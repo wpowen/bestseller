@@ -17,6 +17,12 @@ class ProjectConsistencyScores(BaseModel):
     timeline_coverage: float = Field(ge=0, le=1)
     revision_pressure: float = Field(ge=0, le=1)
     export_readiness: float = Field(ge=0, le=1)
+    main_plot_progression: float = Field(ge=0, le=1)
+    mystery_balance: float = Field(ge=0, le=1)
+    emotional_continuity: float = Field(ge=0, le=1)
+    character_arc_progression: float = Field(ge=0, le=1)
+    world_rule_consistency: float = Field(ge=0, le=1)
+    antagonist_pressure: float = Field(ge=0, le=1)
 
 
 class ProjectConsistencyResult(BaseModel):

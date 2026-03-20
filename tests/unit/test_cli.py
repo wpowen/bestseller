@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime
 import json
 from pathlib import Path
 from uuid import uuid4
@@ -9,6 +10,7 @@ import pytest
 from typer.testing import CliRunner
 
 from bestseller.cli.main import app
+from bestseller.domain.evaluation import BenchmarkSuiteCatalogEntry, BenchmarkSuiteRunResult, BenchmarkSuiteSpec
 from bestseller.domain.workflow import WorkflowMaterializationResult
 
 
@@ -23,6 +25,65 @@ def test_status_command_outputs_json() -> None:
     payload = json.loads(result.stdout)
     assert payload["retrieval_provider"] == "pgvector"
     assert payload["llm_writer_model"]
+
+
+def test_benchmark_list_command(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "bestseller.cli.main.list_benchmark_suites",
+        lambda: [
+            BenchmarkSuiteCatalogEntry(
+                suite_id="sample-books",
+                title="样书评测基线",
+                description="三套样书回归",
+                path="/tmp/sample_books.yaml",
+                case_count=3,
+                case_ids=["doomsday-hoarding", "xuanhuan-progression", "urban-mystery"],
+            )
+        ],
+    )
+
+    result = runner.invoke(app, ["benchmark", "list"])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload[0]["suite_id"] == "sample-books"
+
+
+def test_benchmark_run_command(monkeypatch: pytest.MonkeyPatch) -> None:
+    @asynccontextmanager
+    async def fake_session_scope(settings):
+        yield object()
+
+    def fake_load_benchmark_suite(suite_id: str, suite_file=None):
+        assert suite_id == "sample-books"
+        return BenchmarkSuiteSpec(
+            suite_id="sample-books",
+            title="样书评测基线",
+            cases=[],
+        )
+
+    async def fake_run_benchmark_suite(session, settings, **kwargs):
+        return BenchmarkSuiteRunResult(
+            suite_id="sample-books",
+            title="样书评测基线",
+            started_at=datetime.now(UTC),
+            completed_at=datetime.now(UTC),
+            report_path="/tmp/bench-report.json",
+            case_results=[],
+            passed_case_count=3,
+            failed_case_count=0,
+        )
+
+    monkeypatch.setattr("bestseller.cli.main.session_scope", fake_session_scope)
+    monkeypatch.setattr("bestseller.cli.main.load_benchmark_suite", fake_load_benchmark_suite)
+    monkeypatch.setattr("bestseller.cli.main.run_benchmark_suite", fake_run_benchmark_suite)
+
+    result = runner.invoke(app, ["benchmark", "run", "sample-books", "--no-progress"])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["suite_id"] == "sample-books"
+    assert payload["passed_case_count"] == 3
 
 
 def test_config_show_reads_custom_file(tmp_path: Path) -> None:
@@ -1501,6 +1562,7 @@ def test_scene_review_command(monkeypatch: pytest.MonkeyPatch) -> None:
                     dialogue=0.24,
                     style=0.82,
                     hook=0.7,
+                    contract_alignment=0.64,
                 ),
                 findings=[
                     SceneReviewFinding(

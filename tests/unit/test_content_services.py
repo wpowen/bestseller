@@ -203,6 +203,8 @@ def test_scene_draft_prompt_includes_narrative_graph_sections() -> None:
         {"contract_summary": "本章要抛出更大的异常。", "core_conflict": "拿到线索", "closing_hook": "更大风险逼近"},
         {"contract_summary": "本场必须抛出异常航标。", "core_conflict": "交换信息", "tail_hook": "新坐标浮现"},
         [{"node_path": "/chapters/002/contract", "node_type": "chapter_contract", "summary": "本章要抛出更大的异常。"}],
+        [{"track_type": "bond", "title": "沈砚 / 顾临 关系线", "summary": "双方暂时合作但信任未恢复。", "trust_level": 0.42, "attraction_level": 0.1, "conflict_level": 0.7, "intimacy_stage": "push_pull"}],
+        [{"threat_type": "volume_pressure", "title": "第1卷反派升级", "goal": "封锁调查路径", "current_move": "切断证据链", "next_countermove": "围堵主角"}],
     )
     _, user_prompt = build_scene_draft_prompts(
         project,
@@ -221,13 +223,19 @@ def test_scene_draft_prompt_includes_narrative_graph_sections() -> None:
         {"contract_summary": "本章要抛出更大的异常。", "core_conflict": "拿到线索", "closing_hook": "更大风险逼近"},
         {"contract_summary": "本场必须抛出异常航标。", "core_conflict": "交换信息", "tail_hook": "新坐标浮现"},
         [{"node_path": "/chapters/002/contract", "node_type": "chapter_contract", "summary": "本章要抛出更大的异常。"}],
+        [{"track_type": "bond", "title": "沈砚 / 顾临 关系线", "summary": "双方暂时合作但信任未恢复。", "trust_level": 0.42, "attraction_level": 0.1, "conflict_level": 0.7, "intimacy_stage": "push_pull"}],
+        [{"threat_type": "volume_pressure", "title": "第1卷反派升级", "goal": "封锁调查路径", "current_move": "切断证据链", "next_countermove": "围堵主角"}],
     )
 
     assert "当前叙事线与节拍" in content
     assert "伏笔与兑现约束" in content
+    assert "关系与情绪推进约束" in content
+    assert "反派推进约束" in content
     assert "合同式写作约束" in content
     assert "叙事树上下文" in content
     assert "chapter/scene contract" in user_prompt
+    assert "关系与情绪推进约束" in user_prompt
+    assert "反派推进约束" in user_prompt
     assert "deterministic path retrieval" in user_prompt
     assert "必须覆盖 scene contract" in user_prompt
 

@@ -5,10 +5,12 @@ from uuid import uuid4
 import pytest
 
 from bestseller.infra.db.models import (
+    AntagonistPlanModel,
     ChapterContractModel,
     ChapterModel,
     CharacterModel,
     ClueModel,
+    EmotionTrackModel,
     NarrativeTreeNodeModel,
     PayoffModel,
     PlotArcModel,
@@ -202,6 +204,41 @@ async def test_rebuild_narrative_tree_exports_deterministic_paths() -> None:
         metadata_json={},
     )
     scene_contract.id = uuid4()
+    emotion_track = EmotionTrackModel(
+        project_id=project.id,
+        track_code="bond-shenyan-gulin",
+        track_type="bond",
+        title="沈砚 / 顾临 关系线",
+        character_a_label="沈砚",
+        character_b_label="顾临",
+        relationship_type="旧搭档",
+        summary="双方在合作与猜疑之间摇摆。",
+        desired_payoff="在高潮前恢复默契。",
+        trust_level=0.42,
+        attraction_level=0.08,
+        distance_level=0.64,
+        conflict_level=0.72,
+        intimacy_stage="push_pull",
+        status="active",
+        metadata_json={},
+    )
+    emotion_track.id = uuid4()
+    antagonist_plan = AntagonistPlanModel(
+        project_id=project.id,
+        antagonist_label="顾临",
+        plan_code="volume-01-pressure",
+        title="第1卷反派升级",
+        threat_type="volume_pressure",
+        goal="持续封锁主角调查路径。",
+        current_move="清理底层日志。",
+        next_countermove="切断主角证据来源。",
+        scope_volume_number=1,
+        target_chapter_number=1,
+        pressure_level=0.82,
+        status="active",
+        metadata_json={},
+    )
+    antagonist_plan.id = uuid4()
 
     session = FakeSession(
         scalars_results=[
@@ -213,6 +250,8 @@ async def test_rebuild_narrative_tree_exports_deterministic_paths() -> None:
             [],
             [character],
             [arc],
+            [emotion_track],
+            [antagonist_plan],
             [clue],
             [payoff],
             [chapter_contract],
@@ -232,6 +271,8 @@ async def test_rebuild_narrative_tree_exports_deterministic_paths() -> None:
     assert "/world/rules/r001" in node_paths
     assert "/characters/沈砚" in node_paths
     assert "/arcs/main-plot" in node_paths
+    assert "/emotion-tracks/bond-shenyan-gulin" in node_paths
+    assert "/antagonists/volume-01-pressure" in node_paths
     assert "/chapters/001/contract" in node_paths
     assert "/scenes/001-01/contract" in node_paths
 

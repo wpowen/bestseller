@@ -15,19 +15,23 @@ from bestseller.domain.context import (
 )
 from bestseller.domain.narrative_tree import NarrativeTreeNodeRead
 from bestseller.domain.narrative import (
+    AntagonistPlanRead,
     ArcBeatRead,
     ChapterContractRead,
     ClueRead,
+    EmotionTrackRead,
     PayoffRead,
     PlotArcRead,
     SceneContractRead,
 )
 from bestseller.infra.db.models import (
+    AntagonistPlanModel,
     ArcBeatModel,
     CanonFactModel,
     ChapterContractModel,
     ChapterModel,
     ClueModel,
+    EmotionTrackModel,
     PayoffModel,
     PlotArcModel,
     ProjectModel,
@@ -37,11 +41,13 @@ from bestseller.infra.db.models import (
 )
 from bestseller.services.projects import get_project_by_slug
 from bestseller.services.narrative_tree import (
+    antagonist_plan_path,
     arc_path,
     chapter_contract_path,
     chapter_path,
     character_path,
     clue_path,
+    emotion_track_path,
     payoff_path,
     resolve_narrative_tree_paths_for_project,
     scene_contract_path,
@@ -178,6 +184,47 @@ def _payoff_read(item: PayoffModel) -> PayoffRead:
     )
 
 
+def _emotion_track_read(item: EmotionTrackModel) -> EmotionTrackRead:
+    return EmotionTrackRead(
+        id=item.id,
+        track_code=item.track_code,
+        track_type=item.track_type,
+        title=item.title,
+        character_a_label=item.character_a_label,
+        character_b_label=item.character_b_label,
+        relationship_type=item.relationship_type,
+        summary=item.summary,
+        desired_payoff=item.desired_payoff,
+        trust_level=float(item.trust_level),
+        attraction_level=float(item.attraction_level),
+        distance_level=float(item.distance_level),
+        conflict_level=float(item.conflict_level),
+        intimacy_stage=item.intimacy_stage,
+        last_shift_chapter_number=item.last_shift_chapter_number,
+        status=item.status,
+    )
+
+
+def _antagonist_plan_read(item: AntagonistPlanModel) -> AntagonistPlanRead:
+    return AntagonistPlanRead(
+        id=item.id,
+        plan_code=item.plan_code,
+        antagonist_character_id=item.antagonist_character_id,
+        antagonist_label=item.antagonist_label,
+        title=item.title,
+        threat_type=item.threat_type,
+        goal=item.goal,
+        current_move=item.current_move,
+        next_countermove=item.next_countermove,
+        escalation_condition=item.escalation_condition,
+        reveal_timing=item.reveal_timing,
+        scope_volume_number=item.scope_volume_number,
+        target_chapter_number=item.target_chapter_number,
+        pressure_level=float(item.pressure_level),
+        status=item.status,
+    )
+
+
 def _chapter_contract_read(item: ChapterContractModel) -> ChapterContractRead:
     return ChapterContractRead(
         id=item.id,
@@ -252,6 +299,8 @@ def _tree_paths_for_scene_context(
     active_arc_codes: list[str],
     clue_codes: list[str],
     payoff_codes: list[str],
+    emotion_track_codes: list[str],
+    antagonist_plan_codes: list[str],
 ) -> list[str]:
     paths = [
         "/book/premise",
@@ -269,6 +318,8 @@ def _tree_paths_for_scene_context(
     paths.extend(arc_path(code) for code in active_arc_codes[:4])
     paths.extend(clue_path(code) for code in clue_codes[:4])
     paths.extend(payoff_path(code) for code in payoff_codes[:3])
+    paths.extend(emotion_track_path(code) for code in emotion_track_codes[:3])
+    paths.extend(antagonist_plan_path(code) for code in antagonist_plan_codes[:3])
     return list(dict.fromkeys(path for path in paths if path))
 
 
@@ -279,6 +330,8 @@ def _tree_paths_for_chapter_context(
     active_arc_codes: list[str],
     clue_codes: list[str],
     payoff_codes: list[str],
+    emotion_track_codes: list[str],
+    antagonist_plan_codes: list[str],
 ) -> list[str]:
     paths = [
         "/book/premise",
@@ -293,7 +346,26 @@ def _tree_paths_for_chapter_context(
     paths.extend(arc_path(code) for code in active_arc_codes[:4])
     paths.extend(clue_path(code) for code in clue_codes[:6])
     paths.extend(payoff_path(code) for code in payoff_codes[:4])
+    paths.extend(emotion_track_path(code) for code in emotion_track_codes[:4])
+    paths.extend(antagonist_plan_path(code) for code in antagonist_plan_codes[:4])
     return list(dict.fromkeys(path for path in paths if path))
+
+
+def _track_matches_scene(track: EmotionTrackModel, participants: set[str]) -> bool:
+    return (
+        track.character_a_label in participants
+        or track.character_b_label in participants
+    )
+
+
+def _track_matches_chapter(track: EmotionTrackModel, participants: set[str]) -> bool:
+    return _track_matches_scene(track, participants)
+
+
+def _plan_matches_chapter(plan: AntagonistPlanModel, chapter_number: int) -> bool:
+    if plan.target_chapter_number is None:
+        return True
+    return plan.target_chapter_number >= chapter_number
 
 
 async def build_scene_writer_context(
@@ -584,6 +656,45 @@ async def build_scene_writer_context_from_models(
         _arc_beat_read(item, arc_code_by_id.get(item.plot_arc_id))
         for item in (scene_beats + chapter_beats)[:6]
     ]
+    scene_participants = {participant for participant in scene.participants if participant}
+    emotion_track_rows = list(
+        await session.scalars(
+            select(EmotionTrackModel)
+            .where(
+                EmotionTrackModel.project_id == project.id,
+                EmotionTrackModel.status.in_(("active", "planned")),
+            )
+            .order_by(
+                EmotionTrackModel.conflict_level.desc(),
+                EmotionTrackModel.attraction_level.desc(),
+                EmotionTrackModel.track_code.asc(),
+            )
+        )
+    )
+    active_emotion_tracks = [
+        _emotion_track_read(item)
+        for item in emotion_track_rows
+        if _track_matches_scene(item, scene_participants)
+    ][:4]
+    antagonist_plan_rows = list(
+        await session.scalars(
+            select(AntagonistPlanModel)
+            .where(
+                AntagonistPlanModel.project_id == project.id,
+                AntagonistPlanModel.status.in_(("active", "planned")),
+            )
+            .order_by(
+                AntagonistPlanModel.pressure_level.desc(),
+                AntagonistPlanModel.target_chapter_number.asc().nullsfirst(),
+                AntagonistPlanModel.plan_code.asc(),
+            )
+        )
+    )
+    active_antagonist_plans = [
+        _antagonist_plan_read(item)
+        for item in antagonist_plan_rows
+        if _plan_matches_chapter(item, chapter.chapter_number)
+    ][:3]
     preferred_tree_paths = _tree_paths_for_scene_context(
         chapter=chapter,
         scene=scene,
@@ -594,6 +705,8 @@ async def build_scene_writer_context_from_models(
         ],
         clue_codes=[item.clue_code for item in unresolved_clues if item.clue_code],
         payoff_codes=[item.payoff_code for item in planned_payoffs if item.payoff_code],
+        emotion_track_codes=[item.track_code for item in active_emotion_tracks if item.track_code],
+        antagonist_plan_codes=[item.plan_code for item in active_antagonist_plans if item.plan_code],
     )
     deterministic_tree_nodes = await resolve_narrative_tree_paths_for_project(
         session,
@@ -636,6 +749,8 @@ async def build_scene_writer_context_from_models(
         active_arc_beats=active_arc_beat_reads,
         unresolved_clues=unresolved_clues[:6],
         planned_payoffs=planned_payoffs[:4],
+        active_emotion_tracks=active_emotion_tracks,
+        active_antagonist_plans=active_antagonist_plans,
         chapter_contract=_chapter_contract_read(chapter_contract_row)
         if isinstance(chapter_contract_row, ChapterContractModel)
         else None,
@@ -837,12 +952,58 @@ async def build_chapter_writer_context(
         _arc_beat_read(item, arc_code_by_id.get(item.plot_arc_id))
         for item in active_arc_beats[:8]
     ]
+    chapter_participants = {
+        participant
+        for scene in scenes
+        for participant in scene.participants
+        if participant
+    }
+    emotion_track_rows = list(
+        await session.scalars(
+            select(EmotionTrackModel)
+            .where(
+                EmotionTrackModel.project_id == project.id,
+                EmotionTrackModel.status.in_(("active", "planned")),
+            )
+            .order_by(
+                EmotionTrackModel.conflict_level.desc(),
+                EmotionTrackModel.attraction_level.desc(),
+                EmotionTrackModel.track_code.asc(),
+            )
+        )
+    )
+    active_emotion_tracks = [
+        _emotion_track_read(item)
+        for item in emotion_track_rows
+        if _track_matches_chapter(item, chapter_participants)
+    ][:6]
+    antagonist_plan_rows = list(
+        await session.scalars(
+            select(AntagonistPlanModel)
+            .where(
+                AntagonistPlanModel.project_id == project.id,
+                AntagonistPlanModel.status.in_(("active", "planned")),
+            )
+            .order_by(
+                AntagonistPlanModel.pressure_level.desc(),
+                AntagonistPlanModel.target_chapter_number.asc().nullsfirst(),
+                AntagonistPlanModel.plan_code.asc(),
+            )
+        )
+    )
+    active_antagonist_plans = [
+        _antagonist_plan_read(item)
+        for item in antagonist_plan_rows
+        if _plan_matches_chapter(item, chapter.chapter_number)
+    ][:4]
     preferred_tree_paths = _tree_paths_for_chapter_context(
         chapter=chapter,
         scenes=scenes,
         active_arc_codes=[item.arc_code for item in active_plot_arc_reads if item.arc_code],
         clue_codes=[item.clue_code for item in unresolved_clues if item.clue_code],
         payoff_codes=[item.payoff_code for item in planned_payoffs if item.payoff_code],
+        emotion_track_codes=[item.track_code for item in active_emotion_tracks if item.track_code],
+        antagonist_plan_codes=[item.plan_code for item in active_antagonist_plans if item.plan_code],
     )
     deterministic_tree_nodes = await resolve_narrative_tree_paths_for_project(
         session,
@@ -911,6 +1072,8 @@ async def build_chapter_writer_context(
         active_arc_beats=active_arc_beat_reads,
         unresolved_clues=unresolved_clues[:8],
         planned_payoffs=planned_payoffs[:6],
+        active_emotion_tracks=active_emotion_tracks,
+        active_antagonist_plans=active_antagonist_plans,
         chapter_contract=_chapter_contract_read(chapter_contract_row)
         if isinstance(chapter_contract_row, ChapterContractModel)
         else None,

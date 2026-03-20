@@ -15,10 +15,12 @@ from bestseller.domain.narrative_tree import (
     NarrativeTreeSearchResult,
 )
 from bestseller.infra.db.models import (
+    AntagonistPlanModel,
     ChapterContractModel,
     ChapterModel,
     CharacterModel,
     ClueModel,
+    EmotionTrackModel,
     FactionModel,
     LocationModel,
     NarrativeTreeNodeModel,
@@ -77,6 +79,14 @@ def payoff_path(payoff_code: str) -> str:
     return f"/ledgers/payoffs/{tree_segment(payoff_code, 'payoff')}"
 
 
+def emotion_track_path(track_code: str) -> str:
+    return f"/emotion-tracks/{tree_segment(track_code, 'emotion-track')}"
+
+
+def antagonist_plan_path(plan_code: str) -> str:
+    return f"/antagonists/{tree_segment(plan_code, 'antagonist-plan')}"
+
+
 def _parent_path(path: str) -> str | None:
     if path == "/":
         return None
@@ -133,8 +143,10 @@ def _node_type_weight(node_type: str) -> float:
         "scene_contract": 1.0,
         "chapter_contract": 0.95,
         "plot_arc": 0.9,
+        "antagonist_plan": 0.88,
         "clue": 0.9,
         "payoff": 0.85,
+        "emotion_track": 0.84,
         "scene": 0.8,
         "chapter": 0.78,
         "character": 0.75,
@@ -221,6 +233,12 @@ async def rebuild_narrative_tree(
     )
     plot_arcs = list(
         await session.scalars(select(PlotArcModel).where(PlotArcModel.project_id == project.id))
+    )
+    emotion_tracks = list(
+        await session.scalars(select(EmotionTrackModel).where(EmotionTrackModel.project_id == project.id))
+    )
+    antagonist_plans = list(
+        await session.scalars(select(AntagonistPlanModel).where(AntagonistPlanModel.project_id == project.id))
     )
     clues = list(await session.scalars(select(ClueModel).where(ClueModel.project_id == project.id)))
     payoffs = list(await session.scalars(select(PayoffModel).where(PayoffModel.project_id == project.id)))
@@ -355,6 +373,8 @@ async def rebuild_narrative_tree(
     add_node(node_path="/world/factions", node_type="factions_root", title="阵营", body_md="# 阵营")
     add_node(node_path="/characters", node_type="characters_root", title="角色", body_md="# 角色")
     add_node(node_path="/arcs", node_type="arcs_root", title="叙事线", body_md="# 叙事线")
+    add_node(node_path="/emotion-tracks", node_type="emotion_tracks_root", title="情绪与关系线", body_md="# 情绪与关系线")
+    add_node(node_path="/antagonists", node_type="antagonists_root", title="反派推进", body_md="# 反派推进")
     add_node(node_path="/ledgers", node_type="ledgers_root", title="线索与兑现账本", body_md="# 线索与兑现账本")
     add_node(node_path="/ledgers/clues", node_type="clues_root", title="伏笔账本", body_md="# 伏笔账本")
     add_node(node_path="/ledgers/payoffs", node_type="payoffs_root", title="兑现账本", body_md="# 兑现账本")
@@ -455,6 +475,69 @@ async def rebuild_narrative_tree(
             source_type="plot_arc",
             source_ref_id=arc.id,
             metadata={"arc_code": arc.arc_code, "arc_type": arc.arc_type},
+        )
+
+    for emotion_track in emotion_tracks:
+        add_node(
+            node_path=emotion_track_path(emotion_track.track_code),
+            node_type="emotion_track",
+            title=emotion_track.title,
+            summary=emotion_track.summary,
+            body_md=_node_body(
+                emotion_track.title,
+                _safe_line("track_code", emotion_track.track_code),
+                _safe_line("track_type", emotion_track.track_type),
+                _safe_line("characters", f"{emotion_track.character_a_label} / {emotion_track.character_b_label}"),
+                _safe_line("relationship_type", emotion_track.relationship_type),
+                _safe_line("summary", emotion_track.summary),
+                _safe_line("desired_payoff", emotion_track.desired_payoff),
+                _safe_line("trust_level", emotion_track.trust_level),
+                _safe_line("attraction_level", emotion_track.attraction_level),
+                _safe_line("distance_level", emotion_track.distance_level),
+                _safe_line("conflict_level", emotion_track.conflict_level),
+                _safe_line("intimacy_stage", emotion_track.intimacy_stage),
+            ),
+            source_type="emotion_track",
+            source_ref_id=emotion_track.id,
+            metadata={
+                "track_code": emotion_track.track_code,
+                "track_type": emotion_track.track_type,
+                "character_a_label": emotion_track.character_a_label,
+                "character_b_label": emotion_track.character_b_label,
+                "relationship_type": emotion_track.relationship_type,
+                "status": emotion_track.status,
+            },
+        )
+
+    for antagonist_plan in antagonist_plans:
+        add_node(
+            node_path=antagonist_plan_path(antagonist_plan.plan_code),
+            node_type="antagonist_plan",
+            title=antagonist_plan.title,
+            summary=antagonist_plan.goal,
+            body_md=_node_body(
+                antagonist_plan.title,
+                _safe_line("plan_code", antagonist_plan.plan_code),
+                _safe_line("antagonist", antagonist_plan.antagonist_label),
+                _safe_line("threat_type", antagonist_plan.threat_type),
+                _safe_line("goal", antagonist_plan.goal),
+                _safe_line("current_move", antagonist_plan.current_move),
+                _safe_line("next_countermove", antagonist_plan.next_countermove),
+                _safe_line("escalation_condition", antagonist_plan.escalation_condition),
+                _safe_line("reveal_timing", antagonist_plan.reveal_timing),
+                _safe_line("pressure_level", antagonist_plan.pressure_level),
+            ),
+            source_type="antagonist_plan",
+            source_ref_id=antagonist_plan.id,
+            scope_level="volume" if antagonist_plan.scope_volume_number is not None else "project",
+            scope_volume_number=antagonist_plan.scope_volume_number,
+            scope_chapter_number=antagonist_plan.target_chapter_number,
+            metadata={
+                "plan_code": antagonist_plan.plan_code,
+                "antagonist_label": antagonist_plan.antagonist_label,
+                "threat_type": antagonist_plan.threat_type,
+                "status": antagonist_plan.status,
+            },
         )
 
     for clue in clues:

@@ -13,8 +13,13 @@ pytestmark = pytest.mark.unit
 
 
 class FakeSession:
-    def __init__(self, scalar_results: list[object | None] | None = None) -> None:
+    def __init__(
+        self,
+        scalar_results: list[object | None] | None = None,
+        scalars_results: list[list[object]] | None = None,
+    ) -> None:
         self.scalar_results = list(scalar_results or [])
+        self.scalars_results = list(scalars_results or [])
         self.added: list[object] = []
         self.executed: list[object] = []
 
@@ -33,6 +38,11 @@ class FakeSession:
         if not self.scalar_results:
             return None
         return self.scalar_results.pop(0)
+
+    async def scalars(self, stmt: object) -> list[object]:
+        if not self.scalars_results:
+            return []
+        return self.scalars_results.pop(0)
 
     async def execute(self, stmt: object) -> None:
         self.executed.append(stmt)
@@ -95,6 +105,50 @@ def test_evaluate_project_consistency_returns_attention_when_coverage_is_missing
     assert result.recommended_actions
 
 
+def test_evaluate_project_consistency_v2_flags_narrative_regressions() -> None:
+    result = consistency_services.evaluate_project_consistency(
+        settings=build_settings(),
+        chapter_count=4,
+        chapter_draft_count=4,
+        complete_chapter_count=4,
+        scene_count=8,
+        approved_scene_count=8,
+        scene_summary_count=8,
+        timeline_event_count=8,
+        pending_rewrite_count=0,
+        project_export_count=1,
+        chapter_export_count=4,
+        main_plot_progression=0.5,
+        main_plot_chapter_count=2,
+        mystery_balance=0.4,
+        clue_count=4,
+        payoff_count=1,
+        overdue_clue_count=2,
+        emotional_continuity=0.45,
+        emotion_track_count=2,
+        stale_emotion_track_count=2,
+        character_arc_progression=0.35,
+        protagonist_arc_step_count=1,
+        protagonist_snapshot_chapter_count=2,
+        world_rule_consistency=0.5,
+        world_rule_count=3,
+        grounded_world_rule_count=0,
+        antagonist_pressure=0.3,
+        antagonist_count=1,
+        antagonist_plan_count=1,
+        active_antagonist_plan_count=0,
+    )
+
+    categories = {finding.category for finding in result.findings}
+    assert result.verdict == "attention"
+    assert "main_plot_progression" in categories
+    assert "mystery_balance" in categories
+    assert "emotion_continuity" in categories
+    assert "character_arc_progression" in categories
+    assert "world_rule_consistency" in categories
+    assert "antagonist_pressure" in categories
+
+
 @pytest.mark.asyncio
 async def test_review_project_consistency_persists_report_and_quality(
     monkeypatch: pytest.MonkeyPatch,
@@ -107,6 +161,18 @@ async def test_review_project_consistency_persists_report_and_quality(
     monkeypatch.setattr(consistency_services, "get_project_by_slug", fake_get_project_by_slug)
     session = FakeSession(
         scalar_results=[2, 2, 2, 3, 3, 3, 3, 0, 1, 2],
+        scalars_results=[
+            [],
+            [],
+            [],
+            [],
+            [],
+            [],
+            [],
+            [],
+            [],
+            [],
+        ],
     )
 
     result, report, quality = await consistency_services.review_project_consistency(

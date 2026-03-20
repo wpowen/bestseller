@@ -180,6 +180,38 @@ def _render_clue_section(
     return "\n".join(sections)
 
 
+def _render_emotion_track_section(emotion_tracks: list[dict[str, Any]] | None) -> str:
+    if not emotion_tracks:
+        return ""
+    lines = ["当前关系/情绪线："]
+    lines.extend(
+        (
+            f"- [{item.get('track_type')}] {item.get('title')}：{item.get('summary')}"
+            f" / trust={item.get('trust_level')}"
+            f" / attraction={item.get('attraction_level')}"
+            f" / conflict={item.get('conflict_level')}"
+            f" / stage={item.get('intimacy_stage')}"
+        )
+        for item in emotion_tracks[:4]
+    )
+    return "\n".join(lines)
+
+
+def _render_antagonist_plan_section(antagonist_plans: list[dict[str, Any]] | None) -> str:
+    if not antagonist_plans:
+        return ""
+    lines = ["当前反派推进："]
+    lines.extend(
+        (
+            f"- [{item.get('threat_type')}] {item.get('title')}：{item.get('goal')}"
+            f" / 当前动作:{item.get('current_move')}"
+            f" / 下一步:{item.get('next_countermove')}"
+        )
+        for item in antagonist_plans[:4]
+    )
+    return "\n".join(lines)
+
+
 def _render_contract_section(
     chapter_contract: dict[str, Any] | None,
     scene_contract: dict[str, Any] | None,
@@ -233,6 +265,8 @@ def render_scene_draft_markdown(
     chapter_contract: dict[str, Any] | None = None,
     scene_contract: dict[str, Any] | None = None,
     tree_context_nodes: list[dict[str, Any]] | None = None,
+    active_emotion_tracks: list[dict[str, Any]] | None = None,
+    active_antagonist_plans: list[dict[str, Any]] | None = None,
 ) -> str:
     title = scene.title or f"场景 {scene.scene_number}"
     participants = "、".join(scene.participants) if scene.participants else "相关角色"
@@ -256,6 +290,8 @@ def render_scene_draft_markdown(
     participant_fact_section = _render_participant_fact_section(participant_canon_facts)
     arc_section = _render_arc_section(active_plot_arcs, active_arc_beats)
     clue_section = _render_clue_section(unresolved_clues, planned_payoffs)
+    emotion_track_section = _render_emotion_track_section(active_emotion_tracks)
+    antagonist_plan_section = _render_antagonist_plan_section(active_antagonist_plans)
     contract_section = _render_contract_section(chapter_contract, scene_contract)
     tree_section = _render_tree_section(tree_context_nodes)
 
@@ -297,6 +333,10 @@ def render_scene_draft_markdown(
         paragraphs.insert(len(paragraphs) - 2, f"当前叙事线与节拍：\n{arc_section}")
     if clue_section:
         paragraphs.insert(len(paragraphs) - 2, f"伏笔与兑现约束：\n{clue_section}")
+    if emotion_track_section:
+        paragraphs.insert(len(paragraphs) - 2, f"关系与情绪推进约束：\n{emotion_track_section}")
+    if antagonist_plan_section:
+        paragraphs.insert(len(paragraphs) - 2, f"反派推进约束：\n{antagonist_plan_section}")
     if contract_section:
         paragraphs.insert(len(paragraphs) - 2, f"合同式写作约束：\n{contract_section}")
     if tree_section:
@@ -326,6 +366,8 @@ def build_scene_draft_prompts(
     chapter_contract: dict[str, Any] | None = None,
     scene_contract: dict[str, Any] | None = None,
     tree_context_nodes: list[dict[str, Any]] | None = None,
+    active_emotion_tracks: list[dict[str, Any]] | None = None,
+    active_antagonist_plans: list[dict[str, Any]] | None = None,
 ) -> tuple[str, str]:
     system_prompt = (
         "你是长篇中文小说写作系统里的场景写手。"
@@ -347,6 +389,8 @@ def build_scene_draft_prompts(
     participant_fact_section = _render_participant_fact_section(participant_canon_facts)
     arc_section = _render_arc_section(active_plot_arcs, active_arc_beats)
     clue_section = _render_clue_section(unresolved_clues, planned_payoffs)
+    emotion_track_section = _render_emotion_track_section(active_emotion_tracks)
+    antagonist_plan_section = _render_antagonist_plan_section(active_antagonist_plans)
     contract_section = _render_contract_section(chapter_contract, scene_contract)
     tree_section = _render_tree_section(tree_context_nodes)
     user_prompt = (
@@ -369,6 +413,8 @@ def build_scene_draft_prompts(
         f"已知时间线节点：\n{recent_timeline_section or '暂无已知时间线节点'}\n"
         f"当前叙事线与节拍：\n{arc_section or '暂无显式叙事线约束'}\n"
         f"伏笔与兑现约束：\n{clue_section or '暂无显式伏笔/兑现约束'}\n"
+        f"关系与情绪推进约束：\n{emotion_track_section or '暂无显式关系/情绪线约束'}\n"
+        f"反派推进约束：\n{antagonist_plan_section or '暂无显式反派推进约束'}\n"
         f"chapter/scene contract：\n{contract_section or '暂无显式 contract 约束'}\n"
         f"叙事树上下文：\n{tree_section or '暂无叙事树上下文'}\n"
         f"参与角色当前可见事实：\n{participant_fact_section or '暂无额外角色事实'}\n"
@@ -449,6 +495,18 @@ def _packet_retrieval_context(packet: SceneWriterContextPacket | None) -> list[d
     if packet is None:
         return []
     return [item.model_dump(mode="json") for item in packet.retrieval_chunks]
+
+
+def _packet_emotion_tracks(packet: SceneWriterContextPacket | None) -> list[dict[str, Any]]:
+    if packet is None:
+        return []
+    return [item.model_dump(mode="json") for item in packet.active_emotion_tracks]
+
+
+def _packet_antagonist_plans(packet: SceneWriterContextPacket | None) -> list[dict[str, Any]]:
+    if packet is None:
+        return []
+    return [item.model_dump(mode="json") for item in packet.active_antagonist_plans]
 
 
 def render_chapter_draft_markdown(
@@ -536,6 +594,8 @@ async def generate_scene_draft(
             active_arc_beats=[],
             unresolved_clues=[],
             planned_payoffs=[],
+            active_emotion_tracks=[],
+            active_antagonist_plans=[],
             chapter_contract=None,
             scene_contract=None,
             tree_context_nodes=[],
@@ -558,6 +618,8 @@ async def generate_scene_draft(
         _packet_chapter_contract(context_packet),
         _packet_scene_contract(context_packet),
         _packet_tree_context(context_packet),
+        _packet_emotion_tracks(context_packet),
+        _packet_antagonist_plans(context_packet),
     )
     model_name = "mock-writer"
     llm_run_id: UUID | None = None
@@ -581,6 +643,8 @@ async def generate_scene_draft(
             _packet_chapter_contract(context_packet),
             _packet_scene_contract(context_packet),
             _packet_tree_context(context_packet),
+            _packet_emotion_tracks(context_packet),
+            _packet_antagonist_plans(context_packet),
         )
         completion = await complete_text(
             session,
@@ -650,6 +714,8 @@ async def generate_scene_draft(
             "active_arc_count": len(_packet_active_plot_arcs(context_packet)),
             "active_beat_count": len(_packet_active_arc_beats(context_packet)),
             "unresolved_clue_count": len(_packet_unresolved_clues(context_packet)),
+            "emotion_track_count": len(_packet_emotion_tracks(context_packet)),
+            "antagonist_plan_count": len(_packet_antagonist_plans(context_packet)),
             "tree_context_count": len(_packet_tree_context(context_packet)),
             "retrieval_chunk_count": len(_packet_retrieval_context(context_packet)),
         },

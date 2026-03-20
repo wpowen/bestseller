@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from uuid import UUID
 
 from sqlalchemy import func, select, update
@@ -11,16 +12,25 @@ from bestseller.domain.project_review import (
     ProjectConsistencyScores,
 )
 from bestseller.infra.db.models import (
+    AntagonistPlanModel,
     CanonFactModel,
+    ChapterContractModel,
     ChapterDraftVersionModel,
     ChapterModel,
+    CharacterModel,
+    CharacterStateSnapshotModel,
+    ClueModel,
+    EmotionTrackModel,
     ExportArtifactModel,
+    PayoffModel,
+    PlotArcModel,
     ProjectModel,
     QualityScoreModel,
     ReviewReportModel,
     RewriteTaskModel,
     SceneCardModel,
     TimelineEventModel,
+    WorldRuleModel,
 )
 from bestseller.services.llm import LLMCompletionRequest, complete_text
 from bestseller.services.projects import get_project_by_slug
@@ -45,6 +55,155 @@ def _max_severity(findings: list[ProjectConsistencyFinding]) -> str:
     if any(finding.severity == "medium" for finding in findings):
         return "medium"
     return "low"
+
+
+def _safe_ratio(numerator: int, denominator: int) -> float:
+    if denominator <= 0:
+        return 1.0
+    return _clamp_score(numerator / denominator)
+
+
+def _term_candidates(*values: str | None) -> list[str]:
+    terms: list[str] = []
+    for value in values:
+        if not value:
+            continue
+        for token in re.findall(r"[0-9A-Za-z\u4e00-\u9fff]{2,}", value):
+            if token not in terms:
+                terms.append(token)
+    return terms
+
+
+def _collect_narrative_review_signals(
+    *,
+    chapter_count: int,
+    max_chapter_number: int,
+    chapter_contracts: list[ChapterContractModel],
+    plot_arcs: list[PlotArcModel],
+    clues: list[ClueModel],
+    payoffs: list[PayoffModel],
+    emotion_tracks: list[EmotionTrackModel],
+    antagonist_plans: list[AntagonistPlanModel],
+    world_rules: list[WorldRuleModel],
+    protagonist_snapshots: list[CharacterStateSnapshotModel],
+    chapter_drafts: list[ChapterDraftVersionModel],
+    protagonist_count: int,
+    antagonist_count: int,
+) -> dict[str, object]:
+    main_arc_codes = {
+        arc.arc_code
+        for arc in plot_arcs
+        if arc.arc_type in {"main_plot", "growth", "faction", "romance", "mystery"}
+    } or {"main_plot"}
+    main_plot_chapter_count = 0
+    main_plot_progression = 1.0
+    if plot_arcs and chapter_contracts:
+        main_plot_chapter_count = len(
+            {
+                contract.chapter_number
+                for contract in chapter_contracts
+                if set(contract.primary_arc_codes + contract.supporting_arc_codes) & main_arc_codes
+            }
+        )
+        main_plot_progression = _safe_ratio(main_plot_chapter_count, chapter_count)
+
+    overdue_clue_count = len(
+        [
+            clue
+            for clue in clues
+            if clue.expected_payoff_by_chapter_number is not None
+            and clue.expected_payoff_by_chapter_number <= max_chapter_number
+            and clue.actual_paid_off_chapter_number is None
+        ]
+    )
+    mystery_balance = 1.0
+    if clues or payoffs:
+        payoff_coverage = _safe_ratio(len(payoffs), max(len(clues), 1))
+        overdue_penalty = 1.0 - min(overdue_clue_count / max(len(clues), 1), 1.0)
+        mystery_balance = _clamp_score((payoff_coverage + overdue_penalty) / 2)
+
+    stale_emotion_track_count = len(
+        [
+            track
+            for track in emotion_tracks
+            if track.last_shift_chapter_number is not None
+            and max_chapter_number - track.last_shift_chapter_number >= 3
+        ]
+    )
+    emotional_continuity = 1.0
+    if emotion_tracks:
+        freshness_scores: list[float] = []
+        horizon = max(max_chapter_number, 1)
+        for track in emotion_tracks:
+            if track.last_shift_chapter_number is None:
+                freshness_scores.append(0.6)
+                continue
+            staleness = max(0, max_chapter_number - track.last_shift_chapter_number)
+            freshness_scores.append(max(0.0, 1 - (staleness / max(horizon, 3))))
+        emotional_continuity = _clamp_score(sum(freshness_scores) / len(freshness_scores))
+
+    distinct_arc_states = {
+        snapshot.arc_state.strip()
+        for snapshot in protagonist_snapshots
+        if snapshot.arc_state and snapshot.arc_state.strip()
+    }
+    protagonist_arc_step_count = len(distinct_arc_states)
+    protagonist_snapshot_chapter_count = len({snapshot.chapter_number for snapshot in protagonist_snapshots})
+    character_arc_progression = 1.0
+    if protagonist_count > 0 and chapter_count > 1:
+        coverage_score = _safe_ratio(protagonist_snapshot_chapter_count, chapter_count)
+        step_target = min(max(chapter_count, 2), 4)
+        step_score = _safe_ratio(protagonist_arc_step_count, step_target)
+        character_arc_progression = _clamp_score((coverage_score + step_score) / 2)
+
+    grounded_world_rule_count = 0
+    combined_draft_text = "\n".join(draft.content_md for draft in chapter_drafts)
+    for rule in world_rules:
+        candidates = _term_candidates(rule.rule_code, rule.name, rule.story_consequence, rule.description)[:6]
+        if any(term and term in combined_draft_text for term in candidates):
+            grounded_world_rule_count += 1
+    world_rule_consistency = 1.0
+    if world_rules:
+        world_rule_consistency = _clamp_score((1 + _safe_ratio(grounded_world_rule_count, len(world_rules))) / 2)
+
+    active_antagonist_plan_count = len(
+        [
+            plan
+            for plan in antagonist_plans
+            if plan.status in {"active", "planned"}
+            and (plan.target_chapter_number is None or plan.target_chapter_number >= max_chapter_number)
+        ]
+    )
+    antagonist_pressure = 1.0
+    if antagonist_count > 0:
+        if not antagonist_plans:
+            antagonist_pressure = 0.2
+        else:
+            plan_coverage = min(1.0, len(antagonist_plans) / max(1, min(chapter_count, 4)))
+            live_pressure = 1.0 if active_antagonist_plan_count > 0 else 0.45
+            antagonist_pressure = _clamp_score((plan_coverage + live_pressure) / 2)
+
+    return {
+        "main_plot_progression": main_plot_progression,
+        "main_plot_chapter_count": main_plot_chapter_count,
+        "mystery_balance": mystery_balance,
+        "overdue_clue_count": overdue_clue_count,
+        "clue_count": len(clues),
+        "payoff_count": len(payoffs),
+        "emotional_continuity": emotional_continuity,
+        "emotion_track_count": len(emotion_tracks),
+        "stale_emotion_track_count": stale_emotion_track_count,
+        "character_arc_progression": character_arc_progression,
+        "protagonist_arc_step_count": protagonist_arc_step_count,
+        "protagonist_snapshot_chapter_count": protagonist_snapshot_chapter_count,
+        "world_rule_consistency": world_rule_consistency,
+        "world_rule_count": len(world_rules),
+        "grounded_world_rule_count": grounded_world_rule_count,
+        "antagonist_pressure": antagonist_pressure,
+        "antagonist_count": antagonist_count,
+        "antagonist_plan_count": len(antagonist_plans),
+        "active_antagonist_plan_count": active_antagonist_plan_count,
+    }
 
 
 def render_project_review_summary(review_result: ProjectConsistencyResult) -> str:
@@ -98,6 +257,25 @@ def evaluate_project_consistency(
     project_export_count: int,
     chapter_export_count: int,
     expect_project_export: bool = True,
+    main_plot_progression: float | None = None,
+    main_plot_chapter_count: int = 0,
+    mystery_balance: float | None = None,
+    overdue_clue_count: int = 0,
+    clue_count: int = 0,
+    payoff_count: int = 0,
+    emotional_continuity: float | None = None,
+    emotion_track_count: int = 0,
+    stale_emotion_track_count: int = 0,
+    character_arc_progression: float | None = None,
+    protagonist_arc_step_count: int = 0,
+    protagonist_snapshot_chapter_count: int = 0,
+    world_rule_consistency: float | None = None,
+    world_rule_count: int = 0,
+    grounded_world_rule_count: int = 0,
+    antagonist_pressure: float | None = None,
+    antagonist_count: int = 0,
+    antagonist_plan_count: int = 0,
+    active_antagonist_plan_count: int = 0,
 ) -> ProjectConsistencyResult:
     safe_chapter_count = max(chapter_count, 1)
     safe_scene_count = max(scene_count, 1)
@@ -114,6 +292,16 @@ def evaluate_project_consistency(
             if project_export_count > 0
             else (0.7 if chapter_export_count >= chapter_count else 0.0)
         )
+    main_plot_progression = 1.0 if main_plot_progression is None else _clamp_score(main_plot_progression)
+    mystery_balance = 1.0 if mystery_balance is None else _clamp_score(mystery_balance)
+    emotional_continuity = 1.0 if emotional_continuity is None else _clamp_score(emotional_continuity)
+    character_arc_progression = (
+        1.0 if character_arc_progression is None else _clamp_score(character_arc_progression)
+    )
+    world_rule_consistency = (
+        1.0 if world_rule_consistency is None else _clamp_score(world_rule_consistency)
+    )
+    antagonist_pressure = 1.0 if antagonist_pressure is None else _clamp_score(antagonist_pressure)
     overall = _clamp_score(
         (
             chapter_coverage
@@ -122,8 +310,14 @@ def evaluate_project_consistency(
             + timeline_coverage
             + revision_pressure
             + export_readiness
+            + main_plot_progression
+            + mystery_balance
+            + emotional_continuity
+            + character_arc_progression
+            + world_rule_consistency
+            + antagonist_pressure
         )
-        / 6
+        / 12
     )
 
     findings: list[ProjectConsistencyFinding] = []
@@ -177,6 +371,67 @@ def evaluate_project_consistency(
                 message="项目级导出尚未生成，当前整书交付物不完整。",
             )
         )
+    if main_plot_progression < 0.75:
+        findings.append(
+            ProjectConsistencyFinding(
+                category="main_plot_progression",
+                severity=_severity_from_score(main_plot_progression),
+                message=f"主线只在 {main_plot_chapter_count}/{chapter_count} 个章节中被显式承担，推进密度偏低。",
+            )
+        )
+    if clue_count > 0 and mystery_balance < 0.75:
+        findings.append(
+            ProjectConsistencyFinding(
+                category="mystery_balance",
+                severity=_severity_from_score(mystery_balance),
+                message=(
+                    f"暗线当前有 {clue_count} 个伏笔、{payoff_count} 个兑现，"
+                    f"其中 {overdue_clue_count} 个伏笔已经超期未回收。"
+                ),
+            )
+        )
+    if emotion_track_count > 0 and emotional_continuity < 0.75:
+        findings.append(
+            ProjectConsistencyFinding(
+                category="emotion_continuity",
+                severity=_severity_from_score(emotional_continuity),
+                message=(
+                    f"当前有 {emotion_track_count} 条关系/情绪线，其中 {stale_emotion_track_count} 条已经连续多章没有变化。"
+                ),
+            )
+        )
+    if chapter_count >= 3 and character_arc_progression < 0.75:
+        findings.append(
+            ProjectConsistencyFinding(
+                category="character_arc_progression",
+                severity=_severity_from_score(character_arc_progression),
+                message=(
+                    f"主角弧光当前只有 {protagonist_arc_step_count} 个明显台阶，"
+                    f"角色状态快照仅覆盖 {protagonist_snapshot_chapter_count}/{chapter_count} 个章节。"
+                ),
+            )
+        )
+    if world_rule_count > 0 and world_rule_consistency < 0.75:
+        findings.append(
+            ProjectConsistencyFinding(
+                category="world_rule_consistency",
+                severity=_severity_from_score(world_rule_consistency),
+                message=(
+                    f"已定义 {world_rule_count} 条世界规则，但只有 {grounded_world_rule_count} 条在当前章节草稿中获得明确落地。"
+                ),
+            )
+        )
+    if antagonist_count > 0 and antagonist_pressure < 0.75:
+        findings.append(
+            ProjectConsistencyFinding(
+                category="antagonist_pressure",
+                severity=_severity_from_score(antagonist_pressure),
+                message=(
+                    f"项目存在 {antagonist_count} 名反派角色，但当前只有 {antagonist_plan_count} 条反派计划，"
+                    f"其中仍在当前叙事地平线内生效的只有 {active_antagonist_plan_count} 条。"
+                ),
+            )
+        )
 
     threshold = settings.quality.thresholds.chapter_coherence_min_score
     verdict = "pass" if overall >= threshold and not findings else "attention"
@@ -189,6 +444,18 @@ def evaluate_project_consistency(
         recommended_actions.append("优先处理仍处于 pending/queued 的 rewrite 任务。")
     if expect_project_export and project_export_count == 0:
         recommended_actions.append("生成最新的项目级导出文件，保证可交付版本存在。")
+    if main_plot_progression < 0.75:
+        recommended_actions.append("提高 chapter contract 中主线 arc 的覆盖率，避免连续章节失去主线推进。")
+    if clue_count > 0 and mystery_balance < 0.75:
+        recommended_actions.append("补齐伏笔兑现计划，优先处理已经超期未回收的暗线节点。")
+    if emotion_track_count > 0 and emotional_continuity < 0.75:
+        recommended_actions.append("为核心关系线补一轮明确的推进、拉扯或兑现，避免情绪线断档。")
+    if chapter_count >= 3 and character_arc_progression < 0.75:
+        recommended_actions.append("补写主角弧光台阶，确保关键章节出现新的 arc_state 变化。")
+    if world_rule_count > 0 and world_rule_consistency < 0.75:
+        recommended_actions.append("把关键世界规则显式落到正文事件与代价里，避免世界观停留在设定层。")
+    if antagonist_count > 0 and antagonist_pressure < 0.75:
+        recommended_actions.append("补强反派计划与升级节点，确保主角不是单向推进。")
     if not recommended_actions:
         recommended_actions.append("当前项目一致性通过，可继续扩大章节规模或切换到真实模型。")
 
@@ -203,6 +470,12 @@ def evaluate_project_consistency(
             timeline_coverage=timeline_coverage,
             revision_pressure=revision_pressure,
             export_readiness=export_readiness,
+            main_plot_progression=main_plot_progression,
+            mystery_balance=mystery_balance,
+            emotional_continuity=emotional_continuity,
+            character_arc_progression=character_arc_progression,
+            world_rule_consistency=world_rule_consistency,
+            antagonist_pressure=antagonist_pressure,
         ),
         findings=findings,
         evidence_summary={
@@ -216,6 +489,19 @@ def evaluate_project_consistency(
             "pending_rewrite_count": pending_rewrite_count,
             "project_export_count": project_export_count,
             "chapter_export_count": chapter_export_count,
+            "main_plot_chapter_count": main_plot_chapter_count,
+            "clue_count": clue_count,
+            "payoff_count": payoff_count,
+            "overdue_clue_count": overdue_clue_count,
+            "emotion_track_count": emotion_track_count,
+            "stale_emotion_track_count": stale_emotion_track_count,
+            "protagonist_arc_step_count": protagonist_arc_step_count,
+            "protagonist_snapshot_chapter_count": protagonist_snapshot_chapter_count,
+            "world_rule_count": world_rule_count,
+            "grounded_world_rule_count": grounded_world_rule_count,
+            "antagonist_count": antagonist_count,
+            "antagonist_plan_count": antagonist_plan_count,
+            "active_antagonist_plan_count": active_antagonist_plan_count,
         },
         recommended_actions=recommended_actions,
     )
@@ -332,6 +618,97 @@ async def review_project_consistency(
         )
         or 0
     )
+    chapter_contracts = list(
+        await session.scalars(
+            select(ChapterContractModel)
+            .where(ChapterContractModel.project_id == project.id)
+            .order_by(ChapterContractModel.chapter_number.asc())
+        )
+    )
+    plot_arcs = list(
+        await session.scalars(
+            select(PlotArcModel).where(PlotArcModel.project_id == project.id)
+        )
+    )
+    clues = list(
+        await session.scalars(
+            select(ClueModel).where(ClueModel.project_id == project.id)
+        )
+    )
+    payoffs = list(
+        await session.scalars(
+            select(PayoffModel).where(PayoffModel.project_id == project.id)
+        )
+    )
+    emotion_tracks = list(
+        await session.scalars(
+            select(EmotionTrackModel).where(EmotionTrackModel.project_id == project.id)
+        )
+    )
+    antagonist_plans = list(
+        await session.scalars(
+            select(AntagonistPlanModel).where(AntagonistPlanModel.project_id == project.id)
+        )
+    )
+    world_rules = list(
+        await session.scalars(
+            select(WorldRuleModel).where(WorldRuleModel.project_id == project.id)
+        )
+    )
+    protagonists = list(
+        await session.scalars(
+            select(CharacterModel).where(
+                CharacterModel.project_id == project.id,
+                CharacterModel.role == "protagonist",
+            )
+        )
+    )
+    antagonists = list(
+        await session.scalars(
+            select(CharacterModel).where(
+                CharacterModel.project_id == project.id,
+                CharacterModel.role == "antagonist",
+            )
+        )
+    )
+    protagonist_ids = [item.id for item in protagonists if item.id is not None]
+    protagonist_snapshots = list(
+        await session.scalars(
+            select(CharacterStateSnapshotModel)
+            .where(
+                CharacterStateSnapshotModel.project_id == project.id,
+                CharacterStateSnapshotModel.character_id.in_(protagonist_ids or [UUID(int=0)]),
+            )
+            .order_by(
+                CharacterStateSnapshotModel.chapter_number.asc(),
+                CharacterStateSnapshotModel.scene_number.asc().nullsfirst(),
+            )
+        )
+    ) if protagonist_ids else []
+    chapter_drafts = list(
+        await session.scalars(
+            select(ChapterDraftVersionModel).where(
+                ChapterDraftVersionModel.project_id == project.id,
+                ChapterDraftVersionModel.is_current.is_(True),
+            )
+        )
+    )
+    max_chapter_number = max((chapter.chapter_number for chapter in chapter_contracts), default=chapter_count)
+    narrative_signals = _collect_narrative_review_signals(
+        chapter_count=chapter_count,
+        max_chapter_number=max_chapter_number,
+        chapter_contracts=chapter_contracts,
+        plot_arcs=plot_arcs,
+        clues=clues,
+        payoffs=payoffs,
+        emotion_tracks=emotion_tracks,
+        antagonist_plans=antagonist_plans,
+        world_rules=world_rules,
+        protagonist_snapshots=protagonist_snapshots,
+        chapter_drafts=chapter_drafts,
+        protagonist_count=len(protagonists),
+        antagonist_count=len(antagonists),
+    )
 
     review_result = evaluate_project_consistency(
         settings=settings,
@@ -346,6 +723,7 @@ async def review_project_consistency(
         project_export_count=project_export_count,
         chapter_export_count=chapter_export_count,
         expect_project_export=expect_project_export,
+        **narrative_signals,
     )
 
     fallback_summary = render_project_review_summary(review_result)
@@ -407,10 +785,10 @@ async def review_project_consistency(
         is_current=True,
         score_overall=review_result.scores.overall,
         score_goal=review_result.scores.chapter_coverage,
-        score_conflict=review_result.scores.scene_knowledge,
-        score_emotion=review_result.scores.canon_coverage,
-        score_dialogue=review_result.scores.timeline_coverage,
-        score_style=review_result.scores.revision_pressure,
+        score_conflict=review_result.scores.main_plot_progression,
+        score_emotion=review_result.scores.emotional_continuity,
+        score_dialogue=review_result.scores.mystery_balance,
+        score_style=review_result.scores.world_rule_consistency,
         score_hook=review_result.scores.export_readiness,
         evidence_summary=review_result.evidence_summary,
     )

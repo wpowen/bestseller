@@ -27,7 +27,7 @@ from bestseller.infra.db.models import (
     SceneDraftVersionModel,
     StyleGuideModel,
 )
-from bestseller.services.context import build_chapter_writer_context
+from bestseller.services.context import build_chapter_writer_context, build_scene_writer_context
 from bestseller.services.drafts import (
     count_words,
     _normalize_fragment,
@@ -48,6 +48,103 @@ def _severity_from_score(score: float) -> str:
     if score < 0.7:
         return "medium"
     return "low"
+
+
+def _term_candidates(*values: str | None) -> list[str]:
+    terms: list[str] = []
+    for value in values:
+        if not value:
+            continue
+        normalized = _normalize_fragment(value)
+        if normalized and normalized not in terms:
+            terms.append(normalized)
+        for token in re.findall(r"[0-9A-Za-z\u4e00-\u9fff]{2,}", value):
+            if token not in terms:
+                terms.append(token)
+    return terms
+
+
+def _contract_field_score(content: str, value: str | None) -> float | None:
+    if not value:
+        return None
+    normalized = _normalize_fragment(value)
+    if normalized and normalized in content:
+        return 1.0
+    terms = _term_candidates(value)[:6]
+    if not terms:
+        return 0.0
+    hit_count = sum(1 for term in terms if term in content)
+    return _clamp_score(hit_count / len(terms))
+
+
+def _evaluate_contract_alignment(
+    content: str,
+    *,
+    expectations: list[tuple[str, str | None]],
+) -> tuple[float, dict[str, object]]:
+    scored_items: list[tuple[str, float]] = []
+    missing_labels: list[str] = []
+    for label, value in expectations:
+        field_score = _contract_field_score(content, value)
+        if field_score is None:
+            continue
+        scored_items.append((label, field_score))
+        if field_score < 0.5:
+            missing_labels.append(label)
+    if not scored_items:
+        return 1.0, {
+            "contract_expectation_count": 0,
+            "contract_matched_count": 0,
+            "contract_missing_labels": [],
+            "contract_alignment_breakdown": {},
+        }
+    breakdown = {label: score for label, score in scored_items}
+    matched_count = sum(1 for _, score in scored_items if score >= 0.5)
+    return _clamp_score(sum(score for _, score in scored_items) / len(scored_items)), {
+        "contract_expectation_count": len(scored_items),
+        "contract_matched_count": matched_count,
+        "contract_missing_labels": missing_labels,
+        "contract_alignment_breakdown": breakdown,
+    }
+
+
+def _scene_contract_expectations(
+    *,
+    chapter_contract: Any | None = None,
+    scene_contract: Any | None = None,
+) -> list[tuple[str, str | None]]:
+    if scene_contract is not None:
+        return [
+            ("scene_summary", getattr(scene_contract, "contract_summary", None)),
+            ("core_conflict", getattr(scene_contract, "core_conflict", None)),
+            ("emotional_shift", getattr(scene_contract, "emotional_shift", None)),
+            ("information_release", getattr(scene_contract, "information_release", None)),
+            ("tail_hook", getattr(scene_contract, "tail_hook", None)),
+        ]
+    if chapter_contract is not None:
+        return [
+            ("chapter_summary", getattr(chapter_contract, "contract_summary", None)),
+            ("core_conflict", getattr(chapter_contract, "core_conflict", None)),
+            ("emotional_shift", getattr(chapter_contract, "emotional_shift", None)),
+            ("information_release", getattr(chapter_contract, "information_release", None)),
+            ("closing_hook", getattr(chapter_contract, "closing_hook", None)),
+        ]
+    return []
+
+
+def _chapter_contract_expectations(
+    *,
+    chapter_contract: Any | None = None,
+) -> list[tuple[str, str | None]]:
+    if chapter_contract is None:
+        return []
+    return [
+        ("chapter_summary", getattr(chapter_contract, "contract_summary", None)),
+        ("core_conflict", getattr(chapter_contract, "core_conflict", None)),
+        ("emotional_shift", getattr(chapter_contract, "emotional_shift", None)),
+        ("information_release", getattr(chapter_contract, "information_release", None)),
+        ("closing_hook", getattr(chapter_contract, "closing_hook", None)),
+    ]
 
 
 def _max_severity(findings: list[SceneReviewFinding]) -> str:
@@ -136,6 +233,8 @@ def build_scene_rewrite_prompts(
 
 
 def _render_chapter_context_section(packet) -> str:
+    if packet is None:
+        return "暂无章节上下文。"
     lines: list[str] = []
     if getattr(packet, "active_plot_arcs", None):
         lines.append("激活叙事线：")
@@ -160,6 +259,25 @@ def _render_chapter_context_section(packet) -> str:
         lines.extend(
             f"- {item.payoff_code}：{item.label}"
             for item in packet.planned_payoffs[:4]
+        )
+    if getattr(packet, "active_emotion_tracks", None):
+        lines.append("关系与情绪线：")
+        lines.extend(
+            (
+                f"- [{item.track_type}] {item.title}：{item.summary}"
+                f" / trust={item.trust_level} / conflict={item.conflict_level}"
+            )
+            for item in packet.active_emotion_tracks[:4]
+        )
+    if getattr(packet, "active_antagonist_plans", None):
+        lines.append("反派推进：")
+        lines.extend(
+            (
+                f"- [{item.threat_type}] {item.title}：{item.goal}"
+                f" / 当前动作:{item.current_move}"
+                f" / 下一步:{item.next_countermove}"
+            )
+            for item in packet.active_antagonist_plans[:4]
         )
     if getattr(packet, "chapter_contract", None):
         lines.append(f"章节 contract：{packet.chapter_contract.contract_summary}")
@@ -274,6 +392,8 @@ def evaluate_scene_draft(
     chapter: ChapterModel,
     draft: SceneDraftVersionModel,
     settings: AppSettings,
+    chapter_contract: Any | None = None,
+    scene_contract: Any | None = None,
 ) -> SceneReviewResult:
     content = draft.content_md
     target_ratio = draft.word_count / max(scene.target_word_count, 1)
@@ -320,7 +440,17 @@ def evaluate_scene_draft(
         + (0.1 if "结尾" in content else 0.0)
     )
 
-    overall = _clamp_score((goal + conflict + emotion + dialogue + style + hook) / 6)
+    contract_alignment, contract_evidence = _evaluate_contract_alignment(
+        content,
+        expectations=_scene_contract_expectations(
+            chapter_contract=chapter_contract,
+            scene_contract=scene_contract,
+        ),
+    )
+    score_parts = [goal, conflict, emotion, dialogue, style, hook]
+    if int(contract_evidence["contract_expectation_count"]) > 0:
+        score_parts.append(contract_alignment)
+    overall = _clamp_score(sum(score_parts) / len(score_parts))
     threshold = settings.quality.thresholds.scene_min_score
 
     findings: list[SceneReviewFinding] = []
@@ -359,13 +489,33 @@ def evaluate_scene_draft(
                 message="缺少有效对话支撑，人物之间的对抗还没有被真正演出来。",
             )
         )
+    if int(contract_evidence["contract_expectation_count"]) > 0 and contract_alignment < threshold:
+        missing_labels = list(contract_evidence["contract_missing_labels"])
+        findings.append(
+            SceneReviewFinding(
+                category="contract_alignment",
+                severity=_severity_from_score(contract_alignment),
+                message=(
+                    "当前场景没有充分兑现 scene contract。"
+                    + (f" 缺失要点：{', '.join(missing_labels)}。" if missing_labels else "")
+                ),
+            )
+        )
 
     verdict = "pass" if overall >= threshold and not findings else "rewrite"
     rewrite_instructions = None
     if verdict == "rewrite":
+        contract_hint = ""
+        if int(contract_evidence["contract_expectation_count"]) > 0:
+            missing_labels = list(contract_evidence["contract_missing_labels"])
+            contract_hint = (
+                " 并对齐 scene contract，补齐核心冲突、情绪变化、信息释放和尾钩。"
+                if not missing_labels
+                else f" 并对齐 scene contract，补齐这些缺口：{', '.join(missing_labels)}。"
+            )
         rewrite_instructions = (
             f"请重写第{chapter.chapter_number}章第{scene.scene_number}场，优先补足目标推进、"
-            "冲突升级、人物对话和情绪层次，确保结尾留下明确钩子。"
+            f"冲突升级、人物对话和情绪层次，确保结尾留下明确钩子。{contract_hint}"
         )
 
     return SceneReviewResult(
@@ -379,6 +529,7 @@ def evaluate_scene_draft(
             dialogue=dialogue,
             style=style,
             hook=hook,
+            contract_alignment=contract_alignment,
         ),
         findings=findings,
         evidence_summary={
@@ -387,6 +538,7 @@ def evaluate_scene_draft(
             "participants_hit": participants_present,
             "dialogue_markers": dialogue_markers,
             "chapter_goal": chapter.chapter_goal,
+            **contract_evidence,
         },
         rewrite_instructions=rewrite_instructions,
     )
@@ -398,6 +550,7 @@ def evaluate_chapter_draft(
     scenes: list[SceneCardModel],
     draft: ChapterDraftVersionModel,
     settings: AppSettings,
+    chapter_contract: Any | None = None,
 ) -> ChapterReviewResult:
     content = draft.content_md
     target_ratio = draft.word_count / max(chapter.target_word_count, 1)
@@ -439,7 +592,14 @@ def evaluate_chapter_draft(
         + (0.1 if "下一" in content or "下一个" in content else 0.0)
     )
 
-    overall = _clamp_score((goal + coverage + coherence + continuity + style + hook) / 6)
+    contract_alignment, contract_evidence = _evaluate_contract_alignment(
+        content,
+        expectations=_chapter_contract_expectations(chapter_contract=chapter_contract),
+    )
+    score_parts = [goal, coverage, coherence, continuity, style, hook]
+    if int(contract_evidence["contract_expectation_count"]) > 0:
+        score_parts.append(contract_alignment)
+    overall = _clamp_score(sum(score_parts) / len(score_parts))
     threshold = settings.quality.thresholds.chapter_coherence_min_score
 
     findings: list[ChapterReviewFinding] = []
@@ -478,14 +638,34 @@ def evaluate_chapter_draft(
                 message="章节前后承接不足，缺少对上一阶段局势的衔接和对下一阶段威胁的延展。",
             )
         )
+    if int(contract_evidence["contract_expectation_count"]) > 0 and contract_alignment < threshold:
+        missing_labels = list(contract_evidence["contract_missing_labels"])
+        findings.append(
+            ChapterReviewFinding(
+                category="contract_alignment",
+                severity=_severity_from_score(contract_alignment),
+                message=(
+                    "当前章节没有充分兑现 chapter contract。"
+                    + (f" 缺失要点：{', '.join(missing_labels)}。" if missing_labels else "")
+                ),
+            )
+        )
 
     blocking_findings = [finding for finding in findings if finding.severity in {"high", "medium"}]
     verdict = "pass" if overall >= threshold and not blocking_findings else "rewrite"
     rewrite_instructions = None
     if verdict == "rewrite":
+        contract_hint = ""
+        if int(contract_evidence["contract_expectation_count"]) > 0:
+            missing_labels = list(contract_evidence["contract_missing_labels"])
+            contract_hint = (
+                " 并把 chapter contract 的核心冲突、情绪变化、信息释放和尾钩真正落到正文。"
+                if not missing_labels
+                else f" 并重点修正这些 contract 缺口：{', '.join(missing_labels)}。"
+            )
         rewrite_instructions = (
             f"请重写第{chapter.chapter_number}章，保持场景顺序不变，重点补强章节推进、"
-            "场景衔接、连续性和结尾钩子。"
+            f"场景衔接、连续性和结尾钩子。{contract_hint}"
         )
 
     return ChapterReviewResult(
@@ -501,6 +681,7 @@ def evaluate_chapter_draft(
             continuity=continuity,
             style=style,
             hook=hook,
+            contract_alignment=contract_alignment,
         ),
         findings=findings,
         evidence_summary={
@@ -509,6 +690,7 @@ def evaluate_chapter_draft(
             "scene_heading_count": scene_heading_count,
             "expected_scene_count": expected_scene_count,
             "scene_titles_hit": scene_titles_hit,
+            **contract_evidence,
         },
         rewrite_instructions=rewrite_instructions,
     )
@@ -616,12 +798,24 @@ async def review_scene_draft(
         chapter_number,
         scene_number,
     )
+    try:
+        scene_context = await build_scene_writer_context(
+            session,
+            settings,
+            project_slug,
+            chapter_number,
+            scene_number,
+        )
+    except ValueError:
+        scene_context = None
 
     review_result = evaluate_scene_draft(
         scene=scene,
         chapter=chapter,
         draft=draft,
         settings=settings,
+        chapter_contract=getattr(scene_context, "chapter_contract", None),
+        scene_contract=getattr(scene_context, "scene_contract", None),
     )
 
     critic_response = render_scene_review_summary(review_result)
@@ -761,18 +955,22 @@ async def review_chapter_draft(
         project_slug,
         chapter_number,
     )
-    chapter_context = await build_chapter_writer_context(
-        session,
-        settings,
-        project_slug,
-        chapter_number,
-    )
+    try:
+        chapter_context = await build_chapter_writer_context(
+            session,
+            settings,
+            project_slug,
+            chapter_number,
+        )
+    except ValueError:
+        chapter_context = None
 
     review_result = evaluate_chapter_draft(
         chapter=chapter,
         scenes=scenes,
         draft=draft,
         settings=settings,
+        chapter_contract=getattr(chapter_context, "chapter_contract", None),
     )
 
     critic_response = render_chapter_review_summary(review_result)

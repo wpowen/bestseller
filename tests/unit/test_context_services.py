@@ -6,7 +6,15 @@ import pytest
 
 from bestseller.domain.narrative_tree import NarrativeTreeNodeRead
 from bestseller.domain.retrieval import RetrievedChunk, RetrievalSearchResult
-from bestseller.infra.db.models import CanonFactModel, ChapterModel, ProjectModel, SceneCardModel, TimelineEventModel
+from bestseller.infra.db.models import (
+    AntagonistPlanModel,
+    CanonFactModel,
+    ChapterModel,
+    EmotionTrackModel,
+    ProjectModel,
+    SceneCardModel,
+    TimelineEventModel,
+)
 from bestseller.services import context as context_services
 from bestseller.settings import load_settings
 
@@ -150,6 +158,40 @@ async def test_build_scene_writer_context_includes_visible_history_and_filters_f
         metadata_json={"summary": "发现异常", "chapter_number": 1, "scene_number": 2},
     )
     event.id = uuid4()
+    emotion_track = EmotionTrackModel(
+        project_id=project.id,
+        track_code="bond-shenyan-gulin",
+        track_type="bond",
+        title="沈砚 / 顾临 关系线",
+        character_a_label="沈砚",
+        character_b_label="顾临",
+        relationship_type="旧搭档",
+        summary="双方暂时合作但信任未恢复。",
+        desired_payoff="在高潮前恢复最基本的默契。",
+        trust_level=0.42,
+        attraction_level=0.1,
+        distance_level=0.64,
+        conflict_level=0.7,
+        intimacy_stage="push_pull",
+        status="active",
+        metadata_json={},
+    )
+    emotion_track.id = uuid4()
+    antagonist_plan = AntagonistPlanModel(
+        project_id=project.id,
+        antagonist_label="顾临",
+        plan_code="volume-01-pressure",
+        title="第1卷反派升级",
+        threat_type="volume_pressure",
+        goal="封锁主角的调查路径。",
+        current_move="清理底层日志。",
+        next_countermove="围堵取证渠道。",
+        target_chapter_number=2,
+        pressure_level=0.82,
+        status="active",
+        metadata_json={},
+    )
+    antagonist_plan.id = uuid4()
 
     async def fake_get_project_by_slug(session, slug: str):
         return project
@@ -247,6 +289,13 @@ async def test_build_scene_writer_context_includes_visible_history_and_filters_f
             [summary_fact],
             [event],
             [participant_fact],
+            [],
+            [],
+            [],
+            [],
+            [],
+            [emotion_track],
+            [antagonist_plan],
         ],
     )
 
@@ -265,6 +314,8 @@ async def test_build_scene_writer_context_includes_visible_history_and_filters_f
     assert packet.tree_context_nodes[0].node_path == "/chapters/002/contract"
     assert len(packet.retrieval_chunks) == 1
     assert packet.retrieval_chunks[0].chunk_text == "过去场景命中"
+    assert packet.active_emotion_tracks[0].track_code == "bond-shenyan-gulin"
+    assert packet.active_antagonist_plans[0].plan_code == "volume-01-pressure"
 
 
 @pytest.mark.asyncio
@@ -337,6 +388,40 @@ async def test_build_chapter_writer_context_includes_scene_plan_and_filters_futu
         metadata_json={"summary": "发现异常", "chapter_number": 1, "scene_number": 2},
     )
     event.id = uuid4()
+    emotion_track = EmotionTrackModel(
+        project_id=project.id,
+        track_code="bond-shenyan-gulin",
+        track_type="bond",
+        title="沈砚 / 顾临 关系线",
+        character_a_label="沈砚",
+        character_b_label="顾临",
+        relationship_type="旧搭档",
+        summary="合作带着戒备。",
+        desired_payoff="卷末形成更脆弱的盟友关系。",
+        trust_level=0.4,
+        attraction_level=0.08,
+        distance_level=0.66,
+        conflict_level=0.72,
+        intimacy_stage="push_pull",
+        status="active",
+        metadata_json={},
+    )
+    emotion_track.id = uuid4()
+    antagonist_plan = AntagonistPlanModel(
+        project_id=project.id,
+        antagonist_label="顾临",
+        plan_code="volume-01-pressure",
+        title="第1卷反派升级",
+        threat_type="volume_pressure",
+        goal="持续封锁主角调查路径。",
+        current_move="收紧船坞出入限制。",
+        next_countermove="派代理人切断证据链。",
+        target_chapter_number=2,
+        pressure_level=0.82,
+        status="active",
+        metadata_json={},
+    )
+    antagonist_plan.id = uuid4()
 
     async def fake_get_project_by_slug(session, slug: str):
         return project
@@ -430,6 +515,12 @@ async def test_build_chapter_writer_context_includes_scene_plan_and_filters_futu
             [previous_scene, current_scene_a, current_scene_b],
             [previous_summary],
             [event],
+            [],
+            [],
+            [],
+            [],
+            [emotion_track],
+            [antagonist_plan],
         ],
     )
 
@@ -447,3 +538,5 @@ async def test_build_chapter_writer_context_includes_scene_plan_and_filters_futu
     assert packet.tree_context_nodes[0].node_path == "/chapters/002"
     assert len(packet.retrieval_chunks) == 1
     assert packet.retrieval_chunks[0].chunk_text == "本章之前的关键线索"
+    assert packet.active_emotion_tracks[0].track_code == "bond-shenyan-gulin"
+    assert packet.active_antagonist_plans[0].plan_code == "volume-01-pressure"

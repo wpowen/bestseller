@@ -43,16 +43,17 @@ BestSeller 是一个面向长篇小说生产的人机共创框架，目标是把
   - `RetrievalChunk` 自动索引故事圣经与当前正文，可用 `retrieval search` 查询
   - `scene context` 会把故事圣经、近期剧情、时间线、角色可见事实和检索命中组装成写作上下文包
 - 已具备第一阶段显式叙事图谱：
-  - `PlotArc / ArcBeat / Clue / Payoff / ChapterContract / SceneContract` 已入库
+  - `PlotArc / ArcBeat / Clue / Payoff / ChapterContract / SceneContract / EmotionTrack / AntagonistPlan` 已入库
   - `workflow materialize-narrative-graph` 可从现有规划和故事圣经重建叙事图谱
-  - `scene/chapter context` 已显式吃到 arcs / beats / clues / contracts
+  - `scene/chapter context` 已显式吃到 arcs / beats / clues / emotion tracks / antagonist plans / contracts
   - `narrative show` 可直接查看当前项目的叙事图谱
 - 已具备 Narrative Tree 与路径式上下文检索：
-  - `workflow materialize-narrative-tree` 会把 PostgreSQL 真值导出成 `/book /world /characters /arcs /volumes /chapters /scenes` 叙事树
+  - `workflow materialize-narrative-tree` 会把 PostgreSQL 真值导出成 `/book /world /characters /arcs /emotion-tracks /antagonists /volumes /chapters /scenes` 叙事树
   - `narrative tree-show|path-show|search` 可直接查看树节点、按路径精确读取、按路径偏好做树搜索
   - `scene/chapter context` 现在按 `path retrieval -> tree search -> hybrid retrieval` 三层顺序装配上下文
 - 已具备项目级一致性评审：
   - 汇总章节覆盖率、知识层覆盖率、Canon 完整度、Timeline 完整度、待重写压力和导出就绪度
+  - `project review v2` 已纳入主线推进、暗线埋设/兑现、情绪线连续性、角色弧光台阶、世界规则落地、反派推进压力
   - 结果落到 `review_reports` 和 `quality_scores`
 - 已具备重写影响分析：
   - 场景审校生成 `RewriteTask` 时，会同步推导被波及的 `CanonFact / Scene / Chapter`
@@ -289,6 +290,48 @@ make run ARGS="export pdf my-story"
 ./scripts/verify.sh
 ./scripts/stop.sh
 ```
+
+## Benchmark & Evaluation
+
+当前内置了一套样书评测套件，覆盖三类基线：
+
+- 末日囤货
+- 玄幻升级
+- 都市悬疑
+
+先列出当前可用 suite：
+
+```bash
+./scripts/run.sh benchmark list
+```
+
+运行整套 benchmark：
+
+```bash
+./scripts/run.sh benchmark run sample-books --slug-prefix bench
+```
+
+只跑一个 case：
+
+```bash
+./scripts/run.sh benchmark run sample-books --case doomsday-hoarding --slug-prefix bench
+```
+
+运行结果会输出结构化 JSON，并把报告写到：
+
+```bash
+output/benchmarks/
+```
+
+每个 case 会检查这些最小基线：
+
+- 是否完成整书 autowrite
+- 是否生成 `project.md`
+- 项目级评分是否达到阈值
+- 是否包含要求的叙事线类型
+- 是否生成 emotion tracks / antagonist plans
+
+另外，scene/chapter review 现在已经会显式对照 `chapter contract / scene contract` 做偏差审校；即使最终仍需人工复核，也会先导出当前草稿，便于人工判断问题落点。
 
 ## Core Docs
 

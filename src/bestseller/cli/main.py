@@ -19,6 +19,11 @@ from bestseller.infra.db.session import create_engine, session_scope
 from bestseller.services.drafts import assemble_chapter_draft, generate_scene_draft
 from bestseller.services.consistency import review_project_consistency
 from bestseller.services.context import build_chapter_writer_context, build_scene_writer_context
+from bestseller.services.evaluation import (
+    list_benchmark_suites,
+    load_benchmark_suite,
+    run_benchmark_suite,
+)
 from bestseller.services.exports import (
     export_chapter_docx,
     export_chapter_epub,
@@ -99,6 +104,7 @@ rewrite_app = typer.Typer(help="Rewrite task operations.")
 retrieval_app = typer.Typer(help="Retrieval operations.")
 story_bible_app = typer.Typer(help="Story bible inspection operations.")
 narrative_app = typer.Typer(help="Narrative graph inspection operations.")
+benchmark_app = typer.Typer(help="Benchmark and evaluation operations.")
 
 app.add_typer(db_app, name="db")
 app.add_typer(project_app, name="project")
@@ -113,6 +119,7 @@ app.add_typer(rewrite_app, name="rewrite")
 app.add_typer(retrieval_app, name="retrieval")
 app.add_typer(story_bible_app, name="story-bible")
 app.add_typer(narrative_app, name="narrative")
+app.add_typer(benchmark_app, name="benchmark")
 
 
 @app.callback()
@@ -175,6 +182,19 @@ def _autowrite_progress_printer(stage: str, payload: dict[str, Any] | None = Non
         f"[bestseller] {label}{_format_progress_details(payload)}",
         err=True,
         fg=typer.colors.CYAN,
+    )
+
+
+def _benchmark_progress_printer(stage: str, payload: dict[str, Any] | None = None) -> None:
+    labels = {
+        "benchmark_case_started": "开始 benchmark case",
+        "benchmark_case_completed": "benchmark case 完成",
+        "benchmark_suite_completed": "benchmark suite 完成",
+    }
+    typer.secho(
+        f"[benchmark] {labels.get(stage, stage)}{_format_progress_details(payload)}",
+        err=True,
+        fg=typer.colors.GREEN,
     )
 
 
@@ -821,6 +841,40 @@ def narrative_search(
                 query,
                 preferred_paths=list(path or []),
                 top_k=top_k,
+            )
+            typer.echo(json.dumps(result.model_dump(mode="json"), ensure_ascii=False, indent=2))
+
+    asyncio.run(_run())
+
+
+@benchmark_app.command("list")
+def benchmark_list() -> None:
+    """List bundled benchmark suites."""
+    payload = [item.model_dump(mode="json") for item in list_benchmark_suites()]
+    typer.echo(json.dumps(payload, ensure_ascii=False, indent=2))
+
+
+@benchmark_app.command("run")
+def benchmark_run(
+    suite_id: str = typer.Argument("sample-books"),
+    suite_file: Path | None = typer.Option(None, "--suite-file", exists=True, file_okay=True, dir_okay=False),
+    case: list[str] | None = typer.Option(None, "--case", help="Only run selected benchmark case ids."),
+    slug_prefix: str = typer.Option("benchmark", "--slug-prefix"),
+    show_progress: bool = typer.Option(True, "--progress/--no-progress"),
+) -> None:
+    """Run one benchmark suite and emit a structured JSON report."""
+
+    async def _run() -> None:
+        settings = load_settings()
+        suite = load_benchmark_suite(suite_id, suite_file=suite_file)
+        async with session_scope(settings) as session:
+            result = await run_benchmark_suite(
+                session,
+                settings,
+                suite=suite,
+                case_ids=list(case or []),
+                slug_prefix=slug_prefix,
+                progress=_benchmark_progress_printer if show_progress else None,
             )
             typer.echo(json.dumps(result.model_dump(mode="json"), ensure_ascii=False, indent=2))
 

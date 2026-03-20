@@ -5,14 +5,17 @@ from uuid import uuid4
 import pytest
 
 from bestseller.infra.db.models import (
+    AntagonistPlanModel,
     ArcBeatModel,
     ChapterContractModel,
     ChapterModel,
     CharacterModel,
     ClueModel,
+    EmotionTrackModel,
     PayoffModel,
     PlotArcModel,
     ProjectModel,
+    RelationshipModel,
     SceneCardModel,
     SceneContractModel,
     VolumeModel,
@@ -132,6 +135,31 @@ def build_character(project_id, name: str, role: str) -> CharacterModel:
     return character
 
 
+def build_relationship(
+    project_id,
+    character_a_id,
+    character_b_id,
+    relationship_type: str,
+    *,
+    strength: float = 0.6,
+) -> RelationshipModel:
+    relationship = RelationshipModel(
+        project_id=project_id,
+        character_a_id=character_a_id,
+        character_b_id=character_b_id,
+        relationship_type=relationship_type,
+        strength=strength,
+        public_face="旧搭档",
+        private_reality="双方都还保留未说出口的旧账。",
+        tension_summary="信任还没有恢复，但被迫继续合作。",
+        established_chapter_no=1,
+        last_changed_chapter_no=1,
+        metadata_json={},
+    )
+    relationship.id = uuid4()
+    return relationship
+
+
 @pytest.mark.asyncio
 async def test_rebuild_narrative_graph_creates_arcs_beats_clues_and_contracts() -> None:
     project = build_project()
@@ -142,6 +170,7 @@ async def test_rebuild_narrative_graph_creates_arcs_beats_clues_and_contracts() 
     scene2 = build_scene(project.id, chapter2.id, 1, "旧搭档回舰", ["沈砚", "顾临"])
     protagonist = build_character(project.id, "沈砚", "protagonist")
     antagonist = build_character(project.id, "顾临", "antagonist")
+    relationship = build_relationship(project.id, protagonist.id, antagonist.id, "旧搭档")
 
     session = FakeSession(
         scalars_results=[
@@ -149,6 +178,7 @@ async def test_rebuild_narrative_graph_creates_arcs_beats_clues_and_contracts() 
             [volume],
             [scene1, scene2],
             [protagonist, antagonist],
+            [relationship],
         ]
     )
 
@@ -176,13 +206,17 @@ async def test_rebuild_narrative_graph_creates_arcs_beats_clues_and_contracts() 
     assert counts["payoff_count"] >= 1
     assert counts["chapter_contract_count"] == 2
     assert counts["scene_contract_count"] == 2
+    assert counts["emotion_track_count"] >= 1
+    assert counts["antagonist_plan_count"] >= 1
     assert any(isinstance(obj, PlotArcModel) for obj in session.added)
     assert any(isinstance(obj, ArcBeatModel) for obj in session.added)
     assert any(isinstance(obj, ClueModel) for obj in session.added)
     assert any(isinstance(obj, PayoffModel) for obj in session.added)
     assert any(isinstance(obj, ChapterContractModel) for obj in session.added)
     assert any(isinstance(obj, SceneContractModel) for obj in session.added)
-    assert len(session.executed) == 6
+    assert any(isinstance(obj, EmotionTrackModel) for obj in session.added)
+    assert any(isinstance(obj, AntagonistPlanModel) for obj in session.added)
+    assert len(session.executed) == 8
 
 
 @pytest.mark.asyncio
@@ -269,6 +303,44 @@ async def test_build_narrative_overview_renders_materialized_graph(
         metadata_json={},
     )
     scene_contract.id = uuid4()
+    emotion_track = EmotionTrackModel(
+        project_id=project.id,
+        track_code="bond-shenyan-gulin",
+        track_type="bond",
+        title="沈砚 / 顾临 关系线",
+        character_a_label="沈砚",
+        character_b_label="顾临",
+        relationship_type="旧搭档",
+        summary="两人的信任尚未恢复。",
+        desired_payoff="在高潮前恢复最低限度的联手。",
+        trust_level=0.45,
+        attraction_level=0.1,
+        distance_level=0.62,
+        conflict_level=0.66,
+        intimacy_stage="push_pull",
+        status="active",
+        metadata_json={},
+    )
+    emotion_track.id = uuid4()
+    antagonist_plan = AntagonistPlanModel(
+        project_id=project.id,
+        antagonist_character_id=uuid4(),
+        antagonist_label="顾临",
+        plan_code="volume-01-pressure",
+        title="第1卷反派升级",
+        threat_type="volume_pressure",
+        goal="持续封锁主角调查路径。",
+        current_move="封港并清理底层日志。",
+        next_countermove="安排代理人截断证据链。",
+        escalation_condition="主角拿到第一份铁证。",
+        reveal_timing="第1卷",
+        scope_volume_number=1,
+        target_chapter_number=2,
+        pressure_level=0.82,
+        status="active",
+        metadata_json={},
+    )
+    antagonist_plan.id = uuid4()
 
     async def fake_get_project_by_slug(session, slug: str):
         assert slug == "my-story"
@@ -284,6 +356,8 @@ async def test_build_narrative_overview_renders_materialized_graph(
             [payoff],
             [chapter_contract],
             [scene_contract],
+            [emotion_track],
+            [antagonist_plan],
         ]
     )
 
@@ -296,3 +370,5 @@ async def test_build_narrative_overview_renders_materialized_graph(
     assert overview.payoffs[0].payoff_code == "payoff-001"
     assert overview.chapter_contracts[0].contract_summary == "本章要抛出主线异常。"
     assert overview.scene_contracts[0].contract_summary == "本场必须抛出异常航标。"
+    assert overview.emotion_tracks[0].track_code == "bond-shenyan-gulin"
+    assert overview.antagonist_plans[0].plan_code == "volume-01-pressure"

@@ -95,6 +95,45 @@ def test_evaluate_scene_draft_marks_short_template_for_rewrite() -> None:
     assert any(finding.category == "goal" for finding in result.findings)
 
 
+def test_evaluate_scene_draft_flags_contract_deviation() -> None:
+    scene = SimpleNamespace(
+        target_word_count=1000,
+        scene_type="reveal",
+        participants=["林夜", "苏禾"],
+        purpose={"emotion": "不安和试探"},
+        scene_number=2,
+    )
+    chapter = SimpleNamespace(chapter_number=1, chapter_goal="抛出未来物资渠道")
+    draft = SimpleNamespace(
+        content_md=(
+            "## 场景 2：仓库碰头\n\n"
+            "林夜和苏禾在仓库里简短碰头，交换了几句模糊判断。"
+            "两人确认局势危险，但没有真正触及新的交易规则。"
+        ),
+        word_count=260,
+    )
+    scene_contract = SimpleNamespace(
+        contract_summary="本场必须抛出未来物资渠道并建立互不信任。",
+        core_conflict="林夜拒绝公开 app 来源，苏禾要求立即验货。",
+        emotional_shift="从试探合作转向互相提防。",
+        information_release="未来物资 app 可以提前购买末日资源。",
+        tail_hook="苏禾发现林夜拿出的药剂批次来自未来。",
+    )
+
+    result = evaluate_scene_draft(
+        scene=scene,
+        chapter=chapter,
+        draft=draft,
+        settings=build_settings(),
+        scene_contract=scene_contract,
+    )
+
+    assert result.verdict == "rewrite"
+    assert result.scores.contract_alignment < 0.7
+    assert any(finding.category == "contract_alignment" for finding in result.findings)
+    assert "contract_missing_labels" in result.evidence_summary
+
+
 def test_render_rewritten_scene_markdown_expands_content_and_dialogue() -> None:
     project = SimpleNamespace(title="长夜巡航")
     chapter = SimpleNamespace(chapter_number=1, chapter_goal="展示主线冲突")
@@ -157,6 +196,47 @@ def test_evaluate_chapter_draft_marks_sparse_chapter_for_rewrite() -> None:
     assert result.rewrite_instructions is not None
 
 
+def test_evaluate_chapter_draft_flags_contract_deviation() -> None:
+    chapter = SimpleNamespace(
+        chapter_number=5,
+        title="第一次囤货",
+        chapter_goal="主角第一次验证未来物资 app 的真实性",
+        target_word_count=2800,
+    )
+    scenes = [
+        SimpleNamespace(scene_number=1, title="仓库试单"),
+        SimpleNamespace(scene_number=2, title="异常到账"),
+    ]
+    draft = SimpleNamespace(
+        content_md=(
+            "# 第5章 第一次囤货\n\n"
+            "## 场景 1：仓库试单\n\n"
+            "主角简单测试了一个订单，确认东西能到。"
+        ),
+        word_count=550,
+    )
+    chapter_contract = SimpleNamespace(
+        contract_summary="本章要完成第一次试单、建立代价规则并在结尾抛出更大的囤货欲望。",
+        core_conflict="主角必须决定是否相信一个明显违背常识的购买入口。",
+        emotional_shift="从谨慎试探转向压抑不住的贪念和兴奋。",
+        information_release="未来物资 app 只在末日前三天可用且每次交易都会消耗寿命。",
+        closing_hook="主角发现更高阶的基因进化药也能购买。",
+    )
+
+    result = evaluate_chapter_draft(
+        chapter=chapter,
+        scenes=scenes,
+        draft=draft,
+        settings=build_settings(),
+        chapter_contract=chapter_contract,
+    )
+
+    assert result.verdict == "rewrite"
+    assert result.scores.contract_alignment < 0.7
+    assert any(finding.category == "contract_alignment" for finding in result.findings)
+    assert result.evidence_summary["contract_expectation_count"] >= 4
+
+
 def test_evaluate_chapter_draft_allows_low_severity_polish_findings() -> None:
     chapter = SimpleNamespace(
         chapter_number=4,
@@ -202,6 +282,8 @@ def test_render_chapter_review_summary_and_prompts_include_context() -> None:
         previous_scene_summaries=[SimpleNamespace(chapter_number=2, scene_number=2, scene_title="偏移的航标", summary="上一章发现异常。")],
         chapter_scenes=[SimpleNamespace(scene_number=1, title="旧搭档回舰", scene_type="setup", story_purpose="推进调查", emotion_purpose="警觉")],
         recent_timeline_events=[SimpleNamespace(story_time_label="昨夜", event_name="发现异常", consequences=["调查升级"], summary="发现异常")],
+        active_emotion_tracks=[SimpleNamespace(track_type="bond", title="沈砚 / 顾临 关系线", summary="双方暂时合作但信任未恢复。", trust_level=0.42, conflict_level=0.7)],
+        active_antagonist_plans=[SimpleNamespace(threat_type="volume_pressure", title="第1卷反派升级", goal="封锁调查路径", current_move="切断证据链", next_countermove="围堵主角")],
         retrieval_chunks=[SimpleNamespace(source_type="scene_draft", chunk_text="过去场景片段")],
     )
     review_result = SimpleNamespace(
@@ -228,6 +310,7 @@ def test_render_chapter_review_summary_and_prompts_include_context() -> None:
                 continuity=0.58,
                 style=0.85,
                 hook=0.48,
+                contract_alignment=0.66,
             ),
             findings=[
                 review_services.ChapterReviewFinding(
@@ -258,6 +341,8 @@ def test_render_chapter_review_summary_and_prompts_include_context() -> None:
     assert "章节评论者" in system_prompt
     assert "本章场景计划" in user_prompt
     assert "上一章发现异常" in user_prompt
+    assert "关系与情绪线" in user_prompt
+    assert "反派推进" in user_prompt
     assert "章节重写编辑" in rewrite_system_prompt
     assert "补强场景衔接" in rewrite_user_prompt
 

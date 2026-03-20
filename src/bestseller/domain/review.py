@@ -17,6 +17,7 @@ class SceneReviewScores(BaseModel):
     dialogue: float = Field(ge=0, le=1)
     style: float = Field(ge=0, le=1)
     hook: float = Field(ge=0, le=1)
+    contract_alignment: float = Field(ge=0, le=1)
 
 
 class SceneReviewResult(BaseModel):
@@ -42,6 +43,7 @@ class ChapterReviewScores(BaseModel):
     continuity: float = Field(ge=0, le=1)
     style: float = Field(ge=0, le=1)
     hook: float = Field(ge=0, le=1)
+    contract_alignment: float = Field(ge=0, le=1)
 
 
 class ChapterReviewResult(BaseModel):

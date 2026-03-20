@@ -661,6 +661,11 @@ def _build_antagonist_plan_specs(
 ) -> list[dict[str, Any]]:
     if antagonist is None:
         return []
+    all_chapters = sorted(
+        [chapter for volume_chapters in chapters_by_volume.values() for chapter in volume_chapters],
+        key=lambda item: item.chapter_number,
+    )
+    final_chapter_number = all_chapters[-1].chapter_number if all_chapters else None
     specs: list[dict[str, Any]] = [
         {
             "plan_code": "main-antagonist-plan",
@@ -684,7 +689,7 @@ def _build_antagonist_plan_specs(
             ),
             "reveal_timing": "终局前",
             "scope_volume_number": None,
-            "target_chapter_number": volumes[-1].target_chapter_count if volumes and volumes[-1].target_chapter_count else None,
+            "target_chapter_number": final_chapter_number,
             "pressure_level": 0.85,
             "status": "active",
             "metadata_json": {"generated": "master_plan"},
@@ -768,14 +773,35 @@ async def rebuild_narrative_graph(
             .order_by(CharacterModel.role.asc(), CharacterModel.name.asc())
         )
     )
+    relationships = list(
+        await session.scalars(
+            select(RelationshipModel)
+            .where(RelationshipModel.project_id == project.id)
+            .order_by(
+                RelationshipModel.last_changed_chapter_no.asc().nullsfirst(),
+                RelationshipModel.established_chapter_no.asc().nullsfirst(),
+                RelationshipModel.relationship_type.asc(),
+            )
+        )
+    )
     protagonist = next((item for item in characters if item.role == "protagonist"), None)
     antagonist = next((item for item in characters if item.role == "antagonist"), None)
+    characters_by_id = {item.id: item for item in characters}
+    volume_number_by_id = {volume.id: volume.volume_number for volume in volumes if volume.id is not None}
 
     scenes_by_chapter: dict[UUID, list[SceneCardModel]] = defaultdict(list)
     for scene in scenes:
         scenes_by_chapter[scene.chapter_id].append(scene)
     for scene_list in scenes_by_chapter.values():
         scene_list.sort(key=lambda item: item.scene_number)
+
+    chapters_by_volume: dict[int, list[ChapterModel]] = defaultdict(list)
+    for chapter in chapters:
+        volume_number = volume_number_by_id.get(chapter.volume_id)
+        if volume_number is not None:
+            chapters_by_volume[volume_number].append(chapter)
+    for chapter_list in chapters_by_volume.values():
+        chapter_list.sort(key=lambda item: item.chapter_number)
 
     volume_entries = {
         item.volume_number: item
@@ -789,6 +815,8 @@ async def rebuild_narrative_graph(
         ClueModel,
         ArcBeatModel,
         PlotArcModel,
+        EmotionTrackModel,
+        AntagonistPlanModel,
     ):
         await session.execute(delete(model).where(model.project_id == project.id))
     await session.flush()
@@ -1010,7 +1038,69 @@ async def rebuild_narrative_graph(
                     payoff_codes=scene_payoffs,
                     metadata_json={},
                 )
-            )
+        )
+
+    emotion_track_specs = _build_emotion_track_specs(
+        protagonist=protagonist,
+        antagonist=antagonist,
+        relationships=relationships,
+        characters_by_id=characters_by_id,
+    )
+    emotion_track_models: list[EmotionTrackModel] = []
+    for spec in emotion_track_specs:
+        emotion_track = EmotionTrackModel(
+            project_id=project.id,
+            track_code=spec["track_code"],
+            track_type=spec["track_type"],
+            title=spec["title"],
+            character_a_id=spec.get("character_a_id"),
+            character_b_id=spec.get("character_b_id"),
+            character_a_label=spec["character_a_label"],
+            character_b_label=spec["character_b_label"],
+            relationship_type=spec.get("relationship_type"),
+            summary=spec["summary"],
+            desired_payoff=spec.get("desired_payoff"),
+            trust_level=spec["trust_level"],
+            attraction_level=spec["attraction_level"],
+            distance_level=spec["distance_level"],
+            conflict_level=spec["conflict_level"],
+            intimacy_stage=spec["intimacy_stage"],
+            last_shift_chapter_number=spec.get("last_shift_chapter_number"),
+            status=spec["status"],
+            metadata_json=spec.get("metadata_json") or {},
+        )
+        session.add(emotion_track)
+        emotion_track_models.append(emotion_track)
+
+    antagonist_plan_specs = _build_antagonist_plan_specs(
+        protagonist=protagonist,
+        antagonist=antagonist,
+        volumes=volumes,
+        chapters_by_volume=chapters_by_volume,
+        volume_entries=volume_entries,
+    )
+    antagonist_plan_models: list[AntagonistPlanModel] = []
+    for spec in antagonist_plan_specs:
+        antagonist_plan = AntagonistPlanModel(
+            project_id=project.id,
+            antagonist_character_id=antagonist.id if antagonist is not None else None,
+            antagonist_label=antagonist.name if antagonist is not None else "未知反派",
+            plan_code=spec["plan_code"],
+            title=spec["title"],
+            threat_type=spec["threat_type"],
+            goal=spec["goal"],
+            current_move=spec["current_move"],
+            next_countermove=spec["next_countermove"],
+            escalation_condition=spec.get("escalation_condition"),
+            reveal_timing=spec.get("reveal_timing"),
+            scope_volume_number=spec.get("scope_volume_number"),
+            target_chapter_number=spec.get("target_chapter_number"),
+            pressure_level=spec["pressure_level"],
+            status=spec["status"],
+            metadata_json=spec.get("metadata_json") or {},
+        )
+        session.add(antagonist_plan)
+        antagonist_plan_models.append(antagonist_plan)
 
     await session.flush()
     return {
@@ -1020,6 +1110,8 @@ async def rebuild_narrative_graph(
         "payoff_count": len(payoffs_by_code),
         "chapter_contract_count": len(chapters),
         "scene_contract_count": len(scenes),
+        "emotion_track_count": len(emotion_track_models),
+        "antagonist_plan_count": len(antagonist_plan_models),
     }
 
 
@@ -1076,6 +1168,24 @@ async def build_narrative_overview(
             select(SceneContractModel)
             .where(SceneContractModel.project_id == project.id)
             .order_by(SceneContractModel.chapter_number.asc(), SceneContractModel.scene_number.asc())
+        )
+    )
+    emotion_tracks = list(
+        await session.scalars(
+            select(EmotionTrackModel)
+            .where(EmotionTrackModel.project_id == project.id)
+            .order_by(EmotionTrackModel.track_type.asc(), EmotionTrackModel.track_code.asc())
+        )
+    )
+    antagonist_plans = list(
+        await session.scalars(
+            select(AntagonistPlanModel)
+            .where(AntagonistPlanModel.project_id == project.id)
+            .order_by(
+                AntagonistPlanModel.scope_volume_number.asc().nullsfirst(),
+                AntagonistPlanModel.target_chapter_number.asc().nullsfirst(),
+                AntagonistPlanModel.plan_code.asc(),
+            )
         )
     )
 
@@ -1197,5 +1307,46 @@ async def build_narrative_overview(
                 payoff_codes=list(item.payoff_codes),
             )
             for item in scene_contracts
+        ],
+        emotion_tracks=[
+            EmotionTrackRead(
+                id=item.id,
+                track_code=item.track_code,
+                track_type=item.track_type,
+                title=item.title,
+                character_a_label=item.character_a_label,
+                character_b_label=item.character_b_label,
+                relationship_type=item.relationship_type,
+                summary=item.summary,
+                desired_payoff=item.desired_payoff,
+                trust_level=float(item.trust_level),
+                attraction_level=float(item.attraction_level),
+                distance_level=float(item.distance_level),
+                conflict_level=float(item.conflict_level),
+                intimacy_stage=item.intimacy_stage,
+                last_shift_chapter_number=item.last_shift_chapter_number,
+                status=item.status,
+            )
+            for item in emotion_tracks
+        ],
+        antagonist_plans=[
+            AntagonistPlanRead(
+                id=item.id,
+                plan_code=item.plan_code,
+                antagonist_character_id=item.antagonist_character_id,
+                antagonist_label=item.antagonist_label,
+                title=item.title,
+                threat_type=item.threat_type,
+                goal=item.goal,
+                current_move=item.current_move,
+                next_countermove=item.next_countermove,
+                escalation_condition=item.escalation_condition,
+                reveal_timing=item.reveal_timing,
+                scope_volume_number=item.scope_volume_number,
+                target_chapter_number=item.target_chapter_number,
+                pressure_level=float(item.pressure_level),
+                status=item.status,
+            )
+            for item in antagonist_plans
         ],
     )

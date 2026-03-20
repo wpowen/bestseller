@@ -1,0 +1,62 @@
+suite_id: sample-books
+title: 样书评测基线
+description: >
+  用三种题材样书快速回归当前长篇系统是否还能稳定产出完整结构、叙事线和导出物。
+cases:
+  - case_id: doomsday-hoarding
+    title: 末日囤货样书
+    genre: doomsday-power-fantasy
+    sub_genre: apocalypse-hoarding
+    audience: web-novel
+    target_word_count: 12000
+    target_chapters: 4
+    premise: >
+      末日爆发前三天，主角意外获得一个能提前购买未来物资的应用，开始低价囤积基因进化药、能源核心和避难所模块，
+      却发现真正的灾难并非天灾，而是有人提前布局清洗幸存者阶层。
+    expectations:
+      min_overall_score: 0.55
+      require_export: true
+      require_project_markdown: true
+      min_chapter_count: 4
+      allowed_final_verdicts: [pass, attention]
+      required_arc_types: [main_plot, growth, mystery]
+      require_emotion_track: true
+      require_antagonist_plan: true
+  - case_id: xuanhuan-progression
+    title: 玄幻升级样书
+    genre: xuanhuan-progression
+    sub_genre: academy-realm-upgrade
+    audience: web-novel
+    target_word_count: 12000
+    target_chapters: 4
+    premise: >
+      宗门废徒被逐出山门后，在一座失落洞府里得到残缺传承，只能靠不断吞并他人弃置的法则碎片重修境界，
+      但每次突破都会暴露他体内隐藏的古老禁制，引来宗门和异族双重追杀。
+    expectations:
+      min_overall_score: 0.55
+      require_export: true
+      require_project_markdown: true
+      min_chapter_count: 4
+      allowed_final_verdicts: [pass, attention]
+      required_arc_types: [main_plot, growth, faction]
+      require_emotion_track: true
+      require_antagonist_plan: true
+  - case_id: urban-mystery
+    title: 都市悬疑样书
+    genre: urban-mystery
+    sub_genre: conspiracy-investigation
+    audience: web-novel
+    target_word_count: 12000
+    target_chapters: 4
+    premise: >
+      刚复职的刑警在一桩看似普通的跳楼案里发现了被故意篡改的监控时间轴，顺着一张匿名快递里的旧照片查下去，
+      才意识到自己十年前经手的一起失踪案从未真正结案，而幕后人正在引导他重新打开所有证物。
+    expectations:
+      min_overall_score: 0.58
+      require_export: true
+      require_project_markdown: true
+      min_chapter_count: 4
+      allowed_final_verdicts: [pass, attention]
+      required_arc_types: [main_plot, mystery, faction]
+      require_emotion_track: true
+      require_antagonist_plan: true

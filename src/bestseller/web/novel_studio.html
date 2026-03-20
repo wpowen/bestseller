@@ -225,6 +225,169 @@
       margin-top: 3px;
     }
 
+    .workflow-overview-summary {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+
+    .workflow-stat {
+      border-radius: var(--radius-md);
+      border: 1px solid rgba(104, 79, 56, 0.12);
+      background: rgba(255, 252, 247, 0.8);
+      padding: 12px 14px;
+      box-shadow: var(--shadow-soft);
+    }
+
+    .workflow-stat strong {
+      display: block;
+      font-size: 20px;
+      margin-bottom: 4px;
+      color: var(--ink);
+    }
+
+    .workflow-stat span {
+      font-size: 12px;
+      color: var(--soft);
+      line-height: 1.6;
+    }
+
+    .workflow-run-list {
+      display: grid;
+      gap: 14px;
+      margin-bottom: 16px;
+    }
+
+    .workflow-run-card {
+      border-radius: var(--radius-md);
+      border: 1px solid rgba(104, 79, 56, 0.12);
+      background: rgba(255, 255, 255, 0.78);
+      box-shadow: var(--shadow-soft);
+      overflow: hidden;
+    }
+
+    .workflow-run-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: start;
+      padding: 14px 16px 10px;
+      border-bottom: 1px solid rgba(104, 79, 56, 0.1);
+      background: linear-gradient(180deg, rgba(255, 249, 242, 0.95) 0%, rgba(255, 255, 255, 0.9) 100%);
+    }
+
+    .workflow-run-head h3 {
+      margin: 0 0 6px;
+      font-size: 15px;
+      color: var(--ink);
+    }
+
+    .workflow-run-head p {
+      margin: 0;
+      font-size: 12px;
+      line-height: 1.7;
+      color: var(--soft);
+    }
+
+    .workflow-badges {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      gap: 8px;
+    }
+
+    .workflow-badge {
+      display: inline-flex;
+      align-items: center;
+      min-height: 28px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      border: 1px solid rgba(104, 79, 56, 0.12);
+      background: rgba(255, 255, 255, 0.9);
+      font-size: 12px;
+      color: var(--ink);
+      white-space: nowrap;
+    }
+
+    .workflow-badge.success {
+      border-color: rgba(48, 119, 61, 0.18);
+      color: #2f6d3b;
+      background: rgba(236, 248, 238, 0.95);
+    }
+
+    .workflow-badge.failed {
+      border-color: rgba(161, 47, 29, 0.18);
+      color: #8a2f22;
+      background: rgba(255, 239, 236, 0.95);
+    }
+
+    .workflow-run-meta {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px 12px;
+      padding: 12px 16px 10px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .workflow-run-meta strong {
+      display: block;
+      margin-bottom: 3px;
+      font-size: 11px;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+      color: var(--soft);
+    }
+
+    .workflow-steps-grid {
+      display: grid;
+      gap: 8px;
+      padding: 0 16px 16px;
+    }
+
+    .workflow-step-row {
+      display: grid;
+      grid-template-columns: 26px minmax(0, 1fr) auto;
+      gap: 10px;
+      align-items: center;
+      padding: 8px 10px;
+      border-radius: 12px;
+      background: rgba(244, 236, 224, 0.42);
+      border: 1px solid rgba(104, 79, 56, 0.08);
+    }
+
+    .workflow-step-index {
+      display: inline-grid;
+      place-items: center;
+      width: 26px;
+      height: 26px;
+      border-radius: 999px;
+      background: rgba(128, 49, 25, 0.9);
+      color: white;
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    .workflow-step-title {
+      font-size: 13px;
+      color: var(--ink);
+      line-height: 1.5;
+    }
+
+    .workflow-step-title small {
+      display: block;
+      color: var(--soft);
+      font-size: 12px;
+      margin-top: 2px;
+    }
+
+    .workflow-step-status {
+      font-size: 12px;
+      color: var(--soft);
+      white-space: nowrap;
+    }
+
     .status-strip {
       display: flex;
       flex-wrap: wrap;
@@ -664,6 +827,116 @@
       font-size: 12px;
     }
 
+    .execution-panel {
+      display: grid;
+      gap: 16px;
+    }
+
+    .execution-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .execution-stat {
+      border-radius: 18px;
+      border: 1px solid rgba(104, 79, 56, 0.12);
+      background: linear-gradient(180deg, rgba(255, 255, 255, 0.84) 0%, rgba(248, 239, 228, 0.82) 100%);
+      padding: 16px;
+    }
+
+    .execution-stat strong {
+      display: block;
+      margin-bottom: 8px;
+      color: var(--soft);
+      font-size: 12px;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    .execution-stat span {
+      display: block;
+      font-size: 24px;
+      font-weight: 800;
+      line-height: 1.15;
+    }
+
+    .execution-stat small {
+      display: block;
+      margin-top: 6px;
+      color: var(--muted);
+      line-height: 1.65;
+      font-size: 12px;
+    }
+
+    .milestone-strip {
+      display: grid;
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .milestone {
+      border-radius: 16px;
+      border: 1px solid rgba(104, 79, 56, 0.12);
+      background: rgba(255, 255, 255, 0.7);
+      padding: 12px;
+      min-height: 110px;
+    }
+
+    .milestone-label {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 88px;
+      min-height: 28px;
+      padding: 0 10px;
+      border-radius: 999px;
+      background: rgba(104, 79, 56, 0.08);
+      color: var(--ink);
+      font-size: 12px;
+      font-weight: 700;
+      margin-bottom: 10px;
+    }
+
+    .milestone.completed .milestone-label {
+      background: rgba(31, 107, 70, 0.12);
+      color: var(--ok);
+    }
+
+    .milestone.running .milestone-label {
+      background: rgba(139, 92, 25, 0.12);
+      color: var(--warn);
+    }
+
+    .milestone.failed .milestone-label {
+      background: rgba(143, 48, 41, 0.12);
+      color: var(--err);
+    }
+
+    .milestone strong {
+      display: block;
+      margin-bottom: 6px;
+      font-size: 14px;
+    }
+
+    .milestone p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.7;
+    }
+
+    .execution-feed {
+      display: grid;
+      gap: 10px;
+      max-height: 240px;
+      overflow: auto;
+    }
+
+    .execution-feed .progress-item {
+      background: rgba(255, 255, 255, 0.68);
+    }
+
     .tabs {
       display: flex;
       flex-wrap: wrap;
@@ -742,13 +1015,201 @@
       flex: 1 1 280px;
     }
 
-    .preview-frame {
-      width: 100%;
-      min-height: 760px;
-      border-radius: 20px;
+    .preview-toggle {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 12px;
+      border-radius: 999px;
       border: 1px solid rgba(104, 79, 56, 0.12);
-      background: white;
-      box-shadow: inset 0 0 0 1px rgba(104, 79, 56, 0.04);
+      background: rgba(255, 251, 245, 0.92);
+      color: var(--soft);
+      font-size: 12px;
+      line-height: 1.4;
+    }
+
+    .preview-toggle input {
+      accent-color: var(--accent);
+    }
+
+    .preview-note {
+      margin: 0 0 14px;
+      color: var(--muted);
+      line-height: 1.8;
+      font-size: 13px;
+    }
+
+    .reading-meta-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+
+    .reading-meta-card {
+      border-radius: 18px;
+      border: 1px solid rgba(104, 79, 56, 0.12);
+      background: rgba(255, 251, 245, 0.96);
+      box-shadow: 0 16px 34px rgba(77, 53, 34, 0.08);
+      padding: 14px 16px;
+    }
+
+    .reading-meta-card strong {
+      display: block;
+      margin-bottom: 8px;
+      color: var(--soft);
+      font-size: 12px;
+      letter-spacing: 0.04em;
+    }
+
+    .reading-meta-card span {
+      display: block;
+      color: #261b13;
+      font-size: 24px;
+      font-weight: 800;
+      line-height: 1.2;
+    }
+
+    .reading-meta-card small {
+      display: block;
+      margin-top: 8px;
+      color: var(--muted);
+      line-height: 1.75;
+    }
+
+    .reading-shell {
+      min-height: 760px;
+      border-radius: 26px;
+      border: 1px solid rgba(104, 79, 56, 0.12);
+      background:
+        radial-gradient(circle at top right, rgba(187, 132, 97, 0.08), transparent 34%),
+        linear-gradient(180deg, rgba(255, 250, 243, 0.98) 0%, rgba(252, 247, 239, 0.98) 100%);
+      box-shadow:
+        0 22px 44px rgba(74, 52, 33, 0.10),
+        inset 0 0 0 1px rgba(104, 79, 56, 0.03);
+      padding: 24px;
+      overflow: auto;
+    }
+
+    .reading-header {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      align-items: flex-start;
+      padding-bottom: 18px;
+      margin-bottom: 20px;
+      border-bottom: 1px solid rgba(104, 79, 56, 0.10);
+    }
+
+    .reading-header h3 {
+      margin: 0;
+      font-size: 28px;
+      line-height: 1.2;
+      color: #241911;
+    }
+
+    .reading-header p {
+      margin: 8px 0 0;
+      color: var(--muted);
+      line-height: 1.75;
+      font-size: 13px;
+      word-break: break-all;
+    }
+
+    .reading-status-pill {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 36px;
+      padding: 0 14px;
+      border-radius: 999px;
+      background: rgba(168, 73, 40, 0.10);
+      color: var(--accent-strong);
+      font-size: 12px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .reading-article {
+      max-width: 860px;
+      margin: 0 auto;
+      padding: 8px 8px 28px;
+    }
+
+    .reading-article h1,
+    .reading-article h2,
+    .reading-article h3,
+    .reading-article h4 {
+      color: #21170f;
+      line-height: 1.28;
+    }
+
+    .reading-article h1 {
+      margin: 0 0 24px;
+      font-size: 36px;
+    }
+
+    .reading-article h2 {
+      margin: 42px 0 18px;
+      font-size: 26px;
+    }
+
+    .reading-article h3 {
+      margin: 28px 0 14px;
+      font-size: 21px;
+    }
+
+    .reading-article p,
+    .reading-article li {
+      color: #2c2017;
+      font-size: 18px;
+      line-height: 2;
+    }
+
+    .reading-article p {
+      margin: 0 0 1.1em;
+      text-indent: 2em;
+      text-wrap: pretty;
+    }
+
+    .reading-article h1 + p,
+    .reading-article h2 + p,
+    .reading-article h3 + p,
+    .reading-article blockquote p,
+    .reading-article li p,
+    .reading-article p.no-indent {
+      text-indent: 0;
+    }
+
+    .reading-article blockquote {
+      margin: 1.2em 0;
+      padding: 14px 16px;
+      border-left: 4px solid var(--accent);
+      border-radius: 0 16px 16px 0;
+      background: rgba(168, 73, 40, 0.05);
+      color: #5a4d42;
+    }
+
+    .reading-article ul,
+    .reading-article ol {
+      padding-left: 1.5em;
+      margin: 0 0 1.1em;
+    }
+
+    .reading-article hr {
+      border: 0;
+      border-top: 1px solid rgba(104, 79, 56, 0.16);
+      margin: 34px 0;
+    }
+
+    .reading-empty {
+      min-height: 520px;
+      display: grid;
+      place-items: center;
+      text-align: center;
+      color: var(--muted);
+      line-height: 1.9;
+      padding: 24px;
     }
 
     .empty {
@@ -797,6 +1258,8 @@
 
     @media (max-width: 980px) {
       .hero-note-grid,
+      .execution-grid,
+      .milestone-strip,
       .summary-cards,
       .formula-grid,
       .field-grid {
@@ -819,6 +1282,8 @@
       }
 
       .hero-note-grid,
+      .execution-grid,
+      .milestone-strip,
       .summary-cards,
       .formula-grid,
       .field-grid {
@@ -957,6 +1422,135 @@
               <label for="audience">目标读者</label>
               <div class="field-meta">决定语言风格、情绪强度和信息密度。例如“男频连载读者”“女频成长向读者”。</div>
               <input id="audience" list="audience-options" value="男频连载读者" />
+            </div>
+
+            <div class="field">
+              <label for="platform-target">平台目标</label>
+              <div class="field-meta">不同平台的开篇节奏、情绪密度和钩子风格不一样。这个字段会直接影响规划和写作 prompt。</div>
+              <select id="platform-target">
+                <option value="番茄小说" selected>番茄小说</option>
+                <option value="起点中文网">起点中文网</option>
+                <option value="晋江文学城">晋江文学城</option>
+                <option value="中文网文平台">中文网文平台（通用）</option>
+              </select>
+            </div>
+
+            <div class="field">
+              <label for="prompt-pack-key">题材 Prompt Pack</label>
+              <div class="field-meta">这是预制的题材提示词包。它会在写作画像基础上，再额外注入该题材特有的规划、正文和审校约束。</div>
+              <select id="prompt-pack-key">
+                <option value="">自动按题材匹配</option>
+                <option value="apocalypse-supply-chain" selected>末日囤货升级流</option>
+                <option value="xianxia-upgrade-core">仙侠升级夺机缘</option>
+                <option value="urban-power-reversal">都市异能反转流</option>
+                <option value="romance-tension-growth">感情拉扯成长流</option>
+              </select>
+            </div>
+
+            <div class="field">
+              <label for="reader-promise">读者承诺</label>
+              <div class="field-meta">一句话说明这本书最先抓住读者的持续期待是什么，例如“看主角如何靠信息差在末日前抢资源并反杀”。</div>
+              <input id="reader-promise" value="开篇快速亮出末日倒计时、囤货优势和秩序崩坏前的抢跑窗口，持续用资源差、危机升级和真相逼近制造追读。" />
+            </div>
+
+            <div class="field full">
+              <label for="selling-points">核心卖点</label>
+              <div class="field-meta">用逗号分隔。建议写 3 到 6 个，会直接作为 planner 和 writer 的显式卖点约束。</div>
+              <input id="selling-points" value="重生回档,未来商城,末日前囤货,资源碾压,秩序崩坏,幕后真相" />
+            </div>
+
+            <div class="field full">
+              <label for="trope-keywords">套路标签 / 爽点标签</label>
+              <div class="field-meta">用逗号分隔。比如“末日,囤货,系统,规则生存,打脸反杀”。系统会把这些标签压进章节与场景约束。</div>
+              <input id="trope-keywords" value="末日,囤货,系统,规则生存,打脸反杀" />
+            </div>
+
+            <div class="field">
+              <label for="protagonist-archetype">主角原型</label>
+              <div class="field-meta">例如“先知型求生者”“逆袭型成长主角”“情绪成长型主角”。</div>
+              <input id="protagonist-archetype" value="先知型求生者" />
+            </div>
+
+            <div class="field">
+              <label for="golden-finger">主角外挂 / 差异化优势</label>
+              <div class="field-meta">决定主角第一时间能吸引人的独特能力或信息差。</div>
+              <input id="golden-finger" value="来自未来的购物入口，可低价购买末日关键物资" />
+            </div>
+
+            <div class="field">
+              <label for="pacing-profile">节奏档位</label>
+              <div class="field-meta">快节奏更适合商业连载；中速更适合人物关系和世界观展开。</div>
+              <select id="pacing-profile">
+                <option value="fast" selected>快节奏</option>
+                <option value="medium-fast">中快节奏</option>
+                <option value="medium">中节奏</option>
+              </select>
+            </div>
+
+            <div class="field">
+              <label for="worldbuilding-density">世界观密度</label>
+              <div class="field-meta">控制背景说明比例。商业网文通常不宜一开始就高密度说明设定。</div>
+              <select id="worldbuilding-density">
+                <option value="light">轻</option>
+                <option value="medium" selected>中</option>
+                <option value="heavy">重</option>
+              </select>
+            </div>
+
+            <div class="field">
+              <label for="pov-type">叙事视角</label>
+              <div class="field-meta">会直接写入 style guide 和 writer prompt。</div>
+              <select id="pov-type">
+                <option value="third-limited" selected>第三人称限知</option>
+                <option value="first-person">第一人称</option>
+                <option value="multi-pov">多视角</option>
+              </select>
+            </div>
+
+            <div class="field">
+              <label for="prose-style">文风模式</label>
+              <div class="field-meta">商业网文建议更利落、推进感更强，不要默认文青腔。</div>
+              <select id="prose-style">
+                <option value="commercial-web-serial" selected>商业网文成品风</option>
+                <option value="lean-cinematic">利落影视化</option>
+                <option value="lyrical">偏抒情</option>
+              </select>
+            </div>
+
+            <div class="field">
+              <label for="sentence-style">句式风格</label>
+              <div class="field-meta">短促更利于追更和冲突推进，混合更适合中长篇平衡。</div>
+              <select id="sentence-style">
+                <option value="short-punchy" selected>短促有力</option>
+                <option value="mixed">混合</option>
+                <option value="long-flowing">偏长句</option>
+              </select>
+            </div>
+
+            <div class="field">
+              <label for="dialogue-ratio">对话占比</label>
+              <div class="field-meta">0 到 1。商业连载通常 0.35 到 0.5 更利于推进和人物辨识。</div>
+              <input id="dialogue-ratio" type="number" value="0.42" min="0" max="1" step="0.01" />
+            </div>
+
+            <div class="field full">
+              <label for="reference-works">参考作品</label>
+              <div class="field-meta">用逗号分隔。只会作为风格和结构参考，不会要求模型模仿具体句子。</div>
+              <input id="reference-works" value="《全球冰封：我打造了末日安全屋》,《诡秘之主》" />
+            </div>
+
+            <div class="field full">
+              <label for="chapter-hook-strategy">章节尾钩策略</label>
+              <div class="field-meta">系统会把它压进 chapter/scene contract 和 writer prompt。</div>
+              <textarea id="chapter-hook-strategy">每章结尾至少留下一个未解决问题、反转、新资源窗口或更大的危险，避免平收。免费阶段优先保证连续追读欲。</textarea>
+            </div>
+
+            <div class="field full">
+              <label for="custom-rules">额外写作规则</label>
+              <div class="field-meta">用换行分隔。例如“第一章 800 字内必须给异常信号”“背景说明必须嵌在行动里”。</div>
+              <textarea id="custom-rules">第一章 800 字内给出明确异常信号。
+前三章必须连续兑现至少三次短回报。
+背景设定只能嵌在行动、交易、冲突和代价里释放。</textarea>
             </div>
 
             <div class="field full">
@@ -1107,6 +1701,11 @@
               <small>当前项目目录下已经生成的可读产物数量。</small>
             </div>
             <div class="summary-card">
+              <strong>当前成品字数</strong>
+              <span id="summary-reading-words">-</span>
+              <small id="summary-reading-detail">优先显示整书 `project.md` 的当前正文总字数和预计阅读时长。</small>
+            </div>
+            <div class="summary-card">
               <strong>世界规则</strong>
               <span id="summary-world-rules">-</span>
               <small>世界观限制、能力边界和运作规则数量。</small>
@@ -1126,7 +1725,50 @@
               <span id="summary-emotions">-</span>
               <small>关系线、情绪线与反派推进计划的当前规模。</small>
             </div>
+            <div class="summary-card">
+              <strong>平台 / 读者承诺</strong>
+              <span id="summary-platform">-</span>
+              <small id="summary-reader-promise">当前项目按哪类平台目标和哪种持续期待来组织写作。</small>
+            </div>
+            <div class="summary-card">
+              <strong>流程运行数</strong>
+              <span id="summary-workflows">-</span>
+              <small>当前项目历史上已经跑过多少条 workflow，以及最近一条的状态。</small>
+            </div>
           </div>
+        </section>
+
+        <section class="panel execution-panel">
+          <div class="panel-head">
+            <div>
+              <h2>执行看板</h2>
+              <p>把后台阶段事件整理成项目进度视图。这里会持续显示当前跑到哪一步、完成了多少章节、是否进入修订和是否已有产物。</p>
+            </div>
+          </div>
+          <div class="execution-grid">
+            <div class="execution-stat">
+              <strong>当前任务</strong>
+              <span id="execution-task-status">-</span>
+              <small id="execution-task-title">还没有任务在运行。</small>
+            </div>
+            <div class="execution-stat">
+              <strong>当前阶段</strong>
+              <span id="execution-current-stage">-</span>
+              <small id="execution-stage-detail">启动任务后，这里会显示当前阶段和章节信息。</small>
+            </div>
+            <div class="execution-stat">
+              <strong>章节推进</strong>
+              <span id="execution-chapter-progress">-</span>
+              <small id="execution-chapter-detail">会显示总章节、已完成章节和当前正在处理的章节。</small>
+            </div>
+            <div class="execution-stat">
+              <strong>导出状态</strong>
+              <span id="execution-export-status">-</span>
+              <small id="execution-export-detail">如果已经导出，会显示目录和产物数量。</small>
+            </div>
+          </div>
+          <div class="milestone-strip" id="execution-milestones"></div>
+          <div class="execution-feed" id="execution-feed"></div>
         </section>
 
         <section class="panel">
@@ -1136,6 +1778,8 @@
             <button class="tab" data-tab="structure">项目结构</button>
             <button class="tab" data-tab="story-bible">故事圣经</button>
             <button class="tab" data-tab="narrative">叙事图谱</button>
+            <button class="tab" data-tab="writing-profile">写作配置</button>
+            <button class="tab" data-tab="workflow">流程跟踪</button>
             <button class="tab" data-tab="outputs">导出文件</button>
           </div>
 
@@ -1143,8 +1787,47 @@
             <div class="preview-toolbar">
               <select id="preview-file"></select>
               <button class="secondary" id="open-preview">加载预览</button>
+              <button class="ghost" id="refresh-preview">刷新当前正文</button>
+              <label class="preview-toggle">
+                <input id="preview-auto-follow" type="checkbox" />
+                <span>执行中自动跟随当前正文</span>
+              </label>
             </div>
-            <iframe class="preview-frame" id="preview-frame" title="小说正文预览"></iframe>
+            <p class="preview-note" id="preview-note">阅读视图默认锁定，不会因为后台轮询而自动跳回顶部。你可以手动刷新正文，或勾选自动跟随最新内容。</p>
+            <div class="reading-meta-grid">
+              <div class="reading-meta-card">
+                <strong>当前正文</strong>
+                <span id="preview-name">-</span>
+                <small id="preview-path">当前还没有加载成品正文。</small>
+              </div>
+              <div class="reading-meta-card">
+                <strong>正文总字数</strong>
+                <span id="preview-word-count">-</span>
+                <small id="preview-character-count">会显示排除空白后的实际阅读字数。</small>
+              </div>
+              <div class="reading-meta-card">
+                <strong>预计阅读时长</strong>
+                <span id="preview-read-minutes">-</span>
+                <small id="preview-paragraph-count">会显示当前正文的段落数量。</small>
+              </div>
+              <div class="reading-meta-card">
+                <strong>文件信息</strong>
+                <span id="preview-file-size">-</span>
+                <small id="preview-modified-at">会显示当前预览文件的更新时间。</small>
+              </div>
+            </div>
+            <div class="reading-shell" id="preview-shell">
+              <div class="reading-header">
+                <div>
+                  <h3 id="preview-title">等待加载正文</h3>
+                  <p id="preview-subtitle">选择一个 Markdown 正文文件后，这里会显示排版后的成品阅读视图。</p>
+                </div>
+                <div class="reading-status-pill" id="preview-refresh-mode">阅读锁定</div>
+              </div>
+              <article class="reading-article" id="preview-article">
+                <div class="reading-empty">当前还没有可阅读的小说正文。完成一轮导出后，这里会显示 `project.md` 或章节 Markdown 的排版内容。</div>
+              </article>
+            </div>
           </div>
 
           <div class="tab-panel" id="tab-progress">
@@ -1161,6 +1844,15 @@
 
           <div class="tab-panel" id="tab-narrative">
             <pre class="codebox" id="narrative-json">等待加载叙事图谱。</pre>
+          </div>
+
+          <div class="tab-panel" id="tab-writing-profile">
+            <pre class="codebox" id="writing-profile-json">等待加载写作配置。</pre>
+          </div>
+
+          <div class="tab-panel" id="tab-workflow">
+            <div id="workflow-board"></div>
+            <pre class="codebox" id="workflow-json">等待加载流程跟踪。</pre>
           </div>
 
           <div class="tab-panel" id="tab-outputs">
@@ -1183,7 +1875,10 @@
       tasks: [],
       activeProjectSlug: null,
       activeTaskId: null,
+      activeTab: "preview",
       summary: null,
+      lastProjectRefreshAt: 0,
+      currentPreviewName: null,
     };
 
     const els = {
@@ -1196,17 +1891,49 @@
       summaryChapters: document.getElementById("summary-chapters"),
       summaryScenes: document.getElementById("summary-scenes"),
       summaryOutputs: document.getElementById("summary-outputs"),
+      summaryReadingWords: document.getElementById("summary-reading-words"),
+      summaryReadingDetail: document.getElementById("summary-reading-detail"),
       summaryWorldRules: document.getElementById("summary-world-rules"),
       summaryCharacters: document.getElementById("summary-characters"),
       summaryArcs: document.getElementById("summary-arcs"),
       summaryEmotions: document.getElementById("summary-emotions"),
+      summaryPlatform: document.getElementById("summary-platform"),
+      summaryReaderPromise: document.getElementById("summary-reader-promise"),
+      summaryWorkflows: document.getElementById("summary-workflows"),
+      executionTaskStatus: document.getElementById("execution-task-status"),
+      executionTaskTitle: document.getElementById("execution-task-title"),
+      executionCurrentStage: document.getElementById("execution-current-stage"),
+      executionStageDetail: document.getElementById("execution-stage-detail"),
+      executionChapterProgress: document.getElementById("execution-chapter-progress"),
+      executionChapterDetail: document.getElementById("execution-chapter-detail"),
+      executionExportStatus: document.getElementById("execution-export-status"),
+      executionExportDetail: document.getElementById("execution-export-detail"),
+      executionMilestones: document.getElementById("execution-milestones"),
+      executionFeed: document.getElementById("execution-feed"),
       structureJson: document.getElementById("structure-json"),
       storyBibleJson: document.getElementById("story-bible-json"),
       narrativeJson: document.getElementById("narrative-json"),
+      writingProfileJson: document.getElementById("writing-profile-json"),
+      workflowBoard: document.getElementById("workflow-board"),
+      workflowJson: document.getElementById("workflow-json"),
       progressFeed: document.getElementById("progress-feed"),
       artifactList: document.getElementById("artifact-list"),
       previewFile: document.getElementById("preview-file"),
-      previewFrame: document.getElementById("preview-frame"),
+      previewNote: document.getElementById("preview-note"),
+      previewName: document.getElementById("preview-name"),
+      previewPath: document.getElementById("preview-path"),
+      previewWordCount: document.getElementById("preview-word-count"),
+      previewCharacterCount: document.getElementById("preview-character-count"),
+      previewReadMinutes: document.getElementById("preview-read-minutes"),
+      previewParagraphCount: document.getElementById("preview-paragraph-count"),
+      previewFileSize: document.getElementById("preview-file-size"),
+      previewModifiedAt: document.getElementById("preview-modified-at"),
+      previewShell: document.getElementById("preview-shell"),
+      previewTitle: document.getElementById("preview-title"),
+      previewSubtitle: document.getElementById("preview-subtitle"),
+      previewRefreshMode: document.getElementById("preview-refresh-mode"),
+      previewArticle: document.getElementById("preview-article"),
+      previewAutoFollow: document.getElementById("preview-auto-follow"),
       wordsPerChapter: document.getElementById("words-per-chapter"),
       estimatedScenes: document.getElementById("estimated-scenes"),
       wordsPerScene: document.getElementById("words-per-scene"),
@@ -1225,6 +1952,13 @@
       return JSON.stringify(value, null, 2);
     }
 
+    function splitList(value) {
+      return String(value || "")
+        .split(/[,\n，]/)
+        .map((item) => item.trim())
+        .filter(Boolean);
+    }
+
     function formatBytes(bytes) {
       if (!Number.isFinite(bytes) || bytes <= 0) return "0 B";
       const units = ["B", "KB", "MB", "GB"];
@@ -1235,6 +1969,25 @@
         index += 1;
       }
       return `${size.toFixed(size >= 10 || index === 0 ? 0 : 1)} ${units[index]}`;
+    }
+
+    function formatWordCount(value) {
+      const count = Number(value || 0);
+      return count > 0 ? `${count.toLocaleString("zh-CN")} 字` : "0 字";
+    }
+
+    function formatMinutes(value) {
+      const count = Number(value || 0);
+      return count > 0 ? `${count.toLocaleString("zh-CN")} 分钟` : "0 分钟";
+    }
+
+    function getCurrentPreviewOutput() {
+      const outputs = state.summary?.outputs || [];
+      return outputs.find((item) => item.name === state.currentPreviewName) || null;
+    }
+
+    function getCurrentTabName() {
+      return state.activeTab || "preview";
     }
 
     function humanizeTaskStatus(status) {
@@ -1259,24 +2012,341 @@
       return mapping[status] || status || "-";
     }
 
+    function humanizeWorkflowType(value) {
+      const mapping = {
+        generate_novel_plan: "生成整书规划",
+        materialize_story_bible: "物化故事圣经",
+        materialize_chapter_outline_batch: "物化章节大纲",
+        materialize_narrative_graph: "物化叙事图谱",
+        materialize_narrative_tree: "物化叙事树",
+        project_pipeline: "整书流水线",
+        chapter_pipeline: "章节流水线",
+        scene_pipeline: "场景流水线",
+        project_repair: "整书修订",
+      };
+      return mapping[value] || value || "-";
+    }
+
+    function formatDateTime(value) {
+      if (!value) return "-";
+      try {
+        return new Intl.DateTimeFormat("zh-CN", {
+          dateStyle: "short",
+          timeStyle: "short",
+        }).format(new Date(value));
+      } catch (_) {
+        return value;
+      }
+    }
+
     function humanizeStage(stage) {
       const mapping = {
         queued: "等待执行",
         running: "正在执行",
-        create_project: "创建项目",
-        generate_planning: "生成规划",
-        materialize_story_bible: "物化故事圣经",
-        materialize_outline: "物化章节大纲",
-        materialize_narrative_graph: "物化叙事图谱",
-        materialize_narrative_tree: "物化叙事树",
-        run_project_pipeline: "执行整书流水线",
-        run_project_review: "执行整书审校",
-        run_project_repair: "执行自动修复",
-        export_project: "导出整书",
+        project_creation_started: "开始创建项目",
+        project_creation_completed: "项目已创建",
+        planning_started: "开始生成规划",
+        planning_completed: "规划生成完成",
+        story_bible_materialization_started: "开始物化故事圣经",
+        story_bible_materialization_completed: "故事圣经已物化",
+        outline_materialization_started: "开始物化章节大纲",
+        outline_materialization_completed: "章节大纲已物化",
+        narrative_graph_materialization_started: "开始物化叙事图谱",
+        narrative_graph_materialization_completed: "叙事图谱已物化",
+        narrative_tree_materialization_started: "开始物化叙事树",
+        narrative_tree_materialization_completed: "叙事树已物化",
+        project_pipeline_started: "开始整书流水线",
+        chapter_pipeline_started: "开始章节流水线",
+        chapter_pipeline_completed: "章节流水线完成",
+        project_export_started: "开始导出整书",
+        project_export_completed: "整书导出完成",
+        project_consistency_review_completed: "整书一致性审校完成",
+        project_pipeline_completed: "整书流水线结束",
+        auto_repair_started: "开始自动修复",
+        auto_repair_completed: "自动修复结束",
+        project_repair_started: "开始 repair 流程",
+        project_repair_targets_collected: "repair 影响面已收集",
+        project_repair_tasks_superseded: "旧任务已 supersede",
+        project_repair_chapter_started: "开始 repair 章节",
+        project_repair_chapter_completed: "repair 章节完成",
+        project_repair_export_started: "repair 后开始导出",
+        project_repair_export_completed: "repair 后导出完成",
+        project_repair_review_completed: "repair 后一致性审校完成",
+        project_repair_completed: "repair 流程结束",
+        autowrite_completed: "整书自动写作完成",
         completed: "已完成",
         failed: "失败",
       };
       return mapping[stage] || stage || "-";
+    }
+
+    function getRelevantTaskForCurrentView() {
+      if (state.activeTaskId) {
+        const explicitTask = state.tasks.find((item) => item.task_id === state.activeTaskId);
+        if (explicitTask) {
+          return explicitTask;
+        }
+      }
+
+      if (state.activeProjectSlug) {
+        const runningTask = state.tasks.find(
+          (item) => item.project_slug === state.activeProjectSlug && item.status === "running"
+        );
+        if (runningTask) {
+          return runningTask;
+        }
+        const recentProjectTask = state.tasks.find(
+          (item) => item.project_slug === state.activeProjectSlug
+        );
+        if (recentProjectTask) {
+          return recentProjectTask;
+        }
+      }
+
+      return state.tasks.find((item) => item.status === "running") || state.tasks[0] || null;
+    }
+
+    function deriveTaskOverview(task) {
+      if (!task) {
+        return null;
+      }
+
+      const events = task.progress_events || [];
+      const stages = new Set(events.map((item) => item.stage));
+      const completedChapters = new Set();
+      const repairedChapters = new Set();
+
+      let totalChapters = 0;
+      let currentChapter = null;
+      let repairTargetCount = 0;
+      let outputDir = task.result?.output_dir || null;
+      let outputFiles = Array.isArray(task.result?.output_files) ? task.result.output_files : [];
+      let exportStatus = task.result?.export_status || null;
+      let finalVerdict = task.result?.final_verdict || null;
+      let requiresHumanReview = task.result?.requires_human_review ?? null;
+
+      for (const event of events) {
+        const payload = event.payload || {};
+        if (event.stage === "planning_completed" && Number.isFinite(payload.chapter_count)) {
+          totalChapters = Math.max(totalChapters, Number(payload.chapter_count));
+        }
+        if (event.stage === "project_pipeline_started" && Number.isFinite(payload.chapter_count)) {
+          totalChapters = Math.max(totalChapters, Number(payload.chapter_count));
+        }
+        if (event.stage === "chapter_pipeline_started" && Number.isFinite(payload.chapter_number)) {
+          currentChapter = Number(payload.chapter_number);
+        }
+        if (event.stage === "chapter_pipeline_completed" && Number.isFinite(payload.chapter_number)) {
+          completedChapters.add(Number(payload.chapter_number));
+        }
+        if (
+          event.stage === "project_repair_targets_collected" &&
+          Array.isArray(payload.target_chapter_numbers)
+        ) {
+          repairTargetCount = payload.target_chapter_numbers.length;
+        }
+        if (event.stage === "project_repair_chapter_started" && Number.isFinite(payload.chapter_number)) {
+          currentChapter = Number(payload.chapter_number);
+        }
+        if (event.stage === "project_repair_chapter_completed" && Number.isFinite(payload.chapter_number)) {
+          repairedChapters.add(Number(payload.chapter_number));
+        }
+        if (typeof payload.output_dir === "string" && payload.output_dir) {
+          outputDir = payload.output_dir;
+        }
+        if (Array.isArray(payload.output_files) && payload.output_files.length) {
+          outputFiles = payload.output_files;
+        }
+        if (typeof payload.export_status === "string" && payload.export_status) {
+          exportStatus = payload.export_status;
+        }
+        if (typeof payload.final_verdict === "string" && payload.final_verdict) {
+          finalVerdict = payload.final_verdict;
+        }
+        if (typeof payload.requires_human_review === "boolean") {
+          requiresHumanReview = payload.requires_human_review;
+        }
+      }
+
+      return {
+        totalChapters,
+        completedChapters: completedChapters.size,
+        repairedChapters: repairedChapters.size,
+        currentChapter,
+        repairTargetCount,
+        outputDir,
+        outputFiles,
+        exportStatus,
+        finalVerdict,
+        requiresHumanReview,
+        stages,
+        events,
+      };
+    }
+
+    function milestoneState(kind, task, overview) {
+      const stages = overview.stages;
+      if (task.status === "failed") {
+        return "failed";
+      }
+      const definitions = {
+        planning: {
+          completed: ["planning_completed"],
+          running: ["planning_started", "project_creation_started", "project_creation_completed"],
+        },
+        story_bible: {
+          completed: ["story_bible_materialization_completed"],
+          running: ["story_bible_materialization_started"],
+        },
+        outline: {
+          completed: ["outline_materialization_completed"],
+          running: ["outline_materialization_started"],
+        },
+        narrative: {
+          completed: ["narrative_tree_materialization_completed", "narrative_graph_materialization_completed"],
+          running: ["narrative_graph_materialization_started", "narrative_tree_materialization_started"],
+        },
+        chapters: {
+          completed: overview.totalChapters > 0 && overview.completedChapters >= overview.totalChapters,
+          running: stages.has("project_pipeline_started") || stages.has("chapter_pipeline_started"),
+        },
+        repair: {
+          completed: stages.has("project_repair_completed") || stages.has("auto_repair_completed"),
+          running: stages.has("project_repair_started") || stages.has("auto_repair_started"),
+        },
+        export: {
+          completed: Boolean((overview.outputFiles || []).length) || stages.has("project_export_completed") || stages.has("project_repair_export_completed"),
+          running: stages.has("project_export_started") || stages.has("project_repair_export_started"),
+        },
+      };
+      const definition = definitions[kind];
+      if (!definition) return "pending";
+      if (typeof definition.completed === "boolean") {
+        if (definition.completed) return "completed";
+      } else if (definition.completed.some((stage) => stages.has(stage))) {
+        return "completed";
+      }
+      if (typeof definition.running === "boolean") {
+        if (definition.running && task.status === "running") return "running";
+      } else if (definition.running.some((stage) => stages.has(stage)) && task.status === "running") {
+        return "running";
+      }
+      return "pending";
+    }
+
+    function renderExecutionBoard(task) {
+      if (!task) {
+        els.executionTaskStatus.textContent = "-";
+        els.executionTaskTitle.textContent = "还没有任务在运行。";
+        els.executionCurrentStage.textContent = "-";
+        els.executionStageDetail.textContent = "发起整书写作或修订任务后，这里会自动显示当前进展。";
+        els.executionChapterProgress.textContent = "-";
+        els.executionChapterDetail.textContent = "会显示章节总数、已完成数量和当前正在处理的章节。";
+        els.executionExportStatus.textContent = "-";
+        els.executionExportDetail.textContent = "会显示导出状态、产物数量和输出目录。";
+        els.executionMilestones.innerHTML = `<div class="empty" style="grid-column: 1 / -1;">当前没有可显示的执行任务。</div>`;
+        els.executionFeed.innerHTML = `<div class="empty">执行任务后，这里会出现最近阶段事件。</div>`;
+        return;
+      }
+
+      const overview = deriveTaskOverview(task);
+      const lastEvent = overview.events[overview.events.length - 1] || null;
+      const currentStageLabel = humanizeStage(task.current_stage);
+      const currentStageDetail = currentStageLabel === (task.current_stage || "-")
+        ? `原始阶段码：${task.current_stage || "-"}`
+        : `${currentStageLabel} · 原始阶段码：${task.current_stage || "-"}`;
+
+      els.executionTaskStatus.textContent = humanizeTaskStatus(task.status);
+      els.executionTaskTitle.textContent = `${task.title || task.project_slug || "未命名任务"} · ${task.task_type === "repair" ? "修订任务" : "整书写作任务"}`;
+      els.executionCurrentStage.textContent = currentStageLabel;
+      els.executionStageDetail.textContent = currentStageDetail;
+
+      const chapterProgressText = overview.totalChapters
+        ? `${overview.completedChapters}/${overview.totalChapters}`
+        : `${overview.completedChapters}`;
+      els.executionChapterProgress.textContent = chapterProgressText;
+      els.executionChapterDetail.textContent = [
+        overview.totalChapters ? `总章节 ${overview.totalChapters}` : null,
+        overview.currentChapter ? `当前章节 第 ${overview.currentChapter} 章` : null,
+        overview.repairedChapters ? `已修订章节 ${overview.repairedChapters}` : null,
+      ].filter(Boolean).join(" · ") || "还没有进入章节推进阶段。";
+
+      const exportLabelMap = {
+        exported: "已导出",
+        exported_requires_human_review: "已导出但待复核",
+        skipped_requires_human_review: "待复核，暂未导出",
+        not_exported: "未导出",
+      };
+      els.executionExportStatus.textContent = exportLabelMap[overview.exportStatus] || (overview.outputFiles.length ? "已导出" : "未导出");
+      els.executionExportDetail.textContent = [
+        overview.outputFiles.length ? `产物 ${overview.outputFiles.length} 个` : null,
+        overview.finalVerdict ? `最终判定 ${overview.finalVerdict}` : null,
+        overview.requiresHumanReview === true ? "仍需人工复核" : null,
+        overview.outputDir ? overview.outputDir : null,
+      ].filter(Boolean).join(" · ") || "导出尚未开始。";
+
+      const milestoneItems = [
+        {
+          key: "planning",
+          title: "规划",
+          desc: "生成 premise 对应的书本规划和整体章节规模。",
+        },
+        {
+          key: "story_bible",
+          title: "故事圣经",
+          desc: "把世界观、角色和关系落成可执行结构。",
+        },
+        {
+          key: "outline",
+          title: "章节大纲",
+          desc: "把章节与场景物化成真正的写作结构。",
+        },
+        {
+          key: "narrative",
+          title: "叙事结构",
+          desc: "建立叙事图谱和叙事树，保证主线、暗线和关系线可追踪。",
+        },
+        {
+          key: "chapters",
+          title: "章节推进",
+          desc: overview.totalChapters
+            ? `已完成 ${overview.completedChapters}/${overview.totalChapters} 章。`
+            : "还没有进入章节写作阶段。",
+        },
+        {
+          key: "repair",
+          title: "修订 / 导出",
+          desc: overview.outputFiles.length
+            ? `当前已有 ${overview.outputFiles.length} 个导出文件。`
+            : overview.repairTargetCount
+            ? `待修订目标章节 ${overview.repairTargetCount} 个。`
+            : "如审校未通过，会自动进入 repair。",
+        },
+      ];
+      els.executionMilestones.innerHTML = milestoneItems.map((item) => {
+        const stateClass = milestoneState(item.key, task, overview);
+        return `
+          <div class="milestone ${stateClass}">
+            <span class="milestone-label">${stateClass === "completed" ? "已完成" : stateClass === "running" ? "进行中" : stateClass === "failed" ? "失败" : "待执行"}</span>
+            <strong>${item.title}</strong>
+            <p>${item.desc}</p>
+          </div>
+        `;
+      }).join("");
+
+      const recentEvents = overview.events.slice(-6).reverse();
+      els.executionFeed.innerHTML = recentEvents.length ? recentEvents.map((item) => `
+        <div class="progress-item">
+          <div class="progress-item-head">
+            <div>
+              <strong>${escapeHtml(humanizeStage(item.stage))}</strong>
+              <div class="hint">${escapeHtml(item.stage || "-")}</div>
+            </div>
+            <div class="hint">${escapeHtml(item.timestamp || "-")}</div>
+          </div>
+          <div class="hint">${escapeHtml(Object.entries(item.payload || {}).slice(0, 4).map(([key, value]) => `${key}: ${typeof value === "object" ? JSON.stringify(value) : String(value)}`).join(" · ") || "无额外上下文")}</div>
+        </div>
+      `).join("") : `<div class="empty">当前任务还没有阶段事件。</div>`;
     }
 
     async function api(path, options = {}) {
@@ -1398,6 +2468,48 @@
       `).join("");
     }
 
+    function renderPreviewPlaceholder(message) {
+      els.previewTitle.textContent = "等待加载正文";
+      els.previewSubtitle.textContent = message;
+      els.previewName.textContent = "-";
+      els.previewPath.textContent = "当前还没有加载成品正文。";
+      els.previewWordCount.textContent = "-";
+      els.previewCharacterCount.textContent = "会显示排除空白后的实际阅读字数。";
+      els.previewReadMinutes.textContent = "-";
+      els.previewParagraphCount.textContent = "会显示当前正文的段落数量。";
+      els.previewFileSize.textContent = "-";
+      els.previewModifiedAt.textContent = "会显示当前预览文件的更新时间。";
+      els.previewArticle.innerHTML = `<div class="reading-empty">${escapeHtml(message)}</div>`;
+    }
+
+    function updatePreviewModeLabel() {
+      els.previewRefreshMode.textContent = els.previewAutoFollow.checked ? "自动跟随正文" : "阅读锁定";
+      els.previewNote.textContent = els.previewAutoFollow.checked
+        ? "当前已开启自动跟随。执行中的项目在产物更新后会静默刷新当前正文，但会尽量保持你的阅读位置。"
+        : "阅读视图默认锁定，不会因为后台轮询而自动跳回顶部。你可以手动刷新正文，或勾选自动跟随最新内容。";
+    }
+
+    function applyPreviewOptions(summary) {
+      const outputs = Array.isArray(summary.outputs) ? summary.outputs : [];
+      const markdownOutputs = outputs.filter((item) => item.name.endsWith(".md"));
+      const selectedName = markdownOutputs.some((item) => item.name === state.currentPreviewName)
+        ? state.currentPreviewName
+        : summary.default_preview_name;
+
+      const previewOptions = markdownOutputs.map((item) => {
+        const wordText = item.word_count ? ` · ${Number(item.word_count).toLocaleString("zh-CN")} 字` : "";
+        return `<option value="${escapeHtml(item.name)}">${escapeHtml(item.name)}${escapeHtml(wordText)}</option>`;
+      });
+      els.previewFile.innerHTML = previewOptions.length
+        ? previewOptions.join("")
+        : `<option value="">当前没有可预览的 Markdown 文件</option>`;
+
+      if (selectedName) {
+        els.previewFile.value = selectedName;
+      }
+      return selectedName || null;
+    }
+
     function renderSummary(summary) {
       state.summary = summary;
       els.projectTitle.textContent = summary.project.title;
@@ -1410,17 +2522,17 @@
       els.summaryCharacters.textContent = Number(summary.story_bible_counts.character_count || 0).toLocaleString("zh-CN");
       els.summaryArcs.textContent = Number(summary.narrative_counts.plot_arc_count || 0).toLocaleString("zh-CN");
       els.summaryEmotions.textContent = `${Number(summary.narrative_counts.emotion_track_count || 0).toLocaleString("zh-CN")} / ${Number(summary.narrative_counts.antagonist_plan_count || 0).toLocaleString("zh-CN")}`;
-
-      const previewOptions = summary.outputs
-        .filter((item) => item.name.endsWith(".md"))
-        .map((item) => `<option value="${escapeHtml(item.name)}">${escapeHtml(item.name)}</option>`);
-      els.previewFile.innerHTML = previewOptions.length
-        ? previewOptions.join("")
-        : `<option value="">当前没有可预览的 Markdown 文件</option>`;
-
-      if (summary.default_preview_name) {
-        els.previewFile.value = summary.default_preview_name;
-      }
+      els.summaryPlatform.textContent = summary.writing_profile?.market?.platform_target || "未配置";
+      els.summaryReaderPromise.textContent = summary.writing_profile?.market?.reader_promise || "当前还没有显式读者承诺。";
+      els.summaryWorkflows.textContent = `${Number(summary.workflow_counts?.run_count || 0).toLocaleString("zh-CN")} / ${humanizeTaskStatus(summary.workflow_counts?.latest_run_status || "-")}`;
+      const readingStats = summary.output_stats || {};
+      const headlineWordCount = Number(readingStats.project_word_count || readingStats.default_preview_word_count || 0);
+      els.summaryReadingWords.textContent = formatWordCount(headlineWordCount);
+      els.summaryReadingDetail.textContent = headlineWordCount
+        ? `${readingStats.default_preview_name || "当前正文"} · 预计 ${formatMinutes(readingStats.default_preview_estimated_read_minutes || 0)}`
+        : "当前还没有可统计字数的 Markdown 成品。";
+      els.writingProfileJson.textContent = pretty(summary.writing_profile || {});
+      applyPreviewOptions(summary);
       renderArtifacts(summary.outputs);
     }
 
@@ -1435,10 +2547,12 @@
         <div class="artifact">
           <div class="artifact-head">
             <strong>${escapeHtml(item.name)}</strong>
-            <span class="hint">${escapeHtml(formatBytes(Number(item.size_bytes || 0)))}</span>
+            <span class="hint">${escapeHtml(item.word_count ? formatWordCount(item.word_count) : formatBytes(Number(item.size_bytes || 0)))}</span>
           </div>
           <div class="artifact-meta">
-            <div class="hint">文件类型：${escapeHtml(item.suffix || "未知")}</div>
+            <div class="hint">文件类型：${escapeHtml(item.suffix || "未知")} · 大小：${escapeHtml(formatBytes(Number(item.size_bytes || 0)))}</div>
+            ${item.word_count ? `<div class="hint">正文：${escapeHtml(formatWordCount(item.word_count))} · 预计阅读 ${escapeHtml(formatMinutes(item.estimated_read_minutes || 0))} · 段落 ${escapeHtml(Number(item.paragraph_count || 0).toLocaleString("zh-CN"))}</div>` : ""}
+            <div class="hint">更新时间：${escapeHtml(formatDateTime(item.modified_at || "-"))}</div>
             <div class="artifact-path">${escapeHtml(item.path)}</div>
           </div>
           <div class="actions" style="margin-top: 10px;">
@@ -1449,6 +2563,43 @@
       `).join("");
     }
 
+    async function loadPreview(name, { force = false, preserveScroll = true } = {}) {
+      if (!state.activeProjectSlug || !name) {
+        renderPreviewPlaceholder("当前还没有可阅读的小说正文。完成一轮导出后，这里会显示 `project.md` 或章节 Markdown 的排版内容。");
+        return;
+      }
+
+      const samePreview = state.currentPreviewName === name;
+      const previousScrollTop = preserveScroll ? els.previewShell.scrollTop : 0;
+      const payload = await api(`/api/projects/${state.activeProjectSlug}/preview-data?name=${encodeURIComponent(name)}`);
+      state.currentPreviewName = name;
+      els.previewFile.value = name;
+      els.previewTitle.textContent = payload.artifact_name || name;
+      els.previewSubtitle.textContent = `项目 ${payload.project_slug} · ${payload.path || "未提供文件路径"}`;
+      els.previewName.textContent = payload.artifact_name || name;
+      els.previewPath.textContent = payload.path || "未提供文件路径";
+      els.previewWordCount.textContent = formatWordCount(payload.word_count || 0);
+      els.previewCharacterCount.textContent = `排除空白后共 ${Number(payload.character_count || 0).toLocaleString("zh-CN")} 个字符`;
+      els.previewReadMinutes.textContent = formatMinutes(payload.estimated_read_minutes || 0);
+      els.previewParagraphCount.textContent = `共 ${Number(payload.paragraph_count || 0).toLocaleString("zh-CN")} 段`;
+      els.previewFileSize.textContent = formatBytes(Number(payload.size_bytes || 0));
+      els.previewModifiedAt.textContent = `更新时间：${formatDateTime(payload.modified_at || "-")}`;
+      els.previewArticle.innerHTML = payload.html || `<div class="reading-empty">当前正文无法渲染，请直接打开 Markdown 文件查看。</div>`;
+      if (samePreview && preserveScroll) {
+        els.previewShell.scrollTop = previousScrollTop;
+      } else if (force) {
+        els.previewShell.scrollTop = 0;
+      }
+    }
+
+    async function openPreview(name, options = {}) {
+      try {
+        await loadPreview(name, { force: true, preserveScroll: false, ...options });
+      } catch (error) {
+        renderPreviewPlaceholder(error.message || "加载正文预览失败。");
+      }
+    }
+
     async function loadStatus() {
       const payload = await api("/api/status");
       setStatusStrip(payload);
@@ -1457,16 +2608,34 @@
     async function loadTasks() {
       state.tasks = await api("/api/tasks");
       renderTasks();
-      if (state.activeTaskId) {
-        const active = state.tasks.find((item) => item.task_id === state.activeTaskId);
-        if (active) {
-          renderTaskFeed(active);
-          if (active.status === "completed" && active.result && active.result.project_slug) {
-            state.activeProjectSlug = active.result.project_slug;
-            await loadProjects();
-            await loadProject(active.result.project_slug);
-          }
+      const active = getRelevantTaskForCurrentView();
+      if (active) {
+        state.activeTaskId = active.task_id;
+        renderTasks();
+        renderTaskFeed(active);
+        renderExecutionBoard(active);
+        if (active.project_slug && !state.activeProjectSlug) {
+          state.activeProjectSlug = active.project_slug;
         }
+        if (active.status === "completed" && active.result && active.result.project_slug) {
+          state.activeProjectSlug = active.result.project_slug;
+          await loadProjects();
+          await loadProject(active.result.project_slug, { preservePreview: true, liveRefresh: false });
+          return;
+        }
+        if (
+          active.status === "running" &&
+          active.project_slug &&
+          state.activeProjectSlug === active.project_slug &&
+          Date.now() - state.lastProjectRefreshAt > 8000
+        ) {
+          state.lastProjectRefreshAt = Date.now();
+          await refreshProjectLive(active.project_slug);
+          return;
+        }
+      } else {
+        renderTaskFeed(null);
+        renderExecutionBoard(null);
       }
     }
 
@@ -1475,20 +2644,70 @@
       renderProjects();
     }
 
-    async function loadProject(slug) {
+    async function refreshProjectLive(slug) {
+      const [summary, workflow] = await Promise.all([
+        api(`/api/projects/${slug}/summary`),
+        api(`/api/projects/${slug}/workflow`),
+      ]);
+      renderSummary(summary);
+      const currentPreviewOutput = getCurrentPreviewOutput();
+      if (!state.currentPreviewName && summary.default_preview_name) {
+        await loadPreview(summary.default_preview_name, { force: true, preserveScroll: false });
+      } else if (!currentPreviewOutput && summary.default_preview_name) {
+        await loadPreview(summary.default_preview_name, { force: true, preserveScroll: false });
+      } else if (
+        getCurrentTabName() === "preview" &&
+        state.currentPreviewName &&
+        els.previewAutoFollow.checked
+      ) {
+        await loadPreview(state.currentPreviewName, { force: false, preserveScroll: true });
+      }
+
+      const normalized = {
+        ...workflow,
+        runs: (workflow.runs || []).map((item) => ({
+          ...item,
+          workflow_type_label: humanizeWorkflowType(item.workflow_type),
+        })),
+      };
+      renderWorkflowOverview(normalized);
+      els.workflowJson.textContent = pretty(normalized);
+    }
+
+    async function loadProject(slug, { preservePreview = false, liveRefresh = false } = {}) {
+      const projectChanged = state.activeProjectSlug !== slug;
       state.activeProjectSlug = slug;
+      state.lastProjectRefreshAt = Date.now();
+      if (projectChanged) {
+        state.currentPreviewName = null;
+      }
       renderProjects();
       const summary = await api(`/api/projects/${slug}/summary`);
       renderSummary(summary);
-      await Promise.all([
-        loadStructure(slug),
-        loadStoryBible(slug),
-        loadNarrative(slug),
-      ]);
-      if (summary.default_preview_name) {
-        openPreview(summary.default_preview_name);
+      const relatedTask = getRelevantTaskForCurrentView();
+      if (relatedTask && relatedTask.project_slug === slug) {
+        state.activeTaskId = relatedTask.task_id;
+        renderExecutionBoard(relatedTask);
+        renderTaskFeed(relatedTask);
+      }
+      if (liveRefresh) {
+        await refreshProjectLive(slug);
       } else {
-        els.previewFrame.srcdoc = `<div style="padding:28px;font-family:${getComputedStyle(document.body).fontFamily};color:#665a4d;line-height:1.9;">当前项目还没有可预览的 Markdown 产物。你可以先查看结构、故事圣经和叙事图谱，再继续执行 repair 或下一轮写作。</div>`;
+        await Promise.all([
+          loadStructure(slug),
+          loadStoryBible(slug),
+          loadNarrative(slug),
+          loadWorkflow(slug),
+        ]);
+      }
+
+      const currentPreviewOutput = getCurrentPreviewOutput();
+      if (!summary.default_preview_name) {
+        renderPreviewPlaceholder("当前项目还没有可预览的 Markdown 产物。你可以先查看结构、故事圣经和叙事图谱，再继续执行 repair 或下一轮写作。");
+        return;
+      }
+      if (!preservePreview || projectChanged || !state.currentPreviewName || !currentPreviewOutput) {
+        await loadPreview(summary.default_preview_name, { force: true, preserveScroll: false });
       }
     }
 
@@ -1507,11 +2726,95 @@
       els.narrativeJson.textContent = pretty(payload);
     }
 
-    function openPreview(name) {
-      if (!state.activeProjectSlug || !name) {
+    async function loadWorkflow(slug) {
+      const payload = await api(`/api/projects/${slug}/workflow`);
+      const normalized = {
+        ...payload,
+        runs: (payload.runs || []).map((item) => ({
+          ...item,
+          workflow_type_label: humanizeWorkflowType(item.workflow_type),
+        })),
+      };
+      renderWorkflowOverview(normalized);
+      els.workflowJson.textContent = pretty(normalized);
+    }
+
+    function renderWorkflowOverview(payload) {
+      const runs = Array.isArray(payload?.runs) ? payload.runs : [];
+      if (!runs.length) {
+        els.workflowBoard.innerHTML = `<div class="empty" style="margin-bottom:16px;">当前项目还没有 workflow 运行记录。</div>`;
         return;
       }
-      els.previewFrame.src = `/api/projects/${state.activeProjectSlug}/preview?name=${encodeURIComponent(name)}`;
+
+      const summaryHtml = `
+        <div class="workflow-overview-summary">
+          <div class="workflow-stat">
+            <strong>${Number(payload.run_count || 0).toLocaleString("zh-CN")}</strong>
+            <span>累计运行次数</span>
+          </div>
+          <div class="workflow-stat">
+            <strong>${Number(payload.completed_run_count || 0).toLocaleString("zh-CN")}</strong>
+            <span>已完成 workflow</span>
+          </div>
+          <div class="workflow-stat">
+            <strong>${Number(payload.failed_run_count || 0).toLocaleString("zh-CN")}</strong>
+            <span>失败 workflow</span>
+          </div>
+          <div class="workflow-stat">
+            <strong>${humanizeTaskStatus(payload.latest_run_status || "-")}</strong>
+            <span>最近一次状态</span>
+          </div>
+        </div>
+      `;
+
+      const runCards = runs.slice(0, 12).map((run) => {
+        const statusClass = run.status === "completed" ? "success" : run.status === "failed" ? "failed" : "";
+        const steps = Array.isArray(run.steps) ? run.steps.slice(0, 10) : [];
+        const stepsHtml = steps.length
+          ? steps.map((step) => `
+              <div class="workflow-step-row">
+                <div class="workflow-step-index">${escapeHtml(step.step_order)}</div>
+                <div class="workflow-step-title">
+                  ${escapeHtml(step.step_name)}
+                  <small>${escapeHtml(formatDateTime(step.created_at))}</small>
+                </div>
+                <div class="workflow-step-status">${escapeHtml(humanizeTaskStatus(step.status))}</div>
+              </div>
+            `).join("")
+          : `<div class="empty">当前 workflow 没有详细步骤记录。</div>`;
+
+        return `
+          <article class="workflow-run-card">
+            <div class="workflow-run-head">
+              <div>
+                <h3>${escapeHtml(run.workflow_type_label || humanizeWorkflowType(run.workflow_type))}</h3>
+                <p>创建时间：${escapeHtml(formatDateTime(run.created_at))} · 最近更新：${escapeHtml(formatDateTime(run.updated_at))}</p>
+              </div>
+              <div class="workflow-badges">
+                <span class="workflow-badge ${statusClass}">${escapeHtml(humanizeTaskStatus(run.status))}</span>
+                <span class="workflow-badge">${escapeHtml((run.completed_step_count || 0) + "/" + (run.step_count || 0) + " 步")}</span>
+              </div>
+            </div>
+            <div class="workflow-run-meta">
+              <div>
+                <strong>作用域</strong>
+                <span>${escapeHtml(run.scope_type || "-")}</span>
+              </div>
+              <div>
+                <strong>请求来源</strong>
+                <span>${escapeHtml(run.requested_by || "-")}</span>
+              </div>
+              <div>
+                <strong>当前步骤</strong>
+                <span>${escapeHtml(run.current_step || "-")}</span>
+              </div>
+            </div>
+            <div class="workflow-steps-grid">${stepsHtml}</div>
+          </article>
+        `;
+      }).join("");
+
+      els.workflowBoard.innerHTML = `${summaryHtml}<div class="workflow-run-list">${runCards}</div>`;
     }
 
     function readAutowritePayload() {
@@ -1527,6 +2830,41 @@
         export_markdown: document.getElementById("export-markdown").checked,
         auto_repair: document.getElementById("auto-repair").checked,
         language: "zh-CN",
+        writing_profile: {
+          market: {
+            platform_target: document.getElementById("platform-target").value.trim(),
+            prompt_pack_key: document.getElementById("prompt-pack-key").value.trim() || null,
+            reader_promise: document.getElementById("reader-promise").value.trim(),
+            selling_points: splitList(document.getElementById("selling-points").value),
+            trope_keywords: splitList(document.getElementById("trope-keywords").value),
+            opening_strategy: document.getElementById("premise").value.trim().slice(0, 240),
+            chapter_hook_strategy: document.getElementById("chapter-hook-strategy").value.trim(),
+            pacing_profile: document.getElementById("pacing-profile").value,
+          },
+          character: {
+            protagonist_archetype: document.getElementById("protagonist-archetype").value.trim(),
+            golden_finger: document.getElementById("golden-finger").value.trim(),
+          },
+          world: {
+            worldbuilding_density: document.getElementById("worldbuilding-density").value,
+          },
+          style: {
+            pov_type: document.getElementById("pov-type").value,
+            prose_style: document.getElementById("prose-style").value,
+            sentence_style: document.getElementById("sentence-style").value,
+            dialogue_ratio: Number(document.getElementById("dialogue-ratio").value || 0.42),
+            reference_works: splitList(document.getElementById("reference-works").value),
+            custom_rules: splitList(document.getElementById("custom-rules").value),
+          },
+          serialization: {
+            opening_mandate: "开篇必须快速亮出主角差异化优势、异常事件、短期利益和明确危险。",
+            first_three_chapter_goal: "前三章必须完成主角卖点亮相、世界异常亮相、第一轮得失与追读钩子。",
+            scene_drive_rule: "每场都要有目标、阻碍、升级、信息变化和尾钩，避免纯说明。",
+            exposition_rule: "背景说明必须嵌在行动、交易、冲突和代价里。",
+            chapter_ending_rule: document.getElementById("chapter-hook-strategy").value.trim(),
+            free_chapter_strategy: "免费阶段优先保证高密度钩子、连续爽点和危机升级。",
+          },
+        },
       };
     }
 
@@ -1592,6 +2930,7 @@
           document.querySelectorAll(".tab-panel").forEach((item) => item.classList.remove("active"));
           tabButton.classList.add("active");
           document.getElementById(`tab-${tabButton.dataset.tab}`).classList.add("active");
+          state.activeTab = tabButton.dataset.tab;
         });
       });
     }
@@ -1599,7 +2938,7 @@
     async function refreshAll() {
       await Promise.all([loadStatus(), loadProjects(), loadTasks()]);
       if (state.activeProjectSlug) {
-        await loadProject(state.activeProjectSlug);
+        await loadProject(state.activeProjectSlug, { preservePreview: true, liveRefresh: false });
       }
     }
 
@@ -1612,11 +2951,19 @@
     document.getElementById("refresh-projects").addEventListener("click", loadProjects);
     document.getElementById("refresh-projects-2").addEventListener("click", loadProjects);
     document.getElementById("hero-refresh-button").addEventListener("click", refreshAll);
-    document.getElementById("reload-project").addEventListener("click", () => state.activeProjectSlug && loadProject(state.activeProjectSlug));
+    document.getElementById("reload-project").addEventListener("click", () => state.activeProjectSlug && loadProject(state.activeProjectSlug, { preservePreview: true, liveRefresh: false }));
     document.getElementById("run-repair").addEventListener("click", runRepair);
     document.getElementById("open-preview").addEventListener("click", () => openPreview(els.previewFile.value));
+    document.getElementById("refresh-preview").addEventListener("click", () => {
+      const previewName = state.currentPreviewName || els.previewFile.value;
+      if (previewName) {
+        openPreview(previewName, { force: true, preserveScroll: true });
+      }
+    });
+    els.previewAutoFollow.addEventListener("change", updatePreviewModeLabel);
 
     wireTabs();
+    updatePreviewModeLabel();
     updateScopeEstimator();
     refreshAll();
     setInterval(loadTasks, 2000);

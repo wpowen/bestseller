@@ -47,6 +47,7 @@ from bestseller.services.narrative_tree import (
     get_narrative_tree_node_by_path,
     search_narrative_tree_for_project,
 )
+from bestseller.services.prompt_packs import get_prompt_pack, list_prompt_packs
 from bestseller.services.pipelines import (
     run_autowrite_pipeline,
     run_chapter_pipeline,
@@ -107,6 +108,7 @@ story_bible_app = typer.Typer(help="Story bible inspection operations.")
 narrative_app = typer.Typer(help="Narrative graph inspection operations.")
 benchmark_app = typer.Typer(help="Benchmark and evaluation operations.")
 ui_app = typer.Typer(help="Web UI operations.")
+prompt_pack_app = typer.Typer(help="Prompt pack operations.")
 
 app.add_typer(db_app, name="db")
 app.add_typer(project_app, name="project")
@@ -123,6 +125,7 @@ app.add_typer(story_bible_app, name="story-bible")
 app.add_typer(narrative_app, name="narrative")
 app.add_typer(benchmark_app, name="benchmark")
 app.add_typer(ui_app, name="ui")
+app.add_typer(prompt_pack_app, name="prompt-pack")
 
 
 @app.callback()
@@ -143,6 +146,33 @@ def _format_progress_details(payload: dict[str, Any] | None) -> str:
         else:
             details.append(f"{key}={value}")
     return " | " + " | ".join(details) if details else ""
+
+
+def _load_structured_payload_file(path: Path | None) -> dict[str, Any] | None:
+    if path is None:
+        return None
+    raw = yaml.safe_load(path.read_text(encoding="utf-8"))
+    if raw is None:
+        return None
+    if not isinstance(raw, dict):
+        raise typer.BadParameter(f"{path} must contain a JSON/YAML object.")
+    return raw
+
+
+def _apply_prompt_pack_to_profile_payload(
+    writing_profile_payload: dict[str, Any] | None,
+    prompt_pack: str | None,
+) -> dict[str, Any] | None:
+    if not prompt_pack:
+        return writing_profile_payload
+    payload = dict(writing_profile_payload or {})
+    market = payload.get("market")
+    if not isinstance(market, dict):
+        market = {}
+    market = dict(market)
+    market["prompt_pack_key"] = prompt_pack
+    payload["market"] = market
+    return payload
 
 
 def _autowrite_progress_printer(stage: str, payload: dict[str, Any] | None = None) -> None:
@@ -237,6 +267,38 @@ def config_show(
     typer.echo(json.dumps(payload, ensure_ascii=False, indent=2))
 
 
+@prompt_pack_app.command("list")
+def prompt_pack_list() -> None:
+    """List available prompt packs."""
+    packs = list_prompt_packs()
+    typer.echo(
+        json.dumps(
+            [
+                {
+                    "key": pack.key,
+                    "name": pack.name,
+                    "version": pack.version,
+                    "description": pack.description,
+                    "genres": pack.genres,
+                    "tags": pack.tags,
+                }
+                for pack in packs
+            ],
+            ensure_ascii=False,
+            indent=2,
+        )
+    )
+
+
+@prompt_pack_app.command("show")
+def prompt_pack_show(key: str) -> None:
+    """Show one prompt pack in detail."""
+    pack = get_prompt_pack(key)
+    if pack is None:
+        raise typer.BadParameter(f"Prompt pack '{key}' was not found.")
+    typer.echo(json.dumps(pack.model_dump(mode="json"), ensure_ascii=False, indent=2))
+
+
 @ui_app.command("serve")
 def ui_serve(
     host: str = typer.Option("127.0.0.1", "--host"),
@@ -283,8 +345,26 @@ def project_create(
     sub_genre: str | None = None,
     audience: str | None = None,
     language: str = "zh-CN",
+    profile_file: Path | None = typer.Option(
+        None,
+        "--profile-file",
+        exists=True,
+        file_okay=True,
+        dir_okay=False,
+        help="Optional JSON/YAML writing profile file.",
+    ),
+    prompt_pack: str | None = typer.Option(
+        None,
+        "--prompt-pack",
+        help="Optional prompt pack key. Use `bestseller prompt-pack list` to inspect available packs.",
+    ),
 ) -> None:
     """Create a project and its default style guide."""
+
+    writing_profile_payload = _apply_prompt_pack_to_profile_payload(
+        _load_structured_payload_file(profile_file),
+        prompt_pack,
+    )
 
     async def _run() -> None:
         settings = load_settings()
@@ -300,10 +380,26 @@ def project_create(
                     language=language,
                     target_word_count=target_words,
                     target_chapters=target_chapters,
+                    writing_profile=writing_profile_payload,
                 ),
                 settings,
             )
-            typer.echo(json.dumps({"id": str(project.id), "slug": project.slug}, indent=2))
+            typer.echo(
+                json.dumps(
+                    {
+                        "id": str(project.id),
+                        "slug": project.slug,
+                        "writing_profile_configured": bool(writing_profile_payload),
+                        "prompt_pack": (
+                            (writing_profile_payload or {}).get("market", {}).get("prompt_pack_key")
+                            if isinstance((writing_profile_payload or {}).get("market"), dict)
+                            else None
+                        ),
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                )
+            )
 
     asyncio.run(_run())
 
@@ -499,6 +595,19 @@ def project_autowrite(
     sub_genre: str | None = None,
     audience: str | None = None,
     language: str = "zh-CN",
+    profile_file: Path | None = typer.Option(
+        None,
+        "--profile-file",
+        exists=True,
+        file_okay=True,
+        dir_okay=False,
+        help="Optional JSON/YAML writing profile file.",
+    ),
+    prompt_pack: str | None = typer.Option(
+        None,
+        "--prompt-pack",
+        help="Optional prompt pack key. Use `bestseller prompt-pack list` to inspect available packs.",
+    ),
     requested_by: str = "system",
     export_markdown: bool = typer.Option(
         True,
@@ -518,6 +627,11 @@ def project_autowrite(
 ) -> None:
     """Create a project if needed, generate the full plan, and run the whole novel pipeline."""
 
+    writing_profile_payload = _apply_prompt_pack_to_profile_payload(
+        _load_structured_payload_file(profile_file),
+        prompt_pack,
+    )
+
     async def _run() -> None:
         settings = load_settings()
         async with session_scope(settings) as session:
@@ -533,6 +647,8 @@ def project_autowrite(
                     language=language,
                     target_word_count=target_words,
                     target_chapters=target_chapters,
+                    metadata={"premise": premise},
+                    writing_profile=writing_profile_payload,
                 ),
                 premise=premise,
                 requested_by=requested_by,

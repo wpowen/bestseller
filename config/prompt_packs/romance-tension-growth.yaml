@@ -1,0 +1,48 @@
+key: romance-tension-growth
+name: 感情拉扯成长流
+version: "1.0"
+description: 适合晋江/女频向成长与感情拉扯写法，强调关系张力、情绪兑现和双向成长。
+genres:
+  - 言情
+  - 成长
+  - 女频
+tags:
+  - 情感拉扯
+  - 关系推进
+  - 情绪兑现
+  - 角色成长
+source_notes:
+  - 借鉴 romance 类 prompt guidance 设计
+  - 结合女频连载对关系节奏的要求
+anti_patterns:
+  - 纯误会堆剧情
+  - 角色关系没有阶段变化
+  - 只说爱，不展示靠近和试探
+writing_profile_overrides:
+  market:
+    prompt_pack_key: romance-tension-growth
+    platform_target: 晋江文学城
+    reader_promise: 快速建立关系张力、情绪困局和成长抓手，持续用靠近、误解、选择和兑现推动阅读。
+    selling_points:
+      - 情感拉扯
+      - 双向成长
+      - 身份差
+      - 秘密揭露
+    trope_keywords:
+      - 成长
+      - 情感拉扯
+      - 误解
+      - 并肩
+      - 选择
+  character:
+    romance_mode: 主线感情线
+    relationship_tension: 吸引、试探、误解、并肩、再选择
+fragments:
+  planner_cast_spec: |
+    感情线双方都要有独立目标和伤口，关系推进不能只靠误会，要靠共同事件和价值选择改变。
+  planner_outline: |
+    每章明确关系是拉近、拉远、试探、误判还是兑现。不要让情绪停在同一个状态太久。
+  scene_writer: |
+    通过动作细节、对话潜台词、关系位置变化写拉扯，不要直接解释“他们很在意彼此”。
+  chapter_review: |
+    检查关系线是否真的前进，是否出现新的理解、误解、牺牲或选择。

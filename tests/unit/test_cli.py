@@ -49,6 +49,55 @@ def test_benchmark_list_command(monkeypatch: pytest.MonkeyPatch) -> None:
     assert payload[0]["suite_id"] == "sample-books"
 
 
+def test_prompt_pack_list_command(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "bestseller.cli.main.list_prompt_packs",
+        lambda: [
+            type(
+                "PromptPackStub",
+                (),
+                {
+                    "key": "apocalypse-supply-chain",
+                    "name": "末日囤货升级流",
+                    "version": "1.0",
+                    "description": "末日囤货",
+                    "genres": ["末日"],
+                    "tags": ["囤货"],
+                },
+            )()
+        ],
+    )
+
+    result = runner.invoke(app, ["prompt-pack", "list"])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload[0]["key"] == "apocalypse-supply-chain"
+
+
+def test_prompt_pack_show_command(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "bestseller.cli.main.get_prompt_pack",
+        lambda key: type(
+            "PromptPackStub",
+            (),
+            {
+                "model_dump": lambda self, mode="json": {
+                    "key": key,
+                    "name": "末日囤货升级流",
+                    "version": "1.0",
+                }
+            },
+        )(),
+    )
+
+    result = runner.invoke(app, ["prompt-pack", "show", "apocalypse-supply-chain"])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["key"] == "apocalypse-supply-chain"
+
+
 def test_benchmark_run_command(monkeypatch: pytest.MonkeyPatch) -> None:
     @asynccontextmanager
     async def fake_session_scope(settings):
@@ -450,6 +499,8 @@ def test_project_autowrite_command(monkeypatch: pytest.MonkeyPatch, tmp_path: Pa
     async def fake_run_autowrite_pipeline(session, settings, **kwargs):
         assert kwargs["auto_repair_on_attention"] is True
         assert callable(kwargs["progress"])
+        assert kwargs["project_payload"].writing_profile is not None
+        assert kwargs["project_payload"].writing_profile.market.prompt_pack_key == "apocalypse-supply-chain"
         kwargs["progress"](
             "planning_completed",
             {
@@ -493,6 +544,8 @@ def test_project_autowrite_command(monkeypatch: pytest.MonkeyPatch, tmp_path: Pa
             "12",
             "--premise",
             "一名被放逐的导航员发现帝国正在篡改边境航线记录。",
+            "--prompt-pack",
+            "apocalypse-supply-chain",
         ],
     )
 

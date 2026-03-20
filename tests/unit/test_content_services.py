@@ -11,8 +11,10 @@ from bestseller.services.drafts import (
     count_words,
     render_chapter_draft_markdown,
     render_scene_draft_markdown,
+    sanitize_novel_markdown_content,
 )
 from bestseller.services.exports import (
+    build_markdown_reading_stats,
     build_docx_bytes,
     build_epub_bytes,
     build_project_markdown,
@@ -240,6 +242,59 @@ def test_scene_draft_prompt_includes_narrative_graph_sections() -> None:
     assert "必须覆盖 scene contract" in user_prompt
 
 
+def test_scene_draft_prompt_includes_writing_profile_and_serial_rules() -> None:
+    project = SimpleNamespace(
+        title="末日零点仓库",
+        metadata_json={
+            "writing_profile": {
+                "market": {
+                    "platform_target": "番茄小说",
+                    "prompt_pack_key": "apocalypse-supply-chain",
+                    "reader_promise": "开篇即进入末日倒计时与囤货优势展示，前三章连续给出危机升级与短回报。",
+                    "selling_points": ["重生回档", "未来商城", "资源碾压"],
+                    "trope_keywords": ["末日", "囤货", "系统", "打脸反杀"],
+                    "opening_strategy": "第一屏直接抛出末日倒计时、主角知道未来、资源窗口马上关闭。",
+                    "chapter_hook_strategy": "每章末给新的资源机会、规则异变或敌人反压。",
+                },
+                "character": {
+                    "protagonist_archetype": "先知型求生者",
+                    "golden_finger": "未来拼单商城",
+                    "growth_curve": "资源碾压 -> 势力扩张 -> 真相破局",
+                },
+                "world": {
+                    "worldbuilding_density": "medium",
+                    "info_reveal_strategy": "先冲突后解释，背景信息掺在行动和交易里释放。",
+                },
+            }
+        },
+    )
+    chapter = SimpleNamespace(chapter_number=1, chapter_goal="建立主角抢占先机的优势", title="零点前夜")
+    scene = SimpleNamespace(
+        scene_number=1,
+        title="未来订单",
+        participants=["林昼"],
+        purpose={"story": "展示主角提前囤货并察觉末日倒计时", "emotion": "紧迫与隐秘兴奋"},
+        time_label="末日前三天",
+        entry_state={"stock": "紧缺"},
+        exit_state={"advantage": "建立第一批资源优势"},
+        scene_type="hook",
+        target_word_count=1400,
+    )
+    style_guide = SimpleNamespace(pov_type="third-limited", tone_keywords=["狠", "快", "压迫感"])
+
+    _, user_prompt = build_scene_draft_prompts(project, chapter, scene, style_guide)
+
+    assert "平台与读者承诺" in user_prompt
+    assert "番茄小说" in user_prompt
+    assert "Prompt Pack" in user_prompt
+    assert "末日囤货升级流" in user_prompt
+    assert "重生回档" in user_prompt
+    assert "未来拼单商城" in user_prompt
+    assert "章节尾部必须留下强迫读者继续阅读的问题、威胁或利益诱因" in user_prompt
+    assert "开篇要尽快亮出主角差异化优势、核心异变、短期利益与即时危险" in user_prompt
+    assert "抢资源" in user_prompt or "资源差" in user_prompt
+
+
 def test_render_chapter_draft_markdown_combines_scene_drafts() -> None:
     chapter = SimpleNamespace(chapter_number=3, title="静默航道", chapter_goal="追查失踪巡逻舰")
     scene_drafts = [
@@ -254,10 +309,59 @@ def test_render_chapter_draft_markdown_combines_scene_drafts() -> None:
     assert "## 场景 2：信号残响" in content
 
 
+def test_sanitize_novel_markdown_content_strips_structured_metadata_lines() -> None:
+    content = """## 场景 3：陷阱合拢
+
+**scene_summary:** 主角发现真相，但也意识到自己已掉进更大的陷阱。
+
+**core_conflict:** 主角要带走证据，反派要切断他的退路。
+
+**emotional_shift:** 从谨慎试探 -> 短暂兴奋 -> 巨大寒意
+
+祁镇的声音从废弃机柜后面传来，像一根冰冷的针，缓慢刺进末日零的后颈。
+"""
+
+    cleaned = sanitize_novel_markdown_content(content)
+
+    assert "scene_summary" not in cleaned
+    assert "core_conflict" not in cleaned
+    assert "emotional_shift" not in cleaned
+    assert "祁镇的声音从废弃机柜后面传来" in cleaned
+
+
+def test_render_chapter_draft_markdown_strips_scene_metadata_artifacts() -> None:
+    chapter = SimpleNamespace(chapter_number=3, title="静默航道", chapter_goal="追查失踪巡逻舰")
+    scene_drafts = [
+        SimpleNamespace(
+            content_md=(
+                "## 场景 1：旧搭档回舰\n\n"
+                "**scene_summary:** 本场说明双方重新接触。\n\n"
+                "顾临没有先开口，只是把旧证件按在桌上。"
+            )
+        ),
+        SimpleNamespace(content_md="## 场景 2：信号残响\n\n舱壁深处传来断续的回波。"),
+    ]
+
+    content = render_chapter_draft_markdown(chapter, scene_drafts)
+
+    assert "scene_summary" not in content
+    assert "顾临没有先开口" in content
+    assert "舱壁深处传来断续的回波" in content
+
+
 def test_build_project_markdown_combines_chapters() -> None:
     project = SimpleNamespace(title="长夜巡航", genre="science-fantasy")
     chapter_payloads = [
-        (SimpleNamespace(chapter_number=1), SimpleNamespace(content_md="# 第1章 失准星图")),
+        (
+            SimpleNamespace(chapter_number=1),
+            SimpleNamespace(
+                content_md=(
+                    "# 第1章 失准星图\n\n"
+                    "**core_conflict:** 主角必须先活下来。\n\n"
+                    "沈砚在封港通告亮起前就察觉到了不对。"
+                )
+            ),
+        ),
         (SimpleNamespace(chapter_number=2), SimpleNamespace(content_md="# 第2章 静默航道")),
     ]
 
@@ -266,6 +370,8 @@ def test_build_project_markdown_combines_chapters() -> None:
     assert "# 长夜巡航" in content
     assert "# 第1章 失准星图" in content
     assert "# 第2章 静默航道" in content
+    assert "core_conflict" not in content
+    assert "沈砚在封港通告亮起前就察觉到了不对" in content
 
 
 def test_write_markdown_output_creates_file_and_checksum(tmp_path: Path) -> None:
@@ -283,7 +389,8 @@ def test_markdown_to_html_renders_basic_structure() -> None:
 
     assert "<h1>标题</h1>" in html
     assert "<h2>小节</h2>" in html
-    assert "<blockquote><p>引文</p></blockquote>" in html
+    assert "<blockquote>" in html
+    assert "<p>引文</p>" in html
     assert "<p>正文内容</p>" in html
 
 
@@ -293,6 +400,15 @@ def test_markdown_to_plain_text_strips_markers() -> None:
     assert "标题" in text
     assert "引文" in text
     assert "条目" in text
+
+
+def test_build_markdown_reading_stats_counts_cjk_and_latin_text() -> None:
+    stats = build_markdown_reading_stats("# 标题\n\n正文内容 Alpha beta 123")
+
+    assert stats["word_count"] == 9
+    assert stats["character_count"] == 18
+    assert stats["paragraph_count"] == 2
+    assert stats["estimated_read_minutes"] == 1
 
 
 def test_build_docx_bytes_creates_zip_package() -> None:

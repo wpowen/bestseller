@@ -7,6 +7,11 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bestseller.domain.enums import ArtifactType, ChapterStatus, ProjectStatus, SceneStatus, VolumeStatus
+from bestseller.domain.inspection import (
+    ProjectWorkflowOverviewRead,
+    WorkflowRunRead,
+    WorkflowStepRunRead,
+)
 from bestseller.domain.planning import PlanningArtifactDetail, PlanningArtifactSummary
 from bestseller.domain.project import (
     ChapterStructureRead,
@@ -34,6 +39,8 @@ from bestseller.infra.db.models import (
     SceneCardModel,
     SceneDraftVersionModel,
     VolumeModel,
+    WorkflowRunModel,
+    WorkflowStepRunModel,
     WorldRuleModel,
 )
 from bestseller.services.projects import get_project_by_slug
@@ -228,6 +235,88 @@ async def build_project_structure(
         total_chapters=len(chapters),
         total_scenes=len(scenes),
         volumes=volume_views,
+    )
+
+
+async def build_project_workflow_overview(
+    session: AsyncSession,
+    project_slug: str,
+) -> ProjectWorkflowOverviewRead:
+    project = await get_project_by_slug(session, project_slug)
+    if project is None:
+        raise ValueError(f"Project '{project_slug}' was not found.")
+
+    workflow_runs = list(
+        await session.scalars(
+            select(WorkflowRunModel)
+            .where(WorkflowRunModel.project_id == project.id)
+            .order_by(WorkflowRunModel.created_at.desc())
+        )
+    )
+    workflow_run_ids = [row.id for row in workflow_runs]
+    workflow_steps = (
+        list(
+            await session.scalars(
+                select(WorkflowStepRunModel)
+                .where(WorkflowStepRunModel.workflow_run_id.in_(workflow_run_ids))
+                .order_by(WorkflowStepRunModel.workflow_run_id.asc(), WorkflowStepRunModel.step_order.asc())
+            )
+        )
+        if workflow_run_ids
+        else []
+    )
+
+    steps_by_run: dict[object, list[WorkflowStepRunModel]] = defaultdict(list)
+    for step in workflow_steps:
+        steps_by_run[step.workflow_run_id].append(step)
+
+    runs: list[WorkflowRunRead] = []
+    for row in workflow_runs:
+        steps = steps_by_run.get(row.id, [])
+        completed_step_count = sum(1 for item in steps if item.status == "completed")
+        failed_step_count = sum(1 for item in steps if item.status == "failed")
+        runs.append(
+            WorkflowRunRead(
+                workflow_run_id=row.id,
+                workflow_type=row.workflow_type,
+                status=row.status,
+                scope_type=row.scope_type,
+                scope_id=row.scope_id,
+                requested_by=row.requested_by,
+                current_step=row.current_step,
+                error_message=row.error_message,
+                created_at=row.created_at,
+                updated_at=row.updated_at,
+                metadata=dict(row.metadata_json or {}),
+                step_count=len(steps),
+                completed_step_count=completed_step_count,
+                failed_step_count=failed_step_count,
+                steps=[
+                    WorkflowStepRunRead(
+                        step_run_id=item.id,
+                        step_name=item.step_name,
+                        step_order=item.step_order,
+                        status=item.status,
+                        created_at=item.created_at,
+                        input_ref=dict(item.input_ref or {}),
+                        output_ref=dict(item.output_ref or {}),
+                        error_message=item.error_message,
+                    )
+                    for item in steps
+                ],
+            )
+        )
+
+    return ProjectWorkflowOverviewRead(
+        project_id=project.id,
+        project_slug=project.slug,
+        project_status=project.status,
+        run_count=len(runs),
+        completed_run_count=sum(1 for row in runs if row.status == "completed"),
+        failed_run_count=sum(1 for row in runs if row.status == "failed"),
+        latest_run_id=runs[0].workflow_run_id if runs else None,
+        latest_run_status=runs[0].status if runs else None,
+        runs=runs,
     )
 
 

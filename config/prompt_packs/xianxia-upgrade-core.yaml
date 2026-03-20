@@ -1,0 +1,60 @@
+key: xianxia-upgrade-core
+name: 仙侠升级夺机缘
+version: "1.0"
+description: 适合起点系修仙、玄幻、升级流写法，强调境界压制、机缘争夺、打脸与世界扩张。
+genres:
+  - 修仙
+  - 玄幻
+  - 升级
+tags:
+  - 境界
+  - 宗门
+  - 机缘
+  - 打脸
+  - 越阶反杀
+source_notes:
+  - 借鉴 Long-Novel-GPT 的分层规划
+  - 借鉴 NovelGenerator 的 genre guidance 结构
+anti_patterns:
+  - 境界体系只有名字，没有代价和资源条件
+  - 主角一路顺推，没有同阶压制和越阶风险
+  - 宗门、家族、秘境只是背景板
+writing_profile_overrides:
+  market:
+    prompt_pack_key: xianxia-upgrade-core
+    platform_target: 起点中文网
+    reader_promise: 前几章给出主角受压环境、机缘入口和第一次打破阶层压制的机会。
+    selling_points:
+      - 升级突破
+      - 机缘夺取
+      - 势力压制
+      - 越阶反杀
+      - 世界地图扩张
+    trope_keywords:
+      - 废柴逆袭
+      - 秘境
+      - 宗门
+      - 气运
+      - 打脸
+    hook_keywords:
+      - 新境界
+      - 秘宝
+      - 宗门考核
+      - 上位势力
+  character:
+    protagonist_archetype: 逆袭型成长主角
+    golden_finger: 特殊血脉、至宝、推演能力或外挂面板
+    growth_curve: 底层逆袭 -> 宗门争锋 -> 位面扩张 -> 大道争夺
+  world:
+    power_system_style: 境界制与资源制并行
+fragments:
+  global_rules: |
+    境界提升必须伴随资源、代价、师承、风险或仇恨，不允许空升级。
+  planner_book_spec: |
+    主线要围绕“被压制 -> 抢机缘 -> 立威 -> 被更高层盯上”构建，不能只是被动成长。
+  planner_outline: |
+    前三章要快速完成受压环境、主角差异化机缘、第一次突破或立威。每章至少推进一次“实力/资源/地位”中的一个。
+  scene_writer: |
+    正文要突出境界差、资源差和威压感。打斗场面服务于地位变化和机缘争夺，不要只写光效。
+  chapter_review: |
+    检查本章是否真的推进了境界、地位、机缘或仇恨链，而不是原地踏步。

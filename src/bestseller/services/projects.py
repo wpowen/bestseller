@@ -16,6 +16,10 @@ from bestseller.infra.db.models import (
     StyleGuideModel,
     VolumeModel,
 )
+from bestseller.services.writing_profile import (
+    build_project_metadata,
+    resolve_project_create_writing_profile,
+)
 from bestseller.settings import AppSettings
 
 
@@ -32,6 +36,7 @@ async def create_project(
     if existing is not None:
         raise ValueError(f"Project slug '{payload.slug}' already exists.")
 
+    writing_profile = resolve_project_create_writing_profile(payload)
     project = ProjectModel(
         slug=payload.slug,
         title=payload.title,
@@ -41,24 +46,24 @@ async def create_project(
         target_word_count=payload.target_word_count,
         target_chapters=payload.target_chapters,
         audience=payload.audience,
-        metadata_json=payload.metadata,
+        metadata_json=build_project_metadata(payload, writing_profile),
     )
     session.add(project)
     await session.flush()
 
     style = StyleGuideModel(
         project_id=project.id,
-        pov_type=settings.generation.pov,
-        tense="present",
-        tone_keywords=[payload.genre],
-        prose_style="baseline",
-        sentence_style="mixed",
-        info_density="medium",
-        dialogue_ratio=0.35,
-        taboo_words=[],
-        taboo_topics=[],
-        reference_works=[],
-        custom_rules=[],
+        pov_type=writing_profile.style.pov_type or settings.generation.pov,
+        tense=writing_profile.style.tense,
+        tone_keywords=writing_profile.style.tone_keywords or [payload.genre],
+        prose_style=writing_profile.style.prose_style,
+        sentence_style=writing_profile.style.sentence_style,
+        info_density=writing_profile.style.info_density,
+        dialogue_ratio=writing_profile.style.dialogue_ratio,
+        taboo_words=writing_profile.style.taboo_words,
+        taboo_topics=writing_profile.style.taboo_topics,
+        reference_works=writing_profile.style.reference_works,
+        custom_rules=writing_profile.style.custom_rules,
     )
     session.add(style)
     await session.flush()

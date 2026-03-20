@@ -2,11 +2,14 @@ from __future__ import annotations
 
 import hashlib
 import io
+import math
+import re
 from html import escape
 from pathlib import Path
 from uuid import UUID
 from zipfile import ZIP_DEFLATED, ZIP_STORED, ZipFile
 
+import markdown as markdown_lib
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -16,8 +19,13 @@ from bestseller.infra.db.models import (
     ExportArtifactModel,
     ProjectModel,
 )
+from bestseller.services.drafts import sanitize_novel_markdown_content
 from bestseller.services.projects import get_project_by_slug
 from bestseller.settings import AppSettings
+
+
+_CJK_CHAR_PATTERN = re.compile(r"[\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF]")
+_LATIN_WORD_PATTERN = re.compile(r"[A-Za-z0-9]+(?:['’._-][A-Za-z0-9]+)*")
 
 
 def build_project_markdown(
@@ -25,7 +33,7 @@ def build_project_markdown(
     chapter_payloads: list[tuple[ChapterModel, ChapterDraftVersionModel]],
 ) -> str:
     header = [f"# {project.title}", f"> 类型：{project.genre}"]
-    sections = [draft.content_md.strip() for _, draft in chapter_payloads]
+    sections = [sanitize_novel_markdown_content(draft.content_md) for _, draft in chapter_payloads]
     return "\n\n".join(header + sections).strip()
 
 
@@ -74,51 +82,33 @@ def markdown_to_plain_text(content_md: str) -> str:
 
 
 def markdown_to_html(content_md: str) -> str:
-    html_blocks: list[str] = []
-    paragraph_buffer: list[str] = []
-    list_buffer: list[str] = []
+    rendered = markdown_lib.markdown(
+        sanitize_novel_markdown_content(content_md),
+        extensions=[
+            "extra",
+            "sane_lists",
+            "nl2br",
+        ],
+        output_format="html5",
+    )
+    return rendered.strip()
 
-    def flush_paragraph() -> None:
-        if paragraph_buffer:
-            html_blocks.append(f"<p>{escape(' '.join(paragraph_buffer))}</p>")
-            paragraph_buffer.clear()
 
-    def flush_list() -> None:
-        if list_buffer:
-            items = "".join(f"<li>{escape(item)}</li>" for item in list_buffer)
-            html_blocks.append(f"<ul>{items}</ul>")
-            list_buffer.clear()
-
-    for raw_line in content_md.splitlines():
-        if not raw_line.strip():
-            flush_paragraph()
-            flush_list()
-            continue
-
-        block_type, text = _parse_markdown_line(raw_line)
-        if block_type == "li":
-            flush_paragraph()
-            list_buffer.append(text)
-            continue
-
-        flush_list()
-        if block_type == "h1":
-            flush_paragraph()
-            html_blocks.append(f"<h1>{escape(text)}</h1>")
-            continue
-        if block_type == "h2":
-            flush_paragraph()
-            html_blocks.append(f"<h2>{escape(text)}</h2>")
-            continue
-        if block_type == "quote":
-            flush_paragraph()
-            html_blocks.append(f"<blockquote><p>{escape(text)}</p></blockquote>")
-            continue
-        paragraph_buffer.append(text)
-
-    flush_paragraph()
-    flush_list()
-    return "\n".join(html_blocks).strip()
+def build_markdown_reading_stats(content_md: str) -> dict[str, int]:
+    plain_text = markdown_to_plain_text(content_md)
+    non_whitespace_text = re.sub(r"\s+", "", plain_text)
+    word_count = len(_CJK_CHAR_PATTERN.findall(non_whitespace_text)) + len(
+        _LATIN_WORD_PATTERN.findall(plain_text)
+    )
+    character_count = len(non_whitespace_text)
+    paragraph_count = len([line for line in plain_text.splitlines() if line.strip()])
+    estimated_read_minutes = math.ceil(word_count / 500) if word_count > 0 else 0
+    return {
+        "word_count": word_count,
+        "character_count": character_count,
+        "paragraph_count": paragraph_count,
+        "estimated_read_minutes": estimated_read_minutes,
+    }
 
 
 def build_docx_bytes(title: str, content_md: str) -> bytes:
@@ -440,7 +430,10 @@ async def export_chapter_markdown(
 ) -> tuple[ExportArtifactModel, Path]:
     project, chapter, draft = await _load_chapter_export_payload(session, project_slug, chapter_number)
     output_path = Path(settings.output.base_dir) / project.slug / f"chapter-{chapter.chapter_number:03d}.md"
-    storage_uri, checksum = write_markdown_output(output_path, draft.content_md)
+    storage_uri, checksum = write_markdown_output(
+        output_path,
+        sanitize_novel_markdown_content(draft.content_md),
+    )
     artifact = _create_export_artifact(
         project_id=project.id,
         export_type="markdown",

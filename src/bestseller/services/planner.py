@@ -14,8 +14,18 @@ from bestseller.domain.planning import NovelPlanningResult, PlanningArtifactCrea
 from bestseller.domain.workflow import ChapterOutlineBatchInput
 from bestseller.infra.db.models import ProjectModel
 from bestseller.services.llm import LLMCompletionRequest, complete_text
+from bestseller.services.prompt_packs import (
+    render_prompt_pack_fragment,
+    render_prompt_pack_prompt_block,
+    resolve_prompt_pack,
+)
 from bestseller.services.projects import get_project_by_slug, import_planning_artifact
 from bestseller.services.story_bible import parse_cast_spec_input, parse_volume_plan_input, parse_world_spec_input
+from bestseller.services.writing_profile import (
+    render_serial_fiction_guardrails,
+    render_writing_profile_prompt_block,
+    resolve_writing_profile,
+)
 from bestseller.services.workflows import create_workflow_run, create_workflow_step_run
 from bestseller.settings import AppSettings
 
@@ -159,21 +169,48 @@ def _genre_profile(genre: str) -> dict[str, Any]:
     }
 
 
+def _planner_writing_profile(project: ProjectModel) -> Any:
+    raw = project.metadata_json.get("writing_profile") if isinstance(project.metadata_json, dict) else None
+    return resolve_writing_profile(
+        raw,
+        genre=project.genre,
+        sub_genre=project.sub_genre,
+        audience=project.audience,
+    )
+
+
+def _planner_prompt_pack(project: ProjectModel):
+    writing_profile = _planner_writing_profile(project)
+    return resolve_prompt_pack(
+        writing_profile.market.prompt_pack_key,
+        genre=project.genre,
+        sub_genre=project.sub_genre,
+    )
+
+
 def _fallback_book_spec(project: ProjectModel, premise: str) -> dict[str, Any]:
     profile = _genre_profile(project.genre)
+    writing_profile = _planner_writing_profile(project)
     protagonist_name = _derive_protagonist_name(premise)
     return {
         "title": project.title,
         "logline": premise.strip(),
         "genre": project.genre,
         "target_audience": project.audience or "web-serial",
-        "tone": profile["tones"],
-        "themes": profile["themes"],
+        "tone": writing_profile.style.tone_keywords or profile["tones"],
+        "themes": profile["themes"] + [
+            item for item in writing_profile.market.selling_points[:2] if item not in profile["themes"]
+        ],
         "protagonist": {
             "name": protagonist_name,
             "core_wound": f"{protagonist_name}曾因一次关键判断失误付出沉重代价。",
-            "external_goal": f"{protagonist_name}必须主动追查并破解当前危机背后的操盘者。",
+            "external_goal": (
+                writing_profile.character.protagonist_core_drive
+                or f"{protagonist_name}必须主动追查并破解当前危机背后的操盘者。"
+            ),
             "internal_need": f"{protagonist_name}需要从只靠个人硬撑，转向建立真正可持续的同盟。",
+            "archetype": writing_profile.character.protagonist_archetype,
+            "golden_finger": writing_profile.character.golden_finger,
         },
         "stakes": {
             "personal": f"{protagonist_name}会失去自己仍在意的人。",
@@ -181,8 +218,14 @@ def _fallback_book_spec(project: ProjectModel, premise: str) -> dict[str, Any]:
             "existential": "如果幕后计划成功，整个世界的基本运行秩序都会被改写。",
         },
         "series_engine": {
-            "core_loop": "发现异常 -> 主动调查 -> 引发更强反扑 -> 拿到新线索 -> 逼近更大真相",
-            "hook_style": "每章末抛出新的威胁、线索或立场反转",
+            "core_loop": "主角利用差异化优势抢先一步 -> 得到短回报 -> 引来更大反压 -> 被迫升级手段 -> 揭开更深真相",
+            "hook_style": writing_profile.market.chapter_hook_strategy,
+            "reader_promise": writing_profile.market.reader_promise,
+            "selling_points": writing_profile.market.selling_points,
+            "trope_keywords": writing_profile.market.trope_keywords,
+            "opening_strategy": writing_profile.market.opening_strategy,
+            "payoff_rhythm": writing_profile.market.payoff_rhythm,
+            "first_three_chapter_goal": writing_profile.serialization.first_three_chapter_goal,
         },
     }
 
@@ -275,6 +318,7 @@ def _fallback_world_spec(project: ProjectModel, premise: str, book_spec: dict[st
 
 def _fallback_cast_spec(project: ProjectModel, premise: str, book_spec: dict[str, Any], world_spec: dict[str, Any]) -> dict[str, Any]:
     profile = _genre_profile(project.genre)
+    writing_profile = _planner_writing_profile(project)
     protagonist = _mapping(_mapping(book_spec).get("protagonist"))
     protagonist_name = _protagonist_name_from_book_spec(book_spec, premise)
     external_goal = _non_empty_string(
@@ -302,6 +346,8 @@ def _fallback_cast_spec(project: ProjectModel, premise: str, book_spec: dict[str
             "secret": "主角一直怀疑过去的失败并非表面原因。",
             "arc_trajectory": "从单打独斗到建立可持续同盟。",
             "arc_state": "开场",
+            "archetype": writing_profile.character.protagonist_archetype,
+            "golden_finger": writing_profile.character.golden_finger,
             "knowledge_state": {
                 "knows": ["当前危机存在异常迹象", "官方叙事有漏洞"],
                 "falsely_believes": [f"{ally_name}当年做出了背离自己的选择"],
@@ -472,6 +518,7 @@ def _fallback_chapter_outline_batch(
     cast_spec: dict[str, Any],
     volume_plan: list[dict[str, Any]],
 ) -> dict[str, Any]:
+    writing_profile = _planner_writing_profile(project)
     cast_payload = _mapping(cast_spec)
     protagonist_name = _non_empty_string(_mapping(cast_payload.get("protagonist")).get("name"), "主角")
     supporting_cast = _mapping_list(cast_payload.get("supporting_cast"))
@@ -495,6 +542,7 @@ def _fallback_chapter_outline_batch(
         volume_number = int(volume_payload.get("volume_number") or raw_volume_index)
         for index_within_volume in range(1, total_in_volume + 1):
             phase = _phase_name(index_within_volume, total_in_volume)
+            is_opening_chapter = chapter_number <= 3
             chapter_goal = (
                 f"{protagonist_name}在第{chapter_number}章推进{volume_goal}，"
                 f"并迫使局势进入新的高压阶段。"
@@ -502,13 +550,21 @@ def _fallback_chapter_outline_batch(
             scenes = [
                 {
                     "scene_number": 1,
-                    "scene_type": "setup" if phase == "setup" else "transition",
-                    "title": f"第{chapter_number}章开场压力",
+                    "scene_type": "hook" if is_opening_chapter else ("setup" if phase == "setup" else "transition"),
+                    "title": "第一时间亮出主角优势" if chapter_number == 1 else f"第{chapter_number}章开场压力",
                     "time_label": f"第{chapter_number}章开场",
                     "participants": [protagonist_name, ally_name],
                     "purpose": {
-                        "story": "承接上章后果并给出当前行动目标",
-                        "emotion": "持续拉高压力和不确定性",
+                        "story": (
+                            "快速亮出主角差异化优势、当前利益和逼近的危险"
+                            if is_opening_chapter
+                            else "承接上章后果并给出当前行动目标"
+                        ),
+                        "emotion": (
+                            "先给读者明确吸引点，再持续拉高压力和不确定性"
+                            if is_opening_chapter
+                            else "持续拉高压力和不确定性"
+                        ),
                     },
                     "entry_state": {
                         protagonist_name: {"arc_state": "承压推进", "emotion": "紧绷"},
@@ -550,7 +606,7 @@ def _fallback_chapter_outline_batch(
                     if index_within_volume % 3 != 0
                     else [protagonist_name, antagonist_name],
                     "purpose": {
-                        "story": "抛出本章最大新信息或新威胁",
+                        "story": writing_profile.market.chapter_hook_strategy,
                         "emotion": "让读者必须继续追下一章",
                     },
                     "entry_state": {
@@ -565,12 +621,20 @@ def _fallback_chapter_outline_batch(
             chapters.append(
                 {
                     "chapter_number": chapter_number,
-                    "title": f"第{chapter_number}章：{['裂缝','追线','封锁','碰撞','反咬','闯关','断局','逼近'][chapter_number % 8]}",
+                    "title": (
+                        f"第{chapter_number}章：零点前的抢购"
+                        if chapter_number == 1 and any(token in project.genre for token in ("末日", "科幻"))
+                        else f"第{chapter_number}章：{['裂缝','追线','封锁','碰撞','反咬','闯关','断局','逼近'][chapter_number % 8]}"
+                    ),
                     "goal": chapter_goal,
-                    "opening_situation": "承接上一章的结果，主角暂时没有退路。",
+                    "opening_situation": (
+                        writing_profile.serialization.opening_mandate
+                        if chapter_number == 1
+                        else "承接上一章尾钩，主角没有空档去长篇解释设定。"
+                    ),
                     "main_conflict": f"{protagonist_name}需要在被压制的条件下拿到新证据，同时防止{antagonist_name}抢先一步。",
                     "hook_type": _hook_type(index_within_volume, total_in_volume),
-                    "hook_description": "章末抛出一条更危险的新线索或让敌方行动先一步压到主角面前。",
+                    "hook_description": writing_profile.market.chapter_hook_strategy,
                     "volume_number": volume_number,
                     "target_word_count": max(2200, int(project.target_word_count / max(project.target_chapters, 1))),
                     "scenes": scenes,
@@ -581,9 +645,12 @@ def _fallback_chapter_outline_batch(
 
 
 def _book_spec_prompts(project: ProjectModel, premise: str, fallback: dict[str, Any]) -> tuple[str, str]:
+    writing_profile = _planner_writing_profile(project)
+    prompt_pack = _planner_prompt_pack(project)
     system_prompt = (
         "你是长篇中文小说的故事策划师。"
         "输出必须是合法 JSON，不要解释。"
+        "你要产出的是适合中文网文平台连载的商业小说骨架，而不是文学评论。"
     )
     user_prompt = (
         f"项目标题：{project.title}\n"
@@ -592,59 +659,90 @@ def _book_spec_prompts(project: ProjectModel, premise: str, fallback: dict[str, 
         f"目标章节：{project.target_chapters}\n"
         f"受众：{project.audience or 'web-serial'}\n"
         f"Premise：{premise}\n"
+        f"写作画像：\n{render_writing_profile_prompt_block(writing_profile)}\n"
+        f"{'Prompt Pack：\n' + render_prompt_pack_prompt_block(prompt_pack) + '\n' if prompt_pack else ''}"
+        f"商业网文硬约束：\n{render_serial_fiction_guardrails(writing_profile)}\n"
+        f"{render_prompt_pack_fragment(prompt_pack, 'planner_book_spec') + '\n' if prompt_pack else ''}"
         "请生成一个 BookSpec JSON，包含 title、logline、genre、target_audience、tone、themes、"
         "protagonist、stakes、series_engine。"
+        "其中 series_engine 必须清楚写出：核心连载引擎、读者承诺、前三章抓手、章节尾钩策略、"
+        "短回报与长回报的节奏安排。"
     )
     return system_prompt, user_prompt
 
 
 def _world_spec_prompts(project: ProjectModel, premise: str, book_spec: dict[str, Any]) -> tuple[str, str]:
+    writing_profile = _planner_writing_profile(project)
+    prompt_pack = _planner_prompt_pack(project)
     system_prompt = "你是长篇中文小说世界观设计师。输出必须是合法 JSON，不要解释。"
     user_prompt = (
         f"项目标题：{project.title}\n"
         f"类型：{project.genre}\n"
         f"Premise：{premise}\n"
+        f"写作画像：\n{render_writing_profile_prompt_block(writing_profile)}\n"
+        f"{'Prompt Pack：\n' + render_prompt_pack_prompt_block(prompt_pack) + '\n' if prompt_pack else ''}"
         f"BookSpec：{_json_dumps(book_spec)}\n"
+        f"{render_prompt_pack_fragment(prompt_pack, 'planner_world_spec') + '\n' if prompt_pack else ''}"
         "请生成一个 WorldSpec JSON，包含 world_name、world_premise、rules、power_system、locations、"
         "factions、power_structure、history_key_events、forbidden_zones。"
+        "要求世界规则能直接制造冲突、爽点成本、升级空间和阴谋推进空间，不要只写空背景。"
     )
     return system_prompt, user_prompt
 
 
-def _cast_spec_prompts(book_spec: dict[str, Any], world_spec: dict[str, Any]) -> tuple[str, str]:
+def _cast_spec_prompts(project: ProjectModel, book_spec: dict[str, Any], world_spec: dict[str, Any]) -> tuple[str, str]:
+    prompt_pack = _planner_prompt_pack(project)
     system_prompt = "你是长篇中文小说角色架构师。输出必须是合法 JSON，不要解释。"
     user_prompt = (
         f"BookSpec：{_json_dumps(book_spec)}\n"
         f"WorldSpec：{_json_dumps(world_spec)}\n"
+        f"{'Prompt Pack：\n' + render_prompt_pack_prompt_block(prompt_pack) + '\n' if prompt_pack else ''}"
+        f"{render_prompt_pack_fragment(prompt_pack, 'planner_cast_spec') + '\n' if prompt_pack else ''}"
         "请生成一个 CastSpec JSON，包含 protagonist、antagonist、supporting_cast、conflict_map。"
+        "主角必须有鲜明欲望、明显短板、可持续升级点和可被读者快速记住的差异化优势；"
+        "反派必须能持续升级并主动反制主角；配角要形成明确功能位和关系张力。"
     )
     return system_prompt, user_prompt
 
 
 def _volume_plan_prompts(project: ProjectModel, book_spec: dict[str, Any], world_spec: dict[str, Any], cast_spec: dict[str, Any]) -> tuple[str, str]:
+    writing_profile = _planner_writing_profile(project)
+    prompt_pack = _planner_prompt_pack(project)
     system_prompt = "你是长篇中文小说结构编辑。输出必须是合法 JSON 数组，不要解释。"
     user_prompt = (
         f"项目标题：{project.title}\n"
         f"目标字数：{project.target_word_count}\n"
         f"目标章节：{project.target_chapters}\n"
+        f"写作画像：\n{render_writing_profile_prompt_block(writing_profile)}\n"
+        f"{'Prompt Pack：\n' + render_prompt_pack_prompt_block(prompt_pack) + '\n' if prompt_pack else ''}"
         f"BookSpec：{_json_dumps(book_spec)}\n"
         f"WorldSpec：{_json_dumps(world_spec)}\n"
         f"CastSpec：{_json_dumps(cast_spec)}\n"
+        f"{render_prompt_pack_fragment(prompt_pack, 'planner_volume_plan') + '\n' if prompt_pack else ''}"
         "请生成 VolumePlan JSON 数组，每个元素包含 volume_number、volume_title、volume_theme、"
         "chapter_count_target、volume_goal、volume_obstacle、volume_climax、volume_resolution。"
+        "每卷都要有清晰的爽点兑现、局势升级、关键揭示、卷尾钩子和下一卷期待。"
     )
     return system_prompt, user_prompt
 
 
 def _outline_prompts(project: ProjectModel, book_spec: dict[str, Any], cast_spec: dict[str, Any], volume_plan: list[dict[str, Any]]) -> tuple[str, str]:
+    writing_profile = _planner_writing_profile(project)
+    prompt_pack = _planner_prompt_pack(project)
     system_prompt = "你是长篇中文小说章纲规划师。输出必须是合法 JSON，不要解释。"
     user_prompt = (
         f"项目标题：{project.title}\n"
         f"目标章节：{project.target_chapters}\n"
+        f"写作画像：\n{render_writing_profile_prompt_block(writing_profile)}\n"
+        f"{'Prompt Pack：\n' + render_prompt_pack_prompt_block(prompt_pack) + '\n' if prompt_pack else ''}"
+        f"商业网文硬约束：\n{render_serial_fiction_guardrails(writing_profile)}\n"
         f"BookSpec：{_json_dumps(book_spec)}\n"
         f"CastSpec：{_json_dumps(cast_spec)}\n"
         f"VolumePlan：{_json_dumps(volume_plan)}\n"
+        f"{render_prompt_pack_fragment(prompt_pack, 'planner_outline') + '\n' if prompt_pack else ''}"
         "请生成完整 ChapterOutlineBatch JSON，包含 batch_name 和 chapters。每章至少 3 个 scenes。"
+        "要求：前 3 章必须快速完成主角卖点亮相、核心异常亮相、第一轮得失与追读钩子；"
+        "每章都要写明 goal、main_conflict、hook_description；每场都要有 story/emotion 任务。"
     )
     return system_prompt, user_prompt
 
@@ -824,7 +922,7 @@ async def generate_novel_plan(
         cast_spec_fallback = _fallback_cast_spec(project, premise, book_spec_payload, world_spec_payload)
         current_step_name = "generate_cast_spec"
         workflow_run.current_step = current_step_name
-        cast_system, cast_user = _cast_spec_prompts(book_spec_payload, world_spec_payload)
+        cast_system, cast_user = _cast_spec_prompts(project, book_spec_payload, world_spec_payload)
         cast_spec_payload, llm_run_id = await _generate_structured_artifact(
             session,
             settings,

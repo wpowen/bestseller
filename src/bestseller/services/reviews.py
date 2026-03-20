@@ -31,10 +31,21 @@ from bestseller.services.context import build_chapter_writer_context, build_scen
 from bestseller.services.drafts import (
     count_words,
     _normalize_fragment,
+    sanitize_novel_markdown_content,
 )
 from bestseller.services.llm import LLMCompletionRequest, complete_text
+from bestseller.services.prompt_packs import (
+    render_prompt_pack_fragment,
+    render_prompt_pack_prompt_block,
+    resolve_prompt_pack,
+)
 from bestseller.services.projects import get_project_by_slug
 from bestseller.services.rewrite_impacts import analyze_rewrite_impacts_for_scene_task
+from bestseller.services.writing_profile import (
+    render_serial_fiction_guardrails,
+    render_writing_profile_prompt_block,
+    resolve_writing_profile,
+)
 from bestseller.settings import AppSettings
 
 
@@ -172,6 +183,40 @@ def render_scene_review_summary(review_result: SceneReviewResult) -> str:
     return "\n".join(summary_lines)
 
 
+def _resolve_project_writing_profile(project: Any, style_guide: StyleGuideModel | None = None):
+    metadata = getattr(project, "metadata_json", {}) or {}
+    raw_profile = metadata.get("writing_profile") if isinstance(metadata, dict) else None
+    fallback_style = None
+    if style_guide is not None:
+        fallback_style = {
+            "style": {
+                "pov_type": getattr(style_guide, "pov_type", "third-limited"),
+                "tense": getattr(style_guide, "tense", "present"),
+                "tone_keywords": list(getattr(style_guide, "tone_keywords", []) or []),
+                "prose_style": getattr(style_guide, "prose_style", "commercial-web-serial"),
+                "sentence_style": getattr(style_guide, "sentence_style", "mixed"),
+                "info_density": getattr(style_guide, "info_density", "medium"),
+                "dialogue_ratio": float(getattr(style_guide, "dialogue_ratio", 0.4)),
+                "reference_works": list(getattr(style_guide, "reference_works", []) or []),
+                "custom_rules": list(getattr(style_guide, "custom_rules", []) or []),
+            }
+        }
+    return resolve_writing_profile(
+        raw_profile or fallback_style,
+        genre=str(getattr(project, "genre", "general-fiction") or "general-fiction"),
+        sub_genre=getattr(project, "sub_genre", None),
+        audience=getattr(project, "audience", None),
+    )
+
+
+def _resolve_project_prompt_pack(project: Any, writing_profile: Any):
+    return resolve_prompt_pack(
+        getattr(writing_profile.market, "prompt_pack_key", None),
+        genre=str(getattr(project, "genre", "general-fiction") or "general-fiction"),
+        sub_genre=getattr(project, "sub_genre", None),
+    )
+
+
 def build_scene_review_prompts(
     project: ProjectModel,
     chapter: ChapterModel,
@@ -179,6 +224,8 @@ def build_scene_review_prompts(
     draft: SceneDraftVersionModel,
     review_result: SceneReviewResult,
 ) -> tuple[str, str]:
+    writing_profile = _resolve_project_writing_profile(project)
+    prompt_pack = _resolve_project_prompt_pack(project, writing_profile)
     system_prompt = (
         "你是长篇小说审校系统里的场景评论者。"
         "请输出简洁、专业、可执行的审校意见，不要复述需求。"
@@ -189,10 +236,14 @@ def build_scene_review_prompts(
         f"场景：第{scene.scene_number}场 {scene.title or ''}\n"
         f"场景目标：{scene.purpose.get('story', '推进本章主线')}\n"
         f"情绪目标：{scene.purpose.get('emotion', '拉高当前张力')}\n"
+        f"写作画像：\n{render_writing_profile_prompt_block(writing_profile)}\n"
+        f"{'Prompt Pack：\n' + render_prompt_pack_prompt_block(prompt_pack) + '\n' if prompt_pack else ''}"
+        f"{render_prompt_pack_fragment(prompt_pack, 'scene_review') + '\n' if prompt_pack else ''}"
         f"当前评分：{review_result.scores.model_dump(mode='json')}\n"
         f"当前发现：{[finding.model_dump(mode='json') for finding in review_result.findings]}\n"
         f"当前草稿：\n{draft.content_md}\n"
         "请用中文输出一段简洁的审校结论，并给出是否需要重写的理由。"
+        "结论要明确指出这段文字是否兑现了平台目标、读者承诺、主角卖点和章节尾钩。"
     )
     return system_prompt, user_prompt
 
@@ -205,6 +256,8 @@ def build_scene_rewrite_prompts(
     rewrite_task: RewriteTaskModel,
     style_guide: StyleGuideModel | None,
 ) -> tuple[str, str]:
+    writing_profile = _resolve_project_writing_profile(project, style_guide)
+    prompt_pack = _resolve_project_prompt_pack(project, writing_profile)
     system_prompt = (
         "你是长篇中文小说写作系统里的重写编辑。"
         "输出必须是 Markdown 正文，不要解释，不要道歉，不要列修改清单。"
@@ -226,8 +279,13 @@ def build_scene_rewrite_prompts(
         f"剧情目标：{scene.purpose.get('story', '推进本章主线')}\n"
         f"情绪目标：{scene.purpose.get('emotion', '拉高当前张力')}\n"
         f"语气关键词：{tone}\n"
+        f"写作画像：\n{render_writing_profile_prompt_block(writing_profile)}\n"
+        f"{'Prompt Pack：\n' + render_prompt_pack_prompt_block(prompt_pack) + '\n' if prompt_pack else ''}"
+        f"商业网文硬约束：\n{render_serial_fiction_guardrails(writing_profile)}\n"
+        f"{render_prompt_pack_fragment(prompt_pack, 'scene_rewrite') + '\n' if prompt_pack else ''}"
         f"当前草稿：\n{current_draft.content_md}\n"
         "请重写当前场景，补强冲突、人物对话、情绪层次和结尾钩子。"
+        "要让文本更像平台成品网文，而不是策划草稿或解释说明。"
     )
     return system_prompt, user_prompt
 
@@ -345,6 +403,8 @@ def build_chapter_review_prompts(
     chapter_context,
     review_result: ChapterReviewResult,
 ) -> tuple[str, str]:
+    writing_profile = _resolve_project_writing_profile(project)
+    prompt_pack = _resolve_project_prompt_pack(project, writing_profile)
     system_prompt = (
         "你是长篇小说审校系统里的章节评论者。"
         "请输出简洁、专业、可执行的章节审校意见，不要复述需求。"
@@ -353,11 +413,15 @@ def build_chapter_review_prompts(
         f"项目：《{project.title}》\n"
         f"章节：第{chapter.chapter_number}章 {chapter.title or ''}\n"
         f"章节目标：{chapter.chapter_goal}\n"
+        f"写作画像：\n{render_writing_profile_prompt_block(writing_profile)}\n"
+        f"{'Prompt Pack：\n' + render_prompt_pack_prompt_block(prompt_pack) + '\n' if prompt_pack else ''}"
+        f"{render_prompt_pack_fragment(prompt_pack, 'chapter_review') + '\n' if prompt_pack else ''}"
         f"上下文：\n{_render_chapter_context_section(chapter_context)}\n"
         f"当前评分：{review_result.scores.model_dump(mode='json')}\n"
         f"当前发现：{[finding.model_dump(mode='json') for finding in review_result.findings]}\n"
         f"当前草稿：\n{draft.content_md}\n"
         "请用中文输出一段简洁的章节审校结论，并给出是否需要重写的理由。"
+        "需要判断本章是否真的有追读欲、是否在平台读者预期下足够有吸引力。"
     )
     return system_prompt, user_prompt
 
@@ -369,6 +433,8 @@ def build_chapter_rewrite_prompts(
     rewrite_task: RewriteTaskModel,
     chapter_context,
 ) -> tuple[str, str]:
+    writing_profile = _resolve_project_writing_profile(project)
+    prompt_pack = _resolve_project_prompt_pack(project, writing_profile)
     system_prompt = (
         "你是长篇中文小说写作系统里的章节重写编辑。"
         "输出必须是 Markdown 正文，不要解释，不要列修改清单。"
@@ -379,9 +445,14 @@ def build_chapter_rewrite_prompts(
         f"章节目标：{chapter.chapter_goal}\n"
         f"重写任务：{rewrite_task.instructions}\n"
         f"重写策略：{rewrite_task.rewrite_strategy}\n"
+        f"写作画像：\n{render_writing_profile_prompt_block(writing_profile)}\n"
+        f"{'Prompt Pack：\n' + render_prompt_pack_prompt_block(prompt_pack) + '\n' if prompt_pack else ''}"
+        f"商业网文硬约束：\n{render_serial_fiction_guardrails(writing_profile)}\n"
+        f"{render_prompt_pack_fragment(prompt_pack, 'chapter_rewrite') + '\n' if prompt_pack else ''}"
         f"章节上下文：\n{_render_chapter_context_section(chapter_context)}\n"
         f"当前草稿：\n{current_draft.content_md}\n"
         "请在保留本章核心事件顺序的前提下，重写本章，使场景衔接更顺、章节推进更完整、收尾钩子更明确。"
+        "优先强化读者追更欲、爽点兑现、人设辨识和节奏推进。"
     )
     return system_prompt, user_prompt
 
@@ -1300,10 +1371,12 @@ async def rewrite_chapter_from_task(
                 },
             ),
         )
-        content_md = completion.content.strip() or fallback_content
+        content_md = sanitize_novel_markdown_content(completion.content) or fallback_content
         model_name = completion.model_name
         llm_run_id = completion.llm_run_id
         generation_mode = completion.provider
+    else:
+        content_md = sanitize_novel_markdown_content(content_md)
 
     word_count = count_words(content_md)
     next_version = int(
@@ -1425,10 +1498,12 @@ async def rewrite_scene_from_task(
                 },
             ),
         )
-        content_md = completion.content.strip() or fallback_content
+        content_md = sanitize_novel_markdown_content(completion.content) or fallback_content
         model_name = completion.model_name
         llm_run_id = completion.llm_run_id
         generation_mode = completion.provider
+    else:
+        content_md = sanitize_novel_markdown_content(content_md)
     word_count = count_words(content_md)
     next_version = int(
         (

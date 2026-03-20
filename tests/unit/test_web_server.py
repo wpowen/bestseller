@@ -24,6 +24,9 @@ def test_collect_project_artifact_entries_lists_files(tmp_path: Path) -> None:
     entries = web_server.collect_project_artifact_entries(_settings(tmp_path), "demo-story")
 
     assert [item["name"] for item in entries] == ["chapter-001.md", "project.md"]
+    assert entries[0]["word_count"] >= 1
+    assert entries[0]["estimated_read_minutes"] == 1
+    assert entries[0]["is_previewable"] is True
 
 
 def test_resolve_project_artifact_path_blocks_path_escape(tmp_path: Path) -> None:
@@ -43,3 +46,14 @@ def test_render_preview_html_wraps_markdown_content() -> None:
     assert "<title>demo-story / project.md</title>" in html
     assert "<h1>标题</h1>" in html
     assert "<p>正文</p>" in html
+    assert "正文总字数" in html
+
+
+def test_build_preview_payload_includes_html_and_stats() -> None:
+    payload = web_server.build_preview_payload("demo-story", "project.md", "# 标题\n\n正文 world")  # noqa: SLF001
+
+    assert payload["project_slug"] == "demo-story"
+    assert payload["artifact_name"] == "project.md"
+    assert payload["word_count"] >= 4
+    assert payload["estimated_read_minutes"] == 1
+    assert "<h1>标题</h1>" in str(payload["html"])

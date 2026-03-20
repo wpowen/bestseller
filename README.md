@@ -70,6 +70,143 @@ BestSeller 是一个面向长篇小说生产的人机共创框架，目标是把
 - 更精细的多轮 planner 迭代和人工确认点
 - 更强的 retrieval embedding 与更复杂的跨章节自动级联策略
 
+## Prompt Pack
+
+当前系统已经支持“题材专用 Prompt Pack”。这层不是零散的 if/else，而是可版本化的题材包，直接接入：
+
+- `planning generate`
+- `project autowrite`
+- scene writer
+- scene/chapter review
+- scene/chapter rewrite
+
+当前内置 4 个 pack：
+
+- `apocalypse-supply-chain`
+  - 末日囤货升级流
+- `xianxia-upgrade-core`
+  - 仙侠升级夺机缘
+- `urban-power-reversal`
+  - 都市异能反转流
+- `romance-tension-growth`
+  - 感情拉扯成长流
+
+列出和查看：
+
+```bash
+./scripts/run.sh prompt-pack list
+./scripts/run.sh prompt-pack show apocalypse-supply-chain
+```
+
+创建项目或整书自动写作时，可以直接指定：
+
+```bash
+./scripts/run.sh project create my-story "我的长篇" 末日科幻 120000 40 \
+  --prompt-pack apocalypse-supply-chain
+
+./scripts/run.sh project autowrite my-story "我的长篇" 末日科幻 120000 40 \
+  --premise "末日零点我能提前购买未来物资，主角重生在末日爆发前三天，拥有未来商城与资源差优势。" \
+  --prompt-pack apocalypse-supply-chain
+```
+
+Prompt Pack 文件目录：
+
+- `config/prompt_packs/`
+
+每个 pack 文件包含：
+
+- 题材说明
+- 反例 / anti-patterns
+- `writing_profile_overrides`
+- planner / writer / review / rewrite 专用片段
+
+多数情况下，后续新增一个题材，不需要改 Python 逻辑，只需要新增一个 pack 文件。
+
+## 写作画像配置
+
+这轮已经把“写作配置”从几个基础字段扩成了一套可执行的 `writing_profile`。它不是只展示在页面里，而是会同时被：
+
+- `project create`
+- `project autowrite`
+- `planning generate`
+- scene/chapter draft prompt
+- scene/chapter review & rewrite prompt
+
+共同消费。
+
+当前支持的配置维度包括：
+
+- 平台与内容定位
+  - `platform_target`
+  - `content_mode`
+  - `reader_promise`
+  - `selling_points`
+  - `trope_keywords`
+  - `hook_keywords`
+  - `opening_strategy`
+  - `chapter_hook_strategy`
+  - `hook_deadline_words`
+  - `pacing_profile`
+  - `payoff_rhythm`
+  - `update_strategy`
+- 主角与人物引擎
+  - `protagonist_archetype`
+  - `protagonist_core_drive`
+  - `golden_finger`
+  - `growth_curve`
+  - `romance_mode`
+  - `relationship_tension`
+  - `antagonist_mode`
+  - `ensemble_mode`
+- 世界与信息释放方式
+  - `worldbuilding_density`
+  - `info_reveal_strategy`
+  - `rule_hardness`
+  - `power_system_style`
+  - `mystery_density`
+  - `setting_tags`
+- 文风与表达约束
+  - `pov_type`
+  - `tense`
+  - `tone_keywords`
+  - `prose_style`
+  - `sentence_style`
+  - `info_density`
+  - `dialogue_ratio`
+  - `taboo_topics`
+  - `taboo_words`
+  - `reference_works`
+  - `custom_rules`
+- 连载节奏硬约束
+  - `opening_mandate`
+  - `first_three_chapter_goal`
+  - `scene_drive_rule`
+  - `exposition_rule`
+  - `chapter_ending_rule`
+  - `free_chapter_strategy`
+
+系统内置了按题材分流的默认预设：
+
+- `末日 / 科幻 / 星际 / 生存`
+- `仙侠 / 玄幻 / 奇幻 / 升级`
+- `都市 / 异能 / 悬疑 / 现实`
+- `女频 / 成长 / 言情 / 宫斗`
+
+示例 profile 文件在：
+
+- `examples/configs/web_serial_profile.yaml`
+
+CLI 可以直接吃文件：
+
+```bash
+./scripts/run.sh project create my-story "我的长篇" sci-fi 120000 40 \
+  --profile-file examples/configs/web_serial_profile.yaml
+
+./scripts/run.sh project autowrite my-story "我的长篇" sci-fi 120000 40 \
+  --premise "末日零点我能提前购买未来物资，主角重生在末日爆发前三天，拥有未来商城与资源差优势。" \
+  --profile-file examples/configs/web_serial_profile.yaml
+```
+
 ## 一键启动
 
 项目现在提供本地开发脚本：
@@ -123,7 +260,9 @@ make dev-stop
 - 创建项目
 - 输入 premise
 - 直接触发 `project autowrite`
+- 配置平台定位、读者承诺、卖点、套路关键词、主角 archetype、金手指、节奏和文风
 - 查看任务阶段进度
+- 查看项目级 workflow 跟踪，直接看到每条 workflow、每个 step 是否完成
 - 查看项目结构、故事圣经、叙事图谱
 - 直接预览 `project.md` 和各章节产物
 - 对待修订项目触发 `project repair`
@@ -160,6 +299,7 @@ make ui
 - `build_project_structure`
 - `build_story_bible_overview`
 - `build_narrative_overview`
+- `build_project_workflow_overview`
 
 页面里生成整书后，真实产物仍然落在：
 
@@ -172,9 +312,26 @@ make ui
 说明：
 
 - 页面可以直接配置目标总字数和目标章节数。
+- 页面左侧“本轮写作配置”就是当前项目实际使用的 `writing_profile` 中文输入面板。
+- 页面中的“写作配置”标签会展示当前项目最终落库的 `writing_profile`。
+- 页面中的“流程跟踪”标签会展示项目的 workflow 总览、最近状态以及每条 workflow 的 step 列表。
 - 从系统能力上说，可以把目标字数设置到 `1000000` 甚至更高。
 - 但真实模型成本、运行时间、长篇稳定性会随体量线性上升，所以当前更推荐按“卷/阶段”推进，而不是第一次就直接跑千万字整书。
 - 更稳的做法是先用页面生成 `3k/12k/50k` 级样书验证风格，再逐步放大。
+
+如果你要从系统外部直接看流程数据，也可以调：
+
+```bash
+curl http://127.0.0.1:8895/api/projects/<project-slug>/workflow
+```
+
+返回里会包含：
+
+- `run_count`
+- `completed_run_count`
+- `failed_run_count`
+- `latest_run_status`
+- 每条 workflow 的 step 详情
 
 ## Gemini 试用
 
@@ -243,6 +400,23 @@ ls -la output/demo-story
 ```bash
 ./scripts/run.sh project autowrite demo-story "Demo Story" sci-fi 12000 4 --premise "一名被放逐的导航员发现帝国正在篡改边境航线记录，并被迫在追杀中揭穿真相。" --no-auto-repair
 ```
+
+## 小说质量与提示词策略
+
+这轮还把规划和写作提示词补成了更偏“商业连载小说”的方向，重点不再是泛化创作，而是更接近平台可读性：
+
+- 先交代 `reader_promise`，再展开世界观
+- 前三章必须建立主角差异化、短期目标和追读钩子
+- 背景信息必须嵌进行动、交易、对抗和结果里释放
+- 每章末尾都要制造继续阅读的压力
+- 审校时会显式检查平台适配、卖点兑现、hook 强度和“成品网文感”
+
+更完整的研究说明见：
+
+- `docs/novel-framework-research-and-proposal.md`
+- `docs/prompt-engineering-strategy.md`
+- `docs/novel-writing-configuration-research.md`
+- `docs/prompt-pack-design.md`
 
 ## Quick Start
 

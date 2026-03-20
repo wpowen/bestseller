@@ -17,20 +17,24 @@ from urllib.parse import parse_qs, urlparse
 from uuid import UUID, uuid4
 
 from bestseller.domain.project import ProjectCreate
+from bestseller.infra.db.models import StyleGuideModel
 from bestseller.infra.db.session import session_scope
-from bestseller.services.exports import markdown_to_html
+from bestseller.services.exports import build_markdown_reading_stats, markdown_to_html
 from bestseller.services.inspection import (
     build_project_structure,
+    build_project_workflow_overview,
     build_story_bible_overview,
 )
 from bestseller.services.narrative import build_narrative_overview
 from bestseller.services.pipelines import run_autowrite_pipeline
 from bestseller.services.projects import get_project_by_slug, list_projects
 from bestseller.services.repair import run_project_repair
+from bestseller.services.writing_profile import get_project_writing_profile
 from bestseller.settings import AppSettings, load_settings
 
 
 _UI_HTML_PATH = Path(__file__).with_name("novel_studio.html")
+_ARTIFACT_CACHE: dict[str, tuple[int, int, dict[str, object]]] = {}
 
 
 class _FastThreadingHTTPServer(ThreadingHTTPServer):
@@ -70,14 +74,18 @@ def collect_project_artifact_entries(
     for path in sorted(output_dir.iterdir(), key=lambda item: item.name):
         if not path.is_file():
             continue
-        entries.append(
-            {
-                "name": path.name,
-                "path": str(path.resolve()),
-                "size_bytes": path.stat().st_size,
-                "suffix": path.suffix.lower(),
-            }
-        )
+        stat = path.stat()
+        entry: dict[str, object] = {
+            "name": path.name,
+            "path": str(path.resolve()),
+            "size_bytes": stat.st_size,
+            "suffix": path.suffix.lower(),
+            "modified_at": datetime.fromtimestamp(stat.st_mtime, UTC).isoformat(),
+            "is_previewable": path.suffix.lower() == ".md",
+        }
+        if path.suffix.lower() == ".md":
+            entry.update(_read_markdown_artifact_metadata(path))
+        entries.append(entry)
     return entries
 
 
@@ -97,7 +105,8 @@ def resolve_project_artifact_path(
 
 
 def _render_preview_html(project_slug: str, artifact_name: str, content_md: str) -> str:
-    body = markdown_to_html(content_md)
+    preview = build_preview_payload(project_slug, artifact_name, content_md)
+    body = str(preview["html"])
     return f"""<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -116,33 +125,156 @@ def _render_preview_html(project_slug: str, artifact_name: str, content_md: str)
       margin: 0 auto;
       padding: 32px 20px 72px;
     }}
+    .meta {{
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+      gap: 12px;
+      margin-bottom: 18px;
+    }}
+    .meta-card {{
+      border-radius: 16px;
+      border: 1px solid #d8d0c3;
+      background: rgba(255, 253, 248, 0.94);
+      padding: 14px 16px;
+      box-shadow: 0 12px 32px rgba(43, 32, 20, 0.06);
+    }}
+    .meta-card strong {{
+      display: block;
+      font-size: 12px;
+      color: #7a6a58;
+      margin-bottom: 6px;
+      letter-spacing: 0.04em;
+    }}
+    .meta-card span {{
+      display: block;
+      font-size: 22px;
+      font-weight: 700;
+      color: #241b13;
+    }}
+    .meta-card small {{
+      display: block;
+      margin-top: 6px;
+      color: #6f655b;
+      line-height: 1.7;
+    }}
     article {{
       background: #fffdf8;
       border: 1px solid #d8d0c3;
       border-radius: 20px;
-      padding: 28px;
+      padding: 36px 36px 44px;
       box-shadow: 0 12px 32px rgba(43, 32, 20, 0.08);
     }}
-    h1, h2 {{
+    article h1, article h2, article h3 {{
       line-height: 1.25;
     }}
-    p, li {{
-      line-height: 1.8;
+    article h1 {{
+      font-size: 34px;
+      margin: 0 0 22px;
     }}
-    blockquote {{
+    article h2 {{
+      margin-top: 40px;
+      font-size: 24px;
+    }}
+    article h3 {{
+      margin-top: 28px;
+      font-size: 20px;
+    }}
+    article p, article li {{
+      line-height: 1.98;
+      font-size: 18px;
+      color: #251d15;
+    }}
+    article p {{
+      margin: 0 0 1.05em;
+      text-indent: 2em;
+    }}
+    article p:first-of-type,
+    article h1 + p,
+    article h2 + p,
+    article h3 + p,
+    article blockquote p,
+    article li p {{
+      text-indent: 0;
+    }}
+    article blockquote {{
       border-left: 4px solid #9b4a2e;
       padding-left: 14px;
       margin-left: 0;
       color: #5d564d;
+      background: rgba(155, 74, 46, 0.05);
+      border-radius: 0 14px 14px 0;
+      padding-top: 8px;
+      padding-bottom: 8px;
+    }}
+    article hr {{
+      border: 0;
+      border-top: 1px solid #e5dbcb;
+      margin: 32px 0;
+    }}
+    article ul,
+    article ol {{
+      padding-left: 1.5em;
+      margin: 0 0 1em;
     }}
   </style>
 </head>
 <body>
   <main>
+    <section class="meta">
+      <div class="meta-card">
+        <strong>当前正文</strong>
+        <span>{artifact_name}</span>
+        <small>{project_slug}</small>
+      </div>
+      <div class="meta-card">
+        <strong>正文总字数</strong>
+        <span>{preview["word_count"]}</span>
+        <small>中文按阅读字数统计，已排除空白字符。</small>
+      </div>
+      <div class="meta-card">
+        <strong>预计阅读</strong>
+        <span>{preview["estimated_read_minutes"]} 分钟</span>
+        <small>按 500 字 / 分钟估算。</small>
+      </div>
+      <div class="meta-card">
+        <strong>段落数量</strong>
+        <span>{preview["paragraph_count"]}</span>
+        <small>可用于判断正文密度和断章节奏。</small>
+      </div>
+    </section>
     <article>{body}</article>
   </main>
 </body>
 </html>"""
+
+
+def _read_markdown_artifact_metadata(path: Path) -> dict[str, object]:
+    stat = path.stat()
+    cache_key = str(path.resolve())
+    cached = _ARTIFACT_CACHE.get(cache_key)
+    if cached is not None and cached[0] == stat.st_mtime_ns and cached[1] == stat.st_size:
+        return dict(cached[2])
+    content_md = path.read_text(encoding="utf-8")
+    metadata = build_markdown_reading_stats(content_md)
+    _ARTIFACT_CACHE[cache_key] = (stat.st_mtime_ns, stat.st_size, dict(metadata))
+    return metadata
+
+
+def build_preview_payload(
+    project_slug: str,
+    artifact_name: str,
+    content_md: str,
+) -> dict[str, object]:
+    stats = build_markdown_reading_stats(content_md)
+    return {
+        "project_slug": project_slug,
+        "artifact_name": artifact_name,
+        "word_count": stats["word_count"],
+        "character_count": stats["character_count"],
+        "paragraph_count": stats["paragraph_count"],
+        "estimated_read_minutes": stats["estimated_read_minutes"],
+        "html": markdown_to_html(content_md),
+    }
 
 
 @dataclass
@@ -302,6 +434,8 @@ class WebTaskManager:
                         language=str(payload.get("language") or "zh-CN"),
                         target_word_count=int(payload["target_words"]),
                         target_chapters=int(payload["target_chapters"]),
+                        metadata={"premise": str(payload["premise"])},
+                        writing_profile=payload.get("writing_profile"),
                     ),
                     premise=str(payload["premise"]),
                     requested_by="web-ui",
@@ -374,8 +508,21 @@ async def _load_project_summary_payload(
         structure = await build_project_structure(session, project_slug)
         story_bible = await build_story_bible_overview(session, project_slug)
         narrative = await build_narrative_overview(session, project_slug)
+        workflow = await build_project_workflow_overview(session, project_slug)
+        style_guide = await session.get(StyleGuideModel, project.id)
+        writing_profile = get_project_writing_profile(project, style_guide).model_dump(mode="json")
     outputs = collect_project_artifact_entries(settings, project_slug)
     markdown_entries = [item for item in outputs if str(item["suffix"]) == ".md"]
+    default_preview_entry = (
+        next((item for item in markdown_entries if item["name"] == "project.md"), None)
+        or (markdown_entries[0] if markdown_entries else None)
+    )
+    project_markdown_entry = next((item for item in markdown_entries if item["name"] == "project.md"), None)
+    chapter_markdown_entries = [
+        item
+        for item in markdown_entries
+        if str(item["name"]).startswith("chapter-")
+    ]
     return {
         "project": {
             "id": str(project.id),
@@ -390,6 +537,7 @@ async def _load_project_summary_payload(
             "current_volume_number": project.current_volume_number,
             "current_chapter_number": project.current_chapter_number,
         },
+        "writing_profile": writing_profile,
         "structure_summary": {
             "total_chapters": structure.total_chapters,
             "total_scenes": structure.total_scenes,
@@ -412,11 +560,24 @@ async def _load_project_summary_payload(
             "chapter_contract_count": len(narrative.chapter_contracts),
             "scene_contract_count": len(narrative.scene_contracts),
         },
+        "workflow_counts": {
+            "run_count": workflow.run_count,
+            "completed_run_count": workflow.completed_run_count,
+            "failed_run_count": workflow.failed_run_count,
+            "latest_run_id": str(workflow.latest_run_id) if workflow.latest_run_id else None,
+            "latest_run_status": workflow.latest_run_status,
+        },
+        "output_stats": {
+            "markdown_output_count": len(markdown_entries),
+            "project_word_count": int(project_markdown_entry["word_count"]) if project_markdown_entry else 0,
+            "chapter_word_count_total": sum(int(item.get("word_count") or 0) for item in chapter_markdown_entries),
+            "default_preview_name": str(default_preview_entry["name"]) if default_preview_entry else None,
+            "default_preview_word_count": int(default_preview_entry["word_count"]) if default_preview_entry else 0,
+            "default_preview_estimated_read_minutes": int(default_preview_entry["estimated_read_minutes"]) if default_preview_entry else 0,
+        },
         "outputs": outputs,
         "default_preview_name": (
-            "project.md"
-            if any(item["name"] == "project.md" for item in markdown_entries)
-            else str(markdown_entries[0]["name"]) if markdown_entries else None
+            str(default_preview_entry["name"]) if default_preview_entry else None
         ),
     }
 
@@ -445,6 +606,15 @@ async def _load_narrative_payload(
 ) -> dict[str, object]:
     async with session_scope(settings) as session:
         overview = await build_narrative_overview(session, project_slug)
+    return overview.model_dump(mode="json")
+
+
+async def _load_workflow_payload(
+    settings: AppSettings,
+    project_slug: str,
+) -> dict[str, object]:
+    async with session_scope(settings) as session:
+        overview = await build_project_workflow_overview(session, project_slug)
     return overview.model_dump(mode="json")
 
 
@@ -570,6 +740,10 @@ def serve_web_app(
                     project_slug = path.split("/")[3]
                     self._send_json(asyncio.run(_load_narrative_payload(settings, project_slug)))
                     return
+                if path.startswith("/api/projects/") and path.endswith("/workflow"):
+                    project_slug = path.split("/")[3]
+                    self._send_json(asyncio.run(_load_workflow_payload(settings, project_slug)))
+                    return
                 if path.startswith("/api/projects/") and path.endswith("/preview"):
                     project_slug = path.split("/")[3]
                     artifact_name = (query.get("name") or ["project.md"])[0]
@@ -579,6 +753,21 @@ def serve_web_app(
                         _render_preview_html(project_slug, artifact_path.name, content_md),
                         content_type="text/html; charset=utf-8",
                     )
+                    return
+                if path.startswith("/api/projects/") and path.endswith("/preview-data"):
+                    project_slug = path.split("/")[3]
+                    artifact_name = (query.get("name") or ["project.md"])[0]
+                    artifact_path = resolve_project_artifact_path(settings, project_slug, artifact_name)
+                    content_md = artifact_path.read_text(encoding="utf-8")
+                    payload = build_preview_payload(project_slug, artifact_path.name, content_md)
+                    payload.update(
+                        {
+                            "path": str(artifact_path.resolve()),
+                            "size_bytes": artifact_path.stat().st_size,
+                            "modified_at": datetime.fromtimestamp(artifact_path.stat().st_mtime, UTC).isoformat(),
+                        }
+                    )
+                    self._send_json(payload)
                     return
                 if path.startswith("/api/projects/") and path.endswith("/artifact"):
                     project_slug = path.split("/")[3]

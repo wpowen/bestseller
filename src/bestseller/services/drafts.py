@@ -19,8 +19,18 @@ from bestseller.infra.db.models import (
 )
 from bestseller.services.context import build_scene_writer_context_from_models
 from bestseller.services.llm import LLMCompletionRequest, complete_text
+from bestseller.services.prompt_packs import (
+    render_prompt_pack_fragment,
+    render_prompt_pack_prompt_block,
+    resolve_prompt_pack,
+)
 from bestseller.services.projects import get_project_by_slug
 from bestseller.services.story_bible import load_scene_story_bible_context
+from bestseller.services.writing_profile import (
+    render_serial_fiction_guardrails,
+    render_writing_profile_prompt_block,
+    resolve_writing_profile,
+)
 from bestseller.settings import AppSettings
 
 
@@ -28,6 +38,41 @@ def count_words(text: str) -> int:
     han_chars = re.findall(r"[\u4e00-\u9fff]", text)
     latin_words = re.findall(r"[A-Za-z0-9_]+", text)
     return len(han_chars) + len(latin_words)
+
+
+_STRUCTURED_METADATA_KEYS = (
+    "scene_summary",
+    "chapter_summary",
+    "core_conflict",
+    "emotional_shift",
+    "contract_alignment",
+    "story_task",
+    "emotion_task",
+    "information_release",
+    "tail_hook",
+    "closing_hook",
+    "entry_state",
+    "exit_state",
+)
+
+_STRUCTURED_METADATA_LINE_RE = re.compile(
+    r"^\s*(?:[-*]\s*)?(?:\*\*|__)?"
+    r"(?P<key>" + "|".join(_STRUCTURED_METADATA_KEYS) + r")"
+    r"(?:\*\*|__)?\s*:\s*.+$",
+    re.IGNORECASE,
+)
+
+
+def sanitize_novel_markdown_content(content_md: str) -> str:
+    cleaned_lines: list[str] = []
+    for raw_line in content_md.splitlines():
+        if _STRUCTURED_METADATA_LINE_RE.match(raw_line.strip()):
+            continue
+        cleaned_lines.append(raw_line.rstrip())
+
+    cleaned = "\n".join(cleaned_lines)
+    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
+    return cleaned.strip()
 
 
 def _render_state(state: dict[str, Any]) -> str:
@@ -248,6 +293,44 @@ def _render_tree_section(tree_context_nodes: list[dict[str, Any]] | None) -> str
     )
 
 
+def _resolve_project_writing_profile(project: Any, style_guide: StyleGuideModel | None) -> Any:
+    metadata = getattr(project, "metadata_json", {}) or {}
+    raw_profile = metadata.get("writing_profile") if isinstance(metadata, dict) else None
+    fallback_style = (
+        {
+            "style": {
+                "pov_type": getattr(style_guide, "pov_type", "third-limited"),
+                "tense": getattr(style_guide, "tense", "present"),
+                "tone_keywords": list(getattr(style_guide, "tone_keywords", []) or []),
+                "prose_style": getattr(style_guide, "prose_style", "commercial-web-serial"),
+                "sentence_style": getattr(style_guide, "sentence_style", "mixed"),
+                "info_density": getattr(style_guide, "info_density", "medium"),
+                "dialogue_ratio": float(getattr(style_guide, "dialogue_ratio", 0.4)),
+                "taboo_topics": list(getattr(style_guide, "taboo_topics", []) or []),
+                "taboo_words": list(getattr(style_guide, "taboo_words", []) or []),
+                "reference_works": list(getattr(style_guide, "reference_works", []) or []),
+                "custom_rules": list(getattr(style_guide, "custom_rules", []) or []),
+            }
+        }
+        if style_guide is not None
+        else None
+    )
+    return resolve_writing_profile(
+        raw_profile or fallback_style,
+        genre=str(getattr(project, "genre", "general-fiction") or "general-fiction"),
+        sub_genre=getattr(project, "sub_genre", None),
+        audience=getattr(project, "audience", None),
+    )
+
+
+def _resolve_project_prompt_pack(project: Any, writing_profile: Any):
+    return resolve_prompt_pack(
+        getattr(writing_profile.market, "prompt_pack_key", None),
+        genre=str(getattr(project, "genre", "general-fiction") or "general-fiction"),
+        sub_genre=getattr(project, "sub_genre", None),
+    )
+
+
 def render_scene_draft_markdown(
     project: ProjectModel,
     chapter: ChapterModel,
@@ -294,6 +377,8 @@ def render_scene_draft_markdown(
     antagonist_plan_section = _render_antagonist_plan_section(active_antagonist_plans)
     contract_section = _render_contract_section(chapter_contract, scene_contract)
     tree_section = _render_tree_section(tree_context_nodes)
+    writing_profile = _resolve_project_writing_profile(project, style_guide)
+    writing_profile_section = render_writing_profile_prompt_block(writing_profile)
 
     paragraphs = [
         f"## 场景 {scene.scene_number}：{title}",
@@ -318,6 +403,8 @@ def render_scene_draft_markdown(
             f"让下一场戏可以自然承接，同时保持章节钩子不断线。"
         ),
     ]
+    if writing_profile_section:
+        paragraphs.insert(2, f"商业写作画像：\n{writing_profile_section}")
     if story_bible_section:
         paragraphs.insert(
             3,
@@ -369,10 +456,13 @@ def build_scene_draft_prompts(
     active_emotion_tracks: list[dict[str, Any]] | None = None,
     active_antagonist_plans: list[dict[str, Any]] | None = None,
 ) -> tuple[str, str]:
+    writing_profile = _resolve_project_writing_profile(project, style_guide)
+    prompt_pack = _resolve_project_prompt_pack(project, writing_profile)
     system_prompt = (
         "你是长篇中文小说写作系统里的场景写手。"
         "输出必须直接是 Markdown 正文，不要解释，不要列清单。"
         "必须写成可接续的小说场景，而不是策划说明。"
+        "文本要像可以直接投到中文网文平台的成品章节，不要像策划案、提纲或润色说明。"
     )
     tone = (
         "、".join(str(keyword) for keyword in style_guide.tone_keywords[:3])
@@ -393,6 +483,10 @@ def build_scene_draft_prompts(
     antagonist_plan_section = _render_antagonist_plan_section(active_antagonist_plans)
     contract_section = _render_contract_section(chapter_contract, scene_contract)
     tree_section = _render_tree_section(tree_context_nodes)
+    writing_profile_section = render_writing_profile_prompt_block(writing_profile)
+    prompt_pack_section = render_prompt_pack_prompt_block(prompt_pack)
+    serial_guardrails = render_serial_fiction_guardrails(writing_profile)
+    prompt_pack_scene_writer = render_prompt_pack_fragment(prompt_pack, "scene_writer")
     user_prompt = (
         f"项目：《{project.title}》\n"
         f"章节：第{chapter.chapter_number}章 {chapter.title or ''}\n"
@@ -408,6 +502,8 @@ def build_scene_draft_prompts(
         f"目标字数：{scene.target_word_count}\n"
         f"视角：{style_guide.pov_type if style_guide else 'third-limited'}\n"
         f"语气关键词：{tone}\n"
+        f"写作画像：\n{writing_profile_section}\n"
+        f"{'Prompt Pack：\n' + prompt_pack_section + '\n' if prompt_pack_section else ''}"
         f"故事圣经约束：\n{story_bible_section or '暂无额外故事圣经约束'}\n"
         f"近期剧情回顾：\n{recent_scene_section or '暂无近期剧情回顾'}\n"
         f"已知时间线节点：\n{recent_timeline_section or '暂无已知时间线节点'}\n"
@@ -419,10 +515,14 @@ def build_scene_draft_prompts(
         f"叙事树上下文：\n{tree_section or '暂无叙事树上下文'}\n"
         f"参与角色当前可见事实：\n{participant_fact_section or '暂无额外角色事实'}\n"
         f"检索到的相关上下文：\n{retrieval_section or '暂无额外检索上下文'}\n"
-        "请输出完整场景，至少包含冲突推进、人物动作、有效对话和结尾钩子。"
+        f"商业网文硬约束：\n{serial_guardrails}\n"
+        f"{'Prompt Pack 额外写法：\n' + prompt_pack_scene_writer + '\n' if prompt_pack_scene_writer else ''}"
+        "请输出完整场景，至少包含冲突推进、人物动作、有效对话、信息变化和结尾钩子。"
         "不得泄露未来章节才会揭示的信息，不得与当前已知事实和时间线冲突。"
         "优先服从 deterministic path retrieval 与 narrative tree 提供的结构化约束。"
         "必须覆盖 scene contract 的核心冲突、情绪变化、信息释放和尾钩。"
+        "背景说明必须压缩到最少，优先把设定藏进人物行动、交易、冲突后果和细节里。"
+        "不要用空泛抒情、不要先解释世界观、不要写成提纲口吻。"
     )
     return system_prompt, user_prompt
 
@@ -518,7 +618,10 @@ def render_chapter_draft_markdown(
         f"# 第{chapter.chapter_number}章 {title}",
         f"> 本章目标：{chapter.chapter_goal}",
     ]
-    scene_sections = [scene_draft.content_md.strip() for scene_draft in scene_drafts]
+    scene_sections = [
+        sanitize_novel_markdown_content(scene_draft.content_md)
+        for scene_draft in scene_drafts
+    ]
     return "\n\n".join(header + scene_sections).strip()
 
 
@@ -667,10 +770,12 @@ async def generate_scene_draft(
                 },
             ),
         )
-        content_md = completion.content.strip() or fallback_content
+        content_md = sanitize_novel_markdown_content(completion.content) or fallback_content
         model_name = completion.model_name
         llm_run_id = completion.llm_run_id
         generation_mode = completion.provider
+    else:
+        content_md = sanitize_novel_markdown_content(content_md)
     word_count = count_words(content_md)
     next_version = int(
         (

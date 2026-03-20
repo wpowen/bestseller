@@ -1,0 +1,45 @@
+key: urban-power-reversal
+name: 都市异能反转流
+version: "1.0"
+description: 适合番茄系都市、异能、现实反击、身份反转写法，强调现实压迫、能力介入和快速爽点兑现。
+genres:
+  - 都市
+  - 异能
+  - 现实
+tags:
+  - 身份反转
+  - 现实压迫
+  - 能力外挂
+  - 爽点兑现
+source_notes:
+  - 借鉴 NovelGenerator 的 thriller/character focus
+  - 结合番茄系短回报节奏
+anti_patterns:
+  - 都市题材上来先大谈设定
+  - 主角拿到能力后迟迟不改变现实处境
+writing_profile_overrides:
+  market:
+    prompt_pack_key: urban-power-reversal
+    platform_target: 番茄小说
+    reader_promise: 早期就让读者看到主角的现实困境、能力介入和第一次反制爽点。
+    selling_points:
+      - 现实代入
+      - 反差人设
+      - 身份反转
+      - 快速打脸
+    trope_keywords:
+      - 都市
+      - 系统
+      - 逆袭
+      - 悬疑
+      - 反转
+  character:
+    protagonist_archetype: 现实受压型反击主角
+    protagonist_core_drive: 翻盘现实处境并重建个人价值
+fragments:
+  planner_outline: |
+    第一章必须让读者清楚主角当前的压迫处境和能力介入后第一轮现实收益。不要把核心爽点拖太久。
+  scene_writer: |
+    多写现实利益、社会关系、身份落差和对话压迫感。能力要直接改变局面，而不是只做悬念摆设。
+  chapter_review: |
+    检查是否真的形成现实层面的逆转、反压或身份变化。

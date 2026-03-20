@@ -19,6 +19,8 @@ from bestseller.infra.db.models import (
     SceneCardModel,
     SceneDraftVersionModel,
     VolumeModel,
+    WorkflowRunModel,
+    WorkflowStepRunModel,
     WorldRuleModel,
 )
 from bestseller.services import inspection as inspection_services
@@ -241,3 +243,58 @@ async def test_build_story_bible_overview_uses_latest_character_state(
     assert shen_yan.latest_state is not None
     assert shen_yan.latest_state.arc_state == "开始正视真相"
     assert result.relationships[0].relationship_type == "旧搭档"
+
+
+@pytest.mark.asyncio
+async def test_build_project_workflow_overview_returns_runs_and_steps(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = build_project()
+    workflow_run = WorkflowRunModel(
+        project_id=project.id,
+        workflow_type="generate_novel_plan",
+        status="completed",
+        scope_type="project",
+        scope_id=project.id,
+        requested_by="system",
+        current_step="completed",
+        metadata_json={"chapter_count": 4},
+    )
+    workflow_run.id = uuid4()
+    workflow_run.created_at = datetime.now(timezone.utc)
+    workflow_run.updated_at = datetime.now(timezone.utc)
+    workflow_step_a = WorkflowStepRunModel(
+        workflow_run_id=workflow_run.id,
+        step_name="generate_book_spec",
+        step_order=1,
+        status="completed",
+        input_ref={},
+        output_ref={"artifact": "book_spec"},
+    )
+    workflow_step_a.id = uuid4()
+    workflow_step_a.created_at = datetime.now(timezone.utc)
+    workflow_step_b = WorkflowStepRunModel(
+        workflow_run_id=workflow_run.id,
+        step_name="generate_world_spec",
+        step_order=2,
+        status="completed",
+        input_ref={},
+        output_ref={"artifact": "world_spec"},
+    )
+    workflow_step_b.id = uuid4()
+    workflow_step_b.created_at = datetime.now(timezone.utc)
+
+    async def fake_get_project_by_slug(session, slug: str):
+        return project
+
+    monkeypatch.setattr(inspection_services, "get_project_by_slug", fake_get_project_by_slug)
+
+    session = FakeSession(scalars_results=[[workflow_run], [workflow_step_a, workflow_step_b]])
+    overview = await inspection_services.build_project_workflow_overview(session, "my-story")
+
+    assert overview.project_slug == "my-story"
+    assert overview.run_count == 1
+    assert overview.completed_run_count == 1
+    assert overview.runs[0].workflow_type == "generate_novel_plan"
+    assert overview.runs[0].step_count == 2
+    assert overview.runs[0].steps[0].step_name == "generate_book_spec"

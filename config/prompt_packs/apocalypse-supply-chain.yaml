@@ -1,0 +1,86 @@
+key: apocalypse-supply-chain
+name: 末日囤货升级流
+version: "1.0"
+description: 适合番茄系末日、囤货、重生、规则生存、势力扩张写法，强调开篇强钩子、资源差优势、危机升级和持续追读。
+genres:
+  - 末日
+  - 科幻
+  - 生存
+tags:
+  - 末日
+  - 囤货
+  - 重生
+  - 规则生存
+  - 资源碾压
+source_notes:
+  - 借鉴 Long-Novel-GPT 的阶段式长篇规划思路
+  - 借鉴 NovelGenerator 的 genrePrompts + promptRegistry 设计
+  - 结合番茄作者专区对开篇、节奏、追读的要求
+anti_patterns:
+  - 开篇先讲大段世界观设定
+  - 主角只是知道末日要来却没有立即获利动作
+  - 囤货没有稀缺感、竞争感和窗口关闭压力
+  - 连续几章都只在解释规则而不兑现回报
+writing_profile_overrides:
+  market:
+    prompt_pack_key: apocalypse-supply-chain
+    platform_target: 番茄小说
+    reader_promise: 开篇三千字内必须让读者看到末日倒计时、主角抢先囤货和第一轮资源优势兑现。
+    selling_points:
+      - 重生时间差
+      - 外挂商城
+      - 稀缺资源
+      - 规则生存
+      - 势力扩张
+    trope_keywords:
+      - 末日
+      - 囤货
+      - 系统
+      - 重生
+      - 打脸反杀
+    hook_keywords:
+      - 倒计时
+      - 资源窗口
+      - 规则异变
+      - 更大灾变
+      - 背叛
+    opening_strategy: 第一章前半必须亮出倒计时、主角为什么知道未来、以及第一轮抢资源动作。
+    chapter_hook_strategy: 每章末抛出更稀缺的资源机会、更危险的规则异变、或更高层级的人为操控痕迹。
+    pacing_profile: fast
+    payoff_rhythm: 短回报高频兑现，长回报逐步通向灾变真相。
+  character:
+    protagonist_archetype: 先知型求生者
+    protagonist_core_drive: 抢在所有人之前建立生存和统治优势
+    golden_finger: 重生记忆、未来商城、资源价格差或规则漏洞
+    growth_curve: 个人求生优势 -> 小队统治力 -> 区域秩序重建 -> 末日真相破局
+    antagonist_mode: 民间竞争者、组织化掠夺者和灾变操盘者逐级上升
+  world:
+    mystery_density: high
+    worldbuilding_density: medium
+  style:
+    prose_style: commercial-web-serial
+    sentence_style: short-punchy
+    info_density: lean
+fragments:
+  global_rules: |
+    免费章节必须密集给出可见利益、危机升级和新信息，不允许长时间停留在准备阶段。
+  planner_book_spec: |
+    明确设计第一轮“抢时间窗口 -> 拿到别人拿不到的资源 -> 立刻形成优势”的成瘾链。主线不是单纯生存，而是资源、权力和末日真相三线并进。
+  planner_world_spec: |
+    世界规则必须直接作用于资源获取、秩序崩坏和能力成长。至少设计一个能被主角利用的规则漏洞，以及一个越往后越致命的代价机制。
+  planner_cast_spec: |
+    配角要服务于生存协作、资源背叛、势力竞争。反派不只是恶人，而是代表另一种更有效率但更残酷的生存逻辑。
+  planner_volume_plan: |
+    每卷都要有一个阶段性资源目标、一次秩序升级和一次更大真相揭露。卷尾必须明确抛出更大范围的灾变或更高层对手。
+  planner_outline: |
+    前三章必须完成：倒计时亮相、主角抢资源、第一次压过普通人、第一次确认末日规则与前世不同。每章都要有明确收益或损失。
+  scene_writer: |
+    正文优先写抢资源、抢时间、抢规则漏洞的具体动作。不要空喊末日残酷，要让读者看到资源价格、抢购手段、敌对竞争和即时收益。
+  scene_review: |
+    重点检查：是否足够快，是否真的让主角占到便宜，是否有资源差和规则差，章节尾是否让读者想立刻看主角下一步怎么抢。
+  scene_rewrite: |
+    如果场景不够抓人，优先补“即时利益、可见竞争、意外反压、下一轮更大资源窗口”，不是补抒情。
+  chapter_review: |
+    重点检查章节是否完成一次囤货/生存/扩张回报，并是否抛出新的升级压力。
+  chapter_rewrite: |
+    章节改写时优先增强危机节奏、物资细节、对手压迫和卷尾钩子，不要把节奏改慢。

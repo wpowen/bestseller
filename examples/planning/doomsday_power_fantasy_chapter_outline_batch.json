@@ -1,0 +1,231 @@
+{
+  "batch_name": "volume-1-doomsday-rise",
+  "chapters": [
+    {
+      "chapter_number": 1,
+      "title": "重生回到末日前七天",
+      "goal": "林夜确认重生事实，激活无限仓库系统，并在第一天完成关键囤货。",
+      "scenes": [
+        {
+          "scene_number": 1,
+          "scene_type": "setup",
+          "title": "冷柜中的第二次心跳",
+          "participants": ["林夜"],
+          "purpose": {
+            "story": "交代前世死亡与重生时间点",
+            "emotion": "窒息后的狂喜与狠厉"
+          }
+        },
+        {
+          "scene_number": 2,
+          "scene_type": "reveal",
+          "title": "无限仓库启动",
+          "participants": ["林夜", "系统提示音"],
+          "purpose": {
+            "story": "确立系统规则与首个新手任务",
+            "emotion": "掌控感和兴奋"
+          }
+        },
+        {
+          "scene_number": 3,
+          "scene_type": "action",
+          "title": "仓储城大扫货",
+          "participants": ["林夜", "仓库经理", "搬运工"],
+          "purpose": {
+            "story": "快速囤积药品、净水和高热量食品",
+            "emotion": "节奏加速与爽感建立"
+          }
+        }
+      ]
+    },
+    {
+      "chapter_number": 2,
+      "title": "黑市军火与第一桶金",
+      "goal": "林夜利用信息差获利，拿下黑市渠道，建立武装优势。",
+      "scenes": [
+        {
+          "scene_number": 1,
+          "scene_type": "deal",
+          "title": "废车场交易",
+          "participants": ["林夜", "刀疤周", "黑市中介"],
+          "purpose": {
+            "story": "完成武器与防护装备采购",
+            "emotion": "压迫对峙后的强势反转"
+          }
+        },
+        {
+          "scene_number": 2,
+          "scene_type": "twist",
+          "title": "截胡掠夺者",
+          "participants": ["林夜", "掠夺者小队"],
+          "purpose": {
+            "story": "夺取重卡与柴油，补足机动短板",
+            "emotion": "碾压与快感升级"
+          }
+        }
+      ]
+    },
+    {
+      "chapter_number": 3,
+      "title": "血月夜，尸潮起",
+      "goal": "末日正式爆发，林夜以提前布置稳住第一波冲击并救下关键人才。",
+      "scenes": [
+        {
+          "scene_number": 1,
+          "scene_type": "disaster",
+          "title": "第一声警报",
+          "participants": ["林夜", "林小满", "社区居民"],
+          "purpose": {
+            "story": "展示尸变爆发与社区失控",
+            "emotion": "恐慌到镇定的反差"
+          }
+        },
+        {
+          "scene_number": 2,
+          "scene_type": "rescue",
+          "title": "实验室突围",
+          "participants": ["林夜", "苏清禾", "变异体"],
+          "purpose": {
+            "story": "救出病毒学专家苏清禾",
+            "emotion": "紧绷与信任萌芽"
+          }
+        }
+      ]
+    },
+    {
+      "chapter_number": 4,
+      "title": "钢铁超市改造避难所",
+      "goal": "林夜将大型仓储超市改造为临时堡垒，完成团队雏形搭建。",
+      "scenes": [
+        {
+          "scene_number": 1,
+          "scene_type": "build",
+          "title": "封门、加固、分层",
+          "participants": ["林夜", "赵虎机修队", "幸存者"],
+          "purpose": {
+            "story": "搭建防线与物资分配制度",
+            "emotion": "从混乱到秩序的安全感"
+          }
+        },
+        {
+          "scene_number": 2,
+          "scene_type": "conflict",
+          "title": "内部抢粮风波",
+          "participants": ["林夜", "闹事者", "幸存者代表"],
+          "purpose": {
+            "story": "确立避难所铁律，压住内耗",
+            "emotion": "强硬镇场带来的威慑"
+          }
+        }
+      ]
+    },
+    {
+      "chapter_number": 5,
+      "title": "觉醒者首战",
+      "goal": "林夜完成第一次异能进阶，在实战中拿下首只精英变异体。",
+      "scenes": [
+        {
+          "scene_number": 1,
+          "scene_type": "training",
+          "title": "系统试炼副本",
+          "participants": ["林夜", "系统守关体"],
+          "purpose": {
+            "story": "解锁雷磁操控能力",
+            "emotion": "高压突破后的成就感"
+          }
+        },
+        {
+          "scene_number": 2,
+          "scene_type": "boss_fight",
+          "title": "雨夜斩骨魔",
+          "participants": ["林夜", "骨魔", "队员"],
+          "purpose": {
+            "story": "首杀精英怪并获取稀有核心",
+            "emotion": "硬刚获胜的极致爽点"
+          }
+        }
+      ]
+    },
+    {
+      "chapter_number": 6,
+      "title": "城东联盟来袭",
+      "goal": "掠夺者联盟试图吞并避难所，林夜以谋略和实力完成反收编。",
+      "scenes": [
+        {
+          "scene_number": 1,
+          "scene_type": "negotiation",
+          "title": "假谈判真围杀",
+          "participants": ["林夜", "罗阎", "联盟使者"],
+          "purpose": {
+            "story": "揭穿联盟阴谋并设局反制",
+            "emotion": "压抑后的智斗快感"
+          }
+        },
+        {
+          "scene_number": 2,
+          "scene_type": "battle",
+          "title": "重卡冲阵",
+          "participants": ["林夜", "钢铁避难所战斗组", "联盟武装"],
+          "purpose": {
+            "story": "击溃联盟先锋并收编后勤队",
+            "emotion": "大场面碾压与士气爆发"
+          }
+        }
+      ]
+    },
+    {
+      "chapter_number": 7,
+      "title": "污染母巢的坐标",
+      "goal": "苏清禾破解样本，锁定污染母巢，卷入更大层级的末日真相。",
+      "scenes": [
+        {
+          "scene_number": 1,
+          "scene_type": "investigation",
+          "title": "高危样本解码",
+          "participants": ["苏清禾", "林夜", "科研组"],
+          "purpose": {
+            "story": "发现变异扩散背后的人工干预痕迹",
+            "emotion": "惊惧与危机升级"
+          }
+        },
+        {
+          "scene_number": 2,
+          "scene_type": "reveal",
+          "title": "地下军工区地图",
+          "participants": ["林夜", "前军官韩策"],
+          "purpose": {
+            "story": "获得通往母巢外围的旧军图",
+            "emotion": "真相逼近的压迫感"
+          }
+        }
+      ]
+    },
+    {
+      "chapter_number": 8,
+      "title": "出征前夜",
+      "goal": "林夜完成队伍整编与资源配置，立下远征军令，卷一收束。",
+      "scenes": [
+        {
+          "scene_number": 1,
+          "scene_type": "preparation",
+          "title": "远征名单",
+          "participants": ["林夜", "核心队员", "后勤组"],
+          "purpose": {
+            "story": "明确主线团队职责和出征计划",
+            "emotion": "决绝与昂扬"
+          }
+        },
+        {
+          "scene_number": 2,
+          "scene_type": "cliffhanger",
+          "title": "血月二次共振",
+          "participants": ["林夜", "全城幸存者"],
+          "purpose": {
+            "story": "抛出更高等级灾变倒计时",
+            "emotion": "燃点拉满与追读欲"
+          }
+        }
+      ]
+    }
+  ]
+}

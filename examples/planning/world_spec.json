@@ -1,0 +1,74 @@
+{
+  "world_name": "边境星门航道",
+  "world_premise": "帝国依赖古老星门与航道档案维系统治，一旦航图被改写，真相和历史都会被一起重置。",
+  "rules": [
+    {
+      "rule_id": "R001",
+      "name": "航道记录优先于个人证词",
+      "description": "帝国法规定一切航行事故以官方星图记录为准，个人回忆不能作为裁定依据。",
+      "story_consequence": "沈砚即使亲历灾难，也无法仅凭记忆翻案。",
+      "exploitation_potential": "只要拿到未被篡改的底层航标日志，就能反向撬动整个裁定体系。"
+    },
+    {
+      "rule_id": "R002",
+      "name": "星门校准必须由导航员亲签",
+      "description": "每次大型航道校准都需要登记在册的导航员亲签授权，否则属于非法改道。",
+      "story_consequence": "任何伪造记录都意味着系统内有高层勾连。",
+      "exploitation_potential": "沈砚可以借签名链反查是谁盗用了他的权限。"
+    },
+    {
+      "rule_id": "R003",
+      "name": "静默航道会吞没实时通信",
+      "description": "进入静默航道后，外部通信和定位会被严重扭曲，只能依靠离线标记航行。",
+      "story_consequence": "主角团队一旦追进静默航道，就很难向外求援。",
+      "exploitation_potential": "也正因为通信失效，帝国无法第一时间掌握他们的真实位置。"
+    }
+  ],
+  "power_system": {
+    "name": "导航印记",
+    "tiers": ["学徒", "持证导航员", "首席校准官", "星门编纂者"],
+    "acquisition_method": "通过高风险航道实操、星门共鸣和印记认证提升",
+    "hard_limits": "每次强行校准都会损耗记忆与精神稳定性",
+    "protagonist_starting_tier": "持证导航员"
+  },
+  "locations": [
+    {
+      "name": "碎潮星港",
+      "type": "星港",
+      "atmosphere": "铁锈、霓虹与军令并存，空气里始终有压抑感",
+      "key_rules": ["R001", "R002"],
+      "story_role": "故事开局和政治压迫的主要舞台"
+    },
+    {
+      "name": "静默航道",
+      "type": "航道",
+      "atmosphere": "空旷、失真、像在被遗忘的黑海中航行",
+      "key_rules": ["R003"],
+      "story_role": "中段调查与高风险追踪的核心区域"
+    }
+  ],
+  "factions": [
+    {
+      "name": "帝国航道署",
+      "goal": "维持帝国对边境星门的绝对控制",
+      "method": "以法规、档案和军令压制异议",
+      "relationship_to_protagonist": "敌对",
+      "internal_conflict": "一部分技术官员知道航图被改写，但不愿背叛体制"
+    },
+    {
+      "name": "碎潮自由引航团",
+      "goal": "保住边境贸易线和民间航行自由",
+      "method": "私下共享航标、走灰色补给线",
+      "relationship_to_protagonist": "复杂",
+      "internal_conflict": "有人想帮助沈砚，有人只想自保"
+    }
+  ],
+  "power_structure": "帝国档案官与军方垄断航道解释权，民间导航员只能在灰色地带求生。",
+  "history_key_events": [
+    {
+      "event": "七年前的黑潮失航事故导致整支护航舰队覆灭",
+      "relevance": "这是沈砚被放逐的根源，也是帝国掩盖真相的起点"
+    }
+  ],
+  "forbidden_zones": "任何人未经许可接近星门底层日志库，都将被视为叛乱。"
+}

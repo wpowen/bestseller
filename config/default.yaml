@@ -1,0 +1,195 @@
+# =============================================================================
+# BestSeller — Default Configuration
+# =============================================================================
+# Override order:
+#   1. config/local.yaml
+#   2. Environment variables with prefix BESTSELLER__
+#      e.g. BESTSELLER__DATABASE__URL=postgresql+asyncpg://...
+# =============================================================================
+
+llm:
+  mock: false
+
+  planner:
+    model: "anthropic/claude-opus-4-5"
+    temperature: 0.65
+    max_tokens: 8192
+    timeout_seconds: 120
+    n_candidates: 3
+
+  writer:
+    model: "anthropic/claude-sonnet-4-5"
+    temperature: 0.85
+    max_tokens: 4096
+    timeout_seconds: 120
+    stream: true
+
+  critic:
+    model: "anthropic/claude-haiku-4-5"
+    temperature: 0.25
+    max_tokens: 2048
+    timeout_seconds: 60
+
+  summarizer:
+    model: "anthropic/claude-haiku-4-5"
+    temperature: 0.2
+    max_tokens: 1536
+    timeout_seconds: 45
+
+  editor:
+    model: "anthropic/claude-sonnet-4-5"
+    temperature: 0.4
+    max_tokens: 4096
+    timeout_seconds: 90
+
+  retry:
+    max_attempts: 3
+    wait_min_seconds: 1
+    wait_max_seconds: 10
+    retry_on:
+      - "RateLimitError"
+      - "APITimeoutError"
+      - "ServiceUnavailableError"
+
+# -----------------------------------------------------------------------------
+# Primary Database
+# PostgreSQL is the only source of truth for structured data and draft text.
+# -----------------------------------------------------------------------------
+database:
+  url: "postgresql+asyncpg://bestseller:bestseller@localhost:5432/bestseller"
+  pool_size: 20
+  max_overflow: 20
+  pool_timeout_seconds: 30
+  pool_recycle_seconds: 1800
+  statement_timeout_ms: 60000
+  lock_timeout_ms: 5000
+  application_name: "bestseller"
+  auto_migrate: true
+  echo_sql: false
+
+# -----------------------------------------------------------------------------
+# Retrieval
+# PostgreSQL + pgvector + trigram hybrid retrieval.
+# -----------------------------------------------------------------------------
+retrieval:
+  provider: "pgvector"
+  embedding_model: "BAAI/bge-m3"
+  embedding_dimensions: 1024
+  chunk_size: 800
+  chunk_overlap: 120
+  candidate_limit: 40
+  top_k: 12
+  min_score: 0.55
+  index_type: "hnsw"
+
+  hybrid_weights:
+    vector: 0.60
+    lexical: 0.20
+    structural: 0.20
+
+# -----------------------------------------------------------------------------
+# Generation
+# -----------------------------------------------------------------------------
+generation:
+  target_total_words: 80000
+  target_chapters: 20
+
+  words_per_chapter:
+    min: 2000
+    target: 4000
+    max: 6000
+
+  scenes_per_chapter:
+    min: 2
+    target: 4
+    max: 6
+
+  words_per_scene:
+    min: 400
+    target: 1000
+    max: 1600
+
+  context_budget_tokens: 8000
+  active_context_scenes: 3
+  genre: "general-fiction"
+  language: "zh-CN"
+  pov: "third-limited"
+  structure_template: "three-act"
+
+# -----------------------------------------------------------------------------
+# Quality
+# -----------------------------------------------------------------------------
+quality:
+  enable_scene_critique: true
+  enable_chapter_coherence_check: true
+  enable_final_consistency_check: true
+
+  thresholds:
+    scene_min_score: 0.70
+    chapter_coherence_min_score: 0.75
+    character_consistency_min_score: 0.75
+    plot_logic_min_score: 0.70
+
+  max_scene_revisions: 2
+  max_chapter_revisions: 1
+
+  repetition:
+    window_words: 2000
+    similarity_threshold: 0.92
+
+# -----------------------------------------------------------------------------
+# Artifact Store
+# Exported files and large payload snapshots live here.
+# Not a source of truth.
+# -----------------------------------------------------------------------------
+artifact_store:
+  mode: "local"   # local | s3
+  local_dir: "./artifacts"
+  retain_prompt_payloads: false
+
+  s3:
+    bucket: ""
+    region: ""
+    prefix: "bestseller"
+
+# -----------------------------------------------------------------------------
+# Output
+# -----------------------------------------------------------------------------
+output:
+  base_dir: "./output"
+
+  formats:
+    markdown: true
+    docx: false
+    epub: false
+    pdf: false
+
+  checkpoint:
+    enabled: true
+    every_n_scenes: 5
+
+  stream_to_console: true
+
+# -----------------------------------------------------------------------------
+# Logging
+# -----------------------------------------------------------------------------
+logging:
+  level: "INFO"
+  format: "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+  datefmt: "%Y-%m-%d %H:%M:%S"
+  json_logs: false
+
+  file:
+    enabled: true
+    path: "./logs/bestseller.log"
+    max_bytes: 10485760
+    backup_count: 5
+
+  suppress:
+    - "httpx"
+    - "httpcore"
+    - "urllib3"
+    - "sentence_transformers"
+    - "asyncpg"
+    - "sqlalchemy.engine"
+

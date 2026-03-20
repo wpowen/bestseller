@@ -1,0 +1,49 @@
+{
+  "batch_name": "volume-1-opening",
+  "chapters": [
+    {
+      "chapter_number": 1,
+      "title": "失准星图",
+      "goal": "展示沈砚被迫接下禁令任务，并在任务开始时发现星图记录被人为修改。",
+      "scenes": [
+        {
+          "scene_number": 1,
+          "scene_type": "setup",
+          "title": "封港命令",
+          "participants": ["沈砚", "港务官"],
+          "purpose": {
+            "story": "抛出禁令任务和风险",
+            "emotion": "压迫感和抗拒"
+          }
+        },
+        {
+          "scene_number": 2,
+          "scene_type": "reveal",
+          "title": "偏移的航标",
+          "participants": ["沈砚"],
+          "purpose": {
+            "story": "发现航图被改写的第一处证据",
+            "emotion": "警觉和不安"
+          }
+        }
+      ]
+    },
+    {
+      "chapter_number": 2,
+      "title": "静默航道",
+      "goal": "沈砚和旧搭档重逢，两人沿着被删改的航标追查到一艘失踪巡逻舰。",
+      "scenes": [
+        {
+          "scene_number": 1,
+          "scene_type": "reunion",
+          "title": "旧搭档回舰",
+          "participants": ["沈砚", "顾临"],
+          "purpose": {
+            "story": "建立旧关系张力",
+            "emotion": "戒备和未尽之言"
+          }
+        }
+      ]
+    }
+  ]
+}

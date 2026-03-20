@@ -1,0 +1,52 @@
+[
+  {
+    "volume_number": 1,
+    "volume_title": "失准航线",
+    "volume_theme": "面对被篡改的记忆与责任",
+    "word_count_target": "20万字",
+    "chapter_count_target": 40,
+    "opening_state": {
+      "protagonist_status": "被放逐的星港导航员",
+      "protagonist_power_tier": "持证导航员",
+      "world_situation": "帝国正在秘密重写边境航道档案"
+    },
+    "volume_goal": "沈砚找到航图篡改的第一份铁证，并确认当年事故并非意外。",
+    "volume_obstacle": "祁镇借封港和巡逻舰封锁调查路径。",
+    "volume_climax": "沈砚和顾临闯入静默航道，截获失踪巡逻舰的残存黑匣子，逼出祁镇公开下令灭口。",
+    "volume_resolution": {
+      "protagonist_power_tier": "持证导航员",
+      "goal_achieved": true,
+      "cost_paid": "沈砚被帝国正式列为叛逃导航员，碎潮星港彻底失去庇护。",
+      "new_threat_introduced": "帝国准备在全边境同步更新新航图。"
+    },
+    "key_reveals": ["签名链被盗用", "祁镇参与了当年的非法校准"],
+    "foreshadowing_planted": ["底层日志库仍然存在", "静默航道里还有幸存记录"],
+    "foreshadowing_paid_off": ["黑潮事故并非导航员个人失误"],
+    "reader_hook_to_next": "沈砚必须在全面通缉下抢先找到日志库入口。"
+  },
+  {
+    "volume_number": 2,
+    "volume_title": "静默深渊",
+    "volume_theme": "真相并不会自动带来秩序",
+    "word_count_target": "22万字",
+    "chapter_count_target": 44,
+    "opening_state": {
+      "protagonist_status": "公开通缉中的地下调查者",
+      "protagonist_power_tier": "持证导航员",
+      "world_situation": "边境各港口开始执行新版危险航图"
+    },
+    "volume_goal": "拿到日志库中的原始记录，并让足够多的人相信帝国在篡改历史。",
+    "volume_obstacle": "帝国清洗证人，自由引航团内部也开始分裂。",
+    "volume_climax": "沈砚在星门日志库里被迫用记忆换取一次强行校准，公开旧记录。",
+    "volume_resolution": {
+      "protagonist_power_tier": "首席校准官",
+      "goal_achieved": true,
+      "cost_paid": "沈砚失去了一段和事故有关的完整记忆。",
+      "new_threat_introduced": "帝国高层决定直接锁死古老星门网络。"
+    },
+    "key_reveals": ["黑潮事故真正触发点", "帝国高层才是篡改计划发起者"],
+    "foreshadowing_planted": ["锁门协议", "更古老的非帝国航图"],
+    "foreshadowing_paid_off": ["静默航道的幸存记录"],
+    "reader_hook_to_next": "如果星门锁死，边境会先于帝国腹地整体崩塌。"
+  }
+]

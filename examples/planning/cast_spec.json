@@ -1,0 +1,113 @@
+{
+  "protagonist": {
+    "name": "沈砚",
+    "age": 29,
+    "role": "protagonist",
+    "background": "曾是帝国边境最年轻的持证导航员，因黑潮失航事故被放逐到碎潮星港。",
+    "goal": "找到航图被篡改的铁证并阻止帝国再次误导整条边境航道。",
+    "fear": "再次因为自己的判断失误害死整船人。",
+    "flaw": "过度控制、很难信任别人。",
+    "strength": "对异常航标有近乎偏执的敏锐直觉。",
+    "secret": "他一直怀疑当年的事故并不是单纯判断失误。",
+    "arc_trajectory": "从只相信个人控制到学会带队协作并承担公开对抗体制的责任。",
+    "arc_state": "开场时仍在逃避当年的真相",
+    "knowledge_state": {
+      "knows": ["七年前的事故现场数据不对劲", "帝国正在封存一批旧航线记录"],
+      "falsely_believes": ["顾临当年是主动抛下自己离开的"],
+      "unaware_of": ["帝国已经用他的旧权限持续篡改校准记录"]
+    },
+    "power_tier": "持证导航员",
+    "relationships": [
+      {
+        "character": "顾临",
+        "type": "旧搭档",
+        "tension": "彼此仍信任能力，但都不愿先提七年前那次失航事故。"
+      },
+      {
+        "character": "祁镇",
+        "type": "敌人",
+        "tension": "祁镇掌握体制资源，沈砚掌握异常线索，双方都想先一步拿到日志。"
+      }
+    ]
+  },
+  "antagonist": {
+    "name": "祁镇",
+    "role": "antagonist",
+    "background": "帝国航道署边境校准总监。",
+    "goal": "在黑潮真相曝光前彻底重写边境航图并清除所有旧记录。",
+    "fear": "底层日志被外界读取后，帝国高层会把责任推到自己身上。",
+    "flaw": "相信秩序比真实更重要，因此低估人会为了真相铤而走险。",
+    "strength": "掌握档案权限和军令调度能力。",
+    "secret": "当年的事故中，他亲自批准过一份非法校准。",
+    "arc_trajectory": "从幕后操盘到被迫亲自下场追杀沈砚。",
+    "arc_state": "仍处于可控局面",
+    "knowledge_state": {
+      "knows": ["底层日志仍然存在", "沈砚已经开始怀疑签名链被盗用"],
+      "falsely_believes": ["顾临已经彻底站在体制一边"],
+      "unaware_of": ["自由引航团内部已经出现愿意作证的人"]
+    },
+    "power_tier": "首席校准官",
+    "relationships": [
+      {
+        "character": "沈砚",
+        "type": "追捕对象",
+        "tension": "他需要沈砚背锅，又不能让沈砚死得太快以免引发怀疑。"
+      }
+    ],
+    "justification": "如果航道秩序崩溃，边境会先一步毁灭，所以真相必须被延后。",
+    "method": "封港、删档、伪造签名链、调动巡逻舰灭口。",
+    "weakness": "对底层技术日志理解不够深入。",
+    "relationship_to_protagonist": "当年事故的真正责任链之一。",
+    "reveal_timing": "第一卷末"
+  },
+  "supporting_cast": [
+    {
+      "name": "顾临",
+      "role": "ally",
+      "background": "沈砚的旧搭档，现任巡逻舰副官。",
+      "goal": "确认当年事故真相并保护仍留在边境航线上的幸存者。",
+      "fear": "再次在关键时刻站错队。",
+      "flaw": "喜欢把真实情绪压到任务之后。",
+      "strength": "判断快，执行力强，擅长在军方体系里周旋。",
+      "secret": "当年他并不是离开，而是被迫去送一份未完成的求救包。",
+      "arc_trajectory": "从沉默自保到重新和沈砚并肩作战。",
+      "arc_state": "表面冷静，内心仍有愧疚",
+      "knowledge_state": {
+        "knows": ["事故现场曾出现过一条不该存在的二级校准指令"],
+        "falsely_believes": ["只要不惊动高层就还能内部解决"],
+        "unaware_of": ["祁镇已经把自己列入潜在清除名单"]
+      },
+      "power_tier": "持证导航员",
+      "relationships": [
+        {
+          "character": "沈砚",
+          "type": "旧搭档",
+          "tension": "两人都以为对方抛下了自己。"
+        }
+      ],
+      "value_to_story": "提供军方视角与行动能力。",
+      "potential_betrayal": "中"
+    },
+    {
+      "name": "港务官",
+      "role": "wildcard",
+      "background": "碎潮星港的执行官，只认命令不认人。",
+      "goal": "保住自己的位置并确保碎潮星港不因调查遭到清洗。",
+      "arc_state": "谨慎观望"
+    }
+  ],
+  "conflict_map": [
+    {
+      "character_a": "沈砚",
+      "character_b": "顾临",
+      "conflict_type": "情感纠葛",
+      "trigger_condition": "只要七年前最后一段通讯被提起，两人的旧伤口就会被重新撕开。"
+    },
+    {
+      "character_a": "沈砚",
+      "character_b": "祁镇",
+      "conflict_type": "目标冲突",
+      "trigger_condition": "沈砚一旦接近底层日志，祁镇就必须公开追杀。"
+    }
+  ]
+}

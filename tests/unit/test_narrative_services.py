@@ -1,0 +1,298 @@
+from __future__ import annotations
+
+from uuid import uuid4
+
+import pytest
+
+from bestseller.infra.db.models import (
+    ArcBeatModel,
+    ChapterContractModel,
+    ChapterModel,
+    CharacterModel,
+    ClueModel,
+    PayoffModel,
+    PlotArcModel,
+    ProjectModel,
+    SceneCardModel,
+    SceneContractModel,
+    VolumeModel,
+)
+from bestseller.services import narrative as narrative_services
+
+
+pytestmark = pytest.mark.unit
+
+
+class FakeSession:
+    def __init__(self, *, scalars_results: list[list[object]] | None = None) -> None:
+        self.scalars_results = list(scalars_results or [])
+        self.added: list[object] = []
+        self.executed: list[object] = []
+
+    def add(self, obj: object) -> None:
+        self.added.append(obj)
+
+    async def flush(self) -> None:
+        for obj in self.added:
+            table = getattr(obj, "__table__", None)
+            if table is not None and "id" in table.c and getattr(obj, "id", None) is None:
+                setattr(obj, "id", uuid4())
+
+    async def scalars(self, stmt: object) -> list[object]:
+        if not self.scalars_results:
+            return []
+        return self.scalars_results.pop(0)
+
+    async def execute(self, stmt: object) -> None:
+        self.executed.append(stmt)
+
+
+def build_project() -> ProjectModel:
+    project = ProjectModel(
+        slug="my-story",
+        title="长夜巡航",
+        genre="science-fantasy",
+        target_word_count=80000,
+        target_chapters=12,
+        metadata_json={
+            "logline": "被放逐的导航员调查被篡改的航线。",
+            "themes": ["真相", "牺牲"],
+        },
+    )
+    project.id = uuid4()
+    return project
+
+
+def build_volume(project_id, volume_number: int) -> VolumeModel:
+    volume = VolumeModel(
+        project_id=project_id,
+        volume_number=volume_number,
+        title=f"第{volume_number}卷",
+        goal="找到铁证",
+        obstacle="封锁升级",
+        metadata_json={},
+    )
+    volume.id = uuid4()
+    return volume
+
+
+def build_chapter(project_id, volume_id, chapter_number: int, title: str) -> ChapterModel:
+    chapter = ChapterModel(
+        project_id=project_id,
+        volume_id=volume_id,
+        chapter_number=chapter_number,
+        title=title,
+        chapter_goal="推进调查",
+        opening_situation="主角被迫接手高风险任务。",
+        main_conflict="主角必须在封锁前拿到证据。",
+        hook_description="新的异常坐标浮现。",
+        information_revealed=[],
+        information_withheld=[],
+        foreshadowing_actions={},
+        chapter_emotion_arc="从戒备到主动出击",
+        metadata_json={},
+        target_word_count=3000,
+    )
+    chapter.id = uuid4()
+    return chapter
+
+
+def build_scene(project_id, chapter_id, scene_number: int, title: str, participants: list[str]) -> SceneCardModel:
+    scene = SceneCardModel(
+        project_id=project_id,
+        chapter_id=chapter_id,
+        scene_number=scene_number,
+        scene_type="setup",
+        title=title,
+        participants=participants,
+        purpose={"story": "推进主线调查", "emotion": "紧绷"},
+        entry_state={"risk": "高"},
+        exit_state={"risk": "更高"},
+        hook_requirement="结尾必须抛出更大风险。",
+        metadata_json={},
+        target_word_count=1000,
+    )
+    scene.id = uuid4()
+    return scene
+
+
+def build_character(project_id, name: str, role: str) -> CharacterModel:
+    character = CharacterModel(
+        project_id=project_id,
+        name=name,
+        role=role,
+        goal="揭开真相" if role == "protagonist" else "压制主角",
+        secret="幕后另有更高层操盘者",
+        arc_trajectory="从单打独斗到建立同盟" if role == "protagonist" else "从幕后操盘到公开下场",
+        arc_state="开场",
+        knowledge_state_json={},
+        metadata_json={},
+    )
+    character.id = uuid4()
+    return character
+
+
+@pytest.mark.asyncio
+async def test_rebuild_narrative_graph_creates_arcs_beats_clues_and_contracts() -> None:
+    project = build_project()
+    volume = build_volume(project.id, 1)
+    chapter1 = build_chapter(project.id, volume.id, 1, "封港命令")
+    chapter2 = build_chapter(project.id, volume.id, 2, "静默航道")
+    scene1 = build_scene(project.id, chapter1.id, 1, "异常航标", ["沈砚"])
+    scene2 = build_scene(project.id, chapter2.id, 1, "旧搭档回舰", ["沈砚", "顾临"])
+    protagonist = build_character(project.id, "沈砚", "protagonist")
+    antagonist = build_character(project.id, "顾临", "antagonist")
+
+    session = FakeSession(
+        scalars_results=[
+            [chapter1, chapter2],
+            [volume],
+            [scene1, scene2],
+            [protagonist, antagonist],
+        ]
+    )
+
+    counts = await narrative_services.rebuild_narrative_graph(
+        session,
+        project=project,
+        volume_plan_content=[
+            {
+                "volume_number": 1,
+                "title": "边境疑云",
+                "volume_goal": "拿到第一份铁证",
+                "volume_obstacle": "封港和追杀同步升级",
+                "volume_climax": "主角抢到关键底层记录",
+                "key_reveals": ["帝国正在系统性篡改航线记录"],
+                "foreshadowing_planted": ["异常航标其实是人为留下的求救信号"],
+                "foreshadowing_paid_off": ["求救信号指向真正的底层日志库入口"],
+                "reader_hook_to_next": "更高层操盘者开始清场",
+            }
+        ],
+    )
+
+    assert counts["plot_arc_count"] >= 3
+    assert counts["arc_beat_count"] >= 4
+    assert counts["clue_count"] >= 1
+    assert counts["payoff_count"] >= 1
+    assert counts["chapter_contract_count"] == 2
+    assert counts["scene_contract_count"] == 2
+    assert any(isinstance(obj, PlotArcModel) for obj in session.added)
+    assert any(isinstance(obj, ArcBeatModel) for obj in session.added)
+    assert any(isinstance(obj, ClueModel) for obj in session.added)
+    assert any(isinstance(obj, PayoffModel) for obj in session.added)
+    assert any(isinstance(obj, ChapterContractModel) for obj in session.added)
+    assert any(isinstance(obj, SceneContractModel) for obj in session.added)
+    assert len(session.executed) == 6
+
+
+@pytest.mark.asyncio
+async def test_build_narrative_overview_renders_materialized_graph(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = build_project()
+    arc = PlotArcModel(
+        project_id=project.id,
+        arc_code="main_plot",
+        name="主线推进",
+        arc_type="main_plot",
+        promise="调查被篡改的航线。",
+        core_question="主角能否揭开真相？",
+        status="planned",
+        scope_level="project",
+        metadata_json={},
+    )
+    arc.id = uuid4()
+    beat = ArcBeatModel(
+        project_id=project.id,
+        plot_arc_id=arc.id,
+        beat_order=1,
+        scope_level="chapter",
+        scope_chapter_number=1,
+        beat_kind="chapter_push",
+        summary="第1章承担主线推进。",
+        status="planned",
+        metadata_json={"arc_code": "main_plot"},
+    )
+    beat.id = uuid4()
+    clue = ClueModel(
+        project_id=project.id,
+        plot_arc_id=arc.id,
+        clue_code="clue-001",
+        label="异常航标",
+        clue_type="foreshadow",
+        description="异常航标暗示有人留下了信息。",
+        planted_in_chapter_number=1,
+        status="planted",
+        metadata_json={},
+    )
+    clue.id = uuid4()
+    payoff = PayoffModel(
+        project_id=project.id,
+        plot_arc_id=arc.id,
+        source_clue_id=clue.id,
+        payoff_code="payoff-001",
+        label="求救信号兑现",
+        description="求救信号指向底层日志库入口。",
+        target_chapter_number=2,
+        actual_chapter_number=2,
+        status="paid_off",
+        metadata_json={},
+    )
+    payoff.id = uuid4()
+    chapter_contract = ChapterContractModel(
+        project_id=project.id,
+        chapter_id=uuid4(),
+        chapter_number=1,
+        contract_summary="本章要抛出主线异常。",
+        opening_state={"risk": "高"},
+        primary_arc_codes=["main_plot"],
+        supporting_arc_codes=[],
+        active_arc_beat_ids=[str(beat.id)],
+        planted_clue_codes=["clue-001"],
+        due_payoff_codes=[],
+        metadata_json={},
+    )
+    chapter_contract.id = uuid4()
+    scene_contract = SceneContractModel(
+        project_id=project.id,
+        chapter_id=chapter_contract.chapter_id,
+        scene_card_id=uuid4(),
+        chapter_number=1,
+        scene_number=1,
+        contract_summary="本场必须抛出异常航标。",
+        entry_state={"risk": "高"},
+        exit_state={"risk": "更高"},
+        arc_codes=["main_plot"],
+        arc_beat_ids=[str(beat.id)],
+        planted_clue_codes=["clue-001"],
+        payoff_codes=[],
+        metadata_json={},
+    )
+    scene_contract.id = uuid4()
+
+    async def fake_get_project_by_slug(session, slug: str):
+        assert slug == "my-story"
+        return project
+
+    monkeypatch.setattr(narrative_services, "get_project_by_slug", fake_get_project_by_slug)
+
+    session = FakeSession(
+        scalars_results=[
+            [arc],
+            [beat],
+            [clue],
+            [payoff],
+            [chapter_contract],
+            [scene_contract],
+        ]
+    )
+
+    overview = await narrative_services.build_narrative_overview(session, "my-story")
+
+    assert overview.project_slug == "my-story"
+    assert overview.plot_arcs[0].arc_code == "main_plot"
+    assert overview.arc_beats[0].summary == "第1章承担主线推进。"
+    assert overview.clues[0].clue_code == "clue-001"
+    assert overview.payoffs[0].payoff_code == "payoff-001"
+    assert overview.chapter_contracts[0].contract_summary == "本章要抛出主线异常。"
+    assert overview.scene_contracts[0].contract_summary == "本场必须抛出异常航标。"

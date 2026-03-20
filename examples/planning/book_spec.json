@@ -1,0 +1,31 @@
+{
+  "title": "长夜巡航",
+  "logline": "一名被放逐的星港导航员，为了阻止帝国篡改航道历史，被迫在谎言、旧爱与失控舰队之间做出选择。",
+  "genre": "science-fantasy",
+  "target_audience": "web-serial",
+  "tone": [
+    "紧张",
+    "冷峻",
+    "悬疑"
+  ],
+  "themes": [
+    "记忆与真相",
+    "秩序与自由",
+    "牺牲的代价"
+  ],
+  "protagonist": {
+    "name": "沈砚",
+    "core_wound": "曾因一次错误导航导致舰队覆灭",
+    "external_goal": "证明帝国正在伪造航线记录并阻止新一轮灾难",
+    "internal_need": "面对自己的过失，而不是继续用控制欲掩盖恐惧"
+  },
+  "stakes": {
+    "personal": "沈砚会失去唯一仍信任他的搭档",
+    "social": "整条边境航道会被错误引导，数百万居民被困",
+    "existential": "古老星门网络可能被永久锁死"
+  },
+  "series_engine": {
+    "core_loop": "发现异常航线 -> 调查真相 -> 引发追杀 -> 逼近更大阴谋",
+    "hook_style": "每章末保留一个新真相或更高层级威胁"
+  }
+}

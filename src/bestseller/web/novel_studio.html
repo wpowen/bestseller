@@ -1407,14 +1407,30 @@
             </div>
 
             <div class="field">
+              <label for="genre-preset-key">题材预设</label>
+              <div class="field-meta">直接套用一组题材卖点、平台建议、人物原型、节奏与 Prompt Pack。</div>
+              <select id="genre-preset-key">
+                <option value="">加载中…</option>
+              </select>
+            </div>
+
+            <div class="field">
+              <label for="length-preset-key">篇幅预设</label>
+              <div class="field-meta">会自动填写本轮目标总字数和章节数，并满足每章最低 5000 字。</div>
+              <select id="length-preset-key">
+                <option value="">加载中…</option>
+              </select>
+            </div>
+
+            <div class="field">
               <label for="target-words">本轮目标总字数</label>
-              <div class="field-meta">本轮计划推进到多少字。建议先跑 12000 到 50000 字验证风格，再放大。</div>
-              <input id="target-words" type="number" value="12000" min="1000" step="1000" />
+              <div class="field-meta">本轮计划推进到多少字。系统按每章 5000 到 6000 字设计，低于章节下限会被直接拦截。</div>
+              <input id="target-words" type="number" value="22000" min="5000" step="1000" />
             </div>
 
             <div class="field">
               <label for="target-chapters">本轮目标章节数</label>
-              <div class="field-meta">本轮要写几章。系统会据此拆章节和场景，并控制推进密度。</div>
+              <div class="field-meta">本轮要写几章。系统会按每章最低 5000 字做校验，推荐平均 5500 字左右。</div>
               <input id="target-chapters" type="number" value="4" min="1" />
             </div>
 
@@ -1429,9 +1445,6 @@
               <div class="field-meta">不同平台的开篇节奏、情绪密度和钩子风格不一样。这个字段会直接影响规划和写作 prompt。</div>
               <select id="platform-target">
                 <option value="番茄小说" selected>番茄小说</option>
-                <option value="起点中文网">起点中文网</option>
-                <option value="晋江文学城">晋江文学城</option>
-                <option value="中文网文平台">中文网文平台（通用）</option>
               </select>
             </div>
 
@@ -1558,6 +1571,12 @@
               <div class="field-meta">把题材、主角优势、危机和核心悬念写清楚。系统会以此生成世界观、人物和章节骨架。</div>
               <textarea id="premise">末日零点降临前三天，主角意外得到一个来自未来的购物入口，可以低价购买基因进化药、无限能源和禁忌物资。为了活下去，他必须一边囤货，一边隐藏秘密，同时在末日前的秩序崩塌前找到真正的幕后操盘者。</textarea>
             </div>
+
+            <div class="field full">
+              <label>当前预设说明</label>
+              <div class="field-meta">这里显示当前平台 / 题材 / 篇幅预设的组合说明、适配读者和推荐范围。</div>
+              <div class="empty" id="preset-summary">预设加载后，这里会显示当前题材和篇幅建议。</div>
+            </div>
           </div>
 
           <datalist id="genre-options">
@@ -1590,6 +1609,7 @@
           <div class="tag-row">
             <span class="tag">建议先做 4 到 8 章样书</span>
             <span class="tag">百万字建议按卷推进</span>
+            <span class="tag">每章最低 5000 字，建议 5500 字左右</span>
             <span class="tag">千万字建议多轮规划与人工把关</span>
           </div>
 
@@ -1621,20 +1641,20 @@
             <div class="formula-grid">
               <div class="formula-item">
                 <strong>平均每章字数</strong>
-                <span id="words-per-chapter">3000</span>
+                <span id="words-per-chapter">5500</span>
               </div>
               <div class="formula-item">
                 <strong>预估总场景数</strong>
-                <span id="estimated-scenes">16</span>
+                <span id="estimated-scenes">20</span>
               </div>
               <div class="formula-item">
                 <strong>平均每场字数</strong>
-                <span id="words-per-scene">750</span>
+                <span id="words-per-scene">1100</span>
               </div>
             </div>
             <div class="scope-banner">
-              <strong id="scope-mode">建议模式：样书试写</strong>
-              <p id="scope-advice">当前体量适合先验证书名、题材、节奏和主角卖点。确认可读性后，再扩写到单卷或整书。</p>
+              <strong id="scope-mode">建议模式：4 章样书试写</strong>
+              <p id="scope-advice">当前体量满足每章最低 5000 字，适合先验证书名、题材、节奏和主角卖点。确认可读性后，再扩写到单卷或整书。</p>
             </div>
           </div>
 
@@ -1862,7 +1882,7 @@
 
         <section class="footer-note">
           真正的大体量长篇不应该一次性生成。正确方式是先建立世界观、人物、主线和卷级目标，再逐轮扩写、审校和修订。
-          这个页面已经按这个思路包装了当前系统：你可以把 10000 到 50000 字当作样书或单卷试写，把 100000 到 300000 字当作阶段推进，
+          这个页面已经按这个思路包装了当前系统：你可以把 22000 到 50000 字当作样书或单卷试写，把 100000 到 300000 字当作阶段推进，
           再逐卷扩充到百万字项目。千万字项目也不是不能做，但应该拆成多个连续项目阶段来推进，而不是一次运行完成。
         </section>
       </main>
@@ -1879,6 +1899,7 @@
       summary: null,
       lastProjectRefreshAt: 0,
       currentPreviewName: null,
+      writingPresets: null,
     };
 
     const els = {
@@ -1939,6 +1960,9 @@
       wordsPerScene: document.getElementById("words-per-scene"),
       scopeMode: document.getElementById("scope-mode"),
       scopeAdvice: document.getElementById("scope-advice"),
+      presetSummary: document.getElementById("preset-summary"),
+      genrePresetKey: document.getElementById("genre-preset-key"),
+      lengthPresetKey: document.getElementById("length-preset-key"),
     };
 
     function escapeHtml(value) {
@@ -1957,6 +1981,25 @@
         .split(/[,\n，]/)
         .map((item) => item.trim())
         .filter(Boolean);
+    }
+
+    function deepMerge(base, override) {
+      const output = { ...(base || {}) };
+      for (const [key, value] of Object.entries(override || {})) {
+        if (
+          value &&
+          typeof value === "object" &&
+          !Array.isArray(value) &&
+          output[key] &&
+          typeof output[key] === "object" &&
+          !Array.isArray(output[key])
+        ) {
+          output[key] = deepMerge(output[key], value);
+        } else {
+          output[key] = value;
+        }
+      }
+      return output;
     }
 
     function formatBytes(bytes) {
@@ -1988,6 +2031,187 @@
 
     function getCurrentTabName() {
       return state.activeTab || "preview";
+    }
+
+    function getWritingPresetCatalog() {
+      return state.writingPresets || {
+        chapter_word_policy: { min: 5000, target: 5500, max: 6000 },
+        platform_presets: [],
+        genre_presets: [],
+        length_presets: [],
+      };
+    }
+
+    function getSelectedGenrePreset() {
+      const catalog = getWritingPresetCatalog();
+      return (catalog.genre_presets || []).find((item) => item.key === els.genrePresetKey.value) || null;
+    }
+
+    function getSelectedLengthPreset() {
+      const catalog = getWritingPresetCatalog();
+      return (catalog.length_presets || []).find((item) => item.key === els.lengthPresetKey.value) || null;
+    }
+
+    function getSelectedPlatformPreset() {
+      const catalog = getWritingPresetCatalog();
+      return (catalog.platform_presets || []).find((item) => item.name === document.getElementById("platform-target").value) || null;
+    }
+
+    function renderPresetSummary() {
+      const genrePreset = getSelectedGenrePreset();
+      const lengthPreset = getSelectedLengthPreset();
+      const platformPreset = getSelectedPlatformPreset();
+      const policy = getWritingPresetCatalog().chapter_word_policy || { min: 5000, target: 5500, max: 6000 };
+      const blocks = [];
+
+      if (genrePreset) {
+        blocks.push([
+          `题材预设：${genrePreset.name}`,
+          genrePreset.description,
+          genrePreset.trend_summary ? `近期热度：${genrePreset.trend_summary}` : null,
+          Number.isFinite(genrePreset.trend_score) && genrePreset.trend_score > 0 ? `热点推荐指数：${genrePreset.trend_score} / 100` : null,
+          genrePreset.trend_keywords?.length ? `热点关键词：${genrePreset.trend_keywords.join("、")}` : null,
+          genrePreset.recommended_platforms?.length ? `适配平台：${genrePreset.recommended_platforms.join("、")}` : null,
+          genrePreset.recommended_audiences?.length ? `适配读者：${genrePreset.recommended_audiences.join("、")}` : null,
+          genrePreset.target_word_options?.length ? `常用总字数档位：${genrePreset.target_word_options.map((item) => Number(item).toLocaleString("zh-CN")).join(" / ")} 字` : null,
+          genrePreset.target_chapter_options?.length ? `常用章节档位：${genrePreset.target_chapter_options.map((item) => Number(item).toLocaleString("zh-CN")).join(" / ")} 章` : null,
+        ].filter(Boolean).join("\n"));
+      }
+
+      if (platformPreset) {
+        blocks.push([
+          `平台预设：${platformPreset.name}`,
+          platformPreset.description,
+          platformPreset.recommended_genres?.length ? `推荐题材：${platformPreset.recommended_genres.join("、")}` : null,
+        ].filter(Boolean).join("\n"));
+      }
+
+      if (lengthPreset) {
+        blocks.push([
+          `篇幅预设：${lengthPreset.name}`,
+          `${lengthPreset.description} 本轮目标 ${Number(lengthPreset.target_words).toLocaleString("zh-CN")} 字 / ${Number(lengthPreset.target_chapters).toLocaleString("zh-CN")} 章。`,
+          `阶段目标：${lengthPreset.phase_goal}`,
+        ].join("\n"));
+      }
+
+      blocks.push(`章节字数政策：每章最低 ${policy.min} 字，建议 ${policy.target} 字左右，上限建议控制在 ${policy.max} 字附近。`);
+      els.presetSummary.textContent = blocks.join("\n\n");
+    }
+
+    function fillDatalist(id, values) {
+      const datalist = document.getElementById(id);
+      const uniqueValues = [...new Set((values || []).filter(Boolean))];
+      datalist.innerHTML = uniqueValues.map((item) => `<option value="${escapeHtml(item)}"></option>`).join("");
+    }
+
+    function syncPresetDrivenFields({ applyRecommendedPlatform = false } = {}) {
+      const genrePreset = getSelectedGenrePreset();
+
+      if (genrePreset) {
+        document.getElementById("genre").value = genrePreset.genre;
+        document.getElementById("sub-genre").value = genrePreset.sub_genre;
+        if (genrePreset.recommended_audiences?.[0]) {
+          document.getElementById("audience").value = genrePreset.recommended_audiences[0];
+        }
+        if (applyRecommendedPlatform && genrePreset.recommended_platforms?.[0]) {
+          document.getElementById("platform-target").value = genrePreset.recommended_platforms[0];
+        }
+        if (genrePreset.prompt_pack_key) {
+          document.getElementById("prompt-pack-key").value = genrePreset.prompt_pack_key;
+        }
+      }
+
+      const platformPreset = getSelectedPlatformPreset();
+      const mergedProfile = deepMerge(
+        platformPreset?.writing_profile_overrides || {},
+        genrePreset?.writing_profile_overrides || {},
+      );
+
+      const market = mergedProfile.market || {};
+      const character = mergedProfile.character || {};
+      const world = mergedProfile.world || {};
+      const style = mergedProfile.style || {};
+      const serialization = mergedProfile.serialization || {};
+
+      if (market.platform_target) document.getElementById("platform-target").value = market.platform_target;
+      if (market.reader_promise) document.getElementById("reader-promise").value = market.reader_promise;
+      if (Array.isArray(market.selling_points) && market.selling_points.length) {
+        document.getElementById("selling-points").value = market.selling_points.join(",");
+      }
+      if (Array.isArray(market.trope_keywords) && market.trope_keywords.length) {
+        document.getElementById("trope-keywords").value = market.trope_keywords.join(",");
+      }
+      if (market.pacing_profile) document.getElementById("pacing-profile").value = market.pacing_profile;
+
+      if (character.protagonist_archetype) document.getElementById("protagonist-archetype").value = character.protagonist_archetype;
+      if (character.golden_finger) document.getElementById("golden-finger").value = character.golden_finger;
+
+      if (world.worldbuilding_density) document.getElementById("worldbuilding-density").value = world.worldbuilding_density;
+      if (style.pov_type) document.getElementById("pov-type").value = style.pov_type;
+      if (style.prose_style) document.getElementById("prose-style").value = style.prose_style;
+      if (style.sentence_style) document.getElementById("sentence-style").value = style.sentence_style;
+      if (typeof style.dialogue_ratio === "number") document.getElementById("dialogue-ratio").value = style.dialogue_ratio;
+      if (Array.isArray(style.reference_works) && style.reference_works.length) {
+        document.getElementById("reference-works").value = style.reference_works.join(",");
+      }
+      if (serialization.chapter_ending_rule) document.getElementById("chapter-hook-strategy").value = serialization.chapter_ending_rule;
+      if (Array.isArray(style.custom_rules) && style.custom_rules.length) {
+        document.getElementById("custom-rules").value = style.custom_rules.join("\n");
+      }
+
+      renderPresetSummary();
+    }
+
+    function applyLengthPreset() {
+      const preset = getSelectedLengthPreset();
+      if (!preset) {
+        renderPresetSummary();
+        updateScopeEstimator();
+        return;
+      }
+      document.getElementById("target-words").value = preset.target_words;
+      document.getElementById("target-chapters").value = preset.target_chapters;
+      renderPresetSummary();
+      updateScopeEstimator();
+    }
+
+    async function loadWritingPresets() {
+      const catalog = await api("/api/writing-presets");
+      state.writingPresets = catalog;
+      const genrePresets = [...(catalog.genre_presets || [])].sort((left, right) => (right.trend_score || 0) - (left.trend_score || 0));
+
+      const platformSelect = document.getElementById("platform-target");
+      platformSelect.innerHTML = (catalog.platform_presets || [])
+        .map((item) => `<option value="${escapeHtml(item.name)}">${escapeHtml(item.name)}</option>`)
+        .join("");
+
+      els.genrePresetKey.innerHTML = ['<option value="">手动填写 / 不套预设</option>']
+        .concat(genrePresets.map((item) => `<option value="${escapeHtml(item.key)}">${escapeHtml(item.name)}${item.trend_score >= 88 ? " · 热门" : ""}</option>`))
+        .join("");
+      els.lengthPresetKey.innerHTML = ['<option value="">手动填写 / 不套预设</option>']
+        .concat((catalog.length_presets || []).map((item) => `<option value="${escapeHtml(item.key)}">${escapeHtml(item.name)}</option>`))
+        .join("");
+
+      fillDatalist("genre-options", genrePresets.map((item) => item.genre));
+      fillDatalist("sub-genre-options", genrePresets.map((item) => item.sub_genre));
+      fillDatalist(
+        "audience-options",
+        genrePresets.flatMap((item) => item.recommended_audiences || []).concat(
+          (catalog.platform_presets || []).flatMap((item) => item.recommended_audiences || []),
+        ),
+      );
+
+      const defaultGenrePreset = genrePresets.find((item) => item.key === "apocalypse-supply");
+      const defaultLengthPreset = (catalog.length_presets || []).find((item) => item.key === "trial-4");
+      if (defaultGenrePreset) {
+        els.genrePresetKey.value = defaultGenrePreset.key;
+      }
+      if (defaultLengthPreset) {
+        els.lengthPresetKey.value = defaultLengthPreset.key;
+      }
+
+      syncPresetDrivenFields({ applyRecommendedPlatform: true });
+      applyLengthPreset();
     }
 
     function humanizeTaskStatus(status) {
@@ -2378,27 +2602,38 @@
     function updateScopeEstimator() {
       const targetWords = Number(document.getElementById("target-words").value || 0);
       const targetChapters = Math.max(Number(document.getElementById("target-chapters").value || 0), 1);
+      const policy = getWritingPresetCatalog().chapter_word_policy || { min: 5000, target: 5500, max: 6000 };
       const wordsPerChapter = Math.max(Math.round(targetWords / targetChapters), 0);
-      const estimatedScenes = Math.max(targetChapters * 4, 0);
+      const estimatedScenes = Math.max(targetChapters * 5, 0);
       const wordsPerScene = estimatedScenes > 0 ? Math.round(targetWords / estimatedScenes) : 0;
 
       els.wordsPerChapter.textContent = wordsPerChapter.toLocaleString("zh-CN");
       els.estimatedScenes.textContent = estimatedScenes.toLocaleString("zh-CN");
       els.wordsPerScene.textContent = wordsPerScene.toLocaleString("zh-CN");
 
-      if (targetWords <= 20000) {
-        els.scopeMode.textContent = "建议模式：样书试写 / 开书验证";
-        els.scopeAdvice.textContent = "当前体量适合测试题材辨识度、主角卖点、第一卷节奏和语言风格。先把可读性做对，再扩写。";
+      if (wordsPerChapter < policy.min) {
+        els.scopeMode.textContent = "当前配置不满足章节字数下限";
+        els.scopeAdvice.textContent = `按当前章节数计算，平均每章只有 ${wordsPerChapter.toLocaleString("zh-CN")} 字。系统要求每章最低 ${policy.min.toLocaleString("zh-CN")} 字，请提高总字数或减少章节数。`;
+        return;
+      }
+      if (wordsPerChapter > policy.max + 800) {
+        els.scopeMode.textContent = "当前配置偏重，建议拆阶段";
+        els.scopeAdvice.textContent = `当前平均每章 ${wordsPerChapter.toLocaleString("zh-CN")} 字，明显高于建议的 ${policy.max.toLocaleString("zh-CN")} 字左右。更合理的做法是增加章节数或拆成本轮 + 下一轮阶段。`;
+        return;
+      }
+      if (targetWords <= 30000) {
+        els.scopeMode.textContent = "建议模式：4 到 6 章样书试写";
+        els.scopeAdvice.textContent = "当前体量适合测试题材辨识度、主角卖点、开书钩子和章节尾钩。先把可读性做对，再扩写。";
         return;
       }
       if (targetWords <= 150000) {
         els.scopeMode.textContent = "建议模式：单卷推进 / 中体量连载";
-        els.scopeAdvice.textContent = "当前范围适合做一卷或一个阶段目标。建议跑完后先审校和修订，再决定是否继续扩写下一卷。";
+        els.scopeAdvice.textContent = `当前范围适合做一卷或一个阶段目标。当前平均每章 ${wordsPerChapter.toLocaleString("zh-CN")} 字，符合每章 ${policy.min} 到 ${policy.max} 字的推荐区间。`;
         return;
       }
       if (targetWords <= 1000000) {
         els.scopeMode.textContent = "建议模式：长篇项目 / 分卷推进";
-        els.scopeAdvice.textContent = "这是长篇项目了，不建议追求一次性全部完成。更合理的做法是按卷推进，每卷结束后重做一致性检查。";
+        els.scopeAdvice.textContent = `这是长篇项目了。当前平均每章 ${wordsPerChapter.toLocaleString("zh-CN")} 字，建议按卷推进，每卷结束后重做一致性检查。`;
         return;
       }
       els.scopeMode.textContent = "建议模式：超长篇项目 / 多阶段维护";
@@ -2818,6 +3053,48 @@
     }
 
     function readAutowritePayload() {
+      const platformPreset = getSelectedPlatformPreset();
+      const genrePreset = getSelectedGenrePreset();
+      const presetProfile = deepMerge(
+        platformPreset?.writing_profile_overrides || {},
+        genrePreset?.writing_profile_overrides || {},
+      );
+      const manualProfile = {
+        market: {
+          platform_target: document.getElementById("platform-target").value.trim(),
+          prompt_pack_key: document.getElementById("prompt-pack-key").value.trim() || null,
+          reader_promise: document.getElementById("reader-promise").value.trim(),
+          selling_points: splitList(document.getElementById("selling-points").value),
+          trope_keywords: splitList(document.getElementById("trope-keywords").value),
+          opening_strategy: presetProfile?.market?.opening_strategy || document.getElementById("premise").value.trim().slice(0, 240),
+          chapter_hook_strategy: document.getElementById("chapter-hook-strategy").value.trim(),
+          pacing_profile: document.getElementById("pacing-profile").value,
+        },
+        character: {
+          protagonist_archetype: document.getElementById("protagonist-archetype").value.trim(),
+          golden_finger: document.getElementById("golden-finger").value.trim(),
+        },
+        world: {
+          worldbuilding_density: document.getElementById("worldbuilding-density").value,
+        },
+        style: {
+          pov_type: document.getElementById("pov-type").value,
+          prose_style: document.getElementById("prose-style").value,
+          sentence_style: document.getElementById("sentence-style").value,
+          dialogue_ratio: Number(document.getElementById("dialogue-ratio").value || 0.42),
+          reference_works: splitList(document.getElementById("reference-works").value),
+          custom_rules: splitList(document.getElementById("custom-rules").value),
+        },
+        serialization: {
+          opening_mandate: "开篇必须快速亮出主角差异化优势、异常事件、短期利益和明确危险。",
+          first_three_chapter_goal: "前三章必须完成主角卖点亮相、世界异常亮相、第一轮得失与追读钩子。",
+          scene_drive_rule: "每场都要有目标、阻碍、升级、信息变化和尾钩，避免纯说明。",
+          exposition_rule: "背景说明必须嵌在行动、交易、冲突和代价里。",
+          chapter_ending_rule: document.getElementById("chapter-hook-strategy").value.trim(),
+          free_chapter_strategy: "免费阶段优先保证高密度钩子、连续爽点和危机升级。",
+        },
+      };
+      const writingProfile = deepMerge(presetProfile, manualProfile);
       return {
         slug: document.getElementById("slug").value.trim(),
         title: document.getElementById("title").value.trim(),
@@ -2830,41 +3107,7 @@
         export_markdown: document.getElementById("export-markdown").checked,
         auto_repair: document.getElementById("auto-repair").checked,
         language: "zh-CN",
-        writing_profile: {
-          market: {
-            platform_target: document.getElementById("platform-target").value.trim(),
-            prompt_pack_key: document.getElementById("prompt-pack-key").value.trim() || null,
-            reader_promise: document.getElementById("reader-promise").value.trim(),
-            selling_points: splitList(document.getElementById("selling-points").value),
-            trope_keywords: splitList(document.getElementById("trope-keywords").value),
-            opening_strategy: document.getElementById("premise").value.trim().slice(0, 240),
-            chapter_hook_strategy: document.getElementById("chapter-hook-strategy").value.trim(),
-            pacing_profile: document.getElementById("pacing-profile").value,
-          },
-          character: {
-            protagonist_archetype: document.getElementById("protagonist-archetype").value.trim(),
-            golden_finger: document.getElementById("golden-finger").value.trim(),
-          },
-          world: {
-            worldbuilding_density: document.getElementById("worldbuilding-density").value,
-          },
-          style: {
-            pov_type: document.getElementById("pov-type").value,
-            prose_style: document.getElementById("prose-style").value,
-            sentence_style: document.getElementById("sentence-style").value,
-            dialogue_ratio: Number(document.getElementById("dialogue-ratio").value || 0.42),
-            reference_works: splitList(document.getElementById("reference-works").value),
-            custom_rules: splitList(document.getElementById("custom-rules").value),
-          },
-          serialization: {
-            opening_mandate: "开篇必须快速亮出主角差异化优势、异常事件、短期利益和明确危险。",
-            first_three_chapter_goal: "前三章必须完成主角卖点亮相、世界异常亮相、第一轮得失与追读钩子。",
-            scene_drive_rule: "每场都要有目标、阻碍、升级、信息变化和尾钩，避免纯说明。",
-            exposition_rule: "背景说明必须嵌在行动、交易、冲突和代价里。",
-            chapter_ending_rule: document.getElementById("chapter-hook-strategy").value.trim(),
-            free_chapter_strategy: "免费阶段优先保证高密度钩子、连续爽点和危机升级。",
-          },
-        },
+        writing_profile: writingProfile,
       };
     }
 
@@ -2872,11 +3115,16 @@
       if (!payload.slug || !payload.title || !payload.genre || !payload.premise) {
         throw new Error("请至少填写项目代号、书名、主类型和一句话设定。");
       }
-      if (!Number.isFinite(payload.target_words) || payload.target_words < 1000) {
-        throw new Error("本轮目标总字数至少填写 1000。");
+      if (!Number.isFinite(payload.target_words) || payload.target_words < 5000) {
+        throw new Error("本轮目标总字数至少填写 5000。");
       }
       if (!Number.isFinite(payload.target_chapters) || payload.target_chapters < 1) {
         throw new Error("本轮目标章节数至少填写 1。");
+      }
+      const chapterWordMin = Number(getWritingPresetCatalog().chapter_word_policy?.min || 5000);
+      const averageWords = payload.target_words / payload.target_chapters;
+      if (averageWords < chapterWordMin) {
+        throw new Error(`当前平均每章仅 ${Math.floor(averageWords)} 字，不满足每章最低 ${chapterWordMin} 字。请提高总字数或减少章节数。`);
       }
     }
 
@@ -2961,11 +3209,18 @@
       }
     });
     els.previewAutoFollow.addEventListener("change", updatePreviewModeLabel);
+    document.getElementById("platform-target").addEventListener("change", () => syncPresetDrivenFields({ applyRecommendedPlatform: false }));
+    els.genrePresetKey.addEventListener("change", () => syncPresetDrivenFields({ applyRecommendedPlatform: true }));
+    els.lengthPresetKey.addEventListener("change", applyLengthPreset);
 
     wireTabs();
     updatePreviewModeLabel();
     updateScopeEstimator();
-    refreshAll();
+    loadWritingPresets()
+      .catch((error) => {
+        els.presetSummary.textContent = error.message || "写作预设加载失败，当前将继续使用页面默认值。";
+      })
+      .finally(refreshAll);
     setInterval(loadTasks, 2000);
   </script>
 </body>

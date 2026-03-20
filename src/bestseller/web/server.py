@@ -30,6 +30,7 @@ from bestseller.services.pipelines import run_autowrite_pipeline
 from bestseller.services.projects import get_project_by_slug, list_projects
 from bestseller.services.repair import run_project_repair
 from bestseller.services.writing_profile import get_project_writing_profile
+from bestseller.services.writing_presets import load_writing_preset_catalog, validate_longform_scope
 from bestseller.settings import AppSettings, load_settings
 
 
@@ -713,6 +714,9 @@ def serve_web_app(
                 if path == "/api/projects":
                     self._send_json(asyncio.run(_load_projects_payload(settings)))
                     return
+                if path == "/api/writing-presets":
+                    self._send_json(load_writing_preset_catalog().model_dump(mode="json"))
+                    return
                 if path == "/api/tasks":
                     self._send_json(task_manager.list_tasks())
                     return
@@ -793,6 +797,7 @@ def serve_web_app(
                     missing = [key for key in required if not payload.get(key)]
                     if missing:
                         raise ValueError(f"Missing required fields: {', '.join(missing)}")
+                    validate_longform_scope(int(payload["target_words"]), int(payload["target_chapters"]))
                     task = task_manager.create_autowrite_task(payload)
                     self._send_json(task, status=HTTPStatus.ACCEPTED)
                     return

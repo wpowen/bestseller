@@ -198,7 +198,7 @@ class ChapterCreate(BaseModel):
     main_conflict: str | None = None
     hook_type: str | None = None
     hook_description: str | None = None
-    target_word_count: int = Field(default=3000, gt=0)
+    target_word_count: int = Field(default=5500, gt=0)
     volume_number: int = Field(default=1, gt=0)
     status: ChapterStatus = ChapterStatus.PLANNED
 

@@ -425,7 +425,7 @@ CREATE TABLE chapters (
     information_withheld    JSONB NOT NULL DEFAULT '[]'::jsonb,
     foreshadowing_actions   JSONB NOT NULL DEFAULT '{}'::jsonb,
     chapter_emotion_arc     TEXT,
-    target_word_count       INTEGER NOT NULL DEFAULT 3000,
+    target_word_count       INTEGER NOT NULL DEFAULT 5500,
     current_word_count      INTEGER NOT NULL DEFAULT 0,
     revision_count          INTEGER NOT NULL DEFAULT 0,
     status                  TEXT NOT NULL DEFAULT 'planned'
@@ -1040,4 +1040,3 @@ RETURNING wr.*;
 ---
 
 这份 schema 的重点不是“数据库表很多”，而是**让长篇小说生产中的规划、正文、事实、一致性、重写和工作流第一次进入同一套可事务化的数据模型**。这才是后续真正能写出长篇、改得动长篇、审得住长篇的前提。
-

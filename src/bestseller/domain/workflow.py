@@ -33,7 +33,7 @@ class ChapterOutlineInput(BaseModel):
     hook_type: str | None = None
     hook_description: str | None = None
     volume_number: int = Field(default=1, gt=0)
-    target_word_count: int = Field(default=3000, gt=0)
+    target_word_count: int = Field(default=5500, gt=0)
     scenes: list[SceneOutlineInput] = Field(default_factory=list)
 
 

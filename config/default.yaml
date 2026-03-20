@@ -95,19 +95,19 @@ generation:
   target_chapters: 20
 
   words_per_chapter:
-    min: 2000
-    target: 4000
+    min: 5000
+    target: 5500
     max: 6000
 
   scenes_per_chapter:
-    min: 2
-    target: 4
+    min: 4
+    target: 5
     max: 6
 
   words_per_scene:
-    min: 400
-    target: 1000
-    max: 1600
+    min: 800
+    target: 1100
+    max: 1500
 
   context_budget_tokens: 8000
   active_context_scenes: 3
@@ -192,4 +192,3 @@ logging:
     - "sentence_transformers"
     - "asyncpg"
     - "sqlalchemy.engine"
-

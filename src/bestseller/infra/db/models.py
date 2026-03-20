@@ -289,7 +289,7 @@ class ChapterModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     information_withheld: Mapped[JSON_LIST] = mapped_column(JSONB, nullable=False, default=list)
     foreshadowing_actions: Mapped[JSON_DICT] = mapped_column(JSONB, nullable=False, default=dict)
     chapter_emotion_arc: Mapped[str | None] = mapped_column(Text)
-    target_word_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("3000"))
+    target_word_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("5500"))
     current_word_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
     revision_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
     status: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'planned'"))

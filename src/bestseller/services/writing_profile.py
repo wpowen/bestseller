@@ -9,6 +9,15 @@ from bestseller.services.prompt_packs import (
     render_prompt_pack_fragment,
     resolve_prompt_pack,
 )
+from bestseller.services.writing_presets import get_platform_preset, infer_genre_preset
+
+
+def _merge_lists(base: list[Any], override: list[Any]) -> list[Any]:
+    merged: list[Any] = []
+    for item in [*base, *override]:
+        if item not in merged:
+            merged.append(item)
+    return merged
 
 
 def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
@@ -16,12 +25,18 @@ def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any
     for key, value in override.items():
         if isinstance(value, dict) and isinstance(merged.get(key), dict):
             merged[key] = _deep_merge(merged[key], value)
+        elif isinstance(value, list) and isinstance(merged.get(key), list):
+            merged[key] = _merge_lists(merged[key], value)
         else:
             merged[key] = value
     return merged
 
 
 def _genre_preset(genre: str, sub_genre: str | None = None) -> dict[str, Any]:
+    preset = infer_genre_preset(genre, sub_genre)
+    if preset is not None:
+        return dict(preset.writing_profile_overrides)
+
     label = f"{genre} {sub_genre or ''}".lower()
     if any(token in label for token in ("末日", "科幻", "星际", "生存")):
         return {
@@ -156,6 +171,7 @@ def resolve_writing_profile(
     audience: str | None = None,
 ) -> WritingProfile:
     base = WritingProfile().model_dump(mode="json")
+    inferred_genre_preset = infer_genre_preset(genre, sub_genre)
     preset = _genre_preset(genre, sub_genre)
     merged = _deep_merge(base, preset)
     if audience:
@@ -170,7 +186,19 @@ def resolve_writing_profile(
         pack_key = explicit_payload.get("market", {}).get("prompt_pack_key")
     else:
         pack_key = None
-    prompt_pack = resolve_prompt_pack(pack_key, genre=genre, sub_genre=sub_genre)
+    platform_name = (
+        explicit_payload.get("market", {}).get("platform_target")
+        if explicit_payload is not None
+        else merged.get("market", {}).get("platform_target")
+    )
+    platform_preset = get_platform_preset(str(platform_name) if platform_name else None)
+    if platform_preset is not None:
+        merged = _deep_merge(merged, platform_preset.writing_profile_overrides)
+    prompt_pack = resolve_prompt_pack(
+        pack_key or (inferred_genre_preset.prompt_pack_key if inferred_genre_preset is not None else None),
+        genre=genre,
+        sub_genre=sub_genre,
+    )
     if prompt_pack is not None:
         merged = _deep_merge(merged, prompt_pack.writing_profile_overrides)
     if explicit_payload is not None:

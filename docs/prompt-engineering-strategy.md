@@ -440,7 +440,7 @@ Generate ChapterOutline JSON array for the NEXT {{batch_size}} chapters:
   {
     "chapter_number": 0,
     "chapter_title": "（章节标题，吸引点击）",
-    "word_count_target": 3000,
+    "word_count_target": 5500,
     "pov_character": "（视角角色姓名）",
     "chapter_goal": "（本章要完成的具体事件，一句话）",
     "opening_situation": "（承接上章结尾的开场状态）",

@@ -86,6 +86,15 @@ from bestseller.services.workflows import (
     materialize_narrative_tree,
     materialize_story_bible,
 )
+from bestseller.services.writing_presets import (
+    get_genre_preset,
+    list_genre_presets,
+    list_hot_genre_presets,
+    list_length_presets,
+    list_platform_presets,
+    load_writing_preset_catalog,
+    validate_longform_scope,
+)
 from bestseller.settings import DEFAULT_CONFIG_PATH, load_settings, settings_to_dict
 from bestseller.web import serve_web_app
 
@@ -109,6 +118,7 @@ narrative_app = typer.Typer(help="Narrative graph inspection operations.")
 benchmark_app = typer.Typer(help="Benchmark and evaluation operations.")
 ui_app = typer.Typer(help="Web UI operations.")
 prompt_pack_app = typer.Typer(help="Prompt pack operations.")
+writing_preset_app = typer.Typer(help="Writing preset operations.")
 
 app.add_typer(db_app, name="db")
 app.add_typer(project_app, name="project")
@@ -126,6 +136,7 @@ app.add_typer(narrative_app, name="narrative")
 app.add_typer(benchmark_app, name="benchmark")
 app.add_typer(ui_app, name="ui")
 app.add_typer(prompt_pack_app, name="prompt-pack")
+app.add_typer(writing_preset_app, name="writing-preset")
 
 
 @app.callback()
@@ -299,6 +310,96 @@ def prompt_pack_show(key: str) -> None:
     typer.echo(json.dumps(pack.model_dump(mode="json"), ensure_ascii=False, indent=2))
 
 
+@writing_preset_app.command("list")
+def writing_preset_list() -> None:
+    """List built-in writing presets for platform, genre, and length."""
+    catalog = load_writing_preset_catalog()
+    typer.echo(
+        json.dumps(
+            {
+                "chapter_word_policy": catalog.chapter_word_policy.model_dump(mode="json"),
+                "platform_presets": [
+                    {
+                        "key": preset.key,
+                        "name": preset.name,
+                        "recommended_genres": preset.recommended_genres,
+                        "recommended_audiences": preset.recommended_audiences,
+                    }
+                    for preset in list_platform_presets()
+                ],
+                "genre_presets": [
+                    {
+                        "key": preset.key,
+                        "name": preset.name,
+                        "genre": preset.genre,
+                        "sub_genre": preset.sub_genre,
+                        "recommended_platforms": preset.recommended_platforms,
+                        "target_word_options": preset.target_word_options,
+                        "target_chapter_options": preset.target_chapter_options,
+                    }
+                    for preset in list_genre_presets()
+                ],
+                "length_presets": [
+                    preset.model_dump(mode="json")
+                    for preset in list_length_presets()
+                ],
+                "source_notes": catalog.source_notes,
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+    )
+
+
+@writing_preset_app.command("show")
+def writing_preset_show(
+    key: str,
+    kind: str = typer.Option(
+        "genre",
+        "--kind",
+        help="platform, genre, or length",
+    ),
+) -> None:
+    """Show one built-in writing preset in detail."""
+    normalized = kind.strip().lower()
+    if normalized == "platform":
+        preset = next((item for item in list_platform_presets() if item.key == key), None)
+    elif normalized == "length":
+        preset = next((item for item in list_length_presets() if item.key == key), None)
+    else:
+        preset = get_genre_preset(key)
+    if preset is None:
+        raise typer.BadParameter(f"Writing preset '{key}' was not found in {normalized}.")
+    typer.echo(json.dumps(preset.model_dump(mode="json"), ensure_ascii=False, indent=2))
+
+
+@writing_preset_app.command("hot")
+def writing_preset_hot(
+    limit: int = typer.Option(8, "--limit", min=1, max=50),
+) -> None:
+    """Show currently recommended hot genre presets."""
+    typer.echo(
+        json.dumps(
+            [
+                {
+                    "key": preset.key,
+                    "name": preset.name,
+                    "genre": preset.genre,
+                    "sub_genre": preset.sub_genre,
+                    "trend_score": preset.trend_score,
+                    "trend_window": preset.trend_window,
+                    "trend_summary": preset.trend_summary,
+                    "trend_keywords": preset.trend_keywords,
+                    "recommended_platforms": preset.recommended_platforms,
+                }
+                for preset in list_hot_genre_presets(limit=limit)
+            ],
+            ensure_ascii=False,
+            indent=2,
+        )
+    )
+
+
 @ui_app.command("serve")
 def ui_serve(
     host: str = typer.Option("127.0.0.1", "--host"),
@@ -360,6 +461,8 @@ def project_create(
     ),
 ) -> None:
     """Create a project and its default style guide."""
+
+    validate_longform_scope(target_words, target_chapters)
 
     writing_profile_payload = _apply_prompt_pack_to_profile_payload(
         _load_structured_payload_file(profile_file),
@@ -626,6 +729,8 @@ def project_autowrite(
     ),
 ) -> None:
     """Create a project if needed, generate the full plan, and run the whole novel pipeline."""
+
+    validate_longform_scope(target_words, target_chapters)
 
     writing_profile_payload = _apply_prompt_pack_to_profile_payload(
         _load_structured_payload_file(profile_file),
@@ -1057,7 +1162,7 @@ def chapter_add(
     chapter_goal: str,
     title: str | None = None,
     volume_number: int = 1,
-    target_words: int = 3000,
+    target_words: int = 5500,
 ) -> None:
     """Create a chapter structure row."""
 

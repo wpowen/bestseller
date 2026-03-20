@@ -27,6 +27,7 @@ BestSeller 是一个面向长篇小说生产的人机共创框架，目标是把
   - `bestseller export markdown|docx|epub|pdf`
   - `bestseller canon list`
   - `bestseller timeline list`
+  - `bestseller writing-preset list|show|hot`
 - 已接入统一 `LLM gateway`，支持 `writer / critic / editor` 三类角色
 - 已接入 `summarizer` 角色，为知识层生成场景摘要
 - 默认可在无外部模型依赖时退回 `mock/fallback`，同时把 `llm_runs` 审计记录写入数据库
@@ -101,10 +102,10 @@ BestSeller 是一个面向长篇小说生产的人机共创框架，目标是把
 创建项目或整书自动写作时，可以直接指定：
 
 ```bash
-./scripts/run.sh project create my-story "我的长篇" 末日科幻 120000 40 \
+./scripts/run.sh project create my-story "我的长篇" 末日科幻 220000 40 \
   --prompt-pack apocalypse-supply-chain
 
-./scripts/run.sh project autowrite my-story "我的长篇" 末日科幻 120000 40 \
+./scripts/run.sh project autowrite my-story "我的长篇" 末日科幻 220000 40 \
   --premise "末日零点我能提前购买未来物资，主角重生在末日爆发前三天，拥有未来商城与资源差优势。" \
   --prompt-pack apocalypse-supply-chain
 ```
@@ -121,6 +122,42 @@ Prompt Pack 文件目录：
 - planner / writer / review / rewrite 专用片段
 
 多数情况下，后续新增一个题材，不需要改 Python 逻辑，只需要新增一个 pack 文件。
+
+## 写作预设目录
+
+除了 Prompt Pack，系统还内置了一套更上层的“写作预设目录”，用于一次性确定：
+
+- 平台目标
+- 主类型
+- 细分卖点
+- 目标总字数
+- 目标章节数
+- 人物原型
+- 爽点 / 套路标签
+- 章节节奏和读者承诺
+
+当前已经内置：
+
+- 平台预设：`番茄小说 / 起点中文网 / 七猫小说 / 晋江文学城 / 纵横中文网 / 17K 小说网 / 中文网文平台（通用）`
+- 题材预设：`末日囤货 / 末日规则 / 末日基建 / 仙侠升级 / 都市异能反转 / 都市黑科技 / 历史争霸 / 悬疑追凶 / 规则怪谈 / 无限流 / 星际舰队 / 女性成长拉扯 / 古言宫斗 / 御兽养成 / 电竞直播 / 民俗悬疑 / 重生创业`
+- 篇幅预设：从 `4 章样书试写` 一直到 `超长连载阶段单元`
+- 热点题材推荐：支持按最近市场热度排序查看
+
+硬约束：
+
+- 每章最低 `5000` 字
+- 推荐每章 `5500` 字左右
+- 推荐范围 `5000-6000` 字
+
+查看预设目录：
+
+```bash
+./scripts/run.sh writing-preset list
+./scripts/run.sh writing-preset show apocalypse-supply --kind genre
+./scripts/run.sh writing-preset show qidian --kind platform
+./scripts/run.sh writing-preset show trial-4 --kind length
+./scripts/run.sh writing-preset hot --limit 8
+```
 
 ## 写作画像配置
 
@@ -199,10 +236,10 @@ Prompt Pack 文件目录：
 CLI 可以直接吃文件：
 
 ```bash
-./scripts/run.sh project create my-story "我的长篇" sci-fi 120000 40 \
+./scripts/run.sh project create my-story "我的长篇" sci-fi 220000 40 \
   --profile-file examples/configs/web_serial_profile.yaml
 
-./scripts/run.sh project autowrite my-story "我的长篇" sci-fi 120000 40 \
+./scripts/run.sh project autowrite my-story "我的长篇" sci-fi 220000 40 \
   --premise "末日零点我能提前购买未来物资，主角重生在末日爆发前三天，拥有未来商城与资源差优势。" \
   --profile-file examples/configs/web_serial_profile.yaml
 ```
@@ -368,7 +405,7 @@ GEMINI_API_KEY=你的-gemini-api-key
 第一次试跑一整本，建议先用小体量：
 
 ```bash
-./scripts/run.sh project autowrite demo-story "Demo Story" sci-fi 12000 4 --premise "一名被放逐的导航员发现帝国正在篡改边境航线记录，并被迫在追杀中揭穿真相。"
+./scripts/run.sh project autowrite demo-story "Demo Story" sci-fi 22000 4 --premise "一名被放逐的导航员发现帝国正在篡改边境航线记录，并被迫在追杀中揭穿真相。"
 ./scripts/run.sh project structure demo-story
 ./scripts/run.sh story-bible show demo-story
 ./scripts/run.sh project review demo-story
@@ -392,13 +429,13 @@ ls -la output/demo-story
 如果你只想要纯 JSON 而不看阶段日志，可以显式关闭：
 
 ```bash
-./scripts/run.sh project autowrite demo-story "Demo Story" sci-fi 12000 4 --premise "一名被放逐的导航员发现帝国正在篡改边境航线记录，并被迫在追杀中揭穿真相。" --no-progress
+./scripts/run.sh project autowrite demo-story "Demo Story" sci-fi 22000 4 --premise "一名被放逐的导航员发现帝国正在篡改边境航线记录，并被迫在追杀中揭穿真相。" --no-progress
 ```
 
 如果你不想自动执行 repair，可以显式关闭：
 
 ```bash
-./scripts/run.sh project autowrite demo-story "Demo Story" sci-fi 12000 4 --premise "一名被放逐的导航员发现帝国正在篡改边境航线记录，并被迫在追杀中揭穿真相。" --no-auto-repair
+./scripts/run.sh project autowrite demo-story "Demo Story" sci-fi 22000 4 --premise "一名被放逐的导航员发现帝国正在篡改边境航线记录，并被迫在追杀中揭穿真相。" --no-auto-repair
 ```
 
 ## 小说质量与提示词策略
@@ -436,7 +473,7 @@ make db-upgrade
 创建项目：
 
 ```bash
-make run ARGS="project create my-story '我的故事' fantasy 120000 60"
+make run ARGS="project create my-story '我的故事' fantasy 330000 60"
 ```
 
 导入规划产物：
@@ -521,7 +558,7 @@ make run ARGS="export pdf my-story"
 ```bash
 ./scripts/start.sh
 ./scripts/run.sh status
-./scripts/run.sh project autowrite demo-story "Demo Story" sci-fi 12000 4 --premise "一名被放逐的导航员发现帝国正在篡改边境航线记录。"
+./scripts/run.sh project autowrite demo-story "Demo Story" sci-fi 22000 4 --premise "一名被放逐的导航员发现帝国正在篡改边境航线记录。"
 ./scripts/verify.sh
 ./scripts/stop.sh
 ```

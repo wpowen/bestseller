@@ -535,6 +535,8 @@ def _fallback_chapter_outline_batch(
         ]
     chapters: list[dict[str, Any]] = []
     chapter_number = 1
+    chapter_target_words = max(5000, int(project.target_word_count / max(project.target_chapters, 1)))
+    scene_target_words = max(900, int(chapter_target_words / 3))
     for raw_volume_index, volume in enumerate(normalized_volume_plan, start=1):
         volume_payload = _mapping(volume)
         total_in_volume = max(int(volume_payload.get("chapter_count_target") or 1), 1)
@@ -574,7 +576,7 @@ def _fallback_chapter_outline_batch(
                         protagonist_name: {"arc_state": "主动出击", "emotion": "更坚定"},
                         ally_name: {"arc_state": "被迫跟进", "emotion": "压力上升"},
                     },
-                    "target_word_count": project.target_word_count // max(project.target_chapters * 3, 1),
+                    "target_word_count": scene_target_words,
                 },
                 {
                     "scene_number": 2,
@@ -595,7 +597,7 @@ def _fallback_chapter_outline_batch(
                         protagonist_name: {"arc_state": "掌握更多真相", "emotion": "不安"},
                         antagonist_name: {"arc_state": "开始主动压制", "emotion": "冷静施压"},
                     },
-                    "target_word_count": project.target_word_count // max(project.target_chapters * 3, 1),
+                    "target_word_count": scene_target_words,
                 },
                 {
                     "scene_number": 3,
@@ -615,7 +617,7 @@ def _fallback_chapter_outline_batch(
                     "exit_state": {
                         protagonist_name: {"arc_state": "被迫进入更难局面", "emotion": "强压下前进"},
                     },
-                    "target_word_count": project.target_word_count // max(project.target_chapters * 3, 1),
+                    "target_word_count": scene_target_words,
                 },
             ]
             chapters.append(
@@ -636,7 +638,7 @@ def _fallback_chapter_outline_batch(
                     "hook_type": _hook_type(index_within_volume, total_in_volume),
                     "hook_description": writing_profile.market.chapter_hook_strategy,
                     "volume_number": volume_number,
-                    "target_word_count": max(2200, int(project.target_word_count / max(project.target_chapters, 1))),
+                    "target_word_count": chapter_target_words,
                     "scenes": scenes,
                 }
             )

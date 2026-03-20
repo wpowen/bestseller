@@ -86,6 +86,26 @@ def test_benchmark_run_command(monkeypatch: pytest.MonkeyPatch) -> None:
     assert payload["passed_case_count"] == 3
 
 
+def test_ui_serve_command(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_serve_web_app(*, host: str, port: int, open_browser: bool) -> None:
+        captured["host"] = host
+        captured["port"] = port
+        captured["open_browser"] = open_browser
+
+    monkeypatch.setattr("bestseller.cli.main.serve_web_app", fake_serve_web_app)
+
+    result = runner.invoke(app, ["ui", "serve", "--host", "127.0.0.1", "--port", "8899", "--open-browser"])
+
+    assert result.exit_code == 0
+    assert captured == {
+        "host": "127.0.0.1",
+        "port": 8899,
+        "open_browser": True,
+    }
+
+
 def test_config_show_reads_custom_file(tmp_path: Path) -> None:
     config_path = tmp_path / "config.yaml"
     config_path.write_text(

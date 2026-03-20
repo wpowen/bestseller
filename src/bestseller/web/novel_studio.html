@@ -1,0 +1,1625 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>BestSeller 长篇小说控制台</title>
+  <style>
+    :root {
+      --bg-top: #f7efe4;
+      --bg-bottom: #ede1d0;
+      --surface: rgba(255, 251, 245, 0.88);
+      --surface-strong: #fffdf9;
+      --surface-deep: #efe4d3;
+      --ink: #211a15;
+      --muted: #665a4d;
+      --soft: #8f8272;
+      --line: rgba(104, 79, 56, 0.14);
+      --line-strong: rgba(104, 79, 56, 0.26);
+      --accent: #9b4325;
+      --accent-2: #c86632;
+      --accent-soft: #f4dfd0;
+      --ok: #1f6b46;
+      --warn: #8b5c19;
+      --err: #8f3029;
+      --shadow: 0 18px 48px rgba(56, 35, 18, 0.09);
+      --shadow-soft: 0 8px 24px rgba(56, 35, 18, 0.06);
+      --radius-xl: 28px;
+      --radius-lg: 22px;
+      --radius-md: 16px;
+      --radius-sm: 12px;
+      --mono: "SFMono-Regular", "JetBrains Mono", "Fira Code", monospace;
+      --serif: "Songti SC", "STSong", "Noto Serif SC", "Source Han Serif SC", serif;
+      --sans: "PingFang SC", "Noto Sans SC", "Microsoft YaHei", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      margin: 0;
+      color: var(--ink);
+      font-family: var(--sans);
+      background:
+        radial-gradient(circle at 12% 8%, rgba(255, 255, 255, 0.8) 0, transparent 28rem),
+        radial-gradient(circle at 88% 6%, rgba(234, 188, 147, 0.38) 0, transparent 22rem),
+        linear-gradient(180deg, var(--bg-top) 0%, var(--bg-bottom) 100%);
+      min-height: 100vh;
+    }
+
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      background:
+        linear-gradient(rgba(112, 85, 63, 0.035) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(112, 85, 63, 0.035) 1px, transparent 1px);
+      background-size: 34px 34px;
+      mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.35), transparent 78%);
+    }
+
+    .shell {
+      position: relative;
+      max-width: 1600px;
+      margin: 0 auto;
+      padding: 28px;
+    }
+
+    .hero {
+      position: relative;
+      overflow: hidden;
+      display: grid;
+      grid-template-columns: minmax(0, 1.25fr) minmax(360px, 0.85fr);
+      gap: 22px;
+      padding: 28px;
+      border-radius: var(--radius-xl);
+      border: 1px solid var(--line);
+      background:
+        linear-gradient(135deg, rgba(255, 252, 247, 0.96) 0%, rgba(245, 229, 210, 0.94) 62%, rgba(236, 213, 187, 0.9) 100%);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(14px);
+    }
+
+    .hero::after {
+      content: "";
+      position: absolute;
+      right: -90px;
+      top: -110px;
+      width: 300px;
+      height: 300px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(196, 102, 50, 0.18), transparent 70%);
+      pointer-events: none;
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 14px;
+      border-radius: 999px;
+      border: 1px solid rgba(155, 67, 37, 0.15);
+      background: rgba(255, 255, 255, 0.62);
+      color: var(--accent);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .hero h1 {
+      margin: 18px 0 12px;
+      font-family: var(--serif);
+      font-size: clamp(34px, 4vw, 54px);
+      line-height: 1.05;
+      letter-spacing: 0.01em;
+    }
+
+    .hero p {
+      margin: 0;
+      max-width: 920px;
+      color: var(--muted);
+      font-size: 15px;
+      line-height: 1.9;
+    }
+
+    .hero-copy {
+      display: grid;
+      gap: 18px;
+    }
+
+    .hero-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 6px;
+    }
+
+    .hero-note-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .hero-note {
+      border-radius: var(--radius-md);
+      border: 1px solid rgba(104, 79, 56, 0.12);
+      background: rgba(255, 255, 255, 0.7);
+      padding: 14px;
+      box-shadow: var(--shadow-soft);
+    }
+
+    .hero-note strong {
+      display: block;
+      margin-bottom: 8px;
+      font-size: 12px;
+      color: var(--soft);
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    .hero-note span {
+      font-size: 15px;
+      line-height: 1.7;
+      color: var(--ink);
+    }
+
+    .hero-side {
+      position: relative;
+      display: grid;
+      gap: 14px;
+      align-content: start;
+    }
+
+    .workflow-card,
+    .status-card {
+      border-radius: var(--radius-lg);
+      border: 1px solid rgba(104, 79, 56, 0.12);
+      background: rgba(255, 252, 247, 0.78);
+      padding: 18px;
+      box-shadow: var(--shadow-soft);
+    }
+
+    .workflow-card h2,
+    .status-card h2 {
+      margin: 0 0 10px;
+      font-size: 18px;
+    }
+
+    .workflow-list {
+      display: grid;
+      gap: 10px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .workflow-step {
+      display: grid;
+      grid-template-columns: 34px 1fr;
+      gap: 10px;
+      align-items: start;
+    }
+
+    .workflow-step strong {
+      display: inline-grid;
+      place-items: center;
+      width: 34px;
+      height: 34px;
+      border-radius: 50%;
+      background: linear-gradient(180deg, #a34728 0%, #803119 100%);
+      color: white;
+      font-size: 13px;
+      box-shadow: 0 8px 18px rgba(138, 56, 30, 0.22);
+    }
+
+    .workflow-step span {
+      display: block;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.7;
+      margin-top: 3px;
+    }
+
+    .status-strip {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      min-height: 36px;
+      padding: 8px 12px;
+      border-radius: 999px;
+      border: 1px solid rgba(104, 79, 56, 0.12);
+      background: rgba(255, 255, 255, 0.72);
+      font-size: 13px;
+      color: var(--ink);
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: 420px minmax(0, 1fr);
+      gap: 20px;
+      margin-top: 20px;
+      min-height: calc(100vh - 240px);
+    }
+
+    .stack {
+      display: grid;
+      gap: 18px;
+      align-content: start;
+    }
+
+    .panel {
+      border-radius: var(--radius-lg);
+      border: 1px solid var(--line);
+      background: var(--surface);
+      backdrop-filter: blur(12px);
+      box-shadow: var(--shadow-soft);
+      padding: 20px;
+    }
+
+    .panel-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: start;
+      gap: 14px;
+      margin-bottom: 14px;
+    }
+
+    .panel-head h2,
+    .panel-head h3 {
+      margin: 0 0 6px;
+      line-height: 1.2;
+    }
+
+    .panel-head p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.7;
+    }
+
+    .field-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .field {
+      display: grid;
+      gap: 7px;
+    }
+
+    .field.full {
+      grid-column: 1 / -1;
+    }
+
+    label {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--ink);
+    }
+
+    .field-meta {
+      margin-top: -2px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.6;
+    }
+
+    input,
+    textarea,
+    select {
+      width: 100%;
+      border-radius: 14px;
+      border: 1px solid rgba(104, 79, 56, 0.16);
+      background: rgba(255, 255, 255, 0.85);
+      color: var(--ink);
+      font: inherit;
+      padding: 11px 13px;
+      transition: border-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
+    }
+
+    input:focus,
+    textarea:focus,
+    select:focus {
+      outline: none;
+      border-color: rgba(155, 67, 37, 0.55);
+      box-shadow: 0 0 0 4px rgba(155, 67, 37, 0.1);
+      transform: translateY(-1px);
+    }
+
+    textarea {
+      min-height: 150px;
+      resize: vertical;
+      line-height: 1.8;
+    }
+
+    .tag-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 4px;
+    }
+
+    .tag {
+      padding: 6px 10px;
+      border-radius: 999px;
+      border: 1px solid rgba(155, 67, 37, 0.12);
+      background: rgba(155, 67, 37, 0.06);
+      font-size: 12px;
+      color: var(--accent);
+    }
+
+    .checks {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-top: 10px;
+    }
+
+    .check {
+      display: inline-flex;
+      align-items: start;
+      gap: 10px;
+      padding: 12px 14px;
+      border-radius: 14px;
+      border: 1px solid rgba(104, 79, 56, 0.12);
+      background: rgba(255, 255, 255, 0.56);
+      min-width: 180px;
+    }
+
+    .check input {
+      width: auto;
+      margin-top: 2px;
+      transform: scale(1.08);
+    }
+
+    .check strong {
+      display: block;
+      font-size: 13px;
+      margin-bottom: 3px;
+    }
+
+    .check span {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.6;
+    }
+
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    button,
+    .action-link {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      min-height: 44px;
+      padding: 0 16px;
+      border-radius: 14px;
+      border: 1px solid transparent;
+      background: linear-gradient(180deg, #ab4d2b 0%, #8f3920 100%);
+      color: white;
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+      text-decoration: none;
+      box-shadow: 0 12px 26px rgba(149, 63, 33, 0.2);
+      transition: transform 0.18s ease, box-shadow 0.18s ease, opacity 0.18s ease;
+    }
+
+    button:hover,
+    .action-link:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 14px 30px rgba(149, 63, 33, 0.24);
+    }
+
+    button.secondary,
+    .action-link.secondary {
+      background: rgba(255, 255, 255, 0.82);
+      color: var(--ink);
+      border-color: rgba(104, 79, 56, 0.14);
+      box-shadow: none;
+    }
+
+    button.ghost,
+    .action-link.ghost {
+      background: transparent;
+      color: var(--accent);
+      border-color: rgba(155, 67, 37, 0.24);
+      box-shadow: none;
+    }
+
+    button:disabled {
+      cursor: not-allowed;
+      opacity: 0.65;
+      transform: none;
+      box-shadow: none;
+    }
+
+    .hint {
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.75;
+    }
+
+    .strategy-card,
+    .formula-card,
+    .info-card {
+      border-radius: var(--radius-md);
+      border: 1px solid rgba(104, 79, 56, 0.12);
+      background: rgba(255, 255, 255, 0.56);
+      padding: 14px;
+    }
+
+    .formula-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 12px;
+    }
+
+    .formula-item {
+      border-radius: 14px;
+      background: rgba(255, 251, 245, 0.88);
+      border: 1px solid rgba(104, 79, 56, 0.1);
+      padding: 12px;
+    }
+
+    .formula-item strong {
+      display: block;
+      font-size: 12px;
+      color: var(--soft);
+      margin-bottom: 8px;
+      letter-spacing: 0.04em;
+    }
+
+    .formula-item span {
+      display: block;
+      font-size: 22px;
+      font-weight: 800;
+      font-family: var(--serif);
+    }
+
+    .scope-banner {
+      margin-top: 14px;
+      border-radius: 18px;
+      padding: 14px 16px;
+      background: linear-gradient(135deg, rgba(155, 67, 37, 0.08), rgba(200, 102, 50, 0.12));
+      border: 1px solid rgba(155, 67, 37, 0.14);
+    }
+
+    .scope-banner strong {
+      display: block;
+      margin-bottom: 6px;
+      font-size: 14px;
+    }
+
+    .scope-banner p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.75;
+    }
+
+    .task-list,
+    .project-list,
+    .artifact-list {
+      display: grid;
+      gap: 10px;
+      max-height: 280px;
+      overflow: auto;
+      padding-right: 4px;
+    }
+
+    .task,
+    .project,
+    .artifact {
+      border-radius: 16px;
+      border: 1px solid rgba(104, 79, 56, 0.12);
+      background: rgba(255, 255, 255, 0.7);
+      padding: 14px;
+      transition: transform 0.18s ease, border-color 0.18s ease, background 0.18s ease;
+    }
+
+    .task:hover,
+    .project:hover,
+    .artifact:hover {
+      transform: translateY(-1px);
+      border-color: rgba(155, 67, 37, 0.25);
+      background: rgba(255, 255, 255, 0.84);
+    }
+
+    .task.current,
+    .project.current {
+      border-color: rgba(155, 67, 37, 0.35);
+      background: rgba(255, 247, 240, 0.92);
+      box-shadow: inset 0 0 0 1px rgba(155, 67, 37, 0.08);
+    }
+
+    .task-head,
+    .project-head,
+    .artifact-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: center;
+    }
+
+    .task-head strong,
+    .project-head strong,
+    .artifact-head strong {
+      font-size: 15px;
+    }
+
+    .status {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 28px;
+      padding: 0 10px;
+      border-radius: 999px;
+      border: 1px solid rgba(104, 79, 56, 0.12);
+      background: rgba(248, 243, 235, 0.88);
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--ink);
+    }
+
+    .status.running { color: var(--warn); }
+    .status.completed { color: var(--ok); }
+    .status.failed { color: var(--err); }
+    .status.queued { color: var(--soft); }
+
+    .main-grid {
+      display: grid;
+      gap: 18px;
+      align-content: start;
+    }
+
+    .headline-panel {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 16px;
+      align-items: center;
+    }
+
+    .headline-panel h2 {
+      margin: 0 0 6px;
+      font-family: var(--serif);
+      font-size: clamp(26px, 3vw, 38px);
+      line-height: 1.08;
+    }
+
+    .headline-panel p {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.75;
+    }
+
+    .summary-cards {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .summary-card {
+      position: relative;
+      overflow: hidden;
+      border-radius: 18px;
+      border: 1px solid rgba(104, 79, 56, 0.12);
+      background: linear-gradient(180deg, rgba(255, 255, 255, 0.82) 0%, rgba(248, 239, 228, 0.78) 100%);
+      padding: 16px;
+    }
+
+    .summary-card::after {
+      content: "";
+      position: absolute;
+      right: -18px;
+      top: -18px;
+      width: 74px;
+      height: 74px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(200, 102, 50, 0.12), transparent 70%);
+    }
+
+    .summary-card strong {
+      display: block;
+      margin-bottom: 8px;
+      color: var(--soft);
+      font-size: 12px;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    .summary-card span {
+      display: block;
+      font-size: 26px;
+      font-weight: 800;
+      line-height: 1.15;
+    }
+
+    .summary-card small {
+      display: block;
+      margin-top: 6px;
+      color: var(--muted);
+      line-height: 1.6;
+      font-size: 12px;
+    }
+
+    .tabs {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 14px;
+    }
+
+    .tab {
+      min-height: 40px;
+      padding: 0 14px;
+      border-radius: 999px;
+      border: 1px solid rgba(104, 79, 56, 0.14);
+      background: rgba(247, 239, 230, 0.9);
+      color: var(--ink);
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .tab.active {
+      background: linear-gradient(180deg, #a84928 0%, #8c361d 100%);
+      color: white;
+      border-color: rgba(140, 54, 29, 0.9);
+      box-shadow: 0 10px 22px rgba(140, 54, 29, 0.18);
+    }
+
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+
+    .codebox,
+    pre {
+      margin: 0;
+      border-radius: 16px;
+      border: 1px solid rgba(104, 79, 56, 0.12);
+      background: rgba(249, 244, 236, 0.92);
+      padding: 16px;
+      overflow: auto;
+      font-family: var(--mono);
+      font-size: 12.5px;
+      line-height: 1.72;
+      color: #3c2d22;
+    }
+
+    .progress-feed {
+      max-height: 420px;
+      overflow: auto;
+      display: grid;
+      gap: 10px;
+    }
+
+    .progress-item {
+      border-radius: 16px;
+      border: 1px solid rgba(104, 79, 56, 0.12);
+      background: rgba(255, 255, 255, 0.72);
+      padding: 14px;
+    }
+
+    .progress-item-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: start;
+      margin-bottom: 10px;
+    }
+
+    .preview-toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+
+    .preview-toolbar select {
+      min-width: 280px;
+      flex: 1 1 280px;
+    }
+
+    .preview-frame {
+      width: 100%;
+      min-height: 760px;
+      border-radius: 20px;
+      border: 1px solid rgba(104, 79, 56, 0.12);
+      background: white;
+      box-shadow: inset 0 0 0 1px rgba(104, 79, 56, 0.04);
+    }
+
+    .empty {
+      border-radius: 18px;
+      border: 1px dashed rgba(104, 79, 56, 0.2);
+      padding: 24px;
+      color: var(--muted);
+      text-align: center;
+      background: rgba(255, 250, 242, 0.72);
+      line-height: 1.75;
+    }
+
+    .artifact-meta {
+      display: grid;
+      gap: 6px;
+      margin-top: 6px;
+    }
+
+    .artifact-path {
+      color: var(--soft);
+      font-size: 12px;
+      line-height: 1.6;
+      word-break: break-all;
+    }
+
+    .footer-note {
+      margin-top: 20px;
+      padding: 18px;
+      border-radius: 20px;
+      border: 1px solid rgba(104, 79, 56, 0.12);
+      background: rgba(255, 252, 247, 0.68);
+      color: var(--muted);
+      line-height: 1.9;
+      font-size: 13px;
+    }
+
+    @media (max-width: 1360px) {
+      .hero {
+        grid-template-columns: 1fr;
+      }
+
+      .layout {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media (max-width: 980px) {
+      .hero-note-grid,
+      .summary-cards,
+      .formula-grid,
+      .field-grid {
+        grid-template-columns: 1fr 1fr;
+      }
+
+      .headline-panel {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media (max-width: 760px) {
+      .shell {
+        padding: 16px;
+      }
+
+      .hero,
+      .panel {
+        padding: 16px;
+      }
+
+      .hero-note-grid,
+      .summary-cards,
+      .formula-grid,
+      .field-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .workflow-step {
+        grid-template-columns: 30px 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <section class="hero">
+      <div class="hero-copy">
+        <div class="eyebrow">BestSeller / 长篇小说控制台</div>
+        <h1>不是“一次性写完一本书”，<br />而是可控地推进整部长篇。</h1>
+        <p>
+          这个页面直接驱动当前项目的真实写作流水线。你可以先定义题材、卖点、目标体量和一句话设定，
+          系统会依次完成规划、故事圣经、叙事图谱、章节与场景、审校、修订和导出。对于百万字、千万字项目，
+          正确做法不是一次性写完，而是按卷、按阶段不断扩写和维护一致性。
+        </p>
+
+        <div class="hero-actions">
+          <button id="hero-start-button">开始本轮写作</button>
+          <button class="secondary" id="hero-refresh-button">刷新项目与任务</button>
+        </div>
+
+        <div class="hero-note-grid">
+          <div class="hero-note">
+            <strong>当前页面负责什么</strong>
+            <span>发起整书任务、监控阶段进度、查看故事骨架、预览章节正文和导出成品。</span>
+          </div>
+          <div class="hero-note">
+            <strong>长篇如何推进</strong>
+            <span>先做结构，再做单卷，再做整书维护。页面里的总字数和总章节数指的是本轮目标范围。</span>
+          </div>
+          <div class="hero-note">
+            <strong>什么时候该修订</strong>
+            <span>当章节、情绪线、暗线或世界规则没有通过审校时，直接在页面执行自动修复并继续推进。</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="hero-side">
+        <section class="workflow-card">
+          <h2>长篇写作链路</h2>
+          <ol class="workflow-list">
+            <li class="workflow-step">
+              <strong>1</strong>
+              <div>
+                <div>设定本轮范围</div>
+                <span>题材、目标字数、目标章节数、读者定位、一句话 premise。</span>
+              </div>
+            </li>
+            <li class="workflow-step">
+              <strong>2</strong>
+              <div>
+                <div>生成结构骨架</div>
+                <span>规划产物、故事圣经、叙事图谱、章节与场景合同会先建立出来。</span>
+              </div>
+            </li>
+            <li class="workflow-step">
+              <strong>3</strong>
+              <div>
+                <div>写作与修订</div>
+                <span>章节按场景推进，经过审校、自动修订、知识沉淀，再汇总成章。</span>
+              </div>
+            </li>
+            <li class="workflow-step">
+              <strong>4</strong>
+              <div>
+                <div>导出与继续扩写</div>
+                <span>先得到可读草稿，再逐卷扩大范围，而不是一次性把千万字全部跑完。</span>
+              </div>
+            </li>
+          </ol>
+        </section>
+
+        <section class="status-card">
+          <h2>当前运行环境</h2>
+          <div class="status-strip" id="status-strip"></div>
+        </section>
+      </div>
+    </section>
+
+    <section class="layout">
+      <aside class="stack">
+        <section class="panel">
+          <div class="panel-head">
+            <div>
+              <h2>本轮写作配置</h2>
+              <p>这里定义的是“这一次要推进的写作范围”，不是整个人生周期里一次性写完全部内容。</p>
+            </div>
+          </div>
+
+          <div class="field-grid">
+            <div class="field">
+              <label for="slug">项目代号</label>
+              <div class="field-meta">内部唯一标识，只用于路径、数据库和导出目录。建议英文小写加连字符。</div>
+              <input id="slug" value="web-story-001" />
+            </div>
+
+            <div class="field">
+              <label for="title">书名</label>
+              <div class="field-meta">读者看到的作品标题，会进入导出文件和页面预览。</div>
+              <input id="title" value="网页试写长篇" />
+            </div>
+
+            <div class="field">
+              <label for="genre">主类型</label>
+              <div class="field-meta">决定叙事节奏、读者预期和爽点分布。可以填中文，例如“末日科幻”。</div>
+              <input id="genre" list="genre-options" value="末日科幻" />
+            </div>
+
+            <div class="field">
+              <label for="sub-genre">细分卖点</label>
+              <div class="field-meta">决定题材辨识度，例如“重生囤货”“规则怪谈”“星际逃亡”。</div>
+              <input id="sub-genre" list="sub-genre-options" value="重生囤货" />
+            </div>
+
+            <div class="field">
+              <label for="target-words">本轮目标总字数</label>
+              <div class="field-meta">本轮计划推进到多少字。建议先跑 12000 到 50000 字验证风格，再放大。</div>
+              <input id="target-words" type="number" value="12000" min="1000" step="1000" />
+            </div>
+
+            <div class="field">
+              <label for="target-chapters">本轮目标章节数</label>
+              <div class="field-meta">本轮要写几章。系统会据此拆章节和场景，并控制推进密度。</div>
+              <input id="target-chapters" type="number" value="4" min="1" />
+            </div>
+
+            <div class="field full">
+              <label for="audience">目标读者</label>
+              <div class="field-meta">决定语言风格、情绪强度和信息密度。例如“男频连载读者”“女频成长向读者”。</div>
+              <input id="audience" list="audience-options" value="男频连载读者" />
+            </div>
+
+            <div class="field full">
+              <label for="premise">一句话设定 / 开书钩子</label>
+              <div class="field-meta">把题材、主角优势、危机和核心悬念写清楚。系统会以此生成世界观、人物和章节骨架。</div>
+              <textarea id="premise">末日零点降临前三天，主角意外得到一个来自未来的购物入口，可以低价购买基因进化药、无限能源和禁忌物资。为了活下去，他必须一边囤货，一边隐藏秘密，同时在末日前的秩序崩塌前找到真正的幕后操盘者。</textarea>
+            </div>
+          </div>
+
+          <datalist id="genre-options">
+            <option value="末日科幻"></option>
+            <option value="都市异能"></option>
+            <option value="仙侠升级"></option>
+            <option value="悬疑推理"></option>
+            <option value="历史权谋"></option>
+            <option value="女性成长"></option>
+            <option value="奇幻冒险"></option>
+          </datalist>
+
+          <datalist id="sub-genre-options">
+            <option value="重生囤货"></option>
+            <option value="规则生存"></option>
+            <option value="系统成长"></option>
+            <option value="星际逃亡"></option>
+            <option value="恋爱博弈"></option>
+            <option value="家族经营"></option>
+          </datalist>
+
+          <datalist id="audience-options">
+            <option value="男频连载读者"></option>
+            <option value="女频成长向读者"></option>
+            <option value="悬疑剧情向读者"></option>
+            <option value="轻小说读者"></option>
+            <option value="网文平台读者"></option>
+          </datalist>
+
+          <div class="tag-row">
+            <span class="tag">建议先做 4 到 8 章样书</span>
+            <span class="tag">百万字建议按卷推进</span>
+            <span class="tag">千万字建议多轮规划与人工把关</span>
+          </div>
+
+          <div class="checks">
+            <label class="check">
+              <input id="export-markdown" type="checkbox" checked />
+              <span>
+                <strong>自动导出 Markdown</strong>
+                <span>本轮写作结束后，自动生成可直接阅读的正文草稿。</span>
+              </span>
+            </label>
+
+            <label class="check">
+              <input id="auto-repair" type="checkbox" checked />
+              <span>
+                <strong>自动修复一轮</strong>
+                <span>一致性审校未通过时，自动进行一轮 repair，而不是直接停在待人工处理。</span>
+              </span>
+            </label>
+          </div>
+
+          <div class="formula-card" style="margin-top: 14px;">
+            <div class="panel-head" style="margin-bottom: 10px;">
+              <div>
+                <h3>范围估算</h3>
+                <p>根据总字数和章节数，先看这次写作任务的粒度是否合理。</p>
+              </div>
+            </div>
+            <div class="formula-grid">
+              <div class="formula-item">
+                <strong>平均每章字数</strong>
+                <span id="words-per-chapter">3000</span>
+              </div>
+              <div class="formula-item">
+                <strong>预估总场景数</strong>
+                <span id="estimated-scenes">16</span>
+              </div>
+              <div class="formula-item">
+                <strong>平均每场字数</strong>
+                <span id="words-per-scene">750</span>
+              </div>
+            </div>
+            <div class="scope-banner">
+              <strong id="scope-mode">建议模式：样书试写</strong>
+              <p id="scope-advice">当前体量适合先验证书名、题材、节奏和主角卖点。确认可读性后，再扩写到单卷或整书。</p>
+            </div>
+          </div>
+
+          <div class="actions" style="margin-top: 14px;">
+            <button id="start-autowrite">开始本轮写作</button>
+            <button class="secondary" id="refresh-projects">刷新项目列表</button>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head">
+            <div>
+              <h2>任务中心</h2>
+              <p>这里看写作、修复和导出任务的实时阶段，不需要盯着命令行。</p>
+            </div>
+          </div>
+          <div class="task-list" id="task-list"></div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head">
+            <div>
+              <h2>已有项目</h2>
+              <p>选择已有项目后，可以继续看结构、正文预览、修订状态和导出文件。</p>
+            </div>
+            <button class="ghost" id="refresh-projects-2">刷新</button>
+          </div>
+          <div class="project-list" id="project-list"></div>
+        </section>
+      </aside>
+
+      <main class="main-grid">
+        <section class="panel headline-panel">
+          <div>
+            <h2 id="project-title">还没有选中项目</h2>
+            <p id="project-subtitle">先在左侧发起一轮写作，或者打开已有项目查看结构与正文。</p>
+          </div>
+          <div class="actions">
+            <button class="secondary" id="run-repair">对当前项目执行修订</button>
+            <button class="secondary" id="reload-project">刷新当前项目</button>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="summary-cards">
+            <div class="summary-card">
+              <strong>项目状态</strong>
+              <span id="summary-status">-</span>
+              <small>当前整书处于什么阶段，例如规划中、写作中、修订中、已完成。</small>
+            </div>
+            <div class="summary-card">
+              <strong>章节总数</strong>
+              <span id="summary-chapters">-</span>
+              <small>当前已物化到数据库里的章节数量。</small>
+            </div>
+            <div class="summary-card">
+              <strong>场景总数</strong>
+              <span id="summary-scenes">-</span>
+              <small>场景越多，说明故事推进颗粒度越细。</small>
+            </div>
+            <div class="summary-card">
+              <strong>导出文件</strong>
+              <span id="summary-outputs">-</span>
+              <small>当前项目目录下已经生成的可读产物数量。</small>
+            </div>
+            <div class="summary-card">
+              <strong>世界规则</strong>
+              <span id="summary-world-rules">-</span>
+              <small>世界观限制、能力边界和运作规则数量。</small>
+            </div>
+            <div class="summary-card">
+              <strong>角色数量</strong>
+              <span id="summary-characters">-</span>
+              <small>故事圣经中当前已建好的核心角色和重要配角数量。</small>
+            </div>
+            <div class="summary-card">
+              <strong>主线 / 支线</strong>
+              <span id="summary-arcs">-</span>
+              <small>叙事图谱里已经落地的 plot arcs 数量。</small>
+            </div>
+            <div class="summary-card">
+              <strong>情绪 / 反派线</strong>
+              <span id="summary-emotions">-</span>
+              <small>关系线、情绪线与反派推进计划的当前规模。</small>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="tabs">
+            <button class="tab active" data-tab="preview">成品阅读</button>
+            <button class="tab" data-tab="progress">阶段日志</button>
+            <button class="tab" data-tab="structure">项目结构</button>
+            <button class="tab" data-tab="story-bible">故事圣经</button>
+            <button class="tab" data-tab="narrative">叙事图谱</button>
+            <button class="tab" data-tab="outputs">导出文件</button>
+          </div>
+
+          <div class="tab-panel active" id="tab-preview">
+            <div class="preview-toolbar">
+              <select id="preview-file"></select>
+              <button class="secondary" id="open-preview">加载预览</button>
+            </div>
+            <iframe class="preview-frame" id="preview-frame" title="小说正文预览"></iframe>
+          </div>
+
+          <div class="tab-panel" id="tab-progress">
+            <div class="progress-feed" id="progress-feed"></div>
+          </div>
+
+          <div class="tab-panel" id="tab-structure">
+            <pre class="codebox" id="structure-json">等待加载项目结构。</pre>
+          </div>
+
+          <div class="tab-panel" id="tab-story-bible">
+            <pre class="codebox" id="story-bible-json">等待加载故事圣经。</pre>
+          </div>
+
+          <div class="tab-panel" id="tab-narrative">
+            <pre class="codebox" id="narrative-json">等待加载叙事图谱。</pre>
+          </div>
+
+          <div class="tab-panel" id="tab-outputs">
+            <div class="artifact-list" id="artifact-list"></div>
+          </div>
+        </section>
+
+        <section class="footer-note">
+          真正的大体量长篇不应该一次性生成。正确方式是先建立世界观、人物、主线和卷级目标，再逐轮扩写、审校和修订。
+          这个页面已经按这个思路包装了当前系统：你可以把 10000 到 50000 字当作样书或单卷试写，把 100000 到 300000 字当作阶段推进，
+          再逐卷扩充到百万字项目。千万字项目也不是不能做，但应该拆成多个连续项目阶段来推进，而不是一次运行完成。
+        </section>
+      </main>
+    </section>
+  </div>
+
+  <script>
+    const state = {
+      projects: [],
+      tasks: [],
+      activeProjectSlug: null,
+      activeTaskId: null,
+      summary: null,
+    };
+
+    const els = {
+      statusStrip: document.getElementById("status-strip"),
+      taskList: document.getElementById("task-list"),
+      projectList: document.getElementById("project-list"),
+      projectTitle: document.getElementById("project-title"),
+      projectSubtitle: document.getElementById("project-subtitle"),
+      summaryStatus: document.getElementById("summary-status"),
+      summaryChapters: document.getElementById("summary-chapters"),
+      summaryScenes: document.getElementById("summary-scenes"),
+      summaryOutputs: document.getElementById("summary-outputs"),
+      summaryWorldRules: document.getElementById("summary-world-rules"),
+      summaryCharacters: document.getElementById("summary-characters"),
+      summaryArcs: document.getElementById("summary-arcs"),
+      summaryEmotions: document.getElementById("summary-emotions"),
+      structureJson: document.getElementById("structure-json"),
+      storyBibleJson: document.getElementById("story-bible-json"),
+      narrativeJson: document.getElementById("narrative-json"),
+      progressFeed: document.getElementById("progress-feed"),
+      artifactList: document.getElementById("artifact-list"),
+      previewFile: document.getElementById("preview-file"),
+      previewFrame: document.getElementById("preview-frame"),
+      wordsPerChapter: document.getElementById("words-per-chapter"),
+      estimatedScenes: document.getElementById("estimated-scenes"),
+      wordsPerScene: document.getElementById("words-per-scene"),
+      scopeMode: document.getElementById("scope-mode"),
+      scopeAdvice: document.getElementById("scope-advice"),
+    };
+
+    function escapeHtml(value) {
+      return String(value)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;");
+    }
+
+    function pretty(value) {
+      return JSON.stringify(value, null, 2);
+    }
+
+    function formatBytes(bytes) {
+      if (!Number.isFinite(bytes) || bytes <= 0) return "0 B";
+      const units = ["B", "KB", "MB", "GB"];
+      let size = bytes;
+      let index = 0;
+      while (size >= 1024 && index < units.length - 1) {
+        size /= 1024;
+        index += 1;
+      }
+      return `${size.toFixed(size >= 10 || index === 0 ? 0 : 1)} ${units[index]}`;
+    }
+
+    function humanizeTaskStatus(status) {
+      const mapping = {
+        queued: "排队中",
+        running: "执行中",
+        completed: "已完成",
+        failed: "失败",
+      };
+      return mapping[status] || status || "-";
+    }
+
+    function humanizeProjectStatus(status) {
+      const mapping = {
+        planning: "规划中",
+        writing: "写作中",
+        revising: "修订中",
+        complete: "已完成",
+        draft: "草稿中",
+        queued: "排队中",
+      };
+      return mapping[status] || status || "-";
+    }
+
+    function humanizeStage(stage) {
+      const mapping = {
+        queued: "等待执行",
+        running: "正在执行",
+        create_project: "创建项目",
+        generate_planning: "生成规划",
+        materialize_story_bible: "物化故事圣经",
+        materialize_outline: "物化章节大纲",
+        materialize_narrative_graph: "物化叙事图谱",
+        materialize_narrative_tree: "物化叙事树",
+        run_project_pipeline: "执行整书流水线",
+        run_project_review: "执行整书审校",
+        run_project_repair: "执行自动修复",
+        export_project: "导出整书",
+        completed: "已完成",
+        failed: "失败",
+      };
+      return mapping[stage] || stage || "-";
+    }
+
+    async function api(path, options = {}) {
+      const response = await fetch(path, {
+        headers: { "Content-Type": "application/json" },
+        ...options,
+      });
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(text || `HTTP ${response.status}`);
+      }
+      const contentType = response.headers.get("Content-Type") || "";
+      if (contentType.includes("application/json")) {
+        return response.json();
+      }
+      return response.text();
+    }
+
+    function setStatusStrip(payload) {
+      const items = [
+        `模型模式：${payload.llm_mock ? "Mock / 回退写作" : "真实模型"}`,
+        `规划模型：${payload.planner_model}`,
+        `写作模型：${payload.writer_model}`,
+        `产物目录：${payload.output_base_dir}`,
+      ];
+      els.statusStrip.innerHTML = items.map((item) => `<span class="pill">${escapeHtml(item)}</span>`).join("");
+    }
+
+    function updateScopeEstimator() {
+      const targetWords = Number(document.getElementById("target-words").value || 0);
+      const targetChapters = Math.max(Number(document.getElementById("target-chapters").value || 0), 1);
+      const wordsPerChapter = Math.max(Math.round(targetWords / targetChapters), 0);
+      const estimatedScenes = Math.max(targetChapters * 4, 0);
+      const wordsPerScene = estimatedScenes > 0 ? Math.round(targetWords / estimatedScenes) : 0;
+
+      els.wordsPerChapter.textContent = wordsPerChapter.toLocaleString("zh-CN");
+      els.estimatedScenes.textContent = estimatedScenes.toLocaleString("zh-CN");
+      els.wordsPerScene.textContent = wordsPerScene.toLocaleString("zh-CN");
+
+      if (targetWords <= 20000) {
+        els.scopeMode.textContent = "建议模式：样书试写 / 开书验证";
+        els.scopeAdvice.textContent = "当前体量适合测试题材辨识度、主角卖点、第一卷节奏和语言风格。先把可读性做对，再扩写。";
+        return;
+      }
+      if (targetWords <= 150000) {
+        els.scopeMode.textContent = "建议模式：单卷推进 / 中体量连载";
+        els.scopeAdvice.textContent = "当前范围适合做一卷或一个阶段目标。建议跑完后先审校和修订，再决定是否继续扩写下一卷。";
+        return;
+      }
+      if (targetWords <= 1000000) {
+        els.scopeMode.textContent = "建议模式：长篇项目 / 分卷推进";
+        els.scopeAdvice.textContent = "这是长篇项目了，不建议追求一次性全部完成。更合理的做法是按卷推进，每卷结束后重做一致性检查。";
+        return;
+      }
+      els.scopeMode.textContent = "建议模式：超长篇项目 / 多阶段维护";
+      els.scopeAdvice.textContent = "这个体量必须按多卷、多阶段推进。系统可以承载这个目标，但不应该一次运行写完全部内容。请把它拆成连续的阶段任务。";
+    }
+
+    function renderTasks() {
+      if (!state.tasks.length) {
+        els.taskList.innerHTML = `<div class="empty">还没有任务。发起一轮写作后，这里会显示阶段进度和结果。</div>`;
+        return;
+      }
+
+      els.taskList.innerHTML = state.tasks.map((task) => `
+        <div class="task ${task.task_id === state.activeTaskId ? "current" : ""}">
+          <div class="task-head">
+            <strong>${escapeHtml(task.project_slug || task.task_type)}</strong>
+            <span class="status ${escapeHtml(task.status)}">${escapeHtml(humanizeTaskStatus(task.status))}</span>
+          </div>
+          <div class="hint" style="margin-top: 6px;">${escapeHtml(task.title || "未命名任务")}</div>
+          <div class="hint" style="margin-top: 6px;">当前阶段：${escapeHtml(humanizeStage(task.current_stage))}</div>
+          <div class="actions" style="margin-top: 10px;">
+            <button class="ghost" onclick="selectTask('${task.task_id}')">查看日志</button>
+            ${task.project_slug ? `<button class="ghost" onclick="loadProject('${task.project_slug}')">打开项目</button>` : ""}
+          </div>
+        </div>
+      `).join("");
+    }
+
+    function renderProjects() {
+      if (!state.projects.length) {
+        els.projectList.innerHTML = `<div class="empty">当前还没有项目。先在上方配置本轮范围，再开始一次写作任务。</div>`;
+        return;
+      }
+
+      els.projectList.innerHTML = state.projects.map((project) => `
+        <div class="project ${project.slug === state.activeProjectSlug ? "current" : ""}">
+          <div class="project-head">
+            <strong>${escapeHtml(project.title)}</strong>
+            <span class="status">${escapeHtml(humanizeProjectStatus(project.status))}</span>
+          </div>
+          <div class="hint" style="margin-top: 6px;">${escapeHtml(project.slug)} · ${escapeHtml(project.genre)}</div>
+          <div class="hint" style="margin-top: 6px;">本轮目标 ${Number(project.target_word_count || 0).toLocaleString("zh-CN")} 字 / ${Number(project.target_chapters || 0).toLocaleString("zh-CN")} 章</div>
+          <div class="actions" style="margin-top: 10px;">
+            <button class="ghost" onclick="loadProject('${project.slug}')">打开项目</button>
+          </div>
+        </div>
+      `).join("");
+    }
+
+    function renderTaskFeed(task) {
+      if (!task || !task.progress_events || !task.progress_events.length) {
+        els.progressFeed.innerHTML = `<div class="empty">当前任务还没有阶段日志。启动写作或修订任务后，这里会实时显示每一步。</div>`;
+        return;
+      }
+
+      els.progressFeed.innerHTML = task.progress_events.slice().reverse().map((item) => `
+        <div class="progress-item">
+          <div class="progress-item-head">
+            <div>
+              <strong>${escapeHtml(humanizeStage(item.stage))}</strong>
+              <div class="hint">原始阶段码：${escapeHtml(item.stage || "-")}</div>
+            </div>
+            <div class="hint">${escapeHtml(item.timestamp || "-")}</div>
+          </div>
+          <pre class="codebox">${escapeHtml(pretty(item.payload || {}))}</pre>
+        </div>
+      `).join("");
+    }
+
+    function renderSummary(summary) {
+      state.summary = summary;
+      els.projectTitle.textContent = summary.project.title;
+      els.projectSubtitle.textContent = `${summary.project.slug} · ${summary.project.genre} · 目标 ${Number(summary.project.target_word_count || 0).toLocaleString("zh-CN")} 字 / ${Number(summary.project.target_chapters || 0).toLocaleString("zh-CN")} 章`;
+      els.summaryStatus.textContent = humanizeProjectStatus(summary.project.status);
+      els.summaryChapters.textContent = Number(summary.structure_summary.total_chapters || 0).toLocaleString("zh-CN");
+      els.summaryScenes.textContent = Number(summary.structure_summary.total_scenes || 0).toLocaleString("zh-CN");
+      els.summaryOutputs.textContent = Number(summary.outputs.length || 0).toLocaleString("zh-CN");
+      els.summaryWorldRules.textContent = Number(summary.story_bible_counts.world_rule_count || 0).toLocaleString("zh-CN");
+      els.summaryCharacters.textContent = Number(summary.story_bible_counts.character_count || 0).toLocaleString("zh-CN");
+      els.summaryArcs.textContent = Number(summary.narrative_counts.plot_arc_count || 0).toLocaleString("zh-CN");
+      els.summaryEmotions.textContent = `${Number(summary.narrative_counts.emotion_track_count || 0).toLocaleString("zh-CN")} / ${Number(summary.narrative_counts.antagonist_plan_count || 0).toLocaleString("zh-CN")}`;
+
+      const previewOptions = summary.outputs
+        .filter((item) => item.name.endsWith(".md"))
+        .map((item) => `<option value="${escapeHtml(item.name)}">${escapeHtml(item.name)}</option>`);
+      els.previewFile.innerHTML = previewOptions.length
+        ? previewOptions.join("")
+        : `<option value="">当前没有可预览的 Markdown 文件</option>`;
+
+      if (summary.default_preview_name) {
+        els.previewFile.value = summary.default_preview_name;
+      }
+      renderArtifacts(summary.outputs);
+    }
+
+    function renderArtifacts(outputs) {
+      if (!outputs.length) {
+        els.artifactList.innerHTML = `<div class="empty">当前还没有导出产物。完成写作或修订后，这里会出现整书和章节文件。</div>`;
+        return;
+      }
+
+      const slug = state.activeProjectSlug;
+      els.artifactList.innerHTML = outputs.map((item) => `
+        <div class="artifact">
+          <div class="artifact-head">
+            <strong>${escapeHtml(item.name)}</strong>
+            <span class="hint">${escapeHtml(formatBytes(Number(item.size_bytes || 0)))}</span>
+          </div>
+          <div class="artifact-meta">
+            <div class="hint">文件类型：${escapeHtml(item.suffix || "未知")}</div>
+            <div class="artifact-path">${escapeHtml(item.path)}</div>
+          </div>
+          <div class="actions" style="margin-top: 10px;">
+            <a class="action-link ghost" href="/api/projects/${slug}/artifact?name=${encodeURIComponent(item.name)}" target="_blank">打开文件</a>
+            ${item.name.endsWith(".md") ? `<button class="ghost" onclick="openPreview('${item.name}')">在页面预览</button>` : ""}
+          </div>
+        </div>
+      `).join("");
+    }
+
+    async function loadStatus() {
+      const payload = await api("/api/status");
+      setStatusStrip(payload);
+    }
+
+    async function loadTasks() {
+      state.tasks = await api("/api/tasks");
+      renderTasks();
+      if (state.activeTaskId) {
+        const active = state.tasks.find((item) => item.task_id === state.activeTaskId);
+        if (active) {
+          renderTaskFeed(active);
+          if (active.status === "completed" && active.result && active.result.project_slug) {
+            state.activeProjectSlug = active.result.project_slug;
+            await loadProjects();
+            await loadProject(active.result.project_slug);
+          }
+        }
+      }
+    }
+
+    async function loadProjects() {
+      state.projects = await api("/api/projects");
+      renderProjects();
+    }
+
+    async function loadProject(slug) {
+      state.activeProjectSlug = slug;
+      renderProjects();
+      const summary = await api(`/api/projects/${slug}/summary`);
+      renderSummary(summary);
+      await Promise.all([
+        loadStructure(slug),
+        loadStoryBible(slug),
+        loadNarrative(slug),
+      ]);
+      if (summary.default_preview_name) {
+        openPreview(summary.default_preview_name);
+      } else {
+        els.previewFrame.srcdoc = `<div style="padding:28px;font-family:${getComputedStyle(document.body).fontFamily};color:#665a4d;line-height:1.9;">当前项目还没有可预览的 Markdown 产物。你可以先查看结构、故事圣经和叙事图谱，再继续执行 repair 或下一轮写作。</div>`;
+      }
+    }
+
+    async function loadStructure(slug) {
+      const payload = await api(`/api/projects/${slug}/structure`);
+      els.structureJson.textContent = pretty(payload);
+    }
+
+    async function loadStoryBible(slug) {
+      const payload = await api(`/api/projects/${slug}/story-bible`);
+      els.storyBibleJson.textContent = pretty(payload);
+    }
+
+    async function loadNarrative(slug) {
+      const payload = await api(`/api/projects/${slug}/narrative`);
+      els.narrativeJson.textContent = pretty(payload);
+    }
+
+    function openPreview(name) {
+      if (!state.activeProjectSlug || !name) {
+        return;
+      }
+      els.previewFrame.src = `/api/projects/${state.activeProjectSlug}/preview?name=${encodeURIComponent(name)}`;
+    }
+
+    function readAutowritePayload() {
+      return {
+        slug: document.getElementById("slug").value.trim(),
+        title: document.getElementById("title").value.trim(),
+        genre: document.getElementById("genre").value.trim(),
+        sub_genre: document.getElementById("sub-genre").value.trim(),
+        audience: document.getElementById("audience").value.trim(),
+        target_words: Number(document.getElementById("target-words").value),
+        target_chapters: Number(document.getElementById("target-chapters").value),
+        premise: document.getElementById("premise").value.trim(),
+        export_markdown: document.getElementById("export-markdown").checked,
+        auto_repair: document.getElementById("auto-repair").checked,
+        language: "zh-CN",
+      };
+    }
+
+    function validateAutowritePayload(payload) {
+      if (!payload.slug || !payload.title || !payload.genre || !payload.premise) {
+        throw new Error("请至少填写项目代号、书名、主类型和一句话设定。");
+      }
+      if (!Number.isFinite(payload.target_words) || payload.target_words < 1000) {
+        throw new Error("本轮目标总字数至少填写 1000。");
+      }
+      if (!Number.isFinite(payload.target_chapters) || payload.target_chapters < 1) {
+        throw new Error("本轮目标章节数至少填写 1。");
+      }
+    }
+
+    async function startAutowrite() {
+      try {
+        const payload = readAutowritePayload();
+        validateAutowritePayload(payload);
+        const task = await api("/api/tasks/autowrite", {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+        state.activeTaskId = task.task_id;
+        await loadTasks();
+        renderTaskFeed(task);
+      } catch (error) {
+        alert(error.message || String(error));
+      }
+    }
+
+    async function runRepair() {
+      if (!state.activeProjectSlug) {
+        alert("请先选择一个项目。");
+        return;
+      }
+      const task = await api("/api/tasks/repair", {
+        method: "POST",
+        body: JSON.stringify({
+          project_slug: state.activeProjectSlug,
+          refresh_impacts: true,
+          export_markdown: true,
+        }),
+      });
+      state.activeTaskId = task.task_id;
+      await loadTasks();
+      renderTaskFeed(task);
+    }
+
+    function selectTask(taskId) {
+      state.activeTaskId = taskId;
+      const task = state.tasks.find((item) => item.task_id === taskId);
+      if (task) {
+        renderTaskFeed(task);
+      }
+      renderTasks();
+    }
+
+    function wireTabs() {
+      document.querySelectorAll(".tab").forEach((tabButton) => {
+        tabButton.addEventListener("click", () => {
+          document.querySelectorAll(".tab").forEach((item) => item.classList.remove("active"));
+          document.querySelectorAll(".tab-panel").forEach((item) => item.classList.remove("active"));
+          tabButton.classList.add("active");
+          document.getElementById(`tab-${tabButton.dataset.tab}`).classList.add("active");
+        });
+      });
+    }
+
+    async function refreshAll() {
+      await Promise.all([loadStatus(), loadProjects(), loadTasks()]);
+      if (state.activeProjectSlug) {
+        await loadProject(state.activeProjectSlug);
+      }
+    }
+
+    ["target-words", "target-chapters"].forEach((id) => {
+      document.getElementById(id).addEventListener("input", updateScopeEstimator);
+    });
+
+    document.getElementById("start-autowrite").addEventListener("click", startAutowrite);
+    document.getElementById("hero-start-button").addEventListener("click", startAutowrite);
+    document.getElementById("refresh-projects").addEventListener("click", loadProjects);
+    document.getElementById("refresh-projects-2").addEventListener("click", loadProjects);
+    document.getElementById("hero-refresh-button").addEventListener("click", refreshAll);
+    document.getElementById("reload-project").addEventListener("click", () => state.activeProjectSlug && loadProject(state.activeProjectSlug));
+    document.getElementById("run-repair").addEventListener("click", runRepair);
+    document.getElementById("open-preview").addEventListener("click", () => openPreview(els.previewFile.value));
+
+    wireTabs();
+    updateScopeEstimator();
+    refreshAll();
+    setInterval(loadTasks, 2000);
+  </script>
+</body>
+</html>

@@ -63,6 +63,7 @@ help:
 	@echo "    make run            Run the CLI (pass ARGS='...' for arguments)"
 	@echo "    make dev-start      Start local PostgreSQL + install environment"
 	@echo "    make dev-stop       Stop local PostgreSQL"
+	@echo "    make ui             Start the local Web Studio"
 	@echo "    make verify         Run unit tests + end-to-end functional verification"
 	@echo ""
 	@echo "  Maintenance"
@@ -168,6 +169,10 @@ dev-start:
 .PHONY: dev-stop
 dev-stop:
 	./scripts/stop.sh $(ARGS)
+
+.PHONY: ui
+ui:
+	./scripts/ui.sh $(ARGS)
 
 .PHONY: verify
 verify:

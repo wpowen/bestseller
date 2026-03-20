@@ -111,9 +111,70 @@ BestSeller 是一个面向长篇小说生产的人机共创框架，目标是把
 ./stop.sh --purge
 
 make dev-start
+make ui
 make verify
 make dev-stop
 ```
+
+## Web Studio
+
+现在已经有本地 HTML 页面，可直接用浏览器交互完成：
+
+- 创建项目
+- 输入 premise
+- 直接触发 `project autowrite`
+- 查看任务阶段进度
+- 查看项目结构、故事圣经、叙事图谱
+- 直接预览 `project.md` 和各章节产物
+- 对待修订项目触发 `project repair`
+
+启动方式：
+
+```bash
+./start.sh
+./studio.sh
+```
+
+或：
+
+```bash
+make ui
+```
+
+默认会打开浏览器到本地页面。CLI 入口等价于：
+
+```bash
+./scripts/run.sh ui serve --open-browser
+```
+
+如果你需要指定端口：
+
+```bash
+./scripts/run.sh ui serve --host 127.0.0.1 --port 8895 --open-browser
+```
+
+页面背后走的是真实系统流水线，不是单独做了一套“演示页”逻辑。它调用的是当前项目里的：
+
+- `run_autowrite_pipeline`
+- `run_project_repair`
+- `build_project_structure`
+- `build_story_bible_overview`
+- `build_narrative_overview`
+
+页面里生成整书后，真实产物仍然落在：
+
+- `output/<project-slug>/project.md`
+- `output/<project-slug>/chapter-001.md`
+- `output/<project-slug>/project.docx`
+- `output/<project-slug>/project.epub`
+- `output/<project-slug>/project.pdf`
+
+说明：
+
+- 页面可以直接配置目标总字数和目标章节数。
+- 从系统能力上说，可以把目标字数设置到 `1000000` 甚至更高。
+- 但真实模型成本、运行时间、长篇稳定性会随体量线性上升，所以当前更推荐按“卷/阶段”推进，而不是第一次就直接跑千万字整书。
+- 更稳的做法是先用页面生成 `3k/12k/50k` 级样书验证风格，再逐步放大。
 
 ## Gemini 试用
 

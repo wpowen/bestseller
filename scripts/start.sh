@@ -299,6 +299,7 @@ main() {
   echo "LLM mock mode: $BESTSELLER__LLM__MOCK"
   echo "LLM provider preset: $BESTSELLER_LLM_PROVIDER"
   echo "CLI wrapper: $ROOT_DIR/scripts/run.sh"
+  echo "Web Studio: $ROOT_DIR/studio.sh"
   echo "Verification: $ROOT_DIR/scripts/verify.sh"
   "$VENV_BESTSELLER" status
 }

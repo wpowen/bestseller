@@ -86,6 +86,7 @@ from bestseller.services.workflows import (
     materialize_story_bible,
 )
 from bestseller.settings import DEFAULT_CONFIG_PATH, load_settings, settings_to_dict
+from bestseller.web import serve_web_app
 
 
 app = typer.Typer(
@@ -105,6 +106,7 @@ retrieval_app = typer.Typer(help="Retrieval operations.")
 story_bible_app = typer.Typer(help="Story bible inspection operations.")
 narrative_app = typer.Typer(help="Narrative graph inspection operations.")
 benchmark_app = typer.Typer(help="Benchmark and evaluation operations.")
+ui_app = typer.Typer(help="Web UI operations.")
 
 app.add_typer(db_app, name="db")
 app.add_typer(project_app, name="project")
@@ -120,6 +122,7 @@ app.add_typer(retrieval_app, name="retrieval")
 app.add_typer(story_bible_app, name="story-bible")
 app.add_typer(narrative_app, name="narrative")
 app.add_typer(benchmark_app, name="benchmark")
+app.add_typer(ui_app, name="ui")
 
 
 @app.callback()
@@ -232,6 +235,20 @@ def config_show(
         typer.echo(yaml.safe_dump(payload, allow_unicode=True, sort_keys=False))
         return
     typer.echo(json.dumps(payload, ensure_ascii=False, indent=2))
+
+
+@ui_app.command("serve")
+def ui_serve(
+    host: str = typer.Option("127.0.0.1", "--host"),
+    port: int = typer.Option(8787, "--port", min=1, max=65535),
+    open_browser: bool = typer.Option(
+        False,
+        "--open-browser/--no-open-browser",
+        help="Open the local Novel Studio page in the default browser after startup.",
+    ),
+) -> None:
+    """Run the local HTML Novel Studio for interactive project generation and preview."""
+    serve_web_app(host=host, port=port, open_browser=open_browser)
 
 
 @db_app.command("render-sql")

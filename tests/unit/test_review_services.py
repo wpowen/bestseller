@@ -92,6 +92,8 @@ def test_evaluate_scene_draft_marks_short_template_for_rewrite() -> None:
 
     assert result.verdict == "rewrite"
     assert result.scores.overall < 0.7
+    assert result.scores.hook_strength >= 0
+    assert result.scores.voice_consistency >= 0
     assert any(finding.category == "goal" for finding in result.findings)
 
 
@@ -130,6 +132,7 @@ def test_evaluate_scene_draft_flags_contract_deviation() -> None:
 
     assert result.verdict == "rewrite"
     assert result.scores.contract_alignment < 0.7
+    assert result.scores.payoff_density < 0.8
     assert any(finding.category == "contract_alignment" for finding in result.findings)
     assert "contract_missing_labels" in result.evidence_summary
 
@@ -192,6 +195,7 @@ def test_evaluate_chapter_draft_marks_sparse_chapter_for_rewrite() -> None:
 
     assert result.verdict == "rewrite"
     assert result.scores.coverage < 0.8
+    assert result.scores.main_plot_progression < 0.8
     assert any(finding.category == "coverage" for finding in result.findings)
     assert result.rewrite_instructions is not None
 
@@ -233,6 +237,7 @@ def test_evaluate_chapter_draft_flags_contract_deviation() -> None:
 
     assert result.verdict == "rewrite"
     assert result.scores.contract_alignment < 0.7
+    assert result.scores.ending_hook_effectiveness < 0.8
     assert any(finding.category == "contract_alignment" for finding in result.findings)
     assert result.evidence_summary["contract_expectation_count"] >= 4
 
@@ -308,8 +313,12 @@ def test_render_chapter_review_summary_and_prompts_include_context() -> None:
                 coverage=0.5,
                 coherence=0.6,
                 continuity=0.58,
+                main_plot_progression=0.64,
+                subplot_progression=0.55,
                 style=0.85,
                 hook=0.48,
+                ending_hook_effectiveness=0.52,
+                volume_mission_alignment=0.66,
                 contract_alignment=0.66,
             ),
             findings=[

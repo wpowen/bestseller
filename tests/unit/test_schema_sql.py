@@ -18,6 +18,8 @@ def test_render_schema_sql_contains_extensions_and_core_tables() -> None:
     assert "CREATE TABLE projects" in sql
     assert "CREATE TABLE planning_artifact_versions" in sql
     assert "CREATE TABLE world_rules" in sql
+    assert "CREATE TABLE world_backbones" in sql
+    assert "CREATE TABLE volume_frontiers" in sql
     assert "CREATE TABLE characters" in sql
     assert "CREATE TABLE chapters" in sql
     assert "CREATE TABLE scene_cards" in sql
@@ -29,6 +31,8 @@ def test_render_schema_sql_contains_extensions_and_core_tables() -> None:
 def test_metadata_registers_expected_tables() -> None:
     assert "projects" in Base.metadata.tables
     assert "world_rules" in Base.metadata.tables
+    assert "world_backbones" in Base.metadata.tables
+    assert "volume_frontiers" in Base.metadata.tables
     assert "characters" in Base.metadata.tables
     assert "scene_draft_versions" in Base.metadata.tables
     assert "rewrite_impacts" in Base.metadata.tables

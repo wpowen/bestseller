@@ -10,7 +10,9 @@ from bestseller.infra.db.models import (
     ChapterModel,
     CharacterModel,
     ClueModel,
+    DeferredRevealModel,
     EmotionTrackModel,
+    ExpansionGateModel,
     NarrativeTreeNodeModel,
     PayoffModel,
     PlotArcModel,
@@ -18,6 +20,8 @@ from bestseller.infra.db.models import (
     SceneCardModel,
     SceneContractModel,
     VolumeModel,
+    VolumeFrontierModel,
+    WorldBackboneModel,
     WorldRuleModel,
 )
 from bestseller.services import narrative_tree as narrative_tree_services
@@ -127,6 +131,61 @@ async def test_rebuild_narrative_tree_exports_deterministic_paths() -> None:
         metadata_json={},
     )
     world_rule.id = uuid4()
+    world_backbone = WorldBackboneModel(
+        project_id=project.id,
+        title="全书世界主干",
+        core_promise="被放逐的导航员调查被篡改的航线。",
+        mainline_drive="以真相撬动帝国的记录垄断。",
+        invariant_elements=["航道记录优先"],
+        stable_unknowns=["更高层操盘者的身份"],
+        metadata_json={},
+    )
+    world_backbone.id = uuid4()
+    frontier = VolumeFrontierModel(
+        project_id=project.id,
+        volume_id=volume.id,
+        volume_number=1,
+        title="边境疑云",
+        frontier_summary="只展开边境星港和航道署的局部真相。",
+        expansion_focus="边境封锁与取证",
+        start_chapter_number=1,
+        end_chapter_number=20,
+        visible_rule_codes=["R001"],
+        active_locations=["碎潮星港"],
+        active_factions=["帝国航道署"],
+        active_arc_codes=["main_plot"],
+        future_reveal_codes=["volume-02-reveal-01"],
+        metadata_json={},
+    )
+    frontier.id = uuid4()
+    deferred_reveal = DeferredRevealModel(
+        project_id=project.id,
+        volume_id=volume.id,
+        reveal_code="volume-02-reveal-01",
+        label="第2卷关键揭示 1",
+        category="key_reveal",
+        summary="幕后操盘者并非航道署。",
+        source_volume_number=1,
+        reveal_volume_number=2,
+        reveal_chapter_number=21,
+        status="scheduled",
+        metadata_json={},
+    )
+    deferred_reveal.id = uuid4()
+    expansion_gate = ExpansionGateModel(
+        project_id=project.id,
+        volume_id=volume.id,
+        gate_code="unlock-volume-01",
+        label="第1卷世界扩张闸门",
+        gate_type="world_expansion",
+        condition_summary="完成开篇建场并建立主线承诺。",
+        unlocks_summary="展开第1卷局部世界边界。",
+        unlock_volume_number=1,
+        unlock_chapter_number=1,
+        status="active",
+        metadata_json={},
+    )
+    expansion_gate.id = uuid4()
     character = CharacterModel(
         project_id=project.id,
         name="沈砚",
@@ -241,11 +300,15 @@ async def test_rebuild_narrative_tree_exports_deterministic_paths() -> None:
     antagonist_plan.id = uuid4()
 
     session = FakeSession(
+        scalar_results=[world_backbone],
         scalars_results=[
             [volume],
             [chapter],
             [scene],
             [world_rule],
+            [frontier],
+            [deferred_reveal],
+            [expansion_gate],
             [],
             [],
             [character],
@@ -268,6 +331,10 @@ async def test_rebuild_narrative_tree_exports_deterministic_paths() -> None:
     }
     assert counts["node_count"] >= 12
     assert "/book/premise" in node_paths
+    assert "/world/backbone" in node_paths
+    assert "/world/frontiers/volume-01" in node_paths
+    assert "/world/deferred-reveals/volume-02-reveal-01" in node_paths
+    assert "/world/expansion-gates/unlock-volume-01" in node_paths
     assert "/world/rules/r001" in node_paths
     assert "/characters/沈砚" in node_paths
     assert "/arcs/main-plot" in node_paths

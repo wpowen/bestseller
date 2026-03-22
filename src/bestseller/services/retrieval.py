@@ -207,7 +207,7 @@ async def refresh_story_bible_retrieval_index(
                 f"{world_rule.description}。"
                 f"冲突后果：{world_rule.story_consequence or '未定义'}。"
             ),
-            metadata={"kind": "world_rule", "name": world_rule.name},
+            metadata={"kind": "world_rule", "name": world_rule.name, "rule_code": world_rule.rule_code},
         )
 
     characters = list(

@@ -8,12 +8,15 @@ from bestseller.domain.story_bible import CastSpecInput
 from bestseller.infra.db.models import (
     CharacterModel,
     CharacterStateSnapshotModel,
+    ExpansionGateModel,
     FactionModel,
     LocationModel,
     ProjectModel,
     RelationshipModel,
     StyleGuideModel,
     VolumeModel,
+    VolumeFrontierModel,
+    WorldBackboneModel,
     WorldRuleModel,
 )
 from bestseller.services import story_bible as story_bible_services
@@ -320,7 +323,46 @@ async def test_load_scene_story_bible_context_includes_roles_states_and_rules(
         knowledge_state_json={"knows": ["异常指令"]},
         metadata_json={},
     )
+    backbone = WorldBackboneModel(
+        project_id=project.id,
+        title="全书世界主干",
+        core_promise="被放逐的导航员调查被篡改的航线。",
+        mainline_drive="追查真相并撬动记录垄断。",
+        invariant_elements=["航道记录优先"],
+        stable_unknowns=["更高层操盘者身份"],
+        metadata_json={},
+    )
+    frontier = VolumeFrontierModel(
+        project_id=project.id,
+        volume_id=volume.id,
+        volume_number=1,
+        title="失准航线",
+        frontier_summary="只展开边境星港、航道署和底层日志的局部世界。",
+        expansion_focus="边境封锁与取证",
+        start_chapter_number=1,
+        end_chapter_number=40,
+        visible_rule_codes=["R001"],
+        active_locations=["碎潮星港"],
+        active_factions=["帝国航道署"],
+        active_arc_codes=["main_plot"],
+        future_reveal_codes=["volume-02-reveal-01"],
+        metadata_json={},
+    )
+    next_gate = ExpansionGateModel(
+        project_id=project.id,
+        volume_id=volume.id,
+        gate_code="unlock-volume-02",
+        label="第2卷世界扩张闸门",
+        gate_type="world_expansion",
+        condition_summary="完成第一份铁证并承受封港代价。",
+        unlocks_summary="展开更高层航道势力。",
+        unlock_volume_number=2,
+        unlock_chapter_number=41,
+        status="planned",
+        metadata_json={},
+    )
     session = FakeSession(
+        scalar_results=[backbone, frontier, 2, next_gate],
         get_map={
             (VolumeModel, volume.id): volume,
             (CharacterModel, shen.id): shen,
@@ -372,6 +414,10 @@ async def test_load_scene_story_bible_context_includes_roles_states_and_rules(
     )
 
     assert context["volume"]["goal"] == "找到第一份铁证"
+    assert context["world_backbone"]["mainline_drive"] == "追查真相并撬动记录垄断。"
+    assert context["volume_frontier"]["active_locations"] == ["碎潮星港"]
+    assert context["deferred_reveal_status"]["hidden_count"] == 2
+    assert context["next_expansion_gate"]["unlock_volume_number"] == 2
     assert context["world_rules"][0]["rule_code"] == "R001"
     assert context["participants"][0]["name"] == "沈砚"
     assert context["relationships"][0]["relationship_type"] == "旧搭档"

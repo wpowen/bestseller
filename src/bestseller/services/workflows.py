@@ -31,6 +31,7 @@ from bestseller.services.story_bible import (
     upsert_volume_plan,
     upsert_world_spec,
 )
+from bestseller.services.world_expansion import refresh_world_expansion_boundaries
 from bestseller.settings import load_settings
 
 
@@ -373,6 +374,10 @@ async def materialize_story_bible(
         "relationships_upserted": 0,
         "state_snapshots_created": 0,
         "volumes_upserted": 0,
+        "world_backbones_upserted": 0,
+        "volume_frontiers_upserted": 0,
+        "deferred_reveals_upserted": 0,
+        "expansion_gates_upserted": 0,
     }
     current_step_name = "load_story_bible"
 
@@ -464,6 +469,22 @@ async def materialize_story_bible(
                     "artifact_type": ArtifactType.VOLUME_PLAN.value,
                     "source_artifact_id": str(artifact_ids["volume_plan"]) if "volume_plan" in artifact_ids else None,
                 },
+            )
+            step_order += 1
+
+        if any(payload is not None for payload in (book_spec_content, world_spec_content, cast_spec_content, volume_plan_content)):
+            current_step_name = "refresh_world_expansion_boundaries"
+            workflow_run.current_step = current_step_name
+            boundary_counts = await refresh_world_expansion_boundaries(session, project=project)
+            for key, value in boundary_counts.items():
+                counts[key] += value
+            await create_workflow_step_run(
+                session,
+                workflow_run_id=workflow_run.id,
+                step_name=current_step_name,
+                step_order=step_order,
+                status=WorkflowStatus.COMPLETED,
+                output_ref=boundary_counts,
             )
             step_order += 1
 

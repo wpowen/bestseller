@@ -268,6 +268,121 @@ class VolumeModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     metadata_json: Mapped[JSON_DICT] = mapped_column("metadata", JSONB, nullable=False, default=dict)
 
 
+class WorldBackboneModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "world_backbones"
+    __table_args__ = (UniqueConstraint("project_id", name="uq_world_backbone_project"),)
+
+    project_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    title: Mapped[str] = mapped_column(String(200), nullable=False, server_default=text("'全书世界主干'"))
+    core_promise: Mapped[str] = mapped_column(Text, nullable=False)
+    mainline_drive: Mapped[str] = mapped_column(Text, nullable=False)
+    protagonist_destiny: Mapped[str | None] = mapped_column(Text)
+    antagonist_axis: Mapped[str | None] = mapped_column(Text)
+    thematic_melody: Mapped[str | None] = mapped_column(Text)
+    world_frame: Mapped[str | None] = mapped_column(Text)
+    invariant_elements: Mapped[JSON_LIST] = mapped_column(JSONB, nullable=False, default=list)
+    stable_unknowns: Mapped[JSON_LIST] = mapped_column(JSONB, nullable=False, default=list)
+    metadata_json: Mapped[JSON_DICT] = mapped_column("metadata", JSONB, nullable=False, default=dict)
+
+
+class VolumeFrontierModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "volume_frontiers"
+    __table_args__ = (
+        UniqueConstraint("project_id", "volume_number", name="uq_volume_frontier_number"),
+        Index(
+            "idx_volume_frontiers_project_chapter_range",
+            "project_id",
+            "start_chapter_number",
+            "end_chapter_number",
+        ),
+    )
+
+    project_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    volume_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), ForeignKey("volumes.id", ondelete="SET NULL"))
+    volume_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    frontier_summary: Mapped[str] = mapped_column(Text, nullable=False)
+    expansion_focus: Mapped[str | None] = mapped_column(Text)
+    start_chapter_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    end_chapter_number: Mapped[int | None] = mapped_column(Integer)
+    visible_rule_codes: Mapped[JSON_LIST] = mapped_column(JSONB, nullable=False, default=list)
+    active_locations: Mapped[JSON_LIST] = mapped_column(JSONB, nullable=False, default=list)
+    active_factions: Mapped[JSON_LIST] = mapped_column(JSONB, nullable=False, default=list)
+    active_arc_codes: Mapped[JSON_LIST] = mapped_column(JSONB, nullable=False, default=list)
+    future_reveal_codes: Mapped[JSON_LIST] = mapped_column(JSONB, nullable=False, default=list)
+    metadata_json: Mapped[JSON_DICT] = mapped_column("metadata", JSONB, nullable=False, default=dict)
+
+
+class DeferredRevealModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "deferred_reveals"
+    __table_args__ = (
+        UniqueConstraint("project_id", "reveal_code", name="uq_deferred_reveal_code"),
+        Index(
+            "idx_deferred_reveals_project_visibility",
+            "project_id",
+            "reveal_volume_number",
+            "reveal_chapter_number",
+            "status",
+        ),
+    )
+
+    project_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    volume_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), ForeignKey("volumes.id", ondelete="SET NULL"))
+    reveal_code: Mapped[str] = mapped_column(String(64), nullable=False)
+    label: Mapped[str] = mapped_column(String(200), nullable=False)
+    category: Mapped[str] = mapped_column(String(64), nullable=False, server_default=text("'key_reveal'"))
+    summary: Mapped[str] = mapped_column(Text, nullable=False)
+    source_volume_number: Mapped[int | None] = mapped_column(Integer)
+    reveal_volume_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    reveal_chapter_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    guard_condition: Mapped[str | None] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'scheduled'"))
+    metadata_json: Mapped[JSON_DICT] = mapped_column("metadata", JSONB, nullable=False, default=dict)
+
+
+class ExpansionGateModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "expansion_gates"
+    __table_args__ = (
+        UniqueConstraint("project_id", "gate_code", name="uq_expansion_gate_code"),
+        Index(
+            "idx_expansion_gates_project_unlock",
+            "project_id",
+            "unlock_volume_number",
+            "unlock_chapter_number",
+            "status",
+        ),
+    )
+
+    project_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    volume_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), ForeignKey("volumes.id", ondelete="SET NULL"))
+    gate_code: Mapped[str] = mapped_column(String(64), nullable=False)
+    label: Mapped[str] = mapped_column(String(200), nullable=False)
+    gate_type: Mapped[str] = mapped_column(String(64), nullable=False, server_default=text("'world_expansion'"))
+    condition_summary: Mapped[str] = mapped_column(Text, nullable=False)
+    unlocks_summary: Mapped[str] = mapped_column(Text, nullable=False)
+    source_volume_number: Mapped[int | None] = mapped_column(Integer)
+    unlock_volume_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    unlock_chapter_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'planned'"))
+    metadata_json: Mapped[JSON_DICT] = mapped_column("metadata", JSONB, nullable=False, default=dict)
+
+
 class ChapterModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "chapters"
     __table_args__ = (UniqueConstraint("project_id", "chapter_number", name="uq_chapter_number"),)

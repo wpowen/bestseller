@@ -1,0 +1,473 @@
+- generic [ref=e2]:
+  - generic [ref=e3]:
+    - generic [ref=e4]:
+      - generic [ref=e5]: BestSeller / 长篇小说控制台
+      - heading "不是“一次性写完一本书”， 而是可控地推进整部长篇。" [level=1] [ref=e6]:
+        - text: 不是“一次性写完一本书”，
+        - text: 而是可控地推进整部长篇。
+      - paragraph [ref=e7]: 这个页面直接驱动当前项目的真实写作流水线。你可以先定义题材、卖点、目标体量和一句话设定， 系统会依次完成规划、故事圣经、叙事图谱、章节与场景、审校、修订和导出。对于百万字、千万字项目， 正确做法不是一次性写完，而是按卷、按阶段不断扩写和维护一致性。
+      - generic [ref=e8]:
+        - button "开始本轮写作" [ref=e9] [cursor=pointer]
+        - button "刷新项目与任务" [ref=e10] [cursor=pointer]
+      - generic [ref=e11]:
+        - generic [ref=e12]:
+          - strong [ref=e13]: 当前页面负责什么
+          - text: 发起整书任务、监控阶段进度、查看故事骨架、预览章节正文和导出成品。
+        - generic [ref=e14]:
+          - strong [ref=e15]: 长篇如何推进
+          - text: 先做结构，再做单卷，再做整书维护。页面里的总字数和总章节数指的是本轮目标范围。
+        - generic [ref=e16]:
+          - strong [ref=e17]: 什么时候该修订
+          - text: 当章节、情绪线、暗线或世界规则没有通过审校时，直接在页面执行自动修复并继续推进。
+    - generic [ref=e18]:
+      - generic [ref=e19]:
+        - heading "长篇写作链路" [level=2] [ref=e20]
+        - list [ref=e21]:
+          - listitem [ref=e22]:
+            - strong [ref=e23]: "1"
+            - generic [ref=e24]:
+              - generic [ref=e25]: 设定本轮范围
+              - generic [ref=e26]: 题材、目标字数、目标章节数、读者定位、一句话 premise。
+          - listitem [ref=e27]:
+            - strong [ref=e28]: "2"
+            - generic [ref=e29]:
+              - generic [ref=e30]: 生成结构骨架
+              - generic [ref=e31]: 规划产物、故事圣经、叙事图谱、章节与场景合同会先建立出来。
+          - listitem [ref=e32]:
+            - strong [ref=e33]: "3"
+            - generic [ref=e34]:
+              - generic [ref=e35]: 写作与修订
+              - generic [ref=e36]: 章节按场景推进，经过审校、自动修订、知识沉淀，再汇总成章。
+          - listitem [ref=e37]:
+            - strong [ref=e38]: "4"
+            - generic [ref=e39]:
+              - generic [ref=e40]: 导出与继续扩写
+              - generic [ref=e41]: 先得到可读草稿，再逐卷扩大范围，而不是一次性把千万字全部跑完。
+      - generic [ref=e42]:
+        - heading "当前运行环境" [level=2] [ref=e43]
+        - generic [ref=e44]:
+          - generic [ref=e45]: 模型模式：真实模型
+          - generic [ref=e46]: 规划模型：anthropic/claude-opus-4-5
+          - generic [ref=e47]: 写作模型：anthropic/claude-sonnet-4-5
+          - generic [ref=e48]: 产物目录：/Users/owen/Documents/workspace/bestseller/output
+  - generic [ref=e49]:
+    - generic [ref=e50]:
+      - generic [ref=e52]:
+        - heading "本轮写作配置" [level=2] [ref=e53]
+        - paragraph [ref=e54]: 这里定义的是“这一次要推进的写作范围”，不是整个人生周期里一次性写完全部内容。
+      - generic [ref=e55]:
+        - generic [ref=e56]:
+          - generic [ref=e57]: 项目代号
+          - generic [ref=e58]: 内部唯一标识，只用于路径、数据库和导出目录。建议英文小写加连字符。
+          - textbox "项目代号" [ref=e59]: web-story-001
+        - generic [ref=e60]:
+          - generic [ref=e61]: 书名
+          - generic [ref=e62]: 读者看到的作品标题，会进入导出文件和页面预览。
+          - textbox "书名" [ref=e63]: 网页试写长篇
+        - generic [ref=e64]:
+          - generic [ref=e65]: 主类型
+          - generic [ref=e66]: 决定叙事节奏、读者预期和爽点分布。可以填中文，例如“末日科幻”。
+          - combobox "主类型" [ref=e67]: 末日科幻
+        - generic [ref=e68]:
+          - generic [ref=e69]: 细分卖点
+          - generic [ref=e70]: 决定题材辨识度，例如“重生囤货”“规则怪谈”“星际逃亡”。
+          - combobox "细分卖点" [ref=e71]: 重生囤货
+        - generic [ref=e72]:
+          - generic [ref=e73]: 题材预设
+          - generic [ref=e74]: 直接套用一组题材卖点、平台建议、人物原型、节奏与 Prompt Pack。
+          - combobox "题材预设" [ref=e75]:
+            - option "手动填写 / 不套预设"
+            - option "末日囤货升级流 · 热门" [selected]
+            - option "都市异能反转流"
+        - generic [ref=e76]:
+          - generic [ref=e77]: 篇幅预设
+          - generic [ref=e78]: 会自动填写本轮目标总字数和章节数，并满足每章最低 5000 字。
+          - combobox "篇幅预设" [ref=e79]:
+            - option "手动填写 / 不套预设"
+            - option "4 章样书试写" [selected]
+            - option "单卷推进"
+        - generic [ref=e80]:
+          - generic [ref=e81]: 本轮目标总字数
+          - generic [ref=e82]: 本轮计划推进到多少字。系统按每章 5000 到 6000 字设计，低于章节下限会被直接拦截。
+          - spinbutton "本轮目标总字数" [ref=e83]: "22000"
+        - generic [ref=e84]:
+          - generic [ref=e85]: 本轮目标章节数
+          - generic [ref=e86]: 本轮要写几章。系统会按每章最低 5000 字做校验，推荐平均 5500 字左右。
+          - spinbutton "本轮目标章节数" [ref=e87]: "4"
+        - generic [ref=e88]:
+          - generic [ref=e89]: 目标读者
+          - generic [ref=e90]: 决定语言风格、情绪强度和信息密度。例如“男频连载读者”“女频成长向读者”。
+          - combobox "目标读者" [ref=e91]: 男频连载读者
+        - generic [ref=e92]:
+          - generic [ref=e93]: 平台目标
+          - generic [ref=e94]: 不同平台的开篇节奏、情绪密度和钩子风格不一样。这个字段会直接影响规划和写作 prompt。
+          - combobox "平台目标" [ref=e95]:
+            - option "番茄小说" [selected]
+            - option "起点中文网"
+        - generic [ref=e96]:
+          - generic [ref=e97]: 题材 Prompt Pack
+          - generic [ref=e98]: 这是预制的题材提示词包。它会在写作画像基础上，再额外注入该题材特有的规划、正文和审校约束。
+          - combobox "题材 Prompt Pack" [ref=e99]:
+            - option "自动按题材匹配"
+            - option "末日囤货升级流" [selected]
+            - option "仙侠升级夺机缘"
+            - option "都市异能反转流"
+            - option "感情拉扯成长流"
+        - generic [ref=e100]:
+          - generic [ref=e101]: 读者承诺
+          - generic [ref=e102]: 一句话说明这本书最先抓住读者的持续期待是什么，例如“看主角如何靠信息差在末日前抢资源并反杀”。
+          - textbox "读者承诺" [ref=e103]: 资源差和危机升级驱动持续追读。
+        - generic [ref=e104]:
+          - generic [ref=e105]: 核心卖点
+          - generic [ref=e106]: 用逗号分隔。建议写 3 到 6 个，会直接作为 planner 和 writer 的显式卖点约束。
+          - textbox "核心卖点" [ref=e107]: 末日倒计时,资源差抢跑,秩序崩坏
+        - generic [ref=e108]:
+          - generic [ref=e109]: 套路标签 / 爽点标签
+          - generic [ref=e110]: 用逗号分隔。比如“末日,囤货,系统,规则生存,打脸反杀”。系统会把这些标签压进章节与场景约束。
+          - textbox "套路标签 / 爽点标签" [ref=e111]: 末日,囤货,系统
+        - generic [ref=e112]:
+          - generic [ref=e113]: 主角原型
+          - generic [ref=e114]: 例如“先知型求生者”“逆袭型成长主角”“情绪成长型主角”。
+          - textbox "主角原型" [ref=e115]: 先知型求生者
+        - generic [ref=e116]:
+          - generic [ref=e117]: 主角外挂 / 差异化优势
+          - generic [ref=e118]: 决定主角第一时间能吸引人的独特能力或信息差。
+          - textbox "主角外挂 / 差异化优势" [ref=e119]: 来自未来的购物入口，可低价购买末日关键物资
+        - generic [ref=e120]:
+          - generic [ref=e121]: 节奏档位
+          - generic [ref=e122]: 快节奏更适合商业连载；中速更适合人物关系和世界观展开。
+          - combobox "节奏档位" [ref=e123]:
+            - option "快节奏" [selected]
+            - option "中快节奏"
+            - option "中节奏"
+        - generic [ref=e124]:
+          - generic [ref=e125]: 世界观密度
+          - generic [ref=e126]: 控制背景说明比例。商业网文通常不宜一开始就高密度说明设定。
+          - combobox "世界观密度" [ref=e127]:
+            - option "轻"
+            - option "中" [selected]
+            - option "重"
+        - generic [ref=e128]:
+          - generic [ref=e129]: 叙事视角
+          - generic [ref=e130]: 会直接写入 style guide 和 writer prompt。
+          - combobox "叙事视角" [ref=e131]:
+            - option "第三人称限知" [selected]
+            - option "第一人称"
+            - option "多视角"
+        - generic [ref=e132]:
+          - generic [ref=e133]: 文风模式
+          - generic [ref=e134]: 商业网文建议更利落、推进感更强，不要默认文青腔。
+          - combobox "文风模式" [ref=e135]:
+            - option "商业网文成品风" [selected]
+            - option "利落影视化"
+            - option "偏抒情"
+        - generic [ref=e136]:
+          - generic [ref=e137]: 句式风格
+          - generic [ref=e138]: 短促更利于追更和冲突推进，混合更适合中长篇平衡。
+          - combobox "句式风格" [ref=e139]:
+            - option "短促有力" [selected]
+            - option "混合"
+            - option "偏长句"
+        - generic [ref=e140]:
+          - generic [ref=e141]: 对话占比
+          - generic [ref=e142]: 0 到 1。商业连载通常 0.35 到 0.5 更利于推进和人物辨识。
+          - spinbutton "对话占比" [ref=e143]: "0.42"
+        - generic [ref=e144]:
+          - generic [ref=e145]: 参考作品
+          - generic [ref=e146]: 用逗号分隔。只会作为风格和结构参考，不会要求模型模仿具体句子。
+          - textbox "参考作品" [ref=e147]: 《全球冰封：我打造了末日安全屋》,《诡秘之主》
+        - generic [ref=e148]:
+          - generic [ref=e149]: 章节尾钩策略
+          - generic [ref=e150]: 系统会把它压进 chapter/scene contract 和 writer prompt。
+          - textbox "章节尾钩策略" [ref=e151]: 每章结尾至少留下一个未解决问题、反转、新资源窗口或更大的危险，避免平收。免费阶段优先保证连续追读欲。
+        - generic [ref=e152]:
+          - generic [ref=e153]: 额外写作规则
+          - generic [ref=e154]: 用换行分隔。例如“第一章 800 字内必须给异常信号”“背景说明必须嵌在行动里”。
+          - textbox "额外写作规则" [ref=e155]: 第一章 800 字内给出明确异常信号。 前三章必须连续兑现至少三次短回报。 背景设定只能嵌在行动、交易、冲突和代价里释放。
+        - generic [ref=e156]:
+          - generic [ref=e157]: 一句话设定 / 开书钩子
+          - generic [ref=e158]: 把题材、主角优势、危机和核心悬念写清楚。系统会以此生成世界观、人物和章节骨架。
+          - textbox "一句话设定 / 开书钩子" [ref=e159]: 末日零点降临前三天，主角意外得到一个来自未来的购物入口，可以低价购买基因进化药、无限能源和禁忌物资。为了活下去，他必须一边囤货，一边隐藏秘密，同时在末日前的秩序崩塌前找到真正的幕后操盘者。
+        - generic [ref=e160]:
+          - generic [ref=e161]: 当前预设说明
+          - generic [ref=e162]: 这里显示当前平台 / 题材 / 篇幅预设的组合说明、适配读者和推荐范围。
+          - generic [ref=e163]: 题材预设：末日囤货升级流 末日倒计时、囤货、资源差、秩序崩坏。 近期热度：近期热点稳定，资源差和反杀感强。 热点推荐指数：95 / 100 热点关键词：末日、囤货、重生 适配平台：番茄小说 适配读者：男频连载读者 常用总字数档位：22,000 / 120,000 字 常用章节档位：4 / 24 章 平台预设：番茄小说 高钩子、强追读、开篇见异常。 推荐题材：末日科幻、都市异能 篇幅预设：4 章样书试写 验证开篇钩子、节奏和主角卖点。 本轮目标 22,000 字 / 4 章。 阶段目标：先验证可读性和追读欲。 章节字数政策：每章最低 5000 字，建议 5500 字左右，上限建议控制在 6000 字附近。
+      - generic [ref=e164]:
+        - generic [ref=e165]: 建议先做 4 到 8 章样书
+        - generic [ref=e166]: 百万字建议按卷推进
+        - generic [ref=e167]: 每章最低 5000 字，建议 5500 字左右
+        - generic [ref=e168]: 千万字建议多轮规划与人工把关
+      - generic [ref=e169]:
+        - generic [ref=e170]:
+          - checkbox "自动导出 Markdown 本轮写作结束后，自动生成可直接阅读的正文草稿。" [checked] [ref=e171]
+          - generic [ref=e172]:
+            - strong [ref=e173]: 自动导出 Markdown
+            - text: 本轮写作结束后，自动生成可直接阅读的正文草稿。
+        - generic [ref=e174]:
+          - checkbox "自动修复一轮 一致性审校未通过时，自动进行一轮 repair，而不是直接停在待人工处理。" [checked] [ref=e175]
+          - generic [ref=e176]:
+            - strong [ref=e177]: 自动修复一轮
+            - text: 一致性审校未通过时，自动进行一轮 repair，而不是直接停在待人工处理。
+      - generic [ref=e178]:
+        - generic [ref=e180]:
+          - heading "范围估算" [level=3] [ref=e181]
+          - paragraph [ref=e182]: 根据总字数和章节数，先看这次写作任务的粒度是否合理。
+        - generic [ref=e183]:
+          - generic [ref=e184]:
+            - strong [ref=e185]: 平均每章字数
+            - generic [ref=e186]: 5,500
+          - generic [ref=e187]:
+            - strong [ref=e188]: 预估总场景数
+            - generic [ref=e189]: "20"
+          - generic [ref=e190]:
+            - strong [ref=e191]: 平均每场字数
+            - generic [ref=e192]: 1,100
+        - generic [ref=e193]:
+          - strong [ref=e194]: 建议模式：4 到 6 章样书试写
+          - paragraph [ref=e195]: 当前体量适合测试题材辨识度、主角卖点、开书钩子和章节尾钩。先把可读性做对，再扩写。
+      - generic [ref=e196]:
+        - button "开始本轮写作" [ref=e197] [cursor=pointer]
+        - button "刷新项目列表" [ref=e198] [cursor=pointer]
+    - generic [ref=e199]:
+      - complementary [ref=e200]:
+        - generic [ref=e201]:
+          - generic [ref=e203]:
+            - heading "任务中心" [level=2] [ref=e204]
+            - paragraph [ref=e205]: 这里看写作、修复和导出任务的实时阶段，不需要盯着命令行。
+          - generic [ref=e206]:
+            - generic [ref=e207]:
+              - generic [ref=e208]:
+                - strong [ref=e209]: novel-beta
+                - generic [ref=e210]: 执行中
+              - generic [ref=e211]: 末日抢跑手册 · 本轮自动写作
+              - generic [ref=e212]: 当前阶段：开始章节流水线
+              - generic [ref=e213]:
+                - button "查看日志" [ref=e214] [cursor=pointer]
+                - button "打开项目" [ref=e215] [cursor=pointer]
+            - generic [ref=e216]:
+              - generic [ref=e217]:
+                - strong [ref=e218]: novel-alpha
+                - generic [ref=e219]: 已完成
+              - generic [ref=e220]: 星门下的幸存者 · 修订完成
+              - generic [ref=e221]: 当前阶段：repair 流程结束
+              - generic [ref=e222]:
+                - button "查看日志" [ref=e223] [cursor=pointer]
+                - button "打开项目" [ref=e224] [cursor=pointer]
+        - generic [ref=e225]:
+          - generic [ref=e226]:
+            - generic [ref=e227]:
+              - heading "已有项目" [level=2] [ref=e228]
+              - paragraph [ref=e229]: 整张项目卡片都可以直接点击。选中后，下方所有结构、正文和流程面板会同步切换。
+            - button "刷新" [ref=e230] [cursor=pointer]
+          - generic [ref=e231]:
+            - button "末日抢跑手册 写作中 novel-beta · 末日科幻 本轮目标 22,000 字 / 4 章 当前正在查看这个项目。" [ref=e232] [cursor=pointer]:
+              - generic [ref=e233]:
+                - strong [ref=e234]: 末日抢跑手册
+                - generic [ref=e235]: 写作中
+              - generic [ref=e236]: novel-beta · 末日科幻
+              - generic [ref=e237]: 本轮目标 22,000 字 / 4 章
+              - generic [ref=e238]: 当前正在查看这个项目。
+            - button "星门下的幸存者 修订中 novel-alpha · 科幻悬疑 本轮目标 66,000 字 / 12 章 点击卡片即可切换到这个项目。" [ref=e239] [cursor=pointer]:
+              - generic [ref=e240]:
+                - strong [ref=e241]: 星门下的幸存者
+                - generic [ref=e242]: 修订中
+              - generic [ref=e243]: novel-alpha · 科幻悬疑
+              - generic [ref=e244]: 本轮目标 66,000 字 / 12 章
+              - generic [ref=e245]: 点击卡片即可切换到这个项目。
+      - main [ref=e246]:
+        - generic [ref=e247]:
+          - generic [ref=e248]:
+            - heading "末日抢跑手册" [level=2] [ref=e249]
+            - paragraph [ref=e250]: novel-beta · 末日科幻 · 目标 22,000 字 / 4 章 · 当前边界：第 1 卷 末日前三天
+          - generic [ref=e251]:
+            - generic [ref=e252]: 当前项目
+            - combobox "当前项目" [ref=e253]:
+              - option "末日抢跑手册 · novel-beta · 写作中" [selected]
+              - option "星门下的幸存者 · novel-alpha · 修订中"
+            - generic [ref=e254]: 当前正在查看《末日抢跑手册》，目标 22,000 字 / 4 章。
+          - generic [ref=e255]:
+            - button "对当前项目执行修订" [ref=e256] [cursor=pointer]
+            - button "刷新当前项目" [ref=e257] [cursor=pointer]
+        - generic [ref=e259]:
+          - generic [ref=e260]:
+            - strong [ref=e261]: 项目状态
+            - generic [ref=e262]: 写作中
+            - generic [ref=e263]: 当前整书处于什么阶段，例如规划中、写作中、修订中、已完成。
+          - generic [ref=e264]:
+            - strong [ref=e265]: 章节总数
+            - generic [ref=e266]: "4"
+            - generic [ref=e267]: 当前已物化到数据库里的章节数量。
+          - generic [ref=e268]:
+            - strong [ref=e269]: 场景总数
+            - generic [ref=e270]: "20"
+            - generic [ref=e271]: 场景越多，说明故事推进颗粒度越细。
+          - generic [ref=e272]:
+            - strong [ref=e273]: 导出文件
+            - generic [ref=e274]: "1"
+            - generic [ref=e275]: 当前项目目录下已经生成的可读产物数量。
+          - generic [ref=e276]:
+            - strong [ref=e277]: 当前成品字数
+            - generic [ref=e278]: 5,480 字
+            - generic [ref=e279]: project.md · 预计 12 分钟
+          - generic [ref=e280]:
+            - strong [ref=e281]: 世界规则
+            - generic [ref=e282]: "6"
+            - generic [ref=e283]: 世界观限制、能力边界和运作规则数量。
+          - generic [ref=e284]:
+            - strong [ref=e285]: 角色数量
+            - generic [ref=e286]: "9"
+            - generic [ref=e287]: 故事圣经中当前已建好的核心角色和重要配角数量。
+          - generic [ref=e288]:
+            - strong [ref=e289]: 主线 / 支线
+            - generic [ref=e290]: "4"
+            - generic [ref=e291]: 叙事图谱里已经落地的 plot arcs 数量。
+          - generic [ref=e292]:
+            - strong [ref=e293]: 情绪 / 反派线
+            - generic [ref=e294]: 2 / 1
+            - generic [ref=e295]: 关系线、情绪线与反派推进计划的当前规模。
+          - generic [ref=e296]:
+            - strong [ref=e297]: 平台 / 读者承诺
+            - generic [ref=e298]: 番茄小说
+            - generic [ref=e299]: 看主角如何靠资源差抢跑并反杀。
+          - generic [ref=e300]:
+            - strong [ref=e301]: 流程运行数
+            - generic [ref=e302]: 7 / 执行中
+            - generic [ref=e303]: 当前项目历史上已经跑过多少条 workflow，以及最近一条的状态。
+        - generic [ref=e304]:
+          - generic [ref=e306]:
+            - heading "执行看板" [level=2] [ref=e307]
+            - paragraph [ref=e308]: 把后台阶段事件整理成项目进度视图。这里会持续显示当前跑到哪一步、完成了多少章节、是否进入修订和是否已有产物。
+          - generic [ref=e309]:
+            - generic [ref=e310]:
+              - strong [ref=e311]: 当前任务
+              - generic [ref=e312]: 执行中
+              - generic [ref=e313]: 末日抢跑手册 · 本轮自动写作 · 整书写作任务
+            - generic [ref=e314]:
+              - strong [ref=e315]: 当前阶段
+              - generic [ref=e316]: 开始章节流水线
+              - generic [ref=e317]: 开始章节流水线 · 原始阶段码：chapter_pipeline_started
+            - generic [ref=e318]:
+              - strong [ref=e319]: 章节推进
+              - generic [ref=e320]: 0/4
+              - generic [ref=e321]: 总章节 4 · 当前章节 第 2 章
+            - generic [ref=e322]:
+              - strong [ref=e323]: 导出状态
+              - generic [ref=e324]: 未导出
+              - generic [ref=e325]: 产物 1 个 · 最终判定 attention · /Users/owen/Documents/workspace/bestseller/output/novel-beta
+          - generic [ref=e326]:
+            - generic [ref=e327]:
+              - generic [ref=e328]: 已完成
+              - strong [ref=e329]: 规划
+              - paragraph [ref=e330]: 生成 premise 对应的书本规划和整体章节规模。
+            - generic [ref=e331]:
+              - generic [ref=e332]: 已完成
+              - strong [ref=e333]: 故事圣经
+              - paragraph [ref=e334]: 把世界观、角色和关系落成可执行结构。
+            - generic [ref=e335]:
+              - generic [ref=e336]: 已完成
+              - strong [ref=e337]: 章节大纲
+              - paragraph [ref=e338]: 把章节与场景物化成真正的写作结构。
+            - generic [ref=e339]:
+              - generic [ref=e340]: 已完成
+              - strong [ref=e341]: 叙事结构
+              - paragraph [ref=e342]: 建立叙事图谱和叙事树，保证主线、暗线和关系线可追踪。
+            - generic [ref=e343]:
+              - generic [ref=e344]: 进行中
+              - strong [ref=e345]: 章节推进
+              - paragraph [ref=e346]: 已完成 0/4 章。
+            - generic [ref=e347]:
+              - generic [ref=e348]: 待执行
+              - strong [ref=e349]: 修订 / 导出
+              - paragraph [ref=e350]: 当前已有 1 个导出文件。
+          - generic [ref=e351]:
+            - generic [ref=e352]:
+              - generic [ref=e353]:
+                - generic [ref=e354]:
+                  - strong [ref=e355]: 开始章节流水线
+                  - generic [ref=e356]: chapter_pipeline_started
+                - generic [ref=e357]: 2026-03-21T10:05:00+08:00
+              - generic [ref=e358]: "chapter_number: 2"
+            - generic [ref=e359]:
+              - generic [ref=e360]:
+                - generic [ref=e361]:
+                  - strong [ref=e362]: 开始整书流水线
+                  - generic [ref=e363]: project_pipeline_started
+                - generic [ref=e364]: 2026-03-21T10:04:00+08:00
+              - generic [ref=e365]: "chapter_count: 4"
+            - generic [ref=e366]:
+              - generic [ref=e367]:
+                - generic [ref=e368]:
+                  - strong [ref=e369]: 叙事树已物化
+                  - generic [ref=e370]: narrative_tree_materialization_completed
+                - generic [ref=e371]: 2026-03-21T10:03:40+08:00
+              - generic [ref=e372]: 无额外上下文
+            - generic [ref=e373]:
+              - generic [ref=e374]:
+                - generic [ref=e375]:
+                  - strong [ref=e376]: 叙事图谱已物化
+                  - generic [ref=e377]: narrative_graph_materialization_completed
+                - generic [ref=e378]: 2026-03-21T10:03:20+08:00
+              - generic [ref=e379]: 无额外上下文
+            - generic [ref=e380]:
+              - generic [ref=e381]:
+                - generic [ref=e382]:
+                  - strong [ref=e383]: 章节大纲已物化
+                  - generic [ref=e384]: outline_materialization_completed
+                - generic [ref=e385]: 2026-03-21T10:03:00+08:00
+              - generic [ref=e386]: 无额外上下文
+            - generic [ref=e387]:
+              - generic [ref=e388]:
+                - generic [ref=e389]:
+                  - strong [ref=e390]: 故事圣经已物化
+                  - generic [ref=e391]: story_bible_materialization_completed
+                - generic [ref=e392]: 2026-03-21T10:02:00+08:00
+              - generic [ref=e393]: 无额外上下文
+        - generic [ref=e394]:
+          - generic [ref=e395]:
+            - button "成品阅读" [ref=e396] [cursor=pointer]
+            - button "阶段日志" [ref=e397] [cursor=pointer]
+            - button "项目结构" [ref=e398] [cursor=pointer]
+            - button "故事圣经" [ref=e399] [cursor=pointer]
+            - button "叙事图谱" [ref=e400] [cursor=pointer]
+            - button "写作配置" [ref=e401] [cursor=pointer]
+            - button "流程跟踪" [ref=e402] [cursor=pointer]
+            - button "导出文件" [ref=e403] [cursor=pointer]
+          - generic [ref=e404]:
+            - generic [ref=e405]:
+              - combobox [ref=e406]:
+                - option "project.md · 21,840 字" [selected]
+              - button "加载预览" [ref=e407] [cursor=pointer]
+              - button "刷新当前正文" [ref=e408] [cursor=pointer]
+              - generic [ref=e409]:
+                - checkbox "执行中自动跟随当前正文" [ref=e410]
+                - generic [ref=e411]: 执行中自动跟随当前正文
+            - paragraph [ref=e412]: 阅读视图默认锁定，不会因为后台轮询而自动跳回顶部。你可以手动刷新正文，或勾选自动跟随最新内容。
+            - generic [ref=e413]:
+              - generic [ref=e414]:
+                - strong [ref=e415]: 当前正文
+                - generic [ref=e416]: project.md
+                - generic [ref=e417]: /Users/owen/Documents/workspace/bestseller/output/novel-beta/project.md
+              - generic [ref=e418]:
+                - strong [ref=e419]: 正文总字数
+                - generic [ref=e420]: 5,480 字
+                - generic [ref=e421]: 排除空白后共 5,360 个字符
+              - generic [ref=e422]:
+                - strong [ref=e423]: 预计阅读时长
+                - generic [ref=e424]: 12 分钟
+                - generic [ref=e425]: 共 46 段
+              - generic [ref=e426]:
+                - strong [ref=e427]: 文件信息
+                - generic [ref=e428]: 12 KB
+                - generic [ref=e429]: 更新时间：2026/3/21 10:05
+            - generic [ref=e430]:
+              - generic [ref=e431]:
+                - generic [ref=e432]:
+                  - heading "project.md" [level=3] [ref=e433]
+                  - paragraph [ref=e434]: 项目 novel-beta · /Users/owen/Documents/workspace/bestseller/output/novel-beta/project.md
+                - generic [ref=e435]: 阅读锁定
+              - article [ref=e436]:
+                - heading "《末日抢跑手册》" [level=1] [ref=e437]
+                - paragraph [ref=e438]: 倒计时亮起时，城市还在假装一切正常。
+                - paragraph [ref=e439]: 林策看着手机屏幕上的未来商城，第一次意识到，末日不是未来式，而是现在进行时。
+                - paragraph [ref=e440]: 他没有时间解释，也没有时间犹豫。第一批物资，必须在两个小时内全部锁定。
+        - generic [ref=e441]: 真正的大体量长篇不应该一次性生成。正确方式是先建立世界观、人物、主线和卷级目标，再逐轮扩写、审校和修订。 这个页面已经按这个思路包装了当前系统：你可以把 22000 到 50000 字当作样书或单卷试写，把 100000 到 300000 字当作阶段推进， 再逐卷扩充到百万字项目。千万字项目也不是不能做，但应该拆成多个连续项目阶段来推进，而不是一次运行完成。

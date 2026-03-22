@@ -21,17 +21,23 @@ from bestseller.domain.project import (
 )
 from bestseller.domain.story_bible import (
     CharacterStateSnapshotRead,
+    DeferredRevealRead,
+    ExpansionGateRead,
     StoryBibleCharacterRead,
     StoryBibleFactionRead,
-    StoryBibleLocationRead,
     StoryBibleOverview,
+    StoryBibleLocationRead,
     StoryBibleRelationshipRead,
     StoryBibleWorldRuleRead,
+    VolumeFrontierRead,
+    WorldBackboneRead,
 )
 from bestseller.infra.db.models import (
     ChapterDraftVersionModel,
     ChapterModel,
     CharacterModel,
+    DeferredRevealModel,
+    ExpansionGateModel,
     FactionModel,
     LocationModel,
     PlanningArtifactVersionModel,
@@ -39,8 +45,10 @@ from bestseller.infra.db.models import (
     SceneCardModel,
     SceneDraftVersionModel,
     VolumeModel,
+    VolumeFrontierModel,
     WorkflowRunModel,
     WorkflowStepRunModel,
+    WorldBackboneModel,
     WorldRuleModel,
 )
 from bestseller.services.projects import get_project_by_slug
@@ -369,6 +377,37 @@ async def build_story_bible_overview(
             )
         )
     )
+    world_backbone = await session.scalar(
+        select(WorldBackboneModel).where(WorldBackboneModel.project_id == project.id)
+    )
+    volume_frontiers = list(
+        await session.scalars(
+            select(VolumeFrontierModel)
+            .where(VolumeFrontierModel.project_id == project.id)
+            .order_by(VolumeFrontierModel.volume_number.asc())
+        )
+    )
+    deferred_reveals = list(
+        await session.scalars(
+            select(DeferredRevealModel)
+            .where(DeferredRevealModel.project_id == project.id)
+            .order_by(
+                DeferredRevealModel.reveal_volume_number.asc(),
+                DeferredRevealModel.reveal_chapter_number.asc(),
+                DeferredRevealModel.reveal_code.asc(),
+            )
+        )
+    )
+    expansion_gates = list(
+        await session.scalars(
+            select(ExpansionGateModel)
+            .where(ExpansionGateModel.project_id == project.id)
+            .order_by(
+                ExpansionGateModel.unlock_volume_number.asc(),
+                ExpansionGateModel.unlock_chapter_number.asc(),
+            )
+        )
+    )
 
     character_name_by_id = {character.id: character.name for character in characters}
     character_views: list[StoryBibleCharacterRead] = []
@@ -415,6 +454,21 @@ async def build_story_bible_overview(
         project_id=project.id,
         project_slug=project.slug,
         title=project.title,
+        world_backbone=(
+            WorldBackboneRead(
+                title=world_backbone.title,
+                core_promise=world_backbone.core_promise,
+                mainline_drive=world_backbone.mainline_drive,
+                protagonist_destiny=world_backbone.protagonist_destiny,
+                antagonist_axis=world_backbone.antagonist_axis,
+                thematic_melody=world_backbone.thematic_melody,
+                world_frame=world_backbone.world_frame,
+                invariant_elements=list(world_backbone.invariant_elements or []),
+                stable_unknowns=list(world_backbone.stable_unknowns or []),
+            )
+            if world_backbone is not None
+            else None
+        ),
         world_rules=[
             StoryBibleWorldRuleRead(
                 rule_code=rule.rule_code,
@@ -459,5 +513,49 @@ async def build_story_bible_overview(
                 last_changed_chapter_no=relationship.last_changed_chapter_no,
             )
             for relationship in relationships
+        ],
+        volume_frontiers=[
+            VolumeFrontierRead(
+                volume_number=item.volume_number,
+                title=item.title,
+                frontier_summary=item.frontier_summary,
+                expansion_focus=item.expansion_focus,
+                start_chapter_number=item.start_chapter_number,
+                end_chapter_number=item.end_chapter_number,
+                visible_rule_codes=list(item.visible_rule_codes or []),
+                active_locations=list(item.active_locations or []),
+                active_factions=list(item.active_factions or []),
+                active_arc_codes=list(item.active_arc_codes or []),
+                future_reveal_codes=list(item.future_reveal_codes or []),
+            )
+            for item in volume_frontiers
+        ],
+        deferred_reveals=[
+            DeferredRevealRead(
+                reveal_code=item.reveal_code,
+                label=item.label,
+                category=item.category,
+                summary=item.summary,
+                source_volume_number=item.source_volume_number,
+                reveal_volume_number=item.reveal_volume_number,
+                reveal_chapter_number=item.reveal_chapter_number,
+                guard_condition=item.guard_condition,
+                status=item.status,
+            )
+            for item in deferred_reveals
+        ],
+        expansion_gates=[
+            ExpansionGateRead(
+                gate_code=item.gate_code,
+                label=item.label,
+                gate_type=item.gate_type,
+                condition_summary=item.condition_summary,
+                unlocks_summary=item.unlocks_summary,
+                source_volume_number=item.source_volume_number,
+                unlock_volume_number=item.unlock_volume_number,
+                unlock_chapter_number=item.unlock_chapter_number,
+                status=item.status,
+            )
+            for item in expansion_gates
         ],
     )

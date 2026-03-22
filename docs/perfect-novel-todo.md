@@ -34,7 +34,7 @@
 
 - [x] 新增 `relationship_arcs` 或 `emotion_tracks`
 - [x] 显式记录 `trust / attraction / distance / conflict / intimacy stage`
-- [ ] 场景审校增加“情感推进是否有效”评分
+- [x] 场景审校增加“情感推进是否有效”评分
 - [ ] 支持感情线节奏规则：推进、拉扯、误会、对抗、确认、兑现
 
 ### P0.4 反派推进模型
@@ -95,18 +95,18 @@
 
 ### P1.6 Scene Quality Rubric v2
 
-- [ ] 增加 `hook strength`
-- [ ] 增加 `conflict clarity`
-- [ ] 增加 `emotional movement`
-- [ ] 增加 `payoff density`
-- [ ] 增加 `voice consistency`
+- [x] 增加 `hook strength`
+- [x] 增加 `conflict clarity`
+- [x] 增加 `emotional movement`
+- [x] 增加 `payoff density`
+- [x] 增加 `voice consistency`
 
 ### P1.7 Chapter Quality Rubric v2
 
-- [ ] 增加“本章是否推进主线”
-- [ ] 增加“本章是否推进至少一条副线”
-- [ ] 增加“本章尾钩是否成立”
-- [ ] 增加“本章是否承担卷级任务”
+- [x] 增加“本章是否推进主线”
+- [x] 增加“本章是否推进至少一条副线”
+- [x] 增加“本章尾钩是否成立”
+- [x] 增加“本章是否承担卷级任务”
 
 ### P1.8 Project Review v2
 
@@ -120,11 +120,21 @@
 
 ### P2.1 编辑工作台
 
-- [ ] Web UI: Story Bible Explorer
-- [ ] Web UI: Arc Graph Explorer
-- [ ] Web UI: Clue / Payoff Ledger
-- [ ] Web UI: Chapter / Scene status board
+- [x] Web UI: Story Bible Explorer
+- [x] Web UI: World Expansion Boundary Explorer
+- [x] Web UI: Arc Graph Explorer
+- [x] Web UI: Clue / Payoff Ledger
+- [x] Web UI: Chapter / Scene status board
 - [ ] Web UI: Review findings dashboard
+
+### P2.4 长篇世界扩张控制
+
+- [x] 新增 `WorldBackbone / VolumeFrontier / DeferredReveal / ExpansionGate`
+- [x] 按当前卷和当前章节同步世界扩张状态
+- [x] Scene / Chapter Context 只注入当前 frontier 可见规则
+- [x] Narrative Tree 暴露 `/world/backbone /world/frontiers /world/deferred-reveals /world/expansion-gates`
+- [ ] ExpansionGate 根据真实完成状态自动升级，而不只按章节位置同步
+- [ ] 支持更细粒度的阶段 frontier，而不只按卷边界
 
 ### P2.2 导出层增强
 
@@ -180,6 +190,7 @@
 - [x] 能显式管理伏笔埋设与回收
 - [x] 能显式管理人物知识边界和人物弧光
 - [x] 能显式管理世界规则并进行规则冲突检测
+- [x] 能显式管理“全书主干 / 当前世界边界 / 延后揭示 / 世界扩张闸门”
 - [x] 能显式管理卷级、章级、场级叙事任务
 - [x] 即使 review 未通过，也能导出当前草稿供人工审阅
 - [x] 能对一本完整长篇输出结构化质量报告

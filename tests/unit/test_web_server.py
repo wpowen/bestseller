@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from types import SimpleNamespace
+from uuid import uuid4
 
 import pytest
 
@@ -57,3 +58,58 @@ def test_build_preview_payload_includes_html_and_stats() -> None:
     assert payload["word_count"] >= 4
     assert payload["estimated_read_minutes"] == 1
     assert "<h1>标题</h1>" in str(payload["html"])
+
+
+def test_resolve_story_bible_progress_returns_current_frontier_and_next_gate() -> None:
+    story_bible = SimpleNamespace(
+        world_backbone=SimpleNamespace(title="全书世界主干"),
+        volume_frontiers=[
+            SimpleNamespace(
+                volume_number=1,
+                title="失准航线",
+                frontier_summary="第一卷边界",
+                expansion_focus="边境封锁",
+                start_chapter_number=1,
+                end_chapter_number=20,
+                active_locations=["碎潮星港"],
+                active_factions=["帝国航道署"],
+            ),
+            SimpleNamespace(
+                volume_number=2,
+                title="静默航道",
+                frontier_summary="第二卷边界",
+                expansion_focus="幕后层级",
+                start_chapter_number=21,
+                end_chapter_number=40,
+                active_locations=["静默航道"],
+                active_factions=["监察署"],
+            ),
+        ],
+        expansion_gates=[
+            SimpleNamespace(
+                id=uuid4(),
+                label="第2卷世界扩张闸门",
+                condition_summary="拿到第一份铁证",
+                unlocks_summary="展开第2卷",
+                unlock_volume_number=2,
+                unlock_chapter_number=21,
+                status="unlocked",
+            ),
+            SimpleNamespace(
+                id=uuid4(),
+                label="第3卷世界扩张闸门",
+                condition_summary="进入第二层势力",
+                unlocks_summary="展开第3卷",
+                unlock_volume_number=3,
+                unlock_chapter_number=41,
+                status="active",
+            ),
+        ],
+    )
+
+    payload = web_server._resolve_story_bible_progress(story_bible, current_chapter_number=24)  # noqa: SLF001
+
+    assert payload["has_backbone"] is True
+    assert payload["current_frontier"]["volume_number"] == 2
+    assert payload["next_gate"]["unlock_volume_number"] == 3
+    assert payload["unlocked_gate_count"] == 1

@@ -229,11 +229,24 @@ async def test_materialize_story_bible_creates_workflow_records(
     async def fake_refresh_story_bible_retrieval_index(session: object, settings: object, project_id) -> int:
         return 9
 
+    async def fake_refresh_world_expansion_boundaries(session: object, *, project: object) -> dict[str, int]:
+        return {
+            "world_backbones_upserted": 1,
+            "volume_frontiers_upserted": 2,
+            "deferred_reveals_upserted": 3,
+            "expansion_gates_upserted": 2,
+        }
+
     monkeypatch.setattr(workflow_services, "get_project_by_slug", fake_get_project_by_slug)
     monkeypatch.setattr(workflow_services, "apply_book_spec", fake_apply_book_spec)
     monkeypatch.setattr(workflow_services, "upsert_world_spec", fake_upsert_world_spec)
     monkeypatch.setattr(workflow_services, "upsert_cast_spec", fake_upsert_cast_spec)
     monkeypatch.setattr(workflow_services, "upsert_volume_plan", fake_upsert_volume_plan)
+    monkeypatch.setattr(
+        workflow_services,
+        "refresh_world_expansion_boundaries",
+        fake_refresh_world_expansion_boundaries,
+    )
     monkeypatch.setattr(
         workflow_services,
         "refresh_story_bible_retrieval_index",
@@ -258,9 +271,10 @@ async def test_materialize_story_bible_creates_workflow_records(
     assert result.world_rules_upserted == 2
     assert result.characters_upserted == 3
     assert result.volumes_upserted == 2
+    assert result.world_backbones_upserted == 1
     assert len(workflow_runs) == 1
     assert workflow_runs[0].status == "completed"
-    assert len(workflow_steps) == 6
+    assert len(workflow_steps) == 7
 
 
 @pytest.mark.asyncio

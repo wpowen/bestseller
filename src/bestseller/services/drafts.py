@@ -96,6 +96,15 @@ def _render_story_bible_section(story_bible_context: dict[str, Any] | None) -> s
     lines: list[str] = []
     if story_bible_context.get("logline"):
         lines.append(f"全书主线：{story_bible_context['logline']}")
+    backbone = story_bible_context.get("world_backbone") or {}
+    if backbone.get("mainline_drive"):
+        lines.append(f"全书主旋律：{backbone['mainline_drive']}")
+    if backbone.get("thematic_melody"):
+        lines.append(f"主题旋律：{backbone['thematic_melody']}")
+    if backbone.get("invariant_elements"):
+        lines.append(
+            f"不可轻改元素：{'、'.join(str(item) for item in backbone['invariant_elements'][:5])}"
+        )
     if story_bible_context.get("themes"):
         lines.append(f"主题：{'、'.join(str(item) for item in story_bible_context['themes'])}")
     volume = story_bible_context.get("volume") or {}
@@ -103,6 +112,19 @@ def _render_story_bible_section(story_bible_context: dict[str, Any] | None) -> s
         lines.append(f"本卷目标：{volume['goal']}")
     if volume.get("obstacle"):
         lines.append(f"本卷障碍：{volume['obstacle']}")
+    frontier = story_bible_context.get("volume_frontier") or {}
+    if frontier.get("frontier_summary"):
+        lines.append(f"当前世界边界：{frontier['frontier_summary']}")
+    if frontier.get("expansion_focus"):
+        lines.append(f"当前扩张焦点：{frontier['expansion_focus']}")
+    if frontier.get("active_locations"):
+        lines.append(
+            f"当前主要舞台：{'、'.join(str(item) for item in frontier['active_locations'][:4])}"
+        )
+    if frontier.get("active_factions"):
+        lines.append(
+            f"当前活跃势力：{'、'.join(str(item) for item in frontier['active_factions'][:4])}"
+        )
     rules = story_bible_context.get("world_rules") or []
     if rules:
         rendered_rules = "；".join(
@@ -110,6 +132,13 @@ def _render_story_bible_section(story_bible_context: dict[str, Any] | None) -> s
             for item in rules[:3]
         )
         lines.append(f"关键世界规则：{rendered_rules}")
+    reveal_status = story_bible_context.get("deferred_reveal_status") or {}
+    hidden_reveal_count = reveal_status.get("hidden_count")
+    if isinstance(hidden_reveal_count, int) and hidden_reveal_count > 0:
+        lines.append(f"仍有 {hidden_reveal_count} 个延后揭示不得提前说破，只能通过异常与悬念间接保留。")
+    next_gate = story_bible_context.get("next_expansion_gate") or {}
+    if next_gate.get("condition_summary"):
+        lines.append(f"下一层世界解锁条件：{next_gate['condition_summary']}")
     participants = story_bible_context.get("participants") or []
     if participants:
         rendered_participants = "；".join(

@@ -1,6 +1,6 @@
 # BestSeller Current Status And Roadmap
 
-更新时间：2026-03-19
+更新时间：2026-03-21
 
 ## 1. 当前总体判断
 
@@ -18,7 +18,9 @@
 - canon / timeline / retrieval
 - rewrite impacts / rewrite cascade
 - project repair
+- world backbone / volume frontier / deferred reveal / expansion gate
 - markdown / docx / epub / pdf 导出
+- Web Studio 可视化阅读与项目执行看板
 
 当前系统更准确的定位是：
 
@@ -71,7 +73,18 @@
 - `story-bible show`
 - `project structure`
 
-### 2.5 修订层
+### 2.5 世界扩张边界层
+
+- `WorldBackbone`
+- `VolumeFrontier`
+- `DeferredReveal`
+- `ExpansionGate`
+- `workflow materialize-story-bible` 会同步物化世界主干与卷级边界
+- `project pipeline / project repair` 会根据当前章节推进同步 frontier 和 gate 状态
+- `scene/chapter context` 只读取当前 frontier 允许暴露的世界规则、地点、势力与未来揭示边界
+- `Narrative Tree` 已暴露 `/world/backbone /world/frontiers /world/deferred-reveals /world/expansion-gates`
+
+### 2.6 修订层
 
 - `rewrite impacts`
 - `rewrite cascade`
@@ -82,7 +95,7 @@
   - 重新做项目审校
   - 在通过时重新导出整书 Markdown
 
-### 2.6 导出层
+### 2.7 导出层
 
 - `export markdown`
 - `export docx`
@@ -106,6 +119,15 @@
 `project autowrite`
 
 这条链路当前已经在真实验收里跑通，能产出整书 `project.md`。
+
+### 3.3 Web Studio 可视化
+
+适合跟踪真实执行中的项目和阅读成品：
+
+- 查看项目摘要、写作配置、执行看板
+- 查看故事圣经中的世界主干、当前卷边界、延后揭示和扩张闸门
+- 查看 Markdown 成品阅读版式、字数、段落数、预计阅读时长
+- 运行中的 `autowrite / repair` 任务可持续查看阶段进展
 
 ## 4. 当前仍属于增强项的部分
 
@@ -149,10 +171,10 @@
 
 最近一次完整验收：
 
-- 单测：`119 passed`
-- 覆盖率：`82.48%`
+- 单测：`181 passed`
+- 覆盖率：`81.43%`
 - 编译检查：通过
-- `./scripts/verify.sh`：通过
+- 世界边界同步、pipeline、repair、Web 摘要相关回归：通过
 
 最近一次端到端验收输出目录：
 

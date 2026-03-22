@@ -20,7 +20,9 @@ from bestseller.infra.db.models import (
     ChapterModel,
     CharacterModel,
     ClueModel,
+    DeferredRevealModel,
     EmotionTrackModel,
+    ExpansionGateModel,
     FactionModel,
     LocationModel,
     NarrativeTreeNodeModel,
@@ -30,6 +32,8 @@ from bestseller.infra.db.models import (
     SceneCardModel,
     SceneContractModel,
     VolumeModel,
+    VolumeFrontierModel,
+    WorldBackboneModel,
     WorldRuleModel,
 )
 from bestseller.services.projects import get_project_by_slug
@@ -85,6 +89,22 @@ def emotion_track_path(track_code: str) -> str:
 
 def antagonist_plan_path(plan_code: str) -> str:
     return f"/antagonists/{tree_segment(plan_code, 'antagonist-plan')}"
+
+
+def world_backbone_path() -> str:
+    return "/world/backbone"
+
+
+def volume_frontier_path(volume_number: int) -> str:
+    return f"/world/frontiers/volume-{volume_number:02d}"
+
+
+def deferred_reveal_path(reveal_code: str) -> str:
+    return f"/world/deferred-reveals/{tree_segment(reveal_code, 'deferred-reveal')}"
+
+
+def expansion_gate_path(gate_code: str) -> str:
+    return f"/world/expansion-gates/{tree_segment(gate_code, 'expansion-gate')}"
 
 
 def _parent_path(path: str) -> str | None:
@@ -147,6 +167,10 @@ def _node_type_weight(node_type: str) -> float:
         "clue": 0.9,
         "payoff": 0.85,
         "emotion_track": 0.84,
+        "world_backbone": 0.83,
+        "volume_frontier": 0.82,
+        "deferred_reveal": 0.76,
+        "expansion_gate": 0.74,
         "scene": 0.8,
         "chapter": 0.78,
         "character": 0.75,
@@ -221,6 +245,37 @@ async def rebuild_narrative_tree(
     )
     world_rules = list(
         await session.scalars(select(WorldRuleModel).where(WorldRuleModel.project_id == project.id))
+    )
+    world_backbone = await session.scalar(
+        select(WorldBackboneModel).where(WorldBackboneModel.project_id == project.id)
+    )
+    volume_frontiers = list(
+        await session.scalars(
+            select(VolumeFrontierModel)
+            .where(VolumeFrontierModel.project_id == project.id)
+            .order_by(VolumeFrontierModel.volume_number.asc())
+        )
+    )
+    deferred_reveals = list(
+        await session.scalars(
+            select(DeferredRevealModel)
+            .where(DeferredRevealModel.project_id == project.id)
+            .order_by(
+                DeferredRevealModel.reveal_volume_number.asc(),
+                DeferredRevealModel.reveal_chapter_number.asc(),
+                DeferredRevealModel.reveal_code.asc(),
+            )
+        )
+    )
+    expansion_gates = list(
+        await session.scalars(
+            select(ExpansionGateModel)
+            .where(ExpansionGateModel.project_id == project.id)
+            .order_by(
+                ExpansionGateModel.unlock_volume_number.asc(),
+                ExpansionGateModel.unlock_chapter_number.asc(),
+            )
+        )
     )
     locations = list(
         await session.scalars(select(LocationModel).where(LocationModel.project_id == project.id))
@@ -368,6 +423,27 @@ async def rebuild_narrative_tree(
             _safe_line("power_system", project.metadata_json.get("power_system")),
         ),
     )
+    add_node(
+        node_path="/world/frontiers",
+        node_type="world_frontiers_root",
+        title="阶段世界边界",
+        summary="按卷推进的可见世界范围。",
+        body_md="# 阶段世界边界",
+    )
+    add_node(
+        node_path="/world/deferred-reveals",
+        node_type="deferred_reveals_root",
+        title="延后揭示账本",
+        summary="未来才允许正面揭示的真相。",
+        body_md="# 延后揭示账本",
+    )
+    add_node(
+        node_path="/world/expansion-gates",
+        node_type="expansion_gates_root",
+        title="世界扩张闸门",
+        summary="下一层世界何时解锁。",
+        body_md="# 世界扩张闸门",
+    )
     add_node(node_path="/world/rules", node_type="world_rules_root", title="世界规则", body_md="# 世界规则")
     add_node(node_path="/world/locations", node_type="locations_root", title="关键地点", body_md="# 关键地点")
     add_node(node_path="/world/factions", node_type="factions_root", title="阵营", body_md="# 阵营")
@@ -381,6 +457,103 @@ async def rebuild_narrative_tree(
     add_node(node_path="/volumes", node_type="volumes_root", title="卷结构", body_md="# 卷结构")
     add_node(node_path="/chapters", node_type="chapters_root", title="章节结构", body_md="# 章节结构")
     add_node(node_path="/scenes", node_type="scenes_root", title="场景结构", body_md="# 场景结构")
+
+    if world_backbone is not None:
+        add_node(
+            node_path=world_backbone_path(),
+            node_type="world_backbone",
+            title=world_backbone.title,
+            summary=world_backbone.core_promise,
+            body_md=_node_body(
+                world_backbone.title,
+                _safe_line("核心承诺", world_backbone.core_promise),
+                _safe_line("主线驱动", world_backbone.mainline_drive),
+                _safe_line("主角终局方向", world_backbone.protagonist_destiny),
+                _safe_line("反派主轴", world_backbone.antagonist_axis),
+                _safe_line("主题旋律", world_backbone.thematic_melody),
+                _safe_line("世界骨架", world_backbone.world_frame),
+                _safe_line("不可轻改元素", " / ".join(str(item) for item in world_backbone.invariant_elements)),
+                _safe_line("长期未知项", " / ".join(str(item) for item in world_backbone.stable_unknowns)),
+            ),
+            source_type="world_backbone",
+            source_ref_id=world_backbone.id,
+            metadata={
+                "invariant_elements": list(world_backbone.invariant_elements or []),
+                "stable_unknowns": list(world_backbone.stable_unknowns or []),
+            },
+        )
+    for frontier in volume_frontiers:
+        add_node(
+            node_path=volume_frontier_path(frontier.volume_number),
+            node_type="volume_frontier",
+            title=f"第{frontier.volume_number}卷边界：{frontier.title}",
+            summary=frontier.frontier_summary,
+            body_md=_node_body(
+                f"第{frontier.volume_number}卷边界",
+                _safe_line("阶段摘要", frontier.frontier_summary),
+                _safe_line("扩张焦点", frontier.expansion_focus),
+                _safe_line(
+                    "可见章节范围",
+                    f"{frontier.start_chapter_number} - {frontier.end_chapter_number or frontier.start_chapter_number}",
+                ),
+                _safe_line("允许启用规则", " / ".join(str(item) for item in frontier.visible_rule_codes)),
+                _safe_line("活跃地点", " / ".join(str(item) for item in frontier.active_locations)),
+                _safe_line("活跃势力", " / ".join(str(item) for item in frontier.active_factions)),
+                _safe_line("主导叙事线", " / ".join(str(item) for item in frontier.active_arc_codes)),
+                _safe_line("后续未展开揭示", " / ".join(str(item) for item in frontier.future_reveal_codes)),
+            ),
+            source_type="volume_frontier",
+            source_ref_id=frontier.id,
+            scope_level="volume",
+            scope_volume_number=frontier.volume_number,
+            scope_chapter_number=frontier.start_chapter_number,
+            metadata={
+                "end_chapter_number": frontier.end_chapter_number,
+                "active_locations": list(frontier.active_locations or []),
+                "active_factions": list(frontier.active_factions or []),
+            },
+        )
+    for reveal in deferred_reveals:
+        add_node(
+            node_path=deferred_reveal_path(reveal.reveal_code),
+            node_type="deferred_reveal",
+            title=reveal.label,
+            summary=reveal.summary,
+            body_md=_node_body(
+                reveal.label,
+                _safe_line("类别", reveal.category),
+                _safe_line("正式揭示", reveal.summary),
+                _safe_line("保护条件", reveal.guard_condition),
+                _safe_line("允许出现卷", reveal.reveal_volume_number),
+                _safe_line("允许出现章节", reveal.reveal_chapter_number),
+            ),
+            source_type="deferred_reveal",
+            source_ref_id=reveal.id,
+            scope_level="chapter",
+            scope_volume_number=reveal.reveal_volume_number,
+            scope_chapter_number=reveal.reveal_chapter_number,
+            metadata={"category": reveal.category},
+        )
+    for gate in expansion_gates:
+        add_node(
+            node_path=expansion_gate_path(gate.gate_code),
+            node_type="expansion_gate",
+            title=gate.label,
+            summary=gate.unlocks_summary,
+            body_md=_node_body(
+                gate.label,
+                _safe_line("触发条件", gate.condition_summary),
+                _safe_line("解锁内容", gate.unlocks_summary),
+                _safe_line("解锁卷", gate.unlock_volume_number),
+                _safe_line("解锁章节", gate.unlock_chapter_number),
+            ),
+            source_type="expansion_gate",
+            source_ref_id=gate.id,
+            scope_level="chapter",
+            scope_volume_number=gate.unlock_volume_number,
+            scope_chapter_number=gate.unlock_chapter_number,
+            metadata={"gate_type": gate.gate_type},
+        )
 
     for world_rule in world_rules:
         add_node(

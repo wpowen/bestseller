@@ -52,10 +52,20 @@ BestSeller 是一个面向长篇小说生产的人机共创框架，目标是把
   - `workflow materialize-narrative-tree` 会把 PostgreSQL 真值导出成 `/book /world /characters /arcs /emotion-tracks /antagonists /volumes /chapters /scenes` 叙事树
   - `narrative tree-show|path-show|search` 可直接查看树节点、按路径精确读取、按路径偏好做树搜索
   - `scene/chapter context` 现在按 `path retrieval -> tree search -> hybrid retrieval` 三层顺序装配上下文
+- 已具备“分阶段扩世界”控制层：
+  - `WorldBackbone` 固定全书主旋律、主线驱动力和不可轻易漂移的世界主干
+  - `VolumeFrontier` 限定当前卷允许展开的世界边界
+  - `DeferredReveal` 管理未来才允许揭开的真相和暗线
+  - `ExpansionGate` 管理世界扩张闸门，并随章节推进同步状态
+  - scene/chapter context 只注入当前 frontier 允许可见的世界规则、地点、势力与未来揭示边界
 - 已具备项目级一致性评审：
   - 汇总章节覆盖率、知识层覆盖率、Canon 完整度、Timeline 完整度、待重写压力和导出就绪度
   - `project review v2` 已纳入主线推进、暗线埋设/兑现、情绪线连续性、角色弧光台阶、世界规则落地、反派推进压力
   - 结果落到 `review_reports` 和 `quality_scores`
+- 已具备 `Scene / Chapter Quality Rubric v2`：
+  - scene review 现在显式评分 `hook_strength / conflict_clarity / emotional_movement / payoff_density / voice_consistency`
+  - chapter review 现在显式评分 `main_plot_progression / subplot_progression / ending_hook_effectiveness / volume_mission_alignment`
+  - 审校报告的 `structured_output` 已带 `scores`，方便后续工作台做 findings dashboard
 - 已具备重写影响分析：
   - 场景审校生成 `RewriteTask` 时，会同步推导被波及的 `CanonFact / Scene / Chapter`
   - 可用 `bestseller rewrite impacts` 查询或刷新影响面
@@ -70,6 +80,43 @@ BestSeller 是一个面向长篇小说生产的人机共创框架，目标是把
 - 更强的正文生成策略，真实模型已可接入，但 fallback 仍然偏结构化稳态写法
 - 更精细的多轮 planner 迭代和人工确认点
 - 更强的 retrieval embedding 与更复杂的跨章节自动级联策略
+
+## Web Studio
+
+当前已经提供本地 Web Studio，用于发起写作、跟踪执行和阅读成品。
+
+启动：
+
+```bash
+./start.sh
+./studio.sh
+```
+
+页面当前支持：
+
+- 发起 `project autowrite`
+- 选择平台 / 题材 / 篇幅 / prompt pack / 写作画像
+- 查看执行看板和阶段日志
+- 查看项目结构、故事圣经、叙事图谱、流程跟踪
+- 查看章节 / 场景状态板，而不只是结构 JSON
+- 查看故事圣经中的：
+  - 全书主干
+  - 当前卷世界边界
+  - 延后揭示
+  - 世界扩张闸门
+- 查看叙事图谱中的：
+  - 主线与节拍
+  - 伏笔 / 兑现账本
+  - 关系线 / 情绪线 / 反派推进
+  - chapter / scene contract
+- 阅读 Markdown 成品，显示：
+  - 正文总字数
+  - 排除空白后的字符数
+  - 段落数
+  - 预计阅读时长
+  - 文件大小和更新时间
+
+这层的目标不是“一次性跑完千万字”，而是把长篇按阶段推进，并把当前阶段真正需要看到的信息稳定展示出来。
 
 ## Prompt Pack
 

@@ -119,6 +119,41 @@ def _evaluate_contract_alignment(
     }
 
 
+def _tail_excerpt(content: str, *, max_chars: int = 260) -> str:
+    normalized = str(content or "").strip()
+    if len(normalized) <= max_chars:
+        return normalized
+    return normalized[-max_chars:]
+
+
+def _keyword_score(
+    content: str,
+    *,
+    keywords: list[str],
+    max_terms: int = 8,
+) -> float | None:
+    terms = list(dict.fromkeys(term for term in _term_candidates(*keywords) if term))[:max_terms]
+    if not terms:
+        return None
+    normalized_content = _normalize_fragment(content)
+    hits = 0
+    for term in terms:
+        normalized_term = _normalize_fragment(term)
+        if normalized_term and normalized_term in normalized_content:
+            hits += 1
+    return _clamp_score(hits / len(terms))
+
+
+def _story_bible_frontier(packet: Any | None) -> dict[str, Any]:
+    if packet is None:
+        return {}
+    story_bible = getattr(packet, "story_bible", {}) or {}
+    if isinstance(story_bible, dict):
+        frontier = story_bible.get("volume_frontier", {})
+        return frontier if isinstance(frontier, dict) else {}
+    return {}
+
+
 def _scene_contract_expectations(
     *,
     chapter_contract: Any | None = None,
@@ -465,6 +500,7 @@ def evaluate_scene_draft(
     settings: AppSettings,
     chapter_contract: Any | None = None,
     scene_contract: Any | None = None,
+    scene_context: Any | None = None,
 ) -> SceneReviewResult:
     content = draft.content_md
     target_ratio = draft.word_count / max(scene.target_word_count, 1)
@@ -510,6 +546,95 @@ def evaluate_scene_draft(
         + (0.25 if "不确定性" in content else 0.0)
         + (0.1 if "结尾" in content else 0.0)
     )
+    tail_excerpt = _tail_excerpt(content)
+    tail_hook_score = _keyword_score(
+        tail_excerpt,
+        keywords=[
+            getattr(scene_contract, "tail_hook", None),
+            getattr(chapter_contract, "closing_hook", None),
+            "悬念",
+            "真相",
+            "危机",
+            "倒计时",
+            "下一秒",
+            "却",
+            "忽然",
+        ],
+    )
+    conflict_contract_score = _keyword_score(
+        content,
+        keywords=[
+            getattr(scene_contract, "core_conflict", None),
+            str(scene.purpose.get("story", "")).strip(),
+            "对峙",
+            "逼迫",
+            "争执",
+            "选择",
+        ],
+    )
+    emotional_shift_score = _keyword_score(
+        content,
+        keywords=[
+            getattr(scene_contract, "emotional_shift", None),
+            str(scene.purpose.get("emotion", "")).strip(),
+            "呼吸",
+            "沉默",
+            "心跳",
+            "发紧",
+            "警觉",
+            "压迫",
+        ],
+    )
+    payoff_density_signal = _keyword_score(
+        content,
+        keywords=[
+            getattr(scene_contract, "information_release", None),
+            *(getattr(scene_contract, "payoff_codes", []) or []),
+            *(getattr(scene_context, "planned_payoffs", []) and [
+                getattr(item, "label", None)
+                for item in getattr(scene_context, "planned_payoffs", [])[:3]
+            ] or []),
+            "发现",
+            "证据",
+            "真相",
+            "终于",
+            "线索",
+            "代价",
+        ],
+    )
+    voice_signal = _keyword_score(
+        content,
+        keywords=[
+            "克制",
+            "紧张",
+            "压迫",
+            "利落",
+            "追问",
+            "反击",
+        ],
+    )
+    hook_strength = _clamp_score(
+        hook * 0.55
+        + (tail_hook_score if tail_hook_score is not None else hook) * 0.45
+    )
+    conflict_clarity = _clamp_score(
+        conflict * 0.7
+        + (conflict_contract_score if conflict_contract_score is not None else conflict) * 0.3
+    )
+    emotional_movement = _clamp_score(
+        emotion * 0.7
+        + (emotional_shift_score if emotional_shift_score is not None else emotion) * 0.3
+    )
+    payoff_density = _clamp_score(
+        0.35
+        + (0.15 if draft.word_count >= int(scene.target_word_count * 0.8) else 0.0)
+        + ((payoff_density_signal or 0.0) * 0.5)
+    )
+    voice_consistency = _clamp_score(
+        style * 0.7
+        + ((voice_signal or 0.0) * 0.2)
+        + (0.1 if "**scene_summary" not in content and "**core_conflict" not in content else 0.0)
+    )
 
     contract_alignment, contract_evidence = _evaluate_contract_alignment(
         content,
@@ -518,7 +643,19 @@ def evaluate_scene_draft(
             scene_contract=scene_contract,
         ),
     )
-    score_parts = [goal, conflict, emotion, dialogue, style, hook]
+    score_parts = [
+        goal,
+        conflict,
+        conflict_clarity,
+        emotion,
+        emotional_movement,
+        dialogue,
+        style,
+        voice_consistency,
+        hook,
+        hook_strength,
+        payoff_density,
+    ]
     if int(contract_evidence["contract_expectation_count"]) > 0:
         score_parts.append(contract_alignment)
     overall = _clamp_score(sum(score_parts) / len(score_parts))
@@ -544,6 +681,14 @@ def evaluate_scene_draft(
                 message="冲突呈现仍偏概述，缺少更具体的对抗动作和压力升级。",
             )
         )
+    if conflict_clarity < threshold:
+        findings.append(
+            SceneReviewFinding(
+                category="conflict_clarity",
+                severity=_severity_from_score(conflict_clarity),
+                message="冲突被提到了，但双方立场、代价和选择边界还不够清楚。",
+            )
+        )
     if emotion < threshold:
         findings.append(
             SceneReviewFinding(
@@ -552,12 +697,44 @@ def evaluate_scene_draft(
                 message="情绪变化被直接说明较多，缺少体感、动作和反应层面的表达。",
             )
         )
+    if emotional_movement < threshold:
+        findings.append(
+            SceneReviewFinding(
+                category="emotional_movement",
+                severity=_severity_from_score(emotional_movement),
+                message="情绪线没有形成明确位移，人物的前后心理状态还不够可感。",
+            )
+        )
     if dialogue < threshold:
         findings.append(
             SceneReviewFinding(
                 category="dialogue",
                 severity=_severity_from_score(dialogue),
                 message="缺少有效对话支撑，人物之间的对抗还没有被真正演出来。",
+            )
+        )
+    if hook_strength < threshold:
+        findings.append(
+            SceneReviewFinding(
+                category="hook_strength",
+                severity=_severity_from_score(hook_strength),
+                message="场景尾钩不够硬，读者很难被自然推向下一场或下一章。",
+            )
+        )
+    if payoff_density < threshold:
+        findings.append(
+            SceneReviewFinding(
+                category="payoff_density",
+                severity=_severity_from_score(payoff_density),
+                message="当前场景的信息释放和短回报偏弱，还没有形成足够明确的阅读收益。",
+            )
+        )
+    if voice_consistency < threshold:
+        findings.append(
+            SceneReviewFinding(
+                category="voice_consistency",
+                severity=_severity_from_score(voice_consistency),
+                message="文本语气和成品网文叙述感不够稳定，仍有策划说明腔或语感漂移。",
             )
         )
     if int(contract_evidence["contract_expectation_count"]) > 0 and contract_alignment < threshold:
@@ -596,10 +773,15 @@ def evaluate_scene_draft(
             overall=overall,
             goal=goal,
             conflict=conflict,
+            conflict_clarity=conflict_clarity,
             emotion=emotion,
+            emotional_movement=emotional_movement,
             dialogue=dialogue,
             style=style,
             hook=hook,
+            hook_strength=hook_strength,
+            payoff_density=payoff_density,
+            voice_consistency=voice_consistency,
             contract_alignment=contract_alignment,
         ),
         findings=findings,
@@ -609,6 +791,11 @@ def evaluate_scene_draft(
             "participants_hit": participants_present,
             "dialogue_markers": dialogue_markers,
             "chapter_goal": chapter.chapter_goal,
+            "hook_strength": hook_strength,
+            "conflict_clarity": conflict_clarity,
+            "emotional_movement": emotional_movement,
+            "payoff_density": payoff_density,
+            "voice_consistency": voice_consistency,
             **contract_evidence,
         },
         rewrite_instructions=rewrite_instructions,
@@ -622,6 +809,7 @@ def evaluate_chapter_draft(
     draft: ChapterDraftVersionModel,
     settings: AppSettings,
     chapter_contract: Any | None = None,
+    chapter_context: Any | None = None,
 ) -> ChapterReviewResult:
     content = draft.content_md
     target_ratio = draft.word_count / max(chapter.target_word_count, 1)
@@ -662,12 +850,88 @@ def evaluate_chapter_draft(
         + (0.25 if "新的不确定性" in content or "真相" in content else 0.0)
         + (0.1 if "下一" in content or "下一个" in content else 0.0)
     )
+    tail_excerpt = _tail_excerpt(content)
+    main_plot_progression = _clamp_score(
+        0.3
+        + ((_keyword_score(
+            content,
+            keywords=[
+                chapter.chapter_goal,
+                getattr(chapter_contract, "contract_summary", None),
+                *[
+                    getattr(item, "summary", None)
+                    for item in (getattr(chapter_context, "active_arc_beats", []) or [])
+                    if getattr(item, "arc_code", "") == "main_plot"
+                ][:3],
+            ],
+        ) or 0.0) * 0.55)
+    )
+    supporting_arc_codes = list(getattr(chapter_contract, "supporting_arc_codes", []) or [])
+    subplot_terms = supporting_arc_codes + [
+        getattr(item, "summary", None)
+        for item in (getattr(chapter_context, "active_arc_beats", []) or [])
+        if getattr(item, "arc_code", "") not in {"", "main_plot"}
+    ][:4]
+    if subplot_terms:
+        subplot_progression = _clamp_score(
+            0.25 + ((_keyword_score(content, keywords=[str(item) for item in subplot_terms if item]) or 0.0) * 0.65)
+        )
+    else:
+        subplot_progression = 1.0
+    ending_hook_effectiveness = _clamp_score(
+        0.15
+        + hook * 0.35
+        + ((_keyword_score(
+            tail_excerpt,
+            keywords=[
+                getattr(chapter_contract, "closing_hook", None),
+                "新的不确定性",
+                "下一步",
+                "真相",
+                "危险",
+                "代价",
+                "却",
+                "忽然",
+            ],
+        ) or hook) * 0.35)
+        + (
+            0.1
+            if ("下一步" in tail_excerpt or "新的不确定性" in tail_excerpt or "真相" in tail_excerpt)
+            else 0.0
+        )
+        + (0.1 if ("必须" in tail_excerpt or "立刻" in tail_excerpt or "已经" in tail_excerpt) else 0.0)
+    )
+    frontier = _story_bible_frontier(chapter_context)
+    volume_mission_alignment = _clamp_score(
+        0.3
+        + ((_keyword_score(
+            content,
+            keywords=[
+                frontier.get("frontier_summary"),
+                frontier.get("expansion_focus"),
+                *list(frontier.get("active_locations", [])[:2] if isinstance(frontier.get("active_locations"), list) else []),
+                *list(frontier.get("active_factions", [])[:2] if isinstance(frontier.get("active_factions"), list) else []),
+                chapter.chapter_goal,
+            ],
+        ) or 0.0) * 0.55)
+    )
 
     contract_alignment, contract_evidence = _evaluate_contract_alignment(
         content,
         expectations=_chapter_contract_expectations(chapter_contract=chapter_contract),
     )
-    score_parts = [goal, coverage, coherence, continuity, style, hook]
+    score_parts = [
+        goal,
+        coverage,
+        coherence,
+        continuity,
+        main_plot_progression,
+        subplot_progression,
+        style,
+        hook,
+        ending_hook_effectiveness,
+        volume_mission_alignment,
+    ]
     if int(contract_evidence["contract_expectation_count"]) > 0:
         score_parts.append(contract_alignment)
     overall = _clamp_score(sum(score_parts) / len(score_parts))
@@ -707,6 +971,38 @@ def evaluate_chapter_draft(
                 category="continuity",
                 severity=_severity_from_score(continuity),
                 message="章节前后承接不足，缺少对上一阶段局势的衔接和对下一阶段威胁的延展。",
+            )
+        )
+    if main_plot_progression < threshold:
+        findings.append(
+            ChapterReviewFinding(
+                category="main_plot_progression",
+                severity=_severity_from_score(main_plot_progression),
+                message="本章对主线的推进还不够明确，读者不容易感受到这一章真的把大问题往前推了一步。",
+            )
+        )
+    if subplot_terms and subplot_progression < threshold:
+        findings.append(
+            ChapterReviewFinding(
+                category="subplot_progression",
+                severity=_severity_from_score(subplot_progression),
+                message="本章承担的副线推进较弱，支线更多停留在提及，还没有形成有效推进。",
+            )
+        )
+    if ending_hook_effectiveness < threshold:
+        findings.append(
+            ChapterReviewFinding(
+                category="ending_hook_effectiveness",
+                severity=_severity_from_score(ending_hook_effectiveness),
+                message="本章收尾钩子不够硬，章节结束后的追读牵引力仍然偏弱。",
+            )
+        )
+    if volume_mission_alignment < threshold:
+        findings.append(
+            ChapterReviewFinding(
+                category="volume_mission_alignment",
+                severity=_severity_from_score(volume_mission_alignment),
+                message="本章和当前卷的阶段任务贴合度不够，像是发生了事件，但没有真正服务卷级推进。",
             )
         )
     if int(contract_evidence["contract_expectation_count"]) > 0 and contract_alignment < threshold:
@@ -750,8 +1046,12 @@ def evaluate_chapter_draft(
             coverage=coverage,
             coherence=coherence,
             continuity=continuity,
+            main_plot_progression=main_plot_progression,
+            subplot_progression=subplot_progression,
             style=style,
             hook=hook,
+            ending_hook_effectiveness=ending_hook_effectiveness,
+            volume_mission_alignment=volume_mission_alignment,
             contract_alignment=contract_alignment,
         ),
         findings=findings,
@@ -761,6 +1061,10 @@ def evaluate_chapter_draft(
             "scene_heading_count": scene_heading_count,
             "expected_scene_count": expected_scene_count,
             "scene_titles_hit": scene_titles_hit,
+            "main_plot_progression": main_plot_progression,
+            "subplot_progression": subplot_progression,
+            "ending_hook_effectiveness": ending_hook_effectiveness,
+            "volume_mission_alignment": volume_mission_alignment,
             **contract_evidence,
         },
         rewrite_instructions=rewrite_instructions,
@@ -887,6 +1191,7 @@ async def review_scene_draft(
         settings=settings,
         chapter_contract=getattr(scene_context, "chapter_contract", None),
         scene_contract=getattr(scene_context, "scene_contract", None),
+        scene_context=scene_context,
     )
 
     critic_response = render_scene_review_summary(review_result)
@@ -934,6 +1239,7 @@ async def review_scene_draft(
         llm_run_id=llm_run_id,
         structured_output={
             "draft_id": str(draft.id),
+            "scores": review_result.scores.model_dump(mode="json"),
             "findings": [finding.model_dump(mode="json") for finding in review_result.findings],
             "evidence_summary": review_result.evidence_summary,
             "rewrite_instructions": review_result.rewrite_instructions,
@@ -1042,6 +1348,7 @@ async def review_chapter_draft(
         draft=draft,
         settings=settings,
         chapter_contract=getattr(chapter_context, "chapter_contract", None),
+        chapter_context=chapter_context,
     )
 
     critic_response = render_chapter_review_summary(review_result)
@@ -1088,6 +1395,7 @@ async def review_chapter_draft(
         llm_run_id=llm_run_id,
         structured_output={
             "draft_id": str(draft.id),
+            "scores": review_result.scores.model_dump(mode="json"),
             "findings": [finding.model_dump(mode="json") for finding in review_result.findings],
             "evidence_summary": review_result.evidence_summary,
             "rewrite_instructions": review_result.rewrite_instructions,

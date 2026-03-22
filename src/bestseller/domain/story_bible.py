@@ -163,6 +163,10 @@ class StoryBibleMaterializationResult(BaseModel):
     relationships_upserted: int = 0
     state_snapshots_created: int = 0
     volumes_upserted: int = 0
+    world_backbones_upserted: int = 0
+    volume_frontiers_upserted: int = 0
+    deferred_reveals_upserted: int = 0
+    expansion_gates_upserted: int = 0
     source_artifact_ids: dict[str, UUID] = Field(default_factory=dict)
 
 
@@ -229,12 +233,66 @@ class StoryBibleCharacterRead(BaseModel):
     latest_state: CharacterStateSnapshotRead | None = None
 
 
+class WorldBackboneRead(BaseModel):
+    title: str = Field(min_length=1)
+    core_promise: str = Field(min_length=1)
+    mainline_drive: str = Field(min_length=1)
+    protagonist_destiny: str | None = None
+    antagonist_axis: str | None = None
+    thematic_melody: str | None = None
+    world_frame: str | None = None
+    invariant_elements: list[str] = Field(default_factory=list)
+    stable_unknowns: list[str] = Field(default_factory=list)
+
+
+class VolumeFrontierRead(BaseModel):
+    volume_number: int = Field(ge=1)
+    title: str = Field(min_length=1)
+    frontier_summary: str = Field(min_length=1)
+    expansion_focus: str | None = None
+    start_chapter_number: int = Field(ge=1)
+    end_chapter_number: int | None = Field(default=None, ge=1)
+    visible_rule_codes: list[str] = Field(default_factory=list)
+    active_locations: list[str] = Field(default_factory=list)
+    active_factions: list[str] = Field(default_factory=list)
+    active_arc_codes: list[str] = Field(default_factory=list)
+    future_reveal_codes: list[str] = Field(default_factory=list)
+
+
+class DeferredRevealRead(BaseModel):
+    reveal_code: str = Field(min_length=1)
+    label: str = Field(min_length=1)
+    category: str = Field(min_length=1)
+    summary: str = Field(min_length=1)
+    source_volume_number: int | None = Field(default=None, ge=1)
+    reveal_volume_number: int = Field(ge=1)
+    reveal_chapter_number: int = Field(ge=1)
+    guard_condition: str | None = None
+    status: str = Field(min_length=1)
+
+
+class ExpansionGateRead(BaseModel):
+    gate_code: str = Field(min_length=1)
+    label: str = Field(min_length=1)
+    gate_type: str = Field(min_length=1)
+    condition_summary: str = Field(min_length=1)
+    unlocks_summary: str = Field(min_length=1)
+    source_volume_number: int | None = Field(default=None, ge=1)
+    unlock_volume_number: int = Field(ge=1)
+    unlock_chapter_number: int = Field(ge=1)
+    status: str = Field(min_length=1)
+
+
 class StoryBibleOverview(BaseModel):
     project_id: UUID
     project_slug: str = Field(min_length=1)
     title: str = Field(min_length=1)
+    world_backbone: WorldBackboneRead | None = None
     world_rules: list[StoryBibleWorldRuleRead] = Field(default_factory=list)
     locations: list[StoryBibleLocationRead] = Field(default_factory=list)
     factions: list[StoryBibleFactionRead] = Field(default_factory=list)
     characters: list[StoryBibleCharacterRead] = Field(default_factory=list)
     relationships: list[StoryBibleRelationshipRead] = Field(default_factory=list)
+    volume_frontiers: list[VolumeFrontierRead] = Field(default_factory=list)
+    deferred_reveals: list[DeferredRevealRead] = Field(default_factory=list)
+    expansion_gates: list[ExpansionGateRead] = Field(default_factory=list)

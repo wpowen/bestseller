@@ -41,6 +41,7 @@ from bestseller.services.workflows import (
     materialize_latest_narrative_tree,
     materialize_latest_story_bible,
 )
+from bestseller.services.world_expansion import sync_world_expansion_progress
 from bestseller.settings import AppSettings
 
 
@@ -991,6 +992,11 @@ async def run_project_pipeline(
                     "chapter_draft_version_no": chapter_result.chapter_draft_version_no,
                 },
             )
+            project.current_chapter_number = max(
+                int(project.current_chapter_number or 0),
+                chapter.chapter_number,
+            )
+            await sync_world_expansion_progress(session, project=project)
 
         export_artifact_id: UUID | None = None
         output_path: str | None = None
@@ -1071,6 +1077,7 @@ async def run_project_pipeline(
         )
 
         project.current_chapter_number = max(chapter.chapter_number for chapter in chapters)
+        await sync_world_expansion_progress(session, project=project)
         project.status = (
             ProjectStatus.REVISING.value if requires_human_review else ProjectStatus.WRITING.value
         )

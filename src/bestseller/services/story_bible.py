@@ -28,6 +28,7 @@ from bestseller.infra.db.models import (
     VolumeModel,
     WorldRuleModel,
 )
+from bestseller.services.world_expansion import load_world_expansion_context
 
 
 def stable_character_id(project_id: UUID, character_name: str) -> UUID:
@@ -550,14 +551,27 @@ async def load_scene_story_bible_context(
     if chapter.volume_id is not None:
         volume = await session.get(VolumeModel, chapter.volume_id)
 
-    world_rules = list(
-        await session.scalars(
-            select(WorldRuleModel)
-            .where(WorldRuleModel.project_id == project.id)
-            .order_by(WorldRuleModel.rule_code.asc(), WorldRuleModel.name.asc())
-            .limit(8)
-        )
+    world_expansion_context = await load_world_expansion_context(
+        session,
+        project=project,
+        volume_number=volume.volume_number if volume is not None else None,
+        chapter_number=chapter.chapter_number,
     )
+
+    visible_rule_codes = set(
+        world_expansion_context.get("volume_frontier", {}).get("visible_rule_codes", [])
+        if isinstance(world_expansion_context.get("volume_frontier"), dict)
+        else []
+    )
+    world_rule_stmt = (
+        select(WorldRuleModel)
+        .where(WorldRuleModel.project_id == project.id)
+        .order_by(WorldRuleModel.rule_code.asc(), WorldRuleModel.name.asc())
+        .limit(8)
+    )
+    if visible_rule_codes:
+        world_rule_stmt = world_rule_stmt.where(WorldRuleModel.rule_code.in_(sorted(visible_rule_codes)))
+    world_rules = list(await session.scalars(world_rule_stmt))
     characters = []
     relationships = []
     for participant_name in scene.participants:
@@ -611,6 +625,7 @@ async def load_scene_story_bible_context(
         "themes": project.metadata_json.get("themes", []),
         "stakes": project.metadata_json.get("stakes", {}),
         "series_engine": project.metadata_json.get("series_engine", {}),
+        **world_expansion_context,
         "volume": {
             "volume_number": volume.volume_number if volume is not None else None,
             "title": volume.title if volume is not None else None,

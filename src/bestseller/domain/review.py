@@ -13,10 +13,15 @@ class SceneReviewScores(BaseModel):
     overall: float = Field(ge=0, le=1)
     goal: float = Field(ge=0, le=1)
     conflict: float = Field(ge=0, le=1)
+    conflict_clarity: float = Field(ge=0, le=1)
     emotion: float = Field(ge=0, le=1)
+    emotional_movement: float = Field(ge=0, le=1)
     dialogue: float = Field(ge=0, le=1)
     style: float = Field(ge=0, le=1)
     hook: float = Field(ge=0, le=1)
+    hook_strength: float = Field(ge=0, le=1)
+    payoff_density: float = Field(ge=0, le=1)
+    voice_consistency: float = Field(ge=0, le=1)
     contract_alignment: float = Field(ge=0, le=1)
 
 
@@ -41,8 +46,12 @@ class ChapterReviewScores(BaseModel):
     coverage: float = Field(ge=0, le=1)
     coherence: float = Field(ge=0, le=1)
     continuity: float = Field(ge=0, le=1)
+    main_plot_progression: float = Field(ge=0, le=1)
+    subplot_progression: float = Field(ge=0, le=1)
     style: float = Field(ge=0, le=1)
     hook: float = Field(ge=0, le=1)
+    ending_hook_effectiveness: float = Field(ge=0, le=1)
+    volume_mission_alignment: float = Field(ge=0, le=1)
     contract_alignment: float = Field(ge=0, le=1)
 
 

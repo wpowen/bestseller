@@ -498,6 +498,85 @@ async def _load_projects_payload(settings: AppSettings) -> list[dict[str, object
         ]
 
 
+def _resolve_story_bible_progress(
+    story_bible: Any,
+    *,
+    current_chapter_number: int,
+) -> dict[str, object]:
+    frontiers = list(getattr(story_bible, "volume_frontiers", []) or [])
+    gates = list(getattr(story_bible, "expansion_gates", []) or [])
+    current_frontier = None
+    if frontiers:
+        if current_chapter_number <= 0:
+            current_frontier = frontiers[0]
+        else:
+            current_frontier = next(
+                (
+                    frontier
+                    for frontier in frontiers
+                    if frontier.start_chapter_number <= current_chapter_number
+                    and (
+                        frontier.end_chapter_number is None
+                        or frontier.end_chapter_number >= current_chapter_number
+                    )
+                ),
+                None,
+            )
+            if current_frontier is None:
+                current_frontier = next(
+                    (
+                        frontier
+                        for frontier in reversed(frontiers)
+                        if frontier.start_chapter_number <= current_chapter_number
+                    ),
+                    frontiers[0],
+                )
+    next_gate = next(
+        (
+            gate
+            for gate in sorted(
+                gates,
+                key=lambda item: (item.unlock_chapter_number, item.unlock_volume_number),
+            )
+            if gate.status != "unlocked"
+        ),
+        None,
+    )
+    unlocked_gate_count = sum(1 for gate in gates if gate.status == "unlocked")
+    active_gate_count = sum(1 for gate in gates if gate.status == "active")
+    return {
+        "has_backbone": getattr(story_bible, "world_backbone", None) is not None,
+        "current_frontier": (
+            {
+                "volume_number": current_frontier.volume_number,
+                "title": current_frontier.title,
+                "frontier_summary": current_frontier.frontier_summary,
+                "expansion_focus": current_frontier.expansion_focus,
+                "start_chapter_number": current_frontier.start_chapter_number,
+                "end_chapter_number": current_frontier.end_chapter_number,
+                "active_locations": list(current_frontier.active_locations),
+                "active_factions": list(current_frontier.active_factions),
+            }
+            if current_frontier is not None
+            else None
+        ),
+        "next_gate": (
+            {
+                "label": next_gate.label,
+                "condition_summary": next_gate.condition_summary,
+                "unlocks_summary": next_gate.unlocks_summary,
+                "unlock_volume_number": next_gate.unlock_volume_number,
+                "unlock_chapter_number": next_gate.unlock_chapter_number,
+                "status": next_gate.status,
+            }
+            if next_gate is not None
+            else None
+        ),
+        "unlocked_gate_count": unlocked_gate_count,
+        "active_gate_count": active_gate_count,
+    }
+
+
 async def _load_project_summary_payload(
     settings: AppSettings,
     project_slug: str,
@@ -524,6 +603,10 @@ async def _load_project_summary_payload(
         for item in markdown_entries
         if str(item["name"]).startswith("chapter-")
     ]
+    world_expansion = _resolve_story_bible_progress(
+        story_bible,
+        current_chapter_number=int(project.current_chapter_number or 0),
+    )
     return {
         "project": {
             "id": str(project.id),
@@ -545,12 +628,17 @@ async def _load_project_summary_payload(
             "volume_count": len(structure.volumes),
         },
         "story_bible_counts": {
+            "has_world_backbone": bool(world_expansion["has_backbone"]),
             "world_rule_count": len(story_bible.world_rules),
             "location_count": len(story_bible.locations),
             "faction_count": len(story_bible.factions),
             "character_count": len(story_bible.characters),
             "relationship_count": len(story_bible.relationships),
+            "volume_frontier_count": len(story_bible.volume_frontiers),
+            "deferred_reveal_count": len(story_bible.deferred_reveals),
+            "expansion_gate_count": len(story_bible.expansion_gates),
         },
+        "world_expansion": world_expansion,
         "narrative_counts": {
             "plot_arc_count": len(narrative.plot_arcs),
             "arc_beat_count": len(narrative.arc_beats),

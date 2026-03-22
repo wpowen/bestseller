@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>BestSeller 长篇小说控制台</title>
+  <link rel="icon" href="data:," />
   <style>
     :root {
       --bg-top: #f7efe4;
@@ -253,6 +254,193 @@
       line-height: 1.6;
     }
 
+    .story-bible-shell {
+      display: grid;
+      gap: 18px;
+    }
+
+    .story-bible-overview {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .story-bible-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 16px;
+      align-items: start;
+    }
+
+    .story-bible-column {
+      border-radius: var(--radius-lg);
+      border: 1px solid rgba(104, 79, 56, 0.12);
+      background: rgba(255, 252, 247, 0.82);
+      padding: 16px;
+      box-shadow: var(--shadow-soft);
+      display: grid;
+      gap: 12px;
+    }
+
+    .story-bible-column h3 {
+      margin: 0;
+      font-size: 16px;
+    }
+
+    .story-bible-card-list {
+      display: grid;
+      gap: 10px;
+    }
+
+    .story-bible-card {
+      border-radius: var(--radius-md);
+      border: 1px solid rgba(104, 79, 56, 0.12);
+      background: rgba(255, 255, 255, 0.72);
+      padding: 14px;
+    }
+
+    .story-bible-card strong {
+      display: block;
+      margin-bottom: 8px;
+      font-size: 14px;
+    }
+
+    .story-bible-card p {
+      margin: 0 0 8px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.7;
+    }
+
+    .story-bible-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .story-bible-pill {
+      display: inline-flex;
+      align-items: center;
+      padding: 4px 9px;
+      border-radius: 999px;
+      background: rgba(155, 67, 37, 0.08);
+      color: var(--accent);
+      font-size: 12px;
+      line-height: 1.5;
+    }
+
+    .story-bible-raw summary {
+      cursor: pointer;
+      color: var(--accent);
+      font-weight: 700;
+      margin-bottom: 10px;
+    }
+
+    .status-shell,
+    .narrative-shell {
+      display: grid;
+      gap: 18px;
+    }
+
+    .status-overview,
+    .narrative-overview {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .status-board {
+      display: grid;
+      gap: 14px;
+    }
+
+    .volume-status-card,
+    .narrative-column {
+      border-radius: var(--radius-lg);
+      border: 1px solid rgba(104, 79, 56, 0.12);
+      background: rgba(255, 252, 247, 0.82);
+      padding: 16px;
+      box-shadow: var(--shadow-soft);
+      display: grid;
+      gap: 12px;
+    }
+
+    .volume-status-head,
+    .narrative-column h3 {
+      margin: 0;
+    }
+
+    .volume-status-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: flex-start;
+    }
+
+    .volume-status-head p {
+      margin: 6px 0 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.7;
+    }
+
+    .chapter-status-list,
+    .narrative-card-list {
+      display: grid;
+      gap: 10px;
+    }
+
+    .chapter-status-row,
+    .narrative-card {
+      border-radius: var(--radius-md);
+      border: 1px solid rgba(104, 79, 56, 0.12);
+      background: rgba(255, 255, 255, 0.74);
+      padding: 14px;
+    }
+
+    .chapter-status-row strong,
+    .narrative-card strong {
+      display: block;
+      margin-bottom: 6px;
+      font-size: 14px;
+      color: var(--ink);
+    }
+
+    .chapter-status-row p,
+    .narrative-card p {
+      margin: 0 0 8px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.7;
+    }
+
+    .chapter-scene-strip,
+    .narrative-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .scene-status-pill,
+    .narrative-pill {
+      display: inline-flex;
+      align-items: center;
+      min-height: 26px;
+      padding: 4px 9px;
+      border-radius: 999px;
+      background: rgba(155, 67, 37, 0.08);
+      color: var(--accent);
+      font-size: 12px;
+      line-height: 1.5;
+    }
+
+    .narrative-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+      align-items: start;
+    }
+
     .workflow-run-list {
       display: grid;
       gap: 14px;
@@ -409,9 +597,15 @@
 
     .layout {
       display: grid;
-      grid-template-columns: 420px minmax(0, 1fr);
       gap: 20px;
       margin-top: 20px;
+    }
+
+    .workspace-grid {
+      display: grid;
+      grid-template-columns: 360px minmax(0, 1fr);
+      gap: 20px;
+      align-items: start;
       min-height: calc(100vh - 240px);
     }
 
@@ -428,6 +622,22 @@
       backdrop-filter: blur(12px);
       box-shadow: var(--shadow-soft);
       padding: 20px;
+    }
+
+    .config-panel {
+      position: relative;
+      overflow: hidden;
+    }
+
+    .config-panel::after {
+      content: "";
+      position: absolute;
+      inset: auto -120px -140px auto;
+      width: 300px;
+      height: 300px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(200, 102, 50, 0.11), transparent 70%);
+      pointer-events: none;
     }
 
     .panel-head {
@@ -702,6 +912,16 @@
       transition: transform 0.18s ease, border-color 0.18s ease, background 0.18s ease;
     }
 
+    .project {
+      cursor: pointer;
+    }
+
+    .project:focus-visible {
+      outline: none;
+      border-color: rgba(155, 67, 37, 0.42);
+      box-shadow: 0 0 0 4px rgba(155, 67, 37, 0.1);
+    }
+
     .task:hover,
     .project:hover,
     .artifact:hover {
@@ -757,9 +977,26 @@
       align-content: start;
     }
 
+    .project-navigator {
+      display: grid;
+      gap: 12px;
+    }
+
+    .project-selector-wrap {
+      display: grid;
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+
+    .project-selector-note {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.65;
+    }
+
     .headline-panel {
       display: grid;
-      grid-template-columns: minmax(0, 1fr) auto;
+      grid-template-columns: minmax(0, 1fr) minmax(260px, 340px) auto;
       gap: 16px;
       align-items: center;
     }
@@ -1251,7 +1488,7 @@
         grid-template-columns: 1fr;
       }
 
-      .layout {
+      .workspace-grid {
         grid-template-columns: 1fr;
       }
     }
@@ -1262,7 +1499,11 @@
       .milestone-strip,
       .summary-cards,
       .formula-grid,
-      .field-grid {
+      .field-grid,
+      .story-bible-overview,
+      .status-overview,
+      .narrative-overview,
+      .narrative-grid {
         grid-template-columns: 1fr 1fr;
       }
 
@@ -1286,7 +1527,11 @@
       .milestone-strip,
       .summary-cards,
       .formula-grid,
-      .field-grid {
+      .field-grid,
+      .story-bible-overview,
+      .status-overview,
+      .narrative-overview,
+      .narrative-grid {
         grid-template-columns: 1fr;
       }
 
@@ -1372,8 +1617,7 @@
     </section>
 
     <section class="layout">
-      <aside class="stack">
-        <section class="panel">
+      <section class="panel config-panel">
           <div class="panel-head">
             <div>
               <h2>本轮写作配置</h2>
@@ -1385,7 +1629,7 @@
             <div class="field">
               <label for="slug">项目代号</label>
               <div class="field-meta">内部唯一标识，只用于路径、数据库和导出目录。建议英文小写加连字符。</div>
-              <input id="slug" value="web-story-001" />
+              <input id="slug" value="" />
             </div>
 
             <div class="field">
@@ -1445,6 +1689,10 @@
               <div class="field-meta">不同平台的开篇节奏、情绪密度和钩子风格不一样。这个字段会直接影响规划和写作 prompt。</div>
               <select id="platform-target">
                 <option value="番茄小说" selected>番茄小说</option>
+                <option value="起点中文网">起点中文网</option>
+                <option value="纵横中文网">纵横中文网</option>
+                <option value="晋江文学城">晋江文学城</option>
+                <option value="实体出版">实体出版</option>
               </select>
             </div>
 
@@ -1497,6 +1745,7 @@
                 <option value="fast" selected>快节奏</option>
                 <option value="medium-fast">中快节奏</option>
                 <option value="medium">中节奏</option>
+                <option value="slow">慢节奏</option>
               </select>
             </div>
 
@@ -1507,6 +1756,7 @@
                 <option value="light">轻</option>
                 <option value="medium" selected>中</option>
                 <option value="heavy">重</option>
+                <option value="very-heavy">极重</option>
               </select>
             </div>
 
@@ -1517,6 +1767,7 @@
                 <option value="third-limited" selected>第三人称限知</option>
                 <option value="first-person">第一人称</option>
                 <option value="multi-pov">多视角</option>
+                <option value="third-omniscient">第三人称全知</option>
               </select>
             </div>
 
@@ -1527,6 +1778,8 @@
                 <option value="commercial-web-serial" selected>商业网文成品风</option>
                 <option value="lean-cinematic">利落影视化</option>
                 <option value="lyrical">偏抒情</option>
+                <option value="witty-humorous">诙谐幽默</option>
+                <option value="epic-grand">史诗宏大</option>
               </select>
             </div>
 
@@ -1537,6 +1790,7 @@
                 <option value="short-punchy" selected>短促有力</option>
                 <option value="mixed">混合</option>
                 <option value="long-flowing">偏长句</option>
+                <option value="varied-rhythmic">变化与韵律感</option>
               </select>
             </div>
 
@@ -1587,6 +1841,9 @@
             <option value="历史权谋"></option>
             <option value="女性成长"></option>
             <option value="奇幻冒险"></option>
+            <option value="玄幻脑洞"></option>
+            <option value="游戏竞技"></option>
+            <option value="职场商战"></option>
           </datalist>
 
           <datalist id="sub-genre-options">
@@ -1596,6 +1853,9 @@
             <option value="星际逃亡"></option>
             <option value="恋爱博弈"></option>
             <option value="家族经营"></option>
+            <option value="无敌流"></option>
+            <option value="废土种田"></option>
+            <option value="克苏鲁"></option>
           </datalist>
 
           <datalist id="audience-options">
@@ -1604,6 +1864,8 @@
             <option value="悬疑剧情向读者"></option>
             <option value="轻小说读者"></option>
             <option value="网文平台读者"></option>
+            <option value="严肃文学读者"></option>
+            <option value="类型文学爱好者"></option>
           </datalist>
 
           <div class="tag-row">
@@ -1662,8 +1924,10 @@
             <button id="start-autowrite">开始本轮写作</button>
             <button class="secondary" id="refresh-projects">刷新项目列表</button>
           </div>
-        </section>
+      </section>
 
+      <section class="workspace-grid">
+      <aside class="stack">
         <section class="panel">
           <div class="panel-head">
             <div>
@@ -1678,7 +1942,7 @@
           <div class="panel-head">
             <div>
               <h2>已有项目</h2>
-              <p>选择已有项目后，可以继续看结构、正文预览、修订状态和导出文件。</p>
+              <p>整张项目卡片都可以直接点击。选中后，下方所有结构、正文和流程面板会同步切换。</p>
             </div>
             <button class="ghost" id="refresh-projects-2">刷新</button>
           </div>
@@ -1691,6 +1955,13 @@
           <div>
             <h2 id="project-title">还没有选中项目</h2>
             <p id="project-subtitle">先在左侧发起一轮写作，或者打开已有项目查看结构与正文。</p>
+          </div>
+          <div class="project-selector-wrap">
+            <label for="project-selector">当前项目</label>
+            <select id="project-selector">
+              <option value="">先从项目列表中选择，或等待页面自动选中最近项目</option>
+            </select>
+            <div class="project-selector-note" id="project-selector-note">页面首次加载会自动选中最近项目；执行中的项目不会强制抢走你当前查看的项目。</div>
           </div>
           <div class="actions">
             <button class="secondary" id="run-repair">对当前项目执行修订</button>
@@ -1855,15 +2126,67 @@
           </div>
 
           <div class="tab-panel" id="tab-structure">
-            <pre class="codebox" id="structure-json">等待加载项目结构。</pre>
+            <div class="status-shell">
+              <div class="status-overview" id="structure-overview"></div>
+              <div class="status-board" id="structure-board"></div>
+              <details class="story-bible-raw">
+                <summary>查看原始项目结构 JSON</summary>
+                <pre class="codebox" id="structure-json">等待加载项目结构。</pre>
+              </details>
+            </div>
           </div>
 
           <div class="tab-panel" id="tab-story-bible">
-            <pre class="codebox" id="story-bible-json">等待加载故事圣经。</pre>
+            <div class="story-bible-shell">
+              <div class="story-bible-overview" id="story-bible-overview"></div>
+              <div class="story-bible-grid">
+                <section class="story-bible-column">
+                  <h3>阶段世界边界</h3>
+                  <div class="story-bible-card-list" id="story-bible-frontiers"></div>
+                </section>
+                <section class="story-bible-column">
+                  <h3>未来揭示与扩张闸门</h3>
+                  <div class="story-bible-card-list" id="story-bible-reveals"></div>
+                  <div class="story-bible-card-list" id="story-bible-gates"></div>
+                </section>
+                <section class="story-bible-column">
+                  <h3>故事主干</h3>
+                  <div class="story-bible-card-list" id="story-bible-backbone"></div>
+                </section>
+              </div>
+              <details class="story-bible-raw">
+                <summary>查看原始故事圣经 JSON</summary>
+                <pre class="codebox" id="story-bible-json">等待加载故事圣经。</pre>
+              </details>
+            </div>
           </div>
 
           <div class="tab-panel" id="tab-narrative">
-            <pre class="codebox" id="narrative-json">等待加载叙事图谱。</pre>
+            <div class="narrative-shell">
+              <div class="narrative-overview" id="narrative-overview"></div>
+              <div class="narrative-grid">
+                <section class="narrative-column">
+                  <h3>主线与节拍</h3>
+                  <div class="narrative-card-list" id="narrative-arcs"></div>
+                </section>
+                <section class="narrative-column">
+                  <h3>伏笔与兑现</h3>
+                  <div class="narrative-card-list" id="narrative-ledger"></div>
+                </section>
+                <section class="narrative-column">
+                  <h3>关系线与反派推进</h3>
+                  <div class="narrative-card-list" id="narrative-pressure"></div>
+                </section>
+                <section class="narrative-column">
+                  <h3>章节 / 场景 Contract</h3>
+                  <div class="narrative-card-list" id="narrative-contracts"></div>
+                </section>
+              </div>
+              <details class="story-bible-raw">
+                <summary>查看原始叙事图谱 JSON</summary>
+                <pre class="codebox" id="narrative-json">等待加载叙事图谱。</pre>
+              </details>
+            </div>
           </div>
 
           <div class="tab-panel" id="tab-writing-profile">
@@ -1886,6 +2209,7 @@
           再逐卷扩充到百万字项目。千万字项目也不是不能做，但应该拆成多个连续项目阶段来推进，而不是一次运行完成。
         </section>
       </main>
+      </section>
     </section>
   </div>
 
@@ -1932,8 +2256,20 @@
       executionMilestones: document.getElementById("execution-milestones"),
       executionFeed: document.getElementById("execution-feed"),
       structureJson: document.getElementById("structure-json"),
+      structureOverview: document.getElementById("structure-overview"),
+      structureBoard: document.getElementById("structure-board"),
+      storyBibleOverview: document.getElementById("story-bible-overview"),
+      storyBibleBackbone: document.getElementById("story-bible-backbone"),
+      storyBibleFrontiers: document.getElementById("story-bible-frontiers"),
+      storyBibleReveals: document.getElementById("story-bible-reveals"),
+      storyBibleGates: document.getElementById("story-bible-gates"),
       storyBibleJson: document.getElementById("story-bible-json"),
       narrativeJson: document.getElementById("narrative-json"),
+      narrativeOverview: document.getElementById("narrative-overview"),
+      narrativeArcs: document.getElementById("narrative-arcs"),
+      narrativeLedger: document.getElementById("narrative-ledger"),
+      narrativePressure: document.getElementById("narrative-pressure"),
+      narrativeContracts: document.getElementById("narrative-contracts"),
       writingProfileJson: document.getElementById("writing-profile-json"),
       workflowBoard: document.getElementById("workflow-board"),
       workflowJson: document.getElementById("workflow-json"),
@@ -1963,6 +2299,8 @@
       presetSummary: document.getElementById("preset-summary"),
       genrePresetKey: document.getElementById("genre-preset-key"),
       lengthPresetKey: document.getElementById("length-preset-key"),
+      projectSelector: document.getElementById("project-selector"),
+      projectSelectorNote: document.getElementById("project-selector-note"),
     };
 
     function escapeHtml(value) {
@@ -2234,6 +2572,28 @@
         queued: "排队中",
       };
       return mapping[status] || status || "-";
+    }
+
+    function humanizeStructureStatus(status) {
+      const mapping = {
+        planned: "待开始",
+        outlining: "大纲中",
+        drafting: "写作中",
+        review: "审校中",
+        revision: "修订中",
+        complete: "已完成",
+        drafted: "已成稿",
+        reviewed: "已审校",
+        approved: "已通过",
+        needs_rewrite: "待重写",
+      };
+      return mapping[status] || status || "-";
+    }
+
+    function truncateText(value, limit = 68) {
+      const text = String(value || "").trim();
+      if (!text) return "";
+      return text.length > limit ? `${text.slice(0, limit)}…` : text;
     }
 
     function humanizeWorkflowType(value) {
@@ -2662,25 +3022,68 @@
       `).join("");
     }
 
+    function syncProjectSelector() {
+      if (!state.projects.length) {
+        els.projectSelector.innerHTML = `<option value="">当前还没有项目</option>`;
+        els.projectSelector.value = "";
+        els.projectSelectorNote.textContent = "先在上方配置本轮写作，再点击“开始本轮写作”，页面会自动创建并选中新项目。";
+        return;
+      }
+
+      els.projectSelector.innerHTML = state.projects.map((project) => `
+        <option value="${escapeHtml(project.slug)}">${escapeHtml(project.title)} · ${escapeHtml(project.slug)} · ${escapeHtml(humanizeProjectStatus(project.status))}</option>
+      `).join("");
+
+      if (state.activeProjectSlug && state.projects.some((project) => project.slug === state.activeProjectSlug)) {
+        els.projectSelector.value = state.activeProjectSlug;
+      } else {
+        els.projectSelector.value = "";
+      }
+
+      const activeProject = state.projects.find((project) => project.slug === state.activeProjectSlug) || null;
+      els.projectSelectorNote.textContent = activeProject
+        ? `当前正在查看《${activeProject.title}》，目标 ${Number(activeProject.target_word_count || 0).toLocaleString("zh-CN")} 字 / ${Number(activeProject.target_chapters || 0).toLocaleString("zh-CN")} 章。`
+        : "页面会默认选中最近的项目；你也可以用这个下拉框随时切换查看对象。";
+    }
+
+    function choosePreferredProjectSlug() {
+      if (state.activeProjectSlug && state.projects.some((project) => project.slug === state.activeProjectSlug)) {
+        return state.activeProjectSlug;
+      }
+
+      const taskProjectSlug = getRelevantTaskForCurrentView()?.project_slug;
+      if (taskProjectSlug && state.projects.some((project) => project.slug === taskProjectSlug)) {
+        return taskProjectSlug;
+      }
+
+      return state.projects[0]?.slug || null;
+    }
+
     function renderProjects() {
       if (!state.projects.length) {
         els.projectList.innerHTML = `<div class="empty">当前还没有项目。先在上方配置本轮范围，再开始一次写作任务。</div>`;
+        syncProjectSelector();
         return;
       }
 
       els.projectList.innerHTML = state.projects.map((project) => `
-        <div class="project ${project.slug === state.activeProjectSlug ? "current" : ""}">
+        <div
+          class="project ${project.slug === state.activeProjectSlug ? "current" : ""}"
+          role="button"
+          tabindex="0"
+          onclick="loadProject('${project.slug}')"
+          onkeydown="if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); loadProject('${project.slug}'); }"
+        >
           <div class="project-head">
             <strong>${escapeHtml(project.title)}</strong>
             <span class="status">${escapeHtml(humanizeProjectStatus(project.status))}</span>
           </div>
           <div class="hint" style="margin-top: 6px;">${escapeHtml(project.slug)} · ${escapeHtml(project.genre)}</div>
           <div class="hint" style="margin-top: 6px;">本轮目标 ${Number(project.target_word_count || 0).toLocaleString("zh-CN")} 字 / ${Number(project.target_chapters || 0).toLocaleString("zh-CN")} 章</div>
-          <div class="actions" style="margin-top: 10px;">
-            <button class="ghost" onclick="loadProject('${project.slug}')">打开项目</button>
-          </div>
+          <div class="hint" style="margin-top: 10px;">${project.slug === state.activeProjectSlug ? "当前正在查看这个项目。" : "点击卡片即可切换到这个项目。"}</div>
         </div>
       `).join("");
+      syncProjectSelector();
     }
 
     function renderTaskFeed(task) {
@@ -2747,8 +3150,9 @@
 
     function renderSummary(summary) {
       state.summary = summary;
+      const currentFrontier = summary.world_expansion?.current_frontier || null;
       els.projectTitle.textContent = summary.project.title;
-      els.projectSubtitle.textContent = `${summary.project.slug} · ${summary.project.genre} · 目标 ${Number(summary.project.target_word_count || 0).toLocaleString("zh-CN")} 字 / ${Number(summary.project.target_chapters || 0).toLocaleString("zh-CN")} 章`;
+      els.projectSubtitle.textContent = `${summary.project.slug} · ${summary.project.genre} · 目标 ${Number(summary.project.target_word_count || 0).toLocaleString("zh-CN")} 字 / ${Number(summary.project.target_chapters || 0).toLocaleString("zh-CN")} 章${currentFrontier ? ` · 当前边界：第 ${Number(currentFrontier.volume_number || 0).toLocaleString("zh-CN")} 卷 ${currentFrontier.title || ""}` : ""}`;
       els.summaryStatus.textContent = humanizeProjectStatus(summary.project.status);
       els.summaryChapters.textContent = Number(summary.structure_summary.total_chapters || 0).toLocaleString("zh-CN");
       els.summaryScenes.textContent = Number(summary.structure_summary.total_scenes || 0).toLocaleString("zh-CN");
@@ -2769,6 +3173,270 @@
       els.writingProfileJson.textContent = pretty(summary.writing_profile || {});
       applyPreviewOptions(summary);
       renderArtifacts(summary.outputs);
+    }
+
+    function renderStructure(payload) {
+      els.structureJson.textContent = pretty(payload);
+      const volumes = Array.isArray(payload?.volumes) ? payload.volumes : [];
+      const totalChapters = Number(payload?.total_chapters || 0);
+      const totalScenes = Number(payload?.total_scenes || 0);
+      const currentVolumeNumber = payload?.current_volume_number || 0;
+      const currentChapterNumber = payload?.current_chapter_number || 0;
+
+      const statCard = (title, value, note) => `
+        <div class="workflow-stat">
+          <strong>${escapeHtml(value)}</strong>
+          <span>${escapeHtml(title)}${note ? ` · ${escapeHtml(note)}` : ""}</span>
+        </div>
+      `;
+
+      els.structureOverview.innerHTML = [
+        statCard("卷数量", Number(volumes.length || 0).toLocaleString("zh-CN"), "当前已物化卷结构"),
+        statCard("章节数量", totalChapters.toLocaleString("zh-CN"), currentChapterNumber ? `当前推进到第 ${currentChapterNumber} 章` : "尚未推进"),
+        statCard("场景数量", totalScenes.toLocaleString("zh-CN"), "当前数据库中的场景总数"),
+        statCard("当前卷", currentVolumeNumber ? `第 ${Number(currentVolumeNumber).toLocaleString("zh-CN")} 卷` : "未进入", payload?.status || ""),
+      ].join("");
+
+      if (!volumes.length) {
+        els.structureBoard.innerHTML = `<div class="empty">当前还没有可展示的卷、章、场结构。</div>`;
+        return;
+      }
+
+      els.structureBoard.innerHTML = volumes.map((volume) => {
+        const chapters = Array.isArray(volume.chapters) ? volume.chapters : [];
+        const chapterRows = chapters.length ? chapters.map((chapter) => {
+          const scenes = Array.isArray(chapter.scenes) ? chapter.scenes : [];
+          const scenePills = scenes.length
+            ? scenes.map((scene) => `<span class="scene-status-pill">第 ${Number(scene.scene_number || 0).toLocaleString("zh-CN")} 场 · ${escapeHtml(humanizeStructureStatus(scene.status))}</span>`).join("")
+            : `<span class="scene-status-pill">暂无场景</span>`;
+          return `
+            <div class="chapter-status-row">
+              <strong>第 ${Number(chapter.chapter_number || 0).toLocaleString("zh-CN")} 章 · ${escapeHtml(chapter.title || "未命名章节")}</strong>
+              <p>${escapeHtml(truncateText(chapter.chapter_goal || "暂无章节目标。", 96))}</p>
+              <div class="narrative-meta">
+                <span class="narrative-pill">状态：${escapeHtml(humanizeStructureStatus(chapter.status))}</span>
+                <span class="narrative-pill">目标 ${formatWordCount(chapter.target_word_count || 0)}</span>
+                <span class="narrative-pill">当前 ${formatWordCount(chapter.current_word_count || 0)}</span>
+                <span class="narrative-pill">草稿版本 ${escapeHtml(chapter.current_draft_version_no ? String(chapter.current_draft_version_no) : "-")}</span>
+              </div>
+              <div class="chapter-scene-strip">${scenePills}</div>
+            </div>
+          `;
+        }).join("") : `<div class="empty">这一卷还没有章节。</div>`;
+
+        return `
+          <div class="volume-status-card">
+            <div class="volume-status-head">
+              <div>
+                <strong>第 ${Number(volume.volume_number || 0).toLocaleString("zh-CN")} 卷 · ${escapeHtml(volume.title || "未命名卷")}</strong>
+                <p>目标 ${formatWordCount(volume.target_word_count || 0)} / 预计 ${Number(volume.target_chapter_count || 0).toLocaleString("zh-CN")} 章</p>
+              </div>
+              <span class="narrative-pill">${escapeHtml(humanizeStructureStatus(volume.status))}</span>
+            </div>
+            <div class="chapter-status-list">${chapterRows}</div>
+          </div>
+        `;
+      }).join("");
+    }
+
+    function renderNarrative(payload) {
+      els.narrativeJson.textContent = pretty(payload);
+      const plotArcs = Array.isArray(payload?.plot_arcs) ? payload.plot_arcs : [];
+      const arcBeats = Array.isArray(payload?.arc_beats) ? payload.arc_beats : [];
+      const clues = Array.isArray(payload?.clues) ? payload.clues : [];
+      const payoffs = Array.isArray(payload?.payoffs) ? payload.payoffs : [];
+      const emotionTracks = Array.isArray(payload?.emotion_tracks) ? payload.emotion_tracks : [];
+      const antagonistPlans = Array.isArray(payload?.antagonist_plans) ? payload.antagonist_plans : [];
+      const chapterContracts = Array.isArray(payload?.chapter_contracts) ? payload.chapter_contracts : [];
+      const sceneContracts = Array.isArray(payload?.scene_contracts) ? payload.scene_contracts : [];
+
+      const statCard = (title, value, note) => `
+        <div class="workflow-stat">
+          <strong>${escapeHtml(value)}</strong>
+          <span>${escapeHtml(title)}${note ? ` · ${escapeHtml(note)}` : ""}</span>
+        </div>
+      `;
+
+      els.narrativeOverview.innerHTML = [
+        statCard("叙事线", Number(plotArcs.length || 0).toLocaleString("zh-CN"), "主线、暗线、成长线等"),
+        statCard("节拍节点", Number(arcBeats.length || 0).toLocaleString("zh-CN"), "卷级、章级、场级 beat"),
+        statCard("伏笔 / 兑现", `${Number(clues.length || 0).toLocaleString("zh-CN")} / ${Number(payoffs.length || 0).toLocaleString("zh-CN")}`, "线索账本"),
+        statCard("关系 / 反派", `${Number(emotionTracks.length || 0).toLocaleString("zh-CN")} / ${Number(antagonistPlans.length || 0).toLocaleString("zh-CN")}`, "情绪线与压力线"),
+      ].join("");
+
+      els.narrativeArcs.innerHTML = plotArcs.length ? plotArcs.slice(0, 8).map((arc) => {
+        const relatedBeatCount = arcBeats.filter((beat) => beat.arc_code === arc.arc_code).length;
+        return `
+          <div class="narrative-card">
+            <strong>[${escapeHtml(arc.arc_type)}] ${escapeHtml(arc.name)}</strong>
+            <p>${escapeHtml(truncateText(arc.promise || "", 92))}</p>
+            <div class="narrative-meta">
+              <span class="narrative-pill">状态：${escapeHtml(arc.status || "-")}</span>
+              <span class="narrative-pill">核心问题：${escapeHtml(truncateText(arc.core_question || "-", 28))}</span>
+              <span class="narrative-pill">节拍 ${relatedBeatCount}</span>
+            </div>
+          </div>
+        `;
+      }).join("") : `<div class="empty">当前还没有叙事线。</div>`;
+
+      const ledgerCards = [];
+      clues.slice(0, 6).forEach((clue) => {
+        ledgerCards.push(`
+          <div class="narrative-card">
+            <strong>伏笔 · ${escapeHtml(clue.label || clue.clue_code)}</strong>
+            <p>${escapeHtml(truncateText(clue.description || "", 92))}</p>
+            <div class="narrative-meta">
+              <span class="narrative-pill">状态：${escapeHtml(clue.status || "-")}</span>
+              <span class="narrative-pill">埋设：第 ${Number(clue.planted_in_chapter_number || 0).toLocaleString("zh-CN")} 章</span>
+              <span class="narrative-pill">预期回收：第 ${Number(clue.expected_payoff_by_chapter_number || 0).toLocaleString("zh-CN")} 章</span>
+            </div>
+          </div>
+        `);
+      });
+      payoffs.slice(0, 6).forEach((payoff) => {
+        ledgerCards.push(`
+          <div class="narrative-card">
+            <strong>兑现 · ${escapeHtml(payoff.label || payoff.payoff_code)}</strong>
+            <p>${escapeHtml(truncateText(payoff.description || "", 92))}</p>
+            <div class="narrative-meta">
+              <span class="narrative-pill">状态：${escapeHtml(payoff.status || "-")}</span>
+              <span class="narrative-pill">目标：第 ${Number(payoff.target_chapter_number || 0).toLocaleString("zh-CN")} 章</span>
+              <span class="narrative-pill">实际：${payoff.actual_chapter_number ? `第 ${Number(payoff.actual_chapter_number).toLocaleString("zh-CN")} 章` : "未兑现"}</span>
+            </div>
+          </div>
+        `);
+      });
+      els.narrativeLedger.innerHTML = ledgerCards.length ? ledgerCards.join("") : `<div class="empty">当前还没有伏笔 / 兑现账本。</div>`;
+
+      const pressureCards = [];
+      emotionTracks.slice(0, 6).forEach((track) => {
+        pressureCards.push(`
+          <div class="narrative-card">
+            <strong>[${escapeHtml(track.track_type)}] ${escapeHtml(track.title)}</strong>
+            <p>${escapeHtml(truncateText(track.summary || "", 92))}</p>
+            <div class="narrative-meta">
+              <span class="narrative-pill">trust ${Number(track.trust_level || 0).toFixed(2)}</span>
+              <span class="narrative-pill">conflict ${Number(track.conflict_level || 0).toFixed(2)}</span>
+              <span class="narrative-pill">${escapeHtml(track.intimacy_stage || "-")}</span>
+            </div>
+          </div>
+        `);
+      });
+      antagonistPlans.slice(0, 6).forEach((plan) => {
+        pressureCards.push(`
+          <div class="narrative-card">
+            <strong>[${escapeHtml(plan.threat_type)}] ${escapeHtml(plan.title)}</strong>
+            <p>${escapeHtml(truncateText(plan.goal || "", 92))}</p>
+            <div class="narrative-meta">
+              <span class="narrative-pill">当前动作：${escapeHtml(truncateText(plan.current_move || "-", 22))}</span>
+              <span class="narrative-pill">下一步：${escapeHtml(truncateText(plan.next_countermove || "-", 22))}</span>
+              <span class="narrative-pill">压力 ${Number(plan.pressure_level || 0).toFixed(2)}</span>
+            </div>
+          </div>
+        `);
+      });
+      els.narrativePressure.innerHTML = pressureCards.length ? pressureCards.join("") : `<div class="empty">当前还没有情绪线或反派推进计划。</div>`;
+
+      const contractCards = [];
+      chapterContracts.slice(0, 6).forEach((contract) => {
+        contractCards.push(`
+          <div class="narrative-card">
+            <strong>章节 Contract · 第 ${Number(contract.chapter_number || 0).toLocaleString("zh-CN")} 章</strong>
+            <p>${escapeHtml(truncateText(contract.contract_summary || "", 92))}</p>
+            <div class="narrative-meta">
+              ${(Array.isArray(contract.primary_arc_codes) ? contract.primary_arc_codes : []).slice(0, 3).map((item) => `<span class="narrative-pill">主线：${escapeHtml(item)}</span>`).join("")}
+              ${(Array.isArray(contract.due_payoff_codes) ? contract.due_payoff_codes : []).slice(0, 2).map((item) => `<span class="narrative-pill">兑现：${escapeHtml(item)}</span>`).join("")}
+            </div>
+          </div>
+        `);
+      });
+      sceneContracts.slice(0, 8).forEach((contract) => {
+        contractCards.push(`
+          <div class="narrative-card">
+            <strong>场景 Contract · 第 ${Number(contract.chapter_number || 0).toLocaleString("zh-CN")} 章第 ${Number(contract.scene_number || 0).toLocaleString("zh-CN")} 场</strong>
+            <p>${escapeHtml(truncateText(contract.contract_summary || "", 92))}</p>
+            <div class="narrative-meta">
+              ${(Array.isArray(contract.arc_codes) ? contract.arc_codes : []).slice(0, 3).map((item) => `<span class="narrative-pill">${escapeHtml(item)}</span>`).join("")}
+              ${(Array.isArray(contract.payoff_codes) ? contract.payoff_codes : []).slice(0, 2).map((item) => `<span class="narrative-pill">兑现：${escapeHtml(item)}</span>`).join("")}
+            </div>
+          </div>
+        `);
+      });
+      els.narrativeContracts.innerHTML = contractCards.length ? contractCards.join("") : `<div class="empty">当前还没有 chapter / scene contract。</div>`;
+    }
+
+    function renderStoryBible(payload) {
+      els.storyBibleJson.textContent = pretty(payload);
+      const overviewStats = state.summary?.world_expansion || {};
+      const backbone = payload?.world_backbone || null;
+      const frontiers = Array.isArray(payload?.volume_frontiers) ? payload.volume_frontiers : [];
+      const reveals = Array.isArray(payload?.deferred_reveals) ? payload.deferred_reveals : [];
+      const gates = Array.isArray(payload?.expansion_gates) ? payload.expansion_gates : [];
+      const currentFrontier = overviewStats.current_frontier || frontiers[0] || null;
+      const nextGate = overviewStats.next_gate || null;
+
+      const statCard = (title, value, note) => `
+        <div class="workflow-stat">
+          <strong>${escapeHtml(value)}</strong>
+          <span>${escapeHtml(title)}${note ? ` · ${escapeHtml(note)}` : ""}</span>
+        </div>
+      `;
+
+      els.storyBibleOverview.innerHTML = [
+        statCard("世界主干", backbone ? "已建立" : "未建立", backbone?.thematic_melody || backbone?.core_promise || ""),
+        statCard("当前边界", currentFrontier ? `第 ${Number(currentFrontier.volume_number || 0).toLocaleString("zh-CN")} 卷` : "未识别", currentFrontier?.title || ""),
+        statCard("扩张闸门", `${Number(overviewStats.unlocked_gate_count || 0).toLocaleString("zh-CN")} 已解锁 / ${Number(overviewStats.active_gate_count || 0).toLocaleString("zh-CN")} 激活`, nextGate?.label || ""),
+        statCard("未来揭示", `${Number(reveals.length || 0).toLocaleString("zh-CN")} 项`, nextGate?.condition_summary || "按阶段逐步打开"),
+      ].join("");
+
+      els.storyBibleBackbone.innerHTML = backbone ? `
+        <div class="story-bible-card">
+          <strong>${escapeHtml(backbone.title || "全书世界主干")}</strong>
+          <p>${escapeHtml(backbone.core_promise || "暂无核心承诺。")}</p>
+          <p>主线驱动：${escapeHtml(backbone.mainline_drive || "未定义")}</p>
+          <p>主角方向：${escapeHtml(backbone.protagonist_destiny || "未定义")}</p>
+          <p>反派主轴：${escapeHtml(backbone.antagonist_axis || "未定义")}</p>
+          <div class="story-bible-meta">
+            ${(Array.isArray(backbone.invariant_elements) ? backbone.invariant_elements : []).slice(0, 6).map((item) => `<span class="story-bible-pill">${escapeHtml(item)}</span>`).join("")}
+          </div>
+        </div>
+      ` : `<div class="empty">当前还没有可展示的世界主干。</div>`;
+
+      els.storyBibleFrontiers.innerHTML = frontiers.length ? frontiers.map((item) => `
+        <div class="story-bible-card">
+          <strong>第 ${Number(item.volume_number || 0).toLocaleString("zh-CN")} 卷 · ${escapeHtml(item.title || "未命名边界")}</strong>
+          <p>${escapeHtml(item.frontier_summary || "暂无阶段摘要。")}</p>
+          <div class="story-bible-meta">
+            <span class="story-bible-pill">章节 ${escapeHtml(`${item.start_chapter_number || "-"} - ${item.end_chapter_number || item.start_chapter_number || "-"}`)}</span>
+            ${item.expansion_focus ? `<span class="story-bible-pill">焦点：${escapeHtml(item.expansion_focus)}</span>` : ""}
+            ${(Array.isArray(item.active_locations) ? item.active_locations : []).slice(0, 2).map((value) => `<span class="story-bible-pill">地点：${escapeHtml(value)}</span>`).join("")}
+            ${(Array.isArray(item.active_factions) ? item.active_factions : []).slice(0, 2).map((value) => `<span class="story-bible-pill">势力：${escapeHtml(value)}</span>`).join("")}
+          </div>
+        </div>
+      `).join("") : `<div class="empty">当前还没有阶段世界边界。</div>`;
+
+      els.storyBibleReveals.innerHTML = reveals.length ? reveals.slice(0, 8).map((item) => `
+        <div class="story-bible-card">
+          <strong>${escapeHtml(item.label || item.reveal_code || "未来揭示")}</strong>
+          <p>${escapeHtml(item.summary || "暂无说明。")}</p>
+          <div class="story-bible-meta">
+            <span class="story-bible-pill">第 ${Number(item.reveal_volume_number || 0).toLocaleString("zh-CN")} 卷揭示</span>
+            <span class="story-bible-pill">第 ${Number(item.reveal_chapter_number || 0).toLocaleString("zh-CN")} 章以后</span>
+          </div>
+        </div>
+      `).join("") : `<div class="empty">当前还没有登记未来揭示。</div>`;
+
+      els.storyBibleGates.innerHTML = gates.length ? gates.map((item) => `
+        <div class="story-bible-card">
+          <strong>${escapeHtml(item.label || item.gate_code || "世界扩张闸门")}</strong>
+          <p>触发条件：${escapeHtml(item.condition_summary || "未定义")}</p>
+          <p>解锁内容：${escapeHtml(item.unlocks_summary || "未定义")}</p>
+          <div class="story-bible-meta">
+            <span class="story-bible-pill">状态：${escapeHtml(humanizeTaskStatus(item.status || "planned"))}</span>
+            <span class="story-bible-pill">第 ${Number(item.unlock_volume_number || 0).toLocaleString("zh-CN")} 卷 / 第 ${Number(item.unlock_chapter_number || 0).toLocaleString("zh-CN")} 章</span>
+          </div>
+        </div>
+      `).join("") : `<div class="empty">当前还没有世界扩张闸门。</div>`;
     }
 
     function renderArtifacts(outputs) {
@@ -2854,7 +3522,7 @@
         }
         if (active.status === "completed" && active.result && active.result.project_slug) {
           state.activeProjectSlug = active.result.project_slug;
-          await loadProjects();
+          await loadProjects({ autoOpen: false });
           await loadProject(active.result.project_slug, { preservePreview: true, liveRefresh: false });
           return;
         }
@@ -2874,9 +3542,28 @@
       }
     }
 
-    async function loadProjects() {
+    async function loadProjects({ autoOpen = true, preservePreview = true } = {}) {
       state.projects = await api("/api/projects");
       renderProjects();
+      if (!state.projects.length) {
+        state.activeProjectSlug = null;
+        syncProjectSelector();
+        return { loaded: false, selectedSlug: null };
+      }
+
+      const activeExists = state.projects.some((project) => project.slug === state.activeProjectSlug);
+      if (!activeExists) {
+        const preferredSlug = choosePreferredProjectSlug();
+        if (preferredSlug) {
+          state.activeProjectSlug = preferredSlug;
+          renderProjects();
+          if (autoOpen) {
+            await loadProject(preferredSlug, { preservePreview, liveRefresh: false });
+            return { loaded: true, selectedSlug: preferredSlug };
+          }
+        }
+      }
+      return { loaded: false, selectedSlug: state.activeProjectSlug };
     }
 
     async function refreshProjectLive(slug) {
@@ -2948,17 +3635,17 @@
 
     async function loadStructure(slug) {
       const payload = await api(`/api/projects/${slug}/structure`);
-      els.structureJson.textContent = pretty(payload);
+      renderStructure(payload);
     }
 
     async function loadStoryBible(slug) {
       const payload = await api(`/api/projects/${slug}/story-bible`);
-      els.storyBibleJson.textContent = pretty(payload);
+      renderStoryBible(payload);
     }
 
     async function loadNarrative(slug) {
       const payload = await api(`/api/projects/${slug}/narrative`);
-      els.narrativeJson.textContent = pretty(payload);
+      renderNarrative(payload);
     }
 
     async function loadWorkflow(slug) {
@@ -3184,8 +3871,10 @@
     }
 
     async function refreshAll() {
-      await Promise.all([loadStatus(), loadProjects(), loadTasks()]);
-      if (state.activeProjectSlug) {
+      await loadStatus();
+      await loadTasks();
+      const projectLoadState = await loadProjects({ autoOpen: true, preservePreview: true });
+      if (state.activeProjectSlug && !projectLoadState.loaded) {
         await loadProject(state.activeProjectSlug, { preservePreview: true, liveRefresh: false });
       }
     }
@@ -3196,8 +3885,8 @@
 
     document.getElementById("start-autowrite").addEventListener("click", startAutowrite);
     document.getElementById("hero-start-button").addEventListener("click", startAutowrite);
-    document.getElementById("refresh-projects").addEventListener("click", loadProjects);
-    document.getElementById("refresh-projects-2").addEventListener("click", loadProjects);
+    document.getElementById("refresh-projects").addEventListener("click", refreshAll);
+    document.getElementById("refresh-projects-2").addEventListener("click", refreshAll);
     document.getElementById("hero-refresh-button").addEventListener("click", refreshAll);
     document.getElementById("reload-project").addEventListener("click", () => state.activeProjectSlug && loadProject(state.activeProjectSlug, { preservePreview: true, liveRefresh: false }));
     document.getElementById("run-repair").addEventListener("click", runRepair);
@@ -3212,6 +3901,12 @@
     document.getElementById("platform-target").addEventListener("change", () => syncPresetDrivenFields({ applyRecommendedPlatform: false }));
     els.genrePresetKey.addEventListener("change", () => syncPresetDrivenFields({ applyRecommendedPlatform: true }));
     els.lengthPresetKey.addEventListener("change", applyLengthPreset);
+    els.projectSelector.addEventListener("change", (event) => {
+      const slug = event.target.value;
+      if (slug) {
+        loadProject(slug, { preservePreview: false, liveRefresh: false });
+      }
+    });
 
     wireTabs();
     updatePreviewModeLabel();
@@ -3222,6 +3917,15 @@
       })
       .finally(refreshAll);
     setInterval(loadTasks, 2000);
+
+    function generateDefaultSlug() {
+      const slugInput = document.getElementById("slug");
+      if (slugInput && !slugInput.value.trim()) {
+        const randomId = Math.floor(100000 + Math.random() * 900000);
+        slugInput.value = `web-story-${randomId}`;
+      }
+    }
+    generateDefaultSlug();
   </script>
 </body>
 </html>

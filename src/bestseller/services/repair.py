@@ -22,6 +22,7 @@ from bestseller.services.pipelines import run_chapter_pipeline
 from bestseller.services.projects import get_project_by_slug
 from bestseller.services.rewrite_impacts import refresh_rewrite_impacts
 from bestseller.services.workflows import create_workflow_run, create_workflow_step_run
+from bestseller.services.world_expansion import sync_world_expansion_progress
 from bestseller.settings import AppSettings
 
 
@@ -431,6 +432,12 @@ async def run_project_repair(
             or review_result.verdict != "pass"
             or remaining_pending_rewrite_count > 0
         )
+        if processed_chapters:
+            project.current_chapter_number = max(
+                int(project.current_chapter_number or 0),
+                max(item.chapter_number for item in processed_chapters),
+            )
+        await sync_world_expansion_progress(session, project=project)
         project.status = (
             ProjectStatus.REVISING.value if requires_human_review else ProjectStatus.WRITING.value
         )

@@ -47,6 +47,7 @@ from bestseller.services.narrative_tree import (
     chapter_path,
     character_path,
     clue_path,
+    expansion_gate_path,
     emotion_track_path,
     payoff_path,
     resolve_narrative_tree_paths_for_project,
@@ -54,6 +55,8 @@ from bestseller.services.narrative_tree import (
     scene_path,
     search_narrative_tree_for_project,
     volume_path,
+    volume_frontier_path,
+    world_backbone_path,
 )
 from bestseller.services.retrieval import search_retrieval_for_project
 from bestseller.services.story_bible import load_scene_story_bible_context, stable_character_id
@@ -296,6 +299,7 @@ def _tree_paths_for_scene_context(
     *,
     chapter: ChapterModel,
     scene: SceneCardModel,
+    volume_number: int | None,
     active_arc_codes: list[str],
     clue_codes: list[str],
     payoff_codes: list[str],
@@ -305,15 +309,17 @@ def _tree_paths_for_scene_context(
     paths = [
         "/book/premise",
         "/book/book-spec",
+        world_backbone_path(),
+        "/world/expansion-gates",
         chapter_path(chapter.chapter_number),
         chapter_contract_path(chapter.chapter_number),
         scene_path(chapter.chapter_number, scene.scene_number),
         scene_contract_path(chapter.chapter_number, scene.scene_number),
     ]
-    if chapter.volume_id is not None:
-        volume_number = scene.metadata_json.get("volume_number")
-        if isinstance(volume_number, int):
-            paths.append(volume_path(volume_number))
+    if volume_number is not None:
+        paths.append(volume_path(volume_number))
+        paths.append(volume_frontier_path(volume_number))
+        paths.append(expansion_gate_path(f"unlock-volume-{volume_number:02d}"))
     paths.extend(character_path(name) for name in scene.participants)
     paths.extend(arc_path(code) for code in active_arc_codes[:4])
     paths.extend(clue_path(code) for code in clue_codes[:4])
@@ -327,6 +333,7 @@ def _tree_paths_for_chapter_context(
     *,
     chapter: ChapterModel,
     scenes: list[SceneCardModel],
+    volume_number: int | None,
     active_arc_codes: list[str],
     clue_codes: list[str],
     payoff_codes: list[str],
@@ -336,9 +343,15 @@ def _tree_paths_for_chapter_context(
     paths = [
         "/book/premise",
         "/book/book-spec",
+        world_backbone_path(),
+        "/world/expansion-gates",
         chapter_path(chapter.chapter_number),
         chapter_contract_path(chapter.chapter_number),
     ]
+    if volume_number is not None:
+        paths.append(volume_path(volume_number))
+        paths.append(volume_frontier_path(volume_number))
+        paths.append(expansion_gate_path(f"unlock-volume-{volume_number:02d}"))
     for scene in scenes[:4]:
         paths.append(scene_path(chapter.chapter_number, scene.scene_number))
         paths.append(scene_contract_path(chapter.chapter_number, scene.scene_number))
@@ -573,7 +586,18 @@ async def build_scene_writer_context_from_models(
         chunk
         for chunk in retrieval_result.chunks
         if (
-            chunk.source_type in {"world_rule", "character", "relationship", "volume"}
+            (
+                chunk.source_type == "world_rule"
+                and (
+                    not isinstance(story_bible_context.get("volume_frontier"), dict)
+                    or not story_bible_context.get("volume_frontier", {}).get("visible_rule_codes")
+                    or (
+                        (chunk.metadata or {}).get("rule_code")
+                        in set(story_bible_context.get("volume_frontier", {}).get("visible_rule_codes", []))
+                    )
+                )
+            )
+            or chunk.source_type in {"character", "relationship", "volume"}
             or _is_before_current_position(
                 *_retrieval_chunk_position(chunk.model_dump(mode="json")),
                 current_chapter_number=chapter.chapter_number,
@@ -698,6 +722,11 @@ async def build_scene_writer_context_from_models(
     preferred_tree_paths = _tree_paths_for_scene_context(
         chapter=chapter,
         scene=scene,
+        volume_number=(
+            story_bible_context.get("volume", {}).get("volume_number")
+            if isinstance(story_bible_context.get("volume"), dict)
+            else None
+        ),
         active_arc_codes=[
             item.arc_code
             for item in active_plot_arc_reads
@@ -899,7 +928,18 @@ async def build_chapter_writer_context(
         chunk
         for chunk in retrieval_result.chunks
         if (
-            chunk.source_type in {"world_rule", "character", "relationship", "volume"}
+            (
+                chunk.source_type == "world_rule"
+                and (
+                    not isinstance(story_bible_context.get("volume_frontier"), dict)
+                    or not story_bible_context.get("volume_frontier", {}).get("visible_rule_codes")
+                    or (
+                        (chunk.metadata or {}).get("rule_code")
+                        in set(story_bible_context.get("volume_frontier", {}).get("visible_rule_codes", []))
+                    )
+                )
+            )
+            or chunk.source_type in {"character", "relationship", "volume"}
             or _is_before_current_position(
                 *_retrieval_chunk_position(chunk.model_dump(mode="json")),
                 current_chapter_number=chapter.chapter_number,
@@ -999,6 +1039,11 @@ async def build_chapter_writer_context(
     preferred_tree_paths = _tree_paths_for_chapter_context(
         chapter=chapter,
         scenes=scenes,
+        volume_number=(
+            story_bible_context.get("volume", {}).get("volume_number")
+            if isinstance(story_bible_context.get("volume"), dict)
+            else None
+        ),
         active_arc_codes=[item.arc_code for item in active_plot_arc_reads if item.arc_code],
         clue_codes=[item.clue_code for item in unresolved_clues if item.clue_code],
         payoff_codes=[item.payoff_code for item in planned_payoffs if item.payoff_code],

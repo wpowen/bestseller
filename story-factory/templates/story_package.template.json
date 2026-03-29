@@ -1,0 +1,49 @@
+{
+  "book": {
+    "id": "book_id",
+    "title": "书名",
+    "author": "命书工作室",
+    "cover_image_name": "cover_book_id",
+    "synopsis": "一句完整简介。",
+    "genre": "末日爽文",
+    "tags": ["资源争夺", "安全区夺权", "尸潮围城"],
+    "interaction_tags": ["高互动", "势力经营", "关系推进"],
+    "total_chapters": 5,
+    "free_chapters": 5,
+    "characters": [],
+    "initial_stats": {
+      "combat": 10,
+      "fame": 10,
+      "strategy": 10,
+      "wealth": 5,
+      "charm": 8,
+      "darkness": 0,
+      "destiny": 20
+    }
+  },
+  "reader_desire_map": {
+    "core_fantasy": "用户在消费什么补偿",
+    "reward_promises": ["奖励承诺 1", "奖励承诺 2"],
+    "control_promises": ["控制承诺 1", "控制承诺 2"],
+    "suspense_questions": ["悬念问题 1", "悬念问题 2"]
+  },
+  "story_bible": {
+    "premise": "故事前提",
+    "mainline_goal": "主线目标",
+    "side_threads": ["支线 1", "支线 2"],
+    "hidden_truths": ["暗线真相 1", "暗线真相 2"]
+  },
+  "route_graph": {
+    "mainline": "主线摘要",
+    "side_routes": ["支线摘要"],
+    "hidden_routes": ["暗线摘要"],
+    "milestones": []
+  },
+  "walkthrough": {
+    "book_id": "book_id",
+    "title": "攻略图标题",
+    "stages": [],
+    "chapter_guides": []
+  },
+  "chapters": []
+}

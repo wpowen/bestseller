@@ -7,7 +7,14 @@ ENV_FILE="$RUNTIME_DIR/dev.env"
 
 CONTAINER_NAME="${BESTSELLER_CONTAINER_NAME:-bestseller-dev-postgres}"
 DB_VOLUME="${BESTSELLER_DB_VOLUME:-bestseller-pgdata}"
+STUDIO_PORT="${BESTSELLER_STUDIO_PORT:-8787}"
 PURGE="${1:-}"
+
+pids="$(lsof -ti :"$STUDIO_PORT" 2>/dev/null || true)"
+if [[ -n "$pids" ]]; then
+  echo "$pids" | xargs kill -9 2>/dev/null || true
+  echo "Stopped Web Studio on port ${STUDIO_PORT}."
+fi
 
 if docker ps -a --format '{{.Names}}' | grep -qx "$CONTAINER_NAME"; then
   docker rm -f "$CONTAINER_NAME" >/dev/null

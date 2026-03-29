@@ -1,0 +1,1467 @@
+{
+  "book": {
+    "id": "cultivation_full_001",
+    "title": "残剑问仙",
+    "author": "命书工作室",
+    "cover_image_name": "cover_cultivation_full_001",
+    "synopsis": "你天生断脉，被问仙门当成废人扔在外门三年。宗门试剑这天，葬剑台深处一柄沉睡百年的残剑忽然只为你而鸣。可真正等着你的，不是单纯的逆袭，而是一场由剑压、旧案、师门权力和父亲死因缠成的死局。你可以硬杀、设局、借人心，但每一步都要亲手走完那场试剑、那次夜入剑冢、那场当众问罪和最后的天门决断。",
+    "genre": "修仙升级",
+    "tags": ["断脉逆修", "残剑认主", "宗门旧案", "公开问罪", "成长路线"],
+    "interaction_tags": ["高互动", "战斗过程", "关系推进", "攻略图"],
+    "total_chapters": 4,
+    "free_chapters": 4,
+    "characters": [
+      {
+        "id": "char_qinshuang",
+        "name": "秦霜",
+        "title": "执剑师姐",
+        "avatar_image_name": "avatar_qinshuang",
+        "description": "内门执剑弟子，话不多，眼很稳。她一直在看你，但从不轻易替谁站队。",
+        "role": "红颜"
+      },
+      {
+        "id": "char_hanye",
+        "name": "韩夜",
+        "title": "内门首席",
+        "avatar_image_name": "avatar_hanye",
+        "description": "问仙门这一代风头最盛的人，习惯踩着别人抬高自己。你的断脉三年来一直是他最爱讲的笑话。",
+        "role": "宿敌"
+      },
+      {
+        "id": "char_mochangqing",
+        "name": "莫长青",
+        "title": "戒律长老",
+        "avatar_image_name": "avatar_mochangqing",
+        "description": "掌管试剑与戒律，面上最冷，话最少，却像早就知道残剑旧名意味着什么。",
+        "role": "师尊"
+      },
+      {
+        "id": "char_bonesword",
+        "name": "骨剑灵",
+        "title": "残剑旧灵",
+        "avatar_image_name": "avatar_bonesword",
+        "description": "沉睡在残剑里的旧灵，只回应真正愿意付代价的人。它知道你断脉的真相，也知道你父亲不是死于走火入魔。",
+        "role": "盟友"
+      },
+      {
+        "id": "char_fengrushan",
+        "name": "封如山",
+        "title": "藏经峰长老",
+        "avatar_image_name": "avatar_fengrushan",
+        "description": "藏经峰长老，向来和气，可每次提到你父亲时都笑得太慢了半拍。",
+        "role": "反派"
+      }
+    ],
+    "initial_stats": {
+      "combat": 14,
+      "fame": 6,
+      "strategy": 13,
+      "wealth": 2,
+      "charm": 8,
+      "darkness": 5,
+      "destiny": 30
+    }
+  },
+  "reader_desire_map": {
+    "core_fantasy": "从被全宗门认定的废人，一步步变成让旧规则为你让路的人。",
+    "reward_promises": [
+      "公开场合完成逆转",
+      "每一章都把一层压迫撕开",
+      "战斗和翻盘都必须有过程"
+    ],
+    "control_promises": [
+      "用户决定主角用什么打法开锋",
+      "关系线和公开路线能被记录与回看",
+      "结尾去向由用户亲自落定"
+    ],
+    "suspense_questions": [
+      "你的断脉究竟是谁下的手",
+      "莫长青为什么一直不阻止你",
+      "封如山为什么怕残剑的旧名被人叫出来"
+    ]
+  },
+  "story_bible": {
+    "premise": "一个被宗门遗弃的断脉弟子，在残剑认主后撬开父辈旧案和门内权力死局。",
+    "mainline_goal": "先活着拿住残剑，再在公开问罪里把局势翻过来。",
+    "side_threads": [
+      "秦霜是否会真正站到你这边",
+      "莫长青究竟是在利用你，还是在等你自己跨过去"
+    ],
+    "hidden_truths": [
+      "你的断脉不是天生，而是当年有人为夺残剑旧脉而强行截断",
+      "你父亲并非叛门，而是死在封如山设下的封脉局里"
+    ]
+  },
+  "route_graph": {
+    "mainline": "试剑开锋 -> 夜入剑冢 -> 当众问罪 -> 天门翻案",
+    "side_routes": [
+      "秦霜关系线",
+      "莫长青立场线",
+      "骨剑灵共鸣线"
+    ],
+    "hidden_routes": [
+      "父亲旧案线",
+      "封如山夺剑线"
+    ],
+    "milestones": [
+      {
+        "id": "milestone_1",
+        "title": "拿到残剑回应",
+        "chapter_ids": ["cfull_001", "cfull_002"]
+      },
+      {
+        "id": "milestone_2",
+        "title": "把幕后逼到台前",
+        "chapter_ids": ["cfull_003", "cfull_004"]
+      }
+    ]
+  },
+  "walkthrough": {
+    "book_id": "cultivation_full_001",
+    "title": "残剑问门攻略图",
+    "stages": [
+      {
+        "id": "stage_open",
+        "title": "断脉开锋",
+        "summary": "先决定你以什么姿态走上葬剑台，再决定谁可以被你带进这场局。",
+        "chapter_ids": ["cfull_001"]
+      },
+      {
+        "id": "stage_sword",
+        "title": "夜取残剑",
+        "summary": "真正的试炼不在台前，而在你敢不敢把旧名从黑暗里带出来。",
+        "chapter_ids": ["cfull_002"]
+      },
+      {
+        "id": "stage_trial",
+        "title": "问罪反杀",
+        "summary": "你要在问门殿里把自己从罪人翻成持剑者，并把幕后逼出影子。",
+        "chapter_ids": ["cfull_003"]
+      },
+      {
+        "id": "stage_end",
+        "title": "天门决断",
+        "summary": "最后一战不是单纯斩人，而是决定你以后到底为谁而持这柄剑。",
+        "chapter_ids": ["cfull_004"]
+      }
+    ],
+    "chapter_guides": [
+      {
+        "chapter_id": "cfull_001",
+        "stage_id": "stage_open",
+        "public_summary": "宗门试剑把你推到所有人面前。你先要决定开锋方式，再决定谁能成为你第一位真正的局内人。",
+        "objective": "在众目睽睽下拿到走上葬剑台的资格",
+        "estimated_minutes": 5,
+        "interaction_count": 2,
+        "visible_routes": [
+          {
+            "id": "route_open_1",
+            "title": "硬抗剑压",
+            "style": "直接爽",
+            "unlock_hint": "偏战力",
+            "payoff": "最快建立震场感",
+            "process_focus": "剑压对抗"
+          },
+          {
+            "id": "route_open_2",
+            "title": "借势错位",
+            "style": "扮猪吃虎",
+            "unlock_hint": "偏谋略",
+            "payoff": "让韩夜先出丑",
+            "process_focus": "步法与局势"
+          },
+          {
+            "id": "route_open_3",
+            "title": "血祭剑纹",
+            "style": "阴谋爽",
+            "unlock_hint": "偏天命",
+            "payoff": "最早唤醒残剑",
+            "process_focus": "代价交换"
+          }
+        ],
+        "hidden_route_hint": "第一章的关系落子会决定谁陪你走到天门。"
+      },
+      {
+        "chapter_id": "cfull_002",
+        "stage_id": "stage_sword",
+        "public_summary": "夜入剑冢不是拿到剑就结束，而是要决定你怎样让这柄剑认你，也要决定旧名该被多少人听见。",
+        "objective": "带着残剑活着离开剑冢",
+        "estimated_minutes": 6,
+        "interaction_count": 2,
+        "visible_routes": [
+          {
+            "id": "route_sword_1",
+            "title": "正面斩傀",
+            "style": "碾压爽",
+            "unlock_hint": "偏战力",
+            "payoff": "最快立住锋芒",
+            "process_focus": "近身搏杀"
+          },
+          {
+            "id": "route_sword_2",
+            "title": "引傀互撞",
+            "style": "延迟爽",
+            "unlock_hint": "偏谋略",
+            "payoff": "保住体力与底牌",
+            "process_focus": "空间调度"
+          },
+          {
+            "id": "route_sword_3",
+            "title": "借灵夺息",
+            "style": "阴谋爽",
+            "unlock_hint": "偏天命",
+            "payoff": "最快摸到旧名真相",
+            "process_focus": "共鸣代价"
+          }
+        ],
+        "hidden_route_hint": "第二章决定你公开多少真相，也决定第三章谁先出手。"
+      },
+      {
+        "chapter_id": "cfull_003",
+        "stage_id": "stage_trial",
+        "public_summary": "问门殿里真正重要的不是你认不认罪，而是你用什么方式把罪名反压回去，并决定谁去为你掀开最后的证据。",
+        "objective": "把问罪变成自己的登门之战",
+        "estimated_minutes": 6,
+        "interaction_count": 2,
+        "visible_routes": [
+          {
+            "id": "route_trial_1",
+            "title": "当众三剑",
+            "style": "直接爽",
+            "unlock_hint": "偏战力",
+            "payoff": "最快打碎韩夜的势",
+            "process_focus": "公开对决"
+          },
+          {
+            "id": "route_trial_2",
+            "title": "半卷铁证",
+            "style": "延迟爽",
+            "unlock_hint": "偏证据",
+            "payoff": "把长老们逼到中立",
+            "process_focus": "证据链"
+          },
+          {
+            "id": "route_trial_3",
+            "title": "认半罪钓人",
+            "style": "扮猪吃虎",
+            "unlock_hint": "偏黑化",
+            "payoff": "最快钓出幕后",
+            "process_focus": "心理博弈"
+          }
+        ],
+        "hidden_route_hint": "第三章的托付对象会改变第四章谁替你扛第一波杀机。"
+      },
+      {
+        "chapter_id": "cfull_004",
+        "stage_id": "stage_end",
+        "public_summary": "天门最后一战会结束第一卷主问题，但结尾去向由你决定：守门、下山、或暂时离开所有人。",
+        "objective": "杀穿天门阵并决定你带着残剑去哪里",
+        "estimated_minutes": 7,
+        "interaction_count": 2,
+        "visible_routes": [
+          {
+            "id": "route_end_1",
+            "title": "借天雷洗剑",
+            "style": "碾压爽",
+            "unlock_hint": "偏战力与天命",
+            "payoff": "正面斩开封如山",
+            "process_focus": "雷劫硬战"
+          },
+          {
+            "id": "route_end_2",
+            "title": "旧名破阵",
+            "style": "直接爽",
+            "unlock_hint": "偏名望与证据",
+            "payoff": "当众翻案",
+            "process_focus": "公开见证"
+          },
+          {
+            "id": "route_end_3",
+            "title": "共命一息",
+            "style": "阴谋爽",
+            "unlock_hint": "偏骨剑灵线",
+            "payoff": "打开下一卷的真相口",
+            "process_focus": "命数交换"
+          }
+        ],
+        "hidden_route_hint": "最后的去向不会改变胜负，但会改变这卷故事留下的情绪余味。"
+      }
+    ]
+  },
+  "chapters": [
+    {
+      "id": "cfull_001",
+      "book_id": "cultivation_full_001",
+      "number": 1,
+      "title": "葬剑台前",
+      "is_paid": false,
+      "next_chapter_hook": "子时前，剑冢暗门只会开半炷香。韩夜已经派人守住三条上山路，而骨剑灵第一次在你耳边说出了两个字：旧名。",
+      "nodes": [
+        {
+          "text": {
+            "id": "cfull_001_01",
+            "content": "辰时，葬剑台前，问仙门外门弟子密密麻麻站满了石阶。",
+            "emphasis": "dramatic"
+          }
+        },
+        {
+          "text": {
+            "id": "cfull_001_02",
+            "content": "你刚踏上第一层青石，经脉深处就像被人用钝刀慢慢剐开。三年断脉留下的伤并没有好，只是一直被你咬牙压着。"
+          }
+        },
+        {
+          "dialogue": {
+            "id": "cfull_001_03",
+            "character_id": "char_hanye",
+            "content": "废脉也来试剑？你要是真能走上第九层，我今天就在众人面前向你赔罪。",
+            "emotion": "讥笑"
+          }
+        },
+        {
+          "dialogue": {
+            "id": "cfull_001_04",
+            "character_id": "char_mochangqing",
+            "content": "葬剑台认命，不认嘴。敢上，就自己担后果。",
+            "emotion": "冷肃"
+          }
+        },
+        {
+          "text": {
+            "id": "cfull_001_05",
+            "content": "就在第一重剑压压落下来的时候，最上方那柄锈黑残剑忽然轻轻一震，一道只有你能听见的嘶哑嗓音顺着心口爬上来。",
+            "emphasis": "system"
+          }
+        },
+        {
+          "text": {
+            "id": "cfull_001_06",
+            "content": "「往上走。但别急着赢，先决定你想用什么方式撕开他们的眼神。」",
+            "emphasis": "system"
+          }
+        },
+        {
+          "choice": {
+            "id": "cfull_choice_001",
+            "prompt": "第一重剑压已落。你决定如何开锋？",
+            "choice_type": "keyDecision",
+            "choices": [
+              {
+                "id": "cfull_choice_001_a",
+                "text": "硬抗剑压，踩着裂骨声往上走",
+                "description": "不藏，也不让。让所有人看着你怎样把断脉一步一步扛上去。",
+                "satisfaction_type": "直接爽",
+                "visible_cost": "经脉会再裂一次",
+                "visible_reward": "当场建立威势",
+                "risk_hint": "天命反噬会提前到来",
+                "process_label": "剑压",
+                "stat_effects": [
+                  { "stat": "战力", "delta": 12 },
+                  { "stat": "名望", "delta": 10 },
+                  { "stat": "天命值", "delta": -6 }
+                ],
+                "relationship_effects": [
+                  { "character_id": "char_hanye", "dimension": "敬畏", "delta": 20 },
+                  { "character_id": "char_hanye", "dimension": "敌意", "delta": 15 },
+                  { "character_id": "char_qinshuang", "dimension": "好感", "delta": 8 }
+                ],
+                "result_node_ids": [],
+                "result_nodes": [
+                  {
+                    "text": {
+                      "id": "cfull_001_a_01",
+                      "content": "你肩膀一沉，任由第一重剑压砸在背上。骨头里先是闷响，再是细密的裂声，像有人在你身体里一寸寸敲开旧伤。"
+                    }
+                  },
+                  {
+                    "text": {
+                      "id": "cfull_001_a_02",
+                      "content": "可你没有退。第二步踏下时，鲜血顺着鞋边流进青石纹路，原本灰白的剑纹被你一步步踩亮，台下的喧哗也一点点低了下去。"
+                    }
+                  },
+                  {
+                    "dialogue": {
+                      "id": "cfull_001_a_03",
+                      "character_id": "char_hanye",
+                      "content": "他怎么还能站着？",
+                      "emotion": "失声"
+                    }
+                  }
+                ],
+                "is_premium": false
+              },
+              {
+                "id": "cfull_choice_001_b",
+                "text": "借势错位，让韩夜先吃一记偏压",
+                "description": "不和葬剑台硬碰，你要先让最会笑的人第一个乱阵脚。",
+                "satisfaction_type": "扮猪吃虎",
+                "visible_cost": "你要暂时装成狼狈",
+                "visible_reward": "让韩夜公开出丑",
+                "risk_hint": "步法错半寸就会被压跪",
+                "process_label": "步法",
+                "stat_effects": [
+                  { "stat": "谋略", "delta": 12 },
+                  { "stat": "名望", "delta": 6 },
+                  { "stat": "天命值", "delta": 4 }
+                ],
+                "relationship_effects": [
+                  { "character_id": "char_hanye", "dimension": "敌意", "delta": 20 },
+                  { "character_id": "char_qinshuang", "dimension": "信任", "delta": 10 },
+                  { "character_id": "char_mochangqing", "dimension": "信任", "delta": 6 }
+                ],
+                "result_node_ids": [],
+                "result_nodes": [
+                  {
+                    "text": {
+                      "id": "cfull_001_b_01",
+                      "content": "你在剑压落下前半步忽然侧身，让最重那股力道擦着耳边砸进身后的石砖。表面上看，你像是被逼得狼狈躲闪。"
+                    }
+                  },
+                  {
+                    "text": {
+                      "id": "cfull_001_b_02",
+                      "content": "韩夜果然追前一步，想踩着你的狼狈再补一脚。下一瞬，第二层偏压被你带偏，轰地压在他那一步上，震得他袖口当场裂开。"
+                    }
+                  },
+                  {
+                    "dialogue": {
+                      "id": "cfull_001_b_03",
+                      "character_id": "char_mochangqing",
+                      "content": "台前越位者，退下。",
+                      "emotion": "喝斥"
+                    }
+                  }
+                ],
+                "is_premium": false
+              },
+              {
+                "id": "cfull_choice_001_c",
+                "text": "血祭剑纹，先让残剑看到你",
+                "description": "你愿意拿自己的命当第一把钥匙，换残剑先开口。",
+                "satisfaction_type": "阴谋爽",
+                "visible_cost": "心脉会短时失衡",
+                "visible_reward": "最快唤醒残剑",
+                "risk_hint": "会让某些老人想起旧事",
+                "process_label": "命数",
+                "stat_effects": [
+                  { "stat": "战力", "delta": 8 },
+                  { "stat": "黑化值", "delta": 8 },
+                  { "stat": "天命值", "delta": 12 }
+                ],
+                "relationship_effects": [
+                  { "character_id": "char_bonesword", "dimension": "依赖", "delta": 20 },
+                  { "character_id": "char_mochangqing", "dimension": "敌意", "delta": 8 }
+                ],
+                "result_node_ids": [],
+                "result_nodes": [
+                  {
+                    "text": {
+                      "id": "cfull_001_c_01",
+                      "content": "你咬破舌尖，把血抹进掌心，再一把按在青石剑纹上。温热鲜血沿着裂纹往四面八方窜开，整座葬剑台像被你这一下拍醒了。"
+                    }
+                  },
+                  {
+                    "dialogue": {
+                      "id": "cfull_001_c_02",
+                      "character_id": "char_bonesword",
+                      "content": "终于有人肯用命来敲门了。",
+                      "emotion": "沙哑"
+                    }
+                  },
+                  {
+                    "text": {
+                      "id": "cfull_001_c_03",
+                      "content": "原本压向你的剑势忽然朝两侧分流，为你让出一条沾血的上行路。台上的笑声，第一次整齐地停住了。",
+                      "emphasis": "dramatic"
+                    }
+                  }
+                ],
+                "is_premium": false
+              }
+            ]
+          }
+        },
+        {
+          "text": {
+            "id": "cfull_001_07",
+            "content": "高台风声极静。方才那些看热闹的目光，此刻全都从嘲笑变成了谨慎。"
+          }
+        },
+        {
+          "dialogue": {
+            "id": "cfull_001_08",
+            "character_id": "char_qinshuang",
+            "content": "今晚子时，剑冢会开暗门。你若真要去，就不能一个人被盯死。",
+            "emotion": "压低声音"
+          }
+        },
+        {
+          "choice": {
+            "id": "cfull_choice_002",
+            "prompt": "秦霜站到了你身侧。你决定如何处理她的靠近？",
+            "choice_type": "characterPref",
+            "choices": [
+              {
+                "id": "cfull_choice_002_a",
+                "text": "告诉她子时计划，请她替你守半炷香",
+                "description": "你不需要她替你赢，但你需要一个不会背后捅刀的人。",
+                "satisfaction_type": "情感爽",
+                "visible_cost": "欠下她一个人情",
+                "visible_reward": "获得稳定支援",
+                "risk_hint": "她会被一起卷进来",
+                "process_label": "信任",
+                "stat_effects": [
+                  { "stat": "魅力", "delta": 6 },
+                  { "stat": "谋略", "delta": 4 }
+                ],
+                "relationship_effects": [
+                  { "character_id": "char_qinshuang", "dimension": "信任", "delta": 18 },
+                  { "character_id": "char_qinshuang", "dimension": "好感", "delta": 10 }
+                ],
+                "result_node_ids": [],
+                "result_nodes": [
+                  {
+                    "dialogue": {
+                      "id": "cfull_002_a_01",
+                      "character_id": "char_qinshuang",
+                      "content": "半炷香，我替你守住。再多，我就要拔剑了。",
+                      "emotion": "平静"
+                    }
+                  },
+                  {
+                    "text": {
+                      "id": "cfull_002_a_02",
+                      "content": "你点头时，秦霜没有再问为什么。她只是把手搭在剑柄上，像已经替你把今夜的风声都数过一遍。"
+                    }
+                  }
+                ],
+                "is_premium": false
+              },
+              {
+                "id": "cfull_choice_002_b",
+                "text": "让她别靠近，你自己去扛",
+                "description": "这局太脏，你先把她挡在外面。",
+                "satisfaction_type": "延迟爽",
+                "visible_cost": "会失去现成支援",
+                "visible_reward": "减少她被牵连的风险",
+                "risk_hint": "你会在夜里少一只手",
+                "process_label": "取舍",
+                "stat_effects": [
+                  { "stat": "天命值", "delta": 4 }
+                ],
+                "relationship_effects": [
+                  { "character_id": "char_qinshuang", "dimension": "好感", "delta": 4 },
+                  { "character_id": "char_qinshuang", "dimension": "信任", "delta": -4 }
+                ],
+                "result_node_ids": [],
+                "result_nodes": [
+                  {
+                    "text": {
+                      "id": "cfull_002_b_01",
+                      "content": "你只说了一句‘别跟’，声音很轻，却把话说死了。"
+                    }
+                  },
+                  {
+                    "dialogue": {
+                      "id": "cfull_002_b_02",
+                      "character_id": "char_qinshuang",
+                      "content": "好。那你今晚若死了，也别怪我来不及救。",
+                      "emotion": "冷着脸"
+                    }
+                  }
+                ],
+                "is_premium": false
+              },
+              {
+                "id": "cfull_choice_002_c",
+                "text": "反问她为何总在看你，先试她立场",
+                "description": "你不急着交底，先看她到底站在哪一边。",
+                "satisfaction_type": "阴谋爽",
+                "visible_cost": "可能惹她警惕",
+                "visible_reward": "先摸清她的边界",
+                "risk_hint": "试探过头会把人推远",
+                "process_label": "试探",
+                "stat_effects": [
+                  { "stat": "谋略", "delta": 6 },
+                  { "stat": "魅力", "delta": 2 }
+                ],
+                "relationship_effects": [
+                  { "character_id": "char_qinshuang", "dimension": "信任", "delta": 6 },
+                  { "character_id": "char_qinshuang", "dimension": "好感", "delta": 4 }
+                ],
+                "result_node_ids": [],
+                "result_nodes": [
+                  {
+                    "dialogue": {
+                      "id": "cfull_002_c_01",
+                      "character_id": "char_qinshuang",
+                      "content": "因为你不像认命的人。我只对这种人多看两眼。",
+                      "emotion": "淡淡"
+                    }
+                  },
+                  {
+                    "text": {
+                      "id": "cfull_002_c_02",
+                      "content": "她没有回答更多，可那一句已经够了。至少今夜之前，她不会站到韩夜那边。"
+                    }
+                  }
+                ],
+                "is_premium": false
+              }
+            ]
+          }
+        },
+        {
+          "text": {
+            "id": "cfull_001_09",
+            "content": "你低头看着自己掌心还未干透的血，知道真正要见生死的不是白天这九层石阶，而是夜里那道只开半炷香的门。",
+            "emphasis": "dramatic"
+          }
+        }
+      ]
+    },
+    {
+      "id": "cfull_002",
+      "book_id": "cultivation_full_001",
+      "number": 2,
+      "title": "夜入剑冢",
+      "is_paid": false,
+      "next_chapter_hook": "你带出来的不只是残剑，还有一段会让整座问仙门重新站队的旧名。天亮前，封如山已经以戒律名义把你押进了问门殿。",
+      "nodes": [
+        {
+          "text": {
+            "id": "cfull_002_01",
+            "content": "子时，剑冢暗门只开了一道指宽的缝。你刚侧身挤进去，三具守墓剑傀就已经在黑暗里同时睁开了眼。",
+            "emphasis": "dramatic"
+          }
+        },
+        {
+          "text": {
+            "id": "cfull_002_02",
+            "content": "它们没有呼吸，也没有杀意波动，只有剑尖划地的细碎金声沿着石壁一圈圈滚过来。"
+          }
+        },
+        {
+          "choice": {
+            "id": "cfull_choice_003",
+            "prompt": "三具剑傀已经锁定你。你先怎么过这一关？",
+            "choice_type": "keyDecision",
+            "choices": [
+              {
+                "id": "cfull_choice_003_a",
+                "text": "正面斩傀，先把路杀出来",
+                "description": "残剑还没出鞘，你也要先把它逼到你手里。",
+                "satisfaction_type": "碾压爽",
+                "visible_cost": "体力会被硬吃掉一截",
+                "visible_reward": "最快拿到主动权",
+                "risk_hint": "动静太大可能惊动门外",
+                "process_label": "体力",
+                "stat_effects": [
+                  { "stat": "战力", "delta": 10 },
+                  { "stat": "名望", "delta": 4 }
+                ],
+                "relationship_effects": [
+                  { "character_id": "char_bonesword", "dimension": "依赖", "delta": 8 }
+                ],
+                "result_node_ids": [],
+                "result_nodes": [
+                  {
+                    "text": {
+                      "id": "cfull_003_a_01",
+                      "content": "你没有退，反而迎着最先扑来的剑傀压上去。第一下你没抢锋，而是用肩膀硬吃了一记斜斩，借那股冲力把它撞进第二具傀儡怀里。"
+                    }
+                  },
+                  {
+                    "text": {
+                      "id": "cfull_003_a_02",
+                      "content": "第三具剑傀贴地扫来时，你一脚踩住石壁裂缝腾空转身，顺着落势把断剑砸进它颈后的旧钉孔。黑火从钉孔里喷出来，整具傀儡立刻散架。"
+                    }
+                  },
+                  {
+                    "dialogue": {
+                      "id": "cfull_003_a_03",
+                      "character_id": "char_bonesword",
+                      "content": "还算像个持剑的人。",
+                      "emotion": "低笑"
+                    }
+                  }
+                ],
+                "is_premium": false
+              },
+              {
+                "id": "cfull_choice_003_b",
+                "text": "引傀互撞，把剑冢地势也拖进来",
+                "description": "你不跟三具死物拼蛮力，要让它们自己替你拆阵。",
+                "satisfaction_type": "延迟爽",
+                "visible_cost": "你得在刀尖上多绕两圈",
+                "visible_reward": "保下更多余力",
+                "risk_hint": "一步踩错就会被围死",
+                "process_label": "空间",
+                "stat_effects": [
+                  { "stat": "谋略", "delta": 10 },
+                  { "stat": "天命值", "delta": 4 }
+                ],
+                "relationship_effects": [
+                  { "character_id": "char_qinshuang", "dimension": "信任", "delta": 6 }
+                ],
+                "result_node_ids": [],
+                "result_nodes": [
+                  {
+                    "text": {
+                      "id": "cfull_003_b_01",
+                      "content": "你沿着剑冢最窄那条侧廊贴壁疾走，把三具剑傀全都拖成了一线。它们的剑路太直，彼此之间反而成了最大的死角。"
+                    }
+                  },
+                  {
+                    "text": {
+                      "id": "cfull_003_b_02",
+                      "content": "在最前面那具傀儡重刺落下的瞬间，你俯身滑进裂石后方。第二具的横斩和第三具的上挑同时撞上去，火星像雨一样炸满整条廊道。"
+                    }
+                  },
+                  {
+                    "text": {
+                      "id": "cfull_003_b_03",
+                      "content": "等三具傀儡的关节都卡进一处时，你才补上最后一剑，把它们一口气钉死在同一块石壁上。",
+                      "emphasis": "dramatic"
+                    }
+                  }
+                ],
+                "is_premium": false
+              },
+              {
+                "id": "cfull_choice_003_c",
+                "text": "借骨剑灵夺一息控制权，反过来开门",
+                "description": "你愿意把心神借出去一息，换它替你撬开最深的那层机关。",
+                "satisfaction_type": "阴谋爽",
+                "visible_cost": "会被骨剑灵看见更多底色",
+                "visible_reward": "最快摸到残剑真名",
+                "risk_hint": "一息过长就会失控",
+                "process_label": "共鸣",
+                "stat_effects": [
+                  { "stat": "天命值", "delta": 10 },
+                  { "stat": "黑化值", "delta": 6 }
+                ],
+                "relationship_effects": [
+                  { "character_id": "char_bonesword", "dimension": "依赖", "delta": 18 }
+                ],
+                "result_node_ids": [],
+                "result_nodes": [
+                  {
+                    "text": {
+                      "id": "cfull_003_c_01",
+                      "content": "你没有立即出手，而是任由那股冰冷剑意沿着手腕钻进经脉。下一瞬，你看见自己的视野里多出一层灰白轮廓，三具剑傀的核心钉位被骨剑灵一口气指了出来。"
+                    }
+                  },
+                  {
+                    "dialogue": {
+                      "id": "cfull_003_c_02",
+                      "character_id": "char_bonesword",
+                      "content": "只借我一息，剩下的你自己扛。",
+                      "emotion": "冷静"
+                    }
+                  },
+                  {
+                    "text": {
+                      "id": "cfull_003_c_03",
+                      "content": "你顺着那道灰白线一剑一剑刺过去，三具剑傀像被看不见的线同时割断，轰然跪进尘里。而在它们身后，那柄真正的残剑终于露出了半寸寒光。",
+                      "emphasis": "dramatic"
+                    }
+                  }
+                ],
+                "is_premium": false
+              }
+            ]
+          }
+        },
+        {
+          "text": {
+            "id": "cfull_002_03",
+            "content": "剑匣裂开的瞬间，你看见剑身内侧刻着两个旧字：问劫。骨剑灵沉默了整整三息，莫长青却在门外第一次真正变了脸色。"
+          }
+        },
+        {
+          "dialogue": {
+            "id": "cfull_002_04",
+            "character_id": "char_mochangqing",
+            "content": "把那两个字吞回去。今晚若让第三个人听见，你就真的走不掉了。",
+            "emotion": "低沉"
+          }
+        },
+        {
+          "choice": {
+            "id": "cfull_choice_004",
+            "prompt": "你已经拿到残剑旧名。现在，真相要公开到什么程度？",
+            "choice_type": "styleChoice",
+            "choices": [
+              {
+                "id": "cfull_choice_004_a",
+                "text": "当场叫出旧名，让外门都听见",
+                "description": "既然遮不住，那就让所有人都成为见证。",
+                "satisfaction_type": "直接爽",
+                "visible_cost": "会提前把幕后惊出来",
+                "visible_reward": "最快完成翻案开局",
+                "risk_hint": "天亮前你就会被押问",
+                "process_label": "名望",
+                "stat_effects": [
+                  { "stat": "名望", "delta": 12 },
+                  { "stat": "战力", "delta": 4 }
+                ],
+                "relationship_effects": [
+                  { "character_id": "char_mochangqing", "dimension": "敬畏", "delta": 8 },
+                  { "character_id": "char_fengrushan", "dimension": "敌意", "delta": 16 }
+                ],
+                "result_node_ids": [],
+                "result_nodes": [
+                  {
+                    "text": {
+                      "id": "cfull_004_a_01",
+                      "content": "你没有听莫长青的劝，而是迎着暗门外所有人的目光，缓缓吐出那两个字：问劫。"
+                    }
+                  },
+                  {
+                    "text": {
+                      "id": "cfull_004_a_02",
+                      "content": "那一瞬，山风像被人掐住。连站得最远的外门弟子都看见残剑自你掌中轻轻鸣了一声，仿佛在替这个旧名作证。"
+                    }
+                  }
+                ],
+                "is_premium": false
+              },
+              {
+                "id": "cfull_choice_004_b",
+                "text": "只把旧名告诉秦霜，先留一张底牌",
+                "description": "你先把最锋利的东西藏起来，只让一个人知道。",
+                "satisfaction_type": "情感爽",
+                "visible_cost": "翻案会慢一拍",
+                "visible_reward": "换来更稳的同盟",
+                "risk_hint": "证人链会变薄",
+                "process_label": "底牌",
+                "stat_effects": [
+                  { "stat": "谋略", "delta": 8 },
+                  { "stat": "魅力", "delta": 6 }
+                ],
+                "relationship_effects": [
+                  { "character_id": "char_qinshuang", "dimension": "信任", "delta": 16 },
+                  { "character_id": "char_qinshuang", "dimension": "好感", "delta": 8 }
+                ],
+                "result_node_ids": [],
+                "result_nodes": [
+                  {
+                    "dialogue": {
+                      "id": "cfull_004_b_01",
+                      "character_id": "char_qinshuang",
+                      "content": "问劫？我记住了。那从现在开始，谁想碰这柄剑，得先从我这里过。",
+                      "emotion": "平静"
+                    }
+                  },
+                  {
+                    "text": {
+                      "id": "cfull_004_b_02",
+                      "content": "你没有再把话放大，只把名字压在你和她之间。可正因为压得这么低，这个名字才真正成了你的底牌。"
+                    }
+                  }
+                ],
+                "is_premium": false
+              },
+              {
+                "id": "cfull_choice_004_c",
+                "text": "顺着莫长青的沉默，反手给幕后下个套",
+                "description": "你不急着叫名字，而是要看谁会因为这柄剑先乱。",
+                "satisfaction_type": "扮猪吃虎",
+                "visible_cost": "你要先背一段闷气",
+                "visible_reward": "最容易钓出幕后",
+                "risk_hint": "一旦判断错人就会被彻底压死",
+                "process_label": "局势",
+                "stat_effects": [
+                  { "stat": "谋略", "delta": 10 },
+                  { "stat": "黑化值", "delta": 4 }
+                ],
+                "relationship_effects": [
+                  { "character_id": "char_mochangqing", "dimension": "信任", "delta": 10 },
+                  { "character_id": "char_fengrushan", "dimension": "敌意", "delta": 10 }
+                ],
+                "result_node_ids": [],
+                "result_nodes": [
+                  {
+                    "text": {
+                      "id": "cfull_004_c_01",
+                      "content": "你把残剑重新推回袖中，像是什么都没拿到一样跟着众人往外走。可你一路都在看谁的目光最先落到你袖口。"
+                    }
+                  },
+                  {
+                    "text": {
+                      "id": "cfull_004_c_02",
+                      "content": "封如山就在那一刻笑慢了半拍。你知道自己赌对了，真正急的人已经露了形。"
+                    }
+                  }
+                ],
+                "is_premium": false
+              }
+            ]
+          }
+        },
+        {
+          "text": {
+            "id": "cfull_002_05",
+            "content": "你刚走出暗门，山腰钟声就响了三下。封如山带着执法弟子立在石阶尽头，像早就算好了你什么时候会出来。",
+            "emphasis": "dramatic"
+          }
+        }
+      ]
+    },
+    {
+      "id": "cfull_003",
+      "book_id": "cultivation_full_001",
+      "number": 3,
+      "title": "问门反杀",
+      "is_paid": false,
+      "next_chapter_hook": "封如山终于被你逼到台前，可他真正的杀招不在问门殿，而在天门外早就布好的封剑阵。天亮前，你必须决定谁替你扛第一波杀机。",
+      "nodes": [
+        {
+          "text": {
+            "id": "cfull_003_01",
+            "content": "天还没亮，你已经站在问门殿中央。封如山把残剑、剑冢、邪脉三个词一口气扣在你头上，满殿长老都在看你怎么死。",
+            "emphasis": "dramatic"
+          }
+        },
+        {
+          "dialogue": {
+            "id": "cfull_003_02",
+            "character_id": "char_fengrushan",
+            "content": "盗冢、持邪剑、扰试剑礼制。此子若不废，问仙门戒律还有何用？",
+            "emotion": "和气"
+          }
+        },
+        {
+          "dialogue": {
+            "id": "cfull_003_03",
+            "character_id": "char_hanye",
+            "content": "弟子愿意出手替宗门正名。",
+            "emotion": "迫不及待"
+          }
+        },
+        {
+          "choice": {
+            "id": "cfull_choice_005",
+            "prompt": "整个问门殿都在等你开口。你决定怎样把这场问罪翻过来？",
+            "choice_type": "keyDecision",
+            "choices": [
+              {
+                "id": "cfull_choice_005_a",
+                "text": "当众点韩夜，三剑定黑白",
+                "description": "先把最爱叫的人砸下去，满殿的风向就会变。",
+                "satisfaction_type": "直接爽",
+                "visible_cost": "会正面暴露你当前上限",
+                "visible_reward": "最快打碎韩夜的势",
+                "risk_hint": "封如山会立刻加码",
+                "process_label": "公开对决",
+                "stat_effects": [
+                  { "stat": "战力", "delta": 10 },
+                  { "stat": "名望", "delta": 8 }
+                ],
+                "relationship_effects": [
+                  { "character_id": "char_hanye", "dimension": "敌意", "delta": 20 },
+                  { "character_id": "char_hanye", "dimension": "敬畏", "delta": 18 }
+                ],
+                "result_node_ids": [],
+                "result_nodes": [
+                  {
+                    "text": {
+                      "id": "cfull_005_a_01",
+                      "content": "你没有先辩，而是抬剑指向韩夜。'不是要替宗门正名吗？来。三剑。你若赢，我自己废脉。'"
+                    }
+                  },
+                  {
+                    "text": {
+                      "id": "cfull_005_a_02",
+                      "content": "第一剑，韩夜想抢快，被你贴身撞开。第二剑，他改走稳，却被你借柱反震压得退了半步。到第三剑时，满殿的人已经看见他的手先抖了。"
+                    }
+                  },
+                  {
+                    "dialogue": {
+                      "id": "cfull_005_a_03",
+                      "character_id": "char_hanye",
+                      "content": "你不可能这么快把残剑驯住！",
+                      "emotion": "慌乱"
+                    }
+                  }
+                ],
+                "is_premium": false
+              },
+              {
+                "id": "cfull_choice_005_b",
+                "text": "亮出半卷铁证，先让长老们沉默",
+                "description": "先不杀人，你要先让整座殿没有人敢接封如山的话。",
+                "satisfaction_type": "延迟爽",
+                "visible_cost": "需要交出一部分底牌",
+                "visible_reward": "把长老们逼到中立",
+                "risk_hint": "证据不完整，容易被拖时间",
+                "process_label": "证据链",
+                "stat_effects": [
+                  { "stat": "谋略", "delta": 10 },
+                  { "stat": "名望", "delta": 6 }
+                ],
+                "relationship_effects": [
+                  { "character_id": "char_mochangqing", "dimension": "信任", "delta": 8 },
+                  { "character_id": "char_fengrushan", "dimension": "敌意", "delta": 12 }
+                ],
+                "result_node_ids": [],
+                "result_nodes": [
+                  {
+                    "text": {
+                      "id": "cfull_005_b_01",
+                      "content": "你没有先争辩，而是从袖中抽出那半页封脉旧卷，直接抛到殿中央。纸页落地时，三位长老同时起身。"
+                    }
+                  },
+                  {
+                    "text": {
+                      "id": "cfull_005_b_02",
+                      "content": "旧卷只剩一半，内容却够毒：当年有人以禁术截脉，逼活人去承旧剑。满殿第一次不是看你，而是去看封如山。"
+                    }
+                  }
+                ],
+                "is_premium": false
+              },
+              {
+                "id": "cfull_choice_005_c",
+                "text": "顺势认半罪，反钓封如山自己出手",
+                "description": "你先往后退半步，逼真正着急的人自己把刀伸出来。",
+                "satisfaction_type": "扮猪吃虎",
+                "visible_cost": "要先背一瞬间骂名",
+                "visible_reward": "最快钓出幕后真动作",
+                "risk_hint": "全场可能短时站到你对面",
+                "process_label": "心理",
+                "stat_effects": [
+                  { "stat": "谋略", "delta": 12 },
+                  { "stat": "黑化值", "delta": 6 }
+                ],
+                "relationship_effects": [
+                  { "character_id": "char_fengrushan", "dimension": "敌意", "delta": 18 },
+                  { "character_id": "char_bonesword", "dimension": "依赖", "delta": 8 }
+                ],
+                "result_node_ids": [],
+                "result_nodes": [
+                  {
+                    "text": {
+                      "id": "cfull_005_c_01",
+                      "content": "你先低头认了半句：'夜入剑冢，是我。'满殿立刻炸出一片斥声，连韩夜都笑了出来。"
+                    }
+                  },
+                  {
+                    "text": {
+                      "id": "cfull_005_c_02",
+                      "content": "可你下一句没跟着辩，只是盯着封如山。果然，最先急着把你直接押去废脉台的人不是韩夜，而是他。"
+                    }
+                  }
+                ],
+                "is_premium": false
+              }
+            ]
+          }
+        },
+        {
+          "text": {
+            "id": "cfull_003_04",
+            "content": "你已经把第一层风向扭过来了。可要真把封如山钉死，还差最后那一手。"
+          }
+        },
+        {
+          "choice": {
+            "id": "cfull_choice_006",
+            "prompt": "问门殿散前，你只能再托付一个方向。你把最后这手交给谁？",
+            "choice_type": "characterPref",
+            "choices": [
+              {
+                "id": "cfull_choice_006_a",
+                "text": "让秦霜去档案阁翻封剑册",
+                "description": "她剑快，心稳，也最适合从人群里无声消失。",
+                "satisfaction_type": "情感爽",
+                "visible_cost": "她会先替你扛风险",
+                "visible_reward": "最稳的证据补全路线",
+                "risk_hint": "她一旦失手就会被扣叛门",
+                "process_label": "证据",
+                "stat_effects": [
+                  { "stat": "谋略", "delta": 6 },
+                  { "stat": "魅力", "delta": 4 }
+                ],
+                "relationship_effects": [
+                  { "character_id": "char_qinshuang", "dimension": "信任", "delta": 14 },
+                  { "character_id": "char_qinshuang", "dimension": "好感", "delta": 8 }
+                ],
+                "result_node_ids": [],
+                "result_nodes": [
+                  {
+                    "dialogue": {
+                      "id": "cfull_006_a_01",
+                      "character_id": "char_qinshuang",
+                      "content": "好。我回来前，你别死。",
+                      "emotion": "极轻"
+                    }
+                  },
+                  {
+                    "text": {
+                      "id": "cfull_006_a_02",
+                      "content": "她转身时没有再看你，像是怕多看一眼就会让所有人知道她已经站到了你这边。"
+                    }
+                  }
+                ],
+                "is_premium": false
+              },
+              {
+                "id": "cfull_choice_006_b",
+                "text": "请莫长青在天门开阵，把人逼到崖前",
+                "description": "你不要一张纸，要一座谁都退不掉的战场。",
+                "satisfaction_type": "碾压爽",
+                "visible_cost": "会把决战提前",
+                "visible_reward": "逼封如山失去回旋余地",
+                "risk_hint": "你必须自己扛主战",
+                "process_label": "战场",
+                "stat_effects": [
+                  { "stat": "战力", "delta": 6 },
+                  { "stat": "天命值", "delta": 4 }
+                ],
+                "relationship_effects": [
+                  { "character_id": "char_mochangqing", "dimension": "信任", "delta": 12 }
+                ],
+                "result_node_ids": [],
+                "result_nodes": [
+                  {
+                    "dialogue": {
+                      "id": "cfull_006_b_01",
+                      "character_id": "char_mochangqing",
+                      "content": "明白了。天门外见真章。",
+                      "emotion": "平静"
+                    }
+                  },
+                  {
+                    "text": {
+                      "id": "cfull_006_b_02",
+                      "content": "莫长青只回了这一句，可你知道他已经答应把整座天门变成一处谁都逃不开的局。"
+                    }
+                  }
+                ],
+                "is_premium": false
+              },
+              {
+                "id": "cfull_choice_006_c",
+                "text": "和骨剑灵交换一段记忆，直接掏真相",
+                "description": "你要最快知道父亲当年到底死在哪里，哪怕代价是先让自己更碎一层。",
+                "satisfaction_type": "阴谋爽",
+                "visible_cost": "会再裂一次旧伤",
+                "visible_reward": "最快摸到父亲旧案",
+                "risk_hint": "真相会改变你对问仙门的态度",
+                "process_label": "记忆",
+                "stat_effects": [
+                  { "stat": "黑化值", "delta": 8 },
+                  { "stat": "天命值", "delta": 8 }
+                ],
+                "relationship_effects": [
+                  { "character_id": "char_bonesword", "dimension": "依赖", "delta": 14 }
+                ],
+                "result_node_ids": [],
+                "result_nodes": [
+                  {
+                    "text": {
+                      "id": "cfull_006_c_01",
+                      "content": "你把手按在剑脊上，任由骨剑灵顺着旧伤往里看。下一瞬，一道满是血和雨的天门画面狠狠扎进你识海。"
+                    }
+                  },
+                  {
+                    "dialogue": {
+                      "id": "cfull_006_c_02",
+                      "character_id": "char_bonesword",
+                      "content": "你父亲不是死在走火入魔。他是死在封剑阵里。",
+                      "emotion": "低沉"
+                    }
+                  }
+                ],
+                "is_premium": false
+              }
+            ]
+          }
+        },
+        {
+          "text": {
+            "id": "cfull_003_05",
+            "content": "殿门重新打开时，封如山没有再提废脉台，只让人把你押去天门外等。你知道他终于坐不住了。",
+            "emphasis": "dramatic"
+          }
+        }
+      ]
+    },
+    {
+      "id": "cfull_004",
+      "book_id": "cultivation_full_001",
+      "number": 4,
+      "title": "天门一线",
+      "is_paid": false,
+      "next_chapter_hook": "第一卷落幕。残剑旧名已经被你重新带回人间，而真正关于你父亲、断脉和问仙门外那条旧脉的答案，才刚刚打开。",
+      "nodes": [
+        {
+          "text": {
+            "id": "cfull_004_01",
+            "content": "卯时，天门外风雨横掠。封如山把封剑阵铺满了半座崖坪，韩夜站在阵前，像是最后一层故作体面的门板。",
+            "emphasis": "dramatic"
+          }
+        },
+        {
+          "dialogue": {
+            "id": "cfull_004_02",
+            "character_id": "char_fengrushan",
+            "content": "把剑交出来，我还能留你一口气。",
+            "emotion": "温和"
+          }
+        },
+        {
+          "dialogue": {
+            "id": "cfull_004_03",
+            "character_id": "char_hanye",
+            "content": "今天过后，问仙门里不会再有人提你的名字。",
+            "emotion": "狠厉"
+          }
+        },
+        {
+          "choice": {
+            "id": "cfull_choice_007",
+            "prompt": "封剑阵已合。你要用什么方式斩开这一战？",
+            "choice_type": "keyDecision",
+            "choices": [
+              {
+                "id": "cfull_choice_007_a",
+                "text": "借天雷洗剑，正面劈开封阵",
+                "description": "最狠，也最疼。你要拿自己的旧伤去换这一道最响的剑。",
+                "satisfaction_type": "碾压爽",
+                "visible_cost": "旧伤会被彻底撕开",
+                "visible_reward": "最快正面斩穿封如山",
+                "risk_hint": "扛不住雷就会先倒下",
+                "process_label": "雷劫",
+                "stat_effects": [
+                  { "stat": "战力", "delta": 14 },
+                  { "stat": "天命值", "delta": -8 }
+                ],
+                "relationship_effects": [
+                  { "character_id": "char_hanye", "dimension": "敬畏", "delta": 20 },
+                  { "character_id": "char_qinshuang", "dimension": "好感", "delta": 8 }
+                ],
+                "result_node_ids": [],
+                "result_nodes": [
+                  {
+                    "text": {
+                      "id": "cfull_007_a_01",
+                      "content": "你一步踏进阵心，任由封剑阵的锁链先缠上自己，再借那股反噬抬剑引雷。第一道雷劈下来时，你半边肩都像被烧穿了。"
+                    }
+                  },
+                  {
+                    "text": {
+                      "id": "cfull_007_a_02",
+                      "content": "可你偏偏借着那道最疼的雷势把残剑整个洗亮，下一剑直接从阵心劈到封如山脚下。封阵像纸一样从中裂开，连韩夜都被震得跪倒在崖边。"
+                    }
+                  },
+                  {
+                    "dialogue": {
+                      "id": "cfull_007_a_03",
+                      "character_id": "char_fengrushan",
+                      "content": "你怎么敢拿这副身子接雷？！",
+                      "emotion": "终于失态"
+                    }
+                  }
+                ],
+                "is_premium": false
+              },
+              {
+                "id": "cfull_choice_007_b",
+                "text": "当众叫出旧名，用见证破阵",
+                "description": "这不是只靠剑的一战，而是靠所有人都亲眼看见封如山到底在怕什么。",
+                "satisfaction_type": "直接爽",
+                "visible_cost": "底牌会一次性全翻出来",
+                "visible_reward": "最快当众翻案",
+                "risk_hint": "若无人接话，气势会反噬回来",
+                "process_label": "见证",
+                "stat_effects": [
+                  { "stat": "名望", "delta": 14 },
+                  { "stat": "谋略", "delta": 6 }
+                ],
+                "relationship_effects": [
+                  { "character_id": "char_mochangqing", "dimension": "敬畏", "delta": 8 },
+                  { "character_id": "char_fengrushan", "dimension": "敌意", "delta": 18 }
+                ],
+                "result_node_ids": [],
+                "result_nodes": [
+                  {
+                    "text": {
+                      "id": "cfull_007_b_01",
+                      "content": "你没有先冲阵，而是抬剑对着满场人一字一句叫出：问劫。旧名落地的那一瞬，残剑自己发出长鸣，像是替你把三十年前那笔旧债重新喊上台面。"
+                    }
+                  },
+                  {
+                    "text": {
+                      "id": "cfull_007_b_02",
+                      "content": "原本还站在两边观望的长老们终于同时变色。莫长青先一步开口，承认问劫曾是禁封旧剑。封如山脸上的温和，第一次彻底碎了。"
+                    }
+                  }
+                ],
+                "is_premium": false
+              },
+              {
+                "id": "cfull_choice_007_c",
+                "text": "把断脉彻底打开，与骨剑灵共命一息",
+                "description": "你不要最稳的赢法，你要那道能把下一卷真相也一并劈开的口子。",
+                "satisfaction_type": "阴谋爽",
+                "visible_cost": "命数会被真正绑到剑上",
+                "visible_reward": "最快撕开父亲旧案",
+                "risk_hint": "这一剑之后你再也回不到原样",
+                "process_label": "命数",
+                "stat_effects": [
+                  { "stat": "天命值", "delta": 12 },
+                  { "stat": "黑化值", "delta": 10 }
+                ],
+                "relationship_effects": [
+                  { "character_id": "char_bonesword", "dimension": "依赖", "delta": 20 },
+                  { "character_id": "char_qinshuang", "dimension": "信任", "delta": 6 }
+                ],
+                "result_node_ids": [],
+                "result_nodes": [
+                  {
+                    "text": {
+                      "id": "cfull_007_c_01",
+                      "content": "你主动把那道被人截断多年的旧伤整个掀开。剧痛像洪水一样灌进四肢百骸，可骨剑灵也在这一瞬顺着伤口真正和你连到了一起。"
+                    }
+                  },
+                  {
+                    "dialogue": {
+                      "id": "cfull_007_c_02",
+                      "character_id": "char_bonesword",
+                      "content": "记住，这一息过后，你就真的再也不是从前那个废脉了。",
+                      "emotion": "郑重"
+                    }
+                  },
+                  {
+                    "text": {
+                      "id": "cfull_007_c_03",
+                      "content": "你一剑斩下去时，看见的已经不只是封剑阵，而是当年你父亲被逼死在这里的整幅旧景。封如山在那一瞬终于开始后退，可已经来不及了。",
+                      "emphasis": "dramatic"
+                    }
+                  }
+                ],
+                "is_premium": false
+              }
+            ]
+          }
+        },
+        {
+          "text": {
+            "id": "cfull_004_04",
+            "content": "封如山败了，韩夜也被一并掀下阵台。可真正让满场静下来的，不是他们倒下，而是你终于站在天门最前面的时候，没有人敢再叫你废脉。"
+          }
+        },
+        {
+          "choice": {
+            "id": "cfull_choice_008",
+            "prompt": "第一卷的主问题已经结束。你决定带着这柄剑，走向哪一种余波？",
+            "choice_type": "styleChoice",
+            "choices": [
+              {
+                "id": "cfull_choice_008_a",
+                "text": "留在问仙门，接下残剑真传",
+                "description": "你要留下来，把旧门规一条一条改给所有人看。",
+                "satisfaction_type": "直接爽",
+                "visible_cost": "要继续直面门内旧势力",
+                "visible_reward": "最快拿到正统位置",
+                "risk_hint": "所有人都会盯着你下一步",
+                "process_label": "位阶",
+                "stat_effects": [
+                  { "stat": "名望", "delta": 10 }
+                ],
+                "relationship_effects": [
+                  { "character_id": "char_mochangqing", "dimension": "信任", "delta": 10 },
+                  { "character_id": "char_qinshuang", "dimension": "好感", "delta": 6 }
+                ],
+                "result_node_ids": [],
+                "result_nodes": [
+                  {
+                    "text": {
+                      "id": "cfull_008_a_01",
+                      "content": "你收剑入鞘，没有转身离开，而是站在天门前接过莫长青递来的执剑令。所有人都知道，从今天起，问仙门里有一条旧线要被你亲手改写。"
+                    }
+                  }
+                ],
+                "is_premium": false
+              },
+              {
+                "id": "cfull_choice_008_b",
+                "text": "带剑下山，先去查父亲旧案",
+                "description": "门里的第一局已经打完，你真正要问的仙，不在这座山上。",
+                "satisfaction_type": "延迟爽",
+                "visible_cost": "会暂时放下刚到手的位阶",
+                "visible_reward": "最快追到父亲旧案主线",
+                "risk_hint": "山下的敌人不会比门里少",
+                "process_label": "主线",
+                "stat_effects": [
+                  { "stat": "谋略", "delta": 8 },
+                  { "stat": "天命值", "delta": 6 }
+                ],
+                "relationship_effects": [
+                  { "character_id": "char_bonesword", "dimension": "依赖", "delta": 10 },
+                  { "character_id": "char_qinshuang", "dimension": "好感", "delta": 4 }
+                ],
+                "result_node_ids": [],
+                "result_nodes": [
+                  {
+                    "text": {
+                      "id": "cfull_008_b_01",
+                      "content": "你没有接执剑令，只把残剑重新背到身后。天门的风从崖外吹进来，你忽然第一次觉得这柄剑真正要带你去的地方，不在这座山上。"
+                    }
+                  }
+                ],
+                "is_premium": false
+              },
+              {
+                "id": "cfull_choice_008_c",
+                "text": "和秦霜约定来日，先独行北去",
+                "description": "你没有把任何人绑在自己这条命线上，但也没有把她彻底留在身后。",
+                "satisfaction_type": "情感爽",
+                "visible_cost": "要暂时离开刚建立的同盟",
+                "visible_reward": "留下最柔韧的一条关系线",
+                "risk_hint": "再见时，彼此都可能已不是现在的人",
+                "process_label": "关系",
+                "stat_effects": [
+                  { "stat": "魅力", "delta": 10 },
+                  { "stat": "天命值", "delta": 4 }
+                ],
+                "relationship_effects": [
+                  { "character_id": "char_qinshuang", "dimension": "好感", "delta": 16 },
+                  { "character_id": "char_qinshuang", "dimension": "信任", "delta": 12 }
+                ],
+                "result_node_ids": [],
+                "result_nodes": [
+                  {
+                    "dialogue": {
+                      "id": "cfull_008_c_01",
+                      "character_id": "char_qinshuang",
+                      "content": "去吧。等你把该问的仙问明白了，再回来告诉我答案。",
+                      "emotion": "极轻"
+                    }
+                  },
+                  {
+                    "text": {
+                      "id": "cfull_008_c_02",
+                      "content": "你笑了一下，什么都没承诺，只在转身前轻轻碰了碰剑柄。可你们都知道，这不是散场，只是把再见换到了更远的地方。"
+                    }
+                  }
+                ],
+                "is_premium": false
+              }
+            ]
+          }
+        },
+        {
+          "text": {
+            "id": "cfull_004_05",
+            "content": "山风从天门外一层层吹下去，问劫残剑在你背后轻轻一鸣。第一卷到这里结束，可真正的问仙，才刚开始。",
+            "emphasis": "dramatic"
+          }
+        }
+      ]
+    }
+  ]
+}

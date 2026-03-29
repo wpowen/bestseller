@@ -13,13 +13,14 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 from uuid import UUID, uuid4
 
-from bestseller.domain.project import ProjectCreate
+from bestseller.domain.project import InteractiveFictionConfig, ProjectCreate
 from bestseller.infra.db.models import StyleGuideModel
 from bestseller.infra.db.session import session_scope
 from bestseller.services.exports import build_markdown_reading_stats, markdown_to_html
+from bestseller.services.if_generation import run_if_pipeline, run_if_pipeline_integrated
 from bestseller.services.inspection import (
     build_project_structure,
     build_project_workflow_overview,
@@ -35,6 +36,8 @@ from bestseller.settings import AppSettings, load_settings
 
 
 _UI_HTML_PATH = Path(__file__).with_name("novel_studio.html")
+_READER_HTML_PATH = Path(__file__).with_name("novel_reader.html")
+_IF_READER_HTML_PATH = Path(__file__).with_name("novel_if_reader.html")
 _ARTIFACT_CACHE: dict[str, tuple[int, int, dict[str, object]]] = {}
 
 
@@ -452,6 +455,93 @@ class WebTaskManager:
         except Exception:
             self._mark_failed(task_id, traceback.format_exc())
 
+    def create_if_task(self, payload: dict[str, object]) -> dict[str, object]:
+        task_id = str(uuid4())
+        task = WebTaskState(
+            task_id=task_id,
+            task_type="if_generation",
+            status="queued",
+            created_at=_utc_now(),
+            updated_at=_utc_now(),
+            project_slug=str(payload.get("project_slug") or ""),
+            title=f"IF Generation: {payload.get('project_slug') or ''}",
+            current_stage="queued",
+        )
+        with self._lock:
+            self._tasks[task_id] = task
+        thread = threading.Thread(
+            target=self._run_if_worker,
+            args=(task_id, payload),
+            daemon=True,
+        )
+        thread.start()
+        return task.to_dict()
+
+    def _run_if_worker(self, task_id: str, payload: dict[str, object]) -> None:
+        self._mark_running(task_id)
+
+        def progress(stage: str, progress_payload: dict[str, Any] | None = None) -> None:
+            serialized = json.loads(json.dumps(progress_payload or {}, default=_json_default))
+            self._push_progress(task_id, stage, serialized)
+
+        try:
+            settings = load_settings()
+            project_slug = str(payload["project_slug"])
+            resume = bool(payload.get("resume", False))
+
+            raw_cfg = payload.get("if_config") or {}
+            cfg_dict = raw_cfg if isinstance(raw_cfg, dict) else {}
+
+            async def get_or_create_project() -> Any:
+                from bestseller.domain.enums import ProjectType
+                from bestseller.domain.project import WritingProfile
+                from bestseller.services.projects import create_project
+                async with session_scope(settings) as session:
+                    existing = await get_project_by_slug(session, project_slug)
+                    if existing is not None:
+                        return existing
+                    # Auto-create a minimal IF project from the payload
+                    if_cfg_for_profile = InteractiveFictionConfig.model_validate({**cfg_dict, "enabled": True})
+                    title = str(payload.get("title") or project_slug)
+                    genre = cfg_dict.get("if_genre") or "修仙升级"
+                    wp_override = WritingProfile(interactive_fiction=if_cfg_for_profile)
+                    new_project = await create_project(
+                        session,
+                        ProjectCreate(
+                            slug=project_slug,
+                            title=title,
+                            genre=str(genre),
+                            target_word_count=int(cfg_dict.get("target_chapters", 100)) * 5000,
+                            target_chapters=int(cfg_dict.get("target_chapters", 100)),
+                            project_type=ProjectType.INTERACTIVE,
+                            writing_profile=wp_override,
+                        ),
+                        settings,
+                    )
+                    await session.commit()
+                    return new_project
+
+            project = asyncio.run(get_or_create_project())
+
+            # Merge stored writing profile IF config with request overrides
+            stored = project.metadata_json.get("writing_profile", {})
+            stored_if = stored.get("interactive_fiction", {})
+            merged_cfg = {**stored_if, **cfg_dict, "enabled": True}
+            cfg = InteractiveFictionConfig.model_validate(merged_cfg)
+
+            output_base = Path(settings.output.base_dir)
+            out_path = asyncio.run(run_if_pipeline_integrated(
+                project,
+                cfg,
+                output_base,
+                settings=settings,
+                resume=resume,
+                on_progress=progress,
+            ))
+            self._mark_completed(task_id, {"story_package": str(out_path)})
+        except Exception:
+            self._mark_failed(task_id, traceback.format_exc())
+
     def _run_repair_worker(self, task_id: str, payload: dict[str, object]) -> None:
         self._mark_running(task_id)
 
@@ -713,6 +803,78 @@ def _read_ui_html() -> str:
     return "<!DOCTYPE html><html><body><h1>BestSeller UI asset missing.</h1></body></html>"
 
 
+def _read_reader_html() -> str:
+    if _READER_HTML_PATH.exists():
+        return _READER_HTML_PATH.read_text(encoding="utf-8")
+    return "<!DOCTYPE html><html><body><h1>Reader not found.</h1></body></html>"
+
+
+def _read_if_reader_html() -> str:
+    if _IF_READER_HTML_PATH.exists():
+        return _IF_READER_HTML_PATH.read_text(encoding="utf-8")
+    return "<!DOCTYPE html><html><body><h1>IF Reader not found.</h1></body></html>"
+
+
+def _load_if_novels_payload(settings: AppSettings) -> list[dict[str, object]]:
+    """Scan the output dir for story_package.json files and return metadata."""
+    output_base = Path(settings.output.base_dir)
+    results: list[dict[str, object]] = []
+    if not output_base.exists():
+        return results
+    for slug_dir in sorted(output_base.iterdir()):
+        if not slug_dir.is_dir():
+            continue
+        package_path = slug_dir / "if" / "story_package.json"
+        if not package_path.exists():
+            continue
+        try:
+            data = json.loads(package_path.read_text(encoding="utf-8"))
+            book = data.get("book") or {}
+            chapters = data.get("chapters") or []
+            results.append({
+                "slug": slug_dir.name,
+                "title": book.get("title") or slug_dir.name,
+                "genre": book.get("genre") or "",
+                "synopsis": book.get("synopsis") or "",
+                "total_chapters": book.get("total_chapters") or len(chapters),
+                "tags": book.get("tags") or [],
+                "package_path": str(package_path),
+                "modified_at": datetime.fromtimestamp(
+                    package_path.stat().st_mtime, UTC
+                ).isoformat(),
+            })
+        except (OSError, json.JSONDecodeError):
+            continue
+    return results
+
+
+def _build_chapter_toc(output_dir: Path) -> list[dict[str, object]]:
+    """Scan chapter-NNN.md files and extract titles for TOC."""
+    import re as _re
+    entries: list[dict[str, object]] = []
+    for p in sorted(output_dir.glob("chapter-*.md")):
+        first_line = ""
+        try:
+            with p.open(encoding="utf-8") as f:
+                for line in f:
+                    stripped = line.strip()
+                    if stripped:
+                        first_line = stripped
+                        break
+        except OSError:
+            continue
+        # Strip H1 marker, then remove leading duplicate "第N章 " prefix
+        raw = first_line.lstrip("# ").strip() if first_line.startswith("#") else p.stem
+        # "第1章 第1章：追线" → "第1章：追线"
+        title = _re.sub(r"^第\d+章\s+", "", raw) or raw
+        try:
+            num = int(p.stem.split("-")[1])
+        except (IndexError, ValueError):
+            num = len(entries) + 1
+        entries.append({"number": num, "title": title, "filename": p.name})
+    return entries
+
+
 def serve_web_app(
     host: str = "127.0.0.1",
     port: int = 8787,
@@ -722,6 +884,8 @@ def serve_web_app(
     settings = load_settings()
     task_manager = WebTaskManager()
     ui_html = _read_ui_html()
+    reader_html = _read_reader_html()
+    if_reader_html = _read_if_reader_html()
 
     class RequestHandler(BaseHTTPRequestHandler):
         server_version = "BestSellerWeb/0.1"
@@ -781,7 +945,7 @@ def serve_web_app(
 
         def do_GET(self) -> None:  # noqa: N802
             parsed = urlparse(self.path)
-            path = parsed.path
+            path = unquote(parsed.path)
             query = parse_qs(parsed.query)
             try:
                 if path == "/":
@@ -869,6 +1033,132 @@ def serve_web_app(
                     artifact_path = resolve_project_artifact_path(settings, project_slug, artifact_name)
                     self._send_file(artifact_path)
                     return
+                if path.startswith("/api/projects/") and path.endswith("/if/status"):
+                    project_slug = path.split("/")[3]
+                    if_dir = Path(settings.output.base_dir) / project_slug / "if"
+                    build_dir = if_dir / "build"
+                    progress_path = if_dir / "if_progress.json"
+                    chapters_dir = if_dir / "chapters"
+                    progress_data: dict[str, object] = {}
+                    if progress_path.exists():
+                        progress_data = json.loads(progress_path.read_text(encoding="utf-8"))
+                    # Count per-chapter files (new format); fallback to state array (old format)
+                    if chapters_dir.exists():
+                        chapters_done = len(list(chapters_dir.glob("ch*.json")))
+                    else:
+                        chapters_done = len(progress_data.get("chapters", []) or progress_data.get("chapters_mainline", []))
+                    compiled_files = sorted(f.name for f in build_dir.iterdir()) if build_dir.exists() else []
+                    self._send_json({
+                        "project_slug": project_slug,
+                        "has_progress": progress_path.exists(),
+                        "has_bible": "bible" in progress_data,
+                        "has_arc_plans": "arc_plans" in progress_data or "arc_plans_mainline" in progress_data,
+                        "chapters_done": chapters_done,
+                        "has_walkthrough": "walkthrough" in progress_data,
+                        "compiled_files": compiled_files,
+                    })
+                    return
+                if path.startswith("/api/projects/") and "/if/download/" in path:
+                    parts = path.split("/")
+                    project_slug = parts[3]
+                    filename = parts[-1]
+                    if_dir = Path(settings.output.base_dir) / project_slug / "if"
+                    # Check build dir first, then root if dir
+                    file_path = if_dir / "build" / filename
+                    if not file_path.exists():
+                        file_path = if_dir / filename
+                    if not file_path.exists():
+                        self._route_not_found()
+                        return
+                    self._send_file(file_path)
+                    return
+                # ── IF Novels ─────────────────────────────────────────────
+                if path == "/api/if-novels":
+                    self._send_json(_load_if_novels_payload(settings))
+                    return
+                if path.startswith("/api/if-novels/") and path.endswith("/story-package"):
+                    slug = path.split("/")[3]
+                    package_path = (
+                        Path(settings.output.base_dir) / slug / "if" / "story_package.json"
+                    )
+                    if not package_path.exists():
+                        self._route_not_found()
+                        return
+                    self._send_json(json.loads(package_path.read_text(encoding="utf-8")))
+                    return
+                if path.startswith("/api/if-novels/") and "/branches/" in path:
+                    parts = path.split("/")
+                    # /api/if-novels/{slug}/branches/{route_id}
+                    if len(parts) >= 6:
+                        slug = parts[3]
+                        route_id = parts[5]
+                        branch_dir = (
+                            Path(settings.output.base_dir) / slug / "if" / "branches" / route_id
+                        )
+                        if not branch_dir.exists():
+                            self._route_not_found()
+                            return
+                        all_chapters: list[dict] = []
+                        route_meta: dict = {}
+                        for arc_file in sorted(branch_dir.glob("*.json")):
+                            data = json.loads(arc_file.read_text(encoding="utf-8"))
+                            if not route_meta:
+                                route_meta = {
+                                    "route_id": data.get("route_id", route_id),
+                                    "route_title": data.get("route_title", route_id),
+                                    "branch_start_chapter": data.get("branch_start_chapter"),
+                                    "merge_chapter": data.get("merge_chapter"),
+                                }
+                            all_chapters.extend(data.get("chapters", []))
+                        all_chapters.sort(key=lambda c: c.get("number", 0))
+                        self._send_json({**route_meta, "chapters": all_chapters})
+                    else:
+                        self._route_not_found()
+                    return
+                if path.startswith("/read-if/"):
+                    # Validate slug exists
+                    parts = path.split("/")
+                    slug = parts[2] if len(parts) > 2 else ""
+                    if slug:
+                        package_path = (
+                            Path(settings.output.base_dir) / slug / "if" / "story_package.json"
+                        )
+                        if not package_path.exists():
+                            self._route_not_found()
+                            return
+                    self._send_text(if_reader_html, content_type="text/html; charset=utf-8")
+                    return
+                # ── Novel Reader ──────────────────────────────────────────
+                if path.startswith("/read/"):
+                    # Serve the reader SPA; slug is embedded in URL for JS
+                    self._send_text(reader_html, content_type="text/html; charset=utf-8")
+                    return
+                if path.startswith("/api/reader/") and path.endswith("/toc"):
+                    project_slug = path.split("/")[3]
+                    output_dir = _project_output_dir(settings, project_slug)
+                    toc = _build_chapter_toc(output_dir)
+                    self._send_json({"project_slug": project_slug, "chapters": toc})
+                    return
+                if path.startswith("/api/reader/") and "/chapter/" in path:
+                    parts = path.split("/")
+                    project_slug = parts[3]
+                    chapter_n = int(parts[5])
+                    output_dir = _project_output_dir(settings, project_slug)
+                    chapter_file = output_dir / f"chapter-{chapter_n:03d}.md"
+                    if not chapter_file.exists():
+                        self._route_not_found()
+                        return
+                    md = chapter_file.read_text(encoding="utf-8")
+                    html_content = markdown_to_html(md)
+                    stats = build_markdown_reading_stats(md)
+                    self._send_json({
+                        "number": chapter_n,
+                        "filename": chapter_file.name,
+                        "html": html_content,
+                        "word_count": stats["word_count"],
+                        "estimated_read_minutes": stats["estimated_read_minutes"],
+                    })
+                    return
                 self._route_not_found()
             except FileNotFoundError:
                 self._route_not_found()
@@ -877,7 +1167,7 @@ def serve_web_app(
 
         def do_POST(self) -> None:  # noqa: N802
             parsed = urlparse(self.path)
-            path = parsed.path
+            path = unquote(parsed.path)
             try:
                 if path == "/api/tasks/autowrite":
                     payload = self._read_json_body()
@@ -894,6 +1184,13 @@ def serve_web_app(
                     if not payload.get("project_slug"):
                         raise ValueError("Field 'project_slug' is required.")
                     task = task_manager.create_repair_task(payload)
+                    self._send_json(task, status=HTTPStatus.ACCEPTED)
+                    return
+                if path == "/api/tasks/if-generate":
+                    payload = self._read_json_body()
+                    if not payload.get("project_slug"):
+                        raise ValueError("Field 'project_slug' is required.")
+                    task = task_manager.create_if_task(payload)
                     self._send_json(task, status=HTTPStatus.ACCEPTED)
                     return
                 self._route_not_found()

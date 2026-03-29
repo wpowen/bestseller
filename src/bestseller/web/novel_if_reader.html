@@ -1,0 +1,1451 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>互动小说阅读器</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #f5f1e9;
+      --surface: #fffdf8;
+      --border: #ddd5c8;
+      --text: #1d1b18;
+      --text-2: #6b5e4e;
+      --accent: #8b4513;
+      --accent-2: #c8845a;
+      --accent-soft: #f4dfd0;
+      --dialogue-bg: rgba(139,69,19,0.04);
+      --choice-bg: #fef9f5;
+      --choice-border: #d8c9b8;
+      --ok: #1a6b3c;
+      --ok-bg: rgba(26,107,60,0.08);
+      --warn: #8b5c19;
+      --err: #8b2020;
+      --sidebar-w: 260px;
+      --right-w: 220px;
+      --header-h: 52px;
+      --stat-colors: #8b4513;
+    }
+
+    html, body { height: 100%; }
+    body {
+      font-family: "PingFang SC", "Noto Serif SC", "Source Han Serif CN", Georgia, serif;
+      background: var(--bg);
+      color: var(--text);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* ── Header ── */
+    header {
+      height: var(--header-h);
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 0 16px;
+      flex-shrink: 0;
+      box-shadow: 0 1px 6px rgba(0,0,0,0.05);
+      z-index: 100;
+    }
+    .icon-btn {
+      background: none; border: none; cursor: pointer;
+      color: var(--text-2); padding: 5px 7px; border-radius: 6px;
+      font-size: 18px; line-height: 1; transition: background 0.12s;
+      display: flex; align-items: center;
+    }
+    .icon-btn:hover { background: var(--bg); }
+    .if-badge {
+      font-size: 10px; font-weight: 700; letter-spacing: 0.1em;
+      text-transform: uppercase; color: #fff;
+      background: var(--accent); padding: 2px 7px;
+      border-radius: 4px; flex-shrink: 0;
+    }
+    .book-title {
+      font-size: 14px; font-weight: 600; color: var(--text);
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      flex: 1; min-width: 0;
+    }
+    .worldline-badge {
+      font-size: 11px; color: var(--accent); background: var(--accent-soft);
+      padding: 2px 9px; border-radius: 12px; white-space: nowrap;
+      border: 1px solid rgba(139,69,19,0.18); flex-shrink: 0;
+      display: none;
+    }
+    .worldline-badge.visible { display: block; }
+    .header-btn {
+      font-size: 12px; color: var(--text-2); background: none;
+      border: 1px solid var(--border); border-radius: 6px;
+      padding: 4px 10px; cursor: pointer; white-space: nowrap;
+      font-family: inherit; transition: background 0.12s, border-color 0.12s;
+    }
+    .header-btn:hover { background: var(--bg); border-color: var(--accent-2); }
+    .header-btn.accent {
+      color: var(--accent); border-color: rgba(139,69,19,0.3);
+    }
+    .chapter-info { font-size: 12px; color: var(--text-2); white-space: nowrap; }
+    .studio-link {
+      font-size: 12px; color: var(--accent); text-decoration: none;
+      padding: 4px 10px; border: 1px solid var(--accent-2);
+      border-radius: 6px; transition: background 0.12s; white-space: nowrap;
+    }
+    .studio-link:hover { background: rgba(139,69,19,0.06); }
+
+    /* ── Layout ── */
+    .layout {
+      display: flex;
+      flex: 1;
+      overflow: hidden;
+    }
+
+    /* ── Left Sidebar ── */
+    .left-sidebar {
+      width: var(--sidebar-w);
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      transition: width 0.22s ease, opacity 0.18s;
+      flex-shrink: 0;
+      overflow: hidden;
+    }
+    .left-sidebar.collapsed { width: 0; opacity: 0; pointer-events: none; }
+
+    .sidebar-tabs {
+      display: flex;
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    .sidebar-tab {
+      flex: 1; padding: 9px 4px; font-size: 12px; font-weight: 600;
+      color: var(--text-2); background: none; border: none;
+      border-bottom: 2px solid transparent; cursor: pointer;
+      transition: color 0.12s, border-color 0.12s;
+      font-family: inherit; letter-spacing: 0.02em;
+    }
+    .sidebar-tab.active {
+      color: var(--accent); border-bottom-color: var(--accent);
+    }
+    .sidebar-tab:hover:not(.active) { color: var(--text); }
+
+    .sidebar-panel {
+      display: none; flex: 1; overflow-y: auto; flex-direction: column;
+    }
+    .sidebar-panel.active { display: flex; }
+    .sidebar-panel::-webkit-scrollbar { width: 4px; }
+    .sidebar-panel::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+    /* TOC */
+    .toc-item {
+      display: flex; align-items: baseline; gap: 6px;
+      width: 100%; text-align: left; background: none; border: none;
+      cursor: pointer; padding: 8px 14px;
+      font-size: 13px; color: var(--text-2); line-height: 1.4;
+      transition: background 0.1s, color 0.1s;
+      border-left: 3px solid transparent; font-family: inherit;
+    }
+    .toc-item:hover { background: var(--bg); color: var(--text); }
+    .toc-item.active {
+      background: rgba(139,69,19,0.06); color: var(--accent);
+      border-left-color: var(--accent); font-weight: 600;
+    }
+    .toc-num {
+      font-size: 10px; color: var(--text-2); opacity: 0.55;
+      min-width: 22px; flex-shrink: 0;
+    }
+
+    /* Character panel */
+    .char-card {
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--border);
+    }
+    .char-name {
+      font-size: 13px; font-weight: 700; color: var(--text);
+    }
+    .char-role {
+      display: inline-block; font-size: 10px; color: var(--accent);
+      background: var(--accent-soft); padding: 1px 6px; border-radius: 4px;
+      margin-left: 6px; letter-spacing: 0.04em;
+    }
+    .char-rel-bars { margin-top: 8px; display: grid; gap: 4px; }
+    .rel-row {
+      display: grid; grid-template-columns: 28px 1fr 28px;
+      align-items: center; gap: 6px; font-size: 11px; color: var(--text-2);
+    }
+    .rel-bar-bg {
+      height: 5px; background: var(--border); border-radius: 3px; overflow: hidden;
+    }
+    .rel-bar-fill {
+      height: 100%; background: var(--accent); border-radius: 3px;
+      transition: width 0.5s ease;
+    }
+    .rel-bar-fill.hostile { background: var(--err); }
+    .char-memories {
+      margin-top: 8px; font-size: 11px; color: var(--text-2);
+      line-height: 1.6;
+    }
+    .char-memory-item {
+      padding: 3px 0; border-left: 2px solid var(--accent-soft);
+      padding-left: 7px; margin-top: 3px;
+    }
+
+    /* Endings panel */
+    .ending-card {
+      padding: 12px 14px; border-bottom: 1px solid var(--border);
+    }
+    .ending-type-badge {
+      display: inline-block; font-size: 10px; font-weight: 700;
+      padding: 1px 6px; border-radius: 4px; margin-bottom: 5px;
+      letter-spacing: 0.06em;
+    }
+    .ending-type-main { background: rgba(26,107,60,0.1); color: var(--ok); }
+    .ending-type-hidden { background: rgba(139,69,19,0.1); color: var(--accent); }
+    .ending-type-bad { background: rgba(139,32,32,0.1); color: var(--err); }
+    .ending-title {
+      font-size: 13px; font-weight: 700; color: var(--text);
+    }
+    .ending-teaser {
+      font-size: 12px; color: var(--text-2); margin-top: 4px;
+      line-height: 1.6;
+    }
+    .ending-locked {
+      font-size: 12px; color: var(--text-2); opacity: 0.5;
+      font-style: italic; filter: blur(3px);
+    }
+    .ending-progress {
+      margin-top: 6px; font-size: 11px; color: var(--ok);
+      font-weight: 600;
+    }
+    .ending-summary { padding: 10px 14px; border-bottom: 1px solid var(--border); }
+    .ending-summary-text {
+      font-size: 12px; color: var(--text-2);
+    }
+
+    /* ── Main ── */
+    .main-area {
+      flex: 1;
+      overflow-y: auto;
+      padding: 36px 24px 80px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    .main-area::-webkit-scrollbar { width: 6px; }
+    .main-area::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+    .reading-area {
+      width: 100%;
+      max-width: 700px;
+    }
+
+    /* ── Right Stats Panel ── */
+    .right-panel {
+      width: var(--right-w);
+      background: var(--surface);
+      border-left: 1px solid var(--border);
+      flex-shrink: 0;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      transition: width 0.22s ease, opacity 0.18s;
+    }
+    .right-panel.collapsed { width: 0; opacity: 0; pointer-events: none; }
+    .right-panel-inner {
+      padding: 14px 14px 18px;
+      overflow-y: auto;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    .right-panel-inner::-webkit-scrollbar { width: 3px; }
+    .right-panel-inner::-webkit-scrollbar-thumb { background: var(--border); }
+    .rpanel-title {
+      font-size: 10px; font-weight: 700; letter-spacing: 0.1em;
+      text-transform: uppercase; color: var(--text-2);
+      padding-bottom: 8px; border-bottom: 1px solid var(--border);
+    }
+    .stat-row { display: grid; gap: 5px; }
+    .stat-item { display: grid; gap: 3px; }
+    .stat-label-row {
+      display: flex; justify-content: space-between; align-items: center;
+    }
+    .stat-label { font-size: 11px; color: var(--text-2); }
+    .stat-value {
+      font-size: 11px; font-weight: 700; color: var(--text);
+      transition: color 0.3s;
+    }
+    .stat-value.changed-up { color: var(--ok); }
+    .stat-value.changed-down { color: var(--err); }
+    .stat-bar-bg {
+      height: 5px; background: var(--border); border-radius: 3px; overflow: hidden;
+    }
+    .stat-bar-fill {
+      height: 100%; border-radius: 3px;
+      transition: width 0.5s ease, background-color 0.3s;
+    }
+    .stat-bar-fill.danger { background: var(--err); }
+    .stat-bar-fill.warn { background: var(--warn); }
+    .stat-bar-fill.ok { background: var(--ok); }
+    .stat-bar-fill.dark { background: #5a3070; }
+
+    .save-section { display: grid; gap: 7px; }
+    .save-btn {
+      width: 100%; padding: 7px 10px; font-size: 12px; font-family: inherit;
+      border-radius: 8px; border: 1px solid var(--border);
+      background: var(--surface); color: var(--text-2);
+      cursor: pointer; transition: background 0.12s, border-color 0.12s;
+      text-align: center;
+    }
+    .save-btn:hover { background: var(--bg); border-color: var(--accent-2); }
+    .save-btn.accent {
+      color: var(--accent); border-color: rgba(139,69,19,0.3);
+    }
+    .save-btn:disabled { opacity: 0.35; cursor: default; }
+    .save-slots { display: grid; gap: 5px; }
+    .save-slot {
+      font-size: 11px; padding: 5px 8px; border-radius: 6px;
+      border: 1px dashed var(--border); color: var(--text-2);
+      cursor: pointer; transition: background 0.1s;
+      background: none; font-family: inherit; text-align: left;
+    }
+    .save-slot.has-data { border-style: solid; color: var(--text); }
+    .save-slot:hover { background: var(--bg); }
+
+    /* ── Chapter content ── */
+    .chapter-header { margin-bottom: 24px; text-align: center; }
+    .chapter-header h1 {
+      font-size: 21px; font-weight: 700; color: var(--text);
+      line-height: 1.4; margin-bottom: 5px;
+    }
+    .chapter-meta {
+      font-size: 12px; color: var(--text-2);
+      display: flex; gap: 12px; justify-content: center;
+    }
+
+    .node-text {
+      font-size: 17px; line-height: 2.0; color: #2a2118;
+      margin-bottom: 1.1em;
+    }
+    .node-text p { text-indent: 2em; margin-bottom: 0.5em; }
+
+    .node-dialogue {
+      background: var(--dialogue-bg);
+      border-left: 3px solid var(--accent-2);
+      border-radius: 0 10px 10px 0;
+      padding: 12px 16px; margin-bottom: 1.1em;
+      font-size: 16px; line-height: 1.9;
+    }
+    .dialogue-speaker {
+      font-size: 11px; font-weight: 700; color: var(--accent);
+      letter-spacing: 0.06em; margin-bottom: 3px;
+    }
+    .dialogue-emotion {
+      display: inline-block; font-size: 10px; color: var(--text-2);
+      background: rgba(139,69,19,0.07); border-radius: 3px;
+      padding: 1px 5px; margin-left: 7px;
+    }
+
+    /* ── Choice node ── */
+    .node-choice {
+      background: var(--choice-bg);
+      border: 1px solid var(--choice-border);
+      border-radius: 14px; padding: 18px 20px;
+      margin: 20px 0 24px;
+    }
+    .choice-prompt {
+      font-size: 14px; font-weight: 700; color: var(--text-2);
+      margin-bottom: 12px;
+    }
+    .choice-prompt::before { content: "⚡ "; }
+    .choice-type-badge {
+      display: inline-block; font-size: 10px; font-weight: 700;
+      padding: 1px 6px; border-radius: 4px; margin-bottom: 10px;
+      letter-spacing: 0.06em;
+    }
+    .badge-key { background: rgba(139,69,19,0.1); color: var(--accent); }
+    .badge-style { background: rgba(26,107,60,0.08); color: var(--ok); }
+    .badge-pref { background: rgba(100,80,40,0.08); color: var(--warn); }
+    .choice-options { display: grid; gap: 9px; }
+    .choice-btn {
+      display: block; width: 100%; text-align: left;
+      background: var(--surface); border: 1px solid var(--choice-border);
+      border-radius: 10px; padding: 12px 15px; cursor: pointer;
+      font-family: inherit; font-size: 14.5px; color: var(--text);
+      transition: background 0.12s, border-color 0.12s, transform 0.08s;
+      line-height: 1.55; position: relative;
+    }
+    .choice-btn:hover:not(:disabled):not(.locked) {
+      background: rgba(244,223,208,0.5); border-color: var(--accent-2);
+      transform: translateX(2px);
+    }
+    .choice-btn.selected {
+      background: rgba(139,69,19,0.08); border-color: var(--accent);
+      font-weight: 600;
+    }
+    .choice-btn:disabled { cursor: default; }
+    .choice-btn.locked {
+      opacity: 0.45; cursor: not-allowed;
+      border-style: dashed;
+    }
+    .choice-btn-title { font-weight: 600; margin-bottom: 3px; }
+    .choice-btn-desc { font-size: 12.5px; color: var(--text-2); margin-top: 3px; }
+    .choice-hints {
+      font-size: 11px; margin-top: 6px; display: flex;
+      flex-wrap: wrap; gap: 8px;
+    }
+    .hint-cost { color: var(--err); }
+    .hint-reward { color: var(--ok); }
+    .hint-risk { color: var(--warn); }
+    .gate-badge {
+      display: inline-flex; align-items: center; gap: 3px;
+      font-size: 10.5px; font-weight: 700; padding: 2px 7px;
+      border-radius: 4px; margin-top: 5px;
+    }
+    .gate-ok { background: var(--ok-bg); color: var(--ok); }
+    .gate-fail { background: rgba(139,32,32,0.08); color: var(--err); }
+
+    /* Choice result */
+    .choice-result {
+      margin-top: 16px; padding-top: 14px;
+      border-top: 1px dashed var(--choice-border);
+    }
+    .choice-result-label {
+      font-size: 11px; font-weight: 700; color: var(--ok);
+      letter-spacing: 0.06em; margin-bottom: 10px;
+      text-transform: uppercase;
+    }
+
+    /* Chapter hook */
+    .chapter-hook {
+      margin-top: 28px; padding: 14px 18px;
+      background: rgba(139,69,19,0.04);
+      border: 1px solid rgba(139,69,19,0.14); border-radius: 10px;
+      font-size: 13px; color: var(--text-2); font-style: italic;
+      line-height: 1.8;
+    }
+    .chapter-hook::before {
+      content: "下回预告 · ";
+      font-style: normal; font-weight: 700;
+      color: var(--accent); font-size: 11px;
+    }
+
+    /* Nav */
+    .nav-bar {
+      display: flex; justify-content: space-between;
+      align-items: center; margin-top: 32px; gap: 12px;
+    }
+    .nav-btn {
+      padding: 9px 20px; border-radius: 9px;
+      border: 1px solid var(--border); background: var(--surface);
+      cursor: pointer; font-family: inherit; font-size: 13.5px;
+      color: var(--text); transition: background 0.12s, border-color 0.12s;
+    }
+    .nav-btn:hover:not(:disabled) { background: var(--bg); border-color: var(--accent-2); }
+    .nav-btn:disabled { opacity: 0.3; cursor: default; }
+    .nav-btn.primary {
+      background: var(--accent); border-color: var(--accent); color: #fff;
+    }
+    .nav-btn.primary:hover:not(:disabled) { background: #7a3a10; }
+    .nav-pos { font-size: 12px; color: var(--text-2); }
+
+    /* ── Toast notifications ── */
+    #toast-container {
+      position: fixed; top: calc(var(--header-h) + 12px); right: 16px;
+      z-index: 9999; display: flex; flex-direction: column; gap: 7px;
+      pointer-events: none;
+    }
+    .toast {
+      background: rgba(30, 24, 18, 0.88);
+      color: #fff; font-size: 13px;
+      padding: 8px 14px; border-radius: 9px;
+      max-width: 240px; line-height: 1.5;
+      animation: toast-in 0.2s ease, toast-out 0.3s 2.5s ease forwards;
+      pointer-events: none;
+    }
+    @keyframes toast-in {
+      from { opacity: 0; transform: translateX(16px); }
+      to { opacity: 1; transform: translateX(0); }
+    }
+    @keyframes toast-out {
+      from { opacity: 1; }
+      to { opacity: 0; transform: translateX(16px); }
+    }
+    .toast.up { color: #7fe9a0; }
+    .toast.down { color: #f08080; }
+    .toast.flag { color: #ffd080; }
+    .toast.ending { color: #a0c8ff; }
+
+    /* Loading / error */
+    .state-center {
+      display: flex; align-items: center; justify-content: center;
+      flex-direction: column; gap: 12px; color: var(--text-2);
+      height: 300px;
+    }
+    .spinner {
+      width: 26px; height: 26px;
+      border: 3px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Save modal overlay */
+    .modal-overlay {
+      display: none; position: fixed; inset: 0;
+      background: rgba(0,0,0,0.4); z-index: 200;
+      align-items: center; justify-content: center;
+    }
+    .modal-overlay.open { display: flex; }
+    .modal {
+      background: var(--surface); border-radius: 16px;
+      border: 1px solid var(--border);
+      padding: 22px 24px; width: 340px; max-width: 90vw;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.18);
+    }
+    .modal h3 { font-size: 16px; margin-bottom: 14px; color: var(--text); }
+    .modal-slots { display: grid; gap: 8px; margin-bottom: 14px; }
+    .modal-slot {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 9px 12px; border-radius: 8px; border: 1px solid var(--border);
+      cursor: pointer; transition: background 0.1s;
+    }
+    .modal-slot:hover { background: var(--bg); }
+    .modal-slot-label { font-size: 13px; color: var(--text); }
+    .modal-slot-meta { font-size: 11px; color: var(--text-2); }
+    .modal-slot-action {
+      font-size: 11px; font-weight: 700; color: var(--accent);
+      background: none; border: none; cursor: pointer; font-family: inherit;
+    }
+    .modal-close {
+      width: 100%; padding: 8px; border-radius: 8px;
+      border: 1px solid var(--border); background: none;
+      font-family: inherit; font-size: 13px; cursor: pointer;
+      color: var(--text-2); transition: background 0.1s;
+    }
+    .modal-close:hover { background: var(--bg); }
+
+    @media (max-width: 700px) {
+      .left-sidebar { position: absolute; top: var(--header-h); bottom: 0; z-index: 50; }
+      .right-panel { display: none; }
+      :root { --sidebar-w: 260px; }
+    }
+  </style>
+</head>
+<body>
+
+<div id="toast-container"></div>
+
+<!-- Save/Load modal -->
+<div class="modal-overlay" id="save-modal">
+  <div class="modal">
+    <h3 id="modal-title">存档管理</h3>
+    <div class="modal-slots" id="modal-slots"></div>
+    <button class="modal-close" onclick="closeModal()">关闭</button>
+  </div>
+</div>
+
+<header>
+  <button class="icon-btn" id="toggle-sidebar" title="切换目录">&#9776;</button>
+  <span class="if-badge">互动</span>
+  <span class="book-title" id="book-title">加载中...</span>
+  <span class="worldline-badge" id="worldline-badge"></span>
+  <span class="chapter-info" id="chapter-info"></span>
+  <button class="header-btn accent" id="karma-rewind-btn" title="回到上一个关键选择点" style="display:none;">命运回溯</button>
+  <button class="header-btn" id="save-btn">存档</button>
+  <button class="icon-btn" id="toggle-right" title="切换属性面板">📊</button>
+  <a href="/" class="studio-link">工作台</a>
+</header>
+
+<div class="layout">
+  <!-- Left sidebar -->
+  <div class="left-sidebar" id="left-sidebar">
+    <div class="sidebar-tabs">
+      <button class="sidebar-tab active" data-tab="toc">📖 目录</button>
+      <button class="sidebar-tab" data-tab="chars">👥 角色</button>
+      <button class="sidebar-tab" data-tab="endings">🏆 结局</button>
+    </div>
+    <div class="sidebar-panel active" id="panel-toc"></div>
+    <div class="sidebar-panel" id="panel-chars"></div>
+    <div class="sidebar-panel" id="panel-endings"></div>
+  </div>
+
+  <!-- Main reading area -->
+  <main class="main-area" id="main-area">
+    <div class="reading-area" id="reading-area">
+      <div class="state-center"><div class="spinner"></div><span>加载中...</span></div>
+    </div>
+  </main>
+
+  <!-- Right stats panel -->
+  <div class="right-panel" id="right-panel">
+    <div class="right-panel-inner">
+      <div class="rpanel-title">角色属性</div>
+      <div class="stat-row" id="stat-row"></div>
+      <div class="rpanel-title" style="margin-top:4px;">存档 &amp; 回溯</div>
+      <div class="save-section">
+        <button class="save-btn accent" onclick="openSaveModal('save')">💾 存档</button>
+        <button class="save-btn" onclick="openSaveModal('load')">📂 读档</button>
+        <button class="save-btn" id="rp-karma-btn" disabled>↩ 命运回溯</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ─────────────────────────────────────────────────────────────────────────────
+// Constants
+// ─────────────────────────────────────────────────────────────────────────────
+const SLUG = location.pathname.replace(/^\/read-if\//, "").replace(/\/$/, "");
+const STORAGE_KEY = `if_state_${SLUG}`;
+const STAT_NAMES = ["战力","名望","谋略","财富","魅力","黑化值","天命值"];
+const REL_DIMS = ["信任","好感","敌意","敬畏","依赖"];
+const MAX_MANUAL_SAVES = 5;
+const MAX_CHAPTER_SAVES = 10;
+const MAX_KARMA_SAVES = 3;
+
+// Default starting stats (overridden by book.initial_stats if present)
+const DEFAULT_STATS = {战力:50,名望:50,谋略:50,财富:50,魅力:50,黑化值:0,天命值:50};
+const STAT_BAR_CLASS = {
+  黑化值: "dark",
+};
+function statBarClass(name, value) {
+  if (STAT_BAR_CLASS[name]) return STAT_BAR_CLASS[name];
+  if (value < 25) return "danger";
+  if (value < 50) return "warn";
+  return "ok";
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PlayerState
+// ─────────────────────────────────────────────────────────────────────────────
+let PS = null;  // current PlayerState
+let storyPackage = null;
+let chapters = [];
+let currentIndex = 0;
+
+function defaultPS(initialStats) {
+  return {
+    slug: SLUG,
+    stats: { ...DEFAULT_STATS, ...(initialStats || {}) },
+    relationships: {},  // {charId: {信任:0,..., memories:[]}}
+    flags: [],
+    choiceHistory: [],
+    currentChapter: 1,
+    currentRoute: "mainline",  // "mainline" or branch route_id
+    chapterSaves: [],   // [{chapter, snapshot}], max 10
+    karmaSaves: [],     // [{chapter, choiceId, snapshot}], max 3
+    manualSaves: Array(MAX_MANUAL_SAVES).fill(null),
+    unlockedEndings: [],
+    karmaAvailable: false,  // whether karma rewind can be used now
+  };
+}
+
+function savePS() {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(PS));
+  } catch (_) {}
+}
+
+function loadPS() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) {
+      const loaded = JSON.parse(raw);
+      if (loaded.slug === SLUG) return loaded;
+    }
+  } catch (_) {}
+  return null;
+}
+
+function initRelationships() {
+  if (!storyPackage) return;
+  const chars = (storyPackage.book?.characters || []);
+  chars.forEach(ch => {
+    if (!PS.relationships[ch.id]) {
+      PS.relationships[ch.id] = {信任:0, 好感:0, 敌意:0, 敬畏:0, 依赖:0, memories:[], name: ch.name, role: ch.role};
+    } else if (!PS.relationships[ch.id].memories) {
+      PS.relationships[ch.id].memories = [];
+    }
+  });
+}
+
+function snapshotPS() {
+  return JSON.parse(JSON.stringify(PS));
+}
+
+function restorePS(snapshot) {
+  PS = JSON.parse(JSON.stringify(snapshot));
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Apply choice effects
+// ─────────────────────────────────────────────────────────────────────────────
+function applyChoice(chapter, choice, opt) {
+  const toasts = [];
+
+  // 1. Stat effects
+  (opt.stat_effects || []).forEach(e => {
+    if (!STAT_NAMES.includes(e.stat)) return;
+    const prev = PS.stats[e.stat] ?? 50;
+    PS.stats[e.stat] = Math.max(0, Math.min(100, prev + (e.delta || 0)));
+    const d = e.delta || 0;
+    if (d !== 0) {
+      toasts.push({ text: `${e.stat} ${d > 0 ? "+" : ""}${d}`, type: d > 0 ? "up" : "down" });
+    }
+  });
+
+  // 2. Relationship effects
+  (opt.relationship_effects || []).forEach(e => {
+    if (!REL_DIMS.includes(e.dimension)) return;
+    if (!PS.relationships[e.character_id]) {
+      PS.relationships[e.character_id] = {信任:0, 好感:0, 敌意:0, 敬畏:0, 依赖:0, memories:[]};
+    }
+    const rel = PS.relationships[e.character_id];
+    const prev = rel[e.dimension] ?? 0;
+    rel[e.dimension] = Math.max(0, Math.min(100, prev + (e.delta || 0)));
+    const d = e.delta || 0;
+    if (d !== 0) {
+      const charName = rel.name || e.character_id;
+      toasts.push({
+        text: `${charName} · ${e.dimension} ${d > 0 ? "+" : ""}${d}`,
+        type: d > 0 ? "up" : "down"
+      });
+    }
+  });
+
+  // 3. Flags
+  (opt.flags_set || []).forEach(f => {
+    if (!PS.flags.includes(f)) {
+      PS.flags.push(f);
+      toasts.push({ text: `🚩 触发：${f}`, type: "flag" });
+    }
+  });
+
+  // 4. Memory label
+  if (opt.memory_label && opt.relationship_effects?.length) {
+    const firstCharId = opt.relationship_effects[0].character_id;
+    const rel = PS.relationships[firstCharId];
+    if (rel) {
+      if (!rel.memories) rel.memories = [];
+      rel.memories.push(opt.memory_label);
+      const charName = rel.name || firstCharId;
+      toasts.push({ text: `${charName} 记住了：${opt.memory_label}`, type: "flag" });
+    }
+  }
+
+  // 5. Record choice history
+  PS.choiceHistory.push({
+    chapter: chapter.number,
+    choiceId: choice.id,
+    optionId: opt.id,
+    optText: opt.text,
+    ts: Date.now()
+  });
+
+  // 6. Check endings
+  checkEndingProgress(toasts);
+
+  showToasts(toasts);
+  renderStatPanel();
+  renderCharPanel();
+  renderEndingsPanel();
+  savePS();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Stat gate & flag checks
+// ─────────────────────────────────────────────────────────────────────────────
+function checkStatGate(opt) {
+  // Returns {locked: bool, reason: string|null}
+  const gate = opt.stat_gate;
+  if (gate) {
+    const cur = PS.stats[gate.stat] ?? 0;
+    if (gate.min != null && cur < gate.min) {
+      return { locked: true, reason: `需要${gate.stat} ≥ ${gate.min}（当前 ${cur}）` };
+    }
+    if (gate.max != null && cur > gate.max) {
+      return { locked: true, reason: `需要${gate.stat} ≤ ${gate.max}（当前 ${cur}）` };
+    }
+  }
+  if (opt.requires_flag && !PS.flags.includes(opt.requires_flag)) {
+    return { locked: true, reason: `需要触发：${opt.requires_flag}` };
+  }
+  if (opt.forbids_flag && PS.flags.includes(opt.forbids_flag)) {
+    return { locked: true, reason: null };  // hidden
+  }
+  return { locked: false, reason: null };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Ending progress
+// ─────────────────────────────────────────────────────────────────────────────
+function checkEndingProgress(toasts) {
+  const endings = storyPackage?.endings || [];
+  endings.forEach(e => {
+    if (PS.unlockedEndings.includes(e.id)) return;
+    // Check stat conditions
+    const statOk = (e.stat_conditions || []).every(sc => {
+      const cur = PS.stats[sc.stat] ?? 0;
+      if (sc.min != null && cur < sc.min) return false;
+      if (sc.max != null && cur > sc.max) return false;
+      return true;
+    });
+    const flagOk = (e.flag_conditions || []).every(f => PS.flags.includes(f));
+    if (statOk && flagOk && (e.stat_conditions?.length || e.flag_conditions?.length)) {
+      // Check closeness — only notify if 80% close
+      const proximity = computeEndingProximity(e);
+      if (proximity >= 0.8) {
+        if (!toasts.find(t => t.text.includes(e.title))) {
+          toasts.push({ text: `✦ 你正走向：${e.title}`, type: "ending" });
+        }
+      }
+    }
+  });
+}
+
+function computeEndingProximity(e) {
+  const statConds = e.stat_conditions || [];
+  const flagConds = e.flag_conditions || [];
+  if (!statConds.length && !flagConds.length) return 0;
+  let total = statConds.length + flagConds.length;
+  let met = 0;
+  statConds.forEach(sc => {
+    const cur = PS.stats[sc.stat] ?? 0;
+    if (sc.min != null) {
+      met += Math.min(1, cur / sc.min);
+    } else if (sc.max != null) {
+      met += cur <= sc.max ? 1 : 0;
+    }
+  });
+  flagConds.forEach(f => { met += PS.flags.includes(f) ? 1 : 0; });
+  return total > 0 ? met / total : 0;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Save / rewind system
+// ─────────────────────────────────────────────────────────────────────────────
+function saveChapterCheckpoint(chapterNum) {
+  PS.chapterSaves = (PS.chapterSaves || []).filter(s => s.chapter !== chapterNum);
+  PS.chapterSaves.push({ chapter: chapterNum, snapshot: snapshotPS() });
+  if (PS.chapterSaves.length > MAX_CHAPTER_SAVES) {
+    PS.chapterSaves.shift();
+  }
+}
+
+function saveKarmaCheckpoint(chapter, choiceId) {
+  PS.karmaSaves = (PS.karmaSaves || []).filter(s => !(s.chapter === chapter && s.choiceId === choiceId));
+  PS.karmaSaves.push({ chapter, choiceId, snapshot: snapshotPS() });
+  if (PS.karmaSaves.length > MAX_KARMA_SAVES) {
+    PS.karmaSaves.shift();
+  }
+  PS.karmaAvailable = true;
+}
+
+function karmaRewind() {
+  if (!PS.karmaAvailable || !PS.karmaSaves.length) return;
+  const last = PS.karmaSaves[PS.karmaSaves.length - 1];
+  restorePS(last.snapshot);
+  PS.karmaSaves.pop();
+  PS.karmaAvailable = false;
+  savePS();
+  showToasts([{ text: "↩ 命运回溯：回到上一个关键节点", type: "flag" }]);
+  renderChapter(currentIndex);
+}
+
+function openSaveModal(mode) {
+  const modal = document.getElementById("save-modal");
+  const slots = document.getElementById("modal-slots");
+  const title = document.getElementById("modal-title");
+  title.textContent = mode === "save" ? "选择存档槽" : "选择要读取的存档";
+  slots.innerHTML = "";
+  const saves = PS.manualSaves || Array(MAX_MANUAL_SAVES).fill(null);
+  saves.forEach((s, i) => {
+    const row = document.createElement("div");
+    row.className = "modal-slot";
+    const ch = chapters[currentIndex];
+    const label = s ? `第 ${s.chapter} 章 · ${s.label}` : "(空)";
+    const meta = s ? new Date(s.ts).toLocaleString("zh-CN") : "";
+    row.innerHTML = `
+      <div>
+        <div class="modal-slot-label">存档 ${i + 1}：${esc(label)}</div>
+        ${meta ? `<div class="modal-slot-meta">${esc(meta)}</div>` : ""}
+      </div>
+      <button class="modal-slot-action">${mode === "save" ? "存入" : s ? "读取" : "-"}</button>
+    `;
+    row.querySelector("button").addEventListener("click", () => {
+      if (mode === "save") {
+        PS.manualSaves[i] = {
+          chapter: ch?.number || 1,
+          label: ch?.title || "第1章",
+          snapshot: snapshotPS(),
+          ts: Date.now()
+        };
+        savePS();
+        showToasts([{ text: `💾 已存档到槽 ${i + 1}`, type: "up" }]);
+        closeModal();
+      } else if (s) {
+        restorePS(s.snapshot);
+        savePS();
+        showToasts([{ text: `📂 已读取存档槽 ${i + 1}`, type: "flag" }]);
+        closeModal();
+        const idx = chapters.findIndex(c => c.number === PS.currentChapter);
+        goToChapter(idx >= 0 ? idx : 0);
+      }
+    });
+    slots.appendChild(row);
+  });
+  modal.classList.add("open");
+}
+
+function closeModal() {
+  document.getElementById("save-modal").classList.remove("open");
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Toast notifications
+// ─────────────────────────────────────────────────────────────────────────────
+function showToasts(messages) {
+  const container = document.getElementById("toast-container");
+  messages.forEach((m, idx) => {
+    setTimeout(() => {
+      const el = document.createElement("div");
+      el.className = `toast ${m.type || ""}`;
+      el.textContent = m.text;
+      container.appendChild(el);
+      setTimeout(() => el.remove(), 2900);
+    }, idx * 120);
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Escape HTML
+// ─────────────────────────────────────────────────────────────────────────────
+function esc(s) {
+  return String(s ?? "")
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Render: Stat panel
+// ─────────────────────────────────────────────────────────────────────────────
+function renderStatPanel() {
+  const row = document.getElementById("stat-row");
+  if (!row) return;
+  row.innerHTML = STAT_NAMES.map(name => {
+    const val = PS.stats[name] ?? 0;
+    const cls = statBarClass(name, val);
+    return `
+      <div class="stat-item">
+        <div class="stat-label-row">
+          <span class="stat-label">${esc(name)}</span>
+          <span class="stat-value" id="sv-${name}">${val}</span>
+        </div>
+        <div class="stat-bar-bg">
+          <div class="stat-bar-fill ${cls}" style="width:${val}%"></div>
+        </div>
+      </div>
+    `;
+  }).join("");
+}
+
+function animateStatChange(name, delta) {
+  const el = document.getElementById(`sv-${name}`);
+  if (!el) return;
+  el.classList.remove("changed-up", "changed-down");
+  void el.offsetWidth;
+  el.classList.add(delta > 0 ? "changed-up" : "changed-down");
+  setTimeout(() => el.classList.remove("changed-up", "changed-down"), 800);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Render: Character panel
+// ─────────────────────────────────────────────────────────────────────────────
+function renderCharPanel() {
+  const panel = document.getElementById("panel-chars");
+  if (!panel) return;
+  const chars = storyPackage?.book?.characters || [];
+  if (!chars.length) {
+    panel.innerHTML = '<div style="padding:16px;font-size:13px;color:var(--text-2);">暂无角色数据</div>';
+    return;
+  }
+  panel.innerHTML = chars.map(ch => {
+    const rel = PS.relationships[ch.id] || {};
+    const activeDims = REL_DIMS.filter(d => (rel[d] || 0) !== 0);
+    const bars = activeDims.map(d => {
+      const v = rel[d] || 0;
+      const cls = d === "敌意" ? "hostile" : "";
+      return `
+        <div class="rel-row">
+          <span>${esc(d)}</span>
+          <div class="rel-bar-bg"><div class="rel-bar-fill ${cls}" style="width:${v}%"></div></div>
+          <span>${v}</span>
+        </div>
+      `;
+    }).join("");
+    const memories = (rel.memories || []).slice(-5);
+    const memHtml = memories.length
+      ? `<div class="char-memories">${memories.map(m => `<div class="char-memory-item">${esc(m)}</div>`).join("")}</div>`
+      : "";
+    return `
+      <div class="char-card">
+        <div><span class="char-name">${esc(ch.name)}</span><span class="char-role">${esc(ch.role || "")}</span></div>
+        ${bars ? `<div class="char-rel-bars">${bars}</div>` : '<div style="margin-top:6px;font-size:11px;color:var(--text-2);">尚无关系变化</div>'}
+        ${memHtml}
+      </div>
+    `;
+  }).join("");
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Render: Endings panel
+// ─────────────────────────────────────────────────────────────────────────────
+function renderEndingsPanel() {
+  const panel = document.getElementById("panel-endings");
+  if (!panel) return;
+  const endings = storyPackage?.endings || [];
+
+  // Derive from route_graph if no endings defined
+  const displayEndings = endings.length ? endings : deriveEndingsFromRouteGraph();
+
+  if (!displayEndings.length) {
+    panel.innerHTML = '<div style="padding:16px;font-size:13px;color:var(--text-2);">暂无结局数据</div>';
+    return;
+  }
+
+  const unlocked = PS.unlockedEndings || [];
+  let html = `<div class="ending-summary"><div class="ending-summary-text">已解锁 ${unlocked.length} / ${displayEndings.length} 个结局</div></div>`;
+
+  displayEndings.forEach(e => {
+    const typeMap = {main:"主线结局", hidden:"隐藏结局", bad:"Bad End", normal:"普通结局"};
+    const badgeClass = {main:"ending-type-main", hidden:"ending-type-hidden", bad:"ending-type-bad", normal:"ending-type-main"}[e.type] || "ending-type-main";
+    const proximity = computeEndingProximity(e);
+    const progHtml = proximity > 0.5 && proximity < 1.0
+      ? `<div class="ending-progress">▶ 接近度 ${Math.round(proximity * 100)}%</div>`
+      : "";
+    html += `
+      <div class="ending-card">
+        <div><span class="ending-type-badge ${badgeClass}">${typeMap[e.type] || e.type}</span></div>
+        <div class="ending-title">${unlocked.includes(e.id) ? esc(e.title) : "??? 未知结局"}</div>
+        ${unlocked.includes(e.id) && e.teaser
+          ? `<div class="ending-teaser">${esc(e.teaser)}</div>`
+          : `<div class="ending-locked">${esc(e.condition_summary || "条件未知")}</div>`
+        }
+        ${progHtml}
+      </div>
+    `;
+  });
+
+  panel.innerHTML = html;
+}
+
+function deriveEndingsFromRouteGraph() {
+  const rg = storyPackage?.route_graph;
+  if (!rg) return [];
+  const out = [];
+  if (rg.mainline) out.push({id:"end_main", title:"主线结局", type:"main", teaser:rg.mainline, stat_conditions:[], flag_conditions:[], condition_summary:""});
+  (rg.hidden_routes || []).forEach((r, i) => {
+    out.push({id:`end_hidden_${i}`, title:`隐藏结局 ${i+1}`, type:"hidden", teaser:r, stat_conditions:[], flag_conditions:[], condition_summary:r});
+  });
+  return out;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Render: TOC
+// ─────────────────────────────────────────────────────────────────────────────
+function renderToc() {
+  const panel = document.getElementById("panel-toc");
+  if (!chapters.length) {
+    panel.innerHTML = '<div style="padding:16px;font-size:13px;color:var(--text-2);">暂无章节</div>';
+    return;
+  }
+  panel.innerHTML = chapters.map((ch, i) => `
+    <button class="toc-item ${i === currentIndex ? "active" : ""}" onclick="goToChapter(${i})">
+      <span class="toc-num">${ch.number}</span>${esc(ch.title)}
+    </button>
+  `).join("");
+  const active = panel.querySelector(".toc-item.active");
+  if (active) active.scrollIntoView({ block: "nearest" });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Render: Nodes
+// ─────────────────────────────────────────────────────────────────────────────
+function renderNodes(nodes, container, chapter) {
+  if (!nodes?.length) return;
+  nodes.forEach(node => {
+    if (node.text) {
+      renderTextNode(node.text, container);
+    } else if (node.dialogue) {
+      renderDialogueNode(node.dialogue, container);
+    } else if (node.choice) {
+      container.appendChild(renderChoiceNode(node.choice, chapter));
+    }
+  });
+}
+
+function renderTextNode(text, container) {
+  const div = document.createElement("div");
+  div.className = "node-text";
+  const paragraphs = (text.content || "").split(/\n+/).filter(Boolean);
+  div.innerHTML = paragraphs.map(p => `<p>${esc(p)}</p>`).join("");
+  container.appendChild(div);
+}
+
+function renderDialogueNode(d, container) {
+  const div = document.createElement("div");
+  div.className = "node-dialogue";
+  div.innerHTML = `
+    <div class="dialogue-speaker">${esc(d.character_id || "")}
+      ${d.emotion ? `<span class="dialogue-emotion">${esc(d.emotion)}</span>` : ""}
+    </div>
+    <div>${esc(d.content || "")}</div>
+  `;
+  container.appendChild(div);
+}
+
+function renderChoiceNode(choice, chapter) {
+  // Save karma checkpoint before key decisions
+  if (choice.choice_type === "keyDecision") {
+    saveKarmaCheckpoint(chapter.number, choice.id);
+    updateKarmaBtn();
+  }
+
+  const block = document.createElement("div");
+  block.className = "node-choice";
+
+  const typeLabels = {keyDecision:"关键抉择", styleChoice:"风格选择", characterPref:"角色倾向"};
+  const typeBadges = {keyDecision:"badge-key", styleChoice:"badge-style", characterPref:"badge-pref"};
+  const typeLabel = typeLabels[choice.choice_type] || choice.choice_type;
+  const typeBadge = typeBadges[choice.choice_type] || "badge-key";
+
+  block.innerHTML = `
+    <div><span class="choice-type-badge ${typeBadge}">${esc(typeLabel)}</span></div>
+    <div class="choice-prompt">${esc(choice.prompt)}</div>
+  `;
+
+  const opts = document.createElement("div");
+  opts.className = "choice-options";
+
+  (choice.choices || []).forEach(opt => {
+    const { locked, reason } = checkStatGate(opt);
+
+    // Hide if forbids_flag triggered
+    if (opt.forbids_flag && PS.flags.includes(opt.forbids_flag)) return;
+
+    const btn = document.createElement("button");
+    btn.className = "choice-btn" + (locked ? " locked" : "");
+    btn.disabled = locked;
+
+    // Build gate hint
+    let gateHtml = "";
+    if (opt.stat_gate) {
+      const gStat = opt.stat_gate.stat;
+      const gMin = opt.stat_gate.min;
+      const gMax = opt.stat_gate.max;
+      const cur = PS.stats[gStat] ?? 0;
+      const gateOk = !locked;
+      const threshold = gMin != null ? `≥${gMin}` : `≤${gMax}`;
+      gateHtml = `<div><span class="gate-badge ${gateOk ? "gate-ok" : "gate-fail"}">${gateOk ? "🔓" : "🔒"} ${esc(gStat)} ${threshold}（当前 ${cur}）</span></div>`;
+    } else if (locked && reason) {
+      gateHtml = `<div><span class="gate-badge gate-fail">🔒 ${esc(reason)}</span></div>`;
+    }
+
+    btn.innerHTML = `
+      <div class="choice-btn-title">${esc(opt.text)}</div>
+      ${opt.description ? `<div class="choice-btn-desc">${esc(opt.description)}</div>` : ""}
+      ${gateHtml}
+      <div class="choice-hints">
+        ${opt.visible_cost ? `<span class="hint-cost">代价：${esc(opt.visible_cost)}</span>` : ""}
+        ${opt.visible_reward ? `<span class="hint-reward">收益：${esc(opt.visible_reward)}</span>` : ""}
+        ${opt.risk_hint ? `<span class="hint-risk">风险：${esc(opt.risk_hint)}</span>` : ""}
+      </div>
+    `;
+
+    if (!locked) {
+      btn.addEventListener("click", () => {
+        // Disable all options in this block
+        block.querySelectorAll(".choice-btn").forEach(b => {
+          b.disabled = true;
+          b.classList.remove("locked");
+        });
+        btn.classList.add("selected");
+
+        // Apply effects
+        applyChoice(chapter, choice, opt);
+
+        // Render result nodes
+        const resultContainer = document.createElement("div");
+        resultContainer.className = "choice-result";
+        resultContainer.innerHTML = `<div class="choice-result-label">已选择：${esc(opt.text)}</div>`;
+        renderNodes(opt.result_nodes || [], resultContainer, chapter);
+        block.appendChild(resultContainer);
+        resultContainer.scrollIntoView({ behavior: "smooth", block: "nearest" });
+
+        // Handle branch route if present
+        if (opt.branch_route_id) {
+          handleBranchRoute(opt.branch_route_id, chapter);
+        }
+
+        updateKarmaBtn();
+      });
+    }
+
+    opts.appendChild(btn);
+  });
+
+  block.appendChild(opts);
+  return block;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Branch route loading
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Splice branch chapters into the global chapters array.
+// Mainline chapters that fall entirely within [branchStart, mergeChapter)
+// are replaced by the branch chapters.
+async function loadBranchChapters(routeId) {
+  const data = await get(`/api/if-novels/${SLUG}/branches/${routeId}`);
+  const branchChapters = data.chapters || [];
+  if (!branchChapters.length) return data;
+
+  const branchStart = data.branch_start_chapter;
+  const mergeChapter = data.merge_chapter;
+
+  // Remove mainline chapters that the branch replaces
+  if (branchStart != null && mergeChapter != null) {
+    chapters = chapters.filter(c => c.number < branchStart || c.number >= mergeChapter);
+  }
+
+  // Insert branch chapters (avoid duplicates by number)
+  const existing = new Set(chapters.map(c => c.number));
+  for (const bc of branchChapters) {
+    if (!existing.has(bc.number)) chapters.push(bc);
+  }
+  chapters.sort((a, b) => a.number - b.number);
+  return data;
+}
+
+async function handleBranchRoute(routeId, _chapter) {
+  const badge = document.getElementById("worldline-badge");
+  if (badge) { badge.textContent = "世界线：加载中…"; badge.classList.add("visible"); }
+
+  try {
+    const data = await loadBranchChapters(routeId);
+    const branchChapters = data.chapters || [];
+
+    if (!PS.flags.includes(`branch_${routeId}`)) PS.flags.push(`branch_${routeId}`);
+    PS.currentRoute = routeId;
+    savePS();
+
+    const routeTitle = data.route_title || routeId;
+    if (badge) badge.textContent = `世界线：${routeTitle}`;
+    showToasts([{ text: `⚡ 进入分支世界线：${routeTitle}`, type: "ending" }]);
+
+    renderToc();
+    // Navigate to first branch chapter after a short delay for toast visibility
+    if (branchChapters.length) {
+      const firstNum = branchChapters[0].number;
+      const idx = chapters.findIndex(c => c.number === firstNum);
+      if (idx >= 0) setTimeout(() => renderChapter(idx), 600);
+    }
+  } catch (err) {
+    showToasts([{ text: `⚠️ 分支加载失败：${routeId}`, type: "flag" }]);
+    if (badge) badge.classList.remove("visible");
+    // Still mark the flag so the choice is recorded
+    if (!PS.flags.includes(`branch_${routeId}`)) PS.flags.push(`branch_${routeId}`);
+    savePS();
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Render: Chapter
+// ─────────────────────────────────────────────────────────────────────────────
+function renderChapter(idx) {
+  if (idx < 0 || idx >= chapters.length) return;
+  currentIndex = idx;
+  const ch = chapters[idx];
+
+  // Save chapter checkpoint before rendering
+  saveChapterCheckpoint(ch.number);
+  PS.currentChapter = ch.number;
+  savePS();
+
+  const area = document.getElementById("reading-area");
+  area.innerHTML = "";
+  document.getElementById("main-area").scrollTo(0, 0);
+  document.getElementById("chapter-info").textContent = `第 ${ch.number} 章 / 共 ${chapters.length} 章`;
+  document.title = `${ch.title} — ${storyPackage?.book?.title || SLUG}`;
+  location.hash = String(ch.number);
+  renderToc();
+
+  // Chapter header
+  const header = document.createElement("div");
+  header.className = "chapter-header";
+  header.innerHTML = `
+    <h1>${esc(ch.title)}</h1>
+    <div class="chapter-meta">
+      <span>第 ${ch.number} 章</span>
+      ${ch.is_paid ? "<span>💎 付费章节</span>" : ""}
+    </div>
+  `;
+  area.appendChild(header);
+
+  renderNodes(ch.nodes || [], area, ch);
+
+  if (ch.next_chapter_hook) {
+    const hook = document.createElement("div");
+    hook.className = "chapter-hook";
+    hook.textContent = ch.next_chapter_hook;
+    area.appendChild(hook);
+  }
+
+  // Nav
+  const nav = document.createElement("div");
+  nav.className = "nav-bar";
+  nav.innerHTML = `
+    <button class="nav-btn" ${idx <= 0 ? "disabled" : ""} onclick="goToChapter(${idx-1})">← 上一章</button>
+    <span class="nav-pos">${idx + 1} / ${chapters.length}</span>
+    <button class="nav-btn primary" ${idx >= chapters.length - 1 ? "disabled" : ""} onclick="goToChapter(${idx+1})">下一章 →</button>
+  `;
+  area.appendChild(nav);
+}
+
+function goToChapter(idx) {
+  if (idx < 0 || idx >= chapters.length) return;
+  renderChapter(idx);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Karma / rewind buttons
+// ─────────────────────────────────────────────────────────────────────────────
+function updateKarmaBtn() {
+  const available = PS.karmaAvailable && PS.karmaSaves?.length > 0;
+  const headerBtn = document.getElementById("karma-rewind-btn");
+  const rpBtn = document.getElementById("rp-karma-btn");
+  if (headerBtn) headerBtn.style.display = available ? "block" : "none";
+  if (rpBtn) rpBtn.disabled = !available;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Sidebar tab switching
+// ─────────────────────────────────────────────────────────────────────────────
+function wireSidebarTabs() {
+  document.querySelectorAll(".sidebar-tab").forEach(btn => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll(".sidebar-tab").forEach(b => b.classList.remove("active"));
+      document.querySelectorAll(".sidebar-panel").forEach(p => p.classList.remove("active"));
+      btn.classList.add("active");
+      document.getElementById(`panel-${btn.dataset.tab}`).classList.add("active");
+    });
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Fetch
+// ─────────────────────────────────────────────────────────────────────────────
+async function get(url) {
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(`HTTP ${r.status}: ${await r.text()}`);
+  return r.json();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Init
+// ─────────────────────────────────────────────────────────────────────────────
+async function init() {
+  wireSidebarTabs();
+  document.getElementById("toggle-sidebar").addEventListener("click", () => {
+    document.getElementById("left-sidebar").classList.toggle("collapsed");
+  });
+  document.getElementById("toggle-right").addEventListener("click", () => {
+    document.getElementById("right-panel").classList.toggle("collapsed");
+  });
+  document.getElementById("save-btn").addEventListener("click", () => openSaveModal("save"));
+  document.getElementById("karma-rewind-btn").addEventListener("click", karmaRewind);
+  document.getElementById("rp-karma-btn").addEventListener("click", karmaRewind);
+
+  const area = document.getElementById("reading-area");
+  document.getElementById("book-title").textContent = SLUG;
+
+  try {
+    storyPackage = await get(`/api/if-novels/${SLUG}/story-package`);
+    chapters = storyPackage.chapters || [];
+    const book = storyPackage.book || {};
+    const bookTitle = book.title || SLUG;
+    document.getElementById("book-title").textContent = bookTitle;
+    document.title = `${bookTitle} — 互动小说`;
+    window._bookTitle = bookTitle;
+
+    // Initialize PlayerState
+    const saved = loadPS();
+    if (saved) {
+      PS = saved;
+      showToasts([{ text: "📂 已恢复上次进度", type: "flag" }]);
+    } else {
+      PS = defaultPS(book.initial_stats_cn || book.initial_stats);
+    }
+
+    // Restore branch chapters if player was on a branch route
+    if (PS.currentRoute && PS.currentRoute !== "mainline") {
+      try {
+        await loadBranchChapters(PS.currentRoute);
+        const badge = document.getElementById("worldline-badge");
+        if (badge) {
+          badge.textContent = `世界线：${PS.currentRoute}`;
+          badge.classList.add("visible");
+        }
+      } catch (_) {
+        // Branch data unavailable; fall back to mainline silently
+        PS.currentRoute = "mainline";
+      }
+    }
+
+    initRelationships();
+    renderStatPanel();
+    renderCharPanel();
+    renderEndingsPanel();
+    updateKarmaBtn();
+
+    if (!chapters.length) {
+      area.innerHTML = `<div class="state-center">这部小说还没有生成章节。</div>`;
+      document.getElementById("panel-toc").innerHTML =
+        '<div style="padding:16px;font-size:13px;color:var(--text-2);">暂无章节</div>';
+      return;
+    }
+
+    // Determine starting chapter
+    const hashN = parseInt(location.hash.replace("#", ""), 10);
+    let startIdx = 0;
+    if (!isNaN(hashN) && hashN >= 1) {
+      const found = chapters.findIndex(c => c.number === hashN);
+      if (found >= 0) startIdx = found;
+    } else if (PS.currentChapter > 1) {
+      const found = chapters.findIndex(c => c.number === PS.currentChapter);
+      if (found >= 0) startIdx = found;
+    }
+
+    renderChapter(startIdx);
+    renderToc();
+
+  } catch (err) {
+    document.getElementById("panel-toc").innerHTML =
+      `<div style="padding:16px;font-size:13px;color:var(--err-text,#c0392b);">${esc(err.message)}</div>`;
+    area.innerHTML = `
+      <div class="state-center" style="color:#c0392b;">
+        无法加载互动小说「${esc(SLUG)}」<br/>
+        <small style="margin-top:8px;">${esc(err.message)}</small>
+      </div>`;
+  }
+}
+
+init();
+</script>
+</body>
+</html>

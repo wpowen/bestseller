@@ -1,0 +1,82 @@
+{
+  "id": "xianxia_001",
+  "title": "弃徒逆天",
+  "author": "命书工作室",
+  "cover_image_name": "cover_xianxia_001",
+  "synopsis": "你本是天青宗最有潜力的弟子，却在入宗大典上被诊断为\"死灵根\"，遭掌门当众驱逐。流落三年，你在一处古洞中得到了上古洪荒至尊根脉的传承——那个所谓的\"死灵根\"，不过是封住一切的枷锁。带着压抑三年的怒火，你踏上归途。当年欠下的，一笔一笔清算。",
+  "genre": "修仙升级",
+  "tags": [
+    "废材逆袭",
+    "上古传承",
+    "打脸宗门",
+    "父辈旧案",
+    "洪荒血脉"
+  ],
+  "interaction_tags": [
+    "高互动",
+    "战力成长",
+    "关系推进",
+    "攻略图"
+  ],
+  "total_chapters": 1000,
+  "free_chapters": 20,
+  "characters": [
+    {
+      "id": "char_song_xuan",
+      "name": "宋玄",
+      "title": "天青宗掌门",
+      "avatar_image_name": "avatar_song_xuan",
+      "description": "天青宗现任掌门，仙风道骨，深受弟子敬仰。三年前以\"维护宗门纯洁\"为名当众驱逐你。表面公正，实则是当年构陷你父亲的主谋之一。",
+      "role": "反派"
+    },
+    {
+      "id": "char_li_qingyun",
+      "name": "李青云",
+      "title": "天青宗首席弟子",
+      "avatar_image_name": "avatar_li_qingyun",
+      "description": "与你同届入宗的师兄，七阶风雷双灵根，号称百年一遇天才。驱逐那天是他第一个落井下石。随你崛起，嫉恨一步步将他逼向疯狂。",
+      "role": "宿敌"
+    },
+    {
+      "id": "char_chen_xue",
+      "name": "陈雪",
+      "title": "天青宗内门弟子",
+      "avatar_image_name": "avatar_chen_xue",
+      "description": "你入宗时最亲近的同门，曾一起习剑、一起看日落。驱逐那天她沉默了，没有为你说一句话。三年来，这份愧疚从未消散。",
+      "role": "红颜"
+    },
+    {
+      "id": "char_shi_po",
+      "name": "石婆婆",
+      "title": "山间隐者",
+      "avatar_image_name": "avatar_shi_po",
+      "description": "天青山脚下的神秘老人，实为上古强者\"开天老祖\"的最后一名弟子，在山中等待有缘人继承传承，已等了三千年。",
+      "role": "盟友"
+    },
+    {
+      "id": "char_second_elder",
+      "name": "凌峰",
+      "title": "天青宗二长老",
+      "avatar_image_name": "avatar_second_elder",
+      "description": "宗门二长老，与掌门不和多年。当年驱逐你时，他是唯一投了反对票的人。他知道的比任何人都多，却一直在等待时机。",
+      "role": "师尊"
+    },
+    {
+      "id": "char_third_elder",
+      "name": "韩铁",
+      "title": "天青宗三长老",
+      "avatar_image_name": "avatar_third_elder",
+      "description": "掌管宗门惩戒堂，宋玄的左膀右臂，心狠手辣。当年构陷你父亲，是宋玄棋局里最得力的棋子。",
+      "role": "反派"
+    }
+  ],
+  "initial_stats": {
+    "combat": 5,
+    "fame": 5,
+    "strategy": 20,
+    "wealth": 5,
+    "charm": 10,
+    "darkness": 0,
+    "destiny": 30
+  }
+}

@@ -2,9 +2,11 @@ from __future__ import annotations
 
 from uuid import UUID
 
+from typing import Literal
+
 from pydantic import BaseModel, Field, field_validator
 
-from bestseller.domain.enums import ChapterStatus, ProjectStatus, SceneStatus, VolumeStatus
+from bestseller.domain.enums import ChapterStatus, ProjectStatus, ProjectType, SceneStatus, VolumeStatus
 
 
 def _dedupe_string_list(values: list[str]) -> list[str]:
@@ -136,12 +138,89 @@ class SerializationStrategyConfig(BaseModel):
     )
 
 
+_IF_VALID_GENRES = {"都市逆袭", "修仙升级", "悬疑生存", "职场商战", "末日爽文"}
+_IF_VALID_ROLES = {"盟友", "宿敌", "红颜", "师尊", "家族", "中立", "反派"}
+
+
+class IFStatConfig(BaseModel):
+    combat: int = Field(default=10, ge=0, le=100)
+    fame: int = Field(default=5, ge=0, le=100)
+    strategy: int = Field(default=20, ge=0, le=100)
+    wealth: int = Field(default=5, ge=0, le=100)
+    charm: int = Field(default=10, ge=0, le=100)
+    darkness: int = Field(default=0, ge=0, le=100)
+    destiny: int = Field(default=30, ge=0, le=100)
+
+
+class IFCharacterDraft(BaseModel):
+    name: str = Field(min_length=1, max_length=20)
+    role: str = Field(description="盟友|宿敌|红颜|师尊|家族|中立|反派")
+    description: str = Field(default="", max_length=200)
+
+    @field_validator("role")
+    @classmethod
+    def validate_role(cls, v: str) -> str:
+        if v not in _IF_VALID_ROLES:
+            raise ValueError(f"role must be one of {_IF_VALID_ROLES}")
+        return v
+
+
+class InteractiveFictionConfig(BaseModel):
+    enabled: bool = False
+
+    # Concept 参数（对应 story-factory concept.json 字段）
+    if_genre: str = Field(default="修仙升级", max_length=20)
+    target_chapters: int = Field(default=100, ge=10, le=2000)
+    free_chapters: int = Field(default=20, ge=5, le=100)
+    premise: str = Field(default="", max_length=500)
+    protagonist: str = Field(default="", max_length=200)
+    core_conflict: str = Field(default="", max_length=300)
+    tone: str = Field(default="爽快、热血、有悬念", max_length=100)
+    arc_structure: list[str] = Field(default_factory=list)
+    key_characters: list[IFCharacterDraft] = Field(default_factory=list)
+    initial_stats: IFStatConfig = Field(default_factory=IFStatConfig)
+
+    # Generation 参数（控制 Prompt 内容）
+    chapter_text_length: str = Field(default="2500-3500", max_length=20)
+    choice_nodes_per_chapter: str = Field(default="2-3", max_length=10)
+    text_node_length: str = Field(default="150-250", max_length=20)
+    arc_batch_size: int = Field(default=15, ge=5, le=100)
+    parallel_chapter_batch: int = Field(default=8, ge=1, le=20)
+
+    # Acts 结构（全书幕数）
+    act_count: int = Field(default=5, ge=2, le=8)
+
+    # 卷结构（Volume）— 长篇核心机制
+    # volume_size=0 表示不启用卷层级（适合 <200 章短篇）
+    volume_size: int = Field(default=100, ge=0, le=500)
+
+    # 硬分支控制
+    enable_branches: bool = Field(default=False)
+    branch_count: int = Field(default=2, ge=0, le=4)
+    branch_chapter_span: int = Field(default=30, ge=10, le=80)
+
+    # 上下文模式
+    context_mode: Literal["basic", "tiered", "full"] = Field(default="tiered")
+    snapshot_interval: int = Field(default=50, ge=25, le=100)
+
+    # 爽点密度
+    power_moment_interval: int = Field(default=5, ge=3, le=10)
+
+    @field_validator("if_genre")
+    @classmethod
+    def validate_genre(cls, v: str) -> str:
+        if v not in _IF_VALID_GENRES:
+            raise ValueError(f"if_genre must be one of {_IF_VALID_GENRES}")
+        return v
+
+
 class WritingProfile(BaseModel):
     market: MarketPositioningConfig = Field(default_factory=MarketPositioningConfig)
     character: CharacterEngineConfig = Field(default_factory=CharacterEngineConfig)
     world: WorldDesignConfig = Field(default_factory=WorldDesignConfig)
     style: StylePreferenceConfig = Field(default_factory=StylePreferenceConfig)
     serialization: SerializationStrategyConfig = Field(default_factory=SerializationStrategyConfig)
+    interactive_fiction: InteractiveFictionConfig = Field(default_factory=InteractiveFictionConfig)
 
 
 class ProjectCreate(BaseModel):
@@ -153,6 +232,7 @@ class ProjectCreate(BaseModel):
     language: str = Field(default="zh-CN", min_length=2, max_length=20)
     target_word_count: int = Field(gt=0)
     target_chapters: int = Field(gt=0)
+    project_type: ProjectType = ProjectType.LINEAR
     metadata: dict[str, object] = Field(default_factory=dict)
     writing_profile: WritingProfile | None = None
 
@@ -177,6 +257,7 @@ class ProjectRead(BaseModel):
     target_word_count: int
     target_chapters: int
     status: ProjectStatus
+    project_type: ProjectType = ProjectType.LINEAR
 
 
 class VolumeCreate(BaseModel):

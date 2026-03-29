@@ -1,0 +1,52 @@
+{
+  "book_id": "cultivation_full_001",
+  "chapter_count": 4,
+  "choice_nodes": 8,
+  "average_choice_nodes_per_chapter": 2.0,
+  "average_options_per_choice_node": 3.0,
+  "chapters": [
+    {
+      "chapter_id": "cfull_001",
+      "title": "葬剑台前",
+      "char_count": 1025,
+      "choice_nodes": 2,
+      "guide_interactions": 2,
+      "estimated_minutes": 5,
+      "visible_routes": 3
+    },
+    {
+      "chapter_id": "cfull_002",
+      "title": "夜入剑冢",
+      "char_count": 1092,
+      "choice_nodes": 2,
+      "guide_interactions": 2,
+      "estimated_minutes": 6,
+      "visible_routes": 3
+    },
+    {
+      "chapter_id": "cfull_003",
+      "title": "问门反杀",
+      "char_count": 840,
+      "choice_nodes": 2,
+      "guide_interactions": 2,
+      "estimated_minutes": 6,
+      "visible_routes": 3
+    },
+    {
+      "chapter_id": "cfull_004",
+      "title": "天门一线",
+      "char_count": 1016,
+      "choice_nodes": 2,
+      "guide_interactions": 2,
+      "estimated_minutes": 7,
+      "visible_routes": 3
+    }
+  ],
+  "warnings": [
+    "cfull_001: text length 1025 is outside recommended 1200-3200 range",
+    "cfull_002: text length 1092 is outside recommended 1200-3200 range",
+    "cfull_003: text length 840 is outside recommended 1200-3200 range",
+    "cfull_004: text length 1016 is outside recommended 1200-3200 range"
+  ],
+  "errors": []
+}

@@ -1,0 +1,551 @@
+{
+  "book_id": "apocalypse_001",
+  "chapter_count": 60,
+  "choice_nodes": 120,
+  "average_choice_nodes_per_chapter": 2.0,
+  "average_options_per_choice_node": 3.0,
+  "chapters": [
+    {
+      "chapter_id": "apocalypse_001_ch0001",
+      "title": "黑雨落城",
+      "char_count": 1367,
+      "choice_nodes": 2,
+      "guide_interactions": 2,
+      "estimated_minutes": 6,
+      "visible_routes": 3
+    },
+    {
+      "chapter_id": "apocalypse_001_ch0002",
+      "title": "卷帘门后",
+      "char_count": 1363,
+      "choice_nodes": 2,
+      "guide_interactions": 2,
+      "estimated_minutes": 6,
+      "visible_routes": 3
+    },
+    {
+      "chapter_id": "apocalypse_001_ch0003",
+      "title": "第一把铁钥",
+      "char_count": 1365,
+      "choice_nodes": 2,
+      "guide_interactions": 2,
+      "estimated_minutes": 6,
+      "visible_routes": 3
+    },
+    {
+      "chapter_id": "apocalypse_001_ch0004",
+      "title": "冷库试刀",
+      "char_count": 1377,
+      "choice_nodes": 2,
+      "guide_interactions": 2,
+      "estimated_minutes": 6,
+      "visible_routes": 3
+    },
+    {
+      "chapter_id": "apocalypse_001_ch0005",
+      "title": "断电前夜",
+      "char_count": 1366,
+      "choice_nodes": 2,
+      "guide_interactions": 2,
+      "estimated_minutes": 6,
+      "visible_routes": 3
+    },
+    {
+      "chapter_id": "apocalypse_001_ch0006",
+      "title": "楼顶信号",
+      "char_count": 1375,
+      "choice_nodes": 2,
+      "guide_interactions": 2,
+      "estimated_minutes": 6,
+      "visible_routes": 3
+    },
+    {
+      "chapter_id": "apocalypse_001_ch0007",
+      "title": "雨幕搜仓",
+      "char_count": 1364,
+      "choice_nodes": 2,
+      "guide_interactions": 2,
+      "estimated_minutes": 6,
+      "visible_routes": 3
+    },
+    {
+      "chapter_id": "apocalypse_001_ch0008",
+      "title": "第一份名单",
+      "char_count": 1375,
+      "choice_nodes": 2,
+      "guide_interactions": 2,
+      "estimated_minutes": 6,
+      "visible_routes": 3
+    },
+    {
+      "chapter_id": "apocalypse_001_ch0009",
+      "title": "血路回车",
+      "char_count": 1366,
+      "choice_nodes": 2,
+      "guide_interactions": 2,
+      "estimated_minutes": 6,
+      "visible_routes": 3
+    },
+    {
+      "chapter_id": "apocalypse_001_ch0010",
+      "title": "灰楼开门",
+      "char_count": 1362,
+      "choice_nodes": 2,
+      "guide_interactions": 2,
+      "estimated_minutes": 6,
+      "visible_routes": 3
+    },
+    {
+      "chapter_id": "apocalypse_001_ch0011",
+      "title": "电梯井口",
+      "char_count": 1370,
+      "choice_nodes": 2,
+      "guide_interactions": 2,
+      "estimated_minutes": 6,
+      "visible_routes": 3
+    },
+    {
+      "chapter_id": "apocalypse_001_ch0012",
+      "title": "医务室里",
+      "char_count": 1366,
+      "choice_nodes": 2,
+      "guide_interactions": 2,
+      "estimated_minutes": 6,
+      "visible_routes": 3
+    },
+    {
+      "chapter_id": "apocalypse_001_ch0013",
+      "title": "老唐的图纸",
+      "char_count": 1374,
+      "choice_nodes": 2,
+      "guide_interactions": 2,
+      "estimated_minutes": 6,
+      "visible_routes": 3
+    },
+    {
+      "chapter_id": "apocalypse_001_ch0014",
+      "title": "立旗之夜",
+      "char_count": 1370,
+      "choice_nodes": 2,
+      "guide_interactions": 2,
+      "estimated_minutes": 6,
+      "visible_routes": 3
+    },
+    {
+      "chapter_id": "apocalypse_001_ch0015",
+      "title": "广播试呼",
+      "char_count": 1380,
+      "choice_nodes": 2,
+      "guide_interactions": 2,
+      "estimated_minutes": 6,
+      "visible_routes": 3
+    },
+    {
+      "chapter_id": "apocalypse_001_ch0016",
+      "title": "暗仓账本",
+      "char_count": 1368,
+      "choice_nodes": 2,
+      "guide_interactions": 2,
+      "estimated_minutes": 6,
+      "visible_routes": 3
+    },
+    {
+      "chapter_id": "apocalypse_001_ch0017",
+      "title": "猎队来袭",
+      "char_count": 1359,
+      "choice_nodes": 2,
+      "guide_interactions": 2,
+      "estimated_minutes": 6,
+      "visible_routes": 3
+    },
+    {
+      "chapter_id": "apocalypse_001_ch0018",
+      "title": "门外谈判",
+      "char_count": 1399,
+      "choice_nodes": 2,
+      "guide_interactions": 2,
+      "estimated_minutes": 6,
+      "visible_routes": 3
+    },
+    {
+      "chapter_id": "apocalypse_001_ch0019",
+      "title": "首次清剿",
+      "char_count": 1394,
+      "choice_nodes": 2,
+      "guide_interactions": 2,
+      "estimated_minutes": 6,
+      "visible_routes": 3
+    },
+    {
+      "chapter_id": "apocalypse_001_ch0020",
+      "title": "灰楼成军",
+      "char_count": 1411,
+      "choice_nodes": 2,
+      "guide_interactions": 2,
+      "estimated_minutes": 6,
+      "visible_routes": 3
+    },
+    {
+      "chapter_id": "apocalypse_001_ch0021",
+      "title": "C7来信",
+      "char_count": 1397,
+      "choice_nodes": 2,
+      "guide_interactions": 2,
+      "estimated_minutes": 6,
+      "visible_routes": 3
+    },
+    {
+      "chapter_id": "apocalypse_001_ch0022",
+      "title": "过桥名单",
+      "char_count": 1374,
+      "choice_nodes": 2,
+      "guide_interactions": 2,
+      "estimated_minutes": 6,
+      "visible_routes": 3
+    },
+    {
+      "chapter_id": "apocalypse_001_ch0023",
+      "title": "城门试探",
+      "char_count": 1409,
+      "choice_nodes": 2,
+      "guide_interactions": 2,
+      "estimated_minutes": 6,
+      "visible_routes": 3
+    },
+    {
+      "chapter_id": "apocalypse_001_ch0024",
+      "title": "配给大厅",
+      "char_count": 1391,
+      "choice_nodes": 2,
+      "guide_interactions": 2,
+      "estimated_minutes": 6,
+      "visible_routes": 3
+    },
+    {
+      "chapter_id": "apocalypse_001_ch0025",
+      "title": "韩策的局",
+      "char_count": 1392,
+      "choice_nodes": 2,
+      "guide_interactions": 2,
+      "estimated_minutes": 6,
+      "visible_routes": 3
+    },
+    {
+      "chapter_id": "apocalypse_001_ch0026",
+      "title": "假救援车",
+      "char_count": 1389,
+      "choice_nodes": 2,
+      "guide_interactions": 2,
+      "estimated_minutes": 6,
+      "visible_routes": 3
+    },
+    {
+      "chapter_id": "apocalypse_001_ch0027",
+      "title": "洛月开口",
+      "char_count": 1411,
+      "choice_nodes": 2,
+      "guide_interactions": 2,
+      "estimated_minutes": 6,
+      "visible_routes": 3
+    },
+    {
+      "chapter_id": "apocalypse_001_ch0028",
+      "title": "夜审补给官",
+      "char_count": 1398,
+      "choice_nodes": 2,
+      "guide_interactions": 2,
+      "estimated_minutes": 6,
+      "visible_routes": 3
+    },
+    {
+      "chapter_id": "apocalypse_001_ch0029",
+      "title": "反咬一口",
+      "char_count": 1408,
+      "choice_nodes": 2,
+      "guide_interactions": 2,
+      "estimated_minutes": 6,
+      "visible_routes": 3
+    },
+    {
+      "chapter_id": "apocalypse_001_ch0030",
+      "title": "安全区留印",
+      "char_count": 1435,
+      "choice_nodes": 2,
+      "guide_interactions": 2,
+      "estimated_minutes": 6,
+      "visible_routes": 3
+    },
+    {
+      "chapter_id": "apocalypse_001_ch0031",
+      "title": "尸潮预报",
+      "char_count": 1425,
+      "choice_nodes": 2,
+      "guide_interactions": 2,
+      "estimated_minutes": 6,
+      "visible_routes": 3
+    },
+    {
+      "chapter_id": "apocalypse_001_ch0032",
+      "title": "三道防线",
+      "char_count": 1404,
+      "choice_nodes": 2,
+      "guide_interactions": 2,
+      "estimated_minutes": 6,
+      "visible_routes": 3
+    },
+    {
+      "chapter_id": "apocalypse_001_ch0033",
+      "title": "城西火墙",
+      "char_count": 1386,
+      "choice_nodes": 2,
+      "guide_interactions": 2,
+      "estimated_minutes": 6,
+      "visible_routes": 3
+    },
+    {
+      "chapter_id": "apocalypse_001_ch0034",
+      "title": "手术灯下",
+      "char_count": 1395,
+      "choice_nodes": 2,
+      "guide_interactions": 2,
+      "estimated_minutes": 6,
+      "visible_routes": 3
+    },
+    {
+      "chapter_id": "apocalypse_001_ch0035",
+      "title": "断桥诱敌",
+      "char_count": 1416,
+      "choice_nodes": 2,
+      "guide_interactions": 2,
+      "estimated_minutes": 6,
+      "visible_routes": 3
+    },
+    {
+      "chapter_id": "apocalypse_001_ch0036",
+      "title": "韩策翻脸",
+      "char_count": 1418,
+      "choice_nodes": 2,
+      "guide_interactions": 2,
+      "estimated_minutes": 6,
+      "visible_routes": 3
+    },
+    {
+      "chapter_id": "apocalypse_001_ch0037",
+      "title": "广场立威",
+      "char_count": 1442,
+      "choice_nodes": 2,
+      "guide_interactions": 2,
+      "estimated_minutes": 6,
+      "visible_routes": 3
+    },
+    {
+      "chapter_id": "apocalypse_001_ch0038",
+      "title": "灰楼反冲",
+      "char_count": 1401,
+      "choice_nodes": 2,
+      "guide_interactions": 2,
+      "estimated_minutes": 6,
+      "visible_routes": 3
+    },
+    {
+      "chapter_id": "apocalypse_001_ch0039",
+      "title": "黑雨二次降临",
+      "char_count": 1415,
+      "choice_nodes": 2,
+      "guide_interactions": 2,
+      "estimated_minutes": 6,
+      "visible_routes": 3
+    },
+    {
+      "chapter_id": "apocalypse_001_ch0040",
+      "title": "围城第一功",
+      "char_count": 1418,
+      "choice_nodes": 2,
+      "guide_interactions": 2,
+      "estimated_minutes": 6,
+      "visible_routes": 3
+    },
+    {
+      "chapter_id": "apocalypse_001_ch0041",
+      "title": "议事厅门开",
+      "char_count": 1427,
+      "choice_nodes": 2,
+      "guide_interactions": 2,
+      "estimated_minutes": 6,
+      "visible_routes": 3
+    },
+    {
+      "chapter_id": "apocalypse_001_ch0042",
+      "title": "账本上墙",
+      "char_count": 1373,
+      "choice_nodes": 2,
+      "guide_interactions": 2,
+      "estimated_minutes": 6,
+      "visible_routes": 3
+    },
+    {
+      "chapter_id": "apocalypse_001_ch0043",
+      "title": "沈崇失火",
+      "char_count": 1395,
+      "choice_nodes": 2,
+      "guide_interactions": 2,
+      "estimated_minutes": 6,
+      "visible_routes": 3
+    },
+    {
+      "chapter_id": "apocalypse_001_ch0044",
+      "title": "配给权杖",
+      "char_count": 1376,
+      "choice_nodes": 2,
+      "guide_interactions": 2,
+      "estimated_minutes": 6,
+      "visible_routes": 3
+    },
+    {
+      "chapter_id": "apocalypse_001_ch0045",
+      "title": "阿念来信",
+      "char_count": 1412,
+      "choice_nodes": 2,
+      "guide_interactions": 2,
+      "estimated_minutes": 6,
+      "visible_routes": 3
+    },
+    {
+      "chapter_id": "apocalypse_001_ch0046",
+      "title": "名单第七码",
+      "char_count": 1390,
+      "choice_nodes": 2,
+      "guide_interactions": 2,
+      "estimated_minutes": 6,
+      "visible_routes": 3
+    },
+    {
+      "chapter_id": "apocalypse_001_ch0047",
+      "title": "清算直播",
+      "char_count": 1411,
+      "choice_nodes": 2,
+      "guide_interactions": 2,
+      "estimated_minutes": 6,
+      "visible_routes": 3
+    },
+    {
+      "chapter_id": "apocalypse_001_ch0048",
+      "title": "C7易主",
+      "char_count": 1395,
+      "choice_nodes": 2,
+      "guide_interactions": 2,
+      "estimated_minutes": 6,
+      "visible_routes": 3
+    },
+    {
+      "chapter_id": "apocalypse_001_ch0049",
+      "title": "新秩序令",
+      "char_count": 1399,
+      "choice_nodes": 2,
+      "guide_interactions": 2,
+      "estimated_minutes": 6,
+      "visible_routes": 3
+    },
+    {
+      "chapter_id": "apocalypse_001_ch0050",
+      "title": "方舟坐标",
+      "char_count": 1393,
+      "choice_nodes": 2,
+      "guide_interactions": 2,
+      "estimated_minutes": 6,
+      "visible_routes": 3
+    },
+    {
+      "chapter_id": "apocalypse_001_ch0051",
+      "title": "雾港启程",
+      "char_count": 1393,
+      "choice_nodes": 2,
+      "guide_interactions": 2,
+      "estimated_minutes": 6,
+      "visible_routes": 3
+    },
+    {
+      "chapter_id": "apocalypse_001_ch0052",
+      "title": "方舟外环",
+      "char_count": 1398,
+      "choice_nodes": 2,
+      "guide_interactions": 2,
+      "estimated_minutes": 6,
+      "visible_routes": 3
+    },
+    {
+      "chapter_id": "apocalypse_001_ch0053",
+      "title": "父亲日志",
+      "char_count": 1402,
+      "choice_nodes": 2,
+      "guide_interactions": 2,
+      "estimated_minutes": 6,
+      "visible_routes": 3
+    },
+    {
+      "chapter_id": "apocalypse_001_ch0054",
+      "title": "洛月交钥",
+      "char_count": 1396,
+      "choice_nodes": 2,
+      "guide_interactions": 2,
+      "estimated_minutes": 6,
+      "visible_routes": 3
+    },
+    {
+      "chapter_id": "apocalypse_001_ch0055",
+      "title": "阿念现身",
+      "char_count": 1400,
+      "choice_nodes": 2,
+      "guide_interactions": 2,
+      "estimated_minutes": 6,
+      "visible_routes": 3
+    },
+    {
+      "chapter_id": "apocalypse_001_ch0056",
+      "title": "净化真相",
+      "char_count": 1425,
+      "choice_nodes": 2,
+      "guide_interactions": 2,
+      "estimated_minutes": 6,
+      "visible_routes": 3
+    },
+    {
+      "chapter_id": "apocalypse_001_ch0057",
+      "title": "韩策末路",
+      "char_count": 1386,
+      "choice_nodes": 2,
+      "guide_interactions": 2,
+      "estimated_minutes": 6,
+      "visible_routes": 3
+    },
+    {
+      "chapter_id": "apocalypse_001_ch0058",
+      "title": "灰烬之门",
+      "char_count": 1391,
+      "choice_nodes": 2,
+      "guide_interactions": 2,
+      "estimated_minutes": 6,
+      "visible_routes": 3
+    },
+    {
+      "chapter_id": "apocalypse_001_ch0059",
+      "title": "最后的投票",
+      "char_count": 1415,
+      "choice_nodes": 2,
+      "guide_interactions": 2,
+      "estimated_minutes": 6,
+      "visible_routes": 3
+    },
+    {
+      "chapter_id": "apocalypse_001_ch0060",
+      "title": "新法点亮",
+      "char_count": 1436,
+      "choice_nodes": 2,
+      "guide_interactions": 2,
+      "estimated_minutes": 6,
+      "visible_routes": 3
+    }
+  ],
+  "warnings": [],
+  "errors": []
+}

@@ -10,6 +10,34 @@ class ArtifactType(StrEnum):
     CAST_SPEC = "cast_spec"
     VOLUME_PLAN = "volume_plan"
     CHAPTER_OUTLINE_BATCH = "chapter_outline_batch"
+    IF_STORY_BIBLE = "if_story_bible"
+    IF_ARC_PLAN = "if_arc_plan"
+    IF_WALKTHROUGH = "if_walkthrough"
+    IF_ACT_PLAN = "if_act_plan"
+    IF_ARC_SUMMARY = "if_arc_summary"
+    IF_WORLD_SNAPSHOT = "if_world_snapshot"
+    IF_BRANCH_DEFINITION = "if_branch_definition"
+
+
+class ProjectType(StrEnum):
+    LINEAR = "linear"
+    INTERACTIVE = "interactive"
+
+
+class IFGenerationPhase(StrEnum):
+    STORY_BIBLE = "story_bible"
+    ACT_PLAN = "act_plan"
+    ARC_PLAN = "arc_plan"
+    CHAPTER_GEN = "chapter_gen"
+    ARC_SUMMARY = "arc_summary"
+    WORLD_SNAPSHOT = "world_snapshot"
+    BRANCH_PLAN = "branch_plan"
+    BRANCH_CHAPTER_GEN = "branch_chapter_gen"
+    WALKTHROUGH = "walkthrough"
+    ASSEMBLY = "assembly"
+    COMPILE = "compile"
+    COMPLETED = "completed"
+    FAILED = "failed"
 
 
 class ProjectStatus(StrEnum):

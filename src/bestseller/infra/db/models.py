@@ -40,6 +40,7 @@ class ProjectModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     current_chapter_number: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
     audience: Mapped[str | None] = mapped_column(String(200))
     status: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'planning'"))
+    project_type: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'linear'"))
     metadata_json: Mapped[JSON_DICT] = mapped_column("metadata", JSONB, nullable=False, default=dict)
     lock_version: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
 
@@ -1100,3 +1101,228 @@ class RetrievalChunkModel(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
     embedding: Mapped[Any] = mapped_column(Vector(1024), nullable=False)
     lexical_document: Mapped[str | None] = mapped_column(Text)
     metadata_json: Mapped[JSON_DICT] = mapped_column("metadata", JSONB, nullable=False, default=dict)
+
+
+class IFGenerationRunModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Tracks a single interactive fiction generation pipeline run for a project."""
+
+    __tablename__ = "if_generation_runs"
+
+    project_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    phase: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'story_bible'"))
+    status: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'pending'"))
+    book_id: Mapped[str | None] = mapped_column(String(128))
+    # FK to bible / arc / walkthrough planning artifacts (nullable until each phase completes)
+    bible_artifact_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("planning_artifact_versions.id", ondelete="SET NULL"),
+    )
+    arc_artifact_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("planning_artifact_versions.id", ondelete="SET NULL"),
+    )
+    walkthrough_artifact_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("planning_artifact_versions.id", ondelete="SET NULL"),
+    )
+    total_chapters: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+    completed_chapters: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+    output_dir: Mapped[str | None] = mapped_column(Text)
+    error_message: Mapped[str | None] = mapped_column(Text)
+    config_snapshot: Mapped[JSON_DICT] = mapped_column(JSONB, nullable=False, default=dict)
+    # 多分支支持字段
+    total_routes: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("1"))
+    act_plan_json: Mapped[JSON_LIST | None] = mapped_column(JSONB)
+    generation_mode: Mapped[str] = mapped_column(
+        String(32), nullable=False, server_default=text("'simple'")
+    )  # "simple" | "branched" | "extended"
+
+
+class IFActPlanModel(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
+    """Acts-level story structure plan (幕级全书规划)."""
+
+    __tablename__ = "if_act_plans"
+    __table_args__ = (
+        UniqueConstraint("project_id", "run_id", "act_id", name="uq_if_act_plan"),
+        Index("idx_if_act_plans_run", "project_id", "run_id"),
+    )
+
+    project_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    run_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("if_generation_runs.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    act_id: Mapped[str] = mapped_column(String(32), nullable=False)  # "act_01"..."act_05"
+    act_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    chapter_start: Mapped[int] = mapped_column(Integer, nullable=False)
+    chapter_end: Mapped[int] = mapped_column(Integer, nullable=False)
+    act_goal: Mapped[str] = mapped_column(Text, nullable=False)
+    core_theme: Mapped[str | None] = mapped_column(String(100))
+    dominant_emotion: Mapped[str | None] = mapped_column(String(64))
+    climax_chapter: Mapped[int | None] = mapped_column(Integer)
+    entry_state: Mapped[str | None] = mapped_column(Text)
+    exit_state: Mapped[str | None] = mapped_column(Text)
+    payoff_promises: Mapped[JSON_LIST] = mapped_column(JSONB, nullable=False, default=list)
+    branch_opportunities: Mapped[JSON_LIST] = mapped_column(JSONB, nullable=False, default=list)
+    arc_breakdown: Mapped[JSON_LIST] = mapped_column(JSONB, nullable=False, default=list)
+
+
+class IFRouteDefinitionModel(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
+    """Defines a story route/branch (硬分支路线定义)."""
+
+    __tablename__ = "if_route_definitions"
+    __table_args__ = (
+        UniqueConstraint("project_id", "run_id", "route_id", name="uq_if_route"),
+        Index("idx_if_route_definitions_run", "project_id", "run_id"),
+    )
+
+    project_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    run_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("if_generation_runs.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    route_id: Mapped[str] = mapped_column(String(64), nullable=False)  # "mainline"|"branch_warrior"
+    route_type: Mapped[str] = mapped_column(String(32), nullable=False)  # "mainline"|"branch"|"hidden"
+    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text)
+    branch_start_chapter: Mapped[int | None] = mapped_column(Integer)
+    merge_chapter: Mapped[int | None] = mapped_column(Integer)
+    entry_condition: Mapped[JSON_DICT] = mapped_column(JSONB, nullable=False, default=dict)
+    merge_contract: Mapped[JSON_DICT] = mapped_column(JSONB, nullable=False, default=dict)
+    generation_status: Mapped[str] = mapped_column(
+        String(32), nullable=False, server_default=text("'planned'")
+    )  # "planned"|"generating"|"completed"|"failed"
+    chapter_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+    output_arc_file: Mapped[str | None] = mapped_column(Text)
+
+
+class IFWorldStateSnapshotModel(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
+    """World state snapshot taken at end of each arc (世界状态快照)."""
+
+    __tablename__ = "if_world_state_snapshots"
+    __table_args__ = (
+        UniqueConstraint(
+            "project_id", "run_id", "route_id", "snapshot_chapter", name="uq_if_world_snapshot"
+        ),
+        Index(
+            "idx_if_world_snapshots_lookup",
+            "project_id",
+            "run_id",
+            "route_id",
+            "snapshot_chapter",
+        ),
+    )
+
+    project_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    run_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("if_generation_runs.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    route_id: Mapped[str] = mapped_column(
+        String(64), nullable=False, server_default=text("'mainline'")
+    )
+    snapshot_chapter: Mapped[int] = mapped_column(Integer, nullable=False)
+    arc_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    character_states: Mapped[JSON_DICT] = mapped_column(JSONB, nullable=False, default=dict)
+    faction_states: Mapped[JSON_DICT] = mapped_column(JSONB, nullable=False, default=dict)
+    revealed_truths: Mapped[JSON_LIST] = mapped_column(JSONB, nullable=False, default=list)
+    active_threats: Mapped[JSON_LIST] = mapped_column(JSONB, nullable=False, default=list)
+    planted_unrevealed: Mapped[JSON_LIST] = mapped_column(JSONB, nullable=False, default=list)
+    power_rankings: Mapped[JSON_LIST] = mapped_column(JSONB, nullable=False, default=list)
+    world_summary: Mapped[str | None] = mapped_column(Text)  # 200字自然语言，直接注入prompt
+
+
+class IFArcSummaryModel(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
+    """Arc-level summary generated after each arc completes (Arc级摘要)."""
+
+    __tablename__ = "if_arc_summaries"
+    __table_args__ = (
+        UniqueConstraint("project_id", "run_id", "route_id", "arc_index", name="uq_if_arc_summary"),
+        Index("idx_if_arc_summaries_lookup", "project_id", "run_id", "route_id", "arc_index"),
+    )
+
+    project_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    run_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("if_generation_runs.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    route_id: Mapped[str] = mapped_column(
+        String(64), nullable=False, server_default=text("'mainline'")
+    )
+    arc_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    chapter_start: Mapped[int] = mapped_column(Integer, nullable=False)
+    chapter_end: Mapped[int] = mapped_column(Integer, nullable=False)
+    act_id: Mapped[str | None] = mapped_column(String(32))
+    protagonist_growth: Mapped[str | None] = mapped_column(Text)
+    relationship_changes: Mapped[JSON_LIST] = mapped_column(JSONB, nullable=False, default=list)
+    unresolved_threads: Mapped[JSON_LIST] = mapped_column(JSONB, nullable=False, default=list)
+    power_level_summary: Mapped[str | None] = mapped_column(Text)
+    next_arc_setup: Mapped[str | None] = mapped_column(Text)  # 下一Arc规划的铺垫
+    open_clues: Mapped[JSON_LIST] = mapped_column(JSONB, nullable=False, default=list)
+    resolved_clues: Mapped[JSON_LIST] = mapped_column(JSONB, nullable=False, default=list)
+
+
+class IFCanonFactModel(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
+    """IF-specific canon facts with route awareness (IF专用事实库，支持路线感知)."""
+
+    __tablename__ = "if_canon_facts"
+    __table_args__ = (
+        Index(
+            "idx_if_canon_facts_lookup",
+            "project_id",
+            "run_id",
+            "route_id",
+            "chapter_number",
+            "importance",
+        ),
+    )
+
+    project_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    run_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("if_generation_runs.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    route_id: Mapped[str] = mapped_column(
+        String(64), nullable=False, server_default=text("'all'")
+    )  # "all"=全路线适用 | "mainline" | "branch_X"
+    chapter_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    fact_type: Mapped[str] = mapped_column(
+        String(64), nullable=False
+    )  # "chapter_summary"|"character_state"|"event"|"world_rule"
+    subject_label: Mapped[str] = mapped_column(String(255), nullable=False)
+    fact_body: Mapped[str] = mapped_column(Text, nullable=False)  # 自然语言，直接注入prompt
+    importance: Mapped[str] = mapped_column(
+        String(16), nullable=False, server_default=text("'major'")
+    )  # "critical"|"major"|"minor"
+    is_payoff_of_clue: Mapped[str | None] = mapped_column(String(64))

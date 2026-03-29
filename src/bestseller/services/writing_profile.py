@@ -208,6 +208,12 @@ def resolve_writing_profile(
         profile.market.prompt_pack_key = prompt_pack.key
     if not profile.style.tone_keywords:
         profile.style.tone_keywords = [genre] + ([sub_genre] if sub_genre else [])
+    # Interactive fiction mode overrides — applied last so they always win
+    if profile.interactive_fiction.enabled:
+        profile.market.platform_target = "LifeScript"
+        profile.market.content_mode = "交互式小说"
+        profile.market.update_strategy = "全本发布"
+        profile.style.pov_type = "second"
     return profile
 
 

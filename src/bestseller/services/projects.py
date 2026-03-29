@@ -46,6 +46,7 @@ async def create_project(
         target_word_count=payload.target_word_count,
         target_chapters=payload.target_chapters,
         audience=payload.audience,
+        project_type=payload.project_type.value,
         metadata_json=build_project_metadata(payload, writing_profile),
     )
     session.add(project)

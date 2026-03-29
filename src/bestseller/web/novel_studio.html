@@ -1891,6 +1891,86 @@
                 <span>一致性审校未通过时，自动进行一轮 repair，而不是直接停在待人工处理。</span>
               </span>
             </label>
+
+            <label class="check">
+              <input id="if-mode-toggle" type="checkbox" />
+              <span>
+                <strong>交互式小说模式</strong>
+                <span>开启后，将按 LifeScript 故事产物规范生成 story_package.json 和编译好的 JSON 文件，支持手机端互动阅读。</span>
+              </span>
+            </label>
+          </div>
+
+          <div id="if-config-panel" style="display:none; margin-top:12px; border:1px solid var(--border); border-radius:8px; padding:16px; background:var(--surface-2, #f8f8f8);">
+            <div class="panel-head" style="margin-bottom:12px;">
+              <div>
+                <h3 style="margin:0 0 4px 0;">交互式小说参数</h3>
+                <p style="margin:0; color:var(--text-2);">配置 LifeScript 故事工厂的生成参数。类型必须是有效枚举值之一。</p>
+              </div>
+            </div>
+            <div class="form-grid">
+              <div class="field">
+                <label for="if-genre">故事类型</label>
+                <select id="if-genre">
+                  <option value="修仙升级">修仙升级</option>
+                  <option value="都市逆袭">都市逆袭</option>
+                  <option value="悬疑生存">悬疑生存</option>
+                  <option value="职场商战">职场商战</option>
+                  <option value="末日爽文">末日爽文</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="if-target-chapters">目标章节数</label>
+                <input id="if-target-chapters" type="number" value="100" min="10" max="2000" />
+              </div>
+              <div class="field">
+                <label for="if-free-chapters">免费章节数</label>
+                <input id="if-free-chapters" type="number" value="20" min="5" max="100" />
+              </div>
+              <div class="field">
+                <label for="if-tone">基调</label>
+                <input id="if-tone" value="爽快、热血、有悬念" />
+              </div>
+              <div class="field full">
+                <label for="if-protagonist">主角描述（可选）</label>
+                <input id="if-protagonist" placeholder="例：一名被逐出师门的废材弟子，身怀上古传承戒指" />
+              </div>
+              <div class="field full">
+                <label for="if-core-conflict">核心冲突（可选）</label>
+                <input id="if-core-conflict" placeholder="例：必须在宗门大典前突破境界，同时隐藏戒指秘密" />
+              </div>
+            </div>
+            <details style="margin-top:10px;">
+              <summary style="cursor:pointer; color:var(--text-2); font-size:0.85rem;">高级生成参数</summary>
+              <div class="form-grid" style="margin-top:10px;">
+                <div class="field">
+                  <label for="if-chapter-length">每章字数范围</label>
+                  <input id="if-chapter-length" value="3000-6000" />
+                </div>
+                <div class="field">
+                  <label for="if-choice-nodes">每章选择节点数</label>
+                  <input id="if-choice-nodes" value="3-5" />
+                </div>
+                <div class="field">
+                  <label for="if-text-node-length">单文本节点字数</label>
+                  <input id="if-text-node-length" value="200-400" />
+                </div>
+                <div class="field">
+                  <label for="if-arc-batch">弧段批次大小</label>
+                  <input id="if-arc-batch" type="number" value="50" min="20" max="100" />
+                </div>
+                <div class="field">
+                  <label for="if-parallel-batch">章节并行批次</label>
+                  <input id="if-parallel-batch" type="number" value="8" min="1" max="20" />
+                </div>
+              </div>
+            </details>
+            <div class="actions" style="margin-top:14px;">
+              <button id="start-if-generate">生成交互式小说</button>
+              <button class="secondary" id="resume-if-generate">从断点继续</button>
+              <button class="secondary" id="check-if-status">查看生成状态</button>
+            </div>
+            <div id="if-status-display" style="display:none; margin-top:10px; font-size:0.85rem; color:var(--text-2);"></div>
           </div>
 
           <div class="formula-card" style="margin-top: 14px;">
@@ -1948,6 +2028,17 @@
           </div>
           <div class="project-list" id="project-list"></div>
         </section>
+
+        <section class="panel">
+          <div class="panel-head">
+            <div>
+              <h2>互动小说</h2>
+              <p>由 <code>novel.sh</code> 生成的互动爽文，点击「阅读」打开互动阅读器。</p>
+            </div>
+            <button class="ghost" id="refresh-if-novels">刷新</button>
+          </div>
+          <div class="project-list" id="if-novel-list"><div class="empty">暂未检测到互动小说输出。运行 <code>./scripts/novel.sh</code> 生成后刷新。</div></div>
+        </section>
       </aside>
 
       <main class="main-grid">
@@ -1966,6 +2057,7 @@
           <div class="actions">
             <button class="secondary" id="run-repair">对当前项目执行修订</button>
             <button class="secondary" id="reload-project">刷新当前项目</button>
+            <button class="secondary" id="open-reader" title="在阅读器中浏览章节">阅读小说</button>
           </div>
         </section>
 
@@ -2216,6 +2308,7 @@
   <script>
     const state = {
       projects: [],
+      ifNovels: [],
       tasks: [],
       activeProjectSlug: null,
       activeTaskId: null,
@@ -2660,6 +2753,13 @@
         autowrite_completed: "整书自动写作完成",
         completed: "已完成",
         failed: "失败",
+        // IF generation phases
+        story_bible: "故事圣经",
+        arc_plan: "弧段规划",
+        chapter_gen: "章节生成",
+        walkthrough: "通关攻略",
+        assembly: "组装打包",
+        compile: "编译产物",
       };
       return mapping[stage] || stage || "-";
     }
@@ -3006,7 +3106,26 @@
         return;
       }
 
-      els.taskList.innerHTML = state.tasks.map((task) => `
+      els.taskList.innerHTML = state.tasks.map((task) => {
+        const events = task.progress_events || [];
+        const lastEvent = events[events.length - 1];
+        const lastTs = lastEvent?.timestamp || task.updated_at;
+        let staleness = "";
+        if (task.status === "running" && lastTs) {
+          const secs = Math.floor((Date.now() - new Date(lastTs).getTime()) / 1000);
+          if (secs > 60) {
+            const mins = Math.floor(secs / 60);
+            staleness = `<div class="hint" style="margin-top:4px;color:${secs > 300 ? '#e74c3c' : '#e67e22'};">⚠ 最后活动 ${mins} 分钟前${secs > 300 ? "（可能已卡住）" : ""}</div>`;
+          }
+        }
+        const chapterInfo = (() => {
+          const chEv = [...events].reverse().find(e => e.stage === "chapter_gen" && e.payload?.chapter);
+          if (chEv) return `<div class="hint" style="margin-top:4px;">章节进度：${chEv.payload.chapter} / ${chEv.payload.total || "?"}</div>`;
+          const startEv = events.find(e => e.stage === "chapter_gen" && e.payload?.total);
+          if (startEv) return `<div class="hint" style="margin-top:4px;">章节进度：0 / ${startEv.payload.total}（第 1 章生成中）</div>`;
+          return "";
+        })();
+        return `
         <div class="task ${task.task_id === state.activeTaskId ? "current" : ""}">
           <div class="task-head">
             <strong>${escapeHtml(task.project_slug || task.task_type)}</strong>
@@ -3014,12 +3133,14 @@
           </div>
           <div class="hint" style="margin-top: 6px;">${escapeHtml(task.title || "未命名任务")}</div>
           <div class="hint" style="margin-top: 6px;">当前阶段：${escapeHtml(humanizeStage(task.current_stage))}</div>
+          ${chapterInfo}
+          ${staleness}
           <div class="actions" style="margin-top: 10px;">
             <button class="ghost" onclick="selectTask('${task.task_id}')">查看日志</button>
             ${task.project_slug ? `<button class="ghost" onclick="loadProject('${task.project_slug}')">打开项目</button>` : ""}
           </div>
         </div>
-      `).join("");
+      `}).join("");
     }
 
     function syncProjectSelector() {
@@ -3086,13 +3207,58 @@
       syncProjectSelector();
     }
 
+    function renderIfNovels() {
+      const el = document.getElementById("if-novel-list");
+      if (!state.ifNovels.length) {
+        el.innerHTML = `<div class="empty">暂未检测到互动小说输出。运行 <code>./scripts/novel.sh</code> 生成后刷新。</div>`;
+        return;
+      }
+      el.innerHTML = state.ifNovels.map((novel) => `
+        <div class="project">
+          <div class="project-head">
+            <strong>${escapeHtml(novel.title)}</strong>
+            <span class="status" style="background:rgba(139,69,19,0.10);color:#8b4513;">互动</span>
+          </div>
+          <div class="hint" style="margin-top:6px;">${escapeHtml(novel.slug)} · ${escapeHtml(novel.genre)}</div>
+          <div class="hint" style="margin-top:4px;">共 ${Number(novel.total_chapters || 0)} 章</div>
+          ${novel.synopsis ? `<div class="hint" style="margin-top:6px;line-height:1.6;">${escapeHtml(novel.synopsis.slice(0, 80))}${novel.synopsis.length > 80 ? "…" : ""}</div>` : ""}
+          <div style="margin-top:10px;">
+            <a href="/read-if/${encodeURIComponent(novel.slug)}" target="_blank"
+               style="display:inline-block;padding:5px 14px;background:var(--accent,#8b4513);color:#fff;border-radius:8px;font-size:13px;font-weight:600;text-decoration:none;">
+              阅读互动小说
+            </a>
+          </div>
+        </div>
+      `).join("");
+    }
+
+    async function loadIfNovels() {
+      try {
+        state.ifNovels = await api("/api/if-novels");
+      } catch (_) {
+        state.ifNovels = [];
+      }
+      renderIfNovels();
+    }
+
     function renderTaskFeed(task) {
-      if (!task || !task.progress_events || !task.progress_events.length) {
+      if (!task) {
         els.progressFeed.innerHTML = `<div class="empty">当前任务还没有阶段日志。启动写作或修订任务后，这里会实时显示每一步。</div>`;
         return;
       }
-
-      els.progressFeed.innerHTML = task.progress_events.slice().reverse().map((item) => `
+      const events = task.progress_events || [];
+      const errorBlock = task.error
+        ? `<div class="progress-item" style="border-left:3px solid #e74c3c;margin-bottom:8px;">
+             <div class="progress-item-head"><strong style="color:#e74c3c;">任务失败</strong>
+             <div class="hint">${escapeHtml(task.updated_at || "")}</div></div>
+             <pre class="codebox" style="color:#c0392b;">${escapeHtml(task.error)}</pre>
+           </div>`
+        : "";
+      if (!events.length && !task.error) {
+        els.progressFeed.innerHTML = `<div class="empty">当前任务还没有阶段日志。启动写作或修订任务后，这里会实时显示每一步。</div>`;
+        return;
+      }
+      els.progressFeed.innerHTML = errorBlock + events.slice().reverse().map((item) => `
         <div class="progress-item">
           <div class="progress-item-head">
             <div>
@@ -3849,11 +4015,97 @@
       renderTaskFeed(task);
     }
 
+    function readIFConfig() {
+      return {
+        enabled: true,
+        if_genre: document.getElementById("if-genre").value,
+        target_chapters: Number(document.getElementById("if-target-chapters").value),
+        free_chapters: Number(document.getElementById("if-free-chapters").value),
+        tone: document.getElementById("if-tone").value.trim(),
+        protagonist: document.getElementById("if-protagonist").value.trim(),
+        core_conflict: document.getElementById("if-core-conflict").value.trim(),
+        premise: document.getElementById("premise").value.trim(),
+        chapter_text_length: document.getElementById("if-chapter-length").value.trim(),
+        choice_nodes_per_chapter: document.getElementById("if-choice-nodes").value.trim(),
+        text_node_length: document.getElementById("if-text-node-length").value.trim(),
+        arc_batch_size: Number(document.getElementById("if-arc-batch").value),
+        parallel_chapter_batch: Number(document.getElementById("if-parallel-batch").value),
+      };
+    }
+
+    async function startIFGenerate(resume = false) {
+      const projectSlug = document.getElementById("slug").value.trim() || state.activeProjectSlug;
+      if (!projectSlug) {
+        alert("请先填写项目代号或选择一个已有项目。");
+        return;
+      }
+      try {
+        const task = await api("/api/tasks/if-generate", {
+          method: "POST",
+          body: JSON.stringify({
+            project_slug: projectSlug,
+            resume: resume,
+            if_config: readIFConfig(),
+          }),
+        });
+        state.activeTaskId = task.task_id;
+        activateTab("progress");
+        await loadTasks();
+        renderTaskFeed(task);
+      } catch (error) {
+        alert(error.message || String(error));
+      }
+    }
+
+    async function checkIFStatus() {
+      const projectSlug = document.getElementById("slug").value.trim() || state.activeProjectSlug;
+      if (!projectSlug) {
+        alert("请先填写项目代号或选择一个已有项目。");
+        return;
+      }
+      try {
+        const statusData = await api(`/api/projects/${projectSlug}/if/status`);
+        const display = document.getElementById("if-status-display");
+        display.style.display = "block";
+        const files = statusData.compiled_files || [];
+        display.innerHTML = `
+          <strong>项目：</strong>${projectSlug}<br/>
+          <strong>Story Bible：</strong>${statusData.has_bible ? "✓ 已生成" : "未生成"}&nbsp;
+          <strong>弧段规划：</strong>${statusData.has_arc_plans ? "✓ 已生成" : "未生成"}&nbsp;
+          <strong>章节：</strong>${statusData.chapters_done} 章&nbsp;
+          <strong>攻略图：</strong>${statusData.has_walkthrough ? "✓ 已生成" : "未生成"}<br/>
+          ${files.length > 0 ? "<strong>编译产物：</strong>" + files.map(f =>
+            `<a href="/api/projects/${projectSlug}/if/download/${f}" target="_blank">${f}</a>`
+          ).join(" &nbsp; ") : ""}
+        `;
+      } catch (error) {
+        alert(error.message || String(error));
+      }
+    }
+
+    document.getElementById("if-mode-toggle").addEventListener("change", function() {
+      document.getElementById("if-config-panel").style.display = this.checked ? "block" : "none";
+    });
+    document.getElementById("start-if-generate").addEventListener("click", () => startIFGenerate(false));
+    document.getElementById("resume-if-generate").addEventListener("click", () => startIFGenerate(true));
+    document.getElementById("check-if-status").addEventListener("click", checkIFStatus);
+
+    function activateTab(tabName) {
+      document.querySelectorAll(".tab").forEach((item) => item.classList.remove("active"));
+      document.querySelectorAll(".tab-panel").forEach((item) => item.classList.remove("active"));
+      const tabButton = document.querySelector(`.tab[data-tab="${tabName}"]`);
+      const tabPanel = document.getElementById(`tab-${tabName}`);
+      if (tabButton) tabButton.classList.add("active");
+      if (tabPanel) tabPanel.classList.add("active");
+      state.activeTab = tabName;
+    }
+
     function selectTask(taskId) {
       state.activeTaskId = taskId;
       const task = state.tasks.find((item) => item.task_id === taskId);
       if (task) {
         renderTaskFeed(task);
+        activateTab("progress");
       }
       renderTasks();
     }
@@ -3873,6 +4125,7 @@
     async function refreshAll() {
       await loadStatus();
       await loadTasks();
+      await loadIfNovels();
       const projectLoadState = await loadProjects({ autoOpen: true, preservePreview: true });
       if (state.activeProjectSlug && !projectLoadState.loaded) {
         await loadProject(state.activeProjectSlug, { preservePreview: true, liveRefresh: false });
@@ -3887,9 +4140,14 @@
     document.getElementById("hero-start-button").addEventListener("click", startAutowrite);
     document.getElementById("refresh-projects").addEventListener("click", refreshAll);
     document.getElementById("refresh-projects-2").addEventListener("click", refreshAll);
+    document.getElementById("refresh-if-novels").addEventListener("click", loadIfNovels);
     document.getElementById("hero-refresh-button").addEventListener("click", refreshAll);
     document.getElementById("reload-project").addEventListener("click", () => state.activeProjectSlug && loadProject(state.activeProjectSlug, { preservePreview: true, liveRefresh: false }));
     document.getElementById("run-repair").addEventListener("click", runRepair);
+    document.getElementById("open-reader").addEventListener("click", () => {
+      if (!state.activeProjectSlug) { alert("请先选择一个项目。"); return; }
+      window.open(`/read/${state.activeProjectSlug}`, "_blank");
+    });
     document.getElementById("open-preview").addEventListener("click", () => openPreview(els.previewFile.value));
     document.getElementById("refresh-preview").addEventListener("click", () => {
       const previewName = state.currentPreviewName || els.previewFile.value;

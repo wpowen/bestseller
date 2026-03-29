@@ -77,6 +77,10 @@ detect_llm_provider() {
     echo gemini
     return
   fi
+  if [[ -n "${MINIMAX_API_KEY:-}" ]]; then
+    echo minimax
+    return
+  fi
 
   for path in "$ROOT_DIR/.env" "$ROOT_DIR/.env.local"; do
     if [[ ! -f "$path" ]]; then
@@ -88,6 +92,10 @@ detect_llm_provider() {
     fi
     if grep -Eq '^(GEMINI_API_KEY|GOOGLE_API_KEY)=.+' "$path"; then
       echo gemini
+      return
+    fi
+    if grep -Eq '^MINIMAX_API_KEY=.+' "$path"; then
+      echo minimax
       return
     fi
   done
@@ -219,6 +227,27 @@ export BESTSELLER__LLM__EDITOR__API_BASE='https://generativelanguage.googleapis.
 export BESTSELLER__LLM__EDITOR__API_KEY_ENV='${GEMINI_KEY_ENV_NAME}'
 EOF
   fi
+
+  if [[ "$LLM_PROVIDER" == "minimax" ]]; then
+    cat >>"$ENV_FILE" <<EOF
+export BESTSELLER__LLM__PLANNER__MODEL='openai/MiniMax-M2.7'
+export BESTSELLER__LLM__PLANNER__API_BASE='https://api.minimaxi.com/v1'
+export BESTSELLER__LLM__PLANNER__API_KEY_ENV='MINIMAX_API_KEY'
+export BESTSELLER__LLM__WRITER__MODEL='openai/MiniMax-M2.7-highspeed'
+export BESTSELLER__LLM__WRITER__API_BASE='https://api.minimaxi.com/v1'
+export BESTSELLER__LLM__WRITER__API_KEY_ENV='MINIMAX_API_KEY'
+export BESTSELLER__LLM__WRITER__STREAM='false'
+export BESTSELLER__LLM__CRITIC__MODEL='openai/MiniMax-M2.7'
+export BESTSELLER__LLM__CRITIC__API_BASE='https://api.minimaxi.com/v1'
+export BESTSELLER__LLM__CRITIC__API_KEY_ENV='MINIMAX_API_KEY'
+export BESTSELLER__LLM__SUMMARIZER__MODEL='openai/MiniMax-M2.7'
+export BESTSELLER__LLM__SUMMARIZER__API_BASE='https://api.minimaxi.com/v1'
+export BESTSELLER__LLM__SUMMARIZER__API_KEY_ENV='MINIMAX_API_KEY'
+export BESTSELLER__LLM__EDITOR__MODEL='openai/MiniMax-M2.7'
+export BESTSELLER__LLM__EDITOR__API_BASE='https://api.minimaxi.com/v1'
+export BESTSELLER__LLM__EDITOR__API_KEY_ENV='MINIMAX_API_KEY'
+EOF
+  fi
 }
 
 ensure_virtualenv() {
@@ -302,6 +331,18 @@ main() {
   echo "Web Studio: $ROOT_DIR/studio.sh"
   echo "Verification: $ROOT_DIR/scripts/verify.sh"
   "$VENV_BESTSELLER" status
+
+  local studio_port="${BESTSELLER_STUDIO_PORT:-8787}"
+  local pids
+  pids="$(lsof -ti :"$studio_port" 2>/dev/null || true)"
+  if [[ -n "$pids" ]]; then
+    log "Killing existing process on port ${studio_port}."
+    echo "$pids" | xargs kill -9 2>/dev/null || true
+    sleep 0.5
+  fi
+
+  log "Starting Web Studio on port ${studio_port}."
+  exec "$ROOT_DIR/scripts/run.sh" ui serve --open-browser --port "$studio_port"
 }
 
 main "$@"

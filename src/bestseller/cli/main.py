@@ -12,7 +12,7 @@ import yaml
 from bestseller import __version__
 from bestseller.domain.enums import ArtifactType
 from bestseller.domain.planning import PlanningArtifactCreate
-from bestseller.domain.project import ChapterCreate, ProjectCreate, SceneCardCreate
+from bestseller.domain.project import ChapterCreate, InteractiveFictionConfig, ProjectCreate, SceneCardCreate
 from bestseller.domain.workflow import ChapterOutlineBatchInput
 from bestseller.infra.db.schema import initialize_database, render_schema_sql
 from bestseller.infra.db.session import create_engine, session_scope
@@ -64,6 +64,7 @@ from bestseller.services.projects import (
     list_projects,
     load_json_file,
 )
+from bestseller.services.if_generation import run_if_pipeline, run_if_pipeline_integrated
 from bestseller.services.repair import run_project_repair
 from bestseller.services.retrieval import refresh_project_retrieval_index, search_project_retrieval
 from bestseller.services.rewrite_impacts import list_rewrite_impacts, refresh_rewrite_impacts
@@ -119,6 +120,7 @@ benchmark_app = typer.Typer(help="Benchmark and evaluation operations.")
 ui_app = typer.Typer(help="Web UI operations.")
 prompt_pack_app = typer.Typer(help="Prompt pack operations.")
 writing_preset_app = typer.Typer(help="Writing preset operations.")
+if_app = typer.Typer(help="Interactive fiction (LifeScript) operations.")
 
 app.add_typer(db_app, name="db")
 app.add_typer(project_app, name="project")
@@ -137,6 +139,7 @@ app.add_typer(benchmark_app, name="benchmark")
 app.add_typer(ui_app, name="ui")
 app.add_typer(prompt_pack_app, name="prompt-pack")
 app.add_typer(writing_preset_app, name="writing-preset")
+app.add_typer(if_app, name="if")
 
 
 @app.callback()
@@ -1988,3 +1991,132 @@ def export_pdf(project_slug: str, chapter_number: int | None = None) -> None:
     except RuntimeError as exc:
         typer.secho(str(exc), fg=typer.colors.RED, err=True)
         raise typer.Exit(code=2) from exc
+
+
+# ---------------------------------------------------------------------------
+# IF (Interactive Fiction) commands
+# ---------------------------------------------------------------------------
+
+@if_app.command("run")
+def if_run(
+    project_slug: str = typer.Argument(..., help="Project slug to generate IF for."),
+    resume: bool = typer.Option(False, "--resume", help="Resume from last checkpoint."),
+    genre: str = typer.Option("修仙升级", "--genre", help="IF genre (修仙升级|都市逆袭|悬疑生存|职场商战|末日爽文)."),
+    chapters: int = typer.Option(100, "--chapters", min=10, max=2000, help="Target chapter count."),
+    free_chapters: int = typer.Option(20, "--free-chapters", min=5, max=100, help="Free (non-paid) chapter count."),
+    premise: str = typer.Option("", "--premise", help="Story premise override."),
+    protagonist: str = typer.Option("", "--protagonist", help="Protagonist description."),
+    core_conflict: str = typer.Option("", "--core-conflict", help="Core conflict description."),
+    tone: str = typer.Option("爽快、热血、有悬念", "--tone", help="Story tone."),
+    text_length: str = typer.Option("", "--text-length", help="Total text chars per chapter, e.g. '2500-3500'. Defaults to config value."),
+    node_length: str = typer.Option("", "--node-length", help="Chars per individual text node, e.g. '150-250'. Defaults to config value."),
+    output_dir: str = typer.Option("./output", "--output-dir", help="Output base directory."),
+    integrated: bool = typer.Option(True, "--integrated/--no-integrated", help="Use integrated pipeline with DB context injection and summarizer."),
+) -> None:
+    """Run the LifeScript interactive fiction generation pipeline for a project."""
+    settings = load_settings()
+
+    async def _get_project() -> Any:
+        async with session_scope(settings) as session:
+            return await get_project_by_slug(session, project_slug)
+
+    project = asyncio.run(_get_project())
+    if project is None:
+        typer.echo(f"Project '{project_slug}' not found — creating it automatically.")
+        from bestseller.domain.enums import ProjectType
+        from bestseller.domain.project import WritingProfile
+        from bestseller.services.projects import create_project
+        auto_cfg = InteractiveFictionConfig.model_validate({
+            "enabled": True, "if_genre": genre, "target_chapters": chapters,
+            "free_chapters": free_chapters, "tone": tone,
+            **({"premise": premise} if premise else {}),
+            **({"protagonist": protagonist} if protagonist else {}),
+            **({"core_conflict": core_conflict} if core_conflict else {}),
+        })
+        async def _create() -> Any:
+            async with session_scope(settings) as session:
+                p = await create_project(session, ProjectCreate(
+                    slug=project_slug, title=project_slug.replace("-", " ").title(),
+                    genre=genre, target_word_count=chapters * 3000,
+                    target_chapters=chapters, project_type=ProjectType.INTERACTIVE,
+                    writing_profile=WritingProfile(interactive_fiction=auto_cfg),
+                ), settings)
+                await session.commit()
+                return p
+        project = asyncio.run(_create())
+        typer.echo(f"Created project '{project_slug}'.")
+
+    # Merge stored IF config with CLI overrides
+    stored_wp = project.metadata_json.get("writing_profile", {})
+    stored_if = stored_wp.get("interactive_fiction", {})
+    cfg_dict: dict[str, Any] = {**stored_if, "enabled": True, "if_genre": genre, "target_chapters": chapters, "free_chapters": free_chapters, "tone": tone}
+    if premise:
+        cfg_dict["premise"] = premise
+    if protagonist:
+        cfg_dict["protagonist"] = protagonist
+    if core_conflict:
+        cfg_dict["core_conflict"] = core_conflict
+    if text_length:
+        cfg_dict["chapter_text_length"] = text_length
+    if node_length:
+        cfg_dict["text_node_length"] = node_length
+    cfg = InteractiveFictionConfig.model_validate(cfg_dict)
+
+    def on_progress(phase: str, payload: dict[str, Any]) -> None:
+        status = payload.get("status", "")
+        extra = ""
+        if "arc" in payload:
+            extra = f" arc {payload['arc']}/{payload.get('total', '?')}"
+        elif "chapter" in payload:
+            extra = f" ch {payload['chapter']}/{payload.get('total', '?')}"
+        typer.echo(f"[{phase}] {status}{extra}")
+
+    try:
+        if integrated:
+            typer.echo("[integrated] Using DB-backed pipeline with context injection + summarizer.")
+            out_path = asyncio.run(run_if_pipeline_integrated(
+                project,
+                cfg,
+                Path(output_dir),
+                settings=settings,
+                resume=resume,
+                on_progress=on_progress,
+            ))
+        else:
+            out_path = run_if_pipeline(
+                project,
+                cfg,
+                Path(output_dir),
+                settings=settings,
+                resume=resume,
+                on_progress=on_progress,
+            )
+        typer.secho(f"\nDone! story_package.json → {out_path}", fg=typer.colors.GREEN)
+    except Exception as exc:
+        typer.secho(f"Pipeline failed: {exc}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=1) from exc
+
+
+@if_app.command("status")
+def if_status(
+    project_slug: str = typer.Argument(..., help="Project slug."),
+    output_dir: str = typer.Option("./output", "--output-dir"),
+) -> None:
+    """Show IF generation progress / checkpoint state for a project."""
+    import json as _json
+    if_dir = Path(output_dir) / project_slug / "if"
+    progress_path = if_dir / "if_progress.json"
+    if not progress_path.exists():
+        typer.echo("No progress file found. Run 'if run' first.")
+        return
+    state = _json.loads(progress_path.read_text(encoding="utf-8"))
+    chapters_done = len(state.get("chapters", []))
+    typer.echo(f"Project       : {project_slug}")
+    typer.echo(f"Story Bible   : {'✓' if 'bible' in state else '—'}")
+    typer.echo(f"Arc Plans     : {'✓' if 'arc_plans' in state else '—'}")
+    typer.echo(f"Chapters done : {chapters_done}")
+    typer.echo(f"Walkthrough   : {'✓' if 'walkthrough' in state else '—'}")
+    build_dir = if_dir / "build"
+    if build_dir.exists():
+        files = sorted(f.name for f in build_dir.iterdir())
+        typer.echo(f"Compiled files: {', '.join(files)}")

@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>小说阅读器</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #f5f1e9;
+      --surface: #fffdf8;
+      --border: #ddd5c8;
+      --text: #1d1b18;
+      --text-2: #6b5e4e;
+      --accent: #8b4513;
+      --accent-light: #c8845a;
+      --sidebar-w: 280px;
+      --header-h: 56px;
+    }
+
+    body {
+      font-family: "PingFang SC", "Noto Serif SC", "Source Han Serif CN", Georgia, serif;
+      background: var(--bg);
+      color: var(--text);
+      height: 100vh;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ── Header ── */
+    header {
+      height: var(--header-h);
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      padding: 0 20px;
+      flex-shrink: 0;
+      box-shadow: 0 1px 6px rgba(0,0,0,0.06);
+      z-index: 10;
+    }
+    header .menu-btn {
+      background: none;
+      border: none;
+      cursor: pointer;
+      color: var(--text-2);
+      padding: 6px;
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      font-size: 20px;
+      transition: background 0.15s;
+    }
+    header .menu-btn:hover { background: var(--bg); }
+    header .book-title {
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--text);
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    header .chapter-info {
+      font-size: 13px;
+      color: var(--text-2);
+      white-space: nowrap;
+    }
+    header .studio-link {
+      font-size: 12px;
+      color: var(--accent);
+      text-decoration: none;
+      padding: 5px 12px;
+      border: 1px solid var(--accent-light);
+      border-radius: 6px;
+      transition: background 0.15s;
+    }
+    header .studio-link:hover { background: rgba(139,69,19,0.06); }
+
+    /* ── Layout ── */
+    .layout {
+      display: flex;
+      flex: 1;
+      overflow: hidden;
+    }
+
+    /* ── Sidebar ── */
+    aside {
+      width: var(--sidebar-w);
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      transition: width 0.25s ease, opacity 0.2s;
+      flex-shrink: 0;
+    }
+    aside.collapsed { width: 0; opacity: 0; pointer-events: none; }
+    .sidebar-head {
+      padding: 14px 16px 10px;
+      border-bottom: 1px solid var(--border);
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      color: var(--text-2);
+      text-transform: uppercase;
+      flex-shrink: 0;
+    }
+    .toc-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 6px 0;
+    }
+    .toc-list::-webkit-scrollbar { width: 4px; }
+    .toc-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+    .toc-item {
+      display: block;
+      width: 100%;
+      text-align: left;
+      background: none;
+      border: none;
+      cursor: pointer;
+      padding: 9px 16px;
+      font-size: 13.5px;
+      color: var(--text-2);
+      line-height: 1.45;
+      transition: background 0.12s, color 0.12s;
+      border-left: 3px solid transparent;
+    }
+    .toc-item:hover { background: var(--bg); color: var(--text); }
+    .toc-item.active {
+      background: rgba(139,69,19,0.07);
+      color: var(--accent);
+      border-left-color: var(--accent);
+      font-weight: 600;
+    }
+    .toc-num {
+      display: inline-block;
+      width: 28px;
+      font-size: 11px;
+      color: var(--text-2);
+      opacity: 0.6;
+      flex-shrink: 0;
+    }
+
+    /* ── Main content ── */
+    main {
+      flex: 1;
+      overflow-y: auto;
+      padding: 40px 24px 80px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    main::-webkit-scrollbar { width: 6px; }
+    main::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+    .reading-area {
+      width: 100%;
+      max-width: 720px;
+    }
+
+    .chapter-header {
+      margin-bottom: 32px;
+      text-align: center;
+    }
+    .chapter-header h1 {
+      font-size: 22px;
+      font-weight: 700;
+      color: var(--text);
+      line-height: 1.4;
+      margin-bottom: 10px;
+    }
+    .chapter-meta {
+      font-size: 12px;
+      color: var(--text-2);
+      display: flex;
+      gap: 16px;
+      justify-content: center;
+    }
+
+    .chapter-body {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 36px 44px;
+      box-shadow: 0 8px 24px rgba(43,32,20,0.07);
+      font-size: 17px;
+      line-height: 2.0;
+      color: #2a2118;
+    }
+    .chapter-body p { margin-bottom: 1.4em; text-indent: 2em; }
+    .chapter-body h1, .chapter-body h2, .chapter-body h3 {
+      font-weight: 700;
+      margin: 1.6em 0 0.8em;
+      text-indent: 0;
+      color: var(--text);
+    }
+    .chapter-body h1 { font-size: 1.3em; }
+    .chapter-body h2 { font-size: 1.15em; }
+    .chapter-body h3 { font-size: 1.05em; }
+    .chapter-body blockquote {
+      border-left: 3px solid var(--accent-light);
+      margin: 1.2em 0;
+      padding: 0.4em 1em;
+      color: var(--text-2);
+      font-style: italic;
+    }
+    .chapter-body pre {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 14px 18px;
+      font-family: monospace;
+      font-size: 13px;
+      overflow-x: auto;
+      white-space: pre-wrap;
+    }
+    .chapter-body code {
+      background: var(--bg);
+      border-radius: 4px;
+      padding: 1px 5px;
+      font-size: 0.88em;
+      font-family: monospace;
+    }
+    .chapter-body pre code { background: none; padding: 0; }
+    .chapter-body hr {
+      border: none;
+      border-top: 1px solid var(--border);
+      margin: 2em auto;
+      width: 60%;
+    }
+
+    /* ── Nav buttons ── */
+    .nav-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: 36px;
+      gap: 12px;
+    }
+    .nav-btn {
+      padding: 10px 22px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--text);
+      font-size: 14px;
+      cursor: pointer;
+      transition: background 0.15s, border-color 0.15s;
+      font-family: inherit;
+    }
+    .nav-btn:hover:not(:disabled) { background: var(--bg); border-color: var(--accent-light); }
+    .nav-btn:disabled { opacity: 0.35; cursor: default; }
+    .nav-btn.primary {
+      background: var(--accent);
+      color: #fff;
+      border-color: var(--accent);
+    }
+    .nav-btn.primary:hover:not(:disabled) { background: #7a3a10; }
+    .nav-pos { font-size: 13px; color: var(--text-2); }
+
+    /* ── Loading / empty states ── */
+    .state-center {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      gap: 16px;
+      color: var(--text-2);
+    }
+    .spinner {
+      width: 32px;
+      height: 32px;
+      border: 3px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    @media (max-width: 640px) {
+      aside { position: absolute; top: var(--header-h); bottom: 0; z-index: 20; }
+      .chapter-body { padding: 24px 20px; font-size: 16px; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <button class="menu-btn" id="toggle-sidebar" title="切换目录">&#9776;</button>
+  <span class="book-title" id="book-title">加载中...</span>
+  <span class="chapter-info" id="chapter-info"></span>
+  <a href="/" class="studio-link">返回工作台</a>
+</header>
+
+<div class="layout">
+  <aside id="sidebar">
+    <div class="sidebar-head">目录</div>
+    <div class="toc-list" id="toc-list">
+      <div class="state-center" style="height:120px;">
+        <div class="spinner"></div>
+      </div>
+    </div>
+  </aside>
+
+  <main id="main-area">
+    <div class="reading-area" id="reading-area">
+      <div class="state-center" style="height:300px;">
+        <div class="spinner"></div>
+        <span>正在加载...</span>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script>
+  const slug = location.pathname.replace(/^\/read\//, "").replace(/\/$/, "");
+  let toc = [];
+  let currentChapter = 1;
+
+  // ── Sidebar toggle ──────────────────────────────────────────────────────
+  const sidebar = document.getElementById("sidebar");
+  document.getElementById("toggle-sidebar").addEventListener("click", () => {
+    sidebar.classList.toggle("collapsed");
+  });
+
+  // ── Fetch helpers ───────────────────────────────────────────────────────
+  async function get(url) {
+    const r = await fetch(url);
+    if (!r.ok) throw new Error(await r.text());
+    return r.json();
+  }
+
+  // ── Render TOC ──────────────────────────────────────────────────────────
+  function renderToc() {
+    const list = document.getElementById("toc-list");
+    if (!toc.length) {
+      list.innerHTML = '<div style="padding:16px;font-size:13px;color:var(--text-2);">暂无章节</div>';
+      return;
+    }
+    list.innerHTML = toc.map(ch => `
+      <button class="toc-item ${ch.number === currentChapter ? "active" : ""}"
+              data-n="${ch.number}" onclick="loadChapter(${ch.number})">
+        <span class="toc-num">${ch.number}</span>${ch.title}
+      </button>
+    `).join("");
+    // Scroll active item into view
+    const active = list.querySelector(".toc-item.active");
+    if (active) active.scrollIntoView({ block: "nearest" });
+  }
+
+  // ── Load a chapter ──────────────────────────────────────────────────────
+  async function loadChapter(n) {
+    currentChapter = n;
+    const area = document.getElementById("reading-area");
+    area.innerHTML = `
+      <div class="state-center" style="height:300px;">
+        <div class="spinner"></div><span>正在加载第 ${n} 章...</span>
+      </div>`;
+    renderToc();
+    window.scrollTo && document.getElementById("main-area").scrollTo(0, 0);
+    try {
+      const data = await get(`/api/reader/${slug}/chapter/${n}`);
+      const ch = toc.find(c => c.number === n);
+      const title = ch ? ch.title : `第 ${n} 章`;
+      document.getElementById("chapter-info").textContent = `第 ${n} 章 / 共 ${toc.length} 章`;
+      document.getElementById("book-title").textContent = slug;
+      document.title = `${title} — ${slug}`;
+      const prevDisabled = n <= 1 ? "disabled" : "";
+      const nextDisabled = n >= toc.length ? "disabled" : "";
+      area.innerHTML = `
+        <div class="chapter-header">
+          <h1>${title}</h1>
+          <div class="chapter-meta">
+            <span>${data.word_count?.toLocaleString() ?? 0} 字</span>
+            <span>约 ${data.estimated_read_minutes ?? 0} 分钟</span>
+          </div>
+        </div>
+        <div class="chapter-body">${data.html}</div>
+        <div class="nav-bar">
+          <button class="nav-btn" ${prevDisabled} onclick="loadChapter(${n - 1})">&#8592; 上一章</button>
+          <span class="nav-pos">${n} / ${toc.length}</span>
+          <button class="nav-btn primary" ${nextDisabled} onclick="loadChapter(${n + 1})">下一章 &#8594;</button>
+        </div>`;
+    } catch (err) {
+      area.innerHTML = `<div class="state-center" style="height:200px;color:#c0392b;">${err.message}</div>`;
+    }
+  }
+
+  // ── Init ─────────────────────────────────────────────────────────────────
+  async function init() {
+    document.getElementById("book-title").textContent = slug;
+    try {
+      const data = await get(`/api/reader/${slug}/toc`);
+      toc = data.chapters || [];
+      renderToc();
+      // Load chapter from hash or default to first
+      const hashN = parseInt(location.hash.replace("#", ""), 10);
+      const startN = (!isNaN(hashN) && hashN >= 1) ? hashN : (toc[0]?.number ?? 1);
+      await loadChapter(startN);
+    } catch (err) {
+      document.getElementById("toc-list").innerHTML =
+        `<div style="padding:16px;font-size:13px;color:#c0392b;">${err.message}</div>`;
+      document.getElementById("reading-area").innerHTML =
+        `<div class="state-center" style="height:200px;color:#c0392b;">无法加载项目「${slug}」的章节。<br/>请确认已生成该项目的章节内容。</div>`;
+    }
+  }
+
+  init();
+</script>
+</body>
+</html>

@@ -2,11 +2,10 @@
 # =============================================================================
 # translate_all.sh — 《天机录》全书多语言翻译（一键执行）
 #
-# 用法：
-#   ./scripts/translate_all.sh
+# 全局限速：整个 API 合计不超过 40 TPS
+# 三语言通过共享 FIFO 令牌桶实现全局限速
 # =============================================================================
 
-# 只用 -u（未定义变量报错），不用 -e/-o pipefail（翻译子进程自己处理错误）
 set -u
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -18,10 +17,16 @@ OUTPUT="$ROOT_DIR/output/天机录/translations"
 LOG_DIR="$OUTPUT/logs"
 LANGS=("en" "ja" "ko")
 
-MODEL="openai/MiniMax-M2.7-highspeed"
+MODEL="openai/MiniMax-M2.7"
 API_BASE="https://api.minimaxi.com/v1"
-RPM=130      # 每语言 130 RPM × 3 = 390，不超过 500 上限
-WORKERS=6    # 每语言并发线程数
+
+# ---------------------------------------------------------------------------
+# 全局限速：总并发 40，三语言均分
+# ---------------------------------------------------------------------------
+TOTAL_TPS=40                          # 整个 API 最大 40 TPS
+TOTAL_WORKERS=40                      # 总并发线程数
+WORKERS_PER_LANG=$((TOTAL_WORKERS / ${#LANGS[@]}))   # ~13 per lang
+RPM_PER_LANG=$(( TOTAL_TPS * 60 / ${#LANGS[@]} ))    # 800 RPM per lang
 
 MAX_RETRIES=20
 RETRY_WAIT=60
@@ -40,7 +45,6 @@ if [[ -z "${MINIMAX_API_KEY:-}" ]]; then
     echo "❌ MINIMAX_API_KEY 未设置，请检查 .env 文件"
     exit 1
 fi
-
 if [[ ! -d "$INPUT" ]]; then
     echo "❌ 源章节目录不存在：$INPUT"
     exit 1
@@ -65,8 +69,7 @@ log() {
 }
 
 count_chapters() {
-    local dir="$1"
-    find "$dir" -name "ch*.json" 2>/dev/null | wc -l | tr -d ' '
+    find "$1" -name "ch*.json" 2>/dev/null | wc -l | tr -d ' '
 }
 
 # ---------------------------------------------------------------------------
@@ -77,7 +80,9 @@ GLOSSARY="$OUTPUT/glossary.json"
 log "═══════════════════════════════════════════════════════"
 log "  《天机录》多语言翻译"
 log "  章节总数：$CHAPTER_COUNT  |  语言：${LANGS[*]}"
-log "  模型：$MODEL  |  RPM/语言：$RPM  |  并发：$WORKERS"
+log "  模型：$MODEL"
+log "  全局 TPS 上限：$TOTAL_TPS  |  总并发：$TOTAL_WORKERS"
+log "  per lang: RPM=$RPM_PER_LANG, workers=$WORKERS_PER_LANG"
 log "═══════════════════════════════════════════════════════"
 
 if [[ -f "$GLOSSARY" ]]; then
@@ -99,11 +104,11 @@ else
         --sample   50         \
         >> "$GLOG" 2>&1 \
     && log "✓ 术语表提取完成：$GLOSSARY" \
-    || log "⚠ 术语表提取失败（继续翻译，不使用术语表），详见：$GLOG"
+    || log "⚠ 术语表提取失败（继续翻译），详见：$GLOG"
 fi
 
 # ---------------------------------------------------------------------------
-# Phase 1：单语言翻译函数（在后台子进程中运行）
+# Phase 1：单语言翻译函数
 # ---------------------------------------------------------------------------
 translate_lang() {
     local lang="$1"
@@ -111,25 +116,24 @@ translate_lang() {
     local attempt=0
     local wait_time=$RETRY_WAIT
 
-    # 子进程内部不用严格模式，自己管理错误
     set +euo pipefail 2>/dev/null || true
 
-    log "▶ [$lang] 开始翻译，日志：$logfile"
+    log "[$lang] starting: workers=$WORKERS_PER_LANG, rpm=$RPM_PER_LANG"
 
     while [[ $attempt -lt $MAX_RETRIES ]]; do
         attempt=$((attempt + 1))
         done_before=$(count_chapters "$OUTPUT/$lang/chapters")
 
         "$VENV_PYTHON" "$TOOL" translate \
-            --input    "$INPUT"           \
-            --output   "$OUTPUT"          \
-            --lang     "$lang"            \
-            --model    "$MODEL"           \
-            --api-key  "$MINIMAX_API_KEY" \
-            --api-base "$API_BASE"        \
-            --workers  "$WORKERS"         \
-            --rpm      "$RPM"             \
-            --yes                         \
+            --input    "$INPUT"              \
+            --output   "$OUTPUT"             \
+            --lang     "$lang"               \
+            --model    "$MODEL"              \
+            --api-key  "$MINIMAX_API_KEY"    \
+            --api-base "$API_BASE"           \
+            --workers  "$WORKERS_PER_LANG"   \
+            --rpm      "$RPM_PER_LANG"       \
+            --yes                            \
             >> "$logfile" 2>&1
         EXIT_CODE=$?
 
@@ -163,11 +167,42 @@ translate_lang() {
 }
 
 # ---------------------------------------------------------------------------
+# 进度表
+# ---------------------------------------------------------------------------
+print_progress() {
+    local elapsed="$1"
+    local mins=$((elapsed / 60))
+    local secs=$((elapsed % 60))
+    if [[ "${PROGRESS_PRINTED:-0}" -eq 1 ]]; then
+        printf '\033[7A\033[J'
+    fi
+    PROGRESS_PRINTED=1
+
+    echo "┌─────────────────────────────────────────────────────┐"
+    printf "│  翻译进度  已运行: %02d:%02d                           │\n" "$mins" "$secs"
+    echo "├──────┬──────────────────────────┬─────────────────────┤"
+    for lang in "${LANGS[@]}"; do
+        local done_count
+        done_count=$(count_chapters "$OUTPUT/$lang/chapters")
+        local pct
+        pct=$(awk "BEGIN{printf \"%.1f\", $done_count*100/$CHAPTER_COUNT}")
+        local bar_filled
+        bar_filled=$(awk "BEGIN{printf \"%d\", $done_count*20/$CHAPTER_COUNT}")
+        local bar="" i=0
+        while [[ $i -lt $bar_filled ]]; do bar="${bar}█"; i=$((i+1)); done
+        while [[ $i -lt 20 ]];         do bar="${bar}░"; i=$((i+1)); done
+        printf "│  %-4s│ %s │ %4s/%-4s  %5s%% │\n" \
+            "$lang" "$bar" "$done_count" "$CHAPTER_COUNT" "$pct"
+    done
+    echo "└──────┴──────────────────────────┴─────────────────────┘"
+}
+
+# ---------------------------------------------------------------------------
 # 三语言并行启动
 # ---------------------------------------------------------------------------
 log ""
 log "── Phase 1：三语言并行翻译 ──"
-log "  实时查看进度：tail -f $LOG_DIR/en.log"
+log "  详细日志：tail -f $LOG_DIR/en.log"
 log ""
 
 PIDS=()
@@ -177,7 +212,23 @@ for lang in "${LANGS[@]}"; do
     sleep 2
 done
 
-# 等待所有语言完成
+START_TIME=$(date +%s)
+PROGRESS_PRINTED=0
+all_done=false
+while ! $all_done; do
+    all_done=true
+    for pid in "${PIDS[@]}"; do
+        kill -0 "$pid" 2>/dev/null && all_done=false && break
+    done
+    elapsed=$(( $(date +%s) - START_TIME ))
+    print_progress "$elapsed"
+    $all_done || sleep 30
+done
+
+elapsed=$(( $(date +%s) - START_TIME ))
+print_progress "$elapsed"
+echo ""
+
 EXIT_CODES=()
 for pid in "${PIDS[@]}"; do
     wait "$pid"
@@ -199,9 +250,9 @@ for i in "${!LANGS[@]}"; do
     done_count=$(count_chapters "$OUTPUT/$lang/chapters")
     pct=$(awk "BEGIN{printf \"%.1f\", $done_count*100/$CHAPTER_COUNT}" 2>/dev/null || echo "?")
     if [[ "$code" -eq 0 ]]; then
-        log "  $lang：✅ 成功  —  $done_count / $CHAPTER_COUNT 章（${pct}%）"
+        log "  $lang: success -- $done_count / $CHAPTER_COUNT ($pct%)"
     else
-        log "  $lang：❌ 失败  —  $done_count / $CHAPTER_COUNT 章（${pct}%）"
+        log "  $lang: FAILED -- $done_count / $CHAPTER_COUNT ($pct%)"
         ALL_OK=false
     fi
 done

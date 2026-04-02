@@ -95,6 +95,29 @@
     }
     .studio-link:hover { background: rgba(139,69,19,0.06); }
 
+    /* ── Content language selector ── */
+    .content-lang-wrap {
+      position: relative; display: flex; align-items: center; flex-shrink: 0;
+    }
+    .content-lang-select {
+      font-size: 12px; font-family: inherit; color: var(--text-2);
+      background: none; border: 1px solid var(--border); border-radius: 6px;
+      padding: 4px 22px 4px 8px; cursor: pointer;
+      appearance: none; -webkit-appearance: none;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%236b5e4e'/%3E%3C/svg%3E");
+      background-repeat: no-repeat; background-position: right 6px center;
+      transition: border-color 0.12s; max-width: 90px;
+    }
+    .content-lang-select:hover { border-color: var(--accent-2); }
+    .content-lang-select:focus { outline: none; border-color: var(--accent); }
+    .content-lang-badge {
+      font-size: 10px; font-weight: 700; color: var(--accent);
+      background: var(--accent-soft); border: 1px solid rgba(139,69,19,0.18);
+      padding: 1px 5px; border-radius: 4px; margin-left: 4px;
+      display: none; flex-shrink: 0; white-space: nowrap;
+    }
+    .content-lang-badge.visible { display: block; }
+
     /* ── Layout ── */
     .layout {
       display: flex;
@@ -556,18 +579,25 @@
   <span class="worldline-badge" id="worldline-badge"></span>
   <span class="chapter-info" id="chapter-info"></span>
   <button class="header-btn accent" id="karma-rewind-btn" title="回到上一个关键选择点" style="display:none;">命运回溯</button>
+  <div class="content-lang-wrap" id="content-lang-wrap" style="display:none;">
+    <select class="content-lang-select" id="content-lang-select" onchange="switchContentLang(this.value)">
+      <option value="zh">中文</option>
+    </select>
+    <span class="content-lang-badge" id="content-lang-badge"></span>
+  </div>
   <button class="header-btn" id="save-btn">存档</button>
+  <button class="header-btn" id="lang-btn" onclick="toggleLang()" title="Switch language / 切换语言">EN</button>
   <button class="icon-btn" id="toggle-right" title="切换属性面板">📊</button>
-  <a href="/" class="studio-link">工作台</a>
+  <a href="/" class="studio-link" id="studio-link">工作台</a>
 </header>
 
 <div class="layout">
   <!-- Left sidebar -->
   <div class="left-sidebar" id="left-sidebar">
     <div class="sidebar-tabs">
-      <button class="sidebar-tab active" data-tab="toc">📖 目录</button>
-      <button class="sidebar-tab" data-tab="chars">👥 角色</button>
-      <button class="sidebar-tab" data-tab="endings">🏆 结局</button>
+      <button class="sidebar-tab active" data-tab="toc" id="tab-toc">📖 目录</button>
+      <button class="sidebar-tab" data-tab="chars" id="tab-chars">👥 角色</button>
+      <button class="sidebar-tab" data-tab="endings" id="tab-endings">🏆 结局</button>
     </div>
     <div class="sidebar-panel active" id="panel-toc"></div>
     <div class="sidebar-panel" id="panel-chars"></div>
@@ -584,12 +614,12 @@
   <!-- Right stats panel -->
   <div class="right-panel" id="right-panel">
     <div class="right-panel-inner">
-      <div class="rpanel-title">角色属性</div>
+      <div class="rpanel-title" id="rp-title-stats">角色属性</div>
       <div class="stat-row" id="stat-row"></div>
-      <div class="rpanel-title" style="margin-top:4px;">存档 &amp; 回溯</div>
+      <div class="rpanel-title" style="margin-top:4px;" id="rp-title-save">存档 &amp; 回溯</div>
       <div class="save-section">
-        <button class="save-btn accent" onclick="openSaveModal('save')">💾 存档</button>
-        <button class="save-btn" onclick="openSaveModal('load')">📂 读档</button>
+        <button class="save-btn accent" id="rp-save-btn" onclick="openSaveModal('save')">💾 存档</button>
+        <button class="save-btn" id="rp-load-btn" onclick="openSaveModal('load')">📂 读档</button>
         <button class="save-btn" id="rp-karma-btn" disabled>↩ 命运回溯</button>
       </div>
     </div>
@@ -602,11 +632,188 @@
 // ─────────────────────────────────────────────────────────────────────────────
 const SLUG = location.pathname.replace(/^\/read-if\//, "").replace(/\/$/, "");
 const STORAGE_KEY = `if_state_${SLUG}`;
+const CONTENT_LANG_KEY = `if_content_lang_${SLUG}`;
+
+// Content language (the story text language — separate from UI lang)
+let contentLang = localStorage.getItem(CONTENT_LANG_KEY) || "zh";
 const STAT_NAMES = ["战力","名望","谋略","财富","魅力","黑化值","天命值"];
 const REL_DIMS = ["信任","好感","敌意","敬畏","依赖"];
 const MAX_MANUAL_SAVES = 5;
 const MAX_CHAPTER_SAVES = 10;
 const MAX_KARMA_SAVES = 3;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// i18n
+// ─────────────────────────────────────────────────────────────────────────────
+const I18N = {
+  zh: {
+    if_badge: "互动",
+    loading: "加载中...",
+    karma_rewind: "命运回溯",
+    save: "存档",
+    studio: "工作台",
+    tab_toc: "📖 目录",
+    tab_chars: "👥 角色",
+    tab_endings: "🏆 结局",
+    rp_stats: "角色属性",
+    rp_save: "存档 & 回溯",
+    rp_save_btn: "💾 存档",
+    rp_load_btn: "📂 读档",
+    rp_karma_btn: "↩ 命运回溯",
+    modal_close: "关闭",
+    no_chapters: "暂无章节",
+    no_chars: "暂无角色数据",
+    no_endings: "暂无结局数据",
+    no_rel: "尚无关系变化",
+    prev_ch: "← 上一章",
+    next_ch: "下一章 →",
+    ch_of: (cur, total) => `第 ${cur} 章 / 共 ${total} 章`,
+    ch_header: (n) => `第 ${n} 章`,
+    paid: "💎 付费章节",
+    chosen: "已选择：",
+    cost: "代价：",
+    reward: "收益：",
+    risk: "风险：",
+    gate_cur: (stat, thr, cur) => `${stat} ${thr}（当前 ${cur}）`,
+    flag_req: (f) => `需要触发：${f}`,
+    choice_key: "关键抉择",
+    choice_style: "风格选择",
+    choice_char: "角色倾向",
+    endings_unlocked: (n, total) => `已解锁 ${n} / ${total} 个结局`,
+    ending_unknown: "??? 未知结局",
+    ending_proximity: (pct) => `▶ 接近度 ${pct}%`,
+    ending_type_main: "主线结局",
+    ending_type_hidden: "隐藏结局",
+    ending_type_bad: "Bad End",
+    ending_type_normal: "普通结局",
+    cond_unknown: "条件未知",
+    toast_restored: "📂 已恢复上次进度",
+    toast_saved: (i) => `💾 已存档到槽 ${i}`,
+    toast_loaded: (i) => `📂 已读取存档槽 ${i}`,
+    toast_karma: "↩ 命运回溯：回到上一个关键节点",
+    toast_flag: (f) => `🚩 触发：${f}`,
+    toast_memory: (name, m) => `${name} 记住了：${m}`,
+    toast_ending: (title) => `✦ 你正走向：${title}`,
+    toast_branch: (name) => `⚡ 进入分支世界线：${name}`,
+    toast_branch_fail: (id) => `⚠️ 分支加载失败：${id}`,
+    worldline_loading: "世界线：加载中…",
+    worldline: (name) => `世界线：${name}`,
+    modal_save_title: "选择存档槽",
+    modal_load_title: "选择要读取的存档",
+    slot_label: (i) => `存档 ${i}：`,
+    slot_empty: "(空)",
+    slot_save_btn: "存入",
+    slot_load_btn: "读取",
+    slot_empty_btn: "-",
+    err_no_chapters: "这部小说还没有生成章节。",
+    err_load: (slug) => `无法加载互动小说「${slug}」`,
+    branch_main: "主线结局",
+    branch_hidden: (i) => `隐藏结局 ${i + 1}`,
+  },
+  en: {
+    if_badge: "IF",
+    loading: "Loading...",
+    karma_rewind: "Karma Rewind",
+    save: "Save",
+    studio: "Studio",
+    tab_toc: "📖 TOC",
+    tab_chars: "👥 Chars",
+    tab_endings: "🏆 Endings",
+    rp_stats: "Stats",
+    rp_save: "Save & Rewind",
+    rp_save_btn: "💾 Save",
+    rp_load_btn: "📂 Load",
+    rp_karma_btn: "↩ Karma Rewind",
+    modal_close: "Close",
+    no_chapters: "No chapters yet",
+    no_chars: "No character data",
+    no_endings: "No ending data",
+    no_rel: "No relationship changes yet",
+    prev_ch: "← Prev",
+    next_ch: "Next →",
+    ch_of: (cur, total) => `Ch ${cur} / ${total}`,
+    ch_header: (n) => `Chapter ${n}`,
+    paid: "💎 Paid Chapter",
+    chosen: "Chosen: ",
+    cost: "Cost: ",
+    reward: "Reward: ",
+    risk: "Risk: ",
+    gate_cur: (stat, thr, cur) => `${stat} ${thr} (current ${cur})`,
+    flag_req: (f) => `Flag required: ${f}`,
+    choice_key: "Key Decision",
+    choice_style: "Style Choice",
+    choice_char: "Char Pref",
+    endings_unlocked: (n, total) => `${n} / ${total} endings unlocked`,
+    ending_unknown: "??? Unknown Ending",
+    ending_proximity: (pct) => `▶ Proximity ${pct}%`,
+    ending_type_main: "Main Ending",
+    ending_type_hidden: "Hidden Ending",
+    ending_type_bad: "Bad End",
+    ending_type_normal: "Normal Ending",
+    cond_unknown: "Unknown condition",
+    toast_restored: "📂 Progress restored",
+    toast_saved: (i) => `💾 Saved to slot ${i}`,
+    toast_loaded: (i) => `📂 Loaded slot ${i}`,
+    toast_karma: "↩ Karma Rewind: back to last key node",
+    toast_flag: (f) => `🚩 Flag: ${f}`,
+    toast_memory: (name, m) => `${name} remembers: ${m}`,
+    toast_ending: (title) => `✦ You're heading to: ${title}`,
+    toast_branch: (name) => `⚡ Entering branch: ${name}`,
+    toast_branch_fail: (id) => `⚠️ Branch load failed: ${id}`,
+    worldline_loading: "Branch: Loading…",
+    worldline: (name) => `Branch: ${name}`,
+    modal_save_title: "Select Save Slot",
+    modal_load_title: "Select Save to Load",
+    slot_label: (i) => `Slot ${i}: `,
+    slot_empty: "(Empty)",
+    slot_save_btn: "Save",
+    slot_load_btn: "Load",
+    slot_empty_btn: "-",
+    err_no_chapters: "No chapters generated yet.",
+    err_load: (slug) => `Failed to load novel「${slug}」`,
+    branch_main: "Main Ending",
+    branch_hidden: (i) => `Hidden Ending ${i + 1}`,
+  },
+};
+
+let lang = localStorage.getItem("if_lang") || "zh";
+function t(key, ...args) {
+  const val = I18N[lang]?.[key] ?? I18N.zh[key];
+  return typeof val === "function" ? val(...args) : (val ?? key);
+}
+
+function toggleLang() {
+  lang = lang === "zh" ? "en" : "zh";
+  localStorage.setItem("if_lang", lang);
+  applyI18n();
+  // Re-render current chapter so dynamic text updates
+  renderChapter(currentIndex);
+  renderStatPanel();
+  renderCharPanel();
+  renderEndingsPanel();
+  renderToc();
+}
+
+function applyI18n() {
+  const btn = document.getElementById("lang-btn");
+  if (btn) btn.textContent = lang === "zh" ? "EN" : "中文";
+  const set = (id, key) => { const el = document.getElementById(id); if (el) el.textContent = t(key); };
+  set("save-btn", "save");
+  set("karma-rewind-btn", "karma_rewind");
+  set("studio-link", "studio");
+  set("tab-toc", "tab_toc");
+  set("tab-chars", "tab_chars");
+  set("tab-endings", "tab_endings");
+  set("rp-title-stats", "rp_stats");
+  set("rp-title-save", "rp_save");
+  set("rp-save-btn", "rp_save_btn");
+  set("rp-load-btn", "rp_load_btn");
+  set("rp-karma-btn", "rp_karma_btn");
+  const badge = document.querySelector(".if-badge");
+  if (badge) badge.textContent = t("if_badge");
+  const close = document.querySelector(".modal-close");
+  if (close) close.textContent = t("modal_close");
+}
 
 // Default starting stats (overridden by book.initial_stats if present)
 const DEFAULT_STATS = {战力:50,名望:50,谋略:50,财富:50,魅力:50,黑化值:0,天命值:50};
@@ -647,8 +854,31 @@ function defaultPS(initialStats) {
 
 function savePS() {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(PS));
+    // Serialize saves with lean (non-recursive) snapshots to keep storage bounded.
+    const toStore = {
+      ...PS,
+      chapterSaves: (PS.chapterSaves || []).map(s => ({
+        ...s,
+        snapshot: typeof s.snapshot === "object" ? leanSnapshot(s.snapshot) : s.snapshot,
+      })),
+      karmaSaves: (PS.karmaSaves || []).map(s => ({
+        ...s,
+        snapshot: typeof s.snapshot === "object" ? leanSnapshot(s.snapshot) : s.snapshot,
+      })),
+      manualSaves: (PS.manualSaves || []).map(s => s ? ({
+        ...s,
+        snapshot: typeof s.snapshot === "object" ? leanSnapshot(s.snapshot) : s.snapshot,
+      }) : null),
+    };
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(toStore));
   } catch (_) {}
+}
+
+// Strip saves arrays from a snapshot object before persisting.
+function leanSnapshot(snap) {
+  if (!snap) return snap;
+  const { chapterSaves, karmaSaves, manualSaves, ...core } = snap;
+  return core;
 }
 
 function loadPS() {
@@ -656,7 +886,16 @@ function loadPS() {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
       const loaded = JSON.parse(raw);
-      if (loaded.slug === SLUG) return loaded;
+      if (loaded.slug === SLUG) {
+        // Sanitize any legacy recursive snapshots that may exist in storage.
+        const sanitize = (arr) => (arr || []).map(s => s ? ({
+          ...s, snapshot: s.snapshot ? leanSnapshot(s.snapshot) : s.snapshot,
+        }) : null);
+        loaded.chapterSaves = sanitize(loaded.chapterSaves);
+        loaded.karmaSaves   = sanitize(loaded.karmaSaves);
+        loaded.manualSaves  = sanitize(loaded.manualSaves);
+        return loaded;
+      }
     }
   } catch (_) {}
   return null;
@@ -675,11 +914,20 @@ function initRelationships() {
 }
 
 function snapshotPS() {
-  return JSON.parse(JSON.stringify(PS));
+  // Exclude the saves arrays to prevent recursive snapshot nesting.
+  // Saves are preserved from the live PS when restoring.
+  const { chapterSaves, karmaSaves, manualSaves, ...core } = PS;
+  return JSON.parse(JSON.stringify(core));
 }
 
 function restorePS(snapshot) {
-  PS = JSON.parse(JSON.stringify(snapshot));
+  // Merge core state back onto PS, keeping the current saves intact.
+  const saves = {
+    chapterSaves: PS.chapterSaves,
+    karmaSaves: PS.karmaSaves,
+    manualSaves: PS.manualSaves,
+  };
+  PS = { ...JSON.parse(JSON.stringify(snapshot)), ...saves };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -722,7 +970,7 @@ function applyChoice(chapter, choice, opt) {
   (opt.flags_set || []).forEach(f => {
     if (!PS.flags.includes(f)) {
       PS.flags.push(f);
-      toasts.push({ text: `🚩 触发：${f}`, type: "flag" });
+      toasts.push({ text: t("toast_flag", f), type: "flag" });
     }
   });
 
@@ -734,7 +982,7 @@ function applyChoice(chapter, choice, opt) {
       if (!rel.memories) rel.memories = [];
       rel.memories.push(opt.memory_label);
       const charName = rel.name || firstCharId;
-      toasts.push({ text: `${charName} 记住了：${opt.memory_label}`, type: "flag" });
+      toasts.push({ text: t("toast_memory", charName, opt.memory_label), type: "flag" });
     }
   }
 
@@ -801,7 +1049,7 @@ function checkEndingProgress(toasts) {
       const proximity = computeEndingProximity(e);
       if (proximity >= 0.8) {
         if (!toasts.find(t => t.text.includes(e.title))) {
-          toasts.push({ text: `✦ 你正走向：${e.title}`, type: "ending" });
+          toasts.push({ text: t("toast_ending", e.title), type: "ending" });
         }
       }
     }
@@ -853,7 +1101,7 @@ function karmaRewind() {
   PS.karmaSaves.pop();
   PS.karmaAvailable = false;
   savePS();
-  showToasts([{ text: "↩ 命运回溯：回到上一个关键节点", type: "flag" }]);
+  showToasts([{ text: t("toast_karma"), type: "flag" }]);
   renderChapter(currentIndex);
 }
 
@@ -861,37 +1109,37 @@ function openSaveModal(mode) {
   const modal = document.getElementById("save-modal");
   const slots = document.getElementById("modal-slots");
   const title = document.getElementById("modal-title");
-  title.textContent = mode === "save" ? "选择存档槽" : "选择要读取的存档";
+  title.textContent = mode === "save" ? t("modal_save_title") : t("modal_load_title");
   slots.innerHTML = "";
   const saves = PS.manualSaves || Array(MAX_MANUAL_SAVES).fill(null);
   saves.forEach((s, i) => {
     const row = document.createElement("div");
     row.className = "modal-slot";
     const ch = chapters[currentIndex];
-    const label = s ? `第 ${s.chapter} 章 · ${s.label}` : "(空)";
-    const meta = s ? new Date(s.ts).toLocaleString("zh-CN") : "";
+    const label = s ? `${t("ch_header", s.chapter)} · ${s.label}` : t("slot_empty");
+    const meta = s ? new Date(s.ts).toLocaleString(lang === "en" ? "en-US" : "zh-CN") : "";
     row.innerHTML = `
       <div>
-        <div class="modal-slot-label">存档 ${i + 1}：${esc(label)}</div>
+        <div class="modal-slot-label">${esc(t("slot_label", i + 1))}${esc(label)}</div>
         ${meta ? `<div class="modal-slot-meta">${esc(meta)}</div>` : ""}
       </div>
-      <button class="modal-slot-action">${mode === "save" ? "存入" : s ? "读取" : "-"}</button>
+      <button class="modal-slot-action">${mode === "save" ? t("slot_save_btn") : s ? t("slot_load_btn") : t("slot_empty_btn")}</button>
     `;
     row.querySelector("button").addEventListener("click", () => {
       if (mode === "save") {
         PS.manualSaves[i] = {
           chapter: ch?.number || 1,
-          label: ch?.title || "第1章",
+          label: ch?.title || t("ch_header", 1),
           snapshot: snapshotPS(),
           ts: Date.now()
         };
         savePS();
-        showToasts([{ text: `💾 已存档到槽 ${i + 1}`, type: "up" }]);
+        showToasts([{ text: t("toast_saved", i + 1), type: "up" }]);
         closeModal();
       } else if (s) {
         restorePS(s.snapshot);
         savePS();
-        showToasts([{ text: `📂 已读取存档槽 ${i + 1}`, type: "flag" }]);
+        showToasts([{ text: t("toast_loaded", i + 1), type: "flag" }]);
         closeModal();
         const idx = chapters.findIndex(c => c.number === PS.currentChapter);
         goToChapter(idx >= 0 ? idx : 0);
@@ -971,7 +1219,7 @@ function renderCharPanel() {
   if (!panel) return;
   const chars = storyPackage?.book?.characters || [];
   if (!chars.length) {
-    panel.innerHTML = '<div style="padding:16px;font-size:13px;color:var(--text-2);">暂无角色数据</div>';
+    panel.innerHTML = `<div style="padding:16px;font-size:13px;color:var(--text-2);">${t("no_chars")}</div>`;
     return;
   }
   panel.innerHTML = chars.map(ch => {
@@ -995,7 +1243,7 @@ function renderCharPanel() {
     return `
       <div class="char-card">
         <div><span class="char-name">${esc(ch.name)}</span><span class="char-role">${esc(ch.role || "")}</span></div>
-        ${bars ? `<div class="char-rel-bars">${bars}</div>` : '<div style="margin-top:6px;font-size:11px;color:var(--text-2);">尚无关系变化</div>'}
+        ${bars ? `<div class="char-rel-bars">${bars}</div>` : `<div style="margin-top:6px;font-size:11px;color:var(--text-2);">${t("no_rel")}</div>`}
         ${memHtml}
       </div>
     `;
@@ -1014,27 +1262,27 @@ function renderEndingsPanel() {
   const displayEndings = endings.length ? endings : deriveEndingsFromRouteGraph();
 
   if (!displayEndings.length) {
-    panel.innerHTML = '<div style="padding:16px;font-size:13px;color:var(--text-2);">暂无结局数据</div>';
+    panel.innerHTML = `<div style="padding:16px;font-size:13px;color:var(--text-2);">${t("no_endings")}</div>`;
     return;
   }
 
   const unlocked = PS.unlockedEndings || [];
-  let html = `<div class="ending-summary"><div class="ending-summary-text">已解锁 ${unlocked.length} / ${displayEndings.length} 个结局</div></div>`;
+  let html = `<div class="ending-summary"><div class="ending-summary-text">${t("endings_unlocked", unlocked.length, displayEndings.length)}</div></div>`;
 
   displayEndings.forEach(e => {
-    const typeMap = {main:"主线结局", hidden:"隐藏结局", bad:"Bad End", normal:"普通结局"};
+    const typeMap = {main: t("ending_type_main"), hidden: t("ending_type_hidden"), bad: t("ending_type_bad"), normal: t("ending_type_normal")};
     const badgeClass = {main:"ending-type-main", hidden:"ending-type-hidden", bad:"ending-type-bad", normal:"ending-type-main"}[e.type] || "ending-type-main";
     const proximity = computeEndingProximity(e);
     const progHtml = proximity > 0.5 && proximity < 1.0
-      ? `<div class="ending-progress">▶ 接近度 ${Math.round(proximity * 100)}%</div>`
+      ? `<div class="ending-progress">${t("ending_proximity", Math.round(proximity * 100))}</div>`
       : "";
     html += `
       <div class="ending-card">
         <div><span class="ending-type-badge ${badgeClass}">${typeMap[e.type] || e.type}</span></div>
-        <div class="ending-title">${unlocked.includes(e.id) ? esc(e.title) : "??? 未知结局"}</div>
+        <div class="ending-title">${unlocked.includes(e.id) ? esc(e.title) : t("ending_unknown")}</div>
         ${unlocked.includes(e.id) && e.teaser
           ? `<div class="ending-teaser">${esc(e.teaser)}</div>`
-          : `<div class="ending-locked">${esc(e.condition_summary || "条件未知")}</div>`
+          : `<div class="ending-locked">${esc(e.condition_summary || t("cond_unknown"))}</div>`
         }
         ${progHtml}
       </div>
@@ -1048,9 +1296,9 @@ function deriveEndingsFromRouteGraph() {
   const rg = storyPackage?.route_graph;
   if (!rg) return [];
   const out = [];
-  if (rg.mainline) out.push({id:"end_main", title:"主线结局", type:"main", teaser:rg.mainline, stat_conditions:[], flag_conditions:[], condition_summary:""});
+  if (rg.mainline) out.push({id:"end_main", title:t("branch_main"), type:"main", teaser:rg.mainline, stat_conditions:[], flag_conditions:[], condition_summary:""});
   (rg.hidden_routes || []).forEach((r, i) => {
-    out.push({id:`end_hidden_${i}`, title:`隐藏结局 ${i+1}`, type:"hidden", teaser:r, stat_conditions:[], flag_conditions:[], condition_summary:r});
+    out.push({id:`end_hidden_${i}`, title:t("branch_hidden", i), type:"hidden", teaser:r, stat_conditions:[], flag_conditions:[], condition_summary:r});
   });
   return out;
 }
@@ -1061,7 +1309,7 @@ function deriveEndingsFromRouteGraph() {
 function renderToc() {
   const panel = document.getElementById("panel-toc");
   if (!chapters.length) {
-    panel.innerHTML = '<div style="padding:16px;font-size:13px;color:var(--text-2);">暂无章节</div>';
+    panel.innerHTML = `<div style="padding:16px;font-size:13px;color:var(--text-2);">${t("no_chapters")}</div>`;
     return;
   }
   panel.innerHTML = chapters.map((ch, i) => `
@@ -1119,7 +1367,7 @@ function renderChoiceNode(choice, chapter) {
   const block = document.createElement("div");
   block.className = "node-choice";
 
-  const typeLabels = {keyDecision:"关键抉择", styleChoice:"风格选择", characterPref:"角色倾向"};
+  const typeLabels = {keyDecision: t("choice_key"), styleChoice: t("choice_style"), characterPref: t("choice_char")};
   const typeBadges = {keyDecision:"badge-key", styleChoice:"badge-style", characterPref:"badge-pref"};
   const typeLabel = typeLabels[choice.choice_type] || choice.choice_type;
   const typeBadge = typeBadges[choice.choice_type] || "badge-key";
@@ -1151,7 +1399,7 @@ function renderChoiceNode(choice, chapter) {
       const cur = PS.stats[gStat] ?? 0;
       const gateOk = !locked;
       const threshold = gMin != null ? `≥${gMin}` : `≤${gMax}`;
-      gateHtml = `<div><span class="gate-badge ${gateOk ? "gate-ok" : "gate-fail"}">${gateOk ? "🔓" : "🔒"} ${esc(gStat)} ${threshold}（当前 ${cur}）</span></div>`;
+      gateHtml = `<div><span class="gate-badge ${gateOk ? "gate-ok" : "gate-fail"}">${gateOk ? "🔓" : "🔒"} ${esc(t("gate_cur", gStat, threshold, cur))}</span></div>`;
     } else if (locked && reason) {
       gateHtml = `<div><span class="gate-badge gate-fail">🔒 ${esc(reason)}</span></div>`;
     }
@@ -1161,9 +1409,9 @@ function renderChoiceNode(choice, chapter) {
       ${opt.description ? `<div class="choice-btn-desc">${esc(opt.description)}</div>` : ""}
       ${gateHtml}
       <div class="choice-hints">
-        ${opt.visible_cost ? `<span class="hint-cost">代价：${esc(opt.visible_cost)}</span>` : ""}
-        ${opt.visible_reward ? `<span class="hint-reward">收益：${esc(opt.visible_reward)}</span>` : ""}
-        ${opt.risk_hint ? `<span class="hint-risk">风险：${esc(opt.risk_hint)}</span>` : ""}
+        ${opt.visible_cost ? `<span class="hint-cost">${t("cost")}${esc(opt.visible_cost)}</span>` : ""}
+        ${opt.visible_reward ? `<span class="hint-reward">${t("reward")}${esc(opt.visible_reward)}</span>` : ""}
+        ${opt.risk_hint ? `<span class="hint-risk">${t("risk")}${esc(opt.risk_hint)}</span>` : ""}
       </div>
     `;
 
@@ -1182,7 +1430,7 @@ function renderChoiceNode(choice, chapter) {
         // Render result nodes
         const resultContainer = document.createElement("div");
         resultContainer.className = "choice-result";
-        resultContainer.innerHTML = `<div class="choice-result-label">已选择：${esc(opt.text)}</div>`;
+        resultContainer.innerHTML = `<div class="choice-result-label">${t("chosen")}${esc(opt.text)}</div>`;
         renderNodes(opt.result_nodes || [], resultContainer, chapter);
         block.appendChild(resultContainer);
         resultContainer.scrollIntoView({ behavior: "smooth", block: "nearest" });
@@ -1234,7 +1482,7 @@ async function loadBranchChapters(routeId) {
 
 async function handleBranchRoute(routeId, _chapter) {
   const badge = document.getElementById("worldline-badge");
-  if (badge) { badge.textContent = "世界线：加载中…"; badge.classList.add("visible"); }
+  if (badge) { badge.textContent = t("worldline_loading"); badge.classList.add("visible"); }
 
   try {
     const data = await loadBranchChapters(routeId);
@@ -1245,8 +1493,8 @@ async function handleBranchRoute(routeId, _chapter) {
     savePS();
 
     const routeTitle = data.route_title || routeId;
-    if (badge) badge.textContent = `世界线：${routeTitle}`;
-    showToasts([{ text: `⚡ 进入分支世界线：${routeTitle}`, type: "ending" }]);
+    if (badge) badge.textContent = t("worldline", routeTitle);
+    showToasts([{ text: t("toast_branch", routeTitle), type: "ending" }]);
 
     renderToc();
     // Navigate to first branch chapter after a short delay for toast visibility
@@ -1256,7 +1504,7 @@ async function handleBranchRoute(routeId, _chapter) {
       if (idx >= 0) setTimeout(() => renderChapter(idx), 600);
     }
   } catch (err) {
-    showToasts([{ text: `⚠️ 分支加载失败：${routeId}`, type: "flag" }]);
+    showToasts([{ text: t("toast_branch_fail", routeId), type: "flag" }]);
     if (badge) badge.classList.remove("visible");
     // Still mark the flag so the choice is recorded
     if (!PS.flags.includes(`branch_${routeId}`)) PS.flags.push(`branch_${routeId}`);
@@ -1280,7 +1528,7 @@ function renderChapter(idx) {
   const area = document.getElementById("reading-area");
   area.innerHTML = "";
   document.getElementById("main-area").scrollTo(0, 0);
-  document.getElementById("chapter-info").textContent = `第 ${ch.number} 章 / 共 ${chapters.length} 章`;
+  document.getElementById("chapter-info").textContent = t("ch_of", ch.number, chapters.length);
   document.title = `${ch.title} — ${storyPackage?.book?.title || SLUG}`;
   location.hash = String(ch.number);
   renderToc();
@@ -1291,8 +1539,8 @@ function renderChapter(idx) {
   header.innerHTML = `
     <h1>${esc(ch.title)}</h1>
     <div class="chapter-meta">
-      <span>第 ${ch.number} 章</span>
-      ${ch.is_paid ? "<span>💎 付费章节</span>" : ""}
+      <span>${t("ch_header", ch.number)}</span>
+      ${ch.is_paid ? `<span>${t("paid")}</span>` : ""}
     </div>
   `;
   area.appendChild(header);
@@ -1310,9 +1558,9 @@ function renderChapter(idx) {
   const nav = document.createElement("div");
   nav.className = "nav-bar";
   nav.innerHTML = `
-    <button class="nav-btn" ${idx <= 0 ? "disabled" : ""} onclick="goToChapter(${idx-1})">← 上一章</button>
+    <button class="nav-btn" ${idx <= 0 ? "disabled" : ""} onclick="goToChapter(${idx-1})">${t("prev_ch")}</button>
     <span class="nav-pos">${idx + 1} / ${chapters.length}</span>
-    <button class="nav-btn primary" ${idx >= chapters.length - 1 ? "disabled" : ""} onclick="goToChapter(${idx+1})">下一章 →</button>
+    <button class="nav-btn primary" ${idx >= chapters.length - 1 ? "disabled" : ""} onclick="goToChapter(${idx+1})">${t("next_ch")}</button>
   `;
   area.appendChild(nav);
 }
@@ -1348,6 +1596,59 @@ function wireSidebarTabs() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Content language switching
+// ─────────────────────────────────────────────────────────────────────────────
+const LANG_LABELS = { zh: "中文", en: "English", ja: "日本語", ko: "한국어" };
+
+function buildContentLangSelect(availLangs) {
+  const wrap = document.getElementById("content-lang-wrap");
+  const sel = document.getElementById("content-lang-select");
+  if (!availLangs || availLangs.length <= 1) { wrap.style.display = "none"; return; }
+  sel.innerHTML = availLangs.map(lc =>
+    `<option value="${lc}" ${lc === contentLang ? "selected" : ""}>${LANG_LABELS[lc] || lc.toUpperCase()}</option>`
+  ).join("");
+  wrap.style.display = "flex";
+  updateContentLangBadge();
+}
+
+function updateContentLangBadge() {
+  const badge = document.getElementById("content-lang-badge");
+  if (!badge) return;
+  if (contentLang !== "zh") {
+    badge.textContent = LANG_LABELS[contentLang] || contentLang.toUpperCase();
+    badge.classList.add("visible");
+  } else {
+    badge.classList.remove("visible");
+  }
+}
+
+async function switchContentLang(lc) {
+  if (lc === contentLang) return;
+  contentLang = lc;
+  localStorage.setItem(CONTENT_LANG_KEY, lc);
+  updateContentLangBadge();
+
+  // Reload story package with new lang
+  const area = document.getElementById("reading-area");
+  area.innerHTML = `<div class="state-center"><div class="spinner"></div><span>${t("loading")}</span></div>`;
+  try {
+    const pkg = await get(`/api/if-novels/${SLUG}/story-package?lang=${lc}`);
+    storyPackage = pkg;
+    chapters = pkg.chapters || [];
+    // Stay on same chapter number if possible
+    const curNum = chapters[currentIndex]?.number ?? 1;
+    const found = chapters.findIndex(c => c.number === curNum);
+    const startIdx = found >= 0 ? found : 0;
+    renderChapter(startIdx);
+    renderToc();
+    renderCharPanel();
+    renderEndingsPanel();
+  } catch (err) {
+    area.innerHTML = `<div class="state-center" style="color:#c0392b;">${esc(err.message)}</div>`;
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Fetch
 // ─────────────────────────────────────────────────────────────────────────────
 async function get(url) {
@@ -1360,6 +1661,7 @@ async function get(url) {
 // Init
 // ─────────────────────────────────────────────────────────────────────────────
 async function init() {
+  applyI18n();
   wireSidebarTabs();
   document.getElementById("toggle-sidebar").addEventListener("click", () => {
     document.getElementById("left-sidebar").classList.toggle("collapsed");
@@ -1375,19 +1677,20 @@ async function init() {
   document.getElementById("book-title").textContent = SLUG;
 
   try {
-    storyPackage = await get(`/api/if-novels/${SLUG}/story-package`);
+    storyPackage = await get(`/api/if-novels/${SLUG}/story-package?lang=${contentLang}`);
     chapters = storyPackage.chapters || [];
     const book = storyPackage.book || {};
     const bookTitle = book.title || SLUG;
     document.getElementById("book-title").textContent = bookTitle;
     document.title = `${bookTitle} — 互动小说`;
     window._bookTitle = bookTitle;
+    buildContentLangSelect(storyPackage.available_langs || ["zh"]);
 
     // Initialize PlayerState
     const saved = loadPS();
     if (saved) {
       PS = saved;
-      showToasts([{ text: "📂 已恢复上次进度", type: "flag" }]);
+      showToasts([{ text: t("toast_restored"), type: "flag" }]);
     } else {
       PS = defaultPS(book.initial_stats_cn || book.initial_stats);
     }
@@ -1398,7 +1701,7 @@ async function init() {
         await loadBranchChapters(PS.currentRoute);
         const badge = document.getElementById("worldline-badge");
         if (badge) {
-          badge.textContent = `世界线：${PS.currentRoute}`;
+          badge.textContent = t("worldline", PS.currentRoute);
           badge.classList.add("visible");
         }
       } catch (_) {
@@ -1414,9 +1717,9 @@ async function init() {
     updateKarmaBtn();
 
     if (!chapters.length) {
-      area.innerHTML = `<div class="state-center">这部小说还没有生成章节。</div>`;
+      area.innerHTML = `<div class="state-center">${t("err_no_chapters")}</div>`;
       document.getElementById("panel-toc").innerHTML =
-        '<div style="padding:16px;font-size:13px;color:var(--text-2);">暂无章节</div>';
+        `<div style="padding:16px;font-size:13px;color:var(--text-2);">${t("no_chapters")}</div>`;
       return;
     }
 
@@ -1439,7 +1742,7 @@ async function init() {
       `<div style="padding:16px;font-size:13px;color:var(--err-text,#c0392b);">${esc(err.message)}</div>`;
     area.innerHTML = `
       <div class="state-center" style="color:#c0392b;">
-        无法加载互动小说「${esc(SLUG)}」<br/>
+        ${t("err_load", esc(SLUG))}<br/>
         <small style="margin-top:8px;">${esc(err.message)}</small>
       </div>`;
   }

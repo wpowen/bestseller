@@ -513,7 +513,7 @@ def _translate_string_batch(
         model=model,
         api_key=api_key,
         api_base=api_base,
-        max_tokens=min(4096, max(1024, len("".join(strings)) * 3)),
+        max_tokens=min(16384, max(2048, len("".join(strings)) * 4)),
         temperature=0.3,
     )
     result = _parse_json(raw)
@@ -522,6 +522,10 @@ def _translate_string_batch(
     if len(result) != len(strings):
         raise ValueError(f"翻译数量不匹配: 期望 {len(strings)}，实际 {len(result)}")
     return [str(s) for s in result]
+
+
+_CHUNK_SIZE = 25       # 每块最多条数
+_CHUNK_MAX_CHARS = 2000  # 每块最大字符数（防止长文本超出 max_tokens）
 
 
 def translate_chapter(
@@ -535,31 +539,49 @@ def translate_chapter(
 ) -> dict:
     """
     翻译单个章节。
-    策略：提取所有可翻译字符串 → 批量翻译 → 回填到原结构。
-    失败时最多重试 max_attempts 次。
+    策略：提取所有可翻译字符串 → 分块（每块 ≤25 条）翻译 → 回填到原结构。
+    分块保证 LLM 不会截断响应。
     """
     string_paths = extract_translatable_strings(chapter)
     if not string_paths:
-        return chapter  # 没有可翻译内容，直接返回原章节
+        return chapter
 
-    strings = [text for _path, text in string_paths]
+    # 分块翻译：同时限制条数（≤25）和字符数（≤2000），防止 LLM 截断
+    def _make_chunks(paths: list) -> list[list]:
+        chunks, cur, cur_chars = [], [], 0
+        for item in paths:
+            text = item[1]
+            if cur and (len(cur) >= _CHUNK_SIZE or cur_chars + len(text) > _CHUNK_MAX_CHARS):
+                chunks.append(cur)
+                cur, cur_chars = [], 0
+            cur.append(item)
+            cur_chars += len(text)
+        if cur:
+            chunks.append(cur)
+        return chunks
 
-    last_exc: Exception | None = None
-    for attempt in range(max_attempts):
-        try:
-            translations = _translate_string_batch(
-                strings, language, glossary, model, api_key, api_base
-            )
-            return apply_translations(chapter, string_paths, translations)
-        except Exception as exc:
-            last_exc = exc
-            if attempt < max_attempts - 1:
-                wait = 10 * (2 ** attempt)
-                time.sleep(wait)
+    all_translations: list[str] = []
+    for chunk_paths in _make_chunks(string_paths):
+        chunk_strings = [text for _path, text in chunk_paths]
 
-    raise RuntimeError(
-        f"章节 {chapter.get('number')} 翻译失败（{max_attempts} 次尝试后）: {last_exc}"
-    ) from last_exc
+        last_exc: Exception | None = None
+        for attempt in range(max_attempts):
+            try:
+                chunk_result = _translate_string_batch(
+                    chunk_strings, language, glossary, model, api_key, api_base
+                )
+                all_translations.extend(chunk_result)
+                break
+            except Exception as exc:
+                last_exc = exc
+                if attempt < max_attempts - 1:
+                    time.sleep(10 * (2 ** attempt))
+        else:
+            raise RuntimeError(
+                f"章节 {chapter.get('number')} 某块翻译失败（{max_attempts} 次尝试后）: {last_exc}"
+            ) from last_exc
+
+    return apply_translations(chapter, string_paths, all_translations)
 
 
 def run_translation(

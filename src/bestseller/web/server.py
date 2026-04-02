@@ -1084,7 +1084,38 @@ def serve_web_app(
                     if not package_path.exists():
                         self._route_not_found()
                         return
-                    self._send_json(json.loads(package_path.read_text(encoding="utf-8")))
+                    pkg = json.loads(package_path.read_text(encoding="utf-8"))
+                    # Determine chapter source directory based on ?lang= query param.
+                    # zh (default) → if/chapters/;  en/ja/ko → translations/{lang}/chapters/
+                    lang_param = (query.get("lang") or ["zh"])[0].lower()
+                    valid_langs = {"zh", "en", "ja", "ko"}
+                    if lang_param not in valid_langs:
+                        lang_param = "zh"
+                    if lang_param == "zh":
+                        chapters_dir = Path(settings.output.base_dir) / slug / "if" / "chapters"
+                    else:
+                        chapters_dir = Path(settings.output.base_dir) / slug / "translations" / lang_param / "chapters"
+                    # Load all individual chapter files (supersedes story_package chapters list)
+                    if chapters_dir.exists():
+                        chapter_files = sorted(chapters_dir.glob("ch*.json"))
+                        if lang_param != "zh" or len(chapter_files) > len(pkg.get("chapters", [])):
+                            loaded: list[dict] = []
+                            for cf in chapter_files:
+                                try:
+                                    loaded.append(json.loads(cf.read_text(encoding="utf-8")))
+                                except Exception:
+                                    pass
+                            if loaded:
+                                pkg["chapters"] = loaded
+                    pkg["content_lang"] = lang_param
+                    # Expose which languages have translations available
+                    avail: list[str] = ["zh"]
+                    trans_base = Path(settings.output.base_dir) / slug / "translations"
+                    for lc in ("en", "ja", "ko"):
+                        if (trans_base / lc / "chapters").exists() and any((trans_base / lc / "chapters").glob("ch*.json")):
+                            avail.append(lc)
+                    pkg["available_langs"] = avail
+                    self._send_json(pkg)
                     return
                 if path.startswith("/api/if-novels/") and "/branches/" in path:
                     parts = path.split("/")

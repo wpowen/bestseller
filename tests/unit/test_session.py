@@ -57,23 +57,18 @@ async def test_create_engine_uses_database_url() -> None:
 
 
 @pytest.mark.asyncio
-async def test_session_scope_commits_and_disposes_engine(
+async def test_session_scope_commits_on_success(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    fake_engine = FakeEngine()
     fake_session = FakeSession()
 
-    def fake_create_engine(settings=None) -> FakeEngine:
-        return fake_engine
-
-    def fake_create_session_factory(settings=None, engine=None):
+    def fake_factory(settings=None):
         def factory() -> FakeSession:
             return fake_session
 
         return factory
 
-    monkeypatch.setattr(session_module, "create_engine", fake_create_engine)
-    monkeypatch.setattr(session_module, "create_session_factory", fake_create_session_factory)
+    monkeypatch.setattr(session_module, "get_shared_session_factory", fake_factory)
 
     async with session_module.session_scope():
         pass
@@ -81,27 +76,21 @@ async def test_session_scope_commits_and_disposes_engine(
     assert fake_session.committed is True
     assert fake_session.rolled_back is False
     assert fake_session.closed is True
-    assert fake_engine.disposed is True
 
 
 @pytest.mark.asyncio
 async def test_session_scope_rolls_back_on_exception(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    fake_engine = FakeEngine()
     fake_session = FakeSession()
 
-    def fake_create_engine(settings=None) -> FakeEngine:
-        return fake_engine
-
-    def fake_create_session_factory(settings=None, engine=None):
+    def fake_factory(settings=None):
         def factory() -> FakeSession:
             return fake_session
 
         return factory
 
-    monkeypatch.setattr(session_module, "create_engine", fake_create_engine)
-    monkeypatch.setattr(session_module, "create_session_factory", fake_create_session_factory)
+    monkeypatch.setattr(session_module, "get_shared_session_factory", fake_factory)
 
     with pytest.raises(RuntimeError, match="boom"):
         async with session_module.session_scope():
@@ -110,4 +99,18 @@ async def test_session_scope_rolls_back_on_exception(
     assert fake_session.committed is False
     assert fake_session.rolled_back is True
     assert fake_session.closed is True
+
+
+@pytest.mark.asyncio
+async def test_dispose_shared_engine(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_engine = FakeEngine()
+    monkeypatch.setattr(session_module, "_shared_engine", fake_engine)
+    monkeypatch.setattr(session_module, "_shared_session_factory", object())
+
+    await session_module.dispose_shared_engine()
+
     assert fake_engine.disposed is True
+    assert session_module._shared_engine is None
+    assert session_module._shared_session_factory is None

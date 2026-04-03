@@ -124,7 +124,7 @@ async def _upsert_character_state_snapshot(
             _extract_nested_text(state_payload, "physical_state") or existing.physical_state
         )
         existing.power_tier = _extract_nested_text(state_payload, "power_tier") or existing.power_tier
-        existing.trust_map = state_payload.get("trust_map", existing.trust_map or {})
+        existing.trust_map = dict(state_payload.get("trust_map", existing.trust_map or {}))
         existing.beliefs = list(state_payload.get("beliefs", existing.beliefs or []))
         existing.notes = summary_text
         return existing

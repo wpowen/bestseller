@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+import html
 import json
+import logging
 import mimetypes
 import socketserver
 import threading
@@ -67,6 +69,20 @@ def _project_output_dir(settings: AppSettings, project_slug: str) -> Path:
     return (Path(settings.output.base_dir) / project_slug).resolve()
 
 
+def _match_project_route(path: str, suffix: str) -> str | None:
+    """Extract project slug from /api/projects/<slug>/<suffix>.
+
+    Returns None if the path does not match the expected structure.
+    """
+    prefix = "/api/projects/"
+    if not path.startswith(prefix) or not path.endswith(f"/{suffix}"):
+        return None
+    middle = path[len(prefix):-len(f"/{suffix}")]
+    if not middle or "/" in middle:
+        return None
+    return middle
+
+
 def collect_project_artifact_entries(
     settings: AppSettings,
     project_slug: str,
@@ -111,12 +127,14 @@ def resolve_project_artifact_path(
 def _render_preview_html(project_slug: str, artifact_name: str, content_md: str) -> str:
     preview = build_preview_payload(project_slug, artifact_name, content_md)
     body = str(preview["html"])
+    safe_slug = html.escape(project_slug)
+    safe_artifact = html.escape(artifact_name)
     return f"""<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>{project_slug} / {artifact_name}</title>
+  <title>{safe_slug} / {safe_artifact}</title>
   <style>
     body {{
       margin: 0;
@@ -227,8 +245,8 @@ def _render_preview_html(project_slug: str, artifact_name: str, content_md: str)
     <section class="meta">
       <div class="meta-card">
         <strong>当前正文</strong>
-        <span>{artifact_name}</span>
-        <small>{project_slug}</small>
+        <span>{safe_artifact}</span>
+        <small>{safe_slug}</small>
       </div>
       <div class="meta-card">
         <strong>正文总字数</strong>
@@ -935,12 +953,16 @@ def serve_web_app(
             self._send_json({"error": "Not found."}, status=HTTPStatus.NOT_FOUND)
 
         def _route_error(self, exc: Exception) -> None:
+            if isinstance(exc, (ValueError, FileNotFoundError)):
+                error_msg = str(exc)
+            else:
+                logging.getLogger(__name__).exception("Unhandled error in request handler")
+                error_msg = "Internal server error."
             self._send_json(
                 {
-                    "error": str(exc),
-                    "type": type(exc).__name__,
+                    "error": error_msg,
                 },
-                status=HTTPStatus.BAD_REQUEST,
+                status=HTTPStatus.BAD_REQUEST if isinstance(exc, ValueError) else HTTPStatus.INTERNAL_SERVER_ERROR,
             )
 
         def do_GET(self) -> None:  # noqa: N802
@@ -955,7 +977,7 @@ def serve_web_app(
                     self._send_json(
                         {
                             "app": "BestSeller Web Studio",
-                            "database_url": settings.database.url,
+                            "database_connected": bool(settings.database.url),
                             "llm_mock": settings.llm.mock,
                             "planner_model": settings.llm.planner.model,
                             "writer_model": settings.llm.writer.model,
@@ -980,28 +1002,28 @@ def serve_web_app(
                         return
                     self._send_json(task)
                     return
-                if path.startswith("/api/projects/") and path.endswith("/summary"):
-                    project_slug = path.split("/")[3]
+                project_slug = _match_project_route(path, "summary")
+                if project_slug is not None:
                     self._send_json(asyncio.run(_load_project_summary_payload(settings, project_slug)))
                     return
-                if path.startswith("/api/projects/") and path.endswith("/structure"):
-                    project_slug = path.split("/")[3]
+                project_slug = _match_project_route(path, "structure")
+                if project_slug is not None:
                     self._send_json(asyncio.run(_load_project_structure_payload(settings, project_slug)))
                     return
-                if path.startswith("/api/projects/") and path.endswith("/story-bible"):
-                    project_slug = path.split("/")[3]
+                project_slug = _match_project_route(path, "story-bible")
+                if project_slug is not None:
                     self._send_json(asyncio.run(_load_story_bible_payload(settings, project_slug)))
                     return
-                if path.startswith("/api/projects/") and path.endswith("/narrative"):
-                    project_slug = path.split("/")[3]
+                project_slug = _match_project_route(path, "narrative")
+                if project_slug is not None:
                     self._send_json(asyncio.run(_load_narrative_payload(settings, project_slug)))
                     return
-                if path.startswith("/api/projects/") and path.endswith("/workflow"):
-                    project_slug = path.split("/")[3]
+                project_slug = _match_project_route(path, "workflow")
+                if project_slug is not None:
                     self._send_json(asyncio.run(_load_workflow_payload(settings, project_slug)))
                     return
-                if path.startswith("/api/projects/") and path.endswith("/preview"):
-                    project_slug = path.split("/")[3]
+                project_slug = _match_project_route(path, "preview")
+                if project_slug is not None:
                     artifact_name = (query.get("name") or ["project.md"])[0]
                     artifact_path = resolve_project_artifact_path(settings, project_slug, artifact_name)
                     content_md = artifact_path.read_text(encoding="utf-8")
@@ -1010,8 +1032,8 @@ def serve_web_app(
                         content_type="text/html; charset=utf-8",
                     )
                     return
-                if path.startswith("/api/projects/") and path.endswith("/preview-data"):
-                    project_slug = path.split("/")[3]
+                project_slug = _match_project_route(path, "preview-data")
+                if project_slug is not None:
                     artifact_name = (query.get("name") or ["project.md"])[0]
                     artifact_path = resolve_project_artifact_path(settings, project_slug, artifact_name)
                     content_md = artifact_path.read_text(encoding="utf-8")
@@ -1025,8 +1047,8 @@ def serve_web_app(
                     )
                     self._send_json(payload)
                     return
-                if path.startswith("/api/projects/") and path.endswith("/artifact"):
-                    project_slug = path.split("/")[3]
+                project_slug = _match_project_route(path, "artifact")
+                if project_slug is not None:
                     artifact_name = (query.get("name") or [None])[0]
                     if artifact_name is None:
                         raise ValueError("Query parameter 'name' is required.")

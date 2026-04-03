@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import os
 from functools import lru_cache
 from pathlib import Path
@@ -207,7 +208,7 @@ def _coerce_env_value(value: str) -> Any:
 
 
 def _apply_env_overrides(data: dict[str, Any], env: Mapping[str, str]) -> dict[str, Any]:
-    merged = dict(data)
+    merged = copy.deepcopy(data)
     for key, value in env.items():
         if not key.startswith(ENV_PREFIX):
             continue

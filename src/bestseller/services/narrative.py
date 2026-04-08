@@ -14,10 +14,17 @@ from bestseller.domain.narrative import (
     ChapterContractRead,
     ClueRead,
     EmotionTrackRead,
+    EndingContractRead,
+    MotifPlacementRead,
     NarrativeOverview,
+    PacingCurvePointRead,
     PayoffRead,
     PlotArcRead,
+    ReaderKnowledgeEntryRead,
+    RelationshipEventRead,
     SceneContractRead,
+    SubplotScheduleEntryRead,
+    ThemeArcRead,
 )
 from bestseller.infra.db.models import (
     AntagonistPlanModel,
@@ -27,12 +34,19 @@ from bestseller.infra.db.models import (
     CharacterModel,
     ClueModel,
     EmotionTrackModel,
+    EndingContractModel,
+    MotifPlacementModel,
+    PacingCurvePointModel,
     PayoffModel,
     PlotArcModel,
     ProjectModel,
+    ReaderKnowledgeEntryModel,
+    RelationshipEventModel,
     RelationshipModel,
     SceneCardModel,
     SceneContractModel,
+    SubplotScheduleModel,
+    ThemeArcModel,
     VolumeModel,
 )
 from bestseller.services.projects import get_project_by_slug
@@ -736,6 +750,256 @@ def _build_antagonist_plan_specs(
     return specs
 
 
+# ── Builder functions for the 7 new narrative depth models ──
+
+
+_PHASE_TENSION: dict[str, float] = {
+    "setup": 0.25, "investigation": 0.40, "expansion": 0.50,
+    "complication": 0.60, "confrontation": 0.70, "reversal": 0.80,
+    "climax": 0.95, "resolution": 0.35, "epilogue": 0.15,
+}
+
+
+def _build_theme_arc_specs(
+    project: ProjectModel,
+    *,
+    volumes: list[VolumeModel],
+    volume_entries: dict[int, Any],
+) -> list[dict[str, Any]]:
+    specs: list[dict[str, Any]] = []
+    book_theme = (project.metadata_json or {}).get("book_spec", {}).get("theme")
+    if book_theme and isinstance(book_theme, str):
+        specs.append({
+            "theme_code": "main-theme",
+            "theme_statement": book_theme,
+            "symbol_set": [],
+            "evolution_stages": ["introduced", "tested", "deepened", "resolved"],
+            "current_stage": "introduced",
+            "status": "active",
+        })
+    for volume in volumes:
+        entry = volume_entries.get(volume.volume_number)
+        vol_theme = getattr(entry, "volume_theme", None) if entry is not None else None
+        vol_theme = vol_theme or volume.theme
+        if vol_theme and isinstance(vol_theme, str):
+            specs.append({
+                "theme_code": f"vol-{volume.volume_number:02d}-theme",
+                "theme_statement": vol_theme,
+                "symbol_set": [],
+                "evolution_stages": ["introduced", "tested", "resolved"],
+                "current_stage": "introduced",
+                "status": "active",
+            })
+    if not specs:
+        specs.append({
+            "theme_code": "main-theme",
+            "theme_statement": project.title or "本书的核心主题需要在后续规划中补充。",
+            "symbol_set": [],
+            "evolution_stages": ["introduced", "tested", "deepened", "resolved"],
+            "current_stage": "introduced",
+            "status": "active",
+        })
+    return specs
+
+
+def _build_motif_placement_specs(
+    *,
+    theme_arcs_by_code: dict[str, Any],
+    chapters: list[ChapterModel],
+) -> list[dict[str, Any]]:
+    specs: list[dict[str, Any]] = []
+    if not theme_arcs_by_code or not chapters:
+        return specs
+    main_theme_arc = theme_arcs_by_code.get("main-theme")
+    if main_theme_arc is None:
+        main_theme_arc = next(iter(theme_arcs_by_code.values()))
+    theme_arc_id = main_theme_arc.id
+    total = len(chapters)
+    placement_points = [
+        (0, "plant"),
+        (max(1, total // 4), "echo"),
+        (max(2, total // 2), "transform"),
+        (total - 1, "resolve"),
+    ]
+    for idx, ptype in placement_points:
+        if idx < total:
+            chapter = chapters[idx]
+            specs.append({
+                "theme_arc_id": theme_arc_id,
+                "motif_label": f"主题意象-{ptype}",
+                "placement_type": ptype,
+                "volume_number": None,
+                "chapter_number": chapter.chapter_number,
+                "scene_number": 1,
+                "description": f"第{chapter.chapter_number}章通过{ptype}手法呈现核心主题意象。",
+                "status": "planned",
+            })
+    return specs
+
+
+def _build_subplot_schedule_specs(
+    *,
+    arcs_by_code: dict[str, PlotArcModel],
+    chapters: list[ChapterModel],
+    beats_by_chapter: dict[int, list[Any]],
+) -> list[dict[str, Any]]:
+    specs: list[dict[str, Any]] = []
+    subplot_arcs = {
+        code: arc for code, arc in arcs_by_code.items()
+        if arc.arc_type not in {"main_plot"}
+    }
+    if not subplot_arcs:
+        return specs
+    for chapter in chapters:
+        chapter_beat_arc_codes = {
+            str(beat.metadata_json.get("arc_code"))
+            for beat in beats_by_chapter.get(chapter.chapter_number, [])
+        }
+        for arc_code, arc in subplot_arcs.items():
+            if arc_code in chapter_beat_arc_codes:
+                prominence = "primary"
+            elif chapter.chapter_number <= 2:
+                prominence = "mention"
+            else:
+                prominence = "dormant"
+            specs.append({
+                "plot_arc_id": arc.id,
+                "arc_code": arc_code,
+                "chapter_number": chapter.chapter_number,
+                "prominence": prominence,
+            })
+    return specs
+
+
+def _build_relationship_event_specs(
+    *,
+    relationships: list[RelationshipModel],
+    characters_by_id: dict[UUID, CharacterModel],
+    chapters: list[ChapterModel],
+) -> list[dict[str, Any]]:
+    specs: list[dict[str, Any]] = []
+    if not relationships or not chapters:
+        return specs
+    for relationship in relationships:
+        left = characters_by_id.get(relationship.character_a_id)
+        right = characters_by_id.get(relationship.character_b_id)
+        if left is None or right is None:
+            continue
+        established_ch = relationship.established_chapter_no or 1
+        last_changed_ch = relationship.last_changed_chapter_no
+        specs.append({
+            "character_a_label": left.name,
+            "character_b_label": right.name,
+            "chapter_number": established_ch,
+            "scene_number": 1,
+            "event_description": f"{left.name}与{right.name}的{relationship.relationship_type}关系建立。",
+            "relationship_change": relationship.public_face or relationship.relationship_type,
+            "is_milestone": True,
+        })
+        if last_changed_ch is not None and last_changed_ch > established_ch:
+            specs.append({
+                "character_a_label": left.name,
+                "character_b_label": right.name,
+                "chapter_number": last_changed_ch,
+                "scene_number": None,
+                "event_description": _ensure_text(
+                    relationship.tension_summary,
+                    f"{left.name}与{right.name}的关系发生变化。",
+                ),
+                "relationship_change": relationship.private_reality or "关系转折",
+                "is_milestone": bool(relationship.tension_summary),
+            })
+    return specs
+
+
+def _build_reader_knowledge_specs(
+    *,
+    clues_by_code: dict[str, ClueModel],
+    payoffs_by_code: dict[str, PayoffModel],
+) -> list[dict[str, Any]]:
+    specs: list[dict[str, Any]] = []
+    for clue in clues_by_code.values():
+        if clue.planted_in_chapter_number is not None:
+            specs.append({
+                "chapter_number": clue.planted_in_chapter_number,
+                "knowledge_item": _ensure_text(clue.description, clue.label),
+                "audience": "reader_only" if clue.clue_type in {"hidden", "dramatic_irony"} else "both",
+                "source_clue_code": clue.clue_code,
+            })
+    for payoff in payoffs_by_code.values():
+        target_ch = payoff.actual_chapter_number or payoff.target_chapter_number
+        if target_ch is not None:
+            specs.append({
+                "chapter_number": target_ch,
+                "knowledge_item": _ensure_text(payoff.description, payoff.label),
+                "audience": "both",
+                "source_clue_code": None,
+            })
+    return specs
+
+
+def _build_ending_contract_spec(
+    *,
+    arcs_by_code: dict[str, PlotArcModel],
+    clues_by_code: dict[str, ClueModel],
+    emotion_track_models: list[EmotionTrackModel],
+    theme_arcs: list[ThemeArcModel],
+) -> dict[str, Any]:
+    arcs_to_resolve = [arc.arc_code for arc in arcs_by_code.values() if arc.status in ("planned", "active")]
+    clues_to_payoff = [
+        clue.clue_code for clue in clues_by_code.values()
+        if clue.actual_paid_off_chapter_number is None
+    ]
+    relationships_to_close = [
+        track.title for track in emotion_track_models
+        if track.status == "active"
+    ][:10]
+    main_theme = next((t for t in theme_arcs if t.theme_code == "main-theme"), None)
+    thematic_final = main_theme.theme_statement if main_theme else "核心主题需要在结局获得最终回应。"
+    return {
+        "arcs_to_resolve": arcs_to_resolve,
+        "clues_to_payoff": clues_to_payoff,
+        "relationships_to_close": relationships_to_close,
+        "thematic_final_expression": thematic_final,
+        "denouement_plan": "高潮后留出一个余韵场景收束情绪和主题。",
+        "status": "planned",
+    }
+
+
+def _build_pacing_curve_specs(
+    *,
+    chapters: list[ChapterModel],
+    scenes_by_chapter: dict[UUID, list[SceneCardModel]],
+) -> list[dict[str, Any]]:
+    specs: list[dict[str, Any]] = []
+    total = len(chapters)
+    for idx, chapter in enumerate(chapters):
+        chapter_scenes = scenes_by_chapter.get(chapter.id, [])
+        dominant_scene_type = chapter_scenes[0].scene_type if chapter_scenes else "hook"
+        progress = idx / max(total - 1, 1)
+        if progress < 0.15:
+            base_tension = 0.25
+        elif progress < 0.45:
+            base_tension = 0.25 + (progress - 0.15) * 1.5
+        elif progress < 0.75:
+            base_tension = 0.70 + (progress - 0.45) * 0.5
+        elif progress < 0.90:
+            base_tension = 0.85 + (progress - 0.75) * 0.67
+        else:
+            base_tension = 0.95 - (progress - 0.90) * 3.0
+        phase = (chapter.metadata_json or {}).get("phase", "")
+        if phase in _PHASE_TENSION:
+            base_tension = (base_tension + _PHASE_TENSION[phase]) / 2
+        tension = round(max(0.05, min(0.99, base_tension)), 2)
+        specs.append({
+            "chapter_number": chapter.chapter_number,
+            "tension_level": tension,
+            "scene_type_plan": dominant_scene_type,
+            "notes": None,
+        })
+    return specs
+
+
 async def rebuild_narrative_graph(
     session: AsyncSession,
     *,
@@ -809,6 +1073,13 @@ async def rebuild_narrative_graph(
     }
 
     for model in (
+        PacingCurvePointModel,
+        EndingContractModel,
+        ReaderKnowledgeEntryModel,
+        RelationshipEventModel,
+        SubplotScheduleModel,
+        MotifPlacementModel,
+        ThemeArcModel,
         SceneContractModel,
         ChapterContractModel,
         PayoffModel,
@@ -1036,6 +1307,27 @@ async def rebuild_narrative_graph(
                     arc_beat_ids=[str(beat.id) for beat in scene_beats],
                     planted_clue_codes=scene_clues,
                     payoff_codes=scene_payoffs,
+                    thematic_task=scene.purpose.get("theme") or (chapter.metadata_json or {}).get("thematic_task"),
+                    dramatic_irony_intent=(
+                        scene_clues[0] + "（读者已知但角色尚不知情）"
+                        if scene_clues and any(
+                            clues_by_code.get(c) and clues_by_code[c].clue_type in ("hidden", "dramatic_irony")
+                            for c in scene_clues
+                        )
+                        else None
+                    ),
+                    transition_type=(
+                        "time_skip" if scene.scene_type in ("montage", "aftermath")
+                        else "flashback" if scene.scene_type == "flashback"
+                        else "parallel_crosscut" if scene.scene_type == "parallel"
+                        else "hard_cut" if scene.scene_number > 1
+                        else None
+                    ),
+                    subplot_codes=_unique_preserve([
+                        str(beat.metadata_json.get("arc_code"))
+                        for beat in scene_beats
+                        if str(beat.metadata_json.get("arc_code")) not in (set(primary_arc_codes[:1]) | {"main_plot"})
+                    ])[:5],
                     metadata_json={},
                 )
         )
@@ -1103,6 +1395,150 @@ async def rebuild_narrative_graph(
         antagonist_plan_models.append(antagonist_plan)
 
     await session.flush()
+
+    # ── Theme Arcs ──
+    theme_arc_specs = _build_theme_arc_specs(
+        project,
+        volumes=volumes,
+        volume_entries=volume_entries,
+    )
+    theme_arcs_by_code: dict[str, ThemeArcModel] = {}
+    for spec in theme_arc_specs:
+        theme_arc = ThemeArcModel(
+            project_id=project.id,
+            theme_code=spec["theme_code"],
+            theme_statement=spec["theme_statement"],
+            symbol_set=spec["symbol_set"],
+            evolution_stages=spec["evolution_stages"],
+            current_stage=spec["current_stage"],
+            status=spec["status"],
+            metadata_json={},
+        )
+        session.add(theme_arc)
+        theme_arcs_by_code[spec["theme_code"]] = theme_arc
+    await session.flush()
+
+    # ── Motif Placements ──
+    motif_specs = _build_motif_placement_specs(
+        theme_arcs_by_code=theme_arcs_by_code,
+        chapters=chapters,
+    )
+    motif_models: list[MotifPlacementModel] = []
+    for spec in motif_specs:
+        motif = MotifPlacementModel(
+            project_id=project.id,
+            theme_arc_id=spec["theme_arc_id"],
+            motif_label=spec["motif_label"],
+            placement_type=spec["placement_type"],
+            volume_number=spec.get("volume_number"),
+            chapter_number=spec.get("chapter_number"),
+            scene_number=spec.get("scene_number"),
+            description=spec.get("description"),
+            status=spec["status"],
+            metadata_json={},
+        )
+        session.add(motif)
+        motif_models.append(motif)
+
+    # ── Subplot Schedule ──
+    subplot_specs = _build_subplot_schedule_specs(
+        arcs_by_code=arcs_by_code,
+        chapters=chapters,
+        beats_by_chapter=beats_by_chapter,
+    )
+    subplot_models: list[SubplotScheduleModel] = []
+    for spec in subplot_specs:
+        subplot_entry = SubplotScheduleModel(
+            project_id=project.id,
+            plot_arc_id=spec["plot_arc_id"],
+            arc_code=spec["arc_code"],
+            chapter_number=spec["chapter_number"],
+            prominence=spec["prominence"],
+            notes=spec.get("notes"),
+            metadata_json={},
+        )
+        session.add(subplot_entry)
+        subplot_models.append(subplot_entry)
+
+    # ── Relationship Events ──
+    rel_event_specs = _build_relationship_event_specs(
+        relationships=relationships,
+        characters_by_id=characters_by_id,
+        chapters=chapters,
+    )
+    rel_event_models: list[RelationshipEventModel] = []
+    for spec in rel_event_specs:
+        rel_event = RelationshipEventModel(
+            project_id=project.id,
+            character_a_label=spec["character_a_label"],
+            character_b_label=spec["character_b_label"],
+            chapter_number=spec["chapter_number"],
+            scene_number=spec.get("scene_number"),
+            event_description=spec["event_description"],
+            relationship_change=spec["relationship_change"],
+            is_milestone=spec.get("is_milestone", False),
+            metadata_json={},
+        )
+        session.add(rel_event)
+        rel_event_models.append(rel_event)
+
+    # ── Reader Knowledge Entries ──
+    reader_knowledge_specs = _build_reader_knowledge_specs(
+        clues_by_code=clues_by_code,
+        payoffs_by_code=payoffs_by_code,
+    )
+    reader_knowledge_models: list[ReaderKnowledgeEntryModel] = []
+    for spec in reader_knowledge_specs:
+        rk = ReaderKnowledgeEntryModel(
+            project_id=project.id,
+            chapter_number=spec["chapter_number"],
+            knowledge_item=spec["knowledge_item"],
+            audience=spec["audience"],
+            source_clue_code=spec.get("source_clue_code"),
+            metadata_json={},
+        )
+        session.add(rk)
+        reader_knowledge_models.append(rk)
+
+    # ── Ending Contract ──
+    theme_arc_list = list(theme_arcs_by_code.values())
+    ending_spec = _build_ending_contract_spec(
+        arcs_by_code=arcs_by_code,
+        clues_by_code=clues_by_code,
+        emotion_track_models=emotion_track_models,
+        theme_arcs=theme_arc_list,
+    )
+    ending_contract = EndingContractModel(
+        project_id=project.id,
+        arcs_to_resolve=ending_spec["arcs_to_resolve"],
+        clues_to_payoff=ending_spec["clues_to_payoff"],
+        relationships_to_close=ending_spec["relationships_to_close"],
+        thematic_final_expression=ending_spec.get("thematic_final_expression"),
+        denouement_plan=ending_spec.get("denouement_plan"),
+        status=ending_spec["status"],
+        metadata_json={},
+    )
+    session.add(ending_contract)
+
+    # ── Pacing Curve Points ──
+    pacing_specs = _build_pacing_curve_specs(
+        chapters=chapters,
+        scenes_by_chapter=scenes_by_chapter,
+    )
+    pacing_models: list[PacingCurvePointModel] = []
+    for spec in pacing_specs:
+        pacing_point = PacingCurvePointModel(
+            project_id=project.id,
+            chapter_number=spec["chapter_number"],
+            tension_level=spec["tension_level"],
+            scene_type_plan=spec.get("scene_type_plan"),
+            notes=spec.get("notes"),
+            metadata_json={},
+        )
+        session.add(pacing_point)
+        pacing_models.append(pacing_point)
+
+    await session.flush()
     return {
         "plot_arc_count": len(arcs_by_code),
         "arc_beat_count": len(beat_models),
@@ -1112,6 +1548,13 @@ async def rebuild_narrative_graph(
         "scene_contract_count": len(scenes),
         "emotion_track_count": len(emotion_track_models),
         "antagonist_plan_count": len(antagonist_plan_models),
+        "theme_arc_count": len(theme_arcs_by_code),
+        "motif_placement_count": len(motif_models),
+        "subplot_schedule_count": len(subplot_models),
+        "relationship_event_count": len(rel_event_models),
+        "reader_knowledge_count": len(reader_knowledge_models),
+        "ending_contract_count": 1,
+        "pacing_curve_point_count": len(pacing_models),
     }
 
 
@@ -1186,6 +1629,55 @@ async def build_narrative_overview(
                 AntagonistPlanModel.target_chapter_number.asc().nullsfirst(),
                 AntagonistPlanModel.plan_code.asc(),
             )
+        )
+    )
+    theme_arcs = list(
+        await session.scalars(
+            select(ThemeArcModel)
+            .where(ThemeArcModel.project_id == project.id)
+            .order_by(ThemeArcModel.theme_code.asc())
+        )
+    )
+    motif_placements = list(
+        await session.scalars(
+            select(MotifPlacementModel)
+            .where(MotifPlacementModel.project_id == project.id)
+            .order_by(MotifPlacementModel.chapter_number.asc().nullsfirst())
+        )
+    )
+    subplot_schedule = list(
+        await session.scalars(
+            select(SubplotScheduleModel)
+            .where(SubplotScheduleModel.project_id == project.id)
+            .order_by(SubplotScheduleModel.chapter_number.asc(), SubplotScheduleModel.arc_code.asc())
+        )
+    )
+    relationship_events = list(
+        await session.scalars(
+            select(RelationshipEventModel)
+            .where(RelationshipEventModel.project_id == project.id)
+            .order_by(RelationshipEventModel.chapter_number.asc())
+        )
+    )
+    reader_knowledge = list(
+        await session.scalars(
+            select(ReaderKnowledgeEntryModel)
+            .where(ReaderKnowledgeEntryModel.project_id == project.id)
+            .order_by(ReaderKnowledgeEntryModel.chapter_number.asc())
+        )
+    )
+    ending_contract_rows = list(
+        await session.scalars(
+            select(EndingContractModel)
+            .where(EndingContractModel.project_id == project.id)
+        )
+    )
+    ending_contract_row = ending_contract_rows[0] if ending_contract_rows else None
+    pacing_curve = list(
+        await session.scalars(
+            select(PacingCurvePointModel)
+            .where(PacingCurvePointModel.project_id == project.id)
+            .order_by(PacingCurvePointModel.chapter_number.asc())
         )
     )
 
@@ -1305,6 +1797,10 @@ async def build_narrative_overview(
                 arc_beat_ids=[str(beat_id) for beat_id in item.arc_beat_ids],
                 planted_clue_codes=list(item.planted_clue_codes),
                 payoff_codes=list(item.payoff_codes),
+                thematic_task=item.thematic_task,
+                dramatic_irony_intent=item.dramatic_irony_intent,
+                transition_type=item.transition_type,
+                subplot_codes=list(item.subplot_codes) if item.subplot_codes else [],
             )
             for item in scene_contracts
         ],
@@ -1348,5 +1844,83 @@ async def build_narrative_overview(
                 status=item.status,
             )
             for item in antagonist_plans
+        ],
+        theme_arcs=[
+            ThemeArcRead(
+                id=item.id,
+                theme_code=item.theme_code,
+                theme_statement=item.theme_statement,
+                symbol_set=list(item.symbol_set),
+                evolution_stages=list(item.evolution_stages),
+                current_stage=item.current_stage,
+                status=item.status,
+            )
+            for item in theme_arcs
+        ],
+        motif_placements=[
+            MotifPlacementRead(
+                id=item.id,
+                theme_arc_id=item.theme_arc_id,
+                motif_label=item.motif_label,
+                placement_type=item.placement_type,
+                volume_number=item.volume_number,
+                chapter_number=item.chapter_number,
+                scene_number=item.scene_number,
+                description=item.description,
+                status=item.status,
+            )
+            for item in motif_placements
+        ],
+        subplot_schedule=[
+            SubplotScheduleEntryRead(
+                id=item.id,
+                plot_arc_id=item.plot_arc_id,
+                arc_code=item.arc_code,
+                chapter_number=item.chapter_number,
+                prominence=item.prominence,
+                notes=item.notes,
+            )
+            for item in subplot_schedule
+        ],
+        relationship_events=[
+            RelationshipEventRead(
+                id=item.id,
+                character_a_label=item.character_a_label,
+                character_b_label=item.character_b_label,
+                chapter_number=item.chapter_number,
+                scene_number=item.scene_number,
+                event_description=item.event_description,
+                relationship_change=item.relationship_change,
+                is_milestone=item.is_milestone,
+            )
+            for item in relationship_events
+        ],
+        reader_knowledge=[
+            ReaderKnowledgeEntryRead(
+                id=item.id,
+                chapter_number=item.chapter_number,
+                knowledge_item=item.knowledge_item,
+                audience=item.audience,
+                source_clue_code=item.source_clue_code,
+            )
+            for item in reader_knowledge
+        ],
+        ending_contract=EndingContractRead(
+            id=ending_contract_row.id,
+            arcs_to_resolve=list(ending_contract_row.arcs_to_resolve),
+            clues_to_payoff=list(ending_contract_row.clues_to_payoff),
+            relationships_to_close=list(ending_contract_row.relationships_to_close),
+            thematic_final_expression=ending_contract_row.thematic_final_expression,
+            denouement_plan=ending_contract_row.denouement_plan,
+            status=ending_contract_row.status,
+        ) if ending_contract_row is not None else None,
+        pacing_curve=[
+            PacingCurvePointRead(
+                chapter_number=item.chapter_number,
+                tension_level=float(item.tension_level),
+                scene_type_plan=item.scene_type_plan,
+                notes=item.notes,
+            )
+            for item in pacing_curve
         ],
     )

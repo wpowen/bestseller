@@ -432,6 +432,8 @@ async def build_story_bible_overview(
                 power_tier=(latest_state.power_tier if latest_state is not None else character.power_tier),
                 is_pov_character=character.is_pov_character,
                 knowledge_state=dict(character.knowledge_state_json or {}),
+                voice_profile=dict(character.voice_profile_json or {}),
+                moral_framework=dict(character.moral_framework_json or {}),
                 latest_state=(
                     CharacterStateSnapshotRead(
                         chapter_number=latest_state.chapter_number,

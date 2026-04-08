@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import re
 from typing import Any
 from uuid import UUID
@@ -62,17 +63,163 @@ _STRUCTURED_METADATA_LINE_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Chinese structural / meta-commentary terms that should NEVER appear in novel prose.
+_CN_META_HEADER_RE = re.compile(
+    r"^\s*#{1,4}\s*(?:修订说明|上一版草稿|重写策略|写作说明|场景说明|改写说明|润色说明"
+    r"|策划说明|提纲|大纲|剧情任务|情绪任务|写法指导)\s*$"
+)
+
+_CN_META_LINE_RE = re.compile(
+    r"^\s*(?:>+\s*)?[-*]?\s*(?:重写策略|本次任务|修订说明|剧情任务|情绪任务|入场状态|离场状态|收束状态"
+    r"|开场状态|场景类型|场景目标|章节目标|本章目标|钩子设计|尾钩|结尾钩子|开场白设计|开场白|设想"
+    r"|戏剧反讽意图|过渡方式|主题任务|信息释放|contract|合同式写作约束"
+    r"|叙事树上下文|伏笔与兑现约束|关系与情绪推进约束|反派推进约束"
+    r"|商业网文硬约束|Prompt Pack)\s*[：:].+$"
+)
+
+# Scene/chapter scaffold headings that must never appear in prose:
+#   "## 场景 1：xxx"  /  "### 第三场"  /  "第1场" / "第一场"
+_CN_SCAFFOLD_HEADING_RE = re.compile(
+    r"^\s*(?:#{1,4}\s*)?(?:第\s*[一二三四五六七八九十百零\d]+\s*(?:场|章)"
+    r"|场景\s*[一二三四五六七八九十百零\d]+|结尾钩子|本章目标)"
+    r"(?:\s*[:：].*)?$"
+)
+
+_CN_META_PROSE_RE = re.compile(
+    r"(?:这一场景要完成的剧情任务是|这一场景的情绪任务是|本场景的写作目标是"
+    r"|以下是.*的(?:场景|章节|草稿|初稿|提纲|大纲)"
+    r"|以下为.*改写后的版本|以上是.*的(?:重写|修订|润色)版本"
+    r"|根据(?:修订|重写|润色)(?:说明|要求|策略))"
+)
+
 
 def sanitize_novel_markdown_content(content_md: str) -> str:
+    """Strip non-fiction structural markers and meta-commentary from novel prose."""
+    # First pass: remove "### 修订说明" / "### 上一版草稿" blocks entirely.
+    # These blocks run from the header to end-of-string or next H2+ header.
+    content_md = re.sub(
+        r"#{1,4}\s*(?:修订说明|上一版草稿|改写说明|润色说明).*?(?=\n##\s|\Z)",
+        "",
+        content_md,
+        flags=re.DOTALL,
+    )
+
     cleaned_lines: list[str] = []
     for raw_line in content_md.splitlines():
-        if _STRUCTURED_METADATA_LINE_RE.match(raw_line.strip()):
+        stripped = raw_line.strip()
+        # Drop English metadata lines (original filter)
+        if _STRUCTURED_METADATA_LINE_RE.match(stripped):
+            continue
+        # Drop Chinese meta headers
+        if _CN_META_HEADER_RE.match(stripped):
+            continue
+        # Drop Chinese meta key-value lines
+        if _CN_META_LINE_RE.match(stripped):
+            continue
+        # Drop scaffold headings like "## 场景 1：xxx" / "第一场" / "结尾钩子"
+        if _CN_SCAFFOLD_HEADING_RE.match(stripped):
+            continue
+        # Drop prose-wrapped metadata sentences
+        if _CN_META_PROSE_RE.search(stripped):
             continue
         cleaned_lines.append(raw_line.rstrip())
 
     cleaned = "\n".join(cleaned_lines)
     cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
     return cleaned.strip()
+
+
+logger = logging.getLogger(__name__)
+
+# Shared prohibition block injected into all writer / editor system prompts.
+# Uses triple-quoted string to safely contain Chinese fullwidth quotes.
+_NOVEL_OUTPUT_PROHIBITION = """\
+【严禁出现以下内容】：
+- 不得出现\u201c钩子\u201d\u201c开场白\u201d\u201c设想\u201d\u201c尾钩\u201d\u201c入场状态\u201d\u201c离场状态\u201d\u201c收束状态\u201d\u201c剧情任务\u201d\u201c情绪任务\u201d等策划术语
+- 不得出现\u201c修订说明\u201d\u201c重写策略\u201d\u201c上一版草稿\u201d\u201c场景说明\u201d\u201c写法指导\u201d等元评论
+- 不得出现\u201c这一场景要完成的剧情任务是\u201d\u201c以下是\u201d\u201c以上是\u201d等解释性前缀
+- 不得出现 entry_state / exit_state / contract / scene_type 等英文结构化标签
+- 所有策划信息（场景目的、情绪目标、contract 约束）仅供你理解意图，严禁直接输出到正文
+- 输出中只允许出现：叙事散文、对话、动作描写、环境描写、内心活动
+"""
+
+# Quick heuristic: if any of these terms appear in the output, it likely
+# contains non-fiction meta-commentary that slipped through the regex filter.
+_META_LEAK_KEYWORDS = (
+    "修订说明", "上一版草稿", "重写策略", "本次任务",
+    "剧情任务是", "情绪任务是", "入场状态：", "离场状态：",
+    "收束状态：", "开场状态：", "entry_state", "exit_state",
+    "scene_summary", "contract_alignment", "tail_hook",
+    "closing_hook", "story_task", "emotion_task",
+)
+
+
+def has_meta_leak(content_md: str) -> bool:
+    """Return True if *content_md* still contains non-fiction meta-commentary."""
+    return any(kw in content_md for kw in _META_LEAK_KEYWORDS)
+
+
+async def validate_and_clean_novel_content(
+    session: AsyncSession,
+    settings: AppSettings,
+    content_md: str,
+    *,
+    project_id: UUID | None = None,
+    workflow_run_id: UUID | None = None,
+    step_run_id: UUID | None = None,
+) -> str:
+    """LLM-based content validation gate.
+
+    Called after ``sanitize_novel_markdown_content`` only when the heuristic
+    ``has_meta_leak`` still detects non-fiction markers.  The critic role
+    rewrites the offending paragraphs, keeping story content intact.
+    """
+    # Fast path: no leak detected — skip LLM call entirely.
+    if not has_meta_leak(content_md):
+        return content_md
+
+    logger.warning(
+        "Meta-commentary leak detected in output (len=%d), invoking LLM cleanup",
+        len(content_md),
+    )
+
+    system_prompt = (
+        "你是小说正文校验编辑。你的唯一任务是删除或改写混入正文的非小说内容。\n"
+        "非小说内容包括但不限于：\n"
+        "1. 策划术语：钩子、开场白、设想、尾钩、剧情任务、情绪任务、入场状态、离场状态、收束状态\n"
+        "2. 元评论：修订说明、重写策略、上一版草稿、写法指导、场景说明\n"
+        "3. 英文结构标签：entry_state、exit_state、scene_summary、contract 等\n"
+        "4. 解释性前缀/后缀：\u201c以下是\u201d\u201c以上是\u201d\u201c这一场景要完成的剧情任务是\u201d\n\n"
+        "处理规则：\n"
+        "- 如果某个段落完全是元评论/策划说明，直接删除整段\n"
+        "- 如果某个段落混合了小说正文和策划术语，只删除策划术语部分，保留小说正文\n"
+        "- 不要改变小说正文的情节、对话、描写\n"
+        "- 不要添加新内容\n"
+        "- 输出清理后的完整正文，直接输出 Markdown，不要解释你做了什么\n"
+    )
+    user_prompt = f"以下是需要校验的小说正文：\n\n{content_md}"
+
+    completion = await complete_text(
+        session,
+        settings,
+        LLMCompletionRequest(
+            logical_role="critic",
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            fallback_response=content_md,
+            prompt_template="content_validation",
+            prompt_version="1.0",
+            project_id=project_id,
+            workflow_run_id=workflow_run_id,
+            step_run_id=step_run_id,
+            metadata={"task": "meta_leak_cleanup"},
+        ),
+    )
+    cleaned = sanitize_novel_markdown_content(completion.content)
+    if not cleaned:
+        logger.warning("LLM cleanup returned empty content, falling back to original")
+        return content_md
+    return cleaned
 
 
 def _render_state(state: dict[str, Any]) -> str:
@@ -152,6 +299,24 @@ def _render_story_bible_section(story_bible_context: dict[str, Any] | None) -> s
             for item in participants[:4]
         )
         lines.append(f"参与角色当前状态：{rendered_participants}")
+        voice_lines: list[str] = []
+        for item in participants[:4]:
+            vp = item.get("voice_profile") or {}
+            parts: list[str] = []
+            if vp.get("speech_register"):
+                parts.append(f"语言层次:{vp['speech_register']}")
+            if vp.get("verbal_tics"):
+                parts.append(f"口头禅:{'/'.join(vp['verbal_tics'][:3])}")
+            if vp.get("sentence_style"):
+                parts.append(f"句式:{vp['sentence_style']}")
+            if vp.get("emotional_expression"):
+                parts.append(f"情绪表达:{vp['emotional_expression']}")
+            if vp.get("mannerisms"):
+                parts.append(f"习惯动作:{'/'.join(vp['mannerisms'][:2])}")
+            if parts:
+                voice_lines.append(f"{item['name']}——{'，'.join(parts)}")
+        if voice_lines:
+            lines.append("角色语言指纹（对话必须体现区分度）：\n" + "\n".join(voice_lines))
     relationships = story_bible_context.get("relationships") or []
     if relationships:
         rendered_relationships = "；".join(
@@ -307,6 +472,14 @@ def _render_contract_section(
             sections.append(f"- 场景核心冲突：{scene_contract['core_conflict']}")
         if scene_contract.get("tail_hook"):
             sections.append(f"- 场景尾钩：{scene_contract['tail_hook']}")
+        if scene_contract.get("thematic_task"):
+            sections.append(f"- 主题任务：{scene_contract['thematic_task']}（通过行动和意象表达，不要直白说教）")
+        if scene_contract.get("dramatic_irony_intent"):
+            sections.append(f"- 戏剧反讽：{scene_contract['dramatic_irony_intent']}（读者知道但角色不知道）")
+        if scene_contract.get("transition_type"):
+            sections.append(f"- 过渡方式：{scene_contract['transition_type']}")
+        if scene_contract.get("subplot_codes"):
+            sections.append(f"- 推进副线：{'、'.join(scene_contract['subplot_codes'])}")
     return "\n".join(sections)
 
 
@@ -465,6 +638,55 @@ def render_scene_draft_markdown(
     return "\n\n".join(paragraphs).strip()
 
 
+_SCENE_TYPE_GUIDANCE: dict[str, str] = {
+    "hook": "请输出完整场景，至少包含冲突推进、人物动作、有效对话、信息变化和结尾钩子。",
+    "setup": "请输出完整场景，至少包含冲突推进、人物动作、有效对话、信息变化和结尾钩子。",
+    "transition": "请输出完整场景，至少包含冲突推进、人物动作、有效对话、信息变化和结尾钩子。",
+    "conflict": "请输出完整场景，至少包含冲突推进、人物动作、有效对话、信息变化和结尾钩子。",
+    "reveal": "请输出完整场景，至少包含冲突推进、人物动作、有效对话、信息变化和结尾钩子。",
+    "introspection": (
+        "这是一个沉思/内省场景。不需要强制外部冲突，重点放在角色内心世界："
+        "让角色回顾过去、质疑自我、整理情绪。用内心独白、环境映射和感官细节构建氛围。"
+        "结尾留下角色心态转变或新决定的暗示。"
+    ),
+    "relationship_building": (
+        "这是一个关系深化场景。重点放在两个或多个角色之间的互动质量："
+        "通过共同经历、坦诚对话或无声默契加深关系。展示角色间的化学反应和信任变化。"
+        "不需要高强度冲突，但需要情感层次推进。"
+    ),
+    "worldbuilding_discovery": (
+        "这是一个世界观发现场景。通过角色的亲身体验让读者感受世界："
+        "用五感细节、角色反应和具体互动展示世界规则。严禁长段解释，一切设定信息必须藏在行动里。"
+    ),
+    "aftermath": (
+        "这是一个余波/善后场景。上一个高潮刚刚结束，角色需要消化后果："
+        "处理伤亡、评估损失、重新规划。情绪从高强度向内收，展示事件对角色的真实影响。"
+        "节奏放慢，但要留下下一步行动的种子。"
+    ),
+    "preparation": (
+        "这是一个蓄势场景。角色在为接下来的大事件做准备："
+        "收集资源、制定计划、联络盟友。通过准备过程侧面展示挑战的严峻。"
+        "营造紧迫感和期待感，但不要提前揭示结果。"
+    ),
+    "comic_relief": (
+        "这是一个调剂场景。在持续紧张的剧情后给读者喘息空间："
+        "用轻松幽默的日常互动展示角色的另一面。可以有轻微的搞笑冲突或温馨时刻。"
+        "但调剂中也要自然植入一两个对后续情节有用的信息或线索。"
+    ),
+    "montage": (
+        "这是一个时间流逝/蒙太奇场景。通过场景片段展示一段时间内的变化："
+        "用精炼的场景碎片串联成长、训练、旅途或时间推进。每个碎片要有鲜明的感官标记。"
+    ),
+}
+
+
+def _scene_type_writing_guidance(scene_type: str) -> str:
+    return _SCENE_TYPE_GUIDANCE.get(
+        scene_type,
+        "请输出完整场景，至少包含冲突推进、人物动作、有效对话、信息变化和结尾钩子。",
+    )
+
+
 def build_scene_draft_prompts(
     project: ProjectModel,
     chapter: ChapterModel,
@@ -491,7 +713,8 @@ def build_scene_draft_prompts(
         "你是长篇中文小说写作系统里的场景写手。"
         "输出必须直接是 Markdown 正文，不要解释，不要列清单。"
         "必须写成可接续的小说场景，而不是策划说明。"
-        "文本要像可以直接投到中文网文平台的成品章节，不要像策划案、提纲或润色说明。"
+        "文本要像可以直接投到中文网文平台的成品章节，不要像策划案、提纲或润色说明。\n"
+        + _NOVEL_OUTPUT_PROHIBITION
     )
     tone = (
         "、".join(str(keyword) for keyword in style_guide.tone_keywords[:3])
@@ -516,6 +739,8 @@ def build_scene_draft_prompts(
     prompt_pack_section = render_prompt_pack_prompt_block(prompt_pack)
     serial_guardrails = render_serial_fiction_guardrails(writing_profile)
     prompt_pack_scene_writer = render_prompt_pack_fragment(prompt_pack, "scene_writer")
+    _pp_line = f"Prompt Pack：\n{prompt_pack_section}\n" if prompt_pack_section else ""
+    _pp_writer_line = f"Prompt Pack 额外写法：\n{prompt_pack_scene_writer}\n" if prompt_pack_scene_writer else ""
     user_prompt = (
         f"项目：《{project.title}》\n"
         f"章节：第{chapter.chapter_number}章 {chapter.title or ''}\n"
@@ -532,7 +757,7 @@ def build_scene_draft_prompts(
         f"视角：{style_guide.pov_type if style_guide else 'third-limited'}\n"
         f"语气关键词：{tone}\n"
         f"写作画像：\n{writing_profile_section}\n"
-        f"{'Prompt Pack：\n' + prompt_pack_section + '\n' if prompt_pack_section else ''}"
+        f"{_pp_line}"
         f"故事圣经约束：\n{story_bible_section or '暂无额外故事圣经约束'}\n"
         f"近期剧情回顾：\n{recent_scene_section or '暂无近期剧情回顾'}\n"
         f"已知时间线节点：\n{recent_timeline_section or '暂无已知时间线节点'}\n"
@@ -545,8 +770,8 @@ def build_scene_draft_prompts(
         f"参与角色当前可见事实：\n{participant_fact_section or '暂无额外角色事实'}\n"
         f"检索到的相关上下文：\n{retrieval_section or '暂无额外检索上下文'}\n"
         f"商业网文硬约束：\n{serial_guardrails}\n"
-        f"{'Prompt Pack 额外写法：\n' + prompt_pack_scene_writer + '\n' if prompt_pack_scene_writer else ''}"
-        "请输出完整场景，至少包含冲突推进、人物动作、有效对话、信息变化和结尾钩子。"
+        f"{_pp_writer_line}"
+        f"{_scene_type_writing_guidance(scene.scene_type)}"
         "不得泄露未来章节才会揭示的信息，不得与当前已知事实和时间线冲突。"
         "优先服从 deterministic path retrieval 与 narrative tree 提供的结构化约束。"
         "必须覆盖 scene contract 的核心冲突、情绪变化、信息释放和尾钩。"
@@ -643,10 +868,7 @@ def render_chapter_draft_markdown(
     scene_drafts: list[SceneDraftVersionModel],
 ) -> str:
     title = chapter.title or f"第{chapter.chapter_number}章"
-    header = [
-        f"# 第{chapter.chapter_number}章 {title}",
-        f"> 本章目标：{chapter.chapter_goal}",
-    ]
+    header = [f"# 第{chapter.chapter_number}章 {title}"]
     scene_sections = [
         sanitize_novel_markdown_content(scene_draft.content_md)
         for scene_draft in scene_drafts
@@ -778,6 +1000,17 @@ async def generate_scene_draft(
             _packet_emotion_tracks(context_packet),
             _packet_antagonist_plans(context_packet),
         )
+        # Inject voice drift correction prompts for scene participants
+        proj_metadata = getattr(project, "metadata_json", None) or {}
+        voice_corrections = proj_metadata.get("voice_corrections", {}) if isinstance(proj_metadata, dict) else {}
+        if voice_corrections and scene.participants:
+            correction_lines: list[str] = []
+            for participant in scene.participants:
+                correction = voice_corrections.get(participant)
+                if correction:
+                    correction_lines.append(f"【{participant}语音修正】{correction}")
+            if correction_lines:
+                system_prompt += "\n\n" + "\n".join(correction_lines)
         completion = await complete_text(
             session,
             settings,
@@ -800,6 +1033,16 @@ async def generate_scene_draft(
             ),
         )
         content_md = sanitize_novel_markdown_content(completion.content) or fallback_content
+        # LLM-based cleanup if regex sanitizer missed meta-commentary
+        if has_meta_leak(content_md):
+            content_md = await validate_and_clean_novel_content(
+                session,
+                settings,
+                content_md,
+                project_id=project.id,
+                workflow_run_id=workflow_run_id,
+                step_run_id=step_run_id,
+            )
         model_name = completion.model_name
         llm_run_id = completion.llm_run_id
         generation_mode = completion.provider

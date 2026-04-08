@@ -1641,6 +1641,11 @@ def test_scene_review_command(monkeypatch: pytest.MonkeyPatch) -> None:
                     payoff_density=0.48,
                     voice_consistency=0.76,
                     contract_alignment=0.64,
+                    character_voice_distinction=0.55,
+                    thematic_resonance=0.60,
+                    worldbuilding_integration=0.65,
+                    prose_variety=0.70,
+                    moral_complexity=0.50,
                 ),
                 findings=[
                     SceneReviewFinding(

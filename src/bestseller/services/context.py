@@ -63,6 +63,29 @@ from bestseller.services.story_bible import load_scene_story_bible_context, stab
 from bestseller.settings import AppSettings
 
 
+def _adaptive_lookback_window(
+    current_chapter: int,
+    total_chapters: int,
+    base_window: int = 10,
+) -> int:
+    """Compute a logarithmically scaled lookback window for long novels.
+
+    For short novels (≤50 chapters), returns the base window.
+    For longer novels, the window grows logarithmically:
+      ch10→10, ch100→15, ch500→20, ch2000→25
+
+    This prevents O(n) context inflation as novels grow to 2000+ chapters.
+    """
+    import math
+
+    if current_chapter <= 0:
+        return 0
+    if total_chapters <= 50:
+        return min(current_chapter, base_window)
+    scaled = base_window + int(math.log2(max(1, current_chapter / 10)) * 3)
+    return min(current_chapter, scaled)
+
+
 def _scene_position(chapter_number: int, scene_number: int | None) -> tuple[int, int]:
     return chapter_number, scene_number or 0
 
@@ -265,6 +288,10 @@ def _scene_contract_read(item: SceneContractModel) -> SceneContractRead:
         arc_beat_ids=[str(beat_id) for beat_id in item.arc_beat_ids],
         planted_clue_codes=list(item.planted_clue_codes),
         payoff_codes=list(item.payoff_codes),
+        thematic_task=item.thematic_task,
+        dramatic_irony_intent=item.dramatic_irony_intent,
+        transition_type=item.transition_type,
+        subplot_codes=list(item.subplot_codes) if item.subplot_codes else [],
     )
 
 
@@ -445,17 +472,28 @@ async def build_scene_writer_context_from_models(
         top_k=min(settings.retrieval.top_k, max(4, settings.generation.active_context_scenes * 2)),
     )
 
+    # Load chapters within adaptive lookback window for long novels
+    total_chapters_est = project.target_chapters or chapter.chapter_number
+    lookback_window = _adaptive_lookback_window(
+        chapter.chapter_number, total_chapters_est,
+        base_window=settings.generation.active_context_scenes,
+    )
+    lookback_chapter_start = max(1, chapter.chapter_number - lookback_window)
     chapters = {
         item.id: item
         for item in await session.scalars(
-            select(ChapterModel).where(ChapterModel.project_id == project.id)
+            select(ChapterModel).where(
+                ChapterModel.project_id == project.id,
+                ChapterModel.chapter_number >= lookback_chapter_start,
+            )
         )
     }
+    scene_query = select(SceneCardModel).where(SceneCardModel.project_id == project.id)
+    if chapters:
+        scene_query = scene_query.where(SceneCardModel.chapter_id.in_(list(chapters.keys())))
     previous_scenes = [
         item
-        for item in await session.scalars(
-            select(SceneCardModel).where(SceneCardModel.project_id == project.id)
-        )
+        for item in await session.scalars(scene_query)
         if _is_before_current_position(
             chapters.get(item.chapter_id).chapter_number if chapters.get(item.chapter_id) is not None else None,
             item.scene_number,
@@ -505,6 +543,10 @@ async def build_scene_writer_context_from_models(
     ]
 
     current_story_order = float(f"{chapter.chapter_number}.{scene.scene_number:02d}")
+    # Adaptive lookback: only load recent timeline events within a window
+    total_chapters = project.target_chapters or chapter.chapter_number
+    lookback = _adaptive_lookback_window(chapter.chapter_number, total_chapters, base_window=settings.generation.active_context_scenes)
+    lookback_from_order = float(f"{max(1, chapter.chapter_number - lookback)}.00")
     recent_timeline_events = [
         TimelineEventContext(
             chapter_number=chapters.get(item.chapter_id).chapter_number if item.chapter_id in chapters else None,
@@ -527,9 +569,12 @@ async def build_scene_writer_context_from_models(
             [
                 event
                 for event in await session.scalars(
-                    select(TimelineEventModel).where(TimelineEventModel.project_id == project.id)
+                    select(TimelineEventModel).where(
+                        TimelineEventModel.project_id == project.id,
+                        TimelineEventModel.story_order >= lookback_from_order,
+                        TimelineEventModel.story_order < current_story_order,
+                    )
                 )
-                if float(event.story_order) < current_story_order
             ],
             key=lambda event: float(event.story_order),
             reverse=True,
@@ -848,17 +893,28 @@ async def build_chapter_writer_context(
         )
     }
 
+    # Adaptive lookback for long novels
+    total_chapters_est = project.target_chapters or chapter.chapter_number
+    ch_lookback = _adaptive_lookback_window(
+        chapter.chapter_number, total_chapters_est,
+        base_window=settings.generation.active_context_scenes,
+    )
+    ch_lookback_start = max(1, chapter.chapter_number - ch_lookback)
     chapters = {
         item.id: item
         for item in await session.scalars(
-            select(ChapterModel).where(ChapterModel.project_id == project.id)
+            select(ChapterModel).where(
+                ChapterModel.project_id == project.id,
+                ChapterModel.chapter_number >= ch_lookback_start,
+            )
         )
     }
+    ch_scene_query = select(SceneCardModel).where(SceneCardModel.project_id == project.id)
+    if chapters:
+        ch_scene_query = ch_scene_query.where(SceneCardModel.chapter_id.in_(list(chapters.keys())))
     previous_scenes = [
         item
-        for item in await session.scalars(
-            select(SceneCardModel).where(SceneCardModel.project_id == project.id)
-        )
+        for item in await session.scalars(ch_scene_query)
         if _is_before_current_position(
             chapters.get(item.chapter_id).chapter_number if chapters.get(item.chapter_id) is not None else None,
             item.scene_number,
@@ -893,6 +949,8 @@ async def build_chapter_writer_context(
         reverse=True,
     )
 
+    ch_current_story_order = float(f"{chapter.chapter_number}.99")
+    ch_lookback_from_order = float(f"{ch_lookback_start}.00")
     recent_timeline_events = [
         TimelineEventContext(
             chapter_number=chapters.get(item.chapter_id).chapter_number if item.chapter_id in chapters else None,
@@ -912,13 +970,15 @@ async def build_chapter_writer_context(
             ),
         )
         for item in sorted(
-            [
-                event
-                for event in await session.scalars(
-                    select(TimelineEventModel).where(TimelineEventModel.project_id == project.id)
+            list(
+                await session.scalars(
+                    select(TimelineEventModel).where(
+                        TimelineEventModel.project_id == project.id,
+                        TimelineEventModel.story_order >= ch_lookback_from_order,
+                        TimelineEventModel.story_order < ch_current_story_order,
+                    )
                 )
-                if float(event.story_order) < float(f"{chapter.chapter_number}.99")
-            ],
+            ),
             key=lambda event: float(event.story_order),
             reverse=True,
         )[: max(4, settings.generation.active_context_scenes * 2)]

@@ -82,12 +82,25 @@ cloud = [
     "google-generativeai>=0.8.0",   # Gemini
 ]
 
+# REST API + MCP server + task queue + scheduler
+api = [
+    "fastapi>=0.115.0,<1.0",
+    "uvicorn[standard]>=0.34.0,<1.0",
+    "arq>=0.26.0,<1.0",
+    "redis>=5.0.0,<6.0",
+    "apscheduler>=3.10.4,<4.0",
+    "sse-starlette>=2.0.0,<3.0",
+    "fastmcp>=2.0.0,<3.0",
+    "cryptography>=42.0.0,<44.0",
+]
+
 # All optional extras
 all = [
     "bestseller[export]",
     "bestseller[llm]",
     "bestseller[embeddings]",
     "bestseller[cloud]",
+    "bestseller[api]",
 ]
 
 # Development tools
@@ -118,6 +131,10 @@ dev = [
 # ---------------------------------------------------------------------------
 [project.scripts]
 bestseller = "bestseller.cli.main:app"
+bestseller-api = "bestseller.api.app:main"
+bestseller-worker = "bestseller.worker.main:main"
+bestseller-mcp = "bestseller.mcp.server:main"
+bestseller-scheduler = "bestseller.scheduler.main:main"
 
 # ---------------------------------------------------------------------------
 # Hatch build settings
@@ -231,6 +248,10 @@ module = [
     "ebooklib.*",
     "reportlab.*",
     "docx.*",
+    "arq.*",
+    "apscheduler.*",
+    "fastmcp.*",
+    "cryptography.*",
 ]
 ignore_missing_imports = true
 

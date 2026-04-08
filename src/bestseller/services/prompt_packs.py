@@ -66,13 +66,35 @@ def get_prompt_pack(key: str | None) -> PromptPack | None:
 
 def infer_default_prompt_pack_key(genre: str, sub_genre: str | None = None) -> str | None:
     label = f"{genre} {sub_genre or ''}".lower()
-    if any(token in label for token in ("末日", "科幻", "星际", "生存", "囤货")):
+    # Apocalypse / survival (check before sci-fi to catch "末日科幻" correctly)
+    if any(token in label for token in ("末日", "囤货", "废土")):
         return "apocalypse-supply-chain"
+    # Suspense & mystery
+    if any(token in label for token in ("推理", "探案", "怪谈", "诡事", "民俗", "悬疑", "恐怖", "惊悚")):
+        return "suspense-mystery"
+    # Female-lead palace drama (check before history to catch "宫斗权谋")
+    if any(token in label for token in ("宫斗", "大女主", "后宫", "心理暗战", "女帝")):
+        return "female-palace"
+    # Historical & strategy
+    if any(token in label for token in ("历史", "争霸", "经商", "穿越", "考据", "权谋", "三国", "战国")):
+        return "history-strategy"
+    # Sci-fi & space
+    if any(token in label for token in ("星海", "星际", "黑科技", "机甲", "太空", "科幻")):
+        return "scifi-starwar"
+    # Game & esport
+    if any(token in label for token in ("游戏", "电竞", "无限流", "怪物猎人", "副本", "系统流")):
+        return "game-esport"
+    # Eastern aesthetic fantasy
+    if any(token in label for token in ("东方美学", "国风", "水墨", "诗词", "古典仙侠")):
+        return "eastern-aesthetic"
+    # Xianxia / xuanhuan
     if any(token in label for token in ("仙", "玄幻", "奇幻", "升级", "修真")):
         return "xianxia-upgrade-core"
-    if any(token in label for token in ("都市", "异能", "现实", "悬疑")):
+    # Urban power
+    if any(token in label for token in ("都市", "异能", "现实")):
         return "urban-power-reversal"
-    if any(token in label for token in ("女频", "言情", "成长", "宫斗", "恋爱")):
+    # Romance / female-frequency (general)
+    if any(token in label for token in ("女频", "言情", "成长", "恋爱")):
         return "romance-tension-growth"
     return None
 

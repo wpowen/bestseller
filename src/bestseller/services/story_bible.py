@@ -271,6 +271,8 @@ async def get_or_create_character_by_name(
         name=_normalize_name(character_name),
         role=role,
         knowledge_state_json={},
+        voice_profile_json={},
+        moral_framework_json={},
         metadata_json={"placeholder": True},
     )
     session.add(character)
@@ -322,6 +324,8 @@ async def upsert_cast_spec(
     project.metadata_json = _merge_metadata(project.metadata_json, {"cast_spec": content})
 
     characters_upserted = 0
+    voice_profiles_populated = 0
+    moral_frameworks_populated = 0
     state_snapshots_created = 0
     characters_by_name: dict[str, CharacterModel] = {}
     for character_input in cast_spec.all_characters():
@@ -334,6 +338,8 @@ async def upsert_cast_spec(
                 name=_normalize_name(character_input.name),
                 role=character_input.role,
                 knowledge_state_json={},
+                voice_profile_json={},
+                moral_framework_json={},
                 metadata_json={},
             )
             session.add(character)
@@ -351,6 +357,14 @@ async def upsert_cast_spec(
         character.power_tier = character_input.power_tier
         character.is_pov_character = character_input.role == "protagonist"
         character.knowledge_state_json = character_input.knowledge_state.model_dump(mode="json")
+        _voice_data = character_input.voice_profile.model_dump(mode="json")
+        character.voice_profile_json = _voice_data
+        if any(v for v in _voice_data.values() if v):
+            voice_profiles_populated += 1
+        _moral_data = character_input.moral_framework.model_dump(mode="json")
+        character.moral_framework_json = _moral_data
+        if any(v for v in _moral_data.values() if v):
+            moral_frameworks_populated += 1
         character.metadata_json = _merge_metadata(
             character.metadata_json,
             {
@@ -451,6 +465,8 @@ async def upsert_cast_spec(
         "characters_upserted": characters_upserted,
         "relationships_upserted": relationships_upserted,
         "state_snapshots_created": state_snapshots_created,
+        "voice_profiles_populated": voice_profiles_populated,
+        "moral_frameworks_populated": moral_frameworks_populated,
     }
 
 
@@ -595,6 +611,8 @@ async def load_scene_story_bible_context(
                 "arc_state": latest_state.arc_state if latest_state else character.arc_state,
                 "power_tier": latest_state.power_tier if latest_state else character.power_tier,
                 "knowledge_state": character.knowledge_state_json,
+                "voice_profile": character.voice_profile_json,
+                "moral_framework": character.moral_framework_json,
                 "latest_state": latest_state.notes if latest_state is not None else None,
                 "emotional_state": latest_state.emotional_state if latest_state is not None else None,
                 "physical_state": latest_state.physical_state if latest_state is not None else None,

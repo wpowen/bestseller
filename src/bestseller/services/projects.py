@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+import shutil
 from pathlib import Path
 from typing import Any
 
@@ -23,8 +25,72 @@ from bestseller.services.writing_profile import (
 from bestseller.settings import AppSettings
 
 
+logger = logging.getLogger(__name__)
+
+
 async def get_project_by_slug(session: AsyncSession, slug: str) -> ProjectModel | None:
     return await session.scalar(select(ProjectModel).where(ProjectModel.slug == slug))
+
+
+async def delete_project_completely(
+    session: AsyncSession,
+    settings: AppSettings,
+    slug: str,
+) -> dict[str, Any]:
+    """Fully remove a project: DB rows (cascades to all children) and disk artifacts.
+
+    Returns a status dict. Raises ValueError if *slug* is empty or escapes
+    the configured output base directory.
+    """
+    if not slug or "/" in slug or "\\" in slug or ".." in slug:
+        raise ValueError(f"Invalid project slug: {slug!r}")
+
+    result: dict[str, Any] = {
+        "slug": slug,
+        "db_deleted": False,
+        "fs_deleted": False,
+        "path": None,
+        "errors": [],
+    }
+
+    # Step 1: DB delete (cascades via ondelete="CASCADE")
+    project = await get_project_by_slug(session, slug)
+    if project is None:
+        result["errors"].append("project_not_found_in_db")
+    else:
+        try:
+            await session.delete(project)
+            await session.commit()
+            result["db_deleted"] = True
+        except Exception as exc:  # noqa: BLE001
+            await session.rollback()
+            result["errors"].append(f"db_delete_failed: {exc}")
+            logger.exception("Failed to delete project %s from DB", slug)
+            return result  # Don't touch disk if DB failed
+
+    # Step 2: Disk cleanup — strict path validation
+    base_dir = Path(settings.output.base_dir).resolve()
+    target_dir = (base_dir / slug).resolve()
+    result["path"] = str(target_dir)
+    try:
+        target_dir.relative_to(base_dir)  # Raises if target escapes base
+    except ValueError:
+        result["errors"].append(f"path_escape_rejected: {target_dir}")
+        logger.error("Refusing to rmtree outside output base: %s", target_dir)
+        return result
+
+    if target_dir.exists() and target_dir.is_dir():
+        try:
+            shutil.rmtree(target_dir, ignore_errors=False)
+            result["fs_deleted"] = True
+        except Exception as exc:  # noqa: BLE001
+            result["errors"].append(f"fs_delete_failed: {exc}")
+            logger.exception("Failed to rmtree %s", target_dir)
+    else:
+        # Nothing on disk — treat as success (idempotent)
+        result["fs_deleted"] = True
+
+    return result
 
 
 async def create_project(

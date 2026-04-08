@@ -8,7 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 class WorldRuleInput(BaseModel):
     rule_id: str | None = Field(default=None, max_length=32)
-    name: str = Field(min_length=1, max_length=200)
+    name: str = Field(min_length=1, max_length=4000)
     description: str = Field(min_length=1)
     story_consequence: str | None = None
     exploitation_potential: str | None = None
@@ -25,15 +25,15 @@ class PowerSystemInput(BaseModel):
 class LocationInput(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
-    name: str = Field(min_length=1, max_length=200)
-    location_type: str = Field(default="location", alias="type", min_length=1, max_length=100)
+    name: str = Field(min_length=1, max_length=4000)
+    location_type: str = Field(default="location", alias="type", min_length=1, max_length=4000)
     atmosphere: str | None = None
     key_rules: list[str] = Field(default_factory=list)
     story_role: str | None = None
 
 
 class FactionInput(BaseModel):
-    name: str = Field(min_length=1, max_length=200)
+    name: str = Field(min_length=1, max_length=4000)
     goal: str | None = None
     method: str | None = None
     relationship_to_protagonist: str | None = None
@@ -58,8 +58,8 @@ class WorldSpecInput(BaseModel):
 
 
 class CharacterRelationshipInput(BaseModel):
-    character: str = Field(min_length=1, max_length=200)
-    type: str = Field(min_length=1, max_length=100)
+    character: str = Field(min_length=1, max_length=4000)
+    type: str = Field(min_length=1, max_length=4000)
     tension: str | None = None
 
 
@@ -69,10 +69,30 @@ class CharacterKnowledgeStateInput(BaseModel):
     unaware_of: list[str] = Field(default_factory=list)
 
 
+class CharacterVoiceProfileInput(BaseModel):
+    """Per-character speech and behavioural fingerprint."""
+
+    speech_register: str | None = None  # 文雅/口语/粗犷/书卷气/军事化/…
+    verbal_tics: list[str] = Field(default_factory=list)  # 口头禅/标志性用语
+    sentence_style: str | None = None  # 长句思辨型/短句利落型/碎片独白型/…
+    emotional_expression: str | None = None  # 内敛/外放/反讽/冷幽默/沉默型/…
+    mannerisms: list[str] = Field(default_factory=list)  # 标志性肢体语言/习惯动作
+    internal_monologue_style: str | None = None  # 内心独白语气特征
+    vocabulary_level: str | None = None  # 高/中/低/混合
+
+
+class CharacterMoralFramework(BaseModel):
+    """Per-character moral compass — what lines they will/won't cross."""
+
+    core_values: list[str] = Field(default_factory=list)  # 核心信条
+    lines_never_crossed: list[str] = Field(default_factory=list)  # 不可逾越的底线
+    willing_to_sacrifice: str | None = None  # 愿意为目标牺牲什么
+
+
 class CharacterInput(BaseModel):
     model_config = ConfigDict(extra="allow")
 
-    name: str = Field(min_length=1, max_length=200)
+    name: str = Field(min_length=1, max_length=4000)
     role: str = Field(default="supporting", min_length=1, max_length=64)
     age: int | None = Field(default=None, ge=0)
     background: str | None = None
@@ -86,13 +106,15 @@ class CharacterInput(BaseModel):
     knowledge_state: CharacterKnowledgeStateInput = Field(default_factory=CharacterKnowledgeStateInput)
     power_tier: str | None = None
     relationships: list[CharacterRelationshipInput] = Field(default_factory=list)
+    voice_profile: CharacterVoiceProfileInput = Field(default_factory=CharacterVoiceProfileInput)
+    moral_framework: CharacterMoralFramework = Field(default_factory=CharacterMoralFramework)
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class ConflictMapInput(BaseModel):
-    character_a: str = Field(min_length=1, max_length=200)
-    character_b: str = Field(min_length=1, max_length=200)
-    conflict_type: str = Field(min_length=1, max_length=100)
+    character_a: str = Field(min_length=1, max_length=4000)
+    character_b: str = Field(min_length=1, max_length=4000)
+    conflict_type: str = Field(min_length=1, max_length=4000)
     trigger_condition: str | None = None
 
 
@@ -137,7 +159,7 @@ class VolumePlanEntryInput(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     volume_number: int = Field(gt=0)
-    volume_title: str = Field(alias="title", min_length=1, max_length=200)
+    volume_title: str = Field(alias="title", min_length=1, max_length=4000)
     volume_theme: str | None = None
     word_count_target: float | int | str | None = None
     chapter_count_target: int | None = Field(default=None, ge=1)
@@ -167,6 +189,8 @@ class StoryBibleMaterializationResult(BaseModel):
     volume_frontiers_upserted: int = 0
     deferred_reveals_upserted: int = 0
     expansion_gates_upserted: int = 0
+    voice_profiles_populated: int = 0
+    moral_frameworks_populated: int = 0
     source_artifact_ids: dict[str, UUID] = Field(default_factory=dict)
 
 
@@ -230,6 +254,8 @@ class StoryBibleCharacterRead(BaseModel):
     power_tier: str | None = None
     is_pov_character: bool = False
     knowledge_state: dict[str, Any] = Field(default_factory=dict)
+    voice_profile: dict[str, Any] = Field(default_factory=dict)
+    moral_framework: dict[str, Any] = Field(default_factory=dict)
     latest_state: CharacterStateSnapshotRead | None = None
 
 

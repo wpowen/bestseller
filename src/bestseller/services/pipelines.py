@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import traceback
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -41,6 +42,8 @@ from bestseller.services.workflows import (
     materialize_latest_narrative_tree,
     materialize_latest_story_bible,
 )
+from bestseller.services.summarization import compress_knowledge_window
+from bestseller.services.voice_drift import check_all_pov_voice_drift
 from bestseller.services.world_expansion import sync_world_expansion_progress
 from bestseller.settings import AppSettings
 
@@ -820,6 +823,24 @@ async def run_project_pipeline(
     if not chapters:
         raise ValueError(f"Project '{project_slug}' does not have any chapters to process.")
 
+    # Resume support: filter out already-completed chapters
+    pending_chapters = [
+        ch for ch in chapters
+        if ch.status != ChapterStatus.COMPLETE.value
+    ] if settings.pipeline.resume_enabled else chapters
+    skipped_count = len(chapters) - len(pending_chapters)
+    if skipped_count > 0:
+        _emit_progress(
+            progress,
+            "resume_skipped_chapters",
+            {
+                "project_slug": project_slug,
+                "skipped_count": skipped_count,
+                "pending_count": len(pending_chapters),
+                "total_count": len(chapters),
+            },
+        )
+
     if materialize_narrative_graph:
         _emit_progress(
             progress,
@@ -936,13 +957,19 @@ async def run_project_pipeline(
         step_order += 1
 
         requires_human_review = False
-        for chapter in chapters:
+        consistency_check_interval = settings.pipeline.consistency_check_interval
+        rolling_summary_interval = settings.pipeline.rolling_summary_interval
+        chapters_since_last_check = 0
+        chapters_since_last_summary = 0
+
+        for chapter in pending_chapters:
             _emit_progress(
                 progress,
                 "chapter_pipeline_started",
                 {
                     "project_slug": project_slug,
                     "chapter_number": chapter.chapter_number,
+                    "progress": f"{len(chapter_results) + skipped_count + 1}/{len(chapters)}",
                 },
             )
             current_step_name = f"chapter_pipeline_{chapter.chapter_number}"
@@ -997,6 +1024,174 @@ async def run_project_pipeline(
                 chapter.chapter_number,
             )
             await sync_world_expansion_progress(session, project=project)
+
+            # Periodic consistency check every N chapters
+            chapters_since_last_check += 1
+            if (
+                consistency_check_interval > 0
+                and chapters_since_last_check >= consistency_check_interval
+                and chapter != pending_chapters[-1]  # Skip if last chapter (full check happens later)
+            ):
+                chapters_since_last_check = 0
+                _emit_progress(
+                    progress,
+                    "periodic_consistency_check_started",
+                    {
+                        "project_slug": project_slug,
+                        "after_chapter": chapter.chapter_number,
+                    },
+                )
+                current_step_name = f"periodic_consistency_check_after_ch{chapter.chapter_number}"
+                workflow_run.current_step = current_step_name
+                try:
+                    interim_review, interim_report, interim_quality = await review_project_consistency(
+                        session,
+                        settings,
+                        project_slug,
+                        workflow_run_id=workflow_run.id,
+                        expect_project_export=False,
+                    )
+                    await create_workflow_step_run(
+                        session,
+                        workflow_run_id=workflow_run.id,
+                        step_name=current_step_name,
+                        step_order=step_order,
+                        status=WorkflowStatus.COMPLETED,
+                        output_ref={
+                            "review_report_id": str(interim_report.id),
+                            "quality_score_id": str(interim_quality.id),
+                            "verdict": interim_review.verdict,
+                            "is_periodic": True,
+                        },
+                    )
+                    step_order += 1
+                    _emit_progress(
+                        progress,
+                        "periodic_consistency_check_completed",
+                        {
+                            "project_slug": project_slug,
+                            "after_chapter": chapter.chapter_number,
+                            "verdict": interim_review.verdict,
+                        },
+                    )
+                except Exception:
+                    # Periodic check failures should not block the pipeline
+                    _emit_progress(
+                        progress,
+                        "periodic_consistency_check_failed",
+                        {
+                            "project_slug": project_slug,
+                            "after_chapter": chapter.chapter_number,
+                            "error": traceback.format_exc(),
+                        },
+                    )
+                    step_order += 1
+
+            # ── Rolling summary compression + voice drift detection ────
+            # Both use the same counter to stay synchronized, especially
+            # during resume where absolute chapter numbers may skip ahead.
+            chapters_since_last_summary += 1
+            if (
+                rolling_summary_interval > 0
+                and chapters_since_last_summary >= rolling_summary_interval
+            ):
+                chapters_since_last_summary = 0
+
+                # Rolling summary
+                _emit_progress(
+                    progress,
+                    "rolling_summary_started",
+                    {
+                        "project_slug": project_slug,
+                        "from_chapter": max(1, chapter.chapter_number - rolling_summary_interval + 1),
+                        "to_chapter": chapter.chapter_number,
+                    },
+                )
+                try:
+                    summary_result = await compress_knowledge_window(
+                        session,
+                        settings,
+                        project.id,
+                        from_chapter=max(1, chapter.chapter_number - rolling_summary_interval + 1),
+                        to_chapter=chapter.chapter_number,
+                        workflow_run_id=workflow_run.id,
+                    )
+                    _emit_progress(
+                        progress,
+                        "rolling_summary_completed",
+                        {
+                            "project_slug": project_slug,
+                            "to_chapter": chapter.chapter_number,
+                            "facts_compressed": summary_result.fact_count_before,
+                            "summary_created": summary_result.summary_fact_created,
+                        },
+                    )
+                except Exception:
+                    _emit_progress(
+                        progress,
+                        "rolling_summary_failed",
+                        {
+                            "project_slug": project_slug,
+                            "after_chapter": chapter.chapter_number,
+                            "error": traceback.format_exc(),
+                        },
+                    )
+
+                # Voice drift detection (triggered at same interval, after summary)
+                if chapter.chapter_number >= 10:
+                    _emit_progress(
+                        progress,
+                        "voice_drift_check_started",
+                        {
+                            "project_slug": project_slug,
+                            "chapter_number": chapter.chapter_number,
+                        },
+                    )
+                    try:
+                        drift_results = await check_all_pov_voice_drift(
+                            session,
+                            settings,
+                            project.id,
+                            recent_chapter_start=max(1, chapter.chapter_number - 10),
+                            recent_chapter_end=chapter.chapter_number,
+                            workflow_run_id=workflow_run.id,
+                        )
+                        drifted = [r for r in drift_results if r.drift_detected]
+                        _emit_progress(
+                            progress,
+                            "voice_drift_check_completed",
+                            {
+                                "project_slug": project_slug,
+                                "chapter_number": chapter.chapter_number,
+                                "characters_checked": len(drift_results),
+                                "drift_detected_count": len(drifted),
+                                "drifted_characters": [r.character_name for r in drifted],
+                            },
+                        )
+                        if drifted:
+                            # Merge corrections with existing ones (don't overwrite)
+                            corrections = {
+                                r.character_name: r.correction_prompt
+                                for r in drifted
+                                if r.correction_prompt
+                            }
+                            if corrections:
+                                meta = dict(project.metadata_json or {})
+                                existing_corrections = dict(meta.get("voice_corrections", {}))
+                                existing_corrections.update(corrections)
+                                meta["voice_corrections"] = existing_corrections
+                                project.metadata_json = meta
+                                await session.flush()
+                    except Exception:
+                        _emit_progress(
+                            progress,
+                            "voice_drift_check_failed",
+                            {
+                                "project_slug": project_slug,
+                                "after_chapter": chapter.chapter_number,
+                                "error": traceback.format_exc(),
+                            },
+                        )
 
         export_artifact_id: UUID | None = None
         output_path: str | None = None
@@ -1180,28 +1375,52 @@ async def run_autowrite_pipeline(
             },
         )
 
-    _emit_progress(
-        progress,
-        "planning_started",
-        {"project_slug": project.slug},
-    )
-    planning_result = await generate_novel_plan(
+    # Resume: check if planning artifact already exists
+    existing_plan_artifact = await get_latest_planning_artifact(
         session,
-        settings,
-        project.slug,
-        premise,
-        requested_by=requested_by,
+        project_id=project.id,
+        artifact_type=ArtifactType.CHAPTER_OUTLINE_BATCH,
     )
-    _emit_progress(
-        progress,
-        "planning_completed",
-        {
-            "project_slug": project.slug,
-            "workflow_run_id": str(planning_result.workflow_run_id),
-            "volume_count": planning_result.volume_count,
-            "chapter_count": planning_result.chapter_count,
-        },
-    )
+    if existing_plan_artifact is not None and settings.pipeline.resume_enabled:
+        _emit_progress(
+            progress,
+            "planning_skipped_resume",
+            {"project_slug": project.slug, "reason": "planning artifacts already exist"},
+        )
+        # Create a minimal planning result placeholder for downstream references
+        from bestseller.domain.planning import NovelPlanningResult  # noqa: PLC0415
+
+        planning_result = NovelPlanningResult(
+            workflow_run_id=existing_plan_artifact.created_by_run_id or UUID(int=0),
+            project_id=project.id,
+            premise=premise,
+            volume_count=0,
+            chapter_count=0,
+        )
+    else:
+        _emit_progress(
+            progress,
+            "planning_started",
+            {"project_slug": project.slug},
+        )
+        planning_result = await generate_novel_plan(
+            session,
+            settings,
+            project.slug,
+            premise,
+            requested_by=requested_by,
+        )
+        _emit_progress(
+            progress,
+            "planning_completed",
+            {
+                "project_slug": project.slug,
+                "workflow_run_id": str(planning_result.workflow_run_id),
+                "volume_count": planning_result.volume_count,
+                "chapter_count": planning_result.chapter_count,
+            },
+        )
+
     _emit_progress(
         progress,
         "story_bible_materialization_started",

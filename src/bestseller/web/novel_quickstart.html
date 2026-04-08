@@ -1,0 +1,1531 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BestSeller 一键创作</title>
+<style>
+  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --bg: #0e1020;
+    --card: rgba(22, 26, 38, 0.62);
+    --card-hover: rgba(32, 38, 56, 0.72);
+    --accent: rgba(15, 52, 96, 0.6);
+    --accent-light: #1a5276;
+    --blue: #4a9eff;
+    --blue-glow: rgba(74, 158, 255, 0.18);
+    --text: #e8ecf3;
+    --text-dim: #9aa6b8;
+    --text-bright: #ffffff;
+    --border: rgba(255, 255, 255, 0.10);
+    --success: #2ecc71;
+    --warning: #f39c12;
+    --danger: #e74c3c;
+    --radius: 20px;
+    --radius-sm: 14px;
+    --radius-pill: 999px;
+    --glass-blur: blur(24px) saturate(180%);
+    --glass-shadow: 0 1px 0 rgba(255,255,255,0.06) inset, 0 24px 60px -20px rgba(0,0,0,0.55);
+  }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "PingFang SC", "Hiragino Sans GB", system-ui, sans-serif;
+    background:
+      radial-gradient(120% 80% at 20% 0%, #1f2540 0%, #0e1020 60%, #07080f 100%) fixed;
+    color: var(--text);
+    min-height: 100vh;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ── Header ── */
+  .header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 16px 28px;
+    border-bottom: 1px solid var(--border);
+  }
+  .header h1 { font-size: 20px; font-weight: 700; color: var(--text-bright); }
+  .header h1 span { color: var(--blue); }
+  .header-nav { display: flex; gap: 6px; }
+  .header-nav a, .header-nav button {
+    padding: 7px 16px;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 500;
+    text-decoration: none;
+    cursor: pointer;
+    transition: all .2s;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--text-dim);
+  }
+  .header-nav a:hover, .header-nav button:hover {
+    background: var(--card);
+    color: var(--text-bright);
+  }
+  .header-nav .active {
+    background: var(--blue);
+    color: #fff;
+    border-color: var(--blue);
+  }
+
+  /* ── Container ── */
+  .container {
+    max-width: 1080px;
+    margin: 0 auto;
+    padding: 24px 24px 60px;
+  }
+
+  /* ── View tabs ── */
+  .view { display: none; animation: fadeIn .3s ease; }
+  .view.active { display: block; }
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  /* ═══════════════════════════════════
+     DASHBOARD VIEW
+     ═══════════════════════════════════ */
+  .dash-empty {
+    text-align: center;
+    padding: 80px 20px;
+  }
+  .dash-empty h2 {
+    font-size: 20px;
+    color: var(--text-bright);
+    margin-bottom: 8px;
+  }
+  .dash-empty p {
+    color: var(--text-dim);
+    margin-bottom: 24px;
+    font-size: 15px;
+  }
+
+  /* Task card */
+  .task-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px;
+    margin-bottom: 16px;
+    transition: border-color .2s;
+  }
+  .task-card:hover { border-color: rgba(74, 158, 255, 0.3); }
+  .task-card.status-running { border-left: 3px solid var(--blue); }
+  .task-card.status-completed { border-left: 3px solid var(--success); }
+  .task-card.status-failed { border-left: 3px solid var(--danger); }
+  .task-card.status-cancelled { border-left: 3px solid #95a5a6; }
+  .tc-badge.cancelled { background: rgba(149, 165, 166, 0.18); color: #6c7a7a; }
+  .task-card.status-incomplete { border-left: 3px solid #f39c12; }
+  .tc-badge.incomplete { background: rgba(243, 156, 18, 0.18); color: #b9770e; }
+  .task-card.status-queued { border-left: 3px solid var(--warning); }
+
+  .tc-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 12px;
+  }
+  .tc-title {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text-bright);
+  }
+  .tc-subtitle { font-size: 11px; color: var(--text-dim); margin-top: 2px; font-family: monospace; }
+  .tc-badge {
+    padding: 3px 10px;
+    border-radius: 20px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: .5px;
+  }
+  .tc-badge.running { background: rgba(74, 158, 255, 0.15); color: var(--blue); }
+  .tc-badge.completed { background: rgba(46, 204, 113, 0.15); color: var(--success); }
+  .tc-badge.failed { background: rgba(231, 76, 60, 0.15); color: var(--danger); }
+  .tc-badge.queued { background: rgba(243, 156, 18, 0.15); color: var(--warning); }
+
+  .tc-meta {
+    display: flex;
+    gap: 20px;
+    font-size: 13px;
+    color: var(--text-dim);
+    margin-bottom: 14px;
+    flex-wrap: wrap;
+  }
+  .tc-meta strong { color: var(--text); }
+
+  /* Progress inside task card */
+  .tc-progress { margin-bottom: 14px; }
+  .tc-prog-header {
+    display: flex;
+    justify-content: space-between;
+    font-size: 13px;
+    margin-bottom: 6px;
+  }
+  .tc-prog-header .label { color: var(--text-dim); }
+  .tc-prog-header .pct { color: var(--blue); font-weight: 700; }
+  .tc-bar {
+    width: 100%;
+    height: 6px;
+    background: rgba(42, 58, 94, 0.6);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+  .tc-bar-fill {
+    height: 100%;
+    border-radius: 3px;
+    transition: width .6s ease;
+  }
+  .tc-bar-fill.running { background: linear-gradient(90deg, var(--accent-light), var(--blue)); }
+  .tc-bar-fill.completed { background: var(--success); }
+  .tc-bar-fill.failed { background: var(--danger); }
+
+  /* Chapter pills */
+  .tc-chapters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 14px;
+  }
+  .ch-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 10px;
+    border-radius: 6px;
+    font-size: 12px;
+    text-decoration: none;
+    transition: all .15s;
+  }
+  .ch-pill.done {
+    background: rgba(46, 204, 113, 0.1);
+    border: 1px solid rgba(46, 204, 113, 0.25);
+    color: var(--success);
+    cursor: pointer;
+  }
+  .ch-pill.done:hover {
+    background: rgba(46, 204, 113, 0.2);
+    color: var(--text-bright);
+  }
+  .ch-pill.writing {
+    background: rgba(74, 158, 255, 0.1);
+    border: 1px solid rgba(74, 158, 255, 0.25);
+    color: var(--blue);
+    animation: pulse 2s infinite;
+  }
+  @keyframes pulse {
+    0%,100% { opacity: 1; }
+    50% { opacity: .5; }
+  }
+
+  /* Actions row */
+  .tc-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  /* Timeline inside expanded card */
+  .tc-timeline {
+    margin-top: 14px;
+    padding-top: 14px;
+    border-top: 1px solid var(--border);
+    max-height: 180px;
+    overflow-y: auto;
+  }
+  .tl-item {
+    display: flex;
+    gap: 8px;
+    padding: 4px 0;
+    font-size: 12px;
+  }
+  .tl-item .tl-time { color: var(--text-dim); min-width: 60px; }
+  .tl-item .tl-text { color: var(--text); }
+
+  /* ═══════════════════════════════════
+     WIZARD VIEW (create new)
+     ═══════════════════════════════════ */
+
+  /* Stepper */
+  .stepper {
+    display: flex;
+    justify-content: center;
+    gap: 8px;
+    padding: 20px 0 8px;
+  }
+  .step-dot {
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    background: var(--border);
+    transition: all .3s;
+  }
+  .step-dot.active { background: var(--blue); box-shadow: 0 0 8px var(--blue); }
+  .step-dot.done { background: var(--success); }
+  .step-labels {
+    display: flex;
+    justify-content: center;
+    gap: 48px;
+    padding: 4px 0 20px;
+    font-size: 13px;
+    color: var(--text-dim);
+  }
+  .step-labels span.active { color: var(--blue); font-weight: 600; }
+  .step-labels span.done { color: var(--success); }
+
+  /* Panels */
+  .wpanel { display: none; animation: fadeIn .3s ease; }
+  .wpanel.active { display: block; }
+
+  /* Step 1: Genre grid */
+  .search-box { position: relative; margin-bottom: 20px; }
+  .search-box input {
+    width: 100%;
+    padding: 12px 16px 12px 42px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text);
+    font-size: 15px;
+    outline: none;
+  }
+  .search-box input:focus { border-color: var(--blue); }
+  .search-box::before {
+    content: "\1F50D";
+    position: absolute;
+    left: 14px; top: 50%;
+    transform: translateY(-50%);
+    font-size: 16px;
+    opacity: .5;
+  }
+  .genre-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 14px;
+  }
+  @media (max-width: 768px) { .genre-grid { grid-template-columns: repeat(2, 1fr); } }
+  .genre-card {
+    background: var(--card);
+    border: 2px solid transparent;
+    border-radius: var(--radius);
+    padding: 18px 16px;
+    cursor: pointer;
+    transition: all .2s;
+  }
+  .genre-card:hover { background: var(--card-hover); border-color: var(--border); transform: translateY(-2px); }
+  .genre-card.selected { border-color: var(--blue); background: var(--blue-glow); }
+  .genre-card .name { font-size: 16px; font-weight: 600; color: var(--text-bright); margin-bottom: 4px; }
+  .genre-card .genre-tag { font-size: 12px; color: var(--blue); margin-bottom: 8px; }
+  .genre-card .desc {
+    font-size: 13px; color: var(--text-dim); line-height: 1.5;
+    display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
+  }
+  .empty-state { text-align: center; padding: 48px 0; color: var(--text-dim); }
+
+  /* Step 2: Length */
+  .length-presets { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 28px; }
+  @media (max-width: 600px) { .length-presets { grid-template-columns: repeat(2, 1fr); } }
+  .length-btn {
+    background: var(--card); border: 2px solid transparent; border-radius: var(--radius);
+    padding: 24px 16px; cursor: pointer; text-align: center; transition: all .2s; color: var(--text);
+  }
+  .length-btn:hover { background: var(--card-hover); border-color: var(--border); }
+  .length-btn.selected { border-color: var(--blue); background: var(--blue-glow); }
+  .length-btn .label { font-size: 20px; font-weight: 700; color: var(--text-bright); margin-bottom: 4px; }
+  .length-btn .chapters { font-size: 13px; color: var(--text-dim); }
+
+  .custom-row { display: flex; align-items: center; gap: 12px; margin-bottom: 24px; }
+  .custom-row label { font-size: 14px; color: var(--text-dim); white-space: nowrap; }
+  .custom-row input {
+    width: 120px; padding: 10px 14px; background: var(--card); border: 1px solid var(--border);
+    border-radius: 8px; color: var(--text); font-size: 15px; outline: none; text-align: center;
+  }
+  .custom-row input:focus { border-color: var(--blue); }
+
+  .estimate-box { background: var(--card); border-radius: var(--radius); padding: 16px 20px; margin-bottom: 24px; }
+  .estimate-box .cost { font-size: 20px; font-weight: 600; color: var(--blue); margin-top: 4px; }
+
+  /* Step 3: Summary */
+  .summary-card { background: var(--card); border-radius: var(--radius); padding: 28px; margin-bottom: 28px; }
+  .summary-card h3 { font-size: 18px; color: var(--text-bright); margin-bottom: 16px; }
+  .summary-row {
+    display: flex; justify-content: space-between; padding: 10px 0;
+    border-bottom: 1px solid var(--border); font-size: 15px;
+  }
+  .summary-row:last-child { border-bottom: none; }
+  .summary-row .lbl { color: var(--text-dim); }
+  .summary-row .val { color: var(--text-bright); font-weight: 500; }
+
+  /* ═══════════════════════════════════
+     PROGRESS VIEW (single task detail)
+     ═══════════════════════════════════ */
+  .pv-header { text-align: center; margin-bottom: 20px; }
+  .pv-header h2 { font-size: 22px; color: var(--text-bright); margin-bottom: 4px; }
+  .pv-header .sub { font-size: 14px; color: var(--text-dim); }
+
+  .pv-info-bar {
+    display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px;
+    background: var(--card); border-radius: var(--radius); padding: 14px 20px;
+    margin-bottom: 20px; font-size: 13px;
+  }
+  .pv-info-item { display: flex; gap: 6px; color: var(--text-dim); }
+  .pv-info-item strong { color: var(--text-bright); font-weight: 500; }
+
+  .pv-bar-wrap { margin-bottom: 20px; }
+  .pv-bar-top { display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 14px; }
+  .pv-bar-top .stage { color: var(--text); }
+  .pv-bar-top .pct { color: var(--blue); font-weight: 700; font-size: 18px; }
+  .pv-bar { width: 100%; height: 10px; background: var(--card); border-radius: 5px; overflow: hidden; }
+  .pv-bar-fill { height: 100%; border-radius: 5px; transition: width .6s ease; }
+  .pv-bar-fill.running { background: linear-gradient(90deg, var(--accent-light), var(--blue)); }
+  .pv-bar-fill.completed { background: linear-gradient(90deg, #27ae60, var(--success)); }
+  .pv-bar-fill.failed { background: var(--danger); }
+
+  .pv-stats {
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 20px;
+  }
+  @media (max-width: 600px) { .pv-stats { grid-template-columns: repeat(2, 1fr); } }
+  .pv-stat {
+    background: var(--card); border-radius: 8px; padding: 14px 16px; text-align: center;
+  }
+  .pv-stat .v { font-size: 22px; font-weight: 700; color: var(--text-bright); }
+  .pv-stat .l { font-size: 12px; color: var(--text-dim); margin-top: 2px; }
+
+  /* Chapters grid */
+  .pv-chapters {
+    background: var(--card); border-radius: var(--radius); padding: 20px; margin-bottom: 20px;
+  }
+  .pv-chapters h4 {
+    font-size: 14px; color: var(--text-dim); margin-bottom: 12px; font-weight: 500;
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .pv-ch-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 6px; max-height: 280px; overflow-y: auto;
+  }
+  .pv-ch-link {
+    display: flex; align-items: center; gap: 6px; padding: 7px 10px;
+    background: rgba(74, 158, 255, 0.05); border: 1px solid rgba(74, 158, 255, 0.12);
+    border-radius: 6px; color: var(--text); text-decoration: none; font-size: 13px;
+    transition: all .2s;
+  }
+  .pv-ch-link:hover { background: rgba(74, 158, 255, 0.12); border-color: var(--blue); color: var(--text-bright); }
+  .pv-ch-link .n { color: var(--blue); font-weight: 600; min-width: 32px; }
+  .pv-ch-link .t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  /* Timeline log */
+  .pv-timeline {
+    background: var(--card); border-radius: var(--radius); padding: 20px; margin-bottom: 20px;
+    max-height: 220px; overflow-y: auto;
+  }
+  .pv-timeline h4 { font-size: 14px; color: var(--text-dim); margin-bottom: 12px; font-weight: 500; }
+  .pv-tl-item { display: flex; gap: 8px; padding: 5px 0; font-size: 12px; border-bottom: 1px solid rgba(42,58,94,0.4); }
+  .pv-tl-item:last-child { border-bottom: none; }
+  .pv-tl-dot { width: 7px; height: 7px; border-radius: 50%; margin-top: 4px; flex-shrink: 0; }
+  .pv-tl-dot.done { background: var(--success); }
+  .pv-tl-dot.active { background: var(--blue); animation: pulse 1.5s infinite; }
+  .pv-tl-time { color: var(--text-dim); min-width: 55px; }
+  .pv-tl-text { color: var(--text); flex: 1; }
+
+  /* Error */
+  .pv-error {
+    background: rgba(231, 76, 60, 0.1); border: 1px solid rgba(231, 76, 60, 0.3);
+    border-radius: var(--radius); padding: 16px 20px; margin-bottom: 20px; display: none;
+  }
+  .pv-error .err-title { color: var(--danger); font-weight: 600; margin-bottom: 4px; }
+  .pv-error .err-detail { color: var(--text-dim); font-size: 13px; max-height: 100px; overflow-y: auto; white-space: pre-wrap; word-break: break-all; }
+
+  /* Completed banner */
+  .pv-done {
+    text-align: center; padding: 28px 0; display: none; animation: fadeIn .5s ease;
+  }
+  .pv-done h2 { font-size: 22px; color: var(--success); margin-bottom: 6px; }
+  .pv-done p { color: var(--text-dim); margin-bottom: 16px; }
+  .pv-done-actions { display: flex; justify-content: center; gap: 10px; flex-wrap: wrap; }
+
+  /* ── Common buttons ── */
+  .btn {
+    padding: 10px 24px; border: none; border-radius: var(--radius); font-size: 14px;
+    font-weight: 600; cursor: pointer; transition: all .2s; text-decoration: none;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  }
+  .btn-sm { padding: 6px 14px; font-size: 12px; border-radius: 8px; }
+  .btn-secondary { background: var(--card); color: var(--text); border: 1px solid var(--border); }
+  .btn-secondary:hover { background: var(--card-hover); }
+  .btn-primary { background: var(--blue); color: #fff; }
+  .btn-primary:hover { opacity: .85; }
+  .btn-primary:disabled { opacity: .4; cursor: not-allowed; }
+  .btn-success { background: var(--success); color: #fff; }
+  .btn-success:hover { opacity: .85; }
+  .btn-warning { background: var(--warning); color: #fff; }
+  .btn-start { width: 100%; padding: 18px; font-size: 20px; letter-spacing: 2px; }
+
+  .nav-buttons { display: flex; justify-content: space-between; margin-top: 28px; }
+
+  .loading-spinner {
+    display: inline-block; width: 16px; height: 16px;
+    border: 2px solid rgba(255,255,255,.3); border-top-color: #fff;
+    border-radius: 50%; animation: spin .6s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  ::-webkit-scrollbar { width: 5px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+  /* ═══════════════════════════════════
+     LIQUID GLASS OVERRIDES (iOS 26 inspired)
+     ═══════════════════════════════════ */
+  .header {
+    background: rgba(14, 16, 32, 0.55);
+    backdrop-filter: var(--glass-blur);
+    -webkit-backdrop-filter: var(--glass-blur);
+    border-bottom: 1px solid var(--border);
+    position: sticky; top: 0; z-index: 50;
+  }
+  .header-nav a, .header-nav button {
+    border-radius: var(--radius-pill);
+    border: 1px solid var(--border);
+    background: rgba(255,255,255,0.04);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    transition: transform .15s ease, filter .15s ease, background .15s ease;
+  }
+  .header-nav a:hover, .header-nav button:hover {
+    background: rgba(255,255,255,0.10);
+    filter: brightness(1.1);
+  }
+  .header-nav a:active, .header-nav button:active { transform: scale(.97); }
+  .header-nav .active {
+    background: linear-gradient(180deg, rgba(74,158,255,0.95), rgba(60,130,220,0.85));
+    color: #fff; border-color: rgba(74,158,255,0.5);
+    box-shadow: 0 6px 20px -8px rgba(74,158,255,0.7);
+  }
+
+  /* Cards: glassy translucent */
+  .task-card,
+  .genre-card,
+  .length-btn,
+  .summary-card,
+  .estimate-box,
+  .pv-info-bar,
+  .pv-stat,
+  .pv-chapters,
+  .search-box input,
+  .custom-row input {
+    background: var(--card);
+    backdrop-filter: var(--glass-blur);
+    -webkit-backdrop-filter: var(--glass-blur);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--glass-shadow);
+  }
+  .task-card { padding: 22px; margin-bottom: 0; transition: transform .2s ease, box-shadow .2s ease, background .2s ease; }
+  .task-card:hover {
+    background: var(--card-hover);
+    border-color: rgba(255,255,255,0.16);
+    transform: translateY(-2px);
+    box-shadow: 0 1px 0 rgba(255,255,255,0.08) inset, 0 30px 70px -20px rgba(0,0,0,0.6);
+  }
+
+  /* Status ring tints (replace hard border-left) */
+  .task-card.status-running    { border-left: 1px solid var(--border); box-shadow: 0 0 0 1px rgba(74,158,255,0.32), var(--glass-shadow); }
+  .task-card.status-completed  { border-left: 1px solid var(--border); box-shadow: 0 0 0 1px rgba(46,204,113,0.32), var(--glass-shadow); }
+  .task-card.status-failed     { border-left: 1px solid var(--border); box-shadow: 0 0 0 1px rgba(231,76,60,0.32), var(--glass-shadow); }
+  .task-card.status-cancelled  { border-left: 1px solid var(--border); box-shadow: 0 0 0 1px rgba(149,165,166,0.32), var(--glass-shadow); }
+  .task-card.status-incomplete { border-left: 1px solid var(--border); box-shadow: 0 0 0 1px rgba(243,156,18,0.32), var(--glass-shadow); }
+  .task-card.status-queued     { border-left: 1px solid var(--border); box-shadow: 0 0 0 1px rgba(243,156,18,0.32), var(--glass-shadow); }
+
+  /* Dashboard list: breathing grid */
+  #dashTasks { display: grid; gap: 18px; }
+
+  /* Badges → pill glass */
+  .tc-badge {
+    border-radius: var(--radius-pill);
+    padding: 4px 12px;
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(255,255,255,0.08);
+  }
+
+  /* Buttons: glass + interactive */
+  .btn {
+    border-radius: var(--radius-pill) !important;
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    transition: transform .15s ease, filter .15s ease, background .15s ease;
+  }
+  .btn:hover { filter: brightness(1.12); }
+  .btn:active { transform: scale(.97); }
+  .btn-primary {
+    background: linear-gradient(180deg, rgba(74,158,255,0.95), rgba(60,130,220,0.88)) !important;
+    border: 1px solid rgba(74,158,255,0.5) !important;
+    color: #fff !important;
+    box-shadow: 0 8px 22px -10px rgba(74,158,255,0.7);
+  }
+  .btn-secondary {
+    background: rgba(255,255,255,0.06) !important;
+    border: 1px solid var(--border) !important;
+    color: var(--text) !important;
+  }
+  .btn-danger {
+    background: linear-gradient(180deg, rgba(231,76,60,0.92), rgba(190,50,40,0.88)) !important;
+    border: 1px solid rgba(231,76,60,0.5) !important;
+    color: #fff !important;
+  }
+  .btn-success {
+    background: linear-gradient(180deg, rgba(46,204,113,0.92), rgba(36,170,90,0.88)) !important;
+    border: 1px solid rgba(46,204,113,0.5) !important;
+    color: #fff !important;
+  }
+  .btn-warning {
+    background: linear-gradient(180deg, rgba(243,156,18,0.92), rgba(210,130,10,0.88)) !important;
+    border: 1px solid rgba(243,156,18,0.5) !important;
+    color: #fff !important;
+  }
+
+  /* Genre / length cards: hover lift */
+  .genre-card, .length-btn {
+    transition: transform .2s ease, background .2s ease, border-color .2s ease;
+  }
+  .genre-card:hover, .length-btn:hover { transform: translateY(-3px); background: var(--card-hover); }
+  .genre-card.selected, .length-btn.selected {
+    border-color: rgba(74,158,255,0.55);
+    box-shadow: 0 0 0 1px rgba(74,158,255,0.45), 0 16px 40px -12px rgba(74,158,255,0.35), var(--glass-shadow);
+  }
+
+  /* Inputs */
+  .search-box input:focus, .custom-row input:focus {
+    border-color: rgba(74,158,255,0.5);
+    box-shadow: 0 0 0 3px rgba(74,158,255,0.18);
+  }
+
+  /* Progress bars */
+  .tc-bar, .pv-bar {
+    background: rgba(255,255,255,0.06);
+    backdrop-filter: blur(8px);
+  }
+</style>
+</head>
+<body>
+
+<!-- ── Header with nav tabs ── -->
+<div class="header">
+  <h1><span>BestSeller</span> 一键创作</h1>
+  <div class="header-nav">
+    <button id="navDash" class="active" onclick="switchView('dashboard')">任务仪表板</button>
+    <button id="navNew" onclick="switchView('wizard')">新建创作</button>
+    <a href="/">工作室</a>
+  </div>
+</div>
+
+<div class="container">
+
+  <!-- ═══════════ DASHBOARD VIEW ═══════════ -->
+  <div class="view active" id="viewDashboard">
+    <div id="dashStatusBanner" style="display:none;margin-bottom:12px;padding:12px 16px;border-radius:14px;background:rgba(74,158,255,0.08);border:1px solid rgba(74,158,255,0.25);font-size:14px;color:#2c5e9e;"></div>
+    <div id="dashContent">
+      <div class="dash-empty" id="dashEmpty">
+        <h2>还没有创作任务</h2>
+        <p>点击「新建创作」开始你的第一本小说</p>
+        <button class="btn btn-primary" onclick="switchView('wizard')">⚡ 新建创作</button>
+      </div>
+    </div>
+    <div id="dashToolbar" style="display:flex;justify-content:flex-end;gap:8px;margin-bottom:12px;align-items:center;flex-wrap:wrap;">
+      <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:#555;cursor:pointer;">
+        <input type="checkbox" id="dashSelectAll" onchange="toggleSelectAll(this.checked)"> 全选
+      </label>
+      <span id="dashSelectedCount" style="font-size:13px;color:#888;"></span>
+      <button class="btn btn-danger btn-sm" id="dashBatchDelete" onclick="batchDeleteProjects()" style="display:none;">删除选中（含文件）</button>
+      <button class="btn btn-secondary btn-sm" onclick="cleanupTasks()">清理已结束任务</button>
+      <button class="btn btn-secondary btn-sm" onclick="refreshDashboard()">刷新</button>
+    </div>
+    <div id="dashTasks"></div>
+  </div>
+
+  <!-- ═══════════ WIZARD VIEW ═══════════ -->
+  <div class="view" id="viewWizard">
+    <div class="stepper" id="wizStepper">
+      <div class="step-dot active" data-step="1"></div>
+      <div class="step-dot" data-step="2"></div>
+      <div class="step-dot" data-step="3"></div>
+    </div>
+    <div class="step-labels" id="wizLabels">
+      <span class="active" data-step="1">选择题材</span>
+      <span data-step="2">选择长度</span>
+      <span data-step="3">开始创作</span>
+    </div>
+
+    <!-- Step 1 -->
+    <div class="wpanel active" id="ws1">
+      <div class="search-box">
+        <input type="text" id="genreSearch" placeholder="搜索题材...">
+      </div>
+      <div class="genre-grid" id="genreGrid"></div>
+      <div class="empty-state" id="emptyState" style="display:none;">没有找到匹配的题材</div>
+      <div class="nav-buttons">
+        <div></div>
+        <button class="btn btn-primary" id="toStep2" disabled>下一步</button>
+      </div>
+    </div>
+
+    <!-- Step 2 -->
+    <div class="wpanel" id="ws2">
+      <div class="length-presets">
+        <button class="length-btn" data-chapters="10">
+          <div class="label">短篇</div><div class="chapters">10 章</div>
+        </button>
+        <button class="length-btn" data-chapters="30">
+          <div class="label">中篇</div><div class="chapters">30 章</div>
+        </button>
+        <button class="length-btn selected" data-chapters="100">
+          <div class="label">长篇</div><div class="chapters">100 章</div>
+        </button>
+        <button class="length-btn" data-chapters="200">
+          <div class="label">超长篇</div><div class="chapters">200 章</div>
+        </button>
+      </div>
+      <div class="custom-row">
+        <label>自定义：</label>
+        <input type="number" id="customChapters" min="1" max="999" placeholder="100">
+        <span style="font-size:14px;color:var(--text-dim);">章</span>
+      </div>
+      <div class="estimate-box">
+        <div style="font-size:14px;color:var(--text-dim);">预计费用</div>
+        <div class="cost" id="estimateCost">加载中...</div>
+      </div>
+      <div class="nav-buttons">
+        <button class="btn btn-secondary" onclick="wizGo(1)">上一步</button>
+        <button class="btn btn-primary" id="toStep3">下一步</button>
+      </div>
+    </div>
+
+    <!-- Step 3 -->
+    <div class="wpanel" id="ws3">
+      <div class="summary-card">
+        <h3>创作计划</h3>
+        <div class="summary-row"><span class="lbl">题材</span><span class="val" id="sumGenre">-</span></div>
+        <div class="summary-row"><span class="lbl">子类型</span><span class="val" id="sumSub">-</span></div>
+        <div class="summary-row"><span class="lbl">章节数</span><span class="val" id="sumCh">-</span></div>
+        <div class="summary-row"><span class="lbl">写作模型</span><span class="val" id="sumModel">-</span></div>
+      </div>
+      <div class="nav-buttons" style="flex-direction:column;gap:12px;">
+        <button class="btn btn-primary btn-start" id="startBtn">开始创作</button>
+        <button class="btn btn-secondary" onclick="wizGo(2)" style="align-self:flex-start;">上一步</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════ PROGRESS VIEW (single task) ═══════════ -->
+  <div class="view" id="viewProgress">
+    <div style="margin-bottom:16px;">
+      <button class="btn btn-secondary btn-sm" onclick="switchView('dashboard')">← 返回仪表板</button>
+    </div>
+
+    <div class="pv-error" id="pvError">
+      <div class="err-title">创作出错</div>
+      <div class="err-detail" id="pvErrorDetail"></div>
+    </div>
+
+    <div class="pv-header">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;">
+        <div>
+          <h2 id="pvTitle">正在创作中...</h2>
+          <div class="sub" id="pvSub"></div>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <button class="btn btn-secondary btn-sm" onclick="switchView('dashboard')">← 返回仪表板</button>
+          <button class="btn btn-primary btn-sm" onclick="switchView('wizard')">+ 新建另一本</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="pv-info-bar">
+      <div class="pv-info-item"><span>模型：</span><strong id="pvModel">-</strong></div>
+      <div class="pv-info-item"><span>已用时：</span><strong id="pvElapsed">00:00:00</strong></div>
+      <div class="pv-info-item"><span>预计剩余：</span><strong id="pvEta">计算中...</strong></div>
+    </div>
+
+    <div class="pv-bar-wrap">
+      <div class="pv-bar-top">
+        <span class="stage" id="pvStage">初始化</span>
+        <span class="pct" id="pvPct">0%</span>
+      </div>
+      <div class="pv-bar"><div class="pv-bar-fill running" id="pvBarFill" style="width:0%"></div></div>
+    </div>
+
+    <div class="pv-stats">
+      <div class="pv-stat"><div class="v" id="pvDone">0</div><div class="l">已完成</div></div>
+      <div class="pv-stat"><div class="v" id="pvTotal">0</div><div class="l">总章节</div></div>
+      <div class="pv-stat"><div class="v" id="pvAvg">-</div><div class="l">平均每章</div></div>
+      <div class="pv-stat"><div class="v" id="pvStatus">准备中</div><div class="l">状态</div></div>
+    </div>
+
+    <div class="pv-chapters" id="pvChSec" style="display:none;">
+      <h4>
+        <span>已完成章节 <span style="font-weight:400;color:var(--text-dim);">（点击预览）</span></span>
+        <a href="#" id="pvReadAll" class="btn btn-secondary btn-sm" target="_blank">阅读全部</a>
+      </h4>
+      <div class="pv-ch-grid" id="pvChGrid"></div>
+    </div>
+
+    <div class="pv-timeline">
+      <h4>执行日志</h4>
+      <div id="pvTimeline"></div>
+    </div>
+
+    <div class="pv-done" id="pvDoneBanner">
+      <h2>创作完成!</h2>
+      <p id="pvDoneSummary"></p>
+      <div class="pv-done-actions">
+        <a id="pvReaderLink" href="#" class="btn btn-success" target="_blank">阅读作品</a>
+        <button class="btn btn-primary" onclick="switchView('wizard')">创作新作品</button>
+        <a href="/" class="btn btn-secondary">返回工作室</a>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  /* ═══════════════════════════════════════
+     STATE
+     ═══════════════════════════════════════ */
+  let genres = [];
+  let selectedGenreKey = null;
+  let chapterCount = 100;
+  let llmModel = '';
+  let allTasks = [];       // from /api/tasks
+  let focusTaskId = null;  // currently viewing in progress view
+  let pollTimer = null;
+  let elapsedTimer = null;
+  let taskStartTime = null;
+  let maxConcurrentTasks = 3;  // populated from /api/status; default matches backend env
+  let highlightTaskId = null;  // visually highlight a freshly-created task on the dashboard
+
+  const STAGE = {
+    queued: '排队中', running: '运行中', completed: '已完成', failed: '失败', cancelled: '已停止',
+    incomplete: '⏸️ 未完成', incomplete_recovered: '⏸️ 历史未完成',
+    cancel_requested: '🛑 停止请求',
+    // AI Conception stages
+    conception_market: '📊 市场策略构思', conception_character: '👤 角色体系构思',
+    conception_world: '🌍 世界观构思', conception_review: '🔍 交叉审查',
+    conception_finalize: '✨ 构思定稿', conception_complete: '🎯 构思完成',
+    // Planning stages
+    project_creation_started: '创建项目', project_creation_completed: '项目已创建',
+    planning_started: '生成企划', planning_skipped_resume: '企划已存在（续传）', planning_completed: '企划完成',
+    story_bible_materialization_started: '构建世界观', story_bible_materialization_completed: '世界观完成',
+    outline_materialization_started: '生成大纲', outline_materialization_completed: '大纲完成',
+    narrative_graph_materialization_started: '构建叙事图谱', narrative_graph_materialization_completed: '叙事图谱完成',
+    narrative_tree_materialization_started: '构建叙事树', narrative_tree_materialization_completed: '叙事树完成',
+    // Chapter pipeline stages
+    project_pipeline_started: '开始写作', resume_skipped_chapters: '跳过已完成章节（续传）',
+    chapter_pipeline_started: '写作章节', chapter_pipeline_completed: '章节完成',
+    // Quality assurance stages
+    periodic_consistency_check_started: '一致性检查', periodic_consistency_check_completed: '一致性检查完成',
+    rolling_summary_started: '📝 知识压缩', rolling_summary_completed: '📝 知识压缩完成',
+    rolling_summary_failed: '📝 知识压缩失败',
+    voice_drift_check_started: '🎭 语音一致性检查', voice_drift_check_completed: '🎭 语音检查完成',
+    voice_drift_check_failed: '🎭 语音检查失败',
+    project_consistency_review_completed: '全书审校完成',
+    project_export_started: '导出文件', project_export_completed: '导出完成',
+    auto_repair_started: '自动修复', auto_repair_completed: '修复完成',
+    completed: '创作完成', failed: '创作失败',
+  };
+
+  const $ = s => document.querySelector(s);
+  const $$ = s => document.querySelectorAll(s);
+  const esc = s => { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; };
+
+  /* ═══════════════════════════════════════
+     VIEW SWITCHING
+     ═══════════════════════════════════════ */
+  window.switchView = function(name) {
+    $$('.view').forEach(v => v.classList.remove('active'));
+    $(`#view${name.charAt(0).toUpperCase() + name.slice(1)}`).classList.add('active');
+    $$('.header-nav button').forEach(b => b.classList.remove('active'));
+    if (name === 'dashboard') { $('#navDash').classList.add('active'); stopProgressPoll(); refreshDashboard(); }
+    else if (name === 'wizard') { $('#navNew').classList.add('active'); stopProgressPoll(); }
+    else if (name === 'progress') { /* no nav highlight — sub-view of dashboard */ }
+  };
+
+  /* ═══════════════════════════════════════
+     DASHBOARD
+     ═══════════════════════════════════════ */
+  async function refreshDashboard() {
+    try {
+      const res = await fetch('/api/tasks');
+      if (res.ok) allTasks = await res.json();
+    } catch { /* ignore */ }
+    renderDashboard();
+  }
+
+  // Module-level selection state — persists across re-renders.
+  const selectedSlugs = new Set();
+
+  function updateSelectionUI() {
+    const count = selectedSlugs.size;
+    const countEl = $('#dashSelectedCount');
+    const btnEl = $('#dashBatchDelete');
+    if (countEl) countEl.textContent = count > 0 ? `已选 ${count} 项` : '';
+    if (btnEl) btnEl.style.display = count > 0 ? '' : 'none';
+    // Reflect "全选" checkbox state based on selectable slugs on screen.
+    const selectableSlugs = [...new Set(allTasks.map(t => t.project_slug).filter(Boolean))];
+    const all = $('#dashSelectAll');
+    if (all) {
+      all.checked = selectableSlugs.length > 0 && selectableSlugs.every(s => selectedSlugs.has(s));
+    }
+  }
+
+  window.toggleSelectAll = function(checked) {
+    if (checked) {
+      allTasks.forEach(t => { if (t.project_slug) selectedSlugs.add(t.project_slug); });
+    } else {
+      selectedSlugs.clear();
+    }
+    renderDashboard();
+  };
+
+  window.toggleTaskSelect = function(slug, checked) {
+    if (!slug) return;
+    if (checked) selectedSlugs.add(slug); else selectedSlugs.delete(slug);
+    updateSelectionUI();
+  };
+
+  function updateStatusBanner() {
+    const banner = $('#dashStatusBanner');
+    if (!banner) return;
+    const active = allTasks.filter(t => t.status === 'running' || t.status === 'queued').length;
+    if (active === 0) {
+      banner.style.display = 'none';
+      banner.textContent = '';
+      return;
+    }
+    const free = Math.max(0, maxConcurrentTasks - active);
+    const freeText = free > 0
+      ? `还可同时新建 ${free} 本`
+      : `已达并发上限，新建的任务会自动排队`;
+    banner.style.display = '';
+    banner.innerHTML = `🟢 正在进行 <strong>${active}</strong> / ${maxConcurrentTasks} 项 · ${freeText}`;
+  }
+
+  function renderDashboard() {
+    const container = $('#dashTasks');
+    const empty = $('#dashEmpty');
+    if (!allTasks.length) {
+      empty.style.display = '';
+      container.innerHTML = '';
+      selectedSlugs.clear();
+      updateSelectionUI();
+      updateStatusBanner();
+      return;
+    }
+    empty.style.display = 'none';
+    updateStatusBanner();
+    // Prune selected slugs that no longer exist in the task list.
+    const liveSlugs = new Set(allTasks.map(t => t.project_slug).filter(Boolean));
+    for (const s of [...selectedSlugs]) {
+      if (!liveSlugs.has(s)) selectedSlugs.delete(s);
+    }
+    container.innerHTML = allTasks.map(renderTaskCard).join('');
+    updateSelectionUI();
+  }
+
+  function renderTaskCard(task) {
+    const events = task.progress_events || [];
+    const status = task.status || 'queued';
+    const slug = task.project_slug || '';
+
+    // Chapter progress
+    const completedChs = events.filter(e => e.stage === 'chapter_pipeline_completed').map(e => e.payload?.chapter_number).filter(Boolean);
+    const pipelineEvt = events.find(e => e.stage === 'project_pipeline_started');
+    const total = pipelineEvt?.payload?.chapter_count || 0;
+    const pct = total > 0 ? Math.min(99, 5 + Math.round((completedChs.length / total) * 95)) : (status === 'completed' ? 100 : 0);
+    const displayPct = status === 'completed' ? 100 : pct;
+
+    // Currently writing chapter
+    const lastStarted = [...events].reverse().find(e => e.stage === 'chapter_pipeline_started');
+    const writingCh = (status === 'running' && lastStarted && !events.find(e => e.stage === 'chapter_pipeline_completed' && e.payload?.chapter_number === lastStarted.payload?.chapter_number))
+      ? lastStarted.payload?.chapter_number : null;
+
+    // Time info
+    const created = task.created_at ? new Date(task.created_at) : null;
+    const timeStr = created ? created.toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }) : '-';
+
+    // Stage label
+    let stageLabel = STAGE[task.current_stage] || task.current_stage || '-';
+    if (task.current_stage === 'chapter_pipeline_started' && lastStarted?.payload) {
+      const chNum = lastStarted.payload.chapter_number ?? '-';
+      const prog = lastStarted.payload.progress ?? '';
+      stageLabel = `写作第 ${chNum} 章${prog ? ` (${prog})` : ''}`;
+    }
+    if (task.cancel_requested && status === 'running') {
+      stageLabel = '🛑 正在停止…';
+    }
+
+    // Chapter pills (show first 20 + count)
+    const pillLimit = 20;
+    const pills = completedChs.slice(0, pillLimit).map(n =>
+      `<a class="ch-pill done" href="/read/${esc(slug)}#${n}" target="_blank" title="预览第${n}章">第${n}章</a>`
+    ).join('');
+    const writingPill = writingCh ? `<span class="ch-pill writing">第${writingCh}章 写作中</span>` : '';
+    const morePills = completedChs.length > pillLimit ? `<span class="ch-pill done" style="cursor:default;">+${completedChs.length - pillLimit}章</span>` : '';
+
+    // Detect "completed but actually unfinished" — recovered tasks may have
+    // status=completed while chapters on disk < target. Treat as resumable.
+    const writtenCount = (task.result && task.result.chapters_written) || completedChs.length;
+    const targetCount = (task.result && task.result.target_chapters) || total || 0;
+    const isIncomplete = status === 'incomplete' || (targetCount > 0 && writtenCount < targetCount && status !== 'running');
+    const isTrulyComplete = status === 'completed' && !(targetCount > 0 && writtenCount < targetCount);
+    const chaptersLine = targetCount > 0
+      ? `已写 <strong>${writtenCount}</strong> / 目标 <strong>${targetCount}</strong> 章`
+      : `已写 <strong>${writtenCount}</strong> 章（目标未知）`;
+
+    // Actions
+    let actions = '';
+    if (status === 'running' || status === 'queued') {
+      actions += `<button class="btn btn-primary btn-sm" onclick="openProgress('${esc(task.task_id)}')">查看详情</button>`;
+      const stopLabel = task.cancel_requested ? '再次点击强制停止' : '停止任务';
+      actions += `<button class="btn btn-danger btn-sm" onclick="cancelTask('${esc(task.task_id)}')">${stopLabel}</button>`;
+    }
+    if (isTrulyComplete && slug) {
+      actions += `<a class="btn btn-success btn-sm" href="/read/${esc(slug)}" target="_blank">阅读全书</a>`;
+    }
+    const showResume = slug && (
+      status === 'failed' || status === 'cancelled' || status === 'incomplete'
+      || (status === 'completed' && targetCount > 0 && writtenCount < targetCount)
+    );
+    if (showResume) {
+      actions += `<button class="btn btn-warning btn-sm" onclick="resumeTaskById('${esc(task.task_id)}','${esc(slug)}')">继续任务</button>`;
+    }
+    if (slug) {
+      actions += `<a class="btn btn-secondary btn-sm" href="/read/${esc(slug)}" target="_blank">预览章节</a>`;
+    }
+    if (status === 'running') {
+      actions += `<button class="btn btn-secondary btn-sm" onclick="openProgress('${esc(task.task_id)}')">实时日志</button>`;
+    }
+    if (status !== 'running' && status !== 'queued') {
+      actions += `<button class="btn btn-secondary btn-sm" onclick="deleteTask('${esc(task.task_id)}')">删除</button>`;
+    }
+
+    const selectable = !!slug && status !== 'running' && status !== 'queued';
+    const checked = selectedSlugs.has(slug) ? 'checked' : '';
+    const checkboxHtml = selectable
+      ? `<input type="checkbox" class="task-select" data-slug="${esc(slug)}" ${checked} onchange="toggleTaskSelect('${esc(slug)}', this.checked)" style="margin-right:10px;width:18px;height:18px;cursor:pointer;">`
+      : '';
+
+    const highlightStyle = task.task_id === highlightTaskId
+      ? 'box-shadow:0 0 0 2px var(--accent-light, #4a9eff), 0 8px 24px rgba(74,158,255,0.25);transition:box-shadow .3s;'
+      : '';
+    return `
+    <div class="task-card status-${esc(status)}" style="${highlightStyle}">
+      <div class="tc-header">
+        <div style="display:flex;align-items:center;">
+          ${checkboxHtml}
+          <div>
+            <div class="tc-title">${esc(task.title || slug || '未命名')}</div>
+            ${slug && task.title && task.title !== slug ? `<div class="tc-subtitle">${esc(slug)}</div>` : ''}
+          </div>
+        </div>
+        <span class="tc-badge ${esc(status)}">${task.cancel_requested && status === 'running' ? '🛑 正在停止…' : esc(STAGE[status] || status)}</span>
+      </div>
+      <div class="tc-meta">
+        <span>项目：<strong>${esc(slug || '-')}</strong></span>
+        <span>创建：<strong>${timeStr}</strong></span>
+        <span>阶段：<strong>${esc(stageLabel)}</strong></span>
+        <span>章节：${chaptersLine}</span>
+      </div>
+      ${total > 0 ? `
+      <div class="tc-progress">
+        <div class="tc-prog-header">
+          <span class="label">${esc(stageLabel)}</span>
+          <span class="pct">${displayPct}%</span>
+        </div>
+        <div class="tc-bar"><div class="tc-bar-fill ${esc(status)}" style="width:${displayPct}%"></div></div>
+      </div>` : ''}
+      ${(completedChs.length > 0 || writingCh) ? `<div class="tc-chapters">${pills}${writingPill}${morePills}</div>` : ''}
+      <div class="tc-actions">${actions}</div>
+    </div>`;
+  }
+
+  /* Open single-task progress view */
+  window.openProgress = function(taskId) {
+    focusTaskId = taskId;
+    switchView('progress');
+    startProgressPoll(taskId);
+  };
+
+  /* Cancel a running/queued task */
+  window.cancelTask = async function(taskId) {
+    if (!confirm('确认停止该任务吗？已完成的章节会保留。')) return;
+    try {
+      const res = await fetch(`/api/tasks/${taskId}/cancel`, { method: 'POST' });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        alert(d.error || '停止失败');
+        return;
+      }
+      refreshDashboard();
+    } catch (err) {
+      alert('停止失败: ' + err.message);
+    }
+  };
+
+  /* Delete a task record (does NOT delete novel files) */
+  window.deleteTask = async function(taskId) {
+    if (!confirm('确认删除此任务记录？小说文件不会被删除。')) return;
+    try {
+      const res = await fetch(`/api/tasks/${taskId}`, { method: 'DELETE' });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        alert(d.error || '删除失败');
+        return;
+      }
+      refreshDashboard();
+    } catch (err) {
+      alert('删除失败: ' + err.message);
+    }
+  };
+
+  /* Bulk delete selected projects — completely removes DB rows + disk files */
+  window.batchDeleteProjects = async function() {
+    const slugs = [...selectedSlugs];
+    if (!slugs.length) {
+      alert('请先勾选要删除的小说');
+      return;
+    }
+    // Build a preview of what will be deleted using current allTasks.
+    const titles = slugs.map(s => {
+      const t = allTasks.find(x => x.project_slug === s);
+      return t ? (t.title || s) : s;
+    });
+    const previewLines = titles.map((t, i) => `  ${i + 1}. ${t}`).join('\n');
+    const warn =
+      `即将【彻底删除】以下 ${slugs.length} 本小说：\n\n${previewLines}\n\n` +
+      `⚠️  将同时删除：\n` +
+      `  • 数据库中的所有项目记录、章节、人物、大纲、规划工件\n` +
+      `  • 磁盘上 output/<slug>/ 目录下的全部章节文件\n` +
+      `  • 相关的历史任务记录\n\n` +
+      `此操作不可恢复。确认继续？`;
+    if (!confirm(warn)) return;
+    const btn = $('#dashBatchDelete');
+    if (btn) { btn.disabled = true; btn.textContent = '删除中…'; }
+    try {
+      const res = await fetch('/api/projects/batch-delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ slugs }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        alert(data.error || '批量删除失败');
+        return;
+      }
+      const summary = data.summary || {};
+      const failed = (data.results || []).filter(r => !r.ok);
+      if (failed.length) {
+        const detail = failed.map(r => `• ${r.slug}: ${(r.errors || []).join('; ') || '未知错误'}`).join('\n');
+        alert(`完成 ${summary.success || 0} / ${summary.total || 0}，失败 ${failed.length}：\n\n${detail}`);
+      } else {
+        // Quiet success — just refresh.
+      }
+      selectedSlugs.clear();
+      refreshDashboard();
+    } catch (err) {
+      alert('批量删除失败: ' + err.message);
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = '删除选中（含文件）'; }
+    }
+  };
+
+  /* Bulk cleanup finished/failed/incomplete task records */
+  window.cleanupTasks = async function() {
+    if (!confirm('清理所有「失败/已停止/未完成」的任务记录？小说文件不会被删除。')) return;
+    try {
+      const res = await fetch('/api/tasks/cleanup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ statuses: ['failed', 'cancelled', 'incomplete'] }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) { alert(d.error || '清理失败'); return; }
+      alert(`已清理 ${d.removed || 0} 条任务记录`);
+      refreshDashboard();
+    } catch (err) {
+      alert('清理失败: ' + err.message);
+    }
+  };
+
+  /* Resume by task id — uses persisted payload or DB fallback on the server */
+  window.resumeTaskById = async function(taskId, slug) {
+    try {
+      const res = await fetch(`/api/tasks/${taskId}/resume`, { method: 'POST' });
+      if (res.ok) {
+        const data = await res.json();
+        openProgress(data.task_id);
+        refreshDashboard();
+        return;
+      }
+      // Legacy fallback: reconstruct payload from genre-key regex
+      let reason = '';
+      try { reason = (await res.json()).error || ''; } catch {}
+      console.warn('resume endpoint failed:', reason, '- falling back to legacy flow');
+      return window.resumeTask(slug, taskId);
+    } catch (err) {
+      return window.resumeTask(slug, taskId);
+    }
+  };
+
+  /* Resume a failed task (legacy: reconstructs from genre key) */
+  window.resumeTask = async function(slug, oldTaskId) {
+    // Find the genre key from the old task's slug
+    const task = allTasks.find(t => t.task_id === oldTaskId);
+    if (!task) return;
+    // Re-submit with same project_slug to trigger resume
+    const genreKey = slug.replace(/-\d+$/, '');
+    // Recover original chapter count from task metadata or progress events
+    const meta = task.quickstart_meta || {};
+    const pipeEvt = (task.progress_events || []).find(e => e.stage === 'project_pipeline_started');
+    const origChapters = meta.chapter_count || pipeEvt?.payload?.chapter_count || 100;
+    try {
+      const res = await fetch('/api/tasks/quickstart', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ genre_key: genreKey, project_slug: slug, chapter_count: origChapters }),
+      });
+      if (!res.ok) { const d = await res.json(); alert(d.error || '续传失败'); return; }
+      const data = await res.json();
+      openProgress(data.task_id);
+    } catch (err) {
+      alert('续传失败: ' + err.message);
+    }
+  };
+
+  /* ═══════════════════════════════════════
+     PROGRESS VIEW (single task detail)
+     ═══════════════════════════════════════ */
+  function startProgressPoll(taskId) {
+    stopProgressPoll();
+    updateProgressView(taskId);
+    pollTimer = setInterval(() => updateProgressView(taskId), 3000);
+    elapsedTimer = setInterval(updateElapsed, 1000);
+  }
+
+  function stopProgressPoll() {
+    if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+    if (elapsedTimer) { clearInterval(elapsedTimer); elapsedTimer = null; }
+  }
+
+  function updateElapsed() {
+    if (!taskStartTime) return;
+    const sec = Math.floor((Date.now() - new Date(taskStartTime).getTime()) / 1000);
+    $('#pvElapsed').textContent = fmtDur(sec);
+  }
+
+  async function updateProgressView(taskId) {
+    let data;
+    try {
+      const res = await fetch(`/api/tasks/${taskId}`);
+      if (!res.ok) return;
+      data = await res.json();
+    } catch { return; }
+
+    const events = data.progress_events || [];
+    const status = data.status;
+    const slug = data.project_slug || '';
+
+    taskStartTime = data.created_at;
+
+    // Title
+    $('#pvTitle').textContent = status === 'completed' ? '创作完成!' : status === 'failed' ? '创作出错' : '正在创作中...';
+    $('#pvTitle').style.color = status === 'completed' ? 'var(--success)' : status === 'failed' ? 'var(--danger)' : 'var(--text-bright)';
+    $('#pvSub').textContent = data.title || slug || '';
+
+    // Total chapters
+    const pipeEvt = events.find(e => e.stage === 'project_pipeline_started');
+    const total = pipeEvt?.payload?.chapter_count || 0;
+
+    // Completed chapters
+    const doneChs = events.filter(e => e.stage === 'chapter_pipeline_completed').map(e => e.payload?.chapter_number).filter(Boolean);
+    const chTimes = events.filter(e => e.stage === 'chapter_pipeline_completed').map(e => new Date(e.timestamp));
+
+    // Pct
+    let pct = 0;
+    if (status === 'completed') pct = 100;
+    else if (total > 0 && doneChs.length > 0) pct = Math.min(99, 5 + Math.round((doneChs.length / total) * 95));
+    else if (data.current_stage?.includes('materialization') || data.current_stage?.includes('pipeline_started')) pct = 5;
+    else if (data.current_stage?.includes('planning')) pct = 2;
+    else if (data.current_stage?.startsWith('conception')) pct = 3;
+    else if (data.current_stage?.includes('creation')) pct = 1;
+
+    // Bar
+    const fill = $('#pvBarFill');
+    fill.style.width = pct + '%';
+    fill.className = 'pv-bar-fill ' + (status === 'completed' ? 'completed' : status === 'failed' ? 'failed' : 'running');
+    $('#pvPct').textContent = pct + '%';
+
+    // Stage
+    const lastEvt = events[events.length - 1];
+    let stageTxt = STAGE[data.current_stage] || data.current_stage || '-';
+    if (data.current_stage === 'chapter_pipeline_started' && lastEvt?.payload) {
+      const chNum = lastEvt.payload.chapter_number ?? '-';
+      const prog = lastEvt.payload.progress ?? '';
+      stageTxt = `正在写作第 ${chNum} 章${prog ? ` (${prog})` : ''}`;
+    }
+    if (data.cancel_requested && status === 'running') {
+      stageTxt = '🛑 正在停止…';
+    }
+    $('#pvStage').textContent = stageTxt;
+
+    // Stats
+    $('#pvDone').textContent = doneChs.length;
+    $('#pvTotal').textContent = total || '-';
+
+    // Avg time & ETA
+    if (chTimes.length >= 2) {
+      const avgMs = (chTimes[chTimes.length - 1] - chTimes[0]) / (chTimes.length - 1);
+      $('#pvAvg').textContent = fmtShort(Math.round(avgMs / 1000));
+      const rem = total - doneChs.length;
+      $('#pvEta').textContent = rem > 0 ? fmtShort(Math.round(avgMs * rem / 1000)) : '-';
+    } else if (chTimes.length === 1 && pipeEvt) {
+      const ms = chTimes[0] - new Date(pipeEvt.timestamp);
+      $('#pvAvg').textContent = fmtShort(Math.round(ms / 1000));
+      const rem = total - 1;
+      $('#pvEta').textContent = rem > 0 ? fmtShort(Math.round(ms * rem / 1000)) : '-';
+    } else {
+      $('#pvAvg').textContent = '-';
+      $('#pvEta').textContent = '计算中...';
+    }
+
+    // Status label
+    const pvs = $('#pvStatus');
+    if (status === 'completed') { pvs.textContent = '已完成'; pvs.style.color = 'var(--success)'; }
+    else if (status === 'failed') { pvs.textContent = '失败'; pvs.style.color = 'var(--danger)'; }
+    else if (doneChs.length > 0) { pvs.textContent = '写作中'; pvs.style.color = 'var(--blue)'; }
+    else { pvs.textContent = '准备中'; pvs.style.color = ''; }
+
+    // Model
+    $('#pvModel').textContent = llmModel || '-';
+
+    // Timeline
+    const tl = events.slice(-20).reverse();
+    $('#pvTimeline').innerHTML = tl.map((e, i) => {
+      const label = STAGE[e.stage] || e.stage;
+      let detail = '';
+      if (e.stage === 'chapter_pipeline_started' && e.payload) {
+        const cn = e.payload.chapter_number ?? '-';
+        const pg = e.payload.progress ?? '';
+        detail = ` — 第${cn}章${pg ? ` (${pg})` : ''}`;
+      }
+      else if (e.stage === 'chapter_pipeline_completed' && e.payload) detail = ` — 第${e.payload.chapter_number ?? '-'}章`;
+      else if (e.stage === 'planning_completed' && e.payload) detail = ` — ${e.payload.volume_count ?? '-'}卷 ${e.payload.chapter_count ?? '-'}章`;
+      else if (e.stage === 'resume_skipped_chapters' && e.payload) detail = ` — 跳过${e.payload.skipped_count ?? '-'}章`;
+      const dot = (i === 0 && status === 'running') ? 'active' : 'done';
+      const time = new Date(e.timestamp).toLocaleTimeString('zh-CN', { hour12: false });
+      return `<div class="pv-tl-item"><div class="pv-tl-dot ${dot}"></div><span class="pv-tl-time">${time}</span><span class="pv-tl-text">${esc(label)}${esc(detail)}</span></div>`;
+    }).join('');
+
+    // Chapters
+    if (doneChs.length > 0 && slug) {
+      $('#pvChSec').style.display = '';
+      $('#pvReadAll').href = `/read/${encodeURIComponent(slug)}`;
+      try {
+        const tocRes = await fetch(`/api/reader/${encodeURIComponent(slug)}/toc`);
+        if (tocRes.ok) {
+          const tocData = await tocRes.json();
+          const chs = tocData.chapters || [];
+          $('#pvChGrid').innerHTML = chs.map(ch =>
+            `<a class="pv-ch-link" href="/read/${esc(slug)}#${ch.number}" target="_blank"><span class="n">第${ch.number}章</span><span class="t">${esc(ch.title || '')}</span></a>`
+          ).join('') || '<span style="color:var(--text-dim);font-size:13px;">文件生成中...</span>';
+        }
+      } catch { /* ignore */ }
+    }
+
+    // Error
+    if (status === 'failed') {
+      $('#pvError').style.display = '';
+      $('#pvErrorDetail').textContent = data.error || '未知错误';
+    } else {
+      $('#pvError').style.display = 'none';
+    }
+
+    // Completed
+    if (status === 'completed') {
+      stopProgressPoll();
+      $('#pvDoneBanner').style.display = '';
+      $('#pvDoneSummary').textContent = `共 ${doneChs.length} 章已完成`;
+      $('#pvReaderLink').href = `/read/${encodeURIComponent(slug)}`;
+    }
+    if (status === 'failed') {
+      stopProgressPoll();
+    }
+  }
+
+  /* ═══════════════════════════════════════
+     WIZARD (create new)
+     ═══════════════════════════════════════ */
+  function wizGo(n) {
+    $$('.wpanel').forEach(p => p.classList.remove('active'));
+    $(`#ws${n}`).classList.add('active');
+    $$('#wizStepper .step-dot').forEach(d => {
+      const s = +d.dataset.step;
+      d.classList.remove('active', 'done');
+      if (s < n) d.classList.add('done');
+      else if (s === n) d.classList.add('active');
+    });
+    $$('#wizLabels span').forEach(sp => {
+      const s = +sp.dataset.step;
+      sp.classList.remove('active', 'done');
+      if (s < n) sp.classList.add('done');
+      else if (s === n) sp.classList.add('active');
+    });
+  }
+  window.wizGo = wizGo;
+
+  // Genre loading & selection
+  async function loadGenres() {
+    try { const r = await fetch('/api/writing-presets'); const d = await r.json(); genres = d.genre_presets || []; } catch { genres = []; }
+    renderGenres(genres);
+  }
+
+  function renderGenres(list) {
+    const grid = $('#genreGrid');
+    grid.innerHTML = '';
+    if (!list.length) { $('#emptyState').style.display = 'block'; return; }
+    $('#emptyState').style.display = 'none';
+    list.forEach(g => {
+      const card = document.createElement('div');
+      card.className = 'genre-card' + (g.key === selectedGenreKey ? ' selected' : '');
+      card.innerHTML = `<div class="name">${esc(g.name)}</div><div class="genre-tag">${esc(g.genre)}${g.sub_genre ? ' / ' + esc(g.sub_genre) : ''}</div><div class="desc">${esc(g.description || '')}</div>`;
+      card.onclick = () => { selectedGenreKey = g.key; renderGenres(genres.filter(matchSearch)); $('#toStep2').disabled = false; };
+      grid.appendChild(card);
+    });
+  }
+
+  function matchSearch(g) {
+    const q = $('#genreSearch').value.trim().toLowerCase();
+    if (!q) return true;
+    return [g.name, g.genre, g.sub_genre, g.description, g.key].some(v => (v || '').toLowerCase().includes(q));
+  }
+  $('#genreSearch').addEventListener('input', () => renderGenres(genres.filter(matchSearch)));
+
+  // Length selection
+  function selectLen(n) {
+    chapterCount = n;
+    $$('.length-btn').forEach(b => b.classList.toggle('selected', +b.dataset.chapters === n));
+    $('#customChapters').value = n;
+    fetchEstimate(n);
+  }
+  $$('.length-btn').forEach(b => b.addEventListener('click', () => selectLen(+b.dataset.chapters)));
+  $('#customChapters').addEventListener('input', () => { const v = +$('#customChapters').value; if (v > 0) { chapterCount = v; $$('.length-btn').forEach(b => b.classList.toggle('selected', +b.dataset.chapters === v)); fetchEstimate(v); } });
+
+  let estTimer = null;
+  function fetchEstimate(n) {
+    clearTimeout(estTimer);
+    estTimer = setTimeout(async () => {
+      $('#estimateCost').textContent = '计算中...';
+      try { const r = await fetch(`/api/budget/estimate?chapters=${n}`); const d = await r.json(); $('#estimateCost').textContent = d.estimate || d.cost || `约 ${n} 章`; }
+      catch { $('#estimateCost').textContent = `约 ${n} 章`; }
+    }, 300);
+  }
+
+  // Summary
+  function updateSummary() {
+    const g = genres.find(x => x.key === selectedGenreKey);
+    $('#sumGenre').textContent = g ? g.name : '-';
+    $('#sumSub').textContent = g ? `${g.genre}${g.sub_genre ? ' / ' + g.sub_genre : ''}` : '-';
+    $('#sumCh').textContent = `${chapterCount} 章`;
+    $('#sumModel').textContent = llmModel || '-';
+  }
+
+  // Start
+  async function startCreation() {
+    const btn = $('#startBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="loading-spinner"></span> 提交中...';
+    try {
+      const res = await fetch('/api/tasks/quickstart', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ genre_key: selectedGenreKey, chapter_count: chapterCount }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || data.detail || '提交失败');
+      // Refresh task list so the new card appears, highlight it briefly,
+      // then jump back to the dashboard. Avoid hijacking into progress view —
+      // keeps the new vs. old running tasks clearly distinguishable.
+      highlightTaskId = data.task_id;
+      btn.disabled = false;
+      btn.textContent = '开始创作';
+      switchView('dashboard');
+      await refreshDashboard();
+      setTimeout(() => { highlightTaskId = null; renderDashboard(); }, 4000);
+    } catch (err) {
+      btn.disabled = false;
+      btn.textContent = '开始创作';
+      alert('提交失败: ' + err.message);
+    }
+  }
+
+  // Nav wiring
+  $('#toStep2').addEventListener('click', () => { wizGo(2); fetchEstimate(chapterCount); });
+  $('#toStep3').addEventListener('click', () => { updateSummary(); wizGo(3); });
+  $('#startBtn').addEventListener('click', startCreation);
+
+  /* ═══════════════════════════════════════
+     UTILS
+     ═══════════════════════════════════════ */
+  function fmtDur(s) {
+    const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
+    return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`;
+  }
+  function fmtShort(s) {
+    if (s < 60) return s + '秒';
+    const m = Math.floor(s / 60), sec = s % 60;
+    if (m < 60) return sec > 0 ? m + '分' + sec + '秒' : m + '分';
+    const h = Math.floor(m / 60), rm = m % 60;
+    return rm > 0 ? h + '小时' + rm + '分' : h + '小时';
+  }
+
+  /* ═══════════════════════════════════════
+     INIT
+     ═══════════════════════════════════════ */
+  async function init() {
+    // Load model info + concurrency limit
+    try {
+      const r = await fetch('/api/status');
+      const d = await r.json();
+      llmModel = (d.writer_model || d.planner_model || '').replace('openai/', '');
+      if (typeof d.max_concurrent_tasks === 'number' && d.max_concurrent_tasks > 0) {
+        maxConcurrentTasks = d.max_concurrent_tasks;
+      }
+    } catch {}
+
+    // Load genres in background
+    loadGenres();
+    selectLen(100);
+
+    // Load tasks & always stay on the dashboard.
+    // Previously this auto-hijacked the user into the progress view of any
+    // running task, which made it look like the system refused new creations.
+    try { const r = await fetch('/api/tasks'); if (r.ok) allTasks = await r.json(); } catch {}
+    renderDashboard();
+  }
+
+  init();
+
+  // Refresh dashboard periodically when visible
+  setInterval(() => {
+    if ($('#viewDashboard').classList.contains('active')) refreshDashboard();
+  }, 8000);
+
+})();
+</script>
+</body>
+</html>

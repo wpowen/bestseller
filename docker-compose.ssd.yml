@@ -1,0 +1,24 @@
+# ── SSD Volume Override ──────────────────────────────────────────────────────
+# Maps Docker named volumes to external SSD bind mounts for faster I/O
+# and to keep large data off the internal disk.
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.ssd.yml up -d
+#
+# The docker-start.sh script auto-detects SSD and applies this override.
+# ─────────────────────────────────────────────────────────────────────────────
+
+volumes:
+  pgdata:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /Volumes/SSD/Docker/bestseller/pgdata
+  # output: now uses bind mount (./output:/app/output) in main compose
+  artifacts:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /Volumes/SSD/Docker/bestseller/artifacts

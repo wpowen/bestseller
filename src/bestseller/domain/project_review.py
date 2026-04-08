@@ -23,6 +23,9 @@ class ProjectConsistencyScores(BaseModel):
     character_arc_progression: float = Field(ge=0, le=1)
     world_rule_consistency: float = Field(ge=0, le=1)
     antagonist_pressure: float = Field(ge=0, le=1)
+    supporting_cast_depth: float = Field(ge=0, le=1)
+    subplot_health: float = Field(ge=0, le=1)
+    resolution_completeness: float = Field(ge=0, le=1)
 
 
 class ProjectConsistencyResult(BaseModel):

@@ -1,0 +1,186 @@
+# ── Shared environment loaded from .env ─────────────────────────────────────
+x-env-common: &env-common
+  BESTSELLER__DATABASE__URL: postgresql+asyncpg://${DB_USER:-bestseller}:${DB_PASSWORD:-bestseller}@db:5432/${DB_NAME:-bestseller}
+  BESTSELLER_REDIS_URL: redis://redis:6379/0
+  BESTSELLER__REDIS__URL: redis://redis:6379/0
+  BESTSELLER__OUTPUT__BASE_DIR: /app/output
+  BESTSELLER__ARTIFACT_STORE__LOCAL_DIR: /app/artifacts
+  BESTSELLER_TASK_STALE_SECONDS: ${BESTSELLER_TASK_STALE_SECONDS:-2700}
+
+x-llm-env: &env-llm
+  ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+  OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+  GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
+  GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+  BESTSELLER__LLM__MOCK: ${BESTSELLER_LLM_MOCK:-false}
+
+x-volumes: &app-volumes
+  - ./output:/app/output
+  - artifacts:/app/artifacts
+
+services:
+  # ── PostgreSQL + pgvector ────────────────────────────────────────────────
+  db:
+    image: ankane/pgvector:latest
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USER:-bestseller}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-bestseller}
+      POSTGRES_DB: ${DB_NAME:-bestseller}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-bestseller}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # ── Redis ────────────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --save 60 1 --loglevel warning
+    volumes:
+      - redisdata:/data
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # ── Database migration (run-once) ────────────────────────────────────────
+  migrate:
+    build: .
+    command: alembic upgrade head
+    environment:
+      <<: *env-common
+    depends_on:
+      db:
+        condition: service_healthy
+    profiles: ["migrate"]
+
+  # ── FastAPI REST API ─────────────────────────────────────────────────────
+  api:
+    build: .
+    restart: unless-stopped
+    command: >
+      uvicorn bestseller.api.app:create_app --factory
+      --host 0.0.0.0 --port 8000 --workers 1
+    environment:
+      <<: [*env-common, *env-llm]
+    env_file:
+      - .env
+    ports:
+      - "${API_PORT:-8000}:8000"
+    volumes: *app-volumes
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 15s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+
+  # ── MCP Server (OpenClaw integration) ────────────────────────────────────
+  mcp:
+    build: .
+    restart: unless-stopped
+    command: python -m bestseller.mcp.server
+    environment:
+      <<: *env-common
+      BESTSELLER_API_BASE_URL: http://api:8000
+      BESTSELLER_MCP_API_KEY: ${BESTSELLER_MCP_API_KEY:-}
+    env_file:
+      - .env
+    ports:
+      - "${MCP_PORT:-3000}:3000"
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf -X POST -H 'Content-Type: application/json' -d '{}' http://localhost:3000/mcp || exit 0"]
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
+
+  # ── ARQ async workers ────────────────────────────────────────────────────
+  worker:
+    build: .
+    restart: unless-stopped
+    command: python -m bestseller.worker.main
+    environment:
+      <<: [*env-common, *env-llm]
+    env_file:
+      - .env
+    volumes: *app-volumes
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    deploy:
+      replicas: ${WORKER_REPLICAS:-2}
+    healthcheck:
+      test: ["CMD-SHELL", "python -c 'import bestseller' || exit 0"]
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
+
+  # ── Publishing scheduler ─────────────────────────────────────────────────
+  scheduler:
+    build: .
+    restart: unless-stopped
+    command: python -m bestseller.scheduler.main
+    environment:
+      <<: *env-common
+    env_file:
+      - .env
+    volumes: *app-volumes
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python -c 'import bestseller' || exit 0"]
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
+
+  # ── Web Studio (existing UI on port 8787) ────────────────────────────────
+  web:
+    build: .
+    restart: unless-stopped
+    command: bestseller ui serve --host 0.0.0.0 --port 8787
+    environment:
+      <<: [*env-common, *env-llm]
+    env_file:
+      - .env
+    ports:
+      - "${WEB_PORT:-8787}:8787"
+    volumes: *app-volumes
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8787/ || exit 0"]
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
+
+volumes:
+  pgdata:
+  redisdata:
+  artifacts:

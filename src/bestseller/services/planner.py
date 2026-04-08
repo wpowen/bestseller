@@ -122,18 +122,166 @@ def _named_item(items: list[dict[str, Any]], index: int, default_name: str) -> d
     return {"name": default_name}
 
 
-def _protagonist_name_from_book_spec(book_spec: dict[str, Any], premise: str) -> str:
+def _protagonist_name_from_book_spec(
+    book_spec: dict[str, Any],
+    premise: str,
+    genre: str = "",
+) -> str:
     protagonist = _mapping(_mapping(book_spec).get("protagonist"))
-    return _non_empty_string(protagonist.get("name"), _derive_protagonist_name(premise))
+    return _non_empty_string(
+        protagonist.get("name"),
+        _derive_protagonist_name(premise, genre),
+    )
 
 
-def _derive_protagonist_name(premise: str) -> str:
-    candidates = [
-        candidate
-        for candidate in re.findall(r"[A-Z][a-zA-Z]{2,}|[\u4e00-\u9fff]{2,3}", premise)
-        if candidate not in {"一个", "一名", "主角", "故事", "帝国", "世界", "长篇", "小说"}
-    ]
-    return candidates[0] if candidates else "主角"
+def _derive_protagonist_name(premise: str, genre: str = "") -> str:
+    """Return a safe placeholder protagonist name.
+
+    Premise text is NEVER regex-mined for names — that historically produced
+    garbage fragments like ``基于末`` (from ``基于末日…``). The authoritative
+    source for character names is the LLM call ``_generate_character_names()``
+    which is invoked at the start of ``run_planning_pipeline``. This helper
+    only exists as a last-resort placeholder when no LLM/book_spec name is
+    available, and returns a curated genre-appropriate name from the pool.
+    """
+    pool = _genre_name_pool(genre)
+    name = _mapping(pool.get("protagonist")).get("name")
+    return name if isinstance(name, str) and name else "主角"
+
+
+async def _generate_character_names(
+    session: AsyncSession,
+    settings: AppSettings,
+    *,
+    genre: str,
+    sub_genre: str,
+    premise: str,
+    book_spec: dict[str, Any],
+    character_count: int = 5,
+    workflow_run_id: UUID | None = None,
+    project_id: UUID | None = None,
+) -> dict[str, Any]:
+    """Generate contextually appropriate character names via LLM.
+
+    Considers genre, era, character archetypes, and cultural context to produce
+    natural, memorable names. Returns a dict with protagonist, allies, and
+    antagonists name entries.
+    """
+    protagonist = _mapping(_mapping(book_spec).get("protagonist"))
+    archetype = protagonist.get("archetype", "")
+    era_hints = _detect_era_from_genre(genre)
+
+    user_prompt = (
+        f"为以下小说生成 {character_count} 个角色名字。\n\n"
+        f"题材：{genre}（{sub_genre}）\n"
+        f"时代背景：{era_hints}\n"
+        f"故事前提：{premise[:300]}\n"
+        f"主角原型：{archetype}\n\n"
+        f"要求：\n"
+        f"1. 根据题材和时代选择合适的姓名风格：\n"
+        f"   - 古代/仙侠/玄幻：古典风格（如 沈逸、苏暮晚、裴云霄）\n"
+        f"   - 现代/都市：现代风格（如 林启、叶晨、宋思远）\n"
+        f"   - 末日/科幻/未来：普通或硬朗风格（如 秦北、周远、夏凛）\n"
+        f"2. 主角名 2-3 字，音调和谐，有记忆点\n"
+        f"3. 所有角色姓氏不能重复\n"
+        f"4. 避免谐音不雅、过于生僻或网文烂大街的名字\n"
+        f"5. 反派名可暗示性格（但不要太刻意）\n\n"
+        f"输出 JSON：\n"
+        f'{{"protagonist": {{"name": "主角名", "name_reasoning": "命名理由"}},\n'
+        f'  "allies": [{{"name": "盟友名", "name_reasoning": "命名理由"}}],\n'
+        f'  "antagonists": [{{"name": "反派名", "name_reasoning": "命名理由"}}]\n'
+        f"}}"
+    )
+
+    result = await complete_text(
+        session,
+        settings,
+        LLMCompletionRequest(
+            logical_role="critic",
+            system_prompt=(
+                "你是一位中文小说命名专家。你精通各种题材的命名风格，能生成自然、"
+                "有记忆点、符合文化语境的角色名字。输出必须是合法 JSON，不要解释。"
+            ),
+            user_prompt=user_prompt,
+            fallback_response=json.dumps(
+                _genre_name_pool(genre),
+                ensure_ascii=False,
+            ),
+            prompt_template="generate_character_names",
+            project_id=project_id,
+            workflow_run_id=workflow_run_id,
+        ),
+    )
+
+    try:
+        parsed = _extract_json_payload(result.content)
+        if isinstance(parsed, dict) and parsed.get("protagonist", {}).get("name"):
+            return parsed
+    except (ValueError, KeyError):
+        pass
+
+    return _genre_name_pool(genre)
+
+
+def _detect_era_from_genre(genre: str) -> str:
+    """Infer era/setting from genre for name style selection."""
+    normalized = genre.lower()
+    if any(tok in normalized for tok in ("仙", "玄幻", "修真", "古代", "武侠", "历史")):
+        return "古代/架空古风"
+    if any(tok in normalized for tok in ("都市", "现代", "校园", "职场")):
+        return "现代都市"
+    if any(tok in normalized for tok in ("科幻", "末日", "未来", "赛博", "星际")):
+        return "未来/末日"
+    return "架空（可自由选择风格）"
+
+
+def _genre_name_pool(genre: str) -> dict[str, Any]:
+    """Genre-specific fallback name pool — replaces hardcoded names."""
+    normalized = genre.lower()
+    if any(tok in normalized for tok in ("仙", "玄幻", "修真", "武侠")):
+        return {
+            "protagonist": {"name": "沈逸", "name_reasoning": "沈姓古朴，逸字飘逸，适合修仙/玄幻主角"},
+            "allies": [
+                {"name": "苏暮晚", "name_reasoning": "苏姓温婉，暮晚意境幽远"},
+                {"name": "楚长歌", "name_reasoning": "楚姓有力，长歌豪迈"},
+            ],
+            "antagonists": [
+                {"name": "裴云霄", "name_reasoning": "裴姓尊贵，云霄暗示野心"},
+            ],
+        }
+    if any(tok in normalized for tok in ("都市", "现代", "校园")):
+        return {
+            "protagonist": {"name": "林启", "name_reasoning": "林姓常见亲切，启字暗示新的开始"},
+            "allies": [
+                {"name": "叶晨", "name_reasoning": "叶姓清新，晨字有朝气"},
+                {"name": "宋思远", "name_reasoning": "宋姓大气，思远意境深远"},
+            ],
+            "antagonists": [
+                {"name": "陆承渊", "name_reasoning": "陆姓稳重，承渊暗示深不可测"},
+            ],
+        }
+    if any(tok in normalized for tok in ("末日", "科幻", "未来", "星际")):
+        return {
+            "protagonist": {"name": "秦北", "name_reasoning": "秦姓硬朗，北字冷峻，适合末日/科幻"},
+            "allies": [
+                {"name": "周远", "name_reasoning": "周姓朴实，远字有坚韧感"},
+                {"name": "夏凛", "name_reasoning": "夏姓清亮，凛字有锐气"},
+            ],
+            "antagonists": [
+                {"name": "方择", "name_reasoning": "方姓规矩，择字暗示冷酷取舍"},
+            ],
+        }
+    # Default for other genres
+    return {
+        "protagonist": {"name": "卫朝", "name_reasoning": "卫姓有守护感，朝字向上"},
+        "allies": [
+            {"name": "顾临", "name_reasoning": "顾姓温润，临字有临危不惧之意"},
+            {"name": "江澈", "name_reasoning": "江姓大气，澈字通透"},
+        ],
+        "antagonists": [
+            {"name": "何承", "name_reasoning": "何姓疑问感，承字暗示肩负使命"},
+        ],
+    }
 
 
 def _genre_profile(genre: str) -> dict[str, Any]:
@@ -191,7 +339,7 @@ def _planner_prompt_pack(project: ProjectModel):
 def _fallback_book_spec(project: ProjectModel, premise: str) -> dict[str, Any]:
     profile = _genre_profile(project.genre)
     writing_profile = _planner_writing_profile(project)
-    protagonist_name = _derive_protagonist_name(premise)
+    protagonist_name = _derive_protagonist_name(premise, project.genre)
     return {
         "title": project.title,
         "logline": premise.strip(),
@@ -232,7 +380,7 @@ def _fallback_book_spec(project: ProjectModel, premise: str) -> dict[str, Any]:
 
 def _fallback_world_spec(project: ProjectModel, premise: str, book_spec: dict[str, Any]) -> dict[str, Any]:
     profile = _genre_profile(project.genre)
-    protagonist_name = _protagonist_name_from_book_spec(book_spec, premise)
+    protagonist_name = _protagonist_name_from_book_spec(book_spec, premise, project.genre)
     return {
         "world_name": profile["world_name"],
         "world_premise": profile["world_premise"],
@@ -320,7 +468,7 @@ def _fallback_cast_spec(project: ProjectModel, premise: str, book_spec: dict[str
     profile = _genre_profile(project.genre)
     writing_profile = _planner_writing_profile(project)
     protagonist = _mapping(_mapping(book_spec).get("protagonist"))
-    protagonist_name = _protagonist_name_from_book_spec(book_spec, premise)
+    protagonist_name = _protagonist_name_from_book_spec(book_spec, premise, project.genre)
     external_goal = _non_empty_string(
         protagonist.get("external_goal"),
         f"{protagonist_name}必须主动追查并破解当前危机背后的操盘者。",
@@ -331,8 +479,12 @@ def _fallback_cast_spec(project: ProjectModel, premise: str, book_spec: dict[str
     home_location = _named_item(locations, 0, profile["locations"][0])
     ruling_faction = _named_item(factions, 0, profile["factions"][0])
     protagonist_tier = _non_empty_string(power_system.get("protagonist_starting_tier"), "低阶")
-    ally_name = "顾临" if protagonist_name != "顾临" else "林策"
-    antagonist_name = "祁镇" if protagonist_name != "祁镇" else "沈烬"
+    # Use genre-aware name pool instead of hardcoded names
+    name_pool = _genre_name_pool(project.genre)
+    pool_allies = [a["name"] for a in name_pool.get("allies", []) if a.get("name")]
+    pool_antagonists = [a["name"] for a in name_pool.get("antagonists", []) if a.get("name")]
+    ally_name = next((n for n in pool_allies if n != protagonist_name), "顾临")
+    antagonist_name = next((n for n in pool_antagonists if n != protagonist_name), "何承")
     return {
         "protagonist": {
             "name": protagonist_name,
@@ -354,6 +506,20 @@ def _fallback_cast_spec(project: ProjectModel, premise: str, book_spec: dict[str
                 "unaware_of": [f"{antagonist_name}与过去事故存在直接关联"],
             },
             "power_tier": protagonist_tier,
+            "voice_profile": {
+                "speech_register": "口语偏利落",
+                "verbal_tics": ["……算了", "我来想办法"],
+                "sentence_style": "短句利落型",
+                "emotional_expression": "内敛",
+                "mannerisms": ["下意识揉眉心", "说到关键处压低声音"],
+                "internal_monologue_style": "碎片式自问自答",
+                "vocabulary_level": "中",
+            },
+            "moral_framework": {
+                "core_values": ["保护身边的人", "真相比秩序重要"],
+                "lines_never_crossed": ["不会牺牲无辜者换取情报"],
+                "willing_to_sacrifice": "个人安全和社会地位",
+            },
             "relationships": [
                 {
                     "character": ally_name,
@@ -384,6 +550,20 @@ def _fallback_cast_spec(project: ProjectModel, premise: str, book_spec: dict[str
                 "unaware_of": ["主角会这么快找到真正证据链"],
             },
             "power_tier": "高阶",
+            "voice_profile": {
+                "speech_register": "文雅官腔",
+                "verbal_tics": ["不过是秩序的代价", "你以为呢"],
+                "sentence_style": "长句思辨型",
+                "emotional_expression": "冷静克制、偶尔流露轻蔑",
+                "mannerisms": ["说话时不看对方眼睛", "习惯性整理袖口"],
+                "internal_monologue_style": "冷酷推演式",
+                "vocabulary_level": "高",
+            },
+            "moral_framework": {
+                "core_values": ["秩序高于个体", "结果证明手段"],
+                "lines_never_crossed": ["不会亲手动手——总让规则替自己执行"],
+                "willing_to_sacrifice": "任何妨碍大局的人，包括自己的盟友",
+            },
             "relationships": [
                 {
                     "character": protagonist_name,
@@ -410,6 +590,20 @@ def _fallback_cast_spec(project: ProjectModel, premise: str, book_spec: dict[str
                     "knows": ["过去那场事故还有未公开的一段记录"],
                     "falsely_believes": ["只要低调调查就能避免更大冲突"],
                     "unaware_of": [f"{antagonist_name}已经将自己视为潜在隐患"],
+                },
+                "voice_profile": {
+                    "speech_register": "体制内正式用语夹杂私下吐槽",
+                    "verbal_tics": ["你听我说", "这事儿没那么简单"],
+                    "sentence_style": "中等长度、逻辑清晰",
+                    "emotional_expression": "表面沉稳、私下焦虑",
+                    "mannerisms": ["紧张时反复摸口袋里的旧证件"],
+                    "internal_monologue_style": "反复权衡利弊",
+                    "vocabulary_level": "中高",
+                },
+                "moral_framework": {
+                    "core_values": ["保护还在局中的人", "忠诚但有条件"],
+                    "lines_never_crossed": ["不会出卖曾经的搭档"],
+                    "willing_to_sacrifice": "自己在体系内的前途",
                 },
             }
         ],
@@ -512,6 +706,38 @@ def _hook_type(index_within_volume: int, total_in_volume: int) -> str:
     return mapping[phase]
 
 
+# Extended scene type taxonomy for pacing diversity.
+# After high-tension phases, insert low-tension scene types to create rhythm.
+_SCENE_TYPE_AFTER_CLIMAX = ["aftermath", "introspection", "relationship_building"]
+_SCENE_TYPE_AFTER_PRESSURE = ["preparation", "worldbuilding_discovery"]
+_SCENE_TYPE_COMIC_INTERVAL = 7  # Insert comic relief every N chapters
+
+
+def _varied_scene_type(
+    base_type: str,
+    chapter_number: int,
+    scene_number: int,
+    phase: str,
+    prev_phase: str | None,
+) -> str:
+    """Choose a richer scene type based on pacing context.
+
+    Expands the original 5-type system (hook/setup/transition/conflict/reveal)
+    with: introspection, relationship_building, worldbuilding_discovery,
+    aftermath, preparation, comic_relief, montage.
+    """
+    # After a climax or reversal chapter, first scene should be aftermath/introspection
+    if scene_number == 1 and prev_phase in ("climax", "reversal") and phase in ("setup", "investigation"):
+        return _SCENE_TYPE_AFTER_CLIMAX[chapter_number % len(_SCENE_TYPE_AFTER_CLIMAX)]
+    # Middle scenes in investigation phase can be relationship or worldbuilding
+    if scene_number == 2 and phase == "investigation":
+        return _SCENE_TYPE_AFTER_PRESSURE[chapter_number % len(_SCENE_TYPE_AFTER_PRESSURE)]
+    # Periodic comic relief
+    if chapter_number % _SCENE_TYPE_COMIC_INTERVAL == 0 and scene_number == 1 and phase not in ("climax", "reversal"):
+        return "comic_relief"
+    return base_type
+
+
 def _fallback_chapter_outline_batch(
     project: ProjectModel,
     book_spec: dict[str, Any],
@@ -537,6 +763,7 @@ def _fallback_chapter_outline_batch(
     chapter_number = 1
     chapter_target_words = max(5000, int(project.target_word_count / max(project.target_chapters, 1)))
     scene_target_words = max(900, int(chapter_target_words / 3))
+    prev_phase: str | None = None
     for raw_volume_index, volume in enumerate(normalized_volume_plan, start=1):
         volume_payload = _mapping(volume)
         total_in_volume = max(int(volume_payload.get("chapter_count_target") or 1), 1)
@@ -552,7 +779,10 @@ def _fallback_chapter_outline_batch(
             scenes = [
                 {
                     "scene_number": 1,
-                    "scene_type": "hook" if is_opening_chapter else ("setup" if phase == "setup" else "transition"),
+                    "scene_type": "hook" if is_opening_chapter else _varied_scene_type(
+                        "setup" if phase == "setup" else "transition",
+                        chapter_number, 1, phase, prev_phase,
+                    ),
                     "title": "第一时间亮出主角优势" if chapter_number == 1 else f"第{chapter_number}章开场压力",
                     "time_label": f"第{chapter_number}章开场",
                     "participants": [protagonist_name, ally_name],
@@ -580,7 +810,10 @@ def _fallback_chapter_outline_batch(
                 },
                 {
                     "scene_number": 2,
-                    "scene_type": "conflict" if phase in {"pressure", "reversal", "climax"} else "reveal",
+                    "scene_type": _varied_scene_type(
+                        "conflict" if phase in {"pressure", "reversal", "climax"} else "reveal",
+                        chapter_number, 2, phase, prev_phase,
+                    ),
                     "title": f"第{chapter_number}章关键碰撞",
                     "time_label": f"第{chapter_number}章中段",
                     "participants": [protagonist_name, antagonist_name]
@@ -642,6 +875,7 @@ def _fallback_chapter_outline_batch(
                     "scenes": scenes,
                 }
             )
+            prev_phase = phase
             chapter_number += 1
     return {"batch_name": "auto-generated-full-outline", "chapters": chapters}
 
@@ -654,6 +888,8 @@ def _book_spec_prompts(project: ProjectModel, premise: str, fallback: dict[str, 
         "输出必须是合法 JSON，不要解释。"
         "你要产出的是适合中文网文平台连载的商业小说骨架，而不是文学评论。"
     )
+    _pp_block = f"Prompt Pack：\n{render_prompt_pack_prompt_block(prompt_pack)}\n" if prompt_pack else ""
+    _pp_book_spec = f"{render_prompt_pack_fragment(prompt_pack, 'planner_book_spec')}\n" if prompt_pack else ""
     user_prompt = (
         f"项目标题：{project.title}\n"
         f"类型：{project.genre}\n"
@@ -662,9 +898,9 @@ def _book_spec_prompts(project: ProjectModel, premise: str, fallback: dict[str, 
         f"受众：{project.audience or 'web-serial'}\n"
         f"Premise：{premise}\n"
         f"写作画像：\n{render_writing_profile_prompt_block(writing_profile)}\n"
-        f"{'Prompt Pack：\n' + render_prompt_pack_prompt_block(prompt_pack) + '\n' if prompt_pack else ''}"
+        f"{_pp_block}"
         f"商业网文硬约束：\n{render_serial_fiction_guardrails(writing_profile)}\n"
-        f"{render_prompt_pack_fragment(prompt_pack, 'planner_book_spec') + '\n' if prompt_pack else ''}"
+        f"{_pp_book_spec}"
         "请生成一个 BookSpec JSON，包含 title、logline、genre、target_audience、tone、themes、"
         "protagonist、stakes、series_engine。"
         "其中 series_engine 必须清楚写出：核心连载引擎、读者承诺、前三章抓手、章节尾钩策略、"
@@ -677,14 +913,16 @@ def _world_spec_prompts(project: ProjectModel, premise: str, book_spec: dict[str
     writing_profile = _planner_writing_profile(project)
     prompt_pack = _planner_prompt_pack(project)
     system_prompt = "你是长篇中文小说世界观设计师。输出必须是合法 JSON，不要解释。"
+    _pp_block = f"Prompt Pack：\n{render_prompt_pack_prompt_block(prompt_pack)}\n" if prompt_pack else ""
+    _pp_world_spec = f"{render_prompt_pack_fragment(prompt_pack, 'planner_world_spec')}\n" if prompt_pack else ""
     user_prompt = (
         f"项目标题：{project.title}\n"
         f"类型：{project.genre}\n"
         f"Premise：{premise}\n"
         f"写作画像：\n{render_writing_profile_prompt_block(writing_profile)}\n"
-        f"{'Prompt Pack：\n' + render_prompt_pack_prompt_block(prompt_pack) + '\n' if prompt_pack else ''}"
+        f"{_pp_block}"
         f"BookSpec：{_json_dumps(book_spec)}\n"
-        f"{render_prompt_pack_fragment(prompt_pack, 'planner_world_spec') + '\n' if prompt_pack else ''}"
+        f"{_pp_world_spec}"
         "请生成一个 WorldSpec JSON，包含 world_name、world_premise、rules、power_system、locations、"
         "factions、power_structure、history_key_events、forbidden_zones。"
         "要求世界规则能直接制造冲突、爽点成本、升级空间和阴谋推进空间，不要只写空背景。"
@@ -694,15 +932,29 @@ def _world_spec_prompts(project: ProjectModel, premise: str, book_spec: dict[str
 
 def _cast_spec_prompts(project: ProjectModel, book_spec: dict[str, Any], world_spec: dict[str, Any]) -> tuple[str, str]:
     prompt_pack = _planner_prompt_pack(project)
+    era_hint = _detect_era_from_genre(project.genre)
     system_prompt = "你是长篇中文小说角色架构师。输出必须是合法 JSON，不要解释。"
+    _pp_block = f"Prompt Pack：\n{render_prompt_pack_prompt_block(prompt_pack)}\n" if prompt_pack else ""
+    _pp_cast_spec = f"{render_prompt_pack_fragment(prompt_pack, 'planner_cast_spec')}\n" if prompt_pack else ""
     user_prompt = (
         f"BookSpec：{_json_dumps(book_spec)}\n"
         f"WorldSpec：{_json_dumps(world_spec)}\n"
-        f"{'Prompt Pack：\n' + render_prompt_pack_prompt_block(prompt_pack) + '\n' if prompt_pack else ''}"
-        f"{render_prompt_pack_fragment(prompt_pack, 'planner_cast_spec') + '\n' if prompt_pack else ''}"
+        f"题材时代：{era_hint}\n"
+        f"{_pp_block}"
+        f"{_pp_cast_spec}"
         "请生成一个 CastSpec JSON，包含 protagonist、antagonist、supporting_cast、conflict_map。"
         "主角必须有鲜明欲望、明显短板、可持续升级点和可被读者快速记住的差异化优势；"
-        "反派必须能持续升级并主动反制主角；配角要形成明确功能位和关系张力。"
+        "反派必须能持续升级并主动反制主角；配角要形成明确功能位和关系张力。\n"
+        "每个角色必须包含 voice_profile 对象（speech_register、verbal_tics、sentence_style、"
+        "emotional_expression、mannerisms）和 moral_framework 对象（core_values、"
+        "lines_never_crossed、willing_to_sacrifice），确保不同角色的说话方式有明显区分度。\n\n"
+        "【角色命名硬性要求】\n"
+        f"- 角色名字必须符合「{project.genre}」题材和「{era_hint}」时代背景\n"
+        "- 主角名 2-3 字，音调优美朗朗上口，有记忆点\n"
+        "- 所有角色的姓氏不能重复\n"
+        "- 避免过于生僻的字、谐音不雅的组合、或网文中已经烂大街的名字\n"
+        "- 反派名可暗示性格特质但不要太刻意\n"
+        "- 每个角色附 name_reasoning 字段说明命名理由"
     )
     return system_prompt, user_prompt
 
@@ -711,16 +963,18 @@ def _volume_plan_prompts(project: ProjectModel, book_spec: dict[str, Any], world
     writing_profile = _planner_writing_profile(project)
     prompt_pack = _planner_prompt_pack(project)
     system_prompt = "你是长篇中文小说结构编辑。输出必须是合法 JSON 数组，不要解释。"
+    _pp_block = f"Prompt Pack：\n{render_prompt_pack_prompt_block(prompt_pack)}\n" if prompt_pack else ""
+    _pp_volume_plan = f"{render_prompt_pack_fragment(prompt_pack, 'planner_volume_plan')}\n" if prompt_pack else ""
     user_prompt = (
         f"项目标题：{project.title}\n"
         f"目标字数：{project.target_word_count}\n"
         f"目标章节：{project.target_chapters}\n"
         f"写作画像：\n{render_writing_profile_prompt_block(writing_profile)}\n"
-        f"{'Prompt Pack：\n' + render_prompt_pack_prompt_block(prompt_pack) + '\n' if prompt_pack else ''}"
+        f"{_pp_block}"
         f"BookSpec：{_json_dumps(book_spec)}\n"
         f"WorldSpec：{_json_dumps(world_spec)}\n"
         f"CastSpec：{_json_dumps(cast_spec)}\n"
-        f"{render_prompt_pack_fragment(prompt_pack, 'planner_volume_plan') + '\n' if prompt_pack else ''}"
+        f"{_pp_volume_plan}"
         "请生成 VolumePlan JSON 数组，每个元素包含 volume_number、volume_title、volume_theme、"
         "chapter_count_target、volume_goal、volume_obstacle、volume_climax、volume_resolution。"
         "每卷都要有清晰的爽点兑现、局势升级、关键揭示、卷尾钩子和下一卷期待。"
@@ -732,16 +986,18 @@ def _outline_prompts(project: ProjectModel, book_spec: dict[str, Any], cast_spec
     writing_profile = _planner_writing_profile(project)
     prompt_pack = _planner_prompt_pack(project)
     system_prompt = "你是长篇中文小说章纲规划师。输出必须是合法 JSON，不要解释。"
+    _pp_block = f"Prompt Pack：\n{render_prompt_pack_prompt_block(prompt_pack)}\n" if prompt_pack else ""
+    _pp_outline = f"{render_prompt_pack_fragment(prompt_pack, 'planner_outline')}\n" if prompt_pack else ""
     user_prompt = (
         f"项目标题：{project.title}\n"
         f"目标章节：{project.target_chapters}\n"
         f"写作画像：\n{render_writing_profile_prompt_block(writing_profile)}\n"
-        f"{'Prompt Pack：\n' + render_prompt_pack_prompt_block(prompt_pack) + '\n' if prompt_pack else ''}"
+        f"{_pp_block}"
         f"商业网文硬约束：\n{render_serial_fiction_guardrails(writing_profile)}\n"
         f"BookSpec：{_json_dumps(book_spec)}\n"
         f"CastSpec：{_json_dumps(cast_spec)}\n"
         f"VolumePlan：{_json_dumps(volume_plan)}\n"
-        f"{render_prompt_pack_fragment(prompt_pack, 'planner_outline') + '\n' if prompt_pack else ''}"
+        f"{_pp_outline}"
         "请生成完整 ChapterOutlineBatch JSON，包含 batch_name 和 chapters。每章至少 3 个 scenes。"
         "要求：前 3 章必须快速完成主角卖点亮相、核心异常亮相、第一轮得失与追读钩子；"
         "每章都要写明 goal、main_conflict、hook_description；每场都要有 story/emotion 任务。"
@@ -844,7 +1100,31 @@ async def generate_novel_plan(
         )
         step_order += 1
 
+        # Generate character names via LLM up-front so every downstream
+        # fallback (book_spec / world_spec / cast_spec) sees real, contextual
+        # names instead of regex-extracted fragments or generic pool defaults.
+        # If the LLM call fails, _generate_character_names falls back to the
+        # curated genre pool — never to regex on premise.
+        character_name_pool = await _generate_character_names(
+            session,
+            settings,
+            genre=project.genre,
+            sub_genre=project.sub_genre or "",
+            premise=premise,
+            book_spec={},
+            workflow_run_id=workflow_run.id,
+            project_id=project.id,
+        )
+        llm_protagonist_name = (
+            _mapping(character_name_pool.get("protagonist")).get("name")
+            or _genre_name_pool(project.genre)["protagonist"]["name"]
+        )
+
         book_spec_fallback = _fallback_book_spec(project, premise)
+        # Override placeholder name with LLM-designed one so the LLM book_spec
+        # call sees the same protagonist name in its fallback context.
+        if isinstance(book_spec_fallback.get("protagonist"), dict):
+            book_spec_fallback["protagonist"]["name"] = llm_protagonist_name
         current_step_name = "generate_book_spec"
         workflow_run.current_step = current_step_name
         book_system, book_user = _book_spec_prompts(project, premise, book_spec_fallback)

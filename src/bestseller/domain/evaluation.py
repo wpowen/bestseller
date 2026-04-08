@@ -19,10 +19,10 @@ class BenchmarkExpectation(BaseModel):
 
 class BenchmarkCaseSpec(BaseModel):
     case_id: str = Field(min_length=1, max_length=64)
-    title: str = Field(min_length=1, max_length=200)
-    genre: str = Field(min_length=1, max_length=100)
-    sub_genre: str | None = Field(default=None, max_length=100)
-    audience: str | None = Field(default=None, max_length=200)
+    title: str = Field(min_length=1, max_length=4000)
+    genre: str = Field(min_length=1, max_length=4000)
+    sub_genre: str | None = Field(default=None, max_length=4000)
+    audience: str | None = Field(default=None, max_length=4000)
     target_word_count: int = Field(gt=0)
     target_chapters: int = Field(gt=0)
     premise: str = Field(min_length=1)
@@ -31,14 +31,14 @@ class BenchmarkCaseSpec(BaseModel):
 
 class BenchmarkSuiteSpec(BaseModel):
     suite_id: str = Field(min_length=1, max_length=64)
-    title: str = Field(min_length=1, max_length=200)
+    title: str = Field(min_length=1, max_length=4000)
     description: str | None = None
     cases: list[BenchmarkCaseSpec] = Field(default_factory=list)
 
 
 class BenchmarkSuiteCatalogEntry(BaseModel):
     suite_id: str = Field(min_length=1, max_length=64)
-    title: str = Field(min_length=1, max_length=200)
+    title: str = Field(min_length=1, max_length=4000)
     description: str | None = None
     path: str = Field(min_length=1)
     case_count: int = Field(ge=0)
@@ -56,7 +56,7 @@ class BenchmarkCheckResult(BaseModel):
 class BenchmarkCaseResult(BaseModel):
     suite_id: str = Field(min_length=1, max_length=64)
     case_id: str = Field(min_length=1, max_length=64)
-    title: str = Field(min_length=1, max_length=200)
+    title: str = Field(min_length=1, max_length=4000)
     project_id: UUID
     project_slug: str = Field(min_length=1)
     chapter_count: int = Field(ge=0)
@@ -76,7 +76,7 @@ class BenchmarkCaseResult(BaseModel):
 
 class BenchmarkSuiteRunResult(BaseModel):
     suite_id: str = Field(min_length=1, max_length=64)
-    title: str = Field(min_length=1, max_length=200)
+    title: str = Field(min_length=1, max_length=4000)
     started_at: datetime
     completed_at: datetime
     report_path: str | None = None

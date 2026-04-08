@@ -29,9 +29,12 @@ from bestseller.infra.db.models import (
 )
 from bestseller.services.context import build_chapter_writer_context, build_scene_writer_context
 from bestseller.services.drafts import (
-    count_words,
+    _NOVEL_OUTPUT_PROHIBITION,
     _normalize_fragment,
+    count_words,
+    has_meta_leak,
     sanitize_novel_markdown_content,
+    validate_and_clean_novel_content,
 )
 from bestseller.services.llm import LLMCompletionRequest, complete_text
 from bestseller.services.prompt_packs import (
@@ -265,6 +268,8 @@ def build_scene_review_prompts(
         "你是长篇小说审校系统里的场景评论者。"
         "请输出简洁、专业、可执行的审校意见，不要复述需求。"
     )
+    _pp_block = f"Prompt Pack：\n{render_prompt_pack_prompt_block(prompt_pack)}\n" if prompt_pack else ""
+    _pp_scene_review = f"{render_prompt_pack_fragment(prompt_pack, 'scene_review')}\n" if prompt_pack else ""
     user_prompt = (
         f"项目：《{project.title}》\n"
         f"章节：第{chapter.chapter_number}章\n"
@@ -272,8 +277,8 @@ def build_scene_review_prompts(
         f"场景目标：{scene.purpose.get('story', '推进本章主线')}\n"
         f"情绪目标：{scene.purpose.get('emotion', '拉高当前张力')}\n"
         f"写作画像：\n{render_writing_profile_prompt_block(writing_profile)}\n"
-        f"{'Prompt Pack：\n' + render_prompt_pack_prompt_block(prompt_pack) + '\n' if prompt_pack else ''}"
-        f"{render_prompt_pack_fragment(prompt_pack, 'scene_review') + '\n' if prompt_pack else ''}"
+        f"{_pp_block}"
+        f"{_pp_scene_review}"
         f"当前评分：{review_result.scores.model_dump(mode='json')}\n"
         f"当前发现：{[finding.model_dump(mode='json') for finding in review_result.findings]}\n"
         f"当前草稿：\n{draft.content_md}\n"
@@ -295,7 +300,8 @@ def build_scene_rewrite_prompts(
     prompt_pack = _resolve_project_prompt_pack(project, writing_profile)
     system_prompt = (
         "你是长篇中文小说写作系统里的重写编辑。"
-        "输出必须是 Markdown 正文，不要解释，不要道歉，不要列修改清单。"
+        "输出必须是 Markdown 正文，不要解释，不要道歉，不要列修改清单。\n"
+        + _NOVEL_OUTPUT_PROHIBITION
     )
     tone = (
         "、".join(str(keyword) for keyword in style_guide.tone_keywords[:3])
@@ -304,6 +310,8 @@ def build_scene_rewrite_prompts(
     )
     if not re.search(r"[\u4e00-\u9fff]", tone):
         tone = "克制、紧张"
+    _pp_block = f"Prompt Pack：\n{render_prompt_pack_prompt_block(prompt_pack)}\n" if prompt_pack else ""
+    _pp_scene_rewrite = f"{render_prompt_pack_fragment(prompt_pack, 'scene_rewrite')}\n" if prompt_pack else ""
     user_prompt = (
         f"项目：《{project.title}》\n"
         f"章节：第{chapter.chapter_number}章\n"
@@ -315,9 +323,9 @@ def build_scene_rewrite_prompts(
         f"情绪目标：{scene.purpose.get('emotion', '拉高当前张力')}\n"
         f"语气关键词：{tone}\n"
         f"写作画像：\n{render_writing_profile_prompt_block(writing_profile)}\n"
-        f"{'Prompt Pack：\n' + render_prompt_pack_prompt_block(prompt_pack) + '\n' if prompt_pack else ''}"
+        f"{_pp_block}"
         f"商业网文硬约束：\n{render_serial_fiction_guardrails(writing_profile)}\n"
-        f"{render_prompt_pack_fragment(prompt_pack, 'scene_rewrite') + '\n' if prompt_pack else ''}"
+        f"{_pp_scene_rewrite}"
         f"当前草稿：\n{current_draft.content_md}\n"
         "请重写当前场景，补强冲突、人物对话、情绪层次和结尾钩子。"
         "要让文本更像平台成品网文，而不是策划草稿或解释说明。"
@@ -444,13 +452,15 @@ def build_chapter_review_prompts(
         "你是长篇小说审校系统里的章节评论者。"
         "请输出简洁、专业、可执行的章节审校意见，不要复述需求。"
     )
+    _pp_block = f"Prompt Pack：\n{render_prompt_pack_prompt_block(prompt_pack)}\n" if prompt_pack else ""
+    _pp_chapter_review = f"{render_prompt_pack_fragment(prompt_pack, 'chapter_review')}\n" if prompt_pack else ""
     user_prompt = (
         f"项目：《{project.title}》\n"
         f"章节：第{chapter.chapter_number}章 {chapter.title or ''}\n"
         f"章节目标：{chapter.chapter_goal}\n"
         f"写作画像：\n{render_writing_profile_prompt_block(writing_profile)}\n"
-        f"{'Prompt Pack：\n' + render_prompt_pack_prompt_block(prompt_pack) + '\n' if prompt_pack else ''}"
-        f"{render_prompt_pack_fragment(prompt_pack, 'chapter_review') + '\n' if prompt_pack else ''}"
+        f"{_pp_block}"
+        f"{_pp_chapter_review}"
         f"上下文：\n{_render_chapter_context_section(chapter_context)}\n"
         f"当前评分：{review_result.scores.model_dump(mode='json')}\n"
         f"当前发现：{[finding.model_dump(mode='json') for finding in review_result.findings]}\n"
@@ -472,8 +482,11 @@ def build_chapter_rewrite_prompts(
     prompt_pack = _resolve_project_prompt_pack(project, writing_profile)
     system_prompt = (
         "你是长篇中文小说写作系统里的章节重写编辑。"
-        "输出必须是 Markdown 正文，不要解释，不要列修改清单。"
+        "输出必须是 Markdown 正文，不要解释，不要列修改清单。\n"
+        + _NOVEL_OUTPUT_PROHIBITION
     )
+    _pp_block = f"Prompt Pack：\n{render_prompt_pack_prompt_block(prompt_pack)}\n" if prompt_pack else ""
+    _pp_chapter_rewrite = f"{render_prompt_pack_fragment(prompt_pack, 'chapter_rewrite')}\n" if prompt_pack else ""
     user_prompt = (
         f"项目：《{project.title}》\n"
         f"章节：第{chapter.chapter_number}章 {chapter.title or ''}\n"
@@ -481,9 +494,9 @@ def build_chapter_rewrite_prompts(
         f"重写任务：{rewrite_task.instructions}\n"
         f"重写策略：{rewrite_task.rewrite_strategy}\n"
         f"写作画像：\n{render_writing_profile_prompt_block(writing_profile)}\n"
-        f"{'Prompt Pack：\n' + render_prompt_pack_prompt_block(prompt_pack) + '\n' if prompt_pack else ''}"
+        f"{_pp_block}"
         f"商业网文硬约束：\n{render_serial_fiction_guardrails(writing_profile)}\n"
-        f"{render_prompt_pack_fragment(prompt_pack, 'chapter_rewrite') + '\n' if prompt_pack else ''}"
+        f"{_pp_chapter_rewrite}"
         f"章节上下文：\n{_render_chapter_context_section(chapter_context)}\n"
         f"当前草稿：\n{current_draft.content_md}\n"
         "请在保留本章核心事件顺序的前提下，重写本章，使场景衔接更顺、章节推进更完整、收尾钩子更明确。"
@@ -782,6 +795,11 @@ def evaluate_scene_draft(
             hook_strength=hook_strength,
             payoff_density=payoff_density,
             voice_consistency=voice_consistency,
+            character_voice_distinction=dialogue,
+            thematic_resonance=_clamp_score((goal + emotion) / 2),
+            worldbuilding_integration=style,
+            prose_variety=_clamp_score((style + emotion) / 2),
+            moral_complexity=_clamp_score(conflict),
             contract_alignment=contract_alignment,
         ),
         findings=findings,
@@ -1052,6 +1070,9 @@ def evaluate_chapter_draft(
             hook=hook,
             ending_hook_effectiveness=ending_hook_effectiveness,
             volume_mission_alignment=volume_mission_alignment,
+            pacing_rhythm=_clamp_score((coherence + continuity) / 2),
+            character_voice_distinction=_clamp_score(style),
+            thematic_resonance=_clamp_score((goal + volume_mission_alignment) / 2),
             contract_alignment=contract_alignment,
         ),
         findings=findings,
@@ -1481,11 +1502,7 @@ def render_rewritten_scene_markdown(
         tone = "克制、紧张"
     story_purpose = _normalize_fragment(str(scene.purpose.get("story", "推进本章主线")))
     emotion_purpose = _normalize_fragment(str(scene.purpose.get("emotion", "拉高当前张力")))
-    chapter_goal = _normalize_fragment(chapter.chapter_goal)
-    title = scene.title or f"场景 {scene.scene_number}"
-
     revised_sections = [
-        f"## 场景 {scene.scene_number}：{title}",
         (
             f"{scene.time_label or '这一刻'}，{participants}重新被推回《{project.title}》第"
             f"{chapter.chapter_number}章的核心冲突。叙事仍采用 "
@@ -1493,7 +1510,7 @@ def render_rewritten_scene_markdown(
         ),
         (
             f"这一版重写围绕“{story_purpose}”展开，并把“{emotion_purpose}”真正落实到动作、停顿、"
-            f"呼吸和目光变化里。本章目标是：{chapter_goal}。"
+            f"呼吸和目光变化里。"
         ),
         (
             f"{participants}之间的空气一寸寸收紧，没有人愿意先退。"
@@ -1512,41 +1529,10 @@ def render_rewritten_scene_markdown(
             f"{scene.participants[0] if scene.participants else '主角'}最终意识到，这场对抗真正逼近的不是表面任务，"
             f"而是更深一层的真相。结尾必须留下钩子：有人已经提前一步改写了规则，而他们此刻才刚刚看见痕迹。"
         ),
-        "",
-        "### 修订说明",
-        f"- 重写策略：{rewrite_task.rewrite_strategy}",
-        f"- 本次任务：{rewrite_task.instructions}",
-        "",
-        "### 上一版草稿",
-        current_draft.content_md.strip(),
     ]
 
     content_md = "\n\n".join(section for section in revised_sections if section is not None).strip()
-    minimum_words = int(max(scene.target_word_count * 0.72, 720))
-    expansion_templates = [
-        (
-            f"{participants}没有任何一方能够轻易退出这场局面。每一次追问都逼着人物在忠诚、恐惧和判断之间做选择，"
-            "让冲突不只是信息交换，而是立场交换。"
-        ),
-        (
-            f"人物之间的对话继续推进：“如果我们现在退回去，后面所有人都会沿着错误答案继续走下去。”"
-            f"{scene.participants[-1] if scene.participants else '对方'}抬起下巴，却没有给出真正轻松的回应。"
-        ),
-        (
-            f"情绪层面的张力也在持续升高。{emotion_purpose}不再是抽象标签，而是变成呼吸变短、语速失衡、"
-            "以及做决定前那一秒钟过长的停顿。"
-        ),
-        (
-            "场景收尾时，外部局势又向前推了一格。新的异常信号、新的时间压力和新的选择成本同时压下来，"
-            "确保下一场戏必须立刻接续，而不是平滑结束。"
-        ),
-    ]
-    expansion_index = 0
-    while count_words(content_md) < minimum_words:
-        content_md = f"{content_md}\n\n{expansion_templates[expansion_index % len(expansion_templates)]}"
-        expansion_index += 1
-
-    return content_md.strip()
+    return content_md
 
 
 def render_rewritten_chapter_markdown(
@@ -1576,7 +1562,6 @@ def render_rewritten_chapter_markdown(
         final_hook_source = chapter_context.recent_timeline_events[0].summary
     transition_lines = [
         f"# 第{chapter.chapter_number}章 {title}",
-        f"> 本章目标：{chapter.chapter_goal}",
         (
             f"上一阶段留下的局势仍压在众人心头：{previous_summary}"
             " 这一章不再只是承接，而是要把冲突继续推向更高层级。"
@@ -1588,16 +1573,6 @@ def render_rewritten_chapter_markdown(
         ),
     ]
     content_md = "\n\n".join(section.strip() for section in transition_lines if section and section.strip())
-    minimum_words = int(max(chapter.target_word_count * 0.75, 1200))
-    padding_templates = [
-        "人物在章节内部的每一次选择，都在把局势从局部问题推成更难回头的整体问题。",
-        "场景与场景之间的推进不该像并列事件，而要像一根逐步收紧的绳索，把人物逼向同一个结果。",
-        "章节末尾留下的不是单纯的信息点，而是更高一级的压力、代价和无法回避的新决定。",
-    ]
-    index = 0
-    while count_words(content_md) < minimum_words:
-        content_md = f"{content_md}\n\n{padding_templates[index % len(padding_templates)]}"
-        index += 1
     return content_md.strip()
 
 
@@ -1680,6 +1655,15 @@ async def rewrite_chapter_from_task(
             ),
         )
         content_md = sanitize_novel_markdown_content(completion.content) or fallback_content
+        if has_meta_leak(content_md):
+            content_md = await validate_and_clean_novel_content(
+                session,
+                settings,
+                content_md,
+                project_id=project.id,
+                workflow_run_id=workflow_run_id,
+                step_run_id=step_run_id,
+            )
         model_name = completion.model_name
         llm_run_id = completion.llm_run_id
         generation_mode = completion.provider
@@ -1807,6 +1791,15 @@ async def rewrite_scene_from_task(
             ),
         )
         content_md = sanitize_novel_markdown_content(completion.content) or fallback_content
+        if has_meta_leak(content_md):
+            content_md = await validate_and_clean_novel_content(
+                session,
+                settings,
+                content_md,
+                project_id=project.id,
+                workflow_run_id=workflow_run_id,
+                step_run_id=step_run_id,
+            )
         model_name = completion.model_name
         llm_run_id = completion.llm_run_id
         generation_mode = completion.provider

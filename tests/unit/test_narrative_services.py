@@ -12,12 +12,19 @@ from bestseller.infra.db.models import (
     CharacterModel,
     ClueModel,
     EmotionTrackModel,
+    EndingContractModel,
+    MotifPlacementModel,
+    PacingCurvePointModel,
     PayoffModel,
     PlotArcModel,
     ProjectModel,
+    ReaderKnowledgeEntryModel,
+    RelationshipEventModel,
     RelationshipModel,
     SceneCardModel,
     SceneContractModel,
+    SubplotScheduleModel,
+    ThemeArcModel,
     VolumeModel,
 )
 from bestseller.services import narrative as narrative_services
@@ -208,6 +215,15 @@ async def test_rebuild_narrative_graph_creates_arcs_beats_clues_and_contracts() 
     assert counts["scene_contract_count"] == 2
     assert counts["emotion_track_count"] >= 1
     assert counts["antagonist_plan_count"] >= 1
+    # New narrative depth counts
+    assert counts["theme_arc_count"] >= 1
+    assert counts["motif_placement_count"] >= 1
+    assert counts["subplot_schedule_count"] >= 0
+    assert counts["relationship_event_count"] >= 1
+    assert counts["reader_knowledge_count"] >= 1
+    assert counts["ending_contract_count"] == 1
+    assert counts["pacing_curve_point_count"] == 2  # 2 chapters
+    # Verify model types are added
     assert any(isinstance(obj, PlotArcModel) for obj in session.added)
     assert any(isinstance(obj, ArcBeatModel) for obj in session.added)
     assert any(isinstance(obj, ClueModel) for obj in session.added)
@@ -216,7 +232,12 @@ async def test_rebuild_narrative_graph_creates_arcs_beats_clues_and_contracts() 
     assert any(isinstance(obj, SceneContractModel) for obj in session.added)
     assert any(isinstance(obj, EmotionTrackModel) for obj in session.added)
     assert any(isinstance(obj, AntagonistPlanModel) for obj in session.added)
-    assert len(session.executed) == 8
+    assert any(isinstance(obj, ThemeArcModel) for obj in session.added)
+    assert any(isinstance(obj, EndingContractModel) for obj in session.added)
+    assert any(isinstance(obj, PacingCurvePointModel) for obj in session.added)
+    assert any(isinstance(obj, RelationshipEventModel) for obj in session.added)
+    # 15 model types deleted in cleanup
+    assert len(session.executed) == 15
 
 
 @pytest.mark.asyncio
@@ -358,6 +379,13 @@ async def test_build_narrative_overview_renders_materialized_graph(
             [scene_contract],
             [emotion_track],
             [antagonist_plan],
+            [],  # theme_arcs
+            [],  # motif_placements
+            [],  # subplot_schedule
+            [],  # relationship_events
+            [],  # reader_knowledge
+            [],  # ending_contracts
+            [],  # pacing_curve
         ]
     )
 
@@ -372,3 +400,97 @@ async def test_build_narrative_overview_renders_materialized_graph(
     assert overview.scene_contracts[0].contract_summary == "本场必须抛出异常航标。"
     assert overview.emotion_tracks[0].track_code == "bond-shenyan-gulin"
     assert overview.antagonist_plans[0].plan_code == "volume-01-pressure"
+
+
+def test_build_theme_arc_specs_extracts_book_and_volume_themes() -> None:
+    project = build_project()
+    project.metadata_json["book_spec"] = {"theme": "真相与牺牲的代价"}
+    volume = build_volume(project.id, 1)
+    volume.theme = "信任的崩塌"
+    specs = narrative_services._build_theme_arc_specs(
+        project, volumes=[volume], volume_entries={},
+    )
+    assert len(specs) >= 2
+    codes = [s["theme_code"] for s in specs]
+    assert "main-theme" in codes
+    assert "vol-01-theme" in codes
+    assert specs[0]["theme_statement"] == "真相与牺牲的代价"
+
+
+def test_build_pacing_curve_specs_creates_one_point_per_chapter() -> None:
+    project = build_project()
+    volume = build_volume(project.id, 1)
+    chapters = [
+        build_chapter(project.id, volume.id, i, f"第{i}章")
+        for i in range(1, 6)
+    ]
+    specs = narrative_services._build_pacing_curve_specs(
+        chapters=chapters, scenes_by_chapter={},
+    )
+    assert len(specs) == 5
+    assert all(0.05 <= s["tension_level"] <= 0.99 for s in specs)
+    assert specs[0]["chapter_number"] == 1
+    assert specs[-1]["chapter_number"] == 5
+
+
+def test_build_relationship_event_specs_creates_milestone_events() -> None:
+    project = build_project()
+    protagonist = build_character(project.id, "沈砚", "protagonist")
+    antagonist = build_character(project.id, "顾临", "antagonist")
+    relationship = build_relationship(project.id, protagonist.id, antagonist.id, "旧搭档")
+    relationship.last_changed_chapter_no = 3  # simulate a change
+    chapters = [build_chapter(project.id, uuid4(), i, f"第{i}章") for i in range(1, 5)]
+    characters_by_id = {protagonist.id: protagonist, antagonist.id: antagonist}
+    specs = narrative_services._build_relationship_event_specs(
+        relationships=[relationship],
+        characters_by_id=characters_by_id,
+        chapters=chapters,
+    )
+    assert len(specs) >= 2  # establishment + change
+    assert specs[0]["is_milestone"] is True
+    assert specs[0]["chapter_number"] == 1
+    assert specs[1]["chapter_number"] == 3
+
+
+def test_build_ending_contract_spec_collects_open_arcs_and_clues() -> None:
+    project_id = uuid4()
+    arc = PlotArcModel(
+        project_id=project_id,
+        arc_code="main_plot",
+        name="主线",
+        arc_type="main_plot",
+        promise="揭开真相",
+        core_question="能否成功？",
+        status="active",
+        scope_level="project",
+        metadata_json={},
+    )
+    arc.id = uuid4()
+    clue = ClueModel(
+        project_id=project_id,
+        clue_code="clue-001",
+        label="异常航标",
+        clue_type="foreshadow",
+        description="航标异常",
+        status="planted",
+        metadata_json={},
+    )
+    clue.id = uuid4()
+    theme_arc = ThemeArcModel(
+        project_id=project_id,
+        theme_code="main-theme",
+        theme_statement="真相与代价",
+        symbol_set=[],
+        evolution_stages=[],
+        metadata_json={},
+    )
+    theme_arc.id = uuid4()
+    spec = narrative_services._build_ending_contract_spec(
+        arcs_by_code={"main_plot": arc},
+        clues_by_code={"clue-001": clue},
+        emotion_track_models=[],
+        theme_arcs=[theme_arc],
+    )
+    assert "main_plot" in spec["arcs_to_resolve"]
+    assert "clue-001" in spec["clues_to_payoff"]
+    assert spec["thematic_final_expression"] == "真相与代价"

@@ -1,0 +1,50 @@
+# Version control
+.git
+.gitignore
+
+# Python artifacts
+__pycache__
+*.pyc
+*.pyo
+*.egg-info
+.eggs
+dist
+build
+
+# Virtual environments
+.venv
+venv
+
+# IDE
+.idea
+.vscode
+*.swp
+*.swo
+
+# Testing / quality
+.pytest_cache
+.mypy_cache
+.ruff_cache
+htmlcov
+coverage.xml
+.coverage
+
+# Runtime artifacts (these are Docker volumes)
+output/
+artifacts/
+logs/
+
+# Local dev runtime
+.runtime
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Documentation / plans (not needed at runtime)
+plan.md
+*.md
+!README.md
+
+# Node (if any)
+node_modules

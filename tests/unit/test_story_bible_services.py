@@ -276,6 +276,32 @@ async def test_upsert_cast_spec_creates_characters_relationships_and_snapshots()
 
 
 @pytest.mark.asyncio
+async def test_upsert_cast_spec_counts_voice_profiles_and_moral_frameworks() -> None:
+    project = build_project()
+    session = FakeSession(scalar_results=[None, None, None])
+
+    cast_with_voice = build_cast_spec()
+    cast_with_voice["protagonist"]["voice_profile"] = {
+        "speech_register": "冷静克制",
+        "verbal_tics": ["……"],
+        "sentence_style": "短句利落型",
+    }
+    cast_with_voice["protagonist"]["moral_framework"] = {
+        "core_values": ["真相高于秩序"],
+        "lines_never_crossed": ["不伤害无辜"],
+    }
+
+    counts = await story_bible_services.upsert_cast_spec(session, project, cast_with_voice)
+
+    assert counts["voice_profiles_populated"] >= 1
+    assert counts["moral_frameworks_populated"] >= 1
+    characters = [item for item in session.added if isinstance(item, CharacterModel)]
+    protagonist = next(item for item in characters if item.name == "沈砚")
+    assert protagonist.voice_profile_json["speech_register"] == "冷静克制"
+    assert protagonist.moral_framework_json["core_values"] == ["真相高于秩序"]
+
+
+@pytest.mark.asyncio
 async def test_upsert_volume_plan_creates_and_updates_volumes() -> None:
     project = build_project()
     session = FakeSession(scalar_results=[None])

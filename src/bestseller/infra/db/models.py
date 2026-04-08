@@ -46,7 +46,11 @@ class ProjectModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     metadata_json: Mapped[JSON_DICT] = mapped_column("metadata", JSONB, nullable=False, default=dict)
     lock_version: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
 
-    style_guide: Mapped["StyleGuideModel | None"] = relationship(back_populates="project")
+    style_guide: Mapped["StyleGuideModel | None"] = relationship(
+        back_populates="project",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
 
 
 class StyleGuideModel(TimestampMixin, Base):

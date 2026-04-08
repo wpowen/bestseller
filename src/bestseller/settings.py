@@ -168,6 +168,34 @@ class LoggingSettings(BaseModel):
     suppress: list[str] = Field(default_factory=list)
 
 
+class RedisSettings(BaseModel):
+    url: str = "redis://localhost:6379/0"
+    pool_max_connections: int = 10
+    socket_timeout_seconds: float = 5.0
+    socket_connect_timeout_seconds: float = 3.0
+
+
+class PipelineSettings(BaseModel):
+    consistency_check_interval: int = 20  # Run consistency check every N chapters
+    rolling_summary_interval: int = 25  # Compress knowledge window every N chapters
+    resume_enabled: bool = True  # Skip already-completed chapters on resume
+
+
+class BudgetSettings(BaseModel):
+    max_tokens_per_project: int = 0  # 0 = unlimited
+    warning_thresholds: list[float] = Field(default_factory=lambda: [0.5, 0.8, 1.0])
+    cost_per_1k_input_tokens: float = 0.003
+    cost_per_1k_output_tokens: float = 0.015
+
+
+class ApiSettings(BaseModel):
+    host: str = "0.0.0.0"
+    port: int = 8000
+    cors_origins: list[str] = Field(default_factory=list)  # Empty by default; set explicitly for production
+    api_key_header: str = "Authorization"
+    task_event_ttl_seconds: int = 86400  # 24h progress retention in Redis
+
+
 class AppSettings(BaseModel):
     llm: LLMSettings
     database: DatabaseSettings
@@ -177,6 +205,10 @@ class AppSettings(BaseModel):
     artifact_store: ArtifactStoreSettings
     output: OutputSettings
     logging: LoggingSettings
+    redis: RedisSettings = Field(default_factory=RedisSettings)
+    api: ApiSettings = Field(default_factory=ApiSettings)
+    pipeline: PipelineSettings = Field(default_factory=PipelineSettings)
+    budget: BudgetSettings = Field(default_factory=BudgetSettings)
 
 
 def _read_yaml(path: Path) -> dict[str, Any]:

@@ -8,8 +8,8 @@ from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
 class SceneOutlineInput(BaseModel):
     scene_number: int = Field(gt=0)
-    scene_type: str = Field(min_length=1, max_length=100)
-    title: str | None = Field(default=None, max_length=200)
+    scene_type: str = Field(min_length=1, max_length=4000)
+    title: str | None = Field(default=None, max_length=4000)
     time_label: str | None = None
     participants: list[str] = Field(default_factory=list)
     purpose: dict[str, Any] = Field(default_factory=dict)
@@ -22,7 +22,7 @@ class ChapterOutlineInput(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     chapter_number: int = Field(gt=0)
-    title: str | None = Field(default=None, max_length=200)
+    title: str | None = Field(default=None, max_length=4000)
     chapter_goal: str = Field(
         min_length=1,
         validation_alias=AliasChoices("chapter_goal", "goal"),
@@ -38,7 +38,7 @@ class ChapterOutlineInput(BaseModel):
 
 
 class ChapterOutlineBatchInput(BaseModel):
-    batch_name: str = Field(default="default-batch", min_length=1, max_length=200)
+    batch_name: str = Field(default="default-batch", min_length=1, max_length=4000)
     chapters: list[ChapterOutlineInput] = Field(default_factory=list)
 
 

@@ -7,11 +7,11 @@ from pydantic import BaseModel, Field
 
 class NarrativeTreeNodeRead(BaseModel):
     id: UUID
-    node_path: str = Field(min_length=1, max_length=512)
-    parent_path: str | None = Field(default=None, max_length=512)
+    node_path: str = Field(min_length=1, max_length=4000)
+    parent_path: str | None = Field(default=None, max_length=4000)
     depth: int = Field(ge=1)
     node_type: str = Field(min_length=1, max_length=64)
-    title: str = Field(min_length=1, max_length=255)
+    title: str = Field(min_length=1, max_length=4000)
     summary: str | None = None
     body_md: str = Field(min_length=1)
     source_type: str = Field(min_length=1, max_length=64)
@@ -38,9 +38,9 @@ class NarrativeTreeOverview(BaseModel):
 
 
 class NarrativeTreeSearchHit(BaseModel):
-    node_path: str = Field(min_length=1, max_length=512)
+    node_path: str = Field(min_length=1, max_length=4000)
     node_type: str = Field(min_length=1, max_length=64)
-    title: str = Field(min_length=1, max_length=255)
+    title: str = Field(min_length=1, max_length=4000)
     summary: str | None = None
     score: float = Field(ge=0.0)
     source_type: str = Field(min_length=1, max_length=64)

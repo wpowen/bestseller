@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 class PlotArcRead(BaseModel):
     id: UUID
     arc_code: str = Field(min_length=1, max_length=64)
-    name: str = Field(min_length=1, max_length=200)
+    name: str = Field(min_length=1, max_length=4000)
     arc_type: str = Field(min_length=1, max_length=64)
     promise: str = Field(min_length=1)
     core_question: str = Field(min_length=1)
@@ -41,7 +41,7 @@ class ArcBeatRead(BaseModel):
 class ClueRead(BaseModel):
     id: UUID
     clue_code: str = Field(min_length=1, max_length=64)
-    label: str = Field(min_length=1, max_length=200)
+    label: str = Field(min_length=1, max_length=4000)
     clue_type: str = Field(min_length=1, max_length=64)
     description: str = Field(min_length=1)
     plot_arc_id: UUID | None = None
@@ -60,7 +60,7 @@ class ClueRead(BaseModel):
 class PayoffRead(BaseModel):
     id: UUID
     payoff_code: str = Field(min_length=1, max_length=64)
-    label: str = Field(min_length=1, max_length=200)
+    label: str = Field(min_length=1, max_length=4000)
     description: str = Field(min_length=1)
     plot_arc_id: UUID | None = None
     source_clue_id: UUID | None = None
@@ -102,6 +102,10 @@ class SceneContractRead(BaseModel):
     emotional_shift: str | None = None
     information_release: str | None = None
     tail_hook: str | None = None
+    thematic_task: str | None = None
+    dramatic_irony_intent: str | None = None
+    transition_type: str | None = Field(default=None, max_length=32)  # hard_cut / time_skip / parallel_crosscut / flashback
+    subplot_codes: list[str] = Field(default_factory=list)
     arc_codes: list[str] = Field(default_factory=list)
     arc_beat_ids: list[str] = Field(default_factory=list)
     planted_clue_codes: list[str] = Field(default_factory=list)
@@ -112,9 +116,9 @@ class EmotionTrackRead(BaseModel):
     id: UUID
     track_code: str = Field(min_length=1, max_length=64)
     track_type: str = Field(min_length=1, max_length=64)
-    title: str = Field(min_length=1, max_length=200)
-    character_a_label: str = Field(min_length=1, max_length=200)
-    character_b_label: str = Field(min_length=1, max_length=200)
+    title: str = Field(min_length=1, max_length=4000)
+    character_a_label: str = Field(min_length=1, max_length=4000)
+    character_b_label: str = Field(min_length=1, max_length=4000)
     relationship_type: str | None = None
     summary: str = Field(min_length=1)
     desired_payoff: str | None = None
@@ -131,8 +135,8 @@ class AntagonistPlanRead(BaseModel):
     id: UUID
     plan_code: str = Field(min_length=1, max_length=64)
     antagonist_character_id: UUID | None = None
-    antagonist_label: str = Field(min_length=1, max_length=200)
-    title: str = Field(min_length=1, max_length=200)
+    antagonist_label: str = Field(min_length=1, max_length=4000)
+    title: str = Field(min_length=1, max_length=4000)
     threat_type: str = Field(min_length=1, max_length=64)
     goal: str = Field(min_length=1)
     current_move: str = Field(min_length=1)
@@ -143,6 +147,88 @@ class AntagonistPlanRead(BaseModel):
     target_chapter_number: int | None = Field(default=None, ge=1)
     pressure_level: float = Field(ge=0, le=1)
     status: str = Field(min_length=1, max_length=32)
+
+
+class ThemeArcRead(BaseModel):
+    """Tracks a thematic thread through the novel."""
+
+    id: UUID
+    theme_code: str = Field(min_length=1, max_length=64)
+    theme_statement: str = Field(min_length=1)
+    symbol_set: list[str] = Field(default_factory=list)
+    evolution_stages: list[str] = Field(default_factory=list)  # 引入→质疑→深化→升华
+    current_stage: str = Field(default="introduced", min_length=1, max_length=32)
+    status: str = Field(default="active", min_length=1, max_length=32)
+
+
+class MotifPlacementRead(BaseModel):
+    """Ledger entry for a symbolic motif placement (analogous to Clue/Payoff)."""
+
+    id: UUID
+    theme_arc_id: UUID
+    motif_label: str = Field(min_length=1, max_length=4000)
+    placement_type: str = Field(min_length=1, max_length=32)  # plant / echo / transform / resolve
+    volume_number: int | None = Field(default=None, ge=1)
+    chapter_number: int | None = Field(default=None, ge=1)
+    scene_number: int | None = Field(default=None, ge=1)
+    description: str | None = None
+    status: str = Field(default="planned", min_length=1, max_length=32)
+
+
+class SubplotScheduleEntryRead(BaseModel):
+    """Per-chapter subplot prominence plan."""
+
+    id: UUID
+    plot_arc_id: UUID
+    arc_code: str = Field(min_length=1, max_length=64)
+    chapter_number: int = Field(ge=1)
+    prominence: str = Field(min_length=1, max_length=16)  # primary / secondary / mention / dormant
+    notes: str | None = None
+
+
+class RelationshipEventRead(BaseModel):
+    """A specific event that materially changed a relationship."""
+
+    id: UUID
+    character_a_label: str = Field(min_length=1, max_length=4000)
+    character_b_label: str = Field(min_length=1, max_length=4000)
+    chapter_number: int = Field(ge=1)
+    scene_number: int | None = Field(default=None, ge=1)
+    event_description: str = Field(min_length=1)
+    relationship_change: str = Field(min_length=1)
+    is_milestone: bool = False
+
+
+class ReaderKnowledgeEntryRead(BaseModel):
+    """Tracks what the reader knows at a given chapter that characters may not."""
+
+    id: UUID
+    chapter_number: int = Field(ge=1)
+    knowledge_item: str = Field(min_length=1)
+    audience: str = Field(min_length=1, max_length=16)  # reader_only / character_only / both
+    source_clue_code: str | None = None
+
+
+class EndingContractRead(BaseModel):
+    """Checklist for ensuring a satisfying ending."""
+
+    id: UUID
+    arcs_to_resolve: list[str] = Field(default_factory=list)
+    clues_to_payoff: list[str] = Field(default_factory=list)
+    relationships_to_close: list[str] = Field(default_factory=list)
+    thematic_final_expression: str | None = None
+    denouement_plan: str | None = None
+    status: str = Field(default="planned", min_length=1, max_length=32)
+
+
+class PacingCurvePointRead(BaseModel):
+    """A single point on the tension curve for a chapter."""
+
+    id: UUID | None = None
+    chapter_number: int = Field(ge=1)
+    tension_level: float = Field(ge=0, le=10)
+    scene_type_plan: str | None = None  # e.g. introspection, conflict, aftermath
+    notes: str | None = None
 
 
 class NarrativeGraphMaterializationResult(BaseModel):
@@ -156,6 +242,13 @@ class NarrativeGraphMaterializationResult(BaseModel):
     scene_contract_count: int = Field(default=0, ge=0)
     emotion_track_count: int = Field(default=0, ge=0)
     antagonist_plan_count: int = Field(default=0, ge=0)
+    theme_arc_count: int = Field(default=0, ge=0)
+    motif_placement_count: int = Field(default=0, ge=0)
+    subplot_schedule_count: int = Field(default=0, ge=0)
+    relationship_event_count: int = Field(default=0, ge=0)
+    reader_knowledge_count: int = Field(default=0, ge=0)
+    ending_contract_count: int = Field(default=0, ge=0)
+    pacing_curve_point_count: int = Field(default=0, ge=0)
     source_artifact_ids: dict[str, UUID] = Field(default_factory=dict)
 
 
@@ -171,3 +264,10 @@ class NarrativeOverview(BaseModel):
     scene_contracts: list[SceneContractRead] = Field(default_factory=list)
     emotion_tracks: list[EmotionTrackRead] = Field(default_factory=list)
     antagonist_plans: list[AntagonistPlanRead] = Field(default_factory=list)
+    theme_arcs: list[ThemeArcRead] = Field(default_factory=list)
+    motif_placements: list[MotifPlacementRead] = Field(default_factory=list)
+    subplot_schedule: list[SubplotScheduleEntryRead] = Field(default_factory=list)
+    relationship_events: list[RelationshipEventRead] = Field(default_factory=list)
+    reader_knowledge: list[ReaderKnowledgeEntryRead] = Field(default_factory=list)
+    ending_contract: EndingContractRead | None = None
+    pacing_curve: list[PacingCurvePointRead] = Field(default_factory=list)

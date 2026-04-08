@@ -29,7 +29,9 @@ from bestseller.infra.db.models import (
     ReviewReportModel,
     RewriteTaskModel,
     SceneCardModel,
+    SubplotScheduleModel,
     TimelineEventModel,
+    VolumeModel,
     WorldRuleModel,
 )
 from bestseller.services.llm import LLMCompletionRequest, complete_text
@@ -276,6 +278,14 @@ def evaluate_project_consistency(
     antagonist_count: int = 0,
     antagonist_plan_count: int = 0,
     active_antagonist_plan_count: int = 0,
+    supporting_character_count: int = 0,
+    supporting_with_arc_count: int = 0,
+    supporting_with_voice_count: int = 0,
+    dormant_subplot_count: int = 0,
+    total_subplot_count: int = 0,
+    open_arc_count: int = 0,
+    open_clue_count: int = 0,
+    is_final_volume: bool = False,
 ) -> ProjectConsistencyResult:
     safe_chapter_count = max(chapter_count, 1)
     safe_scene_count = max(scene_count, 1)
@@ -302,23 +312,43 @@ def evaluate_project_consistency(
         1.0 if world_rule_consistency is None else _clamp_score(world_rule_consistency)
     )
     antagonist_pressure = 1.0 if antagonist_pressure is None else _clamp_score(antagonist_pressure)
-    overall = _clamp_score(
-        (
-            chapter_coverage
-            + scene_knowledge
-            + canon_coverage
-            + timeline_coverage
-            + revision_pressure
-            + export_readiness
-            + main_plot_progression
-            + mystery_balance
-            + emotional_continuity
-            + character_arc_progression
-            + world_rule_consistency
-            + antagonist_pressure
-        )
-        / 12
-    )
+
+    # Supporting cast depth: do supporting characters have arc trajectories + voice profiles?
+    supporting_cast_depth = 1.0
+    if supporting_character_count > 0:
+        arc_ratio = _safe_ratio(supporting_with_arc_count, supporting_character_count)
+        voice_ratio = _safe_ratio(supporting_with_voice_count, supporting_character_count)
+        supporting_cast_depth = _clamp_score((arc_ratio + voice_ratio) / 2)
+
+    # Subplot health: are subplots alive or have any gone dormant too long?
+    subplot_health = 1.0
+    if total_subplot_count > 0:
+        subplot_health = _clamp_score(1.0 - (dormant_subplot_count / total_subplot_count))
+
+    # Resolution completeness: for final volumes, check that arcs and clues are closing
+    resolution_completeness = 1.0
+    if is_final_volume and (open_arc_count > 0 or open_clue_count > 0):
+        total_open = open_arc_count + open_clue_count
+        resolution_completeness = _clamp_score(max(0.0, 1.0 - (total_open * 0.15)))
+
+    _score_parts = [
+        chapter_coverage,
+        scene_knowledge,
+        canon_coverage,
+        timeline_coverage,
+        revision_pressure,
+        export_readiness,
+        main_plot_progression,
+        mystery_balance,
+        emotional_continuity,
+        character_arc_progression,
+        world_rule_consistency,
+        antagonist_pressure,
+        supporting_cast_depth,
+        subplot_health,
+        resolution_completeness,
+    ]
+    overall = _clamp_score(sum(_score_parts) / len(_score_parts))
 
     findings: list[ProjectConsistencyFinding] = []
     if chapter_draft_count < chapter_count:
@@ -432,6 +462,39 @@ def evaluate_project_consistency(
                 ),
             )
         )
+    if supporting_character_count > 0 and supporting_cast_depth < 0.75:
+        findings.append(
+            ProjectConsistencyFinding(
+                category="supporting_cast_depth",
+                severity=_severity_from_score(supporting_cast_depth),
+                message=(
+                    f"项目有 {supporting_character_count} 个配角，"
+                    f"但只有 {supporting_with_arc_count} 个有弧线轨迹、"
+                    f"{supporting_with_voice_count} 个有语言指纹。配角丰满度不足。"
+                ),
+            )
+        )
+    if total_subplot_count > 0 and subplot_health < 0.75:
+        findings.append(
+            ProjectConsistencyFinding(
+                category="subplot_health",
+                severity=_severity_from_score(subplot_health),
+                message=(
+                    f"项目有 {total_subplot_count} 条副线，但 {dormant_subplot_count} 条已沉默超过 5 章。"
+                ),
+            )
+        )
+    if is_final_volume and resolution_completeness < 0.75:
+        findings.append(
+            ProjectConsistencyFinding(
+                category="resolution_completeness",
+                severity=_severity_from_score(resolution_completeness),
+                message=(
+                    f"最终卷仍有 {open_arc_count} 条未关闭弧线和 {open_clue_count} 条未兑现伏笔，"
+                    f"烂尾风险高。"
+                ),
+            )
+        )
 
     threshold = settings.quality.thresholds.chapter_coherence_min_score
     verdict = "pass" if overall >= threshold and not findings else "attention"
@@ -456,6 +519,12 @@ def evaluate_project_consistency(
         recommended_actions.append("把关键世界规则显式落到正文事件与代价里，避免世界观停留在设定层。")
     if antagonist_count > 0 and antagonist_pressure < 0.75:
         recommended_actions.append("补强反派计划与升级节点，确保主角不是单向推进。")
+    if supporting_character_count > 0 and supporting_cast_depth < 0.75:
+        recommended_actions.append("为配角补充弧线轨迹和语言指纹(voice_profile)，确保每个命名配角有辨识度。")
+    if total_subplot_count > 0 and subplot_health < 0.75:
+        recommended_actions.append("激活沉默副线，在接下来的章节中给予推进或明确收束。")
+    if is_final_volume and resolution_completeness < 0.75:
+        recommended_actions.append("优先关闭开放弧线和兑现伏笔，避免烂尾。规划收尾章节的 EndingContract。")
     if not recommended_actions:
         recommended_actions.append("当前项目一致性通过，可继续扩大章节规模或切换到真实模型。")
 
@@ -476,6 +545,9 @@ def evaluate_project_consistency(
             character_arc_progression=character_arc_progression,
             world_rule_consistency=world_rule_consistency,
             antagonist_pressure=antagonist_pressure,
+            supporting_cast_depth=supporting_cast_depth,
+            subplot_health=subplot_health,
+            resolution_completeness=resolution_completeness,
         ),
         findings=findings,
         evidence_summary={
@@ -710,6 +782,58 @@ async def review_project_consistency(
         antagonist_count=len(antagonists),
     )
 
+    # ── Supporting cast depth signals ──
+    supporting_characters = list(
+        await session.scalars(
+            select(CharacterModel).where(
+                CharacterModel.project_id == project.id,
+                CharacterModel.role.notin_(["protagonist", "antagonist"]),
+            )
+        )
+    )
+    supporting_character_count = len(supporting_characters)
+    supporting_with_arc_count = len(
+        [c for c in supporting_characters if c.arc_trajectory and c.arc_trajectory.strip()]
+    )
+    supporting_with_voice_count = len(
+        [c for c in supporting_characters if c.voice_profile_json and c.voice_profile_json != {}]
+    )
+
+    # ── Subplot health signals ──
+    subplot_arcs = [arc for arc in plot_arcs if arc.arc_type not in {"main_plot"}]
+    total_subplot_count = len(subplot_arcs)
+    dormant_subplot_count = 0
+    if subplot_arcs and max_chapter_number >= 6:
+        subplot_schedule_rows = list(
+            await session.scalars(
+                select(SubplotScheduleModel).where(
+                    SubplotScheduleModel.project_id == project.id
+                )
+            )
+        )
+        recent_active_arc_ids = {
+            row.plot_arc_id
+            for row in subplot_schedule_rows
+            if row.chapter_number >= max_chapter_number - 4
+            and row.prominence in ("primary", "secondary", "mention")
+        }
+        dormant_subplot_count = len(
+            [arc for arc in subplot_arcs if arc.id not in recent_active_arc_ids]
+        )
+
+    # ── Resolution completeness signals ──
+    open_arc_count = len([arc for arc in plot_arcs if arc.status in ("active", "planned")])
+    open_clue_count = len([clue for clue in clues if clue.actual_paid_off_chapter_number is None])
+    total_volume_count = int(
+        await session.scalar(
+            select(func.count()).select_from(VolumeModel).where(VolumeModel.project_id == project.id)
+        )
+        or 0
+    )
+    is_final_volume = (
+        total_volume_count > 0 and project.current_volume_number >= total_volume_count
+    )
+
     review_result = evaluate_project_consistency(
         settings=settings,
         chapter_count=chapter_count,
@@ -723,6 +847,14 @@ async def review_project_consistency(
         project_export_count=project_export_count,
         chapter_export_count=chapter_export_count,
         expect_project_export=expect_project_export,
+        supporting_character_count=supporting_character_count,
+        supporting_with_arc_count=supporting_with_arc_count,
+        supporting_with_voice_count=supporting_with_voice_count,
+        dormant_subplot_count=dormant_subplot_count,
+        total_subplot_count=total_subplot_count,
+        open_arc_count=open_arc_count,
+        open_clue_count=open_clue_count,
+        is_final_volume=is_final_volume,
         **narrative_signals,
     )
 

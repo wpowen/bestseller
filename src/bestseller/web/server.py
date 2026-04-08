@@ -5,6 +5,7 @@ import html
 import json
 import logging
 import mimetypes
+import os
 import socketserver
 import threading
 import traceback
@@ -30,16 +31,23 @@ from bestseller.services.inspection import (
 )
 from bestseller.services.narrative import build_narrative_overview
 from bestseller.services.pipelines import run_autowrite_pipeline
-from bestseller.services.projects import get_project_by_slug, list_projects
+from bestseller.services.projects import (
+    delete_project_completely,
+    get_project_by_slug,
+    list_projects,
+)
 from bestseller.services.repair import run_project_repair
 from bestseller.services.writing_profile import get_project_writing_profile
 from bestseller.services.writing_presets import load_writing_preset_catalog, validate_longform_scope
 from bestseller.settings import AppSettings, load_settings
 
 
+logger = logging.getLogger(__name__)
+
 _UI_HTML_PATH = Path(__file__).with_name("novel_studio.html")
 _READER_HTML_PATH = Path(__file__).with_name("novel_reader.html")
 _IF_READER_HTML_PATH = Path(__file__).with_name("novel_if_reader.html")
+_QUICKSTART_HTML_PATH = Path(__file__).with_name("novel_quickstart.html")
 _ARTIFACT_CACHE: dict[str, tuple[int, int, dict[str, object]]] = {}
 
 
@@ -81,6 +89,56 @@ def _match_project_route(path: str, suffix: str) -> str | None:
     if not middle or "/" in middle:
         return None
     return middle
+
+
+def _delete_project_full(
+    slug: str,
+    task_manager: "WebTaskManager",
+    settings: AppSettings,
+) -> dict[str, object]:
+    """Delete task records + DB rows + disk artifacts for a single project slug.
+
+    Skips (returns ok=False) when the project still has active tasks.
+    Safe to call for unknown slugs — reports via ``errors`` field.
+    """
+    out: dict[str, object] = {
+        "slug": slug,
+        "ok": False,
+        "tasks_deleted": 0,
+        "db_deleted": False,
+        "fs_deleted": False,
+        "path": None,
+        "errors": [],
+    }
+    if task_manager.has_active_task_for_project(slug):
+        out["errors"].append("project has running or queued tasks")
+        return out
+    try:
+        tasks_deleted = task_manager.delete_tasks_by_project(slug)
+        out["tasks_deleted"] = tasks_deleted
+    except Exception as exc:  # noqa: BLE001
+        out["errors"].append(f"task_cleanup_failed: {exc}")
+
+    async def _run() -> dict[str, object]:
+        async with session_scope(settings) as session:
+            return await delete_project_completely(session, settings, slug)
+
+    try:
+        svc_result = asyncio.run(_run())
+    except Exception as exc:  # noqa: BLE001
+        out["errors"].append(f"service_error: {exc}")
+        return out
+
+    out["db_deleted"] = bool(svc_result.get("db_deleted"))
+    out["fs_deleted"] = bool(svc_result.get("fs_deleted"))
+    out["path"] = svc_result.get("path")
+    svc_errors = svc_result.get("errors") or []
+    if svc_errors:
+        out["errors"].extend(svc_errors)
+    # A project_not_found_in_db is tolerable if disk was also empty or cleaned.
+    only_missing = svc_errors == ["project_not_found_in_db"] and out["fs_deleted"]
+    out["ok"] = (out["db_deleted"] and out["fs_deleted"]) or only_missing
+    return out
 
 
 def collect_project_artifact_entries(
@@ -299,6 +357,10 @@ def build_preview_payload(
     }
 
 
+class TaskCancelledError(Exception):
+    """Raised inside a task worker when the user requested cancellation."""
+
+
 @dataclass
 class WebTaskState:
     task_id: str
@@ -312,6 +374,8 @@ class WebTaskState:
     progress_events: list[dict[str, object]] = field(default_factory=list)
     result: dict[str, object] | None = None
     error: str | None = None
+    cancel_requested: bool = False
+    payload: dict[str, object] | None = None  # original payload for resume
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -326,13 +390,245 @@ class WebTaskState:
             "progress_events": list(self.progress_events),
             "result": self.result,
             "error": self.error,
+            "cancel_requested": self.cancel_requested,
+            "payload": self.payload,
         }
 
 
 class WebTaskManager:
-    def __init__(self) -> None:
+    def __init__(self, persist_path: Path | None = None) -> None:
         self._lock = threading.Lock()
         self._tasks: dict[str, WebTaskState] = {}
+        self._persist_path = persist_path
+        # Bounded concurrency for long-running writing tasks. Each autowrite /
+        # repair / interactive-fiction task acquires one slot before doing any
+        # real work; extra tasks visibly queue until a slot frees up. This
+        # prevents LLM-rate-limit/DB-pool pileups when users queue many books.
+        max_concurrent = max(1, int(os.getenv("WEB_MAX_CONCURRENT_TASKS", "3")))
+        self._task_slots = threading.BoundedSemaphore(max_concurrent)
+        self._max_concurrent_tasks = max_concurrent
+        if persist_path is not None:
+            self._load_from_disk()
+
+    def _run_with_slot(
+        self,
+        task_id: str,
+        worker: "callable[[str, dict[str, object]], None]",
+        payload: dict[str, object],
+    ) -> None:
+        """Acquire a concurrency slot then run *worker*, always releasing."""
+        # Keep the task visibly in "queued" state until a slot is acquired.
+        self._task_slots.acquire()
+        try:
+            worker(task_id, payload)
+        finally:
+            self._task_slots.release()
+
+    # ── Disk persistence ──────────────────────────────────────────────────
+
+    def _load_from_disk(self) -> None:
+        """Restore tasks from a JSON file on disk."""
+        if self._persist_path is None or not self._persist_path.exists():
+            return
+        try:
+            data = json.loads(self._persist_path.read_text(encoding="utf-8"))
+            for item in data:
+                task = WebTaskState(
+                    task_id=item["task_id"],
+                    task_type=item.get("task_type", "autowrite"),
+                    status=item.get("status", "completed"),
+                    created_at=item.get("created_at", ""),
+                    updated_at=item.get("updated_at", ""),
+                    project_slug=item.get("project_slug"),
+                    title=item.get("title"),
+                    current_stage=item.get("current_stage"),
+                    progress_events=item.get("progress_events") or [],
+                    result=item.get("result"),
+                    error=item.get("error"),
+                    cancel_requested=bool(item.get("cancel_requested", False)),
+                    payload=item.get("payload"),
+                )
+                # Running/queued tasks from a previous session are now stale
+                if task.status in ("running", "queued"):
+                    task.status = "failed"
+                    task.current_stage = "failed"
+                    task.error = task.error or "Server restarted while task was running"
+                self._tasks[task.task_id] = task
+        except (OSError, json.JSONDecodeError, KeyError):
+            pass  # corrupt file — start fresh
+
+    def _save_to_disk(self) -> None:
+        """Persist current task states to a JSON file.  Caller must hold *_lock*."""
+        if self._persist_path is None:
+            return
+        try:
+            self._persist_path.parent.mkdir(parents=True, exist_ok=True)
+            payload = [task.to_dict() for task in self._tasks.values()]
+            tmp = self._persist_path.with_suffix(".tmp")
+            tmp.write_text(
+                json.dumps(payload, ensure_ascii=False, indent=2, default=_json_default),
+                encoding="utf-8",
+            )
+            tmp.replace(self._persist_path)
+        except OSError:
+            pass  # best-effort
+
+    # ── Task recovery from output directory ─────────────────────────────
+
+    async def _recover_tasks_from_output(self, settings: AppSettings) -> int:
+        """Scan output directory and create synthetic task records for projects
+        that have chapter files on disk but no corresponding task entry.
+
+        Looks up each project in the database so the synthesised task has
+        an accurate ``target_chapters`` target, a rebuildable ``payload``, and
+        a status that correctly reflects whether the project is complete.
+
+        Returns the number of recovered tasks.
+        """
+        import re as _re  # noqa: PLC0415
+
+        output_dir = Path(settings.output.base_dir)
+        if not output_dir.exists():
+            return 0
+
+        # Collect existing project_slugs already tracked
+        existing_slugs: set[str] = set()
+        with self._lock:
+            for task in self._tasks.values():
+                if task.project_slug:
+                    existing_slugs.add(task.project_slug)
+
+        # Pre-compute dir list + chapter files (pure I/O, no DB yet)
+        candidates: list[tuple[Path, list[Path]]] = []
+        for slug_dir in sorted(output_dir.iterdir()):
+            if not slug_dir.is_dir() or slug_dir.name.startswith("."):
+                continue
+            if slug_dir.name in existing_slugs:
+                continue
+            chapter_files = sorted(slug_dir.glob("chapter-*.md"))
+            if not chapter_files:
+                continue
+            candidates.append((slug_dir, chapter_files))
+
+        if not candidates:
+            return 0
+
+        recovered_count = 0
+
+        async with session_scope(settings) as session:
+            for slug_dir, chapter_files in candidates:
+                slug = slug_dir.name
+                num_chapters = len(chapter_files)
+
+                # Look up the authoritative project record.
+                project = await get_project_by_slug(session, slug)
+
+                # Derive target_chapters: prefer DB, then outline, then disk count.
+                if project is not None:
+                    target_chapters = int(project.target_chapters or num_chapters)
+                    title = project.title or slug
+                else:
+                    outline_target = _extract_target_chapters_from_project_md(
+                        slug_dir / "project.md",
+                    )
+                    target_chapters = outline_target or num_chapters
+                    title = slug
+
+                # If title is still just the slug (missing in DB or placeholder),
+                # try to parse the real novel name from project.md's H1 heading.
+                if title == slug:
+                    project_md = slug_dir / "project.md"
+                    if project_md.exists():
+                        try:
+                            first_lines = project_md.read_text(encoding="utf-8")[:500]
+                            title_match = _re.search(r"^#\s+(.+)$", first_lines, _re.MULTILINE)
+                            if title_match:
+                                title = title_match.group(1).strip() or slug
+                        except OSError:
+                            pass
+
+                is_incomplete = num_chapters < target_chapters
+                # ``incomplete`` is a dedicated status for recovered projects
+                # that have some chapters on disk but never reached their
+                # target — distinct from user-initiated ``cancelled``.
+                status = "incomplete" if is_incomplete else "completed"
+                current_stage = (
+                    "incomplete_recovered" if is_incomplete else "project_pipeline_completed"
+                )
+                error = (
+                    f"Recovered: {num_chapters}/{target_chapters} chapters on disk"
+                    if is_incomplete
+                    else None
+                )
+
+                # Directory mtime → timestamps
+                try:
+                    dir_mtime = slug_dir.stat().st_mtime
+                except OSError:
+                    dir_mtime = 0.0
+                dir_ts = datetime.fromtimestamp(dir_mtime, UTC).isoformat()
+
+                # Build progress events so the UI can render a real progress bar.
+                events: list[dict[str, object]] = [
+                    {
+                        "timestamp": dir_ts,
+                        "stage": "project_pipeline_started",
+                        "payload": {"chapter_count": target_chapters},
+                    },
+                ]
+                for ch_file in chapter_files:
+                    ch_match = _re.search(r"chapter-(\d+)", ch_file.name)
+                    ch_num = int(ch_match.group(1)) if ch_match else 0
+                    if ch_num <= 0:
+                        continue
+                    try:
+                        ch_mtime = ch_file.stat().st_mtime
+                    except OSError:
+                        ch_mtime = dir_mtime
+                    ch_ts = datetime.fromtimestamp(ch_mtime, UTC).isoformat()
+                    events.append({
+                        "timestamp": ch_ts,
+                        "stage": "chapter_pipeline_completed",
+                        "payload": {"chapter_number": ch_num},
+                    })
+
+                # Rebuild a resumable payload when we can — this is the whole
+                # point of this pass: recovered tasks that the user wants to
+                # continue later need a payload ready for ``create_autowrite_task``.
+                payload: dict[str, object] | None = None
+                if project is not None:
+                    payload = _payload_from_project_model(project)
+
+                task = WebTaskState(
+                    task_id=f"recovered-{slug}",
+                    task_type="autowrite",
+                    status=status,
+                    created_at=dir_ts,
+                    updated_at=dir_ts,
+                    project_slug=slug,
+                    title=title,
+                    current_stage=current_stage,
+                    progress_events=events,
+                    result={
+                        "project_slug": slug,
+                        "chapters_written": num_chapters,
+                        "target_chapters": target_chapters,
+                    },
+                    error=error,
+                    payload=payload,
+                )
+
+                with self._lock:
+                    self._tasks[task.task_id] = task
+                recovered_count += 1
+
+        if recovered_count > 0:
+            with self._lock:
+                self._save_to_disk()
+
+        return recovered_count
+
+    # ── Public API ────────────────────────────────────────────────────────
 
     def list_tasks(self) -> list[dict[str, object]]:
         with self._lock:
@@ -362,9 +658,10 @@ class WebTaskManager:
         )
         with self._lock:
             self._tasks[task_id] = task
+            self._save_to_disk()
         thread = threading.Thread(
-            target=self._run_autowrite_worker,
-            args=(task_id, payload),
+            target=self._run_with_slot,
+            args=(task_id, self._run_autowrite_worker, payload),
             daemon=True,
         )
         thread.start()
@@ -384,9 +681,10 @@ class WebTaskManager:
         )
         with self._lock:
             self._tasks[task_id] = task
+            self._save_to_disk()
         thread = threading.Thread(
-            target=self._run_repair_worker,
-            args=(task_id, payload),
+            target=self._run_with_slot,
+            args=(task_id, self._run_repair_worker, payload),
             daemon=True,
         )
         thread.start()
@@ -410,6 +708,21 @@ class WebTaskManager:
                 }
             )
             task.progress_events = task.progress_events[-300:]
+            self._save_to_disk()
+
+    def _update_task_title(self, task_id: str, title: str) -> None:
+        """Persist a freshly resolved novel title onto the task record."""
+        title = (title or "").strip()
+        if not title:
+            return
+        with self._lock:
+            task = self._tasks.get(task_id)
+            if task is None or task.title == title:
+                return
+            task.title = title
+            task.updated_at = _utc_now()
+            self._save_to_disk()
+        logger.info("Task %s retitled to %r", task_id, title)
 
     def _mark_running(self, task_id: str) -> None:
         with self._lock:
@@ -417,6 +730,7 @@ class WebTaskManager:
             task.status = "running"
             task.updated_at = _utc_now()
             task.current_stage = "running"
+            self._save_to_disk()
 
     def _mark_completed(self, task_id: str, result: dict[str, object]) -> None:
         with self._lock:
@@ -425,6 +739,7 @@ class WebTaskManager:
             task.updated_at = _utc_now()
             task.current_stage = "completed"
             task.result = result
+            self._save_to_disk()
 
     def _mark_failed(self, task_id: str, error: str) -> None:
         with self._lock:
@@ -433,33 +748,276 @@ class WebTaskManager:
             task.updated_at = _utc_now()
             task.current_stage = "failed"
             task.error = error
+            self._save_to_disk()
+        try:
+            logger.error("Task %s failed: %s", task_id, error.splitlines()[-1] if error else "")
+        except Exception:
+            pass
+
+    def request_cancel(self, task_id: str) -> bool:
+        """Mark a task for cancellation. Worker checks the flag at next progress event.
+
+        Returns True if a running/queued task was marked for cancellation."""
+        force = False
+        with self._lock:
+            task = self._tasks.get(task_id)
+            if task is None:
+                return False
+            if task.status not in ("running", "queued"):
+                return False
+            force = bool(task.cancel_requested)
+            task.cancel_requested = True
+            task.updated_at = _utc_now()
+            task.progress_events.append({
+                "timestamp": task.updated_at,
+                "stage": "cancel_requested",
+                "payload": {"force": force},
+            })
+            task.progress_events = task.progress_events[-300:]
+            self._save_to_disk()
+        logger.info("Cancellation requested for task %s (force=%s)", task_id, force)
+        if force:
+            self._mark_cancelled(task_id)
+        return True
+
+    def _mark_cancelled(self, task_id: str) -> None:
+        with self._lock:
+            task = self._tasks.get(task_id)
+            if task is None:
+                return
+            task.status = "cancelled"
+            task.updated_at = _utc_now()
+            task.current_stage = "cancelled"
+            task.error = task.error or "Task cancelled by user"
+            self._save_to_disk()
+        logger.info("Task %s cancelled", task_id)
+
+    def delete_task(self, task_id: str, *, force: bool = False) -> str:
+        """Remove a task record from memory and the persisted file.
+
+        Returns one of ``"deleted"``, ``"not_found"``, or ``"running"``.
+        Does NOT touch the project output directory or DB row — only the
+        task entry is removed so the user can continue to see/read the
+        underlying novel.
+        """
+        with self._lock:
+            task = self._tasks.get(task_id)
+            if task is None:
+                return "not_found"
+            if task.status in ("running", "queued") and not force:
+                return "running"
+            del self._tasks[task_id]
+            self._save_to_disk()
+        logger.info("Deleted task %s", task_id)
+        return "deleted"
+
+    def delete_tasks_by_project(self, project_slug: str) -> int:
+        """Delete all task records associated with *project_slug*.
+
+        Running / queued tasks are kept — the caller is expected to verify
+        that no active tasks exist for the project before invoking this.
+        Returns the number of task records removed.
+        """
+        if not project_slug:
+            return 0
+        removed = 0
+        with self._lock:
+            survivors: dict[str, WebTaskState] = {}
+            for tid, t in self._tasks.items():
+                if t.project_slug == project_slug and t.status not in ("running", "queued"):
+                    removed += 1
+                    continue
+                survivors[tid] = t
+            if removed:
+                self._tasks = survivors
+                self._save_to_disk()
+        if removed:
+            logger.info("Deleted %d task record(s) for project %s", removed, project_slug)
+        return removed
+
+    def has_active_task_for_project(self, project_slug: str) -> bool:
+        if not project_slug:
+            return False
+        with self._lock:
+            return any(
+                t.project_slug == project_slug and t.status in ("running", "queued")
+                for t in self._tasks.values()
+            )
+
+    def cleanup_tasks(self, statuses: set[str]) -> int:
+        """Bulk-delete all tasks whose status is in *statuses*.
+
+        Tasks in ``running`` / ``queued`` are always skipped regardless of
+        what the caller asks for — they must be cancelled first.
+        Returns the number of tasks removed.
+        """
+        protected = {"running", "queued"}
+        allowed = statuses - protected
+        removed = 0
+        with self._lock:
+            survivors: dict[str, WebTaskState] = {}
+            for tid, t in self._tasks.items():
+                if t.status in allowed:
+                    removed += 1
+                    continue
+                survivors[tid] = t
+            if removed:
+                self._tasks = survivors
+                self._save_to_disk()
+        if removed:
+            logger.info("Cleaned up %d task(s) with statuses %s", removed, sorted(allowed))
+        return removed
+
+    def _check_cancelled(self, task_id: str) -> None:
+        """Raise TaskCancelledError if cancellation has been requested."""
+        with self._lock:
+            task = self._tasks.get(task_id)
+            if task is not None and task.cancel_requested:
+                raise TaskCancelledError(f"Task {task_id} cancelled by user")
+
+    def watchdog_sweep(self, stale_after_seconds: int = 2700) -> int:
+        """Mark running tasks as failed if no progress event for *stale_after_seconds*.
+
+        Before declaring a task stale, consult a disk-level heartbeat: if the
+        project directory has a ``chapter-*.md`` file whose mtime is within the
+        stale window, the pipeline is still alive (just deep inside a long
+        LLM call) and the task is rescued instead of failed.
+
+        Returns the number of tasks marked failed.
+        """
+        now = datetime.now(UTC)
+        stale_ids: list[str] = []
+        with self._lock:
+            for task in self._tasks.values():
+                if task.status != "running":
+                    continue
+                try:
+                    updated = datetime.fromisoformat(task.updated_at)
+                except ValueError:
+                    continue
+                age = (now - updated).total_seconds()
+                if age > stale_after_seconds:
+                    stale_ids.append(task.task_id)
+
+        stale_count = 0
+        for tid in stale_ids:
+            if self._rescue_from_disk_heartbeat(tid, stale_after_seconds):
+                continue
+            self._mark_failed(
+                tid,
+                f"Task watchdog: no progress for >{stale_after_seconds}s, marking as failed",
+            )
+            stale_count += 1
+        return stale_count
+
+    def _rescue_from_disk_heartbeat(
+        self, task_id: str, stale_after_seconds: int,
+    ) -> bool:
+        """Refresh *task_id*'s ``updated_at`` if a chapter file was recently written.
+
+        Returns True when the task was rescued (pipeline still alive), False
+        when no recent chapter mtime was found and the task should be failed.
+        """
+        with self._lock:
+            task = self._tasks.get(task_id)
+            if task is None or not task.project_slug:
+                return False
+            slug = task.project_slug
+        try:
+            settings = load_settings()
+            proj_dir = _project_output_dir(settings, slug)
+            if not proj_dir.exists():
+                return False
+            now_ts = datetime.now(UTC).timestamp()
+            latest = 0.0
+            for ch in proj_dir.glob("chapter-*.md"):
+                try:
+                    latest = max(latest, ch.stat().st_mtime)
+                except OSError:
+                    continue
+            if latest <= 0 or (now_ts - latest) > stale_after_seconds:
+                return False
+            with self._lock:
+                t = self._tasks.get(task_id)
+                if t is not None:
+                    t.updated_at = datetime.fromtimestamp(latest, UTC).isoformat()
+                    self._save_to_disk()
+            logger.info(
+                "Task %s rescued by disk heartbeat: chapter mtime %.0fs ago",
+                task_id,
+                now_ts - latest,
+            )
+            return True
+        except Exception:
+            logger.exception("disk heartbeat rescue failed for %s", task_id)
+            return False
 
     def _run_autowrite_worker(self, task_id: str, payload: dict[str, object]) -> None:
         self._mark_running(task_id)
+        # Persist payload so resume after restart can re-build the task
+        with self._lock:
+            task = self._tasks.get(task_id)
+            if task is not None:
+                task.payload = json.loads(json.dumps(payload, default=_json_default))
+                self._save_to_disk()
 
         def progress(stage: str, progress_payload: dict[str, Any] | None = None) -> None:
+            # Check cancellation before each progress event — gives the pipeline
+            # a graceful shutdown point at every meaningful checkpoint.
+            self._check_cancelled(task_id)
             serialized = json.loads(json.dumps(progress_payload or {}, default=_json_default))
             self._push_progress(task_id, stage, serialized)
 
         async def runner() -> dict[str, object]:
             settings = load_settings()
+
+            # Run AI conception pipeline for quickstart tasks
+            run_conception = bool(payload.get("_run_conception", False))
+            effective_premise = str(payload["premise"])
+            effective_title = str(payload["title"])
+            effective_writing_profile = payload.get("writing_profile")
+
+            # Use a single session scope for both conception and autowrite
+            # to ensure transactional consistency.
             async with session_scope(settings) as session:
+                if run_conception:
+                    from bestseller.services.conception import run_conception_pipeline  # noqa: PLC0415
+
+                    genre_key = str(payload.get("_genre_key", ""))
+                    if genre_key:
+                        conception_result = await run_conception_pipeline(
+                            session,
+                            settings,
+                            genre_key=genre_key,
+                            chapter_count=int(payload["target_chapters"]),
+                            progress=progress,
+                        )
+                        effective_premise = conception_result.premise
+                        effective_title = conception_result.title
+                        self._update_task_title(task_id, effective_title)
+                        effective_writing_profile = conception_result.writing_profile
+                        progress("conception_complete", {
+                            "title": effective_title,
+                            "premise_preview": effective_premise[:200],
+                            "profile_keys": list(conception_result.writing_profile.keys()),
+                        })
+
                 result = await run_autowrite_pipeline(
                     session,
                     settings,
                     project_payload=ProjectCreate(
                         slug=str(payload["slug"]),
-                        title=str(payload["title"]),
+                        title=effective_title,
                         genre=str(payload["genre"]),
                         sub_genre=(str(payload["sub_genre"]) if payload.get("sub_genre") else None),
                         audience=(str(payload["audience"]) if payload.get("audience") else None),
                         language=str(payload.get("language") or "zh-CN"),
                         target_word_count=int(payload["target_words"]),
                         target_chapters=int(payload["target_chapters"]),
-                        metadata={"premise": str(payload["premise"])},
-                        writing_profile=payload.get("writing_profile"),
+                        metadata={"premise": effective_premise},
+                        writing_profile=effective_writing_profile,
                     ),
-                    premise=str(payload["premise"]),
+                    premise=effective_premise,
                     requested_by="web-ui",
                     export_markdown=bool(payload.get("export_markdown", True)),
                     auto_repair_on_attention=bool(payload.get("auto_repair", True)),
@@ -467,11 +1025,102 @@ class WebTaskManager:
                 )
             return json.loads(json.dumps(result.model_dump(mode="json"), default=_json_default))
 
+        # Overall pipeline cap: 24h. Long enough for 100+ chapters.
+        pipeline_timeout = float(os.environ.get("BESTSELLER_PIPELINE_TIMEOUT", "86400"))
+
+        async def guarded_runner() -> dict[str, object]:
+            return await asyncio.wait_for(runner(), timeout=pipeline_timeout)
+
         try:
-            result = asyncio.run(runner())
+            result = asyncio.run(guarded_runner())
             self._mark_completed(task_id, result)
+        except TaskCancelledError as exc:
+            self._mark_cancelled(task_id)
+            logger.info("Task %s exited via cancellation: %s", task_id, exc)
+        except asyncio.TimeoutError:
+            self._mark_failed(
+                task_id,
+                f"Pipeline exceeded timeout of {pipeline_timeout:.0f}s",
+            )
         except Exception:
-            self._mark_failed(task_id, traceback.format_exc())
+            tb = traceback.format_exc()
+            logger.exception("Autowrite task %s crashed", task_id)
+            self._mark_failed(task_id, tb)
+
+    def create_quickstart_task(self, payload: dict[str, object]) -> dict[str, object]:
+        """Quickstart: genre_key + optional chapter_count → fully automated novel.
+
+        Supports resume: pass ``project_slug`` to continue an existing project
+        instead of creating a new one.
+        """
+        from bestseller.services.writing_presets import (  # noqa: PLC0415
+            list_genre_presets,
+            list_length_presets,
+        )
+
+        genre_key = str(payload["genre_key"])
+        genre_presets = {p.key: p for p in list_genre_presets()}
+        genre_preset = genre_presets.get(genre_key)
+        if genre_preset is None:
+            raise ValueError(f"Unknown genre_key: {genre_key}. Available: {list(genre_presets.keys())}")
+
+        # Resolve chapter count
+        chapter_count = int(payload.get("chapter_count") or 0)
+        length_key = str(payload.get("length_key") or "")
+        if chapter_count <= 0 and length_key:
+            length_presets = {p.key: p for p in list_length_presets()}
+            lp = length_presets.get(length_key)
+            if lp:
+                chapter_count = lp.target_chapters
+        if chapter_count <= 0:
+            chapter_count = genre_preset.target_chapter_options[0] if genre_preset.target_chapter_options else 30
+
+        words_per_chapter = 5500
+        target_words = chapter_count * words_per_chapter
+
+        # Resume: reuse existing project slug if provided
+        resume_slug = str(payload.get("project_slug") or "")
+        placeholder = f"{genre_preset.name}·构思中 {datetime.now().strftime('%m-%d %H:%M')}"
+        if resume_slug:
+            slug = resume_slug
+            title = placeholder
+        else:
+            import time  # noqa: PLC0415
+            slug = f"{genre_key}-{int(time.time())}"
+            title = placeholder
+
+        # For new projects, use AI conception to generate premise + writing_profile.
+        # For resume, use the stored premise from the existing project.
+        is_new_project = not resume_slug
+        premise = (
+            f"基于{genre_preset.genre}（{genre_preset.sub_genre}）题材，"
+            f"{genre_preset.description}"
+        )
+
+        autowrite_payload: dict[str, object] = {
+            "slug": slug,
+            "title": title,
+            "genre": genre_preset.genre,
+            "sub_genre": genre_preset.sub_genre,
+            "target_words": target_words,
+            "target_chapters": chapter_count,
+            "premise": premise,
+            "export_markdown": True,
+            "auto_repair": True,
+            "writing_profile": genre_preset.writing_profile_overrides or None,
+            # Enable AI conception for new projects (not resume)
+            "_run_conception": is_new_project,
+            "_genre_key": genre_key,
+        }
+        task = self.create_autowrite_task(autowrite_payload)
+        # Enrich response with quickstart metadata
+        task["quickstart_meta"] = {
+            "genre_key": genre_key,
+            "genre_name": genre_preset.name,
+            "chapter_count": chapter_count,
+            "target_words": target_words,
+        }
+        return task
 
     def create_if_task(self, payload: dict[str, object]) -> dict[str, object]:
         task_id = str(uuid4())
@@ -487,9 +1136,10 @@ class WebTaskManager:
         )
         with self._lock:
             self._tasks[task_id] = task
+            self._save_to_disk()
         thread = threading.Thread(
-            target=self._run_if_worker,
-            args=(task_id, payload),
+            target=self._run_with_slot,
+            args=(task_id, self._run_if_worker, payload),
             daemon=True,
         )
         thread.start()
@@ -497,8 +1147,14 @@ class WebTaskManager:
 
     def _run_if_worker(self, task_id: str, payload: dict[str, object]) -> None:
         self._mark_running(task_id)
+        with self._lock:
+            t = self._tasks.get(task_id)
+            if t is not None:
+                t.payload = json.loads(json.dumps(payload, default=_json_default))
+                self._save_to_disk()
 
         def progress(stage: str, progress_payload: dict[str, Any] | None = None) -> None:
+            self._check_cancelled(task_id)
             serialized = json.loads(json.dumps(progress_payload or {}, default=_json_default))
             self._push_progress(task_id, stage, serialized)
 
@@ -557,13 +1213,23 @@ class WebTaskManager:
                 on_progress=progress,
             ))
             self._mark_completed(task_id, {"story_package": str(out_path)})
+        except TaskCancelledError:
+            self._mark_cancelled(task_id)
         except Exception:
-            self._mark_failed(task_id, traceback.format_exc())
+            tb = traceback.format_exc()
+            logger.exception("IF task %s crashed", task_id)
+            self._mark_failed(task_id, tb)
 
     def _run_repair_worker(self, task_id: str, payload: dict[str, object]) -> None:
         self._mark_running(task_id)
+        with self._lock:
+            t = self._tasks.get(task_id)
+            if t is not None:
+                t.payload = json.loads(json.dumps(payload, default=_json_default))
+                self._save_to_disk()
 
         def progress(stage: str, progress_payload: dict[str, Any] | None = None) -> None:
+            self._check_cancelled(task_id)
             serialized = json.loads(json.dumps(progress_payload or {}, default=_json_default))
             self._push_progress(task_id, stage, serialized)
 
@@ -585,8 +1251,230 @@ class WebTaskManager:
         try:
             result = asyncio.run(runner())
             self._mark_completed(task_id, result)
+        except TaskCancelledError:
+            self._mark_cancelled(task_id)
         except Exception:
-            self._mark_failed(task_id, traceback.format_exc())
+            tb = traceback.format_exc()
+            logger.exception("Repair task %s crashed", task_id)
+            self._mark_failed(task_id, tb)
+
+
+def _extract_target_chapters_from_project_md(project_md: Path) -> int | None:
+    """Parse the project plan markdown for the highest chapter number referenced
+    in an H2 heading (e.g. ``## 第 12 章 ...`` or ``## 12. ...``).
+
+    Returns ``None`` if the file cannot be read or no chapter heading is found.
+    """
+    import re as _re  # noqa: PLC0415
+
+    if not project_md.exists():
+        return None
+    try:
+        text = project_md.read_text(encoding="utf-8")
+    except OSError:
+        return None
+    max_ch = 0
+    for m in _re.finditer(r"^##\s+(?:\u7b2c\s*)?(\d+)", text, _re.MULTILINE):
+        try:
+            n = int(m.group(1))
+        except ValueError:
+            continue
+        if n > max_ch:
+            max_ch = n
+    return max_ch if max_ch > 0 else None
+
+
+def _infer_genre_key_from_slug(slug: str) -> str:
+    """Derive a plausible genre_key from a slug like ``apocalypse-supply-1234567890``.
+
+    Strips a trailing numeric suffix and validates against the installed
+    genre presets. Returns an empty string when no preset matches.
+    """
+    from bestseller.services.writing_presets import list_genre_presets  # noqa: PLC0415
+
+    candidate = slug.rsplit("-", 1)[0] if "-" in slug else slug
+    valid_keys = {p.key for p in list_genre_presets()}
+    if candidate in valid_keys:
+        return candidate
+    if slug in valid_keys:
+        return slug
+    return ""
+
+
+def _payload_from_project_model(project: Any) -> dict[str, object]:
+    """Build an autowrite payload from a stored ``ProjectModel`` so hung/recovered
+    tasks can be resumed without relying on a previously persisted payload.
+    """
+    metadata = project.metadata_json or {}
+    genre_key = str(metadata.get("genre_key") or _infer_genre_key_from_slug(project.slug))
+    premise = str(
+        metadata.get("premise")
+        or f"\u7ee7\u7eed\u300a{project.title}\u300b\u7684\u521b\u4f5c"
+    )
+    return {
+        "slug": project.slug,
+        "title": project.title,
+        "genre": project.genre,
+        "sub_genre": project.sub_genre,
+        "target_words": project.target_word_count,
+        "target_chapters": project.target_chapters,
+        "premise": premise,
+        "export_markdown": True,
+        "auto_repair": True,
+        "writing_profile": metadata.get("writing_profile"),
+        "_run_conception": False,
+        "_genre_key": genre_key,
+    }
+
+
+async def _rebuild_payload_from_db(
+    settings: AppSettings,
+    slug: str,
+) -> dict[str, object] | None:
+    """Look up a project by slug and return an autowrite-ready payload.
+
+    Used as a fallback for the ``/api/tasks/{id}/resume`` endpoint when the
+    original task had no persisted payload (e.g. tasks synthesised by
+    ``_recover_tasks_from_output`` before the payload field existed).
+    """
+    async with session_scope(settings) as session:
+        project = await get_project_by_slug(session, slug)
+        if project is None:
+            return None
+        return _payload_from_project_model(project)
+
+
+async def _recover_projects_from_output(settings: AppSettings) -> list[dict[str, object]]:
+    """Scan the output directory and re-create DB records for any projects
+    that have chapter files on disk but no corresponding DB entry.
+
+    Returns a list of recovered project summaries.
+    """
+    import re as _re  # noqa: PLC0415
+
+    output_base = Path(settings.output.base_dir)
+    if not output_base.exists():
+        return []
+
+    recovered: list[dict[str, object]] = []
+
+    async with session_scope(settings) as session:
+        existing_projects = await list_projects(session)
+        existing_slugs = {p.slug for p in existing_projects}
+
+        for slug_dir in sorted(output_base.iterdir()):
+            if not slug_dir.is_dir() or slug_dir.name.startswith("."):
+                continue
+            slug = slug_dir.name
+            if slug in existing_slugs:
+                continue
+
+            # Check for chapter files (chapter-001.md, etc.) or project.md
+            chapter_files = sorted(slug_dir.glob("chapter-*.md"))
+            project_md = slug_dir / "project.md"
+            if not chapter_files and not project_md.exists():
+                continue
+
+            # Extract title from project.md or first chapter
+            title = slug
+            genre = "general-fiction"
+            if project_md.exists():
+                try:
+                    first_lines = project_md.read_text(encoding="utf-8")[:500]
+                    title_match = _re.search(r"^#\s+(.+)$", first_lines, _re.MULTILINE)
+                    if title_match:
+                        title = title_match.group(1).strip()
+                    genre_match = _re.search(r">\s*\u7c7b\u578b\uff1a(.+)$", first_lines, _re.MULTILINE)
+                    if genre_match:
+                        genre = genre_match.group(1).strip()
+                except OSError:
+                    pass
+
+            chapter_count = len(chapter_files)
+            total_words = 0
+            for cf in chapter_files[:5]:  # sample first 5 for avg
+                try:
+                    total_words += len(cf.read_text(encoding="utf-8"))
+                except OSError:
+                    pass
+            avg_words_per_ch = total_words // max(len(chapter_files[:5]), 1)
+
+            # Derive the *true* chapter target:
+            #   1) count H2 outline entries in project.md (``## 第 N 章 …``)
+            #   2) fall back to chapter_count, but never below 30 so a
+            #      mid-run recovery doesn't collapse the goal to "what we
+            #      already wrote" and block resume.
+            outline_target = _extract_target_chapters_from_project_md(project_md)
+            target_chapters = outline_target or max(chapter_count, 30)
+            estimated_total = avg_words_per_ch * target_chapters
+
+            # Store a validated genre_key so resume doesn't need regex guessing.
+            genre_key = _infer_genre_key_from_slug(slug)
+            recovered_status = (
+                "completed" if chapter_count >= target_chapters else "in_progress"
+            )
+
+            from bestseller.domain.enums import ChapterStatus  # noqa: PLC0415
+            from bestseller.infra.db.models import ChapterModel, ProjectModel  # noqa: PLC0415
+
+            project = ProjectModel(
+                slug=slug,
+                title=title,
+                genre=genre,
+                sub_genre=None,
+                target_word_count=estimated_total or target_chapters * 5000,
+                target_chapters=target_chapters,
+                status=recovered_status,
+                metadata_json={
+                    "recovered": True,
+                    "source": f"output/{slug}",
+                    "genre_key": genre_key,
+                    "chapters_on_disk": chapter_count,
+                },
+            )
+            session.add(project)
+            # Flush to allocate project.id so we can link chapter rows.
+            await session.flush()
+
+            # Materialize ChapterModel rows for every chapter-*.md on disk
+            # marked as COMPLETE, so ``run_autowrite_pipeline``'s resume
+            # filter (which checks ``ChapterStatus.COMPLETE`` in DB, not disk)
+            # correctly skips them and continues from the next chapter.
+            for ch_file in chapter_files:
+                ch_num_match = _re.search(r"chapter-(\d+)", ch_file.name)
+                if not ch_num_match:
+                    continue
+                ch_num = int(ch_num_match.group(1))
+                try:
+                    body = ch_file.read_text(encoding="utf-8")
+                except OSError:
+                    body = ""
+                ch_title: str | None = None
+                h1 = _re.search(r"^#\s+(.+)$", body[:500], _re.MULTILINE)
+                if h1:
+                    ch_title = h1.group(1).strip()[:200]
+                session.add(ChapterModel(
+                    project_id=project.id,
+                    chapter_number=ch_num,
+                    title=ch_title,
+                    chapter_goal="(recovered from disk)",
+                    information_revealed=[],
+                    information_withheld=[],
+                    foreshadowing_actions={},
+                    current_word_count=len(body),
+                    target_word_count=5500,
+                    status=ChapterStatus.COMPLETE.value,
+                    metadata_json={"recovered": True, "source_file": ch_file.name},
+                ))
+            recovered.append({
+                "slug": slug,
+                "title": title,
+                "genre": genre,
+                "chapters_found": chapter_count,
+                "target_chapters": target_chapters,
+            })
+
+    return recovered
 
 
 async def _load_projects_payload(settings: AppSettings) -> list[dict[str, object]]:
@@ -833,6 +1721,12 @@ def _read_if_reader_html() -> str:
     return "<!DOCTYPE html><html><body><h1>IF Reader not found.</h1></body></html>"
 
 
+def _read_quickstart_html() -> str:
+    if _QUICKSTART_HTML_PATH.exists():
+        return _QUICKSTART_HTML_PATH.read_text(encoding="utf-8")
+    return "<!DOCTYPE html><html><body><h1>Quickstart page not found.</h1></body></html>"
+
+
 def _load_if_novels_payload(settings: AppSettings) -> list[dict[str, object]]:
     """Scan the output dir for story_package.json files and return metadata."""
     output_base = Path(settings.output.base_dir)
@@ -900,7 +1794,44 @@ def serve_web_app(
     open_browser: bool = False,
 ) -> None:
     settings = load_settings()
-    task_manager = WebTaskManager()
+    tasks_persist_path = Path(settings.output.base_dir) / ".web_tasks.json"
+    task_manager = WebTaskManager(persist_path=tasks_persist_path)
+    # Auto-recover projects from output directory if DB is missing records
+    try:
+        recovered = asyncio.run(_recover_projects_from_output(settings))
+        if recovered:
+            print(f"Auto-recovered {len(recovered)} projects from output directory")  # noqa: T201
+    except Exception:
+        pass  # best-effort recovery
+    # Recover task history from output directories (for quickstart dashboard).
+    # Must run AFTER _recover_projects_from_output so DB records exist and
+    # this pass can derive target_chapters and a resumable payload from them.
+    try:
+        recovered_tasks = asyncio.run(
+            task_manager._recover_tasks_from_output(settings),
+        )
+        if recovered_tasks:
+            print(f"Auto-recovered {recovered_tasks} task(s) from output directory")  # noqa: T201
+    except Exception:
+        logger.exception("Task recovery from output directory failed")
+
+    # Background watchdog: detect hung tasks (no progress for >stale_seconds)
+    stale_seconds = int(os.environ.get("BESTSELLER_TASK_STALE_SECONDS", "2700"))
+    sweep_interval = int(os.environ.get("BESTSELLER_WATCHDOG_INTERVAL", "60"))
+
+    def _watchdog_loop() -> None:
+        import time as _time  # noqa: PLC0415
+        while True:
+            try:
+                _time.sleep(sweep_interval)
+                marked = task_manager.watchdog_sweep(stale_after_seconds=stale_seconds)
+                if marked:
+                    logger.warning("Watchdog marked %d stale task(s) as failed", marked)
+            except Exception:
+                logger.exception("Watchdog sweep failed")
+
+    threading.Thread(target=_watchdog_loop, daemon=True, name="task-watchdog").start()
+
     ui_html = _read_ui_html()
     reader_html = _read_reader_html()
     if_reader_html = _read_if_reader_html()
@@ -973,6 +1904,9 @@ def serve_web_app(
                 if path == "/":
                     self._send_text(ui_html, content_type="text/html; charset=utf-8")
                     return
+                if path == "/quickstart":
+                    self._send_text(_read_quickstart_html(), content_type="text/html; charset=utf-8")
+                    return
                 if path == "/api/status":
                     self._send_json(
                         {
@@ -982,6 +1916,7 @@ def serve_web_app(
                             "planner_model": settings.llm.planner.model,
                             "writer_model": settings.llm.writer.model,
                             "output_base_dir": str(Path(settings.output.base_dir).resolve()),
+                            "max_concurrent_tasks": task_manager._max_concurrent_tasks,
                         }
                     )
                     return
@@ -990,6 +1925,16 @@ def serve_web_app(
                     return
                 if path == "/api/writing-presets":
                     self._send_json(load_writing_preset_catalog().model_dump(mode="json"))
+                    return
+                if path == "/api/prompt-packs":
+                    from bestseller.services.prompt_packs import list_prompt_packs  # noqa: PLC0415
+                    packs = list_prompt_packs()
+                    self._send_json([p.model_dump(mode="json") for p in packs])
+                    return
+                if path == "/api/budget/estimate":
+                    from bestseller.services.budget import estimate_project_cost  # noqa: PLC0415
+                    ch_count = int(query.get("chapters", ["30"])[0])
+                    self._send_json(estimate_project_cost(ch_count, settings))
                     return
                 if path == "/api/tasks":
                     self._send_json(task_manager.list_tasks())
@@ -1239,12 +2184,143 @@ def serve_web_app(
                     task = task_manager.create_repair_task(payload)
                     self._send_json(task, status=HTTPStatus.ACCEPTED)
                     return
+                if path == "/api/tasks/quickstart":
+                    payload = self._read_json_body()
+                    if not payload.get("genre_key"):
+                        raise ValueError("Field 'genre_key' is required.")
+                    task = task_manager.create_quickstart_task(payload)
+                    self._send_json(task, status=HTTPStatus.ACCEPTED)
+                    return
                 if path == "/api/tasks/if-generate":
                     payload = self._read_json_body()
                     if not payload.get("project_slug"):
                         raise ValueError("Field 'project_slug' is required.")
                     task = task_manager.create_if_task(payload)
                     self._send_json(task, status=HTTPStatus.ACCEPTED)
+                    return
+                if path.startswith("/api/tasks/") and path.endswith("/cancel"):
+                    task_id = path.removeprefix("/api/tasks/").removesuffix("/cancel")
+                    ok = task_manager.request_cancel(task_id)
+                    if not ok:
+                        self._send_json(
+                            {"ok": False, "error": "Task not found or not running"},
+                            status=HTTPStatus.NOT_FOUND,
+                        )
+                        return
+                    self._send_json({"ok": True, "task_id": task_id})
+                    return
+                if path.startswith("/api/tasks/") and path.endswith("/resume"):
+                    task_id = path.removeprefix("/api/tasks/").removesuffix("/resume")
+                    old = task_manager.get_task(task_id)
+                    if old is None:
+                        self._send_json(
+                            {"ok": False, "error": "Task not found"},
+                            status=HTTPStatus.NOT_FOUND,
+                        )
+                        return
+                    saved_payload = old.get("payload") or {}
+                    # Fallback: rebuild payload from the stored ProjectModel.
+                    # Enables resume for historical / recovered tasks that
+                    # pre-date payload persistence.
+                    if not saved_payload:
+                        slug = old.get("project_slug") or ""
+                        if slug:
+                            rebuilt = asyncio.run(
+                                _rebuild_payload_from_db(settings, str(slug)),
+                            )
+                            if rebuilt:
+                                saved_payload = rebuilt
+                    if not saved_payload:
+                        self._send_json(
+                            {
+                                "ok": False,
+                                "error": "No saved payload to resume from and no matching project in DB",
+                            },
+                            status=HTTPStatus.BAD_REQUEST,
+                        )
+                        return
+                    # Force-disable conception so resume doesn't recreate from scratch
+                    saved_payload = dict(saved_payload)
+                    saved_payload["_run_conception"] = False
+                    new_task = task_manager.create_autowrite_task(saved_payload)
+                    self._send_json(new_task, status=HTTPStatus.ACCEPTED)
+                    return
+                if path == "/api/projects/batch-delete":
+                    body = self._read_json_body()
+                    raw_slugs = body.get("slugs") or []
+                    if not isinstance(raw_slugs, list) or not raw_slugs:
+                        raise ValueError("Field 'slugs' must be a non-empty list.")
+                    # Dedupe while preserving order
+                    seen: set[str] = set()
+                    slugs: list[str] = []
+                    for raw in raw_slugs:
+                        s = str(raw).strip()
+                        if s and s not in seen:
+                            seen.add(s)
+                            slugs.append(s)
+                    results = [
+                        _delete_project_full(slug, task_manager, settings) for slug in slugs
+                    ]
+                    summary = {
+                        "total": len(results),
+                        "success": sum(1 for r in results if r.get("ok")),
+                        "failed": sum(1 for r in results if not r.get("ok")),
+                    }
+                    self._send_json({"results": results, "summary": summary})
+                    return
+                if path == "/api/tasks/cleanup":
+                    body = self._read_json_body()
+                    raw_statuses = body.get("statuses") or []
+                    if not isinstance(raw_statuses, list) or not raw_statuses:
+                        raise ValueError("Field 'statuses' must be a non-empty list.")
+                    statuses = {str(s) for s in raw_statuses}
+                    removed = task_manager.cleanup_tasks(statuses)
+                    self._send_json({"removed": removed, "statuses": sorted(statuses)})
+                    return
+                if path == "/api/projects/recover":
+                    recovered = asyncio.run(_recover_projects_from_output(settings))
+                    self._send_json({
+                        "recovered": len(recovered),
+                        "projects": recovered,
+                    })
+                    return
+                self._route_not_found()
+            except Exception as exc:
+                self._route_error(exc)
+
+        def do_DELETE(self) -> None:  # noqa: N802
+            parsed = urlparse(self.path)
+            path = unquote(parsed.path)
+            try:
+                if path.startswith("/api/tasks/"):
+                    task_id = path.removeprefix("/api/tasks/").strip("/")
+                    if not task_id:
+                        raise ValueError("Missing task_id in path")
+                    result = task_manager.delete_task(task_id)
+                    if result == "not_found":
+                        self._send_json(
+                            {"ok": False, "error": "Task not found"},
+                            status=HTTPStatus.NOT_FOUND,
+                        )
+                        return
+                    if result == "running":
+                        self._send_json(
+                            {
+                                "ok": False,
+                                "error": "Task is still running — stop it before deleting.",
+                            },
+                            status=HTTPStatus.CONFLICT,
+                        )
+                        return
+                    self._send_json({"ok": True, "task_id": task_id})
+                    return
+                if path.startswith("/api/projects/"):
+                    slug = path.removeprefix("/api/projects/").strip("/")
+                    if not slug:
+                        raise ValueError("Missing project slug in path")
+                    outcome = _delete_project_full(slug, task_manager, settings)
+                    status_code = HTTPStatus.OK if outcome.get("ok") else HTTPStatus.CONFLICT
+                    self._send_json(outcome, status=status_code)
                     return
                 self._route_not_found()
             except Exception as exc:

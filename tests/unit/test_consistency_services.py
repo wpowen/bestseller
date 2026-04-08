@@ -149,6 +149,40 @@ def test_evaluate_project_consistency_v2_flags_narrative_regressions() -> None:
     assert "antagonist_pressure" in categories
 
 
+def test_evaluate_project_consistency_v3_flags_supporting_cast_subplot_and_resolution() -> None:
+    result = consistency_services.evaluate_project_consistency(
+        settings=build_settings(),
+        chapter_count=10,
+        chapter_draft_count=10,
+        complete_chapter_count=10,
+        scene_count=20,
+        approved_scene_count=20,
+        scene_summary_count=20,
+        timeline_event_count=20,
+        pending_rewrite_count=0,
+        project_export_count=1,
+        chapter_export_count=10,
+        # New dimensions — all underperforming
+        supporting_character_count=6,
+        supporting_with_arc_count=1,
+        supporting_with_voice_count=0,
+        dormant_subplot_count=3,
+        total_subplot_count=4,
+        open_arc_count=5,
+        open_clue_count=4,
+        is_final_volume=True,
+    )
+
+    categories = {finding.category for finding in result.findings}
+    assert result.verdict == "attention"
+    assert "supporting_cast_depth" in categories
+    assert "subplot_health" in categories
+    assert "resolution_completeness" in categories
+    assert result.scores.supporting_cast_depth < 0.75
+    assert result.scores.subplot_health < 0.75
+    assert result.scores.resolution_completeness < 1.0
+
+
 @pytest.mark.asyncio
 async def test_review_project_consistency_persists_report_and_quality(
     monkeypatch: pytest.MonkeyPatch,
@@ -160,18 +194,22 @@ async def test_review_project_consistency_persists_report_and_quality(
 
     monkeypatch.setattr(consistency_services, "get_project_by_slug", fake_get_project_by_slug)
     session = FakeSession(
-        scalar_results=[2, 2, 2, 3, 3, 3, 3, 0, 1, 2],
+        scalar_results=[
+            2, 2, 2, 3, 3, 3, 3, 0, 1, 2,  # original 10 scalar counts
+            0,  # total_volume_count
+        ],
         scalars_results=[
-            [],
-            [],
-            [],
-            [],
-            [],
-            [],
-            [],
-            [],
-            [],
-            [],
+            [],  # chapter_contracts
+            [],  # plot_arcs
+            [],  # clues
+            [],  # payoffs
+            [],  # emotion_tracks
+            [],  # antagonist_plans
+            [],  # world_rules
+            [],  # protagonists
+            [],  # antagonists
+            [],  # chapter_drafts
+            [],  # supporting_characters
         ],
     )
 

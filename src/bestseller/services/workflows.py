@@ -16,8 +16,10 @@ from bestseller.domain.workflow import (
     WorkflowMaterializationResult,
 )
 from bestseller.infra.db.models import (
+    ChapterModel,
     PlanningArtifactVersionModel,
     ProjectModel,
+    SceneCardModel,
     WorkflowRunModel,
     WorkflowStepRunModel,
 )
@@ -187,22 +189,34 @@ async def materialize_chapter_outline_batch(
             current_step_name = f"create_chapter_{chapter_outline.chapter_number}"
             workflow_run.current_step = current_step_name
 
-            chapter = await create_chapter(
-                session,
-                project_slug,
-                ChapterCreate(
-                    chapter_number=chapter_outline.chapter_number,
-                    title=chapter_outline.title,
-                    chapter_goal=chapter_outline.chapter_goal,
-                    opening_situation=chapter_outline.opening_situation,
-                    main_conflict=chapter_outline.main_conflict,
-                    hook_type=chapter_outline.hook_type,
-                    hook_description=chapter_outline.hook_description,
-                    volume_number=chapter_outline.volume_number,
-                    target_word_count=chapter_outline.target_word_count,
-                ),
+            # Idempotency: if a chapter row with the same number already exists
+            # (e.g. recovery shim or previous partial materialization), reuse it
+            # instead of raising. This makes resume safe across re-runs.
+            existing_chapter = await session.scalar(
+                select(ChapterModel).where(
+                    ChapterModel.project_id == project.id,
+                    ChapterModel.chapter_number == chapter_outline.chapter_number,
+                )
             )
-            chapters_created += 1
+            if existing_chapter is not None:
+                chapter = existing_chapter
+            else:
+                chapter = await create_chapter(
+                    session,
+                    project_slug,
+                    ChapterCreate(
+                        chapter_number=chapter_outline.chapter_number,
+                        title=chapter_outline.title,
+                        chapter_goal=chapter_outline.chapter_goal,
+                        opening_situation=chapter_outline.opening_situation,
+                        main_conflict=chapter_outline.main_conflict,
+                        hook_type=chapter_outline.hook_type,
+                        hook_description=chapter_outline.hook_description,
+                        volume_number=chapter_outline.volume_number,
+                        target_word_count=chapter_outline.target_word_count,
+                    ),
+                )
+                chapters_created += 1
             await create_workflow_step_run(
                 session,
                 workflow_run_id=workflow_run.id,
@@ -226,23 +240,32 @@ async def materialize_chapter_outline_batch(
                 )
                 workflow_run.current_step = current_step_name
 
-                scene = await create_scene_card(
-                    session,
-                    project_slug,
-                    chapter_outline.chapter_number,
-                    SceneCardCreate(
-                        scene_number=scene_outline.scene_number,
-                        scene_type=scene_outline.scene_type,
-                        title=scene_outline.title,
-                        time_label=scene_outline.time_label,
-                        participants=scene_outline.participants,
-                        purpose=scene_outline.purpose,
-                        entry_state=scene_outline.entry_state,
-                        exit_state=scene_outline.exit_state,
-                        target_word_count=scene_outline.target_word_count,
-                    ),
+                existing_scene = await session.scalar(
+                    select(SceneCardModel).where(
+                        SceneCardModel.chapter_id == chapter.id,
+                        SceneCardModel.scene_number == scene_outline.scene_number,
+                    )
                 )
-                scenes_created += 1
+                if existing_scene is not None:
+                    scene = existing_scene
+                else:
+                    scene = await create_scene_card(
+                        session,
+                        project_slug,
+                        chapter_outline.chapter_number,
+                        SceneCardCreate(
+                            scene_number=scene_outline.scene_number,
+                            scene_type=scene_outline.scene_type,
+                            title=scene_outline.title,
+                            time_label=scene_outline.time_label,
+                            participants=scene_outline.participants,
+                            purpose=scene_outline.purpose,
+                            entry_state=scene_outline.entry_state,
+                            exit_state=scene_outline.exit_state,
+                            target_word_count=scene_outline.target_word_count,
+                        ),
+                    )
+                    scenes_created += 1
                 await create_workflow_step_run(
                     session,
                     workflow_run_id=workflow_run.id,
@@ -373,6 +396,8 @@ async def materialize_story_bible(
         "characters_upserted": 0,
         "relationships_upserted": 0,
         "state_snapshots_created": 0,
+        "voice_profiles_populated": 0,
+        "moral_frameworks_populated": 0,
         "volumes_upserted": 0,
         "world_backbones_upserted": 0,
         "volume_frontiers_upserted": 0,

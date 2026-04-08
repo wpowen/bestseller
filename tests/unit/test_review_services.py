@@ -164,10 +164,12 @@ def test_render_rewritten_scene_markdown_expands_content_and_dialogue() -> None:
         style_guide,
     )
 
-    assert "### 修订说明" in content
-    assert "“" in content
-    assert "旧版本草稿" in content
-    assert "悬念" in content or "钩子" in content
+    # Revision notes and old draft sections are no longer appended to avoid
+    # non-fiction content leaking into novel prose.
+    assert "### " + "\u4fee\u8ba2\u8bf4\u660e" not in content
+    assert "### " + "\u4e0a\u4e00\u7248\u8349\u7a3f" not in content
+    assert "\u201c" in content
+    assert "\u51b2\u7a81" in content or "\u538b\u8feb" in content
 
 
 def test_evaluate_chapter_draft_marks_sparse_chapter_for_rewrite() -> None:
@@ -320,6 +322,9 @@ def test_render_chapter_review_summary_and_prompts_include_context() -> None:
                 ending_hook_effectiveness=0.52,
                 volume_mission_alignment=0.66,
                 contract_alignment=0.66,
+                pacing_rhythm=0.60,
+                character_voice_distinction=0.55,
+                thematic_resonance=0.58,
             ),
             findings=[
                 review_services.ChapterReviewFinding(

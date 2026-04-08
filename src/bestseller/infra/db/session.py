@@ -9,8 +9,54 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from bestseller.settings import AppSettings, get_settings
 
 
+# ---------------------------------------------------------------------------
+# Shared engine (CLI / scripts / session_scope)
+# ---------------------------------------------------------------------------
+
 _shared_engine: AsyncEngine | None = None
 _shared_session_factory: async_sessionmaker[AsyncSession] | None = None
+
+
+# ---------------------------------------------------------------------------
+# Long-lived server engine (API server, ARQ worker)
+# ---------------------------------------------------------------------------
+
+_global_engine: AsyncEngine | None = None
+_global_session_factory: async_sessionmaker[AsyncSession] | None = None
+
+
+async def init_db(settings: AppSettings) -> None:
+    """Initialize a shared engine + session factory for long-lived server processes."""
+    global _global_engine, _global_session_factory
+    if _global_engine is not None:
+        return  # Already initialized — prevent pool leaks from double-init
+    _global_engine = create_engine(settings)
+    _global_session_factory = create_session_factory(engine=_global_engine)
+
+
+async def shutdown_db() -> None:
+    """Dispose the shared engine on server shutdown."""
+    global _global_engine, _global_session_factory
+    if _global_engine is not None:
+        await _global_engine.dispose()
+    _global_engine = None
+    _global_session_factory = None
+
+
+@asynccontextmanager
+async def get_server_session() -> AsyncIterator[AsyncSession]:
+    """Yield an AsyncSession from the shared server pool (commit on success, rollback on error)."""
+    if _global_session_factory is None:
+        raise RuntimeError("Database not initialized. Call init_db() first.")
+    session = _global_session_factory()
+    try:
+        yield session
+        await session.commit()
+    except Exception:
+        await session.rollback()
+        raise
+    finally:
+        await session.close()
 
 
 def create_engine(settings: AppSettings | None = None) -> AsyncEngine:

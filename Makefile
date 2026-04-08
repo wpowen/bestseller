@@ -66,6 +66,16 @@ help:
 	@echo "    make ui             Start the local Web Studio"
 	@echo "    make verify         Run unit tests + end-to-end functional verification"
 	@echo ""
+	@echo "  Docker (Full Stack)"
+	@echo "    make docker-up      Start all Docker services"
+	@echo "    make docker-up-build Start + rebuild Docker images"
+	@echo "    make docker-down    Stop all Docker services (keep data)"
+	@echo "    make docker-purge   Stop + delete all data volumes"
+	@echo "    make docker-clean   Stop + delete images and volumes"
+	@echo "    make docker-logs    Tail logs (ARGS='api' for specific service)"
+	@echo "    make docker-ps      Show running Docker services"
+	@echo "    make docker-restart Restart entire Docker stack"
+	@echo ""
 	@echo "  Maintenance"
 	@echo "    make db-init        Create PostgreSQL extensions and tables"
 	@echo "    make db-upgrade     Apply Alembic migrations"
@@ -177,6 +187,41 @@ ui:
 .PHONY: verify
 verify:
 	./scripts/verify.sh
+
+# ---------------------------------------------------------------------------
+# Docker (Full Stack)
+# ---------------------------------------------------------------------------
+.PHONY: docker-up
+docker-up:
+	./scripts/docker-start.sh $(ARGS)
+
+.PHONY: docker-up-build
+docker-up-build:
+	./scripts/docker-start.sh --build
+
+.PHONY: docker-down
+docker-down:
+	./scripts/docker-stop.sh
+
+.PHONY: docker-purge
+docker-purge:
+	./scripts/docker-stop.sh --purge
+
+.PHONY: docker-clean
+docker-clean:
+	./scripts/docker-stop.sh --clean
+
+.PHONY: docker-logs
+docker-logs:
+	docker compose logs -f $(ARGS)
+
+.PHONY: docker-ps
+docker-ps:
+	docker compose ps
+
+.PHONY: docker-restart
+docker-restart:
+	./scripts/docker-stop.sh && ./scripts/docker-start.sh
 
 # ---------------------------------------------------------------------------
 # Database

@@ -92,11 +92,65 @@ _CN_META_PROSE_RE = re.compile(
     r"|根据(?:修订|重写|润色)(?:说明|要求|策略))"
 )
 
+# Sentences that only ever originate from the fallback template prose in
+# ``render_rewritten_scene_markdown`` / ``render_rewritten_chapter_markdown``.
+# These are the exact phrases that leaked into chapters 2/3/5/7–13/15/20/25 of
+# the apocalypse-supply output. They are precise enough that matching a line
+# means the line is template residue, never legitimate prose.
+_CN_TEMPLATE_LEAK_SUBSTRINGS: tuple[str, ...] = (
+    "重新被推回《",
+    "叙事仍采用",
+    "这一版重写围绕",
+    "third-limited 视角",
+    "third-limited视角",
+    "third-person limited",
+    "叙事采用 third-limited",
+    "真正落实到动作、停顿、呼吸和目光变化",
+    "金属舱壁传来的冷意",
+    "人物说出口的话和没有说出口的话同时构成冲突",
+    "上一阶段留下的局势仍压在众人心头",
+    "这一章不再只是承接，而是要把冲突继续推向更高层级",
+    "章节收束时，",
+    # Time-labelled reflection openers used by the fallback outline builder
+    # ("第13章中段，程彻…", "第15章开场，周远…", "第22章结尾，…").
+    "第1章开场",
+    "第1章中段",
+    "第1章结尾",
+)
+
+# Regex form that captures "第<digits>章(开场|中段|结尾)[，,]" at line start.
+# More robust than listing every chapter number as a substring.
+_CN_CHAPTER_PHASE_PREFIX_RE = re.compile(
+    r"^\s*第\s*\d+\s*章(?:开场|中段|结尾)\s*[，,、]",
+)
+
+# Any standalone HTML comment — used by us to mark fallbacks and must never
+# appear in published chapters.
+_HTML_COMMENT_BLOCK_RE = re.compile(r"<!--.*?-->", flags=re.DOTALL)
+
 
 def sanitize_novel_markdown_content(content_md: str) -> str:
-    """Strip non-fiction structural markers and meta-commentary from novel prose."""
-    # First pass: remove "### 修订说明" / "### 上一版草稿" blocks entirely.
-    # These blocks run from the header to end-of-string or next H2+ header.
+    """Strip non-fiction structural markers and meta-commentary from novel prose.
+
+    Order of operations:
+
+    1. Remove all HTML comments (our fallback markers plus any stray notes).
+    2. Drop ``### 修订说明`` / ``### 上一版草稿`` blocks entirely.
+    3. Filter line-by-line to strip structural markers, meta headers, meta
+       key-value rows, scaffolding headings, meta-prose sentences and the
+       rewrite template sentences listed in ``_CN_TEMPLATE_LEAK_SUBSTRINGS``.
+    4. Drop the leading-paragraph "第N章中段，XX 重新被推回…" pattern even when
+       the rewrite template wasn't flagged by the substring list (catches LLM
+       paraphrases of the same prompt seed).
+    """
+    if not content_md:
+        return ""
+    # 1. Strip all HTML comments first so our rewrite / scene-draft fallback
+    # markers never reach the final output.
+    content_md = _HTML_COMMENT_BLOCK_RE.sub("", content_md)
+
+    # 2. Remove "### 修订说明" / "### 上一版草稿" blocks entirely. These run
+    # from the header to end-of-string or the next H2+ header.
     content_md = re.sub(
         r"#{1,4}\s*(?:修订说明|上一版草稿|改写说明|润色说明).*?(?=\n##\s|\Z)",
         "",
@@ -122,11 +176,95 @@ def sanitize_novel_markdown_content(content_md: str) -> str:
         # Drop prose-wrapped metadata sentences
         if _CN_META_PROSE_RE.search(stripped):
             continue
+        # Drop rewrite template sentences — precise substrings that only ever
+        # come from the legacy render_rewritten_* fallback prose.
+        if any(substr in stripped for substr in _CN_TEMPLATE_LEAK_SUBSTRINGS):
+            continue
+        # Drop lines that open with "第N章(开场|中段|结尾)，…" — every known
+        # leak started with one of these time-label prefixes.
+        if _CN_CHAPTER_PHASE_PREFIX_RE.match(stripped):
+            continue
         cleaned_lines.append(raw_line.rstrip())
 
     cleaned = "\n".join(cleaned_lines)
     cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
     return cleaned.strip()
+
+
+# Duplicate / nested chapter-scene markers that should never appear in prose:
+#   "第1章 第2场" / "第3章 第3章：碰撞" / "## 第15章 第15章：xxx"
+# Matches an entire line (or paragraph-leading fragment) that starts with one
+# chapter/scene marker followed by another. Line-level match is enough because
+# these leaks always come in at paragraph boundaries.
+_CN_DUPLICATE_CHAPTER_MARKER_RE = re.compile(
+    r"^\s*(?:#{1,4}\s*)?第\s*[一二三四五六七八九十百零\d]+\s*[章场]"
+    r"[\s·：:、，,]*第\s*[一二三四五六七八九十百零\d]+\s*[章场]"
+    r"(?:\s*[:：].*)?$"
+)
+
+# Prose-wrapped reasoning / rewrite-plan paragraphs, e.g.:
+#   "第15章开场，程彻、周远重新被推回《...》第15章的核心冲突..."
+# Matches a paragraph (delimited by blank lines) whose FIRST line starts with
+# "第N章" followed by planning vocabulary. We erase the whole paragraph so
+# multi-line reflections are cleaned in one shot. Anchored to start-of-string
+# or double-newline to avoid eating legitimate in-dialogue mentions.
+_CN_LEADING_REASONING_PARA_RE = re.compile(
+    r"(?:^|\n\n)\s*第\s*[一二三四五六七八九十百零\d]+\s*章[^\n]*?"
+    r"(?:开场|的核心冲突|继续|承接|重写围绕|重写的|这一版)[^\n]*"
+    r"(?:\n[^\n]+)*?"
+    r"(?=\n\n|\Z)"
+)
+
+# Additional phrase-pair rules for has_meta_leak. Each tuple is a list of
+# phrases that must all be present for the pair to count as a leak — this
+# avoids false positives where "视角" or "开场" appears in legitimate prose.
+_HAS_META_PHRASE_PAIRS: tuple[tuple[str, ...], ...] = (
+    ("这一版", "重写"),
+    ("重写围绕",),
+    ("叙事仍采用",),
+    ("third-limited",),
+    ("third limited",),
+    ("third-person limited",),
+    ("核心冲突", "第", "章"),  # "第X章的核心冲突"
+    ("开场", "重新被推回"),
+)
+
+
+def strip_scaffolding_echoes(content_md: str) -> str:
+    """Strip duplicate chapter markers and leading AI-reasoning paragraphs.
+
+    This runs AFTER ``sanitize_novel_markdown_content`` and is the last
+    regex-level net before falling back to LLM-based cleanup. It catches
+    two bug classes that the line-oriented sanitizer misses:
+
+    1. Duplicate / nested chapter-scene headers like "第1章 第2场" or
+       "第3章 第3章：碰撞", which the sanitizer's line-start regex can't
+       match when both markers land on the same line.
+    2. Prose-wrapped AI reflection paragraphs like
+       "第15章开场，XXX 重新被推回 ... 这一版重写围绕 ...", where the LLM
+       leaked its rewrite plan as the first paragraph of the chapter.
+    """
+    if not content_md:
+        return content_md
+
+    # Erase duplicate chapter markers line by line (preserving surrounding prose).
+    cleaned_lines: list[str] = []
+    for line in content_md.splitlines():
+        if _CN_DUPLICATE_CHAPTER_MARKER_RE.match(line.strip()):
+            continue
+        cleaned_lines.append(line)
+    content_md = "\n".join(cleaned_lines)
+
+    # Erase prose-wrapped reasoning paragraphs. Loop until stable in case
+    # multiple reflection paragraphs stack at the top.
+    while True:
+        new_content = _CN_LEADING_REASONING_PARA_RE.sub("", content_md, count=1)
+        if new_content == content_md:
+            break
+        content_md = new_content
+
+    content_md = re.sub(r"\n{3,}", "\n\n", content_md)
+    return content_md.strip()
 
 
 logger = logging.getLogger(__name__)
@@ -151,12 +289,25 @@ _META_LEAK_KEYWORDS = (
     "收束状态：", "开场状态：", "entry_state", "exit_state",
     "scene_summary", "contract_alignment", "tail_hook",
     "closing_hook", "story_task", "emotion_task",
+    # Rewrite-plan vocabulary that leaked into the body of a rewritten chapter
+    # (see reviews.build_chapter_rewrite_prompts — the LLM occasionally
+    # paraphrases rewrite_strategy back at us instead of writing prose).
+    "这一版重写", "重写围绕", "叙事仍采用",
+    "third-limited", "third limited", "third-person limited",
 )
 
 
 def has_meta_leak(content_md: str) -> bool:
     """Return True if *content_md* still contains non-fiction meta-commentary."""
-    return any(kw in content_md for kw in _META_LEAK_KEYWORDS)
+    if any(kw in content_md for kw in _META_LEAK_KEYWORDS):
+        return True
+    # Phrase-pair check: each rule fires only if EVERY phrase in the tuple is
+    # present. This lets us flag ambiguous single words ("开场", "视角") only
+    # when they co-occur with other planning vocabulary.
+    return any(
+        all(phrase in content_md for phrase in phrases)
+        for phrases in _HAS_META_PHRASE_PAIRS
+    )
 
 
 async def validate_and_clean_novel_content(
@@ -495,6 +646,46 @@ def _render_tree_section(tree_context_nodes: list[dict[str, Any]] | None) -> str
     )
 
 
+def _render_hard_fact_snapshot_section(snapshot: dict[str, Any] | None) -> str:
+    """Render the chapter-end hard-fact snapshot block.
+
+    ``snapshot`` is the JSON-serialized form of
+    :class:`bestseller.domain.context.ChapterStateSnapshotContext`.  Returns an
+    empty string when there is nothing to inject so the caller can safely
+    concatenate.
+    """
+    if not snapshot:
+        return ""
+    facts = snapshot.get("facts") or []
+    if not facts:
+        return ""
+    chapter_number = snapshot.get("chapter_number")
+    header = (
+        f"=== 当前事实状态（来自第 {chapter_number} 章末 — 必须严格遵守，不得前后矛盾）==="
+        if chapter_number is not None
+        else "=== 当前事实状态（来自上一章末 — 必须严格遵守，不得前后矛盾）==="
+    )
+    lines: list[str] = [header]
+    for fact in facts:
+        if not isinstance(fact, dict):
+            continue
+        name = fact.get("name")
+        value = fact.get("value")
+        if not name or value is None:
+            continue
+        subject = fact.get("subject")
+        unit = fact.get("unit")
+        notes = fact.get("notes")
+        prefix = f"[{subject}] " if subject else ""
+        unit_suffix = f" {unit}" if unit else ""
+        notes_suffix = f"  // {notes}" if notes else ""
+        lines.append(f"- {prefix}{name}: {value}{unit_suffix}{notes_suffix}")
+    lines.append(
+        "=== 任何数值/位置/物品变化都必须在本章正文里给出读者可见的触发事件（交易、战斗、时间流逝等）==="
+    )
+    return "\n".join(lines)
+
+
 def _resolve_project_writing_profile(project: Any, style_guide: StyleGuideModel | None) -> Any:
     metadata = getattr(project, "metadata_json", {}) or {}
     raw_profile = metadata.get("writing_profile") if isinstance(metadata, dict) else None
@@ -553,89 +744,50 @@ def render_scene_draft_markdown(
     active_emotion_tracks: list[dict[str, Any]] | None = None,
     active_antagonist_plans: list[dict[str, Any]] | None = None,
 ) -> str:
-    title = scene.title or f"场景 {scene.scene_number}"
-    participants = "、".join(scene.participants) if scene.participants else "相关角色"
-    story_purpose = _render_purpose(scene.purpose, "story", "推进本章主线")
-    emotion_purpose = _render_purpose(scene.purpose, "emotion", "拉高当前张力")
-    raw_tone_keywords = (
-        [str(keyword) for keyword in style_guide.tone_keywords[:3]]
-        if style_guide and style_guide.tone_keywords
-        else []
-    )
-    has_han_tone_keywords = any(re.search(r"[\u4e00-\u9fff]", keyword) for keyword in raw_tone_keywords)
-    tone = "、".join(raw_tone_keywords) if has_han_tone_keywords else "克制、紧张"
-    pov = style_guide.pov_type if style_guide is not None else "third-limited"
-    chapter_goal = _normalize_fragment(chapter.chapter_goal)
-    story_purpose = _normalize_fragment(story_purpose)
-    emotion_purpose = _normalize_fragment(emotion_purpose)
-    story_bible_section = _render_story_bible_section(story_bible_context)
-    retrieval_section = _render_retrieval_section(retrieval_context)
-    recent_scene_section = _render_recent_scene_section(recent_scene_summaries)
-    recent_timeline_section = _render_timeline_section(recent_timeline_events)
-    participant_fact_section = _render_participant_fact_section(participant_canon_facts)
-    arc_section = _render_arc_section(active_plot_arcs, active_arc_beats)
-    clue_section = _render_clue_section(unresolved_clues, planned_payoffs)
-    emotion_track_section = _render_emotion_track_section(active_emotion_tracks)
-    antagonist_plan_section = _render_antagonist_plan_section(active_antagonist_plans)
-    contract_section = _render_contract_section(chapter_contract, scene_contract)
-    tree_section = _render_tree_section(tree_context_nodes)
-    writing_profile = _resolve_project_writing_profile(project, style_guide)
-    writing_profile_section = render_writing_profile_prompt_block(writing_profile)
+    """Return a minimal fallback markdown for a scene whose LLM draft failed.
 
-    paragraphs = [
-        f"## 场景 {scene.scene_number}：{title}",
-        (
-            f"{scene.time_label or '这一刻'}，{participants}被推入《{project.title}》第"
-            f"{chapter.chapter_number}章的核心冲突。叙事采用 {pov} 视角，整体语气保持 {tone}。"
-        ),
-        (
-            f"这一场景要完成的剧情任务是“{story_purpose}”，情绪任务是“{emotion_purpose}”。"
-            f"本章的总目标仍然是：{chapter_goal}。"
-        ),
-        (
-            f"开场状态：{_render_state(scene.entry_state)}。角色在互动中不断试探、施压、暴露信息，"
-            f"让冲突不只是说明，而是推动局势继续向前。"
-        ),
-        (
-            f"场景推进过程中，{participants}围绕“{story_purpose}”发生正面碰撞。"
-            f"对话、动作和观察需要服务于场景类型“{scene.scene_type}”，并把悬念留到结尾。"
-        ),
-        (
-            f"收束状态：{_render_state(scene.exit_state)}。场景结束时要留下新的不确定性，"
-            f"让下一场戏可以自然承接，同时保持章节钩子不断线。"
-        ),
-    ]
-    if writing_profile_section:
-        paragraphs.insert(2, f"商业写作画像：\n{writing_profile_section}")
-    if story_bible_section:
-        paragraphs.insert(
-            3,
-            "这一场景必须服从以下长篇约束："
-            f"{story_bible_section if story_bible_section.startswith('全书') else chr(10) + story_bible_section}",
-        )
-    if recent_scene_section:
-        paragraphs.insert(4 if story_bible_section else 3, f"近期剧情回顾：\n{recent_scene_section}")
-    if recent_timeline_section:
-        insert_at = 5 if story_bible_section and recent_scene_section else 4 if (story_bible_section or recent_scene_section) else 3
-        paragraphs.insert(insert_at, f"已知时间线节点：\n{recent_timeline_section}")
-    if arc_section:
-        paragraphs.insert(len(paragraphs) - 2, f"当前叙事线与节拍：\n{arc_section}")
-    if clue_section:
-        paragraphs.insert(len(paragraphs) - 2, f"伏笔与兑现约束：\n{clue_section}")
-    if emotion_track_section:
-        paragraphs.insert(len(paragraphs) - 2, f"关系与情绪推进约束：\n{emotion_track_section}")
-    if antagonist_plan_section:
-        paragraphs.insert(len(paragraphs) - 2, f"反派推进约束：\n{antagonist_plan_section}")
-    if contract_section:
-        paragraphs.insert(len(paragraphs) - 2, f"合同式写作约束：\n{contract_section}")
-    if tree_section:
-        paragraphs.insert(len(paragraphs) - 2, f"叙事树上下文：\n{tree_section}")
-    if participant_fact_section:
-        insert_at = 6 if story_bible_section and recent_scene_section and recent_timeline_section else len(paragraphs) - 2
-        paragraphs.insert(insert_at, f"参与角色可见事实：\n{participant_fact_section}")
-    if retrieval_section:
-        paragraphs.insert(len(paragraphs) - 2, f"相关检索上下文：\n{retrieval_section}")
-    return "\n\n".join(paragraphs).strip()
+    IMPORTANT: this function must NOT return narrative prose. Its output is
+    used as ``fallback_response`` for the scene-writer LLM call, which means it
+    can end up being stored verbatim as the scene's final ``content_md`` when
+    the LLM is unreachable or returns empty text.
+
+    Historically this function returned a six-paragraph template that looked
+    like prose ("XX 被推入《项目名》第 N 章的核心冲突。叙事采用 third-limited
+    视角…"). Those sentences repeatedly leaked into the final novel output as
+    meta-commentary, because the sanitizer only matched structural markers and
+    could not tell them apart from real scene text.
+
+    The fix is to return an obviously non-prose HTML comment placeholder. When
+    a scene relies on this fallback, the placeholder is easy to spot during
+    review, the sanitizer drops it from the rendered chapter, and it cannot
+    masquerade as narrative prose.
+    """
+    # The unused arguments below are intentional: callers still pass context
+    # for parity with ``build_scene_draft_prompts`` and to keep the signature
+    # stable. Reference them once so linters do not flag unused parameters.
+    _ = (
+        style_guide,
+        story_bible_context,
+        retrieval_context,
+        recent_scene_summaries,
+        recent_timeline_events,
+        participant_canon_facts,
+        active_plot_arcs,
+        active_arc_beats,
+        unresolved_clues,
+        planned_payoffs,
+        chapter_contract,
+        scene_contract,
+        tree_context_nodes,
+        active_emotion_tracks,
+        active_antagonist_plans,
+    )
+    participants = "、".join(scene.participants) if scene.participants else "相关角色"
+    return (
+        f"<!-- scene-draft-fallback project=\"{project.slug}\" "
+        f"chapter={chapter.chapter_number} scene={scene.scene_number} "
+        f"participants=\"{participants}\" -->"
+    )
 
 
 _SCENE_TYPE_GUIDANCE: dict[str, str] = {
@@ -706,6 +858,7 @@ def build_scene_draft_prompts(
     tree_context_nodes: list[dict[str, Any]] | None = None,
     active_emotion_tracks: list[dict[str, Any]] | None = None,
     active_antagonist_plans: list[dict[str, Any]] | None = None,
+    hard_fact_snapshot: dict[str, Any] | None = None,
 ) -> tuple[str, str]:
     writing_profile = _resolve_project_writing_profile(project, style_guide)
     prompt_pack = _resolve_project_prompt_pack(project, writing_profile)
@@ -735,13 +888,16 @@ def build_scene_draft_prompts(
     antagonist_plan_section = _render_antagonist_plan_section(active_antagonist_plans)
     contract_section = _render_contract_section(chapter_contract, scene_contract)
     tree_section = _render_tree_section(tree_context_nodes)
+    hard_fact_section = _render_hard_fact_snapshot_section(hard_fact_snapshot)
     writing_profile_section = render_writing_profile_prompt_block(writing_profile)
     prompt_pack_section = render_prompt_pack_prompt_block(prompt_pack)
     serial_guardrails = render_serial_fiction_guardrails(writing_profile)
     prompt_pack_scene_writer = render_prompt_pack_fragment(prompt_pack, "scene_writer")
     _pp_line = f"Prompt Pack：\n{prompt_pack_section}\n" if prompt_pack_section else ""
     _pp_writer_line = f"Prompt Pack 额外写法：\n{prompt_pack_scene_writer}\n" if prompt_pack_scene_writer else ""
+    _hard_fact_line = f"{hard_fact_section}\n\n" if hard_fact_section else ""
     user_prompt = (
+        f"{_hard_fact_line}"
         f"项目：《{project.title}》\n"
         f"章节：第{chapter.chapter_number}章 {chapter.title or ''}\n"
         f"章节目标：{chapter.chapter_goal}\n"
@@ -863,16 +1019,55 @@ def _packet_antagonist_plans(packet: SceneWriterContextPacket | None) -> list[di
     return [item.model_dump(mode="json") for item in packet.active_antagonist_plans]
 
 
+def _packet_hard_fact_snapshot(packet: SceneWriterContextPacket | None) -> dict[str, Any] | None:
+    if packet is None or packet.hard_fact_snapshot is None:
+        return None
+    return packet.hard_fact_snapshot.model_dump(mode="json")
+
+
+def _format_chapter_heading(chapter_number: int, raw_title: str | None) -> str:
+    """Build a single ``# 第N章：子标题`` heading without double-prefixing.
+
+    ``chapter.title`` in older data can look like any of:
+
+    - ``"零点前的抢购"``             → ``# 第1章：零点前的抢购``
+    - ``"第1章：零点前的抢购"``      → ``# 第1章：零点前的抢购``
+    - ``"第1章 零点前的抢购"``        → ``# 第1章：零点前的抢购``
+    - ``"第1章"``                    → ``# 第1章``
+    - ``None`` / ``""``              → ``# 第1章``
+
+    Previously the renderer unconditionally prepended ``# 第N章 {title}`` and
+    produced ``# 第1章 第1章：零点前的抢购``. This helper strips any existing
+    ``第N章`` prefix (with optional whitespace / colon) before re-attaching a
+    single canonical prefix.
+    """
+    chapter_prefix = f"第{chapter_number}章"
+    title = (raw_title or "").strip()
+    if not title:
+        return f"# {chapter_prefix}"
+    # Strip any existing "第N章" prefix (with optional separator) to avoid
+    # double-prefixing. Tolerate both the exact chapter number and generic
+    # leading "第\d+章" forms so earlier data with stale numbering still works.
+    stripped = re.sub(r"^第\s*\d+\s*章\s*[：:\-\s]*", "", title).strip()
+    if not stripped:
+        return f"# {chapter_prefix}"
+    return f"# {chapter_prefix}：{stripped}"
+
+
 def render_chapter_draft_markdown(
     chapter: ChapterModel,
     scene_drafts: list[SceneDraftVersionModel],
 ) -> str:
-    title = chapter.title or f"第{chapter.chapter_number}章"
-    header = [f"# 第{chapter.chapter_number}章 {title}"]
+    header = [_format_chapter_heading(chapter.chapter_number, chapter.title)]
     scene_sections = [
         sanitize_novel_markdown_content(scene_draft.content_md)
         for scene_draft in scene_drafts
     ]
+    # Drop any scene section that collapsed to an empty string after sanitizing
+    # (e.g. when the section was 100% meta-commentary leakage) so the final
+    # chapter does not contain stray blank "<!-- fallback -->" placeholders or
+    # double blank lines.
+    scene_sections = [section for section in scene_sections if section.strip()]
     return "\n\n".join(header + scene_sections).strip()
 
 
@@ -885,6 +1080,7 @@ async def generate_scene_draft(
     settings: AppSettings | None = None,
     workflow_run_id: UUID | None = None,
     step_run_id: UUID | None = None,
+    context_packet: SceneWriterContextPacket | None = None,
 ) -> SceneDraftVersionModel:
     project = await get_project_by_slug(session, project_slug)
     if project is None:
@@ -911,8 +1107,12 @@ async def generate_scene_draft(
         )
 
     style_guide = await session.get(StyleGuideModel, project.id)
-    context_packet = None
-    if settings is not None:
+    if context_packet is not None:
+        # Caller (run_scene_pipeline) already built a shared context for this scene —
+        # reuse it instead of re-running the 10+ DB/retrieval queries inside
+        # build_scene_writer_context_from_models. Opt-B memoization.
+        pass
+    elif settings is not None:
         context_packet = await build_scene_writer_context_from_models(
             session,
             settings,
@@ -999,6 +1199,7 @@ async def generate_scene_draft(
             _packet_tree_context(context_packet),
             _packet_emotion_tracks(context_packet),
             _packet_antagonist_plans(context_packet),
+            hard_fact_snapshot=_packet_hard_fact_snapshot(context_packet),
         )
         # Inject voice drift correction prompts for scene participants
         proj_metadata = getattr(project, "metadata_json", None) or {}
@@ -1033,6 +1234,7 @@ async def generate_scene_draft(
             ),
         )
         content_md = sanitize_novel_markdown_content(completion.content) or fallback_content
+        content_md = strip_scaffolding_echoes(content_md)
         # LLM-based cleanup if regex sanitizer missed meta-commentary
         if has_meta_leak(content_md):
             content_md = await validate_and_clean_novel_content(
@@ -1047,7 +1249,7 @@ async def generate_scene_draft(
         llm_run_id = completion.llm_run_id
         generation_mode = completion.provider
     else:
-        content_md = sanitize_novel_markdown_content(content_md)
+        content_md = strip_scaffolding_echoes(sanitize_novel_markdown_content(content_md))
     word_count = count_words(content_md)
     next_version = int(
         (

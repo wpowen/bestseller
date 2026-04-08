@@ -46,6 +46,29 @@ class ParticipantCanonFactContext(BaseModel):
     value: dict[str, Any] = Field(default_factory=dict)
 
 
+class HardFactContext(BaseModel):
+    """Single enumerable ``hard fact`` extracted from a chapter's end-state.
+
+    Persisted in ``chapter_state_snapshots.facts`` and injected into the next
+    chapter's writing prompt as a strict continuity constraint.
+    """
+
+    name: str = Field(min_length=1)
+    value: str = Field(min_length=1)
+    unit: str | None = None
+    kind: str = Field(min_length=1)
+    subject: str | None = None
+    notes: str | None = None
+    source_quote: str | None = None
+
+
+class ChapterStateSnapshotContext(BaseModel):
+    """Frozen end-of-chapter hard-fact state injected into the next chapter."""
+
+    chapter_number: int = Field(ge=1)
+    facts: list[HardFactContext] = Field(default_factory=list)
+
+
 class SceneWriterContextPacket(BaseModel):
     project_id: UUID
     project_slug: str = Field(min_length=1)
@@ -68,6 +91,7 @@ class SceneWriterContextPacket(BaseModel):
     scene_contract: SceneContractRead | None = None
     tree_context_nodes: list[NarrativeTreeNodeRead] = Field(default_factory=list)
     retrieval_chunks: list[RetrievedChunk] = Field(default_factory=list)
+    hard_fact_snapshot: ChapterStateSnapshotContext | None = None
 
 
 class ChapterSceneContext(BaseModel):
@@ -101,3 +125,4 @@ class ChapterWriterContextPacket(BaseModel):
     chapter_contract: ChapterContractRead | None = None
     tree_context_nodes: list[NarrativeTreeNodeRead] = Field(default_factory=list)
     retrieval_chunks: list[RetrievedChunk] = Field(default_factory=list)
+    hard_fact_snapshot: ChapterStateSnapshotContext | None = None

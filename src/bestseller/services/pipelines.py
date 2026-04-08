@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import traceback
 from collections.abc import Callable
 from pathlib import Path
@@ -9,6 +10,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from bestseller.domain.context import SceneWriterContextPacket
 from bestseller.domain.enums import ChapterStatus, ArtifactType, ProjectStatus, WorkflowStatus
 from bestseller.domain.pipeline import ProjectPipelineChapterSummary, ProjectPipelineResult
 from bestseller.domain.planning import AutowriteResult
@@ -20,6 +22,8 @@ from bestseller.domain.pipeline import (
 from bestseller.domain.project import ProjectCreate
 from bestseller.domain.workflow import ChapterOutlineBatchInput
 from bestseller.infra.db.models import ChapterModel, ProjectModel, SceneCardModel, SceneDraftVersionModel
+from bestseller.services.context import build_scene_writer_context_from_models
+from bestseller.services.continuity import extract_chapter_state_snapshot
 from bestseller.services.drafts import assemble_chapter_draft, generate_scene_draft
 from bestseller.services.exports import export_chapter_markdown, export_project_markdown
 from bestseller.services.consistency import review_project_consistency
@@ -48,6 +52,9 @@ from bestseller.services.world_expansion import sync_world_expansion_progress
 from bestseller.settings import AppSettings
 
 
+logger = logging.getLogger(__name__)
+
+
 WORKFLOW_TYPE_SCENE_PIPELINE = "scene_pipeline"
 WORKFLOW_TYPE_CHAPTER_PIPELINE = "chapter_pipeline"
 WORKFLOW_TYPE_PROJECT_PIPELINE = "project_pipeline"
@@ -72,6 +79,24 @@ def _emit_progress(
     if progress is None:
         return
     progress(stage, payload)
+
+
+async def _checkpoint_commit(session: AsyncSession) -> None:
+    """Commit the current transaction at a pipeline checkpoint.
+
+    Splits the long-running autowrite/project/chapter pipelines into many short
+    transactions instead of one mega-transaction. This prevents PostgreSQL
+    snapshot bloat (idle-in-transaction blocking VACUUM, MVCC version chains
+    growing across hours of work) and gives crash-recovery a meaningful
+    granularity.
+
+    Tests use FakeSession objects that may not implement ``commit``. Be tolerant
+    of that — the production AsyncSession always implements it.
+    """
+    commit = getattr(session, "commit", None)
+    if commit is None:
+        return
+    await commit()
 
 
 async def _load_scene_identifiers(
@@ -179,6 +204,29 @@ async def run_scene_pipeline(
         )
         step_order += 1
 
+        # Opt-B: build the scene writer context exactly once per pipeline run and
+        # share it between draft + review (and any rewrite re-review). The context
+        # contains 10+ DB / retrieval queries; without sharing, each call rebuilds
+        # the same packet. rewrite_scene_from_task does NOT consume context, so we
+        # don't need to invalidate after rewrite. refresh_scene_knowledge runs last
+        # and is allowed to invalidate the world — we never reuse shared_context
+        # past it. Use the *_from_models variant since we already loaded
+        # project/chapter/scene above.
+        shared_context: SceneWriterContextPacket | None = None
+        try:
+            shared_context = await build_scene_writer_context_from_models(
+                session,
+                settings,
+                project,
+                chapter,
+                scene,
+            )
+        except Exception:
+            # Match the pre-Opt-B behavior in review_scene_draft: tolerate context
+            # build failures (tests / mocks may not provide everything). Downstream
+            # functions handle context_packet=None correctly.
+            shared_context = None
+
         if draft is None:
             current_step_name = "generate_scene_draft"
             workflow_run.current_step = current_step_name
@@ -189,6 +237,7 @@ async def run_scene_pipeline(
                 scene_number,
                 settings=settings,
                 workflow_run_id=workflow_run.id,
+                context_packet=shared_context,
             )
             if draft.llm_run_id is not None:
                 llm_run_ids.append(draft.llm_run_id)
@@ -224,6 +273,7 @@ async def run_scene_pipeline(
                 chapter_number,
                 scene_number,
                 workflow_run_id=workflow_run.id,
+                context_packet=shared_context,
             )
             if report.llm_run_id is not None:
                 llm_run_ids.append(report.llm_run_id)
@@ -601,6 +651,24 @@ async def run_chapter_pipeline(
 
             if chapter_review_result.verdict == "pass" or chapter_rewrite_task is None:
                 chapter.status = ChapterStatus.COMPLETE.value
+                # Extract hard-fact snapshot for cross-chapter continuity.
+                # Failures are logged and swallowed — continuity is a quality
+                # enhancement, not a hard dependency for chapter completion.
+                try:
+                    await extract_chapter_state_snapshot(
+                        session,
+                        settings,
+                        project_id=project.id,
+                        chapter=chapter,
+                        chapter_md=chapter_draft.content_md,
+                        workflow_run_id=workflow_run.id,
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning(
+                        "Chapter %d hard-fact extraction failed (non-fatal): %s",
+                        chapter.chapter_number,
+                        exc,
+                    )
                 break
 
             if chapter_rewrite_iterations >= settings.quality.max_chapter_revisions:
@@ -769,6 +837,7 @@ async def run_project_pipeline(
             project_slug,
             requested_by=requested_by,
         )
+        await _checkpoint_commit(session)
         _emit_progress(
             progress,
             "story_bible_materialization_completed",
@@ -810,6 +879,7 @@ async def run_project_pipeline(
                 project_slug,
                 requested_by=requested_by,
             )
+        await _checkpoint_commit(session)
         _emit_progress(
             progress,
             "outline_materialization_completed",
@@ -852,6 +922,7 @@ async def run_project_pipeline(
             project_slug,
             requested_by=requested_by,
         )
+        await _checkpoint_commit(session)
         _emit_progress(
             progress,
             "narrative_graph_materialization_completed",
@@ -874,6 +945,7 @@ async def run_project_pipeline(
             project_slug,
             requested_by=requested_by,
         )
+        await _checkpoint_commit(session)
         _emit_progress(
             progress,
             "narrative_tree_materialization_completed",
@@ -1193,6 +1265,13 @@ async def run_project_pipeline(
                             },
                         )
 
+            # ─── Per-chapter commit checkpoint ─────────────────────────────
+            # Splits the project pipeline into one short transaction per
+            # chapter. Without this, the entire multi-chapter run sits inside
+            # a single PostgreSQL transaction that can grow to hours, blocking
+            # autovacuum and bloating MVCC version chains.
+            await _checkpoint_commit(session)
+
         export_artifact_id: UUID | None = None
         output_path: str | None = None
         if export_markdown:
@@ -1295,6 +1374,9 @@ async def run_project_pipeline(
             "final_verdict": review_result.verdict if review_result is not None else None,
         }
         await session.flush()
+        # Final commit so the project pipeline closes its transaction before
+        # returning to the autowrite orchestrator (or worker context manager).
+        await _checkpoint_commit(session)
         _emit_progress(
             progress,
             "project_pipeline_completed",
@@ -1366,6 +1448,7 @@ async def run_autowrite_pipeline(
             {"project_slug": project_payload.slug},
         )
         project = await create_project(session, project_payload, settings)
+        await _checkpoint_commit(session)
         _emit_progress(
             progress,
             "project_creation_completed",
@@ -1410,6 +1493,7 @@ async def run_autowrite_pipeline(
             premise,
             requested_by=requested_by,
         )
+        await _checkpoint_commit(session)
         _emit_progress(
             progress,
             "planning_completed",
@@ -1431,6 +1515,7 @@ async def run_autowrite_pipeline(
         project.slug,
         requested_by=requested_by,
     )
+    await _checkpoint_commit(session)
     _emit_progress(
         progress,
         "story_bible_materialization_completed",
@@ -1449,6 +1534,7 @@ async def run_autowrite_pipeline(
         project.slug,
         requested_by=requested_by,
     )
+    await _checkpoint_commit(session)
     _emit_progress(
         progress,
         "outline_materialization_completed",
@@ -1467,6 +1553,7 @@ async def run_autowrite_pipeline(
         project.slug,
         requested_by=requested_by,
     )
+    await _checkpoint_commit(session)
     _emit_progress(
         progress,
         "narrative_graph_materialization_completed",
@@ -1487,6 +1574,7 @@ async def run_autowrite_pipeline(
         project.slug,
         requested_by=requested_by,
     )
+    await _checkpoint_commit(session)
     _emit_progress(
         progress,
         "narrative_tree_materialization_completed",

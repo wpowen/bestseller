@@ -137,8 +137,17 @@ def test_evaluate_scene_draft_flags_contract_deviation() -> None:
     assert "contract_missing_labels" in result.evidence_summary
 
 
-def test_render_rewritten_scene_markdown_expands_content_and_dialogue() -> None:
-    project = SimpleNamespace(title="长夜巡航")
+def test_render_rewritten_scene_markdown_is_non_prose_fallback() -> None:
+    """Rewrite fallback must preserve the existing draft verbatim, never invent prose.
+
+    Historically this function returned six paragraphs of template Chinese
+    ("XX 重新被推回《...》第 N 章的核心冲突。叙事仍采用 third-limited
+    视角…", "这一版重写围绕…", "金属舱壁传来的冷意…"). Those sentences
+    ended up stored as the scene's final content_md whenever the rewriter
+    LLM timed out, and produced the meta-text seen across multiple
+    chapters of ``output/apocalypse-supply-1775626373``.
+    """
+    project = SimpleNamespace(title="长夜巡航", slug="chang-ye-xun-hang")
     chapter = SimpleNamespace(chapter_number=1, chapter_goal="展示主线冲突")
     scene = SimpleNamespace(
         title="封港命令",
@@ -148,7 +157,7 @@ def test_render_rewritten_scene_markdown_expands_content_and_dialogue() -> None:
         purpose={"story": "抛出禁令任务", "emotion": "压迫感和抗拒"},
         target_word_count=1000,
     )
-    current_draft = SimpleNamespace(content_md="旧版本草稿", id=uuid4())
+    current_draft = SimpleNamespace(content_md="旧版本草稿：沈砚站在封港通告前。", id=uuid4())
     rewrite_task = SimpleNamespace(
         rewrite_strategy="scene_dialogue_conflict_expansion",
         instructions="补强冲突和对话",
@@ -164,12 +173,18 @@ def test_render_rewritten_scene_markdown_expands_content_and_dialogue() -> None:
         style_guide,
     )
 
-    # Revision notes and old draft sections are no longer appended to avoid
-    # non-fiction content leaking into novel prose.
-    assert "### " + "\u4fee\u8ba2\u8bf4\u660e" not in content
-    assert "### " + "\u4e0a\u4e00\u7248\u8349\u7a3f" not in content
-    assert "\u201c" in content
-    assert "\u51b2\u7a81" in content or "\u538b\u8feb" in content
+    # Fallback must preserve the existing draft content verbatim.
+    assert "旧版本草稿：沈砚站在封港通告前。" in content
+    # A non-prose HTML marker identifies the failed rewrite.
+    assert "<!--" in content
+    assert "rewrite-scene-fallback" in content
+    assert f"chapter={chapter.chapter_number}" in content
+    # None of the legacy template sentences may appear.
+    assert "重新被推回《" not in content
+    assert "叙事仍采用" not in content
+    assert "third-limited" not in content
+    assert "这一版重写围绕" not in content
+    assert "金属舱壁传来的冷意" not in content
 
 
 def test_evaluate_chapter_draft_marks_sparse_chapter_for_rewrite() -> None:
@@ -361,11 +376,21 @@ def test_render_chapter_review_summary_and_prompts_include_context() -> None:
     assert "补强场景衔接" in rewrite_user_prompt
 
 
-def test_render_rewritten_chapter_markdown_adds_transition_and_hook() -> None:
-    project = SimpleNamespace(title="长夜巡航")
-    chapter = SimpleNamespace(chapter_number=3, title="静默航道", chapter_goal="推进调查", target_word_count=2000)
+def test_render_rewritten_chapter_markdown_preserves_existing_body_verbatim() -> None:
+    """Chapter rewrite fallback must not invent wrapper prose around the body."""
+    project = SimpleNamespace(title="长夜巡航", slug="chang-ye-xun-hang")
+    chapter = SimpleNamespace(
+        chapter_number=3,
+        title="静默航道",
+        chapter_goal="推进调查",
+        target_word_count=2000,
+    )
     current_draft = SimpleNamespace(
-        content_md="# 第3章 静默航道\n\n> 本章目标：推进调查\n\n## 场景 1：旧搭档回舰\n\n章节旧稿。",
+        content_md=(
+            "# 第3章 静默航道\n\n"
+            "## 场景 1：旧搭档回舰\n\n"
+            "章节旧稿：顾临把旧证件按在桌上。"
+        ),
     )
     rewrite_task = SimpleNamespace(
         rewrite_strategy="chapter_coherence_bridge_rewrite",
@@ -384,10 +409,42 @@ def test_render_rewritten_chapter_markdown_adds_transition_and_hook() -> None:
         chapter_context,
     )
 
-    assert content.startswith("# 第3章 静默航道")
-    assert "上一阶段发现异常" in content
-    assert "真相开始浮出水面" in content
-    assert "章节旧稿" in content
+    # Canonical heading uses colon and appears exactly once.
+    assert "# 第3章：静默航道" in content
+    assert content.count("第3章") == 1
+    # Original body is preserved verbatim.
+    assert "章节旧稿：顾临把旧证件按在桌上" in content
+    # Fallback marker identifies the failed rewrite.
+    assert "<!--" in content
+    assert "rewrite-chapter-fallback" in content
+    # None of the legacy template wrappers may appear.
+    assert "上一阶段留下的局势仍压在众人心头" not in content
+    assert "这一章不再只是承接" not in content
+    assert "章节收束时" not in content
+
+
+def test_render_rewritten_chapter_markdown_handles_empty_draft() -> None:
+    """Empty / missing draft must return a valid heading without crashing."""
+    project = SimpleNamespace(title="长夜巡航", slug="chang-ye-xun-hang")
+    chapter = SimpleNamespace(
+        chapter_number=7, title=None, chapter_goal="推进调查", target_word_count=2000
+    )
+    current_draft = SimpleNamespace(content_md="")
+    rewrite_task = SimpleNamespace(
+        rewrite_strategy="chapter_coherence_bridge_rewrite", instructions=""
+    )
+
+    content = render_rewritten_chapter_markdown(
+        project,
+        chapter,
+        current_draft,
+        rewrite_task,
+        None,
+    )
+
+    assert "<!-- rewrite-chapter-fallback" in content
+    assert "# 第7章" in content
+    assert "上一阶段留下的局势" not in content
 
 
 @pytest.mark.asyncio

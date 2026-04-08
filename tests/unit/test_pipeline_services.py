@@ -299,7 +299,18 @@ async def test_rewrite_scene_from_task_creates_new_version(
     )
 
     assert new_draft.version_no == 2
-    assert new_draft.word_count > scene_draft.word_count
+    # Rewrite fallback (when the LLM is unavailable) now preserves the
+    # existing draft verbatim instead of inventing template prose. The
+    # HTML comment marker attached by render_rewritten_scene_markdown is
+    # stripped by sanitize_novel_markdown_content before the draft is
+    # persisted — so the final stored content equals the original draft.
+    # Previously this test asserted ``new_draft.word_count > scene_draft
+    # .word_count``, which was implicitly relying on the template prose
+    # inflation that we just removed.
+    assert new_draft.content_md.strip() == "旧版本草稿"
+    assert "重新被推回《" not in new_draft.content_md
+    assert "third-limited" not in new_draft.content_md
+    assert "rewrite-scene-fallback" not in new_draft.content_md
     assert completed_task.status == "completed"
     assert scene.status == "drafted"
 

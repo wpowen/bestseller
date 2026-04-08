@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import importlib
+import logging
 from time import perf_counter
 from typing import Any, Literal, cast
 from uuid import UUID
@@ -13,7 +14,71 @@ from bestseller.infra.db.models import LlmRunModel
 from bestseller.settings import AppSettings, LLMRoleSettings, get_runtime_env_value
 
 
+logger = logging.getLogger(__name__)
+
+
 LLMRole = Literal["planner", "writer", "critic", "summarizer", "editor"]
+
+
+# --- Opt-C: shared litellm HTTP client ----------------------------------------
+#
+# By default, litellm creates a fresh ``httpx.AsyncClient`` for every
+# ``acompletion`` call when no shared client is configured. For OpenAI-compatible
+# providers (like MiniMax via ``openai/MiniMax-M2.7-*``), this means a TLS
+# handshake per call — measurably 0.5–1s of latency overhead per request, which
+# adds up across the 16–20+ LLM calls per chapter.
+#
+# litellm exposes a documented hook: setting ``litellm.aclient_session`` to a
+# long-lived ``httpx.AsyncClient`` makes the OpenAI handler reuse it
+# (see ``litellm/llms/openai/common_utils.py::_get_async_http_client``).
+#
+# We initialize a single process-wide client lazily on first LLM call so:
+#   * Test paths (``settings.llm.mock = True``) never construct it.
+#   * Worker / API processes share connection pooling across all LLM calls.
+#   * Errors initializing the shared client fall back silently to litellm's
+#     per-call default (no behavioral regression).
+_shared_litellm_async_client: Any = None  # httpx.AsyncClient when initialized
+
+
+def _ensure_shared_litellm_http_client() -> None:
+    """Install a process-wide ``httpx.AsyncClient`` into litellm.
+
+    Idempotent: subsequent calls are no-ops once the shared client is set.
+    Failures are logged and swallowed — litellm falls back to its built-in
+    per-call client.
+    """
+    global _shared_litellm_async_client
+    if _shared_litellm_async_client is not None:
+        return
+    try:
+        import httpx
+
+        litellm = importlib.import_module("litellm")
+        # If something else (tests, an integration) already set the session,
+        # do not overwrite it.
+        if getattr(litellm, "aclient_session", None) is not None:
+            _shared_litellm_async_client = litellm.aclient_session
+            return
+        client = httpx.AsyncClient(
+            timeout=httpx.Timeout(180.0, connect=10.0),
+            limits=httpx.Limits(
+                max_connections=20,
+                max_keepalive_connections=10,
+                keepalive_expiry=300.0,
+            ),
+            follow_redirects=True,
+        )
+        litellm.aclient_session = client
+        _shared_litellm_async_client = client
+        logger.info(
+            "Installed shared httpx.AsyncClient into litellm.aclient_session "
+            "(keepalive=10, timeout=180s)"
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "Failed to install shared litellm http client; falling back to per-call default: %s",
+            exc,
+        )
 
 
 class LLMCompletionRequest(BaseModel):
@@ -141,6 +206,10 @@ async def _call_litellm(
     request: LLMCompletionRequest,
     role_settings: LLMRoleSettings,
 ) -> tuple[str, int | None, int | None, str | None]:
+    # Opt-C: install a shared httpx.AsyncClient into litellm on first use, so
+    # subsequent calls reuse keep-alive connections to the model provider and
+    # avoid per-request TLS handshakes.
+    _ensure_shared_litellm_http_client()
     litellm = importlib.import_module("litellm")
     acompletion = getattr(litellm, "acompletion", None)
     if acompletion is None:

@@ -143,6 +143,74 @@ def test_fallback_chapter_outline_batch_tolerates_non_mapping_volume_items() -> 
     assert outline_batch["chapters"][0]["scenes"]
 
 
+def test_fallback_chapter_outline_titles_do_not_cycle() -> None:
+    """No chapter title may repeat across a 24-chapter book.
+
+    Before the fix, ``_fallback_chapter_outline_batch`` indexed an 8-element
+    hard-coded list by ``chapter_number % 8``, so chapters 2/10/18, 3/11/19,
+    4/12/20 etc. got literally identical subtitles (封锁, 碰撞, 反咬, …).
+    The fix replaces the cycle with a deterministic subtitle derived from
+    the volume goal plus the chapter number, guaranteeing uniqueness.
+    """
+    project = build_project()
+    project.target_chapters = 24
+    premise = "一名被放逐的导航员发现帝国正在篡改边境航线记录。"
+    book_spec = planner_services._fallback_book_spec(project, premise)
+    world_spec = planner_services._fallback_world_spec(project, premise, book_spec)
+    cast_spec = planner_services._fallback_cast_spec(project, premise, book_spec, world_spec)
+    volume_plan = planner_services._fallback_volume_plan(project, book_spec, cast_spec, world_spec)
+
+    outline_batch = planner_services._fallback_chapter_outline_batch(
+        project,
+        book_spec,
+        cast_spec,
+        volume_plan,
+    )
+
+    titles = [ch["title"] for ch in outline_batch["chapters"]]
+    # Chapter 1 might be a genre-specific opener; chapters 2+ must be unique.
+    non_empty = [t for t in titles[1:] if t]
+    assert len(non_empty) == len(set(non_empty)), (
+        f"Chapter titles must not repeat in a 24-chapter book; got {titles}"
+    )
+
+
+def test_fallback_chapter_outline_scenes_have_no_chapter_number_prefix() -> None:
+    """Scene titles / time_labels must not embed the chapter number.
+
+    Historically these looked like ``f"第{chapter_number}章中段"`` and that
+    prefix leaked into the rewrite-template fallback prose as
+    ``"第13章中段，程彻重新被推回…"``. Keeping them generic guarantees no
+    renderer can reconstruct a chapter-numbered meta sentence.
+    """
+    project = build_project()
+    project.target_chapters = 6
+    premise = "一名被放逐的导航员发现帝国正在篡改边境航线记录。"
+    book_spec = planner_services._fallback_book_spec(project, premise)
+    world_spec = planner_services._fallback_world_spec(project, premise, book_spec)
+    cast_spec = planner_services._fallback_cast_spec(project, premise, book_spec, world_spec)
+    volume_plan = planner_services._fallback_volume_plan(project, book_spec, cast_spec, world_spec)
+
+    outline_batch = planner_services._fallback_chapter_outline_batch(
+        project,
+        book_spec,
+        cast_spec,
+        volume_plan,
+    )
+
+    import re
+
+    prefix_re = re.compile(r"第\s*\d+\s*章")
+    for chapter in outline_batch["chapters"]:
+        for scene in chapter["scenes"]:
+            assert not prefix_re.search(scene.get("title", "")), (
+                f"scene title leaked chapter number: {scene['title']}"
+            )
+            assert not prefix_re.search(scene.get("time_label", "")), (
+                f"scene time_label leaked chapter number: {scene['time_label']}"
+            )
+
+
 def test_fallback_volume_plan_does_not_create_zero_chapter_volumes_for_short_projects() -> None:
     project = build_project()
     project.target_chapters = 1

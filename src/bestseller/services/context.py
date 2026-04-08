@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from bestseller.domain.context import (
     ChapterSceneContext,
+    ChapterStateSnapshotContext,
     ChapterWriterContextPacket,
     ParticipantCanonFactContext,
     RecentSceneSummary,
@@ -39,6 +40,7 @@ from bestseller.infra.db.models import (
     SceneContractModel,
     TimelineEventModel,
 )
+from bestseller.services.continuity import load_previous_chapter_snapshot
 from bestseller.services.projects import get_project_by_slug
 from bestseller.services.narrative_tree import (
     antagonist_plan_path,
@@ -807,6 +809,12 @@ async def build_scene_writer_context_from_models(
     )
     tree_context_nodes = _dedupe_tree_nodes(deterministic_tree_nodes + searched_tree_nodes)[:12]
 
+    hard_fact_snapshot = await _safe_load_previous_snapshot(
+        session,
+        project_id=project.id,
+        current_chapter_number=chapter.chapter_number,
+    )
+
     return SceneWriterContextPacket(
         project_id=project.id,
         project_slug=project.slug,
@@ -833,7 +841,36 @@ async def build_scene_writer_context_from_models(
         else None,
         tree_context_nodes=tree_context_nodes,
         retrieval_chunks=retrieval_chunks,
+        hard_fact_snapshot=hard_fact_snapshot,
     )
+
+
+async def _safe_load_previous_snapshot(
+    session: AsyncSession,
+    *,
+    project_id: Any,
+    current_chapter_number: int,
+) -> ChapterStateSnapshotContext | None:
+    """Load the previous chapter snapshot, swallowing any errors.
+
+    Hard-fact continuity is an additive enhancement: a failure here must never
+    break the scene writer context path.  On any exception the caller falls
+    back to the legacy prompt (no ``CURRENT_STATE`` block).
+    """
+    try:
+        return await load_previous_chapter_snapshot(
+            session,
+            project_id=project_id,
+            current_chapter_number=current_chapter_number,
+        )
+    except Exception as exc:  # noqa: BLE001
+        import logging
+
+        logging.getLogger(__name__).warning(
+            "Failed to load previous chapter snapshot for continuity injection: %s",
+            exc,
+        )
+        return None
 
 
 async def build_chapter_writer_context(
@@ -1135,6 +1172,12 @@ async def build_chapter_writer_context(
     )
     tree_context_nodes = _dedupe_tree_nodes(deterministic_tree_nodes + searched_tree_nodes)[:14]
 
+    hard_fact_snapshot = await _safe_load_previous_snapshot(
+        session,
+        project_id=project.id,
+        current_chapter_number=chapter.chapter_number,
+    )
+
     return ChapterWriterContextPacket(
         project_id=project.id,
         project_slug=project.slug,
@@ -1184,4 +1227,5 @@ async def build_chapter_writer_context(
         else None,
         tree_context_nodes=tree_context_nodes,
         retrieval_chunks=retrieval_chunks,
+        hard_fact_snapshot=hard_fact_snapshot,
     )

@@ -713,6 +713,47 @@ _SCENE_TYPE_AFTER_PRESSURE = ["preparation", "worldbuilding_discovery"]
 _SCENE_TYPE_COMIC_INTERVAL = 7  # Insert comic relief every N chapters
 
 
+def _chapter_fallback_subtitle(
+    chapter_number: int,
+    volume_goal: str | None,
+    *,
+    is_opening: bool,
+) -> str:
+    """Build a deterministic subtitle for a fallback chapter spec.
+
+    This replaces the old ``['裂缝','追线','封锁','碰撞','反咬','闯关','断局',
+    '逼近'][chapter_number % 8]`` cycle, which produced visibly repeating
+    titles every 8 chapters. The goal here is to keep the returned string
+    SHORT (the renderer adds the "第N章：" prefix) and non-repeating across
+    the book.
+
+    Rules:
+    - Chapter 1 of a genre that names a signature opener gets empty string;
+      planner callers can override with their own opening title later if
+      needed.
+    - Otherwise we derive a subtitle from the volume goal (first 12 Han
+      chars). Ties that land on the same volume get an ordinal suffix so
+      two chapters in the same volume never share a title.
+    - If no volume goal is available, return an empty string. ``drafts.
+      _format_chapter_heading`` will render that as ``# 第N章`` — ugly but
+      unambiguous, and never a cyclic duplicate.
+    """
+    _ = is_opening  # reserved for future opener detection
+    goal = (volume_goal or "").strip()
+    if not goal:
+        return ""
+    # Keep only Han chars / latin letters / digits / space to avoid headings
+    # that look like partial sentences ("推动主线调查，并在尾声……" ->
+    # "推动主线调查").
+    cleaned = re.sub(r"[，。；、！？：:,;.!?]", "", goal).strip()
+    if not cleaned:
+        return ""
+    short = cleaned[:12]
+    # Append a small ordinal so repeated calls with the same volume_goal do
+    # not produce literally identical titles across chapters.
+    return f"{short}·{chapter_number:02d}"
+
+
 def _varied_scene_type(
     base_type: str,
     chapter_number: int,
@@ -783,8 +824,15 @@ def _fallback_chapter_outline_batch(
                         "setup" if phase == "setup" else "transition",
                         chapter_number, 1, phase, prev_phase,
                     ),
-                    "title": "第一时间亮出主角优势" if chapter_number == 1 else f"第{chapter_number}章开场压力",
-                    "time_label": f"第{chapter_number}章开场",
+                    # Short subtitle only — downstream renderers must NOT
+                    # concatenate a "第N章" prefix. Avoids the double-prefix
+                    # and title-cycle bugs.
+                    "title": "第一时间亮出主角优势" if chapter_number == 1 else "开场压力",
+                    # time_label is plain phase text. Historically this read
+                    # "第N章开场" / "第N章中段" / "第N章结尾" and those
+                    # strings leaked into the rewrite-fallback template prose
+                    # ("第13章中段，程彻…"). Keep it generic.
+                    "time_label": "章节开场",
                     "participants": [protagonist_name, ally_name],
                     "purpose": {
                         "story": (
@@ -814,8 +862,8 @@ def _fallback_chapter_outline_batch(
                         "conflict" if phase in {"pressure", "reversal", "climax"} else "reveal",
                         chapter_number, 2, phase, prev_phase,
                     ),
-                    "title": f"第{chapter_number}章关键碰撞",
-                    "time_label": f"第{chapter_number}章中段",
+                    "title": "关键碰撞",
+                    "time_label": "章节中段",
                     "participants": [protagonist_name, antagonist_name]
                     if index_within_volume % 2 == 0
                     else [protagonist_name],
@@ -835,8 +883,8 @@ def _fallback_chapter_outline_batch(
                 {
                     "scene_number": 3,
                     "scene_type": "hook",
-                    "title": f"第{chapter_number}章结尾钩子",
-                    "time_label": f"第{chapter_number}章结尾",
+                    "title": "结尾钩子",
+                    "time_label": "章节结尾",
                     "participants": [protagonist_name, ally_name]
                     if index_within_volume % 3 != 0
                     else [protagonist_name, antagonist_name],
@@ -856,10 +904,20 @@ def _fallback_chapter_outline_batch(
             chapters.append(
                 {
                     "chapter_number": chapter_number,
-                    "title": (
-                        f"第{chapter_number}章：零点前的抢购"
-                        if chapter_number == 1 and any(token in project.genre for token in ("末日", "科幻"))
-                        else f"第{chapter_number}章：{['裂缝','追线','封锁','碰撞','反咬','闯关','断局','逼近'][chapter_number % 8]}"
+                    # NOTE: title intentionally left as a SHORT subtitle without
+                    # any "第N章" prefix. The chapter header renderer
+                    # (``drafts._format_chapter_heading``) is responsible for
+                    # re-attaching the canonical "第N章：" prefix exactly once,
+                    # which prevents the "# 第1章 第1章：…" double-prefix bug.
+                    #
+                    # Previously this fell back to an 8-word hard-coded cycle
+                    # (``封锁/碰撞/反咬/闯关/断局/逼近/裂缝/追线``) indexed by
+                    # ``chapter_number % 8``, which produced visibly repeating
+                    # titles every 8 chapters in the output. We now either
+                    # derive the subtitle from the volume goal (when present)
+                    # or leave it empty so the renderer shows just ``# 第N章``.
+                    "title": _chapter_fallback_subtitle(
+                        chapter_number, volume_goal, is_opening=(chapter_number == 1)
                     ),
                     "goal": chapter_goal,
                     "opening_situation": (

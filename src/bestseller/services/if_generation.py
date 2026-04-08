@@ -259,8 +259,86 @@ def _migrate_chapters_from_state(output_dir: Path, state: dict, key: str) -> Non
 # Concept JSON builder
 # ---------------------------------------------------------------------------
 
+def _load_story_package_characters(project: ProjectModel) -> list[dict[str, Any]]:
+    """Load canonical characters from a project's ``story_package.json`` when present.
+
+    Returns an empty list if the file does not exist or cannot be parsed.
+    This is the bridge that lets the IF pipeline honour the *original* cast
+    defined by ``story-factory/projects/<slug>/story_package.json`` — before
+    this helper was added, the pipeline ignored that file entirely and let
+    the bible LLM invent a fresh cast, producing stories whose characters had
+    nothing in common with the user's configured setting.
+    """
+    # Resolve candidate directories from the project metadata.
+    metadata = project.metadata_json if isinstance(project.metadata_json, dict) else {}
+    candidates: list[Path] = []
+
+    explicit = metadata.get("story_package_path")
+    if isinstance(explicit, str) and explicit:
+        candidates.append(Path(explicit))
+
+    # Conventional location: story-factory/projects/<slug>/story_package.json
+    # (slug with dashes → underscores). Walk upwards from CWD to find the
+    # project root that contains this directory.
+    slug_underscored = project.slug.replace("-", "_")
+    cwd = Path.cwd()
+    for anchor in (cwd, *cwd.parents):
+        candidates.append(
+            anchor / "story-factory" / "projects" / slug_underscored / "story_package.json"
+        )
+    # Dedupe while preserving order
+    seen: set[Path] = set()
+    unique_candidates: list[Path] = []
+    for path in candidates:
+        try:
+            resolved = path.resolve()
+        except OSError:
+            continue
+        if resolved in seen:
+            continue
+        seen.add(resolved)
+        unique_candidates.append(resolved)
+
+    for path in unique_candidates:
+        if not path.is_file():
+            continue
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        book = data.get("book") if isinstance(data, dict) else None
+        if not isinstance(book, dict):
+            continue
+        characters = book.get("characters")
+        if not isinstance(characters, list):
+            continue
+        normalized: list[dict[str, Any]] = []
+        for char in characters:
+            if not isinstance(char, dict):
+                continue
+            name = char.get("name")
+            if not isinstance(name, str) or not name.strip():
+                continue
+            normalized.append(
+                {
+                    "id": char.get("id"),
+                    "name": name.strip(),
+                    "title": char.get("title"),
+                    "description": char.get("description"),
+                    "role": char.get("role"),
+                }
+            )
+        if normalized:
+            return normalized
+    return []
+
+
 def build_concept_json(cfg: InteractiveFictionConfig, project: ProjectModel) -> dict[str, Any]:
-    """Map InteractiveFictionConfig + ProjectModel fields → concept.json format."""
+    """Map InteractiveFictionConfig + ProjectModel fields → concept.json format.
+
+    Also pulls in canonical characters from ``story_package.json`` when present
+    so the downstream bible prompt cannot silently invent a new cast.
+    """
     book_id = project.slug.replace("-", "_")
     concept: dict[str, Any] = {
         "book_id": book_id,
@@ -275,11 +353,30 @@ def build_concept_json(cfg: InteractiveFictionConfig, project: ProjectModel) -> 
     }
     if cfg.arc_structure:
         concept["arc_structure"] = cfg.arc_structure
-    if cfg.key_characters:
-        concept["key_characters"] = [
+
+    # Merge canonical characters from story_package.json with any
+    # cfg.key_characters the caller supplied. story_package takes precedence
+    # because it is the user-authored source of truth.
+    canonical = _load_story_package_characters(project)
+    key_chars: list[dict[str, Any]] = []
+    if canonical:
+        key_chars = [
+            {"name": c["name"], "role": c.get("role"), "description": c.get("description")}
+            for c in canonical
+            if c.get("name")
+        ]
+    elif cfg.key_characters:
+        key_chars = [
             {"name": c.name, "role": c.role, "description": c.description}
             for c in cfg.key_characters
         ]
+    if key_chars:
+        concept["key_characters"] = key_chars
+        # Stash the canonical names under a separate key so downstream phases
+        # (bible validation, chapter prompts) can cheaply assert that the LLM
+        # is still using them.
+        concept["canonical_character_names"] = [c["name"] for c in key_chars]
+
     # Include pre-defined endings from concept file if provided via metadata
     if "endings" in project.metadata_json:
         concept["endings"] = project.metadata_json["endings"]
@@ -289,6 +386,53 @@ def build_concept_json(cfg: InteractiveFictionConfig, project: ProjectModel) -> 
 # ---------------------------------------------------------------------------
 # Phase runners (sync, called from async worker via thread)
 # ---------------------------------------------------------------------------
+
+
+class CharacterConsistencyError(ValueError):
+    """Raised when a freshly generated bible drops or renames canonical characters."""
+
+
+def _enforce_canonical_characters(
+    bible: dict[str, Any],
+    canonical_names: list[str],
+) -> dict[str, Any]:
+    """Ensure every canonical character name appears in ``bible.book.characters``.
+
+    Behaviour:
+    - If ``canonical_names`` is empty, return the bible unchanged.
+    - If the bible already contains every canonical name, return unchanged.
+    - Otherwise raise :class:`CharacterConsistencyError` so the caller can
+      either retry the bible phase or abort the generation run. We prefer
+      failing loudly over silently patching the character list because the
+      surrounding description fields (role, title, motivation) are tightly
+      coupled to the character name in the prompt, and silent merges produce
+      bibles where two characters have the same name but contradictory
+      descriptions.
+    """
+    if not canonical_names:
+        return bible
+
+    book = bible.get("book")
+    if not isinstance(book, dict):
+        raise CharacterConsistencyError("bible is missing 'book' section")
+    characters = book.get("characters")
+    if not isinstance(characters, list):
+        raise CharacterConsistencyError("bible is missing 'book.characters' list")
+
+    present = {
+        str(c.get("name", "")).strip()
+        for c in characters
+        if isinstance(c, dict)
+    }
+    missing = [name for name in canonical_names if name and name not in present]
+    if missing:
+        raise CharacterConsistencyError(
+            "bible dropped canonical characters: "
+            + ", ".join(missing)
+            + f" (present: {sorted(present)})"
+        )
+    return bible
+
 
 def run_bible_phase(
     client: _LLMCaller,
@@ -300,6 +444,12 @@ def run_bible_phase(
     bible = _parse_json(raw)
     bible["book"]["total_chapters"] = cfg.target_chapters
     bible["book"]["free_chapters"] = cfg.free_chapters
+    canonical_names = [
+        str(name)
+        for name in concept.get("canonical_character_names", [])
+        if isinstance(name, str) and name.strip()
+    ]
+    _enforce_canonical_characters(bible, canonical_names)
     return bible
 
 

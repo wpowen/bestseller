@@ -667,6 +667,51 @@ class WebTaskManager:
         thread.start()
         return task.to_dict()
 
+    def resume_autowrite_task(
+        self,
+        task_id: str,
+        payload: dict[str, object],
+    ) -> dict[str, object] | str | None:
+        """Resume a stopped autowrite task *in place*, reusing the same task_id.
+
+        Returns the updated task dict on success, the sentinel string
+        ``"busy"`` if the task is currently running or queued, or ``None`` if
+        the task does not exist. The caller is responsible for mapping these
+        to HTTP responses.
+        """
+        serialized_payload = json.loads(json.dumps(payload, default=_json_default))
+        with self._lock:
+            task = self._tasks.get(task_id)
+            if task is None:
+                return None
+            if task.status in ("running", "queued"):
+                return "busy"
+            now = _utc_now()
+            task.status = "queued"
+            task.current_stage = "queued"
+            task.error = None
+            task.result = None
+            task.cancel_requested = False
+            task.updated_at = now
+            task.payload = serialized_payload
+            task.progress_events.append(
+                {
+                    "timestamp": now,
+                    "stage": "resume_requested",
+                    "payload": {},
+                }
+            )
+            task.progress_events = task.progress_events[-300:]
+            self._save_to_disk()
+            task_snapshot = task.to_dict()
+        thread = threading.Thread(
+            target=self._run_with_slot,
+            args=(task_id, self._run_autowrite_worker, payload),
+            daemon=True,
+        )
+        thread.start()
+        return task_snapshot
+
     def create_repair_task(self, payload: dict[str, object]) -> dict[str, object]:
         task_id = str(uuid4())
         task = WebTaskState(
@@ -2242,8 +2287,23 @@ def serve_web_app(
                     # Force-disable conception so resume doesn't recreate from scratch
                     saved_payload = dict(saved_payload)
                     saved_payload["_run_conception"] = False
-                    new_task = task_manager.create_autowrite_task(saved_payload)
-                    self._send_json(new_task, status=HTTPStatus.ACCEPTED)
+                    resumed = task_manager.resume_autowrite_task(task_id, saved_payload)
+                    if resumed is None:
+                        self._send_json(
+                            {"ok": False, "error": "Task not found"},
+                            status=HTTPStatus.NOT_FOUND,
+                        )
+                        return
+                    if resumed == "busy":
+                        self._send_json(
+                            {
+                                "ok": False,
+                                "error": "Task is already running or queued",
+                            },
+                            status=HTTPStatus.CONFLICT,
+                        )
+                        return
+                    self._send_json(resumed, status=HTTPStatus.ACCEPTED)
                     return
                 if path == "/api/projects/batch-delete":
                     body = self._read_json_body()

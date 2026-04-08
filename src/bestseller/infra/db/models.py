@@ -422,6 +422,51 @@ class ChapterModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     scenes: Mapped[list["SceneCardModel"]] = relationship(back_populates="chapter")
 
 
+class ChapterStateSnapshotModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Structured ``hard fact`` snapshot extracted at the end of each chapter.
+
+    Used to prevent cross-chapter drift in countdowns, character levels,
+    resources, inventory, position, and other enumerable values.  Populated by
+    :mod:`bestseller.services.continuity` after every chapter finalization;
+    consumed by ``build_scene_writer_context_from_models`` to inject a
+    ``CURRENT_STATE`` block into the next chapter's writing prompt.
+    """
+
+    __tablename__ = "chapter_state_snapshots"
+    __table_args__ = (
+        UniqueConstraint("project_id", "chapter_id", name="uq_chapter_state_snapshot_chapter"),
+        Index(
+            "idx_chapter_state_snapshots_lookup",
+            "project_id",
+            "chapter_number",
+        ),
+    )
+
+    project_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    chapter_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("chapters.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    chapter_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    # ``facts`` layout: {"facts": [{name, value, unit?, kind, subject?, notes?, source_quote?}]}
+    #
+    # ``kind`` is one of: "countdown", "level", "resource", "location", "time",
+    # "distance", "inventory_count", "other".
+    facts: Mapped[JSON_DICT] = mapped_column(JSONB, nullable=False, default=dict)
+    raw_extraction: Mapped[str | None] = mapped_column(Text)
+    extraction_model: Mapped[str | None] = mapped_column(Text)
+    extraction_status: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        server_default=text("'ok'"),
+    )
+
+
 class SceneCardModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "scene_cards"
     __table_args__ = (

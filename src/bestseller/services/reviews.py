@@ -7,6 +7,7 @@ from uuid import UUID
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from bestseller.domain.context import SceneWriterContextPacket
 from bestseller.domain.enums import ChapterStatus, SceneStatus
 from bestseller.domain.review import (
     ChapterReviewFinding,
@@ -34,6 +35,7 @@ from bestseller.services.drafts import (
     count_words,
     has_meta_leak,
     sanitize_novel_markdown_content,
+    strip_scaffolding_echoes,
     validate_and_clean_novel_content,
 )
 from bestseller.services.llm import LLMCompletionRequest, complete_text
@@ -50,6 +52,43 @@ from bestseller.services.writing_profile import (
     resolve_writing_profile,
 )
 from bestseller.settings import AppSettings
+
+
+# Absolute rule appended to rewrite system prompts. The writer occasionally
+# paraphrases ``rewrite_strategy`` back at us as if it were the chapter opener
+# — this block tells it, in uncompromising terms, that strategy text is
+# reference-only and must never appear in the body.
+_REWRITE_STRATEGY_CONTRACT = """
+【绝对约束 — 重写参考材料的使用】
+- 下面用 `=== 仅供理解，严禁进入正文 ===` 栅栏包住的 `重写任务` / `重写策略` 字段\
+只是给你理解修改方向的参考材料。
+- 这些字段内部的遣词（例如 "这一版重写围绕……"、"叙事仍采用 third-limited 视角"、\
+"强调狠、快、压迫感"、"承接上章后果并给出当前行动目标"）全都是规划语言。
+- 你【绝对不允许】把这些规划语言以任何形式（原句、改写、摘要、段首引入、作为开场说明）\
+出现在你的输出里。
+- 也不允许输出类似 "第X章开场" / "本章承接" / "这一版" / "叙事采用" 的段落——\
+这些都属于元评论。
+- 输出必须是纯粹的叙事散文、对话、动作、环境、内心活动，直接进入故事场景。
+- 不要在正文开头重复章节号或章节标题（章节号已经由系统单独渲染）。
+"""
+
+
+def _wrap_rewrite_reference(instructions: str | None, strategy: str | None) -> str:
+    """Render rewrite instructions/strategy inside a fence so the LLM clearly
+    sees they are reference-only material, not a template to echo back.
+
+    We intentionally pad with highly visible ASCII separators because LLMs
+    attend to literal tokens like ``===`` more reliably than to natural-
+    language "please don't echo this" instructions.
+    """
+    instructions_text = (instructions or "").strip() or "(无)"
+    strategy_text = (strategy or "").strip() or "(无)"
+    return (
+        "=== 仅供理解，严禁进入正文 ===\n"
+        f"重写任务：{instructions_text}\n"
+        f"重写策略：{strategy_text}\n"
+        "=== 以上内容禁止复述、禁止改写成正文、禁止作为段首引入 ===\n"
+    )
 
 
 def _clamp_score(value: float) -> float:
@@ -302,6 +341,7 @@ def build_scene_rewrite_prompts(
         "你是长篇中文小说写作系统里的重写编辑。"
         "输出必须是 Markdown 正文，不要解释，不要道歉，不要列修改清单。\n"
         + _NOVEL_OUTPUT_PROHIBITION
+        + _REWRITE_STRATEGY_CONTRACT
     )
     tone = (
         "、".join(str(keyword) for keyword in style_guide.tone_keywords[:3])
@@ -316,8 +356,7 @@ def build_scene_rewrite_prompts(
         f"项目：《{project.title}》\n"
         f"章节：第{chapter.chapter_number}章\n"
         f"场景：第{scene.scene_number}场 {scene.title or ''}\n"
-        f"重写任务：{rewrite_task.instructions}\n"
-        f"重写策略：{rewrite_task.rewrite_strategy}\n"
+        f"{_wrap_rewrite_reference(rewrite_task.instructions, rewrite_task.rewrite_strategy)}"
         f"章节目标：{chapter.chapter_goal}\n"
         f"剧情目标：{scene.purpose.get('story', '推进本章主线')}\n"
         f"情绪目标：{scene.purpose.get('emotion', '拉高当前张力')}\n"
@@ -337,6 +376,21 @@ def _render_chapter_context_section(packet) -> str:
     if packet is None:
         return "暂无章节上下文。"
     lines: list[str] = []
+    # Prepend the hard-fact snapshot (continuity block) so the reviewer/rewriter
+    # sees the previous chapter's end-state as the first, most-salient constraint.
+    snapshot = getattr(packet, "hard_fact_snapshot", None)
+    if snapshot is not None and getattr(snapshot, "facts", None):
+        lines.append(
+            f"=== 当前事实状态（来自第 {snapshot.chapter_number} 章末 — 必须严格遵守，不得前后矛盾）==="
+        )
+        for fact in snapshot.facts:
+            prefix = f"[{fact.subject}] " if fact.subject else ""
+            unit = f" {fact.unit}" if fact.unit else ""
+            note = f"  // {fact.notes}" if fact.notes else ""
+            lines.append(f"- {prefix}{fact.name}: {fact.value}{unit}{note}")
+        lines.append(
+            "=== 任何数值/位置/物品变化都必须在本章正文里给出读者可见的触发事件 ==="
+        )
     if getattr(packet, "active_plot_arcs", None):
         lines.append("激活叙事线：")
         lines.extend(
@@ -484,6 +538,7 @@ def build_chapter_rewrite_prompts(
         "你是长篇中文小说写作系统里的章节重写编辑。"
         "输出必须是 Markdown 正文，不要解释，不要列修改清单。\n"
         + _NOVEL_OUTPUT_PROHIBITION
+        + _REWRITE_STRATEGY_CONTRACT
     )
     _pp_block = f"Prompt Pack：\n{render_prompt_pack_prompt_block(prompt_pack)}\n" if prompt_pack else ""
     _pp_chapter_rewrite = f"{render_prompt_pack_fragment(prompt_pack, 'chapter_rewrite')}\n" if prompt_pack else ""
@@ -491,8 +546,7 @@ def build_chapter_rewrite_prompts(
         f"项目：《{project.title}》\n"
         f"章节：第{chapter.chapter_number}章 {chapter.title or ''}\n"
         f"章节目标：{chapter.chapter_goal}\n"
-        f"重写任务：{rewrite_task.instructions}\n"
-        f"重写策略：{rewrite_task.rewrite_strategy}\n"
+        f"{_wrap_rewrite_reference(rewrite_task.instructions, rewrite_task.rewrite_strategy)}"
         f"写作画像：\n{render_writing_profile_prompt_block(writing_profile)}\n"
         f"{_pp_block}"
         f"商业网文硬约束：\n{render_serial_fiction_guardrails(writing_profile)}\n"
@@ -1187,6 +1241,7 @@ async def review_scene_draft(
     *,
     workflow_run_id: UUID | None = None,
     step_run_id: UUID | None = None,
+    context_packet: SceneWriterContextPacket | None = None,
 ) -> tuple[SceneReviewResult, ReviewReportModel, QualityScoreModel, RewriteTaskModel | None]:
     project, chapter, scene, _style_guide, draft = await _load_scene_context(
         session,
@@ -1194,16 +1249,22 @@ async def review_scene_draft(
         chapter_number,
         scene_number,
     )
-    try:
-        scene_context = await build_scene_writer_context(
-            session,
-            settings,
-            project_slug,
-            chapter_number,
-            scene_number,
-        )
-    except ValueError:
-        scene_context = None
+    if context_packet is not None:
+        # Caller (run_scene_pipeline) already built the shared context for this scene —
+        # reuse it instead of re-running the 10+ DB/retrieval queries inside
+        # build_scene_writer_context. Opt-B memoization.
+        scene_context = context_packet
+    else:
+        try:
+            scene_context = await build_scene_writer_context(
+                session,
+                settings,
+                project_slug,
+                chapter_number,
+                scene_number,
+            )
+        except ValueError:
+            scene_context = None
 
     review_result = evaluate_scene_draft(
         scene=scene,
@@ -1492,47 +1553,32 @@ def render_rewritten_scene_markdown(
     rewrite_task: RewriteTaskModel,
     style_guide: StyleGuideModel | None,
 ) -> str:
-    participants = "、".join(scene.participants) if scene.participants else "相关角色"
-    tone = (
-        "、".join(str(keyword) for keyword in style_guide.tone_keywords[:3])
-        if style_guide and style_guide.tone_keywords
-        else "克制、紧张"
-    )
-    if not re.search(r"[\u4e00-\u9fff]", tone):
-        tone = "克制、紧张"
-    story_purpose = _normalize_fragment(str(scene.purpose.get("story", "推进本章主线")))
-    emotion_purpose = _normalize_fragment(str(scene.purpose.get("emotion", "拉高当前张力")))
-    revised_sections = [
-        (
-            f"{scene.time_label or '这一刻'}，{participants}重新被推回《{project.title}》第"
-            f"{chapter.chapter_number}章的核心冲突。叙事仍采用 "
-            f"{style_guide.pov_type if style_guide else 'third-limited'} 视角，但会更强调 {tone} 的压迫感。"
-        ),
-        (
-            f"这一版重写围绕“{story_purpose}”展开，并把“{emotion_purpose}”真正落实到动作、停顿、"
-            f"呼吸和目光变化里。"
-        ),
-        (
-            f"{participants}之间的空气一寸寸收紧，没有人愿意先退。"
-            f"{scene.participants[0] if scene.participants else '主角'}压低声音说："
-            f"“这不是一条能照着旧航图走完的路，我们现在每向前一步，都可能踩进别人故意留下的陷阱。”"
-        ),
-        (
-            f"另一方没有立刻回答，只是盯着光屏上的异常波纹，任由沉默把压力继续抬高。"
-            f"他们的分歧不再停留在说明层面，而是直接影响接下来谁来承担风险、谁来做最终决定。"
-        ),
-        (
-            f"随着争执升级，场景里的感官细节被进一步放大：金属舱壁传来的冷意、警报灯反复切换的微红、"
-            f"以及每一次视线交锋后更明显的戒备。人物说出口的话和没有说出口的话同时构成冲突。"
-        ),
-        (
-            f"{scene.participants[0] if scene.participants else '主角'}最终意识到，这场对抗真正逼近的不是表面任务，"
-            f"而是更深一层的真相。结尾必须留下钩子：有人已经提前一步改写了规则，而他们此刻才刚刚看见痕迹。"
-        ),
-    ]
+    """Return a safe fallback for a scene rewrite when the LLM call fails.
 
-    content_md = "\n\n".join(section for section in revised_sections if section is not None).strip()
-    return content_md
+    Historically this function generated six paragraphs of Chinese prose
+    ("XX 重新被推回《项目》第 N 章的核心冲突。叙事仍采用 third-limited
+    视角…", "这一版重写围绕 XX 展开…", "金属舱壁传来的冷意…"). That prose
+    was stored verbatim when the rewriter LLM timed out, and is the exact
+    meta-text that showed up in multiple chapters of the existing
+    ``apocalypse-supply-1775626373`` output.
+
+    The correct behaviour for a rewrite *fallback* is: do not invent new
+    prose, and do not overwrite the previously-approved draft with templated
+    narration. Instead, re-use the current draft's ``content_md`` verbatim
+    and prefix it with an invisible HTML comment marker so reviewers can see
+    the rewrite never actually ran. The marker is stripped later by
+    ``sanitize_novel_markdown_content``.
+    """
+    _ = (rewrite_task, style_guide)  # kept for signature parity
+    marker = (
+        f"<!-- rewrite-scene-fallback project=\"{project.slug}\" "
+        f"chapter={chapter.chapter_number} scene={scene.scene_number} "
+        f"reason=\"rewriter-llm-unavailable\" -->"
+    )
+    existing = (current_draft.content_md or "").strip()
+    if not existing:
+        return marker
+    return f"{marker}\n\n{existing}"
 
 
 def render_rewritten_chapter_markdown(
@@ -1542,38 +1588,41 @@ def render_rewritten_chapter_markdown(
     rewrite_task: RewriteTaskModel,
     chapter_context,
 ) -> str:
-    title = chapter.title or f"第{chapter.chapter_number}章"
-    original_content = current_draft.content_md.strip()
-    if original_content.startswith("# 第"):
-        parts = original_content.split("\n\n", 2)
-        original_body = parts[2] if len(parts) >= 3 else parts[-1]
-    else:
-        original_body = original_content
+    """Return a safe fallback for a chapter rewrite when the LLM call fails.
 
-    previous_summary = "上一阶段的冲突余波仍未散去。"
-    if chapter_context is not None and chapter_context.previous_scene_summaries:
-        previous_summary = chapter_context.previous_scene_summaries[0].summary
-    final_hook_source = chapter.chapter_goal
-    if (
-        chapter_context is not None
-        and chapter_context.recent_timeline_events
-        and chapter_context.recent_timeline_events[0].summary
-    ):
-        final_hook_source = chapter_context.recent_timeline_events[0].summary
-    transition_lines = [
-        f"# 第{chapter.chapter_number}章 {title}",
-        (
-            f"上一阶段留下的局势仍压在众人心头：{previous_summary}"
-            " 这一章不再只是承接，而是要把冲突继续推向更高层级。"
-        ),
-        original_body,
-        (
-            f"章节收束时，{final_hook_source}不再只是背景，而变成下一章必须立刻面对的现实。"
-            " 真正的危险已经被看见，但还没有被解决。"
-        ),
-    ]
-    content_md = "\n\n".join(section.strip() for section in transition_lines if section and section.strip())
-    return content_md.strip()
+    Previously this function wrapped the original chapter body with two
+    templated narration paragraphs ("上一阶段留下的局势仍压在众人心头…"
+    / "章节收束时，XX 不再只是背景…"). Those wrappers ended up in the final
+    output when the rewriter LLM was unreachable, polluting multiple chapters
+    with the same boilerplate opener and closer.
+
+    The fix mirrors :func:`render_rewritten_scene_markdown`: re-use the
+    current draft verbatim (re-normalising the heading so the double
+    ``第N章 第N章`` prefix bug cannot resurface) and attach a non-prose
+    HTML comment so reviewers can spot a rewrite that never succeeded.
+    """
+    _ = (rewrite_task, chapter_context)  # kept for signature parity
+    from bestseller.services.drafts import _format_chapter_heading
+
+    marker = (
+        f"<!-- rewrite-chapter-fallback project=\"{project.slug}\" "
+        f"chapter={chapter.chapter_number} "
+        f"reason=\"rewriter-llm-unavailable\" -->"
+    )
+    original_content = (current_draft.content_md or "").strip()
+    if not original_content:
+        return f"{marker}\n\n{_format_chapter_heading(chapter.chapter_number, chapter.title)}"
+
+    if original_content.startswith("# 第"):
+        lines = original_content.split("\n", 1)
+        body = lines[1].lstrip("\n") if len(lines) == 2 else ""
+    else:
+        body = original_content
+    heading = _format_chapter_heading(chapter.chapter_number, chapter.title)
+    parts = [marker, heading]
+    if body.strip():
+        parts.append(body.strip())
+    return "\n\n".join(parts).strip()
 
 
 async def rewrite_chapter_from_task(
@@ -1655,6 +1704,7 @@ async def rewrite_chapter_from_task(
             ),
         )
         content_md = sanitize_novel_markdown_content(completion.content) or fallback_content
+        content_md = strip_scaffolding_echoes(content_md)
         if has_meta_leak(content_md):
             content_md = await validate_and_clean_novel_content(
                 session,
@@ -1668,7 +1718,7 @@ async def rewrite_chapter_from_task(
         llm_run_id = completion.llm_run_id
         generation_mode = completion.provider
     else:
-        content_md = sanitize_novel_markdown_content(content_md)
+        content_md = strip_scaffolding_echoes(sanitize_novel_markdown_content(content_md))
 
     word_count = count_words(content_md)
     next_version = int(
@@ -1791,6 +1841,7 @@ async def rewrite_scene_from_task(
             ),
         )
         content_md = sanitize_novel_markdown_content(completion.content) or fallback_content
+        content_md = strip_scaffolding_echoes(content_md)
         if has_meta_leak(content_md):
             content_md = await validate_and_clean_novel_content(
                 session,
@@ -1804,7 +1855,7 @@ async def rewrite_scene_from_task(
         llm_run_id = completion.llm_run_id
         generation_mode = completion.provider
     else:
-        content_md = sanitize_novel_markdown_content(content_md)
+        content_md = strip_scaffolding_echoes(sanitize_novel_markdown_content(content_md))
     word_count = count_words(content_md)
     next_version = int(
         (

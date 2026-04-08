@@ -147,6 +147,34 @@ async def test_create_project_applies_writing_profile_to_style_guide_and_metadat
     assert "第一章 800 字内给出明确异变信号。" in style_guides[0].custom_rules
 
 
+def test_project_style_guide_relationship_cascades_deletion() -> None:
+    """Regression guard for the ``db_delete_failed: Dependency rule on column
+    'projects.id' tried to blank-out primary key column 'style_guides.project_id'``
+    error that blocked project deletion.
+
+    ``style_guides.project_id`` is both the foreign key **and** the primary key,
+    so SQLAlchemy's default cascade (``save-update, merge``) would try to
+    orphan the child by nulling its FK on parent delete — which fails because
+    a PK cannot be null. The fix is ``cascade="all, delete-orphan"`` with
+    ``passive_deletes=True`` so SA defers to the DB-level ``ON DELETE CASCADE``.
+    """
+    mapper = ProjectModel.__mapper__
+    rel = mapper.relationships["style_guide"]
+    cascade_flags = rel.cascade
+    assert cascade_flags.delete, (
+        "ProjectModel.style_guide must cascade delete; otherwise SA will try "
+        "to null style_guides.project_id which is a primary key."
+    )
+    assert cascade_flags.delete_orphan, (
+        "ProjectModel.style_guide must use delete-orphan so disassociation "
+        "never attempts to leave a style_guide without a project."
+    )
+    assert rel.passive_deletes is True, (
+        "ProjectModel.style_guide must have passive_deletes=True so SA defers "
+        "to PostgreSQL's ON DELETE CASCADE on the FK."
+    )
+
+
 def test_resolve_writing_profile_merges_prompt_pack_defaults() -> None:
     from bestseller.services.writing_profile import resolve_writing_profile
 

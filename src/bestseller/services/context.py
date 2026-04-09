@@ -858,11 +858,12 @@ async def _safe_load_previous_snapshot(
     back to the legacy prompt (no ``CURRENT_STATE`` block).
     """
     try:
-        return await load_previous_chapter_snapshot(
-            session,
-            project_id=project_id,
-            current_chapter_number=current_chapter_number,
-        )
+        async with session.begin_nested():
+            return await load_previous_chapter_snapshot(
+                session,
+                project_id=project_id,
+                current_chapter_number=current_chapter_number,
+            )
     except Exception as exc:  # noqa: BLE001
         import logging
 

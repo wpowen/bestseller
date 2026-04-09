@@ -56,19 +56,41 @@ async def test_create_engine_uses_database_url() -> None:
         engine.sync_engine.dispose()
 
 
-@pytest.mark.asyncio
-async def test_session_scope_commits_on_success(
+def _patch_session_scope(
     monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    fake_session = FakeSession()
+    fake_session: "FakeSession",
+    fake_engine: "FakeEngine | None" = None,
+) -> "FakeEngine":
+    """Wire ``session_scope`` to use a fake engine + session.
 
-    def fake_factory(settings=None):
+    ``session_scope`` is now a one-shot context manager (fresh engine per
+    call). To intercept it without needing a real database we replace
+    ``create_engine`` so it returns a fake engine, and
+    ``create_session_factory`` so it returns a factory that yields the fake
+    session. Returns the fake engine so callers can assert ``disposed``.
+    """
+    engine = fake_engine or FakeEngine()
+
+    def fake_create_engine(settings=None):
+        return engine
+
+    def fake_create_session_factory(settings=None, engine=None):
         def factory() -> FakeSession:
             return fake_session
 
         return factory
 
-    monkeypatch.setattr(session_module, "get_shared_session_factory", fake_factory)
+    monkeypatch.setattr(session_module, "create_engine", fake_create_engine)
+    monkeypatch.setattr(session_module, "create_session_factory", fake_create_session_factory)
+    return engine
+
+
+@pytest.mark.asyncio
+async def test_session_scope_commits_on_success(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_session = FakeSession()
+    fake_engine = _patch_session_scope(monkeypatch, fake_session)
 
     async with session_module.session_scope():
         pass
@@ -76,6 +98,9 @@ async def test_session_scope_commits_on_success(
     assert fake_session.committed is True
     assert fake_session.rolled_back is False
     assert fake_session.closed is True
+    # Engine must be disposed on exit so the next ``session_scope`` call
+    # (potentially under a different event loop) starts fresh.
+    assert fake_engine.disposed is True
 
 
 @pytest.mark.asyncio
@@ -83,14 +108,7 @@ async def test_session_scope_rolls_back_on_exception(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     fake_session = FakeSession()
-
-    def fake_factory(settings=None):
-        def factory() -> FakeSession:
-            return fake_session
-
-        return factory
-
-    monkeypatch.setattr(session_module, "get_shared_session_factory", fake_factory)
+    fake_engine = _patch_session_scope(monkeypatch, fake_session)
 
     with pytest.raises(RuntimeError, match="boom"):
         async with session_module.session_scope():
@@ -99,6 +117,51 @@ async def test_session_scope_rolls_back_on_exception(
     assert fake_session.committed is False
     assert fake_session.rolled_back is True
     assert fake_session.closed is True
+    # Engine must STILL be disposed when the body raises — otherwise the
+    # cross-loop bug returns the moment a request errors out.
+    assert fake_engine.disposed is True
+
+
+@pytest.mark.asyncio
+async def test_session_scope_creates_fresh_engine_per_call(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regression guard for the cross-event-loop ``InterfaceError`` that
+    crashed every web-server request after the first.
+
+    The synchronous web server calls ``asyncio.run(coro)`` per HTTP request,
+    creating a brand-new event loop each time. If ``session_scope`` were to
+    reuse a cached ``AsyncEngine`` across loops, asyncpg connections from
+    the previous (now-dead) loop would blow up the next request with
+    ``cannot perform operation: another operation is in progress``. This
+    test pins the contract: each ``session_scope`` invocation must build
+    AND dispose its own engine.
+    """
+    engines: list[FakeEngine] = []
+
+    def fake_create_engine(settings=None):
+        eng = FakeEngine()
+        engines.append(eng)
+        return eng
+
+    def fake_create_session_factory(settings=None, engine=None):
+        def factory() -> FakeSession:
+            return FakeSession()
+
+        return factory
+
+    monkeypatch.setattr(session_module, "create_engine", fake_create_engine)
+    monkeypatch.setattr(session_module, "create_session_factory", fake_create_session_factory)
+
+    async with session_module.session_scope():
+        pass
+    async with session_module.session_scope():
+        pass
+    async with session_module.session_scope():
+        pass
+
+    assert len(engines) == 3, "session_scope must create a new engine per call"
+    assert all(e.disposed for e in engines), "every engine must be disposed on exit"
 
 
 @pytest.mark.asyncio

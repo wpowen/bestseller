@@ -10,7 +10,19 @@ from bestseller.settings import AppSettings, get_settings
 
 
 # ---------------------------------------------------------------------------
-# Shared engine (CLI / scripts / session_scope)
+# Shared engine (legacy; retained for backward compat but no longer used by
+# ``session_scope``).
+#
+# These globals used to cache an ``AsyncEngine`` + session factory across calls
+# for CLI/script efficiency, but the cache is not safe to reuse across
+# different asyncio event loops. The web server (``bestseller-web-1``) is a
+# synchronous ``BaseHTTPRequestHandler`` that calls ``asyncio.run(coro)`` per
+# request — each call creates a fresh event loop, and asyncpg connections
+# cached from the first loop blow up in subsequent loops with
+# ``InterfaceError: cannot perform operation: another operation is in
+# progress``. ``session_scope`` now creates and disposes a fresh engine on
+# every invocation so it is loop-agnostic. Long-lived async processes (API,
+# worker, scheduler) should use ``init_db`` + ``get_server_session`` instead.
 # ---------------------------------------------------------------------------
 
 _shared_engine: AsyncEngine | None = None
@@ -110,13 +122,34 @@ async def dispose_shared_engine() -> None:
 
 @asynccontextmanager
 async def session_scope(settings: AppSettings | None = None) -> AsyncIterator[AsyncSession]:
-    factory = get_shared_session_factory(settings)
-    session = factory()
+    """Yield a one-shot ``AsyncSession`` bound to a freshly-created engine.
+
+    A new ``AsyncEngine`` is created on entry and disposed on exit. This
+    trades a small amount of connection-setup latency (~50ms per call) for
+    full isolation across event loops: the engine, its pool, and every
+    asyncpg connection it creates all live and die inside the current
+    ``asyncio`` event loop, so the next caller — even one running under a
+    different ``asyncio.run()`` loop in the same process — starts from a
+    clean slate.
+
+    This is deliberately safe for the synchronous web server (which spawns
+    a fresh event loop per HTTP request) and for CLI commands (one
+    ``asyncio.run()`` per invocation). Long-lived async services (API,
+    worker, scheduler) should not use this — they should keep using
+    ``init_db`` + ``get_server_session`` which retains a pooled engine for
+    the lifetime of the process.
+    """
+    engine = create_engine(settings)
     try:
-        yield session
-        await session.commit()
-    except Exception:
-        await session.rollback()
-        raise
+        factory = create_session_factory(engine=engine)
+        session = factory()
+        try:
+            yield session
+            await session.commit()
+        except Exception:
+            await session.rollback()
+            raise
+        finally:
+            await session.close()
     finally:
-        await session.close()
+        await engine.dispose()

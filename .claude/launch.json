@@ -1,0 +1,35 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "Novel Studio (Web UI)",
+      "runtimeExecutable": "uv",
+      "runtimeArgs": ["run", "bestseller", "ui", "serve", "--host", "127.0.0.1", "--port", "8787"],
+      "port": 8787
+    },
+    {
+      "name": "REST API (FastAPI)",
+      "runtimeExecutable": "uv",
+      "runtimeArgs": ["run", "bestseller-api"],
+      "port": 8000
+    },
+    {
+      "name": "MCP Server",
+      "runtimeExecutable": "uv",
+      "runtimeArgs": ["run", "bestseller-mcp"],
+      "port": 3000
+    },
+    {
+      "name": "ARQ Worker",
+      "runtimeExecutable": "uv",
+      "runtimeArgs": ["run", "bestseller-worker"],
+      "port": 0
+    },
+    {
+      "name": "APScheduler",
+      "runtimeExecutable": "uv",
+      "runtimeArgs": ["run", "bestseller-scheduler"],
+      "port": 0
+    }
+  ]
+}

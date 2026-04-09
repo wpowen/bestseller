@@ -1841,24 +1841,41 @@ def serve_web_app(
     settings = load_settings()
     tasks_persist_path = Path(settings.output.base_dir) / ".web_tasks.json"
     task_manager = WebTaskManager(persist_path=tasks_persist_path)
-    # Auto-recover projects from output directory if DB is missing records
+
+    # Run BOTH recovery passes inside a single ``asyncio.run()`` so they
+    # share one event loop. Splitting them across two ``asyncio.run()``
+    # calls used to crash the second one with ``Future attached to a
+    # different loop`` because the legacy ``_shared_engine`` cache held
+    # asyncpg connections from the first (now-dead) loop. ``session_scope``
+    # is now one-shot per call, but consolidating here also avoids paying
+    # the engine-creation cost twice.
+    async def _run_startup_recovery() -> None:
+        try:
+            recovered = await _recover_projects_from_output(settings)
+            if recovered:
+                print(  # noqa: T201
+                    f"Auto-recovered {len(recovered)} projects from output directory"
+                )
+        except Exception:
+            logger.exception("Project recovery from output directory failed")
+
+        # Recover task history from output directories (for quickstart
+        # dashboard). Must run AFTER ``_recover_projects_from_output`` so
+        # DB records exist and this pass can derive ``target_chapters`` and
+        # a resumable payload from them.
+        try:
+            recovered_tasks = await task_manager._recover_tasks_from_output(settings)
+            if recovered_tasks:
+                print(  # noqa: T201
+                    f"Auto-recovered {recovered_tasks} task(s) from output directory"
+                )
+        except Exception:
+            logger.exception("Task recovery from output directory failed")
+
     try:
-        recovered = asyncio.run(_recover_projects_from_output(settings))
-        if recovered:
-            print(f"Auto-recovered {len(recovered)} projects from output directory")  # noqa: T201
+        asyncio.run(_run_startup_recovery())
     except Exception:
-        pass  # best-effort recovery
-    # Recover task history from output directories (for quickstart dashboard).
-    # Must run AFTER _recover_projects_from_output so DB records exist and
-    # this pass can derive target_chapters and a resumable payload from them.
-    try:
-        recovered_tasks = asyncio.run(
-            task_manager._recover_tasks_from_output(settings),
-        )
-        if recovered_tasks:
-            print(f"Auto-recovered {recovered_tasks} task(s) from output directory")  # noqa: T201
-    except Exception:
-        logger.exception("Task recovery from output directory failed")
+        logger.exception("Startup recovery sequence failed")
 
     # Background watchdog: detect hung tasks (no progress for >stale_seconds)
     stale_seconds = int(os.environ.get("BESTSELLER_TASK_STALE_SECONDS", "2700"))

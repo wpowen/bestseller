@@ -61,12 +61,20 @@ class StyleGuideModel(TimestampMixin, Base):
         ForeignKey("projects.id", ondelete="CASCADE"),
         primary_key=True,
     )
-    pov_type: Mapped[str] = mapped_column(String(32), nullable=False)
-    tense: Mapped[str] = mapped_column(String(32), nullable=False)
+    # NOTE: these four columns were originally VARCHAR(32) (short enum codes),
+    # but in practice both the Pydantic StylePreferenceConfig (max_length=4000)
+    # and the LLM conception pipeline treat them as free-form descriptions.
+    # Migration 0013 widens them to TEXT — keep this in sync.
+    pov_type: Mapped[str] = mapped_column(Text, nullable=False)
+    tense: Mapped[str] = mapped_column(Text, nullable=False)
     tone_keywords: Mapped[JSON_LIST] = mapped_column(JSONB, nullable=False, default=list)
     prose_style: Mapped[str | None] = mapped_column(Text)
-    sentence_style: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'mixed'"))
-    info_density: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'medium'"))
+    sentence_style: Mapped[str] = mapped_column(
+        Text, nullable=False, server_default=text("'mixed'")
+    )
+    info_density: Mapped[str] = mapped_column(
+        Text, nullable=False, server_default=text("'medium'")
+    )
     dialogue_ratio: Mapped[float] = mapped_column(Numeric(5, 4), nullable=False, server_default=text("0.35"))
     taboo_words: Mapped[JSON_LIST] = mapped_column(JSONB, nullable=False, default=list)
     taboo_topics: Mapped[JSON_LIST] = mapped_column(JSONB, nullable=False, default=list)

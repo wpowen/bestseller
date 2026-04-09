@@ -214,17 +214,20 @@ async def run_scene_pipeline(
         # project/chapter/scene above.
         shared_context: SceneWriterContextPacket | None = None
         try:
-            shared_context = await build_scene_writer_context_from_models(
-                session,
-                settings,
-                project,
-                chapter,
-                scene,
-            )
+            async with session.begin_nested():
+                shared_context = await build_scene_writer_context_from_models(
+                    session,
+                    settings,
+                    project,
+                    chapter,
+                    scene,
+                )
         except Exception:
             # Match the pre-Opt-B behavior in review_scene_draft: tolerate context
             # build failures (tests / mocks may not provide everything). Downstream
-            # functions handle context_packet=None correctly.
+            # functions handle context_packet=None correctly. The SAVEPOINT above
+            # ensures any failed query inside the context build does not poison the
+            # outer transaction (asyncpg PendingRollbackError).
             shared_context = None
 
         if draft is None:
@@ -654,15 +657,19 @@ async def run_chapter_pipeline(
                 # Extract hard-fact snapshot for cross-chapter continuity.
                 # Failures are logged and swallowed — continuity is a quality
                 # enhancement, not a hard dependency for chapter completion.
+                # Wrap in a SAVEPOINT so an internal DB error (e.g. missing
+                # table, constraint violation) does not poison the outer
+                # transaction shared across the rest of the chapter loop.
                 try:
-                    await extract_chapter_state_snapshot(
-                        session,
-                        settings,
-                        project_id=project.id,
-                        chapter=chapter,
-                        chapter_md=chapter_draft.content_md,
-                        workflow_run_id=workflow_run.id,
-                    )
+                    async with session.begin_nested():
+                        await extract_chapter_state_snapshot(
+                            session,
+                            settings,
+                            project_id=project.id,
+                            chapter=chapter,
+                            chapter_md=chapter_draft.content_md,
+                            workflow_run_id=workflow_run.id,
+                        )
                 except Exception as exc:  # noqa: BLE001
                     logger.warning(
                         "Chapter %d hard-fact extraction failed (non-fatal): %s",
@@ -1116,26 +1123,30 @@ async def run_project_pipeline(
                 current_step_name = f"periodic_consistency_check_after_ch{chapter.chapter_number}"
                 workflow_run.current_step = current_step_name
                 try:
-                    interim_review, interim_report, interim_quality = await review_project_consistency(
-                        session,
-                        settings,
-                        project_slug,
-                        workflow_run_id=workflow_run.id,
-                        expect_project_export=False,
-                    )
-                    await create_workflow_step_run(
-                        session,
-                        workflow_run_id=workflow_run.id,
-                        step_name=current_step_name,
-                        step_order=step_order,
-                        status=WorkflowStatus.COMPLETED,
-                        output_ref={
-                            "review_report_id": str(interim_report.id),
-                            "quality_score_id": str(interim_quality.id),
-                            "verdict": interim_review.verdict,
-                            "is_periodic": True,
-                        },
-                    )
+                    # SAVEPOINT: any DB error here rolls back only the periodic
+                    # check work and leaves the outer chapter-loop transaction
+                    # usable for the next chapter.
+                    async with session.begin_nested():
+                        interim_review, interim_report, interim_quality = await review_project_consistency(
+                            session,
+                            settings,
+                            project_slug,
+                            workflow_run_id=workflow_run.id,
+                            expect_project_export=False,
+                        )
+                        await create_workflow_step_run(
+                            session,
+                            workflow_run_id=workflow_run.id,
+                            step_name=current_step_name,
+                            step_order=step_order,
+                            status=WorkflowStatus.COMPLETED,
+                            output_ref={
+                                "review_report_id": str(interim_report.id),
+                                "quality_score_id": str(interim_quality.id),
+                                "verdict": interim_review.verdict,
+                                "is_periodic": True,
+                            },
+                        )
                     step_order += 1
                     _emit_progress(
                         progress,
@@ -1180,14 +1191,17 @@ async def run_project_pipeline(
                     },
                 )
                 try:
-                    summary_result = await compress_knowledge_window(
-                        session,
-                        settings,
-                        project.id,
-                        from_chapter=max(1, chapter.chapter_number - rolling_summary_interval + 1),
-                        to_chapter=chapter.chapter_number,
-                        workflow_run_id=workflow_run.id,
-                    )
+                    # SAVEPOINT: rolling summary is best-effort. Isolate any
+                    # DB error so the next chapter can still write.
+                    async with session.begin_nested():
+                        summary_result = await compress_knowledge_window(
+                            session,
+                            settings,
+                            project.id,
+                            from_chapter=max(1, chapter.chapter_number - rolling_summary_interval + 1),
+                            to_chapter=chapter.chapter_number,
+                            workflow_run_id=workflow_run.id,
+                        )
                     _emit_progress(
                         progress,
                         "rolling_summary_completed",
@@ -1220,15 +1234,34 @@ async def run_project_pipeline(
                         },
                     )
                     try:
-                        drift_results = await check_all_pov_voice_drift(
-                            session,
-                            settings,
-                            project.id,
-                            recent_chapter_start=max(1, chapter.chapter_number - 10),
-                            recent_chapter_end=chapter.chapter_number,
-                            workflow_run_id=workflow_run.id,
-                        )
-                        drifted = [r for r in drift_results if r.drift_detected]
+                        # SAVEPOINT: voice drift detection + correction writeback
+                        # is best-effort. Wrap the whole block (drift check +
+                        # metadata flush) so an asyncpg ERROR state is rolled
+                        # back cleanly without poisoning the outer transaction.
+                        async with session.begin_nested():
+                            drift_results = await check_all_pov_voice_drift(
+                                session,
+                                settings,
+                                project.id,
+                                recent_chapter_start=max(1, chapter.chapter_number - 10),
+                                recent_chapter_end=chapter.chapter_number,
+                                workflow_run_id=workflow_run.id,
+                            )
+                            drifted = [r for r in drift_results if r.drift_detected]
+                            if drifted:
+                                # Merge corrections with existing ones (don't overwrite)
+                                corrections = {
+                                    r.character_name: r.correction_prompt
+                                    for r in drifted
+                                    if r.correction_prompt
+                                }
+                                if corrections:
+                                    meta = dict(project.metadata_json or {})
+                                    existing_corrections = dict(meta.get("voice_corrections", {}))
+                                    existing_corrections.update(corrections)
+                                    meta["voice_corrections"] = existing_corrections
+                                    project.metadata_json = meta
+                                    await session.flush()
                         _emit_progress(
                             progress,
                             "voice_drift_check_completed",
@@ -1240,20 +1273,6 @@ async def run_project_pipeline(
                                 "drifted_characters": [r.character_name for r in drifted],
                             },
                         )
-                        if drifted:
-                            # Merge corrections with existing ones (don't overwrite)
-                            corrections = {
-                                r.character_name: r.correction_prompt
-                                for r in drifted
-                                if r.correction_prompt
-                            }
-                            if corrections:
-                                meta = dict(project.metadata_json or {})
-                                existing_corrections = dict(meta.get("voice_corrections", {}))
-                                existing_corrections.update(corrections)
-                                meta["voice_corrections"] = existing_corrections
-                                project.metadata_json = meta
-                                await session.flush()
                     except Exception:
                         _emit_progress(
                             progress,

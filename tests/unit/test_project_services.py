@@ -260,3 +260,56 @@ def test_load_json_file_reads_payload(tmp_path: Path) -> None:
 
     assert payload["chapter"] == 1
     assert payload["title"] == "Opening"
+
+
+# ---------------------------------------------------------------------------
+# Regression: style_guides enum-like columns must be TEXT (migration 0013)
+# ---------------------------------------------------------------------------
+#
+# Background: the LLM conception pipeline writes free-form Chinese descriptions
+# into pov_type / sentence_style / info_density / tense (e.g. 51-char
+# "短句为主，穿插中等长度复合句构建张力；..."). The Pydantic domain model has
+# always allowed ``max_length=4000``, but the DB schema historically capped
+# these at VARCHAR(32), causing autowrite to crash in ``create_project`` with
+# ``StringDataRightTruncationError``. Migration 0013 widens the columns to
+# TEXT — these tests pin both layers so we don't silently regress back.
+
+
+def test_style_guide_enum_columns_are_text_not_varchar() -> None:
+    """pov_type / tense / sentence_style / info_density must be TEXT."""
+    from sqlalchemy import String, Text
+
+    for col_name in ("pov_type", "tense", "sentence_style", "info_density"):
+        col = StyleGuideModel.__table__.c[col_name]
+        # Text is a subclass of String in SA, so order matters: reject String(N)
+        # explicitly (where length is set), then confirm Text.
+        assert (
+            not isinstance(col.type, String) or col.type.length is None
+        ), (
+            f"style_guides.{col_name} is {col.type!r}; must be TEXT "
+            "because the LLM conception pipeline writes long descriptions."
+        )
+        assert isinstance(col.type, Text), (
+            f"style_guides.{col_name} must be sqlalchemy.Text, got {col.type!r}"
+        )
+
+
+def test_style_preference_accepts_long_chinese_sentence_style() -> None:
+    """The 51-char Chinese value that originally crashed autowrite must round-trip."""
+    long_value = (
+        "短句为主，穿插中等长度复合句构建张力；"
+        "对话简洁有力，避免冗长内心独白式独白（内心戏通过行为和反应呈现）"
+    )
+    assert len(long_value) > 32  # guard against the old VARCHAR(32) cap
+
+    cfg = StylePreferenceConfig(sentence_style=long_value)
+    assert cfg.sentence_style == long_value
+
+
+def test_style_preference_accepts_annotated_pov_type() -> None:
+    """LLMs frequently append Chinese annotations to pov_type — must be accepted."""
+    annotated = "third-limited（跟随主角陆征视角）"
+    assert len(annotated) > 16  # much longer than a bare enum code
+
+    cfg = StylePreferenceConfig(pov_type=annotated)
+    assert cfg.pov_type == annotated

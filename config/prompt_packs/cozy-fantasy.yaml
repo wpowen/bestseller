@@ -1,0 +1,86 @@
+key: cozy-fantasy
+name: Cozy Fantasy
+version: "1.0"
+description: Low-stakes, warm-hearted fantasy — bookshops, bakeries, found family, and gentle magic. Comfort reading with fantasy charm, targeting the post-Legends-and-Lattes KU audience.
+genres:
+  - Fantasy
+  - Cozy Fantasy
+tags:
+  - cozy fantasy
+  - found family
+  - cottagecore
+  - low stakes
+  - comfort read
+  - slice of life
+  - gentle magic
+source_notes:
+  - Built for the English-language cozy fantasy boom that followed Legends and Lattes
+  - Prioritizes warmth, atmosphere, and character over conflict intensity
+  - Optimized for KU comfort-reading sessions and Goodreads cozy-fantasy shelves
+anti_patterns:
+  - High-stakes world-ending conflict that contradicts the cozy promise
+  - Violence, gore, or graphic content that breaks the comfort atmosphere
+  - A protagonist who is anxious, stressed, or miserable for extended stretches without cozy relief
+  - Romance that overshadows the found-family and community-building core
+  - Conflict that feels forced or artificially dramatic for a low-stakes genre
+  - Magic system that is complicated or threatening rather than whimsical and warm
+writing_profile_overrides:
+  market:
+    prompt_pack_key: cozy-fantasy
+    platform_target: Kindle Unlimited
+    reader_promise: Wrap the reader in warmth from page one. Deliver the comfort of a quiet life, gentle magic, good food, and people who slowly become family. The stakes are personal, the victories are small, and the world feels like a hug.
+    selling_points:
+      - found family warmth
+      - gentle magic
+      - small-town charm
+      - low stakes comfort
+      - cozy atmosphere
+    trope_keywords:
+      - cozy fantasy
+      - found family
+      - slice of life
+      - comfort
+    hook_keywords:
+      - new beginning
+      - warm welcome
+      - small magic
+      - community
+    opening_strategy: Open with the protagonist arriving at or discovering the place that will become home — a bookshop, a bakery, a village. The first chapter should establish the cozy atmosphere, the protagonist's need for a fresh start, and a hint of the gentle conflict to come.
+    chapter_hook_strategy: Cozy hooks are about anticipation and community — a mysterious new neighbor, a festival to prepare for, a recipe to perfect, a friendship deepening, a small problem to solve together. The reader should want to keep reading not from anxiety but from warmth.
+    pacing_profile: slow
+    payoff_rhythm: Small, warm payoffs every chapter (a shared meal, a kind gesture, a small success). Medium payoffs every few chapters (a friendship milestone, a community event, a personal breakthrough). The big payoff is the protagonist realizing they have found home.
+  character:
+    protagonist_archetype: Retired adventurer or gentle soul seeking a quiet life
+    protagonist_core_drive: Build something meaningful — a shop, a home, a community
+    growth_curve: Restless arrival to finding belonging to protecting what matters
+    antagonist_mode: Gentle conflict — a business rival, a misunderstanding, a town tradition at risk, or an old wound to heal
+  world:
+    mystery_density: low
+    worldbuilding_density: medium
+  style:
+    prose_style: commercial-genre
+    sentence_style: balanced
+    info_density: lean
+fragments:
+  global_rules: |
+    This is cozy fantasy — warmth is the reader's primary experience. Every scene must contribute to the atmosphere of comfort, belonging, or gentle wonder. Conflict should be low-stakes and solvable through kindness, community effort, or personal growth — never through violence or betrayal. Food, drink, weather, and sensory comforts should be woven into every chapter. Magic should feel whimsical and delightful, not threatening. The reader should finish every chapter feeling warmer than when they started.
+  planner_book_spec: |
+    Structure around the found-family arc: Arrival (Act 1) — protagonist arrives at the setting, meets the core cast, and begins the project (opening a shop, restoring something, starting fresh). Building (Act 2A) — relationships deepen, the project progresses, small obstacles arise. Challenge (Act 2B) — the gentle conflict reaches its peak (the business might fail, a friend might leave, the community faces a threat to its way of life). Resolution (Act 3) — the community rallies, relationships solidify, the protagonist realizes this is home. Include seasonal progression or a community event as a structural spine.
+  planner_world_spec: |
+    The setting IS the story. Design it with sensory richness: the smell of baking bread, the glow of enchanted lanterns, the sound of a creek behind the shop, the feel of warm hearth stones. The world should have gentle magic that enhances daily life — self-stirring teapots, plants that hum, weather that responds to mood. Include a rich community of shop owners, artisans, and characters with quirks and kindness. The geography should feel intimate — a village, a neighborhood, a single magical building with many rooms.
+  planner_cast_spec: |
+    Build a found family. Include: a gruff-but-kind neighbor who becomes a close friend, a young character who brings energy and hope, an elder who holds the community's stories, and a creature companion (a cat, a familiar, a magical beast) who provides warmth and comic relief. Every character should have a small personal arc that intersects with the protagonist's journey. Avoid true villains — antagonists should be misguided, hurt, or simply different, and redeemable.
+  planner_volume_plan: |
+    For a series: each book should cover a season or a major community event, with the protagonist's project and relationships deepening. Book 1 establishes the setting and core relationships. Book 2 introduces a new character or challenge that expands the community. Book 3 celebrates what has been built with a climactic community event. Each book should be a self-contained comfort read that also rewards series readers with deepening bonds.
+  planner_outline: |
+    Chapter 1: Arrival — establish the protagonist, the setting, and the fresh start. Chapter 2-3: Meeting the community, discovering the space (shop, cottage, etc.), first taste of gentle magic. Chapters 4-8: Building relationships, working on the project, small setbacks and warm victories. Midpoint: A community gathering or event that cements the protagonist's belonging. 60-80%: The gentle conflict escalates — something threatens the project or the community. 80-90%: The community comes together, protagonist realizes what matters. Final chapters: Resolution, celebration, home.
+  scene_writer: |
+    Write with warmth and sensory richness. Describe food in mouthwatering detail. Let the weather set the mood — rain on the roof, sunlight through windows, the first snow. Use gentle humor and quiet observation. Dialogue should feel natural and kind, even in conflict. Magic should delight — describe how it looks, sounds, and feels. Let small moments carry big emotional weight: a shared cup of tea, a repaired fence, a name remembered. Pacing should be unhurried — give the reader permission to linger.
+  scene_review: |
+    Check: Does the scene contribute to warmth, belonging, or gentle wonder? Are the senses engaged — food, weather, texture, light? Is the conflict appropriate for the cozy genre (no violence, betrayal, or high-stakes drama)? Does the scene deepen a relationship or advance the protagonist's project? Is the magic whimsical and delightful? Does the scene leave the reader feeling warm? Is the pacing appropriately unhurried without becoming boring?
+  scene_rewrite: |
+    If a scene feels flat, add: a shared meal or drink, a moment of quiet kindness, a sensory detail that grounds the reader in the setting, a gentle humor beat, or a small magical moment that delights. If a scene feels too tense for cozy, soften the conflict, add a comforting gesture, or shift the focus to community support. Cut anything that feels dark, threatening, or anxiety-inducing.
+  chapter_review: |
+    Verify the chapter delivers warmth through at least two of: a relationship deepening, a project milestone, a community moment, a sensory comfort scene, or a gentle magic beat. The chapter should leave the reader smiling or feeling content. Check that conflict remains low-stakes and that the atmosphere never breaks the cozy promise. Pacing should be comfortable — not rushed, not stalled.
+  chapter_rewrite: |
+    When rewriting, prioritize: adding sensory richness (food, weather, textures), deepening character warmth through small gestures and dialogue, ensuring the chapter has a gentle forward momentum, and maintaining the cozy atmosphere throughout. If the chapter ends on too much tension, add a beat of comfort or humor before the chapter break.

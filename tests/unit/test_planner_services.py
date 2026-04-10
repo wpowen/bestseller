@@ -473,7 +473,7 @@ async def test_generate_novel_plan_creates_all_artifacts_and_workflow_records(
 def test_fallback_volume_plan_has_different_obstacles_per_volume() -> None:
     """Each volume must have a unique obstacle, not the same antagonist template."""
     project = build_project()
-    project.target_chapters = 24
+    project.target_chapters = 54  # >50 chapters needed for multi-volume
     premise = "一名被放逐的导航员发现帝国正在篡改边境航线记录。"
     book_spec = planner_services._fallback_book_spec(project, premise)
     world_spec = planner_services._fallback_world_spec(project, premise, book_spec)
@@ -536,7 +536,7 @@ def test_fallback_chapter_outline_main_conflict_varies_across_volumes() -> None:
 def test_fallback_cast_spec_includes_antagonist_forces() -> None:
     """The cast spec should include antagonist_forces for multi-force conflict."""
     project = build_project()
-    project.target_chapters = 24
+    project.target_chapters = 54  # >50 chapters needed for multi-volume/force
     premise = "一名被放逐的导航员发现帝国正在篡改边境航线记录。"
     book_spec = planner_services._fallback_book_spec(project, premise)
     world_spec = planner_services._fallback_world_spec(project, premise, book_spec)

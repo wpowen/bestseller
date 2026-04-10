@@ -261,6 +261,11 @@ _CONTINUITY_SIGNAL_TERMS = (
 )
 _SPEECH_SIGNAL_TERMS = ("说", "问", "答", "喊", "低声", "冷冷", "沉声", "厉声")
 _META_REWARD_TERMS = ("整体语气保持", "本章目标", "场景目标", "剧情任务", "情绪任务")
+_EN_META_REWARD_TERMS = (
+    "overall tone maintains", "chapter goal", "scene objective",
+    "plot task", "emotional task", "narrative function", "story purpose",
+    "character arc progression", "this scene serves to", "the reader should feel",
+)
 
 
 def _is_low_signal_term(term: str) -> bool:
@@ -1205,7 +1210,11 @@ def evaluate_scene_draft(
         + (0.08 if participants_present >= 2 else 0.0)
     )
     style_penalty = 0.15 if "。。" in content or ".." in content else 0.0
-    meta_penalty = 0.12 if any(term in content for term in _META_REWARD_TERMS) else 0.0
+    content_lower = content.lower()
+    meta_penalty = 0.12 if (
+        any(term in content for term in _META_REWARD_TERMS)
+        or any(term in content_lower for term in _EN_META_REWARD_TERMS)
+    ) else 0.0
     style = _clamp_score(
         0.74
         + (0.08 if not meta_leak else -0.22)

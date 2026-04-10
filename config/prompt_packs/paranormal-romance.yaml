@@ -1,0 +1,90 @@
+key: paranormal-romance
+name: Paranormal / Shifter Romance
+version: "1.0"
+description: Werewolves, fated mates, pack dynamics, and supernatural passion — alpha heroes, destined bonds, and primal attraction. Built for KU paranormal romance readers and the fated-mates-forever audience.
+genres:
+  - Romance
+  - Paranormal Romance
+  - Shifter Romance
+tags:
+  - paranormal romance
+  - shifter
+  - fated mates
+  - werewolf
+  - alpha
+  - pack
+  - vampire
+  - supernatural
+source_notes:
+  - Designed for the KU paranormal/shifter romance evergreen market
+  - Incorporates fated mates, pack dynamics, and supernatural world-building conventions
+  - Follows the paranormal romance arc with dual nature (human/beast) tension
+anti_patterns:
+  - Fated mate bond that removes all romantic tension — the bond should create complications, not solve them
+  - Alpha hero who is controlling without tenderness or vulnerability
+  - Heroine whose only role is to be claimed — she must have agency within the pack
+  - Pack dynamics that are window dressing without genuine social complexity
+  - Supernatural rules that are vague or change to suit the plot
+  - Shifting scenes that are either glossed over or gratuitously described without emotional resonance
+writing_profile_overrides:
+  market:
+    prompt_pack_key: paranormal-romance
+    platform_target: Kindle Unlimited
+    reader_promise: Deliver the primal fantasy of a bond that is written in blood and bone. The hero is lethal to everyone but her. The pack is family and battlefield. The fated mate bond is irresistible — but accepting it will cost them both everything they thought they knew.
+    selling_points:
+      - fated mates bond
+      - alpha hero
+      - pack dynamics
+      - primal attraction
+      - supernatural conflict
+    trope_keywords:
+      - paranormal romance
+      - shifter
+      - fated mates
+      - alpha
+      - pack
+    hook_keywords:
+      - the scent
+      - fated bond
+      - pack challenge
+      - rogue threat
+      - first shift
+    opening_strategy: Open with the fated bond activation — the moment the hero scents his mate, or the heroine encounters the supernatural world for the first time. The first chapter must establish the supernatural rules, the primal attraction, and the complication that makes the bond dangerous or forbidden.
+    chapter_hook_strategy: Alternate between romantic tension hooks (the bond pulling them together, a moment of the hero losing control, the heroine accepting something new about herself) and supernatural plot hooks (pack challenge, rogue threat, ancient enemy, a shift that goes wrong). The primal and the romantic must be inseparable.
+    pacing_profile: fast
+    payoff_rhythm: Romantic/primal tension payoffs every 2-3 chapters, supernatural plot escalations every 3-4 chapters, the mating bond acceptance as the major payoff at the climax.
+  character:
+    protagonist_archetype: Strong-willed woman discovering she is bonded to a powerful alpha
+    protagonist_core_drive: Resist or accept the fated bond while navigating pack politics
+    growth_curve: Outsider to reluctant mate to pack defender to alpha's equal
+    antagonist_mode: Rival pack, rogue wolves, or ancient supernatural threat
+  world:
+    mystery_density: medium
+    worldbuilding_density: medium
+  style:
+    prose_style: commercial-genre
+    sentence_style: short-punchy
+    info_density: lean
+fragments:
+  global_rules: |
+    Paranormal romance is about the collision of the primal and the personal. The fated mate bond must create conflict, not just attraction — it should force both characters to confront what they fear, need, and must sacrifice. The hero's dual nature (human/beast) should be a source of both power and vulnerability. Pack dynamics must feel like a genuine social structure with hierarchy, loyalty, politics, and consequences. The supernatural world must have consistent rules — shifting, mating, pack law, territorial boundaries. The heroine must earn her place in the pack through her own strength, not just the hero's protection.
+  planner_book_spec: |
+    Structure around the fated mates arc: The Scent (Act 1, 0-25%) — the bond activates, the heroine enters the supernatural world (or discovers it), and the complication is established (she is human, from an enemy pack, promised to another, or the hero has reason to reject the bond). Resistance (Act 2A, 25-50%) — both fight the bond for valid reasons, forced proximity in the pack setting builds tension, pack dynamics create additional pressure. Surrender (Act 2B, 50-75%) — walls come down, the bond deepens, but an external threat escalates (rogue attack, rival pack challenge, ancient enemy awakening). The Challenge (75-85%) — the bond and the pack face an existential threat that requires the hero and heroine to fully accept each other. Climax (85-95%) — the threat is defeated through the combined strength of the mated pair, the heroine proves herself to the pack. Resolution (95-100%) — mating ceremony or acceptance, HEA, pack equilibrium restored.
+  planner_world_spec: |
+    Build the supernatural world with specificity: Pack Structure (alpha, beta, omega hierarchy, pack law, challenge protocols, the role of the alpha mate), Shifting Mechanics (what triggers a shift, how it feels, the dual consciousness between human and animal), Territorial Rules (pack boundaries, neutral zones, the consequences of trespass), Mating Bond Mechanics (how it activates, what it feels like, whether it can be rejected, the ceremony or consummation requirements), and the Supernatural Ecosystem (what other beings exist — vampires, witches, fae — and how they relate to shifters). The pack territory should feel like a character — the compound, the forest, the gathering places.
+  planner_cast_spec: |
+    The pack IS the cast. Include: the alpha hero (dangerous, protective, struggling with the bond), the heroine (strong-willed, adapting to a new world, finding her power), a beta or second-in-command who is a loyal ally, a pack member who resents the heroine or challenges her right to the alpha position, an elder or healer who explains pack traditions, and an external threat (rogue shifter, rival pack alpha, or supernatural enemy). The heroine needs at least one ally within the pack who helps her navigate — not the hero. The hero's beast should be almost a separate character, with instincts that conflict with his human judgment.
+  planner_volume_plan: |
+    Paranormal romance series can follow the same couple across books or different couples within the pack. Same-couple series: Book 1 is the fated bond discovery and initial threat. Book 2 deepens the bond and introduces a larger supernatural conflict. Book 3 resolves the series-level threat with the mated pair leading the pack. Different-couple series: Each book follows a new pack member finding their mate, with the pack's ongoing conflicts providing continuity. Each book should be a complete romance with series-level world-building threads.
+  planner_outline: |
+    Chapter 1: The scent — the fated bond activates. Establish the hero's primal reaction and the heroine's introduction to the supernatural. Chapter 2-3: Entry into the pack world, establishing the hierarchy and the complication. Chapters 4-8: Push and pull of the bond, pack dynamics creating pressure, growing attraction. Midpoint: A moment of genuine vulnerability or a shift scene that deepens the connection. 50-75%: Bond deepening, external threat escalating, the heroine finding her strength within the pack. 75%: The threat becomes existential — the pack or the bond itself is at risk. Climax: Hero and heroine fight together, the bond is the source of their power. Resolution: Mating acceptance, pack status, HEA.
+  scene_writer: |
+    Write with primal intensity. The fated bond should be conveyed through the senses — scent above all (his scent, her scent, the way the bond makes them hyperaware of each other), but also heat, heartbeat, and the pull of proximity. Shifting scenes should be visceral and emotional — describe the pain, the power, the wildness. Pack scenes should feel familial — boisterous dinners, training sessions, hierarchy rituals. The hero's beast should surface in moments of jealousy, protection, or desire — a growl, eyes shifting color, muscles tensing. Romantic scenes should carry the primal undercurrent — this is a bond written in biology, not choice, and the struggle between instinct and reason is the tension.
+  scene_review: |
+    Check: Does the scene advance the fated bond arc or the supernatural plot? Is the primal element present — scent, instinct, the beast? Does the heroine demonstrate agency (choosing, challenging, adapting) rather than just being claimed? Are pack dynamics contributing to the scene (hierarchy, loyalty, politics)? Is the supernatural world consistent with established rules? Does the scene end with a hook — bond escalation, pack conflict, external threat? Is the sensory writing strong enough to make the reader feel the supernatural?
+  scene_rewrite: |
+    If a scene lacks energy, add: a primal moment (the beast surfaces, scent overwhelms reason, a growl during a tense conversation), a pack dynamic beat (a challenge, a ritual, a meal together), a shifting scene that reveals character, or a threat that triggers the hero's protective instincts. If the romance feels generic, add supernatural-specific tension (the bond acting against both their wishes, a shifting complication, pack law interfering). If the heroine feels passive, give her an action that earns respect from the pack independent of the hero.
+  chapter_review: |
+    Verify the chapter advances both the romance (bond tension, vulnerability, acceptance) and the supernatural plot (pack politics, external threat, world-building). Check that the primal elements are present and consistent. Ensure the heroine has agency. Verify pack dynamics contribute to the story rather than serving as background. The chapter must end with a hook that pulls on the romantic, supernatural, or pack thread.
+  chapter_rewrite: |
+    Strengthen by: adding a primal/sensory beat if the chapter feels too cerebral, giving the heroine a moment of pack-world competence, including a pack-dynamics scene if the chapter is too insular to the couple, and ensuring the chapter ending leverages the supernatural or the bond for maximum tension. If the pace stalls, add an external threat or pack challenge.

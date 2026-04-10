@@ -520,6 +520,78 @@ async def upsert_volume_plan(
     return {"volumes_upserted": volumes_upserted}
 
 
+async def upsert_act_plan(
+    session: AsyncSession,
+    project: ProjectModel,
+    act_plan: list[dict[str, Any]],
+) -> dict[str, int]:
+    """Store act plan into project.metadata_json and propagate act_id to volumes.
+
+    The act plan is stored in project.metadata_json["act_plan"].
+    Each volume's metadata_json is updated with its parent act_id and act_index
+    when the volume's chapter range falls within an act's chapter range.
+    """
+    project.metadata_json = _merge_metadata(project.metadata_json, {"act_plan": act_plan})
+
+    # Build act lookup: chapter_number → act info
+    act_by_chapter: dict[int, dict[str, Any]] = {}
+    for act in act_plan:
+        for ch in range(act.get("chapter_start", 0), act.get("chapter_end", 0) + 1):
+            act_by_chapter[ch] = act
+
+    # Update existing volumes with act_id / act_index
+    volumes_updated = 0
+    volume_plan = (project.metadata_json or {}).get("volume_plan")
+    if isinstance(volume_plan, list):
+        for vol_entry in volume_plan:
+            if not isinstance(vol_entry, dict):
+                continue
+            vol_num = vol_entry.get("volume_number")
+            if vol_num is None:
+                continue
+            volume = await session.scalar(
+                select(VolumeModel).where(
+                    VolumeModel.project_id == project.id,
+                    VolumeModel.volume_number == vol_num,
+                )
+            )
+            if volume is None:
+                continue
+            # Find which act this volume belongs to based on its first chapter
+            vol_start = _volume_start_chapter(vol_entry, vol_num, volume_plan)
+            parent_act = act_by_chapter.get(vol_start)
+            if parent_act:
+                volume.metadata_json = _merge_metadata(
+                    volume.metadata_json,
+                    {
+                        "act_id": parent_act.get("act_id"),
+                        "act_index": parent_act.get("act_index"),
+                    },
+                )
+                volumes_updated += 1
+
+    await session.flush()
+    return {"acts_stored": len(act_plan), "volumes_updated": volumes_updated}
+
+
+def _volume_start_chapter(
+    vol_entry: dict[str, Any],
+    vol_num: int,
+    volume_plan: list[dict[str, Any]],
+) -> int:
+    """Compute the first chapter number of a volume from the volume plan."""
+    chapter_cursor = 1
+    for v in volume_plan:
+        if not isinstance(v, dict):
+            continue
+        vn = v.get("volume_number")
+        if vn == vol_num:
+            return chapter_cursor
+        count = v.get("chapter_count_target", 0)
+        chapter_cursor += count
+    return chapter_cursor
+
+
 async def get_latest_character_state(
     session: AsyncSession,
     *,

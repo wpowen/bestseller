@@ -94,6 +94,8 @@ class SceneWriterContextPacket(BaseModel):
     hard_fact_snapshot: ChapterStateSnapshotContext | None = None
     contradiction_warnings: list[str] = Field(default_factory=list)
     participant_knowledge_states: list[dict[str, Any]] = Field(default_factory=list)
+    arc_summaries: list[dict[str, Any]] = Field(default_factory=list)
+    world_snapshot: dict[str, Any] | None = None
 
 
 class ChapterSceneContext(BaseModel):

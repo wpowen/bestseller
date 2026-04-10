@@ -552,6 +552,27 @@ def test_has_meta_leak_detects_rewrite_plan_phrases() -> None:
     assert has_meta_leak(clean) is False
 
 
+def test_has_meta_leak_detects_hook_summary_labels() -> None:
+    assert has_meta_leak("正文内容。\n\n【小钩子：三天期限逼近】") is True
+    assert has_meta_leak("正文内容。\n【中钩子：纸片上的秘密】") is True
+    assert has_meta_leak("正文内容。\n【大钩子：封印苏醒】") is True
+
+
+def test_sanitize_strips_hook_summary_bracket_lines() -> None:
+    content = (
+        "方源握紧了拳头，转身消失在夜色中。\n\n"
+        "【小钩子：三天期限，陈家与孙覃的双重压迫逼近，方源必须在绝境中寻找出路】\n\n"
+        "【中钩子：苏暮晚手中那张泛黄的纸片上，\u201c祖地\u201d与\u201c封印\u201d背后究竟藏着什么秘密？】\n\n"
+        "【大钩子：镇界宗祖地深处，封锁万年的某物正在苏醒】"
+    )
+    cleaned = sanitize_novel_markdown_content(content)
+
+    assert "小钩子" not in cleaned
+    assert "中钩子" not in cleaned
+    assert "大钩子" not in cleaned
+    assert "方源握紧了拳头" in cleaned
+
+
 # ── continuity.py: hard-fact snapshot extraction ──────────────────────────────
 
 

@@ -1,0 +1,87 @@
+key: cozy-mystery
+name: Cozy Mystery
+version: "1.0"
+description: Amateur sleuth, small town, quirky cast, and puzzle-driven plots — murder without the gore, optimized for KU series readers who binge cozy mystery series like comfort food.
+genres:
+  - Mystery
+  - Cozy Mystery
+tags:
+  - cozy mystery
+  - amateur sleuth
+  - small town
+  - whodunit
+  - series
+  - pets
+  - themed mystery
+source_notes:
+  - Designed for the KU cozy mystery market — one of the most series-loyal audiences
+  - Follows fair-play mystery conventions with cozy genre warmth
+  - Themed cozies (bakery, bookshop, cat cafe) drive discoverability on Amazon
+anti_patterns:
+  - Graphic violence, gore, or on-page murder — the body is discovered, not witnessed
+  - Protagonist who is reckless or TSTL (Too Stupid To Live) in their investigating
+  - Red herrings that feel unfair — the reader should be able to solve it with the clues provided
+  - Dark, gritty tone that breaks the cozy atmosphere
+  - Romance subplot that overshadows the mystery
+  - Pet or animal sidekick that exists only as a prop without personality
+  - Mystery solution that requires information not available to the reader
+writing_profile_overrides:
+  market:
+    prompt_pack_key: cozy-mystery
+    platform_target: Kindle Unlimited
+    reader_promise: Deliver a fair-play whodunit wrapped in small-town charm. The reader should be engaged by the puzzle, charmed by the cast, and comforted by the setting. The murder is the excuse — the community is the reason they keep reading.
+    selling_points:
+      - amateur sleuth charm
+      - small-town setting
+      - quirky cast
+      - puzzle-driven plot
+      - series potential
+    trope_keywords:
+      - cozy mystery
+      - amateur sleuth
+      - small town
+      - whodunit
+    hook_keywords:
+      - dead body
+      - prime suspect
+      - hidden clue
+      - town secret
+    opening_strategy: Open with the protagonist in their element (running the shop, attending a town event) to establish the cozy world. Introduce the murder by the end of chapter 1 or early in chapter 2. The protagonist must have a personal reason to investigate (friend is a suspect, business is threatened, they discovered the body).
+    chapter_hook_strategy: End chapters with clue discoveries, suspect revelations, red herring twists, or moments of personal danger (mild — a warning, not a genuine threat to life). Alternate mystery hooks with community and character moments.
+    pacing_profile: medium
+    payoff_rhythm: A new clue or suspect every 2-3 chapters, red herring reveals at 33% and 66%, the real solution at 85-90%, with community warmth woven throughout.
+  character:
+    protagonist_archetype: Clever amateur sleuth with a day job and a knack for trouble
+    protagonist_core_drive: Solve the puzzle, protect the community, and run the business
+    growth_curve: Reluctant investigator to community pillar to series detective
+    antagonist_mode: The killer hides in plain sight among the charming townsfolk
+  world:
+    mystery_density: high
+    worldbuilding_density: medium
+  style:
+    prose_style: commercial-genre
+    sentence_style: balanced
+    info_density: medium
+fragments:
+  global_rules: |
+    This is a cozy mystery — the murder happens off-page, the investigation drives the plot, and the small-town charm keeps the reader warm. The mystery must be fair-play: every clue the sleuth uses to solve the case must be available to the reader. Include at least three viable suspects, two genuine red herrings, and one clue hidden in plain sight. The tone should balance intrigue with humor and warmth. The protagonist's day job or hobby should intersect with the investigation in clever ways. Series potential is essential — plant seeds for the next book's mystery.
+  planner_book_spec: |
+    Structure around the cozy mystery framework: Setup (Act 1, 0-25%) — establish the protagonist's world, introduce the victim and key suspects, discover the body. Investigation (Act 2A, 25-50%) — follow initial leads, interview suspects, discover the first red herring. Complications (Act 2B, 50-75%) — the prime suspect shifts, a second incident occurs, the protagonist faces a personal stake. Unraveling (75-85%) — key clues converge, the protagonist has a revelation. Confrontation (85-95%) — the killer is revealed through clever deduction, not action heroics. Denouement (95-100%) — justice served, community restored, seeds planted for the next book.
+  planner_world_spec: |
+    The small town IS a character. Design it with named locations (the cafe, the bookshop, the town square, the quirky local landmark), recurring community events (farmers markets, festivals, town meetings), and a social ecosystem where everyone knows everyone — and has opinions. The protagonist's business or home should be a hub where information naturally flows. Include a local law enforcement character who is both helpful and an obstacle. The town should have enough secrets for a long series.
+  planner_cast_spec: |
+    Design the suspects first — each needs means, motive, and opportunity, with one being guilty. The protagonist needs: a best friend/confidant who bounces theories off them, a romantic interest (slow-burn across the series), an animal companion with personality, a local authority figure (sheriff, chief) who alternates between ally and obstacle, and a handful of colorful recurring townspeople. The victim should be someone whose death reveals surprising secrets about the town.
+  planner_volume_plan: |
+    Cozy mysteries thrive on series. Each book is a standalone mystery with series-level threads: the protagonist's personal growth, a slow-burn romance, the expanding town dynamics, and an overarching secret. Plan themes: Book 1 introduces the town and the sleuth's reputation. Book 2 deepens relationships and raises personal stakes. Book 3 connects to a larger town secret. Each book should feature the themed element prominently (if it is a bakery mystery, baking should be woven throughout).
+  planner_outline: |
+    Chapter 1: Establish the protagonist's world — the shop, the routine, the charm. End with or hint at the murder. Chapter 2: Body discovered, protagonist drawn in. Chapters 3-5: Interview suspects, gather initial clues, first red herring appears. Midpoint: A revelation that shifts suspicion — the obvious suspect is cleared or a new motive emerges. Chapters after midpoint: Deeper investigation, personal stakes rise, second red herring. 75% mark: The protagonist pieces together the key clue. 85%: Confrontation or revelation scene. Final chapters: Resolution, community healing, and a hook for the next book.
+  scene_writer: |
+    Write with warmth and wit. Investigation scenes should feel like conversations — the protagonist is nosy, not interrogating. Weave the themed element (baking, books, crafts) into every chapter. Clue scenes should be crafted so the reader can catch the clue on a reread but may miss it the first time — bury it in character interaction or setting detail. Community scenes should be charming and reveal character. The pet sidekick should have genuine personality moments. Use humor to leaven the mystery tension. Keep violence off-page and tone light.
+  scene_review: |
+    Check: Does the scene advance the mystery (new clue, new suspect, red herring) or deepen the community (character development, relationship building, themed-element moment)? Is the clue placement fair but subtle? Does the protagonist demonstrate cleverness without being superhuman? Is the tone warm and humorous rather than dark? Does the scene include the themed element (food, books, crafts, pets)? Does it end with a hook — a mystery development or a character moment that pulls the reader forward?
+  scene_rewrite: |
+    If a scene feels dull, add: a clue disguised as a throwaway detail, a humorous community moment, a suspect behaving suspiciously in a way that could be innocent, a moment with the pet sidekick, or a themed-element scene (cooking, crafting, organizing) that also advances the investigation. If the scene is too dark, lighten the tone with humor or warmth. If the mystery stalls, introduce a new piece of information from an unexpected source.
+  chapter_review: |
+    Verify the chapter advances the mystery through at least one clue, suspect interview, or revelation, while also containing at least one community warmth moment. The chapter should maintain the cozy tone — no graphic violence, no prolonged darkness. Check that the themed element appears. Ensure the chapter ending hooks the reader on either the mystery or the personal thread. Verify fair-play rules: no clue is used in the solution that was not available to the reader.
+  chapter_rewrite: |
+    Strengthen by: adding a cleverly hidden clue in dialogue or setting description, injecting a humor beat through the supporting cast, including a themed-element scene, tightening the chapter ending to a mystery hook or character-arc moment, and ensuring the protagonist is proactive in the investigation rather than stumbling onto information. Maintain the cozy-warm tone throughout.

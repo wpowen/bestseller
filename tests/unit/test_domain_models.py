@@ -41,6 +41,17 @@ def test_project_create_rejects_invalid_slug() -> None:
         )
 
 
+def test_project_create_rejects_target_word_count_below_minimum() -> None:
+    with pytest.raises(ValueError):
+        ProjectCreate(
+            slug="too-short",
+            title="Too Short",
+            genre="fantasy",
+            target_word_count=4999,
+            target_chapters=1,
+        )
+
+
 def test_planning_artifact_create_keeps_content() -> None:
     artifact = PlanningArtifactCreate(
         artifact_type=ArtifactType.BOOK_SPEC,

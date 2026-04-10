@@ -628,7 +628,8 @@ def _fallback_cast_spec(project: ProjectModel, premise: str, book_spec: dict[str
     _used.add(betrayer_name)
     # Determine volume count for conflict force assignment
     total_chapters = max(project.target_chapters, 1)
-    volume_count = min(6, total_chapters, max(1, math.ceil(total_chapters / 12)))
+    hierarchy = compute_linear_hierarchy(total_chapters)
+    volume_count = hierarchy["volume_count"]
     return {
         "protagonist": {
             "name": protagonist_name,
@@ -840,6 +841,48 @@ def _fallback_cast_spec(project: ProjectModel, premise: str, book_spec: dict[str
     }
 
 
+def compute_linear_hierarchy(total_chapters: int) -> dict[str, int]:
+    """Compute act/volume/arc counts for a LINEAR novel based on total chapter count.
+
+    Returns a dict with keys: act_count, volume_count, arc_batch_size.
+
+    The hierarchy scales naturally with novel length:
+    - arc_batch_size is fixed at 12 (the narrative rhythm atom)
+    - volume_count grows with chapters (~30-50 chapters per volume)
+    - act_count grows slowly (macro narrative arcs, max 6)
+
+    Backward compatible: novels ≤50 chapters get act_count=1, volume_count=1,
+    behaving identically to the old system.
+    """
+    arc_batch_size = 12
+
+    # Volume count: ~30-50 chapters per volume
+    if total_chapters <= 50:
+        volume_count = 1
+    elif total_chapters <= 120:
+        volume_count = max(2, round(total_chapters / 30))
+    else:
+        volume_count = max(3, math.ceil(total_chapters / 50))
+
+    # Act count: macro narrative structure (1-6 acts)
+    if total_chapters <= 50:
+        act_count = 1
+    elif total_chapters <= 120:
+        act_count = 3
+    elif total_chapters <= 300:
+        act_count = 4
+    elif total_chapters <= 1500:
+        act_count = 5
+    else:
+        act_count = 6
+
+    return {
+        "act_count": act_count,
+        "volume_count": volume_count,
+        "arc_batch_size": arc_batch_size,
+    }
+
+
 def _build_volume_ranges(total_chapters: int, volume_count: int) -> list[tuple[int, int]]:
     base = total_chapters // volume_count
     remainder = total_chapters % volume_count
@@ -883,7 +926,8 @@ _VOLUME_RESOLUTION_TEMPLATES: dict[str, str] = {
 def _fallback_volume_plan(project: ProjectModel, book_spec: dict[str, Any], cast_spec: dict[str, Any], world_spec: dict[str, Any]) -> list[dict[str, Any]]:
     profile = _genre_profile(project.genre)
     total_chapters = max(project.target_chapters, 1)
-    volume_count = min(6, total_chapters, max(1, math.ceil(total_chapters / 12)))
+    hierarchy = compute_linear_hierarchy(total_chapters)
+    volume_count = hierarchy["volume_count"]
     chapter_ranges = _build_volume_ranges(total_chapters, volume_count)
     cast_payload = _mapping(cast_spec)
     protagonist_name = _non_empty_string(_mapping(cast_payload.get("protagonist")).get("name"), "主角")
@@ -921,6 +965,15 @@ def _fallback_volume_plan(project: ProjectModel, book_spec: dict[str, Any], cast
         )
         vol_resolution_text = _VOLUME_RESOLUTION_TEMPLATES.get(phase, "主角取得进展但付出了代价。")
 
+        # Compute arc ranges within this volume
+        arc_batch_size = hierarchy["arc_batch_size"]
+        arcs: list[list[int]] = []
+        cursor = chapter_start
+        while cursor <= chapter_end:
+            arc_end = min(cursor + arc_batch_size - 1, chapter_end)
+            arcs.append([cursor, arc_end])
+            cursor = arc_end + 1
+
         plan.append(
             {
                 "volume_number": volume_number,
@@ -950,9 +1003,232 @@ def _fallback_volume_plan(project: ProjectModel, book_spec: dict[str, Any], cast
                 "foreshadowing_planted": [f"为第{volume_number + 1}卷的新挑战埋下伏笔。"] if volume_number < volume_count else [],
                 "foreshadowing_paid_off": [f"回收前序卷的一个关键误导或伏笔。"] if volume_number > 1 else [],
                 "reader_hook_to_next": f"卷末{force_name}的威胁虽然暂时解决，但引出了更大的变局。" if volume_number < volume_count else "故事走向终章。",
+                "arc_ranges": arcs,
+                "is_final_volume": volume_number == volume_count,
             }
         )
     return plan
+
+
+# ── Act-level planning (幕级规划) ──────────────────────────────────
+# For novels >50 chapters, acts provide macro narrative structure
+# above volumes: Act → Volume → Arc → Chapter.
+
+_ACT_THEMES_ZH = [
+    ("觉醒崛起", "热血", "主角从底层觉醒，获得第一个重大优势"),
+    ("扩张威胁", "紧张", "主角实力增长引来更强大的对手"),
+    ("危机蜕变", "压抑", "遭遇重大挫折完成更深层蜕变"),
+    ("决战前夜", "震撼", "最终决战棋局布置各方力量汇聚"),
+    ("最终对决", "爽快", "决战收割情感完成所有承诺"),
+    ("余韵新篇", "满足", "善后收束余韵留白"),
+]
+
+_ACT_THEMES_EN = [
+    ("Awakening", "thrilling", "Protagonist rises from obscurity, gains first major advantage"),
+    ("Escalation", "tense", "Growing power attracts deadlier enemies"),
+    ("Crisis", "dark", "Major setback forces deeper transformation"),
+    ("Convergence", "epic", "All forces converge for the final confrontation"),
+    ("Climax", "cathartic", "Final battle, emotional payoffs, all promises fulfilled"),
+    ("Epilogue", "satisfying", "Resolution, aftermath, and lingering resonance"),
+]
+
+
+def _fallback_act_plan(
+    project: ProjectModel,
+    book_spec: dict[str, Any],
+    cast_spec: dict[str, Any],
+    world_spec: dict[str, Any],
+) -> list[dict[str, Any]]:
+    """Generate a fallback act plan for novels with >50 chapters.
+
+    Each act spans multiple volumes and represents a macro narrative arc.
+    Adapted from IF's _generate_fallback_acts() but without branch_opportunities.
+    """
+    total_chapters = max(project.target_chapters, 1)
+    hierarchy = compute_linear_hierarchy(total_chapters)
+    act_count = hierarchy["act_count"]
+    arc_batch_size = hierarchy["arc_batch_size"]
+
+    is_en = is_english_language(project.language)
+    act_themes = _ACT_THEMES_EN if is_en else _ACT_THEMES_ZH
+
+    protagonist_name = _non_empty_string(
+        _mapping(_mapping(cast_spec).get("protagonist")).get("name"),
+        "Protagonist" if is_en else "主角",
+    )
+
+    act_size = total_chapters // act_count
+    acts: list[dict[str, Any]] = []
+
+    for i in range(act_count):
+        start = i * act_size + 1
+        end = (i + 1) * act_size if i < act_count - 1 else total_chapters
+        theme_idx = min(i, len(act_themes) - 1)
+        theme, emotion, goal = act_themes[theme_idx]
+
+        # Build arc breakdown within this act
+        arcs: list[dict[str, Any]] = []
+        arc_start = start
+        arc_idx = 0
+        while arc_start <= end:
+            arc_end = min(arc_start + arc_batch_size - 1, end)
+            arc_goal = (
+                f"Advance the core conflict of the {theme} phase"
+                if is_en
+                else f"推进{theme}阶段的核心冲突"
+            )
+            arcs.append({
+                "arc_index": arc_idx,
+                "chapter_start": arc_start,
+                "chapter_end": arc_end,
+                "arc_goal": arc_goal,
+            })
+            arc_start = arc_end + 1
+            arc_idx += 1
+
+        climax_chapter = start + (end - start) * 4 // 5
+        is_final = i == act_count - 1
+
+        act_dict: dict[str, Any] = {
+            "act_id": f"act_{i + 1:02d}",
+            "act_index": i,
+            "title": f"Act {i + 1}: {theme}" if is_en else f"第{i + 1}幕：{theme}",
+            "chapter_start": start,
+            "chapter_end": end,
+            "act_goal": goal,
+            "core_theme": theme,
+            "dominant_emotion": emotion,
+            "climax_chapter": climax_chapter,
+            "entry_state": (
+                f"{protagonist_name} begins the journey"
+                if is_en
+                else f"{protagonist_name}踏上征程"
+            ) if i == 0 else (
+                f"{protagonist_name} enters a new phase after Act {i}"
+                if is_en
+                else f"{protagonist_name}经历第{i}幕后进入新阶段"
+            ),
+            "exit_state": (
+                f"{protagonist_name} completes the story"
+                if is_en
+                else f"{protagonist_name}完成全篇"
+            ) if is_final else (
+                f"{protagonist_name} is transformed and ready for Act {i + 2}"
+                if is_en
+                else f"{protagonist_name}完成蜕变，进入第{i + 2}幕"
+            ),
+            "payoff_promises": [
+                f"Act {i + 1} core payoff delivered" if is_en else f"第{i + 1}幕核心爽点兑现"
+            ],
+            "arc_breakdown": arcs,
+            "is_final_act": is_final,
+        }
+        if is_final:
+            act_dict["resolution_contract"] = {
+                "all_threads_resolved": True,
+                "emotional_closure": True,
+                "protagonist_arc_complete": True,
+            }
+        acts.append(act_dict)
+
+    return acts
+
+
+def _act_plan_prompts(
+    project: ProjectModel,
+    book_spec: dict[str, Any],
+    world_spec: dict[str, Any],
+    cast_spec: dict[str, Any],
+) -> tuple[str, str]:
+    """Generate LLM prompts for act-level planning."""
+    language = _planner_language(project)
+    is_en = is_english_language(language)
+    hierarchy = compute_linear_hierarchy(max(project.target_chapters, 1))
+    act_count = hierarchy["act_count"]
+    arc_batch_size = hierarchy["arc_batch_size"]
+
+    system_prompt = (
+        "You are a senior story architect for long-form commercial fiction. "
+        "Plan the macro narrative structure (Acts) for the full novel. Output ONLY valid JSON, no markdown."
+        if is_en
+        else "你是长篇商业小说的高级故事架构师。规划全书的宏观叙事结构（幕）。输出必须是合法 JSON，不要解释。"
+    )
+
+    user_prompt = (
+        (
+            f"Project title: {project.title}\n"
+            f"Target chapters: {project.target_chapters}\n"
+            f"BookSpec: {_json_dumps(book_spec)}\n"
+            f"WorldSpec: {_json_dumps(world_spec)}\n"
+            f"CastSpec: {_json_dumps(cast_spec)}\n\n"
+            f"Divide the full {project.target_chapters}-chapter story into exactly {act_count} Acts (幕).\n"
+            "Each act must have a clear emotional arc from entry_state to exit_state.\n\n"
+            "Output ONLY valid JSON with this structure:\n"
+            '{"acts": [\n'
+            "  {\n"
+            '    "act_id": "act_01",\n'
+            '    "act_index": 0,\n'
+            '    "title": "<Act title>",\n'
+            '    "chapter_start": 1,\n'
+            '    "chapter_end": <end chapter>,\n'
+            '    "act_goal": "<what must be accomplished>",\n'
+            '    "core_theme": "<one theme word>",\n'
+            '    "dominant_emotion": "<dominant emotion>",\n'
+            '    "climax_chapter": <chapter number>,\n'
+            '    "entry_state": "<protagonist state at start>",\n'
+            '    "exit_state": "<protagonist state at end>",\n'
+            '    "payoff_promises": ["<specific payoff>"],\n'
+            '    "arc_breakdown": [{"arc_index": 0, "chapter_start": 1, "chapter_end": 12, "arc_goal": "..."}],\n'
+            '    "is_final_act": false\n'
+            "  }\n"
+            "]}\n\n"
+            "CRITICAL rules:\n"
+            "- Acts must be contiguous: act_01 ends where act_02 begins\n"
+            f"- Total chapters across all acts must equal exactly {project.target_chapters}\n"
+            f"- Each act: ~{project.target_chapters // act_count} chapters on average (can vary ±30%)\n"
+            "- payoff_promises: 2-4 per act, specific and emotionally satisfying\n"
+            f"- arc_breakdown: each act should have ~{arc_batch_size}-chapter arcs\n"
+            "- Last act must have is_final_act: true and include resolution_contract"
+        )
+        if is_en
+        else (
+            f"项目标题：{project.title}\n"
+            f"目标章节：{project.target_chapters}\n"
+            f"BookSpec：{_json_dumps(book_spec)}\n"
+            f"WorldSpec：{_json_dumps(world_spec)}\n"
+            f"CastSpec：{_json_dumps(cast_spec)}\n\n"
+            f"将全书 {project.target_chapters} 章分为恰好 {act_count} 幕（Act）。\n"
+            "每幕必须有从 entry_state 到 exit_state 的清晰情感弧。\n\n"
+            "输出格式（纯 JSON，无 markdown）：\n"
+            '{"acts": [\n'
+            "  {\n"
+            '    "act_id": "act_01",\n'
+            '    "act_index": 0,\n'
+            '    "title": "<幕标题>",\n'
+            '    "chapter_start": 1,\n'
+            '    "chapter_end": <结束章号>,\n'
+            '    "act_goal": "<本幕必须完成的叙事目标>",\n'
+            '    "core_theme": "<一个主题词，如 觉醒|崛起|危机|蜕变|决战>",\n'
+            '    "dominant_emotion": "<主导情绪：热血|紧张|压抑|震撼|爽快|满足>",\n'
+            '    "climax_chapter": <章号>,\n'
+            '    "entry_state": "<主角在幕初的状态>",\n'
+            '    "exit_state": "<主角在幕末的状态>",\n'
+            '    "payoff_promises": ["<具体爽点承诺>"],\n'
+            '    "arc_breakdown": [{"arc_index": 0, "chapter_start": 1, "chapter_end": 12, "arc_goal": "..."}],\n'
+            '    "is_final_act": false\n'
+            "  }\n"
+            "]}\n\n"
+            "【硬性要求】\n"
+            "- 各幕章节范围必须首尾相接，不允许间隙或重叠\n"
+            f"- 所有幕的章节总数必须恰好等于 {project.target_chapters}\n"
+            f"- 每幕平均约 {project.target_chapters // act_count} 章（允许 ±30%）\n"
+            "- payoff_promises：每幕 2-4 个，必须具体到读者能感受到的爽点\n"
+            f"- arc_breakdown：每幕按 ~{arc_batch_size} 章一弧细分\n"
+            "- 最后一幕必须标记 is_final_act: true 并包含 resolution_contract"
+        )
+    )
+
+    return system_prompt, user_prompt
 
 
 # ── Multi-Force Conflict Taxonomy ──────────────────────────────────
@@ -1195,6 +1471,72 @@ def _render_chapter_conflict(conflict_phase: str, chapter_phase: str, protagonis
     return template.format(protagonist=protagonist, force_name=force_name)
 
 
+def _phase_name_within_arc(index: int, total: int) -> str:
+    """Determine the narrative phase of a chapter within its arc.
+
+    More granular than the per-volume 5-phase system, providing finer
+    narrative rhythm control within each 12-chapter arc.
+    """
+    ratio = index / max(total, 1)
+    if ratio <= 0.13:
+        return "hook"
+    if ratio <= 0.33:
+        return "setup"
+    if ratio <= 0.53:
+        return "escalation"
+    if ratio <= 0.73:
+        return "twist"
+    if ratio <= 0.87:
+        return "climax"
+    return "resolution_hook"
+
+
+def _compute_chapter_arc_info(
+    chapter_number: int,
+    volume_plan: list[dict[str, Any]],
+) -> tuple[int, str]:
+    """Find which arc a chapter belongs to and its phase within that arc.
+
+    Returns (arc_index, arc_phase). arc_index is global across the whole book.
+    """
+    global_arc_index = 0
+    for vol in volume_plan:
+        vol_map = _mapping(vol)
+        arc_ranges = vol_map.get("arc_ranges")
+        if not isinstance(arc_ranges, list):
+            # Volume has no arc_ranges — treat entire volume as one arc
+            ch_count = max(int(vol_map.get("chapter_count_target") or 1), 1)
+            vol_start = _compute_volume_start(vol_map, volume_plan)
+            vol_end = vol_start + ch_count - 1
+            if vol_start <= chapter_number <= vol_end:
+                idx_in_arc = chapter_number - vol_start
+                total_in_arc = ch_count
+                return global_arc_index, _phase_name_within_arc(idx_in_arc, total_in_arc)
+            global_arc_index += 1
+            continue
+        for arc_range in arc_ranges:
+            if isinstance(arc_range, list) and len(arc_range) == 2:
+                arc_start, arc_end = arc_range
+                if arc_start <= chapter_number <= arc_end:
+                    idx_in_arc = chapter_number - arc_start
+                    total_in_arc = arc_end - arc_start + 1
+                    return global_arc_index, _phase_name_within_arc(idx_in_arc, total_in_arc)
+                global_arc_index += 1
+    return 0, "setup"
+
+
+def _compute_volume_start(vol_map: dict[str, Any], volume_plan: list[dict[str, Any]]) -> int:
+    """Compute the start chapter of a volume from the plan."""
+    vol_num = vol_map.get("volume_number", 1)
+    cursor = 1
+    for v in volume_plan:
+        v_map = _mapping(v)
+        if v_map.get("volume_number") == vol_num:
+            return cursor
+        cursor += max(int(v_map.get("chapter_count_target") or 1), 1)
+    return cursor
+
+
 def _fallback_chapter_outline_batch(
     project: ProjectModel,
     book_spec: dict[str, Any],
@@ -1264,10 +1606,35 @@ def _fallback_chapter_outline_batch(
         for index_within_volume in range(1, total_in_volume + 1):
             phase = _phase_name(index_within_volume, total_in_volume)
             is_opening_chapter = chapter_number <= 3
-            chapter_goal = (
-                f"{protagonist_name}在第{chapter_number}章推进{volume_goal}，"
-                f"并迫使局势进入新的高压阶段。"
-            )
+
+            # Ending contract: force specific goals for the last 3 chapters
+            total_ch = max(project.target_chapters, 1)
+            is_en = is_english_language(project.language)
+            chapters_from_end = total_ch - chapter_number
+
+            if chapters_from_end == 2:
+                chapter_goal = (
+                    "Final preparations before the ultimate confrontation — all foreshadowing threads converge."
+                    if is_en
+                    else f"决战前最后准备——{protagonist_name}的所有伏笔汇聚，各方力量到位。"
+                )
+            elif chapters_from_end == 1:
+                chapter_goal = (
+                    "The ultimate confrontation or core mystery revealed — the story's central conflict reaches its peak."
+                    if is_en
+                    else f"终极对决或核心悬念揭晓——{protagonist_name}与命运正面交锋。"
+                )
+            elif chapters_from_end == 0:
+                chapter_goal = (
+                    "Resolution landing — emotional closure, lingering resonance, and the final image."
+                    if is_en
+                    else f"结局着陆——{protagonist_name}的情感收束，余韵留白，最终画面。"
+                )
+            else:
+                chapter_goal = (
+                    f"{protagonist_name}在第{chapter_number}章推进{volume_goal}，"
+                    f"并迫使局势进入新的高压阶段。"
+                )
             scenes = [
                 {
                     "scene_number": 1,
@@ -1352,6 +1719,9 @@ def _fallback_chapter_outline_batch(
                     "target_word_count": scene_target_words,
                 },
             ]
+            # Compute arc-level info for this chapter
+            arc_index, arc_phase = _compute_chapter_arc_info(chapter_number, normalized_volume_plan)
+
             chapters.append(
                 {
                     "chapter_number": chapter_number,
@@ -1386,6 +1756,8 @@ def _fallback_chapter_outline_batch(
                     "hook_type": _hook_type(index_within_volume, total_in_volume),
                     "hook_description": writing_profile.market.chapter_hook_strategy,
                     "volume_number": volume_number,
+                    "arc_index": arc_index,
+                    "arc_phase": arc_phase,
                     "target_word_count": chapter_target_words,
                     "scenes": scenes,
                 }
@@ -1585,7 +1957,14 @@ def _cast_spec_prompts(project: ProjectModel, book_spec: dict[str, Any], world_s
     return system_prompt, user_prompt
 
 
-def _volume_plan_prompts(project: ProjectModel, book_spec: dict[str, Any], world_spec: dict[str, Any], cast_spec: dict[str, Any]) -> tuple[str, str]:
+def _volume_plan_prompts(
+    project: ProjectModel,
+    book_spec: dict[str, Any],
+    world_spec: dict[str, Any],
+    cast_spec: dict[str, Any],
+    *,
+    act_plan: list[dict[str, Any]] | None = None,
+) -> tuple[str, str]:
     from bestseller.services.genre_review_profiles import resolve_genre_review_profile
 
     language = _planner_language(project)
@@ -1639,6 +2018,23 @@ def _volume_plan_prompts(project: ProjectModel, book_spec: dict[str, Any], world
             "每卷都要有清晰的爽点兑现、局势升级、关键揭示、卷尾钩子和下一卷期待。"
         )
     )
+    # Inject act plan context when available (multi-act novels)
+    if act_plan:
+        act_context = _json_dumps(act_plan)
+        if is_en:
+            user_prompt += (
+                f"\n\nActPlan (macro narrative structure):\n{act_context}\n"
+                "Each volume must belong to one act. Volume themes and goals must align with "
+                "the parent act's core_theme and act_goal. Volumes within the same act should "
+                "form a coherent narrative progression."
+            )
+        else:
+            user_prompt += (
+                f"\n\n幕计划（全书宏观叙事结构）：\n{act_context}\n"
+                "每卷必须隶属于一个幕，主题和目标需与所属幕的 core_theme 和 act_goal 一致。"
+                "同一幕内的卷应形成连贯的叙事推进。"
+            )
+
     _genre_instruction = getattr(_genre_profile.planner_prompts, f"volume_plan_instruction_{_lang_key}", "")
     if _genre_instruction:
         user_prompt += f"\n\n{'[Genre planning requirements]' if is_en else '【品类规划要求】'}\n{_genre_instruction}"
@@ -1938,6 +2334,60 @@ async def generate_novel_plan(
         )
         step_order += 1
 
+        # ── Act Plan: macro narrative structure for long novels ──
+        hierarchy = compute_linear_hierarchy(max(project.target_chapters, 1))
+        act_plan_payload: list[dict[str, Any]] | None = None
+        if hierarchy["act_count"] > 1 and project.target_chapters > settings.pipeline.act_plan_threshold:
+            act_plan_fallback = _fallback_act_plan(project, book_spec_payload, cast_spec_payload, world_spec_payload)
+            current_step_name = "generate_act_plan"
+            workflow_run.current_step = current_step_name
+            act_system, act_user = _act_plan_prompts(project, book_spec_payload, world_spec_payload, cast_spec_payload)
+            act_plan_payload_raw, llm_run_id = await _generate_structured_artifact(
+                session,
+                settings,
+                project=project,
+                logical_name="act_plan",
+                system_prompt=act_system,
+                user_prompt=act_user,
+                fallback_payload={"acts": act_plan_fallback},
+                workflow_run_id=workflow_run.id,
+            )
+            if llm_run_id is not None:
+                llm_run_ids.append(llm_run_id)
+            # Extract acts list from payload (may be {"acts": [...]} or [...])
+            if isinstance(act_plan_payload_raw, dict) and "acts" in act_plan_payload_raw:
+                act_plan_payload = act_plan_payload_raw["acts"]
+            elif isinstance(act_plan_payload_raw, list):
+                act_plan_payload = act_plan_payload_raw
+            else:
+                act_plan_payload = act_plan_fallback
+
+            act_artifact = await import_planning_artifact(
+                session,
+                project_slug,
+                PlanningArtifactCreate(artifact_type=ArtifactType.ACT_PLAN, content={"acts": act_plan_payload}),
+            )
+            artifact_records.append(
+                PlanningArtifactRecord(
+                    artifact_type=ArtifactType.ACT_PLAN,
+                    artifact_id=act_artifact.id,
+                    version_no=act_artifact.version_no,
+                )
+            )
+            # Persist act plan to project metadata
+            from bestseller.services.story_bible import upsert_act_plan
+            await upsert_act_plan(session, project, act_plan_payload)
+
+            await create_workflow_step_run(
+                session,
+                workflow_run_id=workflow_run.id,
+                step_name=current_step_name,
+                step_order=step_order,
+                status=WorkflowStatus.COMPLETED,
+                output_ref={"artifact_id": str(act_artifact.id), "llm_run_id": str(llm_run_id) if llm_run_id else None},
+            )
+            step_order += 1
+
         volume_plan_fallback = _fallback_volume_plan(project, book_spec_payload, cast_spec_payload, world_spec_payload)
         current_step_name = "generate_volume_plan"
         workflow_run.current_step = current_step_name
@@ -1946,6 +2396,7 @@ async def generate_novel_plan(
             book_spec_payload,
             world_spec_payload,
             cast_spec_payload,
+            act_plan=act_plan_payload,
         )
         volume_plan_payload, llm_run_id = await _generate_structured_artifact(
             session,
@@ -2021,6 +2472,7 @@ async def generate_novel_plan(
                         )
                         repair_system, repair_user = _volume_plan_prompts(
                             project, book_spec_payload, world_spec_payload, cast_spec_payload,
+                            act_plan=act_plan_payload,
                         )
                         is_en = is_english_language(project.language)
                         repair_user += (

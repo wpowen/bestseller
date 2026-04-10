@@ -1,0 +1,90 @@
+key: space-opera
+name: Space Opera
+version: "1.0"
+description: Interstellar politics, fleet battles, alien cultures, and grand-scale space adventure — built for KU and Royal Road sci-fi readers who want The Expanse meets Star Wars with crew dynamics and galactic stakes.
+genres:
+  - Sci-Fi
+  - Space Opera
+  - Military Sci-Fi
+tags:
+  - space opera
+  - interstellar
+  - fleet battles
+  - alien
+  - galactic empire
+  - FTL
+  - crew dynamics
+source_notes:
+  - Designed for the English-language KU and Royal Road space opera market
+  - Incorporates military sci-fi conventions and found-family crew dynamics
+  - Balances hard-sci-fi plausibility with space opera spectacle
+anti_patterns:
+  - Tech exposition that reads like a manual rather than organic world-building
+  - Alien cultures that are monocultures (one trait = entire species)
+  - Fleet battles that are abstract strategy with no personal stakes
+  - FTL/technology that violates its own rules for plot convenience
+  - A protagonist who is a lone wolf in a genre built on crew dynamics
+  - Space that feels like an empty backdrop rather than a dangerous, wondrous environment
+  - Political intrigue that is confusing without being compelling
+writing_profile_overrides:
+  market:
+    prompt_pack_key: space-opera
+    platform_target: Kindle Unlimited
+    reader_promise: Launch the reader into a galaxy of wonders and dangers. Deliver the thrill of FTL jumps, the tension of first contact, the camaraderie of a crew under fire, and political stakes that span star systems. Every chapter should make the reader feel the vastness of space and the intimacy of the ship.
+    selling_points:
+      - interstellar conflict
+      - fleet battles
+      - alien diplomacy
+      - crew dynamics
+      - galactic politics
+    trope_keywords:
+      - space opera
+      - starship
+      - alien
+      - empire
+      - rebellion
+    hook_keywords:
+      - distress signal
+      - unknown planet
+      - first contact
+      - mutiny
+      - jump gate
+    opening_strategy: Open on the ship or in space — the reader should feel the scale of the setting immediately. Start with a compelling crew dynamic or a mission that goes wrong. Introduce the protagonist through action and crew interaction, not backstory. The first chapter should establish the tech level, the political situation, and the personal stakes.
+    chapter_hook_strategy: End chapters with mission twists (the objective changes mid-operation), ship crises (hull breach, engine failure, unknown contact), political revelations (a betrayal, a secret alliance), or crew dynamics shifts (a confession, a conflict, a new member). Alternate between intimate ship scenes and grand-scale space events.
+    pacing_profile: medium
+    payoff_rhythm: Crew dynamic payoffs every 2-3 chapters, mission/plot payoffs every 4-6 chapters, political revelations at act breaks, a major space battle or set piece at the midpoint and climax.
+  character:
+    protagonist_archetype: Ship captain or rogue pilot navigating galactic chaos
+    protagonist_core_drive: Protect the crew, uncover the conspiracy, survive the void
+    growth_curve: Solo operator to reluctant leader to fleet commander to galaxy-shaping figure
+    antagonist_mode: Multi-level — rival captains, corrupt admirals, hostile alien factions, and an existential threat
+  world:
+    mystery_density: medium
+    worldbuilding_density: high
+  style:
+    prose_style: commercial-genre
+    sentence_style: balanced
+    info_density: medium
+fragments:
+  global_rules: |
+    Space opera lives on two scales: the intimate (crew on a ship, personal bonds, tight corridors) and the vast (fleet battles, galactic politics, alien civilizations). Every chapter must serve both. Technology must be consistent — establish the FTL rules, weapon capabilities, and communication limits early, then respect them. Alien cultures must be genuinely alien — not humans with funny ears. The crew is the reader's family; invest in their dynamics, conflicts, and loyalties. Space itself should be a character — beautiful, lethal, and full of the unknown.
+  planner_book_spec: |
+    Structure around the mission arc: The Call (Act 1, 0-25%) — establish the crew, the ship, and the mission. Something goes wrong that reveals a larger conspiracy or threat. Escalation (Act 2A, 25-50%) — the mission expands, new allies and enemies emerge, the political landscape becomes clear. The crew faces their first major test. Midpoint Crisis (50%) — a major space battle, first contact event, or political betrayal that redefines the mission. Deep Space (Act 2B, 50-75%) — the stakes become galactic, the crew's bonds are tested, the protagonist must make impossible choices. Climax (75-95%) — the final operation, combining tactical brilliance, crew sacrifice, and political resolution. Aftermath (95-100%) — the new galactic order, crew status, and seeds for the next mission.
+  planner_world_spec: |
+    Build the galaxy in layers: Technology (FTL method, weapon types, communication systems, ship classes — all with consistent rules and limitations), Political Map (at least three major factions with competing interests — human factions, allied aliens, hostile unknowns), Alien Cultures (each with a genuinely alien psychology, social structure, and technology approach), Economy (what drives interstellar trade, what is scarce, what is fought over), and The Ship (the protagonist's vessel should be as detailed as a fantasy castle — layout, quirks, capabilities, limitations). The void of space should feel both beautiful and terrifying.
+  planner_cast_spec: |
+    The crew is the heart of space opera. Design each crew member to fill both a ship role and a character role: the pilot (reckless, instinctive), the engineer (practical, creative under pressure), the weapons officer (disciplined, morally conflicted), the medic (compassionate, hiding a past), the comms/diplomat (silver-tongued, politically connected). Each needs a personal arc that intersects with the mission. Include at least one alien crew member whose perspective challenges human assumptions. The antagonist should be a specific person with a face and a philosophy, not just an abstract enemy fleet.
+  planner_volume_plan: |
+    Space opera series typically run 3-6 books with escalating scope. Book 1: a single mission that reveals the larger threat. Book 2: the crew takes on a bigger role in the galactic conflict, new crew members or allies join. Book 3: the full galactic war, with the crew at its center. Each book should have a complete mission arc while building the series-level political and personal threads. The crew should grow and change — members may leave, join, or sacrifice across the series.
+  planner_outline: |
+    Chapter 1: Open on the ship — establish the crew dynamic and the current mission. Something goes wrong. Chapters 2-4: The mission complicates, introduce the political context and the first alien encounter or faction conflict. By chapter 6: the larger conspiracy or threat is visible. 25%: A decision that commits the crew to the larger conflict. Midpoint: Major space battle or first contact event. 50-75%: Deepening alliances, political maneuvering, crew bonds tested. 75%: Devastating setback — a loss, a betrayal, an impossible choice. Climax: Multi-chapter sequence combining ship combat, ground action, and political resolution. Final chapter: New equilibrium, crew reflection, forward hook.
+  scene_writer: |
+    Write space with wonder and danger — the silence of the void, the beauty of a nebula, the terror of hull breach. Ship-board scenes should feel intimate and lived-in — the hum of the engines, the cramped corridors, the mess hall where the crew argues and bonds. Combat should be tactical and visceral — the reader should understand the spatial geometry of a fleet engagement while feeling the shudder of impacts. Use technology naturally — characters interact with their tech like we interact with our phones, not with exposition. Alien encounters should convey genuine otherness through sensory detail and communication gaps. Crew dialogue should be sharp, distinctive, and reveal relationships through banter and shorthand.
+  scene_review: |
+    Check: Does the scene balance the intimate (crew, personal) and the vast (space, political)? Is technology used consistently and without exposition dumps? In combat scenes, are the stakes personal as well as tactical? In diplomatic/political scenes, are the alien perspectives genuinely alien? Does the crew dynamic advance — is there banter, conflict, or bonding? Does the scene convey the sensory experience of space (silence, scale, beauty, danger)? Does it end with a hook — a tactical twist, a political revelation, a crew moment, or a mystery?
+  scene_rewrite: |
+    If a scene drags, add: a ship crisis that forces the crew to collaborate, a moment of space wonder or terror that reminds the reader where they are, a crew dynamic beat (argument, confession, humor), or a revelation that changes the tactical or political situation. If tech exposition is too heavy, filter it through character action (show them using it, not explaining it). If a battle scene is too abstract, add a personal moment in the middle of the action.
+  chapter_review: |
+    Verify the chapter advances the mission plot, develops at least one crew relationship, and maintains the dual scale of space opera (intimate and vast). Check technology consistency. In battle chapters, verify personal stakes are clear alongside tactical ones. Ensure alien cultures are portrayed with genuine complexity. The chapter must end with a hook strong enough to survive a POV or scene change.
+  chapter_rewrite: |
+    Strengthen by: adding a sensory space moment (a view, a sound, a danger), deepening crew interaction with specific character beats, injecting a technology detail that creates a genuine problem or opportunity, and sharpening the chapter ending to a tactical twist, political revelation, or crew cliffhanger. If the chapter is all action, add a character moment. If it is all politics, add a visceral space experience.

@@ -330,7 +330,7 @@ class ProjectCreate(BaseModel):
     sub_genre: str | None = Field(default=None, max_length=4000)
     audience: str | None = Field(default=None, max_length=4000)
     language: str = Field(default="zh-CN", min_length=2, max_length=20)
-    target_word_count: int = Field(gt=0)
+    target_word_count: int = Field(ge=5000)
     target_chapters: int = Field(gt=0)
     project_type: ProjectType = ProjectType.LINEAR
     metadata: dict[str, object] = Field(default_factory=dict)

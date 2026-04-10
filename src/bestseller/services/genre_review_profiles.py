@@ -229,6 +229,14 @@ _GENRE_TO_CATEGORY_MAP: dict[str, str] = {
     "beast-taming-upgrade": "action-progression",
     "urban-xiuxian-2-0": "action-progression",
     "litrpg-progression": "action-progression",
+    "urban-fantasy": "action-progression",
+    "gamelit-isekai": "action-progression",
+    "apocalypse-survival": "action-progression",
+    "ya-fantasy": "action-progression",
+    "portal-fantasy": "action-progression",
+    "cultivation-western": "action-progression",
+    "monster-evolution": "action-progression",
+    "superhero-fiction": "action-progression",
     # relationship-driven
     "female-growth-romance": "relationship-driven",
     "palace-revenge": "relationship-driven",
@@ -239,6 +247,7 @@ _GENRE_TO_CATEGORY_MAP: dict[str, str] = {
     "mafia-romance": "relationship-driven",
     "paranormal-romance": "relationship-driven",
     "cozy-fantasy": "relationship-driven",
+    "slow-burn-romance": "relationship-driven",
     # suspense-mystery
     "suspense-detective": "suspense-mystery",
     "rule-horror": "suspense-mystery",
@@ -247,6 +256,8 @@ _GENRE_TO_CATEGORY_MAP: dict[str, str] = {
     "infinite-flow": "suspense-mystery",
     "psychological-thriller": "suspense-mystery",
     "cozy-mystery": "suspense-mystery",
+    "detective-procedural": "suspense-mystery",
+    "thriller-conspiracy": "suspense-mystery",
     # strategy-worldbuilding
     "history-hegemony": "strategy-worldbuilding",
     "starsea-war": "strategy-worldbuilding",
@@ -254,6 +265,7 @@ _GENRE_TO_CATEGORY_MAP: dict[str, str] = {
     "historical-research-travel": "strategy-worldbuilding",
     "epic-fantasy": "strategy-worldbuilding",
     "space-opera": "strategy-worldbuilding",
+    "military-scifi": "strategy-worldbuilding",
     # esports-competition
     "game-esports": "esports-competition",
     # female-growth-ncp

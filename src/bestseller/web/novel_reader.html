@@ -322,6 +322,7 @@
   const slug = location.pathname.replace(/^\/read\//, "").replace(/\/$/, "");
   let toc = [];
   let currentChapter = 1;
+  let bookTitle = slug;  // Will be updated with real title from API
 
   // ── Sidebar toggle ──────────────────────────────────────────────────────
   const sidebar = document.getElementById("sidebar");
@@ -369,8 +370,8 @@
       const ch = toc.find(c => c.number === n);
       const title = ch ? ch.title : `第 ${n} 章`;
       document.getElementById("chapter-info").textContent = `第 ${n} 章 / 共 ${toc.length} 章`;
-      document.getElementById("book-title").textContent = slug;
-      document.title = `${title} — ${slug}`;
+      document.getElementById("book-title").textContent = bookTitle;
+      document.title = `${title} — ${bookTitle}`;
       const prevDisabled = n <= 1 ? "disabled" : "";
       const nextDisabled = n >= toc.length ? "disabled" : "";
       area.innerHTML = `
@@ -397,6 +398,8 @@
     document.getElementById("book-title").textContent = slug;
     try {
       const data = await get(`/api/reader/${slug}/toc`);
+      bookTitle = data.title || slug;
+      document.getElementById("book-title").textContent = bookTitle;
       toc = data.chapters || [];
       renderToc();
       // Load chapter from hash or default to first

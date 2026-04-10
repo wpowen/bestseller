@@ -3129,10 +3129,10 @@
         return `
         <div class="task ${task.task_id === state.activeTaskId ? "current" : ""}">
           <div class="task-head">
-            <strong>${escapeHtml(task.project_slug || task.task_type)}</strong>
+            <strong>${escapeHtml(task.title || task.project_slug || "未命名任务")}</strong>
             <span class="status ${escapeHtml(task.status)}">${escapeHtml(humanizeTaskStatus(task.status))}</span>
           </div>
-          <div class="hint" style="margin-top: 6px;">${escapeHtml(task.title || "未命名任务")}</div>
+          <div class="hint" style="margin-top: 6px;">${escapeHtml(task.project_slug || task.task_type)}</div>
           <div class="hint" style="margin-top: 6px;">当前阶段：${escapeHtml(humanizeStage(task.current_stage))}</div>
           ${chapterInfo}
           ${staleness}

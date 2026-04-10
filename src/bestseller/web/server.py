@@ -2224,7 +2224,17 @@ def serve_web_app(
                     project_slug = path.split("/")[3]
                     output_dir = _project_output_dir(settings, project_slug)
                     toc = _build_chapter_toc(output_dir)
-                    self._send_json({"project_slug": project_slug, "chapters": toc})
+                    # Resolve human-readable project title from DB.
+                    project_title = project_slug
+                    try:
+                        async def _fetch_title() -> str:
+                            async with session_scope(settings) as sess:
+                                proj = await get_project_by_slug(sess, project_slug)
+                                return proj.title if proj and proj.title else project_slug
+                        project_title = asyncio.run(_fetch_title())
+                    except Exception:
+                        pass
+                    self._send_json({"project_slug": project_slug, "title": project_title, "chapters": toc})
                     return
                 if path.startswith("/api/reader/") and "/chapter/" in path:
                     parts = path.split("/")

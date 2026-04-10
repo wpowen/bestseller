@@ -68,7 +68,8 @@ _STRUCTURED_METADATA_LINE_RE = re.compile(
 # Chinese structural / meta-commentary terms that should NEVER appear in novel prose.
 _CN_META_HEADER_RE = re.compile(
     r"^\s*#{1,4}\s*(?:修订说明|上一版草稿|重写策略|写作说明|场景说明|改写说明|润色说明"
-    r"|策划说明|提纲|大纲|剧情任务|情绪任务|写法指导)\s*$"
+    r"|策划说明|提纲|大纲|剧情任务|情绪任务|写法指导"
+    r"|重写第\d+章第?\d*场?)\s*$"
 )
 
 _CN_META_LINE_RE = re.compile(

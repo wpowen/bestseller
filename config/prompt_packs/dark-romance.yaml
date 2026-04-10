@@ -1,0 +1,89 @@
+key: dark-romance
+name: Dark Romance
+version: "1.0"
+description: Morally gray heroes, dangerous power dynamics, captive tension, and emotional intensity — optimized for KU dark romance readers and BookTok discovery.
+genres:
+  - Romance
+  - Dark Romance
+tags:
+  - dark romance
+  - morally gray
+  - captive
+  - possessive hero
+  - anti-hero
+  - spicy
+  - BookTok
+source_notes:
+  - Designed for English-language KU dark romance market conventions
+  - Incorporates BookTok hook patterns and KU page-read optimization
+  - Follows three-act romance structure with dark-romance-specific beats
+anti_patterns:
+  - Hero cruelty without emotional payoff or character arc
+  - Romanticizing abuse without the heroine having agency or growth
+  - Opening with backstory dump instead of immediate tension or danger
+  - Steam scenes that don't advance the emotional arc or power dynamic
+  - Redemption arc that feels unearned — the hero must pay a real price
+  - Villain who is dark for shock value without coherent motivation
+writing_profile_overrides:
+  market:
+    prompt_pack_key: dark-romance
+    platform_target: Kindle Unlimited
+    reader_promise: Open with danger, obsession, and an irresistible pull between characters who should stay apart. Every chapter must escalate the stakes — emotional, physical, or both.
+    selling_points:
+      - morally gray hero
+      - power dynamics
+      - captive tension
+      - high steam
+      - twisted devotion
+    trope_keywords:
+      - dark romance
+      - anti-hero
+      - possessive
+      - forced proximity
+      - power imbalance
+    hook_keywords:
+      - danger
+      - obsession
+      - forbidden
+      - captive
+      - dark secret
+    opening_strategy: Open in medias res with the heroine in a vulnerable or trapped situation. Introduce the dangerous hero within the first chapter. Establish the power imbalance and the electric tension immediately.
+    chapter_hook_strategy: End every chapter on an escalation — a dangerous revelation, a moment of unexpected tenderness from the hero, a new threat, or a line crossed. Never let the reader find a comfortable stopping point.
+    pacing_profile: fast
+    payoff_rhythm: Short-cycle emotional payoffs (vulnerability, stolen moments, cracks in armor) layered over long-arc transformation.
+  character:
+    protagonist_archetype: Resilient survivor drawn to danger
+    protagonist_core_drive: Survival, independence, and an irresistible pull toward the anti-hero
+    golden_finger: Inner strength that refuses to break under pressure
+    growth_curve: Vulnerability to resistance to surrender to mutual transformation
+    antagonist_mode: The love interest IS the danger — external threats force alliance
+  world:
+    mystery_density: medium
+    worldbuilding_density: low
+  style:
+    prose_style: commercial-genre
+    sentence_style: short-punchy
+    info_density: lean
+fragments:
+  global_rules: |
+    This is dark romance — the tension between danger and desire drives every scene. The hero must be morally gray, not cartoonishly evil. The heroine must have agency even when she is powerless. Steam must serve the emotional arc. Every chapter must contain at least one moment that makes the reader's pulse spike — whether from fear, desire, or both.
+  planner_book_spec: |
+    Structure the novel around the dark romance arc: Inciting Captivity (Act 1) — the heroine enters the hero's dangerous world. Resistance & Cracks (Act 2A) — she fights the attraction while glimpsing the damaged man beneath the monster. Surrender & Betrayal (Act 2B) — walls come down, but a devastating betrayal or revelation shatters trust. Dark Night of the Soul (Act 3 midpoint) — both must face what they've become. Climax & Redemption (Act 3) — the hero proves his devotion through sacrifice, not words. Deliver an HEA or HFN that feels earned.
+  planner_world_spec: |
+    The world should feel like a cage — beautiful, dangerous, and inescapable. Whether it is a criminal empire, an elite society, or an isolated estate, the setting must reinforce the power dynamic. Include sensory details that heighten tension: locked doors, surveillance, luxury that feels like a gilded prison. The world should have its own rules and hierarchy that trap both characters.
+  planner_cast_spec: |
+    The hero must be genuinely dangerous — not just brooding. Give him a coherent reason for his darkness (trauma, duty, survival) and a specific vulnerability only the heroine can reach. The heroine must be intelligent and resourceful, not passive. Supporting cast should include: a loyal-but-morally-complex ally, a genuine external threat that forces hero-heroine alliance, and at least one character who shows what the hero could become if he doesn't change.
+  planner_volume_plan: |
+    Each volume in a series should escalate the external danger while deepening the emotional bond. Volume 1: captivity and first cracks. Volume 2: fragile trust tested by betrayal. Volume 3: full alliance against the real threat, with the hero's redemption arc completing. Each volume needs its own satisfying emotional resolution even if the external plot continues.
+  planner_outline: |
+    Chapter 1 must establish: the heroine's vulnerability, the hero's danger, and the electric tension between them. By chapter 3, the reader must understand the power dynamic and what is at stake. The midpoint should flip the power — the heroine gains leverage or the hero shows unexpected vulnerability. The 75% mark needs a devastating betrayal or revelation. The climax must force the hero to choose the heroine over his darkness.
+  scene_writer: |
+    Write with visceral, sensory prose — dark romance readers want to FEEL the danger and desire. Use short, punchy sentences during high-tension moments. Let silence and what is left unsaid carry as much weight as dialogue. In steam scenes, focus on the emotional power dynamic, not just physical choreography. The hero's POV should reveal the obsession and self-loathing beneath the control. The heroine's POV should capture the intoxicating terror of wanting someone dangerous.
+  scene_review: |
+    Check: Does the scene advance the emotional arc or the power dynamic? Is the hero compelling rather than repulsive? Does the heroine have agency — does she make choices, even when trapped? Is the tension escalating? Is there a hook at the end that makes the reader need the next scene? Are steam scenes emotionally meaningful, not gratuitous? Does the prose convey danger and desire through sensory detail?
+  scene_rewrite: |
+    If a scene falls flat, add: a moment where the hero's mask slips (showing vulnerability or obsession), a choice the heroine makes that shifts the power balance, physical proximity that raises the stakes, or a new threat that forces them closer together. Cut any passages where the heroine is purely passive or where the hero's cruelty has no emotional weight.
+  chapter_review: |
+    Verify the chapter delivers at least one of: escalation of the power dynamic, a crack in the hero's armor, a moment of heroine agency, a steam scene that changes the relationship, or a plot twist that raises external stakes. The chapter must end on a hook. Pacing should feel relentless — cut any scene that does not serve tension, character development, or plot advancement.
+  chapter_rewrite: |
+    When rewriting, prioritize: tightening the emotional tension, adding sensory detail to key moments, ensuring the hero shows complexity (not just cruelty), giving the heroine a moment of strength or defiance, and sharpening the chapter-ending hook. Do not slow the pacing with introspection dumps — weave internal conflict into action and dialogue.

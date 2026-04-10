@@ -1,0 +1,89 @@
+key: epic-fantasy
+name: Epic Fantasy
+version: "1.0"
+description: Multi-POV, world-at-stake conflicts, hard magic systems, and political intrigue — grand-scope storytelling for readers who want deep lore, complex characters, and a world that feels as real as their own.
+genres:
+  - Fantasy
+  - Epic Fantasy
+  - High Fantasy
+tags:
+  - epic fantasy
+  - magic system
+  - multi-pov
+  - political intrigue
+  - world-building
+  - high fantasy
+source_notes:
+  - Designed for the English-language epic fantasy audience (KU and trade)
+  - Follows Sanderson's Laws of Magic and GRRM-style political complexity
+  - Incorporates multi-POV management techniques and epic scope pacing
+anti_patterns:
+  - Info-dump prologues that explain the world before the reader cares about anyone
+  - Magic system that works by authorial convenience rather than consistent rules
+  - Multi-POV where some POVs are significantly less interesting than others
+  - Political intrigue that is confusing rather than compelling — clarity of stakes is essential
+  - Chosen One prophecy that removes all tension because the outcome is foretold
+  - World-building that is encyclopedic but never emotionally resonant
+  - Battle scenes that are spectacle without character stakes
+writing_profile_overrides:
+  market:
+    prompt_pack_key: epic-fantasy
+    platform_target: Kindle Unlimited
+    reader_promise: Build a world the reader will want to live in, with characters whose fates they will agonize over. Every chapter must advance either the political landscape, a character arc, or the magical stakes — ideally all three. The scope should feel vast but the story should remain personal.
+    selling_points:
+      - hard magic system
+      - political intrigue
+      - multi-POV narrative
+      - world-at-stake conflict
+      - deep lore
+    trope_keywords:
+      - epic fantasy
+      - chosen one
+      - magic system
+      - war
+      - prophecy
+    hook_keywords:
+      - ancient threat
+      - forbidden magic
+      - throne
+      - alliance
+      - betrayal
+    opening_strategy: Open with a POV character in a compelling personal situation that reveals the world through their experience. Establish one thread of the larger conflict within the first chapter. Do NOT open with a history lesson or a map tour. The reader should care about a person before they care about a world.
+    chapter_hook_strategy: With multi-POV, end each POV chapter on a cliffhanger or revelation, then switch to a different POV — the reader must be eager to return to EVERY thread. Use chapter endings to create dramatic irony between POVs who have different information.
+    pacing_profile: slow
+    payoff_rhythm: Each POV thread should have its own pacing with micro-payoffs every 2-3 chapters. Major convergence events at 25%, 50%, and 75%. The climax should bring all threads together in a way that makes the separate journeys feel purposeful.
+  character:
+    protagonist_archetype: Multiple POV characters with intertwining destinies
+    protagonist_core_drive: Each POV pursues different goals that converge into a world-changing conflict
+    growth_curve: Separate threads to first convergence to escalating stakes to epic climax
+    antagonist_mode: Multiple levels of antagonism — personal enemies, political opponents, and a world-level existential threat
+  world:
+    mystery_density: medium
+    worldbuilding_density: high
+  style:
+    prose_style: commercial-genre
+    sentence_style: balanced
+    info_density: high
+fragments:
+  global_rules: |
+    Epic fantasy demands both scope and intimacy. The world must feel vast and deep, but every piece of lore should connect to a character's experience or a plot consequence. The magic system must have clear rules, defined costs, and specific limitations — readers should be able to predict what is possible and be surprised by how it is used, not by what it can do. Multi-POV must be managed carefully: each POV must be compelling enough to carry chapters alone, and each must contribute uniquely to the larger story. Political intrigue must be clear in its stakes even when complex in its execution. Every battle must have personal stakes, not just strategic ones.
+  planner_book_spec: |
+    Structure around converging threads: Separate Beginnings (Act 1, 0-20%) — introduce each POV in their distinct corner of the world, each facing a personal inciting incident. Expanding Scope (Act 2A, 20-40%) — POV threads begin to affect each other indirectly, the larger conflict becomes visible. Convergence Begins (midpoint, 40-60%) — at least two POV threads intersect, the world-level threat is confirmed. Escalation (Act 2B, 60-80%) — alliances form and break, the magic system is tested at scale, personal costs mount. Climax (80-95%) — all threads converge in a sequence that resolves both the personal and political arcs. Denouement (95-100%) — the new status quo, seeds for the next volume.
+  planner_world_spec: |
+    Build the world in layers: Geography & Cultures (distinct nations, peoples, and belief systems that feel organic), the Magic System (hard magic with clear rules, costs, and at least one unexplored frontier), Political Landscape (at least three factions with competing interests and internal divisions), History (specific historical events that shaped the present conflict, referenced naturally by characters), and Economy & Daily Life (enough detail that the world feels lived-in, not just battled-in). Every world-building element should eventually pay off in plot or character terms.
+  planner_cast_spec: |
+    Design each POV character to represent a different perspective on the central conflict — a political leader, a soldier, a scholar of magic, a common person swept up in events, an enemy combatant. Each needs: a personal goal that conflicts with the larger situation, a moral dilemma that evolves through the story, relationships that create loyalty conflicts, and a distinct voice that makes their chapters immediately recognizable. The antagonist should be as dimensional as the protagonists — with coherent motivations and a worldview that is understandable even if wrong.
+  planner_volume_plan: |
+    For a series: Volume 1 establishes all POVs, the world, the magic system, and the initial conflict — ending with a major convergence event that redefines the stakes. Volume 2 expands the scope, introduces new factions and complications, tests alliances, and ends with a devastating loss or betrayal. Volume 3 brings the ultimate convergence and resolution. Each volume must resolve enough threads to be satisfying while opening enough questions to demand the next book. Plan POV balance across the series — every POV should have their strongest arc.
+  planner_outline: |
+    Alternate POV chapters to maintain momentum. Chapter 1: The most accessible POV character in a compelling personal moment that hints at the larger world. Chapters 2-4: Introduce remaining POV characters, each in their distinct setting. By chapter 5-6: the reader should understand the political landscape and the magical rules. 25%: A major event that connects at least two threads. 50%: First major convergence or conflict between POV characters. 75%: A devastating setback or betrayal that raises the stakes to existential. Climax: Multi-chapter sequence that weaves all POVs into a single escalating crisis. Final chapter: New equilibrium and forward hook.
+  scene_writer: |
+    Each POV should have a distinct prose voice — the soldier writes in shorter, more visceral sentences; the scholar uses more precise, analytical language; the politician speaks in subtext. World-building should be delivered through character perception — what they notice reveals who they are and what their world is like. Magic scenes should be precise about what is being done, what it costs, and what the limits are. Battle scenes should balance tactical overview with personal stakes — the reader needs to care about the person swinging the sword, not just the army's position. Political scenes should crackle with subtext — what is said and what is meant should diverge.
+  scene_review: |
+    Check: Does the scene advance the POV character's personal arc AND the larger plot? Is world-building delivered through experience rather than exposition? If magic is used, are the rules and costs clear? In political scenes, are the stakes and subtext legible to the reader? In battle scenes, are personal stakes as vivid as tactical ones? Does the scene end with a hook strong enough to sustain the reader through the next POV switch? Is the POV voice distinct from other characters?
+  scene_rewrite: |
+    If a scene drags, add: a personal revelation that changes the character's understanding, a political maneuver that shifts the balance, a magic usage that demonstrates the system's rules in a surprising way, or interpersonal tension between allies. If world-building is too dense, filter it through character reaction and emotion. If a battle scene lacks impact, add a personal cost or a moral dilemma in the heat of combat. If a political scene is confusing, clarify the stakes in dialogue subtext.
+  chapter_review: |
+    Verify the chapter advances the POV character's arc, contributes to the larger plot, and maintains the POV's distinct voice. Check that world-building is woven into action rather than delivered as exposition. Ensure the chapter ending creates enough tension to sustain the reader through the next POV switch. For magic scenes, verify consistency with established rules. For political scenes, verify the reader can track who wants what and why. Check POV balance across the surrounding chapters.
+  chapter_rewrite: |
+    Strengthen by: sharpening the POV voice to be more distinct, adding a personal cost to political or military events, weaving world-building into character observation rather than narrator explanation, and ensuring the chapter ending is a genuine cliffhanger or revelation. If the chapter is all action, add a character moment. If it is all politics, add a visceral detail that grounds the stakes in reality.

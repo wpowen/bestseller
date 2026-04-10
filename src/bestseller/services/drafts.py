@@ -75,7 +75,17 @@ _CN_META_LINE_RE = re.compile(
     r"|开场状态|场景类型|场景目标|章节目标|本章目标|钩子设计|尾钩|结尾钩子|开场白设计|开场白|设想"
     r"|戏剧反讽意图|过渡方式|主题任务|信息释放|contract|合同式写作约束"
     r"|叙事树上下文|伏笔与兑现约束|关系与情绪推进约束|反派推进约束"
-    r"|商业网文硬约束|Prompt Pack)\s*[：:].+$"
+    r"|商业网文硬约束|Prompt Pack"
+    r"|小钩子|中钩子|大钩子|章末钩子|场景钩子|章节钩子)\s*[：:].+$"
+)
+
+# Lines wrapped in Chinese fullwidth brackets 【...】 that contain planning
+# labels (hook summaries, foreshadowing notes, transition markers, etc.).
+# These are structural annotations the LLM leaks at scene / chapter
+# boundaries and must never appear in published prose.
+_CN_BRACKET_META_RE = re.compile(
+    r"^\s*【(?:小钩子|中钩子|大钩子|钩子|尾钩|章末钩子|过渡|伏笔|悬念|铺垫"
+    r"|章节钩子|场景钩子|hook|设定|本章目标|剧情任务|情绪任务)[：:].*】\s*$"
 )
 
 # Scene scaffold headings that must never appear in prose:
@@ -95,6 +105,68 @@ _CN_META_PROSE_RE = re.compile(
     r"|以下是.*的(?:场景|章节|草稿|初稿|提纲|大纲)"
     r"|以下为.*改写后的版本|以上是.*的(?:重写|修订|润色)版本"
     r"|根据(?:修订|重写|润色)(?:说明|要求|策略))"
+)
+
+# ---------------------------------------------------------------------------
+# English structural / meta-commentary patterns (mirrors the Chinese set above)
+# ---------------------------------------------------------------------------
+
+# English structural headers: "## Scene 1:", "Chapter 3:", "Act 2:"
+_EN_META_HEADER_RE = re.compile(
+    r"^(?:##?\s*)?(?:Scene\s+\d+|Chapter\s+\d+|Act\s+\d+)\s*[:：]",
+    re.IGNORECASE | re.MULTILINE,
+)
+
+# English metadata key-value lines: "POV:", "Setting:", "Story Goal:", etc.
+_EN_META_LINE_RE = re.compile(
+    r"^(?:POV|Point of View|Setting|Time|Location|Participants|"
+    r"Story Goal|Emotional Goal|Scene Type|Word Count|Target|"
+    r"Character Arc|Plot Purpose|Hook|Conflict Type)\s*[:：]",
+    re.IGNORECASE | re.MULTILINE,
+)
+
+# English scaffold headings: "## Scene 1", "### Climax", "# Inciting Incident"
+_EN_SCAFFOLD_HEADING_RE = re.compile(
+    r"^#{1,3}\s+(?:Scene\s+\d+|Opening|Climax|Resolution|Denouement|"
+    r"Rising Action|Falling Action|Inciting Incident)\s*$",
+    re.IGNORECASE | re.MULTILINE,
+)
+
+# English template leak substrings — precise phrases that only originate from
+# planning prompts or template fallback prose, never from legitimate fiction.
+_EN_TEMPLATE_LEAK_SUBSTRINGS: tuple[str, ...] = (
+    "[Author's Note",
+    "[Note:",
+    "[End of",
+    "--- End",
+    "Word count:",
+    "POV:",
+    "Scene goal:",
+    "This scene",
+    "In this chapter",
+    "The purpose of this scene",
+    "This chapter establishes",
+    "Moving on to",
+    "As outlined in the",
+    "Per the story bible",
+    "According to the plan",
+    "The narrative shifts to",
+    "scene transitions to",
+)
+
+# English meta-reward terms — planning language that should never appear in
+# novel prose. Mirrors the Chinese ``_META_REWARD_TERMS`` in reviews.py.
+_EN_META_REWARD_TERMS: tuple[str, ...] = (
+    "overall tone maintains",
+    "chapter goal",
+    "scene objective",
+    "plot task",
+    "emotional task",
+    "narrative function",
+    "story purpose",
+    "character arc progression",
+    "this scene serves to",
+    "the reader should feel",
 )
 
 # Sentences that only ever originate from the fallback template prose in
@@ -137,13 +209,16 @@ _HTML_COMMENT_BLOCK_RE = re.compile(r"<!--.*?-->", flags=re.DOTALL)
 def sanitize_novel_markdown_content(content_md: str) -> str:
     """Strip non-fiction structural markers and meta-commentary from novel prose.
 
+    Detects BOTH Chinese and English meta-leaks simultaneously — a scene draft
+    could contain mixed-language leaks.
+
     Order of operations:
 
     1. Remove all HTML comments (our fallback markers plus any stray notes).
-    2. Drop ``### 修订说明`` / ``### 上一版草稿`` blocks entirely.
+    2. Drop block-level meta sections (CN: ``### 修订说明``; EN: ``### Revision Notes``).
     3. Filter line-by-line to strip structural markers, meta headers, meta
        key-value rows, scaffolding headings, meta-prose sentences and the
-       rewrite template sentences listed in ``_CN_TEMPLATE_LEAK_SUBSTRINGS``.
+       rewrite template sentences in both languages.
     4. Drop the leading-paragraph "第N章中段，XX 重新被推回…" pattern even when
        the rewrite template wasn't flagged by the substring list (catches LLM
        paraphrases of the same prompt seed).
@@ -154,41 +229,62 @@ def sanitize_novel_markdown_content(content_md: str) -> str:
     # markers never reach the final output.
     content_md = _HTML_COMMENT_BLOCK_RE.sub("", content_md)
 
-    # 2. Remove "### 修订说明" / "### 上一版草稿" blocks entirely. These run
-    # from the header to end-of-string or the next H2+ header.
+    # 2a. Remove Chinese meta-commentary blocks entirely. These run from the
+    # header to end-of-string or the next H2+ header.
     content_md = re.sub(
         r"#{1,4}\s*(?:修订说明|上一版草稿|改写说明|润色说明).*?(?=\n##\s|\Z)",
         "",
         content_md,
         flags=re.DOTALL,
     )
+    # 2b. Remove English meta-commentary blocks: "### Revision Notes",
+    # "## Author's Notes", "### Rewrite Strategy", etc.
+    content_md = re.sub(
+        r"#{1,4}\s*(?:Revision Notes?|Author'?s? Notes?|Rewrite Strategy"
+        r"|Writing Notes?|Scene Notes?|Draft Notes?)\b.*?(?=\n##\s|\Z)",
+        "",
+        content_md,
+        flags=re.DOTALL | re.IGNORECASE,
+    )
 
     cleaned_lines: list[str] = []
     for raw_line in content_md.splitlines():
         stripped = raw_line.strip()
-        # Drop English metadata lines (original filter)
+        # --- Shared / structural metadata (both languages) ---
         if _STRUCTURED_METADATA_LINE_RE.match(stripped):
             continue
-        # Drop Chinese meta headers
+
+        # --- Chinese meta-leak line filters ---
         if _CN_META_HEADER_RE.match(stripped):
             continue
-        # Drop Chinese meta key-value lines
         if _CN_META_LINE_RE.match(stripped):
             continue
-        # Drop scaffold headings like "## 场景 1：xxx" / "第一场" / "结尾钩子"
         if _CN_SCAFFOLD_HEADING_RE.match(stripped):
             continue
-        # Drop prose-wrapped metadata sentences
         if _CN_META_PROSE_RE.search(stripped):
             continue
-        # Drop rewrite template sentences — precise substrings that only ever
-        # come from the legacy render_rewritten_* fallback prose.
         if any(substr in stripped for substr in _CN_TEMPLATE_LEAK_SUBSTRINGS):
             continue
-        # Drop lines that open with "第N章(开场|中段|结尾)，…" — every known
-        # leak started with one of these time-label prefixes.
         if _CN_CHAPTER_PHASE_PREFIX_RE.match(stripped):
             continue
+        if _CN_BRACKET_META_RE.match(stripped):
+            continue
+
+        # --- English meta-leak line filters ---
+        if _EN_META_HEADER_RE.match(stripped):
+            continue
+        if _EN_META_LINE_RE.match(stripped):
+            continue
+        if _EN_SCAFFOLD_HEADING_RE.match(stripped):
+            continue
+        # Case-insensitive check for English template leak substrings
+        stripped_lower = stripped.lower()
+        if any(substr.lower() in stripped_lower for substr in _EN_TEMPLATE_LEAK_SUBSTRINGS):
+            continue
+        # English meta-reward terms leaked into prose
+        if any(term in stripped_lower for term in _EN_META_REWARD_TERMS):
+            continue
+
         cleaned_lines.append(raw_line.rstrip())
 
     cleaned = "\n".join(cleaned_lines)
@@ -233,6 +329,24 @@ _CN_LEADING_REASONING_PARA_RE = re.compile(
     r"(?=\n\n|\Z)"
 )
 
+# English mid-content chapter heading: "# Chapter 4: The Clash" appearing after
+# the first line. Mirrors _CN_MID_CONTENT_CHAPTER_HEADING_RE.
+_EN_MID_CONTENT_CHAPTER_HEADING_RE = re.compile(
+    r"^\s*#{1,4}\s*Chapter\s+\d+(?:[\s:：].*|$)",
+    re.IGNORECASE,
+)
+
+# English leading reasoning paragraph: "Chapter 5 opens with..." / "This
+# rewrite focuses on..." — AI reflection that leaked as the first paragraph.
+_EN_LEADING_REASONING_PARA_RE = re.compile(
+    r"(?:^|\n\n)\s*(?:Chapter\s+\d+\s+(?:opens|begins|continues|picks up)|"
+    r"This\s+(?:rewrite|revision|draft)\s+(?:focuses|centers|aims)|"
+    r"In\s+this\s+(?:rewrite|revision|version))[^\n]*"
+    r"(?:\n[^\n]+)*?"
+    r"(?=\n\n|\Z)",
+    re.IGNORECASE,
+)
+
 # Additional phrase-pair rules for has_meta_leak. Each tuple is a list of
 # phrases that must all be present for the pair to count as a leak — this
 # avoids false positives where "视角" or "开场" appears in legitimate prose.
@@ -247,23 +361,36 @@ _HAS_META_PHRASE_PAIRS: tuple[tuple[str, ...], ...] = (
     ("开场", "重新被推回"),
 )
 
+# English phrase-pair rules: mirrors _HAS_META_PHRASE_PAIRS for English content.
+_EN_HAS_META_PHRASE_PAIRS: tuple[tuple[str, ...], ...] = (
+    ("this rewrite", "focuses on"),
+    ("scene objective",),
+    ("chapter goal",),
+    ("narrative function",),
+    ("the reader should feel",),
+    ("this scene serves to",),
+    ("character arc", "progression"),
+    ("per the story bible",),
+    ("according to the plan",),
+)
+
 
 def strip_scaffolding_echoes(content_md: str) -> str:
     """Strip duplicate chapter markers and leading AI-reasoning paragraphs.
 
     This runs AFTER ``sanitize_novel_markdown_content`` and is the last
     regex-level net before falling back to LLM-based cleanup. It catches
-    three bug classes that the line-oriented sanitizer misses:
+    leaks in both Chinese and English:
 
     1. Duplicate / nested chapter-scene headers like "第1章 第2场" or
        "第3章 第3章：碰撞", which the sanitizer's line-start regex can't
        match when both markers land on the same line.
-    2. Mid-content chapter headings like "# 第4章 关键碰撞" or
-       "# 第1章 陆衍需要在本卷内拿到一组" — leaked outline notes / planning
+    2. Mid-content chapter headings — CN: "# 第4章 关键碰撞";
+       EN: "# Chapter 4: The Clash" — leaked outline notes / planning
        tasks that mimic chapter headings. The first-line heading is preserved.
-    3. Prose-wrapped AI reflection paragraphs like
-       "第15章开场，XXX 重新被推回 ... 这一版重写围绕 ...", where the LLM
-       leaked its rewrite plan as the first paragraph of the chapter.
+    3. Prose-wrapped AI reflection paragraphs — CN: "第15章开场，XXX 重新
+       被推回 ..."; EN: "Chapter 5 opens with ..." / "This rewrite focuses
+       on ..." — where the LLM leaked its rewrite plan as the first paragraph.
     """
     if not content_md:
         return content_md
@@ -273,6 +400,7 @@ def strip_scaffolding_echoes(content_md: str) -> str:
     first_line_seen = False
     for line in content_md.splitlines():
         stripped = line.strip()
+        # Chinese duplicate / nested chapter-scene markers
         if _CN_DUPLICATE_CHAPTER_MARKER_RE.match(stripped):
             continue
         # Strip mid-content "# 第N章 ..." headings (leaked outline/planning
@@ -280,15 +408,29 @@ def strip_scaffolding_echoes(content_md: str) -> str:
         # legitimate chapter heading from _format_chapter_heading.
         if first_line_seen and _CN_MID_CONTENT_CHAPTER_HEADING_RE.match(stripped):
             continue
+        # Strip mid-content "# Chapter N ..." headings (English equivalent)
+        if first_line_seen and _EN_MID_CONTENT_CHAPTER_HEADING_RE.match(stripped):
+            continue
+        # Strip English scaffold headings that survived the line-level filter
+        # (e.g. "## Scene 3" / "### Climax" appearing mid-content)
+        if first_line_seen and _EN_SCAFFOLD_HEADING_RE.match(stripped):
+            continue
         if stripped:
             first_line_seen = True
         cleaned_lines.append(line)
     content_md = "\n".join(cleaned_lines)
 
-    # Erase prose-wrapped reasoning paragraphs. Loop until stable in case
-    # multiple reflection paragraphs stack at the top.
+    # Erase prose-wrapped reasoning paragraphs (Chinese). Loop until stable in
+    # case multiple reflection paragraphs stack at the top.
     while True:
         new_content = _CN_LEADING_REASONING_PARA_RE.sub("", content_md, count=1)
+        if new_content == content_md:
+            break
+        content_md = new_content
+
+    # Erase prose-wrapped reasoning paragraphs (English).
+    while True:
+        new_content = _EN_LEADING_REASONING_PARA_RE.sub("", content_md, count=1)
         if new_content == content_md:
             break
         content_md = new_content
@@ -304,6 +446,7 @@ logger = logging.getLogger(__name__)
 _NOVEL_OUTPUT_PROHIBITION = """\
 【严禁出现以下内容】：
 - 不得出现\u201c钩子\u201d\u201c开场白\u201d\u201c设想\u201d\u201c尾钩\u201d\u201c入场状态\u201d\u201c离场状态\u201d\u201c收束状态\u201d\u201c剧情任务\u201d\u201c情绪任务\u201d等策划术语
+- 严禁在章节或场景末尾输出【小钩子：...】【中钩子：...】【大钩子：...】等钩子摘要标记——这些是内部规划标签，绝不能出现在正文中
 - 不得出现\u201c修订说明\u201d\u201c重写策略\u201d\u201c上一版草稿\u201d\u201c场景说明\u201d\u201c写法指导\u201d等元评论
 - 不得出现\u201c这一场景要完成的剧情任务是\u201d\u201c以下是\u201d\u201c以上是\u201d等解释性前缀
 - 不得出现 entry_state / exit_state / contract / scene_type 等英文结构化标签
@@ -320,29 +463,53 @@ _NOVEL_OUTPUT_PROHIBITION = """\
 # Quick heuristic: if any of these terms appear in the output, it likely
 # contains non-fiction meta-commentary that slipped through the regex filter.
 _META_LEAK_KEYWORDS = (
+    # --- Chinese ---
     "修订说明", "上一版草稿", "重写策略", "本次任务",
     "剧情任务是", "情绪任务是", "入场状态：", "离场状态：",
     "收束状态：", "开场状态：", "entry_state", "exit_state",
     "scene_summary", "contract_alignment", "tail_hook",
     "closing_hook", "story_task", "emotion_task",
+    # Hook summary labels leaked at scene / chapter boundaries.
+    "小钩子", "中钩子", "大钩子",
     # Rewrite-plan vocabulary that leaked into the body of a rewritten chapter
     # (see reviews.build_chapter_rewrite_prompts — the LLM occasionally
     # paraphrases rewrite_strategy back at us instead of writing prose).
     "这一版重写", "重写围绕", "叙事仍采用",
     "third-limited", "third limited", "third-person limited",
+    # --- English ---
+    "[Author's Note",
+    "[Note:",
+    "[End of",
+    "Word count:",
+    "POV:",
+    "Scene goal:",
+    "The purpose of this scene",
+    "This chapter establishes",
+    "Per the story bible",
+    "According to the plan",
 )
 
 
 def has_meta_leak(content_md: str) -> bool:
-    """Return True if *content_md* still contains non-fiction meta-commentary."""
+    """Return True if *content_md* still contains non-fiction meta-commentary.
+
+    Scans for both Chinese and English meta-leak indicators simultaneously.
+    """
     if any(kw in content_md for kw in _META_LEAK_KEYWORDS):
         return True
-    # Phrase-pair check: each rule fires only if EVERY phrase in the tuple is
-    # present. This lets us flag ambiguous single words ("开场", "视角") only
-    # when they co-occur with other planning vocabulary.
-    return any(
+    # Chinese phrase-pair check: each rule fires only if EVERY phrase in the
+    # tuple is present. This lets us flag ambiguous single words ("开场",
+    # "视角") only when they co-occur with other planning vocabulary.
+    if any(
         all(phrase in content_md for phrase in phrases)
         for phrases in _HAS_META_PHRASE_PAIRS
+    ):
+        return True
+    # English phrase-pair check (case-insensitive for natural prose matching).
+    content_lower = content_md.lower()
+    return any(
+        all(phrase in content_lower for phrase in phrases)
+        for phrases in _EN_HAS_META_PHRASE_PAIRS
     )
 
 
@@ -1113,6 +1280,8 @@ def build_scene_draft_prompts(
     hard_fact_snapshot: dict[str, Any] | None = None,
     contradiction_warnings: list[str] | None = None,
     participant_knowledge_states: list[dict[str, Any]] | None = None,
+    arc_summaries: list[dict[str, Any]] | None = None,
+    world_snapshot: dict[str, Any] | None = None,
 ) -> tuple[str, str]:
     language = _project_language(project)
     is_en = is_english_language(language)
@@ -1202,11 +1371,41 @@ def build_scene_draft_prompts(
     _knowledge_line = _render_knowledge_state_section(participant_knowledge_states, is_en=is_en)
     if _knowledge_line:
         _knowledge_line += "\n\n"
+    # Arc summaries (warm context) and world snapshot (cold context)
+    _arc_summary_line = ""
+    if arc_summaries:
+        _arc_items = []
+        for arc_s in arc_summaries:
+            ch_start = arc_s.get("chapter_start", "?")
+            ch_end = arc_s.get("chapter_end", "?")
+            growth = arc_s.get("protagonist_growth", "")
+            threads = ", ".join(arc_s.get("unresolved_threads", [])[:3])
+            _arc_items.append(
+                f"  Arc Ch{ch_start}-{ch_end}: {growth}"
+                + (f" | Unresolved: {threads}" if threads else "")
+            )
+        _arc_block = "\n".join(_arc_items)
+        _arc_summary_line = (
+            f"=== Recent arc recap (warm context) ===\n{_arc_block}\n\n"
+            if is_en
+            else f"=== 近期弧线回顾（温上下文）===\n{_arc_block}\n\n"
+        )
+    _world_snapshot_line = ""
+    if world_snapshot:
+        ws = world_snapshot.get("world_summary", "")
+        if ws:
+            _world_snapshot_line = (
+                f"=== World state (cold context) ===\n{ws}\n\n"
+                if is_en
+                else f"=== 世界状态（冷上下文）===\n{ws}\n\n"
+            )
     if is_en:
         user_prompt = (
             f"{_hard_fact_line}"
             f"{_contradiction_line}"
             f"{_knowledge_line}"
+            f"{_arc_summary_line}"
+            f"{_world_snapshot_line}"
             f"Project: {project.title}\n"
             f"Chapter {chapter.chapter_number}: {chapter.title or ''}\n"
             f"Chapter goal (for intent only, never quote it verbatim): {chapter.chapter_goal}\n"
@@ -1246,6 +1445,8 @@ def build_scene_draft_prompts(
             f"{_hard_fact_line}"
             f"{_contradiction_line}"
             f"{_knowledge_line}"
+            f"{_arc_summary_line}"
+            f"{_world_snapshot_line}"
             f"项目：《{project.title}》\n"
             f"章节：第{chapter.chapter_number}章 {chapter.title or ''}\n"
             f"章节目标（仅供你理解意图，严禁出现在正文中）：{chapter.chapter_goal}\n"
@@ -1558,6 +1759,8 @@ async def generate_scene_draft(
             hard_fact_snapshot=_packet_hard_fact_snapshot(context_packet),
             contradiction_warnings=getattr(context_packet, "contradiction_warnings", None) if context_packet else None,
             participant_knowledge_states=getattr(context_packet, "participant_knowledge_states", None) if context_packet else None,
+            arc_summaries=getattr(context_packet, "arc_summaries", None) if context_packet else None,
+            world_snapshot=getattr(context_packet, "world_snapshot", None) if context_packet else None,
         )
         # Inject voice drift correction prompts for scene participants
         proj_metadata = getattr(project, "metadata_json", None) or {}

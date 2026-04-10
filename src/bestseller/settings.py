@@ -190,6 +190,9 @@ class PipelineSettings(BaseModel):
     feedback_stale_clue_threshold: int = 15  # Chapters before a clue is stale
     feedback_dormant_plan_threshold: int = 10  # Chapters before antagonist plan is dormant
     feedback_arc_inactivity_threshold: int = 8  # Chapters before arc is dead-ended
+    arc_summary_enabled: bool = True  # Generate arc summaries at arc boundaries
+    world_snapshot_enabled: bool = True  # Generate world snapshots at arc boundaries
+    act_plan_threshold: int = 50  # Chapters > threshold enables act-level planning
 
 
 class BudgetSettings(BaseModel):

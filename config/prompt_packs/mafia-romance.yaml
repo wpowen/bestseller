@@ -1,0 +1,87 @@
+key: mafia-romance
+name: Mafia Romance
+version: "1.0"
+description: Arranged marriages, ruthless crime bosses, and forbidden desire — power dynasties, blood oaths, and passion that defies the family code. Built for KU dark romance and BookTok mafia romance fans.
+genres:
+  - Romance
+  - Dark Romance
+  - Mafia Romance
+tags:
+  - mafia romance
+  - arranged marriage
+  - crime boss
+  - dark hero
+  - Italian
+  - power dynasty
+  - blood oath
+source_notes:
+  - Designed for the KU mafia romance niche — a BookTok and KU powerhouse sub-genre
+  - Follows mafia romance conventions including arranged marriage catalyst and family loyalty conflicts
+  - Balances dark romance intensity with the specific tropes of organized crime settings
+anti_patterns:
+  - Glorifying real-world violence without emotional consequences for the characters
+  - Heroine who is purely a damsel without agency or intelligence
+  - Mafia world-building that is cartoonish or relies entirely on stereotypes
+  - Hero whose cruelty has no internal cost or character justification
+  - Arranged marriage that resolves too quickly — the tension must simmer
+  - Family dynamics that are one-dimensional (all evil or all loyal)
+writing_profile_overrides:
+  market:
+    prompt_pack_key: mafia-romance
+    platform_target: Kindle Unlimited
+    reader_promise: Deliver the intoxicating danger of a world where blood oaths outweigh wedding vows. The hero is ruthless to everyone but her. The heroine refuses to be a pawn. The arrangement that was supposed to be a cage becomes the one thing neither can live without.
+    selling_points:
+      - ruthless hero
+      - arranged marriage
+      - power dynasty
+      - forbidden passion
+      - loyalty vs love
+    trope_keywords:
+      - mafia romance
+      - arranged marriage
+      - possessive hero
+      - crime family
+    hook_keywords:
+      - the deal
+      - the arrangement
+      - blood oath
+      - family loyalty
+    opening_strategy: Open with the arrangement — the moment the heroine learns her fate, or the moment she meets the man she's been promised to. The first chapter must establish the power imbalance, the danger, and the first spark of chemistry (even if it's wrapped in hostility). Make the stakes of the arrangement clear — lives depend on this alliance.
+    chapter_hook_strategy: Alternate between romantic tension hooks (a moment of unexpected tenderness, a possessive gesture, a crack in the armor) and crime plot hooks (a betrayal, a power play, a threat from a rival family). The worlds of passion and danger must be inseparable.
+    pacing_profile: fast
+    payoff_rhythm: Romantic tension payoffs every 2-3 chapters, crime plot escalations every 3-4 chapters, the heroine gaining power or agency at regular intervals.
+  character:
+    protagonist_archetype: Fierce woman thrust into a world of power and violence
+    protagonist_core_drive: Survive the arrangement and discover the man behind the monster
+    growth_curve: Unwilling bride to strategic player to equal partner in empire
+    antagonist_mode: Rival families and internal betrayals threaten the fragile alliance
+  world:
+    mystery_density: medium
+    worldbuilding_density: medium
+  style:
+    prose_style: commercial-genre
+    sentence_style: short-punchy
+    info_density: lean
+fragments:
+  global_rules: |
+    Mafia romance lives at the intersection of power, loyalty, and forbidden desire. The hero must be genuinely dangerous in his world — a boss, an enforcer, a heir who kills without hesitation — but the heroine must see beneath the mask. The arranged marriage or forced union is the catalyst, but the real story is two people who should be adversaries becoming indispensable to each other. The criminal world must feel authentic and consequential — decisions have costs, loyalty has a price, and betrayal is always possible. The heroine must gain agency and power within the world, not escape from it.
+  planner_book_spec: |
+    Structure around the arranged marriage arc: The Arrangement (Act 1, 0-25%) — the deal is struck, the heroine enters the hero's world, the power imbalance is established. Resistance & Revelation (Act 2A, 25-50%) — the heroine pushes back, the hero's complexity emerges, forced proximity breeds reluctant chemistry. Alliance & Passion (Act 2B, 50-75%) — an external threat forces them to work together, walls come down, the heroine begins wielding her own power within the family. Betrayal & Reckoning (75-85%) — a devastating betrayal (from within the family or from rivals) threatens everything. The Black Moment — the hero must choose between the family and the heroine. Climax (85-95%) — the heroine proves she is not a pawn but a queen, the hero sacrifices to protect the bond. Resolution — they face the family together as equals, HEA.
+  planner_world_spec: |
+    Build the mafia world with specificity — family hierarchy, territory, business interests (legitimate and otherwise), rivalries, codes of conduct, and the role of women in the organization. The world should feel like a gilded cage for the heroine — luxury, power, and constant danger. Include: a family compound or estate, a legitimate business front, a dangerous underbelly location, and social events (weddings, funerals, galas) where politics play out. The rival family must be a credible threat with their own logic and leaders.
+  planner_cast_spec: |
+    The hero's family is essential: a patriarch with iron rules, a loyal enforcer or right-hand, a sibling who is either an ally or a threat, and a family member who sees the heroine as a weakness to exploit. The heroine needs at least one ally within the family — someone who shows her how to navigate the world. The rival family should have a face: a specific antagonist whose ambition drives the external conflict. Include a heroine confidant from her old life who represents what she left behind.
+  planner_volume_plan: |
+    Mafia romance series typically run 3-4 books, often following different couples within the family. Book 1: the arranged marriage, establishing the world and the central couple. Book 2: a second couple (a sibling, a bodyguard, an enforcer) with the first couple as secondary characters and the family conflict escalating. Book 3: the family faces an existential threat, all couples are tested. Each book should be a complete romance with escalating stakes in the crime plotline.
+  planner_outline: |
+    Chapter 1: The arrangement — establish the heroine's situation, the stakes, and the first meeting with the hero. Chapter 2-3: Entry into the hero's world, the power dynamic in full display. Chapters 4-8: Push and pull — the heroine resists, the hero reveals complexity, forced proximity builds chemistry. Midpoint: A genuine moment of connection — the hero shows vulnerability or the heroine demonstrates strength that earns respect. 60-75%: External threat forces alliance, passion ignites. 75%: Betrayal from within. 85%: The hero makes a sacrifice. Final chapters: Resolution, the heroine as partner not prisoner, HEA.
+  scene_writer: |
+    Write with intensity and atmosphere. The criminal world should feel visceral — the weight of a gun, the silence before a meeting, the luxury that comes from blood money. Romantic scenes should carry the power dynamic — who is in control, who surrenders, how the balance shifts. Use short, punchy sentences for dangerous moments and slow the pace for intimate revelations. The hero's POV should reveal the ruthless calculation AND the obsession he can't control. The heroine's POV should show her intelligence, her fear, and her growing power. Steam should reflect the power dynamic and how it evolves.
+  scene_review: |
+    Check: Does the scene balance the romance and the crime plot? Is the hero's danger credible while his complexity visible? Does the heroine demonstrate agency — making choices, playing the game, gaining ground? Is the power dynamic shifting or escalating? Does the scene contain sensory detail that grounds the reader in the mafia world (luxury, danger, ceremony)? Does it end on a hook — romantic, threatening, or both? Is the tone intense without being gratuitously violent?
+  scene_rewrite: |
+    If a scene falls flat, add: a moment where the power dynamic shifts (the heroine gains leverage, or the hero shows vulnerability), a detail that grounds the reader in the mafia world (a ritual, a family custom, a power play), physical proximity that raises the stakes, or a threat from the external plot that forces the characters closer. If the hero feels too villainous, add a moment of unexpected tenderness or a glimpse of his burden. If the heroine feels passive, give her an action or a strategic insight.
+  chapter_review: |
+    Verify the chapter advances both the romance and the crime plot. Check that the hero's complexity is shown (not just his danger), the heroine's agency is demonstrated, and the power dynamic between them has shifted. The chapter must end on a hook. Verify the mafia world feels authentic and consequential. Check pacing — mafia romance should move briskly.
+  chapter_rewrite: |
+    Strengthen by: adding a crime-plot beat if the chapter is all romance, or a romantic beat if it is all plot. Sharpen the hero's complexity (add a moment of vulnerability or moral cost). Give the heroine a power play or strategic choice. Tighten the chapter ending to a moment of danger, desire, or revelation. Ensure the arranged-marriage tension is progressing — not stalling.

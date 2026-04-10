@@ -17,6 +17,7 @@ class ArtifactType(StrEnum):
     IF_ARC_SUMMARY = "if_arc_summary"
     IF_WORLD_SNAPSHOT = "if_world_snapshot"
     IF_BRANCH_DEFINITION = "if_branch_definition"
+    ACT_PLAN = "act_plan"
     PLAN_VALIDATION = "plan_validation"
 
 

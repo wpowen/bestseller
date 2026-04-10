@@ -1,0 +1,85 @@
+key: enemies-to-lovers
+name: Enemies to Lovers
+version: "1.0"
+description: Rivals-to-romance with electric banter, forced proximity, and maximum friction — engineered for KU contemporary romance readers who live for the slow-burn hate-to-love arc.
+genres:
+  - Romance
+  - Contemporary Romance
+tags:
+  - enemies to lovers
+  - forced proximity
+  - rivals
+  - banter
+  - fake dating
+  - hate to love
+  - rom-com
+source_notes:
+  - Designed for the English-language KU contemporary romance market
+  - Emphasizes banter-heavy prose and rom-com pacing conventions
+  - Follows the rivals-to-lovers romance beat sheet with forced proximity catalyst
+anti_patterns:
+  - Enemies whose conflict is based on a simple misunderstanding that could be resolved in one conversation
+  - Banter that reads as genuinely mean-spirited rather than charged with attraction
+  - Forced proximity setup that feels contrived without organic stakes
+  - Hero or heroine who is objectively horrible with no redeeming qualities beneath the hostility
+  - Conflict that evaporates too quickly — the enemies phase must last long enough to build genuine tension
+  - All banter and no vulnerability — the armor must crack at key moments
+writing_profile_overrides:
+  market:
+    prompt_pack_key: enemies-to-lovers
+    platform_target: Kindle Unlimited
+    reader_promise: Open with the best first-clash scene you can write — banter so sharp it crackles. Then trap these two together and make the reader ache for the moment the walls come down.
+    selling_points:
+      - electric banter
+      - forced proximity
+      - rivals to lovers
+      - slow-burn tension
+      - hate-to-love arc
+    trope_keywords:
+      - enemies to lovers
+      - forced proximity
+      - fake dating
+      - rivals
+    hook_keywords:
+      - first clash
+      - stuck together
+      - truce
+      - cracks in armor
+    opening_strategy: Open with the clash — the first meeting (or re-meeting) must establish the rivalry with banter, chemistry, and stakes. The reader should feel the sparks within the first chapter. By chapter 2, establish the forced proximity mechanism.
+    chapter_hook_strategy: Alternate between friction hooks (new argument, competitive escalation, public humiliation) and vulnerability hooks (an unguarded moment, unexpected kindness, a crack in the facade). Each chapter should make the reader think "just KISS already."
+    pacing_profile: medium
+    payoff_rhythm: Banter payoffs every chapter, vulnerability payoffs every 3-4 chapters, the first kiss at roughly 60-70% mark, full emotional resolution in the climax.
+  character:
+    protagonist_archetype: Sharp-tongued, independent, refuses to back down
+    protagonist_core_drive: Win the rivalry — until winning means losing the person they hate to want
+    growth_curve: Hostility to grudging respect to denial to surrender
+    antagonist_mode: External circumstances that force them together, plus their own stubbornness
+  world:
+    worldbuilding_density: low
+  style:
+    prose_style: commercial-genre
+    sentence_style: balanced
+    info_density: lean
+fragments:
+  global_rules: |
+    The engine of this story is FRICTION that becomes ATTRACTION. Every scene must serve the enemies-to-lovers arc: either escalating the conflict, revealing vulnerability beneath the hostility, or advancing the forced proximity trap. Banter must be witty and character-revealing, never generic snark. The reader must believe these two genuinely cannot stand each other AND that they are irresistibly drawn together. Dual POV is strongly recommended to show both sides of the tension.
+  planner_book_spec: |
+    Structure around the enemies-to-lovers beat sheet: The Clash (Act 1, 0-25%) — establish the rivalry, the stakes, and the forced proximity mechanism. Grudging Alliance (Act 2A, 25-50%) — circumstances force cooperation; banter shifts from hostile to charged. The Crack (midpoint) — a vulnerable moment that changes everything. Denial & Escalation (Act 2B, 50-75%) — both fight the attraction while the reader screams. The Reckoning (75%) — a forced confession, a stolen kiss, or a moment of pure honesty. Black Moment (85%) — the old rivalry or a misunderstanding threatens to destroy what they have built. Resolution (90-100%) — grand gesture, emotional honesty, HEA.
+  planner_world_spec: |
+    The setting must serve as a pressure cooker. Whether it is a shared apartment, a workplace, a small town, or a competition, the world must make it impossible for these two to avoid each other. Design the physical spaces to force proximity — shared kitchens, overlapping social circles, situations where they must present a united front. The world should have enough texture to feel real but never distract from the central dynamic.
+  planner_cast_spec: |
+    Supporting cast should include: a best friend who sees through the denial, a well-meaning matchmaker or meddling friend group, potentially a false-alarm love interest who highlights what the leads actually want, and a shared antagonist or obstacle that forces the rivals to team up. Every supporting character should either pressure the leads together or provide comic relief that underscores the tension.
+  planner_volume_plan: |
+    For a standalone: the full enemies-to-lovers arc in one book. For a series: each book can feature a different couple from the same friend group or workplace, with the previous couple providing mentorship or comic commentary. The setting and supporting cast provide continuity across the series.
+  planner_outline: |
+    Chapter 1: The clash — establish the rivalry with a killer first scene of banter and conflict. Chapter 2: The trap — introduce the forced proximity mechanism. Chapters 3-6: Escalating friction with hints of chemistry. Midpoint chapter: The crack — an unguarded moment that changes the dynamic. Chapters after midpoint: Charged tension, near-misses, stolen moments. 75% mark: First real kiss or confession. 85%: Black moment — old wounds or misunderstanding threaten everything. Final chapters: Grand gesture, honest conversation, HEA.
+  scene_writer: |
+    Write banter like a tennis match — fast, sharp, each line a volley. Let subtext do the heavy lifting: what the characters say and what they mean should diverge. Use internal monologue to show the attraction the character is trying to suppress. Physical awareness should build gradually — first noticing small details, then unable to stop. In vulnerability scenes, slow the pace, drop the wit, and let raw honesty land. Use the setting to create proximity: reaching for the same object, cramped spaces, accidental touches.
+  scene_review: |
+    Check: Does the banter reveal character and advance the dynamic, or is it generic snark? Is the underlying attraction simmering beneath the hostility? Does the scene shift the relationship — even slightly? Is there physical awareness building? Does the scene end on a hook — a charged moment, a new complication, or a line crossed? In vulnerable moments, does the prose slow down and let emotion breathe? Is the forced proximity feeling organic, not contrived?
+  scene_rewrite: |
+    If a scene falls flat, add: a moment of unexpected kindness or competence that the other character notices against their will, physical proximity that neither can control, a line of banter that lands differently than intended (revealing real feelings), or an external pressure that forces them to collaborate. Cut any banter that is cruel without chemistry, and any internal monologue that tells the reader about attraction instead of showing it.
+  chapter_review: |
+    Verify the chapter advances the enemies-to-lovers arc through at least one of: banter that reveals deeper feelings, a forced proximity moment that raises the temperature, a vulnerable exchange that cracks the armor, or a plot development that pushes them closer together. The chapter must end with the reader desperate to see what happens next. Check that both characters are sympathetic — the reader should root for both of them.
+  chapter_rewrite: |
+    Strengthen by: sharpening the banter (every line should do double duty — funny AND character-revealing), adding physical awareness beats (noticing lips, hands, the way they smell), injecting a moment that makes the reader shout "just admit you like each other," and tightening the chapter ending to a charged or cliffhanger beat. Maintain a brisk, witty tone throughout.

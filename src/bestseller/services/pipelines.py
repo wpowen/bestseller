@@ -11,7 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bestseller.domain.context import SceneWriterContextPacket
-from bestseller.domain.enums import ChapterStatus, ArtifactType, ProjectStatus, WorkflowStatus
+from bestseller.domain.enums import ChapterStatus, ArtifactType, ProjectStatus, SceneStatus, WorkflowStatus
 from bestseller.domain.pipeline import ProjectPipelineChapterSummary, ProjectPipelineResult
 from bestseller.domain.planning import AutowriteResult
 from bestseller.domain.pipeline import (
@@ -160,6 +160,35 @@ async def run_scene_pipeline(
         chapter_number,
         scene_number,
     )
+
+    # Resume: skip already-complete scenes to avoid re-drafting
+    if settings.pipeline.resume_enabled and scene.status == SceneStatus.APPROVED.value:
+        logger.info(
+            "Scene %d.%d already complete — skipping (resume)",
+            chapter_number, scene_number,
+        )
+        draft = await _load_current_scene_draft(session, scene.id)
+        if draft is None:
+            raise ValueError(
+                f"Scene {chapter_number}.{scene_number} is marked COMPLETE but has no current draft."
+            )
+        return ScenePipelineResult(
+            workflow_run_id=UUID(int=0),
+            project_id=project.id,
+            chapter_id=chapter.id,
+            scene_id=scene.id,
+            chapter_number=chapter_number,
+            scene_number=scene_number,
+            current_draft_id=draft.id,
+            current_draft_version_no=draft.version_no,
+            final_verdict="pass",
+            review_iterations=0,
+            rewrite_iterations=0,
+            canon_fact_count=0,
+            timeline_event_count=0,
+            requires_human_review=False,
+        )
+
     workflow_run = await create_workflow_run(
         session,
         project_id=project.id,
@@ -301,7 +330,7 @@ async def run_scene_pipeline(
         # Draft mode: skip review/rewrite/knowledge refresh — rely on prompt
         # quality + mechanical sanitization (regex) for quality assurance.
         if settings.quality.draft_mode:
-            scene.status = SceneStatus.COMPLETE.value
+            scene.status = SceneStatus.APPROVED.value
             workflow_run.status = WorkflowStatus.COMPLETED.value
             workflow_run.current_step = "completed"
             workflow_run.metadata_json = {
@@ -614,7 +643,18 @@ async def run_chapter_pipeline(
         step_order += 1
 
         scene_requires_human_review = False
-        for scene in scenes:
+        # Resume support: filter out already-completed scenes
+        pending_scenes = [
+            s for s in scenes
+            if s.status != SceneStatus.APPROVED.value
+        ] if settings.pipeline.resume_enabled else scenes
+        skipped_scene_count = len(scenes) - len(pending_scenes)
+        if skipped_scene_count > 0:
+            logger.info(
+                "Chapter %d resume: skipping %d completed scenes, %d pending",
+                chapter_number, skipped_scene_count, len(pending_scenes),
+            )
+        for scene in pending_scenes:
             current_step_name = f"scene_pipeline_{scene.scene_number}"
             workflow_run.current_step = current_step_name
             scene_result = await run_scene_pipeline(
@@ -1227,6 +1267,27 @@ async def run_project_pipeline(
         chapters_since_last_check = 0
         chapters_since_last_summary = 0
 
+        # Compute arc boundaries from volume plan for arc summary triggers
+        arc_boundaries: set[int] = set()
+        arc_boundary_info: dict[int, dict[str, int]] = {}
+        _volume_plan = (project.metadata_json or {}).get("volume_plan")
+        if isinstance(_volume_plan, list):
+            _global_arc_idx = 0
+            for _vp_entry in _volume_plan:
+                if not isinstance(_vp_entry, dict):
+                    continue
+                _arc_ranges = _vp_entry.get("arc_ranges")
+                if isinstance(_arc_ranges, list):
+                    for _arc_range in _arc_ranges:
+                        if isinstance(_arc_range, list) and len(_arc_range) == 2:
+                            _a_start, _a_end = _arc_range
+                            arc_boundaries.add(_a_end)
+                            arc_boundary_info[_a_end] = {
+                                "arc_start": _a_start,
+                                "arc_index": _global_arc_idx,
+                            }
+                            _global_arc_idx += 1
+
         for chapter in pending_chapters:
             _emit_progress(
                 progress,
@@ -1488,6 +1549,63 @@ async def run_project_pipeline(
                                 "error": traceback.format_exc(),
                             },
                         )
+
+            # ── Arc summary + world snapshot at arc boundaries ────────────
+            if settings.pipeline.arc_summary_enabled and chapter.chapter_number in arc_boundaries:
+                try:
+                    async with session.begin_nested():
+                        from bestseller.services.linear_arc_summary import (
+                            generate_linear_arc_summary,
+                            generate_linear_world_snapshot,
+                            store_linear_arc_summary,
+                            store_linear_world_snapshot,
+                        )
+
+                        arc_info = arc_boundary_info.get(chapter.chapter_number, {})
+                        arc_start = arc_info.get("arc_start", chapter.chapter_number)
+                        arc_idx = arc_info.get("arc_index", 0)
+
+                        _emit_progress(
+                            progress,
+                            "arc_summary_started",
+                            {
+                                "project_slug": project_slug,
+                                "chapter_number": chapter.chapter_number,
+                                "arc_index": arc_idx,
+                            },
+                        )
+                        arc_summary = await generate_linear_arc_summary(
+                            session, settings, project, arc_start, chapter.chapter_number,
+                        )
+                        await store_linear_arc_summary(
+                            session, project, arc_idx, arc_summary, arc_start, chapter.chapter_number,
+                        )
+                        if settings.pipeline.world_snapshot_enabled:
+                            snapshot = await generate_linear_world_snapshot(
+                                session, settings, project, chapter.chapter_number, arc_summary,
+                            )
+                            await store_linear_world_snapshot(
+                                session, project, chapter.chapter_number, snapshot,
+                            )
+                        _emit_progress(
+                            progress,
+                            "arc_summary_completed",
+                            {
+                                "project_slug": project_slug,
+                                "chapter_number": chapter.chapter_number,
+                                "arc_index": arc_idx,
+                            },
+                        )
+                except Exception:
+                    _emit_progress(
+                        progress,
+                        "arc_summary_failed",
+                        {
+                            "project_slug": project_slug,
+                            "after_chapter": chapter.chapter_number,
+                            "error": traceback.format_exc(),
+                        },
+                    )
 
             # ─── Per-chapter commit checkpoint ─────────────────────────────
             # Splits the project pipeline into one short transaction per

@@ -1,0 +1,87 @@
+key: reverse-harem
+name: Reverse Harem / Why Choose
+version: "1.0"
+description: One heroine, multiple love interests, no choosing required — pack dynamics, academy settings, and supernatural bonds. Built for the KU Why Choose audience that devours series.
+genres:
+  - Romance
+  - Reverse Harem
+tags:
+  - reverse harem
+  - why choose
+  - multiple love interests
+  - academy
+  - pack
+  - fated mates
+  - poly romance
+source_notes:
+  - Designed for the KU Why Choose / Reverse Harem market
+  - Incorporates multi-love-interest arc management and group chemistry conventions
+  - Follows the RH romance arc structure where each LI gets dedicated development
+anti_patterns:
+  - Love interests who are interchangeable — each must have a distinct personality, role, and dynamic with the heroine
+  - Jealousy drama that makes the LIs unlikable rather than endearing
+  - The heroine being passive while men compete for her — she must be the active center
+  - Unbalanced page time where one LI dominates and the others feel like extras
+  - Resolving the "who does she choose" question by having her choose one — this is Why Choose
+  - Steam scenes that are physically choreographed but emotionally empty
+writing_profile_overrides:
+  market:
+    prompt_pack_key: reverse-harem
+    platform_target: Kindle Unlimited
+    reader_promise: Deliver the fantasy of being chosen by ALL of them — and choosing them all back. Each love interest must steal the reader's heart individually while the group chemistry makes the whole greater than the sum of its parts.
+    selling_points:
+      - multiple love interests
+      - no choosing required
+      - pack dynamics
+      - jealousy tension
+      - group chemistry
+    trope_keywords:
+      - reverse harem
+      - why choose
+      - academy
+      - fated mates
+      - pack
+    hook_keywords:
+      - new arrival
+      - multiple bonds
+      - pack tension
+      - forbidden attraction
+    opening_strategy: Introduce the heroine and at least two love interests in the first three chapters. Each LI introduction should be distinct and memorable. Establish the mechanism that connects them (fated bonds, academy assignment, pack dynamics, supernatural link). The reader should feel the first spark of chemistry with each LI by the end of chapter 3.
+    chapter_hook_strategy: Rotate chapter endings between different LI tension hooks — a charged moment with LI #1, a revelation about LI #2, a surprising alliance with LI #3. Keep all relationship threads active. Group scenes should end on dynamics that make the reader crave more.
+    pacing_profile: fast
+    payoff_rhythm: Each LI gets a focused tension/payoff beat every 4-5 chapters. Group dynamics scenes every 3-4 chapters. The heroine's acceptance of the multi-bond should build gradually across the book.
+  character:
+    protagonist_archetype: Strong-willed heroine navigating multiple intense bonds
+    protagonist_core_drive: Discover why she is bonded to all of them — and that she doesn't have to choose
+    growth_curve: Overwhelmed newcomer to bonds deepening to full pack acceptance
+    antagonist_mode: External threat that requires the full group to face together
+  world:
+    mystery_density: medium
+    worldbuilding_density: medium
+  style:
+    prose_style: commercial-genre
+    sentence_style: balanced
+    info_density: lean
+fragments:
+  global_rules: |
+    This is Why Choose — the heroine ends up with ALL love interests. Each LI must be distinct in personality, love language, and dynamic with the heroine. Track each relationship thread carefully — no LI should be neglected for more than 3-4 chapters. The heroine must be the active center of the story, not a passive prize. Group chemistry scenes (where all or most LIs interact) are essential and should happen regularly. Jealousy should be handled in a way that builds tension without making anyone unsympathetic. The "why choose" moment should feel earned and emotionally satisfying.
+  planner_book_spec: |
+    Structure around the multi-bond arc: Introduction (Act 1, 0-25%) — heroine enters the world, meets each LI in memorable ways, the bonding mechanism is established. Individual Bonds (Act 2A, 25-50%) — each LI gets focused scenes that develop their unique connection with the heroine. Complications & Group Dynamics (Act 2B, 50-75%) — jealousy, external threats, and the heroine's internal struggle about wanting them all. Acceptance (75-85%) — the heroine begins to accept that she can have all of them. Climax (85-95%) — external threat forces the group together, bonds are tested and proven. Resolution (95-100%) — full why-choose acceptance, group HEA or HFN.
+  planner_world_spec: |
+    The world needs a mechanism that makes the multi-bond logical: pack dynamics (shifter), fated bonds (paranormal), coven structure (magic), academy housing (contemporary/fantasy), or team assignment (military/sports). Design shared spaces where the group interacts naturally — a house, a dorm wing, a training ground. Include an external threat or challenge that specifically requires the FULL group working together.
+  planner_cast_spec: |
+    Design each love interest to be a distinct archetype: the Protector (gruff, possessive, acts of service), the Charmer (flirty, emotionally intelligent, verbal affection), the Brooder (closed off, intense, slow to open up), and the Wildcard (unpredictable, playful, challenges the heroine). Adjust archetypes to fit your sub-genre. Each LI needs: a unique backstory, a distinct love language, a specific way they are vulnerable, and a moment where THEY choose the heroine (not just the reverse). Include a supportive friend for the heroine outside the harem.
+  planner_volume_plan: |
+    RH series typically run 3-5 books. Book 1: introductions, initial bonds, the heroine resists the idea of "all of them." Book 2: bonds deepen individually, jealousy and external threats escalate, the heroine begins accepting. Book 3: full acceptance, the group faces the ultimate threat together, complete HEA. Each book should develop at least two LI relationships significantly while keeping all threads active.
+  planner_outline: |
+    Chapter 1: Heroine enters the new world or situation. Chapters 2-4: Meet each LI — each introduction should be a distinct, memorable scene. Chapter 5-6: The bonding mechanism is revealed or activated. 25-50%: Rotating focused chapters — each LI gets at least one significant one-on-one scene with the heroine. Midpoint: First group dynamic scene that shows the potential of ALL of them together. 50-75%: Escalating tension — jealousy, external threat, heroine's internal conflict. 75%: The "why choose" realization begins. Climax: Group faces threat together, bonds proven. Resolution: Full acceptance.
+  scene_writer: |
+    When writing individual LI scenes, make each dynamic feel completely different — different energy, different chemistry, different vulnerability. The Protector scene should feel safe and intense. The Charmer scene should be playful and emotionally perceptive. The Brooder scene should be charged with unspoken tension. In group scenes, manage the chemistry carefully — let the LIs interact with each other (banter, rivalry, grudging respect) not just with the heroine. Use the heroine's internal monologue to show her growing feelings for each. Steam scenes should reflect each LI's unique dynamic.
+  scene_review: |
+    Check: Which LI relationship does this scene develop? Has each LI had roughly equal page time recently? Does the heroine demonstrate agency — is she choosing and acting, not just reacting? In group scenes, do all LIs present have distinct voices and roles? Is the chemistry specific to the LI in the scene, or is it generic attraction? Does the scene end with a hook that pulls on a specific relationship thread? Is jealousy handled sympathetically?
+  scene_rewrite: |
+    If a scene feels flat, add: a moment that is unique to this specific LI's dynamic with the heroine (something that wouldn't happen with the others), a beat where an LI shows vulnerability that surprises the heroine, a group interaction that demonstrates the chemistry between the LIs themselves, or a complication that raises the stakes for one specific bond. If an LI feels neglected, add a brief but meaningful moment with them.
+  chapter_review: |
+    Verify the chapter develops at least one LI relationship meaningfully, includes a plot or world-building advancement, and maintains the balance of attention across all LIs. Check that the heroine is active and her internal arc (from resistance to acceptance) is progressing. Ensure group scenes happen regularly. The chapter should end with a hook that makes the reader eager for more — preferably from a different LI thread than the one that dominated the chapter.
+  chapter_rewrite: |
+    Strengthen by: balancing LI page time (add a beat with a neglected LI), adding a group dynamic moment, giving the heroine a choice or action that demonstrates agency, and ensuring each LI interaction feels unique and specific. Tighten the chapter ending to a charged moment — a confession, a touch, a revelation, or a threat to one of the bonds.

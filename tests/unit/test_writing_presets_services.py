@@ -26,6 +26,15 @@ def test_infer_genre_preset_matches_apocalypse_supply_chain_keywords() -> None:
     assert preset.prompt_pack_key == "apocalypse-supply-chain"
 
 
+def test_validate_longform_scope_rejects_total_word_count_below_minimum() -> None:
+    with pytest.raises(ValueError, match="低于最低要求 5000 字"):
+        preset_services.validate_longform_scope(4999, 1)
+
+
+def test_validate_longform_scope_accepts_total_at_minimum() -> None:
+    preset_services.validate_longform_scope(5000, 1)
+
+
 def test_validate_longform_scope_rejects_average_chapter_word_count_below_floor() -> None:
     with pytest.raises(ValueError, match="每章最低 5000 字"):
         preset_services.validate_longform_scope(12000, 4)

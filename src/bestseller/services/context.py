@@ -844,6 +844,12 @@ async def build_scene_writer_context_from_models(
                     "unaware_of": ks.get("unaware_of", [])[:5],
                 })
 
+    # Load arc summaries (warm context) and world snapshot (cold context)
+    from bestseller.services.linear_arc_summary import load_recent_arc_summaries, load_latest_world_snapshot
+
+    arc_summaries = await load_recent_arc_summaries(session, project.id, chapter.chapter_number, limit=3)
+    world_snapshot = await load_latest_world_snapshot(session, project.id, chapter.chapter_number)
+
     return SceneWriterContextPacket(
         project_id=project.id,
         project_slug=project.slug,
@@ -872,6 +878,8 @@ async def build_scene_writer_context_from_models(
         retrieval_chunks=retrieval_chunks,
         hard_fact_snapshot=hard_fact_snapshot,
         participant_knowledge_states=_knowledge_states,
+        arc_summaries=arc_summaries,
+        world_snapshot=world_snapshot,
     )
 
 

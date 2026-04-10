@@ -175,6 +175,36 @@ def test_fallback_chapter_outline_titles_do_not_cycle() -> None:
     )
 
 
+def test_fallback_chapter_outline_titles_are_concise_and_not_volume_goal_clips() -> None:
+    project = build_project()
+    project.target_chapters = 12
+    premise = "一名被放逐的导航员发现帝国正在篡改边境航线记录。"
+    book_spec = planner_services._fallback_book_spec(project, premise)
+    world_spec = planner_services._fallback_world_spec(project, premise, book_spec)
+    cast_spec = planner_services._fallback_cast_spec(project, premise, book_spec, world_spec)
+    volume_plan = [
+        {
+            "volume_number": 1,
+            "chapter_count_target": 12,
+            "volume_goal": "沈渡需要在本卷内拿到一组足以改变局势的关键证据或盟友。",
+        }
+    ]
+
+    outline_batch = planner_services._fallback_chapter_outline_batch(
+        project,
+        book_spec,
+        cast_spec,
+        volume_plan,
+    )
+
+    titles = [ch["title"] for ch in outline_batch["chapters"] if ch.get("title")]
+
+    assert titles
+    assert all("需要在本卷内" not in title for title in titles)
+    assert all("·" not in title for title in titles)
+    assert all(len(title) <= 8 for title in titles)
+
+
 def test_fallback_chapter_outline_scenes_have_no_chapter_number_prefix() -> None:
     """Scene titles / time_labels must not embed the chapter number.
 
@@ -223,6 +253,56 @@ def test_fallback_volume_plan_does_not_create_zero_chapter_volumes_for_short_pro
 
     assert len(volume_plan) == 1
     assert volume_plan[0]["chapter_count_target"] == 1
+
+
+def test_planner_prompts_switch_to_english_for_english_projects() -> None:
+    project = ProjectModel(
+        slug="storm-ledger",
+        title="Storm Ledger",
+        genre="Fantasy",
+        sub_genre="Epic Fantasy",
+        language="en-US",
+        target_word_count=90000,
+        target_chapters=24,
+        audience="KU readers",
+        metadata_json={
+            "writing_profile": {
+                "market": {
+                    "platform_target": "Kindle Unlimited",
+                    "content_mode": "English-language commercial fantasy serial",
+                    "reader_promise": "Fast-moving fantasy with escalating political danger.",
+                    "selling_points": ["storm magic", "buried dynasty", "betrayal"],
+                    "trope_keywords": ["chosen family", "forbidden archive"],
+                    "hook_keywords": ["sealed letter", "execution order"],
+                    "opening_strategy": "Open with the order and the stolen key in the same scene.",
+                    "chapter_hook_strategy": "End every chapter with a fresh threat or reveal.",
+                    "payoff_rhythm": "Short payoff every chapter, major payoff every 5-7 chapters",
+                },
+                "style": {
+                    "tone_keywords": ["taut", "ominous", "fast"],
+                },
+                "serialization": {
+                    "opening_mandate": "Hook the reader in the first scene with concrete danger.",
+                    "first_three_chapter_goal": "Lock in the central conflict, edge, and reversal.",
+                    "scene_drive_rule": "Every scene must create a gain, a loss, or a sharper choice.",
+                    "chapter_ending_rule": "Every chapter must end on a question, a threat, or a costly next move.",
+                },
+            }
+        },
+    )
+    project.id = uuid4()
+
+    system_prompt, user_prompt = planner_services._book_spec_prompts(  # noqa: SLF001
+        project,
+        "A royal archivist discovers the crown has been deleting its own bloodline.",
+        {},
+    )
+
+    assert "English-language commercial fiction planner" in system_prompt
+    assert "Project title: Storm Ledger" in user_prompt
+    assert "Target chapters: 24" in user_prompt
+    assert "Write all planning artifacts in English." in user_prompt
+    assert "长篇中文小说" not in system_prompt + user_prompt
 
 
 @pytest.mark.asyncio
@@ -381,12 +461,141 @@ async def test_generate_novel_plan_creates_all_artifacts_and_workflow_records(
         ArtifactType.WORLD_SPEC,
         ArtifactType.CAST_SPEC,
         ArtifactType.VOLUME_PLAN,
+        ArtifactType.PLAN_VALIDATION,
         ArtifactType.CHAPTER_OUTLINE_BATCH,
     ]
     assert len(result.llm_run_ids) == 5
     assert len(workflow_runs) == 1
     assert workflow_runs[0].status == "completed"
     assert len(workflow_steps) == 6
+
+
+def test_fallback_volume_plan_has_different_obstacles_per_volume() -> None:
+    """Each volume must have a unique obstacle, not the same antagonist template."""
+    project = build_project()
+    project.target_chapters = 24
+    premise = "一名被放逐的导航员发现帝国正在篡改边境航线记录。"
+    book_spec = planner_services._fallback_book_spec(project, premise)
+    world_spec = planner_services._fallback_world_spec(project, premise, book_spec)
+    cast_spec = planner_services._fallback_cast_spec(project, premise, book_spec, world_spec)
+    volume_plan = planner_services._fallback_volume_plan(project, book_spec, cast_spec, world_spec)
+
+    obstacles = [v["volume_obstacle"] for v in volume_plan]
+    # With multiple volumes, obstacles should be different
+    assert len(volume_plan) >= 2
+    assert len(set(obstacles)) == len(obstacles), (
+        f"Volume obstacles must be unique; got {obstacles}"
+    )
+
+
+def test_fallback_volume_plan_carries_conflict_phase() -> None:
+    """Each volume entry must include a conflict_phase and primary_force_name."""
+    project = build_project()
+    project.target_chapters = 24
+    premise = "一名被放逐的导航员发现帝国正在篡改边境航线记录。"
+    book_spec = planner_services._fallback_book_spec(project, premise)
+    world_spec = planner_services._fallback_world_spec(project, premise, book_spec)
+    cast_spec = planner_services._fallback_cast_spec(project, premise, book_spec, world_spec)
+    volume_plan = planner_services._fallback_volume_plan(project, book_spec, cast_spec, world_spec)
+
+    for vol in volume_plan:
+        assert "conflict_phase" in vol
+        assert "primary_force_name" in vol
+        assert vol["conflict_phase"] in (
+            "survival", "political_intrigue", "betrayal",
+            "faction_war", "existential_threat", "internal_reckoning",
+        )
+
+
+def test_fallback_chapter_outline_main_conflict_varies_across_volumes() -> None:
+    """main_conflict in chapters of different volumes should differ."""
+    project = build_project()
+    project.target_chapters = 24
+    premise = "一名被放逐的导航员发现帝国正在篡改边境航线记录。"
+    book_spec = planner_services._fallback_book_spec(project, premise)
+    world_spec = planner_services._fallback_world_spec(project, premise, book_spec)
+    cast_spec = planner_services._fallback_cast_spec(project, premise, book_spec, world_spec)
+    volume_plan = planner_services._fallback_volume_plan(project, book_spec, cast_spec, world_spec)
+    outline = planner_services._fallback_chapter_outline_batch(project, book_spec, cast_spec, volume_plan)
+
+    chapters = outline["chapters"]
+    # Group main_conflict by volume
+    conflicts_by_volume: dict[int, set[str]] = {}
+    for ch in chapters:
+        vol = ch["volume_number"]
+        conflicts_by_volume.setdefault(vol, set()).add(ch["main_conflict"])
+
+    # Different volumes should produce different conflict texts
+    all_vol_conflicts = [next(iter(s)) for s in conflicts_by_volume.values()]
+    unique_count = len(set(all_vol_conflicts))
+    assert unique_count >= min(2, len(conflicts_by_volume)), (
+        f"Expected different conflict texts across volumes; got {all_vol_conflicts}"
+    )
+
+
+def test_fallback_cast_spec_includes_antagonist_forces() -> None:
+    """The cast spec should include antagonist_forces for multi-force conflict."""
+    project = build_project()
+    project.target_chapters = 24
+    premise = "一名被放逐的导航员发现帝国正在篡改边境航线记录。"
+    book_spec = planner_services._fallback_book_spec(project, premise)
+    world_spec = planner_services._fallback_world_spec(project, premise, book_spec)
+    cast_spec = planner_services._fallback_cast_spec(project, premise, book_spec, world_spec)
+
+    assert "antagonist_forces" in cast_spec
+    forces = cast_spec["antagonist_forces"]
+    assert len(forces) >= 2
+    # Each force has required fields
+    for force in forces:
+        assert "name" in force
+        assert "force_type" in force
+        assert "active_volumes" in force
+        assert len(force["active_volumes"]) >= 1
+
+
+def test_fallback_cast_spec_backward_compat_single_chapter() -> None:
+    """A single-chapter project should still work with antagonist_forces."""
+    project = build_project()
+    project.target_chapters = 1
+    premise = "一名被放逐的导航员发现帝国正在篡改边境航线记录。"
+    book_spec = planner_services._fallback_book_spec(project, premise)
+    world_spec = planner_services._fallback_world_spec(project, premise, book_spec)
+    cast_spec = planner_services._fallback_cast_spec(project, premise, book_spec, world_spec)
+    volume_plan = planner_services._fallback_volume_plan(project, book_spec, cast_spec, world_spec)
+    outline = planner_services._fallback_chapter_outline_batch(project, book_spec, cast_spec, volume_plan)
+
+    assert cast_spec["antagonist"] is not None
+    assert len(cast_spec["antagonist_forces"]) >= 1
+    assert len(volume_plan) == 1
+    assert len(outline["chapters"]) == 1
+
+
+def test_assign_conflict_phases_distributes_correctly() -> None:
+    assert planner_services._assign_conflict_phases(1) == ["survival"]
+    assert planner_services._assign_conflict_phases(2) == ["survival", "existential_threat"]
+    assert planner_services._assign_conflict_phases(3) == ["survival", "political_intrigue", "existential_threat"]
+    phases_5 = planner_services._assign_conflict_phases(5)
+    assert len(phases_5) == 5
+    assert phases_5[0] == "survival"
+    assert phases_5[-1] == "existential_threat"
+
+
+def test_assign_conflict_phases_7_volumes_cycles_middle() -> None:
+    """For 7+ volumes, middle phases should cycle instead of repeating last."""
+    phases_7 = planner_services._assign_conflict_phases(7)
+    assert len(phases_7) == 7
+    assert phases_7[0] == "survival"
+    assert phases_7[-1] == "internal_reckoning"
+    # Middle should NOT just repeat internal_reckoning
+    middle = phases_7[1:-1]
+    assert "internal_reckoning" not in middle
+    # Should cycle through the 4 middle phases
+    assert len(set(middle)) >= 3  # at least 3 distinct phases in the middle
+
+    phases_8 = planner_services._assign_conflict_phases(8)
+    assert len(phases_8) == 8
+    assert phases_8[0] == "survival"
+    assert phases_8[-1] == "internal_reckoning"
 
 
 def test_json_dump_helper_keeps_unicode() -> None:

@@ -605,6 +605,131 @@ async def test_run_scene_pipeline_rewrites_until_review_passes(
 
 
 @pytest.mark.asyncio
+async def test_run_scene_pipeline_stops_after_stalled_rewrite(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = build_project()
+    chapter = build_chapter(project.id)
+    scene = build_scene(project.id, chapter.id)
+    initial_draft = SceneDraftVersionModel(
+        project_id=project.id,
+        scene_card_id=scene.id,
+        version_no=1,
+        content_md="初始草稿",
+        word_count=120,
+        is_current=True,
+        generation_params={},
+    )
+    initial_draft.id = uuid4()
+    initial_draft.llm_run_id = uuid4()
+
+    rewritten_draft = SceneDraftVersionModel(
+        project_id=project.id,
+        scene_card_id=scene.id,
+        version_no=2,
+        content_md="重写一次后的草稿",
+        word_count=160,
+        is_current=True,
+        generation_params={},
+    )
+    rewritten_draft.id = uuid4()
+    rewritten_draft.llm_run_id = uuid4()
+
+    rewrite_task = type("RewriteTaskStub", (), {"id": uuid4(), "status": "pending"})()
+    report_a = type("ReportStub", (), {"id": uuid4(), "llm_run_id": None})()
+    report_b = type("ReportStub", (), {"id": uuid4(), "llm_run_id": None})()
+    quality_a = type("QualityStub", (), {"id": uuid4()})()
+    quality_b = type("QualityStub", (), {"id": uuid4()})()
+
+    async def fake_load_scene_identifiers(session, project_slug, chapter_number, scene_number):
+        return project, chapter, scene
+
+    async def fake_load_current_scene_draft(session, scene_id):
+        return initial_draft
+
+    async def fake_review_scene_draft(
+        session,
+        settings,
+        project_slug,
+        chapter_number,
+        scene_number,
+        **kwargs,
+    ):
+        calls = getattr(fake_review_scene_draft, "calls", 0) + 1
+        fake_review_scene_draft.calls = calls
+        if calls == 1:
+            return (
+                type(
+                    "ReviewResultStub",
+                    (),
+                    {
+                        "verdict": "rewrite",
+                        "severity_max": "medium",
+                        "scores": type("ScoreStub", (), {"overall": 0.50})(),
+                        "rewrite_instructions": "补强冲突和尾钩",
+                    },
+                )(),
+                report_a,
+                quality_a,
+                rewrite_task,
+            )
+        return (
+            type(
+                "ReviewResultStub",
+                (),
+                {
+                    "verdict": "rewrite",
+                    "severity_max": "medium",
+                    "scores": type("ScoreStub", (), {"overall": 0.51})(),
+                    "rewrite_instructions": "补强冲突和尾钩",
+                },
+            )(),
+            report_b,
+            quality_b,
+            rewrite_task,
+        )
+
+    async def fake_rewrite_scene_from_task(
+        session,
+        project_slug,
+        chapter_number,
+        scene_number,
+        **kwargs,
+    ):
+        calls = getattr(fake_rewrite_scene_from_task, "calls", 0) + 1
+        fake_rewrite_scene_from_task.calls = calls
+        return rewritten_draft, rewrite_task
+
+    monkeypatch.setattr(pipeline_services, "_load_scene_identifiers", fake_load_scene_identifiers)
+    monkeypatch.setattr(pipeline_services, "_load_current_scene_draft", fake_load_current_scene_draft)
+    monkeypatch.setattr(pipeline_services, "review_scene_draft", fake_review_scene_draft)
+    monkeypatch.setattr(pipeline_services, "rewrite_scene_from_task", fake_rewrite_scene_from_task)
+
+    session = FakeSession()
+    settings = build_settings()
+    settings.quality.min_scene_rewrite_improvement = 0.03
+
+    result = await pipeline_services.run_scene_pipeline(
+        session,
+        settings,
+        "my-story",
+        1,
+        1,
+        requested_by="tester",
+    )
+
+    workflow_runs = [obj for obj in session.added if isinstance(obj, WorkflowRunModel)]
+
+    assert result.final_verdict == "rewrite"
+    assert result.review_iterations == 2
+    assert result.rewrite_iterations == 1
+    assert result.requires_human_review is True
+    assert getattr(fake_rewrite_scene_from_task, "calls", 0) == 1
+    assert workflow_runs[0].status == "waiting_human"
+    assert workflow_runs[0].metadata_json["stalled_rewrite"] is True
+
+
+@pytest.mark.asyncio
 async def test_run_chapter_pipeline_assembles_and_exports(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -1239,6 +1364,167 @@ async def test_run_project_pipeline_materializes_and_exports(
     assert len(result.chapter_results) == 1
     assert len(workflow_runs) == 1
     assert workflow_runs[0].status == "completed"
+
+
+@pytest.mark.asyncio
+async def test_run_project_pipeline_emits_chapter_progress_with_title_and_word_counts(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    project = build_project()
+    chapter = build_chapter(project.id)
+    chapter.target_word_count = 5000
+    chapter.title = "暗潮入局"
+    materialization_result = type(
+        "MaterializationResultStub",
+        (),
+        {"workflow_run_id": uuid4()},
+    )()
+    chapter_result = pipeline_services.ChapterPipelineResult(
+        workflow_run_id=uuid4(),
+        project_id=project.id,
+        chapter_id=chapter.id,
+        chapter_number=1,
+        scene_results=[],
+        chapter_draft_id=uuid4(),
+        chapter_draft_version_no=1,
+        export_artifact_id=uuid4(),
+        output_path=str(tmp_path / "output" / "chapter-001.md"),
+        requires_human_review=False,
+    )
+
+    async def fake_get_project_by_slug(session, slug: str) -> ProjectModel:
+        return project
+
+    async def fake_load_project_chapters(session, project_id):
+        return [chapter]
+
+    async def fake_materialize_latest(session, project_slug: str, **kwargs):
+        return materialization_result
+
+    async def fake_run_chapter_pipeline(
+        session,
+        settings,
+        project_slug,
+        chapter_number,
+        **kwargs,
+    ):
+        chapter.current_word_count = 4986
+        chapter.title = "暗潮入局"
+        return chapter_result
+
+    async def fake_export_project_markdown(session, settings, project_slug: str, **kwargs):
+        output_path = tmp_path / "output" / "project.md"
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text("# My Story", encoding="utf-8")
+        export_artifact = ExportArtifactModel(
+            project_id=project.id,
+            export_type="markdown",
+            source_scope="project",
+            source_id=project.id,
+            storage_uri=str(output_path),
+            checksum="b" * 64,
+            version_label="project-current",
+        )
+        export_artifact.id = uuid4()
+        return export_artifact, output_path
+
+    async def fake_review_project_consistency(
+        session,
+        settings,
+        project_slug: str,
+        **kwargs,
+    ):
+        return (
+            type("ProjectReviewResultStub", (), {"verdict": "pass"})(),
+            type("ProjectReviewReportStub", (), {"id": uuid4()})(),
+            type("ProjectReviewQualityStub", (), {"id": uuid4()})(),
+        )
+
+    async def fake_get_latest_planning_artifact(session, project_id, artifact_type):
+        return object()
+
+    monkeypatch.setattr(pipeline_services, "get_project_by_slug", fake_get_project_by_slug)
+    monkeypatch.setattr(pipeline_services, "_load_project_chapters", fake_load_project_chapters)
+    monkeypatch.setattr(
+        pipeline_services,
+        "materialize_latest_chapter_outline_batch",
+        fake_materialize_latest,
+    )
+    monkeypatch.setattr(pipeline_services, "run_chapter_pipeline", fake_run_chapter_pipeline)
+    monkeypatch.setattr(pipeline_services, "export_project_markdown", fake_export_project_markdown)
+    monkeypatch.setattr(
+        pipeline_services,
+        "review_project_consistency",
+        fake_review_project_consistency,
+    )
+    monkeypatch.setattr(
+        pipeline_services,
+        "materialize_latest_narrative_graph",
+        AsyncMock(
+            return_value=type(
+                "NarrativeGraphResultStub",
+                (),
+                {"workflow_run_id": uuid4(), "plot_arc_count": 3, "clue_count": 1},
+            )()
+        ),
+    )
+    monkeypatch.setattr(
+        pipeline_services,
+        "materialize_latest_narrative_tree",
+        AsyncMock(
+            return_value=type(
+                "NarrativeTreeResultStub",
+                (),
+                {"workflow_run_id": uuid4(), "node_count": 16},
+            )()
+        ),
+    )
+    monkeypatch.setattr(
+        pipeline_services,
+        "get_latest_planning_artifact",
+        fake_get_latest_planning_artifact,
+    )
+
+    progress_events: list[tuple[str, dict[str, object] | None]] = []
+
+    def progress(stage: str, payload: dict[str, object] | None = None) -> None:
+        progress_events.append((stage, payload))
+
+    session = FakeSession()
+    await pipeline_services.run_project_pipeline(
+        session,
+        build_settings(),
+        "my-story",
+        requested_by="tester",
+        materialize_outline=True,
+        export_markdown=True,
+        progress=progress,
+    )
+
+    started = [payload for stage, payload in progress_events if stage == "chapter_pipeline_started"]
+    completed = [payload for stage, payload in progress_events if stage == "chapter_pipeline_completed"]
+
+    assert started == [
+        {
+            "project_slug": "my-story",
+            "chapter_number": 1,
+            "progress": "1/1",
+            "target_word_count": 5000,
+        }
+    ]
+    assert completed == [
+        {
+            "project_slug": "my-story",
+            "chapter_number": 1,
+            "workflow_run_id": str(chapter_result.workflow_run_id),
+            "requires_human_review": False,
+            "chapter_draft_version_no": 1,
+            "chapter_title": "暗潮入局",
+            "word_count": 4986,
+            "target_word_count": 5000,
+        }
+    ]
 
 
 @pytest.mark.asyncio

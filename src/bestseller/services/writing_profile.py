@@ -2,11 +2,18 @@ from __future__ import annotations
 
 from typing import Any
 
-from bestseller.domain.project import ProjectCreate, WritingProfile
+from bestseller.domain.project import (
+    CharacterEngineConfig,
+    MarketPositioningConfig,
+    ProjectCreate,
+    SerializationStrategyConfig,
+    WorldDesignConfig,
+    WritingProfile,
+)
 from bestseller.infra.db.models import ProjectModel, StyleGuideModel
 from bestseller.services.prompt_packs import (
-    render_prompt_pack_prompt_block,
     render_prompt_pack_fragment,
+    render_prompt_pack_prompt_block,
     resolve_prompt_pack,
 )
 from bestseller.services.writing_presets import get_platform_preset, infer_genre_preset
@@ -30,6 +37,43 @@ def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any
         else:
             merged[key] = value
     return merged
+
+
+def is_english_language(language: str | None) -> bool:
+    normalized = (language or "").strip().lower()
+    return normalized.startswith("en")
+
+
+def _default_writing_profile_payload(language: str | None = None) -> dict[str, Any]:
+    if is_english_language(language):
+        return WritingProfile(
+            market=MarketPositioningConfig(
+                platform_target="English-language fiction platform",
+                content_mode="English-language serial fiction",
+                opening_strategy="Open fast with the protagonist edge, an immediate problem, a concrete gain, and visible danger.",
+                chapter_hook_strategy="End every chapter with a question, threat, reveal, or costly next move.",
+                payoff_rhythm="Frequent short payoffs with longer-arc escalation",
+                update_strategy="Serial release",
+            ),
+            character=CharacterEngineConfig(
+                growth_curve="Escalate competence, pressure, and cost in visible steps.",
+                relationship_tension="Trust and suspicion should pull against each other inside every alliance.",
+                antagonist_mode="Escalating system-level opposition",
+                ensemble_mode="Supporting cast should mirror, tempt, or challenge the protagonist's choices.",
+            ),
+            world=WorldDesignConfig(
+                info_reveal_strategy="Reveal background through action, negotiation, conflict, and consequences instead of exposition blocks.",
+            ),
+            serialization=SerializationStrategyConfig(
+                opening_mandate="Reveal the protagonist edge, core disturbance, short-term gain, and immediate danger as early as possible.",
+                first_three_chapter_goal="Lock in the protagonist hook, the world disturbance, the first counter-pressure, and a strong read-on hook.",
+                scene_drive_rule="Every scene needs a goal, resistance, escalation, information change, and a trailing hook.",
+                exposition_rule="Keep exposition light; hide it inside action, trade-offs, conflict, and aftermath.",
+                chapter_ending_rule="Every chapter ends with an unresolved question, reversal, or sharper danger.",
+                free_chapter_strategy="Sample chapters must prove hook density, pace, and escalation early.",
+            ),
+        ).model_dump(mode="json")
+    return WritingProfile().model_dump(mode="json")
 
 
 def _genre_preset(genre: str, sub_genre: str | None = None) -> dict[str, Any]:
@@ -169,9 +213,15 @@ def resolve_writing_profile(
     genre: str,
     sub_genre: str | None = None,
     audience: str | None = None,
+    language: str | None = None,
 ) -> WritingProfile:
-    base = WritingProfile().model_dump(mode="json")
     inferred_genre_preset = infer_genre_preset(genre, sub_genre)
+    resolved_language = (
+        language
+        or (inferred_genre_preset.language if inferred_genre_preset is not None else None)
+        or "zh-CN"
+    )
+    base = _default_writing_profile_payload(resolved_language)
     preset = _genre_preset(genre, sub_genre)
     merged = _deep_merge(base, preset)
     if audience:
@@ -223,6 +273,7 @@ def resolve_project_create_writing_profile(payload: ProjectCreate) -> WritingPro
         genre=payload.genre,
         sub_genre=payload.sub_genre,
         audience=payload.audience,
+        language=payload.language,
     )
 
 
@@ -239,6 +290,11 @@ def build_project_metadata(payload: ProjectCreate, writing_profile: WritingProfi
     metadata.setdefault("golden_finger", writing_profile.character.golden_finger)
     metadata.setdefault("protagonist_archetype", writing_profile.character.protagonist_archetype)
     metadata.setdefault("growth_curve", writing_profile.character.growth_curve)
+    if payload.publishing is not None:
+        metadata["publishing"] = _deep_merge(
+            metadata.get("publishing", {}) if isinstance(metadata.get("publishing"), dict) else {},
+            payload.publishing.model_dump(mode="json", exclude_none=True),
+        )
     return metadata
 
 
@@ -253,6 +309,7 @@ def get_project_writing_profile(
             genre=project.genre,
             sub_genre=project.sub_genre,
             audience=project.audience,
+            language=project.language,
         )
     fallback = {}
     if style_guide is not None:
@@ -276,15 +333,63 @@ def get_project_writing_profile(
         genre=project.genre,
         sub_genre=project.sub_genre,
         audience=project.audience,
+        language=project.language,
     )
 
 
-def render_writing_profile_prompt_block(profile: WritingProfile) -> str:
+def render_writing_profile_prompt_block(profile: WritingProfile, *, language: str | None = None) -> str:
     prompt_pack = resolve_prompt_pack(
         profile.market.prompt_pack_key,
         genre=" ".join(profile.style.tone_keywords) or "通用",
         sub_genre=None,
     )
+    if is_english_language(language):
+        lines = [
+            "Platform and Reader Promise:",
+            f"- Platform target: {profile.market.platform_target}",
+            f"- Prompt pack: {profile.market.prompt_pack_key or 'auto/unspecified'}",
+            f"- Content mode: {profile.market.content_mode}",
+            f"- Reader promise: {profile.market.reader_promise or 'Establish a durable read-on desire fast.'}",
+            f"- Selling points: {', '.join(profile.market.selling_points) or 'none specified'}",
+            f"- Trope tags: {', '.join(profile.market.trope_keywords) or 'none'}",
+            f"- Hook tags: {', '.join(profile.market.hook_keywords) or 'none'}",
+            f"- Opening strategy: {profile.market.opening_strategy}",
+            f"- Chapter hook strategy: {profile.market.chapter_hook_strategy}",
+            f"- Pace: {profile.market.pacing_profile} / Payoff rhythm: {profile.market.payoff_rhythm}",
+            "Character and Story Engine:",
+            f"- Protagonist archetype: {profile.character.protagonist_archetype or 'unspecified'}",
+            f"- Protagonist core drive: {profile.character.protagonist_core_drive or 'unspecified'}",
+            f"- Unique edge: {profile.character.golden_finger or 'unspecified'}",
+            f"- Growth curve: {profile.character.growth_curve}",
+            f"- Romance mode: {profile.character.romance_mode}",
+            f"- Relationship tension: {profile.character.relationship_tension}",
+            f"- Antagonist mode: {profile.character.antagonist_mode}",
+            "World and Information Release:",
+            f"- Worldbuilding density: {profile.world.worldbuilding_density}",
+            f"- Reveal strategy: {profile.world.info_reveal_strategy}",
+            f"- Rule hardness: {profile.world.rule_hardness}",
+            f"- Power system: {profile.world.power_system_style or 'unspecified'}",
+            f"- Mystery density: {profile.world.mystery_density}",
+            f"- Setting tags: {', '.join(profile.world.setting_tags) or 'none'}",
+            "Style and Serialization Rules:",
+            f"- POV: {profile.style.pov_type} / Tense: {profile.style.tense}",
+            f"- Tone keywords: {', '.join(profile.style.tone_keywords) or 'unspecified'}",
+            f"- Prose style: {profile.style.prose_style}",
+            f"- Sentence style: {profile.style.sentence_style} / Info density: {profile.style.info_density} / Dialogue ratio: {profile.style.dialogue_ratio:.2f}",
+            f"- Reference works: {', '.join(profile.style.reference_works) or 'none'}",
+            f"- Extra rules: {'; '.join(profile.style.custom_rules) or 'none'}",
+            "Serialization Guardrails:",
+            f"- {profile.serialization.opening_mandate}",
+            f"- {profile.serialization.first_three_chapter_goal}",
+            f"- {profile.serialization.scene_drive_rule}",
+            f"- {profile.serialization.exposition_rule}",
+            f"- {profile.serialization.chapter_ending_rule}",
+            f"- {profile.serialization.free_chapter_strategy}",
+        ]
+        pack_block = render_prompt_pack_prompt_block(prompt_pack)
+        if pack_block:
+            lines.extend(["Prompt Pack Notes:", pack_block])
+        return "\n".join(lines)
     lines = [
         "平台与读者承诺：",
         f"- 平台目标：{profile.market.platform_target}",
@@ -333,7 +438,26 @@ def render_writing_profile_prompt_block(profile: WritingProfile) -> str:
     return "\n".join(lines)
 
 
-def render_serial_fiction_guardrails(profile: WritingProfile) -> str:
+def render_serial_fiction_guardrails(profile: WritingProfile, *, language: str | None = None) -> str:
+    if is_english_language(language):
+        guardrails = (
+            "1. Reveal the protagonist's differentiating edge, the core disturbance, a short-term gain, and immediate danger as early as possible.\n"
+            f"2. Deliver a concrete hook within the first {profile.market.hook_deadline_words} words; do not open with encyclopedia-style background.\n"
+            "3. Every scene needs a goal, resistance, escalation, an information change, and a trailing hook.\n"
+            "4. Release setting information through action, trade-offs, conflict, failure, and consequence instead of long exposition blocks.\n"
+            "5. Let the protagonist quickly display an advantage, wound, hunger, blind spot, or sharp contrast readers can remember.\n"
+            "6. End every chapter with a question, threat, reveal, or incentive that compels the next click.\n"
+            "7. All payoffs, mysteries, and emotional turns must serve the active platform target, selling points, and trope tags."
+        )
+        prompt_pack = resolve_prompt_pack(
+            profile.market.prompt_pack_key,
+            genre=" ".join(profile.style.tone_keywords) or "general",
+            sub_genre=None,
+        )
+        pack_rules = render_prompt_pack_fragment(prompt_pack, "global_rules")
+        if pack_rules:
+            guardrails = f"{guardrails}\n8. Extra Prompt Pack rules: {pack_rules}"
+        return guardrails
     guardrails = (
         "1. 开篇要尽快亮出主角差异化优势、核心异变、短期利益与即时危险。\n"
         f"2. 在前 {profile.market.hook_deadline_words} 字内给出明确钩子，不要先铺背景百科。\n"

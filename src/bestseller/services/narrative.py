@@ -81,6 +81,7 @@ def _build_arc_specs(
     *,
     protagonist: CharacterModel | None,
     antagonist: CharacterModel | None,
+    all_antagonists: list[CharacterModel] | None = None,
     volumes: list[VolumeModel],
     volume_entries: dict[int, Any],
 ) -> list[dict[str, Any]]:
@@ -106,6 +107,7 @@ def _build_arc_specs(
                 _ensure_text(last_volume.goal if last_volume is not None else None, "主线在最终高潮获得兑现。"),
             ),
             "description": theme_text or None,
+            "metadata_json": {"plotline_category": "mainline", "plotline_visibility": "visible"},
         }
     ]
 
@@ -125,6 +127,7 @@ def _build_arc_specs(
                     f"{protagonist.name}完成成长并承担更大的叙事责任。",
                 ),
                 "description": protagonist.arc_state,
+                "metadata_json": {"plotline_category": "subplot", "plotline_visibility": "visible"},
             }
         )
 
@@ -142,6 +145,7 @@ def _build_arc_specs(
                 "core_question": "幕后真相到底是什么，谁在操盘？",
                 "target_payoff": _ensure_text(key_reveals[-1] if key_reveals else None, "暗线在关键卷完成兑现。"),
                 "description": "控制揭示顺序，避免过早泄露核心真相。",
+                "metadata_json": {"plotline_category": "hidden", "plotline_visibility": "hidden"},
             }
         )
 
@@ -161,8 +165,67 @@ def _build_arc_specs(
                     f"{antagonist.name}被迫公开下场，与主角正面碰撞。",
                 ),
                 "description": antagonist.arc_trajectory,
+                "metadata_json": {"plotline_category": "subplot", "plotline_visibility": "visible"},
             }
         )
+
+    # Generate volume-scoped conflict arcs for additional antagonist characters.
+    # Each non-primary antagonist gets a volume_conflict arc scoped to volumes
+    # where they are active, creating rich subplot diversity.
+    _extra_antagonists = [
+        ch for ch in (all_antagonists or [])
+        if ch.role == "antagonist" and (antagonist is None or ch.id != antagonist.id)
+    ]
+    for extra_antag in _extra_antagonists:
+        # Determine active volumes from character metadata
+        antag_meta = extra_antag.metadata_json if isinstance(extra_antag.metadata_json, dict) else {}
+        active_vols = antag_meta.get("active_volumes", [])
+        scope_vol = active_vols[0] if active_vols else None
+        arc_specs.append(
+            {
+                "arc_code": f"volume_conflict_{extra_antag.name.lower().replace(' ', '_')}",
+                "name": f"{extra_antag.name}冲突线",
+                "arc_type": "volume_conflict",
+                "promise": _ensure_text(
+                    extra_antag.goal,
+                    f"{extra_antag.name}在特定阶段构成主角的核心挑战。",
+                ),
+                "core_question": f"{extra_antag.name}会如何影响主角的旅程？",
+                "target_payoff": _ensure_text(
+                    extra_antag.secret,
+                    f"{extra_antag.name}的威胁最终被主角化解或转化。",
+                ),
+                "description": extra_antag.arc_trajectory,
+                "scope_volume_number": scope_vol,
+                "metadata_json": {
+                    "plotline_category": "subplot",
+                    "plotline_visibility": "visible",
+                    "active_volumes": active_vols,
+                },
+            }
+        )
+
+    # Generate hidden arcs for characters with secrets (betrayal setup)
+    all_chars = all_antagonists or []
+    if protagonist is not None:
+        # Check supporting cast characters that have secrets and potential_betrayal
+        for ch in all_chars:
+            if ch.role in ("ally", "supporting") and ch.secret:
+                arc_specs.append(
+                    {
+                        "arc_code": f"conspiracy_{ch.name.lower().replace(' ', '_')}",
+                        "name": f"{ch.name}暗线",
+                        "arc_type": "conspiracy",
+                        "promise": f"{ch.name}隐藏着不为人知的秘密。",
+                        "core_question": f"{ch.name}的真正目的是什么？",
+                        "target_payoff": f"{ch.name}的秘密在关键时刻被揭露。",
+                        "description": ch.secret,
+                        "metadata_json": {
+                            "plotline_category": "hidden",
+                            "plotline_visibility": "hidden",
+                        },
+                    }
+                )
 
     return arc_specs
 
@@ -665,51 +728,67 @@ def _build_emotion_track_specs(
     return specs
 
 
+_CONFLICT_PHASE_PRESSURE: dict[str, float] = {
+    "survival": 0.40,
+    "political_intrigue": 0.50,
+    "betrayal": 0.65,
+    "faction_war": 0.70,
+    "existential_threat": 0.85,
+    "internal_reckoning": 0.75,
+}
+
+
 def _build_antagonist_plan_specs(
     *,
     protagonist: CharacterModel | None,
     antagonist: CharacterModel | None,
+    all_antagonists: list[CharacterModel] | None = None,
     volumes: list[VolumeModel],
     chapters_by_volume: dict[int, list[ChapterModel]],
     volume_entries: dict[int, Any],
 ) -> list[dict[str, Any]]:
-    if antagonist is None:
+    if antagonist is None and not (all_antagonists or []):
         return []
     all_chapters = sorted(
         [chapter for volume_chapters in chapters_by_volume.values() for chapter in volume_chapters],
         key=lambda item: item.chapter_number,
     )
     final_chapter_number = all_chapters[-1].chapter_number if all_chapters else None
-    specs: list[dict[str, Any]] = [
-        {
-            "plan_code": "main-antagonist-plan",
-            "title": f"{antagonist.name}总体反制计划",
-            "threat_type": "master_plan",
-            "goal": _ensure_text(
-                antagonist.goal,
-                f"{antagonist.name}要阻止主角接近核心真相。",
-            ),
-            "current_move": _ensure_text(
-                antagonist.arc_state,
-                f"{antagonist.name}正在通过体系与代理人持续施压。",
-            ),
-            "next_countermove": _ensure_text(
-                antagonist.secret,
-                f"{antagonist.name}下一步会把压制升级成公开对撞。",
-            ),
-            "escalation_condition": _ensure_text(
-                protagonist.goal if protagonist is not None else None,
-                "主角一旦拿到关键证据，反派必须提前动手。",
-            ),
-            "reveal_timing": "终局前",
-            "scope_volume_number": None,
-            "target_chapter_number": final_chapter_number,
-            "pressure_level": 0.85,
-            "status": "active",
-            "metadata_json": {"generated": "master_plan"},
-        }
-    ]
+    specs: list[dict[str, Any]] = []
 
+    # 1. Master plan for the primary antagonist (the "final boss")
+    if antagonist is not None:
+        specs.append(
+            {
+                "plan_code": "main-antagonist-plan",
+                "title": f"{antagonist.name}总体反制计划",
+                "threat_type": "master_plan",
+                "goal": _ensure_text(
+                    antagonist.goal,
+                    f"{antagonist.name}要阻止主角接近核心真相。",
+                ),
+                "current_move": _ensure_text(
+                    antagonist.arc_state,
+                    f"{antagonist.name}正在通过体系与代理人持续施压。",
+                ),
+                "next_countermove": _ensure_text(
+                    antagonist.secret,
+                    f"{antagonist.name}下一步会把压制升级成公开对撞。",
+                ),
+                "escalation_condition": _ensure_text(
+                    protagonist.goal if protagonist is not None else None,
+                    "主角一旦拿到关键证据，反派必须提前动手。",
+                ),
+                "reveal_timing": "终局前",
+                "scope_volume_number": None,
+                "target_chapter_number": final_chapter_number,
+                "pressure_level": 0.85,
+                "status": "active",
+                "metadata_json": {"generated": "master_plan"},
+            }
+        )
+
+    # 2. Per-volume plans — use volume's conflict_phase for pressure calculation
     for volume in volumes:
         entry = volume_entries.get(volume.volume_number)
         volume_chapters = sorted(
@@ -717,34 +796,59 @@ def _build_antagonist_plan_specs(
             key=lambda item: item.chapter_number,
         )
         target_chapter_number = volume_chapters[-1].chapter_number if volume_chapters else None
-        pressure_level = _clamp_metric(0.45 + (volume.volume_number * 0.12))
+
+        # Extract conflict_phase from volume metadata if available
+        vol_meta = volume.metadata_json if isinstance(volume.metadata_json, dict) else {}
+        conflict_phase = vol_meta.get("conflict_phase", "")
+        force_name = vol_meta.get("primary_force_name", antagonist.name if antagonist else "敌对势力")
+
+        # Use phase-based pressure instead of linear formula
+        if conflict_phase and conflict_phase in _CONFLICT_PHASE_PRESSURE:
+            pressure_level = _clamp_metric(_CONFLICT_PHASE_PRESSURE[conflict_phase])
+        else:
+            pressure_level = _clamp_metric(0.45 + (volume.volume_number * 0.12))
+
+        # Find the matching antagonist character for this volume
+        plan_antagonist = antagonist
+        for extra in (all_antagonists or []):
+            extra_meta = extra.metadata_json if isinstance(extra.metadata_json, dict) else {}
+            if volume.volume_number in extra_meta.get("active_volumes", []):
+                plan_antagonist = extra
+                break
+
+        plan_label = plan_antagonist.name if plan_antagonist else force_name
         specs.append(
             {
                 "plan_code": f"volume-{volume.volume_number:02d}-pressure",
-                "title": f"第{volume.volume_number}卷反派升级",
-                "threat_type": "volume_pressure",
+                "title": f"第{volume.volume_number}卷·{force_name}",
+                "threat_type": conflict_phase or "volume_pressure",
                 "goal": _ensure_text(
                     getattr(entry, "volume_obstacle", None) if entry is not None else None,
-                    volume.obstacle or f"{antagonist.name}在本卷持续收紧主角的行动空间。",
+                    volume.obstacle or f"{plan_label}在本卷持续收紧主角的行动空间。",
                 ),
                 "current_move": _ensure_text(
                     volume.obstacle,
-                    f"{antagonist.name}在本卷布置新的封锁和压迫手段。",
+                    f"{plan_label}在本卷布置新的封锁和压迫手段。",
                 ),
                 "next_countermove": _ensure_text(
                     getattr(entry, "reader_hook_to_next", None) if entry is not None else None,
-                    f"{antagonist.name}在卷末会把对抗升级到更高层级。",
+                    f"{plan_label}在卷末会把对抗升级到更高层级。",
                 ),
                 "escalation_condition": _ensure_text(
                     getattr(entry, "volume_goal", None) if entry is not None else None,
-                    "主角一旦推进主线，反派必须同步升级压制。",
+                    "主角一旦推进主线，对手必须同步升级压制。",
                 ),
                 "reveal_timing": f"第{volume.volume_number}卷",
                 "scope_volume_number": volume.volume_number,
                 "target_chapter_number": target_chapter_number,
                 "pressure_level": pressure_level,
                 "status": "active" if target_chapter_number is None or volume.volume_number == 1 else "planned",
-                "metadata_json": {"volume_title": volume.title},
+                "metadata_json": {
+                    "volume_title": volume.title,
+                    "conflict_phase": conflict_phase,
+                    "force_name": force_name,
+                    "antagonist_label": plan_label,
+                },
             }
         )
     return specs
@@ -842,6 +946,7 @@ def _build_subplot_schedule_specs(
     arcs_by_code: dict[str, PlotArcModel],
     chapters: list[ChapterModel],
     beats_by_chapter: dict[int, list[Any]],
+    chapters_by_volume: dict[int, list[ChapterModel]] | None = None,
 ) -> list[dict[str, Any]]:
     specs: list[dict[str, Any]] = []
     subplot_arcs = {
@@ -850,18 +955,51 @@ def _build_subplot_schedule_specs(
     }
     if not subplot_arcs:
         return specs
+
+    # Build chapter→volume lookup
+    ch_to_vol: dict[int, int] = {}
+    for vol_num, vol_chapters in (chapters_by_volume or {}).items():
+        for ch in vol_chapters:
+            ch_to_vol[ch.chapter_number] = vol_num
+
     for chapter in chapters:
         chapter_beat_arc_codes = {
             str(beat.metadata_json.get("arc_code"))
             for beat in beats_by_chapter.get(chapter.chapter_number, [])
         }
+        ch_vol = ch_to_vol.get(chapter.chapter_number, 1)
         for arc_code, arc in subplot_arcs.items():
-            if arc_code in chapter_beat_arc_codes:
+            arc_meta = arc.metadata_json if isinstance(arc.metadata_json, dict) else {}
+            plotline_visibility = arc_meta.get("plotline_visibility", "visible")
+            active_volumes = arc_meta.get("active_volumes", [])
+
+            # Hidden arcs stay dormant/mention until their active volume
+            if plotline_visibility == "hidden":
+                if active_volumes and ch_vol not in active_volumes:
+                    prominence = "dormant"
+                elif arc_code in chapter_beat_arc_codes:
+                    prominence = "secondary"  # hidden arcs don't dominate
+                elif chapter.chapter_number <= 2:
+                    prominence = "mention"
+                else:
+                    prominence = "dormant"
+            # Volume-scoped arcs are only active in their volumes
+            elif active_volumes:
+                if ch_vol in active_volumes:
+                    if arc_code in chapter_beat_arc_codes:
+                        prominence = "primary"
+                    else:
+                        prominence = "secondary"
+                else:
+                    prominence = "dormant"
+            # Standard logic for visible, project-scoped arcs
+            elif arc_code in chapter_beat_arc_codes:
                 prominence = "primary"
             elif chapter.chapter_number <= 2:
                 prominence = "mention"
             else:
                 prominence = "dormant"
+
             specs.append({
                 "plot_arc_id": arc.id,
                 "arc_code": arc_code,
@@ -1050,6 +1188,7 @@ async def rebuild_narrative_graph(
     )
     protagonist = next((item for item in characters if item.role == "protagonist"), None)
     antagonist = next((item for item in characters if item.role == "antagonist"), None)
+    all_antagonists = [item for item in characters if item.role == "antagonist"]
     characters_by_id = {item.id: item for item in characters}
     volume_number_by_id = {volume.id: volume.volume_number for volume in volumes if volume.id is not None}
 
@@ -1096,6 +1235,7 @@ async def rebuild_narrative_graph(
         project,
         protagonist=protagonist,
         antagonist=antagonist,
+        all_antagonists=all_antagonists,
         volumes=volumes,
         volume_entries=volume_entries,
     )
@@ -1110,11 +1250,11 @@ async def rebuild_narrative_graph(
             core_question=spec["core_question"],
             target_payoff=spec.get("target_payoff"),
             status="planned",
-            scope_level="project",
-            scope_volume_number=None,
+            scope_level="volume" if spec.get("scope_volume_number") else "project",
+            scope_volume_number=spec.get("scope_volume_number"),
             scope_chapter_number=None,
             description=spec.get("description"),
-            metadata_json={},
+            metadata_json=spec.get("metadata_json", {}),
         )
         session.add(arc)
         arcs_by_code[spec["arc_code"]] = arc
@@ -1367,16 +1507,20 @@ async def rebuild_narrative_graph(
     antagonist_plan_specs = _build_antagonist_plan_specs(
         protagonist=protagonist,
         antagonist=antagonist,
+        all_antagonists=all_antagonists,
         volumes=volumes,
         chapters_by_volume=chapters_by_volume,
         volume_entries=volume_entries,
     )
     antagonist_plan_models: list[AntagonistPlanModel] = []
     for spec in antagonist_plan_specs:
+        # Use per-plan label from metadata if available (for multi-force plans)
+        plan_meta = spec.get("metadata_json") or {}
+        plan_antag_label = plan_meta.get("antagonist_label", antagonist.name if antagonist is not None else "未知反派")
         antagonist_plan = AntagonistPlanModel(
             project_id=project.id,
             antagonist_character_id=antagonist.id if antagonist is not None else None,
-            antagonist_label=antagonist.name if antagonist is not None else "未知反派",
+            antagonist_label=plan_antag_label,
             plan_code=spec["plan_code"],
             title=spec["title"],
             threat_type=spec["threat_type"],
@@ -1445,6 +1589,7 @@ async def rebuild_narrative_graph(
         arcs_by_code=arcs_by_code,
         chapters=chapters,
         beats_by_chapter=beats_by_chapter,
+        chapters_by_volume=chapters_by_volume,
     )
     subplot_models: list[SubplotScheduleModel] = []
     for spec in subplot_specs:

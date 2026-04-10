@@ -28,6 +28,7 @@ from bestseller.services.prompt_packs import (
 from bestseller.services.projects import get_project_by_slug
 from bestseller.services.story_bible import load_scene_story_bible_context
 from bestseller.services.writing_profile import (
+    is_english_language,
     render_serial_fiction_guardrails,
     render_writing_profile_prompt_block,
     resolve_writing_profile,
@@ -77,10 +78,14 @@ _CN_META_LINE_RE = re.compile(
     r"|商业网文硬约束|Prompt Pack)\s*[：:].+$"
 )
 
-# Scene/chapter scaffold headings that must never appear in prose:
+# Scene scaffold headings that must never appear in prose:
 #   "## 场景 1：xxx"  /  "### 第三场"  /  "第1场" / "第一场"
+# NOTE: This must NOT match chapter headings like "# 第1章：xxx" — those are
+# legitimate headings inserted by _format_chapter_heading and must be preserved.
+# Duplicate chapter markers (e.g. "第1章 第1章：xxx") are handled separately by
+# _CN_DUPLICATE_CHAPTER_MARKER_RE.
 _CN_SCAFFOLD_HEADING_RE = re.compile(
-    r"^\s*(?:#{1,4}\s*)?(?:第\s*[一二三四五六七八九十百零\d]+\s*(?:场|章)"
+    r"^\s*(?:#{1,4}\s*)?(?:第\s*[一二三四五六七八九十百零\d]+\s*场"
     r"|场景\s*[一二三四五六七八九十百零\d]+|结尾钩子|本章目标)"
     r"(?:\s*[:：].*)?$"
 )
@@ -188,6 +193,10 @@ def sanitize_novel_markdown_content(content_md: str) -> str:
 
     cleaned = "\n".join(cleaned_lines)
     cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
+    # Strip tier-1 AI-flavor kill-on-sight phrases (zero LLM cost).
+    from bestseller.services.anti_slop import strip_tier1_slop  # noqa: PLC0415
+
+    cleaned = strip_tier1_slop(cleaned)
     return cleaned.strip()
 
 
@@ -200,6 +209,15 @@ _CN_DUPLICATE_CHAPTER_MARKER_RE = re.compile(
     r"^\s*(?:#{1,4}\s*)?第\s*[一二三四五六七八九十百零\d]+\s*[章场]"
     r"[\s·：:、，,]*第\s*[一二三四五六七八九十百零\d]+\s*[章场]"
     r"(?:\s*[:：].*)?$"
+)
+
+# Mid-content chapter heading: "# 第N章 XYZ" appearing AFTER the first line.
+# The legitimate chapter heading sits at position 0 (prepended by
+# _format_chapter_heading). Any subsequent "# 第N章 ..." line is a leaked
+# outline note, scene label, or planning task and must be stripped.
+# Only matches markdown headings (#{1,4} prefix) — bare "第N章" in prose is ok.
+_CN_MID_CONTENT_CHAPTER_HEADING_RE = re.compile(
+    r"^\s*#{1,4}\s*第\s*[一二三四五六七八九十百零\d]+\s*章(?:\s.*|$)"
 )
 
 # Prose-wrapped reasoning / rewrite-plan paragraphs, e.g.:
@@ -235,23 +253,35 @@ def strip_scaffolding_echoes(content_md: str) -> str:
 
     This runs AFTER ``sanitize_novel_markdown_content`` and is the last
     regex-level net before falling back to LLM-based cleanup. It catches
-    two bug classes that the line-oriented sanitizer misses:
+    three bug classes that the line-oriented sanitizer misses:
 
     1. Duplicate / nested chapter-scene headers like "第1章 第2场" or
        "第3章 第3章：碰撞", which the sanitizer's line-start regex can't
        match when both markers land on the same line.
-    2. Prose-wrapped AI reflection paragraphs like
+    2. Mid-content chapter headings like "# 第4章 关键碰撞" or
+       "# 第1章 陆衍需要在本卷内拿到一组" — leaked outline notes / planning
+       tasks that mimic chapter headings. The first-line heading is preserved.
+    3. Prose-wrapped AI reflection paragraphs like
        "第15章开场，XXX 重新被推回 ... 这一版重写围绕 ...", where the LLM
        leaked its rewrite plan as the first paragraph of the chapter.
     """
     if not content_md:
         return content_md
 
-    # Erase duplicate chapter markers line by line (preserving surrounding prose).
+    # Erase duplicate chapter markers and mid-content chapter headings.
     cleaned_lines: list[str] = []
+    first_line_seen = False
     for line in content_md.splitlines():
-        if _CN_DUPLICATE_CHAPTER_MARKER_RE.match(line.strip()):
+        stripped = line.strip()
+        if _CN_DUPLICATE_CHAPTER_MARKER_RE.match(stripped):
             continue
+        # Strip mid-content "# 第N章 ..." headings (leaked outline/planning
+        # notes). The first non-blank line is skipped — it may be the
+        # legitimate chapter heading from _format_chapter_heading.
+        if first_line_seen and _CN_MID_CONTENT_CHAPTER_HEADING_RE.match(stripped):
+            continue
+        if stripped:
+            first_line_seen = True
         cleaned_lines.append(line)
     content_md = "\n".join(cleaned_lines)
 
@@ -277,7 +307,13 @@ _NOVEL_OUTPUT_PROHIBITION = """\
 - 不得出现\u201c修订说明\u201d\u201c重写策略\u201d\u201c上一版草稿\u201d\u201c场景说明\u201d\u201c写法指导\u201d等元评论
 - 不得出现\u201c这一场景要完成的剧情任务是\u201d\u201c以下是\u201d\u201c以上是\u201d等解释性前缀
 - 不得出现 entry_state / exit_state / contract / scene_type 等英文结构化标签
+- 不得输出 Markdown 标题标记（# 或 ##）——正文中不需要章节标题、场景标题或任何层级标题
+- 不得把\u201c章节目标\u201d\u201c场景标题\u201d\u201c卷目标\u201d原文搬入正文——这些信息仅供理解意图
 - 所有策划信息（场景目的、情绪目标、contract 约束）仅供你理解意图，严禁直接输出到正文
+- 严禁使用AI味套话：\u201c显而易见\u201d\u201c毫无疑问\u201d\u201c不言而喻\u201d\u201c心中五味杂陈\u201d\u201c空气仿佛凝固了\u201d等
+- 严禁堆砌虚弱修饰副词（缓缓、轻轻、微微、淡淡），同类副词每千字不超过2次
+- 严禁模板式微表情描写（眼眶微红、嘴角上扬、瞳孔骤缩），用具体动作替代
+- 每个角色说话必须有自己的风格——参考角色语言指纹，不同角色的对话必须可区分
 - 输出中只允许出现：叙事散文、对话、动作描写、环境描写、内心活动
 """
 
@@ -388,40 +424,61 @@ def _normalize_fragment(text: str) -> str:
     return text.strip().rstrip("。！？!?")
 
 
-def _render_story_bible_section(story_bible_context: dict[str, Any] | None) -> str:
+def _render_story_bible_section(
+    story_bible_context: dict[str, Any] | None,
+    *,
+    language: str | None = None,
+) -> str:
     if not story_bible_context:
         return ""
+    is_en = is_english_language(language)
     lines: list[str] = []
     if story_bible_context.get("logline"):
-        lines.append(f"全书主线：{story_bible_context['logline']}")
+        lines.append(
+            f"{'Series spine' if is_en else '全书主线'}：{story_bible_context['logline']}"
+        )
     backbone = story_bible_context.get("world_backbone") or {}
     if backbone.get("mainline_drive"):
-        lines.append(f"全书主旋律：{backbone['mainline_drive']}")
+        lines.append(
+            f"{'Mainline drive' if is_en else '全书主旋律'}：{backbone['mainline_drive']}"
+        )
     if backbone.get("thematic_melody"):
-        lines.append(f"主题旋律：{backbone['thematic_melody']}")
+        lines.append(
+            f"{'Thematic melody' if is_en else '主题旋律'}：{backbone['thematic_melody']}"
+        )
     if backbone.get("invariant_elements"):
         lines.append(
-            f"不可轻改元素：{'、'.join(str(item) for item in backbone['invariant_elements'][:5])}"
+            f"{'Do-not-break elements' if is_en else '不可轻改元素'}："
+            f"{(', ' if is_en else '、').join(str(item) for item in backbone['invariant_elements'][:5])}"
         )
     if story_bible_context.get("themes"):
-        lines.append(f"主题：{'、'.join(str(item) for item in story_bible_context['themes'])}")
+        lines.append(
+            f"{'Themes' if is_en else '主题'}："
+            f"{(', ' if is_en else '、').join(str(item) for item in story_bible_context['themes'])}"
+        )
     volume = story_bible_context.get("volume") or {}
     if volume.get("goal"):
-        lines.append(f"本卷目标：{volume['goal']}")
+        lines.append(f"{'Volume goal' if is_en else '本卷目标'}：{volume['goal']}")
     if volume.get("obstacle"):
-        lines.append(f"本卷障碍：{volume['obstacle']}")
+        lines.append(f"{'Volume obstacle' if is_en else '本卷障碍'}：{volume['obstacle']}")
     frontier = story_bible_context.get("volume_frontier") or {}
     if frontier.get("frontier_summary"):
-        lines.append(f"当前世界边界：{frontier['frontier_summary']}")
+        lines.append(
+            f"{'Current world frontier' if is_en else '当前世界边界'}：{frontier['frontier_summary']}"
+        )
     if frontier.get("expansion_focus"):
-        lines.append(f"当前扩张焦点：{frontier['expansion_focus']}")
+        lines.append(
+            f"{'Current expansion focus' if is_en else '当前扩张焦点'}：{frontier['expansion_focus']}"
+        )
     if frontier.get("active_locations"):
         lines.append(
-            f"当前主要舞台：{'、'.join(str(item) for item in frontier['active_locations'][:4])}"
+            f"{'Active locations' if is_en else '当前主要舞台'}："
+            f"{(', ' if is_en else '、').join(str(item) for item in frontier['active_locations'][:4])}"
         )
     if frontier.get("active_factions"):
         lines.append(
-            f"当前活跃势力：{'、'.join(str(item) for item in frontier['active_factions'][:4])}"
+            f"{'Active factions' if is_en else '当前活跃势力'}："
+            f"{(', ' if is_en else '、').join(str(item) for item in frontier['active_factions'][:4])}"
         )
     rules = story_bible_context.get("world_rules") or []
     if rules:
@@ -429,45 +486,85 @@ def _render_story_bible_section(story_bible_context: dict[str, Any] | None) -> s
             f"{item['name']}({item['story_consequence'] or item['description']})"
             for item in rules[:3]
         )
-        lines.append(f"关键世界规则：{rendered_rules}")
+        lines.append(f"{'Key world rules' if is_en else '关键世界规则'}：{rendered_rules}")
     reveal_status = story_bible_context.get("deferred_reveal_status") or {}
     hidden_reveal_count = reveal_status.get("hidden_count")
     if isinstance(hidden_reveal_count, int) and hidden_reveal_count > 0:
-        lines.append(f"仍有 {hidden_reveal_count} 个延后揭示不得提前说破，只能通过异常与悬念间接保留。")
+        lines.append(
+            (
+                f"There are still {hidden_reveal_count} deferred reveals that must stay hidden; preserve them through anomalies and suspense only."
+                if is_en
+                else f"仍有 {hidden_reveal_count} 个延后揭示不得提前说破，只能通过异常与悬念间接保留。"
+            )
+        )
     next_gate = story_bible_context.get("next_expansion_gate") or {}
     if next_gate.get("condition_summary"):
-        lines.append(f"下一层世界解锁条件：{next_gate['condition_summary']}")
+        lines.append(
+            f"{'Next expansion gate' if is_en else '下一层世界解锁条件'}：{next_gate['condition_summary']}"
+        )
+    # Render canonical character definitions from cast_spec so the LLM always
+    # sees immutable character attributes (background, role, relationships).
+    cast_spec = story_bible_context.get("cast_spec") or {}
+    cast_characters = cast_spec.get("characters") or []
+    if not cast_characters:
+        # Fallback: try protagonist + allies + antagonists keys
+        for _key in ("protagonist", "allies", "antagonists"):
+            _val = cast_spec.get(_key)
+            if isinstance(_val, dict):
+                cast_characters.append(_val)
+            elif isinstance(_val, list):
+                cast_characters.extend(item for item in _val if isinstance(item, dict))
+    if cast_characters:
+        cast_lines: list[str] = []
+        for char in cast_characters[:6]:
+            parts = [f"{char.get('name', 'Unknown' if is_en else '未知')}"]
+            if char.get("role"):
+                parts.append(f"{'Role' if is_en else '角色'}:{char['role']}")
+            if char.get("background"):
+                bg = str(char["background"])[:80]
+                parts.append(f"{'Background' if is_en else '背景'}:{bg}")
+            cast_lines.append((" | " if is_en else "｜").join(parts))
+        lines.append(
+            ("Core cast anchors (do not alter):\n" if is_en else "【核心角色设定（不可更改）】：\n")
+            + "\n".join(cast_lines)
+        )
     participants = story_bible_context.get("participants") or []
     if participants:
         rendered_participants = "；".join(
             (
                 f"{item['name']}[{item.get('role') or 'character'}]"
-                f" 目标:{item.get('goal') or '未定义'}"
-                f" 弧线状态:{item.get('arc_state') or '未定义'}"
-                f" 力量层级:{item.get('power_tier') or '未定义'}"
-                f" 情绪:{item.get('emotional_state') or '未定义'}"
+                f" {'Background' if is_en else '背景'}:{(item.get('background') or ('undefined' if is_en else '未定义'))[:40]}"
+                f" {'Goal' if is_en else '目标'}:{item.get('goal') or ('undefined' if is_en else '未定义')}"
+                f" {'Arc' if is_en else '弧线状态'}:{item.get('arc_state') or ('undefined' if is_en else '未定义')}"
+                f" {'Power' if is_en else '力量层级'}:{item.get('power_tier') or ('undefined' if is_en else '未定义')}"
+                f" {'Emotion' if is_en else '情绪'}:{item.get('emotional_state') or ('undefined' if is_en else '未定义')}"
             )
             for item in participants[:4]
         )
-        lines.append(f"参与角色当前状态：{rendered_participants}")
+        lines.append(
+            f"{'Current participant states' if is_en else '参与角色当前状态'}：{rendered_participants}"
+        )
         voice_lines: list[str] = []
         for item in participants[:4]:
             vp = item.get("voice_profile") or {}
             parts: list[str] = []
             if vp.get("speech_register"):
-                parts.append(f"语言层次:{vp['speech_register']}")
+                parts.append(f"{'Register' if is_en else '语言层次'}:{vp['speech_register']}")
             if vp.get("verbal_tics"):
-                parts.append(f"口头禅:{'/'.join(vp['verbal_tics'][:3])}")
+                parts.append(f"{'Verbal tics' if is_en else '口头禅'}:{'/'.join(vp['verbal_tics'][:3])}")
             if vp.get("sentence_style"):
-                parts.append(f"句式:{vp['sentence_style']}")
+                parts.append(f"{'Sentence style' if is_en else '句式'}:{vp['sentence_style']}")
             if vp.get("emotional_expression"):
-                parts.append(f"情绪表达:{vp['emotional_expression']}")
+                parts.append(f"{'Emotional expression' if is_en else '情绪表达'}:{vp['emotional_expression']}")
             if vp.get("mannerisms"):
-                parts.append(f"习惯动作:{'/'.join(vp['mannerisms'][:2])}")
+                parts.append(f"{'Mannerisms' if is_en else '习惯动作'}:{'/'.join(vp['mannerisms'][:2])}")
             if parts:
-                voice_lines.append(f"{item['name']}——{'，'.join(parts)}")
+                voice_lines.append(f"{item['name']}{' - ' if is_en else '——'}{(' / ' if is_en else '，').join(parts)}")
         if voice_lines:
-            lines.append("角色语言指纹（对话必须体现区分度）：\n" + "\n".join(voice_lines))
+            lines.append(
+                ("Character voice fingerprints (dialogue must stay distinct):\n" if is_en else "角色语言指纹（对话必须体现区分度）：\n")
+                + "\n".join(voice_lines)
+            )
     relationships = story_bible_context.get("relationships") or []
     if relationships:
         rendered_relationships = "；".join(
@@ -477,7 +574,9 @@ def _render_story_bible_section(story_bible_context: dict[str, Any] | None) -> s
             )
             for item in relationships[:3]
         )
-        lines.append(f"当前关系张力：{rendered_relationships}")
+        lines.append(
+            f"{'Current relationship tension' if is_en else '当前关系张力'}：{rendered_relationships}"
+        )
     return "\n".join(lines)
 
 
@@ -530,20 +629,27 @@ def _render_participant_fact_section(participant_facts: list[dict[str, Any]] | N
 def _render_arc_section(
     plot_arcs: list[dict[str, Any]] | None,
     arc_beats: list[dict[str, Any]] | None,
+    *,
+    language: str | None = None,
 ) -> str:
+    is_en = is_english_language(language)
     sections: list[str] = []
     if plot_arcs:
-        sections.append("激活叙事线：")
+        sections.append("Active narrative lines:" if is_en else "激活叙事线：")
         sections.extend(
             f"- [{item.get('arc_type')}] {item.get('name')}：{item.get('promise')}"
             for item in plot_arcs[:4]
         )
     if arc_beats:
-        sections.append("当前承担的叙事节拍：")
+        sections.append("Current arc beats:" if is_en else "当前承担的叙事节拍：")
         sections.extend(
             (
                 f"- {item.get('arc_code')} / {item.get('beat_kind')}：{item.get('summary')}"
-                + (f" / 情绪:{item.get('emotional_shift')}" if item.get("emotional_shift") else "")
+                + (
+                    f" / {'emotion' if is_en else '情绪'}:{item.get('emotional_shift')}"
+                    if item.get("emotional_shift")
+                    else ""
+                )
             )
             for item in arc_beats[:6]
         )
@@ -553,16 +659,19 @@ def _render_arc_section(
 def _render_clue_section(
     unresolved_clues: list[dict[str, Any]] | None,
     planned_payoffs: list[dict[str, Any]] | None,
+    *,
+    language: str | None = None,
 ) -> str:
+    is_en = is_english_language(language)
     sections: list[str] = []
     if unresolved_clues:
-        sections.append("未回收伏笔：")
+        sections.append("Open clues:" if is_en else "未回收伏笔：")
         sections.extend(
             f"- {item.get('clue_code')} / {item.get('label')}：{item.get('description')}"
             for item in unresolved_clues[:6]
         )
     if planned_payoffs:
-        sections.append("近期应兑现节点：")
+        sections.append("Near-term payoffs:" if is_en else "近期应兑现节点：")
         sections.extend(
             f"- {item.get('payoff_code')} / {item.get('label')}：{item.get('description')}"
             for item in planned_payoffs[:4]
@@ -570,10 +679,15 @@ def _render_clue_section(
     return "\n".join(sections)
 
 
-def _render_emotion_track_section(emotion_tracks: list[dict[str, Any]] | None) -> str:
+def _render_emotion_track_section(
+    emotion_tracks: list[dict[str, Any]] | None,
+    *,
+    language: str | None = None,
+) -> str:
     if not emotion_tracks:
         return ""
-    lines = ["当前关系/情绪线："]
+    is_en = is_english_language(language)
+    lines = ["Current relationship/emotion lines:" if is_en else "当前关系/情绪线："]
     lines.extend(
         (
             f"- [{item.get('track_type')}] {item.get('title')}：{item.get('summary')}"
@@ -587,15 +701,20 @@ def _render_emotion_track_section(emotion_tracks: list[dict[str, Any]] | None) -
     return "\n".join(lines)
 
 
-def _render_antagonist_plan_section(antagonist_plans: list[dict[str, Any]] | None) -> str:
+def _render_antagonist_plan_section(
+    antagonist_plans: list[dict[str, Any]] | None,
+    *,
+    language: str | None = None,
+) -> str:
     if not antagonist_plans:
         return ""
-    lines = ["当前反派推进："]
+    is_en = is_english_language(language)
+    lines = ["Current antagonist pressure:" if is_en else "当前反派推进："]
     lines.extend(
         (
             f"- [{item.get('threat_type')}] {item.get('title')}：{item.get('goal')}"
-            f" / 当前动作:{item.get('current_move')}"
-            f" / 下一步:{item.get('next_countermove')}"
+            f" / {'current move' if is_en else '当前动作'}:{item.get('current_move')}"
+            f" / {'next move' if is_en else '下一步'}:{item.get('next_countermove')}"
         )
         for item in antagonist_plans[:4]
     )
@@ -605,48 +724,77 @@ def _render_antagonist_plan_section(antagonist_plans: list[dict[str, Any]] | Non
 def _render_contract_section(
     chapter_contract: dict[str, Any] | None,
     scene_contract: dict[str, Any] | None,
+    *,
+    language: str | None = None,
 ) -> str:
+    is_en = is_english_language(language)
     sections: list[str] = []
     if chapter_contract:
         sections.append(
-            f"章节 contract：{chapter_contract.get('contract_summary') or '本章需要承担明确叙事任务'}"
+            f"{'Chapter contract' if is_en else '章节 contract'}："
+            f"{chapter_contract.get('contract_summary') or ('This chapter must carry a clear narrative task.' if is_en else '本章需要承担明确叙事任务')}"
         )
         if chapter_contract.get("core_conflict"):
-            sections.append(f"- 章节核心冲突：{chapter_contract['core_conflict']}")
+            sections.append(f"- {'Chapter core conflict' if is_en else '章节核心冲突'}：{chapter_contract['core_conflict']}")
         if chapter_contract.get("closing_hook"):
-            sections.append(f"- 章节尾钩：{chapter_contract['closing_hook']}")
+            sections.append(f"- {'Chapter closing hook' if is_en else '章节尾钩'}：{chapter_contract['closing_hook']}")
     if scene_contract:
         sections.append(
-            f"场景 contract：{scene_contract.get('contract_summary') or '本场必须完成清晰推进'}"
+            f"{'Scene contract' if is_en else '场景 contract'}："
+            f"{scene_contract.get('contract_summary') or ('This scene must produce a clean forward move.' if is_en else '本场必须完成清晰推进')}"
         )
         if scene_contract.get("core_conflict"):
-            sections.append(f"- 场景核心冲突：{scene_contract['core_conflict']}")
+            sections.append(f"- {'Scene core conflict' if is_en else '场景核心冲突'}：{scene_contract['core_conflict']}")
         if scene_contract.get("tail_hook"):
-            sections.append(f"- 场景尾钩：{scene_contract['tail_hook']}")
+            sections.append(f"- {'Scene tail hook' if is_en else '场景尾钩'}：{scene_contract['tail_hook']}")
         if scene_contract.get("thematic_task"):
-            sections.append(f"- 主题任务：{scene_contract['thematic_task']}（通过行动和意象表达，不要直白说教）")
+            sections.append(
+                (
+                    f"- Thematic task: {scene_contract['thematic_task']} (express it through action and imagery, never direct sermonizing)"
+                    if is_en
+                    else f"- 主题任务：{scene_contract['thematic_task']}（通过行动和意象表达，不要直白说教）"
+                )
+            )
         if scene_contract.get("dramatic_irony_intent"):
-            sections.append(f"- 戏剧反讽：{scene_contract['dramatic_irony_intent']}（读者知道但角色不知道）")
+            sections.append(
+                (
+                    f"- Dramatic irony: {scene_contract['dramatic_irony_intent']} (the reader knows this before the character)"
+                    if is_en
+                    else f"- 戏剧反讽：{scene_contract['dramatic_irony_intent']}（读者知道但角色不知道）"
+                )
+            )
         if scene_contract.get("transition_type"):
-            sections.append(f"- 过渡方式：{scene_contract['transition_type']}")
+            sections.append(f"- {'Transition type' if is_en else '过渡方式'}：{scene_contract['transition_type']}")
         if scene_contract.get("subplot_codes"):
-            sections.append(f"- 推进副线：{'、'.join(scene_contract['subplot_codes'])}")
+            sections.append(
+                f"- {'Subplots advanced' if is_en else '推进副线'}："
+                f"{(', ' if is_en else '、').join(scene_contract['subplot_codes'])}"
+            )
     return "\n".join(sections)
 
 
-def _render_tree_section(tree_context_nodes: list[dict[str, Any]] | None) -> str:
+def _render_tree_section(
+    tree_context_nodes: list[dict[str, Any]] | None,
+    *,
+    language: str | None = None,
+) -> str:
     if not tree_context_nodes:
         return ""
+    is_en = is_english_language(language)
     return "\n".join(
         (
             f"- {item.get('node_path')} [{item.get('node_type')}]："
-            f"{item.get('summary') or item.get('title') or '无摘要'}"
+            f"{item.get('summary') or item.get('title') or ('No summary' if is_en else '无摘要')}"
         )
         for item in tree_context_nodes[:8]
     )
 
 
-def _render_hard_fact_snapshot_section(snapshot: dict[str, Any] | None) -> str:
+def _render_hard_fact_snapshot_section(
+    snapshot: dict[str, Any] | None,
+    *,
+    language: str | None = None,
+) -> str:
     """Render the chapter-end hard-fact snapshot block.
 
     ``snapshot`` is the JSON-serialized form of
@@ -659,11 +807,20 @@ def _render_hard_fact_snapshot_section(snapshot: dict[str, Any] | None) -> str:
     facts = snapshot.get("facts") or []
     if not facts:
         return ""
+    is_en = is_english_language(language)
     chapter_number = snapshot.get("chapter_number")
     header = (
-        f"=== 当前事实状态（来自第 {chapter_number} 章末 — 必须严格遵守，不得前后矛盾）==="
-        if chapter_number is not None
-        else "=== 当前事实状态（来自上一章末 — 必须严格遵守，不得前后矛盾）==="
+        f"=== Locked fact state (from the end of Chapter {chapter_number}; must be obeyed exactly with no contradictions) ==="
+        if chapter_number is not None and is_en
+        else (
+            f"=== 当前事实状态（来自第 {chapter_number} 章末 — 必须严格遵守，不得前后矛盾）==="
+            if chapter_number is not None
+            else (
+                "=== Locked fact state (from the previous chapter end; must be obeyed exactly with no contradictions) ==="
+                if is_en
+                else "=== 当前事实状态（来自上一章末 — 必须严格遵守，不得前后矛盾）==="
+            )
+        )
     )
     lines: list[str] = [header]
     for fact in facts:
@@ -681,7 +838,11 @@ def _render_hard_fact_snapshot_section(snapshot: dict[str, Any] | None) -> str:
         notes_suffix = f"  // {notes}" if notes else ""
         lines.append(f"- {prefix}{name}: {value}{unit_suffix}{notes_suffix}")
     lines.append(
-        "=== 任何数值/位置/物品变化都必须在本章正文里给出读者可见的触发事件（交易、战斗、时间流逝等）==="
+        (
+            "=== Any change to quantities, locations, or possessions must have a reader-visible trigger event in this chapter (trade, combat, elapsed time, etc.) ==="
+            if is_en
+            else "=== 任何数值/位置/物品变化都必须在本章正文里给出读者可见的触发事件（交易、战斗、时间流逝等）==="
+        )
     )
     return "\n".join(lines)
 
@@ -713,6 +874,7 @@ def _resolve_project_writing_profile(project: Any, style_guide: StyleGuideModel 
         genre=str(getattr(project, "genre", "general-fiction") or "general-fiction"),
         sub_genre=getattr(project, "sub_genre", None),
         audience=getattr(project, "audience", None),
+        language=getattr(project, "language", None),
     )
 
 
@@ -722,6 +884,16 @@ def _resolve_project_prompt_pack(project: Any, writing_profile: Any):
         genre=str(getattr(project, "genre", "general-fiction") or "general-fiction"),
         sub_genre=getattr(project, "sub_genre", None),
     )
+
+
+def _project_language(project: Any) -> str:
+    return str(getattr(project, "language", None) or "zh-CN")
+
+
+def _scene_participant_text(participants: list[str] | None, *, language: str) -> str:
+    if not participants:
+        return "relevant characters" if is_english_language(language) else "相关角色"
+    return ", ".join(participants) if is_english_language(language) else "、".join(participants)
 
 
 def render_scene_draft_markdown(
@@ -782,7 +954,7 @@ def render_scene_draft_markdown(
         active_emotion_tracks,
         active_antagonist_plans,
     )
-    participants = "、".join(scene.participants) if scene.participants else "相关角色"
+    participants = _scene_participant_text(scene.participants, language=_project_language(project))
     return (
         f"<!-- scene-draft-fallback project=\"{project.slug}\" "
         f"chapter={chapter.chapter_number} scene={scene.scene_number} "
@@ -831,12 +1003,92 @@ _SCENE_TYPE_GUIDANCE: dict[str, str] = {
     ),
 }
 
+_SCENE_TYPE_GUIDANCE_EN: dict[str, str] = {
+    "hook": "Write a full scene with conflict movement, character action, effective dialogue, information change, and a closing hook.",
+    "setup": "Write a full scene with conflict movement, character action, effective dialogue, information change, and a closing hook.",
+    "transition": "Write a full scene with conflict movement, character action, effective dialogue, information change, and a closing hook.",
+    "conflict": "Write a full scene with conflict movement, character action, effective dialogue, information change, and a closing hook.",
+    "reveal": "Write a full scene with conflict movement, character action, effective dialogue, information change, and a closing hook.",
+    "introspection": (
+        "This is an introspection scene. External conflict is optional; prioritize the character's inner reckoning, self-doubt, emotional sorting, and the decision forming underneath the silence."
+    ),
+    "relationship_building": (
+        "This is a relationship-building scene. Prioritize interaction quality, shifting trust, and emotional subtext between the characters. It does not need explosive conflict, but it does need clear emotional progression."
+    ),
+    "worldbuilding_discovery": (
+        "This is a world-discovery scene. Let the reader feel the setting through direct experience, sensory detail, and consequence. Avoid exposition blocks; hide the world rules inside action and reaction."
+    ),
+    "aftermath": (
+        "This is an aftermath scene. The previous spike has just landed, so focus on consequence, damage assessment, emotional settling, and the seed of the next move."
+    ),
+    "preparation": (
+        "This is a preparation scene. Show resource gathering, plan-making, or alliance-building in a way that makes the coming event feel larger and more dangerous without revealing the outcome early."
+    ),
+    "comic_relief": (
+        "This is a relief scene. Let the pressure ease just enough for humor, warmth, or awkward humanity, but still plant at least one useful clue or piece of future leverage."
+    ),
+    "montage": (
+        "This is a montage / time-passage scene. Use compressed scene fragments to show growth, travel, training, or time progression; each fragment should carry a sharp sensory anchor."
+    ),
+}
 
-def _scene_type_writing_guidance(scene_type: str) -> str:
-    return _SCENE_TYPE_GUIDANCE.get(
+
+def _scene_type_writing_guidance(scene_type: str, *, language: str | None = None) -> str:
+    is_en = is_english_language(language)
+    guidance_map = _SCENE_TYPE_GUIDANCE_EN if is_en else _SCENE_TYPE_GUIDANCE
+    return guidance_map.get(
         scene_type,
-        "请输出完整场景，至少包含冲突推进、人物动作、有效对话、信息变化和结尾钩子。",
+        (
+            "Write a full scene with conflict movement, character action, effective dialogue, information change, and a closing hook."
+            if is_en
+            else "请输出完整场景，至少包含冲突推进、人物动作、有效对话、信息变化和结尾钩子。"
+        ),
     )
+
+
+def _render_knowledge_state_section(
+    knowledge_states: list[dict[str, Any]] | None,
+    *,
+    is_en: bool = False,
+) -> str:
+    """Render character cognitive states into a prompt section."""
+    if not knowledge_states:
+        return ""
+    lines: list[str] = []
+    header = (
+        "=== Character cognitive states (writing MUST obey) ==="
+        if is_en
+        else "=== 角色认知状态（写作必须遵守）==="
+    )
+    footer = (
+        "=== Characters must NOT act on knowledge they don't have ==="
+        if is_en
+        else "=== 角色的对话和行为不得超越其认知边界 ==="
+    )
+    lines.append(header)
+    for ks in knowledge_states:
+        name = ks.get("character_name", "?")
+        lines.append(f"{name}:")
+        knows = ks.get("knows", [])
+        if knows:
+            lines.append(
+                f"  {'Knows' if is_en else '已知'}："
+                f"{'; '.join(str(k) for k in knows[:6])}"
+            )
+        fb = ks.get("falsely_believes", [])
+        if fb:
+            lines.append(
+                f"  {'Falsely believes' if is_en else '错误相信'}："
+                f"{'; '.join(str(b) for b in fb[:4])}"
+            )
+        unaware = ks.get("unaware_of", [])
+        if unaware:
+            lines.append(
+                f"  {'Unaware of' if is_en else '尚不知道'}："
+                f"{'; '.join(str(u) for u in unaware[:4])}"
+            )
+    lines.append(footer)
+    return "\n".join(lines)
 
 
 def build_scene_draft_prompts(
@@ -859,81 +1111,175 @@ def build_scene_draft_prompts(
     active_emotion_tracks: list[dict[str, Any]] | None = None,
     active_antagonist_plans: list[dict[str, Any]] | None = None,
     hard_fact_snapshot: dict[str, Any] | None = None,
+    contradiction_warnings: list[str] | None = None,
+    participant_knowledge_states: list[dict[str, Any]] | None = None,
 ) -> tuple[str, str]:
+    language = _project_language(project)
+    is_en = is_english_language(language)
     writing_profile = _resolve_project_writing_profile(project, style_guide)
     prompt_pack = _resolve_project_prompt_pack(project, writing_profile)
-    system_prompt = (
-        "你是长篇中文小说写作系统里的场景写手。"
-        "输出必须直接是 Markdown 正文，不要解释，不要列清单。"
-        "必须写成可接续的小说场景，而不是策划说明。"
-        "文本要像可以直接投到中文网文平台的成品章节，不要像策划案、提纲或润色说明。\n"
-        + _NOVEL_OUTPUT_PROHIBITION
-    )
+    writing_profile_section = render_writing_profile_prompt_block(writing_profile, language=language)
+    serial_guardrails = render_serial_fiction_guardrails(writing_profile, language=language)
+    # Build system prompt with project-level static content first (cache-
+    # friendly: Anthropic's automatic prompt caching keeps the shared prefix
+    # across scenes in the same chapter, reducing TTFT by 60-80%).
+    if is_en:
+        system_prompt = (
+            "You are the scene writer inside a long-form commercial fiction system. "
+            "Output must be direct Markdown prose only, with no explanations, bullet lists, or planning notes. "
+            "Write a publishable scene, not commentary.\n"
+            "Write the scene in English only. Do not switch to Chinese.\n"
+            "Opening diversity rule: vary chapter and scene openings across time, place, action, and angle of entry. "
+            "Do not reuse the same opening pattern in consecutive chapters.\n"
+            f"\nWriting profile:\n{writing_profile_section}\n"
+            f"Serial fiction guardrails:\n{serial_guardrails}\n"
+        )
+    else:
+        system_prompt = (
+            "你是长篇中文小说写作系统里的场景写手。"
+            "输出必须直接是 Markdown 正文，不要解释，不要列清单。"
+            "必须写成可接续的小说场景，而不是策划说明。"
+            "文本要像可以直接投到中文网文平台的成品章节，不要像策划案、提纲或润色说明。\n"
+            + _NOVEL_OUTPUT_PROHIBITION
+            + "\n【开场多样性要求】：每章/每场的开头必须在时间、地点、视角、动作上有所变化。"
+            "禁止连续两章以同一种方式开场（如连续用'凌晨+手机'模式）。"
+            "参考近期剧情回顾中的前几章开场方式，刻意选择不同的切入角度。\n"
+            f"\n写作画像：\n{writing_profile_section}\n"
+            f"商业网文硬约束：\n{serial_guardrails}\n"
+        )
     tone = (
-        "、".join(str(keyword) for keyword in style_guide.tone_keywords[:3])
-        if style_guide and style_guide.tone_keywords
-        else "克制、紧张"
+        ", ".join(str(keyword) for keyword in style_guide.tone_keywords[:3])
+        if style_guide and style_guide.tone_keywords and is_en
+        else (
+            "、".join(str(keyword) for keyword in style_guide.tone_keywords[:3])
+            if style_guide and style_guide.tone_keywords
+            else ("taut, controlled" if is_en else "克制、紧张")
+        )
     )
-    if not re.search(r"[\u4e00-\u9fff]", tone):
+    if is_en:
+        if re.search(r"[\u4e00-\u9fff]", tone):
+            tone = "taut, controlled"
+    elif not re.search(r"[\u4e00-\u9fff]", tone):
         tone = "克制、紧张"
-    participants = "、".join(scene.participants) if scene.participants else "相关角色"
-    story_bible_section = _render_story_bible_section(story_bible_context)
+    participants = _scene_participant_text(scene.participants, language=language)
+    story_bible_section = _render_story_bible_section(story_bible_context, language=language)
     retrieval_section = _render_retrieval_section(retrieval_context)
     recent_scene_section = _render_recent_scene_section(recent_scene_summaries)
     recent_timeline_section = _render_timeline_section(recent_timeline_events)
     participant_fact_section = _render_participant_fact_section(participant_canon_facts)
-    arc_section = _render_arc_section(active_plot_arcs, active_arc_beats)
-    clue_section = _render_clue_section(unresolved_clues, planned_payoffs)
-    emotion_track_section = _render_emotion_track_section(active_emotion_tracks)
-    antagonist_plan_section = _render_antagonist_plan_section(active_antagonist_plans)
-    contract_section = _render_contract_section(chapter_contract, scene_contract)
-    tree_section = _render_tree_section(tree_context_nodes)
-    hard_fact_section = _render_hard_fact_snapshot_section(hard_fact_snapshot)
-    writing_profile_section = render_writing_profile_prompt_block(writing_profile)
+    arc_section = _render_arc_section(active_plot_arcs, active_arc_beats, language=language)
+    clue_section = _render_clue_section(unresolved_clues, planned_payoffs, language=language)
+    emotion_track_section = _render_emotion_track_section(active_emotion_tracks, language=language)
+    antagonist_plan_section = _render_antagonist_plan_section(active_antagonist_plans, language=language)
+    contract_section = _render_contract_section(chapter_contract, scene_contract, language=language)
+    tree_section = _render_tree_section(tree_context_nodes, language=language)
+    hard_fact_section = _render_hard_fact_snapshot_section(hard_fact_snapshot, language=language)
     prompt_pack_section = render_prompt_pack_prompt_block(prompt_pack)
-    serial_guardrails = render_serial_fiction_guardrails(writing_profile)
     prompt_pack_scene_writer = render_prompt_pack_fragment(prompt_pack, "scene_writer")
-    _pp_line = f"Prompt Pack：\n{prompt_pack_section}\n" if prompt_pack_section else ""
-    _pp_writer_line = f"Prompt Pack 额外写法：\n{prompt_pack_scene_writer}\n" if prompt_pack_scene_writer else ""
-    _hard_fact_line = f"{hard_fact_section}\n\n" if hard_fact_section else ""
-    user_prompt = (
-        f"{_hard_fact_line}"
-        f"项目：《{project.title}》\n"
-        f"章节：第{chapter.chapter_number}章 {chapter.title or ''}\n"
-        f"章节目标：{chapter.chapter_goal}\n"
-        f"场景：第{scene.scene_number}场 {scene.title or ''}\n"
-        f"场景类型：{scene.scene_type}\n"
-        f"时间标签：{scene.time_label or '未指定'}\n"
-        f"参与者：{participants}\n"
-        f"剧情目的：{scene.purpose.get('story', '推进本章主线')}\n"
-        f"情绪目的：{scene.purpose.get('emotion', '拉高当前张力')}\n"
-        f"入场状态：{scene.entry_state}\n"
-        f"离场状态：{scene.exit_state}\n"
-        f"目标字数：{scene.target_word_count}\n"
-        f"视角：{style_guide.pov_type if style_guide else 'third-limited'}\n"
-        f"语气关键词：{tone}\n"
-        f"写作画像：\n{writing_profile_section}\n"
-        f"{_pp_line}"
-        f"故事圣经约束：\n{story_bible_section or '暂无额外故事圣经约束'}\n"
-        f"近期剧情回顾：\n{recent_scene_section or '暂无近期剧情回顾'}\n"
-        f"已知时间线节点：\n{recent_timeline_section or '暂无已知时间线节点'}\n"
-        f"当前叙事线与节拍：\n{arc_section or '暂无显式叙事线约束'}\n"
-        f"伏笔与兑现约束：\n{clue_section or '暂无显式伏笔/兑现约束'}\n"
-        f"关系与情绪推进约束：\n{emotion_track_section or '暂无显式关系/情绪线约束'}\n"
-        f"反派推进约束：\n{antagonist_plan_section or '暂无显式反派推进约束'}\n"
-        f"chapter/scene contract：\n{contract_section or '暂无显式 contract 约束'}\n"
-        f"叙事树上下文：\n{tree_section or '暂无叙事树上下文'}\n"
-        f"参与角色当前可见事实：\n{participant_fact_section or '暂无额外角色事实'}\n"
-        f"检索到的相关上下文：\n{retrieval_section or '暂无额外检索上下文'}\n"
-        f"商业网文硬约束：\n{serial_guardrails}\n"
-        f"{_pp_writer_line}"
-        f"{_scene_type_writing_guidance(scene.scene_type)}"
-        "不得泄露未来章节才会揭示的信息，不得与当前已知事实和时间线冲突。"
-        "优先服从 deterministic path retrieval 与 narrative tree 提供的结构化约束。"
-        "必须覆盖 scene contract 的核心冲突、情绪变化、信息释放和尾钩。"
-        "背景说明必须压缩到最少，优先把设定藏进人物行动、交易、冲突后果和细节里。"
-        "不要用空泛抒情、不要先解释世界观、不要写成提纲口吻。"
+    _pp_line = (
+        f"Prompt Pack:\n{prompt_pack_section}\n"
+        if prompt_pack_section and is_en
+        else (f"Prompt Pack：\n{prompt_pack_section}\n" if prompt_pack_section else "")
     )
+    _pp_writer_line = (
+        f"Extra Prompt Pack guidance:\n{prompt_pack_scene_writer}\n"
+        if prompt_pack_scene_writer and is_en
+        else (f"Prompt Pack 额外写法：\n{prompt_pack_scene_writer}\n" if prompt_pack_scene_writer else "")
+    )
+    _hard_fact_line = f"{hard_fact_section}\n\n" if hard_fact_section else ""
+    _contradiction_line = ""
+    if contradiction_warnings:
+        _warning_items = "\n".join(f"- {w}" for w in contradiction_warnings)
+        _contradiction_line = (
+            f"=== Continuity constraints (must obey) ===\n{_warning_items}\n"
+            f"=== Do not violate the constraints above ===\n\n"
+            if is_en
+            else (
+                f"=== 连续性约束（必须遵守）===\n{_warning_items}\n"
+                f"=== 不得违反以上约束 ===\n\n"
+            )
+        )
+    _knowledge_line = _render_knowledge_state_section(participant_knowledge_states, is_en=is_en)
+    if _knowledge_line:
+        _knowledge_line += "\n\n"
+    if is_en:
+        user_prompt = (
+            f"{_hard_fact_line}"
+            f"{_contradiction_line}"
+            f"{_knowledge_line}"
+            f"Project: {project.title}\n"
+            f"Chapter {chapter.chapter_number}: {chapter.title or ''}\n"
+            f"Chapter goal (for intent only, never quote it verbatim): {chapter.chapter_goal}\n"
+            f"Scene {scene.scene_number}: {scene.title or ''}\n"
+            f"Scene type: {scene.scene_type}\n"
+            f"Time label: {scene.time_label or 'unspecified'}\n"
+            f"Participants: {participants}\n"
+            f"Story purpose: {scene.purpose.get('story', 'advance the chapter spine')}\n"
+            f"Emotional purpose: {scene.purpose.get('emotion', 'raise tension')}\n"
+            f"Entry state: {scene.entry_state}\n"
+            f"Exit state: {scene.exit_state}\n"
+            f"Target words: {scene.target_word_count}\n"
+            f"POV: {style_guide.pov_type if style_guide else 'third-limited'}\n"
+            f"Tone keywords: {tone}\n"
+            f"{_pp_line}"
+            f"Story bible constraints:\n{story_bible_section or 'No additional story-bible constraints.'}\n"
+            f"Recent story recap:\n{recent_scene_section or 'No recent-scene recap.'}\n"
+            f"Known timeline beats:\n{recent_timeline_section or 'No known timeline beats.'}\n"
+            f"Active narrative lines and beats:\n{arc_section or 'No explicit arc constraints.'}\n"
+            f"Clue and payoff constraints:\n{clue_section or 'No explicit clue/payoff constraints.'}\n"
+            f"Relationship and emotional progression:\n{emotion_track_section or 'No explicit relationship/emotion constraints.'}\n"
+            f"Antagonist pressure:\n{antagonist_plan_section or 'No explicit antagonist constraints.'}\n"
+            f"Chapter/scene contract:\n{contract_section or 'No explicit contract constraints.'}\n"
+            f"Narrative tree context:\n{tree_section or 'No narrative tree context.'}\n"
+            f"Visible facts for current participants:\n{participant_fact_section or 'No extra participant facts.'}\n"
+            f"Retrieved supporting context:\n{retrieval_section or 'No extra retrieval context.'}\n"
+            f"{_pp_writer_line}"
+            f"Scene-type guidance: {_scene_type_writing_guidance(scene.scene_type, language=language)}\n"
+            "Write the scene in English only. Do not switch to Chinese. "
+            "Do not reveal information that belongs to future chapters, and do not contradict established facts or timeline beats. "
+            "Prioritize the deterministic path retrieval and narrative-tree constraints when they exist. "
+            "The scene must land the core conflict, emotional movement, information release, and tail hook required by the scene contract. "
+            "Keep exposition compressed; hide setting inside action, exchange, consequence, and detail."
+        )
+    else:
+        user_prompt = (
+            f"{_hard_fact_line}"
+            f"{_contradiction_line}"
+            f"{_knowledge_line}"
+            f"项目：《{project.title}》\n"
+            f"章节：第{chapter.chapter_number}章 {chapter.title or ''}\n"
+            f"章节目标（仅供你理解意图，严禁出现在正文中）：{chapter.chapter_goal}\n"
+            f"场景定位（仅供参考，不要作为标题输出）：第{scene.scene_number}场 {scene.title or ''}\n"
+            f"场景类型：{scene.scene_type}\n"
+            f"时间标签：{scene.time_label or '未指定'}\n"
+            f"参与者：{participants}\n"
+            f"剧情目的：{scene.purpose.get('story', '推进本章主线')}\n"
+            f"情绪目的：{scene.purpose.get('emotion', '拉高当前张力')}\n"
+            f"入场状态：{scene.entry_state}\n"
+            f"离场状态：{scene.exit_state}\n"
+            f"目标字数：{scene.target_word_count}\n"
+            f"视角：{style_guide.pov_type if style_guide else 'third-limited'}\n"
+            f"语气关键词：{tone}\n"
+            f"{_pp_line}"
+            f"故事圣经约束：\n{story_bible_section or '暂无额外故事圣经约束'}\n"
+            f"近期剧情回顾：\n{recent_scene_section or '暂无近期剧情回顾'}\n"
+            f"已知时间线节点：\n{recent_timeline_section or '暂无已知时间线节点'}\n"
+            f"当前叙事线与节拍：\n{arc_section or '暂无显式叙事线约束'}\n"
+            f"伏笔与兑现约束：\n{clue_section or '暂无显式伏笔/兑现约束'}\n"
+            f"关系与情绪推进约束：\n{emotion_track_section or '暂无显式关系/情绪线约束'}\n"
+            f"反派推进约束：\n{antagonist_plan_section or '暂无显式反派推进约束'}\n"
+            f"chapter/scene contract：\n{contract_section or '暂无显式 contract 约束'}\n"
+            f"叙事树上下文：\n{tree_section or '暂无叙事树上下文'}\n"
+            f"参与角色当前可见事实：\n{participant_fact_section or '暂无额外角色事实'}\n"
+            f"检索到的相关上下文：\n{retrieval_section or '暂无额外检索上下文'}\n"
+            f"{_pp_writer_line}"
+            f"{_scene_type_writing_guidance(scene.scene_type)}"
+            "不得泄露未来章节才会揭示的信息，不得与当前已知事实和时间线冲突。"
+            "优先服从 deterministic path retrieval 与 narrative tree 提供的结构化约束。"
+            "必须覆盖 scene contract 的核心冲突、情绪变化、信息释放和尾钩。"
+            "背景说明必须压缩到最少，优先把设定藏进人物行动、交易、冲突后果和细节里。"
+            "不要用空泛抒情、不要先解释世界观、不要写成提纲口吻。"
+        )
     return system_prompt, user_prompt
 
 
@@ -1025,7 +1371,12 @@ def _packet_hard_fact_snapshot(packet: SceneWriterContextPacket | None) -> dict[
     return packet.hard_fact_snapshot.model_dump(mode="json")
 
 
-def _format_chapter_heading(chapter_number: int, raw_title: str | None) -> str:
+def format_chapter_heading(
+    chapter_number: int,
+    raw_title: str | None,
+    *,
+    language: str | None = None,
+) -> str:
     """Build a single ``# 第N章：子标题`` heading without double-prefixing.
 
     ``chapter.title`` in older data can look like any of:
@@ -1041,7 +1392,8 @@ def _format_chapter_heading(chapter_number: int, raw_title: str | None) -> str:
     ``第N章`` prefix (with optional whitespace / colon) before re-attaching a
     single canonical prefix.
     """
-    chapter_prefix = f"第{chapter_number}章"
+    is_en = is_english_language(language)
+    chapter_prefix = f"Chapter {chapter_number}" if is_en else f"第{chapter_number}章"
     title = (raw_title or "").strip()
     if not title:
         return f"# {chapter_prefix}"
@@ -1049,16 +1401,20 @@ def _format_chapter_heading(chapter_number: int, raw_title: str | None) -> str:
     # double-prefixing. Tolerate both the exact chapter number and generic
     # leading "第\d+章" forms so earlier data with stale numbering still works.
     stripped = re.sub(r"^第\s*\d+\s*章\s*[：:\-\s]*", "", title).strip()
+    stripped = re.sub(r"^Chapter\s*\d+\s*[:\-\s]*", "", stripped, flags=re.IGNORECASE).strip()
     if not stripped:
         return f"# {chapter_prefix}"
-    return f"# {chapter_prefix}：{stripped}"
+    separator = ": " if is_en else "："
+    return f"# {chapter_prefix}{separator}{stripped}"
 
 
 def render_chapter_draft_markdown(
     chapter: ChapterModel,
     scene_drafts: list[SceneDraftVersionModel],
+    *,
+    language: str | None = None,
 ) -> str:
-    header = [_format_chapter_heading(chapter.chapter_number, chapter.title)]
+    header = [format_chapter_heading(chapter.chapter_number, chapter.title, language=language)]
     scene_sections = [
         sanitize_novel_markdown_content(scene_draft.content_md)
         for scene_draft in scene_drafts
@@ -1200,6 +1556,8 @@ async def generate_scene_draft(
             _packet_emotion_tracks(context_packet),
             _packet_antagonist_plans(context_packet),
             hard_fact_snapshot=_packet_hard_fact_snapshot(context_packet),
+            contradiction_warnings=getattr(context_packet, "contradiction_warnings", None) if context_packet else None,
+            participant_knowledge_states=getattr(context_packet, "participant_knowledge_states", None) if context_packet else None,
         )
         # Inject voice drift correction prompts for scene participants
         proj_metadata = getattr(project, "metadata_json", None) or {}
@@ -1354,7 +1712,7 @@ async def assemble_chapter_draft(
             f"Chapter {chapter_number} cannot be assembled because current drafts are missing for scenes: {missing}."
         )
 
-    content_md = render_chapter_draft_markdown(chapter, scene_drafts)
+    content_md = render_chapter_draft_markdown(chapter, scene_drafts, language=project.language)
     word_count = count_words(content_md)
     next_version = int(
         (

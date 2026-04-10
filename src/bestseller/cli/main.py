@@ -12,13 +12,18 @@ import yaml
 from bestseller import __version__
 from bestseller.domain.enums import ArtifactType
 from bestseller.domain.planning import PlanningArtifactCreate
-from bestseller.domain.project import ChapterCreate, InteractiveFictionConfig, ProjectCreate, SceneCardCreate
+from bestseller.domain.project import (
+    ChapterCreate,
+    InteractiveFictionConfig,
+    ProjectCreate,
+    SceneCardCreate,
+)
 from bestseller.domain.workflow import ChapterOutlineBatchInput
 from bestseller.infra.db.schema import initialize_database, render_schema_sql
 from bestseller.infra.db.session import create_engine, session_scope
-from bestseller.services.drafts import assemble_chapter_draft, generate_scene_draft
 from bestseller.services.consistency import review_project_consistency
 from bestseller.services.context import build_chapter_writer_context, build_scene_writer_context
+from bestseller.services.drafts import assemble_chapter_draft, generate_scene_draft
 from bestseller.services.evaluation import (
     list_benchmark_suites,
     load_benchmark_suite,
@@ -34,6 +39,7 @@ from bestseller.services.exports import (
     export_project_markdown,
     export_project_pdf,
 )
+from bestseller.services.if_generation import run_if_pipeline, run_if_pipeline_integrated
 from bestseller.services.inspection import (
     build_project_structure,
     build_story_bible_overview,
@@ -47,7 +53,6 @@ from bestseller.services.narrative_tree import (
     get_narrative_tree_node_by_path,
     search_narrative_tree_for_project,
 )
-from bestseller.services.prompt_packs import get_prompt_pack, list_prompt_packs
 from bestseller.services.pipelines import (
     run_autowrite_pipeline,
     run_chapter_pipeline,
@@ -64,24 +69,29 @@ from bestseller.services.projects import (
     list_projects,
     load_json_file,
 )
-from bestseller.services.if_generation import run_if_pipeline, run_if_pipeline_integrated
+from bestseller.services.prompt_packs import get_prompt_pack, list_prompt_packs
+from bestseller.services.publishing.amazon_kdp import (
+    init_amazon_kdp_profile,
+    package_amazon_kdp_project,
+    show_amazon_kdp_profile,
+    validate_amazon_kdp_project,
+)
 from bestseller.services.repair import run_project_repair
 from bestseller.services.retrieval import refresh_project_retrieval_index, search_project_retrieval
-from bestseller.services.rewrite_impacts import list_rewrite_impacts, refresh_rewrite_impacts
-from bestseller.services.rewrite_cascade import run_rewrite_cascade
 from bestseller.services.reviews import (
     review_chapter_draft,
     review_scene_draft,
     rewrite_chapter_from_task,
     rewrite_scene_from_task,
 )
+from bestseller.services.rewrite_cascade import run_rewrite_cascade
+from bestseller.services.rewrite_impacts import list_rewrite_impacts, refresh_rewrite_impacts
 from bestseller.services.workflows import (
     get_workflow_run,
     list_workflow_runs,
     materialize_chapter_outline_batch,
     materialize_latest_chapter_outline_batch,
     materialize_latest_narrative_graph,
-    materialize_latest_narrative_tree,
     materialize_latest_story_bible,
     materialize_narrative_graph,
     materialize_narrative_tree,
@@ -99,7 +109,6 @@ from bestseller.services.writing_presets import (
 from bestseller.settings import DEFAULT_CONFIG_PATH, load_settings, settings_to_dict
 from bestseller.web import serve_web_app
 
-
 app = typer.Typer(
     help="BestSeller CLI for the PostgreSQL-first long-form novel framework."
 )
@@ -110,6 +119,7 @@ chapter_app = typer.Typer(help="Chapter operations.")
 scene_app = typer.Typer(help="Scene operations.")
 workflow_app = typer.Typer(help="Workflow operations.")
 export_app = typer.Typer(help="Export operations.")
+export_amazon_kdp_app = typer.Typer(help="Amazon KDP export operations.")
 canon_app = typer.Typer(help="Canon fact operations.")
 timeline_app = typer.Typer(help="Timeline operations.")
 rewrite_app = typer.Typer(help="Rewrite task operations.")
@@ -121,6 +131,7 @@ ui_app = typer.Typer(help="Web UI operations.")
 prompt_pack_app = typer.Typer(help="Prompt pack operations.")
 writing_preset_app = typer.Typer(help="Writing preset operations.")
 if_app = typer.Typer(help="Interactive fiction (LifeScript) operations.")
+publish_profile_app = typer.Typer(help="Publication profile operations.")
 
 app.add_typer(db_app, name="db")
 app.add_typer(project_app, name="project")
@@ -129,6 +140,7 @@ app.add_typer(chapter_app, name="chapter")
 app.add_typer(scene_app, name="scene")
 app.add_typer(workflow_app, name="workflow")
 app.add_typer(export_app, name="export")
+app.add_typer(publish_profile_app, name="publish-profile")
 app.add_typer(canon_app, name="canon")
 app.add_typer(timeline_app, name="timeline")
 app.add_typer(rewrite_app, name="rewrite")
@@ -140,6 +152,7 @@ app.add_typer(ui_app, name="ui")
 app.add_typer(prompt_pack_app, name="prompt-pack")
 app.add_typer(writing_preset_app, name="writing-preset")
 app.add_typer(if_app, name="if")
+export_app.add_typer(export_amazon_kdp_app, name="amazon-kdp")
 
 
 @app.callback()
@@ -1991,6 +2004,80 @@ def export_pdf(project_slug: str, chapter_number: int | None = None) -> None:
     except RuntimeError as exc:
         typer.secho(str(exc), fg=typer.colors.RED, err=True)
         raise typer.Exit(code=2) from exc
+
+
+@publish_profile_app.command("init")
+def publish_profile_init(
+    project_slug: str,
+    target: str = typer.Option("amazon-kdp", "--target", help="Publication target to initialize."),
+    overwrite: bool = typer.Option(False, "--overwrite", help="Overwrite an existing stored profile."),
+) -> None:
+    """Initialize a publication profile from current project metadata."""
+
+    if target != "amazon-kdp":
+        raise typer.BadParameter("Only --target amazon-kdp is currently supported.")
+
+    async def _run() -> None:
+        settings = load_settings()
+        async with session_scope(settings) as session:
+            profile = await init_amazon_kdp_profile(session, project_slug, overwrite=overwrite)
+            typer.echo(json.dumps(profile.model_dump(mode="json", exclude_none=True), ensure_ascii=False, indent=2))
+
+    asyncio.run(_run())
+
+
+@publish_profile_app.command("show")
+def publish_profile_show(
+    project_slug: str,
+    target: str = typer.Option("amazon-kdp", "--target", help="Publication target to inspect."),
+) -> None:
+    """Show the stored publication profile."""
+
+    if target != "amazon-kdp":
+        raise typer.BadParameter("Only --target amazon-kdp is currently supported.")
+
+    async def _run() -> None:
+        settings = load_settings()
+        async with session_scope(settings) as session:
+            profile = await show_amazon_kdp_profile(session, project_slug)
+            typer.echo(json.dumps(profile.model_dump(mode="json", exclude_none=True), ensure_ascii=False, indent=2))
+
+    asyncio.run(_run())
+
+
+@export_amazon_kdp_app.command("validate")
+def export_amazon_kdp_validate(
+    project_slug: str,
+) -> None:
+    """Validate whether the current project is ready for Amazon KDP ebook packaging."""
+
+    async def _run() -> None:
+        settings = load_settings()
+        async with session_scope(settings) as session:
+            report = await validate_amazon_kdp_project(session, project_slug)
+            typer.echo(json.dumps(report.model_dump(mode="json"), ensure_ascii=False, indent=2))
+
+    asyncio.run(_run())
+
+
+@export_amazon_kdp_app.command("package")
+def export_amazon_kdp_package(
+    project_slug: str,
+    strict: bool = typer.Option(
+        True,
+        "--strict/--no-strict",
+        help="Block package generation when validation has blocking findings.",
+    ),
+) -> None:
+    """Build an upload-ready Amazon KDP ebook package."""
+
+    async def _run() -> None:
+        settings = load_settings()
+        async with session_scope(settings) as session:
+            result = await package_amazon_kdp_project(session, settings, project_slug, strict=strict)
+            typer.echo(json.dumps(result.model_dump(mode="json"), ensure_ascii=False, indent=2))
+
+    asyncio.run(_run())
 
 
 # ---------------------------------------------------------------------------

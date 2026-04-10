@@ -123,6 +123,11 @@ quality:
   enable_scene_critique: true
   enable_chapter_coherence_check: true
   enable_final_consistency_check: true
+  enable_llm_scene_commentary: false
+  enable_llm_chapter_commentary: false
+  enable_plan_judge: true
+  enable_plan_judge_llm: false
+  min_scene_rewrite_improvement: 0.03
 
   thresholds:
     scene_min_score: 0.70

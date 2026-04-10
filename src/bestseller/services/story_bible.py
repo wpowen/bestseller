@@ -605,6 +605,7 @@ async def load_scene_story_bible_context(
             {
                 "name": character.name,
                 "role": character.role,
+                "background": character.background,
                 "goal": character.goal,
                 "fear": character.fear,
                 "flaw": character.flaw,
@@ -639,6 +640,7 @@ async def load_scene_story_bible_context(
 
     return {
         "book_spec": project.metadata_json.get("book_spec", {}),
+        "cast_spec": project.metadata_json.get("cast_spec", {}),
         "logline": project.metadata_json.get("logline"),
         "themes": project.metadata_json.get("themes", []),
         "stakes": project.metadata_json.get("stakes", {}),

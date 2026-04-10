@@ -301,6 +301,28 @@
     font-size: 16px;
     opacity: .5;
   }
+  .lang-tabs {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 16px;
+  }
+  .lang-tab {
+    padding: 8px 20px;
+    border-radius: 20px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    border: 1px solid var(--border);
+    background: rgba(255,255,255,0.04);
+    color: var(--text-dim);
+    transition: all .2s;
+  }
+  .lang-tab:hover { background: rgba(255,255,255,0.08); color: var(--text); }
+  .lang-tab.active {
+    background: linear-gradient(180deg, rgba(74,158,255,0.95), rgba(60,130,220,0.85));
+    color: #fff;
+    border-color: rgba(74,158,255,0.5);
+  }
   .genre-grid {
     display: grid;
     grid-template-columns: repeat(4, 1fr);
@@ -407,7 +429,7 @@
     gap: 6px; max-height: 280px; overflow-y: auto;
   }
   .pv-ch-link {
-    display: flex; align-items: center; gap: 6px; padding: 7px 10px;
+    display: grid; grid-template-columns: auto 1fr; gap: 6px 8px; padding: 7px 10px;
     background: rgba(74, 158, 255, 0.05); border: 1px solid rgba(74, 158, 255, 0.12);
     border-radius: 6px; color: var(--text); text-decoration: none; font-size: 13px;
     transition: all .2s;
@@ -415,6 +437,7 @@
   .pv-ch-link:hover { background: rgba(74, 158, 255, 0.12); border-color: var(--blue); color: var(--text-bright); }
   .pv-ch-link .n { color: var(--blue); font-weight: 600; min-width: 32px; }
   .pv-ch-link .t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pv-ch-link .m { color: var(--text-dim); font-size: 12px; grid-column: 2; }
 
   /* Timeline log */
   .pv-timeline {
@@ -617,7 +640,7 @@
   <h1><span>BestSeller</span> 一键创作</h1>
   <div class="header-nav">
     <button id="navDash" class="active" onclick="switchView('dashboard')">任务仪表板</button>
-    <button id="navNew" onclick="switchView('wizard')">新建创作</button>
+    <button id="navNew" onclick="startNewCreationFlow()">新建创作</button>
     <a href="/">工作室</a>
   </div>
 </div>
@@ -631,7 +654,7 @@
       <div class="dash-empty" id="dashEmpty">
         <h2>还没有创作任务</h2>
         <p>点击「新建创作」开始你的第一本小说</p>
-        <button class="btn btn-primary" onclick="switchView('wizard')">⚡ 新建创作</button>
+        <button class="btn btn-primary" onclick="startNewCreationFlow()">⚡ 新建创作</button>
       </div>
     </div>
     <div id="dashToolbar" style="display:flex;justify-content:flex-end;gap:8px;margin-bottom:12px;align-items:center;flex-wrap:wrap;">
@@ -661,6 +684,10 @@
 
     <!-- Step 1 -->
     <div class="wpanel active" id="ws1">
+      <div class="lang-tabs">
+        <button class="lang-tab active" data-lang="zh" id="langTabZh">中文题材</button>
+        <button class="lang-tab" data-lang="en" id="langTabEn">English Genres</button>
+      </div>
       <div class="search-box">
         <input type="text" id="genreSearch" placeholder="搜索题材...">
       </div>
@@ -711,6 +738,13 @@
         <div class="summary-row"><span class="lbl">子类型</span><span class="val" id="sumSub">-</span></div>
         <div class="summary-row"><span class="lbl">章节数</span><span class="val" id="sumCh">-</span></div>
         <div class="summary-row"><span class="lbl">写作模型</span><span class="val" id="sumModel">-</span></div>
+        <div class="summary-row" style="margin-top:12px;">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:14px;">
+            <input type="checkbox" id="draftModeToggle" style="width:18px;height:18px;">
+            <span>快速草稿模式</span>
+            <span style="color:#888;font-size:12px;">（跳过审核循环，速度提升 3x）</span>
+          </label>
+        </div>
       </div>
       <div class="nav-buttons" style="flex-direction:column;gap:12px;">
         <button class="btn btn-primary btn-start" id="startBtn">开始创作</button>
@@ -738,7 +772,7 @@
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;">
           <button class="btn btn-secondary btn-sm" onclick="switchView('dashboard')">← 返回仪表板</button>
-          <button class="btn btn-primary btn-sm" onclick="switchView('wizard')">+ 新建另一本</button>
+          <button class="btn btn-primary btn-sm" onclick="startNewCreationFlow()">+ 新建另一本</button>
         </div>
       </div>
     </div>
@@ -782,7 +816,7 @@
       <p id="pvDoneSummary"></p>
       <div class="pv-done-actions">
         <a id="pvReaderLink" href="#" class="btn btn-success" target="_blank">阅读作品</a>
-        <button class="btn btn-primary" onclick="switchView('wizard')">创作新作品</button>
+        <button class="btn btn-primary" onclick="startNewCreationFlow()">创作新作品</button>
         <a href="/" class="btn btn-secondary">返回工作室</a>
       </div>
     </div>
@@ -799,6 +833,7 @@
      ═══════════════════════════════════════ */
   let genres = [];
   let selectedGenreKey = null;
+  let selectedLang = 'zh';
   let chapterCount = 100;
   let llmModel = '';
   let allTasks = [];       // from /api/tasks
@@ -808,6 +843,8 @@
   let taskStartTime = null;
   let maxConcurrentTasks = 3;  // populated from /api/status; default matches backend env
   let highlightTaskId = null;  // visually highlight a freshly-created task on the dashboard
+  const DEFAULT_LANG = 'zh';
+  const DEFAULT_CHAPTER_COUNT = 100;
 
   const STAGE = {
     queued: '排队中', running: '运行中', completed: '已完成', failed: '失败', cancelled: '已停止',
@@ -853,6 +890,27 @@
     if (name === 'dashboard') { $('#navDash').classList.add('active'); stopProgressPoll(); refreshDashboard(); }
     else if (name === 'wizard') { $('#navNew').classList.add('active'); stopProgressPoll(); }
     else if (name === 'progress') { /* no nav highlight — sub-view of dashboard */ }
+  };
+
+  function resetWizardState() {
+    selectedGenreKey = null;
+    selectedLang = DEFAULT_LANG;
+    chapterCount = DEFAULT_CHAPTER_COUNT;
+    $('#genreSearch').value = '';
+    $('#genreSearch').placeholder = '搜索题材...';
+    $$('.lang-tab').forEach(t => t.classList.toggle('active', t.dataset.lang === DEFAULT_LANG));
+    $('#toStep2').disabled = true;
+    $('#draftModeToggle').checked = false;
+    $('#customChapters').value = DEFAULT_CHAPTER_COUNT;
+    selectLen(DEFAULT_CHAPTER_COUNT);
+    renderGenres(genres.filter(matchSearch));
+    updateSummary();
+    wizGo(1);
+  }
+
+  window.startNewCreationFlow = function() {
+    resetWizardState();
+    switchView('wizard');
   };
 
   /* ═══════════════════════════════════════
@@ -941,13 +999,22 @@
     const events = task.progress_events || [];
     const status = task.status || 'queued';
     const slug = task.project_slug || '';
+    const targetWords = Number(task.payload?.target_words || task.result?.target_words || 0);
+    const targetChapters = Number(task.payload?.target_chapters || task.result?.target_chapters || 0);
+    const targetWordsPerChapter = targetWords > 0 && targetChapters > 0
+      ? Math.round(targetWords / targetChapters)
+      : 0;
 
     // Chapter progress
-    const completedChs = events.filter(e => e.stage === 'chapter_pipeline_completed').map(e => e.payload?.chapter_number).filter(Boolean);
+    const completedChapterEvents = events.filter(e =>
+      e.stage === 'chapter_pipeline_completed' && Number.isFinite(e.payload?.chapter_number)
+    );
+    const completedChs = completedChapterEvents.map(e => e.payload?.chapter_number).filter(Boolean);
     const pipelineEvt = events.find(e => e.stage === 'project_pipeline_started');
     const total = pipelineEvt?.payload?.chapter_count || 0;
     const pct = total > 0 ? Math.min(99, 5 + Math.round((completedChs.length / total) * 95)) : (status === 'completed' ? 100 : 0);
     const displayPct = status === 'completed' ? 100 : pct;
+    const completedWordCount = completedChapterEvents.reduce((sum, e) => sum + Number(e.payload?.word_count || 0), 0);
 
     // Currently writing chapter
     const lastStarted = [...events].reverse().find(e => e.stage === 'chapter_pipeline_started');
@@ -963,7 +1030,10 @@
     if (task.current_stage === 'chapter_pipeline_started' && lastStarted?.payload) {
       const chNum = lastStarted.payload.chapter_number ?? '-';
       const prog = lastStarted.payload.progress ?? '';
-      stageLabel = `写作第 ${chNum} 章${prog ? ` (${prog})` : ''}`;
+      const targetText = Number(lastStarted.payload.target_word_count || 0) > 0
+        ? ` · 目标约 ${fmtWords(lastStarted.payload.target_word_count)}`
+        : '';
+      stageLabel = `写作第 ${chNum} 章${prog ? ` (${prog})` : ''}${targetText}`;
     }
     if (task.cancel_requested && status === 'running') {
       stageLabel = '🛑 正在停止…';
@@ -971,9 +1041,15 @@
 
     // Chapter pills (show first 20 + count)
     const pillLimit = 20;
-    const pills = completedChs.slice(0, pillLimit).map(n =>
-      `<a class="ch-pill done" href="/read/${esc(slug)}#${n}" target="_blank" title="预览第${n}章">第${n}章</a>`
-    ).join('');
+    const pills = completedChapterEvents.slice(0, pillLimit).map((e) => {
+      const n = e.payload?.chapter_number;
+      const wc = Number(e.payload?.word_count || 0);
+      const title = e.payload?.chapter_title || '';
+      const tip = [title ? `第${n}章：${title}` : `第${n}章`, wc > 0 ? fmtWords(wc) : '']
+        .filter(Boolean)
+        .join(' · ');
+      return `<a class="ch-pill done" href="/read/${esc(slug)}#${n}" target="_blank" title="${esc(tip)}">第${n}章${wc > 0 ? ` · ${esc(fmtWords(wc))}` : ''}</a>`;
+    }).join('');
     const writingPill = writingCh ? `<span class="ch-pill writing">第${writingCh}章 写作中</span>` : '';
     const morePills = completedChs.length > pillLimit ? `<span class="ch-pill done" style="cursor:default;">+${completedChs.length - pillLimit}章</span>` : '';
 
@@ -986,6 +1062,9 @@
     const chaptersLine = targetCount > 0
       ? `已写 <strong>${writtenCount}</strong> / 目标 <strong>${targetCount}</strong> 章`
       : `已写 <strong>${writtenCount}</strong> 章（目标未知）`;
+    const wordLine = targetWordsPerChapter > 0
+      ? `字数：目标约 <strong>${fmtWords(targetWordsPerChapter)}</strong>/章${completedWordCount > 0 ? ` · 已产出 <strong>${fmtWords(completedWordCount)}</strong>` : ''}`
+      : '';
 
     // Actions
     let actions = '';
@@ -1040,6 +1119,7 @@
         <span>创建：<strong>${timeStr}</strong></span>
         <span>阶段：<strong>${esc(stageLabel)}</strong></span>
         <span>章节：${chaptersLine}</span>
+        ${wordLine ? `<span>${wordLine}</span>` : ''}
       </div>
       ${total > 0 ? `
       <div class="tc-progress">
@@ -1276,7 +1356,10 @@
     if (data.current_stage === 'chapter_pipeline_started' && lastEvt?.payload) {
       const chNum = lastEvt.payload.chapter_number ?? '-';
       const prog = lastEvt.payload.progress ?? '';
-      stageTxt = `正在写作第 ${chNum} 章${prog ? ` (${prog})` : ''}`;
+      const targetText = Number(lastEvt.payload.target_word_count || 0) > 0
+        ? ` · 目标约 ${fmtWords(lastEvt.payload.target_word_count)}`
+        : '';
+      stageTxt = `正在写作第 ${chNum} 章${prog ? ` (${prog})` : ''}${targetText}`;
     }
     if (data.cancel_requested && status === 'running') {
       stageTxt = '🛑 正在停止…';
@@ -1321,9 +1404,16 @@
       if (e.stage === 'chapter_pipeline_started' && e.payload) {
         const cn = e.payload.chapter_number ?? '-';
         const pg = e.payload.progress ?? '';
-        detail = ` — 第${cn}章${pg ? ` (${pg})` : ''}`;
+        const targetText = Number(e.payload.target_word_count || 0) > 0
+          ? ` · 目标约 ${fmtWords(e.payload.target_word_count)}`
+          : '';
+        detail = ` — 第${cn}章${pg ? ` (${pg})` : ''}${targetText}`;
       }
-      else if (e.stage === 'chapter_pipeline_completed' && e.payload) detail = ` — 第${e.payload.chapter_number ?? '-'}章`;
+      else if (e.stage === 'chapter_pipeline_completed' && e.payload) {
+        const chapterTitle = e.payload.chapter_title ? `《${e.payload.chapter_title}》` : '';
+        const wordText = Number(e.payload.word_count || 0) > 0 ? ` · ${fmtWords(e.payload.word_count)}` : '';
+        detail = ` — 第${e.payload.chapter_number ?? '-'}章${chapterTitle}${wordText}`;
+      }
       else if (e.stage === 'planning_completed' && e.payload) detail = ` — ${e.payload.volume_count ?? '-'}卷 ${e.payload.chapter_count ?? '-'}章`;
       else if (e.stage === 'resume_skipped_chapters' && e.payload) detail = ` — 跳过${e.payload.skipped_count ?? '-'}章`;
       const dot = (i === 0 && status === 'running') ? 'active' : 'done';
@@ -1341,7 +1431,7 @@
           const tocData = await tocRes.json();
           const chs = tocData.chapters || [];
           $('#pvChGrid').innerHTML = chs.map(ch =>
-            `<a class="pv-ch-link" href="/read/${esc(slug)}#${ch.number}" target="_blank"><span class="n">第${ch.number}章</span><span class="t">${esc(ch.title || '')}</span></a>`
+            `<a class="pv-ch-link" href="/read/${esc(slug)}#${ch.number}" target="_blank"><span class="n">第${ch.number}章</span><span class="t">${esc(ch.title || '')}</span><span class="m">${esc(Number(ch.word_count || 0) > 0 ? `${fmtWords(ch.word_count)} · 约 ${Number(ch.estimated_read_minutes || 0)} 分钟` : '文件生成中')}</span></a>`
           ).join('') || '<span style="color:var(--text-dim);font-size:13px;">文件生成中...</span>';
         }
       } catch { /* ignore */ }
@@ -1391,7 +1481,7 @@
   // Genre loading & selection
   async function loadGenres() {
     try { const r = await fetch('/api/writing-presets'); const d = await r.json(); genres = d.genre_presets || []; } catch { genres = []; }
-    renderGenres(genres);
+    renderGenres(genres.filter(matchSearch));
   }
 
   function renderGenres(list) {
@@ -1409,11 +1499,26 @@
   }
 
   function matchSearch(g) {
+    const gLang = (g.language || 'zh-CN').startsWith('en') ? 'en' : 'zh';
+    if (gLang !== selectedLang) return false;
     const q = $('#genreSearch').value.trim().toLowerCase();
     if (!q) return true;
     return [g.name, g.genre, g.sub_genre, g.description, g.key].some(v => (v || '').toLowerCase().includes(q));
   }
   $('#genreSearch').addEventListener('input', () => renderGenres(genres.filter(matchSearch)));
+
+  // Language tab switching
+  function switchLangTab(lang) {
+    selectedLang = lang;
+    selectedGenreKey = null;
+    $('#toStep2').disabled = true;
+    $$('.lang-tab').forEach(t => t.classList.toggle('active', t.dataset.lang === lang));
+    $('#genreSearch').value = '';
+    $('#genreSearch').placeholder = lang === 'en' ? 'Search genres...' : '搜索题材...';
+    renderGenres(genres.filter(matchSearch));
+  }
+  $('#langTabZh').addEventListener('click', () => switchLangTab('zh'));
+  $('#langTabEn').addEventListener('click', () => switchLangTab('en'));
 
   // Length selection
   function selectLen(n) {
@@ -1453,7 +1558,7 @@
       const res = await fetch('/api/tasks/quickstart', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ genre_key: selectedGenreKey, chapter_count: chapterCount }),
+        body: JSON.stringify({ genre_key: selectedGenreKey, chapter_count: chapterCount, draft_mode: !!$('#draftModeToggle').checked }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || data.detail || '提交失败');
@@ -1492,6 +1597,10 @@
     const h = Math.floor(m / 60), rm = m % 60;
     return rm > 0 ? h + '小时' + rm + '分' : h + '小时';
   }
+  function fmtWords(n) {
+    const value = Number(n || 0);
+    return value > 0 ? `${value.toLocaleString('zh-CN')}字` : '0字';
+  }
 
   /* ═══════════════════════════════════════
      INIT
@@ -1509,7 +1618,7 @@
 
     // Load genres in background
     loadGenres();
-    selectLen(100);
+    resetWizardState();
 
     // Load tasks & always stay on the dashboard.
     // Previously this auto-hijacked the user into the progress view of any

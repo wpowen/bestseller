@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -118,9 +118,36 @@ class ConflictMapInput(BaseModel):
     trigger_condition: str | None = None
 
 
+class ConflictForceInput(BaseModel):
+    """A named conflict force active during specific volumes of the story.
+
+    Unlike a single antagonist, conflict forces represent the diverse
+    challenges the protagonist faces at different stages of their journey:
+    local bullies, political intrigue, betrayals, faction wars, etc.
+    """
+
+    name: str = Field(min_length=1, max_length=4000)
+    force_type: Literal["character", "faction", "environment", "internal", "systemic"] = Field(
+        description="character / faction / environment / internal / systemic",
+    )
+    active_volumes: list[int] = Field(
+        default_factory=list,
+        description="Volume numbers where this force is the primary threat. Empty = all volumes.",
+    )
+    threat_description: str | None = None
+    relationship_to_protagonist: str | None = None
+    escalation_path: str | None = None
+    character_ref: str | None = Field(
+        default=None,
+        max_length=4000,
+        description="Name of a character in supporting_cast when force_type is 'character'.",
+    )
+
+
 class CastSpecInput(BaseModel):
     protagonist: CharacterInput | None = None
     antagonist: CharacterInput | None = None
+    antagonist_forces: list[ConflictForceInput] = Field(default_factory=list)
     supporting_cast: list[CharacterInput] = Field(default_factory=list)
     conflict_map: list[ConflictMapInput] = Field(default_factory=list)
 

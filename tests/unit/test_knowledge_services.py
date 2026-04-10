@@ -67,6 +67,20 @@ def build_project() -> ProjectModel:
     return project
 
 
+def build_english_project() -> ProjectModel:
+    project = ProjectModel(
+        slug="storm-ledger",
+        title="Storm Ledger",
+        genre="Fantasy",
+        language="en-US",
+        target_word_count=90000,
+        target_chapters=18,
+        metadata_json={},
+    )
+    project.id = uuid4()
+    return project
+
+
 def build_chapter(project_id):
     from bestseller.infra.db.models import ChapterModel
 
@@ -136,6 +150,37 @@ def build_style(project_id) -> StyleGuideModel:
         reference_works=[],
         custom_rules=[],
     )
+
+
+def test_scene_summary_prompts_switch_to_english_for_english_projects() -> None:
+    project = build_english_project()
+    chapter = build_chapter(project.id)
+    chapter.title = "Storm Wake"
+    chapter.chapter_goal = "Force Elara to move first"
+    scene = build_scene(project.id, chapter.id)
+    scene.title = "The Order Arrives"
+    scene.participants = ["Elara", "Captain Vale"]
+    scene.purpose = {"story": "Trigger the execution order", "emotion": "panic turning into resolve"}
+    draft = build_draft(project.id, scene.id)
+    draft.content_md = "The execution order arrived before dawn."
+    style = build_style(project.id)
+
+    system_prompt, user_prompt = knowledge_services.build_scene_summary_prompts(
+        project,
+        chapter,
+        scene,
+        draft,
+        style,
+    )
+    fallback = knowledge_services.render_scene_summary_fallback(project, chapter, scene)
+
+    combined = system_prompt + "\n" + user_prompt + "\n" + fallback
+    assert "Write a concise 2-3 sentence English summary" in system_prompt
+    assert "Project: Storm Ledger" in user_prompt
+    assert "Scene 1: The Order Arrives" in user_prompt
+    assert "In Storm Ledger, Chapter 1, Scene 1" in fallback
+    assert "请用中文输出" not in combined
+    assert "《Storm Ledger》" not in combined
 
 
 @pytest.mark.asyncio

@@ -10,16 +10,17 @@ from sqlalchemy.dialects import postgresql
 from bestseller.domain.enums import ArtifactType
 from bestseller.domain.planning import PlanningArtifactCreate
 from bestseller.domain.project import (
+    AmazonKdpPublicationProfile,
     CharacterEngineConfig,
     MarketPositioningConfig,
     ProjectCreate,
+    PublishingProfilesConfig,
     StylePreferenceConfig,
     WritingProfile,
 )
 from bestseller.infra.db.models import ProjectModel, StyleGuideModel
 from bestseller.services import projects as project_services
 from bestseller.settings import load_settings
-
 
 pytestmark = pytest.mark.unit
 
@@ -39,7 +40,7 @@ class FakeSession:
             if table is None or "id" not in table.c:
                 continue
             if getattr(obj, "id", None) is None:
-                setattr(obj, "id", uuid4())
+                obj.id = uuid4()
 
     async def scalar(self, stmt: object) -> object | None:
         self.last_scalar_statement = stmt
@@ -145,6 +146,46 @@ async def test_create_project_applies_writing_profile_to_style_guide_and_metadat
     assert "压迫感" in style_guides[0].tone_keywords
     assert style_guides[0].reference_works == ["《全球冰封》"]
     assert "第一章 800 字内给出明确异变信号。" in style_guides[0].custom_rules
+
+
+@pytest.mark.asyncio
+async def test_create_project_persists_amazon_kdp_publication_profile(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def fake_get_project_by_slug(session: object, slug: str) -> None:
+        return None
+
+    monkeypatch.setattr(project_services, "get_project_by_slug", fake_get_project_by_slug)
+    session = FakeSession()
+
+    project = await project_services.create_project(
+        session,
+        ProjectCreate(
+            slug="english-launch",
+            title="English Launch",
+            genre="fantasy",
+            language="en-US",
+            target_word_count=90000,
+            target_chapters=30,
+            publishing=PublishingProfilesConfig(
+                amazon_kdp=AmazonKdpPublicationProfile(
+                    language="en-US",
+                    book_title="English Launch",
+                    author_display_name="Owen Example",
+                    description="A fantasy launch novel.",
+                    categories=["Fiction / Fantasy / Epic"],
+                    ai_generated_text="assisted",
+                    ai_generated_images="none",
+                )
+            ),
+        ),
+        build_settings(),
+    )
+
+    payload = project.metadata_json["publishing"]["amazon_kdp"]
+    assert project.language == "en-US"
+    assert payload["book_title"] == "English Launch"
+    assert payload["author_display_name"] == "Owen Example"
 
 
 def test_project_style_guide_relationship_cascades_deletion() -> None:

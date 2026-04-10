@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import hashlib
-import io
-import math
-import re
 from html import escape
+import io
+import logging
+import math
 from pathlib import Path
+import re
 from uuid import UUID
 from zipfile import ZIP_DEFLATED, ZIP_STORED, ZipFile
 
@@ -19,21 +20,46 @@ from bestseller.infra.db.models import (
     ExportArtifactModel,
     ProjectModel,
 )
-from bestseller.services.drafts import sanitize_novel_markdown_content
+from bestseller.services.drafts import format_chapter_heading, sanitize_novel_markdown_content
 from bestseller.services.projects import get_project_by_slug
 from bestseller.settings import AppSettings
 
+logger = logging.getLogger(__name__)
 
 _CJK_CHAR_PATTERN = re.compile(r"[\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF]")
 _LATIN_WORD_PATTERN = re.compile(r"[A-Za-z0-9]+(?:['’._-][A-Za-z0-9]+)*")
+
+
+def _ensure_chapter_heading(
+    chapter: ChapterModel,
+    content_md: str,
+    *,
+    language: str | None = None,
+) -> str:
+    """Prepend a canonical chapter heading if the content lacks one."""
+    if content_md.startswith(f"# 第{chapter.chapter_number}章") or content_md.startswith(
+        f"# Chapter {chapter.chapter_number}"
+    ):
+        return content_md
+    heading = format_chapter_heading(chapter.chapter_number, chapter.title, language=language)
+    return f"{heading}\n\n{content_md}"
 
 
 def build_project_markdown(
     project: ProjectModel,
     chapter_payloads: list[tuple[ChapterModel, ChapterDraftVersionModel]],
 ) -> str:
-    header = [f"# {project.title}", f"> 类型：{project.genre}"]
-    sections = [sanitize_novel_markdown_content(draft.content_md) for _, draft in chapter_payloads]
+    project_language = str(getattr(project, "language", None) or "zh-CN")
+    is_en = project_language.lower().startswith("en")
+    header = [f"# {project.title}", f"> {'Genre' if is_en else '类型'}：{project.genre}"]
+    sections = [
+        _ensure_chapter_heading(
+            ch,
+            sanitize_novel_markdown_content(draft.content_md),
+            language=project_language,
+        )
+        for ch, draft in chapter_payloads
+    ]
     return "\n\n".join(header + sections).strip()
 
 
@@ -111,7 +137,7 @@ def build_markdown_reading_stats(content_md: str) -> dict[str, int]:
     }
 
 
-def build_docx_bytes(title: str, content_md: str) -> bytes:
+def build_docx_bytes(title: str, content_md: str, *, author: str | None = None) -> bytes:
     lines = [line for line in content_md.splitlines() if line.strip()]
     paragraph_xml: list[str] = []
     if title:
@@ -192,7 +218,7 @@ def build_docx_bytes(title: str, content_md: str) -> bytes:
         "xmlns:dcterms=\"http://purl.org/dc/terms/\" "
         "xmlns:dcmitype=\"http://purl.org/dc/dcmitype/\" "
         "xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\">"
-        f"<dc:title>{escape(title)}</dc:title><dc:creator>BestSeller</dc:creator>"
+        f"<dc:title>{escape(title)}</dc:title><dc:creator>{escape(author or 'BestSeller')}</dc:creator>"
         "</cp:coreProperties>"
     )
 
@@ -207,18 +233,27 @@ def build_docx_bytes(title: str, content_md: str) -> bytes:
     return buffer.getvalue()
 
 
-def build_epub_bytes(title: str, content_md: str) -> bytes:
+def build_epub_bytes(
+    title: str,
+    content_md: str,
+    *,
+    language: str = "zh-CN",
+    author: str | None = None,
+    identifier: str = "bestseller-export",
+) -> bytes:
     html_body = markdown_to_html(content_md)
+    nav_title = "Table of Contents" if language.lower().startswith("en") else "目录"
+    escaped_author = escape(author) if author else None
     content_xhtml = (
         "<?xml version=\"1.0\" encoding=\"utf-8\"?>"
-        "<html xmlns=\"http://www.w3.org/1999/xhtml\" xml:lang=\"zh-CN\">"
+        f"<html xmlns=\"http://www.w3.org/1999/xhtml\" xml:lang=\"{escape(language)}\">"
         f"<head><title>{escape(title)}</title><meta charset=\"utf-8\"/></head>"
         f"<body>{html_body}</body></html>"
     )
     nav_xhtml = (
         "<?xml version=\"1.0\" encoding=\"utf-8\"?>"
-        "<html xmlns=\"http://www.w3.org/1999/xhtml\" xml:lang=\"zh-CN\">"
-        f"<head><title>{escape(title)} 目录</title></head>"
+        f"<html xmlns=\"http://www.w3.org/1999/xhtml\" xml:lang=\"{escape(language)}\">"
+        f"<head><title>{escape(title)} {escape(nav_title)}</title></head>"
         "<body><nav epub:type=\"toc\" id=\"toc\">"
         f"<ol><li><a href=\"content.xhtml\">{escape(title)}</a></li></ol>"
         "</nav></body></html>"
@@ -227,9 +262,10 @@ def build_epub_bytes(title: str, content_md: str) -> bytes:
         "<?xml version=\"1.0\" encoding=\"utf-8\"?>"
         "<package xmlns=\"http://www.idpf.org/2007/opf\" unique-identifier=\"bookid\" version=\"3.0\">"
         "<metadata xmlns:dc=\"http://purl.org/dc/elements/1.1/\">"
-        "<dc:identifier id=\"bookid\">bestseller-export</dc:identifier>"
+        f"<dc:identifier id=\"bookid\">{escape(identifier)}</dc:identifier>"
         f"<dc:title>{escape(title)}</dc:title>"
-        "<dc:language>zh-CN</dc:language>"
+        f"{f'<dc:creator>{escaped_author}</dc:creator>' if escaped_author else ''}"
+        f"<dc:language>{escape(language)}</dc:language>"
         "</metadata>"
         "<manifest>"
         "<item id=\"nav\" href=\"nav.xhtml\" media-type=\"application/xhtml+xml\" properties=\"nav\"/>"
@@ -397,7 +433,15 @@ async def _load_project_export_payload(
     return project, chapter_payloads
 
 
-def _create_export_artifact(
+async def load_project_export_content(
+    session: AsyncSession,
+    project_slug: str,
+) -> tuple[ProjectModel, str]:
+    project, chapter_payloads = await _load_project_export_payload(session, project_slug)
+    return project, build_project_markdown(project, chapter_payloads)
+
+
+def create_export_artifact(
     *,
     project_id: UUID,
     export_type: str,
@@ -420,6 +464,64 @@ def _create_export_artifact(
     )
 
 
+async def preflight_export_check(
+    session: AsyncSession,
+    project_id: UUID,
+) -> list[str]:
+    """Run pre-export quality checks. Returns warning messages (empty = all clear)."""
+    warnings: list[str] = []
+
+    try:
+        # 1. Check for incomplete chapters (missing current drafts)
+        chapters = (await session.scalars(
+            select(ChapterModel).where(ChapterModel.project_id == project_id)
+        )).all()
+        for ch in chapters:
+            draft = await session.scalar(
+                select(ChapterDraftVersionModel).where(
+                    ChapterDraftVersionModel.chapter_id == ch.id,
+                    ChapterDraftVersionModel.is_current.is_(True),
+                )
+            )
+            if draft is None:
+                warnings.append(f"第{ch.chapter_number}章缺少当前草稿")
+    except Exception:
+        logger.debug("Preflight check: chapter completeness check failed", exc_info=True)
+
+    try:
+        # 2. Check for unresolved clues
+        from bestseller.infra.db.models import ClueModel
+
+        stale_clues = (await session.scalars(
+            select(ClueModel).where(
+                ClueModel.project_id == project_id,
+                ClueModel.actual_paid_off_chapter_number.is_(None),
+            ).limit(10)
+        )).all()
+        planted_clues = [c for c in stale_clues if c.planted_in_chapter_number is not None]
+        if planted_clues:
+            warnings.append(f"有{len(planted_clues)}条伏笔尚未回收")
+    except Exception:
+        logger.debug("Preflight check: clue resolution check failed", exc_info=True)
+
+    try:
+        # 3. Check for incomplete arcs
+        from bestseller.infra.db.models import PlotArcModel
+
+        open_arcs = (await session.scalars(
+            select(PlotArcModel).where(
+                PlotArcModel.project_id == project_id,
+                PlotArcModel.status.in_(["active", "rising"]),
+            ).limit(10)
+        )).all()
+        if open_arcs:
+            warnings.append(f"有{len(open_arcs)}条叙事弧尚未完结")
+    except Exception:
+        logger.debug("Preflight check: arc completeness check failed", exc_info=True)
+
+    return warnings
+
+
 async def export_chapter_markdown(
     session: AsyncSession,
     settings: AppSettings,
@@ -430,11 +532,13 @@ async def export_chapter_markdown(
 ) -> tuple[ExportArtifactModel, Path]:
     project, chapter, draft = await _load_chapter_export_payload(session, project_slug, chapter_number)
     output_path = Path(settings.output.base_dir) / project.slug / f"chapter-{chapter.chapter_number:03d}.md"
-    storage_uri, checksum = write_markdown_output(
-        output_path,
+    content_md = _ensure_chapter_heading(
+        chapter,
         sanitize_novel_markdown_content(draft.content_md),
+        language=project.language,
     )
-    artifact = _create_export_artifact(
+    storage_uri, checksum = write_markdown_output(output_path, content_md)
+    artifact = create_export_artifact(
         project_id=project.id,
         export_type="markdown",
         source_scope="chapter",
@@ -457,10 +561,13 @@ async def export_project_markdown(
     created_by_run_id: UUID | None = None,
 ) -> tuple[ExportArtifactModel, Path]:
     project, chapter_payloads = await _load_project_export_payload(session, project_slug)
+    preflight_warnings = await preflight_export_check(session, project.id)
+    if preflight_warnings:
+        logger.warning("Export pre-flight warnings for %s: %s", project_slug, "; ".join(preflight_warnings))
     content_md = build_project_markdown(project, chapter_payloads)
     output_path = Path(settings.output.base_dir) / project.slug / "project.md"
     storage_uri, checksum = write_markdown_output(output_path, content_md)
-    artifact = _create_export_artifact(
+    artifact = create_export_artifact(
         project_id=project.id,
         export_type="markdown",
         source_scope="project",
@@ -487,7 +594,7 @@ async def export_chapter_docx(
     title = f"第{chapter.chapter_number}章 {chapter.title or ''}".strip()
     output_path = Path(settings.output.base_dir) / project.slug / f"chapter-{chapter.chapter_number:03d}.docx"
     storage_uri, checksum = write_binary_output(output_path, build_docx_bytes(title, draft.content_md))
-    artifact = _create_export_artifact(
+    artifact = create_export_artifact(
         project_id=project.id,
         export_type="docx",
         source_scope="chapter",
@@ -510,10 +617,13 @@ async def export_project_docx(
     created_by_run_id: UUID | None = None,
 ) -> tuple[ExportArtifactModel, Path]:
     project, chapter_payloads = await _load_project_export_payload(session, project_slug)
+    preflight_warnings = await preflight_export_check(session, project.id)
+    if preflight_warnings:
+        logger.warning("Export pre-flight warnings for %s: %s", project_slug, "; ".join(preflight_warnings))
     content_md = build_project_markdown(project, chapter_payloads)
     output_path = Path(settings.output.base_dir) / project.slug / "project.docx"
     storage_uri, checksum = write_binary_output(output_path, build_docx_bytes(project.title, content_md))
-    artifact = _create_export_artifact(
+    artifact = create_export_artifact(
         project_id=project.id,
         export_type="docx",
         source_scope="project",
@@ -539,8 +649,11 @@ async def export_chapter_epub(
     project, chapter, draft = await _load_chapter_export_payload(session, project_slug, chapter_number)
     title = f"第{chapter.chapter_number}章 {chapter.title or ''}".strip()
     output_path = Path(settings.output.base_dir) / project.slug / f"chapter-{chapter.chapter_number:03d}.epub"
-    storage_uri, checksum = write_binary_output(output_path, build_epub_bytes(title, draft.content_md))
-    artifact = _create_export_artifact(
+    storage_uri, checksum = write_binary_output(
+        output_path,
+        build_epub_bytes(title, draft.content_md, language=project.language),
+    )
+    artifact = create_export_artifact(
         project_id=project.id,
         export_type="epub",
         source_scope="chapter",
@@ -563,10 +676,16 @@ async def export_project_epub(
     created_by_run_id: UUID | None = None,
 ) -> tuple[ExportArtifactModel, Path]:
     project, chapter_payloads = await _load_project_export_payload(session, project_slug)
+    preflight_warnings = await preflight_export_check(session, project.id)
+    if preflight_warnings:
+        logger.warning("Export pre-flight warnings for %s: %s", project_slug, "; ".join(preflight_warnings))
     content_md = build_project_markdown(project, chapter_payloads)
     output_path = Path(settings.output.base_dir) / project.slug / "project.epub"
-    storage_uri, checksum = write_binary_output(output_path, build_epub_bytes(project.title, content_md))
-    artifact = _create_export_artifact(
+    storage_uri, checksum = write_binary_output(
+        output_path,
+        build_epub_bytes(project.title, content_md, language=project.language or "zh-CN"),
+    )
+    artifact = create_export_artifact(
         project_id=project.id,
         export_type="epub",
         source_scope="project",
@@ -593,7 +712,7 @@ async def export_chapter_pdf(
     title = f"第{chapter.chapter_number}章 {chapter.title or ''}".strip()
     output_path = Path(settings.output.base_dir) / project.slug / f"chapter-{chapter.chapter_number:03d}.pdf"
     storage_uri, checksum = write_binary_output(output_path, build_pdf_bytes(title, draft.content_md))
-    artifact = _create_export_artifact(
+    artifact = create_export_artifact(
         project_id=project.id,
         export_type="pdf",
         source_scope="chapter",
@@ -616,10 +735,13 @@ async def export_project_pdf(
     created_by_run_id: UUID | None = None,
 ) -> tuple[ExportArtifactModel, Path]:
     project, chapter_payloads = await _load_project_export_payload(session, project_slug)
+    preflight_warnings = await preflight_export_check(session, project.id)
+    if preflight_warnings:
+        logger.warning("Export pre-flight warnings for %s: %s", project_slug, "; ".join(preflight_warnings))
     content_md = build_project_markdown(project, chapter_payloads)
     output_path = Path(settings.output.base_dir) / project.slug / "project.pdf"
     storage_uri, checksum = write_binary_output(output_path, build_pdf_bytes(project.title, content_md))
-    artifact = _create_export_artifact(
+    artifact = create_export_artifact(
         project_id=project.id,
         export_type="pdf",
         source_scope="project",

@@ -70,6 +70,7 @@ def _parse_cron(expr: str) -> dict[str, str]:
 
 async def _listen_for_changes(scheduler: AsyncIOScheduler) -> None:
     """Listen to Redis pubsub for schedule changes with automatic reconnection."""
+    pubsub = None
     while True:
         try:
             redis = get_redis_client()
@@ -101,6 +102,14 @@ async def _listen_for_changes(scheduler: AsyncIOScheduler) -> None:
         except Exception:
             logger.warning("Redis pubsub connection lost, reconnecting in 5s…", exc_info=True)
             await asyncio.sleep(5)
+        finally:
+            if pubsub is not None:
+                try:
+                    await pubsub.unsubscribe(_SCHEDULE_CHANNEL)
+                    await pubsub.aclose()
+                except Exception:
+                    pass
+                pubsub = None
 
 
 async def main() -> None:

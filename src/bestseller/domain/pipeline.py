@@ -15,10 +15,10 @@ class ScenePipelineResult(BaseModel):
     current_draft_id: UUID
     current_draft_version_no: int = Field(gt=0)
     final_verdict: str = Field(min_length=1, max_length=16)
-    review_report_id: UUID
-    quality_score_id: UUID
+    review_report_id: UUID | None = None
+    quality_score_id: UUID | None = None
     rewrite_task_id: UUID | None = None
-    review_iterations: int = Field(ge=1)
+    review_iterations: int = Field(ge=0)
     rewrite_iterations: int = Field(ge=0)
     canon_fact_count: int = Field(default=0, ge=0)
     timeline_event_count: int = Field(default=0, ge=0)

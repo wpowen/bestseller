@@ -111,9 +111,15 @@ class QualityThresholds(BaseModel):
 
 
 class QualitySettings(BaseModel):
+    draft_mode: bool = False
     enable_scene_critique: bool = True
     enable_chapter_coherence_check: bool = True
     enable_final_consistency_check: bool = True
+    enable_llm_scene_commentary: bool = False
+    enable_llm_chapter_commentary: bool = False
+    enable_plan_judge: bool = True
+    enable_plan_judge_llm: bool = False
+    min_scene_rewrite_improvement: float = 0.03
     thresholds: QualityThresholds
     max_scene_revisions: int = 2
     max_chapter_revisions: int = 1
@@ -179,6 +185,11 @@ class PipelineSettings(BaseModel):
     consistency_check_interval: int = 20  # Run consistency check every N chapters
     rolling_summary_interval: int = 25  # Compress knowledge window every N chapters
     resume_enabled: bool = True  # Skip already-completed chapters on resume
+    enable_chapter_feedback: bool = True  # Post-chapter feedback extraction
+    enable_contradiction_checks: bool = True  # Pre-scene contradiction checks
+    feedback_stale_clue_threshold: int = 15  # Chapters before a clue is stale
+    feedback_dormant_plan_threshold: int = 10  # Chapters before antagonist plan is dormant
+    feedback_arc_inactivity_threshold: int = 8  # Chapters before arc is dead-ended
 
 
 class BudgetSettings(BaseModel):

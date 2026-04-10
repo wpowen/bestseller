@@ -1047,6 +1047,8 @@ class WebTaskManager:
                             "profile_keys": list(conception_result.writing_profile.keys()),
                         })
 
+                if payload.get("draft_mode"):
+                    settings.quality.draft_mode = True
                 result = await run_autowrite_pipeline(
                     session,
                     settings,
@@ -1120,12 +1122,17 @@ class WebTaskManager:
         if chapter_count <= 0:
             chapter_count = genre_preset.target_chapter_options[0] if genre_preset.target_chapter_options else 30
 
-        words_per_chapter = 5500
+        words_per_chapter = 5000
         target_words = chapter_count * words_per_chapter
 
         # Resume: reuse existing project slug if provided
         resume_slug = str(payload.get("project_slug") or "")
-        placeholder = f"{genre_preset.name}·构思中 {datetime.now().strftime('%m-%d %H:%M')}"
+        is_en = genre_preset.language.startswith("en")
+        placeholder = (
+            f"{genre_preset.name} - Drafting {datetime.now().strftime('%m-%d %H:%M')}"
+            if is_en
+            else f"{genre_preset.name}·构思中 {datetime.now().strftime('%m-%d %H:%M')}"
+        )
         if resume_slug:
             slug = resume_slug
             title = placeholder
@@ -1138,8 +1145,12 @@ class WebTaskManager:
         # For resume, use the stored premise from the existing project.
         is_new_project = not resume_slug
         premise = (
-            f"基于{genre_preset.genre}（{genre_preset.sub_genre}）题材，"
-            f"{genre_preset.description}"
+            f"A {genre_preset.genre} ({genre_preset.sub_genre}) novel: {genre_preset.description}"
+            if is_en
+            else (
+                f"基于{genre_preset.genre}（{genre_preset.sub_genre}）题材，"
+                f"{genre_preset.description}"
+            )
         )
 
         autowrite_payload: dict[str, object] = {
@@ -1152,6 +1163,8 @@ class WebTaskManager:
             "premise": premise,
             "export_markdown": True,
             "auto_repair": True,
+            "draft_mode": bool(payload.get("draft_mode", False)),
+            "language": genre_preset.language,
             "writing_profile": genre_preset.writing_profile_overrides or None,
             # Enable AI conception for new projects (not resume)
             "_run_conception": is_new_project,
@@ -1507,7 +1520,7 @@ async def _recover_projects_from_output(settings: AppSettings) -> list[dict[str,
                     information_withheld=[],
                     foreshadowing_actions={},
                     current_word_count=len(body),
-                    target_word_count=5500,
+                    target_word_count=5000,
                     status=ChapterStatus.COMPLETE.value,
                     metadata_json={"recovered": True, "source_file": ch_file.name},
                 ))
@@ -1810,25 +1823,39 @@ def _build_chapter_toc(output_dir: Path) -> list[dict[str, object]]:
     import re as _re
     entries: list[dict[str, object]] = []
     for p in sorted(output_dir.glob("chapter-*.md")):
+        content_md = ""
         first_line = ""
         try:
             with p.open(encoding="utf-8") as f:
                 for line in f:
+                    content_md += line
                     stripped = line.strip()
                     if stripped:
                         first_line = stripped
                         break
+                remainder = f.read()
+                if remainder:
+                    content_md += remainder
         except OSError:
             continue
         # Strip H1 marker, then remove leading duplicate "第N章 " prefix
         raw = first_line.lstrip("# ").strip() if first_line.startswith("#") else p.stem
         # "第1章 第1章：追线" → "第1章：追线"
-        title = _re.sub(r"^第\d+章\s+", "", raw) or raw
+        title = _re.sub(r"^第\d+章(?:[：:\s]+)?", "", raw).strip() or raw
+        stats = build_markdown_reading_stats(content_md)
         try:
             num = int(p.stem.split("-")[1])
         except (IndexError, ValueError):
             num = len(entries) + 1
-        entries.append({"number": num, "title": title, "filename": p.name})
+        entries.append(
+            {
+                "number": num,
+                "title": title,
+                "filename": p.name,
+                "word_count": stats["word_count"],
+                "estimated_read_minutes": stats["estimated_read_minutes"],
+            }
+        )
     return entries
 
 

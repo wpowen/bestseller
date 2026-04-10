@@ -1,33 +1,36 @@
 from __future__ import annotations
 
 import builtins
+import io
 from pathlib import Path
 from types import SimpleNamespace
+from zipfile import ZipFile
 
 import pytest
 
 from bestseller.services.drafts import (
-    _format_chapter_heading,
+    _render_story_bible_section,
     build_scene_draft_prompts,
     count_words,
+    format_chapter_heading,
     has_meta_leak,
     render_chapter_draft_markdown,
     render_scene_draft_markdown,
     sanitize_novel_markdown_content,
     strip_scaffolding_echoes,
 )
+from bestseller.services.exports import _ensure_chapter_heading
 from bestseller.services.exports import (
-    build_markdown_reading_stats,
     build_docx_bytes,
     build_epub_bytes,
-    build_project_markdown,
+    build_markdown_reading_stats,
     build_pdf_bytes,
+    build_project_markdown,
     markdown_to_html,
     markdown_to_plain_text,
     write_binary_output,
     write_markdown_output,
 )
-
 
 pytestmark = pytest.mark.unit
 
@@ -281,17 +284,112 @@ def test_scene_draft_prompt_includes_writing_profile_and_serial_rules() -> None:
     )
     style_guide = SimpleNamespace(pov_type="third-limited", tone_keywords=["狠", "快", "压迫感"])
 
-    _, user_prompt = build_scene_draft_prompts(project, chapter, scene, style_guide)
+    system_prompt, user_prompt = build_scene_draft_prompts(project, chapter, scene, style_guide)
 
-    assert "平台与读者承诺" in user_prompt
-    assert "番茄小说" in user_prompt
+    # Writing profile and serial guardrails moved to system_prompt for cache-
+    # friendly prompt structure (shared across scenes in the same chapter).
+    combined = system_prompt + "\n" + user_prompt
+    assert "平台与读者承诺" in combined
+    assert "番茄小说" in combined
     assert "Prompt Pack" in user_prompt
     assert "末日囤货升级流" in user_prompt
-    assert "重生回档" in user_prompt
-    assert "未来拼单商城" in user_prompt
-    assert "章节尾部必须留下强迫读者继续阅读的问题、威胁或利益诱因" in user_prompt
-    assert "开篇要尽快亮出主角差异化优势、核心异变、短期利益与即时危险" in user_prompt
-    assert "抢资源" in user_prompt or "资源差" in user_prompt
+    assert "重生回档" in combined
+    assert "未来拼单商城" in combined
+    assert "章节尾部必须留下强迫读者继续阅读的问题、威胁或利益诱因" in combined
+    assert "开篇要尽快亮出主角差异化优势、核心异变、短期利益与即时危险" in combined
+    assert "抢资源" in combined or "资源差" in combined
+
+
+def test_scene_draft_prompts_switch_to_english_for_english_project() -> None:
+    project = SimpleNamespace(
+        title="Storm Ledger",
+        genre="Fantasy",
+        sub_genre="Epic Fantasy",
+        audience="KU readers",
+        language="en-US",
+        metadata_json={
+            "writing_profile": {
+                "market": {
+                    "platform_target": "Kindle Unlimited",
+                    "content_mode": "English-language commercial fantasy serial",
+                    "reader_promise": "Fast-moving fantasy with escalating political danger and clean cliffhangers.",
+                    "selling_points": ["court intrigue", "storm magic", "betrayal"],
+                    "trope_keywords": ["chosen family", "forbidden archive"],
+                    "hook_keywords": ["sealed letter", "execution order"],
+                    "opening_strategy": "Open with the execution order and the stolen archive key in the same scene.",
+                    "chapter_hook_strategy": "End each chapter on a fresh threat, reveal, or impossible choice.",
+                    "payoff_rhythm": "Short payoff every chapter, major payoff every 5-7 chapters",
+                },
+                "character": {
+                    "protagonist_archetype": "reluctant strategist",
+                    "golden_finger": "storm-sense tied to erased royal records",
+                    "growth_curve": "survivor -> operator -> claimant",
+                },
+                "world": {
+                    "worldbuilding_density": "medium",
+                    "info_reveal_strategy": "Reveal the world through bargains, rituals, and political fallout.",
+                },
+                "style": {
+                    "tone_keywords": ["taut", "ominous", "fast"],
+                    "prose_style": "commercial-genre",
+                    "sentence_style": "mixed",
+                    "info_density": "lean",
+                    "dialogue_ratio": 0.42,
+                },
+                "serialization": {
+                    "opening_mandate": "Hook the reader in the first scene with concrete danger and a visible edge.",
+                    "first_three_chapter_goal": "Lock in the main conflict, the protagonist edge, and the first reversal.",
+                    "scene_drive_rule": "Every scene must create a gain, a loss, or a sharper choice.",
+                    "exposition_rule": "Hide exposition inside action, negotiation, and consequences.",
+                    "chapter_ending_rule": "Every chapter ends on a question, a threat, or a costly next move.",
+                    "free_chapter_strategy": "Use the sample chapters to prove voice, hook, and escalation.",
+                },
+            }
+        },
+    )
+    chapter = SimpleNamespace(
+        chapter_number=1,
+        chapter_goal="Force Elara to steal the sealed archive ledger",
+        title="Storm Wake",
+    )
+    scene = SimpleNamespace(
+        scene_number=1,
+        title="The Order Arrives",
+        participants=["Elara", "Captain Vale"],
+        purpose={"story": "Trigger the execution order and force Elara to move first", "emotion": "panic turning into cold resolve"},
+        time_label="Before dawn",
+        entry_state={"status": "cornered"},
+        exit_state={"status": "committed"},
+        scene_type="hook",
+        target_word_count=1500,
+    )
+    style_guide = SimpleNamespace(pov_type="third-limited", tone_keywords=["taut", "ominous", "fast"])
+    story_bible_context = {
+        "logline": "A weather-marked archivist steals proof of a buried dynasty before the crown erases her.",
+        "volume": {"goal": "Steal the ledger before sunrise"},
+    }
+
+    system_prompt, user_prompt = build_scene_draft_prompts(
+        project,
+        chapter,
+        scene,
+        style_guide,
+        story_bible_context,
+    )
+    combined = system_prompt + "\n" + user_prompt
+
+    assert "English-language commercial fantasy serial" in combined
+    assert "Write the scene in English only" in combined
+    assert "You are the scene writer" in system_prompt
+    assert "Project: Storm Ledger" in user_prompt
+    assert "Chapter 1: Storm Wake" in user_prompt
+    assert "Scene 1: The Order Arrives" in user_prompt
+    assert "Series spine" in user_prompt
+    assert "Volume goal" in user_prompt
+    assert "Write a full scene with conflict movement" in user_prompt
+    assert "长篇中文小说" not in combined
+    assert "全书主线" not in combined
+    assert "请输出完整场景" not in combined
 
 
 def test_render_chapter_draft_markdown_combines_scene_drafts() -> None:
@@ -344,25 +442,33 @@ def test_render_chapter_draft_markdown_handles_prefixed_chapter_title() -> None:
     assert "程彻猛地从床上弹起来" in content
 
 
-def test_format_chapter_heading_handles_all_title_variants() -> None:
+def testformat_chapter_heading_handles_all_title_variants() -> None:
     """Regression tests for the '第N章 第N章' double-prefix bug.
 
     Covers every title shape we have observed in historical project data.
     """
     # Already prefixed with colon — use as-is.
-    assert _format_chapter_heading(1, "第1章：零点前的抢购") == "# 第1章：零点前的抢购"
+    assert format_chapter_heading(1, "第1章：零点前的抢购") == "# 第1章：零点前的抢购"
     # Already prefixed with a space separator — normalize to colon.
-    assert _format_chapter_heading(1, "第1章 零点前的抢购") == "# 第1章：零点前的抢购"
+    assert format_chapter_heading(1, "第1章 零点前的抢购") == "# 第1章：零点前的抢购"
     # Bare subtitle — renderer attaches the prefix exactly once.
-    assert _format_chapter_heading(1, "零点前的抢购") == "# 第1章：零点前的抢购"
+    assert format_chapter_heading(1, "零点前的抢购") == "# 第1章：零点前的抢购"
     # Only the chapter number with no subtitle.
-    assert _format_chapter_heading(1, "第1章") == "# 第1章"
+    assert format_chapter_heading(1, "第1章") == "# 第1章"
     # Empty / None fall back to the bare chapter number.
-    assert _format_chapter_heading(1, None) == "# 第1章"
-    assert _format_chapter_heading(1, "") == "# 第1章"
-    assert _format_chapter_heading(1, "   ") == "# 第1章"
+    assert format_chapter_heading(1, None) == "# 第1章"
+    assert format_chapter_heading(1, "") == "# 第1章"
+    assert format_chapter_heading(1, "   ") == "# 第1章"
     # Stale numbering in the stored title must not survive.
-    assert _format_chapter_heading(3, "第15章：无关") == "# 第3章：无关"
+    assert format_chapter_heading(3, "第15章：无关") == "# 第3章：无关"
+
+
+def test_format_chapter_heading_supports_english_projects() -> None:
+    assert format_chapter_heading(1, "Chapter 1: The Wake", language="en-US") == "# Chapter 1: The Wake"
+    assert format_chapter_heading(1, "Chapter 1 The Wake", language="en-US") == "# Chapter 1: The Wake"
+    assert format_chapter_heading(1, "The Wake", language="en-US") == "# Chapter 1: The Wake"
+    assert format_chapter_heading(1, None, language="en-US") == "# Chapter 1"
+    assert format_chapter_heading(2, "第2章：暗潮入局", language="en-US") == "# Chapter 2: 暗潮入局"
 
 
 def test_sanitize_novel_markdown_content_strips_structured_metadata_lines() -> None:
@@ -746,10 +852,14 @@ def test_build_docx_bytes_creates_zip_package() -> None:
 
 
 def test_build_epub_bytes_creates_zip_package() -> None:
-    payload = build_epub_bytes("我的书", "# 标题\n\n正文")
+    payload = build_epub_bytes("我的书", "# 标题\n\n正文", language="en-US", author="Owen Example")
 
     assert payload[:2] == b"PK"
     assert b"application/epub+zip" in payload
+    with ZipFile(io.BytesIO(payload), "r") as archive:
+        opf = archive.read("OEBPS/content.opf")
+    assert b"en-US" in opf
+    assert b"Owen Example" in opf
 
 
 def test_write_binary_output_creates_file_and_checksum(tmp_path: Path) -> None:
@@ -774,3 +884,153 @@ def test_build_pdf_bytes_requires_optional_dependency(monkeypatch: pytest.Monkey
 
     with pytest.raises(RuntimeError, match="reportlab"):
         build_pdf_bytes("我的书", "# 标题\n\n正文")
+
+
+# ── Fix 1: Chapter heading ensured in exports ──────────────────────────────
+
+
+def test_ensure_chapter_heading_prepends_when_missing() -> None:
+    chapter = SimpleNamespace(chapter_number=3, title="暗流涌动")
+    content = "凌晨三点，手机震动。"
+    result = _ensure_chapter_heading(chapter, content)
+    assert result.startswith("# 第3章：暗流涌动\n\n")
+    assert "凌晨三点，手机震动。" in result
+
+
+def test_ensure_chapter_heading_preserves_existing() -> None:
+    chapter = SimpleNamespace(chapter_number=1, title="零点前的抢购")
+    content = "# 第1章：零点前的抢购\n\n正文内容。"
+    result = _ensure_chapter_heading(chapter, content)
+    assert result == content
+    assert result.count("# 第1章") == 1
+
+
+# ── Fix 2: Prohibition covers markdown headings ────────────────────────────
+
+
+def test_strip_scaffolding_echoes_removes_mid_content_chapter_heading() -> None:
+    content = (
+        "# 第1章：暗流涌动\n\n"
+        "陆衍靠在承重柱后面。\n\n"
+        "# 第1章 陆衍需要在本卷内拿到一组可以翻盘的线索\n\n"
+        "手机又震了。"
+    )
+    cleaned = strip_scaffolding_echoes(content)
+    assert "# 第1章：暗流涌动" in cleaned
+    assert "陆衍需要在本卷内拿到一组" not in cleaned
+    assert "手机又震了。" in cleaned
+
+
+# ── Fix 3: Story bible renders cast_spec and background ────────────────────
+
+
+def test_render_story_bible_includes_cast_spec_characters() -> None:
+    context = {
+        "cast_spec": {
+            "protagonist": {
+                "name": "陆衍",
+                "role": "protagonist",
+                "background": "前刑警，因内部调查被迫离职。",
+            },
+            "allies": [
+                {
+                    "name": "顾临",
+                    "role": "ally",
+                    "background": "陆衍的旧搭档，现任刑侦队长。",
+                },
+            ],
+        },
+    }
+    result = _render_story_bible_section(context)
+    assert "核心角色设定" in result
+    assert "陆衍" in result
+    assert "顾临" in result
+    assert "旧搭档" in result
+
+
+def test_render_story_bible_includes_participant_background() -> None:
+    context = {
+        "participants": [
+            {
+                "name": "顾临",
+                "role": "ally",
+                "background": "陆衍的旧搭档，现任刑侦队长。",
+                "goal": "协助调查",
+                "arc_state": "中期",
+                "power_tier": "中阶",
+                "emotional_state": "警觉",
+            },
+        ],
+    }
+    result = _render_story_bible_section(context)
+    assert "背景:" in result
+    assert "旧搭档" in result
+
+
+# ── Draft mode: ScenePipelineResult accepts optional review fields ──────
+
+
+def test_scene_pipeline_result_accepts_draft_mode_fields() -> None:
+    from uuid import uuid4
+    from bestseller.domain.pipeline import ScenePipelineResult
+
+    result = ScenePipelineResult(
+        workflow_run_id=uuid4(),
+        project_id=uuid4(),
+        chapter_id=uuid4(),
+        scene_id=uuid4(),
+        chapter_number=1,
+        scene_number=1,
+        current_draft_id=uuid4(),
+        current_draft_version_no=1,
+        final_verdict="draft",
+        review_report_id=None,
+        quality_score_id=None,
+        review_iterations=0,
+        rewrite_iterations=0,
+    )
+    assert result.final_verdict == "draft"
+    assert result.review_report_id is None
+    assert result.quality_score_id is None
+    assert result.review_iterations == 0
+
+
+# ── Draft mode: prompt caching structure ────────────────────────────────
+
+
+def test_scene_draft_system_prompt_contains_writing_profile() -> None:
+    """Writing profile and serial guardrails should be in system_prompt
+    (not user_prompt) for Anthropic prompt caching efficiency."""
+    project = SimpleNamespace(
+        title="测试项目",
+        metadata_json={
+            "writing_profile": {
+                "market": {
+                    "platform_target": "番茄小说",
+                    "reader_promise": "前三章连续给出危机升级。",
+                },
+            }
+        },
+    )
+    chapter = SimpleNamespace(chapter_number=1, chapter_goal="测试", title="测试章")
+    scene = SimpleNamespace(
+        scene_number=1,
+        title="测试场景",
+        participants=["主角"],
+        scene_type="hook",
+        time_label="开场",
+        purpose={"story": "推进", "emotion": "紧张"},
+        entry_state="正常",
+        exit_state="紧张",
+        target_word_count=1000,
+    )
+    style_guide = SimpleNamespace(pov_type="third-limited", tone_keywords=["紧张"])
+
+    system_prompt, user_prompt = build_scene_draft_prompts(project, chapter, scene, style_guide)
+
+    # Writing profile and serial guardrails in system_prompt
+    assert "番茄小说" in system_prompt or "番茄小说" in user_prompt
+    # Prohibition rules in system_prompt
+    assert "严禁出现以下内容" in system_prompt
+    # Opening diversity requirement in system_prompt
+    assert "开场多样性" in system_prompt

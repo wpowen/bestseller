@@ -10,9 +10,12 @@ import pytest
 from typer.testing import CliRunner
 
 from bestseller.cli.main import app
-from bestseller.domain.evaluation import BenchmarkSuiteCatalogEntry, BenchmarkSuiteRunResult, BenchmarkSuiteSpec
+from bestseller.domain.evaluation import (
+    BenchmarkSuiteCatalogEntry,
+    BenchmarkSuiteRunResult,
+    BenchmarkSuiteSpec,
+)
 from bestseller.domain.workflow import WorkflowMaterializationResult
-
 
 runner = CliRunner()
 pytestmark = pytest.mark.unit
@@ -1504,6 +1507,119 @@ def test_export_pdf_command_reports_optional_dependency_error(
     assert "reportlab" in result.stderr
 
 
+def test_publish_profile_init_command(monkeypatch: pytest.MonkeyPatch) -> None:
+    @asynccontextmanager
+    async def fake_session_scope(settings):
+        yield object()
+
+    async def fake_init_amazon_kdp_profile(session, project_slug, overwrite=False):
+        assert project_slug == "my-story"
+        assert overwrite is False
+        return type(
+            "ProfileStub",
+            (),
+            {
+                "model_dump": lambda self, mode="json", exclude_none=True: {
+                    "language": "en-US",
+                    "book_title": "My Story",
+                }
+            },
+        )()
+
+    monkeypatch.setattr("bestseller.cli.main.session_scope", fake_session_scope)
+    monkeypatch.setattr("bestseller.cli.main.init_amazon_kdp_profile", fake_init_amazon_kdp_profile)
+
+    result = runner.invoke(app, ["publish-profile", "init", "my-story"])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["language"] == "en-US"
+
+
+def test_publish_profile_show_command(monkeypatch: pytest.MonkeyPatch) -> None:
+    @asynccontextmanager
+    async def fake_session_scope(settings):
+        yield object()
+
+    async def fake_show_amazon_kdp_profile(session, project_slug):
+        assert project_slug == "my-story"
+        return type(
+            "ProfileStub",
+            (),
+            {
+                "model_dump": lambda self, mode="json", exclude_none=True: {
+                    "author_display_name": "Owen Example",
+                }
+            },
+        )()
+
+    monkeypatch.setattr("bestseller.cli.main.session_scope", fake_session_scope)
+    monkeypatch.setattr("bestseller.cli.main.show_amazon_kdp_profile", fake_show_amazon_kdp_profile)
+
+    result = runner.invoke(app, ["publish-profile", "show", "my-story"])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["author_display_name"] == "Owen Example"
+
+
+def test_export_amazon_kdp_validate_command(monkeypatch: pytest.MonkeyPatch) -> None:
+    @asynccontextmanager
+    async def fake_session_scope(settings):
+        yield object()
+
+    async def fake_validate_amazon_kdp_project(session, project_slug):
+        assert project_slug == "my-story"
+        return type(
+            "ValidationStub",
+            (),
+            {
+                "model_dump": lambda self, mode="json": {
+                    "status": "pass_with_warnings",
+                    "blocking_count": 0,
+                }
+            },
+        )()
+
+    monkeypatch.setattr("bestseller.cli.main.session_scope", fake_session_scope)
+    monkeypatch.setattr("bestseller.cli.main.validate_amazon_kdp_project", fake_validate_amazon_kdp_project)
+
+    result = runner.invoke(app, ["export", "amazon-kdp", "validate", "my-story"])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["status"] == "pass_with_warnings"
+
+
+def test_export_amazon_kdp_package_command(monkeypatch: pytest.MonkeyPatch) -> None:
+    @asynccontextmanager
+    async def fake_session_scope(settings):
+        yield object()
+
+    async def fake_package_amazon_kdp_project(session, settings, project_slug, strict=True):
+        assert project_slug == "my-story"
+        assert strict is True
+        return type(
+            "PackageStub",
+            (),
+            {
+                "model_dump": lambda self, mode="json": {
+                    "package_dir": "/tmp/output/my-story/amazon-kdp",
+                    "validation_status": "pass",
+                }
+            },
+        )()
+
+    monkeypatch.setattr("bestseller.cli.main.session_scope", fake_session_scope)
+    monkeypatch.setattr("bestseller.cli.main.package_amazon_kdp_project", fake_package_amazon_kdp_project)
+
+    result = runner.invoke(app, ["export", "amazon-kdp", "package", "my-story"])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["validation_status"] == "pass"
+
+
 def test_rewrite_impacts_command(monkeypatch: pytest.MonkeyPatch) -> None:
     @asynccontextmanager
     async def fake_session_scope(settings):
@@ -1621,7 +1737,11 @@ def test_scene_review_command(monkeypatch: pytest.MonkeyPatch) -> None:
         yield object()
 
     async def fake_review_scene_draft(session, settings, project_slug, chapter_number, scene_number):
-        from bestseller.domain.review import SceneReviewFinding, SceneReviewResult, SceneReviewScores
+        from bestseller.domain.review import (
+            SceneReviewFinding,
+            SceneReviewResult,
+            SceneReviewScores,
+        )
 
         return (
             SceneReviewResult(

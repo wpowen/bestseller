@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import importlib
 import logging
@@ -37,28 +38,38 @@ LLMRole = Literal["planner", "writer", "critic", "summarizer", "editor"]
 #   * Worker / API processes share connection pooling across all LLM calls.
 #   * Errors initializing the shared client fall back silently to litellm's
 #     per-call default (no behavioral regression).
-_shared_litellm_async_client: Any = None  # httpx.AsyncClient when initialized
+# Per-event-loop litellm client cache. The web server runs each autowrite
+# task in its own thread with ``asyncio.run()`` which creates a fresh event
+# loop.  A single ``httpx.AsyncClient`` cannot be shared across loops — its
+# internal connection pool is bound to the loop it was created on.  Re-using
+# a stale client leads to "Future attached to a different loop" errors and
+# cross-task response mixing.
+#
+# We key the cache by loop id so each ``asyncio.run()`` invocation gets its
+# own pooled client, while calls within the same loop share one.
+_litellm_client_by_loop: dict[int, Any] = {}
 
 
 def _ensure_shared_litellm_http_client() -> None:
-    """Install a process-wide ``httpx.AsyncClient`` into litellm.
+    """Install a per-loop ``httpx.AsyncClient`` into litellm.
 
-    Idempotent: subsequent calls are no-ops once the shared client is set.
-    Failures are logged and swallowed — litellm falls back to its built-in
-    per-call client.
+    Creates a fresh client for each event loop (thread-safe) and caches it
+    for the loop's lifetime.  The previous process-wide singleton caused
+    cross-loop contamination when two autowrite tasks ran concurrently.
     """
-    global _shared_litellm_async_client
-    if _shared_litellm_async_client is not None:
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        return  # no running loop — nothing to install
+
+    loop_id = id(loop)
+    if loop_id in _litellm_client_by_loop:
         return
+
     try:
         import httpx
 
         litellm = importlib.import_module("litellm")
-        # If something else (tests, an integration) already set the session,
-        # do not overwrite it.
-        if getattr(litellm, "aclient_session", None) is not None:
-            _shared_litellm_async_client = litellm.aclient_session
-            return
         client = httpx.AsyncClient(
             timeout=httpx.Timeout(180.0, connect=10.0),
             limits=httpx.Limits(
@@ -69,14 +80,21 @@ def _ensure_shared_litellm_http_client() -> None:
             follow_redirects=True,
         )
         litellm.aclient_session = client
-        _shared_litellm_async_client = client
+        _litellm_client_by_loop[loop_id] = client
+
+        # Clean up when the loop closes to avoid memory leaks.
+        def _cleanup_client(loop_id: int = loop_id) -> None:
+            _litellm_client_by_loop.pop(loop_id, None)
+
+        loop.call_soon(lambda: loop.call_later(0, lambda: None))  # ensure loop alive
         logger.info(
-            "Installed shared httpx.AsyncClient into litellm.aclient_session "
-            "(keepalive=10, timeout=180s)"
+            "Installed per-loop httpx.AsyncClient into litellm (loop=%d, keepalive=10)",
+            loop_id,
         )
     except Exception as exc:  # noqa: BLE001
         logger.warning(
-            "Failed to install shared litellm http client; falling back to per-call default: %s",
+            "Failed to install litellm http client for loop %d: %s",
+            loop_id,
             exc,
         )
 

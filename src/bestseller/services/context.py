@@ -29,6 +29,7 @@ from bestseller.infra.db.models import (
     AntagonistPlanModel,
     ArcBeatModel,
     CanonFactModel,
+    CharacterModel,
     ChapterContractModel,
     ChapterModel,
     ClueModel,
@@ -456,6 +457,8 @@ async def build_scene_writer_context_from_models(
     project: ProjectModel,
     chapter: ChapterModel,
     scene: SceneCardModel,
+    *,
+    draft_mode: bool = False,
 ) -> SceneWriterContextPacket:
 
     story_bible_context = await load_scene_story_bible_context(
@@ -765,48 +768,55 @@ async def build_scene_writer_context_from_models(
         _antagonist_plan_read(item)
         for item in antagonist_plan_rows
         if _plan_matches_chapter(item, chapter.chapter_number)
-    ][:3]
-    preferred_tree_paths = _tree_paths_for_scene_context(
-        chapter=chapter,
-        scene=scene,
-        volume_number=(
-            story_bible_context.get("volume", {}).get("volume_number")
-            if isinstance(story_bible_context.get("volume"), dict)
-            else None
-        ),
-        active_arc_codes=[
-            item.arc_code
-            for item in active_plot_arc_reads
-            if item.arc_code
-        ],
-        clue_codes=[item.clue_code for item in unresolved_clues if item.clue_code],
-        payoff_codes=[item.payoff_code for item in planned_payoffs if item.payoff_code],
-        emotion_track_codes=[item.track_code for item in active_emotion_tracks if item.track_code],
-        antagonist_plan_codes=[item.plan_code for item in active_antagonist_plans if item.plan_code],
-    )
-    deterministic_tree_nodes = await resolve_narrative_tree_paths_for_project(
-        session,
-        project,
-        preferred_tree_paths,
-        current_chapter_number=chapter.chapter_number,
-        current_scene_number=scene.scene_number,
-    )
-    tree_search_result = await search_narrative_tree_for_project(
-        session,
-        project,
-        query_text,
-        preferred_paths=preferred_tree_paths,
-        current_chapter_number=chapter.chapter_number,
-        current_scene_number=scene.scene_number,
-        top_k=max(4, settings.generation.active_context_scenes * 2),
-    )
-    searched_tree_nodes = await resolve_narrative_tree_paths_for_project(
-        session,
-        project,
-        [item.node_path for item in tree_search_result.hits],
-        current_chapter_number=chapter.chapter_number,
-        current_scene_number=scene.scene_number,
-    )
+    ][:5]  # Increased from 3 to accommodate multi-force conflict plans
+    # Narrative tree lookups are expensive (3 queries + 2 searches) and
+    # primarily benefit the planner, not the scene writer.  Skip in draft
+    # mode to save ~500ms per scene.
+    if draft_mode:
+        deterministic_tree_nodes: list[NarrativeTreeNodeRead] = []
+        searched_tree_nodes: list[NarrativeTreeNodeRead] = []
+    else:
+        preferred_tree_paths = _tree_paths_for_scene_context(
+            chapter=chapter,
+            scene=scene,
+            volume_number=(
+                story_bible_context.get("volume", {}).get("volume_number")
+                if isinstance(story_bible_context.get("volume"), dict)
+                else None
+            ),
+            active_arc_codes=[
+                item.arc_code
+                for item in active_plot_arc_reads
+                if item.arc_code
+            ],
+            clue_codes=[item.clue_code for item in unresolved_clues if item.clue_code],
+            payoff_codes=[item.payoff_code for item in planned_payoffs if item.payoff_code],
+            emotion_track_codes=[item.track_code for item in active_emotion_tracks if item.track_code],
+            antagonist_plan_codes=[item.plan_code for item in active_antagonist_plans if item.plan_code],
+        )
+        deterministic_tree_nodes = await resolve_narrative_tree_paths_for_project(
+            session,
+            project,
+            preferred_tree_paths,
+            current_chapter_number=chapter.chapter_number,
+            current_scene_number=scene.scene_number,
+        )
+        tree_search_result = await search_narrative_tree_for_project(
+            session,
+            project,
+            query_text,
+            preferred_paths=preferred_tree_paths,
+            current_chapter_number=chapter.chapter_number,
+            current_scene_number=scene.scene_number,
+            top_k=max(4, settings.generation.active_context_scenes * 2),
+        )
+        searched_tree_nodes = await resolve_narrative_tree_paths_for_project(
+            session,
+            project,
+            [item.node_path for item in tree_search_result.hits],
+            current_chapter_number=chapter.chapter_number,
+            current_scene_number=scene.scene_number,
+        )
     tree_context_nodes = _dedupe_tree_nodes(deterministic_tree_nodes + searched_tree_nodes)[:12]
 
     hard_fact_snapshot = await _safe_load_previous_snapshot(
@@ -814,6 +824,25 @@ async def build_scene_writer_context_from_models(
         project_id=project.id,
         current_chapter_number=chapter.chapter_number,
     )
+
+    # Load knowledge states for scene participants
+    _knowledge_states: list[dict[str, Any]] = []
+    for participant_name in (scene.participants or []):
+        char_row = await session.scalar(
+            select(CharacterModel).where(
+                CharacterModel.project_id == project.id,
+                CharacterModel.name == participant_name,
+            )
+        )
+        if char_row and isinstance(char_row.knowledge_state_json, dict):
+            ks = char_row.knowledge_state_json
+            if ks.get("knows") or ks.get("falsely_believes") or ks.get("unaware_of"):
+                _knowledge_states.append({
+                    "character_name": participant_name,
+                    "knows": ks.get("knows", [])[:8],
+                    "falsely_believes": ks.get("falsely_believes", [])[:5],
+                    "unaware_of": ks.get("unaware_of", [])[:5],
+                })
 
     return SceneWriterContextPacket(
         project_id=project.id,
@@ -842,6 +871,7 @@ async def build_scene_writer_context_from_models(
         tree_context_nodes=tree_context_nodes,
         retrieval_chunks=retrieval_chunks,
         hard_fact_snapshot=hard_fact_snapshot,
+        participant_knowledge_states=_knowledge_states,
     )
 
 
@@ -1133,7 +1163,7 @@ async def build_chapter_writer_context(
         _antagonist_plan_read(item)
         for item in antagonist_plan_rows
         if _plan_matches_chapter(item, chapter.chapter_number)
-    ][:4]
+    ][:5]  # Increased from 4 to accommodate multi-force conflict plans
     preferred_tree_paths = _tree_paths_for_chapter_context(
         chapter=chapter,
         scenes=scenes,

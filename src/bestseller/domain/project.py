@@ -1,12 +1,17 @@
 from __future__ import annotations
 
+from typing import Literal
 from uuid import UUID
 
-from typing import Literal
+from pydantic import BaseModel, Field, field_validator, model_validator
 
-from pydantic import BaseModel, Field, field_validator
-
-from bestseller.domain.enums import ChapterStatus, ProjectStatus, ProjectType, SceneStatus, VolumeStatus
+from bestseller.domain.enums import (
+    ChapterStatus,
+    ProjectStatus,
+    ProjectType,
+    SceneStatus,
+    VolumeStatus,
+)
 
 
 def _dedupe_string_list(values: list[str]) -> list[str]:
@@ -223,6 +228,101 @@ class WritingProfile(BaseModel):
     interactive_fiction: InteractiveFictionConfig = Field(default_factory=InteractiveFictionConfig)
 
 
+_AMAZON_KDP_TARGET_FORMATS = {"ebook", "paperback"}
+_AMAZON_KDP_AI_DISCLOSURE_VALUES = {"unknown", "none", "generated", "assisted"}
+
+
+class AmazonKdpContributor(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+    role: str = Field(default="Contributor", min_length=1, max_length=200)
+
+
+class AmazonKdpEbookConfig(BaseModel):
+    enabled: bool = True
+    cover_image_path: str | None = Field(default=None, max_length=4000)
+
+
+class AmazonKdpPaperbackConfig(BaseModel):
+    enabled: bool = False
+    trim_size: str | None = Field(default=None, max_length=40)
+    interior_type: str = Field(default="black_and_white", min_length=1, max_length=40)
+    paper_type: str = Field(default="cream", min_length=1, max_length=40)
+    cover_finish: str = Field(default="glossy", min_length=1, max_length=40)
+
+    @model_validator(mode="after")
+    def validate_required_fields_for_enabled_paperback(self) -> "AmazonKdpPaperbackConfig":
+        if self.enabled and not self.trim_size:
+            raise ValueError("trim_size is required when Amazon KDP paperback is enabled.")
+        return self
+
+
+class AmazonKdpPublicationProfile(BaseModel):
+    language: str = Field(default="en-US", min_length=2, max_length=20)
+    book_title: str | None = Field(default=None, max_length=4000)
+    subtitle: str | None = Field(default=None, max_length=4000)
+    author_display_name: str | None = Field(default=None, max_length=4000)
+    contributors: list[AmazonKdpContributor] = Field(default_factory=list)
+    series_name: str | None = Field(default=None, max_length=4000)
+    series_number: str | None = Field(default=None, max_length=200)
+    description: str | None = Field(default=None, max_length=4000)
+    keywords: list[str] = Field(default_factory=list)
+    categories: list[str] = Field(default_factory=list)
+    primary_marketplace: str = Field(default="Amazon.com", min_length=1, max_length=200)
+    publishing_rights: str = Field(default="worldwide", min_length=1, max_length=200)
+    ai_generated_text: str = Field(default="unknown", min_length=1, max_length=40)
+    ai_generated_images: str = Field(default="unknown", min_length=1, max_length=40)
+    contains_bonus_content: bool = False
+    target_formats: list[str] = Field(default_factory=lambda: ["ebook"])
+    identity_verified: bool = False
+    tax_profile_complete: bool = False
+    payout_method_ready: bool = False
+    ebook: AmazonKdpEbookConfig = Field(default_factory=AmazonKdpEbookConfig)
+    paperback: AmazonKdpPaperbackConfig = Field(default_factory=AmazonKdpPaperbackConfig)
+
+    @field_validator("keywords", "categories", "target_formats")
+    @classmethod
+    def normalize_publishing_lists(cls, values: list[str]) -> list[str]:
+        return _dedupe_string_list(values)
+
+    @field_validator("keywords")
+    @classmethod
+    def validate_keywords_cap(cls, values: list[str]) -> list[str]:
+        if len(values) > 7:
+            raise ValueError("Amazon KDP allows at most 7 keyword phrases.")
+        return values
+
+    @field_validator("categories")
+    @classmethod
+    def validate_categories_cap(cls, values: list[str]) -> list[str]:
+        if len(values) > 3:
+            raise ValueError("Amazon KDP allows at most 3 categories.")
+        return values
+
+    @field_validator("target_formats")
+    @classmethod
+    def validate_target_formats(cls, values: list[str]) -> list[str]:
+        invalid = [value for value in values if value not in _AMAZON_KDP_TARGET_FORMATS]
+        if invalid:
+            raise ValueError(
+                f"Amazon KDP target_formats must be one of {_AMAZON_KDP_TARGET_FORMATS}."
+            )
+        return values
+
+    @field_validator("ai_generated_text", "ai_generated_images")
+    @classmethod
+    def validate_ai_disclosure_values(cls, value: str) -> str:
+        normalized = value.strip().lower()
+        if normalized not in _AMAZON_KDP_AI_DISCLOSURE_VALUES:
+            raise ValueError(
+                f"Amazon KDP AI disclosure must be one of {_AMAZON_KDP_AI_DISCLOSURE_VALUES}."
+            )
+        return normalized
+
+
+class PublishingProfilesConfig(BaseModel):
+    amazon_kdp: AmazonKdpPublicationProfile | None = None
+
+
 class ProjectCreate(BaseModel):
     slug: str = Field(min_length=3, max_length=64)
     title: str = Field(min_length=1, max_length=4000)
@@ -235,6 +335,7 @@ class ProjectCreate(BaseModel):
     project_type: ProjectType = ProjectType.LINEAR
     metadata: dict[str, object] = Field(default_factory=dict)
     writing_profile: WritingProfile | None = None
+    publishing: PublishingProfilesConfig | None = None
 
     @field_validator("slug")
     @classmethod

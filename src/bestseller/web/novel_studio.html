@@ -1669,13 +1669,13 @@
 
             <div class="field">
               <label for="target-words">本轮目标总字数</label>
-              <div class="field-meta">本轮计划推进到多少字。系统按每章 5000 到 6000 字设计，低于章节下限会被直接拦截。</div>
+              <div class="field-meta">本轮计划推进到多少字。系统按每章约 5000 字、建议上限 5500 字设计，低于章节下限会被直接拦截。</div>
               <input id="target-words" type="number" value="22000" min="5000" step="1000" />
             </div>
 
             <div class="field">
               <label for="target-chapters">本轮目标章节数</label>
-              <div class="field-meta">本轮要写几章。系统会按每章最低 5000 字做校验，推荐平均 5500 字左右。</div>
+              <div class="field-meta">本轮要写几章。系统会按每章最低 5000 字做校验，目标控制在每章约 5000 字。</div>
               <input id="target-chapters" type="number" value="4" min="1" />
             </div>
 
@@ -1872,7 +1872,7 @@
           <div class="tag-row">
             <span class="tag">建议先做 4 到 8 章样书</span>
             <span class="tag">百万字建议按卷推进</span>
-            <span class="tag">每章最低 5000 字，建议 5500 字左右</span>
+            <span class="tag">每章最低 5000 字，目标约 5000 字，建议上限 5500 字</span>
             <span class="tag">千万字建议多轮规划与人工把关</span>
           </div>
 
@@ -1984,7 +1984,7 @@
             <div class="formula-grid">
               <div class="formula-item">
                 <strong>平均每章字数</strong>
-                <span id="words-per-chapter">5500</span>
+                <span id="words-per-chapter">5000</span>
               </div>
               <div class="formula-item">
                 <strong>预估总场景数</strong>
@@ -2467,7 +2467,7 @@
 
     function getWritingPresetCatalog() {
       return state.writingPresets || {
-        chapter_word_policy: { min: 5000, target: 5500, max: 6000 },
+        chapter_word_policy: { min: 5000, target: 5000, max: 5500 },
         platform_presets: [],
         genre_presets: [],
         length_presets: [],
@@ -2493,7 +2493,7 @@
       const genrePreset = getSelectedGenrePreset();
       const lengthPreset = getSelectedLengthPreset();
       const platformPreset = getSelectedPlatformPreset();
-      const policy = getWritingPresetCatalog().chapter_word_policy || { min: 5000, target: 5500, max: 6000 };
+      const policy = getWritingPresetCatalog().chapter_word_policy || { min: 5000, target: 5000, max: 5500 };
       const blocks = [];
 
       if (genrePreset) {
@@ -3063,7 +3063,7 @@
     function updateScopeEstimator() {
       const targetWords = Number(document.getElementById("target-words").value || 0);
       const targetChapters = Math.max(Number(document.getElementById("target-chapters").value || 0), 1);
-      const policy = getWritingPresetCatalog().chapter_word_policy || { min: 5000, target: 5500, max: 6000 };
+      const policy = getWritingPresetCatalog().chapter_word_policy || { min: 5000, target: 5000, max: 5500 };
       const wordsPerChapter = Math.max(Math.round(targetWords / targetChapters), 0);
       const estimatedScenes = Math.max(targetChapters * 5, 0);
       const wordsPerScene = estimatedScenes > 0 ? Math.round(targetWords / estimatedScenes) : 0;

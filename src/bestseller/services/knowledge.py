@@ -22,6 +22,7 @@ from bestseller.services.llm import LLMCompletionRequest, complete_text
 from bestseller.services.projects import get_project_by_slug
 from bestseller.services.retrieval import index_scene_retrieval_context
 from bestseller.services.story_bible import get_or_create_character_by_name, stable_character_id
+from bestseller.services.writing_profile import is_english_language
 from bestseller.settings import AppSettings
 
 
@@ -30,9 +31,20 @@ def render_scene_summary_fallback(
     chapter: ChapterModel,
     scene: SceneCardModel,
 ) -> str:
-    participants = "、".join(scene.participants) if scene.participants else "相关角色"
+    is_en = is_english_language(getattr(project, "language", None))
+    participants = (
+        ", ".join(scene.participants)
+        if scene.participants and is_en
+        else ("、".join(scene.participants) if scene.participants else ("relevant characters" if is_en else "相关角色"))
+    )
     story_purpose = str(scene.purpose.get("story", "推进主线"))
     emotion_purpose = str(scene.purpose.get("emotion", "抬高当前张力"))
+    if is_en:
+        return (
+            f"In {project.title}, Chapter {chapter.chapter_number}, Scene {scene.scene_number}, "
+            f"{participants} advance the story around \"{story_purpose}\". "
+            f"The dominant emotional movement is \"{emotion_purpose}\", and the scene ends by opening a new uncertainty."
+        )
     return (
         f"《{project.title}》第{chapter.chapter_number}章第{scene.scene_number}场"
         f"“{scene.title or f'场景{scene.scene_number}'}”中，{participants}围绕“{story_purpose}”展开推进，"
@@ -47,6 +59,27 @@ def build_scene_summary_prompts(
     draft: SceneDraftVersionModel,
     style_guide: StyleGuideModel | None,
 ) -> tuple[str, str]:
+    is_en = is_english_language(getattr(project, "language", None))
+    if is_en:
+        system_prompt = (
+            "You are the story-knowledge summarizer for a long-form fiction pipeline. "
+            "Write a concise 2-3 sentence English summary focused on plot movement, character-state change, and the next hook."
+        )
+        user_prompt = (
+            f"Project: {project.title}\n"
+            f"Chapter {chapter.chapter_number}: {chapter.title or ''}\n"
+            f"Chapter goal: {chapter.chapter_goal}\n"
+            f"Scene {scene.scene_number}: {scene.title or ''}\n"
+            f"Scene type: {scene.scene_type}\n"
+            f"Participants: {scene.participants}\n"
+            f"Story purpose: {scene.purpose.get('story', 'advance the main plot')}\n"
+            f"Emotional purpose: {scene.purpose.get('emotion', 'raise current tension')}\n"
+            f"Time label: {scene.time_label or 'unspecified'}\n"
+            f"POV: {style_guide.pov_type if style_guide else 'third-limited'}\n"
+            f"Current draft:\n{draft.content_md}\n"
+            "Generate a tight summary for continuity tracking."
+        )
+        return system_prompt, user_prompt
     system_prompt = (
         "你是长篇小说知识层的剧情摘要器。"
         "请用中文输出一段 2 到 3 句的剧情摘要，强调事件推进、人物状态变化和下一步悬念。"
@@ -588,3 +621,94 @@ async def list_timeline_events(
         stmt = stmt.where(TimelineEventModel.chapter_id == chapter.id)
     stmt = stmt.order_by(TimelineEventModel.story_order.asc(), TimelineEventModel.created_at.asc())
     return list(await session.scalars(stmt))
+
+
+async def propagate_scene_discoveries(
+    session: AsyncSession,
+    project_id: UUID,
+    chapter_number: int,
+    scene_number: int,
+    knowledge_result: SceneKnowledgeRefreshResult,
+) -> dict[str, int]:
+    """Propagate scene-level discoveries back to upstream models.
+
+    After ``refresh_scene_knowledge`` records canon facts and snapshots,
+    this function writes relationship updates back to
+    ``RelationshipModel`` and enriches ``CharacterModel.metadata_json``
+    with a propagation audit log.
+
+    Character ``arc_state`` / ``power_tier`` updates are already handled
+    inline in ``refresh_scene_knowledge`` (lines 475-476).  This function
+    extends propagation to relationships.
+
+    Zero LLM cost — purely DB reads + writes.
+    """
+    from bestseller.infra.db.models import RelationshipModel  # noqa: PLC0415
+    from bestseller.services.story_bible import stable_character_id  # noqa: PLC0415
+
+    characters_updated = 0
+    relationships_updated = 0
+
+    # Load canon facts created in this scene
+    if not knowledge_result.canon_fact_ids:
+        return {"characters_updated": 0, "relationships_updated": 0}
+
+    facts = list(
+        await session.scalars(
+            select(CanonFactModel).where(
+                CanonFactModel.id.in_(knowledge_result.canon_fact_ids)
+            )
+        )
+    )
+
+    # Collect participant IDs that were active in this scene
+    participant_ids: set[UUID] = set()
+    for fact in facts:
+        if fact.subject_type == "character" and fact.subject_id is not None:
+            participant_ids.add(fact.subject_id)
+
+    # Update relationships between scene participants
+    if len(participant_ids) >= 2:
+        participant_id_list = sorted(participant_ids)
+        relationships = list(
+            await session.scalars(
+                select(RelationshipModel).where(
+                    RelationshipModel.project_id == project_id,
+                    RelationshipModel.character_a_id.in_(participant_id_list),
+                    RelationshipModel.character_b_id.in_(participant_id_list),
+                )
+            )
+        )
+        for rel in relationships:
+            if (
+                rel.last_changed_chapter_no is None
+                or rel.last_changed_chapter_no < chapter_number
+            ):
+                rel.last_changed_chapter_no = chapter_number
+                relationships_updated += 1
+
+    # Enrich character metadata with propagation log
+    for fact in facts:
+        if fact.subject_type != "character" or fact.subject_id is None:
+            continue
+        character = await session.get(CharacterModel, fact.subject_id)
+        if character is None:
+            continue
+        log = list((character.metadata_json or {}).get("propagation_log") or [])
+        log.append({
+            "chapter": chapter_number,
+            "scene": scene_number,
+            "fact_id": str(fact.id),
+            "predicate": fact.predicate,
+        })
+        # Keep last 20 entries to avoid unbounded growth
+        character.metadata_json = {
+            **(character.metadata_json or {}),
+            "propagation_log": log[-20:],
+        }
+        characters_updated += 1
+
+    return {
+        "characters_updated": characters_updated,
+        "relationships_updated": relationships_updated,
+    }

@@ -60,6 +60,39 @@ def test_build_preview_payload_includes_html_and_stats() -> None:
     assert "<h1>标题</h1>" in str(payload["html"])
 
 
+def test_build_chapter_toc_includes_reading_stats() -> None:
+    output_dir = Path("/tmp") / f"demo-story-{uuid4()}"
+    output_dir.mkdir(parents=True)
+    chapter_path = output_dir / "chapter-001.md"
+    chapter_path.write_text("# 第1章：暗潮入局\n\n正文内容一二三四五六七八九十。", encoding="utf-8")
+
+    try:
+        entries = web_server._build_chapter_toc(output_dir)  # noqa: SLF001
+    finally:
+        chapter_path.unlink(missing_ok=True)
+        output_dir.rmdir()
+
+    assert entries == [
+        {
+            "number": 1,
+            "title": "暗潮入局",
+            "filename": "chapter-001.md",
+            "word_count": entries[0]["word_count"],
+            "estimated_read_minutes": 1,
+        }
+    ]
+    assert entries[0]["word_count"] >= 10
+
+
+def test_quickstart_new_creation_buttons_reset_wizard_flow() -> None:
+    html = web_server._QUICKSTART_HTML_PATH.read_text(encoding="utf-8")  # noqa: SLF001
+
+    assert "window.startNewCreationFlow = function()" in html
+    assert "function resetWizardState()" in html
+    assert "onclick=\"switchView('wizard')\"" not in html
+    assert html.count('onclick="startNewCreationFlow()"') >= 4
+
+
 def test_resolve_story_bible_progress_returns_current_frontier_and_next_gate() -> None:
     story_bible = SimpleNamespace(
         world_backbone=SimpleNamespace(title="全书世界主干"),

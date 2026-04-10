@@ -686,10 +686,13 @@
     <div class="wpanel active" id="ws1">
       <div class="lang-tabs">
         <button class="lang-tab active" data-lang="zh" id="langTabZh">中文题材</button>
-        <button class="lang-tab" data-lang="en" id="langTabEn">English Genres</button>
+        <button class="lang-tab" data-lang="en" id="langTabEn">英文题材</button>
       </div>
       <div class="search-box">
         <input type="text" id="genreSearch" placeholder="搜索题材...">
+      </div>
+      <div id="genreLangHint" style="display:none;margin:0 0 14px;font-size:13px;color:var(--text-dim);">
+        题材名称保留英文，说明改为中文展示；实际生成仍输出英文小说。
       </div>
       <div class="genre-grid" id="genreGrid"></div>
       <div class="empty-state" id="emptyState" style="display:none;">没有找到匹配的题材</div>
@@ -845,6 +848,32 @@
   let highlightTaskId = null;  // visually highlight a freshly-created task on the dashboard
   const DEFAULT_LANG = 'zh';
   const DEFAULT_CHAPTER_COUNT = 100;
+  const ENGLISH_GENRE_DESCRIPTION_ZH = {
+    'dark-romance': '道德灰度男主、权力失衡关系、囚禁式拉扯和高浓度情欲并存，卖点就是危险感包裹下的强烈欲望。',
+    romantasy: '以爱情为核心的奇幻题材，常见精灵宫廷、天选之人、慢热拉扯和浓郁世界观，是近年最强势的流行类型之一。',
+    'enemies-to-lovers': '从死对头到恋人，被迫绑定后的高摩擦、高化学反应和嘴硬心动是这一题材最抓人的地方。',
+    'litrpg-progression': '奇幻世界里加入系统、数值、等级和地下城推进，读者最爱清晰可见的成长反馈与升级爽感。',
+    'cozy-fantasy': '低风险、暖氛围的奇幻故事，书店、面包房、找到归属感和温柔魔法是核心吸引力。',
+    'cozy-mystery': '业余侦探、小镇群像、古怪配角和宠物搭档一起破案，悬疑存在但整体轻巧耐读，不走重口路线。',
+    'reverse-harem': '一位女主、多位感情对象，而且不必二选一；很适合学院、超自然羁绊和群体关系张力。',
+    'mafia-romance': '包办婚姻、冷酷黑帮掌权者与禁忌欲望交织，危险、权力和爱情三条线同时推进。',
+    'psychological-thriller': '不可靠叙述者、家庭秘密和强反转并行，让读者一路怀疑每个人，包括主角自己。',
+    'epic-fantasy': '多视角、大格局、深度魔法体系与权谋冲突并重，适合厚重世界观和史诗式叙事。',
+    'space-opera': '星际政治、舰队大战、外星接触和大规模太空冒险结合，适合写出恢宏宇宙感。',
+    'paranormal-romance': '狼人、命定伴侣、族群关系和超自然欲望并行，阿尔法男主与原始吸引力是核心卖点。',
+    'urban-fantasy': '现代都市表层之下潜藏魔法与超自然世界，普通人觉醒力量后要在双重身份之间求生。',
+    'military-scifi': '从一线士兵视角写战争，强调小队作战、军令体系、科技升级和战争代价。',
+    'gamelit-isekai': '主角被送入游戏化异世界，系统面板、任务机制、公会生态与生存升级并行。',
+    'apocalypse-survival': '文明崩塌后，资源稀缺、基地经营、派系冲突和生存机制驱动剧情，知识与准备就是武器。',
+    'detective-procedural': '按案件推进的刑侦/警探故事，法证细节、搭档关系和体制压力共同组成阅读快感。',
+    'slow-burn-romance': '主打长期情绪拉扯和逐步建立信任，每一次对视和试探都很重要，回报来得慢但更值钱。',
+    'ya-fantasy': '青少年在魔法世界中的成长故事，隐藏力量、学院规则、命运召唤和初恋支线一起推进。',
+    'thriller-conspiracy': '体制腐败、强大敌人和主角意外掌握真相的设定，随着调查深入，危险会层层升级。',
+    'portal-fantasy': '主角穿越到规则完全不同的新世界，文化冲击、能力差异和世界探索构成主要乐趣。',
+    'cultivation-western': '用西方商业叙事包装修炼升级，保留境界突破、宗派博弈和成长爽点，但表达方式更偏英文读者习惯。',
+    'monster-evolution': '主角本身就是怪物或地城核心，通过进化分支、领地扩张和能力树成长，从非人视角看世界。',
+    'superhero-fiction': '能力觉醒、英雄与反派对抗、秘密身份和战力成长并重，适合连载化的现代超能故事。',
+  };
 
   const STAGE = {
     queued: '排队中', running: '运行中', completed: '已完成', failed: '失败', cancelled: '已停止',
@@ -880,6 +909,21 @@
   const $$ = s => document.querySelectorAll(s);
   const esc = s => { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; };
 
+  function isEnglishGenre(genre) {
+    return (genre?.language || 'zh-CN').startsWith('en');
+  }
+
+  function getGenreDisplayDescription(genre) {
+    if (!genre) return '';
+    if (!isEnglishGenre(genre)) return genre.description || '';
+    return ENGLISH_GENRE_DESCRIPTION_ZH[genre.key] || genre.description || '';
+  }
+
+  function syncGenreLangUi() {
+    $('#genreSearch').placeholder = selectedLang === 'en' ? '搜索英文题材...' : '搜索题材...';
+    $('#genreLangHint').style.display = selectedLang === 'en' ? 'block' : 'none';
+  }
+
   /* ═══════════════════════════════════════
      VIEW SWITCHING
      ═══════════════════════════════════════ */
@@ -897,12 +941,12 @@
     selectedLang = DEFAULT_LANG;
     chapterCount = DEFAULT_CHAPTER_COUNT;
     $('#genreSearch').value = '';
-    $('#genreSearch').placeholder = '搜索题材...';
     $$('.lang-tab').forEach(t => t.classList.toggle('active', t.dataset.lang === DEFAULT_LANG));
     $('#toStep2').disabled = true;
     $('#draftModeToggle').checked = false;
     $('#customChapters').value = DEFAULT_CHAPTER_COUNT;
     selectLen(DEFAULT_CHAPTER_COUNT);
+    syncGenreLangUi();
     renderGenres(genres.filter(matchSearch));
     updateSummary();
     wizGo(1);
@@ -1492,7 +1536,7 @@
     list.forEach(g => {
       const card = document.createElement('div');
       card.className = 'genre-card' + (g.key === selectedGenreKey ? ' selected' : '');
-      card.innerHTML = `<div class="name">${esc(g.name)}</div><div class="genre-tag">${esc(g.genre)}${g.sub_genre ? ' / ' + esc(g.sub_genre) : ''}</div><div class="desc">${esc(g.description || '')}</div>`;
+      card.innerHTML = `<div class="name">${esc(g.name)}</div><div class="genre-tag">${esc(g.genre)}${g.sub_genre ? ' / ' + esc(g.sub_genre) : ''}</div><div class="desc">${esc(getGenreDisplayDescription(g))}</div>`;
       card.onclick = () => { selectedGenreKey = g.key; renderGenres(genres.filter(matchSearch)); $('#toStep2').disabled = false; };
       grid.appendChild(card);
     });
@@ -1503,7 +1547,7 @@
     if (gLang !== selectedLang) return false;
     const q = $('#genreSearch').value.trim().toLowerCase();
     if (!q) return true;
-    return [g.name, g.genre, g.sub_genre, g.description, g.key].some(v => (v || '').toLowerCase().includes(q));
+    return [g.name, g.genre, g.sub_genre, g.description, getGenreDisplayDescription(g), g.key].some(v => (v || '').toLowerCase().includes(q));
   }
   $('#genreSearch').addEventListener('input', () => renderGenres(genres.filter(matchSearch)));
 
@@ -1514,7 +1558,7 @@
     $('#toStep2').disabled = true;
     $$('.lang-tab').forEach(t => t.classList.toggle('active', t.dataset.lang === lang));
     $('#genreSearch').value = '';
-    $('#genreSearch').placeholder = lang === 'en' ? 'Search genres...' : '搜索题材...';
+    syncGenreLangUi();
     renderGenres(genres.filter(matchSearch));
   }
   $('#langTabZh').addEventListener('click', () => switchLangTab('zh'));

@@ -5,11 +5,17 @@ from uuid import uuid4
 import pytest
 
 from bestseller.infra.db.models import LlmRunModel
-from bestseller.services.llm import LLMCompletionRequest, complete_text
+from bestseller.services.llm import LLMCompletionRequest, _llm_breaker, complete_text
 from bestseller.settings import load_settings
 
 
 pytestmark = pytest.mark.unit
+
+
+@pytest.fixture(autouse=True)
+def _reset_circuit_breaker() -> None:
+    """Prevent cross-test pollution from the module-level circuit breaker."""
+    _llm_breaker.reset()
 
 
 class FakeSession:

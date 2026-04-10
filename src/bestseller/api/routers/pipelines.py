@@ -10,10 +10,22 @@ from sqlalchemy import select
 
 from bestseller.api.deps import ApiKeyDep, SessionDep, SettingsDep
 from bestseller.api.schemas.tasks import AutowriteRequest, PipelineRequest, TaskEnqueuedResponse
-from bestseller.infra.db.models import ProjectModel
+from bestseller.domain.enums import WorkflowStatus
+from bestseller.infra.db.models import ProjectModel, WorkflowRunModel
 from bestseller.settings import AppSettings
 
 router = APIRouter(tags=["pipelines"])
+
+# Workflow types that count as "pipeline in progress" for concurrency guard
+_PIPELINE_WORKFLOW_TYPES = frozenset({
+    "autowrite_pipeline",
+    "project_pipeline",
+})
+_ACTIVE_STATUSES = frozenset({
+    WorkflowStatus.PENDING.value,
+    WorkflowStatus.QUEUED.value,
+    WorkflowStatus.RUNNING.value,
+})
 
 # Module-level cached ARQ pool — initialized lazily on first use
 _arq_pool: ArqRedis | None = None
@@ -44,6 +56,31 @@ async def _get_project_or_404(slug: str, session: SessionDep) -> ProjectModel:
     return project
 
 
+async def _assert_no_active_pipeline(
+    session: SessionDep,
+    project: ProjectModel,
+) -> None:
+    """Raise 409 Conflict if a pipeline is already running for this project."""
+    active_run = await session.scalar(
+        select(WorkflowRunModel)
+        .where(
+            WorkflowRunModel.project_id == project.id,
+            WorkflowRunModel.workflow_type.in_(_PIPELINE_WORKFLOW_TYPES),
+            WorkflowRunModel.status.in_(_ACTIVE_STATUSES),
+        )
+        .limit(1)
+    )
+    if active_run is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                f"Project '{project.slug}' already has an active pipeline "
+                f"(workflow_run={active_run.id}, status={active_run.status}). "
+                "Wait for it to finish or cancel it first."
+            ),
+        )
+
+
 async def _enqueue(
     settings: AppSettings,
     task_name: str,
@@ -72,7 +109,8 @@ async def start_autowrite(
     settings: SettingsDep,
     _key: ApiKeyDep,
 ) -> TaskEnqueuedResponse:
-    await _get_project_or_404(slug, session)
+    project = await _get_project_or_404(slug, session)
+    await _assert_no_active_pipeline(session, project)
     return await _enqueue(
         settings,
         "run_autowrite_task",
@@ -92,7 +130,8 @@ async def start_project_pipeline(
     settings: SettingsDep,
     _key: ApiKeyDep,
 ) -> TaskEnqueuedResponse:
-    await _get_project_or_404(slug, session)
+    project = await _get_project_or_404(slug, session)
+    await _assert_no_active_pipeline(session, project)
     return await _enqueue(
         settings,
         "run_project_pipeline_task",

@@ -182,7 +182,7 @@ async def test_assemble_chapter_draft_creates_assembled_version(
         project_id=project.id,
         scene_card_id=scene.id,
         version_no=1,
-        content_md="## 场景 1：封港命令",
+        content_md="程彻抓起挂在门后的黑色双肩包，猛地拉开拉链检查里面的物资。",
         word_count=128,
         is_current=True,
         generation_params={},
@@ -453,12 +453,14 @@ async def test_generate_scene_draft_with_settings_records_llm_run(
         get_map={(StyleGuideModel, project.id): style},
     )
 
+    settings = build_settings()
+    settings.llm.mock = True
     draft = await draft_services.generate_scene_draft(
         session,
         "my-story",
         1,
         1,
-        settings=build_settings(),
+        settings=settings,
     )
 
     assert draft.llm_run_id is not None

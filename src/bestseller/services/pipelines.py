@@ -21,7 +21,7 @@ from bestseller.domain.pipeline import (
 )
 from bestseller.domain.project import ProjectCreate
 from bestseller.domain.workflow import ChapterOutlineBatchInput
-from bestseller.infra.db.models import ChapterModel, ProjectModel, SceneCardModel, SceneDraftVersionModel
+from bestseller.infra.db.models import ChapterDraftVersionModel, ChapterModel, ProjectModel, SceneCardModel, SceneDraftVersionModel
 from bestseller.services.context import build_scene_writer_context_from_models
 from bestseller.services.continuity import extract_chapter_state_snapshot
 from bestseller.services.drafts import assemble_chapter_draft, generate_scene_draft
@@ -696,9 +696,26 @@ async def run_chapter_pipeline(
             if scene_result.requires_human_review:
                 scene_requires_human_review = True
 
+        # Resume optimisation: if every scene was already APPROVED (nothing
+        # to process) and a chapter draft already exists, reuse it rather
+        # than creating a redundant new version with identical content.
         current_step_name = "assemble_chapter_draft"
         workflow_run.current_step = current_step_name
-        chapter_draft = await assemble_chapter_draft(session, project_slug, chapter_number)
+        chapter_draft = None
+        if settings.pipeline.resume_enabled and not pending_scenes:
+            chapter_draft = await session.scalar(
+                select(ChapterDraftVersionModel).where(
+                    ChapterDraftVersionModel.chapter_id == chapter.id,
+                    ChapterDraftVersionModel.is_current.is_(True),
+                )
+            )
+            if chapter_draft is not None:
+                logger.info(
+                    "Chapter %d resume: reusing existing draft v%d",
+                    chapter_number, chapter_draft.version_no,
+                )
+        if chapter_draft is None:
+            chapter_draft = await assemble_chapter_draft(session, project_slug, chapter_number)
         await create_workflow_step_run(
             session,
             workflow_run_id=workflow_run.id,
@@ -1557,6 +1574,7 @@ async def run_project_pipeline(
                         from bestseller.services.linear_arc_summary import (
                             generate_linear_arc_summary,
                             generate_linear_world_snapshot,
+                            load_arc_chapter_summaries,
                             store_linear_arc_summary,
                             store_linear_world_snapshot,
                         )
@@ -1574,8 +1592,12 @@ async def run_project_pipeline(
                                 "arc_index": arc_idx,
                             },
                         )
+                        chapter_summaries = await load_arc_chapter_summaries(
+                            session, project.id, arc_start, chapter.chapter_number,
+                        )
                         arc_summary = await generate_linear_arc_summary(
                             session, settings, project, arc_start, chapter.chapter_number,
+                            chapter_summaries=chapter_summaries,
                         )
                         await store_linear_arc_summary(
                             session, project, arc_idx, arc_summary, arc_start, chapter.chapter_number,

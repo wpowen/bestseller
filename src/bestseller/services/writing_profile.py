@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from bestseller.domain.project import (
@@ -39,9 +40,47 @@ def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any
     return merged
 
 
+_logger = logging.getLogger(__name__)
+
+# Supported language families — used for validation and logging.
+_SUPPORTED_LANGUAGE_PREFIXES = ("zh", "en")
+
+_unsupported_warned: set[str] = set()
+
+
 def is_english_language(language: str | None) -> bool:
     normalized = (language or "").strip().lower()
     return normalized.startswith("en")
+
+
+def normalize_language(language: str | None) -> str:
+    """Return a normalised language tag, defaulting to ``zh-CN``.
+
+    Logs a one-time warning if the language is not in the supported set
+    (currently Chinese and English).  Unsupported languages fall back to
+    English when the tag looks Latin-script (fr, de, es, pt, it …) and
+    to Chinese otherwise, so the prompts at least use a familiar script.
+    """
+    raw = (language or "").strip()
+    if not raw:
+        return "zh-CN"
+    lower = raw.lower()
+    if any(lower.startswith(p) for p in _SUPPORTED_LANGUAGE_PREFIXES):
+        return raw
+    # Unsupported — warn once per tag and choose the best fallback.
+    if lower not in _unsupported_warned:
+        _unsupported_warned.add(lower)
+        _logger.warning(
+            "Language '%s' is not fully supported (supported: zh-*, en-*). "
+            "Prompts will use the closest supported language.",
+            raw,
+        )
+    # Latin-script languages → English prompts are closer than Chinese.
+    _LATIN_PREFIXES = ("fr", "de", "es", "pt", "it", "nl", "pl", "ro", "sv", "da", "no", "fi", "cs", "hu", "tr", "vi", "id", "ms", "tl")
+    if any(lower.startswith(p) for p in _LATIN_PREFIXES):
+        return "en-US"
+    # CJK or other → Chinese prompts are closer.
+    return "zh-CN"
 
 
 def _default_writing_profile_payload(language: str | None = None) -> dict[str, Any]:

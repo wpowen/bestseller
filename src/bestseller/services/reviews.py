@@ -48,6 +48,7 @@ from bestseller.services.projects import get_project_by_slug
 from bestseller.services.rewrite_impacts import analyze_rewrite_impacts_for_scene_task
 from bestseller.services.writing_profile import (
     is_english_language,
+    normalize_language,
     render_serial_fiction_guardrails,
     render_writing_profile_prompt_block,
     resolve_writing_profile,
@@ -597,7 +598,7 @@ def _resolve_project_prompt_pack(project: Any, writing_profile: Any):
 
 
 def _project_language(project: Any) -> str:
-    return str(getattr(project, "language", None) or "zh-CN")
+    return normalize_language(getattr(project, "language", None))
 
 
 def build_scene_review_prompts(
@@ -2362,7 +2363,7 @@ def render_rewritten_chapter_markdown(
         f"chapter={chapter.chapter_number} "
         f"reason=\"rewriter-llm-unavailable\" -->"
     )
-    project_language = str(getattr(project, "language", None) or "zh-CN")
+    project_language = normalize_language(getattr(project, "language", None))
     original_content = (current_draft.content_md or "").strip()
     if not original_content:
         return f"{marker}\n\n{_format_chapter_heading(chapter.chapter_number, chapter.title, language=project_language)}"

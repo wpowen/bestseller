@@ -108,8 +108,18 @@ def _linear_arc_summary_prompt(
     return system_prompt, user_prompt
 
 
-def _fallback_arc_summary(arc_start: int, arc_end: int) -> dict[str, Any]:
+def _fallback_arc_summary(arc_start: int, arc_end: int, language: str | None = None) -> dict[str, Any]:
     """Generate a minimal fallback arc summary when LLM fails."""
+    if is_english_language(language):
+        return {
+            "protagonist_growth": f"The protagonist continued to grow during chapters {arc_start}-{arc_end}.",
+            "relationship_changes": [],
+            "unresolved_threads": [f"The suspense at the end of chapter {arc_end} remains unresolved."],
+            "power_level_summary": "The protagonist's strength and awareness have improved.",
+            "next_arc_setup": "New challenges are on the horizon.",
+            "open_clues": [],
+            "resolved_clues": [],
+        }
     return {
         "protagonist_growth": f"主角在第{arc_start}-{arc_end}章中持续成长。",
         "relationship_changes": [],
@@ -129,14 +139,19 @@ async def generate_linear_arc_summary(
     arc_chapter_end: int,
     chapter_summaries: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    """Generate an arc summary via LLM with fallback."""
+    """Generate an arc summary via LLM with fallback.
+
+    After generation, carries forward unresolved threads and open clues
+    from the previous arc that were not resolved in this one, preventing
+    long-running plot threads from being silently forgotten.
+    """
     if chapter_summaries is None:
         chapter_summaries = []
 
     system_prompt, user_prompt = _linear_arc_summary_prompt(
         project, chapter_summaries, arc_chapter_start, arc_chapter_end, project.language,
     )
-    fallback = _fallback_arc_summary(arc_chapter_start, arc_chapter_end)
+    fallback = _fallback_arc_summary(arc_chapter_start, arc_chapter_end, project.language)
 
     try:
         completion = await complete_text(
@@ -166,7 +181,71 @@ async def generate_linear_arc_summary(
         )
         payload = fallback
 
+    # ── Cumulative thread tracking ──────────────────────────────────────
+    # Carry forward unresolved threads and open clues from the previous
+    # arc that were NOT resolved in the current arc.  This ensures that
+    # plot threads planted 50+ chapters ago remain visible in the warm
+    # context tier until explicitly resolved.
+    prev_arcs = await load_recent_arc_summaries(
+        session, project.id, arc_chapter_start, limit=1,
+    )
+    if prev_arcs:
+        prev = prev_arcs[0]
+        resolved_in_this_arc = set(payload.get("resolved_clues", []))
+        # Carry forward unresolved threads not mentioned in this arc's resolved list
+        prev_threads = prev.get("unresolved_threads", [])
+        current_threads = payload.get("unresolved_threads", [])
+        current_thread_set = set(current_threads)
+        for thread in prev_threads:
+            if thread not in current_thread_set and thread not in resolved_in_this_arc:
+                current_threads.append(thread)
+        # Cap at 10 to prevent unbounded growth
+        payload["unresolved_threads"] = current_threads[:10]
+
+        # Carry forward open clues
+        prev_open = prev.get("open_clues", [])
+        current_open = payload.get("open_clues", [])
+        current_codes = {c.get("code") for c in current_open if isinstance(c, dict)}
+        for clue in prev_open:
+            if isinstance(clue, dict) and clue.get("code") not in current_codes and clue.get("code") not in resolved_in_this_arc:
+                current_open.append(clue)
+        payload["open_clues"] = current_open[:15]
+
     return payload
+
+
+async def load_arc_chapter_summaries(
+    session: AsyncSession,
+    project_id: UUID,
+    arc_start: int,
+    arc_end: int,
+) -> list[dict[str, Any]]:
+    """Load scene-level summaries for chapters in [arc_start, arc_end].
+
+    Returns a list of dicts with ``chapter_number`` and ``summary`` keys,
+    suitable for passing to ``generate_linear_arc_summary``.
+    """
+    stmt = (
+        select(CanonFactModel)
+        .where(
+            CanonFactModel.project_id == project_id,
+            CanonFactModel.fact_type == "scene_summary",
+            CanonFactModel.is_current.is_(True),
+            CanonFactModel.valid_from_chapter_no >= arc_start,
+            CanonFactModel.valid_from_chapter_no <= arc_end,
+        )
+        .order_by(CanonFactModel.valid_from_chapter_no.asc())
+    )
+    results = list(await session.scalars(stmt))
+    return [
+        {
+            "chapter_number": r.value_json.get("chapter_number", r.valid_from_chapter_no),
+            "scene_number": r.value_json.get("scene_number"),
+            "summary": r.value_json.get("summary", ""),
+        }
+        for r in results
+        if r.value_json.get("summary")
+    ]
 
 
 async def store_linear_arc_summary(
@@ -177,12 +256,32 @@ async def store_linear_arc_summary(
     ch_start: int,
     ch_end: int,
 ) -> CanonFactModel:
-    """Store an arc summary as a CanonFactModel record."""
+    """Store an arc summary as a CanonFactModel record.
+
+    Idempotent: marks any previous arc summary with the same subject_label
+    as ``is_current=False`` before inserting, preventing duplicates on resume.
+    """
+    label = f"arc_{arc_index:03d}"
+
+    # Mark previous versions as non-current (dedup on resume)
+    prev_stmt = (
+        select(CanonFactModel)
+        .where(
+            CanonFactModel.project_id == project.id,
+            CanonFactModel.fact_type == "arc_summary",
+            CanonFactModel.subject_label == label,
+            CanonFactModel.is_current.is_(True),
+        )
+    )
+    prev_facts = await session.scalars(prev_stmt)
+    for f in prev_facts:
+        f.is_current = False
+
     fact = CanonFactModel(
         id=uuid4(),
         project_id=project.id,
         subject_type="arc",
-        subject_label=f"arc_{arc_index:03d}",
+        subject_label=label,
         predicate="arc_summary",
         fact_type="arc_summary",
         value_json={

@@ -847,7 +847,11 @@ async def build_scene_writer_context_from_models(
     # Load arc summaries (warm context) and world snapshot (cold context)
     from bestseller.services.linear_arc_summary import load_recent_arc_summaries, load_latest_world_snapshot
 
-    arc_summaries = await load_recent_arc_summaries(session, project.id, chapter.chapter_number, limit=3)
+    # Scale warm context with novel length: 3 for ≤50 chapters, up to 8 for
+    # very long novels.  This keeps recent + mid-range arc memory visible.
+    _total_ch = project.target_chapters or chapter.chapter_number
+    _arc_summary_limit = 3 if _total_ch <= 50 else min(8, 3 + (_total_ch // 100))
+    arc_summaries = await load_recent_arc_summaries(session, project.id, chapter.chapter_number, limit=_arc_summary_limit)
     world_snapshot = await load_latest_world_snapshot(session, project.id, chapter.chapter_number)
 
     return SceneWriterContextPacket(

@@ -4,6 +4,7 @@ import asyncio
 import hashlib
 import importlib
 import logging
+import time
 from time import perf_counter
 from typing import Any, Literal, cast
 from uuid import UUID
@@ -12,13 +13,80 @@ from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bestseller.infra.db.models import LlmRunModel
-from bestseller.settings import AppSettings, LLMRoleSettings, get_runtime_env_value
+from bestseller.settings import AppSettings, LLMRoleSettings, RetrySettings, get_runtime_env_value
 
 
 logger = logging.getLogger(__name__)
 
 
 LLMRole = Literal["planner", "writer", "critic", "summarizer", "editor"]
+
+
+# ── Circuit Breaker ─────────────────────────────────────────────────────
+#
+# Prevents cascading fallback-text contamination when the LLM provider is
+# down.  After ``failure_threshold`` consecutive failures, the breaker
+# opens and all calls fail fast for ``recovery_timeout`` seconds.  Then a
+# single probe call is allowed; if it succeeds the breaker closes.
+
+class _CircuitBreaker:
+    """Simple async-safe circuit breaker for LLM calls."""
+
+    __slots__ = (
+        "_failure_threshold",
+        "_recovery_timeout",
+        "_consecutive_failures",
+        "_last_failure_time",
+        "_state",
+    )
+
+    def __init__(self, failure_threshold: int = 5, recovery_timeout: float = 60.0) -> None:
+        self._failure_threshold = failure_threshold
+        self._recovery_timeout = recovery_timeout
+        self._consecutive_failures = 0
+        self._last_failure_time = 0.0
+        self._state: Literal["closed", "open", "half_open"] = "closed"
+
+    @property
+    def state(self) -> str:
+        return self._state
+
+    def reset(self) -> None:
+        """Reset breaker to initial closed state (useful for testing)."""
+        self._consecutive_failures = 0
+        self._last_failure_time = 0.0
+        self._state = "closed"
+
+    def record_success(self) -> None:
+        self._consecutive_failures = 0
+        self._state = "closed"
+
+    def record_failure(self) -> None:
+        self._consecutive_failures += 1
+        self._last_failure_time = time.monotonic()
+        if self._consecutive_failures >= self._failure_threshold:
+            self._state = "open"
+            logger.warning(
+                "LLM circuit breaker OPEN after %d consecutive failures (recovery in %ds)",
+                self._consecutive_failures,
+                self._recovery_timeout,
+            )
+
+    def allow_request(self) -> bool:
+        if self._state == "closed":
+            return True
+        if self._state == "open":
+            elapsed = time.monotonic() - self._last_failure_time
+            if elapsed >= self._recovery_timeout:
+                self._state = "half_open"
+                logger.info("LLM circuit breaker HALF_OPEN — allowing probe request")
+                return True
+            return False
+        # half_open: allow exactly one probe
+        return True
+
+
+_llm_breaker = _CircuitBreaker(failure_threshold=5, recovery_timeout=60.0)
 
 
 # --- Opt-C: shared litellm HTTP client ----------------------------------------
@@ -268,6 +336,52 @@ async def _call_litellm(
     return content.strip(), input_tokens, output_tokens, finish_reason
 
 
+async def _call_litellm_with_retry(
+    request: LLMCompletionRequest,
+    role_settings: LLMRoleSettings,
+    retry_settings: RetrySettings,
+) -> tuple[str, int | None, int | None, str | None]:
+    """Invoke ``_call_litellm`` with exponential back-off retry.
+
+    Uses the configured :class:`RetrySettings` for max attempts and
+    wait bounds.  Each retry doubles the wait (jittered between
+    ``wait_min_seconds`` and the current backoff ceiling).
+    """
+    last_exc: Exception | None = None
+    max_attempts = max(1, retry_settings.max_attempts)
+    wait_min = retry_settings.wait_min_seconds
+    wait_max = retry_settings.wait_max_seconds
+
+    for attempt in range(1, max_attempts + 1):
+        try:
+            result = await _call_litellm(request, role_settings)
+            _llm_breaker.record_success()
+            return result
+        except Exception as exc:
+            last_exc = exc
+            _llm_breaker.record_failure()
+            if attempt < max_attempts:
+                # Exponential backoff: min(wait_max, wait_min * 2^(attempt-1))
+                backoff = min(wait_max, wait_min * (2 ** (attempt - 1)))
+                logger.warning(
+                    "LLM call attempt %d/%d failed (%s: %s) — retrying in %.1fs",
+                    attempt,
+                    max_attempts,
+                    type(exc).__name__,
+                    exc,
+                    backoff,
+                )
+                await asyncio.sleep(backoff)
+            else:
+                logger.error(
+                    "LLM call failed after %d attempts (%s: %s) — falling back",
+                    max_attempts,
+                    type(exc).__name__,
+                    exc,
+                )
+    raise last_exc  # type: ignore[misc]
+
+
 async def complete_text(
     session: AsyncSession,
     settings: AppSettings,
@@ -294,13 +408,25 @@ async def complete_text(
                 input_tokens,
                 output_tokens,
                 finish_reason,
-            ) = await _call_litellm(request, role_settings)
+            ) = await _call_litellm_with_retry(
+                request, role_settings, settings.llm.retry,
+            )
         except Exception as exc:
             provider = "fallback"
             model_name = f"fallback-{request.logical_role}"
             metadata["configured_model"] = role_settings.model
             metadata["fallback_reason"] = f"{type(exc).__name__}: {exc}"
+            metadata["retry_exhausted"] = True
             finish_reason = "fallback"
+            logger.error(
+                "LLM call FAILED for role=%s model=%s template=%s — using fallback content. "
+                "Error: %s: %s",
+                request.logical_role,
+                role_settings.model,
+                request.prompt_template,
+                type(exc).__name__,
+                exc,
+            )
     latency_ms = int((perf_counter() - started_at) * 1000)
 
     llm_run = LlmRunModel(

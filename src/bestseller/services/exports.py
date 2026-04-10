@@ -22,6 +22,7 @@ from bestseller.infra.db.models import (
 )
 from bestseller.services.drafts import format_chapter_heading, sanitize_novel_markdown_content
 from bestseller.services.projects import get_project_by_slug
+from bestseller.services.writing_profile import normalize_language
 from bestseller.settings import AppSettings
 
 logger = logging.getLogger(__name__)
@@ -49,7 +50,7 @@ def build_project_markdown(
     project: ProjectModel,
     chapter_payloads: list[tuple[ChapterModel, ChapterDraftVersionModel]],
 ) -> str:
-    project_language = str(getattr(project, "language", None) or "zh-CN")
+    project_language = normalize_language(getattr(project, "language", None))
     is_en = project_language.lower().startswith("en")
     header = [f"# {project.title}", f"> {'Genre' if is_en else '类型'}：{project.genre}"]
     sections = [

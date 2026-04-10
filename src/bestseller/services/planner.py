@@ -530,6 +530,7 @@ def _build_default_conflict_forces(
     betrayer_name: str,
     ally_name: str,
     volume_count: int,
+    is_en: bool = False,
 ) -> list[dict[str, Any]]:
     """Generate default conflict forces based on the volume count.
 
@@ -539,53 +540,102 @@ def _build_default_conflict_forces(
     """
     phases = _assign_conflict_phases(volume_count)
     forces: list[dict[str, Any]] = []
-    phase_to_force: dict[str, dict[str, Any]] = {
-        "survival": {
-            "name": f"{local_threat_name}的地方势力",
-            "force_type": "faction",
-            "threat_description": f"{local_threat_name}控制着主角所在区域的资源和通道，是最直接的生存威胁。",
-            "relationship_to_protagonist": "直接敌对——双方争夺同一片生存空间。",
-            "escalation_path": f"从资源封锁到暴力驱逐，最终暴露与{antagonist_name}的勾连。",
-            "character_ref": local_threat_name,
-        },
-        "political_intrigue": {
-            "name": "权力暗网",
-            "force_type": "systemic",
-            "threat_description": "体制内部的权力博弈和规则操弄，让主角的每一步调查都可能被反制。",
-            "relationship_to_protagonist": "主角是这场权力游戏中的局外人和变量。",
-            "escalation_path": "从暗中施压到公开封锁，盟友被迫站队。",
-        },
-        "betrayal": {
-            "name": f"{betrayer_name}的背叛",
-            "force_type": "character",
-            "threat_description": f"{betrayer_name}一直潜伏在主角身边，在关键时刻亮出真实立场。",
-            "relationship_to_protagonist": "曾经最信任的同伴，背叛后成为最危险的敌人。",
-            "escalation_path": "从暗中传递情报到公开反水，彻底摧毁主角的信任体系。",
-            "character_ref": betrayer_name,
-        },
-        "faction_war": {
-            "name": "多方势力全面冲突",
-            "force_type": "faction",
-            "threat_description": "多个势力之间的矛盾全面爆发，主角被卷入大规模对抗。",
-            "relationship_to_protagonist": "主角是各方都想拉拢或消灭的关键变量。",
-            "escalation_path": "从局部冲突到全面战争，主角必须在混战中找到自己的位置。",
-        },
-        "existential_threat": {
-            "name": f"{antagonist_name}的终极计划",
-            "force_type": "character",
-            "threat_description": f"{antagonist_name}的真正目标浮出水面，威胁到整个世界的根基。",
-            "relationship_to_protagonist": "一切矛盾的终极根源，主角命运的最终对手。",
-            "escalation_path": "从幕后操盘到亲自下场，主角必须倾尽一切与之对决。",
-            "character_ref": antagonist_name,
-        },
-        "internal_reckoning": {
-            "name": f"{protagonist_name}的内心拷问",
-            "force_type": "internal",
-            "threat_description": "主角一路走来积累的选择、牺牲和代价，最终汇聚成无法逃避的自我审判。",
-            "relationship_to_protagonist": "主角自身就是最大的敌人。",
-            "escalation_path": "从隐约的不安到全面的精神危机，最终完成蜕变或崩溃。",
-        },
-    }
+    if is_en:
+        phase_to_force: dict[str, dict[str, Any]] = {
+            "survival": {
+                "name": f"{local_threat_name}'s local power",
+                "force_type": "faction",
+                "threat_description": f"{local_threat_name} controls resources and access in the protagonist's area — the most immediate survival threat.",
+                "relationship_to_protagonist": "Direct opposition — both competing for the same ground.",
+                "escalation_path": f"From resource blockade to violent expulsion, ultimately exposing ties to {antagonist_name}.",
+                "character_ref": local_threat_name,
+            },
+            "political_intrigue": {
+                "name": "The power web",
+                "force_type": "systemic",
+                "threat_description": "Internal power games and rule manipulation within the system can counter every step of the investigation.",
+                "relationship_to_protagonist": "The protagonist is an outsider and wild card in this power game.",
+                "escalation_path": "From covert pressure to open lockdown, forcing allies to pick sides.",
+            },
+            "betrayal": {
+                "name": f"{betrayer_name}'s betrayal",
+                "force_type": "character",
+                "threat_description": f"{betrayer_name} has been embedded beside the protagonist all along, revealing their true allegiance at the critical moment.",
+                "relationship_to_protagonist": "Once the most trusted companion; after betrayal, the most dangerous enemy.",
+                "escalation_path": "From leaking intelligence to open defection, shattering the protagonist's trust network.",
+                "character_ref": betrayer_name,
+            },
+            "faction_war": {
+                "name": "Multi-faction open conflict",
+                "force_type": "faction",
+                "threat_description": "Long-simmering tensions between factions erupt into all-out confrontation.",
+                "relationship_to_protagonist": "Every faction wants to recruit or eliminate the protagonist — they are the key variable.",
+                "escalation_path": "From localised clashes to full-scale war; the protagonist must find their place in the chaos.",
+            },
+            "existential_threat": {
+                "name": f"{antagonist_name}'s endgame",
+                "force_type": "character",
+                "threat_description": f"{antagonist_name}'s true objective surfaces, threatening the very foundations of the world.",
+                "relationship_to_protagonist": "The ultimate source of every conflict — the protagonist's final adversary.",
+                "escalation_path": "From puppet master to direct combatant; the protagonist must give everything to stop them.",
+                "character_ref": antagonist_name,
+            },
+            "internal_reckoning": {
+                "name": f"{protagonist_name}'s reckoning",
+                "force_type": "internal",
+                "threat_description": "Every choice, sacrifice, and cost the protagonist has accumulated converges into an inescapable trial of self.",
+                "relationship_to_protagonist": "The protagonist is their own greatest enemy.",
+                "escalation_path": "From creeping unease to full-blown crisis, ending in transformation or collapse.",
+            },
+        }
+    else:
+        phase_to_force: dict[str, dict[str, Any]] = {
+            "survival": {
+                "name": f"{local_threat_name}的地方势力",
+                "force_type": "faction",
+                "threat_description": f"{local_threat_name}控制着主角所在区域的资源和通道，是最直接的生存威胁。",
+                "relationship_to_protagonist": "直接敌对——双方争夺同一片生存空间。",
+                "escalation_path": f"从资源封锁到暴力驱逐，最终暴露与{antagonist_name}的勾连。",
+                "character_ref": local_threat_name,
+            },
+            "political_intrigue": {
+                "name": "权力暗网",
+                "force_type": "systemic",
+                "threat_description": "体制内部的权力博弈和规则操弄，让主角的每一步调查都可能被反制。",
+                "relationship_to_protagonist": "主角是这场权力游戏中的局外人和变量。",
+                "escalation_path": "从暗中施压到公开封锁，盟友被迫站队。",
+            },
+            "betrayal": {
+                "name": f"{betrayer_name}的背叛",
+                "force_type": "character",
+                "threat_description": f"{betrayer_name}一直潜伏在主角身边，在关键时刻亮出真实立场。",
+                "relationship_to_protagonist": "曾经最信任的同伴，背叛后成为最危险的敌人。",
+                "escalation_path": "从暗中传递情报到公开反水，彻底摧毁主角的信任体系。",
+                "character_ref": betrayer_name,
+            },
+            "faction_war": {
+                "name": "多方势力全面冲突",
+                "force_type": "faction",
+                "threat_description": "多个势力之间的矛盾全面爆发，主角被卷入大规模对抗。",
+                "relationship_to_protagonist": "主角是各方都想拉拢或消灭的关键变量。",
+                "escalation_path": "从局部冲突到全面战争，主角必须在混战中找到自己的位置。",
+            },
+            "existential_threat": {
+                "name": f"{antagonist_name}的终极计划",
+                "force_type": "character",
+                "threat_description": f"{antagonist_name}的真正目标浮出水面，威胁到整个世界的根基。",
+                "relationship_to_protagonist": "一切矛盾的终极根源，主角命运的最终对手。",
+                "escalation_path": "从幕后操盘到亲自下场，主角必须倾尽一切与之对决。",
+                "character_ref": antagonist_name,
+            },
+            "internal_reckoning": {
+                "name": f"{protagonist_name}的内心拷问",
+                "force_type": "internal",
+                "threat_description": "主角一路走来积累的选择、牺牲和代价，最终汇聚成无法逃避的自我审判。",
+                "relationship_to_protagonist": "主角自身就是最大的敌人。",
+                "escalation_path": "从隐约的不安到全面的精神危机，最终完成蜕变或崩溃。",
+            },
+        }
     for vol_idx, phase in enumerate(phases, start=1):
         base = phase_to_force.get(phase, phase_to_force["survival"])
         forces.append({
@@ -598,24 +648,32 @@ def _build_default_conflict_forces(
 def _fallback_cast_spec(project: ProjectModel, premise: str, book_spec: dict[str, Any], world_spec: dict[str, Any]) -> dict[str, Any]:
     profile = _genre_profile(project.genre)
     writing_profile = _planner_writing_profile(project)
+    is_en = is_english_language(project.language)
     protagonist = _mapping(_mapping(book_spec).get("protagonist"))
     protagonist_name = _protagonist_name_from_book_spec(book_spec, premise, project.genre, language=project.language)
     external_goal = _non_empty_string(
         protagonist.get("external_goal"),
-        f"{protagonist_name}必须主动追查并破解当前危机背后的操盘者。",
+        (
+            f"{protagonist_name} must track down and expose the orchestrator behind the current crisis."
+            if is_en
+            else f"{protagonist_name}必须主动追查并破解当前危机背后的操盘者。"
+        ),
     )
     locations = _mapping_list(_mapping(world_spec).get("locations"))
     factions = _mapping_list(_mapping(world_spec).get("factions"))
     power_system = _mapping(_mapping(world_spec).get("power_system"))
     home_location = _named_item(locations, 0, profile["locations"][0])
     ruling_faction = _named_item(factions, 0, profile["factions"][0])
-    protagonist_tier = _non_empty_string(power_system.get("protagonist_starting_tier"), "低阶")
+    protagonist_tier = _non_empty_string(
+        power_system.get("protagonist_starting_tier"),
+        "low" if is_en else "低阶",
+    )
     # Use genre-aware name pool instead of hardcoded names
     name_pool = _genre_name_pool(project.genre, language=project.language)
     pool_allies = [a["name"] for a in name_pool.get("allies", []) if a.get("name")]
     pool_antagonists = [a["name"] for a in name_pool.get("antagonists", []) if a.get("name")]
-    ally_name = next((n for n in pool_allies if n != protagonist_name), "顾临")
-    antagonist_name = next((n for n in pool_antagonists if n != protagonist_name), "何承")
+    ally_name = next((n for n in pool_allies if n != protagonist_name), "Riley Shaw" if is_en else "顾临")
+    antagonist_name = next((n for n in pool_antagonists if n != protagonist_name), "Elias Cain" if is_en else "何承")
     # Extra names for multi-force conflict characters
     _used = {protagonist_name, ally_name, antagonist_name}
     _extra_allies = [n for n in pool_allies if n not in _used]
@@ -635,173 +693,449 @@ def _fallback_cast_spec(project: ProjectModel, premise: str, book_spec: dict[str
             "name": protagonist_name,
             "age": 28,
             "role": "protagonist",
-            "background": f"曾在{home_location['name']}所属体系中工作，后被边缘化。",
+            "background": (
+                f"Formerly worked within the system tied to {home_location['name']}, later pushed to the margins."
+                if is_en
+                else f"曾在{home_location['name']}所属体系中工作，后被边缘化。"
+            ),
             "goal": external_goal,
-            "fear": "再次因为自己的决定害死重要的人。",
-            "flaw": "习惯把压力全部扛在自己身上。",
-            "strength": "对异常细节和风险变化高度敏感。",
-            "secret": "主角一直怀疑过去的失败并非表面原因。",
-            "arc_trajectory": "从单打独斗到建立可持续同盟。",
-            "arc_state": "开场",
+            "fear": (
+                "Causing the death of someone important through their own decisions — again."
+                if is_en
+                else "再次因为自己的决定害死重要的人。"
+            ),
+            "flaw": (
+                "Shoulders every burden alone, refuses to delegate risk."
+                if is_en
+                else "习惯把压力全部扛在自己身上。"
+            ),
+            "strength": (
+                "Hyper-alert to anomalies and shifts in risk."
+                if is_en
+                else "对异常细节和风险变化高度敏感。"
+            ),
+            "secret": (
+                "Has always suspected the past failure was not what it appeared."
+                if is_en
+                else "主角一直怀疑过去的失败并非表面原因。"
+            ),
+            "arc_trajectory": (
+                "From lone wolf to building a sustainable alliance."
+                if is_en
+                else "从单打独斗到建立可持续同盟。"
+            ),
+            "arc_state": "opening" if is_en else "开场",
             "archetype": writing_profile.character.protagonist_archetype,
             "golden_finger": writing_profile.character.golden_finger,
             "knowledge_state": {
-                "knows": ["当前危机存在异常迹象", "官方叙事有漏洞"],
-                "falsely_believes": [f"{ally_name}当年做出了背离自己的选择"],
-                "unaware_of": [f"{antagonist_name}与过去事故存在直接关联"],
+                "knows": (
+                    ["Anomalies exist in the current crisis", "The official narrative has gaps"]
+                    if is_en
+                    else ["当前危机存在异常迹象", "官方叙事有漏洞"]
+                ),
+                "falsely_believes": (
+                    [f"{ally_name} betrayed them during the original incident"]
+                    if is_en
+                    else [f"{ally_name}当年做出了背离自己的选择"]
+                ),
+                "unaware_of": (
+                    [f"{antagonist_name} is directly linked to the past disaster"]
+                    if is_en
+                    else [f"{antagonist_name}与过去事故存在直接关联"]
+                ),
             },
             "power_tier": protagonist_tier,
-            "voice_profile": {
-                "speech_register": "口语偏利落",
-                "verbal_tics": ["……算了", "我来想办法"],
-                "sentence_style": "短句利落型",
-                "emotional_expression": "内敛",
-                "mannerisms": ["下意识揉眉心", "说到关键处压低声音"],
-                "internal_monologue_style": "碎片式自问自答",
-                "vocabulary_level": "中",
-            },
-            "moral_framework": {
-                "core_values": ["保护身边的人", "真相比秩序重要"],
-                "lines_never_crossed": ["不会牺牲无辜者换取情报"],
-                "willing_to_sacrifice": "个人安全和社会地位",
-            },
+            "voice_profile": (
+                {
+                    "speech_register": "clipped and direct",
+                    "verbal_tics": ["Forget it.", "I'll figure it out."],
+                    "sentence_style": "short, punchy sentences",
+                    "emotional_expression": "guarded",
+                    "mannerisms": ["rubs the bridge of their nose when thinking", "drops voice at key moments"],
+                    "internal_monologue_style": "fragmented self-interrogation",
+                    "vocabulary_level": "mid",
+                }
+                if is_en
+                else {
+                    "speech_register": "口语偏利落",
+                    "verbal_tics": ["……算了", "我来想办法"],
+                    "sentence_style": "短句利落型",
+                    "emotional_expression": "内敛",
+                    "mannerisms": ["下意识揉眉心", "说到关键处压低声音"],
+                    "internal_monologue_style": "碎片式自问自答",
+                    "vocabulary_level": "中",
+                }
+            ),
+            "moral_framework": (
+                {
+                    "core_values": ["Protect those nearby", "Truth matters more than order"],
+                    "lines_never_crossed": ["Will not sacrifice innocents for intel"],
+                    "willing_to_sacrifice": "Personal safety and social standing",
+                }
+                if is_en
+                else {
+                    "core_values": ["保护身边的人", "真相比秩序重要"],
+                    "lines_never_crossed": ["不会牺牲无辜者换取情报"],
+                    "willing_to_sacrifice": "个人安全和社会地位",
+                }
+            ),
             "relationships": [
                 {
                     "character": ally_name,
-                    "type": "旧搭档",
-                    "tension": "彼此仍认可对方能力，但都有未说开的旧账。",
+                    "type": "former partner" if is_en else "旧搭档",
+                    "tension": (
+                        "Mutual respect for each other's skills, but old debts remain unsettled."
+                        if is_en
+                        else "彼此仍认可对方能力，但都有未说开的旧账。"
+                    ),
                 },
                 {
                     "character": antagonist_name,
-                    "type": "敌人",
-                    "tension": "双方都知道对方会成为自己计划里最大的变量。",
+                    "type": "enemy" if is_en else "敌人",
+                    "tension": (
+                        "Both know the other is the wildcard in their plans."
+                        if is_en
+                        else "双方都知道对方会成为自己计划里最大的变量。"
+                    ),
                 },
             ],
         },
         "antagonist": {
             "name": antagonist_name,
             "role": "antagonist",
-            "background": f"{ruling_faction['name']}中的高位操盘者。",
-            "goal": "在真相曝光前完成既定重构计划并清除证据。",
-            "fear": "一旦核心真相外泄，自己会被更高层抛弃。",
-            "flaw": "相信秩序永远比人更重要。",
-            "strength": "掌握规则、资源与执行力量。",
-            "secret": "其本人直接参与了主角过去那场失败背后的决策链。",
-            "arc_trajectory": "从幕后操盘到公开下场追杀主角。",
-            "arc_state": "开场",
+            "background": (
+                f"A high-ranking power broker within {ruling_faction['name']}."
+                if is_en
+                else f"{ruling_faction['name']}中的高位操盘者。"
+            ),
+            "goal": (
+                "Complete the restructuring plan and destroy all evidence before the truth surfaces."
+                if is_en
+                else "在真相曝光前完成既定重构计划并清除证据。"
+            ),
+            "fear": (
+                "Being abandoned by those above once the core truth leaks."
+                if is_en
+                else "一旦核心真相外泄，自己会被更高层抛弃。"
+            ),
+            "flaw": (
+                "Believes order will always matter more than people."
+                if is_en
+                else "相信秩序永远比人更重要。"
+            ),
+            "strength": (
+                "Commands rules, resources, and enforcement power."
+                if is_en
+                else "掌握规则、资源与执行力量。"
+            ),
+            "secret": (
+                "Was personally involved in the chain of decisions behind the protagonist's past failure."
+                if is_en
+                else "其本人直接参与了主角过去那场失败背后的决策链。"
+            ),
+            "arc_trajectory": (
+                "From behind-the-scenes puppeteer to open pursuit of the protagonist."
+                if is_en
+                else "从幕后操盘到公开下场追杀主角。"
+            ),
+            "arc_state": "opening" if is_en else "开场",
             "knowledge_state": {
-                "knows": ["主角已经开始怀疑旧案", "体系里有人可能倒向主角"],
-                "falsely_believes": [f"{ally_name}仍然完全可控"],
-                "unaware_of": ["主角会这么快找到真正证据链"],
+                "knows": (
+                    ["The protagonist has begun questioning the old case", "Someone inside the system may defect"]
+                    if is_en
+                    else ["主角已经开始怀疑旧案", "体系里有人可能倒向主角"]
+                ),
+                "falsely_believes": (
+                    [f"{ally_name} is still fully under control"]
+                    if is_en
+                    else [f"{ally_name}仍然完全可控"]
+                ),
+                "unaware_of": (
+                    ["How quickly the protagonist will find the real evidence chain"]
+                    if is_en
+                    else ["主角会这么快找到真正证据链"]
+                ),
             },
-            "power_tier": "高阶",
-            "voice_profile": {
-                "speech_register": "文雅官腔",
-                "verbal_tics": ["不过是秩序的代价", "你以为呢"],
-                "sentence_style": "长句思辨型",
-                "emotional_expression": "冷静克制、偶尔流露轻蔑",
-                "mannerisms": ["说话时不看对方眼睛", "习惯性整理袖口"],
-                "internal_monologue_style": "冷酷推演式",
-                "vocabulary_level": "高",
-            },
-            "moral_framework": {
-                "core_values": ["秩序高于个体", "结果证明手段"],
-                "lines_never_crossed": ["不会亲手动手——总让规则替自己执行"],
-                "willing_to_sacrifice": "任何妨碍大局的人，包括自己的盟友",
-            },
+            "power_tier": "high" if is_en else "高阶",
+            "voice_profile": (
+                {
+                    "speech_register": "polished and bureaucratic",
+                    "verbal_tics": ["A necessary cost of order.", "You really think so?"],
+                    "sentence_style": "long, analytical sentences",
+                    "emotional_expression": "ice-calm with occasional contempt",
+                    "mannerisms": ["avoids eye contact while speaking", "adjusts cuffs habitually"],
+                    "internal_monologue_style": "cold strategic calculus",
+                    "vocabulary_level": "high",
+                }
+                if is_en
+                else {
+                    "speech_register": "文雅官腔",
+                    "verbal_tics": ["不过是秩序的代价", "你以为呢"],
+                    "sentence_style": "长句思辨型",
+                    "emotional_expression": "冷静克制、偶尔流露轻蔑",
+                    "mannerisms": ["说话时不看对方眼睛", "习惯性整理袖口"],
+                    "internal_monologue_style": "冷酷推演式",
+                    "vocabulary_level": "高",
+                }
+            ),
+            "moral_framework": (
+                {
+                    "core_values": ["Order above the individual", "Ends justify the means"],
+                    "lines_never_crossed": ["Never gets hands dirty — always lets the rules do the killing"],
+                    "willing_to_sacrifice": "Anyone who obstructs the larger plan, including allies",
+                }
+                if is_en
+                else {
+                    "core_values": ["秩序高于个体", "结果证明手段"],
+                    "lines_never_crossed": ["不会亲手动手——总让规则替自己执行"],
+                    "willing_to_sacrifice": "任何妨碍大局的人，包括自己的盟友",
+                }
+            ),
             "relationships": [
                 {
                     "character": protagonist_name,
-                    "type": "追捕对象",
-                    "tension": "必须压制对方，但又不能让其过早死去以免线索失控。",
+                    "type": "target" if is_en else "追捕对象",
+                    "tension": (
+                        "Must suppress the protagonist without killing them too soon and losing control of the evidence trail."
+                        if is_en
+                        else "必须压制对方，但又不能让其过早死去以免线索失控。"
+                    ),
                 }
             ],
-            "justification": "只要秩序不崩，牺牲少数人就是必要成本。",
-            "method": "删改记录、借规则压制、操控追捕和资源封锁。",
-            "weakness": "过度依赖体制和既有权力结构。",
-            "relationship_to_protagonist": "主角过去那场惨败背后的关键责任人之一。",
-            "reveal_timing": "第一卷末",
+            "justification": (
+                "So long as order holds, sacrificing the few is a necessary cost."
+                if is_en
+                else "只要秩序不崩，牺牲少数人就是必要成本。"
+            ),
+            "method": (
+                "Falsify records, weaponize regulations, coordinate pursuit and resource blockades."
+                if is_en
+                else "删改记录、借规则压制、操控追捕和资源封锁。"
+            ),
+            "weakness": (
+                "Over-reliance on institutional power structures."
+                if is_en
+                else "过度依赖体制和既有权力结构。"
+            ),
+            "relationship_to_protagonist": (
+                "One of the key architects behind the protagonist's past defeat."
+                if is_en
+                else "主角过去那场惨败背后的关键责任人之一。"
+            ),
+            "reveal_timing": "end of volume 1" if is_en else "第一卷末",
         },
         "supporting_cast": [
             {
                 "name": ally_name,
                 "role": "ally",
-                "background": "仍在体系内部活动的旧搭档。",
-                "goal": "确认旧案真相并尽量保护仍在局中的人。",
-                "value_to_story": "提供行动力、体制内视角和情感张力。",
-                "potential_betrayal": "中",
-                "arc_state": "谨慎观望",
+                "background": (
+                    "A former partner still operating inside the system."
+                    if is_en
+                    else "仍在体系内部活动的旧搭档。"
+                ),
+                "goal": (
+                    "Confirm the truth of the old case while protecting those still caught in the crossfire."
+                    if is_en
+                    else "确认旧案真相并尽量保护仍在局中的人。"
+                ),
+                "value_to_story": (
+                    "Provides operational capability, insider perspective, and emotional tension."
+                    if is_en
+                    else "提供行动力、体制内视角和情感张力。"
+                ),
+                "potential_betrayal": "medium" if is_en else "中",
+                "arc_state": "cautious observer" if is_en else "谨慎观望",
                 "knowledge_state": {
-                    "knows": ["过去那场事故还有未公开的一段记录"],
-                    "falsely_believes": ["只要低调调查就能避免更大冲突"],
-                    "unaware_of": [f"{antagonist_name}已经将自己视为潜在隐患"],
+                    "knows": (
+                        ["There is an unreleased record from the past incident"]
+                        if is_en
+                        else ["过去那场事故还有未公开的一段记录"]
+                    ),
+                    "falsely_believes": (
+                        ["A low-profile investigation can avoid larger conflict"]
+                        if is_en
+                        else ["只要低调调查就能避免更大冲突"]
+                    ),
+                    "unaware_of": (
+                        [f"{antagonist_name} has already flagged them as a potential liability"]
+                        if is_en
+                        else [f"{antagonist_name}已经将自己视为潜在隐患"]
+                    ),
                 },
-                "voice_profile": {
-                    "speech_register": "体制内正式用语夹杂私下吐槽",
-                    "verbal_tics": ["你听我说", "这事儿没那么简单"],
-                    "sentence_style": "中等长度、逻辑清晰",
-                    "emotional_expression": "表面沉稳、私下焦虑",
-                    "mannerisms": ["紧张时反复摸口袋里的旧证件"],
-                    "internal_monologue_style": "反复权衡利弊",
-                    "vocabulary_level": "中高",
-                },
-                "moral_framework": {
-                    "core_values": ["保护还在局中的人", "忠诚但有条件"],
-                    "lines_never_crossed": ["不会出卖曾经的搭档"],
-                    "willing_to_sacrifice": "自己在体系内的前途",
-                },
+                "voice_profile": (
+                    {
+                        "speech_register": "formal institutional tone with private sarcasm",
+                        "verbal_tics": ["Listen to me.", "It's not that simple."],
+                        "sentence_style": "mid-length, logical",
+                        "emotional_expression": "calm surface, privately anxious",
+                        "mannerisms": ["nervously touches an old ID badge in pocket"],
+                        "internal_monologue_style": "constant pros-and-cons weighing",
+                        "vocabulary_level": "mid-high",
+                    }
+                    if is_en
+                    else {
+                        "speech_register": "体制内正式用语夹杂私下吐槽",
+                        "verbal_tics": ["你听我说", "这事儿没那么简单"],
+                        "sentence_style": "中等长度、逻辑清晰",
+                        "emotional_expression": "表面沉稳、私下焦虑",
+                        "mannerisms": ["紧张时反复摸口袋里的旧证件"],
+                        "internal_monologue_style": "反复权衡利弊",
+                        "vocabulary_level": "中高",
+                    }
+                ),
+                "moral_framework": (
+                    {
+                        "core_values": ["Protect those still in the game", "Loyalty with conditions"],
+                        "lines_never_crossed": ["Will never sell out a former partner"],
+                        "willing_to_sacrifice": "Their career inside the system",
+                    }
+                    if is_en
+                    else {
+                        "core_values": ["保护还在局中的人", "忠诚但有条件"],
+                        "lines_never_crossed": ["不会出卖曾经的搭档"],
+                        "willing_to_sacrifice": "自己在体系内的前途",
+                    }
+                ),
             },
             {
                 "name": local_threat_name,
                 "role": "antagonist",
-                "background": f"主角所在地区的实权人物，{ruling_faction['name']}在基层的执行者。",
-                "goal": "维护自己的地盘和既得利益，清除一切不稳定因素。",
-                "flaw": "目光短浅，只关心眼前的控制权。",
-                "strength": "对本地资源和人脉有绝对掌控力。",
-                "secret": f"私下与{antagonist_name}有利益输送关系。",
-                "arc_trajectory": "从地方小霸到被更高层抛弃的弃子。",
-                "arc_state": "开场",
-                "power_tier": "中阶",
-                "voice_profile": {
-                    "speech_register": "粗犷直接",
-                    "verbal_tics": ["在我地盘上", "你算什么东西"],
-                    "sentence_style": "短句命令型",
-                    "emotional_expression": "外放暴躁",
-                    "mannerisms": ["说话时习惯拍桌子"],
-                    "internal_monologue_style": "简单粗暴的利益算计",
-                    "vocabulary_level": "低",
-                },
-                "moral_framework": {
-                    "core_values": ["地盘就是一切", "拳头大的说了算"],
-                    "lines_never_crossed": [],
-                    "willing_to_sacrifice": "任何挡在利益面前的人",
-                },
+                "background": (
+                    f"A local power figure and {ruling_faction['name']}'s ground-level enforcer in the protagonist's area."
+                    if is_en
+                    else f"主角所在地区的实权人物，{ruling_faction['name']}在基层的执行者。"
+                ),
+                "goal": (
+                    "Protect territory and vested interests; eliminate all destabilising elements."
+                    if is_en
+                    else "维护自己的地盘和既得利益，清除一切不稳定因素。"
+                ),
+                "flaw": (
+                    "Short-sighted; only cares about immediate control."
+                    if is_en
+                    else "目光短浅，只关心眼前的控制权。"
+                ),
+                "strength": (
+                    "Absolute grip on local resources and connections."
+                    if is_en
+                    else "对本地资源和人脉有绝对掌控力。"
+                ),
+                "secret": (
+                    f"Has a hidden quid-pro-quo arrangement with {antagonist_name}."
+                    if is_en
+                    else f"私下与{antagonist_name}有利益输送关系。"
+                ),
+                "arc_trajectory": (
+                    "From local bully to discarded pawn of the higher-ups."
+                    if is_en
+                    else "从地方小霸到被更高层抛弃的弃子。"
+                ),
+                "arc_state": "opening" if is_en else "开场",
+                "power_tier": "mid" if is_en else "中阶",
+                "voice_profile": (
+                    {
+                        "speech_register": "blunt and aggressive",
+                        "verbal_tics": ["On my turf.", "Who the hell are you?"],
+                        "sentence_style": "short barked commands",
+                        "emotional_expression": "openly volatile",
+                        "mannerisms": ["slams the table when making a point"],
+                        "internal_monologue_style": "crude, profit-first calculus",
+                        "vocabulary_level": "low",
+                    }
+                    if is_en
+                    else {
+                        "speech_register": "粗犷直接",
+                        "verbal_tics": ["在我地盘上", "你算什么东西"],
+                        "sentence_style": "短句命令型",
+                        "emotional_expression": "外放暴躁",
+                        "mannerisms": ["说话时习惯拍桌子"],
+                        "internal_monologue_style": "简单粗暴的利益算计",
+                        "vocabulary_level": "低",
+                    }
+                ),
+                "moral_framework": (
+                    {
+                        "core_values": ["Territory is everything", "Might makes right"],
+                        "lines_never_crossed": [],
+                        "willing_to_sacrifice": "Anyone standing between them and profit",
+                    }
+                    if is_en
+                    else {
+                        "core_values": ["地盘就是一切", "拳头大的说了算"],
+                        "lines_never_crossed": [],
+                        "willing_to_sacrifice": "任何挡在利益面前的人",
+                    }
+                ),
             },
             {
                 "name": betrayer_name,
                 "role": "ally",
-                "background": f"主角信任的同伴之一，曾在关键时刻提供过帮助。",
-                "goal": "表面上协助主角，实际上在为自己的秘密目标铺路。",
-                "flaw": "无法割舍自己的野心。",
-                "strength": "善于隐藏真实意图，社交能力极强。",
-                "secret": "早已在暗中与更高层势力达成交易。",
-                "arc_trajectory": "从可靠同伴到背叛者，最终被自己的选择反噬。",
-                "arc_state": "伪装期",
+                "background": (
+                    "One of the protagonist's trusted companions who helped at a critical moment."
+                    if is_en
+                    else f"主角信任的同伴之一，曾在关键时刻提供过帮助。"
+                ),
+                "goal": (
+                    "Ostensibly helps the protagonist while secretly advancing a hidden agenda."
+                    if is_en
+                    else "表面上协助主角，实际上在为自己的秘密目标铺路。"
+                ),
+                "flaw": (
+                    "Cannot let go of personal ambition."
+                    if is_en
+                    else "无法割舍自己的野心。"
+                ),
+                "strength": (
+                    "Expert at masking true intentions; exceptional social skills."
+                    if is_en
+                    else "善于隐藏真实意图，社交能力极强。"
+                ),
+                "secret": (
+                    "Has already struck a deal with a higher power behind the scenes."
+                    if is_en
+                    else "早已在暗中与更高层势力达成交易。"
+                ),
+                "arc_trajectory": (
+                    "From trusted companion to betrayer, ultimately consumed by their own choices."
+                    if is_en
+                    else "从可靠同伴到背叛者，最终被自己的选择反噬。"
+                ),
+                "arc_state": "disguise phase" if is_en else "伪装期",
                 "power_tier": protagonist_tier,
-                "voice_profile": {
-                    "speech_register": "温和亲切",
-                    "verbal_tics": ["放心", "交给我"],
-                    "sentence_style": "柔和中等长度",
-                    "emotional_expression": "表面温暖体贴",
-                    "mannerisms": ["总是第一个主动帮忙"],
-                    "internal_monologue_style": "精密计算的伪善",
-                    "vocabulary_level": "中高",
-                },
-                "moral_framework": {
-                    "core_values": ["自己的利益高于一切"],
-                    "lines_never_crossed": [],
-                    "willing_to_sacrifice": "任何人的信任",
-                },
+                "voice_profile": (
+                    {
+                        "speech_register": "warm and reassuring",
+                        "verbal_tics": ["Don't worry.", "Leave it to me."],
+                        "sentence_style": "smooth mid-length sentences",
+                        "emotional_expression": "surface warmth and care",
+                        "mannerisms": ["always the first to volunteer help"],
+                        "internal_monologue_style": "precision-engineered insincerity",
+                        "vocabulary_level": "mid-high",
+                    }
+                    if is_en
+                    else {
+                        "speech_register": "温和亲切",
+                        "verbal_tics": ["放心", "交给我"],
+                        "sentence_style": "柔和中等长度",
+                        "emotional_expression": "表面温暖体贴",
+                        "mannerisms": ["总是第一个主动帮忙"],
+                        "internal_monologue_style": "精密计算的伪善",
+                        "vocabulary_level": "中高",
+                    }
+                ),
+                "moral_framework": (
+                    {
+                        "core_values": ["Self-interest above all"],
+                        "lines_never_crossed": [],
+                        "willing_to_sacrifice": "Anyone's trust",
+                    }
+                    if is_en
+                    else {
+                        "core_values": ["自己的利益高于一切"],
+                        "lines_never_crossed": [],
+                        "willing_to_sacrifice": "任何人的信任",
+                    }
+                ),
             },
         ],
         "antagonist_forces": _build_default_conflict_forces(
@@ -811,31 +1145,48 @@ def _fallback_cast_spec(project: ProjectModel, premise: str, book_spec: dict[str
             betrayer_name=betrayer_name,
             ally_name=ally_name,
             volume_count=volume_count,
+            is_en=is_en,
         ),
         "conflict_map": [
             {
                 "character_a": protagonist_name,
                 "character_b": ally_name,
-                "conflict_type": "情感纠葛",
-                "trigger_condition": "一旦谈到过去那场失败，两人的旧误会就会被重新点燃。",
+                "conflict_type": "emotional entanglement" if is_en else "情感纠葛",
+                "trigger_condition": (
+                    "Whenever the past failure is mentioned, old misunderstandings between the two reignite."
+                    if is_en
+                    else "一旦谈到过去那场失败，两人的旧误会就会被重新点燃。"
+                ),
             },
             {
                 "character_a": protagonist_name,
                 "character_b": antagonist_name,
-                "conflict_type": "目标冲突",
-                "trigger_condition": "主角一旦接近核心证据链，反派就必须公开加压。",
+                "conflict_type": "goal opposition" if is_en else "目标冲突",
+                "trigger_condition": (
+                    "Once the protagonist gets close to the core evidence, the antagonist must escalate openly."
+                    if is_en
+                    else "主角一旦接近核心证据链，反派就必须公开加压。"
+                ),
             },
             {
                 "character_a": protagonist_name,
                 "character_b": local_threat_name,
-                "conflict_type": "生存对抗",
-                "trigger_condition": "主角在地方势力的地盘上展开行动时。",
+                "conflict_type": "survival" if is_en else "生存对抗",
+                "trigger_condition": (
+                    "When the protagonist operates on the local power figure's territory."
+                    if is_en
+                    else "主角在地方势力的地盘上展开行动时。"
+                ),
             },
             {
                 "character_a": protagonist_name,
                 "character_b": betrayer_name,
-                "conflict_type": "隐性背叛",
-                "trigger_condition": "主角越接近真相，背叛者越需要加速自己的计划。",
+                "conflict_type": "hidden betrayal" if is_en else "隐性背叛",
+                "trigger_condition": (
+                    "The closer the protagonist gets to the truth, the faster the betrayer must advance their own plan."
+                    if is_en
+                    else "主角越接近真相，背叛者越需要加速自己的计划。"
+                ),
             },
         ],
     }
@@ -862,7 +1213,9 @@ def compute_linear_hierarchy(total_chapters: int) -> dict[str, int]:
     elif total_chapters <= 120:
         volume_count = max(2, round(total_chapters / 30))
     else:
-        volume_count = max(3, math.ceil(total_chapters / 50))
+        # Ensure monotonicity at the 120→121 boundary: never fewer volumes
+        # than at 120 chapters (which yields 4 via round(120/30)).
+        volume_count = max(4, math.ceil(total_chapters / 50))
 
     # Act count: macro narrative structure (1-6 acts)
     if total_chapters <= 50:
@@ -904,6 +1257,15 @@ _VOLUME_TITLE_BY_PHASE: dict[str, str] = {
     "internal_reckoning": "蜕变",
 }
 
+_VOLUME_TITLE_BY_PHASE_EN: dict[str, str] = {
+    "survival": "Crucible",
+    "political_intrigue": "Shadows",
+    "betrayal": "Fractures",
+    "faction_war": "Chaos",
+    "existential_threat": "Endgame",
+    "internal_reckoning": "Reckoning",
+}
+
 _VOLUME_GOAL_TEMPLATES: dict[str, str] = {
     "survival": "{protagonist}必须在{force_name}的直接威胁下争取到生存空间和初步的反击资本。",
     "political_intrigue": "{protagonist}需要看穿{force_name}背后的权力博弈，找到可以利用的裂缝。",
@@ -911,6 +1273,15 @@ _VOLUME_GOAL_TEMPLATES: dict[str, str] = {
     "faction_war": "{protagonist}需要在{force_name}引发的多方混战中找到自己的立足之地。",
     "existential_threat": "{protagonist}必须倾尽所有力量去阻止{force_name}带来的终极灾难。",
     "internal_reckoning": "{protagonist}必须直面自己内心最深处的矛盾，完成真正的蜕变。",
+}
+
+_VOLUME_GOAL_TEMPLATES_EN: dict[str, str] = {
+    "survival": "{protagonist} must carve out survival space and initial leverage against {force_name}'s direct threat.",
+    "political_intrigue": "{protagonist} must see through {force_name}'s power games and find a crack to exploit.",
+    "betrayal": "{protagonist} must determine who is truly loyal after {force_name} shatters the circle of trust.",
+    "faction_war": "{protagonist} must find solid ground amid the all-out conflict sparked by {force_name}.",
+    "existential_threat": "{protagonist} must commit everything to stop the catastrophe {force_name} is about to unleash.",
+    "internal_reckoning": "{protagonist} must confront the deepest contradictions inside themselves and emerge transformed.",
 }
 
 _VOLUME_RESOLUTION_TEMPLATES: dict[str, str] = {
@@ -922,6 +1293,39 @@ _VOLUME_RESOLUTION_TEMPLATES: dict[str, str] = {
     "internal_reckoning": "主角完成了蜕变，以全新的姿态面对之后的道路。",
 }
 
+_VOLUME_RESOLUTION_TEMPLATES_EN: dict[str, str] = {
+    "survival": "The protagonist escapes the immediate crisis, but the cost is exposure to far larger forces.",
+    "political_intrigue": "The protagonist tears open one corner of the power web, only to find the deeper conspiracy just surfacing.",
+    "betrayal": "The protagonist rebuilds alliances on the ruins of trust, but the scars won't heal easily.",
+    "faction_war": "The battle pauses, but the landscape is permanently altered and the protagonist's role with it.",
+    "existential_threat": "The protagonist stops the worst outcome at enormous cost; the world holds but is forever changed.",
+    "internal_reckoning": "The protagonist completes the transformation and faces the road ahead as a new person.",
+}
+
+
+def _volume_goal_achieved(volume_number: int, volume_count: int) -> bool:
+    """Determine whether the protagonist achieves the volume goal.
+
+    Creates a realistic wave of victories and setbacks:
+    - Volume 1: True (initial hook victory)
+    - Final volume: True (resolution)
+    - Penultimate volume: False (major setback before the finale)
+    - Middle volumes: alternate, leaning toward failure in the
+      middle third of the book (the "crisis zone").
+    """
+    if volume_count <= 2:
+        return True
+    if volume_number == 1 or volume_number == volume_count:
+        return True
+    if volume_number == volume_count - 1:
+        return False  # penultimate setback
+    # Middle volumes: fail in the crisis zone (40%-70% of the book)
+    progress = volume_number / volume_count
+    if 0.4 <= progress <= 0.7:
+        return False
+    # Outside crisis zone: alternate (even=True, odd=False)
+    return volume_number % 2 == 0
+
 
 def _fallback_volume_plan(project: ProjectModel, book_spec: dict[str, Any], cast_spec: dict[str, Any], world_spec: dict[str, Any]) -> list[dict[str, Any]]:
     profile = _genre_profile(project.genre)
@@ -930,11 +1334,21 @@ def _fallback_volume_plan(project: ProjectModel, book_spec: dict[str, Any], cast
     volume_count = hierarchy["volume_count"]
     chapter_ranges = _build_volume_ranges(total_chapters, volume_count)
     cast_payload = _mapping(cast_spec)
-    protagonist_name = _non_empty_string(_mapping(cast_payload.get("protagonist")).get("name"), "主角")
-    antagonist_name = _non_empty_string(_mapping(cast_payload.get("antagonist")).get("name"), "敌对操盘者")
+    is_en = is_english_language(project.language)
+    protagonist_name = _non_empty_string(
+        _mapping(cast_payload.get("protagonist")).get("name"),
+        "protagonist" if is_en else "主角",
+    )
+    antagonist_name = _non_empty_string(
+        _mapping(cast_payload.get("antagonist")).get("name"),
+        "the antagonist" if is_en else "敌对操盘者",
+    )
     themes = _string_list(_mapping(book_spec).get("themes")) or profile["themes"]
     power_system = _mapping(_mapping(world_spec).get("power_system"))
-    protagonist_tier = _non_empty_string(power_system.get("protagonist_starting_tier"), "低阶")
+    protagonist_tier = _non_empty_string(
+        power_system.get("protagonist_starting_tier"),
+        "low" if is_en else "低阶",
+    )
 
     # Use conflict forces if available, otherwise fall back to single-antagonist
     antagonist_forces = _mapping_list(cast_payload.get("antagonist_forces"))
@@ -947,23 +1361,31 @@ def _fallback_volume_plan(project: ProjectModel, book_spec: dict[str, Any], cast
             if isinstance(vol, int):
                 force_by_volume[vol] = force
 
+    # Select language-appropriate template sets
+    _title_map = _VOLUME_TITLE_BY_PHASE_EN if is_en else _VOLUME_TITLE_BY_PHASE
+    _goal_map = _VOLUME_GOAL_TEMPLATES_EN if is_en else _VOLUME_GOAL_TEMPLATES
+    _resolution_map = _VOLUME_RESOLUTION_TEMPLATES_EN if is_en else _VOLUME_RESOLUTION_TEMPLATES
+
     plan: list[dict[str, Any]] = []
     for volume_number, (chapter_start, chapter_end) in enumerate(chapter_ranges, start=1):
         phase = conflict_phases[min(volume_number - 1, len(conflict_phases) - 1)]
         force = force_by_volume.get(volume_number, {})
         force_name = _non_empty_string(force.get("name"), antagonist_name)
 
-        vol_title = _VOLUME_TITLE_BY_PHASE.get(phase, "变局")
+        vol_title = _title_map.get(phase, "Turning Point" if is_en else "变局")
         vol_obstacle = _VOLUME_OBSTACLE_TEMPLATES.get(phase, "{force_name}持续施压。").format(
             force_name=force_name, protagonist=protagonist_name,
         )
         vol_climax = _VOLUME_CLIMAX_TEMPLATES.get(phase, "{protagonist}完成一次关键突破。").format(
             force_name=force_name, protagonist=protagonist_name,
         )
-        vol_goal = _VOLUME_GOAL_TEMPLATES.get(phase, "{protagonist}推进主线。").format(
+        vol_goal = _goal_map.get(phase, "{protagonist} advances the main plot." if is_en else "{protagonist}推进主线。").format(
             force_name=force_name, protagonist=protagonist_name,
         )
-        vol_resolution_text = _VOLUME_RESOLUTION_TEMPLATES.get(phase, "主角取得进展但付出了代价。")
+        vol_resolution_text = _resolution_map.get(
+            phase,
+            "The protagonist makes progress but pays a price." if is_en else "主角取得进展但付出了代价。",
+        )
 
         # Compute arc ranges within this volume
         arc_batch_size = hierarchy["arc_batch_size"]
@@ -977,32 +1399,68 @@ def _fallback_volume_plan(project: ProjectModel, book_spec: dict[str, Any], cast
         plan.append(
             {
                 "volume_number": volume_number,
-                "volume_title": f"第{volume_number}卷：{vol_title}",
+                "volume_title": (
+                    f"Volume {volume_number}: {vol_title}"
+                    if is_en
+                    else f"第{volume_number}卷：{vol_title}"
+                ),
                 "volume_theme": themes[(volume_number - 1) % len(themes)],
                 "word_count_target": int(project.target_word_count / volume_count),
                 "chapter_count_target": chapter_end - chapter_start + 1,
                 "conflict_phase": phase,
                 "primary_force_name": force_name,
                 "opening_state": {
-                    "protagonist_status": "仍在高压局面中被迫行动" if volume_number == 1 else f"经历了第{volume_number - 1}卷后处于新的起点",
+                    "protagonist_status": (
+                        ("Forced to act under high-pressure conditions" if volume_number == 1 else f"At a new starting point after Volume {volume_number - 1}")
+                        if is_en
+                        else ("仍在高压局面中被迫行动" if volume_number == 1 else f"经历了第{volume_number - 1}卷后处于新的起点")
+                    ),
                     "protagonist_power_tier": protagonist_tier
                     if volume_number == 1
-                    else f"第{volume_number - 1}卷后更成熟的状态",
-                    "world_situation": f"来自{force_name}的{phase}型威胁正在成形。",
+                    else (
+                        f"More mature after Volume {volume_number - 1}"
+                        if is_en
+                        else f"第{volume_number - 1}卷后更成熟的状态"
+                    ),
+                    "world_situation": (
+                        f"A {phase}-type threat from {force_name} is taking shape."
+                        if is_en
+                        else f"来自{force_name}的{phase}型威胁正在成形。"
+                    ),
                 },
                 "volume_goal": vol_goal,
                 "volume_obstacle": vol_obstacle,
                 "volume_climax": vol_climax,
                 "volume_resolution": {
-                    "protagonist_power_tier": "中阶" if volume_number >= 2 else protagonist_tier,
-                    "goal_achieved": True,
+                    "protagonist_power_tier": (
+                        ("mid" if is_en else "中阶") if volume_number >= 2 else protagonist_tier
+                    ),
+                    "goal_achieved": _volume_goal_achieved(volume_number, volume_count),
                     "cost_paid": vol_resolution_text,
-                    "new_threat_introduced": f"第{volume_number + 1}卷的新型挑战即将登场。" if volume_number < volume_count else "所有悬念收束。",
+                    "new_threat_introduced": (
+                        (f"A new kind of challenge from Volume {volume_number + 1} is on the horizon." if volume_number < volume_count else "All threads converge.")
+                        if is_en
+                        else (f"第{volume_number + 1}卷的新型挑战即将登场。" if volume_number < volume_count else "所有悬念收束。")
+                    ),
                 },
-                "key_reveals": [f"第{volume_number}卷揭示与{force_name}相关的关键真相。"],
-                "foreshadowing_planted": [f"为第{volume_number + 1}卷的新挑战埋下伏笔。"] if volume_number < volume_count else [],
-                "foreshadowing_paid_off": [f"回收前序卷的一个关键误导或伏笔。"] if volume_number > 1 else [],
-                "reader_hook_to_next": f"卷末{force_name}的威胁虽然暂时解决，但引出了更大的变局。" if volume_number < volume_count else "故事走向终章。",
+                "key_reveals": [
+                    (f"Volume {volume_number} reveals a critical truth related to {force_name}." if is_en else f"第{volume_number}卷揭示与{force_name}相关的关键真相。")
+                ],
+                "foreshadowing_planted": (
+                    [(f"Seeds planted for Volume {volume_number + 1}'s new challenge." if is_en else f"为第{volume_number + 1}卷的新挑战埋下伏笔。")]
+                    if volume_number < volume_count
+                    else []
+                ),
+                "foreshadowing_paid_off": (
+                    [(f"A key misdirection or foreshadowing from earlier volumes is paid off." if is_en else f"回收前序卷的一个关键误导或伏笔。")]
+                    if volume_number > 1
+                    else []
+                ),
+                "reader_hook_to_next": (
+                    (f"The threat from {force_name} is temporarily resolved, but a bigger shift emerges." if volume_number < volume_count else "The story moves to its final chapter.")
+                    if is_en
+                    else (f"卷末{force_name}的威胁虽然暂时解决，但引出了更大的变局。" if volume_number < volume_count else "故事走向终章。")
+                ),
                 "arc_ranges": arcs,
                 "is_final_volume": volume_number == volume_count,
             }
@@ -1464,6 +1922,34 @@ def _varied_scene_type(
     return base_type
 
 
+def _compute_scene_count(
+    chapter_number: int,
+    phase: str,
+    prev_phase: str | None,
+    chapters_from_end: int,
+) -> int:
+    """Vary scene count per chapter to break the mechanical 3-scene rhythm.
+
+    Returns 2, 3, or 4:
+    - 2 scenes: aftermath chapters (post-climax cool-down), resolution chapters
+    - 4 scenes: climax chapters, major confrontation chapters
+    - 3 scenes: everything else (the baseline)
+    """
+    # Post-climax aftermath: compact 2-scene chapter
+    if prev_phase in ("climax", "reversal") and phase in ("setup", "investigation"):
+        return 2
+    # Climax and confrontation chapters get more breathing room
+    if phase in ("climax", "reversal"):
+        return 4
+    # Final resolution chapter: compact
+    if chapters_from_end == 0:
+        return 2
+    # Every ~10th chapter: a tighter 2-scene chapter for pacing variety
+    if chapter_number > 5 and chapter_number % 10 == 0 and phase not in ("pressure",):
+        return 2
+    return 3
+
+
 def _render_chapter_conflict(conflict_phase: str, chapter_phase: str, protagonist: str, force_name: str) -> str:
     """Generate a chapter-level main_conflict string from the volume's conflict phase and chapter phase."""
     templates = _CHAPTER_CONFLICT_TEMPLATES.get(conflict_phase, _CHAPTER_CONFLICT_TEMPLATES["survival"])
@@ -1607,10 +2093,14 @@ def _fallback_chapter_outline_batch(
             phase = _phase_name(index_within_volume, total_in_volume)
             is_opening_chapter = chapter_number <= 3
 
-            # Ending contract: force specific goals for the last 3 chapters
+            # Ending contract: graduated wind-down that scales with novel length.
+            # - Last 3 chapters: hard contract (convergence → confrontation → resolution)
+            # - Wind-down zone (5% of total, min 5, max 20): begin resolving threads
+            # - Before wind-down: normal chapter goals
             total_ch = max(project.target_chapters, 1)
             is_en = is_english_language(project.language)
             chapters_from_end = total_ch - chapter_number
+            wind_down_size = max(5, min(20, round(total_ch * 0.05)))
 
             if chapters_from_end == 2:
                 chapter_goal = (
@@ -1630,63 +2120,96 @@ def _fallback_chapter_outline_batch(
                     if is_en
                     else f"结局着陆——{protagonist_name}的情感收束，余韵留白，最终画面。"
                 )
+            elif chapters_from_end < wind_down_size:
+                # Graduated wind-down zone: start resolving open threads
+                wind_progress = 1.0 - (chapters_from_end / wind_down_size)
+                if wind_progress < 0.33:
+                    chapter_goal = (
+                        f"Begin tying off secondary subplots — {protagonist_name} confronts lingering loose ends while the final threat crystallizes."
+                        if is_en
+                        else f"开始收束次要支线——{protagonist_name}处理遗留问题，终极威胁逐渐明朗。"
+                    )
+                elif wind_progress < 0.66:
+                    chapter_goal = (
+                        f"Resolve major relationship arcs and pay off key planted clues — {protagonist_name} faces difficult personal choices."
+                        if is_en
+                        else f"收束主要人物关系线、回收关键伏笔——{protagonist_name}面临艰难的个人抉择。"
+                    )
+                else:
+                    chapter_goal = (
+                        f"Final alliances formed, last secrets revealed — all forces converge toward the climactic confrontation."
+                        if is_en
+                        else f"最终联盟结成、最后的秘密揭露——所有力量向高潮对决汇聚。"
+                    )
             else:
                 chapter_goal = (
-                    f"{protagonist_name}在第{chapter_number}章推进{volume_goal}，"
-                    f"并迫使局势进入新的高压阶段。"
+                    (
+                        f"{protagonist_name} advances the volume goal in chapter {chapter_number}, "
+                        f"forcing the situation into a new high-pressure phase."
+                    )
+                    if is_en
+                    else (
+                        f"{protagonist_name}在第{chapter_number}章推进{volume_goal}，"
+                        f"并迫使局势进入新的高压阶段。"
+                    )
                 )
-            scenes = [
-                {
-                    "scene_number": 1,
-                    "scene_type": "hook" if is_opening_chapter else _varied_scene_type(
-                        "setup" if phase == "setup" else "transition",
-                        chapter_number, 1, phase, prev_phase,
+            num_scenes = _compute_scene_count(chapter_number, phase, prev_phase, chapters_from_end)
+            # Build scenes dynamically: opening + N middle + closing hook
+            scenes: list[dict[str, Any]] = []
+
+            # Scene 1: Opening
+            scenes.append({
+                "scene_number": 1,
+                "scene_type": "hook" if is_opening_chapter else _varied_scene_type(
+                    "setup" if phase == "setup" else "transition",
+                    chapter_number, 1, phase, prev_phase,
+                ),
+                "title": "第一时间亮出主角优势" if chapter_number == 1 else "开场压力",
+                "time_label": "章节开场",
+                "participants": [protagonist_name, ally_name],
+                "purpose": {
+                    "story": (
+                        "快速亮出主角差异化优势、当前利益和逼近的危险"
+                        if is_opening_chapter
+                        else "承接上章后果并给出当前行动目标"
                     ),
-                    # Short subtitle only — downstream renderers must NOT
-                    # concatenate a "第N章" prefix. Avoids the double-prefix
-                    # and title-cycle bugs.
-                    "title": "第一时间亮出主角优势" if chapter_number == 1 else "开场压力",
-                    # time_label is plain phase text. Historically this read
-                    # "第N章开场" / "第N章中段" / "第N章结尾" and those
-                    # strings leaked into the rewrite-fallback template prose
-                    # ("第13章中段，程彻…"). Keep it generic.
-                    "time_label": "章节开场",
-                    "participants": [protagonist_name, ally_name],
-                    "purpose": {
-                        "story": (
-                            "快速亮出主角差异化优势、当前利益和逼近的危险"
-                            if is_opening_chapter
-                            else "承接上章后果并给出当前行动目标"
-                        ),
-                        "emotion": (
-                            "先给读者明确吸引点，再持续拉高压力和不确定性"
-                            if is_opening_chapter
-                            else "持续拉高压力和不确定性"
-                        ),
-                    },
-                    "entry_state": {
-                        protagonist_name: {"arc_state": "承压推进", "emotion": "紧绷"},
-                        ally_name: {"arc_state": "谨慎协作", "emotion": "戒备"},
-                    },
-                    "exit_state": {
-                        protagonist_name: {"arc_state": "主动出击", "emotion": "更坚定"},
-                        ally_name: {"arc_state": "被迫跟进", "emotion": "压力上升"},
-                    },
-                    "target_word_count": scene_target_words,
+                    "emotion": (
+                        "先给读者明确吸引点，再持续拉高压力和不确定性"
+                        if is_opening_chapter
+                        else "持续拉高压力和不确定性"
+                    ),
                 },
-                {
-                    "scene_number": 2,
+                "entry_state": {
+                    protagonist_name: {"arc_state": "承压推进", "emotion": "紧绷"},
+                    ally_name: {"arc_state": "谨慎协作", "emotion": "戒备"},
+                },
+                "exit_state": {
+                    protagonist_name: {"arc_state": "主动出击", "emotion": "更坚定"},
+                    ally_name: {"arc_state": "被迫跟进", "emotion": "压力上升"},
+                },
+                "target_word_count": scene_target_words,
+            })
+
+            # Middle scenes (0 for 2-scene, 1 for 3-scene, 2 for 4-scene)
+            middle_count = num_scenes - 2
+            _middle_types = [
+                ("conflict" if phase in {"pressure", "reversal", "climax"} else "reveal"),
+                "introspection" if phase not in ("climax",) else "conflict",
+            ]
+            for mi in range(middle_count):
+                base_type = _middle_types[mi % len(_middle_types)]
+                scenes.append({
+                    "scene_number": len(scenes) + 1,
                     "scene_type": _varied_scene_type(
-                        "conflict" if phase in {"pressure", "reversal", "climax"} else "reveal",
-                        chapter_number, 2, phase, prev_phase,
+                        base_type, chapter_number, len(scenes) + 1, phase, prev_phase,
                     ),
-                    "title": "关键碰撞",
+                    "title": "关键碰撞" if mi == 0 else "深层交锋",
                     "time_label": "章节中段",
                     "participants": [protagonist_name, volume_antag_participant]
                     if index_within_volume % 2 == 0
                     else [protagonist_name],
                     "purpose": {
-                        "story": "让主角拿到一条新线索，同时付出新的代价",
+                        "story": "让主角拿到一条新线索，同时付出新的代价" if mi == 0 else "揭示更深层的真相或代价",
                         "emotion": "把悬念和敌意推高到下一层",
                     },
                     "entry_state": {
@@ -1697,28 +2220,29 @@ def _fallback_chapter_outline_batch(
                         antagonist_name: {"arc_state": "开始主动压制", "emotion": "冷静施压"},
                     },
                     "target_word_count": scene_target_words,
+                })
+
+            # Final scene: closing hook
+            scenes.append({
+                "scene_number": len(scenes) + 1,
+                "scene_type": "hook",
+                "title": "结尾钩子",
+                "time_label": "章节结尾",
+                "participants": [protagonist_name, ally_name]
+                if index_within_volume % 3 != 0
+                else [protagonist_name, volume_antag_participant],
+                "purpose": {
+                    "story": writing_profile.market.chapter_hook_strategy,
+                    "emotion": "让读者必须继续追下一章",
                 },
-                {
-                    "scene_number": 3,
-                    "scene_type": "hook",
-                    "title": "结尾钩子",
-                    "time_label": "章节结尾",
-                    "participants": [protagonist_name, ally_name]
-                    if index_within_volume % 3 != 0
-                    else [protagonist_name, volume_antag_participant],
-                    "purpose": {
-                        "story": writing_profile.market.chapter_hook_strategy,
-                        "emotion": "让读者必须继续追下一章",
-                    },
-                    "entry_state": {
-                        protagonist_name: {"arc_state": "准备收束", "emotion": "短暂控制局势"},
-                    },
-                    "exit_state": {
-                        protagonist_name: {"arc_state": "被迫进入更难局面", "emotion": "强压下前进"},
-                    },
-                    "target_word_count": scene_target_words,
+                "entry_state": {
+                    protagonist_name: {"arc_state": "准备收束", "emotion": "短暂控制局势"},
                 },
-            ]
+                "exit_state": {
+                    protagonist_name: {"arc_state": "被迫进入更难局面", "emotion": "强压下前进"},
+                },
+                "target_word_count": scene_target_words,
+            })
             # Compute arc-level info for this chapter
             arc_index, arc_phase = _compute_chapter_arc_info(chapter_number, normalized_volume_plan)
 

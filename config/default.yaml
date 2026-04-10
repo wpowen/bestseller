@@ -110,7 +110,7 @@ generation:
     max: 1500
 
   context_budget_tokens: 8000
-  active_context_scenes: 3
+  active_context_scenes: 8
   genre: "general-fiction"
   language: "zh-CN"
   pov: "third-limited"

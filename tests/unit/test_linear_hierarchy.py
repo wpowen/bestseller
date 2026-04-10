@@ -82,6 +82,30 @@ def test_compute_linear_hierarchy_always_returns_positive() -> None:
         assert h["arc_batch_size"] >= 1
 
 
+def test_compute_linear_hierarchy_volume_count_monotonic() -> None:
+    """volume_count must never decrease as total_chapters increases."""
+    prev_volume_count = 0
+    for n in range(1, 3001):
+        h = compute_linear_hierarchy(n)
+        assert h["volume_count"] >= prev_volume_count, (
+            f"volume_count dropped from {prev_volume_count} to {h['volume_count']} "
+            f"at total_chapters={n}"
+        )
+        prev_volume_count = h["volume_count"]
+
+
+def test_compute_linear_hierarchy_act_count_monotonic() -> None:
+    """act_count must never decrease as total_chapters increases."""
+    prev_act_count = 0
+    for n in range(1, 3001):
+        h = compute_linear_hierarchy(n)
+        assert h["act_count"] >= prev_act_count, (
+            f"act_count dropped from {prev_act_count} to {h['act_count']} "
+            f"at total_chapters={n}"
+        )
+        prev_act_count = h["act_count"]
+
+
 # ── Backward compatibility: ≤50 chapters ─────────────────────────────
 
 

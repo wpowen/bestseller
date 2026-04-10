@@ -110,8 +110,92 @@ _TIER3_FILLER_PHRASES: tuple[str, ...] = (
     "毕竟",
 )
 
-# ── Chinese sentence splitting ───────────────────────────────────────────
+# ── English Tier 1: Kill-on-sight ───────────────────────────────────────
+# Unmistakable AI clichés. A sentence containing one should be removed.
+
+_TIER1_KILL_PHRASES_EN: tuple[str, ...] = (
+    # hollow framing
+    "it's worth noting that",
+    "it is worth noting that",
+    "it's important to note",
+    "it bears mentioning",
+    "needless to say",
+    "it goes without saying",
+    # dead metaphors / AI-era clichés
+    "a testament to",
+    "sends shivers down",
+    "a wave of emotion washed over",
+    "a symphony of",
+    "a tapestry of",
+    "a kaleidoscope of",
+    "a dance of light and shadow",
+    "a mosaic of",
+    "the weight of the world",
+    "time seemed to stand still",
+    "time seemed to slow",
+    "the air crackled with",
+    "the silence was deafening",
+    "a single tear rolled down",
+    "tears streamed down",
+    "a collective gasp",
+    # AI transition filler
+    "little did they know",
+    "unbeknownst to",
+    "as if on cue",
+    "in the blink of an eye",
+    "in that moment, everything changed",
+)
+
+# ── English Tier 2: Suspicious in clusters ──────────────────────────────
+_TIER2_CLUSTER_PHRASES_EN: tuple[str, ...] = (
+    # weak adverbs
+    "couldn't help but",
+    "involuntarily",
+    "instinctively",
+    "subconsciously",
+    # template micro-expressions
+    "eyes widened",
+    "brow furrowed",
+    "jaw clenched",
+    "lips quirked",
+    "breath hitched",
+    "heart hammered",
+    "heart pounded",
+    "stomach churned",
+    "blood ran cold",
+    "pulse quickened",
+    # vague internal narration
+    "a thought flickered",
+    "something stirred",
+    "a chill ran down",
+    "a knot formed in",
+    "a lump formed in",
+    "the realization hit",
+    "the realization dawned",
+    # template dialogue tags
+    "voice barely above a whisper",
+    "voice dripping with",
+    "he breathed",
+    "she breathed",
+)
+
+# ── English Tier 3: Zero-information filler ─────────────────────────────
+_TIER3_FILLER_PHRASES_EN: tuple[str, ...] = (
+    "in a sense",
+    "to some extent",
+    "to be fair",
+    "if truth be told",
+    "truth be told",
+    "in all honesty",
+    "at the end of the day",
+    "when all was said and done",
+    "for what it was worth",
+    "all things considered",
+)
+
+# ── Sentence splitting ──────────────────────────────────────────────────
 _SENTENCE_SPLIT_RE = re.compile(r"(?<=[。！？…\n])")
+_SENTENCE_SPLIT_RE_EN = re.compile(r"(?<=[.!?\n])\s+")
 
 
 @dataclass
@@ -141,59 +225,97 @@ class AiSlopReport:
         return min(t1 + t2 + t3, 1.0)
 
 
-def detect_ai_slop(content_md: str) -> AiSlopReport:
-    """Detect AI-flavor phrases at all three tiers. Zero LLM cost."""
+def _select_phrase_lists(language: str | None) -> tuple[
+    tuple[str, ...], tuple[str, ...], tuple[str, ...], re.Pattern[str], bool
+]:
+    """Return (tier1, tier2, tier3, sentence_re, case_insensitive) for the given language."""
+    if language and language.strip().lower().startswith("en"):
+        return (
+            _TIER1_KILL_PHRASES_EN,
+            _TIER2_CLUSTER_PHRASES_EN,
+            _TIER3_FILLER_PHRASES_EN,
+            _SENTENCE_SPLIT_RE_EN,
+            True,  # English matching is case-insensitive
+        )
+    return (
+        _TIER1_KILL_PHRASES,
+        _TIER2_CLUSTER_PHRASES,
+        _TIER3_FILLER_PHRASES,
+        _SENTENCE_SPLIT_RE,
+        False,
+    )
+
+
+def detect_ai_slop(content_md: str, *, language: str | None = None) -> AiSlopReport:
+    """Detect AI-flavor phrases at all three tiers. Zero LLM cost.
+
+    Supports both Chinese (default) and English phrase lists.
+    Pass ``language="en-US"`` or any ``en-*`` tag for English detection.
+    """
     report = AiSlopReport()
     if not content_md:
         return report
 
-    for phrase in _TIER1_KILL_PHRASES:
-        if phrase in content_md:
+    tier1, tier2, tier3, _sent_re, case_insensitive = _select_phrase_lists(language)
+    text = content_md.lower() if case_insensitive else content_md
+
+    for phrase in tier1:
+        check = phrase.lower() if case_insensitive else phrase
+        if check in text:
             report.tier1_hits.append(phrase)
 
     distinct_t2 = 0
-    for phrase in _TIER2_CLUSTER_PHRASES:
-        count = content_md.count(phrase)
+    for phrase in tier2:
+        check = phrase.lower() if case_insensitive else phrase
+        count = text.count(check)
         if count > 0:
             report.tier2_hits.append(phrase)
             distinct_t2 += 1
             report.tier2_cluster_count += count
     report.tier2_over_threshold = distinct_t2 >= _TIER2_CLUSTER_THRESHOLD
 
-    for phrase in _TIER3_FILLER_PHRASES:
-        if phrase in content_md:
+    for phrase in tier3:
+        check = phrase.lower() if case_insensitive else phrase
+        if check in text:
             report.tier3_hits.append(phrase)
 
     return report
 
 
-def strip_tier1_slop(content_md: str) -> str:
+def strip_tier1_slop(content_md: str, *, language: str | None = None) -> str:
     """Remove sentences containing tier-1 kill-on-sight phrases.
 
-    Operates at sentence granularity (split on 。！？…) to avoid
-    destroying paragraph flow. If a sentence is the only one in a
-    paragraph, the entire paragraph is removed.
+    Operates at sentence granularity (split on 。！？… for Chinese, or
+    `.!?` for English) to avoid destroying paragraph flow. If a
+    sentence is the only one in a paragraph, the entire paragraph is
+    removed.
     """
     if not content_md:
         return content_md
+
+    tier1, _t2, _t3, sentence_re, case_insensitive = _select_phrase_lists(language)
+
+    def _has_kill(segment: str) -> bool:
+        check = segment.lower() if case_insensitive else segment
+        return any(
+            (p.lower() if case_insensitive else p) in check
+            for p in tier1
+        )
 
     cleaned_paragraphs: list[str] = []
     for paragraph in content_md.split("\n"):
         if not paragraph.strip():
             cleaned_paragraphs.append(paragraph)
             continue
-        has_kill = any(phrase in paragraph for phrase in _TIER1_KILL_PHRASES)
-        if not has_kill:
+        if not _has_kill(paragraph):
             cleaned_paragraphs.append(paragraph)
             continue
         # Split into sentences and keep only clean ones
-        sentences = _SENTENCE_SPLIT_RE.split(paragraph)
-        kept = [
-            s for s in sentences
-            if s.strip() and not any(phrase in s for phrase in _TIER1_KILL_PHRASES)
-        ]
+        sentences = sentence_re.split(paragraph)
+        kept = [s for s in sentences if s.strip() and not _has_kill(s)]
         if kept:
-            cleaned_paragraphs.append("".join(kept))
+            joiner = " " if case_insensitive else ""
+            cleaned_paragraphs.append(joiner.join(kept))
         # else: entire paragraph was slop — drop it
 
     result = "\n".join(cleaned_paragraphs)

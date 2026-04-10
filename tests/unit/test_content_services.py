@@ -386,7 +386,7 @@ def test_scene_draft_prompts_switch_to_english_for_english_project() -> None:
     assert "Scene 1: The Order Arrives" in user_prompt
     assert "Series spine" in user_prompt
     assert "Volume goal" in user_prompt
-    assert "Write a full scene with conflict movement" in user_prompt
+    assert "hook scene" in user_prompt.lower()
     assert "长篇中文小说" not in combined
     assert "全书主线" not in combined
     assert "请输出完整场景" not in combined
@@ -440,6 +440,22 @@ def test_render_chapter_draft_markdown_handles_prefixed_chapter_title() -> None:
     assert "# 第1章：零点前的抢购" in content
     assert "# 第1章 第1章" not in content
     assert "程彻猛地从床上弹起来" in content
+
+
+def test_render_chapter_draft_markdown_raises_on_all_empty_scenes() -> None:
+    """Chapter assembly must fail loudly when every scene is a fallback placeholder."""
+    chapter = SimpleNamespace(chapter_number=1, title="Empty Chapter", chapter_goal="test")
+    scene_drafts = [
+        SimpleNamespace(
+            content_md='<!-- scene-draft-fallback project="demo" chapter=1 scene=1 -->'
+        ),
+        SimpleNamespace(
+            content_md='<!-- scene-draft-fallback project="demo" chapter=1 scene=2 -->'
+        ),
+    ]
+
+    with pytest.raises(ValueError, match="no scene content after sanitization"):
+        render_chapter_draft_markdown(chapter, scene_drafts)
 
 
 def testformat_chapter_heading_handles_all_title_variants() -> None:

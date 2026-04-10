@@ -587,7 +587,7 @@ def _volume_start_chapter(
         vn = v.get("volume_number")
         if vn == vol_num:
             return chapter_cursor
-        count = v.get("chapter_count_target", 0)
+        count = max(int(v.get("chapter_count_target") or 1), 1)
         chapter_cursor += count
     return chapter_cursor
 

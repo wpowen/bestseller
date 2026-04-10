@@ -29,6 +29,7 @@ from bestseller.services.projects import get_project_by_slug
 from bestseller.services.story_bible import load_scene_story_bible_context
 from bestseller.services.writing_profile import (
     is_english_language,
+    normalize_language,
     render_serial_fiction_guardrails,
     render_writing_profile_prompt_block,
     resolve_writing_profile,
@@ -206,7 +207,7 @@ _CN_CHAPTER_PHASE_PREFIX_RE = re.compile(
 _HTML_COMMENT_BLOCK_RE = re.compile(r"<!--.*?-->", flags=re.DOTALL)
 
 
-def sanitize_novel_markdown_content(content_md: str) -> str:
+def sanitize_novel_markdown_content(content_md: str, *, language: str | None = None) -> str:
     """Strip non-fiction structural markers and meta-commentary from novel prose.
 
     Detects BOTH Chinese and English meta-leaks simultaneously — a scene draft
@@ -292,7 +293,11 @@ def sanitize_novel_markdown_content(content_md: str) -> str:
     # Strip tier-1 AI-flavor kill-on-sight phrases (zero LLM cost).
     from bestseller.services.anti_slop import strip_tier1_slop  # noqa: PLC0415
 
+    # Always strip Chinese slop (can appear even in English drafts from bilingual models).
     cleaned = strip_tier1_slop(cleaned)
+    # Also strip English slop when language is English or unknown (covers both).
+    if language is None or (language and language.strip().lower().startswith("en")):
+        cleaned = strip_tier1_slop(cleaned, language="en-US")
     return cleaned.strip()
 
 
@@ -1054,7 +1059,7 @@ def _resolve_project_prompt_pack(project: Any, writing_profile: Any):
 
 
 def _project_language(project: Any) -> str:
-    return str(getattr(project, "language", None) or "zh-CN")
+    return normalize_language(getattr(project, "language", None))
 
 
 def _scene_participant_text(participants: list[str] | None, *, language: str) -> str:
@@ -1130,11 +1135,33 @@ def render_scene_draft_markdown(
 
 
 _SCENE_TYPE_GUIDANCE: dict[str, str] = {
-    "hook": "请输出完整场景，至少包含冲突推进、人物动作、有效对话、信息变化和结尾钩子。",
-    "setup": "请输出完整场景，至少包含冲突推进、人物动作、有效对话、信息变化和结尾钩子。",
-    "transition": "请输出完整场景，至少包含冲突推进、人物动作、有效对话、信息变化和结尾钩子。",
-    "conflict": "请输出完整场景，至少包含冲突推进、人物动作、有效对话、信息变化和结尾钩子。",
-    "reveal": "请输出完整场景，至少包含冲突推进、人物动作、有效对话、信息变化和结尾钩子。",
+    "hook": (
+        "这是一个钩子/开场场景。用强烈的感官画面或悬念动作立刻抓住读者注意力："
+        "角色必须在第一段就处于行动或困境中，严禁平铺直叙的背景介绍。"
+        "抛出一个读者必须知道答案的问题或一个打破日常的意外事件。"
+        "结尾要让读者非翻下一页不可。"
+    ),
+    "setup": (
+        "这是一个铺垫/建设场景。为即将到来的冲突种下种子："
+        "通过角色日常行动中的细节暗示即将到来的变化。建立角色关系的基线和世界规则。"
+        "每一段看似平常的描写都要包含后续会回收的伏线。节奏可以稍慢，但严禁无意义的闲聊。"
+    ),
+    "transition": (
+        "这是一个过渡/桥接场景。承接上一个情节高点并导向下一个冲突："
+        "角色在消化刚发生的事件同时向新目标移动。用旅途、环境变化或新角色登场推动过渡。"
+        "必须包含至少一个微型紧张点（一个隐患、一条坏消息、一次误判），避免节奏完全平坦。"
+    ),
+    "conflict": (
+        "这是一个核心冲突场景。对抗必须直接、具体、有后果："
+        "明确展示双方的筹码和代价。冲突中角色要做出艰难选择，不允许轻松化解。"
+        "对话要带刺，动作要有后果，信息差要起作用。冲突结果必须改变力量格局。"
+    ),
+    "reveal": (
+        "这是一个揭示/反转场景。核心信息的曝光必须带来范式转换："
+        "精确控制信息释放的时机——先铺足读者和角色的错误预期，再用一个关键细节翻盘。"
+        "重点写角色发现真相后的情绪冲击和行为变化，而不仅仅是信息本身。"
+        "揭示必须改变角色之后的所有行动逻辑。"
+    ),
     "introspection": (
         "这是一个沉思/内省场景。不需要强制外部冲突，重点放在角色内心世界："
         "让角色回顾过去、质疑自我、整理情绪。用内心独白、环境映射和感官细节构建氛围。"
@@ -1171,11 +1198,36 @@ _SCENE_TYPE_GUIDANCE: dict[str, str] = {
 }
 
 _SCENE_TYPE_GUIDANCE_EN: dict[str, str] = {
-    "hook": "Write a full scene with conflict movement, character action, effective dialogue, information change, and a closing hook.",
-    "setup": "Write a full scene with conflict movement, character action, effective dialogue, information change, and a closing hook.",
-    "transition": "Write a full scene with conflict movement, character action, effective dialogue, information change, and a closing hook.",
-    "conflict": "Write a full scene with conflict movement, character action, effective dialogue, information change, and a closing hook.",
-    "reveal": "Write a full scene with conflict movement, character action, effective dialogue, information change, and a closing hook.",
+    "hook": (
+        "This is a hook scene. Grab the reader's attention immediately with vivid sensory imagery or a disruption. "
+        "The character must be in action or crisis by the first paragraph — no flat background exposition. "
+        "Pose a question the reader cannot ignore or an event that breaks the status quo. "
+        "End with a line that makes turning the page irresistible."
+    ),
+    "setup": (
+        "This is a setup scene. Plant seeds for the coming conflict through everyday actions that carry hidden significance. "
+        "Establish baseline relationships, character wants, and world rules. "
+        "Every seemingly ordinary detail should contain a thread that pays off later. "
+        "Pace can be moderate, but every exchange must advance characterization or stakes — no empty chatter."
+    ),
+    "transition": (
+        "This is a transition scene. Bridge the aftermath of the last event to the next conflict zone. "
+        "Show the character processing what happened while moving toward a new objective. "
+        "Use travel, environment shifts, or a new character's arrival to carry the transition. "
+        "Include at least one micro-tension beat (a warning, bad news, or misjudgment) so the pace never goes flat."
+    ),
+    "conflict": (
+        "This is a core conflict scene. The confrontation must be direct, specific, and consequential. "
+        "Show what each side stands to gain or lose. Force the character into a hard choice with no easy exit. "
+        "Dialogue should carry subtext and edge; actions should have visible costs; information asymmetry should drive the stakes. "
+        "The outcome must shift the power balance."
+    ),
+    "reveal": (
+        "This is a reveal scene. The core information drop must create a paradigm shift. "
+        "First solidify the character's (and reader's) wrong assumptions, then shatter them with one precise detail. "
+        "Focus on the emotional shockwave and behavioral change the truth triggers, not just the information itself. "
+        "The reveal must alter the character's decision logic for everything that follows."
+    ),
     "introspection": (
         "This is an introspection scene. External conflict is optional; prioritize the character's inner reckoning, self-doubt, emotional sorting, and the decision forming underneath the silence."
     ),
@@ -1474,7 +1526,7 @@ def build_scene_draft_prompts(
             f"参与角色当前可见事实：\n{participant_fact_section or '暂无额外角色事实'}\n"
             f"检索到的相关上下文：\n{retrieval_section or '暂无额外检索上下文'}\n"
             f"{_pp_writer_line}"
-            f"{_scene_type_writing_guidance(scene.scene_type)}"
+            f"{_scene_type_writing_guidance(scene.scene_type, language=language)}"
             "不得泄露未来章节才会揭示的信息，不得与当前已知事实和时间线冲突。"
             "优先服从 deterministic path retrieval 与 narrative tree 提供的结构化约束。"
             "必须覆盖 scene contract 的核心冲突、情绪变化、信息释放和尾钩。"
@@ -1617,7 +1669,7 @@ def render_chapter_draft_markdown(
 ) -> str:
     header = [format_chapter_heading(chapter.chapter_number, chapter.title, language=language)]
     scene_sections = [
-        sanitize_novel_markdown_content(scene_draft.content_md)
+        sanitize_novel_markdown_content(scene_draft.content_md, language=language)
         for scene_draft in scene_drafts
     ]
     # Drop any scene section that collapsed to an empty string after sanitizing
@@ -1625,6 +1677,14 @@ def render_chapter_draft_markdown(
     # chapter does not contain stray blank "<!-- fallback -->" placeholders or
     # double blank lines.
     scene_sections = [section for section in scene_sections if section.strip()]
+    if not scene_sections:
+        raise ValueError(
+            f"Chapter {chapter.chapter_number} has no scene content after sanitization. "
+            f"All {len(scene_drafts)} scene drafts were empty or contained only "
+            f"fallback placeholders. The LLM writer failed for every scene. "
+            f"Check: 1) API key is set (MINIMAX_API_KEY / ANTHROPIC_API_KEY), "
+            f"2) model name is valid, 3) network connectivity to the LLM provider."
+        )
     return "\n\n".join(header + scene_sections).strip()
 
 
@@ -1794,7 +1854,19 @@ async def generate_scene_draft(
                 },
             ),
         )
-        content_md = sanitize_novel_markdown_content(completion.content) or fallback_content
+        if completion.provider == "fallback":
+            # LLM call failed after all retries. Log clearly but let the
+            # pipeline continue — the chapter-level guard in
+            # render_chapter_draft_markdown will raise if ALL scenes failed.
+            logger.error(
+                "Scene %d.%d LLM writer FAILED — using fallback placeholder. "
+                "model=%s finish_reason=%s",
+                chapter_number,
+                scene_number,
+                completion.model_name,
+                completion.finish_reason,
+            )
+        content_md = sanitize_novel_markdown_content(completion.content, language=_project_language(project)) or fallback_content
         content_md = strip_scaffolding_echoes(content_md)
         # LLM-based cleanup if regex sanitizer missed meta-commentary
         if has_meta_leak(content_md):

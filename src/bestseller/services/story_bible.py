@@ -365,11 +365,34 @@ async def upsert_cast_spec(
         character.moral_framework_json = _moral_data
         if any(v for v in _moral_data.values() if v):
             moral_frameworks_populated += 1
+        # ── Phase-4: generate lie_truth_arc from knowledge_state ──
+        _ks = character_input.knowledge_state
+        _lie_truth_extra: dict[str, Any] = {}
+        if _ks.falsely_believes:
+            _core_lie = _ks.falsely_believes[0]
+            _arc_traj = (character_input.arc_trajectory or "").lower()
+            if any(kw in _arc_traj for kw in ("negative", "tragic", "fall", "堕落", "负面")):
+                _arc_type = "negative"
+            elif any(kw in _arc_traj for kw in ("flat", "考验", "守护")):
+                _arc_type = "flat"
+            else:
+                _arc_type = "positive"
+            _lie_truth_extra = {
+                "lie_truth_arc": {
+                    "core_lie": _core_lie,
+                    "core_truth": f"与「{_core_lie}」相反的真相",
+                    "transformation_cost": character_input.flaw or "必须放弃旧的保护方式",
+                    "arc_type": _arc_type,
+                    "current_phase": "believing_lie",
+                },
+            }
+
         character.metadata_json = _merge_metadata(
             character.metadata_json,
             {
                 **character_input.metadata,
                 **(character_input.model_extra or {}),
+                **_lie_truth_extra,
             },
         )
         characters_upserted += 1

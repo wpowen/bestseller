@@ -46,6 +46,48 @@ _logger = logging.getLogger(__name__)
 _SUPPORTED_LANGUAGE_PREFIXES = ("zh", "en")
 
 _unsupported_warned: set[str] = set()
+_GENRE_FRAMEWORK_OVERRIDE_FIELDS: dict[str, set[str]] = {
+    "market": {
+        "platform_target",
+        "content_mode",
+        "hook_deadline_words",
+        "update_strategy",
+        "pacing_profile",
+        "prompt_pack_key",
+    },
+    "world": {
+        "worldbuilding_density",
+        "info_reveal_strategy",
+        "rule_hardness",
+        "mystery_density",
+    },
+    "style": {
+        "prose_style",
+        "sentence_style",
+        "info_density",
+        "dialogue_ratio",
+    },
+    "serialization": {
+        "opening_mandate",
+        "first_three_chapter_goal",
+        "scene_drive_rule",
+        "exposition_rule",
+        "chapter_ending_rule",
+        "free_chapter_strategy",
+    },
+    "methodology": {
+        "emotion_spring_min_chapters",
+        "emotion_spring_max_chapters",
+        "core_loop_cycle_length",
+        "hook_min_active",
+        "hook_max_active",
+        "hook_max_age_chapters",
+        "visual_writing_mode",
+        "dialogue_subtext_ratio",
+        "safety_net_mode",
+        "reaction_amplification",
+    },
+}
 
 
 def is_english_language(language: str | None) -> bool:
@@ -83,6 +125,26 @@ def normalize_language(language: str | None) -> str:
     return "zh-CN"
 
 
+def sanitize_genre_story_overrides(overrides: dict[str, Any] | None) -> dict[str, Any]:
+    """Strip genre presets down to framework hints instead of story content."""
+    if not isinstance(overrides, dict):
+        return {}
+
+    sanitized: dict[str, Any] = {}
+    for section, allowed_keys in _GENRE_FRAMEWORK_OVERRIDE_FIELDS.items():
+        raw_section = overrides.get(section)
+        if not isinstance(raw_section, dict):
+            continue
+        kept = {
+            key: value
+            for key, value in raw_section.items()
+            if key in allowed_keys and value not in (None, "", [], {})
+        }
+        if kept:
+            sanitized[section] = kept
+    return sanitized
+
+
 def _default_writing_profile_payload(language: str | None = None) -> dict[str, Any]:
     if is_english_language(language):
         return WritingProfile(
@@ -118,37 +180,21 @@ def _default_writing_profile_payload(language: str | None = None) -> dict[str, A
 def _genre_preset(genre: str, sub_genre: str | None = None) -> dict[str, Any]:
     preset = infer_genre_preset(genre, sub_genre)
     if preset is not None:
-        return dict(preset.writing_profile_overrides)
+        return sanitize_genre_story_overrides(dict(preset.writing_profile_overrides))
 
     label = f"{genre} {sub_genre or ''}".lower()
     if any(token in label for token in ("末日", "科幻", "星际", "生存")):
         return {
             "market": {
-                "platform_target": "番茄小说",
-                "reader_promise": "开篇快速亮出异常降临、资源窗口和主角抢占先机的优势，持续用危机升级与资源差制造追读。",
-                "selling_points": ["末日降临", "时间差优势", "资源囤积", "秩序崩坏", "真相揭露"],
-                "trope_keywords": ["末日", "囤货", "系统", "重生", "规则生存", "打脸反杀"],
-                "hook_keywords": ["倒计时", "稀缺资源", "规则异变", "背叛", "升级反杀"],
-                "opening_strategy": "第一屏直接抛出末日倒计时、主角知道未来、资源窗口马上关闭。",
-                "chapter_hook_strategy": "每章末给新的资源机会、规则异变、敌人反压或更大真相。",
                 "pacing_profile": "fast",
-                "payoff_rhythm": "短回报强刺激，长期埋更大灾变真相",
             },
             "character": {
-                "protagonist_archetype": "先知型求生者",
-                "protagonist_core_drive": "抢时间、抢资源、抢先建立安全边界",
-                "golden_finger": "重生记忆、外挂商城或信息差优势",
-                "growth_curve": "个人生存优势 -> 小团体统治力 -> 末日真相破局",
-                "antagonist_mode": "生存竞争者与系统性灾变操盘者双重压迫",
             },
             "world": {
                 "worldbuilding_density": "medium",
-                "power_system_style": "资源、秩序、能力同步升级",
                 "mystery_density": "high",
-                "setting_tags": ["生存", "资源争夺", "规则异变", "秩序崩坏"],
             },
             "style": {
-                "tone_keywords": ["狠", "快", "压迫感", "危机感"],
                 "prose_style": "commercial-web-serial",
                 "sentence_style": "short-punchy",
                 "info_density": "lean",
@@ -158,92 +204,51 @@ def _genre_preset(genre: str, sub_genre: str | None = None) -> dict[str, Any]:
     if any(token in label for token in ("仙", "玄幻", "奇幻", "升级")):
         return {
             "market": {
-                "platform_target": "起点中文网",
-                "reader_promise": "快速给出主角天赋/机缘与压迫环境，持续用升级、夺宝、打脸和更大世界打开期待。",
-                "selling_points": ["升级成长", "机缘夺取", "势力对抗", "越阶反杀", "世界地图扩张"],
-                "trope_keywords": ["废柴逆袭", "秘境", "宗门", "升级", "气运", "打脸"],
-                "hook_keywords": ["新境界", "秘宝", "仇敌", "宗门考核", "更高位面"],
                 "pacing_profile": "fast",
             },
             "character": {
-                "protagonist_archetype": "逆袭型成长主角",
-                "protagonist_core_drive": "向上突破阶层与命运封锁",
-                "golden_finger": "特殊血脉、至宝、功法推演或外挂面板",
-                "growth_curve": "底层逆袭 -> 越阶争锋 -> 位面扩张",
-                "antagonist_mode": "阶层压迫 + 天才对照组 + 上位势力持续镇压",
             },
             "world": {
                 "worldbuilding_density": "medium",
-                "power_system_style": "境界制与资源制并行",
+                "rule_hardness": "hard",
                 "mystery_density": "medium",
-                "setting_tags": ["宗门", "境界", "秘境", "传承"],
             },
             "style": {
-                "tone_keywords": ["燃", "凌厉", "压迫感"],
                 "dialogue_ratio": 0.32,
             },
         }
     if any(token in label for token in ("都市", "异能", "悬疑", "现实")):
         return {
             "market": {
-                "platform_target": "番茄小说",
-                "reader_promise": "很快让读者看到主角的异常能力、现实压力和可以立刻兑现的利益/反制机会。",
-                "selling_points": ["现实代入", "能力外挂", "反差人设", "爽点兑现", "悬念推进"],
-                "trope_keywords": ["都市", "系统", "逆袭", "悬疑", "身份反转"],
-                "hook_keywords": ["反转", "秘密", "能力亮相", "现实代价"],
                 "pacing_profile": "fast",
             },
             "character": {
-                "protagonist_archetype": "现实受压型反击主角",
-                "protagonist_core_drive": "翻盘现实处境并重塑身份价值",
             },
             "world": {
                 "worldbuilding_density": "light",
                 "info_reveal_strategy": "背景设定必须紧贴现实场景和事件推进。",
                 "mystery_density": "medium",
-                "setting_tags": ["现实压迫", "社会关系", "能力介入"],
             },
             "style": {
-                "tone_keywords": ["利落", "现实感", "悬念"],
                 "dialogue_ratio": 0.45,
             },
         }
     if any(token in label for token in ("女频", "成长", "言情", "宫斗")):
         return {
             "market": {
-                "platform_target": "晋江文学城",
-                "reader_promise": "快速建立人物关系张力、核心情绪困局与角色成长抓手，持续用关系推进和反转维持阅读欲。",
-                "selling_points": ["人物关系拉扯", "情绪兑现", "成长弧光", "秘密揭露"],
-                "trope_keywords": ["成长", "情感拉扯", "身份差", "信任博弈"],
-                "hook_keywords": ["误解", "靠近", "选择", "秘密"],
                 "pacing_profile": "medium-fast",
             },
             "character": {
-                "protagonist_archetype": "情绪成长型主角",
-                "relationship_tension": "吸引、试探、误解、并肩、再选择",
-                "romance_mode": "主线感情线",
             },
             "world": {
                 "worldbuilding_density": "light-medium",
                 "mystery_density": "medium",
             },
             "style": {
-                "tone_keywords": ["细腻", "拉扯感", "高情绪密度"],
                 "dialogue_ratio": 0.48,
             },
         }
-    return {
-        "market": {
-            "platform_target": "中文网文平台",
-            "reader_promise": "开篇快速亮出主角、冲突、利益与危险，持续维持追读。",
-            "selling_points": ["强主线", "持续冲突", "反转", "人物成长"],
-            "trope_keywords": ["悬念", "反转", "升级"],
-            "hook_keywords": ["危机", "利益", "秘密"],
-        },
-        "style": {
-            "tone_keywords": [genre],
-        },
-    }
+    return {}
 
 
 def resolve_writing_profile(
@@ -289,7 +294,7 @@ def resolve_writing_profile(
         sub_genre=sub_genre,
     )
     if prompt_pack is not None:
-        merged = _deep_merge(merged, prompt_pack.writing_profile_overrides)
+        merged = _deep_merge(merged, sanitize_genre_story_overrides(prompt_pack.writing_profile_overrides))
     if explicit_payload is not None:
         merged = _deep_merge(merged, explicit_payload)
     profile = WritingProfile.model_validate(merged)

@@ -11,9 +11,14 @@ from bestseller.domain.narrative import (
     ChapterContractRead,
     ClueRead,
     EmotionTrackRead,
+    EndingContractRead,
+    PacingCurvePointRead,
     PayoffRead,
     PlotArcRead,
+    ReaderKnowledgeEntryRead,
+    RelationshipEventRead,
     SceneContractRead,
+    SubplotScheduleEntryRead,
 )
 from bestseller.domain.narrative_tree import NarrativeTreeNodeRead
 from bestseller.domain.retrieval import RetrievedChunk
@@ -97,6 +102,27 @@ class SceneWriterContextPacket(BaseModel):
     arc_summaries: list[dict[str, Any]] = Field(default_factory=list)
     world_snapshot: dict[str, Any] | None = None
 
+    # ── Phase-1 wiring: previously orphaned narrative models ──
+    pacing_target: PacingCurvePointRead | None = None
+    subplot_schedule: list[SubplotScheduleEntryRead] = Field(default_factory=list)
+    ending_contract: EndingContractRead | None = None
+    reader_knowledge_entries: list[ReaderKnowledgeEntryRead] = Field(default_factory=list)
+    relationship_milestones: list[RelationshipEventRead] = Field(default_factory=list)
+
+    # ── Phase-2 wiring: structure template beat ──
+    structure_beat_name: str | None = None
+    structure_beat_description: str | None = None
+
+    # ── Phase-3 wiring: Swain scene/sequel pattern ──
+    swain_pattern: str | None = None
+    scene_skeleton: dict[str, str] | None = None
+
+    # ── Phase-5 wiring: genre obligatory scenes due ──
+    genre_obligations_due: list[dict[str, str]] = Field(default_factory=list)
+
+    # ── Phase-6 wiring: foreshadowing gap warning ──
+    foreshadowing_gap_warning: str | None = None
+
 
 class ChapterSceneContext(BaseModel):
     scene_number: int = Field(ge=1)
@@ -130,3 +156,20 @@ class ChapterWriterContextPacket(BaseModel):
     tree_context_nodes: list[NarrativeTreeNodeRead] = Field(default_factory=list)
     retrieval_chunks: list[RetrievedChunk] = Field(default_factory=list)
     hard_fact_snapshot: ChapterStateSnapshotContext | None = None
+
+    # ── Phase-1 wiring: previously orphaned narrative models ──
+    pacing_target: PacingCurvePointRead | None = None
+    subplot_schedule: list[SubplotScheduleEntryRead] = Field(default_factory=list)
+    ending_contract: EndingContractRead | None = None
+    reader_knowledge_entries: list[ReaderKnowledgeEntryRead] = Field(default_factory=list)
+    relationship_milestones: list[RelationshipEventRead] = Field(default_factory=list)
+
+    # ── Phase-2 wiring: structure template beat ──
+    structure_beat_name: str | None = None
+    structure_beat_description: str | None = None
+
+    # ── Phase-5 wiring: genre obligatory scenes due ──
+    genre_obligations_due: list[dict[str, str]] = Field(default_factory=list)
+
+    # ── Phase-6 wiring: foreshadowing gap warning ──
+    foreshadowing_gap_warning: str | None = None

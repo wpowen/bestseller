@@ -79,6 +79,33 @@ def test_fallback_generators_create_complete_chain() -> None:
     assert len(outline_batch["chapters"][0]["scenes"]) == 3
 
 
+def test_fallback_cast_spec_uses_neutral_role_labels_when_names_are_missing() -> None:
+    premise = "一名被放逐的导航员发现帝国正在篡改边境航线记录。"
+
+    project = build_project()
+    book_spec = planner_services._fallback_book_spec(project, premise)
+    world_spec = planner_services._fallback_world_spec(project, premise, book_spec)
+    cast_spec = planner_services._fallback_cast_spec(project, premise, book_spec, world_spec)
+
+    assert cast_spec["protagonist"]["name"] == "主角"
+    assert cast_spec["antagonist"]["name"] == "对手"
+    assert cast_spec["supporting_cast"][0]["name"] == "盟友甲"
+
+
+def test_fallback_world_spec_uses_neutral_rule_scaffold() -> None:
+    project = build_project()
+    project.genre = "仙侠"
+    premise = "一个被逐出宗门的弟子，在秘境中发现自己的谱牒被人篡改。"
+
+    book_spec = planner_services._fallback_book_spec(project, premise)
+    world_spec = planner_services._fallback_world_spec(project, premise, book_spec)
+
+    rule_names = {rule["name"] for rule in world_spec["rules"]}
+    assert "记录优先规则" not in rule_names
+    assert "宗门谱牒规则" not in rule_names
+    assert rule_names == {"核心秩序规则", "门槛通行规则", "禁区隔绝规则"}
+
+
 def test_merge_planning_payload_preserves_fallback_nested_fields() -> None:
     project = build_project()
     premise = "一名被放逐的导航员发现帝国正在篡改边境航线记录。"
@@ -306,6 +333,42 @@ def test_planner_prompts_switch_to_english_for_english_projects() -> None:
 
 
 @pytest.mark.asyncio
+async def test_generate_character_names_prompt_does_not_embed_fixed_example_names(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, str] = {}
+
+    async def fake_complete_text(session: object, settings: object, request: object):
+        captured["user_prompt"] = request.user_prompt
+        return type(
+            "CompletionStub",
+            (),
+            {
+                "content": json.dumps({}, ensure_ascii=False),
+                "llm_run_id": uuid4(),
+            },
+        )()
+
+    monkeypatch.setattr(planner_services, "complete_text", fake_complete_text)
+
+    await planner_services._generate_character_names(
+        FakeSession(),
+        build_settings(),
+        genre="末日科幻",
+        sub_genre="重生囤货",
+        language="zh-CN",
+        premise="主角重生回末日前三十天，提前囤货并抢占安全区通行权。",
+        book_spec={},
+    )
+
+    prompt = captured["user_prompt"]
+    assert "沈逸" not in prompt
+    assert "裴云霄" not in prompt
+    assert "林启" not in prompt
+    assert "秦北" not in prompt
+
+
+@pytest.mark.asyncio
 async def test_generate_structured_artifact_merges_partial_llm_payload_with_fallback(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -462,6 +525,7 @@ async def test_generate_novel_plan_creates_all_artifacts_and_workflow_records(
         ArtifactType.CAST_SPEC,
         ArtifactType.VOLUME_PLAN,
         ArtifactType.PLAN_VALIDATION,
+        ArtifactType.VOLUME_CHAPTER_OUTLINE,
         ArtifactType.CHAPTER_OUTLINE_BATCH,
     ]
     assert len(result.llm_run_ids) == 5
@@ -596,6 +660,55 @@ def test_assign_conflict_phases_7_volumes_cycles_middle() -> None:
     assert len(phases_8) == 8
     assert phases_8[0] == "survival"
     assert phases_8[-1] == "internal_reckoning"
+
+
+def test_assign_conflict_phases_with_category_key() -> None:
+    """Category-specific phases should replace legacy phases."""
+    phases = planner_services._assign_conflict_phases(5, category_key="action-progression")
+    assert len(phases) == 5
+    assert phases[0] == "individual_survival"
+    assert phases[-1] == "transcendence"
+
+    # Different category yields different phases
+    phases_rel = planner_services._assign_conflict_phases(5, category_key="relationship-driven")
+    assert phases_rel[0] == "stranger"
+    assert phases_rel != phases
+
+
+def test_assign_conflict_phases_category_fewer_volumes() -> None:
+    """When volume_count < pathway phases, should distribute correctly."""
+    phases = planner_services._assign_conflict_phases(3, category_key="action-progression")
+    assert len(phases) == 3
+    assert phases[0] == "individual_survival"
+    assert phases[-1] == "transcendence"
+
+
+def test_assign_conflict_phases_unknown_category_falls_back() -> None:
+    """Unknown category_key should fall back to legacy behavior."""
+    phases = planner_services._assign_conflict_phases(3, category_key="nonexistent-xyz")
+    assert phases == ["survival", "political_intrigue", "existential_threat"]
+
+
+def test_assign_conflict_phases_none_category_preserves_legacy() -> None:
+    """category_key=None should produce identical results to the old behavior."""
+    assert planner_services._assign_conflict_phases(2, category_key=None) == ["survival", "existential_threat"]
+    assert planner_services._assign_conflict_phases(5, category_key=None)[0] == "survival"
+
+
+def test_resolve_phase_templates_from_category() -> None:
+    """Category phase templates should contain formatted text."""
+    tpl = planner_services._resolve_phase_templates(
+        "individual_survival", category_key="action-progression", is_en=False,
+    )
+    assert tpl["goal"]  # non-empty
+    assert "{protagonist}" in tpl["goal"]  # still has placeholder
+
+
+def test_resolve_phase_templates_legacy_fallback() -> None:
+    """Without category, legacy templates should be returned."""
+    tpl = planner_services._resolve_phase_templates("survival", category_key=None, is_en=False)
+    assert tpl["goal"]
+    assert "{protagonist}" in tpl["goal"]
 
 
 def test_json_dump_helper_keeps_unicode() -> None:

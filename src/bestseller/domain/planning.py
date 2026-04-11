@@ -68,3 +68,12 @@ class AutowriteResult(BaseModel):
     chapter_count: int = Field(ge=0)
     final_verdict: str | None = None
     requires_human_review: bool = False
+
+
+class VolumePlanningResult(BaseModel):
+    workflow_run_id: UUID
+    volume_number: int = Field(ge=1)
+    chapter_count: int = Field(ge=0)
+    new_characters_introduced: int = Field(ge=0, default=0)
+    artifacts: list[PlanningArtifactRecord] = Field(default_factory=list)
+    llm_run_ids: list[UUID] = Field(default_factory=list)

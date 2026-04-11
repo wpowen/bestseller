@@ -21,9 +21,14 @@ from bestseller.domain.narrative import (
     ChapterContractRead,
     ClueRead,
     EmotionTrackRead,
+    EndingContractRead,
+    PacingCurvePointRead,
     PayoffRead,
     PlotArcRead,
+    ReaderKnowledgeEntryRead,
+    RelationshipEventRead,
     SceneContractRead,
+    SubplotScheduleEntryRead,
 )
 from bestseller.infra.db.models import (
     AntagonistPlanModel,
@@ -34,11 +39,16 @@ from bestseller.infra.db.models import (
     ChapterModel,
     ClueModel,
     EmotionTrackModel,
+    EndingContractModel,
+    PacingCurvePointModel,
     PayoffModel,
     PlotArcModel,
     ProjectModel,
+    ReaderKnowledgeEntryModel,
+    RelationshipEventModel,
     SceneCardModel,
     SceneContractModel,
+    SubplotScheduleModel,
     TimelineEventModel,
 )
 from bestseller.services.continuity import load_previous_chapter_snapshot
@@ -730,6 +740,48 @@ async def build_scene_writer_context_from_models(
         _arc_beat_read(item, arc_code_by_id.get(item.plot_arc_id))
         for item in (scene_beats + chapter_beats)[:6]
     ]
+
+    # ── Phase-2: extract structure beat from arc beat metadata ──
+    _structure_beat_name: str | None = None
+    _structure_beat_description: str | None = None
+    for _cb in chapter_beats:
+        _cb_meta = _cb.metadata_json if isinstance(_cb.metadata_json, dict) else {}
+        if _cb_meta.get("structure_beat"):
+            _structure_beat_name = _cb_meta["structure_beat"]
+            _structure_beat_description = _cb_meta.get("structure_beat_description")
+            break
+
+    # ── Phase-3: compute Swain scene/sequel pattern ──
+    _scene_meta = scene.metadata_json if isinstance(scene.metadata_json, dict) else {}
+    _stored_swain = _scene_meta.get("swain_pattern")
+    if _stored_swain:
+        _swain_pattern = _stored_swain
+    else:
+        # Derive from scene number parity; high-tension chapters go all-action
+        _chapter_phase = (chapter.metadata_json or {}).get("phase", "")
+        if _chapter_phase in {"pressure", "reversal", "climax", "confrontation"}:
+            _swain_pattern = "action"
+        elif scene.scene_number % 2 == 1:
+            _swain_pattern = "action"
+        else:
+            _swain_pattern = "sequel"
+
+    _scene_skeleton: dict[str, str] | None = None
+    _scene_purpose_story = str(scene.purpose.get("story", ""))
+    _scene_purpose_emotion = str(scene.purpose.get("emotion", ""))
+    if _swain_pattern == "action":
+        _scene_skeleton = {
+            "goal": _scene_purpose_story or "The protagonist pursues an immediate objective.",
+            "conflict": chapter.main_conflict or "Opposition blocks progress.",
+            "disaster": "The situation worsens or a new complication emerges.",
+        }
+    else:
+        _scene_skeleton = {
+            "reaction": _scene_purpose_emotion or "The protagonist processes what just happened.",
+            "dilemma": "Two or more paths forward, none clearly safe.",
+            "decision": "The protagonist commits to a new course of action.",
+        }
+
     scene_participants = {participant for participant in scene.participants if participant}
     emotion_track_rows = list(
         await session.scalars(
@@ -837,12 +889,18 @@ async def build_scene_writer_context_from_models(
         if char_row and isinstance(char_row.knowledge_state_json, dict):
             ks = char_row.knowledge_state_json
             if ks.get("knows") or ks.get("falsely_believes") or ks.get("unaware_of"):
-                _knowledge_states.append({
+                _ks_entry: dict[str, Any] = {
                     "character_name": participant_name,
                     "knows": ks.get("knows", [])[:8],
                     "falsely_believes": ks.get("falsely_believes", [])[:5],
                     "unaware_of": ks.get("unaware_of", [])[:5],
-                })
+                }
+                # Phase-4: attach lie/truth arc if present
+                _char_meta = char_row.metadata_json or {}
+                _lt_arc = _char_meta.get("lie_truth_arc")
+                if isinstance(_lt_arc, dict) and _lt_arc.get("core_lie"):
+                    _ks_entry["lie_truth_arc"] = _lt_arc
+                _knowledge_states.append(_ks_entry)
 
     # Load arc summaries (warm context) and world snapshot (cold context)
     from bestseller.services.linear_arc_summary import load_recent_arc_summaries, load_latest_world_snapshot
@@ -853,6 +911,126 @@ async def build_scene_writer_context_from_models(
     _arc_summary_limit = 3 if _total_ch <= 50 else min(8, 3 + (_total_ch // 100))
     arc_summaries = await load_recent_arc_summaries(session, project.id, chapter.chapter_number, limit=_arc_summary_limit)
     world_snapshot = await load_latest_world_snapshot(session, project.id, chapter.chapter_number)
+
+    # ── Phase-1 wiring: query five previously orphaned narrative models ──
+
+    # 1) Pacing target — single row for this chapter
+    _pacing_row = await session.scalar(
+        select(PacingCurvePointModel).where(
+            PacingCurvePointModel.project_id == project.id,
+            PacingCurvePointModel.chapter_number == chapter.chapter_number,
+        )
+    )
+    _pacing_target = (
+        PacingCurvePointRead(
+            id=_pacing_row.id,
+            chapter_number=_pacing_row.chapter_number,
+            tension_level=float(_pacing_row.tension_level),
+            scene_type_plan=_pacing_row.scene_type_plan,
+            notes=_pacing_row.notes,
+        )
+        if _pacing_row is not None
+        else None
+    )
+
+    # 2) Subplot schedule — non-dormant entries for this chapter
+    _subplot_rows = list(
+        await session.scalars(
+            select(SubplotScheduleModel).where(
+                SubplotScheduleModel.project_id == project.id,
+                SubplotScheduleModel.chapter_number == chapter.chapter_number,
+                SubplotScheduleModel.prominence.notin_(["dormant"]),
+            )
+        )
+    )
+    _subplot_schedule = [
+        SubplotScheduleEntryRead(
+            id=row.id,
+            plot_arc_id=row.plot_arc_id,
+            arc_code=row.arc_code,
+            chapter_number=row.chapter_number,
+            prominence=row.prominence,
+            notes=row.notes,
+        )
+        for row in _subplot_rows
+    ]
+
+    # 3) Ending contract — only injected in the final 3 chapters
+    _ending_contract: EndingContractRead | None = None
+    _target_chapters = project.target_chapters or chapter.chapter_number
+    if chapter.chapter_number >= _target_chapters - 3:
+        _ending_row = await session.scalar(
+            select(EndingContractModel).where(
+                EndingContractModel.project_id == project.id,
+            )
+        )
+        if _ending_row is not None:
+            _ending_contract = EndingContractRead(
+                id=_ending_row.id,
+                arcs_to_resolve=list(_ending_row.arcs_to_resolve or []),
+                clues_to_payoff=list(_ending_row.clues_to_payoff or []),
+                relationships_to_close=list(_ending_row.relationships_to_close or []),
+                thematic_final_expression=_ending_row.thematic_final_expression,
+                denouement_plan=_ending_row.denouement_plan,
+                status=_ending_row.status,
+            )
+
+    # 4) Reader knowledge entries — dramatic irony cues up to this chapter
+    _rk_rows = list(
+        await session.scalars(
+            select(ReaderKnowledgeEntryModel)
+            .where(
+                ReaderKnowledgeEntryModel.project_id == project.id,
+                ReaderKnowledgeEntryModel.chapter_number <= chapter.chapter_number,
+                ReaderKnowledgeEntryModel.audience.notin_(["character_only"]),
+            )
+            .order_by(ReaderKnowledgeEntryModel.chapter_number.desc())
+            .limit(10)
+        )
+    )
+    _reader_knowledge = [
+        ReaderKnowledgeEntryRead(
+            id=row.id,
+            chapter_number=row.chapter_number,
+            knowledge_item=row.knowledge_item,
+            audience=row.audience,
+            source_clue_code=row.source_clue_code,
+        )
+        for row in _rk_rows
+    ]
+
+    # 5) Relationship milestones — recent milestone events involving scene participants
+    _participant_names = list(scene.participants or [])
+    _rel_milestones: list[RelationshipEventRead] = []
+    if _participant_names:
+        _lookback_start = max(1, chapter.chapter_number - lookback_window)
+        _rel_rows = list(
+            await session.scalars(
+                select(RelationshipEventModel)
+                .where(
+                    RelationshipEventModel.project_id == project.id,
+                    RelationshipEventModel.is_milestone.is_(True),
+                    RelationshipEventModel.chapter_number >= _lookback_start,
+                    RelationshipEventModel.chapter_number <= chapter.chapter_number,
+                )
+                .order_by(RelationshipEventModel.chapter_number.desc())
+                .limit(8)
+            )
+        )
+        for row in _rel_rows:
+            if row.character_a_label in _participant_names or row.character_b_label in _participant_names:
+                _rel_milestones.append(
+                    RelationshipEventRead(
+                        id=row.id,
+                        character_a_label=row.character_a_label,
+                        character_b_label=row.character_b_label,
+                        chapter_number=row.chapter_number,
+                        scene_number=row.scene_number,
+                        event_description=row.event_description,
+                        relationship_change=row.relationship_change,
+                        is_milestone=row.is_milestone,
+                    )
+                )
 
     return SceneWriterContextPacket(
         project_id=project.id,
@@ -884,7 +1062,104 @@ async def build_scene_writer_context_from_models(
         participant_knowledge_states=_knowledge_states,
         arc_summaries=arc_summaries,
         world_snapshot=world_snapshot,
+        # Phase-1 wiring
+        pacing_target=_pacing_target,
+        subplot_schedule=_subplot_schedule,
+        ending_contract=_ending_contract,
+        reader_knowledge_entries=_reader_knowledge,
+        relationship_milestones=_rel_milestones,
+        # Phase-2 wiring
+        structure_beat_name=_structure_beat_name,
+        structure_beat_description=_structure_beat_description,
+        # Phase-3 wiring
+        swain_pattern=_swain_pattern,
+        scene_skeleton=_scene_skeleton,
+        # Phase-5 wiring
+        genre_obligations_due=_compute_obligations_due(
+            project=project,
+            chapter_number=chapter.chapter_number,
+        ),
+        # Phase-6 wiring
+        foreshadowing_gap_warning=_compute_foreshadowing_gap(
+            unresolved_clues=unresolved_clues,
+            chapter_number=chapter.chapter_number,
+        ),
     )
+
+
+def _compute_obligations_due(
+    *,
+    project: Any,
+    chapter_number: int,
+) -> list[dict[str, str]]:
+    """Phase-5: Return obligatory scenes due at or near the current chapter."""
+    from bestseller.services.prompt_packs import resolve_prompt_pack
+
+    pack_key = (project.metadata_json or {}).get("prompt_pack_key")
+    pack = resolve_prompt_pack(
+        pack_key,
+        genre=project.genre,
+        sub_genre=project.sub_genre,
+    )
+    if pack is None or not pack.obligatory_scenes:
+        return []
+
+    total = max(project.target_chapters or chapter_number, 1)
+    act1_end = max(1, round(total * 0.25))
+    midpoint = round(total * 0.5)
+    act3_start = max(1, round(total * 0.75))
+
+    due: list[dict[str, str]] = []
+    for oblig in pack.obligatory_scenes:
+        timing = oblig.timing
+        is_due = False
+        if timing == "act_1" and chapter_number <= act1_end:
+            is_due = True
+        elif timing == "act_2_midpoint" and abs(chapter_number - midpoint) <= 2:
+            is_due = True
+        elif timing == "act_3" and chapter_number >= act3_start:
+            is_due = True
+        elif timing == "final_chapter" and chapter_number >= total - 1:
+            is_due = True
+        # "any" obligations are always listed
+        elif timing == "any":
+            is_due = True
+
+        if is_due:
+            due.append({"code": oblig.code, "label": oblig.label, "timing": oblig.timing})
+
+    return due
+
+
+def _compute_foreshadowing_gap(
+    *,
+    unresolved_clues: list[Any],
+    chapter_number: int,
+    lookback: int = 3,
+) -> str | None:
+    """Phase-6: Return a warning if recent chapters have no clue activity."""
+    if not unresolved_clues or chapter_number < lookback + 1:
+        return None
+
+    # Gather chapters with clue planting or payoff activity
+    active_chapters: set[int] = set()
+    for clue in unresolved_clues:
+        planted = getattr(clue, "planted_in_chapter_number", None)
+        if planted is not None:
+            active_chapters.add(planted)
+        paid = getattr(clue, "actual_paid_off_chapter_number", None)
+        if paid is not None:
+            active_chapters.add(paid)
+
+    # Check if all recent `lookback` chapters are inactive
+    recent_range = range(chapter_number - lookback, chapter_number)
+    if all(ch not in active_chapters for ch in recent_range):
+        return (
+            f"近 {lookback} 章无伏笔活动（种植或回收），"
+            f"考虑在本章种植新线索或回应旧线索。"
+        )
+
+    return None
 
 
 async def _safe_load_previous_snapshot(
@@ -1132,6 +1407,17 @@ async def build_chapter_writer_context(
         _arc_beat_read(item, arc_code_by_id.get(item.plot_arc_id))
         for item in active_arc_beats[:8]
     ]
+
+    # ── Phase-2: extract structure beat from arc beat metadata ──
+    _ch_structure_beat_name: str | None = None
+    _ch_structure_beat_desc: str | None = None
+    for _ab in active_arc_beats:
+        _ab_meta = _ab.metadata_json if isinstance(_ab.metadata_json, dict) else {}
+        if _ab_meta.get("structure_beat"):
+            _ch_structure_beat_name = _ab_meta["structure_beat"]
+            _ch_structure_beat_desc = _ab_meta.get("structure_beat_description")
+            break
+
     chapter_participants = {
         participant
         for scene in scenes
@@ -1221,6 +1507,121 @@ async def build_chapter_writer_context(
         current_chapter_number=chapter.chapter_number,
     )
 
+    # ── Phase-1 wiring: query five previously orphaned narrative models (chapter level) ──
+
+    _ch_pacing_row = await session.scalar(
+        select(PacingCurvePointModel).where(
+            PacingCurvePointModel.project_id == project.id,
+            PacingCurvePointModel.chapter_number == chapter.chapter_number,
+        )
+    )
+    _ch_pacing_target = (
+        PacingCurvePointRead(
+            id=_ch_pacing_row.id,
+            chapter_number=_ch_pacing_row.chapter_number,
+            tension_level=float(_ch_pacing_row.tension_level),
+            scene_type_plan=_ch_pacing_row.scene_type_plan,
+            notes=_ch_pacing_row.notes,
+        )
+        if _ch_pacing_row is not None
+        else None
+    )
+
+    _ch_subplot_rows = list(
+        await session.scalars(
+            select(SubplotScheduleModel).where(
+                SubplotScheduleModel.project_id == project.id,
+                SubplotScheduleModel.chapter_number == chapter.chapter_number,
+                SubplotScheduleModel.prominence.notin_(["dormant"]),
+            )
+        )
+    )
+    _ch_subplot_schedule = [
+        SubplotScheduleEntryRead(
+            id=row.id,
+            plot_arc_id=row.plot_arc_id,
+            arc_code=row.arc_code,
+            chapter_number=row.chapter_number,
+            prominence=row.prominence,
+            notes=row.notes,
+        )
+        for row in _ch_subplot_rows
+    ]
+
+    _ch_ending_contract: EndingContractRead | None = None
+    _ch_target_chapters = project.target_chapters or chapter.chapter_number
+    if chapter.chapter_number >= _ch_target_chapters - 3:
+        _ch_ending_row = await session.scalar(
+            select(EndingContractModel).where(
+                EndingContractModel.project_id == project.id,
+            )
+        )
+        if _ch_ending_row is not None:
+            _ch_ending_contract = EndingContractRead(
+                id=_ch_ending_row.id,
+                arcs_to_resolve=list(_ch_ending_row.arcs_to_resolve or []),
+                clues_to_payoff=list(_ch_ending_row.clues_to_payoff or []),
+                relationships_to_close=list(_ch_ending_row.relationships_to_close or []),
+                thematic_final_expression=_ch_ending_row.thematic_final_expression,
+                denouement_plan=_ch_ending_row.denouement_plan,
+                status=_ch_ending_row.status,
+            )
+
+    _ch_rk_rows = list(
+        await session.scalars(
+            select(ReaderKnowledgeEntryModel)
+            .where(
+                ReaderKnowledgeEntryModel.project_id == project.id,
+                ReaderKnowledgeEntryModel.chapter_number <= chapter.chapter_number,
+                ReaderKnowledgeEntryModel.audience.notin_(["character_only"]),
+            )
+            .order_by(ReaderKnowledgeEntryModel.chapter_number.desc())
+            .limit(10)
+        )
+    )
+    _ch_reader_knowledge = [
+        ReaderKnowledgeEntryRead(
+            id=row.id,
+            chapter_number=row.chapter_number,
+            knowledge_item=row.knowledge_item,
+            audience=row.audience,
+            source_clue_code=row.source_clue_code,
+        )
+        for row in _ch_rk_rows
+    ]
+
+    _ch_participant_names = list(chapter_participants)
+    _ch_rel_milestones: list[RelationshipEventRead] = []
+    if _ch_participant_names:
+        _ch_lookback_start = max(1, chapter.chapter_number - ch_lookback)
+        _ch_rel_rows = list(
+            await session.scalars(
+                select(RelationshipEventModel)
+                .where(
+                    RelationshipEventModel.project_id == project.id,
+                    RelationshipEventModel.is_milestone.is_(True),
+                    RelationshipEventModel.chapter_number >= _ch_lookback_start,
+                    RelationshipEventModel.chapter_number <= chapter.chapter_number,
+                )
+                .order_by(RelationshipEventModel.chapter_number.desc())
+                .limit(10)
+            )
+        )
+        for row in _ch_rel_rows:
+            if row.character_a_label in _ch_participant_names or row.character_b_label in _ch_participant_names:
+                _ch_rel_milestones.append(
+                    RelationshipEventRead(
+                        id=row.id,
+                        character_a_label=row.character_a_label,
+                        character_b_label=row.character_b_label,
+                        chapter_number=row.chapter_number,
+                        scene_number=row.scene_number,
+                        event_description=row.event_description,
+                        relationship_change=row.relationship_change,
+                        is_milestone=row.is_milestone,
+                    )
+                )
+
     return ChapterWriterContextPacket(
         project_id=project.id,
         project_slug=project.slug,
@@ -1271,4 +1672,23 @@ async def build_chapter_writer_context(
         tree_context_nodes=tree_context_nodes,
         retrieval_chunks=retrieval_chunks,
         hard_fact_snapshot=hard_fact_snapshot,
+        # Phase-1 wiring
+        pacing_target=_ch_pacing_target,
+        subplot_schedule=_ch_subplot_schedule,
+        ending_contract=_ch_ending_contract,
+        reader_knowledge_entries=_ch_reader_knowledge,
+        relationship_milestones=_ch_rel_milestones,
+        # Phase-2 wiring
+        structure_beat_name=_ch_structure_beat_name,
+        structure_beat_description=_ch_structure_beat_desc,
+        # Phase-5 wiring
+        genre_obligations_due=_compute_obligations_due(
+            project=project,
+            chapter_number=chapter.chapter_number,
+        ),
+        # Phase-6 wiring
+        foreshadowing_gap_warning=_compute_foreshadowing_gap(
+            unresolved_clues=unresolved_clues,
+            chapter_number=chapter.chapter_number,
+        ),
     )

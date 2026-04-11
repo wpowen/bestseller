@@ -37,7 +37,10 @@ from bestseller.services.projects import (
     list_projects,
 )
 from bestseller.services.repair import run_project_repair
-from bestseller.services.writing_profile import get_project_writing_profile
+from bestseller.services.writing_profile import (
+    get_project_writing_profile,
+    sanitize_genre_story_overrides,
+)
 from bestseller.services.writing_presets import load_writing_preset_catalog, validate_longform_scope
 from bestseller.settings import AppSettings, load_settings
 
@@ -71,6 +74,30 @@ def _json_default(value: object) -> object:
     if isinstance(value, datetime):
         return value.isoformat()
     raise TypeError(f"Object of type {type(value).__name__} is not JSON serializable")
+
+
+def _sanitize_preset_payload(item: dict[str, object]) -> dict[str, object]:
+    payload = dict(item)
+    payload["writing_profile_overrides"] = sanitize_genre_story_overrides(
+        payload.get("writing_profile_overrides")
+        if isinstance(payload.get("writing_profile_overrides"), dict)
+        else None
+    )
+    return payload
+
+
+def _public_writing_preset_catalog_payload() -> dict[str, object]:
+    """Return a web-safe preset catalog without story-specific seed content."""
+    catalog = load_writing_preset_catalog().model_dump(mode="json")
+    catalog["platform_presets"] = [
+        _sanitize_preset_payload(item) if isinstance(item, dict) else item
+        for item in (catalog.get("platform_presets") or [])
+    ]
+    catalog["genre_presets"] = [
+        _sanitize_preset_payload(item) if isinstance(item, dict) else item
+        for item in (catalog.get("genre_presets") or [])
+    ]
+    return catalog
 
 
 def _project_output_dir(settings: AppSettings, project_slug: str) -> Path:
@@ -432,6 +459,7 @@ class WebTaskManager:
             return
         try:
             data = json.loads(self._persist_path.read_text(encoding="utf-8"))
+            changed = False
             for item in data:
                 task = WebTaskState(
                     task_id=item["task_id"],
@@ -453,7 +481,13 @@ class WebTaskManager:
                     task.status = "failed"
                     task.current_stage = "failed"
                     task.error = task.error or "Server restarted while task was running"
+                    changed = True
                 self._tasks[task.task_id] = task
+            # Persist the recovered state so the file on disk matches memory.
+            # Without this, a crash before the next _save_to_disk would leave
+            # orphaned "running" entries that never get cleaned up.
+            if changed:
+                self._save_to_disk()
         except (OSError, json.JSONDecodeError, KeyError):
             pass  # corrupt file — start fresh
 
@@ -1165,7 +1199,7 @@ class WebTaskManager:
             "auto_repair": True,
             "draft_mode": bool(payload.get("draft_mode", False)),
             "language": genre_preset.language,
-            "writing_profile": genre_preset.writing_profile_overrides or None,
+            "writing_profile": sanitize_genre_story_overrides(genre_preset.writing_profile_overrides),
             # Enable AI conception for new projects (not resume)
             "_run_conception": is_new_project,
             "_genre_key": genre_key,
@@ -2013,7 +2047,7 @@ def serve_web_app(
                     self._send_json(asyncio.run(_load_projects_payload(settings)))
                     return
                 if path == "/api/writing-presets":
-                    self._send_json(load_writing_preset_catalog().model_dump(mode="json"))
+                    self._send_json(_public_writing_preset_catalog_payload())
                     return
                 if path == "/api/prompt-packs":
                     from bestseller.services.prompt_packs import list_prompt_packs  # noqa: PLC0415

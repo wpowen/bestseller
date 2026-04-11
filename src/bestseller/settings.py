@@ -193,6 +193,8 @@ class PipelineSettings(BaseModel):
     arc_summary_enabled: bool = True  # Generate arc summaries at arc boundaries
     world_snapshot_enabled: bool = True  # Generate world snapshots at arc boundaries
     act_plan_threshold: int = 50  # Chapters > threshold enables act-level planning
+    progressive_planning: bool = False  # Enable progressive volume planning with write-feedback loop
+    category_aware_planning: bool = True  # Use novel-category research for genre-specific planning
 
 
 class BudgetSettings(BaseModel):

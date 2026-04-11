@@ -1,0 +1,196 @@
+key: default
+name: "通用"
+name_en: "Default"
+reader_promise_zh: >
+  提供完整、连贯、有吸引力的叙事体验。
+  通用标准适用于无法明确归入以上8个品类的作品。
+reader_promise_en: >
+  Deliver a complete, coherent, and compelling narrative experience.
+  Default standards apply to works that cannot be clearly classified into the other 8 categories.
+
+challenge_evolution_pathway:
+  - phase_key: introduction
+    phase_name_zh: "引入"
+    phase_name_en: "Introduction"
+    description_zh: "建立世界观、人物和核心冲突，让读者快速进入故事。"
+    description_en: "Establish the world, characters, and core conflict — pull readers into the story quickly."
+    typical_force_types: ["character", "environment"]
+    volume_goal_template_zh: "{protagonist}必须在{force_name}带来的初始冲突中找到自己的定位和方向。"
+    volume_goal_template_en: "{protagonist} must find positioning and direction within the initial conflict brought by {force_name}."
+    volume_climax_template_zh: "{protagonist}完成第一个关键抉择，故事的主线方向由此确定。"
+    volume_climax_template_en: "{protagonist} makes a first critical choice, establishing the main story direction."
+    volume_obstacle_template_zh: "{force_name}代表的初始挑战测试着{protagonist}的基本能力和决心。"
+    volume_obstacle_template_en: "{force_name}'s initial challenge tests {protagonist}'s basic ability and resolve."
+    volume_resolution_template_zh: "主线确立，{protagonist}带着初步的资源和经验进入下一阶段。"
+    volume_resolution_template_en: "The main line is established — {protagonist} enters the next stage with initial resources and experience."
+    chapter_conflict_templates:
+      setup_zh: "{protagonist}的日常被{force_name}引发的事件打破，不得不面对全新的处境。"
+      setup_en: "{protagonist}'s routine is broken by events triggered by {force_name}, forced to face a new situation."
+      investigation_zh: "{protagonist}试图理解{force_name}带来的变化意味着什么。"
+      investigation_en: "{protagonist} tries to understand what {force_name}'s disruption means."
+      pressure_zh: "{force_name}的压力升级，{protagonist}必须做出第一个重要决定。"
+      pressure_en: "{force_name}'s pressure escalates — {protagonist} must make a first important decision."
+      reversal_zh: "{protagonist}发现情况并非表面那样——{force_name}的真实意图更加复杂。"
+      reversal_en: "{protagonist} discovers things aren't what they seem — {force_name}'s true intent is more complex."
+      climax_zh: "{protagonist}在第一次关键对抗中展现了自己的核心品质。"
+      climax_en: "{protagonist} reveals their core qualities in the first critical confrontation."
+
+  - phase_key: escalation
+    phase_name_zh: "升级"
+    phase_name_en: "Escalation"
+    description_zh: "冲突规模扩大，主角面临更复杂的挑战，能力和认知同步成长。"
+    description_en: "Conflict scale expands — the protagonist faces more complex challenges with abilities and understanding growing in sync."
+    typical_force_types: ["character", "faction"]
+    volume_goal_template_zh: "{protagonist}必须在{force_name}带来的升级挑战中提升自己的能力和理解。"
+    volume_goal_template_en: "{protagonist} must elevate abilities and understanding through the escalated challenges from {force_name}."
+    volume_climax_template_zh: "{protagonist}在一次关键挑战中展现了显著的成长，赢得了新的资源或地位。"
+    volume_climax_template_en: "{protagonist} demonstrates significant growth in a key challenge, earning new resources or status."
+    volume_obstacle_template_zh: "{force_name}的威胁不再是简单的个体对抗，{protagonist}需要全新的策略。"
+    volume_obstacle_template_en: "{force_name}'s threat is no longer simple individual confrontation — {protagonist} needs entirely new strategies."
+    volume_resolution_template_zh: "成长阶段完成，但最难的考验还在前方。"
+    volume_resolution_template_en: "Growth phase complete, but the hardest test still lies ahead."
+    chapter_conflict_templates:
+      setup_zh: "{protagonist}意识到{force_name}的挑战已经升级到了全新的维度。"
+      setup_en: "{protagonist} realizes {force_name}'s challenge has escalated to an entirely new dimension."
+      investigation_zh: "{protagonist}寻找应对新层级挑战的资源和方法。"
+      investigation_en: "{protagonist} searches for resources and methods to handle the new level of challenge."
+      pressure_zh: "升级的挑战暴露了{protagonist}的不足，成长的痛苦不可避免。"
+      pressure_en: "Escalated challenges expose {protagonist}'s weaknesses — the pain of growth is inevitable."
+      reversal_zh: "{protagonist}从一次看似失败的经历中获得了关键的成长领悟。"
+      reversal_en: "{protagonist} gains a critical growth insight from a seemingly failed experience."
+      climax_zh: "{protagonist}在升级后的考验中证明了自己的成长是真实的。"
+      climax_en: "{protagonist} proves their growth is real in the escalated trial."
+
+  - phase_key: crisis
+    phase_name_zh: "危机"
+    phase_name_en: "Crisis"
+    description_zh: "最大的考验降临，之前积累的一切都被置于风险之中。"
+    description_en: "The greatest test arrives — everything accumulated is placed at risk."
+    typical_force_types: ["faction", "internal"]
+    volume_goal_template_zh: "{protagonist}必须在{force_name}引发的最大危机中保住一切，同时做出定义命运的选择。"
+    volume_goal_template_en: "{protagonist} must preserve everything in the greatest crisis triggered by {force_name} while making a fate-defining choice."
+    volume_climax_template_zh: "{protagonist}在最黑暗的时刻做出了一个改变一切的决定。"
+    volume_climax_template_en: "{protagonist} makes a decision that changes everything at the darkest moment."
+    volume_obstacle_template_zh: "{force_name}的终极攻势让{protagonist}失去了几乎所有依靠。"
+    volume_obstacle_template_en: "{force_name}'s ultimate offensive strips {protagonist} of nearly all support."
+    volume_resolution_template_zh: "危机过去，但{protagonist}和周围的一切都被永远改变了。"
+    volume_resolution_template_en: "The crisis passes, but {protagonist} and everything around are changed forever."
+    chapter_conflict_templates:
+      setup_zh: "{force_name}发动了前所未有的攻势，{protagonist}面对最严峻的考验。"
+      setup_en: "{force_name} launches an unprecedented offensive — {protagonist} faces the most severe test."
+      investigation_zh: "{protagonist}在危机中寻找最后的转机——任何一线希望都不能放过。"
+      investigation_en: "{protagonist} searches for a last turning point in the crisis — no sliver of hope can be missed."
+      pressure_zh: "一个接一个的打击让{protagonist}几近崩溃——还能承受多少？"
+      pressure_en: "Blow after blow pushes {protagonist} to the brink — how much more can be endured?"
+      reversal_zh: "在绝望中，{protagonist}找到了一个所有人都认为不可能的解决方案。"
+      reversal_en: "In despair, {protagonist} finds a solution everyone deemed impossible."
+      climax_zh: "{protagonist}在生死关头做出最终选择——这个选择定义了整个故事的核心。"
+      climax_en: "{protagonist} makes the final choice at life's edge — this choice defines the story's core."
+
+  - phase_key: resolution
+    phase_name_zh: "收束"
+    phase_name_en: "Resolution"
+    description_zh: "所有线索收束，冲突走向最终解决，角色完成内在弧线。"
+    description_en: "All threads converge, conflict reaches final resolution, characters complete their inner arcs."
+    typical_force_types: ["character", "internal"]
+    volume_goal_template_zh: "{protagonist}必须在{force_name}的最后对决中完成自己的内心成长和使命。"
+    volume_goal_template_en: "{protagonist} must complete inner growth and mission in the final confrontation with {force_name}."
+    volume_climax_template_zh: "最终对决结束——{protagonist}以成长后的姿态给出了属于自己的答案。"
+    volume_climax_template_en: "The final confrontation ends — {protagonist} gives their own answer from a place of growth."
+    volume_obstacle_template_zh: "{force_name}代表的不只是外部敌人，更是{protagonist}必须面对的内心残留。"
+    volume_obstacle_template_en: "{force_name} represents not just an external enemy but the inner remnants {protagonist} must face."
+    volume_resolution_template_zh: "故事走向结尾，{protagonist}在经历一切之后找到了属于自己的平衡。"
+    volume_resolution_template_en: "The story reaches its conclusion — {protagonist} finds their own balance after experiencing everything."
+    chapter_conflict_templates:
+      setup_zh: "所有线索指向最终的对决，{protagonist}做着最后的准备。"
+      setup_en: "All clues point to the final confrontation — {protagonist} makes last preparations."
+      investigation_zh: "{protagonist}回望整段旅程，理清最后的疑问。"
+      investigation_en: "{protagonist} looks back over the entire journey, clearing final questions."
+      pressure_zh: "最终对决之前，{protagonist}必须面对自己内心最后的恐惧。"
+      pressure_en: "Before the final confrontation, {protagonist} must face one last inner fear."
+      reversal_zh: "一个意想不到的发现改变了最终对决的性质。"
+      reversal_en: "An unexpected discovery changes the nature of the final confrontation."
+      climax_zh: "{protagonist}完成了整个故事的核心命题——不是胜利，而是成长。"
+      climax_en: "{protagonist} completes the story's core proposition — not victory, but growth."
+
+protagonist_archetypes:
+  - archetype_key: everyperson
+    name_zh: "普通人"
+    name_en: "Everyperson"
+    core_wound_zh: "曾经历过一次改变人生轨迹的事件，被迫面对自己从未想过的世界。"
+    core_wound_en: "Experienced a life-changing event, forced to face a world never imagined."
+    external_goal_template_zh: "{name}必须在不可控的变化中找到自己的方向并解决面前的核心问题。"
+    external_goal_template_en: "{name} must find direction amid uncontrollable change and solve the core problem ahead."
+    internal_need_template_zh: "{name}需要发现自己比想象中更有能力，同时接受自己的局限。"
+    internal_need_template_en: "{name} must discover they are more capable than imagined while accepting limitations."
+    arc_trajectory_zh: "从被动卷入到主动选择，从平凡到在平凡中找到非凡。"
+    arc_trajectory_en: "From being swept along to active choosing, from ordinary to finding the extraordinary in the ordinary."
+    flaw_zh: "容易自我怀疑，在关键时刻可能犹豫不决。"
+    flaw_en: "Prone to self-doubt, may hesitate at critical moments."
+    strength_zh: "同理心强，善于连接不同的人和资源。"
+    strength_en: "Strong empathy, adept at connecting different people and resources."
+
+world_rule_templates:
+  - rule_template_key: cause_effect
+    name_zh: "因果规则"
+    name_en: "Cause-Effect Rule"
+    description_zh: "每一个行动都有后果，每一个选择都有代价，世界按因果逻辑运转。"
+    description_en: "Every action has consequences, every choice has a cost — the world operates on causal logic."
+    story_consequence_zh: "{protagonist}不能不劳而获，每次收益都有对应的付出。"
+    story_consequence_en: "{protagonist} cannot gain without effort — every reward has a corresponding cost."
+    exploitation_potential_zh: "因果链是剧情推进的核心引擎——当下的选择决定未来的困境。"
+    exploitation_potential_en: "Causal chains are the core engine of plot progression — present choices determine future dilemmas."
+
+  - rule_template_key: limited_information
+    name_zh: "有限信息规则"
+    name_en: "Limited Information Rule"
+    description_zh: "角色只能基于自己掌握的信息做决策，没有人拥有完整的全局视角。"
+    description_en: "Characters can only make decisions based on available information — no one has a complete picture."
+    story_consequence_zh: "{protagonist}的决策可能是错的，因为信息不完整——这是冲突的天然来源。"
+    story_consequence_en: "{protagonist}'s decisions may be wrong due to incomplete information — a natural source of conflict."
+    exploitation_potential_zh: "信息差是所有品类通用的戏剧张力来源。"
+    exploitation_potential_en: "Information asymmetry is a universal source of dramatic tension across all categories."
+
+  - rule_template_key: change_cost
+    name_zh: "改变代价规则"
+    name_en: "Change Cost Rule"
+    description_zh: "任何有意义的改变都伴随着代价——放弃旧的才能拥抱新的。"
+    description_en: "Every meaningful change comes with a cost — one must let go of the old to embrace the new."
+    story_consequence_zh: "{protagonist}的每一次成长都意味着放弃某些东西，成长是一个持续取舍的过程。"
+    story_consequence_en: "{protagonist}'s every growth means giving something up — growth is a continuous process of trade-offs."
+    exploitation_potential_zh: "改变的代价让每一个选择都有分量，避免了'无痛升级'的空洞感。"
+    exploitation_potential_en: "The cost of change gives weight to every choice, avoiding the hollow feeling of 'painless upgrades.'"
+
+quality_traps:
+  - trap_key: unclear_category
+    description_zh: "品类不明确导致读者错配：读者不知道这是什么类型的书，期待与实际内容不匹配。"
+    description_en: "Unclear category causes reader mismatch: readers don't know what kind of book this is, expectations don't match content."
+    severity: warning
+
+  - trap_key: pleasing_everyone
+    description_zh: "试图讨好所有人：什么元素都有一点但什么都不深入，结果是所有维度都平庸。"
+    description_en: "Trying to please everyone: a bit of everything but nothing deep — all dimensions end up mediocre."
+    severity: warning
+
+  - trap_key: missing_engine
+    description_zh: "叙事引擎缺失：没有一个核心的叙事引擎来驱动故事前进，导致剧情散漫。"
+    description_en: "Missing narrative engine: no core engine driving the story forward, resulting in unfocused plot."
+    severity: critical
+
+disqualifiers:
+  - rule_zh: "叙事缺乏清晰的主线和合理的节奏。"
+    rule_en: "Narrative lacks a clear main line and reasonable pacing."
+    severity: critical
+
+  - rule_zh: "角色缺乏明确的动机和一致的行为逻辑。"
+    rule_en: "Characters lack clear motivation and consistent behavioral logic."
+    severity: critical
+
+tolerance_ranges:
+  all_dimensions:
+    min: 0.5
+    max: 0.5
+    note_zh: "通用分类对所有维度的容忍下限均为0.5"
+
+signal_keywords:
+  narrative_zh: ["冲突", "选择", "代价", "成长", "转折", "危机", "决定", "改变"]

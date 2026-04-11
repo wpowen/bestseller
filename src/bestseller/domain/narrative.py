@@ -88,6 +88,16 @@ class ChapterContractRead(BaseModel):
     planted_clue_codes: list[str] = Field(default_factory=list)
     due_payoff_codes: list[str] = Field(default_factory=list)
 
+    # --- 方法论扩展字段 (Methodology extensions) ---
+    conflict_stakes: str | None = None  # 筹码：输了会失去什么
+    conflict_buffs: list[str] = Field(default_factory=list)  # 极限施压BUFF
+    pacing_mode: str | None = Field(default=None, max_length=32)  # build/accelerate/climax/breathe
+    emotion_phase: str | None = Field(default=None, max_length=32)  # compress/release
+    hooks_to_resolve: list[str] = Field(default_factory=list)  # 本章应消解的钩子
+    hooks_to_plant: list[str] = Field(default_factory=list)  # 本章应植入的新钩子
+    is_climax: bool = False  # 是否为高潮章节
+    loop_position: str | None = Field(default=None, max_length=32)  # trigger/action/reward/invest
+
 
 class SceneContractRead(BaseModel):
     id: UUID
@@ -110,6 +120,14 @@ class SceneContractRead(BaseModel):
     arc_beat_ids: list[str] = Field(default_factory=list)
     planted_clue_codes: list[str] = Field(default_factory=list)
     payoff_codes: list[str] = Field(default_factory=list)
+
+    # --- 方法论扩展字段 (Methodology extensions) ---
+    conflict_stakes: str | None = None  # 筹码：输了会失去什么
+    conflict_buffs: list[str] = Field(default_factory=list)  # 极限施压BUFF列表
+    hook_type: str | None = Field(default=None, max_length=32)  # information_gap/deadline/mystery/desire/threat
+    spotlight_character: str | None = None  # 群像焦点轮转：本场景高光角色
+    information_control_mode: str | None = Field(default=None, max_length=64)  # reader_knows/character_knows/neither
+    action_sequence: list[str] = Field(default_factory=list)  # 动作序列细纲（心流写作用）
 
 
 class EmotionTrackRead(BaseModel):

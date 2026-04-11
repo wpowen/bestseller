@@ -1,0 +1,248 @@
+key: strategy-worldbuilding
+name: "策略世界观类"
+name_en: "Strategy-Worldbuilding"
+reader_promise_zh: >
+  世界观有深度和逻辑，势力博弈有策略，主角的谋略和决策是推动剧情的核心引擎。
+  读者来这个品类，买的是"看一个复杂世界中的战略博弈与权力运作"。
+reader_promise_en: >
+  The world has depth and logic. Factional games require strategy. The protagonist's
+  tactics and decisions are the core narrative engine. The reader buys strategic
+  competition and power dynamics in a complex world.
+
+challenge_evolution_pathway:
+  - phase_key: personal
+    phase_name_zh: "个人求存"
+    phase_name_en: "Personal Survival"
+    description_zh: "主角以个体身份在复杂势力格局中寻找立足之地。"
+    description_en: "The protagonist seeks a foothold as an individual within a complex power landscape."
+    typical_force_types: ["character", "faction"]
+    volume_goal_template_zh: "{protagonist}必须在{force_name}主导的势力格局中找到自己的第一个生存位置。"
+    volume_goal_template_en: "{protagonist} must find a first survival position in the power landscape dominated by {force_name}."
+    volume_climax_template_zh: "{protagonist}用第一步棋证明了自己不是可以随意抛弃的棋子。"
+    volume_climax_template_en: "{protagonist} proves with a first move that they are not a pawn to be discarded at will."
+    volume_obstacle_template_zh: "{force_name}代表的既有秩序不给{protagonist}任何直接对抗的空间。"
+    volume_obstacle_template_en: "The established order {force_name} represents offers {protagonist} no room for direct confrontation."
+    volume_resolution_template_zh: "主角在最底层获得了第一笔政治资本，但代价是被更多势力注意到。"
+    volume_resolution_template_en: "The protagonist gains first political capital at the lowest level, but the cost is visibility to more factions."
+    chapter_conflict_templates:
+      setup_zh: "{protagonist}在{force_name}的势力范围内发现了隐藏的权力规则和利益链。"
+      setup_en: "{protagonist} discovers hidden power rules and interest chains within {force_name}'s territory."
+      investigation_zh: "{protagonist}通过观察和情报收集，逐步摸清{force_name}的决策逻辑和弱点。"
+      investigation_en: "{protagonist} gradually maps {force_name}'s decision logic and weaknesses through observation and intelligence."
+      pressure_zh: "{force_name}的一个决策直接威胁到{protagonist}的生存基础。"
+      pressure_en: "A decision by {force_name} directly threatens {protagonist}'s survival foundation."
+      reversal_zh: "{protagonist}利用{force_name}势力内部的矛盾找到了一个出人意料的突破口。"
+      reversal_en: "{protagonist} exploits internal contradictions in {force_name}'s faction to find a surprising opening."
+      climax_zh: "{protagonist}在第一次博弈中以小搏大，用信息优势赢得了关键一步。"
+      climax_en: "{protagonist} wins a critical move in the first game of strategy, leveraging information advantage against greater power."
+
+  - phase_key: family_clan
+    phase_name_zh: "家族博弈"
+    phase_name_en: "Family & Clan"
+    description_zh: "冲突扩展到家族/组织层面，主角开始管理自己的小势力并与同级对手博弈。"
+    description_en: "Conflict expands to family/organizational level — the protagonist manages a small faction and competes with peers."
+    typical_force_types: ["faction", "character"]
+    volume_goal_template_zh: "{protagonist}必须带领自己的力量在{force_name}主导的家族博弈中站稳脚跟。"
+    volume_goal_template_en: "{protagonist} must lead their own force to a firm footing in the family contest dominated by {force_name}."
+    volume_climax_template_zh: "{protagonist}在家族博弈中完成一次关键布局，格局因此发生不可逆的变化。"
+    volume_climax_template_en: "{protagonist} completes a critical strategic move in the clan contest — the balance shifts irreversibly."
+    volume_obstacle_template_zh: "{force_name}的资源和人脉远超{protagonist}，正面竞争毫无胜算。"
+    volume_obstacle_template_en: "{force_name}'s resources and connections far exceed {protagonist}'s — direct competition is hopeless."
+    volume_resolution_template_zh: "家族内部重新洗牌，主角从边缘走向核心，但更大的势力开始介入。"
+    volume_resolution_template_en: "The clan reshuffles — the protagonist moves from margin to core, but larger factions begin to interfere."
+    chapter_conflict_templates:
+      setup_zh: "{protagonist}开始在家族权力结构中建立自己的位置和人脉网络。"
+      setup_en: "{protagonist} begins establishing a position and network within the clan power structure."
+      investigation_zh: "{protagonist}调查{force_name}的盟友和软肋，为策略布局收集筹码。"
+      investigation_en: "{protagonist} investigates {force_name}'s allies and vulnerabilities, collecting bargaining chips."
+      pressure_zh: "{force_name}发动先手打压，{protagonist}被迫在不利条件下做出反应。"
+      pressure_en: "{force_name} strikes first to suppress — {protagonist} must react under unfavorable conditions."
+      reversal_zh: "{protagonist}暗中布置的一步棋在关键时刻发挥作用，{force_name}的计划被打乱。"
+      reversal_en: "A hidden move {protagonist} placed earlier takes effect at the critical moment, disrupting {force_name}'s plan."
+      climax_zh: "家族内部的权力争夺到达顶点，{protagonist}和{force_name}的终极博弈开始。"
+      climax_en: "Internal clan power struggle peaks — the ultimate game between {protagonist} and {force_name} begins."
+
+  - phase_key: regional
+    phase_name_zh: "地方割据"
+    phase_name_en: "Regional Power"
+    description_zh: "博弈扩大到地区层面，多个势力并存竞争，主角必须在多方角力中运筹帷幄。"
+    description_en: "The game expands to the regional level — multiple factions coexist and compete, requiring the protagonist to orchestrate among many."
+    typical_force_types: ["faction", "systemic"]
+    volume_goal_template_zh: "{protagonist}必须在{force_name}引发的地方势力重组中巩固自己的地盘。"
+    volume_goal_template_en: "{protagonist} must consolidate territory during the regional power restructuring triggered by {force_name}."
+    volume_climax_template_zh: "地区格局大洗牌，{protagonist}凭借关键决策成为新格局的核心力量之一。"
+    volume_climax_template_en: "The regional balance reshuffles — {protagonist}'s critical decisions make them a core power in the new order."
+    volume_obstacle_template_zh: "{force_name}联合多方势力对{protagonist}形成合围之势。"
+    volume_obstacle_template_en: "{force_name} unites multiple factions to encircle {protagonist}."
+    volume_resolution_template_zh: "地区秩序重建，主角成为不可忽视的力量，但国家层面的风暴正在酝酿。"
+    volume_resolution_template_en: "Regional order rebuilds — the protagonist becomes an undeniable force, but a national storm brews."
+    chapter_conflict_templates:
+      setup_zh: "多个地方势力同时向{protagonist}施压，{force_name}在暗中操纵局势。"
+      setup_en: "Multiple regional powers pressure {protagonist} simultaneously while {force_name} manipulates from the shadows."
+      investigation_zh: "{protagonist}派人渗透{force_name}的联盟，寻找可以瓦解联合的突破点。"
+      investigation_en: "{protagonist} infiltrates {force_name}'s alliance, searching for cracks to dissolve the coalition."
+      pressure_zh: "合围收紧，{protagonist}的后方补给线被切断，必须在绝境中找到出路。"
+      pressure_en: "The encirclement tightens — {protagonist}'s supply lines are cut, forcing a way out from desperation."
+      reversal_zh: "{protagonist}利用{force_name}联盟内部的利益矛盾，成功策反了关键一方。"
+      reversal_en: "{protagonist} exploits interest conflicts within {force_name}'s coalition, successfully turning a key party."
+      climax_zh: "决定地区格局的大决战爆发，{protagonist}以谋略对抗{force_name}的兵力优势。"
+      climax_en: "The battle that decides regional power erupts — {protagonist} pits strategy against {force_name}'s numerical advantage."
+
+  - phase_key: national
+    phase_name_zh: "国家争霸"
+    phase_name_en: "National Contest"
+    description_zh: "主角进入国家级权力博弈，面对的是制度、律法和整个国家机器。"
+    description_en: "The protagonist enters national-level power games, facing institutions, laws, and the entire state apparatus."
+    typical_force_types: ["systemic", "faction"]
+    volume_goal_template_zh: "{protagonist}必须在{force_name}代表的国家级博弈中争取到改变规则的权力。"
+    volume_goal_template_en: "{protagonist} must win the power to change rules in the national-level contest represented by {force_name}."
+    volume_climax_template_zh: "{protagonist}在国家权力的巅峰做出了一个改变所有人命运的决策。"
+    volume_climax_template_en: "{protagonist} makes a decision at the pinnacle of national power that changes everyone's fate."
+    volume_obstacle_template_zh: "{force_name}掌控着整个国家机器，{protagonist}的每一步都在对方的监控之下。"
+    volume_obstacle_template_en: "{force_name} controls the entire state apparatus — {protagonist}'s every move is under surveillance."
+    volume_resolution_template_zh: "国家格局被重塑，主角站在了权力的中心，但文明级的挑战正在降临。"
+    volume_resolution_template_en: "The national landscape is reshaped — the protagonist stands at the center of power, but civilization-level challenges loom."
+    chapter_conflict_templates:
+      setup_zh: "{protagonist}进入国家权力的核心圈层，发现{force_name}的影响力远超想象。"
+      setup_en: "{protagonist} enters the core circle of national power, discovering {force_name}'s influence exceeds all expectations."
+      investigation_zh: "{protagonist}试图理解{force_name}用以维持统治的制度逻辑和利益分配机制。"
+      investigation_en: "{protagonist} tries to understand the institutional logic and interest distribution {force_name} uses to maintain rule."
+      pressure_zh: "{force_name}通过制度手段合法地剥夺{protagonist}的根基。"
+      pressure_en: "{force_name} legally strips {protagonist}'s foundation through institutional means."
+      reversal_zh: "{protagonist}发现了{force_name}制度体系中一个致命的结构性矛盾。"
+      reversal_en: "{protagonist} discovers a fatal structural contradiction in {force_name}'s institutional system."
+      climax_zh: "国家级的权力对决到达顶点，{protagonist}必须在改革和妥协之间做出选择。"
+      climax_en: "The national power confrontation peaks — {protagonist} must choose between reform and compromise."
+
+  - phase_key: civilizational
+    phase_name_zh: "文明抉择"
+    phase_name_en: "Civilizational Choice"
+    description_zh: "最终博弈超越国家边界，主角面对的是文明方向的选择和历史的书写权。"
+    description_en: "The final game transcends national borders — the protagonist faces choices about civilization's direction and the right to write history."
+    typical_force_types: ["systemic", "internal"]
+    volume_goal_template_zh: "{protagonist}必须在{force_name}代表的文明级挑战面前做出定义未来的选择。"
+    volume_goal_template_en: "{protagonist} must make a future-defining choice before the civilization-level challenge {force_name} represents."
+    volume_climax_template_zh: "{protagonist}的最终选择决定了一个文明的走向——这不再是胜负，而是方向。"
+    volume_climax_template_en: "{protagonist}'s final choice determines a civilization's direction — this is no longer about winning or losing, but about direction."
+    volume_obstacle_template_zh: "{force_name}代表的是一种根深蒂固的文明范式，{protagonist}要改变的不是一个人而是一种思维方式。"
+    volume_obstacle_template_en: "{force_name} represents a deeply rooted civilization paradigm — {protagonist} must change not a person but a way of thinking."
+    volume_resolution_template_zh: "文明的方向被重新定义，{protagonist}的选择成为后世传说的起点。"
+    volume_resolution_template_en: "The direction of civilization is redefined — {protagonist}'s choice becomes the origin of a legend for future generations."
+    chapter_conflict_templates:
+      setup_zh: "{protagonist}站在文明的十字路口，{force_name}的理念和自己的信仰发生根本冲突。"
+      setup_en: "{protagonist} stands at civilization's crossroads — {force_name}'s philosophy fundamentally conflicts with their own."
+      investigation_zh: "{protagonist}回顾整个博弈历程，寻找超越胜负的第三条路。"
+      investigation_en: "{protagonist} reviews the entire strategic journey, seeking a third path beyond victory and defeat."
+      pressure_zh: "所有人都在等待{protagonist}的决定，但没有一个选择是没有代价的。"
+      pressure_en: "Everyone awaits {protagonist}'s decision, but no choice comes without cost."
+      reversal_zh: "{protagonist}在绝境中找到了一个超越博弈本身的解决方案。"
+      reversal_en: "{protagonist} finds a solution that transcends the game itself at the point of desperation."
+      climax_zh: "{protagonist}做出最终选择——这不是最优解，但这是最符合信仰的解。"
+      climax_en: "{protagonist} makes the final choice — not the optimal one, but the one most aligned with belief."
+
+protagonist_archetypes:
+  - archetype_key: strategic_mind
+    name_zh: "谋略家"
+    name_en: "Strategic Mind"
+    core_wound_zh: "曾亲眼见证一次因决策失误导致的灾难，从此对'错误决策'有深入骨髓的恐惧。"
+    core_wound_en: "Witnessed a disaster caused by a wrong decision — since then, carries bone-deep fear of making the wrong call."
+    external_goal_template_zh: "{name}必须用策略和谋划在复杂的势力格局中为自己（和追随者）争取到最好的结果。"
+    external_goal_template_en: "{name} must use strategy and planning to win the best outcome for self and followers in complex factional dynamics."
+    internal_need_template_zh: "{name}需要学会接受不完美的决策，理解'足够好'有时比'完美'更重要。"
+    internal_need_template_en: "{name} must accept imperfect decisions — 'good enough' sometimes matters more than 'perfect.'"
+    arc_trajectory_zh: "从追求完美控制到接受不确定性，从孤独的棋手到有人性温度的领袖。"
+    arc_trajectory_en: "From pursuing perfect control to accepting uncertainty, from a lonely chess player to a leader with human warmth."
+    flaw_zh: "过度算计导致难以信任他人，容易把人当棋子。"
+    flaw_en: "Over-calculating makes trust difficult — easily treats people as chess pieces."
+    strength_zh: "格局视野极广，善于在混乱中找到关键杠杆点。"
+    strength_en: "Exceptional strategic vision — adept at finding key leverage points amid chaos."
+
+world_rule_templates:
+  - rule_template_key: power_balance
+    name_zh: "权力均衡规则"
+    name_en: "Power Balance Rule"
+    description_zh: "多个势力维持动态平衡，任何一方的突然强大都会引发其他方的联合制衡。"
+    description_en: "Multiple factions maintain dynamic equilibrium — any sudden rise triggers joint balancing from others."
+    story_consequence_zh: "{protagonist}不能无限扩张，每次获得优势都会面临其他势力的反制联盟。"
+    story_consequence_en: "{protagonist} cannot expand infinitely — every advantage gained triggers counter-alliances."
+    exploitation_potential_zh: "均衡体系中最有价值的是'关键少数'——能打破平衡的那一票。"
+    exploitation_potential_en: "In a balanced system, the most valuable position is the 'pivotal minority' — the vote that breaks the balance."
+
+  - rule_template_key: information_warfare
+    name_zh: "情报战规则"
+    name_en: "Information Warfare Rule"
+    description_zh: "信息是最重要的武器，知道别人不知道的事是最大的优势。"
+    description_en: "Information is the most important weapon — knowing what others don't is the greatest advantage."
+    story_consequence_zh: "{protagonist}的策略成功与否取决于情报的准确性，错误情报比没有情报更危险。"
+    story_consequence_en: "{protagonist}'s strategic success depends on intelligence accuracy — wrong intelligence is more dangerous than none."
+    exploitation_potential_zh: "反间计、假情报、信息泄露都是推动剧情的核心手段。"
+    exploitation_potential_en: "Counter-intelligence, disinformation, and leaks are core plot drivers."
+
+  - rule_template_key: institutional_inertia
+    name_zh: "制度惯性规则"
+    name_en: "Institutional Inertia Rule"
+    description_zh: "既有制度和传统具有巨大的惯性，即使有明显缺陷也很难在短期内改变。"
+    description_en: "Existing institutions and traditions have enormous inertia — even obvious flaws are hard to change quickly."
+    story_consequence_zh: "{protagonist}不能靠一次胜利改变整个体制，制度变革需要长期的策略布局。"
+    story_consequence_en: "{protagonist} cannot change an entire system with one victory — institutional change requires long-term strategic positioning."
+    exploitation_potential_zh: "制度惯性既是障碍也是工具——利用旧制度的规则来推动新变革。"
+    exploitation_potential_en: "Institutional inertia is both obstacle and tool — use old rules to drive new reforms."
+
+quality_traps:
+  - trap_key: protagonist_omniscience
+    description_zh: "主角全知全能：主角对所有势力的底细了如指掌，博弈毫无悬念。应该让主角也有信息盲区。"
+    description_en: "Omniscient protagonist: knows everything about every faction, making games without suspense. Give the protagonist blind spots."
+    severity: critical
+
+  - trap_key: dumb_opponents
+    description_zh: "对手集体降智：所有对手都犯低级错误来让主角赢。对手应该是聪明的。"
+    description_en: "Dumb opponents: all opponents make basic mistakes so the protagonist wins. Opponents should be intelligent."
+    severity: critical
+
+  - trap_key: wikipedia_worldbuilding
+    description_zh: "世界观展示变百科全书：用大段说明文介绍世界设定，而非通过角色的体验和决策来展示。"
+    description_en: "Wikipedia worldbuilding: introducing settings through exposition paragraphs instead of through character experience and decisions."
+    severity: warning
+
+  - trap_key: static_factions
+    description_zh: "势力格局静态化：从第一卷到最后一卷，势力分布没有本质变化。应该像棋局一样不断重组。"
+    description_en: "Static factions: power distribution unchanged from first to last volume. Should constantly reshuffle like a chess game."
+    severity: critical
+
+  - trap_key: strategy_execution_gap
+    description_zh: "谋略与执行脱节：花大量篇幅描写谋划过程，但执行阶段一笔带过。"
+    description_en: "Strategy-execution gap: extensive planning descriptions but execution glossed over."
+    severity: warning
+
+disqualifiers:
+  - rule_zh: "世界规则自相矛盾。"
+    rule_en: "World rules contradict themselves."
+    severity: fatal
+
+  - rule_zh: "主角靠'运气'而非'策略'获胜。"
+    rule_en: "Protagonist wins through 'luck' rather than 'strategy.'"
+    severity: fatal
+
+  - rule_zh: "所有对手都是弱智，无一个值得尊敬的对手。"
+    rule_en: "All opponents are stupid — no respectable adversary exists."
+    severity: critical
+
+tolerance_ranges:
+  poetic_language:
+    min: 0.3
+    max: 0.5
+    note_zh: "策略文更注重信息密度和逻辑清晰"
+  romantic_emotion:
+    min: 0.3
+    max: 0.5
+    note_zh: "除非宫斗/宅斗"
+  combat_detail:
+    min: 0.3
+    max: 0.5
+    note_zh: "策略文的'战斗'更多是运筹帷幄"
+
+signal_keywords:
+  power_zh: ["朝堂", "势力", "阵营", "同盟", "背叛", "拉拢", "制衡", "布局", "下棋", "博弈"]
+  strategy_zh: ["谋划", "算计", "反间", "信息", "情报", "筹码", "利益", "让步", "交换", "牺牲"]
+  institution_zh: ["制度", "律法", "规矩", "传统", "禁令", "资源", "供给", "税赋", "封地", "领地"]
+  change_zh: ["崛起", "衰落", "吞并", "独立", "联盟", "割据", "统一", "变法", "改革"]

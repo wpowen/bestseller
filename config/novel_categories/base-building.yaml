@@ -1,0 +1,249 @@
+key: base-building
+name: "基建经营类"
+name_en: "Base-Building"
+reader_promise_zh: >
+  从零到一的建设过程有细节有满足感，资源积累和管理有逻辑，
+  "种田"的过程本身就是最大的看点。
+  读者来这个品类，买的是"看一个体系从无到有、从小到大的全过程满足感"。
+reader_promise_en: >
+  The zero-to-one building process has detail and satisfaction. Resource accumulation
+  and management follow logic. The "farming" process itself is the main attraction.
+  The reader buys the full satisfaction of watching a system grow from nothing.
+
+challenge_evolution_pathway:
+  - phase_key: foundation
+    phase_name_zh: "奠基"
+    phase_name_en: "Foundation"
+    description_zh: "从一无所有开始，收集基础资源，建立第一个可居住/可运营的基地。"
+    description_en: "Starting from nothing — gather basic resources, establish the first livable/operable base."
+    typical_force_types: ["environment", "character"]
+    volume_goal_template_zh: "{protagonist}必须在{force_name}带来的恶劣环境中收集资源、建立第一个可持续的据点。"
+    volume_goal_template_en: "{protagonist} must gather resources and establish a first sustainable base in the harsh environment brought by {force_name}."
+    volume_climax_template_zh: "第一个基地完成基础建设，{protagonist}的努力终于有了可见的成果。"
+    volume_climax_template_en: "The first base completes basic construction — {protagonist}'s effort finally has visible results."
+    volume_obstacle_template_zh: "资源极度匮乏，{force_name}带来的环境威胁让每一步建设都困难重重。"
+    volume_obstacle_template_en: "Resources are extremely scarce — environmental threats from {force_name} make every construction step arduous."
+    volume_resolution_template_zh: "基地雏形建成，自给自足的目标初步实现，但规模扩张的需求已经迫在眉睫。"
+    volume_resolution_template_en: "Base framework built and basic self-sufficiency achieved, but the need for scale expansion is already pressing."
+    chapter_conflict_templates:
+      setup_zh: "{protagonist}勘察了{force_name}环境中可利用的资源分布，制定了建设优先级。"
+      setup_en: "{protagonist} surveys available resources in {force_name}'s environment and sets construction priorities."
+      investigation_zh: "{protagonist}发现了一种关键资源的获取途径，但代价是必须冒险进入{force_name}的控制区域。"
+      investigation_en: "{protagonist} discovers a way to obtain a critical resource, but it requires venturing into {force_name}'s controlled area."
+      pressure_zh: "突发的环境危机威胁到了已建成的设施，{protagonist}必须紧急做出保护还是放弃的决定。"
+      pressure_en: "A sudden environmental crisis threatens existing facilities — {protagonist} must urgently decide: protect or abandon."
+      reversal_zh: "{protagonist}找到了一种创新的建设方法，大幅提高了资源利用效率。"
+      reversal_en: "{protagonist} discovers an innovative construction method that dramatically improves resource efficiency."
+      climax_zh: "基地面对第一次重大考验——{force_name}的威胁直接冲击了{protagonist}的所有建设成果。"
+      climax_en: "The base faces its first major test — {force_name}'s threat directly impacts all of {protagonist}'s construction achievements."
+
+  - phase_key: expansion
+    phase_name_zh: "扩张"
+    phase_name_en: "Expansion"
+    description_zh: "基地开始向外扩展，开辟新资源、新领地，吸引新成员加入。"
+    description_en: "The base begins outward expansion — opening new resources, new territories, attracting new members."
+    typical_force_types: ["faction", "environment"]
+    volume_goal_template_zh: "{protagonist}必须突破{force_name}造成的资源瓶颈，将基地从生存模式扩张到发展模式。"
+    volume_goal_template_en: "{protagonist} must break through {force_name}'s resource bottleneck, expanding the base from survival to development mode."
+    volume_climax_template_zh: "扩张目标达成，基地的规模和影响力实现了质的飞跃。"
+    volume_climax_template_en: "Expansion target achieved — the base's scale and influence make a qualitative leap."
+    volume_obstacle_template_zh: "{force_name}控制着扩张所需的关键资源或通道，直接竞争不可避免。"
+    volume_obstacle_template_en: "{force_name} controls key resources or passages needed for expansion — direct competition is inevitable."
+    volume_resolution_template_zh: "领地扩大了，但管理的复杂度也成倍增加，内部治理成为新挑战。"
+    volume_resolution_template_en: "Territory expanded, but management complexity multiplied — internal governance becomes the new challenge."
+    chapter_conflict_templates:
+      setup_zh: "{protagonist}制定了扩张计划，但{force_name}控制的区域是必经之路。"
+      setup_en: "{protagonist} drafts an expansion plan, but {force_name}'s controlled area is an unavoidable path."
+      investigation_zh: "{protagonist}派人探查{force_name}领地的资源分布和防御弱点。"
+      investigation_en: "{protagonist} sends scouts to survey resource distribution and defense weaknesses in {force_name}'s territory."
+      pressure_zh: "扩张中的资源消耗超出预期，基地的储备面临危机。"
+      pressure_en: "Expansion resource consumption exceeds expectations — base reserves face a crisis."
+      reversal_zh: "意外发现的新资源产地改变了扩张的战略方向。"
+      reversal_en: "An unexpectedly discovered resource site changes the strategic direction of expansion."
+      climax_zh: "{protagonist}在扩张的关键节点做出决策：保守经营还是冒险突进。"
+      climax_en: "{protagonist} makes a decision at expansion's critical point: conservative management or risky advance."
+
+  - phase_key: defense
+    phase_name_zh: "防御"
+    phase_name_en: "Defense"
+    description_zh: "基地的发展引来外部威胁，必须建立防御体系保护已有成果。"
+    description_en: "Base development attracts external threats — defense systems must be built to protect achievements."
+    typical_force_types: ["faction", "environment"]
+    volume_goal_template_zh: "{protagonist}必须在{force_name}发动的攻击中保住基地，同时完善防御体系。"
+    volume_goal_template_en: "{protagonist} must defend the base from {force_name}'s attacks while perfecting the defense system."
+    volume_climax_template_zh: "基地经受住了{force_name}最猛烈的攻击，防御体系首次证明了其价值。"
+    volume_climax_template_en: "The base withstands {force_name}'s fiercest attack — the defense system proves its value for the first time."
+    volume_obstacle_template_zh: "{force_name}的进攻规模超出预期，现有防御体系面临崩溃风险。"
+    volume_obstacle_template_en: "{force_name}'s offensive scale exceeds expectations — existing defenses risk collapse."
+    volume_resolution_template_zh: "防御成功但暴露了体系短板，主角开始思考如何从被动防御转为主动整合。"
+    volume_resolution_template_en: "Defense succeeds but exposes system weaknesses — the protagonist begins thinking about shifting from passive defense to active integration."
+    chapter_conflict_templates:
+      setup_zh: "{force_name}的侦察力量出现在基地周围，{protagonist}意识到和平时期即将结束。"
+      setup_en: "{force_name}'s scouts appear around the base — {protagonist} realizes the peaceful period is ending."
+      investigation_zh: "{protagonist}评估{force_name}的进攻能力，针对性地加固防御薄弱环节。"
+      investigation_en: "{protagonist} assesses {force_name}'s offensive capability and reinforces defensive weak points."
+      pressure_zh: "{force_name}的封锁切断了外部补给，基地必须完全依靠内部储备作战。"
+      pressure_en: "{force_name}'s blockade cuts external supply — the base must fight entirely on internal reserves."
+      reversal_zh: "{protagonist}想出了一个利用地形和基地设施的创新防御方案。"
+      reversal_en: "{protagonist} devises an innovative defense plan using terrain and base facilities."
+      climax_zh: "决定性的防御战爆发，{protagonist}必须用有限资源抵抗{force_name}的全面进攻。"
+      climax_en: "The decisive defense battle erupts — {protagonist} must resist {force_name}'s full assault with limited resources."
+
+  - phase_key: integration
+    phase_name_zh: "整合"
+    phase_name_en: "Integration"
+    description_zh: "多个据点和资源整合为一个有机系统，内部治理和外交成为核心。"
+    description_en: "Multiple outposts and resources integrate into an organic system — internal governance and diplomacy become core."
+    typical_force_types: ["systemic", "faction"]
+    volume_goal_template_zh: "{protagonist}必须在{force_name}的竞争压力下完成内部整合，建立可持续运转的治理体系。"
+    volume_goal_template_en: "{protagonist} must complete internal integration under {force_name}'s competitive pressure, establishing a sustainable governance system."
+    volume_climax_template_zh: "整合完成，基地从一群松散的据点升级为一个真正的自治体。"
+    volume_climax_template_en: "Integration complete — the base upgrades from a cluster of loose outposts to a true autonomous entity."
+    volume_obstacle_template_zh: "内部派系矛盾和资源分配争议威胁着整合进程。"
+    volume_obstacle_template_en: "Internal faction conflicts and resource distribution disputes threaten the integration process."
+    volume_resolution_template_zh: "自治体成形，主角从建设者变为治理者，新的责任带来新的挑战。"
+    volume_resolution_template_en: "The autonomous entity takes shape — the protagonist transforms from builder to governor, new responsibilities bring new challenges."
+    chapter_conflict_templates:
+      setup_zh: "{protagonist}开始规划将分散的据点整合为统一的管理体系。"
+      setup_en: "{protagonist} begins planning to integrate scattered outposts into a unified management system."
+      investigation_zh: "{protagonist}深入了解各据点的实际情况和利益诉求，寻找整合的共识基础。"
+      investigation_en: "{protagonist} deeply understands each outpost's situation and interests, seeking consensus for integration."
+      pressure_zh: "整合过程中的利益重新分配引发了内部冲突，{force_name}趁机施压。"
+      pressure_en: "Interest redistribution during integration triggers internal conflict — {force_name} applies pressure."
+      reversal_zh: "{protagonist}提出了一个让各方都能接受的利益方案，化解了最大的内部阻力。"
+      reversal_en: "{protagonist} proposes a benefit scheme acceptable to all parties, dissolving the greatest internal resistance."
+      climax_zh: "整合的最终决议日到来，{protagonist}必须让所有人同意一个不完美但可行的方案。"
+      climax_en: "Integration's final decision day arrives — {protagonist} must get everyone to agree on an imperfect but workable plan."
+
+  - phase_key: prosperity
+    phase_name_zh: "繁荣"
+    phase_name_en: "Prosperity"
+    description_zh: "基业进入繁荣期，主角面对的是如何让这个体系传承下去的终极命题。"
+    description_en: "The enterprise enters prosperity — the protagonist faces the ultimate question of how to make this system endure."
+    typical_force_types: ["internal", "systemic"]
+    volume_goal_template_zh: "{protagonist}必须在{force_name}代表的新型挑战面前确保基业的长期繁荣和传承。"
+    volume_goal_template_en: "{protagonist} must ensure the enterprise's long-term prosperity and succession before the new challenges {force_name} represents."
+    volume_climax_template_zh: "基业达到巅峰——{protagonist}做出一个关于传承和未来的决定。"
+    volume_climax_template_en: "The enterprise reaches its peak — {protagonist} makes a decision about succession and the future."
+    volume_obstacle_template_zh: "繁荣带来了新的问题：内部安逸、外部觊觎、以及{protagonist}自身的倦怠。"
+    volume_obstacle_template_en: "Prosperity brings new problems: internal complacency, external covetousness, and {protagonist}'s own fatigue."
+    volume_resolution_template_zh: "基业找到了可持续传承的方式，{protagonist}的建设精神成为这个体系的灵魂。"
+    volume_resolution_template_en: "The enterprise finds a sustainable succession path — {protagonist}'s building spirit becomes the system's soul."
+    chapter_conflict_templates:
+      setup_zh: "{protagonist}审视繁荣中的隐患——看似完美的体系下藏着什么样的裂缝？"
+      setup_en: "{protagonist} examines hidden dangers in prosperity — what cracks lurk beneath the seemingly perfect system?"
+      investigation_zh: "{protagonist}思考传承的问题——这个体系离开自己还能持续运转吗？"
+      investigation_en: "{protagonist} considers succession — can this system continue operating without them?"
+      pressure_zh: "{force_name}带来的新型挑战暴露了繁荣体系中最深层的结构性缺陷。"
+      pressure_en: "New challenges from {force_name} expose the deepest structural flaws in the prosperous system."
+      reversal_zh: "{protagonist}意识到真正的繁荣不是规模的极限，而是体系的自我进化能力。"
+      reversal_en: "{protagonist} realizes true prosperity isn't maximum scale but the system's ability to self-evolve."
+      climax_zh: "{protagonist}做出了关于基业未来的最终决策——这个选择定义了整个建设旅程的意义。"
+      climax_en: "{protagonist} makes the final decision about the enterprise's future — this choice defines the meaning of the entire building journey."
+
+protagonist_archetypes:
+  - archetype_key: methodical_builder
+    name_zh: "匠心建设者"
+    name_en: "Methodical Builder"
+    core_wound_zh: "曾亲眼看着一个家园被毁灭，发誓要用自己的双手建造一个不会倒塌的世界。"
+    core_wound_en: "Witnessed a homeland destroyed — swore to build a world that would not fall with their own hands."
+    external_goal_template_zh: "{name}要从零开始建造一个完整的、自给自足的、能够传承下去的基业。"
+    external_goal_template_en: "{name} will build a complete, self-sustaining, enduring enterprise from scratch."
+    internal_need_template_zh: "{name}需要学会不是所有事情都要亲力亲为，信任他人也是建设的一部分。"
+    internal_need_template_en: "{name} must learn that not everything needs personal handling — trusting others is part of building."
+    arc_trajectory_zh: "从事必躬亲的建设者到运筹帷幄的治理者，从个人成就到集体传承。"
+    arc_trajectory_en: "From hands-on builder to strategic governor, from personal achievement to collective legacy."
+    flaw_zh: "控制欲强，难以放手让他人承担重要工作。"
+    flaw_en: "Strong control impulse, struggles to delegate important work to others."
+    strength_zh: "规划能力极强，对资源和效率有近乎直觉的敏感。"
+    strength_en: "Exceptional planning ability — near-intuitive sensitivity to resources and efficiency."
+
+world_rule_templates:
+  - rule_template_key: resource_scarcity
+    name_zh: "资源稀缺规则"
+    name_en: "Resource Scarcity Rule"
+    description_zh: "关键资源有限且需要持续投入才能获取，不存在'一劳永逸'的资源方案。"
+    description_en: "Key resources are limited and require continuous investment — no 'once and done' resource solutions exist."
+    story_consequence_zh: "{protagonist}必须在有限的资源中做出优先级选择，不可能什么都建。"
+    story_consequence_en: "{protagonist} must prioritize within limited resources — building everything is impossible."
+    exploitation_potential_zh: "资源稀缺是天然的冲突引擎——谁控制资源，谁就掌握话语权。"
+    exploitation_potential_en: "Resource scarcity is a natural conflict engine — whoever controls resources holds the voice."
+
+  - rule_template_key: tech_tree
+    name_zh: "技术路线规则"
+    name_en: "Technology Tree Rule"
+    description_zh: "技术和建设有合理的先后顺序，不能跳过基础直接到达高级。"
+    description_en: "Technology and construction follow a reasonable sequence — skipping basics to reach advanced levels is impossible."
+    story_consequence_zh: "{protagonist}不能一步到位，每个阶段的建设都是下一阶段的基础。"
+    story_consequence_en: "{protagonist} cannot reach the end in one step — each stage's construction is the foundation for the next."
+    exploitation_potential_zh: "技术路线的分叉点是重大决策——选择一条路意味着放弃另一条。"
+    exploitation_potential_en: "Technology tree forks are major decisions — choosing one path means abandoning another."
+
+  - rule_template_key: scale_challenge
+    name_zh: "规模挑战规则"
+    name_en: "Scale Challenge Rule"
+    description_zh: "基业规模每上一个台阶，管理复杂度呈指数级增长。"
+    description_en: "Every step up in enterprise scale brings exponential growth in management complexity."
+    story_consequence_zh: "{protagonist}不能只管建设不管治理，规模化之后的管理挑战可能比建设本身更难。"
+    story_consequence_en: "{protagonist} cannot only build without governing — post-scaling management may be harder than construction itself."
+    exploitation_potential_zh: "规模挑战是基建文从'爽文'进化为'深度叙事'的关键转折。"
+    exploitation_potential_en: "Scale challenges are the key transition from 'power fantasy' to 'deep narrative' in base-building fiction."
+
+quality_traps:
+  - trap_key: unlimited_resources
+    description_zh: "建设没有限制：主角想建什么就建什么，资源无限、技术无限。缺乏限制就缺乏戏剧张力。"
+    description_en: "Unlimited building: protagonist builds whatever they want with infinite resources and tech. No limits means no tension."
+    severity: critical
+
+  - trap_key: skipped_process
+    description_zh: "跳过建设过程：'三个月后，城池已初具规模'——读者来看的就是这三个月的过程。"
+    description_en: "Skipped process: 'three months later the city took shape' — readers came to SEE those three months."
+    severity: critical
+
+  - trap_key: impossible_tech
+    description_zh: "技术树不合理：还没有基本冶铁技术就直接造蒸汽机。"
+    description_en: "Impossible tech tree: building steam engines before basic iron smelting."
+    severity: critical
+
+  - trap_key: build_no_manage
+    description_zh: "只有建设没有管理：建好后完全不提运营和管理问题。"
+    description_en: "Build without manage: no mention of operation and management after construction."
+    severity: warning
+
+  - trap_key: threat_rhythm
+    description_zh: "外部威胁频率失衡：太频繁导致建设被不断打断；太稀少导致缺乏紧迫感。"
+    description_en: "Threat rhythm imbalance: too frequent interrupts building; too rare lacks urgency."
+    severity: warning
+
+disqualifiers:
+  - rule_zh: "资源凭空出现，破坏积累感。"
+    rule_en: "Resources appear from nowhere, destroying the sense of accumulation."
+    severity: fatal
+
+  - rule_zh: "建设过程被大量跳过，读者看不到从无到有。"
+    rule_en: "Construction process is largely skipped — readers cannot see the zero-to-one journey."
+    severity: fatal
+
+  - rule_zh: "完全没有外部威胁导致叙事毫无张力。"
+    rule_en: "Complete absence of external threats creates zero narrative tension."
+    severity: critical
+
+tolerance_ranges:
+  combat_scenes:
+    min: 0.3
+    max: 0.5
+    note_zh: "基建文的战斗更多是防御/保护"
+  poetic_language:
+    min: 0.3
+    max: 0.5
+    note_zh: "实用主义文风更符合品类气质"
+  character_depth:
+    min: 0.4
+    max: 0.6
+    note_zh: "功能性关系的描写优先于情感关系"
+
+signal_keywords:
+  building_zh: ["建造", "修建", "扩建", "开垦", "开采", "冶炼", "铸造", "规划", "蓝图", "工坊"]
+  resource_zh: ["资源", "物资", "储备", "产量", "消耗", "交易", "采购", "运输", "仓储", "盈余"]
+  growth_zh: ["雏形", "初具规模", "繁荣", "扩张", "壮大", "自给自足", "产业链", "升级"]
+  threat_zh: ["兽潮", "入侵", "天灾", "封锁", "资源争夺", "领地争端"]

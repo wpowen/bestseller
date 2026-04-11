@@ -1,0 +1,248 @@
+key: eastern-aesthetic
+name: "东方美学类"
+name_en: "Eastern-Aesthetic"
+reader_promise_zh: >
+  意境之美贯穿全书，哲学思辨有深度，文化元素浑然天成而非生硬堆砌。
+  读者来这个品类，买的是"在一个充满东方美学的世界中获得精神层面的体验和感悟"。
+reader_promise_en: >
+  Aesthetic beauty pervades the entire work. Philosophical reflection has depth.
+  Cultural elements are naturally woven, not forcibly stacked. The reader buys a
+  spiritual experience in a world of Eastern aesthetics.
+
+challenge_evolution_pathway:
+  - phase_key: initial_wonder
+    phase_name_zh: "初见之惑"
+    phase_name_en: "Initial Wonder"
+    description_zh: "主角初入美学世界，被其美丽震撼的同时产生根本性的困惑和追问。"
+    description_en: "The protagonist first enters the aesthetic world, awed by beauty while developing fundamental questions and puzzlement."
+    typical_force_types: ["environment", "internal"]
+    volume_goal_template_zh: "{protagonist}必须在{force_name}展现的世界之美中找到自己追寻的方向和第一个问题的答案。"
+    volume_goal_template_en: "{protagonist} must find direction and the first answer amid the world's beauty revealed by {force_name}."
+    volume_climax_template_zh: "{protagonist}在一个震撼心灵的美学体验中获得了第一个领悟，踏上求道之路。"
+    volume_climax_template_en: "{protagonist} gains a first insight through a soul-shaking aesthetic experience, stepping onto the path of seeking."
+    volume_obstacle_template_zh: "美的表象背后藏着{force_name}设定的考验——美丽和危险共存。"
+    volume_obstacle_template_en: "Behind beauty's surface hides a test set by {force_name} — beauty and danger coexist."
+    volume_resolution_template_zh: "第一层美被领悟，但更深的哲学之问正在酝酿。"
+    volume_resolution_template_en: "The first layer of beauty is comprehended, but deeper philosophical questions are brewing."
+    chapter_conflict_templates:
+      setup_zh: "{protagonist}第一次置身于{force_name}创造的美学世界中，被其壮美震慑。"
+      setup_en: "{protagonist} first enters the aesthetic world created by {force_name}, awed by its grandeur."
+      investigation_zh: "{protagonist}试图理解这个世界的美学法则——为什么美会以这种形式存在？"
+      investigation_en: "{protagonist} tries to understand this world's aesthetic laws — why does beauty manifest this way?"
+      pressure_zh: "美的背面是危险——{force_name}的考验要求{protagonist}用心而非用力去面对。"
+      pressure_en: "The flip side of beauty is danger — {force_name}'s test demands {protagonist} face it with heart, not force."
+      reversal_zh: "{protagonist}在最意想不到的地方发现了美的本质——不是华丽，而是真实。"
+      reversal_en: "{protagonist} discovers beauty's essence in the most unexpected place — not splendor, but truth."
+      climax_zh: "{protagonist}完成了第一次审美突破——从观赏者变为感受者。"
+      climax_en: "{protagonist} achieves the first aesthetic breakthrough — from observer to feeler."
+
+  - phase_key: craft_mastery
+    phase_name_zh: "技艺精进"
+    phase_name_en: "Craft Mastery"
+    description_zh: "主角通过修炼某种技艺（剑道/琴道/画道等）深入理解美学的内在逻辑。"
+    description_en: "The protagonist deepens understanding of aesthetic logic through mastering a craft (swordsmanship, music, painting, etc.)."
+    typical_force_types: ["character", "internal"]
+    volume_goal_template_zh: "{protagonist}必须在{force_name}的指导或对抗中将自身技艺提升到可以'以技入道'的境界。"
+    volume_goal_template_en: "{protagonist} must elevate their craft to the level of 'entering the Way through technique' under {force_name}'s guidance or opposition."
+    volume_climax_template_zh: "{protagonist}的技艺突破了'形似'进入'神似'——作品开始有了灵魂。"
+    volume_climax_template_en: "{protagonist}'s craft breaks through from 'resemblance' to 'spirit' — the work begins to have a soul."
+    volume_obstacle_template_zh: "{force_name}代表的是一种已经登峰造极的技艺传统，{protagonist}必须在传承与创新之间找到自己的路。"
+    volume_obstacle_template_en: "{force_name} represents a craft tradition at its peak — {protagonist} must find their own path between inheritance and innovation."
+    volume_resolution_template_zh: "技艺精进完成，但{protagonist}隐约感到：技艺的极限之上还有更大的天地。"
+    volume_resolution_template_en: "Craft mastery achieved, but {protagonist} senses vaguely: beyond technique's limits lies a larger world."
+    chapter_conflict_templates:
+      setup_zh: "{protagonist}开始系统地修炼{force_name}传承的技艺，从最基础的形式开始。"
+      setup_en: "{protagonist} begins systematic cultivation of the craft handed down by {force_name}, starting from the most basic forms."
+      investigation_zh: "{protagonist}在反复练习中寻找'形'与'神'之间的桥梁。"
+      investigation_en: "{protagonist} searches for the bridge between 'form' and 'spirit' through repeated practice."
+      pressure_zh: "技艺瓶颈出现——{protagonist}的技术已经到顶，但作品缺少灵魂。"
+      pressure_en: "A craft bottleneck appears — {protagonist}'s technique has peaked, but the work lacks soul."
+      reversal_zh: "一个偶然的自然意象（落花/流水/残月）让{protagonist}领悟了技艺的真谛。"
+      reversal_en: "A chance natural image (falling petals/flowing water/waning moon) reveals to {protagonist} the true meaning of craft."
+      climax_zh: "{protagonist}在关键的展示/对决中完成了一件超越技术本身的作品。"
+      climax_en: "{protagonist} creates a work that transcends technique itself in a pivotal showcase or duel."
+
+  - phase_key: dao_heart_trial
+    phase_name_zh: "道心考验"
+    phase_name_en: "Dao Heart Trial"
+    description_zh: "主角的哲学信念和审美追求受到根本性的挑战和动摇。"
+    description_en: "The protagonist's philosophical beliefs and aesthetic pursuit face fundamental challenge and shaking."
+    typical_force_types: ["character", "internal"]
+    volume_goal_template_zh: "{protagonist}必须在{force_name}引发的道心危机中坚守或重塑自己的信念。"
+    volume_goal_template_en: "{protagonist} must defend or reshape their beliefs through the Dao-heart crisis triggered by {force_name}."
+    volume_climax_template_zh: "{protagonist}在信念崩塌的边缘做出了关键选择——不是答案，而是面对问题的勇气。"
+    volume_climax_template_en: "{protagonist} makes a critical choice at the edge of belief's collapse — not an answer, but the courage to face the question."
+    volume_obstacle_template_zh: "{force_name}提出了一个{protagonist}无法用现有认知回答的根本性问题。"
+    volume_obstacle_template_en: "{force_name} poses a fundamental question {protagonist} cannot answer with current understanding."
+    volume_resolution_template_zh: "道心经受住了考验，但已不再是原来的形态——它在破碎中重生。"
+    volume_resolution_template_en: "The Dao heart withstands the trial, but no longer in its original form — it is reborn through breaking."
+    chapter_conflict_templates:
+      setup_zh: "{force_name}的存在让{protagonist}开始质疑自己一直以来信奉的美学之道。"
+      setup_en: "{force_name}'s existence makes {protagonist} begin questioning the aesthetic Way they've always believed in."
+      investigation_zh: "{protagonist}回溯自己的修行之路，试图找到信念的根基在哪里。"
+      investigation_en: "{protagonist} traces back their cultivation path, trying to find where the foundation of belief lies."
+      pressure_zh: "道心动摇的{protagonist}在一场关键对决中失去了往日的灵性和力量。"
+      pressure_en: "With a shaken Dao heart, {protagonist} loses their usual spirituality and power in a key confrontation."
+      reversal_zh: "在最深的迷茫中，{protagonist}通过一次极其个人化的体验重新找回了方向。"
+      reversal_en: "In deepest confusion, {protagonist} rediscovers direction through an intensely personal experience."
+      climax_zh: "{protagonist}在道心考验的最终时刻选择了接受不确定——道在存疑中前行。"
+      climax_en: "{protagonist} at the Dao trial's final moment chooses to embrace uncertainty — the Way advances through questioning."
+
+  - phase_key: shattering_rebirth
+    phase_name_zh: "破碎重塑"
+    phase_name_en: "Shattering & Rebirth"
+    description_zh: "旧的世界观和审美框架被打碎，主角在废墟上重建更深层的理解。"
+    description_en: "Old worldview and aesthetic framework are shattered — the protagonist rebuilds deeper understanding on the ruins."
+    typical_force_types: ["internal", "environment"]
+    volume_goal_template_zh: "{protagonist}必须在{force_name}造成的认知废墟上重建全新的美学体系和生命理解。"
+    volume_goal_template_en: "{protagonist} must rebuild an entirely new aesthetic system and life understanding on the cognitive ruins left by {force_name}."
+    volume_climax_template_zh: "{protagonist}在破碎中完成了重塑——新的美学不是旧的升级，而是一种全新的视角。"
+    volume_climax_template_en: "{protagonist} completes rebirth through shattering — the new aesthetic is not an upgrade of the old, but an entirely new perspective."
+    volume_obstacle_template_zh: "旧框架被打碎后的虚无感是最大的敌人——{protagonist}失去了评判美丑的标准。"
+    volume_obstacle_template_en: "The nihilism after the old framework shatters is the greatest enemy — {protagonist} loses the standard for judging beauty."
+    volume_resolution_template_zh: "新的理解建立，{protagonist}带着全新的眼光看待这个世界和自己。"
+    volume_resolution_template_en: "New understanding established — {protagonist} sees the world and self with entirely new eyes."
+    chapter_conflict_templates:
+      setup_zh: "旧的美学世界观彻底崩塌，{protagonist}面对的是一片认知的废墟。"
+      setup_en: "The old aesthetic worldview collapses entirely — {protagonist} faces cognitive ruins."
+      investigation_zh: "{protagonist}在废墟中寻找值得保留的碎片——并非一切都需要推倒重来。"
+      investigation_en: "{protagonist} searches the ruins for fragments worth keeping — not everything needs to be rebuilt from scratch."
+      pressure_zh: "重建的过程比想象的痛苦——新旧认知的冲突让{protagonist}几近崩溃。"
+      pressure_en: "Rebuilding is more painful than imagined — the conflict between old and new cognition nearly breaks {protagonist}."
+      reversal_zh: "{protagonist}在一个最简单的事物中看到了最深的美——大道至简。"
+      reversal_en: "{protagonist} sees the deepest beauty in the simplest thing — the great Way is simple."
+      climax_zh: "{protagonist}完成了从破碎到重塑的过程，新的美学体系在这一刻诞生。"
+      climax_en: "{protagonist} completes the journey from shattering to rebirth — a new aesthetic system is born in this moment."
+
+  - phase_key: great_simplicity
+    phase_name_zh: "大道至简"
+    phase_name_en: "Great Simplicity"
+    description_zh: "经历了所有复杂之后回归本真，主角在最简单中找到最深的美和道。"
+    description_en: "After all complexity, return to essence — the protagonist finds the deepest beauty and Way in ultimate simplicity."
+    typical_force_types: ["internal"]
+    volume_goal_template_zh: "{protagonist}在经历了一切之后，在{force_name}代表的终极命题面前找到了属于自己的'大道至简'。"
+    volume_goal_template_en: "{protagonist}, after experiencing everything, finds their own 'great simplicity' before the ultimate question {force_name} represents."
+    volume_climax_template_zh: "{protagonist}以最简单的一个动作/一句话/一个选择，完成了整段旅程最深刻的表达。"
+    volume_climax_template_en: "{protagonist} completes the journey's most profound expression with the simplest action, word, or choice."
+    volume_obstacle_template_zh: "回归简单比走向复杂更难——{force_name}代表的是放不下的执念和荣耀。"
+    volume_obstacle_template_en: "Returning to simplicity is harder than pursuing complexity — {force_name} represents attachments and glory that cannot be released."
+    volume_resolution_template_zh: "一切归于平静，{protagonist}在最朴素的日常中活出了最深的美学精神。"
+    volume_resolution_template_en: "All settles into tranquility — {protagonist} lives the deepest aesthetic spirit in the most ordinary daily life."
+    chapter_conflict_templates:
+      setup_zh: "{protagonist}功成名就却感到前所未有的空虚——所有的追求最终指向什么？"
+      setup_en: "{protagonist} achieves fame and success yet feels unprecedented emptiness — what does all pursuit ultimately point to?"
+      investigation_zh: "{protagonist}回到最初的起点，用全新的眼光重新审视曾经觉得平凡的一切。"
+      investigation_en: "{protagonist} returns to the very beginning, re-examining everything once thought ordinary with new eyes."
+      pressure_zh: "放下执念的过程比拿起更痛苦——{protagonist}必须真正做到'舍'。"
+      pressure_en: "Releasing attachment is more painful than gaining — {protagonist} must truly 'let go.'"
+      reversal_zh: "在最平凡的一个瞬间，{protagonist}看到了贯穿一切的美——原来道一直在身边。"
+      reversal_en: "In the most ordinary instant, {protagonist} sees beauty pervading everything — the Way was always nearby."
+      climax_zh: "{protagonist}以一个最朴素的选择为自己的旅程画上句点——大道至简。"
+      climax_en: "{protagonist} concludes the journey with the most unadorned choice — the great Way is simple."
+
+protagonist_archetypes:
+  - archetype_key: aesthetic_seeker
+    name_zh: "美的追寻者"
+    name_en: "Aesthetic Seeker"
+    core_wound_zh: "曾在美的极致中失去至亲或自我，从此在追美之路上既渴望又恐惧。"
+    core_wound_en: "Lost someone dear or self at the extreme of beauty — since then, both longing and fearing the aesthetic path."
+    external_goal_template_zh: "{name}要在这个充满东方美学的世界中找到属于自己的'道'——不是别人定义的美，而是内心深处的真实。"
+    external_goal_template_en: "{name} seeks their own 'Way' in this world of Eastern aesthetics — not beauty defined by others, but inner truth."
+    internal_need_template_zh: "{name}需要学会美不是逃避现实，而是更深地介入现实。"
+    internal_need_template_en: "{name} must learn beauty is not escape from reality, but deeper engagement with it."
+    arc_trajectory_zh: "从追求外在之美到领悟内在之真，从被美束缚到在美中获得自由。"
+    arc_trajectory_en: "From pursuing external beauty to comprehending inner truth, from being bound by beauty to finding freedom in it."
+    flaw_zh: "容易沉溺于美学体验而忽略现实的紧迫性。"
+    flaw_en: "Easily lost in aesthetic experience, neglecting reality's urgency."
+    strength_zh: "对美有超越常人的感知力，能在平凡中发现深邃的意义。"
+    strength_en: "Possesses extraordinary aesthetic perception — finds profound meaning in the ordinary."
+
+world_rule_templates:
+  - rule_template_key: beauty_danger
+    name_zh: "美与危并存规则"
+    name_en: "Beauty-Danger Coexistence Rule"
+    description_zh: "世界上最美的事物往往最危险，极致的美学体验伴随着心灵或身体的代价。"
+    description_en: "The most beautiful things are often most dangerous — peak aesthetic experience comes with spiritual or physical cost."
+    story_consequence_zh: "{protagonist}不能无代价地享受美学体验，每一次深层领悟都有相应的代价。"
+    story_consequence_en: "{protagonist} cannot enjoy aesthetic experience without cost — every deep insight has a corresponding price."
+    exploitation_potential_zh: "美与危的共存为'美学战斗'提供了合理性——以美为武器的对决。"
+    exploitation_potential_en: "Beauty-danger coexistence gives legitimacy to 'aesthetic combat' — duels wielding beauty as weapon."
+
+  - rule_template_key: resonance_law
+    name_zh: "共鸣法则"
+    name_en: "Resonance Law"
+    description_zh: "修行者的内心境界必须与外在技艺相匹配——心境不到，技艺也无法突破。"
+    description_en: "A cultivator's inner state must match their outer craft — without inner attainment, technique cannot break through."
+    story_consequence_zh: "{protagonist}的成长不仅是技术层面的，更是精神层面的——灵魂的成长决定技艺的高度。"
+    story_consequence_en: "{protagonist}'s growth is not just technical but spiritual — the soul's growth determines technique's height."
+    exploitation_potential_zh: "共鸣法则让人物内心的成长有了可视化的外在表现。"
+    exploitation_potential_en: "The Resonance Law gives inner character growth a visible external manifestation."
+
+  - rule_template_key: aesthetic_heritage
+    name_zh: "美学传承规则"
+    name_en: "Aesthetic Heritage Rule"
+    description_zh: "每种技艺和美学流派都有悠久的传承，创新必须建立在对传统的深刻理解之上。"
+    description_en: "Every craft and aesthetic school has a long heritage — innovation must build on deep understanding of tradition."
+    story_consequence_zh: "{protagonist}不能全盘否定传统，必须在理解传统的基础上走出自己的路。"
+    story_consequence_en: "{protagonist} cannot wholly reject tradition — must walk their own path based on deep understanding of it."
+    exploitation_potential_zh: "传统与创新的张力是这个品类最丰富的叙事资源。"
+    exploitation_potential_en: "The tension between tradition and innovation is this category's richest narrative resource."
+
+quality_traps:
+  - trap_key: vocabulary_over_imagery
+    description_zh: "辞藻堆砌代替意境：堆砌华丽形容词但场景没有画面感。一个精准的动词胜过三个华丽的形容词。"
+    description_en: "Vocabulary over imagery: piling ornate adjectives without visual scenes. One precise verb beats three ornate adjectives."
+    severity: critical
+
+  - trap_key: philosophy_preaching
+    description_zh: "哲学说教化：作者借角色之口直接讲道理，变成议论文。哲学应该通过角色的选择和代价来呈现。"
+    description_en: "Philosophy preaching: the author lectures through characters, turning fiction into essays. Philosophy should be shown through choices and costs."
+    severity: critical
+
+  - trap_key: aesthetic_narrative_split
+    description_zh: "美学与叙事割裂：美的段落和推进剧情的段落泾渭分明，跳过'美文'不影响理解剧情。"
+    description_en: "Aesthetic-narrative split: beautiful passages and plot passages clearly separated — skipping 'beautiful writing' doesn't affect plot understanding."
+    severity: critical
+
+  - trap_key: cultural_namedropping
+    description_zh: "文化元素'掉书袋'：大量引用诗词典故但不理解其深层含义。"
+    description_en: "Cultural name-dropping: heavily quoting poetry and classics without understanding their deeper meaning."
+    severity: warning
+
+  - trap_key: beauty_without_conflict
+    description_zh: "只有意境没有冲突：沉浸在优美描写中，忘记了故事需要冲突和张力来推动。"
+    description_en: "Beauty without conflict: immersed in beautiful writing, forgetting stories need conflict and tension to drive them."
+    severity: critical
+
+disqualifiers:
+  - rule_zh: "美学描写完全脱离叙事——纯粹炫技。"
+    rule_en: "Aesthetic writing completely detached from narrative — pure showing off."
+    severity: fatal
+
+  - rule_zh: "哲学说教化——直接灌输道理而非通过故事呈现。"
+    rule_en: "Philosophical preaching — directly lecturing instead of showing through story."
+    severity: fatal
+
+  - rule_zh: "文化元素堆砌但不理解其含义。"
+    rule_en: "Cultural elements piled up without understanding their meaning."
+    severity: critical
+
+tolerance_ranges:
+  progression_pace:
+    min: 0.3
+    max: 0.5
+    note_zh: "东方美学文的成长更多是'悟道'而非'升级'"
+  combat_frequency:
+    min: 0.3
+    max: 0.5
+    note_zh: "战斗更注重美感和意境而非密度"
+  info_density:
+    min: 0.3
+    max: 0.5
+    note_zh: "留白本身就是品类特征"
+
+signal_keywords:
+  imagery_zh: ["水墨", "青绿", "留白", "意境", "空灵", "清寂", "幽远", "恬淡", "苍茫"]
+  nature_zh: ["枯梅", "残月", "流水", "山岚", "松竹", "云雾", "晚霞", "秋雨", "寒鸦"]
+  philosophy_zh: ["道", "空", "虚", "实", "破", "立", "轮回", "因果", "执念", "放下", "顿悟"]
+  culture_zh: ["琴棋书画", "茶道", "香道", "剑道", "花道", "诗词", "典故", "祝祷", "仪轨"]

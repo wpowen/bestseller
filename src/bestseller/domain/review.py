@@ -29,6 +29,13 @@ class SceneReviewScores(BaseModel):
     moral_complexity: float = Field(ge=0, le=1)
     contract_alignment: float = Field(ge=0, le=1)
 
+    # ── Phase-1 wiring: pacing & subplot alignment ──
+    pacing_alignment: float = Field(default=0.5, ge=0, le=1)
+    subplot_presence: float = Field(default=0.5, ge=0, le=1)
+
+    # ── Phase-3 wiring: scene/sequel alignment ──
+    scene_sequel_alignment: float = Field(default=0.5, ge=0, le=1)
+
 
 class SceneReviewResult(BaseModel):
     verdict: str = Field(min_length=1, max_length=16)

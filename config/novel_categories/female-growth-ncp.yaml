@@ -1,0 +1,249 @@
+key: female-growth-ncp
+name: "女性成长无CP类"
+name_en: "Female Growth No-CP"
+reader_promise_zh: >
+  女主角一定会通过自身的智慧、能力和选择实现价值跃升，
+  成长路径以个人主体性为核心而非依赖感情线。
+  读者来这个品类，买的是"看一个女性角色如何靠自己的力量改写命运"。
+reader_promise_en: >
+  The female protagonist will achieve value elevation through her own wisdom, ability,
+  and choices. Growth centers on personal agency, not romance. The reader buys the
+  story of a woman rewriting her destiny by her own power.
+
+challenge_evolution_pathway:
+  - phase_key: survival
+    phase_name_zh: "求生立足"
+    phase_name_en: "Survival & Foothold"
+    description_zh: "女主在恶劣的初始环境中争取基本生存权和最初的一点资源。"
+    description_en: "The protagonist fights for basic survival rights and initial resources in a hostile starting environment."
+    typical_force_types: ["character", "environment"]
+    volume_goal_template_zh: "{protagonist}必须在{force_name}主导的压制环境中活下来，获得最初的行动空间。"
+    volume_goal_template_en: "{protagonist} must survive in the oppressive environment dominated by {force_name} and gain initial room to act."
+    volume_climax_template_zh: "{protagonist}用智慧和隐忍完成第一次破局，证明自己不是可以随意拿捏的人。"
+    volume_climax_template_en: "{protagonist} uses wisdom and patience for a first breakthrough, proving she is not someone to be pushed around."
+    volume_obstacle_template_zh: "{force_name}代表的权力结构从根本上否定{protagonist}的价值和地位。"
+    volume_obstacle_template_en: "The power structure {force_name} represents fundamentally denies {protagonist}'s value and status."
+    volume_resolution_template_zh: "主角获得了第一个安全的立足点，但代价是被更多有权势的人注意到。"
+    volume_resolution_template_en: "The protagonist gains a first safe foothold, but the cost is attracting attention from more powerful people."
+    chapter_conflict_templates:
+      setup_zh: "{protagonist}清醒地评估自己的处境——{force_name}的威胁让她几乎没有退路。"
+      setup_en: "{protagonist} soberly assesses her situation — {force_name}'s threat leaves her almost no retreat."
+      investigation_zh: "{protagonist}暗中收集信息，寻找{force_name}权力结构中的漏洞和可利用的人。"
+      investigation_en: "{protagonist} secretly gathers intelligence, searching for cracks and useful people in {force_name}'s power structure."
+      pressure_zh: "{force_name}的打压变本加厉，{protagonist}必须在沉默中积蓄反击的力量。"
+      pressure_en: "{force_name}'s oppression intensifies — {protagonist} must gather counter-strike strength in silence."
+      reversal_zh: "{protagonist}在最不利的局面中找到了翻盘的切入点——一个所有人都忽视的细节。"
+      reversal_en: "{protagonist} finds a turning point in the worst situation — a detail everyone overlooked."
+      climax_zh: "{protagonist}发动精心准备的第一次反击，{force_name}第一次意识到这个人不简单。"
+      climax_en: "{protagonist} launches her carefully prepared first counterstrike — {force_name} realizes for the first time this person is no simple target."
+
+  - phase_key: establishment
+    phase_name_zh: "站稳根基"
+    phase_name_en: "Establishment"
+    description_zh: "主角建立自己的根基和人脉，从被动求存变为主动布局。"
+    description_en: "The protagonist establishes her own foundation and network, shifting from passive survival to active planning."
+    typical_force_types: ["faction", "character"]
+    volume_goal_template_zh: "{protagonist}需要在{force_name}的持续阻力下建立起自己不可动摇的根基。"
+    volume_goal_template_en: "{protagonist} must establish an unshakable foundation despite {force_name}'s persistent resistance."
+    volume_climax_template_zh: "{protagonist}的根基第一次经受住了{force_name}的全力冲击，证明了其坚固。"
+    volume_climax_template_en: "{protagonist}'s foundation withstands {force_name}'s full assault for the first time, proving its solidity."
+    volume_obstacle_template_zh: "{force_name}联合其他势力试图在根基未稳时将{protagonist}连根拔起。"
+    volume_obstacle_template_en: "{force_name} allies with other forces trying to uproot {protagonist} before her foundation solidifies."
+    volume_resolution_template_zh: "根基稳固，主角在新的位置上获得了扩张的资本。"
+    volume_resolution_template_en: "Foundation secured — the protagonist gains expansion capital from her new position."
+    chapter_conflict_templates:
+      setup_zh: "{protagonist}开始有意识地构建自己的人脉网和资源体系。"
+      setup_en: "{protagonist} begins consciously building her network and resource system."
+      investigation_zh: "{protagonist}研究{force_name}的盟友结构，寻找可以拉拢或分化的对象。"
+      investigation_en: "{protagonist} studies {force_name}'s alliance structure, seeking targets for recruitment or division."
+      pressure_zh: "{force_name}发现了{protagonist}的布局意图，发起了针对性的打击。"
+      pressure_en: "{force_name} discovers {protagonist}'s strategic intent and launches a targeted strike."
+      reversal_zh: "{protagonist}的一个看似失败的棋子在关键时刻发挥了意想不到的作用。"
+      reversal_en: "A seemingly failed piece of {protagonist}'s strategy plays an unexpected role at the critical moment."
+      climax_zh: "{protagonist}在根基保卫战中展现了远超{force_name}预期的政治成熟度。"
+      climax_en: "{protagonist} demonstrates political maturity far beyond {force_name}'s expectations in the battle to defend her foundation."
+
+  - phase_key: expansion
+    phase_name_zh: "势力扩张"
+    phase_name_en: "Expansion"
+    description_zh: "主角开始主动扩大影响力范围，从防守转向进攻。"
+    description_en: "The protagonist actively expands her sphere of influence, shifting from defense to offense."
+    typical_force_types: ["faction", "systemic"]
+    volume_goal_template_zh: "{protagonist}必须在{force_name}的势力范围内开辟新的空间，将影响力从点扩展到面。"
+    volume_goal_template_en: "{protagonist} must carve new space within {force_name}'s domain, expanding influence from a point to a surface."
+    volume_climax_template_zh: "{protagonist}完成了一次让所有势力重新评估其实力的行动。"
+    volume_climax_template_en: "{protagonist} executes an action that forces all factions to reassess her strength."
+    volume_obstacle_template_zh: "扩张意味着直接触碰{force_name}的核心利益，冲突不可避免地升级。"
+    volume_obstacle_template_en: "Expansion means directly touching {force_name}'s core interests — conflict escalation is inevitable."
+    volume_resolution_template_zh: "影响力成功扩张，但代价是成为了更大博弈的核心棋子之一。"
+    volume_resolution_template_en: "Influence successfully expanded, but the cost is becoming a core piece in a larger game."
+    chapter_conflict_templates:
+      setup_zh: "{protagonist}制定了扩张计划，但首先需要解决{force_name}在关键位置的布防。"
+      setup_en: "{protagonist} devises an expansion plan, but must first address {force_name}'s defenses at key positions."
+      investigation_zh: "{protagonist}在扩张过程中发现了{force_name}势力更深层的运作逻辑。"
+      investigation_en: "During expansion, {protagonist} discovers deeper operational logic in {force_name}'s power."
+      pressure_zh: "扩张带来的资源消耗让{protagonist}的根基出现了暂时的脆弱期。"
+      pressure_en: "Expansion's resource drain creates a temporary period of vulnerability for {protagonist}'s foundation."
+      reversal_zh: "{protagonist}巧妙地将扩张中的危机转化为{force_name}的内部矛盾。"
+      reversal_en: "{protagonist} cleverly converts expansion crises into internal contradictions for {force_name}."
+      climax_zh: "{protagonist}在扩张的关键节点做出一个改变格局的决策——代价巨大但收益更大。"
+      climax_en: "{protagonist} makes a landscape-changing decision at a key expansion point — the cost is great but the reward greater."
+
+  - phase_key: power_game
+    phase_name_zh: "权力博弈"
+    phase_name_en: "Power Game"
+    description_zh: "主角进入最高层级的权力博弈，面对制度性的压迫和顶层的对手。"
+    description_en: "The protagonist enters the highest level of power games, facing systemic oppression and top-tier opponents."
+    typical_force_types: ["systemic", "character"]
+    volume_goal_template_zh: "{protagonist}必须在{force_name}代表的最高权力层面获得话语权。"
+    volume_goal_template_en: "{protagonist} must gain a voice at the highest power level represented by {force_name}."
+    volume_climax_template_zh: "{protagonist}在最高层级的博弈中以代价换取了改变规则的权力。"
+    volume_climax_template_en: "{protagonist} trades cost for the power to change rules in the highest-level game."
+    volume_obstacle_template_zh: "{force_name}代表的是整个制度对女性主体性的系统性否定。"
+    volume_obstacle_template_en: "{force_name} represents the entire system's denial of female agency."
+    volume_resolution_template_zh: "权力获得，但{protagonist}开始思考权力之上还有什么。"
+    volume_resolution_template_en: "Power gained, but {protagonist} begins questioning what lies beyond power."
+    chapter_conflict_templates:
+      setup_zh: "{protagonist}进入最高权力层，发现{force_name}的规则比想象中更加根深蒂固。"
+      setup_en: "{protagonist} enters the highest power tier and finds {force_name}'s rules more deeply rooted than imagined."
+      investigation_zh: "{protagonist}研究{force_name}的权力体系的历史渊源和内在逻辑。"
+      investigation_en: "{protagonist} studies the historical origins and internal logic of {force_name}'s power system."
+      pressure_zh: "{force_name}用制度手段合法地封锁{protagonist}的所有常规路径。"
+      pressure_en: "{force_name} legally blocks all of {protagonist}'s conventional paths through institutional means."
+      reversal_zh: "{protagonist}找到了一种不在{force_name}规则框架内的全新博弈方式。"
+      reversal_en: "{protagonist} discovers an entirely new way of playing the game outside {force_name}'s rule framework."
+      climax_zh: "{protagonist}面对最终的权力对决——不是打败{force_name}，而是改变游戏规则本身。"
+      climax_en: "{protagonist} faces the final power confrontation — not defeating {force_name}, but changing the rules of the game itself."
+
+  - phase_key: freedom
+    phase_name_zh: "自由之路"
+    phase_name_en: "Path to Freedom"
+    description_zh: "超越权力游戏，主角追寻真正的自由——不是不被控制，而是按自己的意志选择。"
+    description_en: "Beyond the power game, the protagonist pursues true freedom — not the absence of control, but the ability to choose by one's own will."
+    typical_force_types: ["internal", "systemic"]
+    volume_goal_template_zh: "{protagonist}不再为权力而战，而是在{force_name}代表的终极约束面前追寻真正的自由。"
+    volume_goal_template_en: "{protagonist} no longer fights for power but pursues true freedom before the ultimate constraint {force_name} represents."
+    volume_climax_template_zh: "{protagonist}做出了一个让所有人震惊的选择——放弃某种权力以换取真正的自由。"
+    volume_climax_template_en: "{protagonist} makes a choice that shocks everyone — giving up a form of power in exchange for true freedom."
+    volume_obstacle_template_zh: "{force_name}代表的不只是外部压迫，更是{protagonist}内心对安全感的执念。"
+    volume_obstacle_template_en: "{force_name} represents not just external oppression but {protagonist}'s own inner attachment to security."
+    volume_resolution_template_zh: "主角以自己的方式定义了自由，成为后来者的灯塔。"
+    volume_resolution_template_en: "The protagonist defines freedom in her own way, becoming a beacon for those who follow."
+    chapter_conflict_templates:
+      setup_zh: "权力在手的{protagonist}开始质疑——这真的是自己想要的生活吗？"
+      setup_en: "With power in hand, {protagonist} begins questioning — is this truly the life she wanted?"
+      investigation_zh: "{protagonist}回望整条成长之路，试图找到最初的渴望和现在的差距。"
+      investigation_en: "{protagonist} looks back at her entire growth path, seeking the gap between original desire and current reality."
+      pressure_zh: "放弃权力的代价比获得权力更大——{protagonist}能承受失去一切的风险吗？"
+      pressure_en: "The cost of releasing power exceeds the cost of gaining it — can {protagonist} bear the risk of losing everything?"
+      reversal_zh: "{protagonist}在一个最平凡的时刻突然明白了自由的真正含义。"
+      reversal_en: "In the most ordinary moment, {protagonist} suddenly grasps the true meaning of freedom."
+      climax_zh: "{protagonist}做出最终选择，以她自己的方式走完这条属于一个女性的自由之路。"
+      climax_en: "{protagonist} makes the final choice, walking her own path of freedom in her own way."
+
+protagonist_archetypes:
+  - archetype_key: resilient_strategist
+    name_zh: "隐忍谋略者"
+    name_en: "Resilient Strategist"
+    core_wound_zh: "曾被身边最亲的人出卖或牺牲，明白在这个世界只能靠自己。"
+    core_wound_en: "Betrayed or sacrificed by those closest — understands that in this world, one can only rely on oneself."
+    external_goal_template_zh: "{name}必须凭借自己的智慧和隐忍，在权力的游戏中一步步攀升到不可被忽视的位置。"
+    external_goal_template_en: "{name} must climb to an undeniable position through wisdom and patience in the power game."
+    internal_need_template_zh: "{name}需要学会不是所有人都会背叛，在追求权力的同时保住自己的底线。"
+    internal_need_template_en: "{name} must learn not everyone will betray, preserving personal boundaries while pursuing power."
+    arc_trajectory_zh: "从被动隐忍到主动布局，从只信自己到愿意信任值得信任的人。"
+    arc_trajectory_en: "From passive endurance to active strategy, from trusting only self to trusting those who deserve it."
+    flaw_zh: "过度谨慎和控制，难以真正信任他人，容易在安全和信任之间做出错误选择。"
+    flaw_en: "Over-cautious and controlling, struggles to truly trust others, prone to wrong choices between safety and trust."
+    strength_zh: "心理洞察力极强，善于在复杂局势中找到最关键的人和最薄弱的环节。"
+    strength_en: "Exceptional psychological insight — adept at finding the most critical people and weakest links in complex situations."
+
+world_rule_templates:
+  - rule_template_key: gender_hierarchy
+    name_zh: "性别等级规则"
+    name_en: "Gender Hierarchy Rule"
+    description_zh: "世界存在显性或隐性的性别权力差异，女性获取权力的路径比男性更曲折。"
+    description_en: "The world has explicit or implicit gender power disparities — women's paths to power are more tortuous."
+    story_consequence_zh: "{protagonist}不能照搬男性角色的成功路径，必须找到独属于自己的方式。"
+    story_consequence_en: "{protagonist} cannot copy male success paths — she must find her own unique way."
+    exploitation_potential_zh: "性别偏见既是障碍也是武器——对手的轻视正是最好的掩护。"
+    exploitation_potential_en: "Gender bias is both obstacle and weapon — opponents' contempt is the best cover."
+
+  - rule_template_key: alliance_price
+    name_zh: "联盟代价规则"
+    name_en: "Alliance Price Rule"
+    description_zh: "每一个联盟都有代价，每一个帮助都有条件，没有无偿的支持。"
+    description_en: "Every alliance has a price, every help has conditions — no support is free."
+    story_consequence_zh: "{protagonist}必须精确计算每一次合作的收益和代价，避免成为他人的棋子。"
+    story_consequence_en: "{protagonist} must precisely calculate the benefit and cost of every cooperation, avoiding becoming another's pawn."
+    exploitation_potential_zh: "联盟的代价机制让每一次选择都充满了戏剧张力。"
+    exploitation_potential_en: "The alliance cost mechanism fills every choice with dramatic tension."
+
+  - rule_template_key: reputation_capital
+    name_zh: "声望资本规则"
+    name_en: "Reputation Capital Rule"
+    description_zh: "在权力场中，声望是最重要的无形资本，一旦崩塌几乎无法修复。"
+    description_en: "In power arenas, reputation is the most important intangible capital — once collapsed, nearly impossible to repair."
+    story_consequence_zh: "{protagonist}必须在每一个公开场合维护自己的形象，因为一次失误可能抵消所有积累。"
+    story_consequence_en: "{protagonist} must maintain her image in every public setting — one mistake can erase all accumulated credit."
+    exploitation_potential_zh: "声望的脆弱性让抹黑和造谣成为权力斗争的常用手段。"
+    exploitation_potential_en: "Reputation's fragility makes smear campaigns and rumor-mongering standard tools of power struggle."
+
+quality_traps:
+  - trap_key: hidden_romance
+    description_zh: "假无CP真恋爱：名义上无CP，但叙事重心不自觉地滑向男女关系线。"
+    description_en: "Hidden romance: nominally no-CP, but narrative center unconsciously slides toward the romantic line."
+    severity: critical
+
+  - trap_key: faceslap_addiction
+    description_zh: "爽文化陷阱：女主角'打脸'成瘾，所有对手都是脑残反派。应该设置有实力有智慧的对手。"
+    description_en: "Face-slap addiction: protagonist addicted to 'face-slapping', all opponents are brainless villains. Need strong, smart opponents."
+    severity: critical
+
+  - trap_key: saint_or_villain
+    description_zh: "角色极端化：角色要么完美无私要么阴暗算计，好的角色是复杂的。"
+    description_en: "Extreme characters: either perfectly selfless or darkly calculating. Good characters are complex."
+    severity: warning
+
+  - trap_key: single_growth_path
+    description_zh: "成长路径单一化：只通过'惩罚坏人'来体现成长。真正的成长是多维度的。"
+    description_en: "Single growth path: growth shown only through 'punishing villains'. True growth is multi-dimensional."
+    severity: warning
+
+  - trap_key: all_males_npc
+    description_zh: "所有男性角色都是NPC：为了突出女主而把所有男性角色写成背景板。"
+    description_en: "All males are NPCs: all male characters become background to highlight the heroine."
+    severity: warning
+
+disqualifiers:
+  - rule_zh: "女主角的关键成功依赖男性角色的帮助/保护。"
+    rule_en: "Protagonist's key success depends on male character's help/protection."
+    severity: fatal
+
+  - rule_zh: "成长没有代价——无脑开挂。"
+    rule_en: "Growth without cost — mindless power-ups."
+    severity: fatal
+
+  - rule_zh: "所有女性配角都是反派/工具人。"
+    rule_en: "All female supporting characters are villains/tools."
+    severity: critical
+
+tolerance_ranges:
+  romantic_emotion:
+    min: 0.2
+    max: 0.4
+    note_zh: "品类定位就是无CP"
+  combat_scenes:
+    min: 0.3
+    max: 0.5
+    note_zh: "成长不一定通过武力实现"
+  power_system:
+    min: 0.3
+    max: 0.5
+    note_zh: "如果有的话可以简化"
+
+signal_keywords:
+  agency_zh: ["选择", "代价", "赌注", "取舍", "底线", "决定", "不退", "站住", "凭什么", "我要"]
+  power_zh: ["权力", "位置", "筹码", "翻盘", "破局", "晋升", "扎根", "势力", "根基"]
+  psychology_zh: ["试探", "算计", "结盟", "背叛", "示弱", "示强", "虚虚实实", "城府", "洞察"]
+  female_strength_zh: ["清醒", "冷静", "隐忍", "爆发", "不求人", "自己的路", "姿态", "骨气"]

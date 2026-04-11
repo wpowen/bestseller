@@ -49,3 +49,15 @@ def test_build_fallback_final_uses_english_premise_and_profile_defaults() -> Non
         "Every chapter"
     )
     assert "基于" not in payload["premise"]
+
+
+def test_build_genre_context_sanitizes_story_content_overrides() -> None:
+    ctx = conception_services._build_genre_context("apocalypse-supply", 120)
+
+    market = ctx["existing_overrides"].get("market", {})
+    character = ctx["existing_overrides"].get("character", {})
+
+    assert market.get("pacing_profile") == "fast"
+    assert "reader_promise" not in market
+    assert "trope_keywords" not in market
+    assert character == {}

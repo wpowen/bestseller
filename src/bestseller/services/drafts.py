@@ -20,7 +20,9 @@ from bestseller.infra.db.models import (
 )
 from bestseller.services.context import build_scene_writer_context_from_models
 from bestseller.services.llm import LLMCompletionRequest, complete_text
+from bestseller.services.methodology import render_methodology_scene_rules
 from bestseller.services.prompt_packs import (
+    render_methodology_block,
     render_prompt_pack_fragment,
     render_prompt_pack_prompt_block,
     resolve_prompt_pack,
@@ -1307,7 +1309,316 @@ def _render_knowledge_state_section(
                 f"  {'Unaware of' if is_en else '尚不知道'}："
                 f"{'; '.join(str(u) for u in unaware[:4])}"
             )
+        # Phase-4: lie/truth arc guidance
+        lt_arc = ks.get("lie_truth_arc")
+        if isinstance(lt_arc, dict) and lt_arc.get("core_lie"):
+            phase = lt_arc.get("current_phase", "believing_lie")
+            if is_en:
+                lines.append(f"  Core lie: {lt_arc['core_lie']}")
+                lines.append(f"  Core truth: {lt_arc.get('core_truth', '?')}")
+                lines.append(f"  Arc type: {lt_arc.get('arc_type', 'positive')} | Phase: {phase}")
+                _phase_hints = {
+                    "believing_lie": "Character fully believes the lie — actions driven by it.",
+                    "questioning_lie": "Cracks appear — character encounters contradictions.",
+                    "confronting_lie": "Crisis forces character to choose lie or truth.",
+                    "embracing_truth": "Character acts from truth, paying transformation cost.",
+                }
+            else:
+                lines.append(f"  核心谎言：{lt_arc['core_lie']}")
+                lines.append(f"  核心真相：{lt_arc.get('core_truth', '?')}")
+                lines.append(f"  弧线类型：{lt_arc.get('arc_type', 'positive')} | 阶段：{phase}")
+                _phase_hints = {
+                    "believing_lie": "角色完全相信谎言——行为受其驱动。",
+                    "questioning_lie": "裂痕出现——角色遭遇矛盾。",
+                    "confronting_lie": "危机迫使角色在谎言与真相间抉择。",
+                    "embracing_truth": "角色基于真相行动，付出蜕变代价。",
+                }
+            hint = _phase_hints.get(phase, "")
+            if hint:
+                lines.append(f"  → {hint}")
     lines.append(footer)
+    return "\n".join(lines)
+
+
+# ── Phase-3 wiring: Swain scene/sequel pattern ──
+
+
+def _render_scene_sequel_section(
+    swain_pattern: str | None,
+    scene_skeleton: dict[str, str] | None,
+    *,
+    is_en: bool = False,
+) -> str:
+    if not swain_pattern:
+        return ""
+    if is_en:
+        header = "=== SCENE PATTERN ==="
+        if swain_pattern == "action":
+            lines = [
+                f"\n{header}",
+                f"This is an ACTION scene (Goal → Conflict → Disaster).",
+            ]
+            if scene_skeleton:
+                lines.append(f"- Goal: {scene_skeleton.get('goal', '')}")
+                lines.append(f"- Conflict: {scene_skeleton.get('conflict', '')}")
+                lines.append(f"- Disaster: {scene_skeleton.get('disaster', '')}")
+        else:
+            lines = [
+                f"\n{header}",
+                f"This is a SEQUEL scene (Reaction → Dilemma → Decision).",
+            ]
+            if scene_skeleton:
+                lines.append(f"- Reaction: {scene_skeleton.get('reaction', '')}")
+                lines.append(f"- Dilemma: {scene_skeleton.get('dilemma', '')}")
+                lines.append(f"- Decision: {scene_skeleton.get('decision', '')}")
+        return "\n".join(lines) + "\n"
+    # Chinese
+    if swain_pattern == "action":
+        lines = [
+            "\n=== 场景节奏 ===",
+            "本场是【行动场景】（目标 → 冲突 → 灾难）。",
+        ]
+        if scene_skeleton:
+            lines.append(f"- 目标：{scene_skeleton.get('goal', '')}")
+            lines.append(f"- 冲突：{scene_skeleton.get('conflict', '')}")
+            lines.append(f"- 灾难：{scene_skeleton.get('disaster', '')}")
+    else:
+        lines = [
+            "\n=== 场景节奏 ===",
+            "本场是【反应场景】（反应 → 两难 → 决定）。",
+        ]
+        if scene_skeleton:
+            lines.append(f"- 反应：{scene_skeleton.get('reaction', '')}")
+            lines.append(f"- 两难：{scene_skeleton.get('dilemma', '')}")
+            lines.append(f"- 决定：{scene_skeleton.get('decision', '')}")
+    return "\n".join(lines) + "\n"
+
+
+# ── Phase-2 wiring: structure template beat ──
+
+
+def _render_structure_beat_section(
+    structure_beat_name: str | None,
+    structure_beat_description: str | None,
+    *,
+    is_en: bool = False,
+) -> str:
+    if not structure_beat_name:
+        return ""
+    desc = structure_beat_description or ""
+    if is_en:
+        return (
+            f"\n=== STRUCTURE BEAT ===\n"
+            f"This chapter lands on the \"{structure_beat_name}\" beat.\n"
+            f"{desc}\n"
+            f"Write to serve this structural role.\n"
+        )
+    return (
+        f"\n=== 结构节拍 ===\n"
+        f"本章对应结构节拍：「{structure_beat_name}」。\n"
+        f"{desc}\n"
+        f"请在写作中服务于这一结构定位。\n"
+    )
+
+
+# ── Phase-5 wiring: genre obligatory scenes ──
+
+
+def _render_genre_obligations_section(
+    obligations: list[dict[str, str]] | None,
+    *,
+    is_en: bool = False,
+) -> str:
+    """Render genre-required scenes due near the current chapter."""
+    if not obligations:
+        return ""
+    if is_en:
+        lines = ["\n=== GENRE OBLIGATIONS (due this chapter) ==="]
+        for ob in obligations:
+            lines.append(f"- [{ob.get('code', '')}] {ob.get('label', '')} (timing: {ob.get('timing', 'any')})")
+        lines.append("Ensure at least one of these obligations is addressed in this scene if appropriate.")
+    else:
+        lines = ["\n=== 题材必须场景（本章附近应出现）==="]
+        for ob in obligations:
+            lines.append(f"- [{ob.get('code', '')}] {ob.get('label', '')}（时机：{ob.get('timing', 'any')}）")
+        lines.append("请在合适时机安排上述必须场景元素。")
+    return "\n".join(lines) + "\n"
+
+
+# ── Phase-6 wiring: foreshadowing gap warning ──
+
+
+def _render_foreshadowing_gap_section(
+    warning: str | None,
+    *,
+    is_en: bool = False,
+) -> str:
+    """Render a foreshadowing gap warning if present."""
+    if not warning:
+        return ""
+    if is_en:
+        return (
+            f"\n=== FORESHADOWING GAP WARNING ===\n"
+            f"{warning}\n"
+        )
+    return (
+        f"\n=== 伏笔空白警告 ===\n"
+        f"{warning}\n"
+    )
+
+
+# ── Phase-1 wiring: render five previously orphaned narrative context sections ──
+
+
+def _render_pacing_target_section(
+    pacing_target: dict[str, Any] | None,
+    *,
+    is_en: bool = False,
+) -> str:
+    """Render the chapter tension target into a prompt section."""
+    if not pacing_target:
+        return ""
+    tension = pacing_target.get("tension_level", 0)
+    scene_type_plan = pacing_target.get("scene_type_plan", "")
+    notes = pacing_target.get("notes", "")
+    if is_en:
+        header = "=== Chapter Tension Target ==="
+        body = f"Target tension level: {tension:.2f}/1.00"
+        if scene_type_plan:
+            body += f". Planned scene type: {scene_type_plan}"
+        if notes:
+            body += f". Notes: {notes}"
+        return f"{header}\n{body}"
+    header = "=== 本章张力目标 ==="
+    body = f"目标张力水平: {tension:.2f}/1.00"
+    if scene_type_plan:
+        body += f"。计划场景类型: {scene_type_plan}"
+    if notes:
+        body += f"。备注: {notes}"
+    return f"{header}\n{body}"
+
+
+def _render_subplot_prominence_section(
+    subplot_schedule: list[dict[str, Any]] | None,
+    *,
+    is_en: bool = False,
+) -> str:
+    """Render subplot prominence schedule for this chapter."""
+    if not subplot_schedule:
+        return ""
+    primary = [e for e in subplot_schedule if e.get("prominence") == "primary"]
+    secondary = [e for e in subplot_schedule if e.get("prominence") == "secondary"]
+    mention = [e for e in subplot_schedule if e.get("prominence") == "mention"]
+    lines: list[str] = []
+    if is_en:
+        lines.append("=== Subplot Focus This Chapter ===")
+        if primary:
+            lines.append(f"Primary arcs (must advance): {', '.join(e.get('arc_code', '?') for e in primary)}")
+        if secondary:
+            lines.append(f"Secondary arcs (touch briefly): {', '.join(e.get('arc_code', '?') for e in secondary)}")
+        if mention:
+            lines.append(f"Mention only: {', '.join(e.get('arc_code', '?') for e in mention)}")
+    else:
+        lines.append("=== 本章子情节焦点 ===")
+        if primary:
+            lines.append(f"主推弧线（必须推进）: {', '.join(e.get('arc_code', '?') for e in primary)}")
+        if secondary:
+            lines.append(f"辅助弧线（简短触及）: {', '.join(e.get('arc_code', '?') for e in secondary)}")
+        if mention:
+            lines.append(f"仅提及: {', '.join(e.get('arc_code', '?') for e in mention)}")
+    return "\n".join(lines)
+
+
+def _render_ending_contract_section(
+    ending_contract: dict[str, Any] | None,
+    *,
+    is_en: bool = False,
+) -> str:
+    """Render the ending contract checklist for final chapters."""
+    if not ending_contract:
+        return ""
+    arcs = ending_contract.get("arcs_to_resolve", [])
+    clues = ending_contract.get("clues_to_payoff", [])
+    rels = ending_contract.get("relationships_to_close", [])
+    thematic = ending_contract.get("thematic_final_expression", "")
+    denouement = ending_contract.get("denouement_plan", "")
+    lines: list[str] = []
+    if is_en:
+        lines.append("=== ENDING CONTRACT (MUST RESOLVE) ===")
+        if arcs:
+            lines.append(f"Arcs to resolve: {', '.join(arcs[:8])}")
+        if clues:
+            lines.append(f"Clues to pay off: {', '.join(clues[:8])}")
+        if rels:
+            lines.append(f"Relationships to close: {', '.join(rels[:6])}")
+        if thematic:
+            lines.append(f"Thematic final expression: {thematic}")
+        if denouement:
+            lines.append(f"Denouement plan: {denouement}")
+    else:
+        lines.append("=== 结局合约（必须收束）===")
+        if arcs:
+            lines.append(f"待收束弧线: {', '.join(arcs[:8])}")
+        if clues:
+            lines.append(f"待回收伏笔: {', '.join(clues[:8])}")
+        if rels:
+            lines.append(f"待收束关系: {', '.join(rels[:6])}")
+        if thematic:
+            lines.append(f"主题最终表达: {thematic}")
+        if denouement:
+            lines.append(f"余韵计划: {denouement}")
+    return "\n".join(lines)
+
+
+def _render_reader_knowledge_section(
+    reader_knowledge_entries: list[dict[str, Any]] | None,
+    *,
+    is_en: bool = False,
+) -> str:
+    """Render dramatic irony cues — what the reader knows but characters may not."""
+    if not reader_knowledge_entries:
+        return ""
+    lines: list[str] = []
+    if is_en:
+        lines.append("=== Reader Knowledge (Dramatic Irony) ===")
+        for entry in reader_knowledge_entries[:8]:
+            audience = entry.get("audience", "both")
+            marker = " [reader only]" if audience == "reader_only" else ""
+            lines.append(f"- Ch{entry.get('chapter_number', '?')}: {entry.get('knowledge_item', '?')}{marker}")
+    else:
+        lines.append("=== 读者已知信息（戏剧反讽）===")
+        for entry in reader_knowledge_entries[:8]:
+            audience = entry.get("audience", "both")
+            marker = " [仅读者知道]" if audience == "reader_only" else ""
+            lines.append(f"- 第{entry.get('chapter_number', '?')}章: {entry.get('knowledge_item', '?')}{marker}")
+    return "\n".join(lines)
+
+
+def _render_relationship_milestone_section(
+    milestones: list[dict[str, Any]] | None,
+    *,
+    is_en: bool = False,
+) -> str:
+    """Render recent relationship milestone events."""
+    if not milestones:
+        return ""
+    lines: list[str] = []
+    if is_en:
+        lines.append("=== Recent Relationship Milestones ===")
+        for m in milestones[:6]:
+            lines.append(
+                f"- Ch{m.get('chapter_number', '?')}: "
+                f"{m.get('character_a_label', '?')} ↔ {m.get('character_b_label', '?')}: "
+                f"{m.get('event_description', '?')} → {m.get('relationship_change', '?')}"
+            )
+    else:
+        lines.append("=== 近期关系里程碑 ===")
+        for m in milestones[:6]:
+            lines.append(
+                f"- 第{m.get('chapter_number', '?')}章: "
+                f"{m.get('character_a_label', '?')} ↔ {m.get('character_b_label', '?')}: "
+                f"{m.get('event_description', '?')} → {m.get('relationship_change', '?')}"
+            )
     return "\n".join(lines)
 
 
@@ -1335,6 +1646,22 @@ def build_scene_draft_prompts(
     participant_knowledge_states: list[dict[str, Any]] | None = None,
     arc_summaries: list[dict[str, Any]] | None = None,
     world_snapshot: dict[str, Any] | None = None,
+    # Phase-1 wiring
+    pacing_target: dict[str, Any] | None = None,
+    subplot_schedule: list[dict[str, Any]] | None = None,
+    ending_contract: dict[str, Any] | None = None,
+    reader_knowledge_entries: list[dict[str, Any]] | None = None,
+    relationship_milestones: list[dict[str, Any]] | None = None,
+    # Phase-2 wiring
+    structure_beat_name: str | None = None,
+    structure_beat_description: str | None = None,
+    # Phase-3 wiring
+    swain_pattern: str | None = None,
+    scene_skeleton: dict[str, str] | None = None,
+    # Phase-5 wiring
+    genre_obligations_due: list[dict[str, str]] | None = None,
+    # Phase-6 wiring
+    foreshadowing_gap_warning: str | None = None,
 ) -> tuple[str, str]:
     language = _project_language(project)
     is_en = is_english_language(language)
@@ -1351,6 +1678,9 @@ def build_scene_draft_prompts(
             "Output must be direct Markdown prose only, with no explanations, bullet lists, or planning notes. "
             "Write a publishable scene, not commentary.\n"
             "Write the scene in English only. Do not switch to Chinese.\n"
+            "WORD COUNT RULE: You MUST meet or exceed the target word count specified in the user prompt. "
+            "Scenes that are significantly shorter than the target will be rejected. "
+            "Write fully developed scenes with rich detail, dialogue, and action — do not summarize or cut short.\n"
             "Opening diversity rule: vary chapter and scene openings across time, place, action, and angle of entry. "
             "Do not reuse the same opening pattern in consecutive chapters.\n"
             f"\nWriting profile:\n{writing_profile_section}\n"
@@ -1362,6 +1692,8 @@ def build_scene_draft_prompts(
             "输出必须直接是 Markdown 正文，不要解释，不要列清单。"
             "必须写成可接续的小说场景，而不是策划说明。"
             "文本要像可以直接投到中文网文平台的成品章节，不要像策划案、提纲或润色说明。\n"
+            "【字数铁律】你必须达到用户提示中指定的目标字数。字数严重不足的场景会被退回重写。"
+            "写充分展开的场景——丰富的细节、对话、动作、环境描写和心理活动。绝对不要提前收束或写成概要。\n"
             + _NOVEL_OUTPUT_PROHIBITION
             + "\n【开场多样性要求】：每章/每场的开头必须在时间、地点、视角、动作上有所变化。"
             "禁止连续两章以同一种方式开场（如连续用'凌晨+手机'模式）。"
@@ -1408,6 +1740,40 @@ def build_scene_draft_prompts(
         if prompt_pack_scene_writer and is_en
         else (f"Prompt Pack 额外写法：\n{prompt_pack_scene_writer}\n" if prompt_pack_scene_writer else "")
     )
+    # Methodology rules injection (猫神方法论)
+    _methodology_pack_block = render_methodology_block(prompt_pack, phase="scene")
+    # Try contract fields first; fall back to positional heuristics when empty.
+    _is_climax = bool(chapter_contract and chapter_contract.get("is_climax"))
+    _pacing_mode_val = (chapter_contract or {}).get("pacing_mode") or ""
+    if not _pacing_mode_val:
+        # Heuristic: derive pacing mode from chapter position within the book
+        _total = max(getattr(project, "target_chapters", None) or 20, 1)
+        _pos = chapter.chapter_number / _total
+        if _pos >= 0.75:
+            _pacing_mode_val = "accelerate"
+            # The last 10% of the book is climax territory
+            if _pos >= 0.90:
+                _is_climax = True
+                _pacing_mode_val = "accelerate"
+        elif _pos <= 0.15:
+            _pacing_mode_val = "build"  # opening chapters
+        elif chapter.chapter_number % 5 == 0:
+            _pacing_mode_val = "breathe"  # periodic breathing room
+        else:
+            _pacing_mode_val = "build"
+    _methodology_rules = render_methodology_scene_rules(
+        chapter_number=chapter.chapter_number,
+        is_opening=(chapter.chapter_number <= 3),
+        is_climax=_is_climax,
+        pacing_mode=_pacing_mode_val,
+    )
+    _methodology_line = ""
+    if _methodology_pack_block or _methodology_rules:
+        _methodology_line = (
+            f"{_methodology_pack_block}\n\n{_methodology_rules}\n\n"
+            if _methodology_pack_block
+            else f"{_methodology_rules}\n\n"
+        )
     _hard_fact_line = f"{hard_fact_section}\n\n" if hard_fact_section else ""
     _contradiction_line = ""
     if contradiction_warnings:
@@ -1424,6 +1790,48 @@ def build_scene_draft_prompts(
     _knowledge_line = _render_knowledge_state_section(participant_knowledge_states, is_en=is_en)
     if _knowledge_line:
         _knowledge_line += "\n\n"
+
+    # Phase-3 wiring: scene/sequel pattern
+    _scene_sequel_line = _render_scene_sequel_section(
+        swain_pattern, scene_skeleton, is_en=is_en,
+    )
+    if _scene_sequel_line:
+        _scene_sequel_line += "\n\n"
+
+    # Phase-2 wiring: structure beat
+    _structure_beat_line = _render_structure_beat_section(
+        structure_beat_name, structure_beat_description, is_en=is_en,
+    )
+    if _structure_beat_line:
+        _structure_beat_line += "\n\n"
+
+    # Phase-1 wiring: render five previously orphaned narrative context sections
+    _pacing_line = _render_pacing_target_section(pacing_target, is_en=is_en)
+    if _pacing_line:
+        _pacing_line += "\n\n"
+    _subplot_line = _render_subplot_prominence_section(subplot_schedule, is_en=is_en)
+    if _subplot_line:
+        _subplot_line += "\n\n"
+    _ending_line = _render_ending_contract_section(ending_contract, is_en=is_en)
+    if _ending_line:
+        _ending_line += "\n\n"
+    _reader_knowledge_line = _render_reader_knowledge_section(reader_knowledge_entries, is_en=is_en)
+    if _reader_knowledge_line:
+        _reader_knowledge_line += "\n\n"
+    _relationship_line = _render_relationship_milestone_section(relationship_milestones, is_en=is_en)
+    if _relationship_line:
+        _relationship_line += "\n\n"
+
+    # Phase-5 wiring: genre obligatory scenes
+    _obligations_line = _render_genre_obligations_section(genre_obligations_due, is_en=is_en)
+    if _obligations_line:
+        _obligations_line += "\n\n"
+
+    # Phase-6 wiring: foreshadowing gap warning
+    _foreshadow_line = _render_foreshadowing_gap_section(foreshadowing_gap_warning, is_en=is_en)
+    if _foreshadow_line:
+        _foreshadow_line += "\n\n"
+
     # Arc summaries (warm context) and world snapshot (cold context)
     _arc_summary_line = ""
     if arc_summaries:
@@ -1459,6 +1867,15 @@ def build_scene_draft_prompts(
             f"{_knowledge_line}"
             f"{_arc_summary_line}"
             f"{_world_snapshot_line}"
+            f"{_structure_beat_line}"
+            f"{_scene_sequel_line}"
+            f"{_pacing_line}"
+            f"{_subplot_line}"
+            f"{_ending_line}"
+            f"{_reader_knowledge_line}"
+            f"{_relationship_line}"
+            f"{_obligations_line}"
+            f"{_foreshadow_line}"
             f"Project: {project.title}\n"
             f"Chapter {chapter.chapter_number}: {chapter.title or ''}\n"
             f"Chapter goal (for intent only, never quote it verbatim): {chapter.chapter_goal}\n"
@@ -1470,7 +1887,7 @@ def build_scene_draft_prompts(
             f"Emotional purpose: {scene.purpose.get('emotion', 'raise tension')}\n"
             f"Entry state: {scene.entry_state}\n"
             f"Exit state: {scene.exit_state}\n"
-            f"Target words: {scene.target_word_count}\n"
+            f"Target words: {scene.target_word_count} (IMPORTANT: You MUST write at least {int(scene.target_word_count * 0.9)} words. Scenes shorter than this target will be rejected and rewritten. Do NOT cut short.)\n"
             f"POV: {style_guide.pov_type if style_guide else 'third-limited'}\n"
             f"Tone keywords: {tone}\n"
             f"{_pp_line}"
@@ -1486,6 +1903,7 @@ def build_scene_draft_prompts(
             f"Visible facts for current participants:\n{participant_fact_section or 'No extra participant facts.'}\n"
             f"Retrieved supporting context:\n{retrieval_section or 'No extra retrieval context.'}\n"
             f"{_pp_writer_line}"
+            f"{_methodology_line}"
             f"Scene-type guidance: {_scene_type_writing_guidance(scene.scene_type, language=language)}\n"
             "Write the scene in English only. Do not switch to Chinese. "
             "Do not reveal information that belongs to future chapters, and do not contradict established facts or timeline beats. "
@@ -1500,6 +1918,15 @@ def build_scene_draft_prompts(
             f"{_knowledge_line}"
             f"{_arc_summary_line}"
             f"{_world_snapshot_line}"
+            f"{_structure_beat_line}"
+            f"{_scene_sequel_line}"
+            f"{_pacing_line}"
+            f"{_subplot_line}"
+            f"{_ending_line}"
+            f"{_reader_knowledge_line}"
+            f"{_relationship_line}"
+            f"{_obligations_line}"
+            f"{_foreshadow_line}"
             f"项目：《{project.title}》\n"
             f"章节：第{chapter.chapter_number}章 {chapter.title or ''}\n"
             f"章节目标（仅供你理解意图，严禁出现在正文中）：{chapter.chapter_goal}\n"
@@ -1511,7 +1938,7 @@ def build_scene_draft_prompts(
             f"情绪目的：{scene.purpose.get('emotion', '拉高当前张力')}\n"
             f"入场状态：{scene.entry_state}\n"
             f"离场状态：{scene.exit_state}\n"
-            f"目标字数：{scene.target_word_count}\n"
+            f"目标字数：{scene.target_word_count}（【硬性要求】本场景正文不得少于 {int(scene.target_word_count * 0.9)} 字。字数不足将被退回重写。必须写满，不要提前收束。）\n"
             f"视角：{style_guide.pov_type if style_guide else 'third-limited'}\n"
             f"语气关键词：{tone}\n"
             f"{_pp_line}"
@@ -1527,6 +1954,7 @@ def build_scene_draft_prompts(
             f"参与角色当前可见事实：\n{participant_fact_section or '暂无额外角色事实'}\n"
             f"检索到的相关上下文：\n{retrieval_section or '暂无额外检索上下文'}\n"
             f"{_pp_writer_line}"
+            f"{_methodology_line}"
             f"{_scene_type_writing_guidance(scene.scene_type, language=language)}"
             "不得泄露未来章节才会揭示的信息，不得与当前已知事实和时间线冲突。"
             "优先服从 deterministic path retrieval 与 narrative tree 提供的结构化约束。"
@@ -1822,6 +2250,52 @@ async def generate_scene_draft(
             participant_knowledge_states=getattr(context_packet, "participant_knowledge_states", None) if context_packet else None,
             arc_summaries=getattr(context_packet, "arc_summaries", None) if context_packet else None,
             world_snapshot=getattr(context_packet, "world_snapshot", None) if context_packet else None,
+            # Phase-1 wiring
+            pacing_target=(
+                context_packet.pacing_target.model_dump(mode="json")
+                if context_packet and context_packet.pacing_target
+                else None
+            ),
+            subplot_schedule=(
+                [e.model_dump(mode="json") for e in context_packet.subplot_schedule]
+                if context_packet and context_packet.subplot_schedule
+                else None
+            ),
+            ending_contract=(
+                context_packet.ending_contract.model_dump(mode="json")
+                if context_packet and context_packet.ending_contract
+                else None
+            ),
+            reader_knowledge_entries=(
+                [e.model_dump(mode="json") for e in context_packet.reader_knowledge_entries]
+                if context_packet and context_packet.reader_knowledge_entries
+                else None
+            ),
+            relationship_milestones=(
+                [e.model_dump(mode="json") for e in context_packet.relationship_milestones]
+                if context_packet and context_packet.relationship_milestones
+                else None
+            ),
+            # Phase-2 wiring
+            structure_beat_name=(
+                context_packet.structure_beat_name if context_packet else None
+            ),
+            structure_beat_description=(
+                context_packet.structure_beat_description if context_packet else None
+            ),
+            # Phase-3 wiring
+            swain_pattern=(
+                context_packet.swain_pattern if context_packet else None
+            ),
+            scene_skeleton=(
+                context_packet.scene_skeleton if context_packet else None
+            ),
+            genre_obligations_due=(
+                context_packet.genre_obligations_due if context_packet else None
+            ),
+            foreshadowing_gap_warning=(
+                context_packet.foreshadowing_gap_warning if context_packet else None
+            ),
         )
         # Inject voice drift correction prompts for scene participants
         proj_metadata = getattr(project, "metadata_json", None) or {}

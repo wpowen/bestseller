@@ -156,20 +156,53 @@ def _generate_fallback_acts(cfg: Any) -> list[dict[str, Any]]:
     total = cfg.target_chapters
     act_size = total // cfg.act_count
     acts: list[dict[str, Any]] = []
-
-    act_themes = [
-        ("觉醒崛起", "热血", "废材/普通人觉醒，获得第一个重大优势"),
-        ("扩张威胁", "紧张", "主角实力增长，引来更强大的对手"),
-        ("危机蜕变", "压抑", "遭遇重大挫折，完成更深层的蜕变"),
-        ("决战前夜", "震撼", "最终决战的棋局布置，各方力量汇聚"),
-        ("最终对决", "爽快", "决战，收割情感，完成所有承诺"),
-    ]
+    is_en = str(getattr(cfg, "language", "") or "").lower().startswith("en")
 
     for i in range(cfg.act_count):
         start = i * act_size + 1
         end = (i + 1) * act_size if i < cfg.act_count - 1 else total
-        theme_idx = min(i, len(act_themes) - 1)
-        theme, emotion, goal = act_themes[theme_idx]
+        if is_en:
+            title = f"Act {i + 1}"
+            if i == 0:
+                theme = "Initial Momentum"
+                emotion = "driving"
+                goal = "Establish the core objective, active constraints, and the first meaningful branch."
+                arc_goal = "Push the opening objective into visible motion"
+            elif i == cfg.act_count - 1:
+                theme = "Endgame Resolution"
+                emotion = "decisive"
+                goal = "Resolve the central pressure, pay off major choices, and define the aftermath."
+                arc_goal = "Drive the act toward endgame resolution"
+            else:
+                theme = "Pressure Escalation"
+                emotion = "tense"
+                goal = "Increase the cost of action, reorder alliances, and move the story into a deeper layer."
+                arc_goal = "Escalate cost, resistance, and branching pressure"
+            payoff_promise = f"Act {i + 1} delivers a major turning point."
+            choice_theme = "Key decision"
+            entry_state = "To be defined"
+            exit_state = "To be defined"
+        else:
+            title = f"第{i + 1}幕"
+            if i == 0:
+                theme = "起势推进"
+                emotion = "推进"
+                goal = "建立主线目标、关键限制与第一轮分支压力。"
+                arc_goal = "推动主线目标进入可执行状态"
+            elif i == cfg.act_count - 1:
+                theme = "终局收束"
+                emotion = "决断"
+                goal = "回收关键选择与主要压力，并为后续余波留出口。"
+                arc_goal = "推动本幕走向终局决断"
+            else:
+                theme = "压力升级"
+                emotion = "紧张"
+                goal = "抬高行动代价、重排关系站位，并把局势推进到更深一层。"
+                arc_goal = "放大代价、阻力与分支压力"
+            payoff_promise = f"第{i + 1}幕完成一次关键转折。"
+            choice_theme = "关键选择"
+            entry_state = "待定"
+            exit_state = "待定"
 
         branch_trigger = start + (end - start) // 3
         merge_ch = branch_trigger + getattr(cfg, "branch_chapter_span", 30)
@@ -185,7 +218,7 @@ def _generate_fallback_acts(cfg: Any) -> list[dict[str, Any]]:
                 "arc_index": arc_idx,
                 "chapter_start": arc_start,
                 "chapter_end": arc_end,
-                "arc_goal": f"推进{theme}阶段的核心冲突",
+                "arc_goal": arc_goal,
             })
             arc_start = arc_end + 1
             arc_idx += 1
@@ -193,20 +226,20 @@ def _generate_fallback_acts(cfg: Any) -> list[dict[str, Any]]:
         acts.append({
             "act_id": f"act_{i + 1:02d}",
             "act_index": i,
-            "title": f"第{i + 1}幕：{theme}",
+            "title": title,
             "chapter_start": start,
             "chapter_end": end,
             "act_goal": goal,
             "core_theme": theme,
             "dominant_emotion": emotion,
             "climax_chapter": start + (end - start) * 4 // 5,
-            "entry_state": "待定",
-            "exit_state": "待定",
-            "payoff_promises": [f"第{i + 1}幕核心爽点兑现"],
+            "entry_state": entry_state,
+            "exit_state": exit_state,
+            "payoff_promises": [payoff_promise],
             "branch_opportunities": [
                 {
                     "trigger_chapter": branch_trigger,
-                    "choice_theme": "关键选择",
+                    "choice_theme": choice_theme,
                     "routes": ["branch_a", "branch_b"],
                     "merge_chapter": merge_ch,
                     "branch_chapter_span": getattr(cfg, "branch_chapter_span", 30),

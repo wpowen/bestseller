@@ -16,6 +16,14 @@ RUN pip install --no-cache-dir uv==0.4.30
 COPY pyproject.toml README.md ./
 COPY src/ ./src/
 
+# Clear any Docker Desktop proxy injection — buildkit cannot route to
+# http.docker.internal:3128 which causes "Network is unreachable" errors.
+ARG HTTP_PROXY=
+ARG HTTPS_PROXY=
+ARG http_proxy=
+ARG https_proxy=
+ENV HTTP_PROXY= HTTPS_PROXY= http_proxy= https_proxy=
+
 # Install CPU-only PyTorch first (avoids pulling ~5GB of NVIDIA CUDA packages)
 RUN uv pip install --system --no-cache \
     torch --index-url https://download.pytorch.org/whl/cpu

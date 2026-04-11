@@ -39,6 +39,9 @@ class GenreReviewWeights(BaseModel):
     hook_strength: float = Field(default=1.0, ge=0.0)
     payoff_density: float = Field(default=1.0, ge=0.0)
     contract_alignment: float = Field(default=1.0, ge=0.0)
+    pacing_alignment: float = Field(default=1.0, ge=0.0)
+    subplot_presence: float = Field(default=1.0, ge=0.0)
+    scene_sequel_alignment: float = Field(default=1.0, ge=0.0)
 
 
 class GenreChapterReviewWeights(BaseModel):

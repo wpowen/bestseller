@@ -1,0 +1,265 @@
+key: action-progression
+name: "动作升级类"
+name_en: "Action-Progression"
+reader_promise_zh: >
+  主角一定会变强，力量体系有逻辑，战斗有策略而非无脑碾压，升级节奏持续给读者"成长爽感"。
+  读者来这个品类，买的是"看主角从弱到强的完整旅程"。
+reader_promise_en: >
+  The protagonist will grow stronger. The power system follows consistent rules.
+  Battles require strategy, not brute force. The reader buys the full journey from
+  weakness to strength.
+
+challenge_evolution_pathway:
+  - phase_key: individual_survival
+    phase_name_zh: "个体求生"
+    phase_name_en: "Individual Survival"
+    description_zh: "主角面对直接的个体威胁，争取基本生存空间和第一笔成长资本。"
+    description_en: "Protagonist faces direct personal threats, fighting for survival and first growth capital."
+    typical_force_types: ["character", "environment"]
+    volume_goal_template_zh: "{protagonist}必须在{force_name}的直接威胁下争取生存空间，获取第一次突破的资源和机缘。"
+    volume_goal_template_en: "{protagonist} must survive the direct threat of {force_name} and secure the resources for a first breakthrough."
+    volume_climax_template_zh: "{protagonist}在生死边缘完成第一次突破，暂时挣脱{force_name}的控制。"
+    volume_climax_template_en: "{protagonist} achieves a first breakthrough at death's edge, breaking free of {force_name}'s grip."
+    volume_obstacle_template_zh: "{force_name}带来直接的生存压力——{protagonist}必须先活下来才有资格谈成长。"
+    volume_obstacle_template_en: "{force_name} applies lethal pressure — {protagonist} must survive before growth is even possible."
+    volume_resolution_template_zh: "主角暂时突破困局，但突破引来了更高层级的注意。"
+    volume_resolution_template_en: "The protagonist breaks through, but the breakthrough draws attention from a higher tier."
+    chapter_conflict_templates:
+      setup_zh: "{protagonist}发现自身处境远比预想的危险，{force_name}的威胁已经迫在眉睫。"
+      setup_en: "{protagonist} realizes the situation is far more dangerous than expected — {force_name}'s threat is imminent."
+      investigation_zh: "{protagonist}在{force_name}的压力下搜寻突破的关键资源和机缘线索。"
+      investigation_en: "{protagonist} searches for critical resources and breakthrough clues under {force_name}'s pressure."
+      pressure_zh: "{force_name}收紧了控制，{protagonist}必须在窗口关闭前完成准备。"
+      pressure_en: "{force_name} tightens control — {protagonist} must prepare before the window closes."
+      reversal_zh: "局势突然逆转——{protagonist}找到了一个意外的突破口。"
+      reversal_en: "A sudden reversal — {protagonist} finds an unexpected opening."
+      climax_zh: "{protagonist}和{force_name}正面交锋，生存之战到了最后关头。"
+      climax_en: "{protagonist} and {force_name} clash head-on in a final struggle for survival."
+
+  - phase_key: faction_friction
+    phase_name_zh: "势力摩擦"
+    phase_name_en: "Faction Friction"
+    description_zh: "冲突从个体扩大到组织，主角被卷入势力间的角力，必须在夹缝中成长。"
+    description_en: "Conflict escalates from individual to organizational — the protagonist is caught between factions."
+    typical_force_types: ["faction", "systemic"]
+    volume_goal_template_zh: "{protagonist}需要在{force_name}代表的势力角力中找到自己的位置和成长空间。"
+    volume_goal_template_en: "{protagonist} must find a foothold and room to grow amid the factional contest led by {force_name}."
+    volume_climax_template_zh: "{protagonist}在势力碰撞中抓住机遇完成关键突破，但也因此站到了更大舞台上。"
+    volume_climax_template_en: "{protagonist} seizes an opportunity in the factional clash for a critical breakthrough, stepping onto a larger stage."
+    volume_obstacle_template_zh: "{force_name}代表的组织力量远非个人能抗衡，{protagonist}被迫在夹缝中求存。"
+    volume_obstacle_template_en: "{force_name}'s organizational power far exceeds individual resistance — {protagonist} must maneuver in the cracks."
+    volume_resolution_template_zh: "主角在势力洗牌中获得了新的身份和资源，但旧的庇护也随之消失。"
+    volume_resolution_template_en: "The protagonist gains a new identity and resources from the factional reshuffle, but old protections vanish."
+    chapter_conflict_templates:
+      setup_zh: "{protagonist}发现{force_name}所属势力的运作规则远比想象的复杂。"
+      setup_en: "{protagonist} discovers {force_name}'s faction operates by rules far more complex than expected."
+      investigation_zh: "{protagonist}试图摸清{force_name}背后的势力关系和利益链条。"
+      investigation_en: "{protagonist} tries to map the power relationships and interests behind {force_name}."
+      pressure_zh: "势力间的摩擦波及{protagonist}，迫使其提前做出站位选择。"
+      pressure_en: "Factional friction reaches {protagonist}, forcing an early choice of allegiance."
+      reversal_zh: "{protagonist}利用势力间的矛盾找到了意想不到的机缘。"
+      reversal_en: "{protagonist} exploits inter-factional contradictions to find an unexpected opportunity."
+      climax_zh: "势力碰撞达到顶点，{protagonist}必须在混战中完成突破或付出代价。"
+      climax_en: "Factional collision reaches its peak — {protagonist} must break through or pay the price."
+
+  - phase_key: power_system_test
+    phase_name_zh: "体系考验"
+    phase_name_en: "Power System Test"
+    description_zh: "主角触碰力量体系的深层规则，面临旧能力失效、必须质变的考验。"
+    description_en: "The protagonist confronts deeper rules of the power system — old abilities fail, a qualitative leap is required."
+    typical_force_types: ["systemic", "environment"]
+    volume_goal_template_zh: "{protagonist}必须理解并突破{force_name}代表的力量体系深层规则，完成从量变到质变的跨越。"
+    volume_goal_template_en: "{protagonist} must understand and break through the deep rules {force_name} represents, achieving a qualitative leap."
+    volume_climax_template_zh: "{protagonist}在体系极限处完成质变，但质变本身带来了全新的弱点和代价。"
+    volume_climax_template_en: "{protagonist} achieves a qualitative transformation at the system's limits, but the change brings new weaknesses."
+    volume_obstacle_template_zh: "{force_name}代表的体系规则封锁了主角惯用的成长路径，旧手段全面失效。"
+    volume_obstacle_template_en: "{force_name}'s systemic rules block the protagonist's usual growth path — old methods fail completely."
+    volume_resolution_template_zh: "主角完成质变但付出沉重代价，世界观的更深层真相也随之揭开一角。"
+    volume_resolution_template_en: "The protagonist completes the qualitative leap at heavy cost, and a deeper truth about the world is revealed."
+    chapter_conflict_templates:
+      setup_zh: "{protagonist}发现自己的能力在{force_name}设定的规则面前完全失效。"
+      setup_en: "{protagonist} discovers their abilities are completely ineffective against {force_name}'s rules."
+      investigation_zh: "{protagonist}开始研究{force_name}所代表的力量体系深层逻辑。"
+      investigation_en: "{protagonist} begins studying the deep logic of the power system {force_name} represents."
+      pressure_zh: "体系的反噬越来越强，{protagonist}的时间窗口在急剧缩小。"
+      pressure_en: "Systemic backlash intensifies — {protagonist}'s window is shrinking fast."
+      reversal_zh: "{protagonist}从体系规则中发现了一个被所有人忽视的漏洞。"
+      reversal_en: "{protagonist} discovers a flaw in the system's rules that everyone overlooked."
+      climax_zh: "{protagonist}赌上一切尝试质变，成功与毁灭仅一线之隔。"
+      climax_en: "{protagonist} stakes everything on the qualitative leap — success and destruction are a hair apart."
+
+  - phase_key: world_threat
+    phase_name_zh: "天下之危"
+    phase_name_en: "World Threat"
+    description_zh: "威胁从局部扩大到整个世界，主角的选择影响所有人的命运。"
+    description_en: "The threat expands from regional to global — the protagonist's choices shape everyone's fate."
+    typical_force_types: ["faction", "environment", "systemic"]
+    volume_goal_template_zh: "{protagonist}必须集结一切力量对抗{force_name}引发的世界级威胁。"
+    volume_goal_template_en: "{protagonist} must rally all forces against the world-level threat unleashed by {force_name}."
+    volume_climax_template_zh: "{protagonist}以极大的个人代价阻止了{force_name}的终极计划，但世界已被永远改变。"
+    volume_climax_template_en: "{protagonist} stops {force_name}'s ultimate plan at enormous personal cost, but the world is changed forever."
+    volume_obstacle_template_zh: "{force_name}的力量已经超越个体和势力的范畴，{protagonist}必须号召同盟。"
+    volume_obstacle_template_en: "{force_name}'s power exceeds individual and factional scales — {protagonist} must build a coalition."
+    volume_resolution_template_zh: "世界在浩劫后重组，主角在新格局中获得了前所未有的地位和责任。"
+    volume_resolution_template_en: "The world restructures after catastrophe — the protagonist gains unprecedented status and responsibility."
+    chapter_conflict_templates:
+      setup_zh: "{force_name}的威胁已扩散到整个世界，{protagonist}意识到单打独斗无法解决问题。"
+      setup_en: "{force_name}'s threat has spread across the world — {protagonist} realizes fighting alone is futile."
+      investigation_zh: "{protagonist}寻找对抗{force_name}的关键——一个被遗忘的力量或同盟。"
+      investigation_en: "{protagonist} searches for the key to countering {force_name} — a forgotten power or alliance."
+      pressure_zh: "同盟内部出现裂缝，{force_name}的攻势让所有人面临生死抉择。"
+      pressure_en: "Cracks appear in the coalition — {force_name}'s offensive forces everyone to a life-or-death choice."
+      reversal_zh: "在最绝望的时刻，{protagonist}发现了扭转局势的关键情报。"
+      reversal_en: "At the darkest moment, {protagonist} discovers the intelligence that can turn the tide."
+      climax_zh: "最终大战爆发，{protagonist}必须在拯救世界和个人代价之间做出选择。"
+      climax_en: "The final battle erupts — {protagonist} must choose between saving the world and personal sacrifice."
+
+  - phase_key: transcendence
+    phase_name_zh: "超越"
+    phase_name_en: "Transcendence"
+    description_zh: "主角突破力量体系的最终限制，完成从强者到传奇的蜕变，面对内心的终极考验。"
+    description_en: "The protagonist breaks the final limit of the power system, transforming from a strong fighter to a legend, facing an ultimate inner trial."
+    typical_force_types: ["internal", "systemic"]
+    volume_goal_template_zh: "{protagonist}必须直面{force_name}带来的终极考验，突破力量体系的最后壁垒，完成真正的超越。"
+    volume_goal_template_en: "{protagonist} must face the ultimate trial from {force_name}, break the last barrier of the power system, and achieve true transcendence."
+    volume_climax_template_zh: "{protagonist}在超越的边缘完成蜕变，力量体系的终极秘密在这一刻揭开。"
+    volume_climax_template_en: "{protagonist} transforms at the edge of transcendence — the ultimate secret of the power system is revealed."
+    volume_obstacle_template_zh: "{force_name}代表的不仅是外在敌人，更是{protagonist}内心深处从未面对的恐惧和执念。"
+    volume_obstacle_template_en: "{force_name} represents not just an external enemy, but {protagonist}'s deepest unconfronted fears and obsessions."
+    volume_resolution_template_zh: "主角完成超越，以全新的姿态重新定义了力量与自我的关系。"
+    volume_resolution_template_en: "The protagonist achieves transcendence, redefining the relationship between power and self."
+    chapter_conflict_templates:
+      setup_zh: "{protagonist}站在力量体系的顶端，却感到从未有过的空虚和迷茫。"
+      setup_en: "{protagonist} stands at the apex of the power system yet feels unprecedented emptiness."
+      investigation_zh: "{protagonist}开始追问力量的终极意义——{force_name}正是这个问题的化身。"
+      investigation_en: "{protagonist} begins questioning the ultimate meaning of power — {force_name} is the embodiment of that question."
+      pressure_zh: "{force_name}的考验剥去了{protagonist}的一切外在力量，只剩最本真的自我。"
+      pressure_en: "{force_name}'s trial strips away all external power, leaving only {protagonist}'s true self."
+      reversal_zh: "{protagonist}在失去一切力量的瞬间领悟了超越的真谛。"
+      reversal_en: "In the instant of losing all power, {protagonist} grasps the truth of transcendence."
+      climax_zh: "{protagonist}完成最终蜕变，以全新的理解面对{force_name}的终极挑战。"
+      climax_en: "{protagonist} completes the final transformation, facing {force_name}'s ultimate challenge with new understanding."
+
+protagonist_archetypes:
+  - archetype_key: power_seeker
+    name_zh: "求力者"
+    name_en: "Power Seeker"
+    core_wound_zh: "曾因力量不足失去了最重要的人或事物，这个失去驱动着一切行动。"
+    core_wound_en: "Lost something irreplaceable due to lack of power — this loss drives every action."
+    external_goal_template_zh: "{name}必须不断变强，获取足够的力量来保护想保护的一切。"
+    external_goal_template_en: "{name} must grow ever stronger to protect everything that matters."
+    internal_need_template_zh: "{name}需要学会接受力量的代价，理解强大不等于正确。"
+    internal_need_template_en: "{name} must learn to accept the cost of power and understand that strength is not righteousness."
+    arc_trajectory_zh: "从被动求存到主动追力，从追力者到理解力量真谛者。"
+    arc_trajectory_en: "From passive survivor to active power-seeker, from seeker to one who understands power's true meaning."
+    flaw_zh: "为了变强不计代价，容易忽视身边人的感受和自身的底线。"
+    flaw_en: "Pursues power at any cost, easily neglecting those around and personal ethical boundaries."
+    strength_zh: "对危险的直觉极强，面对绝境时爆发力远超常态。"
+    strength_en: "Exceptional danger instincts and explosive potential under extreme pressure."
+
+  - archetype_key: cunning_survivor
+    name_zh: "狡猾求生者"
+    name_en: "Cunning Survivor"
+    core_wound_zh: "在一个弱肉强食的世界中从最底层爬上来，永远不信任任何体系。"
+    core_wound_en: "Climbed from the very bottom in a dog-eat-dog world — never trusts any system."
+    external_goal_template_zh: "{name}必须用智慧和手段在强者的夹缝中开辟出一条属于自己的路。"
+    external_goal_template_en: "{name} must carve a path through cunning and resourcefulness in the cracks between the powerful."
+    internal_need_template_zh: "{name}需要学会信任，从只靠自己到建立真正的同盟。"
+    internal_need_template_en: "{name} must learn to trust — from relying solely on self to building genuine alliances."
+    arc_trajectory_zh: "从孤狼式求生到以谋略整合资源，最终学会信任和被信任。"
+    arc_trajectory_en: "From lone-wolf survival to strategic resource integration, eventually learning to trust and be trusted."
+    flaw_zh: "过度算计，很难真心信任他人，关键时刻可能因疑心错失机会。"
+    flaw_en: "Over-calculates, struggles to truly trust others — may miss critical opportunities due to suspicion."
+    strength_zh: "观察力和信息整合能力极强，善于利用环境和规则中的漏洞。"
+    strength_en: "Exceptional observation and information synthesis — adept at exploiting loopholes in environments and rules."
+
+world_rule_templates:
+  - rule_template_key: power_hierarchy
+    name_zh: "力量阶梯规则"
+    name_en: "Power Hierarchy Rule"
+    description_zh: "世界的力量分为清晰的层级，高层碾压低层是基本法则，跨层挑战极其罕见。"
+    description_en: "Power divides into clear tiers — higher tiers crush lower ones as a fundamental law; cross-tier challenges are exceedingly rare."
+    story_consequence_zh: "{protagonist}不能靠热血和友情碾压高阶敌人，必须找到跨阶的合理方式。"
+    story_consequence_en: "{protagonist} cannot brute-force higher-tier enemies through willpower alone — a legitimate cross-tier method is required."
+    exploitation_potential_zh: "层级体系越严格，体系中的漏洞和例外就越有叙事价值。"
+    exploitation_potential_en: "The stricter the hierarchy, the more narratively valuable its loopholes and exceptions become."
+
+  - rule_template_key: resource_bottleneck
+    name_zh: "资源瓶颈规则"
+    name_en: "Resource Bottleneck Rule"
+    description_zh: "升级需要特定资源，资源的稀缺性随层级提高而急剧上升。"
+    description_en: "Advancement requires specific resources whose scarcity rises sharply with each tier."
+    story_consequence_zh: "{protagonist}的每一次突破都需要明确的资源支撑，不能凭空顿悟。"
+    story_consequence_en: "Every breakthrough requires concrete resource support — epiphanies from thin air are forbidden."
+    exploitation_potential_zh: "资源的争夺是势力冲突的天然导火索，也是主角介入更大博弈的入口。"
+    exploitation_potential_en: "Resource competition is a natural catalyst for factional conflict and the protagonist's entry to larger games."
+
+  - rule_template_key: backlash_cost
+    name_zh: "反噬代价规则"
+    name_en: "Backlash Cost Rule"
+    description_zh: "超越当前层级的力量使用会产生反噬，代价与超越幅度成正比。"
+    description_en: "Using power beyond one's current tier triggers backlash proportional to the extent of overreach."
+    story_consequence_zh: "{protagonist}不能无限透支潜力，每次越阶行动都有明确的后续成本。"
+    story_consequence_en: "{protagonist} cannot overdraw potential infinitely — each cross-tier action has clear subsequent costs."
+    exploitation_potential_zh: "反噬机制让'以弱胜强'有了合理性和紧迫感，也为战后低谷期提供叙事空间。"
+    exploitation_potential_en: "The backlash mechanism makes 'defeating the strong as the weak' both plausible and urgent, also creating narrative space for post-battle vulnerability."
+
+quality_traps:
+  - trap_key: numerical_inflation
+    description_zh: "数值膨胀失控：力量数字越写越大，但读者对数字已经麻木。应该用'质变'代替'量变'。"
+    description_en: "Numerical inflation: power numbers keep growing but readers are numb. Use qualitative change, not quantitative."
+    severity: critical
+
+  - trap_key: battle_template
+    description_zh: "战斗描写模板化：每场战斗都是'对峙→试探→大招→反转→获胜'的固定流程。需要变换战斗环境、条件、目标。"
+    description_en: "Battle template: every fight follows 'standoff → test → ultimate move → reversal → victory'. Vary environments, conditions, objectives."
+    severity: critical
+
+  - trap_key: sidekick_tools
+    description_zh: "配角工具化：配角只在主角需要被救或需要观众时才出现，缺乏自身的行为逻辑。"
+    description_en: "Sidekick as tool: sidekicks appear only when the protagonist needs saving or an audience — they lack their own behavioral logic."
+    severity: warning
+
+  - trap_key: random_breakthrough
+    description_zh: "升级理由随意化：突然'感悟'或'被激发'导致突破，缺乏铺垫和因果链。每次突破都应有明确的触发条件和代价。"
+    description_en: "Random breakthrough: sudden 'insight' or 'awakening' with no setup or causality. Every breakthrough needs clear triggers and costs."
+    severity: critical
+
+  - trap_key: late_system_collapse
+    description_zh: "力量体系后期崩塌：前期设定严谨，后期为了推进剧情开始违反自己建立的规则。"
+    description_en: "Late system collapse: strict early rules broken in later volumes to push the plot forward."
+    severity: critical
+
+disqualifiers:
+  - rule_zh: "力量体系自相矛盾——一票否决。"
+    rule_en: "Power system contradicts itself — automatic disqualification."
+    severity: fatal
+
+  - rule_zh: "升级节奏完全停滞超过连续3章。"
+    rule_en: "Progression completely stagnates for more than 3 consecutive chapters."
+    severity: critical
+
+  - rule_zh: "战斗无策略变化，每场战斗模式完全相同。"
+    rule_en: "Battles have no strategic variation — every fight follows the same pattern."
+    severity: critical
+
+tolerance_ranges:
+  emotional_depth:
+    min: 0.5
+    max: 0.6
+    note_zh: "升级文不需要复杂感情纠葛"
+    note_en: "Action-progression does not require complex emotional entanglements"
+  philosophical_depth:
+    min: 0.3
+    max: 0.5
+    note_zh: "读者不期待深刻的人生思考"
+  poetic_language:
+    min: 0.3
+    max: 0.5
+    note_zh: "简洁有力的战斗描写优于华丽辞藻"
+
+signal_keywords:
+  combat_zh: ["突破", "晋级", "领悟", "气劲", "灵力", "真气", "吞噬", "压制", "碾压", "对峙", "绝招", "秘技", "禁术"]
+  progression_zh: ["修炼", "闭关", "顿悟", "瓶颈", "契机", "蜕变", "进阶", "淬体", "凝丹"]
+  system_zh: ["位阶", "层级", "境界", "法则", "规则", "天道", "限制", "代价", "反噬"]
+  hooks_zh: ["隐藏", "觉醒", "封印", "血脉", "传承", "秘境", "遗迹"]

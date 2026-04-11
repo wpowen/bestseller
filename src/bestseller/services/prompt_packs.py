@@ -8,6 +8,21 @@ import yaml
 from pydantic import BaseModel, Field
 
 
+class ObligatoryScene(BaseModel, frozen=True):
+    """A genre-required scene type that must appear somewhere in the novel."""
+
+    code: str = Field(min_length=1, max_length=64)
+    label: str = Field(min_length=1, max_length=120)
+    timing: str = Field(
+        default="any",
+        description=(
+            "When this scene should appear: "
+            "'act_1', 'act_2_midpoint', 'act_3', 'final_chapter', 'any'."
+        ),
+    )
+    check_keywords: list[str] = Field(default_factory=list)
+
+
 class PromptPackFragments(BaseModel):
     global_rules: str | None = None
     planner_book_spec: str | None = None
@@ -20,6 +35,21 @@ class PromptPackFragments(BaseModel):
     scene_rewrite: str | None = None
     chapter_review: str | None = None
     chapter_rewrite: str | None = None
+    structure_guidance: str | None = None
+
+    # --- 方法论扩展片段 (Methodology-driven fragments) ---
+    emotion_engineering: str | None = None
+    conflict_stakes: str | None = None
+    hook_design: str | None = None
+    core_loop: str | None = None
+    dialogue_rules: str | None = None
+    visual_writing: str | None = None
+    opening_rules: str | None = None
+    climax_design: str | None = None
+    pacing_guidance: str | None = None
+    character_design: str | None = None
+    reversal_design: str | None = None
+    reaction_amplification: str | None = None
 
 
 class PromptPack(BaseModel):
@@ -33,6 +63,7 @@ class PromptPack(BaseModel):
     anti_patterns: list[str] = Field(default_factory=list)
     writing_profile_overrides: dict[str, Any] = Field(default_factory=dict)
     fragments: PromptPackFragments = Field(default_factory=PromptPackFragments)
+    obligatory_scenes: list[ObligatoryScene] = Field(default_factory=list)
 
 
 def _prompt_pack_dir() -> Path:
@@ -129,3 +160,69 @@ def render_prompt_pack_fragment(pack: PromptPack | None, fragment_name: str) -> 
         return ""
     value = getattr(pack.fragments, fragment_name, None)
     return value.strip() if isinstance(value, str) and value.strip() else ""
+
+
+# Methodology fragment keys that should be injected into scene writing prompts.
+_METHODOLOGY_SCENE_FRAGMENTS = (
+    "emotion_engineering",
+    "conflict_stakes",
+    "hook_design",
+    "core_loop",
+    "dialogue_rules",
+    "visual_writing",
+    "pacing_guidance",
+    "reaction_amplification",
+)
+
+# Methodology fragment keys for chapter review prompts.
+_METHODOLOGY_REVIEW_FRAGMENTS = (
+    "emotion_engineering",
+    "conflict_stakes",
+    "hook_design",
+    "core_loop",
+    "pacing_guidance",
+)
+
+# Methodology fragment keys for planner/outline prompts.
+_METHODOLOGY_PLANNER_FRAGMENTS = (
+    "opening_rules",
+    "climax_design",
+    "character_design",
+    "reversal_design",
+    "core_loop",
+)
+
+
+def render_methodology_block(
+    pack: PromptPack | None,
+    *,
+    phase: str = "scene",
+) -> str:
+    """Render combined methodology guidance block for a given phase.
+
+    Args:
+        pack: Resolved prompt pack (may be None).
+        phase: One of "scene", "review", "planner".
+
+    Returns:
+        Multi-line string with all applicable methodology fragments, or "".
+    """
+    if pack is None:
+        return ""
+
+    if phase == "review":
+        keys = _METHODOLOGY_REVIEW_FRAGMENTS
+    elif phase == "planner":
+        keys = _METHODOLOGY_PLANNER_FRAGMENTS
+    else:
+        keys = _METHODOLOGY_SCENE_FRAGMENTS
+
+    sections: list[str] = []
+    for key in keys:
+        value = getattr(pack.fragments, key, None)
+        if isinstance(value, str) and value.strip():
+            sections.append(f"【{key}】\n{value.strip()}")
+
+    if not sections:
+        return ""
+    return "## 写法方法论指导\n\n" + "\n\n".join(sections)

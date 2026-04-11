@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import func, select, update
@@ -63,6 +64,156 @@ def _safe_ratio(numerator: int, denominator: int) -> float:
     if denominator <= 0:
         return 1.0
     return _clamp_score(numerator / denominator)
+
+
+def _check_obligatory_scenes(
+    *,
+    project: "ProjectModel",
+    chapter_count: int,
+    chapter_drafts: list["ChapterDraftVersionModel"],
+) -> list[ProjectConsistencyFinding]:
+    """Phase-5: Check whether genre-required obligatory scenes are present.
+
+    Uses the project's prompt pack to find obligatory scene definitions, then
+    checks completed chapter drafts for keyword matches.
+    """
+    from bestseller.services.prompt_packs import resolve_prompt_pack
+
+    pack_key = (project.metadata_json or {}).get("prompt_pack_key")
+    pack = resolve_prompt_pack(
+        pack_key,
+        genre=project.genre,
+        sub_genre=project.sub_genre,
+    )
+    if pack is None or not pack.obligatory_scenes:
+        return []
+
+    # Build a single string of all draft content for keyword scanning
+    all_draft_text = "\n".join(
+        (d.content or "") for d in chapter_drafts if d.content
+    ).lower()
+
+    # Map timing labels to chapter ranges
+    safe_total = max(chapter_count, 1)
+    act1_end = max(1, round(safe_total * 0.25))
+    midpoint = round(safe_total * 0.5)
+    act3_start = max(1, round(safe_total * 0.75))
+
+    draft_by_chapter: dict[int, str] = {}
+    for d in chapter_drafts:
+        ch_num = getattr(d, "chapter_number", 0)
+        if ch_num and d.content:
+            draft_by_chapter[ch_num] = (d.content or "").lower()
+
+    findings: list[ProjectConsistencyFinding] = []
+
+    for oblig in pack.obligatory_scenes:
+        # Determine which chapters to scan based on timing
+        if oblig.timing == "act_1":
+            target_text = "\n".join(
+                txt for ch, txt in draft_by_chapter.items() if ch <= act1_end
+            )
+            timing_label = f"第一幕 (Ch 1-{act1_end})"
+        elif oblig.timing == "act_2_midpoint":
+            mid_lo = max(1, midpoint - 2)
+            mid_hi = midpoint + 2
+            target_text = "\n".join(
+                txt for ch, txt in draft_by_chapter.items() if mid_lo <= ch <= mid_hi
+            )
+            timing_label = f"中点附近 (Ch {mid_lo}-{mid_hi})"
+        elif oblig.timing == "act_3":
+            target_text = "\n".join(
+                txt for ch, txt in draft_by_chapter.items() if ch >= act3_start
+            )
+            timing_label = f"第三幕 (Ch {act3_start}+)"
+        elif oblig.timing == "final_chapter":
+            target_text = draft_by_chapter.get(chapter_count, "")
+            timing_label = f"最终章 (Ch {chapter_count})"
+        else:
+            target_text = all_draft_text
+            timing_label = "全书"
+
+        if not target_text:
+            # No drafts in the expected range yet — skip (not overdue)
+            continue
+
+        # Check if any keyword is present
+        found = any(kw.lower() in target_text for kw in oblig.check_keywords)
+        if not found:
+            findings.append(
+                ProjectConsistencyFinding(
+                    category="obligatory_scene",
+                    severity="medium",
+                    message=(
+                        f"题材必须场景「{oblig.label}」({oblig.code}) "
+                        f"预期出现在{timing_label}，但未检测到相关信号词。"
+                    ),
+                )
+            )
+
+    return findings
+
+
+def _check_foreshadowing_density(
+    *,
+    clues: list[Any],
+    payoffs: list[Any],
+    total_chapters: int,
+) -> list[ProjectConsistencyFinding]:
+    """Phase-6: Analyse clue/payoff distribution for dead zones and orphans."""
+    from bestseller.services.foreshadowing import analyze_foreshadowing_density
+
+    if not clues and not payoffs:
+        return []
+
+    result = analyze_foreshadowing_density(
+        clues=clues,
+        payoffs=payoffs,
+        total_chapters=total_chapters,
+    )
+
+    findings: list[ProjectConsistencyFinding] = []
+
+    if result.dead_zone_chapters:
+        zones_str = ", ".join(
+            f"Ch {s}-{e}" for s, e in result.dead_zone_chapters
+        )
+        findings.append(
+            ProjectConsistencyFinding(
+                category="foreshadowing_density",
+                severity="medium",
+                message=f"伏笔活动死寂区间：{zones_str}。建议在这些章节种植或回收伏笔。",
+            )
+        )
+
+    if result.orphan_clue_codes:
+        codes_str = ", ".join(result.orphan_clue_codes[:5])
+        findings.append(
+            ProjectConsistencyFinding(
+                category="foreshadowing_orphan",
+                severity="medium",
+                message=(
+                    f"以下伏笔已超过预期回收章节但未兑现：{codes_str}"
+                    f"{'...' if len(result.orphan_clue_codes) > 5 else ''}。"
+                ),
+            )
+        )
+
+    if result.balance_score < 0.5:
+        findings.append(
+            ProjectConsistencyFinding(
+                category="foreshadowing_balance",
+                severity=_severity_from_score(result.balance_score),
+                message=(
+                    f"伏笔分布不均衡（评分 {result.balance_score:.2f}）。"
+                    f"Act 1: {result.act1_plants}植/{result.act1_recoveries}收, "
+                    f"Act 2: {result.act2_plants}植/{result.act2_recoveries}收, "
+                    f"Act 3: {result.act3_plants}植/{result.act3_recoveries}收。"
+                ),
+            )
+        )
+
+    return findings
 
 
 def _term_candidates(*values: str | None) -> list[str]:
@@ -857,6 +1008,28 @@ async def review_project_consistency(
         is_final_volume=is_final_volume,
         **narrative_signals,
     )
+
+    # ── Phase-5: obligatory scene validation ──
+    obligation_findings = _check_obligatory_scenes(
+        project=project,
+        chapter_count=chapter_count,
+        chapter_drafts=chapter_drafts,
+    )
+    if obligation_findings:
+        review_result = review_result.model_copy(
+            update={"findings": review_result.findings + obligation_findings},
+        )
+
+    # ── Phase-6: foreshadowing density analysis ──
+    foreshadowing_findings = _check_foreshadowing_density(
+        clues=clues,
+        payoffs=payoffs,
+        total_chapters=chapter_count,
+    )
+    if foreshadowing_findings:
+        review_result = review_result.model_copy(
+            update={"findings": review_result.findings + foreshadowing_findings},
+        )
 
     fallback_summary = render_project_review_summary(review_result)
     system_prompt, user_prompt = build_project_review_prompts(project, review_result)

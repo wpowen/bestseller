@@ -1,0 +1,263 @@
+key: relationship-driven
+name: "关系情感类"
+name_en: "Relationship-Driven"
+reader_promise_zh: >
+  核心关系一定会推进，情感互动有层次和变化，角色之间的化学反应真实可感。
+  读者来这个品类，买的是"看两个人如何从A走到B的完整情感旅程"。
+reader_promise_en: >
+  The core relationship will progress. Emotional interactions have layers and evolution.
+  The reader buys the complete emotional journey between two people from A to B.
+
+challenge_evolution_pathway:
+  - phase_key: stranger
+    phase_name_zh: "陌生"
+    phase_name_en: "Stranger"
+    description_zh: "核心角色初次相遇或被迫处于同一环境，建立第一印象和初始冲突。"
+    description_en: "Core characters meet for the first time or are thrown together, establishing first impressions and initial friction."
+    typical_force_types: ["character", "environment"]
+    volume_goal_template_zh: "{protagonist}和{force_name}在命运安排下初次交汇，建立起充满张力的第一印象。"
+    volume_goal_template_en: "{protagonist} and {force_name} cross paths for the first time, establishing a tension-filled first impression."
+    volume_climax_template_zh: "一个意外事件让{protagonist}看到了{force_name}完全不同的一面，关系的种子在这一刻种下。"
+    volume_climax_template_en: "An unexpected event reveals a completely different side of {force_name} — the seed of the relationship is planted."
+    volume_obstacle_template_zh: "身份差异、偏见或误解在{protagonist}和{force_name}之间筑起了无形的墙。"
+    volume_obstacle_template_en: "Status differences, prejudice, or misunderstanding build an invisible wall between {protagonist} and {force_name}."
+    volume_resolution_template_zh: "第一道隔阂被打破，但双方都还没有意识到这段关系的真正分量。"
+    volume_resolution_template_en: "The first barrier falls, but neither side yet grasps the true weight of this relationship."
+    chapter_conflict_templates:
+      setup_zh: "{protagonist}在日常中不断与{force_name}产生交集，摩擦中隐含着好奇。"
+      setup_en: "{protagonist} keeps crossing paths with {force_name} — friction conceals curiosity."
+      investigation_zh: "{protagonist}开始主动或被动地了解{force_name}的过去和真实面目。"
+      investigation_en: "{protagonist} begins to learn about {force_name}'s past and true nature — actively or passively."
+      pressure_zh: "外界压力迫使{protagonist}和{force_name}必须共同面对一个紧急状况。"
+      pressure_en: "External pressure forces {protagonist} and {force_name} to face an urgent situation together."
+      reversal_zh: "{protagonist}发现自己对{force_name}的印象完全是错误的——真相比想象更复杂。"
+      reversal_en: "{protagonist} discovers their impression of {force_name} was entirely wrong — the truth is more complex."
+      climax_zh: "一个关键时刻让{protagonist}必须决定是走近{force_name}还是保持距离。"
+      climax_en: "A pivotal moment forces {protagonist} to choose: draw closer to {force_name} or keep distance."
+
+  - phase_key: testing
+    phase_name_zh: "试探"
+    phase_name_en: "Testing"
+    description_zh: "双方开始有意识地接近，但信任尚未建立，每一次互动都是试探的博弈。"
+    description_en: "Both sides begin conscious approach but trust is not yet established — every interaction is a probing game."
+    typical_force_types: ["character", "internal"]
+    volume_goal_template_zh: "{protagonist}和{force_name}在反复试探中逐渐建立起脆弱的信任。"
+    volume_goal_template_en: "{protagonist} and {force_name} gradually build fragile trust through repeated testing."
+    volume_climax_template_zh: "一次关键的信任考验决定了这段关系能否继续向前。"
+    volume_climax_template_en: "A critical trust test determines whether this relationship can continue moving forward."
+    volume_obstacle_template_zh: "{force_name}的过去或秘密成为了阻碍信任建立的最大障碍。"
+    volume_obstacle_template_en: "{force_name}'s past or secret becomes the greatest obstacle to building trust."
+    volume_resolution_template_zh: "信任的第一块基石被放下，但双方都知道这还远远不够。"
+    volume_resolution_template_en: "The first cornerstone of trust is laid, but both know it is far from enough."
+    chapter_conflict_templates:
+      setup_zh: "{protagonist}试图主动靠近{force_name}，却被对方的防线挡回。"
+      setup_en: "{protagonist} tries to approach {force_name} but is deflected by their defenses."
+      investigation_zh: "{protagonist}通过细节和行为读懂{force_name}没有说出口的心声。"
+      investigation_en: "{protagonist} reads {force_name}'s unspoken feelings through details and behavior."
+      pressure_zh: "外界的质疑或干预让{protagonist}和{force_name}的关系面临公开化的压力。"
+      pressure_en: "Outside doubt or interference pressures the relationship toward exposure."
+      reversal_zh: "一个意外的袒露让双方的关系突破了安全距离。"
+      reversal_en: "An unexpected moment of vulnerability pushes the relationship past safe distance."
+      climax_zh: "{protagonist}必须在自我保护和向{force_name}坦诚之间做出选择。"
+      climax_en: "{protagonist} must choose between self-protection and honesty with {force_name}."
+
+  - phase_key: approach
+    phase_name_zh: "靠近"
+    phase_name_en: "Approach"
+    description_zh: "关系进入快速深化期，情感从暗流变为明流，但靠近也意味着暴露脆弱。"
+    description_en: "The relationship deepens rapidly — emotions surface from undercurrent to open stream, but closeness means exposing vulnerability."
+    typical_force_types: ["internal", "character"]
+    volume_goal_template_zh: "{protagonist}和{force_name}的关系从试探进入真正的靠近，情感开始质变。"
+    volume_goal_template_en: "The relationship between {protagonist} and {force_name} shifts from testing to genuine closeness — emotions begin transforming."
+    volume_climax_template_zh: "一个无法回避的情感时刻迫使双方承认——这段关系已经不再是可有可无的。"
+    volume_climax_template_en: "An unavoidable emotional moment forces both to admit — this relationship is no longer optional."
+    volume_obstacle_template_zh: "靠近意味着暴露最脆弱的部分，{protagonist}和{force_name}都在对抗自己的恐惧。"
+    volume_obstacle_template_en: "Closeness means exposing the most vulnerable parts — both {protagonist} and {force_name} fight their own fears."
+    volume_resolution_template_zh: "双方在情感上迈出了关键一步，但新的外部挑战正在逼近。"
+    volume_resolution_template_en: "Both take a critical emotional step forward, but a new external challenge approaches."
+    chapter_conflict_templates:
+      setup_zh: "{protagonist}和{force_name}之间的互动越来越频繁，空气中的温度在改变。"
+      setup_en: "Interactions between {protagonist} and {force_name} grow more frequent — the atmosphere is shifting."
+      investigation_zh: "{protagonist}开始审视自己对{force_name}的感情到底是什么。"
+      investigation_en: "{protagonist} begins examining what they truly feel for {force_name}."
+      pressure_zh: "某个事件让{protagonist}意识到如果失去{force_name}，代价远比预想的沉重。"
+      pressure_en: "An event makes {protagonist} realize losing {force_name} would cost far more than expected."
+      reversal_zh: "{force_name}突然拉开了距离——原因比{protagonist}想象的更复杂。"
+      reversal_en: "{force_name} suddenly pulls away — the reason is more complex than {protagonist} imagined."
+      climax_zh: "{protagonist}选择不再退缩，直面这段关系中最难以启齿的真相。"
+      climax_en: "{protagonist} chooses to stop retreating, confronting the hardest truth in this relationship."
+
+  - phase_key: trial
+    phase_name_zh: "考验"
+    phase_name_en: "Trial"
+    description_zh: "外部危机或内部价值冲突考验关系的根基，不经此难无法达到真正的深度。"
+    description_en: "External crisis or internal value conflict tests the relationship's foundation — true depth requires surviving this trial."
+    typical_force_types: ["character", "faction", "internal"]
+    volume_goal_template_zh: "{protagonist}必须在{force_name}带来的巨大考验中证明这段关系的价值。"
+    volume_goal_template_en: "{protagonist} must prove the relationship's worth through the severe trial brought by {force_name}."
+    volume_climax_template_zh: "在最痛苦的抉择时刻，{protagonist}做出了定义这段关系本质的选择。"
+    volume_climax_template_en: "In the most painful moment of choice, {protagonist} makes the decision that defines the relationship's essence."
+    volume_obstacle_template_zh: "{force_name}代表的外部压力撕裂了{protagonist}的情感和理智。"
+    volume_obstacle_template_en: "The external pressure from {force_name} tears {protagonist} between emotion and reason."
+    volume_resolution_template_zh: "关系在废墟上重建——不再完美，但更加真实和坚固。"
+    volume_resolution_template_en: "The relationship rebuilds on ruins — no longer perfect, but more real and enduring."
+    chapter_conflict_templates:
+      setup_zh: "一个无法回避的冲突把{protagonist}和{force_name}推向了对立面。"
+      setup_en: "An unavoidable conflict pushes {protagonist} and {force_name} to opposite sides."
+      investigation_zh: "{protagonist}试图理解为什么{force_name}做出了那个令人心碎的选择。"
+      investigation_en: "{protagonist} tries to understand why {force_name} made that heartbreaking choice."
+      pressure_zh: "所有人都在劝{protagonist}放弃，但内心有一个声音始终无法平息。"
+      pressure_en: "Everyone urges {protagonist} to give up, but a voice inside refuses to be silenced."
+      reversal_zh: "真相浮出水面——{force_name}的选择背后藏着一个{protagonist}从未想过的原因。"
+      reversal_en: "The truth surfaces — behind {force_name}'s choice lies a reason {protagonist} never imagined."
+      climax_zh: "{protagonist}必须做出最终选择：接受不完美的真相，还是继续追寻一个不存在的完美。"
+      climax_en: "{protagonist} must make the final choice: accept imperfect truth, or keep chasing a perfection that doesn't exist."
+
+  - phase_key: transformation
+    phase_name_zh: "质变"
+    phase_name_en: "Transformation"
+    description_zh: "关系从依赖或激情进化为成熟的理解与并肩，双方都因这段关系成为了更好的人。"
+    description_en: "The relationship evolves from dependence or passion to mature understanding and partnership — both become better people through it."
+    typical_force_types: ["internal", "environment"]
+    volume_goal_template_zh: "{protagonist}和{force_name}的关系完成从热烈到沉稳的质变，双方以全新的理解并肩前行。"
+    volume_goal_template_en: "The relationship between {protagonist} and {force_name} completes its transformation from intensity to steadiness — both walk forward with new understanding."
+    volume_climax_template_zh: "在最后的考验面前，{protagonist}和{force_name}展现了这段关系的真正力量。"
+    volume_climax_template_en: "Before the final test, {protagonist} and {force_name} reveal the true power of their relationship."
+    volume_obstacle_template_zh: "过去的伤痕和新的选择同时到来，{protagonist}必须证明这段关系的成长是真实的。"
+    volume_obstacle_template_en: "Old scars and new choices arrive together — {protagonist} must prove the relationship's growth is real."
+    volume_resolution_template_zh: "这段关系以它最真实的面目定格——不完美，但足以支撑余生的分量。"
+    volume_resolution_template_en: "The relationship settles into its truest form — imperfect, but with enough weight to sustain a lifetime."
+    chapter_conflict_templates:
+      setup_zh: "{protagonist}回望来路，发现自己已经在不知不觉中被{force_name}深刻改变。"
+      setup_en: "{protagonist} looks back and realizes {force_name} has profoundly changed them without either noticing."
+      investigation_zh: "{protagonist}开始思考这段关系的未来——不再是能否在一起，而是如何共同面对。"
+      investigation_en: "{protagonist} begins thinking about the future — no longer 'can we be together' but 'how do we face life together.'"
+      pressure_zh: "最后一个旧伤需要被治愈，{protagonist}和{force_name}必须共同面对各自的过去。"
+      pressure_en: "One last old wound needs healing — {protagonist} and {force_name} must face each other's past together."
+      reversal_zh: "一个意想不到的危机让{protagonist}看到了{force_name}最深层的温柔和力量。"
+      reversal_en: "An unexpected crisis reveals {force_name}'s deepest tenderness and strength."
+      climax_zh: "{protagonist}和{force_name}在这段关系中找到了真正的自己——这是最大的奇迹。"
+      climax_en: "{protagonist} and {force_name} discover their true selves within the relationship — the greatest miracle."
+
+protagonist_archetypes:
+  - archetype_key: guarded_heart
+    name_zh: "设防者"
+    name_en: "Guarded Heart"
+    core_wound_zh: "曾被最信任的人背叛或抛弃，从此在心里筑起了高墙。"
+    core_wound_en: "Betrayed or abandoned by the most trusted person — built walls around the heart ever since."
+    external_goal_template_zh: "{name}需要在新的关系中学会重新敞开心扉，但每一步都像走在刀尖上。"
+    external_goal_template_en: "{name} must learn to open up in a new relationship, but every step feels like walking on a blade."
+    internal_need_template_zh: "{name}需要理解：真正的力量不是不受伤，而是受伤后还敢再次相信。"
+    internal_need_template_en: "{name} must understand: true strength is not invulnerability, but daring to believe again after being hurt."
+    arc_trajectory_zh: "从封闭自保到试探性信任，从害怕再次受伤到接受脆弱是关系的一部分。"
+    arc_trajectory_en: "From self-protective isolation to tentative trust, from fearing re-injury to accepting vulnerability as part of connection."
+    flaw_zh: "习惯性推开靠近的人，用冷漠伪装恐惧。"
+    flaw_en: "Habitually pushes away those who get close, disguising fear as coldness."
+    strength_zh: "一旦决定信任，忠诚和付出远超常人。"
+    strength_en: "Once trust is given, loyalty and devotion far exceed the ordinary."
+
+  - archetype_key: passionate_idealist
+    name_zh: "热忱理想者"
+    name_en: "Passionate Idealist"
+    core_wound_zh: "曾因过于信任和付出而被深深伤害，但内心始终相信真爱存在。"
+    core_wound_en: "Deeply hurt by over-trusting and over-giving, yet the heart still believes in true love."
+    external_goal_template_zh: "{name}需要在保持真诚的同时学会保护自己，找到给予与接受的平衡。"
+    external_goal_template_en: "{name} must learn self-protection while staying genuine, finding balance between giving and receiving."
+    internal_need_template_zh: "{name}需要学会爱不只是付出，也是接受和建立边界。"
+    internal_need_template_en: "{name} must learn love is not just giving — it is also receiving and setting boundaries."
+    arc_trajectory_zh: "从盲目付出到有觉知的爱，从害怕被拒绝到有勇气说出真正的需要。"
+    arc_trajectory_en: "From blind giving to conscious love, from fearing rejection to having courage to voice real needs."
+    flaw_zh: "容易在关系中失去自我，为了对方放弃太多。"
+    flaw_en: "Easily loses self in relationships, giving up too much for the other person."
+    strength_zh: "对感情真诚且勇敢，能看到他人内心最柔软的部分。"
+    strength_en: "Genuine and brave in love — able to see the softest part of another's heart."
+
+world_rule_templates:
+  - rule_template_key: social_boundary
+    name_zh: "社会阶层壁垒"
+    name_en: "Social Boundary Rule"
+    description_zh: "身份、家庭、阶层构成了关系发展的天然障碍。"
+    description_en: "Identity, family, and social class form natural barriers to relationship development."
+    story_consequence_zh: "{protagonist}的感情不只是两个人的事，还要面对来自社会结构的压力。"
+    story_consequence_en: "{protagonist}'s love is not just between two people — it must face structural social pressure."
+    exploitation_potential_zh: "阶层壁垒越高，跨越它的情感代价越大，故事张力越强。"
+    exploitation_potential_en: "The higher the class barrier, the greater the emotional cost of crossing it, and the stronger the narrative tension."
+
+  - rule_template_key: information_asymmetry
+    name_zh: "信息不对称规则"
+    name_en: "Information Asymmetry Rule"
+    description_zh: "角色之间存在秘密、误解或信息差，这些差异驱动情感冲突。"
+    description_en: "Secrets, misunderstandings, and information gaps between characters drive emotional conflict."
+    story_consequence_zh: "每一个秘密都是一颗定时炸弹，揭晓时会重塑双方的信任基础。"
+    story_consequence_en: "Every secret is a ticking bomb — when revealed, it reshapes the foundation of trust between both sides."
+    exploitation_potential_zh: "信息差的揭露时机决定了情感冲击的强度。"
+    exploitation_potential_en: "The timing of information reveal determines the intensity of emotional impact."
+
+  - rule_template_key: emotional_debt
+    name_zh: "情感债务规则"
+    name_en: "Emotional Debt Rule"
+    description_zh: "过去的伤害和亏欠不会自动消失，必须被正视和清算。"
+    description_en: "Past hurts and debts do not vanish on their own — they must be confronted and settled."
+    story_consequence_zh: "{protagonist}不能靠一次深情表白抵消过去的伤害，修复需要时间和行动。"
+    story_consequence_en: "{protagonist} cannot erase past damage with a single heartfelt confession — healing requires time and action."
+    exploitation_potential_zh: "旧债的清算时机往往与新危机叠加，制造最强烈的情感高潮。"
+    exploitation_potential_en: "The settlement of old debts often coincides with new crises, creating the most intense emotional climaxes."
+
+quality_traps:
+  - trap_key: misunderstanding_stall
+    description_zh: "误解驱动变拖延驱动：同一个误解反复出现且可以一句话解决，读者失去耐心。"
+    description_en: "Misunderstanding becomes stalling: the same misunderstanding recurs and could be resolved in one sentence."
+    severity: critical
+
+  - trap_key: character_stupidity
+    description_zh: "角色降智服务剧情：让聪明角色突然变蠢来制造情感冲突。应该用价值观差异和信息差驱动。"
+    description_en: "Character dumbing-down: making smart characters suddenly stupid for emotional conflict. Use value differences and info gaps instead."
+    severity: critical
+
+  - trap_key: sidekick_tools
+    description_zh: "配角工具化严重：闺蜜/兄弟只在需要倾诉时出场，情敌只负责搅局。"
+    description_en: "Severe sidekick tooling: best friends appear only for venting, rivals only for sabotage."
+    severity: warning
+
+  - trap_key: emotion_template
+    description_zh: "情感描写模板化：每次心动都是'心跳加速'，每次伤心都是'眼眶泛红'。需要更多元的表达。"
+    description_en: "Template emotions: every heartbeat is 'racing pulse', every sadness is 'reddened eyes'. Need diverse expression."
+    severity: warning
+
+  - trap_key: uneven_pacing
+    description_zh: "关系进展不均匀：前期极慢导致读者流失，后期赶工导致情感质变缺乏铺垫。"
+    description_en: "Uneven relationship pacing: too slow early (reader drop-off), rushed later (emotional transformation lacks setup)."
+    severity: critical
+
+disqualifiers:
+  - rule_zh: "核心关系连续2卷以上无任何实质推进。"
+    rule_en: "Core relationship has no substantive progress for 2+ consecutive volumes."
+    severity: fatal
+
+  - rule_zh: "角色行为严重违反已建立的性格设定。"
+    rule_en: "Character behavior severely violates established personality."
+    severity: fatal
+
+  - rule_zh: "情感转折完全缺乏铺垫，突然反转。"
+    rule_en: "Emotional turning point completely lacks setup — sudden reversal."
+    severity: critical
+
+tolerance_ranges:
+  world_depth:
+    min: 0.4
+    max: 0.6
+    note_zh: "言情读者不要求宏大世界观"
+  combat_scenes:
+    min: 0.2
+    max: 0.4
+    note_zh: "可以偏低甚至缺失"
+  power_system:
+    min: 0.0
+    max: 0.3
+    note_zh: "可以完全没有"
+
+signal_keywords:
+  emotion_zh: ["心跳", "呼吸", "靠近", "后退", "眼神", "沉默", "温度", "触碰", "距离"]
+  relationship_zh: ["信任", "试探", "误解", "和解", "选择", "放手", "守护", "承诺", "牺牲", "并肩"]
+  inner_voice_zh: ["不自觉", "忍不住", "明知道", "却还是", "第一次", "从未", "习惯", "在意", "心软"]
+  atmosphere_zh: ["月光", "雨声", "夜晚", "窗台", "屋檐", "街角", "背影", "余温", "风"]

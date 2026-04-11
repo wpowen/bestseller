@@ -23,7 +23,7 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bestseller.services.llm import LLMCompletionRequest, LLMRole, complete_text
-from bestseller.services.writing_profile import resolve_writing_profile
+from bestseller.services.writing_profile import resolve_writing_profile, sanitize_genre_story_overrides
 from bestseller.services.writing_presets import list_genre_presets, list_platform_presets
 from bestseller.settings import AppSettings
 
@@ -31,6 +31,11 @@ from bestseller.settings import AppSettings
 from bestseller.services.genre_review_profiles import (
     GenreReviewProfile,
     resolve_genre_review_profile,
+)
+from bestseller.services.novel_categories import (
+    render_category_anti_patterns,
+    render_category_reader_promise,
+    resolve_novel_category,
 )
 
 logger = logging.getLogger(__name__)
@@ -141,7 +146,7 @@ def _build_genre_context(genre_key: str, chapter_count: int) -> dict[str, Any]:
         "trend_score": preset.trend_score,
         "trend_summary": preset.trend_summary,
         "default_platform": recommended_platform,
-        "existing_overrides": preset.writing_profile_overrides,
+        "existing_overrides": sanitize_genre_story_overrides(preset.writing_profile_overrides),
     }
 
 
@@ -603,6 +608,14 @@ def _finalize_user_prompt(
         instruction = genre_profile.planner_prompts.book_spec_instruction_zh
         if instruction:
             base += f"\n\n【品类最终质量要求】\n{instruction}"
+    # Inject category anti-patterns and reader promise
+    cat = resolve_novel_category(ctx.get("genre", ""), ctx.get("sub_genre"))
+    promise = render_category_reader_promise(cat, is_en=False)
+    anti = render_category_anti_patterns(cat, is_en=False)
+    if promise:
+        base += f"\n\n{promise}"
+    if anti:
+        base += f"\n\n{anti}"
     return base
 
 
@@ -674,7 +687,95 @@ def _finalize_user_prompt_en(
         instruction = genre_profile.planner_prompts.book_spec_instruction_en
         if instruction:
             base += f"\n\n[Genre final quality requirements]\n{instruction}"
+    # Inject category anti-patterns and reader promise
+    cat = resolve_novel_category(ctx.get("genre", ""), ctx.get("sub_genre"))
+    promise = render_category_reader_promise(cat, is_en=True)
+    anti = render_category_anti_patterns(cat, is_en=True)
+    if promise:
+        base += f"\n\n{promise}"
+    if anti:
+        base += f"\n\n{anti}"
     return base
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Creative exploration (anti-cliché step)
+# ─────────────────────────────────────────────────────────────────────
+
+_CREATIVE_EXPLORATION_SYSTEM = (
+    "你是一位专注于差异化创意的小说策划师。"
+    "你的任务是基于当前的市场/角色/世界设定提案，"
+    "提出3个有差异化的创意方向，每个方向都必须避开品类常见陷阱。"
+    "输出必须是合法 JSON。"
+)
+
+_CREATIVE_EXPLORATION_SYSTEM_EN = (
+    "You are a differentiation-focused fiction planner. "
+    "Based on current market/character/world proposals, "
+    "propose 3 differentiated creative directions, each avoiding common category traps. "
+    "Output must be valid JSON only."
+)
+
+
+async def _creative_exploration(
+    session: AsyncSession,
+    settings: AppSettings,
+    *,
+    ctx: dict[str, Any],
+    market: dict[str, Any],
+    character: dict[str, Any],
+    world: dict[str, Any],
+    review: dict[str, Any],
+    category: Any,  # NovelCategoryResearch
+    is_en: bool,
+) -> tuple[str, UUID | None]:
+    """Generate 3 creative directions and choose the most differentiated one."""
+    anti = render_category_anti_patterns(category, is_en=is_en)
+    promise = render_category_reader_promise(category, is_en=is_en)
+
+    if is_en:
+        user_prompt = (
+            f"Genre: {ctx['genre']} ({ctx['sub_genre']})\n"
+            f"Target chapters: {ctx['chapter_count']}\n\n"
+            f"## Current Proposals\n"
+            f"Market: {json.dumps(market, ensure_ascii=False)[:500]}\n"
+            f"Character: {json.dumps(character, ensure_ascii=False)[:500]}\n"
+            f"World: {json.dumps(world, ensure_ascii=False)[:500]}\n"
+            f"Review feedback: {json.dumps(review, ensure_ascii=False)[:500]}\n\n"
+            f"{promise}\n\n{anti}\n\n"
+            "Generate 3 creative directions JSON:\n"
+            '{"directions": [\n'
+            '  {"premise_variation": "...", "unique_hook": "...", "avoids_traps": ["trap_key_1"]},\n'
+            '  ...\n'
+            '],\n'
+            '"chosen_direction": {"premise_variation": "...", "unique_hook": "...", "reason": "..."}}'
+        )
+    else:
+        user_prompt = (
+            f"题材：{ctx['genre']}（{ctx['sub_genre']}）\n"
+            f"目标章节数：{ctx['chapter_count']}章\n\n"
+            f"## 当前提案\n"
+            f"市场定位：{json.dumps(market, ensure_ascii=False)[:500]}\n"
+            f"角色体系：{json.dumps(character, ensure_ascii=False)[:500]}\n"
+            f"世界观：{json.dumps(world, ensure_ascii=False)[:500]}\n"
+            f"审查意见：{json.dumps(review, ensure_ascii=False)[:500]}\n\n"
+            f"{promise}\n\n{anti}\n\n"
+            "请生成3个差异化创意方向 JSON：\n"
+            '{"directions": [\n'
+            '  {"premise_variation": "前提变体描述", "unique_hook": "独特卖点", "avoids_traps": ["trap_key"]},\n'
+            '  ...\n'
+            '],\n'
+            '"chosen_direction": {"premise_variation": "最终选择", "unique_hook": "差异化卖点", "reason": "选择理由"}}'
+        )
+
+    return await _llm_call(
+        session, settings,
+        role="planner",
+        system_prompt=_CREATIVE_EXPLORATION_SYSTEM_EN if is_en else _CREATIVE_EXPLORATION_SYSTEM,
+        user_prompt=user_prompt,
+        fallback='{"directions": [], "chosen_direction": {}}',
+        template="conception_creative_exploration",
+    )
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -788,6 +889,31 @@ async def run_conception_pipeline(
     _track_id(review_llm_id)
     review_result = _extract_json(review_text)
     conception_log.append({"round": 2, "agent": "chief_editor", "review": review_result})
+
+    # ── Round 2.5: Creative Exploration (anti-cliché) ────────────────
+    _cat = resolve_novel_category(ctx.get("genre", ""), ctx.get("sub_genre"))
+    if _cat and _cat.quality_traps:
+        _emit("conception_creative_exploration", {"round": 2.5, "agent": "creative_explorer"})
+        exploration_text, exploration_llm_id = await _creative_exploration(
+            session, settings,
+            ctx=ctx,
+            market=market_proposal,
+            character=character_proposal,
+            world=world_proposal,
+            review=review_result,
+            category=_cat,
+            is_en=is_en,
+        )
+        _track_id(exploration_llm_id)
+        exploration_result = _extract_json(exploration_text) or {}
+        conception_log.append({"round": 2.5, "agent": "creative_explorer", "exploration": exploration_result})
+        # Merge the chosen creative direction into proposals for the finalizer
+        chosen = exploration_result.get("chosen_direction", {})
+        if chosen:
+            if chosen.get("premise_variation"):
+                ctx["creative_premise_seed"] = chosen["premise_variation"]
+            if chosen.get("unique_hook"):
+                ctx["creative_hook"] = chosen["unique_hook"]
 
     # ── Round 3: Merge & Finalize ───────────────────────────────────
     _emit("conception_finalize", {"round": 3, "agent": "project_director"})

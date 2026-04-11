@@ -49,6 +49,7 @@ from bestseller.infra.db.models import (
     ThemeArcModel,
     VolumeModel,
 )
+from bestseller.domain.structure_templates import StructureTemplate, resolve_structure_template
 from bestseller.services.projects import get_project_by_slug
 from bestseller.services.story_bible import parse_volume_plan_input
 
@@ -1108,14 +1109,30 @@ def _build_pacing_curve_specs(
     *,
     chapters: list[ChapterModel],
     scenes_by_chapter: dict[UUID, list[SceneCardModel]],
+    structure_template: StructureTemplate | None = None,
 ) -> list[dict[str, Any]]:
     specs: list[dict[str, Any]] = []
     total = len(chapters)
+
+    # Pre-compute structure beat positions mapped to chapter indices
+    beat_by_chapter_idx: dict[int, tuple[str, float, float]] = {}
+    if structure_template is not None:
+        for beat in structure_template.beats:
+            ch_idx = min(round(beat.position_pct * max(total - 1, 1)), total - 1)
+            lo, hi = beat.tension_range
+            beat_by_chapter_idx[ch_idx] = (beat.beat_name, lo, hi)
+
     for idx, chapter in enumerate(chapters):
         chapter_scenes = scenes_by_chapter.get(chapter.id, [])
         dominant_scene_type = chapter_scenes[0].scene_type if chapter_scenes else "hook"
         progress = idx / max(total - 1, 1)
-        if progress < 0.15:
+
+        # Check if a structure beat anchors this chapter
+        template_hit = beat_by_chapter_idx.get(idx)
+        if template_hit is not None:
+            _, lo, hi = template_hit
+            base_tension = (lo + hi) / 2
+        elif progress < 0.15:
             base_tension = 0.25
         elif progress < 0.45:
             base_tension = 0.25 + (progress - 0.15) * 1.5
@@ -1125,15 +1142,17 @@ def _build_pacing_curve_specs(
             base_tension = 0.85 + (progress - 0.75) * 0.67
         else:
             base_tension = 0.95 - (progress - 0.90) * 3.0
+
         phase = (chapter.metadata_json or {}).get("phase", "")
         if phase in _PHASE_TENSION:
             base_tension = (base_tension + _PHASE_TENSION[phase]) / 2
         tension = round(max(0.05, min(0.99, base_tension)), 2)
+        notes = template_hit[0] if template_hit else None
         specs.append({
             "chapter_number": chapter.chapter_number,
             "tension_level": tension,
             "scene_type_plan": dominant_scene_type,
-            "notes": None,
+            "notes": notes,
         })
     return specs
 
@@ -1292,6 +1311,26 @@ async def rebuild_narrative_graph(
         session.add(beat)
         beat_models.append(beat)
     await session.flush()
+
+    # ── Stamp structure beat names into main_plot arc beat metadata ──
+    _structure_key = getattr(project, "metadata_json", {}).get("structure_template") or "three-act"
+    _struct_tmpl = resolve_structure_template(_structure_key)
+    _total_chapters = len(chapters)
+    for struct_beat in _struct_tmpl.beats:
+        _target_ch = chapters[
+            min(round(struct_beat.position_pct * max(_total_chapters - 1, 1)), _total_chapters - 1)
+        ].chapter_number
+        for bm in beat_models:
+            if (
+                bm.scope_chapter_number == _target_ch
+                and bm.scope_level == "chapter"
+                and (bm.metadata_json or {}).get("arc_code") == "main_plot"
+            ):
+                meta = dict(bm.metadata_json or {})
+                meta["structure_beat"] = struct_beat.beat_name
+                meta["structure_beat_description"] = struct_beat.description
+                bm.metadata_json = meta
+                break
 
     clue_specs, payoff_specs = _build_clues_and_payoffs(
         arc_ids=arc_ids,
@@ -1665,10 +1704,13 @@ async def rebuild_narrative_graph(
     )
     session.add(ending_contract)
 
-    # ── Pacing Curve Points ──
+    # ── Pacing Curve Points (template-aware) ──
+    _structure_key = getattr(project, "metadata_json", {}).get("structure_template") or "three-act"
+    _structure_template = resolve_structure_template(_structure_key)
     pacing_specs = _build_pacing_curve_specs(
         chapters=chapters,
         scenes_by_chapter=scenes_by_chapter,
+        structure_template=_structure_template,
     )
     pacing_models: list[PacingCurvePointModel] = []
     for spec in pacing_specs:

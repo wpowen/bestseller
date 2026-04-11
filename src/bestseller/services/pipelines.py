@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from bestseller.domain.context import SceneWriterContextPacket
 from bestseller.domain.enums import ChapterStatus, ArtifactType, ProjectStatus, SceneStatus, WorkflowStatus
 from bestseller.domain.pipeline import ProjectPipelineChapterSummary, ProjectPipelineResult
-from bestseller.domain.planning import AutowriteResult
+from bestseller.domain.planning import AutowriteResult, PlanningArtifactCreate
 from bestseller.domain.pipeline import (
     ChapterPipelineResult,
     ChapterPipelineSceneSummary,
@@ -28,8 +28,8 @@ from bestseller.services.drafts import assemble_chapter_draft, generate_scene_dr
 from bestseller.services.exports import export_chapter_markdown, export_project_markdown
 from bestseller.services.consistency import review_project_consistency
 from bestseller.services.knowledge import propagate_scene_discoveries, refresh_scene_knowledge
-from bestseller.services.planner import generate_novel_plan
-from bestseller.services.projects import create_project, get_project_by_slug, load_json_file
+from bestseller.services.planner import generate_foundation_plan, generate_novel_plan, generate_volume_plan
+from bestseller.services.projects import create_project, get_project_by_slug, import_planning_artifact, load_json_file
 from bestseller.services.reviews import (
     review_chapter_draft,
     review_scene_draft,
@@ -1804,6 +1804,18 @@ async def run_autowrite_pipeline(
     auto_repair_on_attention: bool = True,
     progress: ProgressCallback | None = None,
 ) -> AutowriteResult:
+    # ── Route to progressive pipeline if enabled ──
+    if settings.pipeline.progressive_planning:
+        return await run_progressive_autowrite_pipeline(
+            session, settings,
+            project_payload=project_payload,
+            premise=premise,
+            requested_by=requested_by,
+            export_markdown=export_markdown,
+            auto_repair_on_attention=auto_repair_on_attention,
+            progress=progress,
+        )
+
     project = await get_project_by_slug(session, project_payload.slug)
     if project is None:
         _emit_progress(
@@ -2056,6 +2068,276 @@ async def run_autowrite_pipeline(
         output_files=output_files,
         export_status=export_status,
         chapter_count=len(project_result.chapter_results),
+        final_verdict=final_verdict,
+        requires_human_review=final_requires_human_review,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Progressive Autowrite Pipeline (Phase 3)
+# ---------------------------------------------------------------------------
+
+
+async def run_progressive_autowrite_pipeline(
+    session: AsyncSession,
+    settings: AppSettings,
+    *,
+    project_payload: ProjectCreate,
+    premise: str,
+    requested_by: str = "system",
+    export_markdown: bool = True,
+    auto_repair_on_attention: bool = True,
+    progress: ProgressCallback | None = None,
+) -> AutowriteResult:
+    """Progressive planning pipeline: Foundation → per-volume (plan → write → feedback) loop.
+
+    Characters and world evolve with the story — each volume's planning is
+    informed by feedback from the previous volume's actual writing output.
+    """
+    from bestseller.services.planning_context import (  # noqa: PLC0415
+        collect_volume_writing_feedback,
+        summarize_volume_feedback,
+    )
+
+    project = await get_project_by_slug(session, project_payload.slug)
+    if project is None:
+        _emit_progress(progress, "project_creation_started", {"project_slug": project_payload.slug})
+        project = await create_project(session, project_payload, settings)
+        await _checkpoint_commit(session)
+        _emit_progress(progress, "project_creation_completed", {"project_slug": project.slug, "project_id": str(project.id)})
+
+    # ── Phase A: Foundation Plan ──
+    existing_volume_plan = await get_latest_planning_artifact(
+        session, project_id=project.id, artifact_type=ArtifactType.VOLUME_PLAN,
+    )
+    if existing_volume_plan is not None and settings.pipeline.resume_enabled:
+        _emit_progress(progress, "foundation_planning_skipped_resume", {"project_slug": project.slug})
+        from bestseller.domain.planning import NovelPlanningResult  # noqa: PLC0415
+        planning_result = NovelPlanningResult(
+            workflow_run_id=existing_volume_plan.source_run_id or UUID(int=0),
+            project_id=project.id, premise=premise, volume_count=0, chapter_count=0,
+        )
+    else:
+        _emit_progress(progress, "foundation_planning_started", {"project_slug": project.slug})
+        planning_result = await generate_foundation_plan(
+            session, settings, project.slug, premise, requested_by=requested_by,
+        )
+        await _checkpoint_commit(session)
+        _emit_progress(progress, "foundation_planning_completed", {
+            "project_slug": project.slug,
+            "workflow_run_id": str(planning_result.workflow_run_id),
+            "volume_count": planning_result.volume_count,
+        })
+
+    # ── Materialize story bible from foundation ──
+    _emit_progress(progress, "story_bible_materialization_started", {"project_slug": project.slug})
+    story_bible_result = await materialize_latest_story_bible(session, project.slug, requested_by=requested_by)
+    await _checkpoint_commit(session)
+    _emit_progress(progress, "story_bible_materialization_completed", {"project_slug": project.slug, "workflow_run_id": str(story_bible_result.workflow_run_id)})
+
+    # ── Load planning artifacts for volume loop ──
+    book_spec_art = await get_latest_planning_artifact(session, project_id=project.id, artifact_type=ArtifactType.BOOK_SPEC)
+    world_spec_art = await get_latest_planning_artifact(session, project_id=project.id, artifact_type=ArtifactType.WORLD_SPEC)
+    cast_spec_art = await get_latest_planning_artifact(session, project_id=project.id, artifact_type=ArtifactType.CAST_SPEC)
+    volume_plan_art = await get_latest_planning_artifact(session, project_id=project.id, artifact_type=ArtifactType.VOLUME_PLAN)
+
+    book_spec_payload = book_spec_art.content if book_spec_art else {}
+    world_spec_payload = world_spec_art.content if world_spec_art else {}
+    cast_spec_payload = cast_spec_art.content if cast_spec_art else {}
+    volume_plan_payload = volume_plan_art.content if volume_plan_art else []
+
+    # Normalize volume plan
+    if isinstance(volume_plan_payload, dict):
+        volume_plan_list = volume_plan_payload.get("volumes", [])
+    elif isinstance(volume_plan_payload, list):
+        volume_plan_list = volume_plan_payload
+    else:
+        volume_plan_list = []
+
+    prior_feedback_summary: str | None = None
+    prior_world_snapshot: str | None = None
+    all_chapter_results: list[Any] = []
+    total_volumes = len(volume_plan_list)
+    # Initialize variables used after the loop to avoid UnboundLocalError
+    outline_result = None
+    narrative_graph_result = None
+    narrative_tree_result = None
+    vol_project_result = None
+
+    # ── Phase B: Per-volume loop ──
+    for vol_idx, vol_entry in enumerate(volume_plan_list, start=1):
+        vol_num = int(vol_entry.get("volume_number", 0)) or vol_idx
+
+        _emit_progress(progress, "volume_planning_started", {
+            "project_slug": project.slug, "volume_number": vol_num, "total_volumes": total_volumes,
+        })
+
+        # Plan this volume (cast expansion + world disclosure + outline)
+        vol_plan_result = await generate_volume_plan(
+            session, settings, project.slug, vol_num,
+            book_spec=book_spec_payload,
+            world_spec=world_spec_payload,
+            cast_spec=cast_spec_payload,
+            volume_plan=volume_plan_list,
+            prior_feedback_summary=prior_feedback_summary,
+            prior_world_snapshot=prior_world_snapshot,
+            requested_by=requested_by,
+        )
+        await _checkpoint_commit(session)
+
+        _emit_progress(progress, "volume_planning_completed", {
+            "project_slug": project.slug, "volume_number": vol_num,
+            "chapter_count": vol_plan_result.chapter_count,
+            "new_characters": vol_plan_result.new_characters_introduced,
+        })
+
+        # Materialize the per-volume outline into the combined CHAPTER_OUTLINE_BATCH
+        # so the existing chapter writing pipeline can pick it up
+        vol_outline_art = await get_latest_planning_artifact(
+            session, project_id=project.id, artifact_type=ArtifactType.VOLUME_CHAPTER_OUTLINE,
+        )
+        if vol_outline_art and vol_outline_art.content:
+            # Merge volume outline into cumulative CHAPTER_OUTLINE_BATCH
+            existing_batch_art = await get_latest_planning_artifact(
+                session, project_id=project.id, artifact_type=ArtifactType.CHAPTER_OUTLINE_BATCH,
+            )
+            existing_chapters: list[Any] = []
+            if existing_batch_art and isinstance(existing_batch_art.content, dict):
+                existing_chapters = existing_batch_art.content.get("chapters", [])
+            elif existing_batch_art and isinstance(existing_batch_art.content, list):
+                existing_chapters = existing_batch_art.content
+            vol_chapters = (
+                vol_outline_art.content.get("chapters", [])
+                if isinstance(vol_outline_art.content, dict)
+                else vol_outline_art.content if isinstance(vol_outline_art.content, list) else []
+            )
+            merged = {"batch_name": "progressive-merged-outline", "chapters": existing_chapters + vol_chapters}
+            await import_planning_artifact(session, project.slug, PlanningArtifactCreate(
+                artifact_type=ArtifactType.CHAPTER_OUTLINE_BATCH, content=merged,
+            ))
+            await _checkpoint_commit(session)
+
+        # Materialize outline + narrative structures for this volume's chapters
+        _emit_progress(progress, "outline_materialization_started", {"project_slug": project.slug})
+        outline_result = await materialize_latest_chapter_outline_batch(session, project.slug, requested_by=requested_by)
+        await _checkpoint_commit(session)
+        _emit_progress(progress, "outline_materialization_completed", {"project_slug": project.slug, "workflow_run_id": str(outline_result.workflow_run_id)})
+
+        _emit_progress(progress, "narrative_graph_materialization_started", {"project_slug": project.slug})
+        narrative_graph_result = await materialize_latest_narrative_graph(session, project.slug, requested_by=requested_by)
+        await _checkpoint_commit(session)
+        _emit_progress(progress, "narrative_graph_materialization_completed", {"project_slug": project.slug, "workflow_run_id": str(narrative_graph_result.workflow_run_id)})
+
+        _emit_progress(progress, "narrative_tree_materialization_started", {"project_slug": project.slug})
+        narrative_tree_result = await materialize_latest_narrative_tree(session, project.slug, requested_by=requested_by)
+        await _checkpoint_commit(session)
+        _emit_progress(progress, "narrative_tree_materialization_completed", {"project_slug": project.slug, "workflow_run_id": str(narrative_tree_result.workflow_run_id)})
+
+        # Write this volume's chapters via the existing project pipeline
+        _emit_progress(progress, "volume_writing_started", {
+            "project_slug": project.slug, "volume_number": vol_num,
+        })
+        vol_project_result = await run_project_pipeline(
+            session, settings, project.slug,
+            requested_by=requested_by,
+            materialize_story_bible=False,
+            materialize_outline=False,
+            materialize_narrative_graph=False,
+            materialize_narrative_tree=False,
+            export_markdown=False,
+            progress=progress,
+        )
+        await _checkpoint_commit(session)
+        all_chapter_results.extend(vol_project_result.chapter_results)
+        _emit_progress(progress, "volume_writing_completed", {
+            "project_slug": project.slug, "volume_number": vol_num,
+            "chapters_written": len(vol_project_result.chapter_results),
+        })
+
+        # ── Collect feedback (反哺) for next volume ──
+        _emit_progress(progress, "volume_feedback_collection_started", {
+            "project_slug": project.slug, "volume_number": vol_num,
+        })
+        feedback = await collect_volume_writing_feedback(session, project.id, vol_num)
+        prior_feedback_summary = summarize_volume_feedback(feedback, language=project.language)
+        # Extract world snapshot for next volume's world disclosure
+        world_snap = feedback.get("world_snapshot")
+        if world_snap and isinstance(world_snap, dict):
+            prior_world_snapshot = world_snap.get("summary", "")
+        _emit_progress(progress, "volume_feedback_collected", {
+            "project_slug": project.slug, "volume_number": vol_num,
+            "character_evolutions": len(feedback.get("character_states", [])),
+            "unresolved_threads": len(feedback.get("arc_summary", {}).get("unresolved_threads", [])),
+        })
+
+    # ── Final export + review ──
+    if export_markdown:
+        await export_project_markdown(session, settings, project.slug)
+
+    project_result = vol_project_result if vol_project_result is not None else ProjectPipelineResult(
+        workflow_run_id=UUID(int=0), project_id=project.id, project_slug=project.slug,
+        chapter_results=[], review_report_id=None, quality_score_id=None,
+        export_artifact_id=None, output_path=None,
+        final_verdict=None, requires_human_review=False,
+    )
+
+    repair_result = None
+    if project_result.requires_human_review and auto_repair_on_attention:
+        _emit_progress(progress, "auto_repair_started", {
+            "project_slug": project.slug, "final_verdict": project_result.final_verdict,
+        })
+        from bestseller.services.repair import run_project_repair
+        repair_result = await run_project_repair(
+            session, settings, project.slug,
+            requested_by=requested_by, export_markdown=export_markdown, progress=progress,
+        )
+        _emit_progress(progress, "auto_repair_completed", {
+            "project_slug": project.slug, "workflow_run_id": str(repair_result.workflow_run_id),
+        })
+
+    final_review_report_id = repair_result.review_report_id if repair_result else project_result.review_report_id
+    final_quality_score_id = repair_result.quality_score_id if repair_result else project_result.quality_score_id
+    final_export_artifact_id = (
+        repair_result.export_artifact_id if repair_result and repair_result.export_artifact_id
+        else project_result.export_artifact_id
+    )
+    final_output_path = (
+        repair_result.output_path if repair_result and repair_result.output_path
+        else project_result.output_path
+    )
+    final_verdict = repair_result.final_verdict if repair_result else project_result.final_verdict
+    final_requires_human_review = repair_result.requires_human_review if repair_result else project_result.requires_human_review
+    output_dir = (Path(settings.output.base_dir) / project.slug).resolve()
+    output_files = _collect_output_files(output_dir)
+    export_status = (
+        "exported_requires_human_review" if final_export_artifact_id and final_requires_human_review
+        else "exported" if final_export_artifact_id
+        else "skipped_requires_human_review" if final_requires_human_review
+        else "not_exported"
+    )
+    _emit_progress(progress, "autowrite_completed", {
+        "project_slug": project.slug, "export_status": export_status,
+        "output_dir": str(output_dir), "final_verdict": final_verdict,
+    })
+    return AutowriteResult(
+        project_id=project.id,
+        project_slug=project.slug,
+        planning_workflow_run_id=planning_result.workflow_run_id,
+        story_bible_workflow_run_id=story_bible_result.workflow_run_id,
+        outline_workflow_run_id=outline_result.workflow_run_id if outline_result is not None else UUID(int=0),
+        narrative_graph_workflow_run_id=narrative_graph_result.workflow_run_id if narrative_graph_result is not None else UUID(int=0),
+        narrative_tree_workflow_run_id=narrative_tree_result.workflow_run_id if narrative_tree_result is not None else UUID(int=0),
+        project_workflow_run_id=project_result.workflow_run_id,
+        repair_workflow_run_id=repair_result.workflow_run_id if repair_result else None,
+        repair_attempted=repair_result is not None,
+        review_report_id=final_review_report_id,
+        quality_score_id=final_quality_score_id,
+        export_artifact_id=final_export_artifact_id,
+        output_path=final_output_path,
+        output_dir=str(output_dir),
+        output_files=output_files,
+        export_status=export_status,
+        chapter_count=len(all_chapter_results),
         final_verdict=final_verdict,
         requires_human_review=final_requires_human_review,
     )

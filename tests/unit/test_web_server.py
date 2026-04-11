@@ -93,6 +93,61 @@ def test_quickstart_new_creation_buttons_reset_wizard_flow() -> None:
     assert html.count('onclick="startNewCreationFlow()"') >= 4
 
 
+def test_public_writing_preset_catalog_payload_sanitizes_story_specific_overrides() -> None:
+    payload = web_server._public_writing_preset_catalog_payload()  # noqa: SLF001
+
+    platform_market = payload["platform_presets"][0]["writing_profile_overrides"].get("market", {})
+    genre_market = next(
+        item["writing_profile_overrides"].get("market", {})
+        for item in payload["genre_presets"]
+        if item["key"] == "apocalypse-supply"
+    )
+    genre_character = next(
+        item["writing_profile_overrides"].get("character", {})
+        for item in payload["genre_presets"]
+        if item["key"] == "apocalypse-supply"
+    )
+
+    assert platform_market.get("platform_target") == "番茄小说"
+    assert "reader_promise" not in platform_market
+    assert "selling_points" not in genre_market
+    assert "trope_keywords" not in genre_market
+    assert genre_character == {}
+
+
+def test_quickstart_task_uses_sanitized_genre_profile(monkeypatch: pytest.MonkeyPatch) -> None:
+    manager = web_server.WebTaskManager()
+    captured: dict[str, object] = {}
+
+    def fake_create_autowrite_task(self: object, payload: dict[str, object]) -> dict[str, object]:
+        captured["payload"] = payload
+        return {"task_id": "demo-task"}
+
+    monkeypatch.setattr(web_server.WebTaskManager, "create_autowrite_task", fake_create_autowrite_task)
+
+    task = manager.create_quickstart_task({"genre_key": "apocalypse-supply", "chapter_count": 12})
+
+    profile = captured["payload"]["writing_profile"]
+    assert task["task_id"] == "demo-task"
+    assert profile["market"]["pacing_profile"] == "fast"
+    assert "reader_promise" not in profile["market"]
+    assert "selling_points" not in profile["market"]
+    assert "trope_keywords" not in profile["market"]
+    assert profile.get("character", {}) == {}
+
+
+def test_novel_studio_defaults_do_not_seed_apocalypse_story_template() -> None:
+    html = web_server._UI_HTML_PATH.read_text(encoding="utf-8")  # noqa: SLF001
+
+    assert '<input id="genre" list="genre-options" value=""' in html
+    assert '<input id="sub-genre" list="sub-genre-options" value=""' in html
+    assert 'option value="apocalypse-supply-chain" selected' not in html
+    assert "末日零点降临前三天" not in html
+    assert 'input id="protagonist-archetype" value="先知型求生者"' not in html
+    assert 'input id="golden-finger" value="来自未来的购物入口，可低价购买末日关键物资"' not in html
+    assert 'const defaultGenrePreset = genrePresets.find((item) => item.key === "apocalypse-supply");' not in html
+
+
 def test_resolve_story_bible_progress_returns_current_frontier_and_next_gate() -> None:
     story_bible = SimpleNamespace(
         world_backbone=SimpleNamespace(title="全书世界主干"),

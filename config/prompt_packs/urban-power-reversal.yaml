@@ -1,7 +1,7 @@
 key: urban-power-reversal
 name: 都市异能反转流
-version: "1.0"
-description: 适合番茄系都市、异能、现实反击、身份反转写法，强调现实压迫、能力介入和快速爽点兑现。
+version: "2.0"
+description: 适合番茄系都市、异能、现实反击、身份反转写法，强调现实压迫、能力介入和快速爽点兑现。融入情绪工程与核心循环方法论。
 genres:
   - 都市
   - 异能
@@ -14,9 +14,16 @@ tags:
 source_notes:
   - 借鉴 NovelGenerator 的 thriller/character focus
   - 结合番茄系短回报节奏
+  - 融入猫神写作方法论（情绪工程/核心循环/钩子轮换）
 anti_patterns:
   - 都市题材上来先大谈设定
   - 主角拿到能力后迟迟不改变现实处境
+  - 爽点没有前置压缩（无痛升级=无感升级）
+  - 反转靠天降神兵而非伏笔回收
+  - 对话全是直来直去的信息交换
+  - 配角只会震惊和膜拜
+  - 能力展示只有光效没有后果
+  - 钩子断裂——上一章的悬念下一章完全不管
 writing_profile_overrides:
   market:
     prompt_pack_key: urban-power-reversal
@@ -27,19 +34,137 @@ writing_profile_overrides:
       - 反差人设
       - 身份反转
       - 快速打脸
+      - 社会地位跃升
     trope_keywords:
       - 都市
       - 系统
       - 逆袭
       - 悬疑
       - 反转
+    hook_keywords:
+      - 身份暴露
+      - 新能力
+      - 商业机会
+      - 旧仇
   character:
     protagonist_archetype: 现实受压型反击主角
     protagonist_core_drive: 翻盘现实处境并重建个人价值
+    golden_finger: 异能系统、信息先知、或资源外挂
+    growth_curve: 底层受压 -> 初次反制 -> 身份渗透 -> 全面翻盘
+  methodology:
+    emotion_spring_min_chapters: 1
+    emotion_spring_max_chapters: 3
+    core_loop_cycle_length: 2
+    hook_min_active: 3
+    hook_max_active: 5
+    hook_max_age_chapters: 8
+    visual_writing_mode: result_over_process
+    dialogue_subtext_ratio: 0.6
+    safety_net_mode: golden_finger_on_demand
+    reaction_amplification: true
 fragments:
+  global_rules: |
+    能力必须直接作用于现实层面（金钱/地位/人际），不允许只在异能维度升级而现实不变。
   planner_outline: |
-    第一章必须让读者清楚主角当前的压迫处境和能力介入后第一轮现实收益。不要把核心爽点拖太久。
+    第一章必须让读者清楚主角当前的压迫处境和能力介入后第一轮现实收益。不要把核心爽点拖太久。每2章完成一轮"受压→反制→收益"循环。
   scene_writer: |
     多写现实利益、社会关系、身份落差和对话压迫感。能力要直接改变局面，而不是只做悬念摆设。
   chapter_review: |
     检查是否真的形成现实层面的逆转、反压或身份变化。
+    检查情绪压缩释放节奏：爽点前有没有足够的压迫铺垫？
+    检查钩子生命周期：章末是否有新钩子？是否消解了旧钩子？
+
+  # --- 方法论扩展片段 ---
+  emotion_engineering: |
+    本类型的情绪工程核心：
+    - 压缩期：被看不起、被欺负、被侮辱、被抢走利益
+    - 释放期：用能力反制、打脸、获得超额回报
+    - 弹簧法：压至少1-2章再释放，番茄系节奏更短更快
+    - 爽感公式：地位差越大 × 被轻视越深 × 反制越精确 = 爽感越强
+    - 现实对照：每次反制后明确写出"之前vs现在"的地位对比
+
+  conflict_stakes: |
+    冲突筹码设计规则：
+    - 每次冲突必须有明确的现实筹码（工作/房子/面子/亲人安全）
+    - 筹码升级路径：面子 → 金钱 → 事业 → 亲情安危 → 人生自由
+    - 极限施压BUFF选择：权力压制/经济封锁/社会孤立/时间限制/公开羞辱
+    - 不允许无筹码的口水冲突——每次对抗必须有人输掉实质利益
+
+  hook_design: |
+    都市异能类钩子设计：
+    - information_gap型：能力的真正来源、系统的终极目的、身份背后的秘密
+    - deadline型：项目截止日期、债务到期、对手的部署时限
+    - mystery型：诡异事件、能力的副作用、暗中观察的势力
+    - desire型：更高的社会地位、复仇的渴望、失去之物的追回
+    - threat型：身份暴露危机、更强能力者盯上主角、旧日仇敌报复
+    每章结尾钩子示例：
+    "他刚松了口气，手机屏幕亮了——一条来自未知号码的短信：'我知道你的能力。'"
+
+  core_loop: |
+    都市反转流核心循环（每1.5-2章完成一轮）：
+    1. 触发(trigger)：新的现实压迫/机会出现
+    2. 行动(action)：运用能力介入现实（过程详细，60%篇幅）
+    3. 奖励(reward)：地位/金钱/关系的实质变化
+    4. 投入(invest)：新地位带来的安全感和新可能性
+
+    变体循环（防止疲劳）：
+    - 每3个反制循环后插入1个"日常呼吸口"（享受成果/新关系发展）
+    - 奖励必须有现实感：具体的数字、具体的人态度变化
+
+  dialogue_rules: |
+    都市对话规则：
+    - 上位者说话要有资源感：随口一句话就是别人奋斗十年的资源
+    - 小人说话要有算计：恭维中带刺、客气中带威胁
+    - 主角说话要克制：不解释、不争辩、用结果打脸
+    - 打破问答：面对挑衅用行动回应（挂电话/转身走/当场签约）
+    - 潜台词示例：同事说"你家条件也挺好的嘛"
+      （潜台词：你哪来的钱？你不配拥有这些。）
+
+  visual_writing: |
+    都市画面感规则：
+    - 结果聚焦法：不写过程多努力，写结果出来时所有人的反应
+    - 对比镜头法：先写之前被人看不起的场景，再写现在众人巴结的场面
+    - 环境道具：用具体的物质符号传达地位变化（车/表/办公室/住所）
+    - 五感通道：金钱的重量感/地位变化时的空气变化/众人目光的温度
+    - 身份烙印：让主角有个低调但识货人能认出来的标志性穿搭或习惯
+
+  pacing_guidance: |
+    节奏控制规则（番茄系更快节奏）：
+    - 日常铺设(build)：信息密度高，铺设新冲突源+人际关系，1-2章
+    - 冲突升级(accelerate)：节奏加快，压迫加大，1章
+    - 反制高潮(climax)：精准反击，现实层面翻盘，1章
+    - 享受成果(breathe)：地位变化展示+新信息揭示，0.5-1章
+    循环节奏：build→accelerate→climax→breathe→(新循环)
+
+  climax_design: |
+    都市反转高潮设计模板：
+    1. 公开场合：选择众人面前作为翻盘舞台（会议/宴会/开庭）
+    2. 极限压抑：所有人都认为主角必输/完蛋/被踩死
+    3. BUFF叠加：权力碾压 + 经济封锁 + 众叛亲离
+    4. 信息差反转：前面暗中准备的资源/关系在此刻引爆
+    5. Reaction放大：对手脸色剧变→围观者窃窃私语→大佬重新评估
+    6. 收运：地位跃升 + 之前看不起的人态度180度 + 简短有力的台词
+
+  reaction_amplification: |
+    反应放大法（都市爽文核心放大器）：
+    - 每次反制成功后必须写≥3个旁观者的分层反应
+    - 层次：小人震惊 → 同事不可置信 → 领导/大佬重新评估 → 被打脸者崩溃
+    - 态度转变要具体：从"他算什么东西"到"X总好，那个项目..."
+    - 地位符号变化：从没人理到所有人主动打招呼/让路/敬酒
+obligatory_scenes:
+  - code: first_reversal
+    label: 首次现实反制
+    timing: act_1
+    check_keywords: ["反转", "打脸", "震惊", "不可能", "刮目相看"]
+  - code: identity_reveal
+    label: 身份暴露/能力展示
+    timing: act_2_midpoint
+    check_keywords: ["暴露", "身份", "真实", "隐藏", "揭穿"]
+  - code: total_reversal
+    label: 全面翻盘
+    timing: act_3
+    check_keywords: ["翻盘", "逆转", "地位", "巅峰", "掌控"]
+  - code: new_order
+    label: 新秩序建立
+    timing: final_chapter
+    check_keywords: ["新", "秩序", "巅峰", "掌控", "王者"]

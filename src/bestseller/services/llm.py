@@ -138,8 +138,13 @@ def _ensure_shared_litellm_http_client() -> None:
         import httpx
 
         litellm = importlib.import_module("litellm")
+        # Use a permissive default so litellm's per-request ``timeout``
+        # parameter (from role_settings.timeout_seconds) is the enforced
+        # deadline.  The previous hard 180 s cap overrode litellm's
+        # per-request value, causing calls to hang for up to 362 s even
+        # when the role timeout was set to 120 s.
         client = httpx.AsyncClient(
-            timeout=httpx.Timeout(180.0, connect=10.0),
+            timeout=httpx.Timeout(None, connect=10.0),
             limits=httpx.Limits(
                 max_connections=20,
                 max_keepalive_connections=10,
@@ -320,12 +325,22 @@ async def _call_litellm(
         if api_key:
             completion_kwargs["api_key"] = api_key
 
-    response = await acompletion(
-        **completion_kwargs,
+    # Enforce a hard wall-clock deadline via asyncio.wait_for.  litellm
+    # passes ``timeout`` to httpx, but when a shared ``aclient_session`` is
+    # installed, httpx may ignore per-request timeouts and use the client
+    # default instead — allowing calls to hang far beyond the configured
+    # role timeout.  The asyncio deadline guarantees cancellation.
+    hard_timeout = float(role_settings.timeout_seconds) + 5.0  # small grace
+    response = await asyncio.wait_for(
+        acompletion(**completion_kwargs),
+        timeout=hard_timeout,
     )
 
     if role_settings.stream:
-        return await _collect_streaming_content(response)
+        return await asyncio.wait_for(
+            _collect_streaming_content(response),
+            timeout=hard_timeout,
+        )
 
     choice = response.choices[0]
     content = _extract_text_content(choice.message.content)

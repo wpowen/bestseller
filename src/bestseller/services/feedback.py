@@ -550,10 +550,35 @@ async def _apply_character_state_updates(
             beliefs_gained=extraction.beliefs_gained,
             beliefs_invalidated=extraction.beliefs_invalidated,
         )
+        _update_values: dict[str, Any] = {"knowledge_state_json": updated_knowledge}
+
+        # Phase-4: advance lie_truth_arc phase when core_lie is invalidated
+        if extraction.beliefs_invalidated:
+            _char_meta = dict(character.metadata_json or {})
+            _lt_arc = _char_meta.get("lie_truth_arc")
+            if isinstance(_lt_arc, dict) and _lt_arc.get("core_lie"):
+                _core_lie = _lt_arc["core_lie"]
+                if _core_lie in extraction.beliefs_invalidated:
+                    _phase_order = [
+                        "believing_lie",
+                        "questioning_lie",
+                        "confronting_lie",
+                        "embracing_truth",
+                    ]
+                    _cur = _lt_arc.get("current_phase", "believing_lie")
+                    try:
+                        _idx = _phase_order.index(_cur)
+                    except ValueError:
+                        _idx = 0
+                    if _idx < len(_phase_order) - 1:
+                        _lt_arc = {**_lt_arc, "current_phase": _phase_order[_idx + 1]}
+                        _char_meta = {**_char_meta, "lie_truth_arc": _lt_arc}
+                        _update_values["metadata_json"] = _char_meta
+
         await session.execute(
             update(CharacterModel)
             .where(CharacterModel.id == character.id)
-            .values(knowledge_state_json=updated_knowledge)
+            .values(**_update_values)
         )
 
         # Update arc_state if provided

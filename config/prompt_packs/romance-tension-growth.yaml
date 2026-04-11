@@ -1,7 +1,7 @@
 key: romance-tension-growth
 name: 感情拉扯成长流
-version: "1.0"
-description: 适合晋江/女频向成长与感情拉扯写法，强调关系张力、情绪兑现和双向成长。
+version: "2.0"
+description: 适合晋江/女频向成长与感情拉扯写法，强调关系张力、情绪兑现和双向成长。融入情绪工程与核心循环方法论。
 genres:
   - 言情
   - 成长
@@ -14,10 +14,16 @@ tags:
 source_notes:
   - 借鉴 romance 类 prompt guidance 设计
   - 结合女频连载对关系节奏的要求
+  - 融入猫神写作方法论（情绪工程/核心循环/钩子轮换）
 anti_patterns:
   - 纯误会堆剧情
   - 角色关系没有阶段变化
   - 只说爱，不展示靠近和试探
+  - 甜蜜没有前置心酸铺垫（无痛撒糖=无感撒糖）
+  - 对话直接表白心意，没有潜台词和试探
+  - 反转靠突然失忆/车祸/第三者强插
+  - 配角只做工具人，没有自己的立场和弧线
+  - 钩子断裂——上一章的关系悬念下一章完全不接
 writing_profile_overrides:
   market:
     prompt_pack_key: romance-tension-growth
@@ -37,6 +43,19 @@ writing_profile_overrides:
   character:
     romance_mode: 主线感情线
     relationship_tension: 吸引、试探、误解、并肩、再选择
+    protagonist_archetype: 成长型情感觉醒主角
+    growth_curve: 自我保护 -> 被动心动 -> 主动靠近 -> 被伤害退缩 -> 重新选择
+  methodology:
+    emotion_spring_min_chapters: 2
+    emotion_spring_max_chapters: 5
+    core_loop_cycle_length: 3
+    hook_min_active: 2
+    hook_max_active: 5
+    hook_max_age_chapters: 12
+    visual_writing_mode: micro_expression
+    dialogue_subtext_ratio: 0.7
+    safety_net_mode: emotional_anchor
+    reaction_amplification: true
 fragments:
   planner_cast_spec: |
     感情线双方都要有独立目标和伤口，关系推进不能只靠误会，要靠共同事件和价值选择改变。
@@ -46,3 +65,101 @@ fragments:
     通过动作细节、对话潜台词、关系位置变化写拉扯，不要直接解释“他们很在意彼此”。
   chapter_review: |
     检查关系线是否真的前进，是否出现新的理解、误解、牺牲或选择。
+    检查情绪压缩释放节奏：甜蜜前有没有足够的心酸/试探/冷战？
+    检查钩子生命周期：章末是否有新的关系悬念？是否回应了旧悬念？
+
+  # --- 方法论扩展片段 ---
+  emotion_engineering: |
+    言情类情绪工程核心：
+    - 压缩期：误解、冷战、错过、不敢靠近、被第三方阻隔
+    - 释放期：意外温柔、主动靠近、真心话、牺牲式保护
+    - 弹簧法：甜前必苦，压至少2章再给糖。无痛撒糖=无感撒糖
+    - 爽感公式：距离越远 × 误解越深 × 心动越克制 = 甜蜜冲击越大
+    - 随机奖励：偶尔给一个意料之外的柔软瞬间（不在角色计划内的下意识关心）
+
+  conflict_stakes: |
+    感情冲突筹码设计：
+    - 每次关系冲突必须有明确的情感筹码（不只是吵架，是失去什么）
+    - 筹码升级路径：面子 → 信任 → 承诺 → 安全感 → 未来 → 自我认同
+    - 极限施压：被迫分离/公开误解/对方为另一人牺牲/价值观根本冲突
+    - 不允许无筹码的小打小闹——每次冲突后关系必须发生质变
+
+  hook_design: |
+    言情类钩子设计：
+    - information_gap型：TA的过去、那个人的真实身份、不愿说出口的秘密
+    - deadline型：分离倒计时、约定到期、第三方最后通牒
+    - mystery型：反常的温柔、突然的冷漠、不属于这个场景的物品
+    - desire型：想靠近但不敢、想说但忍住、想触碰但缩回手
+    - threat型：情敌出现、家庭反对、过去的创伤被触发
+    每章结尾钩子示例：
+    "她以为自己已经放下了。直到他在雨里只给她撑了那半边伞。"
+
+  core_loop: |
+    感情线核心循环（每2-3章完成一轮）：
+    1. 触发(trigger)：新事件打破当前关系平衡
+    2. 行动(action)：互动/试探/冲突（细节描写，65%篇幅）
+    3. 奖励(reward)：关系前进一步（靠近/理解/心动确认）
+    4. 投入(invest)：双方都为这段关系付出了更多（回不去了）
+
+    变体循环（防止疲劳）：
+    - 每3个拉扯循环后插入1个"并肩作战"章节（面对外部困难时自然靠近）
+    - 奖励要有层次：不总是甜蜜，偶尔是理解、偶尔是释然、偶尔是心疼
+
+  dialogue_rules: |
+    言情对话规则：
+    - 口是心非是核心技术：说"走吧"时在看对方会不会留
+    - 潜台词密度要高：每句话表面义和真实义至少有30%偏差
+    - 打破问答：面对告白用沉默回应，面对道歉用无关话题转移
+    - 动作卡位：对话间穿插手指动作/目光方向/呼吸变化
+    - 潜台词示例：她说"你不用来接我的"
+      （潜台词：你会来吗？你还是来了。）
+
+  visual_writing: |
+    言情画面感规则：
+    - 微表情特写法：不写"她心动了"，写"她的睫毛颤了一下，然后迅速看向别处"
+    - 距离感知法：两人之间的物理距离=情感距离的可视化
+    - 环境映射：下雨=分离伤感/阳光=心情明朗/夜晚=内心独白
+    - 五感重点：触觉（指尖温度、衣角被拉住）> 嗅觉（对方的气味）> 听觉（心跳/呼吸）
+    - 身份烙印：给双方各一个标志性小习惯（紧张时理头发/生气时咬嘴唇）
+
+  pacing_guidance: |
+    节奏控制规则：
+    - 铺设期(build)：日常相处、误解积累、暗暗在意，2-3章
+    - 加速期(accelerate)：冲突升级、面对面对峙、距离骤变，1-2章
+    - 高潮期(climax)：情感爆发——告白/决裂/牺牲，1章
+    - 呼吸期(breathe)：关系新平衡、温馨日常、治愈系互动，1章
+    循环节奏：build→build→accelerate→climax→breathe→(新循环更深层)
+
+  climax_design: |
+    感情线高潮设计模板：
+    1. 多线交汇：感情线+事业线+家庭线在同一事件中碰撞
+    2. 极限压抑：误解到极致、分离看似不可逆、所有人都说不可能
+    3. BUFF叠加：时间限制+第三方压力+过去创伤被翻出+公开场合
+    4. 信息差反转：读者知道TA一直在默默守护，但对方不知道
+    5. 情感爆发：不是台词多有力，是一个小动作打破所有防线
+    6. 收运：关系质变+互相确认+一句话定义这段关系
+
+  reaction_amplification: |
+    反应放大法（言情核心放大器）：
+    - 每次关系重大变化后写至少2个旁观者的反应
+    - 闺蜜/兄弟视角：震惊→调侃→认真祝福
+    - 对手/情敌视角：不甘→反思→放手或反击
+    - 内心戏放大：重要瞬间后给POV角色一段独处时的回味
+    - 身体诚实法则：嘴上说不在乎，手却攥紧了口袋里的那张车票
+obligatory_scenes:
+  - code: first_attraction
+    label: 初次心动/吸引
+    timing: act_1
+    check_keywords: ["心跳", "脸红", "目光", "移不开", "怦"]
+  - code: first_intimate
+    label: 首次亲密接触
+    timing: act_2_midpoint
+    check_keywords: ["吻", "嘴唇", "手指", "触碰", "靠近"]
+  - code: major_misunderstanding
+    label: 重大误解/决裂
+    timing: act_3
+    check_keywords: ["误会", "离开", "不再", "放手", "转身"]
+  - code: hea_hfn
+    label: HEA/HFN 结局
+    timing: final_chapter
+    check_keywords: ["在一起", "嘴角", "心安", "未来", "牵手"]

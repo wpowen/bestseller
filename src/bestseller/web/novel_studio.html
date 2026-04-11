@@ -1642,18 +1642,18 @@
             <div class="field">
               <label for="genre">主类型</label>
               <div class="field-meta">决定叙事节奏、读者预期和爽点分布。可以填中文，例如“末日科幻”。</div>
-              <input id="genre" list="genre-options" value="末日科幻" />
+              <input id="genre" list="genre-options" value="" placeholder="例如：末日科幻 / 都市异能 / 古言权谋" />
             </div>
 
             <div class="field">
               <label for="sub-genre">细分卖点</label>
               <div class="field-meta">决定题材辨识度，例如“重生囤货”“规则怪谈”“星际逃亡”。</div>
-              <input id="sub-genre" list="sub-genre-options" value="重生囤货" />
+              <input id="sub-genre" list="sub-genre-options" value="" placeholder="例如：重生囤货 / 规则怪谈 / 星际逃亡" />
             </div>
 
             <div class="field">
               <label for="genre-preset-key">题材预设</label>
-              <div class="field-meta">直接套用一组题材卖点、平台建议、人物原型、节奏与 Prompt Pack。</div>
+              <div class="field-meta">只同步题材范围和框架建议，不再预填具体人物、人设、卖点和设定。</div>
               <select id="genre-preset-key">
                 <option value="">加载中…</option>
               </select>
@@ -1682,14 +1682,15 @@
             <div class="field full">
               <label for="audience">目标读者</label>
               <div class="field-meta">决定语言风格、情绪强度和信息密度。例如“男频连载读者”“女频成长向读者”。</div>
-              <input id="audience" list="audience-options" value="男频连载读者" />
+              <input id="audience" list="audience-options" value="" placeholder="例如：男频连载读者 / 女频成长向读者" />
             </div>
 
             <div class="field">
               <label for="platform-target">平台目标</label>
               <div class="field-meta">不同平台的开篇节奏、情绪密度和钩子风格不一样。这个字段会直接影响规划和写作 prompt。</div>
               <select id="platform-target">
-                <option value="番茄小说" selected>番茄小说</option>
+                <option value="" selected>自动 / 未指定</option>
+                <option value="番茄小说">番茄小说</option>
                 <option value="起点中文网">起点中文网</option>
                 <option value="纵横中文网">纵横中文网</option>
                 <option value="晋江文学城">晋江文学城</option>
@@ -1701,8 +1702,8 @@
               <label for="prompt-pack-key">题材 Prompt Pack</label>
               <div class="field-meta">这是预制的题材提示词包。它会在写作画像基础上，再额外注入该题材特有的规划、正文和审校约束。</div>
               <select id="prompt-pack-key">
-                <option value="">自动按题材匹配</option>
-                <option value="apocalypse-supply-chain" selected>末日囤货升级流</option>
+                <option value="" selected>自动按题材匹配</option>
+                <option value="apocalypse-supply-chain">末日囤货升级流</option>
                 <option value="xianxia-upgrade-core">仙侠升级夺机缘</option>
                 <option value="urban-power-reversal">都市异能反转流</option>
                 <option value="romance-tension-growth">感情拉扯成长流</option>
@@ -1711,32 +1712,32 @@
 
             <div class="field">
               <label for="reader-promise">读者承诺</label>
-              <div class="field-meta">一句话说明这本书最先抓住读者的持续期待是什么，例如“看主角如何靠信息差在末日前抢资源并反杀”。</div>
-              <input id="reader-promise" value="开篇快速亮出末日倒计时、囤货优势和秩序崩坏前的抢跑窗口，持续用资源差、危机升级和真相逼近制造追读。" />
+              <div class="field-meta">一句话说明这本书最先抓住读者的持续期待是什么，例如“看主角如何靠独特优势穿过第一轮危机并不断翻盘”。</div>
+              <input id="reader-promise" value="" placeholder="留空则由模型结合题材和框架自动生成" />
             </div>
 
             <div class="field full">
               <label for="selling-points">核心卖点</label>
               <div class="field-meta">用逗号分隔。建议写 3 到 6 个，会直接作为 planner 和 writer 的显式卖点约束。</div>
-              <input id="selling-points" value="重生回档,未来商城,末日前囤货,资源碾压,秩序崩坏,幕后真相" />
+              <input id="selling-points" value="" placeholder="留空则由模型根据题材生成" />
             </div>
 
             <div class="field full">
               <label for="trope-keywords">套路标签 / 爽点标签</label>
-              <div class="field-meta">用逗号分隔。比如“末日,囤货,系统,规则生存,打脸反杀”。系统会把这些标签压进章节与场景约束。</div>
-              <input id="trope-keywords" value="末日,囤货,系统,规则生存,打脸反杀" />
+              <div class="field-meta">用逗号分隔。比如“升级,反转,规则,博弈,情绪拉扯”。系统会把这些标签压进章节与场景约束。</div>
+              <input id="trope-keywords" value="" placeholder="留空则由模型根据题材生成" />
             </div>
 
             <div class="field">
               <label for="protagonist-archetype">主角原型</label>
-              <div class="field-meta">例如“先知型求生者”“逆袭型成长主角”“情绪成长型主角”。</div>
-              <input id="protagonist-archetype" value="先知型求生者" />
+              <div class="field-meta">例如“高压求生型主角”“隐忍反击型主角”“情绪成长型主角”。</div>
+              <input id="protagonist-archetype" value="" placeholder="留空则由模型根据题材生成" />
             </div>
 
             <div class="field">
               <label for="golden-finger">主角外挂 / 差异化优势</label>
               <div class="field-meta">决定主角第一时间能吸引人的独特能力或信息差。</div>
-              <input id="golden-finger" value="来自未来的购物入口，可低价购买末日关键物资" />
+              <input id="golden-finger" value="" placeholder="留空则由模型根据题材生成" />
             </div>
 
             <div class="field">
@@ -1804,7 +1805,7 @@
             <div class="field full">
               <label for="reference-works">参考作品</label>
               <div class="field-meta">用逗号分隔。只会作为风格和结构参考，不会要求模型模仿具体句子。</div>
-              <input id="reference-works" value="《全球冰封：我打造了末日安全屋》,《诡秘之主》" />
+              <input id="reference-works" value="" placeholder="可选：留空则不额外绑定参考作品" />
             </div>
 
             <div class="field full">
@@ -1824,7 +1825,7 @@
             <div class="field full">
               <label for="premise">一句话设定 / 开书钩子</label>
               <div class="field-meta">把题材、主角优势、危机和核心悬念写清楚。系统会以此生成世界观、人物和章节骨架。</div>
-              <textarea id="premise">末日零点降临前三天，主角意外得到一个来自未来的购物入口，可以低价购买基因进化药、无限能源和禁忌物资。为了活下去，他必须一边囤货，一边隐藏秘密，同时在末日前的秩序崩塌前找到真正的幕后操盘者。</textarea>
+              <textarea id="premise" placeholder="例如：题材 + 主角当下优势/困境 + 核心危机 + 最大悬念"></textarea>
             </div>
 
             <div class="field full">
@@ -2434,6 +2435,33 @@
       return output;
     }
 
+    const PRESET_PROFILE_ALLOWED_FIELDS = {
+      market: new Set(["platform_target", "content_mode", "hook_deadline_words", "update_strategy", "pacing_profile", "prompt_pack_key"]),
+      world: new Set(["worldbuilding_density", "info_reveal_strategy", "rule_hardness", "mystery_density"]),
+      style: new Set(["prose_style", "sentence_style", "info_density", "dialogue_ratio"]),
+      serialization: new Set(["opening_mandate", "first_three_chapter_goal", "scene_drive_rule", "exposition_rule", "chapter_ending_rule", "free_chapter_strategy"]),
+    };
+
+    function sanitizePresetProfile(profile) {
+      const sanitized = {};
+      for (const [section, allowedKeys] of Object.entries(PRESET_PROFILE_ALLOWED_FIELDS)) {
+        const rawSection = profile?.[section];
+        if (!rawSection || typeof rawSection !== "object" || Array.isArray(rawSection)) continue;
+        const kept = {};
+        for (const [key, value] of Object.entries(rawSection)) {
+          if (!allowedKeys.has(key)) continue;
+          if (value === null || value === "") continue;
+          if (Array.isArray(value) && !value.length) continue;
+          if (value && typeof value === "object" && !Array.isArray(value) && !Object.keys(value).length) continue;
+          kept[key] = value;
+        }
+        if (Object.keys(kept).length) {
+          sanitized[section] = kept;
+        }
+      }
+      return sanitized;
+    }
+
     function formatBytes(bytes) {
       if (!Number.isFinite(bytes) || bytes <= 0) return "0 B";
       const units = ["B", "KB", "MB", "GB"];
@@ -2554,10 +2582,10 @@
       }
 
       const platformPreset = getSelectedPlatformPreset();
-      const mergedProfile = deepMerge(
+      const mergedProfile = sanitizePresetProfile(deepMerge(
         platformPreset?.writing_profile_overrides || {},
         genrePreset?.writing_profile_overrides || {},
-      );
+      ));
 
       const market = mergedProfile.market || {};
       const character = mergedProfile.character || {};
@@ -2613,9 +2641,12 @@
       const genrePresets = [...(catalog.genre_presets || [])].sort((left, right) => (right.trend_score || 0) - (left.trend_score || 0));
 
       const platformSelect = document.getElementById("platform-target");
-      platformSelect.innerHTML = (catalog.platform_presets || [])
-        .map((item) => `<option value="${escapeHtml(item.name)}">${escapeHtml(item.name)}</option>`)
+      const currentPlatform = platformSelect.value;
+      platformSelect.innerHTML = ['<option value="">自动 / 未指定</option>']
+        .concat((catalog.platform_presets || [])
+          .map((item) => `<option value="${escapeHtml(item.name)}">${escapeHtml(item.name)}</option>`))
         .join("");
+      platformSelect.value = currentPlatform || "";
 
       els.genrePresetKey.innerHTML = ['<option value="">手动填写 / 不套预设</option>']
         .concat(genrePresets.map((item) => `<option value="${escapeHtml(item.key)}">${escapeHtml(item.name)}${item.trend_score >= 88 ? " · 热门" : ""}</option>`))
@@ -2633,11 +2664,7 @@
         ),
       );
 
-      const defaultGenrePreset = genrePresets.find((item) => item.key === "apocalypse-supply");
       const defaultLengthPreset = (catalog.length_presets || []).find((item) => item.key === "trial-4");
-      if (defaultGenrePreset) {
-        els.genrePresetKey.value = defaultGenrePreset.key;
-      }
       if (defaultLengthPreset) {
         els.lengthPresetKey.value = defaultLengthPreset.key;
       }
@@ -3909,10 +3936,10 @@
     function readAutowritePayload() {
       const platformPreset = getSelectedPlatformPreset();
       const genrePreset = getSelectedGenrePreset();
-      const presetProfile = deepMerge(
+      const presetProfile = sanitizePresetProfile(deepMerge(
         platformPreset?.writing_profile_overrides || {},
         genrePreset?.writing_profile_overrides || {},
-      );
+      ));
       const manualProfile = {
         market: {
           platform_target: document.getElementById("platform-target").value.trim(),

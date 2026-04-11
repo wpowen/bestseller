@@ -20,8 +20,8 @@ llm:
   writer:
     model: "anthropic/claude-sonnet-4-5"
     temperature: 0.85
-    max_tokens: 4096
-    timeout_seconds: 120
+    max_tokens: 8192
+    timeout_seconds: 180
     stream: true
 
   critic:
@@ -39,8 +39,8 @@ llm:
   editor:
     model: "anthropic/claude-sonnet-4-5"
     temperature: 0.4
-    max_tokens: 4096
-    timeout_seconds: 90
+    max_tokens: 8192
+    timeout_seconds: 180
 
   retry:
     max_attempts: 3

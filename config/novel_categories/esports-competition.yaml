@@ -1,0 +1,247 @@
+key: esports-competition
+name: "电竞竞技类"
+name_en: "Esports-Competition"
+reader_promise_zh: >
+  比赛一定有看点，技术成长可感知，竞技氛围真实热血。
+  读者来这个品类，买的是"和主角一起从菜鸟打到巅峰的热血竞技旅程"。
+reader_promise_en: >
+  Matches are always exciting. Skill growth is perceivable. Competitive atmosphere
+  is authentic and thrilling. The reader buys a hot-blooded journey from rookie to champion.
+
+challenge_evolution_pathway:
+  - phase_key: rookie
+    phase_name_zh: "新手入场"
+    phase_name_en: "Rookie Entry"
+    description_zh: "主角进入竞技场，面对基本技术门槛和第一批对手。"
+    description_en: "The protagonist enters the arena, facing basic skill thresholds and first opponents."
+    typical_force_types: ["character", "environment"]
+    volume_goal_template_zh: "{protagonist}必须在{force_name}主导的竞技环境中证明自己有资格留在赛场上。"
+    volume_goal_template_en: "{protagonist} must prove worthy of staying in the arena dominated by {force_name}."
+    volume_climax_template_zh: "{protagonist}在关键赛事中完成让所有人刮目相看的操作，正式踏入竞技圈。"
+    volume_climax_template_en: "{protagonist} pulls off an operation that makes everyone take notice in a key match, officially entering the competitive scene."
+    volume_obstacle_template_zh: "{force_name}代表的技术壁垒和经验差距让{protagonist}在初期连连受挫。"
+    volume_obstacle_template_en: "{force_name}'s skill barrier and experience gap cause repeated early setbacks for {protagonist}."
+    volume_resolution_template_zh: "主角证明了自己的天赋和潜力，但距离真正的竞技高手还有巨大差距。"
+    volume_resolution_template_en: "The protagonist proves talent and potential, but a vast gap remains to truly competitive players."
+    chapter_conflict_templates:
+      setup_zh: "{protagonist}踏入竞技场，面对{force_name}展现的压倒性技术差距。"
+      setup_en: "{protagonist} enters the arena, facing the overwhelming skill gap demonstrated by {force_name}."
+      investigation_zh: "{protagonist}分析{force_name}的比赛录像和战术体系，寻找可以学习和利用的弱点。"
+      investigation_en: "{protagonist} studies {force_name}'s match replays and tactical systems, searching for learnable weaknesses."
+      pressure_zh: "淘汰赛逼近，{protagonist}必须在有限的训练时间内完成关键技术的突破。"
+      pressure_en: "Elimination approaches — {protagonist} must achieve a key technical breakthrough within limited training time."
+      reversal_zh: "{protagonist}在实战中突然找到了属于自己的独特打法。"
+      reversal_en: "{protagonist} suddenly discovers their own unique play style in live combat."
+      climax_zh: "关键比赛的最后时刻，{protagonist}的创新打法让{force_name}措手不及。"
+      climax_en: "In the final moment of the key match, {protagonist}'s innovative style catches {force_name} off guard."
+
+  - phase_key: ranked_climb
+    phase_name_zh: "排位攀升"
+    phase_name_en: "Ranked Climb"
+    description_zh: "主角在排位系统中稳步上升，面对越来越强的对手和团队磨合挑战。"
+    description_en: "Steady climb through the ranking system, facing increasingly skilled opponents and team synergy challenges."
+    typical_force_types: ["character", "faction"]
+    volume_goal_template_zh: "{protagonist}需要带领团队突破{force_name}设定的排位瓶颈，进入更高级别的竞技圈层。"
+    volume_goal_template_en: "{protagonist} must lead the team past the ranking bottleneck set by {force_name}, entering a higher competitive tier."
+    volume_climax_template_zh: "团队在关键排位赛中完成突破，{protagonist}的领导力和技术同步成长。"
+    volume_climax_template_en: "The team achieves a ranking breakthrough — {protagonist}'s leadership and skills grow in sync."
+    volume_obstacle_template_zh: "{force_name}的团队配合和战术体系远比{protagonist}的队伍成熟。"
+    volume_obstacle_template_en: "{force_name}'s team coordination and tactical system are far more mature than {protagonist}'s squad."
+    volume_resolution_template_zh: "排位突破成功，但更高层级的竞争规则和对手完全不同。"
+    volume_resolution_template_en: "Ranking breakthrough achieved, but the rules and opponents at the higher level are completely different."
+    chapter_conflict_templates:
+      setup_zh: "{protagonist}的队伍在高强度排位中暴露出团队配合的短板。"
+      setup_en: "{protagonist}'s team reveals coordination weaknesses under high-intensity ranked play."
+      investigation_zh: "{protagonist}研究{force_name}的团队战术，寻找可以针对性克制的方案。"
+      investigation_en: "{protagonist} studies {force_name}'s team tactics, looking for targeted counter-strategies."
+      pressure_zh: "队内矛盾在连败压力下爆发，{protagonist}必须同时解决技术和人心问题。"
+      pressure_en: "Team conflicts erupt under losing streaks — {protagonist} must solve both technical and morale issues."
+      reversal_zh: "{protagonist}设计的新战术在训练赛中展现出惊人效果。"
+      reversal_en: "{protagonist}'s new tactics show stunning results in practice matches."
+      climax_zh: "排位晋级赛打响，{protagonist}的队伍必须在逆境中完成团队的真正蜕变。"
+      climax_en: "The promotion match begins — {protagonist}'s team must achieve true transformation under adversity."
+
+  - phase_key: league
+    phase_name_zh: "联赛征战"
+    phase_name_en: "League Campaign"
+    description_zh: "进入正式联赛，面对职业级对手和更复杂的战术博弈。"
+    description_en: "Entering the official league — facing professional opponents and more complex tactical games."
+    typical_force_types: ["faction", "character"]
+    volume_goal_template_zh: "{protagonist}必须在{force_name}主导的职业联赛中证明自己和团队的实力。"
+    volume_goal_template_en: "{protagonist} must prove self and team's worth in the professional league dominated by {force_name}."
+    volume_climax_template_zh: "联赛关键战中，{protagonist}的队伍以创新战术击败了{force_name}代表的传统强队。"
+    volume_climax_template_en: "In a pivotal league match, {protagonist}'s team defeats the traditional powerhouse represented by {force_name} with innovative tactics."
+    volume_obstacle_template_zh: "职业联赛的强度、压力和媒体关注远超排位赛，{protagonist}需要适应全新的竞技维度。"
+    volume_obstacle_template_en: "Professional league intensity, pressure, and media attention far exceed ranked play — {protagonist} must adapt to new competitive dimensions."
+    volume_resolution_template_zh: "联赛阶段性成功，团队获得认可，但全国赛的挑战级别完全不同。"
+    volume_resolution_template_en: "League success achieved and team recognized, but the national tournament's challenge level is entirely different."
+    chapter_conflict_templates:
+      setup_zh: "职业联赛的节奏和压力让{protagonist}的队伍一度陷入低谷。"
+      setup_en: "Professional league pace and pressure push {protagonist}'s team into a temporary slump."
+      investigation_zh: "{protagonist}深入分析{force_name}的历史比赛数据，寻找战术规律和盲点。"
+      investigation_en: "{protagonist} deeply analyzes {force_name}'s historical match data, seeking tactical patterns and blind spots."
+      pressure_zh: "关键队员受伤或状态低迷，{protagonist}必须调整阵容和战术。"
+      pressure_en: "A key player is injured or slumping — {protagonist} must adjust roster and tactics."
+      reversal_zh: "{protagonist}在赛前会议上提出一个大胆的战术变革方案。"
+      reversal_en: "{protagonist} proposes a bold tactical overhaul in the pre-match meeting."
+      climax_zh: "联赛生死战，{protagonist}的创新战术和{force_name}的经验之间展开极限较量。"
+      climax_en: "League elimination match — an extreme contest between {protagonist}'s innovation and {force_name}'s experience."
+
+  - phase_key: national_championship
+    phase_name_zh: "全国争冠"
+    phase_name_en: "National Championship"
+    description_zh: "在全国最高级别赛事中冲击冠军，面对最强对手和极限心理考验。"
+    description_en: "Competing for the championship at the national level, facing the strongest opponents and ultimate psychological tests."
+    typical_force_types: ["character", "internal"]
+    volume_goal_template_zh: "{protagonist}必须在{force_name}代表的全国最强对手面前，带领团队向冠军发起冲击。"
+    volume_goal_template_en: "{protagonist} must lead the team to challenge for the championship against the nation's strongest, represented by {force_name}."
+    volume_climax_template_zh: "全国总决赛的最后一局，{protagonist}在极限压力下做出了定义职业生涯的操作。"
+    volume_climax_template_en: "In the final game of the national finals, {protagonist} makes a career-defining play under extreme pressure."
+    volume_obstacle_template_zh: "{force_name}的个人实力和团队配合都在{protagonist}之上，正面交锋胜算极低。"
+    volume_obstacle_template_en: "{force_name}'s individual skill and team coordination both exceed {protagonist}'s — direct confrontation odds are very low."
+    volume_resolution_template_zh: "全国赛的结果无论胜负，{protagonist}和团队都在这个过程中完成了真正的蜕变。"
+    volume_resolution_template_en: "Regardless of the national result, {protagonist} and team complete their true transformation through the journey."
+    chapter_conflict_templates:
+      setup_zh: "全国赛的舞台让{protagonist}感受到了前所未有的压力和期待。"
+      setup_en: "The national stage brings {protagonist} unprecedented pressure and expectations."
+      investigation_zh: "{protagonist}和团队对{force_name}进行了最详尽的战术分析和准备。"
+      investigation_en: "{protagonist} and team conduct the most thorough tactical analysis and preparation against {force_name}."
+      pressure_zh: "半决赛中的苦战消耗了团队的体力和精力，决赛前的状态令人担忧。"
+      pressure_en: "The grueling semifinal drains the team's stamina and spirit — pre-finals condition is concerning."
+      reversal_zh: "{protagonist}在决赛前夕突然领悟了对抗{force_name}的关键——不是技术，而是心态。"
+      reversal_en: "On the eve of the finals, {protagonist} suddenly grasps the key against {force_name} — not technique, but mindset."
+      climax_zh: "决赛最后时刻，一切技术和战术都已用尽，决定胜负的是{protagonist}的意志和信念。"
+      climax_en: "In the finals' last moment, all technique and tactics are exhausted — what decides is {protagonist}'s will and conviction."
+
+  - phase_key: legend
+    phase_name_zh: "传奇之路"
+    phase_name_en: "Path to Legend"
+    description_zh: "超越冠军头衔，追求竞技的终极意义和传承。"
+    description_en: "Beyond championship titles — pursuing the ultimate meaning of competition and legacy."
+    typical_force_types: ["internal", "character"]
+    volume_goal_template_zh: "{protagonist}不再只是为冠军而战，而是在{force_name}代表的终极挑战中寻找竞技的本质意义。"
+    volume_goal_template_en: "{protagonist} no longer fights only for championships but seeks the essential meaning of competition in the ultimate challenge represented by {force_name}."
+    volume_climax_template_zh: "{protagonist}在巅峰对决中展现了超越胜负的竞技精神，成为一代传奇。"
+    volume_climax_template_en: "{protagonist} demonstrates a competitive spirit beyond winning and losing in the peak showdown, becoming a legend."
+    volume_obstacle_template_zh: "巅峰期的压力、伤病和后辈的追赶让{protagonist}面对竞技生涯的终极抉择。"
+    volume_obstacle_template_en: "Peak-era pressure, injuries, and rising newcomers force {protagonist} to face the ultimate career choice."
+    volume_resolution_template_zh: "{protagonist}以自己的方式定义了什么是真正的传奇——不是永远赢，而是永远全力以赴。"
+    volume_resolution_template_en: "{protagonist} defines legend in their own way — not always winning, but always giving everything."
+    chapter_conflict_templates:
+      setup_zh: "{protagonist}站在竞技巅峰，却感到一种说不清的空虚——冠军之后还有什么？"
+      setup_en: "{protagonist} stands at the competitive peak yet feels an indescribable emptiness — what comes after the championship?"
+      investigation_zh: "{protagonist}回望自己的竞技之路，试图找到最初踏入赛场时的那份纯粹。"
+      investigation_en: "{protagonist} looks back at their competitive journey, trying to find the pure feeling from when they first stepped on stage."
+      pressure_zh: "新一代选手的崛起和身体的衰退同时到来，{protagonist}面对退役的现实。"
+      pressure_en: "The rise of a new generation and physical decline arrive together — {protagonist} faces the reality of retirement."
+      reversal_zh: "{protagonist}在一场意想不到的比赛中重新找到了竞技的快乐。"
+      reversal_en: "In an unexpected match, {protagonist} rediscovers the joy of competition."
+      climax_zh: "{protagonist}选择以最热血的方式结束自己的竞技篇章——不是安静退场，而是燃尽最后的光芒。"
+      climax_en: "{protagonist} chooses to end their competitive chapter in the most passionate way — not a quiet exit, but burning the last flame."
+
+protagonist_archetypes:
+  - archetype_key: rising_prodigy
+    name_zh: "崛起天才"
+    name_en: "Rising Prodigy"
+    core_wound_zh: "曾因天赋被质疑或打压而失去竞技机会，带着证明自己的执念回归。"
+    core_wound_en: "Lost competitive opportunities due to doubted or suppressed talent — returns with an obsession to prove themselves."
+    external_goal_template_zh: "{name}要带领团队登上竞技巅峰，用成绩回应所有质疑。"
+    external_goal_template_en: "{name} must lead the team to the competitive summit, answering all doubts with results."
+    internal_need_template_zh: "{name}需要学会竞技不只是为了证明自己，还有团队、热爱和传承。"
+    internal_need_template_en: "{name} must learn competition isn't just about proving oneself — it's also about team, passion, and legacy."
+    arc_trajectory_zh: "从孤独的天才到团队的核心，从为自己而战到为所有人而战。"
+    arc_trajectory_en: "From lonely genius to team's core, from fighting for self to fighting for everyone."
+    flaw_zh: "过于追求个人表现，容易忽视团队配合。"
+    flaw_en: "Overly focused on individual performance, easily neglects team coordination."
+    strength_zh: "操作天赋极高，关键时刻的决断力和抗压能力超群。"
+    strength_en: "Extraordinary operational talent, exceptional decision-making and pressure resistance at critical moments."
+
+world_rule_templates:
+  - rule_template_key: competitive_ecosystem
+    name_zh: "竞技生态规则"
+    name_en: "Competitive Ecosystem Rule"
+    description_zh: "竞技圈有完整的训练、选拔、比赛、转会和退役体系。"
+    description_en: "The competitive scene has a complete system of training, selection, competition, transfers, and retirement."
+    story_consequence_zh: "{protagonist}的成长不只是技术提升，还需要在体制中找到位置和机会。"
+    story_consequence_en: "{protagonist}'s growth isn't just technical — they must find position and opportunity within the system."
+    exploitation_potential_zh: "体制的规则和漏洞都是叙事资源——转会、禁赛、野卡、替补等机制创造天然剧情。"
+    exploitation_potential_en: "System rules and loopholes are narrative resources — transfers, bans, wildcards, and substitutions create natural drama."
+
+  - rule_template_key: meta_evolution
+    name_zh: "版本迭代规则"
+    name_en: "Meta Evolution Rule"
+    description_zh: "竞技环境（游戏版本、规则）会定期变化，要求选手不断适应。"
+    description_en: "The competitive environment (game patches, rules) changes periodically, requiring constant adaptation."
+    story_consequence_zh: "{protagonist}不能一招鲜吃遍天——版本变化会让旧策略失效，逼迫持续创新。"
+    story_consequence_en: "{protagonist} can't rely on one trick forever — meta shifts invalidate old strategies, forcing continuous innovation."
+    exploitation_potential_zh: "版本更新是天然的叙事转折点，可以重置优劣势格局。"
+    exploitation_potential_en: "Patch updates are natural narrative turning points that can reset advantage landscapes."
+
+  - rule_template_key: team_chemistry
+    name_zh: "团队化学规则"
+    name_en: "Team Chemistry Rule"
+    description_zh: "个人能力的上限由团队配合决定，最强的个人不一定在最强的队伍里。"
+    description_en: "Individual performance ceiling is determined by team synergy — the strongest individual isn't necessarily on the strongest team."
+    story_consequence_zh: "{protagonist}必须在追求个人巅峰的同时建设团队，两者的平衡是核心挑战。"
+    story_consequence_en: "{protagonist} must build the team while pursuing personal excellence — balancing both is the core challenge."
+    exploitation_potential_zh: "队内矛盾和磨合是天然的情感和成长素材。"
+    exploitation_potential_en: "Internal conflicts and team-building are natural material for emotional and growth arcs."
+
+quality_traps:
+  - trap_key: match_logbook
+    description_zh: "比赛描写流水账化：机械记录每一步操作，缺乏节奏起伏和情感投入。比赛描写应该像体育解说一样有重点有高光。"
+    description_en: "Match logbook: mechanically recording every action without rhythm or emotion. Match writing should highlight key moments like sports commentary."
+    severity: critical
+
+  - trap_key: solo_carry
+    description_zh: "主角一人carry全队：队友完全沦为背景板，违背团队竞技的基本逻辑。"
+    description_en: "Solo carry: teammates become wallpaper, contradicting the basic logic of team competition."
+    severity: critical
+
+  - trap_key: training_bloat
+    description_zh: "训练/日常占比过大：非比赛内容超过60%会导致节奏拖沓。"
+    description_en: "Training bloat: non-match content exceeding 60% causes pacing drag."
+    severity: warning
+
+  - trap_key: cardboard_opponents
+    description_zh: "对手脸谱化：对手只有'嚣张→被打脸'一种模式。应该有值得尊敬的、有独特风格的对手。"
+    description_en: "Cardboard opponents: opponents only exist as 'arrogant → face-slapped'. Need respectable opponents with unique styles."
+    severity: warning
+
+  - trap_key: tech_imbalance
+    description_zh: "技术描写过于真实或过于虚假：完全照搬术语非玩家看不懂；完全虚构核心玩家出戏。需要平衡。"
+    description_en: "Tech imbalance: copying real jargon alienates non-gamers; pure fiction alienates core gamers. Balance needed."
+    severity: warning
+
+disqualifiers:
+  - rule_zh: "比赛结果全靠运气或主角光环。"
+    rule_en: "Match results rely entirely on luck or plot armor."
+    severity: fatal
+
+  - rule_zh: "技术描写错误且不自洽。"
+    rule_en: "Technical descriptions are wrong and inconsistent."
+    severity: critical
+
+  - rule_zh: "团队成员完全没有存在感，只有主角。"
+    rule_en: "Team members have zero presence — only the protagonist exists."
+    severity: critical
+
+tolerance_ranges:
+  world_depth:
+    min: 0.3
+    max: 0.5
+    note_zh: "电竞文不需要宏大世界观"
+  philosophical_depth:
+    min: 0.3
+    max: 0.4
+    note_zh: "竞技文更注重热血和成长"
+  poetic_language:
+    min: 0.2
+    max: 0.4
+    note_zh: "简洁有力的比赛解说风格更适合"
+
+signal_keywords:
+  operation_zh: ["操作", "走位", "预判", "反应", "手速", "极限", "失误", "完美", "闪现", "技能"]
+  tactics_zh: ["策略", "阵容", "节奏", "视野", "资源", "对线", "团战", "切入", "牵制", "佯攻"]
+  teamwork_zh: ["配合", "信任", "默契", "指挥", "沟通", "补位", "掩护", "开团", "撤退"]
+  growth_zh: ["排位", "晋级", "决赛", "冠军", "巅峰", "挑战", "突破", "瓶颈", "训练", "复盘"]

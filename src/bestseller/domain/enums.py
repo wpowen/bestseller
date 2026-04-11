@@ -19,6 +19,11 @@ class ArtifactType(StrEnum):
     IF_BRANCH_DEFINITION = "if_branch_definition"
     ACT_PLAN = "act_plan"
     PLAN_VALIDATION = "plan_validation"
+    VOLUME_CHAPTER_OUTLINE = "volume_chapter_outline"
+    VOLUME_CAST_EXPANSION = "volume_cast_expansion"
+    VOLUME_WORLD_DISCLOSURE = "volume_world_disclosure"
+    VOLUME_WRITING_FEEDBACK = "volume_writing_feedback"
+    CREATIVE_EXPLORATION = "creative_exploration"
 
 
 class ProjectType(StrEnum):

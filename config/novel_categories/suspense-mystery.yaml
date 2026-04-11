@@ -1,0 +1,247 @@
+key: suspense-mystery
+name: "悬疑推理类"
+name_en: "Suspense-Mystery"
+reader_promise_zh: >
+  谜底一定有逻辑，线索一定有回收，真相一定比表面更复杂。
+  读者来这个品类，买的是"和主角一起推理、被合理反转震撼的智识体验"。
+reader_promise_en: >
+  The answer has logic. Every clue is collected. The truth is always more complex than the surface.
+  The reader buys the experience of reasoning alongside the protagonist and being shocked by fair twists.
+
+challenge_evolution_pathway:
+  - phase_key: surface_anomaly
+    phase_name_zh: "表象异常"
+    phase_name_en: "Surface Anomaly"
+    description_zh: "看似孤立的异常事件引起主角注意，初步调查揭开第一层迷雾。"
+    description_en: "A seemingly isolated anomaly catches the protagonist's attention; initial investigation lifts the first veil."
+    typical_force_types: ["environment", "character"]
+    volume_goal_template_zh: "{protagonist}必须调查{force_name}引发的表面异常，在混乱中找到第一条可靠线索。"
+    volume_goal_template_en: "{protagonist} must investigate the surface anomaly caused by {force_name} and find the first reliable clue amid chaos."
+    volume_climax_template_zh: "{protagonist}在追查中发现：这个案件远非表面那么简单——背后藏着一个更大的谜团。"
+    volume_climax_template_en: "{protagonist} discovers while investigating: this case is far from simple — a larger mystery hides beneath."
+    volume_obstacle_template_zh: "{force_name}制造的假象和红鲱鱼不断误导{protagonist}的推理方向。"
+    volume_obstacle_template_en: "{force_name}'s decoys and red herrings keep misdirecting {protagonist}'s reasoning."
+    volume_resolution_template_zh: "第一层谜团被揭开，但答案指向了一个更深、更危险的真相。"
+    volume_resolution_template_en: "The first layer of mystery is lifted, but the answer points to a deeper, more dangerous truth."
+    chapter_conflict_templates:
+      setup_zh: "{protagonist}接触到一个看似普通的异常事件，但细节中隐藏着不合理之处。"
+      setup_en: "{protagonist} encounters a seemingly ordinary anomaly, but details conceal inconsistencies."
+      investigation_zh: "{protagonist}系统性地收集线索，用排除法缩小嫌疑范围。"
+      investigation_en: "{protagonist} systematically collects clues and narrows suspects through elimination."
+      pressure_zh: "关键证人消失或新的受害者出现，{protagonist}的调查时间被急剧压缩。"
+      pressure_en: "A key witness vanishes or a new victim appears, drastically compressing {protagonist}'s investigation window."
+      reversal_zh: "一条被忽视的线索突然串联起所有零散信息——{protagonist}意识到自己一直在看错方向。"
+      reversal_en: "An overlooked clue suddenly connects all scattered information — {protagonist} realizes they've been looking the wrong way."
+      climax_zh: "{protagonist}在逻辑推演和直觉之间做出判断，直面第一层真相。"
+      climax_en: "{protagonist} judges between logical deduction and intuition, confronting the first layer of truth."
+
+  - phase_key: first_truth
+    phase_name_zh: "一层真相"
+    phase_name_en: "First Truth"
+    description_zh: "第一个谜底揭晓，但它只是更大拼图的一角，新的矛盾浮出水面。"
+    description_en: "The first answer is revealed, but it's only one piece of a larger puzzle — new contradictions surface."
+    typical_force_types: ["character", "systemic"]
+    volume_goal_template_zh: "{protagonist}必须验证第一层真相的可靠性，同时追查{force_name}暴露的新矛盾。"
+    volume_goal_template_en: "{protagonist} must verify the first truth's reliability while pursuing new contradictions exposed by {force_name}."
+    volume_climax_template_zh: "第一层真相被证实——但真凶或幕后力量远比{protagonist}预想的强大。"
+    volume_climax_template_en: "The first truth is confirmed — but the real perpetrator or force behind it is far more powerful than {protagonist} expected."
+    volume_obstacle_template_zh: "{force_name}开始主动反击，试图阻止{protagonist}继续深挖。"
+    volume_obstacle_template_en: "{force_name} actively strikes back, trying to prevent {protagonist} from digging deeper."
+    volume_resolution_template_zh: "第一个真相尘埃落定，但新的问题比旧的更难解答。"
+    volume_resolution_template_en: "The first truth settles, but new questions are harder to answer than the old ones."
+    chapter_conflict_templates:
+      setup_zh: "{protagonist}带着第一层线索深入调查，却发现{force_name}早已布好了陷阱。"
+      setup_en: "{protagonist} follows the first clue deeper, only to find {force_name} has already set a trap."
+      investigation_zh: "{protagonist}在验证旧线索的同时发现了指向更深层的新证据。"
+      investigation_en: "{protagonist} discovers new evidence pointing deeper while verifying old clues."
+      pressure_zh: "{force_name}开始主动消除痕迹，{protagonist}必须在证据消失前完成关键取证。"
+      pressure_en: "{force_name} begins actively destroying evidence — {protagonist} must secure critical proof before it's gone."
+      reversal_zh: "一个意想不到的同盟者出现，带来了改变整个推理方向的关键信息。"
+      reversal_en: "An unexpected ally appears with information that changes the entire direction of reasoning."
+      climax_zh: "{protagonist}在第一层真相和新发现的矛盾之间做出判断——旧答案只是更大阴谋的表象。"
+      climax_en: "{protagonist} judges between the first truth and newly discovered contradictions — the old answer was merely a facade."
+
+  - phase_key: deeper_mystery
+    phase_name_zh: "深层谜团"
+    phase_name_en: "Deeper Mystery"
+    description_zh: "调查进入核心层，主角面对的不再是单一案件而是一个系统性的阴谋或规则。"
+    description_en: "Investigation reaches the core — the protagonist no longer faces a single case but a systemic conspiracy or set of rules."
+    typical_force_types: ["systemic", "faction"]
+    volume_goal_template_zh: "{protagonist}必须破解{force_name}背后的系统性阴谋，在信息迷宫中找到通往核心真相的路径。"
+    volume_goal_template_en: "{protagonist} must crack the systemic conspiracy behind {force_name}, finding a path to the core truth through an information maze."
+    volume_climax_template_zh: "{protagonist}拼出了阴谋的全貌——但真相的代价远比想象的沉重。"
+    volume_climax_template_en: "{protagonist} pieces together the full picture of the conspiracy — but the cost of truth is far heavier than imagined."
+    volume_obstacle_template_zh: "{force_name}控制的信息网络让{protagonist}无法分辨真假，连自己的推理也变得不可靠。"
+    volume_obstacle_template_en: "{force_name}'s information network makes it impossible for {protagonist} to tell truth from fiction — even their own reasoning becomes unreliable."
+    volume_resolution_template_zh: "阴谋的核心被揭露，但最终的对决还需要一个决定性的证据。"
+    volume_resolution_template_en: "The conspiracy's core is exposed, but the final confrontation requires one decisive piece of evidence."
+    chapter_conflict_templates:
+      setup_zh: "{protagonist}意识到自己面对的不是个体行为而是一整套精心设计的系统。"
+      setup_en: "{protagonist} realizes they're facing not individual actions but an entire carefully designed system."
+      investigation_zh: "{protagonist}深入{force_name}的核心运作机制，每一步都可能暴露自己。"
+      investigation_en: "{protagonist} penetrates {force_name}'s core operating mechanism — every step risks exposure."
+      pressure_zh: "{force_name}的反击越来越精准，{protagonist}的安全网被一条条切断。"
+      pressure_en: "{force_name}'s counterattacks grow increasingly precise, cutting {protagonist}'s safety nets one by one."
+      reversal_zh: "{protagonist}在绝境中发现了{force_name}最致命的逻辑漏洞。"
+      reversal_en: "In a desperate situation, {protagonist} discovers {force_name}'s most fatal logical flaw."
+      climax_zh: "{protagonist}必须在揭露真相和保护自己之间做出不可能的选择。"
+      climax_en: "{protagonist} must make an impossible choice between exposing the truth and self-preservation."
+
+  - phase_key: cognitive_reversal
+    phase_name_zh: "认知颠覆"
+    phase_name_en: "Cognitive Reversal"
+    description_zh: "一个关键反转颠覆了之前所有的认知框架，读者和主角同时被震撼。"
+    description_en: "A key reversal overturns the entire cognitive framework — readers and protagonist are shocked simultaneously."
+    typical_force_types: ["internal", "character"]
+    volume_goal_template_zh: "{protagonist}必须在认知被彻底颠覆后重建推理框架，用全新的视角审视{force_name}的真实身份。"
+    volume_goal_template_en: "{protagonist} must rebuild their reasoning framework after total cognitive upheaval, reassessing {force_name}'s true identity from a new perspective."
+    volume_climax_template_zh: "最大的反转揭晓——{protagonist}此前深信不疑的某个前提是错误的。"
+    volume_climax_template_en: "The greatest reversal is revealed — a premise {protagonist} believed absolutely was wrong."
+    volume_obstacle_template_zh: "{protagonist}必须同时对抗外部的{force_name}和内心被颠覆的信念。"
+    volume_obstacle_template_en: "{protagonist} must fight both {force_name} externally and shattered beliefs internally."
+    volume_resolution_template_zh: "新的认知框架建立，{protagonist}带着更深的理解走向最终真相。"
+    volume_resolution_template_en: "A new cognitive framework is established — {protagonist} approaches the final truth with deeper understanding."
+    chapter_conflict_templates:
+      setup_zh: "一个不起眼的细节让{protagonist}对之前的所有结论产生了动摇。"
+      setup_en: "An inconspicuous detail shakes {protagonist}'s confidence in all previous conclusions."
+      investigation_zh: "{protagonist}重新审视所有旧证据，在新框架下发现了完全不同的含义。"
+      investigation_en: "{protagonist} re-examines all old evidence and discovers completely different meanings under the new framework."
+      pressure_zh: "认知崩塌的震荡还未平息，{force_name}发起了最猛烈的攻势。"
+      pressure_en: "The shock of cognitive collapse hasn't settled when {force_name} launches their fiercest offensive."
+      reversal_zh: "{protagonist}在废墟般的旧认知中找到了一根坚实的锚点——这是走向终极真相的钥匙。"
+      reversal_en: "Among the ruins of old cognition, {protagonist} finds one solid anchor — the key to the ultimate truth."
+      climax_zh: "{protagonist}用重建后的逻辑体系直面{force_name}，双方的智力交锋到达顶点。"
+      climax_en: "{protagonist} confronts {force_name} with the rebuilt logical framework — their intellectual duel reaches its peak."
+
+  - phase_key: ultimate_revelation
+    phase_name_zh: "终极揭示"
+    phase_name_en: "Ultimate Revelation"
+    description_zh: "所有线索汇聚，最终真相完整呈现，所有伏笔回收，逻辑闭环完成。"
+    description_en: "All clues converge, the final truth is fully presented, all foreshadowing is collected, the logical loop closes."
+    typical_force_types: ["character", "internal"]
+    volume_goal_template_zh: "{protagonist}必须将所有线索串联，在{force_name}最后的抵抗中完成终极揭示。"
+    volume_goal_template_en: "{protagonist} must connect all clues and complete the ultimate revelation against {force_name}'s final resistance."
+    volume_climax_template_zh: "终极真相揭晓——它比任何人预想的都更加震撼，但逻辑上完美自洽。"
+    volume_climax_template_en: "The ultimate truth is revealed — more shocking than anyone predicted, yet perfectly logical."
+    volume_obstacle_template_zh: "{force_name}拼死阻止最后一块拼图归位，这是最危险的时刻。"
+    volume_obstacle_template_en: "{force_name} desperately prevents the last puzzle piece from falling into place — this is the most dangerous moment."
+    volume_resolution_template_zh: "所有谜团彻底解开，{protagonist}在真相的光芒和阴影中找到了属于自己的答案。"
+    volume_resolution_template_en: "All mysteries are fully solved — {protagonist} finds their own answer in the light and shadow of truth."
+    chapter_conflict_templates:
+      setup_zh: "{protagonist}掌握了最后一块拼图的线索，向终极对决的地点进发。"
+      setup_en: "{protagonist} holds the clue to the last puzzle piece and advances toward the final confrontation."
+      investigation_zh: "{protagonist}在脑海中完成了最终的逻辑推演——所有线索终于指向同一个答案。"
+      investigation_en: "{protagonist} completes the final logical deduction in their mind — all clues finally point to the same answer."
+      pressure_zh: "{force_name}发动最后的手段试图毁灭证据链，{protagonist}必须抢在毁灭之前完成揭示。"
+      pressure_en: "{force_name} launches a final attempt to destroy the evidence chain — {protagonist} must reveal the truth before destruction."
+      reversal_zh: "在揭示的最后一刻，{protagonist}发现了一个改变一切的微小细节。"
+      reversal_en: "At the last moment of revelation, {protagonist} discovers one tiny detail that changes everything."
+      climax_zh: "{protagonist}面对所有人完成终极揭示——真相让每一个旁观者重新审视自己的认知。"
+      climax_en: "{protagonist} completes the ultimate revelation before all — the truth forces every observer to re-examine their cognition."
+
+protagonist_archetypes:
+  - archetype_key: analytical_detective
+    name_zh: "分析型侦探"
+    name_en: "Analytical Detective"
+    core_wound_zh: "曾因一次推理失误导致无辜者受害，从此对自己的判断既自信又恐惧。"
+    core_wound_en: "A past reasoning mistake led to an innocent person's suffering — since then, both confident and fearful of own judgment."
+    external_goal_template_zh: "{name}必须解开眼前的谜团，在逻辑和直觉之间找到真相。"
+    external_goal_template_en: "{name} must solve the mystery at hand, finding truth between logic and intuition."
+    internal_need_template_zh: "{name}需要接受自己不是全知的，允许自己犯错，但不允许自己放弃。"
+    internal_need_template_en: "{name} must accept not being omniscient — allowing mistakes but never allowing surrender."
+    arc_trajectory_zh: "从依赖纯逻辑到整合直觉和情感，从追求绝对正确到接受真相的灰色地带。"
+    arc_trajectory_en: "From pure logic to integrating intuition and emotion, from pursuing absolute correctness to accepting truth's grey zones."
+    flaw_zh: "过度依赖逻辑，忽视人性中不合理的部分，容易低估情感驱动的行为。"
+    flaw_en: "Over-relies on logic, ignores the irrational in human nature, easily underestimates emotionally driven behavior."
+    strength_zh: "观察力惊人，记忆力精准，擅长在海量信息中找到关键矛盾。"
+    strength_en: "Remarkable observation, precise memory, adept at finding key contradictions in vast information."
+
+world_rule_templates:
+  - rule_template_key: information_control
+    name_zh: "信息管制规则"
+    name_en: "Information Control Rule"
+    description_zh: "关键信息被有意或无意地层层封锁，获取真相需要突破多重信息壁垒。"
+    description_en: "Key information is deliberately or accidentally sealed behind multiple barriers — truth requires breaking through each layer."
+    story_consequence_zh: "{protagonist}无法一步到达真相，每一层信息壁垒背后都可能是线索也可能是陷阱。"
+    story_consequence_en: "{protagonist} cannot reach truth in one step — behind each barrier may lie a clue or a trap."
+    exploitation_potential_zh: "信息壁垒同时保护了真相和保护了主角——知道太多可能比不知道更危险。"
+    exploitation_potential_en: "Information barriers protect both the truth and the protagonist — knowing too much may be more dangerous than knowing too little."
+
+  - rule_template_key: evidence_decay
+    name_zh: "证据衰减规则"
+    name_en: "Evidence Decay Rule"
+    description_zh: "证据会随时间流逝、人为破坏或自然消亡而减少，调查有时间窗口。"
+    description_en: "Evidence diminishes through time, deliberate destruction, or natural decay — investigation has a time window."
+    story_consequence_zh: "{protagonist}必须在证据消失前完成取证，时间压力是悬疑文的核心张力来源。"
+    story_consequence_en: "{protagonist} must collect evidence before it vanishes — time pressure is the core source of tension in mystery fiction."
+    exploitation_potential_zh: "证据衰减让'先手优势'变得极其重要，也为犯罪者留下了反击的空间。"
+    exploitation_potential_en: "Evidence decay makes 'first-mover advantage' critical and gives perpetrators room to counter-attack."
+
+  - rule_template_key: unreliable_testimony
+    name_zh: "不可靠证词规则"
+    name_en: "Unreliable Testimony Rule"
+    description_zh: "所有证人的陈述都可能带有主观偏差、记忆失真或刻意隐瞒。"
+    description_en: "All witness statements may carry subjective bias, memory distortion, or deliberate concealment."
+    story_consequence_zh: "{protagonist}不能完全信任任何一条口供，必须交叉验证和独立取证。"
+    story_consequence_en: "{protagonist} cannot fully trust any single testimony — cross-verification and independent evidence are essential."
+    exploitation_potential_zh: "不可靠证词既是推理的障碍也是人物塑造的工具——每个人的谎言都反映了他们最想保护的东西。"
+    exploitation_potential_en: "Unreliable testimony is both a reasoning obstacle and a characterization tool — every lie reflects what someone protects most."
+
+quality_traps:
+  - trap_key: unplanted_evidence
+    description_zh: "线索凭空出现：关键证据在需要时才第一次出现，读者完全没有机会提前推理。必须遵守'公平推理'原则。"
+    description_en: "Unplanted evidence: critical proof appears for the first time only when needed — readers had no chance to reason ahead. Must follow 'fair play' principle."
+    severity: critical
+
+  - trap_key: omniscient_detective
+    description_zh: "万能侦探综合症：主角无所不知，每次都能一眼看穿。应该让主角也会走弯路、被误导。"
+    description_en: "Omniscient detective syndrome: the protagonist knows everything and sees through everything instantly. Let them take wrong turns and be misled."
+    severity: critical
+
+  - trap_key: atmosphere_over_logic
+    description_zh: "氛围掩盖逻辑缺失：用大量恐怖描写来掩盖推理链的薄弱。氛围是锦上添花，不是核心。"
+    description_en: "Atmosphere over logic: using heavy horror descriptions to mask weak reasoning chains. Atmosphere is icing, not the cake."
+    severity: critical
+
+  - trap_key: inconsistent_rules
+    description_zh: "规则怪谈的规则不自洽：规则体系前后矛盾，或者规则的存在只为恐吓而无内在逻辑。"
+    description_en: "Inconsistent rules in rule-horror: the rule system contradicts itself or exists only for scares without internal logic."
+    severity: critical
+
+  - trap_key: info_dump_reveal
+    description_zh: "信息倾泻式揭秘：在最后一章用大段独白一次性解释所有谜团。应该分层逐步揭示。"
+    description_en: "Info-dump revelation: explaining all mysteries in one long monologue in the final chapter. Reveal in layers progressively."
+    severity: warning
+
+disqualifiers:
+  - rule_zh: "核心推理存在逻辑漏洞——一票否决。"
+    rule_en: "Core reasoning has logical holes — automatic disqualification."
+    severity: fatal
+
+  - rule_zh: "谜底靠巧合或超自然强行解释（除非设定允许）。"
+    rule_en: "Resolution relies on coincidence or supernatural hand-waving (unless the setting allows it)."
+    severity: fatal
+
+  - rule_zh: "关键线索无铺垫直接出现，违反公平推理原则。"
+    rule_en: "Critical clues appear without setup, violating the fair-play principle."
+    severity: critical
+
+tolerance_ranges:
+  character_depth:
+    min: 0.4
+    max: 0.5
+    note_zh: "推理读者不要求复杂感情线"
+  combat_scenes:
+    min: 0.2
+    max: 0.4
+    note_zh: "可以偏低或没有"
+  poetic_language:
+    min: 0.3
+    max: 0.5
+    note_zh: "推理文风格通常偏冷硬或纪实"
+
+signal_keywords:
+  clue_zh: ["线索", "证据", "痕迹", "矛盾", "疑点", "排除", "推断", "假设", "验证", "动机"]
+  atmosphere_zh: ["异常", "诡异", "寂静", "阴影", "不对劲", "违和感", "第六感", "直觉", "警觉"]
+  twist_zh: ["真相", "反转", "揭露", "原来", "果然", "不可能", "盲点", "误导", "隐藏"]
+  horror_zh: ["规则", "禁忌", "不可", "禁止", "代价", "诅咒", "消失", "不能回头"]

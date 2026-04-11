@@ -1,663 +1,688 @@
 # BestSeller
 
-BestSeller 是一个面向长篇小说生产的人机共创框架，目标是把长篇创作拆成可持续迭代的生产流水线，而不是一次性“大 prompt 写书”。
+**面向长篇小说生产的分布式人机共创框架**
 
-当前仓库已经落到第一版可运行基线：
+BestSeller 把长篇创作拆成可持续迭代的工业级生产流水线——不是"一次性大 prompt 写书"，而是一套有规划、有知识、有审校、有记忆的自动化叙事系统。
 
-- `PostgreSQL 16+` 作为唯一主数据库
-- `pgvector` 作为内建语义检索层
-- `Project / Volume / Chapter / SceneCard / PlanningArtifact / Canon / Workflow` 首批模型已经入代码
-- 已补齐故事圣经执行层：
-  - `BookSpec / WorldSpec / CastSpec / VolumePlan` 可物化为项目、世界规则、地点、阵营、角色、关系和角色状态快照
-- 提供 Alembic 初始迁移基线
-- 提供基础 CLI：
-  - `bestseller status`
-  - `bestseller db render-sql`
-  - `bestseller db init`
-  - `bestseller workflow materialize-story-bible|materialize-outline|materialize-narrative-graph|materialize-narrative-tree|list|show`
-  - `bestseller project create|list|show|structure|pipeline|review|repair|autowrite`
-  - `bestseller planning import|generate|list|show`
-  - `bestseller chapter add|assemble|context|review|rewrite|pipeline`
-  - `bestseller scene add`
-  - `bestseller scene context|draft|review|rewrite|pipeline`
-  - `bestseller rewrite impacts|cascade`
-  - `bestseller retrieval refresh|search`
-  - `bestseller story-bible show`
-  - `bestseller narrative show|tree-show|path-show|search`
-  - `bestseller export markdown|docx|epub|pdf`
-  - `bestseller canon list`
-  - `bestseller timeline list`
-  - `bestseller writing-preset list|show|hot`
-- 已接入统一 `LLM gateway`，支持 `writer / critic / editor` 三类角色
-- 已接入 `summarizer` 角色，为知识层生成场景摘要
-- 默认可在无外部模型依赖时退回 `mock/fallback`，同时把 `llm_runs` 审计记录写入数据库
-- 已具备最小自动流水线：
-  - `planning generate`: 从 premise 自动生成 `premise -> book/world/cast/volume/chapter-outline`
-  - `scene pipeline`: `draft -> review -> rewrite -> re-review`
-  - `chapter pipeline`: 串行跑完本章 scenes，再 `assemble -> export`
-  - `project pipeline`: 从项目级串行跑完整个已规划章节，导出整书，并落库项目级一致性评审
-  - `project autowrite`: 从 premise 直接生成整书规划并跑完整个写作流水线
-- 已具备最小知识层：
-  - `CanonFact` 自动沉淀角色最近状态、出场记录、场景摘要和最新剧情推进
-  - `TimelineEvent` 自动沉淀场景级事件时间线
-  - `CharacterStateSnapshot` 自动沉淀角色的阶段状态，供后续场景写作读取
-  - `RetrievalChunk` 自动索引故事圣经与当前正文，可用 `retrieval search` 查询
-  - `scene context` 会把故事圣经、近期剧情、时间线、角色可见事实和检索命中组装成写作上下文包
-- 已具备第一阶段显式叙事图谱：
-  - `PlotArc / ArcBeat / Clue / Payoff / ChapterContract / SceneContract / EmotionTrack / AntagonistPlan` 已入库
-  - `workflow materialize-narrative-graph` 可从现有规划和故事圣经重建叙事图谱
-  - `scene/chapter context` 已显式吃到 arcs / beats / clues / emotion tracks / antagonist plans / contracts
-  - `narrative show` 可直接查看当前项目的叙事图谱
-- 已具备 Narrative Tree 与路径式上下文检索：
-  - `workflow materialize-narrative-tree` 会把 PostgreSQL 真值导出成 `/book /world /characters /arcs /emotion-tracks /antagonists /volumes /chapters /scenes` 叙事树
-  - `narrative tree-show|path-show|search` 可直接查看树节点、按路径精确读取、按路径偏好做树搜索
-  - `scene/chapter context` 现在按 `path retrieval -> tree search -> hybrid retrieval` 三层顺序装配上下文
-- 已具备“分阶段扩世界”控制层：
-  - `WorldBackbone` 固定全书主旋律、主线驱动力和不可轻易漂移的世界主干
-  - `VolumeFrontier` 限定当前卷允许展开的世界边界
-  - `DeferredReveal` 管理未来才允许揭开的真相和暗线
-  - `ExpansionGate` 管理世界扩张闸门，并随章节推进同步状态
-  - scene/chapter context 只注入当前 frontier 允许可见的世界规则、地点、势力与未来揭示边界
-- 已具备项目级一致性评审：
-  - 汇总章节覆盖率、知识层覆盖率、Canon 完整度、Timeline 完整度、待重写压力和导出就绪度
-  - `project review v2` 已纳入主线推进、暗线埋设/兑现、情绪线连续性、角色弧光台阶、世界规则落地、反派推进压力
-  - 结果落到 `review_reports` 和 `quality_scores`
-- 已具备 `Scene / Chapter Quality Rubric v2`：
-  - scene review 现在显式评分 `hook_strength / conflict_clarity / emotional_movement / payoff_density / voice_consistency`
-  - chapter review 现在显式评分 `main_plot_progression / subplot_progression / ending_hook_effectiveness / volume_mission_alignment`
-  - 审校报告的 `structured_output` 已带 `scores`，方便后续工作台做 findings dashboard
-- 已具备重写影响分析：
-  - 场景审校生成 `RewriteTask` 时，会同步推导被波及的 `CanonFact / Scene / Chapter`
-  - 可用 `bestseller rewrite impacts` 查询或刷新影响面
-  - 可用 `bestseller rewrite cascade` 自动重跑受影响章节
-- 已具备多格式导出：
-  - `Markdown`、`DOCX`、`EPUB` 已可直接导出
-  - `PDF` 需要安装可选导出依赖：`pip install -e .[export]`
-- 已补单元测试，覆盖配置加载、领域模型、CLI、schema SQL、session、workflow、draft 和 export 渲染
-
-当前仍未完成的部分：
-
-- 更强的正文生成策略，真实模型已可接入，但 fallback 仍然偏结构化稳态写法
-- 更精细的多轮 planner 迭代和人工确认点
-- 更强的 retrieval embedding 与更复杂的跨章节自动级联策略
-
-## Web Studio
-
-当前已经提供本地 Web Studio，用于发起写作、跟踪执行和阅读成品。
-
-启动：
-
-```bash
-./start.sh
-./studio.sh
+```
+Premise → Plan → Draft → Review → Rewrite → Knowledge Propagation → Export → Publish
 ```
 
-页面当前支持：
+---
 
-- 发起 `project autowrite`
-- 选择平台 / 题材 / 篇幅 / prompt pack / 写作画像
-- 查看执行看板和阶段日志
-- 查看项目结构、故事圣经、叙事图谱、流程跟踪
-- 查看章节 / 场景状态板，而不只是结构 JSON
-- 查看故事圣经中的：
-  - 全书主干
-  - 当前卷世界边界
-  - 延后揭示
-  - 世界扩张闸门
-- 查看叙事图谱中的：
-  - 主线与节拍
-  - 伏笔 / 兑现账本
-  - 关系线 / 情绪线 / 反派推进
-  - chapter / scene contract
-- 阅读 Markdown 成品，显示：
-  - 正文总字数
-  - 排除空白后的字符数
-  - 段落数
-  - 预计阅读时长
-  - 文件大小和更新时间
+## 目录
 
-这层的目标不是“一次性跑完千万字”，而是把长篇按阶段推进，并把当前阶段真正需要看到的信息稳定展示出来。
+- [设计哲学](#设计哲学)
+- [架构总览](#架构总览)
+- [核心子系统](#核心子系统)
+  - [1. 多级流水线](#1-多级流水线pipeline-architecture)
+  - [2. 叙事知识系统](#2-叙事知识系统narrative-knowledge-system)
+  - [3. 上下文装配引擎](#3-上下文装配引擎context-assembly-engine)
+  - [4. 质量门控体系](#4-质量门控体系quality-gate-system)
+  - [5. LLM 网关层](#5-llm-网关层llm-gateway)
+  - [6. 分阶段世界扩张](#6-分阶段世界扩张staged-world-expansion)
+  - [7. 检索增强生成](#7-检索增强生成rag-for-narrative)
+- [系统架构](#系统架构)
+  - [服务拓扑](#服务拓扑)
+  - [数据库设计](#数据库设计)
+  - [配置体系](#配置体系)
+- [接入方式](#接入方式)
+  - [Web Studio](#web-studio)
+  - [REST API](#rest-api)
+  - [MCP Server](#mcp-server)
+  - [CLI](#cli)
+- [快速开始](#快速开始)
+- [写作配置系统](#写作配置系统)
+  - [Prompt Pack](#prompt-pack)
+  - [写作预设目录](#写作预设目录)
+  - [写作画像](#写作画像)
+- [多格式导出](#多格式导出)
+- [发布调度](#发布调度)
+- [评测体系](#评测体系)
+- [技术栈](#技术栈)
+- [项目结构](#项目结构)
+- [文档索引](#文档索引)
 
-## Prompt Pack
+---
 
-当前系统已经支持“题材专用 Prompt Pack”。这层不是零散的 if/else，而是可版本化的题材包，直接接入：
+## 设计哲学
 
-- `planning generate`
-- `project autowrite`
-- scene writer
-- scene/chapter review
-- scene/chapter rewrite
+长篇小说（10 万 ~ 百万字）的核心难点不是"让 LLM 写出一段好文字"，而是**如何在数十万字的跨度里维持叙事一致性、角色弧光连贯性和世界观自洽性**。
 
-当前内置 4 个 pack：
+BestSeller 的设计围绕三个核心信念：
 
-- `apocalypse-supply-chain`
-  - 末日囤货升级流
-- `xianxia-upgrade-core`
-  - 仙侠升级夺机缘
-- `urban-power-reversal`
-  - 都市异能反转流
-- `romance-tension-growth`
-  - 感情拉扯成长流
+### 1. 流水线 > 一次性推理
 
-列出和查看：
+单次 prompt 无法可靠生成长篇。系统把创作拆成 `规划 → 草稿 → 审校 → 重写 → 知识沉淀` 的多级流水线，每个环节有独立的 LLM 角色、独立的质量阈值、独立的重试策略。一个场景写砸了，只需要重跑这个场景，不需要从头来过。
 
-```bash
-./scripts/run.sh prompt-pack list
-./scripts/run.sh prompt-pack show apocalypse-supply-chain
+### 2. 知识先于生成
+
+写作不是凭空创作，而是"在已建立的知识库上做受约束的续写"。系统在每个场景写完后，自动提取 `Canon Facts`（角色状态、关系变化、剧情事实）、`Timeline Events`（时间线事件）和 `Character State Snapshots`（角色状态快照），构成一个不断增长的叙事知识库。下一个场景的 writer 看到的不是"前面写了什么"，而是"当前世界的事实状态"。
+
+### 3. 约束即质量
+
+好的长篇不是"想写什么就写什么"，而是"在严格的叙事合约下交付"。每个章节有 `Chapter Contract`（主线推进目标、伏笔兑现任务、情绪弧要求），每个场景有 `Scene Contract`（具体要完成的叙事动作）。审校阶段会逐条对照合约检查偏差，而不是泛泛地说"写得不好"。
+
+---
+
+## 架构总览
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                        接入层 Access Layer                       │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────────┐    │
+│  │ Web Studio│  │ REST API │  │ MCP Server│  │   CLI (Typer)│    │
+│  │  :8787   │  │  :8000   │  │  :3000   │  │              │    │
+│  └────┬─────┘  └────┬─────┘  └────┬─────┘  └──────┬───────┘    │
+│       │              │              │               │            │
+├───────┴──────────────┴──────────────┴───────────────┴────────────┤
+│                      服务层 Service Layer                         │
+│  ┌─────────────────────────────────────────────────────────┐     │
+│  │                    Pipeline Orchestrator                 │     │
+│  │  autowrite · project · chapter · scene                  │     │
+│  └──────┬────────────┬────────────┬───────────────┬────────┘     │
+│         │            │            │               │              │
+│  ┌──────┴──┐  ┌──────┴──┐  ┌─────┴────┐  ┌──────┴──────┐       │
+│  │Conception│  │ Planner │  │  Drafts  │  │  Reviews    │       │
+│  │ & Bible │  │& Outline│  │& Assembly│  │& Rewrite    │       │
+│  └─────────┘  └─────────┘  └──────────┘  └─────────────┘       │
+│         │            │            │               │              │
+│  ┌──────┴────────────┴────────────┴───────────────┴──────┐       │
+│  │               Knowledge & Narrative Layer             │       │
+│  │  Canon · Timeline · Continuity · Narrative Graph      │       │
+│  │  Retrieval · Context Assembly · World Expansion       │       │
+│  └───────────────────────┬───────────────────────────────┘       │
+│                          │                                       │
+├──────────────────────────┴───────────────────────────────────────┤
+│                     基础设施层 Infrastructure                      │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────────┐     │
+│  │PostgreSQL│  │  Redis   │  │  LiteLLM │  │  Embedding   │     │
+│  │+ pgvector│  │  + ARQ   │  │  Gateway │  │  BAAI/bge-m3 │     │
+│  └──────────┘  └──────────┘  └──────────┘  └──────────────┘     │
+└──────────────────────────────────────────────────────────────────┘
 ```
 
-创建项目或整书自动写作时，可以直接指定：
+---
 
-```bash
-./scripts/run.sh project create my-story "我的长篇" 末日科幻 220000 40 \
-  --prompt-pack apocalypse-supply-chain
+## 核心子系统
 
-./scripts/run.sh project autowrite my-story "我的长篇" 末日科幻 220000 40 \
-  --premise "末日零点我能提前购买未来物资，主角重生在末日爆发前三天，拥有未来商城与资源差优势。" \
-  --prompt-pack apocalypse-supply-chain
+### 1. 多级流水线（Pipeline Architecture）
+
+系统采用三级流水线架构，每一级都有独立的工作流跟踪、进度回调和故障恢复：
+
+```
+Project Pipeline
+ ├── Chapter Pipeline (×N)
+ │    ├── Scene Pipeline (×M)
+ │    │    ├── Context Assembly      ← 装配写作上下文
+ │    │    ├── Draft Generation      ← LLM (writer) 生成草稿
+ │    │    ├── Knowledge Propagation ← 自动提取事实、时间线、角色状态
+ │    │    ├── Review & Scoring      ← LLM (critic) 审校打分
+ │    │    └── Rewrite (if needed)   ← LLM (editor) 按审校意见重写
+ │    ├── Chapter Assembly           ← 合并场景为完整章节
+ │    ├── Chapter Review             ← 章节级审校（主线/副线/hook）
+ │    └── Chapter Export             ← Markdown checkpoint
+ ├── Consistency Check               ← 项目级一致性评审
+ ├── Auto Repair (if needed)         ← 自动重跑未通过章节
+ └── Full Export                     ← Markdown / DOCX / EPUB / PDF
 ```
 
-Prompt Pack 文件目录：
+**设计精妙之处：**
 
-- `config/prompt_packs/`
+- **Checkpoint Commit**：每个场景写完后立即持久化到数据库，而不是在整章完成后才提交。这避免了 PostgreSQL 长事务导致的快照膨胀，也意味着中途失败只需重跑失败的场景。
+- **Progress Callback**：流水线的每一步都通过 `ProgressCallback` 发射事件，Web UI 和 SSE 客户端可以实时看到 `"正在写第 3 章第 2 场景"` 这样的进度。
+- **幂等恢复**：`project repair` 会分析哪些章节/场景处于 `needs_rewrite` 或 `failed` 状态，只重跑这些，不影响已完成的内容。
 
-每个 pack 文件包含：
+### 2. 叙事知识系统（Narrative Knowledge System）
 
-- 题材说明
-- 反例 / anti-patterns
-- `writing_profile_overrides`
-- planner / writer / review / rewrite 专用片段
+这是 BestSeller 区别于"简单 prompt 链"的核心设计。系统维护一个不断增长的叙事知识图谱：
 
-多数情况下，后续新增一个题材，不需要改 Python 逻辑，只需要新增一个 pack 文件。
-
-## 写作预设目录
-
-除了 Prompt Pack，系统还内置了一套更上层的“写作预设目录”，用于一次性确定：
-
-- 平台目标
-- 主类型
-- 细分卖点
-- 目标总字数
-- 目标章节数
-- 人物原型
-- 爽点 / 套路标签
-- 章节节奏和读者承诺
-
-当前已经内置：
-
-- 平台预设：`番茄小说 / 起点中文网 / 七猫小说 / 晋江文学城 / 纵横中文网 / 17K 小说网 / 中文网文平台（通用）`
-- 题材预设：`末日囤货 / 末日规则 / 末日基建 / 仙侠升级 / 都市异能反转 / 都市黑科技 / 历史争霸 / 悬疑追凶 / 规则怪谈 / 无限流 / 星际舰队 / 女性成长拉扯 / 古言宫斗 / 御兽养成 / 电竞直播 / 民俗悬疑 / 重生创业`
-- 篇幅预设：从 `4 章样书试写` 一直到 `超长连载阶段单元`
-- 热点题材推荐：支持按最近市场热度排序查看
-
-硬约束：
-
-- 每章最低 `5000` 字
-- 推荐每章 `5500` 字左右
-- 推荐范围 `5000-6000` 字
-
-查看预设目录：
-
-```bash
-./scripts/run.sh writing-preset list
-./scripts/run.sh writing-preset show apocalypse-supply --kind genre
-./scripts/run.sh writing-preset show qidian --kind platform
-./scripts/run.sh writing-preset show trial-4 --kind length
-./scripts/run.sh writing-preset hot --limit 8
+```
+                    Story Bible
+                   ┌───────────┐
+                   │ BookSpec   │  ← 全书主旨、读者承诺、卖点
+                   │ WorldSpec  │  ← 世界观、势力、地理
+                   │ CastSpec   │  ← 人物谱、关系网
+                   │ VolumePlan │  ← 分卷结构
+                   └─────┬─────┘
+                         │
+              Narrative Graph (显式叙事结构)
+          ┌──────────────┼──────────────┐
+    ┌─────┴─────┐  ┌─────┴─────┐  ┌────┴────┐
+    │  PlotArc  │  │   Clue    │  │ Emotion │
+    │  ArcBeat  │  │  Payoff   │  │  Track  │
+    └───────────┘  └───────────┘  └─────────┘
+          │              │              │
+    ┌─────┴──────────────┴──────────────┴────┐
+    │     Chapter Contract / Scene Contract   │  ← 每章/场景的叙事合约
+    └────────────────────────────────────────┘
+                         │
+            Knowledge Layer (动态积累)
+          ┌──────────────┼──────────────┐
+    ┌─────┴─────┐  ┌─────┴─────┐  ┌────┴─────────┐
+    │Canon Facts│  │ Timeline  │  │  Character   │
+    │(角色事实) │  │  Events   │  │State Snapshot│
+    └───────────┘  └───────────┘  └──────────────┘
 ```
 
-## 写作画像配置
+**Canon Facts** 不是简单的"前情提要"，而是结构化的事实数据库：
+- 角色当前位置、情绪状态、已知信息、持有物品
+- 角色间关系的最新状态
+- 已兑现的伏笔和仍未揭示的暗线
+- 世界规则的执行状态
 
-这轮已经把“写作配置”从几个基础字段扩成了一套可执行的 `writing_profile`。它不是只展示在页面里，而是会同时被：
+**每个场景写完后**，系统自动执行 `propagate_scene_discoveries`：
+1. 从草稿文本中提取新的 Canon Facts
+2. 更新 Timeline Events
+3. 刷新 Character State Snapshots
+4. 重建 Retrieval Chunks（用于后续检索）
 
-- `project create`
-- `project autowrite`
-- `planning generate`
-- scene/chapter draft prompt
-- scene/chapter review & rewrite prompt
+这意味着第 20 章的 writer 看到的角色状态，是系统从前 19 章中自动累积出来的真实状态，而不是靠 prompt 里放一段"前情提要"。
 
-共同消费。
+### 3. 上下文装配引擎（Context Assembly Engine）
 
-当前支持的配置维度包括：
+长篇写作的上下文窗口永远不够用。系统通过 `SceneWriterContextPacket` 精确控制 writer 能看到什么：
 
-- 平台与内容定位
-  - `platform_target`
-  - `content_mode`
-  - `reader_promise`
-  - `selling_points`
-  - `trope_keywords`
-  - `hook_keywords`
-  - `opening_strategy`
-  - `chapter_hook_strategy`
-  - `hook_deadline_words`
-  - `pacing_profile`
-  - `payoff_rhythm`
-  - `update_strategy`
-- 主角与人物引擎
-  - `protagonist_archetype`
-  - `protagonist_core_drive`
-  - `golden_finger`
-  - `growth_curve`
-  - `romance_mode`
-  - `relationship_tension`
-  - `antagonist_mode`
-  - `ensemble_mode`
-- 世界与信息释放方式
-  - `worldbuilding_density`
-  - `info_reveal_strategy`
-  - `rule_hardness`
-  - `power_system_style`
-  - `mystery_density`
-  - `setting_tags`
-- 文风与表达约束
-  - `pov_type`
-  - `tense`
-  - `tone_keywords`
-  - `prose_style`
-  - `sentence_style`
-  - `info_density`
-  - `dialogue_ratio`
-  - `taboo_topics`
-  - `taboo_words`
-  - `reference_works`
-  - `custom_rules`
-- 连载节奏硬约束
-  - `opening_mandate`
-  - `first_three_chapter_goal`
-  - `scene_drive_rule`
-  - `exposition_rule`
-  - `chapter_ending_rule`
-  - `free_chapter_strategy`
-
-系统内置了按题材分流的默认预设：
-
-- `末日 / 科幻 / 星际 / 生存`
-- `仙侠 / 玄幻 / 奇幻 / 升级`
-- `都市 / 异能 / 悬疑 / 现实`
-- `女频 / 成长 / 言情 / 宫斗`
-
-示例 profile 文件在：
-
-- `examples/configs/web_serial_profile.yaml`
-
-CLI 可以直接吃文件：
-
-```bash
-./scripts/run.sh project create my-story "我的长篇" sci-fi 220000 40 \
-  --profile-file examples/configs/web_serial_profile.yaml
-
-./scripts/run.sh project autowrite my-story "我的长篇" sci-fi 220000 40 \
-  --premise "末日零点我能提前购买未来物资，主角重生在末日爆发前三天，拥有未来商城与资源差优势。" \
-  --profile-file examples/configs/web_serial_profile.yaml
+```
+SceneWriterContextPacket
+├── story_bible_excerpt       ← 故事圣经核心摘要
+├── world_rules (filtered)    ← 当前卷允许可见的世界规则
+├── chapter_contract          ← 本章叙事合约
+├── scene_contract            ← 本场景叙事合约
+├── active_arcs               ← 当前活跃的情节线
+├── active_beats              ← 当前需要推进的节拍
+├── pending_clues             ← 已埋未兑现的伏笔
+├── scheduled_payoffs         ← 本场景应兑现的伏笔
+├── emotion_tracks            ← 情绪线走向
+├── antagonist_plans          ← 反派当前阶段的行动
+├── participant_facts         ← 本场景出场角色的 Canon Facts
+├── recent_scene_summaries    ← 最近 N 个场景的摘要
+├── character_state_snapshot  ← 上一章结束时的角色状态
+├── timeline_window           ← 近期时间线事件
+└── retrieval_results         ← 混合检索命中
 ```
 
-## 一键启动
+**装配策略的精妙之处：**
 
-项目现在提供本地开发脚本：
+- **三层检索**：`path retrieval → tree search → hybrid retrieval`。先按叙事树路径精确定位，再按树结构语义搜索，最后用向量+词法+结构三路混合检索补充。
+- **Token 预算制**：总上下文预算固定（默认 8000 tokens），各部分按优先级竞争预算，低优先级内容被裁剪而不是被丢弃。
+- **可见性过滤**：World Expansion 系统的 `VolumeFrontier` 和 `DeferredReveal` 确保 writer 只能看到当前阶段允许展开的世界信息，避免在第 3 章就泄露第 20 章才该揭示的秘密。
 
-- `./start.sh`
-  - 根目录启动入口
-  - 内部转发到 `./scripts/start.sh`
-- `./stop.sh`
-  - 根目录停止入口
-  - 内部转发到 `./scripts/stop.sh`
-- `./scripts/start.sh`
-  - 创建或更新 `.venv`
-  - 默认安装 `.[dev,export]`
-  - 检测到真实 LLM key 时会额外安装 `.[llm,cloud]`
-  - 拉起本地 `PostgreSQL + pgvector` 容器
-  - 若检测到 `.env` / `.env.local` 或当前环境中存在 LLM API key，则默认关闭 mock 模式
-  - 写入 `.runtime/dev.env`
-  - 执行 `alembic upgrade head`
-- `./scripts/run.sh ...`
-  - 自动注入 `.runtime/dev.env`
-  - 直接运行 CLI
-- `./scripts/verify.sh`
-  - 跑单测
-  - 跑一条完整功能验证链路
-  - 验证 `planning list/show`、`project structure`、`story-bible show`
-  - 验证 `scene context`、`chapter context`
-  - 验证 `chapter review`、`chapter rewrite`
-  - 验证 `project repair`
-  - 验证 `rewrite impacts`、`retrieval search`、`project pipeline`、`project review`
-  - 验证 `markdown/docx/epub/pdf` 导出
-- `./scripts/stop.sh`
-  - 停止并移除本地 PostgreSQL 容器
-  - `./scripts/stop.sh --purge` 还会删除 Docker volume
+### 4. 质量门控体系（Quality Gate System）
 
-也可以直接用 Makefile 包装：
+每个层级都有独立的质量门控，不是一个笼统的"好/坏"判断，而是结构化的多维评分：
 
-```bash
-./start.sh
-./stop.sh --purge
+**场景级评分维度：**
+- `hook_strength` — 开场吸引力
+- `conflict_clarity` — 冲突是否清晰
+- `emotional_movement` — 情感推进力度
+- `payoff_density` — 伏笔兑现密度
+- `voice_consistency` — 叙述声音一致性
 
-make dev-start
-make ui
-make verify
-make dev-stop
+**章节级评分维度：**
+- `main_plot_progression` — 主线推进度
+- `subplot_progression` — 副线推进度
+- `ending_hook_effectiveness` — 章末钩子强度
+- `volume_mission_alignment` — 与卷目标的对齐度
+
+**项目级一致性评审：**
+- 章节覆盖率、知识层完整度、Canon/Timeline 完整度
+- 主线推进、暗线埋设/兑现、情绪线连续性
+- 角色弧光台阶、世界规则落地、反派推进压力
+
+**重写级联**（Rewrite Cascade）：当一个场景被判定需要重写时，系统自动分析受影响的下游 Canon Facts、Scenes 和 Chapters，可以自动级联重跑受影响的内容。
+
+### 5. LLM 网关层（LLM Gateway）
+
+系统通过 LiteLLM 统一接入多个模型提供商，并按**角色**分配不同的模型和参数：
+
+| 角色 | 职责 | 默认模型 | 温度 | 说明 |
+|------|------|---------|------|------|
+| `planner` | 规划生成 | Claude Opus | 0.65 | 高推理，多候选 |
+| `writer` | 正文写作 | Claude Sonnet | 0.85 | 高创意，流式输出 |
+| `critic` | 审校打分 | Claude Haiku | 0.25 | 低温度，精确评判 |
+| `summarizer` | 摘要压缩 | Claude Haiku | 0.20 | 低温度，信息保持 |
+| `editor` | 重写润色 | Claude Sonnet | 0.40 | 中温度，保持风格 |
+
+**韧性设计：**
+- **熔断器**（Circuit Breaker）：连续 5 次失败后熔断 60 秒，防止级联故障
+- **指数退避重试**：对 RateLimitError / APITimeout / ServiceUnavailable 自动重试
+- **HTTP 连接池复用**：per-event-loop 的 httpx.AsyncClient 池，减少 TLS 握手开销
+- **审计日志**：每次 LLM 调用写入 `llm_runs` 表，记录模型、角色、token 数、延迟、成本
+- **Mock 模式**：无外部依赖时自动降级为确定性输出，用于开发和测试
+
+### 6. 分阶段世界扩张（Staged World Expansion）
+
+长篇小说的世界观不应该在第一章就全部展开。系统实现了精细的信息释放控制：
+
+```
+WorldBackbone         ← 贯穿全书的世界主干（不可漂移）
+ ├── VolumeFrontier   ← 当前卷允许展开的世界边界
+ ├── DeferredReveal   ← 未来才允许揭示的暗线/真相
+ └── ExpansionGate    ← 世界扩张闸门（随章节推进同步）
 ```
 
-## Web Studio
+Writer 在写第 5 章时，只能看到 `Volume 1 Frontier` 允许的世界规则、地点和势力，看不到 Volume 3 才该展开的内容。这确保了：
+- 信息释放的节奏感
+- 暗线的可控性
+- 世界观的逐步展开而非一次性倾倒
 
-现在已经有本地 HTML 页面，可直接用浏览器交互完成：
+### 7. 检索增强生成（RAG for Narrative）
 
-- 创建项目
-- 输入 premise
-- 直接触发 `project autowrite`
-- 配置平台定位、读者承诺、卖点、套路关键词、主角 archetype、金手指、节奏和文风
-- 查看任务阶段进度
-- 查看项目级 workflow 跟踪，直接看到每条 workflow、每个 step 是否完成
-- 查看项目结构、故事圣经、叙事图谱
-- 直接预览 `project.md` 和各章节产物
-- 对待修订项目触发 `project repair`
+系统使用 PostgreSQL + pgvector 实现了专为叙事场景优化的混合检索：
 
-启动方式：
-
-```bash
-./start.sh
-./studio.sh
+```
+查询 → ┌── Vector Search (pgvector, BAAI/bge-m3)    权重 60%
+       ├── Lexical Search (pg_trgm, trigram)         权重 20%
+       └── Structural Search (叙事树路径匹配)          权重 20%
+       ───────────────────────────────────────────────
+       → Ranked Results → Token Budget Trimming → Context Packet
 ```
 
-或：
+**结构化检索**的独特之处在于：它不仅做语义相似度匹配，还理解叙事结构。查询 `/chapters/003/contract` 会精确返回第三章的叙事合约，而不是语义上相似但不相关的内容。
+
+---
+
+## 系统架构
+
+### 服务拓扑
+
+```yaml
+services:
+  api:        FastAPI REST API           (:8000)   # 1 worker
+  worker:     ARQ async job worker       (×2)      # 异步任务执行
+  scheduler:  APScheduler cron runner              # 定时发布调度
+  mcp:        FastMCP HTTP server        (:3000)   # MCP 协议接入
+  web:        Embedded Web UI            (:8787)   # 浏览器交互
+  db:         PostgreSQL 16 + pgvector             # 唯一数据源
+  redis:      Redis 7                              # 队列 + 进度流 + 缓存
+```
+
+**任务处理架构：**
+- **ARQ**（Async Redis Queue）负责长时任务（autowrite 整书可能运行数小时）
+- **APScheduler** 负责定时发布（cron 表达式 + 时区）
+- Redis Pub/Sub 实现跨服务的实时进度推送
+- SSE（Server-Sent Events）将进度流推到浏览器
+
+### 数据库设计
+
+PostgreSQL 是**唯一数据源**（Single Source of Truth），50+ 个表覆盖：
+
+| 领域 | 核心模型 |
+|------|---------|
+| **项目结构** | Project → Volume → Chapter → SceneCard |
+| **规划产物** | PlanningArtifactVersion（带版本号和审批状态） |
+| **世界构建** | WorldRule, Location, Character, Relationship |
+| **叙事图谱** | PlotArc, ArcBeat, Clue, Payoff, Contract |
+| **内容草稿** | SceneDraftVersion, ChapterDraftVersion |
+| **知识层** | CanonFact, TimelineEvent, CharacterStateSnapshot |
+| **检索索引** | RetrievalChunk（pgvector embedding） |
+| **工作流** | WorkflowRun → WorkflowStepRun |
+| **审计** | LlmRun（每次 LLM 调用的完整记录） |
+| **发布** | PublishingPlatform, Schedule, PublishedChapter |
+| **互动小说** | IFStoryBible, IFArcPlan, IFBranch, IFWalkthrough |
+
+**关键设计模式：**
+- **版本化产物**：规划和草稿都有 `version_no`，保留完整的修改历史
+- **乐观锁**：项目级 `lock_version` 防止并发冲突
+- **JSONB 灵活存储**：配置、上下文、元数据用 JSONB 存储，兼顾结构和灵活性
+- **向量索引**：pgvector HNSW 索引用于语义检索
+- **Alembic 迁移**：15 个版本的 schema 迁移，支持在线升级
+
+### 配置体系
+
+四层配置覆盖，从通用到特殊：
+
+```
+config/default.yaml          ← 基础默认值
+config/local.yaml            ← 本地覆盖（不入库）
+.env / .env.local            ← 环境变量
+BESTSELLER__*                ← 运行时环境变量
+```
+
+所有配置由 Pydantic Settings 类验证，类型安全且有默认值。核心配置维度：
+
+- **LLM**：每个角色的模型、温度、token 上限、超时、重试策略
+- **Generation**：目标字数、章节数、每章字数范围、场景数范围
+- **Quality**：各维度评分阈值、最大重写轮数、重复检测参数
+- **Retrieval**：嵌入模型、维度、混合权重、候选数量
+- **Pipeline**：一致性检查间隔、知识压缩间隔、反馈阈值
+
+---
+
+## 接入方式
+
+### Web Studio
+
+内置的浏览器交互界面，直接操作完整的写作流水线：
 
 ```bash
+./start.sh && ./studio.sh
+# 或
 make ui
 ```
 
-默认会打开浏览器到本地页面。CLI 入口等价于：
+支持的操作：
+- 创建项目、输入 premise、配置写作画像
+- 一键触发 `autowrite` 整书生成
+- 实时查看执行阶段和进度
+- 浏览项目结构、故事圣经、叙事图谱、流程跟踪
+- 在线阅读 Markdown 成品（含字数统计、段落数、预计阅读时长）
+- 触发 `project repair` 修复未通过章节
 
-```bash
-./scripts/run.sh ui serve --open-browser
+> 页面调用的是真实系统流水线，不是演示逻辑。
+
+### REST API
+
+FastAPI 驱动的 REST API，Bearer Token 认证：
+
+```
+POST /api/v1/projects                              创建项目
+POST /api/v1/projects/{slug}/autowrite             一键整书生成
+GET  /api/v1/projects/{slug}/structure             项目结构
+GET  /api/v1/projects/{slug}/content               完整正文
+POST /api/v1/projects/{slug}/export/{format}       导出
+GET  /api/v1/tasks/{id}                            任务状态（SSE 流）
+POST /api/v1/projects/{slug}/publishing/schedule   发布调度
 ```
 
-如果你需要指定端口：
+### MCP Server
+
+FastMCP HTTP 服务（端口 3000），将完整功能暴露为 MCP 工具，可被 Claude 等 AI 代理直接调用：
 
 ```bash
-./scripts/run.sh ui serve --host 127.0.0.1 --port 8895 --open-browser
+bestseller-mcp  # 启动 MCP 服务
 ```
 
-页面背后走的是真实系统流水线，不是单独做了一套“演示页”逻辑。它调用的是当前项目里的：
+20+ 工具覆盖：项目管理、流水线触发、内容检索、格式导出、发布调度、任务监控。
 
-- `run_autowrite_pipeline`
-- `run_project_repair`
-- `build_project_structure`
-- `build_story_bible_overview`
-- `build_narrative_overview`
-- `build_project_workflow_overview`
+### CLI
 
-页面里生成整书后，真实产物仍然落在：
-
-- `output/<project-slug>/project.md`
-- `output/<project-slug>/chapter-001.md`
-- `output/<project-slug>/project.docx`
-- `output/<project-slug>/project.epub`
-- `output/<project-slug>/project.pdf`
-
-说明：
-
-- 页面可以直接配置目标总字数和目标章节数。
-- 页面左侧“本轮写作配置”就是当前项目实际使用的 `writing_profile` 中文输入面板。
-- 页面中的“写作配置”标签会展示当前项目最终落库的 `writing_profile`。
-- 页面中的“流程跟踪”标签会展示项目的 workflow 总览、最近状态以及每条 workflow 的 step 列表。
-- 从系统能力上说，可以把目标字数设置到 `1000000` 甚至更高。
-- 但真实模型成本、运行时间、长篇稳定性会随体量线性上升，所以当前更推荐按“卷/阶段”推进，而不是第一次就直接跑千万字整书。
-- 更稳的做法是先用页面生成 `3k/12k/50k` 级样书验证风格，再逐步放大。
-
-如果你要从系统外部直接看流程数据，也可以调：
+Typer 驱动的命令行界面，100+ 命令覆盖所有功能：
 
 ```bash
-curl http://127.0.0.1:8895/api/projects/<project-slug>/workflow
+bestseller project autowrite my-story "标题" sci-fi 80000 20 --premise "..."
+bestseller project structure my-story
+bestseller narrative show my-story
+bestseller export epub my-story
 ```
 
-返回里会包含：
+---
 
-- `run_count`
-- `completed_run_count`
-- `failed_run_count`
-- `latest_run_status`
-- 每条 workflow 的 step 详情
+## 快速开始
 
-## Gemini 试用
+### 一键启动（本地开发）
 
-先在项目根目录准备 `.env`：
+```bash
+git clone <repo> && cd bestseller
+./start.sh                  # 创建 venv、拉起 PostgreSQL、执行迁移
+./studio.sh                 # 打开 Web Studio
+```
+
+`start.sh` 会自动：
+- 创建 `.venv` 并安装依赖
+- 检测 LLM API Key，有则关闭 mock 模式
+- 拉起本地 PostgreSQL + pgvector 容器
+- 执行 `alembic upgrade head`
+- 写入 `.runtime/dev.env`
+
+### 第一本小说
+
+```bash
+# CLI 方式
+./scripts/run.sh project autowrite demo "示例小说" sci-fi 22000 4 \
+  --premise "一名被放逐的导航员发现帝国正在篡改边境航线记录，并被迫在追杀中揭穿真相。"
+
+# 查看产物
+ls output/demo/
+cat output/demo/project.md
+```
+
+### Docker Compose（生产部署）
 
 ```bash
 cp .env.example .env
+# 编辑 .env 填入 LLM API Key
+docker compose up -d
 ```
 
-把下面两项填进去：
+服务：`api(:8000)` · `worker(×2)` · `scheduler` · `mcp(:3000)` · `web(:8787)` · `db` · `redis`
+
+### 模型配置
+
+支持多个 LLM 提供商，通过 `.env` 配置：
 
 ```bash
+# Anthropic（默认）
+ANTHROPIC_API_KEY=sk-ant-...
+
+# Google Gemini
 BESTSELLER_LLM_PROVIDER=gemini
-GEMINI_API_KEY=你的-gemini-api-key
+GEMINI_API_KEY=...
+
+# OpenAI
+OPENAI_API_KEY=sk-...
+
+# 任意 OpenAI-compatible endpoint
+BESTSELLER__LLM__WRITER__MODEL=openai/your-model
+BESTSELLER__LLM__WRITER__API_BASE=https://your-endpoint/v1
 ```
 
-也可以不用 `GEMINI_API_KEY`，直接填 `GOOGLE_API_KEY`。如果两个都存在，启动脚本会优先使用 `GOOGLE_API_KEY`。
+---
 
-然后启动环境：
+## 写作配置系统
+
+### Prompt Pack
+
+题材专用的 prompt 模板包，**不需要改 Python 逻辑即可新增题材**。每个 pack 包含：
+
+- 题材说明和反例（anti-patterns）
+- 规划 / 写作 / 审校 / 重写专用片段
+- `writing_profile_overrides`
+
+内置 pack：
+
+| Pack | 题材 |
+|------|------|
+| `apocalypse-supply-chain` | 末日囤货升级流 |
+| `xianxia-upgrade-core` | 仙侠升级夺机缘 |
+| `urban-power-reversal` | 都市异能反转流 |
+| `romance-tension-growth` | 感情拉扯成长流 |
 
 ```bash
-./start.sh
-./scripts/run.sh status
+./scripts/run.sh prompt-pack list
+./scripts/run.sh project autowrite my-story "标题" 末日科幻 220000 40 \
+  --premise "..." --prompt-pack apocalypse-supply-chain
 ```
 
-如果切换成功，`status` 里应至少看到：
+### 写作预设目录
 
-- `llm_mock: false`
-- `llm_writer_model: openai/gemini-2.5-flash`
-- `llm_writer_api_base: https://generativelanguage.googleapis.com/v1beta/openai/`
+一次性确定项目的平台定位、类型、篇幅和读者期望：
 
-当前 Gemini 预设走 Google 官方 OpenAI-compatible endpoint，先统一用 `gemini-2.5-flash` 跑通整条链路，后续再按质量和成本拆分 planner/writer/critic 模型。
-
-第一次试跑一整本，建议先用小体量：
+- **平台预设**：番茄小说 / 起点中文网 / 七猫小说 / 晋江文学城 等
+- **题材预设**：末日囤货 / 仙侠升级 / 都市异能 / 悬疑追凶 / 无限流 等 17 类
+- **篇幅预设**：4 章样书 ~ 超长连载阶段单元
+- **热点推荐**：按市场热度排序
 
 ```bash
-./scripts/run.sh project autowrite demo-story "Demo Story" sci-fi 22000 4 --premise "一名被放逐的导航员发现帝国正在篡改边境航线记录，并被迫在追杀中揭穿真相。"
-./scripts/run.sh project structure demo-story
-./scripts/run.sh story-bible show demo-story
-./scripts/run.sh project review demo-story
-ls -la output/demo-story
+./scripts/run.sh writing-preset list
+./scripts/run.sh writing-preset hot --limit 8
 ```
 
-重点看这些产物：
+### 写作画像
 
-- `output/demo-story/project.md`
-- `output/demo-story/chapter-001.md`
-- `output/demo-story/project.docx`
-- `output/demo-story/project.epub`
-- `output/demo-story/project.pdf`
+完整的可执行写作配置，**贯穿规划到审校的所有环节**：
 
-`project autowrite` 现在默认会：
-
-- 在终端 `stderr` 实时打印阶段、章节、repair 和产物路径
-- 在第一次项目级一致性审校未通过时，自动执行一轮 `project repair`
-- 在最终 JSON 中返回 `repair_attempted`、`repair_workflow_run_id`、`output_dir`、`output_files`、`export_status`
-
-如果你只想要纯 JSON 而不看阶段日志，可以显式关闭：
-
-```bash
-./scripts/run.sh project autowrite demo-story "Demo Story" sci-fi 22000 4 --premise "一名被放逐的导航员发现帝国正在篡改边境航线记录，并被迫在追杀中揭穿真相。" --no-progress
+```
+平台与内容定位     │ platform_target, content_mode, reader_promise, selling_points,
+                  │ hook_keywords, pacing_profile, payoff_rhythm, update_strategy
+──────────────────┤
+主角与人物引擎     │ protagonist_archetype, golden_finger, growth_curve,
+                  │ romance_mode, antagonist_mode, ensemble_mode
+──────────────────┤
+世界与信息释放     │ worldbuilding_density, info_reveal_strategy, rule_hardness,
+                  │ power_system_style, mystery_density
+──────────────────┤
+文风与表达约束     │ pov_type, tense, tone_keywords, prose_style, dialogue_ratio,
+                  │ taboo_topics, taboo_words, reference_works
+──────────────────┤
+连载节奏硬约束     │ opening_mandate, first_three_chapter_goal, scene_drive_rule,
+                  │ chapter_ending_rule, free_chapter_strategy
 ```
 
-如果你不想自动执行 repair，可以显式关闭：
+---
+
+## 多格式导出
 
 ```bash
-./scripts/run.sh project autowrite demo-story "Demo Story" sci-fi 22000 4 --premise "一名被放逐的导航员发现帝国正在篡改边境航线记录，并被迫在追杀中揭穿真相。" --no-auto-repair
+bestseller export markdown my-story    # Markdown（默认）
+bestseller export docx my-story        # Word 文档
+bestseller export epub my-story        # 电子书
+bestseller export pdf my-story         # PDF（需 pip install -e .[export]）
 ```
 
-## 小说质量与提示词策略
+产物输出到 `output/<project-slug>/`：
+- `project.md` / `chapter-001.md` / `chapter-002.md` ...
+- `project.docx` / `project.epub` / `project.pdf`
 
-这轮还把规划和写作提示词补成了更偏“商业连载小说”的方向，重点不再是泛化创作，而是更接近平台可读性：
+---
 
-- 先交代 `reader_promise`，再展开世界观
-- 前三章必须建立主角差异化、短期目标和追读钩子
-- 背景信息必须嵌进行动、交易、对抗和结果里释放
-- 每章末尾都要制造继续阅读的压力
-- 审校时会显式检查平台适配、卖点兑现、hook 强度和“成品网文感”
+## 发布调度
 
-更完整的研究说明见：
+内置多平台定时发布系统：
 
-- `docs/novel-framework-research-and-proposal.md`
-- `docs/prompt-engineering-strategy.md`
-- `docs/novel-writing-configuration-research.md`
-- `docs/prompt-pack-design.md`
-
-## Quick Start
+- APScheduler + Cron 表达式 + 时区支持
+- 平台适配器：番茄小说、起点中文网、七猫小说、Amazon KDP
+- Redis Pub/Sub 热加载：修改调度后立即生效
+- 发布历史记录和追踪
 
 ```bash
-make install
-make test
-make run ARGS="status"
+# REST API 创建发布计划
+POST /api/v1/projects/{slug}/publishing/schedule
+{
+  "platform": "fanqie",
+  "cron": "0 8 * * *",
+  "timezone": "Asia/Shanghai"
+}
 ```
 
-初始化数据库：
+---
+
+## 评测体系
+
+内置样书评测套件，用于验证生成质量的基线：
 
 ```bash
-make run ARGS="db init"
-make db-upgrade
-```
-
-创建项目：
-
-```bash
-make run ARGS="project create my-story '我的故事' fantasy 330000 60"
-```
-
-导入规划产物：
-
-```bash
-make run ARGS="planning import my-story book_spec --file examples/planning/book_spec.json"
-make run ARGS="planning import my-story world_spec --file examples/planning/world_spec.json"
-make run ARGS="planning import my-story cast_spec --file examples/planning/cast_spec.json"
-make run ARGS="planning import my-story volume_plan --file examples/planning/volume_plan.json"
-make run ARGS="planning import my-story chapter_outline_batch --file examples/planning/chapter_outline_batch.json"
-```
-
-先把故事圣经物化成可执行对象：
-
-```bash
-make run ARGS="workflow materialize-story-bible my-story"
-```
-
-也可以让系统直接自动生成全套规划：
-
-```bash
-make run ARGS="planning generate my-story --premise '一名被放逐的导航员发现帝国正在篡改边境航线记录。'"
-make run ARGS="planning list my-story"
-make run ARGS="planning show my-story book_spec"
-```
-
-把大纲物化为章节和场景：
-
-```bash
-make run ARGS="workflow materialize-outline my-story --file examples/planning/chapter_outline_batch.json"
-```
-
-运行完整项目流水线：
-
-```bash
-make run ARGS="project pipeline my-story --materialize-story-bible --materialize-outline"
-make run ARGS="project review my-story"
-make run ARGS="project repair my-story"
-make run ARGS="project structure my-story"
-make run ARGS="story-bible show my-story"
-make run ARGS="workflow materialize-narrative-graph my-story"
-make run ARGS="workflow materialize-narrative-tree my-story"
-make run ARGS="narrative show my-story"
-make run ARGS="narrative tree-show my-story"
-make run ARGS="narrative path-show my-story --path /chapters/001/contract"
-make run ARGS="narrative search my-story --query '主线 真相 调查' --path /chapters/001 --path /arcs/main-plot"
-make run ARGS="scene context my-story 2 1"
-make run ARGS="chapter context my-story 1"
-make run ARGS="canon list my-story"
-make run ARGS="timeline list my-story"
-make run ARGS="retrieval search my-story --query '主角 当前目标 真相'"
-```
-
-也可以按章节或场景运行：
-
-```bash
-make run ARGS="scene pipeline my-story 1 1"
-make run ARGS="chapter pipeline my-story 1 --export-markdown"
-```
-
-也可以拆开执行单步命令：
-
-```bash
-make run ARGS="scene draft my-story 1 1"
-make run ARGS="scene draft my-story 1 2"
-make run ARGS="chapter assemble my-story 1"
-make run ARGS="chapter review my-story 1"
-make run ARGS="chapter rewrite my-story 1"
-make run ARGS="chapter context my-story 1"
-make run ARGS="scene review my-story 1 1"
-make run ARGS="scene rewrite my-story 1 1"
-make run ARGS="rewrite cascade my-story --chapter-number 1 --scene-number 1"
-make run ARGS="export markdown my-story --chapter-number 1"
-make run ARGS="export markdown my-story"
-make run ARGS="export docx my-story"
-make run ARGS="export epub my-story"
-make run ARGS="export pdf my-story"
-```
-
-如果你使用一键脚本，建议改用：
-
-```bash
-./scripts/start.sh
-./scripts/run.sh status
-./scripts/run.sh project autowrite demo-story "Demo Story" sci-fi 22000 4 --premise "一名被放逐的导航员发现帝国正在篡改边境航线记录。"
-./scripts/verify.sh
-./scripts/stop.sh
-```
-
-## Benchmark & Evaluation
-
-当前内置了一套样书评测套件，覆盖三类基线：
-
-- 末日囤货
-- 玄幻升级
-- 都市悬疑
-
-先列出当前可用 suite：
-
-```bash
-./scripts/run.sh benchmark list
-```
-
-运行整套 benchmark：
-
-```bash
-./scripts/run.sh benchmark run sample-books --slug-prefix bench
-```
-
-只跑一个 case：
-
-```bash
+./scripts/run.sh benchmark list                                    # 列出可用 suite
+./scripts/run.sh benchmark run sample-books --slug-prefix bench    # 运行全套
 ./scripts/run.sh benchmark run sample-books --case doomsday-hoarding --slug-prefix bench
 ```
 
-运行结果会输出结构化 JSON，并把报告写到：
+每个 case 检查：
+- autowrite 是否完成
+- 产物是否生成
+- 项目级评分是否达标
+- 叙事线类型是否齐全
+- 情绪线和反派推进是否存在
 
-```bash
-output/benchmarks/
+报告输出到 `output/benchmarks/`。
+
+---
+
+## 技术栈
+
+| 层 | 技术 |
+|----|------|
+| **语言** | Python 3.11+ |
+| **API** | FastAPI + Uvicorn + Starlette-SSE |
+| **ORM** | SQLAlchemy 2.0 (async) + asyncpg |
+| **数据库** | PostgreSQL 16 + pgvector + pg_trgm + pgcrypto |
+| **队列** | ARQ (Async Redis Queue) |
+| **调度** | APScheduler 3.x |
+| **缓存/消息** | Redis 7 |
+| **LLM 网关** | LiteLLM (Anthropic / OpenAI / Gemini / any compatible) |
+| **嵌入** | sentence-transformers (BAAI/bge-m3, 1024 dims) |
+| **导出** | python-docx, ebooklib, reportlab, markdown |
+| **MCP** | FastMCP 2.0 |
+| **CLI** | Typer + Rich |
+| **配置** | Pydantic Settings + YAML + dotenv |
+| **迁移** | Alembic |
+| **容器** | Docker multi-stage + docker-compose |
+| **测试** | pytest + coverage |
+| **代码质量** | ruff + mypy + pre-commit |
+
+---
+
+## 项目结构
+
+```
+bestseller/
+├── src/bestseller/
+│   ├── api/                    # REST API 层
+│   │   ├── app.py              #   FastAPI 应用工厂 + 生命周期
+│   │   ├── deps.py             #   依赖注入（session, settings, redis, api_key）
+│   │   ├── routers/            #   6 个路由模块
+│   │   └── schemas/            #   Pydantic 请求/响应模型
+│   ├── cli/                    # CLI 入口（Typer）
+│   ├── domain/                 # 领域模型（20+ 文件）
+│   │   ├── project.py          #   项目创建、市场定位、风格配置
+│   │   ├── pipeline.py         #   流水线结果模型
+│   │   ├── narrative.py        #   情节线、节拍、伏笔、兑现、合约
+│   │   ├── context.py          #   写作上下文包
+│   │   ├── knowledge.py        #   Canon Facts、时间线事件
+│   │   └── ...                 #   评测、检查、反馈、重写等
+│   ├── services/               # 业务逻辑（50 模块，核心层）
+│   │   ├── pipelines.py        #   流水线编排
+│   │   ├── conception.py       #   BookSpec/WorldSpec/CastSpec 生成
+│   │   ├── planner.py          #   章节大纲生成
+│   │   ├── drafts.py           #   场景/章节草稿生成
+│   │   ├── reviews.py          #   审校与质量评分
+│   │   ├── context.py          #   上下文装配引擎
+│   │   ├── knowledge.py        #   知识传播与管理
+│   │   ├── consistency.py      #   一致性检查
+│   │   ├── contradiction.py    #   矛盾检测
+│   │   ├── continuity.py       #   角色连续性
+│   │   ├── narrative.py        #   叙事图谱操作
+│   │   ├── retrieval.py        #   混合检索
+│   │   ├── llm.py              #   LLM 网关（熔断器 + 审计）
+│   │   ├── exports.py          #   多格式导出
+│   │   ├── publishing/         #   发布平台适配器
+│   │   └── ...                 #   世界扩张、写作预设、反 slop 等
+│   ├── infra/                  # 基础设施
+│   │   ├── db/                 #   SQLAlchemy 模型 + session + schema
+│   │   └── redis.py            #   Redis 客户端
+│   ├── worker/                 # ARQ 异步任务
+│   ├── scheduler/              # APScheduler 发布调度
+│   ├── mcp/                    # MCP 服务
+│   └── web/                    # 内嵌 Web UI
+├── config/                     # YAML 配置
+├── migrations/                 # Alembic 迁移（15 版本）
+├── tests/                      # 测试套件
+├── scripts/                    # 启动/停止/验证脚本
+├── docs/                       # 设计文档
+├── examples/                   # 示例配置和规划产物
+├── docker-compose.yml          # 多服务编排
+├── Dockerfile                  # 多阶段构建
+└── pyproject.toml              # 项目元数据和依赖
 ```
 
-每个 case 会检查这些最小基线：
+---
 
-- 是否完成整书 autowrite
-- 是否生成 `project.md`
-- 项目级评分是否达到阈值
-- 是否包含要求的叙事线类型
-- 是否生成 emotion tracks / antagonist plans
+## 文档索引
 
-另外，scene/chapter review 现在已经会显式对照 `chapter contract / scene contract` 做偏差审校；即使最终仍需人工复核，也会先导出当前草稿，便于人工判断问题落点。
+| 文档 | 内容 |
+|------|------|
+| [架构设计](docs/architecture.md) | 系统架构详解 |
+| [数据库方案](docs/database-schema.md) | 完整数据库 schema |
+| [Prompt 设计](docs/prompt-engineering-strategy.md) | 提示词工程策略 |
+| [框架调研](docs/novel-framework-research-and-proposal.md) | 开源框架调研与总体方案 |
+| [写作配置研究](docs/novel-writing-configuration-research.md) | 写作配置维度研究 |
+| [Prompt Pack 设计](docs/prompt-pack-design.md) | 题材 prompt 包设计 |
+| [状态与路线](docs/current-status-and-roadmap.md) | 当前状态与后续规划 |
+| [叙事架构路线](docs/pageindex-integration-and-narrative-roadmap.md) | PageIndex 集成评估 |
 
-## Core Docs
+---
 
-- [当前状态与后续路线](docs/current-status-and-roadmap.md)
-- [PageIndex 集成评估与叙事架构路线](docs/pageindex-integration-and-narrative-roadmap.md)
-- [走向更完整长篇系统的 TODO](docs/perfect-novel-todo.md)
-- [架构设计](docs/architecture.md)
-- [数据库方案](docs/database-schema.md)
-- [Prompt 设计](docs/prompt-engineering-strategy.md)
-- [开源框架调研与总体方案](docs/novel-framework-research-and-proposal.md)
+## License
+
+MIT

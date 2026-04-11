@@ -31,6 +31,9 @@ def _all_scene_weight_values(profile: GenreReviewProfile) -> list[float]:
         sw.hook_strength,
         sw.payoff_density,
         sw.contract_alignment,
+        sw.pacing_alignment,
+        sw.subplot_presence,
+        sw.scene_sequel_alignment,
     ]
 
 

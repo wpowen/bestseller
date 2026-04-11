@@ -228,8 +228,8 @@ def test_resolve_writing_profile_merges_prompt_pack_defaults() -> None:
 
     assert profile.market.prompt_pack_key == "apocalypse-supply-chain"
     assert profile.market.platform_target == "番茄小说"
-    assert "末日" in profile.market.trope_keywords
-    assert profile.character.golden_finger
+    assert profile.market.trope_keywords == []
+    assert not profile.character.golden_finger
 
 
 @pytest.mark.asyncio

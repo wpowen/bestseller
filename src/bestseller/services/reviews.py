@@ -39,7 +39,9 @@ from bestseller.services.drafts import (
     validate_and_clean_novel_content,
 )
 from bestseller.services.llm import LLMCompletionRequest, complete_text
+from bestseller.services.methodology import render_methodology_scene_rules
 from bestseller.services.prompt_packs import (
+    render_methodology_block,
     render_prompt_pack_fragment,
     render_prompt_pack_prompt_block,
     resolve_prompt_pack,
@@ -629,6 +631,8 @@ def build_scene_review_prompts(
         system_prompt += f"\n\n{'[Genre review requirements]' if is_en else '【品类审核要求】'}\n{_genre_review_system}"
     _pp_block = f"Prompt Pack：\n{render_prompt_pack_prompt_block(prompt_pack)}\n" if prompt_pack else ""
     _pp_scene_review = f"{render_prompt_pack_fragment(prompt_pack, 'scene_review')}\n" if prompt_pack else ""
+    _methodology_review_block = render_methodology_block(prompt_pack, phase="review")
+    _methodology_line = f"\n{_methodology_review_block}\n" if _methodology_review_block else ""
     user_prompt = (
         (
             f"Project: {project.title}\n"
@@ -639,6 +643,7 @@ def build_scene_review_prompts(
             f"Writing profile:\n{render_writing_profile_prompt_block(writing_profile, language=language)}\n"
             f"{_pp_block}"
             f"{_pp_scene_review}"
+            f"{_methodology_line}"
             f"Scores: {review_result.scores.model_dump(mode='json')}\n"
             f"Findings: {[finding.model_dump(mode='json') for finding in review_result.findings]}\n"
             f"Current draft:\n{draft.content_md}\n"
@@ -655,6 +660,7 @@ def build_scene_review_prompts(
             f"写作画像：\n{render_writing_profile_prompt_block(writing_profile, language=language)}\n"
             f"{_pp_block}"
             f"{_pp_scene_review}"
+            f"{_methodology_line}"
             f"当前评分：{review_result.scores.model_dump(mode='json')}\n"
             f"当前发现：{[finding.model_dump(mode='json') for finding in review_result.findings]}\n"
             f"当前草稿：\n{draft.content_md}\n"
@@ -710,6 +716,18 @@ def build_scene_rewrite_prompts(
         tone = "克制、紧张"
     _pp_block = f"Prompt Pack：\n{render_prompt_pack_prompt_block(prompt_pack)}\n" if prompt_pack else ""
     _pp_scene_rewrite = f"{render_prompt_pack_fragment(prompt_pack, 'scene_rewrite')}\n" if prompt_pack else ""
+    _methodology_scene_block = render_methodology_block(prompt_pack, phase="scene")
+    _methodology_rules = render_methodology_scene_rules(
+        chapter_number=chapter.chapter_number,
+        is_opening=(chapter.chapter_number <= 3),
+        is_climax=False,
+        pacing_mode="build",
+    )
+    _methodology_line = ""
+    if _methodology_scene_block:
+        _methodology_line += f"\n{_methodology_scene_block}\n"
+    if _methodology_rules:
+        _methodology_line += f"\n{_methodology_rules}\n"
     user_prompt = (
         (
             f"Project: {project.title}\n"
@@ -724,6 +742,7 @@ def build_scene_rewrite_prompts(
             f"{_pp_block}"
             f"Serial fiction guardrails:\n{render_serial_fiction_guardrails(writing_profile, language=language)}\n"
             f"{_pp_scene_rewrite}"
+            f"{_methodology_line}"
             f"Current draft:\n{current_draft.content_md}\n"
             "Rewrite the current scene in English only. Strengthen the conflict, dialogue, emotional layering, and final hook. "
             "The result should read like publishable commercial fiction, not planning notes."
@@ -742,6 +761,7 @@ def build_scene_rewrite_prompts(
             f"{_pp_block}"
             f"商业网文硬约束：\n{render_serial_fiction_guardrails(writing_profile, language=language)}\n"
             f"{_pp_scene_rewrite}"
+            f"{_methodology_line}"
             f"当前草稿：\n{current_draft.content_md}\n"
             "请重写当前场景，补强冲突、人物对话、情绪层次和结尾钩子。"
             "要让文本更像平台成品网文，而不是策划草稿或解释说明。"
@@ -923,6 +943,8 @@ def build_chapter_review_prompts(
         system_prompt += f"\n\n{'[Genre review requirements]' if is_en else '【品类审核要求】'}\n{_genre_ch_review_system}"
     _pp_block = f"Prompt Pack：\n{render_prompt_pack_prompt_block(prompt_pack)}\n" if prompt_pack else ""
     _pp_chapter_review = f"{render_prompt_pack_fragment(prompt_pack, 'chapter_review')}\n" if prompt_pack else ""
+    _methodology_review_block = render_methodology_block(prompt_pack, phase="review")
+    _methodology_line = f"\n{_methodology_review_block}\n" if _methodology_review_block else ""
     user_prompt = (
         (
             f"Project: {project.title}\n"
@@ -931,6 +953,7 @@ def build_chapter_review_prompts(
             f"Writing profile:\n{render_writing_profile_prompt_block(writing_profile, language=language)}\n"
             f"{_pp_block}"
             f"{_pp_chapter_review}"
+            f"{_methodology_line}"
             f"Context:\n{_render_chapter_context_section(chapter_context, language=language)}\n"
             f"Scores: {review_result.scores.model_dump(mode='json')}\n"
             f"Findings: {[finding.model_dump(mode='json') for finding in review_result.findings]}\n"
@@ -946,6 +969,7 @@ def build_chapter_review_prompts(
             f"写作画像：\n{render_writing_profile_prompt_block(writing_profile, language=language)}\n"
             f"{_pp_block}"
             f"{_pp_chapter_review}"
+            f"{_methodology_line}"
             f"上下文：\n{_render_chapter_context_section(chapter_context, language=language)}\n"
             f"当前评分：{review_result.scores.model_dump(mode='json')}\n"
             f"当前发现：{[finding.model_dump(mode='json') for finding in review_result.findings]}\n"
@@ -986,6 +1010,18 @@ def build_chapter_rewrite_prompts(
     )
     _pp_block = f"Prompt Pack：\n{render_prompt_pack_prompt_block(prompt_pack)}\n" if prompt_pack else ""
     _pp_chapter_rewrite = f"{render_prompt_pack_fragment(prompt_pack, 'chapter_rewrite')}\n" if prompt_pack else ""
+    _methodology_scene_block = render_methodology_block(prompt_pack, phase="scene")
+    _methodology_rules = render_methodology_scene_rules(
+        chapter_number=chapter.chapter_number,
+        is_opening=(chapter.chapter_number <= 3),
+        is_climax=False,
+        pacing_mode="build",
+    )
+    _methodology_line = ""
+    if _methodology_scene_block:
+        _methodology_line += f"\n{_methodology_scene_block}\n"
+    if _methodology_rules:
+        _methodology_line += f"\n{_methodology_rules}\n"
     user_prompt = (
         (
             f"Project: {project.title}\n"
@@ -996,6 +1032,7 @@ def build_chapter_rewrite_prompts(
             f"{_pp_block}"
             f"Serial fiction guardrails:\n{render_serial_fiction_guardrails(writing_profile, language=language)}\n"
             f"{_pp_chapter_rewrite}"
+            f"{_methodology_line}"
             f"Chapter context:\n{_render_chapter_context_section(chapter_context, language=language)}\n"
             f"Current draft:\n{current_draft.content_md}\n"
             "Rewrite the chapter in English only while preserving the core event order. Improve transitions, chapter propulsion, and the ending hook first."
@@ -1010,6 +1047,7 @@ def build_chapter_rewrite_prompts(
             f"{_pp_block}"
             f"商业网文硬约束：\n{render_serial_fiction_guardrails(writing_profile, language=language)}\n"
             f"{_pp_chapter_rewrite}"
+            f"{_methodology_line}"
             f"章节上下文：\n{_render_chapter_context_section(chapter_context, language=language)}\n"
             f"当前草稿：\n{current_draft.content_md}\n"
             "请在保留本章核心事件顺序的前提下，重写本章，使场景衔接更顺、章节推进更完整、收尾钩子更明确。"
@@ -1128,6 +1166,9 @@ def evaluate_scene_draft(
     genre: str | None = None,
     sub_genre: str | None = None,
     language: str | None = None,
+    pacing_target: Any | None = None,
+    subplot_schedule: list[Any] | None = None,
+    swain_pattern: str | None = None,
 ) -> SceneReviewResult:
     from bestseller.services.genre_review_profiles import resolve_genre_review_profile
 
@@ -1308,6 +1349,42 @@ def evaluate_scene_draft(
         + (0.1 if not meta_leak else 0.0)
     )
 
+    # ── Phase-1: pacing alignment & subplot presence ──
+    _pacing_tension = getattr(pacing_target, "tension_level", None)
+    if _pacing_tension is not None:
+        _draft_tension = (conflict_signal + emotion_signal) / 2
+        _pacing_deviation = abs(_draft_tension - _pacing_tension)
+        pacing_alignment_score = _clamp_score(1.0 - _pacing_deviation * 1.6)
+    else:
+        pacing_alignment_score = 0.5
+
+    _primary_arcs = [
+        entry
+        for entry in (subplot_schedule or [])
+        if getattr(entry, "prominence", None) == "primary"
+    ]
+    if _primary_arcs:
+        _arc_hits = sum(
+            1
+            for arc in _primary_arcs
+            if getattr(arc, "arc_label", None) and getattr(arc, "arc_label", "") in content
+        )
+        subplot_presence_score = _clamp_score(0.3 + _arc_hits / max(len(_primary_arcs), 1) * 0.7)
+    else:
+        subplot_presence_score = 0.5
+
+    # ── Phase-3: scene/sequel alignment ──
+    _ACTION_SIGNAL_TERMS = ["冲突", "对抗", "追击", "逼", "挡", "clash", "fight", "confront"]
+    _SEQUEL_SIGNAL_TERMS = ["犹豫", "回想", "抉择", "沉思", "hesitat", "reflect", "dilemma"]
+    if swain_pattern == "action":
+        _swain_signal = _signal_score(content, keywords=_ACTION_SIGNAL_TERMS)
+        scene_sequel_alignment_score = _clamp_score(0.3 + _swain_signal * 0.7)
+    elif swain_pattern == "sequel":
+        _swain_signal = _signal_score(content, keywords=_SEQUEL_SIGNAL_TERMS)
+        scene_sequel_alignment_score = _clamp_score(0.3 + _swain_signal * 0.7)
+    else:
+        scene_sequel_alignment_score = 0.5
+
     contract_alignment, contract_evidence = _evaluate_contract_alignment(
         content,
         expectations=_scene_contract_expectations(
@@ -1353,6 +1430,12 @@ def evaluate_scene_draft(
     ]
     if int(contract_evidence["contract_expectation_count"]) > 0:
         weighted_parts.append((contract_alignment, _sw.contract_alignment))
+    if pacing_target is not None:
+        weighted_parts.append((pacing_alignment_score, _sw.pacing_alignment))
+    if _primary_arcs:
+        weighted_parts.append((subplot_presence_score, _sw.subplot_presence))
+    if swain_pattern is not None:
+        weighted_parts.append((scene_sequel_alignment_score, _sw.scene_sequel_alignment))
     _total_weight = sum(w for _, w in weighted_parts)
     overall = _clamp_score(sum(s * w for s, w in weighted_parts) / max(_total_weight, 0.01))
     threshold = profile.scene_threshold_override or settings.quality.thresholds.scene_min_score
@@ -1486,6 +1569,9 @@ def evaluate_scene_draft(
             prose_variety=_clamp_score((style + emotion) / 2),
             moral_complexity=_clamp_score(conflict),
             contract_alignment=contract_alignment,
+            pacing_alignment=pacing_alignment_score,
+            subplot_presence=subplot_presence_score,
+            scene_sequel_alignment=scene_sequel_alignment_score,
         ),
         findings=findings,
         evidence_summary={
@@ -1500,6 +1586,9 @@ def evaluate_scene_draft(
             "payoff_density": payoff_density,
             "voice_consistency": voice_consistency,
             "meta_leak_detected": meta_leak,
+            "pacing_alignment": pacing_alignment_score,
+            "subplot_presence": subplot_presence_score,
+            "scene_sequel_alignment": scene_sequel_alignment_score,
             **contract_evidence,
         },
         rewrite_instructions=rewrite_instructions,
@@ -2018,6 +2107,9 @@ async def review_scene_draft(
         genre=project.genre,
         sub_genre=project.sub_genre,
         language=getattr(project, "language", None),
+        pacing_target=getattr(scene_context, "pacing_target", None),
+        subplot_schedule=getattr(scene_context, "subplot_schedule", None),
+        swain_pattern=getattr(scene_context, "swain_pattern", None),
     )
 
     critic_response = render_scene_review_summary(

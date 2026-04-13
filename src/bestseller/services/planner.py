@@ -5,6 +5,7 @@ import hashlib
 import json
 import logging
 import math
+from pathlib import Path
 import re
 from typing import Any, Callable
 from uuid import UUID
@@ -105,6 +106,86 @@ def _build_planner_context(
 
 def _json_dumps(payload: Any) -> str:
     return json.dumps(payload, ensure_ascii=False, indent=2)
+
+
+def _story_package_candidate_paths(project: ProjectModel) -> list[Path]:
+    metadata = project.metadata_json if isinstance(project.metadata_json, dict) else {}
+    candidates: list[Path] = []
+
+    explicit = metadata.get("story_package_path")
+    if isinstance(explicit, str) and explicit:
+        candidates.append(Path(explicit))
+
+    slug_underscored = project.slug.replace("-", "_")
+    cwd = Path.cwd()
+    for anchor in (cwd, *cwd.parents):
+        candidates.append(anchor / "story-factory" / "projects" / slug_underscored / "story_package.json")
+
+    unique_candidates: list[Path] = []
+    seen: set[Path] = set()
+    for path in candidates:
+        try:
+            resolved = path.resolve()
+        except OSError:
+            continue
+        if resolved in seen:
+            continue
+        seen.add(resolved)
+        unique_candidates.append(resolved)
+    return unique_candidates
+
+
+def _load_story_package_seed(project: ProjectModel) -> dict[str, Any]:
+    for path in _story_package_candidate_paths(project):
+        if not path.is_file():
+            continue
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if not isinstance(data, dict):
+            continue
+        return {
+            "path": str(path),
+            "book": data.get("book") if isinstance(data.get("book"), dict) else {},
+            "reader_desire_map": data.get("reader_desire_map") if isinstance(data.get("reader_desire_map"), dict) else {},
+            "story_bible": data.get("story_bible") if isinstance(data.get("story_bible"), dict) else {},
+            "route_graph": data.get("route_graph") if isinstance(data.get("route_graph"), dict) else {},
+        }
+    return {}
+
+
+def _story_package_prompt_block(project: ProjectModel, *, language: str | None = None) -> str:
+    seed = _load_story_package_seed(project)
+    if not seed:
+        return ""
+
+    is_en = is_english_language(language)
+    book = _mapping(seed.get("book"))
+    reader_desire = _mapping(seed.get("reader_desire_map"))
+    story_bible = _mapping(seed.get("story_bible"))
+    route_graph = _mapping(seed.get("route_graph"))
+    characters = [item.get("name") for item in _mapping_list(book.get("characters")) if item.get("name")]
+    milestones = [
+        item.get("title")
+        for item in _mapping_list(route_graph.get("milestones"))
+        if item.get("title")
+    ]
+    summary = {
+        "canonical_characters": characters[:8],
+        "reader_promise": reader_desire.get("core_fantasy"),
+        "reward_promises": _string_list(reader_desire.get("reward_promises"))[:3],
+        "story_bible_mainline": story_bible.get("mainline_goal"),
+        "milestones": milestones[:6],
+        "source_path": seed.get("path"),
+    }
+    label = "[Story package seed]" if is_en else "【story_package 既有商业设定】"
+    return (
+        f"\n\n{label}\n"
+        "Treat this as pre-existing commercial canon. Reuse its characters, reader promise, and milestones whenever compatible.\n"
+        if is_en else
+        f"\n\n{label}\n请把它视为已有商业化 canon，在不冲突时优先复用其中的人物、读者承诺与里程碑。\n"
+    ) + _json_dumps(summary)
 
 
 def _render_template(template: str, variables: dict[str, str]) -> str:
@@ -237,7 +318,8 @@ def _derive_protagonist_name(
         seed_text=seed_text or _seed_material(premise[:160], genre, language or ""),
     )
     name = _mapping(pool.get("protagonist")).get("name")
-    return name if isinstance(name, str) and name else "主角"
+    _fallback = "Protagonist" if is_english_language(language) else "主角"
+    return name if isinstance(name, str) and name else _fallback
 
 
 async def _generate_character_names(
@@ -409,28 +491,34 @@ def _project_name_seed(project: ProjectModel, premise: str = "") -> str:
 
 
 def _role_label(role: str, *, language: str | None = None, index: int = 0) -> str:
+    """Return a plausible placeholder *name* for the given role.
+
+    These are used as emergency fallback when the LLM fails to produce character
+    names. They must look like real character names — NOT role descriptions such
+    as ``盟友甲`` — so that even in fallback mode the novel reads naturally.
+    """
     if is_english_language(language):
         if role == "protagonist":
-            return "Protagonist"
+            return "Alex Reed"
         if role == "ally":
-            return ["Ally A", "Ally B", "Ally C"][min(index, 2)]
+            return ["Sam Blake", "Nora Chen", "Jake Cross"][min(index, 2)]
         if role == "antagonist":
-            return "Antagonist"
+            return "Victor Hale"
         if role == "local_threat":
-            return "Local Rival"
+            return "Marcus Webb"
         if role == "betrayer":
-            return "Hidden Defector"
-        return "Character"
+            return "Dominic Pryce"
+        return "Jordan"
     if role == "protagonist":
-        return "主角"
+        return "林逸"
     if role == "ally":
-        return ["盟友甲", "盟友乙", "盟友丙"][min(index, 2)]
+        return ["沈远", "陆昭", "秦晗"][min(index, 2)]
     if role == "antagonist":
-        return "对手"
+        return "顾铭"
     if role == "local_threat":
-        return "地方阻力"
+        return "周庆"
     if role == "betrayer":
-        return "潜伏者"
+        return "方域"
     return "角色"
 
 
@@ -498,7 +586,7 @@ def _genre_name_pool(
     return _generic_name_bundle(language=language)
 
 
-def _genre_profile(genre: str, *, category_key: str | None = None) -> dict[str, Any]:
+def _genre_profile(genre: str, *, category_key: str | None = None, language: str | None = None) -> dict[str, Any]:
     # Try category-specific profile derivation first
     if category_key:
         cat = get_novel_category(category_key)
@@ -508,6 +596,16 @@ def _genre_profile(genre: str, *, category_key: str | None = None) -> dict[str, 
     # Legacy 3-bucket fallback
     normalized = genre.lower()
     if any(token in normalized for token in ("sci", "space", "科幻", "science")):
+        if is_english_language(language):
+            return {
+                "tones": ["tense", "bleak", "suspenseful"],
+                "themes": ["truth vs. control", "order vs. freedom", "the cost of sacrifice"],
+                "world_name": "Frontier Corridor Network",
+                "world_premise": "Routes, records, and clearances determine who controls the narrative of reality.",
+                "power_system_name": "Authority Sigil",
+                "locations": ["Border Station", "Silent Corridor", "Deep Archive"],
+                "factions": ["Imperial Archive Bureau", "Free Pilots Guild"],
+            }
         return {
             "tones": ["紧张", "冷峻", "悬疑"],
             "themes": ["真相与控制", "秩序与自由", "牺牲的代价"],
@@ -518,6 +616,16 @@ def _genre_profile(genre: str, *, category_key: str | None = None) -> dict[str, 
             "factions": ["帝国档案局", "边境自由引航团"],
         }
     if any(token in normalized for token in ("fantasy", "玄幻", "仙", "magic")):
+        if is_english_language(language):
+            return {
+                "tones": ["high-stakes", "wondrous", "intense"],
+                "themes": ["power and its cost", "order vs. rebellion", "growth and betrayal"],
+                "world_name": "The Fractured Realm",
+                "world_premise": "World resources and the power hierarchy are monopolized by a handful of sects.",
+                "power_system_name": "Spirit Sigil System",
+                "locations": ["Borderlands City", "Rift Valley", "Ancestral Grounds"],
+                "factions": ["Ward-Keeper Sect", "Black Market Alliance"],
+            }
         return {
             "tones": ["高压", "奇诡", "燃"],
             "themes": ["力量与代价", "秩序与反抗", "成长与背叛"],
@@ -526,6 +634,16 @@ def _genre_profile(genre: str, *, category_key: str | None = None) -> dict[str, 
             "power_system_name": "灵印体系",
             "locations": ["边荒城", "秘境裂谷", "王朝祖地"],
             "factions": ["镇界宗", "黑市同盟"],
+        }
+    if is_english_language(language):
+        return {
+            "tones": ["tense", "restrained", "driven"],
+            "themes": ["identity and choice", "trust and its price", "truth and lies"],
+            "world_name": "Stormgate City",
+            "world_premise": "Power and secrets together shape everyone's fate.",
+            "power_system_name": "Momentum Ladder",
+            "locations": ["Central City", "Restricted Zone", "Old Archive"],
+            "factions": ["Governing Authority", "Underground Alliance"],
         }
     return {
         "tones": ["紧张", "克制", "推进感"],
@@ -770,8 +888,13 @@ def _build_protagonist_from_category(
 
 
 def _fallback_book_spec(project: ProjectModel, premise: str, *, category_key: str | None = None) -> dict[str, Any]:
-    profile = _genre_profile(project.genre, category_key=category_key)
+    profile = _genre_profile(project.genre, category_key=category_key, language=project.language)
     writing_profile = _planner_writing_profile(project)
+    story_package = _load_story_package_seed(project)
+    book_seed = _mapping(story_package.get("book"))
+    reader_desire = _mapping(story_package.get("reader_desire_map"))
+    story_bible = _mapping(story_package.get("story_bible"))
+    route_graph = _mapping(story_package.get("route_graph"))
     name_seed = _project_name_seed(project, premise)
     protagonist_name = _derive_protagonist_name(
         premise,
@@ -779,14 +902,30 @@ def _fallback_book_spec(project: ProjectModel, premise: str, *, category_key: st
         language=project.language,
         seed_text=name_seed,
     )
+    milestone_titles = [
+        item.get("title")
+        for item in _mapping_list(route_graph.get("milestones"))
+        if item.get("title")
+    ]
+    story_tags = _string_list(book_seed.get("tags")) + _string_list(book_seed.get("interaction_tags"))
+    story_themes = _string_list(story_bible.get("side_threads"))
     return {
         "title": project.title,
-        "logline": premise.strip(),
+        "logline": (
+            _non_empty_string(story_bible.get("premise"), "")
+            or _non_empty_string(book_seed.get("synopsis"), "")
+            or premise.strip()
+        ),
         "genre": project.genre,
         "target_audience": project.audience or "web-serial",
         "tone": writing_profile.style.tone_keywords or profile["tones"],
-        "themes": profile["themes"] + [
-            item for item in writing_profile.market.selling_points[:2] if item not in profile["themes"]
+        "themes": [
+            *profile["themes"],
+            *[item for item in story_themes[:2] if item not in profile["themes"]],
+            *[
+                item for item in writing_profile.market.selling_points[:2]
+                if item not in profile["themes"] and item not in story_themes[:2]
+            ],
         ],
         "protagonist": _build_protagonist_from_category(
             protagonist_name,
@@ -800,20 +939,31 @@ def _fallback_book_spec(project: ProjectModel, premise: str, *, category_key: st
             "existential": "如果幕后计划成功，整个世界的基本运行秩序都会被改写。",
         },
         "series_engine": {
-            "core_loop": "主角利用差异化优势抢先一步 -> 得到短回报 -> 引来更大反压 -> 被迫升级手段 -> 揭开更深真相",
+            "core_loop": (
+                _non_empty_string(route_graph.get("mainline"), "")
+                or "主角利用差异化优势抢先一步 -> 得到短回报 -> 引来更大反压 -> 被迫升级手段 -> 揭开更深真相"
+            ),
             "hook_style": writing_profile.market.chapter_hook_strategy,
-            "reader_promise": writing_profile.market.reader_promise,
-            "selling_points": writing_profile.market.selling_points,
-            "trope_keywords": writing_profile.market.trope_keywords,
+            "reader_promise": (
+                _non_empty_string(reader_desire.get("core_fantasy"), "")
+                or writing_profile.market.reader_promise
+            ),
+            "selling_points": list(dict.fromkeys(
+                _string_list(reader_desire.get("reward_promises"))[:3] or writing_profile.market.selling_points
+            )),
+            "trope_keywords": list(dict.fromkeys(story_tags[:4] or writing_profile.market.trope_keywords)),
             "opening_strategy": writing_profile.market.opening_strategy,
             "payoff_rhythm": writing_profile.market.payoff_rhythm,
             "first_three_chapter_goal": writing_profile.serialization.first_three_chapter_goal,
+            "control_promises": _string_list(reader_desire.get("control_promises"))[:3],
+            "suspense_questions": _string_list(reader_desire.get("suspense_questions"))[:3],
+            "mainline_milestones": milestone_titles[:6],
         },
     }
 
 
 def _fallback_world_spec(project: ProjectModel, premise: str, book_spec: dict[str, Any], *, category_key: str | None = None) -> dict[str, Any]:
-    profile = _genre_profile(project.genre, category_key=category_key)
+    profile = _genre_profile(project.genre, category_key=category_key, language=project.language)
     name_seed = _project_name_seed(project, premise)
     protagonist_name = _protagonist_name_from_book_spec(
         book_spec,
@@ -829,61 +979,62 @@ def _fallback_world_spec(project: ProjectModel, premise: str, book_spec: dict[st
         seed_text=name_seed,
         category_key=category_key,
     )
+    _is_en = is_english_language(project.language)
     return {
         "world_name": profile["world_name"],
         "world_premise": profile["world_premise"],
         "rules": template["rules"],
         "power_system": {
             "name": profile["power_system_name"],
-            "tiers": ["低阶", "中阶", "高阶", "顶层"],
-            "acquisition_method": "通过真实冒险、资源争夺和高压试炼提升。",
-            "hard_limits": "每次跃迁都会伴随代价、损耗或不可逆牺牲。",
-            "protagonist_starting_tier": "低阶",
+            "tiers": ["Novice", "Intermediate", "Advanced", "Apex"] if _is_en else ["低阶", "中阶", "高阶", "顶层"],
+            "acquisition_method": "Advance through real adventure, resource competition, and high-pressure trials." if _is_en else "通过真实冒险、资源争夺和高压试炼提升。",
+            "hard_limits": "Each tier leap exacts an irreversible cost — loss, sacrifice, or permanent trade-off." if _is_en else "每次跃迁都会伴随代价、损耗或不可逆牺牲。",
+            "protagonist_starting_tier": "Novice" if _is_en else "低阶",
         },
         "locations": [
             {
                 "name": profile["locations"][0],
-                "type": "核心据点",
-                "atmosphere": "高压、秩序化、随时可能爆发冲突",
+                "type": "Core Stronghold" if _is_en else "核心据点",
+                "atmosphere": "High-pressure, regimented, conflict can erupt at any moment" if _is_en else "高压、秩序化、随时可能爆发冲突",
                 "key_rules": ["R001", "R002"],
-                "story_role": "开局主舞台与秩序压迫的来源",
+                "story_role": "Opening stage and source of oppressive order" if _is_en else "开局主舞台与秩序压迫的来源",
             },
             {
                 "name": profile["locations"][1],
-                "type": "危险区域",
-                "atmosphere": "失真、压迫、逼迫人物做出选择",
+                "type": "Danger Zone" if _is_en else "危险区域",
+                "atmosphere": "Distorted, oppressive, forces characters into hard choices" if _is_en else "失真、压迫、逼迫人物做出选择",
                 "key_rules": ["R003"],
-                "story_role": "调查推进和高潮冲突发生地",
+                "story_role": "Site of investigation and climactic confrontation" if _is_en else "调查推进和高潮冲突发生地",
             },
             {
                 "name": profile["locations"][2],
-                "type": "终极目标地",
-                "atmosphere": "神秘、封闭、伴随巨大代价",
+                "type": "Ultimate Destination" if _is_en else "终极目标地",
+                "atmosphere": "Mysterious, sealed, comes at a great cost" if _is_en else "神秘、封闭、伴随巨大代价",
                 "key_rules": ["R001", "R002", "R003"],
-                "story_role": "最终真相与关键证据的藏身处",
+                "story_role": "Repository of the final truth and critical evidence" if _is_en else "最终真相与关键证据的藏身处",
             },
         ],
         "factions": [
             {
                 "name": profile["factions"][0],
-                "goal": "维持既有秩序与控制力。",
-                "method": "通过规则、资源和强制力量压制异议。",
-                "relationship_to_protagonist": "敌对",
-                "internal_conflict": "内部有人知道真相，但不敢公开站队。",
+                "goal": "Maintain the existing order and control." if _is_en else "维持既有秩序与控制力。",
+                "method": "Suppress dissent through rules, resources, and coercive force." if _is_en else "通过规则、资源和强制力量压制异议。",
+                "relationship_to_protagonist": "hostile" if _is_en else "敌对",
+                "internal_conflict": "Some insiders know the truth but dare not take a public stand." if _is_en else "内部有人知道真相，但不敢公开站队。",
             },
             {
                 "name": profile["factions"][1],
-                "goal": "在夹缝中保住生存空间并获取更多自主权。",
-                "method": "私下交易、非正式合作与灰色行动。",
-                "relationship_to_protagonist": "复杂",
-                "internal_conflict": "既想利用主角，又担心被主角拖下水。",
+                "goal": "Hold on to survival space and win greater autonomy." if _is_en else "在夹缝中保住生存空间并获取更多自主权。",
+                "method": "Back-channel deals, informal alliances, and grey-area operations." if _is_en else "私下交易、非正式合作与灰色行动。",
+                "relationship_to_protagonist": "complicated" if _is_en else "复杂",
+                "internal_conflict": "They want to use the protagonist but fear being dragged down with them." if _is_en else "既想利用主角，又担心被主角拖下水。",
             },
         ],
         "power_structure": template["power_structure"],
         "history_key_events": [
             {
                 "event": template["history_event"],
-                "relevance": "这既是主角心结，也是当前主线危机的前史入口。",
+                "relevance": "This is both the protagonist's open wound and the entry point to the current crisis." if _is_en else "这既是主角心结，也是当前主线危机的前史入口。",
             }
         ],
         "forbidden_zones": template["forbidden_zones"],
@@ -1014,10 +1165,20 @@ def _build_default_conflict_forces(
     return forces
 
 
-def _fallback_cast_spec(project: ProjectModel, premise: str, book_spec: dict[str, Any], world_spec: dict[str, Any], *, category_key: str | None = None) -> dict[str, Any]:
-    profile = _genre_profile(project.genre, category_key=category_key)
+def _fallback_cast_spec(
+    project: ProjectModel,
+    premise: str,
+    book_spec: dict[str, Any],
+    world_spec: dict[str, Any],
+    *,
+    category_key: str | None = None,
+    character_name_pool: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    profile = _genre_profile(project.genre, category_key=category_key, language=project.language)
     writing_profile = _planner_writing_profile(project)
     is_en = is_english_language(project.language)
+    story_package = _load_story_package_seed(project)
+    story_characters = _mapping_list(_mapping(story_package.get("book")).get("characters"))
     protagonist = _mapping(_mapping(book_spec).get("protagonist"))
     name_seed = _project_name_seed(project, premise)
     protagonist_name = _protagonist_name_from_book_spec(
@@ -1044,23 +1205,68 @@ def _fallback_cast_spec(project: ProjectModel, premise: str, book_spec: dict[str
         power_system.get("protagonist_starting_tier"),
         "low" if is_en else "低阶",
     )
-    # Use genre-aware name pool instead of hardcoded names
-    name_pool = _genre_name_pool(project.genre, language=project.language, seed_text=name_seed)
-    pool_allies = [a["name"] for a in name_pool.get("allies", []) if a.get("name")]
-    pool_antagonists = [a["name"] for a in name_pool.get("antagonists", []) if a.get("name")]
+    # Use LLM-generated name pool when available; fall back to static pool
+    name_pool = character_name_pool if character_name_pool else _genre_name_pool(project.genre, language=project.language, seed_text=name_seed)
+    pool_allies = [a["name"] for a in _mapping_list(name_pool.get("allies")) if a.get("name")]
+    pool_antagonists = [a["name"] for a in _mapping_list(name_pool.get("antagonists")) if a.get("name")]
+    story_antagonists = [
+        item.get("name")
+        for item in story_characters
+        if item.get("name") and str(item.get("role") or "").lower() in {"反派", "宿敌", "antagonist", "rival", "enemy"}
+    ]
+    story_supporters = [
+        item.get("name")
+        for item in story_characters
+        if item.get("name") and item.get("name") != protagonist_name and item.get("name") not in story_antagonists
+    ]
     ally_name = next((n for n in pool_allies if n != protagonist_name), _role_label("ally", language=project.language, index=0))
-    antagonist_name = next((n for n in pool_antagonists if n != protagonist_name), _role_label("antagonist", language=project.language))
+    if story_supporters:
+        ally_name = story_supporters[0]
+    antagonist_name = next((n for n in story_antagonists if n != protagonist_name), "")
+    if not antagonist_name:
+        antagonist_name = next((n for n in pool_antagonists if n != protagonist_name), _role_label("antagonist", language=project.language))
     # Extra names for multi-force conflict characters
     _used = {protagonist_name, ally_name, antagonist_name}
     _extra_allies = [n for n in pool_allies if n not in _used]
-    local_threat_name = _extra_allies[0] if _extra_allies else _role_label("local_threat", language=project.language)
+    _story_remaining = [n for n in story_supporters[1:] if n not in _used]
+    local_threat_name = _story_remaining[0] if _story_remaining else (_extra_allies[0] if _extra_allies else _role_label("local_threat", language=project.language))
     _used.add(local_threat_name)
-    betrayer_name = next((n for n in _extra_allies[1:] if n not in _used), _role_label("betrayer", language=project.language))
+    betrayer_name = next(
+        (n for n in _story_remaining[1:] if n not in _used),
+        next((n for n in _extra_allies[1:] if n not in _used), _role_label("betrayer", language=project.language)),
+    )
     _used.add(betrayer_name)
     # Determine volume count for conflict force assignment
     total_chapters = max(project.target_chapters, 1)
     hierarchy = compute_linear_hierarchy(total_chapters)
     volume_count = hierarchy["volume_count"]
+    extra_story_supporting_cast: list[dict[str, Any]] = []
+    for item in story_characters:
+        name = _non_empty_string(item.get("name"), "")
+        if not name or name in {ally_name, local_threat_name, betrayer_name, antagonist_name, protagonist_name}:
+            continue
+        role_text = str(item.get("role") or "").strip()
+        normalized_role = "antagonist" if role_text in {"反派", "宿敌", "antagonist", "rival", "enemy"} else "ally"
+        extra_story_supporting_cast.append(
+            {
+                "name": name,
+                "role": normalized_role,
+                "background": _non_empty_string(item.get("description"), item.get("title")),
+                "goal": item.get("title"),
+                "value_to_story": (
+                    f"Retains the canonical story-package function of {name}."
+                    if is_en else f"保留 story_package 中 {name} 的既有叙事功能。"
+                ),
+                "arc_state": "opening" if is_en else "开场",
+                "knowledge_state": {},
+                "voice_profile": {},
+                "moral_framework": {},
+                "metadata": {
+                    "story_package_role": role_text,
+                    "story_package_title": item.get("title"),
+                },
+            }
+        )
     return {
         "protagonist": {
             "name": protagonist_name,
@@ -1510,7 +1716,7 @@ def _fallback_cast_spec(project: ProjectModel, premise: str, book_spec: dict[str
                     }
                 ),
             },
-        ],
+        ] + extra_story_supporting_cast,
         "antagonist_forces": _build_default_conflict_forces(
             protagonist_name=protagonist_name,
             antagonist_name=antagonist_name,
@@ -1702,7 +1908,7 @@ def _volume_goal_achieved(volume_number: int, volume_count: int) -> bool:
 
 
 def _fallback_volume_plan(project: ProjectModel, book_spec: dict[str, Any], cast_spec: dict[str, Any], world_spec: dict[str, Any], *, category_key: str | None = None) -> list[dict[str, Any]]:
-    profile = _genre_profile(project.genre, category_key=category_key)
+    profile = _genre_profile(project.genre, category_key=category_key, language=project.language)
     total_chapters = max(project.target_chapters, 1)
     hierarchy = compute_linear_hierarchy(total_chapters)
     volume_count = hierarchy["volume_count"]
@@ -1718,6 +1924,22 @@ def _fallback_volume_plan(project: ProjectModel, book_spec: dict[str, Any], cast
         or _mapping(book_spec).get("logline"),
         "Advance the main story." if is_en else "推进主线目标。",
     )
+    story_package = _load_story_package_seed(project)
+    route_graph = _mapping(story_package.get("route_graph"))
+    milestone_entries = _mapping_list(route_graph.get("milestones"))
+    hidden_routes_raw = route_graph.get("hidden_routes")
+    hidden_routes: list[str] = []
+    if isinstance(hidden_routes_raw, list):
+        for item in hidden_routes_raw:
+            if isinstance(item, dict):
+                route_text = _non_empty_string(
+                    item.get("reveal"),
+                    _non_empty_string(item.get("summary"), _non_empty_string(item.get("title"), "")),
+                )
+                if route_text:
+                    hidden_routes.append(route_text)
+            elif isinstance(item, str) and item.strip():
+                hidden_routes.append(item.strip())
     antagonist_name = _non_empty_string(
         _mapping(cast_payload.get("antagonist")).get("name"),
         "the antagonist" if is_en else "敌对操盘者",
@@ -1746,6 +1968,10 @@ def _fallback_volume_plan(project: ProjectModel, book_spec: dict[str, Any], cast
         force = force_by_volume.get(volume_number, {})
         force_name = _non_empty_string(force.get("name"), antagonist_name)
         volume_title = f"Volume {volume_number}" if is_en else f"第{volume_number}卷"
+        milestone = milestone_entries[volume_number - 1] if volume_number - 1 < len(milestone_entries) else {}
+        milestone_title = _non_empty_string(_mapping(milestone).get("title"), "")
+        if milestone_title:
+            volume_title = milestone_title
         # Try category-specific phase templates; fall back to generic text
         phase_tpl = _resolve_phase_templates(phase, category_key=category_key, is_en=is_en)
         tpl_vars = {"protagonist": protagonist_name, "force_name": force_name}
@@ -1827,7 +2053,16 @@ def _fallback_volume_plan(project: ProjectModel, book_spec: dict[str, Any], cast
                         f"Volume {volume_number} reveals information that changes how the protagonist understands the main objective: {protagonist_goal}"
                         if is_en
                         else f"第{volume_number}卷揭示一条会改变主角理解主线目标的新信息：{protagonist_goal}"
-                    )
+                    ),
+                    *(
+                        [
+                            (
+                                f"Hidden route in play: {hidden_routes[volume_number - 1]}"
+                                if is_en else f"暗线开始发酵：{hidden_routes[volume_number - 1]}"
+                            )
+                        ]
+                        if volume_number - 1 < len(hidden_routes) else []
+                    ),
                 ],
                 "foreshadowing_planted": (
                     [(f"Plant one unresolved variable that must mature in Volume {volume_number + 1}." if is_en else f"埋下一条必须在第{volume_number + 1}卷继续发酵的未解变量。")]
@@ -1840,9 +2075,17 @@ def _fallback_volume_plan(project: ProjectModel, book_spec: dict[str, Any], cast
                     else []
                 ),
                 "reader_hook_to_next": (
-                    (f"The immediate pressure changes shape, but the story cannot settle yet." if volume_number < volume_count else "The story is ready for its final landing.")
+                    (
+                        f"Milestone '{milestone_title}' lands, but the next commercial escalation is already visible."
+                        if milestone_title and volume_number < volume_count
+                        else (f"The immediate pressure changes shape, but the story cannot settle yet." if volume_number < volume_count else "The story is ready for its final landing.")
+                    )
                     if is_en
-                    else ("眼前压力虽然变形或后撤，但故事还不能停下来。" if volume_number < volume_count else "故事已经进入终局着陆阶段。")
+                    else (
+                        f"「{milestone_title}」这个里程碑落地后，更大的商业钩子已经抬头。"
+                        if milestone_title and volume_number < volume_count
+                        else ("眼前压力虽然变形或后撤，但故事还不能停下来。" if volume_number < volume_count else "故事已经进入终局着陆阶段。")
+                    )
                 ),
                 "arc_ranges": arcs,
                 "is_final_volume": volume_number == volume_count,
@@ -2087,6 +2330,24 @@ _VOLUME_CLIMAX_TEMPLATES: dict[str, str] = {
     "internal_reckoning": "{protagonist}直面内心最深处的恐惧，完成了真正意义上的蜕变。",
 }
 
+_VOLUME_OBSTACLE_TEMPLATES_EN: dict[str, str] = {
+    "survival": "{force_name} poses a direct survival threat — {protagonist} must stay alive before anything else.",
+    "political_intrigue": "{force_name} is maneuvering in the shadows; {protagonist} must see through the power plays to find a way out.",
+    "betrayal": "A devastating betrayal by {force_name} strips {protagonist} of their most trusted support — they must rebuild from the wreckage.",
+    "faction_war": "{force_name} launches an all-out offensive, dragging {protagonist} into a multi-faction quagmire.",
+    "existential_threat": "{force_name}'s endgame threatens the very foundation of the world; {protagonist} must make the ultimate sacrifice.",
+    "internal_reckoning": "{protagonist} confronts a deep inner crisis — {force_name} forces them to face the truth they've been running from.",
+}
+
+_VOLUME_CLIMAX_TEMPLATES_EN: dict[str, str] = {
+    "survival": "{protagonist} pulls off a desperate counter-strike at death's door, temporarily breaking free of {force_name}'s grip.",
+    "political_intrigue": "{protagonist} exposes one layer of {force_name}'s power trap — only to discover an even deeper game beneath.",
+    "betrayal": "In the wreckage of broken trust, {protagonist} makes an agonizing choice that severs their last tie to {force_name}.",
+    "faction_war": "The battlefield reshuffles as {protagonist} leverages critical intelligence to shift the balance against {force_name}.",
+    "existential_threat": "{protagonist} pays a devastating personal price to halt the first phase of {force_name}'s ultimate plan.",
+    "internal_reckoning": "{protagonist} faces their deepest fear head-on, emerging truly transformed.",
+}
+
 _CHAPTER_CONFLICT_TEMPLATES: dict[str, dict[str, str]] = {
     "survival": {
         "setup": "{protagonist}发现自身处境远比预想的危险，{force_name}的威胁已经逼到眼前。",
@@ -2129,6 +2390,51 @@ _CHAPTER_CONFLICT_TEMPLATES: dict[str, dict[str, str]] = {
         "pressure": "{force_name}让{protagonist}无法再逃避——必须直面最不愿面对的真相。",
         "reversal": "{protagonist}在崩溃的边缘找到了内心深处真正的答案。",
         "climax": "{protagonist}完成了精神上的蜕变，以全新的姿态回应{force_name}的终极拷问。",
+    },
+}
+
+_CHAPTER_CONFLICT_TEMPLATES_EN: dict[str, dict[str, str]] = {
+    "survival": {
+        "setup": "{protagonist} discovers their situation is far more dangerous than expected — {force_name}'s threat is closing in.",
+        "investigation": "Under {force_name}'s pressure, {protagonist} searches for survival resources and escape routes.",
+        "pressure": "{force_name} tightens the noose; {protagonist} must make impossible trade-offs under a shrinking deadline.",
+        "reversal": "The tables turn — {protagonist} finds an unexpected opening to strike back at {force_name}.",
+        "climax": "{protagonist} and {force_name} clash head-on in a fight for survival that has reached its breaking point.",
+    },
+    "political_intrigue": {
+        "setup": "{protagonist} begins to sense the power network {force_name} has been building in the shadows.",
+        "investigation": "{protagonist} probes deep into {force_name}'s sphere of influence, searching for a critical weakness.",
+        "pressure": "{force_name}'s political maneuvers start to shake {protagonist}'s allies loose.",
+        "reversal": "{protagonist} uncovers a hidden piece of intelligence that could turn the tables on {force_name}.",
+        "climax": "On the chessboard of power, {protagonist} and {force_name} reach the decisive moment of their struggle.",
+    },
+    "betrayal": {
+        "setup": "Disturbing signals emerge around {protagonist} — {force_name}'s true nature begins to surface.",
+        "investigation": "{protagonist} tracks the trail of {force_name}'s betrayal through a fog of uncertainty.",
+        "pressure": "Evidence of the betrayal mounts; {protagonist}'s trust is crumbling.",
+        "reversal": "The truth is out — {force_name}'s betrayal runs far deeper than imagined, but it also reveals a new opportunity.",
+        "climax": "{protagonist} must make the hardest decision of their life in the shadow of betrayal.",
+    },
+    "faction_war": {
+        "setup": "Tensions between factions boil over; {protagonist} is drawn into the conflict vortex unleashed by {force_name}.",
+        "investigation": "{protagonist} scrambles to find a foothold in the chaos dominated by {force_name}.",
+        "pressure": "{force_name}'s assault pushes {protagonist}'s position to the brink.",
+        "reversal": "An unexpected variable emerges in the battle, giving {protagonist} a chance to turn the tide against {force_name}.",
+        "climax": "On the final battlefield, {protagonist} must punch through {force_name}'s siege to survive.",
+    },
+    "existential_threat": {
+        "setup": "{force_name}'s ultimate threat surfaces; {protagonist} realizes this dwarfs every previous challenge.",
+        "investigation": "{protagonist} desperately searches for a weapon that can counter {force_name}'s endgame.",
+        "pressure": "{force_name}'s plan advances irreversibly; {protagonist}'s window is closing fast.",
+        "reversal": "An unexpected discovery gives {protagonist} a last glimmer of hope against {force_name}.",
+        "climax": "The final showdown — {protagonist} stakes everything in a battle of destiny against {force_name}.",
+    },
+    "internal_reckoning": {
+        "setup": "{protagonist} is haunted by a deepening inner conflict — {force_name} has struck at their most vulnerable point.",
+        "investigation": "Under {force_name}'s pressure, {protagonist} retraces every choice that led them here.",
+        "pressure": "{force_name} leaves {protagonist} no room to run — they must face the truth they've been avoiding.",
+        "reversal": "On the edge of collapse, {protagonist} finds the real answer buried deep within.",
+        "climax": "{protagonist} completes a spiritual metamorphosis and faces {force_name}'s ultimate challenge as a changed person.",
     },
 }
 
@@ -2228,8 +2534,8 @@ def _resolve_phase_templates(
                     }
     # Legacy fallback
     goal_map = _VOLUME_GOAL_TEMPLATES_EN if is_en else _VOLUME_GOAL_TEMPLATES
-    climax_map = _VOLUME_CLIMAX_TEMPLATES  # zh only in legacy
-    obstacle_map = _VOLUME_OBSTACLE_TEMPLATES  # zh only in legacy
+    climax_map = _VOLUME_CLIMAX_TEMPLATES_EN if is_en else _VOLUME_CLIMAX_TEMPLATES
+    obstacle_map = _VOLUME_OBSTACLE_TEMPLATES_EN if is_en else _VOLUME_OBSTACLE_TEMPLATES
     resolution_map = _VOLUME_RESOLUTION_TEMPLATES_EN if is_en else _VOLUME_RESOLUTION_TEMPLATES
     return {
         "goal": goal_map.get(phase_key, ""),
@@ -2265,7 +2571,8 @@ def _resolve_chapter_conflict_templates(
                         "climax": getattr(tpl, f"climax{suffix}", "") or "",
                     }
     # Legacy fallback
-    return _CHAPTER_CONFLICT_TEMPLATES.get(phase_key, _CHAPTER_CONFLICT_TEMPLATES.get("survival", {}))
+    _tpl_map = _CHAPTER_CONFLICT_TEMPLATES_EN if is_en else _CHAPTER_CONFLICT_TEMPLATES
+    return _tpl_map.get(phase_key, _tpl_map.get("survival", {}))
 
 
 def _phase_name(index_within_volume: int, total_in_volume: int) -> str:
@@ -2281,15 +2588,24 @@ def _phase_name(index_within_volume: int, total_in_volume: int) -> str:
     return "climax"
 
 
-def _hook_type(index_within_volume: int, total_in_volume: int) -> str:
+def _hook_type(index_within_volume: int, total_in_volume: int, *, language: str | None = None) -> str:
     phase = _phase_name(index_within_volume, total_in_volume)
-    mapping = {
-        "setup": "信息揭示",
-        "investigation": "冲突升级",
-        "pressure": "危机悬念",
-        "reversal": "反转",
-        "climax": "行动截断",
-    }
+    if is_english_language(language):
+        mapping = {
+            "setup": "information reveal",
+            "investigation": "conflict escalation",
+            "pressure": "crisis suspense",
+            "reversal": "reversal",
+            "climax": "action cliffhanger",
+        }
+    else:
+        mapping = {
+            "setup": "信息揭示",
+            "investigation": "冲突升级",
+            "pressure": "危机悬念",
+            "reversal": "反转",
+            "climax": "行动截断",
+        }
     return mapping[phase]
 
 
@@ -2300,46 +2616,30 @@ _SCENE_TYPE_AFTER_PRESSURE = ["preparation", "worldbuilding_discovery"]
 _SCENE_TYPE_COMIC_INTERVAL = 7  # Insert comic relief every N chapters
 
 _FALLBACK_TITLE_PREFIXES = [
-    "暗潮",
-    "盲区",
-    "裂痕",
-    "回声",
-    "风眼",
-    "余烬",
-    "伏线",
-    "变局",
-    "断点",
-    "逆流",
-    "边界",
-    "悬灯",
+    "暗潮", "盲区", "裂痕", "回声", "风眼", "余烬",
+    "伏线", "变局", "断点", "逆流", "边界", "悬灯",
+    "浮标", "锈迹", "夜隙", "残局", "沉渊", "灰幕",
+    "雾锁", "棱线", "铁壁", "荒火", "冷锋", "碎影",
 ]
 _FALLBACK_TITLE_SUFFIXES = {
-    "setup": ["初现", "入局", "投石", "试探", "铺火", "露锋"],
-    "investigation": ["追索", "摸底", "拆解", "寻隙", "探针", "回查"],
-    "pressure": ["加压", "围拢", "失衡", "封锁", "死线", "逼近"],
-    "reversal": ["反咬", "逆转", "偏航", "脱钩", "换轨", "回火"],
-    "climax": ["爆裂", "截断", "崩口", "闯线", "归零", "掀牌"],
+    "setup": ["初现", "入局", "投石", "试探", "铺火", "露锋", "破冰", "起手", "掀幕", "落子"],
+    "investigation": ["追索", "摸底", "拆解", "寻隙", "探针", "回查", "溯源", "揭层", "织网", "破壁"],
+    "pressure": ["加压", "围拢", "失衡", "封锁", "死线", "逼近", "绞杀", "窒息", "崩弦", "缩网"],
+    "reversal": ["反咬", "逆转", "偏航", "脱钩", "换轨", "回火", "翻盘", "倒戈", "破局", "重铸"],
+    "climax": ["爆裂", "截断", "崩口", "闯线", "归零", "掀牌", "决堤", "焚天", "碎锁", "终幕"],
 }
 _FALLBACK_TITLE_PREFIXES_EN = [
-    "Storm",
-    "Ash",
-    "Iron",
-    "Glass",
-    "Night",
-    "Ember",
-    "Shadow",
-    "Signal",
-    "Hollow",
-    "Rift",
-    "Cinder",
-    "Cipher",
+    "Storm", "Ash", "Iron", "Glass", "Night", "Ember",
+    "Shadow", "Signal", "Hollow", "Rift", "Cinder", "Cipher",
+    "Frost", "Veil", "Thorn", "Drift", "Shard", "Crimson",
+    "Wraith", "Beacon", "Chasm", "Ruin", "Onyx", "Haze",
 ]
 _FALLBACK_TITLE_SUFFIXES_EN = {
-    "setup": ["Wake", "Threshold", "First Light", "Opening Move", "Spark", "Edge"],
-    "investigation": ["Trace", "Crossing", "Faultline", "Search", "Probe", "Ledger"],
-    "pressure": ["Lockdown", "Deadline", "Pressure", "Siege", "Choke Point", "Breaking Point"],
-    "reversal": ["Countermove", "Turn", "Slip", "Backfire", "Pivot", "Undoing"],
-    "climax": ["Rupture", "Burn", "Cutline", "Zero Hour", "Collapse", "Last Gate"],
+    "setup": ["Wake", "Threshold", "First Light", "Opening Move", "Spark", "Edge", "Kindling", "Harbinger", "Genesis", "Prelude"],
+    "investigation": ["Trace", "Crossing", "Faultline", "Search", "Probe", "Ledger", "Cipher", "Thread", "Excavation", "Inquiry"],
+    "pressure": ["Lockdown", "Deadline", "Pressure", "Siege", "Choke Point", "Breaking Point", "Stranglehold", "Crucible", "Gauntlet", "Cascade"],
+    "reversal": ["Countermove", "Turn", "Slip", "Backfire", "Pivot", "Undoing", "Gambit", "Shift", "Resurgence", "Overthrow"],
+    "climax": ["Rupture", "Burn", "Cutline", "Zero Hour", "Collapse", "Last Gate", "Reckoning", "Inferno", "Convergence", "Endgame"],
 }
 
 
@@ -2351,24 +2651,32 @@ def _chapter_fallback_subtitle(
     *,
     language: str | None = None,
     is_opening: bool,
+    project_slug: str = "",
 ) -> str:
     """Build a concise, genre-neutral fallback subtitle.
 
-    Earlier versions clipped ``volume_goal`` into titles like
-    ``"沈渡需要在本卷内拿到一组·01"``. Those strings were technically unique
-    because of the ordinal suffix, but they read like planning notes rather
-    than chapter names. The fallback now composes a short title from a stable
-    prefix lexicon plus a phase-aware suffix lexicon so the result stays
-    compact, readable, and deterministic even when the outline LLM times out.
+    Uses a project-slug-seeded shuffle so different novels get different title
+    sequences even when using the same genre preset. The expanded vocabulary
+    (24 prefixes x 10 suffixes per phase) minimizes visible repetition across
+    30+ chapters.
     """
+    import hashlib  # noqa: PLC0415
+    import random as _rng  # noqa: PLC0415
+
     is_en = is_english_language(language)
     suffix_map = _FALLBACK_TITLE_SUFFIXES_EN if is_en else _FALLBACK_TITLE_SUFFIXES
     phase_key = phase if phase in suffix_map else "investigation"
-    prefixes = _FALLBACK_TITLE_PREFIXES_EN if is_en else _FALLBACK_TITLE_PREFIXES
-    suffixes = suffix_map[phase_key]
+    prefixes = list(_FALLBACK_TITLE_PREFIXES_EN if is_en else _FALLBACK_TITLE_PREFIXES)
+    suffixes = list(suffix_map[phase_key])
 
-    prefix_index = (chapter_number + (volume_number * 2) - 2) % len(prefixes)
-    suffix_index = (index_within_volume + (chapter_number * 3) + (1 if is_opening else 0)) % len(suffixes)
+    # Seed a deterministic shuffle from project_slug so each novel gets a
+    # unique title sequence, but the same novel is reproducible.
+    seed = int(hashlib.md5(project_slug.encode()).hexdigest()[:8], 16)
+    _rng.Random(seed).shuffle(prefixes)
+    _rng.Random(seed + 1).shuffle(suffixes)
+
+    prefix_index = (chapter_number - 1) % len(prefixes)
+    suffix_index = (chapter_number - 1) % len(suffixes)
     if is_en:
         return f"{prefixes[prefix_index]} {suffixes[suffix_index]}".strip()
     return f"{prefixes[prefix_index]}{suffixes[suffix_index]}"
@@ -2800,6 +3108,7 @@ def _fallback_chapter_outline_batch(
                         volume_number,
                         language=project.language,
                         is_opening=(chapter_number == 1),
+                        project_slug=project.slug,
                     ),
                     "goal": chapter_goal,
                     "opening_situation": (
@@ -2808,7 +3117,7 @@ def _fallback_chapter_outline_batch(
                         else "承接上一章尾钩，主角没有空档去长篇解释设定。"
                     ),
                     "main_conflict": _render_chapter_conflict(conflict_phase, phase, protagonist_name, volume_force_name),
-                    "hook_type": _hook_type(index_within_volume, total_in_volume),
+                    "hook_type": _hook_type(index_within_volume, total_in_volume, language=project.language),
                     "hook_description": writing_profile.market.chapter_hook_strategy,
                     "volume_number": volume_number,
                     "arc_index": arc_index,
@@ -2879,6 +3188,7 @@ def _book_spec_prompts(project: ProjectModel, premise: str, fallback: dict[str, 
     _pp_book_spec = f"{render_prompt_pack_fragment(prompt_pack, 'planner_book_spec')}\n" if prompt_pack else ""
     _methodology_planner_block = render_methodology_block(prompt_pack, phase="planner")
     _methodology_line = f"\n{_methodology_planner_block}\n" if _methodology_planner_block else ""
+    _story_package_block = _story_package_prompt_block(project, language=language)
     if is_en:
         user_prompt = (
             f"Project title: {project.title}\n"
@@ -2891,6 +3201,7 @@ def _book_spec_prompts(project: ProjectModel, premise: str, fallback: dict[str, 
             f"Writing profile:\n{render_writing_profile_prompt_block(writing_profile, language=language)}\n"
             f"{_pp_block}"
             f"Serial fiction guardrails:\n{render_serial_fiction_guardrails(writing_profile, language=language)}\n"
+            f"{_story_package_block}\n"
             f"{_pp_book_spec}"
             f"{_methodology_line}"
             "Generate a BookSpec JSON with title, logline, genre, target_audience, tone, themes, protagonist, stakes, and series_engine. "
@@ -2907,6 +3218,7 @@ def _book_spec_prompts(project: ProjectModel, premise: str, fallback: dict[str, 
             f"写作画像：\n{render_writing_profile_prompt_block(writing_profile, language=language)}\n"
             f"{_pp_block}"
             f"商业网文硬约束：\n{render_serial_fiction_guardrails(writing_profile, language=language)}\n"
+            f"{_story_package_block}\n"
             f"{_pp_book_spec}"
             f"{_methodology_line}"
             "请生成一个 BookSpec JSON，包含 title、logline、genre、target_audience、tone、themes、"
@@ -2940,6 +3252,7 @@ def _world_spec_prompts(project: ProjectModel, premise: str, book_spec: dict[str
         system_prompt += f"\n{_genre_system}"
     _pp_block = f"Prompt Pack：\n{render_prompt_pack_prompt_block(prompt_pack)}\n" if prompt_pack else ""
     _pp_world_spec = f"{render_prompt_pack_fragment(prompt_pack, 'planner_world_spec')}\n" if prompt_pack else ""
+    _story_package_block = _story_package_prompt_block(project, language=language)
     user_prompt = (
         (
             f"Project title: {project.title}\n"
@@ -2949,6 +3262,7 @@ def _world_spec_prompts(project: ProjectModel, premise: str, book_spec: dict[str
             f"Writing profile:\n{render_writing_profile_prompt_block(writing_profile, language=language)}\n"
             f"{_pp_block}"
             f"BookSpec summary:\n{summarize_book_spec(book_spec, language='en')}\n"
+            f"{_story_package_block}\n"
             f"{_pp_world_spec}"
             "Generate a WorldSpec JSON with world_name, world_premise, rules, power_system, locations, factions, power_structure, history_key_events, and forbidden_zones. "
             "World rules must create conflict, cost, upgrade space, and conspiracy leverage rather than empty lore."
@@ -2961,6 +3275,7 @@ def _world_spec_prompts(project: ProjectModel, premise: str, book_spec: dict[str
             f"写作画像：\n{render_writing_profile_prompt_block(writing_profile, language=language)}\n"
             f"{_pp_block}"
             f"BookSpec 摘要：\n{summarize_book_spec(book_spec, language='zh')}\n"
+            f"{_story_package_block}\n"
             f"{_pp_world_spec}"
             "请生成一个 WorldSpec JSON，包含 world_name、world_premise、rules、power_system、locations、"
             "factions、power_structure、history_key_events、forbidden_zones。"
@@ -2993,6 +3308,7 @@ def _cast_spec_prompts(project: ProjectModel, book_spec: dict[str, Any], world_s
         system_prompt += f"\n{_genre_system}"
     _pp_block = f"Prompt Pack：\n{render_prompt_pack_prompt_block(prompt_pack)}\n" if prompt_pack else ""
     _pp_cast_spec = f"{render_prompt_pack_fragment(prompt_pack, 'planner_cast_spec')}\n" if prompt_pack else ""
+    _story_package_block = _story_package_prompt_block(project, language=language)
     user_prompt = (
         (
             f"BookSpec summary:\n{summarize_book_spec(book_spec, language='en')}\n"
@@ -3000,6 +3316,7 @@ def _cast_spec_prompts(project: ProjectModel, book_spec: dict[str, Any], world_s
             f"Era / setting hint: {era_hint}\n"
             "Write all planning artifacts in English.\n"
             f"{_pp_block}"
+            f"{_story_package_block}\n"
             f"{_pp_cast_spec}"
             "Generate a CastSpec JSON with protagonist, antagonist, antagonist_forces, supporting_cast, and conflict_map. "
             "The protagonist needs a vivid desire, a real weakness, visible growth space, and a memorable edge; the antagonist must actively counter the protagonist and keep escalating. "
@@ -3022,6 +3339,7 @@ def _cast_spec_prompts(project: ProjectModel, book_spec: dict[str, Any], world_s
             f"WorldSpec 摘要：\n{summarize_world_spec(world_spec, language='zh')}\n"
             f"题材时代：{era_hint}\n"
             f"{_pp_block}"
+            f"{_story_package_block}\n"
             f"{_pp_cast_spec}"
             "请生成一个 CastSpec JSON，包含 protagonist、antagonist、antagonist_forces、supporting_cast、conflict_map。"
             "主角必须有鲜明欲望、明显短板、可持续升级点和可被读者快速记住的差异化优势；"
@@ -3076,6 +3394,7 @@ def _volume_plan_prompts(
         system_prompt += f"\n{_genre_system}"
     _pp_block = f"Prompt Pack：\n{render_prompt_pack_prompt_block(prompt_pack)}\n" if prompt_pack else ""
     _pp_volume_plan = f"{render_prompt_pack_fragment(prompt_pack, 'planner_volume_plan')}\n" if prompt_pack else ""
+    _story_package_block = _story_package_prompt_block(project, language=language)
     user_prompt = (
         (
             f"Project title: {project.title}\n"
@@ -3087,6 +3406,7 @@ def _volume_plan_prompts(
             f"BookSpec summary:\n{summarize_book_spec(book_spec, language='en')}\n"
             f"WorldSpec summary:\n{summarize_world_spec(world_spec, language='en')}\n"
             f"CastSpec summary:\n{summarize_cast_spec(cast_spec, language='en')}\n"
+            f"{_story_package_block}\n"
             f"{_pp_volume_plan}"
             "Generate a VolumePlan JSON array. Each entry must include volume_number, volume_title, volume_theme, chapter_count_target, volume_goal, volume_obstacle, volume_climax, volume_resolution, conflict_phase, and primary_force_name. "
             "CRITICAL: Each volume must face a DIFFERENT primary conflict force from the CastSpec's antagonist_forces. Don't repeat the same antagonist pressure — vary between survival, political intrigue, betrayal, faction warfare, existential threat, etc. "
@@ -3102,6 +3422,7 @@ def _volume_plan_prompts(
             f"BookSpec 摘要：\n{summarize_book_spec(book_spec, language='zh')}\n"
             f"WorldSpec 摘要：\n{summarize_world_spec(world_spec, language='zh')}\n"
             f"CastSpec 摘要：\n{summarize_cast_spec(cast_spec, language='zh')}\n"
+            f"{_story_package_block}\n"
             f"{_pp_volume_plan}"
             "请生成 VolumePlan JSON 数组，每个元素包含 volume_number、volume_title、volume_theme、"
             "chapter_count_target、volume_goal、volume_obstacle、volume_climax、volume_resolution、"
@@ -3227,6 +3548,7 @@ def _volume_outline_prompts(
     _pp_outline = f"{render_prompt_pack_fragment(prompt_pack, 'planner_outline')}\n" if prompt_pack else ""
     _methodology_planner_block = render_methodology_block(prompt_pack, phase="planner")
     _methodology_line = f"\n{_methodology_planner_block}\n" if _methodology_planner_block else ""
+    _story_package_block = _story_package_prompt_block(project, language=language)
     vol_plan_summary = summarize_volume_plan_context(volume_plan, current_volume=volume_number, language=language)
     user_prompt = (
         (
@@ -3239,6 +3561,7 @@ def _volume_outline_prompts(
             f"BookSpec summary:\n{summarize_book_spec(book_spec, language='en')}\n"
             f"CastSpec summary:\n{summarize_cast_spec(cast_spec, language='en', volume_number=volume_number)}\n"
             f"VolumePlan context:\n{vol_plan_summary}\n"
+            f"{_story_package_block}\n"
             f"{_pp_outline}"
             f"{_methodology_line}"
             f"Generate a ChapterOutlineBatch JSON for volume {volume_number} ONLY ({chapter_count} chapters). "
@@ -3255,6 +3578,7 @@ def _volume_outline_prompts(
             f"BookSpec 摘要：\n{summarize_book_spec(book_spec, language='zh')}\n"
             f"CastSpec 摘要：\n{summarize_cast_spec(cast_spec, language='zh', volume_number=volume_number)}\n"
             f"VolumePlan 上下文：\n{vol_plan_summary}\n"
+            f"{_story_package_block}\n"
             f"{_pp_outline}"
             f"{_methodology_line}"
             f"请仅生成第{volume_number}卷的 ChapterOutlineBatch JSON（共{chapter_count}章），"
@@ -3369,6 +3693,209 @@ def _volume_world_disclosure_prompts(
     return system_prompt, user_prompt
 
 
+def _merge_mapping_non_empty(base: dict[str, Any], incoming: dict[str, Any]) -> dict[str, Any]:
+    merged = copy.deepcopy(base)
+    for key, value in incoming.items():
+        if value in (None, "", [], {}):
+            continue
+        if isinstance(value, dict) and isinstance(merged.get(key), dict):
+            merged[key] = _merge_mapping_non_empty(_mapping(merged.get(key)), value)
+        else:
+            merged[key] = copy.deepcopy(value)
+    return merged
+
+
+def _merge_volume_cast_expansion_into_cast_spec(
+    cast_spec: dict[str, Any],
+    cast_expansion: dict[str, Any],
+) -> dict[str, Any]:
+    merged = copy.deepcopy(_mapping(cast_spec))
+    if not merged:
+        return merged
+
+    supporting_cast = [copy.deepcopy(_mapping(item)) for item in _mapping_list(merged.get("supporting_cast"))]
+    supporting_by_name = {
+        _non_empty_string(item.get("name"), ""): item
+        for item in supporting_cast
+        if _non_empty_string(item.get("name"), "")
+    }
+
+    def _upsert_character(raw_value: Any) -> None:
+        if isinstance(raw_value, str):
+            candidate = {"name": raw_value, "role": "ally"}
+        else:
+            candidate = copy.deepcopy(_mapping(raw_value))
+        name = _non_empty_string(candidate.get("name"), "")
+        if not name:
+            return
+        existing = supporting_by_name.get(name)
+        if existing is None:
+            supporting_by_name[name] = candidate
+            supporting_cast.append(candidate)
+            return
+        supporting_by_name[name] = _merge_mapping_non_empty(existing, candidate)
+        idx = supporting_cast.index(existing)
+        supporting_cast[idx] = supporting_by_name[name]
+
+    for raw_character in _mapping_list(cast_expansion.get("new_characters")):
+        _upsert_character(raw_character)
+
+    primary_characters = {
+        _non_empty_string(_mapping(merged.get("protagonist")).get("name"), ""): _mapping(merged.get("protagonist")),
+        _non_empty_string(_mapping(merged.get("antagonist")).get("name"), ""): _mapping(merged.get("antagonist")),
+    }
+    for evolution in _mapping_list(cast_expansion.get("character_evolutions")):
+        evo_map = _mapping(evolution)
+        name = _non_empty_string(evo_map.get("name") or evo_map.get("character"), "")
+        if not name:
+            continue
+        changes = _mapping(evo_map.get("changes"))
+        if not changes:
+            changes = {
+                key: value
+                for key, value in evo_map.items()
+                if key not in {"name", "character"}
+            }
+        target = primary_characters.get(name) or supporting_by_name.get(name)
+        if target is None:
+            _upsert_character({"name": name, **changes})
+            continue
+        merged_target = _merge_mapping_non_empty(target, changes)
+        if name == primary_characters.get(name, {}).get("name"):
+            if merged.get("protagonist", {}).get("name") == name:
+                merged["protagonist"] = merged_target
+            elif merged.get("antagonist", {}).get("name") == name:
+                merged["antagonist"] = merged_target
+        elif name in supporting_by_name:
+            idx = supporting_cast.index(supporting_by_name[name])
+            supporting_by_name[name] = merged_target
+            supporting_cast[idx] = merged_target
+
+    merged["supporting_cast"] = supporting_cast
+    relationship_updates = _mapping_list(cast_expansion.get("relationship_updates"))
+    if relationship_updates:
+        conflict_map = list(_mapping_list(merged.get("conflict_map")))
+        for update in relationship_updates:
+            update_map = _mapping(update)
+            left = _non_empty_string(update_map.get("character_a") or update_map.get("name"), "")
+            right = _non_empty_string(update_map.get("character_b") or update_map.get("counterpart"), "")
+            relation_type = _non_empty_string(update_map.get("type") or update_map.get("relationship_type"), "")
+            if left and right and relation_type:
+                conflict_map.append(
+                    {
+                        "character_a": left,
+                        "character_b": right,
+                        "conflict_type": relation_type,
+                        "trigger_condition": update_map.get("tension") or update_map.get("summary"),
+                    }
+                )
+        if conflict_map:
+            merged["conflict_map"] = conflict_map
+    return merged
+
+
+def _merge_volume_world_disclosure_into_world_spec(
+    world_spec: dict[str, Any],
+    world_disclosure: dict[str, Any],
+    *,
+    volume_number: int,
+) -> dict[str, Any]:
+    merged = copy.deepcopy(_mapping(world_spec))
+    if not merged:
+        return merged
+
+    locations = [copy.deepcopy(_mapping(item)) for item in _mapping_list(merged.get("locations"))]
+    locations_by_name = {
+        _non_empty_string(item.get("name"), ""): item
+        for item in locations
+        if _non_empty_string(item.get("name"), "")
+    }
+    for raw_location in _mapping_list(world_disclosure.get("new_locations")):
+        if isinstance(raw_location, str):
+            candidate = {"name": raw_location, "type": "location"}
+        else:
+            candidate = copy.deepcopy(_mapping(raw_location))
+        name = _non_empty_string(candidate.get("name"), "")
+        if not name:
+            continue
+        existing = locations_by_name.get(name)
+        if existing is None:
+            locations.append(candidate)
+            locations_by_name[name] = candidate
+        else:
+            merged_location = _merge_mapping_non_empty(existing, candidate)
+            idx = locations.index(existing)
+            locations[idx] = merged_location
+            locations_by_name[name] = merged_location
+    if locations:
+        merged["locations"] = locations
+
+    rules = [copy.deepcopy(_mapping(item)) for item in _mapping_list(merged.get("rules"))]
+    existing_rule_names = {_non_empty_string(item.get("name"), "") for item in rules}
+    for index, raw_rule in enumerate(_mapping_list(world_disclosure.get("new_rules_revealed")), start=1):
+        if isinstance(raw_rule, str):
+            candidate = {
+                "rule_id": f"VR{volume_number:02d}-{index:02d}",
+                "name": raw_rule,
+                "description": raw_rule,
+            }
+        else:
+            candidate = copy.deepcopy(_mapping(raw_rule))
+            if not candidate.get("rule_id"):
+                candidate["rule_id"] = f"VR{volume_number:02d}-{index:02d}"
+        name = _non_empty_string(candidate.get("name"), "")
+        if name and name not in existing_rule_names:
+            rules.append(candidate)
+            existing_rule_names.add(name)
+    if rules:
+        merged["rules"] = rules
+
+    factions = [copy.deepcopy(_mapping(item)) for item in _mapping_list(merged.get("factions"))]
+    factions_by_name = {
+        _non_empty_string(item.get("name"), ""): item
+        for item in factions
+        if _non_empty_string(item.get("name"), "")
+    }
+    for raw_movement in _mapping_list(world_disclosure.get("faction_movements")):
+        movement = copy.deepcopy(_mapping(raw_movement))
+        name = _non_empty_string(movement.get("name") or movement.get("faction"), "")
+        if not name:
+            continue
+        existing = factions_by_name.get(name)
+        if existing is None:
+            candidate = {
+                "name": name,
+                "goal": movement.get("goal") or movement.get("movement"),
+                "method": movement.get("method"),
+                "relationship_to_protagonist": movement.get("relationship_to_protagonist"),
+                "internal_conflict": movement.get("internal_conflict"),
+            }
+            factions.append(candidate)
+            factions_by_name[name] = candidate
+        else:
+            merged_faction = _merge_mapping_non_empty(existing, movement)
+            idx = factions.index(existing)
+            factions[idx] = merged_faction
+            factions_by_name[name] = merged_faction
+    if factions:
+        merged["factions"] = factions
+
+    frontier_summary = _non_empty_string(world_disclosure.get("frontier_summary"), "")
+    if frontier_summary:
+        history_key_events = list(_mapping_list(merged.get("history_key_events")))
+        history_key_events.append(
+            {
+                "event": frontier_summary,
+                "relevance": (
+                    f"Volume {volume_number} frontier update"
+                    if re.search(r"[A-Za-z]", frontier_summary) else f"第{volume_number}卷世界边界更新"
+                ),
+            }
+        )
+        merged["history_key_events"] = history_key_events
+    return merged
+
+
 async def _generate_structured_artifact(
     session: AsyncSession,
     settings: AppSettings,
@@ -3408,6 +3935,189 @@ async def _generate_structured_artifact(
     except Exception:
         payload = fallback_payload
     return payload, completion.llm_run_id
+
+
+# ---------------------------------------------------------------------------
+# Promotional brief: title refinement + tags + protagonist intro + blurb
+# ---------------------------------------------------------------------------
+
+
+def _promotional_brief_fallback(
+    project: ProjectModel,
+    book_spec: dict[str, Any],
+    cast_spec: dict[str, Any],
+) -> dict[str, Any]:
+    """Build a static fallback promotional brief from existing artifacts."""
+    bs = _mapping(book_spec)
+    protag = _mapping(bs.get("protagonist"))
+    cast = _mapping(cast_spec)
+    cast_protag = _mapping(cast.get("protagonist"))
+    is_en = is_english_language(project.language)
+
+    # Merge protagonist info from both specs
+    protag_name = protag.get("name") or cast_protag.get("name") or (
+        "Protagonist" if is_en else "主角"
+    )
+    protag_archetype = protag.get("archetype") or cast_protag.get("archetype") or ""
+    protag_golden_finger = protag.get("golden_finger") or ""
+    protag_goal = protag.get("external_goal") or cast_protag.get("goal") or ""
+
+    return {
+        "title": bs.get("title") or project.title,
+        "tags": _string_list(bs.get("themes"))[:8] or (
+            [project.genre] if project.genre else []
+        ),
+        "protagonist": {
+            "name": protag_name,
+            "archetype": protag_archetype,
+            "golden_finger": protag_golden_finger,
+            "goal": protag_goal,
+        },
+        "blurb": _non_empty_string(
+            bs.get("logline"),
+            project.title,
+        ),
+    }
+
+
+def _promotional_brief_prompts(
+    project: ProjectModel,
+    book_spec: dict[str, Any],
+    cast_spec: dict[str, Any],
+    volume_plan: list[dict[str, Any]],
+) -> tuple[str, str]:
+    """Build system + user prompt for generating the promotional brief."""
+    is_en = is_english_language(project.language)
+    book_summary = summarize_book_spec(book_spec, language="en" if is_en else "zh")
+    cast_summary = summarize_cast_spec(cast_spec, language="en" if is_en else "zh")
+    vol_count = len(volume_plan) if isinstance(volume_plan, list) else 0
+    ch_count = sum(
+        int(v.get("chapter_count_target", 0))
+        for v in (volume_plan if isinstance(volume_plan, list) else [])
+    )
+
+    if is_en:
+        system_prompt = (
+            "You are a bestselling fiction marketing copywriter. "
+            "You produce compelling blurbs, tags, and one-liners for novel promotion. "
+            "Output valid JSON only."
+        )
+        user_prompt = (
+            f"Based on the following novel plan, generate a promotional brief.\n\n"
+            f"BookSpec summary:\n{book_summary}\n\n"
+            f"CastSpec summary:\n{cast_summary}\n\n"
+            f"Scale: {vol_count} volume(s), {ch_count} chapters\n\n"
+            "Generate a JSON object with:\n"
+            '1. "title": Refined novel title (catchy, memorable, 2-6 words)\n'
+            '2. "tags": Array of 5-8 genre/theme tags for discoverability (e.g. ["post-apocalyptic", "survival", "power fantasy"])\n'
+            '3. "protagonist": {{"name": "...", "tagline": "one-line character pitch"}}\n'
+            '4. "blurb": Promotional synopsis under 500 words. Must:\n'
+            "   - Open with a hook that grabs attention in the first sentence\n"
+            "   - Introduce the protagonist's situation and unique edge\n"
+            "   - Reveal the central conflict without major spoilers\n"
+            "   - End with a question or cliffhanger that compels the reader to start reading\n"
+            "   - Use vivid, punchy language — this is marketing copy, not a summary\n"
+        )
+    else:
+        system_prompt = (
+            "你是顶级网络小说营销文案专家。"
+            "你擅长写出让人忍不住点开的书名、标签和宣传简介。"
+            "输出必须是合法 JSON，不要解释。"
+        )
+        user_prompt = (
+            f"根据以下小说规划，生成一份宣传简介。\n\n"
+            f"BookSpec 摘要：\n{book_summary}\n\n"
+            f"CastSpec 摘要：\n{cast_summary}\n\n"
+            f"规模：{vol_count} 卷，{ch_count} 章\n\n"
+            "生成一个 JSON 对象，包含：\n"
+            '1. "title"：优化后的小说标题（吸睛、好记、2-10字）\n'
+            '2. "tags"：5-8 个作品标签，用于分类和推荐（如 ["末日生存", "异能觉醒", "废土霸主"]）\n'
+            '3. "protagonist"：{"name": "主角名", "tagline": "一句话角色卖点"}\n'
+            '4. "blurb"：宣传简介，500字以内。要求：\n'
+            "   - 第一句话就要有钩子，让人想读下去\n"
+            "   - 交代主角处境和独特优势\n"
+            "   - 点出核心冲突，但不剧透关键转折\n"
+            "   - 结尾用悬念或反问收束，让读者迫不及待想翻开第一章\n"
+            "   - 语言要有画面感、有节奏——这是营销文案，不是情节摘要\n"
+        )
+    return system_prompt, user_prompt
+
+
+async def _generate_promotional_brief(
+    session: AsyncSession,
+    settings: AppSettings,
+    *,
+    project: ProjectModel,
+    book_spec: dict[str, Any],
+    cast_spec: dict[str, Any],
+    volume_plan: list[dict[str, Any]],
+    workflow_run_id: UUID,
+    step_order: int,
+    llm_run_ids: list[UUID],
+    artifact_records: list[PlanningArtifactRecord],
+) -> dict[str, Any]:
+    """Generate promotional brief (title + tags + protagonist + blurb) and persist as artifact."""
+    fallback = _promotional_brief_fallback(project, book_spec, cast_spec)
+    system_prompt, user_prompt = _promotional_brief_prompts(
+        project, book_spec, cast_spec, volume_plan,
+    )
+    brief_payload, llm_run_id = await _generate_structured_artifact(
+        session,
+        settings,
+        project=project,
+        logical_name="promotional_brief",
+        system_prompt=system_prompt,
+        user_prompt=user_prompt,
+        fallback_payload=fallback,
+        workflow_run_id=workflow_run_id,
+    )
+    if llm_run_id is not None:
+        llm_run_ids.append(llm_run_id)
+
+    # Persist as artifact
+    brief_artifact = await import_planning_artifact(
+        session,
+        project.slug,
+        PlanningArtifactCreate(
+            artifact_type=ArtifactType.PROMOTIONAL_BRIEF,
+            content=brief_payload,
+        ),
+    )
+    artifact_records.append(
+        PlanningArtifactRecord(
+            artifact_type=ArtifactType.PROMOTIONAL_BRIEF,
+            artifact_id=brief_artifact.id,
+            version_no=brief_artifact.version_no,
+        )
+    )
+    await create_workflow_step_run(
+        session,
+        workflow_run_id=workflow_run_id,
+        step_name="generate_promotional_brief",
+        step_order=step_order,
+        status=WorkflowStatus.COMPLETED,
+        output_ref={
+            "artifact_id": str(brief_artifact.id),
+            "llm_run_id": str(llm_run_id) if llm_run_id else None,
+        },
+    )
+
+    # Update project title if the LLM produced a better one
+    new_title = brief_payload.get("title")
+    if isinstance(new_title, str) and new_title.strip() and new_title.strip() != project.title:
+        project.title = new_title.strip()
+
+    # Store tags + blurb in project metadata for easy access
+    project.metadata_json = {
+        **(project.metadata_json or {}),
+        "promotional_brief": {
+            "tags": brief_payload.get("tags", []),
+            "protagonist": brief_payload.get("protagonist", {}),
+            "blurb": brief_payload.get("blurb", ""),
+        },
+    }
+
+    return brief_payload
 
 
 async def generate_novel_plan(
@@ -3578,7 +4288,7 @@ async def generate_novel_plan(
         )
         step_order += 1
 
-        cast_spec_fallback = _fallback_cast_spec(project, premise, book_spec_payload, world_spec_payload, category_key=_category_key)
+        cast_spec_fallback = _fallback_cast_spec(project, premise, book_spec_payload, world_spec_payload, category_key=_category_key, character_name_pool=character_name_pool)
         current_step_name = "generate_cast_spec"
         workflow_run.current_step = current_step_name
         cast_system, cast_user = _cast_spec_prompts(project, book_spec_payload, world_spec_payload)
@@ -3727,6 +4437,7 @@ async def generate_novel_plan(
                 world_spec=world_spec_payload,
                 cast_spec=cast_spec_payload,
                 volume_plan=volume_plan_payload if isinstance(volume_plan_payload, list) else [],
+                language=project.language,
             )
             validation_artifact = await import_planning_artifact(
                 session,
@@ -3881,6 +4592,24 @@ async def generate_novel_plan(
             )
         )
 
+        # ── Promotional brief: title refinement + tags + protagonist intro + blurb ──
+        current_step_name = "generate_promotional_brief"
+        workflow_run.current_step = current_step_name
+        step_order += 1
+        _normalized_vp = volume_plan_payload if isinstance(volume_plan_payload, list) else _mapping_list(volume_plan_payload.get("volumes"))
+        await _generate_promotional_brief(
+            session,
+            settings,
+            project=project,
+            book_spec=book_spec_payload,
+            cast_spec=cast_spec_payload,
+            volume_plan=_normalized_vp,
+            workflow_run_id=workflow_run.id,
+            step_order=step_order,
+            llm_run_ids=llm_run_ids,
+            artifact_records=artifact_records,
+        )
+
         workflow_run.current_step = "completed"
         workflow_run.status = WorkflowStatus.COMPLETED.value
         workflow_run.metadata_json = {
@@ -4031,7 +4760,7 @@ async def generate_foundation_plan(
         step_order += 1
 
         # ── CastSpec ──
-        cast_spec_fallback = _fallback_cast_spec(project, premise, book_spec_payload, world_spec_payload, category_key=_category_key)
+        cast_spec_fallback = _fallback_cast_spec(project, premise, book_spec_payload, world_spec_payload, category_key=_category_key, character_name_pool=character_name_pool)
         current_step_name = "generate_cast_spec"
         workflow_run.current_step = current_step_name
         cast_system, cast_user = _cast_spec_prompts(project, book_spec_payload, world_spec_payload)
@@ -4065,6 +4794,19 @@ async def generate_foundation_plan(
         artifact_records.append(PlanningArtifactRecord(artifact_type=ArtifactType.VOLUME_PLAN, artifact_id=volume_artifact.id, version_no=volume_artifact.version_no))
         await create_workflow_step_run(session, workflow_run_id=workflow_run.id, step_name=current_step_name, step_order=step_order, status=WorkflowStatus.COMPLETED, output_ref={"artifact_id": str(volume_artifact.id)})
         step_order += 1
+
+        # ── Promotional brief: title + tags + protagonist + blurb ──
+        current_step_name = "generate_promotional_brief"
+        workflow_run.current_step = current_step_name
+        step_order += 1
+        _norm_vp = volume_plan_payload if isinstance(volume_plan_payload, list) else _mapping_list(volume_plan_payload.get("volumes"))
+        await _generate_promotional_brief(
+            session, settings, project=project,
+            book_spec=book_spec_payload, cast_spec=cast_spec_payload,
+            volume_plan=_norm_vp, workflow_run_id=workflow_run.id,
+            step_order=step_order, llm_run_ids=llm_run_ids,
+            artifact_records=artifact_records,
+        )
 
         # ── Done — no outline step; volumes handle their own outlines ──
         workflow_run.current_step = "completed"
@@ -4149,6 +4891,8 @@ async def generate_volume_plan(
     new_characters_introduced = 0
 
     try:
+        effective_cast_spec = copy.deepcopy(_mapping(cast_spec))
+        effective_world_spec = copy.deepcopy(_mapping(world_spec))
         # ── Cast Expansion (skip for volume 1 — initial cast is from foundation) ──
         if volume_number > 1:
             cast_exp_system, cast_exp_user = _volume_cast_expansion_prompts(
@@ -4173,6 +4917,20 @@ async def generate_volume_plan(
                 artifact_type=ArtifactType.VOLUME_CAST_EXPANSION,
                 artifact_id=cast_exp_artifact.id, version_no=cast_exp_artifact.version_no,
             ))
+            effective_cast_spec = _merge_volume_cast_expansion_into_cast_spec(
+                effective_cast_spec,
+                cast_exp_payload,
+            )
+            if effective_cast_spec and effective_cast_spec != _mapping(cast_spec):
+                merged_cast_artifact = await import_planning_artifact(
+                    session,
+                    project_slug,
+                    PlanningArtifactCreate(artifact_type=ArtifactType.CAST_SPEC, content=effective_cast_spec),
+                )
+                artifact_records.append(PlanningArtifactRecord(
+                    artifact_type=ArtifactType.CAST_SPEC,
+                    artifact_id=merged_cast_artifact.id, version_no=merged_cast_artifact.version_no,
+                ))
             await create_workflow_step_run(session, workflow_run_id=workflow_run.id, step_name=current_step_name, step_order=step_order, status=WorkflowStatus.COMPLETED, output_ref={"artifact_id": str(cast_exp_artifact.id)})
             step_order += 1
 
@@ -4200,6 +4958,21 @@ async def generate_volume_plan(
             artifact_type=ArtifactType.VOLUME_WORLD_DISCLOSURE,
             artifact_id=world_disc_artifact.id, version_no=world_disc_artifact.version_no,
         ))
+        effective_world_spec = _merge_volume_world_disclosure_into_world_spec(
+            effective_world_spec,
+            world_disc_payload,
+            volume_number=volume_number,
+        )
+        if effective_world_spec and effective_world_spec != _mapping(world_spec):
+            merged_world_artifact = await import_planning_artifact(
+                session,
+                project_slug,
+                PlanningArtifactCreate(artifact_type=ArtifactType.WORLD_SPEC, content=effective_world_spec),
+            )
+            artifact_records.append(PlanningArtifactRecord(
+                artifact_type=ArtifactType.WORLD_SPEC,
+                artifact_id=merged_world_artifact.id, version_no=merged_world_artifact.version_no,
+            ))
         await create_workflow_step_run(session, workflow_run_id=workflow_run.id, step_name=current_step_name, step_order=step_order, status=WorkflowStatus.COMPLETED, output_ref={"artifact_id": str(world_disc_artifact.id)})
         step_order += 1
 
@@ -4208,12 +4981,12 @@ async def generate_volume_plan(
         workflow_run.current_step = current_step_name
 
         # Build per-volume fallback
-        full_fallback = _fallback_chapter_outline_batch(project, book_spec, cast_spec, volume_plan, category_key=_category_key)
+        full_fallback = _fallback_chapter_outline_batch(project, book_spec, effective_cast_spec, volume_plan, category_key=_category_key)
         vol_fallback_chapters = [ch for ch in full_fallback.get("chapters", []) if ch.get("volume_number") == volume_number]
         vol_fallback = {"batch_name": f"volume-{volume_number}-outline", "chapters": vol_fallback_chapters}
 
         vol_outline_system, vol_outline_user = _volume_outline_prompts(
-            project, book_spec, cast_spec, _mapping_list(volume_plan), vol_entry,
+            project, book_spec, effective_cast_spec, _mapping_list(volume_plan), vol_entry,
         )
         vol_outline_payload, llm_run_id = await _generate_structured_artifact(
             session, settings, project=project,

@@ -188,7 +188,7 @@ def test_fallback_act_plan_english() -> None:
 
     act_plan = _fallback_act_plan(project, book_spec, cast_spec, world_spec)
     assert len(act_plan) == 3  # 100 chapters → 3 acts
-    assert "Act 1:" in act_plan[0]["title"]
+    assert act_plan[0]["title"] == "Act 1"
 
 
 def test_fallback_act_plan_contiguous() -> None:

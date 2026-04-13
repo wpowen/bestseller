@@ -263,6 +263,24 @@
     .nav-btn.primary:hover:not(:disabled) { background: #7a3a10; }
     .nav-pos { font-size: 13px; color: var(--text-2); }
 
+    /* ── Copy button ── */
+    .copy-btn {
+      padding: 5px 14px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--text-2);
+      font-size: 12px;
+      cursor: pointer;
+      font-family: inherit;
+      transition: background 0.15s, border-color 0.15s, color 0.15s;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+    }
+    .copy-btn:hover { background: var(--bg); border-color: var(--accent-light); color: var(--text); }
+    .copy-btn.copied { border-color: #27ae60; color: #27ae60; }
+
     /* ── Loading / empty states ── */
     .state-center {
       display: flex;
@@ -380,6 +398,7 @@
           <div class="chapter-meta">
             <span>${data.word_count?.toLocaleString() ?? 0} 字</span>
             <span>约 ${data.estimated_read_minutes ?? 0} 分钟</span>
+            <button class="copy-btn" onclick="copyChapterText(this)">&#128203; 复制正文</button>
           </div>
         </div>
         <div class="chapter-body">${data.html}</div>
@@ -390,6 +409,33 @@
         </div>`;
     } catch (err) {
       area.innerHTML = `<div class="state-center" style="height:200px;color:#c0392b;">${err.message}</div>`;
+    }
+  }
+
+  // ── Copy chapter text ────────────────────────────────────────────────────
+  async function copyChapterText(btn) {
+    const body = document.querySelector(".chapter-body");
+    if (!body) return;
+    const text = body.innerText.trim();
+    try {
+      await navigator.clipboard.writeText(text);
+      const orig = btn.innerHTML;
+      btn.innerHTML = "&#10003; 已复制";
+      btn.classList.add("copied");
+      setTimeout(() => { btn.innerHTML = orig; btn.classList.remove("copied"); }, 1500);
+    } catch {
+      // Fallback for non-HTTPS or denied permission
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      ta.style.cssText = "position:fixed;left:-9999px";
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand("copy");
+      document.body.removeChild(ta);
+      const orig = btn.innerHTML;
+      btn.innerHTML = "&#10003; 已复制";
+      btn.classList.add("copied");
+      setTimeout(() => { btn.innerHTML = orig; btn.classList.remove("copied"); }, 1500);
     }
   }
 

@@ -336,6 +336,156 @@
       margin-bottom: 10px;
     }
 
+    /* ── Book Detail Panel ── */
+    .book-detail-layout {
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+    }
+    .book-detail-header {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      padding: 20px 24px;
+      background: linear-gradient(135deg, rgba(139,69,19,0.06) 0%, rgba(210,180,140,0.10) 100%);
+      border-radius: var(--radius-md);
+      border: 1px solid rgba(139,69,19,0.12);
+    }
+    .book-detail-title-block h3 {
+      font-size: 22px;
+      font-weight: 800;
+      letter-spacing: 0.5px;
+      margin: 0 0 6px;
+      color: var(--fg);
+    }
+    .book-detail-genre {
+      font-size: 13px;
+      color: var(--muted);
+      margin: 0;
+    }
+    .book-detail-tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .book-detail-tag {
+      display: inline-flex;
+      align-items: center;
+      padding: 4px 12px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 600;
+      line-height: 1.5;
+      background: rgba(139,69,19,0.08);
+      color: var(--accent, #8b4513);
+      border: 1px solid rgba(139,69,19,0.15);
+    }
+    .book-detail-section {
+      padding: 0 4px;
+    }
+    .book-detail-section h4 {
+      font-size: 15px;
+      font-weight: 700;
+      margin: 0 0 12px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid rgba(104,79,56,0.10);
+      color: var(--fg);
+    }
+    .book-detail-synopsis {
+      font-size: 14px;
+      line-height: 1.85;
+      color: var(--fg);
+      white-space: pre-line;
+      padding: 16px 20px;
+      background: rgba(255,255,255,0.72);
+      border-radius: var(--radius-md);
+      border: 1px solid rgba(104,79,56,0.10);
+    }
+    .book-detail-protagonist {
+      display: grid;
+      gap: 12px;
+    }
+    .protagonist-card {
+      padding: 16px 20px;
+      background: rgba(255,255,255,0.72);
+      border-radius: var(--radius-md);
+      border: 1px solid rgba(104,79,56,0.10);
+    }
+    .protagonist-card .protagonist-name {
+      font-size: 16px;
+      font-weight: 700;
+      margin: 0 0 10px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .protagonist-card .protagonist-name .role-badge {
+      font-size: 11px;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 999px;
+      background: rgba(139,69,19,0.12);
+      color: var(--accent, #8b4513);
+    }
+    .protagonist-attrs {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 8px 16px;
+      margin-top: 10px;
+    }
+    .protagonist-attr {
+      font-size: 13px;
+      line-height: 1.6;
+    }
+    .protagonist-attr strong {
+      color: var(--muted);
+      font-weight: 600;
+      margin-right: 6px;
+    }
+    .book-detail-characters {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+      gap: 12px;
+    }
+    .character-mini-card {
+      padding: 12px 16px;
+      background: rgba(255,255,255,0.72);
+      border-radius: var(--radius-md);
+      border: 1px solid rgba(104,79,56,0.10);
+    }
+    .character-mini-card strong {
+      display: block;
+      font-size: 14px;
+      margin-bottom: 6px;
+    }
+    .character-mini-card p {
+      margin: 0;
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.6;
+    }
+    .book-detail-positioning {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 12px;
+    }
+    .positioning-card {
+      padding: 12px 16px;
+      background: rgba(255,255,255,0.72);
+      border-radius: var(--radius-md);
+      border: 1px solid rgba(104,79,56,0.10);
+    }
+    .positioning-card strong {
+      display: block;
+      font-size: 12px;
+      color: var(--muted);
+      margin-bottom: 4px;
+    }
+    .positioning-card span {
+      font-size: 13px;
+      line-height: 1.6;
+    }
+
     .status-shell,
     .narrative-shell {
       display: grid;
@@ -2159,6 +2309,7 @@
         <section class="panel">
           <div class="tabs">
             <button class="tab active" data-tab="preview">成品阅读</button>
+            <button class="tab" data-tab="book-detail">作品详情</button>
             <button class="tab" data-tab="progress">阶段日志</button>
             <button class="tab" data-tab="structure">项目结构</button>
             <button class="tab" data-tab="story-bible">故事圣经</button>
@@ -2212,6 +2363,46 @@
               <article class="reading-article" id="preview-article">
                 <div class="reading-empty">当前还没有可阅读的小说正文。完成一轮导出后，这里会显示 `project.md` 或章节 Markdown 的排版内容。</div>
               </article>
+            </div>
+          </div>
+
+          <div class="tab-panel" id="tab-book-detail">
+            <div class="book-detail-layout">
+              <div class="book-detail-header" id="book-detail-header">
+                <div class="book-detail-title-block">
+                  <h3 id="book-detail-title">-</h3>
+                  <p class="book-detail-genre" id="book-detail-genre">-</p>
+                </div>
+                <div class="book-detail-tags" id="book-detail-tags"></div>
+              </div>
+
+              <div class="book-detail-section">
+                <h4>作品简介</h4>
+                <div class="book-detail-synopsis" id="book-detail-synopsis">
+                  <p class="empty">暂无作品简介。新建项目完成构思后会自动生成宣传简介。</p>
+                </div>
+              </div>
+
+              <div class="book-detail-section">
+                <h4>主角档案</h4>
+                <div class="book-detail-protagonist" id="book-detail-protagonist">
+                  <div class="empty">暂无主角信息。等待故事圣经生成后会自动展示。</div>
+                </div>
+              </div>
+
+              <div class="book-detail-section">
+                <h4>核心角色</h4>
+                <div class="book-detail-characters" id="book-detail-characters">
+                  <div class="empty">暂无角色信息。</div>
+                </div>
+              </div>
+
+              <div class="book-detail-section">
+                <h4>作品定位</h4>
+                <div class="book-detail-positioning" id="book-detail-positioning">
+                  <div class="empty">暂无定位信息。</div>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -2316,6 +2507,7 @@
       activeTaskId: null,
       activeTab: "preview",
       summary: null,
+      storyBiblePayload: null,
       lastProjectRefreshAt: 0,
       currentPreviewName: null,
       writingPresets: null,
@@ -2359,6 +2551,14 @@
       storyBibleReveals: document.getElementById("story-bible-reveals"),
       storyBibleGates: document.getElementById("story-bible-gates"),
       storyBibleJson: document.getElementById("story-bible-json"),
+      bookDetailHeader: document.getElementById("book-detail-header"),
+      bookDetailTitle: document.getElementById("book-detail-title"),
+      bookDetailGenre: document.getElementById("book-detail-genre"),
+      bookDetailTags: document.getElementById("book-detail-tags"),
+      bookDetailSynopsis: document.getElementById("book-detail-synopsis"),
+      bookDetailProtagonist: document.getElementById("book-detail-protagonist"),
+      bookDetailCharacters: document.getElementById("book-detail-characters"),
+      bookDetailPositioning: document.getElementById("book-detail-positioning"),
       narrativeJson: document.getElementById("narrative-json"),
       narrativeOverview: document.getElementById("narrative-overview"),
       narrativeArcs: document.getElementById("narrative-arcs"),
@@ -2778,6 +2978,27 @@
         project_repair_export_completed: "repair 后导出完成",
         project_repair_review_completed: "repair 后一致性审校完成",
         project_repair_completed: "repair 流程结束",
+        // Progressive pipeline stages
+        foundation_planning_started: "开始基础规划",
+        foundation_planning_completed: "基础规划完成",
+        foundation_planning_skipped_resume: "基础规划已恢复（跳过）",
+        story_bible_refresh_started: "刷新故事圣经",
+        story_bible_refresh_completed: "故事圣经已刷新",
+        volume_planning_started: "开始卷规划",
+        volume_planning_completed: "卷规划完成",
+        volume_writing_started: "开始卷写作",
+        volume_writing_completed: "卷写作完成",
+        volume_feedback_collection_started: "收集卷反馈",
+        volume_feedback_collection_completed: "卷反馈已收集",
+        resume_requested: "恢复执行",
+        conception_commercial_positioning: "构思 · 商业定位",
+        conception_market: "构思 · 市场分析",
+        conception_character: "构思 · 角色设定",
+        conception_world: "构思 · 世界观",
+        conception_review: "构思 · 主编审核",
+        conception_creative_exploration: "构思 · 创意探索",
+        conception_finalize: "构思 · 定稿",
+        conception_complete: "构思完成",
         autowrite_completed: "整书自动写作完成",
         completed: "已完成",
         failed: "失败",
@@ -2829,7 +3050,11 @@
       const repairedChapters = new Set();
 
       let totalChapters = 0;
+      let globalTotalChapters = 0;
+      let globalCompletedChapters = 0;
       let currentChapter = null;
+      let currentVolume = null;
+      let totalVolumes = 0;
       let repairTargetCount = 0;
       let outputDir = task.result?.output_dir || null;
       let outputFiles = Array.isArray(task.result?.output_files) ? task.result.output_files : [];
@@ -2845,11 +3070,31 @@
         if (event.stage === "project_pipeline_started" && Number.isFinite(payload.chapter_count)) {
           totalChapters = Math.max(totalChapters, Number(payload.chapter_count));
         }
+        if (event.stage === "volume_planning_started" && Number.isFinite(payload.total_volumes)) {
+          totalVolumes = Number(payload.total_volumes);
+        }
+        if ((event.stage === "volume_writing_started" || event.stage === "volume_planning_started") && Number.isFinite(payload.volume_number)) {
+          currentVolume = Number(payload.volume_number);
+        }
         if (event.stage === "chapter_pipeline_started" && Number.isFinite(payload.chapter_number)) {
           currentChapter = Number(payload.chapter_number);
+          // Extract global progress if available (progressive pipeline)
+          if (typeof payload.global_progress === "string") {
+            const gp = payload.global_progress.split("/");
+            if (gp.length === 2) {
+              globalTotalChapters = Number(gp[1]) || globalTotalChapters;
+            }
+          }
         }
         if (event.stage === "chapter_pipeline_completed" && Number.isFinite(payload.chapter_number)) {
           completedChapters.add(Number(payload.chapter_number));
+          if (typeof payload.global_progress === "string") {
+            const gp = payload.global_progress.split("/");
+            if (gp.length === 2) {
+              globalCompletedChapters = Math.max(globalCompletedChapters, Number(gp[0]) || 0);
+              globalTotalChapters = Number(gp[1]) || globalTotalChapters;
+            }
+          }
         }
         if (
           event.stage === "project_repair_targets_collected" &&
@@ -2880,11 +3125,18 @@
         }
       }
 
+      // Use global totals when available (progressive pipeline with >50 chapters)
+      const effectiveTotalChapters = globalTotalChapters || totalChapters;
+      const effectiveCompletedChapters = globalCompletedChapters || completedChapters.size;
+
       return {
-        totalChapters,
-        completedChapters: completedChapters.size,
+        totalChapters: effectiveTotalChapters,
+        completedChapters: effectiveCompletedChapters,
+        volumeCompletedChapters: completedChapters.size,
         repairedChapters: repairedChapters.size,
         currentChapter,
+        currentVolume,
+        totalVolumes,
         repairTargetCount,
         outputDir,
         outputFiles,
@@ -2903,8 +3155,8 @@
       }
       const definitions = {
         planning: {
-          completed: ["planning_completed"],
-          running: ["planning_started", "project_creation_started", "project_creation_completed"],
+          completed: ["planning_completed", "foundation_planning_completed"],
+          running: ["planning_started", "project_creation_started", "project_creation_completed", "foundation_planning_started", "conception_commercial_positioning", "conception_market", "conception_character", "conception_world", "conception_review", "conception_creative_exploration", "conception_finalize", "conception_complete"],
         },
         story_bible: {
           completed: ["story_bible_materialization_completed"],
@@ -2979,6 +3231,7 @@
       els.executionChapterProgress.textContent = chapterProgressText;
       els.executionChapterDetail.textContent = [
         overview.totalChapters ? `总章节 ${overview.totalChapters}` : null,
+        overview.totalVolumes ? `第 ${overview.currentVolume || "?"}/${overview.totalVolumes} 卷` : null,
         overview.currentChapter ? `当前章节 第 ${overview.currentChapter} 章` : null,
         overview.repairedChapters ? `已修订章节 ${overview.repairedChapters}` : null,
       ].filter(Boolean).join(" · ") || "还没有进入章节推进阶段。";
@@ -3022,7 +3275,7 @@
           key: "chapters",
           title: "章节推进",
           desc: overview.totalChapters
-            ? `已完成 ${overview.completedChapters}/${overview.totalChapters} 章。`
+            ? `已完成 ${overview.completedChapters}/${overview.totalChapters} 章` + (overview.totalVolumes ? `（第 ${overview.currentVolume || "?"}/${overview.totalVolumes} 卷）` : "") + "。"
             : "还没有进入章节写作阶段。",
         },
         {
@@ -3367,6 +3620,7 @@
       els.writingProfileJson.textContent = pretty(summary.writing_profile || {});
       applyPreviewOptions(summary);
       renderArtifacts(summary.outputs);
+      renderBookDetail(summary, state.storyBiblePayload || null);
     }
 
     function renderStructure(payload) {
@@ -3633,6 +3887,121 @@
       `).join("") : `<div class="empty">当前还没有世界扩张闸门。</div>`;
     }
 
+    function renderBookDetail(summary, storyBiblePayload) {
+      const project = summary?.project || {};
+      const wp = summary?.writing_profile || {};
+      const market = wp.market || {};
+      const charConfig = wp.character || {};
+      const style = wp.style || {};
+
+      // Title & genre
+      els.bookDetailTitle.textContent = project.title || "-";
+      const genreParts = [project.genre, project.sub_genre].filter(Boolean);
+      const audiencePart = project.audience ? ` · ${project.audience}` : "";
+      els.bookDetailGenre.textContent = (genreParts.join(" / ") || "未分类") + audiencePart
+        + ` · ${Number(project.target_word_count || 0).toLocaleString("zh-CN")} 字 / ${Number(project.target_chapters || 0).toLocaleString("zh-CN")} 章`;
+
+      // Tags
+      const tags = Array.isArray(project.tags) ? project.tags : [];
+      els.bookDetailTags.innerHTML = tags.length
+        ? tags.map((t) => `<span class="book-detail-tag">${escapeHtml(t)}</span>`).join("")
+        : "";
+
+      // Synopsis
+      const synopsis = project.synopsis || "";
+      els.bookDetailSynopsis.innerHTML = synopsis
+        ? `<p style="margin:0;">${escapeHtml(synopsis)}</p>`
+        : `<p class="empty">暂无作品简介。新建项目完成构思后会自动生成宣传简介。</p>`;
+
+      // Protagonist from story bible characters
+      const characters = Array.isArray(storyBiblePayload?.characters) ? storyBiblePayload.characters : [];
+      const protagonists = characters.filter((c) => c.role === "protagonist" || c.is_pov_character);
+      const supportingCast = characters.filter((c) => c.role !== "protagonist" && !c.is_pov_character);
+
+      if (protagonists.length) {
+        els.bookDetailProtagonist.innerHTML = protagonists.map((p) => {
+          const attrs = [];
+          if (charConfig.protagonist_archetype) attrs.push(["原型", charConfig.protagonist_archetype]);
+          if (charConfig.protagonist_core_drive) attrs.push(["核心驱动", charConfig.protagonist_core_drive]);
+          if (charConfig.golden_finger) attrs.push(["金手指", charConfig.golden_finger]);
+          if (charConfig.growth_curve) attrs.push(["成长弧线", charConfig.growth_curve]);
+          if (p.goal) attrs.push(["目标", p.goal]);
+          if (p.fear) attrs.push(["恐惧", p.fear]);
+          if (p.flaw) attrs.push(["缺陷", p.flaw]);
+          if (p.secret) attrs.push(["秘密", p.secret]);
+          if (p.arc_trajectory) attrs.push(["角色轨迹", p.arc_trajectory]);
+          if (p.arc_state) attrs.push(["当前状态", p.arc_state]);
+          if (p.power_tier) attrs.push(["境界/等级", p.power_tier]);
+
+          const attrHtml = attrs.length ? `
+            <div class="protagonist-attrs">
+              ${attrs.map(([label, value]) => `<div class="protagonist-attr"><strong>${escapeHtml(label)}</strong>${escapeHtml(value)}</div>`).join("")}
+            </div>
+          ` : "";
+
+          return `
+            <div class="protagonist-card">
+              <div class="protagonist-name">
+                ${escapeHtml(p.name)}
+                <span class="role-badge">${p.is_pov_character ? "POV 主角" : "主角"}</span>
+              </div>
+              ${attrHtml}
+            </div>
+          `;
+        }).join("");
+      } else {
+        // Fallback: show writing profile protagonist info even without story bible characters
+        const fallbackAttrs = [];
+        if (charConfig.protagonist_archetype) fallbackAttrs.push(["原型", charConfig.protagonist_archetype]);
+        if (charConfig.protagonist_core_drive) fallbackAttrs.push(["核心驱动", charConfig.protagonist_core_drive]);
+        if (charConfig.golden_finger) fallbackAttrs.push(["金手指", charConfig.golden_finger]);
+        if (charConfig.growth_curve) fallbackAttrs.push(["成长弧线", charConfig.growth_curve]);
+        if (charConfig.romance_mode) fallbackAttrs.push(["情感线", charConfig.romance_mode]);
+        if (charConfig.antagonist_mode) fallbackAttrs.push(["反派模式", charConfig.antagonist_mode]);
+
+        els.bookDetailProtagonist.innerHTML = fallbackAttrs.length ? `
+          <div class="protagonist-card">
+            <div class="protagonist-name">主角设定 <span class="role-badge">来自写作配置</span></div>
+            <div class="protagonist-attrs">
+              ${fallbackAttrs.map(([label, value]) => `<div class="protagonist-attr"><strong>${escapeHtml(label)}</strong>${escapeHtml(value)}</div>`).join("")}
+            </div>
+          </div>
+        ` : `<div class="empty">暂无主角信息。等待故事圣经生成后会自动展示。</div>`;
+      }
+
+      // Supporting characters
+      if (supportingCast.length) {
+        els.bookDetailCharacters.innerHTML = supportingCast.slice(0, 12).map((c) => `
+          <div class="character-mini-card">
+            <strong>${escapeHtml(c.name)} <span style="font-weight:400;color:var(--muted);font-size:12px;">${escapeHtml(c.role || "")}</span></strong>
+            ${c.goal ? `<p>目标：${escapeHtml(c.goal)}</p>` : ""}
+            ${c.arc_trajectory ? `<p>轨迹：${escapeHtml(truncateText(c.arc_trajectory, 60))}</p>` : ""}
+            ${c.arc_state ? `<p>当前：${escapeHtml(c.arc_state)}</p>` : ""}
+          </div>
+        `).join("");
+      } else {
+        els.bookDetailCharacters.innerHTML = `<div class="empty">暂无角色信息。</div>`;
+      }
+
+      // Market positioning
+      const posItems = [];
+      if (market.platform_target) posItems.push(["目标平台", market.platform_target]);
+      if (market.reader_promise) posItems.push(["读者承诺", market.reader_promise]);
+      if (market.pacing_profile) posItems.push(["节奏", market.pacing_profile]);
+      if (market.payoff_rhythm) posItems.push(["爽点节奏", market.payoff_rhythm]);
+      if (style.pov_type) posItems.push(["视角", style.pov_type]);
+      if (style.prose_style) posItems.push(["文风", style.prose_style]);
+      if (style.tone_keywords?.length) posItems.push(["基调", style.tone_keywords.join("、")]);
+      if (market.selling_points?.length) posItems.push(["卖点", market.selling_points.join("、")]);
+
+      els.bookDetailPositioning.innerHTML = posItems.length ? posItems.map(([label, value]) => `
+        <div class="positioning-card">
+          <strong>${escapeHtml(label)}</strong>
+          <span>${escapeHtml(value)}</span>
+        </div>
+      `).join("") : `<div class="empty">暂无定位信息。</div>`;
+    }
+
     function renderArtifacts(outputs) {
       if (!outputs.length) {
         els.artifactList.innerHTML = `<div class="empty">当前还没有导出产物。完成写作或修订后，这里会出现整书和章节文件。</div>`;
@@ -3834,7 +4203,9 @@
 
     async function loadStoryBible(slug) {
       const payload = await api(`/api/projects/${slug}/story-bible`);
+      state.storyBiblePayload = payload;
       renderStoryBible(payload);
+      if (state.summary) renderBookDetail(state.summary, payload);
     }
 
     async function loadNarrative(slug) {

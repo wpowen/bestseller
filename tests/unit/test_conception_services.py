@@ -61,3 +61,36 @@ def test_build_genre_context_sanitizes_story_content_overrides() -> None:
     assert "reader_promise" not in market
     assert "trope_keywords" not in market
     assert character == {}
+
+
+def test_apply_commercial_brief_merges_market_and_style_signals() -> None:
+    profile = {
+        "market": {
+            "platform_target": "番茄小说",
+            "selling_points": ["原有卖点"],
+        },
+        "style": {
+            "reference_works": ["旧参考"],
+            "custom_rules": ["已有规则"],
+        },
+    }
+    brief = {
+        "platform_target": "起点中文网",
+        "reader_promise": "每章都有即时爽点和更大危机。",
+        "selling_points": ["原有卖点", "升级反杀"],
+        "trope_keywords": ["重生囤货"],
+        "hook_keywords": ["倒计时"],
+        "benchmark_works": ["全球高武"],
+        "taboo_topics": ["拖沓开局"],
+        "commercial_rationale": "优先保证前三章留存。",
+    }
+
+    merged = conception_services._apply_commercial_brief_to_profile(profile, brief)
+
+    assert merged["market"]["platform_target"] == "番茄小说"
+    assert merged["market"]["reader_promise"] == "每章都有即时爽点和更大危机。"
+    assert merged["market"]["selling_points"] == ["原有卖点", "升级反杀"]
+    assert merged["market"]["trope_keywords"] == ["重生囤货"]
+    assert merged["style"]["reference_works"] == ["旧参考", "全球高武"]
+    assert "拖沓开局" in merged["style"]["taboo_topics"]
+    assert "优先保证前三章留存。" in merged["style"]["custom_rules"]

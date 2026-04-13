@@ -42,6 +42,7 @@ class GenreReviewWeights(BaseModel):
     pacing_alignment: float = Field(default=1.0, ge=0.0)
     subplot_presence: float = Field(default=1.0, ge=0.0)
     scene_sequel_alignment: float = Field(default=1.0, ge=0.0)
+    methodology_compliance: float = Field(default=0.8, ge=0.0)
 
 
 class GenreChapterReviewWeights(BaseModel):
@@ -3052,10 +3053,13 @@ def resolve_genre_review_profile(
     genre: str,
     sub_genre: str | None = None,
     genre_preset_key: str | None = None,
+    story_facets: object | None = None,
 ) -> GenreReviewProfile:
     """Resolve the best-matching genre review profile.
 
     Resolution strategy (first match wins):
+    0. If *story_facets* is provided, use the Facet Review Blender for
+       dynamic weight mixing (new multi-dimensional path).
     1. If *genre_preset_key* is provided, look it up in
        ``_GENRE_TO_CATEGORY_MAP``.
     2. Otherwise attempt ``infer_genre_preset()`` from the writing presets
@@ -3064,6 +3068,19 @@ def resolve_genre_review_profile(
        *sub_genre*) strings.
     4. Return the ``"default"`` profile if nothing matches.
     """
+    # --- strategy 0: facet-based dynamic blending ---
+    if story_facets is not None:
+        try:
+            from bestseller.domain.facets import StoryFacets
+            from bestseller.services.facet_review_blender import build_facet_review_profile
+
+            if isinstance(story_facets, StoryFacets):
+                return build_facet_review_profile(story_facets)
+            elif isinstance(story_facets, dict):
+                facets = StoryFacets(**story_facets)
+                return build_facet_review_profile(facets)
+        except Exception:
+            logger.debug("Facet review blender failed; falling through to legacy path.", exc_info=True)
     profiles = load_genre_review_profiles()
 
     # --- strategy 1: direct preset key lookup ---

@@ -52,6 +52,7 @@ from bestseller.infra.db.models import (
 from bestseller.domain.structure_templates import StructureTemplate, resolve_structure_template
 from bestseller.services.projects import get_project_by_slug
 from bestseller.services.story_bible import parse_volume_plan_input
+from bestseller.services.writing_profile import is_english_language
 
 
 def _normalized_token(value: str | None) -> str:
@@ -86,26 +87,37 @@ def _build_arc_specs(
     volumes: list[VolumeModel],
     volume_entries: dict[int, Any],
 ) -> list[dict[str, Any]]:
-    logline = _ensure_text(project.metadata_json.get("logline"), f"《{project.title}》的主线持续推进。")
+    _is_en = is_english_language(project.language)
+    logline = _ensure_text(
+        project.metadata_json.get("logline"),
+        f"The main plot of '{project.title}' continues to advance." if _is_en
+        else f"《{project.title}》的主线持续推进。",
+    )
     first_volume = volumes[0] if volumes else None
     last_volume = volumes[-1] if volumes else None
     first_volume_entry = volume_entries.get(first_volume.volume_number) if first_volume is not None else None
     last_volume_entry = volume_entries.get(last_volume.volume_number) if last_volume is not None else None
-    theme_text = "、".join(str(item) for item in project.metadata_json.get("themes", []) if str(item).strip())
+    _join = ", " if _is_en else "、"
+    theme_text = _join.join(str(item) for item in project.metadata_json.get("themes", []) if str(item).strip())
 
     arc_specs: list[dict[str, Any]] = [
         {
             "arc_code": "main_plot",
-            "name": "主线推进",
+            "name": "Main Plot" if _is_en else "主线推进",
             "arc_type": "main_plot",
             "promise": logline,
             "core_question": _ensure_text(
                 protagonist.goal if protagonist is not None else None,
-                "主角能否在升级的对抗中完成主线目标？",
+                "Can the protagonist achieve their goal against escalating opposition?" if _is_en
+                else "主角能否在升级的对抗中完成主线目标？",
             ),
             "target_payoff": _ensure_text(
                 getattr(last_volume_entry, "volume_climax", None) if last_volume_entry is not None else None,
-                _ensure_text(last_volume.goal if last_volume is not None else None, "主线在最终高潮获得兑现。"),
+                _ensure_text(
+                    last_volume.goal if last_volume is not None else None,
+                    "The main plot reaches its payoff in the final climax." if _is_en
+                    else "主线在最终高潮获得兑现。",
+                ),
             ),
             "description": theme_text or None,
             "metadata_json": {"plotline_category": "mainline", "plotline_visibility": "visible"},
@@ -116,16 +128,22 @@ def _build_arc_specs(
         arc_specs.append(
             {
                 "arc_code": "growth_arc",
-                "name": f"{protagonist.name}成长线",
+                "name": (f"{protagonist.name} Growth Arc" if _is_en
+                         else f"{protagonist.name}成长线"),
                 "arc_type": "growth",
                 "promise": _ensure_text(
                     protagonist.arc_trajectory,
-                    f"{protagonist.name}需要完成关键内在转变。",
+                    f"{protagonist.name} must undergo a critical inner transformation." if _is_en
+                    else f"{protagonist.name}需要完成关键内在转变。",
                 ),
-                "core_question": f"{protagonist.name}能否走出当前的弧线卡点？",
+                "core_question": (
+                    f"Can {protagonist.name} break through their current arc bottleneck?" if _is_en
+                    else f"{protagonist.name}能否走出当前的弧线卡点？"
+                ),
                 "target_payoff": _ensure_text(
                     protagonist.goal,
-                    f"{protagonist.name}完成成长并承担更大的叙事责任。",
+                    f"{protagonist.name} completes their growth and takes on greater narrative responsibility." if _is_en
+                    else f"{protagonist.name}完成成长并承担更大的叙事责任。",
                 ),
                 "description": protagonist.arc_state,
                 "metadata_json": {"plotline_category": "subplot", "plotline_visibility": "visible"},
@@ -135,17 +153,35 @@ def _build_arc_specs(
     key_reveals: list[str] = []
     for entry in volume_entries.values():
         key_reveals.extend(str(item).strip() for item in entry.key_reveals if str(item).strip())
-    hidden_signal = any(token in logline for token in ("真相", "秘密", "阴谋", "篡改", "幕后"))
+    hidden_signal = any(
+        token in logline
+        for token in ("truth", "secret", "conspiracy", "cover-up", "behind the scenes",
+                       "真相", "秘密", "阴谋", "篡改", "幕后")
+    )
     if hidden_signal or key_reveals:
         arc_specs.append(
             {
                 "arc_code": "mystery_arc",
-                "name": "暗线真相",
+                "name": "Hidden Truth" if _is_en else "暗线真相",
                 "arc_type": "mystery",
-                "promise": _ensure_text(key_reveals[0] if key_reveals else None, "被遮蔽的真相会逐步显形。"),
-                "core_question": "幕后真相到底是什么，谁在操盘？",
-                "target_payoff": _ensure_text(key_reveals[-1] if key_reveals else None, "暗线在关键卷完成兑现。"),
-                "description": "控制揭示顺序，避免过早泄露核心真相。",
+                "promise": _ensure_text(
+                    key_reveals[0] if key_reveals else None,
+                    "The concealed truth will gradually surface." if _is_en
+                    else "被遮蔽的真相会逐步显形。",
+                ),
+                "core_question": (
+                    "What is the real truth, and who is pulling the strings?" if _is_en
+                    else "幕后真相到底是什么，谁在操盘？"
+                ),
+                "target_payoff": _ensure_text(
+                    key_reveals[-1] if key_reveals else None,
+                    "The hidden arc reaches its payoff at a critical volume." if _is_en
+                    else "暗线在关键卷完成兑现。",
+                ),
+                "description": (
+                    "Control the reveal sequence; avoid disclosing the core truth too early." if _is_en
+                    else "控制揭示顺序，避免过早泄露核心真相。"
+                ),
                 "metadata_json": {"plotline_category": "hidden", "plotline_visibility": "hidden"},
             }
         )
@@ -154,16 +190,23 @@ def _build_arc_specs(
         arc_specs.append(
             {
                 "arc_code": "faction_pressure",
-                "name": f"{antagonist.name}反制线",
+                "name": (f"{antagonist.name} Counter-Pressure" if _is_en
+                         else f"{antagonist.name}反制线"),
                 "arc_type": "faction",
                 "promise": _ensure_text(
                     antagonist.goal,
-                    f"{antagonist.name}会持续升级对主角的压制。",
+                    f"{antagonist.name} will continuously escalate pressure on the protagonist." if _is_en
+                    else f"{antagonist.name}会持续升级对主角的压制。",
                 ),
-                "core_question": f"{antagonist.name}会如何一步步把局势逼向更危险的方向？",
+                "core_question": (
+                    f"How will {antagonist.name} push the situation step by step into greater danger?" if _is_en
+                    else f"{antagonist.name}会如何一步步把局势逼向更危险的方向？"
+                ),
                 "target_payoff": _ensure_text(
                     antagonist.secret,
-                    f"{antagonist.name}被迫公开下场，与主角正面碰撞。",
+                    (f"{antagonist.name} is forced into the open for a direct confrontation with the protagonist."
+                     if _is_en
+                     else f"{antagonist.name}被迫公开下场，与主角正面碰撞。"),
                 ),
                 "description": antagonist.arc_trajectory,
                 "metadata_json": {"plotline_category": "subplot", "plotline_visibility": "visible"},
@@ -185,16 +228,23 @@ def _build_arc_specs(
         arc_specs.append(
             {
                 "arc_code": f"volume_conflict_{extra_antag.name.lower().replace(' ', '_')}",
-                "name": f"{extra_antag.name}冲突线",
+                "name": (f"{extra_antag.name} Conflict Arc" if _is_en
+                         else f"{extra_antag.name}冲突线"),
                 "arc_type": "volume_conflict",
                 "promise": _ensure_text(
                     extra_antag.goal,
-                    f"{extra_antag.name}在特定阶段构成主角的核心挑战。",
+                    f"{extra_antag.name} serves as the protagonist's core challenge during a specific phase." if _is_en
+                    else f"{extra_antag.name}在特定阶段构成主角的核心挑战。",
                 ),
-                "core_question": f"{extra_antag.name}会如何影响主角的旅程？",
+                "core_question": (
+                    f"How will {extra_antag.name} affect the protagonist's journey?" if _is_en
+                    else f"{extra_antag.name}会如何影响主角的旅程？"
+                ),
                 "target_payoff": _ensure_text(
                     extra_antag.secret,
-                    f"{extra_antag.name}的威胁最终被主角化解或转化。",
+                    (f"The threat posed by {extra_antag.name} is ultimately resolved or transformed by the protagonist."
+                     if _is_en
+                     else f"{extra_antag.name}的威胁最终被主角化解或转化。"),
                 ),
                 "description": extra_antag.arc_trajectory,
                 "scope_volume_number": scope_vol,
@@ -215,11 +265,21 @@ def _build_arc_specs(
                 arc_specs.append(
                     {
                         "arc_code": f"conspiracy_{ch.name.lower().replace(' ', '_')}",
-                        "name": f"{ch.name}暗线",
+                        "name": (f"{ch.name} Hidden Arc" if _is_en
+                                 else f"{ch.name}暗线"),
                         "arc_type": "conspiracy",
-                        "promise": f"{ch.name}隐藏着不为人知的秘密。",
-                        "core_question": f"{ch.name}的真正目的是什么？",
-                        "target_payoff": f"{ch.name}的秘密在关键时刻被揭露。",
+                        "promise": (
+                            f"{ch.name} harbors a secret unknown to others." if _is_en
+                            else f"{ch.name}隐藏着不为人知的秘密。"
+                        ),
+                        "core_question": (
+                            f"What is {ch.name}'s true purpose?" if _is_en
+                            else f"{ch.name}的真正目的是什么？"
+                        ),
+                        "target_payoff": (
+                            f"{ch.name}'s secret is revealed at a critical moment." if _is_en
+                            else f"{ch.name}的秘密在关键时刻被揭露。"
+                        ),
                         "description": ch.secret,
                         "metadata_json": {
                             "plotline_category": "hidden",

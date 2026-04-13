@@ -59,9 +59,14 @@ _ALLOWED_KINDS: frozenset[str] = frozenset(
         "time",
         "distance",
         "inventory_count",
+        "elapsed_story_time",
         "other",
     }
 )
+
+# Monotonic direction rules: which fact kinds must only go up or down
+_MONOTONIC_UP_KINDS: frozenset[str] = frozenset({"level"})
+_MONOTONIC_DOWN_KINDS: frozenset[str] = frozenset({"countdown"})
 
 
 _FENCED_JSON_RE = re.compile(r"```(?:json)?\s*(\{.*?\})\s*```", re.DOTALL | re.IGNORECASE)
@@ -88,12 +93,16 @@ _EXTRACTION_SYSTEM_PROMPT = (
     "  ]\n"
     "}\n\n"
     "规则：\n"
-    "1. kind 只能取：countdown | level | resource | location | time | distance | inventory_count | other\n"
+    "1. kind 只能取：countdown | level | resource | location | time | distance | inventory_count | elapsed_story_time | other\n"
     "2. value 统一用字符串（包含数字）——JSON 数字和字符串都能，但必须避免歧义。\n"
     "3. 只抽取**本章正文里明确提到**的硬事实，不得编造、推测、补全。\n"
     "4. 不要输出 Markdown、解释、注释或任何非 JSON 内容。直接以 `{` 开头，以 `}` 结尾。\n"
     "5. 如果本章没有任何可枚举硬事实，返回 `{\"facts\": []}`。\n"
-    "6. 如果某条事实在上一章已经出现且本章未变化，**仍要列出**（标注 notes=\"无变化\"），便于下一章继续约束。"
+    "6. 如果某条事实在上一章已经出现且本章未变化，**仍要列出**（标注 notes=\"无变化\"），便于下一章继续约束。\n"
+    "7. 对 kind=level 的事实（修为/等级/境界），值只能单调递增。如果你发现本章值比上一章低，"
+    "在 notes 中标注 `regression=true` 并说明原因。\n"
+    "8. 对 kind=countdown 的事实，值只能单调递减。如果倒计时重置了，在 notes 中标注 `reset=true`。\n"
+    "9. 必须抽取一条 kind=elapsed_story_time 的事实，记录本章故事内经过的时间（如 \"3小时\"、\"1天\"、\"数分钟\"）。"
 )
 
 
@@ -335,6 +344,59 @@ async def extract_chapter_state_snapshot(
 
     await session.flush()
     return snapshot
+
+
+def validate_fact_monotonicity(
+    current_facts: list[HardFactContext],
+    previous_facts: list[HardFactContext],
+) -> list[str]:
+    """Check that monotonic facts (level, countdown) have not regressed.
+
+    Returns a list of warning messages for any violations found.
+    """
+    if not previous_facts or not current_facts:
+        return []
+
+    prev_by_name: dict[str, HardFactContext] = {f.name: f for f in previous_facts}
+    warnings: list[str] = []
+
+    for fact in current_facts:
+        prev = prev_by_name.get(fact.name)
+        if prev is None:
+            continue
+
+        try:
+            cur_num = _extract_numeric(fact.value)
+            prev_num = _extract_numeric(prev.value)
+        except ValueError:
+            continue
+
+        if cur_num is None or prev_num is None:
+            continue
+
+        if fact.kind in _MONOTONIC_UP_KINDS and cur_num < prev_num:
+            warnings.append(
+                f"[数值回退] {fact.name}: 从 {prev.value} 降到 {fact.value} "
+                f"(kind={fact.kind} 应单调递增)。"
+                f"如果确实发生了降级，必须在正文中给出明确原因。"
+            )
+        elif fact.kind in _MONOTONIC_DOWN_KINDS and cur_num > prev_num:
+            warnings.append(
+                f"[倒计时重置] {fact.name}: 从 {prev.value} 涨到 {fact.value} "
+                f"(kind={fact.kind} 应单调递减)。"
+                f"如果倒计时被重置，必须在正文中给出明确原因。"
+            )
+
+    return warnings
+
+
+def _extract_numeric(value: str) -> float | None:
+    """Try to extract a numeric value from a fact value string."""
+    import re as _re
+    match = _re.search(r"[-+]?\d*\.?\d+", value)
+    if match:
+        return float(match.group())
+    return None
 
 
 def render_hard_fact_snapshot_block(snapshot: ChapterStateSnapshotContext | None) -> str:

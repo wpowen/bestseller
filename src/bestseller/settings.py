@@ -27,6 +27,7 @@ class LLMRoleSettings(BaseModel):
     n_candidates: int = 1
     api_base: str | None = None
     api_key_env: str | None = None
+    model_override: str | None = None
 
 
 class RetrySettings(BaseModel):
@@ -185,6 +186,7 @@ class PipelineSettings(BaseModel):
     consistency_check_interval: int = 20  # Run consistency check every N chapters
     rolling_summary_interval: int = 25  # Compress knowledge window every N chapters
     resume_enabled: bool = True  # Skip already-completed chapters on resume
+    accept_on_stall: bool = True  # Accept best draft when rewrite is stalled (no score improvement)
     enable_chapter_feedback: bool = True  # Post-chapter feedback extraction
     enable_contradiction_checks: bool = True  # Pre-scene contradiction checks
     feedback_stale_clue_threshold: int = 15  # Chapters before a clue is stale

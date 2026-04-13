@@ -322,6 +322,7 @@ async def test_export_project_markdown_writes_artifact(
 ) -> None:
     project = build_project()
     chapter = build_chapter(project.id)
+    chapter.target_word_count = 120
     chapter_draft = ChapterDraftVersionModel(
         project_id=project.id,
         chapter_id=chapter.id,
@@ -362,6 +363,7 @@ async def test_export_project_docx_writes_artifact(
 ) -> None:
     project = build_project()
     chapter = build_chapter(project.id)
+    chapter.target_word_count = 120
     chapter_draft = ChapterDraftVersionModel(
         project_id=project.id,
         chapter_id=chapter.id,
@@ -402,6 +404,7 @@ async def test_export_project_epub_writes_artifact(
 ) -> None:
     project = build_project()
     chapter = build_chapter(project.id)
+    chapter.target_word_count = 120
     chapter_draft = ChapterDraftVersionModel(
         project_id=project.id,
         chapter_id=chapter.id,
@@ -433,6 +436,44 @@ async def test_export_project_epub_writes_artifact(
     assert artifact.id is not None
     assert output_path.exists() is True
     assert output_path.suffix == ".epub"
+
+
+@pytest.mark.asyncio
+async def test_export_project_markdown_blocks_unfinished_placeholder_content(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    project = build_project()
+    chapter = build_chapter(project.id)
+    chapter.target_word_count = 120
+    chapter_draft = ChapterDraftVersionModel(
+        project_id=project.id,
+        chapter_id=chapter.id,
+        version_no=1,
+        content_md="# 第1章 失准星图\n\n盟友甲在仓库门口等他。",
+        word_count=120,
+        assembled_from_scene_draft_ids=[],
+        is_current=True,
+    )
+    chapter_draft.id = uuid4()
+
+    async def fake_get_project_by_slug(session, slug: str) -> ProjectModel:
+        return project
+
+    monkeypatch.setattr(export_services, "get_project_by_slug", fake_get_project_by_slug)
+    settings = build_settings()
+    settings.output.base_dir = str(tmp_path / "output")
+    session = FakeSession(
+        scalar_results=[chapter_draft],
+        scalars_results=[[chapter]],
+    )
+
+    with pytest.raises(ValueError, match="盟友甲"):
+        await export_services.export_project_markdown(
+            session,
+            settings,
+            "my-story",
+        )
 
 
 @pytest.mark.asyncio
@@ -710,6 +751,7 @@ async def test_run_scene_pipeline_stops_after_stalled_rewrite(
     session = FakeSession()
     settings = build_settings()
     settings.quality.min_scene_rewrite_improvement = 0.03
+    settings.pipeline.accept_on_stall = False
 
     result = await pipeline_services.run_scene_pipeline(
         session,
@@ -1512,6 +1554,7 @@ async def test_run_project_pipeline_emits_chapter_progress_with_title_and_word_c
             "project_slug": "my-story",
             "chapter_number": 1,
             "progress": "1/1",
+            "global_progress": "1/1",
             "target_word_count": 5000,
         }
     ]
@@ -1519,6 +1562,8 @@ async def test_run_project_pipeline_emits_chapter_progress_with_title_and_word_c
         {
             "project_slug": "my-story",
             "chapter_number": 1,
+            "progress": "1/1",
+            "global_progress": "1/1",
             "workflow_run_id": str(chapter_result.workflow_run_id),
             "requires_human_review": False,
             "chapter_draft_version_no": 1,

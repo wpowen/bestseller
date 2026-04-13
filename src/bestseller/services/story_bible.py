@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import logging
 import re
 from collections import defaultdict
 from typing import Any
@@ -29,6 +31,7 @@ from bestseller.infra.db.models import (
     WorldRuleModel,
 )
 from bestseller.services.world_expansion import load_world_expansion_context
+from bestseller.services.writing_profile import is_english_language
 
 
 def stable_character_id(project_id: UUID, character_name: str) -> UUID:
@@ -94,10 +97,13 @@ def _merge_metadata(existing: dict[str, Any] | None, incoming: dict[str, Any] | 
     return merged
 
 
-def _character_beliefs(knowledge_state: CharacterKnowledgeStateInput) -> list[str]:
+def _character_beliefs(knowledge_state: CharacterKnowledgeStateInput, *, language: str | None = None) -> list[str]:
+    _is_en = (language or "").lower().startswith("en")
     beliefs = [str(item) for item in knowledge_state.knows]
-    beliefs.extend(f"误判:{item}" for item in knowledge_state.falsely_believes)
-    beliefs.extend(f"未知:{item}" for item in knowledge_state.unaware_of)
+    _false_prefix = "False belief: " if _is_en else "误判:"
+    _unknown_prefix = "Unknown: " if _is_en else "未知:"
+    beliefs.extend(f"{_false_prefix}{item}" for item in knowledge_state.falsely_believes)
+    beliefs.extend(f"{_unknown_prefix}{item}" for item in knowledge_state.unaware_of)
     return beliefs
 
 
@@ -169,14 +175,17 @@ async def apply_book_spec(
     if isinstance(tone_keywords, list) and tone_keywords:
         style_guide.tone_keywords = [str(item) for item in tone_keywords]
     if content.get("themes"):
+        _is_en = is_english_language(project.language)
+        _theme_prefix = "Theme: " if _is_en else "主题:"
         style_guide.custom_rules = [
-            f"主题:{theme}" for theme in content.get("themes", []) if str(theme).strip()
+            f"{_theme_prefix}{theme}" for theme in content.get("themes", []) if str(theme).strip()
         ]
     if isinstance(content.get("series_engine"), dict):
         series_engine = content["series_engine"]
         hook_style = series_engine.get("hook_style")
         if hook_style:
-            style_guide.reference_works = [f"连载引擎:{hook_style}"]
+            _se_prefix = "Series engine: " if is_english_language(project.language) else "连载引擎:"
+            style_guide.reference_works = [f"{_se_prefix}{hook_style}"]
     await session.flush()
     return True
 
@@ -285,6 +294,7 @@ async def _ensure_initial_character_state_snapshot(
     *,
     project_id: UUID,
     character: CharacterModel,
+    language: str | None = None,
 ) -> bool:
     existing = await session.scalar(
         select(CharacterStateSnapshotModel).where(
@@ -307,7 +317,7 @@ async def _ensure_initial_character_state_snapshot(
         physical_state=character.metadata_json.get("physical_state"),
         power_tier=character.power_tier,
         trust_map={},
-        beliefs=_character_beliefs(CharacterKnowledgeStateInput.model_validate(character.knowledge_state_json or {})),
+        beliefs=_character_beliefs(CharacterKnowledgeStateInput.model_validate(character.knowledge_state_json or {}), language=language),
         notes="Initial story bible state.",
     )
     session.add(snapshot)
@@ -377,11 +387,18 @@ async def upsert_cast_spec(
                 _arc_type = "flat"
             else:
                 _arc_type = "positive"
+            _is_en = is_english_language(project.language)
             _lie_truth_extra = {
                 "lie_truth_arc": {
                     "core_lie": _core_lie,
-                    "core_truth": f"与「{_core_lie}」相反的真相",
-                    "transformation_cost": character_input.flaw or "必须放弃旧的保护方式",
+                    "core_truth": (
+                        f"The truth that opposes \"{_core_lie}\""
+                        if _is_en else
+                        f"与「{_core_lie}」相反的真相"
+                    ),
+                    "transformation_cost": character_input.flaw or (
+                        "Must abandon old protective patterns" if _is_en else "必须放弃旧的保护方式"
+                    ),
                     "arc_type": _arc_type,
                     "current_phase": "believing_lie",
                 },
@@ -405,6 +422,7 @@ async def upsert_cast_spec(
             session,
             project_id=project.id,
             character=character,
+            language=project.language,
         ):
             state_snapshots_created += 1
 
@@ -760,3 +778,274 @@ async def load_scene_story_bible_context(
         "participants": characters,
         "relationships": relationships,
     }
+
+
+logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Living Story Bible — update character/world state after each chapter
+# ---------------------------------------------------------------------------
+
+_BIBLE_UPDATE_SYSTEM_PROMPT_ZH = """\
+你是一个小说编辑助手，负责在每一章完成后更新故事圣经（Story Bible）。
+阅读以下章节文本，提取以下变化：
+1. **角色知识更新**: 每个角色新获得的信息、错误认知、以及仍不知道的重要信息
+2. **关系变化**: 角色之间关系的变化（亲密度、敌意、信任等）
+3. **世界观更新**: 新揭示的世界规则或位置
+4. **角色状态变化**: 身体状态、情感状态、力量等级变化
+
+请以JSON格式输出：
+```json
+{
+  "character_updates": [
+    {
+      "name": "角色名",
+      "knowledge_gained": ["新获得的信息"],
+      "false_beliefs": ["错误认知"],
+      "emotional_state": "当前情感状态",
+      "physical_state": "身体状态变化",
+      "power_change": "力量/等级变化描述"
+    }
+  ],
+  "relationship_updates": [
+    {
+      "character_a": "角色A",
+      "character_b": "角色B",
+      "change": "关系变化描述",
+      "affinity_direction": "up|down|neutral"
+    }
+  ],
+  "world_updates": [
+    {
+      "rule_or_location": "规则或位置名称",
+      "description": "描述"
+    }
+  ]
+}
+```
+只输出JSON，不要输出其他内容。如果没有变化，对应数组为空。"""
+
+_BIBLE_UPDATE_SYSTEM_PROMPT_EN = """\
+You are a novel editing assistant responsible for updating the Story Bible after each chapter.
+Read the chapter text below and extract the following changes:
+1. **Character knowledge updates**: New information each character gained, false beliefs, important things they still don't know
+2. **Relationship changes**: Changes in relationships between characters (intimacy, hostility, trust, etc.)
+3. **World updates**: Newly revealed world rules or locations
+4. **Character state changes**: Physical state, emotional state, power level changes
+
+Output in JSON format:
+```json
+{
+  "character_updates": [
+    {
+      "name": "character name",
+      "knowledge_gained": ["new information gained"],
+      "false_beliefs": ["false beliefs"],
+      "emotional_state": "current emotional state",
+      "physical_state": "physical state change",
+      "power_change": "power/level change description"
+    }
+  ],
+  "relationship_updates": [
+    {
+      "character_a": "Character A",
+      "character_b": "Character B",
+      "change": "relationship change description",
+      "affinity_direction": "up|down|neutral"
+    }
+  ],
+  "world_updates": [
+    {
+      "rule_or_location": "rule or location name",
+      "description": "description"
+    }
+  ]
+}
+```
+Output JSON only, nothing else. If no changes, use empty arrays."""
+
+
+async def update_story_bible_from_chapter(
+    session: AsyncSession,
+    settings: "AppSettings",
+    *,
+    project: ProjectModel,
+    chapter: ChapterModel,
+    chapter_text: str,
+    workflow_run_id: UUID | None = None,
+) -> dict[str, int]:
+    """Extract and apply story bible updates from a completed chapter.
+
+    Uses the ``editor`` LLM role to extract character knowledge, relationship,
+    and world-building changes, then persists them to the database.
+
+    Returns a dict of counts: characters_updated, relationships_updated, world_rules_added.
+    """
+    from bestseller.services.llm import LLMCompletionRequest, complete_text
+
+    language = getattr(project, "language", None) or "zh-CN"
+    is_zh = language.lower().startswith("zh")
+
+    system_prompt = _BIBLE_UPDATE_SYSTEM_PROMPT_ZH if is_zh else _BIBLE_UPDATE_SYSTEM_PROMPT_EN
+    user_prompt = (
+        f"章节: 第{chapter.chapter_number}章 {chapter.title or ''}\n\n"
+        f"正文:\n{chapter_text[:12000]}"
+    ) if is_zh else (
+        f"Chapter: {chapter.chapter_number} — {chapter.title or ''}\n\n"
+        f"Text:\n{chapter_text[:12000]}"
+    )
+
+    result = await complete_text(
+        session,
+        settings,
+        LLMCompletionRequest(
+            logical_role="editor",
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            fallback_response='{"character_updates":[],"relationship_updates":[],"world_updates":[]}',
+            prompt_template="bible_update_v1",
+            prompt_version="1.0",
+            project_id=project.id,
+            workflow_run_id=workflow_run_id,
+            metadata={"chapter_number": chapter.chapter_number},
+        ),
+    )
+
+    # Parse LLM response
+    try:
+        raw = result.content.strip()
+        # Strip markdown fences if present
+        if raw.startswith("```"):
+            raw = re.sub(r"^```(?:json)?\s*", "", raw)
+            raw = re.sub(r"\s*```$", "", raw)
+        updates = json.loads(raw)
+    except (json.JSONDecodeError, ValueError):
+        logger.warning("Failed to parse bible update JSON for ch%d", chapter.chapter_number)
+        return {"characters_updated": 0, "relationships_updated": 0, "world_rules_added": 0}
+
+    counts = {"characters_updated": 0, "relationships_updated": 0, "world_rules_added": 0}
+
+    # Apply character updates
+    for cu in updates.get("character_updates", []):
+        name = cu.get("name", "").strip()
+        if not name:
+            continue
+        try:
+            char = await get_or_create_character_by_name(
+                session, project_id=project.id, character_name=name,
+            )
+            ks = dict(char.knowledge_state_json or {})
+            # Merge knowledge
+            existing_knows = ks.get("knows", [])
+            for item in cu.get("knowledge_gained", []):
+                if item and item not in existing_knows:
+                    existing_knows.append(item)
+            ks["knows"] = existing_knows[-30:]  # cap at 30 entries
+
+            existing_false = ks.get("falsely_believes", [])
+            for item in cu.get("false_beliefs", []):
+                if item and item not in existing_false:
+                    existing_false.append(item)
+            ks["falsely_believes"] = existing_false[-10:]
+
+            char.knowledge_state_json = ks
+
+            # Update metadata with emotional/physical state
+            md = dict(char.metadata_json or {})
+            if cu.get("emotional_state"):
+                md["emotional_state"] = cu["emotional_state"]
+            if cu.get("physical_state"):
+                md["physical_state"] = cu["physical_state"]
+            if cu.get("power_change"):
+                md["latest_power_change"] = cu["power_change"]
+                md["power_change_chapter"] = chapter.chapter_number
+            char.metadata_json = md
+
+            counts["characters_updated"] += 1
+        except Exception:
+            logger.debug("Failed to update character '%s' (non-fatal)", name, exc_info=True)
+
+    # Apply relationship updates
+    for ru in updates.get("relationship_updates", []):
+        char_a_name = ru.get("character_a", "").strip()
+        char_b_name = ru.get("character_b", "").strip()
+        if not char_a_name or not char_b_name:
+            continue
+        try:
+            char_a = await get_or_create_character_by_name(
+                session, project_id=project.id, character_name=char_a_name,
+            )
+            char_b = await get_or_create_character_by_name(
+                session, project_id=project.id, character_name=char_b_name,
+            )
+            rel_id = _stable_relationship_id(project.id, char_a.id, char_b.id)
+            rel = await session.get(RelationshipModel, rel_id)
+            if rel is None:
+                rel = RelationshipModel(
+                    id=rel_id,
+                    project_id=project.id,
+                    character_a_id=char_a.id,
+                    character_b_id=char_b.id,
+                    label=ru.get("change", "neutral"),
+                    current_affinity=0.5,
+                    metadata_json={},
+                )
+                session.add(rel)
+            # Update affinity
+            direction = ru.get("affinity_direction", "neutral")
+            delta = {"up": 0.1, "down": -0.1}.get(direction, 0.0)
+            rel.current_affinity = max(0.0, min(1.0, (rel.current_affinity or 0.5) + delta))
+            rel.label = ru.get("change", rel.label)
+            # Track events
+            events = list(rel.metadata_json.get("events", []) if rel.metadata_json else [])
+            events.append({
+                "chapter": chapter.chapter_number,
+                "change": ru.get("change", ""),
+                "direction": direction,
+            })
+            rel.metadata_json = {**(rel.metadata_json or {}), "events": events[-20:]}
+
+            counts["relationships_updated"] += 1
+        except Exception:
+            logger.debug(
+                "Failed to update relationship '%s'-'%s' (non-fatal)",
+                char_a_name, char_b_name, exc_info=True,
+            )
+
+    # Apply world updates
+    for wu in updates.get("world_updates", []):
+        rule_name = wu.get("rule_or_location", "").strip()
+        if not rule_name:
+            continue
+        try:
+            rule_code = re.sub(r"[^a-z0-9_]", "_", rule_name.lower())[:50]
+            rule_id = stable_world_rule_id(project.id, rule_code)
+            existing = await session.get(WorldRuleModel, rule_id)
+            if existing is None:
+                rule = WorldRuleModel(
+                    id=rule_id,
+                    project_id=project.id,
+                    rule_code=rule_code,
+                    name=rule_name,
+                    description=wu.get("description", ""),
+                    metadata_json={
+                        "source": f"chapter_{chapter.chapter_number}",
+                        "reveal_chapter": chapter.chapter_number,
+                    },
+                )
+                session.add(rule)
+                counts["world_rules_added"] += 1
+            else:
+                # Update description if richer
+                if wu.get("description") and len(wu["description"]) > len(existing.description or ""):
+                    existing.description = wu["description"]
+        except Exception:
+            logger.debug("Failed to add world rule '%s' (non-fatal)", rule_name, exc_info=True)
+
+    await session.flush()
+    logger.info(
+        "Story bible updated for ch%d: %s",
+        chapter.chapter_number,
+        counts,
+    )
+    return counts

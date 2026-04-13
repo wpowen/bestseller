@@ -1,0 +1,19 @@
+# Tone Fragment: Dark
+# Modifies story guidance toward darker themes.
+
+scene_writer: |
+  TONE: DARK — this story embraces moral ambiguity and visceral consequences.
+  - Actions have permanent, often painful consequences
+  - Characters make morally complex choices under pressure
+  - The world is unforgiving — safety is earned, never guaranteed
+  - Beauty exists in contrast to darkness (makes light moments more powerful)
+  - Violence is impactful, never casual or glorified
+
+pacing_guidance: |
+  Dark tone pacing: longer dread-building, briefer but intense action.
+  Allow scenes of uneasy quiet between confrontations.
+
+anti_patterns:
+  - "Gratuitous violence with no narrative purpose"
+  - "Edginess for shock value without character consequence"
+  - "Relentless darkness with no moments of connection or hope"

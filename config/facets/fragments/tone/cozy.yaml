@@ -1,0 +1,28 @@
+# Tone Fragment: Cozy
+# Modifies story guidance toward warm, comforting themes.
+
+scene_writer: |
+  TONE: COZY — this story prioritizes warmth, comfort, and gentle progression.
+  - Conflict exists but is never overwhelming or traumatic
+  - Relationships are supportive and grow through shared moments
+  - Sensory details focus on comfort: food, warmth, nature, community
+  - Progress is measured in small satisfactions and daily victories
+  - The world is fundamentally kind, even if individual challenges arise
+
+pacing_guidance: |
+  Cozy tone pacing: gentle rhythm, longer scenes of connection and crafting.
+  Allow breathing room. Not every scene needs high stakes.
+  Small victories and warm moments ARE the payoff.
+
+character_design: |
+  Cozy character approach:
+  - Characters have flaws but are fundamentally kind
+  - Antagonists are obstacles, not villains — misunderstandings, bureaucracy, nature
+  - Friendships form naturally through shared activities
+  - Romance (if present) is sweet and low-angst
+
+anti_patterns:
+  - "Traumatic backstories played for drama"
+  - "High-stakes life-or-death conflicts"
+  - "Characters being cruel or manipulative"
+  - "Rushing through peaceful moments to get to action"

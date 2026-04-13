@@ -1,0 +1,8 @@
+# Review weight deltas for tone: epic
+# Epic stories emphasize conflict, payoff, and pacing at grand scale.
+scene_weights:
+  conflict: 0.2
+  payoff_density: 0.2
+  pacing_alignment: 0.15
+  hook_strength: 0.1
+  emotion: 0.1

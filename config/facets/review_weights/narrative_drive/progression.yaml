@@ -1,0 +1,8 @@
+# Review weight deltas for narrative_drive: progression
+# Progression stories emphasize conflict, hooks, and payoff over emotion.
+scene_weights:
+  conflict: 0.3
+  hook_strength: 0.2
+  payoff_density: 0.2
+  emotion: -0.15
+  pacing_alignment: 0.1

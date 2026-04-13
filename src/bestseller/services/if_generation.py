@@ -76,7 +76,8 @@ class _LLMCaller:
         """
         import time as _time
 
-        litellm = importlib.import_module("litellm")
+        from bestseller.services.llm import _get_litellm  # noqa: PLC0415
+        litellm = _get_litellm()
         api_key = (
             get_runtime_env_value(role_settings.api_key_env)
             if role_settings.api_key_env

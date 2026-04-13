@@ -134,6 +134,9 @@ def test_quickstart_task_uses_sanitized_genre_profile(monkeypatch: pytest.Monkey
     assert "selling_points" not in profile["market"]
     assert "trope_keywords" not in profile["market"]
     assert profile.get("character", {}) == {}
+    assert captured["payload"]["target_words"] == (
+        12 * web_server.load_settings().generation.words_per_chapter.target
+    )
 
 
 def test_novel_studio_defaults_do_not_seed_apocalypse_story_template() -> None:

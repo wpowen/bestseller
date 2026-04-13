@@ -1,0 +1,40 @@
+# Genre Fragment: Xianxia (仙侠)
+# Core genre guidance for cultivation/immortal hero stories.
+
+scene_writer: |
+  This is a Xianxia (cultivation/immortal hero) story. Key genre elements:
+  - Cultivation realms form the backbone of progression (each breakthrough must feel earned)
+  - Heavenly tribulations, spiritual energy, dao comprehension
+  - The gap between realms creates natural power dynamics and conflict
+  - "Face" culture and sect politics drive interpersonal tension
+  - Forbidden techniques and ancient inheritances as story catalysts
+
+planner_book_spec: |
+  Xianxia structural requirements:
+  - Clear cultivation tier system with defined breakthroughs
+  - Each volume should feature at least one major realm advancement
+  - Secret realms/ancient ruins provide exploration arcs
+  - Antagonists should typically be 1-2 realms above protagonist's current level
+  - World expands with each tier (sect → region → continent → higher realms)
+
+scene_review: |
+  Xianxia quality checks:
+  - Does the scene advance cultivation or reveal new aspects of the power system?
+  - Are realm differences tangibly felt in combat and dialogue?
+  - Is there a sense of the vast immortal world beyond the current setting?
+
+anti_patterns:
+  - "Cultivation breakthrough with no setup or cost"
+  - "Antagonists that exist solely to be face-slapped with no depth"
+  - "Info-dumping cultivation system mechanics outside of relevant context"
+  - "Repeated tournament arc structure without variation"
+
+obligatory_scenes:
+  - code: first_breakthrough
+    label: "First cultivation breakthrough"
+    timing: act_1
+    description: "MC achieves first significant advancement, establishing the power system for readers."
+  - code: secret_realm
+    label: "Secret realm exploration"
+    timing: act_2_midpoint
+    description: "MC enters a dangerous ancient location with treasures and threats."

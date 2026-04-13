@@ -1459,7 +1459,7 @@ function renderChoiceNode(choice, chapter) {
 // Mainline chapters that fall entirely within [branchStart, mergeChapter)
 // are replaced by the branch chapters.
 async function loadBranchChapters(routeId) {
-  const data = await get(`/api/if-novels/${SLUG}/branches/${routeId}`);
+  const data = await get(`/api/if-novels/${SLUG}/branches/${routeId}?lang=${contentLang}`);
   const branchChapters = data.chapters || [];
   if (!branchChapters.length) return data;
 

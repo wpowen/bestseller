@@ -190,6 +190,7 @@ class CharacterModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     arc_trajectory: Mapped[str | None] = mapped_column(Text)
     arc_state: Mapped[str | None] = mapped_column(Text)
     power_tier: Mapped[str | None] = mapped_column(Text())
+    physical_description: Mapped[str | None] = mapped_column(Text())
     knowledge_state_json: Mapped[JSON_DICT] = mapped_column("knowledge_state", JSONB, nullable=False, default=dict)
     voice_profile_json: Mapped[JSON_DICT] = mapped_column(
         "voice_profile", JSONB, nullable=False, default=dict, server_default=text("'{}'::jsonb"),

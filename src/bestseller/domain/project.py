@@ -144,7 +144,12 @@ class SerializationStrategyConfig(BaseModel):
 
 
 _IF_VALID_GENRES = {"都市逆袭", "修仙升级", "悬疑生存", "职场商战", "末日爽文"}
+_IF_VALID_GENRES_EN = {"urban-revenge", "cultivation-progression", "mystery-survival", "corporate-strategy", "apocalypse-power-fantasy"}
+_IF_ALL_VALID_GENRES = _IF_VALID_GENRES | _IF_VALID_GENRES_EN
+
 _IF_VALID_ROLES = {"盟友", "宿敌", "红颜", "师尊", "家族", "中立", "反派"}
+_IF_VALID_ROLES_EN = {"ally", "rival", "love_interest", "mentor", "family", "neutral", "antagonist"}
+_IF_ALL_VALID_ROLES = _IF_VALID_ROLES | _IF_VALID_ROLES_EN
 
 
 class IFStatConfig(BaseModel):
@@ -159,14 +164,14 @@ class IFStatConfig(BaseModel):
 
 class IFCharacterDraft(BaseModel):
     name: str = Field(min_length=1, max_length=20)
-    role: str = Field(description="盟友|宿敌|红颜|师尊|家族|中立|反派")
+    role: str = Field(description="盟友|宿敌|红颜|师尊|家族|中立|反派 / ally|rival|love_interest|mentor|family|neutral|antagonist")
     description: str = Field(default="", max_length=4000)
 
     @field_validator("role")
     @classmethod
     def validate_role(cls, v: str) -> str:
-        if v not in _IF_VALID_ROLES:
-            raise ValueError(f"role must be one of {_IF_VALID_ROLES}")
+        if v not in _IF_ALL_VALID_ROLES:
+            raise ValueError(f"role must be one of {_IF_ALL_VALID_ROLES}")
         return v
 
 
@@ -214,8 +219,8 @@ class InteractiveFictionConfig(BaseModel):
     @field_validator("if_genre")
     @classmethod
     def validate_genre(cls, v: str) -> str:
-        if v not in _IF_VALID_GENRES:
-            raise ValueError(f"if_genre must be one of {_IF_VALID_GENRES}")
+        if v not in _IF_ALL_VALID_GENRES:
+            raise ValueError(f"if_genre must be one of {_IF_ALL_VALID_GENRES}")
         return v
 
 

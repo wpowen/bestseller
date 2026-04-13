@@ -123,6 +123,17 @@ class SceneWriterContextPacket(BaseModel):
     # ── Phase-6 wiring: foreshadowing gap warning ──
     foreshadowing_gap_warning: str | None = None
 
+    # ── Character identity constraints (Tier 0 — never dropped) ──
+    identity_constraint_block: str | None = None
+    # ── Identity registry for review scoring (list of CharacterIdentity) ──
+    identity_registry: list[Any] = Field(default_factory=list)
+
+    # ── Overused phrase avoidance block (injected after chapter completion) ──
+    overused_phrase_block: str | None = None
+
+    # ── Genre-specific constraint block ──
+    genre_constraint_block: str | None = None
+
 
 class ChapterSceneContext(BaseModel):
     scene_number: int = Field(ge=1)

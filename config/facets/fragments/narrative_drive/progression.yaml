@@ -1,0 +1,29 @@
+# Narrative Drive Fragment: Progression
+# Story structure guidance for progression/power-growth narratives.
+
+scene_writer: |
+  NARRATIVE DRIVE: PROGRESSION — the story is propelled by measurable growth.
+  - Every scene should contribute to the MC's advancement (skill, power, knowledge, status)
+  - Growth must be earned through challenge — never handed freely
+  - Each breakthrough opens new possibilities AND new threats
+  - The reader should always see the "next level" beckoning ahead
+  - Setbacks create hunger for the next advancement
+
+planner_book_spec: |
+  Progression structure:
+  - Clear power tiers with defined advancement milestones
+  - Each volume features 2-3 significant breakthroughs
+  - Antagonist difficulty scales with MC growth (never trivially easy)
+  - Training/preparation scenes followed by application scenes
+  - Display new abilities in satisfying ways after earning them
+
+core_loop: |
+  Progression core loop: Challenge → Train/Prepare → Break Through → Apply Power → New Challenge
+  Vary the loop: sometimes the breakthrough happens mid-battle (desperation growth),
+  sometimes it comes from insight (intellectual growth), sometimes from sacrifice (emotional growth).
+
+anti_patterns:
+  - "Power growth with no cost, risk, or effort"
+  - "Repeating the same training montage structure"
+  - "New powers that don't meaningfully change combat dynamics"
+  - "Stagnating at a power level for too long without progress"

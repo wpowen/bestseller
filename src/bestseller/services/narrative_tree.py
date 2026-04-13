@@ -39,6 +39,58 @@ from bestseller.infra.db.models import (
 from bestseller.services.projects import get_project_by_slug
 from bestseller.services.retrieval import tokenize_text
 
+# ---------------------------------------------------------------------------
+# Bilingual label dictionaries
+# ---------------------------------------------------------------------------
+
+_NODE_TITLES = {
+    "book_overview": ("Book Overview", "全书总览"),
+    "premise": ("Work Premise", "作品 premise"),
+    "world_overview": ("World Overview", "世界观总览"),
+    "world_frontiers": ("Stage World Boundaries", "阶段世界边界"),
+    "deferred_reveals": ("Deferred Reveals Ledger", "延后揭示账本"),
+    "world_expansion_gates": ("World Expansion Gates", "世界扩张闸门"),
+    "world_rules": ("World Rules", "世界规则"),
+    "key_locations": ("Key Locations", "关键地点"),
+    "factions": ("Factions", "阵营"),
+    "characters": ("Characters", "角色"),
+    "narrative_arcs": ("Narrative Arcs", "叙事线"),
+    "emotional_tracks": ("Emotional & Relationship Tracks", "情绪与关系线"),
+    "antagonist_progression": ("Antagonist Progression", "反派推进"),
+    "clues_ledger": ("Clues & Payoffs Ledger", "线索与兑现账本"),
+    "foreshadowing_ledger": ("Foreshadowing Ledger", "伏笔账本"),
+    "payoff_ledger": ("Payoff Ledger", "兑现账本"),
+    "volume_structure": ("Volume Structure", "卷结构"),
+    "chapter_structure": ("Chapter Structure", "章节结构"),
+    "scene_structure": ("Scene Structure", "场景结构"),
+}
+
+_FIELD_LABELS = {
+    "书名": "Title", "题材": "Genre", "主线": "Main Plot", "主题": "Theme",
+    "核心承诺": "Core Promise", "主线驱动": "Main Drive", "主角终局方向": "Protagonist Endgame",
+    "反派主轴": "Antagonist Axis", "主题旋律": "Theme Melody",
+    "世界骨架": "World Backbone", "不可轻改元素": "Immutable Elements",
+    "长期未知项": "Long-term Unknowns",
+    "阶段摘要": "Phase Summary", "扩张焦点": "Expansion Focus",
+    "可见章节范围": "Visible Chapter Range",
+    "允许启用规则": "Active Rules", "活跃地点": "Active Locations",
+    "活跃势力": "Active Forces", "主导叙事线": "Primary Narrative Arc",
+    "后续未展开揭示": "Pending Reveals",
+    "类别": "Category", "正式揭示": "Official Reveal", "保护条件": "Protection Conditions",
+    "允许出现卷": "Allowed Volumes", "允许出现章节": "Allowed Chapters",
+    "触发条件": "Trigger Conditions", "解锁内容": "Unlocked Content",
+    "解锁卷": "Unlock Volume", "解锁章节": "Unlock Chapter",
+}
+
+
+def _t(key: str, is_en: bool) -> str:
+    """Return the English or Chinese variant of a node title or field label."""
+    if key in _NODE_TITLES:
+        return _NODE_TITLES[key][0] if is_en else _NODE_TITLES[key][1]
+    if key in _FIELD_LABELS:
+        return _FIELD_LABELS[key] if is_en else key
+    return key
+
 
 def tree_segment(value: str | None, fallback: str) -> str:
     if not value:
@@ -123,13 +175,14 @@ def _depth(path: str) -> int:
     return len([segment for segment in path.split("/") if segment])
 
 
-def _safe_line(label: str, value: Any) -> str:
+def _safe_line(label: str, value: Any, *, is_en: bool = False) -> str:
     if value is None:
         return ""
     text = str(value).strip()
     if not text:
         return ""
-    return f"- {label}：{text}"
+    sep = ": " if is_en else "："
+    return f"- {label}{sep}{text}"
 
 
 def _node_body(title: str, *lines: str) -> str:
@@ -218,6 +271,10 @@ async def rebuild_narrative_tree(
     *,
     project: ProjectModel,
 ) -> dict[str, Any]:
+    is_en = not (project.language or "").startswith("zh")
+    sl = _safe_line  # local alias for brevity
+    join_sep = ", " if is_en else "、"
+
     await session.execute(
         delete(NarrativeTreeNodeModel).where(NarrativeTreeNodeModel.project_id == project.id)
     )
@@ -367,26 +424,26 @@ async def rebuild_narrative_tree(
     add_node(
         node_path="/book",
         node_type="book_root",
-        title="全书总览",
+        title=_t("book_overview", is_en),
         summary=project.metadata_json.get("logline") or project.title,
         body_md=_node_body(
-            "全书总览",
-            _safe_line("书名", project.title),
-            _safe_line("题材", project.genre),
-            _safe_line("主线", project.metadata_json.get("logline")),
-            _safe_line("主题", "、".join(str(item) for item in project.metadata_json.get("themes", []))),
+            _t("book_overview", is_en),
+            sl(_t("书名", is_en), project.title, is_en=is_en),
+            sl(_t("题材", is_en), project.genre, is_en=is_en),
+            sl(_t("主线", is_en), project.metadata_json.get("logline"), is_en=is_en),
+            sl(_t("主题", is_en), join_sep.join(str(item) for item in project.metadata_json.get("themes", [])), is_en=is_en),
         ),
     )
     add_node(
         node_path="/book/premise",
         node_type="premise",
-        title="作品 premise",
+        title=_t("premise", is_en),
         summary=project.metadata_json.get("logline") or project.title,
         body_md=_node_body(
-            "作品 premise",
-            _safe_line("logline", project.metadata_json.get("logline") or project.title),
-            _safe_line("themes", "、".join(str(item) for item in project.metadata_json.get("themes", []))),
-            _safe_line("stakes", project.metadata_json.get("stakes")),
+            _t("premise", is_en),
+            sl("logline", project.metadata_json.get("logline") or project.title, is_en=is_en),
+            sl("themes", join_sep.join(str(item) for item in project.metadata_json.get("themes", [])), is_en=is_en),
+            sl("stakes", project.metadata_json.get("stakes"), is_en=is_en),
         ),
         source_type="project",
         source_ref_id=project.id,
@@ -399,64 +456,84 @@ async def rebuild_narrative_tree(
         summary=project.metadata_json.get("logline") or project.title,
         body_md=_node_body(
             "Book Spec",
-            _safe_line("title", project.title),
-            _safe_line("genre", project.genre),
-            _safe_line("audience", project.audience),
-            _safe_line("logline", project.metadata_json.get("logline")),
-            _safe_line("themes", "、".join(str(item) for item in project.metadata_json.get("themes", []))),
-            _safe_line("series_engine", project.metadata_json.get("series_engine")),
+            sl("title", project.title, is_en=is_en),
+            sl("genre", project.genre, is_en=is_en),
+            sl("audience", project.audience, is_en=is_en),
+            sl("logline", project.metadata_json.get("logline"), is_en=is_en),
+            sl("themes", join_sep.join(str(item) for item in project.metadata_json.get("themes", [])), is_en=is_en),
+            sl("series_engine", project.metadata_json.get("series_engine"), is_en=is_en),
         ),
         source_type="planning_artifact",
         source_ref_id=project.id,
         metadata={"kind": "book_spec"},
     )
+    _world_fallback = "Current project world settings" if is_en else "当前项目世界设定"
     add_node(
         node_path="/world",
         node_type="world_root",
-        title="世界观总览",
-        summary=project.metadata_json.get("world_premise") or project.metadata_json.get("world_name") or "当前项目世界设定",
+        title=_t("world_overview", is_en),
+        summary=project.metadata_json.get("world_premise") or project.metadata_json.get("world_name") or _world_fallback,
         body_md=_node_body(
-            "世界观总览",
-            _safe_line("world_name", project.metadata_json.get("world_name")),
-            _safe_line("world_premise", project.metadata_json.get("world_premise")),
-            _safe_line("power_structure", project.metadata_json.get("power_structure")),
-            _safe_line("power_system", project.metadata_json.get("power_system")),
+            _t("world_overview", is_en),
+            sl("world_name", project.metadata_json.get("world_name"), is_en=is_en),
+            sl("world_premise", project.metadata_json.get("world_premise"), is_en=is_en),
+            sl("power_structure", project.metadata_json.get("power_structure"), is_en=is_en),
+            sl("power_system", project.metadata_json.get("power_system"), is_en=is_en),
         ),
     )
+    _frontiers_title = _t("world_frontiers", is_en)
+    _frontiers_summary = "Visible world scope progressing by volume." if is_en else "按卷推进的可见世界范围。"
     add_node(
         node_path="/world/frontiers",
         node_type="world_frontiers_root",
-        title="阶段世界边界",
-        summary="按卷推进的可见世界范围。",
-        body_md="# 阶段世界边界",
+        title=_frontiers_title,
+        summary=_frontiers_summary,
+        body_md=f"# {_frontiers_title}",
     )
+    _deferred_title = _t("deferred_reveals", is_en)
+    _deferred_summary = "Truths that may only be revealed in the future." if is_en else "未来才允许正面揭示的真相。"
     add_node(
         node_path="/world/deferred-reveals",
         node_type="deferred_reveals_root",
-        title="延后揭示账本",
-        summary="未来才允许正面揭示的真相。",
-        body_md="# 延后揭示账本",
+        title=_deferred_title,
+        summary=_deferred_summary,
+        body_md=f"# {_deferred_title}",
     )
+    _gates_title = _t("world_expansion_gates", is_en)
+    _gates_summary = "When the next layer of the world unlocks." if is_en else "下一层世界何时解锁。"
     add_node(
         node_path="/world/expansion-gates",
         node_type="expansion_gates_root",
-        title="世界扩张闸门",
-        summary="下一层世界何时解锁。",
-        body_md="# 世界扩张闸门",
+        title=_gates_title,
+        summary=_gates_summary,
+        body_md=f"# {_gates_title}",
     )
-    add_node(node_path="/world/rules", node_type="world_rules_root", title="世界规则", body_md="# 世界规则")
-    add_node(node_path="/world/locations", node_type="locations_root", title="关键地点", body_md="# 关键地点")
-    add_node(node_path="/world/factions", node_type="factions_root", title="阵营", body_md="# 阵营")
-    add_node(node_path="/characters", node_type="characters_root", title="角色", body_md="# 角色")
-    add_node(node_path="/arcs", node_type="arcs_root", title="叙事线", body_md="# 叙事线")
-    add_node(node_path="/emotion-tracks", node_type="emotion_tracks_root", title="情绪与关系线", body_md="# 情绪与关系线")
-    add_node(node_path="/antagonists", node_type="antagonists_root", title="反派推进", body_md="# 反派推进")
-    add_node(node_path="/ledgers", node_type="ledgers_root", title="线索与兑现账本", body_md="# 线索与兑现账本")
-    add_node(node_path="/ledgers/clues", node_type="clues_root", title="伏笔账本", body_md="# 伏笔账本")
-    add_node(node_path="/ledgers/payoffs", node_type="payoffs_root", title="兑现账本", body_md="# 兑现账本")
-    add_node(node_path="/volumes", node_type="volumes_root", title="卷结构", body_md="# 卷结构")
-    add_node(node_path="/chapters", node_type="chapters_root", title="章节结构", body_md="# 章节结构")
-    add_node(node_path="/scenes", node_type="scenes_root", title="场景结构", body_md="# 场景结构")
+    _wr = _t("world_rules", is_en)
+    _kl = _t("key_locations", is_en)
+    _fa = _t("factions", is_en)
+    _ch = _t("characters", is_en)
+    _na = _t("narrative_arcs", is_en)
+    _et = _t("emotional_tracks", is_en)
+    _ap = _t("antagonist_progression", is_en)
+    _cl = _t("clues_ledger", is_en)
+    _fl = _t("foreshadowing_ledger", is_en)
+    _pl = _t("payoff_ledger", is_en)
+    _vs = _t("volume_structure", is_en)
+    _cs = _t("chapter_structure", is_en)
+    _ss = _t("scene_structure", is_en)
+    add_node(node_path="/world/rules", node_type="world_rules_root", title=_wr, body_md=f"# {_wr}")
+    add_node(node_path="/world/locations", node_type="locations_root", title=_kl, body_md=f"# {_kl}")
+    add_node(node_path="/world/factions", node_type="factions_root", title=_fa, body_md=f"# {_fa}")
+    add_node(node_path="/characters", node_type="characters_root", title=_ch, body_md=f"# {_ch}")
+    add_node(node_path="/arcs", node_type="arcs_root", title=_na, body_md=f"# {_na}")
+    add_node(node_path="/emotion-tracks", node_type="emotion_tracks_root", title=_et, body_md=f"# {_et}")
+    add_node(node_path="/antagonists", node_type="antagonists_root", title=_ap, body_md=f"# {_ap}")
+    add_node(node_path="/ledgers", node_type="ledgers_root", title=_cl, body_md=f"# {_cl}")
+    add_node(node_path="/ledgers/clues", node_type="clues_root", title=_fl, body_md=f"# {_fl}")
+    add_node(node_path="/ledgers/payoffs", node_type="payoffs_root", title=_pl, body_md=f"# {_pl}")
+    add_node(node_path="/volumes", node_type="volumes_root", title=_vs, body_md=f"# {_vs}")
+    add_node(node_path="/chapters", node_type="chapters_root", title=_cs, body_md=f"# {_cs}")
+    add_node(node_path="/scenes", node_type="scenes_root", title=_ss, body_md=f"# {_ss}")
 
     if world_backbone is not None:
         add_node(
@@ -466,14 +543,14 @@ async def rebuild_narrative_tree(
             summary=world_backbone.core_promise,
             body_md=_node_body(
                 world_backbone.title,
-                _safe_line("核心承诺", world_backbone.core_promise),
-                _safe_line("主线驱动", world_backbone.mainline_drive),
-                _safe_line("主角终局方向", world_backbone.protagonist_destiny),
-                _safe_line("反派主轴", world_backbone.antagonist_axis),
-                _safe_line("主题旋律", world_backbone.thematic_melody),
-                _safe_line("世界骨架", world_backbone.world_frame),
-                _safe_line("不可轻改元素", " / ".join(str(item) for item in world_backbone.invariant_elements)),
-                _safe_line("长期未知项", " / ".join(str(item) for item in world_backbone.stable_unknowns)),
+                sl(_t("核心承诺", is_en), world_backbone.core_promise, is_en=is_en),
+                sl(_t("主线驱动", is_en), world_backbone.mainline_drive, is_en=is_en),
+                sl(_t("主角终局方向", is_en), world_backbone.protagonist_destiny, is_en=is_en),
+                sl(_t("反派主轴", is_en), world_backbone.antagonist_axis, is_en=is_en),
+                sl(_t("主题旋律", is_en), world_backbone.thematic_melody, is_en=is_en),
+                sl(_t("世界骨架", is_en), world_backbone.world_frame, is_en=is_en),
+                sl(_t("不可轻改元素", is_en), " / ".join(str(item) for item in world_backbone.invariant_elements), is_en=is_en),
+                sl(_t("长期未知项", is_en), " / ".join(str(item) for item in world_backbone.stable_unknowns), is_en=is_en),
             ),
             source_type="world_backbone",
             source_ref_id=world_backbone.id,
@@ -483,29 +560,33 @@ async def rebuild_narrative_tree(
             },
         )
     for frontier in volume_frontiers:
+        vol = frontier.volume_number
+        _frontier_heading = f"Volume {vol} Boundary" if is_en else f"第{vol}卷边界"
+        _frontier_title = f"{_frontier_heading}: {frontier.title}" if is_en else f"{_frontier_heading}：{frontier.title}"
         add_node(
-            node_path=volume_frontier_path(frontier.volume_number),
+            node_path=volume_frontier_path(vol),
             node_type="volume_frontier",
-            title=f"第{frontier.volume_number}卷边界：{frontier.title}",
+            title=_frontier_title,
             summary=frontier.frontier_summary,
             body_md=_node_body(
-                f"第{frontier.volume_number}卷边界",
-                _safe_line("阶段摘要", frontier.frontier_summary),
-                _safe_line("扩张焦点", frontier.expansion_focus),
-                _safe_line(
-                    "可见章节范围",
+                _frontier_heading,
+                sl(_t("阶段摘要", is_en), frontier.frontier_summary, is_en=is_en),
+                sl(_t("扩张焦点", is_en), frontier.expansion_focus, is_en=is_en),
+                sl(
+                    _t("可见章节范围", is_en),
                     f"{frontier.start_chapter_number} - {frontier.end_chapter_number or frontier.start_chapter_number}",
+                    is_en=is_en,
                 ),
-                _safe_line("允许启用规则", " / ".join(str(item) for item in frontier.visible_rule_codes)),
-                _safe_line("活跃地点", " / ".join(str(item) for item in frontier.active_locations)),
-                _safe_line("活跃势力", " / ".join(str(item) for item in frontier.active_factions)),
-                _safe_line("主导叙事线", " / ".join(str(item) for item in frontier.active_arc_codes)),
-                _safe_line("后续未展开揭示", " / ".join(str(item) for item in frontier.future_reveal_codes)),
+                sl(_t("允许启用规则", is_en), " / ".join(str(item) for item in frontier.visible_rule_codes), is_en=is_en),
+                sl(_t("活跃地点", is_en), " / ".join(str(item) for item in frontier.active_locations), is_en=is_en),
+                sl(_t("活跃势力", is_en), " / ".join(str(item) for item in frontier.active_factions), is_en=is_en),
+                sl(_t("主导叙事线", is_en), " / ".join(str(item) for item in frontier.active_arc_codes), is_en=is_en),
+                sl(_t("后续未展开揭示", is_en), " / ".join(str(item) for item in frontier.future_reveal_codes), is_en=is_en),
             ),
             source_type="volume_frontier",
             source_ref_id=frontier.id,
             scope_level="volume",
-            scope_volume_number=frontier.volume_number,
+            scope_volume_number=vol,
             scope_chapter_number=frontier.start_chapter_number,
             metadata={
                 "end_chapter_number": frontier.end_chapter_number,
@@ -521,11 +602,11 @@ async def rebuild_narrative_tree(
             summary=reveal.summary,
             body_md=_node_body(
                 reveal.label,
-                _safe_line("类别", reveal.category),
-                _safe_line("正式揭示", reveal.summary),
-                _safe_line("保护条件", reveal.guard_condition),
-                _safe_line("允许出现卷", reveal.reveal_volume_number),
-                _safe_line("允许出现章节", reveal.reveal_chapter_number),
+                sl(_t("类别", is_en), reveal.category, is_en=is_en),
+                sl(_t("正式揭示", is_en), reveal.summary, is_en=is_en),
+                sl(_t("保护条件", is_en), reveal.guard_condition, is_en=is_en),
+                sl(_t("允许出现卷", is_en), reveal.reveal_volume_number, is_en=is_en),
+                sl(_t("允许出现章节", is_en), reveal.reveal_chapter_number, is_en=is_en),
             ),
             source_type="deferred_reveal",
             source_ref_id=reveal.id,
@@ -542,10 +623,10 @@ async def rebuild_narrative_tree(
             summary=gate.unlocks_summary,
             body_md=_node_body(
                 gate.label,
-                _safe_line("触发条件", gate.condition_summary),
-                _safe_line("解锁内容", gate.unlocks_summary),
-                _safe_line("解锁卷", gate.unlock_volume_number),
-                _safe_line("解锁章节", gate.unlock_chapter_number),
+                sl(_t("触发条件", is_en), gate.condition_summary, is_en=is_en),
+                sl(_t("解锁内容", is_en), gate.unlocks_summary, is_en=is_en),
+                sl(_t("解锁卷", is_en), gate.unlock_volume_number, is_en=is_en),
+                sl(_t("解锁章节", is_en), gate.unlock_chapter_number, is_en=is_en),
             ),
             source_type="expansion_gate",
             source_ref_id=gate.id,
@@ -563,10 +644,10 @@ async def rebuild_narrative_tree(
             summary=world_rule.description,
             body_md=_node_body(
                 world_rule.name,
-                _safe_line("rule_code", world_rule.rule_code),
-                _safe_line("description", world_rule.description),
-                _safe_line("story_consequence", world_rule.story_consequence),
-                _safe_line("exploitation_potential", world_rule.exploitation_potential),
+                sl("rule_code", world_rule.rule_code, is_en=is_en),
+                sl("description", world_rule.description, is_en=is_en),
+                sl("story_consequence", world_rule.story_consequence, is_en=is_en),
+                sl("exploitation_potential", world_rule.exploitation_potential, is_en=is_en),
             ),
             source_type="world_rule",
             source_ref_id=world_rule.id,
@@ -581,10 +662,10 @@ async def rebuild_narrative_tree(
             summary=location.story_role or location.atmosphere,
             body_md=_node_body(
                 location.name,
-                _safe_line("type", location.location_type),
-                _safe_line("story_role", location.story_role),
-                _safe_line("atmosphere", location.atmosphere),
-                _safe_line("key_rules", "、".join(str(item) for item in location.key_rule_codes)),
+                sl("type", location.location_type, is_en=is_en),
+                sl("story_role", location.story_role, is_en=is_en),
+                sl("atmosphere", location.atmosphere, is_en=is_en),
+                sl("key_rules", join_sep.join(str(item) for item in location.key_rule_codes), is_en=is_en),
             ),
             source_type="location",
             source_ref_id=location.id,
@@ -599,10 +680,10 @@ async def rebuild_narrative_tree(
             summary=faction.goal or faction.method,
             body_md=_node_body(
                 faction.name,
-                _safe_line("goal", faction.goal),
-                _safe_line("method", faction.method),
-                _safe_line("relationship_to_protagonist", faction.relationship_to_protagonist),
-                _safe_line("internal_conflict", faction.internal_conflict),
+                sl("goal", faction.goal, is_en=is_en),
+                sl("method", faction.method, is_en=is_en),
+                sl("relationship_to_protagonist", faction.relationship_to_protagonist, is_en=is_en),
+                sl("internal_conflict", faction.internal_conflict, is_en=is_en),
             ),
             source_type="faction",
             source_ref_id=faction.id,
@@ -616,14 +697,14 @@ async def rebuild_narrative_tree(
             summary=character.goal or character.arc_state or character.role,
             body_md=_node_body(
                 character.name,
-                _safe_line("role", character.role),
-                _safe_line("goal", character.goal),
-                _safe_line("fear", character.fear),
-                _safe_line("flaw", character.flaw),
-                _safe_line("secret", character.secret),
-                _safe_line("arc_trajectory", character.arc_trajectory),
-                _safe_line("arc_state", character.arc_state),
-                _safe_line("power_tier", character.power_tier),
+                sl("role", character.role, is_en=is_en),
+                sl("goal", character.goal, is_en=is_en),
+                sl("fear", character.fear, is_en=is_en),
+                sl("flaw", character.flaw, is_en=is_en),
+                sl("secret", character.secret, is_en=is_en),
+                sl("arc_trajectory", character.arc_trajectory, is_en=is_en),
+                sl("arc_state", character.arc_state, is_en=is_en),
+                sl("power_tier", character.power_tier, is_en=is_en),
             ),
             source_type="character",
             source_ref_id=character.id,
@@ -638,12 +719,12 @@ async def rebuild_narrative_tree(
             summary=arc.promise,
             body_md=_node_body(
                 arc.name,
-                _safe_line("arc_code", arc.arc_code),
-                _safe_line("arc_type", arc.arc_type),
-                _safe_line("promise", arc.promise),
-                _safe_line("core_question", arc.core_question),
-                _safe_line("target_payoff", arc.target_payoff),
-                _safe_line("description", arc.description),
+                sl("arc_code", arc.arc_code, is_en=is_en),
+                sl("arc_type", arc.arc_type, is_en=is_en),
+                sl("promise", arc.promise, is_en=is_en),
+                sl("core_question", arc.core_question, is_en=is_en),
+                sl("target_payoff", arc.target_payoff, is_en=is_en),
+                sl("description", arc.description, is_en=is_en),
             ),
             source_type="plot_arc",
             source_ref_id=arc.id,
@@ -658,17 +739,17 @@ async def rebuild_narrative_tree(
             summary=emotion_track.summary,
             body_md=_node_body(
                 emotion_track.title,
-                _safe_line("track_code", emotion_track.track_code),
-                _safe_line("track_type", emotion_track.track_type),
-                _safe_line("characters", f"{emotion_track.character_a_label} / {emotion_track.character_b_label}"),
-                _safe_line("relationship_type", emotion_track.relationship_type),
-                _safe_line("summary", emotion_track.summary),
-                _safe_line("desired_payoff", emotion_track.desired_payoff),
-                _safe_line("trust_level", emotion_track.trust_level),
-                _safe_line("attraction_level", emotion_track.attraction_level),
-                _safe_line("distance_level", emotion_track.distance_level),
-                _safe_line("conflict_level", emotion_track.conflict_level),
-                _safe_line("intimacy_stage", emotion_track.intimacy_stage),
+                sl("track_code", emotion_track.track_code, is_en=is_en),
+                sl("track_type", emotion_track.track_type, is_en=is_en),
+                sl("characters", f"{emotion_track.character_a_label} / {emotion_track.character_b_label}", is_en=is_en),
+                sl("relationship_type", emotion_track.relationship_type, is_en=is_en),
+                sl("summary", emotion_track.summary, is_en=is_en),
+                sl("desired_payoff", emotion_track.desired_payoff, is_en=is_en),
+                sl("trust_level", emotion_track.trust_level, is_en=is_en),
+                sl("attraction_level", emotion_track.attraction_level, is_en=is_en),
+                sl("distance_level", emotion_track.distance_level, is_en=is_en),
+                sl("conflict_level", emotion_track.conflict_level, is_en=is_en),
+                sl("intimacy_stage", emotion_track.intimacy_stage, is_en=is_en),
             ),
             source_type="emotion_track",
             source_ref_id=emotion_track.id,
@@ -690,15 +771,15 @@ async def rebuild_narrative_tree(
             summary=antagonist_plan.goal,
             body_md=_node_body(
                 antagonist_plan.title,
-                _safe_line("plan_code", antagonist_plan.plan_code),
-                _safe_line("antagonist", antagonist_plan.antagonist_label),
-                _safe_line("threat_type", antagonist_plan.threat_type),
-                _safe_line("goal", antagonist_plan.goal),
-                _safe_line("current_move", antagonist_plan.current_move),
-                _safe_line("next_countermove", antagonist_plan.next_countermove),
-                _safe_line("escalation_condition", antagonist_plan.escalation_condition),
-                _safe_line("reveal_timing", antagonist_plan.reveal_timing),
-                _safe_line("pressure_level", antagonist_plan.pressure_level),
+                sl("plan_code", antagonist_plan.plan_code, is_en=is_en),
+                sl("antagonist", antagonist_plan.antagonist_label, is_en=is_en),
+                sl("threat_type", antagonist_plan.threat_type, is_en=is_en),
+                sl("goal", antagonist_plan.goal, is_en=is_en),
+                sl("current_move", antagonist_plan.current_move, is_en=is_en),
+                sl("next_countermove", antagonist_plan.next_countermove, is_en=is_en),
+                sl("escalation_condition", antagonist_plan.escalation_condition, is_en=is_en),
+                sl("reveal_timing", antagonist_plan.reveal_timing, is_en=is_en),
+                sl("pressure_level", antagonist_plan.pressure_level, is_en=is_en),
             ),
             source_type="antagonist_plan",
             source_ref_id=antagonist_plan.id,
@@ -714,6 +795,16 @@ async def rebuild_narrative_tree(
         )
 
     for clue in clues:
+        _planted = (
+            f"Ch {clue.planted_in_chapter_number or '?'} Scene {clue.planted_in_scene_number or '?'}"
+            if is_en
+            else f"第{clue.planted_in_chapter_number or '?'}章第{clue.planted_in_scene_number or '?'}场"
+        )
+        _expected = (
+            f"Ch {clue.expected_payoff_by_chapter_number or '?'} Scene {clue.expected_payoff_by_scene_number or '?'}"
+            if is_en
+            else f"第{clue.expected_payoff_by_chapter_number or '?'}章第{clue.expected_payoff_by_scene_number or '?'}场"
+        )
         add_node(
             node_path=clue_path(clue.clue_code),
             node_type="clue",
@@ -721,12 +812,12 @@ async def rebuild_narrative_tree(
             summary=clue.description,
             body_md=_node_body(
                 clue.label,
-                _safe_line("clue_code", clue.clue_code),
-                _safe_line("clue_type", clue.clue_type),
-                _safe_line("description", clue.description),
-                _safe_line("planted_in", f"第{clue.planted_in_chapter_number or '?'}章第{clue.planted_in_scene_number or '?'}场"),
-                _safe_line("expected_payoff", f"第{clue.expected_payoff_by_chapter_number or '?'}章第{clue.expected_payoff_by_scene_number or '?'}场"),
-                _safe_line("reveal_guard", clue.reveal_guard),
+                sl("clue_code", clue.clue_code, is_en=is_en),
+                sl("clue_type", clue.clue_type, is_en=is_en),
+                sl("description", clue.description, is_en=is_en),
+                sl("planted_in", _planted, is_en=is_en),
+                sl("expected_payoff", _expected, is_en=is_en),
+                sl("reveal_guard", clue.reveal_guard, is_en=is_en),
             ),
             source_type="clue",
             source_ref_id=clue.id,
@@ -742,6 +833,16 @@ async def rebuild_narrative_tree(
         )
 
     for payoff in payoffs:
+        _target_pos = (
+            f"Ch {payoff.target_chapter_number or '?'} Scene {payoff.target_scene_number or '?'}"
+            if is_en
+            else f"第{payoff.target_chapter_number or '?'}章第{payoff.target_scene_number or '?'}场"
+        )
+        _actual_pos = (
+            f"Ch {payoff.actual_chapter_number or '?'} Scene {payoff.actual_scene_number or '?'}"
+            if is_en
+            else f"第{payoff.actual_chapter_number or '?'}章第{payoff.actual_scene_number or '?'}场"
+        )
         add_node(
             node_path=payoff_path(payoff.payoff_code),
             node_type="payoff",
@@ -749,10 +850,10 @@ async def rebuild_narrative_tree(
             summary=payoff.description,
             body_md=_node_body(
                 payoff.label,
-                _safe_line("payoff_code", payoff.payoff_code),
-                _safe_line("description", payoff.description),
-                _safe_line("target_position", f"第{payoff.target_chapter_number or '?'}章第{payoff.target_scene_number or '?'}场"),
-                _safe_line("actual_position", f"第{payoff.actual_chapter_number or '?'}章第{payoff.actual_scene_number or '?'}场"),
+                sl("payoff_code", payoff.payoff_code, is_en=is_en),
+                sl("description", payoff.description, is_en=is_en),
+                sl("target_position", _target_pos, is_en=is_en),
+                sl("actual_position", _actual_pos, is_en=is_en),
             ),
             source_type="payoff",
             source_ref_id=payoff.id,
@@ -779,13 +880,13 @@ async def rebuild_narrative_tree(
             summary=volume.goal or volume.theme,
             body_md=_node_body(
                 volume.title,
-                _safe_line("volume_number", volume.volume_number),
-                _safe_line("theme", volume.theme),
-                _safe_line("goal", volume.goal),
-                _safe_line("obstacle", volume.obstacle),
-                _safe_line("target_word_count", volume.target_word_count),
-                _safe_line("target_chapter_count", volume.target_chapter_count),
-                _safe_line("reader_hook_to_next", volume.metadata_json.get("reader_hook_to_next")),
+                sl("volume_number", volume.volume_number, is_en=is_en),
+                sl("theme", volume.theme, is_en=is_en),
+                sl("goal", volume.goal, is_en=is_en),
+                sl("obstacle", volume.obstacle, is_en=is_en),
+                sl("target_word_count", volume.target_word_count, is_en=is_en),
+                sl("target_chapter_count", volume.target_chapter_count, is_en=is_en),
+                sl("reader_hook_to_next", volume.metadata_json.get("reader_hook_to_next"), is_en=is_en),
             ),
             source_type="volume",
             source_ref_id=volume.id,
@@ -796,19 +897,21 @@ async def rebuild_narrative_tree(
         )
 
     for chapter in chapters:
+        _ch_fallback = f"Ch {chapter.chapter_number}" if is_en else f"第{chapter.chapter_number}章"
+        _ch_title = chapter.title or _ch_fallback
         add_node(
             node_path=chapter_path(chapter.chapter_number),
             node_type="chapter",
-            title=chapter.title or f"第{chapter.chapter_number}章",
+            title=_ch_title,
             summary=chapter.chapter_goal,
             body_md=_node_body(
-                chapter.title or f"第{chapter.chapter_number}章",
-                _safe_line("chapter_number", chapter.chapter_number),
-                _safe_line("chapter_goal", chapter.chapter_goal),
-                _safe_line("opening_situation", chapter.opening_situation),
-                _safe_line("main_conflict", chapter.main_conflict),
-                _safe_line("hook", chapter.hook_description),
-                _safe_line("emotion_arc", chapter.chapter_emotion_arc),
+                _ch_title,
+                sl("chapter_number", chapter.chapter_number, is_en=is_en),
+                sl("chapter_goal", chapter.chapter_goal, is_en=is_en),
+                sl("opening_situation", chapter.opening_situation, is_en=is_en),
+                sl("main_conflict", chapter.main_conflict, is_en=is_en),
+                sl("hook", chapter.hook_description, is_en=is_en),
+                sl("emotion_arc", chapter.chapter_emotion_arc, is_en=is_en),
             ),
             source_type="chapter",
             source_ref_id=chapter.id,
@@ -818,22 +921,23 @@ async def rebuild_narrative_tree(
         )
         chapter_contract = chapter_contract_by_number.get(chapter.chapter_number)
         if chapter_contract is not None:
+            _cc_title = f"Ch {chapter.chapter_number} Contract" if is_en else f"第{chapter.chapter_number}章 contract"
             add_node(
                 node_path=chapter_contract_path(chapter.chapter_number),
                 node_type="chapter_contract",
-                title=f"第{chapter.chapter_number}章 contract",
+                title=_cc_title,
                 summary=chapter_contract.contract_summary,
                 body_md=_node_body(
-                    f"第{chapter.chapter_number}章 contract",
-                    _safe_line("summary", chapter_contract.contract_summary),
-                    _safe_line("core_conflict", chapter_contract.core_conflict),
-                    _safe_line("emotional_shift", chapter_contract.emotional_shift),
-                    _safe_line("information_release", chapter_contract.information_release),
-                    _safe_line("closing_hook", chapter_contract.closing_hook),
-                    _safe_line("primary_arcs", "、".join(str(item) for item in chapter_contract.primary_arc_codes)),
-                    _safe_line("supporting_arcs", "、".join(str(item) for item in chapter_contract.supporting_arc_codes)),
-                    _safe_line("planted_clues", "、".join(str(item) for item in chapter_contract.planted_clue_codes)),
-                    _safe_line("due_payoffs", "、".join(str(item) for item in chapter_contract.due_payoff_codes)),
+                    _cc_title,
+                    sl("summary", chapter_contract.contract_summary, is_en=is_en),
+                    sl("core_conflict", chapter_contract.core_conflict, is_en=is_en),
+                    sl("emotional_shift", chapter_contract.emotional_shift, is_en=is_en),
+                    sl("information_release", chapter_contract.information_release, is_en=is_en),
+                    sl("closing_hook", chapter_contract.closing_hook, is_en=is_en),
+                    sl("primary_arcs", join_sep.join(str(item) for item in chapter_contract.primary_arc_codes), is_en=is_en),
+                    sl("supporting_arcs", join_sep.join(str(item) for item in chapter_contract.supporting_arc_codes), is_en=is_en),
+                    sl("planted_clues", join_sep.join(str(item) for item in chapter_contract.planted_clue_codes), is_en=is_en),
+                    sl("due_payoffs", join_sep.join(str(item) for item in chapter_contract.due_payoff_codes), is_en=is_en),
                 ),
                 source_type="chapter_contract",
                 source_ref_id=chapter_contract.id,
@@ -846,20 +950,26 @@ async def rebuild_narrative_tree(
         chapter = chapter_by_id.get(scene.chapter_id)
         if chapter is None:
             continue
+        _scene_fallback = (
+            f"Ch {chapter.chapter_number} Scene {scene.scene_number}"
+            if is_en
+            else f"第{chapter.chapter_number}章第{scene.scene_number}场"
+        )
+        _scene_title = scene.title or _scene_fallback
         add_node(
             node_path=scene_path(chapter.chapter_number, scene.scene_number),
             node_type="scene",
-            title=scene.title or f"第{chapter.chapter_number}章第{scene.scene_number}场",
+            title=_scene_title,
             summary=str(scene.purpose.get("story") or scene.hook_requirement or scene.scene_type),
             body_md=_node_body(
-                scene.title or f"第{chapter.chapter_number}章第{scene.scene_number}场",
-                _safe_line("scene_type", scene.scene_type),
-                _safe_line("participants", "、".join(str(item) for item in scene.participants)),
-                _safe_line("story_purpose", scene.purpose.get("story")),
-                _safe_line("emotion_purpose", scene.purpose.get("emotion")),
-                _safe_line("entry_state", scene.entry_state),
-                _safe_line("exit_state", scene.exit_state),
-                _safe_line("hook_requirement", scene.hook_requirement),
+                _scene_title,
+                sl("scene_type", scene.scene_type, is_en=is_en),
+                sl("participants", join_sep.join(str(item) for item in scene.participants), is_en=is_en),
+                sl("story_purpose", scene.purpose.get("story"), is_en=is_en),
+                sl("emotion_purpose", scene.purpose.get("emotion"), is_en=is_en),
+                sl("entry_state", scene.entry_state, is_en=is_en),
+                sl("exit_state", scene.exit_state, is_en=is_en),
+                sl("hook_requirement", scene.hook_requirement, is_en=is_en),
             ),
             source_type="scene",
             source_ref_id=scene.id,
@@ -874,21 +984,26 @@ async def rebuild_narrative_tree(
         )
         scene_contract = scene_contract_by_position.get((chapter.chapter_number, scene.scene_number))
         if scene_contract is not None:
+            _sc_title = (
+                f"Ch {chapter.chapter_number} Scene {scene.scene_number} Contract"
+                if is_en
+                else f"第{chapter.chapter_number}章第{scene.scene_number}场 contract"
+            )
             add_node(
                 node_path=scene_contract_path(chapter.chapter_number, scene.scene_number),
                 node_type="scene_contract",
-                title=f"第{chapter.chapter_number}章第{scene.scene_number}场 contract",
+                title=_sc_title,
                 summary=scene_contract.contract_summary,
                 body_md=_node_body(
-                    f"第{chapter.chapter_number}章第{scene.scene_number}场 contract",
-                    _safe_line("summary", scene_contract.contract_summary),
-                    _safe_line("core_conflict", scene_contract.core_conflict),
-                    _safe_line("emotional_shift", scene_contract.emotional_shift),
-                    _safe_line("information_release", scene_contract.information_release),
-                    _safe_line("tail_hook", scene_contract.tail_hook),
-                    _safe_line("arc_codes", "、".join(str(item) for item in scene_contract.arc_codes)),
-                    _safe_line("planted_clues", "、".join(str(item) for item in scene_contract.planted_clue_codes)),
-                    _safe_line("payoff_codes", "、".join(str(item) for item in scene_contract.payoff_codes)),
+                    _sc_title,
+                    sl("summary", scene_contract.contract_summary, is_en=is_en),
+                    sl("core_conflict", scene_contract.core_conflict, is_en=is_en),
+                    sl("emotional_shift", scene_contract.emotional_shift, is_en=is_en),
+                    sl("information_release", scene_contract.information_release, is_en=is_en),
+                    sl("tail_hook", scene_contract.tail_hook, is_en=is_en),
+                    sl("arc_codes", join_sep.join(str(item) for item in scene_contract.arc_codes), is_en=is_en),
+                    sl("planted_clues", join_sep.join(str(item) for item in scene_contract.planted_clue_codes), is_en=is_en),
+                    sl("payoff_codes", join_sep.join(str(item) for item in scene_contract.payoff_codes), is_en=is_en),
                 ),
                 source_type="scene_contract",
                 source_ref_id=scene_contract.id,

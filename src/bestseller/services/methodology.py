@@ -161,25 +161,35 @@ class HookLedger:
         *,
         hooks_planted: int = 0,
         hooks_resolved: int = 0,
+        language: str | None = None,
     ) -> list[str]:
         """Validate hook lifecycle rules for a chapter. Returns warnings."""
         warnings: list[str] = []
         active = self.active_count
+        _is_en = (language or "").lower().startswith("en")
 
         if hooks_planted == 0:
             warnings.append(
+                f"Chapter {chapter_number}: no new hooks planted. Rule: at least 1 new hook per chapter."
+                if _is_en else
                 f"第{chapter_number}章未植入新钩子。规则：每章≥1个新钩子。"
             )
         if hooks_resolved == 0 and active > 0:
             warnings.append(
-                f"第{chapter_number}章未消解任何旧钩子。规则：每章≥1个���解。"
+                f"Chapter {chapter_number}: no old hooks resolved. Rule: at least 1 resolution per chapter."
+                if _is_en else
+                f"第{chapter_number}章未消解任何旧钩子。规则：每章≥1个消解。"
             )
         if active > 7:
             warnings.append(
-                f"活跃钩子��={active}，超过上限7。读者可能记不住。"
+                f"Active hooks = {active}, exceeding the limit of 7. Readers may lose track."
+                if _is_en else
+                f"活跃钩子数={active}，超过上限7。读者可能记不住。"
             )
         if active < 3 and chapter_number > 3:
             warnings.append(
+                f"Active hooks = {active}, below the minimum of 3. Suspense is insufficient."
+                if _is_en else
                 f"活跃钩子数={active}，低于下限3。悬念不足。"
             )
 
@@ -188,6 +198,8 @@ class HookLedger:
             age = chapter_number - h.planted_chapter
             if age > 15:
                 warnings.append(
+                    f"Hook \"{h.description}\" has gone {age} chapters unresolved, exceeding the 15-chapter limit. Readers may have forgotten it."
+                    if _is_en else
                     f"钩子「{h.description}」已{age}章未消解，超过15章上限，可能已被读者遗忘。"
                 )
 

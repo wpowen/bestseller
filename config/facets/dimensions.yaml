@@ -1,0 +1,594 @@
+# Facet Dimensions Configuration
+# This file defines all available dimensions for the StoryFacets system.
+# It serves as both validation schema and knowledge base for the Story Architect Agent.
+
+dimensions:
+  - name: primary_genre
+    label_zh: "主类型"
+    label_en: "Primary Genre"
+    description: "The main genre category. Required user input."
+    required: true
+    allow_freeform: false
+    max_values: 1
+    values:
+      # ── Chinese genres ──
+      - key: xianxia
+        label_zh: "仙侠"
+        label_en: "Xianxia"
+        heat_score: 88
+      - key: xuanhuan
+        label_zh: "玄幻"
+        label_en: "Xuanhuan"
+        heat_score: 85
+      - key: wuxia
+        label_zh: "武侠"
+        label_en: "Wuxia"
+        heat_score: 60
+      - key: urban
+        label_zh: "都市"
+        label_en: "Urban"
+        heat_score: 82
+      - key: apocalypse
+        label_zh: "末日"
+        label_en: "Apocalypse"
+        heat_score: 78
+      - key: suspense
+        label_zh: "悬疑推理"
+        label_en: "Suspense/Mystery"
+        heat_score: 75
+      - key: history
+        label_zh: "历史"
+        label_en: "Historical"
+        heat_score: 65
+      - key: romance-cn
+        label_zh: "言情"
+        label_en: "Romance (CN)"
+        heat_score: 80
+      - key: scifi-cn
+        label_zh: "科幻"
+        label_en: "Sci-Fi (CN)"
+        heat_score: 70
+      - key: game
+        label_zh: "游戏电竞"
+        label_en: "Gaming/Esports"
+        heat_score: 72
+      - key: infinite-flow
+        label_zh: "无限流"
+        label_en: "Infinite Flow"
+        heat_score: 76
+      - key: rule-horror
+        label_zh: "规则怪谈"
+        label_en: "Rule Horror"
+        heat_score: 80
+      - key: beast-taming
+        label_zh: "御兽"
+        label_en: "Beast Taming"
+        heat_score: 68
+      - key: light-novel
+        label_zh: "轻小说"
+        label_en: "Light Novel"
+        heat_score: 55
+      # ── English genres ──
+      - key: fantasy
+        label_zh: "奇幻"
+        label_en: "Fantasy"
+        heat_score: 90
+      - key: romance
+        label_zh: "浪漫"
+        label_en: "Romance"
+        heat_score: 92
+      - key: thriller
+        label_zh: "惊悚"
+        label_en: "Thriller"
+        heat_score: 78
+      - key: scifi
+        label_zh: "科幻"
+        label_en: "Sci-Fi"
+        heat_score: 75
+      - key: horror
+        label_zh: "恐怖"
+        label_en: "Horror"
+        heat_score: 65
+      - key: litrpg
+        label_zh: "数值升级"
+        label_en: "LitRPG"
+        heat_score: 85
+      - key: progression
+        label_zh: "进阶"
+        label_en: "Progression Fantasy"
+        heat_score: 88
+      - key: romantasy
+        label_zh: "浪漫奇幻"
+        label_en: "Romantasy"
+        heat_score: 86
+      - key: cozy-fantasy
+        label_zh: "治愈奇幻"
+        label_en: "Cozy Fantasy"
+        heat_score: 82
+      - key: dark-romance
+        label_zh: "暗黑浪漫"
+        label_en: "Dark Romance"
+        heat_score: 84
+      - key: space-opera
+        label_zh: "太空歌剧"
+        label_en: "Space Opera"
+        heat_score: 62
+      - key: urban-fantasy
+        label_zh: "都市奇幻"
+        label_en: "Urban Fantasy"
+        heat_score: 70
+      - key: military-scifi
+        label_zh: "军事科幻"
+        label_en: "Military Sci-Fi"
+        heat_score: 58
+      - key: paranormal-romance
+        label_zh: "超自然浪漫"
+        label_en: "Paranormal Romance"
+        heat_score: 72
+
+  - name: tone
+    label_zh: "基调"
+    label_en: "Tone"
+    description: "The overall emotional tone of the story."
+    required: false
+    allow_freeform: false
+    max_values: 1
+    values:
+      - key: dark
+        label_zh: "暗黑"
+        label_en: "Dark"
+        heat_score: 75
+      - key: lighthearted
+        label_zh: "轻快"
+        label_en: "Lighthearted"
+        heat_score: 70
+      - key: tense
+        label_zh: "紧张"
+        label_en: "Tense"
+        heat_score: 72
+      - key: comedic
+        label_zh: "喜剧"
+        label_en: "Comedic"
+        heat_score: 65
+      - key: bittersweet
+        label_zh: "苦乐参半"
+        label_en: "Bittersweet"
+        heat_score: 68
+      - key: epic
+        label_zh: "史诗"
+        label_en: "Epic"
+        heat_score: 80
+      - key: cozy
+        label_zh: "治愈"
+        label_en: "Cozy"
+        heat_score: 82
+      - key: gritty
+        label_zh: "硬核写实"
+        label_en: "Gritty"
+        heat_score: 60
+      - key: whimsical
+        label_zh: "奇趣"
+        label_en: "Whimsical"
+        heat_score: 55
+      - key: melancholic
+        label_zh: "忧郁"
+        label_en: "Melancholic"
+        heat_score: 50
+
+  - name: narrative_drive
+    label_zh: "叙事驱动"
+    label_en: "Narrative Drive"
+    description: "What propels the story forward."
+    required: false
+    allow_freeform: false
+    max_values: 1
+    values:
+      - key: progression
+        label_zh: "升级成长"
+        label_en: "Progression"
+        description: "Power growth, levels, realms, stats."
+        heat_score: 88
+      - key: mystery
+        label_zh: "推理解谜"
+        label_en: "Mystery"
+        description: "Clues, deduction, truth revelation."
+        heat_score: 75
+      - key: relationship
+        label_zh: "关系推动"
+        label_en: "Relationship"
+        description: "Emotional bonds drive plot forward."
+        heat_score: 80
+      - key: survival
+        label_zh: "生存"
+        label_en: "Survival"
+        description: "Staying alive against escalating threats."
+        heat_score: 72
+      - key: strategy
+        label_zh: "策略博弈"
+        label_en: "Strategy"
+        description: "Political maneuvering, war games, schemes."
+        heat_score: 70
+      - key: base-building
+        label_zh: "经营建设"
+        label_en: "Base Building"
+        description: "Territory development, resource management."
+        heat_score: 74
+      - key: exploration
+        label_zh: "探索发现"
+        label_en: "Exploration"
+        description: "Discovering new places, secrets, civilizations."
+        heat_score: 68
+      - key: revenge
+        label_zh: "复仇"
+        label_en: "Revenge"
+        description: "Payback against those who wronged the MC."
+        heat_score: 65
+      - key: heist
+        label_zh: "计划执行"
+        label_en: "Heist/Plan"
+        description: "Elaborate plans coming together."
+        heat_score: 60
+
+  - name: power_system
+    label_zh: "力量体系"
+    label_en: "Power System"
+    description: "The type of power/magic system in the world."
+    required: false
+    allow_freeform: true
+    max_values: 1
+    values:
+      - key: cultivation-tiers
+        label_zh: "境界修仙"
+        label_en: "Cultivation Tiers"
+        heat_score: 85
+      - key: litrpg-stats
+        label_zh: "数值系统"
+        label_en: "LitRPG Stats"
+        heat_score: 82
+      - key: magic-system
+        label_zh: "魔法体系"
+        label_en: "Magic System"
+        heat_score: 75
+      - key: martial-arts
+        label_zh: "武功内力"
+        label_en: "Martial Arts"
+        heat_score: 60
+      - key: psionic
+        label_zh: "超能力"
+        label_en: "Psionic/Super Powers"
+        heat_score: 68
+      - key: tech-augmentation
+        label_zh: "科技强化"
+        label_en: "Tech Augmentation"
+        heat_score: 65
+      - key: bloodline
+        label_zh: "血脉觉醒"
+        label_en: "Bloodline"
+        heat_score: 72
+      - key: none
+        label_zh: "无"
+        label_en: "None"
+        heat_score: 40
+
+  - name: relationship_mode
+    label_zh: "感情线"
+    label_en: "Relationship Mode"
+    description: "How romance/relationships function in the story."
+    required: false
+    allow_freeform: false
+    max_values: 1
+    values:
+      - key: no-cp
+        label_zh: "无CP"
+        label_en: "No Romance"
+        heat_score: 50
+      - key: slow-burn
+        label_zh: "慢热"
+        label_en: "Slow Burn"
+        heat_score: 85
+      - key: enemies-to-lovers
+        label_zh: "仇敌变情人"
+        label_en: "Enemies to Lovers"
+        heat_score: 88
+      - key: bg
+        label_zh: "男女主"
+        label_en: "M/F"
+        heat_score: 75
+      - key: bl
+        label_zh: "耽美"
+        label_en: "M/M"
+        heat_score: 70
+      - key: gl
+        label_zh: "百合"
+        label_en: "F/F"
+        heat_score: 60
+      - key: harem
+        label_zh: "后宫"
+        label_en: "Harem"
+        heat_score: 55
+      - key: reverse-harem
+        label_zh: "逆后宫"
+        label_en: "Reverse Harem"
+        heat_score: 65
+      - key: found-family
+        label_zh: "羁绊家人"
+        label_en: "Found Family"
+        heat_score: 78
+      - key: bromance
+        label_zh: "兄弟情"
+        label_en: "Bromance"
+        heat_score: 62
+
+  - name: emotional_register
+    label_zh: "情感基调"
+    label_en: "Emotional Register"
+    description: "The primary emotional experience delivered to readers."
+    required: false
+    allow_freeform: false
+    max_values: 1
+    values:
+      - key: power-fantasy
+        label_zh: "爽文"
+        label_en: "Power Fantasy"
+        heat_score: 85
+      - key: bittersweet
+        label_zh: "苦甜"
+        label_en: "Bittersweet"
+        heat_score: 65
+      - key: cozy
+        label_zh: "治愈暖心"
+        label_en: "Cozy/Warm"
+        heat_score: 80
+      - key: grimdark
+        label_zh: "黑暗残酷"
+        label_en: "Grimdark"
+        heat_score: 55
+      - key: balanced
+        label_zh: "均衡"
+        label_en: "Balanced"
+        heat_score: 70
+      - key: cathartic
+        label_zh: "宣泄快感"
+        label_en: "Cathartic"
+        heat_score: 75
+      - key: romantic-tension
+        label_zh: "情感张力"
+        label_en: "Romantic Tension"
+        heat_score: 78
+      - key: intellectual
+        label_zh: "智力快感"
+        label_en: "Intellectual"
+        heat_score: 60
+
+  - name: trope_tags
+    label_zh: "标签"
+    label_en: "Trope Tags"
+    description: "Specific story tropes and themes. AI selects 3-8 creative combinations."
+    required: false
+    allow_freeform: true
+    max_values: 8
+    values:
+      # ── Chinese tropes ──
+      - key: 废柴逆袭
+        label_en: "Underdog Rise"
+        heat_score: 88
+      - key: 重生
+        label_en: "Rebirth"
+        heat_score: 85
+      - key: 穿书
+        label_en: "Transmigration into Book"
+        heat_score: 82
+      - key: 快穿
+        label_en: "Quick Transmigration"
+        heat_score: 75
+      - key: 宗门
+        label_en: "Sect"
+        heat_score: 72
+      - key: 秘境
+        label_en: "Secret Realm"
+        heat_score: 78
+      - key: 打脸
+        label_en: "Face-Slapping"
+        heat_score: 80
+      - key: 种田
+        label_en: "Farming/Base Building"
+        heat_score: 74
+      - key: 宫斗
+        label_en: "Palace Intrigue"
+        heat_score: 70
+      - key: 年代文
+        label_en: "Era Story"
+        heat_score: 65
+      - key: 系统
+        label_en: "System"
+        heat_score: 78
+      - key: 金手指
+        label_en: "Golden Finger"
+        heat_score: 82
+      - key: 囤货
+        label_en: "Hoarding/Stockpiling"
+        heat_score: 70
+      - key: 副本
+        label_en: "Instance/Dungeon"
+        heat_score: 76
+      - key: 规则怪谈
+        label_en: "Rule Horror"
+        heat_score: 84
+      - key: 师徒
+        label_en: "Master-Disciple"
+        heat_score: 65
+      - key: 兽��
+        label_en: "Beast Tide"
+        heat_score: 60
+      - key: 炼器
+        label_en: "Artifact Refining"
+        heat_score: 55
+      - key: 丹药
+        label_en: "Alchemy"
+        heat_score: 58
+      - key: 空间
+        label_en: "Pocket Space"
+        heat_score: 72
+      - key: 商战
+        label_en: "Business War"
+        heat_score: 60
+      - key: 复仇
+        label_en: "Revenge"
+        heat_score: 75
+      - key: 团宠
+        label_en: "Group Pampering"
+        heat_score: 70
+      - key: 女强
+        label_en: "Strong Female Lead"
+        heat_score: 78
+      - key: 马甲
+        label_en: "Hidden Identity"
+        heat_score: 80
+      - key: 直播
+        label_en: "Livestreaming"
+        heat_score: 68
+      - key: 末日求生
+        label_en: "Apocalypse Survival"
+        heat_score: 76
+      - key: 灵气复苏
+        label_en: "Spiritual Revival"
+        heat_score: 72
+      - key: 诡异复苏
+        label_en: "Horror Revival"
+        heat_score: 74
+      - key: 电竞
+        label_en: "Esports"
+        heat_score: 66
+      # ── English tropes ──
+      - key: isekai
+        label_en: "Isekai"
+        heat_score: 80
+      - key: dungeon-core
+        label_en: "Dungeon Core"
+        heat_score: 75
+      - key: academy
+        label_en: "Academy"
+        heat_score: 72
+      - key: chosen-one
+        label_en: "Chosen One"
+        heat_score: 60
+      - key: found-family
+        label_en: "Found Family"
+        heat_score: 78
+      - key: morally-grey
+        label_en: "Morally Grey MC"
+        heat_score: 82
+      - key: time-loop
+        label_en: "Time Loop"
+        heat_score: 76
+      - key: unreliable-narrator
+        label_en: "Unreliable Narrator"
+        heat_score: 60
+      - key: monster-evolution
+        label_en: "Monster Evolution"
+        heat_score: 74
+      - key: portal-fantasy
+        label_en: "Portal Fantasy"
+        heat_score: 68
+      - key: fated-mates
+        label_en: "Fated Mates"
+        heat_score: 75
+      - key: forced-proximity
+        label_en: "Forced Proximity"
+        heat_score: 80
+      - key: second-chance
+        label_en: "Second Chance"
+        heat_score: 72
+      - key: one-bed
+        label_en: "Only One Bed"
+        heat_score: 65
+      - key: secret-identity
+        label_en: "Secret Identity"
+        heat_score: 70
+      - key: power-imbalance
+        label_en: "Power Imbalance"
+        heat_score: 68
+      - key: heist-crew
+        label_en: "Heist Crew"
+        heat_score: 64
+      - key: survival-game
+        label_en: "Survival Game"
+        heat_score: 76
+      - key: kingdom-building
+        label_en: "Kingdom Building"
+        heat_score: 72
+      - key: crafting
+        label_en: "Crafting"
+        heat_score: 70
+      - key: antihero
+        label_en: "Antihero"
+        heat_score: 74
+      - key: forbidden-love
+        label_en: "Forbidden Love"
+        heat_score: 78
+      - key: mentor-figure
+        label_en: "Mentor Figure"
+        heat_score: 55
+      - key: dark-academia
+        label_en: "Dark Academia"
+        heat_score: 66
+      - key: unrequited-love
+        label_en: "Unrequited Love"
+        heat_score: 62
+      - key: political-intrigue
+        label_en: "Political Intrigue"
+        heat_score: 70
+
+  - name: gender_channel
+    label_zh: "频道"
+    label_en: "Gender Channel"
+    description: "Target reader segment (primarily for Chinese platforms)."
+    required: false
+    allow_freeform: false
+    max_values: 1
+    values:
+      - key: male
+        label_zh: "男频"
+        label_en: "Male-oriented"
+        heat_score: 75
+      - key: female
+        label_zh: "女频"
+        label_en: "Female-oriented"
+        heat_score: 80
+      - key: neutral
+        label_zh: "通用"
+        label_en: "Gender-neutral"
+        heat_score: 70
+
+  - name: platform_style
+    label_zh: "平台风格"
+    label_en: "Platform Style"
+    description: "Only affects prose style (sentence length, dialogue ratio, info density). Does NOT affect plot or tropes."
+    required: false
+    allow_freeform: false
+    max_values: 1
+    values:
+      - key: fanqie
+        label_zh: "番茄"
+        label_en: "Fanqie (fast-paced)"
+        heat_score: 85
+      - key: qidian
+        label_zh: "起点"
+        label_en: "Qidian (world-building)"
+        heat_score: 80
+      - key: jinjiang
+        label_zh: "晋江"
+        label_en: "JJWXC (character-driven)"
+        heat_score: 78
+      - key: royal-road
+        label_zh: "Royal Road"
+        label_en: "Royal Road"
+        heat_score: 82
+      - key: kindle-unlimited
+        label_zh: "KU"
+        label_en: "Kindle Unlimited"
+        heat_score: 85
+      - key: wattpad
+        label_zh: "Wattpad"
+        label_en: "Wattpad"
+        heat_score: 60

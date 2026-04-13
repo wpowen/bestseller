@@ -2121,9 +2121,12 @@ def infer_genre_preset(genre: str, sub_genre: str | None = None) -> GenrePreset 
     return best_match
 
 
-def validate_longform_scope(target_words: int, target_chapters: int) -> None:
+def validate_longform_scope(target_words: int, target_chapters: int, *, language: str | None = None) -> None:
+    _is_en = (language or "").lower().startswith("en")
     if target_words < MINIMUM_NOVEL_WORD_COUNT:
         raise ValueError(
+            f"Target word count {target_words} is below the minimum {MINIMUM_NOVEL_WORD_COUNT}."
+            if _is_en else
             f"目标总字数 {target_words} 低于最低要求 {MINIMUM_NOVEL_WORD_COUNT} 字。"
             f"小说总字数不得少于 {MINIMUM_NOVEL_WORD_COUNT} 字。"
         )
@@ -2131,6 +2134,9 @@ def validate_longform_scope(target_words: int, target_chapters: int) -> None:
     minimum_required = target_chapters * policy.min
     if target_words < minimum_required:
         raise ValueError(
+            f"Target word count {target_words} doesn't meet chapter minimum. "
+            f"At {policy.min} words per chapter minimum, {target_chapters} chapters require at least {minimum_required} words."
+            if _is_en else
             f"当前目标总字数 {target_words} 不满足章节下限。"
             f"按每章最低 {policy.min} 字计算，{target_chapters} 章至少需要 {minimum_required} 字。"
         )

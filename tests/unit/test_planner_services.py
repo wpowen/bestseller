@@ -87,9 +87,64 @@ def test_fallback_cast_spec_uses_neutral_role_labels_when_names_are_missing() ->
     world_spec = planner_services._fallback_world_spec(project, premise, book_spec)
     cast_spec = planner_services._fallback_cast_spec(project, premise, book_spec, world_spec)
 
-    assert cast_spec["protagonist"]["name"] == "主角"
-    assert cast_spec["antagonist"]["name"] == "对手"
-    assert cast_spec["supporting_cast"][0]["name"] == "盟友甲"
+    assert cast_spec["protagonist"]["name"] == "林逸"
+    assert cast_spec["antagonist"]["name"] == "顾铭"
+    assert cast_spec["supporting_cast"][0]["name"] == "沈远"
+
+
+def test_story_package_seed_informs_fallback_specs(tmp_path: Path) -> None:
+    package_path = tmp_path / "story_package.json"
+    package_path.write_text(
+        json.dumps(
+            {
+                "book": {
+                    "synopsis": "末日前三天，灰楼开门。",
+                    "tags": ["末日生存"],
+                    "interaction_tags": ["势力扩张"],
+                    "characters": [
+                        {"name": "沈崇", "role": "反派", "title": "灰楼执钥人"},
+                        {"name": "唐海", "role": "盟友", "title": "黑市搬运头子"},
+                        {"name": "韩策", "role": "宿敌", "title": "安全区监察官"},
+                    ],
+                },
+                "reader_desire_map": {
+                    "core_fantasy": "主角靠规则优势一路滚雪球。",
+                    "reward_promises": ["抢先囤货", "建立据点"],
+                    "control_promises": ["掌控通路"],
+                    "suspense_questions": ["谁在操纵灰楼"],
+                },
+                "story_bible": {
+                    "premise": "末日前三天，灰楼开门。",
+                    "side_threads": ["家族裂痕", "安全区权力斗争"],
+                    "mainline_goal": "在秩序崩塌前抢到第一批核心资源。",
+                },
+                "route_graph": {
+                    "mainline": "囤货 -> 建据点 -> 扩势力",
+                    "hidden_routes": [{"reveal": "地下仓链并未断绝"}],
+                    "milestones": [{"title": "灰楼开门"}],
+                },
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    project = build_project()
+    project.metadata_json = {"story_package_path": str(package_path)}
+    premise = "一个普通人得到灰楼交易资格，必须在秩序崩塌前囤起第一座安全屋。"
+
+    book_spec = planner_services._fallback_book_spec(project, premise)
+    world_spec = planner_services._fallback_world_spec(project, premise, book_spec)
+    cast_spec = planner_services._fallback_cast_spec(project, premise, book_spec, world_spec)
+    volume_plan = planner_services._fallback_volume_plan(project, book_spec, cast_spec, world_spec)
+
+    assert book_spec["logline"] == "末日前三天，灰楼开门。"
+    assert book_spec["series_engine"]["reader_promise"] == "主角靠规则优势一路滚雪球。"
+    assert book_spec["series_engine"]["mainline_milestones"][0] == "灰楼开门"
+    assert cast_spec["antagonist"]["name"] == "沈崇"
+    assert cast_spec["supporting_cast"][0]["name"] == "唐海"
+    assert volume_plan[0]["volume_title"] == "灰楼开门"
+    assert any("地下仓链并未断绝" in item for item in volume_plan[0]["key_reveals"])
 
 
 def test_fallback_world_spec_uses_neutral_rule_scaffold() -> None:
@@ -518,20 +573,22 @@ async def test_generate_novel_plan_creates_all_artifacts_and_workflow_records(
 
     assert result.chapter_count == project.target_chapters
     assert result.volume_count >= 1
-    assert [item.artifact_type for item in result.artifacts] == [
+    artifact_types = [item.artifact_type for item in result.artifacts]
+    assert artifact_types[:6] == [
         ArtifactType.PREMISE,
         ArtifactType.BOOK_SPEC,
         ArtifactType.WORLD_SPEC,
         ArtifactType.CAST_SPEC,
         ArtifactType.VOLUME_PLAN,
         ArtifactType.PLAN_VALIDATION,
-        ArtifactType.VOLUME_CHAPTER_OUTLINE,
-        ArtifactType.CHAPTER_OUTLINE_BATCH,
     ]
-    assert len(result.llm_run_ids) == 5
+    assert ArtifactType.PROMOTIONAL_BRIEF in artifact_types
+    assert ArtifactType.VOLUME_CHAPTER_OUTLINE in artifact_types
+    assert ArtifactType.CHAPTER_OUTLINE_BATCH in artifact_types
+    assert len(result.llm_run_ids) == 6
     assert len(workflow_runs) == 1
     assert workflow_runs[0].status == "completed"
-    assert len(workflow_steps) == 6
+    assert len(workflow_steps) == 7
 
 
 def test_fallback_volume_plan_has_different_obstacles_per_volume() -> None:

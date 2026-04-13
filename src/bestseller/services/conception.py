@@ -52,6 +52,9 @@ class ConceptionResult:
     title: str
     conception_log: list[dict[str, Any]]
     llm_run_ids: list[UUID]
+    commercial_brief: dict[str, Any] = field(default_factory=dict)
+    synopsis: str = ""
+    tags: list[str] = field(default_factory=list)
 
 
 def _extract_json(text: str) -> dict[str, Any]:
@@ -110,8 +113,16 @@ async def _llm_call(
     return result.content, result.llm_run_id
 
 
-def _build_genre_context(genre_key: str, chapter_count: int) -> dict[str, Any]:
-    """Build context dict from genre preset for prompts."""
+def _build_genre_context(
+    genre_key: str,
+    chapter_count: int,
+    story_facets: object | None = None,
+) -> dict[str, Any]:
+    """Build context dict from genre preset for prompts.
+
+    When story_facets is provided, enriches the context with multi-dimensional
+    facet information for the conception agents.
+    """
     presets = {p.key: p for p in list_genre_presets()}
     preset = presets.get(genre_key)
     if preset is None:
@@ -133,7 +144,7 @@ def _build_genre_context(genre_key: str, chapter_count: int) -> dict[str, Any]:
         if recommended_platform is None:
             recommended_platform = preset.recommended_platforms[0]
 
-    return {
+    ctx: dict[str, Any] = {
         "genre_key": genre_key,
         "genre": preset.genre,
         "sub_genre": preset.sub_genre,
@@ -148,6 +159,270 @@ def _build_genre_context(genre_key: str, chapter_count: int) -> dict[str, Any]:
         "default_platform": recommended_platform,
         "existing_overrides": sanitize_genre_story_overrides(preset.writing_profile_overrides),
     }
+
+    # Enrich with StoryFacets if available
+    if story_facets is not None:
+        try:
+            from bestseller.domain.facets import StoryFacets
+
+            facets: StoryFacets | None = None
+            if isinstance(story_facets, StoryFacets):
+                facets = story_facets
+            elif isinstance(story_facets, dict):
+                facets = StoryFacets(**story_facets)
+
+            if facets is not None:
+                ctx["story_facets"] = {
+                    "sub_genres": list(facets.sub_genres),
+                    "setting": facets.setting,
+                    "tone": facets.tone,
+                    "power_system": facets.power_system,
+                    "relationship_mode": facets.relationship_mode,
+                    "narrative_drive": facets.narrative_drive,
+                    "emotional_register": facets.emotional_register,
+                    "trope_tags": list(facets.trope_tags),
+                }
+                # Override sub_genre with richer facet data
+                if facets.sub_genres:
+                    ctx["sub_genre"] = ", ".join(facets.sub_genres)
+                # Add facet-driven description enhancement
+                ctx["facet_description"] = (
+                    f"Setting: {facets.setting}\n"
+                    f"Tone: {facets.tone}\n"
+                    f"Narrative Drive: {facets.narrative_drive}\n"
+                    f"Relationship: {facets.relationship_mode}\n"
+                    f"Tropes: {', '.join(facets.trope_tags)}"
+                )
+        except Exception:
+            logger.debug("Failed to enrich genre context with story_facets", exc_info=True)
+
+    return ctx
+
+
+def _commercial_brief_prompt_block(ctx: dict[str, Any]) -> str:
+    brief = ctx.get("commercial_brief")
+    if not isinstance(brief, dict) or not brief:
+        return ""
+    label = "[Auto commercial positioning brief]" if str(ctx.get("language", "")).startswith("en") else "【自动商业化立项 brief】"
+    return f"\n\n{label}\n{json.dumps(brief, ensure_ascii=False, indent=2)}\n"
+
+
+def _normalize_string_list(values: Any) -> list[str]:
+    if not isinstance(values, list):
+        return []
+    deduped: list[str] = []
+    for value in values:
+        text = str(value).strip()
+        if text and text not in deduped:
+            deduped.append(text)
+    return deduped
+
+
+def _build_commercial_fallback(ctx: dict[str, Any]) -> dict[str, Any]:
+    is_en = str(ctx.get("language", "zh-CN")).startswith("en")
+    existing_overrides = ctx.get("existing_overrides", {})
+    market = existing_overrides.get("market", {}) if isinstance(existing_overrides, dict) else {}
+    style = existing_overrides.get("style", {}) if isinstance(existing_overrides, dict) else {}
+    target_audiences = _normalize_string_list(ctx.get("recommended_audiences"))[:3]
+    trend_keywords = _normalize_string_list(ctx.get("trend_keywords"))[:4]
+    benchmark_works = (
+        [
+            f"{ctx.get('sub_genre') or ctx.get('genre')}头部连载",
+            f"{ctx.get('default_platform') or '目标平台'}同类爆款",
+        ]
+        if not is_en
+        else [
+            f"Top {ctx.get('sub_genre') or ctx.get('genre')} serial",
+            f"Best-performing title on {ctx.get('default_platform') or 'the target platform'}",
+        ]
+    )
+    return {
+        "platform_target": market.get("platform_target") or ctx.get("default_platform"),
+        "target_audiences": target_audiences,
+        "benchmark_works": benchmark_works,
+        "reader_promise": market.get("reader_promise") or (
+            f"以{ctx.get('genre')}核心爽点提供稳定追读回报。"
+            if not is_en else f"Deliver a dependable {ctx.get('genre')} page-turning payoff."
+        ),
+        "selling_points": _normalize_string_list(market.get("selling_points")) or trend_keywords[:3],
+        "trope_keywords": _normalize_string_list(market.get("trope_keywords")) or trend_keywords[:3],
+        "hook_keywords": _normalize_string_list(market.get("hook_keywords")) or trend_keywords[:2],
+        "content_mode": market.get("content_mode") or (
+            "中文网文长篇连载" if not is_en else "Commercial English web serial"
+        ),
+        "opening_strategy": market.get("opening_strategy") or (
+            "开篇先亮出主角差异化优势、即时利益和明确危险。"
+            if not is_en else "Reveal the protagonist edge, immediate upside, and visible danger in the opening."
+        ),
+        "chapter_hook_strategy": market.get("chapter_hook_strategy") or (
+            "每章末尾都要留下更大的问题、威胁或利益诱因。"
+            if not is_en else "End each chapter with a sharper question, threat, or temptation."
+        ),
+        "pacing_profile": market.get("pacing_profile") or "fast",
+        "payoff_rhythm": market.get("payoff_rhythm") or (
+            "短回报密集，长回报递延" if not is_en else "Dense short payoffs with delayed major reversals"
+        ),
+        "update_strategy": market.get("update_strategy") or (
+            "日更连载" if not is_en else "Frequent serial updates"
+        ),
+        "taboo_topics": _normalize_string_list(style.get("taboo_topics")),
+        "taboo_words": _normalize_string_list(style.get("taboo_words")),
+        "commercial_rationale": (
+            f"优先匹配 {ctx.get('default_platform')} 平台与 {', '.join(target_audiences) or '核心受众'} 的追读偏好。"
+            if not is_en
+            else f"Bias toward {ctx.get('default_platform')} and the retention pattern of {', '.join(target_audiences) or 'the core audience'}."
+        ),
+        "confidence": round(float(ctx.get("trend_score", 70)) / 100.0, 2),
+        "assumptions": (
+            ["按推荐平台的主流商业连载节奏组织前 30 章。"]
+            if not is_en else ["Assume the first 30 chapters should follow the dominant retention pattern of the target platform."]
+        ),
+    }
+
+
+def _apply_commercial_brief_to_profile(
+    profile: dict[str, Any],
+    brief: dict[str, Any],
+) -> dict[str, Any]:
+    merged = dict(profile)
+    market = dict(merged.get("market") or {})
+    style = dict(merged.get("style") or {})
+
+    for key in (
+        "platform_target",
+        "reader_promise",
+        "content_mode",
+        "opening_strategy",
+        "chapter_hook_strategy",
+        "pacing_profile",
+        "payoff_rhythm",
+        "update_strategy",
+    ):
+        value = brief.get(key)
+        if value and not market.get(key):
+            market[key] = value
+
+    for key in ("selling_points", "trope_keywords", "hook_keywords"):
+        existing = _normalize_string_list(market.get(key))
+        incoming = _normalize_string_list(brief.get(key))
+        market[key] = existing + [item for item in incoming if item not in existing]
+
+    benchmark_works = _normalize_string_list(brief.get("benchmark_works"))
+    taboo_topics = _normalize_string_list(brief.get("taboo_topics"))
+    taboo_words = _normalize_string_list(brief.get("taboo_words"))
+    style["reference_works"] = _normalize_string_list(style.get("reference_works")) + [
+        item for item in benchmark_works if item not in _normalize_string_list(style.get("reference_works"))
+    ]
+    style["taboo_topics"] = _normalize_string_list(style.get("taboo_topics")) + [
+        item for item in taboo_topics if item not in _normalize_string_list(style.get("taboo_topics"))
+    ]
+    style["taboo_words"] = _normalize_string_list(style.get("taboo_words")) + [
+        item for item in taboo_words if item not in _normalize_string_list(style.get("taboo_words"))
+    ]
+    rationale = str(brief.get("commercial_rationale") or "").strip()
+    if rationale:
+        custom_rules = _normalize_string_list(style.get("custom_rules"))
+        if rationale not in custom_rules:
+            style["custom_rules"] = custom_rules + [rationale]
+
+    merged["market"] = market
+    merged["style"] = style
+    return merged
+
+
+_COMMERCIAL_POSITIONING_SYSTEM = (
+    "你是一位商业化网文立项总监。你要在无人干预的前提下，为新小说自动完成平台定位、受众细分、"
+    "对标作品、追读承诺、更新节奏和内容禁区设计。你的判断必须可执行、偏商业结果导向。"
+    "输出必须是合法 JSON，不要解释。"
+)
+
+_COMMERCIAL_POSITIONING_SYSTEM_EN = (
+    "You are a commercial fiction commissioning director. Autonomously decide the platform fit, audience segment, "
+    "benchmark works, retention promise, release cadence, and content boundaries for a new novel. "
+    "Be concrete, market-minded, and execution-ready. Output valid JSON only."
+)
+
+
+def _commercial_positioning_user_prompt(
+    ctx: dict[str, Any],
+    genre_profile: GenreReviewProfile | None = None,
+) -> str:
+    prompt = (
+        f"题材：{ctx['genre']}（{ctx['sub_genre']}）\n"
+        f"简介：{ctx['description']}\n"
+        f"目标章节数：{ctx['chapter_count']}章\n"
+        f"推荐平台：{', '.join(ctx['recommended_platforms'])}\n"
+        f"推荐受众：{', '.join(ctx['recommended_audiences'])}\n"
+        f"趋势关键词：{', '.join(ctx['trend_keywords'])}\n"
+        f"趋势摘要：{ctx.get('trend_summary') or ''}\n"
+        f"\n请自动完成商业化立项，输出 JSON：\n"
+        "{\n"
+        '  "platform_target": "最优平台",\n'
+        '  "target_audiences": ["核心受众1", "核心受众2"],\n'
+        '  "benchmark_works": ["对标作品1", "对标作品2"],\n'
+        '  "reader_promise": "一句话追读承诺",\n'
+        '  "selling_points": ["卖点1", "卖点2", "卖点3"],\n'
+        '  "trope_keywords": ["题材标签1", "题材标签2"],\n'
+        '  "hook_keywords": ["钩子词1", "钩子词2"],\n'
+        '  "content_mode": "内容模式",\n'
+        '  "opening_strategy": "开篇抓手",\n'
+        '  "chapter_hook_strategy": "章末钩子策略",\n'
+        '  "pacing_profile": "fast/medium/slow",\n'
+        '  "payoff_rhythm": "回报节奏",\n'
+        '  "update_strategy": "更新节奏",\n'
+        '  "taboo_topics": ["禁区1"],\n'
+        '  "taboo_words": ["禁词1"],\n'
+        '  "commercial_rationale": "为什么这样定位最适合商业化",\n'
+        '  "confidence": 0.0,\n'
+        '  "assumptions": ["关键假设1"]\n'
+        "}"
+    )
+    if genre_profile:
+        instruction = genre_profile.planner_prompts.book_spec_instruction_zh
+        if instruction:
+            prompt += f"\n\n【品类商业定位要求】\n{instruction}"
+    return prompt
+
+
+def _commercial_positioning_user_prompt_en(
+    ctx: dict[str, Any],
+    genre_profile: GenreReviewProfile | None = None,
+) -> str:
+    prompt = (
+        f"Genre: {ctx['genre']} ({ctx['sub_genre']})\n"
+        f"Description: {ctx['description']}\n"
+        f"Target chapters: {ctx['chapter_count']}\n"
+        f"Recommended platforms: {', '.join(ctx['recommended_platforms'])}\n"
+        f"Target audiences: {', '.join(ctx['recommended_audiences'])}\n"
+        f"Trend keywords: {', '.join(ctx['trend_keywords'])}\n"
+        f"Trend summary: {ctx.get('trend_summary') or ''}\n"
+        f"\nGenerate an autonomous commercial positioning JSON:\n"
+        "{\n"
+        '  "platform_target": "best-fit platform",\n'
+        '  "target_audiences": ["audience 1", "audience 2"],\n'
+        '  "benchmark_works": ["benchmark 1", "benchmark 2"],\n'
+        '  "reader_promise": "one-line retention promise",\n'
+        '  "selling_points": ["point1", "point2", "point3"],\n'
+        '  "trope_keywords": ["trope1", "trope2"],\n'
+        '  "hook_keywords": ["hook1", "hook2"],\n'
+        '  "content_mode": "content mode",\n'
+        '  "opening_strategy": "opening hook plan",\n'
+        '  "chapter_hook_strategy": "chapter-ending hook plan",\n'
+        '  "pacing_profile": "fast/medium/slow",\n'
+        '  "payoff_rhythm": "payoff rhythm",\n'
+        '  "update_strategy": "release cadence",\n'
+        '  "taboo_topics": ["boundary 1"],\n'
+        '  "taboo_words": ["word 1"],\n'
+        '  "commercial_rationale": "why this positioning is commercially strong",\n'
+        '  "confidence": 0.0,\n'
+        '  "assumptions": ["assumption 1"]\n'
+        "}"
+    )
+    if genre_profile:
+        instruction = genre_profile.planner_prompts.book_spec_instruction_en
+        if instruction:
+            prompt += f"\n\n[Genre commercial requirements]\n{instruction}"
+    return prompt
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -196,6 +471,7 @@ def _market_user_prompt(ctx: dict[str, Any], genre_profile: GenreReviewProfile |
         f'  "content_mode": "内容模式描述"\n'
         f"}}"
     )
+    prompt += _commercial_brief_prompt_block(ctx)
     if genre_profile:
         instruction = genre_profile.planner_prompts.book_spec_instruction_zh
         if instruction:
@@ -247,6 +523,7 @@ def _character_user_prompt(ctx: dict[str, Any], genre_profile: GenreReviewProfil
         f"4. 避免谐音不雅或过于常见的网文烂大街名字\n"
         f"5. 每个名字附命名理由"
     )
+    prompt += _commercial_brief_prompt_block(ctx)
     if genre_profile:
         instruction = genre_profile.planner_prompts.cast_spec_instruction_zh
         if instruction:
@@ -270,6 +547,7 @@ def _world_user_prompt(ctx: dict[str, Any], genre_profile: GenreReviewProfile | 
         f'  "escalation_mechanism": "势力/力量升级机制"\n'
         f"}}"
     )
+    prompt += _commercial_brief_prompt_block(ctx)
     if genre_profile:
         instruction = genre_profile.planner_prompts.world_spec_instruction_zh
         if instruction:
@@ -325,6 +603,7 @@ def _market_user_prompt_en(ctx: dict[str, Any], genre_profile: GenreReviewProfil
         f'  "content_mode": "content mode description"\n'
         f"}}"
     )
+    prompt += _commercial_brief_prompt_block(ctx)
     if genre_profile:
         instruction = genre_profile.planner_prompts.book_spec_instruction_en
         if instruction:
@@ -375,6 +654,7 @@ def _character_user_prompt_en(ctx: dict[str, Any], genre_profile: GenreReviewPro
         f"3. Avoid name confusion — supporting characters should have distinct first letters/sounds\n"
         f"4. Each name should have a brief reasoning"
     )
+    prompt += _commercial_brief_prompt_block(ctx)
     if genre_profile:
         instruction = genre_profile.planner_prompts.cast_spec_instruction_en
         if instruction:
@@ -398,6 +678,7 @@ def _world_user_prompt_en(ctx: dict[str, Any], genre_profile: GenreReviewProfile
         f'  "escalation_mechanism": "how power/stakes escalate"\n'
         f"}}"
     )
+    prompt += _commercial_brief_prompt_block(ctx)
     if genre_profile:
         instruction = genre_profile.planner_prompts.world_spec_instruction_en
         if instruction:
@@ -483,6 +764,7 @@ def _review_user_prompt(
         f'  "premise_seeds": ["可作为premise种子的核心冲突点1", "种子2"]\n'
         f"}}"
     )
+    prompt += _commercial_brief_prompt_block(ctx)
     if genre_profile:
         checklist = _build_rubric_checklist_zh(genre_profile)
         if checklist:
@@ -526,6 +808,7 @@ def _review_user_prompt_en(
         f'  "premise_seeds": ["core conflict seed1", "seed2"]\n'
         f"}}"
     )
+    prompt += _commercial_brief_prompt_block(ctx)
     if genre_profile:
         checklist = _build_rubric_checklist_en(genre_profile)
         if checklist:
@@ -543,7 +826,8 @@ def _review_user_prompt_en(
 
 _FINALIZE_SYSTEM = (
     "你是一位小说项目总策划，负责将市场定位、角色体系、世界观的讨论成果整合为最终方案。"
-    "你需要产出完整的 WritingProfile、一段精炼的 premise 和一个吸引人的书名。"
+    "你需要产出完整的 WritingProfile、一段精炼的 premise、一个有设计感的书名、"
+    "一段宣传用作品简介（synopsis）和作品标签（tags）。"
     "输出必须是合法 JSON，不要解释。"
 )
 
@@ -565,8 +849,18 @@ def _finalize_user_prompt(
         f"\n## 审查意见\n{json.dumps(review, ensure_ascii=False, indent=2)}\n"
         f"\n请根据以上讨论成果，生成最终方案 JSON：\n"
         f'{{\n'
-        f'  "title": "小说书名（4-8字，有吸引力）",\n'
+        f'  "title": "小说书名（必须2-8个汉字。要求有设计感，让读者看到书名就想点进去。'
+        f'好的书名应该：①暗示核心冲突或世界观（如「遮天」暗示逆天改命）；'
+        f'②制造悬念或反差（如「我师兄实在太稳健了」）；'
+        f'③有画面感或意象（如「雪中悍刀行」）；'
+        f'④避免直白描述题材（如「都市修仙记」这种流水线书名）。'
+        f'禁止使用描述性长句，禁止直接用题材名当书名）",\n'
         f'  "premise": "小说前提/核心设定（100-200字，包含主角、核心冲突、金手指和悬念）",\n'
+        f'  "synopsis": "作品宣传简介（200-500字，面向读者的营销文案。要求：'
+        f'①开头一句话勾住读者好奇心；②介绍主角身份和核心困境；'
+        f'③展示世界观最吸引人的设定；④留下悬念，不剧透关键反转。'
+        f'风格参考起点/番茄热门作品简介，有感染力，让人想追更）",\n'
+        f'  "tags": ["标签1", "标签2", "...（5-10个作品标签，包括题材、风格、元素、受众标签）"],\n'
         f'  "writing_profile": {{\n'
         f'    "market": {{\n'
         f'      "platform_target": "...", "reader_promise": "...",\n'
@@ -608,6 +902,7 @@ def _finalize_user_prompt(
         instruction = genre_profile.planner_prompts.book_spec_instruction_zh
         if instruction:
             base += f"\n\n【品类最终质量要求】\n{instruction}"
+    base += _commercial_brief_prompt_block(ctx)
     # Inject category anti-patterns and reader promise
     cat = resolve_novel_category(ctx.get("genre", ""), ctx.get("sub_genre"))
     promise = render_category_reader_promise(cat, is_en=False)
@@ -622,7 +917,7 @@ def _finalize_user_prompt(
 _FINALIZE_SYSTEM_EN = (
     "You are a fiction project director responsible for merging market positioning, character design, "
     "and world-building proposals into a final plan. You must produce a complete WritingProfile, "
-    "a compelling premise, and an attention-grabbing title. "
+    "a compelling premise, an attention-grabbing title, a promotional synopsis, and genre tags. "
     "Output must be valid JSON only, no explanations."
 )
 
@@ -644,8 +939,21 @@ def _finalize_user_prompt_en(
         f"\n## Review Feedback\n{json.dumps(review, ensure_ascii=False, indent=2)}\n"
         f"\nBased on the above discussion, generate the final plan JSON:\n"
         f'{{\n'
-        f'  "title": "Novel title (2-6 words, compelling and genre-appropriate)",\n'
+        f'  "title": "Novel title (2-6 words ONLY. Must feel designed and evocative — '
+        f'a title readers WANT to click. Great titles: ①hint at the core conflict or world '
+        f'(e.g. The Name of the Wind, A Court of Thorns and Roses); '
+        f'②create intrigue or contrast (e.g. The Girl with the Dragon Tattoo); '
+        f'③have vivid imagery (e.g. Blood Meridian, The Shadow of the Wind). '
+        f'Avoid generic genre labels like The Fantasy Quest or Urban Cultivation Story. '
+        f'Must NOT be a sentence or description)",\n'
         f'  "premise": "Novel premise (50-150 words: protagonist, core conflict, unique hook, and central mystery)",\n'
+        f'  "synopsis": "Promotional book blurb (100-300 words, reader-facing marketing copy. '
+        f'Requirements: ①Open with a hook sentence that sparks curiosity; '
+        f'②Introduce the protagonist and their core dilemma; '
+        f'③Showcase the most compelling world-building elements; '
+        f'④End with a cliffhanger question — no major spoilers. '
+        f'Style: compelling back-cover copy that makes readers want to buy)",\n'
+        f'  "tags": ["tag1", "tag2", "...(5-10 tags: genre, style, tropes, audience)"],\n'
         f'  "writing_profile": {{\n'
         f'    "market": {{\n'
         f'      "platform_target": "...", "reader_promise": "...",\n'
@@ -687,6 +995,7 @@ def _finalize_user_prompt_en(
         instruction = genre_profile.planner_prompts.book_spec_instruction_en
         if instruction:
             base += f"\n\n[Genre final quality requirements]\n{instruction}"
+    base += _commercial_brief_prompt_block(ctx)
     # Inject category anti-patterns and reader promise
     cat = resolve_novel_category(ctx.get("genre", ""), ctx.get("sub_genre"))
     promise = render_category_reader_promise(cat, is_en=True)
@@ -790,6 +1099,7 @@ async def run_conception_pipeline(
     genre_key: str,
     chapter_count: int,
     user_hints: dict[str, Any] | None = None,
+    story_facets: object | None = None,
     progress: ProgressCallback | None = None,
 ) -> ConceptionResult:
     """Multi-agent discussion to auto-generate a complete WritingProfile.
@@ -799,9 +1109,12 @@ async def run_conception_pipeline(
     2. Cross-review by a critic
     3. Merge & finalize by an editor
 
+    When story_facets is provided, the conception agents receive enriched
+    multi-dimensional context instead of flat genre descriptions.
+
     Returns a ConceptionResult with the complete writing_profile, premise, and title.
     """
-    ctx = _build_genre_context(genre_key, chapter_count)
+    ctx = _build_genre_context(genre_key, chapter_count, story_facets=story_facets)
     if user_hints:
         ctx["user_hints"] = user_hints
 
@@ -833,6 +1146,24 @@ async def run_conception_pipeline(
     def _track_id(llm_id: UUID | None) -> None:
         if llm_id is not None:
             llm_run_ids.append(llm_id)
+
+    # ── Round 0: Autonomous Commercial Positioning ───────────────────
+    _emit("conception_commercial_positioning", {"round": 0, "agent": "commercial_commissioner"})
+    commercial_text, commercial_llm_id = await _llm_call(
+        session,
+        settings,
+        role="planner",
+        system_prompt=_COMMERCIAL_POSITIONING_SYSTEM_EN if is_en else _COMMERCIAL_POSITIONING_SYSTEM,
+        user_prompt=(
+            _commercial_positioning_user_prompt_en if is_en else _commercial_positioning_user_prompt
+        )(ctx, _genre_profile),
+        fallback=json.dumps(_build_commercial_fallback(ctx), ensure_ascii=False),
+        template="conception_commercial_positioning",
+    )
+    _track_id(commercial_llm_id)
+    commercial_brief = _extract_json(commercial_text) or _build_commercial_fallback(ctx)
+    ctx["commercial_brief"] = commercial_brief
+    conception_log.append({"round": 0, "agent": "commercial_commissioner", "brief": commercial_brief})
 
     # ── Round 1: Independent Proposals ──────────────────────────────
     _emit("conception_market", {"round": 1, "agent": "market_strategist"})
@@ -936,6 +1267,7 @@ async def run_conception_pipeline(
 
     # Ensure writing_profile has all required sections
     writing_profile = _ensure_complete_profile(writing_profile, ctx, market_proposal, character_proposal, world_proposal)
+    writing_profile = _apply_commercial_brief_to_profile(writing_profile, commercial_brief)
 
     # Fallback premise if empty
     if not premise or len(premise) < 10:
@@ -948,21 +1280,53 @@ async def run_conception_pipeline(
             )
         )
 
-    # Fallback title if empty
-    if not title:
-        title = ctx.get("description", ctx["genre"])[:40 if is_en else 20]
+    # Validate title: must be a concise book name, not a description or premise.
+    # Chinese titles should be 2-10 characters; English 2-8 words.
+    title = (title or "").strip()
+    _is_valid_title = bool(title) and (
+        (not is_en and 2 <= len(title) <= 10)
+        or (is_en and 2 <= len(title.split()) <= 8 and len(title) <= 60)
+    )
+    if not _is_valid_title:
+        # Try to extract a short title from a longer generated one (LLM sometimes
+        # returns a description instead of a concise title).
+        if title and not is_en and len(title) > 10:
+            # Take up to the first punctuation or 8 chars, whichever is shorter
+            import re as _re_title  # noqa: PLC0415
+            m = _re_title.match(r"[\u4e00-\u9fff]{2,8}", title)
+            if m:
+                title = m.group(0)
+                _is_valid_title = True
+    if not _is_valid_title:
+        # Fallback: use genre name as basis (never the description/premise)
+        genre_name = ctx.get("genre", "")
+        sub_genre = ctx.get("sub_genre", "")
+        if is_en:
+            title = f"The {sub_genre or genre_name} Chronicles" if genre_name else "Untitled Novel"
+        else:
+            title = sub_genre[:8] if sub_genre else genre_name[:8] if genre_name else "未命名小说"
+
+    # Extract synopsis and tags from the finalized result
+    synopsis = _safe_get(final_result, "synopsis", "").strip()
+    if len(synopsis) > 500:
+        synopsis = synopsis[:497] + "..."
+    raw_tags = final_result.get("tags", [])
+    tags = [str(t).strip() for t in raw_tags if isinstance(t, str) and t.strip()][:10]
 
     logger.info(
-        "Conception pipeline completed for genre=%s: title=%s, premise_len=%d, profile_keys=%s",
-        genre_key, title, len(premise), list(writing_profile.keys()),
+        "Conception pipeline completed for genre=%s: title=%s, premise_len=%d, synopsis_len=%d, tags=%s, profile_keys=%s",
+        genre_key, title, len(premise), len(synopsis), tags, list(writing_profile.keys()),
     )
 
     return ConceptionResult(
         writing_profile=writing_profile,
         premise=premise,
         title=title,
+        commercial_brief=commercial_brief,
         conception_log=conception_log,
         llm_run_ids=llm_run_ids,
+        synopsis=synopsis,
+        tags=tags,
     )
 
 
@@ -1074,8 +1438,11 @@ def _build_fallback_final(
             )
         },
     }
+    commercial_brief = ctx.get("commercial_brief")
+    if isinstance(commercial_brief, dict) and commercial_brief:
+        fallback_profile = _apply_commercial_brief_to_profile(fallback_profile, commercial_brief)
     fallback = {
-        "title": ctx.get("description", ctx["genre"])[:40 if is_en else 20],
+        "title": (ctx.get("sub_genre") or ctx.get("genre", ""))[:8 if not is_en else 40],
         "premise": (
             f"A {ctx['genre']} ({ctx['sub_genre']}) novel: {ctx['description']}"
             if is_en

@@ -1,0 +1,9 @@
+# Review weight deltas for narrative_drive: mystery
+# Mystery stories emphasize hooks, pacing, and goal clarity over raw conflict.
+scene_weights:
+  hook_strength: 0.3
+  hook: 0.2
+  goal: 0.2
+  pacing_alignment: 0.15
+  conflict: -0.1
+  emotion: -0.1

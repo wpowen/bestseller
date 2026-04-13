@@ -226,10 +226,10 @@ main() {
   # a few-second no-op; otherwise the affected images are rebuilt automatically.
   if [[ "$FORCE_BUILD" == "true" ]]; then
     log "Force-building Docker images (--no-cache) ..."
-    compose build --no-cache
+    compose --profile migrate build --no-cache
   else
     log "Building Docker images (incremental, layer-cache aware) ..."
-    compose build
+    compose --profile migrate build
   fi
 
   # ── Step 2: Start infrastructure (DB + Redis) ────────────────────────────

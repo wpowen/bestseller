@@ -24,6 +24,7 @@ class ArtifactType(StrEnum):
     VOLUME_WORLD_DISCLOSURE = "volume_world_disclosure"
     VOLUME_WRITING_FEEDBACK = "volume_writing_feedback"
     CREATIVE_EXPLORATION = "creative_exploration"
+    PROMOTIONAL_BRIEF = "promotional_brief"
 
 
 class ProjectType(StrEnum):

@@ -71,6 +71,7 @@ def _check_obligatory_scenes(
     project: "ProjectModel",
     chapter_count: int,
     chapter_drafts: list["ChapterDraftVersionModel"],
+    language: str | None = None,
 ) -> list[ProjectConsistencyFinding]:
     """Phase-5: Check whether genre-required obligatory scenes are present.
 
@@ -106,6 +107,7 @@ def _check_obligatory_scenes(
             draft_by_chapter[ch_num] = (d.content or "").lower()
 
     findings: list[ProjectConsistencyFinding] = []
+    _is_en = (language or "").lower().startswith("en")
 
     for oblig in pack.obligatory_scenes:
         # Determine which chapters to scan based on timing
@@ -113,25 +115,25 @@ def _check_obligatory_scenes(
             target_text = "\n".join(
                 txt for ch, txt in draft_by_chapter.items() if ch <= act1_end
             )
-            timing_label = f"第一幕 (Ch 1-{act1_end})"
+            timing_label = f"Act 1 (Ch 1-{act1_end})" if _is_en else f"第一幕 (Ch 1-{act1_end})"
         elif oblig.timing == "act_2_midpoint":
             mid_lo = max(1, midpoint - 2)
             mid_hi = midpoint + 2
             target_text = "\n".join(
                 txt for ch, txt in draft_by_chapter.items() if mid_lo <= ch <= mid_hi
             )
-            timing_label = f"中点附近 (Ch {mid_lo}-{mid_hi})"
+            timing_label = f"Midpoint (Ch {mid_lo}-{mid_hi})" if _is_en else f"中点附近 (Ch {mid_lo}-{mid_hi})"
         elif oblig.timing == "act_3":
             target_text = "\n".join(
                 txt for ch, txt in draft_by_chapter.items() if ch >= act3_start
             )
-            timing_label = f"第三幕 (Ch {act3_start}+)"
+            timing_label = f"Act 3 (Ch {act3_start}+)" if _is_en else f"第三幕 (Ch {act3_start}+)"
         elif oblig.timing == "final_chapter":
             target_text = draft_by_chapter.get(chapter_count, "")
-            timing_label = f"最终章 (Ch {chapter_count})"
+            timing_label = f"Final chapter (Ch {chapter_count})" if _is_en else f"最终章 (Ch {chapter_count})"
         else:
             target_text = all_draft_text
-            timing_label = "全书"
+            timing_label = "Entire book" if _is_en else "全书"
 
         if not target_text:
             # No drafts in the expected range yet — skip (not overdue)
@@ -145,8 +147,13 @@ def _check_obligatory_scenes(
                     category="obligatory_scene",
                     severity="medium",
                     message=(
-                        f"题材必须场景「{oblig.label}」({oblig.code}) "
-                        f"预期出现在{timing_label}，但未检测到相关信号词。"
+                        (
+                            f"Required genre scene \"{oblig.label}\" ({oblig.code}) "
+                            f"expected in {timing_label}, but no matching signal words detected."
+                        ) if _is_en else (
+                            f"题材必须场景「{oblig.label}」({oblig.code}) "
+                            f"预期出现在{timing_label}，但未检测到相关信号词。"
+                        )
                     ),
                 )
             )
@@ -159,6 +166,7 @@ def _check_foreshadowing_density(
     clues: list[Any],
     payoffs: list[Any],
     total_chapters: int,
+    language: str | None = None,
 ) -> list[ProjectConsistencyFinding]:
     """Phase-6: Analyse clue/payoff distribution for dead zones and orphans."""
     from bestseller.services.foreshadowing import analyze_foreshadowing_density
@@ -173,6 +181,7 @@ def _check_foreshadowing_density(
     )
 
     findings: list[ProjectConsistencyFinding] = []
+    _is_en = (language or "").lower().startswith("en")
 
     if result.dead_zone_chapters:
         zones_str = ", ".join(
@@ -182,7 +191,11 @@ def _check_foreshadowing_density(
             ProjectConsistencyFinding(
                 category="foreshadowing_density",
                 severity="medium",
-                message=f"伏笔活动死寂区间：{zones_str}。建议在这些章节种植或回收伏笔。",
+                message=(
+                    f"Foreshadowing dead zones: {zones_str}. Consider planting or resolving clues in these chapters."
+                    if _is_en else
+                    f"伏笔活动死寂区间：{zones_str}。建议在这些章节种植或回收伏笔。"
+                ),
             )
         )
 
@@ -193,8 +206,13 @@ def _check_foreshadowing_density(
                 category="foreshadowing_orphan",
                 severity="medium",
                 message=(
-                    f"以下伏笔已超过预期回收章节但未兑现：{codes_str}"
-                    f"{'...' if len(result.orphan_clue_codes) > 5 else ''}。"
+                    (
+                        f"These clues have passed their expected payoff chapter without resolution: {codes_str}"
+                        f"{'...' if len(result.orphan_clue_codes) > 5 else ''}."
+                    ) if _is_en else (
+                        f"以下伏笔已超过预期回收章节但未兑现：{codes_str}"
+                        f"{'...' if len(result.orphan_clue_codes) > 5 else ''}。"
+                    )
                 ),
             )
         )
@@ -205,10 +223,17 @@ def _check_foreshadowing_density(
                 category="foreshadowing_balance",
                 severity=_severity_from_score(result.balance_score),
                 message=(
-                    f"伏笔分布不均衡（评分 {result.balance_score:.2f}）。"
-                    f"Act 1: {result.act1_plants}植/{result.act1_recoveries}收, "
-                    f"Act 2: {result.act2_plants}植/{result.act2_recoveries}收, "
-                    f"Act 3: {result.act3_plants}植/{result.act3_recoveries}收。"
+                    (
+                        f"Foreshadowing distribution is uneven (score {result.balance_score:.2f}). "
+                        f"Act 1: {result.act1_plants} planted/{result.act1_recoveries} resolved, "
+                        f"Act 2: {result.act2_plants} planted/{result.act2_recoveries} resolved, "
+                        f"Act 3: {result.act3_plants} planted/{result.act3_recoveries} resolved."
+                    ) if _is_en else (
+                        f"伏笔分布不均衡（评分 {result.balance_score:.2f}）。"
+                        f"Act 1: {result.act1_plants}植/{result.act1_recoveries}收, "
+                        f"Act 2: {result.act2_plants}植/{result.act2_recoveries}收, "
+                        f"Act 3: {result.act3_plants}植/{result.act3_recoveries}收。"
+                    )
                 ),
             )
         )
@@ -396,6 +421,17 @@ def build_project_review_prompts(
     return system_prompt, user_prompt
 
 
+def detect_chapter_sequence_gaps(
+    chapter_numbers: list[int],
+) -> list[int]:
+    """Return missing chapter numbers given an unsorted list of chapter numbers."""
+    if not chapter_numbers:
+        return []
+    sorted_nums = sorted(chapter_numbers)
+    expected = set(range(sorted_nums[0], sorted_nums[-1] + 1))
+    return sorted(expected - set(sorted_nums))
+
+
 def evaluate_project_consistency(
     *,
     settings: AppSettings,
@@ -410,6 +446,7 @@ def evaluate_project_consistency(
     project_export_count: int,
     chapter_export_count: int,
     expect_project_export: bool = True,
+    chapter_numbers: list[int] | None = None,
     main_plot_progression: float | None = None,
     main_plot_chapter_count: int = 0,
     mystery_balance: float | None = None,
@@ -442,6 +479,11 @@ def evaluate_project_consistency(
     safe_scene_count = max(scene_count, 1)
 
     chapter_coverage = _clamp_score(chapter_draft_count / safe_chapter_count)
+
+    # Chapter sequence gap detection
+    sequence_gaps = detect_chapter_sequence_gaps(chapter_numbers or [])
+    chapter_sequence = 1.0 if not sequence_gaps else 0.0
+
     scene_knowledge = _clamp_score(approved_scene_count / safe_scene_count)
     canon_coverage = _clamp_score(scene_summary_count / safe_scene_count)
     timeline_coverage = _clamp_score(timeline_event_count / safe_scene_count)
@@ -484,6 +526,7 @@ def evaluate_project_consistency(
 
     _score_parts = [
         chapter_coverage,
+        chapter_sequence,
         scene_knowledge,
         canon_coverage,
         timeline_coverage,
@@ -502,6 +545,14 @@ def evaluate_project_consistency(
     overall = _clamp_score(sum(_score_parts) / len(_score_parts))
 
     findings: list[ProjectConsistencyFinding] = []
+    if sequence_gaps:
+        findings.append(
+            ProjectConsistencyFinding(
+                category="chapter_sequence",
+                severity="high",
+                message=f"章节序号存在缺口，缺失: {sequence_gaps}。必须先补全缺失章节再继续生成。",
+            )
+        )
     if chapter_draft_count < chapter_count:
         score = chapter_coverage
         findings.append(
@@ -685,6 +736,7 @@ def evaluate_project_consistency(
         scores=ProjectConsistencyScores(
             overall=overall,
             chapter_coverage=chapter_coverage,
+            chapter_sequence=chapter_sequence,
             scene_knowledge=scene_knowledge,
             canon_coverage=canon_coverage,
             timeline_coverage=timeline_coverage,
@@ -704,6 +756,7 @@ def evaluate_project_consistency(
         evidence_summary={
             "chapter_count": chapter_count,
             "chapter_draft_count": chapter_draft_count,
+            "chapter_sequence_gaps": sequence_gaps,
             "complete_chapter_count": complete_chapter_count,
             "scene_count": scene_count,
             "approved_scene_count": approved_scene_count,
@@ -749,6 +802,14 @@ async def review_project_consistency(
         )
         or 0
     )
+    all_chapter_numbers = [
+        row.chapter_number
+        for row in (
+            await session.scalars(
+                select(ChapterModel.chapter_number).where(ChapterModel.project_id == project.id)
+            )
+        )
+    ]
     chapter_draft_count = int(
         await session.scalar(
             select(func.count())
@@ -990,6 +1051,7 @@ async def review_project_consistency(
         chapter_count=chapter_count,
         chapter_draft_count=chapter_draft_count,
         complete_chapter_count=complete_chapter_count,
+        chapter_numbers=all_chapter_numbers,
         scene_count=scene_count,
         approved_scene_count=approved_scene_count,
         scene_summary_count=scene_summary_count,
@@ -1014,6 +1076,7 @@ async def review_project_consistency(
         project=project,
         chapter_count=chapter_count,
         chapter_drafts=chapter_drafts,
+        language=project.language,
     )
     if obligation_findings:
         review_result = review_result.model_copy(
@@ -1025,6 +1088,7 @@ async def review_project_consistency(
         clues=clues,
         payoffs=payoffs,
         total_chapters=chapter_count,
+        language=project.language,
     )
     if foreshadowing_findings:
         review_result = review_result.model_copy(

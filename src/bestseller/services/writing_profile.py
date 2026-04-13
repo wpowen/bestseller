@@ -45,6 +45,9 @@ _logger = logging.getLogger(__name__)
 # Supported language families — used for validation and logging.
 _SUPPORTED_LANGUAGE_PREFIXES = ("zh", "en")
 
+# Capped set to avoid unbounded growth in long-running processes.
+# 64 unique unsupported language tags is more than enough for dedup.
+_UNSUPPORTED_WARNED_MAX = 64
 _unsupported_warned: set[str] = set()
 _GENRE_FRAMEWORK_OVERRIDE_FIELDS: dict[str, set[str]] = {
     "market": {
@@ -111,6 +114,8 @@ def normalize_language(language: str | None) -> str:
         return raw
     # Unsupported — warn once per tag and choose the best fallback.
     if lower not in _unsupported_warned:
+        if len(_unsupported_warned) >= _UNSUPPORTED_WARNED_MAX:
+            _unsupported_warned.clear()
         _unsupported_warned.add(lower)
         _logger.warning(
             "Language '%s' is not fully supported (supported: zh-*, en-*). "
@@ -248,6 +253,31 @@ def _genre_preset(genre: str, sub_genre: str | None = None) -> dict[str, Any]:
                 "dialogue_ratio": 0.48,
             },
         }
+    # ── English genre fallbacks ──
+    if any(token in label for token in ("apocalypse", "sci-fi", "scifi", "space", "survival", "post-apocal")):
+        return {
+            "market": {"pacing_profile": "fast"},
+            "world": {"worldbuilding_density": "medium", "mystery_density": "high"},
+            "style": {"prose_style": "commercial-web-serial", "sentence_style": "short-punchy", "info_density": "lean", "dialogue_ratio": 0.42},
+        }
+    if any(token in label for token in ("fantasy", "progression", "litrpg", "xianxia", "cultivation", "magic")):
+        return {
+            "market": {"pacing_profile": "fast"},
+            "world": {"worldbuilding_density": "medium", "rule_hardness": "hard", "mystery_density": "medium"},
+            "style": {"dialogue_ratio": 0.32},
+        }
+    if any(token in label for token in ("urban", "thriller", "mystery", "suspense", "detective", "crime")):
+        return {
+            "market": {"pacing_profile": "fast"},
+            "world": {"worldbuilding_density": "light", "mystery_density": "medium"},
+            "style": {"dialogue_ratio": 0.45},
+        }
+    if any(token in label for token in ("romance", "love", "women", "palace", "regency", "contemporary")):
+        return {
+            "market": {"pacing_profile": "medium-fast"},
+            "world": {"worldbuilding_density": "light-medium", "mystery_density": "medium"},
+            "style": {"dialogue_ratio": 0.48},
+        }
     return {}
 
 
@@ -305,8 +335,8 @@ def resolve_writing_profile(
     # Interactive fiction mode overrides — applied last so they always win
     if profile.interactive_fiction.enabled:
         profile.market.platform_target = "LifeScript"
-        profile.market.content_mode = "交互式小说"
-        profile.market.update_strategy = "全本发布"
+        profile.market.content_mode = "Interactive Fiction" if is_english_language(resolved_language) else "交互式小说"
+        profile.market.update_strategy = "Complete Release" if is_english_language(resolved_language) else "全本发布"
         profile.style.pov_type = "second"
     return profile
 

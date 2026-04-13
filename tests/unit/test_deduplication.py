@@ -1,0 +1,159 @@
+from __future__ import annotations
+
+import pytest
+
+from bestseller.services.deduplication import (
+    build_overused_phrase_avoidance_block,
+    check_opening_diversity,
+    check_scene_duplication,
+    compute_jaccard_similarity,
+    extract_frequent_phrases,
+)
+
+pytestmark = pytest.mark.unit
+
+
+# ---------------------------------------------------------------------------
+# Jaccard similarity
+# ---------------------------------------------------------------------------
+
+def test_identical_texts_high_similarity() -> None:
+    text = "这是一段很长的测试文本，用来验证相似度计算是否正确工作"
+    assert compute_jaccard_similarity(text, text) == 1.0
+
+
+def test_completely_different_texts_low_similarity() -> None:
+    text_a = "The quick brown fox jumps over the lazy dog repeatedly"
+    text_b = "An entirely unrelated sentence about submarines and rockets"
+    sim = compute_jaccard_similarity(text_a, text_b)
+    assert sim < 0.3
+
+
+def test_empty_text_zero_similarity() -> None:
+    assert compute_jaccard_similarity("", "some text") == 0.0
+    assert compute_jaccard_similarity("some text", "") == 0.0
+    assert compute_jaccard_similarity("", "") == 0.0
+
+
+# ---------------------------------------------------------------------------
+# check_scene_duplication
+# ---------------------------------------------------------------------------
+
+def test_duplicate_scene_critical() -> None:
+    original = "This is a test scene with some interesting content about characters and their adventures in the world."
+    findings = check_scene_duplication(
+        original,
+        [(1, 1, original)],  # exact copy
+        warning_threshold=0.6,
+        critical_threshold=0.85,
+    )
+    assert len(findings) == 1
+    assert findings[0]["severity"] == "critical"
+    assert findings[0]["similarity"] >= 0.85
+
+
+def test_no_duplication_for_different_scenes() -> None:
+    scene_a = "The warrior entered the dark cave, sword drawn, ready for battle against the ancient beast."
+    scene_b = "Meanwhile at the village market, children played while merchants hawked their wares loudly."
+    findings = check_scene_duplication(
+        scene_a,
+        [(1, 1, scene_b)],
+        warning_threshold=0.6,
+    )
+    assert len(findings) == 0
+
+
+def test_empty_inputs_no_findings() -> None:
+    assert check_scene_duplication("", [(1, 1, "some text")]) == []
+    assert check_scene_duplication("some text", []) == []
+
+
+# ---------------------------------------------------------------------------
+# check_opening_diversity
+# ---------------------------------------------------------------------------
+
+def test_similar_openings_detected() -> None:
+    # Use identical opening text to ensure detection
+    opening = "The dark cave shimmered with a sudden burst of golden light that illuminated everything around them"
+    existing = [(1, "The dark cave shimmered with a sudden burst of golden light that illuminated everything around them")]
+    findings = check_opening_diversity(
+        opening,
+        existing,
+        similarity_threshold=0.7,
+    )
+    assert len(findings) >= 1
+    assert findings[0]["similarity"] >= 0.7
+
+
+def test_different_openings_no_findings() -> None:
+    findings = check_opening_diversity(
+        "清晨的阳光洒满了庭院",
+        [(1, "午夜的钟声响彻云霄")],
+        similarity_threshold=0.7,
+    )
+    assert len(findings) == 0
+
+
+def test_empty_opening_no_findings() -> None:
+    assert check_opening_diversity("", [(1, "something")]) == []
+
+
+# ---------------------------------------------------------------------------
+# extract_frequent_phrases
+# ---------------------------------------------------------------------------
+
+def test_extract_zh_frequent_phrases() -> None:
+    # Repeat a phrase many times across texts
+    texts = [
+        "一股强大的力量涌入体内，一股强大的能量弥漫开来",
+        "一股强大的力量笼罩全身，一股强大的气息弥漫开来",
+        "一股强大的力量再次涌来，一股强大的气息升腾而起",
+        "一股强大的力量席卷而来，一股强大的神识扩散开来",
+    ]
+    phrases = extract_frequent_phrases(texts, language="zh-CN", min_occurrences=3)
+    assert len(phrases) > 0
+    # "一股强大的" should appear frequently
+    phrase_texts = [p[0] for p in phrases]
+    assert any("强大" in p for p in phrase_texts)
+
+
+def test_extract_en_frequent_phrases() -> None:
+    texts = [
+        "she took a deep breath and looked at the horizon with a deep breath",
+        "he took a deep breath before the battle and took a deep breath after",
+        "they all took a deep breath when the storm passed and took a deep breath again",
+        "after a deep breath she continued onward with a deep breath of fresh air",
+    ]
+    phrases = extract_frequent_phrases(texts, language="en", min_occurrences=3)
+    assert len(phrases) > 0
+    phrase_texts = [p[0] for p in phrases]
+    assert any("deep breath" in p for p in phrase_texts)
+
+
+def test_extract_with_too_few_occurrences() -> None:
+    texts = ["unique text one", "unique text two"]
+    phrases = extract_frequent_phrases(texts, language="en", min_occurrences=5)
+    assert len(phrases) == 0
+
+
+# ---------------------------------------------------------------------------
+# build_overused_phrase_avoidance_block
+# ---------------------------------------------------------------------------
+
+def test_avoidance_block_zh() -> None:
+    phrases = [("一股强大的力量", 8), ("缓缓说道", 6)]
+    block = build_overused_phrase_avoidance_block(phrases, language="zh-CN")
+    assert "高频短语避免列表" in block
+    assert "一股强大的力量" in block
+    assert "8" in block
+
+
+def test_avoidance_block_en() -> None:
+    phrases = [("took a deep breath", 7), ("without a second thought", 5)]
+    block = build_overused_phrase_avoidance_block(phrases, language="en")
+    assert "OVERUSED PHRASES" in block
+    assert "took a deep breath" in block
+
+
+def test_avoidance_block_empty() -> None:
+    assert build_overused_phrase_avoidance_block([], language="zh-CN") == ""

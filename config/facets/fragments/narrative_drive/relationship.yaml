@@ -1,0 +1,36 @@
+# Narrative Drive Fragment: Relationship
+# Story structure guidance for relationship-driven narratives.
+
+scene_writer: |
+  NARRATIVE DRIVE: RELATIONSHIP — the story is propelled by emotional bonds.
+  - Every scene must advance, complicate, or test a key relationship
+  - Internal emotional states are as important as external events
+  - Dialogue carries subtext — what's unsaid matters as much as what's said
+  - Physical proximity and distance mirror emotional states
+  - Supporting relationships reflect or contrast the central bond
+
+planner_book_spec: |
+  Relationship structure:
+  - Establish emotional stakes in the first chapter (why we care about this bond)
+  - 4-5 escalating emotional beats that deepen intimacy
+  - External obstacles test the bond's strength
+  - Internal obstacles (fears, misunderstandings, past wounds) create push-pull
+  - Resolution demonstrates growth in both characters through the relationship
+
+core_loop: |
+  Relationship core loop: Connection → Vulnerability → Obstacle → Growth → Deeper Connection
+  Vary the obstacle type: sometimes external (circumstances), sometimes internal (fear),
+  sometimes interpersonal (third parties), sometimes ideological (values conflict).
+
+character_design: |
+  Relationship-driven character approach:
+  - Both leads must have independent desires and arcs
+  - Chemistry manifests through specific, memorable interactions
+  - Each character changes the other in meaningful ways
+  - Supporting cast serves as mirrors, foils, or catalysts
+
+anti_patterns:
+  - "Characters who exist only to serve the other's development"
+  - "Drama manufactured from easily resolved misunderstandings"
+  - "Emotional breakthroughs that don't stick between scenes"
+  - "Supporting characters forgotten when not serving the main relationship"

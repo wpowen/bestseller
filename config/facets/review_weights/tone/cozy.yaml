@@ -1,0 +1,9 @@
+# Review weight deltas for tone: cozy
+# Cozy stories downweight conflict and hooks, upweight emotion and style.
+scene_weights:
+  conflict: -0.3
+  hook_strength: -0.2
+  emotion: 0.3
+  style: 0.2
+  voice_consistency: 0.15
+  pacing_alignment: -0.1

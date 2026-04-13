@@ -45,6 +45,94 @@ def count_words(text: str) -> int:
     return len(han_chars) + len(latin_words)
 
 
+def _estimate_tokens(text: str) -> int:
+    """Rough token estimate: CJK chars ~1 token each, Latin words ~1.3 tokens each."""
+    if not text:
+        return 0
+    han = len(re.findall(r"[\u4e00-\u9fff]", text))
+    latin = len(re.findall(r"[A-Za-z0-9_]+", text))
+    punct = len(re.findall(r"[^\w\s]", text))
+    return han + int(latin * 1.3) + int(punct * 0.5)
+
+
+# Priority tiers for context budget enforcement.
+# Tier 1: structural contracts & safety — always included.
+# Tier 2: recent narrative state — included when budget allows.
+# Tier 3: background & enrichment — only when ample room.
+_CONTEXT_TIER_1 = frozenset({
+    "contract_section",
+    "methodology_line",
+    "participant_fact_section",
+    "contradiction_line",
+    "hard_fact_line",
+    "knowledge_line",
+    "identity_line",
+    "phrase_avoidance_line",
+    "genre_constraint_line",
+})
+_CONTEXT_TIER_2 = frozenset({
+    "recent_scene_section",
+    "emotion_track_section",
+    "antagonist_plan_section",
+    "clue_section",
+    "scene_sequel_line",
+    "structure_beat_line",
+    "pacing_line",
+})
+_CONTEXT_TIER_3 = frozenset({
+    "story_bible_section",
+    "arc_section",
+    "arc_summary_line",
+    "world_snapshot_line",
+    "retrieval_section",
+    "recent_timeline_section",
+    "reader_knowledge_line",
+    "relationship_line",
+    "subplot_line",
+    "ending_line",
+    "obligations_line",
+    "foreshadow_line",
+    "tree_section",
+    "pp_line",
+    "pp_writer_line",
+})
+
+
+def _budget_context_sections(
+    sections: dict[str, str],
+    budget_tokens: int,
+) -> dict[str, str]:
+    """Enforce a token budget on rendered context sections by tier priority.
+
+    Tier 1 sections are always kept.  Tier 2 sections are added next.
+    Tier 3 sections fill remaining budget.  Sections that don't fit are blanked.
+    """
+    result = dict(sections)
+    used = 0
+
+    # Pass 1: Tier 1 — always include (sum their tokens, never blank them)
+    for key in _CONTEXT_TIER_1:
+        used += _estimate_tokens(result.get(key, ""))
+
+    # Pass 2: Tier 2 — add in definition order while budget allows
+    for key in _CONTEXT_TIER_2:
+        cost = _estimate_tokens(result.get(key, ""))
+        if used + cost <= budget_tokens:
+            used += cost
+        else:
+            result[key] = ""
+
+    # Pass 3: Tier 3 — add remaining while budget allows
+    for key in _CONTEXT_TIER_3:
+        cost = _estimate_tokens(result.get(key, ""))
+        if used + cost <= budget_tokens:
+            used += cost
+        else:
+            result[key] = ""
+
+    return result
+
+
 _STRUCTURED_METADATA_KEYS = (
     "scene_summary",
     "chapter_summary",
@@ -312,7 +400,7 @@ def sanitize_novel_markdown_content(content_md: str, *, language: str | None = N
 _CN_DUPLICATE_CHAPTER_MARKER_RE = re.compile(
     r"^\s*(?:#{1,4}\s*)?第\s*[一二三四五六七八九十百零\d]+\s*[章场]"
     r"[\s·：:、，,]*第\s*[一二三四五六七八九十百零\d]+\s*[章场]"
-    r"(?:\s*[:：].*)?$"
+    r".*$"
 )
 
 # Mid-content chapter heading: "# 第N章 XYZ" appearing AFTER the first line.
@@ -444,6 +532,14 @@ def strip_scaffolding_echoes(content_md: str) -> str:
         content_md = new_content
 
     content_md = re.sub(r"\n{3,}", "\n\n", content_md)
+
+    # Normalize quotation marks to a consistent format
+    try:
+        from bestseller.services.output_hygiene import normalize_quote_format
+        content_md = normalize_quote_format(content_md, language=language)
+    except Exception:
+        pass  # Non-fatal
+
     return content_md.strip()
 
 
@@ -466,6 +562,57 @@ _NOVEL_OUTPUT_PROHIBITION = """\
 - 严禁模板式微表情描写（眼眶微红、嘴角上扬、瞳孔骤缩），用具体动作替代
 - 每个角色说话必须有自己的风格——参考角色语言指纹，不同角色的对话必须可区分
 - 输出中只允许出现：叙事散文、对话、动作描写、环境描写、内心活动
+
+【AI套话黑名单——以下表达绝对禁止】：
+- "血液仿佛凝固了" / "血液冰封" / "浑身的血液都冷了"
+- "空气仿佛凝固了" / "时间仿佛静止了" / "周围的一切仿佛都消失了"
+- "心中五味杂陈" / "心中百感交集" / "眼眶不由得湿润了"
+- "一股莫名的情绪" / "一种说不清的感觉" / "一阵莫名的恐惧"
+- "电流般的感觉" / "触电般的感觉" / "沉甸甸的"
+- "仿佛有一只无形的手" / "像是被什么东西攫住了"
+用具体、原创、从故事世界中生长出来的意象替代这些套话。
+
+【系统面板/游戏界面规则】（如适用 LitRPG/GameLit 类型）：
+- 系统面板/代码块每场最多出现 2-3 次，不是每段一个
+- 面板必须短小（不超过 4-5 行），不要大段倾倒状态数据
+- 故事必须脱离面板独立成立——用动作、角色反应传递危险和信息
+- 先写角色的身体/情绪反应，再出面板。不要用面板代替张力
+"""
+
+_NOVEL_OUTPUT_PROHIBITION_EN = """\
+FORBIDDEN OUTPUT — the following must NEVER appear in the prose:
+- Do not output planning terms: "hook", "opening beat", "premise", "tail hook", "entry state", "exit state", "closing state", "story task", "emotion task"
+- Do not output hook summary labels at the end of scenes or chapters: [Small Hook: ...] [Medium Hook: ...] [Large Hook: ...] — these are internal planning tags and must never appear in prose
+- Do not output meta-commentary: "revision notes", "rewrite strategy", "previous draft", "scene notes", "writing guidance"
+- Do not output explanatory prefixes: "The story task for this scene is", "The following is", "The above is"
+- Do not output structural labels: entry_state / exit_state / contract / scene_type
+- Do not output Markdown heading markers (# or ##) — the prose does not need chapter titles, scene titles, or any heading levels
+- Do not copy "chapter goal", "scene title", "volume goal" text verbatim into the prose — that information is for your understanding only
+- All planning information (scene purpose, emotional goals, contract constraints) is for your understanding ONLY — never output it into the prose
+- Avoid weak filler adverbs (slowly, gently, slightly, softly) — no more than 2 uses of the same adverb per 1000 words
+- Avoid template micro-expressions (eyes reddened, lips curled, pupils constricted) — use specific actions instead
+- Every character must speak with their own distinct voice — reference the character voice fingerprint; different characters' dialogue must be distinguishable
+- Output ONLY: narrative prose, dialogue, action, environmental description, internal thought
+
+BANNED AI CLICHÉS — these phrases instantly mark text as machine-generated. NEVER use them:
+- "blood crystallized" / "blood ran cold" / "blood turned to ice"
+- "words landed like a stone in still water" / "words hung in the air"
+- "cold as vacuum" / "frozen fire" / "liquid fire"
+- "something almost like [emotion]" / "something that might have been [emotion]"
+- "the world narrowed to" / "time seemed to slow" / "the air itself seemed to"
+- "a laugh that held no humor" / "a smile that didn't reach their eyes"
+- "electricity crackled between them" / "tension thick enough to cut"
+- "It goes without saying" / "Without a doubt" / "Needless to say"
+- "every fiber of their being" / "a weight settled in their chest"
+- "the silence was deafening" / "pregnant pause" / "comfortable silence"
+Replace these with concrete, specific, original imagery drawn from the story's world.
+
+SYSTEM UI / GAME INTERFACE RULE (for LitRPG/GameLit genres):
+- System panels, stat blocks, and notifications may appear at most 2-3 times per scene (NOT per paragraph).
+- System text must be SHORT (max 4-5 lines) — never a full-screen dump of stats, quests, and warnings.
+- The story must function WITHOUT the panels — use prose, action, and character reaction to convey danger and information.
+- Never use system panels as a substitute for tension. Show the character's physical/emotional reaction FIRST, panel SECOND.
+- If a scene has more than 3 panels, rewrite the excess as narrative prose or internal thought.
 """
 
 # Quick heuristic: if any of these terms appear in the output, it likely
@@ -495,6 +642,15 @@ _META_LEAK_KEYWORDS = (
     "This chapter establishes",
     "Per the story bible",
     "According to the plan",
+    "This scene serves to",
+    "The reader should feel",
+    "In this rewrite",
+    "This revision focuses",
+    "Scene objective:",
+    "Chapter goal:",
+    "Narrative function:",
+    "As per the outline",
+    "Based on the story bible",
 )
 
 
@@ -1662,6 +1818,12 @@ def build_scene_draft_prompts(
     genre_obligations_due: list[dict[str, str]] | None = None,
     # Phase-6 wiring
     foreshadowing_gap_warning: str | None = None,
+    # Identity / dedup / genre constraint blocks (Tier 0/1)
+    identity_constraint_block: str | None = None,
+    overused_phrase_block: str | None = None,
+    genre_constraint_block: str | None = None,
+    # Context budget
+    context_budget_tokens: int = 6000,
 ) -> tuple[str, str]:
     language = _project_language(project)
     is_en = is_english_language(language)
@@ -1674,31 +1836,73 @@ def build_scene_draft_prompts(
     # across scenes in the same chapter, reducing TTFT by 60-80%).
     if is_en:
         system_prompt = (
-            "You are the scene writer inside a long-form commercial fiction system. "
-            "Output must be direct Markdown prose only, with no explanations, bullet lists, or planning notes. "
-            "Write a publishable scene, not commentary.\n"
-            "Write the scene in English only. Do not switch to Chinese.\n"
-            "WORD COUNT RULE: You MUST meet or exceed the target word count specified in the user prompt. "
-            "Scenes that are significantly shorter than the target will be rejected. "
-            "Write fully developed scenes with rich detail, dialogue, and action — do not summarize or cut short.\n"
-            "Opening diversity rule: vary chapter and scene openings across time, place, action, and angle of entry. "
-            "Do not reuse the same opening pattern in consecutive chapters.\n"
-            f"\nWriting profile:\n{writing_profile_section}\n"
+            # --- Part A: Creative voice anchor ---
+            "You are an expert fiction writer inside a long-form commercial fiction system. "
+            "You write vivid, cinematic prose with sharp rhythm and irresistible hooks.\n"
+            "Your core craft:\n"
+            "- Show, don't tell — replace adjectives with action: not 'she was nervous' but 'her nails bit into her palm'.\n"
+            "- Consequences over description — not 'the wave was huge' but 'the freighter flipped like a bathtub toy'.\n"
+            "- Subtext over directness — true feelings live in action, silence, and environment.\n"
+            "- Every paragraph ending plants an unanswered question that compels the reader forward.\n"
+            "- Each passage should carry multiple functions: environment + character + foreshadowing + emotion in one beat.\n"
+            "\n"
+            # --- Part B: Pacing & Character ---
+            "PACING RULE — not every scene is a chase. A good novel breathes:\n"
+            "- After high-tension scenes, include moments of quiet: reflection, humor, small human interactions, sensory rest.\n"
+            "- Vary paragraph rhythm: long flowing passages for atmosphere, short punchy lines for action. Mix them.\n"
+            "- Silence, stillness, and waiting can build more tension than explosions. Use the space between events.\n"
+            "\n"
+            "CHARACTER DISTINCTION RULE — every character is a unique person:\n"
+            "- Each character has their own sentence length, vocabulary level, speech habits, and emotional style.\n"
+            "- Show characters through UNIQUE actions — not just 'jaw tightened' and 'arms crossed'. Give each person specific physical habits that belong only to them.\n"
+            "- Characters must have agency: they initiate, refuse, surprise, joke, contradict. They are not reactive props.\n"
+            "- When two characters talk, a reader should identify who is speaking WITHOUT dialogue tags.\n"
+            "\n"
+            # --- Part C: Consolidated iron rules ---
+            "IRON RULES: Output direct Markdown prose only (narrative, dialogue, action, environment, thought). "
+            "No explanations, bullet lists, planning notes, or commentary.\n"
+            "Write in English only. Do not switch to Chinese.\n"
+            "Word count must land within 90%-120% of target — too short or too long will be rejected.\n"
+            "Use EXACT character names from the Participants list — no renaming, abbreviation, or substitution.\n"
+            "Vary openings across time, place, action, and angle — never repeat the same pattern in consecutive chapters.\n"
+            + _NOVEL_OUTPUT_PROHIBITION_EN
+            + f"\nWriting profile:\n{writing_profile_section}\n"
             f"Serial fiction guardrails:\n{serial_guardrails}\n"
         )
     else:
         system_prompt = (
-            "你是长篇中文小说写作系统里的场景写手。"
-            "输出必须直接是 Markdown 正文，不要解释，不要列清单。"
-            "必须写成可接续的小说场景，而不是策划说明。"
-            "文本要像可以直接投到中文网文平台的成品章节，不要像策划案、提纲或润色说明。\n"
-            "【字数铁律】你必须达到用户提示中指定的目标字数。字数严重不足的场景会被退回重写。"
-            "写充分展开的场景——丰富的细节、对话、动作、环境描写和心理活动。绝对不要提前收束或写成概要。\n"
+            # --- Part A: 创作声音锚点 (Positive creative guidance) ---
+            "你是功力深厚的中文网文写手，擅长写出有画面感、有节奏、有钩子的商业小说。\n"
+            "你的核心能力：\n"
+            "・用动作代替形容词——不写「她很紧张」，写「她的手指死死掐进掌心」\n"
+            "・用后果代替描述——不写「巨浪很大」，写「几千吨重的巨轮像塑料玩具一样被瞬间掀翻」\n"
+            "・用潜台词代替直白——角色真实想法藏在动作、沉默和环境反应里\n"
+            "・每一段结尾留一个没解答的问题，让读者必须翻下一页\n"
+            "\n【风格锚点——好文字长这样】\n"
+            "动作描写：「他一低头，发现一个还没他膝盖高的小女孩正扯着他的裤脚，仰着一张肉嘟嘟的小脸。」\n"
+            "情绪隐藏：「滂沱大雨中他孤身一人，指甲深深掐进肉里。」\n"
+            "环境交互：「手里签牛排的刀狠狠切下去——他盯着对面那张笑脸，刀刃陷进瓷盘。」\n"
+            "一笔多用：一段文字同时承载环境、人设暗示、伏笔和情感，绝不浪费笔墨。\n"
+            "\n"
+            # --- Part B: 节奏与角色 ---
+            "【节奏呼吸】不是每场都是追击战：\n"
+            "・高张力场景之后，必须有喘息节拍——安静对话、幽默、感官休息、人物独处。\n"
+            "・段落节奏要变化：长段铺氛围，短段打冲击。不要全文一个节奏。\n"
+            "・沉默和等待有时比爆炸更有张力。善用留白。\n"
+            "\n"
+            "【角色区分度】每个角色都是独立的人：\n"
+            "・每个角色有独属的句式长度、用词层次、说话习惯和情绪表达方式。\n"
+            "・不要只用「收紧下巴」「抱臂」这种通用动作。每个角色给一个只属于他的肢体语言。\n"
+            "・角色必须有主动性：主动、拒绝、出人意料、开玩笑、反驳。不是被动道具。\n"
+            "・两人对话时，读者不看对话标签就能分辨是谁在说话。\n"
+            "\n"
+            # --- Part C: 硬约束 (Consolidated iron rules) ---
+            "【铁律】输出仅限 Markdown 正文（叙事、对话、动作、环境、内心活动），不要解释/清单/策划说明。\n"
+            "字数必须在目标的 90%-120% 范围内，不足或超出均退回重写。\n"
+            "角色名必须与「参与者」列表完全一致，一字不差，禁止改名/别名/缩写。\n"
+            "开场必须在时间、地点、视角、动作上变化，禁止与前几章重复同一模式。\n"
             + _NOVEL_OUTPUT_PROHIBITION
-            + "\n【开场多样性要求】：每章/每场的开头必须在时间、地点、视角、动作上有所变化。"
-            "禁止连续两章以同一种方式开场（如连续用'凌晨+手机'模式）。"
-            "参考近期剧情回顾中的前几章开场方式，刻意选择不同的切入角度。\n"
-            f"\n写作画像：\n{writing_profile_section}\n"
+            + f"\n写作画像：\n{writing_profile_section}\n"
             f"商业网文硬约束：\n{serial_guardrails}\n"
         )
     tone = (
@@ -1791,6 +1995,21 @@ def build_scene_draft_prompts(
     if _knowledge_line:
         _knowledge_line += "\n\n"
 
+    # Character identity constraints (Tier 0 — always included)
+    _identity_line = ""
+    if identity_constraint_block:
+        _identity_line = f"{identity_constraint_block}\n\n"
+
+    # Overused phrase avoidance (Tier 1 — always included)
+    _phrase_avoidance_line = ""
+    if overused_phrase_block:
+        _phrase_avoidance_line = f"{overused_phrase_block}\n\n"
+
+    # Genre-specific constraints (Tier 1 — always included)
+    _genre_constraint_line = ""
+    if genre_constraint_block:
+        _genre_constraint_line = f"{genre_constraint_block}\n\n"
+
     # Phase-3 wiring: scene/sequel pattern
     _scene_sequel_line = _render_scene_sequel_section(
         swain_pattern, scene_skeleton, is_en=is_en,
@@ -1860,10 +2079,87 @@ def build_scene_draft_prompts(
                 if is_en
                 else f"=== 世界状态（冷上下文）===\n{ws}\n\n"
             )
+
+    # --- Context budget enforcement ---
+    # Pack all rendered sections into a dict, run through the budget filter,
+    # then unpack back into local variables.  This keeps Tier 1 sections
+    # intact while trimming Tier 2/3 when the combined context is too large.
+    _ctx = _budget_context_sections(
+        {
+            "contract_section": contract_section,
+            "methodology_line": _methodology_line,
+            "participant_fact_section": participant_fact_section,
+            "contradiction_line": _contradiction_line,
+            "identity_line": _identity_line,
+            "phrase_avoidance_line": _phrase_avoidance_line,
+            "genre_constraint_line": _genre_constraint_line,
+            "hard_fact_line": _hard_fact_line,
+            "knowledge_line": _knowledge_line,
+            "recent_scene_section": recent_scene_section,
+            "emotion_track_section": emotion_track_section,
+            "antagonist_plan_section": antagonist_plan_section,
+            "clue_section": clue_section,
+            "scene_sequel_line": _scene_sequel_line,
+            "structure_beat_line": _structure_beat_line,
+            "pacing_line": _pacing_line,
+            "story_bible_section": story_bible_section,
+            "arc_section": arc_section,
+            "arc_summary_line": _arc_summary_line,
+            "world_snapshot_line": _world_snapshot_line,
+            "retrieval_section": retrieval_section,
+            "recent_timeline_section": recent_timeline_section,
+            "reader_knowledge_line": _reader_knowledge_line,
+            "relationship_line": _relationship_line,
+            "subplot_line": _subplot_line,
+            "ending_line": _ending_line,
+            "obligations_line": _obligations_line,
+            "foreshadow_line": _foreshadow_line,
+            "tree_section": tree_section,
+            "pp_line": _pp_line,
+            "pp_writer_line": _pp_writer_line,
+        },
+        context_budget_tokens,
+    )
+    # Unpack budgeted sections back into local variables
+    contract_section = _ctx["contract_section"]
+    _methodology_line = _ctx["methodology_line"]
+    participant_fact_section = _ctx["participant_fact_section"]
+    _contradiction_line = _ctx["contradiction_line"]
+    _identity_line = _ctx["identity_line"]
+    _phrase_avoidance_line = _ctx["phrase_avoidance_line"]
+    _genre_constraint_line = _ctx["genre_constraint_line"]
+    _hard_fact_line = _ctx["hard_fact_line"]
+    _knowledge_line = _ctx["knowledge_line"]
+    recent_scene_section = _ctx["recent_scene_section"]
+    emotion_track_section = _ctx["emotion_track_section"]
+    antagonist_plan_section = _ctx["antagonist_plan_section"]
+    clue_section = _ctx["clue_section"]
+    _scene_sequel_line = _ctx["scene_sequel_line"]
+    _structure_beat_line = _ctx["structure_beat_line"]
+    _pacing_line = _ctx["pacing_line"]
+    story_bible_section = _ctx["story_bible_section"]
+    arc_section = _ctx["arc_section"]
+    _arc_summary_line = _ctx["arc_summary_line"]
+    _world_snapshot_line = _ctx["world_snapshot_line"]
+    retrieval_section = _ctx["retrieval_section"]
+    recent_timeline_section = _ctx["recent_timeline_section"]
+    _reader_knowledge_line = _ctx["reader_knowledge_line"]
+    _relationship_line = _ctx["relationship_line"]
+    _subplot_line = _ctx["subplot_line"]
+    _ending_line = _ctx["ending_line"]
+    _obligations_line = _ctx["obligations_line"]
+    _foreshadow_line = _ctx["foreshadow_line"]
+    tree_section = _ctx["tree_section"]
+    _pp_line = _ctx["pp_line"]
+    _pp_writer_line = _ctx["pp_writer_line"]
+
     if is_en:
         user_prompt = (
             f"{_hard_fact_line}"
             f"{_contradiction_line}"
+            f"{_identity_line}"
+            f"{_genre_constraint_line}"
+            f"{_phrase_avoidance_line}"
             f"{_knowledge_line}"
             f"{_arc_summary_line}"
             f"{_world_snapshot_line}"
@@ -1887,7 +2183,7 @@ def build_scene_draft_prompts(
             f"Emotional purpose: {scene.purpose.get('emotion', 'raise tension')}\n"
             f"Entry state: {scene.entry_state}\n"
             f"Exit state: {scene.exit_state}\n"
-            f"Target words: {scene.target_word_count} (IMPORTANT: You MUST write at least {int(scene.target_word_count * 0.9)} words. Scenes shorter than this target will be rejected and rewritten. Do NOT cut short.)\n"
+            f"Target words: {scene.target_word_count} (STRICT RANGE: {int(scene.target_word_count * 0.9)}-{int(scene.target_word_count * 1.2)} words. Scenes outside this range will be rejected. Do NOT cut short and do NOT over-write.)\n"
             f"POV: {style_guide.pov_type if style_guide else 'third-limited'}\n"
             f"Tone keywords: {tone}\n"
             f"{_pp_line}"
@@ -1909,12 +2205,20 @@ def build_scene_draft_prompts(
             "Do not reveal information that belongs to future chapters, and do not contradict established facts or timeline beats. "
             "Prioritize the deterministic path retrieval and narrative-tree constraints when they exist. "
             "The scene must land the core conflict, emotional movement, information release, and tail hook required by the scene contract. "
-            "Keep exposition compressed; hide setting inside action, exchange, consequence, and detail."
+            "Keep exposition compressed; hide setting inside action, exchange, consequence, and detail.\n"
+            "OPENING DIVERSITY: Do NOT open this scene with darkness, pain, waking up, or loss of consciousness. "
+            "Choose from: mid-action, dialogue, a sensory detail, an environmental observation, a character's thought about something specific, a question, or an ironic contrast. "
+            "Check the recent story recap above — if the previous scene opened with a similar pattern, CHOOSE A DIFFERENT ONE.\n"
+            "CONTINUITY: If a character explicitly stated they would NOT do something in a previous scene, do not reverse that decision without showing the reason why. "
+            "Every character entrance must be motivated — explain (through action or implication) how they arrived."
         )
     else:
         user_prompt = (
             f"{_hard_fact_line}"
             f"{_contradiction_line}"
+            f"{_identity_line}"
+            f"{_genre_constraint_line}"
+            f"{_phrase_avoidance_line}"
             f"{_knowledge_line}"
             f"{_arc_summary_line}"
             f"{_world_snapshot_line}"
@@ -1938,7 +2242,7 @@ def build_scene_draft_prompts(
             f"情绪目的：{scene.purpose.get('emotion', '拉高当前张力')}\n"
             f"入场状态：{scene.entry_state}\n"
             f"离场状态：{scene.exit_state}\n"
-            f"目标字数：{scene.target_word_count}（【硬性要求】本场景正文不得少于 {int(scene.target_word_count * 0.9)} 字。字数不足将被退回重写。必须写满，不要提前收束。）\n"
+            f"目标字数：{scene.target_word_count}（【硬性要求】正文字数必须在 {int(scene.target_word_count * 0.9)}-{int(scene.target_word_count * 1.2)} 字范围内。不足或超出均会退回重写。不要提前收束，也不要注水拖长。）\n"
             f"视角：{style_guide.pov_type if style_guide else 'third-limited'}\n"
             f"语气关键词：{tone}\n"
             f"{_pp_line}"
@@ -1960,7 +2264,12 @@ def build_scene_draft_prompts(
             "优先服从 deterministic path retrieval 与 narrative tree 提供的结构化约束。"
             "必须覆盖 scene contract 的核心冲突、情绪变化、信息释放和尾钩。"
             "背景说明必须压缩到最少，优先把设定藏进人物行动、交易、冲突后果和细节里。"
-            "不要用空泛抒情、不要先解释世界观、不要写成提纲口吻。"
+            "不要用空泛抒情、不要先解释世界观、不要写成提纲口吻。\n"
+            "【开头多样性】本场景不要以黑暗、痛苦、失去意识或醒来开场。"
+            "从以下方式中选择：正在进行的动作、对话、一个感官细节、环境观察、角色对具体事物的想法、一个问题、或一个反差。"
+            "对照「近期剧情回顾」，如果前几场用了类似的开头，必须选一个不同的。\n"
+            "【连续性】如果角色在前一场明确说了不做某事，不要无理由翻转。"
+            "每个角色登场必须有动机——通过动作或暗示说明他/她为何出现在这里。"
         )
     return system_prompt, user_prompt
 
@@ -2098,9 +2407,29 @@ def render_chapter_draft_markdown(
 ) -> str:
     header = [format_chapter_heading(chapter.chapter_number, chapter.title, language=language)]
     scene_sections = [
-        sanitize_novel_markdown_content(scene_draft.content_md, language=language)
+        strip_scaffolding_echoes(
+            sanitize_novel_markdown_content(scene_draft.content_md, language=language)
+        )
         for scene_draft in scene_drafts
     ]
+    # Strip leading chapter/scene headings from each scene section.
+    # render_chapter_draft_markdown already prepends the canonical chapter
+    # heading, so any "# 第N章 ..." or "# 第N章 第M场 ..." line at the top
+    # of a scene section is always a leak from the LLM writer.
+    _scene_heading_re = re.compile(
+        r"^\s*#{1,4}\s*(?:第\s*[一二三四五六七八九十百零\d]+\s*[章场]|Chapter\s+\d+)",
+        re.IGNORECASE,
+    )
+    cleaned_sections: list[str] = []
+    for section in scene_sections:
+        lines = section.split("\n")
+        # Strip leading blank lines, then check the first content line.
+        while lines and not lines[0].strip():
+            lines.pop(0)
+        if lines and _scene_heading_re.match(lines[0].strip()):
+            lines.pop(0)
+        cleaned_sections.append("\n".join(lines).strip())
+    scene_sections = cleaned_sections
     # Drop any scene section that collapsed to an empty string after sanitizing
     # (e.g. when the section was 100% meta-commentary leakage) so the final
     # chapter does not contain stray blank "<!-- fallback -->" placeholders or
@@ -2115,6 +2444,25 @@ def render_chapter_draft_markdown(
             f"2) model name is valid, 3) network connectivity to the LLM provider."
         )
     return "\n\n".join(header + scene_sections).strip()
+
+
+def _determine_model_tier(
+    chapter: ChapterModel,
+    scene: SceneCardModel,
+    chapter_contract: dict[str, Any] | None = None,
+) -> str:
+    """Determine whether this scene should use the 'strong' model tier.
+
+    Golden-three chapters, climax scenes, and turning points get the stronger
+    model for richer prose quality.
+    """
+    if chapter.chapter_number <= 3:
+        return "strong"
+    if chapter_contract and chapter_contract.get("is_climax"):
+        return "strong"
+    if scene.scene_type in ("climax", "revelation", "turning_point"):
+        return "strong"
+    return "standard"
 
 
 async def generate_scene_draft(
@@ -2296,23 +2644,43 @@ async def generate_scene_draft(
             foreshadowing_gap_warning=(
                 context_packet.foreshadowing_gap_warning if context_packet else None
             ),
+            identity_constraint_block=(
+                context_packet.identity_constraint_block if context_packet else None
+            ),
+            overused_phrase_block=(
+                context_packet.overused_phrase_block if context_packet else None
+            ),
+            genre_constraint_block=(
+                context_packet.genre_constraint_block if context_packet else None
+            ),
+            context_budget_tokens=(
+                settings.generation.context_budget_tokens if settings else 6000
+            ),
         )
         # Inject voice drift correction prompts for scene participants
         proj_metadata = getattr(project, "metadata_json", None) or {}
         voice_corrections = proj_metadata.get("voice_corrections", {}) if isinstance(proj_metadata, dict) else {}
         if voice_corrections and scene.participants:
+            _vc_is_en = is_english_language(_project_language(project))
             correction_lines: list[str] = []
             for participant in scene.participants:
                 correction = voice_corrections.get(participant)
                 if correction:
-                    correction_lines.append(f"【{participant}语音修正】{correction}")
+                    _vc_label = f"[{participant} Voice Correction]" if _vc_is_en else f"【{participant}语音修正】"
+                    correction_lines.append(f"{_vc_label}{correction}")
             if correction_lines:
                 system_prompt += "\n\n" + "\n".join(correction_lines)
+        _model_tier = _determine_model_tier(
+            chapter,
+            scene,
+            _packet_chapter_contract(context_packet),
+        )
         completion = await complete_text(
             session,
             settings,
             LLMCompletionRequest(
                 logical_role="writer",
+                model_tier=_model_tier,
                 system_prompt=system_prompt,
                 user_prompt=user_prompt,
                 fallback_response=fallback_content,
@@ -2326,6 +2694,7 @@ async def generate_scene_draft(
                     "chapter_number": chapter.chapter_number,
                     "scene_number": scene.scene_number,
                     "context_query": context_packet.query_text,
+                    "model_tier": _model_tier,
                 },
             ),
         )

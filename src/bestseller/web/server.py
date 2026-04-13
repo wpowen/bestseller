@@ -30,7 +30,7 @@ from bestseller.services.inspection import (
     build_story_bible_overview,
 )
 from bestseller.services.narrative import build_narrative_overview
-from bestseller.services.pipelines import run_autowrite_pipeline
+from bestseller.services.pipelines import run_autowrite_pipeline, run_progressive_autowrite_pipeline
 from bestseller.services.projects import (
     delete_project_completely,
     get_project_by_slug,
@@ -51,6 +51,10 @@ _UI_HTML_PATH = Path(__file__).with_name("novel_studio.html")
 _READER_HTML_PATH = Path(__file__).with_name("novel_reader.html")
 _IF_READER_HTML_PATH = Path(__file__).with_name("novel_if_reader.html")
 _QUICKSTART_HTML_PATH = Path(__file__).with_name("novel_quickstart.html")
+# Bounded LRU cache for markdown artifact metadata.  Previous unbounded dict
+# grew without limit over long server runs.  512 entries is enough for a few
+# large projects while capping memory usage.
+_ARTIFACT_CACHE_MAX = 512
 _ARTIFACT_CACHE: dict[str, tuple[int, int, dict[str, object]]] = {}
 
 
@@ -205,8 +209,88 @@ def resolve_project_artifact_path(
     if output_dir not in artifact_path.parents:
         raise ValueError("Artifact path escapes the project output directory.")
     if not artifact_path.exists() or not artifact_path.is_file():
+        # Fallback: if the requested file is a chapter markdown (chapter-NNN.md)
+        # and has a draft in the database, write it out on-the-fly so the preview
+        # still works even when the export step was skipped.
+        content = _try_load_chapter_draft_from_db(settings, project_slug, safe_name)
+        if content is not None:
+            output_dir.mkdir(parents=True, exist_ok=True)
+            artifact_path.write_text(content, encoding="utf-8")
+            return artifact_path
         raise FileNotFoundError(f"Artifact '{safe_name}' was not found for '{project_slug}'.")
     return artifact_path
+
+
+def _try_load_chapter_draft_from_db(
+    settings: AppSettings,
+    project_slug: str,
+    artifact_name: str,
+) -> str | None:
+    """Return markdown content for a chapter draft if it exists in the DB.
+
+    Matches filenames like ``chapter-001.md``.  Returns *None* if the file
+    name doesn't look like a chapter export or no draft is found.
+    """
+    import re  # noqa: PLC0415
+
+    m = re.match(r"chapter-(\d{3,4})\.md$", artifact_name)
+    if m is None:
+        return None
+    chapter_number = int(m.group(1))
+
+    from bestseller.infra.db.models import (  # noqa: PLC0415
+        ChapterDraftVersionModel,
+        ChapterModel,
+        ProjectModel,
+    )
+    from bestseller.services.exports import format_chapter_heading  # noqa: PLC0415
+
+    from sqlalchemy import select  # noqa: PLC0415
+
+    async def _fetch() -> str | None:
+        async with session_scope(settings) as session:
+            proj = (
+                await session.execute(
+                    select(ProjectModel).where(ProjectModel.slug == project_slug)
+                )
+            ).scalar_one_or_none()
+            if proj is None:
+                return None
+            chapter = (
+                await session.execute(
+                    select(ChapterModel).where(
+                        ChapterModel.project_id == proj.id,
+                        ChapterModel.chapter_number == chapter_number,
+                    )
+                )
+            ).scalar_one_or_none()
+            if chapter is None:
+                return None
+            draft = (
+                await session.execute(
+                    select(ChapterDraftVersionModel).where(
+                        ChapterDraftVersionModel.chapter_id == chapter.id,
+                        ChapterDraftVersionModel.is_current.is_(True),
+                    )
+                )
+            ).scalar_one_or_none()
+            if draft is None:
+                return None
+            heading = format_chapter_heading(
+                chapter.chapter_number, chapter.title, language=proj.language,
+            )
+            return f"{heading}\n\n{draft.content_md}"
+
+    try:
+        return asyncio.run(_fetch())
+    except Exception:
+        logger.warning(
+            "Failed to load chapter %d draft from DB for %s",
+            chapter_number,
+            project_slug,
+            exc_info=True,
+        )
+        return None
 
 
 def _render_preview_html(project_slug: str, artifact_name: str, content_md: str) -> str:
@@ -363,6 +447,12 @@ def _read_markdown_artifact_metadata(path: Path) -> dict[str, object]:
         return dict(cached[2])
     content_md = path.read_text(encoding="utf-8")
     metadata = build_markdown_reading_stats(content_md)
+    # Evict oldest entries when cache exceeds max size
+    if len(_ARTIFACT_CACHE) >= _ARTIFACT_CACHE_MAX:
+        # Remove ~25% of entries (oldest insertions via dict ordering)
+        evict_count = _ARTIFACT_CACHE_MAX // 4
+        for _evict_key in list(_ARTIFACT_CACHE)[:evict_count]:
+            del _ARTIFACT_CACHE[_evict_key]
     _ARTIFACT_CACHE[cache_key] = (stat.st_mtime_ns, stat.st_size, dict(metadata))
     return metadata
 
@@ -371,6 +461,8 @@ def build_preview_payload(
     project_slug: str,
     artifact_name: str,
     content_md: str,
+    *,
+    language: str | None = None,
 ) -> dict[str, object]:
     stats = build_markdown_reading_stats(content_md)
     return {
@@ -380,7 +472,7 @@ def build_preview_payload(
         "character_count": stats["character_count"],
         "paragraph_count": stats["paragraph_count"],
         "estimated_read_minutes": stats["estimated_read_minutes"],
-        "html": markdown_to_html(content_md),
+        "html": markdown_to_html(content_md, language=language),
     }
 
 
@@ -769,6 +861,21 @@ class WebTaskManager:
         thread.start()
         return task.to_dict()
 
+    # Stages that warrant an immediate disk persist (state transitions,
+    # milestones).  High-frequency progress events (scene_draft_completed
+    # etc.) are kept in memory and flushed every _PROGRESS_FLUSH_INTERVAL
+    # events to avoid thrashing the disk on large novels.
+    _PERSIST_STAGES: frozenset[str] = frozenset({
+        "running", "queued", "completed", "failed", "cancelled",
+        "chapter_pipeline_completed", "chapter_pipeline_started",
+        "conception_complete", "story_architect_complete",
+        "resume_requested", "cancel_requested",
+        "periodic_consistency_check_started",
+        "periodic_consistency_check_completed",
+        "volume_complete",
+    })
+    _PROGRESS_FLUSH_INTERVAL: int = 10
+
     def _push_progress(
         self,
         task_id: str,
@@ -787,7 +894,13 @@ class WebTaskManager:
                 }
             )
             task.progress_events = task.progress_events[-300:]
-            self._save_to_disk()
+            # Persist immediately for key milestones; batch minor updates
+            # to avoid excessive disk I/O during large pipelines.
+            if (
+                stage in self._PERSIST_STAGES
+                or len(task.progress_events) % self._PROGRESS_FLUSH_INTERVAL == 0
+            ):
+                self._save_to_disk()
 
     def _update_task_title(self, task_id: str, title: str) -> None:
         """Persist a freshly resolved novel title onto the task record."""
@@ -947,6 +1060,37 @@ class WebTaskManager:
             logger.info("Cleaned up %d task(s) with statuses %s", removed, sorted(allowed))
         return removed
 
+    def evict_old_tasks(self, max_age_seconds: int = 86400) -> int:
+        """Remove finished tasks older than *max_age_seconds*.
+
+        Only tasks in terminal states (completed, failed, cancelled) are
+        eligible.  This prevents the ``_tasks`` dict from growing without
+        bound in long-running server processes.
+
+        Returns the number of tasks evicted.
+        """
+        now = datetime.now(UTC)
+        removed = 0
+        with self._lock:
+            survivors: dict[str, WebTaskState] = {}
+            for tid, t in self._tasks.items():
+                if t.status in ("running", "queued"):
+                    survivors[tid] = t
+                    continue
+                try:
+                    updated = datetime.fromisoformat(t.updated_at)
+                    age = (now - updated).total_seconds()
+                except (ValueError, TypeError):
+                    age = max_age_seconds + 1  # treat unparseable as old
+                if age > max_age_seconds:
+                    removed += 1
+                else:
+                    survivors[tid] = t
+            if removed:
+                self._tasks = survivors
+                self._save_to_disk()
+        return removed
+
     def _check_cancelled(self, task_id: str) -> None:
         """Raise TaskCancelledError if cancellation has been requested."""
         with self._lock:
@@ -1055,6 +1199,9 @@ class WebTaskManager:
             effective_premise = str(payload["premise"])
             effective_title = str(payload["title"])
             effective_writing_profile = payload.get("writing_profile")
+            conception_brief: dict[str, object] | None = None
+            conception_log: list[dict[str, object]] | None = None
+            story_facets_obj = None
 
             # Use a single session scope for both conception and autowrite
             # to ensure transactional consistency.
@@ -1064,46 +1211,101 @@ class WebTaskManager:
 
                     genre_key = str(payload.get("_genre_key", ""))
                     if genre_key:
+                        # ── Story Architect: generate StoryFacets before conception ──
+                        story_facets_obj = None
+                        try:
+                            from bestseller.services.story_architect import architect_story_facets  # noqa: PLC0415
+
+                            story_facets_obj = await architect_story_facets(
+                                session,
+                                settings,
+                                primary_genre=genre_key,
+                                language=str(payload.get("language", "zh-CN")),
+                                genre_key=genre_key,
+                            )
+                            progress("story_architect_complete", {
+                                "tone": story_facets_obj.tone,
+                                "narrative_drive": story_facets_obj.narrative_drive,
+                                "trope_tags": list(story_facets_obj.trope_tags),
+                                "setting": story_facets_obj.setting,
+                                "source": story_facets_obj.generation_source,
+                            })
+                        except Exception:
+                            logger.warning("Story Architect failed; proceeding without facets", exc_info=True)
+
                         conception_result = await run_conception_pipeline(
                             session,
                             settings,
                             genre_key=genre_key,
                             chapter_count=int(payload["target_chapters"]),
+                            story_facets=story_facets_obj,
                             progress=progress,
                         )
                         effective_premise = conception_result.premise
                         effective_title = conception_result.title
                         self._update_task_title(task_id, effective_title)
                         effective_writing_profile = conception_result.writing_profile
+                        conception_brief = conception_result.commercial_brief
+                        conception_log = conception_result.conception_log
+                        effective_synopsis = conception_result.synopsis
+                        effective_tags = conception_result.tags
                         progress("conception_complete", {
                             "title": effective_title,
                             "premise_preview": effective_premise[:200],
+                            "synopsis_preview": effective_synopsis[:200] if effective_synopsis else "",
+                            "tags": effective_tags,
                             "profile_keys": list(conception_result.writing_profile.keys()),
+                            "commercial_brief_keys": list(conception_result.commercial_brief.keys()),
                         })
 
+                project_metadata: dict[str, object] = {"premise": effective_premise}
+                if run_conception:
+                    project_metadata["synopsis"] = effective_synopsis
+                    project_metadata["tags"] = effective_tags
+                # Store StoryFacets in metadata for future reference and anti-repetition
+                if story_facets_obj is not None:
+                    project_metadata["story_facets"] = story_facets_obj.model_dump(mode="json")
+                if conception_brief:
+                    project_metadata["commercial_brief"] = conception_brief
+                    project_metadata["benchmark_works"] = conception_brief.get("benchmark_works", [])
+                    project_metadata["target_audiences"] = conception_brief.get("target_audiences", [])
+                if conception_log:
+                    project_metadata["conception_log"] = conception_log
                 if payload.get("draft_mode"):
                     settings.quality.draft_mode = True
-                result = await run_autowrite_pipeline(
-                    session,
-                    settings,
-                    project_payload=ProjectCreate(
-                        slug=str(payload["slug"]),
-                        title=effective_title,
-                        genre=str(payload["genre"]),
-                        sub_genre=(str(payload["sub_genre"]) if payload.get("sub_genre") else None),
-                        audience=(str(payload["audience"]) if payload.get("audience") else None),
-                        language=str(payload.get("language") or "zh-CN"),
-                        target_word_count=int(payload["target_words"]),
-                        target_chapters=int(payload["target_chapters"]),
-                        metadata={"premise": effective_premise},
-                        writing_profile=effective_writing_profile,
-                    ),
-                    premise=effective_premise,
-                    requested_by="web-ui",
-                    export_markdown=bool(payload.get("export_markdown", True)),
-                    auto_repair_on_attention=bool(payload.get("auto_repair", True)),
-                    progress=progress,
+                target_chapters = int(payload["target_chapters"])
+                project_create = ProjectCreate(
+                    slug=str(payload["slug"]),
+                    title=effective_title,
+                    genre=str(payload["genre"]),
+                    sub_genre=(str(payload["sub_genre"]) if payload.get("sub_genre") else None),
+                    audience=(str(payload["audience"]) if payload.get("audience") else None),
+                    language=str(payload.get("language") or "zh-CN"),
+                    target_word_count=int(payload["target_words"]),
+                    target_chapters=target_chapters,
+                    metadata=project_metadata,
+                    writing_profile=effective_writing_profile,
                 )
+                common_kwargs: dict[str, object] = {
+                    "session": session,
+                    "settings": settings,
+                    "project_payload": project_create,
+                    "premise": effective_premise,
+                    "requested_by": "web-ui",
+                    "export_markdown": bool(payload.get("export_markdown", True)),
+                    "auto_repair_on_attention": bool(payload.get("auto_repair", True)),
+                    "progress": progress,
+                }
+                # Use progressive pipeline for large novels (>50 chapters).
+                # Progressive planning generates foundation first, then plans +
+                # writes one volume at a time, feeding writing feedback back into
+                # the next volume's planning.  This avoids a single monolithic
+                # planning step that would take hours for 1000+ chapters.
+                _PROGRESSIVE_CHAPTER_THRESHOLD = 50
+                if target_chapters > _PROGRESSIVE_CHAPTER_THRESHOLD:
+                    result = await run_progressive_autowrite_pipeline(**common_kwargs)
+                else:
+                    result = await run_autowrite_pipeline(**common_kwargs)
             return json.loads(json.dumps(result.model_dump(mode="json"), default=_json_default))
 
         # Overall pipeline cap: 24h. Long enough for 100+ chapters.
@@ -1156,7 +1358,7 @@ class WebTaskManager:
         if chapter_count <= 0:
             chapter_count = genre_preset.target_chapter_options[0] if genre_preset.target_chapter_options else 30
 
-        words_per_chapter = 5000
+        words_per_chapter = load_settings().generation.words_per_chapter.target
         target_words = chapter_count * words_per_chapter
 
         # Resume: reuse existing project slug if provided
@@ -1287,24 +1489,29 @@ class WebTaskManager:
                     await session.commit()
                     return new_project
 
-            project = asyncio.run(get_or_create_project())
+            # Run everything in a single asyncio.run() to avoid creating
+            # multiple event loops (each leaks an httpx client + DB engine).
+            async def _run_if() -> str:
+                project = await get_or_create_project()
+                # Merge stored writing profile IF config with request overrides
+                stored = project.metadata_json.get("writing_profile", {})
+                stored_if = stored.get("interactive_fiction", {})
+                merged_cfg = {**stored_if, **cfg_dict, "enabled": True}
+                cfg = InteractiveFictionConfig.model_validate(merged_cfg)
 
-            # Merge stored writing profile IF config with request overrides
-            stored = project.metadata_json.get("writing_profile", {})
-            stored_if = stored.get("interactive_fiction", {})
-            merged_cfg = {**stored_if, **cfg_dict, "enabled": True}
-            cfg = InteractiveFictionConfig.model_validate(merged_cfg)
+                output_base = Path(settings.output.base_dir)
+                out_path = await run_if_pipeline_integrated(
+                    project,
+                    cfg,
+                    output_base,
+                    settings=settings,
+                    resume=resume,
+                    on_progress=progress,
+                )
+                return str(out_path)
 
-            output_base = Path(settings.output.base_dir)
-            out_path = asyncio.run(run_if_pipeline_integrated(
-                project,
-                cfg,
-                output_base,
-                settings=settings,
-                resume=resume,
-                on_progress=progress,
-            ))
-            self._mark_completed(task_id, {"story_package": str(out_path)})
+            out_path = asyncio.run(_run_if())
+            self._mark_completed(task_id, {"story_package": out_path})
         except TaskCancelledError:
             self._mark_cancelled(task_id)
         except Exception:
@@ -1695,6 +1902,7 @@ async def _load_project_summary_payload(
         story_bible,
         current_chapter_number=int(project.current_chapter_number or 0),
     )
+    project_meta = project.metadata_json or {}
     return {
         "project": {
             "id": str(project.id),
@@ -1708,6 +1916,9 @@ async def _load_project_summary_payload(
             "target_chapters": project.target_chapters,
             "current_volume_number": project.current_volume_number,
             "current_chapter_number": project.current_chapter_number,
+            "synopsis": project_meta.get("synopsis", ""),
+            "tags": project_meta.get("tags", []),
+            "premise": project_meta.get("premise", ""),
         },
         "writing_profile": writing_profile,
         "structure_summary": {
@@ -1942,14 +2153,33 @@ def serve_web_app(
     stale_seconds = int(os.environ.get("BESTSELLER_TASK_STALE_SECONDS", "2700"))
     sweep_interval = int(os.environ.get("BESTSELLER_WATCHDOG_INTERVAL", "60"))
 
+    # Auto-evict completed/failed tasks older than this (seconds).
+    _TASK_RETENTION_SECONDS = int(os.environ.get("BESTSELLER_TASK_RETENTION_SECONDS", "86400"))
+
     def _watchdog_loop() -> None:
         import time as _time  # noqa: PLC0415
+        sweep_count = 0
         while True:
             try:
                 _time.sleep(sweep_interval)
+                sweep_count += 1
                 marked = task_manager.watchdog_sweep(stale_after_seconds=stale_seconds)
                 if marked:
                     logger.warning("Watchdog marked %d stale task(s) as failed", marked)
+
+                # Every 10 sweeps (~10 min): evict old finished tasks to cap memory
+                if sweep_count % 10 == 0:
+                    evicted = task_manager.evict_old_tasks(max_age_seconds=_TASK_RETENTION_SECONDS)
+                    if evicted:
+                        logger.info("Watchdog evicted %d old task record(s)", evicted)
+
+                # Every 10 sweeps: clean up orphaned litellm httpx clients
+                if sweep_count % 10 == 0:
+                    try:
+                        from bestseller.services.llm import _cleanup_stale_litellm_clients  # noqa: PLC0415
+                        _cleanup_stale_litellm_clients()
+                    except Exception:
+                        pass
             except Exception:
                 logger.exception("Watchdog sweep failed")
 
@@ -2209,13 +2439,26 @@ def serve_web_app(
                     return
                 if path.startswith("/api/if-novels/") and "/branches/" in path:
                     parts = path.split("/")
-                    # /api/if-novels/{slug}/branches/{route_id}
+                    # /api/if-novels/{slug}/branches/{route_id}?lang=xx
                     if len(parts) >= 6:
                         slug = parts[3]
                         route_id = parts[5]
-                        branch_dir = (
-                            Path(settings.output.base_dir) / slug / "if" / "branches" / route_id
-                        )
+                        lang_param = (query.get("lang") or ["zh"])[0].lower()
+                        if lang_param not in {"zh", "en", "ja", "ko"}:
+                            lang_param = "zh"
+                        if lang_param == "zh":
+                            branch_dir = (
+                                Path(settings.output.base_dir) / slug / "if" / "branches" / route_id
+                            )
+                        else:
+                            branch_dir = (
+                                Path(settings.output.base_dir) / slug / "translations" / lang_param / "branches" / route_id
+                            )
+                            # Fall back to default Chinese branch if translated version missing
+                            if not branch_dir.exists():
+                                branch_dir = (
+                                    Path(settings.output.base_dir) / slug / "if" / "branches" / route_id
+                                )
                         if not branch_dir.exists():
                             self._route_not_found()
                             return
@@ -2277,10 +2520,37 @@ def serve_web_app(
                     output_dir = _project_output_dir(settings, project_slug)
                     chapter_file = output_dir / f"chapter-{chapter_n:03d}.md"
                     if not chapter_file.exists():
-                        self._route_not_found()
-                        return
+                        # Try 4-digit format for chapters >= 1000
+                        chapter_file_4d = output_dir / f"chapter-{chapter_n:04d}.md"
+                        if chapter_file_4d.exists():
+                            chapter_file = chapter_file_4d
+                        else:
+                            # DB fallback: write chapter draft to disk on-the-fly
+                            content = _try_load_chapter_draft_from_db(
+                                settings, project_slug, f"chapter-{chapter_n:03d}.md",
+                            )
+                            if content is None and chapter_n >= 1000:
+                                content = _try_load_chapter_draft_from_db(
+                                    settings, project_slug, f"chapter-{chapter_n:04d}.md",
+                                )
+                            if content is None:
+                                self._route_not_found()
+                                return
+                            output_dir.mkdir(parents=True, exist_ok=True)
+                            chapter_file.write_text(content, encoding="utf-8")
                     md = chapter_file.read_text(encoding="utf-8")
-                    html_content = markdown_to_html(md)
+                    # Resolve project language for accurate sanitization
+                    _reader_lang: str | None = (query.get("lang") or [None])[0]
+                    if _reader_lang is None:
+                        try:
+                            async def _fetch_lang() -> str | None:
+                                async with session_scope(settings) as sess:
+                                    proj = await get_project_by_slug(sess, project_slug)
+                                    return getattr(proj, "language", None) if proj else None
+                            _reader_lang = asyncio.run(_fetch_lang())
+                        except Exception:
+                            pass
+                    html_content = markdown_to_html(md, language=_reader_lang)
                     stats = build_markdown_reading_stats(md)
                     self._send_json({
                         "number": chapter_n,
@@ -2306,7 +2576,7 @@ def serve_web_app(
                     missing = [key for key in required if not payload.get(key)]
                     if missing:
                         raise ValueError(f"Missing required fields: {', '.join(missing)}")
-                    validate_longform_scope(int(payload["target_words"]), int(payload["target_chapters"]))
+                    validate_longform_scope(int(payload["target_words"]), int(payload["target_chapters"]), language=payload.get("language"))
                     task = task_manager.create_autowrite_task(payload)
                     self._send_json(task, status=HTTPStatus.ACCEPTED)
                     return

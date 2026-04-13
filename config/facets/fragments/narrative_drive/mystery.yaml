@@ -1,0 +1,31 @@
+# Narrative Drive Fragment: Mystery
+# Story structure guidance for mystery/investigation narratives.
+
+scene_writer: |
+  NARRATIVE DRIVE: MYSTERY — the story is propelled by questions and their answers.
+  - Every scene must either plant a clue, reveal information, or deepen a question
+  - Information is currency — control what the reader knows vs. what the MC knows
+  - Red herrings must be fair (plausible) but distinguishable in retrospect
+  - The satisfaction comes from the "aha!" moment — both for character and reader
+  - Multiple layers: surface mystery + deeper mystery revealed as the first resolves
+
+planner_book_spec: |
+  Mystery structure:
+  - Central question established in Chapter 1
+  - 5-7 clues planted across the first two acts
+  - 2-3 red herrings that point to false conclusions
+  - Midpoint revelation that reframes the central question
+  - Resolution that uses ONLY previously established information (fair play)
+  - No deus ex machina or information the reader couldn't have accessed
+
+core_loop: |
+  Mystery core loop: Question → Investigation → Clue → New Question (deeper) → Revelation
+  Layer mysteries: solving one mystery should reveal a bigger one beneath it.
+  The reader should be able to solve it slightly before the MC (satisfying) or
+  be genuinely surprised (must still be fair in retrospect).
+
+anti_patterns:
+  - "Solution relies on information never shown to the reader"
+  - "Protagonist solves mysteries through random luck"
+  - "All suspects equally suspicious (no gradation)"
+  - "Investigation scenes with no new information gained"

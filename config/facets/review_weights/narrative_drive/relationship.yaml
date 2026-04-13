@@ -1,0 +1,9 @@
+# Review weight deltas for narrative_drive: relationship
+# Relationship-driven stories emphasize emotion and dialogue over conflict intensity.
+scene_weights:
+  emotion: 0.3
+  emotional_movement: 0.25
+  dialogue: 0.2
+  conflict: -0.2
+  hook_strength: -0.1
+  payoff_density: -0.1

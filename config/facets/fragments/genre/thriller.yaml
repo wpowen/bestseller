@@ -1,0 +1,41 @@
+# Genre Fragment: Thriller/Suspense
+# Core genre guidance for suspense and thriller stories.
+
+scene_writer: |
+  This is a Thriller/Suspense story. Key genre elements:
+  - Information asymmetry drives tension (reader knows danger MC doesn't, or vice versa)
+  - Every chapter should end with a question, threat, or revelation
+  - Pacing alternates between high-tension set pieces and brief investigation lulls
+  - Red herrings must be planted alongside genuine clues
+  - The clock is always ticking — escalating stakes and shrinking time
+
+planner_book_spec: |
+  Thriller structural requirements:
+  - Inciting incident within the first chapter (murder, disappearance, threat)
+  - 3+ planted clues that readers can piece together before the reveal
+  - At least 2 genuine red herrings that redirect suspicion
+  - Midpoint twist that reframes everything the reader assumed
+  - Resolution that is surprising yet fair (all clues were available)
+
+scene_review: |
+  Thriller quality checks:
+  - Does the scene maintain or escalate tension?
+  - Is new information revealed or a clue planted?
+  - Does the chapter ending compel continued reading?
+  - Are character reactions proportional to the threat level?
+
+anti_patterns:
+  - "Protagonist ignores obvious danger for no reason"
+  - "Villain explains their entire plan when they could just act"
+  - "Mystery solved by coincidence rather than deduction"
+  - "Long exposition dumps that kill pacing and tension"
+
+obligatory_scenes:
+  - code: inciting_threat
+    label: "Inciting threat or crime"
+    timing: act_1
+    description: "The central mystery or threat is established."
+  - code: midpoint_twist
+    label: "Midpoint revelation/twist"
+    timing: act_2_midpoint
+    description: "A discovery that reframes the investigation and raises stakes."

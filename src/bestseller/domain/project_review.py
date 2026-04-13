@@ -12,6 +12,7 @@ class ProjectConsistencyFinding(BaseModel):
 class ProjectConsistencyScores(BaseModel):
     overall: float = Field(ge=0, le=1)
     chapter_coverage: float = Field(ge=0, le=1)
+    chapter_sequence: float = Field(default=1.0, ge=0, le=1)
     scene_knowledge: float = Field(ge=0, le=1)
     canon_coverage: float = Field(ge=0, le=1)
     timeline_coverage: float = Field(ge=0, le=1)

@@ -1,0 +1,41 @@
+# Genre Fragment: Romance
+# Core genre guidance for romance-driven stories.
+
+scene_writer: |
+  This is a Romance story. Key genre elements:
+  - The central relationship IS the plot — every scene should advance or complicate it
+  - Emotional beats follow the romance arc: meet → attraction → obstacle → vulnerability → commitment
+  - Internal conflict (fears, past wounds) drives the push-pull dynamic
+  - Physical awareness and tension should build gradually
+  - Supporting characters serve as mirrors, catalysts, or foils for the romance
+
+planner_book_spec: |
+  Romance structural requirements:
+  - Meet-cute or charged first encounter in the first 10% of the book
+  - 3-4 escalating obstacles that test the relationship
+  - A "dark moment" (apparent breakup/impossible barrier) before resolution
+  - Emotionally satisfying resolution (HEA or HFN)
+  - B-plot that reflects or contrasts the main romance theme
+
+scene_review: |
+  Romance quality checks:
+  - Does every scene include at least one moment of emotional connection or tension?
+  - Is the physical/emotional intimacy progressing naturally?
+  - Are both characters' POVs and desires given equal weight?
+  - Does internal conflict feel organic (not manufactured drama)?
+
+anti_patterns:
+  - "Love interest has no personality beyond being attractive"
+  - "Conflict created purely through miscommunication that could be resolved in one conversation"
+  - "Instalove with no earned emotional foundation"
+  - "One character exists only to serve the other's growth"
+
+obligatory_scenes:
+  - code: charged_meeting
+    label: "Charged first meeting"
+    timing: act_1
+    description: "The leads meet in a way that establishes chemistry and tension."
+  - code: vulnerability_moment
+    label: "Vulnerability and emotional intimacy"
+    timing: act_2_midpoint
+    description: "One character reveals something deeply personal, deepening the bond."

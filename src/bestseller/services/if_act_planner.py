@@ -143,7 +143,8 @@ def _normalize_acts(acts: list[dict[str, Any]], cfg: Any) -> list[dict[str, Any]
         act.setdefault("branch_opportunities", [])
         act.setdefault("arc_breakdown", [])
         act.setdefault("core_theme", "")
-        act.setdefault("dominant_emotion", "热血")
+        _is_en = str(getattr(cfg, "language", "") or "").lower().startswith("en")
+        act.setdefault("dominant_emotion", "passionate" if _is_en else "热血")
         normalized.append(act)
     return normalized
 

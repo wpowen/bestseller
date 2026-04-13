@@ -1,0 +1,8 @@
+# Review weight deltas for tone: dark
+# Dark stories emphasize conflict intensity, style, and emotional impact.
+scene_weights:
+  conflict: 0.2
+  conflict_clarity: 0.15
+  emotion: 0.15
+  style: 0.1
+  hook_strength: 0.1

@@ -1,8 +1,8 @@
 """Plan validation logic — validates a novel plan against genre-specific rubrics.
 
 Runs universal structural checks on every plan and then applies genre-specific
-checks resolved from the genre review profile.  All diagnostic messages are in
-Chinese (internal review, not user-facing).
+checks resolved from the genre review profile.  Diagnostic messages support both
+Chinese and English; pass ``language="en"`` to get English output.
 """
 
 from __future__ import annotations
@@ -19,9 +19,9 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Type alias for check functions
 # ---------------------------------------------------------------------------
-UniversalCheck = Callable[[list[dict[str, Any]]], tuple[bool, PlanValidationFinding | None]]
+UniversalCheck = Callable[[list[dict[str, Any]], bool], tuple[bool, PlanValidationFinding | None]]
 GenreCheck = Callable[
-    [dict[str, Any], dict[str, Any], dict[str, Any], list[dict[str, Any]]],
+    [dict[str, Any], dict[str, Any], dict[str, Any], list[dict[str, Any]], bool],
     tuple[bool, PlanValidationFinding | None],
 ]
 
@@ -32,6 +32,7 @@ GenreCheck = Callable[
 
 def _check_volume_goals_distinct(
     volume_plan: list[dict[str, Any]],
+    _is_en: bool = False,
 ) -> tuple[bool, PlanValidationFinding | None]:
     """No two volumes should share identical volume_goal text."""
     goals: list[str] = []
@@ -42,17 +43,27 @@ def _check_volume_goals_distinct(
 
     if len(goals) != len(set(goals)):
         duplicates = [g for g in set(goals) if goals.count(g) > 1]
+        dup_display = ", ".join(duplicates[:3]) if _is_en else "、".join(duplicates[:3])
         return False, PlanValidationFinding(
             category="volume_goals",
             severity="critical",
-            message=f"存在重复的卷目标：{'、'.join(duplicates[:3])}",
-            suggestion="每卷应有独立的叙事目标，避免复制粘贴。",
+            message=(
+                f"Duplicate volume goals detected: {dup_display}"
+                if _is_en
+                else f"存在重复的卷目标：{dup_display}"
+            ),
+            suggestion=(
+                "Each volume should have a unique narrative goal. Avoid copy-pasting."
+                if _is_en
+                else "每卷应有独立的叙事目标，避免复制粘贴。"
+            ),
         )
     return True, None
 
 
 def _check_challenge_evolution(
     volume_plan: list[dict[str, Any]],
+    _is_en: bool = False,
 ) -> tuple[bool, PlanValidationFinding | None]:
     """Conflict phases and primary forces must vary across volumes."""
     if len(volume_plan) < 2:
@@ -71,28 +82,53 @@ def _check_challenge_evolution(
         return False, PlanValidationFinding(
             category="challenge_evolution",
             severity="critical",
-            message="所有卷的冲突阶段和主要对抗力量完全相同，缺乏递进和变化。",
-            suggestion="为不同卷设置不同类型的冲突阶段（如 survival、political_intrigue、betrayal 等），并安排不同的对抗势力。",
+            message=(
+                "All volumes share identical conflict phases and opposing forces, lacking progression and variety."
+                if _is_en
+                else "所有卷的冲突阶段和主要对抗力量完全相同，缺乏递进和变化。"
+            ),
+            suggestion=(
+                "Use different conflict phases for different volumes (e.g. survival, political_intrigue, betrayal) and arrange different opposing forces."
+                if _is_en
+                else "为不同卷设置不同类型的冲突阶段（如 survival、political_intrigue、betrayal 等），并安排不同的对抗势力。"
+            ),
         )
     if all_phases_same:
         return False, PlanValidationFinding(
             category="challenge_evolution",
             severity="warning",
-            message=f"所有卷的冲突阶段均为「{non_empty_phases[0]}」，缺少变化。",
-            suggestion="建议在不同卷中采用不同的冲突类型以增强叙事张力。",
+            message=(
+                f'All volumes use the same conflict phase "{non_empty_phases[0]}", lacking variety.'
+                if _is_en
+                else f"所有卷的冲突阶段均为「{non_empty_phases[0]}」，缺少变化。"
+            ),
+            suggestion=(
+                "Use different conflict types across volumes to strengthen narrative tension."
+                if _is_en
+                else "建议在不同卷中采用不同的冲突类型以增强叙事张力。"
+            ),
         )
     if all_forces_same:
         return False, PlanValidationFinding(
             category="challenge_evolution",
             severity="warning",
-            message=f"所有卷的主要对抗力量均为「{non_empty_forces[0]}」，压力源单一。",
-            suggestion="引入多元化的冲突力量以避免读者疲劳。",
+            message=(
+                f'All volumes face the same opposing force "{non_empty_forces[0]}", creating monotonous pressure.'
+                if _is_en
+                else f"所有卷的主要对抗力量均为「{non_empty_forces[0]}」，压力源单一。"
+            ),
+            suggestion=(
+                "Introduce diverse conflict forces to avoid reader fatigue."
+                if _is_en
+                else "引入多元化的冲突力量以避免读者疲劳。"
+            ),
         )
     return True, None
 
 
 def _check_foreshadowing_balance(
     volume_plan: list[dict[str, Any]],
+    _is_en: bool = False,
 ) -> tuple[bool, PlanValidationFinding | None]:
     """Foreshadowing planted in early volumes should be paid off in later volumes."""
     if len(volume_plan) < 2:
@@ -111,17 +147,27 @@ def _check_foreshadowing_balance(
             paid_off_volumes.append(vol_num)
 
     if planted_volumes and not paid_off_volumes:
+        vol_list = ", ".join(str(v) for v in planted_volumes) if _is_en else "、".join(str(v) for v in planted_volumes)
         return False, PlanValidationFinding(
             category="foreshadowing_balance",
             severity="warning",
-            message=f"在第{'、'.join(str(v) for v in planted_volumes)}卷埋下了伏笔，但没有任何卷对其进行回收。",
-            suggestion="确保伏笔在后续卷中得到兑现，否则会让读者感到被欺骗。",
+            message=(
+                f"Foreshadowing planted in volume(s) {vol_list} but no volume resolves it."
+                if _is_en
+                else f"在第{vol_list}卷埋下了伏笔，但没有任何卷对其进行回收。"
+            ),
+            suggestion=(
+                "Ensure foreshadowing is paid off in subsequent volumes, otherwise readers will feel cheated."
+                if _is_en
+                else "确保伏笔在后续卷中得到兑现，否则会让读者感到被欺骗。"
+            ),
         )
     return True, None
 
 
 def _check_hooks(
     volume_plan: list[dict[str, Any]],
+    _is_en: bool = False,
 ) -> tuple[bool, PlanValidationFinding | None]:
     """All volumes except the last should have a reader_hook_to_next."""
     if len(volume_plan) < 2:
@@ -137,17 +183,27 @@ def _check_hooks(
             missing.append(vol.get("volume_number", 0))
 
     if missing:
+        vol_list = ", ".join(str(v) for v in missing) if _is_en else "、".join(str(v) for v in missing)
         return False, PlanValidationFinding(
             category="hooks",
             severity="warning",
-            message=f"第{'、'.join(str(v) for v in missing)}卷缺少读者钩子（reader_hook_to_next），可能导致续读率下降。",
-            suggestion="为每个非末卷添加一个引导读者继续阅读的钩子。",
+            message=(
+                f"Volume(s) {vol_list} lack a reader hook (reader_hook_to_next), which may reduce read-through rate."
+                if _is_en
+                else f"第{vol_list}卷缺少读者钩子（reader_hook_to_next），可能导致续读率下降。"
+            ),
+            suggestion=(
+                "Add a hook to each non-final volume to encourage readers to continue."
+                if _is_en
+                else "为每个非末卷添加一个引导读者继续阅读的钩子。"
+            ),
         )
     return True, None
 
 
 def _check_volume_themes(
     volume_plan: list[dict[str, Any]],
+    _is_en: bool = False,
 ) -> tuple[bool, PlanValidationFinding | None]:
     """Each volume should have a non-empty volume_theme."""
     missing: list[int] = []
@@ -157,11 +213,20 @@ def _check_volume_themes(
             missing.append(vol.get("volume_number", 0))
 
     if missing:
+        vol_list = ", ".join(str(v) for v in missing) if _is_en else "、".join(str(v) for v in missing)
         return False, PlanValidationFinding(
             category="volume_themes",
             severity="warning",
-            message=f"第{'、'.join(str(v) for v in missing)}卷缺少卷级主题（volume_theme）。",
-            suggestion="每卷应有明确的主题以统领该卷的叙事方向。",
+            message=(
+                f"Volume(s) {vol_list} lack a volume-level theme (volume_theme)."
+                if _is_en
+                else f"第{vol_list}卷缺少卷级主题（volume_theme）。"
+            ),
+            suggestion=(
+                "Each volume should have a clear theme to guide its narrative direction."
+                if _is_en
+                else "每卷应有明确的主题以统领该卷的叙事方向。"
+            ),
         )
     return True, None
 
@@ -187,6 +252,7 @@ def _check_power_tier_escalation(
     world_spec: dict[str, Any],
     cast_spec: dict[str, Any],
     volume_plan: list[dict[str, Any]],
+    _is_en: bool = False,
 ) -> tuple[bool, PlanValidationFinding | None]:
     """For action-progression: protagonist power tier should escalate across volumes.
 
@@ -199,8 +265,16 @@ def _check_power_tier_escalation(
         return False, PlanValidationFinding(
             category="power_tier_escalation",
             severity="warning",
-            message=f"力量体系仅定义了{len(tiers)}个层级，建议至少设置3个以支撑长篇递进。",
-            suggestion="扩展力量体系层级以提供更多成长空间。",
+            message=(
+                f"Power system defines only {len(tiers)} tier(s); at least 3 are recommended for long-form progression."
+                if _is_en
+                else f"力量体系仅定义了{len(tiers)}个层级，建议至少设置3个以支撑长篇递进。"
+            ),
+            suggestion=(
+                "Expand the power tier hierarchy to provide more room for growth."
+                if _is_en
+                else "扩展力量体系层级以提供更多成长空间。"
+            ),
         )
 
     # Check tier escalation across volumes
@@ -222,8 +296,16 @@ def _check_power_tier_escalation(
         return False, PlanValidationFinding(
             category="power_tier_escalation",
             severity="critical",
-            message=f"主角力量层级在所有卷中始终为「{tier_values[0]}」，缺乏成长感。",
-            suggestion="规划主角在不同卷中的力量递进，体现角色成长。",
+            message=(
+                f'Protagonist power tier remains "{tier_values[0]}" across all volumes, lacking a sense of growth.'
+                if _is_en
+                else f"主角力量层级在所有卷中始终为「{tier_values[0]}」，缺乏成长感。"
+            ),
+            suggestion=(
+                "Plan power-tier progression across volumes to reflect character growth."
+                if _is_en
+                else "规划主角在不同卷中的力量递进，体现角色成长。"
+            ),
         )
     return True, None
 
@@ -233,6 +315,7 @@ def _check_antagonist_evolution(
     world_spec: dict[str, Any],
     cast_spec: dict[str, Any],
     volume_plan: list[dict[str, Any]],
+    _is_en: bool = False,
 ) -> tuple[bool, PlanValidationFinding | None]:
     """Antagonist forces should have varied force_types and rotate across volumes."""
     forces = cast_spec.get("antagonist_forces") or []
@@ -240,8 +323,16 @@ def _check_antagonist_evolution(
         return False, PlanValidationFinding(
             category="antagonist_evolution",
             severity="warning",
-            message="角色设定中缺少对抗力量（antagonist_forces），冲突来源不够多元。",
-            suggestion="添加2-4个不同类型的冲突力量（character/faction/environment/internal/systemic）。",
+            message=(
+                "Cast spec is missing antagonist forces (antagonist_forces); conflict sources are not diverse enough."
+                if _is_en
+                else "角色设定中缺少对抗力量（antagonist_forces），冲突来源不够多元。"
+            ),
+            suggestion=(
+                "Add 2-4 conflict forces of different types (character/faction/environment/internal/systemic)."
+                if _is_en
+                else "添加2-4个不同类型的冲突力量（character/faction/environment/internal/systemic）。"
+            ),
         )
 
     force_types: list[str] = []
@@ -254,8 +345,16 @@ def _check_antagonist_evolution(
         return False, PlanValidationFinding(
             category="antagonist_evolution",
             severity="warning",
-            message=f"所有对抗力量的类型均为「{force_types[0]}」，建议引入多元化的冲突源。",
-            suggestion="混合使用不同类型的冲突力量（如角色、势力、环境等）以丰富冲突层次。",
+            message=(
+                f'All antagonist forces share the same type "{force_types[0]}"; consider diversifying conflict sources.'
+                if _is_en
+                else f"所有对抗力量的类型均为「{force_types[0]}」，建议引入多元化的冲突源。"
+            ),
+            suggestion=(
+                "Mix different force types (e.g. character, faction, environment) to enrich conflict layers."
+                if _is_en
+                else "混合使用不同类型的冲突力量（如角色、势力、环境等）以丰富冲突层次。"
+            ),
         )
 
     # Check that different volumes reference different primary forces
@@ -269,8 +368,16 @@ def _check_antagonist_evolution(
         return False, PlanValidationFinding(
             category="antagonist_evolution",
             severity="warning",
-            message="所有卷的主要对抗力量引用相同角色/势力，缺乏对抗面的变化。",
-            suggestion="安排不同卷面对不同的核心威胁，增强叙事多样性。",
+            message=(
+                "All volumes reference the same primary opposing force, lacking variety in antagonist dynamics."
+                if _is_en
+                else "所有卷的主要对抗力量引用相同角色/势力，缺乏对抗面的变化。"
+            ),
+            suggestion=(
+                "Assign different core threats to different volumes to enhance narrative diversity."
+                if _is_en
+                else "安排不同卷面对不同的核心威胁，增强叙事多样性。"
+            ),
         )
     return True, None
 
@@ -280,6 +387,7 @@ def _check_conflict_phase_variety(
     world_spec: dict[str, Any],
     cast_spec: dict[str, Any],
     volume_plan: list[dict[str, Any]],
+    _is_en: bool = False,
 ) -> tuple[bool, PlanValidationFinding | None]:
     """At least 3 different conflict_phase values should be used when 4+ volumes exist."""
     if len(volume_plan) < 4:
@@ -295,8 +403,16 @@ def _check_conflict_phase_variety(
         return False, PlanValidationFinding(
             category="conflict_phase_variety",
             severity="warning",
-            message=f"共{len(volume_plan)}卷但仅使用了{len(phases)}种冲突阶段类型，变化不足。",
-            suggestion="建议使用至少3种不同的冲突阶段（如 survival、political_intrigue、betrayal、faction_war、existential_threat 等）。",
+            message=(
+                f"{len(volume_plan)} volumes but only {len(phases)} conflict phase type(s) used; variety is insufficient."
+                if _is_en
+                else f"共{len(volume_plan)}卷但仅使用了{len(phases)}种冲突阶段类型，变化不足。"
+            ),
+            suggestion=(
+                "Use at least 3 different conflict phases (e.g. survival, political_intrigue, betrayal, faction_war, existential_threat)."
+                if _is_en
+                else "建议使用至少3种不同的冲突阶段（如 survival、political_intrigue、betrayal、faction_war、existential_threat 等）。"
+            ),
         )
     return True, None
 
@@ -322,6 +438,7 @@ def _check_relationship_milestone_progression(
     world_spec: dict[str, Any],
     cast_spec: dict[str, Any],
     volume_plan: list[dict[str, Any]],
+    _is_en: bool = False,
 ) -> tuple[bool, PlanValidationFinding | None]:
     """For relationship-driven genres: volume themes/goals should include relationship keywords."""
     if len(volume_plan) < 2:
@@ -338,18 +455,35 @@ def _check_relationship_milestone_progression(
             volumes_with_keyword.append(vol.get("volume_number", 0))
 
     if not volumes_with_keyword:
+        kw_display = ", ".join(_RELATIONSHIP_KEYWORDS[:6]) if _is_en else "、".join(_RELATIONSHIP_KEYWORDS[:6])
         return False, PlanValidationFinding(
             category="relationship_milestones",
             severity="critical",
-            message="作为情感/关系驱动的类型，没有任何卷的目标或主题包含关系发展的关键词。",
-            suggestion=f"在卷目标或主题中体现关系里程碑（如：{'、'.join(_RELATIONSHIP_KEYWORDS[:6])}）。",
+            message=(
+                "As an emotion/relationship-driven genre, no volume goal or theme contains relationship development keywords."
+                if _is_en
+                else "作为情感/关系驱动的类型，没有任何卷的目标或主题包含关系发展的关键词。"
+            ),
+            suggestion=(
+                f"Include relationship milestones in volume goals or themes (e.g. {kw_display})."
+                if _is_en
+                else f"在卷目标或主题中体现关系里程碑（如：{kw_display}）。"
+            ),
         )
     if len(volumes_with_keyword) < len(volume_plan) // 2:
         return False, PlanValidationFinding(
             category="relationship_milestones",
             severity="warning",
-            message=f"仅{len(volumes_with_keyword)}/{len(volume_plan)}卷包含关系发展关键词，比例偏低。",
-            suggestion="增加更多卷中关系发展的显性表达，强化情感主线。",
+            message=(
+                f"Only {len(volumes_with_keyword)}/{len(volume_plan)} volumes contain relationship development keywords; ratio is low."
+                if _is_en
+                else f"仅{len(volumes_with_keyword)}/{len(volume_plan)}卷包含关系发展关键词，比例偏低。"
+            ),
+            suggestion=(
+                "Add more explicit relationship development in additional volumes to strengthen the emotional throughline."
+                if _is_en
+                else "增加更多卷中关系发展的显性表达，强化情感主线。"
+            ),
         )
     return True, None
 
@@ -359,6 +493,7 @@ def _check_emotional_arc_explicit(
     world_spec: dict[str, Any],
     cast_spec: dict[str, Any],
     volume_plan: list[dict[str, Any]],
+    _is_en: bool = False,
 ) -> tuple[bool, PlanValidationFinding | None]:
     """Each volume should have emotional goals visible in volume_goal or volume_theme."""
     missing: list[int] = []
@@ -369,11 +504,20 @@ def _check_emotional_arc_explicit(
             missing.append(vol.get("volume_number", 0))
 
     if missing:
+        vol_list = ", ".join(str(v) for v in missing) if _is_en else "、".join(str(v) for v in missing)
         return False, PlanValidationFinding(
             category="emotional_arc",
             severity="warning",
-            message=f"第{'、'.join(str(v) for v in missing)}卷同时缺少卷目标和卷主题，情感弧线不明确。",
-            suggestion="每卷至少应有一个明确的情感或叙事目标。",
+            message=(
+                f"Volume(s) {vol_list} lack both a volume goal and a volume theme; emotional arc is unclear."
+                if _is_en
+                else f"第{vol_list}卷同时缺少卷目标和卷主题，情感弧线不明确。"
+            ),
+            suggestion=(
+                "Each volume should have at least one clear emotional or narrative goal."
+                if _is_en
+                else "每卷至少应有一个明确的情感或叙事目标。"
+            ),
         )
     return True, None
 
@@ -383,6 +527,7 @@ def _check_clue_chain_exists(
     world_spec: dict[str, Any],
     cast_spec: dict[str, Any],
     volume_plan: list[dict[str, Any]],
+    _is_en: bool = False,
 ) -> tuple[bool, PlanValidationFinding | None]:
     """For suspense-mystery: key_reveals should be distributed across at least 2 volumes."""
     volumes_with_reveals: list[int] = []
@@ -392,13 +537,27 @@ def _check_clue_chain_exists(
             volumes_with_reveals.append(vol.get("volume_number", 0))
 
     if len(volumes_with_reveals) < 2:
+        if volumes_with_reveals:
+            msg = (
+                f"Key reveals are spread across only {len(volumes_with_reveals)} volume(s); the suspense thread is broken."
+                if _is_en
+                else f"关键揭示仅分布在{len(volumes_with_reveals)}卷中，悬念线断裂。"
+            )
+        else:
+            msg = (
+                "No volume defines key reveals (key_reveals); the suspense thread is missing."
+                if _is_en
+                else "没有任何卷定义了关键揭示（key_reveals），悬疑线缺失。"
+            )
         return False, PlanValidationFinding(
             category="clue_chain",
             severity="critical",
-            message=f"关键揭示仅分布在{len(volumes_with_reveals)}卷中，悬念线断裂。"
-            if volumes_with_reveals
-            else "没有任何卷定义了关键揭示（key_reveals），悬疑线缺失。",
-            suggestion="将关键线索和揭示分散到至少2个卷中，构建完整的推理/悬疑链条。",
+            message=msg,
+            suggestion=(
+                "Distribute key clues and reveals across at least 2 volumes to build a complete mystery/suspense chain."
+                if _is_en
+                else "将关键线索和揭示分散到至少2个卷中，构建完整的推理/悬疑链条。"
+            ),
         )
     return True, None
 
@@ -408,6 +567,7 @@ def _check_misdirection_planned(
     world_spec: dict[str, Any],
     cast_spec: dict[str, Any],
     volume_plan: list[dict[str, Any]],
+    _is_en: bool = False,
 ) -> tuple[bool, PlanValidationFinding | None]:
     """Foreshadowing/misdirection should be planted in at least 2 volumes."""
     planted_count = 0
@@ -420,8 +580,16 @@ def _check_misdirection_planned(
         return False, PlanValidationFinding(
             category="misdirection",
             severity="warning",
-            message=f"仅有{planted_count}卷埋下了伏笔/误导，悬疑效果可能不足。",
-            suggestion="在至少2个卷中设置伏笔以构建有效的误导和悬念。",
+            message=(
+                f"Only {planted_count} volume(s) plant foreshadowing/misdirection; suspense effect may be insufficient."
+                if _is_en
+                else f"仅有{planted_count}卷埋下了伏笔/误导，悬疑效果可能不足。"
+            ),
+            suggestion=(
+                "Plant foreshadowing in at least 2 volumes to build effective misdirection and suspense."
+                if _is_en
+                else "在至少2个卷中设置伏笔以构建有效的误导和悬念。"
+            ),
         )
     return True, None
 
@@ -431,6 +599,7 @@ def _check_information_escalation(
     world_spec: dict[str, Any],
     cast_spec: dict[str, Any],
     volume_plan: list[dict[str, Any]],
+    _is_en: bool = False,
 ) -> tuple[bool, PlanValidationFinding | None]:
     """Key reveals count should stay significant across volumes (not all crammed in one)."""
     if len(volume_plan) < 2:
@@ -444,8 +613,16 @@ def _check_information_escalation(
         return False, PlanValidationFinding(
             category="information_escalation",
             severity="warning",
-            message="整个计划中没有任何关键揭示（key_reveals），信息层缺失。",
-            suggestion="为至少半数的卷分配关键揭示，确保信息逐步释放。",
+            message=(
+                "The entire plan contains no key reveals (key_reveals); the information layer is missing."
+                if _is_en
+                else "整个计划中没有任何关键揭示（key_reveals），信息层缺失。"
+            ),
+            suggestion=(
+                "Assign key reveals to at least half the volumes to ensure gradual information release."
+                if _is_en
+                else "为至少半数的卷分配关键揭示，确保信息逐步释放。"
+            ),
         )
 
     max_count = max(reveal_counts)
@@ -454,8 +631,16 @@ def _check_information_escalation(
         return False, PlanValidationFinding(
             category="information_escalation",
             severity="warning",
-            message=f"超过80%的关键揭示集中在第{heavy_vol}卷，信息释放节奏失衡。",
-            suggestion="将关键揭示分散到多个卷中，保持信息递进的节奏感。",
+            message=(
+                f"Over 80% of key reveals are concentrated in volume {heavy_vol}; information release pacing is unbalanced."
+                if _is_en
+                else f"超过80%的关键揭示集中在第{heavy_vol}卷，信息释放节奏失衡。"
+            ),
+            suggestion=(
+                "Spread key reveals across multiple volumes to maintain a progressive information release rhythm."
+                if _is_en
+                else "将关键揭示分散到多个卷中，保持信息递进的节奏感。"
+            ),
         )
     return True, None
 
@@ -465,6 +650,7 @@ def _check_faction_progression(
     world_spec: dict[str, Any],
     cast_spec: dict[str, Any],
     volume_plan: list[dict[str, Any]],
+    _is_en: bool = False,
 ) -> tuple[bool, PlanValidationFinding | None]:
     """For strategy-worldbuilding: faction references should change across volumes."""
     if len(volume_plan) < 2:
@@ -480,8 +666,16 @@ def _check_faction_progression(
         return False, PlanValidationFinding(
             category="faction_progression",
             severity="warning",
-            message=f"所有卷的势力引用均为「{force_names[0]}」，缺少势力轮替和博弈变化。",
-            suggestion="不同卷中引入不同的势力冲突焦点，体现战略格局的演变。",
+            message=(
+                f'All volumes reference the same faction "{force_names[0]}", lacking faction rotation and strategic dynamics.'
+                if _is_en
+                else f"所有卷的势力引用均为「{force_names[0]}」，缺少势力轮替和博弈变化。"
+            ),
+            suggestion=(
+                "Introduce different faction conflict focal points across volumes to reflect evolving strategic dynamics."
+                if _is_en
+                else "不同卷中引入不同的势力冲突焦点，体现战略格局的演变。"
+            ),
         )
     return True, None
 
@@ -491,23 +685,35 @@ def _check_worldbuilding_depth_check(
     world_spec: dict[str, Any],
     cast_spec: dict[str, Any],
     volume_plan: list[dict[str, Any]],
+    _is_en: bool = False,
 ) -> tuple[bool, PlanValidationFinding | None]:
     """World spec should have at least 3 rules and 2 locations for strategy/worldbuilding."""
     rules = world_spec.get("rules") or world_spec.get("world_rules") or []
     locations = world_spec.get("locations") or []
 
-    issues: list[str] = []
+    issues_en: list[str] = []
+    issues_zh: list[str] = []
     if len(rules) < 3:
-        issues.append(f"世界规则仅{len(rules)}条（建议至少3条）")
+        issues_en.append(f"only {len(rules)} world rule(s) (at least 3 recommended)")
+        issues_zh.append(f"世界规则仅{len(rules)}条（建议至少3条）")
     if len(locations) < 2:
-        issues.append(f"地点设定仅{len(locations)}个（建议至少2个）")
+        issues_en.append(f"only {len(locations)} location(s) (at least 2 recommended)")
+        issues_zh.append(f"地点设定仅{len(locations)}个（建议至少2个）")
 
-    if issues:
+    if issues_en:  # same truthiness as issues_zh
         return False, PlanValidationFinding(
             category="worldbuilding_depth",
             severity="warning",
-            message="世界观设定深度不足：" + "；".join(issues) + "。",
-            suggestion="丰富世界观设定中的规则体系和地点描述，为长线叙事提供足够的空间。",
+            message=(
+                "Worldbuilding depth is insufficient: " + "; ".join(issues_en) + "."
+                if _is_en
+                else "世界观设定深度不足：" + "；".join(issues_zh) + "。"
+            ),
+            suggestion=(
+                "Enrich the world spec with more rules and location descriptions to support long-form narrative."
+                if _is_en
+                else "丰富世界观设定中的规则体系和地点描述，为长线叙事提供足够的空间。"
+            ),
         )
     return True, None
 
@@ -542,6 +748,7 @@ def validate_plan(
     world_spec: dict[str, Any],
     cast_spec: dict[str, Any],
     volume_plan: list[dict[str, Any]],
+    language: str | None = None,
 ) -> PlanValidationResult:
     """Validate a novel plan against universal and genre-specific rubrics.
 
@@ -561,11 +768,16 @@ def validate_plan(
     volume_plan:
         List of volume plan dicts, each containing volume_number, volume_goal,
         volume_theme, conflict_phase, key_reveals, foreshadowing_*, etc.
+    language:
+        Language code (e.g. "en", "en-US", "zh-CN").  When the language starts
+        with "en", all diagnostic messages are emitted in English; otherwise
+        Chinese is used (the default).
 
     Returns
     -------
     PlanValidationResult with score, findings, and rubric check outcomes.
     """
+    _is_en = (language or "").lower().startswith("en")
     profile = resolve_genre_review_profile(genre=genre, sub_genre=sub_genre)
 
     findings: list[PlanValidationFinding] = []
@@ -574,14 +786,18 @@ def validate_plan(
     # ── 1. Universal checks ──────────────────────────────────────────
     for check_name, check_fn in _UNIVERSAL_CHECKS:
         try:
-            passed, finding = check_fn(volume_plan)
+            passed, finding = check_fn(volume_plan, _is_en)
         except Exception:
             logger.exception("Universal check '%s' raised an error", check_name)
             passed = False
             finding = PlanValidationFinding(
                 category=check_name,
                 severity="warning",
-                message=f"通用检查「{check_name}」执行异常，请检查计划数据完整性。",
+                message=(
+                    f'Universal check "{check_name}" raised an exception. Please verify plan data integrity.'
+                    if _is_en
+                    else f"通用检查「{check_name}」执行异常，请检查计划数据完整性。"
+                ),
             )
         rubric_checks[check_name] = passed
         if finding is not None:
@@ -600,14 +816,18 @@ def validate_plan(
             rubric_checks[check_name] = True
             continue
         try:
-            passed, finding = check_fn_genre(book_spec, world_spec, cast_spec, volume_plan)
+            passed, finding = check_fn_genre(book_spec, world_spec, cast_spec, volume_plan, _is_en)
         except Exception:
             logger.exception("Genre check '%s' raised an error", check_name)
             passed = False
             finding = PlanValidationFinding(
                 category=check_name,
                 severity="warning",
-                message=f"类型检查「{check_name}」执行异常，请检查计划数据完整性。",
+                message=(
+                    f'Genre check "{check_name}" raised an exception. Please verify plan data integrity.'
+                    if _is_en
+                    else f"类型检查「{check_name}」执行异常，请检查计划数据完整性。"
+                ),
             )
         rubric_checks[check_name] = passed
         if finding is not None:

@@ -31,6 +31,7 @@ from bestseller.infra.db.models import (
 from bestseller.services.context import build_chapter_writer_context, build_scene_writer_context
 from bestseller.services.drafts import (
     _NOVEL_OUTPUT_PROHIBITION,
+    _NOVEL_OUTPUT_PROHIBITION_EN,
     _normalize_fragment,
     count_words,
     has_meta_leak,
@@ -40,6 +41,7 @@ from bestseller.services.drafts import (
 )
 from bestseller.services.llm import LLMCompletionRequest, complete_text
 from bestseller.services.methodology import render_methodology_scene_rules
+from bestseller.services.output_hygiene import collect_unfinished_artifact_issues
 from bestseller.services.prompt_packs import (
     render_methodology_block,
     render_prompt_pack_fragment,
@@ -261,6 +263,19 @@ _CONTINUITY_SIGNAL_TERMS = (
     "接着",
     "不久",
     "这时",
+    # English continuity markers
+    "earlier",
+    "before",
+    "previously",
+    "last night",
+    "meanwhile",
+    "afterward",
+    "therefore",
+    "consequently",
+    "just then",
+    "had said",
+    "had promised",
+    "had warned",
 )
 _SPEECH_SIGNAL_TERMS = ("说", "问", "答", "喊", "低声", "冷冷", "沉声", "厉声")
 _META_REWARD_TERMS = ("整体语气保持", "本章目标", "场景目标", "剧情任务", "情绪任务")
@@ -268,6 +283,31 @@ _EN_META_REWARD_TERMS = (
     "overall tone maintains", "chapter goal", "scene objective",
     "plot task", "emotional task", "narrative function", "story purpose",
     "character arc progression", "this scene serves to", "the reader should feel",
+)
+# AI cliché phrases that indicate LLM-generated text
+_AI_CLICHE_TERMS = (
+    "blood crystallized",
+    "blood ran cold",
+    "blood turned to ice",
+    "words hung in the air",
+    "words landed like",
+    "cold as vacuum",
+    "frozen fire",
+    "liquid fire",
+    "something almost like",
+    "something that might have been",
+    "the world narrowed to",
+    "time seemed to slow",
+    "the air itself seemed",
+    "a laugh that held no humor",
+    "didn't reach",  # "smile that didn't reach their eyes"
+    "electricity crackled between",
+    "tension thick enough to cut",
+    "every fiber of",
+    "a weight settled in",
+    "the silence was deafening",
+    "pregnant pause",
+    "comfortable silence",
 )
 
 
@@ -548,6 +588,35 @@ def render_scene_review_summary(
     return "\n".join(summary_lines)
 
 
+def _parse_llm_verdict(critic_response: str) -> str | None:
+    """Extract structured verdict from LLM critic response.
+
+    Looks for 'VERDICT: pass' or 'VERDICT: rewrite' in the response.
+    Returns 'pass', 'rewrite', or None if no structured verdict found.
+    """
+    match = re.search(r"VERDICT:\s*(pass|rewrite)", critic_response, re.IGNORECASE)
+    if match:
+        return match.group(1).lower()
+    return None
+
+
+def _parse_llm_rewrite_direction(critic_response: str) -> str | None:
+    """Extract rewrite direction from LLM critic response.
+
+    Looks for 'REWRITE_DIRECTION: ...' line(s) in the response.
+    """
+    match = re.search(
+        r"REWRITE_DIRECTION:\s*(.+?)(?:\n(?:COMMENTARY|VERDICT|METHODOLOGY):|$)",
+        critic_response,
+        re.IGNORECASE | re.DOTALL,
+    )
+    if match:
+        direction = match.group(1).strip().strip("[]")
+        if direction and direction.lower() not in ("none", "n/a", "无"):
+            return direction
+    return None
+
+
 def _should_generate_scene_review_commentary(settings: AppSettings) -> bool:
     """Return whether scene review should spend an extra LLM call on prose commentary.
 
@@ -620,11 +689,33 @@ def build_scene_review_prompts(
     _genre_profile = resolve_genre_review_profile(project.genre, project.sub_genre)
     _genre_review_system = getattr(_genre_profile.judge_prompts, f"scene_review_system_{_lang_key}", "")
     system_prompt = (
-        "You are a scene reviewer for a long-form fiction pipeline. Return concise, actionable editorial feedback."
+        "You are a scene reviewer for a long-form fiction pipeline. Return concise, actionable editorial feedback.\n"
+        "You MUST evaluate the prose against these methodology rules:\n"
+        "1. Show-don't-tell: emotions conveyed through action/physicality, NOT named directly\n"
+        "2. Sensory richness: at least 2 sensory channels (sight, sound, touch, smell, taste)\n"
+        "3. Dialogue subtext: characters should NOT state intentions directly; tension comes from gap between words and meaning\n"
+        "4. Tail hook: scene must end on an unresolved question, threat, or revelation\n"
+        "5. Reaction amplification: after key moments, other characters' reactions amplify impact\n\n"
+        "Return your response in this EXACT format:\n"
+        "VERDICT: pass OR rewrite\n"
+        "METHODOLOGY: [list violations found]\n"
+        "REWRITE_DIRECTION: [if rewrite, specific instructions]\n"
+        "COMMENTARY: [brief editorial note]"
         if is_en
         else (
             "你是长篇小说审校系统里的场景评论者。"
-            "请输出简洁、专业、可执行的审校意见，不要复述需求。"
+            "请输出简洁、专业、可执行的审校意见，不要复述需求。\n"
+            "你必须按以下方法论规则评估文本质量：\n"
+            "1. 展示不讲述：情绪通过动作/身体反应传达，不能直接写情绪词（愤怒、伤心、高兴等）\n"
+            "2. 感官丰富度：至少使用2个感官通道（视觉、听觉、触觉、嗅觉、味觉）\n"
+            "3. 对话潜台词：角色不能直白表达意图，张力来自话语和真实意图的反差\n"
+            "4. 尾钩强度：场景必须以未解答的问题、威胁或揭示结尾\n"
+            "5. 反应放大：关键时刻后必须有其他角色的反应来放大冲击力\n\n"
+            "请严格按以下格式输出：\n"
+            "VERDICT: pass 或 rewrite\n"
+            "METHODOLOGY: [发现的方法论违规]\n"
+            "REWRITE_DIRECTION: [如需重写，给出具体方向]\n"
+            "COMMENTARY: [简要编辑意见]"
         )
     )
     if _genre_review_system:
@@ -691,6 +782,7 @@ def build_scene_rewrite_prompts(
     system_prompt = (
         "You are an English-language fiction rewriting editor. "
         "Output Markdown prose only, with no explanations, apologies, or change logs.\n"
+        + _NOVEL_OUTPUT_PROHIBITION_EN
         + _REWRITE_STRATEGY_CONTRACT_EN
         if is_en
         else (
@@ -932,11 +1024,31 @@ def build_chapter_review_prompts(
     _genre_profile = resolve_genre_review_profile(project.genre, project.sub_genre)
     _genre_ch_review_system = getattr(_genre_profile.judge_prompts, f"chapter_review_system_{_lang_key}", "")
     system_prompt = (
-        "You are a chapter reviewer for a long-form fiction pipeline. Return concise, actionable editorial feedback."
+        "You are a chapter reviewer for a long-form fiction pipeline. Return concise, actionable editorial feedback.\n"
+        "Evaluate the chapter against these methodology rules:\n"
+        "1. Emotion compression/release: tension must build before payoff\n"
+        "2. Hook lifecycle: chapter must plant new hooks and resolve old ones\n"
+        "3. Conflict stakes: every conflict needs clear stakes (what is lost on failure)\n"
+        "4. Read-on momentum: chapter ending must create irresistible urge to continue\n\n"
+        "Return your response in this EXACT format:\n"
+        "VERDICT: pass OR rewrite\n"
+        "METHODOLOGY: [list violations found]\n"
+        "REWRITE_DIRECTION: [if rewrite, specific instructions]\n"
+        "COMMENTARY: [brief editorial note]"
         if is_en
         else (
             "你是长篇小说审校系统里的章节评论者。"
-            "请输出简洁、专业、可执行的章节审校意见，不要复述需求。"
+            "请输出简洁、专业、可执行的章节审校意见，不要复述需求。\n"
+            "请按以下方法论规则评估章节质量：\n"
+            "1. 情绪压缩释放：爽点前必须有充分的情绪铺垫\n"
+            "2. 钩子生命周期：本章必须植入新钩子并消解旧钩子\n"
+            "3. 冲突筹码：每个冲突必须有明确筹码（输了会失去什么）\n"
+            "4. 追读欲：章末必须制造让读者无法停下的冲动\n\n"
+            "请严格按以下格式输出：\n"
+            "VERDICT: pass 或 rewrite\n"
+            "METHODOLOGY: [发现的方法论违规]\n"
+            "REWRITE_DIRECTION: [如需重写，给出具体方向]\n"
+            "COMMENTARY: [简要编辑意见]"
         )
     )
     if _genre_ch_review_system:
@@ -999,6 +1111,7 @@ def build_chapter_rewrite_prompts(
     prompt_pack = _resolve_project_prompt_pack(project, writing_profile)
     system_prompt = (
         "You are an English-language fiction chapter rewriting editor. Output Markdown prose only, with no explanations or change logs.\n"
+        + _NOVEL_OUTPUT_PROHIBITION_EN
         + _REWRITE_STRATEGY_CONTRACT_EN
         if is_en
         else (
@@ -1190,6 +1303,90 @@ def evaluate_scene_draft(
         content, list(scene.participants or [])
     )
 
+    # ── Identity consistency check (zero LLM cost) ──
+    _identity_score = 1.0
+    _identity_violation_count = 0
+    try:
+        from bestseller.services.identity_guard import validate_scene_text_identity
+
+        _id_registry = getattr(scene_context, "identity_registry", []) if scene_context else []
+        if _id_registry:
+            _violations = validate_scene_text_identity(
+                content,
+                _id_registry,
+                language=language or "zh-CN",
+                participant_names=list(scene.participants or []),
+            )
+            _identity_violation_count = len(_violations)
+            # Each violation reduces score; critical violations reduce more
+            for v in _violations:
+                if v.severity == "critical":
+                    _identity_score -= 0.3
+                else:
+                    _identity_score -= 0.15
+            _identity_score = max(0.0, _identity_score)
+    except Exception:
+        pass  # Non-fatal — defaults to 1.0
+
+    # ── POV consistency check (zero LLM cost) ──
+    _pov_score = 1.0
+    try:
+        _pov_type = getattr(scene_context, "pov_type", None) if scene_context else None
+        if not _pov_type:
+            # Fallback: check style_guide or default
+            _pov_type = "third-limited"
+        _pov_type_lower = _pov_type.lower()
+        if "first" in _pov_type_lower:
+            # First person: should have "I", "my", "me"; should NOT have omniscient thoughts of other chars
+            _i_count = len(re.findall(r'\bI\b', content)) if _is_en else content.count("我")
+            if _i_count < 3:
+                _pov_score -= 0.3  # Too few first-person markers
+        elif "third" in _pov_type_lower and "limited" in _pov_type_lower:
+            # Third-limited: should NOT reveal thoughts of non-POV characters
+            # Check for multiple "X thought/想" with different character names
+            _pov_chars = [p for p in (scene.participants or []) if p]
+            if _pov_chars:
+                _pov_char = _pov_chars[0]  # Assume first participant is POV
+                _thought_markers_zh = ["心想", "暗想", "心中", "想到", "心道"]
+                _thought_markers_en = [" thought,", " wondered,", " realized ", " knew that"]
+                _markers = _thought_markers_zh if not _is_en else _thought_markers_en
+                _other_chars = [p for p in _pov_chars[1:] if p]
+                _omniscient_leaks = 0
+                for oc in _other_chars:
+                    for marker in _markers:
+                        # Check if other character name appears near a thought marker
+                        _pattern = f"{re.escape(oc)}.{{0,20}}{re.escape(marker)}"
+                        if re.search(_pattern, content):
+                            _omniscient_leaks += 1
+                if _omniscient_leaks > 0:
+                    _pov_score -= min(0.5, _omniscient_leaks * 0.15)
+        _pov_score = max(0.0, _pov_score)
+    except Exception:
+        pass  # Non-fatal
+
+    # ── Scene transition quality check ──
+    _transition_score = 0.5  # Default neutral
+    try:
+        _entry_state = scene.entry_state or ""
+        _exit_state = scene.exit_state or ""
+        if _entry_state:
+            # Check if the entry state conditions are reflected in the first 500 chars
+            _opening = content[:500].lower()
+            _entry_keywords = [w.strip() for w in _entry_state.lower().split(",") if len(w.strip()) > 2]
+            _entry_hits = sum(1 for kw in _entry_keywords if kw in _opening)
+            if _entry_keywords:
+                _transition_score = _clamp_score(_entry_hits / max(len(_entry_keywords), 1) * 0.8 + 0.2)
+        if _exit_state:
+            # Check if exit state is reflected in the last 500 chars
+            _closing = content[-500:].lower()
+            _exit_keywords = [w.strip() for w in _exit_state.lower().split(",") if len(w.strip()) > 2]
+            _exit_hits = sum(1 for kw in _exit_keywords if kw in _closing)
+            if _exit_keywords:
+                _exit_ratio = _exit_hits / max(len(_exit_keywords), 1) * 0.8 + 0.2
+                _transition_score = _clamp_score((_transition_score + _exit_ratio) / 2)
+    except Exception:
+        pass
+
     participants_present = sum(
         1 for participant in scene.participants if participant and participant in content
     )
@@ -1236,12 +1433,12 @@ def evaluate_scene_draft(
         0.22
         + min(0.2, participants_present * 0.1)
         + min(0.18, dialogue_markers * 0.09)
-        + (0.15 if draft.word_count >= 240 else 0.0)
+        + (0.15 if draft.word_count >= int(scene.target_word_count * 0.22) else 0.0)
         + (conflict_signal * 0.28)
     )
     emotion = _clamp_score(
         0.24
-        + (0.12 if draft.word_count >= 260 else 0.0)
+        + (0.12 if draft.word_count >= int(scene.target_word_count * 0.24) else 0.0)
         + (emotion_signal * 0.44)
     )
     dialogue = _clamp_score(
@@ -1257,11 +1454,19 @@ def evaluate_scene_draft(
         any(term in content for term in _META_REWARD_TERMS)
         or any(term in content_lower for term in _EN_META_REWARD_TERMS)
     ) else 0.0
+    # System UI panel overuse penalty (LitRPG code blocks)
+    _code_block_count = content.count("```") // 2  # pairs of triple backticks
+    _system_panel_penalty = max(0.0, (_code_block_count - 3) * 0.06) if _code_block_count > 3 else 0.0
+    # AI cliché penalty
+    _ai_cliche_count = sum(1 for phrase in _AI_CLICHE_TERMS if phrase in content_lower)
+    _ai_cliche_penalty = min(0.2, _ai_cliche_count * 0.04)
     style = _clamp_score(
         0.74
         + (0.08 if not meta_leak else -0.22)
         - meta_penalty
         - style_penalty
+        - _system_panel_penalty
+        - _ai_cliche_penalty
     )
 
     hook = _clamp_score(
@@ -1385,6 +1590,60 @@ def evaluate_scene_draft(
     else:
         scene_sequel_alignment_score = 0.5
 
+    # ── Phase-6: methodology compliance (show-don't-tell, sensory richness) ──
+    _DIRECT_EMOTION_WORDS_ZH = [
+        "愤怒", "伤心", "高兴", "害怕", "紧张", "激动", "失望", "焦虑",
+        "恐惧", "悲伤", "开心", "兴奋", "惊讶", "沮丧", "绝望", "愉悦",
+    ]
+    _DIRECT_EMOTION_WORDS_EN = [
+        "angry", "sad", "happy", "afraid", "nervous", "excited", "disappointed",
+        "anxious", "scared", "heartbroken", "thrilled", "shocked", "depressed",
+    ]
+    _PHYSICAL_ACTION_WORDS_ZH = [
+        "攥", "掐", "捏", "握", "咬", "颤", "抖", "抿", "蹙", "皱",
+        "踹", "摔", "撕", "扯", "瞪", "盯", "甩", "拳", "指甲", "拳头",
+    ]
+    _PHYSICAL_ACTION_WORDS_EN = [
+        "clench", "grip", "tremble", "shudder", "bite", "flinch", "slam",
+        "squeeze", "fist", "jaw", "nails", "knuckle", "swallow",
+    ]
+    _SENSORY_ZH = {
+        "visual": ["看", "望", "瞥", "盯", "光", "暗", "影", "色"],
+        "auditory": ["听", "声", "响", "嗡", "吼", "嘶", "呢喃", "沉默"],
+        "tactile": ["触", "烫", "冷", "滑", "粗糙", "刺", "温", "冰"],
+        "olfactory": ["闻", "味", "香", "臭", "腥", "酸", "膻"],
+        "gustatory": ["尝", "咸", "甜", "苦", "涩", "辣"],
+    }
+    _SENSORY_EN = {
+        "visual": ["see", "saw", "glow", "shadow", "bright", "dark", "flicker"],
+        "auditory": ["hear", "heard", "sound", "whisper", "roar", "silence", "echo"],
+        "tactile": ["touch", "cold", "warm", "rough", "smooth", "sting", "burn"],
+        "olfactory": ["smell", "scent", "stench", "fragrant", "reek"],
+        "gustatory": ["taste", "bitter", "sweet", "sour", "salty"],
+    }
+
+    _tell_words = _DIRECT_EMOTION_WORDS_EN if _is_en else _DIRECT_EMOTION_WORDS_ZH
+    _show_words = _PHYSICAL_ACTION_WORDS_EN if _is_en else _PHYSICAL_ACTION_WORDS_ZH
+    _tell_count = sum(1 for w in _tell_words if w in content)
+    _show_count = sum(1 for w in _show_words if w in content)
+    _total_st = _tell_count + _show_count
+    if _total_st > 0:
+        _show_ratio = _show_count / _total_st
+        show_dont_tell_score = _clamp_score(0.3 + _show_ratio * 0.7)
+    else:
+        show_dont_tell_score = 0.5
+
+    _sensory_map = _SENSORY_EN if _is_en else _SENSORY_ZH
+    _channels_used = sum(
+        1 for terms in _sensory_map.values()
+        if any(t in content for t in terms)
+    )
+    sensory_richness_score = _clamp_score(0.1 + _channels_used * 0.18)
+
+    methodology_compliance_score = _clamp_score(
+        show_dont_tell_score * 0.6 + sensory_richness_score * 0.4
+    )
+
     contract_alignment, contract_evidence = _evaluate_contract_alignment(
         content,
         expectations=_scene_contract_expectations(
@@ -1436,9 +1695,19 @@ def evaluate_scene_draft(
         weighted_parts.append((subplot_presence_score, _sw.subplot_presence))
     if swain_pattern is not None:
         weighted_parts.append((scene_sequel_alignment_score, _sw.scene_sequel_alignment))
+    weighted_parts.append((methodology_compliance_score, _sw.methodology_compliance))
     _total_weight = sum(w for _, w in weighted_parts)
     overall = _clamp_score(sum(s * w for s, w in weighted_parts) / max(_total_weight, 0.01))
-    threshold = profile.scene_threshold_override or settings.quality.thresholds.scene_min_score
+    _base_threshold = profile.scene_threshold_override or settings.quality.thresholds.scene_min_score
+    threshold = _base_threshold
+
+    # ── Opening chapter quality amplification ──
+    # Chapters 1-3 use a higher quality bar for the overall verdict,
+    # but individual findings still use the base threshold.
+    _is_opening_chapter = chapter.chapter_number <= 3
+    _verdict_threshold = _base_threshold
+    if _is_opening_chapter:
+        _verdict_threshold = max(_base_threshold, min(_base_threshold + 0.08, 0.85))
 
     _fm = profile.finding_messages
     findings: list[SceneReviewFinding] = []
@@ -1450,6 +1719,19 @@ def evaluate_scene_draft(
                 message=(
                     f"当前场景字数为 {draft.word_count}，明显低于目标字数 {scene.target_word_count}，"
                     "推进任务展开不够充分。"
+                ),
+            )
+        )
+    # Over-length check: flag scenes that exceed target by >30%
+    if target_ratio > 1.3 and scene.target_word_count > 0:
+        _over_severity = "high" if target_ratio > 1.6 else "medium"
+        findings.append(
+            SceneReviewFinding(
+                category="goal",
+                severity=_over_severity,
+                message=(
+                    f"当前场景字数为 {draft.word_count}，超出目标字数 {scene.target_word_count} "
+                    f"达 {int((target_ratio - 1) * 100)}%。内容过长，需要精简。"
                 ),
             )
         )
@@ -1531,21 +1813,124 @@ def evaluate_scene_draft(
             )
         )
 
-    verdict = "pass" if overall >= threshold and not findings else "rewrite"
+    # Character name consistency: detect if the LLM introduced unexpected
+    # character names that look like variants of the expected participants.
+    # This catches the common "陆渊" → "陆铮" type of naming drift.
+    _expected_participants = [p for p in (scene.participants or []) if p and len(p) >= 2]
+    if _expected_participants and content:
+        import re as _re_names  # noqa: PLC0415
+
+        # Extract all 2-3 char Chinese name-like tokens from the text
+        _cn_name_candidates = set(_re_names.findall(r"(?<=[\u4e00-\u9fff])[\u4e00-\u9fff]{1,2}(?=[\u4e00-\u9fff])", content))
+        _expected_surnames = {p[0] for p in _expected_participants if p}
+        _expected_names_set = set(_expected_participants)
+        for _candidate_full in _re_names.findall(r"[\u4e00-\u9fff]{2,3}", content):
+            if len(_candidate_full) >= 2 and _candidate_full not in _expected_names_set:
+                # Check if it shares a surname with an expected participant but has a different given name
+                if _candidate_full[0] in _expected_surnames:
+                    _matching_expected = [p for p in _expected_participants if p[0] == _candidate_full[0]]
+                    for _exp_name in _matching_expected:
+                        # Same surname, different given name, appears frequently → likely naming error
+                        _occurrences = content.count(_candidate_full)
+                        if _occurrences >= 5 and _candidate_full != _exp_name:
+                            findings.append(
+                                SceneReviewFinding(
+                                    category="character_consistency",
+                                    severity="high",
+                                    message=(
+                                        f"检测到角色名不一致：正文中出现「{_candidate_full}」{_occurrences} 次，"
+                                        f"但参与者列表中对应的角色名是「{_exp_name}」。"
+                                        f"请确保全文使用正确的角色名。"
+                                    ),
+                                )
+                            )
+                            break
+
+        # English name consistency: check for name variants (e.g. "James" → "Jim")
+        # Only runs when language is English and participants have multi-word names
+        if _is_en:
+            import re as _re_en_names  # noqa: PLC0415
+            _en_participants = [p for p in _expected_participants if _re_en_names.match(r"[A-Za-z]", p)]
+            if _en_participants:
+                _en_names_set = set(_en_participants)
+                # Extract last names (assume "First Last" format)
+                _en_last_names: dict[str, str] = {}
+                for p in _en_participants:
+                    parts = p.split()
+                    if len(parts) >= 2:
+                        _en_last_names[parts[-1].lower()] = p
+                # Find capitalized words that share a last name but differ in first name
+                _content_names = set(_re_en_names.findall(r"\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)+\b", content))
+                for found_name in _content_names:
+                    if found_name in _en_names_set:
+                        continue
+                    found_parts = found_name.split()
+                    if len(found_parts) >= 2:
+                        found_last = found_parts[-1].lower()
+                        if found_last in _en_last_names:
+                            expected = _en_last_names[found_last]
+                            _occurrences = content.count(found_name)
+                            if _occurrences >= 3 and found_name != expected:
+                                findings.append(
+                                    SceneReviewFinding(
+                                        category="character_consistency",
+                                        severity="high",
+                                        message=(
+                                            f"Character name inconsistency: \"{found_name}\" appears {_occurrences} times "
+                                            f"but the expected name from the participants list is \"{expected}\". "
+                                            f"Ensure the correct character name is used throughout."
+                                        ),
+                                    )
+                                )
+                                break
+
+    hygiene_issues = collect_unfinished_artifact_issues(content, language=language)
+    for issue in hygiene_issues:
+        findings.append(
+            SceneReviewFinding(
+                category="output_hygiene",
+                severity="high",
+                message=issue,
+            )
+        )
+
+    verdict = "pass" if overall >= _verdict_threshold and not findings else "rewrite"
     rewrite_instructions = None
     if verdict == "rewrite":
         contract_hint = ""
         if int(contract_evidence["contract_expectation_count"]) > 0:
             missing_labels = list(contract_evidence["contract_missing_labels"])
-            contract_hint = (
-                " 并对齐 scene contract，补齐核心冲突、情绪变化、信息释放和尾钩。"
-                if not missing_labels
-                else f" 并对齐 scene contract，补齐这些缺口：{', '.join(missing_labels)}。"
+            if _is_en:
+                contract_hint = (
+                    " Align with the scene contract: fill in core conflict, emotional shifts, information reveals, and tail hook."
+                    if not missing_labels
+                    else f" Align with the scene contract — fill these gaps: {', '.join(missing_labels)}."
+                )
+            else:
+                contract_hint = (
+                    " 并对齐 scene contract，补齐核心冲突、情绪变化、信息释放和尾钩。"
+                    if not missing_labels
+                    else f" 并对齐 scene contract，补齐这些缺口：{', '.join(missing_labels)}。"
+                )
+        _name_findings = [f for f in findings if f.category == "character_consistency"]
+        _name_hint = ""
+        if _name_findings:
+            _wrong_names = [f.message for f in _name_findings]
+            if _is_en:
+                _name_hint = f" Character name errors: {'; '.join(_wrong_names)}"
+            else:
+                _name_hint = f" 角色名错误：{'；'.join(_wrong_names)}"
+        if _is_en:
+            rewrite_instructions = (
+                f"Rewrite Chapter {chapter.chapter_number} Scene {scene.scene_number}: "
+                f"prioritize goal advancement, conflict escalation, dialogue depth, and emotional layering. "
+                f"Ensure the ending leaves a clear hook.{contract_hint}{_name_hint}"
             )
-        rewrite_instructions = (
-            f"请重写第{chapter.chapter_number}章第{scene.scene_number}场，优先补足目标推进、"
-            f"冲突升级、人物对话和情绪层次，确保结尾留下明确钩子。{contract_hint}"
-        )
+        else:
+            rewrite_instructions = (
+                f"请重写第{chapter.chapter_number}章第{scene.scene_number}场，优先补足目标推进、"
+                f"冲突升级、人物对话和情绪层次，确保结尾留下明确钩子。{contract_hint}{_name_hint}"
+            )
 
     return SceneReviewResult(
         verdict=verdict,
@@ -1572,6 +1957,12 @@ def evaluate_scene_draft(
             pacing_alignment=pacing_alignment_score,
             subplot_presence=subplot_presence_score,
             scene_sequel_alignment=scene_sequel_alignment_score,
+            show_dont_tell=show_dont_tell_score,
+            sensory_richness=sensory_richness_score,
+            methodology_compliance=methodology_compliance_score,
+            identity_consistency=_clamp_score(_identity_score),
+            pov_consistency=_clamp_score(_pov_score),
+            transition_quality=_clamp_score(_transition_score),
         ),
         findings=findings,
         evidence_summary={
@@ -1589,6 +1980,8 @@ def evaluate_scene_draft(
             "pacing_alignment": pacing_alignment_score,
             "subplot_presence": subplot_presence_score,
             "scene_sequel_alignment": scene_sequel_alignment_score,
+            "identity_violations": _identity_violation_count,
+            "identity_consistency": _identity_score,
             **contract_evidence,
         },
         rewrite_instructions=rewrite_instructions,
@@ -1605,10 +1998,12 @@ def evaluate_chapter_draft(
     chapter_context: Any | None = None,
     genre: str | None = None,
     sub_genre: str | None = None,
+    language: str | None = None,
 ) -> ChapterReviewResult:
     from bestseller.services.genre_review_profiles import resolve_genre_review_profile
 
     _ch_profile = resolve_genre_review_profile(genre or "", sub_genre)
+    _is_en = is_english_language(language)
 
     content = draft.content_md
     target_ratio = draft.word_count / max(chapter.target_word_count, 1)
@@ -1659,28 +2054,29 @@ def evaluate_chapter_draft(
         + (scene_title_ratio * 0.24)
         + (coverage * 0.18)
         + (transition_signal * 0.22)
-        + (0.08 if "## 场景 1" in content else 0.0)
+        + (0.08 if ("## Scene 1" in content or "## 场景 1" in content) else 0.0)
         + (0.08 if content.count("\n\n") >= expected_scene_count * 2 else 0.0)
     )
 
+    _has_backward_ref = (
+        "上一" in content or "此前" in content or "先前" in content
+        or "earlier" in content.lower() or "previously" in content.lower()
+        or "had said" in content.lower() or "had promised" in content.lower()
+    )
+    _has_forward_ref = any(
+        term in content for term in ("因此", "与此同时", "随后", "下一步", "这时")
+    ) or any(
+        term in content.lower() for term in ("meanwhile", "afterward", "consequently", "therefore")
+    )
     continuity = _clamp_score(
         0.22
         + (transition_signal * 0.18)
         + (continuity_context_signal * 0.15)
-        + (0.15 if "上一" in content or "此前" in content or "先前" in content else 0.0)
-        + (
-            0.12
-            if any(term in content for term in ("因此", "与此同时", "随后", "下一步", "这时"))
-            else 0.0
-        )
+        + (0.15 if _has_backward_ref else 0.0)
+        + (0.12 if _has_forward_ref else 0.0)
         + (0.1 if expected_scene_count <= 1 or scene_heading_count == expected_scene_count else 0.0)
         + (0.08 if draft.word_count >= max(900, chapter.target_word_count * 0.5) else 0.0)
-        + (
-            0.04
-            if ("上一" in content or "此前" in content or "先前" in content)
-            and any(term in content for term in ("下一步", "随后", "因此", "与此同时"))
-            else 0.0
-        )
+        + (0.04 if _has_backward_ref and _has_forward_ref else 0.0)
     )
 
     style_penalty = 0.15 if "。。" in content or ".." in content else 0.0
@@ -1850,6 +2246,19 @@ def evaluate_chapter_draft(
                 ),
             )
         )
+    # Over-length check: flag chapters that exceed target by >30%
+    if target_ratio > 1.3 and chapter.target_word_count > 0:
+        _over_severity = "high" if target_ratio > 1.6 else "medium"
+        findings.append(
+            ChapterReviewFinding(
+                category="goal",
+                severity=_over_severity,
+                message=(
+                    f"当前章节字数为 {draft.word_count}，超出目标字数 {chapter.target_word_count} "
+                    f"达 {int((target_ratio - 1) * 100)}%。内容过长，需要精简叙述和删减冗余段落。"
+                ),
+            )
+        )
     if coverage < threshold:
         findings.append(
             ChapterReviewFinding(
@@ -1919,6 +2328,16 @@ def evaluate_chapter_draft(
             )
         )
 
+    hygiene_issues = collect_unfinished_artifact_issues(content, language=language)
+    for issue in hygiene_issues:
+        findings.append(
+            ChapterReviewFinding(
+                category="output_hygiene",
+                severity="high",
+                message=issue,
+            )
+        )
+
     blocking_findings = [finding for finding in findings if finding.severity in {"high", "medium"}]
     verdict = "pass" if overall >= threshold and not blocking_findings else "rewrite"
     rewrite_instructions = None
@@ -1926,15 +2345,28 @@ def evaluate_chapter_draft(
         contract_hint = ""
         if int(contract_evidence["contract_expectation_count"]) > 0:
             missing_labels = list(contract_evidence["contract_missing_labels"])
-            contract_hint = (
-                " 并把 chapter contract 的核心冲突、情绪变化、信息释放和尾钩真正落到正文。"
-                if not missing_labels
-                else f" 并重点修正这些 contract 缺口：{', '.join(missing_labels)}。"
+            if _is_en:
+                contract_hint = (
+                    " Ensure the chapter contract's core conflict, emotional shifts, information reveals, and tail hook are fully realized in prose."
+                    if not missing_labels
+                    else f" Focus on fixing these contract gaps: {', '.join(missing_labels)}."
+                )
+            else:
+                contract_hint = (
+                    " 并把 chapter contract 的核心冲突、情绪变化、信息释放和尾钩真正落到正文。"
+                    if not missing_labels
+                    else f" 并重点修正这些 contract 缺口：{', '.join(missing_labels)}。"
+                )
+        if _is_en:
+            rewrite_instructions = (
+                f"Rewrite Chapter {chapter.chapter_number}: keep scene order intact, focus on strengthening "
+                f"chapter progression, scene transitions, continuity, and the ending hook.{contract_hint}"
             )
-        rewrite_instructions = (
-            f"请重写第{chapter.chapter_number}章，保持场景顺序不变，重点补强章节推进、"
-            f"场景衔接、连续性和结尾钩子。{contract_hint}"
-        )
+        else:
+            rewrite_instructions = (
+                f"请重写第{chapter.chapter_number}章，保持场景顺序不变，重点补强章节推进、"
+                f"场景衔接、连续性和结尾钩子。{contract_hint}"
+            )
 
     return ChapterReviewResult(
         verdict=verdict,
@@ -2151,6 +2583,22 @@ async def review_scene_draft(
         reviewer_type = completion.model_name
         llm_run_id = completion.llm_run_id
 
+        # --- LLM verdict override ---
+        # If the LLM explicitly says "rewrite" but rule-based said "pass",
+        # upgrade the verdict so the quality gate has real teeth.
+        llm_verdict = _parse_llm_verdict(critic_response)
+        if llm_verdict == "rewrite" and review_result.verdict == "pass":
+            review_result = SceneReviewResult(
+                verdict="rewrite",
+                scores=review_result.scores,
+                findings=review_result.findings,
+                severity_max=review_result.severity_max,
+                evidence_summary=review_result.evidence_summary,
+                rewrite_instructions=_parse_llm_rewrite_direction(critic_response)
+                or review_result.rewrite_instructions
+                or "LLM 评审判定需要重写，请补强场景质量。",
+            )
+
     report = ReviewReportModel(
         project_id=project.id,
         target_type="scene_card",
@@ -2273,6 +2721,7 @@ async def review_chapter_draft(
         chapter_context=chapter_context,
         genre=project.genre,
         sub_genre=project.sub_genre,
+        language=getattr(project, "language", None),
     )
 
     critic_response = render_chapter_review_summary(
@@ -2312,6 +2761,20 @@ async def review_chapter_draft(
         critic_response = completion.content.strip() or critic_response
         reviewer_type = completion.model_name
         llm_run_id = completion.llm_run_id
+
+        # --- LLM verdict override for chapter review ---
+        llm_verdict = _parse_llm_verdict(critic_response)
+        if llm_verdict == "rewrite" and review_result.verdict == "pass":
+            review_result = ChapterReviewResult(
+                verdict="rewrite",
+                scores=review_result.scores,
+                findings=review_result.findings,
+                severity_max=review_result.severity_max,
+                evidence_summary=review_result.evidence_summary,
+                rewrite_instructions=_parse_llm_rewrite_direction(critic_response)
+                or review_result.rewrite_instructions
+                or "LLM 评审判定章节需要重写。",
+            )
 
     report = ReviewReportModel(
         project_id=project.id,

@@ -19,6 +19,7 @@ llm:
 
   writer:
     model: "anthropic/claude-sonnet-4-5"
+    model_override: null
     temperature: 0.85
     max_tokens: 8192
     timeout_seconds: 180
@@ -91,26 +92,26 @@ retrieval:
 # Generation
 # -----------------------------------------------------------------------------
 generation:
-  target_total_words: 80000
-  target_chapters: 20
+  target_total_words: 150000
+  target_chapters: 30
 
   words_per_chapter:
     min: 5000
-    target: 5500
-    max: 6000
+    target: 6400
+    max: 7500
 
   scenes_per_chapter:
-    min: 4
-    target: 5
-    max: 6
+    min: 3
+    target: 4
+    max: 5
 
   words_per_scene:
-    min: 800
-    target: 1100
-    max: 1500
+    min: 1200
+    target: 1600
+    max: 2200
 
   context_budget_tokens: 8000
-  active_context_scenes: 8
+  active_context_scenes: 6
   genre: "general-fiction"
   language: "zh-CN"
   pov: "third-limited"
@@ -123,10 +124,10 @@ quality:
   enable_scene_critique: true
   enable_chapter_coherence_check: true
   enable_final_consistency_check: true
-  enable_llm_scene_commentary: false
-  enable_llm_chapter_commentary: false
+  enable_llm_scene_commentary: true
+  enable_llm_chapter_commentary: true
   enable_plan_judge: true
-  enable_plan_judge_llm: false
+  enable_plan_judge_llm: true
   min_scene_rewrite_improvement: 0.03
 
   thresholds:
@@ -136,7 +137,7 @@ quality:
     plot_logic_min_score: 0.70
 
   max_scene_revisions: 2
-  max_chapter_revisions: 1
+  max_chapter_revisions: 2
 
   repetition:
     window_words: 2000

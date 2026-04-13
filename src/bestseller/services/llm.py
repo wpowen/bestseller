@@ -4,6 +4,7 @@ import asyncio
 import hashlib
 import importlib
 import logging
+import re
 import time
 from time import perf_counter
 from typing import Any, Literal, cast
@@ -17,6 +18,21 @@ from bestseller.settings import AppSettings, LLMRoleSettings, RetrySettings, get
 
 
 logger = logging.getLogger(__name__)
+
+# Lazy-cached litellm module reference.  litellm is an optional dependency
+# so we cannot ``import litellm`` at the top level.  Previous code called
+# ``importlib.import_module("litellm")`` on every LLM request (16-20+ per
+# chapter), paying dictionary-lookup overhead each time.  We cache the
+# result here after the first successful import.
+_litellm_module: Any = None
+
+
+def _get_litellm() -> Any:
+    """Return the cached litellm module, importing it on first call."""
+    global _litellm_module
+    if _litellm_module is None:
+        _litellm_module = importlib.import_module("litellm")
+    return _litellm_module
 
 
 LLMRole = Literal["planner", "writer", "critic", "summarizer", "editor"]
@@ -115,7 +131,10 @@ _llm_breaker = _CircuitBreaker(failure_threshold=5, recovery_timeout=60.0)
 #
 # We key the cache by loop id so each ``asyncio.run()`` invocation gets its
 # own pooled client, while calls within the same loop share one.
+import threading as _threading
+
 _litellm_client_by_loop: dict[int, Any] = {}
+_litellm_client_lock = _threading.Lock()
 
 
 def _ensure_shared_litellm_http_client() -> None:
@@ -131,18 +150,14 @@ def _ensure_shared_litellm_http_client() -> None:
         return  # no running loop — nothing to install
 
     loop_id = id(loop)
-    if loop_id in _litellm_client_by_loop:
-        return
+    with _litellm_client_lock:
+        if loop_id in _litellm_client_by_loop:
+            return
 
     try:
         import httpx
 
-        litellm = importlib.import_module("litellm")
-        # Use a permissive default so litellm's per-request ``timeout``
-        # parameter (from role_settings.timeout_seconds) is the enforced
-        # deadline.  The previous hard 180 s cap overrode litellm's
-        # per-request value, causing calls to hang for up to 362 s even
-        # when the role timeout was set to 120 s.
+        litellm = _get_litellm()
         client = httpx.AsyncClient(
             timeout=httpx.Timeout(None, connect=10.0),
             limits=httpx.Limits(
@@ -153,13 +168,28 @@ def _ensure_shared_litellm_http_client() -> None:
             follow_redirects=True,
         )
         litellm.aclient_session = client
-        _litellm_client_by_loop[loop_id] = client
+        with _litellm_client_lock:
+            _litellm_client_by_loop[loop_id] = client
 
-        # Clean up when the loop closes to avoid memory leaks.
-        def _cleanup_client(loop_id: int = loop_id) -> None:
-            _litellm_client_by_loop.pop(loop_id, None)
+        # Register a proper shutdown callback to close the client and remove
+        # it from the cache when the event loop finishes.  This prevents the
+        # memory leak where orphaned httpx clients (with their connection
+        # pools and TLS state) accumulated after each asyncio.run().
+        def _cleanup_client(client: Any = client, loop_id: int = loop_id) -> None:
+            with _litellm_client_lock:
+                _litellm_client_by_loop.pop(loop_id, None)
+            try:
+                # httpx.AsyncClient.aclose() is a coroutine; since the loop
+                # is shutting down we close synchronously via the transport.
+                client._transport.close()
+            except Exception:
+                pass
 
-        loop.call_soon(lambda: loop.call_later(0, lambda: None))  # ensure loop alive
+        # Use weakref.finalize so the callback fires when the loop is
+        # garbage-collected (which happens at the end of asyncio.run()).
+        import weakref
+        weakref.finalize(loop, _cleanup_client)
+
         logger.info(
             "Installed per-loop httpx.AsyncClient into litellm (loop=%d, keepalive=10)",
             loop_id,
@@ -172,8 +202,36 @@ def _ensure_shared_litellm_http_client() -> None:
         )
 
 
+def _cleanup_stale_litellm_clients() -> None:
+    """Remove entries from ``_litellm_client_by_loop`` whose httpx client is
+    no longer usable (transport closed or event loop gone).
+
+    Called periodically by the web server's watchdog to prevent unbounded
+    growth in long-running processes.
+    """
+    with _litellm_client_lock:
+        stale_ids: list[int] = []
+        for lid, client in _litellm_client_by_loop.items():
+            try:
+                # A closed client's transport is_closed; if so it's stale.
+                if getattr(client, "is_closed", False):
+                    stale_ids.append(lid)
+            except Exception:
+                stale_ids.append(lid)
+        for lid in stale_ids:
+            client = _litellm_client_by_loop.pop(lid, None)
+            if client is not None:
+                try:
+                    client._transport.close()
+                except Exception:
+                    pass
+        if stale_ids:
+            logger.info("Cleaned up %d stale litellm httpx client(s)", len(stale_ids))
+
+
 class LLMCompletionRequest(BaseModel):
     logical_role: LLMRole
+    model_tier: Literal["standard", "strong"] = "standard"
     system_prompt: str = Field(min_length=1)
     user_prompt: str = Field(min_length=1)
     fallback_response: str = Field(min_length=1)
@@ -218,9 +276,21 @@ def _provider_from_model(model_name: str) -> str:
     return model_name.split("/", maxsplit=1)[0]
 
 
+_THINK_TAG_RE = re.compile(r"<think>.*?</think>", re.DOTALL)
+
+
+def _strip_thinking_tokens(text: str) -> str:
+    """Remove ``<think>…</think>`` blocks emitted by reasoning models (e.g. MiniMax-M2.7).
+
+    These blocks contain the model's internal chain-of-thought and must not
+    leak into planning artifacts or novel prose.
+    """
+    return _THINK_TAG_RE.sub("", text).strip()
+
+
 def _extract_text_content(raw_content: Any) -> str:
     if isinstance(raw_content, str):
-        return raw_content
+        return _strip_thinking_tokens(raw_content)
     if isinstance(raw_content, list):
         parts: list[str] = []
         for item in raw_content:
@@ -231,7 +301,7 @@ def _extract_text_content(raw_content: Any) -> str:
                 text_value = item.get("text")
                 if isinstance(text_value, str):
                     parts.append(text_value)
-        return "\n".join(part for part in parts if part)
+        return _strip_thinking_tokens("\n".join(part for part in parts if part))
     return ""
 
 
@@ -301,7 +371,7 @@ async def _call_litellm(
     # subsequent calls reuse keep-alive connections to the model provider and
     # avoid per-request TLS handshakes.
     _ensure_shared_litellm_http_client()
-    litellm = importlib.import_module("litellm")
+    litellm = _get_litellm()
     acompletion = getattr(litellm, "acompletion", None)
     if acompletion is None:
         raise RuntimeError("litellm.acompletion is not available.")
@@ -403,6 +473,10 @@ async def complete_text(
     request: LLMCompletionRequest,
 ) -> LLMCompletionResult:
     role_settings = _get_role_settings(settings, request.logical_role)
+    if request.model_tier == "strong" and role_settings.model_override:
+        role_settings = role_settings.model_copy(
+            update={"model": role_settings.model_override}
+        )
     prompt_hash = _hash_prompt(request.system_prompt, request.user_prompt)
     metadata = dict(request.metadata)
     latency_ms: int | None = None

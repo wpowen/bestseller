@@ -5,6 +5,7 @@ from uuid import uuid4
 import pytest
 
 from bestseller.infra.db.models import LlmRunModel
+import bestseller.services.llm as _llm_mod
 from bestseller.services.llm import LLMCompletionRequest, _llm_breaker, complete_text
 from bestseller.settings import load_settings
 
@@ -16,6 +17,14 @@ pytestmark = pytest.mark.unit
 def _reset_circuit_breaker() -> None:
     """Prevent cross-test pollution from the module-level circuit breaker."""
     _llm_breaker.reset()
+
+
+@pytest.fixture(autouse=True)
+def _reset_litellm_module_cache() -> None:
+    """Reset the cached litellm module between tests so each test can inject its own fake."""
+    _llm_mod._litellm_module = None
+    yield
+    _llm_mod._litellm_module = None
 
 
 class FakeSession:
@@ -151,8 +160,8 @@ def test_complete_text_uses_api_base_and_api_key_env_for_real_mode(
         assert captured_kwargs["stream"] is False
 
     monkeypatch.setattr(
-        "bestseller.services.llm.importlib.import_module",
-        lambda name: FakeLiteLLMModule(),
+        "bestseller.services.llm._get_litellm",
+        lambda: FakeLiteLLMModule(),
     )
     monkeypatch.setattr(
         "bestseller.services.llm.get_runtime_env_value",
@@ -227,8 +236,8 @@ def test_complete_text_collects_streaming_chunks(monkeypatch: pytest.MonkeyPatch
         assert result.finish_reason == "stop"
 
     monkeypatch.setattr(
-        "bestseller.services.llm.importlib.import_module",
-        lambda name: FakeLiteLLMModule(),
+        "bestseller.services.llm._get_litellm",
+        lambda: FakeLiteLLMModule(),
     )
 
     import asyncio

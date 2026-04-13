@@ -478,7 +478,7 @@ def project_create(
 ) -> None:
     """Create a project and its default style guide."""
 
-    validate_longform_scope(target_words, target_chapters)
+    validate_longform_scope(target_words, target_chapters, language=language)
 
     writing_profile_payload = _apply_prompt_pack_to_profile_payload(
         _load_structured_payload_file(profile_file),
@@ -746,7 +746,7 @@ def project_autowrite(
 ) -> None:
     """Create a project if needed, generate the full plan, and run the whole novel pipeline."""
 
-    validate_longform_scope(target_words, target_chapters)
+    validate_longform_scope(target_words, target_chapters, language=language)
 
     writing_profile_payload = _apply_prompt_pack_to_profile_payload(
         _load_structured_payload_file(profile_file),

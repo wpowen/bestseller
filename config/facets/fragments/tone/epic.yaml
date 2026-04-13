@@ -1,0 +1,20 @@
+# Tone Fragment: Epic
+# Modifies story guidance toward grand, sweeping narratives.
+
+scene_writer: |
+  TONE: EPIC — this story operates on a grand scale with high stakes.
+  - Individual actions ripple outward to affect kingdoms, worlds, or civilizations
+  - Setbacks are devastating but triumphs are proportionally glorious
+  - The prose should match the scale — allow moments of grandeur in description
+  - Legacy, destiny, and sacrifice are key thematic pillars
+  - Even quiet character moments carry the weight of what's to come
+
+pacing_guidance: |
+  Epic tone pacing: build through escalating arcs.
+  Each volume raises the scope. Allow both intimate character moments
+  AND sweeping narrative beats. The contrast makes both more powerful.
+
+anti_patterns:
+  - "Inconsequential side quests that don't serve the larger narrative"
+  - "Stakes that plateau instead of escalating"
+  - "Grand proclamations without earned emotional weight"

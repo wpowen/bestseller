@@ -36,6 +36,20 @@ class SceneReviewScores(BaseModel):
     # ── Phase-3 wiring: scene/sequel alignment ──
     scene_sequel_alignment: float = Field(default=0.5, ge=0, le=1)
 
+    # ── Phase-6 wiring: methodology compliance ──
+    show_dont_tell: float = Field(default=0.5, ge=0, le=1)
+    sensory_richness: float = Field(default=0.5, ge=0, le=1)
+    methodology_compliance: float = Field(default=0.5, ge=0, le=1)
+
+    # ── Character identity consistency ──
+    identity_consistency: float = Field(default=1.0, ge=0, le=1)
+
+    # ── POV consistency ──
+    pov_consistency: float = Field(default=1.0, ge=0, le=1)
+
+    # ── Scene transition quality ──
+    transition_quality: float = Field(default=0.5, ge=0, le=1)
+
 
 class SceneReviewResult(BaseModel):
     verdict: str = Field(min_length=1, max_length=16)

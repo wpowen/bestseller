@@ -21,12 +21,12 @@ from bestseller.domain.pipeline import (
 )
 from bestseller.domain.project import ProjectCreate
 from bestseller.domain.workflow import ChapterOutlineBatchInput
-from bestseller.infra.db.models import ChapterDraftVersionModel, ChapterModel, ProjectModel, SceneCardModel, SceneDraftVersionModel
+from bestseller.infra.db.models import ChapterDraftVersionModel, ChapterModel, ChapterStateSnapshotModel, ProjectModel, SceneCardModel, SceneDraftVersionModel
 from bestseller.services.context import build_scene_writer_context_from_models
-from bestseller.services.continuity import extract_chapter_state_snapshot
+from bestseller.services.continuity import extract_chapter_state_snapshot, validate_fact_monotonicity
 from bestseller.services.drafts import assemble_chapter_draft, generate_scene_draft
 from bestseller.services.exports import export_chapter_markdown, export_project_markdown
-from bestseller.services.consistency import review_project_consistency
+from bestseller.services.consistency import detect_chapter_sequence_gaps, review_project_consistency
 from bestseller.services.knowledge import propagate_scene_discoveries, refresh_scene_knowledge
 from bestseller.services.planner import generate_foundation_plan, generate_novel_plan, generate_volume_plan
 from bestseller.services.projects import create_project, get_project_by_slug, import_planning_artifact, load_json_file
@@ -258,7 +258,75 @@ async def run_scene_pipeline(
             # functions handle context_packet=None correctly. The SAVEPOINT above
             # ensures any failed query inside the context build does not poison the
             # outer transaction (asyncpg PendingRollbackError).
+            logger.warning(
+                "Context build failed for ch%d sc%d, proceeding without context",
+                chapter.chapter_number,
+                scene.scene_number,
+                exc_info=True,
+            )
             shared_context = None
+
+        # ── Inject character identity constraints (Tier 0 — never dropped) ──
+        if shared_context is not None:
+            try:
+                from bestseller.services.identity_guard import (
+                    build_identity_constraint_block,
+                    load_identity_registry,
+                )
+                _identity_registry = await load_identity_registry(session, project.id)
+                if _identity_registry:
+                    shared_context.identity_registry = _identity_registry
+                    shared_context.identity_constraint_block = build_identity_constraint_block(
+                        _identity_registry,
+                        language=getattr(project, "language", None) or "zh-CN",
+                        participant_names=list(scene.participants or []),
+                    )
+            except Exception:
+                logger.warning(
+                    "Identity guard load failed for ch%d sc%d (non-fatal)",
+                    chapter_number, scene_number,
+                    exc_info=True,
+                )
+
+        # ── Inject overused phrase avoidance + genre constraints ──
+        if shared_context is not None:
+            try:
+                _phrase_block = (project.metadata_json or {}).get("_overused_phrase_block")
+                if _phrase_block:
+                    shared_context.overused_phrase_block = _phrase_block
+            except Exception:
+                logger.debug("Overused phrase injection failed (non-fatal)", exc_info=True)
+            try:
+                from bestseller.services.genre_consistency import (
+                    get_genre_profile,
+                    build_genre_constraint_block,
+                )
+                _genre = getattr(project, "genre", None) or settings.generation.genre
+                _sub_genre = (project.metadata_json or {}).get("sub_genre")
+                _gprofile = get_genre_profile(_genre, _sub_genre)
+                if _gprofile:
+                    # Build character states from latest snapshot
+                    _latest_snap = await session.scalar(
+                        select(ChapterStateSnapshotModel).where(
+                            ChapterStateSnapshotModel.project_id == project.id,
+                        ).order_by(ChapterStateSnapshotModel.chapter_number.desc())
+                    )
+                    _char_states: dict[str, dict] = {}
+                    if _latest_snap and _latest_snap.facts:
+                        for _f in _latest_snap.facts:
+                            _fd = _f if isinstance(_f, dict) else _f.__dict__
+                            _char = _fd.get("character", "")
+                            if _char:
+                                _char_states.setdefault(_char, {})
+                                if _fd.get("kind") == "level":
+                                    _char_states[_char]["cultivation_level"] = _fd.get("value", "")
+                    if _char_states:
+                        _lang = getattr(project, "language", None) or settings.generation.language
+                        shared_context.genre_constraint_block = build_genre_constraint_block(
+                            _gprofile, _char_states, language=_lang,
+                        )
+            except Exception:
+                logger.debug("Genre constraint injection failed (non-fatal)", exc_info=True)
 
         # ── Pre-scene contradiction check (zero LLM cost) ──
         if settings.pipeline.enable_contradiction_checks and shared_context is not None:
@@ -282,7 +350,16 @@ async def run_scene_pipeline(
                         v.message for v in _contradiction_result.violations
                     ] + [w.message for w in _contradiction_result.warnings]
             except Exception:
-                logger.debug("Pre-scene contradiction check failed (non-fatal)", exc_info=True)
+                logger.warning(
+                    "Pre-scene contradiction check failed for ch%d sc%d (non-fatal)",
+                    chapter_number,
+                    scene_number,
+                    exc_info=True,
+                )
+                workflow_run.metadata_json = {
+                    **workflow_run.metadata_json,
+                    "contradiction_check_failed": True,
+                }
 
         # ── Inject pending consistency warnings from last rolling check ──
         _pending_cw: list[str] = []
@@ -326,6 +403,74 @@ async def run_scene_pipeline(
                 },
             )
             step_order += 1
+
+        # ── Post-draft identity validation (zero LLM cost) ──
+        if draft is not None and draft.content_md:
+            try:
+                from bestseller.services.identity_guard import (
+                    load_identity_registry,
+                    validate_scene_text_identity,
+                )
+                _id_registry = await load_identity_registry(session, project.id)
+                _id_violations = validate_scene_text_identity(
+                    draft.content_md,
+                    _id_registry,
+                    language=getattr(project, "language", None) or "zh-CN",
+                    participant_names=list(scene.participants or []),
+                )
+                if _id_violations:
+                    logger.warning(
+                        "Identity violations in ch%d sc%d: %s",
+                        chapter_number, scene_number,
+                        [(v.character_name, v.violation_type, v.expected, v.found) for v in _id_violations],
+                    )
+                    # Inject as contradiction warnings so the reviewer sees them
+                    if shared_context is not None:
+                        for v in _id_violations[:5]:
+                            shared_context.contradiction_warnings.append(
+                                f"[身份违规] {v.character_name}: {v.violation_type} "
+                                f"(expected={v.expected}, found={v.found})"
+                            )
+            except Exception:
+                logger.debug("Post-draft identity check failed (non-fatal)", exc_info=True)
+
+        # ── Post-draft deduplication check (zero LLM cost) ──
+        if draft is not None and draft.content_md:
+            try:
+                from bestseller.services.deduplication import check_scene_duplication
+
+                _existing_drafts_q = await session.scalars(
+                    select(SceneDraftVersionModel).join(
+                        SceneCardModel,
+                        SceneDraftVersionModel.scene_card_id == SceneCardModel.id,
+                    ).join(
+                        ChapterModel,
+                        SceneCardModel.chapter_id == ChapterModel.id,
+                    ).where(
+                        ChapterModel.project_id == project.id,
+                        SceneDraftVersionModel.is_current.is_(True),
+                        SceneDraftVersionModel.id != draft.id,
+                    )
+                )
+                _existing_texts: list[tuple[int, int, str]] = []
+                for ed in _existing_drafts_q:
+                    _sc = await session.get(SceneCardModel, ed.scene_card_id)
+                    _ch = await session.get(ChapterModel, _sc.chapter_id) if _sc else None
+                    if _ch and _sc and ed.content:
+                        _existing_texts.append((_ch.chapter_number, _sc.scene_number, ed.content))
+
+                _dedup_findings = check_scene_duplication(draft.content_md, _existing_texts)
+                if _dedup_findings:
+                    logger.warning(
+                        "Deduplication findings in ch%d sc%d: %s",
+                        chapter_number, scene_number,
+                        [(f["chapter"], f["scene"], f["similarity"], f["severity"]) for f in _dedup_findings],
+                    )
+                    if shared_context is not None:
+                        for f in _dedup_findings[:3]:
+                            shared_context.contradiction_warnings.append(f["message"])
+            except Exception:
+                logger.debug("Post-draft deduplication check failed (non-fatal)", exc_info=True)
 
         # Draft mode: skip review/rewrite/knowledge refresh — rely on prompt
         # quality + mechanical sanitization (regex) for quality assurance.
@@ -415,22 +560,34 @@ async def run_scene_pipeline(
                     and score_delta < settings.quality.min_scene_rewrite_improvement
                 ):
                     reached_revision_limit = True
-                    requires_human_review = True
-                    workflow_run.status = WorkflowStatus.WAITING_HUMAN.value
-                    workflow_run.current_step = "waiting_human_review"
                     workflow_run.metadata_json = {
                         **workflow_run.metadata_json,
                         "stalled_rewrite": True,
                         "stalled_rewrite_score_delta": round(score_delta, 4),
                         "stalled_rewrite_threshold": settings.quality.min_scene_rewrite_improvement,
                     }
+                    if settings.pipeline.accept_on_stall:
+                        logger.info(
+                            "Scene %d.%d rewrite stalled (delta=%.4f) — accepting best draft",
+                            chapter_number, scene_number, score_delta,
+                        )
+                    else:
+                        requires_human_review = True
+                        workflow_run.status = WorkflowStatus.WAITING_HUMAN.value
+                        workflow_run.current_step = "waiting_human_review"
                     break
 
             if rewrite_iterations >= settings.quality.max_scene_revisions:
                 reached_revision_limit = True
-                requires_human_review = True
-                workflow_run.status = WorkflowStatus.WAITING_HUMAN.value
-                workflow_run.current_step = "waiting_human_review"
+                if settings.pipeline.accept_on_stall:
+                    logger.info(
+                        "Scene %d.%d reached max revisions (%d) — accepting best draft",
+                        chapter_number, scene_number, rewrite_iterations,
+                    )
+                else:
+                    requires_human_review = True
+                    workflow_run.status = WorkflowStatus.WAITING_HUMAN.value
+                    workflow_run.current_step = "waiting_human_review"
                 break
 
             previous_scene_score = current_scene_score
@@ -467,6 +624,11 @@ async def run_scene_pipeline(
 
         if draft is None or review_result is None or report is None or quality is None:
             raise RuntimeError("Scene pipeline did not produce a current draft and review result.")
+
+        # When stall was accepted, promote scene/chapter status so downstream
+        # logic (chapter assembly, resume) treats the scene as done.
+        if reached_revision_limit and not requires_human_review:
+            scene.status = SceneStatus.APPROVED.value
 
         if not requires_human_review:
             current_step_name = "refresh_scene_knowledge"
@@ -736,13 +898,34 @@ async def run_chapter_pipeline(
                 return None, None
             current_step_name = "export_chapter_markdown"
             workflow_run.current_step = current_step_name
-            artifact, artifact_path = await export_chapter_markdown(
-                session,
-                settings,
-                project_slug,
-                chapter_number,
-                created_by_run_id=workflow_run.id,
-            )
+            try:
+                artifact, artifact_path = await export_chapter_markdown(
+                    session,
+                    settings,
+                    project_slug,
+                    chapter_number,
+                    created_by_run_id=workflow_run.id,
+                )
+            except (ValueError, OSError) as exc:
+                # Export blockers (hygiene checks, I/O errors) must not crash the
+                # entire chapter pipeline — the draft is already persisted and can
+                # be re-exported later once the issue is resolved.
+                logger.warning(
+                    "Chapter %d export blocked for %s, continuing pipeline: %s",
+                    chapter_number,
+                    project_slug,
+                    exc,
+                )
+                await create_workflow_step_run(
+                    session,
+                    workflow_run_id=workflow_run.id,
+                    step_name=current_step_name,
+                    step_order=step_order,
+                    status=WorkflowStatus.COMPLETED,
+                    output_ref={"export_blocked": str(exc)},
+                )
+                step_order += 1
+                return None, None
             artifact_id = artifact.id
             artifact_output_path = str(artifact_path.resolve())
             await create_workflow_step_run(
@@ -792,7 +975,7 @@ async def run_chapter_pipeline(
             chapter.status = ChapterStatus.COMPLETE.value
             try:
                 async with session.begin_nested():
-                    await extract_chapter_state_snapshot(
+                    snapshot = await extract_chapter_state_snapshot(
                         session,
                         settings,
                         project_id=project.id,
@@ -800,6 +983,130 @@ async def run_chapter_pipeline(
                         chapter_md=chapter_draft.content_md,
                         workflow_run_id=workflow_run.id,
                     )
+                    # Validate monotonic facts against previous chapter
+                    if snapshot is not None and snapshot.facts:
+                        from bestseller.domain.context import HardFactContext as _HFC
+                        from bestseller.services.continuity import _extract_numeric  # noqa: F811
+
+                        _prev_snapshot = None
+                        if chapter.chapter_number > 1:
+                            _prev_snap_model = await session.scalar(
+                                select(ChapterStateSnapshotModel).where(
+                                    ChapterStateSnapshotModel.project_id == project.id,
+                                    ChapterStateSnapshotModel.chapter_number == chapter.chapter_number - 1,
+                                ).order_by(ChapterStateSnapshotModel.created_at.desc())
+                            )
+                            if _prev_snap_model is not None and _prev_snap_model.facts:
+                                _prev_facts = [
+                                    _HFC(**f) if isinstance(f, dict) else f
+                                    for f in (_prev_snap_model.facts or [])
+                                ]
+                                _cur_facts = [
+                                    _HFC(**f) if isinstance(f, dict) else f
+                                    for f in (snapshot.facts or [])
+                                ]
+                                _mono_warnings = validate_fact_monotonicity(_cur_facts, _prev_facts)
+                                if _mono_warnings:
+                                    logger.warning(
+                                        "Chapter %d monotonicity violations: %s",
+                                        chapter.chapter_number,
+                                        _mono_warnings,
+                                    )
+                                    # Store warnings for next chapter's context
+                                    project.metadata_json = {
+                                        **(project.metadata_json or {}),
+                                        "_pending_consistency_warnings": (
+                                            (project.metadata_json or {}).get("_pending_consistency_warnings", [])
+                                            + _mono_warnings[:5]
+                                        ),
+                                    }
+
+                    # ── Genre-specific progression validation ──
+                    try:
+                        from bestseller.services.genre_consistency import (
+                            get_genre_profile,
+                            validate_xianxia_progression,
+                            validate_litrpg_stats,
+                        )
+                        _genre = getattr(project, "genre", None) or settings.generation.genre
+                        _sub_genre = (project.metadata_json or {}).get("sub_genre")
+                        _gprofile = get_genre_profile(_genre, _sub_genre)
+                        if _gprofile and snapshot.facts:
+                            _genre_warnings: list[str] = []
+                            if _gprofile.progression_system == "cultivation_tiers" and _prev_snap_model:
+                                for f in (snapshot.facts or []):
+                                    _fd = f if isinstance(f, dict) else f.__dict__
+                                    if _fd.get("kind") == "level":
+                                        _char = _fd.get("character", "")
+                                        _cur_val = _fd.get("value", "")
+                                        # Find matching previous fact
+                                        for pf in (_prev_snap_model.facts or []):
+                                            _pfd = pf if isinstance(pf, dict) else pf.__dict__
+                                            if _pfd.get("kind") == "level" and _pfd.get("character") == _char:
+                                                _genre_warnings.extend(
+                                                    validate_xianxia_progression(
+                                                        _char, _cur_val, _pfd.get("value", ""),
+                                                        _gprofile.tier_names,
+                                                    )
+                                                )
+                            if _genre_warnings:
+                                logger.warning("Genre violations ch%d: %s", chapter.chapter_number, _genre_warnings)
+                                project.metadata_json = {
+                                    **(project.metadata_json or {}),
+                                    "_pending_consistency_warnings": (
+                                        (project.metadata_json or {}).get("_pending_consistency_warnings", [])
+                                        + _genre_warnings[:3]
+                                    ),
+                                }
+                    except Exception:
+                        logger.debug("Genre consistency check failed (non-fatal)", exc_info=True)
+
+                    # ── Book-level overused phrase tracking ──
+                    try:
+                        from bestseller.services.deduplication import (
+                            extract_frequent_phrases,
+                            build_overused_phrase_avoidance_block,
+                        )
+                        _all_scene_texts_q = await session.scalars(
+                            select(SceneDraftVersionModel.content).join(
+                                SceneCardModel,
+                                SceneDraftVersionModel.scene_card_id == SceneCardModel.id,
+                            ).join(
+                                ChapterModel,
+                                SceneCardModel.chapter_id == ChapterModel.id,
+                            ).where(
+                                ChapterModel.project_id == project.id,
+                                SceneDraftVersionModel.is_current.is_(True),
+                                SceneDraftVersionModel.content.isnot(None),
+                            )
+                        )
+                        _all_scene_texts = [t for t in _all_scene_texts_q if t]
+                        if len(_all_scene_texts) >= 3:
+                            _lang = getattr(project, "language", None) or settings.generation.language
+                            _phrases = extract_frequent_phrases(_all_scene_texts, language=_lang)
+                            if _phrases:
+                                _phrase_block = build_overused_phrase_avoidance_block(_phrases, language=_lang)
+                                project.metadata_json = {
+                                    **(project.metadata_json or {}),
+                                    "_overused_phrase_block": _phrase_block,
+                                }
+                    except Exception:
+                        logger.debug("Overused phrase tracking failed (non-fatal)", exc_info=True)
+
+                    # ── Living Story Bible update ──
+                    try:
+                        from bestseller.services.story_bible import update_story_bible_from_chapter
+                        _bible_counts = await update_story_bible_from_chapter(
+                            session,
+                            settings,
+                            project=project,
+                            chapter=chapter,
+                            chapter_text=chapter_draft.content_md or "",
+                            workflow_run_id=workflow_run.id,
+                        )
+                        logger.info("Bible update ch%d: %s", chapter.chapter_number, _bible_counts)
+                    except Exception:
+                        logger.debug("Living bible update failed (non-fatal)", exc_info=True)
             except Exception as exc:  # noqa: BLE001
                 logger.warning(
                     "Chapter %d hard-fact extraction failed (non-fatal): %s",
@@ -919,6 +1226,25 @@ async def run_chapter_pipeline(
                             chapter.chapter_number,
                             exc,
                         )
+
+                # ── Living Story Bible update (non-draft path) ──
+                try:
+                    from bestseller.services.story_bible import update_story_bible_from_chapter
+                    async with session.begin_nested():
+                        await update_story_bible_from_chapter(
+                            session,
+                            settings,
+                            project=project,
+                            chapter=chapter,
+                            chapter_text=chapter_draft.content_md or "",
+                            workflow_run_id=workflow_run.id,
+                        )
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning(
+                        "Chapter %d bible update failed (non-fatal): %s",
+                        chapter.chapter_number,
+                        exc,
+                    )
                 break
 
             if chapter_rewrite_iterations >= settings.quality.max_chapter_revisions:
@@ -1068,6 +1394,8 @@ async def run_project_pipeline(
     outline_file: Path | None = None,
     export_markdown: bool = True,
     progress: ProgressCallback | None = None,
+    global_chapter_offset: int = 0,
+    total_target_chapters: int = 0,
 ) -> ProjectPipelineResult:
     project = await get_project_by_slug(session, project_slug)
     if project is None:
@@ -1143,10 +1471,29 @@ async def run_project_pipeline(
     if not chapters:
         raise ValueError(f"Project '{project_slug}' does not have any chapters to process.")
 
-    # Resume support: filter out already-completed chapters
+    # Validate chapter sequence has no gaps before starting generation
+    chapter_numbers = sorted(ch.chapter_number for ch in chapters)
+    sequence_gaps = detect_chapter_sequence_gaps(chapter_numbers)
+    if sequence_gaps:
+        logger.error(
+            "Chapter sequence has gaps for '%s': missing %s",
+            project_slug,
+            sequence_gaps,
+        )
+        raise ValueError(
+            f"Chapter sequence has gaps: missing chapters {sequence_gaps}. "
+            f"Fix the outline before running the pipeline."
+        )
+
+    # Resume support: filter out already-completed chapters.
+    # When accept_on_stall is enabled, chapters stuck in REVISION (stalled
+    # rewrites from a prior run) are also treated as complete on resume.
+    _resume_done_statuses = {ChapterStatus.COMPLETE.value}
+    if settings.pipeline.accept_on_stall:
+        _resume_done_statuses.add(ChapterStatus.REVISION.value)
     pending_chapters = [
         ch for ch in chapters
-        if ch.status != ChapterStatus.COMPLETE.value
+        if ch.status not in _resume_done_statuses
     ] if settings.pipeline.resume_enabled else chapters
     skipped_count = len(chapters) - len(pending_chapters)
     if skipped_count > 0:
@@ -1306,13 +1653,17 @@ async def run_project_pipeline(
                             _global_arc_idx += 1
 
         for chapter in pending_chapters:
+            local_done = len(chapter_results) + skipped_count + 1
+            global_done = global_chapter_offset + local_done
+            _total = total_target_chapters or len(chapters)
             _emit_progress(
                 progress,
                 "chapter_pipeline_started",
                 {
                     "project_slug": project_slug,
                     "chapter_number": chapter.chapter_number,
-                    "progress": f"{len(chapter_results) + skipped_count + 1}/{len(chapters)}",
+                    "progress": f"{local_done}/{len(chapters)}",
+                    "global_progress": f"{global_done}/{_total}",
                     "target_word_count": int(chapter.target_word_count or 0),
                 },
             )
@@ -1352,12 +1703,16 @@ async def run_project_pipeline(
             step_order += 1
             if chapter_result.requires_human_review:
                 requires_human_review = True
+            _completed_local = len(chapter_results) + skipped_count
+            _completed_global = global_chapter_offset + _completed_local
             _emit_progress(
                 progress,
                 "chapter_pipeline_completed",
                 {
                     "project_slug": project_slug,
                     "chapter_number": chapter.chapter_number,
+                    "progress": f"{_completed_local}/{len(chapters)}",
+                    "global_progress": f"{_completed_global}/{_total}",
                     "workflow_run_id": str(chapter_result.workflow_run_id),
                     "requires_human_review": chapter_result.requires_human_review,
                     "chapter_draft_version_no": chapter_result.chapter_draft_version_no,
@@ -1507,7 +1862,7 @@ async def run_project_pipeline(
                     )
 
                 # Voice drift detection (triggered at same interval, after summary)
-                if chapter.chapter_number >= 10:
+                if chapter.chapter_number >= 4:
                     _emit_progress(
                         progress,
                         "voice_drift_check_started",
@@ -2191,6 +2546,39 @@ async def run_progressive_autowrite_pipeline(
             "new_characters": vol_plan_result.new_characters_introduced,
         })
 
+        # Refresh canonical world/cast specs materialized by generate_volume_plan
+        # so this volume's writing and the next volume's planning both see the
+        # latest canon instead of the foundation snapshot.
+        _emit_progress(progress, "story_bible_refresh_started", {
+            "project_slug": project.slug, "volume_number": vol_num,
+        })
+        story_bible_result = await materialize_latest_story_bible(
+            session,
+            project.slug,
+            requested_by=requested_by,
+        )
+        await _checkpoint_commit(session)
+        _emit_progress(progress, "story_bible_refresh_completed", {
+            "project_slug": project.slug,
+            "volume_number": vol_num,
+            "workflow_run_id": str(story_bible_result.workflow_run_id),
+        })
+
+        latest_world_spec = await get_latest_planning_artifact(
+            session,
+            project_id=project.id,
+            artifact_type=ArtifactType.WORLD_SPEC,
+        )
+        latest_cast_spec = await get_latest_planning_artifact(
+            session,
+            project_id=project.id,
+            artifact_type=ArtifactType.CAST_SPEC,
+        )
+        if latest_world_spec and isinstance(latest_world_spec.content, dict):
+            world_spec_payload = latest_world_spec.content
+        if latest_cast_spec and isinstance(latest_cast_spec.content, dict):
+            cast_spec_payload = latest_cast_spec.content
+
         # Materialize the per-volume outline into the combined CHAPTER_OUTLINE_BATCH
         # so the existing chapter writing pipeline can pick it up
         vol_outline_art = await get_latest_planning_artifact(
@@ -2244,8 +2632,10 @@ async def run_progressive_autowrite_pipeline(
             materialize_outline=False,
             materialize_narrative_graph=False,
             materialize_narrative_tree=False,
-            export_markdown=False,
+            export_markdown=True,
             progress=progress,
+            global_chapter_offset=len(all_chapter_results),
+            total_target_chapters=project.target_chapters or 0,
         )
         await _checkpoint_commit(session)
         all_chapter_results.extend(vol_project_result.chapter_results)
@@ -2271,8 +2661,11 @@ async def run_progressive_autowrite_pipeline(
         })
 
     # ── Final export + review ──
+    exported_artifact = None
+    exported_output_path: str | None = None
     if export_markdown:
-        await export_project_markdown(session, settings, project.slug)
+        exported_artifact, exported_path = await export_project_markdown(session, settings, project.slug)
+        exported_output_path = str(exported_path)
 
     project_result = vol_project_result if vol_project_result is not None else ProjectPipelineResult(
         workflow_run_id=UUID(int=0), project_id=project.id, project_slug=project.slug,
@@ -2299,11 +2692,11 @@ async def run_progressive_autowrite_pipeline(
     final_quality_score_id = repair_result.quality_score_id if repair_result else project_result.quality_score_id
     final_export_artifact_id = (
         repair_result.export_artifact_id if repair_result and repair_result.export_artifact_id
-        else project_result.export_artifact_id
+        else project_result.export_artifact_id or (exported_artifact.id if exported_artifact else None)
     )
     final_output_path = (
         repair_result.output_path if repair_result and repair_result.output_path
-        else project_result.output_path
+        else project_result.output_path or exported_output_path
     )
     final_verdict = repair_result.final_verdict if repair_result else project_result.final_verdict
     final_requires_human_review = repair_result.requires_human_review if repair_result else project_result.requires_human_review

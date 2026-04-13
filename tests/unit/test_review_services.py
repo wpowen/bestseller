@@ -627,6 +627,44 @@ def test_evaluate_chapter_draft_allows_low_severity_polish_findings() -> None:
     assert all(finding.severity == "low" for finding in result.findings)
 
 
+def test_evaluate_chapter_draft_flags_unfinished_placeholder_names() -> None:
+    chapter = SimpleNamespace(
+        chapter_number=6,
+        title="灰楼见面",
+        chapter_goal="主角第一次和灰楼中间人接头。",
+        target_word_count=2400,
+    )
+    scenes = [
+        SimpleNamespace(scene_number=1, title="仓库接头"),
+        SimpleNamespace(scene_number=2, title="条件交换"),
+    ]
+    draft = SimpleNamespace(
+        content_md=(
+            "# 第6章 灰楼见面\n\n"
+            "## 场景 1：仓库接头\n\n"
+            "盟友甲提前半小时到了旧仓库，盯着主角把货单摊开。"
+            "对方没有报真名，只反复强调今晚只认货不认人。"
+            "主角意识到这不是谨慎，而是有人刻意把中间人的身份抹掉。"
+            "## 场景 2：条件交换\n\n"
+            + ("仓库里风声很紧，双方都在试探彼此底线。" * 80)
+        ),
+        word_count=2400,
+    )
+
+    result = evaluate_chapter_draft(
+        chapter=chapter,
+        scenes=scenes,
+        draft=draft,
+        settings=build_settings(),
+    )
+
+    assert result.verdict == "rewrite"
+    assert any(
+        finding.category == "output_hygiene" and finding.severity == "high"
+        for finding in result.findings
+    )
+
+
 def test_render_chapter_review_summary_and_prompts_include_context() -> None:
     project = SimpleNamespace(title="长夜巡航", genre="末日科幻", sub_genre="重生囤货", language="zh-CN", metadata_json={})
     chapter = SimpleNamespace(chapter_number=3, title="静默航道", chapter_goal="推进调查")
@@ -963,9 +1001,11 @@ async def test_review_scene_draft_skips_llm_commentary_by_default(
     monkeypatch.setattr(review_services, "complete_text", fail_complete_text)
     session = FakeSession()
 
+    settings = build_settings()
+    settings.quality.enable_llm_scene_commentary = False
     result, report, quality, rewrite_task = await review_services.review_scene_draft(
         session,
-        build_settings(),
+        settings,
         "my-story",
         1,
         1,
@@ -1072,9 +1112,11 @@ async def test_review_chapter_draft_skips_llm_commentary_by_default(
         scalars_results=[scenes],
     )
 
+    settings = build_settings()
+    settings.quality.enable_llm_chapter_commentary = False
     result, report, quality, rewrite_task = await review_services.review_chapter_draft(
         session,
-        build_settings(),
+        settings,
         "my-story",
         3,
     )

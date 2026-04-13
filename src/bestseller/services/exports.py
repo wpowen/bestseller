@@ -21,6 +21,7 @@ from bestseller.infra.db.models import (
     ProjectModel,
 )
 from bestseller.services.drafts import format_chapter_heading, sanitize_novel_markdown_content
+from bestseller.services.output_hygiene import collect_unfinished_artifact_issues
 from bestseller.services.projects import get_project_by_slug
 from bestseller.services.writing_profile import normalize_language
 from bestseller.settings import AppSettings
@@ -56,7 +57,7 @@ def build_project_markdown(
     sections = [
         _ensure_chapter_heading(
             ch,
-            sanitize_novel_markdown_content(draft.content_md),
+            sanitize_novel_markdown_content(draft.content_md, language=project_language),
             language=project_language,
         )
         for ch, draft in chapter_payloads
@@ -108,9 +109,9 @@ def markdown_to_plain_text(content_md: str) -> str:
     return "\n".join(lines).strip()
 
 
-def markdown_to_html(content_md: str) -> str:
+def markdown_to_html(content_md: str, *, language: str | None = None) -> str:
     rendered = markdown_lib.markdown(
-        sanitize_novel_markdown_content(content_md),
+        sanitize_novel_markdown_content(content_md, language=language),
         extensions=[
             "extra",
             "sane_lists",
@@ -242,7 +243,7 @@ def build_epub_bytes(
     author: str | None = None,
     identifier: str = "bestseller-export",
 ) -> bytes:
-    html_body = markdown_to_html(content_md)
+    html_body = markdown_to_html(content_md, language=language)
     nav_title = "Table of Contents" if language.lower().startswith("en") else "目录"
     escaped_author = escape(author) if author else None
     content_xhtml = (
@@ -465,11 +466,56 @@ def create_export_artifact(
     )
 
 
+def _collect_export_blockers(
+    project: ProjectModel,
+    chapter_payloads: list[tuple[ChapterModel, ChapterDraftVersionModel]],
+) -> list[str]:
+    language = getattr(project, "language", None)
+    is_en = normalize_language(language).lower().startswith("en")
+    blockers: list[str] = []
+
+    for chapter, draft in chapter_payloads:
+        # Word-count deviations are logged as warnings but never block export.
+        target = max(int(chapter.target_word_count or 0), 0)
+        if target > 0:
+            ratio = draft.word_count / max(target, 1)
+            if ratio < 0.7 or ratio > 1.3:
+                logger.warning(
+                    "Chapter %d word count deviates from target: %d vs %d (%.0f%%).",
+                    chapter.chapter_number,
+                    draft.word_count,
+                    target,
+                    ratio * 100,
+                )
+        hygiene_issues = collect_unfinished_artifact_issues(draft.content_md, language=language)
+        for issue in hygiene_issues:
+            blockers.append(
+                (
+                    f"Chapter {chapter.chapter_number}: {issue}"
+                    if is_en else f"第{chapter.chapter_number}章：{issue}"
+                )
+            )
+    return blockers
+
+
+def _raise_if_export_blocked(
+    project: ProjectModel,
+    chapter_payloads: list[tuple[ChapterModel, ChapterDraftVersionModel]],
+) -> None:
+    blockers = _collect_export_blockers(project, chapter_payloads)
+    if not blockers:
+        return
+    raise ValueError("; ".join(blockers))
+
+
 async def preflight_export_check(
     session: AsyncSession,
     project_id: UUID,
+    *,
+    language: str | None = None,
 ) -> list[str]:
     """Run pre-export quality checks. Returns warning messages (empty = all clear)."""
+    _is_en = (language or "").lower().startswith("en")
     warnings: list[str] = []
 
     try:
@@ -485,7 +531,10 @@ async def preflight_export_check(
                 )
             )
             if draft is None:
-                warnings.append(f"第{ch.chapter_number}章缺少当前草稿")
+                warnings.append(
+                    f"Chapter {ch.chapter_number} is missing a current draft" if _is_en
+                    else f"第{ch.chapter_number}章缺少当前草稿"
+                )
     except Exception:
         logger.debug("Preflight check: chapter completeness check failed", exc_info=True)
 
@@ -501,7 +550,10 @@ async def preflight_export_check(
         )).all()
         planted_clues = [c for c in stale_clues if c.planted_in_chapter_number is not None]
         if planted_clues:
-            warnings.append(f"有{len(planted_clues)}条伏笔尚未回收")
+            warnings.append(
+                f"{len(planted_clues)} clue(s) remain unresolved" if _is_en
+                else f"有{len(planted_clues)}条伏笔尚未回收"
+            )
     except Exception:
         logger.debug("Preflight check: clue resolution check failed", exc_info=True)
 
@@ -516,7 +568,10 @@ async def preflight_export_check(
             ).limit(10)
         )).all()
         if open_arcs:
-            warnings.append(f"有{len(open_arcs)}条叙事弧尚未完结")
+            warnings.append(
+                f"{len(open_arcs)} narrative arc(s) remain unfinished" if _is_en
+                else f"有{len(open_arcs)}条叙事弧尚未完结"
+            )
     except Exception:
         logger.debug("Preflight check: arc completeness check failed", exc_info=True)
 
@@ -532,6 +587,7 @@ async def export_chapter_markdown(
     created_by_run_id: UUID | None = None,
 ) -> tuple[ExportArtifactModel, Path]:
     project, chapter, draft = await _load_chapter_export_payload(session, project_slug, chapter_number)
+    _raise_if_export_blocked(project, [(chapter, draft)])
     output_path = Path(settings.output.base_dir) / project.slug / f"chapter-{chapter.chapter_number:03d}.md"
     content_md = _ensure_chapter_heading(
         chapter,
@@ -562,7 +618,8 @@ async def export_project_markdown(
     created_by_run_id: UUID | None = None,
 ) -> tuple[ExportArtifactModel, Path]:
     project, chapter_payloads = await _load_project_export_payload(session, project_slug)
-    preflight_warnings = await preflight_export_check(session, project.id)
+    _raise_if_export_blocked(project, chapter_payloads)
+    preflight_warnings = await preflight_export_check(session, project.id, language=project.language)
     if preflight_warnings:
         logger.warning("Export pre-flight warnings for %s: %s", project_slug, "; ".join(preflight_warnings))
     content_md = build_project_markdown(project, chapter_payloads)
@@ -592,7 +649,8 @@ async def export_chapter_docx(
     created_by_run_id: UUID | None = None,
 ) -> tuple[ExportArtifactModel, Path]:
     project, chapter, draft = await _load_chapter_export_payload(session, project_slug, chapter_number)
-    title = f"第{chapter.chapter_number}章 {chapter.title or ''}".strip()
+    _raise_if_export_blocked(project, [(chapter, draft)])
+    title = format_chapter_heading(chapter.chapter_number, chapter.title, language=project.language).lstrip("# ").strip()
     output_path = Path(settings.output.base_dir) / project.slug / f"chapter-{chapter.chapter_number:03d}.docx"
     storage_uri, checksum = write_binary_output(output_path, build_docx_bytes(title, draft.content_md))
     artifact = create_export_artifact(
@@ -618,7 +676,8 @@ async def export_project_docx(
     created_by_run_id: UUID | None = None,
 ) -> tuple[ExportArtifactModel, Path]:
     project, chapter_payloads = await _load_project_export_payload(session, project_slug)
-    preflight_warnings = await preflight_export_check(session, project.id)
+    _raise_if_export_blocked(project, chapter_payloads)
+    preflight_warnings = await preflight_export_check(session, project.id, language=project.language)
     if preflight_warnings:
         logger.warning("Export pre-flight warnings for %s: %s", project_slug, "; ".join(preflight_warnings))
     content_md = build_project_markdown(project, chapter_payloads)
@@ -648,7 +707,8 @@ async def export_chapter_epub(
     created_by_run_id: UUID | None = None,
 ) -> tuple[ExportArtifactModel, Path]:
     project, chapter, draft = await _load_chapter_export_payload(session, project_slug, chapter_number)
-    title = f"第{chapter.chapter_number}章 {chapter.title or ''}".strip()
+    _raise_if_export_blocked(project, [(chapter, draft)])
+    title = format_chapter_heading(chapter.chapter_number, chapter.title, language=project.language).lstrip("# ").strip()
     output_path = Path(settings.output.base_dir) / project.slug / f"chapter-{chapter.chapter_number:03d}.epub"
     storage_uri, checksum = write_binary_output(
         output_path,
@@ -677,7 +737,8 @@ async def export_project_epub(
     created_by_run_id: UUID | None = None,
 ) -> tuple[ExportArtifactModel, Path]:
     project, chapter_payloads = await _load_project_export_payload(session, project_slug)
-    preflight_warnings = await preflight_export_check(session, project.id)
+    _raise_if_export_blocked(project, chapter_payloads)
+    preflight_warnings = await preflight_export_check(session, project.id, language=project.language)
     if preflight_warnings:
         logger.warning("Export pre-flight warnings for %s: %s", project_slug, "; ".join(preflight_warnings))
     content_md = build_project_markdown(project, chapter_payloads)
@@ -710,7 +771,8 @@ async def export_chapter_pdf(
     created_by_run_id: UUID | None = None,
 ) -> tuple[ExportArtifactModel, Path]:
     project, chapter, draft = await _load_chapter_export_payload(session, project_slug, chapter_number)
-    title = f"第{chapter.chapter_number}章 {chapter.title or ''}".strip()
+    _raise_if_export_blocked(project, [(chapter, draft)])
+    title = format_chapter_heading(chapter.chapter_number, chapter.title, language=project.language).lstrip("# ").strip()
     output_path = Path(settings.output.base_dir) / project.slug / f"chapter-{chapter.chapter_number:03d}.pdf"
     storage_uri, checksum = write_binary_output(output_path, build_pdf_bytes(title, draft.content_md))
     artifact = create_export_artifact(
@@ -736,7 +798,8 @@ async def export_project_pdf(
     created_by_run_id: UUID | None = None,
 ) -> tuple[ExportArtifactModel, Path]:
     project, chapter_payloads = await _load_project_export_payload(session, project_slug)
-    preflight_warnings = await preflight_export_check(session, project.id)
+    _raise_if_export_blocked(project, chapter_payloads)
+    preflight_warnings = await preflight_export_check(session, project.id, language=project.language)
     if preflight_warnings:
         logger.warning("Export pre-flight warnings for %s: %s", project_slug, "; ".join(preflight_warnings))
     content_md = build_project_markdown(project, chapter_payloads)

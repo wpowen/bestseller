@@ -1,0 +1,604 @@
+# Legacy Preset → StoryFacets Expansion Mapping
+# Used as fallback when AI Story Architect is unavailable.
+# Maps the 46 existing genre preset keys to multi-dimensional facets.
+
+expansions:
+  # ── Chinese Genres ──
+  xianxia-upgrade:
+    primary_genre: xianxia
+    sub_genres: [升级, 宗门]
+    setting: "宗门等级体系下的修仙大陆"
+    tone: epic
+    power_system: cultivation-tiers
+    relationship_mode: no-cp
+    narrative_drive: progression
+    emotional_register: power-fantasy
+    trope_tags: [废柴逆袭, 秘境, 打脸, 金手指]
+    platform_style: qidian
+    gender_channel: male
+
+  urban-power-reversal:
+    primary_genre: urban
+    sub_genres: [逆袭, 异能]
+    setting: "现代都市的隐秘超凡社会"
+    tone: tense
+    power_system: psionic
+    relationship_mode: bg
+    narrative_drive: progression
+    emotional_register: power-fantasy
+    trope_tags: [废柴逆袭, 马甲, 打脸, 系统]
+    platform_style: fanqie
+    gender_channel: male
+
+  urban-blacktech:
+    primary_genre: urban
+    sub_genres: [科技, 创业]
+    setting: "近未来科技创业都市"
+    tone: lighthearted
+    power_system: tech-augmentation
+    relationship_mode: no-cp
+    narrative_drive: base-building
+    emotional_register: power-fantasy
+    trope_tags: [系统, 金手指, 商战]
+    platform_style: qidian
+    gender_channel: male
+
+  apocalypse-supply:
+    primary_genre: apocalypse
+    sub_genres: [囤货, 生存]
+    setting: "灾变后的废墟城市"
+    tone: tense
+    power_system: none
+    relationship_mode: no-cp
+    narrative_drive: survival
+    emotional_register: cathartic
+    trope_tags: [囤货, 末日求生, 空间, 种田]
+    platform_style: fanqie
+    gender_channel: male
+
+  apocalypse-rule:
+    primary_genre: apocalypse
+    sub_genres: [规则怪谈, 副本]
+    setting: "被异常规则侵蚀的现实世界"
+    tone: dark
+    power_system: psionic
+    relationship_mode: no-cp
+    narrative_drive: survival
+    emotional_register: cathartic
+    trope_tags: [规则怪谈, 副本, 系统, 诡异复苏]
+    platform_style: fanqie
+    gender_channel: male
+
+  apocalypse-basebuilding:
+    primary_genre: apocalypse
+    sub_genres: [基建, 团队]
+    setting: "末世人类重建家园"
+    tone: gritty
+    power_system: none
+    relationship_mode: found-family
+    narrative_drive: base-building
+    emotional_register: balanced
+    trope_tags: [末日求生, 种田, 囤货]
+    platform_style: fanqie
+    gender_channel: male
+
+  history-hegemony:
+    primary_genre: history
+    sub_genres: [争霸, 权谋]
+    setting: "中国古代乱世割据时期"
+    tone: epic
+    power_system: none
+    relationship_mode: no-cp
+    narrative_drive: strategy
+    emotional_register: intellectual
+    trope_tags: [重生, 商战]
+    platform_style: qidian
+    gender_channel: male
+
+  suspense-detective:
+    primary_genre: suspense
+    sub_genres: [推理, 刑侦]
+    setting: "现代城市犯罪现场"
+    tone: tense
+    power_system: none
+    relationship_mode: no-cp
+    narrative_drive: mystery
+    emotional_register: intellectual
+    trope_tags: [复仇]
+    platform_style: fanqie
+    gender_channel: male
+
+  rule-horror:
+    primary_genre: rule-horror
+    sub_genres: [怪谈, 副本]
+    setting: "被怪异规则笼罩的封闭空间"
+    tone: dark
+    power_system: psionic
+    relationship_mode: no-cp
+    narrative_drive: survival
+    emotional_register: cathartic
+    trope_tags: [规则怪谈, 副本, 系统]
+    platform_style: fanqie
+    gender_channel: male
+
+  infinite-flow:
+    primary_genre: infinite-flow
+    sub_genres: [无限流, 副本]
+    setting: "跨越多重世界的系统副本"
+    tone: tense
+    power_system: litrpg-stats
+    relationship_mode: no-cp
+    narrative_drive: progression
+    emotional_register: cathartic
+    trope_tags: [副本, 系统, 规则怪谈]
+    platform_style: fanqie
+    gender_channel: male
+
+  starsea-war:
+    primary_genre: scifi-cn
+    sub_genres: [星际, 战争]
+    setting: "银河系多文明星际战场"
+    tone: epic
+    power_system: tech-augmentation
+    relationship_mode: no-cp
+    narrative_drive: strategy
+    emotional_register: power-fantasy
+    trope_tags: [末日求生]
+    platform_style: qidian
+    gender_channel: male
+
+  female-growth-romance:
+    primary_genre: romance-cn
+    sub_genres: [成长, 言情]
+    setting: "现代都市职场与感情"
+    tone: bittersweet
+    power_system: none
+    relationship_mode: slow-burn
+    narrative_drive: relationship
+    emotional_register: romantic-tension
+    trope_tags: [女强, 复仇]
+    platform_style: jinjiang
+    gender_channel: female
+
+  palace-revenge:
+    primary_genre: romance-cn
+    sub_genres: [宫斗, 复仇]
+    setting: "古代宫廷深宫"
+    tone: dark
+    power_system: none
+    relationship_mode: bg
+    narrative_drive: strategy
+    emotional_register: cathartic
+    trope_tags: [宫斗, 复仇, 女强, 重生]
+    platform_style: jinjiang
+    gender_channel: female
+
+  beast-taming-upgrade:
+    primary_genre: beast-taming
+    sub_genres: [御兽, 升级]
+    setting: "万兽争鸣的大陆"
+    tone: lighthearted
+    power_system: cultivation-tiers
+    relationship_mode: no-cp
+    narrative_drive: progression
+    emotional_register: power-fantasy
+    trope_tags: [兽潮, 系统, 金手指]
+    platform_style: qidian
+    gender_channel: male
+
+  game-esports:
+    primary_genre: game
+    sub_genres: [电竞, 成长]
+    setting: "职业电竞联赛"
+    tone: lighthearted
+    power_system: none
+    relationship_mode: bromance
+    narrative_drive: progression
+    emotional_register: cathartic
+    trope_tags: [电竞, 废柴逆袭]
+    platform_style: fanqie
+    gender_channel: male
+
+  folk-mystery:
+    primary_genre: suspense
+    sub_genres: [民俗, 悬疑]
+    setting: "中国偏远乡村的神秘传说"
+    tone: dark
+    power_system: none
+    relationship_mode: no-cp
+    narrative_drive: mystery
+    emotional_register: intellectual
+    trope_tags: [规则怪谈]
+    platform_style: fanqie
+    gender_channel: male
+
+  rebirth-business:
+    primary_genre: urban
+    sub_genres: [重生, 经商]
+    setting: "上世纪80-90年代中国"
+    tone: lighthearted
+    power_system: none
+    relationship_mode: bg
+    narrative_drive: base-building
+    emotional_register: power-fantasy
+    trope_tags: [重生, 商战, 年代文, 金手指]
+    platform_style: fanqie
+    gender_channel: neutral
+
+  female-no-cp:
+    primary_genre: romance-cn
+    sub_genres: [女强, 成长]
+    setting: "现代都市或古代社会"
+    tone: lighthearted
+    power_system: none
+    relationship_mode: no-cp
+    narrative_drive: progression
+    emotional_register: power-fantasy
+    trope_tags: [女强, 马甲, 打脸]
+    platform_style: jinjiang
+    gender_channel: female
+
+  urban-xiuxian-2-0:
+    primary_genre: xianxia
+    sub_genres: [都市修仙, 灵气复苏]
+    setting: "灵气复苏后的现代都市"
+    tone: lighthearted
+    power_system: cultivation-tiers
+    relationship_mode: no-cp
+    narrative_drive: progression
+    emotional_register: power-fantasy
+    trope_tags: [灵气复苏, 系统, 马甲]
+    platform_style: fanqie
+    gender_channel: male
+
+  historical-research-travel:
+    primary_genre: history
+    sub_genres: [考据, 穿越]
+    setting: "真实历史朝代"
+    tone: bittersweet
+    power_system: none
+    relationship_mode: bg
+    narrative_drive: exploration
+    emotional_register: intellectual
+    trope_tags: [重生, 种田, 年代文]
+    platform_style: jinjiang
+    gender_channel: neutral
+
+  human-nature-game:
+    primary_genre: suspense
+    sub_genres: [人性博弈, 生存游戏]
+    setting: "封闭空间的生存游戏"
+    tone: dark
+    power_system: none
+    relationship_mode: no-cp
+    narrative_drive: strategy
+    emotional_register: intellectual
+    trope_tags: [副本, 规则怪谈]
+    platform_style: fanqie
+    gender_channel: male
+
+  eastern-aesthetic-fantasy:
+    primary_genre: xianxia
+    sub_genres: [国风, 美学]
+    setting: "唯美东方仙境"
+    tone: bittersweet
+    power_system: cultivation-tiers
+    relationship_mode: slow-burn
+    narrative_drive: exploration
+    emotional_register: bittersweet
+    trope_tags: [师徒, 秘境]
+    platform_style: jinjiang
+    gender_channel: neutral
+
+  # ── English Genres ──
+  dark-romance:
+    primary_genre: dark-romance
+    sub_genres: [dark, possessive]
+    setting: "Modern gothic underworld"
+    tone: dark
+    power_system: none
+    relationship_mode: enemies-to-lovers
+    narrative_drive: relationship
+    emotional_register: romantic-tension
+    trope_tags: [morally-grey, power-imbalance, forced-proximity, forbidden-love]
+    platform_style: kindle-unlimited
+    gender_channel: female
+
+  romantasy:
+    primary_genre: romantasy
+    sub_genres: [fae, court-intrigue]
+    setting: "A fae court of ancient magic and political machinations"
+    tone: epic
+    power_system: magic-system
+    relationship_mode: enemies-to-lovers
+    narrative_drive: relationship
+    emotional_register: romantic-tension
+    trope_tags: [fated-mates, morally-grey, political-intrigue, forbidden-love]
+    platform_style: kindle-unlimited
+    gender_channel: female
+
+  enemies-to-lovers:
+    primary_genre: romance
+    sub_genres: [contemporary, tension]
+    setting: "High-stakes competitive environment"
+    tone: tense
+    power_system: none
+    relationship_mode: enemies-to-lovers
+    narrative_drive: relationship
+    emotional_register: romantic-tension
+    trope_tags: [forced-proximity, second-chance, one-bed]
+    platform_style: kindle-unlimited
+    gender_channel: female
+
+  litrpg-progression:
+    primary_genre: litrpg
+    sub_genres: [progression, system]
+    setting: "A game-like world with visible stats and skills"
+    tone: epic
+    power_system: litrpg-stats
+    relationship_mode: no-cp
+    narrative_drive: progression
+    emotional_register: power-fantasy
+    trope_tags: [isekai, dungeon-core, crafting, kingdom-building]
+    platform_style: royal-road
+    gender_channel: male
+
+  cozy-fantasy:
+    primary_genre: cozy-fantasy
+    sub_genres: [slice-of-life, comfort]
+    setting: "A quaint magical village or shop"
+    tone: cozy
+    power_system: magic-system
+    relationship_mode: found-family
+    narrative_drive: base-building
+    emotional_register: cozy
+    trope_tags: [found-family, crafting, mentor-figure]
+    platform_style: kindle-unlimited
+    gender_channel: neutral
+
+  cozy-mystery:
+    primary_genre: suspense
+    sub_genres: [cozy, amateur-sleuth]
+    setting: "A charming small town with dark secrets"
+    tone: lighthearted
+    power_system: none
+    relationship_mode: slow-burn
+    narrative_drive: mystery
+    emotional_register: cozy
+    trope_tags: [found-family, secret-identity]
+    platform_style: kindle-unlimited
+    gender_channel: neutral
+
+  reverse-harem:
+    primary_genre: romance
+    sub_genres: [reverse-harem, fantasy]
+    setting: "A magical academy or supernatural court"
+    tone: lighthearted
+    power_system: magic-system
+    relationship_mode: reverse-harem
+    narrative_drive: relationship
+    emotional_register: romantic-tension
+    trope_tags: [academy, fated-mates, forced-proximity]
+    platform_style: kindle-unlimited
+    gender_channel: female
+
+  mafia-romance:
+    primary_genre: dark-romance
+    sub_genres: [mafia, contemporary]
+    setting: "The dangerous world of organized crime"
+    tone: dark
+    power_system: none
+    relationship_mode: enemies-to-lovers
+    narrative_drive: relationship
+    emotional_register: romantic-tension
+    trope_tags: [morally-grey, power-imbalance, forbidden-love, forced-proximity]
+    platform_style: kindle-unlimited
+    gender_channel: female
+
+  psychological-thriller:
+    primary_genre: thriller
+    sub_genres: [psychological, unreliable]
+    setting: "A claustrophobic domestic or institutional setting"
+    tone: tense
+    power_system: none
+    relationship_mode: no-cp
+    narrative_drive: mystery
+    emotional_register: intellectual
+    trope_tags: [unreliable-narrator, time-loop, secret-identity]
+    platform_style: kindle-unlimited
+    gender_channel: neutral
+
+  epic-fantasy:
+    primary_genre: fantasy
+    sub_genres: [epic, multi-pov]
+    setting: "A vast continent of warring kingdoms and ancient magic"
+    tone: epic
+    power_system: magic-system
+    relationship_mode: slow-burn
+    narrative_drive: strategy
+    emotional_register: balanced
+    trope_tags: [chosen-one, political-intrigue, found-family]
+    platform_style: kindle-unlimited
+    gender_channel: neutral
+
+  space-opera:
+    primary_genre: space-opera
+    sub_genres: [military, rebellion]
+    setting: "A galaxy-spanning interstellar civilization"
+    tone: epic
+    power_system: tech-augmentation
+    relationship_mode: slow-burn
+    narrative_drive: strategy
+    emotional_register: balanced
+    trope_tags: [heist-crew, political-intrigue, antihero]
+    platform_style: kindle-unlimited
+    gender_channel: neutral
+
+  paranormal-romance:
+    primary_genre: paranormal-romance
+    sub_genres: [shifter, supernatural]
+    setting: "A hidden supernatural world alongside the modern one"
+    tone: tense
+    power_system: bloodline
+    relationship_mode: enemies-to-lovers
+    narrative_drive: relationship
+    emotional_register: romantic-tension
+    trope_tags: [fated-mates, forbidden-love, secret-identity, morally-grey]
+    platform_style: kindle-unlimited
+    gender_channel: female
+
+  urban-fantasy:
+    primary_genre: urban-fantasy
+    sub_genres: [detective, supernatural]
+    setting: "A modern city with a hidden magical underbelly"
+    tone: gritty
+    power_system: magic-system
+    relationship_mode: slow-burn
+    narrative_drive: mystery
+    emotional_register: balanced
+    trope_tags: [antihero, secret-identity, found-family]
+    platform_style: kindle-unlimited
+    gender_channel: neutral
+
+  military-scifi:
+    primary_genre: military-scifi
+    sub_genres: [military, hard-scifi]
+    setting: "A future war between human factions or alien species"
+    tone: gritty
+    power_system: tech-augmentation
+    relationship_mode: bromance
+    narrative_drive: survival
+    emotional_register: balanced
+    trope_tags: [heist-crew, antihero]
+    platform_style: kindle-unlimited
+    gender_channel: male
+
+  gamelit-isekai:
+    primary_genre: litrpg
+    sub_genres: [isekai, gamelit]
+    setting: "A fantasy world with game-like mechanics"
+    tone: lighthearted
+    power_system: litrpg-stats
+    relationship_mode: no-cp
+    narrative_drive: progression
+    emotional_register: power-fantasy
+    trope_tags: [isekai, crafting, dungeon-core, monster-evolution]
+    platform_style: royal-road
+    gender_channel: male
+
+  apocalypse-survival:
+    primary_genre: apocalypse
+    sub_genres: [survival, system]
+    setting: "Earth after a system apocalypse with monsters"
+    tone: gritty
+    power_system: litrpg-stats
+    relationship_mode: found-family
+    narrative_drive: survival
+    emotional_register: cathartic
+    trope_tags: [survival-game, monster-evolution, kingdom-building]
+    platform_style: royal-road
+    gender_channel: male
+
+  detective-procedural:
+    primary_genre: thriller
+    sub_genres: [procedural, serial-killer]
+    setting: "A major city's homicide department"
+    tone: tense
+    power_system: none
+    relationship_mode: no-cp
+    narrative_drive: mystery
+    emotional_register: intellectual
+    trope_tags: [unreliable-narrator, antihero]
+    platform_style: kindle-unlimited
+    gender_channel: neutral
+
+  slow-burn-romance:
+    primary_genre: romance
+    sub_genres: [contemporary, slow-burn]
+    setting: "A close-knit community or workplace"
+    tone: lighthearted
+    power_system: none
+    relationship_mode: slow-burn
+    narrative_drive: relationship
+    emotional_register: romantic-tension
+    trope_tags: [forced-proximity, second-chance, found-family]
+    platform_style: kindle-unlimited
+    gender_channel: female
+
+  ya-fantasy:
+    primary_genre: fantasy
+    sub_genres: [young-adult, coming-of-age]
+    setting: "A magical academy or hidden supernatural world"
+    tone: lighthearted
+    power_system: magic-system
+    relationship_mode: slow-burn
+    narrative_drive: progression
+    emotional_register: balanced
+    trope_tags: [academy, chosen-one, found-family, secret-identity]
+    platform_style: kindle-unlimited
+    gender_channel: neutral
+
+  thriller-conspiracy:
+    primary_genre: thriller
+    sub_genres: [conspiracy, political]
+    setting: "The shadow corridors of global power"
+    tone: tense
+    power_system: none
+    relationship_mode: no-cp
+    narrative_drive: mystery
+    emotional_register: intellectual
+    trope_tags: [political-intrigue, unreliable-narrator, antihero]
+    platform_style: kindle-unlimited
+    gender_channel: neutral
+
+  portal-fantasy:
+    primary_genre: fantasy
+    sub_genres: [portal, adventure]
+    setting: "A vibrant magical world accessed through a portal"
+    tone: lighthearted
+    power_system: magic-system
+    relationship_mode: found-family
+    narrative_drive: exploration
+    emotional_register: balanced
+    trope_tags: [portal-fantasy, found-family, mentor-figure, chosen-one]
+    platform_style: royal-road
+    gender_channel: neutral
+
+  cultivation-western:
+    primary_genre: progression
+    sub_genres: [cultivation, western-style]
+    setting: "A Western-inspired world with Eastern cultivation mechanics"
+    tone: epic
+    power_system: cultivation-tiers
+    relationship_mode: no-cp
+    narrative_drive: progression
+    emotional_register: power-fantasy
+    trope_tags: [isekai, academy, crafting]
+    platform_style: royal-road
+    gender_channel: male
+
+  monster-evolution:
+    primary_genre: litrpg
+    sub_genres: [monster-mc, evolution]
+    setting: "A dangerous world from the perspective of a monster"
+    tone: lighthearted
+    power_system: litrpg-stats
+    relationship_mode: no-cp
+    narrative_drive: progression
+    emotional_register: power-fantasy
+    trope_tags: [monster-evolution, dungeon-core, isekai]
+    platform_style: royal-road
+    gender_channel: male
+
+  superhero-fiction:
+    primary_genre: urban-fantasy
+    sub_genres: [superhero, vigilante]
+    setting: "A modern city with emerging superhuman powers"
+    tone: gritty
+    power_system: psionic
+    relationship_mode: no-cp
+    narrative_drive: progression
+    emotional_register: balanced
+    trope_tags: [antihero, secret-identity, morally-grey]
+    platform_style: royal-road
+    gender_channel: male

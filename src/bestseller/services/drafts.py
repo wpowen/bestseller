@@ -923,14 +923,19 @@ def _render_retrieval_section(chunks: list[dict[str, Any]] | None) -> str:
 def _render_recent_scene_section(recent_scene_summaries: list[dict[str, Any]] | None) -> str:
     if not recent_scene_summaries:
         return ""
-    return "\n".join(
-        (
+    lines: list[str] = []
+    for item in recent_scene_summaries[:4]:
+        if not item.get("summary"):
+            continue
+        line = (
             f"- 第{item.get('chapter_number')}章第{item.get('scene_number')}场"
             f" {item.get('scene_title') or ''}：{item.get('summary')}"
         )
-        for item in recent_scene_summaries[:4]
-        if item.get("summary")
-    )
+        opening = item.get("opening_lines")
+        if opening:
+            line += f"\n  [开头原文] {opening}"
+        lines.append(line)
+    return "\n".join(lines)
 
 
 def _render_timeline_section(timeline_events: list[dict[str, Any]] | None) -> str:
@@ -2420,6 +2425,11 @@ def render_chapter_draft_markdown(
         r"^\s*#{1,4}\s*(?:第\s*[一二三四五六七八九十百零\d]+\s*[章场]|Chapter\s+\d+)",
         re.IGNORECASE,
     )
+    # Also strip bare subtitle headings (e.g. "# 雾锁探针") that match the
+    # chapter title — the LLM sometimes outputs the subtitle alone as a
+    # heading, duplicating the canonical "# 第N章：雾锁探针" heading above.
+    _raw_title = (chapter.title or "").strip()
+    _stripped_title = re.sub(r"^第\s*\d+\s*章\s*[：:\-\s]*", "", _raw_title).strip()
     cleaned_sections: list[str] = []
     for section in scene_sections:
         lines = section.split("\n")
@@ -2428,6 +2438,14 @@ def render_chapter_draft_markdown(
             lines.pop(0)
         if lines and _scene_heading_re.match(lines[0].strip()):
             lines.pop(0)
+        # Strip bare subtitle heading that duplicates the chapter title
+        elif lines and _stripped_title:
+            _first = lines[0].strip()
+            if _first.startswith("#") and _stripped_title in _first:
+                # Check it's just a heading with the subtitle, not prose
+                _heading_text = re.sub(r"^#{1,4}\s*", "", _first).strip()
+                if _heading_text == _stripped_title:
+                    lines.pop(0)
         cleaned_sections.append("\n".join(lines).strip())
     scene_sections = cleaned_sections
     # Drop any scene section that collapsed to an empty string after sanitizing

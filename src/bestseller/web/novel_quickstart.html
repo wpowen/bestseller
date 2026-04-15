@@ -720,7 +720,7 @@
       </div>
       <div class="custom-row">
         <label>自定义：</label>
-        <input type="number" id="customChapters" min="1" max="999" placeholder="100">
+        <input type="number" id="customChapters" min="1" max="2000" placeholder="100">
         <span style="font-size:14px;color:var(--text-dim);">章</span>
       </div>
       <div class="estimate-box">
@@ -1049,13 +1049,24 @@
       ? Math.round(targetWords / targetChapters)
       : 0;
 
-    // Chapter progress
+    // Chapter progress — book-wide when multi-volume, falling back to
+    // per-volume count for single-volume projects (same priority order as
+    // the detailed progress view).
     const completedChapterEvents = events.filter(e =>
       e.stage === 'chapter_pipeline_completed' && Number.isFinite(e.payload?.chapter_number)
     );
     const completedChs = completedChapterEvents.map(e => e.payload?.chapter_number).filter(Boolean);
-    const pipelineEvt = events.find(e => e.stage === 'project_pipeline_started');
-    const total = pipelineEvt?.payload?.chapter_count || 0;
+    const autowriteEvt = events.find(e => e.stage === 'progressive_autowrite_started');
+    const pipeEvts = events.filter(e => e.stage === 'project_pipeline_started');
+    const latestPipelineEvt = pipeEvts[pipeEvts.length - 1];
+    const firstPipelineEvt = pipeEvts[0];
+    const planDoneEvt = events.find(e => e.stage === 'planning_completed' || e.stage === 'foundation_planning_completed');
+    const total =
+      autowriteEvt?.payload?.project_chapter_count ||
+      latestPipelineEvt?.payload?.project_chapter_count ||
+      firstPipelineEvt?.payload?.chapter_count ||
+      planDoneEvt?.payload?.chapter_count ||
+      0;
     const pct = total > 0 ? Math.min(99, 5 + Math.round((completedChs.length / total) * 95)) : (status === 'completed' ? 100 : 0);
     const displayPct = status === 'completed' ? 100 : pct;
     const completedWordCount = completedChapterEvents.reduce((sum, e) => sum + Number(e.payload?.word_count || 0), 0);
@@ -1371,11 +1382,35 @@
     $('#pvTitle').style.color = status === 'completed' ? 'var(--success)' : status === 'failed' ? 'var(--danger)' : 'var(--text-bright)';
     $('#pvSub').textContent = data.title || slug || '';
 
-    // Total chapters
-    const pipeEvt = events.find(e => e.stage === 'project_pipeline_started');
-    const total = pipeEvt?.payload?.chapter_count || 0;
+    // Total chapters — book-wide when multi-volume, falling back to the
+    // per-volume count for single-volume projects.
+    //
+    // Priority order:
+    //   1. progressive_autowrite_started.project_chapter_count (book total)
+    //   2. project_pipeline_started.project_chapter_count (explicit field)
+    //   3. project_pipeline_started.chapter_count (legacy single-volume)
+    //   4. planning_completed.chapter_count (pre-pipeline plan)
+    const autowriteEvt = events.find(e => e.stage === 'progressive_autowrite_started');
+    const pipeEvts = events.filter(e => e.stage === 'project_pipeline_started');
+    const latestPipeEvt = pipeEvts[pipeEvts.length - 1];
+    const firstPipeEvt = pipeEvts[0];
+    const planDoneEvt = events.find(e => e.stage === 'planning_completed' || e.stage === 'foundation_planning_completed');
+    const total =
+      autowriteEvt?.payload?.project_chapter_count ||
+      latestPipeEvt?.payload?.project_chapter_count ||
+      firstPipeEvt?.payload?.chapter_count ||
+      planDoneEvt?.payload?.chapter_count ||
+      0;
 
-    // Completed chapters
+    // Multi-volume context (optional).
+    const totalVolumes =
+      autowriteEvt?.payload?.volume_count ||
+      latestPipeEvt?.payload?.volume_count ||
+      0;
+    const currentVolume = latestPipeEvt?.payload?.volume_number || null;
+
+    // Completed chapters — aggregated across all volumes because every
+    // volume emits chapter_pipeline_completed into the same task log.
     const doneChs = events.filter(e => e.stage === 'chapter_pipeline_completed').map(e => e.payload?.chapter_number).filter(Boolean);
     const chTimes = events.filter(e => e.stage === 'chapter_pipeline_completed').map(e => new Date(e.timestamp));
 
@@ -1403,16 +1438,24 @@
       const targetText = Number(lastEvt.payload.target_word_count || 0) > 0
         ? ` · 目标约 ${fmtWords(lastEvt.payload.target_word_count)}`
         : '';
-      stageTxt = `正在写作第 ${chNum} 章${prog ? ` (${prog})` : ''}${targetText}`;
+      const volPrefix = (currentVolume && totalVolumes > 1)
+        ? `第 ${currentVolume}/${totalVolumes} 卷 · `
+        : '';
+      stageTxt = `${volPrefix}正在写作第 ${chNum} 章${prog ? ` (${prog})` : ''}${targetText}`;
     }
     if (data.cancel_requested && status === 'running') {
       stageTxt = '🛑 正在停止…';
     }
     $('#pvStage').textContent = stageTxt;
 
-    // Stats
+    // Stats — chapter count is book-wide; append volume progress when the
+    // project has more than one volume so users see 12/1200 章 · 1/24 卷.
     $('#pvDone').textContent = doneChs.length;
-    $('#pvTotal').textContent = total || '-';
+    $('#pvTotal').textContent = total
+      ? (totalVolumes > 1 && currentVolume
+          ? `${total}（卷 ${currentVolume}/${totalVolumes}）`
+          : String(total))
+      : '-';
 
     // Avg time & ETA
     if (chTimes.length >= 2) {

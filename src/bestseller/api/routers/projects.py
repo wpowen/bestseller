@@ -53,7 +53,7 @@ async def create_project(
         audience=body.audience,
         metadata={"premise": body.premise, "writing_preset": body.writing_preset},
     )
-    project = await svc_create(session=session, settings=settings, project=project_create)
+    project = await svc_create(session=session, settings=settings, payload=project_create)
     return ProjectResponse.model_validate(project)
 
 

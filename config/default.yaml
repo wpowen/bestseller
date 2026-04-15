@@ -12,10 +12,10 @@ llm:
 
   planner:
     model: "anthropic/claude-opus-4-5"
-    temperature: 0.65
-    max_tokens: 8192
+    temperature: 0.82
+    max_tokens: 16384
     timeout_seconds: 120
-    n_candidates: 3
+    n_candidates: 1
 
   writer:
     model: "anthropic/claude-sonnet-4-5"
@@ -63,7 +63,7 @@ database:
   pool_timeout_seconds: 30
   pool_recycle_seconds: 1800
   statement_timeout_ms: 60000
-  lock_timeout_ms: 5000
+  lock_timeout_ms: 30000
   application_name: "bestseller"
   auto_migrate: true
   echo_sql: false

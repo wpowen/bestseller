@@ -820,12 +820,81 @@ def build_scene_rewrite_prompts(
         _methodology_line += f"\n{_methodology_scene_block}\n"
     if _methodology_rules:
         _methodology_line += f"\n{_methodology_rules}\n"
+    # ── Word-count envelope: hard constraint to prevent rewrite-bloat spiral ──
+    # The scene writer already enforces a strict word range; the rewriter must
+    # enforce the SAME envelope or it will inflate past target on every pass.
+    _target_wc = int(scene.target_word_count or 0)
+    _current_wc = int(current_draft.word_count or 0)
+    _wc_lo = int(_target_wc * 0.9) if _target_wc > 0 else 0
+    _wc_hi = int(_target_wc * 1.1) if _target_wc > 0 else 0
+    _is_over = _target_wc > 0 and _current_wc > int(_target_wc * 1.2)
+    _is_under = _target_wc > 0 and _current_wc < int(_target_wc * 0.8)
+    if is_en:
+        if _is_over:
+            _wc_directive = (
+                f"WORD COUNT ENVELOPE (MANDATORY):\n"
+                f"- Target: {_target_wc} words (hard range: {_wc_lo}-{_wc_hi})\n"
+                f"- Current draft has {_current_wc} words — OVER target by "
+                f"{_current_wc - _target_wc} words.\n"
+                f"- You MUST TRIM. Remove redundant interiority, repetitive beats, "
+                f"over-explanation, and duplicated emotional reactions. "
+                f"Preserve core conflict, dialogue spine, and tail hook.\n"
+                f"- Outputs outside {_wc_lo}-{_wc_hi} will be rejected.\n"
+            ) if _target_wc > 0 else ""
+        elif _is_under:
+            _wc_directive = (
+                f"WORD COUNT ENVELOPE (MANDATORY):\n"
+                f"- Target: {_target_wc} words (hard range: {_wc_lo}-{_wc_hi})\n"
+                f"- Current draft has {_current_wc} words — UNDER target by "
+                f"{_target_wc - _current_wc} words.\n"
+                f"- Expand toward the target: deepen conflict, add one concrete beat, "
+                f"or sharpen the tail hook. Do NOT pad with summary or repetition.\n"
+                f"- Outputs outside {_wc_lo}-{_wc_hi} will be rejected.\n"
+            ) if _target_wc > 0 else ""
+        else:
+            _wc_directive = (
+                f"WORD COUNT ENVELOPE (MANDATORY):\n"
+                f"- Target: {_target_wc} words (hard range: {_wc_lo}-{_wc_hi})\n"
+                f"- Current draft has {_current_wc} words — within range.\n"
+                f"- Focused revision only: fix the flagged issues WITHOUT materially "
+                f"changing length. Do NOT add or remove more than ~10%.\n"
+                f"- Outputs outside {_wc_lo}-{_wc_hi} will be rejected.\n"
+            ) if _target_wc > 0 else ""
+    else:
+        if _is_over:
+            _wc_directive = (
+                f"【字数闸门·硬性要求】\n"
+                f"- 目标：{_target_wc} 字（硬性范围：{_wc_lo}-{_wc_hi}）\n"
+                f"- 当前稿字数：{_current_wc}，**超出目标 {_current_wc - _target_wc} 字**。\n"
+                f"- 必须【精简】：删除重复的内心独白、复述性铺陈、过度解释、重复的情绪反应。"
+                f"保留核心冲突、对话主线、尾钩。\n"
+                f"- 输出字数若超出 {_wc_lo}-{_wc_hi} 将被退回。\n"
+            ) if _target_wc > 0 else ""
+        elif _is_under:
+            _wc_directive = (
+                f"【字数闸门·硬性要求】\n"
+                f"- 目标：{_target_wc} 字（硬性范围：{_wc_lo}-{_wc_hi}）\n"
+                f"- 当前稿字数：{_current_wc}，**低于目标 {_target_wc - _current_wc} 字**。\n"
+                f"- 适度扩写至目标区间：加深冲突、增加一个具体节拍、或锐化尾钩。"
+                f"不要用总结或重复来凑字。\n"
+                f"- 输出字数若超出 {_wc_lo}-{_wc_hi} 将被退回。\n"
+            ) if _target_wc > 0 else ""
+        else:
+            _wc_directive = (
+                f"【字数闸门·硬性要求】\n"
+                f"- 目标：{_target_wc} 字（硬性范围：{_wc_lo}-{_wc_hi}）\n"
+                f"- 当前稿字数：{_current_wc}，在范围内。\n"
+                f"- 定点修订：只修复被标记的问题，**不得显著改变总字数**（增减幅度不超过 10%）。\n"
+                f"- 输出字数若超出 {_wc_lo}-{_wc_hi} 将被退回。\n"
+            ) if _target_wc > 0 else ""
+
     user_prompt = (
         (
             f"Project: {project.title}\n"
             f"Chapter {chapter.chapter_number}\n"
             f"Scene {scene.scene_number}: {scene.title or ''}\n"
             f"{_wrap_rewrite_reference_for_language(rewrite_task.instructions, rewrite_task.rewrite_strategy, language=language)}"
+            f"{_wc_directive}"
             f"Chapter goal: {chapter.chapter_goal}\n"
             f"Story goal: {scene.purpose.get('story', 'advance the chapter spine')}\n"
             f"Emotional goal: {scene.purpose.get('emotion', 'raise tension')}\n"
@@ -836,8 +905,9 @@ def build_scene_rewrite_prompts(
             f"{_pp_scene_rewrite}"
             f"{_methodology_line}"
             f"Current draft:\n{current_draft.content_md}\n"
-            "Rewrite the current scene in English only. Strengthen the conflict, dialogue, emotional layering, and final hook. "
-            "The result should read like publishable commercial fiction, not planning notes."
+            "Rewrite the current scene in English only. Fix the flagged issues while "
+            "respecting the word-count envelope above. The result should read like "
+            "publishable commercial fiction, not planning notes."
         )
         if is_en
         else (
@@ -845,6 +915,7 @@ def build_scene_rewrite_prompts(
             f"章节：第{chapter.chapter_number}章\n"
             f"场景：第{scene.scene_number}场 {scene.title or ''}\n"
             f"{_wrap_rewrite_reference_for_language(rewrite_task.instructions, rewrite_task.rewrite_strategy, language=language)}"
+            f"{_wc_directive}"
             f"章节目标：{chapter.chapter_goal}\n"
             f"剧情目标：{scene.purpose.get('story', '推进本章主线')}\n"
             f"情绪目标：{scene.purpose.get('emotion', '拉高当前张力')}\n"
@@ -855,7 +926,7 @@ def build_scene_rewrite_prompts(
             f"{_pp_scene_rewrite}"
             f"{_methodology_line}"
             f"当前草稿：\n{current_draft.content_md}\n"
-            "请重写当前场景，补强冲突、人物对话、情绪层次和结尾钩子。"
+            "请按上述字数闸门重写本场景：修复被标记的问题的同时严格控制字数。"
             "要让文本更像平台成品网文，而不是策划草稿或解释说明。"
         )
     )
@@ -1717,6 +1788,11 @@ def evaluate_scene_draft(
                 category="goal",
                 severity=_severity_from_score(goal),
                 message=(
+                    f"Current scene word count {draft.word_count} is clearly "
+                    f"below target {scene.target_word_count} — the scene does "
+                    f"not develop the task enough."
+                    if _is_en
+                    else
                     f"当前场景字数为 {draft.word_count}，明显低于目标字数 {scene.target_word_count}，"
                     "推进任务展开不够充分。"
                 ),
@@ -1730,6 +1806,12 @@ def evaluate_scene_draft(
                 category="goal",
                 severity=_over_severity,
                 message=(
+                    f"Current scene word count {draft.word_count} exceeds "
+                    f"target {scene.target_word_count} by "
+                    f"{int((target_ratio - 1) * 100)}%. The scene is too long "
+                    f"and must be trimmed."
+                    if _is_en
+                    else
                     f"当前场景字数为 {draft.word_count}，超出目标字数 {scene.target_word_count} "
                     f"达 {int((target_ratio - 1) * 100)}%。内容过长，需要精简。"
                 ),
@@ -1817,6 +1899,16 @@ def evaluate_scene_draft(
     # character names that look like variants of the expected participants.
     # This catches the common "陆渊" → "陆铮" type of naming drift.
     _expected_participants = [p for p in (scene.participants or []) if p and len(p) >= 2]
+    # Chinese grammatical particles / auxiliary words that can follow a name as
+    # the 3rd char, creating false-positive "name variants" like 宁尘的/宁尘没.
+    # These must be stripped before name-similarity checks.
+    _CN_PARTICLE_SUFFIXES = frozenset({
+        "的", "了", "着", "过", "在", "也", "又", "还", "就", "才", "都", "已",
+        "没", "不", "来", "去", "说", "看", "想", "要", "把", "被", "让", "给",
+        "是", "为", "与", "和", "而", "但", "却", "则", "或", "并", "且", "于",
+        "向", "往", "从", "到", "对", "由", "跟", "同", "比", "似", "像", "如",
+        "会", "可", "能", "得", "该", "须", "应", "当", "正", "再", "只", "已",
+    })
     if _expected_participants and content:
         import re as _re_names  # noqa: PLC0415
 
@@ -1824,8 +1916,17 @@ def evaluate_scene_draft(
         _cn_name_candidates = set(_re_names.findall(r"(?<=[\u4e00-\u9fff])[\u4e00-\u9fff]{1,2}(?=[\u4e00-\u9fff])", content))
         _expected_surnames = {p[0] for p in _expected_participants if p}
         _expected_names_set = set(_expected_participants)
+        _flagged_already: set[str] = set()
         for _candidate_full in _re_names.findall(r"[\u4e00-\u9fff]{2,3}", content):
-            if len(_candidate_full) >= 2 and _candidate_full not in _expected_names_set:
+            # Normalize: if a 3-char token ends with a particle, strip it to
+            # get the real name candidate (e.g. 宁尘的 → 宁尘, 宁尘没 → 宁尘).
+            if len(_candidate_full) == 3 and _candidate_full[-1] in _CN_PARTICLE_SUFFIXES:
+                _candidate_full = _candidate_full[:2]
+            # After normalization, skip if it matches an expected name or was
+            # already flagged.
+            if _candidate_full in _expected_names_set or _candidate_full in _flagged_already:
+                continue
+            if len(_candidate_full) >= 2:
                 # Check if it shares a surname with an expected participant but has a different given name
                 if _candidate_full[0] in _expected_surnames:
                     _matching_expected = [p for p in _expected_participants if p[0] == _candidate_full[0]]
@@ -1844,6 +1945,7 @@ def evaluate_scene_draft(
                                     ),
                                 )
                             )
+                            _flagged_already.add(_candidate_full)
                             break
 
         # English name consistency: check for name variants (e.g. "James" → "Jim")
@@ -2241,6 +2343,11 @@ def evaluate_chapter_draft(
                 category="goal",
                 severity=_severity_from_score(goal),
                 message=(
+                    f"Current chapter word count {draft.word_count} is below "
+                    f"target {chapter.target_word_count}; the chapter has not "
+                    f"advanced the spine completely."
+                    if _is_en
+                    else
                     f"当前章节字数为 {draft.word_count}，低于目标字数 {chapter.target_word_count}，"
                     "章节推进还不够完整。"
                 ),
@@ -2254,6 +2361,12 @@ def evaluate_chapter_draft(
                 category="goal",
                 severity=_over_severity,
                 message=(
+                    f"Current chapter word count {draft.word_count} exceeds "
+                    f"target {chapter.target_word_count} by "
+                    f"{int((target_ratio - 1) * 100)}%. The chapter is too "
+                    f"long — tighten narration and cut redundant passages."
+                    if _is_en
+                    else
                     f"当前章节字数为 {draft.word_count}，超出目标字数 {chapter.target_word_count} "
                     f"达 {int((target_ratio - 1) * 100)}%。内容过长，需要精简叙述和删减冗余段落。"
                 ),
@@ -2648,11 +2761,22 @@ async def review_scene_draft(
 
     rewrite_task: RewriteTaskModel | None = None
     if review_result.verdict == "rewrite":
+        # Strategy selection: don't default to "expansion" — pick based on what
+        # the findings actually say. Over-length scenes must be TRIMMED, not
+        # expanded further, or we enter a bloat spiral.
+        _findings_text = " ".join(f.message for f in review_result.findings)
+        if ("超出目标字数" in _findings_text) or ("exceeds target" in _findings_text.lower()):
+            _strategy = "scene_trim_and_tighten"
+        elif ("低于目标字数" in _findings_text) or ("below target" in _findings_text.lower()):
+            _strategy = "scene_dialogue_conflict_expansion"
+        else:
+            # Mixed/other findings — focused revision that preserves length
+            _strategy = "scene_focused_revision"
         rewrite_task = RewriteTaskModel(
             project_id=project.id,
             trigger_type="scene_review",
             trigger_source_id=scene.id,
-            rewrite_strategy="scene_dialogue_conflict_expansion",
+            rewrite_strategy=_strategy,
             priority=3,
             status="pending",
             instructions=review_result.rewrite_instructions or "请补强当前场景。",

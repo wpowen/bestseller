@@ -513,6 +513,10 @@ async def refresh_scene_knowledge(
             "last_seen_scene_number": scene.scene_number,
             "last_summary": summary_text,
         }
+        # Flush immediately so the next loop iteration's SELECT queries do not
+        # trigger an autoflush of these dirty character fields, which can hit
+        # PostgreSQL lock_timeout if another session briefly holds the row lock.
+        await session.flush()
 
     timeline_event, timeline_reused = await _upsert_timeline_event(
         session,

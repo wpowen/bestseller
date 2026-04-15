@@ -48,6 +48,7 @@ from bestseller.infra.db.models import (
     RelationshipEventModel,
     SceneCardModel,
     SceneContractModel,
+    SceneDraftVersionModel,
     SubplotScheduleModel,
     TimelineEventModel,
 )
@@ -556,6 +557,35 @@ async def build_scene_writer_context_from_models(
         for fact in summary_facts[: settings.generation.active_context_scenes]
         if fact.value_json.get("summary") or fact.notes
     ]
+
+    # ── Populate opening_lines for the most recent scene summaries ──
+    # This gives the writer LLM concrete text to avoid repeating the
+    # same opening pattern in consecutive chapters/scenes.
+    if recent_scene_summaries and previous_scene_ids:
+        _opening_scene_ids = [s.id for s in previous_scenes[:3]]
+        _opening_drafts = {
+            draft.scene_card_id: draft.content_md
+            for draft in await session.scalars(
+                select(SceneDraftVersionModel).where(
+                    SceneDraftVersionModel.scene_card_id.in_(_opening_scene_ids),
+                    SceneDraftVersionModel.is_current.is_(True),
+                )
+            )
+        }
+        for summary, prev_scene in zip(
+            recent_scene_summaries,
+            previous_scenes[: len(recent_scene_summaries)],
+            strict=False,
+        ):
+            draft_text = _opening_drafts.get(prev_scene.id, "")
+            if draft_text:
+                _prose_lines = [
+                    line
+                    for line in draft_text.split("\n")
+                    if line.strip() and not line.strip().startswith("#")
+                ]
+                if _prose_lines:
+                    summary.opening_lines = _prose_lines[0][:120]
 
     current_story_order = float(f"{chapter.chapter_number}.{scene.scene_number:02d}")
     # Adaptive lookback: only load recent timeline events within a window

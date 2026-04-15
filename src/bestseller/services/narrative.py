@@ -1531,8 +1531,13 @@ async def rebuild_narrative_graph(
                     entry_state=dict(scene.entry_state),
                     exit_state=dict(scene.exit_state),
                     core_conflict=_ensure_text(
-                        scene.purpose.get("story"),
-                        chapter.main_conflict or "场景中必须发生有效碰撞。",
+                        # Prefer chapter-level main_conflict (unique per chapter),
+                        # then scene-level conflict metadata, then purpose.conflict.
+                        # Only fall back to purpose.story as last resort.
+                        chapter.main_conflict
+                        or scene.purpose.get("conflict")
+                        or (scene.metadata_json or {}).get("core_conflict"),
+                        scene.purpose.get("story") or "场景中必须发生有效碰撞。",
                     ),
                     emotional_shift=_ensure_text(
                         scene.purpose.get("emotion"),

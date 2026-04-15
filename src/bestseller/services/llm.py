@@ -28,11 +28,58 @@ _litellm_module: Any = None
 
 
 def _get_litellm() -> Any:
-    """Return the cached litellm module, importing it on first call."""
+    """Return the cached litellm module, importing it on first call.
+
+    On first import we also disable LiteLLM's internal async logging
+    infrastructure.  We record every LLM call in our own ``llm_runs``
+    table so we don't need LiteLLM callbacks.  Leaving them enabled
+    causes a background ``LoggingWorker`` task (queue size 50 000) to
+    accumulate references to full response objects inside each
+    ``asyncio.run()`` call, and those tasks are "destroyed while
+    pending" when the event loop closes — leaking memory across every
+    chapter generation.
+    """
     global _litellm_module
     if _litellm_module is None:
         _litellm_module = importlib.import_module("litellm")
+        _disable_litellm_logging(_litellm_module)
     return _litellm_module
+
+
+def _disable_litellm_logging(litellm: Any) -> None:
+    """Turn off all LiteLLM internal success/failure callbacks and verbose logging.
+
+    LiteLLM's ``LoggingWorker`` is only active when callbacks are registered
+    or verbose mode is on.  By clearing every callback list and disabling
+    verbose output we prevent the worker from enqueuing logging tasks that
+    hold large response-object references across event-loop boundaries.
+    """
+    try:
+        # Clear all callback lists — we do our own logging via llm_runs table.
+        for attr in (
+            "callbacks",
+            "success_callback",
+            "failure_callback",
+            "_async_success_callback",
+            "_async_failure_callback",
+            "input_callback",
+            "service_callback",
+        ):
+            if isinstance(getattr(litellm, attr, None), list):
+                setattr(litellm, attr, [])
+
+        # Disable verbose / debug output that feeds the logging worker queue.
+        litellm.set_verbose = False
+        litellm.verbose = False
+
+        # Suppress request/response body logging (saves significant memory for
+        # large prompts/completions stored inside the LoggingWorker queue).
+        litellm.turn_off_message_logging = True
+
+        logger.debug("LiteLLM internal logging disabled (using our own llm_runs table)")
+    except Exception as exc:  # noqa: BLE001
+        # Non-fatal: worst case LiteLLM logs more than necessary.
+        logger.warning("Could not fully disable LiteLLM logging: %s", exc)
 
 
 LLMRole = Literal["planner", "writer", "critic", "summarizer", "editor"]

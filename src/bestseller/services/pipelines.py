@@ -329,6 +329,47 @@ async def run_scene_pipeline(
             except Exception:
                 logger.debug("Genre constraint injection failed (non-fatal)", exc_info=True)
 
+        # ── Inject opening diversity block (only for scene 1 — chapter opener) ──
+        # Show the LLM the last 5 chapter openings so it avoids repeating the
+        # same sentence structure or setting description.
+        if shared_context is not None and scene_number == 1:
+            try:
+                from bestseller.infra.db.models import ChapterDraftVersionModel
+                from bestseller.services.deduplication import build_opening_diversity_block
+
+                _recent_drafts = await session.execute(
+                    select(
+                        ChapterModel.chapter_number,
+                        ChapterDraftVersionModel.content_md,
+                    )
+                    .join(
+                        ChapterDraftVersionModel,
+                        ChapterDraftVersionModel.chapter_id == ChapterModel.id,
+                    )
+                    .where(
+                        ChapterModel.project_id == project.id,
+                        ChapterModel.chapter_number < chapter_number,
+                        ChapterDraftVersionModel.is_current.is_(True),
+                    )
+                    .order_by(ChapterModel.chapter_number.desc())
+                    .limit(5)
+                )
+                _recent_openings: list[tuple[int, str]] = []
+                for _ch_num, _content in _recent_drafts.fetchall():
+                    _lines = [
+                        l.strip() for l in (_content or "").split("\n")
+                        if l.strip() and not l.strip().startswith("#")
+                    ]
+                    if _lines:
+                        _recent_openings.append((_ch_num, _lines[0]))
+                if _recent_openings:
+                    _lang = getattr(project, "language", None) or settings.generation.language
+                    shared_context.opening_diversity_block = build_opening_diversity_block(
+                        _recent_openings, language=_lang,
+                    )
+            except Exception:
+                logger.debug("Opening diversity block injection failed (non-fatal)", exc_info=True)
+
         # ── Pre-scene contradiction check (zero LLM cost) ──
         if settings.pipeline.enable_contradiction_checks and shared_context is not None:
             try:
@@ -887,7 +928,7 @@ async def run_chapter_pipeline(
                     chapter_number, chapter_draft.version_no,
                 )
         if chapter_draft is None:
-            chapter_draft = await assemble_chapter_draft(session, project_slug, chapter_number)
+            chapter_draft = await assemble_chapter_draft(session, project_slug, chapter_number, settings=settings)
         await create_workflow_step_run(
             session,
             workflow_run_id=workflow_run.id,

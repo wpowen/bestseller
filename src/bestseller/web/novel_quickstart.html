@@ -1052,10 +1052,22 @@
     // Chapter progress — book-wide when multi-volume, falling back to
     // per-volume count for single-volume projects (same priority order as
     // the detailed progress view).
-    const completedChapterEvents = events.filter(e =>
+    const rawCompletedChapterEvents = events.filter(e =>
       e.stage === 'chapter_pipeline_completed' && Number.isFinite(e.payload?.chapter_number)
     );
-    const completedChs = completedChapterEvents.map(e => e.payload?.chapter_number).filter(Boolean);
+    // Dedupe by chapter_number — a task that resumes after a crash (or a
+    // server restart) re-emits `chapter_pipeline_completed` events for
+    // chapters already on disk.  Without dedup the "已写 N" counter
+    // inflates past the real count (e.g. 84 vs the true 50).  We keep the
+    // *latest* event per chapter_number so word counts / titles reflect
+    // the most recent pass.
+    const _completedByCh = new Map();
+    for (const e of rawCompletedChapterEvents) {
+      _completedByCh.set(e.payload.chapter_number, e);
+    }
+    const completedChapterEvents = Array.from(_completedByCh.values())
+      .sort((a, b) => a.payload.chapter_number - b.payload.chapter_number);
+    const completedChs = completedChapterEvents.map(e => e.payload.chapter_number);
     const autowriteEvt = events.find(e => e.stage === 'progressive_autowrite_started');
     const pipeEvts = events.filter(e => e.stage === 'project_pipeline_started');
     const latestPipelineEvt = pipeEvts[pipeEvts.length - 1];
@@ -1411,8 +1423,18 @@
 
     // Completed chapters — aggregated across all volumes because every
     // volume emits chapter_pipeline_completed into the same task log.
-    const doneChs = events.filter(e => e.stage === 'chapter_pipeline_completed').map(e => e.payload?.chapter_number).filter(Boolean);
-    const chTimes = events.filter(e => e.stage === 'chapter_pipeline_completed').map(e => new Date(e.timestamp));
+    // Dedupe by chapter_number: resume passes after a server restart
+    // re-emit completion events for chapters already on disk, which
+    // otherwise inflates the counter (e.g. 84 events vs 50 real chapters).
+    const _rawCompleted = events.filter(e =>
+      e.stage === 'chapter_pipeline_completed' && Number.isFinite(e.payload?.chapter_number)
+    );
+    const _doneByCh = new Map();
+    for (const e of _rawCompleted) _doneByCh.set(e.payload.chapter_number, e);
+    const _dedupedDone = Array.from(_doneByCh.values())
+      .sort((a, b) => a.payload.chapter_number - b.payload.chapter_number);
+    const doneChs = _dedupedDone.map(e => e.payload.chapter_number);
+    const chTimes = _dedupedDone.map(e => new Date(e.timestamp));
 
     // Pct
     let pct = 0;

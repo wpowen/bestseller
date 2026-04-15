@@ -32,6 +32,16 @@ class RecentSceneSummary(BaseModel):
     story_purpose: str | None = None
     emotion_purpose: str | None = None
     opening_lines: str | None = None
+    # Last ~300 chars of the scene prose — lets the next scene writer see what
+    # content was already written at the END of this scene, preventing the LLM
+    # from inadvertently repeating key dialog or action that appeared mid/late.
+    closing_lines: str | None = None
+    # For the IMMEDIATELY preceding scene within the same chapter, we provide
+    # an extended tail (last ~1000 chars) so the writer sees any key dialog or
+    # action that occurred in the middle-to-end of that scene.  AI-generated
+    # summaries are lossy and often omit specific quotes; this raw text is the
+    # reliable anti-repetition signal.
+    extended_tail: str | None = None
 
 
 class TimelineEventContext(BaseModel):
@@ -134,6 +144,9 @@ class SceneWriterContextPacket(BaseModel):
 
     # ── Genre-specific constraint block ──
     genre_constraint_block: str | None = None
+
+    # ── Opening diversity block: recent chapter openings to avoid repeating ──
+    opening_diversity_block: str | None = None
 
 
 class ChapterSceneContext(BaseModel):

@@ -558,9 +558,19 @@ async def build_scene_writer_context_from_models(
         if fact.value_json.get("summary") or fact.notes
     ]
 
-    # ── Populate opening_lines for the most recent scene summaries ──
-    # This gives the writer LLM concrete text to avoid repeating the
-    # same opening pattern in consecutive chapters/scenes.
+    # ── Populate opening_lines, closing_lines, and extended_tail ──
+    #
+    # Root-cause insight: scene summaries are AI-generated compressed text that
+    # omits specific dialog quotes. When Scene N's writer only sees "Scene N-1
+    # summary: protagonist discussed the mark", it may unknowingly reproduce the
+    # exact dialog from Scene N-1 (e.g. "它在叫我"). Providing actual raw text
+    # from the preceding scene is the reliable anti-repetition signal.
+    #
+    #  • opening_lines  — first prose line (120 chars): avoids repeated openings
+    #  • closing_lines  — last ~300 chars: avoids repeating late-scene content
+    #  • extended_tail  — last ~1000 chars for the IMMEDIATE same-chapter
+    #                     predecessor: covers the middle-to-end of the scene where
+    #                     key dialog/action most frequently gets repeated
     if recent_scene_summaries and previous_scene_ids:
         _opening_scene_ids = [s.id for s in previous_scenes[:3]]
         _opening_drafts = {
@@ -572,20 +582,49 @@ async def build_scene_writer_context_from_models(
                 )
             )
         }
-        for summary, prev_scene in zip(
+
+        # Determine the chapter_id of the scene being written so we can
+        # identify which preceding scenes are from the same chapter.
+        _current_chapter_id = scene.chapter_id
+
+        for idx, (summary, prev_scene) in enumerate(zip(
             recent_scene_summaries,
             previous_scenes[: len(recent_scene_summaries)],
             strict=False,
-        ):
+        )):
             draft_text = _opening_drafts.get(prev_scene.id, "")
-            if draft_text:
-                _prose_lines = [
-                    line
-                    for line in draft_text.split("\n")
-                    if line.strip() and not line.strip().startswith("#")
+            if not draft_text:
+                continue
+            _prose_lines = [
+                line
+                for line in draft_text.split("\n")
+                if line.strip() and not line.strip().startswith("#")
+            ]
+            if not _prose_lines:
+                continue
+
+            summary.opening_lines = _prose_lines[0][:120]
+
+            # closing_lines: last ~300 chars for all preceding scenes
+            _tail_text = "\n".join(_prose_lines[-4:])
+            if len(_tail_text) > 300:
+                _tail_text = _tail_text[-300:]
+            summary.closing_lines = _tail_text
+
+            # extended_tail: last ~1000 chars ONLY for the immediately
+            # preceding scene in the same chapter (idx=0, same chapter_id).
+            # This is the scene most likely to produce intra-chapter repetition.
+            if idx == 0 and prev_scene.chapter_id == _current_chapter_id:
+                _ext = draft_text.strip()
+                # Strip markdown heading lines from the top
+                _ext_lines = [
+                    l for l in _ext.split("\n")
+                    if not l.strip().startswith("#")
                 ]
-                if _prose_lines:
-                    summary.opening_lines = _prose_lines[0][:120]
+                _ext_clean = "\n".join(_ext_lines).strip()
+                if len(_ext_clean) > 1000:
+                    _ext_clean = _ext_clean[-1000:]
+                summary.extended_tail = _ext_clean
 
     current_story_order = float(f"{chapter.chapter_number}.{scene.scene_number:02d}")
     # Adaptive lookback: only load recent timeline events within a window

@@ -3,11 +3,16 @@ from __future__ import annotations
 import pytest
 
 from bestseller.services.deduplication import (
+    build_opening_diversity_block,
     build_overused_phrase_avoidance_block,
+    check_hook_repetition,
     check_opening_diversity,
     check_scene_duplication,
+    clean_meta_text_markers,
     compute_jaccard_similarity,
+    detect_intra_chapter_repetition,
     extract_frequent_phrases,
+    remove_intra_chapter_duplicates,
 )
 
 pytestmark = pytest.mark.unit
@@ -157,3 +162,159 @@ def test_avoidance_block_en() -> None:
 
 def test_avoidance_block_empty() -> None:
     assert build_overused_phrase_avoidance_block([], language="zh-CN") == ""
+
+
+# ---------------------------------------------------------------------------
+# detect_intra_chapter_repetition / remove_intra_chapter_duplicates
+# ---------------------------------------------------------------------------
+
+_REPEATED_CHAPTER = """\
+# 第37章：浮标失衡
+
+焦土边缘，风卷起黑色的灰烬。
+
+宁尘将苏瑶从背上放下。她的后背靠上一块断裂的岩柱，呼吸浅得几乎察觉不到。
+
+"撑住。"他低声说。
+
+这是场景一结尾，新的场景即将开始。
+
+焦土边缘，风卷起黑色的灰烬。
+
+宁尘将苏瑶从背上放下。她的后背靠上一块断裂的岩柱，呼吸浅得几乎察觉不到。
+"""
+
+_CLEAN_CHAPTER = """\
+# 第36章：铁壁加压
+
+宁尘从焦土中撑起身，左臂传来一阵钝痛。
+
+雷劫的余温还在皮肤上灼烧，但他站住了。
+
+"能站起来吗？"陆沉的声音从侧面传来。
+
+宁尘拍了拍袍角的灰烬："其他人呢？"
+"""
+
+
+def test_detect_intra_chapter_repetition_finds_duplicates() -> None:
+    findings = detect_intra_chapter_repetition(_REPEATED_CHAPTER)
+    assert len(findings) >= 1
+    assert all(f["severity"] == "critical" for f in findings)
+    assert all("段落重复" in f["message"] for f in findings)
+
+
+def test_detect_intra_chapter_repetition_clean_chapter() -> None:
+    findings = detect_intra_chapter_repetition(_CLEAN_CHAPTER)
+    assert len(findings) == 0
+
+
+def test_detect_intra_chapter_repetition_empty() -> None:
+    assert detect_intra_chapter_repetition("") == []
+
+
+def test_remove_intra_chapter_duplicates_removes_second_occurrence() -> None:
+    cleaned, removed = remove_intra_chapter_duplicates(_REPEATED_CHAPTER)
+    # Duplicate paragraphs should be gone
+    assert removed >= 1
+    # First occurrence should still be present
+    assert "焦土边缘，风卷起黑色的灰烬" in cleaned
+    # No back-to-back identical occurrences in result
+    paragraphs = [p.strip() for p in cleaned.split("\n\n") if p.strip()]
+    seen: set[str] = set()
+    for p in paragraphs:
+        assert p not in seen, f"Paragraph still duplicated: {p[:60]}"
+        seen.add(p)
+
+
+def test_remove_intra_chapter_duplicates_clean_chapter_unchanged() -> None:
+    cleaned, removed = remove_intra_chapter_duplicates(_CLEAN_CHAPTER)
+    assert removed == 0
+    # Content should be functionally identical (only whitespace may differ)
+    assert "宁尘从焦土中撑起身" in cleaned
+    assert "雷劫的余温还在皮肤上灼烧" in cleaned
+
+
+def test_remove_intra_chapter_duplicates_keeps_ultra_short_lines() -> None:
+    # Ultra-short paragraphs (< 12 chars) should not be deduplicated.
+    # "快。" is 2 chars — too short to be a meaningful dedup candidate.
+    text = "# 标题\n\n快。\n\n正文内容，足够长的段落用来触发去重逻辑，不少于十二个字。\n\n快。\n\n正文内容，足够长的段落用来触发去重逻辑，不少于十二个字。"
+    cleaned, removed = remove_intra_chapter_duplicates(text)
+    assert removed == 1  # Only the long paragraph should be removed
+    assert cleaned.count("快。") == 2  # Ultra-short lines preserved
+
+
+# ---------------------------------------------------------------------------
+# clean_meta_text_markers
+# ---------------------------------------------------------------------------
+
+def test_clean_meta_text_removes_bold_chapter_end() -> None:
+    text = "场景结尾的正文内容，角色说了最后一句话。\n\n**第28章 完**\n"
+    cleaned, removed = clean_meta_text_markers(text)
+    assert removed == 1
+    assert "第28章 完" not in cleaned
+    assert "场景结尾的正文内容" in cleaned
+
+
+def test_clean_meta_text_removes_parenthetical_end() -> None:
+    text = "宁尘深吸一口气。\n\n（本章完）\n"
+    cleaned, removed = clean_meta_text_markers(text)
+    assert removed == 1
+    assert "本章完" not in cleaned
+
+
+def test_clean_meta_text_clean_text_unchanged() -> None:
+    text = "这是干净的正文，没有任何元数据标记。宁尘抬起头，看向远处的峰峦。\n"
+    cleaned, removed = clean_meta_text_markers(text)
+    assert removed == 0
+    assert cleaned == text
+
+
+# ---------------------------------------------------------------------------
+# check_hook_repetition
+# ---------------------------------------------------------------------------
+
+def test_hook_repetition_detected() -> None:
+    hook = "而真正的风暴，才刚刚开始。"
+    existing = [(15, "而真正的风暴，才刚刚开始。")]
+    findings = check_hook_repetition(hook, existing, similarity_threshold=0.75)
+    assert len(findings) >= 1
+    assert findings[0]["chapter"] == 15
+
+
+def test_hook_repetition_different_hooks_no_findings() -> None:
+    hook = "石壁轰然崩塌。宁尘坠入黑暗。"
+    existing = [(15, "远处传来了三声悠长的钟鸣，宣告着这个夜晚的结束。")]
+    findings = check_hook_repetition(hook, existing, similarity_threshold=0.75)
+    assert len(findings) == 0
+
+
+def test_hook_repetition_empty_inputs() -> None:
+    assert check_hook_repetition("", [(1, "some hook")]) == []
+    assert check_hook_repetition("some hook", []) == []
+
+
+# ---------------------------------------------------------------------------
+# build_opening_diversity_block
+# ---------------------------------------------------------------------------
+
+def test_opening_diversity_block_zh() -> None:
+    openings = [(14, "清晨的雾气还没散尽，宁尘站在演武场外。"), (15, "清晨的薄雾还未散尽，演武场四周已经挤满。")]
+    block = build_opening_diversity_block(openings, language="zh-CN")
+    assert "最近章节开头" in block
+    assert "第14章" in block
+    assert "第15章" in block
+    assert "开场不得重复" in block
+
+
+def test_opening_diversity_block_en() -> None:
+    openings = [(1, "The amber light flickered in the tunnel."), (2, "The corridor stretched before him.")]
+    block = build_opening_diversity_block(openings, language="en")
+    assert "RECENT CHAPTER OPENINGS" in block
+    assert "Ch1" in block
+    assert "Ch2" in block
+    assert "The" in block
+
+
+def test_opening_diversity_block_empty() -> None:
+    assert build_opening_diversity_block([], language="zh-CN") == ""

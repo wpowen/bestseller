@@ -30,6 +30,14 @@ x-volumes: &app-volumes
   - ./output:/app/output
   - artifacts:/app/artifacts
 
+# ── Python memory: return freed arenas to OS instead of holding them ─────────
+# MALLOC_TRIM_THRESHOLD_=-1  tells glibc malloc to call trim on every free(),
+# preventing the RSS from inflating after large LLM-response allocations.
+# PYTHONMALLOC=malloc        bypasses pymalloc so glibc's trim takes effect.
+x-py-malloc-env: &env-py-malloc
+  MALLOC_TRIM_THRESHOLD_: "-1"
+  PYTHONMALLOC: "malloc"
+
 services:
   # ── PostgreSQL + pgvector ────────────────────────────────────────────────
   db:
@@ -39,10 +47,32 @@ services:
       POSTGRES_USER: ${DB_USER:-bestseller}
       POSTGRES_PASSWORD: ${DB_PASSWORD:-bestseller}
       POSTGRES_DB: ${DB_NAME:-bestseller}
+      # Cap shared_buffers + work_mem so Postgres stays within its memory limit.
+      # shared_buffers=128MB: page cache for hot data (default 128MB, kept low)
+      # work_mem=16MB:        per-sort / per-hash allocation (16 concurrent ops → 256MB max)
+      # maintenance_work_mem: used by VACUUM/ANALYZE, not concurrent
+      POSTGRES_INITDB_ARGS: ""
+    command: >
+      postgres
+        -c shared_buffers=128MB
+        -c work_mem=16MB
+        -c maintenance_work_mem=64MB
+        -c effective_cache_size=256MB
+        -c max_connections=50
+        -c wal_buffers=8MB
+        -c checkpoint_completion_target=0.9
+        -c random_page_cost=1.1
+        -c log_min_duration_statement=2000
     volumes:
       - pgdata:/var/lib/postgresql/data
     ports:
       - "${DB_PORT:-5432}:5432"
+    deploy:
+      resources:
+        limits:
+          memory: ${DB_MEMORY_LIMIT:-512M}
+        reservations:
+          memory: 128M
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-bestseller}"]
       interval: 5s
@@ -53,11 +83,24 @@ services:
   redis:
     image: redis:7-alpine
     restart: unless-stopped
-    command: redis-server --save 60 1 --loglevel warning
+    # maxmemory: cap Redis heap; allkeys-lru evicts least-recently-used keys
+    # when full so the process never grows past the container limit.
+    command: >
+      redis-server
+        --save 60 1
+        --loglevel warning
+        --maxmemory ${REDIS_MAXMEMORY:-96mb}
+        --maxmemory-policy allkeys-lru
     volumes:
       - redisdata:/data
     ports:
       - "${REDIS_PORT:-6379}:6379"
+    deploy:
+      resources:
+        limits:
+          memory: ${REDIS_MEMORY_LIMIT:-128M}
+        reservations:
+          memory: 32M
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -83,7 +126,7 @@ services:
       uvicorn bestseller.api.app:create_app --factory
       --host 0.0.0.0 --port 8000 --workers 1
     environment:
-      <<: [*env-common, *env-llm]
+      <<: [*env-common, *env-llm, *env-py-malloc]
     env_file:
       - .env
     ports:
@@ -94,6 +137,12 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: ${API_MEMORY_LIMIT:-512M}
+        reservations:
+          memory: 128M
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 15s
@@ -107,7 +156,7 @@ services:
     restart: unless-stopped
     command: python -m bestseller.mcp.server
     environment:
-      <<: *env-common
+      <<: [*env-common, *env-py-malloc]
       BESTSELLER_API_BASE_URL: http://api:8000
       BESTSELLER_MCP_API_KEY: ${BESTSELLER_MCP_API_KEY:-}
     env_file:
@@ -117,6 +166,12 @@ services:
     depends_on:
       api:
         condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: ${MCP_MEMORY_LIMIT:-256M}
+        reservations:
+          memory: 64M
     healthcheck:
       test: ["CMD-SHELL", "curl -sf -X POST -H 'Content-Type: application/json' -d '{}' http://localhost:3000/mcp || exit 0"]
       interval: 30s
@@ -130,7 +185,7 @@ services:
     restart: unless-stopped
     command: python -m bestseller.worker.main
     environment:
-      <<: [*env-common, *env-llm]
+      <<: [*env-common, *env-llm, *env-py-malloc]
     env_file:
       - .env
     volumes: *app-volumes
@@ -141,6 +196,11 @@ services:
         condition: service_healthy
     deploy:
       replicas: ${WORKER_REPLICAS:-2}
+      resources:
+        limits:
+          memory: ${WORKER_MEMORY_LIMIT:-768M}
+        reservations:
+          memory: 128M
     healthcheck:
       test: ["CMD-SHELL", "python -c 'import bestseller' || exit 0"]
       interval: 30s
@@ -154,7 +214,7 @@ services:
     restart: unless-stopped
     command: python -m bestseller.scheduler.main
     environment:
-      <<: *env-common
+      <<: [*env-common, *env-py-malloc]
     env_file:
       - .env
     volumes: *app-volumes
@@ -163,6 +223,12 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: ${SCHEDULER_MEMORY_LIMIT:-256M}
+        reservations:
+          memory: 64M
     healthcheck:
       test: ["CMD-SHELL", "python -c 'import bestseller' || exit 0"]
       interval: 30s
@@ -176,7 +242,10 @@ services:
     restart: unless-stopped
     command: bestseller ui serve --host 0.0.0.0 --port 8787
     environment:
-      <<: [*env-common, *env-llm]
+      <<: [*env-common, *env-llm, *env-py-malloc]
+      # Limit concurrent autowrite tasks so peak memory is bounded.
+      # Each task can use ~300-500 MB during LLM calls; 2 tasks = ~1 GB peak.
+      WEB_MAX_CONCURRENT_TASKS: ${WEB_MAX_CONCURRENT_TASKS:-2}
     env_file:
       - .env
     ports:
@@ -185,6 +254,12 @@ services:
     depends_on:
       db:
         condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: ${WEB_MEMORY_LIMIT:-1536M}
+        reservations:
+          memory: 256M
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:8787/ || exit 0"]
       interval: 30s

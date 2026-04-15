@@ -137,6 +137,10 @@
       border-left-color: var(--accent);
       font-weight: 600;
     }
+    .toc-item.not-exported {
+      opacity: 0.55;
+      font-style: italic;
+    }
     .toc-num {
       display: inline-block;
       width: 28px;
@@ -144,6 +148,35 @@
       color: var(--text-2);
       opacity: 0.6;
       flex-shrink: 0;
+    }
+    /* ── Volume grouping headers in the sidebar ── */
+    .toc-volume-head {
+      padding: 16px 16px 6px;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      color: var(--accent);
+      text-transform: uppercase;
+      border-top: 1px solid var(--border);
+      background: rgba(139,69,19,0.03);
+    }
+    .toc-volume-head:first-child { border-top: none; }
+    .toc-volume-head .vol-title {
+      display: block;
+      font-size: 13px;
+      color: var(--text);
+      font-weight: 600;
+      margin-top: 3px;
+      letter-spacing: normal;
+      text-transform: none;
+    }
+    .chapter-volume-tag {
+      display: block;
+      font-size: 13px;
+      color: var(--accent);
+      font-weight: 500;
+      margin-bottom: 6px;
+      letter-spacing: 0.04em;
     }
 
     /* ── Main content ── */
@@ -339,8 +372,19 @@
 <script>
   const slug = location.pathname.replace(/^\/read\//, "").replace(/\/$/, "");
   let toc = [];
+  let volumes = [];
   let currentChapter = 1;
   let bookTitle = slug;  // Will be updated with real title from API
+
+  // ── Helpers ─────────────────────────────────────────────────────────────
+  function escapeHtml(s) {
+    return String(s == null ? "" : s)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+  }
 
   // ── Sidebar toggle ──────────────────────────────────────────────────────
   const sidebar = document.getElementById("sidebar");
@@ -356,21 +400,58 @@
   }
 
   // ── Render TOC ──────────────────────────────────────────────────────────
+  // Group the chapter list by volume_number so the reader can see which 卷
+  // each chapter belongs to.  Chapters with no volume info (legacy single-
+  // volume projects) render as a flat list exactly like before.
   function renderToc() {
     const list = document.getElementById("toc-list");
     if (!toc.length) {
       list.innerHTML = '<div style="padding:16px;font-size:13px;color:var(--text-2);">暂无章节</div>';
       return;
     }
-    list.innerHTML = toc.map(ch => `
-      <button class="toc-item ${ch.number === currentChapter ? "active" : ""}"
-              data-n="${ch.number}" onclick="loadChapter(${ch.number})">
-        <span class="toc-num">${ch.number}</span>${ch.title}
-      </button>
-    `).join("");
+    const hasVolumes = toc.some(ch => ch.volume_number != null);
+    if (!hasVolumes) {
+      list.innerHTML = toc.map(ch => renderTocItem(ch)).join("");
+    } else {
+      // Build a lookup of volume_number → {title, target} for header text.
+      const volLookup = {};
+      for (const v of (volumes || [])) volLookup[v.volume_number] = v;
+      // Preserve order: iterate toc sequentially, emitting a volume header
+      // whenever the volume_number changes.
+      let html = "";
+      let lastVol = undefined;
+      for (const ch of toc) {
+        if (ch.volume_number !== lastVol) {
+          lastVol = ch.volume_number;
+          const meta = volLookup[lastVol];
+          const volTitle = (meta && meta.title) || ch.volume_title || "";
+          const volLabel = lastVol != null ? `第 ${lastVol} 卷` : "未分卷";
+          html += `
+            <div class="toc-volume-head">
+              ${escapeHtml(volLabel)}
+              ${volTitle ? `<span class="vol-title">${escapeHtml(volTitle)}</span>` : ""}
+            </div>`;
+        }
+        html += renderTocItem(ch);
+      }
+      list.innerHTML = html;
+    }
     // Scroll active item into view
     const active = list.querySelector(".toc-item.active");
     if (active) active.scrollIntoView({ block: "nearest" });
+  }
+
+  function renderTocItem(ch) {
+    const cls = [
+      "toc-item",
+      ch.number === currentChapter ? "active" : "",
+      ch.exported === false ? "not-exported" : "",
+    ].filter(Boolean).join(" ");
+    const title = escapeHtml(ch.title || `第${ch.number}章`);
+    return `
+      <button class="${cls}" data-n="${ch.number}" onclick="loadChapter(${ch.number})">
+        <span class="toc-num">${ch.number}</span>${title}
+      </button>`;
   }
 
   // ── Load a chapter ──────────────────────────────────────────────────────
@@ -387,14 +468,26 @@
       const data = await get(`/api/reader/${slug}/chapter/${n}`);
       const ch = toc.find(c => c.number === n);
       const title = ch ? ch.title : `第 ${n} 章`;
-      document.getElementById("chapter-info").textContent = `第 ${n} 章 / 共 ${toc.length} 章`;
+      // Prefer volume info from the chapter endpoint; fall back to TOC.
+      const volNum = (data.volume_number != null ? data.volume_number : ch?.volume_number);
+      const volTitle = data.volume_title || ch?.volume_title || "";
+      const volLabel = volNum != null
+        ? `第 ${volNum} 卷${volTitle ? " · " + volTitle : ""}`
+        : "";
+      const infoParts = [];
+      if (volLabel) infoParts.push(volLabel);
+      infoParts.push(`第 ${n} 章 / 共 ${toc.length} 章`);
+      document.getElementById("chapter-info").textContent = infoParts.join(" · ");
       document.getElementById("book-title").textContent = bookTitle;
-      document.title = `${title} — ${bookTitle}`;
+      document.title = volLabel
+        ? `${volLabel} · ${title} — ${bookTitle}`
+        : `${title} — ${bookTitle}`;
       const prevDisabled = n <= 1 ? "disabled" : "";
       const nextDisabled = n >= toc.length ? "disabled" : "";
       area.innerHTML = `
         <div class="chapter-header">
-          <h1>${title}</h1>
+          ${volLabel ? `<span class="chapter-volume-tag">${escapeHtml(volLabel)}</span>` : ""}
+          <h1>${escapeHtml(title)}</h1>
           <div class="chapter-meta">
             <span>${data.word_count?.toLocaleString() ?? 0} 字</span>
             <span>约 ${data.estimated_read_minutes ?? 0} 分钟</span>
@@ -447,6 +540,7 @@
       bookTitle = data.title || slug;
       document.getElementById("book-title").textContent = bookTitle;
       toc = data.chapters || [];
+      volumes = data.volumes || [];
       renderToc();
       // Load chapter from hash or default to first
       const hashN = parseInt(location.hash.replace("#", ""), 10);

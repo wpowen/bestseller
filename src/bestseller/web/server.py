@@ -208,15 +208,16 @@ def resolve_project_artifact_path(
     output_dir = _project_output_dir(settings, project_slug)
     if output_dir not in artifact_path.parents:
         raise ValueError("Artifact path escapes the project output directory.")
+    # For chapter markdown files, always sync from DB so edits (dedup fixes,
+    # quality rewrites) are reflected immediately without a full export run.
+    fresh_content = _try_load_chapter_draft_from_db(settings, project_slug, safe_name)
+    if fresh_content is not None:
+        output_dir.mkdir(parents=True, exist_ok=True)
+        # Only write if content changed to avoid unnecessary disk writes
+        if not artifact_path.exists() or artifact_path.read_text(encoding="utf-8") != fresh_content:
+            artifact_path.write_text(fresh_content, encoding="utf-8")
+        return artifact_path
     if not artifact_path.exists() or not artifact_path.is_file():
-        # Fallback: if the requested file is a chapter markdown (chapter-NNN.md)
-        # and has a draft in the database, write it out on-the-fly so the preview
-        # still works even when the export step was skipped.
-        content = _try_load_chapter_draft_from_db(settings, project_slug, safe_name)
-        if content is not None:
-            output_dir.mkdir(parents=True, exist_ok=True)
-            artifact_path.write_text(content, encoding="utf-8")
-            return artifact_path
         raise FileNotFoundError(f"Artifact '{safe_name}' was not found for '{project_slug}'.")
     return artifact_path
 
@@ -526,6 +527,11 @@ class WebTaskManager:
         max_concurrent = max(1, int(os.getenv("WEB_MAX_CONCURRENT_TASKS", "3")))
         self._task_slots = threading.BoundedSemaphore(max_concurrent)
         self._max_concurrent_tasks = max_concurrent
+        # IDs of tasks that were mid-flight when the server last shut down and
+        # still carry a rebuildable payload.  ``serve_web`` reads this list
+        # after startup recovery runs and re-queues them so the user does not
+        # have to manually click Resume after every container restart.
+        self._pending_auto_resume_ids: list[str] = []
         if persist_path is not None:
             self._load_from_disk()
 
@@ -568,11 +574,31 @@ class WebTaskManager:
                     cancel_requested=bool(item.get("cancel_requested", False)),
                     payload=item.get("payload"),
                 )
-                # Running/queued tasks from a previous session are now stale
+                # Running/queued tasks from a previous session need recovery.
+                # If the task has a rebuildable payload, move it to queued and
+                # stage it for auto-resume by ``serve_web`` once the event
+                # loop is up; otherwise we have no way to continue, so mark
+                # it failed and let the user decide.
                 if task.status in ("running", "queued"):
-                    task.status = "failed"
-                    task.current_stage = "failed"
-                    task.error = task.error or "Server restarted while task was running"
+                    if task.payload and task.task_type == "autowrite":
+                        task.status = "queued"
+                        task.current_stage = "auto_resume_pending"
+                        task.error = None
+                        task.cancel_requested = False
+                        task.progress_events.append({
+                            "timestamp": _utc_now(),
+                            "stage": "auto_resume_queued",
+                            "payload": {"reason": "server restart"},
+                        })
+                        task.progress_events = task.progress_events[-300:]
+                        self._pending_auto_resume_ids.append(task.task_id)
+                    else:
+                        task.status = "failed"
+                        task.current_stage = "failed"
+                        task.error = task.error or (
+                            "Server restarted while task was running "
+                            "(no payload to resume)"
+                        )
                     changed = True
                 self._tasks[task.task_id] = task
             # Persist the recovered state so the file on disk matches memory.
@@ -1174,6 +1200,53 @@ class WebTaskManager:
         except Exception:
             logger.exception("disk heartbeat rescue failed for %s", task_id)
             return False
+
+    def auto_resume_zombies(self) -> list[str]:
+        """Re-queue every task that ``_load_from_disk`` flagged as a zombie.
+
+        Called once from ``serve_web`` after startup-recovery finishes.
+        Spawns a worker thread per resumed task (bounded by the concurrency
+        semaphore, same as ``resume_autowrite_task``).  Idempotent — after the
+        first call the pending list is cleared.
+
+        Returns the list of task IDs that were successfully re-queued.
+        """
+        with self._lock:
+            pending = list(self._pending_auto_resume_ids)
+            self._pending_auto_resume_ids = []
+
+        resumed: list[str] = []
+        for task_id in pending:
+            with self._lock:
+                task = self._tasks.get(task_id)
+                if task is None or not task.payload:
+                    continue
+                if task.status != "queued":
+                    # Already transitioned (e.g. user cancelled between
+                    # startup and this call) — skip.
+                    continue
+                # Rehydrate payload and reset cancel flag so the worker starts
+                # from a clean slate.  Task stays in queued until the slot
+                # semaphore frees up.
+                payload_copy = json.loads(
+                    json.dumps(task.payload, default=_json_default)
+                )
+                task.cancel_requested = False
+                task.error = None
+                task.result = None
+                self._save_to_disk()
+
+            thread = threading.Thread(
+                target=self._run_with_slot,
+                args=(task_id, self._run_autowrite_worker, payload_copy),
+                daemon=True,
+                name=f"auto-resume-{task_id[:8]}",
+            )
+            thread.start()
+            resumed.append(task_id)
+            logger.info("Auto-resumed zombie task %s after server restart", task_id)
+
+        return resumed
 
     def _run_autowrite_worker(self, task_id: str, payload: dict[str, object]) -> None:
         self._mark_running(task_id)
@@ -2104,6 +2177,118 @@ def _build_chapter_toc(output_dir: Path) -> list[dict[str, object]]:
     return entries
 
 
+def _load_project_chapter_index(
+    settings: AppSettings,
+    project_slug: str,
+) -> tuple[
+    list[dict[str, object]],          # chapter rows from DB (authoritative list)
+    dict[int, dict[str, object]],     # chapter_number → volume summary
+    list[dict[str, object]],          # ordered volume list
+]:
+    """Return the DB-authoritative chapter list plus volume metadata.
+
+    Using DB as source of truth solves two problems in one shot:
+
+    1. **Volume naming** — ``chapters.volume_id`` + ``volumes.title`` tell
+       us which book each chapter belongs to; the filesystem scan in
+       ``_build_chapter_toc`` has no way to know this.
+    2. **Real-time sync** — a chapter draft is persisted to the DB the
+       moment ``assemble_chapter_draft`` completes, well before the markdown
+       export writes ``chapter-NNN.md`` to disk.  Scanning the filesystem
+       under-reports the live chapter count (user reported "84 in task
+       list, 50 in preview").  Reading from ``chapters`` + checking for
+       the current ``chapter_draft_versions`` row keeps the reader in sync.
+
+    Any DB error is swallowed and empty results returned — callers then
+    fall back to the filesystem-only path.
+    """
+    try:
+        from sqlalchemy import select
+
+        from bestseller.infra.db.models import (  # noqa: PLC0415
+            ChapterDraftVersionModel,
+            ChapterModel,
+            VolumeModel,
+        )
+
+        async def _fetch() -> tuple[
+            list[dict[str, object]],
+            dict[int, dict[str, object]],
+            list[dict[str, object]],
+        ]:
+            async with session_scope(settings) as sess:
+                proj = await get_project_by_slug(sess, project_slug)
+                if proj is None:
+                    return [], {}, []
+                volume_rows = list(
+                    await sess.scalars(
+                        select(VolumeModel)
+                        .where(VolumeModel.project_id == proj.id)
+                        .order_by(VolumeModel.volume_number)
+                    )
+                )
+                volume_by_id = {v.id: v for v in volume_rows}
+
+                chapter_rows = list(
+                    await sess.scalars(
+                        select(ChapterModel)
+                        .where(ChapterModel.project_id == proj.id)
+                        .order_by(ChapterModel.chapter_number)
+                    )
+                )
+
+                # Look up which chapters have a current draft; we only
+                # surface *draftable* chapters (a placeholder row with no
+                # draft yet would confuse the reader).
+                draft_chapter_ids: set = set(
+                    await sess.scalars(
+                        select(ChapterDraftVersionModel.chapter_id).where(
+                            ChapterDraftVersionModel.project_id == proj.id,
+                            ChapterDraftVersionModel.is_current.is_(True),
+                        )
+                    )
+                )
+
+                chapters_out: list[dict[str, object]] = []
+                volume_map: dict[int, dict[str, object]] = {}
+                for ch in chapter_rows:
+                    if ch.id not in draft_chapter_ids:
+                        # Planned but not written yet — skip.  The user
+                        # only wants readable chapters in the reader TOC.
+                        continue
+                    vol = volume_by_id.get(ch.volume_id) if ch.volume_id else None
+                    vol_summary: dict[str, object] | None = None
+                    if vol is not None:
+                        vol_summary = {
+                            "volume_number": vol.volume_number,
+                            "volume_title": vol.title,
+                        }
+                        volume_map[ch.chapter_number] = vol_summary
+                    chapters_out.append(
+                        {
+                            "number": ch.chapter_number,
+                            "title": ch.title or f"第{ch.chapter_number}章",
+                            "volume_number": vol_summary["volume_number"] if vol_summary else None,
+                            "volume_title": vol_summary["volume_title"] if vol_summary else None,
+                        }
+                    )
+
+                volumes_out: list[dict[str, object]] = [
+                    {
+                        "volume_number": v.volume_number,
+                        "title": v.title,
+                        "theme": v.theme,
+                        "target_chapter_count": v.target_chapter_count,
+                    }
+                    for v in volume_rows
+                ]
+                return chapters_out, volume_map, volumes_out
+
+        return asyncio.run(_fetch())
+    except Exception:
+        return [], {}, []
+
+
 def serve_web_app(
     host: str = "127.0.0.1",
     port: int = 8787,
@@ -2149,6 +2334,28 @@ def serve_web_app(
     except Exception:
         logger.exception("Startup recovery sequence failed")
 
+    # Auto-resume tasks that were running/queued when the server last shut
+    # down.  ``_load_from_disk`` (run inside the constructor above) marked
+    # every zombie with a rebuildable payload as ``queued`` and recorded its
+    # ID; we now re-spawn workers for them so users do not lose a multi-hour
+    # novel generation just because Docker restarted.  Gated by an env var in
+    # case an operator wants to debug a hung task without it re-launching.
+    _auto_resume_enabled = os.environ.get(
+        "BESTSELLER_AUTO_RESUME_ON_STARTUP", "true"
+    ).lower() not in ("0", "false", "no", "off")
+    if _auto_resume_enabled:
+        try:
+            resumed_ids = task_manager.auto_resume_zombies()
+            if resumed_ids:
+                print(  # noqa: T201
+                    f"Auto-resumed {len(resumed_ids)} zombie task(s) after "
+                    f"server restart: {', '.join(tid[:8] for tid in resumed_ids)}"
+                )
+        except Exception:
+            logger.exception("Zombie auto-resume failed")
+    else:
+        logger.info("Zombie auto-resume disabled via BESTSELLER_AUTO_RESUME_ON_STARTUP")
+
     # Background watchdog: detect hung tasks (no progress for >stale_seconds)
     stale_seconds = int(os.environ.get("BESTSELLER_TASK_STALE_SECONDS", "2700"))
     sweep_interval = int(os.environ.get("BESTSELLER_WATCHDOG_INTERVAL", "60"))
@@ -2157,6 +2364,7 @@ def serve_web_app(
     _TASK_RETENTION_SECONDS = int(os.environ.get("BESTSELLER_TASK_RETENTION_SECONDS", "86400"))
 
     def _watchdog_loop() -> None:
+        import gc as _gc  # noqa: PLC0415
         import time as _time  # noqa: PLC0415
         sweep_count = 0
         while True:
@@ -2178,6 +2386,30 @@ def serve_web_app(
                     try:
                         from bestseller.services.llm import _cleanup_stale_litellm_clients  # noqa: PLC0415
                         _cleanup_stale_litellm_clients()
+                    except Exception:
+                        pass
+
+                # Every 5 sweeps (~5 min): run a full GC cycle then ask glibc
+                # to return free arenas to the OS.  Python's allocator holds
+                # freed memory in internal arenas indefinitely; after large LLM
+                # response allocations the process RSS can grow by hundreds of
+                # MB and never shrink on its own.  malloc_trim(0) triggers an
+                # immediate trim — RSS drops back close to live-object size.
+                # This only works when PYTHONMALLOC=malloc is set (configured
+                # in docker-compose.yml); otherwise it's a safe no-op.
+                if sweep_count % 5 == 0:
+                    try:
+                        collected = _gc.collect()
+                        import ctypes as _ctypes  # noqa: PLC0415
+                        try:
+                            _ctypes.CDLL("libc.so.6").malloc_trim(0)
+                            logger.debug(
+                                "Watchdog GC: collected %d objects, malloc_trim done",
+                                collected,
+                            )
+                        except OSError:
+                            # Not on glibc (e.g. musl/Alpine) — GC still ran.
+                            logger.debug("Watchdog GC: collected %d objects", collected)
                     except Exception:
                         pass
             except Exception:
@@ -2500,7 +2732,45 @@ def serve_web_app(
                 if path.startswith("/api/reader/") and path.endswith("/toc"):
                     project_slug = path.split("/")[3]
                     output_dir = _project_output_dir(settings, project_slug)
-                    toc = _build_chapter_toc(output_dir)
+                    # DB-authoritative chapter list with volume info.  This
+                    # stays in sync with ``assemble_chapter_draft`` — user
+                    # previously saw "84 in task list, 50 in preview" because
+                    # the filesystem scan only saw exported markdown files.
+                    db_chapters, _vol_map, volumes = _load_project_chapter_index(
+                        settings, project_slug,
+                    )
+                    fs_toc = _build_chapter_toc(output_dir)
+                    # Merge: DB list is authoritative for membership; fs
+                    # provides word_count / read-minutes when the export has
+                    # landed.  Chapters not yet exported still show with
+                    # word_count=0 so the reader knows they exist.
+                    fs_by_number: dict[int, dict[str, object]] = {
+                        int(entry["number"]): entry for entry in fs_toc
+                    }
+                    if db_chapters:
+                        merged_toc: list[dict[str, object]] = []
+                        for ch in db_chapters:
+                            n = int(ch["number"])
+                            fs_entry = fs_by_number.get(n) or {}
+                            merged_toc.append(
+                                {
+                                    "number": n,
+                                    "title": fs_entry.get("title") or ch.get("title") or f"第{n}章",
+                                    "filename": fs_entry.get("filename") or f"chapter-{n:03d}.md",
+                                    "word_count": int(fs_entry.get("word_count") or 0),
+                                    "estimated_read_minutes": int(
+                                        fs_entry.get("estimated_read_minutes") or 0
+                                    ),
+                                    "volume_number": ch.get("volume_number"),
+                                    "volume_title": ch.get("volume_title"),
+                                    "exported": n in fs_by_number,
+                                }
+                            )
+                        toc = merged_toc
+                    else:
+                        # DB path failed (or project is filesystem-only);
+                        # degrade to the legacy filesystem TOC.
+                        toc = fs_toc
                     # Resolve human-readable project title from DB.
                     project_title = project_slug
                     try:
@@ -2511,7 +2781,14 @@ def serve_web_app(
                         project_title = asyncio.run(_fetch_title())
                     except Exception:
                         pass
-                    self._send_json({"project_slug": project_slug, "title": project_title, "chapters": toc})
+                    self._send_json(
+                        {
+                            "project_slug": project_slug,
+                            "title": project_title,
+                            "chapters": toc,
+                            "volumes": volumes,
+                        }
+                    )
                     return
                 if path.startswith("/api/reader/") and "/chapter/" in path:
                     parts = path.split("/")
@@ -2552,12 +2829,30 @@ def serve_web_app(
                             pass
                     html_content = markdown_to_html(md, language=_reader_lang)
                     stats = build_markdown_reading_stats(md)
+                    # Resolve volume info for this chapter so the reader can
+                    # render "第N卷 卷名 · 第M章 章名".  Best-effort lookup;
+                    # we never fail the chapter response just because the
+                    # volume query errored.
+                    volume_number: int | None = None
+                    volume_title: str | None = None
+                    chapter_title: str | None = None
+                    try:
+                        _, vol_map, _ = _load_project_chapter_index(settings, project_slug)
+                        vol_info = vol_map.get(chapter_n) if vol_map else None
+                        if vol_info:
+                            volume_number = vol_info.get("volume_number")  # type: ignore[assignment]
+                            volume_title = vol_info.get("volume_title")  # type: ignore[assignment]
+                    except Exception:
+                        pass
                     self._send_json({
                         "number": chapter_n,
                         "filename": chapter_file.name,
                         "html": html_content,
                         "word_count": stats["word_count"],
                         "estimated_read_minutes": stats["estimated_read_minutes"],
+                        "volume_number": volume_number,
+                        "volume_title": volume_title,
+                        "chapter_title": chapter_title,
                     })
                     return
                 self._route_not_found()

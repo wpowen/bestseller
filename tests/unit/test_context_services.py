@@ -287,6 +287,7 @@ async def test_build_scene_writer_context_includes_visible_history_and_filters_f
             [chapter1, chapter2],
             [previous_scene, current_scene],
             [summary_fact],
+            [],  # SceneDraftVersionModel query for opening_lines
             [event],
             [participant_fact],
             [],

@@ -8,6 +8,7 @@ from typing import Any
 from uuid import UUID
 
 from sqlalchemy import select
+from sqlalchemy.exc import PendingRollbackError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bestseller.domain.context import SceneWriterContextPacket
@@ -722,18 +723,27 @@ async def run_scene_pipeline(
             llm_run_ids=llm_run_ids,
         )
     except Exception as exc:
+        # If the session is in PendingRollback state (e.g. from a lock-timeout
+        # autoflush), skip the DB cleanup — any attempt to flush/query would
+        # raise another PendingRollbackError, swallowing the original cause.
+        if isinstance(exc, PendingRollbackError) or not session.is_active:
+            await session.rollback()
+            raise
         workflow_run.status = WorkflowStatus.FAILED.value
         workflow_run.current_step = current_step_name
         workflow_run.error_message = str(exc)
-        await create_workflow_step_run(
-            session,
-            workflow_run_id=workflow_run.id,
-            step_name=current_step_name,
-            step_order=step_order,
-            status=WorkflowStatus.FAILED,
-            error_message=str(exc),
-        )
-        await session.flush()
+        try:
+            await create_workflow_step_run(
+                session,
+                workflow_run_id=workflow_run.id,
+                step_name=current_step_name,
+                step_order=step_order,
+                status=WorkflowStatus.FAILED,
+                error_message=str(exc),
+            )
+            await session.flush()
+        except PendingRollbackError:
+            await session.rollback()
         raise
 
 
@@ -1353,18 +1363,24 @@ async def run_chapter_pipeline(
             requires_human_review=False,
         )
     except Exception as exc:
+        if isinstance(exc, PendingRollbackError) or not session.is_active:
+            await session.rollback()
+            raise
         workflow_run.status = WorkflowStatus.FAILED.value
         workflow_run.current_step = current_step_name
         workflow_run.error_message = str(exc)
-        await create_workflow_step_run(
-            session,
-            workflow_run_id=workflow_run.id,
-            step_name=current_step_name,
-            step_order=step_order,
-            status=WorkflowStatus.FAILED,
-            error_message=str(exc),
-        )
-        await session.flush()
+        try:
+            await create_workflow_step_run(
+                session,
+                workflow_run_id=workflow_run.id,
+                step_name=current_step_name,
+                step_order=step_order,
+                status=WorkflowStatus.FAILED,
+                error_message=str(exc),
+            )
+            await session.flush()
+        except PendingRollbackError:
+            await session.rollback()
         raise
 
 
@@ -1396,6 +1412,8 @@ async def run_project_pipeline(
     progress: ProgressCallback | None = None,
     global_chapter_offset: int = 0,
     total_target_chapters: int = 0,
+    current_volume_number: int | None = None,
+    total_volumes: int | None = None,
 ) -> ProjectPipelineResult:
     project = await get_project_by_slug(session, project_slug)
     if project is None:
@@ -1559,6 +1577,13 @@ async def run_project_pipeline(
         {
             "project_slug": project_slug,
             "chapter_count": len(chapters),
+            # Multi-volume progress context — populated only when invoked
+            # from run_progressive_autowrite_pipeline so the UI can render a
+            # book-wide progress bar instead of a per-volume one.
+            "volume_number": current_volume_number,
+            "volume_count": total_volumes,
+            "project_chapter_count": total_target_chapters or len(chapters),
+            "global_chapter_offset": global_chapter_offset,
         },
     )
 
@@ -2133,18 +2158,24 @@ async def run_project_pipeline(
             requires_human_review=requires_human_review,
         )
     except Exception as exc:
+        if isinstance(exc, PendingRollbackError) or not session.is_active:
+            await session.rollback()
+            raise
         workflow_run.status = WorkflowStatus.FAILED.value
         workflow_run.current_step = current_step_name
         workflow_run.error_message = str(exc)
-        await create_workflow_step_run(
-            session,
-            workflow_run_id=workflow_run.id,
-            step_name=current_step_name,
-            step_order=step_order,
-            status=WorkflowStatus.FAILED,
-            error_message=str(exc),
-        )
-        await session.flush()
+        try:
+            await create_workflow_step_run(
+                session,
+                workflow_run_id=workflow_run.id,
+                step_name=current_step_name,
+                step_order=step_order,
+                status=WorkflowStatus.FAILED,
+                error_message=str(exc),
+            )
+            await session.flush()
+        except PendingRollbackError:
+            await session.rollback()
         raise
 
 
@@ -2519,6 +2550,14 @@ async def run_progressive_autowrite_pipeline(
     narrative_tree_result = None
     vol_project_result = None
 
+    # Book-wide totals so the web UI can render progress across the entire
+    # multi-volume run, not just the current volume.
+    _emit_progress(progress, "progressive_autowrite_started", {
+        "project_slug": project.slug,
+        "volume_count": total_volumes,
+        "project_chapter_count": project.target_chapters or 0,
+    })
+
     # ── Phase B: Per-volume loop ──
     for vol_idx, vol_entry in enumerate(volume_plan_list, start=1):
         vol_num = int(vol_entry.get("volume_number", 0)) or vol_idx
@@ -2621,9 +2660,17 @@ async def run_progressive_autowrite_pipeline(
         await _checkpoint_commit(session)
         _emit_progress(progress, "narrative_tree_materialization_completed", {"project_slug": project.slug, "workflow_run_id": str(narrative_tree_result.workflow_run_id)})
 
-        # Write this volume's chapters via the existing project pipeline
+        # Write this volume's chapters via the existing project pipeline.
+        # In multi-volume mode we deliberately skip the per-volume full-book
+        # markdown export:
+        #   1. The preflight hygiene check scans the full project, so a single
+        #      natural-prose false positive anywhere would abort every volume.
+        #   2. The per-chapter markdown files are still written incrementally
+        #      by assemble_chapter_draft, and a final best-effort project
+        #      export runs once after the whole loop completes.
         _emit_progress(progress, "volume_writing_started", {
             "project_slug": project.slug, "volume_number": vol_num,
+            "total_volumes": total_volumes,
         })
         vol_project_result = await run_project_pipeline(
             session, settings, project.slug,
@@ -2632,10 +2679,12 @@ async def run_progressive_autowrite_pipeline(
             materialize_outline=False,
             materialize_narrative_graph=False,
             materialize_narrative_tree=False,
-            export_markdown=True,
+            export_markdown=False,
             progress=progress,
             global_chapter_offset=len(all_chapter_results),
             total_target_chapters=project.target_chapters or 0,
+            current_volume_number=vol_num,
+            total_volumes=total_volumes,
         )
         await _checkpoint_commit(session)
         all_chapter_results.extend(vol_project_result.chapter_results)
@@ -2661,11 +2710,27 @@ async def run_progressive_autowrite_pipeline(
         })
 
     # ── Final export + review ──
+    # Best-effort project export: surface preflight failures as a warning
+    # event but never let them mask a successful multi-volume write. The
+    # per-chapter markdown files are still available even when the combined
+    # project export is blocked by the hygiene check.
     exported_artifact = None
     exported_output_path: str | None = None
     if export_markdown:
-        exported_artifact, exported_path = await export_project_markdown(session, settings, project.slug)
-        exported_output_path = str(exported_path)
+        try:
+            exported_artifact, exported_path = await export_project_markdown(session, settings, project.slug)
+            exported_output_path = str(exported_path)
+        except ValueError as export_err:
+            _emit_progress(progress, "project_export_skipped", {
+                "project_slug": project.slug,
+                "reason": str(export_err),
+            })
+            logger.warning(
+                "Final project export blocked for %s: %s (continuing; "
+                "per-chapter markdown files remain available).",
+                project.slug,
+                export_err,
+            )
 
     project_result = vol_project_result if vol_project_result is not None else ProjectPipelineResult(
         workflow_run_id=UUID(int=0), project_id=project.id, project_slug=project.slug,

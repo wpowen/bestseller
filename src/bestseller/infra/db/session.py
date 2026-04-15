@@ -80,11 +80,16 @@ def create_engine(settings: AppSettings | None = None) -> AsyncEngine:
         max_overflow=effective_settings.database.max_overflow,
         pool_timeout=effective_settings.database.pool_timeout_seconds,
         pool_recycle=effective_settings.database.pool_recycle_seconds,
+        pool_pre_ping=True,  # Validate connections before use — critical for
+        # long-running LLM calls (10+ min) that leave DB connections idle.
         connect_args={
             "server_settings": {
                 "application_name": effective_settings.database.application_name,
                 "statement_timeout": str(effective_settings.database.statement_timeout_ms),
                 "lock_timeout": str(effective_settings.database.lock_timeout_ms),
+                # Allow idle transactions for up to 30 min (planner LLM calls
+                # can take 10+ min, during which the session holds a transaction).
+                "idle_in_transaction_session_timeout": "1800000",
             }
         },
     )

@@ -216,18 +216,33 @@ def _extract_json_payload(text: str) -> Any:
 
 
 def _merge_planning_payload(fallback_payload: Any, generated_payload: Any) -> Any:
+    """Merge LLM output with fallback — **LLM-primary** strategy.
+
+    The LLM output is used as the base.  Fallback values only fill in
+    fields that the LLM omitted or left empty, rather than the other way
+    around.  This ensures the LLM's creative choices dominate the final
+    output and the fallback only acts as a safety net for missing fields.
+    """
     if generated_payload is None:
         return copy.deepcopy(fallback_payload)
 
     if isinstance(fallback_payload, dict):
         if not isinstance(generated_payload, dict):
             return copy.deepcopy(fallback_payload)
-        merged = copy.deepcopy(fallback_payload)
-        for key, value in generated_payload.items():
-            if key in merged:
-                merged[key] = _merge_planning_payload(merged[key], value)
-            elif value is not None:
-                merged[key] = copy.deepcopy(value)
+        # Start from LLM output, fill gaps from fallback
+        merged = copy.deepcopy(generated_payload)
+        for key, fb_value in fallback_payload.items():
+            if key not in merged:
+                # LLM omitted this field entirely — fill from fallback
+                merged[key] = copy.deepcopy(fb_value)
+            elif merged[key] is None or (isinstance(merged[key], str) and not merged[key].strip()):
+                # LLM left this field empty — fill from fallback
+                merged[key] = copy.deepcopy(fb_value)
+            elif isinstance(fb_value, dict) and isinstance(merged[key], dict):
+                # Recursively fill sub-fields
+                merged[key] = _merge_planning_payload(fb_value, merged[key])
+            elif isinstance(fb_value, list) and isinstance(merged[key], list):
+                merged[key] = _merge_planning_payload(fb_value, merged[key])
         return merged
 
     if isinstance(fallback_payload, list):
@@ -235,6 +250,7 @@ def _merge_planning_payload(fallback_payload: Any, generated_payload: Any) -> An
             return copy.deepcopy(fallback_payload)
         if not generated_payload:
             return copy.deepcopy(fallback_payload)
+        # If both lists have matching dicts, recursively fill per-element
         if len(fallback_payload) == len(generated_payload) and all(
             isinstance(fallback_item, dict) and isinstance(generated_item, dict)
             for fallback_item, generated_item in zip(fallback_payload, generated_payload, strict=False)
@@ -243,6 +259,7 @@ def _merge_planning_payload(fallback_payload: Any, generated_payload: Any) -> An
                 _merge_planning_payload(fallback_item, generated_item)
                 for fallback_item, generated_item in zip(fallback_payload, generated_payload, strict=False)
             ]
+        # LLM provided a different-length list — trust the LLM's structure
         return copy.deepcopy(generated_payload)
 
     if isinstance(generated_payload, str) and not generated_payload.strip():
@@ -2610,9 +2627,29 @@ def _hook_type(index_within_volume: int, total_in_volume: int, *, language: str 
 
 
 # Extended scene type taxonomy for pacing diversity.
+def _pick_by_seed(options: list[str], slug: str, chapter: int, label: str) -> str:
+    """Pick from *options* using a deterministic-but-project-unique hash seed.
+
+    Different novels (slugs) get different selections for the same chapter
+    position, breaking the visible repetition pattern across projects.
+
+    ``options`` must be non-empty.
+    """
+    if not options:
+        return ""
+    _h = int(hashlib.md5(f"{slug}:{chapter}:{label}".encode(), usedforsecurity=False).hexdigest()[:8], 16)
+    return options[_h % len(options)]
+
+
 # After high-tension phases, insert low-tension scene types to create rhythm.
-_SCENE_TYPE_AFTER_CLIMAX = ["aftermath", "introspection", "relationship_building"]
-_SCENE_TYPE_AFTER_PRESSURE = ["preparation", "worldbuilding_discovery"]
+_SCENE_TYPE_AFTER_CLIMAX = [
+    "aftermath", "introspection", "relationship_building",
+    "quiet_revelation", "emotional_recovery", "alliance_shift",
+]
+_SCENE_TYPE_AFTER_PRESSURE = [
+    "preparation", "worldbuilding_discovery",
+    "strategic_planning", "resource_gathering", "mentor_moment",
+]
 _SCENE_TYPE_COMIC_INTERVAL = 7  # Insert comic relief every N chapters
 
 _FALLBACK_TITLE_PREFIXES = [
@@ -2671,7 +2708,7 @@ def _chapter_fallback_subtitle(
 
     # Seed a deterministic shuffle from project_slug so each novel gets a
     # unique title sequence, but the same novel is reproducible.
-    seed = int(hashlib.md5(project_slug.encode()).hexdigest()[:8], 16)
+    seed = int(hashlib.md5(project_slug.encode(), usedforsecurity=False).hexdigest()[:8], 16)
     _rng.Random(seed).shuffle(prefixes)
     _rng.Random(seed + 1).shuffle(suffixes)
 
@@ -2688,21 +2725,30 @@ def _varied_scene_type(
     scene_number: int,
     phase: str,
     prev_phase: str | None,
+    *,
+    project_slug: str = "",
 ) -> str:
     """Choose a richer scene type based on pacing context.
 
-    Expands the original 5-type system (hook/setup/transition/conflict/reveal)
-    with: introspection, relationship_building, worldbuilding_discovery,
-    aftermath, preparation, comic_relief, montage.
+    Uses a hash-based seed derived from ``project_slug``, ``chapter_number``
+    and ``scene_number`` so that different novels produce different scene-type
+    sequences even when the chapter layout is identical.
     """
+    # Build a per-position seed that varies across novels
+    _seed_input = f"{project_slug}:{chapter_number}:{scene_number}:{phase}"
+    _hash_val = int(hashlib.md5(_seed_input.encode(), usedforsecurity=False).hexdigest()[:8], 16)
+
     # After a climax or reversal chapter, first scene should be aftermath/introspection
     if scene_number == 1 and prev_phase in ("climax", "reversal") and phase in ("setup", "investigation"):
-        return _SCENE_TYPE_AFTER_CLIMAX[chapter_number % len(_SCENE_TYPE_AFTER_CLIMAX)]
+        return _SCENE_TYPE_AFTER_CLIMAX[_hash_val % len(_SCENE_TYPE_AFTER_CLIMAX)]
     # Middle scenes in investigation phase can be relationship or worldbuilding
     if scene_number == 2 and phase == "investigation":
-        return _SCENE_TYPE_AFTER_PRESSURE[chapter_number % len(_SCENE_TYPE_AFTER_PRESSURE)]
-    # Periodic comic relief
-    if chapter_number % _SCENE_TYPE_COMIC_INTERVAL == 0 and scene_number == 1 and phase not in ("climax", "reversal"):
+        return _SCENE_TYPE_AFTER_PRESSURE[_hash_val % len(_SCENE_TYPE_AFTER_PRESSURE)]
+    # Periodic comic relief — vary the interval per novel (5–9 chapters);
+    # use a chapter-only seed so the interval is stable regardless of scene_number.
+    _ch_hash = int(hashlib.md5(f"{project_slug}:{chapter_number}".encode(), usedforsecurity=False).hexdigest()[:8], 16)
+    _comic_interval = 5 + (_ch_hash % 5)
+    if chapter_number % _comic_interval == 0 and scene_number == 1 and phase not in ("climax", "reversal"):
         return "comic_relief"
     return base_type
 
@@ -2735,8 +2781,31 @@ def _compute_scene_count(
     return 3
 
 
-def _render_chapter_conflict(conflict_phase: str, chapter_phase: str, protagonist: str, force_name: str) -> str:
-    """Generate a neutral chapter-level conflict summary."""
+def _render_chapter_conflict(
+    conflict_phase: str,
+    chapter_phase: str,
+    protagonist: str,
+    force_name: str,
+    *,
+    project_slug: str = "",
+    chapter_number: int = 1,
+) -> str:
+    """Generate a chapter-level conflict summary with per-novel diversity.
+
+    First attempts to use the rich per-conflict-phase templates from
+    ``_CHAPTER_CONFLICT_TEMPLATES``; falls back to a generic description
+    when the conflict_phase or chapter_phase is unrecognized.
+    """
+    is_en = bool(re.search(r"[A-Za-z]", protagonist or force_name or ""))
+
+    # Try rich templates first (keyed by conflict_phase × chapter_phase)
+    _templates = _CHAPTER_CONFLICT_TEMPLATES_EN if is_en else _CHAPTER_CONFLICT_TEMPLATES
+    phase_dict = _templates.get(conflict_phase, {})
+    rich_template = phase_dict.get(chapter_phase)
+    if rich_template:
+        return rich_template.format(protagonist=protagonist, force_name=force_name)
+
+    # Fallback: varied generic descriptions
     phase_labels = {
         "setup": "识别问题",
         "investigation": "推进调查",
@@ -2751,11 +2820,21 @@ def _render_chapter_conflict(conflict_phase: str, chapter_phase: str, protagonis
         "reversal": "handle a destabilising turn",
         "climax": "face the direct conflict",
     }
-    is_en = bool(re.search(r"[A-Za-z]", protagonist or force_name or ""))
     label = phase_labels_en.get(chapter_phase, "keep the plot moving") if is_en else phase_labels.get(chapter_phase, "继续推进")
-    if is_en:
-        return f"{protagonist} must {label} while dealing with the active resistance around {force_name}."
-    return f"{protagonist}必须在处理「{force_name}」带来的当前阻力时完成本章的「{label}」。"
+    _templates_generic_en = [
+        f"{protagonist} must {label} while dealing with the active resistance around {force_name}.",
+        f"{protagonist} navigates escalating pressure from {force_name} as the situation demands they {label}.",
+        f"Caught between {force_name}'s maneuvers and their own goals, {protagonist} fights to {label}.",
+    ]
+    _templates_generic_zh = [
+        f"{protagonist}必须在处理「{force_name}」带来的当前阻力时完成本章的「{label}」。",
+        f"面对「{force_name}」不断升级的施压，{protagonist}艰难推进——{label}。",
+        f"{protagonist}被「{force_name}」的布局和自身目标夹在中间，必须在夹缝中{label}。",
+    ]
+    return _pick_by_seed(
+        _templates_generic_en if is_en else _templates_generic_zh,
+        project_slug, chapter_number, "conflict_render",
+    )
 
 
 def _phase_name_within_arc(index: int, total: int) -> str:
@@ -2953,30 +3032,77 @@ def _fallback_chapter_outline_batch(
                         else f"最终联盟结成、最后的秘密揭露——所有力量向高潮对决汇聚。"
                     )
             else:
-                chapter_goal = (
-                    (
-                        f"{protagonist_name} advances the volume goal in chapter {chapter_number}, "
-                        f"forcing the situation into a new high-pressure phase."
-                    )
-                    if is_en
-                    else (
-                        f"{protagonist_name}在第{chapter_number}章推进{volume_goal}，"
-                        f"并迫使局势进入新的高压阶段。"
-                    )
+                # Expanded template pool (20+ variants) + position-aware seeding
+                # to minimize cross-chapter collisions. Previously only 7 templates
+                # were seeded with just (slug, chapter) → adjacent chapters often
+                # landed on the same template, causing identical scene purposes
+                # across chapters 6/7, 13/14 etc. Now seeded with volume+index too.
+                _goal_templates_en = [
+                    f"{protagonist_name} advances the volume goal in chapter {chapter_number}, forcing the situation into a new high-pressure phase.",
+                    f"{protagonist_name} uncovers a critical clue that reframes the entire conflict, but the discovery comes at a steep personal cost.",
+                    f"An unexpected alliance shifts the power balance — {protagonist_name} must decide whether to trust a former adversary.",
+                    f"{protagonist_name} is forced into a desperate gambit when the existing plan collapses, revealing deeper layers of the conspiracy.",
+                    f"The stakes escalate as {protagonist_name} discovers the true scope of the threat, and a ticking clock forces immediate action.",
+                    f"{protagonist_name} confronts an internal contradiction that mirrors the external conflict, and must reconcile both to move forward.",
+                    f"A secondary character's hidden agenda surfaces, complicating {protagonist_name}'s path and forcing a painful re-evaluation.",
+                    f"{protagonist_name} must infiltrate hostile territory where a single mistake exposes the entire operation.",
+                    f"A long-buried secret from {protagonist_name}'s past resurfaces, threatening to unravel present alliances.",
+                    f"The antagonist makes a calculated move that forces {protagonist_name} onto unfamiliar ground with diminished resources.",
+                    f"{protagonist_name} gains a temporary advantage through an unexpected resource, but its use carries a hidden cost.",
+                    f"A trusted ally takes an action {protagonist_name} cannot yet understand — is it betrayal, strategy, or something else?",
+                    f"{protagonist_name} must choose between two imperfect paths, each closing off a future possibility permanently.",
+                    f"The established rules of the world are broken in a small but telling way — {protagonist_name} is the first to notice.",
+                    f"A bystander is drawn into the conflict by accident, and {protagonist_name} must protect them while pursuing the real objective.",
+                    f"{protagonist_name} attempts a breakthrough in cultivation or skill that requires reconciling two opposing principles.",
+                    f"A rival's public humiliation of {protagonist_name} masks a more dangerous private maneuver happening in parallel.",
+                    f"{protagonist_name} receives incomplete information and must decide whether acting now or waiting is the greater risk.",
+                    f"An environmental or systemic threat emerges that cannot be defeated by force alone — {protagonist_name} must find another way.",
+                    f"{protagonist_name} is offered a deal that would solve the immediate problem but compromise a core principle.",
+                ]
+                _goal_templates_zh = [
+                    f"{protagonist_name}在第{chapter_number}章推进{volume_goal}，并迫使局势进入新的高压阶段。",
+                    f"{protagonist_name}发现了一条改写整个冲突格局的关键线索，但代价是一次沉重的个人损失。",
+                    f"一个出乎意料的合作打破了力量平衡——{protagonist_name}必须决定是否信任曾经的对手。",
+                    f"原有计划彻底崩盘，{protagonist_name}被迫孤注一掷，同时揭开了更深层的阴谋。",
+                    f"威胁的真实规模浮出水面，倒计时开始——{protagonist_name}必须立即行动。",
+                    f"{protagonist_name}面对一个与外部冲突互为镜像的内心矛盾，必须同时解决才能前进。",
+                    f"一个次要角色的隐藏目的浮出水面，打乱了{protagonist_name}的部署，迫使他重新评估局势。",
+                    f"{protagonist_name}必须潜入敌方腹地，一个失误就会暴露整个行动。",
+                    f"{protagonist_name}过去埋下的秘密突然浮现，威胁当下所有盟友关系。",
+                    f"反派落下一步精心布置的棋，{protagonist_name}被迫在陌生地界以更少资源应对。",
+                    f"{protagonist_name}借助意外资源取得短暂优势，但这份资源带着隐性代价。",
+                    f"一位被信任的盟友做出{protagonist_name}一时难以理解的举动——是背叛、策略，还是另有隐情？",
+                    f"{protagonist_name}必须在两条不完美的路之间选择，每一条都会永久关闭某种未来可能。",
+                    f"世界既定规则出现一个细小却关键的裂缝——{protagonist_name}是第一个察觉的人。",
+                    f"一个路人意外卷入冲突，{protagonist_name}必须在保护对方的同时继续推进真正目标。",
+                    f"{protagonist_name}尝试一次突破，需要调和两种对立的修炼/技巧原则。",
+                    f"对手在公开场合羞辱{protagonist_name}，以此掩护一场更危险的暗中布置。",
+                    f"{protagonist_name}拿到不完整的情报，必须判断：立即行动与继续等待，哪一个更冒险？",
+                    f"一种环境或体系层面的威胁出现，无法用力量硬碰硬——{protagonist_name}必须另辟蹊径。",
+                    f"{protagonist_name}被提出一个能解决眼前难题的交易，但代价是动摇一条核心原则。",
+                ]
+                # Position-aware seed: include volume + in-volume index so
+                # adjacent chapters reliably draw different templates.
+                chapter_goal = _pick_by_seed(
+                    _goal_templates_en if is_en else _goal_templates_zh,
+                    project.slug,
+                    chapter_number,
+                    f"chapter_goal:v{volume_number}:i{index_within_volume}:p{phase}",
                 )
             num_scenes = _compute_scene_count(chapter_number, phase, prev_phase, chapters_from_end)
             # Build scenes dynamically: opening + N middle + closing hook
             scenes: list[dict[str, Any]] = []
 
-            # Scene 1: Opening
+            # Scene 1: Opening — inject chapter_goal for per-chapter uniqueness
+            _ch_goal_tag = f" [chapter goal: {chapter_goal}]" if is_en else f"（本章目标：{chapter_goal}）"
             opening_story = (
-                "Establish the immediate state, the current direction, and the near-term pressure."
+                f"Establish the immediate state, the current direction, and the near-term pressure.{_ch_goal_tag}"
                 if is_en and is_opening_chapter
-                else "Carry forward the previous result and restate the immediate action target."
+                else f"Carry forward the previous result and restate the immediate action target.{_ch_goal_tag}"
                 if is_en
-                else "建立当前局面、行动方向与眼前压力"
+                else f"建立当前局面、行动方向与眼前压力{_ch_goal_tag}"
                 if is_opening_chapter
-                else "承接上章后果并明确本章行动目标"
+                else f"承接上章后果并明确本章行动目标{_ch_goal_tag}"
             )
             opening_emotion = (
                 "Give the reader a clear point of engagement, then increase instability."
@@ -2992,6 +3118,7 @@ def _fallback_chapter_outline_batch(
                 "scene_type": "hook" if is_opening_chapter else _varied_scene_type(
                     "setup" if phase == "setup" else "transition",
                     chapter_number, 1, phase, prev_phase,
+                    project_slug=project.slug,
                 ),
                 "title": "Opening Beat" if is_en else "开场",
                 "time_label": "章节开场",
@@ -3001,21 +3128,46 @@ def _fallback_chapter_outline_batch(
                     "emotion": opening_emotion,
                 },
                 "entry_state": {
-                    protagonist_name: {"arc_state": "承压推进", "emotion": "紧绷"},
-                    ally_name: {"arc_state": "谨慎协作", "emotion": "戒备"},
+                    protagonist_name: {"arc_state": _pick_by_seed(
+                        ["承压推进", "犹豫不决", "暗中筹谋", "被迫应对", "重振旗鼓"], project.slug, chapter_number, "entry_arc"
+                    ), "emotion": _pick_by_seed(
+                        ["紧绷", "焦虑", "冷静克制", "愤怒压抑", "期待中带着不安"], project.slug, chapter_number, "entry_emo"
+                    )},
+                    ally_name: {"arc_state": _pick_by_seed(
+                        ["谨慎协作", "主动支援", "心存疑虑", "独立行动", "勉强配合"], project.slug, chapter_number, "ally_entry"
+                    ), "emotion": _pick_by_seed(
+                        ["戒备", "忧虑", "冷静", "不安", "坚定"], project.slug, chapter_number, "ally_emo"
+                    )},
                 },
                 "exit_state": {
-                    protagonist_name: {"arc_state": "主动出击", "emotion": "更坚定"},
-                    ally_name: {"arc_state": "被迫跟进", "emotion": "压力上升"},
+                    protagonist_name: {"arc_state": _pick_by_seed(
+                        ["主动出击", "获得线索", "陷入困境", "做出抉择", "暂时脱险"], project.slug, chapter_number, "exit_arc"
+                    ), "emotion": _pick_by_seed(
+                        ["更坚定", "沉重", "释然", "紧迫感", "复杂交织"], project.slug, chapter_number, "exit_emo"
+                    )},
+                    ally_name: {"arc_state": _pick_by_seed(
+                        ["被迫跟进", "选择信任", "产生分歧", "承担更多", "暗自打算"], project.slug, chapter_number, "ally_exit"
+                    ), "emotion": _pick_by_seed(
+                        ["压力上升", "决心", "动摇", "疲惫", "隐忍"], project.slug, chapter_number, "ally_exit_emo"
+                    )},
                 },
                 "target_word_count": scene_target_words,
             })
 
             # Middle scenes (0 for 2-scene, 1 for 3-scene, 2 for 4-scene)
             middle_count = num_scenes - 2
+            # Seed-based scene type selection for diversity across novels
+            _ch_seed = int(hashlib.md5(f"{project.slug}:mid:{chapter_number}".encode(), usedforsecurity=False).hexdigest()[:8], 16)
+            _HIGH_TENSION_TYPES = ["conflict", "confrontation", "desperate_gambit", "tactical_clash"]
+            _LOW_TENSION_TYPES = ["reveal", "discovery", "negotiation", "deduction"]
+            _REFLECTION_TYPES = ["introspection", "relationship_building", "moral_dilemma", "quiet_revelation"]
             _middle_types = [
-                ("conflict" if phase in {"pressure", "reversal", "climax"} else "reveal"),
-                "introspection" if phase not in ("climax",) else "conflict",
+                _HIGH_TENSION_TYPES[_ch_seed % len(_HIGH_TENSION_TYPES)]
+                if phase in {"pressure", "reversal", "climax"}
+                else _LOW_TENSION_TYPES[_ch_seed % len(_LOW_TENSION_TYPES)],
+                _REFLECTION_TYPES[(_ch_seed >> 4) % len(_REFLECTION_TYPES)]
+                if phase not in ("climax",)
+                else _HIGH_TENSION_TYPES[(_ch_seed >> 4) % len(_HIGH_TENSION_TYPES)],
             ]
             for mi in range(middle_count):
                 base_type = _middle_types[mi % len(_middle_types)]
@@ -3023,6 +3175,7 @@ def _fallback_chapter_outline_batch(
                     "scene_number": len(scenes) + 1,
                     "scene_type": _varied_scene_type(
                         base_type, chapter_number, len(scenes) + 1, phase, prev_phase,
+                        project_slug=project.slug,
                     ),
                     "title": ("Primary Move" if mi == 0 else "Shift") if is_en else ("推进" if mi == 0 else "变化"),
                     "time_label": "章节中段",
@@ -3031,22 +3184,40 @@ def _fallback_chapter_outline_batch(
                     else [protagonist_name],
                     "purpose": {
                         "story": (
-                            "Move the chapter forward and force a fresh cost or new information."
+                            f"Move the chapter forward and force a fresh cost or new information. [chapter goal: {chapter_goal}]"
                             if mi == 0
-                            else "Complicate the situation with a deeper cost, truth, or shift."
+                            else f"Complicate the situation with a deeper cost, truth, or shift. [chapter goal: {chapter_goal}]"
                         ) if is_en else (
-                            "推动本章局势前进，并换来新的代价或信息。"
+                            f"推动本章局势前进，并换来新的代价或信息。（本章目标：{chapter_goal}）"
                             if mi == 0
-                            else "用更深一层的代价、真相或变化把局势再往前推。"
+                            else f"用更深一层的代价、真相或变化把局势再往前推。（本章目标：{chapter_goal}）"
                         ),
                         "emotion": "Raise friction without flattening the chapter rhythm." if is_en else "继续抬高摩擦感，但不把章节写成单一节奏。",
                     },
                     "entry_state": {
-                        protagonist_name: {"arc_state": "带着怀疑推进", "emotion": "警觉"},
+                        protagonist_name: {"arc_state": _pick_by_seed(
+                            ["带着怀疑推进", "谨慎试探", "果断介入", "被动应战", "暗中观察"],
+                            project.slug, chapter_number + mi, "mid_entry"
+                        ), "emotion": _pick_by_seed(
+                            ["警觉", "冷静", "焦躁", "隐忍", "好奇"],
+                            project.slug, chapter_number + mi, "mid_entry_emo"
+                        )},
                     },
                     "exit_state": {
-                        protagonist_name: {"arc_state": "掌握更多真相", "emotion": "不安"},
-                        antagonist_name: {"arc_state": "开始主动压制", "emotion": "冷静施压"},
+                        protagonist_name: {"arc_state": _pick_by_seed(
+                            ["掌握更多真相", "付出代价", "发现矛盾", "暂时得利", "陷入两难"],
+                            project.slug, chapter_number + mi, "mid_exit"
+                        ), "emotion": _pick_by_seed(
+                            ["不安", "震惊", "隐隐兴奋", "沉重", "决绝"],
+                            project.slug, chapter_number + mi, "mid_exit_emo"
+                        )},
+                        antagonist_name: {"arc_state": _pick_by_seed(
+                            ["开始主动压制", "暗中调整策略", "示弱引诱", "全面出击", "布下新局"],
+                            project.slug, chapter_number + mi, "antag_mid"
+                        ), "emotion": _pick_by_seed(
+                            ["冷静施压", "得意", "谨慎", "愤怒", "隐忍待发"],
+                            project.slug, chapter_number + mi, "antag_mid_emo"
+                        )},
                     },
                     "target_word_count": scene_target_words,
                 })
@@ -3061,14 +3232,29 @@ def _fallback_chapter_outline_batch(
                 if index_within_volume % 3 != 0
                 else [protagonist_name, volume_antag_participant],
                 "purpose": {
-                    "story": writing_profile.market.chapter_hook_strategy,
-                    "emotion": "让读者必须继续追下一章",
+                    "story": (
+                        f"{writing_profile.market.chapter_hook_strategy}"
+                        f"{' [chapter goal: ' + chapter_goal + ']' if is_en else '（本章目标：' + chapter_goal + '）'}"
+                    ),
+                    "emotion": "Make the reader unable to stop — they MUST read the next chapter." if is_en else "让读者必须继续追下一章",
                 },
                 "entry_state": {
-                    protagonist_name: {"arc_state": "准备收束", "emotion": "短暂控制局势"},
+                    protagonist_name: {"arc_state": _pick_by_seed(
+                        ["准备收束", "短暂喘息", "整理线索", "面临抉择", "孤注一掷"],
+                        project.slug, chapter_number, "hook_entry"
+                    ), "emotion": _pick_by_seed(
+                        ["短暂控制局势", "紧绷到极点", "表面平静内心翻涌", "疲惫但不甘", "冷静中带着决绝"],
+                        project.slug, chapter_number, "hook_entry_emo"
+                    )},
                 },
                 "exit_state": {
-                    protagonist_name: {"arc_state": "被迫进入更难局面", "emotion": "强压下前进"},
+                    protagonist_name: {"arc_state": _pick_by_seed(
+                        ["被迫进入更难局面", "发现更大的真相", "失去重要倚仗", "打开新的可能", "站在命运岔路口"],
+                        project.slug, chapter_number, "hook_exit"
+                    ), "emotion": _pick_by_seed(
+                        ["强压下前进", "震惊无措", "悲愤交加", "危机感拉满", "痛苦但更清醒"],
+                        project.slug, chapter_number, "hook_exit_emo"
+                    )},
                 },
                 "target_word_count": scene_target_words,
             })
@@ -3116,7 +3302,10 @@ def _fallback_chapter_outline_batch(
                         if chapter_number == 1
                         else "承接上一章尾钩，主角没有空档去长篇解释设定。"
                     ),
-                    "main_conflict": _render_chapter_conflict(conflict_phase, phase, protagonist_name, volume_force_name),
+                    "main_conflict": _render_chapter_conflict(
+                        conflict_phase, phase, protagonist_name, volume_force_name,
+                        project_slug=project.slug, chapter_number=chapter_number,
+                    ),
                     "hook_type": _hook_type(index_within_volume, total_in_volume, language=project.language),
                     "hook_description": writing_profile.market.chapter_hook_strategy,
                     "volume_number": volume_number,
@@ -3492,7 +3681,13 @@ def _outline_prompts(project: ProjectModel, book_spec: dict[str, Any], cast_spec
             f"{_methodology_line}"
             "Generate a full ChapterOutlineBatch JSON with batch_name and chapters. Each chapter needs at least 3 scenes. "
             "The first 3 chapters must rapidly establish the protagonist edge, the core anomaly, the first gain/loss cycle, and a strong read-on hook. "
-            "Each chapter must define goal, main_conflict, and hook_description; each scene must define story and emotion tasks."
+            "Each chapter must define goal, main_conflict, and hook_description; each scene must define story and emotion tasks.\n\n"
+            "[DIVERSITY CONSTRAINTS — CRITICAL]\n"
+            "1. Each chapter's scene_type combination MUST differ from adjacent chapters — vary scene count, type arrangement, and participant mix.\n"
+            "2. Each chapter's main_conflict must be a specific, concrete event — never use vague summaries like 'push the investigation' or 'advance the goal'.\n"
+            "3. Character entry_state/exit_state must be tied to the chapter's specific events — never reuse the same arc_state or emotion across multiple chapters.\n"
+            "4. Break the narrative rhythm: some chapters end in failure, some focus on quiet character moments, some open with a twist.\n"
+            "5. Chapter goals must be concrete, visualizable events — not abstract narrative functions."
         )
         if is_en
         else (
@@ -3508,7 +3703,14 @@ def _outline_prompts(project: ProjectModel, book_spec: dict[str, Any], cast_spec
             f"{_methodology_line}"
             "请生成完整 ChapterOutlineBatch JSON，包含 batch_name 和 chapters。每章至少 3 个 scenes。"
             "要求：前 3 章必须快速完成主角卖点亮相、核心异常亮相、第一轮得失与追读钩子；"
-            "每章都要写明 goal、main_conflict、hook_description；每场都要有 story/emotion 任务。"
+            "每章都要写明 goal、main_conflict、hook_description；每场都要有 story/emotion 任务。\n\n"
+            "【多样性硬约束——极其重要】\n"
+            "1. 每章的 scene_type 组合不得与前后两章雷同，必须有结构差异（场景数、类型排列、参与角色组合都要变化）。\n"
+            "2. 每章的 main_conflict 必须是独立的、具体的事件描述，禁止使用「推进调查」「承压推进」等泛化概括。\n"
+            "3. 角色的 entry_state/exit_state 必须紧扣本章具体事件，禁止多章复用相同的 arc_state 或 emotion。\n"
+            "4. 避免所有章节都遵循相同的叙事模式（如每章都是「发现线索→遭遇阻碍→获得突破」），"
+            "要主动打破节奏：有的章以失败结尾，有的章以安静的人物关系推进为主，有的章以反转开场。\n"
+            "5. chapter goal 必须是具体的、可视化的事件，不能是抽象的叙事功能描述。"
         )
     )
     _genre_instruction = getattr(_genre_profile.planner_prompts, f"outline_instruction_{_lang_key}", "")
@@ -3909,32 +4111,58 @@ async def _generate_structured_artifact(
     step_run_id: UUID | None = None,
     validator: Callable[[Any], Any] | None = None,
 ) -> tuple[Any, UUID | None]:
-    completion = await complete_text(
-        session,
-        settings,
-        LLMCompletionRequest(
-            logical_role="planner",
-            system_prompt=system_prompt,
-            user_prompt=user_prompt,
-            fallback_response=_json_dumps(fallback_payload),
-            prompt_template=f"planner_{logical_name}",
-            prompt_version="1.0",
-            project_id=project.id,
-            workflow_run_id=workflow_run_id,
-            step_run_id=step_run_id,
-            metadata={
-                "project_slug": project.slug,
-                "artifact": logical_name,
-            },
-        ),
-    )
-    try:
-        payload = _merge_planning_payload(fallback_payload, _extract_json_payload(completion.content))
-        if validator is not None:
-            validator(payload)
-    except Exception:
-        payload = fallback_payload
-    return payload, completion.llm_run_id
+    _max_attempts = 2  # try once, retry once on parse/validation failure
+
+    last_llm_run_id: UUID | None = None
+    for attempt in range(_max_attempts):
+        completion = await complete_text(
+            session,
+            settings,
+            LLMCompletionRequest(
+                logical_role="planner",
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+                fallback_response=_json_dumps(fallback_payload),
+                prompt_template=f"planner_{logical_name}",
+                prompt_version="1.0",
+                project_id=project.id,
+                workflow_run_id=workflow_run_id,
+                step_run_id=step_run_id,
+                metadata={
+                    "project_slug": project.slug,
+                    "artifact": logical_name,
+                    "attempt": attempt + 1,
+                },
+            ),
+        )
+        last_llm_run_id = completion.llm_run_id
+        try:
+            generated = _extract_json_payload(completion.content)
+            payload = _merge_planning_payload(fallback_payload, generated)
+            if validator is not None:
+                validator(payload)
+            return payload, last_llm_run_id
+        except Exception as exc:
+            if attempt < _max_attempts - 1:
+                logger.warning(
+                    "Planner artifact %s attempt %d failed parse/validation (%s: %s), retrying …",
+                    logical_name,
+                    attempt + 1,
+                    type(exc).__name__,
+                    exc,
+                )
+                continue
+            logger.warning(
+                "Planner artifact %s failed after %d attempts (%s: %s), using fallback.",
+                logical_name,
+                _max_attempts,
+                type(exc).__name__,
+                exc,
+            )
+            return copy.deepcopy(fallback_payload), last_llm_run_id
+
+    # Should not reach here, but satisfy type checker
+    return copy.deepcopy(fallback_payload), last_llm_run_id
 
 
 # ---------------------------------------------------------------------------

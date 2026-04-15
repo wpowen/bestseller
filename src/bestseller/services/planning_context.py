@@ -58,7 +58,7 @@ def _mapping(val: Any) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 def summarize_book_spec(book_spec: dict[str, Any], *, language: str = "zh-CN") -> str:
-    """~300 tokens: title, logline, protagonist core, series engine essentials."""
+    """~400 tokens: title, logline, protagonist core, key characters, series engine essentials."""
     bs = _mapping(book_spec)
     is_en = language.startswith("en")
     protag = _mapping(bs.get("protagonist"))
@@ -95,6 +95,55 @@ def summarize_book_spec(book_spec: dict[str, Any], *, language: str = "zh-CN") -
             f"钩子策略：{_s(engine.get('hook_style'))} | 爽点节奏：{_s(engine.get('payoff_rhythm'))}",
             f"读者承诺：{_s(engine.get('reader_promise'))}",
         ]
+
+    # ── key_characters: pass book_spec characters to downstream planning ──
+    raw_chars = bs.get("key_characters") or []
+    if isinstance(raw_chars, list) and raw_chars:
+        if is_en:
+            lines.append("Key characters defined in BookSpec:")
+        else:
+            lines.append("BookSpec 已定义的关键角色：")
+        for ch in raw_chars:
+            cm = _mapping(ch)
+            name = _s(cm.get("name"))
+            role = _s(cm.get("role"))
+            personality = ", ".join(_list_s(cm.get("personality_keywords")))
+            relationship = _s(cm.get("relationship_to_protagonist"))
+            if is_en:
+                line = f"  - {name} ({role})"
+                if personality:
+                    line += f" — personality: {personality}"
+                if relationship:
+                    line += f" — relationship: {relationship}"
+            else:
+                line = f"  - {name}（{role}）"
+                if personality:
+                    line += f"——性格特征：{personality}"
+                if relationship:
+                    line += f"——与主角关系：{relationship}"
+            lines.append(line)
+        if is_en:
+            lines.append("IMPORTANT: CastSpec MUST use these characters. Do NOT invent replacements.")
+        else:
+            lines.append("【重要】CastSpec 必须使用以上角色，不得另行编造替代角色。")
+
+    # ── antagonist_forces ──
+    raw_forces = bs.get("antagonist_forces") or []
+    if isinstance(raw_forces, list) and raw_forces:
+        if is_en:
+            lines.append("Antagonist forces defined in BookSpec:")
+        else:
+            lines.append("BookSpec 已定义的冲突力量：")
+        for af in raw_forces:
+            fm = _mapping(af)
+            fname = _s(fm.get("name"))
+            ftype = _s(fm.get("force_type"))
+            threat = _s(fm.get("threat_description"))
+            if is_en:
+                lines.append(f"  - {fname} ({ftype}): {threat}")
+            else:
+                lines.append(f"  - {fname}（{ftype}）：{threat}")
+
     return "\n".join(lines)
 
 

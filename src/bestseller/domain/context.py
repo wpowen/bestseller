@@ -31,6 +31,7 @@ class RecentSceneSummary(BaseModel):
     summary: str = Field(min_length=1)
     story_purpose: str | None = None
     emotion_purpose: str | None = None
+    opening_lines: str | None = None
 
 
 class TimelineEventContext(BaseModel):

@@ -386,8 +386,11 @@ async def _call_litellm(
         "max_tokens": role_settings.max_tokens,
         "timeout": role_settings.timeout_seconds,
         "stream": role_settings.stream,
-        "n": role_settings.n_candidates,
     }
+    # Only pass n when >1 — many providers (MiniMax, Gemini) ignore or
+    # reject the parameter, and n=1 is the default anyway.
+    if role_settings.n_candidates > 1:
+        completion_kwargs["n"] = role_settings.n_candidates
     if role_settings.api_base:
         completion_kwargs["api_base"] = role_settings.api_base
     if role_settings.api_key_env:
@@ -412,7 +415,18 @@ async def _call_litellm(
             timeout=hard_timeout,
         )
 
-    choice = response.choices[0]
+    # When multiple candidates are returned, pick the longest (most
+    # detailed) response instead of blindly using choices[0].
+    choices = response.choices or []
+    if not choices:
+        raise ValueError("LLM response contains no choices.")
+    if len(choices) == 1:
+        choice = choices[0]
+    else:
+        choice = max(
+            choices,
+            key=lambda c: len(_extract_text_content(c.message.content)),
+        )
     content = _extract_text_content(choice.message.content)
     input_tokens, output_tokens = _extract_usage_fields(getattr(response, "usage", None))
     finish_reason = getattr(choice, "finish_reason", None)

@@ -11,10 +11,11 @@ import asyncio
 import json
 import logging
 import os
+from uuid import UUID
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore
-from sqlalchemy import select
+from sqlalchemy import select, text
 
 from bestseller.infra.db.session import init_db, shutdown_db, get_server_session
 from bestseller.infra.redis import init_redis, shutdown_redis, get_redis_client
@@ -34,6 +35,27 @@ def _build_scheduler(db_url: str) -> AsyncIOScheduler:
     return AsyncIOScheduler(jobstores=jobstores)
 
 
+async def _publish_schedule_job(schedule_id: UUID) -> None:
+    """Module-level wrapper for a single publishing-schedule firing.
+
+    MUST live at module-level (not nested inside `_register_schedule`).
+    APScheduler's SQLAlchemyJobStore persists jobs via pickle; closures /
+    nested functions can't be pickled, so a nested definition crashes
+    `scheduler.start()` with "This Job cannot be serialized since the
+    reference to its callable could not be determined".
+
+    The schedule id is passed through `add_job(args=[...])` instead of
+    captured as a closure variable, so the callable reference is the
+    plain dotted path `bestseller.scheduler.main:_publish_schedule_job`.
+    """
+    async with get_server_session() as session:
+        await publish_next_chapter(
+            session=session,
+            settings=get_settings(),
+            schedule_id=schedule_id,
+        )
+
+
 async def _register_schedule(scheduler: AsyncIOScheduler, schedule: PublishingScheduleModel) -> None:
     job_id = f"publish_{schedule.id}"
     if scheduler.get_job(job_id):
@@ -42,14 +64,11 @@ async def _register_schedule(scheduler: AsyncIOScheduler, schedule: PublishingSc
     if schedule.status != "active":
         return
 
-    async def job() -> None:
-        async with get_server_session() as session:
-            await publish_next_chapter(session=session, settings=get_settings(), schedule_id=schedule.id)
-
     scheduler.add_job(
-        job,
+        _publish_schedule_job,
         trigger="cron",
         id=job_id,
+        args=[schedule.id],
         replace_existing=True,
         **_parse_cron(schedule.cron_expression),
         timezone=schedule.timezone,
@@ -112,6 +131,70 @@ async def _listen_for_changes(scheduler: AsyncIOScheduler) -> None:
                 pubsub = None
 
 
+# ── DB maintenance job ────────────────────────────────────────────────────
+# Runs once per day at 03:00 UTC.  Removes large analytical tables that
+# grow without bound and are never queried after a short retention window:
+#
+#   rewrite_impacts  — per-scene impact scores for every rewrite task.
+#                      101 K rows / 84 MB after a few weeks of use.
+#                      CASCADE-delete via rewrite_tasks (completed, >30d).
+#   workflow_step_runs — per-step execution log.  Only used for debugging.
+#                        Records older than 30 days are not actionable.
+#
+# Retention window is configurable via BESTSELLER_DB_RETENTION_DAYS.
+#
+# IMPORTANT: this function MUST live at module-level (not nested inside
+# main()).  APScheduler's SQLAlchemyJobStore persists jobs via pickle, and
+# pickle cannot serialize closures / nested functions — doing so crashes
+# scheduler.start() with "This Job cannot be serialized since the reference
+# to its callable could not be determined".  A module-level function is
+# pickled by its dotted path (bestseller.scheduler.main:_db_maintenance_job),
+# which APScheduler can resolve on reload.
+async def _db_maintenance_job() -> None:
+    retention_days = int(os.environ.get("BESTSELLER_DB_RETENTION_DAYS", "30"))
+    logger.info("DB maintenance: purging records older than %d days", retention_days)
+    try:
+        async with get_server_session() as session:
+            # 1. Delete completed/failed rewrite_tasks older than retention window.
+            #    rewrite_impacts rows are removed automatically via ON DELETE CASCADE.
+            #    Note: INTERVAL doesn't support bind parameters in PostgreSQL so we
+            #    multiply the bound :days against a literal INTERVAL '1 day'.
+            rt_result = await session.execute(
+                text(
+                    """
+                    DELETE FROM rewrite_tasks
+                    WHERE status IN ('completed', 'failed', 'cancelled')
+                      AND created_at < NOW() - (:days * INTERVAL '1 day')
+                    """
+                ),
+                {"days": retention_days},
+            )
+            rt_deleted = rt_result.rowcount
+
+            # 2. Delete old workflow_step_runs (verbose execution log, large table).
+            ws_result = await session.execute(
+                text(
+                    """
+                    DELETE FROM workflow_step_runs
+                    WHERE created_at < NOW() - (:days * INTERVAL '1 day')
+                    """
+                ),
+                {"days": retention_days},
+            )
+            ws_deleted = ws_result.rowcount
+
+            await session.commit()
+
+        logger.info(
+            "DB maintenance done: removed %d rewrite_task(s) (+ cascaded impacts), "
+            "%d workflow_step_run(s)",
+            rt_deleted,
+            ws_deleted,
+        )
+    except Exception:
+        logger.exception("DB maintenance job failed")
+
+
 async def main() -> None:
     settings = get_settings()
     logging.basicConfig(level=logging.INFO)
@@ -131,6 +214,18 @@ async def main() -> None:
 
     for schedule in schedules:
         await _register_schedule(scheduler, schedule)
+
+    retention_days = int(os.environ.get("BESTSELLER_DB_RETENTION_DAYS", "30"))
+    scheduler.add_job(
+        _db_maintenance_job,
+        trigger="cron",
+        id="db_maintenance",
+        replace_existing=True,
+        hour=3,
+        minute=0,
+        timezone="UTC",
+    )
+    logger.info("Registered daily DB maintenance job (retention=%d days)", retention_days)
 
     scheduler.start()
     logger.info("Scheduler started with %d active jobs", len(scheduler.get_jobs()))

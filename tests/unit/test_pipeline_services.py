@@ -833,7 +833,7 @@ async def test_run_chapter_pipeline_assembles_and_exports(
             llm_run_ids=[],
         )
 
-    async def fake_assemble_chapter_draft(session, project_slug: str, chapter_number: int):
+    async def fake_assemble_chapter_draft(session, project_slug: str, chapter_number: int, *, settings=None):
         return chapter_draft
 
     async def fake_export_chapter_markdown(
@@ -955,7 +955,7 @@ async def test_run_chapter_pipeline_exports_checkpoint_when_scene_needs_human_re
             llm_run_ids=[],
         )
 
-    async def fake_assemble_chapter_draft(session, project_slug: str, chapter_number: int):
+    async def fake_assemble_chapter_draft(session, project_slug: str, chapter_number: int, *, settings=None):
         return chapter_draft
 
     async def fake_export_chapter_markdown(
@@ -1067,7 +1067,7 @@ async def test_run_chapter_pipeline_rewrites_until_review_passes(
             llm_run_ids=[],
         )
 
-    async def fake_assemble_chapter_draft(session, project_slug: str, chapter_number: int):
+    async def fake_assemble_chapter_draft(session, project_slug: str, chapter_number: int, *, settings=None):
         calls = getattr(fake_assemble_chapter_draft, "calls", 0) + 1
         fake_assemble_chapter_draft.calls = calls
         return initial_draft if calls == 1 else rewritten_draft

@@ -26,7 +26,11 @@ logger = logging.getLogger(__name__)
 # 1. Scene fingerprinting via n-gram shingling
 # ---------------------------------------------------------------------------
 
-_SHINGLE_SIZE = 5  # words per shingle
+_SHINGLE_SIZE = 5        # words per shingle (English)
+_CJK_SHINGLE_SIZE = 4   # characters per shingle (Chinese/CJK)
+
+# Regex that matches any CJK Unified Ideograph
+_CJK_RE = re.compile(r"[\u4e00-\u9fff\u3400-\u4dbf]")
 
 
 def _normalize_text(text: str) -> str:
@@ -37,15 +41,42 @@ def _normalize_text(text: str) -> str:
     return text
 
 
+def _is_cjk_dominant(text: str) -> bool:
+    """Return True when more than 30% of non-space characters are CJK."""
+    stripped = text.replace(" ", "")
+    if not stripped:
+        return False
+    return len(_CJK_RE.findall(stripped)) / len(stripped) > 0.3
+
+
 def _compute_shingle_set(text: str, shingle_size: int = _SHINGLE_SIZE) -> set[int]:
-    """Compute a set of hashed word-level shingles from text."""
+    """Compute a set of hashed n-gram shingles from text.
+
+    For CJK-dominant text (Chinese) character-level n-grams are used because
+    Chinese has no whitespace word boundaries.  For Latin/English text the
+    original word-level shingles are used.
+    """
     normalized = _normalize_text(text)
     if not normalized:
         return set()
+
+    if _is_cjk_dominant(normalized):
+        # Character-level shingles: strip spaces so punctuation runs together
+        chars = normalized.replace(" ", "")
+        k = _CJK_SHINGLE_SIZE
+        if len(chars) < k:
+            return {int(hashlib.md5(chars.encode()).hexdigest()[:8], 16)}
+        shingles: set[int] = set()
+        for i in range(len(chars) - k + 1):
+            shingle = chars[i : i + k]
+            shingles.add(int(hashlib.md5(shingle.encode()).hexdigest()[:8], 16))
+        return shingles
+
+    # English / Latin: word-level shingles (original behaviour)
     words = normalized.split()
     if len(words) < shingle_size:
-        return {hash(normalized)}
-    shingles: set[int] = set()
+        return {int(hashlib.md5(normalized.encode()).hexdigest()[:8], 16)}
+    shingles = set()
     for i in range(len(words) - shingle_size + 1):
         shingle = " ".join(words[i : i + shingle_size])
         shingles.add(int(hashlib.md5(shingle.encode()).hexdigest()[:8], 16))
@@ -261,6 +292,104 @@ def _extract_en_phrases(text: str, counter: Counter[str]) -> None:
             counter[phrase] += 1
 
 
+# ---------------------------------------------------------------------------
+# 4. Intra-chapter paragraph-level deduplication
+# ---------------------------------------------------------------------------
+# Minimum paragraph length (chars) to consider as a duplication candidate.
+# 12 chars handles short but meaningful CJK lines like "焦土边缘，风卷起黑色的灰烬。" (16 chars)
+# while excluding ultra-short isolated lines like "快。" (2 chars) or "他说。" (3 chars).
+_MIN_PARA_LEN = 12
+
+
+def _split_paragraphs(text: str) -> list[str]:
+    """Split text into non-empty paragraphs."""
+    return [p.strip() for p in re.split(r"\n\s*\n", text) if p.strip()]
+
+
+def detect_intra_chapter_repetition(
+    chapter_text: str,
+    *,
+    min_paragraph_length: int = _MIN_PARA_LEN,
+) -> list[dict[str, Any]]:
+    """Detect repeated paragraph blocks within a single assembled chapter.
+
+    Parameters
+    ----------
+    chapter_text : str
+        The fully assembled chapter markdown content.
+    min_paragraph_length : int
+        Minimum character length for a paragraph to be considered a duplicate
+        candidate. Short paragraphs (single-sentence transitions) are ignored.
+
+    Returns
+    -------
+    list of findings dicts with keys:
+        first_pos  — index of first occurrence paragraph
+        second_pos — index of duplicate paragraph
+        text       — the repeated paragraph text (truncated to 120 chars)
+        severity   — "critical" (exact match) or "major" (high-similarity)
+        message    — human-readable description
+    """
+    paragraphs = _split_paragraphs(chapter_text)
+    findings: list[dict[str, Any]] = []
+    seen: dict[int, int] = {}  # normalized_hash → first paragraph index
+
+    for i, para in enumerate(paragraphs):
+        normalized = _normalize_text(para)
+        if len(normalized) < min_paragraph_length:
+            continue
+        key = int(hashlib.md5(normalized.encode()).hexdigest()[:12], 16)
+        if key in seen:
+            findings.append({
+                "first_pos": seen[key],
+                "second_pos": i,
+                "text": para[:120],
+                "severity": "critical",
+                "message": (
+                    f"[段落重复] 第{i+1}段与第{seen[key]+1}段内容完全相同，"
+                    f"疑似场景拼接时产生重复。"
+                ),
+            })
+        else:
+            seen[key] = i
+
+    return findings
+
+
+def remove_intra_chapter_duplicates(chapter_text: str) -> tuple[str, int]:
+    """Remove duplicate paragraph blocks from an assembled chapter.
+
+    Keeps the FIRST occurrence of each paragraph and discards subsequent
+    duplicates. Preserves the chapter heading and blank-line structure.
+
+    Returns
+    -------
+    (cleaned_text, removed_count)
+    """
+    paragraphs = _split_paragraphs(chapter_text)
+    seen: set[int] = set()
+    kept: list[str] = []
+    removed = 0
+
+    for para in paragraphs:
+        normalized = _normalize_text(para)
+        if len(normalized) < _MIN_PARA_LEN:
+            kept.append(para)
+            continue
+        key = int(hashlib.md5(normalized.encode()).hexdigest()[:12], 16)
+        if key in seen:
+            removed += 1
+            logger.warning(
+                "Removing duplicate paragraph (len=%d): %s…",
+                len(para), para[:60].replace("\n", " "),
+            )
+        else:
+            seen.add(key)
+            kept.append(para)
+
+    return "\n\n".join(kept), removed
+
+
 def build_overused_phrase_avoidance_block(
     phrases: list[tuple[str, int]],
     *,
@@ -280,5 +409,136 @@ def build_overused_phrase_avoidance_block(
         lines = ["[OVERUSED PHRASES — use alternative expressions]"]
         for phrase, count in phrases[:15]:
             lines.append(f"• \"{phrase}\" ({count} occurrences) — vary your phrasing")
+
+    return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# 5. Hook / cliffhanger ending repetition check
+# ---------------------------------------------------------------------------
+
+def check_hook_repetition(
+    new_hook: str,
+    existing_hooks: list[tuple[int, str]],
+    *,
+    similarity_threshold: float = 0.75,
+    hook_length: int = 200,
+) -> list[dict[str, Any]]:
+    """Check if a chapter's cliffhanger ending is too similar to recent hooks.
+
+    Parameters
+    ----------
+    new_hook : str
+        Last ``hook_length`` characters of the new chapter.
+    existing_hooks : list of (chapter_number, hook_text)
+        Recent chapter endings to compare against.
+    similarity_threshold : float
+        Jaccard similarity above this triggers a finding.
+    hook_length : int
+        How many trailing characters to compare.
+    """
+    if not new_hook:
+        return []
+
+    new_text = _normalize_text(new_hook[-hook_length:])
+    findings: list[dict[str, Any]] = []
+
+    for ch_num, existing_hook in existing_hooks:
+        if not existing_hook:
+            continue
+        existing_text = _normalize_text(existing_hook[-hook_length:])
+        similarity = compute_jaccard_similarity(new_text, existing_text)
+        if similarity >= similarity_threshold:
+            findings.append({
+                "chapter": ch_num,
+                "similarity": round(similarity, 3),
+                "severity": "major",
+                "message": (
+                    f"[钩子重复] 本章结尾与第{ch_num}章结尾相似度为 {similarity:.1%}，"
+                    f"请改写收尾以增加差异性。"
+                ),
+            })
+
+    return findings
+
+
+# ---------------------------------------------------------------------------
+# 6. Meta-text marker cleanup
+# ---------------------------------------------------------------------------
+
+# Patterns that are author/tool notes leaked into chapter prose.
+_META_TEXT_PATTERNS = [
+    # "——\n\n**第N章 完**" — separator + bold chapter-end marker (must match first)
+    re.compile(r"\n——\n\n\*\*第\d+章[^*\n]{0,20}\*\*\s*", re.MULTILINE),
+    # "**第28章 完**" style Markdown bold markers
+    re.compile(r"\n\*\*第\d+章[^*\n]{0,20}\*\*\s*", re.MULTILINE),
+    # "（本章完）" or "(本章完)" anywhere in text
+    re.compile(r"\n?[（(]本章完[）)]\s*", re.MULTILINE),
+    # "（全文完）" novel-end markers
+    re.compile(r"\n?[（(]全文完[）)]\s*", re.MULTILINE),
+    # Trailing "——" separator left after marker removal
+    re.compile(r"\n——\s*$", re.MULTILINE),
+]
+
+
+def clean_meta_text_markers(text: str) -> tuple[str, int]:
+    """Remove author/tool meta-text markers that leaked into chapter prose.
+
+    Returns
+    -------
+    (cleaned_text, removed_count)
+        cleaned_text — text with all meta markers stripped.
+        removed_count — number of markers removed (0 if text was clean).
+    """
+    removed = 0
+    for pattern in _META_TEXT_PATTERNS:
+        new_text, n = pattern.subn("", text)
+        if n:
+            removed += n
+            text = new_text
+    return text.rstrip() + "\n" if removed else text, removed
+
+
+# ---------------------------------------------------------------------------
+# 7. Opening diversity prompt block
+# ---------------------------------------------------------------------------
+
+def build_opening_diversity_block(
+    recent_openings: list[tuple[int, str]],
+    *,
+    language: str = "zh-CN",
+    opening_length: int = 60,
+) -> str:
+    """Render a prompt block listing recent chapter openings to avoid duplicating.
+
+    Parameters
+    ----------
+    recent_openings : list of (chapter_number, opening_text)
+        The last N chapters' first non-heading lines.
+    language : str
+        Language code for prompt language selection.
+    opening_length : int
+        How many characters of each opening to show.
+    """
+    if not recent_openings:
+        return ""
+
+    is_zh = language.lower().startswith("zh")
+
+    if is_zh:
+        lines = ["【最近章节开头 — 本章必须使用不同的开场方式】"]
+        for ch_num, opening in recent_openings:
+            snippet = opening[:opening_length].replace("\n", " ")
+            lines.append(f"• 第{ch_num}章开头：「{snippet}…」")
+        lines.append("开场不得重复上述任何场景设定、视角切入或句式结构。")
+    else:
+        lines = ["[RECENT CHAPTER OPENINGS — this chapter MUST open differently]"]
+        for ch_num, opening in recent_openings:
+            snippet = opening[:opening_length].replace("\n", " ")
+            lines.append(f"• Ch{ch_num} opened with: \"{snippet}…\"")
+        lines.append(
+            "Do NOT start with the same noun phrase, setting, or sentence structure. "
+            "Especially avoid starting with \"The [noun] [verb]...\" if that pattern appears above."
+        )
 
     return "\n".join(lines)

@@ -204,3 +204,145 @@ def test_resolve_story_bible_progress_returns_current_frontier_and_next_gate() -
     assert payload["current_frontier"]["volume_number"] == 2
     assert payload["next_gate"]["unlock_volume_number"] == 3
     assert payload["unlocked_gate_count"] == 1
+
+
+# ── Zombie auto-resume ───────────────────────────────────────────────────────
+
+
+def _write_persisted_tasks(tmp_path: Path, tasks: list[dict[str, object]]) -> Path:
+    persist_path = tmp_path / ".web_tasks.json"
+    import json as _json
+
+    persist_path.write_text(
+        _json.dumps(tasks, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    return persist_path
+
+
+def test_load_from_disk_flags_resumable_zombies_as_queued(tmp_path: Path) -> None:
+    persist_path = _write_persisted_tasks(
+        tmp_path,
+        [
+            {
+                "task_id": "z1",
+                "task_type": "autowrite",
+                "status": "running",
+                "created_at": "2026-01-01T00:00:00+00:00",
+                "updated_at": "2026-01-01T00:05:00+00:00",
+                "project_slug": "demo",
+                "title": "Demo",
+                "current_stage": "chapter_pipeline_started",
+                "progress_events": [],
+                "payload": {"slug": "demo", "title": "Demo"},
+            },
+        ],
+    )
+
+    manager = web_server.WebTaskManager(persist_path=persist_path)
+
+    task = manager.get_task("z1")
+    assert task is not None
+    assert task["status"] == "queued"
+    assert task["current_stage"] == "auto_resume_pending"
+    # The zombie ID was captured for the startup auto-resume sweep
+    assert manager._pending_auto_resume_ids == ["z1"]  # noqa: SLF001
+    # The auto_resume_queued marker event was appended for UI visibility
+    stages = [e["stage"] for e in task["progress_events"]]
+    assert "auto_resume_queued" in stages
+
+
+def test_load_from_disk_fails_zombies_without_payload(tmp_path: Path) -> None:
+    persist_path = _write_persisted_tasks(
+        tmp_path,
+        [
+            {
+                "task_id": "z-nopayload",
+                "task_type": "autowrite",
+                "status": "running",
+                "created_at": "2026-01-01T00:00:00+00:00",
+                "updated_at": "2026-01-01T00:05:00+00:00",
+                "project_slug": "demo",
+                "title": "Demo",
+                "current_stage": "running",
+                "progress_events": [],
+                # No payload → cannot resume
+            },
+            {
+                "task_id": "z-repair",
+                "task_type": "repair",
+                "status": "running",
+                "created_at": "2026-01-01T00:00:00+00:00",
+                "updated_at": "2026-01-01T00:05:00+00:00",
+                "payload": {"project_slug": "demo"},
+            },
+        ],
+    )
+
+    manager = web_server.WebTaskManager(persist_path=persist_path)
+
+    # No payload → failed
+    no_payload = manager.get_task("z-nopayload")
+    assert no_payload is not None
+    assert no_payload["status"] == "failed"
+    # Non-autowrite task with payload → still failed (only autowrite is
+    # safely resumable today; repair workers expect operator involvement).
+    repair = manager.get_task("z-repair")
+    assert repair is not None
+    assert repair["status"] == "failed"
+    assert manager._pending_auto_resume_ids == []  # noqa: SLF001
+
+
+def test_auto_resume_zombies_spawns_worker_thread(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    persist_path = _write_persisted_tasks(
+        tmp_path,
+        [
+            {
+                "task_id": "z-run",
+                "task_type": "autowrite",
+                "status": "running",
+                "created_at": "2026-01-01T00:00:00+00:00",
+                "updated_at": "2026-01-01T00:05:00+00:00",
+                "project_slug": "demo",
+                "title": "Demo",
+                "current_stage": "running",
+                "progress_events": [],
+                "payload": {"slug": "demo", "title": "Demo"},
+            },
+        ],
+    )
+
+    manager = web_server.WebTaskManager(persist_path=persist_path)
+
+    invocations: list[tuple[str, dict[str, object]]] = []
+
+    def fake_worker(self: object, task_id: str, payload: dict[str, object]) -> None:
+        invocations.append((task_id, dict(payload)))
+
+    monkeypatch.setattr(web_server.WebTaskManager, "_run_autowrite_worker", fake_worker)
+
+    resumed = manager.auto_resume_zombies()
+
+    assert resumed == ["z-run"]
+    # The pending list is cleared after a successful call (idempotent).
+    assert manager._pending_auto_resume_ids == []  # noqa: SLF001
+
+    # Wait briefly for the worker thread to observe the call.
+    import time as _time
+
+    deadline = _time.time() + 2.0
+    while not invocations and _time.time() < deadline:
+        _time.sleep(0.02)
+
+    assert invocations and invocations[0][0] == "z-run"
+    assert invocations[0][1]["slug"] == "demo"
+
+
+def test_auto_resume_zombies_idempotent_when_nothing_pending(tmp_path: Path) -> None:
+    persist_path = _write_persisted_tasks(tmp_path, [])
+    manager = web_server.WebTaskManager(persist_path=persist_path)
+
+    assert manager.auto_resume_zombies() == []
+    assert manager.auto_resume_zombies() == []

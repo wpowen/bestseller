@@ -71,12 +71,19 @@ def _check_obligatory_scenes(
     project: "ProjectModel",
     chapter_count: int,
     chapter_drafts: list["ChapterDraftVersionModel"],
+    chapter_number_by_id: dict[UUID, int] | None = None,
     language: str | None = None,
 ) -> list[ProjectConsistencyFinding]:
     """Phase-5: Check whether genre-required obligatory scenes are present.
 
     Uses the project's prompt pack to find obligatory scene definitions, then
     checks completed chapter drafts for keyword matches.
+
+    Note on model fields: ``ChapterDraftVersionModel`` stores the draft body
+    in ``content_md`` (NOT ``content``) and does not carry ``chapter_number``
+    directly — that number lives on ``ChapterModel``/``ChapterContractModel``.
+    We therefore accept an explicit ``chapter_number_by_id`` mapping built by
+    the caller from the already-loaded contracts.
     """
     from bestseller.services.prompt_packs import resolve_prompt_pack
 
@@ -89,9 +96,11 @@ def _check_obligatory_scenes(
     if pack is None or not pack.obligatory_scenes:
         return []
 
-    # Build a single string of all draft content for keyword scanning
+    number_by_id = chapter_number_by_id or {}
+
+    # Build a single string of all draft content for keyword scanning.
     all_draft_text = "\n".join(
-        (d.content or "") for d in chapter_drafts if d.content
+        (d.content_md or "") for d in chapter_drafts if d.content_md
     ).lower()
 
     # Map timing labels to chapter ranges
@@ -102,9 +111,9 @@ def _check_obligatory_scenes(
 
     draft_by_chapter: dict[int, str] = {}
     for d in chapter_drafts:
-        ch_num = getattr(d, "chapter_number", 0)
-        if ch_num and d.content:
-            draft_by_chapter[ch_num] = (d.content or "").lower()
+        ch_num = number_by_id.get(d.chapter_id, 0)
+        if ch_num and d.content_md:
+            draft_by_chapter[ch_num] = d.content_md.lower()
 
     findings: list[ProjectConsistencyFinding] = []
     _is_en = (language or "").lower().startswith("en")
@@ -237,6 +246,129 @@ def _check_foreshadowing_density(
                 ),
             )
         )
+
+    return findings
+
+
+def _check_chapter_opening_diversity(
+    chapter_drafts: list["ChapterDraftVersionModel"],
+    *,
+    language: str | None = None,
+    similarity_threshold: float = 0.72,
+    window: int = 5,
+) -> list["ProjectConsistencyFinding"]:
+    """Detect chapters whose opening lines are too similar to recent chapters."""
+    from bestseller.services.deduplication import check_opening_diversity
+
+    _is_en = (language or "").lower().startswith("en")
+    findings: list[ProjectConsistencyFinding] = []
+    # Build (chapter_number, opening_text) list sorted by chapter number
+    ordered = sorted(chapter_drafts, key=lambda d: getattr(d, "chapter_number", 0))
+    openings: list[tuple[int, str]] = []  # (ch_number, first_non_heading_line)
+
+    for draft in ordered:
+        content = draft.content_md or ""
+        ch_num = getattr(draft, "chapter_number", 0)
+        lines = [l.strip() for l in content.split("\n") if l.strip() and not l.strip().startswith("#")]
+        first_line = lines[0] if lines else ""
+        if not first_line:
+            openings.append((ch_num, ""))
+            continue
+
+        # Check against the last `window` openings
+        recent = [(cn, op) for cn, op in openings[-window:] if op]
+        dup_findings = check_opening_diversity(
+            first_line, recent, similarity_threshold=similarity_threshold,
+        )
+        for f in dup_findings:
+            findings.append(
+                ProjectConsistencyFinding(
+                    category="opening_diversity",
+                    severity="medium",
+                    message=(
+                        f"Chapter {ch_num} opening is {f['similarity']:.0%} similar to Chapter {f['chapter']} opening — consider varying the scene entry point."
+                        if _is_en else
+                        f"第{ch_num}章开头与第{f['chapter']}章开头相似度 {f['similarity']:.0%}，请改写开场方式。"
+                    ),
+                )
+            )
+        openings.append((ch_num, first_line))
+
+    return findings
+
+
+def _check_hook_repetition(
+    chapter_drafts: list["ChapterDraftVersionModel"],
+    *,
+    language: str | None = None,
+    similarity_threshold: float = 0.78,
+    window: int = 3,
+) -> list["ProjectConsistencyFinding"]:
+    """Detect chapters whose cliffhanger endings repeat the same phrasing."""
+    from bestseller.services.deduplication import check_hook_repetition
+
+    _is_en = (language or "").lower().startswith("en")
+    findings: list[ProjectConsistencyFinding] = []
+    ordered = sorted(chapter_drafts, key=lambda d: getattr(d, "chapter_number", 0))
+    hooks: list[tuple[int, str]] = []
+
+    for draft in ordered:
+        content = draft.content_md or ""
+        ch_num = getattr(draft, "chapter_number", 0)
+        hook_text = content[-300:] if len(content) > 300 else content
+        recent = [(cn, h) for cn, h in hooks[-window:] if h]
+        dup_findings = check_hook_repetition(hook_text, recent, similarity_threshold=similarity_threshold)
+        for f in dup_findings:
+            findings.append(
+                ProjectConsistencyFinding(
+                    category="hook_repetition",
+                    severity="medium",
+                    message=(
+                        f"Chapter {ch_num} cliffhanger is {f['similarity']:.0%} similar to Chapter {f['chapter']} ending — rewrite to vary the hook."
+                        if _is_en else
+                        f"第{ch_num}章结尾与第{f['chapter']}章结尾相似度 {f['similarity']:.0%}，请改写钩子句以增加差异。"
+                    ),
+                )
+            )
+        hooks.append((ch_num, hook_text))
+
+    return findings
+
+
+# Minimum word counts per language to flag suspiciously short chapters
+_MIN_CHAPTER_WORDS_ZH = 1500   # Chinese characters (approximate)
+_MIN_CHAPTER_WORDS_EN = 1800   # English words
+
+
+def _check_min_chapter_length(
+    chapter_drafts: list["ChapterDraftVersionModel"],
+    *,
+    language: str | None = None,
+) -> list["ProjectConsistencyFinding"]:
+    """Flag chapters whose word count falls below the minimum threshold."""
+    _is_en = (language or "").lower().startswith("en")
+    min_words = _MIN_CHAPTER_WORDS_EN if _is_en else _MIN_CHAPTER_WORDS_ZH
+    findings: list[ProjectConsistencyFinding] = []
+
+    for draft in chapter_drafts:
+        ch_num = getattr(draft, "chapter_number", 0)
+        word_count = getattr(draft, "word_count", None)
+        if word_count is None:
+            # Fallback: estimate from content length
+            content = draft.content_md or ""
+            word_count = len(content.split()) if _is_en else len(content) // 3
+        if word_count < min_words:
+            findings.append(
+                ProjectConsistencyFinding(
+                    category="chapter_length",
+                    severity="medium" if word_count > min_words * 0.7 else "high",
+                    message=(
+                        f"Chapter {ch_num} is only ~{word_count} words (minimum {min_words}). May be truncated or incomplete."
+                        if _is_en else
+                        f"第{ch_num}章仅约{word_count}字（最低要求{min_words}字），可能内容截断或不完整。"
+                    ),
+                )
+            )
 
     return findings
 
@@ -802,14 +934,15 @@ async def review_project_consistency(
         )
         or 0
     )
-    all_chapter_numbers = [
-        row.chapter_number
-        for row in (
-            await session.scalars(
-                select(ChapterModel.chapter_number).where(ChapterModel.project_id == project.id)
-            )
+    # ``session.scalars`` with a single-column ``select`` yields the column
+    # values directly (plain ints here), NOT row objects — so accessing
+    # ``row.chapter_number`` would raise ``AttributeError: 'int' object has no
+    # attribute 'chapter_number'``.  We materialise the scalar list directly.
+    all_chapter_numbers = list(
+        await session.scalars(
+            select(ChapterModel.chapter_number).where(ChapterModel.project_id == project.id)
         )
-    ]
+    )
     chapter_draft_count = int(
         await session.scalar(
             select(func.count())
@@ -1072,10 +1205,17 @@ async def review_project_consistency(
     )
 
     # ── Phase-5: obligatory scene validation ──
+    # Build chapter_id → chapter_number map so _check_obligatory_scenes can
+    # bucket drafts by chapter.  Drafts don't carry chapter_number directly;
+    # contracts do.
+    chapter_number_by_id: dict[UUID, int] = {
+        c.chapter_id: c.chapter_number for c in chapter_contracts
+    }
     obligation_findings = _check_obligatory_scenes(
         project=project,
         chapter_count=chapter_count,
         chapter_drafts=chapter_drafts,
+        chapter_number_by_id=chapter_number_by_id,
         language=project.language,
     )
     if obligation_findings:
@@ -1094,6 +1234,33 @@ async def review_project_consistency(
         review_result = review_result.model_copy(
             update={"findings": review_result.findings + foreshadowing_findings},
         )
+
+    # ── Phase-7: prose variety checks (opening diversity, hook repetition, length) ──
+    # These are local computation — zero LLM cost.
+    if chapter_drafts:
+        # Attach chapter_number to draft objects using the chapter_number_by_id map
+        _drafts_with_num = []
+        for _d in chapter_drafts:
+            _ch_num = chapter_number_by_id.get(_d.chapter_id, 0)
+            if not hasattr(_d, "chapter_number") or _d.chapter_number != _ch_num:
+                # Dynamically attach chapter_number for the helper functions
+                object.__setattr__(_d, "chapter_number", _ch_num) if hasattr(type(_d), "__slots__") else setattr(_d, "chapter_number", _ch_num)
+            _drafts_with_num.append(_d)
+
+        opening_findings = _check_chapter_opening_diversity(
+            _drafts_with_num, language=project.language,
+        )
+        hook_findings = _check_hook_repetition(
+            _drafts_with_num, language=project.language,
+        )
+        length_findings = _check_min_chapter_length(
+            _drafts_with_num, language=project.language,
+        )
+        prose_findings = opening_findings + hook_findings + length_findings
+        if prose_findings:
+            review_result = review_result.model_copy(
+                update={"findings": review_result.findings + prose_findings},
+            )
 
     fallback_summary = render_project_review_summary(review_result)
     system_prompt, user_prompt = build_project_review_prompts(project, review_result)

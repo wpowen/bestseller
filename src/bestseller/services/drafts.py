@@ -934,6 +934,24 @@ def _render_recent_scene_section(recent_scene_summaries: list[dict[str, Any]] | 
         opening = item.get("opening_lines")
         if opening:
             line += f"\n  [开头原文] {opening}"
+
+        # extended_tail is provided for the immediately preceding same-chapter
+        # scene — it contains the last ~1000 chars of actual prose, covering
+        # dialog and action that AI-generated summaries routinely omit.
+        extended_tail = item.get("extended_tail")
+        if extended_tail:
+            line += (
+                f"\n  [前一场结尾原文 — 以下内容已写入，新场景严禁逐字重复]\n"
+                f"  ---\n"
+                f"  {extended_tail.replace(chr(10), chr(10) + '  ')}\n"
+                f"  ---"
+            )
+        else:
+            # Fallback to shorter closing_lines for cross-chapter preceding scenes
+            closing = item.get("closing_lines")
+            if closing:
+                line += f"\n  [结尾原文（禁止在新场景中重复这段内容）] {closing}"
+
         lines.append(line)
     return "\n".join(lines)
 
@@ -1827,6 +1845,8 @@ def build_scene_draft_prompts(
     identity_constraint_block: str | None = None,
     overused_phrase_block: str | None = None,
     genre_constraint_block: str | None = None,
+    # Opening diversity block: list of (chapter_number, opening_snippet) for recent chapters
+    opening_diversity_block: str | None = None,
     # Context budget
     context_budget_tokens: int = 6000,
 ) -> tuple[str, str]:
@@ -2010,6 +2030,11 @@ def build_scene_draft_prompts(
     if overused_phrase_block:
         _phrase_avoidance_line = f"{overused_phrase_block}\n\n"
 
+    # Opening diversity avoidance (Tier 1 — injected for scene 1 of each chapter)
+    _opening_diversity_line = ""
+    if opening_diversity_block:
+        _opening_diversity_line = f"{opening_diversity_block}\n\n"
+
     # Genre-specific constraints (Tier 1 — always included)
     _genre_constraint_line = ""
     if genre_constraint_block:
@@ -2097,6 +2122,7 @@ def build_scene_draft_prompts(
             "contradiction_line": _contradiction_line,
             "identity_line": _identity_line,
             "phrase_avoidance_line": _phrase_avoidance_line,
+            "opening_diversity_line": _opening_diversity_line,
             "genre_constraint_line": _genre_constraint_line,
             "hard_fact_line": _hard_fact_line,
             "knowledge_line": _knowledge_line,
@@ -2132,6 +2158,7 @@ def build_scene_draft_prompts(
     _contradiction_line = _ctx["contradiction_line"]
     _identity_line = _ctx["identity_line"]
     _phrase_avoidance_line = _ctx["phrase_avoidance_line"]
+    _opening_diversity_line = _ctx["opening_diversity_line"]
     _genre_constraint_line = _ctx["genre_constraint_line"]
     _hard_fact_line = _ctx["hard_fact_line"]
     _knowledge_line = _ctx["knowledge_line"]
@@ -2165,6 +2192,7 @@ def build_scene_draft_prompts(
             f"{_identity_line}"
             f"{_genre_constraint_line}"
             f"{_phrase_avoidance_line}"
+            f"{_opening_diversity_line}"
             f"{_knowledge_line}"
             f"{_arc_summary_line}"
             f"{_world_snapshot_line}"
@@ -2224,6 +2252,7 @@ def build_scene_draft_prompts(
             f"{_identity_line}"
             f"{_genre_constraint_line}"
             f"{_phrase_avoidance_line}"
+            f"{_opening_diversity_line}"
             f"{_knowledge_line}"
             f"{_arc_summary_line}"
             f"{_world_snapshot_line}"
@@ -2671,6 +2700,9 @@ async def generate_scene_draft(
             genre_constraint_block=(
                 context_packet.genre_constraint_block if context_packet else None
             ),
+            opening_diversity_block=(
+                context_packet.opening_diversity_block if context_packet else None
+            ),
             context_budget_tokens=(
                 settings.generation.context_budget_tokens if settings else 6000
             ),
@@ -2805,6 +2837,8 @@ async def assemble_chapter_draft(
     session: AsyncSession,
     project_slug: str,
     chapter_number: int,
+    *,
+    settings: AppSettings | None = None,
 ) -> ChapterDraftVersionModel:
     project = await get_project_by_slug(session, project_slug)
     if project is None:
@@ -2850,6 +2884,39 @@ async def assemble_chapter_draft(
         )
 
     content_md = render_chapter_draft_markdown(chapter, scene_drafts, language=project.language)
+
+    # ── Post-assembly intra-chapter deduplication ──
+    # Detect and remove repeated paragraph blocks that can occur when multiple
+    # scenes accidentally reproduce the same dialog or action.
+    try:
+        from bestseller.services.deduplication import (
+            clean_meta_text_markers,
+            detect_intra_chapter_repetition,
+            remove_intra_chapter_duplicates,
+        )
+
+        # 1. Strip author/tool meta-text markers (e.g. "**第28章 完**", "（本章完）")
+        content_md, _meta_removed = clean_meta_text_markers(content_md)
+        if _meta_removed:
+            logger.info(
+                "Chapter %d: removed %d meta-text marker(s) from draft.",
+                chapter_number, _meta_removed,
+            )
+
+        # 2. Remove intra-chapter duplicate paragraphs
+        _dup_findings = detect_intra_chapter_repetition(content_md)
+        if _dup_findings:
+            logger.warning(
+                "Chapter %d: %d duplicate paragraph(s) detected after assembly — auto-removing.",
+                chapter_number, len(_dup_findings),
+            )
+            for _f in _dup_findings:
+                logger.warning("  %s", _f["message"])
+            content_md, _removed = remove_intra_chapter_duplicates(content_md)
+            logger.info("Chapter %d: removed %d duplicate paragraph(s).", chapter_number, _removed)
+    except Exception:
+        logger.debug("Post-assembly dedup failed (non-fatal)", exc_info=True)
+
     word_count = count_words(content_md)
     next_version = int(
         (
@@ -2884,4 +2951,21 @@ async def assemble_chapter_draft(
     chapter.current_word_count = word_count
     chapter.status = ChapterStatus.DRAFTING.value
     await session.flush()
+
+    # ── Eagerly sync disk file so web UI always shows current content ──
+    if settings is not None:
+        try:
+            from pathlib import Path  # noqa: PLC0415
+
+            output_path = (
+                Path(settings.output.base_dir) / project.slug / f"chapter-{chapter_number:03d}.md"
+            )
+            heading = format_chapter_heading(chapter_number, chapter.title, language=project.language)
+            full_content = f"{heading}\n\n{content_md}"
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            output_path.write_text(full_content, encoding="utf-8")
+            logger.debug("Chapter %d: disk file synced → %s", chapter_number, output_path)
+        except Exception:
+            logger.debug("Chapter %d: disk file sync failed (non-fatal)", chapter_number, exc_info=True)
+
     return chapter_draft

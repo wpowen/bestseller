@@ -1218,7 +1218,7 @@ def chapter_assemble(project_slug: str, chapter_number: int) -> None:
     async def _run() -> None:
         settings = load_settings()
         async with session_scope(settings) as session:
-            draft = await assemble_chapter_draft(session, project_slug, chapter_number)
+            draft = await assemble_chapter_draft(session, project_slug, chapter_number, settings=settings)
             typer.echo(
                 json.dumps(
                     {

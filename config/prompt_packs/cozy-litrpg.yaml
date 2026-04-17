@@ -1,0 +1,108 @@
+key: cozy-litrpg
+name: Cozy LitRPG
+version: "1.0"
+description: Low-stakes LitRPG where the System serves daily crafts — baking, inn-keeping, gardening, brewing. Character-driven slice-of-life with transparent RPG stats, targeting Legends-and-Lattes + Royal Road cozy crowd.
+genres:
+  - Cozy Fantasy
+  - LitRPG
+  - Slice of Life
+tags:
+  - cozy litrpg
+  - slice of life
+  - crafting
+  - magical inn
+  - merchant mc
+  - found family
+  - system
+source_notes:
+  - Built for the 2026 "cozy-LitRPG" wave — Systems used to bake bread, run an inn, or manage a bookshop instead of combat
+  - Transparent stats and progression, but paced slowly and tied to emotional beats
+  - Conflicts resolved by empathy, craft mastery, and community — never by combat-grinding
+anti_patterns:
+  - Forcing a boss fight or combat dungeon to "add stakes" that break the cozy promise
+  - Treating System notifications as a numeric wall — they should delight, not dominate prose
+  - Reducing customers and townspeople to quest-givers with no inner life
+  - Grinding progression that makes the protagonist overpowered too fast
+  - Introducing betrayal, violence, or dark trauma beats inconsistent with the cozy tone
+writing_profile_overrides:
+  market:
+    prompt_pack_key: cozy-litrpg
+    platform_target: Royal Road + Kindle Unlimited
+    reader_promise: Wrap the reader in warmth while giving them the satisfying click of level-ups and unlocks. Every chapter should feel like returning to a favorite café where the menu grows a little bit each visit.
+    selling_points:
+      - transparent RPG progression applied to slice-of-life
+      - warm sensory atmosphere (food, seasons, hearth)
+      - diverse customer cast with emotional stories
+      - low-stakes progression grounded in craft mastery
+      - found-family relationships that deepen across chapters
+    trope_keywords:
+      - cozy litrpg
+      - magical inn
+      - crafting
+      - slice of life
+      - system
+    hook_keywords:
+      - new recipe
+      - level up
+      - customer story
+      - seasonal festival
+    opening_strategy: Open on the protagonist arriving at or inheriting the space — the inn, the bakery, the apothecary. By the end of chapter 1 the System has bonded with the space and unlocked the first craft skill.
+    chapter_hook_strategy: Chapter hooks are anticipation-based — a mysterious traveler at the door, a seasonal festival approaching, a new recipe unlock pending, a friendship deepening. Never use threat-based cliffhangers.
+    pacing_profile: slow
+    payoff_rhythm: Small payoff every chapter (a successful bake, a happy customer, a tiny level-up). Medium payoff every 3-4 chapters (a relationship milestone, a recipe breakthrough, a community event). Big payoff at volume end (seasonal festival, place-of-belonging realization).
+  character:
+    protagonist_archetype: Retired/burnt-out adventurer, wanderer seeking home, or displaced modern soul — now running a gentle establishment
+    protagonist_core_drive: Build and protect a small sanctuary where the right people are fed, housed, and heard
+    growth_curve: Tentative start → finding rhythm → becoming the heart of a chosen community → quiet mastery
+    antagonist_mode: Misunderstandings, rival businesses, bureaucratic pressure, a difficult customer, or a past wound — all resolvable through empathy or craft
+  world:
+    mystery_density: low
+    worldbuilding_density: medium
+  style:
+    prose_style: literary-commercial
+    sentence_style: balanced
+    info_density: lean
+fragments:
+  global_rules: |
+    This is Cozy LitRPG. The System exists to celebrate daily mastery — every notification should feel like a small warm bell, never an alarm. All combat is off-page or avoided. Every scene must deliver at least one of: sensory warmth (food, weather, hearth), a relationship beat, a small craft breakthrough, or a gentle System unlock. Progression is real but slow — the reader should feel the protagonist's skills deepening over time, not leaping overnight.
+  planner_book_spec: |
+    Structure around seasons and relationships: Act 1 — arrival, System bonding, first regulars; Act 2A — deepening craft (skill tree unlocks tied to real mastery), growing chosen family; Act 2B — a gentle external challenge (tax collector, rival, natural disaster, past ghost) tests the place; Act 3 — community rallies, protagonist realizes this IS home. Include a seasonal festival or recurring community event as structural spine.
+  planner_world_spec: |
+    The setting IS the story. Design sensory layers — the smell of rising dough, the creak of the inn's sign, the color of the stew steam, the glow of magical lanterns. Establish a transparent System with readable stats (Cooking, Hospitality, Brewing, Gardening, Empathy). Magic enhances craft rather than replacing it — a self-stirring ladle, flour that sings when perfectly measured, a garden that dreams in winter. Local geography should feel intimate: one village, one inn, one forest path.
+  planner_cast_spec: |
+    Build a found family around the craft. Core cast: (1) A grumpy neighbor/supplier who becomes close, (2) a young apprentice/orphan who brings energy, (3) an elder with stories, (4) a magical creature companion (a hearth spirit, a talking cat, a familiar). Each regular customer should have an ongoing small arc. Antagonists should be flawed humans, not monsters.
+  planner_volume_plan: |
+    Volume 1 — Opening the place, finding first regulars, first seasonal festival. Volume 2 — External pressure (taxes, rivals) tests the community, new recipes unlock mid-tier skills. Volume 3 — A wandering hero/famous figure visits and legitimizes the place; protagonist cements their identity. Each volume must end on a warm, gathered scene.
+  planner_outline: |
+    Chapter 1 — Arrival, System bond, first unlock.
+    Chapters 2-4 — Meeting first customers/neighbors, establishing routine.
+    Chapter 5-8 — Mid-tier skill unlock tied to a real emotional beat (helping a sad regular, befriending a difficult supplier).
+    Midpoint — A festival or community event cements belonging.
+    Chapters 13-18 — Gentle external pressure escalates.
+    Chapters 19-22 — Community rallies, protagonist makes a deeper commitment to the place.
+    Final chapters — Warm resolution, hints of next season.
+  scene_writer: |
+    Lead with sensory detail. Show System notifications sparingly and as warm rewards, not data walls. Dialogue should feel unhurried and kind. Include at least one food/drink/sensory beat per scene. When the System levels, tie the number to a concrete emotional moment (someone's face lighting up at the first bite). Use soft humor. Let silences and shared looks carry weight.
+  scene_review: |
+    Check: Is there sensory warmth (food/weather/hearth)? Does a relationship advance? Does the System feel celebratory rather than grindy? Is the conflict (if any) small-stakes and solvable through craft/empathy? Does the scene leave the reader warmer than they started?
+  scene_rewrite: |
+    If the scene feels flat — add a dish being prepared in sensory detail, a small System notification tied to mastery, a quiet customer confession, or a weather/light shift. If the scene feels too tense — soften the conflict, add a shared meal, or shift to a supporting cast beat.
+  chapter_review: |
+    Verify the chapter delivers warmth through at least two of: a relationship deepening, a craft milestone (with System reward), a sensory atmosphere set-piece, a customer's small story, a community moment. Ensure no combat drift. Pacing should feel unhurried but always forward.
+  chapter_rewrite: |
+    Prioritize adding sensory richness, deepening one relationship through small dialogue, and ensuring the chapter's craft/System progression is tied to an emotional beat. Cut anything that drifts toward combat or threat.
+  dialogue_rules: |
+    Dialogue should feel unhurried. Characters listen to each other. Use half-finished sentences, shared jokes, quiet kindness. Customers reveal their stories through small details, not monologues.
+obligatory_scenes:
+  - code: system_bond
+    label: System bonds with the establishment
+    timing: act_1
+  - code: first_regular
+    label: First regular customer becomes family
+    timing: act_1
+  - code: signature_unlock
+    label: Signature recipe/product unlock
+    timing: act_2_midpoint
+  - code: seasonal_festival
+    label: Seasonal festival / community event
+    timing: act_3

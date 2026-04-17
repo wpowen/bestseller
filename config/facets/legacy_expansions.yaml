@@ -602,3 +602,191 @@ expansions:
     trope_tags: [antihero, secret-identity, morally-grey]
     platform_style: royal-road
     gender_channel: male
+
+  # ─────────────────────────────────────────────────
+  # 2026 新增 presets — CN trending
+  # ─────────────────────────────────────────────────
+  urban-cultivation-system:
+    primary_genre: urban-cultivation
+    sub_genres: [修仙2.0, 系统]
+    setting: "灵气复苏后的现代都市，职场与宗门混合"
+    tone: lighthearted
+    power_system: system-grid
+    relationship_mode: bg
+    narrative_drive: progression
+    emotional_register: power-fantasy
+    trope_tags: [修仙2.0, 系统, 打脸, 马甲, 社畜, 悟道]
+    platform_style: fanqie
+    gender_channel: neutral
+
+  shezhu-slacker-comedy:
+    primary_genre: slacker-life
+    sub_genres: [摆烂, 种田, 沙雕]
+    setting: "社畜猝死/辞职后穿越到小山头/古代农庄/异世界客栈"
+    tone: absurd
+    power_system: system-grid
+    relationship_mode: slow-burn
+    narrative_drive: slice-of-life
+    emotional_register: absurd-comedy
+    trope_tags: [社畜, 摆烂, 沙雕, 种田, 系统, 反套路]
+    platform_style: fanqie
+    gender_channel: neutral
+
+  entertainment-sweet-pampering:
+    primary_genre: entertainment-circle
+    sub_genres: [娱乐圈, 甜宠]
+    setting: "当代娱乐圈剧组/选秀/直播间"
+    tone: sweet
+    power_system: none
+    relationship_mode: bg
+    narrative_drive: relationship
+    emotional_register: sweet-pampering
+    trope_tags: [甜宠, 双洁, 娱乐圈, 马甲, 团宠]
+    platform_style: fanqie
+    gender_channel: female
+
+  face-slap-urban:
+    primary_genre: urban
+    sub_genres: [逆袭, 打脸]
+    setting: "现代都市，豪门家族与普通家境的碰撞"
+    tone: tense
+    power_system: system-grid
+    relationship_mode: bg
+    narrative_drive: face-slap
+    emotional_register: face-slap-cathartic
+    trope_tags: [打脸, 马甲, 废柴逆袭, 系统, 复仇]
+    platform_style: fanqie
+    gender_channel: neutral
+
+  tearjerker-ancient:
+    primary_genre: romance-cn
+    sub_genres: [古言, 虐恋]
+    setting: "古代王朝，权谋与情感纠缠"
+    tone: melancholic
+    power_system: martial-arts
+    relationship_mode: bg
+    narrative_drive: relationship
+    emotional_register: tear-jerker
+    trope_tags: [虐恋, 错过, 宫斗, 复仇, 身世]
+    platform_style: jinjiang
+    gender_channel: female
+
+  national-aesthetic-scholarly:
+    primary_genre: national-studies
+    sub_genres: [考据, 非遗]
+    setting: "真实朝代/虚构盛世，考据服饰、礼制、诗词"
+    tone: epic
+    power_system: none
+    relationship_mode: slow-burn
+    narrative_drive: exploration
+    emotional_register: balanced
+    trope_tags: [考据, 东方玄学, 国风, 年代文]
+    platform_style: qidian
+    gender_channel: neutral
+
+  sports-team-growth:
+    primary_genre: sports
+    sub_genres: [竞技, 团队]
+    setting: "职业体育联赛或校园训练营"
+    tone: epic
+    power_system: none
+    relationship_mode: bromance
+    narrative_drive: progression
+    emotional_register: cathartic
+    trope_tags: [逆袭, 团队, 师徒, 电竞]
+    platform_style: qidian
+    gender_channel: male
+
+  # ─────────────────────────────────────────────────
+  # 2026 新增 presets — EN trending
+  # ─────────────────────────────────────────────────
+  cozy-litrpg-bakery:
+    primary_genre: cozy-litrpg
+    sub_genres: [slice-of-life, crafting]
+    setting: "A magical town where a former adventurer runs a bakery with a cooking System"
+    tone: cozy
+    power_system: crafting-progression
+    relationship_mode: slow-burn
+    narrative_drive: slice-of-life
+    emotional_register: cozy
+    trope_tags: [slice-of-life, magical-inn, crafting, merchant-mc, found-family]
+    platform_style: royal-road
+    gender_channel: neutral
+
+  system-apocalypse-healer:
+    primary_genre: system-apocalypse
+    sub_genres: [system, survival]
+    setting: "Post-integration Earth where the MC is classed as Healer, not Fighter"
+    tone: gritty
+    power_system: litrpg-stats
+    relationship_mode: slow-burn
+    narrative_drive: survival
+    emotional_register: cathartic
+    trope_tags: [system-apocalypse, healer-mc, found-family, weak-to-strong]
+    platform_style: royal-road
+    gender_channel: neutral
+
+  dungeon-core-manager:
+    primary_genre: dungeon-core
+    sub_genres: [base-building, dungeon-master]
+    setting: "A sentient dungeon grows and recruits adventurers-turned-residents"
+    tone: lighthearted
+    power_system: litrpg-stats
+    relationship_mode: no-cp
+    narrative_drive: base-building
+    emotional_register: power-fantasy
+    trope_tags: [dungeon-core, dungeon-master, crafting, monster-evolution]
+    platform_style: royal-road
+    gender_channel: neutral
+
+  villainess-avoid-be:
+    primary_genre: villainess
+    sub_genres: [villainess, reincarnation]
+    setting: "An otome-game / novel world where the MC reincarnates as the doomed villainess"
+    tone: lighthearted
+    power_system: magic-system
+    relationship_mode: enemies-to-lovers
+    narrative_drive: strategy
+    emotional_register: romantic-tension
+    trope_tags: [villain-reincarnation, novel-extra, academy, regression, enemies-to-lovers]
+    platform_style: royal-road
+    gender_channel: female
+
+  isekai-inn-slice:
+    primary_genre: isekai-slice
+    sub_genres: [slice-of-life, shopkeeper]
+    setting: "An otherworld crossroads inn that attracts heroes, monsters, and gods alike"
+    tone: cozy
+    power_system: crafting-progression
+    relationship_mode: found-family
+    narrative_drive: slice-of-life
+    emotional_register: cozy
+    trope_tags: [magical-inn, slice-of-life, isekai, merchant-mc, found-family]
+    platform_style: royal-road
+    gender_channel: neutral
+
+  romantasy-fake-dating:
+    primary_genre: romantasy
+    sub_genres: [fake-dating, fated-mates]
+    setting: "A fae court political plot that forces two rivals into a fake bond"
+    tone: tense
+    power_system: magic-system
+    relationship_mode: enemies-to-lovers
+    narrative_drive: relationship
+    emotional_register: romantic-tension
+    trope_tags: [fake-dating, fated-mates, forced-proximity, enemies-to-lovers, grumpy-sunshine]
+    platform_style: kindle-unlimited
+    gender_channel: female
+
+  crafter-progression-smith:
+    primary_genre: progression
+    sub_genres: [crafting, progression]
+    setting: "A master smith climbs the skill tree via deep-craft expertise instead of combat"
+    tone: epic
+    power_system: crafting-progression
+    relationship_mode: slow-burn
+    narrative_drive: progression
+    emotional_register: power-fantasy
+    trope_tags: [crafter-progression, weak-to-strong, slice-of-life, found-family]
+    platform_style: royal-road
+    gender_channel: male

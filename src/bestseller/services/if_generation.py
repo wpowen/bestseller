@@ -43,6 +43,45 @@ from bestseller.services.stage_seed import (
 from bestseller.settings import AppSettings, get_runtime_env_value
 
 
+class PipelineStuckError(RuntimeError):
+    """Raised when chapter generation exhausts all retries for a specific chapter.
+
+    The pipeline cannot skip ahead (each chapter depends on the previous
+    chapter's hook), so the run halts here and persists a resumable marker on
+    ``project.metadata_json``. The self-heal scanner picks it up later.
+    """
+
+    def __init__(self, chapter_number: int, original: BaseException) -> None:
+        super().__init__(
+            f"Pipeline stuck at chapter {chapter_number}: "
+            f"{type(original).__name__}: {original}"
+        )
+        self.chapter_number = chapter_number
+        self.original = original
+
+
+async def _persist_stuck_state(
+    session: AsyncSession,
+    project: ProjectModel,
+    chapter_number: int,
+    error_message: str,
+) -> None:
+    """Mark a project as paused at a specific chapter so self-heal can resume it.
+
+    Writes ``paused_at / stuck_at_chapter / last_error`` into
+    ``project.metadata_json`` and flips ``project.status`` to ``paused``.
+    """
+    import datetime as _dt  # noqa: PLC0415
+
+    meta = dict(project.metadata_json or {})
+    meta["stuck_at_chapter"] = chapter_number
+    meta["last_error"] = (error_message or "")[:2000]
+    meta["paused_at"] = _dt.datetime.now(_dt.UTC).isoformat()
+    project.metadata_json = meta
+    project.status = "paused"
+    await session.flush()
+
+
 # ---------------------------------------------------------------------------
 # LLM caller — wraps the bestseller LLM gateway (litellm, sync)
 # ---------------------------------------------------------------------------
@@ -1461,6 +1500,64 @@ async def _generate_chapter_with_context(
     return chapter  # type: ignore[return-value]
 
 
+async def _retry_chapter_hard(
+    *,
+    session: AsyncSession,
+    settings: AppSettings,
+    project: ProjectModel,
+    bible: dict[str, Any],
+    card: dict[str, Any],
+    batch_entry_hook: str,
+    book_id: str,
+    cfg: InteractiveFictionConfig,
+    client: _LLMCaller,
+    chapter_model: Any,
+    run_id: Any,
+    route_id: str,
+    arc_index: int,
+    act_id: str | None,
+    arc_goal: str,
+    max_extra_attempts: int = 5,
+    base_wait_seconds: float = 60.0,
+) -> dict[str, Any]:
+    """Escalated per-chapter retry after the inner 5-attempt loop has exhausted.
+
+    Waits longer between tries (``base_wait_seconds * attempt``) and reuses
+    ``_generate_chapter_with_context`` so each attempt gets a fresh 5-try inner
+    loop plus the 8-try LLM-call-level retry. Total = up to 5 × 5 × 8 attempts
+    with cumulative backoff measured in minutes before the pipeline gives up.
+    """
+    import asyncio  # noqa: PLC0415
+
+    last_exc: BaseException | None = None
+    for attempt in range(max_extra_attempts):
+        wait = base_wait_seconds * (attempt + 1)
+        await asyncio.sleep(wait)
+        try:
+            return await _generate_chapter_with_context(
+                session=session,
+                settings=settings,
+                project=project,
+                bible=bible,
+                card=card,
+                batch_entry_hook=batch_entry_hook,
+                book_id=book_id,
+                cfg=cfg,
+                client=client,
+                chapter_model=chapter_model,
+                run_id=run_id,
+                route_id=route_id,
+                arc_index=arc_index,
+                act_id=act_id,
+                arc_goal=arc_goal,
+            )
+        except Exception as exc:  # noqa: BLE001
+            last_exc = exc
+            continue
+    assert last_exc is not None
+    raise last_exc
+
+
 async def run_chapters_phase_integrated(
     session: AsyncSession,
     settings: AppSettings,
@@ -1550,7 +1647,45 @@ async def run_chapters_phase_integrated(
         for card, result in zip(batch, results):
             ch_num = card["number"]
             if isinstance(result, Exception):
-                raise result
+                # Commit any successfully-generated chapters from this batch
+                # BEFORE attempting hard retry, so their DB state survives
+                # whatever fails next.
+                try:
+                    await session.commit()
+                except Exception:  # noqa: BLE001
+                    pass
+
+                try:
+                    result = await _retry_chapter_hard(
+                        session=session,
+                        settings=settings,
+                        project=project,
+                        bible=bible,
+                        card=card,
+                        batch_entry_hook=last_hook,
+                        book_id=book_id,
+                        cfg=cfg,
+                        client=client,
+                        chapter_model=chapter_map.get(ch_num, (None, None))[0],
+                        run_id=run_id,
+                        route_id=route_id,
+                        arc_index=arc_idx,
+                        act_id=act_id,
+                        arc_goal=arc_goal,
+                    )
+                except Exception as final_exc:  # noqa: BLE001
+                    # Escalated retry also failed — persist a resumable marker
+                    # on the project and halt the pipeline cleanly. The
+                    # self-heal scanner will re-queue a run later.
+                    try:
+                        await _persist_stuck_state(
+                            session, project, ch_num, str(final_exc)
+                        )
+                        await session.commit()
+                    except Exception:  # noqa: BLE001
+                        # Don't let persistence failure mask the original cause.
+                        pass
+                    raise PipelineStuckError(ch_num, final_exc) from final_exc
 
             chapter: dict[str, Any] = result
             errs = validate_chapter(chapter, book_id)

@@ -25,6 +25,31 @@ async def startup(ctx: dict[str, Any]) -> None:
     await init_redis(settings)
     ctx["redis"] = get_redis_client()
 
+    # Self-heal: scan for stuck generation pipelines (e.g. chapters halfway
+    # written when the previous container died) and re-queue an autowrite
+    # task for each. Any active WorkflowRunModel row written before *this*
+    # worker booted is by definition a ghost from a prior container —
+    # pass ``startup_cutoff`` so those are reaped immediately instead of
+    # waiting for the heartbeat timeout. Failures must not block startup.
+    if os.getenv("WORKER_SELF_HEAL", "1") != "0":
+        import datetime as _dt  # noqa: PLC0415
+
+        startup_cutoff = _dt.datetime.now(_dt.UTC) - _dt.timedelta(seconds=60)
+        try:
+            from bestseller.worker.self_heal import heal_stuck_projects  # noqa: PLC0415
+
+            dispatched = await heal_stuck_projects(
+                settings, startup_cutoff=startup_cutoff,
+            )
+            if dispatched:
+                logger.info(
+                    "Worker startup self-heal: re-queued %d stuck project(s): %s",
+                    len(dispatched),
+                    [d["slug"] for d in dispatched],
+                )
+        except Exception:  # noqa: BLE001
+            logger.exception("Worker startup self-heal failed — continuing")
+
 
 async def shutdown(ctx: dict[str, Any]) -> None:
     logger.info("Worker shutdown: closing connections…")

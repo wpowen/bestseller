@@ -30,8 +30,12 @@ from bestseller.infra.db.models import (
     VolumeModel,
     WorldRuleModel,
 )
+from bestseller.services.stage_seed import seed_character_inner_structure
 from bestseller.services.world_expansion import load_world_expansion_context
 from bestseller.services.writing_profile import is_english_language
+
+
+logger = logging.getLogger(__name__)
 
 
 def stable_character_id(project_id: UUID, character_name: str) -> UUID:
@@ -124,6 +128,97 @@ def parse_volume_plan_input(content: dict[str, Any] | list[dict[str, Any]]) -> l
         if not items and "volume_number" in content:
             items = [content]
     return [VolumePlanEntryInput.model_validate(item) for item in items]
+
+
+# ── Volume title normalization ─────────────────────────────────────
+# A placeholder title is one that carries no narrative signal — e.g. the
+# generic "第N卷" / "Volume N" fallback patterns. These can slip in when
+# the LLM leaves titles blank or when the planner fallback cannot map a
+# volume to a milestone. We normalize at the persistence boundary so the
+# ``volumes`` table and the stored ``metadata.volume_plan`` never expose
+# placeholder names to readers or downstream prompts.
+
+_PLACEHOLDER_TITLE_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(r"^\s*第\s*\d+\s*卷\s*$"),
+    re.compile(r"^\s*Volume\s+\d+\s*$", re.IGNORECASE),
+    re.compile(r"^\s*Vol\.?\s*\d+\s*$", re.IGNORECASE),
+)
+
+
+def _is_placeholder_volume_title(title: str | None) -> bool:
+    if not title:
+        return True
+    stripped = title.strip()
+    if not stripped:
+        return True
+    return any(pat.match(stripped) for pat in _PLACEHOLDER_TITLE_PATTERNS)
+
+
+def normalize_volume_plan_titles(
+    volumes: list[dict[str, Any]],
+    *,
+    is_en: bool,
+    category_key: str | None = None,
+) -> tuple[list[dict[str, Any]], int]:
+    """Rewrite placeholder volume_title values to phase-based names.
+
+    Called at persistence time so the DB never stores "第N卷"/"Volume N"
+    regardless of whether the source was the LLM, the story_package
+    milestones, or the fallback planner. Returns the normalized list and
+    the number of titles that were replaced.
+    """
+    # Local import to avoid circular dependency with planner.py.
+    from bestseller.services.planner import _resolve_fallback_volume_title
+
+    phase_occurrence: dict[str, int] = {}
+    used_titles: set[str] = set()
+    replaced = 0
+    normalized: list[dict[str, Any]] = []
+
+    # Pre-seed used_titles with non-placeholder titles so phase pool
+    # replacements don't collide with existing real titles.
+    for entry in volumes:
+        if not isinstance(entry, dict):
+            continue
+        title = entry.get("volume_title") or entry.get("title")
+        if isinstance(title, str) and not _is_placeholder_volume_title(title):
+            used_titles.add(title.strip())
+
+    ordered = sorted(
+        (e for e in volumes if isinstance(e, dict)),
+        key=lambda e: int(e.get("volume_number") or 0),
+    )
+    for entry in ordered:
+        new_entry = dict(entry)
+        vn_raw = new_entry.get("volume_number")
+        try:
+            volume_number = int(vn_raw)
+        except (TypeError, ValueError):
+            normalized.append(new_entry)
+            continue
+        phase = str(new_entry.get("conflict_phase") or "").strip() or "survival"
+        current_title = new_entry.get("volume_title") or new_entry.get("title") or ""
+        occ = phase_occurrence.get(phase, 0)
+        phase_occurrence[phase] = occ + 1
+        if _is_placeholder_volume_title(current_title):
+            candidate = _resolve_fallback_volume_title(phase, occ, volume_number, is_en=is_en)
+            safety = 0
+            while candidate in used_titles and safety < 200:
+                occ += 1
+                candidate = _resolve_fallback_volume_title(phase, occ, volume_number, is_en=is_en)
+                safety += 1
+            new_entry["volume_title"] = candidate
+            used_titles.add(candidate)
+            replaced += 1
+            logger.warning(
+                "Replaced placeholder volume title (volume_number=%s, phase=%s) -> %s",
+                volume_number,
+                phase,
+                candidate,
+            )
+        normalized.append(new_entry)
+
+    return normalized, replaced
 
 
 async def _get_or_create_style_guide(session: AsyncSession, project_id: UUID) -> StyleGuideModel:
@@ -404,12 +499,21 @@ async def upsert_cast_spec(
                 },
             }
 
+        _inner_structure = seed_character_inner_structure(
+            character_input,
+            lie_truth_arc=_lie_truth_extra.get("lie_truth_arc"),
+        )
+        _stage_c_extra: dict[str, Any] = (
+            {"inner_structure": _inner_structure} if _inner_structure else {}
+        )
+
         character.metadata_json = _merge_metadata(
             character.metadata_json,
             {
                 **character_input.metadata,
                 **(character_input.model_extra or {}),
                 **_lie_truth_extra,
+                **_stage_c_extra,
             },
         )
         characters_upserted += 1
@@ -516,6 +620,31 @@ async def upsert_volume_plan(
     project: ProjectModel,
     content: dict[str, Any] | list[dict[str, Any]],
 ) -> dict[str, int]:
+    # System-level title normalization: any placeholder ("第N卷" / "Volume N")
+    # that survives LLM/fallback generation is replaced with a phase-based
+    # name before we parse-and-persist. This is the single enforcement point
+    # that covers every write path into the volumes table.
+    is_en = is_english_language(project.language)
+    category_key = None
+    if isinstance(project.metadata_json, dict):
+        raw_cat = project.metadata_json.get("category_key")
+        if isinstance(raw_cat, str) and raw_cat.strip():
+            category_key = raw_cat.strip()
+    if isinstance(content, list):
+        raw_volumes = [dict(e) for e in content if isinstance(e, dict)]
+        normalized_volumes, replaced = normalize_volume_plan_titles(
+            raw_volumes, is_en=is_en, category_key=category_key
+        )
+        if replaced:
+            content = normalized_volumes
+    elif isinstance(content, dict) and isinstance(content.get("volumes"), list):
+        raw_volumes = [dict(e) for e in content["volumes"] if isinstance(e, dict)]
+        normalized_volumes, replaced = normalize_volume_plan_titles(
+            raw_volumes, is_en=is_en, category_key=category_key
+        )
+        if replaced:
+            content = {**content, "volumes": normalized_volumes}
+
     volumes = parse_volume_plan_input(content)
     project.metadata_json = _merge_metadata(project.metadata_json, {"volume_plan": content})
 
@@ -779,8 +908,6 @@ async def load_scene_story_bible_context(
         "relationships": relationships,
     }
 
-
-logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Living Story Bible — update character/world state after each chapter

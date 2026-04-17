@@ -316,6 +316,71 @@ async def test_upsert_volume_plan_creates_and_updates_volumes() -> None:
     assert project.current_volume_number == 1
 
 
+def test_is_placeholder_volume_title_detects_generic_names() -> None:
+    assert story_bible_services._is_placeholder_volume_title("第3卷")
+    assert story_bible_services._is_placeholder_volume_title(" 第 12 卷 ")
+    assert story_bible_services._is_placeholder_volume_title("Volume 4")
+    assert story_bible_services._is_placeholder_volume_title("Vol. 7")
+    assert story_bible_services._is_placeholder_volume_title("")
+    assert story_bible_services._is_placeholder_volume_title(None)
+    assert not story_bible_services._is_placeholder_volume_title("逆命入局")
+    assert not story_bible_services._is_placeholder_volume_title("Ashes of the Court")
+
+
+def test_normalize_volume_plan_titles_replaces_placeholders() -> None:
+    volumes = [
+        {"volume_number": 1, "volume_title": "逆命入局", "conflict_phase": "individual_survival"},
+        {"volume_number": 2, "volume_title": "第2卷", "conflict_phase": "faction_friction"},
+        {"volume_number": 3, "volume_title": "", "conflict_phase": "power_system_test"},
+        {"volume_number": 4, "volume_title": "Volume 4", "conflict_phase": "power_system_test"},
+    ]
+    normalized, replaced = story_bible_services.normalize_volume_plan_titles(
+        volumes, is_en=False
+    )
+    titles = [e["volume_title"] for e in normalized]
+    assert replaced == 3
+    assert titles[0] == "逆命入局"  # real title kept
+    assert "第" not in titles[1]
+    assert titles[2] and titles[3]
+    assert titles[2] != titles[3]  # same phase, different occurrence
+    assert len(titles) == len(set(titles))  # all unique
+
+
+@pytest.mark.asyncio
+async def test_upsert_volume_plan_normalizes_placeholder_titles() -> None:
+    project = build_project()
+    project.metadata_json = {"category_key": "action-progression"}
+    session = FakeSession(scalar_results=[None, None])
+
+    plan = [
+        {
+            "volume_number": 1,
+            "volume_title": "逆命入局",
+            "conflict_phase": "individual_survival",
+            "opening_state": {"protagonist_status": "低谷", "protagonist_power_tier": "低阶"},
+            "key_reveals": [],
+        },
+        {
+            "volume_number": 2,
+            "volume_title": "第2卷",
+            "conflict_phase": "faction_friction",
+            "opening_state": {"protagonist_status": "入局", "protagonist_power_tier": "低阶"},
+            "key_reveals": [],
+        },
+    ]
+
+    await story_bible_services.upsert_volume_plan(session, project, plan)
+
+    volumes = [item for item in session.added if isinstance(item, VolumeModel)]
+    titles = {v.volume_number: v.title for v in volumes}
+    assert titles[1] == "逆命入局"
+    assert not story_bible_services._is_placeholder_volume_title(titles[2])
+    # project metadata should also carry the normalized title for later reads.
+    stored = project.metadata_json["volume_plan"]
+    stored_titles = {e["volume_number"]: e["volume_title"] for e in stored}
+    assert not story_bible_services._is_placeholder_volume_title(stored_titles[2])
+
+
 @pytest.mark.asyncio
 async def test_load_scene_story_bible_context_includes_roles_states_and_rules(
     monkeypatch: pytest.MonkeyPatch,

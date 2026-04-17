@@ -36,6 +36,10 @@ from bestseller.services.if_prompts import (
     walkthrough_prompt,
     world_snapshot_prompt,
 )
+from bestseller.services.stage_seed import (
+    seed_chapter_metadata,
+    seed_scene_metadata,
+)
 from bestseller.settings import AppSettings, get_runtime_env_value
 
 
@@ -1236,6 +1240,7 @@ async def _bootstrap_db_structure(
     # Create ChapterModel + SceneCardModel (1 scene per chapter)
     all_cards = [card for arc in arc_plans for card in arc]
     protagonist_name = characters[0]["name"] if characters else "主角"
+    total_chapters = len(all_cards) or 1
     chapter_map: dict[int, tuple[Any, Any]] = {}
 
     for card in all_cards:
@@ -1248,6 +1253,7 @@ async def _bootstrap_db_structure(
             )
         )
         if chapter is None:
+            chapter_seed = seed_chapter_metadata(card, ch_num, total_chapters)
             chapter = ChapterModel(
                 project_id=project.id,
                 chapter_number=ch_num,
@@ -1257,7 +1263,7 @@ async def _bootstrap_db_structure(
                 chapter_emotion_arc=card.get("primary_emotion"),
                 target_word_count=2000,
                 status="planned",
-                metadata_json={"if_card": card},
+                metadata_json={"if_card": card, **chapter_seed},
             )
             session.add(chapter)
             await session.flush()
@@ -1274,6 +1280,7 @@ async def _bootstrap_db_structure(
                 next((c["name"] for c in characters if c.get("id") == fid), fid)
                 for fid in featured_ids
             ] or [protagonist_name]
+            scene_seed = seed_scene_metadata(card)
             scene = SceneCardModel(
                 project_id=project.id,
                 chapter_id=chapter.id,
@@ -1289,7 +1296,7 @@ async def _bootstrap_db_structure(
                 exit_state={},
                 target_word_count=2000,
                 status="planned",
-                metadata_json={"if_card": card},
+                metadata_json={"if_card": card, **scene_seed},
             )
             session.add(scene)
             await session.flush()

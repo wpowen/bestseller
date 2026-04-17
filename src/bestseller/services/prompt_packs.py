@@ -97,6 +97,27 @@ def get_prompt_pack(key: str | None) -> PromptPack | None:
 
 def infer_default_prompt_pack_key(genre: str, sub_genre: str | None = None) -> str | None:
     label = f"{genre} {sub_genre or ''}".lower()
+    # ── 2026 trending subgenre routes (check FIRST so they win over generic tokens) ──
+    # 都市修仙 / 修仙 2.0 — must beat generic 都市 and 仙 routes
+    if any(token in label for token in ("都市修仙", "修仙2.0", "修仙二.0", "灵气复苏", "系统修仙", "urban-cultivation", "urban cultivation")):
+        return "urban-cultivation-2.0"
+    # 社畜摆烂 / 沙雕种田
+    if any(token in label for token in ("社畜", "摆烂", "沙雕", "躺平", "slacker")):
+        return "shezhu-bailan-comedy"
+    # 娱乐圈甜宠
+    if any(token in label for token in ("娱乐圈", "选秀", "剧组", "直播带货", "entertainment-circle", "entertainment")):
+        return "entertainment-sweet"
+    # Cozy LitRPG (Eng cozy + litrpg combo)
+    if any(token in label for token in ("cozy-litrpg", "cozy litrpg", "magical inn", "treasured bakery", "cozy crafting")):
+        return "cozy-litrpg"
+    # System Apocalypse — Healer / Support
+    if any(token in label for token in ("system apocalypse", "system-apocalypse", "healer mc", "support class", "healer-mc")):
+        return "system-apocalypse-healer"
+    # Villainess / Novel-Extra reincarnation
+    if any(token in label for token in ("villainess", "otome isekai", "novel extra", "novel-extra", "反派千金", "穿成反派", "穿书反派")):
+        return "villainess-reincarnation"
+
+    # ── Pre-existing routes ──
     # Apocalypse / survival (check before sci-fi to catch "末日科幻" correctly)
     if any(token in label for token in ("末日", "囤货", "废土")):
         return "apocalypse-supply-chain"

@@ -1,0 +1,45 @@
+# Genre Fragment: System Apocalypse (系统末世)
+# 地球接入宇宙系统，地牢/怪物涌入，职业 & 面板机制与末世求生交汇。
+
+scene_writer: |
+  This is a System Apocalypse story. Key genre elements:
+  - 地球被强制接入一个宇宙级 System：全民获得属性、职业、技能树
+  - 旧秩序（政府、货币、社交）与新规则（经验值、任务、地牢）双轨并行
+  - 城市地形被"整合"：商场变地牢、地铁变副本、公园出怪物 Boss
+  - 职业选择决定人生：战斗职 / 非战斗职（healer / crafter / merchant）均可成型
+  - 进阶必须对应"系统规则 + 生存资源"双重代价（经验值 & 粮食/装备）
+
+planner_book_spec: |
+  结构要求：
+  - 第一章必须完成：系统降临 + 首次任务/首个怪物 + 第一个面板抉择
+  - 每卷一个"地牢级别跃迁"（E→D→C→B→A→S），清晰可量化
+  - 幸存者据点（apartment、学校、地铁站）逐步扩张为城镇
+  - 非战斗职业也要有"进阶高光"——crafting/healing 同样能战略致胜
+  - 系统揭秘分三层：local 任务 → 区域机制 → 宇宙真相（留到后期卷）
+
+scene_review: |
+  质量检查：
+  - 系统提示是否功能化（给出清晰任务、奖励、惩罚）而非仅作装饰？
+  - 经济 / 物资 / 经验 三条资源线是否都有推进？
+  - 主角的职业选择是否影响了这一场景的战术？（避免"万能职业"）
+  - 是否保留了末世的真实感（食物紧缺、幸存者冲突、旧世回忆）？
+
+anti_patterns:
+  - "系统替主角做所有决策，主角沦为执行者"
+  - "地牢与地上世界割裂，地上毫无生活感"
+  - "所有幸存者都选择战斗职业，导致世界扁平"
+  - "商店/经验等即时补给过于廉价，失去末世紧绷感"
+
+obligatory_scenes:
+  - code: integration_day
+    label: "整合日"
+    timing: act_1_open
+    description: "系统降临的第一小时——主角选择第一个职业/技能。"
+  - code: first_dungeon_clear
+    label: "首个地牢清剿"
+    timing: act_1_end
+    description: "团队雏形完成第一次地牢通关，确立生存法则。"
+  - code: class_specialization
+    label: "职业进阶节点"
+    timing: act_2_midpoint
+    description: "主角达到首次职业进阶门槛，面临关键选择。"

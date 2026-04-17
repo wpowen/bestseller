@@ -84,6 +84,55 @@ def _load_legacy_expansions_raw() -> dict[str, dict[str, Any]]:
     return raw.get("expansions", {})
 
 
+@lru_cache(maxsize=1)
+def load_style_collections() -> dict[str, dict[str, Any]]:
+    """Load curated style collections (风格包) — groups of dimension hints.
+
+    Each collection bundles tone / emotional_register / narrative_drive /
+    trope_tags / platform_style hints representing a reader-facing style
+    such as "纯爽文", "沙雕搞笑", "甜宠暖心", "摆烂治愈", "虐心催泪".
+
+    Returns a dict keyed by collection key (see config/facets/style_collections.yaml).
+    Safe to call when the file is missing — returns {}.
+    """
+    yaml_path = _CONFIG_DIR / "style_collections.yaml"
+    if not yaml_path.exists():
+        logger.info("style_collections.yaml not found — skipping style bundles")
+        return {}
+
+    with yaml_path.open("r", encoding="utf-8") as f:
+        raw = yaml.safe_load(f) or {}
+
+    collections_list = raw.get("collections", []) or []
+    compatibility = raw.get("prompt_pack_compatibility", {}) or {}
+
+    result: dict[str, dict[str, Any]] = {}
+    for entry in collections_list:
+        key = entry.get("key")
+        if not key:
+            continue
+        entry_copy = dict(entry)
+        entry_copy["compatible_prompt_packs"] = list(compatibility.get(key, []))
+        result[key] = entry_copy
+
+    logger.info("Loaded %d style collections", len(result))
+    return result
+
+
+def get_style_collection(key: str | None) -> dict[str, Any] | None:
+    """Return a single style collection by key, or None if missing."""
+    if not key:
+        return None
+    return load_style_collections().get(key)
+
+
+def list_style_collections() -> list[dict[str, Any]]:
+    """Return all style collections as a list (ordered by heat_score desc)."""
+    collections = list(load_style_collections().values())
+    collections.sort(key=lambda c: c.get("heat_score", 0), reverse=True)
+    return collections
+
+
 # ──────────────────────────────────────────────────────────────────────
 # Validation
 # ──────────────────────────────────────────────────────────────────────

@@ -1,0 +1,208 @@
+# Style Collections — curated "情绪/风格" bundles
+# 作用：把 dimensions.yaml 中零散的维度值聚合成用户可一键选择的风格包，
+# 等价于"我要写一本爽文"/"我要写搞笑沙雕"/"我要写甜宠" 这类直觉化入口。
+#
+# 每个 collection 由若干 dimension hints 组成：
+#   - tone / emotional_register / narrative_drive / trope_tags / platform_style
+# Story Architect Agent 在收到 style_collection 时，应把这些 hints
+# 作为生成 StoryFacets 的强约束（不可覆盖用户显式字段）。
+#
+# Heat score 仅用于排序展示，不参与校验。
+
+collections:
+  # ─────────────────────────────────────────────────────
+  # 中文主流情绪风格
+  # ─────────────────────────────────────────────────────
+  - key: power-fantasy-pure
+    label_zh: "纯爽文"
+    label_en: "Pure Power Fantasy"
+    heat_score: 92
+    description_zh: "开局即碾压、打脸连击、金手指明确、单章一爽点。"
+    target_channels: [male, neutral]
+    target_platforms: [fanqie, qidian]
+    hints:
+      tone: tense
+      emotional_register: power-fantasy
+      narrative_drive: face-slap
+      trope_tags: [废柴逆袭, 打脸, 金手指, 系统, 无敌]
+      chapter_beat: "setup→挑衅→碾压→打脸→资源结算"
+    anti_patterns:
+      - "主角犹豫/自我怀疑超过半章"
+      - "反派逃脱后续登场而不被清算"
+      - "失败/受挫情节无明确反击时间点"
+
+  - key: face-slap-cathartic
+    label_zh: "爆爽打脸"
+    label_en: "Face-Slap Cathartic"
+    heat_score: 88
+    description_zh: "单章节节拍严格遵循'装逼→打脸'，每章必有一次清晰的反击瞬间。"
+    target_channels: [male, female]
+    target_platforms: [fanqie]
+    hints:
+      tone: tense
+      emotional_register: face-slap-cathartic
+      narrative_drive: face-slap
+      trope_tags: [打脸, 马甲, 身份揭穿, 反派挑衅]
+      chapter_beat: "3000字内完成一次完整装逼→打脸闭环"
+
+  - key: absurd-comedy
+    label_zh: "沙雕搞笑"
+    label_en: "Absurdist Comedy"
+    heat_score: 84
+    description_zh: "无厘头段子密集、反差人设、谐音梗/解构梗驱动剧情。"
+    target_channels: [neutral, female]
+    target_platforms: [fanqie, royal-road]
+    hints:
+      tone: absurd
+      emotional_register: absurd-comedy
+      narrative_drive: comedic-chain
+      trope_tags: [沙雕, 反套路, 社畜, 摆烂]
+      chapter_beat: "每 800 字至少 1 个笑点，人物反差推动冲突"
+    anti_patterns:
+      - "进入高冲突后丢失喜剧语气"
+      - "笑点依赖歧视/刻板印象"
+
+  - key: sweet-pampering
+    label_zh: "高糖甜宠"
+    label_en: "Sweet Pampering"
+    heat_score: 90
+    description_zh: "互宠无内耗、误会在当章化解、感情推进顺畅，女频番茄主力。"
+    target_channels: [female]
+    target_platforms: [fanqie, jinjiang, wattpad]
+    hints:
+      tone: sweet
+      emotional_register: sweet-pampering
+      narrative_drive: relationship
+      relationship_mode: bg
+      trope_tags: [甜宠, 双洁, 团宠, 马甲, 娱乐圈]
+      chapter_beat: "每章至少一次亲密互动或高糖名场面"
+
+  - key: slacker-escape
+    label_zh: "摆烂治愈"
+    label_en: "Slacker Escapism"
+    heat_score: 80
+    description_zh: "社畜/打工人穿越/辞职/回乡，把日子过得小而美，沙雕 + 治愈双调。"
+    target_channels: [neutral, female]
+    target_platforms: [fanqie, jinjiang, royal-road]
+    hints:
+      tone: cozy
+      emotional_register: slacker-escape
+      narrative_drive: slice-of-life
+      trope_tags: [社畜, 摆烂, 种田, 基建, 奶爸]
+      chapter_beat: "日常小事 + 一次微小的成就/温情瞬间"
+
+  - key: tear-jerker
+    label_zh: "虐心催泪"
+    label_en: "Tear-Jerker"
+    heat_score: 72
+    description_zh: "BE 美学或 HE 前的极致错过/牺牲/误会，晋江常见。"
+    target_channels: [female]
+    target_platforms: [jinjiang, wattpad]
+    hints:
+      tone: melancholic
+      emotional_register: tear-jerker
+      narrative_drive: relationship
+      trope_tags: [虐恋, 错过, 牺牲, 复仇]
+      anti_patterns:
+        - "冲突可一句话解开"
+        - "主角毫无反抗地被苦难推着走"
+
+  - key: tense-suspense
+    label_zh: "紧张悬疑"
+    label_en: "Tense Suspense"
+    heat_score: 78
+    description_zh: "线索密度高、气氛压迫、每章设下钩子。"
+    target_channels: [neutral]
+    target_platforms: [qidian, kindle-unlimited]
+    hints:
+      tone: tense
+      emotional_register: intellectual
+      narrative_drive: mystery
+      trope_tags: [规则怪谈, 诡异复苏, 推理, 副本]
+      chapter_beat: "章末钩子强制向下一章"
+
+  - key: epic-worldbuilding
+    label_zh: "史诗宏大"
+    label_en: "Epic World-Building"
+    heat_score: 76
+    description_zh: "慢节奏、大量设定铺陈、多线视角，起点/KU 风格。"
+    target_channels: [male, neutral]
+    target_platforms: [qidian, royal-road, kindle-unlimited]
+    hints:
+      tone: epic
+      emotional_register: balanced
+      narrative_drive: progression
+      trope_tags: [宗门, 秘境, 考据, 东方玄学, kingdom-building]
+
+  - key: dark-gritty
+    label_zh: "暗黑硬核"
+    label_en: "Dark & Gritty"
+    heat_score: 70
+    description_zh: "道德灰度、暴力真实、胜利都伴随代价。"
+    target_channels: [neutral, male]
+    target_platforms: [royal-road, kindle-unlimited, qidian]
+    hints:
+      tone: gritty
+      emotional_register: grimdark
+      trope_tags: [morally-grey, antihero, 复仇, political-intrigue]
+
+  # ─────────────────────────────────────────────────────
+  # 英文/国际向情绪风格
+  # ─────────────────────────────────────────────────────
+  - key: cozy-vibes
+    label_zh: "治愈氛围"
+    label_en: "Cozy Vibes"
+    heat_score: 84
+    description_zh: "低冲突、烹饪/种植/开店节奏，KU & RR Cozy 赛道。"
+    target_channels: [neutral, female]
+    target_platforms: [royal-road, kindle-unlimited]
+    hints:
+      tone: cozy
+      emotional_register: cozy
+      narrative_drive: slice-of-life
+      trope_tags: [slice-of-life, magical-inn, merchant-mc, crafting, found-family]
+
+  - key: romantasy-tension
+    label_zh: "奇幻高张力"
+    label_en: "Romantasy Tension"
+    heat_score: 90
+    description_zh: "浪漫弧线即主线，fated mates / enemies-to-lovers 驱动。"
+    target_channels: [female]
+    target_platforms: [kindle-unlimited, wattpad]
+    hints:
+      tone: tense
+      emotional_register: romantic-tension
+      narrative_drive: relationship
+      trope_tags: [fated-mates, enemies-to-lovers, forced-proximity, forbidden-love, grumpy-sunshine]
+
+  - key: progression-grind
+    label_zh: "数值爆肝"
+    label_en: "Progression Grind"
+    heat_score: 86
+    description_zh: "单位时间实力增量清晰、面板/技能透明，RR 主流。"
+    target_channels: [male, neutral]
+    target_platforms: [royal-road]
+    hints:
+      tone: epic
+      emotional_register: power-fantasy
+      narrative_drive: progression
+      power_system: litrpg-stats
+      trope_tags: [litrpg, weak-to-strong, crafter-progression, system]
+
+# ─────────────────────────────────────────────────────
+# Cross-cut tips：把风格包与现有 prompt_packs 结合
+# ─────────────────────────────────────────────────────
+prompt_pack_compatibility:
+  # key -> 推荐的 prompt_pack 列表（语义兼容）
+  power-fantasy-pure: [urban-power-reversal, xianxia-upgrade-core, litrpg-progression]
+  face-slap-cathartic: [urban-power-reversal, female-palace]
+  absurd-comedy: [cozy-fantasy, game-esport]
+  sweet-pampering: [romance-tension-growth, romantasy, paranormal-romance, reverse-harem]
+  slacker-escape: [cozy-fantasy, cozy-mystery, eastern-aesthetic]
+  tear-jerker: [dark-romance, enemies-to-lovers, mafia-romance]
+  tense-suspense: [suspense-mystery, psychological-thriller, apocalypse-supply-chain]
+  epic-worldbuilding: [epic-fantasy, space-opera, history-strategy, eastern-aesthetic]
+  dark-gritty: [dark-romance, psychological-thriller, mafia-romance]
+  cozy-vibes: [cozy-fantasy, cozy-mystery]
+  romantasy-tension: [romantasy, paranormal-romance, enemies-to-lovers]
+  progression-grind: [litrpg-progression, xianxia-upgrade-core]

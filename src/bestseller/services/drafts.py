@@ -2485,6 +2485,29 @@ def _packet_hard_fact_snapshot(packet: SceneWriterContextPacket | None) -> dict[
     return packet.hard_fact_snapshot.model_dump(mode="json")
 
 
+def _has_leading_chapter_heading(content_md: str, chapter_number: int) -> bool:
+    """Return True if ``content_md`` already begins with a canonical chapter heading.
+
+    Tolerates leading blank lines and matches both Chinese ("# 第N章…") and
+    English ("# Chapter N…") headings. Used to skip a second heading prepend
+    on the disk-sync path when ``render_chapter_draft_markdown`` has already
+    added one.
+    """
+    if not content_md:
+        return False
+    first_line = ""
+    for line in content_md.splitlines():
+        if line.strip():
+            first_line = line.strip()
+            break
+    if not first_line:
+        return False
+    return bool(
+        re.match(rf"^#{{1,4}}\s*第\s*{chapter_number}\s*章\b", first_line)
+        or re.match(rf"^#{{1,4}}\s*Chapter\s+{chapter_number}\b", first_line, re.IGNORECASE)
+    )
+
+
 def format_chapter_heading(
     chapter_number: int,
     raw_title: str | None,
@@ -3073,8 +3096,17 @@ async def assemble_chapter_draft(
             output_path = (
                 Path(settings.output.base_dir) / project.slug / f"chapter-{chapter_number:03d}.md"
             )
-            heading = format_chapter_heading(chapter_number, chapter.title, language=project.language)
-            full_content = f"{heading}\n\n{content_md}"
+            # render_chapter_draft_markdown already prepends the canonical
+            # chapter heading. Only prepend here if it's missing (e.g. the
+            # content was sourced from an older code path that stored bare
+            # prose). Avoids the "# 第N章 …" / "# 第N章 …" twin-heading bug.
+            if _has_leading_chapter_heading(content_md, chapter_number):
+                full_content = content_md
+            else:
+                heading = format_chapter_heading(
+                    chapter_number, chapter.title, language=project.language
+                )
+                full_content = f"{heading}\n\n{content_md}"
             output_path.parent.mkdir(parents=True, exist_ok=True)
             output_path.write_text(full_content, encoding="utf-8")
             logger.debug("Chapter %d: disk file synced → %s", chapter_number, output_path)

@@ -1,0 +1,45 @@
+# Genre Fragment: Villainess / Novel-Extra Reincarnation (反派千金)
+# 穿成小说反派/炮灰/路人，利用前世剧情记忆改命避免 BE。
+
+scene_writer: |
+  This is a Villainess / Novel-Extra story. Key genre elements:
+  - 主角知道"原剧情"结局并主动偏移——信息差即主角最大的外挂
+  - 原小说主角团（heroine/male lead）仍在推进原剧情，主角要么规避、要么改写
+  - 常见场景：贵族学院、舞会、宫廷、比赛——高社交密度的"镜头"
+  - 每个原剧情 checkpoint 都是"要不要按剧本走"的抉择点
+  - 感情线：常见 enemies-to-lovers（与原男主/原反派）或独立路线
+
+planner_book_spec: |
+  结构要求：
+  - 前 3 章必须明确：穿越事实 + 剧情记忆 + 首个"原本该被处刑"的坎
+  - 每卷对应原著一个关键时间节点（入学、选妃、婚约、退学、处刑）
+  - 改命动作必须付出代价：与原主角团对立 / 失去某段关系 / 资源锐减
+  - 原著男主/反派/女主的人物弧线要与主角改命动作产生连锁反应
+  - 结尾 BE 规避要靠主角实际积累（情报、盟友、势力），不能靠"被宠爱"
+
+scene_review: |
+  质量检查：
+  - 这一场景主角是否用到了"前世剧情记忆"的信息差？
+  - 原著角色的行为是否仍然逻辑自洽（没有被主角主角光环强行扭曲）？
+  - 改命动作是否留下后果（他人对主角的重新评价、原剧情被拉偏的涟漪）？
+  - 是否维持了"原著要推进"的张力——主角不是唯一在做事的人？
+
+anti_patterns:
+  - "主角一出场全员倒戈，原男主/反派变工具人"
+  - "记忆外挂万能，提前知道所有伏笔，失去悬念"
+  - "只谈恋爱不改命，剧情记忆成摆设"
+  - "原著 BE 被口头消解，没有具体改命行动链路"
+
+obligatory_scenes:
+  - code: memory_awakening
+    label: "记忆觉醒"
+    timing: act_1
+    description: "主角意识到自己在小说里，回忆起原本的悲剧结局。"
+  - code: first_deviation
+    label: "首次偏离原剧情"
+    timing: act_1_end
+    description: "主角做出一个原著中不会出现的动作，剧情齿轮开始偏移。"
+  - code: doom_checkpoint
+    label: "最大厄运节点"
+    timing: act_2_end
+    description: "接近原著 BE 时间点，主角必须用累积的准备正面抗衡。"

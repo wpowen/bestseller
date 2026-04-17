@@ -68,6 +68,32 @@ dimensions:
         label_zh: "轻小说"
         label_en: "Light Novel"
         heat_score: 55
+      # ── Chinese trending 2026 ──
+      - key: urban-cultivation
+        label_zh: "都市修仙"
+        label_en: "Urban Cultivation (Xianxia 2.0)"
+        description: "传统仙侠走进现代都市——系统修仙、宗门分配、职场悟道。2026 番茄/起点黑马。"
+        heat_score: 90
+      - key: slacker-life
+        label_zh: "社畜摆烂"
+        label_en: "Slacker Life / Office-Escape"
+        description: "社畜 996 猝逃异世界/山头/农场，摆烂种田放飞自我，沙雕搞笑为主调。"
+        heat_score: 78
+      - key: entertainment-circle
+        label_zh: "娱乐圈"
+        label_en: "Entertainment Industry"
+        description: "娱乐圈选秀/剧组/直播带货，强人设逆袭+CP拉扯，女频主力赛道。"
+        heat_score: 80
+      - key: national-studies
+        label_zh: "国风考据"
+        label_en: "National Aesthetic / Scholarly"
+        description: "东方美学叙事，考据服饰/礼制/典故，融合非遗技艺与典籍典故。"
+        heat_score: 72
+      - key: sports
+        label_zh: "体育竞技"
+        label_en: "Sports/Competition"
+        description: "羽毛球、电竞、格斗等竞技题材，团队+个人成长双线。"
+        heat_score: 66
       # ── English genres ──
       - key: fantasy
         label_zh: "奇幻"
@@ -125,6 +151,32 @@ dimensions:
         label_zh: "超自然浪漫"
         label_en: "Paranormal Romance"
         heat_score: 72
+      # ── English trending 2026 ──
+      - key: cozy-litrpg
+        label_zh: "治愈数值"
+        label_en: "Cozy LitRPG"
+        description: "用 System 管理面包店/客栈/花园的慢节奏 LitRPG，情感+生活模拟。"
+        heat_score: 82
+      - key: system-apocalypse
+        label_zh: "系统末世"
+        label_en: "System Apocalypse"
+        description: "地球接入多元宇宙系统，地牢 & 怪物涌入，经典 RR/KU 头部赛道。"
+        heat_score: 84
+      - key: dungeon-core
+        label_zh: "地下城核心"
+        label_en: "Dungeon Core"
+        description: "主角即为地下城/BOSS，经营视角的 RTS-Base-Builder 变体。"
+        heat_score: 78
+      - key: isekai-slice
+        label_zh: "异世界日常"
+        label_en: "Isekai Slice-of-Life"
+        description: "穿越异界但走日常/开店/支援职业路线，无大 BOSS，氛围为王。"
+        heat_score: 76
+      - key: villainess
+        label_zh: "反派千金"
+        label_en: "Villainess/Otome Isekai"
+        description: "穿成小说反派/路人，主动改命避免 BE 结局。Webnovel/RR 新兴赛道。"
+        heat_score: 80
 
   - name: tone
     label_zh: "基调"
@@ -174,6 +226,16 @@ dimensions:
         label_zh: "忧郁"
         label_en: "Melancholic"
         heat_score: 50
+      - key: absurd
+        label_zh: "沙雕"
+        label_en: "Absurdist"
+        description: "无厘头、高密度段子、主角认知与世界规则反差制造笑点。"
+        heat_score: 82
+      - key: sweet
+        label_zh: "甜宠"
+        label_en: "Sweet/Fluffy"
+        description: "高浓度糖分，互宠无内耗，女频番茄头部风格。"
+        heat_score: 86
 
   - name: narrative_drive
     label_zh: "叙事驱动"
@@ -228,6 +290,21 @@ dimensions:
         label_en: "Heist/Plan"
         description: "Elaborate plans coming together."
         heat_score: 60
+      - key: slice-of-life
+        label_zh: "日常生活流"
+        label_en: "Slice of Life"
+        description: "日常节奏推动——开店、养娃、种田、修行小事。"
+        heat_score: 76
+      - key: face-slap
+        label_zh: "打脸反击"
+        label_en: "Face-Slap/Clap-Back"
+        description: "以反派 setup→主角实力碾压→公开打脸为单章节爽点节拍。"
+        heat_score: 84
+      - key: comedic-chain
+        label_zh: "段子串联"
+        label_en: "Comedy Chain"
+        description: "沙雕梗串场推动剧情，节奏靠笑点密度支撑。"
+        heat_score: 72
 
   - name: power_system
     label_zh: "力量体系"
@@ -269,6 +346,26 @@ dimensions:
         label_zh: "无"
         label_en: "None"
         heat_score: 40
+      - key: rule-based
+        label_zh: "规则异常"
+        label_en: "Rule-Based / Anomaly"
+        description: "以遵守/违反未知规则为核心，规则怪谈/SCP 风格。"
+        heat_score: 78
+      - key: system-grid
+        label_zh: "系统面板"
+        label_en: "System Interface"
+        description: "面板/任务/成就主导，CN 快节奏番茄常用。"
+        heat_score: 86
+      - key: crafting-progression
+        label_zh: "技艺精进"
+        label_en: "Crafting Progression"
+        description: "通过锻造/炼丹/烹饪/符文等工艺积累实力，偏 Cozy/LitRPG。"
+        heat_score: 74
+      - key: eastern-mysticism
+        label_zh: "东方玄学"
+        label_en: "Eastern Mysticism"
+        description: "周易、风水、符箓、香火、因果——都市修仙2.0 常用基底。"
+        heat_score: 76
 
   - name: relationship_mode
     label_zh: "感情线"
@@ -359,6 +456,31 @@ dimensions:
         label_zh: "智力快感"
         label_en: "Intellectual"
         heat_score: 60
+      - key: sweet-pampering
+        label_zh: "甜宠暖心"
+        label_en: "Sweet Pampering"
+        description: "互宠无误会，恋爱脑高糖，女频番茄/晋江主力情绪。"
+        heat_score: 88
+      - key: face-slap-cathartic
+        label_zh: "打脸爽感"
+        label_en: "Face-Slap Catharsis"
+        description: "反派抬头即被主角当众碾压，爽点密度 > 世界观深度。"
+        heat_score: 86
+      - key: absurd-comedy
+        label_zh: "沙雕搞笑"
+        label_en: "Absurdist Comedy"
+        description: "无厘头+反差萌+谐音梗，图的是'笑出猪叫'。"
+        heat_score: 80
+      - key: slacker-escape
+        label_zh: "摆烂治愈"
+        label_en: "Slacker Escapism"
+        description: "社畜/打工人逃离 KPI 过小日子，低压力高代入。"
+        heat_score: 78
+      - key: tear-jerker
+        label_zh: "虐心催泪"
+        label_en: "Tear-Jerker"
+        description: "感情线以误会/牺牲/错过为核心，追求 BE 美学或 HE 前的极致酸痛。"
+        heat_score: 70
 
   - name: trope_tags
     label_zh: "标签"
@@ -459,6 +581,67 @@ dimensions:
       - key: 电竞
         label_en: "Esports"
         heat_score: 66
+      # ── Chinese trending 2026 additions ──
+      - key: 甜宠
+        label_en: "Sweet Pampering"
+        heat_score: 90
+      - key: 双洁
+        label_en: "Double Purity"
+        heat_score: 82
+      - key: 无敌
+        label_en: "Invincible MC"
+        heat_score: 85
+      - key: 摆烂
+        label_en: "Slacker/Lying Flat"
+        heat_score: 80
+      - key: 社畜
+        label_en: "Office Worker Escape"
+        heat_score: 74
+      - key: 娱乐圈
+        label_en: "Entertainment Circle"
+        heat_score: 80
+      - key: 考据
+        label_en: "Scholarly / Historical Rigor"
+        heat_score: 66
+      - key: 悟道
+        label_en: "Dao Enlightenment"
+        heat_score: 68
+      - key: 沙雕
+        label_en: "Absurdist"
+        heat_score: 82
+      - key: 基建
+        label_en: "Infrastructure Building"
+        heat_score: 76
+      - key: 东方玄学
+        label_en: "Eastern Mysticism"
+        heat_score: 75
+      - key: 修仙2.0
+        label_en: "Modern Cultivation"
+        heat_score: 88
+      - key: 老祖
+        label_en: "Ancient Elder / Patriarch POV"
+        heat_score: 72
+      - key: 救世系统
+        label_en: "Save-the-World System"
+        heat_score: 70
+      - key: 奶爸
+        label_en: "Super Dad / Daughter-Raising"
+        heat_score: 70
+      - key: 直播修仙
+        label_en: "Livestream Cultivation"
+        heat_score: 72
+      - key: 职场
+        label_en: "Workplace"
+        heat_score: 64
+      - key: 反套路
+        label_en: "Anti-Trope / Genre Subversion"
+        heat_score: 72
+      - key: 小白文
+        label_en: "Light/Easy Read"
+        heat_score: 68
+      - key: 师门
+        label_en: "Sect-as-Family"
+        heat_score: 64
       # ── English tropes ──
       - key: isekai
         label_en: "Isekai"
@@ -538,6 +721,64 @@ dimensions:
       - key: political-intrigue
         label_en: "Political Intrigue"
         heat_score: 70
+      # ── English trending 2026 additions ──
+      - key: slice-of-life
+        label_en: "Slice of Life"
+        heat_score: 78
+      - key: system-satire
+        label_en: "Hostile/Funny System"
+        heat_score: 74
+      - key: healer-mc
+        label_en: "Healer/Support Class MC"
+        heat_score: 72
+      - key: merchant-mc
+        label_en: "Merchant / Shopkeeper MC"
+        heat_score: 74
+      - key: magical-inn
+        label_en: "Magical Inn / Café"
+        heat_score: 72
+      - key: dungeon-master
+        label_en: "Dungeon Master POV"
+        heat_score: 76
+      - key: villain-reincarnation
+        label_en: "Reincarnated as the Villain"
+        heat_score: 80
+      - key: novel-extra
+        label_en: "Novel Extra / Side-Character Rebirth"
+        heat_score: 74
+      - key: system-apocalypse
+        label_en: "System Apocalypse"
+        heat_score: 82
+      - key: crafter-progression
+        label_en: "Crafter / Artisan Progression"
+        heat_score: 72
+      - key: weak-to-strong
+        label_en: "Weak to Strong"
+        heat_score: 84
+      - key: strong-from-start
+        label_en: "Strong From the Start"
+        heat_score: 70
+      - key: regression
+        label_en: "Regression / Time Rewind"
+        heat_score: 80
+      - key: fake-dating
+        label_en: "Fake Dating"
+        heat_score: 82
+      - key: marriage-of-convenience
+        label_en: "Marriage of Convenience"
+        heat_score: 74
+      - key: grumpy-sunshine
+        label_en: "Grumpy × Sunshine"
+        heat_score: 78
+      - key: touch-her-and-die
+        label_en: "Touch Her and Die"
+        heat_score: 72
+      - key: himbo-hero
+        label_en: "Himbo / Golden-Retriever MC"
+        heat_score: 62
+      - key: soft-magic
+        label_en: "Soft Magic / Vibes"
+        heat_score: 64
 
   - name: gender_channel
     label_zh: "频道"

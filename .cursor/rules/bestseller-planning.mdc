@@ -1,0 +1,138 @@
+---
+description: 编辑 story-bible/ 任何文件时（Mode B · planner 角色）的约束。确保规划完整、相容、可溯。
+globs:
+  - "output/ai-generated/**/story-bible/**/*.md"
+  - "output/ai-generated/**/meta.yaml"
+---
+
+# BestSeller · Planning (Mode B · planner)
+
+> 已启用 `bestseller-core.mdc`。本规则在 story-bible / meta 编辑时叠加。
+
+---
+
+## 0. 你是 planner 角色
+
+- 模拟 temp=0.82，多候选推理
+- 不写正文。正文属 writer 角色
+- 不抽取知识。知识属 summarizer
+
+---
+
+## 1. 规划顺序不可越级
+
+必须按以下顺序逐级推进，**前一级未定**则不可动下一级：
+
+```
+1. premise.md           (BookSpec)
+2. world.md             (WorldSpec)
+3. characters.md        (CastSpec)
+4. volume-plan.md       (VolumePlan)
+5. act-plan.md          (> 50 ch 强制)
+6. world-expansion.md   (> 3 卷强制)
+7. volumes/vol-NN/README.md  (ChapterOutline · just-in-time)
+```
+
+修改前一级后，**必须**检查下游的相容性。例如改 `world.md` 的 power_system tiers → 同步检查 `characters.md` 的 `power_tier` 字段 + `volume-plan.md` 的主角境界预期。
+
+---
+
+## 2. 三个硬门槛检查
+
+| 条件 | 必做 |
+|------|------|
+| `meta.yaml.target_chapters ≤ 50` | `acts=1`, `volumes=1`, 无 act-plan |
+| `meta.yaml.target_chapters > 50` | 存在 `act-plan.md` |
+| `meta.yaml.volumes > 3` | 存在 `world-expansion.md` 且含 `DeferredReveal[]` |
+
+违反即视作规划不完整，writer 不得动笔。
+
+---
+
+## 3. 字段相容性
+
+### premise.md
+
+- `protagonist.external_goal` 必须对应 `volume-plan.md` 中 final volume 的 `volume_goal`
+- `themes[]` 必须在 `characters.md` 的 `moral_framework_json` 与 `plot-arcs.md` 的 thematic resonance 中呼应
+- `stakes` 的三层必须在 `volume-plan.md` 中逐卷升级
+
+### world.md
+
+- `rules[]` 每一条必须**至少有一次**在 `plot-arcs.md` 中被"故事性利用"
+- `power_system.tiers[]` 的递进必须与 `characters.md` 主角 `power_tier` 曲线对齐
+- `locations[]` 所有**主要**地点必须在 `volume-plan.md` 中有出现卷号
+
+### characters.md
+
+- 每个角色的 `knowledge_state.knows / falsely_believes / unaware_of` 必须**严格按时间线**，不得预知后续
+- 反派的 `escalation_path` 必须逐步（每 3–5 章一个台阶），绝不突然升级
+- 主角的 `arc_trajectory` 必须贴 conflict_phases
+
+### volume-plan.md
+
+- 胜负序列（Win/Loss Rhythm）必须：
+  - 第 1 卷 `win`
+  - 倒数第二卷（N-1）`major loss`
+  - 最终卷（N）`win`
+  - 中部至少 40–70% 区间以 loss 或 neutral 为主
+- 跨卷钩子（`reader_hook_to_next`）必须等于下一卷开头种子
+
+### act-plan.md
+
+- 每个 Act 的 `chapter_range` 必须连续不漏不叠
+- `protagonist_arc_stage` 逐 Act 推进，不倒退
+
+### world-expansion.md
+
+- 每条 `DeferredReveal` 的 `payoff_chapter_target` 距 `planted_chapter` ≥ 跨卷（≥ 卷长）
+- 每条有 `status ∈ {planted, paying_off, paid}` 追踪
+- `ExpansionGate[]` 的开闸条件与 `volume-plan.md` 对应卷事件一致
+
+---
+
+## 4. 伏笔对账（plot-arcs.md）
+
+- 每个 `planted` 必须在同一个表中显式给 `payoff_chapter`（可为 TBD 但必须存在列）
+- 偿付率（paid / planted）必须在**每次修改**后依然 ≥ 60%
+- 若某伏笔被决定"不偿付"，必须显式标 `dropped` 并给原因；`dropped` ≥ 10% 即视作规划松散，触发重审
+
+---
+
+## 5. 风格基线（writing-profile.md）
+
+- `POV` / `tense` 一旦定下，后续**不得在 writer 角色下偷偷切换**（除非章节 frontmatter 明确 `pov_switch_ok: true`）
+- `taboo_words[]` 必须至少包含：主角、系统、穿越、金手指、内心毫无波动、气得浑身发抖、仿佛开了挂
+
+---
+
+## 6. 更新 meta.yaml 的时机
+
+以下事件**都要**同步 meta.yaml：
+
+- 写完一章 → `current_chapter`
+- 跨卷 → `current_volume`
+- 改动目标章数 / 字数目标 → `target_chapters` / `target_total_words`
+- 转入 paused / completed → `status`
+
+---
+
+## 7. 多候选推理原则
+
+任何涉及戏剧结构的决定（主角结局、反派身份、师父存亡、情感走向），planner 应在注释里写明 2–3 个候选及其权衡再选定。选定版写入正文；候选版保留在 `<!-- alt -->` 块或 `story-bible/decisions.md`。
+
+---
+
+## 8. 未解问题
+
+若某阶段需要用户决定的问题未明：
+
+- **不要**自行补全并继续
+- 在本文件末尾加 `## Open Questions` 段并列出
+- 告知用户"以下待定"
+
+---
+
+## 9. 示例
+
+见 [output/ai-generated/fen-xin-jue/story-bible/](../../output/ai-generated/fen-xin-jue/story-bible/) — 30 章单卷示例规划。

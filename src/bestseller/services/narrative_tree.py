@@ -5,7 +5,7 @@ from collections import Counter, defaultdict
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bestseller.domain.narrative_tree import (
@@ -274,6 +274,18 @@ async def rebuild_narrative_tree(
     is_en = not (project.language or "").startswith("zh")
     sl = _safe_line  # local alias for brevity
     join_sep = ", " if is_en else "、"
+
+    # Serialise concurrent rebuilds for the same project. Without this,
+    # two pipelines both DELETE then INSERT and collide on the
+    # ``uq_narrative_tree_node_path`` unique constraint (observed
+    # 2026-04-17). The advisory lock is released at transaction end.
+    await session.execute(
+        text(
+            "SELECT pg_advisory_xact_lock("
+            "hashtextextended('narrative_tree_rebuild:' || :pid, 0))"
+        ),
+        {"pid": str(project.id)},
+    )
 
     await session.execute(
         delete(NarrativeTreeNodeModel).where(NarrativeTreeNodeModel.project_id == project.id)

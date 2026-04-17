@@ -478,7 +478,10 @@ async def _call_litellm(
     input_tokens, output_tokens = _extract_usage_fields(getattr(response, "usage", None))
     finish_reason = getattr(choice, "finish_reason", None)
     if not content.strip():
-        raise ValueError("LLM response content is empty.")
+        raise ValueError(
+            f"LLM response content is empty (finish_reason={finish_reason!r}, "
+            f"output_tokens={output_tokens!r})."
+        )
     return content.strip(), input_tokens, output_tokens, finish_reason
 
 

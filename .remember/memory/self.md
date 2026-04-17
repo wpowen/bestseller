@@ -26,3 +26,11 @@ Correct:
 - If result is a list of dicts, merge them into a single dict.
 - Also sanitize `prev_snapshot` input in case corrupted data was already persisted to state.
 - In pipeline, sanitize `world_snapshots` loaded from state to ensure all elements are dicts.
+
+---
+
+Mistake: Assume `python` command exists in all environments when verifying generated content metrics.
+Wrong: Run `python` directly and fail on systems where only `python3` is installed.
+Correct:
+- Prefer `python3` for verification scripts in this repository environment.
+- If command fails, immediately retry with `python3` and continue validation.

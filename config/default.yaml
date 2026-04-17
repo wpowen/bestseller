@@ -51,6 +51,11 @@ llm:
       - "RateLimitError"
       - "APITimeoutError"
       - "ServiceUnavailableError"
+    # 429 rate-limits are transient — retry patiently instead of
+    # pausing the task or swapping in fallback content.
+    rate_limit_max_attempts: 60
+    rate_limit_wait_min_seconds: 5
+    rate_limit_wait_max_seconds: 120
 
 # -----------------------------------------------------------------------------
 # Primary Database

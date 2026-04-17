@@ -6,10 +6,10 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from bestseller.domain.enums import ArtifactType, WorkflowStatus
+from bestseller.domain.enums import ArtifactType, ChapterStatus, SceneStatus, WorkflowStatus
 from bestseller.domain.narrative import NarrativeGraphMaterializationResult
 from bestseller.domain.narrative_tree import NarrativeTreeMaterializationResult
-from bestseller.domain.project import ChapterCreate, SceneCardCreate
+from bestseller.domain.project import ChapterCreate, SceneCardCreate, VolumeCreate
 from bestseller.domain.story_bible import StoryBibleMaterializationResult
 from bestseller.domain.workflow import (
     ChapterOutlineBatchInput,
@@ -23,7 +23,7 @@ from bestseller.infra.db.models import (
     WorkflowRunModel,
     WorkflowStepRunModel,
 )
-from bestseller.services.projects import create_chapter, create_scene_card, get_project_by_slug
+from bestseller.services.projects import create_chapter, create_or_get_volume, create_scene_card, get_project_by_slug
 from bestseller.services.narrative import rebuild_narrative_graph
 from bestseller.services.narrative_tree import rebuild_narrative_tree
 from bestseller.services.retrieval import refresh_story_bible_retrieval_index
@@ -41,6 +41,58 @@ WORKFLOW_TYPE_MATERIALIZE_CHAPTER_OUTLINE = "materialize_chapter_outline_batch"
 WORKFLOW_TYPE_MATERIALIZE_STORY_BIBLE = "materialize_story_bible"
 WORKFLOW_TYPE_MATERIALIZE_NARRATIVE_GRAPH = "materialize_narrative_graph"
 WORKFLOW_TYPE_MATERIALIZE_NARRATIVE_TREE = "materialize_narrative_tree"
+
+_MATERIALIZATION_MUTABLE_CHAPTER_STATUSES = {
+    ChapterStatus.PLANNED.value,
+    ChapterStatus.OUTLINING.value,
+}
+_MATERIALIZATION_MUTABLE_SCENE_STATUSES = {
+    SceneStatus.PLANNED.value,
+}
+
+
+async def _sync_existing_chapter_from_outline(
+    session: AsyncSession,
+    *,
+    project_id: UUID,
+    chapter: ChapterModel,
+    chapter_outline: Any,
+) -> bool:
+    """Update an existing planned/outlining chapter from the latest outline."""
+    if chapter.status not in _MATERIALIZATION_MUTABLE_CHAPTER_STATUSES:
+        return False
+
+    volume = await create_or_get_volume(
+        session,
+        project_id,
+        VolumeCreate(
+            volume_number=chapter_outline.volume_number,
+            title=f"Volume {chapter_outline.volume_number}",
+        ),
+    )
+    chapter.volume_id = volume.id
+    chapter.title = chapter_outline.title
+    chapter.chapter_goal = chapter_outline.chapter_goal
+    chapter.opening_situation = chapter_outline.opening_situation
+    chapter.main_conflict = chapter_outline.main_conflict
+    chapter.hook_type = chapter_outline.hook_type
+    chapter.hook_description = chapter_outline.hook_description
+    chapter.target_word_count = chapter_outline.target_word_count
+    return True
+
+
+def _sync_existing_scene_from_outline(scene: SceneCardModel, scene_outline: Any) -> bool:
+    if scene.status not in _MATERIALIZATION_MUTABLE_SCENE_STATUSES:
+        return False
+    scene.scene_type = scene_outline.scene_type
+    scene.title = scene_outline.title
+    scene.time_label = scene_outline.time_label
+    scene.participants = scene_outline.participants
+    scene.purpose = scene_outline.purpose
+    scene.entry_state = scene_outline.entry_state
+    scene.exit_state = scene_outline.exit_state
+    scene.target_word_count = scene_outline.target_word_count
+    return True
 
 
 async def create_workflow_run(
@@ -145,6 +197,7 @@ async def materialize_chapter_outline_batch(
     *,
     requested_by: str = "system",
     source_artifact_id: UUID | None = None,
+    prune_missing_planned: bool = False,
 ) -> WorkflowMaterializationResult:
     project = await get_project_by_slug(session, project_slug)
     if project is None:
@@ -169,6 +222,10 @@ async def materialize_chapter_outline_batch(
     step_order = 1
     chapters_created = 0
     scenes_created = 0
+    chapters_updated = 0
+    scenes_updated = 0
+    chapters_pruned = 0
+    scenes_pruned = 0
     current_step_name = "validate_outline_batch"
 
     try:
@@ -184,6 +241,7 @@ async def materialize_chapter_outline_batch(
             },
         )
         step_order += 1
+        outlined_chapter_numbers = {chapter.chapter_number for chapter in batch.chapters}
 
         for chapter_outline in batch.chapters:
             current_step_name = f"create_chapter_{chapter_outline.chapter_number}"
@@ -200,6 +258,13 @@ async def materialize_chapter_outline_batch(
             )
             if existing_chapter is not None:
                 chapter = existing_chapter
+                if await _sync_existing_chapter_from_outline(
+                    session,
+                    project_id=project.id,
+                    chapter=chapter,
+                    chapter_outline=chapter_outline,
+                ):
+                    chapters_updated += 1
             else:
                 chapter = await create_chapter(
                     session,
@@ -234,20 +299,33 @@ async def materialize_chapter_outline_batch(
             )
             step_order += 1
 
+            existing_scenes = list(
+                await session.scalars(
+                    select(SceneCardModel)
+                    .where(SceneCardModel.chapter_id == chapter.id)
+                    .order_by(SceneCardModel.scene_number.asc())
+                )
+            )
+            existing_scenes_by_number = {
+                scene.scene_number: scene
+                for scene in existing_scenes
+            }
+            outlined_scene_numbers = {
+                scene_outline.scene_number
+                for scene_outline in chapter_outline.scenes
+            }
+
             for scene_outline in chapter_outline.scenes:
                 current_step_name = (
                     f"create_scene_{chapter_outline.chapter_number}_{scene_outline.scene_number}"
                 )
                 workflow_run.current_step = current_step_name
 
-                existing_scene = await session.scalar(
-                    select(SceneCardModel).where(
-                        SceneCardModel.chapter_id == chapter.id,
-                        SceneCardModel.scene_number == scene_outline.scene_number,
-                    )
-                )
+                existing_scene = existing_scenes_by_number.get(scene_outline.scene_number)
                 if existing_scene is not None:
                     scene = existing_scene
+                    if _sync_existing_scene_from_outline(scene, scene_outline):
+                        scenes_updated += 1
                 else:
                     scene = await create_scene_card(
                         session,
@@ -283,12 +361,40 @@ async def materialize_chapter_outline_batch(
                 )
                 step_order += 1
 
+            if prune_missing_planned:
+                for existing_scene in existing_scenes:
+                    if existing_scene.scene_number in outlined_scene_numbers:
+                        continue
+                    if existing_scene.status not in _MATERIALIZATION_MUTABLE_SCENE_STATUSES:
+                        continue
+                    await session.delete(existing_scene)
+                    scenes_pruned += 1
+
+        if prune_missing_planned and outlined_chapter_numbers:
+            stale_chapters = list(
+                await session.scalars(
+                    select(ChapterModel).where(
+                        ChapterModel.project_id == project.id,
+                        ChapterModel.status.in_(tuple(_MATERIALIZATION_MUTABLE_CHAPTER_STATUSES)),
+                    )
+                )
+            )
+            for stale_chapter in stale_chapters:
+                if stale_chapter.chapter_number in outlined_chapter_numbers:
+                    continue
+                await session.delete(stale_chapter)
+                chapters_pruned += 1
+
         workflow_run.current_step = "completed"
         workflow_run.status = WorkflowStatus.COMPLETED.value
         workflow_run.metadata_json = {
             **workflow_run.metadata_json,
             "chapters_created": chapters_created,
             "scenes_created": scenes_created,
+            "chapters_updated": chapters_updated,
+            "scenes_updated": scenes_updated,
+            "chapters_pruned": chapters_pruned,
+            "scenes_pruned": scenes_pruned,
         }
         await session.flush()
 
@@ -343,6 +449,7 @@ async def materialize_latest_chapter_outline_batch(
         batch,
         requested_by=requested_by,
         source_artifact_id=artifact.id,
+        prune_missing_planned=True,
     )
 
 

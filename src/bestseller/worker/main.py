@@ -33,13 +33,18 @@ async def startup(ctx: dict[str, Any]) -> None:
     # waiting for the heartbeat timeout. Failures must not block startup.
     if os.getenv("WORKER_SELF_HEAL", "1") != "0":
         import datetime as _dt  # noqa: PLC0415
+        import socket  # noqa: PLC0415
 
         startup_cutoff = _dt.datetime.now(_dt.UTC) - _dt.timedelta(seconds=60)
+        worker_id = f"{socket.gethostname()}:{os.getpid()}"
         try:
             from bestseller.worker.self_heal import heal_stuck_projects  # noqa: PLC0415
 
             dispatched = await heal_stuck_projects(
-                settings, startup_cutoff=startup_cutoff,
+                settings,
+                startup_cutoff=startup_cutoff,
+                redis=ctx["redis"],
+                worker_id=worker_id,
             )
             if dispatched:
                 logger.info(

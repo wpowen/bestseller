@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import PendingRollbackError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -22,12 +22,16 @@ from bestseller.domain.pipeline import (
 )
 from bestseller.domain.project import ProjectCreate
 from bestseller.domain.workflow import ChapterOutlineBatchInput
-from bestseller.infra.db.models import ChapterDraftVersionModel, ChapterModel, ChapterStateSnapshotModel, ProjectModel, SceneCardModel, SceneDraftVersionModel
+from bestseller.infra.db.models import ChapterDraftVersionModel, ChapterModel, ChapterStateSnapshotModel, ProjectModel, SceneCardModel, SceneDraftVersionModel, VolumeModel
 from bestseller.services.context import build_scene_writer_context_from_models
 from bestseller.services.continuity import extract_chapter_state_snapshot, validate_fact_monotonicity
 from bestseller.services.drafts import assemble_chapter_draft, generate_scene_draft
 from bestseller.services.exports import export_chapter_markdown, export_project_markdown
-from bestseller.services.consistency import detect_chapter_sequence_gaps, review_project_consistency
+from bestseller.services.consistency import (
+    contiguous_prefix_max,
+    detect_chapter_sequence_gaps,
+    review_project_consistency,
+)
 from bestseller.services.knowledge import propagate_scene_discoveries, refresh_scene_knowledge
 from bestseller.services.planner import generate_foundation_plan, generate_novel_plan, generate_volume_plan
 from bestseller.services.projects import create_project, get_project_by_slug, import_planning_artifact, load_json_file
@@ -80,6 +84,108 @@ def _emit_progress(
     if progress is None:
         return
     progress(stage, payload)
+
+
+def _merge_progressive_outline_batch(
+    existing_chapters: list[Any],
+    incoming_chapters: list[Any],
+) -> list[dict[str, Any]]:
+    """Merge the current-volume outline into the cumulative project outline.
+
+    The current replan becomes authoritative for the entire unwritten tail
+    starting at its first ``chapter_number``. Older outline entries at or
+    beyond that boundary are stale and must be dropped before the incoming
+    chapters are inserted.
+    """
+    incoming_numbers = sorted(
+        n
+        for n in (
+            ch.get("chapter_number")
+            for ch in incoming_chapters
+            if isinstance(ch, dict)
+        )
+        if isinstance(n, int) and n > 0
+    )
+    replace_from = min(incoming_numbers) if incoming_numbers else None
+
+    by_number: dict[int, dict[str, Any]] = {}
+    for ch in existing_chapters:
+        if not isinstance(ch, dict):
+            continue
+        n = ch.get("chapter_number")
+        if not isinstance(n, int) or n <= 0:
+            continue
+        if replace_from is not None and n >= replace_from:
+            continue
+        by_number[n] = ch
+
+    for ch in incoming_chapters:
+        if not isinstance(ch, dict):
+            continue
+        n = ch.get("chapter_number")
+        if not isinstance(n, int) or n <= 0:
+            continue
+        by_number[n] = ch
+    return [by_number[k] for k in sorted(by_number)]
+
+
+_WRITTEN_CHAPTER_STATUSES: tuple[str, ...] = (
+    ChapterStatus.DRAFTING.value,
+    ChapterStatus.REVIEW.value,
+    ChapterStatus.REVISION.value,
+    ChapterStatus.COMPLETE.value,
+)
+
+
+async def _count_written_chapters_in_volume(
+    session: AsyncSession,
+    project_id: UUID,
+    volume_number: int,
+) -> int:
+    """Count chapters in a given volume that already have real content.
+
+    Used by the Phase B loop to decide whether to skip ``generate_volume_plan``
+    for a volume whose chapters are already drafted. Prevents the re-plan path
+    from globally re-numbering chapters and re-inserting them after the writer
+    has advanced (the root cause of the 200-chapter gap incident).
+    """
+    stmt = (
+        select(func.count(ChapterModel.id))
+        .join(VolumeModel, ChapterModel.volume_id == VolumeModel.id)
+        .where(
+            ChapterModel.project_id == project_id,
+            VolumeModel.volume_number == volume_number,
+            ChapterModel.status.in_(_WRITTEN_CHAPTER_STATUSES),
+        )
+    )
+    result = await session.scalar(stmt)
+    return int(result or 0)
+
+
+async def _volume_fully_written(
+    session: AsyncSession,
+    project_id: UUID,
+    volume_number: int,
+) -> tuple[bool, int, int]:
+    """Return (is_fully_written, written_count, total_count) for a volume.
+
+    Evidence is drawn only from the DB — never from VOLUME_PLAN targets that
+    may have drifted during replanning. The skip decision must not depend on
+    plan metadata that the drift itself could have corrupted.
+    """
+    total_stmt = (
+        select(func.count(ChapterModel.id))
+        .join(VolumeModel, ChapterModel.volume_id == VolumeModel.id)
+        .where(
+            ChapterModel.project_id == project_id,
+            VolumeModel.volume_number == volume_number,
+        )
+    )
+    total = int(await session.scalar(total_stmt) or 0)
+    if total <= 0:
+        return (False, 0, 0)
+    written = await _count_written_chapters_in_volume(session, project_id, volume_number)
+    return (written >= total, written, total)
 
 
 async def _checkpoint_commit(session: AsyncSession) -> None:
@@ -233,6 +339,9 @@ async def run_scene_pipeline(
             },
         )
         step_order += 1
+        # Nested draft/review work may roll back the shared session; persist
+        # the scene workflow shell before entering the expensive path.
+        await _checkpoint_commit(session)
 
         # Opt-B: build the scene writer context exactly once per pipeline run and
         # share it between draft + review (and any rewrite re-review). The context
@@ -1012,6 +1121,9 @@ async def run_chapter_pipeline(
             },
         )
         step_order += 1
+        # Child scene pipelines can roll back the shared session on hard DB
+        # errors. Persist the chapter workflow shell before descending.
+        await _checkpoint_commit(session)
 
         scene_requires_human_review = False
         # Resume support: filter out already-completed scenes
@@ -1390,7 +1502,24 @@ async def run_chapter_pipeline(
             )
             step_order += 1
 
-            if chapter_review_result.verdict == "pass" or chapter_rewrite_task is None:
+            at_chapter_rewrite_limit = (
+                chapter_rewrite_iterations >= settings.quality.max_chapter_revisions
+            )
+            accept_chapter_on_stall = (
+                at_chapter_rewrite_limit and settings.pipeline.accept_on_stall
+            )
+            if (
+                chapter_review_result.verdict == "pass"
+                or chapter_rewrite_task is None
+                or accept_chapter_on_stall
+            ):
+                if accept_chapter_on_stall:
+                    reached_chapter_revision_limit = True
+                    logger.info(
+                        "Chapter %d reached max revisions (%d) — accepting best draft",
+                        chapter_number,
+                        chapter_rewrite_iterations,
+                    )
                 chapter.status = ChapterStatus.COMPLETE.value
                 # Extract hard-fact snapshot for cross-chapter continuity.
                 # Failures are logged and swallowed — continuity is a quality
@@ -1456,7 +1585,9 @@ async def run_chapter_pipeline(
                     )
                 break
 
-            if chapter_rewrite_iterations >= settings.quality.max_chapter_revisions:
+            if at_chapter_rewrite_limit:
+                # accept_on_stall=True case was handled above.  Only reached
+                # when accept_on_stall=False → pause for human review.
                 reached_chapter_revision_limit = True
                 requires_human_review = True
                 workflow_run.status = WorkflowStatus.WAITING_HUMAN.value
@@ -1613,6 +1744,7 @@ async def run_project_pipeline(
     total_target_chapters: int = 0,
     current_volume_number: int | None = None,
     total_volumes: int | None = None,
+    chapter_numbers: set[int] | None = None,
 ) -> ProjectPipelineResult:
     project = await get_project_by_slug(session, project_slug)
     if project is None:
@@ -1688,19 +1820,50 @@ async def run_project_pipeline(
     if not chapters:
         raise ValueError(f"Project '{project_slug}' does not have any chapters to process.")
 
-    # Validate chapter sequence has no gaps before starting generation
+    if chapter_numbers is not None:
+        chapters = [ch for ch in chapters if ch.chapter_number in chapter_numbers]
+        if not chapters:
+            raise ValueError(
+                f"Project '{project_slug}' does not have any chapters matching the requested outline slice."
+            )
+
+    # Validate chapter sequence has no gaps before starting generation.
+    #
+    # On resume, stuck projects often have a discontiguous set of
+    # ChapterModel rows (e.g. 1..50 + 101..150 — some prior outline
+    # regen widened the numbering). Failing hard here would make
+    # self-heal impossible: the pipeline could never even start.
+    # Instead, when resume is enabled we trim to the contiguous 1..N
+    # prefix and defer the remainder — the completed prefix still lets
+    # downstream passes (outline repair, narrative rebuild) run and
+    # eventually close the gap.
     chapter_numbers = sorted(ch.chapter_number for ch in chapters)
     sequence_gaps = detect_chapter_sequence_gaps(chapter_numbers)
     if sequence_gaps:
-        logger.error(
-            "Chapter sequence has gaps for '%s': missing %s",
-            project_slug,
-            sequence_gaps,
-        )
-        raise ValueError(
-            f"Chapter sequence has gaps: missing chapters {sequence_gaps}. "
-            f"Fix the outline before running the pipeline."
-        )
+        prefix_max = contiguous_prefix_max(chapter_numbers)
+        if settings.pipeline.resume_enabled and prefix_max is not None:
+            logger.warning(
+                "Chapter sequence has gaps for '%s': keeping contiguous 1..%d, "
+                "deferring %d discontiguous chapter(s) %s",
+                project_slug,
+                prefix_max,
+                len(sequence_gaps),
+                sequence_gaps[:10] + (["..."] if len(sequence_gaps) > 10 else []),
+            )
+            chapters = [
+                ch for ch in chapters
+                if ch.chapter_number <= prefix_max
+            ]
+        else:
+            logger.error(
+                "Chapter sequence has gaps for '%s': missing %s",
+                project_slug,
+                sequence_gaps,
+            )
+            raise ValueError(
+                f"Chapter sequence has gaps: missing chapters {sequence_gaps}. "
+                f"Fix the outline before running the pipeline."
+            )
 
     # Resume support: filter out already-completed chapters.
     # When accept_on_stall is enabled, chapters stuck in REVISION (stalled
@@ -1848,6 +2011,9 @@ async def run_project_pipeline(
             },
         )
         step_order += 1
+        # Child chapter pipelines can roll back the shared session. Persist
+        # the project workflow shell before entering the chapter loop.
+        await _checkpoint_commit(session)
 
         requires_human_review = False
         consistency_check_interval = settings.pipeline.consistency_check_interval
@@ -2280,7 +2446,17 @@ async def run_project_pipeline(
             },
         )
         step_order += 1
-        requires_human_review = requires_human_review or review_result.verdict != "pass"
+        project_review_not_pass = review_result.verdict != "pass"
+        if project_review_not_pass:
+            if settings.pipeline.accept_on_stall:
+                logger.info(
+                    "Project %s consistency verdict=%s — accepting per accept_on_stall; "
+                    "skipping human-review pause.",
+                    project_slug,
+                    review_result.verdict,
+                )
+            else:
+                requires_human_review = True
         _emit_progress(
             progress,
             "project_consistency_review_completed",
@@ -2761,6 +2937,30 @@ async def run_progressive_autowrite_pipeline(
     for vol_idx, vol_entry in enumerate(volume_plan_list, start=1):
         vol_num = int(vol_entry.get("volume_number", 0)) or vol_idx
 
+        # Skip replanning if this volume is already fully written. Re-running
+        # generate_volume_plan against a drifted volume_plan is what produced
+        # the 200-chapter gap on xianxia-upgrade-1776137730: the fallback
+        # re-seeded chapter_number globally across all volumes and reinserted
+        # chapters past the writer frontier. Evidence is DB-only — the skip
+        # decision must not depend on plan targets that the drift could have
+        # corrupted.
+        if settings.pipeline.resume_enabled:
+            fully_written, written_count, total_count = await _volume_fully_written(
+                session, project.id, vol_num,
+            )
+            if fully_written:
+                logger.info(
+                    "Volume %d already fully written (%d/%d chapters) — skipping replanning.",
+                    vol_num, written_count, total_count,
+                )
+                _emit_progress(progress, "volume_planning_skipped_resume", {
+                    "project_slug": project.slug,
+                    "volume_number": vol_num,
+                    "written": written_count,
+                    "total": total_count,
+                })
+                continue
+
         _emit_progress(progress, "volume_planning_started", {
             "project_slug": project.slug, "volume_number": vol_num, "total_volumes": total_volumes,
         })
@@ -2822,6 +3022,7 @@ async def run_progressive_autowrite_pipeline(
         vol_outline_art = await get_latest_planning_artifact(
             session, project_id=project.id, artifact_type=ArtifactType.VOLUME_CHAPTER_OUTLINE,
         )
+        vol_chapters: list[Any] = []
         if vol_outline_art and vol_outline_art.content:
             # Merge volume outline into cumulative CHAPTER_OUTLINE_BATCH
             existing_batch_art = await get_latest_planning_artifact(
@@ -2837,7 +3038,14 @@ async def run_progressive_autowrite_pipeline(
                 if isinstance(vol_outline_art.content, dict)
                 else vol_outline_art.content if isinstance(vol_outline_art.content, list) else []
             )
-            merged = {"batch_name": "progressive-merged-outline", "chapters": existing_chapters + vol_chapters}
+            merged_chapters = _merge_progressive_outline_batch(
+                existing_chapters,
+                vol_chapters,
+            )
+            merged = {
+                "batch_name": "progressive-merged-outline",
+                "chapters": merged_chapters,
+            }
             await import_planning_artifact(session, project.slug, PlanningArtifactCreate(
                 artifact_type=ArtifactType.CHAPTER_OUTLINE_BATCH, content=merged,
             ))
@@ -2871,6 +3079,11 @@ async def run_progressive_autowrite_pipeline(
             "project_slug": project.slug, "volume_number": vol_num,
             "total_volumes": total_volumes,
         })
+        current_volume_chapter_numbers = {
+            ch.get("chapter_number")
+            for ch in vol_chapters
+            if isinstance(ch, dict) and isinstance(ch.get("chapter_number"), int)
+        }
         vol_project_result = await run_project_pipeline(
             session, settings, project.slug,
             requested_by=requested_by,
@@ -2884,6 +3097,7 @@ async def run_progressive_autowrite_pipeline(
             total_target_chapters=project.target_chapters or 0,
             current_volume_number=vol_num,
             total_volumes=total_volumes,
+            chapter_numbers=current_volume_chapter_numbers,
         )
         await _checkpoint_commit(session)
         all_chapter_results.extend(vol_project_result.chapter_results)

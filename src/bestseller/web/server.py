@@ -1630,6 +1630,110 @@ class WebTaskManager:
             logger.exception("Repair task %s crashed", task_id)
             self._mark_failed(task_id, tb)
 
+    # ------------------------------------------------------------------
+    # Bridge arq-worker progress (Redis list) → in-memory task.current_stage
+    # ------------------------------------------------------------------
+    # Novel generation runs on two independent code paths:
+    #   (1) UI-initiated       → web server thread → direct _push_progress().
+    #   (2) self-heal / resume → arq worker container → RedisProgressReporter
+    #                            writes to Redis list ``task:<tid>:progress``.
+    # The UI reads ``task.current_stage`` from the web process only, so path (2)
+    # events never surface — every self-healed task appeared frozen at
+    # ``volume_planning_started``. This sweep reads the worker's Redis list
+    # and re-applies events into memory so the UI reflects real progress.
+
+    def sync_progress_from_worker_redis(self, redis_url: str) -> int:
+        """Pull fresh progress events from Redis for tasks that the arq
+        worker is driving, and update ``current_stage`` / ``progress_events``
+        in memory. Returns the number of tasks updated.
+
+        No-ops when Redis is unreachable — the UI degrades to the stale
+        in-memory view rather than crashing the whole server.
+        """
+        import redis as _redis  # noqa: PLC0415 — lazy to keep import light
+
+        try:
+            client = _redis.from_url(redis_url, decode_responses=True, socket_timeout=2)
+        except Exception:
+            return 0
+
+        # Snapshot task_id → (project_slug, known_event_ts_set) to avoid
+        # holding the manager lock across Redis I/O.
+        with self._lock:
+            snapshot: list[tuple[str, str, set[float]]] = []
+            for tid, task in self._tasks.items():
+                if task.status not in ("running", "queued"):
+                    continue
+                slug = (task.project_slug or "").strip()
+                if not slug:
+                    continue
+                known_ts: set[float] = set()
+                for evt in task.progress_events:
+                    ts = evt.get("timestamp") if isinstance(evt, dict) else None
+                    if isinstance(ts, (int, float)):
+                        known_ts.add(float(ts))
+                snapshot.append((tid, slug, known_ts))
+
+        updated = 0
+        for tid, slug, known_ts in snapshot:
+            # The arq worker task id follows ``autowrite:heal:<slug>``; see
+            # ``worker/self_heal.py``.
+            redis_key = f"task:autowrite:heal:{slug}:progress"
+            try:
+                # Last 100 events are plenty — earlier ones are already in
+                # task.progress_events (and we only keep the last 300 anyway).
+                raw_events = client.lrange(redis_key, -100, -1)
+            except Exception:
+                continue
+            if not raw_events:
+                continue
+
+            fresh: list[dict[str, Any]] = []
+            latest_stage: str | None = None
+            latest_ts: float = 0.0
+            for raw in raw_events:
+                try:
+                    evt = json.loads(raw)
+                except Exception:
+                    continue
+                ts = evt.get("ts")
+                if not isinstance(ts, (int, float)):
+                    continue
+                ts_f = float(ts)
+                msg = evt.get("message")
+                if not isinstance(msg, str):
+                    continue
+                if ts_f > latest_ts:
+                    latest_ts = ts_f
+                    latest_stage = msg
+                if ts_f in known_ts:
+                    continue
+                fresh.append({
+                    "timestamp": ts_f,
+                    "stage": msg,
+                    "payload": evt.get("data") or {},
+                })
+
+            if not fresh and latest_stage is None:
+                continue
+
+            with self._lock:
+                task = self._tasks.get(tid)
+                if task is None:
+                    continue
+                if fresh:
+                    task.progress_events = (task.progress_events + fresh)[-300:]
+                if latest_stage is not None:
+                    task.current_stage = latest_stage
+                task.updated_at = _utc_now()
+                updated += 1
+
+        try:
+            client.close()
+        except Exception:
+            pass
+        return updated
+
 
 def _extract_target_chapters_from_project_md(project_md: Path) -> int | None:
     """Parse the project plan markdown for the highest chapter number referenced
@@ -2416,6 +2520,32 @@ def serve_web_app(
                 logger.exception("Watchdog sweep failed")
 
     threading.Thread(target=_watchdog_loop, daemon=True, name="task-watchdog").start()
+
+    # Background progress bridge: arq-worker containers emit progress events
+    # into Redis, but the web process owns the ``task.current_stage`` that the
+    # UI renders. Without this bridge, every self-healed / resumed task looked
+    # frozen at whatever stage the web process last saw — most commonly
+    # ``volume_planning_started``. Sync every few seconds so the dashboard
+    # reflects real worker progress.
+    _progress_sync_interval = int(
+        os.environ.get("BESTSELLER_PROGRESS_SYNC_INTERVAL", "5")
+    )
+
+    def _progress_sync_loop() -> None:
+        import time as _time  # noqa: PLC0415
+        redis_url = settings.redis.url
+        while True:
+            try:
+                _time.sleep(_progress_sync_interval)
+                task_manager.sync_progress_from_worker_redis(redis_url)
+            except Exception:
+                logger.exception("Worker-progress sync iteration failed")
+
+    threading.Thread(
+        target=_progress_sync_loop,
+        daemon=True,
+        name="worker-progress-sync",
+    ).start()
 
     ui_html = _read_ui_html()
     reader_html = _read_reader_html()

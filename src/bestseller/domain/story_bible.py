@@ -1,9 +1,148 @@
 from __future__ import annotations
 
+import re
 from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+
+_ROLE_MAX_LENGTH = 64
+_ROLE_BREAK_SEPARATORS: tuple[str, ...] = (
+    "—",
+    " - ",
+    ". ",
+    ": ",
+    ", ",
+    "; ",
+    "。 ",
+    "：",
+    "，",
+    "；",
+    "\n",
+)
+_ROLE_SENTENCE_PREFIXES: tuple[str, ...] = (
+    "from ",
+    "becomes ",
+    "becoming ",
+    "remains ",
+    "must ",
+    "cannot ",
+    "needs to ",
+)
+_ROLE_SENTENCE_PREFIXES_ZH: tuple[str, ...] = ("从", "由", "必须", "需要")
+_ROLE_SENTENCE_CONNECTORS: tuple[str, ...] = (
+    " when ",
+    " because ",
+    " while ",
+    " through ",
+    " specifically ",
+)
+_AGE_UNKNOWN_MARKERS: tuple[str, ...] = (
+    "unknown",
+    "indeterminate",
+    "ageless",
+    "immortal",
+    "timeless",
+    "不详",
+    "未知",
+    "不确定",
+)
+_AGE_APPROX_PREFIX_OFFSETS: dict[str, int] = {
+    "early": 2,
+    "mid": 5,
+    "late": 8,
+}
+
+
+def normalize_character_role_label(value: Any, *, fallback: str | None = None) -> Any:
+    """Coerce a role-like value into a short label.
+
+    LLM outputs sometimes stuff a full character-evolution sentence into the
+    ``role`` field. This helper keeps the validator permissive enough to
+    recover by trimming to the first clause break, while callers that need
+    stricter semantics can combine it with ``is_safe_character_role_label``.
+    """
+    if not isinstance(value, str):
+        return value
+    text = value.strip()
+    if not text:
+        return fallback or text
+    if len(text) <= _ROLE_MAX_LENGTH:
+        return text
+    for sep in _ROLE_BREAK_SEPARATORS:
+        idx = text.find(sep)
+        if 0 < idx <= _ROLE_MAX_LENGTH:
+            return text[:idx].strip()
+    if fallback:
+        return fallback
+    return text[:_ROLE_MAX_LENGTH].rstrip()
+
+
+def is_safe_character_role_label(value: Any) -> bool:
+    """Return whether ``value`` looks like a structural role label.
+
+    Accepts compact labels such as ``ally`` / ``antagonist_lieutenant`` /
+    ``Theo Blackwood's field operative (lower-tier antagonist)`` and rejects
+    sentence-shaped arc descriptions that belong in metadata instead.
+    """
+    if not isinstance(value, str):
+        return False
+    text = value.strip()
+    if not text or len(text) > _ROLE_MAX_LENGTH:
+        return False
+    if any(sep in text for sep in ("\n", "\r", "。", "；")):
+        return False
+    lower = text.lower()
+    if lower.startswith(_ROLE_SENTENCE_PREFIXES) or text.startswith(_ROLE_SENTENCE_PREFIXES_ZH):
+        return False
+    if len(text) > 32 and any(connector in lower for connector in _ROLE_SENTENCE_CONNECTORS):
+        return False
+    return True
+
+
+def normalize_character_age(value: Any) -> int | None:
+    """Coerce age-like values into an integer when safe, else ``None``.
+
+    ``cast_spec`` occasionally receives prose like ``late 40s`` or
+    ``indeterminate (fae)``.  Approximate decade labels are normalized to a
+    representative integer so downstream models stay structured; unbounded
+    fantasy labels degrade to ``None`` instead of crashing validation.
+    """
+    if value is None or value == "":
+        return None
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value) if value.is_integer() else None
+    if not isinstance(value, str):
+        return None
+
+    text = value.strip()
+    if not text:
+        return None
+    lower = text.lower()
+    if any(marker in lower for marker in _AGE_UNKNOWN_MARKERS):
+        return None
+    if text.isdigit():
+        return int(text)
+
+    decade_match = re.search(r"\b(early|mid|late)\s+(\d{2,3})s\b", lower)
+    if decade_match:
+        prefix = decade_match.group(1)
+        decade = int(decade_match.group(2))
+        return decade + _AGE_APPROX_PREFIX_OFFSETS[prefix]
+
+    plain_decade_match = re.search(r"\b(\d{2,3})s\b", lower)
+    if plain_decade_match:
+        return int(plain_decade_match.group(1)) + 5
+
+    precise_match = re.fullmatch(r".*?(\d{1,3})\s*(?:years?\s*old|yo)?", lower)
+    if precise_match:
+        return int(precise_match.group(1))
+    return None
 
 
 class WorldRuleInput(BaseModel):
@@ -93,8 +232,20 @@ class CharacterInput(BaseModel):
     model_config = ConfigDict(extra="allow")
 
     name: str = Field(min_length=1, max_length=4000)
-    role: str = Field(default="supporting", min_length=1, max_length=64)
+    role: str = Field(default="supporting", min_length=1, max_length=_ROLE_MAX_LENGTH)
+
+    @field_validator("role", mode="before")
+    @classmethod
+    def _coerce_role_to_short_label(cls, v: Any) -> Any:
+        return normalize_character_role_label(v)
+
     age: int | None = Field(default=None, ge=0)
+
+    @field_validator("age", mode="before")
+    @classmethod
+    def _coerce_age_to_int(cls, v: Any) -> int | None:
+        return normalize_character_age(v)
+
     background: str | None = None
     goal: str | None = None
     fear: str | None = None

@@ -156,3 +156,27 @@ def test_cast_spec_with_antagonist_forces() -> None:
     assert len(spec.antagonist_forces) == 3
     assert spec.antagonist_forces[0].active_volumes == [1]
     assert len(spec.all_characters()) == 3  # protagonist + antagonist + ally
+
+
+def test_character_input_role_truncates_long_descriptive_sentence() -> None:
+    raw_role = (
+        "From information gatherer to active participant—she cannot remain a detached "
+        "investigator when Maya specifically targets her through convergence"
+    )
+
+    character = CharacterInput(name="Zoe Chen", role=raw_role)
+
+    assert character.role == "From information gatherer to active participant"
+    assert len(character.role) <= 64
+
+
+def test_character_input_age_normalizes_decade_label() -> None:
+    character = CharacterInput(name="Nora Vale", age="late 40s")
+
+    assert character.age == 48
+
+
+def test_character_input_age_drops_unbounded_fantasy_label() -> None:
+    character = CharacterInput(name="Winter Court Envoy", age="indeterminate (fae)")
+
+    assert character.age is None

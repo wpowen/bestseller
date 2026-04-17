@@ -152,6 +152,63 @@ class _CircuitBreaker:
 _llm_breaker = _CircuitBreaker(failure_threshold=5, recovery_timeout=60.0)
 
 
+# ── Rate-limit detection ────────────────────────────────────────────────
+#
+# 429 Too Many Requests is a transient signal from the provider — it means
+# "back off and try again", not "your request is broken".  Unlike generic
+# failures, we should be willing to wait much longer for these and must not
+# silently swap in fallback content (which would silently degrade quality).
+
+
+def _is_rate_limit_error(exc: BaseException) -> bool:
+    """Detect whether an exception represents a rate-limit / 429 response.
+
+    Handles three forms:
+      * ``litellm.exceptions.RateLimitError`` (the documented class).
+      * Any exception whose class name ends with ``RateLimitError``
+        (defensive: litellm re-exports / provider-specific subclasses).
+      * Generic exceptions carrying a ``status_code`` attribute == 429.
+    """
+    name = type(exc).__name__
+    if name.endswith("RateLimitError"):
+        return True
+    status = getattr(exc, "status_code", None) or getattr(exc, "http_status", None)
+    if isinstance(status, int) and status == 429:
+        return True
+    message = str(exc).lower()
+    if "429" in message and ("rate" in message or "too many requests" in message):
+        return True
+    return False
+
+
+def _extract_retry_after_seconds(exc: BaseException) -> float | None:
+    """Extract a ``Retry-After`` hint from a provider exception, if present.
+
+    litellm exposes upstream response headers via ``.response.headers``
+    on some error classes.  We look for a ``Retry-After`` header and
+    interpret it as seconds (HTTP also allows HTTP-date, which we skip).
+    """
+    response = getattr(exc, "response", None)
+    if response is None:
+        return None
+    headers = getattr(response, "headers", None)
+    if headers is None:
+        return None
+    try:
+        value = headers.get("Retry-After") or headers.get("retry-after")
+    except Exception:  # noqa: BLE001
+        return None
+    if value is None:
+        return None
+    try:
+        seconds = float(value)
+        if seconds < 0:
+            return None
+        return seconds
+    except (TypeError, ValueError):
+        return None
+
+
 # --- Opt-C: shared litellm HTTP client ----------------------------------------
 #
 # By default, litellm creates a fresh ``httpx.AsyncClient`` for every
@@ -492,43 +549,79 @@ async def _call_litellm_with_retry(
 ) -> tuple[str, int | None, int | None, str | None]:
     """Invoke ``_call_litellm`` with exponential back-off retry.
 
-    Uses the configured :class:`RetrySettings` for max attempts and
-    wait bounds.  Each retry doubles the wait (jittered between
-    ``wait_min_seconds`` and the current backoff ceiling).
+    Separate budgets for generic failures and rate-limit (HTTP 429)
+    responses.  429 is transient — we retry it much more patiently,
+    honour ``Retry-After`` when present, and deliberately do NOT count
+    it against the circuit breaker (otherwise a burst of 429s would
+    open the breaker for 60s on top of the provider's throttle).
     """
-    last_exc: Exception | None = None
     max_attempts = max(1, retry_settings.max_attempts)
     wait_min = retry_settings.wait_min_seconds
     wait_max = retry_settings.wait_max_seconds
 
-    for attempt in range(1, max_attempts + 1):
+    rl_max_attempts = max(1, retry_settings.rate_limit_max_attempts)
+    rl_wait_min = retry_settings.rate_limit_wait_min_seconds
+    rl_wait_max = retry_settings.rate_limit_wait_max_seconds
+
+    generic_attempt = 0
+    rate_limit_attempt = 0
+
+    while True:
         try:
             result = await _call_litellm(request, role_settings)
             _llm_breaker.record_success()
             return result
         except Exception as exc:
-            last_exc = exc
-            _llm_breaker.record_failure()
-            if attempt < max_attempts:
-                # Exponential backoff: min(wait_max, wait_min * 2^(attempt-1))
-                backoff = min(wait_max, wait_min * (2 ** (attempt - 1)))
+            if _is_rate_limit_error(exc):
+                rate_limit_attempt += 1
+                if rate_limit_attempt >= rl_max_attempts:
+                    logger.error(
+                        "LLM rate-limit persisted across %d attempts (%s: %s) — giving up",
+                        rl_max_attempts,
+                        type(exc).__name__,
+                        exc,
+                    )
+                    raise
+                retry_after = _extract_retry_after_seconds(exc)
+                if retry_after is not None:
+                    backoff = min(rl_wait_max, max(rl_wait_min, retry_after))
+                else:
+                    backoff = min(
+                        rl_wait_max,
+                        rl_wait_min * (2 ** (rate_limit_attempt - 1)),
+                    )
                 logger.warning(
-                    "LLM call attempt %d/%d failed (%s: %s) — retrying in %.1fs",
-                    attempt,
-                    max_attempts,
+                    "LLM rate-limited (429) attempt %d/%d (%s: %s) — waiting %.1fs%s",
+                    rate_limit_attempt,
+                    rl_max_attempts,
                     type(exc).__name__,
                     exc,
                     backoff,
+                    " [Retry-After]" if retry_after is not None else "",
                 )
                 await asyncio.sleep(backoff)
-            else:
+                continue
+
+            generic_attempt += 1
+            _llm_breaker.record_failure()
+            if generic_attempt >= max_attempts:
                 logger.error(
                     "LLM call failed after %d attempts (%s: %s) — falling back",
                     max_attempts,
                     type(exc).__name__,
                     exc,
                 )
-    raise last_exc  # type: ignore[misc]
+                raise
+            backoff = min(wait_max, wait_min * (2 ** (generic_attempt - 1)))
+            logger.warning(
+                "LLM call attempt %d/%d failed (%s: %s) — retrying in %.1fs",
+                generic_attempt,
+                max_attempts,
+                type(exc).__name__,
+                exc,
+                backoff,
+            )
+            await asyncio.sleep(backoff)
 
 
 async def complete_text(

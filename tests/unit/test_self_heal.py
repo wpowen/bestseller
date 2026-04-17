@@ -410,3 +410,149 @@ async def test_stuck_project_is_frozen_dataclass() -> None:
     )
     with pytest.raises(Exception):
         sp.slug = "y"  # type: ignore[misc]
+
+
+# ---------------------------------------------------------------------------
+# Boot-lock + enqueue dedup
+# ---------------------------------------------------------------------------
+
+
+class _FakeRedis:
+    """Mimics the SET NX EX subset of redis.asyncio we actually use."""
+
+    def __init__(self) -> None:
+        self.store: dict[str, str] = {}
+        self.set_calls: list[dict[str, Any]] = []
+        self.fail_on_set: bool = False
+
+    async def set(
+        self,
+        key: str,
+        value: str,
+        *,
+        nx: bool = False,
+        ex: int | None = None,
+    ) -> bool:
+        self.set_calls.append({"key": key, "value": value, "nx": nx, "ex": ex})
+        if self.fail_on_set:
+            raise RuntimeError("redis unavailable")
+        if nx and key in self.store:
+            return False
+        self.store[key] = value
+        return True
+
+
+@pytest.mark.asyncio
+async def test_try_acquire_heal_lock_first_caller_wins() -> None:
+    from bestseller.worker.self_heal import (
+        SELF_HEAL_LOCK_KEY,
+        _try_acquire_heal_lock,
+    )
+
+    redis = _FakeRedis()
+
+    assert await _try_acquire_heal_lock(redis, "worker-a") is True
+    assert await _try_acquire_heal_lock(redis, "worker-b") is False
+    # First writer's identity was persisted
+    assert redis.store[SELF_HEAL_LOCK_KEY] == "worker-a"
+    # Both attempts used NX + EX semantics
+    for call in redis.set_calls:
+        assert call["nx"] is True
+        assert call["ex"] is not None and call["ex"] > 0
+
+
+@pytest.mark.asyncio
+async def test_try_acquire_heal_lock_none_redis_returns_true() -> None:
+    """CLI/test paths pass redis=None and must always proceed."""
+    from bestseller.worker.self_heal import _try_acquire_heal_lock
+
+    assert await _try_acquire_heal_lock(None, "worker-x") is True
+
+
+@pytest.mark.asyncio
+async def test_try_acquire_heal_lock_falls_back_on_redis_error() -> None:
+    """Transient Redis failure must not silently skip self-heal."""
+    from bestseller.worker.self_heal import _try_acquire_heal_lock
+
+    redis = _FakeRedis()
+    redis.fail_on_set = True
+
+    assert await _try_acquire_heal_lock(redis, "worker-y") is True
+
+
+def test_autowrite_heal_job_id_is_deterministic() -> None:
+    from bestseller.worker.self_heal import _autowrite_heal_job_id
+
+    assert _autowrite_heal_job_id("slug-a") == "autowrite:heal:slug-a"
+    # Identical across calls → ARQ dedup will reject a second enqueue.
+    assert _autowrite_heal_job_id("slug-a") == _autowrite_heal_job_id("slug-a")
+    # Different slugs → different ids
+    assert _autowrite_heal_job_id("slug-a") != _autowrite_heal_job_id("slug-b")
+
+
+class _FakeArqPool:
+    def __init__(self, reject_job_ids: set[str] | None = None) -> None:
+        self.reject_job_ids = reject_job_ids or set()
+        self.enqueued: list[dict[str, Any]] = []
+
+    async def enqueue_job(
+        self,
+        function: str,
+        *,
+        workflow_run_id: str,
+        payload: dict[str, Any],
+        _job_id: str,
+    ) -> Any:
+        self.enqueued.append(
+            {
+                "function": function,
+                "workflow_run_id": workflow_run_id,
+                "payload": payload,
+                "_job_id": _job_id,
+            }
+        )
+        if _job_id in self.reject_job_ids:
+            return None
+        return object()  # non-None sentinel — ARQ returns a Job instance
+
+
+@pytest.mark.asyncio
+async def test_requeue_autowrite_returns_job_id_on_success() -> None:
+    from bestseller.worker.self_heal import _requeue_autowrite
+
+    pool = _FakeArqPool()
+    stuck = StuckProject(
+        project_id="p1",
+        slug="book-z",
+        reason="missing_drafts",
+        stuck_at_chapter=3,
+        chapters_total=10,
+        chapters_with_draft=2,
+    )
+
+    job_id = await _requeue_autowrite(pool, stuck)  # type: ignore[arg-type]
+
+    assert job_id == "autowrite:heal:book-z"
+    assert len(pool.enqueued) == 1
+    assert pool.enqueued[0]["_job_id"] == "autowrite:heal:book-z"
+    assert pool.enqueued[0]["payload"] == {"project_slug": "book-z", "premise": None}
+
+
+@pytest.mark.asyncio
+async def test_requeue_autowrite_returns_none_when_arq_dedups() -> None:
+    """ARQ returning None means a same-id job is already pending/running."""
+    from bestseller.worker.self_heal import _requeue_autowrite
+
+    pool = _FakeArqPool(reject_job_ids={"autowrite:heal:book-dup"})
+    stuck = StuckProject(
+        project_id="p2",
+        slug="book-dup",
+        reason="missing_drafts",
+        stuck_at_chapter=1,
+        chapters_total=5,
+        chapters_with_draft=0,
+    )
+
+    job_id = await _requeue_autowrite(pool, stuck)  # type: ignore[arg-type]
+
+    assert job_id is None

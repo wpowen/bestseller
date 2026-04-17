@@ -6,12 +6,14 @@ import pytest
 
 from bestseller.domain.workflow import ChapterOutlineBatchInput
 from bestseller.infra.db.models import (
+    ChapterModel,
     PlanningArtifactVersionModel,
     ProjectModel,
+    SceneCardModel,
     WorkflowRunModel,
     WorkflowStepRunModel,
 )
-from bestseller.domain.enums import ArtifactType
+from bestseller.domain.enums import ArtifactType, ChapterStatus, SceneStatus
 from bestseller.services import workflows as workflow_services
 
 
@@ -19,9 +21,15 @@ pytestmark = pytest.mark.unit
 
 
 class FakeSession:
-    def __init__(self, scalar_results: list[object | None] | None = None) -> None:
+    def __init__(
+        self,
+        scalar_results: list[object | None] | None = None,
+        scalars_results: list[list[object]] | None = None,
+    ) -> None:
         self.scalar_results = list(scalar_results or [])
+        self.scalars_results = list(scalars_results or [])
         self.added: list[object] = []
+        self.deleted: list[object] = []
 
     def add(self, obj: object) -> None:
         self.added.append(obj)
@@ -38,6 +46,14 @@ class FakeSession:
         if not self.scalar_results:
             return None
         return self.scalar_results.pop(0)
+
+    async def scalars(self, stmt: object) -> list[object]:
+        if not self.scalars_results:
+            return []
+        return self.scalars_results.pop(0)
+
+    async def delete(self, obj: object) -> None:
+        self.deleted.append(obj)
 
 
 def build_project() -> ProjectModel:
@@ -73,6 +89,48 @@ def build_batch() -> ChapterOutlineBatchInput:
             ],
         }
     )
+
+
+def build_planned_chapter(project: ProjectModel, number: int, *, status: str = ChapterStatus.PLANNED.value) -> ChapterModel:
+    chapter = ChapterModel(
+        project_id=project.id,
+        chapter_number=number,
+        title=f"Old {number}",
+        chapter_goal="old-goal",
+        opening_situation="old-open",
+        main_conflict="old-conflict",
+        hook_type="old-hook",
+        hook_description="old-desc",
+        information_revealed=[],
+        information_withheld=[],
+        foreshadowing_actions={},
+        metadata_json={},
+        target_word_count=1200,
+        status=status,
+    )
+    chapter.id = uuid4()
+    chapter.volume_id = uuid4()
+    return chapter
+
+
+def build_planned_scene(project: ProjectModel, chapter: ChapterModel, number: int, *, status: str = SceneStatus.PLANNED.value) -> SceneCardModel:
+    scene = SceneCardModel(
+        project_id=project.id,
+        chapter_id=chapter.id,
+        scene_number=number,
+        scene_type="setup",
+        title=f"Old Scene {number}",
+        participants=[],
+        purpose={},
+        entry_state={},
+        exit_state={},
+        key_dialogue_beats=[],
+        sensory_anchors={},
+        forbidden_actions=[],
+        status=status,
+    )
+    scene.id = uuid4()
+    return scene
 
 
 @pytest.mark.asyncio
@@ -163,6 +221,57 @@ async def test_materialize_latest_chapter_outline_batch_uses_stored_artifact(
 
     assert result.source_artifact_id == artifact.id
     assert result.batch_name == "opening"
+
+
+@pytest.mark.asyncio
+async def test_materialize_latest_chapter_outline_batch_updates_existing_planned_rows(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = build_project()
+    artifact = PlanningArtifactVersionModel(
+        project_id=project.id,
+        artifact_type="chapter_outline_batch",
+        scope_ref_id=None,
+        version_no=2,
+        status="approved",
+        schema_version="1.0",
+        content=build_batch().model_dump(mode="json", by_alias=True),
+        created_by="tester",
+    )
+    artifact.id = uuid4()
+    existing_chapter = build_planned_chapter(project, 1)
+    existing_scene = build_planned_scene(project, existing_chapter, 1)
+    stale_chapter = build_planned_chapter(project, 99)
+
+    async def fake_get_project_by_slug(session: object, slug: str) -> ProjectModel:
+        return project
+
+    async def fake_create_or_get_volume(session: object, project_id, payload: object) -> object:
+        return type("VolumeStub", (), {"id": uuid4()})()
+
+    monkeypatch.setattr(workflow_services, "get_project_by_slug", fake_get_project_by_slug)
+    monkeypatch.setattr(workflow_services, "create_or_get_volume", fake_create_or_get_volume)
+
+    session = FakeSession(
+        scalar_results=[artifact, existing_chapter],
+        scalars_results=[[existing_scene], [existing_chapter, stale_chapter]],
+    )
+    result = await workflow_services.materialize_latest_chapter_outline_batch(
+        session,
+        "my-story",
+        requested_by="tester",
+    )
+
+    workflow_runs = [obj for obj in session.added if isinstance(obj, WorkflowRunModel)]
+
+    assert result.source_artifact_id == artifact.id
+    assert existing_chapter.title == "The Signal"
+    assert existing_chapter.chapter_goal == "Introduce the investigation."
+    assert existing_scene.title == "Silent Dock"
+    assert stale_chapter in session.deleted
+    assert workflow_runs[0].metadata_json["chapters_updated"] == 1
+    assert workflow_runs[0].metadata_json["scenes_updated"] == 1
+    assert workflow_runs[0].metadata_json["chapters_pruned"] == 1
 
 
 @pytest.mark.asyncio

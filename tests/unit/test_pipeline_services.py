@@ -1575,6 +1575,91 @@ async def test_run_project_pipeline_emits_chapter_progress_with_title_and_word_c
 
 
 @pytest.mark.asyncio
+async def test_run_project_pipeline_filters_requested_chapter_numbers_and_checkpoints_before_children(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = build_project()
+    chapter_1 = build_chapter(project.id)
+    chapter_1.status = "complete"
+    chapter_2 = build_chapter(project.id)
+    chapter_2.id = uuid4()
+    chapter_2.chapter_number = 2
+    chapter_2.title = "第二章"
+    chapter_3 = build_chapter(project.id)
+    chapter_3.id = uuid4()
+    chapter_3.chapter_number = 3
+    chapter_3.title = "第三章"
+
+    sequence: list[str] = []
+    processed: list[int] = []
+
+    async def fake_get_project_by_slug(session, slug: str) -> ProjectModel:
+        return project
+
+    async def fake_load_project_chapters(session, project_id):
+        return [chapter_1, chapter_2, chapter_3]
+
+    async def fake_checkpoint_commit(session) -> None:
+        sequence.append("commit")
+
+    async def fake_run_chapter_pipeline(session, settings, project_slug, chapter_number, **kwargs):
+        sequence.append(f"chapter:{chapter_number}")
+        processed.append(chapter_number)
+        return pipeline_services.ChapterPipelineResult(
+            workflow_run_id=uuid4(),
+            project_id=project.id,
+            chapter_id=chapter_2.id,
+            chapter_number=chapter_number,
+            scene_results=[],
+            chapter_draft_id=uuid4(),
+            chapter_draft_version_no=1,
+            requires_human_review=False,
+        )
+
+    async def fake_review_project_consistency(session, settings, project_slug: str, **kwargs):
+        return (
+            type("ProjectReviewResultStub", (), {"verdict": "pass"})(),
+            type("ProjectReviewReportStub", (), {"id": uuid4()})(),
+            type("ProjectReviewQualityStub", (), {"id": uuid4()})(),
+        )
+
+    async def fake_sync_world_expansion_progress(session, *, project):
+        return None
+
+    monkeypatch.setattr(pipeline_services, "get_project_by_slug", fake_get_project_by_slug)
+    monkeypatch.setattr(pipeline_services, "_load_project_chapters", fake_load_project_chapters)
+    monkeypatch.setattr(pipeline_services, "_checkpoint_commit", fake_checkpoint_commit)
+    monkeypatch.setattr(pipeline_services, "run_chapter_pipeline", fake_run_chapter_pipeline)
+    monkeypatch.setattr(
+        pipeline_services,
+        "review_project_consistency",
+        fake_review_project_consistency,
+    )
+    monkeypatch.setattr(
+        pipeline_services,
+        "sync_world_expansion_progress",
+        fake_sync_world_expansion_progress,
+    )
+
+    session = FakeSession()
+    result = await pipeline_services.run_project_pipeline(
+        session,
+        build_settings(),
+        "my-story",
+        requested_by="tester",
+        materialize_narrative_graph=False,
+        materialize_narrative_tree=False,
+        export_markdown=False,
+        chapter_numbers={2},
+    )
+
+    assert processed == [2]
+    assert sequence[0] == "commit"
+    assert sequence[1] == "chapter:2"
+    assert [item.chapter_number for item in result.chapter_results] == [2]
+
+
+@pytest.mark.asyncio
 async def test_run_autowrite_pipeline_runs_auto_repair_and_reports_outputs(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

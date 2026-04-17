@@ -35,6 +35,12 @@ class RetrySettings(BaseModel):
     wait_min_seconds: int = 1
     wait_max_seconds: int = 10
     retry_on: list[str] = Field(default_factory=list)
+    # Rate-limit (HTTP 429) handling — transient by nature, so we use a
+    # much more patient budget than generic errors.  Default 60 attempts
+    # with up to 120s wait each gives ~2h of patience before giving up.
+    rate_limit_max_attempts: int = 60
+    rate_limit_wait_min_seconds: int = 5
+    rate_limit_wait_max_seconds: int = 120
 
 
 class LLMSettings(BaseModel):

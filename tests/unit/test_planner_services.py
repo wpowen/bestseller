@@ -28,6 +28,10 @@ class FakeSession:
             if table is not None and "id" in table.c and getattr(obj, "id", None) is None:
                 setattr(obj, "id", uuid4())
 
+    async def scalar(self, _stmt: object) -> None:
+        # Fresh project — no written chapters to guard against.
+        return None
+
 
 def build_settings():
     return load_settings(
@@ -324,6 +328,133 @@ def test_fallback_chapter_outline_titles_are_concise_and_not_volume_goal_clips()
     assert all("需要在本卷内" not in title for title in titles)
     assert all("·" not in title for title in titles)
     assert all(len(title) <= 8 for title in titles)
+
+
+def test_merge_volume_cast_expansion_keeps_existing_role_when_role_change_is_descriptive() -> None:
+    cast_spec = {
+        "protagonist": {"name": "Kade Mercer", "role": "protagonist"},
+        "supporting_cast": [
+            {
+                "name": "Zoe Chen",
+                "role": "ally",
+                "metadata": {"existing": True},
+            }
+        ],
+    }
+    raw_role = (
+        "From information gatherer to active participant—she cannot remain a detached "
+        "investigator when Maya specifically targets her through convergence"
+    )
+    cast_expansion = {
+        "character_evolutions": [
+            {
+                "name": "Zoe Chen",
+                "changes": {
+                    "role": raw_role,
+                    "alliance_status": "Moves from tentative trust toward commitment.",
+                },
+            }
+        ]
+    }
+
+    merged = planner_services._merge_volume_cast_expansion_into_cast_spec(
+        cast_spec,
+        cast_expansion,
+    )
+
+    zoe = merged["supporting_cast"][0]
+    assert zoe["role"] == "ally"
+    assert zoe["alliance_status"] == "Moves from tentative trust toward commitment."
+    assert zoe["metadata"]["existing"] is True
+    assert zoe["metadata"]["role_evolution"] == raw_role
+    assert zoe["metadata"]["role_evolution_normalized_label"] == "From information gatherer to active participant"
+
+
+def test_merge_volume_cast_expansion_normalizes_descriptive_role_for_new_character() -> None:
+    cast_spec = {
+        "protagonist": {"name": "Kade Mercer", "role": "protagonist"},
+        "supporting_cast": [],
+    }
+    raw_role = (
+        "From hidden observer to field coordinator—she can no longer stay outside "
+        "the conflict once the breach starts choosing targets"
+    )
+    cast_expansion = {
+        "new_characters": [
+            {
+                "name": "Denise Marlow",
+                "role": raw_role,
+                "goal": "Keep the remaining descendants alive.",
+            }
+        ]
+    }
+
+    merged = planner_services._merge_volume_cast_expansion_into_cast_spec(
+        cast_spec,
+        cast_expansion,
+    )
+
+    denise = merged["supporting_cast"][0]
+    assert denise["role"] == "supporting"
+    assert denise["goal"] == "Keep the remaining descendants alive."
+    assert denise["metadata"]["role_evolution"] == raw_role
+    assert denise["metadata"]["role_evolution_normalized_label"] == "From hidden observer to field coordinator"
+
+
+def test_merge_volume_cast_expansion_normalizes_fuzzy_age_for_new_character() -> None:
+    cast_spec = {
+        "protagonist": {"name": "Kade Mercer", "role": "protagonist"},
+        "supporting_cast": [],
+    }
+    cast_expansion = {
+        "new_characters": [
+            {
+                "name": "Iris Vale",
+                "role": "ally",
+                "age": "late 40s",
+            }
+        ]
+    }
+
+    merged = planner_services._merge_volume_cast_expansion_into_cast_spec(
+        cast_spec,
+        cast_expansion,
+    )
+
+    iris = merged["supporting_cast"][0]
+    assert iris["age"] == 48
+    assert iris["metadata"]["age_note"] == "late 40s"
+    assert iris["metadata"]["age_normalized"] == 48
+
+
+def test_merge_volume_cast_expansion_moves_list_changes_into_metadata_notes() -> None:
+    cast_spec = {
+        "protagonist": {"name": "Kade Mercer", "role": "protagonist"},
+        "supporting_cast": [{"name": "Zoe Chen", "role": "ally"}],
+    }
+    cast_expansion = {
+        "character_evolutions": [
+            {
+                "name": "Zoe Chen",
+                "changes": [
+                    "Stops operating as a detached observer.",
+                    "Commits to the breach team in the field.",
+                ],
+            }
+        ]
+    }
+
+    merged = planner_services._merge_volume_cast_expansion_into_cast_spec(
+        cast_spec,
+        cast_expansion,
+    )
+
+    zoe = merged["supporting_cast"][0]
+    assert zoe["metadata"]["evolution_notes"] == [
+        "Stops operating as a detached observer.",
+        "Commits to the breach team in the field.",
+    ]
+    assert "changes" not in zoe
 
 
 def test_fallback_chapter_outline_scenes_have_no_chapter_number_prefix() -> None:

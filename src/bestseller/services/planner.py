@@ -10,11 +10,17 @@ import re
 from typing import Any, Callable
 from uuid import UUID
 
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from bestseller.domain.enums import ArtifactType, WorkflowStatus
+from bestseller.domain.enums import ArtifactType, ChapterStatus, WorkflowStatus
 from bestseller.domain.planning import NovelPlanningResult, PlanningArtifactCreate, PlanningArtifactRecord, VolumePlanningResult
-from bestseller.infra.db.models import ProjectModel
+from bestseller.domain.story_bible import (
+    is_safe_character_role_label,
+    normalize_character_age,
+    normalize_character_role_label,
+)
+from bestseller.infra.db.models import ChapterModel, ProjectModel, VolumeModel
 from bestseller.services.llm import LLMCompletionRequest, complete_text
 from bestseller.services.planning_context import (
     summarize_book_spec,
@@ -394,6 +400,158 @@ def _non_empty_string(value: Any, default: str) -> str:
     if isinstance(value, str) and value.strip():
         return value.strip()
     return default
+
+
+def _role_metadata_with_evolution_note(
+    current_metadata: Any,
+    *,
+    raw_role: str,
+    normalized_role: str,
+) -> dict[str, Any]:
+    metadata = copy.deepcopy(_mapping(current_metadata))
+    metadata["role_evolution"] = raw_role
+    if normalized_role and normalized_role != raw_role:
+        metadata["role_evolution_normalized_label"] = normalized_role
+    return metadata
+
+
+def _age_metadata_with_note(
+    current_metadata: Any,
+    *,
+    raw_age: Any,
+    normalized_age: int | None,
+) -> dict[str, Any]:
+    metadata = copy.deepcopy(_mapping(current_metadata))
+    raw_text = str(raw_age).strip()
+    if raw_text:
+        metadata["age_note"] = raw_text
+    if normalized_age is not None and raw_text != str(normalized_age):
+        metadata["age_normalized"] = normalized_age
+    return metadata
+
+
+def _sanitize_character_age_field(candidate: dict[str, Any]) -> dict[str, Any]:
+    raw_age = candidate.get("age")
+    if raw_age is None or raw_age == "":
+        candidate.pop("age", None)
+        return candidate
+
+    normalized_age = normalize_character_age(raw_age)
+    if normalized_age is None:
+        candidate["metadata"] = _age_metadata_with_note(
+            candidate.get("metadata"),
+            raw_age=raw_age,
+            normalized_age=None,
+        )
+        candidate.pop("age", None)
+        return candidate
+
+    if isinstance(raw_age, str) and raw_age.strip() != str(normalized_age):
+        candidate["metadata"] = _age_metadata_with_note(
+            candidate.get("metadata"),
+            raw_age=raw_age,
+            normalized_age=normalized_age,
+        )
+    candidate["age"] = normalized_age
+    return candidate
+
+
+def _store_character_evolution_notes(
+    current_metadata: Any,
+    notes: list[str],
+) -> dict[str, Any]:
+    metadata = copy.deepcopy(_mapping(current_metadata))
+    existing = _string_list(metadata.get("evolution_notes"))
+    metadata["evolution_notes"] = existing + [note for note in notes if note not in existing]
+    return metadata
+
+
+def _sanitize_new_character_candidate(
+    raw_value: Any,
+    *,
+    default_role: str = "supporting",
+) -> dict[str, Any]:
+    if isinstance(raw_value, str):
+        candidate = {"name": raw_value, "role": default_role}
+    else:
+        candidate = copy.deepcopy(_mapping(raw_value))
+
+    raw_role = candidate.get("role")
+    if not isinstance(raw_role, str) or not raw_role.strip():
+        candidate["role"] = default_role
+        return _sanitize_character_age_field(candidate)
+
+    normalized_role = normalize_character_role_label(raw_role, fallback=default_role)
+    if is_safe_character_role_label(raw_role):
+        candidate["role"] = normalized_role
+        return _sanitize_character_age_field(candidate)
+
+    candidate["metadata"] = _role_metadata_with_evolution_note(
+        candidate.get("metadata"),
+        raw_role=raw_role.strip(),
+        normalized_role=normalized_role,
+    )
+    candidate["role"] = default_role
+    return _sanitize_character_age_field(candidate)
+
+
+def _sanitize_character_evolution_changes(
+    target: dict[str, Any],
+    changes: dict[str, Any],
+    *,
+    allow_role_change: bool,
+) -> dict[str, Any]:
+    sanitized = copy.deepcopy(changes)
+    raw_evolution_notes = _string_list(sanitized.get("changes"))
+    raw_evolution_notes.extend(
+        note
+        for note in _string_list(sanitized.get("evolution_notes"))
+        if note not in raw_evolution_notes
+    )
+    if raw_evolution_notes:
+        sanitized["metadata"] = _store_character_evolution_notes(
+            sanitized.get("metadata"),
+            raw_evolution_notes,
+        )
+        sanitized.pop("changes", None)
+        sanitized.pop("evolution_notes", None)
+
+    raw_age = sanitized.get("age")
+    if raw_age is not None and raw_age != "":
+        normalized_age = normalize_character_age(raw_age)
+        if normalized_age is None:
+            sanitized["metadata"] = _age_metadata_with_note(
+                sanitized.get("metadata"),
+                raw_age=raw_age,
+                normalized_age=None,
+            )
+            sanitized.pop("age", None)
+        else:
+            if isinstance(raw_age, str) and raw_age.strip() != str(normalized_age):
+                sanitized["metadata"] = _age_metadata_with_note(
+                    sanitized.get("metadata"),
+                    raw_age=raw_age,
+                    normalized_age=normalized_age,
+                )
+            sanitized["age"] = normalized_age
+
+    raw_role = sanitized.get("role")
+    if not isinstance(raw_role, str) or not raw_role.strip():
+        return sanitized
+
+    fallback_role = _non_empty_string(target.get("role"), "supporting")
+    normalized_role = normalize_character_role_label(raw_role, fallback=fallback_role)
+    if allow_role_change and is_safe_character_role_label(raw_role):
+        sanitized["role"] = normalized_role
+        return sanitized
+
+    sanitized.pop("role", None)
+    sanitized["metadata"] = _role_metadata_with_evolution_note(
+        sanitized.get("metadata"),
+        raw_role=raw_role.strip(),
+        normalized_role=normalized_role,
+    )
+    return sanitized
 
 
 def _named_item(items: list[dict[str, Any]], index: int, default_name: str) -> dict[str, Any]:
@@ -3112,6 +3270,64 @@ def _compute_volume_start(vol_map: dict[str, Any], volume_plan: list[dict[str, A
     return cursor
 
 
+_WRITTEN_CHAPTER_STATUSES_FOR_OFFSET: tuple[str, ...] = (
+    ChapterStatus.DRAFTING.value,
+    ChapterStatus.REVIEW.value,
+    ChapterStatus.REVISION.value,
+    ChapterStatus.COMPLETE.value,
+)
+
+
+async def _max_written_chapter_number(session: AsyncSession, project_id: UUID) -> int:
+    """Return the highest ``chapter_number`` already written for a project.
+
+    Used as the authoritative offset when re-planning a tail volume — the
+    fallback must not renumber chapters past this frontier. Returns 0 when
+    nothing is written yet (fresh project).
+    """
+    stmt = select(func.max(ChapterModel.chapter_number)).where(
+        ChapterModel.project_id == project_id,
+        ChapterModel.status.in_(_WRITTEN_CHAPTER_STATUSES_FOR_OFFSET),
+    )
+    result = await session.scalar(stmt)
+    return int(result or 0)
+
+
+async def _next_chapter_number_for_volume(
+    session: AsyncSession,
+    project_id: UUID,
+    volume_number: int,
+) -> int:
+    """Return the first ``chapter_number`` that a fresh replan of ``volume_number`` should use.
+
+    Authority chain (strongest → weakest):
+      1. ``max(chapter_number) + 1`` across ALL chapters belonging to *earlier*
+         volumes (volume_number < N). This binds the start of volume N to the
+         real DB layout regardless of what VOLUME_PLAN targets claim.
+      2. ``max(chapter_number) + 1`` across all chapters in the project when
+         no earlier-volume chapter exists (e.g. volume 1 or an empty project).
+
+    Never trusts VOLUME_PLAN targets — those are exactly what drifted during
+    the 200-chapter gap incident. Always ≥ 1.
+    """
+    prior_stmt = (
+        select(func.max(ChapterModel.chapter_number))
+        .join(VolumeModel, ChapterModel.volume_id == VolumeModel.id)
+        .where(
+            ChapterModel.project_id == project_id,
+            VolumeModel.volume_number < int(volume_number),
+        )
+    )
+    prior_max = int(await session.scalar(prior_stmt) or 0)
+    if prior_max > 0:
+        return prior_max + 1
+    any_stmt = select(func.max(ChapterModel.chapter_number)).where(
+        ChapterModel.project_id == project_id,
+    )
+    any_max = int(await session.scalar(any_stmt) or 0)
+    return max(any_max + 1, 1)
+
+
 def _fallback_chapter_outline_batch(
     project: ProjectModel,
     book_spec: dict[str, Any],
@@ -3119,7 +3335,16 @@ def _fallback_chapter_outline_batch(
     volume_plan: list[dict[str, Any]],
     *,
     category_key: str | None = None,
+    chapter_number_offset: int = 1,
 ) -> dict[str, Any]:
+    """Synthesize a best-effort chapter outline batch.
+
+    ``chapter_number_offset`` is the first global chapter_number to assign
+    (default 1). Pass ``max(existing_written_chapter_number) + 1`` when
+    padding a volume replan so the fallback doesn't collide with already-
+    written chapters — this was the root cause of the 200-chapter gap on
+    xianxia-upgrade-1776137730.
+    """
     writing_profile = _planner_writing_profile(project)
     cast_payload = _mapping(cast_spec)
     protagonist_name = _non_empty_string(_mapping(cast_payload.get("protagonist")).get("name"), "主角")
@@ -3158,7 +3383,7 @@ def _fallback_chapter_outline_batch(
             normalized_forces.append(_mapping(f))
 
     chapters: list[dict[str, Any]] = []
-    chapter_number = 1
+    chapter_number = max(int(chapter_number_offset), 1)
     _gen = get_settings().generation
     chapter_target_words = max(
         _gen.words_per_chapter.min,
@@ -4040,6 +4265,13 @@ def _volume_cast_expansion_prompts(
             "1. 'new_characters': array of new supporting characters needed for this volume\n"
             "2. 'character_evolutions': array of {name, changes} for existing characters that should evolve based on prior events\n"
             "3. 'relationship_updates': array of relationship changes entering this volume\n"
+            "The 'changes' field must be an object, never an array. If you need prose notes, put them under "
+            "'evolution_notes' or 'arc_shift'.\n"
+            "Inside 'changes', never put a full sentence into 'role'. Use 'role' only for a short structural label "
+            "(<=64 chars, e.g. ally, rival, antagonist_lieutenant). Put arc/function changes into fields like "
+            "'role_evolution', 'alliance_status', 'arc_shift', or 'function_in_volume' instead.\n"
+            "If you include 'age', it must be a bare integer (e.g. 47). Do not use prose like 'late 40s'; "
+            "use 'age_note' for fuzzy age text.\n"
             "Keep new characters minimal — only introduce who the volume absolutely needs."
         )
         if is_en
@@ -4053,6 +4285,11 @@ def _volume_cast_expansion_prompts(
             "1. 'new_characters'：本卷需要的新配角数组\n"
             "2. 'character_evolutions'：需要根据前卷事件演化的现有角色 {name, changes} 数组\n"
             "3. 'relationship_updates'：进入本卷时的关系变化数组\n"
+            "'changes' 必须是对象，不能是数组；如果要写描述性说明，请放到 'evolution_notes' 或 'arc_shift'。\n"
+            "在 'changes' 里，不要把完整句子写进 'role'。'role' 只能是简短结构标签（<=64 字符，例如 ally、rival、"
+            "antagonist_lieutenant）；角色功能变化请写到 'role_evolution'、'alliance_status'、'arc_shift'、"
+            "'function_in_volume' 这类字段。\n"
+            "如果填写 'age'，必须是纯整数（例如 47），不要写 'late 40s' 这类自然语言；模糊年龄请写到 'age_note'。\n"
             "新角色应最少化——只引入本卷绝对必要的角色。"
         )
     )
@@ -4135,10 +4372,7 @@ def _merge_volume_cast_expansion_into_cast_spec(
     }
 
     def _upsert_character(raw_value: Any) -> None:
-        if isinstance(raw_value, str):
-            candidate = {"name": raw_value, "role": "ally"}
-        else:
-            candidate = copy.deepcopy(_mapping(raw_value))
+        candidate = _sanitize_new_character_candidate(raw_value)
         name = _non_empty_string(candidate.get("name"), "")
         if not name:
             return
@@ -4174,7 +4408,13 @@ def _merge_volume_cast_expansion_into_cast_spec(
         if target is None:
             _upsert_character({"name": name, **changes})
             continue
-        merged_target = _merge_mapping_non_empty(target, changes)
+        allow_role_change = name not in primary_characters
+        sanitized_changes = _sanitize_character_evolution_changes(
+            target,
+            changes,
+            allow_role_change=allow_role_change,
+        )
+        merged_target = _merge_mapping_non_empty(target, sanitized_changes)
         if name == primary_characters.get(name, {}).get("name"):
             if merged.get("protagonist", {}).get("name") == name:
                 merged["protagonist"] = merged_target
@@ -4583,9 +4823,7 @@ async def generate_novel_plan(
     *,
     requested_by: str = "system",
 ) -> NovelPlanningResult:
-    project = await get_project_by_slug(session, project_slug)
-    if project is None:
-        raise ValueError(f"Project '{project_slug}' was not found.")
+    project = await _assert_plan_writer_not_locked(session, project_slug)
 
     workflow_run = await create_workflow_run(
         session,
@@ -5133,6 +5371,26 @@ WORKFLOW_TYPE_FOUNDATION_PLAN = "generate_foundation_plan"
 WORKFLOW_TYPE_VOLUME_PLAN = "generate_volume_plan"
 
 
+async def _assert_plan_writer_not_locked(session: AsyncSession, project_slug: str) -> ProjectModel:
+    """Guard shared by generate_novel_plan and generate_foundation_plan.
+
+    Refuses to re-run top-level planning on a project that has committed
+    drafted chapters. Prevents the drifted-VOLUME_PLAN root cause that
+    triggered the 200-chapter gap on xianxia-upgrade-1776137730.
+    """
+    project = await get_project_by_slug(session, project_slug)
+    if project is None:
+        raise ValueError(f"Project '{project_slug}' was not found.")
+    existing_max_written = await _max_written_chapter_number(session, project.id)
+    if existing_max_written > 0:
+        raise RuntimeError(
+            f"Project '{project_slug}' already has {existing_max_written} written "
+            "chapters — top-level planning is locked. Resume via "
+            "generate_volume_plan per remaining volume instead."
+        )
+    return project
+
+
 async def generate_foundation_plan(
     session: AsyncSession,
     settings: AppSettings,
@@ -5146,9 +5404,7 @@ async def generate_foundation_plan(
     Identical to ``generate_novel_plan`` but **stops before chapter outlines**.
     Outlines are generated per-volume via ``generate_volume_plan()``.
     """
-    project = await get_project_by_slug(session, project_slug)
-    if project is None:
-        raise ValueError(f"Project '{project_slug}' was not found.")
+    project = await _assert_plan_writer_not_locked(session, project_slug)
 
     workflow_run = await create_workflow_run(
         session,
@@ -5400,6 +5656,10 @@ async def generate_volume_plan(
                 effective_cast_spec,
                 cast_exp_payload,
             )
+            # Validate and normalize the merged CastSpec immediately so
+            # malformed role updates fail close to the merge point instead of
+            # surfacing later during story-bible materialization.
+            effective_cast_spec = parse_cast_spec_input(effective_cast_spec).model_dump(mode="json")
             if effective_cast_spec and effective_cast_spec != _mapping(cast_spec):
                 merged_cast_artifact = await import_planning_artifact(
                     session,
@@ -5459,8 +5719,29 @@ async def generate_volume_plan(
         current_step_name = f"generate_volume_{volume_number}_outline"
         workflow_run.current_step = current_step_name
 
-        # Build per-volume fallback
-        full_fallback = _fallback_chapter_outline_batch(project, book_spec, effective_cast_spec, volume_plan, category_key=_category_key)
+        # Build per-volume fallback using the authoritative chapter-number
+        # frontier from the ``chapters`` table. The offset comes exclusively
+        # from DB evidence (max chapter_number in prior volumes, then
+        # project-wide fallback) — never from VOLUME_PLAN targets, since those
+        # are exactly what drifted during the 200-chapter gap on
+        # xianxia-upgrade-1776137730 (drifted targets pushed vol 4 to ch 351
+        # after only 150 had been written).
+        chapter_number_offset = await _next_chapter_number_for_volume(
+            session, project.id, volume_number,
+        )
+        # Restrict the fallback to the single volume being replanned — the
+        # fallback numbers chapters globally across whatever volume_plan it
+        # receives, so passing only the target volume entry keeps numbering
+        # anchored at ``chapter_number_offset``.
+        single_volume_plan = [v for v in _mapping_list(volume_plan) if int(v.get("volume_number", 0) or 0) == volume_number]
+        full_fallback = _fallback_chapter_outline_batch(
+            project,
+            book_spec,
+            effective_cast_spec,
+            single_volume_plan,
+            category_key=_category_key,
+            chapter_number_offset=chapter_number_offset,
+        )
         vol_fallback_chapters = [ch for ch in full_fallback.get("chapters", []) if ch.get("volume_number") == volume_number]
         vol_fallback = {"batch_name": f"volume-{volume_number}-outline", "chapters": vol_fallback_chapters}
 
@@ -5494,8 +5775,12 @@ async def generate_volume_plan(
             vol_chapters = list(vol_chapters) + pad
             if isinstance(vol_outline_payload, dict):
                 vol_outline_payload["chapters"] = vol_chapters
-        for ch in vol_chapters:
+        # Force a contiguous, offset-safe chapter_number sequence. The LLM
+        # output cannot be trusted to stay above ``chapter_number_offset``,
+        # and fallback padding used to silently leak stale global numbers.
+        for idx, ch in enumerate(vol_chapters):
             ch["volume_number"] = volume_number
+            ch["chapter_number"] = chapter_number_offset + idx
 
         vol_outline_artifact = await import_planning_artifact(
             session, project_slug,

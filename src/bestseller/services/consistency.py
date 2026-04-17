@@ -564,6 +564,26 @@ def detect_chapter_sequence_gaps(
     return sorted(expected - set(sorted_nums))
 
 
+def contiguous_prefix_max(chapter_numbers: list[int]) -> int | None:
+    """Largest N such that chapters 1..N are all present. ``None`` if 1 missing.
+
+    Used by the pipeline's resume path: stuck projects frequently have a
+    discontiguous set of ``ChapterModel`` rows (e.g. 1..50 + 101..150 when
+    an outline regeneration widened the numbering). The contiguous prefix
+    is the safe subset we can actually operate on — anything past the
+    first gap is deferred to a later repair pass.
+    """
+    if not chapter_numbers:
+        return None
+    present = set(chapter_numbers)
+    if 1 not in present:
+        return None
+    n = 1
+    while (n + 1) in present:
+        n += 1
+    return n
+
+
 def evaluate_project_consistency(
     *,
     settings: AppSettings,

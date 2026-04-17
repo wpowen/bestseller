@@ -59,6 +59,15 @@ ORPHAN_WORKFLOW_TIMEOUT_SECONDS = 30 * 60  # 30 minutes without heartbeat
 # the row write hasn't reached the replica yet.
 STARTUP_GRACE_SECONDS = 60
 
+# Redis lock key + TTL. Multiple worker containers boot concurrently —
+# without this lock each one would independently scan stuck projects and
+# enqueue duplicate autowrite tasks, which then race each other inside
+# `rebuild_narrative_graph` and trip the `uq_pacing_curve_chapter`
+# unique constraint. TTL is long enough to cover a slow scan + enqueue
+# cycle but short enough to never block legitimate reboots.
+SELF_HEAL_LOCK_KEY = "bestseller:self_heal:boot_lock"
+SELF_HEAL_LOCK_TTL_SECONDS = 180
+
 logger = logging.getLogger(__name__)
 
 
@@ -222,26 +231,79 @@ def _arq_redis_settings(settings: AppSettings) -> Any:
     )
 
 
+def _autowrite_heal_job_id(slug: str) -> str:
+    """Deterministic ARQ job id so concurrent workers can't double-enqueue.
+
+    ARQ rejects (returns ``None`` from ``enqueue_job``) any second job that
+    shares a ``_job_id`` with one already queued or in-flight. Keying on the
+    project slug means self-heal is naturally idempotent across workers
+    even if the Redis lock somehow lapses.
+    """
+    return f"autowrite:heal:{slug}"
+
+
 async def _requeue_autowrite(
     pool: "ArqRedis",
     stuck: StuckProject,
-) -> str:
-    """Enqueue a fresh ``run_autowrite_task`` for a stuck project."""
-    task_id = str(uuid.uuid4())
-    await pool.enqueue_job(
+) -> str | None:
+    """Enqueue a fresh ``run_autowrite_task`` for a stuck project.
+
+    Returns the job id on success, or ``None`` if ARQ already has a
+    pending/running job for the same slug (deterministic dedup).
+    """
+    job_id = _autowrite_heal_job_id(stuck.slug)
+    job = await pool.enqueue_job(
         "run_autowrite_task",
-        workflow_run_id=task_id,
+        workflow_run_id=job_id,
         payload={"project_slug": stuck.slug, "premise": None},
-        _job_id=task_id,
+        _job_id=job_id,
     )
-    return task_id
+    if job is None:
+        return None
+    return job_id
+
+
+async def _try_acquire_heal_lock(
+    redis: Any | None,
+    worker_id: str,
+    ttl_seconds: int = SELF_HEAL_LOCK_TTL_SECONDS,
+) -> bool:
+    """Attempt to claim the singleton self-heal lock via ``SET NX EX``.
+
+    Returns ``True`` if this worker now holds the lock, ``False`` if
+    another worker already does (and this one should skip self-heal).
+    A ``None`` redis client short-circuits to ``True`` so tests and
+    single-worker environments still run.
+    """
+    if redis is None:
+        return True
+    try:
+        acquired = await redis.set(
+            SELF_HEAL_LOCK_KEY,
+            worker_id,
+            nx=True,
+            ex=ttl_seconds,
+        )
+    except Exception:  # noqa: BLE001 — lock is advisory; fall back to running
+        logger.exception("self-heal: lock acquisition failed — running anyway")
+        return True
+    return bool(acquired)
 
 
 async def heal_stuck_projects(
     settings: AppSettings,
     startup_cutoff: _dt.datetime | None = None,
+    *,
+    redis: Any | None = None,
+    worker_id: str | None = None,
 ) -> list[dict[str, Any]]:
     """Scan for stuck projects and re-queue their autowrite task.
+
+    When multiple worker containers boot concurrently they all hit this
+    function; the Redis ``SET NX`` lock ensures only one actually runs
+    the scan+enqueue. Pass a ``redis`` client to enable the lock — when
+    omitted the caller is assumed to be a single-writer context (CLI,
+    test, etc.) and the lock is skipped.
 
     Returns a list of ``{slug, task_id, reason, stuck_at_chapter}`` dicts
     describing what was requeued. Called at worker startup.
@@ -252,6 +314,14 @@ async def heal_stuck_projects(
     from arq.connections import create_pool  # noqa: PLC0415
 
     dispatched: list[dict[str, Any]] = []
+
+    effective_worker_id = worker_id or str(uuid.uuid4())
+    if not await _try_acquire_heal_lock(redis, effective_worker_id):
+        logger.info(
+            "self-heal: another worker holds the boot lock — skipping scan",
+        )
+        return dispatched
+
     pool: "ArqRedis | None" = None
     try:
         async with get_server_session() as session:
@@ -278,6 +348,12 @@ async def heal_stuck_projects(
                 logger.exception(
                     "self-heal: failed to enqueue slug=%s reason=%s: %s",
                     stuck.slug, stuck.reason, exc,
+                )
+                continue
+            if task_id is None:
+                logger.info(
+                    "self-heal: skipped slug=%s — autowrite job already queued",
+                    stuck.slug,
                 )
                 continue
             dispatched.append(

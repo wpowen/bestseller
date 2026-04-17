@@ -370,6 +370,164 @@ async def run_scene_pipeline(
             except Exception:
                 logger.debug("Opening diversity block injection failed (non-fatal)", exc_info=True)
 
+        # ── Stage A + B: inject conflict / scene-purpose / env diversity blocks ──
+        # Runs for ALL scenes (not just scene 1) — this is the main lever against
+        # plot-template and setting reuse in long novels.
+        if shared_context is not None:
+            try:
+                from bestseller.services.context import (
+                    compute_conflict_history,
+                    compute_env_history,
+                    compute_scene_purpose_history,
+                )
+                from bestseller.services.deduplication import (
+                    build_conflict_diversity_block,
+                    build_env_diversity_block,
+                    build_scene_purpose_diversity_block,
+                )
+
+                _lang = getattr(project, "language", None) or settings.generation.language
+                _genre_pool_key = (project.metadata_json or {}).get("conflict_pool_key")
+                if not _genre_pool_key:
+                    # Heuristic: for female-lead no-CP novels flagged by genre/sub_genre
+                    _genre = (getattr(project, "genre", None) or "").lower()
+                    _sub_genre = ((project.metadata_json or {}).get("sub_genre") or "").lower()
+                    if "female" in _genre or "female" in _sub_genre or "no_cp" in _sub_genre:
+                        _genre_pool_key = "female_lead_no_cp"
+
+                _conflicts = await compute_conflict_history(
+                    session, project.id,
+                    current_chapter=chapter_number,
+                    current_scene=scene_number,
+                    window=10,
+                )
+                _last_emerging_ch = (project.metadata_json or {}).get("_last_emerging_conflict_chapter")
+                from bestseller.services.conflict_taxonomy import should_inject_emerging
+                _inject_emerging = should_inject_emerging(
+                    chapter_number,
+                    int(_last_emerging_ch) if _last_emerging_ch else None,
+                )
+                shared_context.conflict_diversity_block = build_conflict_diversity_block(
+                    _conflicts,
+                    genre_pool_key=_genre_pool_key,
+                    inject_emerging=_inject_emerging,
+                    language=_lang,
+                )
+
+                _purposes = await compute_scene_purpose_history(
+                    session, project.id,
+                    current_chapter=chapter_number,
+                    current_scene=scene_number,
+                    window=5,
+                )
+                shared_context.scene_purpose_diversity_block = build_scene_purpose_diversity_block(
+                    _purposes, language=_lang,
+                )
+
+                _envs = await compute_env_history(
+                    session, project.id,
+                    current_chapter=chapter_number,
+                    current_scene=scene_number,
+                    window=3,
+                )
+                shared_context.env_diversity_block = build_env_diversity_block(
+                    _envs, language=_lang,
+                )
+            except Exception:
+                logger.debug("Stage A/B diversity block injection failed (non-fatal)", exc_info=True)
+
+        # ── Stage C + D: arc beat / five-layer / cliffhanger / tension / location ──
+        # These blocks require knowing the project's target chapter count + POV.
+        # They gracefully degrade to generic prompts when metadata is missing.
+        if shared_context is not None:
+            try:
+                from bestseller.services.context import (
+                    compute_arc_structure_for_pov,
+                    compute_location_history,
+                    compute_recent_hook_types,
+                    compute_recent_tension_scores,
+                )
+                from bestseller.services.deduplication import (
+                    build_arc_beat_block,
+                    build_cliffhanger_diversity_block,
+                    build_five_layer_thinking_block,
+                    build_location_ledger_block,
+                    build_tension_target_block,
+                )
+
+                _lang = getattr(project, "language", None) or settings.generation.language
+                _total_chapters = (
+                    getattr(project, "target_chapters", None)
+                    or (project.metadata_json or {}).get("target_chapter_count")
+                    or 100
+                )
+
+                # POV character lookup — prefer first participant, fall back to any.
+                _participants = list(scene.participants or [])
+                _pov_name = _participants[0] if _participants else None
+                _inner_struct, _pov_display = await compute_arc_structure_for_pov(
+                    session, project.id, pov_character_name=_pov_name,
+                )
+                shared_context.arc_beat_block = build_arc_beat_block(
+                    _inner_struct,
+                    chapter_number=chapter_number,
+                    total_chapters=int(_total_chapters),
+                    pov_name=_pov_display,
+                    language=_lang,
+                )
+                shared_context.five_layer_block = build_five_layer_thinking_block(
+                    language=_lang,
+                )
+
+                _hook_types = await compute_recent_hook_types(
+                    session, project.id,
+                    current_chapter=chapter_number,
+                    window=5,
+                )
+                shared_context.cliffhanger_diversity_block = build_cliffhanger_diversity_block(
+                    _hook_types,
+                    chapter_number=chapter_number,
+                    total_chapters=int(_total_chapters),
+                    language=_lang,
+                )
+
+                _tensions = await compute_recent_tension_scores(
+                    session, project.id,
+                    current_chapter=chapter_number,
+                    window=10,
+                )
+                shared_context.tension_target_block = build_tension_target_block(
+                    chapter_number,
+                    int(_total_chapters),
+                    recent_tension_scores=_tensions,
+                    language=_lang,
+                )
+
+                _locations = await compute_location_history(
+                    session, project.id,
+                    current_chapter=chapter_number,
+                    current_scene=scene_number,
+                    window=8,
+                )
+                # Best-effort current-location lookup from scene metadata.
+                _current_loc: str | None = None
+                try:
+                    _scene_meta = getattr(scene, "metadata_json", None) or {}
+                    _current_loc = (
+                        _scene_meta.get("location_id")
+                        or _scene_meta.get("location")
+                        or getattr(scene, "location", None)
+                    )
+                except Exception:
+                    _current_loc = None
+                shared_context.location_ledger_block = build_location_ledger_block(
+                    _current_loc,
+                    _locations,
+                    language=_lang,
+                )
+            except Exception:
+                logger.debug("Stage C/D block injection failed (non-fatal)", exc_info=True)
+
         # ── Pre-scene contradiction check (zero LLM cost) ──
         if settings.pipeline.enable_contradiction_checks and shared_context is not None:
             try:

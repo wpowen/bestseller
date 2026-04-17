@@ -148,6 +148,30 @@ class SceneWriterContextPacket(BaseModel):
     # ── Opening diversity block: recent chapter openings to avoid repeating ──
     opening_diversity_block: str | None = None
 
+    # ── Stage A: conflict diversity block (per-scene, 4-axis taxonomy) ──
+    conflict_diversity_block: str | None = None
+
+    # ── Stage B: scene-purpose diversity block (24 purpose taxonomy) ──
+    scene_purpose_diversity_block: str | None = None
+
+    # ── Stage B: environment 7-d diversity block ──
+    env_diversity_block: str | None = None
+
+    # ── Stage C: POV character arc + inner structure (lie/want/need/ghost) ──
+    arc_beat_block: str | None = None
+
+    # ── Stage C: 5-layer thinking contract (SENSATION→RATIONALIZATION) ──
+    five_layer_block: str | None = None
+
+    # ── Stage D: cliffhanger diversity (7 hook types, forbid same-type runs) ──
+    cliffhanger_diversity_block: str | None = None
+
+    # ── Stage D: chapter tension target + flat-rhythm warning ──
+    tension_target_block: str | None = None
+
+    # ── Stage B+: location ledger (same-location reframe + visit cap) ──
+    location_ledger_block: str | None = None
+
 
 class ChapterSceneContext(BaseModel):
     scene_number: int = Field(ge=1)

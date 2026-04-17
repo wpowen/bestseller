@@ -207,6 +207,84 @@ def _render_template(template: str, variables: dict[str, str]) -> str:
         return template
 
 
+def _repair_truncated_json(raw: str) -> str | None:
+    """Best-effort repair of a JSON string truncated mid-array.
+
+    Pattern seen in production (2026-04-17): MiniMax-M2.7 hits its
+    ``max_tokens`` ceiling while emitting a large ``"chapters": [ … ]``
+    array, leaving an incomplete trailing object that breaks parsing.
+
+    Strategy:
+    1. Find the outermost opening brace/bracket.
+    2. Walk the string, tracking brace/bracket depth while respecting
+       string literals and escape sequences.
+    3. Remember the position of the last character where the parser
+       was at a "clean" boundary — i.e. right after a closing ``}`` or
+       ``]`` at the same depth as the array we're filling.
+    4. Truncate after that boundary and close any still-open containers.
+
+    Returns the repaired JSON string, or ``None`` if the input is
+    malformed beyond easy repair.
+    """
+    stripped = raw.strip()
+    if not stripped or stripped[0] not in "{[":
+        return None
+    stack: list[str] = []
+    in_string = False
+    escape = False
+    last_clean = -1
+    for i, ch in enumerate(stripped):
+        if escape:
+            escape = False
+            continue
+        if ch == "\\" and in_string:
+            escape = True
+            continue
+        if ch == '"':
+            in_string = not in_string
+            continue
+        if in_string:
+            continue
+        if ch in "{[":
+            stack.append(ch)
+        elif ch in "}]":
+            if not stack:
+                return None
+            opener = stack.pop()
+            if (opener == "{" and ch != "}") or (opener == "[" and ch != "]"):
+                return None
+            # A clean boundary inside an array is right after a child object
+            # closes while the array itself is still open on the stack.
+            if stack and stack[-1] == "[" and opener == "{":
+                last_clean = i
+    if last_clean == -1:
+        return None
+    # Slice up to and including the last complete child object, then
+    # walk the stack state *at that position* to close whatever is still
+    # open outside it.  Re-scan to compute the stack at ``last_clean``.
+    stack2: list[str] = []
+    in_string = False
+    escape = False
+    for ch in stripped[: last_clean + 1]:
+        if escape:
+            escape = False
+            continue
+        if ch == "\\" and in_string:
+            escape = True
+            continue
+        if ch == '"':
+            in_string = not in_string
+            continue
+        if in_string:
+            continue
+        if ch in "{[":
+            stack2.append(ch)
+        elif ch in "}]" and stack2:
+            stack2.pop()
+    closing = "".join("}" if opener == "{" else "]" for opener in reversed(stack2))
+    return stripped[: last_clean + 1] + closing
+
+
 def _extract_json_payload(text: str) -> Any:
     stripped = text.strip()
     if not stripped:
@@ -220,7 +298,26 @@ def _extract_json_payload(text: str) -> Any:
         start = stripped.find(opening)
         end = stripped.rfind(closing)
         if start != -1 and end != -1 and end > start:
-            return json.loads(stripped[start : end + 1])
+            try:
+                return json.loads(stripped[start : end + 1])
+            except json.JSONDecodeError:
+                continue
+
+    # Tolerate truncation at max_tokens: drop the incomplete trailing
+    # object and close any still-open containers.
+    repaired = _repair_truncated_json(stripped)
+    if repaired is not None:
+        try:
+            result = json.loads(repaired)
+        except json.JSONDecodeError:
+            pass
+        else:
+            logger.warning(
+                "Planner output repaired after truncation (orig=%d bytes, repaired=%d bytes).",
+                len(stripped),
+                len(repaired),
+            )
+            return result
     raise ValueError("Planner output does not contain valid JSON.")
 
 
@@ -1989,15 +2086,30 @@ def _fallback_volume_plan(project: ProjectModel, book_spec: dict[str, Any], cast
                 force_by_volume[vol] = force
 
     plan: list[dict[str, Any]] = []
+    phase_occurrence_counter: dict[str, int] = {}
+    used_titles: set[str] = set()
     for volume_number, (chapter_start, chapter_end) in enumerate(chapter_ranges, start=1):
         phase = conflict_phases[min(volume_number - 1, len(conflict_phases) - 1)]
         force = force_by_volume.get(volume_number, {})
         force_name = _non_empty_string(force.get("name"), antagonist_name)
-        volume_title = f"Volume {volume_number}" if is_en else f"第{volume_number}卷"
         milestone = milestone_entries[volume_number - 1] if volume_number - 1 < len(milestone_entries) else {}
         milestone_title = _non_empty_string(_mapping(milestone).get("title"), "")
+        phase_occurrence = phase_occurrence_counter.get(phase, 0)
+        phase_occurrence_counter[phase] = phase_occurrence + 1
         if milestone_title:
             volume_title = milestone_title
+        else:
+            volume_title = _resolve_fallback_volume_title(
+                phase, phase_occurrence, volume_number, is_en=is_en
+            )
+            # Disambiguate if a later phase repeat exhausted the pool and
+            # produced a duplicate against an earlier milestone/phase title.
+            if volume_title in used_titles:
+                volume_title = (
+                    f"{volume_title} · Volume {volume_number}" if is_en
+                    else f"{volume_title}·第{volume_number}卷"
+                )
+        used_titles.add(volume_title)
         # Try category-specific phase templates; fall back to generic text
         phase_tpl = _resolve_phase_templates(phase, category_key=category_key, is_en=is_en)
         tpl_vars = {"protagonist": protagonist_name, "force_name": force_name}
@@ -2337,6 +2449,94 @@ _CONFLICT_PHASE_TYPES: list[str] = [
     "existential_threat",  # 终极威胁与最大牺牲
     "internal_reckoning",  # 内心拷问与自我面对
 ]
+
+# Phase-based volume title pools. Used as a fallback when no milestone title
+# is provided, so volumes get distinct, meaningful names instead of
+# generic "第N卷" / "Volume N" placeholders. Each list is cycled by the
+# phase's occurrence index across the volume plan.
+_PHASE_TITLE_VARIATIONS_ZH: dict[str, list[str]] = {
+    # Category: action-progression phases
+    "individual_survival": ["血路初开", "绝境求生", "悬崖立命", "险中续命"],
+    "faction_friction": ["夹缝立足", "势力角逐", "风云暗涌", "群雄倾轧"],
+    "power_system_test": ["体系破障", "规则叩问", "质变之门", "力道重铸"],
+    "world_threat": ["天下危局", "苍生倾覆", "乾坤失衡", "众生浩劫"],
+    "transcendence": ["破执证道", "大道归一", "心魔照影", "超凡入圣"],
+    # Legacy _CONFLICT_PHASE_TYPES
+    "survival": ["绝地求生", "险中立身", "生死博弈", "残局求存"],
+    "political_intrigue": ["暗流权谋", "棋盘迷影", "庙堂风云", "权谋迭起"],
+    "betrayal": ["信任崩裂", "背刺寒霜", "裂痕成渊", "故人反目"],
+    "faction_war": ["群雄逐鹿", "百宗乱战", "势力倾轧", "风云对决"],
+    "existential_threat": ["天倾之危", "末世将至", "终极决断", "万象归零"],
+    "internal_reckoning": ["归心照影", "内心审判", "破执立我", "自我重铸"],
+}
+
+_PHASE_TITLE_VARIATIONS_EN: dict[str, list[str]] = {
+    "individual_survival": ["First Blood", "Edge of Survival", "Cliff of Fate", "Breath by Breath"],
+    "faction_friction": ["Cracks Between Powers", "Shifting Alliances", "Undercurrents Rise", "Caught in the Fray"],
+    "power_system_test": ["Rules Unbound", "Crossing the Threshold", "Trial of Ascent", "Forging Anew"],
+    "world_threat": ["World in Peril", "Heaven Tilts", "The Great Reckoning", "A Fracturing Sky"],
+    "transcendence": ["Beyond the Path", "Unity of the Way", "Shadow of the Mind", "Stepping Beyond Mortality"],
+    "survival": ["Bare Survival", "Stand Your Ground", "Life on a Knife's Edge", "The Last Ember"],
+    "political_intrigue": ["Whispers of Power", "The Shifting Board", "Court of Shadows", "A Web of Schemes"],
+    "betrayal": ["Broken Trust", "A Cold Blade", "Fault Lines Open", "Friends Turned Foes"],
+    "faction_war": ["Rival Banners", "Open Warfare", "The Grand Clash", "Age of Contention"],
+    "existential_threat": ["On the Brink", "Twilight of an Age", "The Final Choice", "Reduction to Zero"],
+    "internal_reckoning": ["Into the Self", "Inner Trial", "Breaking the Chain", "Reforging the Heart"],
+}
+
+
+def _resolve_fallback_volume_title(
+    phase_key: str,
+    phase_occurrence: int,
+    volume_number: int,
+    *,
+    is_en: bool,
+) -> str:
+    """Pick a distinct phase-based title for a fallback volume plan entry.
+
+    ``phase_occurrence`` is the 0-based index of how many volumes with the
+    same phase have already been named. Cycling the pool by occurrence keeps
+    titles distinct across repeated phases.
+    """
+    pool = (_PHASE_TITLE_VARIATIONS_EN if is_en else _PHASE_TITLE_VARIATIONS_ZH).get(phase_key) or []
+    if pool:
+        base = pool[phase_occurrence % len(pool)]
+        # When a phase repeats beyond the pool size, append an occurrence
+        # suffix so titles stay distinct without resorting to "第N卷".
+        cycle = phase_occurrence // len(pool)
+        if cycle == 0:
+            return base
+        return f"{base} · II" if is_en and cycle == 1 else (
+            f"{base} · {_roman(cycle + 1)}" if is_en else f"{base}·{_chinese_ordinal(cycle + 1)}"
+        )
+    return f"Volume {volume_number}" if is_en else f"第{volume_number}卷"
+
+
+_CHINESE_NUMERALS = "零一二三四五六七八九十"
+
+
+def _chinese_ordinal(n: int) -> str:
+    """Return a compact Chinese numeral for 1-99 (enough for volume counts)."""
+    if n < 0:
+        return str(n)
+    if n <= 10:
+        return _CHINESE_NUMERALS[n]
+    if n < 20:
+        return "十" + (_CHINESE_NUMERALS[n - 10] if n > 10 else "")
+    tens, ones = divmod(n, 10)
+    return f"{_CHINESE_NUMERALS[tens]}十" + (_CHINESE_NUMERALS[ones] if ones else "")
+
+
+def _roman(n: int) -> str:
+    """Return a Roman numeral for small positive integers (suffix use)."""
+    vals = [(10, "X"), (9, "IX"), (5, "V"), (4, "IV"), (1, "I")]
+    out = ""
+    remaining = max(n, 0)
+    for v, s in vals:
+        while remaining >= v:
+            out += s
+            remaining -= v
+    return out or "I"
 
 _VOLUME_OBSTACLE_TEMPLATES: dict[str, str] = {
     "survival": "{force_name}带来直接生存压力——{protagonist}必须先活下来才能图更远的事。",
@@ -3607,6 +3807,7 @@ def _volume_plan_prompts(
             f"{_story_package_block}\n"
             f"{_pp_volume_plan}"
             "Generate a VolumePlan JSON array. Each entry must include volume_number, volume_title, volume_theme, chapter_count_target, volume_goal, volume_obstacle, volume_climax, volume_resolution, conflict_phase, and primary_force_name. "
+            "CRITICAL: `volume_title` must be a concrete, evocative 2-6 word name (e.g. 'Ashes of the Old Court'). Placeholder names like 'Volume 3', 'Vol. 4', or empty strings are forbidden and will be rejected. "
             "CRITICAL: Each volume must face a DIFFERENT primary conflict force from the CastSpec's antagonist_forces. Don't repeat the same antagonist pressure — vary between survival, political intrigue, betrayal, faction warfare, existential threat, etc. "
             "Every volume needs a concrete payoff, escalation, key reveal, volume-end hook, and anticipation for the next volume."
         )
@@ -3626,6 +3827,8 @@ def _volume_plan_prompts(
             "chapter_count_target、volume_goal、volume_obstacle、volume_climax、volume_resolution、"
             "conflict_phase（冲突类型：survival/political_intrigue/betrayal/faction_war/existential_threat/internal_reckoning）、"
             "primary_force_name（本卷主要冲突力量名称）。"
+            "【关键】volume_title 必须是 2-6 字的具体意象化卷名（例如『逆命入局』『灰楼开门』），"
+            "严禁使用『第N卷』『Volume N』『未命名』等占位名或空字符串，否则会被拒绝。"
             "【关键】每卷必须面对不同的冲突力量和冲突类型——不要所有卷都是同一个反派在施压！"
             "每卷都要有清晰的爽点兑现、局势升级、关键揭示、卷尾钩子和下一卷期待。"
         )
@@ -4800,8 +5003,27 @@ async def generate_novel_plan(
             if llm_run_id is not None:
                 llm_run_ids.append(llm_run_id)
 
-            # Normalize chapter numbers to global sequence
+            # Normalize chapter numbers to global sequence.
+            # If the LLM response was truncated mid-array (MiniMax hitting
+            # max_tokens), _extract_json_payload will have salvaged the
+            # complete chapters but we might be short of vol_ch_count.
+            # Pad from the fallback outline so the global sequence has no
+            # gaps (otherwise pipelines.py detect_chapter_sequence_gaps
+            # aborts materialization downstream).
             vol_chapters = vol_outline_payload.get("chapters", []) if isinstance(vol_outline_payload, dict) else []
+            if len(vol_chapters) < vol_ch_count:
+                missing = vol_ch_count - len(vol_chapters)
+                logger.warning(
+                    "Volume %d outline returned %d/%d chapters — padding last %d from fallback.",
+                    vol_num,
+                    len(vol_chapters),
+                    vol_ch_count,
+                    missing,
+                )
+                pad = copy.deepcopy(vol_fallback_chapters[-missing:])
+                vol_chapters = list(vol_chapters) + pad
+                if isinstance(vol_outline_payload, dict):
+                    vol_outline_payload["chapters"] = vol_chapters
             for idx, ch in enumerate(vol_chapters):
                 ch["volume_number"] = vol_num
                 ch["chapter_number"] = chapter_offset + idx
@@ -5256,6 +5478,22 @@ async def generate_volume_plan(
             llm_run_ids.append(llm_run_id)
 
         vol_chapters = vol_outline_payload.get("chapters", []) if isinstance(vol_outline_payload, dict) else []
+        # Pad from fallback if LLM truncation reduced the chapter count
+        # (see sibling loop at line ~4900 for rationale).
+        vol_ch_count = int(vol_entry.get("chapter_count_target", len(vol_chapters) or 1))
+        if len(vol_chapters) < vol_ch_count and vol_fallback_chapters:
+            missing = vol_ch_count - len(vol_chapters)
+            logger.warning(
+                "Volume %d outline returned %d/%d chapters — padding last %d from fallback.",
+                volume_number,
+                len(vol_chapters),
+                vol_ch_count,
+                missing,
+            )
+            pad = copy.deepcopy(vol_fallback_chapters[-missing:])
+            vol_chapters = list(vol_chapters) + pad
+            if isinstance(vol_outline_payload, dict):
+                vol_outline_payload["chapters"] = vol_chapters
         for ch in vol_chapters:
             ch["volume_number"] = volume_number
 

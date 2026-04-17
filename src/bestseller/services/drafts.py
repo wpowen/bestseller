@@ -403,13 +403,14 @@ _CN_DUPLICATE_CHAPTER_MARKER_RE = re.compile(
     r".*$"
 )
 
-# Mid-content chapter heading: "# 第N章 XYZ" appearing AFTER the first line.
-# The legitimate chapter heading sits at position 0 (prepended by
-# _format_chapter_heading). Any subsequent "# 第N章 ..." line is a leaked
+# Mid-content chapter heading: "# 第N章 XYZ" / "# 第N章：副标题" appearing AFTER
+# the first line. The legitimate chapter heading sits at position 0 (prepended
+# by _format_chapter_heading). Any subsequent "# 第N章 ..." line is a leaked
 # outline note, scene label, or planning task and must be stripped.
 # Only matches markdown headings (#{1,4} prefix) — bare "第N章" in prose is ok.
+# The character after 章 may be whitespace, Chinese/ASCII colon, or end-of-string.
 _CN_MID_CONTENT_CHAPTER_HEADING_RE = re.compile(
-    r"^\s*#{1,4}\s*第\s*[一二三四五六七八九十百零\d]+\s*章(?:\s.*|$)"
+    r"^\s*#{1,4}\s*第\s*[一二三四五六七八九十百零\d]+\s*章(?:[\s：:].*|$)"
 )
 
 # Prose-wrapped reasoning / rewrite-plan paragraphs, e.g.:
@@ -924,7 +925,7 @@ def _render_recent_scene_section(recent_scene_summaries: list[dict[str, Any]] | 
     if not recent_scene_summaries:
         return ""
     lines: list[str] = []
-    for item in recent_scene_summaries[:4]:
+    for item in recent_scene_summaries[:8]:
         if not item.get("summary"):
             continue
         line = (
@@ -1847,6 +1848,22 @@ def build_scene_draft_prompts(
     genre_constraint_block: str | None = None,
     # Opening diversity block: list of (chapter_number, opening_snippet) for recent chapters
     opening_diversity_block: str | None = None,
+    # Stage A — conflict diversity (per-scene, all scenes)
+    conflict_diversity_block: str | None = None,
+    # Stage B — scene-purpose diversity (all scenes)
+    scene_purpose_diversity_block: str | None = None,
+    # Stage B — environment 7-d diversity (all scenes)
+    env_diversity_block: str | None = None,
+    # Stage C — POV character arc + inner structure
+    arc_beat_block: str | None = None,
+    # Stage C — 5-layer thinking contract (POV decision points)
+    five_layer_block: str | None = None,
+    # Stage D — 7-type cliffhanger diversity
+    cliffhanger_diversity_block: str | None = None,
+    # Stage D — chapter tension target (beat-sheet driven)
+    tension_target_block: str | None = None,
+    # Stage B+ — location ledger (same-location reframe + visit cap)
+    location_ledger_block: str | None = None,
     # Context budget
     context_budget_tokens: int = 6000,
 ) -> tuple[str, str]:
@@ -2040,6 +2057,46 @@ def build_scene_draft_prompts(
     if genre_constraint_block:
         _genre_constraint_line = f"{genre_constraint_block}\n\n"
 
+    # Stage A — conflict diversity (ALL scenes, not just scene 1)
+    _conflict_diversity_line = ""
+    if conflict_diversity_block:
+        _conflict_diversity_line = f"{conflict_diversity_block}\n\n"
+
+    # Stage B — scene-purpose diversity (ALL scenes)
+    _scene_purpose_line = ""
+    if scene_purpose_diversity_block:
+        _scene_purpose_line = f"{scene_purpose_diversity_block}\n\n"
+
+    # Stage B — environment 7-d diversity (ALL scenes)
+    _env_diversity_line = ""
+    if env_diversity_block:
+        _env_diversity_line = f"{env_diversity_block}\n\n"
+
+    # Stage C — POV arc beat block (ALL scenes)
+    _arc_beat_line = ""
+    if arc_beat_block:
+        _arc_beat_line = f"{arc_beat_block}\n\n"
+
+    # Stage C — 5-layer thinking contract (ALL scenes)
+    _five_layer_line = ""
+    if five_layer_block:
+        _five_layer_line = f"{five_layer_block}\n\n"
+
+    # Stage D — cliffhanger diversity (last-scene-only ideally, but we show it on all)
+    _cliffhanger_line = ""
+    if cliffhanger_diversity_block:
+        _cliffhanger_line = f"{cliffhanger_diversity_block}\n\n"
+
+    # Stage D — chapter tension target (ALL scenes of the chapter share this)
+    _tension_target_line = ""
+    if tension_target_block:
+        _tension_target_line = f"{tension_target_block}\n\n"
+
+    # Stage B+ — location ledger (ALL scenes)
+    _location_ledger_line = ""
+    if location_ledger_block:
+        _location_ledger_line = f"{location_ledger_block}\n\n"
+
     # Phase-3 wiring: scene/sequel pattern
     _scene_sequel_line = _render_scene_sequel_section(
         swain_pattern, scene_skeleton, is_en=is_en,
@@ -2124,6 +2181,14 @@ def build_scene_draft_prompts(
             "phrase_avoidance_line": _phrase_avoidance_line,
             "opening_diversity_line": _opening_diversity_line,
             "genre_constraint_line": _genre_constraint_line,
+            "conflict_diversity_line": _conflict_diversity_line,
+            "scene_purpose_line": _scene_purpose_line,
+            "env_diversity_line": _env_diversity_line,
+            "arc_beat_line": _arc_beat_line,
+            "five_layer_line": _five_layer_line,
+            "cliffhanger_line": _cliffhanger_line,
+            "tension_target_line": _tension_target_line,
+            "location_ledger_line": _location_ledger_line,
             "hard_fact_line": _hard_fact_line,
             "knowledge_line": _knowledge_line,
             "recent_scene_section": recent_scene_section,
@@ -2160,6 +2225,14 @@ def build_scene_draft_prompts(
     _phrase_avoidance_line = _ctx["phrase_avoidance_line"]
     _opening_diversity_line = _ctx["opening_diversity_line"]
     _genre_constraint_line = _ctx["genre_constraint_line"]
+    _conflict_diversity_line = _ctx["conflict_diversity_line"]
+    _scene_purpose_line = _ctx["scene_purpose_line"]
+    _env_diversity_line = _ctx["env_diversity_line"]
+    _arc_beat_line = _ctx["arc_beat_line"]
+    _five_layer_line = _ctx["five_layer_line"]
+    _cliffhanger_line = _ctx["cliffhanger_line"]
+    _tension_target_line = _ctx["tension_target_line"]
+    _location_ledger_line = _ctx["location_ledger_line"]
     _hard_fact_line = _ctx["hard_fact_line"]
     _knowledge_line = _ctx["knowledge_line"]
     recent_scene_section = _ctx["recent_scene_section"]
@@ -2193,6 +2266,14 @@ def build_scene_draft_prompts(
             f"{_genre_constraint_line}"
             f"{_phrase_avoidance_line}"
             f"{_opening_diversity_line}"
+            f"{_conflict_diversity_line}"
+            f"{_scene_purpose_line}"
+            f"{_env_diversity_line}"
+            f"{_location_ledger_line}"
+            f"{_arc_beat_line}"
+            f"{_five_layer_line}"
+            f"{_tension_target_line}"
+            f"{_cliffhanger_line}"
             f"{_knowledge_line}"
             f"{_arc_summary_line}"
             f"{_world_snapshot_line}"
@@ -2253,6 +2334,14 @@ def build_scene_draft_prompts(
             f"{_genre_constraint_line}"
             f"{_phrase_avoidance_line}"
             f"{_opening_diversity_line}"
+            f"{_conflict_diversity_line}"
+            f"{_scene_purpose_line}"
+            f"{_env_diversity_line}"
+            f"{_location_ledger_line}"
+            f"{_arc_beat_line}"
+            f"{_five_layer_line}"
+            f"{_tension_target_line}"
+            f"{_cliffhanger_line}"
             f"{_knowledge_line}"
             f"{_arc_summary_line}"
             f"{_world_snapshot_line}"
@@ -2702,6 +2791,30 @@ async def generate_scene_draft(
             ),
             opening_diversity_block=(
                 context_packet.opening_diversity_block if context_packet else None
+            ),
+            conflict_diversity_block=(
+                context_packet.conflict_diversity_block if context_packet else None
+            ),
+            scene_purpose_diversity_block=(
+                context_packet.scene_purpose_diversity_block if context_packet else None
+            ),
+            env_diversity_block=(
+                context_packet.env_diversity_block if context_packet else None
+            ),
+            arc_beat_block=(
+                context_packet.arc_beat_block if context_packet else None
+            ),
+            five_layer_block=(
+                context_packet.five_layer_block if context_packet else None
+            ),
+            cliffhanger_diversity_block=(
+                context_packet.cliffhanger_diversity_block if context_packet else None
+            ),
+            tension_target_block=(
+                context_packet.tension_target_block if context_packet else None
+            ),
+            location_ledger_block=(
+                context_packet.location_ledger_block if context_packet else None
             ),
             context_budget_tokens=(
                 settings.generation.context_budget_tokens if settings else 6000

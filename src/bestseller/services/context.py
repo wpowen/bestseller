@@ -85,10 +85,15 @@ def _adaptive_lookback_window(
     """Compute a logarithmically scaled lookback window for long novels.
 
     For short novels (≤50 chapters), returns the base window.
-    For longer novels, the window grows logarithmically:
-      ch10→10, ch100→15, ch500→20, ch2000→25
+    For longer novels, the window grows logarithmically. With base_window=12:
+      ch10→12, ch100→≈39, ch500→≈57, ch2000→≈73.
 
-    This prevents O(n) context inflation as novels grow to 2000+ chapters.
+    Rationale: a larger window lets the writer recall earlier plotlines and
+    avoid repeating similar scenes — the narrow window was one of the primary
+    drivers of chapter similarity in 50+ chapter novels. See
+    plans/nifty-percolating-beaver.md (P1).
+
+    This still prevents O(n) context inflation at 2000+ chapters.
     """
     import math
 
@@ -96,12 +101,270 @@ def _adaptive_lookback_window(
         return 0
     if total_chapters <= 50:
         return min(current_chapter, base_window)
-    scaled = base_window + int(math.log2(max(1, current_chapter / 10)) * 3)
+    scaled = base_window + int(math.log2(max(1, current_chapter / 10)) * 8)
     return min(current_chapter, scaled)
 
 
 def _scene_position(chapter_number: int, scene_number: int | None) -> tuple[int, int]:
     return chapter_number, scene_number or 0
+
+
+# ---------------------------------------------------------------------------
+# Stage A / B — diversity history readers (read-only from SceneCard.metadata_json)
+# ---------------------------------------------------------------------------
+
+async def compute_conflict_history(
+    session: AsyncSession,
+    project_id: Any,
+    *,
+    current_chapter: int,
+    current_scene: int,
+    window: int = 10,
+) -> list[dict[str, Any]]:
+    """Read the last `window` scenes' `metadata_json.conflict_tuple` values.
+
+    Returns a most-recent-first list of dicts. Missing entries are skipped.
+    """
+    scenes = await session.scalars(
+        select(SceneCardModel)
+        .where(SceneCardModel.project_id == project_id)
+    )
+    # Sort by position desc, skip current and later scenes.
+    positions: list[tuple[SceneCardModel, tuple[int, int]]] = []
+    for s in scenes:
+        chapter = await session.get(ChapterModel, s.chapter_id)
+        if chapter is None:
+            continue
+        pos = _scene_position(chapter.chapter_number, s.scene_number)
+        if pos >= (current_chapter, current_scene):
+            continue
+        positions.append((s, pos))
+    positions.sort(key=lambda item: item[1], reverse=True)
+
+    result: list[dict[str, Any]] = []
+    for s, _ in positions:
+        meta = s.metadata_json or {}
+        ct = meta.get("conflict_tuple")
+        if isinstance(ct, dict) and ct.get("object") and ct.get("layer"):
+            result.append(ct)
+        if len(result) >= window:
+            break
+    return result
+
+
+async def compute_scene_purpose_history(
+    session: AsyncSession,
+    project_id: Any,
+    *,
+    current_chapter: int,
+    current_scene: int,
+    window: int = 5,
+) -> list[str]:
+    """Read the last `window` scenes' purpose ids (from metadata or purpose field)."""
+    scenes = await session.scalars(
+        select(SceneCardModel)
+        .where(SceneCardModel.project_id == project_id)
+    )
+    positions: list[tuple[SceneCardModel, tuple[int, int]]] = []
+    for s in scenes:
+        chapter = await session.get(ChapterModel, s.chapter_id)
+        if chapter is None:
+            continue
+        pos = _scene_position(chapter.chapter_number, s.scene_number)
+        if pos >= (current_chapter, current_scene):
+            continue
+        positions.append((s, pos))
+    positions.sort(key=lambda item: item[1], reverse=True)
+
+    result: list[str] = []
+    for s, _ in positions:
+        meta = s.metadata_json or {}
+        purpose_id = meta.get("scene_purpose_id")
+        if not purpose_id:
+            # Fall back to the SceneCard.purpose freeform field (first segment).
+            raw = s.purpose
+            if isinstance(raw, dict):
+                purpose_id = raw.get("purpose_id")
+            elif isinstance(raw, str) and raw:
+                purpose_id = raw.split("/", 1)[0].strip().lower().replace(" ", "_")
+        if purpose_id:
+            result.append(str(purpose_id))
+        if len(result) >= window:
+            break
+    return result
+
+
+async def compute_env_history(
+    session: AsyncSession,
+    project_id: Any,
+    *,
+    current_chapter: int,
+    current_scene: int,
+    window: int = 3,
+) -> list[dict[str, Any]]:
+    """Read the last `window` scenes' `metadata_json.env_7d` values."""
+    scenes = await session.scalars(
+        select(SceneCardModel)
+        .where(SceneCardModel.project_id == project_id)
+    )
+    positions: list[tuple[SceneCardModel, tuple[int, int]]] = []
+    for s in scenes:
+        chapter = await session.get(ChapterModel, s.chapter_id)
+        if chapter is None:
+            continue
+        pos = _scene_position(chapter.chapter_number, s.scene_number)
+        if pos >= (current_chapter, current_scene):
+            continue
+        positions.append((s, pos))
+    positions.sort(key=lambda item: item[1], reverse=True)
+
+    result: list[dict[str, Any]] = []
+    for s, _ in positions:
+        meta = s.metadata_json or {}
+        env = meta.get("env_7d")
+        if isinstance(env, dict) and env:
+            result.append(env)
+        if len(result) >= window:
+            break
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Stage C / D — POV arc + hook-type + location history readers
+# ---------------------------------------------------------------------------
+
+async def compute_arc_structure_for_pov(
+    session: AsyncSession,
+    project_id: Any,
+    *,
+    pov_character_name: str | None,
+) -> tuple[dict[str, Any] | None, str | None]:
+    """Look up the POV character's inner-structure payload.
+
+    Returns (inner_structure_dict, display_name). Inner structure is expected
+    at ``CharacterModel.metadata_json.inner_structure``. Missing → (None, name).
+    """
+    if not pov_character_name:
+        return None, None
+    characters = await session.scalars(
+        select(CharacterModel).where(CharacterModel.project_id == project_id)
+    )
+    needle = pov_character_name.strip().lower()
+    for c in characters:
+        name = (c.name or "").strip()
+        aliases = []
+        meta = c.metadata_json or {}
+        raw_aliases = meta.get("aliases") or []
+        if isinstance(raw_aliases, list):
+            aliases = [str(a).strip().lower() for a in raw_aliases]
+        if name.lower() == needle or needle in aliases:
+            inner = meta.get("inner_structure")
+            if isinstance(inner, dict) and inner:
+                return inner, name or pov_character_name
+            return None, name or pov_character_name
+    return None, pov_character_name
+
+
+async def compute_recent_hook_types(
+    session: AsyncSession,
+    project_id: Any,
+    *,
+    current_chapter: int,
+    window: int = 5,
+) -> list[str | None]:
+    """Return most-recent-first list of hook_type strings from chapter metadata.
+
+    Reads ``ChapterModel.metadata_json.hook_type`` for the last `window`
+    chapters strictly before `current_chapter`.
+    """
+    chapters = await session.scalars(
+        select(ChapterModel)
+        .where(
+            ChapterModel.project_id == project_id,
+            ChapterModel.chapter_number < current_chapter,
+        )
+        .order_by(ChapterModel.chapter_number.desc())
+        .limit(window)
+    )
+    result: list[str | None] = []
+    for ch in chapters:
+        meta = ch.metadata_json or {}
+        ht = meta.get("hook_type")
+        result.append(str(ht) if ht else None)
+    return result
+
+
+async def compute_location_history(
+    session: AsyncSession,
+    project_id: Any,
+    *,
+    current_chapter: int,
+    current_scene: int,
+    window: int = 8,
+) -> list[str | None]:
+    """Return most-recent-first list of scene locations from SceneCard metadata.
+
+    Prefers ``metadata_json.location_id``; falls back to ``entry_state.location``
+    and then to the freeform ``SceneCard.location`` field.
+    """
+    scenes = await session.scalars(
+        select(SceneCardModel)
+        .where(SceneCardModel.project_id == project_id)
+    )
+    positions: list[tuple[SceneCardModel, tuple[int, int]]] = []
+    for s in scenes:
+        chapter = await session.get(ChapterModel, s.chapter_id)
+        if chapter is None:
+            continue
+        pos = _scene_position(chapter.chapter_number, s.scene_number)
+        if pos >= (current_chapter, current_scene):
+            continue
+        positions.append((s, pos))
+    positions.sort(key=lambda item: item[1], reverse=True)
+
+    result: list[str | None] = []
+    for s, _ in positions:
+        meta = s.metadata_json or {}
+        loc = meta.get("location_id") or meta.get("location")
+        if not loc:
+            entry_state = meta.get("entry_state")
+            if isinstance(entry_state, dict):
+                loc = entry_state.get("location")
+        if not loc:
+            loc = getattr(s, "location", None)
+        result.append(str(loc) if loc else None)
+        if len(result) >= window:
+            break
+    return result
+
+
+async def compute_recent_tension_scores(
+    session: AsyncSession,
+    project_id: Any,
+    *,
+    current_chapter: int,
+    window: int = 10,
+) -> list[float]:
+    """Return most-recent-first list of chapter tension scores.
+
+    Reads ``ChapterModel.metadata_json.tension_score`` when present.
+    """
+    chapters = await session.scalars(
+        select(ChapterModel)
+        .where(
+            ChapterModel.project_id == project_id,
+            ChapterModel.chapter_number < current_chapter,
+        )
+        .order_by(ChapterModel.chapter_number.desc())
+        .limit(window)
+    )
+    result: list[float] = []
+    for ch in chapters:
+        meta = ch.metadata_json or {}
+        score = meta.get("tension_score")
+        if isinstance(score, (int, float)):
+            result.append(float(score))
+    return result
 
 
 def _is_before_current_position(

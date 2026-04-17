@@ -79,6 +79,45 @@ def test_fallback_generators_create_complete_chain() -> None:
     assert len(outline_batch["chapters"][0]["scenes"]) == 3
 
 
+def test_resolve_fallback_volume_title_cycles_phase_pool() -> None:
+    first = planner_services._resolve_fallback_volume_title(
+        "power_system_test", 0, 3, is_en=False
+    )
+    second = planner_services._resolve_fallback_volume_title(
+        "power_system_test", 1, 6, is_en=False
+    )
+    assert first and second and first != second
+    assert "第" not in first
+
+    fallback = planner_services._resolve_fallback_volume_title(
+        "unknown_phase", 0, 5, is_en=False
+    )
+    assert fallback == "第5卷"
+
+
+def test_fallback_volume_plan_produces_distinct_titles_without_milestones() -> None:
+    project = build_project()
+    project.target_chapters = 1200
+    project.target_word_count = 3_600_000
+    project.genre = "action-progression"
+
+    book_spec = planner_services._fallback_book_spec(project, "主角逆天改命。")
+    world_spec = planner_services._fallback_world_spec(project, "主角逆天改命。", book_spec)
+    cast_spec = planner_services._fallback_cast_spec(project, "主角逆天改命。", book_spec, world_spec)
+
+    volume_plan = planner_services._fallback_volume_plan(
+        project, book_spec, cast_spec, world_spec, category_key="action-progression"
+    )
+
+    titles = [entry["volume_title"] for entry in volume_plan]
+    assert len(titles) > 5
+    assert all(title for title in titles)
+    # No generic "第N卷" placeholder should remain when phase pools exist.
+    assert not any(title == f"第{idx+1}卷" for idx, title in enumerate(titles))
+    # All titles should be unique across the plan.
+    assert len(titles) == len(set(titles))
+
+
 def test_fallback_cast_spec_uses_neutral_role_labels_when_names_are_missing() -> None:
     premise = "一名被放逐的导航员发现帝国正在篡改边境航线记录。"
 

@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import logging
 import re
 from collections import Counter, defaultdict
 from typing import Any
 from uuid import UUID
+
+logger = logging.getLogger(__name__)
 
 from sqlalchemy import delete, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -382,6 +385,15 @@ async def rebuild_narrative_tree(
     scene_contract_by_position = {(item.chapter_number, item.scene_number): item for item in scene_contracts}
 
     node_type_counts: Counter[str] = Counter()
+    # Track every node_path we have already staged on this session. Upstream
+    # canonical data occasionally contains entities whose slugified name
+    # collides (e.g. "Sophie (Absorbed Consciousness)" and
+    # "Sophie (absorbed consciousness)" both map to
+    # ``/characters/sophie-absorbed-consciousness``). Without dedup the batch
+    # INSERT would hit ``uq_narrative_tree_node_path`` and roll back the
+    # whole session, causing the pipeline to crash with
+    # ``PendingRollbackError`` (observed 2026-04-17).
+    seen_paths: set[str] = set()
 
     def add_node(
         *,
@@ -398,6 +410,18 @@ async def rebuild_narrative_tree(
         scope_scene_number: int | None = None,
         metadata: dict[str, Any] | None = None,
     ) -> None:
+        if node_path in seen_paths:
+            logger.warning(
+                "narrative_tree: skipping duplicate node_path %s "
+                "(project=%s, node_type=%s, title=%r) — likely a canonical "
+                "entity name collision after slugification.",
+                node_path,
+                project.id,
+                node_type,
+                title,
+            )
+            return
+        seen_paths.add(node_path)
         lexical_document = " ".join(
             tokenize_text(
                 " ".join(

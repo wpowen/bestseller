@@ -1,0 +1,170 @@
+---
+description: 改动仓库源码（Python）时的细则。覆盖 Pipeline 规范、LLM 调用、DB、评分、rewrite、prompt pack。
+globs:
+  - "src/**/*.py"
+  - "migrations/**/*.py"
+  - "tests/**/*.py"
+---
+
+# BestSeller · Dev (Mode A)
+
+> 已经启用 `bestseller-core.mdc`。本规则在改动 Python 代码时叠加。
+
+---
+
+## 1. 必经之路：`services/llm.py::complete_text`
+
+**所有** LLM 调用必须经过这一个入口，绝不直接 `litellm.completion(...)` 或其他 provider SDK。
+
+```python
+from bestseller.services.llm import complete_text, LLMCompletionRequest
+
+resp = await complete_text(
+    LLMCompletionRequest(
+        logical_role="writer",                  # planner/writer/critic/summarizer/editor
+        system_prompt=...,
+        user_prompt=...,
+        fallback_response="...",                # 断路器开启时使用
+        project_id=project.id,
+        workflow_run_id=workflow_run.id,
+        step_run_id=step_run.id,
+        metadata={"scene_id": scene.id},
+    )
+)
+```
+
+要点：
+
+- **必传** `project_id` + `workflow_run_id`（否则审计不全）
+- **必传** `fallback_response`（断路器或 mock 模式下不崩）
+- `logical_role` 决定 model + temp + max_tokens（在 `settings.py` 配置层映射）
+- 响应会自动落 `llm_runs` 表（model / role / tokens / latency / cost / prompt_hash）
+
+---
+
+## 2. Pipeline 编排约定
+
+### Scene pipeline 六步骤
+
+```python
+# src/bestseller/services/pipelines.py::run_scene_pipeline
+context = build_scene_writer_context_from_models(...)  # 上下文包
+draft = await generate_scene_draft(context)            # writer
+await propagate_scene_discoveries(draft)               # summarizer
+review = await review_scene_draft(draft)               # critic
+if review.requires_rewrite and rewrites < max_scene_revisions:
+    draft = await rewrite_scene_from_task(draft, review.task)  # editor
+checkpoint_commit(session)                             # 原子边界
+```
+
+**每个 scene 之后必须** `checkpoint_commit()`（或等效 `session.commit()`）以切事务边界，避免 PostgreSQL snapshot 膨胀。
+
+### Chapter pipeline
+
+```python
+for scene in chapter.scenes:
+    await run_scene_pipeline(scene)
+chapter_draft = await assemble_chapter_draft(chapter)
+await review_chapter_draft(chapter_draft)
+await extract_chapter_state_snapshot(chapter)
+checkpoint_commit(session)
+```
+
+### Project pipeline
+
+```python
+await generate_foundation_plan(project)
+await generate_novel_plan(project)     # 章节契约 + scene card
+for chapter in project.chapters:
+    await run_chapter_pipeline(chapter)
+    if chapter.chapter_no % 20 == 0:
+        await review_project_consistency(project)
+        await run_project_repair(project) if audit_failed else ...
+await export_project(project, formats=["md", "epub"])
+```
+
+---
+
+## 3. 评分与 Rewrite
+
+- Scene 评分：5 核心维度（hook_strength / conflict_clarity / emotional_movement / payoff_density / voice_consistency）+ 31 全维
+- Chapter 评分：4 核心维度（main_plot / subplot / ending_hook / volume_mission）
+- 任一维 < 阈值 → 生成 `RewriteTaskModel` → editor 改写，最多 2 次，改善 <3% → `accept_on_stall`
+- RewriteTask 的策略文本**必须**以 `=== reference only ===` 围栏包裹再喂 editor
+
+落表：
+
+- `ReviewReportModel` / `QualityScoreModel` 必写
+- `RewriteTaskModel` / `RewriteImpactModel` 必写
+
+---
+
+## 4. 数据库
+
+### 约定
+
+- UUID 主键（`UUIDPrimaryKeyMixin`）
+- 灵活字段用 JSONB
+- `ProjectModel.lock_version` 乐观锁
+- `ON DELETE CASCADE` 外键清孤儿
+- 新表 / 改表必配 Alembic migration（在 `migrations/`）
+- 不可变数据：不原地 mutate，返回新实例；commit 后用 `session.refresh(obj)` 拿 DB 生成字段
+
+### 核心表族
+
+- Project：`ProjectModel` / `VolumeModel` / `ChapterModel` / `SceneCardModel` / `StyleGuideModel`
+- Planning：`PlanningArtifactVersionModel`
+- World：`WorldRuleModel` / `LocationModel` / `FactionModel` / `CharacterModel` / `RelationshipModel` / `VolumeFrontierModel` / `DeferredRevealModel` / `ExpansionGateModel`
+- Narrative：`PlotArcModel` / `ArcBeatModel` / `ClueModel` / `PayoffModel` / `EmotionTrackModel` / `AntagonistPlanModel` / `ChapterContractModel` / `SceneContractModel`
+- Drafts：`SceneDraftVersionModel` / `ChapterDraftVersionModel` / `SceneSummaryModel`
+- Knowledge：`CanonFactModel` / `TimelineEventModel` / `CharacterStateSnapshotModel` / `ChapterStateSnapshotModel`
+- Retrieval：`RetrievalChunkModel`（pgvector）
+- Workflow：`WorkflowRunModel` / `WorkflowStepRunModel` / `LlmRunModel` / `ReviewReportModel` / `QualityScoreModel` / `RewriteTaskModel` / `RewriteImpactModel`
+- Publishing：`PublishingPlatformModel` / `PublishingScheduleModel` / `PublishingHistoryModel`
+
+---
+
+## 5. 检索（Hybrid RAG）
+
+配置在 `config/default.yaml` retrieval 段：
+
+- 权重 60% 向量 + 20% 词法 + 20% 结构
+- 向量：pgvector HNSW，1024 维（BAAI/bge-m3）
+- 词法：拉丁三元 + CJK 二元
+- 结构加权：`scene_context > scene_draft > chapter_draft > character > canon_fact`
+- `top_k=12`，`min_score=0.55`，`chunk_size=800`，`chunk_overlap=120`，`candidate_limit=40`
+
+修改检索相关代码时，影响 `services/retrieval.py` + `services/context.py`。
+
+---
+
+## 6. 进度与 SSE
+
+- 运行期进度用 `RedisProgressReporter.report()`（不要 print / logger）
+- SSE 端点：`GET /progress/{workflow_run_id}` 从 Redis pubsub `bestseller:workflow:{id}` 流出
+- 发布调度热重载走 `bestseller:schedule:events` 频道
+
+---
+
+## 7. 配置层
+
+- 新参数在 `src/bestseller/settings.py` 添加 Pydantic 字段 + 默认值 + 文档字符串
+- 运行期覆盖：`BESTSELLER__<SECTION>__<KEY>` env
+- Docker Compose 用 env 注入 secret，**绝不**硬编码
+
+---
+
+## 8. Prompt Packs
+
+- 24+ genre YAML 在 `config/prompt_packs/`
+- 每个 pack：`key` / `name` / `genres` / `tags` / `anti_patterns` / `writing_profile_overrides` / `fragments[]` / `obligatory_scenes[]`
+- 25+ 片段命名：`global_rules` / `planner_book_spec` / `planner_world_spec` / `planner_cast_spec` / `planner_volume_plan` / `planner_outline` / `scene_writer` / `scene_review` / `scene_rewrite` / `chapter_review` / `chapter_rewrite` / `structure_guidance` / `emotion_engineering` / `conflict_stakes` / `hook_design` / `core_loop` / `dialogue_rules` / `visual_writing` / `opening_rules` / `climax_design` / `pacing_guidance` / `character_design` / `reversal_design` / `reaction_amplification`
+- 加载走 `services/prompt_packs.py::resolve_prompt_pack()` → `render_prompt_pack_fragment()`
+
+---
+
+## 9. 测试
+
+- 新增 pipeline 逻辑须有至少 integration 级别测试（`tests/integration/`）
+- LLM 调用相关测试用 mock（`fallback_response` 路径）
+- 迁移测试：`alembic upgrade head` + `alembic downgrade base` 双向可回滚

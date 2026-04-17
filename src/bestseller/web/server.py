@@ -524,7 +524,7 @@ class WebTaskManager:
         # repair / interactive-fiction task acquires one slot before doing any
         # real work; extra tasks visibly queue until a slot frees up. This
         # prevents LLM-rate-limit/DB-pool pileups when users queue many books.
-        max_concurrent = max(1, int(os.getenv("WEB_MAX_CONCURRENT_TASKS", "3")))
+        max_concurrent = max(1, int(os.getenv("WEB_MAX_CONCURRENT_TASKS", "5")))
         self._task_slots = threading.BoundedSemaphore(max_concurrent)
         self._max_concurrent_tasks = max_concurrent
         # IDs of tasks that were mid-flight when the server last shut down and

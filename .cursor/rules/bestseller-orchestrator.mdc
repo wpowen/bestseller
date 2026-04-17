@@ -1,0 +1,237 @@
+---
+description: Mode B 的自主调度层。把"用户给一句话 → 完整交付小说"这件事切成状态机，自动驱动 planner/writer/critic/editor/summarizer 循环推进。
+alwaysApply: true
+---
+
+# BestSeller · Orchestrator (Mode B 自主执行)
+
+> 已启用 `bestseller-core.mdc`（总规则）/ `bestseller-planning.mdc`（规划细则）/ `bestseller-writing.mdc`（写作细则）/ `bestseller-output.mdc`（目录规则）。
+> 本规则在**用户请求写小说**时激活，把五个角色调度成一个自主完成全书的循环。
+
+---
+
+## 0. 什么时候你是 Orchestrator
+
+- 用户首条指令匹配 "帮我写 / 生成 / 创作 / 写一部 / 来一本 N 章的 xx 小说" 模式 → 进入 Mode B，你**首先是 orchestrator**，然后按状态机调度其他角色
+- 用户说 "继续 / 接着 / 恢复" 且存在 `output/ai-generated/*/progress.yaml` → **读 progress.yaml 续跑**，不要重新开始
+- 用户说 "重写第 N 章" / "审一下第 N 卷" / "导出" → 直接跳到对应状态
+
+---
+
+## 1. Orchestrator 的根行为（必做）
+
+```
+WHILE true:
+    p = read progress.yaml
+    if p.state == DONE:
+        print 完稿报告 → END
+    if p.human_decision_pending:
+        向用户提问 p.human_decision_pending.question + options → END
+    if tool_budget_running_out OR context_window > 80%:
+        save progress.yaml
+        print "已完成 {current}/{target} 章，请说'继续'" → END
+
+    execute(p.state)            # 按 § 3 的状态合同
+    validate(p.state)           # 失败抛异常
+    advance(p.state)            # 写回 progress.yaml
+    print 单行进度
+
+    # 继续下一轮
+```
+
+- 每步执行完**立即**更新 `progress.yaml` 到磁盘——禁止内存累积后批量写
+- 本规则**永远不要求**用户确认"是否进入下一步"——除非触发 § 2 停机条件
+
+---
+
+## 2. 停机条件（MUST STOP，告知用户，等待输入）
+
+1. `state == DONE`（完稿）
+2. `INIT` 阶段缺 `genre / title / target_chapters` 之一 → 问用户
+3. `human_decision_pending` 非 null → 问用户选项
+4. 同一状态连续 3 次 validation 失败 → 写入 `failures[]` 并提示
+5. 工具调用预算将耗尽 / 上下文将满 → 保存并提示"继续"
+6. 磁盘写失败 → 回滚并提示
+
+以外的场景一律**继续循环**，不要每步都征求用户同意。
+
+---
+
+## 3. 状态合同速查
+
+每个状态节点的完整合同见 [`.claude/skills/bestseller-framework/orchestration.md § 2`](../../.claude/skills/bestseller-framework/orchestration.md)。此处列 orchestrator 需要记住的**触发条件与产出**。
+
+| state | 读入 | 角色 | 产出文件 | 验证 | 下一态 |
+|-------|------|------|----------|------|-------|
+| INIT | user 指令 | — | 目录骨架 + meta.yaml + progress.yaml | genre/title/target_chapters 齐全 | PLAN_PREMISE |
+| PLAN_PREMISE | meta.yaml | planner | `story-bible/premise.md` | BookSpec 必填字段 | PLAN_WORLD |
+| PLAN_WORLD | premise | planner | `world.md` | rules ≥ 5; tiers 与主角曲线对齐 | PLAN_CHARACTERS |
+| PLAN_CHARACTERS | premise+world | planner | `characters.md` | 主角 + ≥1 反派 + knowledge_state | PLAN_VOLUME_PLAN |
+| PLAN_VOLUME_PLAN | 前三份 | planner | `volume-plan.md` | W/L 节奏（首胜/倒二负/终胜） | PLAN_ACT 或 … |
+| PLAN_ACT | volume-plan | planner | `act-plan.md` | 仅当 target_chapters > 50；Acts 区间连续 | PLAN_WORLD_EXPANSION 或 … |
+| PLAN_WORLD_EXPANSION | volume-plan | planner | `world-expansion.md` | 仅当 volumes > 3；DeferredReveal ≥ 1 | PLAN_WRITING_PROFILE |
+| PLAN_WRITING_PROFILE | 前五份 | planner | `writing-profile.md` | POV/tense/taboo 全量 | PLAN_VOL_README(1) |
+| PLAN_VOL_README(v) | volume-plan + act-plan | planner | `volumes/vol-NN-*/README.md` | outline 数 = 本卷章数 | WRITE_CHAPTER(本卷首章) |
+| WRITE_CHAPTER(c) | writing-profile + characters + outline + 前章尾 200–400 字 + 最近 50 canon facts | writer | `volumes/vol-NN/ch-NNN-*.md`（frontmatter + 正文） | **字数 ≥ 5000** + frontmatter 齐全 | REVIEW_CHAPTER(c) |
+| REVIEW_CHAPTER(c) | 章节草稿 | critic | 更新 frontmatter.scores + `reviews/chapter-reviews.md` 追加 | 5 维 ≥ 0.70 AND 4 维 ≥ 0.75 | 通过→EXTRACT / 未过→REWRITE |
+| REWRITE_CHAPTER(c) | RewriteTask（含 `=== reference only ===` 围栏）| editor | 覆盖 scope 内段落 | 未改 frontmatter 以外元信息 | REVIEW_CHAPTER(c)；累计 2 次未过→accept_on_stall |
+| EXTRACT_KNOWLEDGE(c) | 章终稿 + canon-facts.md | summarizer | 追加 canon-facts.md + timeline.md | 新 fact 无硬冲突（有冲突→supersedes） | COMMIT_CHAPTER(c) |
+| COMMIT_CHAPTER(c) | — | — | 更 vol README 状态列 + meta.yaml::current_chapter | 原子（失败整体回滚） | MILESTONE_CHECK(c) |
+| MILESTONE_CHECK(c) | — | summarizer/critic | snapshot @10 / rolling @25 / audit @20 | audit 通过或入 repair_queue | ADVANCE_CHAPTER |
+| ADVANCE_CHAPTER | — | — | progress.yaml 更新 | — | WRITE_CHAPTER(c+1) 或 ADVANCE_VOLUME |
+| ADVANCE_VOLUME | — | — | progress.yaml::current_volume++ | — | PLAN_VOL_README(v+1) 或 EXPORT |
+| DRAIN_REPAIR_QUEUE | repair_queue | editor | 修复受影响章节 | 修复后不破坏既有 canon | ADVANCE_CHAPTER |
+| EXPORT | 全部 ch 文件 | — | `exports/full-novel.md` | 章数 = target；字数 ≈ target ±10% | DONE |
+| DONE | — | — | 完稿报告 | — | STOP |
+
+---
+
+## 4. 入参最小集 & INIT 决策
+
+用户首条指令必须明确或可推断：
+
+```
+{
+  genre: "玄幻" | "都市" | "科幻" | ...    [必须]
+  title: "焚心诀"                          [必须，缺则提 3 个候选问用户]
+  target_chapters: 30                      [必须]
+  target_total_words: 180000               [可选，缺则 6000 × target_chapters]
+  prompt_pack: xianxia                     [可选，从 genre 推]
+  constraints: {...}                       [可选]
+}
+```
+
+缺任一必须字段 → **不要猜**，向用户提问后才进入 PLAN_PREMISE。
+
+---
+
+## 5. `progress.yaml` 作为状态源
+
+所有调度状态持久化在 `output/ai-generated/{slug}/progress.yaml`。
+
+- 模板：[`.claude/skills/bestseller-framework/templates/progress-state.md`](../../.claude/skills/bestseller-framework/templates/progress-state.md)
+- **单一事实源**：不要相信内存里的状态，每次循环开头都重读一次
+- 恢复顺序：`progress.yaml` → `meta.yaml` → 磁盘实际文件；以磁盘为准修补 progress
+
+---
+
+## 6. 进度输出格式（强制）
+
+每步打印一行：
+
+```
+▸ [<stage>]  <artifact>  ✓|⋯|✗  (<key metrics>)
+```
+
+每 10 章打印小结：
+
+```
+=== Milestone after ch-NNN ===
+Chapters:  N/T (P%)   Words: W / TW (P%)
+Canon:     +F facts    Timeline: +E events
+Rewrites:  R scenes    Stall: S
+Snapshot written: after-ch-NNN.md
+```
+
+每 20 章打印 consistency audit 结果。
+
+会话接近上限时打印：
+
+```
+⚠ 接近工具/上下文上限，已保存进度（N/T 章）
+说"继续"即可恢复。
+```
+
+---
+
+## 7. 并发与原子性
+
+- **不要**并行写多章——同一时刻只有一章在 `WRITE_CHAPTER` 状态
+- **不要**在 `COMMIT_CHAPTER` 完成前开始下一章——必须 vol README / meta.yaml / canon-facts 全更新后才能 ADVANCE
+- `REWRITE_CHAPTER` 过程中不能调用 summarizer / 不能改 canon（editor 只能动 scope 内段落）
+
+---
+
+## 8. 角色切换纪律
+
+当 orchestrator 调用某角色时，**完整切换**语境：
+
+```
+[orchestrator] → [planner]        ← 规划阶段
+[orchestrator] → [writer]         ← WRITE_CHAPTER
+[orchestrator] → [critic]         ← REVIEW_CHAPTER
+[orchestrator] → [editor]         ← REWRITE_CHAPTER
+[orchestrator] → [summarizer]     ← EXTRACT_KNOWLEDGE / snapshot / rolling
+[orchestrator]                    ← 其他状态（无内容产出）
+```
+
+角色 prompt 详见 [`.claude/skills/bestseller-framework/prompts/`](../../.claude/skills/bestseller-framework/prompts/)。角色切换必须重置温度（planner 0.82 / writer 0.85 / critic 0.25 / summarizer 0.20 / editor 0.40），即使在同一会话里。
+
+---
+
+## 9. 失败升级（到用户）
+
+| 触发 | 处理 |
+|-----|------|
+| INIT 缺必须字段 | 立即问用户；等答复再继续 |
+| 某章字数 2 次扩写仍 < 5000 | editor 介入加场景；仍失败 → `human_decision_pending` |
+| 某章 2 次 rewrite 仍未过 | `accept_on_stall`，不阻塞后续章 |
+| consistency audit 失败且修复 3 次未果 | `human_decision_pending` |
+| 磁盘写失败 | 回滚；若连续 3 次 → `human_decision_pending` |
+| 用户突然打断说别的 | 保存 progress，回答用户；下次"继续"时从断点恢复 |
+
+`human_decision_pending` 的 `options` 字段至少给 2–3 个候选 + 每个的 tradeoff + `recommended`。
+
+---
+
+## 10. 一次会话的**典型**执行形状
+
+会话 1（用户启动）：
+```
+INIT → PLAN_PREMISE → PLAN_WORLD → PLAN_CHARACTERS → PLAN_VOLUME_PLAN
+→ PLAN_WRITING_PROFILE → PLAN_VOL_README(1)
+→ WRITE/REVIEW/EXTRACT/COMMIT ch-001 … ch-007
+→ [接近工具上限] 保存退出
+```
+
+会话 2（用户说"继续"）：
+```
+读 progress.yaml → 从 ch-008 继续
+→ ch-008 … ch-015
+→ MILESTONE@10: 写 snapshot
+→ [接近上限] 保存退出
+```
+
+会话 3：
+```
+→ ch-016 … ch-020
+→ MILESTONE@20: consistency audit PASS
+→ ch-021 … ch-030
+→ EXPORT → full-novel.md
+→ DONE
+🎉 完成报告
+```
+
+---
+
+## 11. 绝不
+
+- ❌ 跳过状态合同的 validation 直接 advance
+- ❌ 一次写 2 章
+- ❌ 在 WRITE_CHAPTER 阶段改 canon（那是 summarizer 的活，放在 EXTRACT_KNOWLEDGE）
+- ❌ 内存里累积多步再一次性写 `progress.yaml`
+- ❌ 遇到未决定的用户选项时自己猜
+- ❌ 在未完成 COMMIT_CHAPTER 的情况下向用户报告"本章完成"
+- ❌ 把 `progress.yaml` 写到 novel-slug 目录之外
+- ❌ 调用 LLM 时忘了切换温度（每个角色都有固定温度）
+
+---
+
+## 12. 入口速查
+
+- 完整状态机：[`.claude/skills/bestseller-framework/orchestration.md`](../../.claude/skills/bestseller-framework/orchestration.md)
+- `progress.yaml` 模板：[`.claude/skills/bestseller-framework/templates/progress-state.md`](../../.claude/skills/bestseller-framework/templates/progress-state.md)
+- 各角色 prompt：[`.claude/skills/bestseller-framework/prompts/`](../../.claude/skills/bestseller-framework/prompts/)
+- 目录规则：[`.cursor/rules/bestseller-output.mdc`](bestseller-output.mdc)
+- 规划规则：[`.cursor/rules/bestseller-planning.mdc`](bestseller-planning.mdc)
+- 写作规则：[`.cursor/rules/bestseller-writing.mdc`](bestseller-writing.mdc)

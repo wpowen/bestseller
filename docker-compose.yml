@@ -51,14 +51,18 @@ services:
       # shared_buffers=128MB: page cache for hot data (default 128MB, kept low)
       # work_mem=16MB:        per-sort / per-hash allocation (16 concurrent ops → 256MB max)
       # maintenance_work_mem: used by VACUUM/ANALYZE, not concurrent
+      # max_connections=100:  bumped from 50 to support 5 concurrent books in Web UI.
+      #   Budget: web(5 tasks × ~4 conns) + worker(2 × ~10) + api/scheduler/mcp ≈ 50-60
+      #   @ ~8MB per backend → ~800MB worst case (fits DB memory limit of 768M with
+      #   shared_buffers overhead absorbed by effective_cache_size already bumped).
       POSTGRES_INITDB_ARGS: ""
     command: >
       postgres
         -c shared_buffers=128MB
         -c work_mem=16MB
         -c maintenance_work_mem=64MB
-        -c effective_cache_size=256MB
-        -c max_connections=50
+        -c effective_cache_size=384MB
+        -c max_connections=100
         -c wal_buffers=8MB
         -c checkpoint_completion_target=0.9
         -c random_page_cost=1.1
@@ -70,7 +74,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: ${DB_MEMORY_LIMIT:-512M}
+          memory: ${DB_MEMORY_LIMIT:-768M}
         reservations:
           memory: 128M
     healthcheck:
@@ -244,8 +248,11 @@ services:
     environment:
       <<: [*env-common, *env-llm, *env-py-malloc]
       # Limit concurrent autowrite tasks so peak memory is bounded.
-      # Each task can use ~300-500 MB during LLM calls; 2 tasks = ~1 GB peak.
-      WEB_MAX_CONCURRENT_TASKS: ${WEB_MAX_CONCURRENT_TASKS:-2}
+      # Each task uses ~300-500 MB peak during LLM calls:
+      #   5 tasks × ~400 MB + ~300 MB base ≈ 2.3 GB (fits WEB_MEMORY_LIMIT=2560M).
+      # If you raise this further, bump WEB_MEMORY_LIMIT and postgres max_connections
+      # together — each task opens 2-4 async DB connections concurrently.
+      WEB_MAX_CONCURRENT_TASKS: ${WEB_MAX_CONCURRENT_TASKS:-5}
     env_file:
       - .env
     ports:
@@ -257,7 +264,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: ${WEB_MEMORY_LIMIT:-1536M}
+          memory: ${WEB_MEMORY_LIMIT:-2560M}
         reservations:
           memory: 256M
     healthcheck:

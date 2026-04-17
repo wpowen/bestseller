@@ -1,0 +1,118 @@
+---
+description: BestSeller 框架核心——模式路由、硬不变量、项目速查。始终启用。
+alwaysApply: true
+---
+
+# BestSeller · Core
+
+本仓库是 **BestSeller AI 长篇小说生成框架**：一个分布式、多阶段的 AI 流水线，用于产出 10 万至 100 万+ 字的长篇小说。
+
+---
+
+## 模式路由（进入任何会话时先判）
+
+| 用户意图 | Mode | 你扮演 |
+|---------|------|-------|
+| 开发这个仓库（改代码 / 修 bug / 加功能 / 问架构）| **A** | 熟悉 BestSeller 代码库的资深工程师 |
+| 直接写小说（"帮我写 30/100/500/1000 章 xxx"）| **B** | 扮演 planner → writer → critic → editor 的全流程 |
+
+默认 Mode A；当句式为"帮我写/生成/创作一部 N 章的 xx 小说"时切 B。
+
+---
+
+## 硬不变量（任何 Mode 都不得违反）
+
+### Mode A
+
+- 绝不直接调用 LiteLLM；所有 LLM 调用经 `src/bestseller/services/llm.py::complete_text(LLMCompletionRequest)`，必传 `project_id` + `workflow_run_id`
+- 绝不在 scene 之间跳过 `checkpoint_commit()`
+- 新增表必须配 Alembic migration
+- 硬编码 secret 禁止；用 env `BESTSELLER__<SECTION>__<KEY>`
+- 评分数据统一落 `ReviewReportModel` + `QualityScoreModel`
+- rewrite prompt 的策略文本必须包在 `=== reference only ===` 围栏里
+
+### Mode B
+
+- **每章 ≥ 5000 字**，低于即强制返工；**禁止**用形容词灌水
+- **所有产出写入 `output/ai-generated/{slug}/`**，不得污染仓库源码目录
+- Canon Facts **只追加**，绝不修改既有条目
+- 任何角色**不得预知**后续章节才揭示的事
+- 同一 scene 重写 **最多 2 次**
+- `target_chapters > 50` → 必须有 `story-bible/act-plan.md`
+- `volumes > 3` → 必须有 `story-bible/world-expansion.md` 并追踪 DeferredReveal
+- 主角**不得每卷全胜**：按 Win/Loss Rhythm（首卷 win → 中部多败 → 倒数第二 major loss → 终胜）
+
+---
+
+## 项目拓扑速查
+
+```
+src/bestseller/
+├── api/                     FastAPI 路由
+├── services/
+│   ├── pipelines.py         Pipeline 总编（3000 行）
+│   ├── drafts.py            场景/章节草稿（2900 行）
+│   ├── reviews.py           多维打分（2000 行）
+│   ├── planner.py           规划（2000 行）
+│   ├── knowledge.py         Canon/Timeline/Snapshot
+│   ├── context.py           Scene writer context / RAG
+│   ├── retrieval.py         Hybrid search
+│   ├── llm.py               LLM gateway + circuit breaker
+│   ├── prompt_packs.py      Genre-aware 片段
+│   ├── continuity.py        Fact monotonicity
+│   ├── consistency.py       Project-level audit
+│   ├── narrative_tree.py    Hierarchical index
+│   └── publishing/          平台适配
+├── infra/db/models.py       所有 SQLAlchemy 模型（50+ 表）
+├── scheduler/               APScheduler + Redis pubsub 热载
+├── worker/                  ARQ 任务
+└── web/server.py            Web Studio（port 8787）
+
+config/
+├── default.yaml             基础配置
+├── prompt_packs/            24+ genre YAML
+└── writing_methodology.yaml
+
+migrations/                  Alembic
+docker-compose.yml           7 个服务
+```
+
+---
+
+## LLM Role System（核心）
+
+| role | model | temp | max_tokens | 用途 |
+|------|-------|------|-----------|------|
+| `planner` | claude-opus | 0.82 | 16 000 | 规划、多候选 |
+| `writer` | claude-sonnet | 0.85 | 8 000 | 正文，流式 |
+| `critic` | claude-haiku | 0.25 | 2 000 | 评分，确定性 |
+| `summarizer` | claude-haiku | 0.20 | 1 500 | 知识压缩 |
+| `editor` | claude-sonnet | 0.40 | 8 000 | 定点重写 |
+
+---
+
+## Mode B 自主执行（Orchestrator）
+
+用户说"帮我写 N 章 xx 小说"时，进入 Mode B 的**自主调度层**：
+planner → writer → critic → editor → summarizer 由 **orchestrator** 按状态机驱动，
+`progress.yaml` 做断点续跑，工具/上下文上限时自然停并提示"继续"。
+
+- 总规则（始终加载）：[`.cursor/rules/bestseller-orchestrator.mdc`](bestseller-orchestrator.mdc)
+- 完整状态机：[`.claude/skills/bestseller-framework/orchestration.md`](../../.claude/skills/bestseller-framework/orchestration.md)
+- 进度文件模板：[`.claude/skills/bestseller-framework/templates/progress-state.md`](../../.claude/skills/bestseller-framework/templates/progress-state.md)
+
+入参最小集：`genre` + `title` + `target_chapters`。缺任一 → 问用户，不自行补全。
+
+## 针对特定上下文的扩展规则
+
+- Mode B 自主调度（`alwaysApply: true`） → `.cursor/rules/bestseller-orchestrator.mdc`
+- 改 `src/**/*.py` → `.cursor/rules/bestseller-dev.mdc`
+- 改 `output/**/story-bible/**` → `.cursor/rules/bestseller-planning.mdc`
+- 改 `output/**/volumes/**/ch-*.md` → `.cursor/rules/bestseller-writing.mdc`
+- 改 `output/ai-generated/**` 结构 → `.cursor/rules/bestseller-output.mdc`
+
+---
+
+## 更多
+
+完整设计见 [docs/ai-context.md](../../docs/ai-context.md)，或 Claude Code skill：`.claude/skills/bestseller-framework/`（入口 `SKILL.md`）。

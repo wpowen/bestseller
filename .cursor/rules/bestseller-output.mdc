@@ -1,0 +1,200 @@
+---
+description: 创建或修改 output/ai-generated/** 目录结构时的约束。保证命名、层级、原子性更新合规。
+globs:
+  - "output/ai-generated/**"
+---
+
+# BestSeller · Output (Mode B · 落地目录)
+
+> 已启用 `bestseller-core.mdc`。本规则覆盖 Mode B 产出的**目录与文件约定**，与 writer / planner 的内容规则正交。
+
+---
+
+## 1. 唯一落地根
+
+Mode B 的**所有**产出必须在：
+
+```
+output/ai-generated/{novel-slug}/
+```
+
+**绝对禁止**写入以下路径：
+
+- `src/` / `tests/` / `migrations/`（仓库源码）
+- `config/`（配置）
+- `docs/`（仓库文档）
+- `.cursor/` / `.claude/`（工具配置）
+- `output/ai-generated/*.md`（扁平层，必须在 novel-slug 子目录内）
+- 仓库根目录（`/`）
+
+---
+
+## 2. 标准目录树
+
+```
+output/ai-generated/{novel-slug}/
+├── README.md                         顶层总览（目录树 + meta 摘要 + 当前进度）
+├── meta.yaml                         见 §5
+├── story-bible/
+│   ├── premise.md                    BookSpec
+│   ├── world.md                      WorldSpec
+│   ├── characters.md                 CastSpec
+│   ├── plot-arcs.md                  Arc + Clue→Payoff 表
+│   ├── volume-plan.md                VolumePlan（标 win/loss 节奏）
+│   ├── act-plan.md                   target_chapters > 50 时强制
+│   ├── world-expansion.md            volumes > 3 时强制
+│   ├── writing-profile.md            POV / tense / voice / taboo
+│   └── decisions.md                  多候选推理保留（可选）
+├── volumes/
+│   └── vol-NN-{volume-slug}/
+│       ├── README.md                 章节索引 + 详细 outline
+│       └── ch-NNN-{chapter-slug}.md
+├── knowledge/
+│   ├── canon-facts.md                只追加
+│   ├── timeline.md                   只追加
+│   ├── rolling-summary.md            每 25 章
+│   └── character-snapshots/
+│       └── after-ch-NNN.md
+├── reviews/
+│   ├── scene-reviews.md
+│   ├── chapter-reviews.md
+│   └── consistency-audits.md         每 20 章
+└── exports/
+    ├── full-novel.md                 全量拼装
+    └── full-novel.epub               用户请求时
+```
+
+不得创建此树之外的新顶层目录（`drafts/` / `notes/` / `tmp/` 等一律禁止）。
+
+---
+
+## 3. 命名规范
+
+| 类型 | 规则 | 示例 |
+|------|------|------|
+| novel-slug | 中文标题 → 全拼小写连字符；英文 → kebab-case | `fen-xin-jue`, `the-last-scribe` |
+| volume 目录 | `vol-{NN}-{volume-slug}`，NN 两位 | `vol-01-qi-meng`, `vol-12-zhong-zhan` |
+| chapter 文件 | `ch-{NNN}-{chapter-slug}.md`，NNN 三位 | `ch-001-xue-zhi-yin.md` |
+| snapshot 文件 | `after-ch-{NNN}.md` | `after-ch-010.md` |
+| rewrite 备份 | `ch-{NNN}-{slug}.v{N}.md` | `ch-007-xxx.v1.md` |
+
+- 不得出现空格、大写、下划线交错、非 ASCII 字符作为文件名主体
+- `{NN}` / `{NNN}` 必须前缀补 0
+- slug 必须与 `meta.yaml` / `volume README` 的 slug 字段完全一致
+
+---
+
+## 4. 原子性更新契约
+
+**每章完工**必须**在同一步里**原子地更新以下 **6 个点**（缺一即视作半写状态，应整体回滚）：
+
+1. `volumes/vol-NN-.../ch-NNN-....md`（新文件；含 frontmatter + 正文）
+2. `volumes/vol-NN-.../README.md`（状态列 `drafted` → `approved`；字数回填）
+3. `meta.yaml` 的 `current_chapter`（必改）；若越卷则 `current_volume` 同步
+4. `knowledge/canon-facts.md`（追加本章新事实）
+5. `knowledge/timeline.md`（追加本章事件）
+6. 若 `chapter_no % 10 == 0` → `knowledge/character-snapshots/after-ch-NNN.md`
+   若 `chapter_no % 25 == 0` → `knowledge/rolling-summary.md` 增一块
+   若 `chapter_no % 20 == 0` → `reviews/consistency-audits.md` 增一份审计
+
+**禁止**：只写了 ch 文件但未更新 meta / canon。这种状态禁止对用户报告"已写完第 N 章"。
+
+---
+
+## 5. meta.yaml 必填字段
+
+```yaml
+slug: fen-xin-jue
+title: 焚心诀
+genre: 玄幻
+prompt_pack: xianxia
+target_chapters: 30
+target_total_words: 180000
+words_per_chapter:
+  min: 5000
+  target: 6400
+  max: 9000
+volumes: 1
+acts: 1
+current_chapter: 1
+current_volume: 1
+status: planning | in_progress | paused | completed
+primary_pov: close_third
+tense: past
+conflict_phases:
+  - ch_range: "1-8"
+    phase: survival
+volume_win_loss_rhythm:
+  vol_01:
+    opening_win: true
+    midsection_loss_band: "11-22"
+    penultimate_major_loss_chapter: 27
+    final_win_chapter: 30
+quality_thresholds:
+  scene_min_score: 0.70
+  chapter_coherence_min_score: 0.75
+  max_scene_revisions: 2
+  consistency_check_chapter: 20
+snapshot_policy:
+  character_snapshot_every_chapters: 10
+  rolling_summary_every_chapters: 25
+```
+
+**不得**省略 `target_chapters` / `current_chapter` / `status` / `words_per_chapter.min`——这些是 writer 与 planner 的硬闸门依据。
+
+---
+
+## 6. Volume README 必含
+
+- **章节索引表**：`#` / 标题 / phase / conflict_phase / 胜负 / 锚点事件 / 状态（`outlined / drafted / approved / rework`）
+- **每章详细 outline**：`conflict_summary` / `scenes[]`（含 scene_type + spotlight + entry/exit_state + estimated_words）/ `hook_type` / `pacing_mode` / `emotion_phase` / `is_climax`
+
+更新次序：planner 先落 `outlined` → writer 转 `drafted` → critic/editor 转 `approved`。**状态不跳级**。
+
+---
+
+## 7. 顶层 README 必含
+
+- 当前 `meta.yaml` 摘要：标题 / 章数进度 / 总字数 / status
+- 目录树指引（哪个文件放什么）
+- 若 `status: paused`：暂停原因 + 续写锚点（下一步该做哪章哪场）
+
+---
+
+## 8. 续写协议（用户说"继续"时）
+
+1. **不得**创建新 novel-slug 目录
+2. 读 `meta.yaml::current_chapter` + `current_volume` 以定位
+3. 读前一章 `ch-(N-1)-*.md` 结尾 200–400 字作为 entry_state
+4. 读 `knowledge/canon-facts.md` 最近 50 条
+5. 读本章在 `vol-NN/README.md` 的 outline 块
+6. 然后才动笔写 ch-N
+
+若 `current_chapter > target_chapters` → 进入 `exports` 阶段（组装 full-novel.md），**不得**自行加章。
+
+---
+
+## 9. 重写协议（用户说"重写第 N 章"时）
+
+1. 原文件改名为 `ch-NNN-{slug}.v{N}.md`（保留历史版本）
+2. 新文件用 `revision: N+1` 写入
+3. `vol-NN/README.md` 状态回 `rework`，通过 critic 后再转 `approved`
+4. 回滚受影响的下游 canon_facts / timeline / snapshots（用 `supersedes` 指向旧条目而**非删除**）
+
+---
+
+## 10. 禁止事项速查
+
+- ❌ 写进 `src/` / `tests/` / `config/` / `docs/` / 仓库根
+- ❌ `output/ai-generated/` 下的扁平 `.md` 文件（必须进 novel-slug 子目录）
+- ❌ 覆盖已有 `ch-NNN-*.md`（必须走重写协议留 v1 备份）
+- ❌ 半写状态对用户报完成（缺 meta / canon / README 同步即算未完成）
+- ❌ 创建非标顶层目录（`drafts/` / `notes/` / `tmp/` / `backup/` 等）
+- ❌ 修改既有 `canon-facts.md` 条目（只追加 + supersedes）
+- ❌ 文件名出现空格 / 大写 / 非 ASCII 主体
+
+---
+
+## 11. 示例
+
+见 [output/ai-generated/fen-xin-jue/](../../output/ai-generated/fen-xin-jue/) —— 30 章玄幻样板，含完整 story-bible / volumes / knowledge 子树。

@@ -1,0 +1,214 @@
+---
+description: 编辑正文章节（output/**/volumes/**/ch-*.md）时（Mode B · writer 角色）的约束。保证字数、视角、voice、hook 合规。
+globs:
+  - "output/ai-generated/**/volumes/**/ch-*.md"
+---
+
+# BestSeller · Writing (Mode B · writer)
+
+> 已启用 `bestseller-core.mdc`。本规则在写章节正文（`ch-NNN-xxx.md`）时叠加。
+
+---
+
+## 0. 你是 writer 角色
+
+- 模拟 temp=0.85，流式落笔
+- 不做规划。规划属 planner
+- 不评分。评分属 critic（写完后自我 critic 亦遵守此职责边界）
+- 不重写。重写属 editor
+
+---
+
+## 1. 下笔前必读（顺序不可换）
+
+1. 本项目 `story-bible/writing-profile.md`（POV / tense / voice / taboo_words）
+2. 本项目 `story-bible/characters.md` 中**本章参与者**的 voice_profile + 当前 knowledge_state
+3. 本项目 `volumes/vol-NN/README.md` 中**本章**的 ChapterOutline（conflict_summary / scenes[] / hook_type / pacing_mode / emotion_phase）
+4. 本项目 `knowledge/canon-facts.md`（至少扫描与本章参与者相关的条目）
+5. 前一章 `ch-(N-1)-*.md` 的结尾 200–400 字（作为 entry_state 源）
+
+**不读就写是 writer 的头号违规**。
+
+---
+
+## 2. 字数硬门槛
+
+| 检查点 | 规则 |
+|--------|------|
+| 单章字数 | ≥ 5000（中文字符；不含 frontmatter / 空白）|
+| 不达线 | 立刻扩写，不得提交 |
+| 扩写方式 | 补场景 / 加冲突细节 / 强化内心-动作间隙；**禁**副词灌水 / **禁**形容词堆叠 / **禁**同义复述 |
+| 单场字数 | 1 200–2 200（不得 < 800 或 > 3 000）|
+
+---
+
+## 3. 必填 frontmatter
+
+```yaml
+---
+volume: <N>
+chapter: <N>
+title: "..."
+slug: "..."
+scenes: <N>
+word_count: <真实字数, ≥ 5000>
+status: draft | approved | rework
+revision: 1
+chapter_phase: hook | setup | escalation | twist | climax | resolution_hook
+conflict_phase: survival | political_intrigue | betrayal | faction_war | existential_threat | internal_reckoning
+pacing_mode: build | accelerate | climax | breathe
+emotion_phase: compress | release
+scores:
+  hook_strength: 0.xx
+  conflict_clarity: 0.xx
+  emotional_movement: 0.xx
+  payoff_density: 0.xx
+  voice_consistency: 0.xx
+contract:
+  main_plot_progress: "..."
+  subplot_progress: "..."
+  emotion_shift: "..."
+  hook: "..."
+generated_at: <ISO-8601>
+---
+```
+
+`word_count` 必须是真实统计值，**不得编造**。`scores` 必须是自评真实值，若任一维 < 0.70 → `status: rework` 并触发重写。
+
+---
+
+## 4. POV / Tense
+
+- 默认：限知第三人称 + 过去式
+- 视角不得无故切换。若必须插入全知短段揭示反派阴谋 → < 200 字、独立段落、段首空行隔离
+- 一旦 `writing-profile.md` 固定 POV/tense → 本章不得擅改（除非 frontmatter 显式标 `pov_switch_ok: true`）
+
+---
+
+## 5. Voice & 禁语
+
+- 严格遵守 `writing-profile.md` 的 `voice` 段 + 每个角色的 `verbal_tics`
+- **taboo_words 全书禁用**（最少覆盖）：
+  - `主角`、`系统`、`穿越`、`金手指`
+  - `内心毫无波动`、`气得浑身发抖`、`仿佛开了挂`
+  - `然后然后`、`原来如此……`（长回忆段）
+- 不用 `他心里想道 / 她暗暗觉得`——心理用**动作—停顿—动作**的间隙承载
+- 不用情绪词总结情绪（"愤怒/悲伤/开心"）；让动作与意象带出
+
+---
+
+## 6. Hook 规则
+
+### 开场四选一
+
+- 未答之问
+- 时限逼近
+- 陌生者出现
+- 身体失控细节
+
+### 结尾四选一
+
+- 未答之问尾扣
+- 新变量入场
+- 已知事物颠覆的一瞬
+- 身体信号异动
+
+### 禁
+
+- 章末 "睡觉 / 第二天清晨 / 一觉无梦 / 就这样过了" 类松弛尾
+- 章末自我总结 / 作者旁白 / 哲理金句收尾
+
+---
+
+## 7. Scene 骨架
+
+每场遵循：
+
+```
+entry_state（上一场 exit_state 或开场 hook）
+    → 冲突升级（信息 / 威胁 / 情绪 至少叠一层）
+        → 转折（外部 reveal 或内在抉择）
+            → exit_state（留给下一场的勾）
+```
+
+场与场之间的 `entry_state / exit_state` 必须链式扣合，不得断裂。
+
+---
+
+## 8. Cultivation / Power-Up 场景专属
+
+- 每次境界突破**必须**同时写出代价账（寿元 / 灵力 / 情感 / 关系 四选至少一）
+- 功法发动必有外显感官：温度 / 光 / 声 / 味之一
+- 突破描写 ≥ 400 字；禁 "顿悟 → 境界提升" 的一句话速突破
+- 功法的颜色 / 符号 / 特征必须与 `world.md::power_system` 对齐；全书一致
+
+---
+
+## 9. Dialogue
+
+| 项 | 值 |
+|---|---|
+| 对白比例 | 25–45%（climax/reveal 偏低，breathe 偏高）|
+| 功能 | 推进情节 70% / 塑造角色 30% |
+| 禁 | 纯信息灌注式对白 / "信息倒斗" 式世界观讲解 |
+| 语气词 | 收敛；每角色的 verbal_tics 按 voice_profile 一致 |
+
+---
+
+## 10. Worldbuilding 渗透
+
+- 每章至少渗入 **2 条** `world.md::rules` 细节
+- 由角色动作 / 对白 / 观察自然带出，**不得**括号内解释术语
+- 新名物首次出现必附 **一个具体感官细节**（色 / 重 / 味 / 温 / 声）
+
+---
+
+## 11. Canon Facts 读-写契约
+
+- 下笔前：若本章涉及既有角色 / 地点 / 势力 → 必须扫过 `knowledge/canon-facts.md`
+- 任何角色**不得预知**尚未在该章或之前章节揭示的事实
+- 落笔后：本章引入的新事实 → 追加到 `canon-facts.md`（仅追加，**绝不修改**已有条目）
+- 若某既有事实在本章被"颠覆性揭示"（如真身反转）→ 新增 `supersedes` 条目指向旧条目，**保留**旧条目
+
+---
+
+## 12. Anti-Patterns（主动规避）
+
+1. 括号内解释术语
+2. 流水账 "然后……然后……"
+3. 长段 "原来如此……" 回忆
+4. 主角光环过盛（每场必无真实风险）
+5. 师父全知但憋着不说（该告知的要告知）
+6. 战斗只写招名
+7. 情绪词直接贴标 / 陈词模板
+8. 穿越 / 系统 / 金手指风味
+9. 用 "主角" 二字指称角色
+10. 作者直接下场评论 / 旁白抒情
+
+---
+
+## 13. 写完后自查三步
+
+1. **数字数**：< 5000 → 扩写；绝不提交
+2. **自我 critic 打分**：5 维 (hook_strength / conflict_clarity / emotional_movement / payoff_density / voice_consistency)
+   - 任一维 < 0.70 → `status: rework` + 启动 editor 角色重写（最多 2 次）
+   - 第 3 次仍未达标 → `accept_on_stall` 保留最高分版本并标 `status: approved_with_debt`
+3. **追加知识**：
+   - `knowledge/canon-facts.md` 追加本章新事实
+   - `knowledge/timeline.md` 追加本章时间事件
+   - 若本章号 % 10 == 0 → 写 `knowledge/character-snapshots/after-ch-NNN.md`
+   - 若本章号 % 25 == 0 → 写/续 `knowledge/rolling-summary.md`
+
+---
+
+## 14. 禁止动作
+
+- ❌ 覆盖已有 `ch-NNN-*.md`（若用户要"重写"，要求先在 `revision` 递增并保留原版为 `ch-NNN-*.v1.md`）
+- ❌ 跨章预写（当 `meta.yaml::current_chapter = N`，不得直接写 N+2 章）
+- ❌ 在章节正文里写非故事元内容（TODO / note / 作者自述）
+
+---
+
+## 15. 示例
+
+见 [output/ai-generated/fen-xin-jue/volumes/vol-01-fen-xin-jue/](../../output/ai-generated/fen-xin-jue/volumes/vol-01-fen-xin-jue/) —— 30 章单卷示例的章节目录与 README。

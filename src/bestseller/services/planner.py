@@ -52,6 +52,15 @@ logger = logging.getLogger(__name__)
 WORKFLOW_TYPE_GENERATE_NOVEL_PLAN = "generate_novel_plan"
 
 
+class PlannerFallbackError(RuntimeError):
+    """Raised when a planner artifact degrades to fallback content and the
+    caller opted in to fail-fast instead of silently using fallback.
+
+    Prevents downstream corruption such as partial chapter outlines
+    producing gaps like "missing chapters [151..350]".
+    """
+
+
 @dataclass(frozen=True)
 class PlannerContext:
     """Centralized category-aware context built once per pipeline run.
@@ -4110,6 +4119,7 @@ async def _generate_structured_artifact(
     workflow_run_id: UUID,
     step_run_id: UUID | None = None,
     validator: Callable[[Any], Any] | None = None,
+    abort_on_fallback: bool = False,
 ) -> tuple[Any, UUID | None]:
     _max_attempts = 2  # try once, retry once on parse/validation failure
 
@@ -4136,6 +4146,15 @@ async def _generate_structured_artifact(
             ),
         )
         last_llm_run_id = completion.llm_run_id
+        # If the LLM call itself exhausted retries, complete_text flips
+        # ``provider`` to "fallback".  For structural artifacts where the
+        # fallback would silently corrupt downstream (e.g. per-volume
+        # chapter outlines), abort immediately with a clear signal.
+        if abort_on_fallback and completion.provider == "fallback":
+            raise PlannerFallbackError(
+                f"Planner artifact '{logical_name}' had to fall back after LLM retries "
+                f"exhausted. Refusing to continue because downstream requires a real outline."
+            )
         try:
             generated = _extract_json_payload(completion.content)
             payload = _merge_planning_payload(fallback_payload, generated)
@@ -4152,6 +4171,11 @@ async def _generate_structured_artifact(
                     exc,
                 )
                 continue
+            if abort_on_fallback:
+                raise PlannerFallbackError(
+                    f"Planner artifact '{logical_name}' failed parse/validation after "
+                    f"{_max_attempts} attempts ({type(exc).__name__}: {exc})."
+                ) from exc
             logger.warning(
                 "Planner artifact %s failed after %d attempts (%s: %s), using fallback.",
                 logical_name,
@@ -4767,6 +4791,11 @@ async def generate_novel_plan(
                 user_prompt=vol_outline_user,
                 fallback_payload=vol_fallback,
                 workflow_run_id=workflow_run.id,
+                # Partial/missing volume outlines corrupt the global chapter
+                # sequence (observed 2026-04-17: "missing chapters [151..350]").
+                # Fail fast so the pipeline surfaces the real LLM failure
+                # rather than materialising a silent fallback.
+                abort_on_fallback=True,
             )
             if llm_run_id is not None:
                 llm_run_ids.append(llm_run_id)
@@ -5221,6 +5250,7 @@ async def generate_volume_plan(
             logical_name=f"volume_{volume_number}_chapter_outline",
             system_prompt=vol_outline_system, user_prompt=vol_outline_user,
             fallback_payload=vol_fallback, workflow_run_id=workflow_run.id,
+            abort_on_fallback=True,
         )
         if llm_run_id is not None:
             llm_run_ids.append(llm_run_id)

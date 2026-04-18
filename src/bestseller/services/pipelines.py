@@ -8,7 +8,7 @@ from typing import Any
 from uuid import UUID
 
 from sqlalchemy import func, select
-from sqlalchemy.exc import PendingRollbackError
+from sqlalchemy.exc import DBAPIError, PendingRollbackError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bestseller.domain.context import SceneWriterContextPacket
@@ -1031,10 +1031,16 @@ async def run_scene_pipeline(
             llm_run_ids=llm_run_ids,
         )
     except Exception as exc:
-        # If the session is in PendingRollback state (e.g. from a lock-timeout
-        # autoflush), skip the DB cleanup — any attempt to flush/query would
-        # raise another PendingRollbackError, swallowing the original cause.
-        if isinstance(exc, PendingRollbackError) or not session.is_active:
+        # Any SQLAlchemy DB-level failure (LockNotAvailableError wrapped in
+        # DBAPIError, PendingRollbackError, connection errors) leaves the
+        # session unusable. Attempting further writes triggers autoflush →
+        # connection checkout → pool_pre_ping → ``MissingGreenlet`` which
+        # masks the real error. Rollback first and re-raise so the reaper
+        # can pick up the workflow_run row instead.
+        if (
+            isinstance(exc, (PendingRollbackError, DBAPIError))
+            or not session.is_active
+        ):
             await session.rollback()
             raise
         workflow_run.status = WorkflowStatus.FAILED.value
@@ -1050,7 +1056,7 @@ async def run_scene_pipeline(
                 error_message=str(exc),
             )
             await session.flush()
-        except PendingRollbackError:
+        except (PendingRollbackError, DBAPIError):
             await session.rollback()
         raise
 
@@ -1693,7 +1699,13 @@ async def run_chapter_pipeline(
             requires_human_review=False,
         )
     except Exception as exc:
-        if isinstance(exc, PendingRollbackError) or not session.is_active:
+        # Mirror the guard in ``run_scene_pipeline`` — any DB-level error
+        # leaves the session unusable and follow-up writes explode with
+        # ``MissingGreenlet``. Rollback first and let the reaper clean up.
+        if (
+            isinstance(exc, (PendingRollbackError, DBAPIError))
+            or not session.is_active
+        ):
             await session.rollback()
             raise
         workflow_run.status = WorkflowStatus.FAILED.value
@@ -1709,7 +1721,7 @@ async def run_chapter_pipeline(
                 error_message=str(exc),
             )
             await session.flush()
-        except PendingRollbackError:
+        except (PendingRollbackError, DBAPIError):
             await session.rollback()
         raise
 
@@ -1725,6 +1737,63 @@ async def _load_project_chapters(
             .order_by(ChapterModel.chapter_number.asc())
         )
     )
+
+
+async def _select_pending_chapters_for_resume(
+    session: AsyncSession,
+    chapters: list[ChapterModel],
+    *,
+    resume_enabled: bool,
+    accept_on_stall: bool,
+) -> tuple[list[ChapterModel], list[int]]:
+    """Filter chapters for a resumed run, safely handling stalled REVISION.
+
+    Returns ``(pending_chapters, draftless_revision_chapter_numbers)``.
+
+    - When ``resume_enabled`` is False, every chapter is pending.
+    - ``COMPLETE`` chapters are always skipped on resume.
+    - ``REVISION`` chapters are skipped only when ``accept_on_stall`` is
+      True AND they already have at least one ``ChapterDraftVersionModel``
+      row (i.e. a chapter draft was assembled at least once).  A
+      ``REVISION`` chapter with zero drafts means the writer crashed
+      mid-chapter before assembling a draft; skipping would leave a
+      permanent hole in the book (see prod incident on 2026-04-17:
+      superhero-fiction-1776147970 ch 154, 186, 188).
+    """
+    if not resume_enabled:
+        return list(chapters), []
+
+    revision_ids = [
+        ch.id for ch in chapters if ch.status == ChapterStatus.REVISION.value
+    ]
+    drafted_ids: set[UUID] = set()
+    if accept_on_stall and revision_ids:
+        drafted_rows = await session.scalars(
+            select(func.distinct(ChapterDraftVersionModel.chapter_id)).where(
+                ChapterDraftVersionModel.chapter_id.in_(revision_ids)
+            )
+        )
+        drafted_ids = {row for row in drafted_rows}
+
+    def _is_resume_done(ch: ChapterModel) -> bool:
+        if ch.status == ChapterStatus.COMPLETE.value:
+            return True
+        if (
+            accept_on_stall
+            and ch.status == ChapterStatus.REVISION.value
+            and ch.id in drafted_ids
+        ):
+            return True
+        return False
+
+    pending = [ch for ch in chapters if not _is_resume_done(ch)]
+    draftless_revisions = [
+        ch.chapter_number
+        for ch in chapters
+        if ch.status == ChapterStatus.REVISION.value
+        and ch.id not in drafted_ids
+    ]
+    return pending, draftless_revisions
 
 
 async def run_project_pipeline(
@@ -1866,15 +1935,23 @@ async def run_project_pipeline(
             )
 
     # Resume support: filter out already-completed chapters.
-    # When accept_on_stall is enabled, chapters stuck in REVISION (stalled
-    # rewrites from a prior run) are also treated as complete on resume.
-    _resume_done_statuses = {ChapterStatus.COMPLETE.value}
-    if settings.pipeline.accept_on_stall:
-        _resume_done_statuses.add(ChapterStatus.REVISION.value)
-    pending_chapters = [
-        ch for ch in chapters
-        if ch.status not in _resume_done_statuses
-    ] if settings.pipeline.resume_enabled else chapters
+    # A REVISION chapter with no assembled ChapterDraftVersionModel must
+    # NOT be skipped — that path leaves permanent holes in the book
+    # (prod incident on 2026-04-17, multiple projects).  See
+    # ``_select_pending_chapters_for_resume`` for full rationale.
+    pending_chapters, draftless_revisions = await _select_pending_chapters_for_resume(
+        session,
+        chapters,
+        resume_enabled=settings.pipeline.resume_enabled,
+        accept_on_stall=settings.pipeline.accept_on_stall,
+    )
+    if draftless_revisions:
+        logger.warning(
+            "Found %d REVISION chapter(s) with no assembled chapter draft "
+            "(%s) — re-queuing to prevent silent skip on resume.",
+            len(draftless_revisions),
+            draftless_revisions[:20] + (["..."] if len(draftless_revisions) > 20 else []),
+        )
     skipped_count = len(chapters) - len(pending_chapters)
     if skipped_count > 0:
         _emit_progress(
@@ -2533,7 +2610,13 @@ async def run_project_pipeline(
             requires_human_review=requires_human_review,
         )
     except Exception as exc:
-        if isinstance(exc, PendingRollbackError) or not session.is_active:
+        # Same guard as the scene/chapter pipelines — DB-level failures must
+        # rollback-and-raise so follow-up writes don't trigger
+        # ``MissingGreenlet`` during connection checkout.
+        if (
+            isinstance(exc, (PendingRollbackError, DBAPIError))
+            or not session.is_active
+        ):
             await session.rollback()
             raise
         workflow_run.status = WorkflowStatus.FAILED.value
@@ -2549,7 +2632,7 @@ async def run_project_pipeline(
                 error_message=str(exc),
             )
             await session.flush()
-        except PendingRollbackError:
+        except (PendingRollbackError, DBAPIError):
             await session.rollback()
         raise
 

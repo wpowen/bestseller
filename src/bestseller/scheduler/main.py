@@ -88,7 +88,22 @@ def _parse_cron(expr: str) -> dict[str, str]:
 
 
 async def _listen_for_changes(scheduler: AsyncIOScheduler) -> None:
-    """Listen to Redis pubsub for schedule changes with automatic reconnection."""
+    """Listen to Redis pubsub for schedule changes with automatic reconnection.
+
+    Uses ``get_message(timeout=...)`` in a loop instead of ``listen()`` because
+    the shared Redis client is configured with ``socket_timeout=5s`` (sensible
+    for regular commands) — but ``listen()`` blocks on the socket and every
+    timeout tears the connection down, reconnecting ~360×/hour.  That spams
+    tens of thousands of stack traces per day and churns connections.
+
+    ``get_message`` returns ``None`` on timeout instead of raising, which lets
+    us keep a single long-lived subscription and only reconnect on genuine
+    connection errors.
+    """
+    # Poll interval: long enough to be cheap (1 tick/s), short enough to be
+    # responsive to schedule changes in the UI.
+    _POLL_TIMEOUT_SECONDS = 1.0
+
     pubsub = None
     while True:
         try:
@@ -97,8 +112,15 @@ async def _listen_for_changes(scheduler: AsyncIOScheduler) -> None:
             await pubsub.subscribe(_SCHEDULE_CHANNEL)
             logger.info("Listening for schedule change events on %s", _SCHEDULE_CHANNEL)
 
-            async for message in pubsub.listen():
-                if message["type"] != "message":
+            while True:
+                message = await pubsub.get_message(
+                    ignore_subscribe_messages=True,
+                    timeout=_POLL_TIMEOUT_SECONDS,
+                )
+                if message is None:
+                    # Idle poll cycle — not an error, just no event yet.
+                    continue
+                if message.get("type") != "message":
                     continue
                 try:
                     event = json.loads(message["data"])

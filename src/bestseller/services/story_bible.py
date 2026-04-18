@@ -111,8 +111,92 @@ def _character_beliefs(knowledge_state: CharacterKnowledgeStateInput, *, languag
     return beliefs
 
 
+# Keys under which the LLM sometimes places world-rule descriptions when it
+# forgets the canonical ``description`` field.  We probe these in order and
+# fall back to ``name`` as a last resort so a stray missing-field crash no
+# longer takes the entire autowrite pipeline down.
+_WORLD_RULE_DESCRIPTION_ALIASES: tuple[str, ...] = (
+    "description",
+    "desc",
+    "details",
+    "detail",
+    "trigger",
+    "effect",
+    "mechanism",
+    "how_it_works",
+    "summary",
+    "explanation",
+)
+
+
+def _sanitize_world_rule(rule: dict[str, Any]) -> dict[str, Any]:
+    """Fill in ``description`` when the LLM omits it.
+
+    Some prompts/models emit world rules shaped like ``{"name": ..., "trigger":
+    ...}`` or similar variants without a canonical ``description`` field.  The
+    schema requires ``description`` (``min_length=1``) so the raw dict fails
+    validation and blows up the entire story-bible materialization — which in
+    turn fails the autowrite task.  This sanitizer coalesces common alias
+    fields into ``description`` and falls back to the rule ``name`` as a
+    last-ditch non-crashing default (with a warning), so 7x24 autowrite runs
+    do not crash on a single sloppy LLM output.
+    """
+    if not isinstance(rule, dict):
+        return rule
+    description = rule.get("description")
+    if isinstance(description, str) and description.strip():
+        return rule
+
+    sanitized = dict(rule)
+    for alias in _WORLD_RULE_DESCRIPTION_ALIASES:
+        if alias == "description":
+            continue
+        candidate = rule.get(alias)
+        if isinstance(candidate, str) and candidate.strip():
+            sanitized["description"] = candidate.strip()
+            logger.warning(
+                "world-rule sanitizer: using alias field %r as description for rule %r",
+                alias,
+                rule.get("name") or "<unnamed>",
+            )
+            return sanitized
+
+    name = rule.get("name")
+    if isinstance(name, str) and name.strip():
+        sanitized["description"] = name.strip()
+        logger.warning(
+            "world-rule sanitizer: no description-like field found for rule %r; "
+            "falling back to name so validation does not crash the pipeline",
+            name,
+        )
+        return sanitized
+
+    # Last resort: give it an explicit placeholder so the Pydantic min_length=1
+    # constraint does not trip and take the whole pipeline down.  The stored
+    # row still communicates that the upstream data was incomplete.
+    sanitized["description"] = "(missing description — sanitizer fallback)"
+    logger.warning(
+        "world-rule sanitizer: rule had neither description nor name; "
+        "using placeholder to keep pipeline alive: %r",
+        rule,
+    )
+    return sanitized
+
+
+def _sanitize_world_spec_content(content: dict[str, Any]) -> dict[str, Any]:
+    """Non-destructive best-effort normalization before validation."""
+    if not isinstance(content, dict):
+        return content
+    rules = content.get("rules")
+    if not isinstance(rules, list):
+        return content
+    sanitized = dict(content)
+    sanitized["rules"] = [_sanitize_world_rule(r) if isinstance(r, dict) else r for r in rules]
+    return sanitized
+
+
 def parse_world_spec_input(content: dict[str, Any]) -> WorldSpecInput:
-    return WorldSpecInput.model_validate(content)
+    return WorldSpecInput.model_validate(_sanitize_world_spec_content(content))
 
 
 def parse_cast_spec_input(content: dict[str, Any]) -> CastSpecInput:

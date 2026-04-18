@@ -346,3 +346,188 @@ def test_auto_resume_zombies_idempotent_when_nothing_pending(tmp_path: Path) -> 
 
     assert manager.auto_resume_zombies() == []
     assert manager.auto_resume_zombies() == []
+
+
+def test_auto_resume_zombies_delegates_to_worker_when_heal_active(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """If worker self-heal already owns the slug (arq heal job present in
+    Redis), the web auto-resume must NOT spawn a competing thread —
+    otherwise both paths fight for ``characters`` row-locks and one
+    crashes with ``LockNotAvailableError``. The task should flip to
+    ``running`` with a ``delegated_to_worker_self_heal`` marker instead.
+    """
+    persist_path = _write_persisted_tasks(
+        tmp_path,
+        [
+            {
+                "task_id": "z-heal-owned",
+                "task_type": "autowrite",
+                "status": "running",
+                "created_at": "2026-01-01T00:00:00+00:00",
+                "updated_at": "2026-01-01T00:05:00+00:00",
+                "project_slug": "novel-a",
+                "title": "A",
+                "current_stage": "chapter_pipeline_started",
+                "progress_events": [],
+                "payload": {"slug": "novel-a", "title": "A"},
+            },
+            {
+                "task_id": "z-orphan",
+                "task_type": "autowrite",
+                "status": "running",
+                "created_at": "2026-01-01T00:00:00+00:00",
+                "updated_at": "2026-01-01T00:05:00+00:00",
+                "project_slug": "novel-b",
+                "title": "B",
+                "current_stage": "chapter_pipeline_started",
+                "progress_events": [],
+                "payload": {"slug": "novel-b", "title": "B"},
+            },
+        ],
+    )
+
+    manager = web_server.WebTaskManager(persist_path=persist_path)
+
+    # Stub out the Redis lookup: novel-a is heal-owned, novel-b is not.
+    monkeypatch.setattr(
+        web_server,
+        "_fetch_heal_owned_slugs",
+        lambda _url: {"novel-a"},
+    )
+
+    invocations: list[str] = []
+
+    def fake_worker(self: object, task_id: str, payload: dict[str, object]) -> None:
+        invocations.append(task_id)
+
+    monkeypatch.setattr(web_server.WebTaskManager, "_run_autowrite_worker", fake_worker)
+
+    resumed = manager.auto_resume_zombies(redis_url="redis://stub")
+
+    # Only novel-b gets a web thread; novel-a is delegated to worker heal.
+    assert resumed == ["z-orphan"]
+
+    # Wait for the spawned thread to invoke.
+    import time as _time
+
+    deadline = _time.time() + 2.0
+    while not invocations and _time.time() < deadline:
+        _time.sleep(0.02)
+    assert invocations == ["z-orphan"]
+
+    # The heal-owned task is now "running" with the delegation marker so
+    # the UI can render it correctly while the Redis progress bridge syncs
+    # subsequent stages.
+    heal_owned = manager.get_task("z-heal-owned")
+    assert heal_owned is not None
+    assert heal_owned["status"] == "running"
+    assert heal_owned["current_stage"] == "delegated_to_worker_self_heal"
+    # A marker event was appended so the dashboard timeline shows the takeover.
+    stages = [evt.get("stage") for evt in heal_owned["progress_events"]]
+    assert "delegated_to_worker_self_heal" in stages
+
+
+def test_auto_resume_zombies_falls_back_when_redis_unreachable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """If Redis can't be scanned (e.g. startup race, network blip), the
+    heal-owner check returns an empty set and auto-resume proceeds with
+    the legacy behavior — fail-open rather than stranding tasks in
+    ``queued`` forever.
+    """
+    persist_path = _write_persisted_tasks(
+        tmp_path,
+        [
+            {
+                "task_id": "z-fallback",
+                "task_type": "autowrite",
+                "status": "running",
+                "created_at": "2026-01-01T00:00:00+00:00",
+                "updated_at": "2026-01-01T00:05:00+00:00",
+                "project_slug": "novel-c",
+                "title": "C",
+                "current_stage": "chapter_pipeline_started",
+                "progress_events": [],
+                "payload": {"slug": "novel-c", "title": "C"},
+            },
+        ],
+    )
+
+    manager = web_server.WebTaskManager(persist_path=persist_path)
+
+    # Simulate a Redis outage: the helper returns an empty set.
+    monkeypatch.setattr(web_server, "_fetch_heal_owned_slugs", lambda _url: set())
+
+    invocations: list[str] = []
+
+    def fake_worker(self: object, task_id: str, payload: dict[str, object]) -> None:
+        invocations.append(task_id)
+
+    monkeypatch.setattr(web_server.WebTaskManager, "_run_autowrite_worker", fake_worker)
+
+    resumed = manager.auto_resume_zombies(redis_url="redis://stub")
+    assert resumed == ["z-fallback"]
+
+    import time as _time
+
+    deadline = _time.time() + 2.0
+    while not invocations and _time.time() < deadline:
+        _time.sleep(0.02)
+    assert invocations == ["z-fallback"]
+
+
+def test_fetch_heal_owned_slugs_parses_arq_keys(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The helper must scan all three ARQ heal-job key prefixes
+    (``arq:job:``, ``arq:in-progress:``, ``arq:retry:``) and collect the
+    slug suffix from each. Missing any prefix would let a retrying heal
+    race with the web auto-resume after the retry timer expires.
+    """
+
+    class _FakeRedis:
+        def __init__(self) -> None:
+            self._keys = [
+                "arq:job:autowrite:heal:novel-a",
+                "arq:in-progress:autowrite:heal:novel-b",
+                "arq:retry:autowrite:heal:novel-c",
+                "arq:queue",  # noise
+                "arq:result:autowrite:heal:novel-d",  # different prefix, ignored
+            ]
+
+        def scan_iter(self, match: str, count: int = 200):  # noqa: ARG002
+            prefix = match.rstrip("*")
+            return (k for k in self._keys if k.startswith(prefix))
+
+    fake_client = _FakeRedis()
+
+    class _FakeRedisModule:
+        @staticmethod
+        def from_url(_url: str, **_kwargs: object) -> _FakeRedis:
+            return fake_client
+
+    import sys as _sys
+
+    monkeypatch.setitem(_sys.modules, "redis", _FakeRedisModule)
+
+    slugs = web_server._fetch_heal_owned_slugs("redis://stub")  # noqa: SLF001
+    assert slugs == {"novel-a", "novel-b", "novel-c"}
+
+
+def test_fetch_heal_owned_slugs_returns_empty_on_redis_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Connection errors must degrade to an empty set so auto-resume
+    continues rather than silently hanging all recovered tasks.
+    """
+
+    class _FakeRedisModule:
+        @staticmethod
+        def from_url(_url: str, **_kwargs: object) -> object:
+            raise RuntimeError("connection refused")
+
+    import sys as _sys
+
+    monkeypatch.setitem(_sys.modules, "redis", _FakeRedisModule)
+
+    slugs = web_server._fetch_heal_owned_slugs("redis://stub")  # noqa: SLF001
+    assert slugs == set()

@@ -432,7 +432,11 @@ class ChapterModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     status: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'planned'"))
     metadata_json: Mapped[JSON_DICT] = mapped_column("metadata", JSONB, nullable=False, default=dict)
 
-    scenes: Mapped[list["SceneCardModel"]] = relationship(back_populates="chapter")
+    scenes: Mapped[list["SceneCardModel"]] = relationship(
+        back_populates="chapter",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
 
 
 class ChapterStateSnapshotModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -474,7 +478,7 @@ class ChapterStateSnapshotModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     raw_extraction: Mapped[str | None] = mapped_column(Text)
     extraction_model: Mapped[str | None] = mapped_column(Text)
     extraction_status: Mapped[str] = mapped_column(
-        String(32),
+        Text,
         nullable=False,
         server_default=text("'ok'"),
     )

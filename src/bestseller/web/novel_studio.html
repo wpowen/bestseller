@@ -4245,7 +4245,11 @@
           </div>
           <div class="workflow-stat">
             <strong>${Number(payload.failed_run_count || 0).toLocaleString("zh-CN")}</strong>
-            <span>失败 workflow</span>
+            <span>失败 workflow（应用错误）</span>
+          </div>
+          <div class="workflow-stat">
+            <strong>${Number(payload.infrastructure_reap_count || 0).toLocaleString("zh-CN")}</strong>
+            <span>容器重启收割（非失败）</span>
           </div>
           <div class="workflow-stat">
             <strong>${humanizeTaskStatus(payload.latest_run_status || "-")}</strong>

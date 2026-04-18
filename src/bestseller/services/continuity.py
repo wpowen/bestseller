@@ -72,6 +72,11 @@ _MONOTONIC_DOWN_KINDS: frozenset[str] = frozenset({"countdown"})
 _FENCED_JSON_RE = re.compile(r"```(?:json)?\s*(\{.*?\})\s*```", re.DOTALL | re.IGNORECASE)
 _BARE_JSON_OBJECT_RE = re.compile(r"\{.*\}", re.DOTALL)
 
+# Unescaped control characters (0x00-0x1F excluding TAB/LF/CR, plus 0x7F).
+# These sneak into LLM JSON output and make ``json.loads`` reject the whole
+# payload even with ``strict=False`` when they appear outside of strings.
+_CTRL_CHARS_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+
 
 _EXTRACTION_SYSTEM_PROMPT = (
     "你是小说连续性事实抽取器。你的任务是读完本章正文和上一章末的事实状态，"
@@ -155,10 +160,24 @@ def _parse_extraction_payload(raw: str) -> tuple[list[HardFactContext], str | No
     if candidate is None:
         return [], "no_json_object_found"
 
+    # LLMs occasionally emit raw control characters (``\n``, ``\t``) inside
+    # JSON string values — strict mode rejects them with
+    # "Invalid control character at". ``strict=False`` accepts them so we
+    # recover gracefully instead of discarding the whole snapshot.
     try:
-        payload = json.loads(candidate)
+        payload = json.loads(candidate, strict=False)
     except json.JSONDecodeError as exc:
-        return [], f"json_decode_error:{exc.msg}"
+        # Second-chance: strip the control characters and retry before
+        # giving up. Some providers emit literal ``\r`` bytes mid-string
+        # that even ``strict=False`` cannot handle on older payloads.
+        sanitized = _CTRL_CHARS_RE.sub(" ", candidate)
+        if sanitized != candidate:
+            try:
+                payload = json.loads(sanitized, strict=False)
+            except json.JSONDecodeError as retry_exc:
+                return [], f"json_decode_error:{retry_exc.msg}"
+        else:
+            return [], f"json_decode_error:{exc.msg}"
 
     if not isinstance(payload, dict):
         return [], "payload_not_object"
@@ -305,7 +324,16 @@ async def extract_chapter_state_snapshot(
 
     raw = completion.content or ""
     facts, error = _parse_extraction_payload(raw)
-    extraction_status = "ok" if error is None else f"failed:{error}"
+    # Defensive truncation: older deployments still have the VARCHAR(32)
+    # column (migration 0015 widens it to TEXT). Cap at 120 chars so a long
+    # composite error like ``failed:json_decode_error:Invalid control character at``
+    # never trips ``StringDataRightTruncationError`` even if the migration
+    # hasn't been applied yet. 120 is comfortably under any reasonable
+    # downgrade path while still preserving enough context to triage.
+    if error is None:
+        extraction_status = "ok"
+    else:
+        extraction_status = f"failed:{error}"[:120]
 
     if error is not None:
         logger.warning(

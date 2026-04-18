@@ -315,13 +315,20 @@ async def build_project_workflow_overview(
             )
         )
 
+    def _is_infra_reap(run: WorkflowRunRead) -> bool:
+        msg = run.error_message or ""
+        return run.status == "failed" and "reaped by self-heal" in msg
+
     return ProjectWorkflowOverviewRead(
         project_id=project.id,
         project_slug=project.slug,
         project_status=project.status,
         run_count=len(runs),
         completed_run_count=sum(1 for row in runs if row.status == "completed"),
-        failed_run_count=sum(1 for row in runs if row.status == "failed"),
+        failed_run_count=sum(
+            1 for row in runs if row.status == "failed" and not _is_infra_reap(row)
+        ),
+        infrastructure_reap_count=sum(1 for row in runs if _is_infra_reap(row)),
         latest_run_id=runs[0].workflow_run_id if runs else None,
         latest_run_status=runs[0].status if runs else None,
         runs=runs,

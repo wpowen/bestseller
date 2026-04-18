@@ -43,6 +43,7 @@ class ProjectWorkflowOverviewRead(BaseModel):
     run_count: int = Field(ge=0)
     completed_run_count: int = Field(ge=0)
     failed_run_count: int = Field(ge=0)
+    infrastructure_reap_count: int = Field(ge=0, default=0)
     latest_run_id: UUID | None = None
     latest_run_status: str | None = None
     runs: list[WorkflowRunRead] = Field(default_factory=list)

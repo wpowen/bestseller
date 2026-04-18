@@ -80,6 +80,45 @@ def _json_default(value: object) -> object:
     raise TypeError(f"Object of type {type(value).__name__} is not JSON serializable")
 
 
+def _fetch_heal_owned_slugs(redis_url: str) -> set[str]:
+    """Return the set of project slugs with an active worker self-heal job.
+
+    Self-heal uses deterministic ARQ job ids of the form
+    ``autowrite:heal:<slug>`` (see ``worker/self_heal.py``). A queued,
+    in-progress, or retrying job leaves keys under those prefixes — any of
+    them means the worker owns the resume for that slug and the web
+    auto-resume path must stand down to avoid racing for row-locks.
+
+    Returns an empty set on any Redis error so the caller falls back to
+    the existing spawn-a-thread behavior (fail-open rather than silently
+    skipping recovery).
+    """
+    import redis as _redis  # noqa: PLC0415 — lazy import, keep start-up light
+
+    try:
+        client = _redis.from_url(redis_url, decode_responses=True, socket_timeout=2)
+    except Exception:
+        logger.warning("auto-resume: redis unreachable, skipping heal-owner check")
+        return set()
+
+    prefixes = (
+        "arq:job:autowrite:heal:",
+        "arq:in-progress:autowrite:heal:",
+        "arq:retry:autowrite:heal:",
+    )
+    slugs: set[str] = set()
+    try:
+        for prefix in prefixes:
+            for key in client.scan_iter(match=prefix + "*", count=200):
+                slug = key[len(prefix):]
+                if slug:
+                    slugs.add(slug)
+    except Exception:
+        logger.exception("auto-resume: redis scan failed — assuming no heal owners")
+        return set()
+    return slugs
+
+
 def _sanitize_preset_payload(item: dict[str, object]) -> dict[str, object]:
     payload = dict(item)
     payload["writing_profile_overrides"] = sanitize_genre_story_overrides(
@@ -1201,7 +1240,7 @@ class WebTaskManager:
             logger.exception("disk heartbeat rescue failed for %s", task_id)
             return False
 
-    def auto_resume_zombies(self) -> list[str]:
+    def auto_resume_zombies(self, redis_url: str | None = None) -> list[str]:
         """Re-queue every task that ``_load_from_disk`` flagged as a zombie.
 
         Called once from ``serve_web`` after startup-recovery finishes.
@@ -1209,13 +1248,25 @@ class WebTaskManager:
         semaphore, same as ``resume_autowrite_task``).  Idempotent — after the
         first call the pending list is cleared.
 
+        When ``redis_url`` is provided, each pending task is checked against
+        the arq worker's self-heal queue. If the worker has already enqueued
+        ``autowrite:heal:<slug>`` for the same project, the web-side thread is
+        NOT spawned — worker self-heal owns the resume, and the Redis progress
+        bridge (``sync_progress_from_worker_redis``) will surface its events
+        to the UI. Skipping the redundant web-side thread prevents both
+        processes from fighting for row-locks on the same ``characters`` /
+        ``workflow_step_runs`` rows (observed as ``LockNotAvailableError``).
+
         Returns the list of task IDs that were successfully re-queued.
         """
         with self._lock:
             pending = list(self._pending_auto_resume_ids)
             self._pending_auto_resume_ids = []
 
+        heal_owned_slugs = _fetch_heal_owned_slugs(redis_url) if redis_url else set()
+
         resumed: list[str] = []
+        delegated: list[str] = []
         for task_id in pending:
             with self._lock:
                 task = self._tasks.get(task_id)
@@ -1224,6 +1275,30 @@ class WebTaskManager:
                 if task.status != "queued":
                     # Already transitioned (e.g. user cancelled between
                     # startup and this call) — skip.
+                    continue
+                slug = (task.project_slug or "").strip()
+                if slug and slug in heal_owned_slugs:
+                    # Worker self-heal already owns this slug. Flip the task
+                    # straight to running with a marker stage so the UI does
+                    # not stall in "queued", then let the Redis progress
+                    # bridge drive subsequent updates.
+                    task.status = "running"
+                    task.current_stage = "delegated_to_worker_self_heal"
+                    task.error = None
+                    task.cancel_requested = False
+                    task.progress_events.append({
+                        "timestamp": _utc_now(),
+                        "stage": "delegated_to_worker_self_heal",
+                        "payload": {"reason": "ARQ heal job already active"},
+                    })
+                    task.progress_events = task.progress_events[-300:]
+                    self._save_to_disk()
+                    delegated.append(task_id)
+                    logger.info(
+                        "Skipping web auto-resume for %s — worker self-heal "
+                        "already owns slug=%s",
+                        task_id, slug,
+                    )
                     continue
                 # Rehydrate payload and reset cancel flag so the worker starts
                 # from a clean slate.  Task stays in queued until the slot
@@ -1245,6 +1320,12 @@ class WebTaskManager:
             thread.start()
             resumed.append(task_id)
             logger.info("Auto-resumed zombie task %s after server restart", task_id)
+
+        if delegated:
+            logger.info(
+                "Delegated %d zombie task(s) to worker self-heal (no web thread)",
+                len(delegated),
+            )
 
         return resumed
 
@@ -2449,7 +2530,9 @@ def serve_web_app(
     ).lower() not in ("0", "false", "no", "off")
     if _auto_resume_enabled:
         try:
-            resumed_ids = task_manager.auto_resume_zombies()
+            resumed_ids = task_manager.auto_resume_zombies(
+                redis_url=settings.redis.url,
+            )
             if resumed_ids:
                 print(  # noqa: T201
                     f"Auto-resumed {len(resumed_ids)} zombie task(s) after "

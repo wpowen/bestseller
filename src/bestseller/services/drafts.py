@@ -1864,6 +1864,8 @@ def build_scene_draft_prompts(
     tension_target_block: str | None = None,
     # Stage B+ — location ledger (same-location reframe + visit cap)
     location_ledger_block: str | None = None,
+    # Scene scope isolation block (earlier scenes written — don't rewrite them)
+    scene_scope_isolation_block: str | None = None,
     # Context budget
     context_budget_tokens: int = 6000,
 ) -> tuple[str, str]:
@@ -2097,6 +2099,13 @@ def build_scene_draft_prompts(
     if location_ledger_block:
         _location_ledger_line = f"{location_ledger_block}\n\n"
 
+    # Scene scope isolation — earlier scenes in this chapter that are already
+    # written.  Prevents the writer from rewriting / paraphrasing them in
+    # this scene (root cause of intra-chapter duplication).
+    _scene_scope_isolation_line = ""
+    if scene_scope_isolation_block:
+        _scene_scope_isolation_line = f"{scene_scope_isolation_block}\n\n"
+
     # Phase-3 wiring: scene/sequel pattern
     _scene_sequel_line = _render_scene_sequel_section(
         swain_pattern, scene_skeleton, is_en=is_en,
@@ -2189,6 +2198,7 @@ def build_scene_draft_prompts(
             "cliffhanger_line": _cliffhanger_line,
             "tension_target_line": _tension_target_line,
             "location_ledger_line": _location_ledger_line,
+            "scene_scope_isolation_line": _scene_scope_isolation_line,
             "hard_fact_line": _hard_fact_line,
             "knowledge_line": _knowledge_line,
             "recent_scene_section": recent_scene_section,
@@ -2233,6 +2243,7 @@ def build_scene_draft_prompts(
     _cliffhanger_line = _ctx["cliffhanger_line"]
     _tension_target_line = _ctx["tension_target_line"]
     _location_ledger_line = _ctx["location_ledger_line"]
+    _scene_scope_isolation_line = _ctx["scene_scope_isolation_line"]
     _hard_fact_line = _ctx["hard_fact_line"]
     _knowledge_line = _ctx["knowledge_line"]
     recent_scene_section = _ctx["recent_scene_section"]
@@ -2263,6 +2274,7 @@ def build_scene_draft_prompts(
             f"{_hard_fact_line}"
             f"{_contradiction_line}"
             f"{_identity_line}"
+            f"{_scene_scope_isolation_line}"
             f"{_genre_constraint_line}"
             f"{_phrase_avoidance_line}"
             f"{_opening_diversity_line}"
@@ -2331,6 +2343,7 @@ def build_scene_draft_prompts(
             f"{_hard_fact_line}"
             f"{_contradiction_line}"
             f"{_identity_line}"
+            f"{_scene_scope_isolation_line}"
             f"{_genre_constraint_line}"
             f"{_phrase_avoidance_line}"
             f"{_opening_diversity_line}"
@@ -2839,6 +2852,9 @@ async def generate_scene_draft(
             location_ledger_block=(
                 context_packet.location_ledger_block if context_packet else None
             ),
+            scene_scope_isolation_block=(
+                context_packet.scene_scope_isolation_block if context_packet else None
+            ),
             context_budget_tokens=(
                 settings.generation.context_budget_tokens if settings else 6000
             ),
@@ -3028,7 +3044,7 @@ async def assemble_chapter_draft(
         from bestseller.services.deduplication import (
             clean_meta_text_markers,
             detect_intra_chapter_repetition,
-            remove_intra_chapter_duplicates,
+            remove_intra_chapter_duplicates_paraphrase,
         )
 
         # 1. Strip author/tool meta-text markers (e.g. "**第28章 完**", "（本章完）")
@@ -3039,7 +3055,7 @@ async def assemble_chapter_draft(
                 chapter_number, _meta_removed,
             )
 
-        # 2. Remove intra-chapter duplicate paragraphs
+        # 2. Remove intra-chapter duplicate paragraphs (byte-exact + paraphrased)
         _dup_findings = detect_intra_chapter_repetition(content_md)
         if _dup_findings:
             logger.warning(
@@ -3048,7 +3064,7 @@ async def assemble_chapter_draft(
             )
             for _f in _dup_findings:
                 logger.warning("  %s", _f["message"])
-            content_md, _removed = remove_intra_chapter_duplicates(content_md)
+            content_md, _removed = remove_intra_chapter_duplicates_paraphrase(content_md)
             logger.info("Chapter %d: removed %d duplicate paragraph(s).", chapter_number, _removed)
     except Exception:
         logger.debug("Post-assembly dedup failed (non-fatal)", exc_info=True)

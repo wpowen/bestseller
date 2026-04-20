@@ -68,6 +68,15 @@ STARTUP_GRACE_SECONDS = 60
 SELF_HEAL_LOCK_KEY = "bestseller:self_heal:boot_lock"
 SELF_HEAL_LOCK_TTL_SECONDS = 180
 
+# Marker key web uses to confirm worker's startup heal scan has finished.
+# Without it, web's ``auto_resume_zombies`` would race ahead of worker and
+# see an empty ``arq:job:autowrite:heal:*`` set even when stuck projects
+# exist — the heal keys only get created AFTER the scan runs. TTL covers
+# the span between worker restarts; web tolerates a stale marker because
+# the ARQ keys themselves are the source of truth once present.
+SELF_HEAL_SCAN_DONE_KEY = "bestseller:self_heal:scan_done"
+SELF_HEAL_SCAN_DONE_TTL_SECONDS = 7200
+
 logger = logging.getLogger(__name__)
 
 
@@ -139,12 +148,22 @@ async def reap_orphan_workflow_runs(
 async def find_stuck_projects(session: Any) -> list[StuckProject]:
     """Return every project that looks stuck and has no active pipeline.
 
-    Two detection paths:
+    Three detection paths:
 
     1. *Explicit*: ``project.metadata_json.stuck_at_chapter`` is set.
-    2. *Implicit*: project has ``ChapterModel`` rows whose current
-       ``ChapterDraftVersionModel`` is missing — i.e. a pipeline laid down
-       chapter stubs but the writer never filled them in.
+    2. *Missing drafts*: project has ``ChapterModel`` rows whose current
+       ``ChapterDraftVersionModel`` is missing — i.e. a pipeline laid
+       down chapter stubs but the writer never filled them in.
+    3. *Under-target*: project has fewer ``ChapterModel`` rows than
+       ``target_chapters`` AND its status is not terminal. This catches
+       the case where the per-volume loop in
+       ``run_progressive_autowrite_pipeline`` exited early (silent
+       swallow of an inner exception, outline drift, etc.) so whole
+       volumes were never planned — their chapter rows never got
+       created, so ``chapters_with_draft >= chapters_total`` and path 2
+       thinks the project is fine even though it is only partially
+       written. Seen on ``romantasy-1776330993`` (150/800) and
+       ``superhero-fiction-1776147970`` (250/800) in production.
     """
     projects = list(await session.scalars(select(ProjectModel)))
     stuck: list[StuckProject] = []
@@ -211,6 +230,30 @@ async def find_stuck_projects(session: Any) -> list[StuckProject]:
                     slug=project.slug,
                     reason="missing_drafts",
                     stuck_at_chapter=int(chapters_with_draft) + 1,
+                    chapters_total=int(chapters_total),
+                    chapters_with_draft=int(chapters_with_draft),
+                )
+            )
+            continue
+
+        # Under-target: volumes never got planned past a certain point.
+        # Only trigger for projects still in a writing state — a project
+        # the user explicitly finished or abandoned (``completed`` /
+        # ``archived``) should not be auto-resumed.
+        target_chapters = int(getattr(project, "target_chapters", 0) or 0)
+        status = (getattr(project, "status", None) or "").lower()
+        under_target_status = status in {"writing", "planning", "revising", "drafting", ""}
+        if (
+            target_chapters > 0
+            and chapters_total < target_chapters
+            and under_target_status
+        ):
+            stuck.append(
+                StuckProject(
+                    project_id=project.id,
+                    slug=project.slug,
+                    reason="under_target_chapters",
+                    stuck_at_chapter=int(chapters_total) + 1,
                     chapters_total=int(chapters_total),
                     chapters_with_draft=int(chapters_with_draft),
                 )
@@ -373,5 +416,21 @@ async def heal_stuck_projects(
     finally:
         if pool is not None:
             await pool.aclose()
+
+        # Signal to the web service that worker self-heal has finished its
+        # startup scan. Without this marker web's ``auto_resume_zombies``
+        # runs the moment Redis becomes reachable — before worker has had
+        # time to populate ``arq:job:autowrite:heal:*`` — and treats its
+        # empty result as "no owner" → spawns competing threads that
+        # collide on row-locks with the heal jobs we're about to enqueue.
+        if redis is not None:
+            try:
+                await redis.set(
+                    SELF_HEAL_SCAN_DONE_KEY,
+                    str(int(_dt.datetime.now(tz=_dt.timezone.utc).timestamp())),
+                    ex=SELF_HEAL_SCAN_DONE_TTL_SECONDS,
+                )
+            except Exception:  # noqa: BLE001 — marker is advisory
+                logger.exception("self-heal: failed to publish scan-done marker")
 
     return dispatched

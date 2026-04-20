@@ -172,6 +172,18 @@ class SceneWriterContextPacket(BaseModel):
     # ── Stage B+: location ledger (same-location reframe + visit cap) ──
     location_ledger_block: str | None = None
 
+    # ── Scene scope isolation: enforce scene-only scope + earlier-scene recaps ──
+    # Tells the writer which beats/content belong to THIS scene only and which
+    # earlier scenes in the chapter are already written (must not be rewritten
+    # or paraphrased in this scene).
+    scene_scope_isolation_block: str | None = None
+
+    # ── Pipeline-level duplication findings (broad scope) ──
+    # Pre-computed findings from check_scene_duplication in pipelines.py.
+    # Forwarded to review_scene_draft so cross-project matches flow into
+    # duplication_score + findings without re-running the scan.
+    pipeline_duplication_findings: list[dict[str, Any]] = Field(default_factory=list)
+
 
 class ChapterSceneContext(BaseModel):
     scene_number: int = Field(ge=1)

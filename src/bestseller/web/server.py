@@ -30,7 +30,7 @@ from bestseller.services.inspection import (
     build_story_bible_overview,
 )
 from bestseller.services.narrative import build_narrative_overview
-from bestseller.services.pipelines import run_autowrite_pipeline, run_progressive_autowrite_pipeline
+from bestseller.services.pipelines import run_autowrite_pipeline
 from bestseller.services.projects import (
     delete_project_completely,
     get_project_by_slug,
@@ -80,6 +80,51 @@ def _json_default(value: object) -> object:
     raise TypeError(f"Object of type {type(value).__name__} is not JSON serializable")
 
 
+_SELF_HEAL_SCAN_DONE_KEY = "bestseller:self_heal:scan_done"
+
+
+def _wait_for_self_heal_scan(
+    redis_url: str,
+    *,
+    timeout_seconds: float = 90.0,
+    poll_interval: float = 1.5,
+) -> bool:
+    """Block until the worker publishes ``SELF_HEAL_SCAN_DONE_KEY`` or we
+    hit ``timeout_seconds``. Returns ``True`` if the marker appeared.
+
+    Without this wait, web's ``auto_resume_zombies`` fires the instant
+    Redis is reachable — before worker has finished populating
+    ``arq:job:autowrite:heal:*`` — so the heal-owner check sees an empty
+    set and the old fail-open path would spawn threads that collide with
+    the heal jobs worker is about to enqueue. Waiting lets us trust the
+    heal-key scan.
+    """
+    import time  # noqa: PLC0415
+    import redis as _redis  # noqa: PLC0415
+
+    try:
+        client = _redis.from_url(redis_url, decode_responses=True, socket_timeout=2)
+    except Exception:
+        logger.warning("auto-resume: redis unreachable, cannot wait for self-heal marker")
+        return False
+
+    deadline = time.monotonic() + timeout_seconds
+    while time.monotonic() < deadline:
+        try:
+            if client.get(_SELF_HEAL_SCAN_DONE_KEY):
+                return True
+        except Exception:
+            logger.exception("auto-resume: redis read failed while waiting for self-heal marker")
+            return False
+        time.sleep(poll_interval)
+    logger.warning(
+        "auto-resume: self-heal scan-done marker did not appear within %.0fs; "
+        "proceeding with whatever heal keys are present (may miss delegation)",
+        timeout_seconds,
+    )
+    return False
+
+
 def _fetch_heal_owned_slugs(redis_url: str) -> set[str]:
     """Return the set of project slugs with an active worker self-heal job.
 
@@ -89,9 +134,9 @@ def _fetch_heal_owned_slugs(redis_url: str) -> set[str]:
     them means the worker owns the resume for that slug and the web
     auto-resume path must stand down to avoid racing for row-locks.
 
-    Returns an empty set on any Redis error so the caller falls back to
-    the existing spawn-a-thread behavior (fail-open rather than silently
-    skipping recovery).
+    Returns an empty set on any Redis error. Callers MUST treat an empty
+    result as "unknown" rather than "no heal jobs exist" — see
+    ``_wait_for_self_heal_scan`` for the startup-race mitigation.
     """
     import redis as _redis  # noqa: PLC0415 — lazy import, keep start-up light
 
@@ -1241,31 +1286,45 @@ class WebTaskManager:
             return False
 
     def auto_resume_zombies(self, redis_url: str | None = None) -> list[str]:
-        """Re-queue every task that ``_load_from_disk`` flagged as a zombie.
+        """Re-dispatch every task ``_load_from_disk`` flagged as a zombie.
 
         Called once from ``serve_web`` after startup-recovery finishes.
-        Spawns a worker thread per resumed task (bounded by the concurrency
-        semaphore, same as ``resume_autowrite_task``).  Idempotent — after the
-        first call the pending list is cleared.
+        Idempotent — after the first call the pending list is cleared.
 
-        When ``redis_url`` is provided, each pending task is checked against
-        the arq worker's self-heal queue. If the worker has already enqueued
-        ``autowrite:heal:<slug>`` for the same project, the web-side thread is
-        NOT spawned — worker self-heal owns the resume, and the Redis progress
-        bridge (``sync_progress_from_worker_redis``) will surface its events
-        to the UI. Skipping the redundant web-side thread prevents both
-        processes from fighting for row-locks on the same ``characters`` /
-        ``workflow_step_runs`` rows (observed as ``LockNotAvailableError``).
+        Autowrite zombies are **always delegated** to the worker's
+        self-heal path: worker owns the deterministic
+        ``autowrite:heal:<slug>`` job id, the row-lock coordination, and
+        the DB-authoritative ``find_stuck_projects`` scan. The old
+        web-side thread spawn competed with that path for row-locks on
+        ``characters`` / ``workflow_step_runs`` and crashed with
+        ``LockNotAvailableError`` whenever both fired at once — so the
+        thread path has been removed entirely. If a zombie slug is NOT
+        in the worker's heal-owned set, it means worker already decided
+        the project is terminal (completed / awaiting human / truly
+        active elsewhere); web still flips the task to a delegated
+        marker so the UI does not stall in ``queued``.
 
-        Returns the list of task IDs that were successfully re-queued.
+        Non-autowrite task types (e.g. ``repair``) still get marked
+        failed as before — the worker has no generic resume path for
+        them.
+
+        Returns the list of task IDs that were handed off (i.e. marked
+        as ``running`` with the delegation stage). The return name is
+        kept for backward compatibility with the old thread-spawn
+        contract even though no threads are spawned anymore.
         """
         with self._lock:
             pending = list(self._pending_auto_resume_ids)
             self._pending_auto_resume_ids = []
 
+        # Wait for worker to publish its scan-done marker before trusting
+        # the heal-owner set. Without this wait the marker would still be
+        # missing on a fresh compose up — web races ahead and sees an
+        # empty set → fail-open path would crash on collision.
+        if redis_url:
+            _wait_for_self_heal_scan(redis_url)
         heal_owned_slugs = _fetch_heal_owned_slugs(redis_url) if redis_url else set()
 
-        resumed: list[str] = []
         delegated: list[str] = []
         for task_id in pending:
             with self._lock:
@@ -1277,49 +1336,29 @@ class WebTaskManager:
                     # startup and this call) — skip.
                     continue
                 slug = (task.project_slug or "").strip()
-                if slug and slug in heal_owned_slugs:
-                    # Worker self-heal already owns this slug. Flip the task
-                    # straight to running with a marker stage so the UI does
-                    # not stall in "queued", then let the Redis progress
-                    # bridge drive subsequent updates.
-                    task.status = "running"
-                    task.current_stage = "delegated_to_worker_self_heal"
-                    task.error = None
-                    task.cancel_requested = False
-                    task.progress_events.append({
-                        "timestamp": _utc_now(),
-                        "stage": "delegated_to_worker_self_heal",
-                        "payload": {"reason": "ARQ heal job already active"},
-                    })
-                    task.progress_events = task.progress_events[-300:]
-                    self._save_to_disk()
-                    delegated.append(task_id)
-                    logger.info(
-                        "Skipping web auto-resume for %s — worker self-heal "
-                        "already owns slug=%s",
-                        task_id, slug,
-                    )
-                    continue
-                # Rehydrate payload and reset cancel flag so the worker starts
-                # from a clean slate.  Task stays in queued until the slot
-                # semaphore frees up.
-                payload_copy = json.loads(
-                    json.dumps(task.payload, default=_json_default)
+                heal_owned = bool(slug and slug in heal_owned_slugs)
+                reason = (
+                    "ARQ heal job already active"
+                    if heal_owned
+                    else "worker self-heal owns resume; web will not spawn a competing thread"
                 )
-                task.cancel_requested = False
+                task.status = "running"
+                task.current_stage = "delegated_to_worker_self_heal"
                 task.error = None
-                task.result = None
+                task.cancel_requested = False
+                task.progress_events.append({
+                    "timestamp": _utc_now(),
+                    "stage": "delegated_to_worker_self_heal",
+                    "payload": {"reason": reason, "heal_owned": heal_owned},
+                })
+                task.progress_events = task.progress_events[-300:]
                 self._save_to_disk()
-
-            thread = threading.Thread(
-                target=self._run_with_slot,
-                args=(task_id, self._run_autowrite_worker, payload_copy),
-                daemon=True,
-                name=f"auto-resume-{task_id[:8]}",
-            )
-            thread.start()
-            resumed.append(task_id)
-            logger.info("Auto-resumed zombie task %s after server restart", task_id)
+                delegated.append(task_id)
+                logger.info(
+                    "Delegated zombie task %s (slug=%s, heal_owned=%s) to "
+                    "worker self-heal",
+                    task_id, slug, heal_owned,
+                )
 
         if delegated:
             logger.info(
@@ -1327,7 +1366,7 @@ class WebTaskManager:
                 len(delegated),
             )
 
-        return resumed
+        return delegated
 
     def _run_autowrite_worker(self, task_id: str, payload: dict[str, object]) -> None:
         self._mark_running(task_id)
@@ -1450,16 +1489,12 @@ class WebTaskManager:
                     "auto_repair_on_attention": bool(payload.get("auto_repair", True)),
                     "progress": progress,
                 }
-                # Use progressive pipeline for large novels (>50 chapters).
-                # Progressive planning generates foundation first, then plans +
-                # writes one volume at a time, feeding writing feedback back into
-                # the next volume's planning.  This avoids a single monolithic
-                # planning step that would take hours for 1000+ chapters.
-                _PROGRESSIVE_CHAPTER_THRESHOLD = 50
-                if target_chapters > _PROGRESSIVE_CHAPTER_THRESHOLD:
-                    result = await run_progressive_autowrite_pipeline(**common_kwargs)
-                else:
-                    result = await run_autowrite_pipeline(**common_kwargs)
+                # Progressive routing (large novels → per-volume plan/write
+                # feedback loop) lives inside run_autowrite_pipeline so the
+                # web-ui path and worker self-heal path pick the same pipeline
+                # for the same target_chapters. See PROGRESSIVE_CHAPTER_THRESHOLD
+                # in services.pipelines.
+                result = await run_autowrite_pipeline(**common_kwargs)
             return json.loads(json.dumps(result.model_dump(mode="json"), default=_json_default))
 
         # Overall pipeline cap: 24h. Long enough for 100+ chapters.

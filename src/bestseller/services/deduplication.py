@@ -310,8 +310,17 @@ def detect_intra_chapter_repetition(
     chapter_text: str,
     *,
     min_paragraph_length: int = _MIN_PARA_LEN,
+    paraphrase_threshold: float = 0.55,
 ) -> list[dict[str, Any]]:
     """Detect repeated paragraph blocks within a single assembled chapter.
+
+    Detects TWO kinds of duplication:
+
+    1. **Byte-exact** (MD5 of normalized text) — catches copy-paste duplicates.
+    2. **Paraphrased** (Jaccard shingle similarity) — catches the same
+       dialog/action rewritten with minor variation, e.g. punctuation or
+       phrasing changes. This is the kind produced by chapter-rewrite LLMs
+       that "echo" upstream scenes in slightly altered form.
 
     Parameters
     ----------
@@ -320,6 +329,9 @@ def detect_intra_chapter_repetition(
     min_paragraph_length : int
         Minimum character length for a paragraph to be considered a duplicate
         candidate. Short paragraphs (single-sentence transitions) are ignored.
+    paraphrase_threshold : float
+        Jaccard similarity above this value flags a paragraph pair as a
+        paraphrased duplicate (default 0.55).
 
     Returns
     -------
@@ -327,12 +339,15 @@ def detect_intra_chapter_repetition(
         first_pos  — index of first occurrence paragraph
         second_pos — index of duplicate paragraph
         text       — the repeated paragraph text (truncated to 120 chars)
-        severity   — "critical" (exact match) or "major" (high-similarity)
+        similarity — Jaccard similarity score (1.0 for byte-exact)
+        severity   — "critical" (byte-exact) or "major" (paraphrased)
         message    — human-readable description
     """
     paragraphs = _split_paragraphs(chapter_text)
     findings: list[dict[str, Any]] = []
-    seen: dict[int, int] = {}  # normalized_hash → first paragraph index
+    seen: dict[int, int] = {}          # normalized_hash → first paragraph index
+    flagged_as_duplicate: set[int] = set()  # paragraphs already flagged (don't double-count)
+    shingle_cache: dict[int, set[int]] = {}
 
     for i, para in enumerate(paragraphs):
         normalized = _normalize_text(para)
@@ -344,16 +359,113 @@ def detect_intra_chapter_repetition(
                 "first_pos": seen[key],
                 "second_pos": i,
                 "text": para[:120],
+                "similarity": 1.0,
                 "severity": "critical",
                 "message": (
                     f"[段落重复] 第{i+1}段与第{seen[key]+1}段内容完全相同，"
                     f"疑似场景拼接时产生重复。"
                 ),
             })
-        else:
-            seen[key] = i
+            flagged_as_duplicate.add(i)
+            continue
+        seen[key] = i
+        shingle_cache[i] = _compute_shingle_set(para)
+
+    # Paraphrase detection — pairwise Jaccard on cached shingle sets
+    indices = sorted(shingle_cache.keys())
+    for idx_a, a in enumerate(indices):
+        if a in flagged_as_duplicate:
+            continue
+        sa = shingle_cache[a]
+        if not sa:
+            continue
+        for b in indices[idx_a + 1 :]:
+            if b in flagged_as_duplicate:
+                continue
+            sb = shingle_cache[b]
+            if not sb:
+                continue
+            u = len(sa | sb)
+            if u == 0:
+                continue
+            sim = len(sa & sb) / u
+            if sim >= paraphrase_threshold:
+                findings.append({
+                    "first_pos": a,
+                    "second_pos": b,
+                    "text": paragraphs[b][:120],
+                    "similarity": round(sim, 3),
+                    "severity": "major",
+                    "message": (
+                        f"[段落改写重复] 第{b+1}段与第{a+1}段相似度 {sim:.1%}，"
+                        f"疑似同内容的改写复制。"
+                    ),
+                })
+                flagged_as_duplicate.add(b)
 
     return findings
+
+
+def remove_intra_chapter_duplicates_paraphrase(
+    chapter_text: str,
+    *,
+    paraphrase_threshold: float = 0.55,
+    min_paragraph_length: int = _MIN_PARA_LEN,
+) -> tuple[str, int]:
+    """Remove byte-exact AND paraphrased duplicate paragraphs.
+
+    Keeps the first occurrence of each unique paragraph; discards later
+    paragraphs that are either byte-identical OR have Jaccard shingle
+    similarity ≥ ``paraphrase_threshold`` with any earlier paragraph.
+
+    Returns
+    -------
+    (cleaned_text, removed_count)
+    """
+    paragraphs = _split_paragraphs(chapter_text)
+    kept: list[str] = []
+    kept_shingles: list[set[int]] = []
+    seen_exact: set[int] = set()
+    removed = 0
+
+    for para in paragraphs:
+        normalized = _normalize_text(para)
+        if len(normalized) < min_paragraph_length:
+            kept.append(para)
+            continue
+        exact_key = int(hashlib.md5(normalized.encode()).hexdigest()[:12], 16)
+        if exact_key in seen_exact:
+            removed += 1
+            logger.warning(
+                "Removing exact-duplicate paragraph (len=%d): %s…",
+                len(para), para[:60].replace("\n", " "),
+            )
+            continue
+        # Paraphrase check — against all previously kept long paragraphs
+        candidate_shingles = _compute_shingle_set(para)
+        is_paraphrase_dup = False
+        if candidate_shingles:
+            for prior_shingles in kept_shingles:
+                u = len(candidate_shingles | prior_shingles)
+                if u == 0:
+                    continue
+                sim = len(candidate_shingles & prior_shingles) / u
+                if sim >= paraphrase_threshold:
+                    is_paraphrase_dup = True
+                    logger.warning(
+                        "Removing paraphrased-duplicate paragraph (sim=%.2f, len=%d): %s…",
+                        sim, len(para), para[:60].replace("\n", " "),
+                    )
+                    break
+        if is_paraphrase_dup:
+            removed += 1
+            continue
+        seen_exact.add(exact_key)
+        if candidate_shingles:
+            kept_shingles.append(candidate_shingles)
+        kept.append(para)
+
+    return "\n\n".join(kept), removed
 
 
 def remove_intra_chapter_duplicates(chapter_text: str) -> tuple[str, int]:

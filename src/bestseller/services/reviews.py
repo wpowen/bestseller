@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import logging
 import re
 from typing import Any
 from uuid import UUID
+
+logger = logging.getLogger(__name__)
 
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -1353,6 +1356,8 @@ def evaluate_scene_draft(
     pacing_target: Any | None = None,
     subplot_schedule: list[Any] | None = None,
     swain_pattern: str | None = None,
+    duplication_score: float = 1.0,
+    duplication_findings: list[dict[str, Any]] | None = None,
 ) -> SceneReviewResult:
     from bestseller.services.genre_review_profiles import resolve_genre_review_profile
 
@@ -1996,6 +2001,26 @@ def evaluate_scene_draft(
             )
         )
 
+    _duplication_score_clamped = _clamp_score(float(duplication_score))
+    if duplication_findings:
+        for _df in duplication_findings:
+            _sev = str(_df.get("severity", "major"))
+            _msg = str(_df.get("message", ""))
+            if not _msg:
+                continue
+            findings.append(
+                SceneReviewFinding(
+                    category="duplication",
+                    severity=_sev if _sev in {"critical", "high", "major", "low"} else "major",
+                    message=_msg,
+                )
+            )
+    # Penalize overall when duplication is detected so the final score reflects
+    # the repetition risk. A duplication_score of 0.45 (≥0.55 Jaccard match) drops
+    # overall by 0.55 * 0.3 = 0.165 points, which typically flips the verdict.
+    if _duplication_score_clamped < 1.0:
+        overall = _clamp_score(overall - (1.0 - _duplication_score_clamped) * 0.3)
+
     verdict = "pass" if overall >= _verdict_threshold and not findings else "rewrite"
     rewrite_instructions = None
     if verdict == "rewrite":
@@ -2022,16 +2047,33 @@ def evaluate_scene_draft(
                 _name_hint = f" Character name errors: {'; '.join(_wrong_names)}"
             else:
                 _name_hint = f" 角色名错误：{'；'.join(_wrong_names)}"
+        _dup_findings = [f for f in findings if f.category == "duplication"]
+        _dup_hint = ""
+        if _dup_findings:
+            _dup_msgs = [f.message for f in _dup_findings[:3]]
+            if _is_en:
+                _dup_hint = (
+                    " Content repetition detected — rewrite with distinct beats, "
+                    "fresh sensory detail, and different dialogue rhythm. "
+                    "Do NOT paraphrase the overlapping passages. "
+                    f"Overlap evidence: {'; '.join(_dup_msgs)}"
+                )
+            else:
+                _dup_hint = (
+                    " 检测到内容重复——请以不同的节奏推进、新的感官细节与对白节奏重写，"
+                    "切勿只是换词改写原段落。"
+                    f" 重复证据：{'；'.join(_dup_msgs)}"
+                )
         if _is_en:
             rewrite_instructions = (
                 f"Rewrite Chapter {chapter.chapter_number} Scene {scene.scene_number}: "
                 f"prioritize goal advancement, conflict escalation, dialogue depth, and emotional layering. "
-                f"Ensure the ending leaves a clear hook.{contract_hint}{_name_hint}"
+                f"Ensure the ending leaves a clear hook.{contract_hint}{_name_hint}{_dup_hint}"
             )
         else:
             rewrite_instructions = (
                 f"请重写第{chapter.chapter_number}章第{scene.scene_number}场，优先补足目标推进、"
-                f"冲突升级、人物对话和情绪层次，确保结尾留下明确钩子。{contract_hint}{_name_hint}"
+                f"冲突升级、人物对话和情绪层次，确保结尾留下明确钩子。{contract_hint}{_name_hint}{_dup_hint}"
             )
 
     return SceneReviewResult(
@@ -2065,6 +2107,7 @@ def evaluate_scene_draft(
             identity_consistency=_clamp_score(_identity_score),
             pov_consistency=_clamp_score(_pov_score),
             transition_quality=_clamp_score(_transition_score),
+            duplication_score=_duplication_score_clamped,
         ),
         findings=findings,
         evidence_summary={
@@ -2084,6 +2127,8 @@ def evaluate_scene_draft(
             "scene_sequel_alignment": scene_sequel_alignment_score,
             "identity_violations": _identity_violation_count,
             "identity_consistency": _identity_score,
+            "duplication_score": _duplication_score_clamped,
+            "duplication_findings": list(duplication_findings or []),
             **contract_evidence,
         },
         rewrite_instructions=rewrite_instructions,
@@ -2101,6 +2146,8 @@ def evaluate_chapter_draft(
     genre: str | None = None,
     sub_genre: str | None = None,
     language: str | None = None,
+    duplication_score: float = 1.0,
+    duplication_findings: list[dict[str, Any]] | None = None,
 ) -> ChapterReviewResult:
     from bestseller.services.genre_review_profiles import resolve_genre_review_profile
 
@@ -2451,6 +2498,27 @@ def evaluate_chapter_draft(
             )
         )
 
+    _ch_dup_score = _clamp_score(float(duplication_score))
+    if duplication_findings:
+        for _df in duplication_findings:
+            _sev = str(_df.get("severity", "major"))
+            _msg = str(_df.get("message", ""))
+            if not _msg:
+                continue
+            findings.append(
+                ChapterReviewFinding(
+                    category="duplication",
+                    severity=(
+                        "high"
+                        if _sev == "critical"
+                        else ("medium" if _sev in {"major", "high"} else "low")
+                    ),
+                    message=_msg,
+                )
+            )
+    if _ch_dup_score < 1.0:
+        overall = _clamp_score(overall - (1.0 - _ch_dup_score) * 0.3)
+
     blocking_findings = [finding for finding in findings if finding.severity in {"high", "medium"}]
     verdict = "pass" if overall >= threshold and not blocking_findings else "rewrite"
     rewrite_instructions = None
@@ -2502,6 +2570,7 @@ def evaluate_chapter_draft(
             character_voice_distinction=_clamp_score(style),
             thematic_resonance=_clamp_score((goal + volume_mission_alignment) / 2),
             contract_alignment=contract_alignment,
+            duplication_score=_ch_dup_score,
         ),
         findings=findings,
         evidence_summary={
@@ -2607,6 +2676,146 @@ async def _load_chapter_context(
     return project, chapter, style_guide, scenes, draft
 
 
+async def _compute_scene_duplication_signal(
+    *,
+    session: AsyncSession,
+    project: ProjectModel,
+    chapter: ChapterModel,
+    scene: SceneCardModel,
+    draft: SceneDraftVersionModel,
+    warning_threshold: float = 0.35,
+    critical_threshold: float = 0.55,
+    pipeline_findings: list[dict[str, Any]] | None = None,
+) -> tuple[float, list[dict[str, Any]]]:
+    """Compute paraphrase-aware duplication signal for a scene draft.
+
+    Compares the current scene draft against:
+    - Earlier scenes in the same chapter (current drafts)
+    - The last few scenes of the previous chapter, when available
+
+    Returns a tuple of ``(duplication_score, findings)``. ``duplication_score``
+    is 1.0 when fully unique, dropping toward 0.0 as the max observed Jaccard
+    similarity approaches 1.0. ``findings`` is a list of dicts suitable for
+    injection into the scene reviewer finding stream.
+    """
+
+    if not (draft and draft.content_md):
+        return 1.0, []
+
+    try:
+        from bestseller.services.deduplication import compute_jaccard_similarity
+    except Exception:
+        return 1.0, []
+
+    prior_texts: list[tuple[int, int, str]] = []
+
+    # Earlier scenes in the same chapter (current drafts only).
+    try:
+        _earlier_result = await session.execute(
+            select(SceneCardModel.scene_number, SceneDraftVersionModel.content_md)
+            .join(
+                SceneDraftVersionModel,
+                SceneDraftVersionModel.scene_card_id == SceneCardModel.id,
+            )
+            .where(
+                SceneCardModel.chapter_id == chapter.id,
+                SceneCardModel.scene_number < scene.scene_number,
+                SceneDraftVersionModel.is_current.is_(True),
+            )
+        )
+        earlier_scene_rows = list(_earlier_result) if _earlier_result is not None else []
+    except Exception:
+        earlier_scene_rows = []
+    for scene_no, content in earlier_scene_rows:
+        if content and str(content).strip():
+            prior_texts.append((chapter.chapter_number, int(scene_no), str(content)))
+
+    # Tail scenes of the previous chapter (max 2) — catches cross-chapter echoes.
+    if chapter.chapter_number > 1:
+        try:
+            prev_chapter = await session.scalar(
+                select(ChapterModel).where(
+                    ChapterModel.project_id == project.id,
+                    ChapterModel.chapter_number == chapter.chapter_number - 1,
+                )
+            )
+        except Exception:
+            prev_chapter = None
+        if prev_chapter is not None:
+            try:
+                _prev_result = await session.execute(
+                    select(SceneCardModel.scene_number, SceneDraftVersionModel.content_md)
+                    .join(
+                        SceneDraftVersionModel,
+                        SceneDraftVersionModel.scene_card_id == SceneCardModel.id,
+                    )
+                    .where(
+                        SceneCardModel.chapter_id == prev_chapter.id,
+                        SceneDraftVersionModel.is_current.is_(True),
+                    )
+                    .order_by(SceneCardModel.scene_number.desc())
+                    .limit(2)
+                )
+                prev_rows = list(_prev_result) if _prev_result is not None else []
+            except Exception:
+                prev_rows = []
+            for scene_no, content in prev_rows:
+                if content and str(content).strip():
+                    prior_texts.append(
+                        (prev_chapter.chapter_number, int(scene_no), str(content))
+                    )
+
+    new_text = draft.content_md
+    max_similarity = 0.0
+    findings: list[dict[str, Any]] = []
+
+    # Merge pipeline-level findings (broad scope — all chapters in project)
+    for pf in pipeline_findings or []:
+        sim = float(pf.get("similarity") or 0.0)
+        if sim > max_similarity:
+            max_similarity = sim
+        findings.append(dict(pf))
+
+    if not prior_texts:
+        if max_similarity > 0:
+            return max(0.0, 1.0 - max_similarity), findings
+        return 1.0, findings
+    for ch_no, sc_no, existing_text in prior_texts:
+        similarity = compute_jaccard_similarity(new_text, existing_text)
+        if similarity > max_similarity:
+            max_similarity = similarity
+        if similarity >= critical_threshold:
+            findings.append(
+                {
+                    "severity": "critical",
+                    "similarity": round(similarity, 3),
+                    "chapter": ch_no,
+                    "scene": sc_no,
+                    "message": (
+                        f"[重复内容-严重] 与第{ch_no}章第{sc_no}场 Jaccard 相似度 {similarity:.1%}，"
+                        f"疑似大段复用。必须重写以提升场景差异度。"
+                    ),
+                }
+            )
+        elif similarity >= warning_threshold:
+            findings.append(
+                {
+                    "severity": "major",
+                    "similarity": round(similarity, 3),
+                    "chapter": ch_no,
+                    "scene": sc_no,
+                    "message": (
+                        f"[重复内容-警告] 与第{ch_no}章第{sc_no}场 Jaccard 相似度 {similarity:.1%}，"
+                        f"重复风险较高，请调整表达方式、动作细节与对白以拉开差异。"
+                    ),
+                }
+            )
+
+    # Map max Jaccard similarity → duplication_score (1.0 = unique).
+    duplication_score = max(0.0, 1.0 - max_similarity)
+    return duplication_score, findings
+
+
 async def review_scene_draft(
     session: AsyncSession,
     settings: AppSettings,
@@ -2641,6 +2850,20 @@ async def review_scene_draft(
         except ValueError:
             scene_context = None
 
+    _pipeline_dup_findings = (
+        list(getattr(scene_context, "pipeline_duplication_findings", []) or [])
+        if scene_context is not None
+        else []
+    )
+    duplication_score, duplication_findings = await _compute_scene_duplication_signal(
+        session=session,
+        project=project,
+        chapter=chapter,
+        scene=scene,
+        draft=draft,
+        pipeline_findings=_pipeline_dup_findings,
+    )
+
     review_result = evaluate_scene_draft(
         scene=scene,
         chapter=chapter,
@@ -2655,6 +2878,8 @@ async def review_scene_draft(
         pacing_target=getattr(scene_context, "pacing_target", None),
         subplot_schedule=getattr(scene_context, "subplot_schedule", None),
         swain_pattern=getattr(scene_context, "swain_pattern", None),
+        duplication_score=duplication_score,
+        duplication_findings=duplication_findings,
     )
 
     critic_response = render_scene_review_summary(
@@ -2812,6 +3037,119 @@ async def review_scene_draft(
     return review_result, report, quality, rewrite_task
 
 
+async def _compute_chapter_duplication_signal(
+    *,
+    session: AsyncSession,
+    project: ProjectModel,
+    chapter: ChapterModel,
+    draft: ChapterDraftVersionModel,
+    warning_threshold: float = 0.3,
+    critical_threshold: float = 0.5,
+    intra_paraphrase_threshold: float = 0.55,
+) -> tuple[float, list[dict[str, Any]]]:
+    """Compute paraphrase-aware duplication signal for an assembled chapter.
+
+    Combines two sources:
+    - Inter-chapter: Jaccard similarity vs. the last 3 prior chapters.
+    - Intra-chapter: paragraph-level paraphrase duplicate count.
+
+    Returns ``(duplication_score, findings)`` where 1.0 == perfectly unique.
+    """
+
+    if not (draft and draft.content_md):
+        return 1.0, []
+
+    try:
+        from bestseller.services.deduplication import (
+            compute_jaccard_similarity,
+            detect_intra_chapter_repetition,
+        )
+    except Exception:
+        return 1.0, []
+
+    findings: list[dict[str, Any]] = []
+    max_similarity = 0.0
+    new_text = draft.content_md
+
+    # Inter-chapter comparison against up to 3 previous chapters
+    if chapter.chapter_number > 1:
+        try:
+            _prior_result = await session.execute(
+                select(ChapterModel.chapter_number, ChapterDraftVersionModel.content_md)
+                .join(
+                    ChapterDraftVersionModel,
+                    ChapterDraftVersionModel.chapter_id == ChapterModel.id,
+                )
+                .where(
+                    ChapterModel.project_id == project.id,
+                    ChapterModel.chapter_number < chapter.chapter_number,
+                    ChapterDraftVersionModel.is_current.is_(True),
+                )
+                .order_by(ChapterModel.chapter_number.desc())
+                .limit(3)
+            )
+            prior_rows = list(_prior_result) if _prior_result is not None else []
+        except Exception:
+            prior_rows = []
+        for ch_no, existing_text in prior_rows:
+            if not existing_text:
+                continue
+            similarity = compute_jaccard_similarity(new_text, str(existing_text))
+            if similarity > max_similarity:
+                max_similarity = similarity
+            if similarity >= critical_threshold:
+                findings.append(
+                    {
+                        "severity": "critical",
+                        "similarity": round(similarity, 3),
+                        "chapter": int(ch_no),
+                        "message": (
+                            f"[章节重复-严重] 与第{int(ch_no)}章 Jaccard 相似度 {similarity:.1%}，"
+                            f"大量段落疑似复用。必须重写以提升差异度。"
+                        ),
+                    }
+                )
+            elif similarity >= warning_threshold:
+                findings.append(
+                    {
+                        "severity": "major",
+                        "similarity": round(similarity, 3),
+                        "chapter": int(ch_no),
+                        "message": (
+                            f"[章节重复-警告] 与第{int(ch_no)}章 Jaccard 相似度 {similarity:.1%}，"
+                            f"请调整段落结构、视角与叙事焦点以拉开差异。"
+                        ),
+                    }
+                )
+
+    # Intra-chapter paraphrase repetition (paragraph-level)
+    try:
+        intra_findings = detect_intra_chapter_repetition(
+            new_text,
+            paraphrase_threshold=intra_paraphrase_threshold,
+        )
+    except TypeError:
+        # Fallback for older signature without paraphrase_threshold kwarg
+        intra_findings = detect_intra_chapter_repetition(new_text)
+    if intra_findings:
+        findings.append(
+            {
+                "severity": "critical" if len(intra_findings) >= 5 else "major",
+                "similarity": None,
+                "chapter": chapter.chapter_number,
+                "message": (
+                    f"[章节内部重复] 检测到 {len(intra_findings)} 处段落级重复/近重复，"
+                    f"请删除或改写以消除 intra-chapter duplication。"
+                ),
+            }
+        )
+        # Penalize duplication_score proportional to duplicate-paragraph count
+        max_similarity = max(max_similarity, min(1.0, 0.35 + 0.05 * len(intra_findings)))
+
+    duplication_score = max(0.0, 1.0 - max_similarity)
+    return duplication_score, findings
+
+
 async def review_chapter_draft(
     session: AsyncSession,
     settings: AppSettings,
@@ -2836,6 +3174,13 @@ async def review_chapter_draft(
     except ValueError:
         chapter_context = None
 
+    ch_duplication_score, ch_duplication_findings = await _compute_chapter_duplication_signal(
+        session=session,
+        project=project,
+        chapter=chapter,
+        draft=draft,
+    )
+
     review_result = evaluate_chapter_draft(
         chapter=chapter,
         scenes=scenes,
@@ -2846,6 +3191,8 @@ async def review_chapter_draft(
         genre=project.genre,
         sub_genre=project.sub_genre,
         language=getattr(project, "language", None),
+        duplication_score=ch_duplication_score,
+        duplication_findings=ch_duplication_findings,
     )
 
     critic_response = render_chapter_review_summary(
@@ -3153,6 +3500,37 @@ async def rewrite_chapter_from_task(
         generation_mode = completion.provider
     else:
         content_md = strip_scaffolding_echoes(sanitize_novel_markdown_content(content_md))
+
+    # ── Post-rewrite intra-chapter deduplication ──
+    # Chapter rewrite LLMs occasionally echo large blocks verbatim (or near-verbatim).
+    # Without this cleanup, byte-identical and paraphrased paragraphs survive
+    # into the saved draft. Parity with assemble_chapter_draft.
+    try:
+        from bestseller.services.deduplication import (
+            clean_meta_text_markers,
+            detect_intra_chapter_repetition,
+            remove_intra_chapter_duplicates_paraphrase,
+        )
+
+        content_md, _meta_removed = clean_meta_text_markers(content_md)
+        if _meta_removed:
+            logger.info(
+                "rewrite_chapter %d: removed %d meta-text marker(s)",
+                chapter.chapter_number, _meta_removed,
+            )
+        _dup_findings = detect_intra_chapter_repetition(content_md)
+        if _dup_findings:
+            logger.warning(
+                "rewrite_chapter %d: %d duplicate paragraph(s) after rewrite \u2014 auto-removing",
+                chapter.chapter_number, len(_dup_findings),
+            )
+            content_md, _removed = remove_intra_chapter_duplicates_paraphrase(content_md)
+            logger.info(
+                "rewrite_chapter %d: removed %d duplicate paragraph(s)",
+                chapter.chapter_number, _removed,
+            )
+    except Exception:
+        logger.debug("Post-rewrite dedup failed (non-fatal)", exc_info=True)
 
     word_count = count_words(content_md)
     next_version = int(

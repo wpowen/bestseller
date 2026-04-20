@@ -1416,7 +1416,102 @@ async def build_scene_writer_context_from_models(
             unresolved_clues=unresolved_clues,
             chapter_number=chapter.chapter_number,
         ),
+        # Scene scope isolation: earlier scenes in this chapter are already written
+        scene_scope_isolation_block=await _build_scene_scope_isolation_block(
+            session,
+            chapter=chapter,
+            scene=scene,
+            is_en=_project_is_english(project),
+        ),
     )
+
+
+def _project_is_english(project: ProjectModel) -> bool:
+    """Return True when the project's language is an English variant."""
+    lang = (getattr(project, "language", None) or "").lower()
+    return lang.startswith("en") or "english" in lang
+
+
+async def _build_scene_scope_isolation_block(
+    session: AsyncSession,
+    *,
+    chapter: ChapterModel,
+    scene: SceneCardModel,
+    is_en: bool,
+) -> str | None:
+    """Build an isolation block listing earlier scenes of this chapter.
+
+    Tells the writer: "these scenes are already written — do not rewrite
+    or paraphrase them.  You are responsible ONLY for this scene's beats."
+    This is the direct fix for Cluster-A intra-chapter duplication, where
+    scene 2 rewrites scene 1's content.
+    """
+    from bestseller.infra.db.models import SceneCardModel as _SCM
+    from bestseller.infra.db.models import SceneDraftVersionModel as _SDM
+
+    try:
+        _result = await session.execute(
+            select(_SCM.scene_number, _SCM.title, _SDM.content_md)
+            .join(_SDM, _SDM.scene_card_id == _SCM.id, isouter=True)
+            .where(
+                _SCM.chapter_id == chapter.id,
+                _SCM.scene_number < scene.scene_number,
+                _SDM.is_current.is_(True),
+            )
+            .order_by(_SCM.scene_number.asc())
+        )
+        earlier_scenes = list(_result) if _result is not None else []
+    except (AttributeError, Exception):
+        return None
+    if not earlier_scenes:
+        return None
+
+    lines: list[str] = []
+    for sc_no, title, content in earlier_scenes:
+        if not content:
+            continue
+        snippet = str(content).strip().replace("\n", " ")[:200]
+        if is_en:
+            lines.append(
+                f"- Scene {int(sc_no)}{(' — ' + str(title)) if title else ''}: "
+                f"ALREADY WRITTEN. Excerpt (first 200 chars): {snippet}…"
+            )
+        else:
+            lines.append(
+                f"- 第 {int(sc_no)} 场{('·' + str(title)) if title else ''}："
+                f"已经写完，你不需要再写。摘录（前 200 字）：{snippet}…"
+            )
+    if not lines:
+        return None
+
+    if is_en:
+        header = (
+            f"=== Scene scope isolation — Chapter {chapter.chapter_number} Scene "
+            f"{scene.scene_number} ===\n"
+            f"The following earlier scenes in this chapter are ALREADY WRITTEN. "
+            f"You must NOT rewrite, paraphrase, summarize, or echo their "
+            f"content in this scene. Your job is to write the NEXT beat "
+            f"(scene {scene.scene_number}) only — starting from its entry state.\n"
+        )
+        footer = (
+            "\nScope reminder: if a beat (combat, argument, reveal, etc.) "
+            "already happened in an earlier scene above, do NOT replay or "
+            "re-explain it. Reference it briefly if needed, then move forward."
+        )
+    else:
+        header = (
+            f"=== 场景范围隔离 — 第 {chapter.chapter_number} 章 第 "
+            f"{scene.scene_number} 场 ===\n"
+            "以下这些本章中的「前序场景」已经写完。你【严禁】在本场景里重写、"
+            "改写、复述或回顾它们的内容。你当前的任务只是写下一个节拍——"
+            f"即第 {scene.scene_number} 场，从它的 entry_state 开始往后推。\n"
+        )
+        footer = (
+            "\n范围提醒：如果某个节拍（打斗、争吵、揭秘等）已经在上面的前序"
+            "场景中发生过了，你【不要】再演一遍或再解释一遍；可以简短 callback，"
+            "但必须向前推进到本场景自己的新事件。"
+        )
+    return header + "\n".join(lines) + footer
 
 
 def _compute_obligations_due(

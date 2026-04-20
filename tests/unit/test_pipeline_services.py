@@ -78,12 +78,15 @@ def build_settings():
 
 
 def build_project() -> ProjectModel:
+    # target_chapters kept <= PROGRESSIVE_CHAPTER_THRESHOLD so autowrite tests
+    # exercising the non-progressive path aren't silently rerouted by the
+    # target-based trigger in run_autowrite_pipeline.
     project = ProjectModel(
         slug="my-story",
         title="My Story",
         genre="fantasy",
-        target_word_count=120000,
-        target_chapters=60,
+        target_word_count=60000,
+        target_chapters=30,
         metadata_json={},
     )
     project.id = uuid4()
@@ -1794,3 +1797,103 @@ async def test_run_autowrite_pipeline_runs_auto_repair_and_reports_outputs(
     assert "auto_repair_started" in progress_events
     assert "auto_repair_completed" in progress_events
     assert progress_events[-1] == "autowrite_completed"
+
+
+def test_should_use_progressive_pipeline_routes_large_target_chapters() -> None:
+    """target_chapters > threshold picks the progressive path even when the
+    setting is off — this is the bug that stalled large books during self-heal
+    (web used the threshold, worker used the setting, default False)."""
+    settings = build_settings()
+    settings.pipeline.progressive_planning = False
+
+    small = pipeline_services.ProjectCreate(
+        slug="small", title="small", genre="fantasy",
+        target_word_count=30000, target_chapters=30,
+    )
+    assert pipeline_services._should_use_progressive_pipeline(settings, small) is False
+
+    at_threshold = pipeline_services.ProjectCreate(
+        slug="edge", title="edge", genre="fantasy",
+        target_word_count=30000,
+        target_chapters=pipeline_services.PROGRESSIVE_CHAPTER_THRESHOLD,
+    )
+    assert pipeline_services._should_use_progressive_pipeline(settings, at_threshold) is False
+
+    large = pipeline_services.ProjectCreate(
+        slug="large", title="large", genre="fantasy",
+        target_word_count=2000000,
+        target_chapters=pipeline_services.PROGRESSIVE_CHAPTER_THRESHOLD + 1,
+    )
+    assert pipeline_services._should_use_progressive_pipeline(settings, large) is True
+
+
+def test_should_use_progressive_pipeline_respects_explicit_setting() -> None:
+    """Explicit progressive_planning=True wins over a small target."""
+    settings = build_settings()
+    settings.pipeline.progressive_planning = True
+
+    small = pipeline_services.ProjectCreate(
+        slug="small", title="small", genre="fantasy",
+        target_word_count=10000, target_chapters=10,
+    )
+    assert pipeline_services._should_use_progressive_pipeline(settings, small) is True
+
+
+def test_should_use_progressive_pipeline_handles_missing_target() -> None:
+    """A missing target_chapters attribute must not trip the progressive path
+    (defensive — ProjectCreate's validator already forbids zero, but other
+    payload shapes might omit the field)."""
+    settings = build_settings()
+    settings.pipeline.progressive_planning = False
+
+    class _PayloadWithoutTarget:
+        slug = "x"
+
+    assert pipeline_services._should_use_progressive_pipeline(
+        settings, _PayloadWithoutTarget()
+    ) is False
+
+
+@pytest.mark.asyncio
+async def test_run_autowrite_pipeline_reroutes_large_target_to_progressive(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When target_chapters exceeds the threshold, run_autowrite_pipeline
+    must delegate to run_progressive_autowrite_pipeline even if the setting
+    is off. Regression guard for the web/worker routing divergence."""
+    settings = build_settings()
+    settings.pipeline.progressive_planning = False
+
+    sentinel = object()
+    captured: dict[str, object] = {}
+
+    async def fake_progressive(session, settings_arg, **kwargs):
+        captured["called"] = True
+        captured["target_chapters"] = kwargs["project_payload"].target_chapters
+        return sentinel
+
+    async def fake_non_progressive_guard(*args, **kwargs):
+        raise AssertionError("non-progressive path should not be used for large targets")
+
+    monkeypatch.setattr(
+        pipeline_services,
+        "run_progressive_autowrite_pipeline",
+        fake_progressive,
+    )
+    monkeypatch.setattr(pipeline_services, "generate_novel_plan", fake_non_progressive_guard)
+
+    payload = pipeline_services.ProjectCreate(
+        slug="huge", title="huge", genre="fantasy",
+        target_word_count=2000000,
+        target_chapters=pipeline_services.PROGRESSIVE_CHAPTER_THRESHOLD + 1,
+    )
+    result = await pipeline_services.run_autowrite_pipeline(
+        FakeSession(),
+        settings,
+        project_payload=payload,
+        premise="premise",
+    )
+
+    assert result is sentinel
+    assert captured["called"] is True
+    assert captured["target_chapters"] == pipeline_services.PROGRESSIVE_CHAPTER_THRESHOLD + 1

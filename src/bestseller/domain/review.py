@@ -50,6 +50,10 @@ class SceneReviewScores(BaseModel):
     # ── Scene transition quality ──
     transition_quality: float = Field(default=0.5, ge=0, le=1)
 
+    # ── Duplication / diversity (Jaccard-shingle based) ──
+    # 1.0 = perfectly unique scene; < 1.0 = shares content with prior scenes.
+    duplication_score: float = Field(default=1.0, ge=0, le=1)
+
 
 class SceneReviewResult(BaseModel):
     verdict: str = Field(min_length=1, max_length=16)
@@ -82,6 +86,8 @@ class ChapterReviewScores(BaseModel):
     character_voice_distinction: float = Field(ge=0, le=1)
     thematic_resonance: float = Field(ge=0, le=1)
     contract_alignment: float = Field(ge=0, le=1)
+    # ── Duplication / diversity (Jaccard-shingle based on assembled chapter) ──
+    duplication_score: float = Field(default=1.0, ge=0, le=1)
 
 
 class ChapterReviewResult(BaseModel):

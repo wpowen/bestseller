@@ -35,6 +35,8 @@ class _FakeProject:
     id: Any
     slug: str
     metadata_json: dict[str, Any] = field(default_factory=dict)
+    target_chapters: int = 0
+    status: str = "writing"
 
 
 @dataclass
@@ -329,6 +331,76 @@ async def test_find_stuck_projects_ignores_complete_projects(now: _dt.datetime) 
     """Every chapter has a current draft — nothing to heal."""
     p = _FakeProject(id=uuid4(), slug="book-4")
     chapters = [_FakeChapter(id=uuid4(), project_id=p.id) for _ in range(3)]
+    drafts = [_FakeDraft(id=uuid4(), chapter_id=c.id, is_current=True) for c in chapters]
+    session = _FakeSession(projects=[p], runs=[], chapters=chapters, drafts=drafts)
+
+    assert await find_stuck_projects(session) == []
+
+
+@pytest.mark.asyncio
+async def test_find_stuck_projects_detects_under_target_chapters(
+    now: _dt.datetime,
+) -> None:
+    """A project still in a writing state whose total chapter rows are
+    below the planned ``target_chapters`` is stuck — the outer pipeline
+    exited early before later volumes could be materialized, so every
+    existing chapter row correctly has a draft but the book is nowhere
+    near its planned length.
+    """
+    p = _FakeProject(
+        id=uuid4(),
+        slug="book-under-target",
+        target_chapters=800,
+        status="writing",
+    )
+    chapters = [_FakeChapter(id=uuid4(), project_id=p.id) for _ in range(150)]
+    drafts = [_FakeDraft(id=uuid4(), chapter_id=c.id, is_current=True) for c in chapters]
+    session = _FakeSession(projects=[p], runs=[], chapters=chapters, drafts=drafts)
+
+    stuck = await find_stuck_projects(session)
+
+    assert len(stuck) == 1
+    assert stuck[0].slug == "book-under-target"
+    assert stuck[0].reason == "under_target_chapters"
+    assert stuck[0].stuck_at_chapter == 151
+    assert stuck[0].chapters_total == 150
+    assert stuck[0].chapters_with_draft == 150
+
+
+@pytest.mark.asyncio
+async def test_find_stuck_projects_skips_under_target_when_completed(
+    now: _dt.datetime,
+) -> None:
+    """A project the user marked ``completed`` must not be auto-resumed,
+    even if its chapter count is below ``target_chapters``. Otherwise the
+    self-healer would override an explicit user decision to stop writing.
+    """
+    p = _FakeProject(
+        id=uuid4(),
+        slug="book-completed-short",
+        target_chapters=800,
+        status="completed",
+    )
+    chapters = [_FakeChapter(id=uuid4(), project_id=p.id) for _ in range(50)]
+    drafts = [_FakeDraft(id=uuid4(), chapter_id=c.id, is_current=True) for c in chapters]
+    session = _FakeSession(projects=[p], runs=[], chapters=chapters, drafts=drafts)
+
+    assert await find_stuck_projects(session) == []
+
+
+@pytest.mark.asyncio
+async def test_find_stuck_projects_ignores_at_target_project(
+    now: _dt.datetime,
+) -> None:
+    """A project whose chapter rows exactly match ``target_chapters`` is
+    complete and must not be flagged under-target."""
+    p = _FakeProject(
+        id=uuid4(),
+        slug="book-full",
+        target_chapters=10,
+        status="writing",
+    )
+    chapters = [_FakeChapter(id=uuid4(), project_id=p.id) for _ in range(10)]
     drafts = [_FakeDraft(id=uuid4(), chapter_id=c.id, is_current=True) for c in chapters]
     session = _FakeSession(projects=[p], runs=[], chapters=chapters, drafts=drafts)
 

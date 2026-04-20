@@ -1256,3 +1256,230 @@ async def test_rewrite_chapter_from_task_creates_new_version(
     assert completed_task.status == "completed"
     assert completed_task.metadata_json["rewritten_chapter_draft_id"] == str(new_draft.id)
     assert chapter.status == "review"
+
+
+# ---------------------------------------------------------------------------
+# Layer 1 — duplication_score / duplication_findings wiring into review
+# ---------------------------------------------------------------------------
+
+def _build_solid_scene_draft() -> tuple[SimpleNamespace, SimpleNamespace, SimpleNamespace]:
+    """Return (scene, chapter, draft) representing a scene that would normally pass."""
+    scene = SimpleNamespace(
+        target_word_count=300,
+        scene_type="confrontation",
+        participants=["沈砚", "顾临"],
+        purpose={"story": "逼出黑匣子真相", "emotion": "警觉转冷怒"},
+        scene_number=3,
+    )
+    chapter = SimpleNamespace(chapter_number=1, chapter_goal="逼近黑匣子真相")
+    draft = SimpleNamespace(
+        content_md=(
+            "顾临把黑匣子摔在桌上，铁壳震得茶杯轻响。\n\n"
+            "“缺的那几页呢？”沈砚盯着他，手背青筋绷起。\n\n"
+            "顾临没回答，只把舱门反锁，冷冷问他昨夜到底把消息递给了谁。\n\n"
+            "桌上的航图被翻开，撕裂口整整齐齐，最关键的禁航航线记录果然被人提前取走。\n\n"
+            "沈砚本来还想压着火气谈条件，这一刻却彻底沉了脸。"
+            "两个人谁也不肯先退，空气像被绞紧。\n\n"
+            "就在顾临伸手去摸腰后的配枪时，门外忽然响起了不属于他们的脚步声。"
+        ),
+        word_count=320,
+    )
+    return scene, chapter, draft
+
+
+def test_evaluate_scene_draft_preserves_pass_when_no_duplication() -> None:
+    """Without any duplication signal, scores.duplication_score stays at 1.0."""
+    scene, chapter, draft = _build_solid_scene_draft()
+    scene_contract = SimpleNamespace(
+        contract_summary="本场要逼出黑匣子缺页真相，并让合作关系转向互相戒备。",
+        core_conflict="沈砚要求顾临交出缺失页，顾临坚持先确认谁在泄密。",
+        emotional_shift="从试探配合转向冷硬对峙。",
+        information_release="黑匣子被人为拆走了记录禁航航线的几页。",
+        tail_hook="门外突然传来第三个人的脚步声。",
+    )
+
+    result = evaluate_scene_draft(
+        scene=scene,
+        chapter=chapter,
+        draft=draft,
+        settings=build_settings(),
+        scene_contract=scene_contract,
+    )
+
+    assert result.scores.duplication_score == 1.0
+    assert all(f.category != "duplication" for f in result.findings)
+    assert result.evidence_summary["duplication_score"] == 1.0
+    assert result.evidence_summary["duplication_findings"] == []
+
+
+def test_evaluate_scene_draft_flips_to_rewrite_on_duplication_findings() -> None:
+    """A critical duplication finding should force the verdict to rewrite."""
+    scene, chapter, draft = _build_solid_scene_draft()
+    scene_contract = SimpleNamespace(
+        contract_summary="本场要逼出黑匣子缺页真相，并让合作关系转向互相戒备。",
+        core_conflict="沈砚要求顾临交出缺失页，顾临坚持先确认谁在泄密。",
+        emotional_shift="从试探配合转向冷硬对峙。",
+        information_release="黑匣子被人为拆走了记录禁航航线的几页。",
+        tail_hook="门外突然传来第三个人的脚步声。",
+    )
+    dup_findings = [
+        {
+            "severity": "critical",
+            "message": "本场开头与第1章第2场高度雷同（Jaccard=0.82）。",
+        }
+    ]
+
+    result = evaluate_scene_draft(
+        scene=scene,
+        chapter=chapter,
+        draft=draft,
+        settings=build_settings(),
+        scene_contract=scene_contract,
+        duplication_score=0.2,
+        duplication_findings=dup_findings,
+    )
+
+    assert result.verdict == "rewrite"
+    assert result.scores.duplication_score == pytest.approx(0.2, abs=1e-6)
+    dup_finding_objs = [f for f in result.findings if f.category == "duplication"]
+    assert len(dup_finding_objs) == 1
+    assert dup_finding_objs[0].severity == "critical"
+    assert result.rewrite_instructions is not None
+    assert "重复" in result.rewrite_instructions or "repetition" in result.rewrite_instructions.lower()
+
+
+def test_evaluate_scene_draft_duplication_score_penalty_reflects_in_overall() -> None:
+    """overall score drops by (1 - duplication_score) * 0.3 when duplication present."""
+    scene, chapter, draft = _build_solid_scene_draft()
+    result_clean = evaluate_scene_draft(
+        scene=scene,
+        chapter=chapter,
+        draft=draft,
+        settings=build_settings(),
+    )
+    result_dup = evaluate_scene_draft(
+        scene=scene,
+        chapter=chapter,
+        draft=draft,
+        settings=build_settings(),
+        duplication_score=0.5,
+        duplication_findings=[{"severity": "major", "message": "段落重复。"}],
+    )
+    # Penalty should be (1 - 0.5) * 0.3 = 0.15 — clamped to [0, 1]
+    expected_drop = (1.0 - 0.5) * 0.3
+    assert result_dup.scores.overall <= result_clean.scores.overall - expected_drop + 0.02
+
+
+def test_evaluate_chapter_draft_flips_to_rewrite_on_duplication_findings() -> None:
+    """Chapter-level duplication findings should also force rewrite."""
+    chapter = SimpleNamespace(
+        chapter_number=3,
+        title="静默航道",
+        chapter_goal="推进调查",
+        target_word_count=1800,
+    )
+    scenes = [
+        SimpleNamespace(scene_number=1, title="旧搭档回舰"),
+        SimpleNamespace(scene_number=2, title="封锁解除"),
+    ]
+    # Build a plausibly passing chapter body
+    body = (
+        "# 第3章 静默航道\n\n"
+        "## 场景 1：旧搭档回舰\n\n"
+        "顾临踩着积水穿过码头，甲板上的探照灯一遍遍扫过船身。"
+        "他抬起手按住耳机，低声应答：\"位置已经确认。\"\n\n"
+        "沈砚从阴影里走出来，船舱的铁锈味混着雨气往鼻腔里钻。"
+        "两个人交换了一个眼神，老旧的默契回到了指尖。\n\n"
+        "## 场景 2：封锁解除\n\n"
+        + ("顾临把手里的令牌按上控制台，红灯转黄再转绿，栅门缓缓抬起。\n\n" * 40)
+    )
+    draft = SimpleNamespace(content_md=body, word_count=1820)
+    dup_findings = [
+        {
+            "severity": "critical",
+            "message": "本章与第2章高度重复（Jaccard=0.78）。",
+        }
+    ]
+
+    result = evaluate_chapter_draft(
+        chapter=chapter,
+        scenes=scenes,
+        draft=draft,
+        settings=build_settings(),
+        duplication_score=0.22,
+        duplication_findings=dup_findings,
+    )
+
+    assert result.verdict == "rewrite"
+    assert result.scores.duplication_score == pytest.approx(0.22, abs=1e-6)
+    dup_finding_objs = [f for f in result.findings if f.category == "duplication"]
+    assert len(dup_finding_objs) == 1
+    # Chapter-level mapping: "critical" → "high" (severity schema differs from scenes)
+    assert dup_finding_objs[0].severity == "high"
+
+
+def test_evaluate_chapter_draft_preserves_pass_when_no_duplication() -> None:
+    """Without duplication, chapter duplication_score stays at 1.0."""
+    chapter = SimpleNamespace(
+        chapter_number=3,
+        title="静默航道",
+        chapter_goal="推进调查",
+        target_word_count=1800,
+    )
+    scenes = [
+        SimpleNamespace(scene_number=1, title="旧搭档回舰"),
+    ]
+    body = (
+        "# 第3章 静默航道\n\n"
+        "## 场景 1：旧搭档回舰\n\n"
+        + ("顾临把手里的令牌按上控制台，红灯转黄再转绿，栅门缓缓抬起。\n\n" * 40)
+    )
+    draft = SimpleNamespace(content_md=body, word_count=1820)
+
+    result = evaluate_chapter_draft(
+        chapter=chapter,
+        scenes=scenes,
+        draft=draft,
+        settings=build_settings(),
+    )
+
+    assert result.scores.duplication_score == 1.0
+    assert all(f.category != "duplication" for f in result.findings)
+
+
+def test_evaluate_scene_draft_unknown_severity_downgrades_to_major() -> None:
+    """Unknown severity strings should normalize to 'major' (defensive mapping)."""
+    scene, chapter, draft = _build_solid_scene_draft()
+    result = evaluate_scene_draft(
+        scene=scene,
+        chapter=chapter,
+        draft=draft,
+        settings=build_settings(),
+        duplication_score=0.6,
+        duplication_findings=[
+            {"severity": "unknown-sev", "message": "可疑重复片段。"},
+        ],
+    )
+    dup_finding_objs = [f for f in result.findings if f.category == "duplication"]
+    assert len(dup_finding_objs) == 1
+    assert dup_finding_objs[0].severity == "major"
+
+
+def test_evaluate_scene_draft_skips_duplication_finding_with_empty_message() -> None:
+    """Findings with empty message should be silently skipped."""
+    scene, chapter, draft = _build_solid_scene_draft()
+    result = evaluate_scene_draft(
+        scene=scene,
+        chapter=chapter,
+        draft=draft,
+        settings=build_settings(),
+        duplication_score=0.4,
+        duplication_findings=[
+            {"severity": "major", "message": ""},
+            {"severity": "major", "message": "有效的重复提示。"},
+        ],
+    )
+    dup_finding_objs = [f for f in result.findings if f.category == "duplication"]
+    # Only the non-empty message is attached
+    assert len(dup_finding_objs) == 1
+    assert dup_finding_objs[0].message == "有效的重复提示。"

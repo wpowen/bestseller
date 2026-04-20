@@ -51,6 +51,107 @@ def test_seed_scene_metadata_skips_conflict_tuple_when_text_is_generic() -> None
 
 
 # ---------------------------------------------------------------------------
+# env_7d classifier
+# ---------------------------------------------------------------------------
+
+def test_seed_scene_metadata_classifies_env_7d_from_prose() -> None:
+    card = {
+        "title": "地下深夜潜行",
+        "chapter_goal": (
+            "深夜，主角独自潜入地下密室，手持火把，漆黑的甬道里只有脚步声回荡；"
+            "他蹑手蹑脚，屏住呼吸。"
+        ),
+    }
+    seed = seed_scene_metadata(card)
+    env = seed.get("env_7d")
+    assert env is not None, "env_7d should be emitted when keywords match"
+    assert env["physical_space"] == "underground"
+    assert env["time_of_day"] == "deep_night"
+    assert env["weather_light"] == "artificial_light"
+    # "脚步声回荡" → sound wins over "独自" on sight
+    assert env["dominant_sense"] in ("sound", "sight")
+    assert env["social_density"] == "alone"
+
+
+def test_seed_scene_metadata_env_7d_detects_storm_over_mountain() -> None:
+    card = {
+        "chapter_goal": (
+            "黄昏时分，两人站在山巅，暴风雨骤起，狂风呼啸着掠过峰顶，"
+            "远处雷暴翻滚。"
+        )
+    }
+    seed = seed_scene_metadata(card)
+    env = seed.get("env_7d")
+    assert env is not None
+    assert env["time_of_day"] == "dusk"
+    assert env["weather_light"] == "storm"
+    assert env["vertical_enclosure"] == "elevated_open"
+    assert env["social_density"] == "dyad"
+
+
+def test_seed_scene_metadata_env_7d_requires_at_least_two_dims() -> None:
+    # Only one classifier hit ("夜") → result should be dropped.
+    card = {"chapter_goal": "日常"}  # no env keywords at all
+    seed = seed_scene_metadata(card)
+    assert "env_7d" not in seed
+
+
+def test_seed_scene_metadata_env_7d_montage_time_scale() -> None:
+    card = {
+        "chapter_goal": "数日后的清晨，一行人离开山林，街巷熙攘，人群川流不息。",
+    }
+    seed = seed_scene_metadata(card)
+    env = seed.get("env_7d")
+    assert env is not None
+    assert env["tempo_scale"] == "montage"
+    assert env["social_density"] == "anonymous_crowd"
+
+
+# ---------------------------------------------------------------------------
+# Expanded hook-type classifier
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize(
+    "hook_text,expected",
+    [
+        ("身份彻底暴露，再也无法隐瞒", "revelation"),
+        ("原来是他一手策划，真面目终于浮现", "revelation"),
+        ("峰回路转，局势出乎意料地逆转", "twist"),
+        ("九死一生，他命悬一线", "crisis"),
+        # "imminent specific threat" now collapses into crisis per CLIFFHANGER_TYPES
+        ("黑影步步紧逼，杀机将至", "crisis"),
+        # "abruptly/suddenly happens" maps to `sudden`
+        ("骤然炸裂一声巨响，所有人都愣住了", "sudden"),
+        # decision/choice pivot now falls under `emotional` (内心重击)
+        ("他咬牙下定决心，做出了抉择", "emotional"),
+        ("她泪流满面，心碎成无数片", "emotional"),
+        # mystery signals now collapse into suspense
+        ("诡异的氛围让人不对劲，蹊跷之处愈发明显", "suspense"),
+        ("戛然而止，留下悬而未决的余音", "suspense"),
+        # philosophical open question
+        ("何为正道？他望着苍生，陷入沉思", "philosophical"),
+    ],
+)
+def test_classify_hook_type_expanded_keywords(hook_text: str, expected: str) -> None:
+    seed = seed_chapter_metadata({"next_chapter_hook": hook_text}, 50, 100)
+    assert seed.get("hook_type") == expected, (
+        f"text={hook_text!r} got={seed.get('hook_type')!r} expected={expected!r}"
+    )
+    assert seed["hook_type"] in CLIFFHANGER_TYPES
+
+
+def test_classify_hook_type_real_chapter_tail_sample() -> None:
+    # Representative chapter ending drawn from a web-novel style: should classify
+    # as crisis, not fall through to None.
+    tail = (
+        "他死死咬牙，鲜血顺着嘴角流下，绝境之中，命悬一线。"
+        "远处传来追兵的喊杀声——下一个瞬间，他知道自己再也撑不住了。"
+    )
+    seed = seed_chapter_metadata({"next_chapter_hook": tail}, 30, 100)
+    assert seed.get("hook_type") == "crisis"
+
+
+# ---------------------------------------------------------------------------
 # seed_chapter_metadata
 # ---------------------------------------------------------------------------
 

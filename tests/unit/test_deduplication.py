@@ -13,6 +13,7 @@ from bestseller.services.deduplication import (
     detect_intra_chapter_repetition,
     extract_frequent_phrases,
     remove_intra_chapter_duplicates,
+    remove_intra_chapter_duplicates_paraphrase,
 )
 
 pytestmark = pytest.mark.unit
@@ -318,3 +319,70 @@ def test_opening_diversity_block_en() -> None:
 
 def test_opening_diversity_block_empty() -> None:
     assert build_opening_diversity_block([], language="zh-CN") == ""
+
+
+# ---------------------------------------------------------------------------
+# Paraphrase-aware intra-chapter dedup (Layer 0 root fix)
+# ---------------------------------------------------------------------------
+
+_PARAPHRASED_CHAPTER = """\
+# 第170章：遗跡深处
+
+宁尘迈步向前，踏入幽暗的石廊之中。空气潮湿而厚重，仿佛被时间压榨过无数次。
+
+他伸手抚上石壁，粗糙的纹路在指尖下流淌，宛如古老的鳞片。脚下的回音一阵一阵地弹回耳膜。
+
+这是一段不会被认为重复的文字，内容与其他段落完全不同，描写的是完全不同的场景细节。
+
+宁尘迈步向前，踏入幽暗的石廊之中。空气潮湿而厚重，仿佛被无数时间压榨过。
+
+他伸手抚上石壁，粗糙的纹路在指尖下流淌，宛如古老的鳞片。脚下的回音一阵一阵地弹着回耳膜。
+"""
+
+
+def test_detect_intra_chapter_repetition_paraphrase() -> None:
+    """Paraphrased paragraphs should be caught by the shingle-based detector."""
+    findings = detect_intra_chapter_repetition(
+        _PARAPHRASED_CHAPTER,
+        paraphrase_threshold=0.45,
+    )
+    # Expect at least one paraphrase finding (the 2 near-identical paragraphs)
+    assert len(findings) >= 1
+    # Paraphrased duplicates are less severe than byte-exact ones; accept either major or critical
+    assert all(f.get("severity") in {"major", "critical"} for f in findings)
+
+
+def test_remove_intra_chapter_duplicates_paraphrase_removes_rewrites() -> None:
+    """Paraphrased duplicate paragraphs should be removed by the paraphrase-aware cleaner."""
+    cleaned, removed = remove_intra_chapter_duplicates_paraphrase(
+        _PARAPHRASED_CHAPTER,
+        paraphrase_threshold=0.45,
+    )
+    assert removed >= 1
+    # The non-duplicate sentinel sentence should survive
+    assert "内容与其他段落完全不同" in cleaned
+    # Header should survive
+    assert "# 第170章" in cleaned
+
+
+def test_remove_intra_chapter_duplicates_paraphrase_clean_chapter() -> None:
+    """A clean chapter should pass through untouched (removed == 0)."""
+    cleaned, removed = remove_intra_chapter_duplicates_paraphrase(_CLEAN_CHAPTER)
+    assert removed == 0
+    assert cleaned.strip() == _CLEAN_CHAPTER.strip()
+
+
+def test_remove_intra_chapter_duplicates_paraphrase_empty() -> None:
+    cleaned, removed = remove_intra_chapter_duplicates_paraphrase("")
+    assert cleaned == ""
+    assert removed == 0
+
+
+def test_detect_intra_chapter_repetition_accepts_threshold_kwarg() -> None:
+    """Regression guard: reviewer passes paraphrase_threshold explicitly."""
+    # Should not raise; equivalent behavior with or without the kwarg on byte-exact duplicates
+    findings_with_kwarg = detect_intra_chapter_repetition(
+        _REPEATED_CHAPTER, paraphrase_threshold=0.55
+    )
+    findings_default = detect_intra_chapter_repetition(_REPEATED_CHAPTER)
+    assert len(findings_with_kwarg) == len(findings_default)

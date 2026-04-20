@@ -293,9 +293,12 @@ def test_load_from_disk_fails_zombies_without_payload(tmp_path: Path) -> None:
     assert manager._pending_auto_resume_ids == []  # noqa: SLF001
 
 
-def test_auto_resume_zombies_spawns_worker_thread(
+def test_auto_resume_zombies_delegates_without_redis(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Without a Redis URL (test / single-node env) autowrite zombies are
+    still delegated — never spawned as a competing thread.
+    """
     persist_path = _write_persisted_tasks(
         tmp_path,
         [
@@ -323,21 +326,21 @@ def test_auto_resume_zombies_spawns_worker_thread(
 
     monkeypatch.setattr(web_server.WebTaskManager, "_run_autowrite_worker", fake_worker)
 
-    resumed = manager.auto_resume_zombies()
+    delegated = manager.auto_resume_zombies()
 
-    assert resumed == ["z-run"]
+    assert delegated == ["z-run"]
     # The pending list is cleared after a successful call (idempotent).
     assert manager._pending_auto_resume_ids == []  # noqa: SLF001
-
-    # Wait briefly for the worker thread to observe the call.
+    # No thread should be spawned anymore — worker self-heal owns resume.
     import time as _time
 
-    deadline = _time.time() + 2.0
-    while not invocations and _time.time() < deadline:
-        _time.sleep(0.02)
+    _time.sleep(0.1)
+    assert invocations == []
 
-    assert invocations and invocations[0][0] == "z-run"
-    assert invocations[0][1]["slug"] == "demo"
+    task = manager.get_task("z-run")
+    assert task is not None
+    assert task["status"] == "running"
+    assert task["current_stage"] == "delegated_to_worker_self_heal"
 
 
 def test_auto_resume_zombies_idempotent_when_nothing_pending(tmp_path: Path) -> None:
@@ -348,14 +351,14 @@ def test_auto_resume_zombies_idempotent_when_nothing_pending(tmp_path: Path) -> 
     assert manager.auto_resume_zombies() == []
 
 
-def test_auto_resume_zombies_delegates_to_worker_when_heal_active(
+def test_auto_resume_zombies_delegates_both_heal_owned_and_orphan(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """If worker self-heal already owns the slug (arq heal job present in
-    Redis), the web auto-resume must NOT spawn a competing thread —
-    otherwise both paths fight for ``characters`` row-locks and one
-    crashes with ``LockNotAvailableError``. The task should flip to
-    ``running`` with a ``delegated_to_worker_self_heal`` marker instead.
+    """All autowrite zombies get delegated — no thread spawn for either the
+    heal-owned slug OR the orphan slug. Worker self-heal is authoritative;
+    if it didn't pick up the orphan, the project is already terminal in DB
+    (completed / awaiting human / active elsewhere) and spawning a web
+    thread would only cause row-lock collisions.
     """
     persist_path = _write_persisted_tasks(
         tmp_path,
@@ -389,7 +392,9 @@ def test_auto_resume_zombies_delegates_to_worker_when_heal_active(
 
     manager = web_server.WebTaskManager(persist_path=persist_path)
 
-    # Stub out the Redis lookup: novel-a is heal-owned, novel-b is not.
+    # Stub the scan-wait to return instantly, and the key scan to report
+    # only novel-a as heal-owned.
+    monkeypatch.setattr(web_server, "_wait_for_self_heal_scan", lambda _url, **_kw: True)
     monkeypatch.setattr(
         web_server,
         "_fetch_heal_owned_slugs",
@@ -403,38 +408,36 @@ def test_auto_resume_zombies_delegates_to_worker_when_heal_active(
 
     monkeypatch.setattr(web_server.WebTaskManager, "_run_autowrite_worker", fake_worker)
 
-    resumed = manager.auto_resume_zombies(redis_url="redis://stub")
+    delegated = manager.auto_resume_zombies(redis_url="redis://stub")
 
-    # Only novel-b gets a web thread; novel-a is delegated to worker heal.
-    assert resumed == ["z-orphan"]
-
-    # Wait for the spawned thread to invoke.
+    # Both tasks delegated — neither spawns a thread.
+    assert sorted(delegated) == ["z-heal-owned", "z-orphan"]
     import time as _time
 
-    deadline = _time.time() + 2.0
-    while not invocations and _time.time() < deadline:
-        _time.sleep(0.02)
-    assert invocations == ["z-orphan"]
+    _time.sleep(0.1)
+    assert invocations == []
 
-    # The heal-owned task is now "running" with the delegation marker so
-    # the UI can render it correctly while the Redis progress bridge syncs
-    # subsequent stages.
-    heal_owned = manager.get_task("z-heal-owned")
-    assert heal_owned is not None
-    assert heal_owned["status"] == "running"
-    assert heal_owned["current_stage"] == "delegated_to_worker_self_heal"
-    # A marker event was appended so the dashboard timeline shows the takeover.
-    stages = [evt.get("stage") for evt in heal_owned["progress_events"]]
-    assert "delegated_to_worker_self_heal" in stages
+    for tid, expected_heal_owned in (("z-heal-owned", True), ("z-orphan", False)):
+        task = manager.get_task(tid)
+        assert task is not None
+        assert task["status"] == "running"
+        assert task["current_stage"] == "delegated_to_worker_self_heal"
+        # Last progress event's payload records whether worker owns the slug.
+        last_event = next(
+            e for e in reversed(task["progress_events"])
+            if e.get("stage") == "delegated_to_worker_self_heal"
+        )
+        assert last_event["payload"]["heal_owned"] is expected_heal_owned
 
 
-def test_auto_resume_zombies_falls_back_when_redis_unreachable(
+def test_auto_resume_zombies_delegates_when_redis_unreachable(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """If Redis can't be scanned (e.g. startup race, network blip), the
-    heal-owner check returns an empty set and auto-resume proceeds with
-    the legacy behavior — fail-open rather than stranding tasks in
-    ``queued`` forever.
+    """If Redis can't be scanned (e.g. startup race, network blip), web
+    still delegates — NEVER spawns threads. Trust worker's self-heal to
+    pick the slug up when Redis comes back; the old fail-open path was
+    the direct cause of the LockNotAvailableError collisions we saw on
+    every container restart.
     """
     persist_path = _write_persisted_tasks(
         tmp_path,
@@ -456,7 +459,8 @@ def test_auto_resume_zombies_falls_back_when_redis_unreachable(
 
     manager = web_server.WebTaskManager(persist_path=persist_path)
 
-    # Simulate a Redis outage: the helper returns an empty set.
+    # Simulate a Redis outage: marker wait times out, scan returns empty.
+    monkeypatch.setattr(web_server, "_wait_for_self_heal_scan", lambda _url, **_kw: False)
     monkeypatch.setattr(web_server, "_fetch_heal_owned_slugs", lambda _url: set())
 
     invocations: list[str] = []
@@ -466,15 +470,19 @@ def test_auto_resume_zombies_falls_back_when_redis_unreachable(
 
     monkeypatch.setattr(web_server.WebTaskManager, "_run_autowrite_worker", fake_worker)
 
-    resumed = manager.auto_resume_zombies(redis_url="redis://stub")
-    assert resumed == ["z-fallback"]
-
+    delegated = manager.auto_resume_zombies(redis_url="redis://stub")
+    assert delegated == ["z-fallback"]
     import time as _time
 
-    deadline = _time.time() + 2.0
-    while not invocations and _time.time() < deadline:
-        _time.sleep(0.02)
-    assert invocations == ["z-fallback"]
+    _time.sleep(0.1)
+    # Critical: NO thread should be spawned even when we can't confirm
+    # worker ownership. Delegation wins every time.
+    assert invocations == []
+
+    task = manager.get_task("z-fallback")
+    assert task is not None
+    assert task["status"] == "running"
+    assert task["current_stage"] == "delegated_to_worker_self_heal"
 
 
 def test_fetch_heal_owned_slugs_parses_arq_keys(monkeypatch: pytest.MonkeyPatch) -> None:

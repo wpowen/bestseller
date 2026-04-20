@@ -65,6 +65,36 @@ WORKFLOW_TYPE_CHAPTER_PIPELINE = "chapter_pipeline"
 WORKFLOW_TYPE_PROJECT_PIPELINE = "project_pipeline"
 ProgressCallback = Callable[[str, dict[str, Any] | None], None]
 
+# Books above this chapter target require progressive planning: a single
+# monolithic plan would take hours and cannot evolve cast/world with feedback
+# from earlier volumes. Web UI enforces this threshold at submission; worker
+# self-heal must mirror it so resumed pipelines take the same path as the
+# original run. When the two diverge, large books stall at the outline frontier
+# because the non-progressive path only processes existing outline entries
+# without planning new volumes.
+PROGRESSIVE_CHAPTER_THRESHOLD = 50
+
+
+def _should_use_progressive_pipeline(
+    settings: AppSettings,
+    project_payload: ProjectCreate,
+) -> bool:
+    """Decide which autowrite pipeline a submission should use.
+
+    Progressive planning is required whenever:
+      * ``settings.pipeline.progressive_planning`` is explicitly enabled, or
+      * ``project_payload.target_chapters`` exceeds the threshold.
+
+    The target-based trigger keeps web-ui submissions and worker self-heal
+    aligned on the same path — historically they diverged (web used the
+    threshold, worker used the setting) which caused large books to stall at
+    the current outline frontier during self-heal.
+    """
+    if settings.pipeline.progressive_planning:
+        return True
+    target_chapters = int(getattr(project_payload, "target_chapters", 0) or 0)
+    return target_chapters > PROGRESSIVE_CHAPTER_THRESHOLD
+
 
 def _collect_output_files(output_dir: Path) -> list[str]:
     if not output_dir.exists() or not output_dir.is_dir():
@@ -765,8 +795,8 @@ async def run_scene_pipeline(
                 for ed in _existing_drafts_q:
                     _sc = await session.get(SceneCardModel, ed.scene_card_id)
                     _ch = await session.get(ChapterModel, _sc.chapter_id) if _sc else None
-                    if _ch and _sc and ed.content:
-                        _existing_texts.append((_ch.chapter_number, _sc.scene_number, ed.content))
+                    if _ch and _sc and ed.content_md:
+                        _existing_texts.append((_ch.chapter_number, _sc.scene_number, ed.content_md))
 
                 _dedup_findings = check_scene_duplication(draft.content_md, _existing_texts)
                 if _dedup_findings:
@@ -776,6 +806,9 @@ async def run_scene_pipeline(
                         [(f["chapter"], f["scene"], f["similarity"], f["severity"]) for f in _dedup_findings],
                     )
                     if shared_context is not None:
+                        # Forward to reviewer so duplication_score reflects broad-scope matches.
+                        # (Cast to the expected schema; check_scene_duplication already uses it.)
+                        shared_context.pipeline_duplication_findings = list(_dedup_findings)
                         for f in _dedup_findings[:3]:
                             shared_context.contradiction_warnings.append(f["message"])
             except Exception:
@@ -2648,8 +2681,8 @@ async def run_autowrite_pipeline(
     auto_repair_on_attention: bool = True,
     progress: ProgressCallback | None = None,
 ) -> AutowriteResult:
-    # ── Route to progressive pipeline if enabled ──
-    if settings.pipeline.progressive_planning:
+    # ── Route to progressive pipeline if enabled or target warrants it ──
+    if _should_use_progressive_pipeline(settings, project_payload):
         return await run_progressive_autowrite_pipeline(
             session, settings,
             project_payload=project_payload,

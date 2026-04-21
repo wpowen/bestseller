@@ -1102,6 +1102,1137 @@ def _planner_language(project: ProjectModel) -> str:
     return str(project.language or "zh-CN")
 
 
+async def _build_revealed_ledger_block(
+    session: AsyncSession,
+    project_id: UUID,
+    *,
+    language: str = "zh-CN",
+) -> str | None:
+    """Wrap :func:`build_revealed_ledger` for use inside planner pipelines.
+
+    Returns ``None`` when the ledger is empty or the build raises — the
+    planner then falls back to running with no ledger block rather than
+    aborting. This keeps the ledger a best-effort augmentation and never
+    a hard dependency of the planning flow.
+    """
+    try:
+        from bestseller.services.revealed_ledger import build_revealed_ledger
+
+        ledger = await build_revealed_ledger(session, project_id)
+        if ledger.is_empty:
+            return None
+        block = ledger.to_prompt_block(language=language)
+        return block or None
+    except Exception:
+        logger.debug(
+            "Revealed-ledger build failed for project %s (non-fatal)",
+            project_id,
+            exc_info=True,
+        )
+        return None
+
+
+async def _repair_volume_plan_convergence_if_needed(
+    *,
+    session: AsyncSession,
+    settings: Any,
+    project: ProjectModel,
+    book_spec_payload: dict[str, Any],
+    world_spec_payload: dict[str, Any],
+    cast_spec_payload: dict[str, Any],
+    act_plan_payload: Any,
+    volume_plan_payload: Any,
+    workflow_run_id: UUID,
+) -> tuple[Any, UUID | None]:
+    """Scan a VolumePlan for cross-volume convergence and auto-repair once
+    if criticals are found.
+
+    Returns ``(possibly-repaired payload, repair LLM run id or None)``.
+    Failures (validation, LLM) fall back to the original payload. This is
+    a best-effort guardrail, not a blocking gate — we do not want a
+    convergence scanner misfire to abort the whole planning pipeline.
+    """
+    if not isinstance(volume_plan_payload, list) or len(volume_plan_payload) < 2:
+        return volume_plan_payload, None
+    try:
+        from bestseller.services.volume_fingerprint import (
+            scan_volume_plan_for_convergence,
+        )
+
+        report = scan_volume_plan_for_convergence(volume_plan_payload)
+    except Exception:
+        logger.debug("Volume convergence scan failed (non-fatal)", exc_info=True)
+        return volume_plan_payload, None
+
+    # Attach findings to workflow metadata for observability.
+    try:
+        from bestseller.infra.db.models import WorkflowRunModel as _WR
+
+        wr = await session.scalar(select(_WR).where(_WR.id == workflow_run_id))
+        if wr is not None:
+            findings_summary = [
+                {
+                    "volume_a": f.volume_a,
+                    "volume_b": f.volume_b,
+                    "similarity": round(f.similarity, 3),
+                    "severity": f.severity,
+                    "reason": f.reason,
+                }
+                for f in report.findings[:20]
+            ]
+            wr.metadata_json = {
+                **(wr.metadata_json or {}),
+                "volume_convergence_findings": findings_summary,
+                "volume_convergence_has_critical": report.has_critical,
+                "volume_conflict_phase_counts": dict(report.conflict_phase_counts),
+                "volume_force_name_counts": dict(report.force_name_counts),
+            }
+    except Exception:
+        logger.debug("Workflow-metadata attachment failed (non-fatal)", exc_info=True)
+
+    if not report.has_critical:
+        if report.findings:
+            logger.info(
+                "Volume convergence: %d warning-level finding(s); continuing without repair.",
+                len(report.findings),
+            )
+        return volume_plan_payload, None
+
+    logger.warning(
+        "Volume convergence critical: %d pair(s); attempting single repair pass.",
+        len(report.critical_findings),
+    )
+
+    try:
+        language = _planner_language(project)
+        repair_block = report.to_prompt_block(language=language)
+        repair_system, repair_user = _volume_plan_prompts(
+            project,
+            book_spec_payload,
+            world_spec_payload,
+            cast_spec_payload,
+            act_plan=act_plan_payload,
+        )
+        is_en = is_english_language(language)
+        header = (
+            "\n\n[Volume convergence — repair the converged volumes]"
+            if is_en
+            else "\n\n【卷间趋同 — 请重新生成以消除以下问题】"
+        )
+        repair_user += f"{header}\n{repair_block}\n"
+        if is_en:
+            repair_user += (
+                "Regenerate the entire VolumePlan JSON array. Each flagged pair of "
+                "volumes must diverge on conflict_phase, primary_force_name, climax "
+                "shape, and core payoff class. Preserve volume_number ordering."
+            )
+        else:
+            repair_user += (
+                "请重新生成整份 VolumePlan JSON 数组："
+                "每一对被标记的卷都必须在 conflict_phase、primary_force_name、"
+                "climax 形态、core payoff 类别 四个维度上都形成差异；"
+                "保持 volume_number 的顺序。"
+            )
+
+        repaired_payload, repair_llm_run_id = await _generate_structured_artifact(
+            session,
+            settings,
+            project=project,
+            logical_name="volume_plan_convergence_repair",
+            system_prompt=repair_system,
+            user_prompt=repair_user,
+            fallback_payload=volume_plan_payload,
+            workflow_run_id=workflow_run_id,
+            validator=parse_volume_plan_input,
+        )
+        if not isinstance(repaired_payload, list) or len(repaired_payload) < 2:
+            return volume_plan_payload, None
+        return repaired_payload, repair_llm_run_id
+    except Exception:
+        logger.warning("Volume convergence repair failed; keeping original plan.", exc_info=True)
+        return volume_plan_payload, None
+
+
+async def _repair_cast_foundation_if_needed(
+    *,
+    session: AsyncSession,
+    settings: Any,
+    project: ProjectModel,
+    book_spec_payload: dict[str, Any],
+    world_spec_payload: dict[str, Any],
+    cast_spec_payload: dict[str, Any],
+    volume_count: int,
+    workflow_run_id: UUID,
+) -> tuple[dict[str, Any], UUID | None]:
+    """Scan cast spec foundational richness; auto-repair once if critical.
+
+    The pre-volume gate that prevents the xianxia failure mode: when the
+    cast spec ships only one antagonist or a force roster whose
+    ``active_volumes`` union doesn't cover the planned volumes, every
+    downstream volume collapses onto the same primary_force_name. This
+    helper detects that up front and asks the LLM to regenerate just the
+    ``antagonist_forces`` + ``supporting_cast`` fields with concrete
+    coverage requirements attached to the prompt.
+
+    Returns ``(possibly-repaired cast_spec_payload, repair LLM run id or
+    None)``. Any failure falls back to the original cast spec; this is a
+    best-effort guardrail, not a blocking gate.
+    """
+    try:
+        from bestseller.services.foundation_richness import (
+            scan_cast_foundation_richness,
+        )
+
+        report = scan_cast_foundation_richness(
+            cast_spec_payload,
+            volume_count=volume_count,
+            language=_planner_language(project),
+        )
+    except Exception:
+        logger.debug("Foundation-richness scan failed (non-fatal)", exc_info=True)
+        return cast_spec_payload, None
+
+    # Attach findings to workflow metadata for observability.
+    try:
+        from bestseller.infra.db.models import WorkflowRunModel as _WR
+
+        wr = await session.scalar(select(_WR).where(_WR.id == workflow_run_id))
+        if wr is not None:
+            wr.metadata_json = {
+                **(wr.metadata_json or {}),
+                "foundation_richness_findings": [
+                    {
+                        "code": f.code,
+                        "severity": f.severity,
+                        "message": f.message,
+                    }
+                    for f in report.findings[:20]
+                ],
+                "foundation_richness_critical": report.is_critical,
+                "foundation_richness_force_count": report.force_count,
+                "foundation_richness_forces_required": report.forces_required,
+                "foundation_richness_coverage_ratio": round(report.coverage_ratio, 3),
+            }
+    except Exception:
+        logger.debug("Workflow-metadata attachment failed (non-fatal)", exc_info=True)
+
+    if not report.is_critical:
+        if report.findings:
+            logger.info(
+                "Foundation richness: %d warning-level finding(s); continuing without repair.",
+                len(report.findings),
+            )
+        return cast_spec_payload, None
+
+    logger.warning(
+        "Foundation richness critical (%d critical, %d warning); attempting single repair.",
+        report.critical_count,
+        report.warning_count,
+    )
+
+    try:
+        language = _planner_language(project)
+        is_en = is_english_language(language)
+        repair_block = report.to_prompt_block(language=language)
+        repair_system, repair_user = _cast_spec_prompts(
+            project, book_spec_payload, world_spec_payload
+        )
+        header = (
+            "\n\n[Foundation richness — repair the thin antagonist roster]"
+            if is_en
+            else "\n\n【基础素材丰富度 — 请修复过于单薄的反派势力与配角池】"
+        )
+        repair_user += f"{header}\n{repair_block}\n"
+        if is_en:
+            repair_user += (
+                "\nRegenerate the ENTIRE CastSpec JSON. Keep the protagonist, "
+                "antagonist, world tie-ins, and name_reasoning fields intact; "
+                "rework antagonist_forces and supporting_cast to satisfy every "
+                "constraint above. Do not narrow any existing field."
+            )
+        else:
+            repair_user += (
+                "\n请重新生成整份 CastSpec JSON：保留 protagonist、antagonist、"
+                "世界观锚点、各角色的 name_reasoning 字段不变；"
+                "重构 antagonist_forces 与 supporting_cast 两个字段，"
+                "使之满足上面列出的所有约束；不要缩减任何已有字段。"
+            )
+
+        repaired_payload, repair_llm_run_id = await _generate_structured_artifact(
+            session,
+            settings,
+            project=project,
+            logical_name="cast_spec_foundation_repair",
+            system_prompt=repair_system,
+            user_prompt=repair_user,
+            fallback_payload=cast_spec_payload,
+            workflow_run_id=workflow_run_id,
+            validator=parse_cast_spec_input,
+        )
+        if not isinstance(repaired_payload, dict):
+            return cast_spec_payload, None
+
+        # Sanity-check the repair before accepting it — reject if the
+        # repair regressed on force count (LLM sometimes misinterprets
+        # the instruction and returns a smaller list).
+        try:
+            repaired_report = scan_cast_foundation_richness(
+                repaired_payload,
+                volume_count=volume_count,
+                language=language,
+            )
+            if repaired_report.force_count < report.force_count:
+                logger.warning(
+                    "Cast repair regressed force count (%d → %d); keeping original.",
+                    report.force_count,
+                    repaired_report.force_count,
+                )
+                return cast_spec_payload, None
+        except Exception:
+            pass
+
+        return repaired_payload, repair_llm_run_id
+    except Exception:
+        logger.warning("Cast foundation repair failed; keeping original cast spec.", exc_info=True)
+        return cast_spec_payload, None
+
+
+async def _repair_world_spec_richness_if_needed(
+    *,
+    session: AsyncSession,
+    settings: Any,
+    project: ProjectModel,
+    premise: str,
+    book_spec_payload: dict[str, Any],
+    world_spec_payload: dict[str, Any],
+    workflow_run_id: UUID,
+) -> tuple[dict[str, Any], UUID | None]:
+    """Scan world_spec richness (rules/locations/factions vs chapter count)
+    and auto-repair once if critical.
+
+    This is the world-level peer of :func:`_repair_cast_foundation_if_needed`
+    and runs immediately after world_spec generation — before the cast
+    spec prompt consumes the world summary. Detects the two failure modes
+    from the 6-book audit:
+
+    * Starved world (道种破虚): too few rules/locations/factions for the
+      planned chapter count, causing chapter-level material exhaustion
+      and volume-plan collapse.
+    * Bloated world: too many rules for chapters to ever ground,
+      producing shallow worldbuilding.
+
+    Best-effort guardrail: any failure falls back to the original spec.
+    """
+
+    try:
+        from bestseller.services.world_richness import (
+            scan_world_spec_richness,
+        )
+
+        report = scan_world_spec_richness(
+            world_spec_payload,
+            total_chapters=max(project.target_chapters, 1),
+            language=_planner_language(project),
+        )
+    except Exception:
+        logger.debug("World-richness scan failed (non-fatal)", exc_info=True)
+        return world_spec_payload, None
+
+    # Attach findings to workflow metadata for observability.
+    try:
+        from bestseller.infra.db.models import WorkflowRunModel as _WR
+
+        wr = await session.scalar(select(_WR).where(_WR.id == workflow_run_id))
+        if wr is not None:
+            wr.metadata_json = {
+                **(wr.metadata_json or {}),
+                "world_richness_findings": [
+                    {
+                        "code": f.code,
+                        "severity": f.severity,
+                        "message": f.message,
+                    }
+                    for f in report.findings[:20]
+                ],
+                "world_richness_critical": report.is_critical,
+                "world_richness_rule_count": report.rule_count,
+                "world_richness_rule_floor": report.rule_bounds.floor,
+                "world_richness_rule_ceiling": report.rule_bounds.ceiling,
+                "world_richness_location_count": report.location_count,
+                "world_richness_faction_count": report.faction_count,
+            }
+    except Exception:
+        logger.debug("Workflow-metadata attachment failed (non-fatal)", exc_info=True)
+
+    if not report.is_critical:
+        if report.findings:
+            logger.info(
+                "World richness: %d warning-level finding(s); continuing without repair.",
+                len(report.findings),
+            )
+        return world_spec_payload, None
+
+    logger.warning(
+        "World richness critical (%d critical, %d warning); attempting single repair.",
+        report.critical_count,
+        report.warning_count,
+    )
+
+    try:
+        language = _planner_language(project)
+        is_en = is_english_language(language)
+        repair_block = report.to_prompt_block(language=language)
+        repair_system, repair_user = _world_spec_prompts(
+            project, premise, book_spec_payload
+        )
+        header = (
+            "\n\n[World richness — repair the under/over-scaled world foundation]"
+            if is_en
+            else "\n\n【世界观丰富度 — 请修复与章节规模不匹配的世界设定】"
+        )
+        repair_user += f"{header}\n{repair_block}\n"
+        if is_en:
+            repair_user += (
+                "\nRegenerate the ENTIRE WorldSpec JSON. Keep world_name, "
+                "world_premise, power_system, power_structure, history_key_events, "
+                "and forbidden_zones intact; rework `rules`, `locations`, and "
+                "`factions` to satisfy every constraint above. Rule names must be "
+                "pairwise distinct. Every rule must carry a non-empty "
+                "description AND story_consequence. Do not narrow any existing "
+                "field."
+            )
+        else:
+            repair_user += (
+                "\n请重新生成整份 WorldSpec JSON：保留 world_name、world_premise、"
+                "power_system、power_structure、history_key_events、forbidden_zones "
+                "字段不变；重构 rules、locations、factions 三个字段，"
+                "使之满足上面列出的所有约束。rule 名称必须两两不同；"
+                "每条 rule 都必须同时包含非空的 description 与 story_consequence。"
+                "不要缩减任何已有字段。"
+            )
+
+        repaired_payload, repair_llm_run_id = await _generate_structured_artifact(
+            session,
+            settings,
+            project=project,
+            logical_name="world_spec_richness_repair",
+            system_prompt=repair_system,
+            user_prompt=repair_user,
+            fallback_payload=world_spec_payload,
+            workflow_run_id=workflow_run_id,
+            validator=parse_world_spec_input,
+        )
+        if not isinstance(repaired_payload, dict):
+            return world_spec_payload, None
+
+        # Sanity-check the repair: reject if it regressed on rule count
+        # (LLM sometimes misinterprets the instruction and shrinks the
+        # list; the starvation branch should never go *lower* than the
+        # original, the bloat branch should never go *higher*).
+        try:
+            from bestseller.services.world_richness import (
+                scan_world_spec_richness as _rescan,
+            )
+
+            repaired_report = _rescan(
+                repaired_payload,
+                total_chapters=max(project.target_chapters, 1),
+                language=language,
+            )
+            was_starved = any(
+                f.code.startswith("starved_") for f in report.findings
+            )
+            was_bloated = any(
+                f.code.startswith("bloated_") for f in report.findings
+            )
+            if was_starved and repaired_report.rule_count < report.rule_count:
+                logger.warning(
+                    "World repair regressed rule count on starvation branch "
+                    "(%d → %d); keeping original.",
+                    report.rule_count,
+                    repaired_report.rule_count,
+                )
+                return world_spec_payload, None
+            if was_bloated and repaired_report.rule_count > report.rule_count:
+                logger.warning(
+                    "World repair regressed rule count on bloat branch "
+                    "(%d → %d); keeping original.",
+                    report.rule_count,
+                    repaired_report.rule_count,
+                )
+                return world_spec_payload, None
+        except Exception:
+            pass
+
+        return repaired_payload, repair_llm_run_id
+    except Exception:
+        logger.warning(
+            "World richness repair failed; keeping original world spec.",
+            exc_info=True,
+        )
+        return world_spec_payload, None
+
+
+async def _repair_volume_plan_foreshadowing_if_needed(
+    *,
+    session: AsyncSession,
+    settings: Any,
+    project: ProjectModel,
+    book_spec_payload: dict[str, Any],
+    world_spec_payload: dict[str, Any],
+    cast_spec_payload: dict[str, Any],
+    act_plan_payload: Any,
+    volume_plan_payload: Any,
+    workflow_run_id: UUID,
+) -> tuple[Any, UUID | None]:
+    """Scan volume plan's foreshadowing density and auto-repair once if
+    critical.
+
+    This addresses the B3 starvation pattern observed across all 6
+    production books: 800-1200 chapter novels were producing only 5-8
+    clues total (one clue every 100-170 chapters), leaving most
+    chapters with no active foreshadow thread.
+
+    Best-effort: failures fall back to the original plan.
+    """
+
+    if not isinstance(volume_plan_payload, list) or len(volume_plan_payload) < 1:
+        return volume_plan_payload, None
+    try:
+        from bestseller.services.foreshadowing_scaling import (
+            scan_volume_plan_foreshadowing,
+        )
+
+        report = scan_volume_plan_foreshadowing(
+            volume_plan_payload,
+            total_chapters=max(project.target_chapters, 1),
+            language=_planner_language(project),
+        )
+    except Exception:
+        logger.debug(
+            "Foreshadowing-scaling scan failed (non-fatal)", exc_info=True
+        )
+        return volume_plan_payload, None
+
+    # Attach findings to workflow metadata for observability.
+    try:
+        from bestseller.infra.db.models import WorkflowRunModel as _WR
+
+        wr = await session.scalar(select(_WR).where(_WR.id == workflow_run_id))
+        if wr is not None:
+            wr.metadata_json = {
+                **(wr.metadata_json or {}),
+                "foreshadowing_scaling_findings": [
+                    {
+                        "code": f.code,
+                        "severity": f.severity,
+                        "message": f.message,
+                    }
+                    for f in report.findings[:20]
+                ],
+                "foreshadowing_scaling_critical": report.is_critical,
+                "foreshadowing_planted_count": report.planted_count,
+                "foreshadowing_planted_floor": report.planted_bounds.floor,
+                "foreshadowing_paid_off_count": report.paid_off_count,
+                "foreshadowing_paid_off_floor": report.paid_off_bounds.floor,
+            }
+    except Exception:
+        logger.debug("Workflow-metadata attachment failed (non-fatal)", exc_info=True)
+
+    if not report.is_critical:
+        if report.findings:
+            logger.info(
+                "Foreshadowing scaling: %d warning-level finding(s); continuing without repair.",
+                len(report.findings),
+            )
+        return volume_plan_payload, None
+
+    logger.warning(
+        "Foreshadowing scaling critical (%d critical, %d warning); attempting single repair.",
+        report.critical_count,
+        report.warning_count,
+    )
+
+    try:
+        language = _planner_language(project)
+        is_en = is_english_language(language)
+        repair_block = report.to_prompt_block(language=language)
+        repair_system, repair_user = _volume_plan_prompts(
+            project,
+            book_spec_payload,
+            world_spec_payload,
+            cast_spec_payload,
+            act_plan=act_plan_payload,
+        )
+        header = (
+            "\n\n[Foreshadowing scaling — repair thin clue/payoff density]"
+            if is_en
+            else "\n\n【伏笔密度 — 请修复密度不足的伏笔设计】"
+        )
+        repair_user += f"{header}\n{repair_block}\n"
+        if is_en:
+            repair_user += (
+                "\nRegenerate the ENTIRE VolumePlan JSON array. Keep every "
+                "volume_number, volume_title, volume_theme, goal, obstacle, "
+                "climax, resolution, conflict_phase, and primary_force_name "
+                "intact; only enrich the `foreshadowing_planted` and "
+                "`foreshadowing_paid_off` arrays to satisfy every constraint "
+                "above. Every plant must be a CONCRETE, nameable item — "
+                "object, person, date, place, or event — never a vague omen."
+            )
+        else:
+            repair_user += (
+                "\n请重新生成整份 VolumePlan JSON 数组："
+                "保留每卷的 volume_number、volume_title、volume_theme、"
+                "goal、obstacle、climax、resolution、conflict_phase、"
+                "primary_force_name 字段不变；仅充实 foreshadowing_planted 与 "
+                "foreshadowing_paid_off 两个数组，使之满足上面列出的所有约束。"
+                "每条伏笔必须是具体可名的物件/人物/日期/地点/事件，"
+                "不能是『一个征兆』这类空泛占位。"
+            )
+
+        repaired_payload, repair_llm_run_id = await _generate_structured_artifact(
+            session,
+            settings,
+            project=project,
+            logical_name="volume_plan_foreshadowing_repair",
+            system_prompt=repair_system,
+            user_prompt=repair_user,
+            fallback_payload=volume_plan_payload,
+            workflow_run_id=workflow_run_id,
+            validator=parse_volume_plan_input,
+        )
+        if not isinstance(repaired_payload, list) or len(repaired_payload) < 1:
+            return volume_plan_payload, None
+
+        # Sanity-check: the repair must not regress planted_count on
+        # a starvation branch.
+        try:
+            from bestseller.services.foreshadowing_scaling import (
+                scan_volume_plan_foreshadowing as _rescan,
+            )
+
+            repaired_report = _rescan(
+                repaired_payload,
+                total_chapters=max(project.target_chapters, 1),
+                language=language,
+            )
+            was_starved = any(
+                f.code.startswith("starved_") for f in report.findings
+            )
+            if was_starved and repaired_report.planted_count < report.planted_count:
+                logger.warning(
+                    "Foreshadowing repair regressed plant count "
+                    "(%d → %d); keeping original.",
+                    report.planted_count,
+                    repaired_report.planted_count,
+                )
+                return volume_plan_payload, None
+        except Exception:
+            pass
+
+        return repaired_payload, repair_llm_run_id
+    except Exception:
+        logger.warning(
+            "Foreshadowing repair failed; keeping original volume plan.",
+            exc_info=True,
+        )
+        return volume_plan_payload, None
+
+
+async def _repair_book_spec_narrative_lines_if_needed(
+    *,
+    session: AsyncSession,
+    settings: Any,
+    project: ProjectModel,
+    premise: str,
+    book_spec_payload: dict[str, Any],
+    workflow_run_id: UUID,
+) -> tuple[dict[str, Any], UUID | None]:
+    """Scan BookSpec.narrative_lines (四线贯穿 contract) and auto-repair
+    once if critical.
+
+    Addresses the B9 root-cause observed in 道种破虚 (24 volumes × single
+    '元婴老者' overt arc): without an explicit four-layer macro structure,
+    the LLM defaults to a single overt antagonist rotating through volumes.
+    The gate validates that the BookSpec defines overt / undercurrent /
+    hidden / core_axis lines at scale-appropriate spans and triggers a
+    focused regeneration when critical.
+
+    Best-effort: any failure falls back to the original spec.
+    """
+
+    try:
+        from bestseller.services.narrative_lines import (
+            scan_narrative_lines,
+        )
+
+        _hierarchy = compute_linear_hierarchy(max(project.target_chapters, 1))
+        volume_count = int(_hierarchy.get("volume_count") or 1)
+        narrative_lines_raw = _mapping(book_spec_payload).get("narrative_lines")
+        report = scan_narrative_lines(
+            narrative_lines_raw if narrative_lines_raw is not None else {},
+            total_chapters=max(project.target_chapters, 1),
+            volume_count=volume_count,
+            language=_planner_language(project),
+        )
+    except Exception:
+        logger.debug(
+            "Narrative-lines scan failed (non-fatal)", exc_info=True
+        )
+        return book_spec_payload, None
+
+    # Attach findings to workflow metadata for observability.
+    try:
+        from bestseller.infra.db.models import WorkflowRunModel as _WR
+
+        wr = await session.scalar(select(_WR).where(_WR.id == workflow_run_id))
+        if wr is not None:
+            wr.metadata_json = {
+                **(wr.metadata_json or {}),
+                "narrative_lines_findings": [
+                    {
+                        "code": f.code,
+                        "severity": f.severity,
+                        "message": f.message,
+                    }
+                    for f in report.findings[:20]
+                ],
+                "narrative_lines_critical": report.is_critical,
+                "narrative_lines_has_overt": report.has_overt,
+                "narrative_lines_has_undercurrent": report.has_undercurrent,
+                "narrative_lines_has_hidden": report.has_hidden_thread,
+                "narrative_lines_has_core_axis": report.has_core_axis,
+            }
+    except Exception:
+        logger.debug("Workflow-metadata attachment failed (non-fatal)", exc_info=True)
+
+    if not report.is_critical:
+        if report.findings:
+            logger.info(
+                "Narrative lines: %d warning-level finding(s); continuing without repair.",
+                len(report.findings),
+            )
+        return book_spec_payload, None
+
+    logger.warning(
+        "Narrative lines critical (%d critical, %d warning); attempting single repair.",
+        report.critical_count,
+        report.warning_count,
+    )
+
+    try:
+        language = _planner_language(project)
+        is_en = is_english_language(language)
+        repair_block = report.to_prompt_block(language=language)
+        repair_system, repair_user = _book_spec_prompts(
+            project, premise, book_spec_payload
+        )
+        header = (
+            "\n\n[Narrative lines — repair the missing four-layer macro structure]"
+            if is_en
+            else "\n\n【叙事四线 — 请修复缺失的四层宏观叙事结构】"
+        )
+        repair_user += f"{header}\n{repair_block}\n"
+        if is_en:
+            repair_user += (
+                "\nRegenerate the ENTIRE BookSpec JSON. Keep title, logline, "
+                "genre, target_audience, tone, themes, protagonist, stakes, "
+                "and series_engine intact; add or rework the top-level "
+                "`narrative_lines` field so every constraint above is met. "
+                "overt_line, undercurrent_line, hidden_thread, core_axis are "
+                "ALL required. Do not narrow any existing field."
+            )
+        else:
+            repair_user += (
+                "\n请重新生成整份 BookSpec JSON："
+                "保留 title、logline、genre、target_audience、tone、themes、"
+                "protagonist、stakes、series_engine 字段不变；"
+                "补全或重构顶层 `narrative_lines` 字段，"
+                "使之满足上面列出的所有约束。"
+                "overt_line、undercurrent_line、hidden_thread、core_axis "
+                "四者缺一不可，不要缩减任何已有字段。"
+            )
+
+        repaired_payload, repair_llm_run_id = await _generate_structured_artifact(
+            session,
+            settings,
+            project=project,
+            logical_name="book_spec_narrative_lines_repair",
+            system_prompt=repair_system,
+            user_prompt=repair_user,
+            fallback_payload=book_spec_payload,
+            workflow_run_id=workflow_run_id,
+        )
+        if not isinstance(repaired_payload, dict):
+            return book_spec_payload, None
+
+        # Sanity-check: the repaired book_spec must at least provide the
+        # four layers. If the re-run still has missing_* findings, keep
+        # the original to avoid churning.
+        try:
+            from bestseller.services.narrative_lines import (
+                scan_narrative_lines as _rescan,
+            )
+
+            repaired_report = _rescan(
+                _mapping(repaired_payload).get("narrative_lines") or {},
+                total_chapters=max(project.target_chapters, 1),
+                volume_count=volume_count,
+                language=language,
+            )
+            if repaired_report.is_critical and repaired_report.critical_count >= report.critical_count:
+                logger.warning(
+                    "Narrative-lines repair did not reduce critical count "
+                    "(%d → %d); keeping original book spec.",
+                    report.critical_count,
+                    repaired_report.critical_count,
+                )
+                return book_spec_payload, None
+        except Exception:
+            pass
+
+        return repaired_payload, repair_llm_run_id
+    except Exception:
+        logger.warning(
+            "Narrative-lines repair failed; keeping original book spec.",
+            exc_info=True,
+        )
+        return book_spec_payload, None
+
+
+async def _repair_cast_spec_antagonist_lifecycle_if_needed(
+    *,
+    session: AsyncSession,
+    settings: Any,
+    project: ProjectModel,
+    book_spec_payload: dict[str, Any],
+    world_spec_payload: dict[str, Any],
+    cast_spec_payload: dict[str, Any],
+    volume_count: int,
+    workflow_run_id: UUID,
+) -> tuple[dict[str, Any], UUID | None]:
+    """Scan CastSpec.antagonists lifecycle and auto-repair once if critical.
+
+    Addresses the post-fix regression observed after the first antagonist
+    gate: even when each volume has a distinct named enemy, if every enemy
+    is a single-volume kill-and-move-on boss the story still reads as a
+    rotating template. This gate validates that the antagonist roster
+    models evolution (line_role separation, stage spans, varied
+    resolution_type palette) and triggers a focused repair otherwise.
+
+    Best-effort: any failure falls back to the original cast spec.
+    """
+
+    try:
+        from bestseller.services.antagonist_lifecycle import (
+            scan_antagonist_lifecycle,
+        )
+
+        antagonists_raw = _mapping(cast_spec_payload).get("antagonists")
+        report = scan_antagonist_lifecycle(
+            antagonists_raw if antagonists_raw is not None else [],
+            total_chapters=max(project.target_chapters, 1),
+            volume_count=max(int(volume_count or 0), 1),
+            language=_planner_language(project),
+        )
+    except Exception:
+        logger.debug(
+            "Antagonist-lifecycle scan failed (non-fatal)", exc_info=True
+        )
+        return cast_spec_payload, None
+
+    # Attach findings to workflow metadata for observability.
+    try:
+        from bestseller.infra.db.models import WorkflowRunModel as _WR
+
+        wr = await session.scalar(select(_WR).where(_WR.id == workflow_run_id))
+        if wr is not None:
+            wr.metadata_json = {
+                **(wr.metadata_json or {}),
+                "antagonist_lifecycle_findings": [
+                    {
+                        "code": f.code,
+                        "severity": f.severity,
+                        "message": f.message,
+                    }
+                    for f in report.findings[:20]
+                ],
+                "antagonist_lifecycle_critical": report.is_critical,
+                "antagonist_lifecycle_count": report.antagonist_count,
+                "antagonist_lifecycle_resolution_distribution":
+                    dict(report.resolution_distribution),
+            }
+    except Exception:
+        logger.debug("Workflow-metadata attachment failed (non-fatal)", exc_info=True)
+
+    if not report.is_critical:
+        if report.findings:
+            logger.info(
+                "Antagonist lifecycle: %d warning-level finding(s); continuing without repair.",
+                len(report.findings),
+            )
+        return cast_spec_payload, None
+
+    logger.warning(
+        "Antagonist lifecycle critical (%d critical, %d warning); attempting single repair.",
+        report.critical_count,
+        report.warning_count,
+    )
+
+    try:
+        language = _planner_language(project)
+        is_en = is_english_language(language)
+        repair_block = report.to_prompt_block(language=language)
+        repair_system, repair_user = _cast_spec_prompts(
+            project, book_spec_payload, world_spec_payload
+        )
+        header = (
+            "\n\n[Antagonist lifecycle — repair the rotating-template roster]"
+            if is_en
+            else "\n\n【敌人生命周期 — 请修复轮换模板式的反派名单】"
+        )
+        repair_user += f"{header}\n{repair_block}\n"
+        if is_en:
+            repair_user += (
+                "\nRegenerate the ENTIRE CastSpec JSON. Keep protagonist, "
+                "world tie-ins, and existing name_reasoning fields intact; "
+                "produce a top-level `antagonists` array where every entry "
+                "has {name, archetype, line_role, stages_of_relevance, "
+                "resolution_type, transition_volume, transition_mechanism}. "
+                "Spread overt antagonists across volumes (distinct names), "
+                "give the undercurrent one a multi-volume span, seed the "
+                "hidden one early with payoff in the last quarter, and do "
+                "NOT let every antagonist end as 'defeated_and_killed'."
+            )
+        else:
+            repair_user += (
+                "\n请重新生成整份 CastSpec JSON："
+                "保留 protagonist、世界观锚点、已有 name_reasoning 字段不变；"
+                "在顶层生成 `antagonists` 数组，每条记录都包含 "
+                "{name、archetype、line_role、stages_of_relevance、"
+                "resolution_type、transition_volume、transition_mechanism}。"
+                "明线敌人要覆盖不同卷（名字两两不同），"
+                "暗线敌人要跨多卷活跃，隐藏线敌人需要前期埋线、末 1/4 揭示，"
+                "并且禁止所有敌人都是『defeated_and_killed』。"
+            )
+
+        repaired_payload, repair_llm_run_id = await _generate_structured_artifact(
+            session,
+            settings,
+            project=project,
+            logical_name="cast_spec_antagonist_lifecycle_repair",
+            system_prompt=repair_system,
+            user_prompt=repair_user,
+            fallback_payload=cast_spec_payload,
+            workflow_run_id=workflow_run_id,
+            validator=parse_cast_spec_input,
+        )
+        if not isinstance(repaired_payload, dict):
+            return cast_spec_payload, None
+
+        # Sanity-check: the repaired cast_spec must at least reduce the
+        # critical count; otherwise keep the original.
+        try:
+            from bestseller.services.antagonist_lifecycle import (
+                scan_antagonist_lifecycle as _rescan,
+            )
+
+            repaired_report = _rescan(
+                _mapping(repaired_payload).get("antagonists") or [],
+                total_chapters=max(project.target_chapters, 1),
+                volume_count=max(int(volume_count or 0), 1),
+                language=language,
+            )
+            if repaired_report.is_critical and repaired_report.critical_count >= report.critical_count:
+                logger.warning(
+                    "Antagonist-lifecycle repair did not reduce critical count "
+                    "(%d → %d); keeping original cast spec.",
+                    report.critical_count,
+                    repaired_report.critical_count,
+                )
+                return cast_spec_payload, None
+        except Exception:
+            pass
+
+        return repaired_payload, repair_llm_run_id
+    except Exception:
+        logger.warning(
+            "Antagonist-lifecycle repair failed; keeping original cast spec.",
+            exc_info=True,
+        )
+        return cast_spec_payload, None
+
+
+async def _repair_cast_spec_relationship_scaling_if_needed(
+    *,
+    session: AsyncSession,
+    settings: Any,
+    project: ProjectModel,
+    book_spec_payload: dict[str, Any],
+    world_spec_payload: dict[str, Any],
+    cast_spec_payload: dict[str, Any],
+    volume_count: int,
+    workflow_run_id: UUID,
+) -> tuple[dict[str, Any], UUID | None]:
+    """Scan CastSpec.supporting_cast scaling and auto-repair once if critical.
+
+    Addresses the social-fabric analogue of the world-richness and
+    foundation-richness starvation patterns: long novels shipping with
+    only 3-5 supporting_cast entries force scenes across many volumes to
+    recycle the same small cluster of faces, giving the whole book a
+    "cast of six" feel regardless of plot scale.
+
+    Best-effort: any failure falls back to the original cast spec.
+    """
+
+    try:
+        from bestseller.services.relationship_scaling import (
+            scan_relationship_scaling,
+        )
+
+        supporting_raw = _mapping(cast_spec_payload).get("supporting_cast")
+        report = scan_relationship_scaling(
+            supporting_raw if supporting_raw is not None else [],
+            total_chapters=max(project.target_chapters, 1),
+            volume_count=max(int(volume_count or 0), 1),
+            language=_planner_language(project),
+        )
+    except Exception:
+        logger.debug(
+            "Relationship-scaling scan failed (non-fatal)", exc_info=True
+        )
+        return cast_spec_payload, None
+
+    # Attach findings to workflow metadata for observability.
+    try:
+        from bestseller.infra.db.models import WorkflowRunModel as _WR
+
+        wr = await session.scalar(select(_WR).where(_WR.id == workflow_run_id))
+        if wr is not None:
+            wr.metadata_json = {
+                **(wr.metadata_json or {}),
+                "relationship_scaling_findings": [
+                    {
+                        "code": f.code,
+                        "severity": f.severity,
+                        "message": f.message,
+                    }
+                    for f in report.findings[:20]
+                ],
+                "relationship_scaling_critical": report.is_critical,
+                "relationship_scaling_count": report.supporting_cast_count,
+                "relationship_scaling_floor": report.supporting_bounds.floor,
+                "relationship_scaling_ceiling": report.supporting_bounds.ceiling,
+                "relationship_scaling_distinct_buckets":
+                    report.distinct_role_buckets,
+                "relationship_scaling_role_distribution":
+                    dict(report.role_distribution),
+            }
+    except Exception:
+        logger.debug("Workflow-metadata attachment failed (non-fatal)", exc_info=True)
+
+    if not report.is_critical:
+        if report.findings:
+            logger.info(
+                "Relationship scaling: %d warning-level finding(s); continuing without repair.",
+                len(report.findings),
+            )
+        return cast_spec_payload, None
+
+    logger.warning(
+        "Relationship scaling critical (%d critical, %d warning); attempting single repair.",
+        report.critical_count,
+        report.warning_count,
+    )
+
+    try:
+        language = _planner_language(project)
+        is_en = is_english_language(language)
+        repair_block = report.to_prompt_block(language=language)
+        repair_system, repair_user = _cast_spec_prompts(
+            project, book_spec_payload, world_spec_payload
+        )
+        header = (
+            "\n\n[Relationship scaling — repair the starved supporting cast]"
+            if is_en
+            else "\n\n【关系网规模 — 请修复过于单薄的 supporting_cast】"
+        )
+        repair_user += f"{header}\n{repair_block}\n"
+        if is_en:
+            repair_user += (
+                "\nRegenerate the ENTIRE CastSpec JSON. Keep protagonist, "
+                "antagonist, antagonists, world tie-ins, and existing "
+                "name_reasoning fields intact; expand `supporting_cast` so "
+                "every entry has {name, role, active_volumes, "
+                "relationship_to_protagonist, evolution_arc}. Cover every "
+                "volume with at least one active non-antagonist. Spread "
+                "roles across at least 3 distinct categories "
+                "(mentor/ally/rival/family/romantic/subordinate/confidant/"
+                "broker) with no category exceeding 40% of the roster."
+            )
+        else:
+            repair_user += (
+                "\n请重新生成整份 CastSpec JSON："
+                "保留 protagonist、antagonist、antagonists、世界观锚点、"
+                "已有 name_reasoning 字段不变；"
+                "扩充 `supporting_cast` 字段，使每个条目包含 "
+                "{name、role、active_volumes、relationship_to_protagonist、"
+                "evolution_arc}。每一卷至少 1 名活跃的非敌人类配角，"
+                "role 要覆盖 ≥3 种类别"
+                "（mentor/ally/rival/family/romantic/subordinate/"
+                "confidant/broker），单一类别不得超过 40%。"
+            )
+
+        repaired_payload, repair_llm_run_id = await _generate_structured_artifact(
+            session,
+            settings,
+            project=project,
+            logical_name="cast_spec_relationship_scaling_repair",
+            system_prompt=repair_system,
+            user_prompt=repair_user,
+            fallback_payload=cast_spec_payload,
+            workflow_run_id=workflow_run_id,
+            validator=parse_cast_spec_input,
+        )
+        if not isinstance(repaired_payload, dict):
+            return cast_spec_payload, None
+
+        # Sanity-check: the repaired cast_spec must at least reduce the
+        # critical count; otherwise keep the original. Guards against the
+        # LLM misinterpreting the repair instruction and returning a
+        # smaller or equally-starved supporting_cast.
+        try:
+            from bestseller.services.relationship_scaling import (
+                scan_relationship_scaling as _rescan,
+            )
+
+            repaired_report = _rescan(
+                _mapping(repaired_payload).get("supporting_cast") or [],
+                total_chapters=max(project.target_chapters, 1),
+                volume_count=max(int(volume_count or 0), 1),
+                language=language,
+            )
+            if repaired_report.is_critical and repaired_report.critical_count >= report.critical_count:
+                logger.warning(
+                    "Relationship-scaling repair did not reduce critical count "
+                    "(%d → %d); keeping original cast spec.",
+                    report.critical_count,
+                    repaired_report.critical_count,
+                )
+                return cast_spec_payload, None
+        except Exception:
+            pass
+
+        return repaired_payload, repair_llm_run_id
+    except Exception:
+        logger.warning(
+            "Relationship-scaling repair failed; keeping original cast spec.",
+            exc_info=True,
+        )
+        return cast_spec_payload, None
+
+
 def _planner_prompt_pack(project: ProjectModel):
     writing_profile = _planner_writing_profile(project)
     return resolve_prompt_pack(
@@ -2260,13 +3391,20 @@ def _fallback_volume_plan(project: ProjectModel, book_spec: dict[str, Any], cast
             volume_title = _resolve_fallback_volume_title(
                 phase, phase_occurrence, volume_number, is_en=is_en
             )
-            # Disambiguate if a later phase repeat exhausted the pool and
-            # produced a duplicate against an earlier milestone/phase title.
-            if volume_title in used_titles:
-                volume_title = (
-                    f"{volume_title} · Volume {volume_number}" if is_en
-                    else f"{volume_title}·第{volume_number}卷"
+            # Disambiguate if an LLM-provided milestone happens to collide
+            # with a fallback-composed title. We escalate via additional
+            # cycle composition rather than emitting a "·二"/"·第N卷"
+            # sequel tag, which reads as a clumsy suffix.
+            _extra_cycle = 1
+            while volume_title in used_titles and _extra_cycle <= 12:
+                volume_title = _compose_cycle_title(
+                    _resolve_fallback_volume_title(
+                        phase, phase_occurrence, volume_number, is_en=is_en
+                    ),
+                    _extra_cycle,
+                    is_en=is_en,
                 )
+                _extra_cycle += 1
         used_titles.add(volume_title)
         # Try category-specific phase templates; fall back to generic text
         phase_tpl = _resolve_phase_templates(phase, category_key=category_key, is_en=is_en)
@@ -2612,35 +3750,180 @@ _CONFLICT_PHASE_TYPES: list[str] = [
 # is provided, so volumes get distinct, meaningful names instead of
 # generic "第N卷" / "Volume N" placeholders. Each list is cycled by the
 # phase's occurrence index across the volume plan.
+#
+# Pools are intentionally ≥ 12 entries each so a 24-volume novel rarely
+# cycles past the pool. When cycles do occur, :func:`_resolve_fallback_volume_title`
+# composes a fresh title via phase-agnostic prefix/suffix mixing — it
+# NEVER appends "·二" / "·III" ordinals, which read as clumsy sequel tags.
 _PHASE_TITLE_VARIATIONS_ZH: dict[str, list[str]] = {
     # Category: action-progression phases
-    "individual_survival": ["血路初开", "绝境求生", "悬崖立命", "险中续命"],
-    "faction_friction": ["夹缝立足", "势力角逐", "风云暗涌", "群雄倾轧"],
-    "power_system_test": ["体系破障", "规则叩问", "质变之门", "力道重铸"],
-    "world_threat": ["天下危局", "苍生倾覆", "乾坤失衡", "众生浩劫"],
-    "transcendence": ["破执证道", "大道归一", "心魔照影", "超凡入圣"],
+    "individual_survival": [
+        "血路初开", "绝境求生", "悬崖立命", "险中续命",
+        "刀锋自渡", "孤身破围", "寒夜独行", "九死一生",
+        "荆棘破春", "绝壁残照", "微光之路", "风雪孤魂",
+    ],
+    "faction_friction": [
+        "夹缝立足", "势力角逐", "风云暗涌", "群雄倾轧",
+        "众宗交织", "明争暗斗", "纵横捭阖", "风波潜流",
+        "各怀心思", "棋局初展", "弈海沉浮", "刀俎之间",
+    ],
+    "power_system_test": [
+        "体系破障", "规则叩问", "质变之门", "力道重铸",
+        "大道辨识", "破而后立", "试剑苍穹", "奇经百脉",
+        "铸魂炼体", "淬火问道", "九转玄关", "通元证法",
+    ],
+    "world_threat": [
+        "天下危局", "苍生倾覆", "乾坤失衡", "众生浩劫",
+        "九州同泣", "星河陨落", "浩荡末路", "山河破碎",
+        "苍茫覆灭", "日月无光", "人间风雷", "浩劫当头",
+    ],
+    "transcendence": [
+        "破执证道", "大道归一", "心魔照影", "超凡入圣",
+        "登临彼岸", "红尘俱忘", "玄元入定", "证道飞升",
+        "孤舟渡苦", "心法通玄", "无我同尘", "道行圆融",
+    ],
     # Legacy _CONFLICT_PHASE_TYPES
-    "survival": ["绝地求生", "险中立身", "生死博弈", "残局求存"],
-    "political_intrigue": ["暗流权谋", "棋盘迷影", "庙堂风云", "权谋迭起"],
-    "betrayal": ["信任崩裂", "背刺寒霜", "裂痕成渊", "故人反目"],
-    "faction_war": ["群雄逐鹿", "百宗乱战", "势力倾轧", "风云对决"],
-    "existential_threat": ["天倾之危", "末世将至", "终极决断", "万象归零"],
-    "internal_reckoning": ["归心照影", "内心审判", "破执立我", "自我重铸"],
+    "survival": [
+        "绝地求生", "险中立身", "生死博弈", "残局求存",
+        "刀尖踏步", "孤城不破", "夹道幽光", "烽烟独守",
+        "血色黎明", "残阳立誓", "死里挣脱", "荆棘踏霜",
+    ],
+    "political_intrigue": [
+        "暗流权谋", "棋盘迷影", "庙堂风云", "权谋迭起",
+        "朝堂裂影", "密议深夜", "玉阶迷雾", "棋局暗张",
+        "云谲波诡", "私宴疑踪", "百官默契", "朱笔如刀",
+    ],
+    "betrayal": [
+        "信任崩裂", "背刺寒霜", "裂痕成渊", "故人反目",
+        "旧盟破镜", "同袍离心", "暗箭难防", "回身寒刃",
+        "誓言散尽", "兄弟陌路", "深情反目", "别后无情",
+    ],
+    "faction_war": [
+        "群雄逐鹿", "百宗乱战", "势力倾轧", "风云对决",
+        "旌旗对峙", "烽烟四起", "铁骑纵横", "万宗争鸣",
+        "诸侯离合", "各据山河", "雄据一方", "刀兵并举",
+    ],
+    "existential_threat": [
+        "天倾之危", "末世将至", "终极决断", "万象归零",
+        "苍穹倒悬", "星坠人寰", "大劫临头", "天门崩开",
+        "寰宇将倾", "终焉之钟", "弥天劫起", "古今同覆",
+    ],
+    "internal_reckoning": [
+        "归心照影", "内心审判", "破执立我", "自我重铸",
+        "照见前尘", "心海生波", "独白深夜", "孤灯问我",
+        "照影审心", "前尘回眸", "心音寂寂", "自渡无人",
+    ],
 }
 
 _PHASE_TITLE_VARIATIONS_EN: dict[str, list[str]] = {
-    "individual_survival": ["First Blood", "Edge of Survival", "Cliff of Fate", "Breath by Breath"],
-    "faction_friction": ["Cracks Between Powers", "Shifting Alliances", "Undercurrents Rise", "Caught in the Fray"],
-    "power_system_test": ["Rules Unbound", "Crossing the Threshold", "Trial of Ascent", "Forging Anew"],
-    "world_threat": ["World in Peril", "Heaven Tilts", "The Great Reckoning", "A Fracturing Sky"],
-    "transcendence": ["Beyond the Path", "Unity of the Way", "Shadow of the Mind", "Stepping Beyond Mortality"],
-    "survival": ["Bare Survival", "Stand Your Ground", "Life on a Knife's Edge", "The Last Ember"],
-    "political_intrigue": ["Whispers of Power", "The Shifting Board", "Court of Shadows", "A Web of Schemes"],
-    "betrayal": ["Broken Trust", "A Cold Blade", "Fault Lines Open", "Friends Turned Foes"],
-    "faction_war": ["Rival Banners", "Open Warfare", "The Grand Clash", "Age of Contention"],
-    "existential_threat": ["On the Brink", "Twilight of an Age", "The Final Choice", "Reduction to Zero"],
-    "internal_reckoning": ["Into the Self", "Inner Trial", "Breaking the Chain", "Reforging the Heart"],
+    "individual_survival": [
+        "First Blood", "Edge of Survival", "Cliff of Fate", "Breath by Breath",
+        "A Thin Line", "Knife's Edge Run", "Lone Thread", "Hard Rain",
+        "The Last Breath", "Through the Briar", "Midnight Vigil", "Embers Alive",
+    ],
+    "faction_friction": [
+        "Cracks Between Powers", "Shifting Alliances", "Undercurrents Rise", "Caught in the Fray",
+        "Rival Tides", "Double-Edged Pact", "Currents Collide", "Broken Accord",
+        "Divided Courts", "Fault Lines", "Hidden Hands", "Shared Knives",
+    ],
+    "power_system_test": [
+        "Rules Unbound", "Crossing the Threshold", "Trial of Ascent", "Forging Anew",
+        "Breaking the Doctrine", "New Laws of the Flesh", "Ashes and Forge", "Beyond the Canon",
+        "Heat of Refining", "Unwritten Code", "Second Awakening", "A Harder Vow",
+    ],
+    "world_threat": [
+        "World in Peril", "Heaven Tilts", "The Great Reckoning", "A Fracturing Sky",
+        "All Lands Weep", "Nightfall Continent", "Fall of the Age", "Ashes of Empire",
+        "Storm Over the Realm", "The Grand Collapse", "End of the Balance", "Silent Heavens",
+    ],
+    "transcendence": [
+        "Beyond the Path", "Unity of the Way", "Shadow of the Mind", "Stepping Beyond Mortality",
+        "Last Shore", "Forgetting the World", "Ninefold Serene", "Dissolving Self",
+        "Into the Cloud", "Truth Without Form", "A Final Echo", "The Whispering Way",
+    ],
+    "survival": [
+        "Bare Survival", "Stand Your Ground", "Life on a Knife's Edge", "The Last Ember",
+        "A Blade's Breadth", "Unbroken Wall", "Dim Lantern Vigil", "Lonesome Garrison",
+        "First Dawn After", "Oath Beneath Ashes", "Tearing Free", "Thorn and Frost",
+    ],
+    "political_intrigue": [
+        "Whispers of Power", "The Shifting Board", "Court of Shadows", "A Web of Schemes",
+        "Cracks at Court", "Midnight Councils", "Mists of the Throne", "Hidden Moves",
+        "Rolling Tides", "Secret Banquets", "A Silent Accord", "The Red Pen",
+    ],
+    "betrayal": [
+        "Broken Trust", "A Cold Blade", "Fault Lines Open", "Friends Turned Foes",
+        "A Shattered Bond", "Estranged Comrades", "Arrows from Shadow", "Cold Steel Reversed",
+        "Vows Ashes", "Brothers No More", "A Beloved's Turn", "Afterward Silence",
+    ],
+    "faction_war": [
+        "Rival Banners", "Open Warfare", "The Grand Clash", "Age of Contention",
+        "Standard Against Standard", "Smoke on the Horizon", "Iron Horsemen", "A Thousand Schools",
+        "Vassals Choose", "Rule by Territory", "Dominion's Edge", "Swords and Spears",
+    ],
+    "existential_threat": [
+        "On the Brink", "Twilight of an Age", "The Final Choice", "Reduction to Zero",
+        "The Firmament Inverted", "Stars Fall on Men", "Calamity Overhead", "The Gates Break",
+        "A World Tilts", "The Final Bell", "End of All Sky", "Past Becomes Dust",
+    ],
+    "internal_reckoning": [
+        "Into the Self", "Inner Trial", "Breaking the Chain", "Reforging the Heart",
+        "Seeing Past Selves", "The Tides of Self", "A Long Vigil", "The Lone Lamp",
+        "Mirror of the Heart", "Looking Back", "Silent Echoes", "No One to Carry You",
+    ],
 }
+
+
+# Cycle composers — used when a phase's occurrence exceeds its pool size.
+# Instead of appending ordinals ("·二", "·III") we compose a fresh title
+# from a neutral prefix + original base + neutral suffix pool, giving the
+# reader a genuinely new-sounding name without the sequel-tag aesthetic.
+_TITLE_CYCLE_PREFIX_ZH: tuple[str, ...] = (
+    "重帷", "再临", "新弦", "岁迹", "回响", "余烬",
+    "深谷", "续章", "暗面", "静流", "远岸", "余韵",
+)
+_TITLE_CYCLE_SUFFIX_ZH: tuple[str, ...] = (
+    "重演", "续声", "回声", "再起", "余响", "新篇",
+    "再临", "新象", "重启", "深处", "之后", "暗影",
+)
+_TITLE_CYCLE_PREFIX_EN: tuple[str, ...] = (
+    "Echoes of", "Return to", "Beneath", "After",
+    "Shadows of", "Remnants of", "Deep", "Beyond",
+    "Into", "Still", "Past", "Long After",
+)
+_TITLE_CYCLE_SUFFIX_EN: tuple[str, ...] = (
+    "Revisited", "Rekindled", "Continued", "Reechoed",
+    "Rewritten", "Anew", "Returning", "Reformed",
+    "Reshaped", "Enduring", "Resurgent", "Redrawn",
+)
+
+
+def _compose_cycle_title(base: str, cycle: int, *, is_en: bool) -> str:
+    """Compose a fresh title from neutral prefix/suffix mixing.
+
+    Used when the phase pool has been exhausted and we would otherwise
+    emit a "·二" / "· II" ordinal suffix. Instead of ordinal numbering
+    we produce a variant like "重帷血路初开" (cycle=1) or
+    "余烬血路初开" (cycle=2). Deterministic: same (base, cycle) always
+    produces the same composed title so volume plans regenerate
+    stably.
+    """
+
+    if cycle <= 0:
+        return base
+    if is_en:
+        prefix = _TITLE_CYCLE_PREFIX_EN[(cycle - 1) % len(_TITLE_CYCLE_PREFIX_EN)]
+        # Alternate between prefix and suffix forms on successive cycles
+        # for additional variety. Odd cycles → prefix; even cycles → suffix.
+        if cycle % 2 == 1:
+            return f"{prefix} {base}"
+        suffix = _TITLE_CYCLE_SUFFIX_EN[(cycle - 1) % len(_TITLE_CYCLE_SUFFIX_EN)]
+        return f"{base} {suffix}"
+    prefix = _TITLE_CYCLE_PREFIX_ZH[(cycle - 1) % len(_TITLE_CYCLE_PREFIX_ZH)]
+    if cycle % 2 == 1:
+        return f"{prefix}{base}"
+    suffix = _TITLE_CYCLE_SUFFIX_ZH[(cycle - 1) % len(_TITLE_CYCLE_SUFFIX_ZH)]
+    return f"{base}{suffix}"
 
 
 def _resolve_fallback_volume_title(
@@ -2655,18 +3938,17 @@ def _resolve_fallback_volume_title(
     ``phase_occurrence`` is the 0-based index of how many volumes with the
     same phase have already been named. Cycling the pool by occurrence keeps
     titles distinct across repeated phases.
+
+    When the pool is exhausted (a single phase repeats more than ``len(pool)``
+    times across the plan — rare with 12-entry pools) the helper composes a
+    fresh title via :func:`_compose_cycle_title` rather than appending a
+    clumsy "·二" / "· II" sequel tag.
     """
     pool = (_PHASE_TITLE_VARIATIONS_EN if is_en else _PHASE_TITLE_VARIATIONS_ZH).get(phase_key) or []
     if pool:
         base = pool[phase_occurrence % len(pool)]
-        # When a phase repeats beyond the pool size, append an occurrence
-        # suffix so titles stay distinct without resorting to "第N卷".
         cycle = phase_occurrence // len(pool)
-        if cycle == 0:
-            return base
-        return f"{base} · II" if is_en and cycle == 1 else (
-            f"{base} · {_roman(cycle + 1)}" if is_en else f"{base}·{_chinese_ordinal(cycle + 1)}"
-        )
+        return _compose_cycle_title(base, cycle, is_en=is_en)
     return f"Volume {volume_number}" if is_en else f"第{volume_number}卷"
 
 
@@ -3853,6 +5135,55 @@ def _book_spec_prompts(project: ProjectModel, premise: str, fallback: dict[str, 
     if _genre_instruction:
         user_prompt += f"\n\n{'[Genre planning requirements]' if is_en else '【品类规划要求】'}\n{_genre_instruction}"
     user_prompt = _append_category_context(user_prompt, project, is_en=is_en)
+
+    # Inject four-layer narrative-lines contract (明线/暗线/隐藏线/核心轴) so
+    # the BookSpec defines the macro-narrative architecture up front. Without
+    # this, the book collapses to a single overt arc that rotates across
+    # volumes — the canonical 道种破虚 failure mode where every volume reads
+    # like the same "stage boss" template.
+    try:
+        from bestseller.services.narrative_lines import (
+            render_narrative_lines_constraints_block,
+        )
+
+        _hierarchy = compute_linear_hierarchy(max(project.target_chapters, 1))
+        _volume_count = int(_hierarchy.get("volume_count") or 1)
+        user_prompt += (
+            "\n\n"
+            + render_narrative_lines_constraints_block(
+                total_chapters=max(project.target_chapters, 1),
+                volume_count=_volume_count,
+                language=language,
+            )
+        )
+        if is_en:
+            user_prompt += (
+                "\nEMIT `narrative_lines` inside the BookSpec JSON with this shape:\n"
+                "  narrative_lines: {\n"
+                "    overt_line: [{name, volumes: [int,...], antagonist_ref}],\n"
+                "    undercurrent_line: [{name, start_volume, end_volume, antagonist_ref}],\n"
+                "    hidden_thread: {statement, seed_volumes: [int,...], payoff_volumes: [int,...]},\n"
+                "    core_axis: {statement, phrasing_tokens: [str,...]}\n"
+                "  }\n"
+                "Every volume plan and chapter outline downstream will reference these layers."
+            )
+        else:
+            user_prompt += (
+                "\n请在 BookSpec JSON 中输出 `narrative_lines` 字段，结构如下：\n"
+                "  narrative_lines: {\n"
+                "    overt_line: [{name, volumes: [int,...], antagonist_ref}],\n"
+                "    undercurrent_line: [{name, start_volume, end_volume, antagonist_ref}],\n"
+                "    hidden_thread: {statement, seed_volumes: [int,...], payoff_volumes: [int,...]},\n"
+                "    core_axis: {statement, phrasing_tokens: [str,...]}\n"
+                "  }\n"
+                "后续所有卷规划和章纲都会引用这四条线。"
+            )
+    except Exception:
+        logger.debug(
+            "Narrative-lines constraints block injection failed (non-fatal)",
+            exc_info=True,
+        )
+
     return system_prompt, user_prompt
 
 
@@ -3909,6 +5240,32 @@ def _world_spec_prompts(project: ProjectModel, premise: str, book_spec: dict[str
     if _genre_instruction:
         user_prompt += f"\n\n{'[Genre planning requirements]' if is_en else '【品类规划要求】'}\n{_genre_instruction}"
     user_prompt = _append_category_context(user_prompt, project, is_en=is_en)
+
+    # Inject world-richness floor/ceiling constraints so the FIRST
+    # world_spec pass scales rules / locations / factions to chapter
+    # count. Without this the LLM either starves the foundation (道种破虚:
+    # 18 rules × 316 chapters → chapter-level material exhaustion) or
+    # bloats it (EN projects: 574 rules that never ground). Both failure
+    # modes push chapters onto a small exploitable pool and force volume
+    # convergence.
+    try:
+        from bestseller.services.world_richness import (
+            render_world_constraints_block,
+        )
+
+        user_prompt += (
+            "\n\n"
+            + render_world_constraints_block(
+                total_chapters=max(project.target_chapters, 1),
+                language=language,
+            )
+        )
+    except Exception:
+        logger.debug(
+            "World-richness constraints block injection failed (non-fatal)",
+            exc_info=True,
+        )
+
     return system_prompt, user_prompt
 
 
@@ -3988,6 +5345,129 @@ def _cast_spec_prompts(project: ProjectModel, book_spec: dict[str, Any], world_s
     if _genre_instruction:
         user_prompt += f"\n\n{'[Genre planning requirements]' if is_en else '【品类规划要求】'}\n{_genre_instruction}"
     user_prompt = _append_category_context(user_prompt, project, is_en=is_en)
+
+    # Inject foundation-richness floor constraints so the FIRST cast-spec
+    # pass produces enough distinct antagonist_forces with active_volumes
+    # coverage. Without this, the downstream volume plan falls through to
+    # the single-antagonist fallback and every volume collapses onto one
+    # pressure — the canonical xianxia (道种破虚) failure mode.
+    try:
+        from bestseller.services.foundation_richness import (
+            render_foundation_constraints_block,
+        )
+
+        _hierarchy = compute_linear_hierarchy(max(project.target_chapters, 1))
+        _volume_count = int(_hierarchy.get("volume_count") or 1)
+        if _volume_count > 1:
+            user_prompt += (
+                "\n\n"
+                + render_foundation_constraints_block(
+                    volume_count=_volume_count,
+                    language=language,
+                )
+            )
+    except Exception:
+        logger.debug("Foundation-richness constraints block injection failed (non-fatal)", exc_info=True)
+
+    # Inject antagonist-lifecycle constraints: demand a lifecycle-rich
+    # `antagonists` roster so each antagonist has a line_role, stages of
+    # relevance, and a resolution_type. Without this, the post-fix
+    # regression observed in production kicks in: each volume gets a
+    # distinct enemy, but every enemy is a one-volume kill-and-move-on
+    # boss, so the story still reads as a rotating template.
+    try:
+        from bestseller.services.antagonist_lifecycle import (
+            render_antagonist_lifecycle_constraints_block,
+        )
+
+        _hierarchy = compute_linear_hierarchy(max(project.target_chapters, 1))
+        _volume_count = int(_hierarchy.get("volume_count") or 1)
+        if _volume_count > 1:
+            user_prompt += (
+                "\n\n"
+                + render_antagonist_lifecycle_constraints_block(
+                    total_chapters=max(project.target_chapters, 1),
+                    volume_count=_volume_count,
+                    language=language,
+                )
+            )
+            if is_en:
+                user_prompt += (
+                    "\nEMIT `antagonists` at the CastSpec top level with entries "
+                    "shaped like:\n"
+                    "  {name, archetype, line_role (overt|undercurrent|hidden), "
+                    "stages_of_relevance [{start_volume, end_volume}, ...], "
+                    "resolution_type, transition_volume, transition_mechanism}\n"
+                    "Every overt antagonist MUST have a distinct `name`; past "
+                    "enemies that survive should transition to allies, neutrals, "
+                    "or fade away — do NOT kill every antagonist."
+                )
+            else:
+                user_prompt += (
+                    "\n请在 CastSpec 顶层输出 `antagonists` 字段，每个元素结构：\n"
+                    "  {name, archetype, line_role（overt|undercurrent|hidden）, "
+                    "stages_of_relevance [{start_volume, end_volume}, ...], "
+                    "resolution_type, transition_volume, transition_mechanism}\n"
+                    "每个明线敌人的 name 必须两两不同；未被杀的前期敌人应转化为"
+                    "盟友/中立/消失，不要把所有敌人都设为『被主角击杀』。"
+                )
+    except Exception:
+        logger.debug(
+            "Antagonist-lifecycle constraints block injection failed (non-fatal)",
+            exc_info=True,
+        )
+
+    # Inject relationship-scaling constraints so the FIRST cast-spec pass
+    # produces a supporting_cast roster large enough and diverse enough to
+    # populate a book of the planned length. Without this, long novels
+    # (≥ 300 chapters) ship with only 3-5 supporting characters and every
+    # volume recycles the same faces — the social-fabric analogue of the
+    # world-richness / foreshadowing-scaling starvation patterns.
+    try:
+        from bestseller.services.relationship_scaling import (
+            render_relationship_constraints_block,
+        )
+
+        _hierarchy = compute_linear_hierarchy(max(project.target_chapters, 1))
+        _volume_count = int(_hierarchy.get("volume_count") or 1)
+        if _volume_count > 1:
+            user_prompt += (
+                "\n\n"
+                + render_relationship_constraints_block(
+                    total_chapters=max(project.target_chapters, 1),
+                    volume_count=_volume_count,
+                    language=language,
+                )
+            )
+            if is_en:
+                user_prompt += (
+                    "\nEMIT `supporting_cast` at the CastSpec top level with "
+                    "entries shaped like:\n"
+                    "  {name, role, active_volumes (list of volume numbers "
+                    "or [{start_volume, end_volume}, ...]), "
+                    "relationship_to_protagonist, evolution_arc}\n"
+                    "Spread roles across mentor / ally / rival / family / "
+                    "romantic / subordinate / confidant / broker — no single "
+                    "category may exceed 40% of the roster. Every volume "
+                    "MUST have at least one active non-antagonist "
+                    "supporting-cast member."
+                )
+            else:
+                user_prompt += (
+                    "\n请在 CastSpec 顶层输出 `supporting_cast` 字段，每个元素结构：\n"
+                    "  {name、role、active_volumes（卷号列表或 "
+                    "[{start_volume, end_volume}, ...]）、"
+                    "relationship_to_protagonist、evolution_arc（关系随全书演化）}\n"
+                    "role 要在 mentor/ally/rival/family/romantic/subordinate/"
+                    "confidant/broker 之间分布——单一类别不得超过 40%。"
+                    "每一卷至少要有 1 名活跃的非敌人类 supporting_cast 成员。"
+                )
+    except Exception:
+        logger.debug(
+            "Relationship-scaling constraints block injection failed (non-fatal)",
+            exc_info=True,
+        )
+
     return system_prompt, user_prompt
 
 
@@ -4034,7 +5514,15 @@ def _volume_plan_prompts(
             "Generate a VolumePlan JSON array. Each entry must include volume_number, volume_title, volume_theme, chapter_count_target, volume_goal, volume_obstacle, volume_climax, volume_resolution, conflict_phase, and primary_force_name. "
             "CRITICAL: `volume_title` must be a concrete, evocative 2-6 word name (e.g. 'Ashes of the Old Court'). Placeholder names like 'Volume 3', 'Vol. 4', or empty strings are forbidden and will be rejected. "
             "CRITICAL: Each volume must face a DIFFERENT primary conflict force from the CastSpec's antagonist_forces. Don't repeat the same antagonist pressure — vary between survival, political intrigue, betrayal, faction warfare, existential threat, etc. "
-            "Every volume needs a concrete payoff, escalation, key reveal, volume-end hook, and anticipation for the next volume."
+            "Every volume needs a concrete payoff, escalation, key reveal, volume-end hook, and anticipation for the next volume.\n\n"
+            "[VOLUME-LEVEL DIFFERENTIATION — HARD CONSTRAINT]\n"
+            "1. No single `conflict_phase` value may be used in more than 2 volumes across the entire plan.\n"
+            "2. `primary_force_name` MUST be different for every consecutive pair of volumes — the same faction/villain cannot dominate two volumes in a row.\n"
+            "3. Vary the CLIMAX SHAPE across volumes: duel, melee, psychological showdown, reveal-twist, sacrificial choice, negotiation, trap-spring, comeback-win. The same climax shape may not appear in consecutive volumes.\n"
+            "4. Each volume's CORE PAYOFF must belong to a different reader-satisfaction class: power-tier jump / identity reversal / information decode / emotional fulfillment / resource windfall / political ascent / score-settling / world-scope expansion.\n"
+            "5. Vary the RHYTHM ARC: some volumes build steadily then shock, others open loud then tighten into a tense payoff, others stage a false-win → reversal → true-win. No two volumes may share the same rhythm arc.\n"
+            "6. `volume_goal` must be a concrete, visualizable objective or event — NEVER 'advance the main plot' / 'consolidate power' / 'level up'.\n"
+            "7. `volume_obstacle` may not simply be 'the prior volume's antagonist continuing to press' — if volume N-1's primary pressure was faction A, volume N must shift to faction B or to a non-faction obstacle (environment / inner reckoning / systemic crisis)."
         )
         if is_en
         else (
@@ -4055,7 +5543,19 @@ def _volume_plan_prompts(
             "【关键】volume_title 必须是 2-6 字的具体意象化卷名（例如『逆命入局』『灰楼开门』），"
             "严禁使用『第N卷』『Volume N』『未命名』等占位名或空字符串，否则会被拒绝。"
             "【关键】每卷必须面对不同的冲突力量和冲突类型——不要所有卷都是同一个反派在施压！"
-            "每卷都要有清晰的爽点兑现、局势升级、关键揭示、卷尾钩子和下一卷期待。"
+            "每卷都要有清晰的爽点兑现、局势升级、关键揭示、卷尾钩子和下一卷期待。\n\n"
+            "【卷间差异化硬约束——读者最怕每卷都长得一样】\n"
+            "1. conflict_phase 不得重复使用超过 2 次（6 卷 ≥ 4 种不同类型，10 卷 ≥ 6 种不同类型）。\n"
+            "2. primary_force_name 每卷都必须不同——不能让同一个反派/势力连续两卷都是本卷主要压力。\n"
+            "3. 每卷的 climax 形态要轮换：独斗、大混战、心理对决、"
+            "揭示反转、牺牲抉择、谈判博弈、制造陷阱、反败为胜等，同一种 climax 形态不得连续两卷使用。\n"
+            "4. 每卷的 core payoff（读者预期兑现点）必须属于不同的爽点类别："
+            "实力跃迁 / 身份翻身 / 信息解谜 / 情感兑现 / 资源爆发 / 权力获取 / 旧怨清算 / 世界观扩张。\n"
+            "5. 每卷的节奏弧要不同：有的卷是『稳扎稳打—骤变—慢热收束』，"
+            "有的是『开局炸场—困局僵持—爆点收尾』，有的是『伪胜利—反转—真胜利』，不得全书用同一条节奏弧。\n"
+            "6. 每卷 volume_goal 必须是具体的、可视化的目标物或目标事件——"
+            "禁止『继续推进主线』『巩固势力』『提升实力』这类抽象功能描述。\n"
+            "7. 每卷 volume_obstacle 不得是『前卷反派的延续』——如果前一卷主要压力是A势力，本卷必须换成 B 势力或完全不同类型（环境/内心/系统性危机等）。"
         )
     )
     # Inject act plan context when available (multi-act novels)
@@ -4079,6 +5579,75 @@ def _volume_plan_prompts(
     if _genre_instruction:
         user_prompt += f"\n\n{'[Genre planning requirements]' if is_en else '【品类规划要求】'}\n{_genre_instruction}"
     user_prompt = _append_category_context(user_prompt, project, is_en=is_en)
+
+    # Inject foreshadowing scaling constraints so the FIRST volume-plan
+    # pass produces enough plants/payoffs for the novel length. Without
+    # this, production data shows systemic starvation (1 clue per 100-170
+    # chapters across all 6 production books, regardless of genre).
+    try:
+        from bestseller.services.foreshadowing_scaling import (
+            render_foreshadowing_constraints_block,
+        )
+
+        _hierarchy = compute_linear_hierarchy(max(project.target_chapters, 1))
+        _volume_count = int(_hierarchy.get("volume_count") or 1)
+        user_prompt += (
+            "\n\n"
+            + render_foreshadowing_constraints_block(
+                total_chapters=max(project.target_chapters, 1),
+                volume_count=_volume_count,
+                language=language,
+            )
+        )
+    except Exception:
+        logger.debug(
+            "Foreshadowing-scaling constraints block injection failed (non-fatal)",
+            exc_info=True,
+        )
+
+    # Thread narrative-lines core_axis into every volume theme so the
+    # four-layer contract propagates from book_spec down to volumes. The
+    # BookSpec defines `narrative_lines.core_axis` — each volume's
+    # `volume_theme` should echo a core_axis phrasing_token or include an
+    # explicit `core_axis_reference` field.
+    try:
+        _narrative_lines = _mapping(book_spec).get("narrative_lines")
+        if isinstance(_narrative_lines, dict) and _narrative_lines:
+            _core_axis = _mapping(_narrative_lines.get("core_axis"))
+            _axis_statement = str(_core_axis.get("statement") or "").strip()
+            _axis_tokens = _core_axis.get("phrasing_tokens") or []
+            _axis_tokens_str = ", ".join(
+                str(t).strip() for t in _axis_tokens if str(t).strip()
+            )
+            if _axis_statement or _axis_tokens_str:
+                if is_en:
+                    user_prompt += (
+                        "\n\n[NARRATIVE-LINES THREADING — hard constraint]\n"
+                        f"Core axis: {_axis_statement or '(see BookSpec)'}\n"
+                        f"Phrasing tokens: [{_axis_tokens_str or 'see BookSpec'}]\n"
+                        "Every `volume_theme` MUST reference the core_axis "
+                        "(either by using one of the phrasing tokens verbatim "
+                        "or by emitting a `core_axis_reference` field whose "
+                        "value is one of the tokens). Without this, the book "
+                        "collapses into a single overt arc rotating across "
+                        "volumes."
+                    )
+                else:
+                    user_prompt += (
+                        "\n\n【叙事四线贯穿 — 硬性要求】\n"
+                        f"核心轴：{_axis_statement or '（参见 BookSpec）'}\n"
+                        f"关键词：[{_axis_tokens_str or '参见 BookSpec'}]\n"
+                        "每卷的 volume_theme 必须引用核心轴"
+                        "（要么逐字包含其中一个 phrasing_token，"
+                        "要么输出 `core_axis_reference` 字段，值为其中一个 token）。"
+                        "否则全书会塌陷为一条单线剧情在各卷间轮换。"
+                    )
+    except Exception:
+        logger.debug(
+            "Narrative-lines core_axis threading injection failed (non-fatal)",
+            exc_info=True,
+        )
+
     return system_prompt, user_prompt
 
 
@@ -4163,9 +5732,27 @@ def _volume_outline_prompts(
     cast_spec: dict[str, Any],
     volume_plan: list[dict[str, Any]],
     volume_entry: dict[str, Any],
+    *,
+    revealed_ledger_block: str | None = None,
 ) -> tuple[str, str]:
-    """Prompts for generating chapter outlines for a single volume."""
+    """Prompts for generating chapter outlines for a single volume.
+
+    ``revealed_ledger_block``: optional pre-rendered block from
+    :func:`bestseller.services.revealed_ledger.build_revealed_ledger`. When
+    provided, the planner sees an up-to-date summary of already-revealed
+    facts, overused hook_types, and recurring beat phrases so it does not
+    re-reveal or replay them in the new volume's outline.
+
+    Prior-volume summary: computed from ``volume_plan`` using
+    :func:`bestseller.services.volume_fingerprint.render_prior_volumes_summary_block`
+    so the model sees explicitly what earlier volumes already claimed —
+    goal, obstacle, conflict_phase, primary_force_name — and is forced to
+    diverge on the axis of differentiation.
+    """
     from bestseller.services.genre_review_profiles import resolve_genre_review_profile
+    from bestseller.services.volume_fingerprint import (
+        render_prior_volumes_summary_block,
+    )
 
     language = _planner_language(project)
     is_en = is_english_language(language)
@@ -4188,6 +5775,11 @@ def _volume_outline_prompts(
     _methodology_planner_block = render_methodology_block(prompt_pack, phase="planner")
     _methodology_line = f"\n{_methodology_planner_block}\n" if _methodology_planner_block else ""
     _story_package_block = _story_package_prompt_block(project, language=language)
+    _ledger_line = f"{revealed_ledger_block}\n\n" if revealed_ledger_block else ""
+    _prior_vols_block = render_prior_volumes_summary_block(
+        volume_plan, current_volume_number=volume_number, language=language,
+    )
+    _prior_vols_line = f"{_prior_vols_block}\n\n" if _prior_vols_block else ""
     vol_plan_summary = summarize_volume_plan_context(volume_plan, current_volume=volume_number, language=language)
     user_prompt = (
         (
@@ -4201,6 +5793,8 @@ def _volume_outline_prompts(
             f"CastSpec summary:\n{summarize_cast_spec(cast_spec, language='en', volume_number=volume_number)}\n"
             f"VolumePlan context:\n{vol_plan_summary}\n"
             f"{_story_package_block}\n"
+            f"{_prior_vols_line}"
+            f"{_ledger_line}"
             f"{_pp_outline}"
             f"{_methodology_line}"
             f"Generate a ChapterOutlineBatch JSON for volume {volume_number} ONLY ({chapter_count} chapters). "
@@ -4218,6 +5812,8 @@ def _volume_outline_prompts(
             f"CastSpec 摘要：\n{summarize_cast_spec(cast_spec, language='zh', volume_number=volume_number)}\n"
             f"VolumePlan 上下文：\n{vol_plan_summary}\n"
             f"{_story_package_block}\n"
+            f"{_prior_vols_line}"
+            f"{_ledger_line}"
             f"{_pp_outline}"
             f"{_methodology_line}"
             f"请仅生成第{volume_number}卷的 ChapterOutlineBatch JSON（共{chapter_count}章），"
@@ -4920,6 +6516,23 @@ async def generate_novel_plan(
         )
         if llm_run_id is not None:
             llm_run_ids.append(llm_run_id)
+
+        # ── Narrative-lines gate: validate the four-layer macro contract
+        # (明线/暗线/隐藏线/核心轴) is present in the BookSpec before
+        # downstream artifacts consume it. Critical gaps trigger a single
+        # focused repair of the BookSpec.
+        repaired_book_spec, narrative_lines_repair_llm_run_id = await _repair_book_spec_narrative_lines_if_needed(
+            session=session,
+            settings=settings,
+            project=project,
+            premise=premise,
+            book_spec_payload=book_spec_payload,
+            workflow_run_id=workflow_run.id,
+        )
+        if narrative_lines_repair_llm_run_id is not None:
+            llm_run_ids.append(narrative_lines_repair_llm_run_id)
+            book_spec_payload = repaired_book_spec
+
         book_artifact = await import_planning_artifact(
             session,
             project_slug,
@@ -4959,6 +6572,25 @@ async def generate_novel_plan(
         )
         if llm_run_id is not None:
             llm_run_ids.append(llm_run_id)
+
+        # ── World richness gate: scan rules/locations/factions for
+        # scale-appropriate breadth before cast spec and volume plan
+        # consume the world summary. Critical starvation (道种破虚) or
+        # bloat triggers a single focused repair pass. Best-effort — a
+        # failing repair keeps the original spec.
+        repaired_world_spec, world_richness_repair_llm_run_id = await _repair_world_spec_richness_if_needed(
+            session=session,
+            settings=settings,
+            project=project,
+            premise=premise,
+            book_spec_payload=book_spec_payload,
+            world_spec_payload=world_spec_payload,
+            workflow_run_id=workflow_run.id,
+        )
+        if world_richness_repair_llm_run_id is not None:
+            llm_run_ids.append(world_richness_repair_llm_run_id)
+            world_spec_payload = repaired_world_spec
+
         world_artifact = await import_planning_artifact(
             session,
             project_slug,
@@ -5019,6 +6651,120 @@ async def generate_novel_plan(
             output_ref={"artifact_id": str(cast_artifact.id), "llm_run_id": str(llm_run_id) if llm_run_id else None},
         )
         step_order += 1
+
+        # ── Foundation richness gate: scan the cast spec for thin
+        # antagonist roster / insufficient active_volumes coverage before
+        # anything downstream consumes it. If critical, repair once with a
+        # focused LLM pass and persist a new cast-spec artifact version so
+        # the fix is visible in project history. Best-effort: repair
+        # failures fall back to the original spec.
+        _foundation_hierarchy = compute_linear_hierarchy(max(project.target_chapters, 1))
+        _foundation_volume_count = int(_foundation_hierarchy.get("volume_count") or 1)
+        if _foundation_volume_count > 1:
+            repaired_cast_spec, foundation_repair_llm_run_id = await _repair_cast_foundation_if_needed(
+                session=session,
+                settings=settings,
+                project=project,
+                book_spec_payload=book_spec_payload,
+                world_spec_payload=world_spec_payload,
+                cast_spec_payload=cast_spec_payload,
+                volume_count=_foundation_volume_count,
+                workflow_run_id=workflow_run.id,
+            )
+            if foundation_repair_llm_run_id is not None:
+                llm_run_ids.append(foundation_repair_llm_run_id)
+                cast_spec_payload = repaired_cast_spec
+                # Persist repaired cast spec as a new artifact version so
+                # downstream readers (retrieval, plan judge, review stages)
+                # see the enriched roster.
+                cast_artifact = await import_planning_artifact(
+                    session,
+                    project_slug,
+                    PlanningArtifactCreate(
+                        artifact_type=ArtifactType.CAST_SPEC,
+                        content=cast_spec_payload,
+                    ),
+                )
+                artifact_records.append(
+                    PlanningArtifactRecord(
+                        artifact_type=ArtifactType.CAST_SPEC,
+                        artifact_id=cast_artifact.id,
+                        version_no=cast_artifact.version_no,
+                    )
+                )
+
+        # ── Antagonist lifecycle gate: after foundation_richness fills in
+        # the antagonist_forces roster, validate that the `antagonists`
+        # array (with line_role, stages_of_relevance, resolution_type, and
+        # transitions) is lifecycle-rich. Catches the post-fix regression
+        # where each volume has a distinct enemy but every enemy is a
+        # one-volume kill-and-move-on boss.
+        if _foundation_volume_count > 1:
+            repaired_cast_spec, lifecycle_repair_llm_run_id = await _repair_cast_spec_antagonist_lifecycle_if_needed(
+                session=session,
+                settings=settings,
+                project=project,
+                book_spec_payload=book_spec_payload,
+                world_spec_payload=world_spec_payload,
+                cast_spec_payload=cast_spec_payload,
+                volume_count=_foundation_volume_count,
+                workflow_run_id=workflow_run.id,
+            )
+            if lifecycle_repair_llm_run_id is not None:
+                llm_run_ids.append(lifecycle_repair_llm_run_id)
+                cast_spec_payload = repaired_cast_spec
+                cast_artifact = await import_planning_artifact(
+                    session,
+                    project_slug,
+                    PlanningArtifactCreate(
+                        artifact_type=ArtifactType.CAST_SPEC,
+                        content=cast_spec_payload,
+                    ),
+                )
+                artifact_records.append(
+                    PlanningArtifactRecord(
+                        artifact_type=ArtifactType.CAST_SPEC,
+                        artifact_id=cast_artifact.id,
+                        version_no=cast_artifact.version_no,
+                    )
+                )
+
+        # ── Relationship scaling gate: the social-fabric peer of the
+        # world-richness / foundation-richness gates. Validates that the
+        # supporting_cast roster is large enough (≥ 1.5 × volume_count),
+        # spans ≥ 3 distinct role categories, and covers every volume with
+        # at least one active non-antagonist. Without this gate, long
+        # novels ship with only 3-5 named side characters and every
+        # volume recycles the same faces.
+        if _foundation_volume_count > 1:
+            repaired_cast_spec, relationship_repair_llm_run_id = await _repair_cast_spec_relationship_scaling_if_needed(
+                session=session,
+                settings=settings,
+                project=project,
+                book_spec_payload=book_spec_payload,
+                world_spec_payload=world_spec_payload,
+                cast_spec_payload=cast_spec_payload,
+                volume_count=_foundation_volume_count,
+                workflow_run_id=workflow_run.id,
+            )
+            if relationship_repair_llm_run_id is not None:
+                llm_run_ids.append(relationship_repair_llm_run_id)
+                cast_spec_payload = repaired_cast_spec
+                cast_artifact = await import_planning_artifact(
+                    session,
+                    project_slug,
+                    PlanningArtifactCreate(
+                        artifact_type=ArtifactType.CAST_SPEC,
+                        content=cast_spec_payload,
+                    ),
+                )
+                artifact_records.append(
+                    PlanningArtifactRecord(
+                        artifact_type=ArtifactType.CAST_SPEC,
+                        artifact_id=cast_artifact.id,
+                        version_no=cast_artifact.version_no,
+                    )
+                )
 
         # ── Act Plan: macro narrative structure for long novels ──
         hierarchy = compute_linear_hierarchy(max(project.target_chapters, 1))
@@ -5097,6 +6843,44 @@ async def generate_novel_plan(
         )
         if llm_run_id is not None:
             llm_run_ids.append(llm_run_id)
+
+        # ── Volume convergence gate: scan the freshly-generated plan for
+        # cross-volume plot repetition. On critical findings, auto-repair
+        # with the convergence block fed back into the prompt so the LLM
+        # can diverge the offending volumes. The repair is best-effort:
+        # failures fall through to the original plan rather than aborting.
+        volume_plan_payload, conv_repair_llm_run_id = await _repair_volume_plan_convergence_if_needed(
+            session=session,
+            settings=settings,
+            project=project,
+            book_spec_payload=book_spec_payload,
+            world_spec_payload=world_spec_payload,
+            cast_spec_payload=cast_spec_payload,
+            act_plan_payload=act_plan_payload,
+            volume_plan_payload=volume_plan_payload,
+            workflow_run_id=workflow_run.id,
+        )
+        if conv_repair_llm_run_id is not None:
+            llm_run_ids.append(conv_repair_llm_run_id)
+
+        # ── Foreshadowing scaling gate: production data shows every book
+        # (even 1200-chapter novels) was producing only 5-8 clues total.
+        # Scan the volume plan's aggregate plant/payoff counts and repair
+        # once if below the chapter-scaled floor.
+        volume_plan_payload, foresh_repair_llm_run_id = await _repair_volume_plan_foreshadowing_if_needed(
+            session=session,
+            settings=settings,
+            project=project,
+            book_spec_payload=book_spec_payload,
+            world_spec_payload=world_spec_payload,
+            cast_spec_payload=cast_spec_payload,
+            act_plan_payload=act_plan_payload,
+            volume_plan_payload=volume_plan_payload,
+            workflow_run_id=workflow_run.id,
+        )
+        if foresh_repair_llm_run_id is not None:
+            llm_run_ids.append(foresh_repair_llm_run_id)
+
         volume_artifact = await import_planning_artifact(
             session,
             project_slug,
@@ -5216,12 +7000,20 @@ async def generate_novel_plan(
             current_step_name = f"generate_volume_{vol_num}_outline"
             workflow_run.current_step = current_step_name
 
+            # Build the revealed-facts/beats ledger so the LLM sees what
+            # has already been revealed across prior volumes and can avoid
+            # re-revealing or replaying the same beats.
+            _ledger_block = await _build_revealed_ledger_block(
+                session, project.id, language=_planner_language(project)
+            )
+
             vol_outline_system, vol_outline_user = _volume_outline_prompts(
                 project,
                 book_spec_payload,
                 cast_spec_payload,
                 normalized_vp,
                 vol_entry,
+                revealed_ledger_block=_ledger_block,
             )
             vol_outline_payload, llm_run_id = await _generate_structured_artifact(
                 session,
@@ -5471,6 +7263,20 @@ async def generate_foundation_plan(
         )
         if llm_run_id is not None:
             llm_run_ids.append(llm_run_id)
+
+        # ── Narrative-lines gate (see long-form generator for rationale) ──
+        repaired_book_spec, narrative_lines_repair_llm_run_id = await _repair_book_spec_narrative_lines_if_needed(
+            session=session,
+            settings=settings,
+            project=project,
+            premise=premise,
+            book_spec_payload=book_spec_payload,
+            workflow_run_id=workflow_run.id,
+        )
+        if narrative_lines_repair_llm_run_id is not None:
+            llm_run_ids.append(narrative_lines_repair_llm_run_id)
+            book_spec_payload = repaired_book_spec
+
         book_artifact = await import_planning_artifact(session, project_slug, PlanningArtifactCreate(artifact_type=ArtifactType.BOOK_SPEC, content=book_spec_payload))
         artifact_records.append(PlanningArtifactRecord(artifact_type=ArtifactType.BOOK_SPEC, artifact_id=book_artifact.id, version_no=book_artifact.version_no))
         await create_workflow_step_run(session, workflow_run_id=workflow_run.id, step_name=current_step_name, step_order=step_order, status=WorkflowStatus.COMPLETED, output_ref={"artifact_id": str(book_artifact.id)})
@@ -5489,6 +7295,21 @@ async def generate_foundation_plan(
         )
         if llm_run_id is not None:
             llm_run_ids.append(llm_run_id)
+
+        # ── World richness gate (see long-form generator for rationale) ──
+        repaired_world_spec, world_richness_repair_llm_run_id = await _repair_world_spec_richness_if_needed(
+            session=session,
+            settings=settings,
+            project=project,
+            premise=premise,
+            book_spec_payload=book_spec_payload,
+            world_spec_payload=world_spec_payload,
+            workflow_run_id=workflow_run.id,
+        )
+        if world_richness_repair_llm_run_id is not None:
+            llm_run_ids.append(world_richness_repair_llm_run_id)
+            world_spec_payload = repaired_world_spec
+
         world_artifact = await import_planning_artifact(session, project_slug, PlanningArtifactCreate(artifact_type=ArtifactType.WORLD_SPEC, content=world_spec_payload))
         artifact_records.append(PlanningArtifactRecord(artifact_type=ArtifactType.WORLD_SPEC, artifact_id=world_artifact.id, version_no=world_artifact.version_no))
         await create_workflow_step_run(session, workflow_run_id=workflow_run.id, step_name=current_step_name, step_order=step_order, status=WorkflowStatus.COMPLETED, output_ref={"artifact_id": str(world_artifact.id)})
@@ -5507,6 +7328,55 @@ async def generate_foundation_plan(
         )
         if llm_run_id is not None:
             llm_run_ids.append(llm_run_id)
+
+        # ── Foundation richness gate (see long-form generator for rationale) ──
+        _foundation_hierarchy = compute_linear_hierarchy(max(project.target_chapters, 1))
+        _foundation_volume_count = int(_foundation_hierarchy.get("volume_count") or 1)
+        if _foundation_volume_count > 1:
+            repaired_cast_spec, foundation_repair_llm_run_id = await _repair_cast_foundation_if_needed(
+                session=session,
+                settings=settings,
+                project=project,
+                book_spec_payload=book_spec_payload,
+                world_spec_payload=world_spec_payload,
+                cast_spec_payload=cast_spec_payload,
+                volume_count=_foundation_volume_count,
+                workflow_run_id=workflow_run.id,
+            )
+            if foundation_repair_llm_run_id is not None:
+                llm_run_ids.append(foundation_repair_llm_run_id)
+                cast_spec_payload = repaired_cast_spec
+
+            # ── Antagonist lifecycle gate ──
+            repaired_cast_spec, lifecycle_repair_llm_run_id = await _repair_cast_spec_antagonist_lifecycle_if_needed(
+                session=session,
+                settings=settings,
+                project=project,
+                book_spec_payload=book_spec_payload,
+                world_spec_payload=world_spec_payload,
+                cast_spec_payload=cast_spec_payload,
+                volume_count=_foundation_volume_count,
+                workflow_run_id=workflow_run.id,
+            )
+            if lifecycle_repair_llm_run_id is not None:
+                llm_run_ids.append(lifecycle_repair_llm_run_id)
+                cast_spec_payload = repaired_cast_spec
+
+            # ── Relationship scaling gate ──
+            repaired_cast_spec, relationship_repair_llm_run_id = await _repair_cast_spec_relationship_scaling_if_needed(
+                session=session,
+                settings=settings,
+                project=project,
+                book_spec_payload=book_spec_payload,
+                world_spec_payload=world_spec_payload,
+                cast_spec_payload=cast_spec_payload,
+                volume_count=_foundation_volume_count,
+                workflow_run_id=workflow_run.id,
+            )
+            if relationship_repair_llm_run_id is not None:
+                llm_run_ids.append(relationship_repair_llm_run_id)
+                cast_spec_payload = repaired_cast_spec
+
         cast_artifact = await import_planning_artifact(session, project_slug, PlanningArtifactCreate(artifact_type=ArtifactType.CAST_SPEC, content=cast_spec_payload))
         artifact_records.append(PlanningArtifactRecord(artifact_type=ArtifactType.CAST_SPEC, artifact_id=cast_artifact.id, version_no=cast_artifact.version_no))
         await create_workflow_step_run(session, workflow_run_id=workflow_run.id, step_name=current_step_name, step_order=step_order, status=WorkflowStatus.COMPLETED, output_ref={"artifact_id": str(cast_artifact.id)})
@@ -5525,6 +7395,22 @@ async def generate_foundation_plan(
         )
         if llm_run_id is not None:
             llm_run_ids.append(llm_run_id)
+
+        # ── Foreshadowing scaling gate (see long-form path for rationale) ──
+        volume_plan_payload, foresh_repair_llm_run_id = await _repair_volume_plan_foreshadowing_if_needed(
+            session=session,
+            settings=settings,
+            project=project,
+            book_spec_payload=book_spec_payload,
+            world_spec_payload=world_spec_payload,
+            cast_spec_payload=cast_spec_payload,
+            act_plan_payload=None,
+            volume_plan_payload=volume_plan_payload,
+            workflow_run_id=workflow_run.id,
+        )
+        if foresh_repair_llm_run_id is not None:
+            llm_run_ids.append(foresh_repair_llm_run_id)
+
         volume_artifact = await import_planning_artifact(session, project_slug, PlanningArtifactCreate(artifact_type=ArtifactType.VOLUME_PLAN, content=volume_plan_payload))
         artifact_records.append(PlanningArtifactRecord(artifact_type=ArtifactType.VOLUME_PLAN, artifact_id=volume_artifact.id, version_no=volume_artifact.version_no))
         await create_workflow_step_run(session, workflow_run_id=workflow_run.id, step_name=current_step_name, step_order=step_order, status=WorkflowStatus.COMPLETED, output_ref={"artifact_id": str(volume_artifact.id)})
@@ -5745,8 +7631,16 @@ async def generate_volume_plan(
         vol_fallback_chapters = [ch for ch in full_fallback.get("chapters", []) if ch.get("volume_number") == volume_number]
         vol_fallback = {"batch_name": f"volume-{volume_number}-outline", "chapters": vol_fallback_chapters}
 
+        # Build the revealed-facts/beats ledger so the LLM sees what
+        # has already been revealed across prior volumes and can avoid
+        # re-revealing or replaying the same beats.
+        _ledger_block = await _build_revealed_ledger_block(
+            session, project.id, language=_planner_language(project)
+        )
+
         vol_outline_system, vol_outline_user = _volume_outline_prompts(
             project, book_spec, effective_cast_spec, _mapping_list(volume_plan), vol_entry,
+            revealed_ledger_block=_ledger_block,
         )
         vol_outline_payload, llm_run_id = await _generate_structured_artifact(
             session, settings, project=project,

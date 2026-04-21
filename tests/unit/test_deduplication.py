@@ -10,10 +10,14 @@ from bestseller.services.deduplication import (
     check_scene_duplication,
     clean_meta_text_markers,
     compute_jaccard_similarity,
+    detect_chapter_text_loop,
     detect_intra_chapter_repetition,
+    detect_short_cluster_near_repeat,
     extract_frequent_phrases,
+    remove_chapter_text_loops,
     remove_intra_chapter_duplicates,
     remove_intra_chapter_duplicates_paraphrase,
+    remove_short_cluster_near_repeats,
 )
 
 pytestmark = pytest.mark.unit
@@ -386,3 +390,252 @@ def test_detect_intra_chapter_repetition_accepts_threshold_kwarg() -> None:
     )
     findings_default = detect_intra_chapter_repetition(_REPEATED_CHAPTER)
     assert len(findings_with_kwarg) == len(findings_default)
+
+
+# ---------------------------------------------------------------------------
+# Block-loop detector (LLM stuck-in-loop failure mode)
+# ---------------------------------------------------------------------------
+
+# Mirrors the actual chapter-181 failure: 17-paragraph block of short lines
+# repeats 5x back-to-back. Each line is under the _MIN_PARA_LEN (12-char)
+# threshold so per-paragraph dedup misses them entirely.
+_LOOP_BLOCK = "\n\n".join([
+    "“我选第三个。”",
+    "宁尘抬起手。",
+    "“你——”",
+    "“砰！”",
+    "殿主的眉头皱起。",
+    "他忽然明白了什么。",
+    "宁尘没有说话。",
+    "然后他看见了陆沉。",
+    "“你来了。”",
+    "“我看见了。”",
+])
+
+
+def test_detect_chapter_text_loop_finds_consecutive_repeat() -> None:
+    # Block repeats 3 times back-to-back — per-paragraph dedup wouldn't catch
+    # any of these because each line is < 12 chars.
+    text = "\n\n".join([_LOOP_BLOCK, _LOOP_BLOCK, _LOOP_BLOCK])
+    loops = detect_chapter_text_loop(text)
+    assert len(loops) == 1
+    assert loops[0]["window_size"] == 10
+    assert loops[0]["repeats"] == 3
+    assert loops[0]["severity"] == "critical"
+
+
+def test_detect_chapter_text_loop_needs_min_repeats() -> None:
+    # A single occurrence is not a loop.
+    loops = detect_chapter_text_loop(_LOOP_BLOCK)
+    assert loops == []
+
+
+def test_detect_chapter_text_loop_ignores_clean_chapter() -> None:
+    clean = (
+        "宁尘走进偏殿，空气中弥漫着霉味。\n\n"
+        "他蹲下身，按住石板。\n\n"
+        "青白色的光芒与符文共振。\n\n"
+        "甬道在他面前缓缓展开。\n\n"
+        "尽头的金光越来越盛。"
+    )
+    assert detect_chapter_text_loop(clean) == []
+
+
+def test_remove_chapter_text_loops_keeps_first_copy_only() -> None:
+    text = "\n\n".join([_LOOP_BLOCK, _LOOP_BLOCK, _LOOP_BLOCK, _LOOP_BLOCK])
+    cleaned, removed = remove_chapter_text_loops(text)
+    # 10 paragraphs per block × (4 - 1) dropped copies = 30 paragraphs removed
+    assert removed == 30
+    # Cleaned text contains the block exactly once.
+    assert cleaned.count("我选第三个") == 1
+    # Structure preserved.
+    assert "砰！" in cleaned
+
+
+def test_remove_chapter_text_loops_is_idempotent() -> None:
+    text = "\n\n".join([_LOOP_BLOCK, _LOOP_BLOCK])
+    cleaned_once, r1 = remove_chapter_text_loops(text)
+    cleaned_twice, r2 = remove_chapter_text_loops(cleaned_once)
+    assert r2 == 0
+    assert cleaned_once == cleaned_twice
+
+
+def test_remove_chapter_text_loops_preserves_non_loop_content() -> None:
+    prefix = "宁尘的脚尖刚踏过废墟的最后一块碎石。\n\n他的视线扫过四周。"
+    suffix = "甬道中一片死寂。\n\n他的呼吸声在墙壁间回荡。"
+    text = "\n\n".join([prefix, _LOOP_BLOCK, _LOOP_BLOCK, _LOOP_BLOCK, suffix])
+    cleaned, removed = remove_chapter_text_loops(text)
+    assert removed == 20  # 2 dropped copies × 10 paragraphs
+    assert "脚尖刚踏过废墟" in cleaned
+    assert "甬道中一片死寂" in cleaned
+
+
+def test_detect_chapter_text_loop_catches_minimum_window() -> None:
+    # 3 paragraphs repeated 2x — smallest loop we accept.
+    block = "“砰！”\n\n他抬起手。\n\n“你——”"
+    text = "\n\n".join([block, block])
+    loops = detect_chapter_text_loop(text)
+    assert len(loops) == 1
+    assert loops[0]["window_size"] == 3
+    assert loops[0]["repeats"] == 2
+
+
+def test_detect_chapter_text_loop_prefers_larger_window() -> None:
+    # A 6-paragraph block that repeats 2x. A naive detector might report this
+    # as a window=3 / repeats=4 if the inner 3-para sub-window happens to
+    # match too — we prefer reporting the *outer* loop window=6.
+    inner = "他抬起手。\n\n“砰！”\n\n他放下手。"
+    block = "\n\n".join([inner, "殿主的眉头皱起。", "他忽然明白了什么。", "宁尘没有说话。"])
+    text = "\n\n".join([block, block])
+    loops = detect_chapter_text_loop(text)
+    assert len(loops) == 1
+    # Window should be the outer 6 (not the inner 3).
+    assert loops[0]["window_size"] == 6
+    assert loops[0]["repeats"] == 2
+
+
+def test_chapter_181_style_loop_is_caught() -> None:
+    """End-to-end: the exact pattern from 道种破虚 ch181 gets collapsed."""
+    # 17-paragraph short-line block, repeated 5 times — matches ch181 scenario.
+    ch181_block = "\n\n".join([
+        "“我选第三个。”",
+        "宁尘抬起手。",
+        "青白色的光芒从他掌心炸开。",
+        "“你——”",
+        "殿主后退一步，眼中闪过一丝意外。",
+        "“砰！”",
+        "殿主的眉头皱起。",
+        "他忽然明白了什么。",
+        "宁尘没有说话。",
+        "然后他看见了陆沉。",
+        "“你来了。”",
+        "“我看见了。”",
+        "他的目光落在宁尘身后。",
+        "“苏瑶。”",
+        "脚步声停了。",
+        "掌心的烙印猛然一跳。",
+        "殿主的眼神变了。",
+    ])
+    text = "\n\n".join([ch181_block] * 5)
+    loops = detect_chapter_text_loop(text)
+    assert loops, "detector must catch the ch181 loop pattern"
+    assert loops[0]["repeats"] == 5
+    cleaned, removed = remove_chapter_text_loops(text)
+    assert removed == 17 * 4  # 4 dropped copies × 17 paragraphs each
+    # First copy retained
+    assert cleaned.count("我选第三个") == 1
+
+
+# ---------------------------------------------------------------------------
+# Fuzzy short-line cluster near-repeat detector
+# ---------------------------------------------------------------------------
+
+def test_detect_short_cluster_near_repeat_catches_nonidentical_echo() -> None:
+    # Two adjacent clusters of short lines with ~85% hash overlap but
+    # different lengths — the exact-match block detector cannot catch this.
+    cluster_a = "\n\n".join([
+        "“我选第三个。”",
+        "宁尘抬起手。",
+        "“你——”",
+        "殿主后退一步，眼中闪过一丝意外。",  # long line inside cluster
+        "“砰！”",
+        "殿主的眉头皱起。",
+        "他忽然明白了什么。",
+        "宁尘没有说话。",
+        "然后他看见了陆沉。",
+        "“你来了。”",
+        "“我看见了。”",
+        "他的目光落在宁尘身后。",
+        "“苏瑶。”",
+        "脚步声停了。",
+        "可她的眼睛是清醒的。",
+        "掌心的烙印猛然一跳。",
+        "殿主的眼神变了。",
+    ])
+    cluster_b = "\n\n".join([
+        "“我选第三个。”",
+        "宁尘抬起手。",
+        "“你——”",
+        "“砰！”",
+        "殿主的眉头皱起。",
+        "他忽然明白了什么。",
+        "宁尘没有说话。",
+        "然后他看见了陆沉。",
+        "“你来了。”",
+        "“我看见了。”",
+        "他的目光落在宁尘身后。",
+        "“苏瑶。”",
+        "脚步声停了。",
+    ])
+    text = cluster_a + "\n\n" + cluster_b
+    findings = detect_short_cluster_near_repeat(text)
+    assert findings, "must detect the non-identical short-line echo"
+    # cluster_b has 13 short paragraphs, all echoing cluster_a
+    assert len(findings) >= 12
+
+
+def test_remove_short_cluster_near_repeats_keeps_first_occurrence() -> None:
+    cluster = "\n\n".join([
+        "“我选第三个。”",
+        "宁尘抬起手。",
+        "“你——”",
+        "“砰！”",
+        "殿主的眉头皱起。",
+        "他忽然明白了什么。",
+        "宁尘没有说话。",
+        "然后他看见了陆沉。",
+        "“你来了。”",
+        "“我看见了。”",
+    ])
+    text = cluster + "\n\n" + cluster
+    cleaned, removed = remove_short_cluster_near_repeats(text)
+    assert removed == 10, "second cluster should be entirely dropped"
+    assert cleaned.count("我选第三个") == 1
+
+
+def test_short_cluster_near_repeat_ignores_narrative_region() -> None:
+    # Short lines scattered in a narrative-rich (long-paragraph-heavy) context
+    # should NOT be flagged — they are not in a short-line-dense region.
+    narrative = "\n\n".join([
+        "宁尘盯着陆沉的背影，三百年的时光在那具身躯上刻下了太深的痕迹。",
+        "“你来了。”",  # short line repeated below but not in dense context
+        "甬道里的空气像被抽干了，远处传来水滴落在石砖上的细微声响。",
+        "苏瑶慢慢走近，黑色的气息在她周身流转，像是活物。",
+        "“你来了。”",
+        "殿主抬起手，金光在他掌心凝聚，空气都被扭曲得变了形。",
+    ])
+    findings = detect_short_cluster_near_repeat(narrative)
+    assert findings == [], "short lines in narrative region must not be flagged"
+
+
+def test_short_cluster_near_repeat_skips_ultrashort_fragments() -> None:
+    # 1-2 char fragments ("好。" / "嗯。") inside a short-dense region should
+    # not be treated as meaningful — they repeat legitimately in dialogue.
+    cluster = "\n\n".join([
+        "“好。”",
+        "“嗯。”",
+        "“快。”",
+        "“走。”",
+        "“好。”",
+        "“嗯。”",
+    ])
+    findings = detect_short_cluster_near_repeat(cluster, min_short_line_len=3)
+    assert findings == []
+
+
+def test_short_cluster_near_repeat_is_idempotent() -> None:
+    cluster = "\n\n".join([
+        "“我选第三个。”",
+        "宁尘抬起手。",
+        "“你——”",
+        "“砰！”",
+        "殿主的眉头皱起。",
+        "他忽然明白了什么。",
+        "宁尘没有说话。",
+    ])
+    text = cluster + "\n\n" + cluster + "\n\n" + cluster
+    cleaned_once, r1 = remove_short_cluster_near_repeats(text)
+    cleaned_twice, r2 = remove_short_cluster_near_repeats(cleaned_once)
+    assert r1 > 0
+    assert r2 == 0
+    assert cleaned_twice == cleaned_once

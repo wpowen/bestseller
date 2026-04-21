@@ -254,7 +254,14 @@ async def test_materialize_latest_chapter_outline_batch_updates_existing_planned
 
     session = FakeSession(
         scalar_results=[artifact, existing_chapter],
-        scalars_results=[[existing_scene], [existing_chapter, stale_chapter]],
+        scalars_results=[
+            # New plan_fingerprint.scan_batch_for_duplicates pulls existing
+            # chapters (outside the new batch) to compare against.  Empty is
+            # fine here — the scan only affects logging / metadata.
+            [],
+            [existing_scene],
+            [existing_chapter, stale_chapter],
+        ],
     )
     result = await workflow_services.materialize_latest_chapter_outline_batch(
         session,

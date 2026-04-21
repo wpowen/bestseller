@@ -184,6 +184,13 @@ class SceneWriterContextPacket(BaseModel):
     # duplication_score + findings without re-running the scan.
     pipeline_duplication_findings: list[dict[str, Any]] = Field(default_factory=list)
 
+    # ── Plan-richness gate findings (pre-draft validation) ──
+    # Populated by scene_plan_richness.validate_scene_model before
+    # generate_scene_draft. Non-empty block = planner produced a thin card;
+    # injected as a RED-FLAG prompt section so the writer LLM knows the card
+    # is incomplete and must compensate with its own concrete invention.
+    plan_richness_block: str | None = None
+
 
 class ChapterSceneContext(BaseModel):
     scene_number: int = Field(ge=1)

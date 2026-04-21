@@ -715,6 +715,69 @@ async def run_scene_pipeline(
         except Exception:
             logger.debug("Failed to inject pending consistency warnings (non-fatal)", exc_info=True)
 
+        # ── Plan-richness gate (zero LLM cost, pre-draft) ──
+        # Validates that the scene card has concrete, specific purpose / state
+        # fields before we spend tokens on the writer LLM. Thin cards force
+        # the model into safe short-dialogue loops (see ch181 "浮标封锁").
+        if (
+            draft is None
+            and getattr(settings.pipeline, "enable_scene_plan_richness_gate", True)
+        ):
+            try:
+                from bestseller.services.scene_plan_richness import validate_scene_model
+
+                _lang = getattr(project, "language", None) or settings.generation.language
+                _richness = validate_scene_model(scene, language=_lang)
+                if _richness.issues:
+                    _codes = [i.code for i in _richness.issues]
+                    logger.warning(
+                        "Scene %d.%d richness %s — issues=%s",
+                        chapter_number, scene_number, _richness.severity, _codes,
+                    )
+                    _block = _richness.to_prompt_block(language=_lang)
+                    if shared_context is not None and _block:
+                        shared_context.plan_richness_block = _block
+                        # Also inject critical issues into contradiction_warnings
+                        # so the writer sees them in the Tier-0 warnings section.
+                        for i in _richness.critical_issues[:3]:
+                            shared_context.contradiction_warnings.append(
+                                f"[场景卡稠密度] {i.field_path}: {i.message}"
+                            )
+                    # Persist the findings on the scene metadata so the planner
+                    # can pick them up on the next re-plan cycle.
+                    try:
+                        _meta = dict(getattr(scene, "metadata_json", {}) or {})
+                        _meta["plan_richness"] = {
+                            "severity": _richness.severity,
+                            "issue_codes": _codes,
+                            "checked_at_chapter": chapter_number,
+                            "checked_at_scene": scene_number,
+                        }
+                        scene.metadata_json = _meta
+                    except Exception:
+                        logger.debug(
+                            "Failed to persist richness findings on scene metadata (non-fatal)",
+                            exc_info=True,
+                        )
+                    # Optionally block: raise so caller triggers re-plan path.
+                    if (
+                        _richness.severity == "critical"
+                        and getattr(settings.pipeline, "scene_richness_block_on_critical", False)
+                    ):
+                        workflow_run.metadata_json = {
+                            **workflow_run.metadata_json,
+                            "blocked_by_richness_gate": True,
+                            "richness_issue_codes": _codes,
+                        }
+                        raise ValueError(
+                            f"Scene {chapter_number}.{scene_number} blocked by plan-richness "
+                            f"gate: {_codes}. Re-plan required (card too thin)."
+                        )
+            except ValueError:
+                raise
+            except Exception:
+                logger.debug("Plan-richness gate failed (non-fatal)", exc_info=True)
+
         if draft is None:
             current_step_name = "generate_scene_draft"
             workflow_run.current_step = current_step_name

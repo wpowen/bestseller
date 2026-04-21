@@ -3150,6 +3150,251 @@ async def _compute_chapter_duplication_signal(
     return duplication_score, findings
 
 
+async def _compute_chapter_antagonist_scope_signal(
+    *,
+    session: AsyncSession,
+    project: ProjectModel,
+    chapter: ChapterModel,
+    draft: ChapterDraftVersionModel,
+) -> tuple[list[ChapterReviewFinding], dict[str, Any]]:
+    """Detect when a chapter uses out-of-scope antagonists.
+
+    Runs the per-chapter slice of ``chapter_antagonist_audit`` against
+    the project's antagonist_plans. Returns
+    ``(findings, evidence_summary_patch)`` — empty if nothing to flag.
+    Failure is silent (the review must not block on audit errors).
+
+    Scope / forward-only policy
+    ---------------------------
+
+    The gate only fires for chapters that are being *freshly written*
+    through the pipeline — it must never retroactively flag finalized
+    content. The user's directive (2026-04-21): "已经写完的卷和章节先
+    不变。后面的卷和章节做调整." We honour that by skipping:
+
+      * ``status == "complete"`` — canon, don't touch.
+      * ``status == "revision"`` — already flagged by a prior review
+        cycle; adding another critical finding here would force a
+        second rewrite loop on chapters the user asked to leave alone.
+      * ``project.metadata_json["b10d_frontier_volume"]`` — optional
+        per-project watermark. If set, chapters whose volume_number is
+        strictly less than the frontier volume are treated as canon
+        even if their status is ``drafting`` / ``review``.
+
+    ``planned`` / ``outlining`` / ``drafting`` / ``review`` chapters
+    proceed through the gate.
+    """
+    if not (draft and draft.content_md):
+        return [], {}
+    if chapter.volume_id is None:
+        return [], {}
+
+    # --- Forward-only scoping -------------------------------------------
+    chapter_status = (getattr(chapter, "status", "") or "").lower()
+    if chapter_status in ("complete", "revision"):
+        logger.debug(
+            "chapter_antagonist_audit: skipping ch%d (status=%s) — "
+            "already-written content is not retroactively flagged.",
+            chapter.chapter_number,
+            chapter_status,
+        )
+        return [], {}
+
+    project_meta = getattr(project, "metadata_json", None) or {}
+    frontier_volume_raw = project_meta.get("b10d_frontier_volume")
+    try:
+        frontier_volume = int(frontier_volume_raw) if frontier_volume_raw else 0
+    except (TypeError, ValueError):
+        frontier_volume = 0
+
+    try:
+        from sqlalchemy import select as _select
+        from bestseller.infra.db.models import (
+            AntagonistPlanModel,
+            VolumeModel,
+        )
+        from bestseller.services.chapter_antagonist_audit import (
+            audit_chapter_against_volume,
+            build_volume_antagonist_index,
+        )
+    except Exception:
+        logger.debug("chapter_antagonist_audit import failed", exc_info=True)
+        return [], {}
+
+    try:
+        volume = await session.scalar(
+            _select(VolumeModel).where(VolumeModel.id == chapter.volume_id)
+        )
+        if volume is None:
+            return [], {}
+        volume_number = volume.volume_number
+
+        # Honour per-project watermark: anything strictly before the
+        # frontier volume is canon and must not be retroactively flagged.
+        if frontier_volume and volume_number < frontier_volume:
+            logger.debug(
+                "chapter_antagonist_audit: skipping ch%d (vol=%d < "
+                "frontier=%d) — pre-watermark volumes are canon.",
+                chapter.chapter_number,
+                volume_number,
+                frontier_volume,
+            )
+            return [], {}
+
+        # Volume count for the project
+        volume_count_row = await session.scalar(
+            _select(func.count(VolumeModel.id)).where(
+                VolumeModel.project_id == project.id
+            )
+        )
+        volume_count = int(volume_count_row or 1)
+
+        plan_rows = list(
+            await session.scalars(
+                _select(AntagonistPlanModel).where(
+                    AntagonistPlanModel.project_id == project.id
+                )
+            )
+        )
+        if not plan_rows:
+            return [], {}
+
+        plans = []
+        for r in plan_rows:
+            meta = r.metadata_json or {}
+            stages = meta.get("stages_of_relevance") or []
+            plans.append(
+                {
+                    "name": r.antagonist_label,
+                    "scope_volume_number": r.scope_volume_number,
+                    "stages_of_relevance": stages,
+                }
+            )
+
+        by_volume, all_names = build_volume_antagonist_index(
+            plans, volume_count=max(volume_count, 1)
+        )
+        audit = audit_chapter_against_volume(
+            chapter_number=chapter.chapter_number,
+            volume_number=volume_number,
+            chapter_text=draft.content_md,
+            allowed_in_volume=by_volume.get(volume_number, set()),
+            all_antagonist_names=all_names,
+            language=getattr(project, "language", None) or "zh-CN",
+        )
+    except Exception:
+        logger.debug(
+            "chapter_antagonist_audit signal failed for ch%d",
+            chapter.chapter_number,
+            exc_info=True,
+        )
+        return [], {}
+
+    findings: list[ChapterReviewFinding] = []
+    for f in audit.findings:
+        severity = "critical" if f.severity == "critical" else "major"
+        findings.append(
+            ChapterReviewFinding(
+                category="antagonist_scope",
+                severity=severity,
+                message=f.message,
+            )
+        )
+
+    evidence: dict[str, Any] = {}
+    if audit.findings:
+        evidence = {
+            "chapter_antagonist_audit": {
+                "volume_number": volume_number,
+                "expected_antagonists": list(audit.expected_antagonists),
+                "mentioned_expected": list(audit.mentioned_expected),
+                "mentioned_out_of_scope": [
+                    {"name": n, "count": c}
+                    for (n, c) in audit.mentioned_out_of_scope
+                ],
+                "critical_count": sum(
+                    1 for f in audit.findings if f.severity == "critical"
+                ),
+                "warning_count": sum(
+                    1 for f in audit.findings if f.severity == "warning"
+                ),
+            }
+        }
+    return findings, evidence
+
+
+def _merge_antagonist_scope_into_review(
+    review_result: ChapterReviewResult,
+    antagonist_findings: list[ChapterReviewFinding],
+    antagonist_evidence: dict[str, Any],
+    *,
+    language: str | None = None,
+) -> ChapterReviewResult:
+    """Fold antagonist-scope findings into an existing ChapterReviewResult.
+
+    Critical antagonist findings force verdict='rewrite' and
+    severity_max='critical', and prepend rewrite_instructions so the
+    rewrite prompt tells the writer which antagonist to stop using.
+    """
+    if not antagonist_findings:
+        return review_result
+
+    has_critical = any(f.severity == "critical" for f in antagonist_findings)
+
+    merged_findings = list(review_result.findings) + antagonist_findings
+    evidence = dict(review_result.evidence_summary)
+    evidence.update(antagonist_evidence)
+
+    new_severity_max = review_result.severity_max
+    severity_rank = {"info": 0, "major": 1, "warning": 1, "critical": 2}
+    for f in antagonist_findings:
+        if severity_rank.get(f.severity, 0) > severity_rank.get(new_severity_max, 0):
+            new_severity_max = f.severity
+
+    new_verdict = review_result.verdict
+    rewrite_prefix: str | None = None
+    if has_critical:
+        new_verdict = "rewrite"
+        is_en = bool(language and str(language).lower().startswith("en"))
+        bad_names = [
+            f.message.split("『")[1].split("』")[0]
+            if "『" in f.message and "』" in f.message
+            else None
+            for f in antagonist_findings
+            if f.severity == "critical"
+        ]
+        bad_names = sorted({n for n in bad_names if n})
+        if is_en:
+            rewrite_prefix = (
+                "[antagonist scope] Remove present-tense use of out-of-scope "
+                f"antagonist(s): {bad_names}. Only antagonists scoped to this "
+                "volume may act in the chapter; earlier-volume bosses are only "
+                "allowed as brief past-tense flashback references."
+            )
+        else:
+            rewrite_prefix = (
+                f"【敌人范围】必须移除当下视角对非本卷敌人的使用：{bad_names}。"
+                "本章只能让本卷所属敌人实际行动，他卷敌人仅允许以简短回忆形式出现。"
+            )
+
+    merged_instructions = review_result.rewrite_instructions
+    if rewrite_prefix:
+        merged_instructions = (
+            f"{rewrite_prefix}\n\n{merged_instructions}"
+            if merged_instructions
+            else rewrite_prefix
+        )
+
+    return ChapterReviewResult(
+        verdict=new_verdict,
+        severity_max=new_severity_max,
+        scores=review_result.scores,
+        findings=merged_findings,
+        evidence_summary=evidence,
+        rewrite_instructions=merged_instructions,
+    )
+
+
 async def review_chapter_draft(
     session: AsyncSession,
     settings: AppSettings,
@@ -3194,6 +3439,26 @@ async def review_chapter_draft(
         duplication_score=ch_duplication_score,
         duplication_findings=ch_duplication_findings,
     )
+
+    # Antagonist-scope gate (B10d): after the rule-based evaluator, fold
+    # in the per-chapter antagonist audit so chapters that carry a
+    # foreign-volume antagonist as the present-tense enemy are rerouted
+    # to a rewrite with specific instructions.
+    antagonist_findings, antagonist_evidence = (
+        await _compute_chapter_antagonist_scope_signal(
+            session=session,
+            project=project,
+            chapter=chapter,
+            draft=draft,
+        )
+    )
+    if antagonist_findings:
+        review_result = _merge_antagonist_scope_into_review(
+            review_result,
+            antagonist_findings,
+            antagonist_evidence,
+            language=getattr(project, "language", None),
+        )
 
     critic_response = render_chapter_review_summary(
         review_result,

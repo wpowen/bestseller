@@ -33,8 +33,12 @@ from bestseller.infra.db.models import (
 )
 from bestseller.infra.db.session import session_scope
 from bestseller.services.deduplication import (
+    detect_chapter_text_loop,
     detect_intra_chapter_repetition,
+    detect_short_cluster_near_repeat,
+    remove_chapter_text_loops,
     remove_intra_chapter_duplicates_paraphrase,
+    remove_short_cluster_near_repeats,
 )
 from bestseller.settings import load_settings
 
@@ -125,17 +129,35 @@ async def run_async(
             original = path.read_text(encoding="utf-8")
         except UnicodeDecodeError:
             continue
-        findings = detect_intra_chapter_repetition(original, paraphrase_threshold=0.55)
-        if not findings:
-            continue
-        cleaned, removed = remove_intra_chapter_duplicates_paraphrase(
-            original, paraphrase_threshold=0.55
+        # Block-loop detector first (catches short-line repeats that the
+        # per-paragraph dedup misses because each line is < _MIN_PARA_LEN).
+        loop_findings = detect_chapter_text_loop(original)
+        stage1, loop_removed = (
+            remove_chapter_text_loops(original) if loop_findings else (original, 0)
         )
+        # Fuzzy short-line cluster repeats (non-identical echoes of a short-line
+        # block — the exact-match loop detector above misses them).
+        short_findings = detect_short_cluster_near_repeat(stage1)
+        stage2, short_removed = (
+            remove_short_cluster_near_repeats(stage1) if short_findings else (stage1, 0)
+        )
+        findings = detect_intra_chapter_repetition(stage2, paraphrase_threshold=0.55)
+        cleaned, para_removed = remove_intra_chapter_duplicates_paraphrase(
+            stage2, paraphrase_threshold=0.55
+        )
+        removed = loop_removed + short_removed + para_removed
         if removed == 0 and cleaned == original:
             continue
         changed += 1
         total_removed += removed
-        print(f"  fix  {path.name}  — {len(findings)} finding(s), removed {removed} paragraph(s)")
+        detail = []
+        if loop_findings:
+            detail.append(f"{len(loop_findings)} loop block(s) → {loop_removed} para")
+        if short_findings:
+            detail.append(f"{len(short_findings)} short-cluster echo → {short_removed} para")
+        if findings:
+            detail.append(f"{len(findings)} dup para → {para_removed} para")
+        print(f"  fix  {path.name}  — {'; '.join(detail)}")
         if not dry_run:
             path.write_text(cleaned, encoding="utf-8")
         if not skip_db and project_slug:

@@ -276,6 +276,52 @@ async def test_upsert_cast_spec_creates_characters_relationships_and_snapshots()
 
 
 @pytest.mark.asyncio
+async def test_upsert_cast_spec_backfills_active_volumes_from_forces() -> None:
+    """antagonist_forces[].active_volumes must propagate into character.metadata_json
+    so narrative._build_antagonist_plan_specs can route per-volume antagonists
+    correctly. Root cause of the xianxia (道种破虚) failure — every volume
+    plan collapsed onto the primary antagonist because no character row had
+    active_volumes set."""
+
+    project = build_project()
+    session = FakeSession(scalar_results=[None, None, None])
+
+    cast = build_cast_spec()
+    # Pin the primary antagonist to vols 11-12, and add two force entries
+    # routing supporting-cast characters to vols 1-5 and 6-10.
+    cast["supporting_cast"] = [
+        {"name": "顾临", "role": "ally", "goal": "确认真相"},
+        {"name": "苏瑶", "role": "antagonist", "goal": "阻击主角"},
+        {"name": "寒鸦", "role": "antagonist", "goal": "切断补给"},
+    ]
+    cast["antagonist_forces"] = [
+        {"name": "初期围堵", "force_type": "character",
+         "character_ref": "苏瑶", "active_volumes": [1, 2, 3, 4, 5]},
+        {"name": "中期封锁", "force_type": "character",
+         "character_ref": "寒鸦", "active_volumes": [6, 7, 8, 9, 10]},
+        {"name": "终局对决", "force_type": "character",
+         "character_ref": "祁镇", "active_volumes": [11, 12]},
+    ]
+
+    await story_bible_services.upsert_cast_spec(session, project, cast)
+
+    characters = [item for item in session.added if isinstance(item, CharacterModel)]
+    by_name = {c.name: c for c in characters}
+    assert by_name["苏瑶"].metadata_json.get("active_volumes") == [1, 2, 3, 4, 5]
+    assert by_name["寒鸦"].metadata_json.get("active_volumes") == [6, 7, 8, 9, 10]
+    assert by_name["祁镇"].metadata_json.get("active_volumes") == [11, 12]
+    # Characters not referenced by any force keep an empty/undefined active_volumes
+    assert "active_volumes" not in (by_name["顾临"].metadata_json or {})
+    # Referenced supporting_cast entries are promoted to role='antagonist' so
+    # downstream narrative routing (_build_antagonist_plan_specs) can consider
+    # them as per-volume antagonist candidates.
+    assert by_name["苏瑶"].role == "antagonist"
+    assert by_name["寒鸦"].role == "antagonist"
+    # Non-referenced allies are NOT promoted.
+    assert by_name["顾临"].role == "ally"
+
+
+@pytest.mark.asyncio
 async def test_upsert_cast_spec_counts_voice_profiles_and_moral_frameworks() -> None:
     project = build_project()
     session = FakeSession(scalar_results=[None, None, None])

@@ -603,6 +603,42 @@ async def upsert_cast_spec(
         characters_upserted += 1
         characters_by_name[character.name] = character
 
+    # Cross-reference antagonist_forces[].active_volumes into character.metadata_json
+    # so downstream routing (narrative._build_antagonist_plan_specs, conflict arcs,
+    # per-volume antagonist selection) can resolve per-volume antagonists instead
+    # of collapsing to the single primary. Root cause of the xianxia failure
+    # (all 25 antagonist_plans labeled with the primary antagonist) lived here:
+    # the LLM supplies active_volumes on forces, but nothing propagated it to the
+    # character rows that downstream routing reads.
+    force_active_by_name: dict[str, set[int]] = {}
+    for force in cast_spec.antagonist_forces:
+        ref = (force.character_ref or "").strip()
+        if not ref:
+            continue
+        normalized_ref = _normalize_name(ref)
+        bucket = force_active_by_name.setdefault(normalized_ref, set())
+        for vol in force.active_volumes or []:
+            if isinstance(vol, int) and vol > 0:
+                bucket.add(vol)
+    for name, active_vols in force_active_by_name.items():
+        character = characters_by_name.get(name)
+        if character is None:
+            continue
+        sorted_vols = sorted(active_vols)
+        current_meta = character.metadata_json if isinstance(character.metadata_json, dict) else {}
+        existing = current_meta.get("active_volumes") or []
+        merged_vols = sorted(set(existing) | set(sorted_vols)) if isinstance(existing, list) else sorted_vols
+        character.metadata_json = _merge_metadata(
+            current_meta,
+            {"active_volumes": merged_vols},
+        )
+        # Promote supporting_cast entries referenced by antagonist_forces.character_ref
+        # to role='antagonist' so downstream routing (narrative._build_antagonist_plan_specs)
+        # can include them in its per-volume selection pool. Without this, only the
+        # primary antagonist is routable and every plan falls back to them.
+        if character.role != "antagonist" and character.role != "protagonist":
+            character.role = "antagonist"
+
     await session.flush()
 
     for character in characters_by_name.values():

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from typing import Any
 from uuid import UUID
 
@@ -35,6 +36,9 @@ from bestseller.services.story_bible import (
 )
 from bestseller.services.world_expansion import refresh_world_expansion_boundaries
 from bestseller.settings import load_settings
+
+
+logger = logging.getLogger(__name__)
 
 
 WORKFLOW_TYPE_MATERIALIZE_CHAPTER_OUTLINE = "materialize_chapter_outline_batch"
@@ -242,6 +246,54 @@ async def materialize_chapter_outline_batch(
         )
         step_order += 1
         outlined_chapter_numbers = {chapter.chapter_number for chapter in batch.chapters}
+
+        # ── Plan fingerprint gate: detect near-duplicate chapters before DB write ──
+        # Compares each outline in the batch against the others AND against any
+        # chapters already persisted for this project. Findings are logged and
+        # attached to the workflow run's metadata so the planner can pick them
+        # up on the next re-plan cycle.
+        try:
+            from bestseller.services.plan_fingerprint import scan_batch_for_duplicates
+
+            _existing_for_fp = list(
+                await session.scalars(
+                    select(ChapterModel)
+                    .where(ChapterModel.project_id == project.id)
+                    .where(ChapterModel.chapter_number.notin_(outlined_chapter_numbers))
+                )
+            )
+            _fp_report = scan_batch_for_duplicates(
+                list(batch.chapters),
+                _existing_for_fp,
+            )
+            if _fp_report.findings:
+                _fp_summary = [
+                    {
+                        "chapter_a": f.chapter_a,
+                        "chapter_b": f.chapter_b,
+                        "similarity": round(f.similarity, 3),
+                        "severity": f.severity,
+                        "reason": f.reason,
+                    }
+                    for f in _fp_report.findings[:20]
+                ]
+                logger.warning(
+                    "Plan fingerprint scan flagged %d chapter pair(s) in batch '%s': %s",
+                    len(_fp_report.findings),
+                    batch.batch_name,
+                    _fp_summary,
+                )
+                workflow_run.metadata_json = {
+                    **(workflow_run.metadata_json or {}),
+                    "plan_fingerprint_findings": _fp_summary,
+                    "plan_fingerprint_has_critical": _fp_report.has_critical,
+                }
+        except Exception:
+            logger.debug(
+                "Plan fingerprint scan failed for batch '%s' (non-fatal)",
+                batch.batch_name,
+                exc_info=True,
+            )
 
         for chapter_outline in batch.chapters:
             current_step_name = f"create_chapter_{chapter_outline.chapter_number}"

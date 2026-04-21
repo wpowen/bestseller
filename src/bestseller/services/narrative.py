@@ -869,13 +869,28 @@ def _build_antagonist_plan_specs(
         else:
             pressure_level = _clamp_metric(0.45 + (volume.volume_number * 0.12))
 
-        # Find the matching antagonist character for this volume
-        plan_antagonist = antagonist
-        for extra in (all_antagonists or []):
+        # Find the matching antagonist character for this volume.
+        # Priority order:
+        #   1. A non-primary antagonist whose metadata.active_volumes includes
+        #      this volume (populated from cast_spec.antagonist_forces.character_ref
+        #      during persist_cast_spec).
+        #   2. The primary antagonist if they themselves carry active_volumes
+        #      for this volume.
+        #   3. Fall back to the primary antagonist.
+        plan_antagonist: CharacterModel | None = None
+        extras = [c for c in (all_antagonists or []) if antagonist is None or c.id != antagonist.id]
+        for extra in extras:
             extra_meta = extra.metadata_json if isinstance(extra.metadata_json, dict) else {}
-            if volume.volume_number in extra_meta.get("active_volumes", []):
+            if volume.volume_number in (extra_meta.get("active_volumes") or []):
                 plan_antagonist = extra
                 break
+        if plan_antagonist is None and antagonist is not None:
+            prim_meta = antagonist.metadata_json if isinstance(antagonist.metadata_json, dict) else {}
+            prim_active = prim_meta.get("active_volumes") or []
+            if not prim_active or volume.volume_number in prim_active:
+                plan_antagonist = antagonist
+        if plan_antagonist is None:
+            plan_antagonist = antagonist
 
         plan_label = plan_antagonist.name if plan_antagonist else force_name
         specs.append(
@@ -909,6 +924,9 @@ def _build_antagonist_plan_specs(
                     "conflict_phase": conflict_phase,
                     "force_name": force_name,
                     "antagonist_label": plan_label,
+                    "antagonist_character_id": str(plan_antagonist.id)
+                    if plan_antagonist is not None and getattr(plan_antagonist, "id", None) is not None
+                    else None,
                 },
             }
         )
@@ -971,34 +989,181 @@ def _build_motif_placement_specs(
     *,
     theme_arcs_by_code: dict[str, Any],
     chapters: list[ChapterModel],
+    chapters_by_volume: dict[int, list[ChapterModel]] | None = None,
+    volume_entries: dict[int, Any] | None = None,
 ) -> list[dict[str, Any]]:
+    """Build motif placement specs that scale with volume count.
+
+    Pre-fix (starvation): exactly 4 placements across the entire novel
+    (one every ~79 chapters for a 316-chapter book), leaving 80 %+ of
+    volumes with no theme anchor — this was the root cause of the
+    observed volume-level repetition where every volume collapsed to the
+    same surface-level pressure template (道种破虚 audit).
+
+    Post-fix contract (see ``bestseller.services.motif_scaling``):
+      * Every volume MUST receive ≥ 1 placement (plant/echo/transform/resolve
+        rotates so each of the four canonical types appears at least once
+        in the book).
+      * Default density is **2 placements per volume** — the first
+        volume seeds the theme's plant + echo, the mid-band carries
+        echo + transform, and the final volume carries transform + resolve.
+      * When multiple theme_arcs exist (main-theme plus per-volume
+        arcs), each volume's placements draw from BOTH the main arc and
+        the volume-local arc so the theme layer is not a single voice
+        repeating itself.
+
+    Parameters
+    ----------
+    theme_arcs_by_code
+        Theme arc models keyed by theme_code. ``main-theme`` is used as
+        the book-wide spine; ``vol-NN-theme`` entries (if present) are
+        used as per-volume accents.
+    chapters
+        Flat list of ChapterModel sorted by chapter_number.
+    chapters_by_volume
+        Chapters grouped by volume_number (sorted within each volume).
+        When supplied, placements are scheduled per-volume; when missing
+        we fall back to the legacy global-rhythm behaviour.
+    volume_entries
+        Volume plan entries keyed by volume_number. Used to pull a
+        concrete motif_label from ``volume_theme`` where available.
+    """
+
     specs: list[dict[str, Any]] = []
     if not theme_arcs_by_code or not chapters:
         return specs
+
     main_theme_arc = theme_arcs_by_code.get("main-theme")
     if main_theme_arc is None:
         main_theme_arc = next(iter(theme_arcs_by_code.values()))
-    theme_arc_id = main_theme_arc.id
-    total = len(chapters)
-    placement_points = [
-        (0, "plant"),
-        (max(1, total // 4), "echo"),
-        (max(2, total // 2), "transform"),
-        (total - 1, "resolve"),
-    ]
-    for idx, ptype in placement_points:
-        if idx < total:
-            chapter = chapters[idx]
-            specs.append({
-                "theme_arc_id": theme_arc_id,
-                "motif_label": f"主题意象-{ptype}",
-                "placement_type": ptype,
-                "volume_number": None,
-                "chapter_number": chapter.chapter_number,
-                "scene_number": 1,
-                "description": f"第{chapter.chapter_number}章通过{ptype}手法呈现核心主题意象。",
-                "status": "planned",
-            })
+    main_theme_arc_id = main_theme_arc.id
+
+    # Legacy path: no per-volume grouping available → fall back to the
+    # pre-fix global rhythm (this is only hit from callers that predate
+    # the chapters_by_volume wiring).
+    if not chapters_by_volume:
+        total = len(chapters)
+        placement_points = [
+            (0, "plant"),
+            (max(1, total // 4), "echo"),
+            (max(2, total // 2), "transform"),
+            (total - 1, "resolve"),
+        ]
+        for idx, ptype in placement_points:
+            if idx < total:
+                chapter = chapters[idx]
+                specs.append({
+                    "theme_arc_id": main_theme_arc_id,
+                    "motif_label": f"主题意象-{ptype}",
+                    "placement_type": ptype,
+                    "volume_number": None,
+                    "chapter_number": chapter.chapter_number,
+                    "scene_number": 1,
+                    "description": (
+                        f"第{chapter.chapter_number}章通过{ptype}手法呈现核心主题意象。"
+                    ),
+                    "status": "planned",
+                })
+        return specs
+
+    # Per-volume scaling path. Distribute the plant→echo→transform→resolve
+    # rhythm across the whole book and ALSO give every volume at least
+    # one placement so the theme never goes dark for a full volume.
+    volume_numbers = sorted(chapters_by_volume.keys())
+    total_volumes = len(volume_numbers)
+    if total_volumes == 0:
+        return specs
+
+    # Book-wide rhythm: distribute plant/echo/transform/resolve across
+    # quartiles of volumes so the macro-arc still reads plant-early,
+    # resolve-late.
+    def _stage_for_volume(idx: int) -> str:
+        # idx is 0-based position in the volume sequence.
+        # First quarter → plant, second → echo, third → transform, last → resolve.
+        if total_volumes <= 1:
+            return "resolve"
+        ratio = idx / max(total_volumes - 1, 1)
+        if ratio < 0.25:
+            return "plant"
+        if ratio < 0.55:
+            return "echo"
+        if ratio < 0.85:
+            return "transform"
+        return "resolve"
+
+    for idx, vol_num in enumerate(volume_numbers):
+        vol_chapters = chapters_by_volume.get(vol_num) or []
+        if not vol_chapters:
+            continue
+        primary_stage = _stage_for_volume(idx)
+        # Secondary stage is the "next" canonical stage to thread the
+        # plant→echo→transform→resolve arc continuously inside the
+        # volume, without losing the macro-rhythm.
+        rhythm = ("plant", "echo", "transform", "resolve")
+        sec_idx = (rhythm.index(primary_stage) + 1) % len(rhythm)
+        secondary_stage = rhythm[sec_idx] if total_volumes > 1 else "resolve"
+
+        # Pick the per-volume arc (if present) for the secondary placement
+        # so the theme layer speaks with two voices: the main book spine +
+        # the volume-local accent.
+        vol_theme_code = f"vol-{vol_num:02d}-theme"
+        vol_theme_arc = theme_arcs_by_code.get(vol_theme_code)
+        secondary_arc_id = (
+            vol_theme_arc.id if vol_theme_arc is not None else main_theme_arc_id
+        )
+
+        # Motif label: prefer the volume's own theme statement (if the
+        # volume plan provided one) so the label is concrete, not a
+        # template placeholder.
+        vol_entry = (volume_entries or {}).get(vol_num)
+        vol_theme_text = None
+        if vol_entry is not None:
+            vol_theme_text = getattr(vol_entry, "volume_theme", None)
+        label_core = (
+            (vol_theme_text.strip() if isinstance(vol_theme_text, str) and vol_theme_text.strip()
+             else None)
+            or getattr(vol_theme_arc, "theme_statement", None)
+            or "核心意象"
+        )
+
+        # Choose two distinct chapters inside the volume for the two
+        # placements — the first near the opening, the second near the
+        # volume climax.
+        first_chapter = vol_chapters[0]
+        climax_idx = max(0, int(len(vol_chapters) * 0.7) - 1)
+        climax_chapter = vol_chapters[climax_idx]
+        # Avoid pointing both placements at the same chapter when the
+        # volume is very short.
+        if climax_chapter.chapter_number == first_chapter.chapter_number and len(vol_chapters) > 1:
+            climax_chapter = vol_chapters[-1]
+
+        specs.append({
+            "theme_arc_id": main_theme_arc_id,
+            "motif_label": f"{label_core}·{primary_stage}",
+            "placement_type": primary_stage,
+            "volume_number": vol_num,
+            "chapter_number": first_chapter.chapter_number,
+            "scene_number": 1,
+            "description": (
+                f"第{vol_num}卷以 {primary_stage} 阶段引入主题意象「{label_core}」，"
+                f"落在第 {first_chapter.chapter_number} 章。"
+            ),
+            "status": "planned",
+        })
+        specs.append({
+            "theme_arc_id": secondary_arc_id,
+            "motif_label": f"{label_core}·{secondary_stage}",
+            "placement_type": secondary_stage,
+            "volume_number": vol_num,
+            "chapter_number": climax_chapter.chapter_number,
+            "scene_number": 1,
+            "description": (
+                f"第{vol_num}卷在第 {climax_chapter.chapter_number} 章以 "
+                f"{secondary_stage} 手法延展主题意象「{label_core}」。"
+            ),
+            "status": "planned",
+        })
+
     return specs
 
 
@@ -1618,12 +1783,25 @@ async def rebuild_narrative_graph(
     )
     antagonist_plan_models: list[AntagonistPlanModel] = []
     for spec in antagonist_plan_specs:
-        # Use per-plan label from metadata if available (for multi-force plans)
+        # Use per-plan label from metadata if available (for multi-force plans).
+        # Also resolve the per-plan antagonist character_id from metadata so each
+        # volume's plan points at the correct per-volume antagonist, not always
+        # at the primary — this was the routing collapse that made every xianxia
+        # volume collapse onto a single antagonist label.
         plan_meta = spec.get("metadata_json") or {}
         plan_antag_label = plan_meta.get("antagonist_label", antagonist.name if antagonist is not None else "未知反派")
+        plan_char_id_raw = plan_meta.get("antagonist_character_id")
+        plan_char_id: UUID | None = None
+        if plan_char_id_raw:
+            try:
+                plan_char_id = UUID(str(plan_char_id_raw))
+            except (ValueError, TypeError):
+                plan_char_id = None
+        if plan_char_id is None and antagonist is not None:
+            plan_char_id = antagonist.id
         antagonist_plan = AntagonistPlanModel(
             project_id=project.id,
-            antagonist_character_id=antagonist.id if antagonist is not None else None,
+            antagonist_character_id=plan_char_id,
             antagonist_label=plan_antag_label,
             plan_code=spec["plan_code"],
             title=spec["title"],
@@ -1670,6 +1848,8 @@ async def rebuild_narrative_graph(
     motif_specs = _build_motif_placement_specs(
         theme_arcs_by_code=theme_arcs_by_code,
         chapters=chapters,
+        chapters_by_volume=chapters_by_volume,
+        volume_entries=volume_entries,
     )
     motif_models: list[MotifPlacementModel] = []
     for spec in motif_specs:

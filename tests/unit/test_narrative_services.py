@@ -402,6 +402,81 @@ async def test_build_narrative_overview_renders_materialized_graph(
     assert overview.antagonist_plans[0].plan_code == "volume-01-pressure"
 
 
+def test_build_antagonist_plan_specs_routes_per_volume_via_active_volumes() -> None:
+    """Each volume must resolve to the antagonist whose active_volumes
+    covers that volume. Xianxia failure: all 25 plans collapsed onto the
+    primary antagonist because no character carried active_volumes."""
+
+    project_id = uuid4()
+    # Primary antagonist covers volumes 3-4 only
+    primary = build_character(project_id, "祁镇", "antagonist")
+    primary.metadata_json = {"active_volumes": [3, 4]}
+    # Two per-volume antagonists routed via character metadata (the new
+    # behavior we just wired up in persist_cast_spec).
+    early = build_character(project_id, "苏瑶", "antagonist")
+    early.metadata_json = {"active_volumes": [1, 2]}
+    late = build_character(project_id, "寒鸦", "antagonist")
+    late.metadata_json = {"active_volumes": [5, 6]}
+
+    volumes = [build_volume(project_id, v) for v in range(1, 7)]
+    chapters_by_volume = {
+        v.volume_number: [build_chapter(project_id, v.id, v.volume_number, f"第{v.volume_number}章")]
+        for v in volumes
+    }
+
+    specs = narrative_services._build_antagonist_plan_specs(
+        protagonist=build_character(project_id, "沈砚", "protagonist"),
+        antagonist=primary,
+        all_antagonists=[primary, early, late],
+        volumes=volumes,
+        chapters_by_volume=chapters_by_volume,
+        volume_entries={},
+    )
+
+    # Pick out per-volume specs (drop the master_plan header)
+    per_vol = [s for s in specs if s["threat_type"] != "master_plan"]
+    assert len(per_vol) == 6
+    labels_by_vol = {s["scope_volume_number"]: s["metadata_json"]["antagonist_label"] for s in per_vol}
+    ids_by_vol = {s["scope_volume_number"]: s["metadata_json"]["antagonist_character_id"] for s in per_vol}
+    assert labels_by_vol[1] == "苏瑶"
+    assert labels_by_vol[2] == "苏瑶"
+    assert labels_by_vol[3] == "祁镇"
+    assert labels_by_vol[4] == "祁镇"
+    assert labels_by_vol[5] == "寒鸦"
+    assert labels_by_vol[6] == "寒鸦"
+    assert ids_by_vol[1] == str(early.id)
+    assert ids_by_vol[3] == str(primary.id)
+    assert ids_by_vol[5] == str(late.id)
+
+
+def test_build_antagonist_plan_specs_falls_back_to_primary_when_no_active_volumes() -> None:
+    """If no character carries active_volumes, every volume falls back to
+    the primary antagonist — preserving legacy behavior when metadata is
+    not populated."""
+
+    project_id = uuid4()
+    primary = build_character(project_id, "祁镇", "antagonist")
+    # No active_volumes on any character
+    volumes = [build_volume(project_id, v) for v in range(1, 4)]
+    chapters_by_volume = {
+        v.volume_number: [build_chapter(project_id, v.id, v.volume_number, f"第{v.volume_number}章")]
+        for v in volumes
+    }
+
+    specs = narrative_services._build_antagonist_plan_specs(
+        protagonist=build_character(project_id, "沈砚", "protagonist"),
+        antagonist=primary,
+        all_antagonists=[primary],
+        volumes=volumes,
+        chapters_by_volume=chapters_by_volume,
+        volume_entries={},
+    )
+    per_vol = [s for s in specs if s["threat_type"] != "master_plan"]
+    for s in per_vol:
+        assert s["metadata_json"]["antagonist_label"] == "祁镇"
+        assert s["metadata_json"]["antagonist_character_id"] == str(primary.id)
+
+
 def test_build_theme_arc_specs_extracts_book_and_volume_themes() -> None:
     project = build_project()
     project.metadata_json["book_spec"] = {"theme": "真相与牺牲的代价"}

@@ -468,6 +468,298 @@ def remove_intra_chapter_duplicates_paraphrase(
     return "\n\n".join(kept), removed
 
 
+# ---------------------------------------------------------------------------
+# 4b. Block-level LLM-loop detector
+# ---------------------------------------------------------------------------
+# When an LLM enters a pathological looping state (for example chapter 181 of
+# 道种破虚 which repeats a 17-paragraph block 5× in a row), each *individual*
+# paragraph may be well under the 12-char threshold used by the per-paragraph
+# dedup above, so the paraphrase detector is blind to it. This function walks
+# the paragraph stream looking for *sequences* of paragraphs that repeat
+# consecutively — treating the block, not the line, as the comparison unit.
+
+_LOOP_MIN_WINDOW = 3       # smallest block (paragraphs) to consider a loop
+_LOOP_MAX_WINDOW = 30      # largest block to search — bigger windows are rare
+_LOOP_MIN_REPEATS = 2      # need ≥2 consecutive repeats of the same block
+
+
+def detect_chapter_text_loop(
+    chapter_text: str,
+    *,
+    min_window: int = _LOOP_MIN_WINDOW,
+    max_window: int = _LOOP_MAX_WINDOW,
+    min_repeats: int = _LOOP_MIN_REPEATS,
+) -> list[dict[str, Any]]:
+    """Detect consecutive repeating paragraph blocks (LLM looping failure mode).
+
+    Returns a list of dicts describing each loop. Unlike per-paragraph dedup,
+    the minimum length check applies to the **block** (window × repeats),
+    not to individual paragraphs — so short-line loops ("砰！" / "他抬起手。"
+    / ...) are caught.
+    """
+    paragraphs = _split_paragraphs(chapter_text)
+    if len(paragraphs) < min_window * min_repeats:
+        return []
+    hashes = [
+        int(hashlib.md5(_normalize_text(p).encode()).hexdigest()[:12], 16)
+        for p in paragraphs
+    ]
+    findings: list[dict[str, Any]] = []
+    n = len(hashes)
+    i = 0
+    while i < n:
+        best_match: tuple[int, int] | None = None
+        # Prefer the smallest matching window — that is the fundamental period
+        # of the loop. A larger window that "also matches" is always a multiple
+        # of the fundamental period and would under-count repeats.
+        window_cap = min(max_window, (n - i) // min_repeats)
+        for window in range(min_window, window_cap + 1):
+            if hashes[i : i + window] != hashes[i + window : i + 2 * window]:
+                continue
+            repeats = 2
+            j = i + 2 * window
+            while j + window <= n and hashes[i : i + window] == hashes[j : j + window]:
+                repeats += 1
+                j += window
+            best_match = (window, repeats)
+            break
+        if best_match is not None:
+            window, repeats = best_match
+            loop_start = i
+            loop_end = i + window * repeats
+            sample = " / ".join(p[:30] for p in paragraphs[i : i + window])
+            findings.append({
+                "loop_start_index": loop_start,
+                "loop_end_index": loop_end,
+                "window_size": window,
+                "repeats": repeats,
+                "sample": sample[:240],
+                "severity": "critical",
+                "message": (
+                    f"[章节循环] 自第{loop_start+1}段起，{window}段为一块，"
+                    f"连续复读{repeats}次。疑似生成阶段模型进入循环状态。"
+                ),
+            })
+            i = loop_end
+        else:
+            i += 1
+    return findings
+
+
+def remove_chapter_text_loops(
+    chapter_text: str,
+    *,
+    min_window: int = _LOOP_MIN_WINDOW,
+    max_window: int = _LOOP_MAX_WINDOW,
+    min_repeats: int = _LOOP_MIN_REPEATS,
+) -> tuple[str, int]:
+    """Collapse repeating paragraph blocks to their first occurrence.
+
+    Runs `detect_chapter_text_loop` then drops all paragraphs in repeat
+    copies 2..N (keeping only the first copy of each loop). Returns the
+    cleaned text and the count of paragraphs removed.
+    """
+    loops = detect_chapter_text_loop(
+        chapter_text,
+        min_window=min_window,
+        max_window=max_window,
+        min_repeats=min_repeats,
+    )
+    if not loops:
+        return chapter_text, 0
+    paragraphs = _split_paragraphs(chapter_text)
+    drop_indices: set[int] = set()
+    for loop in loops:
+        w = loop["window_size"]
+        start = loop["loop_start_index"]
+        end = loop["loop_end_index"]
+        # Keep [start, start + w); drop [start + w, end)
+        for p in range(start + w, end):
+            drop_indices.add(p)
+        logger.warning(
+            "Removing LLM-loop block: start=%d window=%d repeats=%d (%s)",
+            start, w, loop["repeats"], loop["sample"][:80],
+        )
+    kept = [p for i, p in enumerate(paragraphs) if i not in drop_indices]
+    return "\n\n".join(kept), len(drop_indices)
+
+
+# ---------------------------------------------------------------------------
+# 4c. Fuzzy short-line cluster near-repeat detector
+# ---------------------------------------------------------------------------
+# The block-loop detector above requires *exact* window equality, which misses
+# a second LLM failure mode: two adjacent clusters of short lines that share
+# most of their paragraphs but have minor insertions/deletions (e.g. chapter
+# 181 post-main-loop had two short-line clusters with ~85% overlap but
+# different lengths). This detector finds regions dense with short paragraphs
+# and drops short paragraphs whose hash was already seen earlier in the
+# chapter *inside a similarly dense region* — catching the near-repeat case
+# while leaving legitimate short dialogue in narrative-rich regions untouched.
+
+_SHORT_CLUSTER_DENSITY = 0.6    # ≥60% of neighbours must also be short
+_SHORT_CLUSTER_WINDOW = 11       # ±5 neighbours = 11-paragraph context window
+_SHORT_LINE_MIN_LEN = 3          # ignore 1-2 char fragments ("好", "嗯。")
+_ECHO_MAX_DISTANCE = 30          # first occurrence must be within N paragraphs
+_ECHO_CLUSTER_WINDOW = 8         # confirmation window — ≥N echoes within this span
+_ECHO_CLUSTER_MIN = 2            # need ≥N echoes clustered to confirm loop
+                                 # (2 within 8 paras = strong local signal)
+
+
+def _hash_paragraph(para: str) -> int:
+    return int(hashlib.md5(_normalize_text(para).encode()).hexdigest()[:12], 16)
+
+
+def _short_line_flags(
+    paragraphs: list[str],
+    *,
+    max_paragraph_length: int,
+) -> list[bool]:
+    return [len(_normalize_text(p)) < max_paragraph_length for p in paragraphs]
+
+
+def _short_dense_flags(
+    short_flags: list[bool],
+    *,
+    window: int,
+    density: float,
+) -> list[bool]:
+    """Return per-paragraph flag: True when the ±window/2 neighbourhood is
+    dominated by short paragraphs."""
+    n = len(short_flags)
+    half = window // 2
+    out = [False] * n
+    for i in range(n):
+        lo = max(0, i - half)
+        hi = min(n, i + half + 1)
+        slice_ = short_flags[lo:hi]
+        if slice_ and (sum(slice_) / len(slice_)) >= density:
+            out[i] = short_flags[i]
+    return out
+
+
+def detect_short_cluster_near_repeat(
+    chapter_text: str,
+    *,
+    max_paragraph_length: int = _MIN_PARA_LEN,
+    window: int = _SHORT_CLUSTER_WINDOW,
+    density: float = _SHORT_CLUSTER_DENSITY,
+    min_short_line_len: int = _SHORT_LINE_MIN_LEN,
+    max_echo_distance: int = _ECHO_MAX_DISTANCE,
+    echo_cluster_window: int = _ECHO_CLUSTER_WINDOW,
+    echo_cluster_min: int = _ECHO_CLUSTER_MIN,
+) -> list[dict[str, Any]]:
+    """Detect short paragraphs that repeat an earlier short paragraph, *both*
+    sitting inside a short-line-dense region of the chapter.
+
+    To avoid false positives on legitimate repeated dialogue (character
+    catchphrases, motif callbacks), we require:
+
+      1. Both occurrences sit inside a short-line-dense region (window/density).
+      2. The echo is within ``max_echo_distance`` paragraphs of the first
+         occurrence — real loop artifacts are local, legitimate callbacks
+         tend to be far apart.
+      3. The echo is part of a CLUSTER of ≥ ``echo_cluster_min`` echoes within
+         an ``echo_cluster_window``-paragraph span — isolated single-line
+         repeats are preserved as legitimate.
+
+    This is the fuzzy companion to ``detect_chapter_text_loop``: it tolerates
+    insertions, deletions, and reordering between the original short cluster
+    and its echo(es).
+    """
+    paragraphs = _split_paragraphs(chapter_text)
+    if len(paragraphs) < window:
+        return []
+    short_flags = _short_line_flags(
+        paragraphs, max_paragraph_length=max_paragraph_length
+    )
+    dense_flags = _short_dense_flags(short_flags, window=window, density=density)
+
+    # Stage 1: collect candidate echoes. Track every short-enough paragraph's
+    # position regardless of density — a loop artifact's "first copy" often
+    # sits in mixed narrative (not flagged as dense). Only the ECHO position
+    # must be inside a dense region to count as a candidate.
+    seen: dict[int, list[int]] = {}
+    candidates: list[dict[str, Any]] = []
+    for i, para in enumerate(paragraphs):
+        normalized = _normalize_text(para)
+        if len(normalized) < min_short_line_len or len(normalized) >= max_paragraph_length:
+            continue
+        h = _hash_paragraph(para)
+        if h in seen and dense_flags[i]:
+            nearest = seen[h][-1]
+            if i - nearest <= max_echo_distance:
+                candidates.append({
+                    "first_pos": nearest,
+                    "second_pos": i,
+                    "text": para[:120],
+                })
+        seen.setdefault(h, []).append(i)
+
+    if len(candidates) < echo_cluster_min:
+        return []
+
+    # Stage 2: confirm only echoes that are part of a tight cluster. Walk a
+    # sliding window over candidate positions; a candidate is confirmed if
+    # ≥ echo_cluster_min candidates (including itself) fall within the span.
+    echo_positions = [c["second_pos"] for c in candidates]
+    confirmed: set[int] = set()
+    for idx, pos in enumerate(echo_positions):
+        # Count echoes within [pos - window/2, pos + window/2]
+        half = echo_cluster_window // 2
+        nearby = sum(
+            1 for p in echo_positions if pos - half <= p <= pos + half
+        )
+        if nearby >= echo_cluster_min:
+            confirmed.add(pos)
+
+    findings: list[dict[str, Any]] = []
+    for c in candidates:
+        if c["second_pos"] not in confirmed:
+            continue
+        findings.append({
+            **c,
+            "severity": "major",
+            "message": (
+                f"[短行聚团复读] 第{c['second_pos']+1}段在短行密集区与第"
+                f"{c['first_pos']+1}段完全一致，疑似生成阶段模型复读。"
+            ),
+        })
+    return findings
+
+
+def remove_short_cluster_near_repeats(
+    chapter_text: str,
+    *,
+    max_paragraph_length: int = _MIN_PARA_LEN,
+    window: int = _SHORT_CLUSTER_WINDOW,
+    density: float = _SHORT_CLUSTER_DENSITY,
+    min_short_line_len: int = _SHORT_LINE_MIN_LEN,
+) -> tuple[str, int]:
+    """Drop short paragraphs identified by ``detect_short_cluster_near_repeat``.
+
+    Keeps the first occurrence inside a dense region. Returns the cleaned
+    chapter text and the count of paragraphs removed.
+    """
+    findings = detect_short_cluster_near_repeat(
+        chapter_text,
+        max_paragraph_length=max_paragraph_length,
+        window=window,
+        density=density,
+        min_short_line_len=min_short_line_len,
+    )
+    if not findings:
+        return chapter_text, 0
+    paragraphs = _split_paragraphs(chapter_text)
+    drop_indices = {f["second_pos"] for f in findings}
+    for f in findings:
+        logger.warning(
+            "Removing short-line-cluster near-repeat: para=%d (first at %d) '%s'",
+            f["second_pos"], f["first_pos"], f["text"][:40],
+        )
+    kept = [p for i, p in enumerate(paragraphs) if i not in drop_indices]
+    return "\n\n".join(kept), len(drop_indices)
+
+
 def remove_intra_chapter_duplicates(chapter_text: str) -> tuple[str, int]:
     """Remove duplicate paragraph blocks from an assembled chapter.
 

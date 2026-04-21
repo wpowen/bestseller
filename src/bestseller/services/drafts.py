@@ -69,6 +69,7 @@ _CONTEXT_TIER_1 = frozenset({
     "identity_line",
     "phrase_avoidance_line",
     "genre_constraint_line",
+    "plan_richness_line",
 })
 _CONTEXT_TIER_2 = frozenset({
     "recent_scene_section",
@@ -1866,6 +1867,8 @@ def build_scene_draft_prompts(
     location_ledger_block: str | None = None,
     # Scene scope isolation block (earlier scenes written — don't rewrite them)
     scene_scope_isolation_block: str | None = None,
+    # Plan-richness gate findings (pre-draft)
+    plan_richness_block: str | None = None,
     # Context budget
     context_budget_tokens: int = 6000,
 ) -> tuple[str, str]:
@@ -2106,6 +2109,13 @@ def build_scene_draft_prompts(
     if scene_scope_isolation_block:
         _scene_scope_isolation_line = f"{scene_scope_isolation_block}\n\n"
 
+    # Plan-richness RED FLAGS — the pre-draft gate detected a thin scene card.
+    # Surface the issues so the writer LLM knows which fields are generic /
+    # missing and must compensate with its own concrete invention.
+    _plan_richness_line = ""
+    if plan_richness_block:
+        _plan_richness_line = f"{plan_richness_block}\n\n"
+
     # Phase-3 wiring: scene/sequel pattern
     _scene_sequel_line = _render_scene_sequel_section(
         swain_pattern, scene_skeleton, is_en=is_en,
@@ -2199,6 +2209,7 @@ def build_scene_draft_prompts(
             "tension_target_line": _tension_target_line,
             "location_ledger_line": _location_ledger_line,
             "scene_scope_isolation_line": _scene_scope_isolation_line,
+            "plan_richness_line": _plan_richness_line,
             "hard_fact_line": _hard_fact_line,
             "knowledge_line": _knowledge_line,
             "recent_scene_section": recent_scene_section,
@@ -2244,6 +2255,7 @@ def build_scene_draft_prompts(
     _tension_target_line = _ctx["tension_target_line"]
     _location_ledger_line = _ctx["location_ledger_line"]
     _scene_scope_isolation_line = _ctx["scene_scope_isolation_line"]
+    _plan_richness_line = _ctx["plan_richness_line"]
     _hard_fact_line = _ctx["hard_fact_line"]
     _knowledge_line = _ctx["knowledge_line"]
     recent_scene_section = _ctx["recent_scene_section"]
@@ -2273,6 +2285,7 @@ def build_scene_draft_prompts(
         user_prompt = (
             f"{_hard_fact_line}"
             f"{_contradiction_line}"
+            f"{_plan_richness_line}"
             f"{_identity_line}"
             f"{_scene_scope_isolation_line}"
             f"{_genre_constraint_line}"
@@ -2342,6 +2355,7 @@ def build_scene_draft_prompts(
         user_prompt = (
             f"{_hard_fact_line}"
             f"{_contradiction_line}"
+            f"{_plan_richness_line}"
             f"{_identity_line}"
             f"{_scene_scope_isolation_line}"
             f"{_genre_constraint_line}"
@@ -2855,6 +2869,9 @@ async def generate_scene_draft(
             scene_scope_isolation_block=(
                 context_packet.scene_scope_isolation_block if context_packet else None
             ),
+            plan_richness_block=(
+                context_packet.plan_richness_block if context_packet else None
+            ),
             context_budget_tokens=(
                 settings.generation.context_budget_tokens if settings else 6000
             ),
@@ -3043,8 +3060,12 @@ async def assemble_chapter_draft(
     try:
         from bestseller.services.deduplication import (
             clean_meta_text_markers,
+            detect_chapter_text_loop,
             detect_intra_chapter_repetition,
+            detect_short_cluster_near_repeat,
+            remove_chapter_text_loops,
             remove_intra_chapter_duplicates_paraphrase,
+            remove_short_cluster_near_repeats,
         )
 
         # 1. Strip author/tool meta-text markers (e.g. "**第28章 完**", "（本章完）")
@@ -3055,7 +3076,40 @@ async def assemble_chapter_draft(
                 chapter_number, _meta_removed,
             )
 
-        # 2. Remove intra-chapter duplicate paragraphs (byte-exact + paraphrased)
+        # 2a. Block-loop detector — catch LLM "stuck-in-loop" failure mode
+        # where a short-line sequence repeats N times. Must run *before*
+        # per-paragraph dedup because the per-paragraph threshold (≥12 chars)
+        # would skip short lines inside the loop.
+        _loop_findings = detect_chapter_text_loop(content_md)
+        if _loop_findings:
+            logger.warning(
+                "Chapter %d: %d LLM-loop block(s) detected after assembly — auto-collapsing.",
+                chapter_number, len(_loop_findings),
+            )
+            for _lf in _loop_findings:
+                logger.warning("  %s", _lf["message"])
+            content_md, _loop_removed = remove_chapter_text_loops(content_md)
+            logger.info(
+                "Chapter %d: collapsed %d paragraph(s) from LLM-loop blocks.",
+                chapter_number, _loop_removed,
+            )
+
+        # 2a-2. Fuzzy short-line cluster near-repeat — catches the failure mode
+        # where two clusters of short lines echo each other with insertions/
+        # deletions (so the exact-match block detector above misses them).
+        _short_findings = detect_short_cluster_near_repeat(content_md)
+        if _short_findings:
+            logger.warning(
+                "Chapter %d: %d short-line cluster near-repeat(s) — auto-collapsing.",
+                chapter_number, len(_short_findings),
+            )
+            content_md, _short_removed = remove_short_cluster_near_repeats(content_md)
+            logger.info(
+                "Chapter %d: dropped %d short-line paragraph(s) from cluster repeats.",
+                chapter_number, _short_removed,
+            )
+
+        # 2b. Remove intra-chapter duplicate paragraphs (byte-exact + paraphrased)
         _dup_findings = detect_intra_chapter_repetition(content_md)
         if _dup_findings:
             logger.warning(

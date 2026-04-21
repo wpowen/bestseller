@@ -195,6 +195,8 @@ class PipelineSettings(BaseModel):
     accept_on_stall: bool = True  # Accept best draft when rewrite is stalled (no score improvement)
     enable_chapter_feedback: bool = True  # Post-chapter feedback extraction
     enable_contradiction_checks: bool = True  # Pre-scene contradiction checks
+    enable_scene_plan_richness_gate: bool = True  # Pre-draft scene card richness validation
+    scene_richness_block_on_critical: bool = False  # If True, raise on critical richness failure instead of logging + injecting warnings
     feedback_stale_clue_threshold: int = 15  # Chapters before a clue is stale
     feedback_dormant_plan_threshold: int = 10  # Chapters before antagonist plan is dormant
     feedback_arc_inactivity_threshold: int = 8  # Chapters before arc is dead-ended

@@ -53,6 +53,12 @@ from bestseller.services.narrative_tree import (
     get_narrative_tree_node_by_path,
     search_narrative_tree_for_project,
 )
+from bestseller.services.audit_loop import (
+    build_full_audit,
+    build_phase1_audit,
+    persist_audit_findings,
+)
+from bestseller.services.scorecard import compute_scorecard, save_scorecard
 from bestseller.services.pipelines import (
     run_autowrite_pipeline,
     run_chapter_pipeline,
@@ -256,6 +262,223 @@ def _benchmark_progress_printer(stage: str, payload: dict[str, Any] | None = Non
         err=True,
         fg=typer.colors.GREEN,
     )
+
+
+def _audit_finding_sort_key(code: str):
+    """For LENGTH_* findings surface the largest deviation first so
+    catastrophic outliers (e.g. a 229-char chapter) lead the top-10 preview
+    instead of being buried behind smaller near-envelope misses.
+    """
+
+    import re
+
+    length_code = code in {"LENGTH_UNDER", "LENGTH_OVER"}
+
+    def key(finding):
+        if length_code:
+            nums = re.findall(r"\d+", finding.detail)
+            if len(nums) >= 2:
+                actual, threshold = int(nums[0]), int(nums[1])
+                return (-abs(actual - threshold), finding.chapter_no or 0)
+        return (0, finding.chapter_no or 0)
+
+    return key
+
+
+@app.command("audit")
+def audit(
+    slug: str = typer.Argument(..., help="Project slug to audit."),
+    dry_run: bool = typer.Option(
+        True,
+        "--dry-run/--auto-repair",
+        help="Dry-run prints findings; --auto-repair attempts repair (Phase 1: GapRepairer reports only).",
+    ),
+    output_format: str = typer.Option(
+        "text", "--format", help="Output format: text | json."
+    ),
+    profile: str = typer.Option(
+        "full",
+        "--profile",
+        help=(
+            "Validator profile: 'full' runs L4+L5 (language/length/naming/entity/"
+            "dialog/POV/cliffhanger). 'phase1' runs only the narrow L4 subset "
+            "(language + length) — useful when you want near-zero false positives."
+        ),
+    ),
+) -> None:
+    """Run L7 continuous audit against an existing project.
+
+    Defaults to the full L4 + L5 retrospective sweep so pre-gate
+    productions surface CJK leaks, length outliers, rogue names, entity
+    overload, dialog breaks, and POV drift all in one pass. Use
+    ``--profile phase1`` to fall back to the legacy CJK+length-only
+    profile (higher precision, lower recall).
+
+    ``--auto-repair`` is non-destructive: regenerating flagged chapters
+    happens through the full pipeline CLI.
+    """
+
+    async def _run() -> None:
+        settings = load_settings()
+        async with session_scope(settings) as session:
+            project = await get_project_by_slug(session, slug)
+            if project is None:
+                typer.secho(f"Project '{slug}' was not found.", err=True, fg=typer.colors.RED)
+                raise typer.Exit(code=1)
+
+            if profile == "phase1":
+                audit = build_phase1_audit()
+            elif profile == "full":
+                audit = build_full_audit()
+            else:
+                typer.secho(
+                    f"Unknown --profile '{profile}'. Use 'full' or 'phase1'.",
+                    err=True,
+                    fg=typer.colors.RED,
+                )
+                raise typer.Exit(code=2)
+            report = await audit.scan(session, project.id)
+            # Persist for L8 scorecard / dashboard. Failures here are
+            # telemetry-only — don't block the CLI output.
+            try:
+                await persist_audit_findings(session, report)
+            except Exception:
+                pass
+
+            if output_format == "json":
+                payload = {
+                    "project_slug": slug,
+                    "project_id": str(project.id),
+                    "findings": [
+                        {
+                            "auditor": f.auditor,
+                            "code": f.code,
+                            "severity": f.severity,
+                            "chapter_no": f.chapter_no,
+                            "detail": f.detail,
+                            "auto_repairable": f.auto_repairable,
+                        }
+                        for f in report.findings
+                    ],
+                }
+                typer.echo(json.dumps(payload, ensure_ascii=False, indent=2))
+            else:
+                typer.secho(
+                    f"[audit] {slug}: {len(report.findings)} finding(s)",
+                    fg=typer.colors.CYAN,
+                )
+                by_code = report.by_code()
+                for code, findings in sorted(by_code.items()):
+                    typer.secho(
+                        f"  - {code} ({findings[0].severity}): {len(findings)} case(s)",
+                        fg=typer.colors.YELLOW if findings[0].severity == "critical" else None,
+                    )
+                    ordered = sorted(findings, key=_audit_finding_sort_key(code))
+                    for finding in ordered[:10]:
+                        chap = f"ch-{finding.chapter_no}" if finding.chapter_no is not None else "—"
+                        typer.echo(f"      {chap}  {finding.detail}")
+                    if len(findings) > 10:
+                        typer.echo(f"      ... {len(findings) - 10} more")
+
+            if not dry_run:
+                typer.secho(
+                    "[audit] --auto-repair: Phase 1 repair is not self-contained. "
+                    "Use `bestseller project autowrite` or `bestseller chapter write` "
+                    "to regenerate flagged chapters through the full pipeline.",
+                    fg=typer.colors.YELLOW,
+                )
+
+    asyncio.run(_run())
+
+
+@app.command("scorecard")
+def scorecard(
+    slug: str = typer.Argument(..., help="Project slug to score."),
+    output_format: str = typer.Option(
+        "text", "--format", help="Output format: text | json | markdown."
+    ),
+    save: bool = typer.Option(
+        True,
+        "--save/--no-save",
+        help="Persist the snapshot to novel_scorecards (default: save).",
+    ),
+) -> None:
+    """Compute (and persist) the L8 NovelScorecard for an existing project.
+
+    Pulls evidence from chapter lengths, quality reports, audit findings,
+    and the diversity budget into a single 0-100 score + metric snapshot.
+    Pipelines auto-run this as Stage 11; this CLI is for ad-hoc inspection.
+    """
+
+    async def _run() -> None:
+        settings = load_settings()
+        async with session_scope(settings) as session:
+            project = await get_project_by_slug(session, slug)
+            if project is None:
+                typer.secho(
+                    f"Project '{slug}' was not found.", err=True, fg=typer.colors.RED
+                )
+                raise typer.Exit(code=1)
+
+            card = await compute_scorecard(
+                session,
+                project.id,
+                expected_chapter_count=project.target_chapters,
+            )
+            if save:
+                await save_scorecard(session, card)
+
+            snapshot = card.to_dict()
+            if output_format == "json":
+                typer.echo(json.dumps(snapshot, ensure_ascii=False, indent=2))
+            elif output_format == "markdown":
+                typer.echo(f"# Scorecard — {slug}")
+                typer.echo("")
+                typer.echo(f"**Quality Score**: {snapshot['quality_score']} / 100")
+                typer.echo("")
+                typer.echo("| Metric | Value |")
+                typer.echo("|---|---|")
+                for key, value in snapshot.items():
+                    if key in {"project_id", "quality_score", "top_overused_words"}:
+                        continue
+                    typer.echo(f"| {key} | {value} |")
+                if snapshot["top_overused_words"]:
+                    typer.echo("")
+                    typer.echo("**Top overused words**:")
+                    for word, count in snapshot["top_overused_words"]:
+                        typer.echo(f"- `{word}` ×{count}")
+            else:
+                typer.secho(
+                    f"[scorecard] {slug}: quality_score = "
+                    f"{snapshot['quality_score']} / 100",
+                    fg=typer.colors.CYAN,
+                )
+                typer.echo(
+                    f"  chapters: total={snapshot['total_chapters']} "
+                    f"missing={snapshot['missing_chapters']} "
+                    f"blocked={snapshot['chapters_blocked']}"
+                )
+                typer.echo(
+                    f"  length: mean={snapshot['length_mean']:.0f} "
+                    f"stddev={snapshot['length_stddev']:.0f} "
+                    f"cv={snapshot['length_cv']:.3f}"
+                )
+                typer.echo(
+                    f"  defects: cjk={snapshot['cjk_leak_chapters']} "
+                    f"dialog={snapshot['dialog_integrity_violations']} "
+                    f"pov_drift={snapshot['pov_drift_chapters']}"
+                )
+                typer.echo(
+                    f"  diversity: opening_H={snapshot['opening_archetype_entropy']:.2f} "
+                    f"cliffhanger_H={snapshot['cliffhanger_entropy']:.2f} "
+                    f"vocab_HHI={snapshot['vocab_hhi']:.3f}"
+                )
+                if snapshot["top_overused_words"]:
+                    typer.echo("  top overused:")
+                    for word, count in snapshot["top_overused_words"][:5]:
+                        typer.echo(f"    {word} ×{count}")
+
+    asyncio.run(_run())
 
 
 @app.command("status")

@@ -1,0 +1,1358 @@
+{
+  "project_slug": "superhero-fiction-1776301343",
+  "project_id": "b3f4d086-6b66-45c0-a43a-9866bf44e66a",
+  "findings": [
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 1,
+      "detail": "23131 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 2,
+      "detail": "24461 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 5,
+      "detail": "21503 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 9,
+      "detail": "23015 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 10,
+      "detail": "14310 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 11,
+      "detail": "24587 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 12,
+      "detail": "20910 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 13,
+      "detail": "22000 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 14,
+      "detail": "21062 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 15,
+      "detail": "24073 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 16,
+      "detail": "20150 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 18,
+      "detail": "18191 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 19,
+      "detail": "11629 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 20,
+      "detail": "15998 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 21,
+      "detail": "22933 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 24,
+      "detail": "18332 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 25,
+      "detail": "20848 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 26,
+      "detail": "16754 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 27,
+      "detail": "21564 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 28,
+      "detail": "23597 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 29,
+      "detail": "20659 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 30,
+      "detail": "15442 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 31,
+      "detail": "19523 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 32,
+      "detail": "24004 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 33,
+      "detail": "12522 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 34,
+      "detail": "13687 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 35,
+      "detail": "23914 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 36,
+      "detail": "21040 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 37,
+      "detail": "14389 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 38,
+      "detail": "20937 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 41,
+      "detail": "23894 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 44,
+      "detail": "16733 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 53,
+      "detail": "23277 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 54,
+      "detail": "15383 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 55,
+      "detail": "13924 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 56,
+      "detail": "18506 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 57,
+      "detail": "18386 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 59,
+      "detail": "22137 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 60,
+      "detail": "18363 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 61,
+      "detail": "23430 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 62,
+      "detail": "16446 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 63,
+      "detail": "15665 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 64,
+      "detail": "9804 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 65,
+      "detail": "18224 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 66,
+      "detail": "22684 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 68,
+      "detail": "12036 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 69,
+      "detail": "18906 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 70,
+      "detail": "13318 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 71,
+      "detail": "15980 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 72,
+      "detail": "24358 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 73,
+      "detail": "23753 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 74,
+      "detail": "16827 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 76,
+      "detail": "24272 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 77,
+      "detail": "15790 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 78,
+      "detail": "22009 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 79,
+      "detail": "21541 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 81,
+      "detail": "21069 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 83,
+      "detail": "21428 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 84,
+      "detail": "20951 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 85,
+      "detail": "24175 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 86,
+      "detail": "12454 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 87,
+      "detail": "23076 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 88,
+      "detail": "13734 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 89,
+      "detail": "13261 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 90,
+      "detail": "19000 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 91,
+      "detail": "14032 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 92,
+      "detail": "17248 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 93,
+      "detail": "22827 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 94,
+      "detail": "14499 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 95,
+      "detail": "13894 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 96,
+      "detail": "20265 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 97,
+      "detail": "9536 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 98,
+      "detail": "15190 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 99,
+      "detail": "14723 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 101,
+      "detail": "24632 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 102,
+      "detail": "19570 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 105,
+      "detail": "22437 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 107,
+      "detail": "20981 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 108,
+      "detail": "23108 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 109,
+      "detail": "17763 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 110,
+      "detail": "17864 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 111,
+      "detail": "4118 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 112,
+      "detail": "18086 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 114,
+      "detail": "24422 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 115,
+      "detail": "22937 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 116,
+      "detail": "23506 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 117,
+      "detail": "20891 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 118,
+      "detail": "23061 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 119,
+      "detail": "16539 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 120,
+      "detail": "16368 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 121,
+      "detail": "21908 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 123,
+      "detail": "11808 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 124,
+      "detail": "13459 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 126,
+      "detail": "23264 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 127,
+      "detail": "20053 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 128,
+      "detail": "12130 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 129,
+      "detail": "16626 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 130,
+      "detail": "12472 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 131,
+      "detail": "17162 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 132,
+      "detail": "21929 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 135,
+      "detail": "22177 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 137,
+      "detail": "15927 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 138,
+      "detail": "14334 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 139,
+      "detail": "11531 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 140,
+      "detail": "14974 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 141,
+      "detail": "12583 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 142,
+      "detail": "18850 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 143,
+      "detail": "18338 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 144,
+      "detail": "16746 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 145,
+      "detail": "11355 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 146,
+      "detail": "16719 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 147,
+      "detail": "7212 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 148,
+      "detail": "16696 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 149,
+      "detail": "18595 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 150,
+      "detail": "14307 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 153,
+      "detail": "16050 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 154,
+      "detail": "21685 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 156,
+      "detail": "22497 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 157,
+      "detail": "22098 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 159,
+      "detail": "24552 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 160,
+      "detail": "20209 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 162,
+      "detail": "22952 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 163,
+      "detail": "19911 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 164,
+      "detail": "20482 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 165,
+      "detail": "24269 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 166,
+      "detail": "23098 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 167,
+      "detail": "20243 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 168,
+      "detail": "14658 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 170,
+      "detail": "22454 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 172,
+      "detail": "18328 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 173,
+      "detail": "20428 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 174,
+      "detail": "24622 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 178,
+      "detail": "19266 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 179,
+      "detail": "17455 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 180,
+      "detail": "22141 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 181,
+      "detail": "24434 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 182,
+      "detail": "21657 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 183,
+      "detail": "17652 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 184,
+      "detail": "12993 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 186,
+      "detail": "22466 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 187,
+      "detail": "20815 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 188,
+      "detail": "19874 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 189,
+      "detail": "22773 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 190,
+      "detail": "14859 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 191,
+      "detail": "15585 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 192,
+      "detail": "15607 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 193,
+      "detail": "16004 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 194,
+      "detail": "12491 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 195,
+      "detail": "15359 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 196,
+      "detail": "16194 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 197,
+      "detail": "16267 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 198,
+      "detail": "11201 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 199,
+      "detail": "17097 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 200,
+      "detail": "13949 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 203,
+      "detail": "19464 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 208,
+      "detail": "16492 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 209,
+      "detail": "18673 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 210,
+      "detail": "20418 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 212,
+      "detail": "21907 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 214,
+      "detail": "22882 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 215,
+      "detail": "20224 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 217,
+      "detail": "15846 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 218,
+      "detail": "18350 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 219,
+      "detail": "22630 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 220,
+      "detail": "15541 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 223,
+      "detail": "21176 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 224,
+      "detail": "17196 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 226,
+      "detail": "19972 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 228,
+      "detail": "20689 chars < min 24640",
+      "auto_repairable": false
+    }
+  ]
+}

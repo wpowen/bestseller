@@ -1,0 +1,5518 @@
+{
+  "project_slug": "superhero-fiction-1776301343",
+  "project_id": "b3f4d086-6b66-45c0-a43a-9866bf44e66a",
+  "findings": [
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 1,
+      "detail": "23131 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 1,
+      "detail": "2 name(s) not in pool: Darryl Webb×5, Garrett Price×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "OPENING_ENTITY_OVERLOAD",
+      "severity": "critical",
+      "chapter_no": 1,
+      "detail": "6 distinct named entities in first 150 lines (limit 5)",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 1,
+      "detail": "POV declared as 'close_third' but 22/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 2,
+      "detail": "Detected cliffhanger type 'body_reaction' was used in the last 1 chapters (['body_reaction']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 2,
+      "detail": "24461 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 2,
+      "detail": "3 name(s) not in pool: Harmon Valley×12, Kinetic Transference×2, I'd×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 2,
+      "detail": "POV declared as 'close_third' but 15/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 3,
+      "detail": "2 name(s) not in pool: Harmon Valley×12, If Webb×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 3,
+      "detail": "POV declared as 'close_third' but 21/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 4,
+      "detail": "2 name(s) not in pool: Harmon Valley×6, Whatever Kane×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 4,
+      "detail": "POV declared as 'close_third' but 20/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 5,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['body_reaction', 'body_reaction', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 5,
+      "detail": "21503 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 5,
+      "detail": "4 name(s) not in pool: Now I'm×2, Harmon Valley×2, Agent Vasquez×2, Most Awakened×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 5,
+      "detail": "POV declared as 'close_third' but 17/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 6,
+      "detail": "1 name(s) not in pool: Everything I'd×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 6,
+      "detail": "POV declared as 'close_third' but 16/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 7,
+      "detail": "2 name(s) not in pool: Thorn Wake×6, Project Origin×3",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 7,
+      "detail": "POV declared as 'close_third' but 26/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 8,
+      "detail": "2 name(s) not in pool: Project Origin×8, I'm×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 8,
+      "detail": "POV declared as 'close_third' but 18/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 9,
+      "detail": "Detected cliffhanger type 'body_reaction' was used in the last 3 chapters (['body_reaction', 'revelation', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 9,
+      "detail": "23015 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 9,
+      "detail": "1 name(s) not in pool: Coach Reyes×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 9,
+      "detail": "POV declared as 'close_third' but 18/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 10,
+      "detail": "14310 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 10,
+      "detail": "POV declared as 'close_third' but 18/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 11,
+      "detail": "24587 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 11,
+      "detail": "2 name(s) not in pool: Meridian Warehouse×3, Project Origin×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 11,
+      "detail": "POV declared as 'close_third' but 17/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 12,
+      "detail": "20910 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 12,
+      "detail": "1 name(s) not in pool: Project Origin×6",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 12,
+      "detail": "POV declared as 'close_third' but 17/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 13,
+      "detail": "22000 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 13,
+      "detail": "POV declared as 'close_third' but 17/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 14,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['revelation', 'body_reaction', 'decision']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 14,
+      "detail": "21062 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 14,
+      "detail": "2 name(s) not in pool: Central Atrium×4, Not Sophie×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 14,
+      "detail": "POV declared as 'close_third' but 15/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 15,
+      "detail": "24073 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 15,
+      "detail": "1 name(s) not in pool: Project Origin×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 15,
+      "detail": "POV declared as 'close_third' but 12/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 16,
+      "detail": "20150 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 16,
+      "detail": "1 name(s) not in pool: At Elena×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 16,
+      "detail": "POV declared as 'close_third' but 20/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 17,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['body_reaction', 'decision', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 17,
+      "detail": "3 name(s) not in pool: Project Origin×5, Through Sophie×2, Because I'm×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 17,
+      "detail": "POV declared as 'close_third' but 18/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 18,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['decision', 'revelation', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 18,
+      "detail": "18191 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 18,
+      "detail": "1 name(s) not in pool: Project Origin×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 18,
+      "detail": "POV declared as 'close_third' but 19/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 19,
+      "detail": "11629 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 19,
+      "detail": "POV declared as 'close_third' but 16/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 20,
+      "detail": "15998 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 20,
+      "detail": "1 name(s) not in pool: Kinetic Transference×3",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 20,
+      "detail": "POV declared as 'close_third' but 13/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 21,
+      "detail": "22933 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 21,
+      "detail": "POV declared as 'close_third' but 19/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 22,
+      "detail": "3 name(s) not in pool: Project Origin×3, Apex Variant×2, Kinetic Transference×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 22,
+      "detail": "POV declared as 'close_third' but 18/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 23,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['revelation', 'revelation', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 23,
+      "detail": "3 name(s) not in pool: Kinetic Transference×6, Apex Variant×3, Project Genesis×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 23,
+      "detail": "POV declared as 'close_third' but 15/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 24,
+      "detail": "18332 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 24,
+      "detail": "1 name(s) not in pool: Through Sophie×3",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 24,
+      "detail": "POV declared as 'close_third' but 21/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 25,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['revelation', 'revelation', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 25,
+      "detail": "20848 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 25,
+      "detail": "2 name(s) not in pool: Ash Ledger×8, Project Origin×4",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 25,
+      "detail": "POV declared as 'close_third' but 14/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 26,
+      "detail": "16754 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 26,
+      "detail": "5 name(s) not in pool: Project Origin×2, Origin Council×2, Commander Webb×2, Not Sophie×2, Everything I'd×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 26,
+      "detail": "POV declared as 'close_third' but 16/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 27,
+      "detail": "21564 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 27,
+      "detail": "3 name(s) not in pool: Project Origin×4, Sublevel Seven×2, Sector Four×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 27,
+      "detail": "POV declared as 'close_third' but 9/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 28,
+      "detail": "23597 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 28,
+      "detail": "2 name(s) not in pool: Transcendence Division×4, Project Origin×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 28,
+      "detail": "POV declared as 'close_third' but 11/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 29,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['revelation', 'revelation', 'body_reaction']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 29,
+      "detail": "20659 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 29,
+      "detail": "4 name(s) not in pool: Drift Deadline×5, Project Origin×3, Project Ascension×2, If Kane×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 29,
+      "detail": "POV declared as 'close_third' but 17/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 30,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['revelation', 'body_reaction', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 30,
+      "detail": "15442 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 30,
+      "detail": "1 name(s) not in pool: I'm×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 30,
+      "detail": "POV declared as 'close_third' but 21/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 31,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['body_reaction', 'revelation', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 31,
+      "detail": "19523 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 31,
+      "detail": "5 name(s) not in pool: Project Origin×6, Delancey Street×2, That's Victor Kane×2, New Jersey×2, I'd×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 31,
+      "detail": "POV declared as 'close_third' but 10/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 32,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['revelation', 'revelation', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 32,
+      "detail": "24004 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 32,
+      "detail": "2 name(s) not in pool: Harmon Valley×3, Project Origin×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 32,
+      "detail": "POV declared as 'close_third' but 21/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 33,
+      "detail": "12522 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 33,
+      "detail": "2 name(s) not in pool: Project Origin×5, Not Theo×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 33,
+      "detail": "POV declared as 'close_third' but 16/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 34,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['revelation', 'revelation', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 34,
+      "detail": "13687 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 34,
+      "detail": "POV declared as 'close_third' but 20/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 35,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['revelation', 'revelation', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 35,
+      "detail": "23914 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 35,
+      "detail": "2 name(s) not in pool: Project Origin×2, Kinetic Transference×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 35,
+      "detail": "POV declared as 'close_third' but 18/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 36,
+      "detail": "21040 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 36,
+      "detail": "1 name(s) not in pool: I'm×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 36,
+      "detail": "POV declared as 'close_third' but 19/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 37,
+      "detail": "14389 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 37,
+      "detail": "POV declared as 'close_third' but 26/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 38,
+      "detail": "20937 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 38,
+      "detail": "1 name(s) not in pool: At Sophie×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 38,
+      "detail": "POV declared as 'close_third' but 18/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 39,
+      "detail": "1 name(s) not in pool: Project Origin×3",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 39,
+      "detail": "POV declared as 'close_third' but 16/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 40,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['revelation', 'revelation', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 40,
+      "detail": "3 name(s) not in pool: Tanaka×13, Yuki Tanaka×3, Kinetic Transference×3",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 40,
+      "detail": "POV declared as 'close_third' but 16/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 41,
+      "detail": "23894 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 41,
+      "detail": "3 name(s) not in pool: Kinetic Transference×2, I'm×2, To Sophie×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 41,
+      "detail": "POV declared as 'close_third' but 20/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 42,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['revelation', 'revelation', 'body_reaction']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 42,
+      "detail": "1 name(s) not in pool: Kinetic Transference×3",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 42,
+      "detail": "POV declared as 'close_third' but 18/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 43,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['revelation', 'body_reaction', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 43,
+      "detail": "1 name(s) not in pool: Not Victor Kane×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 43,
+      "detail": "POV declared as 'close_third' but 19/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 44,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['body_reaction', 'revelation', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 44,
+      "detail": "16733 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 44,
+      "detail": "POV declared as 'close_third' but 21/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 45,
+      "detail": "1 name(s) not in pool: Not Sophie×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 45,
+      "detail": "POV declared as 'close_third' but 21/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 46,
+      "detail": "1 name(s) not in pool: Denise Okonkwo×6",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 46,
+      "detail": "POV declared as 'close_third' but 25/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 47,
+      "detail": "4 name(s) not in pool: I'm×3, What I've×2, What Kane×2, Whatever Kane×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 47,
+      "detail": "POV declared as 'close_third' but 9/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 48,
+      "detail": "6 name(s) not in pool: Project Origin×3, Fifth Founder×3, I'm×2, Kinetic Transference×2, What Kane×2, Chrysalis Protocol×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 48,
+      "detail": "POV declared as 'close_third' but 16/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 49,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['revelation', 'revelation', 'body_reaction']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 49,
+      "detail": "3 name(s) not in pool: Sublevel Ten×3, Kinetic Transference×3, Not Pryce×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 49,
+      "detail": "POV declared as 'close_third' but 19/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 50,
+      "detail": "Detected cliffhanger type 'body_reaction' was used in the last 3 chapters (['revelation', 'body_reaction', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 50,
+      "detail": "1 name(s) not in pool: Because Kane×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 50,
+      "detail": "POV declared as 'close_third' but 17/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 51,
+      "detail": "POV declared as 'close_third' but 20/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 52,
+      "detail": "2 name(s) not in pool: Lab Seven×2, I'm×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "DIALOG_UNPAIRED",
+      "severity": "critical",
+      "chapter_no": 52,
+      "detail": "Odd count (329) of straight_double quotes across the chapter — one dialogue block is unterminated",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 52,
+      "detail": "POV declared as 'close_third' but 17/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 53,
+      "detail": "23277 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 53,
+      "detail": "4 name(s) not in pool: Internal Affairs×3, Not Sophie×2, Kinetic Transference×2, Sergeant Davis×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 53,
+      "detail": "POV declared as 'close_third' but 17/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 54,
+      "detail": "Detected cliffhanger type 'body_reaction' was used in the last 3 chapters (['body_reaction', 'revelation', 'body_reaction']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 54,
+      "detail": "15383 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 54,
+      "detail": "2 name(s) not in pool: Thorn Wake×3, Agent Vasquez×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 54,
+      "detail": "POV declared as 'close_third' but 20/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 55,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['revelation', 'body_reaction', 'body_reaction']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 55,
+      "detail": "13924 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 55,
+      "detail": "2 name(s) not in pool: Kinetic Transference×2, Sublevel Four×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 55,
+      "detail": "POV declared as 'close_third' but 11/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 56,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['body_reaction', 'body_reaction', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 56,
+      "detail": "18506 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 56,
+      "detail": "POV declared as 'close_third' but 20/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 57,
+      "detail": "Detected cliffhanger type 'body_reaction' was used in the last 3 chapters (['body_reaction', 'revelation', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 57,
+      "detail": "18386 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 57,
+      "detail": "1 name(s) not in pool: I'm×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 57,
+      "detail": "POV declared as 'close_third' but 20/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 58,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['revelation', 'revelation', 'body_reaction']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 58,
+      "detail": "3 name(s) not in pool: Sublevel Four×4, Lower Quarter×3, Something Kane×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 58,
+      "detail": "POV declared as 'close_third' but 18/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 59,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['revelation', 'body_reaction', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 59,
+      "detail": "22137 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 59,
+      "detail": "1 name(s) not in pool: Sublevel Four×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 59,
+      "detail": "POV declared as 'close_third' but 16/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 60,
+      "detail": "18363 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 60,
+      "detail": "1 name(s) not in pool: Sublevel Four×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 60,
+      "detail": "POV declared as 'close_third' but 18/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 61,
+      "detail": "23430 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 61,
+      "detail": "1 name(s) not in pool: I'm×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 61,
+      "detail": "POV declared as 'close_third' but 10/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 62,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['body_reaction', 'revelation', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 62,
+      "detail": "16446 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 62,
+      "detail": "1 name(s) not in pool: Phase Three×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 62,
+      "detail": "POV declared as 'close_third' but 13/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 63,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['revelation', 'revelation', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 63,
+      "detail": "15665 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 63,
+      "detail": "2 name(s) not in pool: Iteration One×4, Caldwell Street×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 63,
+      "detail": "POV declared as 'close_third' but 16/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 64,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['revelation', 'revelation', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 64,
+      "detail": "9804 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 64,
+      "detail": "1 name(s) not in pool: Phase Twelve×3",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 64,
+      "detail": "POV declared as 'close_third' but 20/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 65,
+      "detail": "18224 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 65,
+      "detail": "6 name(s) not in pool: Phase Twelve×17, Sector Seven×4, Sublevel Four×2, At Elena×2, Iteration Twenty×2, Iteration One×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 65,
+      "detail": "POV declared as 'close_third' but 8/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 66,
+      "detail": "22684 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 66,
+      "detail": "5 name(s) not in pool: Sector Seven×16, Iteration Twenty×8, Phase Twelve×4, Iteration One×2, David Chen×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 66,
+      "detail": "POV declared as 'close_third' but 15/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 67,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['revelation', 'revelation', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 67,
+      "detail": "3 name(s) not in pool: Sector Seven×5, Sublevel Seven×2, Phase Twelve×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 67,
+      "detail": "POV declared as 'close_third' but 18/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 68,
+      "detail": "12036 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 68,
+      "detail": "POV declared as 'close_third' but 23/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 69,
+      "detail": "18906 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 69,
+      "detail": "1 name(s) not in pool: Threshold Collective×3",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 69,
+      "detail": "POV declared as 'close_third' but 23/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 70,
+      "detail": "13318 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 70,
+      "detail": "POV declared as 'close_third' but 21/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 71,
+      "detail": "15980 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 71,
+      "detail": "2 name(s) not in pool: Grey District×7, Adept Adaptation×3",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 71,
+      "detail": "POV declared as 'close_third' but 17/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 72,
+      "detail": "24358 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 72,
+      "detail": "2 name(s) not in pool: Grey District×6, Darius Webb×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 72,
+      "detail": "POV declared as 'close_third' but 15/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 73,
+      "detail": "23753 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 73,
+      "detail": "POV declared as 'close_third' but 17/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 74,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['revelation', 'revelation', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 74,
+      "detail": "16827 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 74,
+      "detail": "POV declared as 'close_third' but 21/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 75,
+      "detail": "2 name(s) not in pool: When Maya×3, If Subject Zero×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 75,
+      "detail": "POV declared as 'close_third' but 17/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 76,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['revelation', 'revelation', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 76,
+      "detail": "24272 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 76,
+      "detail": "3 name(s) not in pool: Whisper Seven×4, Inheritor Protocol×3, About Subject Zero×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 76,
+      "detail": "POV declared as 'close_third' but 12/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 77,
+      "detail": "15790 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 77,
+      "detail": "2 name(s) not in pool: Whisper Seven×5, Inheritor Protocol×3",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "DIALOG_UNPAIRED",
+      "severity": "critical",
+      "chapter_no": 77,
+      "detail": "Odd count (237) of straight_double quotes across the chapter — one dialogue block is unterminated",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 77,
+      "detail": "POV declared as 'close_third' but 15/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 78,
+      "detail": "22009 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 78,
+      "detail": "1 name(s) not in pool: Not Threshold×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 78,
+      "detail": "POV declared as 'close_third' but 15/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 79,
+      "detail": "21541 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 79,
+      "detail": "1 name(s) not in pool: Whisper Seven×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 79,
+      "detail": "POV declared as 'close_third' but 13/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 80,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['revelation', 'revelation', 'body_reaction']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 80,
+      "detail": "POV declared as 'close_third' but 22/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 81,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['revelation', 'body_reaction', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 81,
+      "detail": "21069 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 81,
+      "detail": "1 name(s) not in pool: Neutral Ground×6",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 81,
+      "detail": "POV declared as 'close_third' but 12/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 82,
+      "detail": "Detected cliffhanger type 'body_reaction' was used in the last 3 chapters (['body_reaction', 'revelation', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 82,
+      "detail": "POV declared as 'close_third' but 22/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 83,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['revelation', 'revelation', 'body_reaction']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 83,
+      "detail": "21428 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 83,
+      "detail": "POV declared as 'close_third' but 19/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 84,
+      "detail": "Detected cliffhanger type 'body_reaction' was used in the last 3 chapters (['revelation', 'body_reaction', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 84,
+      "detail": "20951 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 84,
+      "detail": "3 name(s) not in pool: Agency Intelligence×4, I've×2, Project Origin×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 84,
+      "detail": "POV declared as 'close_third' but 19/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 85,
+      "detail": "Detected cliffhanger type 'body_reaction' was used in the last 3 chapters (['body_reaction', 'revelation', 'body_reaction']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 85,
+      "detail": "24175 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 85,
+      "detail": "2 name(s) not in pool: Neutral Ground×8, Cascade Echo×4",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 85,
+      "detail": "POV declared as 'close_third' but 20/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 86,
+      "detail": "Detected cliffhanger type 'body_reaction' was used in the last 3 chapters (['revelation', 'body_reaction', 'body_reaction']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 86,
+      "detail": "12454 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 86,
+      "detail": "1 name(s) not in pool: Iteration Forty×3",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 86,
+      "detail": "POV declared as 'close_third' but 26/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 87,
+      "detail": "Detected cliffhanger type 'body_reaction' was used in the last 3 chapters (['body_reaction', 'body_reaction', 'body_reaction']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 87,
+      "detail": "23076 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 87,
+      "detail": "POV declared as 'close_third' but 18/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 88,
+      "detail": "13734 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 88,
+      "detail": "POV declared as 'close_third' but 21/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 89,
+      "detail": "13261 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 89,
+      "detail": "POV declared as 'close_third' but 14/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 90,
+      "detail": "19000 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 90,
+      "detail": "3 name(s) not in pool: Cascade Echo×3, Kinetic Transference×2, When Subject Zero×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 90,
+      "detail": "POV declared as 'close_third' but 18/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 91,
+      "detail": "14032 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 91,
+      "detail": "2 name(s) not in pool: Something Catherine×3, Francis Memorial×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 91,
+      "detail": "POV declared as 'close_third' but 17/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 92,
+      "detail": "Detected cliffhanger type 'body_reaction' was used in the last 3 chapters (['body_reaction', 'body_reaction', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 92,
+      "detail": "17248 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 92,
+      "detail": "1 name(s) not in pool: Through Maya×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 92,
+      "detail": "POV declared as 'close_third' but 18/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 93,
+      "detail": "Detected cliffhanger type 'body_reaction' was used in the last 3 chapters (['body_reaction', 'revelation', 'body_reaction']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 93,
+      "detail": "22827 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 93,
+      "detail": "3 name(s) not in pool: Conference Room×4, Immediate Survival Pressure×3, Resonance Link×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 93,
+      "detail": "POV declared as 'close_third' but 17/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 94,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['revelation', 'body_reaction', 'body_reaction']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 94,
+      "detail": "14499 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 94,
+      "detail": "3 name(s) not in pool: Coordination Suite×3, Internal Affairs×2, Conference Room×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 94,
+      "detail": "POV declared as 'close_third' but 21/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 95,
+      "detail": "13894 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 95,
+      "detail": "2 name(s) not in pool: Adept Adaptation×4, Resonance Link×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 95,
+      "detail": "POV declared as 'close_third' but 17/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 96,
+      "detail": "20265 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 96,
+      "detail": "POV declared as 'close_third' but 10/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 97,
+      "detail": "9536 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 97,
+      "detail": "POV declared as 'close_third' but 16/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 98,
+      "detail": "Detected cliffhanger type 'body_reaction' was used in the last 3 chapters (['body_reaction', 'body_reaction', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 98,
+      "detail": "15190 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 98,
+      "detail": "2 name(s) not in pool: Kinetic Prison×4, Three Tier×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 98,
+      "detail": "POV declared as 'close_third' but 16/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 99,
+      "detail": "14723 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 99,
+      "detail": "3 name(s) not in pool: Subject One×3, I'm×2, Iteration Forty×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 99,
+      "detail": "POV declared as 'close_third' but 4/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 100,
+      "detail": "Detected cliffhanger type 'body_reaction' was used in the last 3 chapters (['body_reaction', 'revelation', 'body_reaction']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 100,
+      "detail": "8 name(s) not in pool: Iteration Forty×4, Resonance Shield×3, Kinetic Transference×3, Kinetic Echo×2, Subject One×2, Internal Affairs×2, Operative Marcus Cole×2, Adept Adaptation×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 100,
+      "detail": "POV declared as 'close_third' but 18/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 101,
+      "detail": "24632 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 101,
+      "detail": "2 name(s) not in pool: Iteration Forty×4, Subject One×3",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 101,
+      "detail": "POV declared as 'close_third' but 21/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 102,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['revelation', 'body_reaction', 'body_reaction']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 102,
+      "detail": "19570 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 102,
+      "detail": "3 name(s) not in pool: Pierce×6, Yolanda Pierce×2, Reyes×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 102,
+      "detail": "POV declared as 'close_third' but 17/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 103,
+      "detail": "4 name(s) not in pool: Iteration Forty×5, Pierce×2, Yolanda Pierce×2, Iteration One×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 103,
+      "detail": "POV declared as 'close_third' but 19/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 104,
+      "detail": "4 name(s) not in pool: If Blackwood×2, Kinetic Transference×2, Your Kinetic Transference×2, I'm×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 104,
+      "detail": "POV declared as 'close_third' but 18/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 105,
+      "detail": "22437 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 105,
+      "detail": "4 name(s) not in pool: Harbor District×3, Iteration Zero×3, You're Cole×2, I'll×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 105,
+      "detail": "POV declared as 'close_third' but 15/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 106,
+      "detail": "Detected cliffhanger type 'body_reaction' was used in the last 3 chapters (['body_reaction', 'body_reaction', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 106,
+      "detail": "4 name(s) not in pool: Iteration Zero×16, Harbor District×3, Bellmore Apartments×3, I'm×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "DIALOG_UNPAIRED",
+      "severity": "critical",
+      "chapter_no": 106,
+      "detail": "Odd count (269) of straight_double quotes across the chapter — one dialogue block is unterminated",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 106,
+      "detail": "POV declared as 'close_third' but 17/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 107,
+      "detail": "Detected cliffhanger type 'body_reaction' was used in the last 3 chapters (['body_reaction', 'revelation', 'body_reaction']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 107,
+      "detail": "20981 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 107,
+      "detail": "POV declared as 'close_third' but 19/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 108,
+      "detail": "23108 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 108,
+      "detail": "2 name(s) not in pool: If Kane×3, Because I've×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 108,
+      "detail": "POV declared as 'close_third' but 19/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 109,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['revelation', 'body_reaction', 'body_reaction']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 109,
+      "detail": "17763 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 109,
+      "detail": "1 name(s) not in pool: Not Kane×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 109,
+      "detail": "POV declared as 'close_third' but 17/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 110,
+      "detail": "Detected cliffhanger type 'body_reaction' was used in the last 3 chapters (['body_reaction', 'body_reaction', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 110,
+      "detail": "17864 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 110,
+      "detail": "4 name(s) not in pool: Threshold Integration×3, Resonance Chambering×3, Second Generation×2, Iteration Children×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 110,
+      "detail": "POV declared as 'close_third' but 26/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 111,
+      "detail": "Detected cliffhanger type 'body_reaction' was used in the last 3 chapters (['body_reaction', 'revelation', 'body_reaction']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 111,
+      "detail": "4118 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 111,
+      "detail": "POV declared as 'close_third' but 23/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 112,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['revelation', 'body_reaction', 'body_reaction']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 112,
+      "detail": "18086 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 112,
+      "detail": "POV declared as 'close_third' but 16/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 113,
+      "detail": "6 name(s) not in pool: Agent Cole×3, Internal Affairs×2, About Elena×2, I'm×2, Agent Vasquez×2, Level Eight×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "DIALOG_UNPAIRED",
+      "severity": "critical",
+      "chapter_no": 113,
+      "detail": "Odd count (453) of straight_double quotes across the chapter — one dialogue block is unterminated",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 113,
+      "detail": "POV declared as 'close_third' but 16/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 114,
+      "detail": "24422 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 114,
+      "detail": "1 name(s) not in pool: Grey District×4",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "DIALOG_UNPAIRED",
+      "severity": "critical",
+      "chapter_no": 114,
+      "detail": "Odd count (257) of straight_double quotes across the chapter — one dialogue block is unterminated",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 114,
+      "detail": "POV declared as 'close_third' but 20/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 115,
+      "detail": "22937 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 115,
+      "detail": "2 name(s) not in pool: Level Nine×5, Chimera Protocol×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 115,
+      "detail": "POV declared as 'close_third' but 20/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 116,
+      "detail": "23506 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 116,
+      "detail": "4 name(s) not in pool: Agent Cole×8, Conference Room×3, I'm×3, Level Nine×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 116,
+      "detail": "POV declared as 'close_third' but 13/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 117,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['body_reaction', 'body_reaction', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 117,
+      "detail": "20891 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 117,
+      "detail": "2 name(s) not in pool: Level Twelve×4, Level Nine×3",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 117,
+      "detail": "POV declared as 'close_third' but 22/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 118,
+      "detail": "Detected cliffhanger type 'body_reaction' was used in the last 3 chapters (['body_reaction', 'revelation', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 118,
+      "detail": "23061 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 118,
+      "detail": "2 name(s) not in pool: Level Twelve×5, Jonathan Vance×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 118,
+      "detail": "POV declared as 'close_third' but 14/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 119,
+      "detail": "16539 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 119,
+      "detail": "POV declared as 'close_third' but 17/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 120,
+      "detail": "Detected cliffhanger type 'body_reaction' was used in the last 3 chapters (['revelation', 'body_reaction', 'decision']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 120,
+      "detail": "16368 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 120,
+      "detail": "POV declared as 'close_third' but 19/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 121,
+      "detail": "Detected cliffhanger type 'body_reaction' was used in the last 3 chapters (['body_reaction', 'decision', 'body_reaction']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 121,
+      "detail": "21908 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 121,
+      "detail": "POV declared as 'close_third' but 20/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 122,
+      "detail": "1 name(s) not in pool: I'm×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 122,
+      "detail": "POV declared as 'close_third' but 19/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 123,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['body_reaction', 'body_reaction', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 123,
+      "detail": "11808 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 123,
+      "detail": "2 name(s) not in pool: Chamber Seven×4, Heroes' Coalition×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 123,
+      "detail": "POV declared as 'close_third' but 12/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 124,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['body_reaction', 'revelation', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 124,
+      "detail": "13459 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 124,
+      "detail": "2 name(s) not in pool: Chamber Seven×2, I'm×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 124,
+      "detail": "POV declared as 'close_third' but 17/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "DIALOG_UNPAIRED",
+      "severity": "critical",
+      "chapter_no": 125,
+      "detail": "Odd count (249) of straight_double quotes across the chapter — one dialogue block is unterminated",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 125,
+      "detail": "POV declared as 'close_third' but 19/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 126,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['revelation', 'revelation', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 126,
+      "detail": "23264 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 126,
+      "detail": "1 name(s) not in pool: Chamber Seven×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 126,
+      "detail": "POV declared as 'close_third' but 14/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 127,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['revelation', 'revelation', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 127,
+      "detail": "20053 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 127,
+      "detail": "POV declared as 'close_third' but 25/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 128,
+      "detail": "12130 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 128,
+      "detail": "2 name(s) not in pool: Project Lighthouse×4, I'm×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 128,
+      "detail": "POV declared as 'close_third' but 25/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 129,
+      "detail": "16626 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 129,
+      "detail": "1 name(s) not in pool: I'm×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 129,
+      "detail": "POV declared as 'close_third' but 15/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 130,
+      "detail": "12472 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 130,
+      "detail": "3 name(s) not in pool: Witness Protection×3, Their Conservation×2, If Syndicate×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 130,
+      "detail": "POV declared as 'close_third' but 11/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 131,
+      "detail": "17162 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 131,
+      "detail": "3 name(s) not in pool: I've×2, I'm×2, Project Lighthouse×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 131,
+      "detail": "POV declared as 'close_third' but 19/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 132,
+      "detail": "Detected cliffhanger type 'body_reaction' was used in the last 3 chapters (['revelation', 'revelation', 'body_reaction']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 132,
+      "detail": "21929 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 132,
+      "detail": "POV declared as 'close_third' but 15/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 133,
+      "detail": "8 name(s) not in pool: Sublevel Four×8, Yuen×7, Achebe×4, Morales×2, Agent Callahan×2, Ms×2, Sublevel Conference Room×2, Agent Cole×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 133,
+      "detail": "POV declared as 'close_third' but 13/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 134,
+      "detail": "3 name(s) not in pool: Eleanor Vance×8, Okonkwo×5, Okonkwo Institute×4",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 134,
+      "detail": "POV declared as 'close_third' but 17/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 135,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['revelation', 'body_reaction', 'body_reaction']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 135,
+      "detail": "22177 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 135,
+      "detail": "2 name(s) not in pool: Okonkwo×6, Not Lily×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 135,
+      "detail": "POV declared as 'close_third' but 16/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 136,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['body_reaction', 'body_reaction', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 136,
+      "detail": "3 name(s) not in pool: I'm×3, Classification Review Chamber×2, Especially Elena×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 136,
+      "detail": "POV declared as 'close_third' but 18/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 137,
+      "detail": "15927 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 137,
+      "detail": "2 name(s) not in pool: Okonkwo×8, Adaeze Okonkwo×6",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 137,
+      "detail": "POV declared as 'close_third' but 15/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 138,
+      "detail": "Detected cliffhanger type 'body_reaction' was used in the last 3 chapters (['body_reaction', 'revelation', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 138,
+      "detail": "14334 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 138,
+      "detail": "1 name(s) not in pool: I'm×4",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 138,
+      "detail": "POV declared as 'close_third' but 15/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 139,
+      "detail": "11531 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 139,
+      "detail": "POV declared as 'close_third' but 6/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 140,
+      "detail": "Detected cliffhanger type 'body_reaction' was used in the last 3 chapters (['revelation', 'revelation', 'body_reaction']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 140,
+      "detail": "14974 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 140,
+      "detail": "3 name(s) not in pool: Agency Oversight×3, Operative Vasquez×3, Classification Board×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 140,
+      "detail": "POV declared as 'close_third' but 15/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 141,
+      "detail": "12583 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 141,
+      "detail": "2 name(s) not in pool: Operative Cole×4, Classification Board×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 141,
+      "detail": "POV declared as 'close_third' but 19/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 142,
+      "detail": "18850 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 142,
+      "detail": "2 name(s) not in pool: Sector Nine×3, I'm×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 142,
+      "detail": "POV declared as 'close_third' but 12/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 143,
+      "detail": "Detected cliffhanger type 'body_reaction' was used in the last 3 chapters (['revelation', 'body_reaction', 'body_reaction']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 143,
+      "detail": "18338 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 143,
+      "detail": "1 name(s) not in pool: Kinetic Transference×3",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 143,
+      "detail": "POV declared as 'close_third' but 17/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 144,
+      "detail": "16746 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 144,
+      "detail": "1 name(s) not in pool: Not Subject Zero×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 144,
+      "detail": "POV declared as 'close_third' but 17/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 145,
+      "detail": "11355 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 145,
+      "detail": "POV declared as 'close_third' but 17/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 146,
+      "detail": "16719 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 146,
+      "detail": "POV declared as 'close_third' but 16/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 147,
+      "detail": "Detected cliffhanger type 'body_reaction' was used in the last 3 chapters (['body_reaction', 'body_reaction', 'body_reaction']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 147,
+      "detail": "7212 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 147,
+      "detail": "2 name(s) not in pool: Site Four×3, Sites Two×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 147,
+      "detail": "POV declared as 'close_third' but 11/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 148,
+      "detail": "16696 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 148,
+      "detail": "3 name(s) not in pool: Site Four×6, I'm×2, I'll×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 148,
+      "detail": "POV declared as 'close_third' but 17/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 149,
+      "detail": "18595 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 149,
+      "detail": "1 name(s) not in pool: Site Four×4",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 149,
+      "detail": "POV declared as 'close_third' but 20/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 150,
+      "detail": "14307 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 150,
+      "detail": "4 name(s) not in pool: Mercy General×5, Site Four×3, Classification Board×2, I've×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 150,
+      "detail": "POV declared as 'close_third' but 18/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 151,
+      "detail": "5 name(s) not in pool: Mercy General×3, Site Four×3, Agent Cole×2, Send Maya×2, Operation Threshold×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 151,
+      "detail": "POV declared as 'close_third' but 21/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 152,
+      "detail": "3 name(s) not in pool: Mercy General×5, Now I'm×2, Article Seven×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 152,
+      "detail": "POV declared as 'close_third' but 18/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 153,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['body_reaction', 'body_reaction', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 153,
+      "detail": "16050 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 153,
+      "detail": "2 name(s) not in pool: Lower Quarter×8, Mercy General×6",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 153,
+      "detail": "POV declared as 'close_third' but 23/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 154,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['body_reaction', 'revelation', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 154,
+      "detail": "21685 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 154,
+      "detail": "3 name(s) not in pool: Lower Quarter×5, Subject Alpha×2, Mercy General×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 154,
+      "detail": "POV declared as 'close_third' but 19/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 155,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['revelation', 'revelation', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 155,
+      "detail": "2 name(s) not in pool: Subject Alpha×2, I'll×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 155,
+      "detail": "POV declared as 'close_third' but 20/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 156,
+      "detail": "22497 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 156,
+      "detail": "1 name(s) not in pool: Lower Quarter×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 156,
+      "detail": "POV declared as 'close_third' but 19/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 157,
+      "detail": "Detected cliffhanger type 'body_reaction' was used in the last 3 chapters (['revelation', 'revelation', 'body_reaction']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 157,
+      "detail": "22098 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 157,
+      "detail": "POV declared as 'close_third' but 19/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 158,
+      "detail": "Detected cliffhanger type 'body_reaction' was used in the last 3 chapters (['revelation', 'body_reaction', 'body_reaction']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 158,
+      "detail": "3 name(s) not in pool: Convergence Point×9, If Subject Zero×3, Project Resonance×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 158,
+      "detail": "POV declared as 'close_third' but 18/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 159,
+      "detail": "24552 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 159,
+      "detail": "POV declared as 'close_third' but 16/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 160,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['body_reaction', 'body_reaction', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 160,
+      "detail": "20209 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 160,
+      "detail": "4 name(s) not in pool: Project Resonance Phase×2, Sublevel Seven×2, I'd×2, Just Kane×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 160,
+      "detail": "POV declared as 'close_third' but 15/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 161,
+      "detail": "Detected cliffhanger type 'body_reaction' was used in the last 3 chapters (['body_reaction', 'revelation', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 161,
+      "detail": "2 name(s) not in pool: Agent Vasquez×4, I'll×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "DIALOG_UNPAIRED",
+      "severity": "critical",
+      "chapter_no": 161,
+      "detail": "Odd count (497) of straight_double quotes across the chapter — one dialogue block is unterminated",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 161,
+      "detail": "POV declared as 'close_third' but 12/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 162,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['revelation', 'revelation', 'body_reaction']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 162,
+      "detail": "22952 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 162,
+      "detail": "POV declared as 'close_third' but 20/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 163,
+      "detail": "19911 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 163,
+      "detail": "3 name(s) not in pool: Tanaka×13, Yuki Tanaka×4, Mercy General×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 163,
+      "detail": "POV declared as 'close_third' but 16/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 164,
+      "detail": "20482 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 164,
+      "detail": "3 name(s) not in pool: Tanaka×5, I'm×2, Meridian City×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 164,
+      "detail": "POV declared as 'close_third' but 19/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 165,
+      "detail": "24269 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 165,
+      "detail": "2 name(s) not in pool: Meridian City×5, Yusuf Vasquez×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 165,
+      "detail": "POV declared as 'close_third' but 18/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 166,
+      "detail": "Detected cliffhanger type 'body_reaction' was used in the last 3 chapters (['revelation', 'body_reaction', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 166,
+      "detail": "23098 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 166,
+      "detail": "3 name(s) not in pool: Meridian City×10, Unknown Number×9, Yusuf Vasquez×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 166,
+      "detail": "POV declared as 'close_third' but 14/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 167,
+      "detail": "20243 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 167,
+      "detail": "4 name(s) not in pool: Meridian City×9, Not Cross×3, Mercy General×2, When Elena×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 167,
+      "detail": "POV declared as 'close_third' but 16/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 168,
+      "detail": "14658 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 168,
+      "detail": "1 name(s) not in pool: Meridian City×4",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 168,
+      "detail": "POV declared as 'close_third' but 14/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 169,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['body_reaction', 'revelation', 'body_reaction']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 169,
+      "detail": "1 name(s) not in pool: Meridian County×3",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 169,
+      "detail": "POV declared as 'close_third' but 15/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 170,
+      "detail": "22454 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 170,
+      "detail": "3 name(s) not in pool: Project Inheritance×4, Henrik Wolff×2, I'm×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 170,
+      "detail": "POV declared as 'close_third' but 10/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 171,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['revelation', 'body_reaction', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 171,
+      "detail": "1 name(s) not in pool: Commander Solis×5",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 171,
+      "detail": "POV declared as 'close_third' but 22/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 172,
+      "detail": "18328 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 172,
+      "detail": "2 name(s) not in pool: Kinetic Transference×2, Commander Solis×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 172,
+      "detail": "POV declared as 'close_third' but 17/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 173,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['body_reaction', 'revelation', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 173,
+      "detail": "20428 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 173,
+      "detail": "POV declared as 'close_third' but 10/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 174,
+      "detail": "24622 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 174,
+      "detail": "3 name(s) not in pool: Project Inheritance×5, Like Maya×2, I'd×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 174,
+      "detail": "POV declared as 'close_third' but 16/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 175,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['revelation', 'revelation', 'body_reaction']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 175,
+      "detail": "5 name(s) not in pool: Seventh District×5, I'm×3, Beyond Coalition×2, Whether I'd×2, Project Inheritance×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 175,
+      "detail": "POV declared as 'close_third' but 18/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 176,
+      "detail": "Detected cliffhanger type 'body_reaction' was used in the last 3 chapters (['revelation', 'body_reaction', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 176,
+      "detail": "2 name(s) not in pool: Protocol Omega×6, Neutral Ground×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 176,
+      "detail": "POV declared as 'close_third' but 17/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 177,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['body_reaction', 'revelation', 'body_reaction']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 177,
+      "detail": "4 name(s) not in pool: Independent Forces×4, Whatever Maya×3, Protocol Omega×3, I'm×3",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 177,
+      "detail": "POV declared as 'close_third' but 20/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 178,
+      "detail": "19266 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 178,
+      "detail": "2 name(s) not in pool: First Civilization×8, Kinetic Transference×5",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 178,
+      "detail": "POV declared as 'close_third' but 17/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 179,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['revelation', 'body_reaction', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 179,
+      "detail": "17455 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 179,
+      "detail": "1 name(s) not in pool: Subject Seven×4",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 179,
+      "detail": "POV declared as 'close_third' but 19/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 180,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['body_reaction', 'revelation', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 180,
+      "detail": "22141 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 180,
+      "detail": "3 name(s) not in pool: Sublevel Eight×7, Sublevel Nine×4, I'm×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 180,
+      "detail": "POV declared as 'close_third' but 17/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 181,
+      "detail": "24434 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 181,
+      "detail": "1 name(s) not in pool: I've×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 181,
+      "detail": "POV declared as 'close_third' but 16/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 182,
+      "detail": "21657 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 182,
+      "detail": "2 name(s) not in pool: Sublevel Eight×3, Western Hemisphere×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 182,
+      "detail": "POV declared as 'close_third' but 13/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 183,
+      "detail": "17652 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 183,
+      "detail": "POV declared as 'close_third' but 19/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 184,
+      "detail": "12993 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 184,
+      "detail": "POV declared as 'close_third' but 18/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 185,
+      "detail": "2 name(s) not in pool: Project Genesis×3, Lower Quarter×3",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 185,
+      "detail": "POV declared as 'close_third' but 18/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 186,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['revelation', 'revelation', 'body_reaction']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 186,
+      "detail": "22466 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 186,
+      "detail": "2 name(s) not in pool: I'm×2, Project Genesis×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 186,
+      "detail": "POV declared as 'close_third' but 15/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 187,
+      "detail": "20815 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 187,
+      "detail": "1 name(s) not in pool: Agent Vasquez×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 187,
+      "detail": "POV declared as 'close_third' but 13/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 188,
+      "detail": "19874 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 188,
+      "detail": "POV declared as 'close_third' but 10/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 189,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['revelation', 'body_reaction', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 189,
+      "detail": "22773 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 189,
+      "detail": "1 name(s) not in pool: Subject One×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 189,
+      "detail": "POV declared as 'close_third' but 15/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 190,
+      "detail": "14859 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 190,
+      "detail": "POV declared as 'close_third' but 19/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 191,
+      "detail": "15585 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 191,
+      "detail": "1 name(s) not in pool: If Dominic×3",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 191,
+      "detail": "POV declared as 'close_third' but 21/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 192,
+      "detail": "15607 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 192,
+      "detail": "POV declared as 'close_third' but 16/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 193,
+      "detail": "16004 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 193,
+      "detail": "1 name(s) not in pool: Eleven Tier×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 193,
+      "detail": "POV declared as 'close_third' but 20/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 194,
+      "detail": "12491 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 194,
+      "detail": "POV declared as 'close_third' but 16/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 195,
+      "detail": "15359 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 195,
+      "detail": "1 name(s) not in pool: Tier Five×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 195,
+      "detail": "POV declared as 'close_third' but 20/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 196,
+      "detail": "16194 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 196,
+      "detail": "1 name(s) not in pool: Iteration Forty×6",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 196,
+      "detail": "POV declared as 'close_third' but 15/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 197,
+      "detail": "Detected cliffhanger type 'body_reaction' was used in the last 3 chapters (['body_reaction', 'revelation', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 197,
+      "detail": "16267 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 197,
+      "detail": "2 name(s) not in pool: I'm×2, Iteration Forty×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 197,
+      "detail": "POV declared as 'close_third' but 15/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 198,
+      "detail": "11201 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 198,
+      "detail": "POV declared as 'close_third' but 15/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 199,
+      "detail": "17097 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 199,
+      "detail": "1 name(s) not in pool: Lower Quarter×4",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 199,
+      "detail": "POV declared as 'close_third' but 19/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 200,
+      "detail": "13949 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 200,
+      "detail": "4 name(s) not in pool: Subject One×5, Phase Forty×3, I'd×2, I'm×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 200,
+      "detail": "POV declared as 'close_third' but 18/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 201,
+      "detail": "8 name(s) not in pool: Iteration Forty×6, Phase Forty×4, Subject One×4, Strategic Assessment×2, Agent Vasquez×2, Captain Reeves×2, Strategic Recovery Division×2, I'm×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 201,
+      "detail": "POV declared as 'close_third' but 23/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 202,
+      "detail": "3 name(s) not in pool: Iteration Forty×2, Agent Vasquez×2, Patient Forty×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 202,
+      "detail": "POV declared as 'close_third' but 22/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 203,
+      "detail": "Detected cliffhanger type 'body_reaction' was used in the last 3 chapters (['revelation', 'body_reaction', 'intrusion']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 203,
+      "detail": "19464 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 203,
+      "detail": "3 name(s) not in pool: Iteration Forty×9, Patient Forty×3, Stabilization Trial×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 203,
+      "detail": "POV declared as 'close_third' but 22/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 204,
+      "detail": "5 name(s) not in pool: Iteration Forty×10, Phase Forty×8, Patient Forty×6, At Elena×2, I'm×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 204,
+      "detail": "POV declared as 'close_third' but 19/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 205,
+      "detail": "3 name(s) not in pool: Patient Forty×11, Phase Forty×4, In Kane×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 205,
+      "detail": "POV declared as 'close_third' but 18/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 206,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['intrusion', 'body_reaction', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 206,
+      "detail": "4 name(s) not in pool: Kinetic Transference×3, Patient Forty×3, I'm×2, Every Subject Forty×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 206,
+      "detail": "POV declared as 'close_third' but 20/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 207,
+      "detail": "1 name(s) not in pool: Carrier Wave×4",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 207,
+      "detail": "POV declared as 'close_third' but 16/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 208,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['body_reaction', 'revelation', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 208,
+      "detail": "16492 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 208,
+      "detail": "POV declared as 'close_third' but 19/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 209,
+      "detail": "18673 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 209,
+      "detail": "1 name(s) not in pool: I'll×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 209,
+      "detail": "POV declared as 'close_third' but 17/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 210,
+      "detail": "20418 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 210,
+      "detail": "3 name(s) not in pool: Phase Forty×5, Harmon Valley×3, Metro City×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 210,
+      "detail": "POV declared as 'close_third' but 19/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 211,
+      "detail": "POV declared as 'close_third' but 21/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 212,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['revelation', 'revelation', 'environmental']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 212,
+      "detail": "21907 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 212,
+      "detail": "POV declared as 'close_third' but 21/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 213,
+      "detail": "1 name(s) not in pool: I'm×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 213,
+      "detail": "POV declared as 'close_third' but 22/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 214,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['revelation', 'environmental', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 214,
+      "detail": "22882 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 214,
+      "detail": "3 name(s) not in pool: When Adrian×2, Not Coalition×2, Because Marcus×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 214,
+      "detail": "POV declared as 'close_third' but 19/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 215,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['environmental', 'revelation', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 215,
+      "detail": "20224 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 215,
+      "detail": "2 name(s) not in pool: Traits I'd×2, At Elena×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 215,
+      "detail": "POV declared as 'close_third' but 17/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 216,
+      "detail": "4 name(s) not in pool: Convergence Point Alpha×3, Because Adrian×2, Unless Kane×2, Whatever Kane×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "DIALOG_UNPAIRED",
+      "severity": "critical",
+      "chapter_no": 216,
+      "detail": "Odd count (465) of straight_double quotes across the chapter — one dialogue block is unterminated",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 216,
+      "detail": "POV declared as 'close_third' but 19/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 217,
+      "detail": "15846 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 217,
+      "detail": "2 name(s) not in pool: I'm×2, Convergence Point Alpha×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 217,
+      "detail": "POV declared as 'close_third' but 13/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 218,
+      "detail": "18350 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 218,
+      "detail": "2 name(s) not in pool: Parallel System×6, Every Gatekeeper×3",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 218,
+      "detail": "POV declared as 'close_third' but 20/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 219,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['revelation', 'revelation', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 219,
+      "detail": "22630 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 219,
+      "detail": "POV declared as 'close_third' but 15/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 220,
+      "detail": "15541 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 220,
+      "detail": "POV declared as 'close_third' but 20/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 221,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['revelation', 'revelation', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 221,
+      "detail": "2 name(s) not in pool: Eastern Seaboard×2, I'm×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 221,
+      "detail": "POV declared as 'close_third' but 19/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 222,
+      "detail": "2 name(s) not in pool: Meridian Group×4, Transportee Cole×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 222,
+      "detail": "POV declared as 'close_third' but 25/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 223,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['revelation', 'revelation', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 223,
+      "detail": "21176 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 223,
+      "detail": "4 name(s) not in pool: Targeting Kane×3, Ip Man×2, Because Vance×2, Not Sophie×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 223,
+      "detail": "POV declared as 'close_third' but 12/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 224,
+      "detail": "17196 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 224,
+      "detail": "POV declared as 'close_third' but 20/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 225,
+      "detail": "5 name(s) not in pool: Protective Services×12, Phase Forty×5, Project Resonance Extraction×4, At Tier×4, Not Kane×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 225,
+      "detail": "POV declared as 'close_third' but 16/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 226,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['revelation', 'revelation', 'body_reaction']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 226,
+      "detail": "19972 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 226,
+      "detail": "4 name(s) not in pool: Phase Forty×5, Protective Services×4, Four Protective Services×4, Three Syndicate×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 226,
+      "detail": "POV declared as 'close_third' but 17/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 227,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['revelation', 'body_reaction', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 227,
+      "detail": "3 name(s) not in pool: Phase Forty×10, Protocol Forty×7, Protective Services×3",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 227,
+      "detail": "POV declared as 'close_third' but 23/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 228,
+      "detail": "20689 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 228,
+      "detail": "2 name(s) not in pool: Protocol Forty×6, Iteration Sixty×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 228,
+      "detail": "POV declared as 'close_third' but 12/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 229,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['body_reaction', 'revelation', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 229,
+      "detail": "3 name(s) not in pool: Protocol Forty×5, Iteration Sixty×3, Because Kane×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 229,
+      "detail": "POV declared as 'close_third' but 12/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 230,
+      "detail": "3 name(s) not in pool: Protocol Forty×15, Something Kane×2, Everything Kane×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 230,
+      "detail": "POV declared as 'close_third' but 16/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 231,
+      "detail": "4 name(s) not in pool: Protocol Forty×11, Option Two×7, Option One×3, Option Three×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 231,
+      "detail": "POV declared as 'close_third' but 17/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    }
+  ]
+}

@@ -1,0 +1,5998 @@
+{
+  "project_slug": "superhero-fiction-1776147970",
+  "project_id": "8a201501-359a-4cbf-8e0a-d2ea678df2d8",
+  "findings": [
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 1,
+      "detail": "2 name(s) not in pool: Mercer×5, Patterson×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "OPENING_ENTITY_OVERLOAD",
+      "severity": "critical",
+      "chapter_no": 1,
+      "detail": "8 distinct named entities in first 150 lines (limit 5)",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 2,
+      "detail": "2 name(s) not in pool: Ashland Street×2, Harbor District×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "DIALOG_UNPAIRED",
+      "severity": "critical",
+      "chapter_no": 2,
+      "detail": "Odd count (477) of straight_double quotes across the chapter — one dialogue block is unterminated",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 3,
+      "detail": "22491 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 3,
+      "detail": "3 name(s) not in pool: Ashford Prep×4, Harbor District×4, Architect Priority×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 4,
+      "detail": "3 name(s) not in pool: Harbor District×7, Resonance Core×4, Daniel Marsh×3",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 5,
+      "detail": "17934 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 5,
+      "detail": "3 name(s) not in pool: Harbor Authority×3, Resonance Core×2, Behind Kade×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 6,
+      "detail": "17183 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 7,
+      "detail": "1 name(s) not in pool: Harbor District×8",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 8,
+      "detail": "3 name(s) not in pool: Harbor District×8, Architect Project×7, Ashford Prep×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 9,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 2 chapters (['body_reaction', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 9,
+      "detail": "2 name(s) not in pool: Mercer×4, Harbor District×4",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 10,
+      "detail": "15334 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 11,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['body_reaction', 'revelation', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LANG_RESIDUE_CJK_IN_EN",
+      "severity": "info",
+      "chapter_no": 11,
+      "detail": "CJK char ratio 0.022% below block limit 2.0% but 5 CJK glyph(s) present; examples: me泡在黑暗, me泡在黑暗里, e泡在黑暗里,",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 11,
+      "detail": "22752 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 11,
+      "detail": "2 name(s) not in pool: Onyx Crossing×3, Project Shell×3",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 12,
+      "detail": "21462 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 13,
+      "detail": "1 name(s) not in pool: Mercer×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 14,
+      "detail": "21509 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 14,
+      "detail": "2 name(s) not in pool: Harbor District×4, Resonance Project×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 15,
+      "detail": "Detected cliffhanger type 'body_reaction' was used in the last 3 chapters (['revelation', 'revelation', 'body_reaction']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 15,
+      "detail": "23433 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 15,
+      "detail": "1 name(s) not in pool: Resonance Project×3",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 16,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['revelation', 'body_reaction', 'body_reaction']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LANG_RESIDUE_CJK_IN_EN",
+      "severity": "info",
+      "chapter_no": 16,
+      "detail": "CJK char ratio 0.007% below block limit 2.0% but 2 CJK glyph(s) present; examples: one代号.\", ne代号.\"",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 16,
+      "detail": "1 name(s) not in pool: Miriam's Protocol×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LANG_RESIDUE_CJK_IN_EN",
+      "severity": "info",
+      "chapter_no": 17,
+      "detail": "CJK char ratio 0.014% below block limit 2.0% but 3 CJK glyph(s) present; examples: o a地下室, a地下室 w, a地下室 we",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 17,
+      "detail": "21934 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 17,
+      "detail": "1 name(s) not in pool: Unbinding Protocol×4",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 18,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['body_reaction', 'body_reaction', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 18,
+      "detail": "21613 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 18,
+      "detail": "1 name(s) not in pool: Captain Reyes×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 19,
+      "detail": "20126 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 19,
+      "detail": "2 name(s) not in pool: Director Crane×2, Witness Protocol×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 20,
+      "detail": "15585 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 20,
+      "detail": "2 name(s) not in pool: Everything Crane×2, Primary Template×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 21,
+      "detail": "19465 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 21,
+      "detail": "3 name(s) not in pool: Inheritance Vault×2, Primary Template×2, Prototype Seven×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 22,
+      "detail": "19991 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 22,
+      "detail": "2 name(s) not in pool: Primary Template×3, Whatever Miriam×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 23,
+      "detail": "17003 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 23,
+      "detail": "1 name(s) not in pool: Onyx Crossing×3",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 24,
+      "detail": "4 name(s) not in pool: Resonance Core×7, Onyx Crossing×5, Mom×3, What Mom×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 25,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['revelation', 'decision', 'body_reaction']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 25,
+      "detail": "24302 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 25,
+      "detail": "3 name(s) not in pool: Onyx Crossing×4, Resonance Core×4, Mercer×3",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 26,
+      "detail": "21080 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "DIALOG_UNPAIRED",
+      "severity": "critical",
+      "chapter_no": 26,
+      "detail": "Odd count (311) of straight_double quotes across the chapter — one dialogue block is unterminated",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 26,
+      "detail": "POV declared as 'close_third' but 5/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 27,
+      "detail": "3 name(s) not in pool: Onyx Crossing×5, Signal Crucible×2, Prototype Three×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 28,
+      "detail": "Detected cliffhanger type 'body_reaction' was used in the last 3 chapters (['decision', 'body_reaction', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 28,
+      "detail": "22458 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 28,
+      "detail": "2 name(s) not in pool: Alexandra Vance×6, Kira Voss×4",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 29,
+      "detail": "3 name(s) not in pool: Prototype Three×4, Whatever Crane×3, Kira's×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 29,
+      "detail": "POV declared as 'close_third' but 5/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 30,
+      "detail": "Detected cliffhanger type 'body_reaction' was used in the last 3 chapters (['body_reaction', 'revelation', 'body_reaction']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 30,
+      "detail": "21429 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 30,
+      "detail": "1 name(s) not in pool: Convergence Point×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 31,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['revelation', 'body_reaction', 'body_reaction']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 31,
+      "detail": "21144 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 31,
+      "detail": "2 name(s) not in pool: Onyx Crossing×2, Prototype Three×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 32,
+      "detail": "Detected cliffhanger type 'body_reaction' was used in the last 3 chapters (['body_reaction', 'body_reaction', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 32,
+      "detail": "22028 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 33,
+      "detail": "11196 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 33,
+      "detail": "1 name(s) not in pool: Whatever Maya×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 34,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['body_reaction', 'revelation', 'body_reaction']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LANG_RESIDUE_CJK_IN_EN",
+      "severity": "info",
+      "chapter_no": 34,
+      "detail": "CJK char ratio 0.036% below block limit 2.0% but 5 CJK glyph(s) present; examples: in僵硬的拥, in僵硬的拥抱, n僵硬的拥抱.",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 34,
+      "detail": "13740 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 35,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['revelation', 'body_reaction', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LANG_RESIDUE_CJK_IN_EN",
+      "severity": "info",
+      "chapter_no": 35,
+      "detail": "CJK char ratio 0.008% below block limit 2.0% but 2 CJK glyph(s) present; examples: ike承认,, ke承认, o",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 35,
+      "detail": "4 name(s) not in pool: Level Seven×5, Chimera Project×3, Prototype Three×2, Protocol Twelve×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 36,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['body_reaction', 'revelation', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 36,
+      "detail": "19959 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 36,
+      "detail": "2 name(s) not in pool: Template Zero×3, Prototype Three×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 37,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['revelation', 'revelation', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 37,
+      "detail": "8747 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 38,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['revelation', 'revelation', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 38,
+      "detail": "22753 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 38,
+      "detail": "2 name(s) not in pool: Template Zero×3, Mercer×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 39,
+      "detail": "2 name(s) not in pool: Template One×5, Template Zero×4",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "DIALOG_UNPAIRED",
+      "severity": "critical",
+      "chapter_no": 39,
+      "detail": "Odd count (405) of straight_double quotes across the chapter — one dialogue block is unterminated",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 40,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['revelation', 'revelation', 'body_reaction']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 40,
+      "detail": "3 name(s) not in pool: Template Zero×4, Template One×3, Oversight Committee×3",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "DIALOG_UNPAIRED",
+      "severity": "critical",
+      "chapter_no": 40,
+      "detail": "Odd count (451) of straight_double quotes across the chapter — one dialogue block is unterminated",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LANG_RESIDUE_CJK_IN_EN",
+      "severity": "info",
+      "chapter_no": 41,
+      "detail": "CJK char ratio 0.013% below block limit 2.0% but 2 CJK glyph(s) present; examples: ter门外 g, er门外 gr",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 41,
+      "detail": "15990 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 41,
+      "detail": "2 name(s) not in pool: Detective Chen×3, Sublevel×3",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 42,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['revelation', 'body_reaction', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 42,
+      "detail": "19840 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 42,
+      "detail": "2 name(s) not in pool: Template Zero×3, This Maya×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 43,
+      "detail": "4 name(s) not in pool: Onyx Crossing×8, Phase Two×7, Core Stronghold×6, Template Zero×6",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 44,
+      "detail": "Detected cliffhanger type 'body_reaction' was used in the last 3 chapters (['body_reaction', 'revelation', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 44,
+      "detail": "11348 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 44,
+      "detail": "2 name(s) not in pool: Template Zero×14, Onyx Crossing×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 45,
+      "detail": "Detected cliffhanger type 'body_reaction' was used in the last 3 chapters (['revelation', 'revelation', 'body_reaction']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 45,
+      "detail": "24145 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 45,
+      "detail": "1 name(s) not in pool: Template Zero×11",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 46,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['revelation', 'body_reaction', 'body_reaction']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LANG_RESIDUE_CJK_IN_EN",
+      "severity": "info",
+      "chapter_no": 46,
+      "detail": "CJK char ratio 0.007% below block limit 2.0% but 2 CJK glyph(s) present; examples: ars潜入 C, rs潜入 Cr",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 46,
+      "detail": "1 name(s) not in pool: Template Zero×6",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 47,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['body_reaction', 'body_reaction', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 47,
+      "detail": "3 name(s) not in pool: Onyx Crossing×8, Something Marcus×2, Template Zero×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 48,
+      "detail": "24339 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 48,
+      "detail": "1 name(s) not in pool: Template Zero×4",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 49,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['body_reaction', 'revelation', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 49,
+      "detail": "17821 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 49,
+      "detail": "3 name(s) not in pool: Kira Voss×3, Witness Protocol×2, Onyx Crossing×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 50,
+      "detail": "3 name(s) not in pool: Vault Seven×8, Onyx Crossing×7, Template Zero×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 51,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['revelation', 'revelation', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 51,
+      "detail": "22752 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 51,
+      "detail": "4 name(s) not in pool: Template Zero×12, Mercer×6, Onyx Crossing×6, Prototype Three×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 52,
+      "detail": "3 name(s) not in pool: Template Zero×34, Vault Seven×3, Find Template Zero×3",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 53,
+      "detail": "3 name(s) not in pool: Template Zero×8, Mercer×2, Malcolm Cole×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 54,
+      "detail": "12381 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 55,
+      "detail": "18628 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 55,
+      "detail": "5 name(s) not in pool: Template Zero×4, Harbor District×2, Template Seventeen×2, Template Negative×2, Template Fifteen×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 55,
+      "detail": "POV declared as 'close_third' but 3/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 56,
+      "detail": "2 name(s) not in pool: Template Negative×11, Danger Zone×3",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 57,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['revelation', 'revelation', 'body_reaction']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 57,
+      "detail": "20554 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 57,
+      "detail": "1 name(s) not in pool: Template Zero×19",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "DIALOG_UNPAIRED",
+      "severity": "critical",
+      "chapter_no": 57,
+      "detail": "Odd count (211) of straight_double quotes across the chapter — one dialogue block is unterminated",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 57,
+      "detail": "POV declared as 'close_third' but 3/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 58,
+      "detail": "Detected cliffhanger type 'body_reaction' was used in the last 3 chapters (['revelation', 'body_reaction', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 58,
+      "detail": "11812 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 59,
+      "detail": "Detected cliffhanger type 'body_reaction' was used in the last 3 chapters (['body_reaction', 'revelation', 'body_reaction']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 59,
+      "detail": "15816 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 59,
+      "detail": "1 name(s) not in pool: Template Zero×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 60,
+      "detail": "Detected cliffhanger type 'body_reaction' was used in the last 3 chapters (['revelation', 'body_reaction', 'body_reaction']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 60,
+      "detail": "14049 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 60,
+      "detail": "POV declared as 'close_third' but 6/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 61,
+      "detail": "24618 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 61,
+      "detail": "1 name(s) not in pool: Architect Prime×9",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 62,
+      "detail": "19810 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 63,
+      "detail": "19811 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 63,
+      "detail": "2 name(s) not in pool: James Chen×5, Template Zero×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 64,
+      "detail": "13742 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 64,
+      "detail": "1 name(s) not in pool: Vault Seven×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 65,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['body_reaction', 'body_reaction', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 65,
+      "detail": "19606 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 65,
+      "detail": "3 name(s) not in pool: Level Thirty×6, Mercer×4, Level Forty×3",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 66,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['body_reaction', 'revelation', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 66,
+      "detail": "23925 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 66,
+      "detail": "3 name(s) not in pool: Daniel Mercer×3, Core Stronghold×3, Batch Forty×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "DIALOG_UNPAIRED",
+      "severity": "critical",
+      "chapter_no": 66,
+      "detail": "Odd count (317) of straight_double quotes across the chapter — one dialogue block is unterminated",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 66,
+      "detail": "POV declared as 'close_third' but 5/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 67,
+      "detail": "24333 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 67,
+      "detail": "3 name(s) not in pool: Daniel Mercer×3, Mercer×2, Warehouse District×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 68,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['revelation', 'revelation', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 68,
+      "detail": "22932 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 68,
+      "detail": "2 name(s) not in pool: Level Seven×2, Daniel Mercer×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LANG_RESIDUE_CJK_IN_EN",
+      "severity": "info",
+      "chapter_no": 69,
+      "detail": "CJK char ratio 0.006% below block limit 2.0% but 2 CJK glyph(s) present; examples: ure吐出 b, re吐出 bl",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 69,
+      "detail": "3 name(s) not in pool: Mercer×3, Resonance Archive×2, Convergence Protocol Theta×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 70,
+      "detail": "9542 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 71,
+      "detail": "Detected cliffhanger type 'body_reaction' was used in the last 3 chapters (['revelation', 'revelation', 'body_reaction']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LANG_RESIDUE_CJK_IN_EN",
+      "severity": "info",
+      "chapter_no": 71,
+      "detail": "CJK char ratio 0.017% below block limit 2.0% but 4 CJK glyph(s) present; examples: ay,伸手可及, y,伸手可及., ,伸手可及.",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 71,
+      "detail": "22912 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 72,
+      "detail": "23804 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 73,
+      "detail": "Detected cliffhanger type 'body_reaction' was used in the last 3 chapters (['revelation', 'body_reaction', 'body_reaction']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 73,
+      "detail": "6578 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 73,
+      "detail": "1 name(s) not in pool: Template Zero×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 74,
+      "detail": "17250 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 75,
+      "detail": "22507 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 75,
+      "detail": "2 name(s) not in pool: Onyx Crossing×2, Template Zero×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 76,
+      "detail": "12889 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 76,
+      "detail": "1 name(s) not in pool: Template Zero×8",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 77,
+      "detail": "1 name(s) not in pool: Template Zero×12",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 78,
+      "detail": "Detected cliffhanger type 'body_reaction' was used in the last 3 chapters (['body_reaction', 'body_reaction', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 78,
+      "detail": "21376 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 78,
+      "detail": "3 name(s) not in pool: Sublevel Zero×7, Delia Okafor×6, Delia×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 79,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['body_reaction', 'revelation', 'body_reaction']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 79,
+      "detail": "22641 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 79,
+      "detail": "4 name(s) not in pool: Iteration One×8, Sublevel Zero×6, Central Convergence Core×2, Every Template×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 80,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['revelation', 'body_reaction', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LANG_RESIDUE_CJK_IN_EN",
+      "severity": "info",
+      "chapter_no": 80,
+      "detail": "CJK char ratio 0.009% below block limit 2.0% but 2 CJK glyph(s) present; examples: tes解脱.\", es解脱.\"",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 80,
+      "detail": "23406 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 80,
+      "detail": "6 name(s) not in pool: Template Zero×6, Daniel Vance×4, Template Thirty×3, Template Nineteen×3, Sublevel Zero×2, Template Seven×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 81,
+      "detail": "Detected cliffhanger type 'body_reaction' was used in the last 3 chapters (['body_reaction', 'revelation', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 81,
+      "detail": "17106 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 81,
+      "detail": "3 name(s) not in pool: Template Zero×3, Template Thirty×3, Template Twelve×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 81,
+      "detail": "POV declared as 'close_third' but 4/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 82,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['revelation', 'revelation', 'body_reaction']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 82,
+      "detail": "24096 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 82,
+      "detail": "2 name(s) not in pool: Harbor District×7, Template Nineteen×3",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 83,
+      "detail": "Detected cliffhanger type 'body_reaction' was used in the last 3 chapters (['revelation', 'body_reaction', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 83,
+      "detail": "20032 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 83,
+      "detail": "7 name(s) not in pool: Template Zero×12, Shell Four×11, Harbor District×5, Template Thirty×2, Whatever Miriam×2, Detective Chen×2, Template Nineteen×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 83,
+      "detail": "POV declared as 'close_third' but 3/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 84,
+      "detail": "Detected cliffhanger type 'body_reaction' was used in the last 3 chapters (['body_reaction', 'revelation', 'body_reaction']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 84,
+      "detail": "3 name(s) not in pool: Template Zero×19, Shell Four×9, Harbor District×5",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LANG_RESIDUE_CJK_IN_EN",
+      "severity": "info",
+      "chapter_no": 85,
+      "detail": "CJK char ratio 0.005% below block limit 2.0% but 1 CJK glyph(s) present; examples: e's赌ed",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 85,
+      "detail": "18974 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 85,
+      "detail": "1 name(s) not in pool: Template Zero×11",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 86,
+      "detail": "Detected cliffhanger type 'body_reaction' was used in the last 3 chapters (['revelation', 'body_reaction', 'body_reaction']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 86,
+      "detail": "2 name(s) not in pool: Template Zero×5, Contingency Seven×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 87,
+      "detail": "Detected cliffhanger type 'body_reaction' was used in the last 3 chapters (['body_reaction', 'body_reaction', 'body_reaction']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 87,
+      "detail": "12953 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 87,
+      "detail": "1 name(s) not in pool: Sublevel Nine×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 90,
+      "detail": "16137 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 91,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['body_reaction', 'internal_crisis', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 91,
+      "detail": "24258 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 91,
+      "detail": "1 name(s) not in pool: Mercer×3",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 92,
+      "detail": "2 name(s) not in pool: Template Zero×16, Mercer×3",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 93,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['internal_crisis', 'revelation', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 93,
+      "detail": "1 name(s) not in pool: Template Zero×12",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 94,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['revelation', 'revelation', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "DIALOG_UNPAIRED",
+      "severity": "critical",
+      "chapter_no": 94,
+      "detail": "Odd count (399) of straight_double quotes across the chapter — one dialogue block is unterminated",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 94,
+      "detail": "POV declared as 'close_third' but 8/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 95,
+      "detail": "4 name(s) not in pool: Template Zero×12, Level Seven×6, Through Zoe×2, Onyx Crossing×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 95,
+      "detail": "POV declared as 'close_third' but 6/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 96,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['revelation', 'revelation', 'body_reaction']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 96,
+      "detail": "2 name(s) not in pool: Template Zero×21, Sublevel Seven×3",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 97,
+      "detail": "Detected cliffhanger type 'body_reaction' was used in the last 3 chapters (['revelation', 'body_reaction', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 97,
+      "detail": "3 name(s) not in pool: Template Zero×4, Onyx Crossing×3, Behind Kade×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 98,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['body_reaction', 'revelation', 'body_reaction']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 98,
+      "detail": "24276 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LANG_RESIDUE_CJK_IN_EN",
+      "severity": "info",
+      "chapter_no": 99,
+      "detail": "CJK char ratio 0.007% below block limit 2.0% but 2 CJK glyph(s) present; examples: ess认同—i, ss认同—if",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 99,
+      "detail": "1 name(s) not in pool: Chen Purge×3",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 100,
+      "detail": "4 name(s) not in pool: Template Zero×6, Template Nineteen×5, Tanaka×2, Vault Seven×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 101,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['revelation', 'body_reaction', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 101,
+      "detail": "14488 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 101,
+      "detail": "1 name(s) not in pool: Young Kade×6",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 102,
+      "detail": "Detected cliffhanger type 'body_reaction' was used in the last 3 chapters (['body_reaction', 'revelation', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 102,
+      "detail": "20969 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 102,
+      "detail": "1 name(s) not in pool: Template Zero×7",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LANG_RESIDUE_CJK_IN_EN",
+      "severity": "info",
+      "chapter_no": 103,
+      "detail": "CJK char ratio 0.012% below block limit 2.0% but 2 CJK glyph(s) present; examples: ate觉醒 f, te觉醒 fo",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 103,
+      "detail": "16335 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 103,
+      "detail": "4 name(s) not in pool: Mercer×3, Template Zero×3, Hargrove Research Annex×2, Santiago Control×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 104,
+      "detail": "19976 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 104,
+      "detail": "1 name(s) not in pool: Template Zero×4",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 105,
+      "detail": "Detected cliffhanger type 'body_reaction' was used in the last 3 chapters (['revelation', 'revelation', 'body_reaction']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LANG_RESIDUE_CJK_IN_EN",
+      "severity": "info",
+      "chapter_no": 105,
+      "detail": "CJK char ratio 0.009% below block limit 2.0% but 2 CJK glyph(s) present; examples: st,播送 t, t,播送 th",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 105,
+      "detail": "22643 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 105,
+      "detail": "2 name(s) not in pool: Template Zero Activation×3, Template Zero×3",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 106,
+      "detail": "22067 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 106,
+      "detail": "2 name(s) not in pool: Template Zero×5, Template Nineteen×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 107,
+      "detail": "Detected cliffhanger type 'body_reaction' was used in the last 3 chapters (['revelation', 'body_reaction', 'body_reaction']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 107,
+      "detail": "1 name(s) not in pool: Delia Okafor×4",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 108,
+      "detail": "Detected cliffhanger type 'body_reaction' was used in the last 3 chapters (['body_reaction', 'body_reaction', 'body_reaction']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 108,
+      "detail": "1 name(s) not in pool: Checkpoint Seven×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 109,
+      "detail": "22215 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 110,
+      "detail": "16101 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 111,
+      "detail": "Detected cliffhanger type 'body_reaction' was used in the last 3 chapters (['body_reaction', 'body_reaction', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 111,
+      "detail": "2 name(s) not in pool: Template Zero×7, Witness Protocol×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "DIALOG_UNPAIRED",
+      "severity": "critical",
+      "chapter_no": 111,
+      "detail": "Odd count (447) of straight_double quotes across the chapter — one dialogue block is unterminated",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 112,
+      "detail": "Detected cliffhanger type 'body_reaction' was used in the last 3 chapters (['body_reaction', 'revelation', 'body_reaction']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 112,
+      "detail": "16687 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 112,
+      "detail": "2 name(s) not in pool: Witness Protocol×2, Template Zero×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 113,
+      "detail": "Detected cliffhanger type 'body_reaction' was used in the last 3 chapters (['revelation', 'body_reaction', 'body_reaction']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 113,
+      "detail": "19719 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 113,
+      "detail": "4 name(s) not in pool: Mercer×4, Sublevel Fourteen×2, Sublevel Nine×2, First Threshold×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "DIALOG_UNPAIRED",
+      "severity": "critical",
+      "chapter_no": 113,
+      "detail": "Odd count (227) of straight_double quotes across the chapter — one dialogue block is unterminated",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 113,
+      "detail": "POV declared as 'close_third' but 6/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LANG_RESIDUE_CJK_IN_EN",
+      "severity": "info",
+      "chapter_no": 114,
+      "detail": "CJK char ratio 0.009% below block limit 2.0% but 2 CJK glyph(s) present; examples: et—集体at, t—集体att",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 114,
+      "detail": "21678 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 114,
+      "detail": "2 name(s) not in pool: Template Zero×3, Template Thirty×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 115,
+      "detail": "Detected cliffhanger type 'body_reaction' was used in the last 3 chapters (['body_reaction', 'body_reaction', 'body_reaction']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 115,
+      "detail": "23363 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 115,
+      "detail": "1 name(s) not in pool: Template Zero×5",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 116,
+      "detail": "22774 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 116,
+      "detail": "3 name(s) not in pool: Tanaka×7, Template Zero×6, Toward Maya×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 117,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['body_reaction', 'body_reaction', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 117,
+      "detail": "15320 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 117,
+      "detail": "2 name(s) not in pool: Template Zero×13, What I've×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 118,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['body_reaction', 'revelation', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 118,
+      "detail": "16281 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 118,
+      "detail": "2 name(s) not in pool: Template Zero×15, Sublevel Fifteen×3",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 119,
+      "detail": "3 name(s) not in pool: Template Zero×58, Sublevel Fifteen×15, Sublevel Fourteen×5",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 120,
+      "detail": "15049 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 120,
+      "detail": "4 name(s) not in pool: Template Zero×6, Mercer×5, Sublevel Nine×3, Sublevel Fourteen×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "DIALOG_UNPAIRED",
+      "severity": "critical",
+      "chapter_no": 120,
+      "detail": "Odd count (205) of straight_double quotes across the chapter — one dialogue block is unterminated",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 120,
+      "detail": "POV declared as 'close_third' but 6/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 121,
+      "detail": "19117 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 121,
+      "detail": "1 name(s) not in pool: Template Zero×20",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 122,
+      "detail": "17952 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 122,
+      "detail": "POV declared as 'close_third' but 3/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LANG_RESIDUE_CJK_IN_EN",
+      "severity": "info",
+      "chapter_no": 123,
+      "detail": "CJK char ratio 0.007% below block limit 2.0% but 2 CJK glyph(s) present; examples: nly预见 t, ly预见 th",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 123,
+      "detail": "2 name(s) not in pool: Sublevel Fourteen×13, Template Zero×5",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 124,
+      "detail": "2 name(s) not in pool: Template Zero×4, Whatever Crane×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 125,
+      "detail": "20345 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 125,
+      "detail": "2 name(s) not in pool: Template Zero×7, Template Nineteen×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 126,
+      "detail": "23867 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 126,
+      "detail": "3 name(s) not in pool: Sublevel Fifteen×12, Witness Protocol×2, Iteration Thirty×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 127,
+      "detail": "Detected cliffhanger type 'body_reaction' was used in the last 3 chapters (['revelation', 'revelation', 'body_reaction']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 127,
+      "detail": "21831 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 127,
+      "detail": "1 name(s) not in pool: Both Cranes×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 128,
+      "detail": "22022 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 128,
+      "detail": "2 name(s) not in pool: Sublevel Fourteen×4, Sublevel Thirteen×3",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 129,
+      "detail": "22932 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 129,
+      "detail": "2 name(s) not in pool: Iteration Seventeen×8, Template Zero×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 130,
+      "detail": "Detected cliffhanger type 'body_reaction' was used in the last 3 chapters (['body_reaction', 'decision', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 130,
+      "detail": "1 name(s) not in pool: Sublevel Fourteen×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 131,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['decision', 'revelation', 'body_reaction']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 131,
+      "detail": "19706 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 131,
+      "detail": "1 name(s) not in pool: Sublevel Fourteen×5",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 132,
+      "detail": "21995 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 132,
+      "detail": "1 name(s) not in pool: Sublevel Fourteen×5",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 133,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['revelation', 'body_reaction', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 133,
+      "detail": "20241 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 133,
+      "detail": "3 name(s) not in pool: Template Zero×6, Sublevel Fourteen×4, Lin Chen×4",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 133,
+      "detail": "POV declared as 'close_third' but 4/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 134,
+      "detail": "3 name(s) not in pool: Sublevel Fourteen×2, Template Zero×2, Resonance Project×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 135,
+      "detail": "Detected cliffhanger type 'body_reaction' was used in the last 3 chapters (['body_reaction', 'revelation', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LANG_RESIDUE_CJK_IN_EN",
+      "severity": "info",
+      "chapter_no": 135,
+      "detail": "CJK char ratio 0.007% below block limit 2.0% but 2 CJK glyph(s) present; examples: r's温柔 a, 's温柔 an",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 135,
+      "detail": "5 name(s) not in pool: Template Zero×5, Sublevel Fourteen×2, Director Harmon×2, Agent Vance×2, Sublevel Nineteen×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 136,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['revelation', 'revelation', 'body_reaction']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 136,
+      "detail": "18319 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 136,
+      "detail": "3 name(s) not in pool: Sublevel Nineteen×6, Sublevel Twenty×2, Harmon Corp×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 137,
+      "detail": "22242 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 137,
+      "detail": "2 name(s) not in pool: Template Zero×3, Sublevel Twenty×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "DIALOG_UNPAIRED",
+      "severity": "critical",
+      "chapter_no": 137,
+      "detail": "Odd count (291) of straight_double quotes across the chapter — one dialogue block is unterminated",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 137,
+      "detail": "POV declared as 'close_third' but 4/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 138,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['revelation', 'body_reaction', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 138,
+      "detail": "2 name(s) not in pool: Sublevel Nineteen×6, Sublevel Twenty×5",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 139,
+      "detail": "Detected cliffhanger type 'body_reaction' was used in the last 3 chapters (['body_reaction', 'revelation', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 139,
+      "detail": "3 name(s) not in pool: Sublevel Nineteen×9, Template Zero×3, Template Nineteen×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "DIALOG_UNPAIRED",
+      "severity": "critical",
+      "chapter_no": 139,
+      "detail": "Odd count (295) of straight_double quotes across the chapter — one dialogue block is unterminated",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LANG_RESIDUE_CJK_IN_EN",
+      "severity": "info",
+      "chapter_no": 140,
+      "detail": "CJK char ratio 0.007% below block limit 2.0% but 2 CJK glyph(s) present; examples: n's逃跑 r, 's逃跑 ro",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 140,
+      "detail": "3 name(s) not in pool: Sublevel Nineteen×5, Sublevel Twenty×5, Sublevel Fourteen×3",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 141,
+      "detail": "4 name(s) not in pool: Sublevel Twenty×4, Template Zero×4, Witness×2, Sublevel Nineteen×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 142,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['revelation', 'revelation', 'body_reaction']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 142,
+      "detail": "14179 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 142,
+      "detail": "2 name(s) not in pool: Witness×23, Template Zero×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 143,
+      "detail": "Detected cliffhanger type 'body_reaction' was used in the last 3 chapters (['revelation', 'body_reaction', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 143,
+      "detail": "5 name(s) not in pool: Witness×16, Sublevel Nineteen×11, Sublevel Twenty×9, Template Zero×7, Sublevel Sixteen×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "DIALOG_UNPAIRED",
+      "severity": "critical",
+      "chapter_no": 143,
+      "detail": "Odd count (415) of straight_double quotes across the chapter — one dialogue block is unterminated",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 144,
+      "detail": "Detected cliffhanger type 'body_reaction' was used in the last 3 chapters (['body_reaction', 'revelation', 'body_reaction']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LANG_RESIDUE_CJK_IN_EN",
+      "severity": "info",
+      "chapter_no": 144,
+      "detail": "CJK char ratio 0.006% below block limit 2.0% but 2 CJK glyph(s) present; examples: ere共生,, re共生, n",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 144,
+      "detail": "2 name(s) not in pool: Sublevel Twenty×5, Patrick Chen×3",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "DIALOG_UNPAIRED",
+      "severity": "critical",
+      "chapter_no": 144,
+      "detail": "Odd count (359) of straight_double quotes across the chapter — one dialogue block is unterminated",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 145,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['revelation', 'body_reaction', 'body_reaction']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 145,
+      "detail": "18951 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 145,
+      "detail": "2 name(s) not in pool: Sublevel Twenty×8, At Zoe×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 146,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['body_reaction', 'body_reaction', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 146,
+      "detail": "3 name(s) not in pool: Sublevel Twenty×6, Sublevel Nineteen×2, Template Zero×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 147,
+      "detail": "1 name(s) not in pool: Sublevel Twenty×3",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 147,
+      "detail": "POV declared as 'close_third' but 6/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 148,
+      "detail": "Detected cliffhanger type 'body_reaction' was used in the last 3 chapters (['body_reaction', 'revelation', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 148,
+      "detail": "2 name(s) not in pool: Template Zero×5, Sublevel Twenty×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 149,
+      "detail": "Detected cliffhanger type 'body_reaction' was used in the last 3 chapters (['revelation', 'revelation', 'body_reaction']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 149,
+      "detail": "3 name(s) not in pool: Sublevel Nineteen×2, Sublevel Twenty×2, Template Zero×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 150,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['revelation', 'body_reaction', 'body_reaction']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 151,
+      "detail": "15845 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 153,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['body_reaction', 'body_reaction', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LANG_RESIDUE_CJK_IN_EN",
+      "severity": "info",
+      "chapter_no": 153,
+      "detail": "CJK char ratio 0.009% below block limit 2.0% but 2 CJK glyph(s) present; examples: asy同步., sy同步.",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 153,
+      "detail": "22089 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 154,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['body_reaction', 'revelation', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 154,
+      "detail": "21054 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 155,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['revelation', 'revelation', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LANG_RESIDUE_CJK_IN_EN",
+      "severity": "info",
+      "chapter_no": 155,
+      "detail": "CJK char ratio 0.004% below block limit 2.0% but 1 CJK glyph(s) present; examples: ght纹 on",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 155,
+      "detail": "24289 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 155,
+      "detail": "1 name(s) not in pool: Template Zero×5",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 156,
+      "detail": "24370 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 156,
+      "detail": "5 name(s) not in pool: Subject One×7, Template Zero×5, Project Genesis×2, Meridian Protocol×2, Consonance Collective×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 157,
+      "detail": "20689 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 157,
+      "detail": "3 name(s) not in pool: Template Zero×6, Sublevel Twelve×4, Meridian Protocol×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 157,
+      "detail": "POV declared as 'close_third' but 4/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 158,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['revelation', 'revelation', 'body_reaction']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 158,
+      "detail": "15807 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 158,
+      "detail": "3 name(s) not in pool: Sublevel Twelve×8, Template Zero×4, Sublevel Nine×3",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 159,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['revelation', 'body_reaction', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LANG_RESIDUE_CJK_IN_EN",
+      "severity": "info",
+      "chapter_no": 159,
+      "detail": "CJK char ratio 0.063% below block limit 2.0% but 15 CJK glyph(s) present; examples: one女子的手, ne女子的手正, e女子的手正慢",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 159,
+      "detail": "23624 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 159,
+      "detail": "2 name(s) not in pool: Meridian Protocol×2, Template Zero×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 160,
+      "detail": "16884 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 160,
+      "detail": "2 name(s) not in pool: Template Zero×3, Vessel Nineteen×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 161,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['body_reaction', 'revelation', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 161,
+      "detail": "12724 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 161,
+      "detail": "2 name(s) not in pool: Door Forty×4, Template Zero×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 162,
+      "detail": "1 name(s) not in pool: Template Zero×5",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 163,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['revelation', 'revelation', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 163,
+      "detail": "24262 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 163,
+      "detail": "1 name(s) not in pool: Template Zero×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 164,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['revelation', 'revelation', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 164,
+      "detail": "2 name(s) not in pool: Template Zero×4, Protocol Twelve×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 165,
+      "detail": "3 name(s) not in pool: Mercer×9, Protocol Twelve×4, Director Crane×3",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 166,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['revelation', 'revelation', 'body_reaction']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 166,
+      "detail": "14008 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LANG_RESIDUE_CJK_IN_EN",
+      "severity": "info",
+      "chapter_no": 167,
+      "detail": "CJK char ratio 0.030% below block limit 2.0% but 5 CJK glyph(s) present; examples: ad—死亡的灵, d—死亡的灵魂, —死亡的灵魂",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 167,
+      "detail": "16589 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 169,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['revelation', 'body_reaction', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 169,
+      "detail": "23661 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 170,
+      "detail": "21590 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 170,
+      "detail": "1 name(s) not in pool: Template Zero×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 171,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['body_reaction', 'revelation', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 171,
+      "detail": "5246 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 172,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['revelation', 'revelation', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LANG_RESIDUE_CJK_IN_EN",
+      "severity": "info",
+      "chapter_no": 172,
+      "detail": "CJK char ratio 0.013% below block limit 2.0% but 4 CJK glyph(s) present; examples: e's复制工厂, 's复制工厂, s复制工厂 w",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 172,
+      "detail": "POV declared as 'close_third' but 4/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 173,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['revelation', 'revelation', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 173,
+      "detail": "22924 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 173,
+      "detail": "1 name(s) not in pool: What Crane×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 174,
+      "detail": "12578 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 174,
+      "detail": "1 name(s) not in pool: Sublevel Twelve×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 175,
+      "detail": "19125 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 175,
+      "detail": "2 name(s) not in pool: Director Crane×4, Template Zero×4",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 175,
+      "detail": "POV declared as 'close_third' but 4/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 176,
+      "detail": "Detected cliffhanger type 'body_reaction' was used in the last 3 chapters (['revelation', 'revelation', 'body_reaction']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 176,
+      "detail": "24101 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 176,
+      "detail": "2 name(s) not in pool: Template Zero×2, To Maya×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 177,
+      "detail": "20960 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 178,
+      "detail": "Detected cliffhanger type 'body_reaction' was used in the last 3 chapters (['body_reaction', 'body_reaction', 'decision']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LANG_RESIDUE_CJK_IN_EN",
+      "severity": "info",
+      "chapter_no": 178,
+      "detail": "CJK char ratio 0.012% below block limit 2.0% but 3 CJK glyph(s) present; examples: ike断了气., ke断了气., e断了气.",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 178,
+      "detail": "24513 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 178,
+      "detail": "1 name(s) not in pool: Protocol Twelve×4",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 179,
+      "detail": "Detected cliffhanger type 'body_reaction' was used in the last 3 chapters (['body_reaction', 'decision', 'body_reaction']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 180,
+      "detail": "Detected cliffhanger type 'body_reaction' was used in the last 3 chapters (['decision', 'body_reaction', 'body_reaction']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 180,
+      "detail": "8843 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 180,
+      "detail": "POV declared as 'close_third' but 4/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 181,
+      "detail": "POV declared as 'close_third' but 6/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 184,
+      "detail": "2 name(s) not in pool: Hollow Men×7, Witness Protocol×3",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 185,
+      "detail": "24138 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 185,
+      "detail": "2 name(s) not in pool: Hollow Men×2, Iteration One×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 186,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['body_reaction', 'environmental', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 186,
+      "detail": "24059 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 186,
+      "detail": "1 name(s) not in pool: Iteration One×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 187,
+      "detail": "6723 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 188,
+      "detail": "14289 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 188,
+      "detail": "1 name(s) not in pool: Core Stronghold×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 189,
+      "detail": "19012 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 190,
+      "detail": "Detected cliffhanger type 'body_reaction' was used in the last 3 chapters (['revelation', 'revelation', 'body_reaction']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 190,
+      "detail": "13742 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 190,
+      "detail": "3 name(s) not in pool: Mekong Delta×3, Sublevel Twenty×3, Southeast Asia×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 191,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['revelation', 'body_reaction', 'body_reaction']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 191,
+      "detail": "16696 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 191,
+      "detail": "1 name(s) not in pool: Sublevel Twenty×3",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 192,
+      "detail": "Detected cliffhanger type 'body_reaction' was used in the last 3 chapters (['body_reaction', 'body_reaction', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 192,
+      "detail": "16171 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 192,
+      "detail": "1 name(s) not in pool: Tanaka×3",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 193,
+      "detail": "14464 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 193,
+      "detail": "1 name(s) not in pool: Gaunt Leader×7",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 194,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['body_reaction', 'revelation', 'body_reaction']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 194,
+      "detail": "7259 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 195,
+      "detail": "Detected cliffhanger type 'body_reaction' was used in the last 3 chapters (['revelation', 'body_reaction', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 195,
+      "detail": "14876 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "DIALOG_UNPAIRED",
+      "severity": "critical",
+      "chapter_no": 195,
+      "detail": "Odd count (103) of straight_double quotes across the chapter — one dialogue block is unterminated",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 195,
+      "detail": "POV declared as 'close_third' but 18/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 196,
+      "detail": "Detected cliffhanger type 'body_reaction' was used in the last 3 chapters (['body_reaction', 'revelation', 'body_reaction']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 196,
+      "detail": "24010 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 197,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['revelation', 'body_reaction', 'body_reaction']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 197,
+      "detail": "23573 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 197,
+      "detail": "1 name(s) not in pool: Voss×6",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 198,
+      "detail": "Detected cliffhanger type 'body_reaction' was used in the last 3 chapters (['body_reaction', 'body_reaction', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 198,
+      "detail": "16105 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 199,
+      "detail": "17267 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 199,
+      "detail": "2 name(s) not in pool: Gaunt Leader×2, Holding Facility×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 200,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['body_reaction', 'revelation', 'body_reaction']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 200,
+      "detail": "15437 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 200,
+      "detail": "1 name(s) not in pool: Gaunt Leader×3",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 201,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['revelation', 'body_reaction', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 201,
+      "detail": "3 name(s) not in pool: Convergence Point×13, Gaunt Leader×6, Meridian Protocol×3",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 202,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['body_reaction', 'revelation', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 202,
+      "detail": "20228 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 203,
+      "detail": "23811 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 203,
+      "detail": "2 name(s) not in pool: Seventh Tier×2, Gaunt Leader×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 203,
+      "detail": "POV declared as 'close_third' but 3/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 204,
+      "detail": "24074 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 204,
+      "detail": "1 name(s) not in pool: Singapore Sector Zero×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 205,
+      "detail": "Detected cliffhanger type 'body_reaction' was used in the last 3 chapters (['revelation', 'revelation', 'body_reaction']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 205,
+      "detail": "13260 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 206,
+      "detail": "Detected cliffhanger type 'body_reaction' was used in the last 3 chapters (['revelation', 'body_reaction', 'body_reaction']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 206,
+      "detail": "1 name(s) not in pool: Sector Zero×15",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 206,
+      "detail": "POV declared as 'close_third' but 4/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 207,
+      "detail": "Detected cliffhanger type 'body_reaction' was used in the last 3 chapters (['body_reaction', 'body_reaction', 'body_reaction']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 207,
+      "detail": "3 name(s) not in pool: Sector Zero×10, Mercer×7, Gaunt's Enforcers×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 208,
+      "detail": "Detected cliffhanger type 'body_reaction' was used in the last 3 chapters (['body_reaction', 'body_reaction', 'body_reaction']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 208,
+      "detail": "4 name(s) not in pool: Protocol Seven×5, Sector Zero×4, Lin Mercer×3, Architect Consortium×3",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 209,
+      "detail": "14362 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 209,
+      "detail": "1 name(s) not in pool: Protocol Seven×4",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 210,
+      "detail": "Detected cliffhanger type 'body_reaction' was used in the last 3 chapters (['body_reaction', 'body_reaction', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 210,
+      "detail": "19668 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 210,
+      "detail": "2 name(s) not in pool: Protocol Seven×12, Sector Zero×3",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 211,
+      "detail": "Detected cliffhanger type 'body_reaction' was used in the last 3 chapters (['body_reaction', 'revelation', 'body_reaction']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 211,
+      "detail": "20852 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 211,
+      "detail": "2 name(s) not in pool: Protocol Seven×11, Sector Zero×6",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 212,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['revelation', 'body_reaction', 'body_reaction']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 212,
+      "detail": "23181 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 212,
+      "detail": "4 name(s) not in pool: Protocol Seven×30, Sector Zero×8, Her Severance×2, Protocol One×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 213,
+      "detail": "18981 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 213,
+      "detail": "3 name(s) not in pool: Sector Zero×11, Protocol Seven×3, Protocol One×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 214,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['body_reaction', 'body_reaction', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 214,
+      "detail": "24491 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 214,
+      "detail": "4 name(s) not in pool: Protocol Seven×7, Sector Zero×3, At Maya×2, At Elena×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 215,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['body_reaction', 'revelation', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 215,
+      "detail": "5 name(s) not in pool: Protocol Seven×26, Protocol One×3, Let Maya×2, That I'm×2, At Zoe×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 216,
+      "detail": "17497 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 216,
+      "detail": "3 name(s) not in pool: Protocol Seven×5, Mercer×2, Pacific Rim×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "DIALOG_UNPAIRED",
+      "severity": "critical",
+      "chapter_no": 216,
+      "detail": "Odd count (317) of straight_double quotes across the chapter — one dialogue block is unterminated",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 217,
+      "detail": "4 name(s) not in pool: Subject Nine×6, Protocol Seven×3, Pacific Rim×3, Mercer×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 218,
+      "detail": "Detected cliffhanger type 'body_reaction' was used in the last 3 chapters (['revelation', 'revelation', 'body_reaction']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 218,
+      "detail": "2 name(s) not in pool: Pacific Rim×2, Protocol Seven×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 219,
+      "detail": "Detected cliffhanger type 'body_reaction' was used in the last 3 chapters (['revelation', 'body_reaction', 'body_reaction']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 219,
+      "detail": "22231 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 219,
+      "detail": "3 name(s) not in pool: Li Jun×10, Subject Nine×2, Subject Seven×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 220,
+      "detail": "Detected cliffhanger type 'body_reaction' was used in the last 3 chapters (['body_reaction', 'body_reaction', 'body_reaction']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 220,
+      "detail": "9383 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 220,
+      "detail": "1 name(s) not in pool: Subject Nine×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 221,
+      "detail": "Detected cliffhanger type 'body_reaction' was used in the last 3 chapters (['body_reaction', 'body_reaction', 'body_reaction']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 221,
+      "detail": "22659 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 222,
+      "detail": "Detected cliffhanger type 'body_reaction' was used in the last 3 chapters (['body_reaction', 'body_reaction', 'body_reaction']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 222,
+      "detail": "12961 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 222,
+      "detail": "2 name(s) not in pool: Protocol Seven×9, Li Jun×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 223,
+      "detail": "Detected cliffhanger type 'body_reaction' was used in the last 3 chapters (['body_reaction', 'body_reaction', 'body_reaction']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LANG_RESIDUE_CJK_IN_EN",
+      "severity": "info",
+      "chapter_no": 223,
+      "detail": "CJK char ratio 0.017% below block limit 2.0% but 4 CJK glyph(s) present; examples: en—一模一样, n—一模一样,, —一模一样,",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 223,
+      "detail": "24002 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 223,
+      "detail": "3 name(s) not in pool: Protocol Seven×16, Mercer×4, Priority Threat×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 224,
+      "detail": "Detected cliffhanger type 'body_reaction' was used in the last 3 chapters (['body_reaction', 'body_reaction', 'body_reaction']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 224,
+      "detail": "19091 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 224,
+      "detail": "1 name(s) not in pool: Protocol Seven×11",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 225,
+      "detail": "18575 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 225,
+      "detail": "1 name(s) not in pool: Mercer×4",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 226,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['body_reaction', 'body_reaction', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 226,
+      "detail": "23555 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 226,
+      "detail": "1 name(s) not in pool: Hong Kong×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 227,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['body_reaction', 'revelation', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 227,
+      "detail": "12069 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 228,
+      "detail": "12934 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 229,
+      "detail": "22748 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 230,
+      "detail": "Detected cliffhanger type 'body_reaction' was used in the last 3 chapters (['revelation', 'revelation', 'body_reaction']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LANG_RESIDUE_CJK_IN_EN",
+      "severity": "info",
+      "chapter_no": 230,
+      "detail": "CJK char ratio 0.020% below block limit 2.0% but 3 CJK glyph(s) present; examples: ter的报告, er的报告 t, r的报告 to",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 230,
+      "detail": "15378 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 231,
+      "detail": "17630 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 233,
+      "detail": "11028 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 234,
+      "detail": "Detected cliffhanger type 'body_reaction' was used in the last 3 chapters (['revelation', 'body_reaction', 'body_reaction']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 234,
+      "detail": "22578 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 234,
+      "detail": "POV declared as 'close_third' but 4/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 235,
+      "detail": "20137 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 235,
+      "detail": "POV declared as 'close_third' but 3/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 236,
+      "detail": "23124 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 236,
+      "detail": "POV declared as 'close_third' but 10/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 237,
+      "detail": "Detected cliffhanger type 'body_reaction' was used in the last 3 chapters (['body_reaction', 'body_reaction', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 237,
+      "detail": "11200 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LANG_RESIDUE_CJK_IN_EN",
+      "severity": "info",
+      "chapter_no": 238,
+      "detail": "CJK char ratio 0.024% below block limit 2.0% but 4 CJK glyph(s) present; examples: eir新月阵型, ir新月阵型—, r新月阵型—e",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 238,
+      "detail": "16867 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 238,
+      "detail": "2 name(s) not in pool: Subject Five×2, Subject Zero×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 238,
+      "detail": "POV declared as 'close_third' but 6/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 239,
+      "detail": "18478 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 239,
+      "detail": "4 name(s) not in pool: Option Three×5, Option One×4, Option Two×3, Template Seventeen×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 240,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['revelation', 'body_reaction', 'decision']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 240,
+      "detail": "19203 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 240,
+      "detail": "2 name(s) not in pool: Project Genesis×7, Subject One×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 241,
+      "detail": "13571 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 242,
+      "detail": "Detected cliffhanger type 'body_reaction' was used in the last 3 chapters (['body_reaction', 'decision', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 242,
+      "detail": "16224 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 243,
+      "detail": "12632 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 243,
+      "detail": "1 name(s) not in pool: Pacific Rim×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 243,
+      "detail": "POV declared as 'close_third' but 4/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 244,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['decision', 'revelation', 'body_reaction']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 244,
+      "detail": "2 name(s) not in pool: At Maya×2, At Elena×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 245,
+      "detail": "19940 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 245,
+      "detail": "1 name(s) not in pool: Pacific Independent News×4",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 246,
+      "detail": "Detected cliffhanger type 'body_reaction' was used in the last 3 chapters (['revelation', 'body_reaction', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 246,
+      "detail": "16102 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 246,
+      "detail": "2 name(s) not in pool: Thomas Reiner×3, Pacific Rim×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 247,
+      "detail": "Detected cliffhanger type 'body_reaction' was used in the last 3 chapters (['body_reaction', 'revelation', 'body_reaction']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 247,
+      "detail": "11643 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 248,
+      "detail": "15888 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 248,
+      "detail": "2 name(s) not in pool: Executive Director×2, Public Representative×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 249,
+      "detail": "14202 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 249,
+      "detail": "3 name(s) not in pool: Lin Zhao×3, Sara Chen×2, Eastern District×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 250,
+      "detail": "21153 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 251,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['revelation', 'body_reaction', 'body_reaction']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 251,
+      "detail": "16035 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 252,
+      "detail": "22379 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 252,
+      "detail": "1 name(s) not in pool: Lin Mei×3",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 253,
+      "detail": "Detected cliffhanger type 'body_reaction' was used in the last 3 chapters (['body_reaction', 'body_reaction', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 253,
+      "detail": "24297 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 253,
+      "detail": "1 name(s) not in pool: Mercer×3",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 254,
+      "detail": "4 name(s) not in pool: Closure Protocol×5, Mercer×4, Template Zero×2, Terminus's Closure Protocol×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "DIALOG_UNPAIRED",
+      "severity": "critical",
+      "chapter_no": 254,
+      "detail": "Odd count (451) of straight_double quotes across the chapter — one dialogue block is unterminated",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 255,
+      "detail": "3 name(s) not in pool: Closure Protocol×4, Director Chen×4, Behind Kade×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 256,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['body_reaction', 'revelation', 'body_reaction']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 256,
+      "detail": "2 name(s) not in pool: Director Chen×23, Closure Protocol×4",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "DIALOG_UNPAIRED",
+      "severity": "critical",
+      "chapter_no": 256,
+      "detail": "Odd count (441) of straight_double quotes across the chapter — one dialogue block is unterminated",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 257,
+      "detail": "Detected cliffhanger type 'body_reaction' was used in the last 3 chapters (['revelation', 'body_reaction', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 257,
+      "detail": "4 name(s) not in pool: Director Chen×3, Protocol Objective×2, Immediate Survival Pressure×2, Closure Protocol×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 258,
+      "detail": "23141 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 258,
+      "detail": "1 name(s) not in pool: Mercer×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 259,
+      "detail": "20352 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 259,
+      "detail": "1 name(s) not in pool: About Template Forty×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 260,
+      "detail": "Detected cliffhanger type 'body_reaction' was used in the last 3 chapters (['body_reaction', 'revelation', 'body_reaction']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 260,
+      "detail": "12939 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 261,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['revelation', 'body_reaction', 'body_reaction']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 261,
+      "detail": "16252 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 261,
+      "detail": "POV declared as 'close_third' but 3/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 262,
+      "detail": "Detected cliffhanger type 'body_reaction' was used in the last 3 chapters (['body_reaction', 'body_reaction', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 262,
+      "detail": "21765 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 262,
+      "detail": "1 name(s) not in pool: Node Core×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 263,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['body_reaction', 'revelation', 'body_reaction']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 263,
+      "detail": "3 name(s) not in pool: Node Core×8, Immediate Survival Pressure×3, Immediate Survival×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LANG_RESIDUE_CJK_IN_EN",
+      "severity": "info",
+      "chapter_no": 264,
+      "detail": "CJK char ratio 0.008% below block limit 2.0% but 2 CJK glyph(s) present; examples: the唤醒 p, he唤醒 pr",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 264,
+      "detail": "24348 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 265,
+      "detail": "14408 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 266,
+      "detail": "16682 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 267,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['body_reaction', 'revelation', 'decision']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 267,
+      "detail": "18471 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "DIALOG_UNPAIRED",
+      "severity": "critical",
+      "chapter_no": 267,
+      "detail": "Odd count (231) of straight_double quotes across the chapter — one dialogue block is unterminated",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 267,
+      "detail": "POV declared as 'close_third' but 9/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 268,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['revelation', 'decision', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 268,
+      "detail": "13978 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 269,
+      "detail": "13152 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 270,
+      "detail": "16424 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 271,
+      "detail": "22144 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 271,
+      "detail": "1 name(s) not in pool: Template Zero×3",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 272,
+      "detail": "17494 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 272,
+      "detail": "1 name(s) not in pool: Fourth Option×6",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 272,
+      "detail": "POV declared as 'close_third' but 8/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 273,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['revelation', 'revelation', 'body_reaction']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 273,
+      "detail": "2 name(s) not in pool: Fourth Option×5, Mercer×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 273,
+      "detail": "POV declared as 'close_third' but 3/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 274,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['revelation', 'body_reaction', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 274,
+      "detail": "1 name(s) not in pool: Fourth Option×3",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LANG_RESIDUE_CJK_IN_EN",
+      "severity": "info",
+      "chapter_no": 275,
+      "detail": "CJK char ratio 0.026% below block limit 2.0% but 8 CJK glyph(s) present; examples: had更重要的, ad更重要的地, d更重要的地方",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 276,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['body_reaction', 'revelation', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 276,
+      "detail": "21153 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 276,
+      "detail": "1 name(s) not in pool: Immediate Survival Pressure×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 277,
+      "detail": "20219 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 278,
+      "detail": "14447 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 278,
+      "detail": "1 name(s) not in pool: Witness Protocol×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 279,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['revelation', 'revelation', 'body_reaction']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 279,
+      "detail": "24515 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 280,
+      "detail": "Detected cliffhanger type 'body_reaction' was used in the last 3 chapters (['revelation', 'body_reaction', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 280,
+      "detail": "20888 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 280,
+      "detail": "3 name(s) not in pool: Mercer×5, Version Three×3, Magistrate Catherine Vance×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 281,
+      "detail": "Detected cliffhanger type 'body_reaction' was used in the last 3 chapters (['body_reaction', 'revelation', 'body_reaction']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 281,
+      "detail": "21739 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 281,
+      "detail": "2 name(s) not in pool: Mercer×9, Agent Chen×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 282,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['revelation', 'body_reaction', 'body_reaction']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 282,
+      "detail": "1 name(s) not in pool: Mercer×4",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 283,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['body_reaction', 'body_reaction', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 283,
+      "detail": "23594 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 283,
+      "detail": "2 name(s) not in pool: Version Forty×5, Now I'm×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 284,
+      "detail": "1 name(s) not in pool: Fourth Option×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "DIALOG_UNPAIRED",
+      "severity": "critical",
+      "chapter_no": 285,
+      "detail": "Odd count (389) of straight_double quotes across the chapter — one dialogue block is unterminated",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 286,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['revelation', 'revelation', 'internal_crisis']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 287,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['revelation', 'internal_crisis', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 287,
+      "detail": "20872 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 288,
+      "detail": "11513 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 288,
+      "detail": "1 name(s) not in pool: Earth×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 289,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['revelation', 'revelation', 'body_reaction']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 289,
+      "detail": "21585 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 289,
+      "detail": "1 name(s) not in pool: Immediate Survival Pressure×3",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 290,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['revelation', 'body_reaction', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 290,
+      "detail": "16567 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 291,
+      "detail": "14165 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 292,
+      "detail": "10388 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 292,
+      "detail": "1 name(s) not in pool: Phase Three×3",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 293,
+      "detail": "Detected cliffhanger type 'body_reaction' was used in the last 3 chapters (['body_reaction', 'revelation', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 293,
+      "detail": "18807 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 294,
+      "detail": "17270 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 295,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['revelation', 'revelation', 'body_reaction']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 295,
+      "detail": "17024 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 296,
+      "detail": "Detected cliffhanger type 'body_reaction' was used in the last 3 chapters (['revelation', 'body_reaction', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 296,
+      "detail": "16884 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 296,
+      "detail": "1 name(s) not in pool: Behind Kade×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 296,
+      "detail": "POV declared as 'close_third' but 7/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 297,
+      "detail": "17909 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 297,
+      "detail": "1 name(s) not in pool: Subject Nine×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 298,
+      "detail": "Detected cliffhanger type 'body_reaction' was used in the last 3 chapters (['body_reaction', 'revelation', 'body_reaction']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 298,
+      "detail": "18617 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 298,
+      "detail": "2 name(s) not in pool: Volume Seven Kade×2, Volume Eight×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 299,
+      "detail": "Detected cliffhanger type 'body_reaction' was used in the last 3 chapters (['revelation', 'body_reaction', 'body_reaction']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 299,
+      "detail": "15714 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 299,
+      "detail": "2 name(s) not in pool: Witness Forty×3, Volume Eight×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 300,
+      "detail": "Detected cliffhanger type 'body_reaction' was used in the last 3 chapters (['body_reaction', 'body_reaction', 'body_reaction']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LANG_RESIDUE_CJK_IN_EN",
+      "severity": "info",
+      "chapter_no": 300,
+      "detail": "CJK char ratio 0.012% below block limit 2.0% but 3 CJK glyph(s) present; examples: rry否决权., ry否决权., y否决权. T",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 300,
+      "detail": "3 name(s) not in pool: Primary Function×7, Witness Forty×3, Volume Eight×3",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 301,
+      "detail": "1 name(s) not in pool: Relay Station Nine×3",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 302,
+      "detail": "3 name(s) not in pool: Relay Station Nine×2, Whatever Version Zero×2, Medical Bay Seven×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 303,
+      "detail": "2 name(s) not in pool: Medical Bay Seven×8, Relay Station Nine×3",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "DIALOG_UNPAIRED",
+      "severity": "critical",
+      "chapter_no": 303,
+      "detail": "Odd count (455) of straight_double quotes across the chapter — one dialogue block is unterminated",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 304,
+      "detail": "19206 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 304,
+      "detail": "4 name(s) not in pool: Origin Point×14, Primary Anchor×5, Medical Bay Seven×3, Reach Origin Point×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 305,
+      "detail": "Detected cliffhanger type 'body_reaction' was used in the last 3 chapters (['body_reaction', 'decision', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 305,
+      "detail": "18324 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 305,
+      "detail": "1 name(s) not in pool: Origin Point×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 306,
+      "detail": "Detected cliffhanger type 'body_reaction' was used in the last 3 chapters (['decision', 'revelation', 'body_reaction']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 306,
+      "detail": "24021 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 306,
+      "detail": "1 name(s) not in pool: Architect Division×6",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 307,
+      "detail": "2 name(s) not in pool: Harrison Street×4, Iteration Forty×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 308,
+      "detail": "Detected cliffhanger type 'body_reaction' was used in the last 3 chapters (['revelation', 'body_reaction', 'body_reaction']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 308,
+      "detail": "1 name(s) not in pool: Power Witnessing×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 309,
+      "detail": "Detected cliffhanger type 'body_reaction' was used in the last 3 chapters (['body_reaction', 'body_reaction', 'body_reaction']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 309,
+      "detail": "20721 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 309,
+      "detail": "1 name(s) not in pool: Catherine Mercer×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 310,
+      "detail": "19655 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 310,
+      "detail": "1 name(s) not in pool: Two Syndicate×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 311,
+      "detail": "3 name(s) not in pool: Marsh Street×4, Phase Two×2, Resonance Collective×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 312,
+      "detail": "22059 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 313,
+      "detail": "15117 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 313,
+      "detail": "1 name(s) not in pool: Template Zero×9",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 314,
+      "detail": "15477 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "DIALOG_UNPAIRED",
+      "severity": "critical",
+      "chapter_no": 314,
+      "detail": "Odd count (129) of straight_double quotes across the chapter — one dialogue block is unterminated",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 314,
+      "detail": "POV declared as 'close_third' but 7/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 315,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['body_reaction', 'body_reaction', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 315,
+      "detail": "23121 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 315,
+      "detail": "1 name(s) not in pool: At Elena×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 316,
+      "detail": "Detected cliffhanger type 'body_reaction' was used in the last 3 chapters (['body_reaction', 'revelation', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 316,
+      "detail": "17854 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 316,
+      "detail": "1 name(s) not in pool: Architect Triumvirate×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 317,
+      "detail": "Detected cliffhanger type 'body_reaction' was used in the last 3 chapters (['revelation', 'revelation', 'body_reaction']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 317,
+      "detail": "2 name(s) not in pool: Template Zero×3, Meridian Complex×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "DIALOG_UNPAIRED",
+      "severity": "critical",
+      "chapter_no": 317,
+      "detail": "Odd count (343) of straight_double quotes across the chapter — one dialogue block is unterminated",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 317,
+      "detail": "POV declared as 'close_third' but 9/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 318,
+      "detail": "Detected cliffhanger type 'body_reaction' was used in the last 3 chapters (['revelation', 'body_reaction', 'body_reaction']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 318,
+      "detail": "4 name(s) not in pool: Meridian Complex×3, Subjects Three×3, Template Thirty×3, Template Zero×3",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 318,
+      "detail": "POV declared as 'close_third' but 3/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LANG_RESIDUE_CJK_IN_EN",
+      "severity": "info",
+      "chapter_no": 319,
+      "detail": "CJK char ratio 0.016% below block limit 2.0% but 3 CJK glyph(s) present; examples: hem到这里, em到这里 n, m到这里 no",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 319,
+      "detail": "18859 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 319,
+      "detail": "5 name(s) not in pool: Template Zero×4, Meridian Complex×3, Template Thirty×3, Phase One×2, Second Wave×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 320,
+      "detail": "7 name(s) not in pool: Template Thirty×4, Your Honor×4, Twenty Templates×2, Every Template×2, Subject Twenty×2, Second Wave×2, Twenty Template×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 321,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['body_reaction', 'body_reaction', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 321,
+      "detail": "16691 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 321,
+      "detail": "4 name(s) not in pool: Mercer×7, Judge Thornton×7, Your Honor×3, Subject Twenty×3",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 322,
+      "detail": "19430 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 323,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['body_reaction', 'revelation', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 323,
+      "detail": "24213 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 323,
+      "detail": "2 name(s) not in pool: Subject Twelve×4, Template Thirty×3",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 324,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['revelation', 'revelation', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 324,
+      "detail": "19474 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 324,
+      "detail": "4 name(s) not in pool: Subject Seventeen×6, Subject Zero×6, Phase Two×2, Phase Two Integration×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 325,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['revelation', 'revelation', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 325,
+      "detail": "22235 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 325,
+      "detail": "2 name(s) not in pool: Subject Zero×17, Protocol Omega×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 326,
+      "detail": "3 name(s) not in pool: Protocol Omega×21, Subject Zero×11, Conference Room Alpha×4",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 326,
+      "detail": "POV declared as 'close_third' but 3/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 327,
+      "detail": "2 name(s) not in pool: Subject Zero×5, Conference Room Alpha×4",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 328,
+      "detail": "Detected cliffhanger type 'body_reaction' was used in the last 3 chapters (['revelation', 'revelation', 'body_reaction']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 328,
+      "detail": "4 name(s) not in pool: Protocol Omega×12, Subject Zero×11, Conference Room Alpha×4, Containment Bay Seven×3",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LANG_RESIDUE_CJK_IN_EN",
+      "severity": "info",
+      "chapter_no": 329,
+      "detail": "CJK char ratio 0.025% below block limit 2.0% but 6 CJK glyph(s) present; examples: nd,越过 t, d,越过 th, rd,越过 t",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 329,
+      "detail": "23728 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 329,
+      "detail": "2 name(s) not in pool: Conference Room Alpha×3, Containment Bay Seven×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 330,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['revelation', 'body_reaction', 'body_reaction']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 330,
+      "detail": "4 name(s) not in pool: Protocol Omega×12, Conference Room Alpha×7, Captain Yuen×3, Containment Bay Seven×3",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 330,
+      "detail": "POV declared as 'close_third' but 3/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 331,
+      "detail": "3 name(s) not in pool: Containment Bay Seven×7, Conference Room Alpha×3, At Webb×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 332,
+      "detail": "2 name(s) not in pool: Subject Zero×4, Template Zero×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "DIALOG_UNPAIRED",
+      "severity": "critical",
+      "chapter_no": 332,
+      "detail": "Odd count (367) of straight_double quotes across the chapter — one dialogue block is unterminated",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 333,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['body_reaction', 'body_reaction', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 333,
+      "detail": "13344 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 334,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['body_reaction', 'revelation', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 334,
+      "detail": "17234 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "POV_DRIFT",
+      "severity": "critical",
+      "chapter_no": 334,
+      "detail": "POV declared as 'close_third' but 4/40 sampled narrative sentences use the wrong person",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 335,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['revelation', 'revelation', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 335,
+      "detail": "18957 chars < min 24640",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 335,
+      "detail": "1 name(s) not in pool: Template Zero×3",
+      "auto_repairable": false
+    }
+  ]
+}

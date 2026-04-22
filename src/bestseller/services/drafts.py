@@ -13,6 +13,8 @@ from bestseller.domain.context import SceneWriterContextPacket
 from bestseller.infra.db.models import (
     ChapterDraftVersionModel,
     ChapterModel,
+    ChapterQualityReportModel,
+    CharacterModel,
     ProjectModel,
     SceneCardModel,
     SceneDraftVersionModel,
@@ -28,6 +30,30 @@ from bestseller.services.prompt_packs import (
     resolve_prompt_pack,
 )
 from bestseller.services.projects import get_project_by_slug
+from bestseller.services.invariants import InvariantSeedError, invariants_from_dict
+from bestseller.services.chapter_validator import classify_cliffhanger
+from bestseller.services.diversity_budget import (
+    DEFAULT_HOT_VOCAB_WINDOW,
+    DiversityBudget,
+    load_diversity_budget,
+    save_diversity_budget,
+)
+from bestseller.services.output_validator import (
+    OutputValidator,
+    QualityReport,
+    ValidationContext,
+)
+from bestseller.services.quality_gates_config import (
+    build_validator_from_config,
+    get_quality_gates_config,
+)
+from bestseller.services.regen_loop import (
+    DEFAULT_BUDGET_PER_CHAPTER,
+    GlobalBudget,
+    RegenerationExhausted,
+    regenerate_until_valid,
+)
+from bestseller.services.write_gate import filter_blocking
 from bestseller.services.story_bible import load_scene_story_bible_context
 from bestseller.services.writing_profile import (
     is_english_language,
@@ -43,6 +69,398 @@ def count_words(text: str) -> int:
     han_chars = re.findall(r"[\u4e00-\u9fff]", text)
     latin_words = re.findall(r"[A-Za-z0-9_]+", text)
     return len(han_chars) + len(latin_words)
+
+
+async def _load_character_name_roster(
+    session: AsyncSession, project_id: UUID
+) -> frozenset[str]:
+    """Collect character names for the project — used as the allowlist for
+    ``NamingConsistencyCheck``.
+
+    Returns an empty set on any error so the gate degrades gracefully (the
+    check no-ops on empty allowlists rather than flagging every name).
+    """
+
+    try:
+        rows = await session.scalars(
+            select(CharacterModel.name).where(CharacterModel.project_id == project_id)
+        )
+        return frozenset(str(n).strip() for n in rows if n and str(n).strip())
+    except Exception:  # pragma: no cover — defensive guard for gate robustness
+        logger.debug(
+            "character roster load failed for project %s", project_id, exc_info=True
+        )
+        return frozenset()
+
+
+async def _evaluate_chapter_quality_gate(
+    *,
+    session: AsyncSession,
+    project: ProjectModel,
+    chapter_number: int,
+    content: str,
+) -> str | None:
+    """Run L4 + L5 validators + L6 gate resolution on an assembled chapter draft.
+
+    Returns the ``production_state`` string to stamp onto the chapter row:
+        * ``"ok"`` — no blocking violations (audit-only findings may exist).
+        * ``"blocked"`` — at least one violation resolved to ``block``.
+        * ``None`` — gate is disabled or invariants missing; leave state untouched.
+
+    Also threads ``DiversityBudget.recent_cliffhangers`` into the validation
+    context so ``CliffhangerRotationCheck`` can see prior chapter kinds, and
+    — when the gate passes — records this chapter's opening / cliffhanger
+    / vocab / title into the budget so future chapters get honest rotation.
+
+    Phase 1 intentionally keeps the gate non-raising so the pipeline can
+    persist the rejected draft for later inspection. A downstream regen
+    loop (Phase 2) will read ``production_state == "blocked"`` and retry.
+    """
+
+    if not project.invariants_json:
+        return None
+
+    gates_cfg = get_quality_gates_config()
+    if not gates_cfg.l6_enabled or (not gates_cfg.l4.enabled and not gates_cfg.l5.enabled):
+        return None
+
+    try:
+        invariants = invariants_from_dict(project.invariants_json)
+    except InvariantSeedError:
+        logger.warning(
+            "chapter %d: invariants payload invalid, skipping quality gate",
+            chapter_number,
+        )
+        return None
+
+    # Build the validator once per call — cheap, lets config-flag flips take
+    # effect between chapters without process restarts.
+    validator = build_validator_from_config(gates_cfg)
+    allowed_names = await _load_character_name_roster(session, project.id)
+
+    # Load diversity budget so CliffhangerRotationCheck can see the recent
+    # kinds. Missing budget row → empty tuple, which makes the check no-op.
+    try:
+        budget = await load_diversity_budget(session, project.id)
+    except Exception:  # pragma: no cover — defensive; budget is non-critical
+        logger.debug(
+            "diversity budget load failed for project %s", project.id, exc_info=True
+        )
+        budget = None
+
+    window = max(invariants.cliffhanger_policy.no_repeat_within, 0) if invariants else 0
+    recent_cliffhangers = (
+        budget.recent_cliffhangers(window) if (budget is not None and window > 0) else ()
+    )
+
+    ctx = ValidationContext(
+        invariants=invariants,
+        chapter_no=chapter_number,
+        scope="chapter",
+        allowed_names=allowed_names,
+        recent_cliffhangers=recent_cliffhangers,
+    )
+    report = validator.validate(content, ctx)
+
+    blocking = filter_blocking(
+        report, gates_cfg.l6_gate, chapter_no=chapter_number
+    )
+    outcome: str
+    if blocking:
+        logger.warning(
+            "chapter %d: blocked by quality gate — %s",
+            chapter_number,
+            ", ".join(v.code for v in blocking),
+        )
+        outcome = "blocked"
+    else:
+        if report.violations:
+            logger.info(
+                "chapter %d: audit-only findings — %s",
+                chapter_number,
+                ", ".join(v.code for v in report.violations),
+            )
+        outcome = "ok"
+
+    # Persist report row for L8 scorecard + Phase 2 promotion analysis.
+    # Always write — even when passes — so the dashboard sees coverage.
+    await _persist_chapter_quality_report(
+        session,
+        project_id=project.id,
+        chapter_number=chapter_number,
+        report=report,
+        blocking_codes=tuple(v.code for v in blocking),
+    )
+
+    # Only register diversity telemetry for chapters that actually ship —
+    # blocked drafts will be re-rendered and we don't want their cliffhanger
+    # / vocab contaminating the rotation window.
+    if outcome == "ok" and budget is not None:
+        try:
+            detected_cliffhanger = classify_cliffhanger(
+                content, invariants.language if invariants else None
+            )
+            title_candidate: str | None = None
+            project_slug = getattr(project, "slug", None)
+            chapter_title = await _lookup_chapter_title(
+                session, project.id, chapter_number
+            )
+            if chapter_title:
+                title_candidate = chapter_title
+            budget.register_chapter(
+                chapter_number,
+                opening=None,  # Opening is registered at prompt-construction time (L3).
+                cliffhanger=detected_cliffhanger,
+                title=title_candidate,
+                text=content,
+                language=invariants.language if invariants else None,
+            )
+            await save_diversity_budget(session, budget)
+            logger.debug(
+                "chapter %d: diversity budget updated (cliffhanger=%s, slug=%s)",
+                chapter_number,
+                detected_cliffhanger.value if detected_cliffhanger else None,
+                project_slug,
+            )
+        except Exception:  # pragma: no cover — budget update must never fail the gate
+            logger.debug(
+                "diversity budget save failed for project %s chapter %d",
+                project.id,
+                chapter_number,
+                exc_info=True,
+            )
+
+    return outcome
+
+
+async def _persist_chapter_quality_report(
+    session: AsyncSession,
+    *,
+    project_id: UUID,
+    chapter_number: int,
+    report: QualityReport,
+    blocking_codes: tuple[str, ...],
+) -> None:
+    """Insert a ``ChapterQualityReportModel`` row snapshotting this gate pass.
+
+    Failing to persist must NOT fail the gate — scoring infra loss is
+    recoverable, a lost draft isn't. Wrapped in a broad ``except`` to
+    degrade gracefully; the scorecard job can still read existing rows.
+    """
+
+    try:
+        chapter_row = await session.execute(
+            select(ChapterModel.id).where(
+                ChapterModel.project_id == project_id,
+                ChapterModel.chapter_number == chapter_number,
+            )
+        )
+        chapter_id = chapter_row.scalar_one_or_none()
+        if chapter_id is None:
+            return
+        payload: dict[str, Any] = {
+            "violations": [
+                {
+                    "code": v.code,
+                    "severity": v.severity,
+                    "location": v.location,
+                    "detail": v.detail,
+                }
+                for v in report.violations
+            ],
+            "blocking_codes": list(blocking_codes),
+        }
+        session.add(
+            ChapterQualityReportModel(
+                chapter_id=chapter_id,
+                report_json=payload,
+                regen_attempts=0,
+                blocks_write=bool(blocking_codes),
+            )
+        )
+        await session.flush()
+    except Exception:  # pragma: no cover — telemetry, never fails the gate
+        logger.debug(
+            "chapter_quality_report persist failed for project %s chapter %d",
+            project_id,
+            chapter_number,
+            exc_info=True,
+        )
+
+
+async def _lookup_chapter_title(
+    session: AsyncSession, project_id: UUID, chapter_number: int
+) -> str | None:
+    try:
+        row = await session.execute(
+            select(ChapterModel.title).where(
+                ChapterModel.project_id == project_id,
+                ChapterModel.chapter_number == chapter_number,
+            )
+        )
+        title = row.scalar_one_or_none()
+        return (title or "").strip() or None
+    except Exception:  # pragma: no cover — defensive
+        return None
+
+
+# ---------------------------------------------------------------------------
+# Scene-scope L4 validation + L4.5 regen loop.
+# ---------------------------------------------------------------------------
+
+
+async def _build_scene_validator(
+    session: AsyncSession, project: ProjectModel
+) -> tuple[OutputValidator | None, ValidationContext | None]:
+    """Construct an ``OutputValidator`` + ``ValidationContext`` for scene scope.
+
+    Returns ``(None, None)`` when invariants are missing or gates disabled —
+    the caller then skips scene-level validation gracefully. The returned
+    validator bundles L4 + L5 checks; several checks self-exempt at scene
+    scope (length envelope, entity density, cliffhanger rotation) so the
+    per-scene runtime cost is dominated by language + naming + dialog
+    integrity + POV lock — all fast.
+    """
+
+    if not project.invariants_json:
+        return None, None
+
+    gates_cfg = get_quality_gates_config()
+    if not gates_cfg.l4.enabled and not gates_cfg.l5.enabled:
+        return None, None
+
+    try:
+        invariants = invariants_from_dict(project.invariants_json)
+    except InvariantSeedError:
+        return None, None
+
+    validator = build_validator_from_config(gates_cfg)
+    allowed_names = await _load_character_name_roster(session, project.id)
+    ctx = ValidationContext(
+        invariants=invariants,
+        chapter_no=None,
+        scope="scene",
+        allowed_names=allowed_names,
+        recent_cliffhangers=(),  # Scene scope never checks cliffhanger rotation.
+    )
+    return validator, ctx
+
+
+async def _regenerate_scene_until_valid(
+    *,
+    session: AsyncSession,
+    settings: AppSettings,
+    project: ProjectModel,
+    chapter_number: int,
+    scene_number: int,
+    initial_content: str,
+    validator: OutputValidator,
+    ctx: ValidationContext,
+    system_prompt: str,
+    user_prompt: str,
+    fallback_content: str,
+    workflow_run_id: UUID | None,
+    step_run_id: UUID | None,
+    model_tier: str,
+    context_query: str,
+    global_budget: GlobalBudget | None,
+) -> tuple[str, str | None, UUID | None, str, int]:
+    """Validate ``initial_content`` and, if blocked, regen until it passes.
+
+    Returns ``(final_content, model_name, llm_run_id, provider, regen_count)``.
+    When the regen budget is exhausted, returns the best-effort output with a
+    ``regen_count`` that reflects attempts made — the caller still persists
+    the scene and lets the chapter-level gate / audit loop clean up later.
+    """
+
+    gates_cfg = get_quality_gates_config()
+    scene_budget = max(0, min(gates_cfg.l4_5.budget_per_chapter, DEFAULT_BUDGET_PER_CHAPTER))
+
+    initial_report = validator.validate(initial_content, ctx)
+    if not initial_report.blocks_write or scene_budget == 0:
+        return initial_content, None, None, "initial", 0
+
+    last_model_name: str | None = None
+    last_llm_run_id: UUID | None = None
+    last_provider = "initial"
+
+    async def _regenerator(feedback: str) -> str:
+        nonlocal last_model_name, last_llm_run_id, last_provider
+        retry_user_prompt = (
+            f"{user_prompt}\n\n---\n【质量整改指令】\n{feedback}"
+            "\n\n请基于以上整改要求重写整段场景，保持剧情、人物、场景不变。"
+        )
+        retry = await complete_text(
+            session,
+            settings,
+            LLMCompletionRequest(
+                logical_role="writer",
+                model_tier=model_tier,
+                system_prompt=system_prompt,
+                user_prompt=retry_user_prompt,
+                fallback_response=fallback_content,
+                prompt_template="scene_writer_regen",
+                prompt_version="1.0",
+                project_id=project.id,
+                workflow_run_id=workflow_run_id,
+                step_run_id=step_run_id,
+                metadata={
+                    "project_slug": project.slug,
+                    "chapter_number": chapter_number,
+                    "scene_number": scene_number,
+                    "context_query": context_query,
+                    "model_tier": model_tier,
+                    "regen_feedback_codes": [
+                        v.code for v in initial_report.violations
+                    ],
+                },
+            ),
+        )
+        last_model_name = retry.model_name
+        last_llm_run_id = retry.llm_run_id
+        last_provider = retry.provider
+        cleaned = sanitize_novel_markdown_content(
+            retry.content, language=_project_language(project)
+        ) or fallback_content
+        cleaned = strip_scaffolding_echoes(cleaned)
+        return cleaned
+
+    async def _validator_fn(text: str) -> QualityReport:
+        return validator.validate(text, ctx)
+
+    try:
+        result = await regenerate_until_valid(
+            initial_output=initial_content,
+            initial_report=initial_report,
+            regenerator=_regenerator,
+            validator=_validator_fn,
+            budget=scene_budget,
+            global_budget=global_budget,
+            context_label=f"scene-{chapter_number}-{scene_number}",
+        )
+    except RegenerationExhausted as exc:
+        logger.warning(
+            "scene %d.%d: regen budget exhausted (%d attempts); shipping best-effort",
+            chapter_number,
+            scene_number,
+            len(exc.attempts),
+        )
+        best = exc.attempts[-1].output if exc.attempts else initial_content
+        return (
+            best,
+            last_model_name,
+            last_llm_run_id,
+            last_provider or "regen_exhausted",
+            max(0, len(exc.attempts) - 1),
+        )
+
+    return (
+        result.final_output,
+        last_model_name,
+        last_llm_run_id,
+        last_provider if result.regen_count > 0 else "initial",
+        result.regen_count,
+    )
 
 
 def _estimate_tokens(text: str) -> int:
@@ -1865,6 +2283,8 @@ def build_scene_draft_prompts(
     tension_target_block: str | None = None,
     # Stage B+ — location ledger (same-location reframe + visit cap)
     location_ledger_block: str | None = None,
+    # L3 — DiversityBudget-sourced block (hot vocab, opening/cliffhanger rotation)
+    budget_diversity_block: str | None = None,
     # Scene scope isolation block (earlier scenes written — don't rewrite them)
     scene_scope_isolation_block: str | None = None,
     # Plan-richness gate findings (pre-draft)
@@ -2102,6 +2522,12 @@ def build_scene_draft_prompts(
     if location_ledger_block:
         _location_ledger_line = f"{location_ledger_block}\n\n"
 
+    # L3 — DiversityBudget (hot vocab + structured rotation). Orthogonal to
+    # the heuristic ``overused_phrase_block`` above.
+    _budget_diversity_line = ""
+    if budget_diversity_block:
+        _budget_diversity_line = f"{budget_diversity_block}\n\n"
+
     # Scene scope isolation — earlier scenes in this chapter that are already
     # written.  Prevents the writer from rewriting / paraphrasing them in
     # this scene (root cause of intra-chapter duplication).
@@ -2208,6 +2634,7 @@ def build_scene_draft_prompts(
             "cliffhanger_line": _cliffhanger_line,
             "tension_target_line": _tension_target_line,
             "location_ledger_line": _location_ledger_line,
+            "budget_diversity_line": _budget_diversity_line,
             "scene_scope_isolation_line": _scene_scope_isolation_line,
             "plan_richness_line": _plan_richness_line,
             "hard_fact_line": _hard_fact_line,
@@ -2254,6 +2681,7 @@ def build_scene_draft_prompts(
     _cliffhanger_line = _ctx["cliffhanger_line"]
     _tension_target_line = _ctx["tension_target_line"]
     _location_ledger_line = _ctx["location_ledger_line"]
+    _budget_diversity_line = _ctx["budget_diversity_line"]
     _scene_scope_isolation_line = _ctx["scene_scope_isolation_line"]
     _plan_richness_line = _ctx["plan_richness_line"]
     _hard_fact_line = _ctx["hard_fact_line"]
@@ -2291,6 +2719,7 @@ def build_scene_draft_prompts(
             f"{_genre_constraint_line}"
             f"{_phrase_avoidance_line}"
             f"{_opening_diversity_line}"
+            f"{_budget_diversity_line}"
             f"{_conflict_diversity_line}"
             f"{_scene_purpose_line}"
             f"{_env_diversity_line}"
@@ -2361,6 +2790,7 @@ def build_scene_draft_prompts(
             f"{_genre_constraint_line}"
             f"{_phrase_avoidance_line}"
             f"{_opening_diversity_line}"
+            f"{_budget_diversity_line}"
             f"{_conflict_diversity_line}"
             f"{_scene_purpose_line}"
             f"{_env_diversity_line}"
@@ -2866,6 +3296,9 @@ async def generate_scene_draft(
             location_ledger_block=(
                 context_packet.location_ledger_block if context_packet else None
             ),
+            budget_diversity_block=(
+                context_packet.budget_diversity_block if context_packet else None
+            ),
             scene_scope_isolation_block=(
                 context_packet.scene_scope_isolation_block if context_packet else None
             ),
@@ -2944,8 +3377,56 @@ async def generate_scene_draft(
         model_name = completion.model_name
         llm_run_id = completion.llm_run_id
         generation_mode = completion.provider
+
+        # ── L4 + L4.5: scene-scope quality gate with bounded regen ──
+        # Runs AFTER meta-leak cleanup so the validator sees the published
+        # text, not LLM scaffolding. Checks that self-exempt at scene scope
+        # (length envelope, entity density) are cheap no-ops. Language /
+        # naming / dialog integrity / POV lock run here and earn their keep.
+        scene_regen_count = 0
+        scene_validator, scene_ctx = await _build_scene_validator(session, project)
+        if scene_validator is not None and scene_ctx is not None:
+            (
+                content_md,
+                regen_model_name,
+                regen_llm_run_id,
+                regen_provider,
+                scene_regen_count,
+            ) = await _regenerate_scene_until_valid(
+                session=session,
+                settings=settings,
+                project=project,
+                chapter_number=chapter_number,
+                scene_number=scene_number,
+                initial_content=content_md,
+                validator=scene_validator,
+                ctx=scene_ctx,
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+                fallback_content=fallback_content,
+                workflow_run_id=workflow_run_id,
+                step_run_id=step_run_id,
+                model_tier=_model_tier,
+                context_query=context_packet.query_text,
+                global_budget=None,
+            )
+            if scene_regen_count > 0:
+                # Overwrite with the retry's provenance so the draft row
+                # points to the accepted attempt rather than the rejected one.
+                if regen_model_name:
+                    model_name = regen_model_name
+                if regen_llm_run_id:
+                    llm_run_id = regen_llm_run_id
+                generation_mode = f"regen_{regen_provider}"
+                logger.info(
+                    "scene %d.%d: regenerated %d time(s) before passing gate",
+                    chapter_number,
+                    scene_number,
+                    scene_regen_count,
+                )
     else:
         content_md = strip_scaffolding_echoes(sanitize_novel_markdown_content(content_md))
+        scene_regen_count = 0
     word_count = count_words(content_md)
     next_version = int(
         (
@@ -2993,6 +3474,7 @@ async def generate_scene_draft(
             "antagonist_plan_count": len(_packet_antagonist_plans(context_packet)),
             "tree_context_count": len(_packet_tree_context(context_packet)),
             "retrieval_chunk_count": len(_packet_retrieval_context(context_packet)),
+            "regen_count": int(scene_regen_count),
         },
     )
     session.add(draft)
@@ -3123,6 +3605,19 @@ async def assemble_chapter_draft(
     except Exception:
         logger.debug("Post-assembly dedup failed (non-fatal)", exc_info=True)
 
+    # ── L4/L5/L6 pre-write quality gate ──
+    # Runs before the draft row + disk file land. L4 checks language/length/
+    # naming/density, L5 checks dialog integrity & POV lock, L6 resolves the
+    # per-violation block/audit_only mode from config/quality_gates.yaml.
+    # Phase 1 only blocks on the high-confidence codes; audit-only codes
+    # still get logged for future precision tuning.
+    quality_gate_outcome = await _evaluate_chapter_quality_gate(
+        session=session,
+        project=project,
+        chapter_number=chapter_number,
+        content=content_md,
+    )
+
     word_count = count_words(content_md)
     next_version = int(
         (
@@ -3156,6 +3651,8 @@ async def assemble_chapter_draft(
     session.add(chapter_draft)
     chapter.current_word_count = word_count
     chapter.status = ChapterStatus.DRAFTING.value
+    if quality_gate_outcome is not None:
+        chapter.production_state = quality_gate_outcome
     await session.flush()
 
     # ── Eagerly sync disk file so web UI always shows current content ──

@@ -1,0 +1,104 @@
+l1_invariants:
+  enabled: true
+
+l2_bible_gate:
+  enabled: false
+  regen_budget: 3
+  checks:
+    quirk_slot_requirement:
+      min_quirks: 3
+    antagonist_motive_ledger:
+      jaccard_threshold: 0.4
+    world_taxonomy_uniqueness:
+      enabled: true
+    naming_pool_size:
+      multiplier: 2.0
+
+l3_prompt_constructor:
+  enabled: false
+  prior_chapter_tail_chars: 800
+  hot_vocab_window_chapters: 5
+  hot_vocab_top_n: 20
+
+l4_output_validator:
+  enabled: true
+  checks:
+    language_signature:
+      cjk_in_en_ratio_max: 0.02
+      latin_in_zh_ratio_max: 0.10
+    length_envelope:
+      enabled: true
+    naming_consistency:
+      enabled: true
+      # Rogue names must appear >= frequency_floor times before flagging; the
+      # floor suppresses false positives from rare regex hits on place/title
+      # words that happen to start with a surname character.
+      frequency_floor: 2
+    entity_density:
+      enabled: true
+      # Chapter 1 only — head_lines of text scanned for distinct named
+      # entities; above max_entities the opening is flagged as overloading
+      # reader memory.
+      head_lines: 150
+      max_entities: 5
+
+l4_5_regen_loop:
+  enabled: true
+  budget_per_chapter: 3
+  global_regen_total_budget: 12
+
+l5_chapter_validator:
+  enabled: true
+  checks:
+    dialog_integrity:
+      enabled: true
+    pov_lock:
+      enabled: true
+      # Sampled sentences — first half from chapter head, second half from
+      # chapter tail. Higher sample_size = slower but catches drift that
+      # only appears mid-chapter.
+      sample_size: 40
+      min_drift_sentences: 3
+    # CliffhangerRotationCheck is deferred until DiversityBudget lands
+    # (Phase 3).  Leaving the block here for forward compatibility.
+    cliffhanger_rotation:
+      enabled: false
+      no_repeat_within: 3
+
+l6_write_gate:
+  enabled: true
+  default: audit_only
+  mode_by_violation:
+    LANG_LEAK_CJK_IN_EN: block
+    LANG_LEAK_LATIN_IN_ZH: block
+    LENGTH_UNDER: block
+    LENGTH_OVER: block
+    DIALOG_UNPAIRED: block
+    CHAPTER_GAP: block
+    QUIRK_SLOT_MISSING: block
+    ANTAGONIST_MOTIVE_OVERLAP: block
+    WORLD_TAXONOMY_BOILERPLATE: block
+    NAMING_POOL_UNDERSIZED: block
+    NAMING_OUT_OF_POOL: audit_only
+    OPENING_ENTITY_OVERLOAD: audit_only
+    POV_DRIFT: audit_only
+    CLIFFHANGER_REPEAT: audit_only
+    # Hype Engine — Phase 2. All audit_only at the gate layer; the
+    # EndingSentenceImpactCheck itself emits severity="block" for the
+    # first 3 chapters, which the write_gate respects via
+    # violation_is_blocking (per-violation severity override).
+    HYPE_MISSING: audit_only
+    HYPE_REPEAT: audit_only
+    ENDING_SENTENCE_WEAK: audit_only
+    GOLDEN_THREE_WEAK: audit_only
+    PLEASURE_HYPE_GAP: audit_only
+    PLEASURE_COMEDIC_BEAT_STARVED: audit_only
+    PLEASURE_SETUP_PAYOFF_DEBT: audit_only
+
+l7_continuous_audit:
+  enabled: true
+  auto_repair: false
+  schedule_cron: "0 */6 * * *"
+
+l8_scorecard:
+  enabled: false

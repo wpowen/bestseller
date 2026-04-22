@@ -14,7 +14,7 @@ def test_writing_preset_catalog_contains_rich_platform_genre_and_length_presets(
 
     assert catalog.chapter_word_policy.min == 5000
     assert len(catalog.platform_presets) >= 7
-    assert len(catalog.genre_presets) >= 22
+    assert len(catalog.genre_presets) >= 27
     assert len(catalog.length_presets) >= 9
 
 
@@ -71,3 +71,42 @@ def test_hot_genre_presets_are_sorted_by_trend_score() -> None:
     assert hot[0].trend_score >= 90
     assert all(item.trend_summary for item in hot)
     assert any(item.key == "apocalypse-supply" for item in hot)
+
+
+@pytest.mark.parametrize(
+    "genre_key, expected_prompt_pack",
+    [
+        ("horror-tycoon", "suspense-mystery"),
+        ("mecha-warfare", "scifi-starwar"),
+        ("blacktech-techtree", "scifi-starwar"),
+        ("game-retro-nostalgia", "game-esport"),
+        ("exorcist-detective", "suspense-mystery"),
+    ],
+)
+def test_editor_recommended_genre_presets_are_registered(
+    genre_key: str, expected_prompt_pack: str
+) -> None:
+    preset = preset_services.get_genre_preset(genre_key)
+
+    assert preset is not None, f"Missing genre preset: {genre_key}"
+    assert preset.prompt_pack_key == expected_prompt_pack
+    assert preset.language == "zh-CN"
+    assert preset.target_word_options, "target_word_options must not be empty"
+    assert preset.target_chapter_options, "target_chapter_options must not be empty"
+    overrides = preset.writing_profile_overrides
+    assert "market" in overrides and "character" in overrides
+    assert overrides["market"].get("selling_points"), "selling_points required"
+
+
+def test_infer_genre_preset_matches_horror_tycoon_keywords() -> None:
+    preset = preset_services.infer_genre_preset("惊悚灵异", "诡豪神豪")
+
+    assert preset is not None
+    assert preset.key == "horror-tycoon"
+
+
+def test_infer_genre_preset_matches_mecha_warfare_keywords() -> None:
+    preset = preset_services.infer_genre_preset("科幻冒险", "机甲战争")
+
+    assert preset is not None
+    assert preset.key == "mecha-warfare"

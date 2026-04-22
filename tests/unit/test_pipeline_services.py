@@ -1582,6 +1582,20 @@ async def test_run_project_pipeline_filters_requested_chapter_numbers_and_checkp
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     project = build_project()
+    # Pre-seed invariants so L1 _ensure_project_invariants is a no-op — this
+    # test focuses on chapter-dispatch ordering, not invariant seeding (which
+    # has its own dedicated tests and its own commit of the seeded payload).
+    project.invariants_json = {
+        "project_id": str(project.id),
+        "language": "zh-CN",
+        "pov": "close_third",
+        "tense": "past",
+        "length_envelope": {
+            "min_chars": 5000,
+            "target_chars": 6400,
+            "max_chars": 7500,
+        },
+    }
     chapter_1 = build_chapter(project.id)
     chapter_1.status = "complete"
     chapter_2 = build_chapter(project.id)

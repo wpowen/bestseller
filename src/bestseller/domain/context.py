@@ -172,6 +172,14 @@ class SceneWriterContextPacket(BaseModel):
     # ── Stage B+: location ledger (same-location reframe + visit cap) ──
     location_ledger_block: str | None = None
 
+    # ── L3 DiversityBudget block (hot vocab + opening / cliffhanger rotation) ──
+    # Populated by pipelines.run_scene_pipeline from the project's
+    # DiversityBudget row. Orthogonal to ``overused_phrase_block`` — the
+    # latter is sourced from chapter-end heuristics in metadata_json and
+    # shows raw phrases; this block surfaces the structured archetype
+    # rotation state that the L5 gate enforces, so prompt and gate agree.
+    budget_diversity_block: str | None = None
+
     # ── Scene scope isolation: enforce scene-only scope + earlier-scene recaps ──
     # Tells the writer which beats/content belong to THIS scene only and which
     # earlier scenes in the chapter are already written (must not be rewritten

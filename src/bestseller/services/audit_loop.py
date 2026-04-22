@@ -35,6 +35,11 @@ from bestseller.services.hype_engine import (
     HypeType,
     classify_hype,
 )
+from bestseller.services.setup_payoff_tracker import (
+    DEFAULT_HUMILIATION_KEYWORDS,
+    DEFAULT_PAYOFF_HYPE_TYPES,
+    analyze_setup_payoff,
+)
 from bestseller.services.invariants import (
     CliffhangerType,
     InvariantSeedError,
@@ -629,6 +634,146 @@ class PleasureDistributionAudit:
 
 
 # ---------------------------------------------------------------------------
+# SetupPayoffTrackerAudit — humiliation → counterattack debt (Phase 3).
+# ---------------------------------------------------------------------------
+
+
+class SetupPayoffTrackerAudit:
+    """Emit ``PLEASURE_SETUP_PAYOFF_DEBT`` for unpaid humiliation setups.
+
+    Delegates the detection to ``setup_payoff_tracker.analyze_setup_payoff``
+    — a pure-function primitive — and wraps each returned ``SetupPayoffDebt``
+    as a finding anchored at the setup chapter so reviewers can jump
+    straight to it. The ``payoff_window_chapters`` knob is read from the
+    project's ``HypeScheme`` when present (preset-declared per plan); we
+    fall back to ``DEFAULT_PAYOFF_WINDOW_CHAPTERS`` when no scheme is set
+    so legacy projects still get the signal.
+
+    Repair is intentionally manual — fixing a missing face-slap means
+    rewriting chapters, which belongs in the pipeline, not here.
+    """
+
+    name = "SetupPayoffTrackerAudit"
+    code_debt = "PLEASURE_SETUP_PAYOFF_DEBT"
+
+    def __init__(
+        self,
+        *,
+        humiliation_keywords: tuple[str, ...] = DEFAULT_HUMILIATION_KEYWORDS,
+        payoff_hype_types: frozenset[HypeType] = DEFAULT_PAYOFF_HYPE_TYPES,
+        classify_when_missing: bool = True,
+    ) -> None:
+        self.humiliation_keywords = humiliation_keywords
+        self.payoff_hype_types = payoff_hype_types
+        self.classify_when_missing = classify_when_missing
+
+    async def scan(
+        self, session: AsyncSession, project_id: UUID
+    ) -> list[AuditFinding]:
+        project = (
+            await session.scalars(
+                select(ProjectModel).where(ProjectModel.id == project_id)
+            )
+        ).first()
+        if project is None:
+            return []
+
+        # Read payoff_window_chapters from the project's hype scheme when
+        # available; legacy projects with no scheme fall back to the
+        # module default (5) so the audit is not a no-op for them.
+        try:
+            invariants = (
+                invariants_from_dict(project.invariants_json)
+                if project.invariants_json
+                else None
+            )
+        except InvariantSeedError:
+            invariants = None
+        if invariants is not None and invariants.hype_scheme is not None:
+            payoff_window = invariants.hype_scheme.payoff_window_chapters
+        else:
+            payoff_window = 5
+
+        language = (project.language or "zh-CN").strip() or "zh-CN"
+
+        rows = (
+            await session.execute(
+                select(
+                    ChapterModel.chapter_number,
+                    ChapterModel.hype_type,
+                    ChapterDraftVersionModel.content_md,
+                )
+                .join(
+                    ChapterDraftVersionModel,
+                    ChapterDraftVersionModel.chapter_id == ChapterModel.id,
+                )
+                .where(
+                    ChapterModel.project_id == project_id,
+                    ChapterDraftVersionModel.is_current.is_(True),
+                    ChapterDraftVersionModel.content_md.is_not(None),
+                )
+                .order_by(ChapterModel.chapter_number)
+            )
+        ).all()
+        if not rows:
+            return []
+
+        chapter_texts: list[tuple[int, str]] = []
+        chapter_hype: list[tuple[int, HypeType | None]] = []
+        for chapter_number, persisted_hype_type, content_md in rows:
+            ch_no = int(chapter_number) if chapter_number is not None else 0
+            chapter_texts.append((ch_no, content_md or ""))
+            persisted_type: HypeType | None = None
+            if persisted_hype_type:
+                try:
+                    persisted_type = HypeType(str(persisted_hype_type))
+                except ValueError:
+                    persisted_type = None
+            chapter_hype.append((ch_no, persisted_type))
+
+        report = analyze_setup_payoff(
+            chapter_texts=chapter_texts,
+            chapter_hype=chapter_hype,
+            humiliation_keywords=self.humiliation_keywords,
+            payoff_hype_types=self.payoff_hype_types,
+            payoff_window_chapters=payoff_window,
+            language=language,
+            classify_when_missing=self.classify_when_missing,
+        )
+
+        return [
+            AuditFinding(
+                auditor=self.name,
+                code=self.code_debt,
+                severity="warn",
+                chapter_no=debt.setup_chapter,
+                detail=(
+                    f"Humiliation setup at chapter {debt.setup_chapter} "
+                    f"(keywords: {', '.join(debt.matched_keywords)}) went "
+                    f"unpaid through chapter {debt.window_end_chapter}; "
+                    f"expected COUNTERATTACK / FACE_SLAP / REVENGE_CLOSURE "
+                    f"/ UNDERDOG_WIN within {report.payoff_window_chapters} "
+                    "chapters."
+                ),
+                auto_repairable=False,
+            )
+            for debt in report.debts
+        ]
+
+    async def repair(
+        self, session: AsyncSession, finding: AuditFinding
+    ) -> RepairResult:
+        return RepairResult(
+            success=False,
+            description=(
+                "SetupPayoffTrackerAudit.repair is not self-contained; "
+                "regenerate the debt's payoff chapter via the pipeline "
+                "CLI with an explicit COUNTERATTACK/FACE_SLAP hype hint."
+            ),
+        )
+
+
+# ---------------------------------------------------------------------------
 # Orchestrator.
 # ---------------------------------------------------------------------------
 
@@ -683,13 +828,16 @@ def build_full_audit() -> ContinuousAudit:
     """Factory: full L4 + L5 retrospective audit + hype distribution audit.
 
     Adds naming consistency, opening entity density, dialog integrity, POV
-    lock, per-chapter cliffhanger rotation, and the Phase 2 hype
-    distribution audit on top of the Phase 1 subset. This is what the
-    offline CLI should use so that "all novels pass through the latest
-    framework capabilities" (user directive 2026-04-22) actually runs the
-    full validator stack. ``PleasureDistributionAudit`` no-ops on projects
-    with an empty ``hype_scheme`` (legacy pre-0019 projects) so it's safe
-    to include unconditionally.
+    lock, per-chapter cliffhanger rotation, the Phase 2 hype distribution
+    audit, and the Phase 3 setup-payoff tracker on top of the Phase 1
+    subset. This is what the offline CLI should use so that "all novels
+    pass through the latest framework capabilities" (user directive
+    2026-04-22) actually runs the full validator stack.
+    ``PleasureDistributionAudit`` no-ops on projects with an empty
+    ``hype_scheme`` (legacy pre-0019 projects) so it's safe to include
+    unconditionally; ``SetupPayoffTrackerAudit`` uses a text-only
+    humiliation scan so it still fires on legacy projects without hype
+    metadata — its window falls back to 5 chapters when no scheme is set.
     """
 
     return ContinuousAudit(
@@ -697,6 +845,7 @@ def build_full_audit() -> ContinuousAudit:
             GapRepairer(),
             ContentAuditor(validator_profile="full"),
             PleasureDistributionAudit(),
+            SetupPayoffTrackerAudit(),
         ]
     )
 

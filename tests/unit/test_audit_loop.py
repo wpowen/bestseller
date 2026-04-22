@@ -368,8 +368,14 @@ async def test_phase1_profile_skips_extended_checks() -> None:
 async def test_build_full_audit_includes_expected_auditors() -> None:
     audit = build_full_audit()
     names = {auditor.name for auditor in audit.auditors}
-    # Phase 2 adds PleasureDistributionAudit alongside the base pair.
-    assert names == {"GapRepairer", "ContentAuditor", "PleasureDistributionAudit"}
+    # Phase 2 adds PleasureDistributionAudit alongside the base pair;
+    # Phase 3 adds SetupPayoffTrackerAudit for humiliation→counterattack debt.
+    assert names == {
+        "GapRepairer",
+        "ContentAuditor",
+        "PleasureDistributionAudit",
+        "SetupPayoffTrackerAudit",
+    }
     # The ContentAuditor in a full-audit registration should be configured
     # with the full profile; this guards against regressions to phase1.
     content = next(a for a in audit.auditors if a.name == "ContentAuditor")

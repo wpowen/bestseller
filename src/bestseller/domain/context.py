@@ -199,6 +199,26 @@ class SceneWriterContextPacket(BaseModel):
     # is incomplete and must compensate with its own concrete invention.
     plan_richness_block: str | None = None
 
+    # ── Reader Hype Engine wiring (plan §Phase 1-3) ──
+    # ``reader_contract_block`` renders on the first 10 chapters and then
+    # every 5th thereafter, carrying the preset's reader promise + selling
+    # points so the LLM sees the commercial frame.
+    # ``hype_constraints_block`` carries the per-chapter hype assignment
+    # (type + recipe + narrative beats + golden-three rule + ladder rung).
+    # Both are pre-rendered by the pipeline from
+    # ``prompt_constructor.build_reader_contract_section`` /
+    # ``build_hype_constraints`` so drafts.py only has to concatenate.
+    # When ``ProjectInvariants.hype_scheme`` is empty (legacy projects),
+    # both strings are empty — safe no-op.
+    reader_contract_block: str | None = None
+    hype_constraints_block: str | None = None
+    # Metadata — captured so the chapter row can persist
+    # hype_type / hype_intensity / hype_recipe_key after the draft lands
+    # and the DiversityBudget can ``register_hype_moment`` the peak.
+    assigned_hype_type: str | None = None
+    assigned_hype_recipe_key: str | None = None
+    assigned_hype_intensity: float | None = None
+
 
 class ChapterSceneContext(BaseModel):
     scene_number: int = Field(ge=1)
@@ -249,3 +269,11 @@ class ChapterWriterContextPacket(BaseModel):
 
     # ── Phase-6 wiring: foreshadowing gap warning ──
     foreshadowing_gap_warning: str | None = None
+
+    # ── Reader Hype Engine wiring (plan §Phase 1-3) ──
+    # Chapter-level mirror of SceneWriterContextPacket — same semantics.
+    reader_contract_block: str | None = None
+    hype_constraints_block: str | None = None
+    assigned_hype_type: str | None = None
+    assigned_hype_recipe_key: str | None = None
+    assigned_hype_intensity: float | None = None

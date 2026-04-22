@@ -228,6 +228,28 @@ class CharacterMoralFramework(BaseModel):
     willing_to_sacrifice: str | None = None  # 愿意为目标牺牲什么
 
 
+class CharacterIPAnchorInput(BaseModel):
+    """Commercial-novel IP anchors — the 3-quirks-and-a-wound checklist.
+
+    Commercial bestsellers make readers remember characters by giving each one
+    concrete, sensory hooks: unusual quirks (at least three per protagonist),
+    signature objects they carry, a distinctive sensory signature (smell,
+    sound, touch), and a single core psychological wound that explains every
+    irrational decision. Without these, even well-plotted protagonists blur
+    into interchangeable archetypes — the root cause of historical bug #14
+    ("protagonist has no memorable features").
+
+    All lists are plain strings so Pydantic can validate loose LLM output; L2
+    Bible Gate layers stricter checks on top (protagonist needs >=3 quirks,
+    core_wound must be non-empty, etc.).
+    """
+
+    quirks: list[str] = Field(default_factory=list)
+    sensory_signatures: list[str] = Field(default_factory=list)
+    signature_objects: list[str] = Field(default_factory=list)
+    core_wound: str | None = None
+
+
 class CharacterInput(BaseModel):
     model_config = ConfigDict(extra="allow")
 
@@ -259,6 +281,7 @@ class CharacterInput(BaseModel):
     relationships: list[CharacterRelationshipInput] = Field(default_factory=list)
     voice_profile: CharacterVoiceProfileInput = Field(default_factory=CharacterVoiceProfileInput)
     moral_framework: CharacterMoralFramework = Field(default_factory=CharacterMoralFramework)
+    ip_anchor: CharacterIPAnchorInput = Field(default_factory=CharacterIPAnchorInput)
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 

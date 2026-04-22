@@ -1,0 +1,422 @@
+{
+  "project_slug": "xianxia-upgrade",
+  "project_id": "ec327953-4017-4a06-b5e7-7774d32da162",
+  "findings": [
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 1,
+      "detail": "6 name(s) not in pool: 孔骤然×4, 金色纹×3, 时候×2, 和姜白×2, 和陆渊×2, 方是来×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "OPENING_ENTITY_OVERLOAD",
+      "severity": "critical",
+      "chapter_no": 1,
+      "detail": "49 distinct named entities in first 150 lines (limit 5)",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 2,
+      "detail": "Detected cliffhanger type 'body_reaction' was used in the last 1 chapters (['body_reaction']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 2,
+      "detail": "9 name(s) not in pool: 苏师姐×4, 姜师姐×3, 孔骤然×3, 方向×3, 计划×2, 金线×2, 时候×2, 张纸×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 3,
+      "detail": "7 name(s) not in pool: 方师兄×6, 陈师兄×3, 时候×2, 林子里×2, 平静×2, 张脸×2, 时将近×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 4,
+      "detail": "11 name(s) not in pool: 苏师姐×7, 方向×5, 姜师姐×4, 金丹期×2, 时候×2, 方师兄×2, 周围几×2, 周围的×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_OVER",
+      "severity": "critical",
+      "chapter_no": 5,
+      "detail": "9952 chars > max 8320",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 5,
+      "detail": "28 name(s) not in pool: 时辰×14, 金色莲×11, 时辰后×7, 方向×7, 孔猛地×6, 花的玉×5, 孔深处×4, 时间不×3",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_OVER",
+      "severity": "critical",
+      "chapter_no": 6,
+      "detail": "9838 chars > max 8320",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 6,
+      "detail": "11 name(s) not in pool: 云海峰×7, 金色莲×4, 方向×3, 时候×2, 和悬在×2, 明的弧×2, 于来了×2, 和我一×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 7,
+      "detail": "8 name(s) not in pool: 苏师姐×7, 云海峰×5, 苏长老×3, 孔深处×2, 孔骤缩×2, 方向×2, 金色纹×2, 时间×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 8,
+      "detail": "9 name(s) not in pool: 姜师姐×5, 平静×3, 方传来×3, 时候×3, 金色×2, 时间×2, 时辰不×2, 张苍白×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "DIALOG_UNPAIRED",
+      "severity": "critical",
+      "chapter_no": 8,
+      "detail": "Paragraph 224: unclosed curly_double quote opened at offset 0",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 9,
+      "detail": "Detected cliffhanger type 'power_shift' was used in the last 3 chapters (['body_reaction', 'body_reaction', 'power_shift']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 9,
+      "detail": "7 name(s) not in pool: 时辰后×2, 金光×2, 金光一×2, 张瞬移×2, 金色的×2, 孙长老×2, 苏醒×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 10,
+      "detail": "4 name(s) not in pool: 金丹老×5, 张陌生×3, 方向×3, 明显×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 11,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['power_shift', 'power_shift', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 11,
+      "detail": "4377 chars < min 4480",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 11,
+      "detail": "1 name(s) not in pool: 周围弟×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 12,
+      "detail": "8 name(s) not in pool: 萧家的×5, 时候×3, 方向×3, 时只有×2, 张纸×2, 时忽然×2, 任何一×2, 时之前×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 13,
+      "detail": "9 name(s) not in pool: 萧家灭×4, 时间×2, 任何一×2, 时候×2, 萧家遗×2, 孔中的×2, 萧家的×2, 孔骤缩×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 14,
+      "detail": "Detected cliffhanger type 'power_shift' was used in the last 3 chapters (['power_shift', 'revelation', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_OVER",
+      "severity": "critical",
+      "chapter_no": 14,
+      "detail": "12181 chars > max 8320",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 14,
+      "detail": "22 name(s) not in pool: 平静×13, 时候×8, 周家的×6, 和苏清×6, 明天×6, 方向×5, 姜家欠×4, 萧家灭×4",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "DIALOG_UNPAIRED",
+      "severity": "critical",
+      "chapter_no": 14,
+      "detail": "Paragraph 607: unclosed curly_double quote opened at offset 16",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 15,
+      "detail": "5 name(s) not in pool: 金丹期×3, 孔骤然×2, 时候×2, 时快到×2, 安静下×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 16,
+      "detail": "8 name(s) not in pool: 萧家的×4, 张开×3, 于转过×2, 周家的×2, 成功率×2, 萧家灭×2, 朱红大×2, 孔骤缩×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 17,
+      "detail": "5 name(s) not in pool: 周长老×4, 时间×3, 萧家灭×2, 张网的×2, 皮跳了×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 18,
+      "detail": "5 name(s) not in pool: 成的幼×2, 和他眉×2, 时间×2, 成无主×2, 张名单×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 19,
+      "detail": "9 name(s) not in pool: 时候×4, 孔骤缩×4, 时间×3, 方向×3, 明天×2, 时恭候×2, 姜家的×2, 平静×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_OVER",
+      "severity": "critical",
+      "chapter_no": 20,
+      "detail": "8941 chars > max 8320",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 20,
+      "detail": "8 name(s) not in pool: 苏前辈×7, 时候×5, 孔骤然×4, 张纸条×3, 贺礼×3, 和钟离×2, 韩征×2, 方便×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_OVER",
+      "severity": "critical",
+      "chapter_no": 21,
+      "detail": "8874 chars > max 8320",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 21,
+      "detail": "13 name(s) not in pool: 方向×6, 萧家的×5, 于来了×4, 皮肤下×3, 平静×3, 时间×3, 于有了×3, 方延伸×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 22,
+      "detail": "Detected cliffhanger type 'body_reaction' was used in the last 3 chapters (['power_shift', 'body_reaction', 'decision']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 22,
+      "detail": "3266 chars < min 4480",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 22,
+      "detail": "6 name(s) not in pool: 萧家院×2, 萧家不×2, 萧家的×2, 于看清×2, 时候×2, 方向×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 23,
+      "detail": "Detected cliffhanger type 'body_reaction' was used in the last 3 chapters (['body_reaction', 'decision', 'body_reaction']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 23,
+      "detail": "5 name(s) not in pool: 云层中×3, 时候×2, 雷云×2, 雷劫×2, 任何他×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 24,
+      "detail": "18 name(s) not in pool: 金丹期×9, 雷劫的×6, 雷劫×3, 安静地×3, 金色的×3, 雷劫落×3, 和他的×3, 成不止×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 25,
+      "detail": "12 name(s) not in pool: 周身的×5, 金瞳的×4, 萧家弃×3, 周围的×3, 时候×3, 成一张×2, 成网×2, 明白了×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 26,
+      "detail": "4053 chars < min 4480",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 26,
+      "detail": "5 name(s) not in pool: 金色的×4, 金色线×4, 孔骤然×2, 时找到×2, 方向×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 27,
+      "detail": "2835 chars < min 4480",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 27,
+      "detail": "2 name(s) not in pool: 金色锚×3, 金色的×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 28,
+      "detail": "Detected cliffhanger type 'body_reaction' was used in the last 3 chapters (['body_reaction', 'body_reaction', 'revelation']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 28,
+      "detail": "3208 chars < min 4480",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 28,
+      "detail": "4 name(s) not in pool: 方向×3, 金色链×2, 和陆渊×2, 金色锚×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "CLIFFHANGER_REPEAT",
+      "severity": "critical",
+      "chapter_no": 29,
+      "detail": "Detected cliffhanger type 'revelation' was used in the last 3 chapters (['body_reaction', 'revelation', 'body_reaction']).",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "LENGTH_UNDER",
+      "severity": "critical",
+      "chapter_no": 29,
+      "detail": "3911 chars < min 4480",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 29,
+      "detail": "8 name(s) not in pool: 金色纹×8, 金色锁×4, 和第四×3, 于凡人×2, 张脸×2, 时候了×2, 金色的×2, 金光×2",
+      "auto_repairable": false
+    },
+    {
+      "auditor": "ContentAuditor",
+      "code": "NAMING_OUT_OF_POOL",
+      "severity": "critical",
+      "chapter_no": 30,
+      "detail": "14 name(s) not in pool: 金色纹×10, 金色光×6, 金光一×4, 金丹期×4, 元婴境×4, 苏醒×3, 平静×3, 金色洪×3",
+      "auto_repairable": false
+    }
+  ]
+}

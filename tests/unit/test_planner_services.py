@@ -60,6 +60,161 @@ def test_extract_json_payload_handles_wrapped_json() -> None:
     assert payload["title"] == "长夜巡航"
 
 
+def test_extract_json_payload_handles_prose_prefix_and_suffix() -> None:
+    """MiniMax-M2.7 often prepends/appends explanatory prose around JSON.
+
+    Observed failure mode (2026-04-21, romantasy-1776330993 volume_5_chapter_outline):
+    2 retries exhausted because ``rfind("}")`` was fooled by a trailing
+    prose example containing a ``}``.  The extractor must find the
+    *balanced* closing brace for the first opening brace, not the last
+    ``}`` in the entire text.
+    """
+    raw = (
+        "Here is the chapter outline:\n\n"
+        '{"chapters": [{"number": 1, "title": "序曲"}]}\n\n'
+        "Note: please revise the last scene if needed "
+        "(e.g. {\"scene\": \"incomplete example\"})."
+    )
+    payload = planner_services._extract_json_payload(raw)
+    assert payload == {"chapters": [{"number": 1, "title": "序曲"}]}
+
+
+def test_extract_json_payload_handles_markdown_fence_without_lang_tag() -> None:
+    """Accept bare ``` fences (no ``json`` tag) that MiniMax sometimes emits."""
+    raw = "```\n{\"title\": \"长夜巡航\", \"volume\": 5}\n```"
+    payload = planner_services._extract_json_payload(raw)
+    assert payload["volume"] == 5
+
+
+def test_extract_json_payload_handles_multiple_fenced_blocks() -> None:
+    """When the LLM emits multiple fenced blocks, pick the first balanced one."""
+    raw = (
+        "First attempt:\n"
+        "```json\n{\"chapters\": [{\"number\": 1}]}\n```\n\n"
+        "Alternative:\n"
+        "```json\n{\"chapters\": [{\"number\": 2}]}\n```\n"
+    )
+    payload = planner_services._extract_json_payload(raw)
+    # Balanced extraction picks up the first JSON object.
+    assert payload == {"chapters": [{"number": 1}]}
+
+
+def test_extract_json_payload_handles_nested_braces_in_strings() -> None:
+    """Balanced extractor must respect string literals containing braces."""
+    raw = (
+        "```json\n"
+        '{"outline": "vol 5 chapter 1: the trap uses a glyph like {X}",'
+        '"count": 3}\n'
+        "```"
+    )
+    payload = planner_services._extract_json_payload(raw)
+    assert payload["count"] == 3
+    assert "{X}" in payload["outline"]
+
+
+def test_extract_json_payload_handles_leading_garbage_with_balanced_body() -> None:
+    """Even without markdown fences, prose-before-JSON should be tolerated."""
+    raw = (
+        "我已经根据用户指令生成第5卷大纲如下（18 章）：\n"
+        '{"chapters": [{"number": 211, "title": "结界裂痕"}, '
+        '{"number": 212, "title": "旧伤"}]}'
+    )
+    payload = planner_services._extract_json_payload(raw)
+    assert payload["chapters"][0]["number"] == 211
+
+
+def test_extract_json_payload_raises_only_when_no_balanced_object_exists() -> None:
+    """True parse-failure still raises — extractor doesn't silently pass bad input."""
+    with pytest.raises(ValueError):
+        planner_services._extract_json_payload("this is just prose, no json at all")
+
+
+def test_extract_json_payload_repairs_minimax_duplicate_opener() -> None:
+    """Root-cause regression: MiniMax-M2.7 occasionally emits doubled
+    ``{`` before an object inside an array (observed 2026-04-21 on
+    superhero-fiction-1776147970 volume_8_chapter_outline). Standard
+    JSON parsers reject this; json-repair library handles it. The
+    extractor must integrate that fallback so the heal pipeline no
+    longer dies on structural MiniMax glitches.
+    """
+    raw = """```json
+{
+  "batch_name": "Volume 8",
+  "volume": 8,
+  "chapters": [
+    {
+      "chapter_number": 1,
+      "title": "Dual Presence",
+      "scenes": [
+        {
+          {
+            "scene_number": 1,
+            "story_task": "open scene"
+          }
+        }
+      ]
+    }
+  ]
+}
+```"""
+    payload = planner_services._extract_json_payload(raw)
+    assert payload["volume"] == 8
+    assert len(payload["chapters"]) == 1
+    # The repaired payload preserves the scene content even though the
+    # original had a malformed extra opener.
+    scenes = payload["chapters"][0]["scenes"]
+    assert len(scenes) >= 1
+    # Walk down to find the actual scene_number regardless of whether
+    # json-repair hoisted the inner object or preserved the outer wrapper.
+    def _find_scene_number(node: object) -> int | None:
+        if isinstance(node, dict):
+            if "scene_number" in node:
+                return node["scene_number"]
+            for value in node.values():
+                found = _find_scene_number(value)
+                if found is not None:
+                    return found
+        elif isinstance(node, list):
+            for item in node:
+                found = _find_scene_number(item)
+                if found is not None:
+                    return found
+        return None
+
+    assert _find_scene_number(scenes) == 1
+
+
+def test_extract_json_payload_repairs_trailing_commas() -> None:
+    """Common LLM glitch: trailing comma in arrays/objects (json-repair handles)."""
+    raw = '{"chapters": [{"number": 1,}, {"number": 2,}],}'
+    payload = planner_services._extract_json_payload(raw)
+    assert len(payload["chapters"]) == 2
+    assert payload["chapters"][0]["number"] == 1
+
+
+def test_planner_max_attempts_is_at_least_four() -> None:
+    """Regression guard: retry budget must be >=4.
+
+    Rationale — 2026-04-21 production failure (romantasy-1776330993):
+    with only 2 attempts, a single pair of malformed MiniMax responses
+    kills the entire heal job.  A 4-attempt budget lets transient
+    formatting glitches self-heal instead of wedging the project.
+    """
+    import inspect
+
+    src = inspect.getsource(
+        planner_services._generate_structured_artifact  # type: ignore[attr-defined]
+    )
+    # Ensure the literal default is at least 4.
+    import re
+
+    matches = re.findall(r"_max_attempts\s*=\s*(\d+)", src)
+    assert matches, "_max_attempts default not found in _generate_structured_artifact"
+    assert all(int(m) >= 4 for m in matches), (
+        f"planner _max_attempts must be >=4, found {matches}"
+    )
+
+
 def test_fallback_generators_create_complete_chain() -> None:
     project = build_project()
     premise = "一名被放逐的导航员发现帝国正在篡改边境航线记录。"

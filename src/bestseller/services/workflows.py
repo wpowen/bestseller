@@ -24,9 +24,15 @@ from bestseller.infra.db.models import (
     WorkflowRunModel,
     WorkflowStepRunModel,
 )
+from bestseller.services.bible_gate import (
+    build_draft_from_materialization_content,
+    validate_bible_completeness,
+)
+from bestseller.services.invariants import invariants_from_dict
 from bestseller.services.projects import create_chapter, create_or_get_volume, create_scene_card, get_project_by_slug
 from bestseller.services.narrative import rebuild_narrative_graph
 from bestseller.services.narrative_tree import rebuild_narrative_tree
+from bestseller.services.quality_gates_config import get_quality_gates_config
 from bestseller.services.retrieval import refresh_story_bible_retrieval_index
 from bestseller.services.story_bible import (
     apply_book_spec,
@@ -505,6 +511,87 @@ async def materialize_latest_chapter_outline_batch(
     )
 
 
+def _audit_bible_completeness(
+    *,
+    project: ProjectModel,
+    project_slug: str,
+    book_spec_content: dict[str, Any] | None,
+    world_spec_content: dict[str, Any] | None,
+    cast_spec_content: dict[str, Any] | None,
+) -> None:
+    """Run L2 BibleCompletenessGate in audit-only mode.
+
+    Phase 1 behaviour: log the deficiencies so operators can review them
+    before flipping the gate to block mode. Failures inside the gate must
+    not break bible materialization — the gate is advisory until the
+    regen loop (L4.5) is wired in.
+    """
+
+    try:
+        gates_cfg = get_quality_gates_config()
+    except Exception:  # pragma: no cover - defensive: config load shouldn't block materialization
+        logger.debug("failed to load quality gates config; skipping L2 bible audit", exc_info=True)
+        return
+
+    l2_cfg = getattr(gates_cfg, "l2", None)
+    l2_enabled = bool(getattr(l2_cfg, "enabled", False)) if l2_cfg is not None else False
+    if not l2_enabled:
+        return
+
+    invariants_payload = getattr(project, "invariants_json", None)
+    if not invariants_payload:
+        logger.debug(
+            "project %s has no invariants payload; skipping L2 bible audit",
+            project_slug,
+        )
+        return
+
+    try:
+        invariants = invariants_from_dict(invariants_payload)
+    except Exception:
+        logger.warning(
+            "project %s has invalid invariants payload; skipping L2 bible audit",
+            project_slug,
+            exc_info=True,
+        )
+        return
+
+    try:
+        draft = build_draft_from_materialization_content(
+            book_spec_content=book_spec_content,
+            world_spec_content=world_spec_content,
+            cast_spec_content=cast_spec_content,
+        )
+        report = validate_bible_completeness(draft, invariants)
+    except Exception:
+        logger.warning(
+            "L2 bible audit raised for project %s; treating as clean",
+            project_slug,
+            exc_info=True,
+        )
+        return
+
+    if report.passes:
+        logger.info("L2 bible gate passed for project %s", project_slug)
+        return
+
+    # Summarise deficiencies for observability. The full prompt feedback is
+    # already wrapped by report.feedback_for_regen() — log it at DEBUG so
+    # the info level stays scannable.
+    codes = sorted({d.code for d in report.deficiencies})
+    logger.warning(
+        "L2 bible gate (audit_only) flagged %d deficiencies for project %s: codes=%s",
+        len(report.deficiencies),
+        project_slug,
+        codes,
+    )
+    logger.debug(
+        "L2 bible gate full feedback for project %s:\n%s",
+        project_slug,
+        report.feedback_for_regen(),
+    )
+
+
 async def materialize_story_bible(
     session: AsyncSession,
     project_slug: str,
@@ -530,6 +617,17 @@ async def materialize_story_bible(
     applied_artifacts = [name for name, payload in requested_payloads.items() if payload is not None]
     if not applied_artifacts:
         raise ValueError("No story bible content was provided.")
+
+    # L2 Bible Completeness Gate — run pre-persistence so we surface
+    # deficiencies before the cast/world rows are committed. Phase 1 mode:
+    # audit-only (log + keep going). Phase 2 will flip to regen + block.
+    _audit_bible_completeness(
+        project=project,
+        project_slug=project_slug,
+        book_spec_content=book_spec_content,
+        world_spec_content=world_spec_content,
+        cast_spec_content=cast_spec_content,
+    )
 
     workflow_run = await create_workflow_run(
         session,

@@ -23,10 +23,22 @@ from bestseller.domain.pipeline import (
 from bestseller.domain.project import ProjectCreate
 from bestseller.domain.workflow import ChapterOutlineBatchInput
 from bestseller.infra.db.models import ChapterDraftVersionModel, ChapterModel, ChapterStateSnapshotModel, ProjectModel, SceneCardModel, SceneDraftVersionModel, VolumeModel
+from bestseller.services.audit_loop import (
+    build_phase1_audit,
+    run_and_persist_audit,
+)
 from bestseller.services.context import build_scene_writer_context_from_models
 from bestseller.services.continuity import extract_chapter_state_snapshot, validate_fact_monotonicity
 from bestseller.services.drafts import assemble_chapter_draft, generate_scene_draft
 from bestseller.services.exports import export_chapter_markdown, export_project_markdown
+from bestseller.services.scorecard import compute_scorecard, save_scorecard
+from bestseller.services.invariants import (
+    InvariantSeedError,
+    invariants_from_dict,
+    invariants_to_dict,
+    seed_invariants,
+)
+from bestseller.services.writing_presets import infer_genre_preset
 from bestseller.services.consistency import (
     contiguous_prefix_max,
     detect_chapter_sequence_gaps,
@@ -216,6 +228,64 @@ async def _volume_fully_written(
         return (False, 0, 0)
     written = await _count_written_chapters_in_volume(session, project_id, volume_number)
     return (written >= total, written, total)
+
+
+async def _ensure_project_invariants(
+    session: AsyncSession,
+    project: ProjectModel,
+    settings: AppSettings,
+) -> None:
+    """Seed or reload ``ProjectInvariants`` onto the given project row.
+
+    The invariants contract (L1) is stored as ``projects.invariants_json``.
+    Seeding happens at most once per project; subsequent pipeline runs read
+    the persisted payload instead of regenerating. We intentionally fail
+    loud on invalid payloads — a drifted contract is worse than a fresh one
+    because downstream stages will happily generate off a broken promise.
+    """
+
+    if project.invariants_json:
+        try:
+            invariants_from_dict(project.invariants_json)
+        except InvariantSeedError:
+            logger.warning(
+                "project %s has invalid invariants payload; reseeding", project.slug
+            )
+        else:
+            return
+
+    style_guide = getattr(project, "style_guide", None)
+    pov = getattr(style_guide, "pov_type", None) or settings.generation.pov or "close_third"
+    tense = getattr(style_guide, "tense", None) or "past"
+
+    # Pull the genre preset's raw ``writing_profile_overrides`` so the Hype
+    # Engine can pick up the preset-declared ``hype`` namespace (recipe_deck,
+    # comedic_beat_density_target, etc.) plus the ``market`` fields
+    # (reader_promise, selling_points, hook_keywords, chapter_hook_strategy)
+    # without going through ``sanitize_genre_story_overrides`` — the latter
+    # intentionally strips story content on the story-framework path.
+    preset_overrides: dict[str, Any] = {}
+    genre_preset = infer_genre_preset(project.genre, project.sub_genre)
+    if genre_preset is not None:
+        preset_overrides = dict(genre_preset.writing_profile_overrides)
+
+    try:
+        invariants = seed_invariants(
+            project_id=project.id,
+            language=project.language,
+            words_per_chapter=settings.generation.words_per_chapter,
+            pov=pov,
+            tense=tense,
+            overrides={"preset_overrides": preset_overrides},
+        )
+    except Exception as exc:  # pragma: no cover - defensive
+        raise InvariantSeedError(
+            f"seed_invariants failed for project {project.slug}: {exc}"
+        ) from exc
+
+    project.invariants_json = invariants_to_dict(invariants)
+    await _checkpoint_commit(session)
+    logger.info("seeded invariants for project %s", project.slug)
 
 
 async def _checkpoint_commit(session: AsyncSession) -> None:
@@ -666,6 +736,42 @@ async def run_scene_pipeline(
                 )
             except Exception:
                 logger.debug("Stage C/D block injection failed (non-fatal)", exc_info=True)
+
+        # ── L3 — DiversityBudget-sourced block (hot vocab + structured rotation) ──
+        # Complements the deduplication.py heuristic blocks above: those use raw
+        # text from prior scenes; this block surfaces the project-level typed
+        # rotation state (OpeningArchetype, CliffhangerType enums + hot_vocab
+        # counter) that the L5 gate enforces. Cheap lookup — one row join.
+        if shared_context is not None:
+            try:
+                from bestseller.services.diversity_budget import (
+                    load_diversity_budget,
+                    render_budget_diversity_block,
+                )
+                from bestseller.infra.db.models import SceneCardModel as _SCM_for_closer
+
+                _budget = await load_diversity_budget(session, project.id)
+                _max_scene_row = await session.execute(
+                    select(func.max(_SCM_for_closer.scene_number)).where(
+                        _SCM_for_closer.chapter_id == chapter.id,
+                    )
+                )
+                _max_scene = _max_scene_row.scalar_one_or_none() or scene_number
+                _is_closer = int(scene_number) >= int(_max_scene)
+                _bd_lang = getattr(project, "language", None) or settings.generation.language
+                _budget_block = render_budget_diversity_block(
+                    _budget,
+                    language=_bd_lang,
+                    is_chapter_opener=scene_number == 1,
+                    is_chapter_closer=_is_closer,
+                )
+                if _budget_block:
+                    shared_context.budget_diversity_block = _budget_block
+            except Exception:
+                logger.debug(
+                    "DiversityBudget block injection failed (non-fatal)",
+                    exc_info=True,
+                )
 
         # ── Pre-scene contradiction check (zero LLM cost) ──
         if settings.pipeline.enable_contradiction_checks and shared_context is not None:
@@ -1915,6 +2021,11 @@ async def run_project_pipeline(
     if project is None:
         raise ValueError(f"Project '{project_slug}' was not found.")
 
+    # L1 ProjectInvariants — seed once, re-use across all downstream stages.
+    # Seeding must happen before any LLM call so prompt construction and
+    # output validation see a coherent contract from chapter 1 onward.
+    await _ensure_project_invariants(session, project, settings)
+
     story_bible_result = None
     narrative_graph_result = None
     narrative_tree_result = None
@@ -2666,6 +2777,74 @@ async def run_project_pipeline(
             "final_verdict": review_result.verdict if review_result is not None else None,
         }
         await session.flush()
+
+        # Stage 10 — Continuous Audit.
+        # ---------------------------------------------------------------
+        # Replay gap + L4 content checks over the finished project. Findings
+        # are persisted so the Scorecard (Stage 11) and CLI ``audit`` command
+        # see the same snapshot. Failures here are telemetry only — never
+        # fail the pipeline because the novel itself already wrote.
+        audit_finding_count = 0
+        try:
+            audit_report = await run_and_persist_audit(
+                session, project.id, build_phase1_audit()
+            )
+            audit_finding_count = len(audit_report.findings)
+            _emit_progress(
+                progress,
+                "continuous_audit_completed",
+                {
+                    "project_slug": project.slug,
+                    "finding_count": audit_finding_count,
+                    "critical": audit_report.has_critical,
+                },
+            )
+        except Exception as audit_exc:  # pragma: no cover - telemetry guard
+            logger.warning(
+                "Stage 10 continuous audit failed for project %s: %s",
+                project.slug,
+                audit_exc,
+            )
+
+        # Stage 11 — Scorecard.
+        # ---------------------------------------------------------------
+        # Aggregate all evidence (chapter lengths, quality reports, audit
+        # findings, diversity budget) into the single NovelScorecard row.
+        # Dashboards read this; humans use ``bestseller scorecard`` to
+        # triage.
+        scorecard_quality_score: float | None = None
+        try:
+            scorecard = await compute_scorecard(
+                session,
+                project.id,
+                expected_chapter_count=project.target_chapters,
+            )
+            await save_scorecard(session, scorecard)
+            scorecard_quality_score = scorecard.quality_score
+            _emit_progress(
+                progress,
+                "scorecard_computed",
+                {
+                    "project_slug": project.slug,
+                    "quality_score": scorecard.quality_score,
+                    "total_chapters": scorecard.total_chapters,
+                    "missing_chapters": scorecard.missing_chapters,
+                    "chapters_blocked": scorecard.chapters_blocked,
+                },
+            )
+        except Exception as scorecard_exc:  # pragma: no cover - telemetry guard
+            logger.warning(
+                "Stage 11 scorecard failed for project %s: %s",
+                project.slug,
+                scorecard_exc,
+            )
+
+        workflow_run.metadata_json = {
+            **workflow_run.metadata_json,
+            "audit_finding_count": audit_finding_count,
+            "scorecard_quality_score": scorecard_quality_score,
+        }
+
         # Final commit so the project pipeline closes its transaction before
         # returning to the autowrite orchestrator (or worker context manager).
         await _checkpoint_commit(session)
@@ -2678,6 +2857,8 @@ async def run_project_pipeline(
                 "final_verdict": review_result.verdict if review_result is not None else None,
                 "requires_human_review": requires_human_review,
                 "output_path": output_path,
+                "audit_finding_count": audit_finding_count,
+                "scorecard_quality_score": scorecard_quality_score,
             },
         )
 

@@ -291,27 +291,116 @@ def _repair_truncated_json(raw: str) -> str | None:
     return stripped[: last_clean + 1] + closing
 
 
+def _find_balanced_json_substring(
+    text: str, opening: str, closing: str
+) -> str | None:
+    """Find the first balanced ``opening...closing`` substring in ``text``.
+
+    Walks from the first occurrence of ``opening``, tracking depth while
+    respecting JSON string literals and their escapes.  Returns the
+    minimal balanced substring, or ``None`` if no balanced pair exists.
+
+    Rationale — 2026-04-21 production failure:
+    MiniMax-M2.7 occasionally wraps the real JSON in prose that also
+    contains stray braces (e.g. an inline "{X}" example).  The naïve
+    ``str.rfind(closing)`` strategy grabs the trailing stray and returns
+    an unparseable substring.  Brace-matching is O(n) and immune to
+    trailing noise.
+    """
+    start = text.find(opening)
+    if start == -1:
+        return None
+    depth = 0
+    in_string = False
+    escape = False
+    for i in range(start, len(text)):
+        ch = text[i]
+        if escape:
+            escape = False
+            continue
+        if in_string:
+            if ch == "\\":
+                escape = True
+                continue
+            if ch == '"':
+                in_string = False
+            continue
+        if ch == '"':
+            in_string = True
+            continue
+        if ch == opening:
+            depth += 1
+        elif ch == closing:
+            depth -= 1
+            if depth == 0:
+                return text[start : i + 1]
+    return None
+
+
+def _strip_markdown_fences(text: str) -> str:
+    """Strip leading/trailing ``` fences (with or without ``json`` tag).
+
+    Handles the common MiniMax-M2.7 output shape:
+        ``` (or ```json) + newline + JSON + newline + ```
+    Does not attempt to strip intra-content fences — balanced-brace
+    extraction handles those cases naturally.
+    """
+    stripped = text.strip()
+    if not stripped.startswith("```"):
+        return stripped
+    # Drop opening fence line (everything up to the first newline after ```)
+    newline_idx = stripped.find("\n")
+    if newline_idx == -1:
+        return stripped
+    body = stripped[newline_idx + 1 :]
+    # Drop trailing ``` (possibly with surrounding whitespace)
+    body = body.rstrip()
+    if body.endswith("```"):
+        body = body[: -len("```")].rstrip()
+    return body
+
+
 def _extract_json_payload(text: str) -> Any:
     stripped = text.strip()
     if not stripped:
         raise ValueError("Planner returned empty content.")
+
+    # Strip surrounding markdown fences so the direct parse works on the
+    # common happy-path MiniMax output.
+    unfenced = _strip_markdown_fences(stripped)
     try:
-        return json.loads(stripped)
+        return json.loads(unfenced)
     except json.JSONDecodeError:
         pass
 
+    # Strategy 1: balanced brace/bracket matching from the first opener.
+    # This is robust against prose prefixes *and* prose suffixes that
+    # happen to contain stray closers — unlike ``rfind(closing)`` which
+    # is fooled by trailing example text.
     for opening, closing in (("{", "}"), ("[", "]")):
-        start = stripped.find(opening)
-        end = stripped.rfind(closing)
-        if start != -1 and end != -1 and end > start:
+        candidate = _find_balanced_json_substring(unfenced, opening, closing)
+        if candidate is not None:
             try:
-                return json.loads(stripped[start : end + 1])
+                return json.loads(candidate)
             except json.JSONDecodeError:
                 continue
 
-    # Tolerate truncation at max_tokens: drop the incomplete trailing
-    # object and close any still-open containers.
-    repaired = _repair_truncated_json(stripped)
+    # Strategy 2 (legacy): rfind-based widest-span scan.  Kept as a
+    # fallback in case brace-matching missed an edge case (e.g. JSON
+    # containing literal unescaped control characters that make the
+    # balanced scan's string-literal tracking over-consume).
+    for opening, closing in (("{", "}"), ("[", "]")):
+        start = unfenced.find(opening)
+        end = unfenced.rfind(closing)
+        if start != -1 and end != -1 and end > start:
+            try:
+                return json.loads(unfenced[start : end + 1])
+            except json.JSONDecodeError:
+                continue
+
+    # Strategy 3: tolerate truncation at max_tokens — drop the incomplete
+    # trailing object and close any still-open containers.
+    repaired = _repair_truncated_json(unfenced)
     if repaired is not None:
         try:
             result = json.loads(repaired)
@@ -320,11 +409,92 @@ def _extract_json_payload(text: str) -> Any:
         else:
             logger.warning(
                 "Planner output repaired after truncation (orig=%d bytes, repaired=%d bytes).",
-                len(stripped),
+                len(unfenced),
                 len(repaired),
             )
             return result
+
+    # Strategy 4: json-repair fallback for structurally malformed LLM
+    # output.  Handles cases the prior strategies cannot: extra openers
+    # (e.g. ``{ {`` before an object inside an array), trailing commas,
+    # unquoted keys, single-quoted strings — common MiniMax-M2.7 glitches
+    # observed in production 2026-04-21 (superhero-fiction-1776147970,
+    # volume_8_chapter_outline attempt 1).  ``json_repair`` is a project
+    # dependency (pyproject.toml: ``json-repair>=0.39.1,<1.0``).
+    try:
+        from json_repair import repair_json
+
+        repaired_str = repair_json(unfenced)
+        if repaired_str:
+            result = json.loads(repaired_str)
+            logger.warning(
+                "Planner output repaired via json-repair (orig=%d bytes, repaired=%d bytes).",
+                len(unfenced),
+                len(repaired_str),
+            )
+            return result
+    except Exception:  # noqa: BLE001 — last-resort fallback; surface a unified error below.
+        pass
+
     raise ValueError("Planner output does not contain valid JSON.")
+
+
+def _persist_failing_planner_output(
+    *,
+    project: "ProjectModel",
+    logical_name: str,
+    attempt: int,
+    content: str,
+    error: Exception,
+) -> None:
+    """Persist the raw LLM response that failed ``_extract_json_payload``.
+
+    Rationale — 2026-04-21 production incident: ``response_payload_ref``
+    on ``LlmRunModel`` is declared but never populated, so the actual
+    MiniMax-M2.7 output that defeats the parser is lost on retry. This
+    helper writes each failing attempt to ``artifacts/planner_failures/``
+    so we can root-cause format regressions offline without waiting for
+    the failure to recur in production.
+
+    Best-effort: any I/O error is swallowed so diagnostic logging can
+    never crash the planner pipeline.
+    """
+    try:
+        from datetime import datetime, timezone
+
+        base_dir = Path("/app/artifacts") / "planner_failures"
+        if not base_dir.exists():
+            # Host-dev fallback when not running inside Docker.
+            base_dir = Path("artifacts") / "planner_failures"
+        base_dir.mkdir(parents=True, exist_ok=True)
+        timestamp = datetime.now(tz=timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        slug = getattr(project, "slug", "unknown")
+        filename = f"{timestamp}_{slug}_{logical_name}_attempt{attempt}.txt"
+        target = base_dir / filename
+        header = (
+            f"# Planner artifact parse failure\n"
+            f"# project_slug: {slug}\n"
+            f"# logical_name: {logical_name}\n"
+            f"# attempt: {attempt}\n"
+            f"# error: {type(error).__name__}: {error}\n"
+            f"# content_len: {len(content)}\n"
+            f"# ---- RAW CONTENT BELOW ----\n\n"
+        )
+        target.write_text(header + content, encoding="utf-8")
+        logger.warning(
+            "Persisted failing planner output to %s (artifact=%s, attempt=%d, len=%d).",
+            target,
+            logical_name,
+            attempt,
+            len(content),
+        )
+    except Exception as persist_exc:  # pragma: no cover - diagnostic best-effort
+        logger.warning(
+            "Failed to persist planner failure for artifact=%s attempt=%d: %s",
+            logical_name,
+            attempt,
+            persist_exc,
+        )
 
 
 def _merge_planning_payload(fallback_payload: Any, generated_payload: Any) -> Any:
@@ -6160,7 +6330,12 @@ async def _generate_structured_artifact(
     validator: Callable[[Any], Any] | None = None,
     abort_on_fallback: bool = False,
 ) -> tuple[Any, UUID | None]:
-    _max_attempts = 2  # try once, retry once on parse/validation failure
+    # Retry budget for planner artifacts.  Bumped to 4 on 2026-04-21 after
+    # a production incident (romantasy-1776330993 volume_5_chapter_outline)
+    # where two back-to-back MiniMax-M2.7 formatting glitches killed an
+    # entire heal job.  Four attempts give non-deterministic LLM output a
+    # reasonable chance to self-heal before the whole job bails.
+    _max_attempts = 4
 
     last_llm_run_id: UUID | None = None
     for attempt in range(_max_attempts):
@@ -6201,6 +6376,17 @@ async def _generate_structured_artifact(
                 validator(payload)
             return payload, last_llm_run_id
         except Exception as exc:
+            # Persist the raw LLM response to disk so we can root-cause
+            # parse/validation failures offline. Critical because
+            # ``response_payload_ref`` on LlmRunModel is currently unused
+            # and the content would otherwise be lost on retry.
+            _persist_failing_planner_output(
+                project=project,
+                logical_name=logical_name,
+                attempt=attempt + 1,
+                content=completion.content,
+                error=exc,
+            )
             if attempt < _max_attempts - 1:
                 logger.warning(
                     "Planner artifact %s attempt %d failed parse/validation (%s: %s), retrying …",

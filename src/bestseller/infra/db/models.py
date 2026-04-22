@@ -9,6 +9,7 @@ from sqlalchemy import (
     Boolean,
     CheckConstraint,
     DateTime,
+    Float,
     ForeignKey,
     Index,
     Integer,
@@ -44,6 +45,13 @@ class ProjectModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     status: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'planning'"))
     project_type: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'linear'"))
     metadata_json: Mapped[JSON_DICT] = mapped_column("metadata", JSONB, nullable=False, default=dict)
+    invariants_json: Mapped[JSON_DICT | None] = mapped_column(JSONB, nullable=True)
+    theme_statement: Mapped[str | None] = mapped_column(Text)
+    dramatic_question: Mapped[str | None] = mapped_column(Text)
+    reader_contract_json: Mapped[JSON_DICT | None] = mapped_column(JSONB, nullable=True)
+    hype_scheme_json: Mapped[JSON_DICT] = mapped_column(
+        JSONB, nullable=False, default=dict, server_default=text("'{}'::jsonb")
+    )
     lock_version: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
 
     style_guide: Mapped["StyleGuideModel | None"] = relationship(
@@ -199,6 +207,16 @@ class CharacterModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         "moral_framework", JSONB, nullable=False, default=dict, server_default=text("'{}'::jsonb"),
     )
     is_pov_character: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("FALSE"))
+    quirks_json: Mapped[JSON_LIST] = mapped_column(
+        "quirks_json", JSONB, nullable=False, default=list, server_default=text("'[]'::jsonb"),
+    )
+    sensory_signatures_json: Mapped[JSON_LIST] = mapped_column(
+        "sensory_signatures_json", JSONB, nullable=False, default=list, server_default=text("'[]'::jsonb"),
+    )
+    signature_objects_json: Mapped[JSON_LIST] = mapped_column(
+        "signature_objects_json", JSONB, nullable=False, default=list, server_default=text("'[]'::jsonb"),
+    )
+    core_wound: Mapped[str | None] = mapped_column(Text)
     metadata_json: Mapped[JSON_DICT] = mapped_column("metadata", JSONB, nullable=False, default=dict)
 
 
@@ -430,6 +448,22 @@ class ChapterModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     current_word_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
     revision_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
     status: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'planned'"))
+    production_state: Mapped[str] = mapped_column(
+        String(20), nullable=False, server_default=text("'pending'")
+    )
+    opening_archetype: Mapped[str | None] = mapped_column(String(32))
+    ending_cliff_type: Mapped[str | None] = mapped_column(String(32))
+    primary_emotion: Mapped[str | None] = mapped_column(String(32))
+    conflict_type: Mapped[str | None] = mapped_column(String(32))
+    scene_pacing: Mapped[str | None] = mapped_column(String(32))
+    location_tag: Mapped[str | None] = mapped_column(String(64))
+    pov_character_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("characters.id", ondelete="SET NULL"),
+    )
+    hype_type: Mapped[str | None] = mapped_column(String(32))
+    hype_intensity: Mapped[float | None] = mapped_column(Float)
+    hype_recipe_key: Mapped[str | None] = mapped_column(String(120))
     metadata_json: Mapped[JSON_DICT] = mapped_column("metadata", JSONB, nullable=False, default=dict)
 
     scenes: Mapped[list["SceneCardModel"]] = relationship(
@@ -1690,3 +1724,130 @@ class IFCanonFactModel(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
         String(16), nullable=False, server_default=text("'major'")
     )  # "critical"|"major"|"minor"
     is_payoff_of_clue: Mapped[str | None] = mapped_column(String(64))
+
+
+class DiversityBudgetModel(Base):
+    """Tracks opening archetype / cliffhanger / vocab rotation per project.
+
+    Keyed on ``project_id`` (1:1). Populated by L3 prompt constructor and
+    consumed by L5 chapter validator.
+    """
+
+    __tablename__ = "diversity_budgets"
+
+    project_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    openings_used: Mapped[JSON_LIST] = mapped_column(
+        JSONB, nullable=False, default=list, server_default=text("'[]'::jsonb")
+    )
+    cliffhangers_used: Mapped[JSON_LIST] = mapped_column(
+        JSONB, nullable=False, default=list, server_default=text("'[]'::jsonb")
+    )
+    titles_used: Mapped[JSON_LIST] = mapped_column(
+        JSONB, nullable=False, default=list, server_default=text("'[]'::jsonb")
+    )
+    vocab_freq: Mapped[JSON_DICT] = mapped_column(
+        JSONB, nullable=False, default=dict, server_default=text("'{}'::jsonb")
+    )
+    hype_moments: Mapped[JSON_LIST] = mapped_column(
+        JSONB, nullable=False, default=list, server_default=text("'[]'::jsonb")
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=text("NOW()")
+    )
+
+
+class ChapterQualityReportModel(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
+    """Persisted L4/L5 ``QualityReport`` per regen attempt.
+
+    Dashboards read this to chart block_rate / false_positive_rate per
+    violation ``code`` — Phase 2 decides whether an ``audit_only`` violation
+    promotes to ``block`` based on these numbers.
+    """
+
+    __tablename__ = "chapter_quality_reports"
+
+    chapter_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("chapters.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    report_json: Mapped[JSON_DICT] = mapped_column(JSONB, nullable=False)
+    regen_attempts: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default=text("0")
+    )
+    blocks_write: Mapped[bool] = mapped_column(Boolean, nullable=False)
+
+
+class ChapterAuditFindingModel(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
+    """L7 post-generation audit finding row."""
+
+    __tablename__ = "chapter_audit_findings"
+
+    project_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    chapter_no: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    auditor: Mapped[str] = mapped_column(String(64), nullable=False)
+    code: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    severity: Mapped[str] = mapped_column(String(10), nullable=False)
+    detail: Mapped[str | None] = mapped_column(Text, nullable=True)
+    auto_repairable: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("false")
+    )
+    repair_attempted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    repair_success: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+
+
+class NovelScorecardModel(Base):
+    """L8 aggregated per-project scorecard (latest snapshot)."""
+
+    __tablename__ = "novel_scorecards"
+
+    project_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    snapshot_json: Mapped[JSON_DICT] = mapped_column(JSONB, nullable=False)
+    quality_score: Mapped[float] = mapped_column(Numeric(5, 2), nullable=False)
+    computed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=text("NOW()")
+    )
+
+
+class ForeshadowingLedgerModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Setup → payoff tracker for planted hooks.
+
+    Each row records a single promise made to the reader (setup) and where it
+    is scheduled to pay off. ``status`` transitions planned → paid_off / void
+    so L7 ContinuousAudit can flag un-resolved hooks before a book "ships".
+    """
+
+    __tablename__ = "foreshadowing_ledger"
+    __table_args__ = (
+        Index("ix_foreshadowing_project_status", "project_id", "status"),
+        Index("ix_foreshadowing_project_setup", "project_id", "setup_chapter_no"),
+    )
+
+    project_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    setup_chapter_no: Mapped[int] = mapped_column(Integer, nullable=False)
+    planned_payoff_chapter_no: Mapped[int | None] = mapped_column(Integer)
+    actual_payoff_chapter_no: Mapped[int | None] = mapped_column(Integer)
+    description: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False, server_default=text("'planned'")
+    )

@@ -1,0 +1,17 @@
+{
+  "project_id": "c7c6a784-3f2b-4449-b820-858af385847e",
+  "total_chapters": 391,
+  "missing_chapters": 409,
+  "chapters_blocked": 0,
+  "length_mean": 6154.59,
+  "length_stddev": 2052.54,
+  "length_cv": 0.3335,
+  "cjk_leak_chapters": 0,
+  "dialog_integrity_violations": 0,
+  "pov_drift_chapters": 0,
+  "opening_archetype_entropy": 0.0,
+  "cliffhanger_entropy": 0.0,
+  "vocab_hhi": 0.0,
+  "top_overused_words": [],
+  "quality_score": 55.0
+}

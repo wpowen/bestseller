@@ -38,6 +38,8 @@ from typing import Sequence
 
 from bestseller.services.diversity_budget import DiversityBudget
 from bestseller.services.hype_engine import (
+    GoldenFingerLadder,
+    GoldenFingerRung,
     HypeDensityBand,
     HypeRecipe,
     HypeScheme,
@@ -364,6 +366,7 @@ def build_hype_constraints(
     recipe: HypeRecipe | None,
     intensity_target: float,
     is_golden_three: bool = False,
+    ladder_rung: GoldenFingerRung | None = None,
 ) -> str:
     """Emit the per-chapter hype constraint block.
 
@@ -371,6 +374,11 @@ def build_hype_constraints(
     present. Empty ``HypeScheme`` short-circuits at the caller
     (``build_chapter_prompt``) — we don't gate here so callers can test
     the section independently.
+
+    ``ladder_rung`` — when non-None, appends a "本章金手指阶梯" (chapter
+    golden-finger rung) block describing the capability currently
+    unlocked and the anchor hype type. Plan §Phase 3 requires this
+    injection so LLMs know which power tier the protagonist is on.
     """
 
     if hype_type is None and recipe is None:
@@ -407,6 +415,21 @@ def build_hype_constraints(
             "- 爽点 ≠ 章末悬念。爽点负责【本章情绪释放峰值】，"
             "在中段或末段；章末悬念另起一段负责勾下一章，不得合写。"
         )
+        if ladder_rung is not None:
+            rung_lines = [
+                "【本章金手指阶梯】",
+                f"- 第 {ladder_rung.rung_index} 级："
+                f"{ladder_rung.capability}"
+                f"（锚定爽点：{ladder_rung.hype_type_anchor.value}）",
+            ]
+            if ladder_rung.signal_keywords:
+                rung_lines.append(
+                    "  关键信号：" + "、".join(ladder_rung.signal_keywords)
+                )
+            rung_lines.append(
+                "- 能力释放不得超过本级上限；如需越级需在正文中明确代价或限制。"
+            )
+            lines.extend(rung_lines)
     else:
         lines.append("[CHAPTER HYPE CONSTRAINTS]")
         if hype_type is not None:
@@ -436,6 +459,22 @@ def build_hype_constraints(
             "emotional release in the mid or late section; the chapter-end "
             "cliffhanger is a separate paragraph that hooks the next chapter."
         )
+        if ladder_rung is not None:
+            rung_lines = [
+                "[CHAPTER GOLDEN-FINGER RUNG]",
+                f"- Rung {ladder_rung.rung_index}: "
+                f"{ladder_rung.capability} "
+                f"(hype anchor: {ladder_rung.hype_type_anchor.value})",
+            ]
+            if ladder_rung.signal_keywords:
+                rung_lines.append(
+                    "  Signals: " + ", ".join(ladder_rung.signal_keywords)
+                )
+            rung_lines.append(
+                "- Do not exceed this rung's ceiling; any higher-tier power "
+                "usage must come with an explicit cost or constraint in prose."
+            )
+            lines.extend(rung_lines)
 
     return "\n".join(lines) if len(lines) > 1 else ""
 
@@ -524,6 +563,7 @@ def build_chapter_prompt(
     no_repeat_within_openings: int = DEFAULT_NO_REPEAT_WITHIN_OPENINGS,
     reader_contract_cadence_head: int = 10,
     reader_contract_cadence_tail: int = 5,
+    golden_finger_ladder: GoldenFingerLadder | None = None,
 ) -> PromptPlan:
     """Assemble a full ``PromptPlan`` for a chapter.
 
@@ -564,6 +604,14 @@ def build_chapter_prompt(
                 reversed(diversity_budget.recent_recipe_keys(5))
             ),
         )
+        ladder_rung: GoldenFingerRung | None = None
+        if (
+            golden_finger_ladder is not None
+            and not golden_finger_ladder.is_empty
+        ):
+            ladder_rung = golden_finger_ladder.rung_for_chapter(
+                chapter_no, total
+            )
         hype_section = build_hype_constraints(
             invariants,
             band=band,
@@ -571,6 +619,7 @@ def build_chapter_prompt(
             recipe=recipe,
             intensity_target=intensity_target,
             is_golden_three=chapter_no <= 3,
+            ladder_rung=ladder_rung,
         )
 
     reader_contract = build_reader_contract_section(
@@ -613,6 +662,113 @@ def build_chapter_prompt(
     return plan
 
 
+@dataclass(frozen=True)
+class ChapterHypeBlocks:
+    """Pre-rendered hype sections for a chapter.
+
+    Built once per chapter by ``build_chapter_hype_blocks`` and attached to
+    every ``SceneWriterContextPacket`` produced for that chapter's scenes,
+    so all scenes share the same hype assignment and the chapter row can
+    persist the metadata after the draft lands.
+    """
+
+    reader_contract_block: str
+    hype_constraints_block: str
+    assigned_hype_type: HypeType | None
+    assigned_hype_recipe: HypeRecipe | None
+    assigned_hype_intensity: float | None
+
+    @property
+    def is_empty(self) -> bool:
+        """True when both blocks are empty — safe no-op for legacy projects."""
+        return (
+            not self.reader_contract_block
+            and not self.hype_constraints_block
+            and self.assigned_hype_type is None
+        )
+
+
+EMPTY_HYPE_BLOCKS = ChapterHypeBlocks(
+    reader_contract_block="",
+    hype_constraints_block="",
+    assigned_hype_type=None,
+    assigned_hype_recipe=None,
+    assigned_hype_intensity=None,
+)
+
+
+def build_chapter_hype_blocks(
+    invariants: ProjectInvariants,
+    diversity_budget: DiversityBudget,
+    *,
+    chapter_no: int,
+    total_chapters: int,
+    pacing_profile: str = "medium",
+    reader_contract_cadence_head: int = 10,
+    reader_contract_cadence_tail: int = 5,
+    golden_finger_ladder: GoldenFingerLadder | None = None,
+) -> ChapterHypeBlocks:
+    """Pick once per chapter; return pre-rendered blocks for scene plumbing.
+
+    Extracted from ``build_chapter_prompt`` so the scene pipeline can share
+    the same assignment across every scene of a chapter without rebuilding
+    the full chapter prompt. Legacy projects (empty ``HypeScheme``) get
+    ``EMPTY_HYPE_BLOCKS`` back and the caller stays a no-op.
+    """
+
+    scheme = invariants.hype_scheme
+    if scheme.is_empty:
+        return EMPTY_HYPE_BLOCKS
+
+    total = max(total_chapters, chapter_no, 1)
+    band = target_hype_for_chapter(
+        chapter_no, total, pacing_profile=pacing_profile
+    )
+    hype_type, recipe, intensity_target = pick_hype_for_chapter(
+        band,
+        scheme.recipe_deck,
+        recent_hype_types=list(
+            reversed(diversity_budget.recent_hype_types(5))
+        ),
+        recent_recipe_keys=list(
+            reversed(diversity_budget.recent_recipe_keys(5))
+        ),
+    )
+    ladder_rung: GoldenFingerRung | None = None
+    if (
+        golden_finger_ladder is not None
+        and not golden_finger_ladder.is_empty
+    ):
+        ladder_rung = golden_finger_ladder.rung_for_chapter(chapter_no, total)
+
+    hype_section = build_hype_constraints(
+        invariants,
+        band=band,
+        hype_type=hype_type,
+        recipe=recipe,
+        intensity_target=intensity_target,
+        is_golden_three=chapter_no <= 3,
+        ladder_rung=ladder_rung,
+    )
+
+    reader_contract = build_reader_contract_section(
+        invariants,
+        chapter_no=chapter_no,
+        reader_contract_cadence_head=reader_contract_cadence_head,
+        reader_contract_cadence_tail=reader_contract_cadence_tail,
+    )
+
+    return ChapterHypeBlocks(
+        reader_contract_block=reader_contract,
+        hype_constraints_block=hype_section,
+        assigned_hype_type=hype_type,
+        assigned_hype_recipe=recipe,
+        assigned_hype_intensity=(
+            intensity_target if hype_type is not None else None
+        ),
+    )
+
+
 def rebuild_with_feedback(
     prior_plan: PromptPlan, feedback: str
 ) -> PromptPlan:
@@ -635,8 +791,11 @@ __all__ = [
     "DEFAULT_HOT_VOCAB_WINDOW",
     "DEFAULT_NO_REPEAT_WITHIN_OPENINGS",
     "DEFAULT_PRIOR_CHAPTER_TAIL_CHARS",
+    "EMPTY_HYPE_BLOCKS",
+    "ChapterHypeBlocks",
     "PromptPlan",
     "build_anti_slop_footer",
+    "build_chapter_hype_blocks",
     "build_chapter_prompt",
     "build_diversity_constraints",
     "build_hype_constraints",

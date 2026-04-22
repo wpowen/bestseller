@@ -21,6 +21,8 @@ import pytest
 from bestseller.services.diversity_budget import DiversityBudget
 from bestseller.services.hype_engine import (
     HYPE_DENSITY_CURVE,
+    GoldenFingerLadder,
+    GoldenFingerRung,
     HypeRecipe,
     HypeScheme,
     HypeType,
@@ -31,6 +33,8 @@ from bestseller.services.invariants import (
     ProjectInvariants,
 )
 from bestseller.services.prompt_constructor import (
+    EMPTY_HYPE_BLOCKS,
+    build_chapter_hype_blocks,
     build_chapter_prompt,
     build_hype_constraints,
     build_reader_contract_section,
@@ -193,6 +197,84 @@ class TestHypeConstraints:
             == ""
         )
 
+    def test_ladder_rung_injects_capability_and_anchor(self) -> None:
+        inv = _invariants_with_scheme(_sample_scheme())
+        band = HYPE_DENSITY_CURVE[1]
+        rung = GoldenFingerRung(
+            rung_index=3,
+            unlock_percentile=(0.4, 0.6),
+            capability="冥库 Level 3 - 阴兵结阵",
+            signal_keywords=("结阵", "阴风"),
+            hype_type_anchor=HypeType.LEVEL_UP,
+        )
+        block = build_hype_constraints(
+            inv,
+            band=band,
+            hype_type=HypeType.LEVEL_UP,
+            recipe=None,
+            intensity_target=7.0,
+            ladder_rung=rung,
+        )
+        assert "本章金手指阶梯" in block
+        assert "第 3 级" in block
+        assert "冥库 Level 3" in block
+        assert "level_up" in block
+        assert "结阵" in block
+
+    def test_ladder_rung_english_heading_when_en_language(self) -> None:
+        scheme = _sample_scheme(
+            promise="Show the supernatural capitalism early.",
+            chapter_hook_strategy="Introduce one ghost asset per chapter.",
+            selling_points=("ghost wealth",),
+            hook_keywords=("incense",),
+        )
+        inv = _invariants_with_scheme(scheme, language="en")
+        band = HYPE_DENSITY_CURVE[1]
+        rung = GoldenFingerRung(
+            rung_index=2,
+            unlock_percentile=(0.2, 0.4),
+            capability="Ghost Vault tier 2 - spirit array",
+            signal_keywords=("array", "banner"),
+            hype_type_anchor=HypeType.POWER_REVEAL,
+        )
+        block = build_hype_constraints(
+            inv,
+            band=band,
+            hype_type=HypeType.POWER_REVEAL,
+            recipe=None,
+            intensity_target=7.5,
+            ladder_rung=rung,
+        )
+        assert "[CHAPTER GOLDEN-FINGER RUNG]" in block
+        assert "Rung 2" in block
+        assert "Ghost Vault tier 2" in block
+        assert "power_reveal" in block
+
+    def test_ladder_rung_without_signals_still_renders(self) -> None:
+        """Engine-extracted rungs ship empty signal_keywords — guard the branch."""
+
+        inv = _invariants_with_scheme(_sample_scheme())
+        band = HYPE_DENSITY_CURVE[1]
+        rung = GoldenFingerRung(
+            rung_index=1,
+            unlock_percentile=(0.0, 0.33),
+            capability="现实落魄",
+            signal_keywords=(),
+            hype_type_anchor=HypeType.GOLDEN_FINGER_REVEAL,
+        )
+        block = build_hype_constraints(
+            inv,
+            band=band,
+            hype_type=HypeType.GOLDEN_FINGER_REVEAL,
+            recipe=None,
+            intensity_target=6.0,
+            ladder_rung=rung,
+        )
+        assert "本章金手指阶梯" in block
+        assert "现实落魄" in block
+        # No signals block when keywords tuple is empty.
+        assert "关键信号" not in block
+
 
 # ---------------------------------------------------------------------------
 # build_chapter_prompt wiring.
@@ -265,6 +347,66 @@ class TestChapterPromptWiring:
         scene_at = rendered.index("SCENE_MARKER")
         assert bible_at < reader_at < hype_at < diversity_at < scene_at
 
+    def test_golden_finger_ladder_threads_through_prompt(self) -> None:
+        """Plan §Phase 3: ladder rung injects at the end of hype_constraints."""
+
+        scheme = _sample_scheme(recipes=(_sample_recipe(),))
+        inv = _invariants_with_scheme(scheme)
+        budget = DiversityBudget(project_id=uuid4())
+        ladder = GoldenFingerLadder(
+            rungs=(
+                GoldenFingerRung(
+                    rung_index=1,
+                    unlock_percentile=(0.0, 0.33),
+                    capability="冥库 Level 1 - 冥符可随身",
+                    signal_keywords=("冥符", "阴气"),
+                    hype_type_anchor=HypeType.GOLDEN_FINGER_REVEAL,
+                ),
+                GoldenFingerRung(
+                    rung_index=2,
+                    unlock_percentile=(0.33, 1.0),
+                    capability="冥库 Level 2 - 阴兵可结阵",
+                    signal_keywords=("阴兵", "列阵"),
+                    hype_type_anchor=HypeType.LEVEL_UP,
+                ),
+            ),
+            source="preset_declared",
+        )
+        plan = build_chapter_prompt(
+            inv,
+            budget,
+            chapter_no=1,
+            total_chapters=60,
+            system="",
+            bible_slice="",
+            scene_spec="",
+            golden_finger_ladder=ladder,
+        )
+        assert "本章金手指阶梯" in plan.hype_constraints
+        assert "冥库 Level 1" in plan.hype_constraints
+        # Chapter 1 of 60 is at percentile ~0.017 → rung 1.
+        assert "Level 2" not in plan.hype_constraints
+        assert "冥符" in plan.hype_constraints
+
+    def test_empty_ladder_is_noop(self) -> None:
+        """An engine-extracted ladder from blank growth_curve is empty; no injection."""
+
+        scheme = _sample_scheme(recipes=(_sample_recipe(),))
+        inv = _invariants_with_scheme(scheme)
+        budget = DiversityBudget(project_id=uuid4())
+        ladder = GoldenFingerLadder(rungs=(), source="engine_extracted")
+        plan = build_chapter_prompt(
+            inv,
+            budget,
+            chapter_no=1,
+            total_chapters=60,
+            system="",
+            bible_slice="",
+            scene_spec="",
+            golden_finger_ladder=ladder,
+        )
+        assert "本章金手指阶梯" not in plan.hype_constraints
+
     def test_hype_history_influences_recipe_choice(self) -> None:
         """After the FACE_SLAP recipe fires, diversity should push to a different type."""
         recipes = (
@@ -306,3 +448,168 @@ class TestChapterPromptWiring:
         # Different recipe on the follow-up chapter.
         assert plan2.assigned_hype_recipe is not None
         assert plan2.assigned_hype_recipe.key != plan1.assigned_hype_recipe.key
+
+
+# ---------------------------------------------------------------------------
+# build_chapter_hype_blocks — lean picker used by the scene pipeline.
+# ---------------------------------------------------------------------------
+
+
+class TestChapterHypeBlocks:
+    """End-to-end plumbing: verify the scene-pipeline helper that ships
+    pre-rendered hype blocks through ``SceneWriterContextPacket`` shares
+    the same assignment across every scene of one chapter and stays a
+    safe no-op for legacy projects."""
+
+    def test_empty_scheme_returns_empty_blocks(self) -> None:
+        """Legacy projects with no HypeScheme must hit the no-op fast path."""
+
+        inv = _invariants_with_scheme(HypeScheme())
+        budget = DiversityBudget(project_id=uuid4())
+        blocks = build_chapter_hype_blocks(
+            inv,
+            budget,
+            chapter_no=1,
+            total_chapters=60,
+        )
+        assert blocks is EMPTY_HYPE_BLOCKS
+        assert blocks.is_empty
+        assert blocks.reader_contract_block == ""
+        assert blocks.hype_constraints_block == ""
+        assert blocks.assigned_hype_type is None
+        assert blocks.assigned_hype_recipe is None
+        assert blocks.assigned_hype_intensity is None
+
+    def test_populated_scheme_returns_rendered_blocks(self) -> None:
+        scheme = _sample_scheme(recipes=(_sample_recipe(),))
+        inv = _invariants_with_scheme(scheme)
+        budget = DiversityBudget(project_id=uuid4())
+        blocks = build_chapter_hype_blocks(
+            inv,
+            budget,
+            chapter_no=1,
+            total_chapters=60,
+        )
+        assert not blocks.is_empty
+        assert "读者契约" in blocks.reader_contract_block
+        assert "本章爽点约束" in blocks.hype_constraints_block
+        assert blocks.assigned_hype_type is HypeType.FACE_SLAP
+        assert blocks.assigned_hype_recipe is not None
+        assert (
+            blocks.assigned_hype_recipe.key == "冥符拍脸-当众羞辱反转"
+        )
+        assert blocks.assigned_hype_intensity is not None
+        assert blocks.assigned_hype_intensity >= 6.0
+
+    def test_deterministic_pick_for_same_chapter(self) -> None:
+        """All scenes of one chapter share the same pick (key property:
+        calling the helper twice without mutating the budget returns the
+        same assignment, so scene 1 and scene 2 of chapter 3 agree)."""
+
+        scheme = _sample_scheme(
+            recipes=(
+                _sample_recipe(),
+                _sample_recipe(
+                    key="阴兵列阵-当场亮牌", hype_type=HypeType.POWER_REVEAL
+                ),
+            )
+        )
+        inv = _invariants_with_scheme(scheme)
+        budget = DiversityBudget(project_id=uuid4())
+        first = build_chapter_hype_blocks(
+            inv, budget, chapter_no=3, total_chapters=60
+        )
+        second = build_chapter_hype_blocks(
+            inv, budget, chapter_no=3, total_chapters=60
+        )
+        assert first.assigned_hype_type == second.assigned_hype_type
+        assert first.assigned_hype_recipe is not None
+        assert second.assigned_hype_recipe is not None
+        assert (
+            first.assigned_hype_recipe.key
+            == second.assigned_hype_recipe.key
+        )
+
+    def test_golden_three_flag_present_on_early_chapters(self) -> None:
+        scheme = _sample_scheme(recipes=(_sample_recipe(),))
+        inv = _invariants_with_scheme(scheme)
+        budget = DiversityBudget(project_id=uuid4())
+        for ch in (1, 2, 3):
+            blocks = build_chapter_hype_blocks(
+                inv, budget, chapter_no=ch, total_chapters=60
+            )
+            assert "黄金三章" in blocks.hype_constraints_block
+
+    def test_ladder_rung_threads_into_hype_block(self) -> None:
+        scheme = _sample_scheme(recipes=(_sample_recipe(),))
+        inv = _invariants_with_scheme(scheme)
+        budget = DiversityBudget(project_id=uuid4())
+        ladder = GoldenFingerLadder(
+            rungs=(
+                GoldenFingerRung(
+                    rung_index=1,
+                    unlock_percentile=(0.0, 0.5),
+                    capability="冥库 Level 1 - 冥符随身",
+                    signal_keywords=("冥符", "阴气"),
+                    hype_type_anchor=HypeType.GOLDEN_FINGER_REVEAL,
+                ),
+                GoldenFingerRung(
+                    rung_index=2,
+                    unlock_percentile=(0.5, 1.0),
+                    capability="冥库 Level 2 - 阴兵结阵",
+                    signal_keywords=("阴兵", "列阵"),
+                    hype_type_anchor=HypeType.LEVEL_UP,
+                ),
+            ),
+            source="preset_declared",
+        )
+        blocks = build_chapter_hype_blocks(
+            inv,
+            budget,
+            chapter_no=1,
+            total_chapters=60,
+            golden_finger_ladder=ladder,
+        )
+        assert "本章金手指阶梯" in blocks.hype_constraints_block
+        assert "冥库 Level 1" in blocks.hype_constraints_block
+        assert "Level 2" not in blocks.hype_constraints_block
+
+    def test_reader_contract_cadence_honored(self) -> None:
+        """head=10 tail=5 → chapter 12 has no reader contract section."""
+
+        scheme = _sample_scheme(recipes=(_sample_recipe(),))
+        inv = _invariants_with_scheme(scheme)
+        budget = DiversityBudget(project_id=uuid4())
+        # Chapter within head: always rendered.
+        early = build_chapter_hype_blocks(
+            inv, budget, chapter_no=5, total_chapters=60
+        )
+        assert early.reader_contract_block
+        # Chapter after head, not on 5-step cadence: empty.
+        between = build_chapter_hype_blocks(
+            inv, budget, chapter_no=12, total_chapters=60
+        )
+        assert between.reader_contract_block == ""
+        # hype constraints stay populated regardless of contract cadence.
+        assert between.hype_constraints_block
+
+    def test_deck_exhausted_by_recent_keys_still_returns_structure(
+        self,
+    ) -> None:
+        """Even if all recipes are recent, caller still receives a valid
+        ChapterHypeBlocks so the scene pipeline has safe defaults."""
+
+        scheme = _sample_scheme(recipes=(_sample_recipe(),))
+        inv = _invariants_with_scheme(scheme)
+        budget = DiversityBudget(project_id=uuid4())
+        # Poison the budget so the one recipe is LRU-blocked.
+        budget.register_hype_moment(
+            1, HypeType.FACE_SLAP, "冥符拍脸-当众羞辱反转", 8.0
+        )
+        blocks = build_chapter_hype_blocks(
+            inv, budget, chapter_no=2, total_chapters=60
+        )
+        # Helper must never raise: either falls back to same recipe or
+        # returns None recipe — both are acceptable shapes downstream.
+        assert isinstance(blocks.hype_constraints_block, str)
+        assert isinstance(blocks.reader_contract_block, str)

@@ -773,6 +773,90 @@ async def run_scene_pipeline(
                     exc_info=True,
                 )
 
+        # ── Reader Hype Engine — per-chapter picker shared across scenes ──
+        # Pulls hype_scheme from invariants, reuses the DiversityBudget above
+        # for LRU state, derives the golden-finger ladder from the preset's
+        # growth_curve when no explicit ladder is declared, and stamps the
+        # shared_context with:
+        #   - reader_contract_block (per-chapter cadence)
+        #   - hype_constraints_block (per-chapter)
+        #   - assigned_hype_{type,recipe_key,intensity} (persisted after draft)
+        # Legacy projects (empty HypeScheme) → no-op.
+        if shared_context is not None:
+            try:
+                from bestseller.services.hype_engine import (
+                    extract_ladder_from_growth_curve,
+                    GoldenFingerLadder,
+                )
+                from bestseller.services.prompt_constructor import (
+                    build_chapter_hype_blocks,
+                )
+
+                _invariants_for_hype = None
+                if project.invariants_json:
+                    _invariants_for_hype = invariants_from_dict(project.invariants_json)
+                _budget_for_hype = _budget if "_budget" in locals() else None
+                if _budget_for_hype is None:
+                    from bestseller.services.diversity_budget import (
+                        load_diversity_budget as _load_budget,
+                    )
+                    _budget_for_hype = await _load_budget(session, project.id)
+                if (
+                    _invariants_for_hype is not None
+                    and not _invariants_for_hype.hype_scheme.is_empty
+                ):
+                    _total_for_hype = (
+                        getattr(project, "target_chapters", None)
+                        or (project.metadata_json or {}).get("target_chapter_count")
+                        or 100
+                    )
+                    _growth_curve = (
+                        (project.metadata_json or {}).get("growth_curve")
+                        or ""
+                    )
+                    _ladder: GoldenFingerLadder | None = None
+                    if _growth_curve:
+                        _ladder = extract_ladder_from_growth_curve(
+                            _growth_curve, int(_total_for_hype)
+                        )
+                        if _ladder.is_empty:
+                            _ladder = None
+                    _hype_blocks = build_chapter_hype_blocks(
+                        _invariants_for_hype,
+                        _budget_for_hype,
+                        chapter_no=chapter_number,
+                        total_chapters=int(_total_for_hype),
+                        pacing_profile=getattr(
+                            settings.generation, "pacing_profile", "medium"
+                        ) or "medium",
+                        golden_finger_ladder=_ladder,
+                    )
+                    shared_context.reader_contract_block = (
+                        _hype_blocks.reader_contract_block or None
+                    )
+                    shared_context.hype_constraints_block = (
+                        _hype_blocks.hype_constraints_block or None
+                    )
+                    if _hype_blocks.assigned_hype_type is not None:
+                        shared_context.assigned_hype_type = (
+                            _hype_blocks.assigned_hype_type.value
+                        )
+                    if _hype_blocks.assigned_hype_recipe is not None:
+                        shared_context.assigned_hype_recipe_key = (
+                            _hype_blocks.assigned_hype_recipe.key
+                        )
+                    if _hype_blocks.assigned_hype_intensity is not None:
+                        shared_context.assigned_hype_intensity = (
+                            _hype_blocks.assigned_hype_intensity
+                        )
+            except Exception:
+                logger.debug(
+                    "Hype block injection failed for ch%d sc%d (non-fatal)",
+                    chapter_number,
+                    scene_number,
+                    exc_info=True,
+                )
+
         # ── Pre-scene contradiction check (zero LLM cost) ──
         if settings.pipeline.enable_contradiction_checks and shared_context is not None:
             try:

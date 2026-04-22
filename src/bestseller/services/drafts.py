@@ -153,12 +153,63 @@ async def _evaluate_chapter_quality_gate(
         budget.recent_cliffhangers(window) if (budget is not None and window > 0) else ()
     )
 
+    # Hype engine context — required by HypeOccurrenceCheck /
+    # HypeDiversityCheck. Read the current chapter's assignment from any scene
+    # draft's generation_params (all scenes of one chapter share the same
+    # pick); recent hype types come from DiversityBudget.hype_moments.
+    assigned_hype_type: Any = None
+    assigned_hype_recipe: Any = None
+    recent_hype_types: tuple[Any, ...] = ()
+    try:
+        from bestseller.services.hype_engine import HypeType as _HypeTypeEnum
+        _chapter_row = await session.scalar(
+            select(ChapterModel).where(
+                ChapterModel.project_id == project.id,
+                ChapterModel.chapter_number == chapter_number,
+            )
+        )
+        if _chapter_row is not None:
+            _scene_rows = list(
+                await session.scalars(
+                    select(SceneDraftVersionModel)
+                    .join(SceneCardModel, SceneCardModel.id == SceneDraftVersionModel.scene_card_id)
+                    .where(
+                        SceneCardModel.chapter_id == _chapter_row.id,
+                        SceneDraftVersionModel.is_current.is_(True),
+                    )
+                )
+            )
+            for _sd in _scene_rows:
+                _gp = dict(_sd.generation_params or {})
+                if _gp.get("assigned_hype_type"):
+                    try:
+                        assigned_hype_type = _HypeTypeEnum(str(_gp["assigned_hype_type"]))
+                    except ValueError:
+                        assigned_hype_type = None
+                    # assigned_hype_recipe is the recipe *key* here; checks
+                    # only need identity, not the full recipe object.
+                    assigned_hype_recipe = _gp.get("assigned_hype_recipe_key")
+                    break
+        if budget is not None and budget.hype_moments:
+            recent_hype_types = tuple(
+                m.hype_type for m in list(budget.hype_moments)[-5:]
+            )
+    except Exception:
+        logger.debug(
+            "hype context load failed for chapter %d (non-fatal)",
+            chapter_number,
+            exc_info=True,
+        )
+
     ctx = ValidationContext(
         invariants=invariants,
         chapter_no=chapter_number,
         scope="chapter",
         allowed_names=allowed_names,
         recent_cliffhangers=recent_cliffhangers,
+        assigned_hype_type=assigned_hype_type,
+        assigned_hype_recipe=assigned_hype_recipe,
+        recent_hype_types=recent_hype_types,
     )
     report = validator.validate(content, ctx)
 
@@ -2289,6 +2340,12 @@ def build_scene_draft_prompts(
     scene_scope_isolation_block: str | None = None,
     # Plan-richness gate findings (pre-draft)
     plan_richness_block: str | None = None,
+    # Reader Hype Engine — per-book commercial contract (cadenced) + per-chapter
+    # hype constraints. Both are pre-rendered by
+    # ``prompt_constructor.build_chapter_hype_blocks`` so this function only has
+    # to concatenate them into the user_prompt. Empty/None → no-op.
+    reader_contract_block: str | None = None,
+    hype_constraints_block: str | None = None,
     # Context budget
     context_budget_tokens: int = 6000,
 ) -> tuple[str, str]:
@@ -2542,6 +2599,17 @@ def build_scene_draft_prompts(
     if plan_richness_block:
         _plan_richness_line = f"{plan_richness_block}\n\n"
 
+    # Reader Hype Engine — reader contract (commercial frame, cadenced) and
+    # per-chapter hype constraints. Pre-rendered by
+    # ``build_chapter_hype_blocks``; empty strings stay no-ops for legacy
+    # projects with empty HypeScheme.
+    _reader_contract_line = ""
+    if reader_contract_block:
+        _reader_contract_line = f"{reader_contract_block}\n\n"
+    _hype_constraints_line = ""
+    if hype_constraints_block:
+        _hype_constraints_line = f"{hype_constraints_block}\n\n"
+
     # Phase-3 wiring: scene/sequel pattern
     _scene_sequel_line = _render_scene_sequel_section(
         swain_pattern, scene_skeleton, is_en=is_en,
@@ -2637,6 +2705,8 @@ def build_scene_draft_prompts(
             "budget_diversity_line": _budget_diversity_line,
             "scene_scope_isolation_line": _scene_scope_isolation_line,
             "plan_richness_line": _plan_richness_line,
+            "reader_contract_line": _reader_contract_line,
+            "hype_constraints_line": _hype_constraints_line,
             "hard_fact_line": _hard_fact_line,
             "knowledge_line": _knowledge_line,
             "recent_scene_section": recent_scene_section,
@@ -2684,6 +2754,8 @@ def build_scene_draft_prompts(
     _budget_diversity_line = _ctx["budget_diversity_line"]
     _scene_scope_isolation_line = _ctx["scene_scope_isolation_line"]
     _plan_richness_line = _ctx["plan_richness_line"]
+    _reader_contract_line = _ctx["reader_contract_line"]
+    _hype_constraints_line = _ctx["hype_constraints_line"]
     _hard_fact_line = _ctx["hard_fact_line"]
     _knowledge_line = _ctx["knowledge_line"]
     recent_scene_section = _ctx["recent_scene_section"]
@@ -2713,6 +2785,8 @@ def build_scene_draft_prompts(
         user_prompt = (
             f"{_hard_fact_line}"
             f"{_contradiction_line}"
+            f"{_reader_contract_line}"
+            f"{_hype_constraints_line}"
             f"{_plan_richness_line}"
             f"{_identity_line}"
             f"{_scene_scope_isolation_line}"
@@ -2784,6 +2858,8 @@ def build_scene_draft_prompts(
         user_prompt = (
             f"{_hard_fact_line}"
             f"{_contradiction_line}"
+            f"{_reader_contract_line}"
+            f"{_hype_constraints_line}"
             f"{_plan_richness_line}"
             f"{_identity_line}"
             f"{_scene_scope_isolation_line}"
@@ -3305,6 +3381,12 @@ async def generate_scene_draft(
             plan_richness_block=(
                 context_packet.plan_richness_block if context_packet else None
             ),
+            reader_contract_block=(
+                context_packet.reader_contract_block if context_packet else None
+            ),
+            hype_constraints_block=(
+                context_packet.hype_constraints_block if context_packet else None
+            ),
             context_budget_tokens=(
                 settings.generation.context_budget_tokens if settings else 6000
             ),
@@ -3475,6 +3557,17 @@ async def generate_scene_draft(
             "tree_context_count": len(_packet_tree_context(context_packet)),
             "retrieval_chunk_count": len(_packet_retrieval_context(context_packet)),
             "regen_count": int(scene_regen_count),
+            # Hype assignment — read by assemble_chapter_draft to stamp the
+            # chapter row + register the moment on DiversityBudget.
+            "assigned_hype_type": (
+                context_packet.assigned_hype_type if context_packet else None
+            ),
+            "assigned_hype_recipe_key": (
+                context_packet.assigned_hype_recipe_key if context_packet else None
+            ),
+            "assigned_hype_intensity": (
+                context_packet.assigned_hype_intensity if context_packet else None
+            ),
         },
     )
     session.add(draft)
@@ -3653,6 +3746,62 @@ async def assemble_chapter_draft(
     chapter.status = ChapterStatus.DRAFTING.value
     if quality_gate_outcome is not None:
         chapter.production_state = quality_gate_outcome
+
+    # ── Reader Hype Engine — persist chapter metadata + register the moment ──
+    # Scene drafts carry the assignment in ``generation_params``; all scenes of
+    # the same chapter share the same pick (the per-chapter picker is
+    # deterministic until ``register_hype_moment`` mutates the budget). Pick
+    # the first non-null triple and use it as the chapter-level assignment.
+    try:
+        _hype_type: str | None = None
+        _hype_recipe_key: str | None = None
+        _hype_intensity: float | None = None
+        for _sd in scene_drafts:
+            _gp = dict(_sd.generation_params or {})
+            if _gp.get("assigned_hype_type"):
+                _hype_type = str(_gp["assigned_hype_type"])
+                _hype_recipe_key = (
+                    str(_gp["assigned_hype_recipe_key"])
+                    if _gp.get("assigned_hype_recipe_key") is not None
+                    else None
+                )
+                _hype_intensity = (
+                    float(_gp["assigned_hype_intensity"])
+                    if _gp.get("assigned_hype_intensity") is not None
+                    else None
+                )
+                break
+        if _hype_type:
+            chapter.hype_type = _hype_type
+            chapter.hype_recipe_key = _hype_recipe_key
+            chapter.hype_intensity = _hype_intensity
+
+            from bestseller.services.diversity_budget import (
+                load_diversity_budget,
+                save_diversity_budget,
+            )
+            from bestseller.services.hype_engine import HypeType as _HypeTypeEnum
+
+            try:
+                _hype_enum = _HypeTypeEnum(_hype_type)
+            except ValueError:
+                _hype_enum = None
+            if _hype_enum is not None:
+                _budget = await load_diversity_budget(session, project.id)
+                _budget.register_hype_moment(
+                    chapter_no=chapter_number,
+                    hype_type=_hype_enum,
+                    recipe_key=_hype_recipe_key,
+                    intensity=float(_hype_intensity or 0.0),
+                )
+                await save_diversity_budget(session, _budget)
+    except Exception:
+        logger.warning(
+            "Hype metadata persistence failed for chapter %d (non-fatal)",
+            chapter_number,
+            exc_info=True,
+        )
+
     await session.flush()
 
     # ── Eagerly sync disk file so web UI always shows current content ──

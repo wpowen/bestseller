@@ -348,6 +348,484 @@ _PLATFORM_PRESETS: list[dict[str, Any]] = [
 ]
 
 
+# ---------------------------------------------------------------------------
+# Hype recipe decks (Reader Hype Engine, Phase 3).
+#
+# Each recipe is a dict compatible with ``hype_engine.HypeRecipe``.
+# Presets embed a deck under ``writing_profile_overrides.hype.recipe_deck``.
+# The four canonical 爽点 categories all show up somewhere in each hot deck
+# (face_slap / power_reveal / counterattack / status_jump) so the rotation
+# engine always has at least one legal pick per tension band.
+# ---------------------------------------------------------------------------
+
+
+_GENERIC_FALLBACK_HYPE_DECK: list[dict[str, Any]] = [
+    {
+        "key": "通用-当众打脸",
+        "hype_type": "face_slap",
+        "trigger_keywords": ["打脸", "僵住", "脸色铁青", "哑口", "噤声"],
+        "narrative_beats": [
+            "挑衅升级", "主角先收声", "一击反转",
+            "羞辱者失色", "围观者倒吸气",
+        ],
+        "intensity_floor": 7.0,
+        "cadence_hint": "300-500 字；动作前留一段静",
+    },
+    {
+        "key": "通用-亮出底牌",
+        "hype_type": "power_reveal",
+        "trigger_keywords": ["亮出", "真身", "显露", "一掌压下", "气势"],
+        "narrative_beats": [
+            "对方以为主角无能", "主角缓缓开口",
+            "底牌首次现形", "对方后退半步",
+        ],
+        "intensity_floor": 7.5,
+        "cadence_hint": "400-700 字；亮牌之前必须铺垫压迫感",
+    },
+    {
+        "key": "通用-以彼之道反击",
+        "hype_type": "counterattack",
+        "trigger_keywords": ["反击", "回敬", "以彼之道", "反手", "反制"],
+        "narrative_beats": [
+            "对手自以为占上风", "主角抓到破绽",
+            "以对方手段回敬", "对方反吞苦果",
+        ],
+        "intensity_floor": 7.0,
+        "cadence_hint": "中段 400 字；突出'反手'冷静",
+    },
+    {
+        "key": "通用-低估掀桌",
+        "hype_type": "underdog_win",
+        "trigger_keywords": ["低估", "小看", "翻身", "掀桌", "扭转"],
+        "narrative_beats": [
+            "对手公开轻视", "主角不动声色",
+            "关键一手扭转乾坤", "对手错愕",
+        ],
+        "intensity_floor": 7.0,
+        "cadence_hint": "前半章铺垫低估，后半章一锤反转",
+    },
+    {
+        "key": "通用-身份跃升",
+        "hype_type": "status_jump",
+        "trigger_keywords": ["登顶", "跃升", "名册", "跻身", "新晋"],
+        "narrative_beats": [
+            "官方播报", "榜单骤变",
+            "主角名字浮现", "旧势力震动",
+        ],
+        "intensity_floor": 7.5,
+        "cadence_hint": "播报口吻穿插；数字要具体",
+    },
+]
+
+
+_APOCALYPSE_SUPPLY_HYPE_DECK: list[dict[str, Any]] = [
+    {
+        "key": "末日-倒计时打脸",
+        "hype_type": "face_slap",
+        "trigger_keywords": ["倒计时", "先知", "抢先", "哑口", "惨白"],
+        "narrative_beats": [
+            "同行嘲笑主角囤废料", "倒计时触发", "规则如主角预言般异变",
+            "嘲笑者哑口", "主角只是淡淡一句",
+        ],
+        "intensity_floor": 8.0,
+        "cadence_hint": "300-500 字；倒计时归零前必须有一段'静'",
+    },
+    {
+        "key": "末日-仓储全开",
+        "hype_type": "power_reveal",
+        "trigger_keywords": ["仓库", "仓储", "物资", "列队", "震慑"],
+        "narrative_beats": [
+            "外人逼宫索取", "主角打开仓储大门",
+            "末日稀缺物资成堆亮相", "外人脸色骤变",
+        ],
+        "intensity_floor": 8.5,
+        "cadence_hint": "400-700 字；开门前必须铺氧气稀薄感",
+    },
+    {
+        "key": "末日-信息差反杀",
+        "hype_type": "counterattack",
+        "trigger_keywords": ["情报", "反杀", "抢先", "反手", "清点"],
+        "narrative_beats": [
+            "敌人布下陷阱", "主角早已知晓",
+            "反向埋伏", "敌方资源被反向清点",
+        ],
+        "intensity_floor": 8.0,
+        "cadence_hint": "短句、硬节拍；反杀必须发生在对方出手前",
+    },
+    {
+        "key": "末日-未来商城解锁",
+        "hype_type": "golden_finger_reveal",
+        "trigger_keywords": ["商城", "解锁", "新分区", "图纸", "兑换"],
+        "narrative_beats": [
+            "资源吃紧", "商城弹出新分区",
+            "稀有图纸解锁", "主角点头一笑",
+        ],
+        "intensity_floor": 7.0,
+        "cadence_hint": "400 字以内；解锁写得像冷静下单",
+    },
+    {
+        "key": "末日-伪装反转",
+        "hype_type": "reversal",
+        "trigger_keywords": ["伪装", "诱敌", "翻盘", "假身", "反杀"],
+        "narrative_beats": [
+            "敌人以为主角被困", "主角伪装启动",
+            "真身从背后出现", "敌方崩溃",
+        ],
+        "intensity_floor": 8.0,
+        "cadence_hint": "伪装揭穿前 200 字必须让读者以为主角真的落单",
+    },
+    {
+        "key": "末日-旧仇清算",
+        "hype_type": "revenge_closure",
+        "trigger_keywords": ["旧仇", "前世", "清算", "了结", "报应"],
+        "narrative_beats": [
+            "前世背叛者本章登场", "主角不动声色",
+            "资源断供加规则反噬", "仇线当章闭合",
+        ],
+        "intensity_floor": 8.0,
+        "cadence_hint": "必须本章了结；不得拖到下一卷",
+    },
+    {
+        "key": "末日-废料翻身",
+        "hype_type": "underdog_win",
+        "trigger_keywords": ["废料", "低估", "翻身", "掀桌", "扭转"],
+        "narrative_beats": [
+            "势力轻视主角囤货", "规则异变来临",
+            "主角废料成为硬通货", "势力反过来求救",
+        ],
+        "intensity_floor": 7.5,
+        "cadence_hint": "前半章铺垫轻视，后半章一锤反转",
+    },
+    {
+        "key": "末日-先手压制",
+        "hype_type": "domination",
+        "trigger_keywords": ["压制", "镇压", "先手", "碾压", "横扫"],
+        "narrative_beats": [
+            "敌方联军逼近", "主角早已部署",
+            "资源先手+能力连击", "敌方溃散",
+        ],
+        "intensity_floor": 8.5,
+        "cadence_hint": "短句、硬节拍；全场 3 个呼吸完成",
+    },
+    {
+        "key": "末日-末日榜登顶",
+        "hype_type": "status_jump",
+        "trigger_keywords": ["榜单", "登顶", "通告", "跃升", "播报"],
+        "narrative_beats": [
+            "末日势力榜刷新", "主角名字浮现",
+            "旧势力震动", "播报定格主角代号",
+        ],
+        "intensity_floor": 8.0,
+        "cadence_hint": "播报口吻穿插；数字要具体",
+    },
+    {
+        "key": "末日-废墟奇遇",
+        "hype_type": "caress_by_fate",
+        "trigger_keywords": ["残骸", "图纸", "认主", "感应", "机缘"],
+        "narrative_beats": [
+            "主角踏入废墟", "隐藏图纸浮现",
+            "图纸认主", "新分支科技加持",
+        ],
+        "intensity_floor": 6.5,
+        "cadence_hint": "描写可稍拉长；奇遇要留余味",
+    },
+    {
+        "key": "末日-幸存者吐槽",
+        "hype_type": "comedic_beat",
+        "trigger_keywords": ["吐槽", "嘀咕", "翻白眼", "冷笑话", "无语"],
+        "narrative_beats": [
+            "幸存者小声议论", "对方以为赢定",
+            "一句冷不丁的吐槽", "气氛凝固",
+        ],
+        "intensity_floor": 5.5,
+        "cadence_hint": "单段不超过 80 字；一章最多 2 次，不得在章末",
+    },
+]
+
+
+_XIANXIA_UPGRADE_HYPE_DECK: list[dict[str, Any]] = [
+    {
+        "key": "仙侠-宗门打脸",
+        "hype_type": "face_slap",
+        "trigger_keywords": ["废柴", "嘲讽", "打脸", "气血逆流", "哑口"],
+        "narrative_beats": [
+            "同门讥讽主角废柴", "主角出手一剑",
+            "对方气血逆流", "长老愣在原地",
+        ],
+        "intensity_floor": 8.0,
+        "cadence_hint": "300-500 字；出剑前必须有一段静",
+    },
+    {
+        "key": "仙侠-真身显露",
+        "hype_type": "power_reveal",
+        "trigger_keywords": ["真身", "本尊", "血脉", "显露", "压下"],
+        "narrative_beats": [
+            "强敌逼上门", "主角神色不变",
+            "真身/血脉首次现形", "天地一滞",
+        ],
+        "intensity_floor": 8.5,
+        "cadence_hint": "400-700 字；真身出现前必须有天象异动",
+    },
+    {
+        "key": "仙侠-一剑反制",
+        "hype_type": "counterattack",
+        "trigger_keywords": ["反制", "回敬", "以彼之道", "反手", "反杀"],
+        "narrative_beats": [
+            "天骄挑战主角", "主角以对方功法回敬",
+            "天骄反吞苦果", "全场静默",
+        ],
+        "intensity_floor": 8.0,
+        "cadence_hint": "中段 400 字；反制必须用对方的招",
+    },
+    {
+        "key": "仙侠-境界突破",
+        "hype_type": "level_up",
+        "trigger_keywords": ["突破", "晋阶", "暴涨", "蜕变", "破境"],
+        "narrative_beats": [
+            "压迫临界", "灵力涌动",
+            "主角连升数阶", "旁观者震骇",
+        ],
+        "intensity_floor": 8.0,
+        "cadence_hint": "场景描写带天象；突破必须伴随危机",
+    },
+    {
+        "key": "仙侠-血脉觉醒",
+        "hype_type": "golden_finger_reveal",
+        "trigger_keywords": ["血脉", "觉醒", "金光", "神识", "激活"],
+        "narrative_beats": [
+            "遗迹气息激发", "主角体内金光",
+            "血脉传承醒转", "新神通显化",
+        ],
+        "intensity_floor": 7.5,
+        "cadence_hint": "400 字以内；觉醒写得像开启古卷",
+    },
+    {
+        "key": "仙侠-伪装反杀",
+        "hype_type": "reversal",
+        "trigger_keywords": ["伪装", "将计就计", "反转", "反杀", "伪身"],
+        "narrative_beats": [
+            "敌方包围假身", "主角本尊在外",
+            "合围反被反杀", "敌首受创",
+        ],
+        "intensity_floor": 8.5,
+        "cadence_hint": "伪装揭穿前 200 字让读者以为主角真的落单",
+    },
+    {
+        "key": "仙侠-宿敌了结",
+        "hype_type": "revenge_closure",
+        "trigger_keywords": ["宿怨", "旧仇", "了结", "清算", "结清"],
+        "narrative_beats": [
+            "旧仇家以新身份登场", "主角冷眼点破",
+            "招式交换", "仇线当章闭合",
+        ],
+        "intensity_floor": 8.0,
+        "cadence_hint": "本章必须了结；不得拖入下一卷",
+    },
+    {
+        "key": "仙侠-废柴掀桌",
+        "hype_type": "underdog_win",
+        "trigger_keywords": ["废柴", "低估", "翻身", "掀桌", "名册"],
+        "narrative_beats": [
+            "宗门轻视主角", "秘境考核开始",
+            "主角连斩天骄", "长老改档立档",
+        ],
+        "intensity_floor": 7.5,
+        "cadence_hint": "前半章铺垫轻视，后半章一锤反转",
+    },
+    {
+        "key": "仙侠-跨阶碾压",
+        "hype_type": "domination",
+        "trigger_keywords": ["碾压", "压制", "跨阶", "吊打", "镇压"],
+        "narrative_beats": [
+            "高阶对手逼近", "主角不退反进",
+            "跨阶一掌压下", "对方溃退",
+        ],
+        "intensity_floor": 8.5,
+        "cadence_hint": "短句、硬节拍；全场 3 个呼吸内完成",
+    },
+    {
+        "key": "仙侠-天骄榜登顶",
+        "hype_type": "status_jump",
+        "trigger_keywords": ["天骄榜", "登顶", "名册", "新晋", "跃居"],
+        "narrative_beats": [
+            "宗门公告张贴", "天骄榜刷新",
+            "主角名字浮现榜首", "各宗门震动",
+        ],
+        "intensity_floor": 8.0,
+        "cadence_hint": "播报口吻穿插；榜单要具体",
+    },
+    {
+        "key": "仙侠-古井机缘",
+        "hype_type": "caress_by_fate",
+        "trigger_keywords": ["古井", "认主", "契文", "感应", "机缘"],
+        "narrative_beats": [
+            "主角踏入秘境", "古井契文浮现",
+            "契约认主", "新权限加持",
+        ],
+        "intensity_floor": 6.5,
+        "cadence_hint": "场景可稍拉长；奇遇要留余味",
+    },
+    {
+        "key": "仙侠-道童吐槽",
+        "hype_type": "comedic_beat",
+        "trigger_keywords": ["吐槽", "嘀咕", "冷笑话", "翻白眼", "打趣"],
+        "narrative_beats": [
+            "道童小声议论", "对方以为赢定",
+            "道童冷不丁吐槽", "气氛凝固",
+        ],
+        "intensity_floor": 5.5,
+        "cadence_hint": "单段不超过 80 字；一章最多 2 次，不得在章末",
+    },
+]
+
+
+_PALACE_REVENGE_HYPE_DECK: list[dict[str, Any]] = [
+    {
+        "key": "宫斗-当堂打脸",
+        "hype_type": "face_slap",
+        "trigger_keywords": ["当堂", "证据", "哑口", "脸色煞白", "打脸"],
+        "narrative_beats": [
+            "诬陷者当堂控诉", "主角不动声色",
+            "证据骤然摊开", "诬陷者脸色煞白",
+        ],
+        "intensity_floor": 8.0,
+        "cadence_hint": "300-500 字；证据亮出前必须有一段静",
+    },
+    {
+        "key": "宫斗-凤仪威压",
+        "hype_type": "power_reveal",
+        "trigger_keywords": ["凤仪", "仪典", "威压", "披挂", "显露"],
+        "narrative_beats": [
+            "外戚逼宫", "主角凤仪加身",
+            "仪典威压压下群臣", "外戚噤声",
+        ],
+        "intensity_floor": 8.0,
+        "cadence_hint": "400-700 字；穿戴描写后必须让众人屏息",
+    },
+    {
+        "key": "宫斗-以毒攻毒",
+        "hype_type": "counterattack",
+        "trigger_keywords": ["反咬", "以彼之道", "回敬", "反手", "反制"],
+        "narrative_beats": [
+            "对方下毒栽赃", "主角顺势反咬",
+            "对方反吞自设陷阱", "皇上震怒转向",
+        ],
+        "intensity_floor": 8.0,
+        "cadence_hint": "中段 400 字；反咬动作必须冷静",
+    },
+    {
+        "key": "宫斗-伪证揭穿",
+        "hype_type": "reversal",
+        "trigger_keywords": ["伪证", "翻案", "暗中", "反转", "证物"],
+        "narrative_beats": [
+            "对方伪证齐备", "主角揭开证物真身",
+            "伪证反成自证", "朝堂哗然",
+        ],
+        "intensity_floor": 8.5,
+        "cadence_hint": "伪证揭穿前 200 字必须让读者以为主角输定",
+    },
+    {
+        "key": "宫斗-册封跃升",
+        "hype_type": "status_jump",
+        "trigger_keywords": ["册封", "晋位", "跃升", "上位", "授印"],
+        "narrative_beats": [
+            "皇上下旨", "礼官宣读册封",
+            "主角正式上位", "旧势力震动",
+        ],
+        "intensity_floor": 8.0,
+        "cadence_hint": "旨意口吻穿插；品阶要具体",
+    },
+    {
+        "key": "宫斗-冤情昭雪",
+        "hype_type": "revenge_closure",
+        "trigger_keywords": ["冤案", "翻案", "昭雪", "了结", "清算"],
+        "narrative_beats": [
+            "旧案由头重提", "主角层层揭证",
+            "幕后者当堂定罪", "仇线当章闭合",
+        ],
+        "intensity_floor": 8.0,
+        "cadence_hint": "本章必须了结；不得拖入下一卷",
+    },
+    {
+        "key": "宫斗-前朝血脉",
+        "hype_type": "golden_finger_reveal",
+        "trigger_keywords": ["血脉", "前朝", "玉牒", "认主", "印信"],
+        "narrative_beats": [
+            "旧物流转至主角手中", "玉牒印信浮现",
+            "血脉身份揭露", "格局骤变",
+        ],
+        "intensity_floor": 7.5,
+        "cadence_hint": "揭露节奏可稍慢；印信描写要具体",
+    },
+    {
+        "key": "宫斗-隐忍掀桌",
+        "hype_type": "underdog_win",
+        "trigger_keywords": ["低估", "轻视", "掀桌", "翻身", "反制"],
+        "narrative_beats": [
+            "嫡系轻视主角出身", "主角长久隐忍",
+            "一纸奏折掀桌", "对方被撤职",
+        ],
+        "intensity_floor": 7.5,
+        "cadence_hint": "前半章铺垫轻视，后半章一击反转",
+    },
+    {
+        "key": "宫斗-御前压制",
+        "hype_type": "domination",
+        "trigger_keywords": ["御前", "压制", "碾压", "镇压", "一锤定音"],
+        "narrative_beats": [
+            "对立势力联名施压", "主角御前呈证",
+            "皇上一锤定音", "对立势力溃散",
+        ],
+        "intensity_floor": 8.5,
+        "cadence_hint": "短句、硬节拍；御前场面要庄严",
+    },
+    {
+        "key": "宫斗-旧物认主",
+        "hype_type": "caress_by_fate",
+        "trigger_keywords": ["旧物", "认主", "感应", "机缘", "信物"],
+        "narrative_beats": [
+            "信物流落到主角手中", "暗纹自行浮现",
+            "旧物认主", "宫中暗流涌动",
+        ],
+        "intensity_floor": 6.5,
+        "cadence_hint": "描写可稍拉长；信物要留余味",
+    },
+    {
+        "key": "宫斗-奴婢暗语",
+        "hype_type": "comedic_beat",
+        "trigger_keywords": ["嘀咕", "暗语", "翻白眼", "冷笑话", "打趣"],
+        "narrative_beats": [
+            "宫婢背后议论", "对方以为稳赢",
+            "一句冷不丁的暗语", "气氛凝固",
+        ],
+        "intensity_floor": 5.5,
+        "cadence_hint": "单段不超过 80 字；一章最多 2 次，不得在章末",
+    },
+]
+
+
+def _hype_block(
+    deck: list[dict[str, Any]],
+    *,
+    comedic_beat_density_target: float = 0.08,
+    min_hype_per_chapter: int = 1,
+    payoff_window_chapters: int = 5,
+) -> dict[str, Any]:
+    """Build a ``writing_profile_overrides.hype`` block.
+
+    Centralises the defaults so presets only need to pass a deck, and
+    override the three knobs when the genre needs a different tempo
+    (e.g. comedic beat density 0.15 for cozy genres).
+    """
+
+    return {
+        "comedic_beat_density_target": comedic_beat_density_target,
+        "min_hype_per_chapter": min_hype_per_chapter,
+        "payoff_window_chapters": payoff_window_chapters,
+        "recipe_deck": list(deck),
+    }
+
+
 _GENRE_PRESETS: list[dict[str, Any]] = [
     {
         "key": "apocalypse-supply",
@@ -401,6 +879,7 @@ _GENRE_PRESETS: list[dict[str, Any]] = [
                 "tone_keywords": ["狠", "快", "压迫感", "生存欲"],
                 "dialogue_ratio": 0.42,
             },
+            "hype": _hype_block(_APOCALYPSE_SUPPLY_HYPE_DECK),
         },
     },
     {
@@ -439,6 +918,7 @@ _GENRE_PRESETS: list[dict[str, Any]] = [
             "style": {
                 "tone_keywords": ["冷静", "高压", "悬疑", "不安"],
             },
+            "hype": _hype_block(_GENERIC_FALLBACK_HYPE_DECK),
         },
     },
     {
@@ -467,6 +947,7 @@ _GENRE_PRESETS: list[dict[str, Any]] = [
                 "power_system_style": "生产链、科技树、势力规模共同升级",
                 "setting_tags": ["基建", "经营", "据点", "军团"],
             },
+            "hype": _hype_block(_GENERIC_FALLBACK_HYPE_DECK),
         },
     },
     {
@@ -517,6 +998,7 @@ _GENRE_PRESETS: list[dict[str, Any]] = [
                 "tone_keywords": ["燃", "凌厉", "进取心"],
                 "dialogue_ratio": 0.30,
             },
+            "hype": _hype_block(_XIANXIA_UPGRADE_HYPE_DECK),
         },
     },
     {
@@ -552,6 +1034,7 @@ _GENRE_PRESETS: list[dict[str, Any]] = [
                 "tone_keywords": ["利落", "反差", "现实感", "爽感"],
                 "dialogue_ratio": 0.45,
             },
+            "hype": _hype_block(_GENERIC_FALLBACK_HYPE_DECK),
         },
     },
     {
@@ -579,6 +1062,7 @@ _GENRE_PRESETS: list[dict[str, Any]] = [
             "world": {
                 "setting_tags": ["公司成长", "产业竞争", "技术升级"],
             },
+            "hype": _hype_block(_GENERIC_FALLBACK_HYPE_DECK),
         },
     },
     {
@@ -611,6 +1095,7 @@ _GENRE_PRESETS: list[dict[str, Any]] = [
             "style": {
                 "tone_keywords": ["沉稳", "锋利", "谋略感"],
             },
+            "hype": _hype_block(_GENERIC_FALLBACK_HYPE_DECK),
         },
     },
     {
@@ -640,6 +1125,7 @@ _GENRE_PRESETS: list[dict[str, Any]] = [
                 "mystery_density": "high",
                 "setting_tags": ["案件", "证据", "时间线", "秘密"],
             },
+            "hype": _hype_block(_GENERIC_FALLBACK_HYPE_DECK),
         },
     },
     {
@@ -674,6 +1160,7 @@ _GENRE_PRESETS: list[dict[str, Any]] = [
             "style": {
                 "tone_keywords": ["诡异", "冷感", "不安", "压迫"],
             },
+            "hype": _hype_block(_GENERIC_FALLBACK_HYPE_DECK),
         },
     },
     {
@@ -700,6 +1187,7 @@ _GENRE_PRESETS: list[dict[str, Any]] = [
                 "protagonist_archetype": "高适应闯关者",
                 "protagonist_core_drive": "在副本与主线夹层中找到存活与通关路径",
             },
+            "hype": _hype_block(_GENERIC_FALLBACK_HYPE_DECK),
         },
     },
     {
@@ -724,6 +1212,7 @@ _GENRE_PRESETS: list[dict[str, Any]] = [
                 "power_system_style": "科技树、舰队规模和政治权限并行升级",
                 "setting_tags": ["星际", "舰队", "帝国", "边境"],
             },
+            "hype": _hype_block(_GENERIC_FALLBACK_HYPE_DECK),
         },
     },
     {
@@ -764,6 +1253,7 @@ _GENRE_PRESETS: list[dict[str, Any]] = [
                 "tone_keywords": ["细腻", "拉扯感", "高情绪密度"],
                 "dialogue_ratio": 0.48,
             },
+            "hype": _hype_block(_GENERIC_FALLBACK_HYPE_DECK),
         },
     },
     {
@@ -799,6 +1289,7 @@ _GENRE_PRESETS: list[dict[str, Any]] = [
             "world": {
                 "setting_tags": ["宫廷", "门第", "权力", "复仇"],
             },
+            "hype": _hype_block(_PALACE_REVENGE_HYPE_DECK),
         },
     },
     {
@@ -829,6 +1320,7 @@ _GENRE_PRESETS: list[dict[str, Any]] = [
                 "power_system_style": "境界成长与宠兽进化树并行",
                 "setting_tags": ["御兽", "进化", "培育", "赛事"],
             },
+            "hype": _hype_block(_GENERIC_FALLBACK_HYPE_DECK),
         },
     },
     {
@@ -861,6 +1353,7 @@ _GENRE_PRESETS: list[dict[str, Any]] = [
                 "tone_keywords": ["热血", "反差", "爽感", "现场感"],
                 "dialogue_ratio": 0.44,
             },
+            "hype": _hype_block(_GENERIC_FALLBACK_HYPE_DECK),
         },
     },
     {
@@ -901,6 +1394,7 @@ _GENRE_PRESETS: list[dict[str, Any]] = [
             "style": {
                 "tone_keywords": ["阴冷", "克制", "不安", "真相感"],
             },
+            "hype": _hype_block(_GENERIC_FALLBACK_HYPE_DECK),
         },
     },
     {
@@ -938,6 +1432,7 @@ _GENRE_PRESETS: list[dict[str, Any]] = [
             "world": {
                 "setting_tags": ["创业", "商业", "资本", "翻盘"],
             },
+            "hype": _hype_block(_GENERIC_FALLBACK_HYPE_DECK),
         },
     },
     {
@@ -978,6 +1473,7 @@ _GENRE_PRESETS: list[dict[str, Any]] = [
                 "tone_keywords": ["清醒", "克制", "锋利", "成长感"],
                 "dialogue_ratio": 0.43,
             },
+            "hype": _hype_block(_GENERIC_FALLBACK_HYPE_DECK),
         },
     },
     {
@@ -1016,6 +1512,7 @@ _GENRE_PRESETS: list[dict[str, Any]] = [
                 "power_system_style": "现代规则与修行体系并行升级",
                 "setting_tags": ["现代修仙", "规则变化", "都市", "升级"],
             },
+            "hype": _hype_block(_GENERIC_FALLBACK_HYPE_DECK),
         },
     },
     {
@@ -1049,6 +1546,7 @@ _GENRE_PRESETS: list[dict[str, Any]] = [
                 "protagonist_archetype": "认知型经营主角",
                 "protagonist_core_drive": "用超前知识和行动力改写时代位置",
             },
+            "hype": _hype_block(_GENERIC_FALLBACK_HYPE_DECK),
         },
     },
     {
@@ -1081,6 +1579,7 @@ _GENRE_PRESETS: list[dict[str, Any]] = [
                 "protagonist_archetype": "高压局中的判断者",
                 "protagonist_core_drive": "在群体崩坏和真相迷局里找到最少后悔的活路",
             },
+            "hype": _hype_block(_GENERIC_FALLBACK_HYPE_DECK),
         },
     },
     {
@@ -1115,6 +1614,7 @@ _GENRE_PRESETS: list[dict[str, Any]] = [
             "style": {
                 "tone_keywords": ["奇诡", "精致", "冷感", "余韵"],
             },
+            "hype": _hype_block(_GENERIC_FALLBACK_HYPE_DECK),
         },
     },
     {
@@ -1355,6 +1855,7 @@ _GENRE_PRESETS: list[dict[str, Any]] = [
                 "tone_keywords": ["硬核", "热血", "机械感", "压迫感"],
                 "dialogue_ratio": 0.4,
             },
+            "hype": _hype_block(_GENERIC_FALLBACK_HYPE_DECK),
         },
     },
     {
@@ -1401,6 +1902,7 @@ _GENRE_PRESETS: list[dict[str, Any]] = [
                 "tone_keywords": ["理性", "硬核", "家国感", "科技浪漫"],
                 "dialogue_ratio": 0.38,
             },
+            "hype": _hype_block(_GENERIC_FALLBACK_HYPE_DECK),
         },
     },
     {
@@ -1445,6 +1947,7 @@ _GENRE_PRESETS: list[dict[str, Any]] = [
                 "tone_keywords": ["热血", "怀旧", "遗憾感", "青春感"],
                 "dialogue_ratio": 0.46,
             },
+            "hype": _hype_block(_GENERIC_FALLBACK_HYPE_DECK),
         },
     },
     {
@@ -1493,6 +1996,7 @@ _GENRE_PRESETS: list[dict[str, Any]] = [
                 "tone_keywords": ["诡异", "家族感", "推理感", "氛围恐惧"],
                 "dialogue_ratio": 0.44,
             },
+            "hype": _hype_block(_GENERIC_FALLBACK_HYPE_DECK),
         },
     },
     # ── English Genre Presets ──────────────────────────────────────────
@@ -1533,6 +2037,7 @@ _GENRE_PRESETS: list[dict[str, Any]] = [
                 "worldbuilding_density": "low",
                 "setting_tags": ["criminal underworld", "elite society", "isolated estate", "power dynasty"],
             },
+            "hype": _hype_block(_GENERIC_FALLBACK_HYPE_DECK),
         },
     },
     {
@@ -1569,6 +2074,7 @@ _GENRE_PRESETS: list[dict[str, Any]] = [
                 "power_system_style": "Elemental magic, bloodline gifts, and ancient pacts",
                 "setting_tags": ["fae court", "enchanted forest", "rival kingdoms", "ancient ruins"],
             },
+            "hype": _hype_block(_GENERIC_FALLBACK_HYPE_DECK),
         },
     },
     {
@@ -1600,6 +2106,7 @@ _GENRE_PRESETS: list[dict[str, Any]] = [
                 "protagonist_core_drive": "Win the rivalry — until winning means losing the person they hate to want",
                 "growth_curve": "Hostility → grudging respect → denial → surrender",
             },
+            "hype": _hype_block(_GENERIC_FALLBACK_HYPE_DECK),
         },
     },
     {
@@ -1638,6 +2145,7 @@ _GENRE_PRESETS: list[dict[str, Any]] = [
                 "power_system_style": "Stat-based with levels, skills, classes, and loot tables",
                 "setting_tags": ["dungeon", "system", "guild", "tower", "apocalypse"],
             },
+            "hype": _hype_block(_GENERIC_FALLBACK_HYPE_DECK),
         },
     },
     {
@@ -1673,6 +2181,7 @@ _GENRE_PRESETS: list[dict[str, Any]] = [
                 "worldbuilding_density": "medium",
                 "setting_tags": ["small town", "bookshop", "bakery", "enchanted forest", "cottage"],
             },
+            "hype": _hype_block(_GENERIC_FALLBACK_HYPE_DECK),
         },
     },
     {
@@ -1704,6 +2213,7 @@ _GENRE_PRESETS: list[dict[str, Any]] = [
                 "protagonist_core_drive": "Solve the puzzle, protect the community, and run the business",
                 "growth_curve": "Reluctant investigator → community pillar → series detective",
             },
+            "hype": _hype_block(_GENERIC_FALLBACK_HYPE_DECK),
         },
     },
     {
@@ -1735,6 +2245,7 @@ _GENRE_PRESETS: list[dict[str, Any]] = [
                 "protagonist_core_drive": "Discover why she is bonded to all of them — and that she doesn't have to choose",
                 "growth_curve": "Overwhelmed newcomer → bonds deepening → full pack acceptance",
             },
+            "hype": _hype_block(_GENERIC_FALLBACK_HYPE_DECK),
         },
     },
     {
@@ -1767,6 +2278,7 @@ _GENRE_PRESETS: list[dict[str, Any]] = [
                 "growth_curve": "Unwilling bride → strategic player → equal partner in empire",
                 "antagonist_mode": "Rival families and internal betrayals threaten the fragile alliance",
             },
+            "hype": _hype_block(_GENERIC_FALLBACK_HYPE_DECK),
         },
     },
     {
@@ -1798,6 +2310,7 @@ _GENRE_PRESETS: list[dict[str, Any]] = [
                 "protagonist_core_drive": "Uncover the truth — but whose truth?",
                 "growth_curve": "False normalcy → cracks appearing → unraveling → devastating revelation",
             },
+            "hype": _hype_block(_GENERIC_FALLBACK_HYPE_DECK),
         },
     },
     {
@@ -1834,6 +2347,7 @@ _GENRE_PRESETS: list[dict[str, Any]] = [
                 "power_system_style": "Hard magic system with defined rules, costs, and limitations",
                 "setting_tags": ["kingdoms", "ancient ruins", "magical academy", "battlefield", "court"],
             },
+            "hype": _hype_block(_GENERIC_FALLBACK_HYPE_DECK),
         },
     },
     {
@@ -1870,6 +2384,7 @@ _GENRE_PRESETS: list[dict[str, Any]] = [
                 "power_system_style": "Technology tiers, FTL mechanics, and political faction power",
                 "setting_tags": ["starship", "space station", "alien world", "frontier colony", "war zone"],
             },
+            "hype": _hype_block(_GENERIC_FALLBACK_HYPE_DECK),
         },
     },
     {
@@ -1906,6 +2421,7 @@ _GENRE_PRESETS: list[dict[str, Any]] = [
                 "worldbuilding_density": "medium",
                 "setting_tags": ["pack territory", "small town", "wilderness", "hidden supernatural world"],
             },
+            "hype": _hype_block(_GENERIC_FALLBACK_HYPE_DECK),
         },
     },
     {
@@ -1943,6 +2459,7 @@ _GENRE_PRESETS: list[dict[str, Any]] = [
                 "power_system_style": "Layered magic hidden behind mundane reality, with factions and territories",
                 "setting_tags": ["modern city", "hidden districts", "supernatural bar", "ley lines", "enchanted underground"],
             },
+            "hype": _hype_block(_GENERIC_FALLBACK_HYPE_DECK),
         },
     },
     {
@@ -1980,6 +2497,7 @@ _GENRE_PRESETS: list[dict[str, Any]] = [
                 "power_system_style": "Military tech tiers, weapon systems, and rank-based authority",
                 "setting_tags": ["warship", "hostile planet", "forward base", "orbital station", "alien territory"],
             },
+            "hype": _hype_block(_GENERIC_FALLBACK_HYPE_DECK),
         },
     },
     {
@@ -2018,6 +2536,7 @@ _GENRE_PRESETS: list[dict[str, Any]] = [
                 "power_system_style": "Game-like stats, skills, classes, quests, and loot with visible UI elements",
                 "setting_tags": ["fantasy world", "starter village", "dungeon", "guild hall", "boss arena"],
             },
+            "hype": _hype_block(_GENERIC_FALLBACK_HYPE_DECK),
         },
     },
     {
@@ -2054,6 +2573,7 @@ _GENRE_PRESETS: list[dict[str, Any]] = [
                 "worldbuilding_density": "medium",
                 "setting_tags": ["ruins", "fortified base", "wasteland", "supply cache", "hostile territory"],
             },
+            "hype": _hype_block(_GENERIC_FALLBACK_HYPE_DECK),
         },
     },
     {
@@ -2089,6 +2609,7 @@ _GENRE_PRESETS: list[dict[str, Any]] = [
                 "worldbuilding_density": "low",
                 "setting_tags": ["precinct", "crime scene", "interrogation room", "forensic lab", "courtroom"],
             },
+            "hype": _hype_block(_GENERIC_FALLBACK_HYPE_DECK),
         },
     },
     {
@@ -2124,6 +2645,7 @@ _GENRE_PRESETS: list[dict[str, Any]] = [
                 "worldbuilding_density": "low",
                 "setting_tags": ["small town", "workplace", "shared space", "hometown return", "seasonal setting"],
             },
+            "hype": _hype_block(_GENERIC_FALLBACK_HYPE_DECK),
         },
     },
     {
@@ -2161,6 +2683,7 @@ _GENRE_PRESETS: list[dict[str, Any]] = [
                 "power_system_style": "Academy-taught magic with tiers, tests, and forbidden branches",
                 "setting_tags": ["magic academy", "enchanted campus", "forbidden wing", "rival houses", "tournament arena"],
             },
+            "hype": _hype_block(_GENERIC_FALLBACK_HYPE_DECK),
         },
     },
     {
@@ -2193,6 +2716,7 @@ _GENRE_PRESETS: list[dict[str, Any]] = [
                 "growth_curve": "Ordinary professional → accidental discovery → hunted whistleblower → public reckoning",
                 "antagonist_mode": "Shadowy institutional forces with unlimited resources and reach",
             },
+            "hype": _hype_block(_GENERIC_FALLBACK_HYPE_DECK),
         },
     },
     {
@@ -2230,6 +2754,7 @@ _GENRE_PRESETS: list[dict[str, Any]] = [
                 "power_system_style": "Native magic or cultivation system unfamiliar to the protagonist",
                 "setting_tags": ["alien landscape", "foreign city", "ancient ruins", "frontier settlement", "dimensional rift"],
             },
+            "hype": _hype_block(_GENERIC_FALLBACK_HYPE_DECK),
         },
     },
     {
@@ -2268,6 +2793,7 @@ _GENRE_PRESETS: list[dict[str, Any]] = [
                 "power_system_style": "Tiered cultivation with named ranks, techniques, and bottleneck breakthroughs",
                 "setting_tags": ["sect grounds", "spirit mountain", "cultivation cave", "tournament ring", "forbidden realm"],
             },
+            "hype": _hype_block(_GENERIC_FALLBACK_HYPE_DECK),
         },
     },
     {
@@ -2306,6 +2832,7 @@ _GENRE_PRESETS: list[dict[str, Any]] = [
                 "power_system_style": "Evolution trees with branching paths, ability unlocks, and tier thresholds",
                 "setting_tags": ["dungeon", "monster territory", "forest depths", "underground cavern", "adventurer guild"],
             },
+            "hype": _hype_block(_GENERIC_FALLBACK_HYPE_DECK),
         },
     },
     {
@@ -2344,6 +2871,7 @@ _GENRE_PRESETS: list[dict[str, Any]] = [
                 "power_system_style": "Classification tiers with defined power categories, rankings, and threat levels",
                 "setting_tags": ["modern city", "secret base", "villain territory", "government facility", "power testing lab"],
             },
+            "hype": _hype_block(_GENERIC_FALLBACK_HYPE_DECK),
         },
     },
 ]

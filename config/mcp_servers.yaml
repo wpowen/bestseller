@@ -1,0 +1,58 @@
+# =============================================================================
+# BestSeller — MCP Client Configuration
+# =============================================================================
+# Lists external Model Context Protocol servers that BestSeller's worker
+# processes (Research Agent, Library Curator, Forges) connect to via
+# `MCPConnectionPool` (src/bestseller/services/mcp_bridge.py).
+#
+# All entries are OPTIONAL — any server failing to start is logged and
+# marked unavailable without affecting the rest of the pipeline.
+# HTTP search + pgvector retrieval remain the mandatory channels.
+#
+# Placeholders `${ENV_VAR}` or `${ENV_VAR:-default}` are expanded from
+# the process environment at load time.
+#
+# `enabled_for` gates which consumers see a given server's tools:
+#   - research_agent : used by `services/research_agent.py`
+#   - curator        : used by `services/library_curator.py`
+#   - forge          : used by `services/material_forge/*`
+#
+# `tools_expose` acts as a whitelist; empty list = expose every tool the
+# server advertises.
+# =============================================================================
+
+servers:
+  # Exa — high-quality web search API exposed via an MCP stdio server.
+  # Install: npm install -g exa-mcp-server  (requires EXA_API_KEY)
+  - name: exa-websearch
+    transport: stdio
+    command: ["npx", "-y", "exa-mcp-server"]
+    env:
+      EXA_API_KEY: "${EXA_API_KEY}"
+    enabled_for: [research_agent, curator]
+    tools_expose: [web_search_exa, research_papers]
+    timeout_seconds: 60
+    enabled: true
+
+  # Wikipedia — reference material for historical/cultural grounding.
+  # Install: uvx install mcp-server-wikipedia
+  - name: wikipedia
+    transport: stdio
+    command: ["uvx", "mcp-server-wikipedia"]
+    env: {}
+    enabled_for: [research_agent, curator]
+    tools_expose: [search_wikipedia, get_article]
+    timeout_seconds: 45
+    enabled: true
+
+  # BestSeller local knowledge base — curated reference files inside the
+  # repo (config/novel_categories/*, config/writing_methodology.yaml, …).
+  # Shipped as bestseller.mcp.local_knowledge_server (optional).
+  - name: local-knowledge
+    transport: stdio
+    command: ["python", "-m", "bestseller.mcp.local_knowledge_server"]
+    env: {}
+    enabled_for: [research_agent, curator, forge]
+    tools_expose: []  # expose everything
+    timeout_seconds: 30
+    enabled: true

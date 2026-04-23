@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import os
+from pathlib import Path
 from typing import Any
 
 from arq.connections import RedisSettings
@@ -17,6 +18,10 @@ from bestseller.worker.tasks import (
 
 logger = logging.getLogger(__name__)
 
+_MCP_CONFIG_PATH = Path(
+    os.environ.get("BESTSELLER_MCP_CONFIG_PATH", "config/mcp_servers.yaml")
+)
+
 
 async def startup(ctx: dict[str, Any]) -> None:
     settings = get_settings()
@@ -24,6 +29,35 @@ async def startup(ctx: dict[str, Any]) -> None:
     await init_db(settings)
     await init_redis(settings)
     ctx["redis"] = get_redis_client()
+
+    # ── MCP connection pool (Batch 1, optional) ────────────────────────
+    # Only spins up when the material-library flag is on; otherwise the
+    # slow subprocess startup is pure overhead.  Pool stash lives in
+    # ``ctx['mcp_pool']`` so tasks can reach it via the ARQ context.
+    # Individual server failures are already swallowed inside the pool,
+    # so a bad config cannot block worker startup.
+    if settings.pipeline.enable_material_library:
+        try:
+            from bestseller.services.mcp_bridge import build_mcp_pool  # noqa: PLC0415
+
+            if _MCP_CONFIG_PATH.exists():
+                pool = await build_mcp_pool(_MCP_CONFIG_PATH, env=os.environ)
+                ctx["mcp_pool"] = pool
+                logger.info(
+                    "Worker startup: MCP pool ready with servers=%s",
+                    pool.server_names(),
+                )
+            else:
+                logger.info(
+                    "Worker startup: MCP config not found at %s; skipping pool",
+                    _MCP_CONFIG_PATH,
+                )
+        except Exception:  # noqa: BLE001 — MCP is optional, never block worker
+            logger.exception("Worker startup: MCP pool init failed — continuing without MCP")
+    else:
+        logger.info(
+            "Worker startup: material library flag off; MCP pool not initialised"
+        )
 
     # Self-heal: scan for stuck generation pipelines (e.g. chapters halfway
     # written when the previous container died) and re-queue an autowrite
@@ -58,6 +92,12 @@ async def startup(ctx: dict[str, Any]) -> None:
 
 async def shutdown(ctx: dict[str, Any]) -> None:
     logger.info("Worker shutdown: closing connections…")
+    pool = ctx.pop("mcp_pool", None)
+    if pool is not None:
+        try:
+            await pool.stop()
+        except Exception:  # noqa: BLE001
+            logger.exception("Worker shutdown: MCP pool stop failed")
     await shutdown_redis()
     await shutdown_db()
 

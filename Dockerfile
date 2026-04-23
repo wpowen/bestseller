@@ -50,6 +50,7 @@ COPY --from=builder /usr/local/bin /usr/local/bin
 COPY src/ ./src/
 COPY config/ ./config/
 COPY migrations/ ./migrations/
+COPY scripts/ ./scripts/
 COPY alembic.ini ./
 
 ENV PYTHONPATH=/app/src

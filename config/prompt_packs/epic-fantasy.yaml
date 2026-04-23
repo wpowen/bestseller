@@ -1,66 +1,75 @@
 key: epic-fantasy
 name: Epic Fantasy
-version: "2.0"
-description: Multi-POV, world-at-stake conflicts, hard magic systems, and political intrigue — grand-scope storytelling for readers who want deep lore, complex characters, and a world that feels as real as their own. Integrates emotion engineering and core loop methodology.
+version: '2.0'
+description: Multi-POV, world-at-stake conflicts, hard magic systems, and political intrigue — grand-scope storytelling for
+  readers who want deep lore, complex characters, and a world that feels as real as their own. Integrates emotion engineering
+  and core loop methodology.
 genres:
-  - Fantasy
-  - Epic Fantasy
-  - High Fantasy
+- Fantasy
+- Epic Fantasy
+- High Fantasy
 tags:
-  - epic fantasy
-  - magic system
-  - multi-pov
-  - political intrigue
-  - world-building
-  - high fantasy
+- epic fantasy
+- magic system
+- multi-pov
+- political intrigue
+- world-building
+- high fantasy
 source_notes:
-  - Designed for the English-language epic fantasy audience (KU and trade)
-  - Follows Sanderson's Laws of Magic and GRRM-style political complexity
-  - Incorporates multi-POV management techniques and epic scope pacing
+- Designed for the English-language epic fantasy audience (KU and trade)
+- Follows Sanderson's Laws of Magic and GRRM-style political complexity
+- Incorporates multi-POV management techniques and epic scope pacing
 anti_patterns:
-  - Info-dump prologues that explain the world before the reader cares about anyone
-  - Magic system that works by authorial convenience rather than consistent rules
-  - Multi-POV where some POVs are significantly less interesting than others
-  - Political intrigue that is confusing rather than compelling — clarity of stakes is essential
-  - Chosen One prophecy that removes all tension because the outcome is foretold
-  - World-building that is encyclopedic but never emotionally resonant
-  - Battle scenes that are spectacle without character stakes
-  - Emotional payoffs without prior compression (victory without cost feels hollow)
-  - Reversals with no foreshadowing planted at least 3 scenes prior
-  - Hooks abandoned across POV switches — every thread must be serviced
-  - Dialogue that directly states political positions instead of layering subtext
+- Info-dump prologues that explain the world before the reader cares about anyone
+- Magic system that works by authorial convenience rather than consistent rules
+- Multi-POV where some POVs are significantly less interesting than others
+- Political intrigue that is confusing rather than compelling — clarity of stakes is essential
+- Chosen One prophecy that removes all tension because the outcome is foretold
+- World-building that is encyclopedic but never emotionally resonant
+- Battle scenes that are spectacle without character stakes
+- Emotional payoffs without prior compression (victory without cost feels hollow)
+- Reversals with no foreshadowing planted at least 3 scenes prior
+- Hooks abandoned across POV switches — every thread must be serviced
+- Dialogue that directly states political positions instead of layering subtext
 writing_profile_overrides:
   market:
     prompt_pack_key: epic-fantasy
     platform_target: Kindle Unlimited
-    reader_promise: Build a world the reader will want to live in, with characters whose fates they will agonize over. Every chapter must advance either the political landscape, a character arc, or the magical stakes — ideally all three. The scope should feel vast but the story should remain personal.
+    reader_promise: Build a world the reader will want to live in, with characters whose fates they will agonize over. Every
+      chapter must advance either the political landscape, a character arc, or the magical stakes — ideally all three. The
+      scope should feel vast but the story should remain personal.
     selling_points:
-      - hard magic system
-      - political intrigue
-      - multi-POV narrative
-      - world-at-stake conflict
-      - deep lore
+    - hard magic system
+    - political intrigue
+    - multi-POV narrative
+    - world-at-stake conflict
+    - deep lore
     trope_keywords:
-      - epic fantasy
-      - chosen one
-      - magic system
-      - war
-      - prophecy
+    - epic fantasy
+    - chosen one
+    - magic system
+    - war
+    - prophecy
     hook_keywords:
-      - ancient threat
-      - forbidden magic
-      - throne
-      - alliance
-      - betrayal
-    opening_strategy: Open with a POV character in a compelling personal situation that reveals the world through their experience. Establish one thread of the larger conflict within the first chapter. Do NOT open with a history lesson or a map tour. The reader should care about a person before they care about a world.
-    chapter_hook_strategy: With multi-POV, end each POV chapter on a cliffhanger or revelation, then switch to a different POV — the reader must be eager to return to EVERY thread. Use chapter endings to create dramatic irony between POVs who have different information.
+    - ancient threat
+    - forbidden magic
+    - throne
+    - alliance
+    - betrayal
+    opening_strategy: Open with a POV character in a compelling personal situation that reveals the world through their experience.
+      Establish one thread of the larger conflict within the first chapter. Do NOT open with a history lesson or a map tour.
+      The reader should care about a person before they care about a world.
+    chapter_hook_strategy: With multi-POV, end each POV chapter on a cliffhanger or revelation, then switch to a different
+      POV — the reader must be eager to return to EVERY thread. Use chapter endings to create dramatic irony between POVs
+      who have different information.
     pacing_profile: slow
-    payoff_rhythm: Each POV thread should have its own pacing with micro-payoffs every 2-3 chapters. Major convergence events at 25%, 50%, and 75%. The climax should bring all threads together in a way that makes the separate journeys feel purposeful.
+    payoff_rhythm: Each POV thread should have its own pacing with micro-payoffs every 2-3 chapters. Major convergence events
+      at 25%, 50%, and 75%. The climax should bring all threads together in a way that makes the separate journeys feel purposeful.
   character:
     protagonist_archetype: Multiple POV characters with intertwining destinies
     protagonist_core_drive: Each POV pursues different goals that converge into a world-changing conflict
-    growth_curve: Separate threads to first convergence to escalating stakes to epic climax
-    antagonist_mode: Multiple levels of antagonism — personal enemies, political opponents, and a world-level existential threat
+    antagonist_mode: Multiple levels of antagonism — personal enemies, political opponents, and a world-level existential
+      threat
   world:
     mystery_density: medium
     worldbuilding_density: high
@@ -80,125 +89,186 @@ writing_profile_overrides:
     safety_net_mode: prophecy_and_cost
     reaction_amplification: true
 fragments:
-  global_rules: |
-    Epic fantasy demands both scope and intimacy. The world must feel vast and deep, but every piece of lore should connect to a character's experience or a plot consequence. The magic system must have clear rules, defined costs, and specific limitations — readers should be able to predict what is possible and be surprised by how it is used, not by what it can do. Multi-POV must be managed carefully: each POV must be compelling enough to carry chapters alone, and each must contribute uniquely to the larger story. Political intrigue must be clear in its stakes even when complex in its execution. Every battle must have personal stakes, not just strategic ones.
-  planner_book_spec: |
-    Structure around converging threads: Separate Beginnings (Act 1, 0-20%) — introduce each POV in their distinct corner of the world, each facing a personal inciting incident. Expanding Scope (Act 2A, 20-40%) — POV threads begin to affect each other indirectly, the larger conflict becomes visible. Convergence Begins (midpoint, 40-60%) — at least two POV threads intersect, the world-level threat is confirmed. Escalation (Act 2B, 60-80%) — alliances form and break, the magic system is tested at scale, personal costs mount. Climax (80-95%) — all threads converge in a sequence that resolves both the personal and political arcs. Denouement (95-100%) — the new status quo, seeds for the next volume.
-  planner_world_spec: |
-    Build the world in layers: Geography & Cultures (distinct nations, peoples, and belief systems that feel organic), the Magic System (hard magic with clear rules, costs, and at least one unexplored frontier), Political Landscape (at least three factions with competing interests and internal divisions), History (specific historical events that shaped the present conflict, referenced naturally by characters), and Economy & Daily Life (enough detail that the world feels lived-in, not just battled-in). Every world-building element should eventually pay off in plot or character terms.
-  planner_cast_spec: |
-    Design each POV character to represent a different perspective on the central conflict — a political leader, a soldier, a scholar of magic, a common person swept up in events, an enemy combatant. Each needs: a personal goal that conflicts with the larger situation, a moral dilemma that evolves through the story, relationships that create loyalty conflicts, and a distinct voice that makes their chapters immediately recognizable. The antagonist should be as dimensional as the protagonists — with coherent motivations and a worldview that is understandable even if wrong.
-  planner_volume_plan: |
-    For a series: Volume 1 establishes all POVs, the world, the magic system, and the initial conflict — ending with a major convergence event that redefines the stakes. Volume 2 expands the scope, introduces new factions and complications, tests alliances, and ends with a devastating loss or betrayal. Volume 3 brings the ultimate convergence and resolution. Each volume must resolve enough threads to be satisfying while opening enough questions to demand the next book. Plan POV balance across the series — every POV should have their strongest arc.
-  planner_outline: |
-    Alternate POV chapters to maintain momentum. Chapter 1: The most accessible POV character in a compelling personal moment that hints at the larger world. Chapters 2-4: Introduce remaining POV characters, each in their distinct setting. By chapter 5-6: the reader should understand the political landscape and the magical rules. 25%: A major event that connects at least two threads. 50%: First major convergence or conflict between POV characters. 75%: A devastating setback or betrayal that raises the stakes to existential. Climax: Multi-chapter sequence that weaves all POVs into a single escalating crisis. Final chapter: New equilibrium and forward hook.
-  scene_writer: |
-    Each POV should have a distinct prose voice — the soldier writes in shorter, more visceral sentences; the scholar uses more precise, analytical language; the politician speaks in subtext. World-building should be delivered through character perception — what they notice reveals who they are and what their world is like. Magic scenes should be precise about what is being done, what it costs, and what the limits are. Battle scenes should balance tactical overview with personal stakes — the reader needs to care about the person swinging the sword, not just the army's position. Political scenes should crackle with subtext — what is said and what is meant should diverge.
-  scene_review: |
-    Check: Does the scene advance the POV character's personal arc AND the larger plot? Is world-building delivered through experience rather than exposition? If magic is used, are the rules and costs clear? In political scenes, are the stakes and subtext legible to the reader? In battle scenes, are personal stakes as vivid as tactical ones? Does the scene end with a hook strong enough to sustain the reader through the next POV switch? Is the POV voice distinct from other characters?
-  scene_rewrite: |
-    If a scene drags, add: a personal revelation that changes the character's understanding, a political maneuver that shifts the balance, a magic usage that demonstrates the system's rules in a surprising way, or interpersonal tension between allies. If world-building is too dense, filter it through character reaction and emotion. If a battle scene lacks impact, add a personal cost or a moral dilemma in the heat of combat. If a political scene is confusing, clarify the stakes in dialogue subtext.
-  chapter_review: |
-    Verify the chapter advances the POV character's arc, contributes to the larger plot, and maintains the POV's distinct voice. Check that world-building is woven into action rather than delivered as exposition. Ensure the chapter ending creates enough tension to sustain the reader through the next POV switch. For magic scenes, verify consistency with established rules. For political scenes, verify the reader can track who wants what and why. Check POV balance across the surrounding chapters.
-  chapter_rewrite: |
-    Strengthen by: sharpening the POV voice to be more distinct, adding a personal cost to political or military events, weaving world-building into character observation rather than narrator explanation, and ensuring the chapter ending is a genuine cliffhanger or revelation. If the chapter is all action, add a character moment. If it is all politics, add a visceral detail that grounds the stakes in reality.
+  global_rules: 'Epic fantasy demands both scope and intimacy. The world must feel vast and deep, but every piece of lore
+    should connect to a character''s experience or a plot consequence. The magic system must have clear rules, defined costs,
+    and specific limitations — readers should be able to predict what is possible and be surprised by how it is used, not
+    by what it can do. Multi-POV must be managed carefully: each POV must be compelling enough to carry chapters alone, and
+    each must contribute uniquely to the larger story. Political intrigue must be clear in its stakes even when complex in
+    its execution. Every battle must have personal stakes, not just strategic ones.
 
-  # --- Methodology Extension Fragments ---
-  emotion_engineering: |
-    Emotion engineering for epic fantasy:
+    '
+  scene_writer: 'Each POV should have a distinct prose voice — the soldier writes in shorter, more visceral sentences; the
+    scholar uses more precise, analytical language; the politician speaks in subtext. World-building should be delivered through
+    character perception — what they notice reveals who they are and what their world is like. Magic scenes should be precise
+    about what is being done, what it costs, and what the limits are. Battle scenes should balance tactical overview with
+    personal stakes — the reader needs to care about the person swinging the sword, not just the army''s position. Political
+    scenes should crackle with subtext — what is said and what is meant should diverge.
+
+    '
+  scene_review: 'Check: Does the scene advance the POV character''s personal arc AND the larger plot? Is world-building delivered
+    through experience rather than exposition? If magic is used, are the rules and costs clear? In political scenes, are the
+    stakes and subtext legible to the reader? In battle scenes, are personal stakes as vivid as tactical ones? Does the scene
+    end with a hook strong enough to sustain the reader through the next POV switch? Is the POV voice distinct from other
+    characters?
+
+    '
+  scene_rewrite: 'If a scene drags, add: a personal revelation that changes the character''s understanding, a political maneuver
+    that shifts the balance, a magic usage that demonstrates the system''s rules in a surprising way, or interpersonal tension
+    between allies. If world-building is too dense, filter it through character reaction and emotion. If a battle scene lacks
+    impact, add a personal cost or a moral dilemma in the heat of combat. If a political scene is confusing, clarify the stakes
+    in dialogue subtext.
+
+    '
+  chapter_review: 'Verify the chapter advances the POV character''s arc, contributes to the larger plot, and maintains the
+    POV''s distinct voice. Check that world-building is woven into action rather than delivered as exposition. Ensure the
+    chapter ending creates enough tension to sustain the reader through the next POV switch. For magic scenes, verify consistency
+    with established rules. For political scenes, verify the reader can track who wants what and why. Check POV balance across
+    the surrounding chapters.
+
+    '
+  chapter_rewrite: 'Strengthen by: sharpening the POV voice to be more distinct, adding a personal cost to political or military
+    events, weaving world-building into character observation rather than narrator explanation, and ensuring the chapter ending
+    is a genuine cliffhanger or revelation. If the chapter is all action, add a character moment. If it is all politics, add
+    a visceral detail that grounds the stakes in reality.
+
+    '
+  emotion_engineering: 'Emotion engineering for epic fantasy:
+
     - Compression phase: political setbacks, betrayals, impossible dilemmas, mounting losses, moral compromise
+
     - Release phase: earned victory, alliance vindicated, sacrifice that changes the war, magic breakthrough at great cost
+
     - Spring rule: compress for 3-5 chapters before releasing. Victory must cost something real.
+
     - Intensity formula: stakes magnitude × personal cost × time invested = emotional impact
-    - Multi-POV amplification: one POV's triumph can be another's devastating loss — use POV switching to show both sides
+
+    - Multi-POV amplification: one POV''s triumph can be another''s devastating loss — use POV switching to show both sides
+
     - The longer the build, the more devastating the payoff — epic fantasy rewards patience in emotional arcs
 
-  conflict_stakes: |
-    Conflict stakes for epic fantasy:
+    '
+  conflict_stakes: 'Conflict stakes for epic fantasy:
+
     - Every conflict must have stakes at both personal AND political levels simultaneously
+
     - Stakes escalation path: personal honor → loyalty to allies → fate of a people → the magical order → the world itself
-    - Pressure BUFFs: time running out/alliance fracturing/magic system destabilizing/intelligence failure/moral impossible choice
-    - Political stakes must be specific: not "the kingdom falls" but "these specific people you've grown to love will die"
+
+    - Pressure BUFFs: time running out/alliance fracturing/magic system destabilizing/intelligence failure/moral impossible
+    choice
+
+    - Political stakes must be specific: not "the kingdom falls" but "these specific people you''ve grown to love will die"
+
     - Magic stakes must have defined costs: every use of power at scale should extract a price that matters
 
-  hook_design: |
-    Epic fantasy hook types:
-    - information_gap: the prophecy's true meaning, who the traitor is, what the ancient ruins contain
-    - deadline: the army marches in three days, the spell must be cast before the solstice, the alliance expires
-    - mystery: why the magic is changing, what the enemy truly wants, the forgotten history that explains everything
-    - desire: the throne, the forbidden knowledge, the reunification of allies, vengeance for the fallen
-    - threat: the approaching army, the political rival's scheme, the magical corruption spreading
-    POV-switch hook rule: NEVER switch away from a POV without leaving the reader desperate to return.
-    Example: "The dragon's shadow passed over the capital. In the throne room, the queen smiled."
+    '
+  hook_design: 'Epic fantasy hook types:
 
-  core_loop: |
-    Epic fantasy core loop (every 3-4 chapters per POV thread):
+    - information_gap: the prophecy''s true meaning, who the traitor is, what the ancient ruins contain
+
+    - deadline: the army marches in three days, the spell must be cast before the solstice, the alliance expires
+
+    - mystery: why the magic is changing, what the enemy truly wants, the forgotten history that explains everything
+
+    - desire: the throne, the forbidden knowledge, the reunification of allies, vengeance for the fallen
+
+    - threat: the approaching army, the political rival''s scheme, the magical corruption spreading
+
+    POV-switch hook rule: NEVER switch away from a POV without leaving the reader desperate to return.
+
+    Example: "The dragon''s shadow passed over the capital. In the throne room, the queen smiled."
+
+    '
+  core_loop: 'Epic fantasy core loop (every 3-4 chapters per POV thread):
+
     1. Trigger: new intelligence, alliance shift, magical discovery, or enemy move
+
     2. Action: planning, execution, political maneuvering, magical working (detailed, 70% of space)
+
     3. Reward: territory gained/alliance secured/knowledge acquired — but at a cost
+
     4. Invest: the new position reshapes the landscape for all POV threads
 
+
     Multi-POV variation:
+
     - Stagger loops across POVs so different threads are at different stages
-    - One POV's "reward" can trigger another POV's "trigger"
+
+    - One POV''s "reward" can trigger another POV''s "trigger"
+
     - Every 4-5 loops across all POVs, insert a convergence event where threads collide
 
-  dialogue_rules: |
-    Epic fantasy dialogue rules:
+    '
+  dialogue_rules: 'Epic fantasy dialogue rules:
+
     - Political speech is subtext warfare: compliments that are threats, offers that are traps, refusals that are invitations
+
     - Soldiers speak in short declaratives, scholars in measured analysis, nobility in calculated ambiguity
+
     - Break Q&A: a political question might be answered with a gesture to a servant, a military order, or deliberate silence
+
     - Multi-cultural dialogue: different cultures should have distinct speech patterns, idioms, and concepts of politeness
+
     - Power in dialogue: the most powerful person in the room speaks least and last
-    - Subtext example: "You honor us with your presence, Lord Commander" (subtext: we know you're here to spy)
 
-  visual_writing: |
-    Epic fantasy visual writing rules:
+    - Subtext example: "You honor us with your presence, Lord Commander" (subtext: we know you''re here to spy)
+
+    '
+  visual_writing: 'Epic fantasy visual writing rules:
+
     - Scale-shift technique: sweep from vast landscape (armies on the horizon) to intimate detail (blood on a gauntlet)
-    - Magic visualization: show magic through its effects on the physical world — cracking stone, shifting light, temperature change
-    - Battle cinematography: alternate between the tactical overview and the soldier's-eye-view chaos
-    - World-building through senses: the smell of a foreign market, the sound of a different language, the taste of unfamiliar food
-    - Character signatures: each POV should notice different sensory details — the soldier sees tactical positions, the scholar sees historical echoes
 
-  pacing_guidance: |
-    Pacing for epic fantasy:
+    - Magic visualization: show magic through its effects on the physical world — cracking stone, shifting light, temperature
+    change
+
+    - Battle cinematography: alternate between the tactical overview and the soldier''s-eye-view chaos
+
+    - World-building through senses: the smell of a foreign market, the sound of a different language, the taste of unfamiliar
+    food
+
+    - Character signatures: each POV should notice different sensory details — the soldier sees tactical positions, the scholar
+    sees historical echoes
+
+    '
+  pacing_guidance: 'Pacing for epic fantasy:
+
     - Build: political maneuvering, alliance building, world exploration, character development, 3-4 chapters
+
     - Accelerate: intelligence failure, betrayal discovered, army mobilizes, magic destabilizes, 2-3 chapters
+
     - Climax: battle/confrontation/magical working that changes the landscape, 1-2 chapters
+
     - Breathe: aftermath, cost assessed, new alliances, seeds planted for next arc, 1-2 chapters
+
     - Cycle: build → build → accelerate → accelerate → climax → breathe → (new cycle at higher scale)
+
     - POV pacing: some threads can be in "build" while others are in "climax" — this creates propulsive cross-cutting
 
-  climax_design: |
-    Epic fantasy climax design template:
+    '
+  climax_design: 'Epic fantasy climax design template:
+
     1. Thread convergence: at least 3 POV threads arrive at the same crisis from different angles
-    2. Maximum pressure: the enemy's plan is better than ours, the magic is failing, the alliance is fracturing
+
+    2. Maximum pressure: the enemy''s plan is better than ours, the magic is failing, the alliance is fracturing
+
     3. BUFF stack: time pressure + betrayal from within + magical cost at the threshold + impossible moral choice
+
     4. Information payoff: a prophecy/mystery/planted detail from Act 1 becomes the key to everything
+
     5. Multi-POV cascade: show the climactic event from 2-3 POVs, each experiencing different aspects
+
     6. Aftermath at scale: the political map has changed, characters are altered, the world is fundamentally different
 
-  reaction_amplification: |
-    Reaction amplification for epic fantasy:
+    '
+  reaction_amplification: 'Reaction amplification for epic fantasy:
+
     - After world-changing events, show reactions at multiple scales: individual, community, political, magical
+
     - Use minor characters to show how major events affect ordinary people
-    - Cross-POV reactions: one POV's triumph seen through another POV's lens adds depth
+
+    - Cross-POV reactions: one POV''s triumph seen through another POV''s lens adds depth
+
     - Political reaction chains: a battlefield victory shifts three different political calculations
-    - The reader should see consequences ripple outward through the world they've come to know
-obligatory_scenes:
-  - code: call_to_adventure
-    label: Call to Adventure / Crossing the Threshold
-    timing: act_1
-    check_keywords: ["quest", "journey", "leave", "chosen", "destiny"]
-  - code: midpoint_reversal
-    label: Midpoint Reversal / Betrayal
-    timing: act_2_midpoint
-    check_keywords: ["betrayal", "revealed", "everything changed", "alliance", "shattered"]
-  - code: climactic_battle
-    label: Climactic Battle / Confrontation
-    timing: act_3
-    check_keywords: ["battle", "war", "final stand", "army", "clash"]
-  - code: sacrifice_or_cost
-    label: Sacrifice / Great Cost
-    timing: act_3
-    check_keywords: ["sacrifice", "died", "gave up", "cost", "fallen"]
+
+    - The reader should see consequences ripple outward through the world they''ve come to know
+
+    '

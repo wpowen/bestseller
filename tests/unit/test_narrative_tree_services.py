@@ -61,8 +61,9 @@ class FakeSession:
             return []
         return self.scalars_results.pop(0)
 
-    async def execute(self, stmt: object) -> None:
-        self.executed.append(stmt)
+    async def execute(self, *args: object, **kwargs: object) -> None:
+        if args:
+            self.executed.append(args[0])
 
 
 def build_project() -> ProjectModel:

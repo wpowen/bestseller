@@ -249,6 +249,37 @@ async def main() -> None:
     )
     logger.info("Registered daily DB maintenance job (retention=%d days)", retention_days)
 
+    # ── Library Curator weekly audit (Batch 1) ─────────────────────────
+    # Even when ``enable_material_library`` is False we still register
+    # the job — the entry point is flag-aware and short-circuits at
+    # execution time, so the job stays cheap until the flag flips on.
+    # This lets us ship the plumbing without having to redeploy the
+    # scheduler at flag-flip time.
+    try:
+        from bestseller.services.library_curator import scheduled_weekly_audit  # noqa: PLC0415
+
+        scheduler.add_job(
+            scheduled_weekly_audit,
+            trigger="cron",
+            id="library_curator_weekly",
+            replace_existing=True,
+            hour=int(os.environ.get("BESTSELLER_CURATOR_CRON_HOUR", str(
+                settings.pipeline.curator_weekly_cron_hour
+            ))),
+            minute=0,
+            day_of_week=os.environ.get(
+                "BESTSELLER_CURATOR_CRON_DOW",
+                settings.pipeline.curator_weekly_cron_day_of_week,
+            ),
+            timezone="UTC",
+        )
+        logger.info(
+            "Registered library_curator weekly audit job (flag=%s)",
+            settings.pipeline.enable_material_library,
+        )
+    except Exception:  # noqa: BLE001 — never block scheduler startup on optional jobs
+        logger.exception("Failed to register library_curator weekly audit job — skipping")
+
     scheduler.start()
     logger.info("Scheduler started with %d active jobs", len(scheduler.get_jobs()))
 

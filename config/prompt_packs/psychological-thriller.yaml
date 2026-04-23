@@ -1,58 +1,64 @@
 key: psychological-thriller
 name: Psychological Thriller
-version: "1.0"
-description: Unreliable narrators, domestic secrets, dual timelines, and devastating twists — engineered for KU thriller readers who want to question everything and trust no one, including the protagonist.
+version: '1.0'
+description: Unreliable narrators, domestic secrets, dual timelines, and devastating twists — engineered for KU thriller readers
+  who want to question everything and trust no one, including the protagonist.
 genres:
-  - Thriller
-  - Psychological Thriller
-  - Domestic Suspense
+- Thriller
+- Psychological Thriller
+- Domestic Suspense
 tags:
-  - psychological thriller
-  - unreliable narrator
-  - domestic suspense
-  - twist
-  - secrets
-  - dual timeline
+- psychological thriller
+- unreliable narrator
+- domestic suspense
+- twist
+- secrets
+- dual timeline
 source_notes:
-  - Designed for the English-language KU psychological thriller market
-  - Follows the post-Gone-Girl structural conventions of unreliable narration and domestic suspense
-  - Incorporates twist engineering and misdirection techniques
+- Designed for the English-language KU psychological thriller market
+- Follows the post-Gone-Girl structural conventions of unreliable narration and domestic suspense
+- Incorporates twist engineering and misdirection techniques
 anti_patterns:
-  - Twist that comes from nowhere with no foreshadowing — the reader should be able to see the clues on a reread
-  - Unreliable narrator whose unreliability is revealed too early, deflating the tension
-  - Thriller that relies on characters making stupid decisions instead of building genuine dread
-  - Dual timeline where one timeline is significantly less interesting than the other
-  - Big reveal that undermines everything the reader cared about without replacing it with something more compelling
-  - Pacing that is all slow burn without enough micro-twists to maintain tension
+- Twist that comes from nowhere with no foreshadowing — the reader should be able to see the clues on a reread
+- Unreliable narrator whose unreliability is revealed too early, deflating the tension
+- Thriller that relies on characters making stupid decisions instead of building genuine dread
+- Dual timeline where one timeline is significantly less interesting than the other
+- Big reveal that undermines everything the reader cared about without replacing it with something more compelling
+- Pacing that is all slow burn without enough micro-twists to maintain tension
 writing_profile_overrides:
   market:
     prompt_pack_key: psychological-thriller
     platform_target: Kindle Unlimited
-    reader_promise: Make the reader question everything — every character, every memory, every assumption. Build dread from the mundane. Then pull the rug out and make them want to immediately reread from the beginning.
+    reader_promise: Make the reader question everything — every character, every memory, every assumption. Build dread from
+      the mundane. Then pull the rug out and make them want to immediately reread from the beginning.
     selling_points:
-      - unreliable narrator
-      - jaw-dropping twist
-      - domestic secrets
-      - paranoia
-      - dual timeline
+    - unreliable narrator
+    - jaw-dropping twist
+    - domestic secrets
+    - paranoia
+    - dual timeline
     trope_keywords:
-      - psychological thriller
-      - unreliable narrator
-      - domestic suspense
+    - psychological thriller
+    - unreliable narrator
+    - domestic suspense
     hook_keywords:
-      - something is wrong
-      - missing person
-      - the lie
-      - hidden room
-      - the truth
-    opening_strategy: Open with an unsettling disruption to normalcy — something is off, but the protagonist (and reader) cannot quite identify what. Plant the first seed of doubt within the first chapter. The reader should feel unease, not just curiosity.
-    chapter_hook_strategy: End every chapter with a micro-twist, a new question, or a detail that reframes what the reader just read. Use alternating POVs or timelines to create dramatic irony and maintain tension through juxtaposition. The reader should never feel safe.
+    - something is wrong
+    - missing person
+    - the lie
+    - hidden room
+    - the truth
+    opening_strategy: Open with an unsettling disruption to normalcy — something is off, but the protagonist (and reader)
+      cannot quite identify what. Plant the first seed of doubt within the first chapter. The reader should feel unease, not
+      just curiosity.
+    chapter_hook_strategy: End every chapter with a micro-twist, a new question, or a detail that reframes what the reader
+      just read. Use alternating POVs or timelines to create dramatic irony and maintain tension through juxtaposition. The
+      reader should never feel safe.
     pacing_profile: medium
-    payoff_rhythm: Micro-twists every 2-3 chapters, a major revelation at 33% that reframes the setup, a second revelation at 66% that shifts suspicion, and the devastating final twist at 85-90%.
+    payoff_rhythm: Micro-twists every 2-3 chapters, a major revelation at 33% that reframes the setup, a second revelation
+      at 66% that shifts suspicion, and the devastating final twist at 85-90%.
   character:
     protagonist_archetype: Unreliable narrator hiding as much as they reveal
     protagonist_core_drive: Uncover the truth — but whose truth?
-    growth_curve: False normalcy to cracks appearing to unraveling to devastating revelation
     antagonist_mode: The antagonist may be the protagonist themselves, a trusted partner, or reality itself
   world:
     mystery_density: high
@@ -62,25 +68,46 @@ writing_profile_overrides:
     sentence_style: balanced
     info_density: medium
 fragments:
-  global_rules: |
-    This is a psychological thriller — the reader's trust is the currency you are spending. Every chapter must either plant a clue, deepen the unease, shift suspicion, or deliver a micro-twist. The unreliable narrator must be carefully calibrated: the reader should sense something is off but not be able to identify exactly what until the reveal. The twist must be EARNED — plant at least three specific clues that, on rereading, make the twist feel inevitable rather than arbitrary. Domestic details should be used to build dread — the familiar made sinister. Pacing must balance slow-burn atmosphere with enough forward momentum to prevent the reader from setting the book down.
-  planner_book_spec: |
-    Structure around the twist architecture: False Normal (Act 1, 0-25%) — establish what the reader believes to be true. Introduce the protagonist, the domestic setting, and the initial disruption. Plant clues for the twist disguised as character details or setting. First Crack (25-33%) — a revelation that makes the reader question the setup. Deepening Suspicion (Act 2A, 33-50%) — the investigation or unraveling accelerates, multiple suspects or explanations emerge. Second Shift (50-66%) — a major revelation that reframes suspicion entirely. Unraveling (Act 2B, 66-80%) — the pace accelerates as secrets surface rapidly. The Twist (80-90%) — the devastating reveal that recontextualizes everything. Aftermath (90-100%) — the emotional and moral fallout of the truth.
-  planner_world_spec: |
-    The setting should feel claustrophobic and deceptively normal — a house, a neighborhood, a marriage, a small community. Familiar spaces should become sinister: a locked room, a deleted browser history, a neighbor who watches too closely. Use the domestic environment as a character — the house that holds secrets, the town that keeps them. If using a dual timeline, each timeline should have its own distinct atmosphere. The world should feel like it has a surface version (what everyone sees) and a hidden version (the truth).
-  planner_cast_spec: |
-    Every character should be a viable suspect or an unreliable source. Design characters with: a public persona and a private truth, a clear motivation for deception, and at least one scene that could be reread with new meaning after the twist. The protagonist must be complex enough to carry the unreliable narration — not a passive observer but someone with agency and secrets. Include a character who seems trustworthy but harbors a critical secret, and a character who seems suspicious but is ultimately innocent.
-  planner_volume_plan: |
-    Psychological thrillers are typically standalones, but series can follow the same protagonist (detective or recurring character) or the same town/community. If series: each book is a complete mystery with its own twist, but a larger conspiracy or character arc spans the series. The protagonist's own reliability and past should deepen across volumes.
-  planner_outline: |
-    Chapter 1: Establish the "normal" and plant the first seed of unease — something is slightly wrong. Chapters 2-5: Build the domestic world, introduce the cast, deepen the protagonist's perspective (which the reader will later question). 25% mark: The inciting disruption — a disappearance, a discovery, a confession. 33% mark: First revelation that reframes the situation. 50%: The investigation shifts direction — a new suspect or motive emerges. 66%: Second major revelation — everything the reader believed is challenged. 75-80%: Accelerating unraveling as secrets cascade. 85%: THE TWIST — the reveal that recontextualizes the entire narrative. 90-100%: Aftermath and resolution.
-  scene_writer: |
-    Write with controlled precision. Use short sentences to build tension, longer sentences for the deceptive calm of "normal" scenes. Let domestic details carry weight — a cup left in the wrong place, a phone turned face-down, a hesitation before answering. Plant clues in the texture of the prose: word choice, sensory details, what the narrator notices and what they skip. In dual-timeline chapters, let the juxtaposition create irony. Use paragraph breaks and white space for emphasis. Let silence and absence speak. Internal monologue should reveal character while hiding truth — the narrator should justify and rationalize in ways that feel natural but are ultimately self-serving.
-  scene_review: |
-    Check: Does the scene advance the mystery or deepen the unease? Is there at least one clue, red herring, or micro-twist? Is the unreliable narration calibrated — enough truth to be believed, enough omission to mislead? Does the domestic setting contribute to atmosphere? Is the pacing right — tense but not exhausting? Does the scene end with a hook that compels the reader forward? Could any line in this scene be read differently after the twist? Is the protagonist active, not just observing?
-  scene_rewrite: |
-    If a scene feels flat, add: a detail that is innocuous now but devastating after the twist, a moment of interpersonal tension where someone says one thing and means another, a sensory detail that builds unease (a sound, a smell, something out of place), or a micro-revelation that shifts the reader's theory. If the scene is too slow, add a disruption to the domestic calm. If it is too frantic, add a moment of false normalcy that makes the dread worse by contrast.
-  chapter_review: |
-    Verify the chapter contains at least one of: a planted clue, a micro-twist, a shift in suspicion, a deepening of the unreliable narration, or an atmospheric dread beat. The chapter must end with a hook. Check that the pacing maintains momentum without being breathless. Verify that the unreliable narration is consistent — the narrator's blind spots and self-deceptions should be stable and character-based. Ensure the twist clues are planted subtly — obvious on reread, invisible on first read.
-  chapter_rewrite: |
-    Strengthen by: adding a reread-rewarding clue disguised in ordinary detail, injecting a moment of interpersonal tension or deception, tightening the prose to eliminate anything that doesn't serve atmosphere or plot, and sharpening the chapter-ending hook to a revelation, question, or unsettling image. If the chapter feels directionless, give the protagonist a specific investigative action that produces an unexpected result.
+  global_rules: 'This is a psychological thriller — the reader''s trust is the currency you are spending. Every chapter must
+    either plant a clue, deepen the unease, shift suspicion, or deliver a micro-twist. The unreliable narrator must be carefully
+    calibrated: the reader should sense something is off but not be able to identify exactly what until the reveal. The twist
+    must be EARNED — plant at least three specific clues that, on rereading, make the twist feel inevitable rather than arbitrary.
+    Domestic details should be used to build dread — the familiar made sinister. Pacing must balance slow-burn atmosphere
+    with enough forward momentum to prevent the reader from setting the book down.
+
+    '
+  scene_writer: 'Write with controlled precision. Use short sentences to build tension, longer sentences for the deceptive
+    calm of "normal" scenes. Let domestic details carry weight — a cup left in the wrong place, a phone turned face-down,
+    a hesitation before answering. Plant clues in the texture of the prose: word choice, sensory details, what the narrator
+    notices and what they skip. In dual-timeline chapters, let the juxtaposition create irony. Use paragraph breaks and white
+    space for emphasis. Let silence and absence speak. Internal monologue should reveal character while hiding truth — the
+    narrator should justify and rationalize in ways that feel natural but are ultimately self-serving.
+
+    '
+  scene_review: 'Check: Does the scene advance the mystery or deepen the unease? Is there at least one clue, red herring,
+    or micro-twist? Is the unreliable narration calibrated — enough truth to be believed, enough omission to mislead? Does
+    the domestic setting contribute to atmosphere? Is the pacing right — tense but not exhausting? Does the scene end with
+    a hook that compels the reader forward? Could any line in this scene be read differently after the twist? Is the protagonist
+    active, not just observing?
+
+    '
+  scene_rewrite: 'If a scene feels flat, add: a detail that is innocuous now but devastating after the twist, a moment of
+    interpersonal tension where someone says one thing and means another, a sensory detail that builds unease (a sound, a
+    smell, something out of place), or a micro-revelation that shifts the reader''s theory. If the scene is too slow, add
+    a disruption to the domestic calm. If it is too frantic, add a moment of false normalcy that makes the dread worse by
+    contrast.
+
+    '
+  chapter_review: 'Verify the chapter contains at least one of: a planted clue, a micro-twist, a shift in suspicion, a deepening
+    of the unreliable narration, or an atmospheric dread beat. The chapter must end with a hook. Check that the pacing maintains
+    momentum without being breathless. Verify that the unreliable narration is consistent — the narrator''s blind spots and
+    self-deceptions should be stable and character-based. Ensure the twist clues are planted subtly — obvious on reread, invisible
+    on first read.
+
+    '
+  chapter_rewrite: 'Strengthen by: adding a reread-rewarding clue disguised in ordinary detail, injecting a moment of interpersonal
+    tension or deception, tightening the prose to eliminate anything that doesn''t serve atmosphere or plot, and sharpening
+    the chapter-ending hook to a revelation, question, or unsettling image. If the chapter feels directionless, give the protagonist
+    a specific investigative action that produces an unexpected result.
+
+    '

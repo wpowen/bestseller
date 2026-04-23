@@ -69,8 +69,9 @@ class FakeSession:
     async def get(self, model: object, key: object) -> object | None:
         return self.get_map.get((model, key))
 
-    async def execute(self, stmt: object) -> None:
-        self.executed.append(stmt)
+    async def execute(self, *args: object, **kwargs: object) -> None:
+        if args:
+            self.executed.append(args[0])
 
 
 def build_settings():

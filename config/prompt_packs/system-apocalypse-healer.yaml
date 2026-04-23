@@ -1,60 +1,67 @@
 key: system-apocalypse-healer
 name: System Apocalypse — Healer/Support
-version: "1.0"
-description: Earth integrates with a cosmic System; MC is classed as Healer/Support, not Fighter. Subverts the combat-MC trope, focuses on strategic support, medical triage, and building survivor communities. 2026 Royal Road + KU growth lane.
+version: '1.0'
+description: Earth integrates with a cosmic System; MC is classed as Healer/Support, not Fighter. Subverts the combat-MC trope,
+  focuses on strategic support, medical triage, and building survivor communities. 2026 Royal Road + KU growth lane.
 genres:
-  - LitRPG
-  - System Apocalypse
-  - Progression Fantasy
+- LitRPG
+- System Apocalypse
+- Progression Fantasy
 tags:
-  - system apocalypse
-  - healer-mc
-  - support class
-  - survival
-  - found family
-  - progression
-  - subversive litrpg
+- system apocalypse
+- healer-mc
+- support class
+- survival
+- found family
+- progression
+- subversive litrpg
 source_notes:
-  - Built for the "System Apocalypse but MC isn't a fighter" trope subversion that surged in 2026
-  - Pairs tactical combat tension with emotional depth — MC keeps others alive
-  - Uses transparent LitRPG stats but progression is earned through healing, strategy, crafting, not kill XP
+- Built for the "System Apocalypse but MC isn't a fighter" trope subversion that surged in 2026
+- Pairs tactical combat tension with emotional depth — MC keeps others alive
+- Uses transparent LitRPG stats but progression is earned through healing, strategy, crafting, not kill XP
 anti_patterns:
-  - MC quietly switches to combat class mid-book and the premise collapses
-  - Fighters sidelined — MC becomes indispensable in a way that feels authorial rather than earned
-  - Healer class reduced to a mana-bottle; no strategic depth or moral weight
-  - Survivor camp scenes turn into flat politics without character interiority
-  - System lore-dumped rather than revealed through gameplay consequences
+- MC quietly switches to combat class mid-book and the premise collapses
+- Fighters sidelined — MC becomes indispensable in a way that feels authorial rather than earned
+- Healer class reduced to a mana-bottle; no strategic depth or moral weight
+- Survivor camp scenes turn into flat politics without character interiority
+- System lore-dumped rather than revealed through gameplay consequences
 writing_profile_overrides:
   market:
     prompt_pack_key: system-apocalypse-healer
     platform_target: Royal Road + Kindle Unlimited
-    reader_promise: Deliver the adrenaline of a system-apocalypse world with a protagonist whose agency comes from keeping others alive. Every fight is survived because of the MC, not won by them.
+    reader_promise: Deliver the adrenaline of a system-apocalypse world with a protagonist whose agency comes from keeping
+      others alive. Every fight is survived because of the MC, not won by them.
     selling_points:
-      - fresh subversion of a crowded genre
-      - emotionally weighted combat from the medic's side
-      - clear support-class progression tree
-      - found-family + survivor community politics
-      - strategic tactical combat without MC power fantasy
+    - fresh subversion of a crowded genre
+    - emotionally weighted combat from the medic's side
+    - clear support-class progression tree
+    - found-family + survivor community politics
+    - strategic tactical combat without MC power fantasy
     trope_keywords:
-      - system apocalypse
-      - healer mc
-      - support class
-      - survival
-      - litrpg
+    - system apocalypse
+    - healer mc
+    - support class
+    - survival
+    - litrpg
     hook_keywords:
-      - integration day
-      - triage
-      - class unlock
-      - dungeon
-    opening_strategy: Integration hour — the System descends. Chapter 1 must deliver the MC's first class choice (actively rejecting combat classes), the first life they save, and the first stat gain from healing. By chapter 3, the MC must have a small team who understands their role.
-    chapter_hook_strategy: End chapters on either a new incoming wave/dungeon ping or a survivor's wound the MC must process emotionally. Avoid "MC suddenly levels up and wipes out enemies" cliffhangers.
+    - integration day
+    - triage
+    - class unlock
+    - dungeon
+    opening_strategy: Integration hour — the System descends. Chapter 1 must deliver the MC's first class choice (actively
+      rejecting combat classes), the first life they save, and the first stat gain from healing. By chapter 3, the MC must
+      have a small team who understands their role.
+    chapter_hook_strategy: End chapters on either a new incoming wave/dungeon ping or a survivor's wound the MC must process
+      emotionally. Avoid "MC suddenly levels up and wipes out enemies" cliffhangers.
     pacing_profile: medium
-    payoff_rhythm: Every chapter at least one life saved / stat gained. Every 3-4 chapters a class-tree unlock. Every volume a major dungeon/wave survived with costs. Final payoff = MC accepted as indispensable strategic anchor.
+    payoff_rhythm: Every chapter at least one life saved / stat gained. Every 3-4 chapters a class-tree unlock. Every volume
+      a major dungeon/wave survived with costs. Final payoff = MC accepted as indispensable strategic anchor.
   character:
-    protagonist_archetype: A medic, teacher, nurse, caretaker, or empath chosen by the System as a Healer/Support class — not because they're weak but because it fits them
+    protagonist_archetype: A medic, teacher, nurse, caretaker, or empath chosen by the System as a Healer/Support class —
+      not because they're weak but because it fits them
     protagonist_core_drive: Keep as many people alive as possible while the world burns, without losing their own humanity
-    growth_curve: Reluctant responsibility → deliberate acceptance of the healer role → strategic indispensability → moral weight of choosing who to save
-    antagonist_mode: External — System monsters, rival survivor factions, hostile guilds. Internal — the pressure of triage choices and survivor guilt.
+    antagonist_mode: External — System monsters, rival survivor factions, hostile guilds. Internal — the pressure of triage
+      choices and survivor guilt.
   world:
     mystery_density: medium
     worldbuilding_density: medium
@@ -63,46 +70,35 @@ writing_profile_overrides:
     sentence_style: balanced
     info_density: medium
 fragments:
-  global_rules: |
-    This is System Apocalypse with a Healer/Support MC. Combat happens but the camera is with the medic — we see the wounds, the triage decisions, the mana math, the people left behind. System notifications are functional and tactical. Avoid the temptation to "let the MC deal the killing blow" — their power is keeping fighters alive. Every chapter must include one life-or-death decision the MC makes that isn't a kill.
-  planner_book_spec: |
-    Structure: Act 1 — integration day, class choice, first saved life, forming the team. Act 2A — small-scale survival (one apartment block/school shelter), establishing routines and relationships. Act 2B — scale-up pressure: joining a guild, discovering a rival faction, entering a mid-tier dungeon as support. Act 3 — a wave event or guild war where the MC's strategic role becomes unmistakable and they face a major triage choice.
-  planner_world_spec: |
-    Post-integration Earth. Cities half-wrecked, half-integrated — malls becoming dungeons, subways becoming instances, parks sprouting monsters. Design a clear Class system with readable tiers (Novice Healer → Field Medic → Battle Chirurgeon → Lifebinder). Mana/focus/resource economy must be tight. Include guild politics and scarce resources (food, vaccines, mana crystals).
-  planner_cast_spec: |
-    Core team around the MC: (1) the "fighter" who trusts the MC completely and whose arc is learning to be defended, (2) the pragmatist who questions triage decisions, (3) a child or dependent the MC must protect, (4) an ex-combat-class ally who transitioned to support and mentors the MC. Villains include hostile guild leaders who view healers as resources.
-  planner_volume_plan: |
-    Volume 1 — Integration, first team, first dungeon, first unavoidable loss. Volume 2 — Joining/rejecting a guild, mid-tier dungeon, moral dilemma about whom to heal first. Volume 3 — Wave event or guild war; MC's strategic reputation cemented; tragic but chosen ending to a major arc. Each volume must end with the MC making a hard triage choice.
-  planner_outline: |
-    Chapter 1 — Integration hour, class choice (explicit rejection of combat), first save.
-    Chapters 2-5 — Forming a small team, first shelter, first monster encounter where MC proves support value.
-    Chapters 6-10 — First dungeon as support-class. Small wins, one unavoidable loss.
-    Midpoint — Guild contact / rival faction. MC's role questioned by outsiders.
-    Chapters 15-20 — Mid-tier dungeon, class-tree unlock, relationship deepening.
-    Chapters 21-26 — Wave event/guild war; triage climax; MC named strategic anchor.
-    Every chapter ends on either an incoming threat or an unresolved emotional wound.
-  scene_writer: |
-    Combat scenes shot from the support angle — MC tracking HP bars, mana pools, enemy aggro patterns, escape routes. Show fighters from the medic's gaze: their wounds, their panic, their trust. System notifications used as tactical tools. Emotional beats should center on triage weight and survivor guilt. Avoid authorial exposition on System lore — reveal through gameplay.
-  scene_review: |
-    Check: Is combat seen from support POV? Does the MC make a support-class decision (not a kill)? Are class-tree progressions tied to emotional beats? Is System lore revealed through consequence, not lecture? Does the scene respect the premise (MC is not a hidden combat monster)?
-  scene_rewrite: |
-    If the scene drifts toward MC-as-fighter — cut the MC's combat action and replace with a tactical healing/strategic decision. If emotional flatness — add a triage choice, a wounded teammate monologue, or a survivor confession.
-  chapter_review: |
-    Verify: one life-or-death support choice, one relationship beat, one System/class interaction, one forward-pressure hook. Combat must be survived, not steamrolled.
-  chapter_rewrite: |
-    Deepen the medic POV — add mana math, triage anxiety, a fighter's gratitude, or a survivor's grief.
-  conflict_stakes: |
-    Stakes are always "who dies if the MC picks wrong." Never "will MC win the fight" — the MC isn't winning fights, they're keeping fighters on their feet.
-obligatory_scenes:
-  - code: integration_day
-    label: Integration hour + class choice
-    timing: act_1
-  - code: first_save
-    label: First life saved via support class
-    timing: act_1
-  - code: unavoidable_loss
-    label: First loss the MC couldn't prevent
-    timing: act_2_midpoint
-  - code: triage_climax
-    label: Triage climax under wave/guild pressure
-    timing: act_3
+  global_rules: 'This is System Apocalypse with a Healer/Support MC. Combat happens but the camera is with the medic — we
+    see the wounds, the triage decisions, the mana math, the people left behind. System notifications are functional and tactical.
+    Avoid the temptation to "let the MC deal the killing blow" — their power is keeping fighters alive. Every chapter must
+    include one life-or-death decision the MC makes that isn''t a kill.
+
+    '
+  scene_writer: 'Combat scenes shot from the support angle — MC tracking HP bars, mana pools, enemy aggro patterns, escape
+    routes. Show fighters from the medic''s gaze: their wounds, their panic, their trust. System notifications used as tactical
+    tools. Emotional beats should center on triage weight and survivor guilt. Avoid authorial exposition on System lore —
+    reveal through gameplay.
+
+    '
+  scene_review: 'Check: Is combat seen from support POV? Does the MC make a support-class decision (not a kill)? Are class-tree
+    progressions tied to emotional beats? Is System lore revealed through consequence, not lecture? Does the scene respect
+    the premise (MC is not a hidden combat monster)?
+
+    '
+  scene_rewrite: 'If the scene drifts toward MC-as-fighter — cut the MC''s combat action and replace with a tactical healing/strategic
+    decision. If emotional flatness — add a triage choice, a wounded teammate monologue, or a survivor confession.
+
+    '
+  chapter_review: 'Verify: one life-or-death support choice, one relationship beat, one System/class interaction, one forward-pressure
+    hook. Combat must be survived, not steamrolled.
+
+    '
+  chapter_rewrite: 'Deepen the medic POV — add mana math, triage anxiety, a fighter''s gratitude, or a survivor''s grief.
+
+    '
+  conflict_stakes: 'Stakes are always "who dies if the MC picks wrong." Never "will MC win the fight" — the MC isn''t winning
+    fights, they''re keeping fighters on their feet.
+
+    '

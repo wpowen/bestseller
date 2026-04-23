@@ -6,6 +6,7 @@ from uuid import UUID
 
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
+    BigInteger,
     Boolean,
     CheckConstraint,
     DateTime,
@@ -1858,4 +1859,201 @@ class ForeshadowingLedgerModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     description: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[str] = mapped_column(
         String(20), nullable=False, server_default=text("'planned'")
+    )
+
+
+class MaterialLibraryModel(Base):
+    """Global multi-dimensional research corpus.
+
+    Stores structured entries (world settings, power systems, factions,
+    character archetypes, plot patterns, scene templates, …) indexed by
+    ``(dimension, genre, sub_genre)`` and by a pgvector HNSW index for
+    semantic retrieval.
+
+    The table is *not* project-scoped — entries are shared across every
+    project that matches the same genre/sub_genre.  Per-project
+    derivations live in the separate ``project_materials`` table added
+    in Batch 2 (migration 0022).
+
+    Lifecycle columns:
+
+    * ``status`` — ``active`` | ``deprecated`` | ``review``.
+    * ``usage_count`` / ``last_used_at`` — maintained by ``mark_used``.
+      Consumed by the cross-project novelty guard (Batch 3) to down-rank
+      over-used entries.
+
+    See :mod:`bestseller.services.material_library` for the read/write
+    API layered on top of this model.
+    """
+
+    __tablename__ = "material_library"
+    __table_args__ = (
+        UniqueConstraint("dimension", "slug", name="uq_material_dimension_slug"),
+        Index("ix_material_dim_genre", "dimension", "genre", "sub_genre"),
+        Index("ix_material_status", "status"),
+        Index("ix_material_usage", "usage_count"),
+        Index(
+            "ix_material_embedding_hnsw",
+            "embedding",
+            postgresql_using="hnsw",
+            postgresql_ops={"embedding": "vector_cosine_ops"},
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+
+    dimension: Mapped[str] = mapped_column(String(48), nullable=False)
+    genre: Mapped[str | None] = mapped_column(String(64))
+    sub_genre: Mapped[str | None] = mapped_column(String(64))
+    tags_json: Mapped[JSON_LIST] = mapped_column(
+        JSONB, nullable=False, default=list, server_default=text("'[]'::jsonb")
+    )
+
+    slug: Mapped[str] = mapped_column(String(160), nullable=False)
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    content_json: Mapped[JSON_DICT] = mapped_column(JSONB, nullable=False, default=dict)
+    narrative_summary: Mapped[str] = mapped_column(Text, nullable=False)
+    embedding: Mapped[Any | None] = mapped_column(Vector(1024), nullable=True)
+
+    source_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    source_citations_json: Mapped[JSON_LIST | None] = mapped_column(JSONB)
+    confidence: Mapped[float] = mapped_column(
+        Float, nullable=False, server_default=text("0.0")
+    )
+    coverage_score: Mapped[float | None] = mapped_column(Float)
+
+    status: Mapped[str] = mapped_column(
+        String(16), nullable=False, server_default=text("'active'")
+    )
+    usage_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default=text("0")
+    )
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("NOW()"),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("NOW()"),
+        onupdate=text("NOW()"),
+    )
+
+
+# ── Batch 2: Project Materials ─────────────────────────────────────────────
+
+
+class ProjectMaterialModel(Base):
+    """Per-project material entries forged from the global material library.
+
+    Each row is owned by one project (``project_id`` FK) and holds a
+    differentiated variant of one or more global library entries for a
+    specific dimension (``material_type``).  The Forge agents produce
+    these by retrieving library seeds, running an LLM differentiation
+    pass, and persisting the unique result here.
+
+    ``source_library_ids_json`` records which ``material_library.id``
+    values were used as seeds so the cross-project novelty guard (Batch 3)
+    can track family relationships and prevent over-reuse of the same
+    library base.
+
+    ``promoted_to_library_id`` is NULL until a Batch-3 novelty_critic
+    approves the entry for back-promotion into ``material_library``.
+
+    Feature flag: ``settings.pipeline.enable_forge_pipeline``.
+    """
+
+    __tablename__ = "project_materials"
+    __table_args__ = (
+        UniqueConstraint(
+            "project_id",
+            "material_type",
+            "slug",
+            name="uq_pm_project_type_slug",
+        ),
+        Index("ix_pm_project_type", "project_id", "material_type"),
+        Index("ix_pm_status", "status"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+
+    project_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    material_type: Mapped[str] = mapped_column(String(48), nullable=False)
+
+    slug: Mapped[str] = mapped_column(String(160), nullable=False)
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    content_json: Mapped[JSON_DICT] = mapped_column(JSONB, nullable=False, default=dict)
+    narrative_summary: Mapped[str] = mapped_column(Text, nullable=False)
+
+    source_library_ids_json: Mapped[JSON_LIST | None] = mapped_column(JSONB)
+    variation_notes: Mapped[str | None] = mapped_column(Text)
+    promoted_to_library_id: Mapped[int | None] = mapped_column(BigInteger)
+
+    status: Mapped[str] = mapped_column(
+        String(16), nullable=False, server_default=text("'active'")
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("NOW()"),
+    )
+
+
+# ── Batch 3: Cross-Project Fingerprints ────────────────────────────────────
+
+
+class CrossProjectFingerprintModel(Base):
+    """Per-entry fingerprints stored for cross-project novelty detection.
+
+    Populated by ``bestseller.services.novelty_critic.register_fingerprint``
+    immediately after a Forge successfully emits a ``project_materials`` row.
+
+    Two-layer novelty check:
+
+    * ``entity_name`` stores the lower-cased display name so exact-match
+      collision detection is a single indexed SELECT.
+    * ``embedding_json`` stores the hashed embedding as a JSONB float array
+      so cosine similarity can be computed in Python without requiring a
+      pgvector index on this table (genre × dimension buckets stay small).
+
+    Feature flag: ``settings.pipeline.enable_novelty_guard``.
+    """
+
+    __tablename__ = "cross_project_fingerprints"
+    __table_args__ = (
+        Index("ix_cpf_genre_dim", "genre", "dimension"),
+        Index("ix_cpf_project", "project_id"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+
+    project_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+
+    genre: Mapped[str] = mapped_column(String(64), nullable=False)
+    dimension: Mapped[str] = mapped_column(String(48), nullable=False)
+
+    # Lower-cased display name for O(1) exact-match collision detection.
+    entity_name: Mapped[str | None] = mapped_column(String(200))
+    slug: Mapped[str] = mapped_column(String(160), nullable=False)
+
+    # Hashed float embedding stored as a JSONB array.
+    embedding_json: Mapped[JSON_LIST | None] = mapped_column(JSONB)
+
+    # Informational back-link; no FK constraint so rows survive independently.
+    source_material_id: Mapped[int | None] = mapped_column(BigInteger)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("NOW()"),
     )

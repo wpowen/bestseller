@@ -346,6 +346,22 @@ class LLMCompletionRequest(BaseModel):
     step_run_id: UUID | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
 
+    # ── Tool-use / function-calling extensions (Batch 1 Stage 0) ──────────
+    # ``tools`` is the OpenAI-style function schema list passed straight
+    # through to the provider.  ``tool_choice`` is "auto" | "none" | a
+    # specific ``{"type":"function","function":{"name":...}}`` dict.
+    # Both are forwarded verbatim to litellm.acompletion.
+    tools: list[dict[str, Any]] | None = None
+    tool_choice: str | dict[str, Any] | None = None
+
+    # When running a multi-round tool loop, the caller needs to replay the
+    # prior assistant ``tool_calls`` + ``tool`` response messages on each
+    # turn.  If ``messages_override`` is provided, it REPLACES the default
+    # ``[system, user]`` wrapper — callers are responsible for including
+    # the system + initial user messages themselves.  This is intentional:
+    # it makes the override explicit rather than silently concatenating.
+    messages_override: list[dict[str, Any]] | None = None
+
 
 class LLMCompletionResult(BaseModel):
     content: str
@@ -356,6 +372,16 @@ class LLMCompletionResult(BaseModel):
     output_tokens: int | None = None
     latency_ms: int | None = None
     finish_reason: str | None = None
+
+    # ── Tool-use extensions ────────────────────────────────────────────────
+    # ``tool_calls`` is a list of structured tool-call records parsed from
+    # the provider's response.  ``None`` means the model returned plain
+    # text; an empty list means the model was offered tools but declined.
+    tool_calls: list[dict[str, Any]] | None = None
+    # ``raw_message`` is the full assistant message dict (content +
+    # tool_calls if any) suitable for appending to ``messages_override``
+    # on the next round of a tool loop.
+    raw_message: dict[str, Any] | None = None
 
 
 def _hash_prompt(system_prompt: str, user_prompt: str) -> str:
@@ -467,10 +493,75 @@ async def _collect_streaming_content(
     return content, input_tokens, output_tokens, finish_reason
 
 
+def _extract_tool_calls(message: Any) -> list[dict[str, Any]] | None:
+    """Normalise an LLM assistant message's ``tool_calls`` into plain dicts.
+
+    Providers return tool_calls in different shapes (pydantic models, dicts,
+    None).  We produce a uniform list[dict] of the form::
+
+        [{"id": "...", "type": "function",
+          "function": {"name": "...", "arguments": "{...json-string...}"}}]
+
+    or ``None`` if the model returned plain text with no tool calls.
+    """
+    if message is None:
+        return None
+    raw = _lookup_field(message, "tool_calls")
+    if not raw:
+        return None
+    if not isinstance(raw, list):
+        return None
+    normalised: list[dict[str, Any]] = []
+    for call in raw:
+        call_id = _lookup_field(call, "id")
+        call_type = _lookup_field(call, "type") or "function"
+        fn = _lookup_field(call, "function")
+        fn_name = _lookup_field(fn, "name") if fn is not None else None
+        fn_args = _lookup_field(fn, "arguments") if fn is not None else None
+        if not isinstance(fn_name, str) or not fn_name:
+            continue
+        if fn_args is None:
+            fn_args = ""
+        elif not isinstance(fn_args, str):
+            # Some providers occasionally return pre-parsed dicts; normalise
+            # to JSON string so downstream consumers have a single contract.
+            import json as _json  # local import to avoid top-level noise
+            try:
+                fn_args = _json.dumps(fn_args, ensure_ascii=False)
+            except Exception:
+                fn_args = str(fn_args)
+        normalised.append(
+            {
+                "id": call_id if isinstance(call_id, str) else "",
+                "type": call_type if isinstance(call_type, str) else "function",
+                "function": {"name": fn_name, "arguments": fn_args},
+            }
+        )
+    return normalised or None
+
+
+def _build_raw_assistant_message(
+    content: str,
+    tool_calls: list[dict[str, Any]] | None,
+) -> dict[str, Any]:
+    """Construct an OpenAI-shaped assistant message for tool-loop replay."""
+    msg: dict[str, Any] = {"role": "assistant", "content": content or None}
+    if tool_calls:
+        msg["tool_calls"] = tool_calls
+    return msg
+
+
 async def _call_litellm(
     request: LLMCompletionRequest,
     role_settings: LLMRoleSettings,
-) -> tuple[str, int | None, int | None, str | None]:
+) -> tuple[str, int | None, int | None, str | None, list[dict[str, Any]] | None, dict[str, Any] | None]:
+    """Invoke litellm.acompletion and return content + tokens + tool_calls.
+
+    Returns a 6-tuple: ``(content, input_tokens, output_tokens,
+    finish_reason, tool_calls, raw_assistant_message)``.  The last two are
+    ``None`` when the caller did not request tools, preserving prior
+    semantics for existing callers.
+    """
     # Opt-C: install a shared httpx.AsyncClient into litellm on first use, so
     # subsequent calls reuse keep-alive connections to the model provider and
     # avoid per-request TLS handshakes.
@@ -480,20 +571,43 @@ async def _call_litellm(
     if acompletion is None:
         raise RuntimeError("litellm.acompletion is not available.")
 
-    completion_kwargs: dict[str, Any] = {
-        "model": role_settings.model,
-        "messages": [
+    # ── Assemble messages ─────────────────────────────────────────────────
+    if request.messages_override is not None:
+        # Caller provides the complete message array (including system +
+        # assistant + tool turns for a multi-round tool loop).  We trust
+        # it and pass through verbatim.
+        messages = list(request.messages_override)
+    else:
+        messages = [
             {"role": "system", "content": request.system_prompt},
             {"role": "user", "content": request.user_prompt},
-        ],
+        ]
+
+    completion_kwargs: dict[str, Any] = {
+        "model": role_settings.model,
+        "messages": messages,
         "temperature": role_settings.temperature,
         "max_tokens": role_settings.max_tokens,
         "timeout": role_settings.timeout_seconds,
         "stream": role_settings.stream,
     }
+
+    # ── Tool-use wiring (Batch 1 Stage 0) ─────────────────────────────────
+    # Pass tools/tool_choice straight through to litellm.  When tools are
+    # present we force stream=False: streaming tool_call deltas would
+    # require a very different accumulator than ``_collect_streaming_content``
+    # currently does, and tool-loop callers do not need token streaming.
+    if request.tools:
+        completion_kwargs["tools"] = request.tools
+        if request.tool_choice is not None:
+            completion_kwargs["tool_choice"] = request.tool_choice
+        completion_kwargs["stream"] = False
+
     # Only pass n when >1 — many providers (MiniMax, Gemini) ignore or
     # reject the parameter, and n=1 is the default anyway.
-    if role_settings.n_candidates > 1:
+    if role_settings.n_candidates > 1 and not request.tools:
+        # n>1 + tools is rarely meaningful and more likely to confuse
+        # providers; keep n=1 whenever tools are involved.
         completion_kwargs["n"] = role_settings.n_candidates
     if role_settings.api_base:
         completion_kwargs["api_base"] = role_settings.api_base
@@ -513,11 +627,12 @@ async def _call_litellm(
         timeout=hard_timeout,
     )
 
-    if role_settings.stream:
-        return await asyncio.wait_for(
+    if completion_kwargs["stream"]:
+        content, in_tok, out_tok, finish = await asyncio.wait_for(
             _collect_streaming_content(response),
             timeout=hard_timeout,
         )
+        return content, in_tok, out_tok, finish, None, None
 
     # When multiple candidates are returned, pick the longest (most
     # detailed) response instead of blindly using choices[0].
@@ -531,22 +646,28 @@ async def _call_litellm(
             choices,
             key=lambda c: len(_extract_text_content(c.message.content)),
         )
-    content = _extract_text_content(choice.message.content)
+    message = getattr(choice, "message", None)
+    content = _extract_text_content(_lookup_field(message, "content"))
+    tool_calls = _extract_tool_calls(message)
     input_tokens, output_tokens = _extract_usage_fields(getattr(response, "usage", None))
     finish_reason = getattr(choice, "finish_reason", None)
-    if not content.strip():
+
+    # With tools, an empty content + non-empty tool_calls is the normal
+    # "model wants to call a tool" state — do NOT raise on empty content.
+    if not content.strip() and not tool_calls:
         raise ValueError(
             f"LLM response content is empty (finish_reason={finish_reason!r}, "
             f"output_tokens={output_tokens!r})."
         )
-    return content.strip(), input_tokens, output_tokens, finish_reason
+    raw_message = _build_raw_assistant_message(content.strip(), tool_calls)
+    return content.strip(), input_tokens, output_tokens, finish_reason, tool_calls, raw_message
 
 
 async def _call_litellm_with_retry(
     request: LLMCompletionRequest,
     role_settings: LLMRoleSettings,
     retry_settings: RetrySettings,
-) -> tuple[str, int | None, int | None, str | None]:
+) -> tuple[str, int | None, int | None, str | None, list[dict[str, Any]] | None, dict[str, Any] | None]:
     """Invoke ``_call_litellm`` with exponential back-off retry.
 
     Separate budgets for generic failures and rate-limit (HTTP 429)
@@ -644,6 +765,8 @@ async def complete_text(
     output_tokens = _estimate_tokens(content)
     finish_reason = "mock"
 
+    tool_calls: list[dict[str, Any]] | None = None
+    raw_message: dict[str, Any] | None = None
     started_at = perf_counter()
     if not settings.llm.mock:
         try:
@@ -654,6 +777,8 @@ async def complete_text(
                 input_tokens,
                 output_tokens,
                 finish_reason,
+                tool_calls,
+                raw_message,
             ) = await _call_litellm_with_retry(
                 request, role_settings, settings.llm.retry,
             )
@@ -703,4 +828,6 @@ async def complete_text(
         output_tokens=output_tokens,
         latency_ms=latency_ms,
         finish_reason=finish_reason,
+        tool_calls=tool_calls,
+        raw_message=raw_message,
     )

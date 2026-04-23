@@ -1,61 +1,71 @@
 key: villainess-reincarnation
 name: Villainess / Novel-Extra Reincarnation
-version: "1.0"
-description: MC reincarnates into a novel/otome game as the doomed villainess or side character and must rewrite their fate using foreknowledge. Political maneuvering, academy politics, and enemies-to-lovers undercurrents. Webnovel/RR 2026 breakout lane.
+version: '1.0'
+description: MC reincarnates into a novel/otome game as the doomed villainess or side character and must rewrite their fate
+  using foreknowledge. Political maneuvering, academy politics, and enemies-to-lovers undercurrents. Webnovel/RR 2026 breakout
+  lane.
 genres:
-  - Romantasy
-  - Fantasy
-  - Villainess
+- Romantasy
+- Fantasy
+- Villainess
 tags:
-  - villainess
-  - novel extra
-  - reincarnation
-  - regression
-  - academy
-  - enemies to lovers
-  - political intrigue
+- villainess
+- novel extra
+- reincarnation
+- regression
+- academy
+- enemies to lovers
+- political intrigue
 source_notes:
-  - Built for the 2026 otome-isekai / novel-extra wave
-  - Foreknowledge is the MC's defining asset — stories live or die by how that information gets used
-  - Strong romance subplot but romance is NOT the escape from doom — action is
-  - Blends political/academy structure with character-driven fate-rewrite arcs
+- Built for the 2026 otome-isekai / novel-extra wave
+- Foreknowledge is the MC's defining asset — stories live or die by how that information gets used
+- Strong romance subplot but romance is NOT the escape from doom — action is
+- Blends political/academy structure with character-driven fate-rewrite arcs
 anti_patterns:
-  - MC's reincarnation is announced then ignored — foreknowledge turns into a vague background detail
-  - Original protagonists (heroine, male lead) become cardboard props who defer to the MC
-  - Doom is avoided through "being loved" rather than through concrete strategic action
-  - MC cheats through every obstacle with perfect memory — kill the suspense by making them omniscient
-  - Romance overtakes fate-rewrite mid-book and the central premise dissolves
+- MC's reincarnation is announced then ignored — foreknowledge turns into a vague background detail
+- Original protagonists (heroine, male lead) become cardboard props who defer to the MC
+- Doom is avoided through "being loved" rather than through concrete strategic action
+- MC cheats through every obstacle with perfect memory — kill the suspense by making them omniscient
+- Romance overtakes fate-rewrite mid-book and the central premise dissolves
 writing_profile_overrides:
   market:
     prompt_pack_key: villainess-reincarnation
     platform_target: Kindle Unlimited + Webnovel + Royal Road
-    reader_promise: Deliver the delicious tension of knowing what's supposed to happen and racing to prevent it. Every chapter is either a canon checkpoint the MC must deflect or an unintended ripple from their last deflection.
+    reader_promise: Deliver the delicious tension of knowing what's supposed to happen and racing to prevent it. Every chapter
+      is either a canon checkpoint the MC must deflect or an unintended ripple from their last deflection.
     selling_points:
-      - foreknowledge-as-weapon storytelling
-      - canon-vs-deviation tension
-      - academy/court political stage
-      - enemies-to-lovers romantic undercurrents
-      - found family with original-novel side characters
+    - foreknowledge-as-weapon storytelling
+    - canon-vs-deviation tension
+    - academy/court political stage
+    - enemies-to-lovers romantic undercurrents
+    - found family with original-novel side characters
     trope_keywords:
-      - villainess
-      - novel extra
-      - reincarnation
-      - academy
-      - fate rewrite
+    - villainess
+    - novel extra
+    - reincarnation
+    - academy
+    - fate rewrite
     hook_keywords:
-      - doomed ending
-      - canon event
-      - deviation
-      - rival glance
-    opening_strategy: Chapter 1 must deliver three beats — (1) the MC's canonical execution/ruin scene (in flashback or premonition), (2) the awakening of past-life memory, (3) the first concrete deviation from the original script. End chapter 1 on "canon just changed."
-    chapter_hook_strategy: Chapter hooks alternate between (a) the next canon checkpoint approaching, (b) a new ripple from a past deviation surfacing, (c) a character acting in ways the original novel didn't account for. Never let canon feel abstract.
+    - doomed ending
+    - canon event
+    - deviation
+    - rival glance
+    opening_strategy: Chapter 1 must deliver three beats — (1) the MC's canonical execution/ruin scene (in flashback or premonition),
+      (2) the awakening of past-life memory, (3) the first concrete deviation from the original script. End chapter 1 on "canon
+      just changed."
+    chapter_hook_strategy: Chapter hooks alternate between (a) the next canon checkpoint approaching, (b) a new ripple from
+      a past deviation surfacing, (c) a character acting in ways the original novel didn't account for. Never let canon feel
+      abstract.
     pacing_profile: medium
-    payoff_rhythm: Every chapter, one canon deflection or unintended consequence. Every 3-4 chapters, a confrontation that previously ended in tragedy now resolved differently. Mid-volume — the male lead/rival notices the MC has changed. End-volume — a canon doom event is survived via action, not luck.
+    payoff_rhythm: Every chapter, one canon deflection or unintended consequence. Every 3-4 chapters, a confrontation that
+      previously ended in tragedy now resolved differently. Mid-volume — the male lead/rival notices the MC has changed. End-volume
+      — a canon doom event is survived via action, not luck.
   character:
-    protagonist_archetype: A reader/player of the original story reborn as its villainess, side character, or extra — intelligent, strategic, self-aware
+    protagonist_archetype: A reader/player of the original story reborn as its villainess, side character, or extra — intelligent,
+      strategic, self-aware
     protagonist_core_drive: Survive the canon death/ruin while protecting the people the original plot was cruel to
-    growth_curve: Panic → strategic deflection → building real relationships → choosing her own ending (not the canon's, not the heroine's)
-    antagonist_mode: 'Canon itself. Secondary — the original heroine/male lead whose "perfect plot" gets rewritten; court factions; family members whose cruelty set up the original ending.'
+    antagonist_mode: Canon itself. Secondary — the original heroine/male lead whose "perfect plot" gets rewritten; court factions;
+      family members whose cruelty set up the original ending.
   world:
     mystery_density: medium
     worldbuilding_density: medium
@@ -64,46 +74,37 @@ writing_profile_overrides:
     sentence_style: balanced
     info_density: medium
 fragments:
-  global_rules: |
-    This is Villainess / Novel-Extra Reincarnation. The MC has foreknowledge of a tragic original ending and is actively trying to rewrite it. Every scene must explicitly or implicitly engage with canon-vs-deviation tension. When MC uses foreknowledge, it must cost her something (a relationship strained, a resource spent, a secret exposed). Canon is a character — it pushes back when deflected. Other characters (heroine, male lead, rival) retain their agency and should sometimes surprise the MC.
-  planner_book_spec: |
-    Structure: Act 1 — canon ending foreshadowed, memory awakens, first deviation, original heroine/male lead introduced. Act 2A — MC navigates early canon events (debut, academy entrance, first ball) while building her own allies. Act 2B — a canon checkpoint the MC CAN'T fully avoid forces a creative solution; relationships with original-cast characters deepen or complicate. Act 3 — the major canon doom event (execution, banishment, ruin) arrives in a form altered by the MC's deviations; she survives not through being loved but through deliberate preparation.
-  planner_world_spec: |
-    Academy / court / imperial setting with clear social hierarchies, political factions, and canonical power players. Establish the original novel's plot summary early (in MC's memory) so readers can track deviations. Include magic/power systems as tools the MC can weaponize. The world should feel like it has momentum independent of the MC — things happen off-page.
-  planner_cast_spec: |
-    The original novel's cast as characters with their own arcs: (1) the heroine — sincere, effective, not a villain, whose presence complicates the MC's plans; (2) the male lead — initially hostile to the villainess role, begins to notice she's changed; (3) the "original villainess allies" who were pawns — MC builds genuine alliances with them; (4) family members who cast the MC as villainess — handle as complex antagonists with reasons, not cartoons. Add at least one character the MC saves who wasn't meant to survive canon.
-  planner_volume_plan: |
-    Volume 1 — Memory awakens + academy entrance + first deviation ripples. Volume 2 — Mid-canon crises (ball, tournament, engagement announcement) survived with changed outcomes. Volume 3 — The major doom event rewritten; MC steps into her chosen ending, relationships clarified, political factions realigned.
-  planner_outline: |
-    Chapter 1 — Canon doom flashback + memory awakening + first deviation.
-    Chapters 2-5 — Identity, family dynamics, first interaction with heroine/male lead where MC refuses the villainess script.
-    Chapters 6-10 — Academy entrance; MC builds first alliances; first minor canon event deflected.
-    Midpoint — Male lead begins to suspect she's not the villainess from his memory; first romantic tension.
-    Chapters 15-20 — A canon event that CAN'T be dodged, only rerouted; painful consequence.
-    Chapters 21-26 — Doom-event climax; MC survives through months of preparation, not rescue.
-    Every chapter ends on a canon checkpoint or deviation ripple.
-  scene_writer: |
-    MC's internal voice is strategic, self-aware, often amused by recognizing canon beats. Dialogue from other characters should feel independent — they aren't reading her script. When the MC deploys foreknowledge, show the mental calculation (probability of change, cost, side effects). Avoid making her omniscient — she should sometimes be wrong because canon has already drifted.
-  scene_review: |
-    Check: Does this scene engage the canon-vs-deviation premise? Does the MC's foreknowledge cost something? Do non-MC characters retain agency? Is the pacing keeping canon feeling alive as a looming structure? Is the romance (if present) a ripple from deviations, not a rescue?
-  scene_rewrite: |
-    If the scene feels floaty — anchor it to a specific canon checkpoint (event the MC remembers) and show the deflection. If the MC feels omniscient — add a detail she remembered wrong or a character acting off-script.
-  chapter_review: |
-    Verify: one canon-deflection beat, one unintended consequence from prior deflection, one relationship beat with an original-cast character, one chapter-ending hook to a looming canon event.
-  chapter_rewrite: |
-    Add either a "memory-vs-reality" mismatch, a deviation ripple surfacing, or a canon-character acting in unexpected ways.
-  reversal_design: |
-    Best reversals come from canon drift — an event the MC expected to remember turns out altered because of her earlier choices. Use these as both tension and character growth.
-obligatory_scenes:
-  - code: canon_memory_awake
-    label: Canon ending remembered
-    timing: act_1
-  - code: first_deviation
-    label: First deliberate deviation from canon
-    timing: act_1
-  - code: cast_meets_mc
-    label: Original heroine/male lead meets the "changed" villainess
-    timing: act_1_end
-  - code: doom_rewritten
-    label: Canon doom event survived via action
-    timing: act_3
+  global_rules: 'This is Villainess / Novel-Extra Reincarnation. The MC has foreknowledge of a tragic original ending and
+    is actively trying to rewrite it. Every scene must explicitly or implicitly engage with canon-vs-deviation tension. When
+    MC uses foreknowledge, it must cost her something (a relationship strained, a resource spent, a secret exposed). Canon
+    is a character — it pushes back when deflected. Other characters (heroine, male lead, rival) retain their agency and should
+    sometimes surprise the MC.
+
+    '
+  scene_writer: 'MC''s internal voice is strategic, self-aware, often amused by recognizing canon beats. Dialogue from other
+    characters should feel independent — they aren''t reading her script. When the MC deploys foreknowledge, show the mental
+    calculation (probability of change, cost, side effects). Avoid making her omniscient — she should sometimes be wrong because
+    canon has already drifted.
+
+    '
+  scene_review: 'Check: Does this scene engage the canon-vs-deviation premise? Does the MC''s foreknowledge cost something?
+    Do non-MC characters retain agency? Is the pacing keeping canon feeling alive as a looming structure? Is the romance (if
+    present) a ripple from deviations, not a rescue?
+
+    '
+  scene_rewrite: 'If the scene feels floaty — anchor it to a specific canon checkpoint (event the MC remembers) and show the
+    deflection. If the MC feels omniscient — add a detail she remembered wrong or a character acting off-script.
+
+    '
+  chapter_review: 'Verify: one canon-deflection beat, one unintended consequence from prior deflection, one relationship beat
+    with an original-cast character, one chapter-ending hook to a looming canon event.
+
+    '
+  chapter_rewrite: 'Add either a "memory-vs-reality" mismatch, a deviation ripple surfacing, or a canon-character acting in
+    unexpected ways.
+
+    '
+  reversal_design: 'Best reversals come from canon drift — an event the MC expected to remember turns out altered because
+    of her earlier choices. Use these as both tension and character growth.
+
+    '

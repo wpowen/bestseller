@@ -25,6 +25,7 @@ from bestseller.infra.db.models import (
     ChapterModel,
     CharacterModel,
     ProjectModel,
+    RewriteTaskModel,
 )
 from bestseller.services.chapter_validator import (
     CliffhangerRotationCheck,
@@ -824,6 +825,28 @@ def build_phase1_audit() -> ContinuousAudit:
     )
 
 
+def build_per_chapter_audit() -> ContinuousAudit:
+    """Factory: lightweight per-chapter audit for the pipeline's chapter loop.
+
+    Runs *only* the book-level pleasure/setup-payoff auditors so per-chapter
+    review surfaces the aggregate "hype gap" / "face-slap debt" signals
+    without replaying the full L4 stack (which already ran inline in
+    ``assemble_chapter_draft``). Callers filter the returned findings by
+    ``chapter_no`` so only current-chapter signals get persisted.
+
+    Expected latency: +2-5s per chapter. Failure is non-fatal at the call
+    site (pipelines.py wraps the invocation in try/except so the chapter
+    still advances).
+    """
+
+    return ContinuousAudit(
+        [
+            PleasureDistributionAudit(),
+            SetupPayoffTrackerAudit(),
+        ]
+    )
+
+
 def build_full_audit() -> ContinuousAudit:
     """Factory: full L4 + L5 retrospective audit + hype distribution audit.
 
@@ -888,14 +911,97 @@ async def run_and_persist_audit(
     session: AsyncSession,
     project_id: UUID,
     audit: ContinuousAudit | None = None,
+    chapter_number: int | None = None,
 ) -> AuditReport:
     """One-shot helper: scan, persist findings, return the report.
 
     Pipeline Stage 10 and the offline CLI use this so the caller doesn't
     have to know about the `ChapterAuditFindingModel` schema.
+
+    When ``chapter_number`` is provided, findings are filtered down to
+    those whose ``chapter_no`` matches (or is ``None`` — i.e. book-level
+    findings always pass through so gap-detection still surfaces). The
+    per-chapter path in pipelines.py uses this to avoid re-persisting
+    findings on earlier chapters every time a new chapter lands.
     """
 
     runner = audit or build_phase1_audit()
     report = await runner.scan(session, project_id)
+    if chapter_number is not None:
+        filtered = tuple(
+            f
+            for f in report.findings
+            if f.chapter_no is None or f.chapter_no == chapter_number
+        )
+        report = AuditReport(project_id=project_id, findings=filtered)
     await persist_audit_findings(session, report)
     return report
+
+
+async def spawn_rewrite_tasks_from_findings(
+    session: AsyncSession,
+    report: AuditReport,
+) -> int:
+    """Convert actionable audit findings into ``RewriteTaskModel`` rows.
+
+    Currently targets ``PLEASURE_SETUP_PAYOFF_DEBT`` only — unpaid
+    humiliation setups get a pending rewrite task pinned to the setup
+    chapter so the review loop (or a later batch worker) can
+    automatically compensate with a counterattack beat. Other finding
+    codes are left untouched: resurrection/stance_flip are blocked at
+    L2 earlier in the pipeline, and hype gaps are book-level signals
+    without a single "rewrite this chapter" target.
+
+    Returns the number of tasks created so callers can log it.
+    """
+
+    created = 0
+    for finding in report.findings:
+        if finding.code != "PLEASURE_SETUP_PAYOFF_DEBT":
+            continue
+        if finding.chapter_no is None:
+            continue
+        # Dedupe: skip if an open setup-payoff task for this chapter
+        # already exists (avoid spamming on every per-chapter audit).
+        existing = (
+            await session.scalars(
+                select(RewriteTaskModel.id).where(
+                    RewriteTaskModel.project_id == report.project_id,
+                    RewriteTaskModel.trigger_type == "setup_payoff_debt",
+                    RewriteTaskModel.status.in_(("pending", "queued")),
+                    RewriteTaskModel.metadata_json["setup_chapter"].astext
+                    == str(finding.chapter_no),
+                )
+            )
+        ).first()
+        if existing is not None:
+            continue
+        session.add(
+            RewriteTaskModel(
+                project_id=report.project_id,
+                trigger_type="setup_payoff_debt",
+                rewrite_strategy="inject_counterattack_payoff",
+                priority=4,
+                status="pending",
+                instructions=(
+                    "检测到角色羞辱/压制设定尚未在窗口内偿还。请在后续章节"
+                    "安排 COUNTERATTACK / FACE_SLAP / REVENGE_CLOSURE / "
+                    "UNDERDOG_WIN 类爽点予以回应，具体章节与情节自行裁定。"
+                    f"\n\n触发细节：{finding.detail}"
+                ),
+                context_required=[
+                    "chapter_context",
+                    "setup_chapter_content",
+                    "hype_scheme",
+                ],
+                metadata_json={
+                    "setup_chapter": finding.chapter_no,
+                    "audit_code": finding.code,
+                    "auditor": finding.auditor,
+                },
+            )
+        )
+        created += 1
+    if created:
+        await session.flush()
+    return created

@@ -213,12 +213,18 @@ async def extract_chapter_feedback(
 
 _SYSTEM_PROMPT_ZH = """\
 你是长篇小说反哺分析器。阅读章节正文后，提取以下结构化信息：
-1. 角色状态变化（情绪、弧线、力量等级、信念变化、知识获取、信任变化）
+1. 角色状态变化（情绪、弧线、力量等级、信念变化、知识获取、信任变化、存活状态、对主角立场）
 2. 关系事件（两人之间的关系发生了什么变化）
 3. 叙事弧节拍推进（哪些计划节拍被实际完成了）
 4. 伏笔状态（哪些伏笔被埋下或兑现了）
 5. 世界细节补充（正文中揭露了哪些新的地点/规则/势力细节）
 6. 新事实（正文中确立了哪些重要事实）
+
+立场（stance）与存活（alive_status）字段特殊要求：
+- 只有正文明确写出触发事件（背叛、结盟、救赎、死亡等）时才填写变化后的值；否则全部留 null 维持原状。
+- 填写 stance 时，必须在 stance_change_reason 里写出触发事件的一句话描述（例："本章第三场目睹父母之仇是主角所为，自此转为敌对"）。
+- alive_status 一旦判定为 deceased，填写该值即视为正式死亡，后续章节不可再复活（除非原始计划允许）。
+- 力量等级 (power_tier) 从高往低变化时，必须在 power_tier_downgrade_reason 里写出原因，否则本次变化会被过滤。
 
 只提取正文中明确呈现的内容，不要推测或虚构。
 输出必须是合法 JSON，不要解释。"""
@@ -227,6 +233,15 @@ _SYSTEM_PROMPT_EN = """\
 You are a novel feedback analyzer. After reading a chapter, extract structured \
 information about character state changes, relationship events, arc beat \
 completions, clue observations, world details, and new canon facts.
+
+Lifecycle fields — alive_status / stance / power_tier — only change when the
+prose shows an explicit triggering event (betrayal, alliance, death, sealing,
+etc.). When stance changes, stance_change_reason MUST describe the triggering
+event in one sentence, or the change is rejected. When power_tier drops,
+power_tier_downgrade_reason MUST give the cause. Once alive_status is
+"deceased" the character cannot later be "alive" again in future chapters
+unless the project's invariants allow reincarnation.
+
 Only extract what is explicitly shown in the prose. Do not infer or fabricate.
 Output valid JSON only."""
 
@@ -239,6 +254,10 @@ _OUTPUT_SCHEMA = """\
       "arc_state": "...|null",
       "power_tier": "...|null",
       "physical_state": "...|null",
+      "alive_status": "alive|injured|dying|deceased|null",
+      "stance": "ally|enemy|neutral|conflicted|protagonist|rival|null",
+      "stance_change_reason": "本章触发立场变化的关键事件简述，若无变化填 null",
+      "power_tier_downgrade_reason": "若本章力量等级下降，说明原因（封印/重伤/道具失效等），若未下降填 null",
       "beliefs_gained": ["..."],
       "beliefs_invalidated": ["..."],
       "knowledge_gained": ["..."],
@@ -524,7 +543,51 @@ async def _apply_character_state_updates(
             )
             continue
 
-        # Create snapshot
+        # Event-gated lifecycle fields: stance writeback requires a reason,
+        # alive_status "deceased" stamps death_chapter_number, power_tier
+        # downgrade requires a reason. Values that fail gating are kept in
+        # the snapshot as evidence but never propagated to CharacterModel.
+        _current_alive = getattr(character, "alive_status", None) or "alive"
+        _accepted_alive: str | None = None
+        if extraction.alive_status:
+            if _current_alive == "deceased" and extraction.alive_status != "deceased":
+                # Never resurrect — keep existing deceased state. Log so the
+                # contradiction check has evidence if the prose slipped through.
+                logger.warning(
+                    "Feedback ch%d: rejecting alive_status %s→%s for '%s' "
+                    "(character is already deceased)",
+                    chapter.chapter_number,
+                    _current_alive,
+                    extraction.alive_status,
+                    character.name,
+                )
+            else:
+                _accepted_alive = extraction.alive_status
+
+        _current_stance = getattr(character, "stance", None)
+        _accepted_stance: str | None = None
+        if (
+            extraction.stance
+            and extraction.stance != _current_stance
+            and _current_stance not in (None, "")
+        ):
+            if not (extraction.stance_change_reason or "").strip():
+                logger.warning(
+                    "Feedback ch%d: rejecting stance %s→%s for '%s' "
+                    "(no stance_change_reason provided)",
+                    chapter.chapter_number,
+                    _current_stance,
+                    extraction.stance,
+                    character.name,
+                )
+            else:
+                _accepted_stance = extraction.stance
+        elif extraction.stance and _current_stance in (None, ""):
+            # First-time stance assignment doesn't need justification.
+            _accepted_stance = extraction.stance
+
+        # Create snapshot — always record extraction values so reviewers can
+        # inspect what the LLM claimed even when gating rejected writeback.
         trust_map: dict[str, str] = dict(extraction.trust_changes) if extraction.trust_changes else {}
         beliefs = list(extraction.beliefs_gained) if extraction.beliefs_gained else []
         snapshot = CharacterStateSnapshotModel(
@@ -537,6 +600,8 @@ async def _apply_character_state_updates(
             emotional_state=extraction.emotional_state,
             physical_state=extraction.physical_state,
             power_tier=extraction.power_tier,
+            alive_status=extraction.alive_status,
+            stance=extraction.stance,
             trust_map=trust_map,
             beliefs=beliefs,
             notes=f"feedback_extraction:ch{chapter.chapter_number}",
@@ -551,6 +616,25 @@ async def _apply_character_state_updates(
             beliefs_invalidated=extraction.beliefs_invalidated,
         )
         _update_values: dict[str, Any] = {"knowledge_state_json": updated_knowledge}
+
+        # Writeback power_tier to CharacterModel so subsequent chapter prompts
+        # see the latest value rather than the bible-time default. The fallback
+        # in story_bible.get_effective_character_state depends on either the
+        # snapshot or the character row holding a non-null value; keeping the
+        # character row current makes the "most recent non-null" lookup cheap.
+        if extraction.power_tier:
+            _update_values["power_tier"] = extraction.power_tier
+
+        if _accepted_alive:
+            _update_values["alive_status"] = _accepted_alive
+            if (
+                _accepted_alive == "deceased"
+                and getattr(character, "death_chapter_number", None) is None
+            ):
+                _update_values["death_chapter_number"] = chapter.chapter_number
+
+        if _accepted_stance:
+            _update_values["stance"] = _accepted_stance
 
         # Phase-4: advance lie_truth_arc phase when core_lie is invalidated
         if extraction.beliefs_invalidated:

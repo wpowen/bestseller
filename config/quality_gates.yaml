@@ -2,8 +2,12 @@ l1_invariants:
   enabled: true
 
 l2_bible_gate:
-  enabled: false
+  enabled: true
   regen_budget: 3
+  # When set, per-chapter stance/resurrection checks are treated as audit_only
+  # for chapters finalized before the first run — prevents historical projects
+  # from becoming un-shippable the moment L2 enforcement turns on.
+  only_enforce_from_chapter: null
   checks:
     quirk_slot_requirement:
       min_quirks: 3
@@ -13,9 +17,11 @@ l2_bible_gate:
       enabled: true
     naming_pool_size:
       multiplier: 2.0
+    stance_flip_justification:
+      enabled: true
 
 l3_prompt_constructor:
-  enabled: false
+  enabled: true
   prior_chapter_tail_chars: 800
   hot_vocab_window_chapters: 5
   hot_vocab_top_n: 20
@@ -94,6 +100,12 @@ l6_write_gate:
     PLEASURE_HYPE_GAP: audit_only
     PLEASURE_COMEDIC_BEAT_STARVED: audit_only
     PLEASURE_SETUP_PAYOFF_DEBT: audit_only
+    # Character lifecycle — Phase A. Deceased speakers and stance flips
+    # without a turning-point beat must block; power-tier drift is advisory.
+    CHARACTER_RESURRECTION: block
+    STANCE_FLIP_UNJUSTIFIED: block
+    POWER_TIER_REGRESSION: audit_only
+    STANCE_FLIP_NO_ARC_BEAT: block
 
 l7_continuous_audit:
   enabled: true
@@ -101,4 +113,4 @@ l7_continuous_audit:
   schedule_cron: "0 */6 * * *"
 
 l8_scorecard:
-  enabled: false
+  enabled: true

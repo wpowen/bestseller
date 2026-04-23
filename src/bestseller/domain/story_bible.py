@@ -145,20 +145,210 @@ def normalize_character_age(value: Any) -> int | None:
     return None
 
 
+_LLM_STRING_FALLBACK_KEYS: tuple[str, ...] = (
+    "description",
+    "summary",
+    "overview",
+    "overall",
+    "overall_structure",
+    "content",
+    "text",
+    "narrative",
+    "detail",
+    "details",
+    "story_consequence",
+    "notes",
+)
+
+
+def _flatten_to_text(value: Any, _depth: int = 0) -> str:
+    """Recursively flatten a nested dict/list into readable Chinese-friendly prose.
+
+    LLMs sometimes emit rich nested objects where the schema expects a single
+    narrative string (e.g. ``power_structure`` / ``forbidden_zones``). Instead of
+    hard-rejecting them, we rebuild a flat textual representation so downstream
+    consumers still see the information.
+    """
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value
+    if isinstance(value, (int, float, bool)):
+        return str(value)
+    if _depth > 6:
+        return str(value)
+    if isinstance(value, dict):
+        if not value:
+            return ""
+        for key in _LLM_STRING_FALLBACK_KEYS:
+            inner = value.get(key)
+            if isinstance(inner, str) and inner.strip():
+                return inner.strip()
+        parts: list[str] = []
+        for key, inner in value.items():
+            rendered = _flatten_to_text(inner, _depth + 1)
+            rendered = rendered.strip()
+            if not rendered:
+                continue
+            parts.append(f"{key}：{rendered}")
+        return "\n".join(parts)
+    if isinstance(value, (list, tuple, set)):
+        parts = []
+        for item in value:
+            rendered = _flatten_to_text(item, _depth + 1).strip()
+            if rendered:
+                parts.append(f"- {rendered}" if "\n" not in rendered else rendered)
+        return "\n".join(parts)
+    return str(value)
+
+
+def coerce_to_narrative_string(value: Any) -> Any:
+    """Coerce nested dict/list-shaped LLM output into a single narrative string.
+
+    Falls through unchanged when ``value`` is already a string or ``None`` so
+    Pydantic's downstream validators still run.
+    """
+    if value is None or isinstance(value, str):
+        return value
+    flattened = _flatten_to_text(value).strip()
+    return flattened or None
+
+
+def coerce_to_string_list(value: Any) -> Any:
+    """Coerce scalar/string/dict into list[str] for list-of-strings fields.
+
+    - ``list`` is passed through (each item stringified if needed).
+    - ``None`` / empty → ``[]``.
+    - ``str`` is wrapped into a single-element list after stripping; callers
+      keep multi-clause phrases intact to avoid false splits on punctuation.
+    - ``dict`` is flattened so each ``key: value`` pair becomes one entry.
+    """
+    if value is None:
+        return []
+    if isinstance(value, list):
+        out: list[str] = []
+        for item in value:
+            if item is None:
+                continue
+            if isinstance(item, str):
+                text = item.strip()
+                if text:
+                    out.append(text)
+            elif isinstance(item, (int, float, bool)):
+                out.append(str(item))
+            else:
+                flattened = _flatten_to_text(item).strip()
+                if flattened:
+                    out.append(flattened)
+        return out
+    if isinstance(value, tuple):
+        return coerce_to_string_list(list(value))
+    if isinstance(value, str):
+        text = value.strip()
+        return [text] if text else []
+    if isinstance(value, (int, float, bool)):
+        return [str(value)]
+    if isinstance(value, dict):
+        out = []
+        for key, inner in value.items():
+            inner_text = _flatten_to_text(inner).strip()
+            if inner_text:
+                out.append(f"{key}：{inner_text}" if not isinstance(inner, str) else inner_text)
+            else:
+                out.append(str(key))
+        return out
+    return value
+
+
+_VOLUME_RANGE_PATTERN = re.compile(r"(\d+)\s*[-–—~到至]\s*(\d+)")
+_VOLUME_INT_PATTERN = re.compile(r"\d+")
+
+
+def coerce_to_int_list(value: Any) -> Any:
+    """Coerce human-shaped descriptors like ``'1-10章'`` / ``'1,3,5'`` into ``list[int]``.
+
+    Ranges are expanded inclusively, capped at 200 entries to avoid runaway
+    memory when the LLM says something like ``'1-999'``. Unparseable strings
+    (e.g. ``'贯穿全书'``) return ``[]`` so downstream Pydantic validation sees a
+    valid empty list rather than the raw string.
+    """
+    if value is None:
+        return []
+    if isinstance(value, list):
+        out: list[int] = []
+        for item in value:
+            if isinstance(item, bool):
+                continue
+            if isinstance(item, int):
+                out.append(item)
+            elif isinstance(item, float) and item.is_integer():
+                out.append(int(item))
+            elif isinstance(item, str):
+                m = _VOLUME_INT_PATTERN.search(item)
+                if m:
+                    out.append(int(m.group(0)))
+        return out
+    if isinstance(value, bool):
+        return []
+    if isinstance(value, (int,)):
+        return [value]
+    if isinstance(value, float):
+        return [int(value)] if value.is_integer() else []
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return []
+        numbers: list[int] = []
+        for start_str, end_str in _VOLUME_RANGE_PATTERN.findall(text):
+            start, end = int(start_str), int(end_str)
+            if start <= end and end - start <= 200:
+                numbers.extend(range(start, end + 1))
+        if numbers:
+            return sorted(set(numbers))
+        fallback = [int(m) for m in _VOLUME_INT_PATTERN.findall(text)]
+        return sorted(set(fallback))[:50]
+    return value
+
+
 class WorldRuleInput(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
     rule_id: str | None = Field(default=None, max_length=32)
     name: str = Field(min_length=1, max_length=4000)
     description: str = Field(min_length=1)
     story_consequence: str | None = None
     exploitation_potential: str | None = None
 
+    @model_validator(mode="before")
+    @classmethod
+    def _accept_rule_name_alias(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+        if "name" not in data and "rule_name" in data:
+            data = {**data, "name": data.get("rule_name")}
+        if "description" in data and not isinstance(data["description"], str):
+            data = {**data, "description": coerce_to_narrative_string(data["description"])}
+        return data
+
 
 class PowerSystemInput(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
     name: str | None = None
     tiers: list[str] = Field(default_factory=list)
     acquisition_method: str | None = None
     hard_limits: str | None = None
     protagonist_starting_tier: str | None = None
+
+    @field_validator("tiers", mode="before")
+    @classmethod
+    def _coerce_tiers(cls, v: Any) -> Any:
+        return coerce_to_string_list(v)
+
+    @field_validator("acquisition_method", "hard_limits", "protagonist_starting_tier", mode="before")
+    @classmethod
+    def _coerce_text_field(cls, v: Any) -> Any:
+        return coerce_to_narrative_string(v)
 
 
 class LocationInput(BaseModel):
@@ -180,8 +370,33 @@ class FactionInput(BaseModel):
 
 
 class HistoryEventInput(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
+
     event: str = Field(min_length=1)
     relevance: str | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _accept_event_aliases(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+        if "event" in data and isinstance(data["event"], str) and data["event"].strip():
+            return data
+        for alias in ("name", "title", "event_name", "label"):
+            alt = data.get(alias)
+            if isinstance(alt, str) and alt.strip():
+                merged = {**data, "event": alt}
+                if "relevance" not in merged or not merged.get("relevance"):
+                    description = data.get("description") or data.get("summary")
+                    if isinstance(description, str) and description.strip():
+                        merged["relevance"] = description
+                return merged
+        return data
+
+    @field_validator("event", "relevance", mode="before")
+    @classmethod
+    def _coerce_text(cls, v: Any) -> Any:
+        return coerce_to_narrative_string(v)
 
 
 class WorldSpecInput(BaseModel):
@@ -194,6 +409,21 @@ class WorldSpecInput(BaseModel):
     power_structure: str | None = None
     history_key_events: list[HistoryEventInput] = Field(default_factory=list)
     forbidden_zones: str | None = None
+
+    @field_validator("power_structure", "forbidden_zones", "world_premise", mode="before")
+    @classmethod
+    def _coerce_narrative_fields(cls, v: Any) -> Any:
+        return coerce_to_narrative_string(v)
+
+    @field_validator("power_system", mode="before")
+    @classmethod
+    def _coerce_power_system(cls, v: Any) -> Any:
+        if isinstance(v, str):
+            text = v.strip()
+            if not text:
+                return {}
+            return {"name": text[:4000]}
+        return v
 
 
 class CharacterRelationshipInput(BaseModel):
@@ -219,6 +449,23 @@ class CharacterVoiceProfileInput(BaseModel):
     internal_monologue_style: str | None = None  # 内心独白语气特征
     vocabulary_level: str | None = None  # 高/中/低/混合
 
+    @field_validator("verbal_tics", "mannerisms", mode="before")
+    @classmethod
+    def _coerce_tic_lists(cls, v: Any) -> Any:
+        return coerce_to_string_list(v)
+
+    @field_validator(
+        "speech_register",
+        "sentence_style",
+        "emotional_expression",
+        "internal_monologue_style",
+        "vocabulary_level",
+        mode="before",
+    )
+    @classmethod
+    def _coerce_voice_text(cls, v: Any) -> Any:
+        return coerce_to_narrative_string(v)
+
 
 class CharacterMoralFramework(BaseModel):
     """Per-character moral compass — what lines they will/won't cross."""
@@ -226,6 +473,16 @@ class CharacterMoralFramework(BaseModel):
     core_values: list[str] = Field(default_factory=list)  # 核心信条
     lines_never_crossed: list[str] = Field(default_factory=list)  # 不可逾越的底线
     willing_to_sacrifice: str | None = None  # 愿意为目标牺牲什么
+
+    @field_validator("core_values", "lines_never_crossed", mode="before")
+    @classmethod
+    def _coerce_moral_lists(cls, v: Any) -> Any:
+        return coerce_to_string_list(v)
+
+    @field_validator("willing_to_sacrifice", mode="before")
+    @classmethod
+    def _coerce_moral_text(cls, v: Any) -> Any:
+        return coerce_to_narrative_string(v)
 
 
 class CharacterIPAnchorInput(BaseModel):
@@ -248,6 +505,16 @@ class CharacterIPAnchorInput(BaseModel):
     sensory_signatures: list[str] = Field(default_factory=list)
     signature_objects: list[str] = Field(default_factory=list)
     core_wound: str | None = None
+
+    @field_validator("quirks", "sensory_signatures", "signature_objects", mode="before")
+    @classmethod
+    def _coerce_ip_lists(cls, v: Any) -> Any:
+        return coerce_to_string_list(v)
+
+    @field_validator("core_wound", mode="before")
+    @classmethod
+    def _coerce_ip_text(cls, v: Any) -> Any:
+        return coerce_to_narrative_string(v)
 
 
 class CharacterInput(BaseModel):
@@ -300,6 +567,8 @@ class ConflictForceInput(BaseModel):
     local bullies, political intrigue, betrayals, faction wars, etc.
     """
 
+    model_config = ConfigDict(extra="allow")
+
     name: str = Field(min_length=1, max_length=4000)
     force_type: Literal["character", "faction", "environment", "internal", "systemic"] = Field(
         description="character / faction / environment / internal / systemic",
@@ -317,6 +586,143 @@ class ConflictForceInput(BaseModel):
         description="Name of a character in supporting_cast when force_type is 'character'.",
     )
 
+    @field_validator("active_volumes", mode="before")
+    @classmethod
+    def _coerce_active_volumes(cls, v: Any) -> Any:
+        return coerce_to_int_list(v)
+
+    @field_validator(
+        "threat_description",
+        "relationship_to_protagonist",
+        "escalation_path",
+        mode="before",
+    )
+    @classmethod
+    def _coerce_conflict_text(cls, v: Any) -> Any:
+        return coerce_to_narrative_string(v)
+
+    @field_validator("force_type", mode="before")
+    @classmethod
+    def _coerce_force_type(cls, v: Any) -> Any:
+        if isinstance(v, str):
+            normalized = v.strip().lower()
+            aliases = {
+                "person": "character",
+                "individual": "character",
+                "group": "faction",
+                "organization": "faction",
+                "org": "faction",
+                "place": "environment",
+                "location": "environment",
+                "setting": "environment",
+                "mental": "internal",
+                "psychological": "internal",
+                "system": "systemic",
+                "structural": "systemic",
+            }
+            return aliases.get(normalized, normalized)
+        return v
+
+
+_CHARACTER_DICT_INNER_KEYS: tuple[str, ...] = (
+    "role",
+    "age",
+    "background",
+    "goal",
+    "fear",
+    "flaw",
+    "strength",
+    "secret",
+    "arc_trajectory",
+    "arc_state",
+    "knowledge_state",
+    "power_tier",
+    "relationships",
+    "voice_profile",
+    "moral_framework",
+    "ip_anchor",
+    "metadata",
+)
+
+
+def _looks_like_name_keyed_character(payload: Any) -> bool:
+    """Return True when ``payload`` is ``{"角色名": {...character fields...}}``.
+
+    LLMs occasionally wrap a single character in an outer name → dict dict.
+    We detect this by checking that every value is itself a dict carrying at
+    least one recognizable character field; the outer keys are the names.
+    """
+    if not isinstance(payload, dict) or not payload:
+        return False
+    for value in payload.values():
+        if not isinstance(value, dict):
+            return False
+        if not any(inner_key in value for inner_key in _CHARACTER_DICT_INNER_KEYS):
+            return False
+    return True
+
+
+def _unwrap_name_keyed_character(payload: Any) -> Any:
+    """Convert ``{"名字": {...}}`` → ``{"name": "名字", ...}`` for a single character."""
+    if not isinstance(payload, dict) or len(payload) != 1:
+        return payload
+    ((outer_key, inner),) = payload.items()
+    if not isinstance(inner, dict):
+        return payload
+    merged: dict[str, Any] = {**inner}
+    if "name" not in merged or not str(merged.get("name") or "").strip():
+        merged["name"] = outer_key
+    return merged
+
+
+def _coerce_character_list(value: Any) -> Any:
+    """Normalize character collections, unwrapping name-keyed dicts when needed."""
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return [_unwrap_name_keyed_character(item) if _looks_like_name_keyed_character(item) else item for item in value]
+    if isinstance(value, dict):
+        if _looks_like_name_keyed_character(value):
+            return [
+                _unwrap_name_keyed_character({outer_key: inner})
+                for outer_key, inner in value.items()
+            ]
+        return [value]
+    return value
+
+
+def _coerce_conflict_map(value: Any) -> Any:
+    """Flatten a dict-shaped ``conflict_map`` into a list of conflict records.
+
+    LLMs sometimes emit ``{"王青峰 vs 李墨白": {...}}`` instead of a list.
+    We rebuild each entry as a dict, recovering ``character_a`` / ``character_b``
+    from the outer key when the inner payload omits them.
+    """
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return value
+    if isinstance(value, dict):
+        out: list[dict[str, Any]] = []
+        for key, inner in value.items():
+            if isinstance(inner, dict):
+                merged: dict[str, Any] = {**inner}
+                if not merged.get("character_a") or not merged.get("character_b"):
+                    for separator in (" vs ", "vs.", " v. ", " 对 ", "↔", "→"):
+                        if separator in str(key):
+                            parts = [part.strip() for part in str(key).split(separator) if part.strip()]
+                            if len(parts) == 2:
+                                merged.setdefault("character_a", parts[0])
+                                merged.setdefault("character_b", parts[1])
+                                break
+                if "conflict_type" not in merged:
+                    merged["conflict_type"] = str(key)
+                out.append(merged)
+            elif isinstance(inner, str):
+                out.append({"character_a": "", "character_b": "", "conflict_type": str(key), "trigger_condition": inner})
+        return out
+    return value
+
 
 class CastSpecInput(BaseModel):
     protagonist: CharacterInput | None = None
@@ -324,6 +730,22 @@ class CastSpecInput(BaseModel):
     antagonist_forces: list[ConflictForceInput] = Field(default_factory=list)
     supporting_cast: list[CharacterInput] = Field(default_factory=list)
     conflict_map: list[ConflictMapInput] = Field(default_factory=list)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _coerce_cast_shapes(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+        patched = {**data}
+        if "protagonist" in patched and _looks_like_name_keyed_character(patched["protagonist"]):
+            patched["protagonist"] = _unwrap_name_keyed_character(patched["protagonist"])
+        if "antagonist" in patched and _looks_like_name_keyed_character(patched["antagonist"]):
+            patched["antagonist"] = _unwrap_name_keyed_character(patched["antagonist"])
+        if "supporting_cast" in patched:
+            patched["supporting_cast"] = _coerce_character_list(patched["supporting_cast"])
+        if "conflict_map" in patched:
+            patched["conflict_map"] = _coerce_conflict_map(patched["conflict_map"])
+        return patched
 
     @model_validator(mode="after")
     def normalize_roles(self) -> "CastSpecInput":
@@ -356,6 +778,32 @@ class VolumePlanResolutionInput(BaseModel):
     new_threat_introduced: str | None = None
 
 
+_WORD_COUNT_INT_PATTERN = re.compile(r"(\d[\d,]*)")
+
+
+def _coerce_word_count_target(value: Any) -> Any:
+    """Coerce ``"约 12000 字"`` / ``"12,000 words"`` into a numeric value.
+
+    Keeps numeric input unchanged so downstream Pydantic validation still runs;
+    unparseable strings degrade to ``None`` to avoid crashing the planner.
+    """
+    if value is None or isinstance(value, (int, float)):
+        return value
+    if not isinstance(value, str):
+        return value
+    text = value.strip()
+    if not text:
+        return None
+    match = _WORD_COUNT_INT_PATTERN.search(text)
+    if not match:
+        return None
+    digits = match.group(1).replace(",", "")
+    try:
+        return int(digits)
+    except ValueError:
+        return None
+
+
 class VolumePlanEntryInput(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
@@ -373,6 +821,33 @@ class VolumePlanEntryInput(BaseModel):
     foreshadowing_planted: list[str] = Field(default_factory=list)
     foreshadowing_paid_off: list[str] = Field(default_factory=list)
     reader_hook_to_next: str | None = None
+
+    @field_validator("word_count_target", mode="before")
+    @classmethod
+    def _coerce_word_count(cls, v: Any) -> Any:
+        return _coerce_word_count_target(v)
+
+    @field_validator(
+        "key_reveals",
+        "foreshadowing_planted",
+        "foreshadowing_paid_off",
+        mode="before",
+    )
+    @classmethod
+    def _coerce_list_fields(cls, v: Any) -> Any:
+        return coerce_to_string_list(v)
+
+    @field_validator(
+        "volume_theme",
+        "volume_goal",
+        "volume_obstacle",
+        "volume_climax",
+        "reader_hook_to_next",
+        mode="before",
+    )
+    @classmethod
+    def _coerce_text_fields(cls, v: Any) -> Any:
+        return coerce_to_narrative_string(v)
 
 
 class StoryBibleMaterializationResult(BaseModel):

@@ -1330,8 +1330,52 @@ def _render_story_bible_section(
             ("Core cast anchors (do not alter):\n" if is_en else "【核心角色设定（不可更改）】：\n")
             + "\n".join(cast_lines)
         )
+    deceased_characters = story_bible_context.get("deceased_characters") or []
+    if deceased_characters:
+        if is_en:
+            dead_lines = [
+                f"- {dc['name']}(died ch{dc.get('death_chapter_number') or '?'}, "
+                "do not appear, speak, or act — reminisce/corpse only)"
+                for dc in deceased_characters
+            ]
+            lines.append(
+                "[Deceased roster — treat as off-limits unless scene is a flashback]:\n"
+                + "\n".join(dead_lines)
+            )
+        else:
+            dead_lines = [
+                f"- {dc['name']}（死于第{dc.get('death_chapter_number') or '?'}章，"
+                "请勿让其出场/说话/行动，仅可作为回忆或遗体）"
+                for dc in deceased_characters
+            ]
+            lines.append(
+                "【本书已故角色（本章禁止复活，除非显式标注回忆/遗体场景）】：\n"
+                + "\n".join(dead_lines)
+            )
+
     participants = story_bible_context.get("participants") or []
     if participants:
+        def _stance_suffix(item: dict[str, Any]) -> str:
+            stance = item.get("stance")
+            if not stance:
+                return ""
+            locked = item.get("stance_locked_until_chapter")
+            if is_en:
+                if locked:
+                    return f" Stance:{stance}(locked until ch{locked})"
+                return f" Stance:{stance}"
+            if locked:
+                return f" 立场:{stance}(锁定至第{locked}章)"
+            return f" 立场:{stance}"
+
+        def _alive_suffix(item: dict[str, Any]) -> str:
+            alive = item.get("alive_status") or "alive"
+            if alive == "alive":
+                return ""
+            if is_en:
+                return f" Alive:{alive}"
+            return f" 存活:{alive}"
+
         rendered_participants = "；".join(
             (
                 f"{item['name']}[{item.get('role') or 'character'}]"
@@ -1340,6 +1384,8 @@ def _render_story_bible_section(
                 f" {'Arc' if is_en else '弧线状态'}:{item.get('arc_state') or ('undefined' if is_en else '未定义')}"
                 f" {'Power' if is_en else '力量层级'}:{item.get('power_tier') or ('undefined' if is_en else '未定义')}"
                 f" {'Emotion' if is_en else '情绪'}:{item.get('emotional_state') or ('undefined' if is_en else '未定义')}"
+                f"{_stance_suffix(item)}"
+                f"{_alive_suffix(item)}"
             )
             for item in participants[:4]
         )
@@ -2346,6 +2392,12 @@ def build_scene_draft_prompts(
     # to concatenate them into the user_prompt. Empty/None → no-op.
     reader_contract_block: str | None = None,
     hype_constraints_block: str | None = None,
+    # L3 Prompt Constructor — per-chapter methodology/invariants/diversity/
+    # anti-slop sections pre-rendered by
+    # ``prompt_constructor.build_chapter_l3_blocks``. When None/empty the
+    # prompt falls back to the legacy hype-only path (feature-gated by
+    # ``quality_gates.l3_prompt_constructor.enabled``).
+    l3_prompt_block: str | None = None,
     # Context budget
     context_budget_tokens: int = 6000,
 ) -> tuple[str, str]:
@@ -2610,6 +2662,12 @@ def build_scene_draft_prompts(
     if hype_constraints_block:
         _hype_constraints_line = f"{hype_constraints_block}\n\n"
 
+    # L3 Prompt Constructor — diversity/methodology/invariants/anti-slop
+    # pre-rendered block (see prompt_constructor.build_chapter_l3_blocks).
+    _l3_prompt_line = ""
+    if l3_prompt_block:
+        _l3_prompt_line = f"{l3_prompt_block}\n\n"
+
     # Phase-3 wiring: scene/sequel pattern
     _scene_sequel_line = _render_scene_sequel_section(
         swain_pattern, scene_skeleton, is_en=is_en,
@@ -2707,6 +2765,7 @@ def build_scene_draft_prompts(
             "plan_richness_line": _plan_richness_line,
             "reader_contract_line": _reader_contract_line,
             "hype_constraints_line": _hype_constraints_line,
+            "l3_prompt_line": _l3_prompt_line,
             "hard_fact_line": _hard_fact_line,
             "knowledge_line": _knowledge_line,
             "recent_scene_section": recent_scene_section,
@@ -2756,6 +2815,7 @@ def build_scene_draft_prompts(
     _plan_richness_line = _ctx["plan_richness_line"]
     _reader_contract_line = _ctx["reader_contract_line"]
     _hype_constraints_line = _ctx["hype_constraints_line"]
+    _l3_prompt_line = _ctx["l3_prompt_line"]
     _hard_fact_line = _ctx["hard_fact_line"]
     _knowledge_line = _ctx["knowledge_line"]
     recent_scene_section = _ctx["recent_scene_section"]
@@ -2787,6 +2847,7 @@ def build_scene_draft_prompts(
             f"{_contradiction_line}"
             f"{_reader_contract_line}"
             f"{_hype_constraints_line}"
+            f"{_l3_prompt_line}"
             f"{_plan_richness_line}"
             f"{_identity_line}"
             f"{_scene_scope_isolation_line}"
@@ -2860,6 +2921,7 @@ def build_scene_draft_prompts(
             f"{_contradiction_line}"
             f"{_reader_contract_line}"
             f"{_hype_constraints_line}"
+            f"{_l3_prompt_line}"
             f"{_plan_richness_line}"
             f"{_identity_line}"
             f"{_scene_scope_isolation_line}"
@@ -3386,6 +3448,9 @@ async def generate_scene_draft(
             ),
             hype_constraints_block=(
                 context_packet.hype_constraints_block if context_packet else None
+            ),
+            l3_prompt_block=(
+                context_packet.l3_prompt_block if context_packet else None
             ),
             context_budget_tokens=(
                 settings.generation.context_budget_tokens if settings else 6000

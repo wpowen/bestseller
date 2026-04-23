@@ -219,6 +219,13 @@ class SceneWriterContextPacket(BaseModel):
     assigned_hype_recipe_key: str | None = None
     assigned_hype_intensity: float | None = None
 
+    # ── L3 PromptConstructor cross-cutting sections (enabled when
+    # ``quality_gates.l3_prompt_constructor.enabled=true``) ──
+    # Pre-rendered by ``prompt_constructor.build_chapter_l3_blocks`` and
+    # consumed verbatim by ``drafts.py`` so the scene layer does not have
+    # to rebuild a full ``PromptPlan`` per scene.
+    l3_prompt_block: str | None = None
+
 
 class ChapterSceneContext(BaseModel):
     scene_number: int = Field(ge=1)

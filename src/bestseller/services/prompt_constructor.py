@@ -769,6 +769,102 @@ def build_chapter_hype_blocks(
     )
 
 
+@dataclass(frozen=True)
+class ChapterL3Blocks:
+    """Per-chapter L3 sections that augment hype_blocks.
+
+    These are the cross-cutting diversity + methodology slices
+    ``build_chapter_prompt`` normally emits. Extracting them as a separate
+    block lets the scene pipeline inject them without rewriting the scene
+    prompt assembly end-to-end. Legacy projects with empty invariants get
+    ``EMPTY_L3_BLOCKS`` back and the caller stays a no-op.
+    """
+
+    invariants_section: str
+    methodology_inject: str
+    diversity_constraints: str
+    anti_slop_footer: str
+    assigned_opening: OpeningArchetype | None
+    assigned_cliffhanger: CliffhangerType | None
+
+    @property
+    def is_empty(self) -> bool:
+        return not (
+            self.invariants_section
+            or self.methodology_inject
+            or self.diversity_constraints
+            or self.anti_slop_footer
+        )
+
+    def as_prompt_block(self) -> str:
+        """Render as a single text block, stable section order."""
+        parts = [
+            self.invariants_section,
+            self.methodology_inject,
+            self.diversity_constraints,
+            self.anti_slop_footer,
+        ]
+        return "\n\n".join(s.strip() for s in parts if s and s.strip())
+
+
+EMPTY_L3_BLOCKS = ChapterL3Blocks(
+    invariants_section="",
+    methodology_inject="",
+    diversity_constraints="",
+    anti_slop_footer="",
+    assigned_opening=None,
+    assigned_cliffhanger=None,
+)
+
+
+def build_chapter_l3_blocks(
+    invariants: ProjectInvariants,
+    diversity_budget: DiversityBudget,
+    *,
+    chapter_no: int,
+    preassigned_opening: OpeningArchetype | None = None,
+    opening_pool: Sequence[OpeningArchetype] | None = None,
+    cliffhanger_policy: CliffhangerPolicy | None = None,
+    hot_vocab_window: int = DEFAULT_HOT_VOCAB_WINDOW,
+    hot_vocab_top_n: int = DEFAULT_HOT_VOCAB_TOP_N,
+    hot_vocab_min_count: int = DEFAULT_HOT_VOCAB_MIN_COUNT,
+    no_repeat_within_openings: int = DEFAULT_NO_REPEAT_WITHIN_OPENINGS,
+) -> ChapterL3Blocks:
+    """Build the per-chapter L3 sections that pair with hype_blocks.
+
+    The scene pipeline injects these alongside ``reader_contract_block`` +
+    ``hype_constraints_block``, giving the LLM the full diversity + methodology
+    + anti-slop contract on every scene of the chapter without the scene
+    layer having to rebuild a PromptPlan per scene.
+    """
+
+    policy = cliffhanger_policy or invariants.cliffhanger_policy
+    opening = choose_opening_archetype(
+        diversity_budget,
+        pool=opening_pool or invariants.opening_archetype_pool,
+        preassigned=preassigned_opening,
+        no_repeat_within=no_repeat_within_openings,
+    )
+    cliffhanger = choose_cliffhanger_type(diversity_budget, policy=policy)
+
+    return ChapterL3Blocks(
+        invariants_section=build_invariants_section(invariants),
+        methodology_inject=build_methodology_inject(invariants),
+        diversity_constraints=build_diversity_constraints(
+            invariants,
+            diversity_budget,
+            assigned_opening=opening,
+            assigned_cliffhanger=cliffhanger,
+            hot_vocab_window=hot_vocab_window,
+            hot_vocab_top_n=hot_vocab_top_n,
+            hot_vocab_min_count=hot_vocab_min_count,
+        ),
+        anti_slop_footer=build_anti_slop_footer(invariants.language),
+        assigned_opening=opening,
+        assigned_cliffhanger=cliffhanger,
+    )
+
+
 def rebuild_with_feedback(
     prior_plan: PromptPlan, feedback: str
 ) -> PromptPlan:
@@ -792,10 +888,13 @@ __all__ = [
     "DEFAULT_NO_REPEAT_WITHIN_OPENINGS",
     "DEFAULT_PRIOR_CHAPTER_TAIL_CHARS",
     "EMPTY_HYPE_BLOCKS",
+    "EMPTY_L3_BLOCKS",
     "ChapterHypeBlocks",
+    "ChapterL3Blocks",
     "PromptPlan",
     "build_anti_slop_footer",
     "build_chapter_hype_blocks",
+    "build_chapter_l3_blocks",
     "build_chapter_prompt",
     "build_diversity_constraints",
     "build_hype_constraints",

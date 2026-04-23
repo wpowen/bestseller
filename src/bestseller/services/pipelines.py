@@ -254,6 +254,14 @@ async def _ensure_project_invariants(
         else:
             return
 
+    # Eagerly load style_guide within the current async context. The relationship
+    # is lazy-loaded by default, and accessing it via getattr outside a greenlet
+    # triggers MissingGreenlet. refresh() performs the load through the async
+    # session machinery, avoiding the lazy-load trap.
+    try:
+        await session.refresh(project, ["style_guide"])
+    except Exception:
+        logger.debug("failed to refresh style_guide for project %s", project.slug, exc_info=True)
     style_guide = getattr(project, "style_guide", None)
     pov = getattr(style_guide, "pov_type", None) or settings.generation.pov or "close_third"
     tense = getattr(style_guide, "tense", None) or "past"
@@ -849,6 +857,44 @@ async def run_scene_pipeline(
                         shared_context.assigned_hype_intensity = (
                             _hype_blocks.assigned_hype_intensity
                         )
+
+                # L3 PromptConstructor: emit the diversity + methodology
+                # + anti-slop block once per chapter and attach to the
+                # shared packet. Legacy projects (invariants_json empty)
+                # already fall through because ``_invariants_for_hype``
+                # is None. When L3 is disabled in config we skip the call.
+                try:
+                    from bestseller.services.quality_gates_config import (
+                        get_quality_gates_config,
+                    )
+                    _l3_cfg = get_quality_gates_config().l3
+                    if (
+                        _l3_cfg.enabled
+                        and _invariants_for_hype is not None
+                    ):
+                        from bestseller.services.prompt_constructor import (
+                            build_chapter_l3_blocks,
+                        )
+                        _l3_blocks = build_chapter_l3_blocks(
+                            _invariants_for_hype,
+                            _budget_for_hype,
+                            chapter_no=chapter_number,
+                            hot_vocab_window=_l3_cfg.hot_vocab_window_chapters,
+                            hot_vocab_top_n=_l3_cfg.hot_vocab_top_n,
+                            hot_vocab_min_count=_l3_cfg.hot_vocab_min_count,
+                            no_repeat_within_openings=_l3_cfg.no_repeat_within_openings,
+                        )
+                        if not _l3_blocks.is_empty:
+                            shared_context.l3_prompt_block = (
+                                _l3_blocks.as_prompt_block() or None
+                            )
+                except Exception:
+                    logger.debug(
+                        "L3 prompt block injection failed for ch%d sc%d (non-fatal)",
+                        chapter_number,
+                        scene_number,
+                        exc_info=True,
+                    )
             except Exception:
                 logger.debug(
                     "Hype block injection failed for ch%d sc%d (non-fatal)",
@@ -1491,6 +1537,44 @@ async def run_chapter_pipeline(
                 )
         if chapter_draft is None:
             chapter_draft = await assemble_chapter_draft(session, project_slug, chapter_number, settings=settings)
+
+        # L2 per-chapter bible validation: detect stance flips lacking
+        # a turning-point arc beat and deceased speakers; log findings on
+        # the step output so the regen_loop can consume them on the next
+        # scene pass.
+        bible_findings: dict[str, int] | None = None
+        try:
+            from bestseller.services.quality_gates_config import (
+                get_quality_gates_config,
+            )
+            _gates_cfg = get_quality_gates_config()
+            if _gates_cfg.l2.enabled:
+                from bestseller.services.bible_gate import (
+                    validate_chapter_against_bible,
+                )
+                _bible_result = await validate_chapter_against_bible(
+                    session,
+                    project_id=chapter.project_id,
+                    chapter_number=chapter_number,
+                    only_enforce_from_chapter=_gates_cfg.l2.only_enforce_from_chapter,
+                )
+                bible_findings = {
+                    "violations": len(_bible_result.violations),
+                    "warnings": len(_bible_result.warnings),
+                }
+                if _bible_result.violations:
+                    logger.warning(
+                        "L2 bible_gate chapter %d: %d violation(s), %d warning(s)",
+                        chapter_number,
+                        len(_bible_result.violations),
+                        len(_bible_result.warnings),
+                    )
+        except Exception:
+            logger.debug(
+                "L2 bible_gate per-chapter validation failed (non-fatal)",
+                exc_info=True,
+            )
+
         await create_workflow_step_run(
             session,
             workflow_run_id=workflow_run.id,
@@ -1500,6 +1584,7 @@ async def run_chapter_pipeline(
             output_ref={
                 "chapter_draft_id": str(chapter_draft.id),
                 "chapter_draft_version_no": chapter_draft.version_no,
+                **({"bible_findings": bible_findings} if bible_findings else {}),
             },
         )
         step_order += 1
@@ -1874,6 +1959,73 @@ async def run_chapter_pipeline(
                         "Chapter %d bible update failed (non-fatal): %s",
                         chapter.chapter_number,
                         exc,
+                    )
+
+                # ── L7 per-chapter audit (lightweight) ──
+                # Runs PleasureDistributionAudit + SetupPayoffTrackerAudit
+                # filtered to findings on the current chapter, then promotes
+                # PLEASURE_SETUP_PAYOFF_DEBT to a pending RewriteTask so the
+                # review loop compensates in a later chapter rather than
+                # waiting for the book-end audit. Failures non-fatal.
+                try:
+                    from bestseller.services.quality_gates_config import (
+                        get_quality_gates_config,
+                    )
+                    _l7_cfg = get_quality_gates_config().l7
+                    if _l7_cfg.enabled:
+                        from bestseller.services.audit_loop import (
+                            build_per_chapter_audit,
+                            run_and_persist_audit,
+                            spawn_rewrite_tasks_from_findings,
+                        )
+                        async with session.begin_nested():
+                            _audit_report = await run_and_persist_audit(
+                                session,
+                                project_id=project.id,
+                                audit=build_per_chapter_audit(),
+                                chapter_number=chapter.chapter_number,
+                            )
+                            _rewrites_created = await spawn_rewrite_tasks_from_findings(
+                                session, _audit_report
+                            )
+                            if _rewrites_created:
+                                logger.info(
+                                    "Chapter %d L7 audit spawned %d rewrite task(s)",
+                                    chapter.chapter_number,
+                                    _rewrites_created,
+                                )
+                except Exception:  # noqa: BLE001
+                    logger.debug(
+                        "Chapter %d L7 per-chapter audit failed (non-fatal)",
+                        chapter.chapter_number,
+                        exc_info=True,
+                    )
+
+                # ── L8 per-chapter scorecard refresh ──
+                # Upserts NovelScorecardModel so dashboards see post-chapter
+                # quality scores without waiting for book-end Stage 11.
+                # Idempotent; failures non-fatal.
+                try:
+                    from bestseller.services.quality_gates_config import (
+                        get_quality_gates_config,
+                    )
+                    _l8_cfg = get_quality_gates_config().l8
+                    if _l8_cfg.enabled:
+                        from bestseller.services.scorecard import (
+                            update_scorecard_incrementally,
+                        )
+                        async with session.begin_nested():
+                            await update_scorecard_incrementally(
+                                session,
+                                project_id=project.id,
+                                chapter_number=chapter.chapter_number,
+                                expected_chapter_count=project.target_chapters,
+                            )
+                except Exception:  # noqa: BLE001
+                    logger.debug(
+                        "Chapter %d L8 per-chapter scorecard failed (non-fatal)",
+                        chapter.chapter_number,
+                        exc_info=True,
                     )
                 break
 

@@ -14,6 +14,10 @@ class CharacterStateExtraction(BaseModel):
     arc_state: str | None = None
     power_tier: str | None = None
     physical_state: str | None = None
+    alive_status: str | None = None  # alive | injured | dying | deceased
+    stance: str | None = None  # ally | enemy | neutral | conflicted | protagonist | rival
+    stance_change_reason: str | None = None
+    power_tier_downgrade_reason: str | None = None
     beliefs_gained: list[str] = Field(default_factory=list)
     beliefs_invalidated: list[str] = Field(default_factory=list)
     knowledge_gained: list[str] = Field(default_factory=list)

@@ -706,6 +706,46 @@ async def save_scorecard(
     await session.execute(stmt)
 
 
+async def update_scorecard_incrementally(
+    session: AsyncSession,
+    project_id: UUID,
+    chapter_number: int,
+    *,
+    expected_chapter_count: int | None = None,
+) -> NovelScorecard | None:
+    """Per-chapter scorecard refresh hook.
+
+    Called from ``run_chapter_pipeline`` after a chapter passes review.
+    Recomputes the aggregate scorecard (hype distribution entropy, hype
+    intensity mean, comedic beat ratio, golden-three weak flag) and
+    upserts it. Idempotent via ``save_scorecard``'s ON CONFLICT path.
+
+    ``chapter_number`` is accepted for logging / future delta math but
+    currently triggers a full recompute — acceptable overhead (2-5s)
+    for a background task, and keeps the math identical to the
+    book-end compute in ``run_autowrite_pipeline`` so the two code
+    paths never diverge. Returns ``None`` if compute fails so the
+    caller can swallow and continue the chapter loop.
+    """
+
+    try:
+        scorecard = await compute_scorecard(
+            session,
+            project_id,
+            expected_chapter_count=expected_chapter_count,
+        )
+    except Exception:
+        logger.debug(
+            "Incremental scorecard compute failed for project %s chapter %d",
+            project_id,
+            chapter_number,
+            exc_info=True,
+        )
+        return None
+    await save_scorecard(session, scorecard)
+    return scorecard
+
+
 __all__ = [
     "NovelScorecard",
     "compute_quality_score",
@@ -714,4 +754,5 @@ __all__ = [
     "length_stats",
     "normalized_entropy",
     "save_scorecard",
+    "update_scorecard_incrementally",
 ]

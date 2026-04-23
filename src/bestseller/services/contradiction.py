@@ -25,7 +25,7 @@ import re
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import select, func
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bestseller.domain.contradiction import (
@@ -38,8 +38,11 @@ from bestseller.infra.db.models import (
     ArcBeatModel,
     ChapterModel,
     CharacterModel,
+    CharacterStateSnapshotModel,
     ClueModel,
     PlotArcModel,
+    ProjectModel,
+    RelationshipEventModel,
     SceneCardModel,
     SceneContractModel,
     TimelineEventModel,
@@ -621,6 +624,338 @@ async def _check_scene_state_continuity(
 
 
 # ---------------------------------------------------------------------------
+# Character lifecycle checks (Phase A4 — resurrection / stance / power_tier)
+# ---------------------------------------------------------------------------
+
+
+async def _check_resurrection(
+    session: AsyncSession,
+    project_id: UUID,
+    chapter_number: int,
+    scene_participants: list[str] | None,
+    language: str | None = None,
+) -> tuple[list[ContradictionViolation], list[ContradictionWarning]]:
+    """Flag scenes that stage a deceased character as an active participant.
+
+    A character is "deceased" when ``characters.alive_status='deceased'`` or
+    ``characters.death_chapter_number`` is set below the current chapter.
+    Reincarnation is allowed only if the project invariants opt in.
+    """
+    violations: list[ContradictionViolation] = []
+    warnings: list[ContradictionWarning] = []
+
+    if not scene_participants:
+        return violations, warnings
+
+    project = await session.get(ProjectModel, project_id)
+    reincarnation_allowed = False
+    if project is not None and project.invariants_json:
+        reincarnation_allowed = bool(
+            project.invariants_json.get("reincarnation_allowed", False)
+        )
+
+    _is_en = is_english_language(language)
+
+    for name in scene_participants:
+        character = await session.scalar(
+            select(CharacterModel).where(
+                CharacterModel.project_id == project_id,
+                CharacterModel.name == name,
+            )
+        )
+        if character is None:
+            continue
+
+        alive_status = getattr(character, "alive_status", "alive")
+        death_ch = getattr(character, "death_chapter_number", None)
+        is_dead = alive_status == "deceased" or (
+            death_ch is not None and death_ch < chapter_number
+        )
+        if not is_dead:
+            continue
+
+        if reincarnation_allowed:
+            if _is_en:
+                recommendation = (
+                    f"'{name}' died in chapter {death_ch}. Reincarnation is "
+                    "allowed — make the return explicit (memory, vision, "
+                    "reborn form)."
+                )
+            else:
+                recommendation = (
+                    f"「{name}」死于第{death_ch}章。本项目允许转世，"
+                    "请在场景内显式说明回归形态（回忆/幻象/转世之身）。"
+                )
+            warnings.append(
+                ContradictionWarning(
+                    check_type="character_resurrection",
+                    message=recommendation,
+                    recommendation=recommendation,
+                )
+            )
+            continue
+
+        if _is_en:
+            message = (
+                f"Deceased character '{name}' is listed as a participant in "
+                f"chapter {chapter_number} (died chapter {death_ch}). "
+                "The scene must be rewritten without their active role."
+            )
+        else:
+            message = (
+                f"第{chapter_number}章的场景参与者包含已故角色「{name}」"
+                f"（死于第{death_ch}章）。请修改场景，勿让其出场或说话。"
+            )
+        violations.append(
+            ContradictionViolation(
+                check_type="character_resurrection",
+                severity="error",
+                message=message,
+                evidence=f"alive_status={alive_status}; death_chapter={death_ch}",
+            )
+        )
+
+    return violations, warnings
+
+
+async def _check_stance_flip(
+    session: AsyncSession,
+    project_id: UUID,
+    chapter_number: int,
+    scene_participants: list[str] | None,
+    language: str | None = None,
+) -> tuple[list[ContradictionViolation], list[ContradictionWarning]]:
+    """Warn when a character's stance flips without a milestone event.
+
+    Rules:
+    * Character's current ``stance`` vs. most recent snapshot ``stance``.
+    * An ally↔enemy flip requires (a) a milestone relationship event in the
+      last 3 chapters OR (b) ``stance_locked_until_chapter`` not yet expired.
+    * Lock-active violations are hard errors; missing-event is a warning.
+    """
+    violations: list[ContradictionViolation] = []
+    warnings: list[ContradictionWarning] = []
+
+    if not scene_participants:
+        return violations, warnings
+
+    _is_en = is_english_language(language)
+    _hostile = {"enemy", "rival", "antagonist"}
+    _friendly = {"ally", "friend", "mentor", "protagonist"}
+
+    def _is_flip(prev: str | None, curr: str | None) -> bool:
+        if not prev or not curr:
+            return False
+        return (
+            (prev in _hostile and curr in _friendly)
+            or (prev in _friendly and curr in _hostile)
+        )
+
+    for name in scene_participants:
+        character = await session.scalar(
+            select(CharacterModel).where(
+                CharacterModel.project_id == project_id,
+                CharacterModel.name == name,
+            )
+        )
+        if character is None:
+            continue
+
+        curr_stance = getattr(character, "stance", None)
+        if not curr_stance:
+            continue
+
+        prior_snap = await session.scalar(
+            select(CharacterStateSnapshotModel)
+            .where(
+                CharacterStateSnapshotModel.project_id == project_id,
+                CharacterStateSnapshotModel.character_id == character.id,
+                CharacterStateSnapshotModel.chapter_number < chapter_number,
+                CharacterStateSnapshotModel.stance.is_not(None),
+            )
+            .order_by(
+                CharacterStateSnapshotModel.chapter_number.desc(),
+                CharacterStateSnapshotModel.scene_number.desc().nullslast(),
+                CharacterStateSnapshotModel.created_at.desc(),
+            )
+            .limit(1)
+        )
+        prior_stance = prior_snap.stance if prior_snap is not None else None
+
+        if not _is_flip(prior_stance, curr_stance):
+            continue
+
+        locked_until = getattr(character, "stance_locked_until_chapter", None)
+        if locked_until is not None and locked_until >= chapter_number:
+            if _is_en:
+                message = (
+                    f"Stance flip blocked: '{name}' stance went {prior_stance} "
+                    f"→ {curr_stance}, but stance is locked until chapter "
+                    f"{locked_until}. Previous state in chapter "
+                    f"{prior_snap.chapter_number if prior_snap else '?'}."
+                )
+            else:
+                message = (
+                    f"立场翻转被锁定：「{name}」自第"
+                    f"{prior_snap.chapter_number if prior_snap else '?'}章后"
+                    f"由 {prior_stance} 翻为 {curr_stance}，"
+                    f"但立场锁定到第{locked_until}章。"
+                )
+            violations.append(
+                ContradictionViolation(
+                    check_type="character_stance_flip_locked",
+                    severity="error",
+                    message=message,
+                    evidence=(
+                        f"prior={prior_stance}; curr={curr_stance}; "
+                        f"locked_until={locked_until}"
+                    ),
+                )
+            )
+            continue
+
+        # Check for milestone event within the last 3 chapters
+        recent_milestone = await session.scalar(
+            select(func.count(RelationshipEventModel.id)).where(
+                RelationshipEventModel.project_id == project_id,
+                RelationshipEventModel.is_milestone.is_(True),
+                or_(
+                    RelationshipEventModel.character_a_label == name,
+                    RelationshipEventModel.character_b_label == name,
+                ),
+                RelationshipEventModel.chapter_number >= chapter_number - 3,
+                RelationshipEventModel.chapter_number <= chapter_number,
+            )
+        )
+        if not recent_milestone:
+            if _is_en:
+                message = (
+                    f"'{name}' stance flipped {prior_stance} → {curr_stance} "
+                    "without a milestone event in the last 3 chapters."
+                )
+                recommendation = (
+                    "Add a milestone relationship event (betrayal, alliance, "
+                    "redemption) or revert the stance."
+                )
+            else:
+                message = (
+                    f"「{name}」立场由 {prior_stance} 翻为 {curr_stance}，"
+                    "但最近 3 章没有里程碑级别的关系事件触发。"
+                )
+                recommendation = (
+                    "请在本章补写背叛/结盟/救赎等关键事件，或恢复原立场。"
+                )
+            warnings.append(
+                ContradictionWarning(
+                    check_type="character_stance_flip_unjustified",
+                    message=message,
+                    recommendation=recommendation,
+                )
+            )
+
+    return violations, warnings
+
+
+async def _check_power_tier_regression(
+    session: AsyncSession,
+    project_id: UUID,
+    chapter_number: int,
+    scene_participants: list[str] | None,
+    language: str | None = None,
+) -> tuple[list[ContradictionViolation], list[ContradictionWarning]]:
+    """Warn when power_tier drops below the historical peak without a reason.
+
+    Peak is computed from snapshot history; regression is judged by position
+    in ``invariants.power_system.tiers`` when provided, else by string inequality.
+    """
+    warnings: list[ContradictionWarning] = []
+    if not scene_participants:
+        return [], warnings
+
+    project = await session.get(ProjectModel, project_id)
+    tier_order: list[str] = []
+    if project is not None and project.invariants_json:
+        power_sys = project.invariants_json.get("power_system")
+        if isinstance(power_sys, dict):
+            tiers = power_sys.get("tiers")
+            if isinstance(tiers, list):
+                tier_order = [str(t) for t in tiers if isinstance(t, (str, int))]
+
+    _is_en = is_english_language(language)
+
+    def _rank(tier: str | None) -> int:
+        if not tier:
+            return -1
+        if tier_order:
+            try:
+                return tier_order.index(str(tier))
+            except ValueError:
+                return -1
+        return hash(tier) & 0xFFFFFF
+
+    for name in scene_participants:
+        character = await session.scalar(
+            select(CharacterModel).where(
+                CharacterModel.project_id == project_id,
+                CharacterModel.name == name,
+            )
+        )
+        if character is None or not getattr(character, "power_tier", None):
+            continue
+
+        curr = character.power_tier
+        prior_snaps = list(
+            await session.scalars(
+                select(CharacterStateSnapshotModel)
+                .where(
+                    CharacterStateSnapshotModel.project_id == project_id,
+                    CharacterStateSnapshotModel.character_id == character.id,
+                    CharacterStateSnapshotModel.chapter_number < chapter_number,
+                    CharacterStateSnapshotModel.power_tier.is_not(None),
+                )
+                .order_by(CharacterStateSnapshotModel.chapter_number.desc())
+                .limit(32)
+            )
+        )
+        if not prior_snaps:
+            continue
+
+        peak_tier = max(
+            (s.power_tier for s in prior_snaps if s.power_tier),
+            key=_rank,
+            default=None,
+        )
+        if peak_tier is None:
+            continue
+
+        if _rank(curr) < _rank(peak_tier):
+            if _is_en:
+                message = (
+                    f"'{name}' power_tier regressed {peak_tier} → {curr} "
+                    "without a downgrade reason in feedback."
+                )
+                recommendation = (
+                    "Record an injury / sealing / artifact-loss event, or "
+                    "restore the prior tier."
+                )
+            else:
+                message = (
+                    f"「{name}」力量等级由 {peak_tier} 下降为 {curr}，"
+                    "feedback 未记录 power_tier_downgrade_reason。"
+                )
+                recommendation = "请在本章显式补写封印/重伤/道具失效等触发事件。"
+            warnings.append(
+                ContradictionWarning(
+                    check_type="character_power_tier_regression",
+                    message=message,
+                    recommendation=recommendation,
+                )
+            )
+
+    return [], warnings
+
+
+# ---------------------------------------------------------------------------
 # Main entry point
 # ---------------------------------------------------------------------------
 
@@ -731,6 +1066,47 @@ async def run_pre_scene_contradiction_checks(
             project_id,
             chapter_number,
             scene_number,
+        )
+
+    # 7. Character resurrection
+    try:
+        resv, resw = await _check_resurrection(
+            session, project_id, chapter_number, scene_participants, language=language,
+        )
+        all_violations.extend(resv)
+        all_warnings.extend(resw)
+        checks_run += 1
+    except Exception:
+        logger.exception(
+            "character_resurrection 检查失败 (project=%s, ch=%d, sc=%d)",
+            project_id, chapter_number, scene_number,
+        )
+
+    # 8. Stance flip justification
+    try:
+        stv, stw = await _check_stance_flip(
+            session, project_id, chapter_number, scene_participants, language=language,
+        )
+        all_violations.extend(stv)
+        all_warnings.extend(stw)
+        checks_run += 1
+    except Exception:
+        logger.exception(
+            "character_stance_flip 检查失败 (project=%s, ch=%d, sc=%d)",
+            project_id, chapter_number, scene_number,
+        )
+
+    # 9. Power tier regression
+    try:
+        _pv, pw = await _check_power_tier_regression(
+            session, project_id, chapter_number, scene_participants, language=language,
+        )
+        all_warnings.extend(pw)
+        checks_run += 1
+    except Exception:
+        logger.exception(
+            "character_power_tier_regression 检查失败 (project=%s, ch=%d, sc=%d)",
+            project_id, chapter_number, scene_number,
         )
 
     passed = len(all_violations) == 0

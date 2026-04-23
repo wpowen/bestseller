@@ -28,12 +28,26 @@ exact integration instruction handed to the bible regeneration loop —
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from itertools import combinations
 from typing import Iterable, Protocol
+from uuid import UUID
 
+from sqlalchemy import and_, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from bestseller.domain.contradiction import (
+    ContradictionCheckResult,
+    ContradictionViolation,
+    ContradictionWarning,
+)
 from bestseller.domain.story_bible import CharacterInput
 from bestseller.services.invariants import ProjectInvariants
+from bestseller.services.writing_profile import is_english_language
+
+
+logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -529,4 +543,186 @@ def build_draft_from_materialization_content(
         expected_character_count=expected_character_count,
         theme_statement=theme_statement,
         dramatic_question=dramatic_question,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Per-chapter runtime checks (Phase A6 + C1).
+# ---------------------------------------------------------------------------
+#
+# The pre-bible gate above validates the *draft* before anything is persisted.
+# The functions below run per-chapter, after feedback extraction, to catch
+# violations that only surface once prose is generated: stance flips without
+# a supporting ArcBeat milestone, resurrections snuck past contradiction
+# checks, etc. These emit the same ``ContradictionViolation`` shape so the
+# regen_loop can treat all layer-2 findings uniformly.
+
+
+_STANCE_TURNING_BEAT_KINDS = {
+    "turning_point",
+    "betrayal",
+    "reveal",
+    "reconciliation",
+    "alliance",
+    "climax",
+}
+
+
+async def validate_chapter_against_bible(
+    session: AsyncSession,
+    *,
+    project_id: UUID,
+    chapter_number: int,
+    only_enforce_from_chapter: int | None = None,
+    language: str | None = None,
+) -> ContradictionCheckResult:
+    """Run bible-level checks that require the chapter to be finalized.
+
+    Currently runs ``StanceFlipJustificationCheck`` — the stance column on
+    ``CharacterStateSnapshotModel`` for the current chapter is compared
+    against the prior non-null snapshot, and any flip must be justified by
+    either (a) a recent milestone relationship event (already enforced in
+    contradiction.py) OR (b) an ArcBeatModel of a turning-point-style
+    beat_kind scoped to this chapter.
+
+    Parameters
+    ----------
+    only_enforce_from_chapter
+        When set, chapters at or below this number are reported as
+        audit-only warnings rather than block-level violations. Used when
+        re-enabling the gate on a historical project so pre-existing stance
+        history doesn't carpet the regen_loop with fabricated regressions.
+    """
+    from bestseller.infra.db.models import (
+        ArcBeatModel,
+        CharacterModel,
+        CharacterStateSnapshotModel,
+    )
+
+    violations: list[ContradictionViolation] = []
+    warnings: list[ContradictionWarning] = []
+
+    audit_only = (
+        only_enforce_from_chapter is not None
+        and chapter_number <= only_enforce_from_chapter
+    )
+    _is_en = is_english_language(language)
+
+    # Pull stance-bearing snapshots for this chapter.
+    snap_stmt = select(CharacterStateSnapshotModel).where(
+        CharacterStateSnapshotModel.project_id == project_id,
+        CharacterStateSnapshotModel.chapter_number == chapter_number,
+        CharacterStateSnapshotModel.stance.is_not(None),
+    )
+    chapter_snaps = list(await session.scalars(snap_stmt))
+
+    if not chapter_snaps:
+        return ContradictionCheckResult(
+            passed=True, violations=[], warnings=[], checks_run=1
+        )
+
+    # Build a chapter-scoped ArcBeat lookup so we can tell whether the stance
+    # flip is grounded in a planned turning-point beat.
+    beat_stmt = select(ArcBeatModel).where(
+        ArcBeatModel.project_id == project_id,
+        ArcBeatModel.scope_chapter_number == chapter_number,
+    )
+    chapter_beats = list(await session.scalars(beat_stmt))
+    chapter_beat_kinds = {
+        (b.beat_kind or "").strip().lower() for b in chapter_beats
+    }
+    turning_beat_present = bool(
+        chapter_beat_kinds & _STANCE_TURNING_BEAT_KINDS
+    )
+
+    _hostile = {"enemy", "rival", "antagonist"}
+    _friendly = {"ally", "friend", "mentor", "protagonist"}
+
+    def _is_flip(prev: str | None, curr: str | None) -> bool:
+        if not prev or not curr:
+            return False
+        return (
+            (prev in _hostile and curr in _friendly)
+            or (prev in _friendly and curr in _hostile)
+        )
+
+    for snap in chapter_snaps:
+        character = await session.get(CharacterModel, snap.character_id)
+        if character is None:
+            continue
+
+        prior_snap = await session.scalar(
+            select(CharacterStateSnapshotModel)
+            .where(
+                CharacterStateSnapshotModel.project_id == project_id,
+                CharacterStateSnapshotModel.character_id == character.id,
+                CharacterStateSnapshotModel.chapter_number < chapter_number,
+                CharacterStateSnapshotModel.stance.is_not(None),
+            )
+            .order_by(
+                CharacterStateSnapshotModel.chapter_number.desc(),
+                CharacterStateSnapshotModel.scene_number.desc().nullslast(),
+                CharacterStateSnapshotModel.created_at.desc(),
+            )
+            .limit(1)
+        )
+        prior_stance = prior_snap.stance if prior_snap is not None else None
+
+        if not _is_flip(prior_stance, snap.stance):
+            continue
+
+        if turning_beat_present:
+            continue
+
+        if _is_en:
+            message = (
+                f"'{character.name}' stance flipped {prior_stance} → "
+                f"{snap.stance} in chapter {chapter_number}, but no "
+                "turning_point / betrayal / reveal ArcBeat is scoped here."
+            )
+        else:
+            message = (
+                f"「{character.name}」在第{chapter_number}章立场由 "
+                f"{prior_stance} 翻为 {snap.stance}，"
+                "但本章未安排 turning_point / betrayal / reveal 类 ArcBeat。"
+            )
+
+        if audit_only:
+            warnings.append(
+                ContradictionWarning(
+                    check_type="stance_flip_justification",
+                    message=message,
+                    recommendation=(
+                        "Historical chapter — audit only." if _is_en
+                        else "历史章节，仅记录不阻断。"
+                    ),
+                )
+            )
+        else:
+            violations.append(
+                ContradictionViolation(
+                    check_type="stance_flip_justification",
+                    severity="error",
+                    message=message,
+                    evidence=(
+                        f"prior_stance={prior_stance}; "
+                        f"chapter_beats={sorted(chapter_beat_kinds)}"
+                    ),
+                )
+            )
+
+    passed = not violations
+    if violations:
+        logger.info(
+            "bible_gate: %d stance_flip violation(s) at project=%s chapter=%d",
+            len(violations),
+            project_id,
+            chapter_number,
+        )
+
+    return ContradictionCheckResult(
+        passed=passed,
+        violations=violations,
+        warnings=warnings,
+        checks_run=1,
     )

@@ -34,3 +34,19 @@ Wrong: Run `python` directly and fail on systems where only `python3` is install
 Correct:
 - Prefer `python3` for verification scripts in this repository environment.
 - If command fails, immediately retry with `python3` and continue validation.
+
+---
+
+Mistake: Use `str.maketrans` with multi-character keys (for example `——`).
+Wrong: Build one translation table containing both single-char and multi-char punctuation mappings, which raises `ValueError`.
+Correct:
+- Keep `str.maketrans` for single-character mappings only.
+- Apply multi-character replacements (such as `——`, `...`) via explicit `.replace()` calls before/after `translate()`.
+
+---
+
+Mistake: Assume `output/天机录/amazon/quality_audit` persists after rebuilding books.
+Wrong: Run `build_amazon_book.py` and then read audit/progress files without re-generating them.
+Correct:
+- Re-run `scripts/scan_residuals.py` and `scripts/smart_audit.py` after EPUB build if `quality_audit` is missing.
+- Recreate/update `progress.json` under `quality_audit` before final reporting.

@@ -5357,6 +5357,55 @@ def _book_spec_prompts(project: ProjectModel, premise: str, fallback: dict[str, 
     return system_prompt, user_prompt
 
 
+_WORLD_SPEC_COUNTER_EXAMPLES_ZH: str = (
+    "【严禁输出以下错误结构】\n"
+    "  \"power_structure\": {\"overview\": \"...\", \"factions\": [...]}   ← 错误：必须是字符串\n"
+    "  \"forbidden_zones\": [{\"name\": \"...\", \"rules\": \"...\"}]        ← 错误：必须是字符串\n"
+    "  \"history_key_events\": [{\"name\": \"...\", \"relevance\": \"...\"}] ← 错误：字段名必须是 event 不是 name\n"
+    "  \"rules\": [{\"rule_name\": \"...\", \"description\": {\"summary\": \"...\"}}] ← 错误：description 必须是字符串\n"
+    "\n【正确写法示例】\n"
+    "  \"power_structure\": \"青萝镇以王李两家世代联盟为权力核心，外加祖庭监督。王家负责血契，李家负责器灵契约，祖庭仲裁。\"\n"
+    "  \"forbidden_zones\": \"封印禁地（镇东古井之下）、器宫核心（百年未启）、魂池（仅三年一开）。\"\n"
+    "  \"history_key_events\": [{\"event\": \"器灵初现\", \"relevance\": \"奠定血契传统\"}, {\"event\": \"妖族之战\", \"relevance\": \"建立祖庭秩序\"}]\n"
+    "  \"rules\": [{\"rule_name\": \"血契\", \"description\": \"人与器灵须以血立约，违约代价为血脉永封\"}]\n"
+)
+
+_WORLD_SPEC_COUNTER_EXAMPLES_EN: str = (
+    "[Forbidden output shapes]\n"
+    "  \"power_structure\": {\"overview\": \"...\", \"factions\": [...]}   WRONG — must be a string\n"
+    "  \"forbidden_zones\": [{\"name\": \"...\", \"rules\": \"...\"}]        WRONG — must be a string\n"
+    "  \"history_key_events\": [{\"name\": \"...\", \"relevance\": \"...\"}] WRONG — key must be 'event', not 'name'\n"
+    "  \"rules\": [{\"rule_name\": \"...\", \"description\": {\"summary\": \"...\"}}] WRONG — description must be string\n"
+    "\n[Correct shapes]\n"
+    "  \"power_structure\": \"The Crown holds legitimacy, the Guild holds access, the Spire holds risk — each balanced against the others.\"\n"
+    "  \"forbidden_zones\": \"The Deep Archive (sealed since the Second Fracture), the Old Well below East Gate, the Blooming Grove after solstice.\"\n"
+    "  \"history_key_events\": [{\"event\": \"The Second Fracture\", \"relevance\": \"Triggered the current oath bindings\"}]\n"
+    "  \"rules\": [{\"rule_name\": \"Blood Covenant\", \"description\": \"Every bonded pair shares wounds across the bond — breaking the bond kills both\"}]\n"
+)
+
+_CAST_SPEC_COUNTER_EXAMPLES_ZH: str = (
+    "【严禁输出以下错误结构】\n"
+    "  \"protagonist\": {\"王青峰\": {\"role\": \"protagonist\", \"age\": 20}} ← 错误：不要以角色名做外层 key 包住角色对象\n"
+    "  \"supporting_cast\": {\"师父\": {...}, \"青儿\": {...}}              ← 错误：必须是数组，不是 dict\n"
+    "  \"conflict_map\": {\"王青峰 vs 李墨白\": {\"conflict_type\": \"...\"}} ← 错误：必须是数组\n"
+    "\n【正确写法示例】\n"
+    "  \"protagonist\": {\"name\": \"王青峰\", \"role\": \"protagonist\", \"age\": 20, ...}\n"
+    "  \"supporting_cast\": [{\"name\": \"师父\", \"role\": \"mentor\", ...}, {\"name\": \"青儿\", \"role\": \"sister\", ...}]\n"
+    "  \"conflict_map\": [{\"character_a\": \"王青峰\", \"character_b\": \"李墨白\", \"conflict_type\": \"血脉之争\", \"trigger_condition\": \"初遇之际\"}]\n"
+)
+
+_CAST_SPEC_COUNTER_EXAMPLES_EN: str = (
+    "[Forbidden output shapes]\n"
+    "  \"protagonist\": {\"Elena\": {\"role\": \"protagonist\", ...}}  WRONG — do not wrap the object with the character name as outer key\n"
+    "  \"supporting_cast\": {\"Mentor\": {...}, \"Rival\": {...}}    WRONG — must be an array, not a dict\n"
+    "  \"conflict_map\": {\"Elena vs Kell\": {\"conflict_type\": \"...\"}} WRONG — must be an array\n"
+    "\n[Correct shapes]\n"
+    "  \"protagonist\": {\"name\": \"Elena\", \"role\": \"protagonist\", ...}\n"
+    "  \"supporting_cast\": [{\"name\": \"Marin\", \"role\": \"mentor\", ...}, {\"name\": \"Kell\", \"role\": \"rival\", ...}]\n"
+    "  \"conflict_map\": [{\"character_a\": \"Elena\", \"character_b\": \"Kell\", \"conflict_type\": \"bloodline rivalry\", \"trigger_condition\": \"first meeting\"}]\n"
+)
+
+
 def _world_spec_prompts(project: ProjectModel, premise: str, book_spec: dict[str, Any]) -> tuple[str, str]:
     from bestseller.services.genre_review_profiles import resolve_genre_review_profile
 
@@ -5389,7 +5438,8 @@ def _world_spec_prompts(project: ProjectModel, premise: str, book_spec: dict[str
             f"{_story_package_block}\n"
             f"{_pp_world_spec}"
             "Generate a WorldSpec JSON with world_name, world_premise, rules, power_system, locations, factions, power_structure, history_key_events, and forbidden_zones. "
-            "World rules must create conflict, cost, upgrade space, and conspiracy leverage rather than empty lore."
+            "World rules must create conflict, cost, upgrade space, and conspiracy leverage rather than empty lore.\n\n"
+            f"{_WORLD_SPEC_COUNTER_EXAMPLES_EN}"
         )
         if is_en
         else (
@@ -5403,7 +5453,8 @@ def _world_spec_prompts(project: ProjectModel, premise: str, book_spec: dict[str
             f"{_pp_world_spec}"
             "请生成一个 WorldSpec JSON，包含 world_name、world_premise、rules、power_system、locations、"
             "factions、power_structure、history_key_events、forbidden_zones。"
-            "要求世界规则能直接制造冲突、爽点成本、升级空间和阴谋推进空间，不要只写空背景。"
+            "要求世界规则能直接制造冲突、爽点成本、升级空间和阴谋推进空间，不要只写空背景。\n\n"
+            f"{_WORLD_SPEC_COUNTER_EXAMPLES_ZH}"
         )
     )
     _genre_instruction = getattr(_genre_profile.planner_prompts, f"world_spec_instruction_{_lang_key}", "")
@@ -5481,7 +5532,8 @@ def _cast_spec_prompts(project: ProjectModel, book_spec: dict[str, Any], world_s
             "- Core cast names should be memorable, readable, and easy to distinguish in dialogue\n"
             "- Avoid confusingly similar names or generic placeholder naming\n"
             "- Antagonist names may imply personality, but stay subtle\n"
-            "- Every character must include a name_reasoning field"
+            "- Every character must include a name_reasoning field\n\n"
+            f"{_CAST_SPEC_COUNTER_EXAMPLES_EN}"
         )
         if is_en
         else (
@@ -5508,7 +5560,8 @@ def _cast_spec_prompts(project: ProjectModel, book_spec: dict[str, Any], world_s
             "- 所有角色的姓氏不能重复\n"
             "- 避免过于生僻的字、谐音不雅的组合、或网文中已经烂大街的名字\n"
             "- 反派名可暗示性格特质但不要太刻意\n"
-            "- 每个角色附 name_reasoning 字段说明命名理由"
+            "- 每个角色附 name_reasoning 字段说明命名理由\n\n"
+            f"{_CAST_SPEC_COUNTER_EXAMPLES_ZH}"
         )
     )
     _genre_instruction = getattr(_genre_profile.planner_prompts, f"cast_spec_instruction_{_lang_key}", "")

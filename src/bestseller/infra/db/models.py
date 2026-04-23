@@ -198,6 +198,12 @@ class CharacterModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     arc_trajectory: Mapped[str | None] = mapped_column(Text)
     arc_state: Mapped[str | None] = mapped_column(Text)
     power_tier: Mapped[str | None] = mapped_column(Text())
+    alive_status: Mapped[str] = mapped_column(
+        String(16), nullable=False, server_default=text("'alive'")
+    )
+    death_chapter_number: Mapped[int | None] = mapped_column(Integer)
+    stance: Mapped[str | None] = mapped_column(String(32))
+    stance_locked_until_chapter: Mapped[int | None] = mapped_column(Integer)
     physical_description: Mapped[str | None] = mapped_column(Text())
     knowledge_state_json: Mapped[JSON_DICT] = mapped_column("knowledge_state", JSONB, nullable=False, default=dict)
     voice_profile_json: Mapped[JSON_DICT] = mapped_column(
@@ -283,6 +289,8 @@ class CharacterStateSnapshotModel(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
     emotional_state: Mapped[str | None] = mapped_column(Text)
     physical_state: Mapped[str | None] = mapped_column(Text)
     power_tier: Mapped[str | None] = mapped_column(Text())
+    alive_status: Mapped[str | None] = mapped_column(String(16))
+    stance: Mapped[str | None] = mapped_column(String(32))
     trust_map: Mapped[JSON_DICT] = mapped_column(JSONB, nullable=False, default=dict)
     beliefs: Mapped[JSON_LIST] = mapped_column(JSONB, nullable=False, default=list)
     notes: Mapped[str | None] = mapped_column(Text)

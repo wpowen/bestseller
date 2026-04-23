@@ -49,6 +49,10 @@ class L2Config:
     antagonist_jaccard_threshold: float = 0.4
     world_taxonomy_enabled: bool = True
     naming_pool_multiplier: float = 2.0
+    # Grandfathering window: stance flips / resurrections in chapters
+    # finalized before this number are audit_only even when enabled.
+    only_enforce_from_chapter: int | None = None
+    stance_flip_justification_enabled: bool = True
 
 
 @dataclass(frozen=True)
@@ -120,6 +124,17 @@ class L7Config:
 
 
 @dataclass(frozen=True)
+class L8Config:
+    """L8 Scorecard config — Phase 3 quality score (0-100).
+
+    Enabled means per-chapter incremental updates after successful review
+    plus a full recompute at end-of-autowrite. Disabled skips both.
+    """
+
+    enabled: bool = False
+
+
+@dataclass(frozen=True)
 class QualityGatesConfig:
     l1_enabled: bool = True
     l2: L2Config = field(default_factory=L2Config)
@@ -130,6 +145,7 @@ class QualityGatesConfig:
     l6_enabled: bool = True
     l6_gate: GateConfig = DEFAULT_GATE_CONFIG
     l7: L7Config = field(default_factory=L7Config)
+    l8: L8Config = field(default_factory=L8Config)
 
 
 def _as_dict(payload: Any) -> dict[str, Any]:
@@ -191,6 +207,12 @@ def load_quality_gates_config(
     l5_pov = _as_dict(l5_checks.get("pov_lock"))
     l6 = _as_dict(raw.get("l6_write_gate"))
     l7 = _as_dict(raw.get("l7_continuous_audit"))
+    l8 = _as_dict(raw.get("l8_scorecard"))
+    l2_stance = _as_dict(l2_checks.get("stance_flip_justification"))
+    _only_enforce_raw = l2.get("only_enforce_from_chapter")
+    _only_enforce: int | None = None
+    if isinstance(_only_enforce_raw, int) and _only_enforce_raw > 0:
+        _only_enforce = _only_enforce_raw
 
     return QualityGatesConfig(
         l1_enabled=bool(l1.get("enabled", True)),
@@ -203,6 +225,10 @@ def load_quality_gates_config(
             ),
             world_taxonomy_enabled=bool(l2_world.get("enabled", True)),
             naming_pool_multiplier=float(l2_naming.get("multiplier", 2.0)),
+            only_enforce_from_chapter=_only_enforce,
+            stance_flip_justification_enabled=bool(
+                l2_stance.get("enabled", True)
+            ),
         ),
         l3=L3Config(
             enabled=bool(l3.get("enabled", True)),
@@ -255,6 +281,9 @@ def load_quality_gates_config(
             enabled=bool(l7.get("enabled", True)),
             auto_repair=bool(l7.get("auto_repair", False)),
             schedule_cron=str(l7.get("schedule_cron", "0 */6 * * *")),
+        ),
+        l8=L8Config(
+            enabled=bool(l8.get("enabled", False)),
         ),
     )
 

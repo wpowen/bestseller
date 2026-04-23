@@ -4,6 +4,7 @@ import json
 import logging
 import re
 from collections import defaultdict
+from dataclasses import dataclass
 from typing import Any
 from uuid import UUID, uuid5
 
@@ -72,6 +73,28 @@ def _base_role_strength(role_type: str) -> float:
     if any(token in normalized for token in ("ally", "friend", "mentor", "爱", "恋", "搭档", "盟友")):
         return 0.6
     return 0.1
+
+
+def _default_stance_from_role(role: str | None) -> str | None:
+    """Pick a default stance value from cast spec role for new characters.
+
+    Returns None when the role is ambiguous so the feedback loop can
+    decide the stance from prose rather than baking in a guess.
+    """
+    if not role:
+        return None
+    normalized = role.strip().lower()
+    if "protagonist" in normalized or "主角" in normalized:
+        return "protagonist"
+    if any(tok in normalized for tok in ("antagonist", "villain", "enemy", "反派", "敌")):
+        return "enemy"
+    if any(tok in normalized for tok in ("ally", "friend", "mentor", "盟友", "师", "搭档")):
+        return "ally"
+    if any(tok in normalized for tok in ("rival", "对手")):
+        return "rival"
+    if "neutral" in normalized or "中立" in normalized:
+        return "neutral"
+    return None
 
 
 def _parse_volume_word_count(raw_value: float | int | str | None) -> int | None:
@@ -544,6 +567,13 @@ async def upsert_cast_spec(
         character.arc_trajectory = character_input.arc_trajectory
         character.arc_state = character_input.arc_state
         character.power_tier = character_input.power_tier
+        if not getattr(character, "alive_status", None):
+            character.alive_status = "alive"
+        # Seed stance from role on first create so default "enemy"/"ally" is
+        # available before feedback fires. Never overwrite once set — stance
+        # updates are event-gated in feedback._apply_character_state_updates.
+        if getattr(character, "stance", None) in (None, ""):
+            character.stance = _default_stance_from_role(character_input.role)
         character.is_pov_character = character_input.role == "protagonist"
         character.knowledge_state_json = character_input.knowledge_state.model_dump(mode="json")
         _voice_data = character_input.voice_profile.model_dump(mode="json")
@@ -918,6 +948,103 @@ async def get_latest_character_state(
     return await session.scalar(stmt.limit(1))
 
 
+@dataclass(frozen=True)
+class EffectiveCharacterState:
+    """Per-field snapshot after "most recent non-null" fallback.
+
+    Each field traces back chronologically through snapshots until a
+    non-null value is found, with the CharacterModel row as the final
+    fallback. This prevents prompt renderings like "Power:未定义" when a
+    more recent snapshot happened to leave power_tier null while earlier
+    snapshots already established the value.
+    """
+
+    arc_state: str | None
+    power_tier: str | None
+    emotional_state: str | None
+    physical_state: str | None
+    alive_status: str | None
+    stance: str | None
+    notes: str | None
+    latest_chapter_number: int | None
+    latest_scene_number: int | None
+
+
+async def get_effective_character_state(
+    session: AsyncSession,
+    *,
+    project_id: UUID,
+    character: CharacterModel,
+    before_chapter_number: int | None = None,
+    before_scene_number: int | None = None,
+) -> EffectiveCharacterState:
+    """Resolve each lifecycle field via most-recent non-null snapshot.
+
+    Strategy:
+    1. Fetch all snapshots for (project, character) up to the cutoff in
+       descending chronological order (capped to avoid unbounded scans).
+    2. For each tracked field, walk snapshots until a non-null value is
+       found; else fall back to CharacterModel.
+    3. latest_chapter/scene_number / notes reference the newest snapshot
+       regardless of whether any field was non-null there.
+    """
+    stmt = select(CharacterStateSnapshotModel).where(
+        CharacterStateSnapshotModel.project_id == project_id,
+        CharacterStateSnapshotModel.character_id == character.id,
+    )
+    if before_chapter_number is not None:
+        if before_scene_number is None:
+            stmt = stmt.where(
+                CharacterStateSnapshotModel.chapter_number <= before_chapter_number
+            )
+        else:
+            stmt = stmt.where(
+                or_(
+                    CharacterStateSnapshotModel.chapter_number < before_chapter_number,
+                    and_(
+                        CharacterStateSnapshotModel.chapter_number == before_chapter_number,
+                        or_(
+                            CharacterStateSnapshotModel.scene_number.is_(None),
+                            CharacterStateSnapshotModel.scene_number < before_scene_number,
+                        ),
+                    ),
+                )
+            )
+    stmt = stmt.order_by(
+        CharacterStateSnapshotModel.chapter_number.desc(),
+        CharacterStateSnapshotModel.scene_number.desc().nullslast(),
+        CharacterStateSnapshotModel.created_at.desc(),
+    ).limit(64)
+    snapshots = list(await session.scalars(stmt))
+
+    def _first_non_null(attr: str) -> Any:
+        for snap in snapshots:
+            value = getattr(snap, attr, None)
+            if value not in (None, ""):
+                return value
+        return None
+
+    arc_state = _first_non_null("arc_state") or character.arc_state
+    power_tier = _first_non_null("power_tier") or character.power_tier
+    emotional_state = _first_non_null("emotional_state")
+    physical_state = _first_non_null("physical_state")
+    alive_status = _first_non_null("alive_status") or getattr(character, "alive_status", None)
+    stance = _first_non_null("stance") or getattr(character, "stance", None)
+
+    latest = snapshots[0] if snapshots else None
+    return EffectiveCharacterState(
+        arc_state=arc_state,
+        power_tier=power_tier,
+        emotional_state=emotional_state,
+        physical_state=physical_state,
+        alive_status=alive_status,
+        stance=stance,
+        notes=latest.notes if latest is not None else None,
+        latest_chapter_number=latest.chapter_number if latest is not None else None,
+        latest_scene_number=latest.scene_number if latest is not None else None,
+    )
+
+
 async def load_scene_story_bible_context(
     session: AsyncSession,
     *,
@@ -956,13 +1083,14 @@ async def load_scene_story_bible_context(
         character = await session.get(CharacterModel, stable_character_id(project.id, participant_name))
         if character is None:
             continue
-        latest_state = await get_latest_character_state(
+        effective = await get_effective_character_state(
             session,
             project_id=project.id,
-            character_id=character.id,
+            character=character,
             before_chapter_number=chapter.chapter_number,
             before_scene_number=scene.scene_number,
         )
+        stance_locked_until = getattr(character, "stance_locked_until_chapter", None)
         characters.append(
             {
                 "name": character.name,
@@ -971,14 +1099,18 @@ async def load_scene_story_bible_context(
                 "goal": character.goal,
                 "fear": character.fear,
                 "flaw": character.flaw,
-                "arc_state": latest_state.arc_state if latest_state else character.arc_state,
-                "power_tier": latest_state.power_tier if latest_state else character.power_tier,
+                "arc_state": effective.arc_state,
+                "power_tier": effective.power_tier,
                 "knowledge_state": character.knowledge_state_json,
                 "voice_profile": character.voice_profile_json,
                 "moral_framework": character.moral_framework_json,
-                "latest_state": latest_state.notes if latest_state is not None else None,
-                "emotional_state": latest_state.emotional_state if latest_state is not None else None,
-                "physical_state": latest_state.physical_state if latest_state is not None else None,
+                "latest_state": effective.notes,
+                "emotional_state": effective.emotional_state,
+                "physical_state": effective.physical_state,
+                "alive_status": effective.alive_status,
+                "stance": effective.stance,
+                "stance_locked_until_chapter": stance_locked_until,
+                "death_chapter_number": getattr(character, "death_chapter_number", None),
             }
         )
 
@@ -999,6 +1131,31 @@ async def load_scene_story_bible_context(
                 )
             )
         ]
+
+    # Deceased roster — cap at recent 20 to avoid prompt bloat on long runs.
+    # Filter to deaths that occurred before the current chapter so the prompt
+    # can explicitly warn "do not resurrect".
+    deceased_stmt = (
+        select(CharacterModel)
+        .where(
+            CharacterModel.project_id == project.id,
+            CharacterModel.alive_status == "deceased",
+            or_(
+                CharacterModel.death_chapter_number.is_(None),
+                CharacterModel.death_chapter_number < chapter.chapter_number,
+            ),
+        )
+        .order_by(CharacterModel.death_chapter_number.desc().nullslast())
+        .limit(20)
+    )
+    deceased_characters = [
+        {
+            "name": dead.name,
+            "death_chapter_number": dead.death_chapter_number,
+            "role": dead.role,
+        }
+        for dead in await session.scalars(deceased_stmt)
+    ]
 
     return {
         "book_spec": project.metadata_json.get("book_spec", {}),
@@ -1026,6 +1183,7 @@ async def load_scene_story_bible_context(
         ],
         "participants": characters,
         "relationships": relationships,
+        "deceased_characters": deceased_characters,
     }
 
 

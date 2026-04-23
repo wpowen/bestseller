@@ -2262,6 +2262,51 @@ async def run_project_pipeline(
     # output validation see a coherent contract from chapter 1 onward.
     await _ensure_project_invariants(session, project, settings)
 
+    # ── Batch 2: Material Forge ────────────────────────────────────────────
+    # When ``enable_forge_pipeline`` is on, run all 5 Forges before the
+    # Planner so that project_materials exist for reference-style prompting.
+    # Runs only on the first pass (when no project_materials exist yet) to
+    # avoid re-forging on every resume.  Failures are logged but do NOT
+    # abort the pipeline — the old non-reference path is the safe fallback.
+    if settings.pipeline.enable_forge_pipeline:
+        try:
+            from bestseller.services.material_forge import forge_all_materials  # noqa: PLC0415
+            from bestseller.infra.db.models import ProjectMaterialModel  # noqa: PLC0415
+            from sqlalchemy import select, func  # noqa: PLC0415
+
+            existing_count_result = await session.execute(
+                select(func.count()).where(
+                    ProjectMaterialModel.project_id == project.id
+                )
+            )
+            existing_count = existing_count_result.scalar_one()
+            if existing_count == 0:
+                _emit_progress(
+                    progress,
+                    "material_forge_started",
+                    {"project_slug": project_slug},
+                )
+                genre = (project.metadata_json or {}).get("genre", "")
+                sub_genre = (project.metadata_json or {}).get("sub_genre")
+                forge_results = await forge_all_materials(
+                    session,
+                    project_id=project.id,
+                    genre=genre,
+                    settings=settings,
+                    sub_genre=sub_genre,
+                )
+                await _checkpoint_commit(session)
+                total_forged = sum(r.emitted_count for r in forge_results)
+                _emit_progress(
+                    progress,
+                    "material_forge_completed",
+                    {"project_slug": project_slug, "total_forged": total_forged},
+                )
+        except Exception:
+            logger.exception(
+                "run_project_pipeline: material forge failed — continuing with legacy path"
+            )
+
     story_bible_result = None
     narrative_graph_result = None
     narrative_tree_result = None

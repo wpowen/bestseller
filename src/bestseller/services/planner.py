@@ -5425,6 +5425,9 @@ def _world_spec_prompts(project: ProjectModel, premise: str, book_spec: dict[str
         system_prompt += f"\n{_genre_system}"
     _pp_block = f"Prompt Pack：\n{render_prompt_pack_prompt_block(prompt_pack)}\n" if prompt_pack else ""
     _pp_world_spec = f"{render_prompt_pack_fragment(prompt_pack, 'planner_world_spec')}\n" if prompt_pack else ""
+    # Batch 2: inject §slug material references when enable_reference_style_generation is on
+    _mat_ref = (project.metadata_json or {}).get("material_reference_block", "")
+    _mat_ref_block = f"\n{_mat_ref}\n" if _mat_ref else ""
     _story_package_block = _story_package_prompt_block(project, language=language)
     user_prompt = (
         (
@@ -5437,6 +5440,7 @@ def _world_spec_prompts(project: ProjectModel, premise: str, book_spec: dict[str
             f"BookSpec summary:\n{summarize_book_spec(book_spec, language='en')}\n"
             f"{_story_package_block}\n"
             f"{_pp_world_spec}"
+            f"{_mat_ref_block}"
             "Generate a WorldSpec JSON with world_name, world_premise, rules, power_system, locations, factions, power_structure, history_key_events, and forbidden_zones. "
             "World rules must create conflict, cost, upgrade space, and conspiracy leverage rather than empty lore.\n\n"
             f"{_WORLD_SPEC_COUNTER_EXAMPLES_EN}"
@@ -5451,6 +5455,7 @@ def _world_spec_prompts(project: ProjectModel, premise: str, book_spec: dict[str
             f"BookSpec 摘要：\n{summarize_book_spec(book_spec, language='zh')}\n"
             f"{_story_package_block}\n"
             f"{_pp_world_spec}"
+            f"{_mat_ref_block}"
             "请生成一个 WorldSpec JSON，包含 world_name、world_premise、rules、power_system、locations、"
             "factions、power_structure、history_key_events、forbidden_zones。"
             "要求世界规则能直接制造冲突、爽点成本、升级空间和阴谋推进空间，不要只写空背景。\n\n"
@@ -6684,6 +6689,27 @@ async def generate_novel_plan(
     if _category_key and isinstance(project.metadata_json, dict):
         project.metadata_json["category_key"] = _category_key
 
+    # ── Batch 2: Reference-style material injection ───────────────────────
+    # When ``enable_reference_style_generation`` is on, pre-fetch the
+    # material reference block (§slug URNs) and stash it in
+    # ``project.metadata_json["material_reference_block"]`` so that every
+    # downstream sync prompt function can read it without needing async.
+    # Empty when no project_materials exist or flag is off — treated as no-op.
+    if settings.pipeline.enable_reference_style_generation:
+        try:
+            from bestseller.services.material_reference import (  # noqa: PLC0415
+                render_material_reference_block,
+            )
+            _mat_ref_block = await render_material_reference_block(
+                session, project.id
+            )
+            if _mat_ref_block and isinstance(project.metadata_json, dict):
+                project.metadata_json["material_reference_block"] = _mat_ref_block
+        except Exception:
+            logger.exception(
+                "generate_novel_plan: material reference block failed — continuing without"
+            )
+
     try:
         premise_artifact = await import_planning_artifact(
             session,
@@ -7460,6 +7486,22 @@ async def generate_foundation_plan(
     # Store category_key in project metadata for downstream reuse
     if _category_key and isinstance(project.metadata_json, dict):
         project.metadata_json["category_key"] = _category_key
+
+    # ── Batch 2: Reference-style material injection ───────────────────────
+    if settings.pipeline.enable_reference_style_generation:
+        try:
+            from bestseller.services.material_reference import (  # noqa: PLC0415
+                render_material_reference_block,
+            )
+            _mat_ref_block_f = await render_material_reference_block(
+                session, project.id
+            )
+            if _mat_ref_block_f and isinstance(project.metadata_json, dict):
+                project.metadata_json["material_reference_block"] = _mat_ref_block_f
+        except Exception:
+            logger.exception(
+                "generate_foundation_plan: material reference block failed — continuing without"
+            )
 
     try:
         # ── Premise ──

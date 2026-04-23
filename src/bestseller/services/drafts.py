@@ -2398,6 +2398,12 @@ def build_scene_draft_prompts(
     # prompt falls back to the legacy hype-only path (feature-gated by
     # ``quality_gates.l3_prompt_constructor.enabled``).
     l3_prompt_block: str | None = None,
+    # Material library soft-reference block. Pre-rendered by
+    # ``material_library_reference.render_library_soft_reference_block``
+    # and gated by ``pipeline.enable_library_soft_reference`` (default
+    # False).  When None / empty the prompt is byte-identical to the
+    # pre-library pipeline — historical novels stay on v1.
+    library_reference_block: str | None = None,
     # Context budget
     context_budget_tokens: int = 6000,
 ) -> tuple[str, str]:
@@ -2668,6 +2674,12 @@ def build_scene_draft_prompts(
     if l3_prompt_block:
         _l3_prompt_line = f"{l3_prompt_block}\n\n"
 
+    # Material library soft reference — opt-in inspiration for old projects'
+    # new chapters. See ``material_library_reference`` module docstring.
+    _library_reference_line = ""
+    if library_reference_block:
+        _library_reference_line = f"{library_reference_block}\n\n"
+
     # Phase-3 wiring: scene/sequel pattern
     _scene_sequel_line = _render_scene_sequel_section(
         swain_pattern, scene_skeleton, is_en=is_en,
@@ -2766,6 +2778,7 @@ def build_scene_draft_prompts(
             "reader_contract_line": _reader_contract_line,
             "hype_constraints_line": _hype_constraints_line,
             "l3_prompt_line": _l3_prompt_line,
+            "library_reference_line": _library_reference_line,
             "hard_fact_line": _hard_fact_line,
             "knowledge_line": _knowledge_line,
             "recent_scene_section": recent_scene_section,
@@ -2816,6 +2829,7 @@ def build_scene_draft_prompts(
     _reader_contract_line = _ctx["reader_contract_line"]
     _hype_constraints_line = _ctx["hype_constraints_line"]
     _l3_prompt_line = _ctx["l3_prompt_line"]
+    _library_reference_line = _ctx["library_reference_line"]
     _hard_fact_line = _ctx["hard_fact_line"]
     _knowledge_line = _ctx["knowledge_line"]
     recent_scene_section = _ctx["recent_scene_section"]
@@ -2848,6 +2862,7 @@ def build_scene_draft_prompts(
             f"{_reader_contract_line}"
             f"{_hype_constraints_line}"
             f"{_l3_prompt_line}"
+            f"{_library_reference_line}"
             f"{_plan_richness_line}"
             f"{_identity_line}"
             f"{_scene_scope_isolation_line}"
@@ -2922,6 +2937,7 @@ def build_scene_draft_prompts(
             f"{_reader_contract_line}"
             f"{_hype_constraints_line}"
             f"{_l3_prompt_line}"
+            f"{_library_reference_line}"
             f"{_plan_richness_line}"
             f"{_identity_line}"
             f"{_scene_scope_isolation_line}"
@@ -3219,6 +3235,73 @@ def _determine_model_tier(
     return "standard"
 
 
+async def _maybe_render_library_soft_reference(
+    session: AsyncSession,
+    *,
+    settings: AppSettings | None,
+    project: ProjectModel,
+    chapter: ChapterModel,
+    scene: SceneCardModel,
+) -> str | None:
+    """Render the soft-reference library block when the feature flag is on.
+
+    * Returns ``None`` when the flag is off or settings are missing —
+      identical to the legacy draft path.
+    * Returns ``""`` (empty string) when retrieval succeeded but found
+      nothing — prompt assembly treats both the same, but we keep the
+      two cases distinct for telemetry and testability.
+    * On any internal error we log and return ``None`` so the draft
+      pipeline never fails because of soft-reference retrieval.
+    """
+
+    if settings is None:
+        return None
+    pipeline_settings = getattr(settings, "pipeline", None)
+    if pipeline_settings is None:
+        return None
+    if not getattr(pipeline_settings, "enable_library_soft_reference", False):
+        return None
+    if not getattr(pipeline_settings, "enable_material_library", False):
+        # Soft reference depends on the library being enabled; otherwise
+        # the retrieval layer may be un-migrated and we'd raise.
+        return None
+
+    top_k = int(
+        getattr(pipeline_settings, "library_soft_reference_top_k", 4) or 4
+    )
+
+    query_parts = [
+        str(chapter.chapter_goal or ""),
+        str(scene.title or ""),
+        str(scene.purpose.get("story", "") if scene.purpose else ""),
+        str(scene.purpose.get("emotion", "") if scene.purpose else ""),
+        " ".join(scene.participants or []),
+    ]
+    query_text = " ".join(p for p in query_parts if p).strip()
+    if not query_text:
+        return None
+
+    try:
+        from bestseller.services.material_library_reference import (  # noqa: PLC0415
+            render_library_soft_reference_block,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("library soft-reference import failed: %s", exc)
+        return None
+
+    try:
+        return await render_library_soft_reference_block(
+            session,
+            query=query_text,
+            genre=getattr(project, "genre", None),
+            sub_genre=getattr(project, "sub_genre", None),
+            top_k=top_k,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("library soft-reference render failed: %s", exc)
+        return None
+
+
 async def generate_scene_draft(
     session: AsyncSession,
     project_slug: str,
@@ -3451,6 +3534,13 @@ async def generate_scene_draft(
             ),
             l3_prompt_block=(
                 context_packet.l3_prompt_block if context_packet else None
+            ),
+            library_reference_block=await _maybe_render_library_soft_reference(
+                session,
+                settings=settings,
+                project=project,
+                chapter=chapter,
+                scene=scene,
             ),
             context_budget_tokens=(
                 settings.generation.context_budget_tokens if settings else 6000

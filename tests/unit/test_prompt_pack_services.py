@@ -27,8 +27,13 @@ def test_resolve_prompt_pack_can_infer_from_genre() -> None:
 
 
 def test_get_prompt_pack_returns_fragments() -> None:
+    """Pack fragments load correctly; B-class planner_* fields were removed in Batch 3."""
     pack = get_prompt_pack("apocalypse-supply-chain")
 
     assert pack is not None
-    assert "前三章" in (pack.fragments.planner_outline or "")
+    # B-class planner_* fields are removed from PromptPackFragments in Batch 3.
+    assert not hasattr(pack.fragments, "planner_outline"), (
+        "planner_outline is a B-class field and must have been removed"
+    )
+    # A-class scene writing fragment is retained.
     assert "资源" in (pack.fragments.scene_writer or "")

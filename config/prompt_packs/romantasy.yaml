@@ -1,59 +1,65 @@
 key: romantasy
 name: Romantasy
-version: "1.0"
-description: Fantasy romance with lush world-building, fae courts, slow-burn tension, and chosen-one arcs — targeting the post-ACOTAR BookTok readership and KU fantasy romance shelves.
+version: '1.0'
+description: Fantasy romance with lush world-building, fae courts, slow-burn tension, and chosen-one arcs — targeting the
+  post-ACOTAR BookTok readership and KU fantasy romance shelves.
 genres:
-  - Fantasy Romance
-  - Romantasy
+- Fantasy Romance
+- Romantasy
 tags:
-  - romantasy
-  - fae
-  - mate bond
-  - slow burn
-  - chosen one
-  - court intrigue
-  - BookTok
+- romantasy
+- fae
+- mate bond
+- slow burn
+- chosen one
+- court intrigue
+- BookTok
 source_notes:
-  - Built for the English-language romantasy market that exploded after A Court of Thorns and Roses
-  - Incorporates KU page-read pacing and BookTok discovery hooks
-  - Balances fantasy world-building with romance beat sheet expectations
+- Built for the English-language romantasy market that exploded after A Court of Thorns and Roses
+- Incorporates KU page-read pacing and BookTok discovery hooks
+- Balances fantasy world-building with romance beat sheet expectations
 anti_patterns:
-  - World-building info dumps that halt the romance or plot momentum
-  - Romance that feels bolted onto a fantasy plot rather than woven through it
-  - Magic system that exists only for convenience without rules or costs
-  - Fae courts that are aesthetically pretty but politically empty
-  - Slow burn that stalls into no burn — tension must always be escalating
-  - Heroine whose only trait is being special without earning her power
+- World-building info dumps that halt the romance or plot momentum
+- Romance that feels bolted onto a fantasy plot rather than woven through it
+- Magic system that exists only for convenience without rules or costs
+- Fae courts that are aesthetically pretty but politically empty
+- Slow burn that stalls into no burn — tension must always be escalating
+- Heroine whose only trait is being special without earning her power
 writing_profile_overrides:
   market:
     prompt_pack_key: romantasy
     platform_target: Kindle Unlimited
-    reader_promise: Immerse the reader in a lush fantasy world where romance and danger are inseparable. Deliver slow-burn tension that builds to a devastating payoff while the heroine discovers powers that could save or doom the realm.
+    reader_promise: Immerse the reader in a lush fantasy world where romance and danger are inseparable. Deliver slow-burn
+      tension that builds to a devastating payoff while the heroine discovers powers that could save or doom the realm.
     selling_points:
-      - fae court intrigue
-      - slow-burn romance
-      - chosen one arc
-      - lush world-building
-      - mate bond tension
+    - fae court intrigue
+    - slow-burn romance
+    - chosen one arc
+    - lush world-building
+    - mate bond tension
     trope_keywords:
-      - romantasy
-      - fae
-      - mate bond
-      - slow burn
-      - enemies to lovers
+    - romantasy
+    - fae
+    - mate bond
+    - slow burn
+    - enemies to lovers
     hook_keywords:
-      - hidden power
-      - court politics
-      - ancient prophecy
-      - forbidden bond
-    opening_strategy: Open with the heroine in her ordinary world, but let the fantasy intrude immediately — a vision, a summoning, an attack. By the end of chapter 1, she must be pulled into the dangerous new world. Introduce the love interest as a threat or enigma within the first three chapters.
-    chapter_hook_strategy: Alternate between romantic tension hooks (a charged moment, an almost-kiss, a revelation about the bond) and fantasy plot hooks (political betrayal, magical escalation, new threat). Never let both arcs rest at the same time.
+    - hidden power
+    - court politics
+    - ancient prophecy
+    - forbidden bond
+    opening_strategy: Open with the heroine in her ordinary world, but let the fantasy intrude immediately — a vision, a summoning,
+      an attack. By the end of chapter 1, she must be pulled into the dangerous new world. Introduce the love interest as
+      a threat or enigma within the first three chapters.
+    chapter_hook_strategy: Alternate between romantic tension hooks (a charged moment, an almost-kiss, a revelation about
+      the bond) and fantasy plot hooks (political betrayal, magical escalation, new threat). Never let both arcs rest at the
+      same time.
     pacing_profile: medium
-    payoff_rhythm: Slow-burn romantic payoffs at act breaks, world-building revelations every 3-4 chapters, power-up moments tied to emotional breakthroughs.
+    payoff_rhythm: Slow-burn romantic payoffs at act breaks, world-building revelations every 3-4 chapters, power-up moments
+      tied to emotional breakthroughs.
   character:
     protagonist_archetype: Hidden-power heroine in a dangerous court
     protagonist_core_drive: Discover her true power while navigating lethal politics and a forbidden attraction
-    growth_curve: Powerless outsider to reluctant weapon to queen in her own right
     antagonist_mode: Court rivals, ancient evil, and the love interest's own divided loyalties
   world:
     mystery_density: medium
@@ -63,25 +69,40 @@ writing_profile_overrides:
     sentence_style: balanced
     info_density: medium
 fragments:
-  global_rules: |
-    Romantasy must weave romance and fantasy equally — neither plot should feel like a subplot. World-building should be delivered through action and character experience, never through expository lectures. The magic system must have clear costs that create genuine stakes. The slow burn must ALWAYS be escalating — every interaction between the leads should shift the dynamic. The reader should feel the world is vast and the romance is inevitable.
-  planner_book_spec: |
-    Use a dual-arc structure: the Fantasy Arc follows the three-act structure (inciting threat, escalating conflict, climactic battle) while the Romance Arc follows standard romance beats (meet-cute or meet-hostile, first major tension point, midpoint shift, black moment, HEA/HFN). The key is synchronization — the romantic black moment should coincide with or directly cause the fantasy crisis. Plan for a 25% mark power reveal, 50% mark relationship shift, 75% mark devastating betrayal or sacrifice, and a climax that resolves both arcs simultaneously.
-  planner_world_spec: |
-    Build the world in three layers: the Visible Layer (courts, cities, landscapes the reader can picture immediately), the Power Layer (magic system rules, political factions, who holds power and why), and the Hidden Layer (ancient history, prophecies, and secrets that unfold gradually). The world must feel lived-in — characters should reference history, customs, and rivalries casually. Design at least one visually striking location per act that could become a BookTok-worthy scene backdrop.
-  planner_cast_spec: |
-    The love interest must be dangerous, politically important, and emotionally guarded — with a specific reason he cannot or should not love the heroine. Include a court rival who is genuinely competent (not a cartoon villain), a mentor figure with a hidden agenda, a loyal friend who grounds the heroine, and at least one morally ambiguous ally. Each supporting character should represent a different political faction or magical philosophy.
-  planner_volume_plan: |
-    For a series: Volume 1 introduces the world, the bond, and the immediate threat — ending with a major revelation about the heroine's power and a relationship-altering moment. Volume 2 deepens the political complexity, tests the bond through separation or betrayal, and expands the world. Volume 3 brings full convergence — the heroine at full power, the romance consummated or tested to breaking, and the ultimate threat defeated. Each volume must have its own satisfying arc.
-  planner_outline: |
-    Chapter 1: heroine's ordinary world disrupted by fantasy element. Chapter 2-3: arrival in the new world, first meeting with the love interest (charged, adversarial, or enigmatic). By chapter 5: establish the political stakes, the heroine's latent power, and the tension with the love interest. Midpoint: a moment of forced intimacy or alliance that shifts the dynamic. 75% mark: betrayal or revelation that seems to destroy the bond. Climax: heroine unleashes her full power in a moment tied to the romantic resolution.
-  scene_writer: |
-    Write with lush, sensory prose — romantasy readers want to taste the feast, feel the magic, and ache with the tension. Balance atmospheric description with sharp dialogue. In romantic scenes, use the senses: proximity, scent, temperature, the way magic reacts to emotional state. In fantasy action scenes, keep the magic visual and visceral — readers should be able to picture it on screen. Let political intrigue simmer beneath courtly conversations. Weave world-building into action — never pause the story to explain.
-  scene_review: |
-    Check: Does the scene serve both the romance and the fantasy plot? Is world-building delivered through experience rather than exposition? Does the romantic tension escalate or shift? Are the political stakes clear? Is the heroine active — making choices, using her power, navigating the court? Does the scene end with a hook that pulls on either the romantic or the fantasy thread? Is the prose sensory and atmospheric without being purple?
-  scene_rewrite: |
-    If a scene drags, inject: a charged moment between the leads (accidental touch, loaded glance, magic reacting to proximity), a political revelation that raises the stakes, or a demonstration of the heroine's growing power. If it is all romance and no plot, add a threat or intrigue beat. If it is all plot and no romance, add a moment of vulnerability or tension between the leads. Cut any world-building that could be delivered later through action.
-  chapter_review: |
-    Verify each chapter advances at least one of: the romantic arc (tension, revelation, shift), the fantasy plot (threat escalation, political move, power development), or world-building (new location, lore, faction dynamics). The chapter must end on a compelling hook. Check that the heroine demonstrates agency and growth. Ensure the pacing balances action, intrigue, and emotional beats.
-  chapter_rewrite: |
-    Strengthen weak chapters by: tightening the opening (start in the middle of a charged moment), adding a beat where the magic system creates a genuine problem or opportunity, deepening the emotional subtext in dialogue, and ensuring the chapter-ending hook is irresistible. Maintain the lush prose style but cut any passage that is atmospheric without purpose.
+  global_rules: 'Romantasy must weave romance and fantasy equally — neither plot should feel like a subplot. World-building
+    should be delivered through action and character experience, never through expository lectures. The magic system must
+    have clear costs that create genuine stakes. The slow burn must ALWAYS be escalating — every interaction between the leads
+    should shift the dynamic. The reader should feel the world is vast and the romance is inevitable.
+
+    '
+  scene_writer: 'Write with lush, sensory prose — romantasy readers want to taste the feast, feel the magic, and ache with
+    the tension. Balance atmospheric description with sharp dialogue. In romantic scenes, use the senses: proximity, scent,
+    temperature, the way magic reacts to emotional state. In fantasy action scenes, keep the magic visual and visceral — readers
+    should be able to picture it on screen. Let political intrigue simmer beneath courtly conversations. Weave world-building
+    into action — never pause the story to explain.
+
+    '
+  scene_review: 'Check: Does the scene serve both the romance and the fantasy plot? Is world-building delivered through experience
+    rather than exposition? Does the romantic tension escalate or shift? Are the political stakes clear? Is the heroine active
+    — making choices, using her power, navigating the court? Does the scene end with a hook that pulls on either the romantic
+    or the fantasy thread? Is the prose sensory and atmospheric without being purple?
+
+    '
+  scene_rewrite: 'If a scene drags, inject: a charged moment between the leads (accidental touch, loaded glance, magic reacting
+    to proximity), a political revelation that raises the stakes, or a demonstration of the heroine''s growing power. If it
+    is all romance and no plot, add a threat or intrigue beat. If it is all plot and no romance, add a moment of vulnerability
+    or tension between the leads. Cut any world-building that could be delivered later through action.
+
+    '
+  chapter_review: 'Verify each chapter advances at least one of: the romantic arc (tension, revelation, shift), the fantasy
+    plot (threat escalation, political move, power development), or world-building (new location, lore, faction dynamics).
+    The chapter must end on a compelling hook. Check that the heroine demonstrates agency and growth. Ensure the pacing balances
+    action, intrigue, and emotional beats.
+
+    '
+  chapter_rewrite: 'Strengthen weak chapters by: tightening the opening (start in the middle of a charged moment), adding
+    a beat where the magic system creates a genuine problem or opportunity, deepening the emotional subtext in dialogue, and
+    ensuring the chapter-ending hook is irresistible. Maintain the lush prose style but cut any passage that is atmospheric
+    without purpose.
+
+    '

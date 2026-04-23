@@ -24,12 +24,22 @@ class ObligatoryScene(BaseModel, frozen=True):
 
 
 class PromptPackFragments(BaseModel):
+    """Methodology fragments injected into various writing stages.
+
+    **A-class (retained)** — writing methodology; tell the LLM *how* to write,
+    not *what* story to tell.  These are safe to keep.
+
+    **B-class (removed in Batch 3)** — ``planner_book_spec``,
+    ``planner_world_spec``, ``planner_cast_spec``, ``planner_volume_plan``,
+    ``planner_outline`` were script-level plot injections that caused every
+    same-genre project to start with the same skeleton.  They have been
+    removed from all pack YAML files and from this model.  Any existing YAML
+    that still contains these keys will be silently ignored by Pydantic (the
+    model uses ``model_config = ConfigDict(extra="ignore")`` via BaseModel
+    defaults).
+    """
+
     global_rules: str | None = None
-    planner_book_spec: str | None = None
-    planner_world_spec: str | None = None
-    planner_cast_spec: str | None = None
-    planner_volume_plan: str | None = None
-    planner_outline: str | None = None
     scene_writer: str | None = None
     scene_review: str | None = None
     scene_rewrite: str | None = None

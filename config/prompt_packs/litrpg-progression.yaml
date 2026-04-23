@@ -1,64 +1,70 @@
 key: litrpg-progression
 name: LitRPG / Progression Fantasy
-version: "1.0"
-description: Stat-driven progression, system mechanics, dungeon crawling, and level-up dopamine — built for Royal Road and KU readers who want clear, measurable power growth and clever system exploitation.
+version: '1.0'
+description: Stat-driven progression, system mechanics, dungeon crawling, and level-up dopamine — built for Royal Road and
+  KU readers who want clear, measurable power growth and clever system exploitation.
 genres:
-  - Fantasy
-  - LitRPG
-  - Progression Fantasy
+- Fantasy
+- LitRPG
+- Progression Fantasy
 tags:
-  - litrpg
-  - progression
-  - system
-  - dungeon
-  - stats
-  - levels
-  - cultivation
-  - gamelit
+- litrpg
+- progression
+- system
+- dungeon
+- stats
+- levels
+- cultivation
+- gamelit
 source_notes:
-  - Designed for the Royal Road and KU LitRPG/Progression Fantasy audience
-  - Incorporates web serial pacing conventions with stat block formatting standards
-  - Follows the progression fantasy arc structure with regular power-up cadence
+- Designed for the Royal Road and KU LitRPG/Progression Fantasy audience
+- Incorporates web serial pacing conventions with stat block formatting standards
+- Follows the progression fantasy arc structure with regular power-up cadence
 anti_patterns:
-  - Stats and system notifications that interrupt narrative flow without advancing plot
-  - Power progression without meaningful cost or risk
-  - MC who levels up purely through grinding with no clever strategy or innovation
-  - System mechanics that are inconsistent or change to suit the plot
-  - Long stretches without a measurable power gain or meaningful challenge
-  - Stat blocks that are walls of text — keep them clean, formatted, and relevant
-  - Cultivation or leveling that feels inevitable rather than earned
+- Stats and system notifications that interrupt narrative flow without advancing plot
+- Power progression without meaningful cost or risk
+- MC who levels up purely through grinding with no clever strategy or innovation
+- System mechanics that are inconsistent or change to suit the plot
+- Long stretches without a measurable power gain or meaningful challenge
+- Stat blocks that are walls of text — keep them clean, formatted, and relevant
+- Cultivation or leveling that feels inevitable rather than earned
 writing_profile_overrides:
   market:
     prompt_pack_key: litrpg-progression
     platform_target: Royal Road
-    reader_promise: Deliver consistent, measurable progression with clever system exploitation. Every chapter must show the MC gaining power, facing a meaningful challenge, or discovering a new system mechanic. The reader should feel the dopamine of the level-up and the thrill of the clever build.
+    reader_promise: Deliver consistent, measurable progression with clever system exploitation. Every chapter must show the
+      MC gaining power, facing a meaningful challenge, or discovering a new system mechanic. The reader should feel the dopamine
+      of the level-up and the thrill of the clever build.
     selling_points:
-      - stat progression
-      - dungeon crawling
-      - system mechanics
-      - power scaling
-      - loot and upgrades
+    - stat progression
+    - dungeon crawling
+    - system mechanics
+    - power scaling
+    - loot and upgrades
     trope_keywords:
-      - litrpg
-      - progression
-      - system
-      - dungeon
-      - stats
+    - litrpg
+    - progression
+    - system
+    - dungeon
+    - stats
     hook_keywords:
-      - level up
-      - new skill
-      - boss fight
-      - rare drop
-      - system notification
-    opening_strategy: Chapter 1 must establish the system, the MC's starting weakness, and the first opportunity for exploitation. Show the first stat screen or system notification within the opening chapters. The reader should understand the progression rules and feel the MC's first power gain by chapter 3.
-    chapter_hook_strategy: End chapters with system notifications (new skill unlocked, level up, quest update), boss fight cliffhangers, loot reveals, or the discovery of a new system mechanic. The reader should always be thinking about the next power-up.
+    - level up
+    - new skill
+    - boss fight
+    - rare drop
+    - system notification
+    opening_strategy: Chapter 1 must establish the system, the MC's starting weakness, and the first opportunity for exploitation.
+      Show the first stat screen or system notification within the opening chapters. The reader should understand the progression
+      rules and feel the MC's first power gain by chapter 3.
+    chapter_hook_strategy: End chapters with system notifications (new skill unlocked, level up, quest update), boss fight
+      cliffhangers, loot reveals, or the discovery of a new system mechanic. The reader should always be thinking about the
+      next power-up.
     pacing_profile: fast
-    payoff_rhythm: Micro power-ups every 1-2 chapters, significant level-ups or skill acquisitions every 5-8 chapters, major build-defining moments at act breaks.
+    payoff_rhythm: Micro power-ups every 1-2 chapters, significant level-ups or skill acquisitions every 5-8 chapters, major
+      build-defining moments at act breaks.
   character:
     protagonist_archetype: Underdog optimizer who exploits system mechanics
     protagonist_core_drive: Level up, survive, and break the system's limits
-    golden_finger: Unique class, hidden stat, or unconventional build
-    growth_curve: Weak start to clever exploitation to steady power climb to system-breaking revelation
     antagonist_mode: Rival Players, system-enforced challenges, and increasingly dangerous dungeons
   world:
     mystery_density: medium
@@ -68,25 +74,42 @@ writing_profile_overrides:
     sentence_style: short-punchy
     info_density: medium
 fragments:
-  global_rules: |
-    This is LitRPG/Progression Fantasy — the system IS the story. Stats, skills, and levels must be presented in clean, consistent formatting (use code blocks or styled notifications). Every chapter must contain at least one measurable progression beat: a stat increase, a new skill, a system discovery, or a challenge that tests the build. The MC must be clever — progression through pure grinding is boring. Show the reader the build strategy unfolding. Balance system content with genuine stakes and character development.
-  planner_book_spec: |
-    Structure around the progression arc: Foundation (Act 1, 0-25%) — MC enters the system, discovers their unique class/skill/advantage, and makes their first strategic build decisions. Early Climbing (Act 2A, 25-50%) — steady progression through increasingly dangerous challenges, first major dungeon or boss fight at midpoint. Build Payoff (Act 2B, 50-75%) — the unconventional build starts showing its true potential, but attracts dangerous attention or faces a hard counter. System Break (Act 3, 75-100%) — a challenge that should be impossible forces the MC to push the system to its limits, resulting in a breakthrough that redefines the power scale.
-  planner_world_spec: |
-    Design the system with Sanderson's Laws in mind — the reader must understand the rules well enough to appreciate clever exploitation. Define: the stat categories, the leveling curve, the skill acquisition method, the rarity tiers, and at least one hidden mechanic the MC can discover. The world should have distinct zones/dungeons of escalating difficulty. Include a social hierarchy based on levels or classes. Design the economy (currency, loot, crafting) to create meaningful choices.
-  planner_cast_spec: |
-    The party should fill distinct mechanical roles (tank, healer, DPS, support) while also being interesting characters. Include: a rival who has a superior build but inferior strategy, a mentor who understands the system's history, a party member whose build synergizes with the MC in unexpected ways, and an NPC or entity that hints at the system's true nature. Avoid cardboard allies — each party member should have their own progression goals and personality.
-  planner_volume_plan: |
-    Each volume should cover a major tier of progression (e.g., levels 1-20, then 21-50). The volume should introduce a new zone or dungeon tier, new system mechanics, and a boss fight climax. End each volume with a breakthrough that opens the next tier. For web serial pacing: plan arcs of 30-50 chapters with satisfying mini-climaxes every 10-15 chapters. Each arc should have a clear progression goal (reach level X, clear dungeon Y, acquire skill Z).
-  planner_outline: |
-    Chapter 1: System introduction, MC's starting situation, unique class or skill revelation. Chapters 2-3: First challenges, establishing the build strategy, first level-up. Chapters 4-8: Escalating challenges, party formation, exploring system mechanics. Midpoint: First major boss fight or dungeon clear — a test of the build that reveals its potential AND its weaknesses. 60-75%: Higher-stakes challenges, rival confrontation, system mystery deepening. Climax: A fight that requires the MC to push beyond known limits, resulting in a system-breaking revelation or evolution.
-  scene_writer: |
-    Write combat with tactical precision — the reader should understand what skills are being used, what stats matter, and why the MC's choices are clever or risky. Format system notifications cleanly (use consistent styling for stat screens, skill descriptions, and level-up messages). Balance crunch (stats, numbers, mechanics) with narrative flow — never let a stat block kill the pacing of an action scene. Show the MC thinking through build decisions. Make loot drops feel exciting. Let the reader feel the power growth through concrete comparisons (what was hard before is now easy).
-  scene_review: |
-    Check: Does the scene contain a progression beat (stat gain, skill use, system discovery, or meaningful challenge)? Are system notifications formatted cleanly and consistently? Does combat show tactical thinking rather than just power levels? Is the MC making clever use of their build? Does the scene end with a hook (new system notification, cliffhanger fight, loot reveal)? Is the balance between system crunch and narrative flow maintained? Are the stakes real despite the game-like mechanics?
-  scene_rewrite: |
-    If a scene lacks engagement, add: a system notification that changes the tactical situation, a clever build exploitation moment, a loot drop or skill unlock, an enemy that hard-counters the MC's build (forcing adaptation), or a system mystery hint. If the scene is too crunchy, weave the stats into the narrative rather than presenting them as blocks. If combat is boring, give the enemy a gimmick that requires the MC to think.
-  chapter_review: |
-    Verify the chapter delivers at least one of: measurable progression (stats, levels, skills), a meaningful combat encounter, a system mechanics revelation, a build strategy decision, or a social/political development in the game world. The chapter must end with a progression hook. Check that stat formatting is consistent. Ensure the MC demonstrates intelligence, not just power.
-  chapter_rewrite: |
-    When rewriting, prioritize: adding a concrete progression beat, tightening combat to highlight tactical decisions, formatting system notifications for clarity, and ensuring the chapter ending drives the reader to the next chapter. If the chapter is all grinding, add a complication or discovery. If it is all dialogue, add a system interaction or brief challenge.
+  global_rules: 'This is LitRPG/Progression Fantasy — the system IS the story. Stats, skills, and levels must be presented
+    in clean, consistent formatting (use code blocks or styled notifications). Every chapter must contain at least one measurable
+    progression beat: a stat increase, a new skill, a system discovery, or a challenge that tests the build. The MC must be
+    clever — progression through pure grinding is boring. Show the reader the build strategy unfolding. Balance system content
+    with genuine stakes and character development.
+
+    '
+  scene_writer: 'Write combat with tactical precision — the reader should understand what skills are being used, what stats
+    matter, and why the MC''s choices are clever or risky. Format system notifications cleanly (use consistent styling for
+    stat screens, skill descriptions, and level-up messages). Balance crunch (stats, numbers, mechanics) with narrative flow
+    — never let a stat block kill the pacing of an action scene. Show the MC thinking through build decisions. Make loot drops
+    feel exciting. Let the reader feel the power growth through concrete comparisons (what was hard before is now easy).
+
+    '
+  scene_review: 'Check: Does the scene contain a progression beat (stat gain, skill use, system discovery, or meaningful challenge)?
+    Are system notifications formatted cleanly and consistently? Does combat show tactical thinking rather than just power
+    levels? Is the MC making clever use of their build? Does the scene end with a hook (new system notification, cliffhanger
+    fight, loot reveal)? Is the balance between system crunch and narrative flow maintained? Are the stakes real despite the
+    game-like mechanics?
+
+    '
+  scene_rewrite: 'If a scene lacks engagement, add: a system notification that changes the tactical situation, a clever build
+    exploitation moment, a loot drop or skill unlock, an enemy that hard-counters the MC''s build (forcing adaptation), or
+    a system mystery hint. If the scene is too crunchy, weave the stats into the narrative rather than presenting them as
+    blocks. If combat is boring, give the enemy a gimmick that requires the MC to think.
+
+    '
+  chapter_review: 'Verify the chapter delivers at least one of: measurable progression (stats, levels, skills), a meaningful
+    combat encounter, a system mechanics revelation, a build strategy decision, or a social/political development in the game
+    world. The chapter must end with a progression hook. Check that stat formatting is consistent. Ensure the MC demonstrates
+    intelligence, not just power.
+
+    '
+  chapter_rewrite: 'When rewriting, prioritize: adding a concrete progression beat, tightening combat to highlight tactical
+    decisions, formatting system notifications for clarity, and ensuring the chapter ending drives the reader to the next
+    chapter. If the chapter is all grinding, add a complication or discovery. If it is all dialogue, add a system interaction
+    or brief challenge.
+
+    '

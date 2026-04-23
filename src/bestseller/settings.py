@@ -205,6 +205,37 @@ class PipelineSettings(BaseModel):
     act_plan_threshold: int = 50  # Chapters > threshold enables act-level planning
     progressive_planning: bool = False  # Enable progressive volume planning with write-feedback loop
     category_aware_planning: bool = True  # Use novel-category research for genre-specific planning
+    # ── Multi-dimensional material library (Batch 1-3 rollout) ─────────
+    # Batch 1 gate: Curator + Research Agent + query API available when
+    # this is True.  Default False so historical projects stay on the
+    # existing pipeline.  Managed via ``config/local.yaml`` or
+    # ``BESTSELLER__PIPELINE__ENABLE_MATERIAL_LIBRARY=true``.
+    enable_material_library: bool = False
+    # Batch 2 gate: 5 Forges produce ProjectMaterials + Planner/Drafter
+    # switch to reference-style prompts.  Depends on
+    # ``enable_material_library``.  Default False.
+    enable_forge_pipeline: bool = False
+    # Batch 2 gate: Planner / Drafter inject §dim/slug references instead
+    # of pack-embedded plot fragments.  Orthogonal to forge_pipeline so
+    # library-backed references can be authored manually for testing.
+    enable_reference_style_generation: bool = False
+    # Batch 3 gate: CrossProjectFingerprint + novelty critic.
+    enable_novelty_guard: bool = False
+    # Opt-in "soft reference" layer — lets historical projects' *new*
+    # chapters pull inspirational entries straight from the global
+    # ``material_library`` without going through a Forge run.  Old data
+    # stays untouched; when this flag is True the Drafter prompt gets a
+    # read-only "library inspiration" block.  Default False so existing
+    # generation behaviour is byte-identical unless the operator opts in.
+    enable_library_soft_reference: bool = False
+    # How many library entries the soft-reference block may surface per
+    # call.  Kept small so the prompt budget stays predictable.
+    library_soft_reference_top_k: int = 4
+    # Curator scheduling — overridable via env for admin triage.
+    curator_weekly_cron_hour: int = 4  # 04:00 UTC Monday
+    curator_weekly_cron_day_of_week: str = "mon"
+    curator_max_gaps_per_run: int = 6
+    curator_max_fills_per_run: int = 5
 
 
 class BudgetSettings(BaseModel):

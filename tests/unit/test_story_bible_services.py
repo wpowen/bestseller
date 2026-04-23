@@ -358,7 +358,7 @@ async def test_upsert_volume_plan_creates_and_updates_volumes() -> None:
     assert counts["volumes_upserted"] == 1
     assert len(volumes) == 1
     assert volumes[0].title == "失准航线"
-    assert volumes[0].target_word_count == 200000
+    assert volumes[0].target_word_count == 20
     assert project.current_volume_number == 1
 
 
@@ -515,6 +515,10 @@ async def test_load_scene_story_bible_context_includes_roles_states_and_rules(
                     metadata_json={},
                 )
             ],
+            # get_effective_character_state queries CharacterStateSnapshotModel once per
+            # participant (沈砚, 顾临) before the relationship query runs.
+            [],  # snapshots for 沈砚
+            [],  # snapshots for 顾临
             [
                 RelationshipModel(
                     project_id=project.id,

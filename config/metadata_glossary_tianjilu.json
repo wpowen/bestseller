@@ -1,0 +1,7924 @@
+{
+  "stats": {
+    "谋略": {
+      "en": "Strategy",
+      "ja": "謀略",
+      "ko": "모략"
+    },
+    "天命值": {
+      "en": "Destiny",
+      "ja": "天命値",
+      "ko": "천명치"
+    },
+    "名望": {
+      "en": "Fame",
+      "ja": "名望",
+      "ko": "명망"
+    },
+    "黑化值": {
+      "en": "Corruption",
+      "ja": "黒化値",
+      "ko": "흑화치"
+    },
+    "战力": {
+      "en": "Combat",
+      "ja": "戦力",
+      "ko": "전투력"
+    },
+    "魅力": {
+      "en": "Charm",
+      "ja": "魅力",
+      "ko": "매력"
+    },
+    "财富": {
+      "en": "Wealth",
+      "ja": "富",
+      "ko": "부"
+    },
+    "好感": {
+      "en": "Affinity",
+      "ja": "好感",
+      "ko": "호감"
+    },
+    "敌意": {
+      "en": "Hostility",
+      "ja": "敵意",
+      "ko": "적의"
+    }
+  },
+  "dimensions": {
+    "信任": {
+      "en": "Trust",
+      "ja": "信頼",
+      "ko": "신뢰"
+    },
+    "敌意": {
+      "en": "Hostility",
+      "ja": "敵意",
+      "ko": "적의"
+    },
+    "敬畏": {
+      "en": "Reverence",
+      "ja": "畏敬",
+      "ko": "외경"
+    },
+    "依赖": {
+      "en": "Dependence",
+      "ja": "依存",
+      "ko": "의존"
+    },
+    "好感": {
+      "en": "Affinity",
+      "ja": "好感",
+      "ko": "호감"
+    },
+    "好奇": {
+      "en": "Curiosity",
+      "ja": "好奇心",
+      "ko": "호기심"
+    },
+    "警惕": {
+      "en": "Vigilance",
+      "ja": "警戒",
+      "ko": "경계"
+    },
+    "轻视": {
+      "en": "Disdain",
+      "ja": "軽蔑",
+      "ko": "경멸"
+    },
+    "羁绊": {
+      "en": "Bond",
+      "ja": "絆",
+      "ko": "유대"
+    },
+    "愤怒": {
+      "en": "Anger",
+      "ja": "怒り",
+      "ko": "분노"
+    },
+    "配合度": {
+      "en": "Cooperation",
+      "ja": "協力度",
+      "ko": "협조도"
+    },
+    "黑化值": {
+      "en": "Corruption",
+      "ja": "黒化値",
+      "ko": "흑화치"
+    },
+    "名望": {
+      "en": "Fame",
+      "ja": "名望",
+      "ko": "명망"
+    },
+    "自信": {
+      "en": "Confidence",
+      "ja": "自信",
+      "ko": "자신감"
+    },
+    "魅力": {
+      "en": "Charm",
+      "ja": "魅力",
+      "ko": "매력"
+    }
+  },
+  "satisfaction_types": {
+    "延迟爽": {
+      "en": "Delayed Gratification",
+      "ja": "遅延爽快",
+      "ko": "지연쾌감"
+    },
+    "扮猪吃虎": {
+      "en": "Underdog Strike",
+      "ja": "豚虎計略",
+      "ko": "돼지호랑이"
+    },
+    "阴谋爽": {
+      "en": "Scheming Thrill",
+      "ja": "陰謀爽快",
+      "ko": "음모쾌감"
+    },
+    "直接爽": {
+      "en": "Direct Thrill",
+      "ja": "直接爽快",
+      "ko": "직접쾌감"
+    },
+    "情感爽": {
+      "en": "Emotional Thrill",
+      "ja": "感情爽快",
+      "ko": "감정쾌감"
+    },
+    "碾压爽": {
+      "en": "Overwhelm Thrill",
+      "ja": "圧倒爽快",
+      "ko": "압도쾌감"
+    },
+    "谋略爽": {
+      "en": "Strategic Thrill",
+      "ja": "謀略爽快",
+      "ko": "모략쾌감"
+    },
+    "嘴毒打脸": {
+      "en": "Verbal Takedown",
+      "ja": "毒舌顔面潰し",
+      "ko": "독설찌르기"
+    },
+    "隐忍": {
+      "en": "Endurance",
+      "ja": "隠忍",
+      "ko": "은인"
+    },
+    "稳妥爽": {
+      "en": "Steady Thrill",
+      "ja": "堅実爽快",
+      "ko": "안정쾌감"
+    },
+    "打脸": {
+      "en": "Face-Slap",
+      "ja": "顔面潰し",
+      "ko": "찌르기"
+    },
+    "质疑": {
+      "en": "Doubt",
+      "ja": "疑念",
+      "ko": "의심"
+    },
+    "理性分析": {
+      "en": "Rational Analysis",
+      "ja": "理性分析",
+      "ko": "이성분석"
+    },
+    "智取": {
+      "en": "Outsmart",
+      "ja": "知略勝ち",
+      "ko": "지략승"
+    },
+    "愤慨": {
+      "en": "Indignation",
+      "ja": "憤慨",
+      "ko": "분개"
+    },
+    "冒险": {
+      "en": "Risk",
+      "ja": "冒険",
+      "ko": "모험"
+    },
+    "借势": {
+      "en": "Leverage",
+      "ja": "勢い借り",
+      "ko": "세빌리기"
+    },
+    "逆天改命": {
+      "en": "Defy Fate",
+      "ja": "逆天改命",
+      "ko": "역천개명"
+    },
+    "深谋": {
+      "en": "Deep Scheme",
+      "ja": "深謀",
+      "ko": "심모"
+    },
+    "智慧": {
+      "en": "Wisdom",
+      "ja": "智慧",
+      "ko": "지혜"
+    },
+    "智谋爽": {
+      "en": "Cunning Thrill",
+      "ja": "智謀爽快",
+      "ko": "지모쾌감"
+    },
+    "牺牲": {
+      "en": "Sacrifice",
+      "ja": "犠牲",
+      "ko": "희생"
+    }
+  },
+  "emotions_common": {
+    "震惊": {
+      "en": "Shocked",
+      "ja": "衝撃",
+      "ko": "충격"
+    },
+    "冷静": {
+      "en": "Calm",
+      "ja": "冷静",
+      "ko": "냉정"
+    },
+    "玩味": {
+      "en": "Amused",
+      "ja": "玩味",
+      "ko": "흥미"
+    },
+    "沉重": {
+      "en": "Heavy",
+      "ja": "重苦",
+      "ko": "무거움"
+    },
+    "坚定": {
+      "en": "Resolute",
+      "ja": "堅決",
+      "ko": "굳은"
+    },
+    "凝重": {
+      "en": "Solemn",
+      "ja": "凝重",
+      "ko": "엄중"
+    },
+    "决绝": {
+      "en": "Unwavering",
+      "ja": "決絶",
+      "ko": "결연"
+    },
+    "嘲讽": {
+      "en": "Sneering",
+      "ja": "嘲笑",
+      "ko": "조롱"
+    },
+    "警告": {
+      "en": "Warning",
+      "ja": "警告",
+      "ko": "경고"
+    },
+    "郑重": {
+      "en": "Earnest",
+      "ja": "鄭重",
+      "ko": "정중"
+    },
+    "冷漠": {
+      "en": "Apathetic",
+      "ja": "冷淡",
+      "ko": "냉담"
+    },
+    "警惕": {
+      "en": "Vigilant",
+      "ja": "警戒",
+      "ko": "경계"
+    },
+    "平静": {
+      "en": "Serene",
+      "ja": "平穏",
+      "ko": "평온"
+    },
+    "冷笑": {
+      "en": "Cold Smile",
+      "ja": "冷笑",
+      "ko": "냉소"
+    },
+    "审视": {
+      "en": "Scrutinizing",
+      "ja": "審視",
+      "ko": "심사"
+    },
+    "复杂": {
+      "en": "Conflicted",
+      "ja": "複雑",
+      "ko": "복잡"
+    },
+    "愤怒": {
+      "en": "Furious",
+      "ja": "怒り",
+      "ko": "분노"
+    },
+    "冷酷": {
+      "en": "Ruthless",
+      "ja": "冷酷",
+      "ko": "냉혹"
+    },
+    "阴冷": {
+      "en": "Sinister",
+      "ja": "陰冷",
+      "ko": "음산"
+    },
+    "焦急": {
+      "en": "Anxious",
+      "ja": "焦燥",
+      "ko": "초조"
+    },
+    "期待": {
+      "en": "Expectant",
+      "ja": "期待",
+      "ko": "기대"
+    },
+    "轻蔑": {
+      "en": "Contempt",
+      "ja": "軽蔑",
+      "ko": "경멸"
+    },
+    "警觉": {
+      "en": "Alert",
+      "ja": "警覚",
+      "ko": "경각"
+    },
+    "激动": {
+      "en": "Agitated",
+      "ja": "激昂",
+      "ko": "격동"
+    },
+    "威严": {
+      "en": "Majestic",
+      "ja": "威厳",
+      "ko": "위엄"
+    },
+    "感动": {
+      "en": "Moved",
+      "ja": "感動",
+      "ko": "감동"
+    },
+    "试探": {
+      "en": "Probing",
+      "ja": "試探",
+      "ko": "탐색"
+    },
+    "震撼": {
+      "en": "Thunderstruck",
+      "ja": "震撼",
+      "ko": "전율"
+    },
+    "释然": {
+      "en": "Relieved",
+      "ja": "釈然",
+      "ko": "후련"
+    },
+    "从容": {
+      "en": "Composed",
+      "ja": "従容",
+      "ko": "종용"
+    },
+    "暴怒": {
+      "en": "Enraged",
+      "ja": "激怒",
+      "ko": "격노"
+    },
+    "欣慰": {
+      "en": "Gratified",
+      "ja": "欣慰",
+      "ko": "위안"
+    },
+    "紧张": {
+      "en": "Tense",
+      "ja": "緊張",
+      "ko": "긴장"
+    },
+    "隐忍": {
+      "en": "Enduring",
+      "ja": "隠忍",
+      "ko": "은인"
+    },
+    "严肃": {
+      "en": "Stern",
+      "ja": "厳粛",
+      "ko": "엄숙"
+    },
+    "意味深长": {
+      "en": "Meaningful",
+      "ja": "意味深長",
+      "ko": "의미심장"
+    },
+    "傲慢": {
+      "en": "Arrogant",
+      "ja": "傲慢",
+      "ko": "오만"
+    },
+    "认真": {
+      "en": "Serious",
+      "ja": "真剣",
+      "ko": "진지"
+    },
+    "担忧": {
+      "en": "Worried",
+      "ja": "憂慮",
+      "ko": "걱정"
+    },
+    "质问": {
+      "en": "Questioning",
+      "ja": "詰問",
+      "ko": "추궁"
+    },
+    "急切": {
+      "en": "Urgent",
+      "ja": "切迫",
+      "ko": "다급"
+    },
+    "威胁": {
+      "en": "Threatening",
+      "ja": "脅迫",
+      "ko": "위협"
+    },
+    "沉思": {
+      "en": "Pensive",
+      "ja": "沈思",
+      "ko": "침사"
+    },
+    "决然": {
+      "en": "Decisive",
+      "ja": "決然",
+      "ko": "결연"
+    },
+    "惊恐": {
+      "en": "Terrified",
+      "ja": "恐怖",
+      "ko": "경공"
+    },
+    "无奈": {
+      "en": "Helpless",
+      "ja": "無奈",
+      "ko": "어찌할도리"
+    },
+    "戏谑": {
+      "en": "Banter",
+      "ja": "戯れ",
+      "ko": "희롱"
+    },
+    "感慨": {
+      "en": "Wistful",
+      "ja": "感慨",
+      "ko": "감개"
+    },
+    "冷厉": {
+      "en": "Icy Stern",
+      "ja": "冷厳",
+      "ko": "냉엄"
+    },
+    "压抑": {
+      "en": "Suppressed",
+      "ja": "圧抑",
+      "ko": "억압"
+    },
+    "威压": {
+      "en": "Overwhelming Aura",
+      "ja": "威圧",
+      "ko": "위압"
+    },
+    "心疼": {
+      "en": "Heartache",
+      "ja": "心痛",
+      "ko": "속상함"
+    },
+    "震动": {
+      "en": "Shaken",
+      "ja": "動揺",
+      "ko": "동요"
+    },
+    "揭露": {
+      "en": "Exposed",
+      "ja": "露見",
+      "ko": "폭로"
+    },
+    "痛苦": {
+      "en": "Agony",
+      "ja": "苦痛",
+      "ko": "고통"
+    },
+    "质疑": {
+      "en": "Skeptical",
+      "ja": "疑念",
+      "ko": "의심"
+    },
+    "温柔": {
+      "en": "Gentle",
+      "ja": "優しさ",
+      "ko": "온화"
+    },
+    "冰冷": {
+      "en": "Freezing",
+      "ja": "氷冷",
+      "ko": "빙랭"
+    },
+    "疑惑": {
+      "en": "Perplexed",
+      "ja": "疑惑",
+      "ko": "의혹"
+    },
+    "冷淡": {
+      "en": "Aloof",
+      "ja": "冷淡",
+      "ko": "냉담"
+    },
+    "深沉": {
+      "en": "Profound",
+      "ja": "深沉",
+      "ko": "심침"
+    },
+    "关切": {
+      "en": "Concerned",
+      "ja": "関心",
+      "ko": "관심"
+    },
+    "动容": {
+      "en": "Stirred",
+      "ja": "動容",
+      "ko": "동용"
+    },
+    "沉稳": {
+      "en": "Steadfast",
+      "ja": "沈着",
+      "ko": "침착"
+    },
+    "神秘": {
+      "en": "Mysterious",
+      "ja": "神秘",
+      "ko": "신비"
+    },
+    "苦涩": {
+      "en": "Bitter",
+      "ja": "苦渋",
+      "ko": "쓴"
+    },
+    "淡然": {
+      "en": "Unfazed",
+      "ja": "淡然",
+      "ko": "담연"
+    },
+    "狡黠": {
+      "en": "Cunning",
+      "ja": "狡猾",
+      "ko": "교활"
+    },
+    "自信": {
+      "en": "Confident",
+      "ja": "自信",
+      "ko": "자신감"
+    },
+    "阴沉": {
+      "en": "Gloomy",
+      "ja": "陰鬱",
+      "ko": "음침"
+    },
+    "算计": {
+      "en": "Calculating",
+      "ja": "算段",
+      "ko": "산책"
+    },
+    "讥讽": {
+      "en": "Mocking",
+      "ja": "譏諷",
+      "ko": "기풍"
+    },
+    "疯狂": {
+      "en": "Mad",
+      "ja": "狂気",
+      "ko": "광기"
+    },
+    "挑衅": {
+      "en": "Provocative",
+      "ja": "挑発",
+      "ko": "도발"
+    },
+    "狂傲": {
+      "en": "Wild Arrogance",
+      "ja": "狂傲",
+      "ko": "광오"
+    },
+    "心痛": {
+      "en": "Heartbroken",
+      "ja": "心痛",
+      "ko": "심통"
+    },
+    "恐惧": {
+      "en": "Fear",
+      "ja": "恐怖",
+      "ko": "공포"
+    },
+    "阴险": {
+      "en": "Treacherous",
+      "ja": "陰険",
+      "ko": "음험"
+    },
+    "淡漠": {
+      "en": "Indifferent",
+      "ja": "淡漠",
+      "ko": "담막"
+    },
+    "赞许": {
+      "en": "Approving",
+      "ja": "賛同",
+      "ko": "찬허"
+    },
+    "紧迫": {
+      "en": "Pressing",
+      "ja": "切迫",
+      "ko": "긴박"
+    },
+    "欣赏": {
+      "en": "Appreciative",
+      "ja": "欣賞",
+      "ko": "감상"
+    },
+    "诱惑": {
+      "en": "Tempting",
+      "ja": "誘惑",
+      "ko": "유혹"
+    },
+    "赞赏": {
+      "en": "Admiring",
+      "ja": "称賛",
+      "ko": "찬상"
+    },
+    "癫狂": {
+      "en": "Deranged",
+      "ja": "狂乱",
+      "ko": "전광"
+    },
+    "悲壮": {
+      "en": "Tragic Heroism",
+      "ja": "悲壮",
+      "ko": "비장"
+    },
+    "坦诚": {
+      "en": "Candid",
+      "ja": "坦率",
+      "ko": "솔직"
+    },
+    "困惑": {
+      "en": "Bewildered",
+      "ja": "困惑",
+      "ko": "곤혹"
+    },
+    "决断": {
+      "en": "Resolved",
+      "ja": "決断",
+      "ko": "결단"
+    },
+    "傲然": {
+      "en": "Haughty",
+      "ja": "傲然",
+      "ko": "오연"
+    },
+    "若有所思": {
+      "en": "Thoughtful",
+      "ja": "思案",
+      "ko": "사색"
+    },
+    "阴狠": {
+      "en": "Vicious",
+      "ja": "陰狠",
+      "ko": "음흉"
+    },
+    "追问": {
+      "en": "Pressing",
+      "ja": "追及",
+      "ko": "추궁"
+    },
+    "虚弱": {
+      "en": "Feeble",
+      "ja": "虚弱",
+      "ko": "허약"
+    },
+    "锐利": {
+      "en": "Piercing",
+      "ja": "鋭利",
+      "ko": "예리"
+    },
+    "冷傲": {
+      "en": "Cold Pride",
+      "ja": "冷傲",
+      "ko": "냉오"
+    },
+    "震怒": {
+      "en": "Thunderous Rage",
+      "ja": "震怒",
+      "ko": "진노"
+    },
+    "得意": {
+      "en": "Smug",
+      "ja": "得意",
+      "ko": "득의"
+    },
+    "疲惫": {
+      "en": "Exhausted",
+      "ja": "疲弊",
+      "ko": "피로"
+    },
+    "悲伤": {
+      "en": "Sorrow",
+      "ja": "悲しみ",
+      "ko": "비애"
+    },
+    "满意": {
+      "en": "Satisfied",
+      "ja": "満足",
+      "ko": "만족"
+    },
+    "冷冽": {
+      "en": "Frigid",
+      "ja": "冷冽",
+      "ko": "냉렬"
+    },
+    "期许": {
+      "en": "Hopeful",
+      "ja": "期許",
+      "ko": "기휴"
+    },
+    "焦虑": {
+      "en": "Anxious",
+      "ja": "焦慮",
+      "ko": "불안"
+    },
+    "悲凉": {
+      "en": "Desolate",
+      "ja": "悲涼",
+      "ko": "비창"
+    },
+    "谨慎": {
+      "en": "Cautious",
+      "ja": "謹慎",
+      "ko": "신중"
+    },
+    "惊骇": {
+      "en": "Appalled",
+      "ja": "驚駭",
+      "ko": "경해"
+    },
+    "哽咽": {
+      "en": "Choking Up",
+      "ja": "咽び",
+      "ko": "목멤"
+    },
+    "冷峻": {
+      "en": "Severe",
+      "ja": "冷峻",
+      "ko": "냉준"
+    },
+    "悲愤": {
+      "en": "Grief-Stricken Rage",
+      "ja": "悲憤",
+      "ko": "비분"
+    },
+    "洞察": {
+      "en": "Insightful",
+      "ja": "洞察",
+      "ko": "통찰"
+    },
+    "信任": {
+      "en": "Trusting",
+      "ja": "信頼",
+      "ko": "신뢰"
+    },
+    "沉痛": {
+      "en": "Deep Sorrow",
+      "ja": "沈痛",
+      "ko": "침통"
+    },
+    "真诚": {
+      "en": "Sincere",
+      "ja": "真誠",
+      "ko": "진실"
+    },
+    "好奇": {
+      "en": "Curious",
+      "ja": "好奇心",
+      "ko": "호기심"
+    },
+    "惊惧": {
+      "en": "Frightened",
+      "ja": "驚懼",
+      "ko": "경구"
+    },
+    "自嘲": {
+      "en": "Self-Deprecating",
+      "ja": "自嘲",
+      "ko": "자조"
+    },
+    "兴奋": {
+      "en": "Excited",
+      "ja": "興奮",
+      "ko": "흥분"
+    },
+    "绝望": {
+      "en": "Despair",
+      "ja": "絶望",
+      "ko": "절망"
+    },
+    "挣扎": {
+      "en": "Struggling",
+      "ja": "葛藤",
+      "ko": "발버둥"
+    },
+    "戒备": {
+      "en": "Guarded",
+      "ja": "戒備",
+      "ko": "경비"
+    },
+    "激昂": {
+      "en": "Fired Up",
+      "ja": "激昂",
+      "ko": "격앙"
+    },
+    "动摇": {
+      "en": "Wavering",
+      "ja": "動揺",
+      "ko": "동요"
+    },
+    "压抑的愤怒": {
+      "en": "Suppressed Fury",
+      "ja": "抑圧された怒り",
+      "ko": "억압된 분노"
+    },
+    "谦卑": {
+      "en": "Humble",
+      "ja": "謙虚",
+      "ko": "겸손"
+    },
+    "惶恐": {
+      "en": "Panic-Stricken",
+      "ja": "惶恐",
+      "ko": "황공"
+    },
+    "杀意": {
+      "en": "Killing Intent",
+      "ja": "殺意",
+      "ko": "살의"
+    },
+    "悲痛": {
+      "en": "Anguished",
+      "ja": "悲痛",
+      "ko": "비통"
+    },
+    "讽刺": {
+      "en": "Sarcastic",
+      "ja": "皮肉",
+      "ko": "풍자"
+    },
+    "伪装": {
+      "en": "Disguised",
+      "ja": "偽装",
+      "ko": "위장"
+    },
+    "意外": {
+      "en": "Surprised",
+      "ja": "意外",
+      "ko": "의외"
+    },
+    "决意": {
+      "en": "Determined",
+      "ja": "決意",
+      "ko": "결의"
+    },
+    "迷茫": {
+      "en": "Lost",
+      "ja": "迷惘",
+      "ko": "망연"
+    },
+    "克制": {
+      "en": "Restrained",
+      "ja": "自制",
+      "ko": "억제"
+    },
+    "深邃": {
+      "en": "Fathomless",
+      "ja": "深邃",
+      "ko": "심수"
+    },
+    "不舍": {
+      "en": "Reluctant to Part",
+      "ja": "未練",
+      "ko": "아쉬움"
+    },
+    "惊讶": {
+      "en": "Astonished",
+      "ja": "驚き",
+      "ko": "놀람"
+    },
+    "贪婪": {
+      "en": "Greedy",
+      "ja": "貪欲",
+      "ko": "탐욕"
+    },
+    "怯懦": {
+      "en": "Cowardly",
+      "ja": "怯懦",
+      "ko": "겁약"
+    },
+    "揭秘": {
+      "en": "Revealing",
+      "ja": "暴露",
+      "ko": "폭로"
+    },
+    "张狂": {
+      "en": "Wild",
+      "ja": "猖狂",
+      "ko": "광란"
+    },
+    "探究": {
+      "en": "Inquiring",
+      "ja": "探究",
+      "ko": "탐구"
+    },
+    "诚恳": {
+      "en": "Earnest",
+      "ja": "誠実",
+      "ko": "성실"
+    },
+    "思索": {
+      "en": "Musing",
+      "ja": "思索",
+      "ko": "사색"
+    },
+    "坦然": {
+      "en": "At Peace",
+      "ja": "坦然",
+      "ko": "탄연"
+    },
+    "倔强": {
+      "en": "Defiant",
+      "ja": "頑固",
+      "ko": "고집"
+    },
+    "冷静分析": {
+      "en": "Analytical Calm",
+      "ja": "冷静分析",
+      "ko": "냉정분석"
+    },
+    "低沉": {
+      "en": "Subdued",
+      "ja": "低落",
+      "ko": "침울"
+    },
+    "恼怒": {
+      "en": "Irritated",
+      "ja": "苛立ち",
+      "ko": "뇌노"
+    },
+    "笃定": {
+      "en": "Certain",
+      "ja": "確信",
+      "ko": "확신"
+    },
+    "危险": {
+      "en": "Dangerous",
+      "ja": "危険",
+      "ko": "위험"
+    },
+    "调侃": {
+      "en": "Teasing",
+      "ja": "からかい",
+      "ko": "농담"
+    },
+    "叹息": {
+      "en": "Sighing",
+      "ja": "嘆息",
+      "ko": "탄식"
+    },
+    "追忆": {
+      "en": "Reminiscing",
+      "ja": "追憶",
+      "ko": "추억"
+    },
+    "认可": {
+      "en": "Acknowledging",
+      "ja": "承認",
+      "ko": "인정"
+    },
+    "温和": {
+      "en": "Mild",
+      "ja": "穏やか",
+      "ko": "온화"
+    },
+    "坚毅": {
+      "en": "Resolute",
+      "ja": "堅毅",
+      "ko": "견의"
+    },
+    "嚣张": {
+      "en": "Brazen",
+      "ja": "囂張",
+      "ko": "횡포"
+    },
+    "真挚": {
+      "en": "Genuine",
+      "ja": "真摯",
+      "ko": "진지"
+    },
+    "失落": {
+      "en": "Disheartened",
+      "ja": "失落",
+      "ko": "실의"
+    },
+    "谦逊": {
+      "en": "Modest",
+      "ja": "謙遜",
+      "ko": "겸손"
+    },
+    "回忆": {
+      "en": "Recalling",
+      "ja": "回想",
+      "ko": "회상"
+    },
+    "沧桑": {
+      "en": "Weathered",
+      "ja": "滄桑",
+      "ko": "창상"
+    },
+    "颤抖": {
+      "en": "Trembling",
+      "ja": "震え",
+      "ko": "떨림"
+    },
+    "惊疑": {
+      "en": "Startled Doubt",
+      "ja": "驚疑",
+      "ko": "경의"
+    },
+    "狂热": {
+      "en": "Fanatical",
+      "ja": "狂熱",
+      "ko": "광열"
+    },
+    "不屈": {
+      "en": "Unyielding",
+      "ja": "不屈",
+      "ko": "불굴"
+    },
+    "崩溃": {
+      "en": "Breaking Down",
+      "ja": "崩壊",
+      "ko": "붕괴"
+    },
+    "脆弱": {
+      "en": "Fragile",
+      "ja": "脆さ",
+      "ko": "취약"
+    },
+    "专注": {
+      "en": "Focused",
+      "ja": "集中",
+      "ko": "집중"
+    },
+    "霸气": {
+      "en": "Dominance",
+      "ja": "覇気",
+      "ko": "패기"
+    },
+    "哀伤": {
+      "en": "Mournful",
+      "ja": "哀傷",
+      "ko": "애상"
+    },
+    "狂妄": {
+      "en": "Megalo",
+      "ja": "狂妄",
+      "ko": "광망"
+    },
+    "冷嘲": {
+      "en": "Cold Mockery",
+      "ja": "冷嘲",
+      "ko": "냉조"
+    },
+    "揭示": {
+      "en": "Unveiling",
+      "ja": "啓示",
+      "ko": "계시"
+    },
+    "庄重": {
+      "en": "Dignified",
+      "ja": "荘重",
+      "ko": "장중"
+    },
+    "不甘": {
+      "en": "Unresigned",
+      "ja": "不甘",
+      "ko": "불간"
+    },
+    "忧虑": {
+      "en": "Apprehensive",
+      "ja": "憂慮",
+      "ko": "우려"
+    },
+    "忌惮": {
+      "en": "Dreading",
+      "ja": "忌憚",
+      "ko": "기탄"
+    },
+    "恭敬": {
+      "en": "Reverent",
+      "ja": "恭敬",
+      "ko": "공경"
+    },
+    "感伤": {
+      "en": "Sentimental",
+      "ja": "感傷",
+      "ko": "감상"
+    },
+    "压迫": {
+      "en": "Oppressive",
+      "ja": "圧迫",
+      "ko": "압박"
+    },
+    "残忍": {
+      "en": "Cruel",
+      "ja": "残忍",
+      "ko": "잔인"
+    },
+    "顿悟": {
+      "en": "Epiphany",
+      "ja": "頓悟",
+      "ko": "돈오"
+    },
+    "交易": {
+      "en": "Transactional",
+      "ja": "取引",
+      "ko": "거래"
+    },
+    "无辜": {
+      "en": "Innocent",
+      "ja": "無辜",
+      "ko": "무고"
+    },
+    "狂喜": {
+      "en": "Ecstatic",
+      "ja": "狂喜",
+      "ko": "광희"
+    },
+    "绵里藏针": {
+      "en": "Velvet Dagger",
+      "ja": "綿裏蔵針",
+      "ko": "면리장침"
+    },
+    "狠辣": {
+      "en": "Ruthless",
+      "ja": "狠辣",
+      "ko": "독랄"
+    },
+    "狂怒": {
+      "en": "Berserk Rage",
+      "ja": "狂怒",
+      "ko": "광노"
+    },
+    "不悦": {
+      "en": "Displeased",
+      "ja": "不快",
+      "ko": "불쾌"
+    },
+    "默契": {
+      "en": "In Sync",
+      "ja": "阿吽",
+      "ko": "투지"
+    },
+    "惊怒": {
+      "en": "Shocked Rage",
+      "ja": "驚怒",
+      "ko": "경노"
+    },
+    "怨毒": {
+      "en": "Venomous Grudge",
+      "ja": "怨毒",
+      "ko": "원독"
+    },
+    "傲娇": {
+      "en": "Tsundere",
+      "ja": "ツンデレ",
+      "ko": "츤데레"
+    },
+    "温情": {
+      "en": "Warmth",
+      "ja": "温情",
+      "ko": "온정"
+    },
+    "凌厉": {
+      "en": "Fierce",
+      "ja": "凌厲",
+      "ko": "능렬"
+    },
+    "愧疚": {
+      "en": "Guilty",
+      "ja": "疚しさ",
+      "ko": "괴로움"
+    },
+    "对峙": {
+      "en": "Confronting",
+      "ja": "対峙",
+      "ko": "대치"
+    },
+    "深情": {
+      "en": "Deep Affection",
+      "ja": "深情",
+      "ko": "심정"
+    },
+    "豪迈": {
+      "en": "Gallant",
+      "ja": "豪快",
+      "ko": "호매"
+    },
+    "战意": {
+      "en": "Battle Lust",
+      "ja": "闘志",
+      "ko": "전의"
+    },
+    "逼问": {
+      "en": "Pressing",
+      "ja": "問い詰め",
+      "ko": "추궁"
+    },
+    "诡谲": {
+      "en": "Devious",
+      "ja": "詭譲",
+      "ko": "궤계"
+    },
+    "计算": {
+      "en": "Calculating",
+      "ja": "計算",
+      "ko": "계산"
+    },
+    "犹豫": {
+      "en": "Hesitant",
+      "ja": "躊躇",
+      "ko": "망설임"
+    },
+    "询问": {
+      "en": "Inquiring",
+      "ja": "尋ねる",
+      "ko": "문의"
+    },
+    "虚伪": {
+      "en": "Hypocritical",
+      "ja": "虚偽",
+      "ko": "허위"
+    },
+    "疏离": {
+      "en": "Aloof",
+      "ja": "疎外",
+      "ko": "소원"
+    },
+    "急迫": {
+      "en": "Urgent",
+      "ja": "急迫",
+      "ko": "급박"
+    },
+    "恍然": {
+      "en": "Realization",
+      "ja": "恍然",
+      "ko": "황연"
+    },
+    "疑虑": {
+      "en": "Doubtful",
+      "ja": "疑念",
+      "ko": "의구심"
+    },
+    "果断": {
+      "en": "Decisive",
+      "ja": "果断",
+      "ko": "과단"
+    },
+    "苍凉": {
+      "en": "Desolate",
+      "ja": "蒼涼",
+      "ko": "창량"
+    },
+    "陈述": {
+      "en": "Stating",
+      "ja": "陳述",
+      "ko": "진술"
+    },
+    "紧绷": {
+      "en": "Tense",
+      "ja": "緊縮",
+      "ko": "긴장"
+    },
+    "狐疑": {
+      "en": "Suspicious",
+      "ja": "狐疑",
+      "ko": "여의심"
+    },
+    "沉默": {
+      "en": "Silent",
+      "ja": "沈黙",
+      "ko": "침묵"
+    },
+    "促狭": {
+      "en": "Mischievous",
+      "ja": "悪戯",
+      "ko": "촉협"
+    },
+    "羞涩": {
+      "en": "Shy",
+      "ja": "羞恥",
+      "ko": "수줍음"
+    },
+    "深思": {
+      "en": "Deep Thought",
+      "ja": "熟考",
+      "ko": "심사"
+    },
+    "阴森": {
+      "en": "Eerie",
+      "ja": "陰森",
+      "ko": "음산"
+    },
+    "怀疑": {
+      "en": "Skeptical",
+      "ja": "懐疑",
+      "ko": "의심"
+    },
+    "运筹帷幄": {
+      "en": "Masterminding",
+      "ja": "帷幄",
+      "ko": "운筹위유"
+    },
+    "锋芒毕露": {
+      "en": "Full Edge",
+      "ja": "鋒芒畢露",
+      "ko": "봉망필로"
+    },
+    "失望": {
+      "en": "Disappointed",
+      "ja": "失望",
+      "ko": "실망"
+    },
+    "怀念": {
+      "en": "Nostalgic",
+      "ja": "懐念",
+      "ko": "향수"
+    },
+    "强硬": {
+      "en": "Tough",
+      "ja": "強硬",
+      "ko": "강경"
+    },
+    "霸道": {
+      "en": "Overbearing",
+      "ja": "覇道",
+      "ko": "패도"
+    },
+    "不屑": {
+      "en": "Dismissive",
+      "ja": "不屑",
+      "ko": "불협"
+    },
+    "理解": {
+      "en": "Understanding",
+      "ja": "理解",
+      "ko": "이해"
+    },
+    "感激": {
+      "en": "Grateful",
+      "ja": "感激",
+      "ko": "감사"
+    },
+    "温馨": {
+      "en": "Heartwarming",
+      "ja": "温もり",
+      "ko": "온기"
+    },
+    "配合": {
+      "en": "Cooperative",
+      "ja": "協力",
+      "ko": "협조"
+    },
+    "敬佩": {
+      "en": "Admiring",
+      "ja": "敬佩",
+      "ko": "경외"
+    },
+    "冷静算计": {
+      "en": "Cold Calculation",
+      "ja": "冷徹計算",
+      "ko": "냉정산계"
+    },
+    "沉着": {
+      "en": "Composed",
+      "ja": "沈着",
+      "ko": "침착"
+    },
+    "惊喜": {
+      "en": "Pleasant Surprise",
+      "ja": "驚喜",
+      "ko": "경희"
+    },
+    "果决": {
+      "en": "Resolute",
+      "ja": "果決",
+      "ko": "과결"
+    },
+    "警示": {
+      "en": "Warning",
+      "ja": "警示",
+      "ko": "경시"
+    },
+    "哭泣": {
+      "en": "Weeping",
+      "ja": "哭泣",
+      "ko": "읍곡"
+    },
+    "步步紧逼": {
+      "en": "Closing In",
+      "ja": "段々追い詰め",
+      "ko": "步步긍박"
+    },
+    "威慑": {
+      "en": "Intimidation",
+      "ja": "威嚇",
+      "ko": "위압"
+    },
+    "不满": {
+      "en": "Dissatisfied",
+      "ja": "不満",
+      "ko": "불만"
+    },
+    "唏嘘": {
+      "en": "Lamenting",
+      "ja": "唏嘘",
+      "ko": "희허"
+    },
+    "妥协": {
+      "en": "Compromising",
+      "ja": "妥協",
+      "ko": "타협"
+    },
+    "暗示": {
+      "en": "Implying",
+      "ja": "暗示",
+      "ko": "암시"
+    },
+    "蛊惑": {
+      "en": "Beguiling",
+      "ja": "蠱惑",
+      "ko": "고혹"
+    },
+    "讥诮": {
+      "en": "Sarcastic",
+      "ja": "嘲笑",
+      "ko": "기조"
+    },
+    "深意": {
+      "en": "Hidden Meaning",
+      "ja": "深意",
+      "ko": "심의"
+    },
+    "期盼": {
+      "en": "Anticipating",
+      "ja": "期盼",
+      "ko": "기대"
+    },
+    "锋芒": {
+      "en": "Sharp Edge",
+      "ja": "鋒芒",
+      "ko": "봉망"
+    },
+    "恍然大悟": {
+      "en": "Sudden Insight",
+      "ja": "恍然大悟",
+      "ko": "황연대오"
+    },
+    "精明": {
+      "en": "Shrewd",
+      "ja": "抜け目ない",
+      "ko": "정밀"
+    },
+    "悲恸": {
+      "en": "Grief-stricken",
+      "ja": "悲慟",
+      "ko": "비통"
+    },
+    "压抑的激动": {
+      "en": "Suppressed Thrill",
+      "ja": "押し殺した激動",
+      "ko": "억압된격동"
+    },
+    "悲悯": {
+      "en": "Compassionate",
+      "ja": "悲憐",
+      "ko": "비민"
+    },
+    "肃穆": {
+      "en": "Solemn",
+      "ja": "粛穆",
+      "ko": "숙목"
+    },
+    "觉醒": {
+      "en": "Awakening",
+      "ja": "覚醒",
+      "ko": "각성"
+    },
+    "漠然": {
+      "en": "Indifferent",
+      "ja": "漠然",
+      "ko": "막연"
+    },
+    "触动": {
+      "en": "Moved",
+      "ja": "触発",
+      "ko": "촉동"
+    },
+    "不安": {
+      "en": "Uneasy",
+      "ja": "不安",
+      "ko": "불안"
+    },
+    "卑微": {
+      "en": "Humble",
+      "ja": "卑屈",
+      "ko": "비미"
+    },
+    "受伤": {
+      "en": "Wounded",
+      "ja": "傷つく",
+      "ko": "수상"
+    },
+    "和蔼": {
+      "en": "Amiable",
+      "ja": "和藹",
+      "ko": "화애"
+    },
+    "诡异": {
+      "en": "Eerie",
+      "ja": "怪異",
+      "ko": "궤이"
+    },
+    "哭笑不得": {
+      "en": "Torn Between",
+      "ja": "泣き笑い",
+      "ko": "곡소부득"
+    },
+    "谄媚": {
+      "en": "Fawning",
+      "ja": "媚び諂う",
+      "ko": "첨미"
+    },
+    "嗤笑": {
+      "en": "Sneering",
+      "ja": "冷笑",
+      "ko": "치소"
+    },
+    "强势": {
+      "en": "Dominant",
+      "ja": "強勢",
+      "ko": "강세"
+    },
+    "色厉内荏": {
+      "en": "Blustering Weak",
+      "ja": "色厳内荏",
+      "ko": "색려내인"
+    },
+    "坚决": {
+      "en": "Firm",
+      "ja": "堅決",
+      "ko": "겁결"
+    },
+    "急促": {
+      "en": "Rushed",
+      "ja": "急促",
+      "ko": "급촉"
+    },
+    "惊叹": {
+      "en": "Marveling",
+      "ja": "驚嘆",
+      "ko": "경탄"
+    },
+    "玩味审视": {
+      "en": "Savoring Gaze",
+      "ja": "玩味審視",
+      "ko": "완미심시"
+    },
+    "睥睨": {
+      "en": "Disdainful",
+      "ja": "睥睨",
+      "ko": "비니"
+    },
+    "直接": {
+      "en": "Direct",
+      "ja": "直接的",
+      "ko": "직접"
+    },
+    "掩饰": {
+      "en": "Concealing",
+      "ja": "隠蔽",
+      "ko": "엄식"
+    },
+    "泣不成声": {
+      "en": "Choked With Tears",
+      "ja": "声も出ず泣く",
+      "ko": "읍불성성"
+    },
+    "冷静审视": {
+      "en": "Cold Scrutiny",
+      "ja": "冷徹審視",
+      "ko": "냉정심시"
+    },
+    "轻松": {
+      "en": "Relaxed",
+      "ja": "軽松",
+      "ko": "경송"
+    },
+    "崩溃边缘": {
+      "en": "On The Brink",
+      "ja": "崩壊寸前",
+      "ko": "붕괴연변"
+    },
+    "阴鸷": {
+      "en": "Sinister",
+      "ja": "陰鷙",
+      "ko": "음지"
+    },
+    "敬畏": {
+      "en": "Reverent",
+      "ja": "敬畏",
+      "ko": "경외"
+    },
+    "传承": {
+      "en": "Inheriting",
+      "ja": "伝承",
+      "ko": "전승"
+    },
+    "哀求": {
+      "en": "Begging",
+      "ja": "哀願",
+      "ko": "애구"
+    },
+    "考验": {
+      "en": "Testing",
+      "ja": "試練",
+      "ko": "시련"
+    },
+    "希望": {
+      "en": "Hopeful",
+      "ja": "希望",
+      "ko": "희망"
+    },
+    "分析": {
+      "en": "Analyzing",
+      "ja": "分析",
+      "ko": "분석"
+    },
+    "惊愕": {
+      "en": "Astonished",
+      "ja": "驚愕",
+      "ko": "경악"
+    },
+    "畅快": {
+      "en": "Exhilarated",
+      "ja": "痛快",
+      "ko": "창쾌"
+    },
+    "孤注一掷": {
+      "en": "All Or Nothing",
+      "ja": "一か八か",
+      "ko": "고주일척"
+    },
+    "心碎": {
+      "en": "Heartbroken",
+      "ja": "心碎",
+      "ko": "심쇄"
+    },
+    "悬念": {
+      "en": "Suspense",
+      "ja": "懸念",
+      "ko": "현념"
+    },
+    "恳切": {
+      "en": "Earnest",
+      "ja": "懇切",
+      "ko": "간절"
+    },
+    "平淡": {
+      "en": "Nonchalant",
+      "ja": "淡々",
+      "ko": "평담"
+    },
+    "暴躁": {
+      "en": "Irritable",
+      "ja": "暴躁",
+      "ko": "폭조"
+    },
+    "将信将疑": {
+      "en": "Half Convinced",
+      "ja": "将信将疑",
+      "ko": "장신장의"
+    },
+    "兴趣": {
+      "en": "Intrigued",
+      "ja": "興味",
+      "ko": "흥미"
+    },
+    "沉吟": {
+      "en": "Pondering",
+      "ja": "沈吟",
+      "ko": "침음"
+    },
+    "淡定": {
+      "en": "Unfazed",
+      "ja": "淡然",
+      "ko": "담정"
+    },
+    "暗流涌动": {
+      "en": "Undercurrents",
+      "ja": "暗流湧動",
+      "ko": "암류용동"
+    },
+    "憨厚": {
+      "en": "Honest Simple",
+      "ja": "淳朴",
+      "ko": "한후"
+    },
+    "委屈": {
+      "en": "Wronged",
+      "ja": "委屈",
+      "ko": "억울"
+    },
+    "对抗": {
+      "en": "Defiant",
+      "ja": "対抗",
+      "ko": "대항"
+    },
+    "伪善": {
+      "en": "Sanctimonious",
+      "ja": "偽善",
+      "ko": "위선"
+    },
+    "心虚": {
+      "en": "Guilty Conscience",
+      "ja": "後ろめたさ",
+      "ko": "심허"
+    },
+    "微妙": {
+      "en": "Subtle",
+      "ja": "微妙",
+      "ko": "미묘"
+    },
+    "不卑不亢": {
+      "en": "Neither Humble Nor Arrogant",
+      "ja": "不卑不亢",
+      "ko": "불비불항"
+    },
+    "胸有成竹": {
+      "en": "Confident Plan",
+      "ja": "成竹在胸",
+      "ko": "흉유성죽"
+    },
+    "博弈": {
+      "en": "Wagering",
+      "ja": "駆け引き",
+      "ko": "박역"
+    },
+    "慌乱": {
+      "en": "Flustered",
+      "ja": "慌乱",
+      "ko": "황란"
+    },
+    "惋惜": {
+      "en": "Regretful",
+      "ja": "惜しむ",
+      "ko": "만석"
+    },
+    "恳求": {
+      "en": "Pleading",
+      "ja": "懇願",
+      "ko": "간구"
+    },
+    "从容不迫": {
+      "en": "Unruffled",
+      "ja": "从容不迫",
+      "ko": "종용불박"
+    },
+    "宣判": {
+      "en": "Judging",
+      "ja": "宣判",
+      "ko": "선판"
+    },
+    "城府": {
+      "en": "Shrewd Depth",
+      "ja": "城府",
+      "ko": "성부"
+    },
+    "威逼利诱": {
+      "en": "Coercion And Bait",
+      "ja": "威圧利誘",
+      "ko": "위핍이유"
+    },
+    "冷漠俯视": {
+      "en": "Cold Condescension",
+      "ja": "冷徹俯瞰",
+      "ko": "냉모부시"
+    },
+    "愉悦": {
+      "en": "Delighted",
+      "ja": "愉悦",
+      "ko": "유열"
+    },
+    "不可置信": {
+      "en": "Disbelieving",
+      "ja": "信じられず",
+      "ko": "불가사의"
+    },
+    "思考": {
+      "en": "Thinking",
+      "ja": "思考",
+      "ko": "사고"
+    },
+    "遗憾": {
+      "en": "Regret",
+      "ja": "遺憾",
+      "ko": "유감"
+    },
+    "漫不经心": {
+      "en": "Casual",
+      "ja": "無頓着",
+      "ko": "만불경심"
+    },
+    "冷静质疑": {
+      "en": "Cold Questioning",
+      "ja": "冷徹質疑",
+      "ko": "냉정질의"
+    },
+    "惊怒交加": {
+      "en": "Shocked And Furious",
+      "ja": "驚怒交加",
+      "ko": "경노교가"
+    },
+    "难以置信": {
+      "en": "Incredible",
+      "ja": "信じ難い",
+      "ko": "난이치신"
+    },
+    "野心": {
+      "en": "Ambitious",
+      "ja": "野心",
+      "ko": "야심"
+    },
+    "纠结": {
+      "en": "Conflicted",
+      "ja": "葛藤",
+      "ko": "결결"
+    },
+    "焦躁": {
+      "en": "Agitated",
+      "ja": "焦躁",
+      "ko": "초조"
+    },
+    "怒吼": {
+      "en": "Roaring Fury",
+      "ja": "怒号",
+      "ko": "노후"
+    },
+    "森然": {
+      "en": "Chilling",
+      "ja": "森然",
+      "ko": "삼연"
+    },
+    "反问": {
+      "en": "Countering",
+      "ja": "反問",
+      "ko": "반문"
+    },
+    "眷恋": {
+      "en": "Longing",
+      "ja": "愛慕",
+      "ko": "권련"
+    },
+    "张扬": {
+      "en": "Flamboyant",
+      "ja": "誇示",
+      "ko": "장양"
+    },
+    "沉凝": {
+      "en": "Grave Composure",
+      "ja": "沈凝",
+      "ko": "침응"
+    },
+    "诱导": {
+      "en": "Guiding",
+      "ja": "誘導",
+      "ko": "유도"
+    },
+    "冷漠审视": {
+      "en": "Icy Scrutiny",
+      "ja": "冷徹審視",
+      "ko": "냉담심시"
+    },
+    "揶揄": {
+      "en": "Mocking",
+      "ja": "揶揄",
+      "ko": "야유"
+    },
+    "矛盾": {
+      "en": "Conflicted",
+      "ja": "矛盾",
+      "ko": "모순"
+    },
+    "压抑怒火": {
+      "en": "Suppressed Rage",
+      "ja": "怒りを押し殺す",
+      "ko": "억압분노"
+    },
+    "内心挣扎": {
+      "en": "Inner Struggle",
+      "ja": "内心の葛藤",
+      "ko": "내심쟁찰"
+    },
+    "慈爱": {
+      "en": "Loving",
+      "ja": "慈愛",
+      "ko": "자애"
+    },
+    "冷酷决绝": {
+      "en": "Cold Resolve",
+      "ja": "冷酷決絶",
+      "ko": "냉혹결절"
+    },
+    "悲怆": {
+      "en": "Sorrowful",
+      "ja": "悲愴",
+      "ko": "비창"
+    },
+    "明悟": {
+      "en": "Clarity",
+      "ja": "明悟",
+      "ko": "명오"
+    },
+    "惊惧交加": {
+      "en": "Shocked And Terrified",
+      "ja": "驚恐交加",
+      "ko": "경구교가"
+    },
+    "狂笑": {
+      "en": "Wild Laughter",
+      "ja": "狂笑",
+      "ko": "광소"
+    },
+    "渴望": {
+      "en": "Yearning",
+      "ja": "渇望",
+      "ko": "갈망"
+    },
+    "镇定": {
+      "en": "Steady",
+      "ja": "鎮定",
+      "ko": "진정"
+    },
+    "悲泣": {
+      "en": "Sorrowful Tears",
+      "ja": "悲泣",
+      "ko": "비읍"
+    },
+    "威逼": {
+      "en": "Coercing",
+      "ja": "威圧",
+      "ko": "위핍"
+    },
+    "温柔而坚定": {
+      "en": "Gentle Yet Firm",
+      "ja": "優しくも揺るぎなく",
+      "ko": "온유하되굳세게"
+    },
+    "震惊与困惑": {
+      "en": "Shocked And Confused",
+      "ja": "衝撃と困惑",
+      "ko": "충격과혼란"
+    },
+    "震惊且警惕": {
+      "en": "Shocked And Alert",
+      "ja": "衝撃と警戒",
+      "ko": "충격과경계"
+    },
+    "欣慰中带着警告": {
+      "en": "Relieved Yet Warning",
+      "ja": "安堵と警告",
+      "ko": "위로속의경고"
+    },
+    "冷静而坚定": {
+      "en": "Calm Yet Firm",
+      "ja": "冷徹にして揺るぎなく",
+      "ko": "냉정하되굳세게"
+    },
+    "平静而坚定": {
+      "en": "Serene Yet Firm",
+      "ja": "平然として揺るぎなく",
+      "ko": "평온하되굳세게"
+    },
+    "痛苦与挣扎": {
+      "en": "Agony And Struggle",
+      "ja": "苦痛と葛藤",
+      "ko": "고통과쟁찰"
+    },
+    "暗怒": {
+      "en": "Hidden Rage",
+      "ja": "暗怒",
+      "ko": "암노"
+    },
+    "怅然": {
+      "en": "Melancholy",
+      "ja": "悵然",
+      "ko": "창연"
+    },
+    "扮猪吃虎": {
+      "en": "Playing Dumb",
+      "ja": "豚のように振る舞い虎を隠す",
+      "ko": "돼지인 척 호랑이 숨기기"
+    },
+    "理性分析": {
+      "en": "Rational Analysis",
+      "ja": "理性的分析",
+      "ko": "이성적 분석"
+    },
+    "逆天改命": {
+      "en": "Defying Fate",
+      "ja": "天命に逆らう",
+      "ko": "천명을 거스르다"
+    },
+    "三分惆怅": {
+      "en": "Slight Melancholy",
+      "ja": "少しの憂鬱",
+      "ko": "약간의 우울"
+    },
+    "下定决心的坚定": {
+      "en": "Determined Resolve",
+      "ja": "決意の固さ",
+      "ko": "결단의 확고함"
+    },
+    "不容置疑的决绝": {
+      "en": "Unquestionable Resolve",
+      "ja": "疑いのない決断",
+      "ko": "의심할 여지 없는 결단"
+    },
+    "不屈与决绝": {
+      "en": "Indomitable Resolve",
+      "ja": "屈しない決意",
+      "ko": "불굴의 결단"
+    },
+    "不屈与挣扎": {
+      "en": "Indomitable Struggle",
+      "ja": "屈しない闘い",
+      "ko": "불굴의 투쟁"
+    },
+    "不惧": {
+      "en": "Fearless",
+      "ja": "恐れない",
+      "ko": "두려움 없는"
+    },
+    "不敢置信": {
+      "en": "Incredulous",
+      "ja": "信じられない",
+      "ko": "믿을 수 없는"
+    },
+    "不满与暗示": {
+      "en": "Dissatisfaction and Hint",
+      "ja": "不満と暗示",
+      "ko": "불만과 암시"
+    },
+    "不甘与决绝": {
+      "en": "Resentful Resolve",
+      "ja": "甘んじない決意",
+      "ko": "억울한 결단"
+    },
+    "不耐烦": {
+      "en": "Impatience",
+      "ja": "苛立ち",
+      "ko": "초조함"
+    },
+    "不解": {
+      "en": "Confusion",
+      "ja": "理解できない",
+      "ko": "이해할 수 없는"
+    },
+    "两难": {
+      "en": "Dilemma",
+      "ja": "ジレンマ",
+      "ko": "딜레마"
+    },
+    "严厉": {
+      "en": "Severe",
+      "ja": "厳しい",
+      "ko": "엄격한"
+    },
+    "严厉却关怀": {
+      "en": "Strict Yet Caring",
+      "ja": "厳しいが思いやりのある",
+      "ko": "엄격하지만 배려하는"
+    },
+    "严厉而忧虑": {
+      "en": "Strict and Worried",
+      "ja": "厳しくて心配している",
+      "ko": "엄격하면서 걱정하는"
+    },
+    "严肃与信任": {
+      "en": "Serious Trust",
+      "ja": "真剣な信頼",
+      "ko": "진지한 신뢰"
+    },
+    "严肃且期待": {
+      "en": "Serious Anticipation",
+      "ja": "真剣な期待",
+      "ko": "진지한 기대"
+    },
+    "严肃而担忧": {
+      "en": "Serious Concern",
+      "ja": "真剣な懸念",
+      "ko": "진지한 우려"
+    },
+    "中计": {
+      "en": "Caught in a Trap",
+      "ja": "罠にかかる",
+      "ko": "함정에 빠지다"
+    },
+    "临死反咬": {
+      "en": "Last-Ditch Revenge",
+      "ja": "死に際の復讐",
+      "ko": "죽기 직전의 복수"
+    },
+    "临终": {
+      "en": "On Deathbed",
+      "ja": "臨終",
+      "ko": "임종"
+    },
+    "临终嘱托": {
+      "en": "Final Request",
+      "ja": "臨終の遺言",
+      "ko": "임종의 유언"
+    },
+    "了然": {
+      "en": "Clear Understanding",
+      "ja": "明らかな理解",
+      "ko": "명확한 이해"
+    },
+    "亢奋": {
+      "en": "Excitement",
+      "ja": "興奮",
+      "ko": "흥분"
+    },
+    "交锋": {
+      "en": "Confrontation",
+      "ja": "対決",
+      "ko": "대결"
+    },
+    "仇恨": {
+      "en": "Hatred",
+      "ja": "憎しみ",
+      "ko": "증오"
+    },
+    "从容布局": {
+      "en": "Calm Strategy",
+      "ja": "冷静な戦略",
+      "ko": "차분한 전략"
+    },
+    "从容淡定中藏着锋芒": {
+      "en": "Calm Yet Sharp",
+      "ja": "冷静さの中に鋭さを隠す",
+      "ko": "차분함 속에 날카로움을 숨기다"
+    },
+    "从容谈判": {
+      "en": "Calm Negotiation",
+      "ja": "冷静な交渉",
+      "ko": "차분한 협상"
+    },
+    "从震惊中恢复，开始认真考虑合作的可能": {
+      "en": "Recovering from Shock, Considering Cooperation",
+      "ja": "ショックから回復し、協力の可能性を真剣に考える",
+      "ko": "충격에서 회복하고 협력 가능성을 진지하게 고려하다"
+    },
+    "从震惊中恢复，转变为认真审视与认可": {
+      "en": "Recovering from Shock, Shifting to Serious Consideration",
+      "ja": "ショックから回復し、真剣に検討する",
+      "ko": "충격에서 회복하고 진지하게 검토하다"
+    },
+    "会心": {
+      "en": "Understanding",
+      "ja": "共感",
+      "ko": "공감"
+    },
+    "伪装的漠然": {
+      "en": "Disguised Indifference",
+      "ja": "偽装された無関心",
+      "ko": "위장된 무관심"
+    },
+    "似笑非笑": {
+      "en": "Half-Smile",
+      "ja": "半笑い",
+      "ko": "반 웃음"
+    },
+    "低吼": {
+      "en": "Low Growl",
+      "ja": "低い吠え",
+      "ko": "낮은 으르렁"
+    },
+    "低沉而坚定": {
+      "en": "Somber Yet Steadfast",
+      "ja": "沈んでいるが揺るがない",
+      "ko": "우울하지만 확고한"
+    },
+    "低沉而急切": {
+      "en": "Somber Yet Urgent",
+      "ja": "沈んでいるが切迫した",
+      "ko": "우울하지만 급박한"
+    },
+    "低沉而深思": {
+      "en": "Somber Reflection",
+      "ja": "沈んだ思索",
+      "ko": "우울한 사색"
+    },
+    "低沉而深远": {
+      "en": "Somber Depth",
+      "ja": "沈んだ深さ",
+      "ko": "우울한 깊이"
+    },
+    "低沉而温柔的承诺": {
+      "en": "Somber Yet Gentle Promise",
+      "ja": "沈んだが優しい約束",
+      "ko": "우울하지만 부드러운 약속"
+    },
+    "低落": {
+      "en": "Depressed",
+      "ja": "落ち込んでいる",
+      "ko": "우울한"
+    },
+    "低语": {
+      "en": "Whisper",
+      "ja": "ささやき",
+      "ko": "속삭임"
+    },
+    "体贴": {
+      "en": "Thoughtful",
+      "ja": "思いやりのある",
+      "ko": "배려하는"
+    },
+    "佩服": {
+      "en": "Admiration",
+      "ja": "感心",
+      "ko": "감탄"
+    },
+    "依恋": {
+      "en": "Attachment",
+      "ja": "愛着",
+      "ko": "애착"
+    },
+    "俏皮中带着狠厉": {
+      "en": "Playful Yet Harsh",
+      "ja": "遊び心のある厳しさ",
+      "ko": "장난기 있지만 가혹한"
+    },
+    "保留": {
+      "en": "Reservation",
+      "ja": "保留",
+      "ko": "유보"
+    },
+    "俯视": {
+      "en": "Condescension",
+      "ja": "見下す",
+      "ko": "경시"
+    },
+    "倔强与决绝": {
+      "en": "Stubborn Resolve",
+      "ja": "頑固な決意",
+      "ko": "고집스러운 결단"
+    },
+    "倔强与痛苦": {
+      "en": "Stubborn Pain",
+      "ja": "頑固な痛み",
+      "ko": "고집스러운 고통"
+    },
+    "倨傲": {
+      "en": "Arrogance",
+      "ja": "傲慢",
+      "ko": "오만"
+    },
+    "假惺惺": {
+      "en": "Feigning Indifference",
+      "ja": "偽りの無関心",
+      "ko": "가식적인 무관심"
+    },
+    "假笑": {
+      "en": "Fake Smile",
+      "ja": "偽りの笑顔",
+      "ko": "가짜 웃음"
+    },
+    "偏执": {
+      "en": "Paranoia",
+      "ja": "偏執",
+      "ko": "편집증"
+    },
+    "傲慢与不屑": {
+      "en": "Arrogance and Disdain",
+      "ja": "傲慢と軽蔑",
+      "ko": "오만과 경멸"
+    },
+    "傲然反击": {
+      "en": "Proud Retaliation",
+      "ja": "誇り高い反撃",
+      "ko": "자존심 있는 반격"
+    },
+    "傲骨铮铮": {
+      "en": "Unyielding Pride",
+      "ja": "揺るがない誇り",
+      "ko": "불굴의 자존심"
+    },
+    "兄妹重逢的温情": {
+      "en": "Warm Reunion of Siblings",
+      "ja": "兄妹の温かい再会",
+      "ko": "형제의 따뜻한 재회"
+    },
+    "充满不屑与寒意": {
+      "en": "Full of Disdain and Coldness",
+      "ja": "軽蔑と冷たさに満ちている",
+      "ko": "경멸과 차가움으로 가득한"
+    },
+    "全场哗然": {
+      "en": "Audience in Uproar",
+      "ja": "観客の騒然",
+      "ko": "관객의 소란"
+    },
+    "全场震惊": {
+      "en": "Audience in Shock",
+      "ja": "観客の驚愕",
+      "ko": "관객의 충격"
+    },
+    "公事公办": {
+      "en": "Businesslike",
+      "ja": "業務的",
+      "ko": "업무적"
+    },
+    "共鸣": {
+      "en": "Resonance",
+      "ja": "共鳴",
+      "ko": "공명"
+    },
+    "关切中带着几分警惕": {
+      "en": "Concern with Vigilance",
+      "ja": "警戒を伴う関心",
+      "ko": "경계를 동반한 관심"
+    },
+    "关切而疑惑": {
+      "en": "Concerned Yet Doubtful",
+      "ja": "心配だが疑念を抱く",
+      "ko": "걱정하지만 의구심을 품다"
+    },
+    "关切而试探": {
+      "en": "Concerned Yet Testing",
+      "ja": "心配しつつ試す",
+      "ko": "걱정하면서 시험하다"
+    },
+    "关切（假）": {
+      "en": "Feigning Concern",
+      "ja": "偽りの関心",
+      "ko": "가식적인 관심"
+    },
+    "兴味": {
+      "en": "Interest",
+      "ja": "興味",
+      "ko": "흥미"
+    },
+    "内心翻涌表面平静": {
+      "en": "Inner Turmoil, Outer Calm",
+      "ja": "内心の波乱、外見の平静",
+      "ko": "내면의 소란, 외면의 평온"
+    },
+    "内心腹诽": {
+      "en": "Inner Resentment",
+      "ja": "内心の恨み",
+      "ko": "내면의 원망"
+    },
+    "内心被戳中痛处，震惊与愤怒交织": {
+      "en": "Inner Pain, Shock and Anger Intertwined",
+      "ja": "内心の痛み、驚きと怒りが交錯する",
+      "ko": "내면의 고통, 충격과 분노가 얽히다"
+    },
+    "内心震动，却强压激动": {
+      "en": "Inner Shock, Suppressed Excitement",
+      "ja": "内心の衝撃、抑えられた興奮",
+      "ko": "내면의 충격, 억제된 흥분"
+    },
+    "内心震动，外表仍强作镇定": {
+      "en": "Inner Shock, Outer Composure",
+      "ja": "内心の衝撃、外見は冷静",
+      "ko": "내면의 충격, 외면은 여전히 침착하다"
+    },
+    "内心震动，面上却越发平静": {
+      "en": "Inner Shock, Increasing Outer Calm",
+      "ja": "内心の衝撃、外見はますます平静",
+      "ko": "내면의 충격, 외면은 더욱 평온해지다"
+    },
+    "内心震荡": {
+      "en": "Inner Turmoil",
+      "ja": "内心の動揺",
+      "ko": "내면의 동요"
+    },
+    "内敛": {
+      "en": "Reserved",
+      "ja": "控えめ",
+      "ko": "내성적인"
+    },
+    "冰冷刺骨": {
+      "en": "Bone-Chilling Cold",
+      "ja": "骨まで凍る冷たさ",
+      "ko": "뼈를 에는 차가움"
+    },
+    "冰冷的洞悉": {
+      "en": "Cold Insight",
+      "ja": "冷徹な洞察",
+      "ko": "차가운 통찰"
+    },
+    "冰冷的理智": {
+      "en": "Cold Rationality",
+      "ja": "冷徹な理性",
+      "ko": "차가운 이성"
+    },
+    "冰冷而嘲讽": {
+      "en": "Cold and Sarcastic",
+      "ja": "冷たくて皮肉な",
+      "ko": "차갑고 비꼬는"
+    },
+    "冰冷而坚定": {
+      "en": "Cold Yet Resolute",
+      "ja": "冷たくも決然とした",
+      "ko": "차갑고도 단호한"
+    },
+    "决心": {
+      "en": "Determination",
+      "ja": "決意",
+      "ko": "결심"
+    },
+    "决战": {
+      "en": "Final Battle",
+      "ja": "決戦",
+      "ko": "결전"
+    },
+    "决断赴约": {
+      "en": "Decisive Commitment",
+      "ja": "決断して約束を果たす",
+      "ko": "결단하고 약속을 지키다"
+    },
+    "决然无畏": {
+      "en": "Fearless Resolve",
+      "ja": "決然とした恐れ知らず",
+      "ko": "결단력 있는 두려움 없음"
+    },
+    "决绝与锋芒": {
+      "en": "Resolute and Sharp",
+      "ja": "決然とした鋭さ",
+      "ko": "결단력 있고 날카로운"
+    },
+    "决绝低语": {
+      "en": "Whisper of Resolve",
+      "ja": "決然とした囁き",
+      "ko": "결단의 속삭임"
+    },
+    "决绝反抗": {
+      "en": "Defiant Resistance",
+      "ja": "決然とした反抗",
+      "ko": "결단력 있는 저항"
+    },
+    "决绝嘱托": {
+      "en": "Serious Entrustment",
+      "ja": "決然とした託宣",
+      "ko": "결단력 있는 위임"
+    },
+    "决绝护短": {
+      "en": "Staunch Protection",
+      "ja": "決然とした保護",
+      "ko": "결단력 있는 보호"
+    },
+    "决绝而冷酷": {
+      "en": "Cold and Resolute",
+      "ja": "冷酷で決然とした",
+      "ko": "차갑고 결단력 있는"
+    },
+    "决绝而坚定": {
+      "en": "Resolute and Steadfast",
+      "ja": "決然として揺るがない",
+      "ko": "결단력 있고 확고한"
+    },
+    "决绝而坦然": {
+      "en": "Calmly Resolute",
+      "ja": "冷静に決然とした",
+      "ko": "차분하게 결단력 있는"
+    },
+    "决绝而战意凛然": {
+      "en": "Fierce and Resolute",
+      "ja": "決然とした戦意",
+      "ko": "결단력 있는 전투 의지"
+    },
+    "决绝而狂热": {
+      "en": "Fervently Resolute",
+      "ja": "狂熱的に決然とした",
+      "ko": "열정적으로 결단력 있는"
+    },
+    "决胜": {
+      "en": "Decisive Victory",
+      "ja": "決勝",
+      "ko": "결승"
+    },
+    "冷": {
+      "en": "Cold",
+      "ja": "冷たい",
+      "ko": "차가운"
+    },
+    "冷傲且坚定": {
+      "en": "Proud and Resolute",
+      "ja": "冷たくも誇り高い",
+      "ko": "차갑고도 자존심 있는"
+    },
+    "冷冽而亢奋": {
+      "en": "Chillingly Excited",
+      "ja": "冷たくも興奮した",
+      "ko": "차갑고도 흥분한"
+    },
+    "冷冽而决绝": {
+      "en": "Chillingly Resolute",
+      "ja": "冷たくも決然とした",
+      "ko": "차갑고도 결단력 있는"
+    },
+    "冷冽而坚定": {
+      "en": "Chillingly Steadfast",
+      "ja": "冷たくも揺るがない",
+      "ko": "차갑고도 확고한"
+    },
+    "冷冽而坚定的杀意": {
+      "en": "Chilling Killing Intent",
+      "ja": "冷たくも揺るがない殺意",
+      "ko": "차갑고도 확고한 살의"
+    },
+    "冷凝": {
+      "en": "Cold Condensation",
+      "ja": "冷凝",
+      "ko": "냉각"
+    },
+    "冷哼一声": {
+      "en": "Cold Snort",
+      "ja": "冷たく鼻を鳴らす",
+      "ko": "차가운 코웃음"
+    },
+    "冷嘲热讽": {
+      "en": "Cold Mockery",
+      "ja": "冷たくも皮肉な",
+      "ko": "차가운 조롱"
+    },
+    "冷声质问": {
+      "en": "Cold Inquiry",
+      "ja": "冷たい声での問い",
+      "ko": "차가운 목소리로 질문"
+    },
+    "冷峻中带着跃跃欲试": {
+      "en": "Stern Yet Eager",
+      "ja": "厳格でありながら試したい",
+      "ko": "엄격하면서도 시도하고 싶은"
+    },
+    "冷峻的自嘲": {
+      "en": "Stern Self-Mockery",
+      "ja": "冷酷な自己嘲笑",
+      "ko": "엄격한 자기 비하"
+    },
+    "冷峻而坚定": {
+      "en": "Stern and Steadfast",
+      "ja": "冷酷で揺るがない",
+      "ko": "엄격하고 확고한"
+    },
+    "冷淡叙述": {
+      "en": "Apathetic Narrative",
+      "ja": "冷淡な叙述",
+      "ko": "무관심한 서술"
+    },
+    "冷淡拒绝": {
+      "en": "Apathetic Refusal",
+      "ja": "冷淡な拒絶",
+      "ko": "무관심한 거절"
+    },
+    "冷淡的催促": {
+      "en": "Apathetic Urging",
+      "ja": "冷淡な促し",
+      "ko": "무관심한 촉구"
+    },
+    "冷漠且防备": {
+      "en": "Apathetic and Guarded",
+      "ja": "冷淡で警戒心のある",
+      "ko": "무관심하고 경계하는"
+    },
+    "冷漠中暗藏戒备": {
+      "en": "Apathetic Yet Guarded",
+      "ja": "冷淡の中に隠された警戒",
+      "ko": "무관심 속에 숨겨진 경계"
+    },
+    "冷漠无情": {
+      "en": "Apathetic and Ruthless",
+      "ja": "冷淡で無情な",
+      "ko": "무관심하고 무자비한"
+    },
+    "冷漠的威压": {
+      "en": "Apathetic Pressure",
+      "ja": "冷淡な威圧",
+      "ko": "무관심한 압박"
+    },
+    "冷漠而危险": {
+      "en": "Apathetic and Dangerous",
+      "ja": "冷淡で危険な",
+      "ko": "무관심하고 위험한"
+    },
+    "冷漠而压迫": {
+      "en": "Apathetic Oppression",
+      "ja": "冷淡な圧迫",
+      "ko": "무관심한 압박"
+    },
+    "冷漠而威严": {
+      "en": "Apathetic and Majestic",
+      "ja": "冷淡で威厳のある",
+      "ko": "무관심하고 위엄 있는"
+    },
+    "冷漠而审视": {
+      "en": "Apathetic Examination",
+      "ja": "冷淡な視線",
+      "ko": "무관심한 시선"
+    },
+    "冷漠而居高临下": {
+      "en": "Apathetic and Condescending",
+      "ja": "冷淡で見下すような",
+      "ko": "무관심하고 거만한"
+    },
+    "冷漠而笃定": {
+      "en": "Apathetic Yet Certain",
+      "ja": "冷淡で確信を持った",
+      "ko": "무관심하면서도 확신하는"
+    },
+    "冷漠而绝对": {
+      "en": "Apathetic and Absolute",
+      "ja": "冷淡で絶対的な",
+      "ko": "무관심하고 절대적인"
+    },
+    "冷漠而自信": {
+      "en": "Apathetic and Confident",
+      "ja": "冷淡で自信に満ちた",
+      "ko": "무관심하고 자신감 있는"
+    },
+    "冷然": {
+      "en": "Indifferent",
+      "ja": "冷然",
+      "ko": "무관심"
+    },
+    "冷眼旁观": {
+      "en": "Cold Observation",
+      "ja": "冷たい目での観察",
+      "ko": "차가운 눈으로 관찰"
+    },
+    "冷硬": {
+      "en": "Cold and Hard",
+      "ja": "冷たく硬い",
+      "ko": "차갑고 단단한"
+    },
+    "冷笑与质疑": {
+      "en": "Cold Smirk and Inquiry",
+      "ja": "冷笑と疑問",
+      "ko": "차가운 웃음과 질문"
+    },
+    "冷笑与质问": {
+      "en": "Cold Smirk and Question",
+      "ja": "冷笑と問い",
+      "ko": "차가운 웃음과 질문"
+    },
+    "冷笑中暗藏锋芒": {
+      "en": "Smirk with Hidden Edge",
+      "ja": "冷笑の中に隠された鋭さ",
+      "ko": "차가운 웃음 속에 숨겨진 날카로움"
+    },
+    "冷笑中的算计": {
+      "en": "Calculating Smirk",
+      "ja": "計算された冷笑",
+      "ko": "계산된 차가운 웃음"
+    },
+    "冷笑却虚弱": {
+      "en": "Weak Yet Smirking",
+      "ja": "冷笑しながらも虚弱",
+      "ko": "차가운 웃음을 지으나 약한"
+    },
+    "冷笑旁观": {
+      "en": "Smirking Observation",
+      "ja": "冷笑しながらの観察",
+      "ko": "차가운 웃음을 지으며 관찰"
+    },
+    "冷笑，心中却是惊涛骇浪": {
+      "en": "Smirk Hiding Turmoil",
+      "ja": "冷笑の裏にある激しい波",
+      "ko": "차가운 웃음 속에 숨겨진 격렬한 파도"
+    },
+    "冷艳中带着赞赏": {
+      "en": "Cold Beauty with Admiration",
+      "ja": "冷たくも賞賛を含む美しさ",
+      "ko": "차가운 아름다움 속에 담긴 찬사"
+    },
+    "冷酷与嘲讽": {
+      "en": "Ruthless Mockery",
+      "ja": "冷酷な嘲笑",
+      "ko": "무자비한 조롱"
+    },
+    "冷酷中藏着温柔": {
+      "en": "Ruthless Yet Gentle",
+      "ja": "冷酷の中に隠された優しさ",
+      "ko": "무자비함 속에 숨겨진 부드러움"
+    },
+    "冷酷护短": {
+      "en": "Ruthless Protection",
+      "ja": "冷酷な保護",
+      "ko": "무자비한 보호"
+    },
+    "冷酷无情": {
+      "en": "Ruthless and Heartless",
+      "ja": "冷酷で無情な",
+      "ko": "무자비하고 무정한"
+    },
+    "冷酷的杀意": {
+      "en": "Ruthless Killing Intent",
+      "ja": "冷酷な殺意",
+      "ko": "무자비한 살의"
+    },
+    "冷酷而决绝": {
+      "en": "Ruthless and Resolute",
+      "ja": "冷酷で決然とした",
+      "ko": "무자비하고 결단력 있는"
+    },
+    "冷酷而残忍": {
+      "en": "Ruthless and Cruel",
+      "ja": "冷酷で残忍な",
+      "ko": "무자비하고 잔인한"
+    },
+    "冷酷而疯狂": {
+      "en": "Ruthless and Insane",
+      "ja": "冷酷で狂気の",
+      "ko": "무자비하고 미친"
+    },
+    "冷酷记仇": {
+      "en": "Ruthless Grudge",
+      "ja": "冷酷な恨み",
+      "ko": "무자비한 원한"
+    },
+    "冷静与算计": {
+      "en": "Calm and Calculating",
+      "ja": "冷静で計算的な",
+      "ko": "차분하고 계산적인"
+    },
+    "冷静且专注": {
+      "en": "Calm and Focused",
+      "ja": "冷静で集中した",
+      "ko": "차분하고 집중한"
+    },
+    "冷静中藏着锋芒": {
+      "en": "Calm with Hidden Edge",
+      "ja": "冷静の中に隠された鋭さ",
+      "ko": "차분함 속에 숨겨진 날카로움"
+    },
+    "冷静到可怕": {
+      "en": "Terrifyingly Calm",
+      "ja": "恐ろしいほど冷静な",
+      "ko": "무섭도록 차분한"
+    },
+    "冷静到近乎冷酷": {
+      "en": "Calm to the Point of Ruthlessness",
+      "ja": "冷静さが冷酷に近い",
+      "ko": "차분함이 무자비함에 가까운"
+    },
+    "冷静如冰": {
+      "en": "Calm as Ice",
+      "ja": "氷のように冷静な",
+      "ko": "얼음처럼 차분한"
+    },
+    "冷静犀利": {
+      "en": "Calm and Sharp",
+      "ja": "冷静で鋭い",
+      "ko": "차분하고 날카로운"
+    },
+    "冷静的交易者姿态": {
+      "en": "Calm Trader's Demeanor",
+      "ja": "冷静な商人の態度",
+      "ko": "차분한 상인의 태도"
+    },
+    "冷静的审视": {
+      "en": "Calm Examination",
+      "ja": "冷静な観察",
+      "ko": "차분한 관찰"
+    },
+    "冷静的试探": {
+      "en": "Calm Probing",
+      "ja": "冷静な試探",
+      "ko": "차분한 탐색"
+    },
+    "冷静的质问": {
+      "en": "Calm Inquiry",
+      "ja": "冷静な問い",
+      "ko": "차분한 질문"
+    },
+    "冷静缜密": {
+      "en": "Calm and Meticulous",
+      "ja": "冷静で綿密な",
+      "ko": "차분하고 세밀한"
+    },
+    "冷静而专注": {
+      "en": "Calm and Determined",
+      "ja": "冷静で決然とした",
+      "ko": "차분하고 결단력 있는"
+    },
+    "冷静而决然": {
+      "en": "Calm and Resolute",
+      "ja": "冷静で決然とした",
+      "ko": "차분하고 결단력 있는"
+    },
+    "冷静而决绝": {
+      "en": "Calm and Unyielding",
+      "ja": "冷静で決然とした",
+      "ko": "차분하고 단호한"
+    },
+    "冷静而得意": {
+      "en": "Calm and Pleased",
+      "ja": "冷静で満足した",
+      "ko": "차분하고 기쁜"
+    },
+    "冷静而深邃的野心": {
+      "en": "Calm Yet Profound Ambition",
+      "ja": "冷静で深い野心",
+      "ko": "차분하면서도 깊은 야망"
+    },
+    "冷静而犀利": {
+      "en": "Calm Yet Sharp",
+      "ja": "冷静で鋭い",
+      "ko": "차분하면서도 날카로운"
+    },
+    "冷静而狡黠": {
+      "en": "Calm Yet Cunning",
+      "ja": "冷静で狡猾な",
+      "ko": "차분하면서도 교활한"
+    },
+    "冷静而理性": {
+      "en": "Calm and Rational",
+      "ja": "冷静で理性的な",
+      "ko": "차분하고 이성적인"
+    },
+    "冷静而锋锐": {
+      "en": "Calm Yet Cutting",
+      "ja": "冷静で鋭利な",
+      "ko": "차분하면서도 날카로운"
+    },
+    "冷静而锐利": {
+      "en": "Calm Yet Keen",
+      "ja": "冷静で鋭い",
+      "ko": "차분하면서도 예리한"
+    },
+    "冷静谈判": {
+      "en": "Calm Negotiation",
+      "ja": "冷静な交渉",
+      "ko": "차분한 협상"
+    },
+    "冷静陈述中暗藏杀意": {
+      "en": "Calm Yet Lethal Understatement",
+      "ja": "冷静な表現に潜む殺意",
+      "ko": "차분한 진술 속에 숨겨진 살의"
+    },
+    "凄厉": {
+      "en": "Harsh",
+      "ja": "凄まじい",
+      "ko": "처참한"
+    },
+    "凄然": {
+      "en": "Desolate",
+      "ja": "凄然とした",
+      "ko": "쓸쓸한"
+    },
+    "凌压": {
+      "en": "Oppression",
+      "ja": "圧迫",
+      "ko": "압박"
+    },
+    "凝重中带着迟疑": {
+      "en": "Heavy Yet Hesitant",
+      "ja": "重苦でありながら躊躇する",
+      "ko": "무거우면서도 망설이는"
+    },
+    "凝重而关切": {
+      "en": "Serious Concern",
+      "ja": "真剣な関心",
+      "ko": "진지한 관심"
+    },
+    "凝重而期待": {
+      "en": "Serious Anticipation",
+      "ja": "重苦で期待する",
+      "ko": "무겁고 기대하는"
+    },
+    "分裂": {
+      "en": "Division",
+      "ja": "分裂",
+      "ko": "분열"
+    },
+    "利益": {
+      "en": "Interest",
+      "ja": "利益",
+      "ko": "이익"
+    },
+    "利益交换": {
+      "en": "Exchange of Interests",
+      "ja": "利益の交換",
+      "ko": "이익 교환"
+    },
+    "别扭的认可": {
+      "en": "Reluctant Acknowledgment",
+      "ja": "ぎこちない承認",
+      "ko": "어색한 인정"
+    },
+    "刮目相看": {
+      "en": "Newfound Respect",
+      "ja": "新たな尊敬",
+      "ko": "새로운 존경"
+    },
+    "剑拔弩张": {
+      "en": "Tense Standoff",
+      "ja": "緊張した対立",
+      "ko": "긴장된 대치"
+    },
+    "剧痛": {
+      "en": "Excruciating Pain",
+      "ja": "激しい痛み",
+      "ko": "극심한 고통"
+    },
+    "务实": {
+      "en": "Pragmatic",
+      "ja": "実務的な",
+      "ko": "실용적인"
+    },
+    "务实高效": {
+      "en": "Pragmatic and Efficient",
+      "ja": "実務的で効率的な",
+      "ko": "실용적이고 효율적인"
+    },
+    "动容且坚定": {
+      "en": "Moved Yet Resolute",
+      "ja": "感動しつつも決然とした",
+      "ko": "감동하면서도 단호한"
+    },
+    "动容呼唤": {
+      "en": "Emotional Call",
+      "ja": "感情的な呼びかけ",
+      "ko": "감정적인 호출"
+    },
+    "动容而复杂": {
+      "en": "Emotional Yet Complex",
+      "ja": "感情的で複雑な",
+      "ko": "감정적이면서도 복잡한"
+    },
+    "动情": {
+      "en": "Emotional",
+      "ja": "感情的な",
+      "ko": "감정적인"
+    },
+    "努力压抑激动": {
+      "en": "Struggling to Suppress Excitement",
+      "ja": "興奮を抑えようとする",
+      "ko": "흥분을 억누르려 애쓰는"
+    },
+    "勉强同意": {
+      "en": "Reluctant Agreement",
+      "ja": "無理な同意",
+      "ko": "억지 동의"
+    },
+    "升华": {
+      "en": "Sublimation",
+      "ja": "昇華",
+      "ko": "승화"
+    },
+    "协议": {
+      "en": "Agreement",
+      "ja": "合意",
+      "ko": "합의"
+    },
+    "危急": {
+      "en": "Critical Situation",
+      "ja": "危機的な状況",
+      "ko": "위급한 상황"
+    },
+    "危机": {
+      "en": "Crisis",
+      "ja": "危機",
+      "ko": "위기"
+    },
+    "危机与转机": {
+      "en": "Crisis and Turning Point",
+      "ja": "危機と転機",
+      "ko": "위기와 전환점"
+    },
+    "危险且真诚": {
+      "en": "Dangerous Yet Sincere",
+      "ja": "危険でありながら誠実な",
+      "ko": "위험하면서도 진실한"
+    },
+    "厉喝": {
+      "en": "Sharp Rebuke",
+      "ja": "厳しい叱責",
+      "ko": "엄한 꾸짖음"
+    },
+    "厉声": {
+      "en": "Harsh Voice",
+      "ja": "厳しい声",
+      "ko": "거친 목소리"
+    },
+    "厉声警告": {
+      "en": "Harsh Warning",
+      "ja": "厳しい警告",
+      "ko": "엄한 경고"
+    },
+    "厉声质问": {
+      "en": "Harsh Interrogation",
+      "ja": "厳しい質問",
+      "ko": "엄한 질문"
+    },
+    "压制怒意": {
+      "en": "Suppressing Anger",
+      "ja": "怒りを抑える",
+      "ko": "분노를 억누르다"
+    },
+    "压抑后的爆发": {
+      "en": "Outburst After Suppression",
+      "ja": "抑圧後の爆発",
+      "ko": "억압 후의 폭발"
+    },
+    "压抑多年的怨恨决堤": {
+      "en": "Long-Suppressed Resentment Erupts",
+      "ja": "長年抑圧された恨みの決壊",
+      "ko": "오랫동안 억눌린 원한이 터지다"
+    },
+    "压抑多年的情感即将决堤": {
+      "en": "Long-Suppressed Emotions on the Verge of Eruption",
+      "ja": "長年抑圧された感情が決壊しそう",
+      "ko": "오랫동안 억눌린 감정이 터질 듯하다"
+    },
+    "压抑怒意": {
+      "en": "Repressed Anger",
+      "ja": "抑圧された怒り",
+      "ko": "억압된 분노"
+    },
+    "压抑的怒意": {
+      "en": "Repressed Anger",
+      "ja": "抑圧された怒り",
+      "ko": "억압된 분노"
+    },
+    "压抑的怒火": {
+      "en": "Suppressed Fury",
+      "ja": "抑圧された怒り",
+      "ko": "억압된 분노"
+    },
+    "压抑的急切": {
+      "en": "Suppressed Urgency",
+      "ja": "抑圧された切迫感",
+      "ko": "억압된 긴급함"
+    },
+    "压抑的情绪即将崩溃": {
+      "en": "Suppressed Emotions on the Brink",
+      "ja": "抑圧された感情が崩壊しそう",
+      "ko": "억압된 감정이 곧 무너질 듯하다"
+    },
+    "压抑的愤怒与冰冷的嘲讽": {
+      "en": "Repressed Anger and Cold Sarcasm",
+      "ja": "抑圧された怒りと冷たい皮肉",
+      "ko": "억압된 분노와 차가운 조롱"
+    },
+    "压抑的愤怒与愧疚": {
+      "en": "Repressed Anger and Guilt",
+      "ja": "抑圧された怒りと罪悪感",
+      "ko": "억압된 분노와 죄책감"
+    },
+    "压抑的愤怒彻底爆发": {
+      "en": "Complete Outburst of Repressed Anger",
+      "ja": "抑圧された怒りの完全な爆発",
+      "ko": "억압된 분노의 완전한 폭발"
+    },
+    "压抑的愤怒终于释放": {
+      "en": "Repressed Anger Finally Released",
+      "ja": "抑圧された怒りがついに解放された",
+      "ko": "억압된 분노가 드디어 풀리다"
+    },
+    "压抑的温柔": {
+      "en": "Suppressed Tenderness",
+      "ja": "抑圧された優しさ",
+      "ko": "억압된 부드러움"
+    },
+    "压抑的焦虑": {
+      "en": "Suppressed Anxiety",
+      "ja": "抑圧された不安",
+      "ko": "억압된 불안"
+    },
+    "压抑的痛苦": {
+      "en": "Suppressed Pain",
+      "ja": "抑圧された痛み",
+      "ko": "억압된 고통"
+    },
+    "压抑的质问中带着颤抖": {
+      "en": "Trembling Interrogation Under Suppression",
+      "ja": "抑圧された質問に震えを伴う",
+      "ko": "억압된 질문 속에 떨림이 있다"
+    },
+    "压抑着情绪波动": {
+      "en": "Suppressing Emotional Turmoil",
+      "ja": "感情の波を抑える",
+      "ko": "감정의 파동을 억누르다"
+    },
+    "压抑着惊涛骇浪般的震惊": {
+      "en": "Suppressing Overwhelming Shock",
+      "ja": "衝撃を抑える",
+      "ko": "압도적인 충격을 억누르다"
+    },
+    "压抑着愤怒": {
+      "en": "Suppressing Anger",
+      "ja": "怒りを抑える",
+      "ko": "분노를 억누르다"
+    },
+    "压抑着激动": {
+      "en": "Suppressing Excitement",
+      "ja": "興奮を抑える",
+      "ko": "흥분을 억누르다"
+    },
+    "压抑着激动，语调却出奇平静": {
+      "en": "Suppressing Excitement with Unexpected Calmness",
+      "ja": "興奮を抑えつつも驚くほど冷静な口調",
+      "ko": "흥분을 억누르면서도 의외로 차분한 어조"
+    },
+    "压抑着震惊的思索": {
+      "en": "Suppressing Shocked Thoughts",
+      "ja": "驚愕した思考を抑える",
+      "ko": "충격적인 생각을 억누르다"
+    },
+    "压抑着颤抖": {
+      "en": "Suppressing Tremors",
+      "ja": "震えを抑える",
+      "ko": "떨림을 억누르다"
+    },
+    "压抑着颤抖的愤怒": {
+      "en": "Suppressing Trembling Anger",
+      "ja": "震える怒りを抑える",
+      "ko": "떨리는 분노를 억누르다"
+    },
+    "压抑着颤抖的追问": {
+      "en": "Suppressing Trembling Questions",
+      "ja": "震える質問を抑える",
+      "ko": "떨리는 질문을 억누르다"
+    },
+    "压抑而冷静": {
+      "en": "Suppressed Yet Calm",
+      "ja": "抑圧されつつも冷静な",
+      "ko": "억압되면서도 차분한"
+    },
+    "又气又急": {
+      "en": "Frustrated and Urgent",
+      "ja": "イライラして急いでいる",
+      "ko": "짜증나고 급한"
+    },
+    "友善": {
+      "en": "Friendly",
+      "ja": "友好的な",
+      "ko": "친근한"
+    },
+    "叙述": {
+      "en": "Narration",
+      "ja": "叙述",
+      "ko": "서술"
+    },
+    "口是心非": {
+      "en": "Two-Faced",
+      "ja": "口と心が違う",
+      "ko": "말과 마음이 다른"
+    },
+    "古老而愉悦": {
+      "en": "Ancient Joy",
+      "ja": "古くて楽しい",
+      "ko": "오래되고 즐거운"
+    },
+    "叫屈喊冤": {
+      "en": "Protest Innocence",
+      "ja": "無実を訴える",
+      "ko": "무죄를 주장하다"
+    },
+    "叮嘱": {
+      "en": "Admonition",
+      "ja": "注意",
+      "ko": "충고"
+    },
+    "号召": {
+      "en": "Call to Action",
+      "ja": "呼びかけ",
+      "ko": "행동 촉구"
+    },
+    "各怀鬼胎": {
+      "en": "Hidden Agendas",
+      "ja": "それぞれの隠れた意図",
+      "ko": "각자의 숨겨진 의도"
+    },
+    "合作达成，但新的疑云升起": {
+      "en": "Cooperation Achieved, Yet New Doubts Arise",
+      "ja": "協力が達成されたが、新たな疑念が生じる",
+      "ko": "협력이 이루어졌지만 새로운 의혹이 생기다"
+    },
+    "后怕": {
+      "en": "Aftershock",
+      "ja": "後悔",
+      "ko": "후회"
+    },
+    "向往": {
+      "en": "Longing",
+      "ja": "憧れ",
+      "ko": "동경"
+    },
+    "否认": {
+      "en": "Denial",
+      "ja": "否認",
+      "ko": "부인"
+    },
+    "吩咐": {
+      "en": "Instruction",
+      "ja": "指示",
+      "ko": "지시"
+    },
+    "含笑": {
+      "en": "Smiling",
+      "ja": "微笑",
+      "ko": "미소"
+    },
+    "启迪": {
+      "en": "Inspiration",
+      "ja": "啓発",
+      "ko": "영감"
+    },
+    "告别": {
+      "en": "Farewell",
+      "ja": "別れ",
+      "ko": "작별"
+    },
+    "告慰": {
+      "en": "Consolation",
+      "ja": "慰め",
+      "ko": "위로"
+    },
+    "告白": {
+      "en": "Confession",
+      "ja": "告白",
+      "ko": "고백"
+    },
+    "告知": {
+      "en": "Notification",
+      "ja": "通知",
+      "ko": "알림"
+    },
+    "命令": {
+      "en": "Command",
+      "ja": "命令",
+      "ko": "명령"
+    },
+    "命运交织": {
+      "en": "Fate Intertwined",
+      "ja": "運命の交錯",
+      "ko": "운명의 얽힘"
+    },
+    "咄咄逼人": {
+      "en": "Aggressive",
+      "ja": "攻撃的",
+      "ko": "공격적"
+    },
+    "哽咽而坚定": {
+      "en": "Choked Yet Resolute",
+      "ja": "詰まったが決意",
+      "ko": "목이 메지만 결연한"
+    },
+    "喜悦与期待": {
+      "en": "Joy and Anticipation",
+      "ja": "喜びと期待",
+      "ko": "기쁨과 기대"
+    },
+    "喜悦而坚定": {
+      "en": "Joyful and Resolute",
+      "ja": "喜びと決意",
+      "ko": "기쁘고 결연한"
+    },
+    "嗔怒": {
+      "en": "Irritation",
+      "ja": "いらだち",
+      "ko": "짜증"
+    },
+    "嗔怒中带着关切": {
+      "en": "Irritated Yet Caring",
+      "ja": "いらだちつつも心配",
+      "ko": "짜증나지만 걱정하는"
+    },
+    "嗔怪": {
+      "en": "Reproach",
+      "ja": "非難",
+      "ko": "비난"
+    },
+    "嗔怪中带着心疼": {
+      "en": "Reproachful Yet Heartbroken",
+      "ja": "非難しつつも心が痛む",
+      "ko": "비난하지만 마음이 아픈"
+    },
+    "嘲弄": {
+      "en": "Mockery",
+      "ja": "嘲笑",
+      "ko": "조롱"
+    },
+    "嘴毒": {
+      "en": "Sharp Tongue",
+      "ja": "辛辣な言葉",
+      "ko": "신랄한 말"
+    },
+    "回忆与痛苦": {
+      "en": "Memories and Pain",
+      "ja": "思い出と痛み",
+      "ko": "추억과 고통"
+    },
+    "困兽之斗": {
+      "en": "Desperate Struggle",
+      "ja": "絶望的な闘争",
+      "ko": "절망적인 투쟁"
+    },
+    "困惑与警惕": {
+      "en": "Confusion and Vigilance",
+      "ja": "混乱と警戒",
+      "ko": "혼란과 경계"
+    },
+    "困惑与警觉": {
+      "en": "Confusion and Alertness",
+      "ja": "混乱と警戒心",
+      "ko": "혼란과 경계심"
+    },
+    "困惑且复杂": {
+      "en": "Confused and Complex",
+      "ja": "混乱して複雑",
+      "ko": "혼란스럽고 복잡한"
+    },
+    "困惑而专注": {
+      "en": "Confused Yet Focused",
+      "ja": "混乱しつつも集中",
+      "ko": "혼란하지만 집중하는"
+    },
+    "困惑而信任": {
+      "en": "Confused Yet Trusting",
+      "ja": "混乱しつつも信頼",
+      "ko": "혼란하지만 신뢰하는"
+    },
+    "困惑而期待": {
+      "en": "Confused Yet Hopeful",
+      "ja": "混乱しつつも期待",
+      "ko": "혼란하지만 기대하는"
+    },
+    "困惑而认真": {
+      "en": "Confused Yet Serious",
+      "ja": "混乱しつつも真剣",
+      "ko": "혼란하지만 진지한"
+    },
+    "图穷匕见": {
+      "en": "Truth Revealed",
+      "ja": "真実が明らかになる",
+      "ko": "진실이 드러나다"
+    },
+    "坚定与不屈": {
+      "en": "Steadfast and Unyielding",
+      "ja": "揺るがない",
+      "ko": "확고하고 굴하지 않는"
+    },
+    "坚定与从容": {
+      "en": "Steadfast and Composed",
+      "ja": "揺るがず冷静",
+      "ko": "확고하고 침착한"
+    },
+    "坚定与决绝": {
+      "en": "Steadfast and Resolute",
+      "ja": "揺るがず決然",
+      "ko": "확고하고 결연한"
+    },
+    "坚定与温柔": {
+      "en": "Steadfast and Gentle",
+      "ja": "揺るがず優しい",
+      "ko": "확고하고 부드러운"
+    },
+    "坚定守护": {
+      "en": "Steadfast Protection",
+      "ja": "揺るがない守護",
+      "ko": "확고한 보호"
+    },
+    "坚定而信任": {
+      "en": "Steadfast and Trusting",
+      "ja": "揺るがず信頼",
+      "ko": "확고하고 신뢰하는"
+    },
+    "坚定而决绝": {
+      "en": "Steadfast and Determined",
+      "ja": "揺るがず決意",
+      "ko": "확고하고 결단한"
+    },
+    "坚定而无奈": {
+      "en": "Steadfast Yet Helpless",
+      "ja": "揺るがず無力",
+      "ko": "확고하지만 무력한"
+    },
+    "坚定而有原则": {
+      "en": "Steadfast and Principled",
+      "ja": "揺るがず原則的",
+      "ko": "확고하고 원칙적인"
+    },
+    "坚定而温柔": {
+      "en": "Steadfast and Tender",
+      "ja": "揺るがず優しい",
+      "ko": "확고하고 부드러운"
+    },
+    "坚定而锋锐": {
+      "en": "Steadfast and Sharp",
+      "ja": "揺るがず鋭い",
+      "ko": "확고하고 날카로운"
+    },
+    "坚定誓言": {
+      "en": "Steadfast Oath",
+      "ja": "揺るがない誓い",
+      "ko": "확고한 맹세"
+    },
+    "坚持": {
+      "en": "Persistence",
+      "ja": "持続",
+      "ko": "지속"
+    },
+    "坚毅护短": {
+      "en": "Resolute Protection",
+      "ja": "毅然とした守護",
+      "ko": "단호한 보호"
+    },
+    "坚韧": {
+      "en": "Resilience",
+      "ja": "弾力性",
+      "ko": "회복력"
+    },
+    "坦白": {
+      "en": "Honesty",
+      "ja": "率直",
+      "ko": "솔직함"
+    },
+    "坦白真相": {
+      "en": "Truthful Revelation",
+      "ja": "真実の告白",
+      "ko": "진실한 폭로"
+    },
+    "坦荡": {
+      "en": "Open-hearted",
+      "ja": "心が広い",
+      "ko": "마음이 넓은"
+    },
+    "坦诚合作": {
+      "en": "Sincere Cooperation",
+      "ja": "誠実な協力",
+      "ko": "진실한 협력"
+    },
+    "坦诚直率": {
+      "en": "Candid and Direct",
+      "ja": "率直で直接的",
+      "ko": "솔직하고 직설적인"
+    },
+    "坦诚相待": {
+      "en": "Treating Honestly",
+      "ja": "誠実に接する",
+      "ko": "정직하게 대하는"
+    },
+    "垂死": {
+      "en": "Dying",
+      "ja": "死にかけ",
+      "ko": "죽어가는"
+    },
+    "壮志": {
+      "en": "Ambition",
+      "ja": "壮志",
+      "ko": "포부"
+    },
+    "声音低哑": {
+      "en": "Hoarse Voice",
+      "ja": "かすれた声",
+      "ko": "쉰 목소리"
+    },
+    "声音微微发颤": {
+      "en": "Slightly Trembling Voice",
+      "ja": "微かに震える声",
+      "ko": "미세하게 떨리는 목소리"
+    },
+    "复仇": {
+      "en": "Revenge",
+      "ja": "復讐",
+      "ko": "복수"
+    },
+    "复杂与警惕": {
+      "en": "Complexity and Vigilance",
+      "ja": "複雑さと警戒",
+      "ko": "복잡함과 경계"
+    },
+    "复杂守护": {
+      "en": "Complex Protection",
+      "ja": "複雑な守護",
+      "ko": "복잡한 보호"
+    },
+    "复杂情绪涌动": {
+      "en": "Surge of Complex Emotions",
+      "ja": "複雑な感情の高まり",
+      "ko": "복잡한 감정의 격동"
+    },
+    "复杂的情绪": {
+      "en": "Complex Emotions",
+      "ja": "複雑な感情",
+      "ko": "복잡한 감정"
+    },
+    "复杂的欣慰": {
+      "en": "Complex Comfort",
+      "ja": "複雑な慰め",
+      "ko": "복잡한 위로"
+    },
+    "复杂的沉默": {
+      "en": "Complex Silence",
+      "ja": "複雑な沈黙",
+      "ko": "복잡한 침묵"
+    },
+    "复杂的试探与欣赏交织": {
+      "en": "Intertwined Testing and Appreciation",
+      "ja": "試探と賞賛の交錯",
+      "ko": "시험과 감상의 얽힘"
+    },
+    "复杂而坚定": {
+      "en": "Complex Yet Resolute",
+      "ja": "複雑でありながら決意",
+      "ko": "복잡하지만 결연한"
+    },
+    "复杂而炽热": {
+      "en": "Complex Yet Passionate",
+      "ja": "複雑でありながら情熱的",
+      "ko": "복잡하지만 열정적인"
+    },
+    "复杂难言": {
+      "en": "Indescribably Complex",
+      "ja": "言葉にできない複雑さ",
+      "ko": "말로 표현할 수 없는 복잡함"
+    },
+    "大笑": {
+      "en": "Laughter",
+      "ja": "大笑い",
+      "ko": "큰 웃음"
+    },
+    "天真": {
+      "en": "Naivety",
+      "ja": "無邪気",
+      "ko": "순진함"
+    },
+    "天真好奇": {
+      "en": "Innocent Curiosity",
+      "ja": "無邪気な好奇心",
+      "ko": "순진한 호기심"
+    },
+    "失去理智": {
+      "en": "Losing Sanity",
+      "ja": "理性を失う",
+      "ko": "이성을 잃다"
+    },
+    "失落但坦然": {
+      "en": "Disappointed Yet Composed",
+      "ja": "失望しつつも冷静",
+      "ko": "실망하지만 침착한"
+    },
+    "失落但理解": {
+      "en": "Disappointed Yet Understanding",
+      "ja": "失望しつつも理解",
+      "ko": "실망하지만 이해하는"
+    },
+    "夸张": {
+      "en": "Exaggeration",
+      "ja": "誇張",
+      "ko": "과장"
+    },
+    "好笑": {
+      "en": "Amusing",
+      "ja": "面白い",
+      "ko": "재미있는"
+    },
+    "如释重负": {
+      "en": "Relieved",
+      "ja": "ほっとした",
+      "ko": "안도하는"
+    },
+    "委屈与不甘": {
+      "en": "Injustice and Resentment",
+      "ja": "不当と不満",
+      "ko": "부당함과 원망"
+    },
+    "委屈与愤怒": {
+      "en": "Injustice and Anger",
+      "ja": "不当と怒り",
+      "ko": "부당함과 분노"
+    },
+    "威严且不容置疑": {
+      "en": "Majestic and Undeniable",
+      "ja": "威厳があり疑いようがない",
+      "ko": "위엄 있고 의심할 여지가 없는"
+    },
+    "威严而冷漠": {
+      "en": "Majestic and Indifferent",
+      "ja": "威厳があり冷淡",
+      "ko": "위엄 있고 냉담한"
+    },
+    "威严而古老": {
+      "en": "Majestic and Ancient",
+      "ja": "威厳があり古い",
+      "ko": "위엄 있고 고대의"
+    },
+    "威严而审视": {
+      "en": "Majestic and Observant",
+      "ja": "威厳があり観察的",
+      "ko": "위엄 있고 관찰적인"
+    },
+    "威严而戏谑": {
+      "en": "Majestic and Mocking",
+      "ja": "威厳があり嘲笑的",
+      "ko": "위엄 있고 조롱하는"
+    },
+    "威严而沧桑": {
+      "en": "Majestic Yet Weathered",
+      "ja": "威厳がありながらも風格がある",
+      "ko": "위엄 있으나 세월의 흔적"
+    },
+    "威严而淡漠": {
+      "en": "Majestic Yet Indifferent",
+      "ja": "威厳がありながらも無関心",
+      "ko": "위엄 있으나 무관심"
+    },
+    "威严而深沉": {
+      "en": "Majestic Yet Profound",
+      "ja": "威厳がありながらも深い",
+      "ko": "위엄 있으나 심오함"
+    },
+    "威严而疲惫": {
+      "en": "Majestic Yet Weary",
+      "ja": "威厳がありながらも疲れた",
+      "ko": "위엄 있으나 피곤함"
+    },
+    "威严而苍凉": {
+      "en": "Majestic Yet Desolate",
+      "ja": "威厳がありながらも荒涼",
+      "ko": "위엄 있으나 황량함"
+    },
+    "威严而苍老": {
+      "en": "Majestic Yet Aged",
+      "ja": "威厳がありながらも老いた",
+      "ko": "위엄 있으나 늙은"
+    },
+    "威严而轻蔑": {
+      "en": "Majestic Yet Contemptuous",
+      "ja": "威厳がありながらも軽蔑",
+      "ko": "위엄 있으나 경멸"
+    },
+    "威严震慑": {
+      "en": "Intimidating Majesty",
+      "ja": "威厳による威圧",
+      "ko": "위엄으로 인한 위압"
+    },
+    "威压与警告": {
+      "en": "Pressure and Warning",
+      "ja": "威圧と警告",
+      "ko": "압박과 경고"
+    },
+    "威压俯视": {
+      "en": "Overbearing Gaze",
+      "ja": "威圧的な視線",
+      "ko": "압박하는 시선"
+    },
+    "威压全开": {
+      "en": "Full Pressure",
+      "ja": "全力の威圧",
+      "ko": "압박 전개"
+    },
+    "威压降临": {
+      "en": "Pressure Descends",
+      "ja": "威圧が降りかかる",
+      "ko": "압박이 내려옴"
+    },
+    "嬉皮笑脸": {
+      "en": "Playful Smirk",
+      "ja": "陽気な笑顔",
+      "ko": "장난스러운 미소"
+    },
+    "安心": {
+      "en": "Peace of Mind",
+      "ja": "安心",
+      "ko": "안심"
+    },
+    "宠溺": {
+      "en": "Indulgent Affection",
+      "ja": "甘やかし",
+      "ko": "애정 어린 응석"
+    },
+    "审判": {
+      "en": "Judgment",
+      "ja": "審判",
+      "ko": "심판"
+    },
+    "审慎": {
+      "en": "Cautious",
+      "ja": "慎重",
+      "ko": "신중"
+    },
+    "审慎且冷静": {
+      "en": "Cautious and Calm",
+      "ja": "慎重かつ冷静",
+      "ko": "신중하고 차분한"
+    },
+    "审视、意外、兴味": {
+      "en": "Curious Examination",
+      "ja": "興味深い観察",
+      "ko": "호기심 어린 관찰"
+    },
+    "审视、考量、微妙的触动": {
+      "en": "Thoughtful Reflection",
+      "ja": "考慮深い反応",
+      "ko": "사려 깊은 반응"
+    },
+    "审视与玩味": {
+      "en": "Intrigued Observation",
+      "ja": "興味を持った観察",
+      "ko": "흥미로운 관찰"
+    },
+    "审视与警惕": {
+      "en": "Vigilant Observation",
+      "ja": "警戒した観察",
+      "ko": "경계하는 관찰"
+    },
+    "审视与试探": {
+      "en": "Testing Observation",
+      "ja": "試すような観察",
+      "ko": "시험하는 관찰"
+    },
+    "审视与质问": {
+      "en": "Questioning Observation",
+      "ja": "問いかける観察",
+      "ko": "질문하는 관찰"
+    },
+    "审视且防备": {
+      "en": "Guarded Observation",
+      "ja": "警戒した観察",
+      "ko": "경계하는 관찰"
+    },
+    "审视中带着一丝难以察觉的关心": {
+      "en": "Subtle Concern in Observation",
+      "ja": "観察の中に微妙な関心",
+      "ko": "관찰 속의 미세한 관심"
+    },
+    "宣战": {
+      "en": "Declaration of War",
+      "ja": "宣戦",
+      "ko": "전쟁 선언"
+    },
+    "宣示权威": {
+      "en": "Assertion of Authority",
+      "ja": "権威の宣言",
+      "ko": "권위의 선언"
+    },
+    "宣读": {
+      "en": "Proclamation",
+      "ja": "宣読",
+      "ko": "선포"
+    },
+    "寂寥": {
+      "en": "Loneliness",
+      "ja": "寂しさ",
+      "ko": "고독"
+    },
+    "寒意": {
+      "en": "Chill",
+      "ja": "寒気",
+      "ko": "차가움"
+    },
+    "寒意彻骨": {
+      "en": "Bone-Chilling Cold",
+      "ja": "骨まで凍る寒さ",
+      "ko": "뼈까지 시린 추위"
+    },
+    "寒意蔓延": {
+      "en": "Spreading Chill",
+      "ja": "寒気の広がり",
+      "ko": "퍼지는 차가움"
+    },
+    "察觉中带着复杂情绪": {
+      "en": "Complex Emotions Detected",
+      "ja": "複雑な感情を感じ取る",
+      "ko": "복잡한 감정이 감지됨"
+    },
+    "对决": {
+      "en": "Showdown",
+      "ja": "対決",
+      "ko": "대결"
+    },
+    "将悲恸化为冰冷的隐忍": {
+      "en": "Turning Grief into Cold Resilience",
+      "ja": "悲しみを冷たい忍耐に変える",
+      "ko": "슬픔을 차가운 인내로 바꿈"
+    },
+    "小心翼翼": {
+      "en": "Cautious",
+      "ja": "用心深く",
+      "ko": "조심스럽게"
+    },
+    "居高临下": {
+      "en": "Condescending",
+      "ja": "見下す",
+      "ko": "내려다보는"
+    },
+    "居高临下的审视": {
+      "en": "Condescending Gaze",
+      "ja": "見下す視線",
+      "ko": "내려다보는 시선"
+    },
+    "屈辱": {
+      "en": "Humiliation",
+      "ja": "屈辱",
+      "ko": "모욕"
+    },
+    "屈辱与愤怒交织": {
+      "en": "Intertwined Humiliation and Anger",
+      "ja": "屈辱と怒りが交錯",
+      "ko": "모욕과 분노가 얽힘"
+    },
+    "崇敬": {
+      "en": "Reverence",
+      "ja": "崇敬",
+      "ko": "존경"
+    },
+    "崇敬与感激": {
+      "en": "Reverence and Gratitude",
+      "ja": "崇敬と感謝",
+      "ko": "존경과 감사"
+    },
+    "布局": {
+      "en": "Strategic Planning",
+      "ja": "配置",
+      "ko": "배치"
+    },
+    "希望与决绝": {
+      "en": "Hope and Resolution",
+      "ja": "希望と決意",
+      "ko": "희망과 결단"
+    },
+    "带着一丝玩味": {
+      "en": "With a Hint of Playfulness",
+      "ja": "少し遊び心を持って",
+      "ko": "약간의 장난스러움"
+    },
+    "带着心疼的了解": {
+      "en": "Understanding with Heartache",
+      "ja": "心の痛みを伴う理解",
+      "ko": "마음 아픈 이해"
+    },
+    "带着惊天秘密的沉重": {
+      "en": "Heavy with a Shocking Secret",
+      "ja": "衝撃的な秘密を抱えて",
+      "ko": "충격적인 비밀을 안고"
+    },
+    "带着期许与郑重": {
+      "en": "With Expectation and Seriousness",
+      "ja": "期待と真剣さを持って",
+      "ko": "기대와 진지함을 가지고"
+    },
+    "带着诡异的得意": {
+      "en": "With a Strange Pride",
+      "ja": "奇妙な誇りを持って",
+      "ko": "이상한 자부심을 가지고"
+    },
+    "干脆": {
+      "en": "Decisive",
+      "ja": "あっさりした",
+      "ko": "단호한"
+    },
+    "平静中带着一丝难以察觉的紧绷": {
+      "en": "Subtle Tension in Calmness",
+      "ja": "平静の中に微妙な緊張",
+      "ko": "차분함 속의 미세한 긴장"
+    },
+    "平静中带着不可一世的霸气": {
+      "en": "Calm Yet Dominant",
+      "ja": "平静の中に圧倒的な威圧感",
+      "ko": "차분함 속의 압도적인 카리스마"
+    },
+    "平静中带着压抑的悲伤": {
+      "en": "Calm Yet Suppressed Sadness",
+      "ja": "平静の中に抑圧された悲しみ",
+      "ko": "차분함 속의 억압된 슬픔"
+    },
+    "平静中带着深沉的关爱": {
+      "en": "Calm Yet Profound Care",
+      "ja": "平静の中に深い愛情",
+      "ko": "차분함 속의 깊은 사랑"
+    },
+    "平静中带着难以掩饰的激动": {
+      "en": "Calm Yet Uncontainable Excitement",
+      "ja": "平静の中に抑えきれない興奮",
+      "ko": "차분함 속의 억제할 수 없는 흥분"
+    },
+    "平静中暗藏机锋": {
+      "en": "Calm with Hidden Wit",
+      "ja": "平静の中に隠れた機知",
+      "ko": "차분함 속의 숨겨진 재치"
+    },
+    "平静中暗藏锋芒": {
+      "en": "Calm with Hidden Sharpness",
+      "ja": "平静の中に隠れた鋭さ",
+      "ko": "차분함 속의 숨겨진 날카로움"
+    },
+    "平静却坚定": {
+      "en": "Calm Yet Resolute",
+      "ja": "平静でありながらも決然",
+      "ko": "차분하지만 단호한"
+    },
+    "平静叙述": {
+      "en": "Calm Narrative",
+      "ja": "平静な叙述",
+      "ko": "차분한 서술"
+    },
+    "平静地陈述事实": {
+      "en": "Calmly Stating Facts",
+      "ja": "冷静に事実を述べる",
+      "ko": "차분하게 사실을 진술"
+    },
+    "平静如水": {
+      "en": "Calm as Water",
+      "ja": "水のように平静",
+      "ko": "물처럼 차분한"
+    },
+    "平静对峙中暗流涌动": {
+      "en": "Undercurrents in Calm Confrontation",
+      "ja": "平静な対峙の中に流れる暗流",
+      "ko": "차분한 대치 속의 암류"
+    },
+    "平静得可怕": {
+      "en": "Terrifying Calmness",
+      "ja": "恐ろしいほどの平静",
+      "ko": "무서울 정도로 차분한"
+    },
+    "平静得近乎讽刺": {
+      "en": "Calm to the Point of Irony",
+      "ja": "皮肉なほどの平静",
+      "ko": "아이러니할 정도로 차분한"
+    },
+    "平静的述说中藏着无尽的牺牲": {
+      "en": "Endless Sacrifice Hidden in Calm Narrative",
+      "ja": "平静な語りの中に隠された無限の犠牲",
+      "ko": "차분한 서술 속에 숨겨진 끝없는 희생"
+    },
+    "平静而疲惫": {
+      "en": "Calm Yet Weary",
+      "ja": "平静でありながらも疲れた",
+      "ko": "차분하지만 피곤한"
+    },
+    "平静而锐利": {
+      "en": "Calm Yet Sharp",
+      "ja": "平静でありながらも鋭い",
+      "ko": "차분하지만 날카로운"
+    },
+    "幸灾乐祸": {
+      "en": "Schadenfreude",
+      "ja": "他人の不幸を喜ぶ",
+      "ko": "타인의 불행을 즐기는"
+    },
+    "幸福": {
+      "en": "Happiness",
+      "ja": "幸福",
+      "ko": "행복"
+    },
+    "庄严": {
+      "en": "Solemnity",
+      "ja": "厳粛",
+      "ko": "엄숙함"
+    },
+    "庄严而坚定": {
+      "en": "Solemn and Resolute",
+      "ja": "厳粛かつ決然",
+      "ko": "엄숙하고 단호한"
+    },
+    "庄重与嘱托": {
+      "en": "Seriousness and Entrustment",
+      "ja": "真剣さと委託",
+      "ko": "진지함과 위임"
+    },
+    "庄重而期待": {
+      "en": "Serious and Expectant",
+      "ja": "真剣で期待に満ちた",
+      "ko": "진지하고 기대에 찬"
+    },
+    "庄重而深沉": {
+      "en": "Serious and Profound",
+      "ja": "真剣で深い",
+      "ko": "진지하고 심오한"
+    },
+    "建议": {
+      "en": "Suggestion",
+      "ja": "提案",
+      "ko": "제안"
+    },
+    "引导": {
+      "en": "Guidance",
+      "ja": "導き",
+      "ko": "안내"
+    },
+    "引诱": {
+      "en": "Temptation",
+      "ja": "誘惑",
+      "ko": "유혹"
+    },
+    "强作镇定": {
+      "en": "Feigning Calm",
+      "ja": "冷静を装う",
+      "ko": "차분함을 가장하는"
+    },
+    "强压怒火": {
+      "en": "Suppressing Anger",
+      "ja": "怒りを抑える",
+      "ko": "분노를 억누르다"
+    },
+    "强撑": {
+      "en": "Forced Resilience",
+      "ja": "無理な耐え忍び",
+      "ko": "억지로 버티기"
+    },
+    "强撑镇定": {
+      "en": "Forced Calmness",
+      "ja": "無理に冷静さを保つ",
+      "ko": "억지로 차분함 유지"
+    },
+    "强撑颜面": {
+      "en": "Maintaining Dignity",
+      "ja": "面子を保つ",
+      "ko": "체면 유지"
+    },
+    "彻底崩溃的质问": {
+      "en": "Desperate Questioning",
+      "ja": "完全に崩壊した問い",
+      "ko": "완전히 무너진 질문"
+    },
+    "彻底撕下伪装的疯狂": {
+      "en": "Unmasking Madness",
+      "ja": "仮面を剥がす狂気",
+      "ko": "가면을 벗기는 광기"
+    },
+    "得意中隐含深意": {
+      "en": "Pride with Depth",
+      "ja": "深い意味を含む誇り",
+      "ko": "깊은 의미가 담긴 자부심"
+    },
+    "循循善诱": {
+      "en": "Gentle Persuasion",
+      "ja": "優しい誘導",
+      "ko": "부드러운 유도"
+    },
+    "微带好奇": {
+      "en": "Subtle Curiosity",
+      "ja": "微かな好奇心",
+      "ko": "미세한 호기심"
+    },
+    "微恼": {
+      "en": "Slight Annoyance",
+      "ja": "微妙な苛立ち",
+      "ko": "약간의 짜증"
+    },
+    "微赧": {
+      "en": "Slight Embarrassment",
+      "ja": "微かな恥ずかしさ",
+      "ko": "약간의 부끄러움"
+    },
+    "心动": {
+      "en": "Heart Flutter",
+      "ja": "心が躍る",
+      "ko": "심장이 뛰다"
+    },
+    "心如刀绞": {
+      "en": "Heart Wrenching",
+      "ja": "心が引き裂かれる",
+      "ko": "가슴이 찢어지는"
+    },
+    "心寒": {
+      "en": "Heart Coldness",
+      "ja": "心が寒い",
+      "ko": "마음이 차가워지다"
+    },
+    "心惊": {
+      "en": "Heart Shock",
+      "ja": "心が驚く",
+      "ko": "심장이 놀라다"
+    },
+    "心满意足": {
+      "en": "Heartfelt Satisfaction",
+      "ja": "心からの満足",
+      "ko": "마음의 만족"
+    },
+    "心照不宣": {
+      "en": "Unspoken Understanding",
+      "ja": "暗黙の了解",
+      "ko": "묵시적 이해"
+    },
+    "心疼与坚定": {
+      "en": "Heartache and Resolve",
+      "ja": "心の痛みと決意",
+      "ko": "마음 아픔과 결단"
+    },
+    "心痛与不甘": {
+      "en": "Heartache and Resentment",
+      "ja": "心の痛みと悔しさ",
+      "ko": "마음 아픔과 억울함"
+    },
+    "心痛如割": {
+      "en": "Heart Pain Like Cutting",
+      "ja": "心が切り裂かれるような痛み",
+      "ko": "가슴이 베이는 듯한 아픔"
+    },
+    "心绪复杂": {
+      "en": "Complex Emotions",
+      "ja": "複雑な感情",
+      "ko": "복잡한 감정"
+    },
+    "心跳、动摇": {
+      "en": "Heart Racing and Shaking",
+      "ja": "心が高鳴り揺れる",
+      "ko": "심장이 뛰고 흔들리다"
+    },
+    "心软无奈": {
+      "en": "Soft-hearted Helplessness",
+      "ja": "心が優しく無力感",
+      "ko": "마음이 약해 어쩔 수 없는"
+    },
+    "忍俊不禁": {
+      "en": "Unable to Hold Back Laughter",
+      "ja": "笑いを堪えきれない",
+      "ko": "웃음을 참지 못하다"
+    },
+    "忍笑": {
+      "en": "Suppressing Laughter",
+      "ja": "笑いを抑える",
+      "ko": "웃음을 참다"
+    },
+    "志在必得": {
+      "en": "Determined to Succeed",
+      "ja": "必ず成功する意志",
+      "ko": "반드시 성공하겠다는 의지"
+    },
+    "忧虑与关切": {
+      "en": "Worry and Concern",
+      "ja": "心配と関心",
+      "ko": "걱정과 관심"
+    },
+    "怀疑中带着几分玩味": {
+      "en": "Skeptical Amusement",
+      "ja": "疑いを持ちながらの楽しみ",
+      "ko": "의심 속의 재미"
+    },
+    "怒不可遏": {
+      "en": "Uncontrollable Rage",
+      "ja": "抑えきれない怒り",
+      "ko": "억제할 수 없는 분노"
+    },
+    "怒其不争": {
+      "en": "Anger at Inaction",
+      "ja": "無気力に対する怒り",
+      "ko": "무기력에 대한 분노"
+    },
+    "怒吼中带着沙哑": {
+      "en": "Hoarse Roar of Anger",
+      "ja": "かすれた怒りの咆哮",
+      "ko": "쉰 목소리의 분노의 포효"
+    },
+    "怒意": {
+      "en": "Anger",
+      "ja": "怒り",
+      "ko": "분노"
+    },
+    "怜悯": {
+      "en": "Compassion",
+      "ja": "同情",
+      "ko": "연민"
+    },
+    "思念": {
+      "en": "Longing",
+      "ja": "思い",
+      "ko": "그리움"
+    },
+    "思念与哽咽": {
+      "en": "Longing and Choking",
+      "ja": "思いと嗚咽",
+      "ko": "그리움과 목메임"
+    },
+    "思念与期盼": {
+      "en": "Longing and Anticipation",
+      "ja": "思いと期待",
+      "ko": "그리움과 기대"
+    },
+    "急切与不甘": {
+      "en": "Impatience and Resentment",
+      "ja": "焦りと悔しさ",
+      "ko": "초조함과 억울함"
+    },
+    "急切示警": {
+      "en": "Urgent Warning",
+      "ja": "緊急の警告",
+      "ko": "긴급 경고"
+    },
+    "急切而克制": {
+      "en": "Impatient Yet Restrained",
+      "ja": "焦りながらも抑える",
+      "ko": "초조하지만 억제된"
+    },
+    "急切而坚定": {
+      "en": "Impatient Yet Resolute",
+      "ja": "焦りながらも決意を持つ",
+      "ko": "초조하지만 확고한"
+    },
+    "急切而颤抖": {
+      "en": "Impatient and Trembling",
+      "ja": "焦りと震え",
+      "ko": "초조하고 떨리는"
+    },
+    "急躁": {
+      "en": "Impatience",
+      "ja": "焦り",
+      "ko": "초조함"
+    },
+    "急迫而郑重": {
+      "en": "Urgent and Serious",
+      "ja": "切迫した真剣さ",
+      "ko": "긴급하고 진지한"
+    },
+    "怨恨": {
+      "en": "Resentment",
+      "ja": "恨み",
+      "ko": "원망"
+    },
+    "怯弱": {
+      "en": "Timidity",
+      "ja": "臆病",
+      "ko": "소심함"
+    },
+    "怯弱中带着刻意的引导": {
+      "en": "Timid Yet Deliberate Guidance",
+      "ja": "臆病ながらも意図的な導き",
+      "ko": "소심하지만 의도적인 유도"
+    },
+    "怯懦中藏锋芒": {
+      "en": "Timid Yet Sharp",
+      "ja": "臆病の中に隠された鋭さ",
+      "ko": "소심함 속에 숨겨진 날카로움"
+    },
+    "恍然大悟后的愤怒与自责": {
+      "en": "Anger and Regret After Realization",
+      "ja": "気づいた後の怒りと自己嫌悪",
+      "ko": "깨달은 후의 분노와 자책"
+    },
+    "恐怖": {
+      "en": "Terror",
+      "ja": "恐怖",
+      "ko": "공포"
+    },
+    "恐惧与忌惮": {
+      "en": "Fear and Apprehension",
+      "ja": "恐れと警戒",
+      "ko": "두려움과 경계"
+    },
+    "恐惧与警惕": {
+      "en": "Fear and Vigilance",
+      "ja": "恐れと警戒心",
+      "ko": "두려움과 경계심"
+    },
+    "恐惧与震惊": {
+      "en": "Fear and Shock",
+      "ja": "恐れと衝撃",
+      "ko": "두려움과 충격"
+    },
+    "恐惧求饶": {
+      "en": "Fearful Pleading",
+      "ja": "恐れながらの懇願",
+      "ko": "두려운 애원"
+    },
+    "恨意": {
+      "en": "Hatred",
+      "ja": "憎しみ",
+      "ko": "증오"
+    },
+    "恨意滔天": {
+      "en": "Overwhelming Hatred",
+      "ja": "溢れんばかりの憎しみ",
+      "ko": "넘치는 증오"
+    },
+    "恨极": {
+      "en": "Extreme Hatred",
+      "ja": "極度の憎しみ",
+      "ko": "극심한 증오"
+    },
+    "恩威并施": {
+      "en": "Carrot and Stick",
+      "ja": "恩恵と威圧",
+      "ko": "당근과 채찍"
+    },
+    "恭敬中带着隐隐不安": {
+      "en": "Respect with Unease",
+      "ja": "不安を抱えた敬意",
+      "ko": "불안한 존경"
+    },
+    "恭谦": {
+      "en": "Humble Respect",
+      "ja": "謙虚な敬意",
+      "ko": "겸손한 존경"
+    },
+    "恭谨": {
+      "en": "Respectful Caution",
+      "ja": "敬意を持った慎重さ",
+      "ko": "존경을 담은 신중함"
+    },
+    "恭谨而克制": {
+      "en": "Respectful Yet Restrained",
+      "ja": "敬意を持ちながらも抑える",
+      "ko": "존경하지만 억제된"
+    },
+    "恭顺": {
+      "en": "Submissiveness",
+      "ja": "従順",
+      "ko": "순종"
+    },
+    "恳切而绝望": {
+      "en": "Desperate Plea",
+      "ja": "切実な懇願",
+      "ko": "절실한 애원"
+    },
+    "恼怒与困惑": {
+      "en": "Anger and Confusion",
+      "ja": "怒りと混乱",
+      "ko": "분노와 혼란"
+    },
+    "恼羞成怒": {
+      "en": "Anger from Embarrassment",
+      "ja": "恥ずかしさからの怒り",
+      "ko": "부끄러움에서 오는 분노"
+    },
+    "恼羞成怒的咆哮": {
+      "en": "Roar of Embarrassed Anger",
+      "ja": "恥ずかしさからの怒りの咆哮",
+      "ko": "부끄러움에서 오는 분노의 포효"
+    },
+    "悔恨交加": {
+      "en": "Regret and Remorse",
+      "ja": "後悔と悔恨",
+      "ko": "후회와 자책"
+    },
+    "悠远": {
+      "en": "Distant Longing",
+      "ja": "遠い思い",
+      "ko": "먼 그리움"
+    },
+    "悲伤与决绝": {
+      "en": "Sadness and Resolve",
+      "ja": "悲しみと決意",
+      "ko": "슬픔과 결단"
+    },
+    "悲凉而释然": {
+      "en": "Melancholic Acceptance",
+      "ja": "悲しみと受け入れ",
+      "ko": "슬픔과 수용"
+    },
+    "悲哀": {
+      "en": "Sorrow",
+      "ja": "悲しみ",
+      "ko": "슬픔"
+    },
+    "悲喜交加": {
+      "en": "Bittersweet",
+      "ja": "悲しみと喜び",
+      "ko": "슬픔과 기쁨"
+    },
+    "悲壮而坚定": {
+      "en": "Solemn Resolve",
+      "ja": "悲壮な決意",
+      "ko": "비장한 결단"
+    },
+    "悲壮诀别": {
+      "en": "Solemn Farewell",
+      "ja": "悲壮な別れ",
+      "ko": "비장한 작별"
+    },
+    "悲怆与坚定": {
+      "en": "Sorrow and Resolve",
+      "ja": "悲しみと決意",
+      "ko": "슬픔과 결단"
+    },
+    "悲怆而沉重": {
+      "en": "Heavy Sorrow",
+      "ja": "重い悲しみ",
+      "ko": "무거운 슬픔"
+    },
+    "悲恸而坚定": {
+      "en": "Sorrowful Yet Resolute",
+      "ja": "悲しみながらも決意を持つ",
+      "ko": "슬프지만 확고한"
+    },
+    "悲悯中带着不容置疑的威严": {
+      "en": "Compassionate Authority",
+      "ja": "疑いの余地のない威厳を持つ同情",
+      "ko": "의심할 여지 없는 위엄을 가진 연민"
+    },
+    "悲愤中的讽刺": {
+      "en": "Bittersweet Irony",
+      "ja": "悲しみと怒りの皮肉",
+      "ko": "슬픔과 분노의 아이러니"
+    },
+    "悲愤交加": {
+      "en": "Bittersweet Anger",
+      "ja": "悲しみと怒りの交錯",
+      "ko": "슬픔과 분노의 교차"
+    },
+    "悲愤化作了冰冷的杀意": {
+      "en": "Bittersweet Rage Turned Cold",
+      "ja": "悲しみと怒りが冷たい殺意に変わる",
+      "ko": "슬픔과 분노가 차가운 살의로 변하다"
+    },
+    "悲愤而隐忍": {
+      "en": "Silent Grief",
+      "ja": "悲しみと怒りを秘める",
+      "ko": "슬픔과 분노를 감추다"
+    },
+    "悲愤逃亡": {
+      "en": "Fleeing in Anguish",
+      "ja": "悲しみと怒りの逃避",
+      "ko": "슬픔과 분노로 도망치다"
+    },
+    "惊喜与计算": {
+      "en": "Surprise and Calculation",
+      "ja": "驚きと計算",
+      "ko": "놀라움과 계산"
+    },
+    "惊天真相": {
+      "en": "Shocking Truth",
+      "ja": "衝撃の真実",
+      "ko": "충격적인 진실"
+    },
+    "惊奇": {
+      "en": "Amazement",
+      "ja": "驚き",
+      "ko": "경이"
+    },
+    "惊异": {
+      "en": "Astonishment",
+      "ja": "驚異",
+      "ko": "놀라움"
+    },
+    "惊恐万分": {
+      "en": "Utter Terror",
+      "ja": "恐怖に満ちた",
+      "ko": "극도의 공포"
+    },
+    "惊恐失控": {
+      "en": "Panic and Chaos",
+      "ja": "パニックと混乱",
+      "ko": "패닉과 혼란"
+    },
+    "惊恐抗拒": {
+      "en": "Fearful Resistance",
+      "ja": "恐怖の抵抗",
+      "ko": "두려운 저항"
+    },
+    "惊恐求和": {
+      "en": "Panic and Plea",
+      "ja": "恐怖の和解を求める",
+      "ko": "공포 속에서 화해를 구하다"
+    },
+    "惊惶": {
+      "en": "Panic",
+      "ja": "慌て",
+      "ko": "당황"
+    },
+    "惊愕与不甘": {
+      "en": "Shock and Resentment",
+      "ja": "ショックと不満",
+      "ko": "충격과 분노"
+    },
+    "惊慌": {
+      "en": "Alarm",
+      "ja": "驚慌",
+      "ko": "혼란"
+    },
+    "惊慌（伪装）": {
+      "en": "Feigning Panic",
+      "ja": "驚慌を装う",
+      "ko": "당황을 가장하다"
+    },
+    "惊涛骇浪般的震惊": {
+      "en": "Overwhelming Shock",
+      "ja": "衝撃的な驚き",
+      "ko": "압도적인 충격"
+    },
+    "惊讶、激动、泪流满面": {
+      "en": "Overwhelmed with Joy",
+      "ja": "驚きと感動で涙が溢れる",
+      "ko": "놀라움과 감동으로 눈물이 흐르다"
+    },
+    "惊讶与希望": {
+      "en": "Surprise and Hope",
+      "ja": "驚きと希望",
+      "ko": "놀라움과 희망"
+    },
+    "惊讶与期待": {
+      "en": "Surprise and Anticipation",
+      "ja": "驚きと期待",
+      "ko": "놀라움과 기대"
+    },
+    "惊讶而关切": {
+      "en": "Concerned Surprise",
+      "ja": "驚きと関心",
+      "ko": "놀라움과 관심"
+    },
+    "惊讶转为嘲讽": {
+      "en": "Surprise Turns to Mockery",
+      "ja": "驚きが嘲笑に変わる",
+      "ko": "놀라움이 조롱으로 변하다"
+    },
+    "惊醒": {
+      "en": "Awakening",
+      "ja": "目覚め",
+      "ko": "각성"
+    },
+    "惊险": {
+      "en": "Thrilling Danger",
+      "ja": "スリリングな危険",
+      "ko": "스릴 넘치는 위험"
+    },
+    "惋惜与期许": {
+      "en": "Regret and Expectation",
+      "ja": "残念と期待",
+      "ko": "아쉬움과 기대"
+    },
+    "意味深长的警告": {
+      "en": "Significant Warning",
+      "ja": "意味深い警告",
+      "ko": "의미 있는 경고"
+    },
+    "意味深长的警告与诱惑": {
+      "en": "Significant Warning and Temptation",
+      "ja": "意味深い警告と誘惑",
+      "ko": "의미 있는 경고와 유혹"
+    },
+    "意外与审视": {
+      "en": "Surprise and Examination",
+      "ja": "驚きと検証",
+      "ko": "놀라움과 검토"
+    },
+    "意气风发": {
+      "en": "High Spirits",
+      "ja": "意気揚々",
+      "ko": "의기양양"
+    },
+    "愚钝": {
+      "en": "Dullness",
+      "ja": "鈍感",
+      "ko": "둔감"
+    },
+    "感人": {
+      "en": "Touching",
+      "ja": "感動的",
+      "ko": "감동적인"
+    },
+    "感动与坚定": {
+      "en": "Moved and Resolute",
+      "ja": "感動と決意",
+      "ko": "감동과 결의"
+    },
+    "感动与释然": {
+      "en": "Moved and Relieved",
+      "ja": "感動と解放",
+      "ko": "감동과 해방"
+    },
+    "感动到说不出话": {
+      "en": "Speechless with Emotion",
+      "ja": "感動で言葉を失う",
+      "ko": "감동해서 말이 없다"
+    },
+    "感动而坚定": {
+      "en": "Moved and Steadfast",
+      "ja": "感動しつつも堅固",
+      "ko": "감동하면서도 확고하다"
+    },
+    "感慨万千": {
+      "en": "Deeply Moved",
+      "ja": "感慨深い",
+      "ko": "깊은 감동"
+    },
+    "感慨而真诚": {
+      "en": "Sincere Reflection",
+      "ja": "真摯な感慨",
+      "ko": "진솔한 감정"
+    },
+    "愤怒与不甘": {
+      "en": "Anger and Resentment",
+      "ja": "怒りと不満",
+      "ko": "분노와 억울함"
+    },
+    "愤怒与坚定": {
+      "en": "Anger and Resolve",
+      "ja": "怒りと決意",
+      "ko": "분노와 결의"
+    },
+    "愤怒与悲痛": {
+      "en": "Anger and Sorrow",
+      "ja": "怒りと悲しみ",
+      "ko": "분노와 슬픔"
+    },
+    "愤怒与担忧": {
+      "en": "Anger and Worry",
+      "ja": "怒りと心配",
+      "ko": "분노와 걱정"
+    },
+    "愤怒且困惑": {
+      "en": "Angry and Confused",
+      "ja": "怒りと混乱",
+      "ko": "분노와 혼란"
+    },
+    "愤怒护主": {
+      "en": "Fierce Loyalty",
+      "ja": "主を守る怒り",
+      "ko": "주인을 지키는 분노"
+    },
+    "愤怒消退，取而代之的是警惕与一丝微妙的期待": {
+      "en": "Anger Fades to Vigilance and Subtle Hope",
+      "ja": "怒りが薄れ、警戒と微妙な期待に変わる",
+      "ko": "분노가 사라지고 경계와 미세한 기대가 남다"
+    },
+    "愤怒转为苦涩": {
+      "en": "Anger Turns to Bitterness",
+      "ja": "怒りが苦さに変わる",
+      "ko": "분노가 쓴맛으로 변하다"
+    },
+    "愤恨": {
+      "en": "Resentment",
+      "ja": "恨み",
+      "ko": "원망"
+    },
+    "愧疚、迷茫、臣服": {
+      "en": "Guilt and Confusion",
+      "ja": "罪悪感と混乱",
+      "ko": "죄책감과 혼란"
+    },
+    "愧疚与释然": {
+      "en": "Guilt and Relief",
+      "ja": "罪悪感と解放",
+      "ko": "죄책감과 해방"
+    },
+    "慌张": {
+      "en": "Fluster",
+      "ja": "慌てる",
+      "ko": "허둥지둥"
+    },
+    "慷慨激昂": {
+      "en": "Passionate",
+      "ja": "情熱的",
+      "ko": "열정적인"
+    },
+    "憋屈": {
+      "en": "Frustration",
+      "ja": "もどかしさ",
+      "ko": "답답함"
+    },
+    "憧憬": {
+      "en": "Longing",
+      "ja": "憧れ",
+      "ko": "동경"
+    },
+    "懊恼": {
+      "en": "Annoyance",
+      "ja": "苛立ち",
+      "ko": "짜증"
+    },
+    "懒散": {
+      "en": "Laziness",
+      "ja": "怠惰",
+      "ko": "게으름"
+    },
+    "懦弱": {
+      "en": "Weakness",
+      "ja": "弱さ",
+      "ko": "약함"
+    },
+    "懵逼": {
+      "en": "Confusion",
+      "ja": "混乱",
+      "ko": "혼란"
+    },
+    "戏谑中藏着认真": {
+      "en": "Seriousness in Jest",
+      "ja": "冗談の中に真剣さが隠れている",
+      "ko": "농담 속에 진지함이 숨겨져 있다"
+    },
+    "戏谑玩弄": {
+      "en": "Playful Mockery",
+      "ja": "遊び心のある嘲笑",
+      "ko": "장난스러운 조롱"
+    },
+    "戏谑而暗藏试探": {
+      "en": "Jesting with Hidden Probes",
+      "ja": "試探を隠した冗談",
+      "ko": "시험을 숨긴 농담"
+    },
+    "成竹在胸": {
+      "en": "Confident Planning",
+      "ja": "胸に竹を成す",
+      "ko": "자신감 있는 계획"
+    },
+    "戒备而好奇": {
+      "en": "Cautiously Curious",
+      "ja": "警戒しつつ好奇心を持つ",
+      "ko": "경계하며 호기심을 가지다"
+    },
+    "战意凛然": {
+      "en": "Fierce Combat Spirit",
+      "ja": "戦意が満ちている",
+      "ko": "강한 전투 의지"
+    },
+    "战意昂扬": {
+      "en": "Elevated Combat Spirit",
+      "ja": "高揚した戦意",
+      "ko": "고양된 전투 의지"
+    },
+    "战意滔天": {
+      "en": "Overwhelming Combat Spirit",
+      "ja": "圧倒的な戦意",
+      "ko": "압도적인 전투 의지"
+    },
+    "打断": {
+      "en": "Interruption",
+      "ja": "中断",
+      "ko": "중단"
+    },
+    "打趣": {
+      "en": "Teasing",
+      "ja": "からかい",
+      "ko": "놀리기"
+    },
+    "打趣中带着试探": {
+      "en": "Teasing with Probing",
+      "ja": "試探を含むからかい",
+      "ko": "시험을 포함한 놀리기"
+    },
+    "托付": {
+      "en": "Entrustment",
+      "ja": "託付",
+      "ko": "위탁"
+    },
+    "托付信任": {
+      "en": "Entrusting Trust",
+      "ja": "信頼を託す",
+      "ko": "신뢰를 위탁하다"
+    },
+    "找到了新的方向": {
+      "en": "Found New Direction",
+      "ja": "新しい方向を見つけた",
+      "ko": "새로운 방향을 찾다"
+    },
+    "抉择": {
+      "en": "Dilemma",
+      "ja": "選択",
+      "ko": "선택"
+    },
+    "护短": {
+      "en": "Protective",
+      "ja": "短所を守る",
+      "ko": "단점을 보호하다"
+    },
+    "护短反击": {
+      "en": "Defensive Retaliation",
+      "ja": "短所を守る反撃",
+      "ko": "단점을 보호하는 반격"
+    },
+    "担忧与心疼": {
+      "en": "Worry and Heartache",
+      "ja": "心配と痛み",
+      "ko": "걱정과 아픔"
+    },
+    "担忧与警告": {
+      "en": "Worry and Warning",
+      "ja": "心配と警告",
+      "ko": "걱정과 경고"
+    },
+    "担忧与警觉": {
+      "en": "Worry and Vigilance",
+      "ja": "心配と警戒",
+      "ko": "걱정과 경계"
+    },
+    "担忧守护": {
+      "en": "Worried Protection",
+      "ja": "心配しながら守る",
+      "ko": "걱정하며 보호하다"
+    },
+    "拒绝": {
+      "en": "Rejection",
+      "ja": "拒否",
+      "ko": "거부"
+    },
+    "招揽": {
+      "en": "Solicitation",
+      "ja": "勧誘",
+      "ko": "유치"
+    },
+    "拼命": {
+      "en": "Desperate Effort",
+      "ja": "必死の努力",
+      "ko": "필사적인 노력"
+    },
+    "拼尽全力": {
+      "en": "All-Out Effort",
+      "ja": "全力を尽くす",
+      "ko": "모든 힘을 다하다"
+    },
+    "挑拨": {
+      "en": "Instigation",
+      "ja": "挑発",
+      "ko": "선동"
+    },
+    "挑拨离间": {
+      "en": "Sowing Discord",
+      "ja": "対立を煽る",
+      "ko": "분열을 조장하다"
+    },
+    "挣扎与无奈": {
+      "en": "Struggle and Helplessness",
+      "ja": "もがきと無力感",
+      "ko": "투쟁과 무력감"
+    },
+    "振奋": {
+      "en": "Elation",
+      "ja": "高揚",
+      "ko": "고양"
+    },
+    "掌控与玩味": {
+      "en": "Control and Enjoyment",
+      "ja": "支配と楽しみ",
+      "ko": "통제와 즐거움"
+    },
+    "掌控全局": {
+      "en": "Mastering the Situation",
+      "ja": "全体を掌握する",
+      "ko": "상황을 장악하다"
+    },
+    "探询": {
+      "en": "Inquisitiveness",
+      "ja": "探求心",
+      "ko": "탐구심"
+    },
+    "接纳": {
+      "en": "Acceptance",
+      "ja": "受け入れ",
+      "ko": "수용"
+    },
+    "推断": {
+      "en": "Inference",
+      "ja": "推測",
+      "ko": "추론"
+    },
+    "推脱": {
+      "en": "Evading Responsibility",
+      "ja": "責任逃れ",
+      "ko": "책임 회피"
+    },
+    "推辞": {
+      "en": "Declining",
+      "ja": "辞退",
+      "ko": "거절"
+    },
+    "提示": {
+      "en": "Hint",
+      "ja": "ヒント",
+      "ko": "힌트"
+    },
+    "提醒": {
+      "en": "Reminder",
+      "ja": "リマインダー",
+      "ko": "상기"
+    },
+    "揭示关键信息": {
+      "en": "Revealing Key Information",
+      "ja": "重要な情報を明らかにする",
+      "ko": "핵심 정보를 드러내다"
+    },
+    "揭示真相": {
+      "en": "Unveiling the Truth",
+      "ja": "真実を明らかにする",
+      "ko": "진실을 드러내다"
+    },
+    "揭示真相的傲慢": {
+      "en": "Arrogance of Truth",
+      "ja": "真実の傲慢",
+      "ko": "진실의 오만"
+    },
+    "揭示真相的平静": {
+      "en": "Calmness of Truth",
+      "ja": "真実の平静",
+      "ko": "진실의 평온"
+    },
+    "揭穿伪装的锐利": {
+      "en": "Sharpness of Unmasking",
+      "ja": "仮面を剥がす鋭さ",
+      "ko": "가면을 벗기는 날카로움"
+    },
+    "揭穿真相的愤怒与心痛": {
+      "en": "Anger and Pain of Truth",
+      "ja": "真実の怒りと痛み",
+      "ko": "진실의 분노와 고통"
+    },
+    "揭露关键信息的沉重": {
+      "en": "Weight of Revealing Key Information",
+      "ja": "重要な情報を明らかにする重さ",
+      "ko": "핵심 정보를 드러내는 무게"
+    },
+    "揭露她默默守护的真相": {
+      "en": "Revealing the Truth She Protects",
+      "ja": "彼女が守る真実を明らかにする",
+      "ko": "그녀가 지키는 진실을 드러내다"
+    },
+    "揭露真相": {
+      "en": "Exposing the Truth",
+      "ja": "真実を暴露する",
+      "ko": "진실을 폭로하다"
+    },
+    "揭露真相的快意": {
+      "en": "Satisfaction of Revealing Truth",
+      "ja": "真実を暴露する満足感",
+      "ko": "진실을 폭로하는 쾌감"
+    },
+    "揭露真相的沉重": {
+      "en": "Heaviness of Revealing Truth",
+      "ja": "真実を暴露する重さ",
+      "ko": "진실을 폭로하는 무게"
+    },
+    "揭露终极真相": {
+      "en": "Revealing the Ultimate Truth",
+      "ja": "究極の真実を明らかにする",
+      "ko": "궁극적인 진실을 드러내다"
+    },
+    "揭露重大秘密": {
+      "en": "Revealing Major Secrets",
+      "ja": "重大な秘密を暴露する",
+      "ko": "중대한 비밀을 폭로하다"
+    },
+    "撕心裂肺": {
+      "en": "Heart-Wrenching",
+      "ja": "胸が引き裂かれる",
+      "ko": "가슴이 찢어지는"
+    },
+    "收敛": {
+      "en": "Restraint",
+      "ja": "抑制",
+      "ko": "자제"
+    },
+    "收敛情绪": {
+      "en": "Containing Emotions",
+      "ja": "感情を抑える",
+      "ko": "감정을 억제하다"
+    },
+    "放松": {
+      "en": "Relaxation",
+      "ja": "リラックス",
+      "ko": "이완"
+    },
+    "故作困惑": {
+      "en": "Feigning Confusion",
+      "ja": "困惑を装う",
+      "ko": "혼란을 가장하다"
+    },
+    "故作委屈": {
+      "en": "Feigning Innocence",
+      "ja": "無実を装う",
+      "ko": "무죄를 가장하다"
+    },
+    "故作深沉": {
+      "en": "Feigning Depth",
+      "ja": "深さを装う",
+      "ko": "깊이를 가장하다"
+    },
+    "故作神秘": {
+      "en": "Feigning Mystery",
+      "ja": "神秘を装う",
+      "ko": "신비로움을 가장하다"
+    },
+    "故作轻松": {
+      "en": "Feigning Ease",
+      "ja": "気楽を装う",
+      "ko": "편안함을 가장하다"
+    },
+    "敬佩而心疼": {
+      "en": "Admiration and Heartache",
+      "ja": "敬意と心の痛み",
+      "ko": "존경과 마음의 아픔"
+    },
+    "斟酌": {
+      "en": "Deliberation",
+      "ja": "熟考",
+      "ko": "숙고"
+    },
+    "施舍般的仁慈": {
+      "en": "Patronizing Kindness",
+      "ja": "施しのような優しさ",
+      "ko": "후원하는 듯한 친절"
+    },
+    "施舍般的傲慢": {
+      "en": "Patronizing Arrogance",
+      "ja": "施しのような傲慢",
+      "ko": "후원하는 듯한 오만"
+    },
+    "无奈却顺从": {
+      "en": "Helpless Yet Compliant",
+      "ja": "無力だが従順",
+      "ko": "무력하지만 순종적이다"
+    },
+    "无奈又郑重": {
+      "en": "Helpless Yet Serious",
+      "ja": "無力だが真剣",
+      "ko": "무력하지만 진지하다"
+    },
+    "无奈而坚定": {
+      "en": "Helpless Yet Resolute",
+      "ja": "無力だが決意",
+      "ko": "무력하지만 단호하다"
+    },
+    "无奈而真诚": {
+      "en": "Helpless Yet Sincere",
+      "ja": "無力だが誠実",
+      "ko": "무력하지만 진실하다"
+    },
+    "无奈苦笑": {
+      "en": "Helpless Smile",
+      "ja": "無力な苦笑",
+      "ko": "무력한 쓴웃음"
+    },
+    "无所畏惧": {
+      "en": "Fearless",
+      "ja": "恐れ知らず",
+      "ko": "두려움이 없다"
+    },
+    "无畏": {
+      "en": "Dauntless",
+      "ja": "恐れを知らない",
+      "ko": "두려움이 없는"
+    },
+    "无语": {
+      "en": "Speechless",
+      "ja": "言葉を失う",
+      "ko": "말이 없다"
+    },
+    "无辜至极": {
+      "en": "Utterly Innocent",
+      "ja": "極めて無実",
+      "ko": "극도로 무죄"
+    },
+    "既好奇又忌惮": {
+      "en": "Curious Yet Cautious",
+      "ja": "好奇心と警戒心",
+      "ko": "호기심과 경계심"
+    },
+    "暂且放过": {
+      "en": "Letting It Go for Now",
+      "ja": "一時的に放置する",
+      "ko": "잠시 놓아주다"
+    },
+    "暗中提醒": {
+      "en": "Subtle Reminder",
+      "ja": "さりげないリマインダー",
+      "ko": "은밀한 상기"
+    },
+    "暗中配合": {
+      "en": "Covert Cooperation",
+      "ja": "密かに協力する",
+      "ko": "은밀한 협력"
+    },
+    "暗流": {
+      "en": "Undercurrent",
+      "ja": "暗流",
+      "ko": "암류"
+    },
+    "暗涌": {
+      "en": "Hidden Surge",
+      "ja": "隠れた波",
+      "ko": "숨겨진 파도"
+    },
+    "暗藏机锋": {
+      "en": "Hidden Intent",
+      "ja": "隠された意図",
+      "ko": "숨겨진 의도"
+    },
+    "暗藏玄机": {
+      "en": "Hidden Secrets",
+      "ja": "隠された秘密",
+      "ko": "숨겨진 비밀"
+    },
+    "暗藏盘算": {
+      "en": "Hidden Schemes",
+      "ja": "隠された計画",
+      "ko": "숨겨진 계획"
+    },
+    "暗藏锋芒": {
+      "en": "Concealed Brilliance",
+      "ja": "隠された輝き",
+      "ko": "숨겨진 빛"
+    },
+    "暗讽": {
+      "en": "Subtle Sarcasm",
+      "ja": "微妙な皮肉",
+      "ko": "미묘한 비꼼"
+    },
+    "暧昧": {
+      "en": "Ambiguity",
+      "ja": "曖昧さ",
+      "ko": "모호함"
+    },
+    "暴怒且不屑": {
+      "en": "Furious and Disdainful",
+      "ja": "激怒し軽蔑する",
+      "ko": "격분하고 경멸하다"
+    },
+    "暴怒且忌惮": {
+      "en": "Furious Yet Cautious",
+      "ja": "激怒し警戒する",
+      "ko": "격분하면서도 경계하다"
+    },
+    "暴戾": {
+      "en": "Ruthlessness",
+      "ja": "残忍さ",
+      "ko": "무자비함"
+    },
+    "暴烈": {
+      "en": "Fierceness",
+      "ja": "激しさ",
+      "ko": "격렬함"
+    },
+    "最后的呢喃，带着孩子气的依赖": {
+      "en": "Final Whispers of Childlike Dependence",
+      "ja": "子供のような依存を伴う最後の囁き",
+      "ko": "아이 같은 의존을 동반한 마지막 속삭임"
+    },
+    "最后的教诲": {
+      "en": "Final Lesson",
+      "ja": "最後の教訓",
+      "ko": "마지막 교훈"
+    },
+    "最后通牒": {
+      "en": "Final Ultimatum",
+      "ja": "最後の通告",
+      "ko": "최후 통첩"
+    },
+    "最真挚的告白": {
+      "en": "Most Sincere Confession",
+      "ja": "最も誠実な告白",
+      "ko": "가장 진실한 고백"
+    },
+    "最终抉择": {
+      "en": "Final Decision",
+      "ja": "最終的な決断",
+      "ko": "최종 결정"
+    },
+    "期待、凝重、一丝不安": {
+      "en": "Anticipation, Tension, Unease",
+      "ja": "期待、緊張、不安",
+      "ko": "기대, 긴장, 불안"
+    },
+    "期待与紧张": {
+      "en": "Anticipation and Tension",
+      "ja": "期待と緊張",
+      "ko": "기대와 긴장"
+    },
+    "期待中带着忐忑": {
+      "en": "Anticipation with Unease",
+      "ja": "不安を伴う期待",
+      "ko": "불안을 동반한 기대"
+    },
+    "期待而冷酷": {
+      "en": "Anticipation and Coldness",
+      "ja": "期待と冷酷さ",
+      "ko": "기대와 냉혹함"
+    },
+    "期待而忐忑": {
+      "en": "Anticipation and Anxiety",
+      "ja": "期待と不安",
+      "ko": "기대와 불안"
+    },
+    "期待而紧张": {
+      "en": "Anticipation and Nervousness",
+      "ja": "期待と緊張感",
+      "ko": "기대와 긴장감"
+    },
+    "期待而郑重": {
+      "en": "Anticipation and Seriousness",
+      "ja": "期待と真剣さ",
+      "ko": "기대와 진지함"
+    },
+    "期望": {
+      "en": "Expectation",
+      "ja": "期待",
+      "ko": "기대"
+    },
+    "机敏": {
+      "en": "Quick-Witted",
+      "ja": "機敏",
+      "ko": "기민"
+    },
+    "机锋暗藏": {
+      "en": "Hidden Wit",
+      "ja": "隠れた機知",
+      "ko": "숨겨진 재치"
+    },
+    "杀意毕露": {
+      "en": "Killing Intent Revealed",
+      "ja": "殺意が露わになる",
+      "ko": "살의가 드러나다"
+    },
+    "杀意隐现": {
+      "en": "Fleeting Killing Intent",
+      "ja": "一瞬の殺意",
+      "ko": "일순간의 살의"
+    },
+    "极力克制": {
+      "en": "Strained Restraint",
+      "ja": "必死の抑制",
+      "ko": "극심한 억제"
+    },
+    "极度悲恸": {
+      "en": "Profound Grief",
+      "ja": "深い悲しみ",
+      "ko": "극심한 슬픔"
+    },
+    "极度震惊": {
+      "en": "Utter Shock",
+      "ja": "衝撃のあまり",
+      "ko": "극도의 충격"
+    },
+    "果断而信任": {
+      "en": "Decisive Trust",
+      "ja": "果断な信頼",
+      "ko": "단호한 신뢰"
+    },
+    "果断而决绝": {
+      "en": "Decisive Resolution",
+      "ja": "果断な決意",
+      "ko": "단호한 결단"
+    },
+    "柔和": {
+      "en": "Gentle",
+      "ja": "柔和な",
+      "ko": "부드러운"
+    },
+    "柔软": {
+      "en": "Soft",
+      "ja": "柔らかい",
+      "ko": "부드러운"
+    },
+    "模糊": {
+      "en": "Vague",
+      "ja": "曖昧な",
+      "ko": "모호한"
+    },
+    "欣喜雀跃": {
+      "en": "Joyful Excitement",
+      "ja": "喜びに満ちた",
+      "ko": "기쁜 흥분"
+    },
+    "欣慰与担忧": {
+      "en": "Relief and Worry",
+      "ja": "安堵と心配",
+      "ko": "안도와 걱정"
+    },
+    "欣慰与期待": {
+      "en": "Relief and Anticipation",
+      "ja": "安堵と期待",
+      "ko": "안도와 기대"
+    },
+    "欣慰与期许": {
+      "en": "Relief and Hope",
+      "ja": "安堵と期待",
+      "ko": "안도와 기대"
+    },
+    "欣慰与释然": {
+      "en": "Relief and Acceptance",
+      "ja": "安堵と受容",
+      "ko": "안도와 수용"
+    },
+    "欣慰中带着几分玩味": {
+      "en": "Amused Relief",
+      "ja": "少し楽しんでいる安堵",
+      "ko": "조금 재미있는 안도"
+    },
+    "欣慰而心疼": {
+      "en": "Relieved Yet Pained",
+      "ja": "安堵しつつも痛む",
+      "ko": "안도하지만 아픈"
+    },
+    "欣慰而解脱": {
+      "en": "Relieved and Liberated",
+      "ja": "安堵と解放",
+      "ko": "안도와 해방"
+    },
+    "欣慰而郑重": {
+      "en": "Serious Relief",
+      "ja": "真剣な安堵",
+      "ko": "진지한 안도"
+    },
+    "欣赏与好奇": {
+      "en": "Appreciation and Curiosity",
+      "ja": "感謝と好奇心",
+      "ko": "감사와 호기심"
+    },
+    "欣赏与警惕": {
+      "en": "Appreciation and Caution",
+      "ja": "感謝と警戒",
+      "ko": "감사와 경계"
+    },
+    "欲言又止": {
+      "en": "Hesitant to Speak",
+      "ja": "言いたいが言えない",
+      "ko": "말하고 싶지만 멈춤"
+    },
+    "歇斯底里": {
+      "en": "Hysterical",
+      "ja": "ヒステリックな",
+      "ko": "히스테리"
+    },
+    "歉意": {
+      "en": "Apology",
+      "ja": "謝罪",
+      "ko": "사과"
+    },
+    "歉疚": {
+      "en": "Guilt",
+      "ja": "罪悪感",
+      "ko": "죄책감"
+    },
+    "正式交换": {
+      "en": "Formal Exchange",
+      "ja": "正式な交換",
+      "ko": "정식 교환"
+    },
+    "正色以待": {
+      "en": "Serious Attitude",
+      "ja": "真剣な態度",
+      "ko": "진지한 태도"
+    },
+    "正色危言": {
+      "en": "Serious Warning",
+      "ja": "真剣な警告",
+      "ko": "진지한 경고"
+    },
+    "步步긍박": {
+      "en": "Cautious Steps",
+      "ja": "慎重な一歩",
+      "ko": "조심스러운 발걸음"
+    },
+    "死不瞑目": {
+      "en": "Unyielding Vigilance",
+      "ja": "死んでも目を閉じない",
+      "ko": "죽어도 눈을 감지 않음"
+    },
+    "死猪不怕开水烫": {
+      "en": "Fearless in Danger",
+      "ja": "危険を恐れない",
+      "ko": "위험을 두려워하지 않음"
+    },
+    "殷切": {
+      "en": "Eager",
+      "ja": "切望している",
+      "ko": "간절한"
+    },
+    "殷切期望": {
+      "en": "Eager Anticipation",
+      "ja": "切望する期待",
+      "ko": "간절한 기대"
+    },
+    "气若游丝": {
+      "en": "Faint Breath",
+      "ja": "かすかな息",
+      "ko": "미세한 숨"
+    },
+    "气若游丝却满是释然": {
+      "en": "Faint Yet Relieved",
+      "ja": "かすかな息だが安堵している",
+      "ko": "미세한 숨이지만 안도함"
+    },
+    "永恒的嘱托与祝福": {
+      "en": "Eternal Blessing",
+      "ja": "永遠の祝福",
+      "ko": "영원한 축복"
+    },
+    "求知": {
+      "en": "Thirst for Knowledge",
+      "ja": "知識を求める",
+      "ko": "지식을 갈망하는"
+    },
+    "沉声": {
+      "en": "Deep Voice",
+      "ja": "低い声",
+      "ko": "깊은 목소리"
+    },
+    "沉思与决心": {
+      "en": "Thoughtful Determination",
+      "ja": "思慮深い決意",
+      "ko": "사려 깊은 결단"
+    },
+    "沉思与警觉": {
+      "en": "Thoughtful Vigilance",
+      "ja": "思慮深い警戒",
+      "ko": "사려 깊은 경계"
+    },
+    "沉思与质疑": {
+      "en": "Thoughtful Doubt",
+      "ja": "思慮深い疑念",
+      "ko": "사려 깊은 의문"
+    },
+    "沉痛而内疚": {
+      "en": "Deep Pain and Guilt",
+      "ja": "深い痛みと罪悪感",
+      "ko": "깊은 아픔과 죄책감"
+    },
+    "沉稳而感慨": {
+      "en": "Calm Reflection",
+      "ja": "落ち着いた感慨",
+      "ko": "차분한 감회"
+    },
+    "沉重且怀念": {
+      "en": "Heavy Nostalgia",
+      "ja": "重い懐かしさ",
+      "ko": "무거운 그리움"
+    },
+    "沉重而决然": {
+      "en": "Heavy Resolution",
+      "ja": "重い決意",
+      "ko": "무거운 결단"
+    },
+    "沉重而悲凉": {
+      "en": "Heavy Sadness",
+      "ja": "重い悲しみ",
+      "ko": "무거운 슬픔"
+    },
+    "沉重而无奈": {
+      "en": "Heavy Resignation",
+      "ja": "重い諦め",
+      "ko": "무거운 체념"
+    },
+    "沉重而沧桑": {
+      "en": "Heavy and Worn",
+      "ja": "重くて疲れた",
+      "ko": "무겁고 지친"
+    },
+    "沉重而深远": {
+      "en": "Heavy and Profound",
+      "ja": "重くて深い",
+      "ko": "무겁고 깊은"
+    },
+    "沉重而警惕": {
+      "en": "Heavy Vigilance",
+      "ja": "重い警戒",
+      "ko": "무거운 경계"
+    },
+    "沉重而迟疑": {
+      "en": "Heavy Hesitation",
+      "ja": "重い躊躇",
+      "ko": "무거운 망설임"
+    },
+    "沉重而释然": {
+      "en": "Heavy Relief",
+      "ja": "重い安堵",
+      "ko": "무거운 안도"
+    },
+    "沉静": {
+      "en": "Calm",
+      "ja": "静かな",
+      "ko": "차분한"
+    },
+    "沉静而笃定": {
+      "en": "Calm and Certain",
+      "ja": "静かで確信に満ちた",
+      "ko": "차분하고 확신에 찬"
+    },
+    "沙哑": {
+      "en": "Hoarse",
+      "ja": "かすれた",
+      "ko": "쉰"
+    },
+    "沧桑而疲惫": {
+      "en": "Worn and Weary",
+      "ja": "疲れ果てた",
+      "ko": "지친"
+    },
+    "泣血": {
+      "en": "Blood-Crying",
+      "ja": "血の涙",
+      "ko": "피눈물"
+    },
+    "泣音": {
+      "en": "Crying Voice",
+      "ja": "泣き声",
+      "ko": "울음소리"
+    },
+    "泪崩": {
+      "en": "Crying Breakdown",
+      "ja": "涙が崩れる",
+      "ko": "눈물이 쏟아짐"
+    },
+    "泪流满面": {
+      "en": "Tears Streaming",
+      "ja": "涙が流れる",
+      "ko": "눈물이 흐름"
+    },
+    "泪流满面却依然倔强": {
+      "en": "Tears Yet Stubborn",
+      "ja": "涙を流しながらも頑固",
+      "ko": "눈물을 흘리면서도 여전히 고집"
+    },
+    "洞察一切": {
+      "en": "Insightful",
+      "ja": "洞察力のある",
+      "ko": "통찰력 있는"
+    },
+    "洞察先机": {
+      "en": "Foreseeing Insight",
+      "ja": "先を見越した洞察",
+      "ko": "앞을 내다보는 통찰"
+    },
+    "洞悉": {
+      "en": "Profound Understanding",
+      "ja": "深い理解",
+      "ko": "깊은 이해"
+    },
+    "洞悉真相": {
+      "en": "Understanding the Truth",
+      "ja": "真実を理解する",
+      "ko": "진실을 이해함"
+    },
+    "活泼": {
+      "en": "Lively",
+      "ja": "活発な",
+      "ko": "활발한"
+    },
+    "消散": {
+      "en": "Dissipation",
+      "ja": "消散",
+      "ko": "소멸"
+    },
+    "淡淡威胁": {
+      "en": "Subtle Threat",
+      "ja": "微妙な脅威",
+      "ko": "미묘한 위협"
+    },
+    "淡漠中带着几分赞许": {
+      "en": "Indifferent Yet Approving",
+      "ja": "無関心ながらも称賛",
+      "ko": "무관심하지만 칭찬하는"
+    },
+    "淡然中带着几分嘲讽": {
+      "en": "Indifferent Yet Sarcastic",
+      "ja": "無関心ながらも皮肉",
+      "ko": "무관심하지만 비꼬는"
+    },
+    "淡然中透着不容置疑": {
+      "en": "Indifferent Yet Undeniable",
+      "ja": "無関心ながらも疑いようがない",
+      "ko": "무관심하지만 부인할 수 없는"
+    },
+    "淡然揭底": {
+      "en": "Calm Revelation",
+      "ja": "冷静な暴露",
+      "ko": "차분한 폭로"
+    },
+    "深不可测": {
+      "en": "Unfathomable",
+      "ja": "計り知れない",
+      "ko": "헤아릴 수 없는"
+    },
+    "深思熟虑": {
+      "en": "Thoughtful Consideration",
+      "ja": "熟慮",
+      "ko": "심사숙고"
+    },
+    "深情守护": {
+      "en": "Deep Affectionate Protection",
+      "ja": "深い愛情で守る",
+      "ko": "깊은 애정으로 보호"
+    },
+    "深情承诺": {
+      "en": "Deep Affectionate Promise",
+      "ja": "深い愛情の約束",
+      "ko": "깊은 애정의 약속"
+    },
+    "深深的眷恋与感激": {
+      "en": "Deep Affection and Gratitude",
+      "ja": "深い愛情と感謝",
+      "ko": "깊은 애정과 감사"
+    },
+    "深远": {
+      "en": "Profound",
+      "ja": "深遠な",
+      "ko": "심오한"
+    },
+    "清冷": {
+      "en": "Chilly",
+      "ja": "冷たい",
+      "ko": "차가운"
+    },
+    "清冷中带着审视": {
+      "en": "Chilly Yet Observant",
+      "ja": "冷たくも観察的な",
+      "ko": "차갑지만 관찰적인"
+    },
+    "温和却坚定": {
+      "en": "Gentle Yet Firm",
+      "ja": "穏やかでありながらも堅固",
+      "ko": "부드럽지만 단호한"
+    },
+    "温和却带着不容拒绝的威严": {
+      "en": "Gentle Yet Authoritative",
+      "ja": "穏やかでありながらも威厳がある",
+      "ko": "부드럽지만 거부할 수 없는 위엄"
+    },
+    "温和却暗藏锋芒": {
+      "en": "Gentle Yet Sharp",
+      "ja": "穏やかだが鋭い",
+      "ko": "온화하지만 날카로운"
+    },
+    "温和却认真": {
+      "en": "Gentle Yet Serious",
+      "ja": "穏やかだが真剣",
+      "ko": "온화하지만 진지한"
+    },
+    "温和而坚定": {
+      "en": "Gentle and Resolute",
+      "ja": "穏やかで決然とした",
+      "ko": "온화하면서도 단호한"
+    },
+    "温和而真诚": {
+      "en": "Gentle and Sincere",
+      "ja": "穏やかで誠実な",
+      "ko": "온화하고 진실한"
+    },
+    "温暖": {
+      "en": "Warmth",
+      "ja": "温かさ",
+      "ko": "온기"
+    },
+    "温暖且坚定": {
+      "en": "Warm and Resolute",
+      "ja": "温かくて決然とした",
+      "ko": "온화하면서도 단호한"
+    },
+    "温暖感动": {
+      "en": "Warmly Touched",
+      "ja": "温かく感動した",
+      "ko": "따뜻하게 감동한"
+    },
+    "温柔与坚定": {
+      "en": "Gentle and Steadfast",
+      "ja": "優しさと堅実さ",
+      "ko": "부드러움과 확고함"
+    },
+    "温柔中带着一丝嗔怪": {
+      "en": "Gentle with a Hint of Teasing",
+      "ja": "優しさの中に少しからかいがある",
+      "ko": "부드러움 속에 약간의 놀림이 있는"
+    },
+    "温柔中带着几分冷酷": {
+      "en": "Gentle Yet Cold",
+      "ja": "優しさの中に冷酷さがある",
+      "ko": "부드러움 속에 차가움이 있는"
+    },
+    "温柔而哀伤": {
+      "en": "Gentle and Sad",
+      "ja": "優しくて悲しい",
+      "ko": "부드럽고 슬픈"
+    },
+    "温柔而悲壮": {
+      "en": "Gentle and Tragic",
+      "ja": "優しくて悲壮な",
+      "ko": "부드럽고 비극적인"
+    },
+    "温柔而绝望": {
+      "en": "Gentle Yet Desperate",
+      "ja": "優しくて絶望的な",
+      "ko": "부드럽지만 절망적인"
+    },
+    "满意而审视": {
+      "en": "Satisfied and Observant",
+      "ja": "満足して観察する",
+      "ko": "만족하며 관찰하는"
+    },
+    "滴水不漏": {
+      "en": "Impeccable",
+      "ja": "完璧な",
+      "ko": "완벽한"
+    },
+    "漠然而威严": {
+      "en": "Apathetic Yet Majestic",
+      "ja": "無関心だが威厳がある",
+      "ko": "무관심하지만 위엄 있는"
+    },
+    "激动与期待": {
+      "en": "Excited and Anticipating",
+      "ja": "興奮と期待",
+      "ko": "흥분과 기대"
+    },
+    "激动与释然": {
+      "en": "Excited and Relieved",
+      "ja": "興奮と安堵",
+      "ko": "흥분과 안도"
+    },
+    "激动到声音发颤": {
+      "en": "Shaking with Excitement",
+      "ja": "興奮して声が震える",
+      "ko": "흥분해서 목소리가 떨리는"
+    },
+    "激动又克制": {
+      "en": "Excited Yet Restrained",
+      "ja": "興奮しているが抑制されている",
+      "ko": "흥분하지만 억제된"
+    },
+    "激动而哽咽": {
+      "en": "Excited and Choked Up",
+      "ja": "興奮して喉が詰まる",
+      "ko": "흥분해서 목이 메인"
+    },
+    "激动而坚定": {
+      "en": "Excited and Determined",
+      "ja": "興奮していて決意している",
+      "ko": "흥분하면서도 결단력 있는"
+    },
+    "激动而期待": {
+      "en": "Excited and Hopeful",
+      "ja": "興奮して期待している",
+      "ko": "흥분하면서도 기대하는"
+    },
+    "激励": {
+      "en": "Inspiring",
+      "ja": "励ます",
+      "ko": "격려하는"
+    },
+    "激愤": {
+      "en": "Furious",
+      "ja": "激怒",
+      "ko": "격분한"
+    },
+    "炫耀": {
+      "en": "Showy",
+      "ja": "自慢する",
+      "ko": "자랑하는"
+    },
+    "点拨": {
+      "en": "Insightful Guidance",
+      "ja": "洞察に満ちた指導",
+      "ko": "통찰력 있는 지도"
+    },
+    "炽热": {
+      "en": "Fiery",
+      "ja": "熱い",
+      "ko": "열렬한"
+    },
+    "热络": {
+      "en": "Warm and Friendly",
+      "ja": "温かくて友好的な",
+      "ko": "따뜻하고 친근한"
+    },
+    "热血沸腾": {
+      "en": "Passionate",
+      "ja": "熱血沸騰",
+      "ko": "열혈이 끓어오르는"
+    },
+    "焦急且心疼": {
+      "en": "Anxious and Pained",
+      "ja": "焦りと痛み",
+      "ko": "초조하고 아픈"
+    },
+    "焦急催促": {
+      "en": "Anxiously Urging",
+      "ja": "焦って急かす",
+      "ko": "초조하게 재촉하는"
+    },
+    "焦急而关切": {
+      "en": "Anxious and Concerned",
+      "ja": "焦りと心配",
+      "ko": "초조하고 걱정하는"
+    },
+    "焦急而冷静": {
+      "en": "Anxious Yet Calm",
+      "ja": "焦っているが冷静な",
+      "ko": "초조하지만 차분한"
+    },
+    "焦急而压抑": {
+      "en": "Anxious and Repressed",
+      "ja": "焦りと抑圧",
+      "ko": "초조하고 억압된"
+    },
+    "焦急而坚持": {
+      "en": "Anxious Yet Persistent",
+      "ja": "焦っているが粘り強い",
+      "ko": "초조하지만 끈질긴"
+    },
+    "焦急而欣喜": {
+      "en": "Anxious Yet Joyful",
+      "ja": "焦りと喜び",
+      "ko": "초조하지만 기쁜"
+    },
+    "焦灼": {
+      "en": "Burning Anxiety",
+      "ja": "焦燥",
+      "ko": "초조함"
+    },
+    "焦虑而急切": {
+      "en": "Anxious and Eager",
+      "ja": "不安で切望している",
+      "ko": "불안하고 간절한"
+    },
+    "焦虑而无奈": {
+      "en": "Anxious and Helpless",
+      "ja": "不安で無力感を感じる",
+      "ko": "불안하고 어쩔 수 없는"
+    },
+    "燃烧": {
+      "en": "Burning",
+      "ja": "燃える",
+      "ko": "타오르는"
+    },
+    "爆发": {
+      "en": "Outburst",
+      "ja": "爆発",
+      "ko": "폭발"
+    },
+    "爽快": {
+      "en": "Refreshing",
+      "ja": "爽快",
+      "ko": "상쾌한"
+    },
+    "牵挂": {
+      "en": "Worry",
+      "ja": "心配",
+      "ko": "걱정"
+    },
+    "犹疑": {
+      "en": "Hesitation",
+      "ja": "ためらい",
+      "ko": "주저"
+    },
+    "犹豫而决绝": {
+      "en": "Hesitant Yet Resolute",
+      "ja": "ためらいながらも決然とした",
+      "ko": "주저하지만 단호한"
+    },
+    "犹豫而谨慎": {
+      "en": "Hesitant and Cautious",
+      "ja": "ためらいと慎重さ",
+      "ko": "주저하고 조심스러운"
+    },
+    "狂乱": {
+      "en": "Frenzy",
+      "ja": "狂乱",
+      "ko": "광란"
+    },
+    "狂信": {
+      "en": "Fanaticism",
+      "ja": "狂信",
+      "ko": "광신"
+    },
+    "狂傲不羁": {
+      "en": "Arrogant and Free",
+      "ja": "傲慢で自由な",
+      "ko": "거만하고 자유로운"
+    },
+    "狂放": {
+      "en": "Wild and Unrestrained",
+      "ja": "自由奔放",
+      "ko": "자유분방한"
+    },
+    "狂暴中带着执念": {
+      "en": "Frenzied with Obsession",
+      "ja": "狂暴の中に執念がある",
+      "ko": "광폭 속에 집착이 있는"
+    },
+    "狂笑中夹杂悲凉": {
+      "en": "Laughing with Sorrow",
+      "ja": "悲しみを交えた笑い",
+      "ko": "슬픔이 섞인 웃음"
+    },
+    "狂躁": {
+      "en": "Agitated",
+      "ja": "興奮した",
+      "ko": "흥분한"
+    },
+    "狗急跳墙": {
+      "en": "Desperate Measures",
+      "ja": "追い詰められた行動",
+      "ko": "궁지에 몰린 행동"
+    },
+    "狠厉": {
+      "en": "Severe",
+      "ja": "厳しい",
+      "ko": "엄한"
+    },
+    "狡猾": {
+      "en": "Cunning",
+      "ja": "ずる賢い",
+      "ko": "교활한"
+    },
+    "狡诈": {
+      "en": "Sly",
+      "ja": "狡猾な",
+      "ko": "교활한"
+    },
+    "狡黠而冷静": {
+      "en": "Cunning and Calm",
+      "ja": "ずる賢く冷静な",
+      "ko": "교활하면서도 차분한"
+    },
+    "狡黠而阴冷": {
+      "en": "Cunning and Sinister",
+      "ja": "ずる賢く陰険な",
+      "ko": "교활하고 음산한"
+    },
+    "狰狞": {
+      "en": "Ferocious",
+      "ja": "凶悪な",
+      "ko": "흉악한"
+    },
+    "狼狈": {
+      "en": "Disheveled",
+      "ja": "みすぼらしい",
+      "ko": "어수선한"
+    },
+    "狼狈不堪": {
+      "en": "In Dire Straits",
+      "ja": "困窮した",
+      "ko": "곤경에 처한"
+    },
+    "猜疑": {
+      "en": "Suspicion",
+      "ja": "疑念",
+      "ko": "의심"
+    },
+    "玄奥": {
+      "en": "Profound",
+      "ja": "奥深い",
+      "ko": "심오한"
+    },
+    "玄机": {
+      "en": "Mystery",
+      "ja": "謎",
+      "ko": "신비"
+    },
+    "玩味与嘲讽": {
+      "en": "Playful and Sarcastic",
+      "ja": "遊び心と皮肉",
+      "ko": "재미있고 비꼬는"
+    },
+    "玩味且带着压迫感": {
+      "en": "Playful Yet Oppressive",
+      "ja": "遊び心がありながら圧迫感を持つ",
+      "ko": "재미있지만 압박감을 주는"
+    },
+    "玩味且精明": {
+      "en": "Playful and Astute",
+      "ja": "遊び心がありながら鋭い",
+      "ko": "재미있으면서도 날카로운"
+    },
+    "玩味而审视": {
+      "en": "Playful and Observant",
+      "ja": "遊び心を持ちながら観察する",
+      "ko": "재미있으면서도 관찰하는"
+    },
+    "理性与紧迫": {
+      "en": "Rational and Urgent",
+      "ja": "理性的で緊急な",
+      "ko": "합리적이고 긴급한"
+    },
+    "理智": {
+      "en": "Rationality",
+      "ja": "理知",
+      "ko": "이성"
+    },
+    "理解与耐心": {
+      "en": "Understanding and Patience",
+      "ja": "理解と忍耐",
+      "ko": "이해와 인내"
+    },
+    "理解而坚定": {
+      "en": "Understanding and Resolute",
+      "ja": "理解しながら決然とした",
+      "ko": "이해하면서도 단호한"
+    },
+    "理解而心疼": {
+      "en": "Understanding and Pained",
+      "ja": "理解しながら痛む",
+      "ko": "이해하면서도 아픈"
+    },
+    "疑惑与探寻": {
+      "en": "Doubt and Exploration",
+      "ja": "疑念と探求",
+      "ko": "의심과 탐구"
+    },
+    "疑惑与警惕加深": {
+      "en": "Doubt and Heightened Vigilance",
+      "ja": "疑念と警戒の高まり",
+      "ko": "의심과 경계의 심화"
+    },
+    "疑惑而警觉": {
+      "en": "Doubtful and Alert",
+      "ja": "疑念を抱きながら警戒している",
+      "ko": "의심하며 경계하는"
+    },
+    "疯狂与觉醒": {
+      "en": "Madness and Awakening",
+      "ja": "狂気と覚醒",
+      "ko": "광기와 각성"
+    },
+    "疯狂反击": {
+      "en": "Frenzied Counterattack",
+      "ja": "狂った反撃",
+      "ko": "광란의 반격"
+    },
+    "疯狂而决绝": {
+      "en": "Mad Determination",
+      "ja": "狂気の決意",
+      "ko": "미친 결단"
+    },
+    "疯狂而冷静": {
+      "en": "Calm Madness",
+      "ja": "冷静な狂気",
+      "ko": "차분한 광기"
+    },
+    "疲惫与释然": {
+      "en": "Exhaustion and Relief",
+      "ja": "疲労と解放",
+      "ko": "피로와 해방"
+    },
+    "疲惫而坚定": {
+      "en": "Tired Yet Resolute",
+      "ja": "疲れたが決意",
+      "ko": "지쳤지만 단호한"
+    },
+    "疲惫而无奈": {
+      "en": "Tired and Helpless",
+      "ja": "疲れと無力感",
+      "ko": "피곤하고 어쩔 수 없는"
+    },
+    "疲惫而畅快": {
+      "en": "Tired Yet Refreshing",
+      "ja": "疲れたが爽快",
+      "ko": "피곤하지만 상쾌한"
+    },
+    "痛心抉择": {
+      "en": "Heartbreaking Choice",
+      "ja": "痛ましい選択",
+      "ko": "가슴 아픈 선택"
+    },
+    "痛快": {
+      "en": "Refreshing",
+      "ja": "痛快",
+      "ko": "통쾌"
+    },
+    "痛快淋漓": {
+      "en": "Thoroughly Refreshing",
+      "ja": "痛快な爽快感",
+      "ko": "통쾌하게"
+    },
+    "痛苦与决绝": {
+      "en": "Pain and Determination",
+      "ja": "苦痛と決意",
+      "ko": "고통과 결단"
+    },
+    "痛苦与惊恐": {
+      "en": "Pain and Terror",
+      "ja": "苦痛と恐怖",
+      "ko": "고통과 공포"
+    },
+    "痛苦与愤怒": {
+      "en": "Pain and Anger",
+      "ja": "苦痛と怒り",
+      "ko": "고통과 분노"
+    },
+    "痛苦与满足": {
+      "en": "Pain and Satisfaction",
+      "ja": "苦痛と満足",
+      "ko": "고통과 만족"
+    },
+    "痛苦与自责": {
+      "en": "Pain and Guilt",
+      "ja": "苦痛と自己非難",
+      "ko": "고통과 자책"
+    },
+    "痛苦且困惑": {
+      "en": "Pain and Confusion",
+      "ja": "苦痛と混乱",
+      "ko": "고통과 혼란"
+    },
+    "痛苦但冷静": {
+      "en": "Painful Yet Calm",
+      "ja": "苦痛だが冷静",
+      "ko": "고통스럽지만 차분한"
+    },
+    "痛苦而冷静": {
+      "en": "Painful and Calm",
+      "ja": "苦痛と冷静",
+      "ko": "고통과 차분함"
+    },
+    "痛苦（装）": {
+      "en": "Feigning Pain",
+      "ja": "痛みを装う",
+      "ko": "고통을 가장하다"
+    },
+    "痞气": {
+      "en": "Irritation",
+      "ja": "イライラ",
+      "ko": "짜증"
+    },
+    "癫狂反噬": {
+      "en": "Backlash of Madness",
+      "ja": "狂気の反撃",
+      "ko": "광기의 반격"
+    },
+    "直接而锋利": {
+      "en": "Direct and Sharp",
+      "ja": "直接的で鋭い",
+      "ko": "직접적이고 날카로운"
+    },
+    "直白": {
+      "en": "Blunt",
+      "ja": "率直",
+      "ko": "솔직한"
+    },
+    "看似关心，实则试探": {
+      "en": "Seemingly Caring, Actually Testing",
+      "ja": "関心を装い、実際には試す",
+      "ko": "관심 있는 척, 사실은 시험하는"
+    },
+    "看热闹不嫌事大": {
+      "en": "Loving the Drama",
+      "ja": "騒ぎを楽しむ",
+      "ko": "소란을 즐기다"
+    },
+    "真心赞许": {
+      "en": "Sincere Approval",
+      "ja": "心からの賛同",
+      "ko": "진심 어린 찬사"
+    },
+    "真情流露": {
+      "en": "Genuine Emotion",
+      "ja": "真情の流露",
+      "ko": "진정한 감정"
+    },
+    "真正的慌乱": {
+      "en": "True Panic",
+      "ja": "本当のパニック",
+      "ko": "진정한 혼란"
+    },
+    "真相大白": {
+      "en": "Truth Revealed",
+      "ja": "真実が明らかになる",
+      "ko": "진실이 드러나다"
+    },
+    "真诚却带着隐瞒": {
+      "en": "Sincere Yet Concealing",
+      "ja": "誠実だが隠している",
+      "ko": "진실하지만 숨기는"
+    },
+    "真诚而郑重": {
+      "en": "Sincere and Serious",
+      "ja": "誠実で真剣",
+      "ko": "진실하고 진지한"
+    },
+    "睥睨天下": {
+      "en": "Looking Down on the World",
+      "ja": "世界を見下す",
+      "ko": "세상을 내려다보다"
+    },
+    "破釜沉舟": {
+      "en": "Burning Bridges",
+      "ja": "釜を破り舟を沈める",
+      "ko": "다리를 태우다"
+    },
+    "破釜沉舟的信任": {
+      "en": "Trust in Burning Bridges",
+      "ja": "破釜沈舟の信頼",
+      "ko": "다리를 태우는 신뢰"
+    },
+    "破釜沉舟的决绝": {
+      "en": "Determination in Burning Bridges",
+      "ja": "破釜沈舟の決意",
+      "ko": "다리를 태우는 결단"
+    },
+    "破防": {
+      "en": "Breaking Defense",
+      "ja": "防御を破る",
+      "ko": "방어를 깨다"
+    },
+    "确认": {
+      "en": "Confirmation",
+      "ja": "確認",
+      "ko": "확인"
+    },
+    "碾压": {
+      "en": "Overwhelming",
+      "ja": "圧倒する",
+      "ko": "압도하다"
+    },
+    "示弱": {
+      "en": "Showing Weakness",
+      "ja": "弱さを見せる",
+      "ko": "약점을 드러내다"
+    },
+    "礼尚往来": {
+      "en": "Reciprocity",
+      "ja": "礼の行き来",
+      "ko": "상호 교류"
+    },
+    "礼貌而冷淡": {
+      "en": "Polite Yet Distant",
+      "ja": "礼儀正しいが冷淡",
+      "ko": "예의 바르지만 냉담한"
+    },
+    "祝福": {
+      "en": "Blessing",
+      "ja": "祝福",
+      "ko": "축복"
+    },
+    "神秘而深沉": {
+      "en": "Mysterious and Profound",
+      "ja": "神秘的で深い",
+      "ko": "신비롭고 심오한"
+    },
+    "神秘而略带赞许": {
+      "en": "Mysterious with Approval",
+      "ja": "神秘的で少しの賛同",
+      "ko": "신비롭고 약간의 찬사"
+    },
+    "神色凝重": {
+      "en": "Serious Expression",
+      "ja": "真剣な表情",
+      "ko": "진지한 표정"
+    },
+    "离去": {
+      "en": "Departure",
+      "ja": "去ること",
+      "ko": "떠나다"
+    },
+    "空洞": {
+      "en": "Hollow",
+      "ja": "空洞",
+      "ko": "공허"
+    },
+    "空灵": {
+      "en": "Ethereal",
+      "ja": "空虚",
+      "ko": "허무"
+    },
+    "突变": {
+      "en": "Sudden Change",
+      "ja": "突然の変化",
+      "ko": "갑작스러운 변화"
+    },
+    "突然发难": {
+      "en": "Sudden Attack",
+      "ja": "突然の攻撃",
+      "ko": "갑작스러운 공격"
+    },
+    "突袭": {
+      "en": "Ambush",
+      "ja": "奇襲",
+      "ko": "매복"
+    },
+    "窘迫": {
+      "en": "Embarrassment",
+      "ja": "窮迫",
+      "ko": "곤란"
+    },
+    "筹谋": {
+      "en": "Planning",
+      "ja": "計画",
+      "ko": "계획"
+    },
+    "粗豪而不耐烦": {
+      "en": "Rough and Impatient",
+      "ja": "粗野でせっかち",
+      "ko": "거칠고 인내심 없는"
+    },
+    "系统": {
+      "en": "Systematic",
+      "ja": "体系的",
+      "ko": "체계적"
+    },
+    "紧张与对抗": {
+      "en": "Tension and Confrontation",
+      "ja": "緊張と対立",
+      "ko": "긴장과 대립"
+    },
+    "紧张而克制": {
+      "en": "Tense Yet Restrained",
+      "ja": "緊張しているが抑制された",
+      "ko": "긴장하지만 자제하는"
+    },
+    "紧急": {
+      "en": "Urgent",
+      "ja": "緊急",
+      "ko": "긴급"
+    },
+    "约定": {
+      "en": "Agreement",
+      "ja": "約束",
+      "ko": "약속"
+    },
+    "细思极恐": {
+      "en": "Chilling Realization",
+      "ja": "考えれば考えるほど恐ろしい",
+      "ko": "생각할수록 소름끼치는"
+    },
+    "绝不放弃": {
+      "en": "Never Give Up",
+      "ja": "決して諦めない",
+      "ko": "절대 포기하지 않다"
+    },
+    "绝地反击": {
+      "en": "Desperate Counterattack",
+      "ja": "絶体絶命の反撃",
+      "ko": "절체절명의 반격"
+    },
+    "绝对掌控": {
+      "en": "Absolute Control",
+      "ja": "絶対的な支配",
+      "ko": "절대적 통제"
+    },
+    "绝望真相": {
+      "en": "Desperate Truth",
+      "ja": "絶望的な真実",
+      "ko": "절망적인 진실"
+    },
+    "维护": {
+      "en": "Maintenance",
+      "ja": "維持",
+      "ko": "유지"
+    },
+    "罕见地失控，声音中带着压抑不住的颤抖": {
+      "en": "Rarely Out of Control, Voice Trembling",
+      "ja": "珍しく制御を失い、声が震える",
+      "ko": "드물게 통제력을 잃고 목소리가 떨리다"
+    },
+    "罕见地带着一丝忌惮": {
+      "en": "Rarely with Caution",
+      "ja": "珍しく警戒心を持つ",
+      "ko": "드물게 경계심을 가지다"
+    },
+    "罕见地带着几分忧虑": {
+      "en": "Rarely with Worry",
+      "ja": "珍しく不安を抱える",
+      "ko": "드물게 걱정을 하다"
+    },
+    "罕见地急切": {
+      "en": "Rarely Eager",
+      "ja": "珍しく切望する",
+      "ko": "드물게 간절하다"
+    },
+    "罕见疲惫": {
+      "en": "Rare Exhaustion",
+      "ja": "珍しい疲労",
+      "ko": "드문 피로"
+    },
+    "罕见的好奇": {
+      "en": "Rare Curiosity",
+      "ja": "珍しい好奇心",
+      "ko": "드문 호기심"
+    },
+    "罕见的温柔": {
+      "en": "Rare Gentleness",
+      "ja": "珍しい優しさ",
+      "ko": "드문 부드러움"
+    },
+    "罕见的犹豫": {
+      "en": "Rare Hesitation",
+      "ja": "珍しいためらい",
+      "ko": "드문 주犹"
+    },
+    "罕见的郑重": {
+      "en": "Rare Seriousness",
+      "ja": "珍しい真剣さ",
+      "ko": "드문 진지함"
+    },
+    "羞恼交加": {
+      "en": "Embarrassment and Anger",
+      "ja": "恥ずかしさと怒り",
+      "ko": "부끄러움과 분노"
+    },
+    "考验与期待": {
+      "en": "Test and Anticipation",
+      "ja": "試練と期待",
+      "ko": "시험과 기대"
+    },
+    "耐心解释": {
+      "en": "Patient Explanation",
+      "ja": "忍耐強い説明",
+      "ko": "인내심 있는 설명"
+    },
+    "肃穆而深沉": {
+      "en": "Solemn and Profound",
+      "ja": "厳粛で深い",
+      "ko": "엄숙하고 심오한"
+    },
+    "胜券在握": {
+      "en": "Victory in Hand",
+      "ja": "勝利を手にする",
+      "ko": "승리를 손에 쥐다"
+    },
+    "胜券在握的从容": {
+      "en": "Composure with Victory",
+      "ja": "勝利を手にした落ち着き",
+      "ko": "승리를 쥐고 있는 차분함"
+    },
+    "脆弱与信任": {
+      "en": "Vulnerability and Trust",
+      "ja": "脆弱さと信頼",
+      "ko": "취약함과 신뢰"
+    },
+    "腹黑": {
+      "en": "Hidden Malice",
+      "ja": "腹黒",
+      "ko": "은밀한 악의"
+    },
+    "自信而危险": {
+      "en": "Confidently Dangerous",
+      "ja": "自信に満ちた危険",
+      "ko": "자신감 넘치는 위험"
+    },
+    "自嘲而释然": {
+      "en": "Self-Mocking Relief",
+      "ja": "自嘲して解放される",
+      "ko": "자조적인 안도"
+    },
+    "自嘲自黑": {
+      "en": "Self-Mocking Darkness",
+      "ja": "自嘲と自己否定",
+      "ko": "자조적이고 자학적인"
+    },
+    "自责": {
+      "en": "Self-Blame",
+      "ja": "自己非難",
+      "ko": "자책"
+    },
+    "自责、恐惧、泪目": {
+      "en": "Self-Blame, Fear, Tearful",
+      "ja": "自己非難、恐れ、涙目",
+      "ko": "자책, 두려움, 눈물"
+    },
+    "自责且困惑": {
+      "en": "Self-Blame and Confusion",
+      "ja": "自己非難と混乱",
+      "ko": "자책과 혼란"
+    },
+    "艰涩": {
+      "en": "Difficult",
+      "ja": "難解",
+      "ko": "어렵고 힘든"
+    },
+    "苍凉与期待": {
+      "en": "Desolation and Anticipation",
+      "ja": "荒涼と期待",
+      "ko": "황량함과 기대"
+    },
+    "苍凉而欣慰": {
+      "en": "Desolate Yet Comforted",
+      "ja": "荒涼ながらも慰められる",
+      "ko": "황량하지만 위안받는"
+    },
+    "苍凉而温柔": {
+      "en": "Desolate Yet Gentle",
+      "ja": "荒涼でありながら優しい",
+      "ko": "황량하지만 부드러운"
+    },
+    "苍凉而郑重": {
+      "en": "Desolate Yet Solemn",
+      "ja": "荒涼でありながら厳粛",
+      "ko": "황량하지만 진지한"
+    },
+    "苍老": {
+      "en": "Aged",
+      "ja": "老いた",
+      "ko": "늙은"
+    },
+    "苍老温和": {
+      "en": "Aged and Gentle",
+      "ja": "老いて優しい",
+      "ko": "늙고 부드러운"
+    },
+    "苍老而坚定": {
+      "en": "Aged and Resolute",
+      "ja": "老いても揺るがない",
+      "ko": "늙었지만 확고한"
+    },
+    "苍老而欣慰": {
+      "en": "Aged Yet Comforted",
+      "ja": "老いても慰められる",
+      "ko": "늙었지만 위안받는"
+    },
+    "苍老而温柔": {
+      "en": "Aged and Tender",
+      "ja": "老いて優しい",
+      "ko": "늙고 부드러운"
+    },
+    "苍老而耐心": {
+      "en": "Aged and Patient",
+      "ja": "老いても忍耐強い",
+      "ko": "늙었지만 인내심 있는"
+    },
+    "苍茫": {
+      "en": "Vastness",
+      "ja": "広大",
+      "ko": "광활함"
+    },
+    "苦涩与决然": {
+      "en": "Bitterness and Resolve",
+      "ja": "苦さと決意",
+      "ko": "쓴맛과 결단"
+    },
+    "苦涩与期待": {
+      "en": "Bitterness and Anticipation",
+      "ja": "苦さと期待",
+      "ko": "쓴맛과 기대"
+    },
+    "苦涩却温暖": {
+      "en": "Bittersweet Warmth",
+      "ja": "苦いが温かい",
+      "ko": "쓴맛이지만 따뜻한"
+    },
+    "苦涩的笑": {
+      "en": "Bitter Smile",
+      "ja": "苦い笑み",
+      "ko": "쓴 웃음"
+    },
+    "苦涩而无奈": {
+      "en": "Bittersweet Resignation",
+      "ja": "苦さと無力感",
+      "ko": "쓴맛과 무력감"
+    },
+    "苦涩而温柔": {
+      "en": "Bittersweet Tenderness",
+      "ja": "苦いが優しい",
+      "ko": "쓴맛이지만 부드러운"
+    },
+    "苦涩而真诚": {
+      "en": "Bittersweet Sincerity",
+      "ja": "苦いが誠実な",
+      "ko": "쓴맛이지만 진실한"
+    },
+    "苦笑": {
+      "en": "Bitter Laughter",
+      "ja": "苦笑",
+      "ko": "쓴 웃음"
+    },
+    "莫测": {
+      "en": "Unpredictable",
+      "ja": "予測不可能",
+      "ko": "예측할 수 없는"
+    },
+    "蓄势": {
+      "en": "Building Momentum",
+      "ja": "勢いを蓄える",
+      "ko": "세력을 쌓다"
+    },
+    "蓄势待发": {
+      "en": "Ready to Strike",
+      "ja": "発動の準備が整った",
+      "ko": "발동할 준비가 된"
+    },
+    "藐视": {
+      "en": "Contempt",
+      "ja": "軽蔑",
+      "ko": "경멸"
+    },
+    "虚与委蛇": {
+      "en": "Feigning Compliance",
+      "ja": "従順を装う",
+      "ko": "순응하는 척하다"
+    },
+    "虚伪的仁慈": {
+      "en": "Hypocritical Kindness",
+      "ja": "偽善的な優しさ",
+      "ko": "위선적인 친절"
+    },
+    "虚伪的保护": {
+      "en": "Hypocritical Protection",
+      "ja": "偽善的な保護",
+      "ko": "위선적인 보호"
+    },
+    "虚伪的关切": {
+      "en": "Hypocritical Concern",
+      "ja": "偽善的な関心",
+      "ko": "위선적인 관심"
+    },
+    "虚伪的关怀": {
+      "en": "Hypocritical Care",
+      "ja": "偽善的な配慮",
+      "ko": "위선적인 배려"
+    },
+    "虚伪的欣慰": {
+      "en": "Hypocritical Comfort",
+      "ja": "偽善的な慰め",
+      "ko": "위선적인 위안"
+    },
+    "虚伪的赞赏": {
+      "en": "Hypocritical Praise",
+      "ja": "偽善的な賞賛",
+      "ko": "위선적인 칭찬"
+    },
+    "虚弱但坚定": {
+      "en": "Weak Yet Resolute",
+      "ja": "弱いが揺るがない",
+      "ko": "약하지만 확고한"
+    },
+    "虚弱但坦诚": {
+      "en": "Weak Yet Honest",
+      "ja": "弱いが正直な",
+      "ko": "약하지만 솔직한"
+    },
+    "虚弱但温柔": {
+      "en": "Weak Yet Gentle",
+      "ja": "弱いが優しい",
+      "ko": "약하지만 부드러운"
+    },
+    "虚弱但狡黠": {
+      "en": "Weak Yet Cunning",
+      "ja": "弱いがずる賢い",
+      "ko": "약하지만 교활한"
+    },
+    "虚弱但释然": {
+      "en": "Weak Yet Relieved",
+      "ja": "弱いが解放される",
+      "ko": "약하지만 안도하는"
+    },
+    "虚弱却坚定": {
+      "en": "Weak Yet Steadfast",
+      "ja": "弱いが堅実な",
+      "ko": "약하지만 확고한"
+    },
+    "虚弱却坚定的告白": {
+      "en": "Weak Yet Steadfast Confession",
+      "ja": "弱いが堅実な告白",
+      "ko": "약하지만 확고한 고백"
+    },
+    "虚弱却欣慰": {
+      "en": "Weak Yet Comforted",
+      "ja": "弱いが慰められる",
+      "ko": "약하지만 위안받는"
+    },
+    "虚弱而急切": {
+      "en": "Weak Yet Eager",
+      "ja": "弱いが切望する",
+      "ko": "약하지만 간절한"
+    },
+    "虚弱而怨毒": {
+      "en": "Weak Yet Resentful",
+      "ja": "弱いが恨みを抱く",
+      "ko": "약하지만 원망하는"
+    },
+    "虚弱而惊恐": {
+      "en": "Weak Yet Terrified",
+      "ja": "弱いが恐れている",
+      "ko": "약하지만 두려운"
+    },
+    "虚弱而欣慰": {
+      "en": "Weak Yet Comforted",
+      "ja": "弱いが慰められる",
+      "ko": "약하지만 위안받는"
+    },
+    "血脉呼唤": {
+      "en": "Bloodline Call",
+      "ja": "血脈の呼びかけ",
+      "ko": "혈통의 부름"
+    },
+    "表面冷静，内心戒备": {
+      "en": "Calm Exterior, Alert Interior",
+      "ja": "表面は冷静、内心は警戒",
+      "ko": "겉은 차분하지만 속은 경계"
+    },
+    "表面平静": {
+      "en": "Calm Surface",
+      "ja": "表面は平静",
+      "ko": "겉은 평온"
+    },
+    "表面平静下的暗流涌动": {
+      "en": "Undercurrents Beneath Calm",
+      "ja": "平静の下の暗流",
+      "ko": "평온 속의 암류"
+    },
+    "表面平静，内心激动": {
+      "en": "Calm Outside, Excited Inside",
+      "ja": "表面は平静、内心は興奮",
+      "ko": "겉은 차분하지만 속은 흥분"
+    },
+    "表面懦弱实则戒备": {
+      "en": "Weak Exterior, Guarded Interior",
+      "ja": "表面は弱いが内心は警戒",
+      "ko": "겉은 약하지만 속은 경계"
+    },
+    "表面淡然，内心紧绷": {
+      "en": "Indifferent Surface, Tense Interior",
+      "ja": "表面は淡々とし、内心は緊張",
+      "ko": "겉은 무관심하지만 속은 긴장"
+    },
+    "表面温和，内心冰冷": {
+      "en": "Gentle Surface, Cold Interior",
+      "ja": "表面は穏やかだが内心は冷たい",
+      "ko": "겉은 부드럽지만 속은 차가운"
+    },
+    "表面质疑，内心震动": {
+      "en": "Questioning Surface, Shaken Interior",
+      "ja": "表面は疑問だが内心は揺れている",
+      "ko": "겉은 의문이지만 속은 흔들리는"
+    },
+    "表面轻蔑实则暗藏锋芒": {
+      "en": "Scornful Surface, Hidden Sharpness",
+      "ja": "表面は軽蔑だが内に鋭さを秘める",
+      "ko": "겉은 경멸하지만 속에는 날카로움이 숨겨진"
+    },
+    "袒露": {
+      "en": "Revealing",
+      "ja": "さらけ出す",
+      "ko": "드러내다"
+    },
+    "被看穿": {
+      "en": "Seen Through",
+      "ja": "見抜かれる",
+      "ko": "간파당하다"
+    },
+    "被迫坦白": {
+      "en": "Forced Confession",
+      "ja": "強制的な告白",
+      "ko": "강제적인 고백"
+    },
+    "装傻": {
+      "en": "Feign Ignorance",
+      "ja": "知らないふりをする",
+      "ko": "모르는 척하다"
+    },
+    "装傻充愣": {
+      "en": "Feigning Foolishness",
+      "ja": "愚かさを装う",
+      "ko": "바보인 척하다"
+    },
+    "装傻掩饰": {
+      "en": "Feigning Ignorance to Conceal",
+      "ja": "知らないふりをして隠す",
+      "ko": "모르는 척하여 감추다"
+    },
+    "要挟": {
+      "en": "Coercion",
+      "ja": "脅迫",
+      "ko": "협박"
+    },
+    "观察": {
+      "en": "Observation",
+      "ja": "観察",
+      "ko": "관찰"
+    },
+    "观望": {
+      "en": "Watching",
+      "ja": "様子を見る",
+      "ko": "지켜보다"
+    },
+    "觉悟": {
+      "en": "Awakening",
+      "ja": "覚悟",
+      "ko": "각오"
+    },
+    "解脱": {
+      "en": "Liberation",
+      "ja": "解放",
+      "ko": "해방"
+    },
+    "誓言": {
+      "en": "Vow",
+      "ja": "誓い",
+      "ko": "맹세"
+    },
+    "警告与威胁": {
+      "en": "Warning and Threat",
+      "ja": "警告と脅迫",
+      "ko": "경고와 위협"
+    },
+    "警告与无奈": {
+      "en": "Warning and Helplessness",
+      "ja": "警告と無力感",
+      "ko": "경고와 무력감"
+    },
+    "警告与暗示": {
+      "en": "Warning and Hint",
+      "ja": "警告と暗示",
+      "ko": "경고와 암시"
+    },
+    "警告与焦急": {
+      "en": "Warning and Urgency",
+      "ja": "警告と焦り",
+      "ko": "경고와 초조"
+    },
+    "警告且忧虑": {
+      "en": "Warning and Worry",
+      "ja": "警告と心配",
+      "ko": "경고와 걱정"
+    },
+    "警惕渐消，取而代之的是审视与思索": {
+      "en": "Diminishing Vigilance, Replaced by Reflection",
+      "ja": "警戒が薄れ、反省に置き換わる",
+      "ko": "경계가 줄어들고 반성으로 대체된다"
+    },
+    "警惕而平静": {
+      "en": "Vigilant Yet Calm",
+      "ja": "警戒しながらも平静",
+      "ko": "경계하면서도 차분한"
+    },
+    "警觉、探究、微怒": {
+      "en": "Alert, Inquisitive, Slightly Angry",
+      "ja": "警戒、探求、微かな怒り",
+      "ko": "경계하고 탐구하며 약간 화가 난"
+    },
+    "警觉而配合": {
+      "en": "Alert Cooperation",
+      "ja": "警戒しながら協力",
+      "ko": "경계하며 협력"
+    },
+    "警觉而震惊": {
+      "en": "Alert Shock",
+      "ja": "警戒しながら驚愕",
+      "ko": "경계하며 충격"
+    },
+    "计谋": {
+      "en": "Strategic Scheme",
+      "ja": "策略",
+      "ko": "계략"
+    },
+    "认可与警告": {
+      "en": "Approval and Warning",
+      "ja": "承認と警告",
+      "ko": "인정과 경고"
+    },
+    "认真而郑重": {
+      "en": "Serious and Solemn",
+      "ja": "真剣かつ厳粛",
+      "ko": "진지하고 엄숙"
+    },
+    "认知颠覆": {
+      "en": "Cognitive Disruption",
+      "ja": "認知の覆し",
+      "ko": "인지의 전복"
+    },
+    "讥讽中藏着委屈": {
+      "en": "Sarcasm with Resentment",
+      "ja": "皮肉の中に不満",
+      "ko": "비꼼 속의 억울함"
+    },
+    "讨价还价": {
+      "en": "Bargaining",
+      "ja": "値切り",
+      "ko": "흥정"
+    },
+    "记仇": {
+      "en": "Holding a Grudge",
+      "ja": "恨みを抱く",
+      "ko": "원한을 품다"
+    },
+    "讳莫如深": {
+      "en": "Deeply Concealed",
+      "ja": "深く隠された",
+      "ko": "깊이 숨겨진"
+    },
+    "许诺": {
+      "en": "Promise",
+      "ja": "約束",
+      "ko": "약속"
+    },
+    "诀别": {
+      "en": "Farewell",
+      "ja": "別れ",
+      "ko": "작별"
+    },
+    "试探、窥探": {
+      "en": "Testing and Probing",
+      "ja": "試探と覗き見",
+      "ko": "시험과 엿보기"
+    },
+    "试探与期许": {
+      "en": "Testing and Anticipation",
+      "ja": "試探と期待",
+      "ko": "시험과 기대"
+    },
+    "试探与认可": {
+      "en": "Testing and Acknowledgment",
+      "ja": "試探と承認",
+      "ko": "시험과 인정"
+    },
+    "试探结束，回归冷淡，但心底已生波澜": {
+      "en": "Testing Ends, Coldness Returns, Yet Inner Turmoil Arises",
+      "ja": "試探が終わり、冷淡に戻るが、心の中に波紋が生まれる",
+      "ko": "시험이 끝나고 냉담함이 돌아오지만, 마음속에 파문이 일어나다"
+    },
+    "诚恳而无奈": {
+      "en": "Sincere Yet Helpless",
+      "ja": "誠実だが無力",
+      "ko": "성실하지만 어쩔 수 없는"
+    },
+    "诚意": {
+      "en": "Sincerity",
+      "ja": "誠意",
+      "ko": "성의"
+    },
+    "诡笑": {
+      "en": "Mischievous Smile",
+      "ja": "悪戯な笑み",
+      "ko": "장난스러운 미소"
+    },
+    "语出惊人": {
+      "en": "Startling Remarks",
+      "ja": "驚くべき発言",
+      "ko": "놀라운 발언"
+    },
+    "诱哄": {
+      "en": "Coaxing",
+      "ja": "おだてる",
+      "ko": "달래기"
+    },
+    "诱导且真诚": {
+      "en": "Inducing and Sincere",
+      "ja": "誘導しつつ誠実",
+      "ko": "유도하며 진실한"
+    },
+    "诱惑收买": {
+      "en": "Temptation and Buyout",
+      "ja": "誘惑と買収",
+      "ko": "유혹과 매수"
+    },
+    "诱惑而笃定": {
+      "en": "Tempted Yet Certain",
+      "ja": "誘惑されながら確信",
+      "ko": "유혹받으면서도 확신하는"
+    },
+    "谈判": {
+      "en": "Negotiation",
+      "ja": "交渉",
+      "ko": "협상"
+    },
+    "谋划": {
+      "en": "Plotting",
+      "ja": "計画",
+      "ko": "모의"
+    },
+    "谦恭": {
+      "en": "Humble",
+      "ja": "謙虚",
+      "ko": "겸손"
+    },
+    "谨慎多疑": {
+      "en": "Cautious and Suspicious",
+      "ja": "慎重で疑い深い",
+      "ko": "조심스럽고 의심 많은"
+    },
+    "谨慎而克制": {
+      "en": "Cautious and Restrained",
+      "ja": "慎重かつ抑制された",
+      "ko": "조심스럽고 절제된"
+    },
+    "谨慎而好奇": {
+      "en": "Cautious Curiosity",
+      "ja": "慎重な好奇心",
+      "ko": "조심스러운 호기심"
+    },
+    "谨慎而略带暧昧的交接": {
+      "en": "Cautious and Ambiguous Exchange",
+      "ja": "慎重でやや曖昧な引き継ぎ",
+      "ko": "조심스럽고 약간 애매한 인수"
+    },
+    "豪情万丈": {
+      "en": "Heroic Passion",
+      "ja": "豪情",
+      "ko": "호기"
+    },
+    "针锋相对": {
+      "en": "Confrontational",
+      "ja": "対立的",
+      "ko": "대립적인"
+    },
+    "铁血中的柔软": {
+      "en": "Softness in Iron Will",
+      "ja": "鉄血の中の柔らかさ",
+      "ko": "철혈 속의 부드러움"
+    },
+    "铿锵有力": {
+      "en": "Resounding Strength",
+      "ja": "力強い響き",
+      "ko": "힘찬 울림"
+    },
+    "锐利且审视": {
+      "en": "Sharp and Observant",
+      "ja": "鋭く観察する",
+      "ko": "날카롭고 관찰하는"
+    },
+    "锐利且洞察": {
+      "en": "Sharp and Insightful",
+      "ja": "鋭く洞察する",
+      "ko": "날카롭고 통찰력 있는"
+    },
+    "闪烁其词": {
+      "en": "Evasive Speech",
+      "ja": "言葉を濁す",
+      "ko": "모호한 말"
+    },
+    "防备": {
+      "en": "Guarded",
+      "ja": "警戒",
+      "ko": "경계"
+    },
+    "阴冷而克制": {
+      "en": "Chilly and Restrained",
+      "ja": "陰冷で抑制された",
+      "ko": "음산하고 절제된"
+    },
+    "阴冷而残忍": {
+      "en": "Chilly and Cruel",
+      "ja": "陰冷で残酷",
+      "ko": "음산하고 잔인한"
+    },
+    "阴测": {
+      "en": "Subtle Malice",
+      "ja": "陰険な悪意",
+      "ko": "은밀한 악의"
+    },
+    "阴狠毒辣": {
+      "en": "Cruel and Ruthless",
+      "ja": "陰険で冷酷",
+      "ko": "은밀하고 무자비한"
+    },
+    "阴笑": {
+      "en": "Sly Smile",
+      "ja": "陰険な笑み",
+      "ko": "교활한 미소"
+    },
+    "阴谋得逞": {
+      "en": "Plot Successful",
+      "ja": "陰謀が成功する",
+      "ko": "음모가 성공하다"
+    },
+    "阴阳怪气": {
+      "en": "Sarcastic Remarks",
+      "ja": "皮肉な言葉",
+      "ko": "비꼬는 말"
+    },
+    "陈述事实般平淡": {
+      "en": "Matter-of-Fact",
+      "ja": "事実を述べるように淡々と",
+      "ko": "사실을 진술하듯 담담하게"
+    },
+    "陈述真理般的淡漠": {
+      "en": "Indifferent Truth",
+      "ja": "真理のように無関心",
+      "ko": "진리처럼 무관심한"
+    },
+    "陡然转厉": {
+      "en": "Sudden Intensity",
+      "ja": "急に厳しくなる",
+      "ko": "갑자기 강해지다"
+    },
+    "隐忍中的自嘲": {
+      "en": "Self-Mockery in Restraint",
+      "ja": "抑えた中の自嘲",
+      "ko": "억제 속의 자기 비하"
+    },
+    "隐忍后的冷笑": {
+      "en": "Cold Smile After Restraint",
+      "ja": "抑えた後の冷笑",
+      "ko": "억제 후의 냉소"
+    },
+    "隐忍守护": {
+      "en": "Silent Protection",
+      "ja": "静かに守る",
+      "ko": "조용히 지키다"
+    },
+    "隐忍恨意": {
+      "en": "Resentment in Restraint",
+      "ja": "抑えた恨み",
+      "ko": "억제된 원한"
+    },
+    "隐忍盘算": {
+      "en": "Calculating in Silence",
+      "ja": "静かに計算する",
+      "ko": "조용히 계산하다"
+    },
+    "隐忍蛰伏": {
+      "en": "Biding Time",
+      "ja": "じっと待つ",
+      "ko": "시간을 기다리다"
+    },
+    "隐忍记仇": {
+      "en": "Silent Grudge",
+      "ja": "抑えた恨み",
+      "ko": "억제된 원한"
+    },
+    "隐痛": {
+      "en": "Hidden Pain",
+      "ja": "隠れた痛み",
+      "ko": "숨겨진 고통"
+    },
+    "隐秘而危险": {
+      "en": "Secretly Dangerous",
+      "ja": "秘密で危険",
+      "ko": "비밀스럽고 위험한"
+    },
+    "隐藏": {
+      "en": "Concealment",
+      "ja": "隠蔽",
+      "ko": "숨김"
+    },
+    "隐藏的温情": {
+      "en": "Hidden Warmth",
+      "ja": "隠れた温かさ",
+      "ko": "숨겨진 온정"
+    },
+    "隐藏的痛苦": {
+      "en": "Hidden Suffering",
+      "ja": "隠れた苦しみ",
+      "ko": "숨겨진 고통"
+    },
+    "隐隐的欣赏与警惕": {
+      "en": "Subtle Admiration and Caution",
+      "ja": "微妙な賞賛と警戒",
+      "ko": "미묘한 감탄과 경계"
+    },
+    "难得流露几分真诚": {
+      "en": "Rare Sincerity",
+      "ja": "珍しい誠実さ",
+      "ko": "드문 진정성"
+    },
+    "难得的打趣": {
+      "en": "Rare Humor",
+      "ja": "珍しい冗談",
+      "ko": "드문 유머"
+    },
+    "难得的温柔": {
+      "en": "Rare Tenderness",
+      "ja": "珍しい優しさ",
+      "ko": "드문 부드러움"
+    },
+    "难过": {
+      "en": "Sadness",
+      "ja": "悲しみ",
+      "ko": "슬픔"
+    },
+    "震动、怀疑、一丝不敢置信的希望": {
+      "en": "Shaken Doubt and Hope",
+      "ja": "揺れ動く疑念と希望",
+      "ko": "흔들리는 의심과 희망"
+    },
+    "震动与深思": {
+      "en": "Shaken Reflection",
+      "ja": "揺れ動く思索",
+      "ko": "흔들리는 사색"
+    },
+    "震动到无法自持": {
+      "en": "Overwhelmed Shock",
+      "ja": "抑えきれない衝撃",
+      "ko": "억제할 수 없는 충격"
+    },
+    "震怒而威胁": {
+      "en": "Furious Threat",
+      "ja": "激怒した脅威",
+      "ko": "격분한 위협"
+    },
+    "震惊、困惑、心跳加速": {
+      "en": "Shock and Confusion",
+      "ja": "驚きと混乱",
+      "ko": "충격과 혼란"
+    },
+    "震惊、悲痛、愤怒交织": {
+      "en": "Shock, Grief, and Anger",
+      "ja": "驚き、悲しみ、怒りが交錯",
+      "ko": "충격, 슬픔, 분노가 얽히다"
+    },
+    "震惊、警告、隐隐兴奋": {
+      "en": "Shock, Warning, and Excitement",
+      "ja": "驚き、警告、微かな興奮",
+      "ko": "충격, 경고, 미세한 흥분"
+    },
+    "震惊一闪而过": {
+      "en": "Fleeting Shock",
+      "ja": "一瞬の驚き",
+      "ko": "순간의 충격"
+    },
+    "震惊不已": {
+      "en": "Unending Shock",
+      "ja": "驚きが止まらない",
+      "ko": "충격이 멈추지 않다"
+    },
+    "震惊与不甘": {
+      "en": "Shock and Resentment",
+      "ja": "驚きと不満",
+      "ko": "충격과 불만"
+    },
+    "震惊与否认": {
+      "en": "Shock and Denial",
+      "ja": "驚きと否認",
+      "ko": "충격과 부정"
+    },
+    "震惊与心疼": {
+      "en": "Shock and Heartache",
+      "ja": "驚きと心の痛み",
+      "ko": "충격과 마음의 아픔"
+    },
+    "震惊与心痛": {
+      "en": "Shock and Pain",
+      "ja": "驚きと痛み",
+      "ko": "충격과 고통"
+    },
+    "震惊与思索": {
+      "en": "Shock and Contemplation",
+      "ja": "驚きと熟考",
+      "ko": "충격과 숙고"
+    },
+    "震惊与急切": {
+      "en": "Shock and Urgency",
+      "ja": "驚きと切迫感",
+      "ko": "충격과 긴박감"
+    },
+    "震惊与恍然": {
+      "en": "Shock and Realization",
+      "ja": "驚きと気づき",
+      "ko": "충격과 깨달음"
+    },
+    "震惊与恐惧": {
+      "en": "Shock and Fear",
+      "ja": "驚きと恐怖",
+      "ko": "충격과 두려움"
+    },
+    "震惊与感动": {
+      "en": "Shock and Emotion",
+      "ja": "驚きと感動",
+      "ko": "충격과 감동"
+    },
+    "震惊与愤怒": {
+      "en": "Shock and Anger",
+      "ja": "驚きと怒り",
+      "ko": "충격과 분노"
+    },
+    "震惊与担忧": {
+      "en": "Shock and Worry",
+      "ja": "驚きと心配",
+      "ko": "충격과 걱정"
+    },
+    "震惊与敬畏": {
+      "en": "Shock and Awe",
+      "ja": "驚きと畏敬",
+      "ko": "충격과 경외"
+    },
+    "震惊与期待": {
+      "en": "Shock and Anticipation",
+      "ja": "驚きと期待",
+      "ko": "충격과 기대"
+    },
+    "震惊与疑惑": {
+      "en": "Shock and Doubt",
+      "ja": "驚きと疑念",
+      "ko": "충격과 의심"
+    },
+    "震惊与窒息": {
+      "en": "Shock and Suffocation",
+      "ja": "驚きと窒息感",
+      "ko": "충격과 질식감"
+    },
+    "震惊与警惕": {
+      "en": "Shock and Vigilance",
+      "ja": "驚きと警戒",
+      "ko": "충격과 경계"
+    },
+    "震惊与警觉": {
+      "en": "Shock and Alertness",
+      "ja": "驚きと警戒心",
+      "ko": "충격과 경계심"
+    },
+    "震惊与认可": {
+      "en": "Shock and Acknowledgment",
+      "ja": "驚きと認識",
+      "ko": "충격과 인식"
+    },
+    "震惊与释然": {
+      "en": "Shock and Relief",
+      "ja": "驚きと安堵",
+      "ko": "충격과 안도"
+    },
+    "震惊与难以置信": {
+      "en": "Shock and Disbelief",
+      "ja": "驚きと信じられない思い",
+      "ko": "충격과 믿기 어려움"
+    },
+    "震惊与震撼": {
+      "en": "Shock and Impact",
+      "ja": "驚きと衝撃",
+      "ko": "충격과 충격"
+    },
+    "震惊且怀疑": {
+      "en": "Shocked and Skeptical",
+      "ja": "驚きつつ疑念を抱く",
+      "ko": "충격을 받으면서 의심하다"
+    },
+    "震惊且急切": {
+      "en": "Shocked and Eager",
+      "ja": "驚きつつ切望する",
+      "ko": "충격을 받으면서 간절히 원하다"
+    },
+    "震惊且恐惧": {
+      "en": "Shocked and Afraid",
+      "ja": "驚きつつ恐れる",
+      "ko": "충격을 받으면서 두려워하다"
+    },
+    "震惊且愤怒": {
+      "en": "Shocked and Angry",
+      "ja": "驚きつつ怒る",
+      "ko": "충격을 받으면서 화내다"
+    },
+    "震惊中带着几分警惕": {
+      "en": "Shock with Caution",
+      "ja": "驚きの中に警戒心",
+      "ko": "충격 속의 경계심"
+    },
+    "震惊但迅速平复": {
+      "en": "Shock Quickly Calmed",
+      "ja": "驚きがすぐに落ち着く",
+      "ko": "충격이 빠르게 가라앉다"
+    },
+    "震惊但迅速镇定": {
+      "en": "Shock Quickly Composed",
+      "ja": "驚きがすぐに冷静になる",
+      "ko": "충격이 빠르게 차분해지다"
+    },
+    "震惊八卦": {
+      "en": "Gossip Shock",
+      "ja": "ゴシップの驚き",
+      "ko": "가십의 충격"
+    },
+    "震惊到极致反而平静": {
+      "en": "Shock Leads to Calm",
+      "ja": "極限の驚きが逆に平静をもたらす",
+      "ko": "극도의 충격이 오히려 평온을 가져오다"
+    },
+    "震惊到语无伦次": {
+      "en": "Shock-Induced Incoherence",
+      "ja": "驚きで言葉を失う",
+      "ko": "충격으로 말이 어눌해지다"
+    },
+    "震惊而凝重": {
+      "en": "Serious Shock",
+      "ja": "真剣な驚き",
+      "ko": "진지한 충격"
+    },
+    "震惊而心痛": {
+      "en": "Shock and Heartache",
+      "ja": "驚きと心の痛み",
+      "ko": "충격과 마음의 아픔"
+    },
+    "震惊而笃定": {
+      "en": "Shock and Certainty",
+      "ja": "驚きと確信",
+      "ko": "충격과 확신"
+    },
+    "震撼、激动、泪流满面": {
+      "en": "Overwhelmed with Emotion",
+      "ja": "感情が溢れ涙が止まらない",
+      "ko": "감정이 넘쳐 눈물이 멈추지 않다"
+    },
+    "震撼与凝重": {
+      "en": "Impact and Seriousness",
+      "ja": "衝撃と重み",
+      "ko": "충격과 중대함"
+    },
+    "震撼与心痛": {
+      "en": "Impact and Heartache",
+      "ja": "衝撃と心の痛み",
+      "ko": "충격과 마음의 아픔"
+    },
+    "震撼与沉思": {
+      "en": "Impact and Contemplation",
+      "ja": "衝撃と熟考",
+      "ko": "충격과 숙고"
+    },
+    "震撼与警醒": {
+      "en": "Impact and Awakening",
+      "ja": "衝撃と目覚め",
+      "ko": "충격과 각성"
+    },
+    "震撼中带着一丝了然": {
+      "en": "Impact with Understanding",
+      "ja": "衝撃の中に理解がある",
+      "ko": "충격 속의 이해"
+    },
+    "震撼中带着觉悟": {
+      "en": "Impact with Realization",
+      "ja": "衝撃の中に気づきがある",
+      "ko": "충격 속의 깨달음"
+    },
+    "顺从": {
+      "en": "Submission",
+      "ja": "従順",
+      "ko": "순종"
+    },
+    "预言": {
+      "en": "Prophecy",
+      "ja": "予言",
+      "ko": "예언"
+    },
+    "颓然": {
+      "en": "Despondent",
+      "ja": "落胆した",
+      "ko": "낙담한"
+    },
+    "颤抖却坚定": {
+      "en": "Trembling Yet Resolute",
+      "ja": "震えながらも決意",
+      "ko": "떨리지만 확고한"
+    },
+    "颤栗中带着敬畏": {
+      "en": "Trembling with Awe",
+      "ja": "畏敬の念を抱きながら震える",
+      "ko": "경외심을 품고 떨다"
+    },
+    "风云变色": {
+      "en": "Changing Winds",
+      "ja": "風雲の変化",
+      "ko": "변화하는 바람"
+    },
+    "飘忽": {
+      "en": "Fleeting",
+      "ja": "ふわふわした",
+      "ko": "덧없는"
+    },
+    "飘渺": {
+      "en": "Ethereal",
+      "ja": "かすかな",
+      "ko": "몽환적인"
+    },
+    "饶有兴味": {
+      "en": "Intriguingly Interesting",
+      "ja": "興味深い",
+      "ko": "흥미로운"
+    },
+    "饶有兴趣": {
+      "en": "Quite Interesting",
+      "ja": "非常に興味深い",
+      "ko": "매우 흥미로운"
+    },
+    "骄傲": {
+      "en": "Pride",
+      "ja": "誇り",
+      "ko": "자부심"
+    },
+    "骇然": {
+      "en": "Astonished",
+      "ja": "驚愕した",
+      "ko": "경악한"
+    },
+    "高傲": {
+      "en": "Arrogance",
+      "ja": "傲慢",
+      "ko": "오만"
+    },
+    "高冷": {
+      "en": "Aloof",
+      "ja": "冷淡な",
+      "ko": "차가운"
+    },
+    "高深莫测": {
+      "en": "Profoundly Mysterious",
+      "ja": "深遠で謎めいた",
+      "ko": "심오하고 불가사의한"
+    },
+    "高高在上的施舍": {
+      "en": "Condescending Charity",
+      "ja": "高圧的な施し",
+      "ko": "거만한 자선"
+    },
+    "鼓励": {
+      "en": "Encouragement",
+      "ja": "励まし",
+      "ko": "격려"
+    },
+    "운筹위유": {
+      "en": "Strategic Calmness",
+      "ja": "戦略的な冷静さ",
+      "ko": "전략적 침착함"
+    },
+    "质疑中暗藏锋芒": {
+      "en": "Questioning with Hidden Edge",
+      "ja": "質疑に隠した鋭さ",
+      "ko": "숨겨난 날카로움의 의심"
+    },
+    "质问与反讽": {
+      "en": "Questioning and Sarcastic",
+      "ja": "質問と皮肉",
+      "ko": "질문과 반어"
+    },
+    "赞叹": {
+      "en": "Admiration",
+      "ja": "感嘆",
+      "ko": "감탄"
+    },
+    "赞同": {
+      "en": "Agreement",
+      "ja": "賛同",
+      "ko": "찬동"
+    },
+    "赞许与欣慰": {
+      "en": "Approving and Gratified",
+      "ja": "称賛と安堵",
+      "ko": "칭찬과 안도"
+    },
+    "赞赏与好奇": {
+      "en": "Appreciative and Curious",
+      "ja": "賞賛と好奇心",
+      "ko": "감상과 호기심"
+    },
+    "赞赏与期待": {
+      "en": "Appreciative and Expectant",
+      "ja": "賞賛と期待",
+      "ko": "감상과 기대"
+    },
+    "蹙眉沉思": {
+      "en": "Frowning in Thought",
+      "ja": "眉をひそめて沈思",
+      "ko": "미간을 찌푸리며 사색"
+    },
+    "转折": {
+      "en": "Turning Point",
+      "ja": "転換",
+      "ko": "전환"
+    },
+    "转移": {
+      "en": "Deflection",
+      "ja": "逸らし",
+      "ko": "회피"
+    },
+    "轻佻": {
+      "en": "Frivolous",
+      "ja": "軽薄",
+      "ko": "경박"
+    },
+    "轻描淡写": {
+      "en": "Downplaying",
+      "ja": "軽く流す",
+      "ko": "가볍게 넘기다"
+    },
+    "轻蔑而笃定": {
+      "en": "Contemptuous and Certain",
+      "ja": "軽蔑と確信",
+      "ko": "경멸과 확신"
+    },
+    "轻蔑赐予": {
+      "en": "Contemptuous Giving",
+      "ja": "軽蔑の施し",
+      "ko": "경멸의 하사"
+    },
+    "运筹": {
+      "en": "Strategizing",
+      "ja": "策を練る",
+      "ko": "모략"
+    },
+    "迟疑": {
+      "en": "Hesitation",
+      "ja": "躊躇",
+      "ko": "주저함"
+    },
+    "迫切": {
+      "en": "Urgent",
+      "ja": "切迫",
+      "ko": "절박"
+    },
+    "迷惘": {
+      "en": "Bewildered",
+      "ja": "迷惘",
+      "ko": "망연"
+    },
+    "迷茫与警醒": {
+      "en": "Bewildered and Alerted",
+      "ja": "迷いと警醒",
+      "ko": "망연과 경각"
+    },
+    "迷茫与震惊": {
+      "en": "Bewildered and Shocked",
+      "ja": "迷いと衝撃",
+      "ko": "망연과 충격"
+    },
+    "迷茫而感动": {
+      "en": "Bewildered and Moved",
+      "ja": "迷いと感動",
+      "ko": "망연과 감동"
+    },
+    "迷茫而渴望": {
+      "en": "Bewildered and Yearning",
+      "ja": "迷いと渇望",
+      "ko": "망연과 갈망"
+    },
+    "追忆与释然": {
+      "en": "Reminiscing and Relieved",
+      "ja": "追憶と釈然",
+      "ko": "추억과 후련함"
+    },
+    "追忆而沉重": {
+      "en": "Reminiscing Heavily",
+      "ja": "追憶と重圧",
+      "ko": "추억과 무거움"
+    },
+    "追悔": {
+      "en": "Remorse",
+      "ja": "悔恨",
+      "ko": "후회"
+    },
+    "退让": {
+      "en": "Conceding",
+      "ja": "譲歩",
+      "ko": "양보"
+    },
+    "逼迫": {
+      "en": "Coercion",
+      "ja": "逼迫",
+      "ko": "협박"
+    },
+    "遗留": {
+      "en": "Leftover",
+      "ja": "残存",
+      "ko": "잔존"
+    },
+    "郑重其事": {
+      "en": "Solemn",
+      "ja": "鄭重其事",
+      "ko": "정중其事"
+    },
+    "郑重而严肃": {
+      "en": "Solemn and Serious",
+      "ja": "厳粛で真剣",
+      "ko": "엄숙하고 진지"
+    },
+    "郑重而神秘": {
+      "en": "Solemn and Mysterious",
+      "ja": "厳粛で神秘",
+      "ko": "엄숙하고 신비"
+    },
+    "郑重而释然": {
+      "en": "Solemn and Relieved",
+      "ja": "厳粛で釈然",
+      "ko": "엄숙하고 후련"
+    },
+    "配合演戏": {
+      "en": "Playing Along",
+      "ja": "演技に協力",
+      "ko": "연기에 협조"
+    },
+    "释然与决绝": {
+      "en": "Relieved and Resolute",
+      "ja": "釈然と決絶",
+      "ko": "후련함과 결연"
+    },
+    "释然与期待": {
+      "en": "Relieved and Expectant",
+      "ja": "釈然と期待",
+      "ko": "후련함과 기대"
+    },
+    "释然与期盼": {
+      "en": "Relieved and Hopeful",
+      "ja": "釈然と希望",
+      "ko": "후련함과 희망"
+    },
+    "释然与温柔": {
+      "en": "Relieved and Gentle",
+      "ja": "釈然と優しさ",
+      "ko": "후련함과 온화"
+    },
+    "野望": {
+      "en": "Ambition",
+      "ja": "野望",
+      "ko": "야망"
+    }
+  },
+  "emotion_component_words": {
+    "震惊": {
+      "en": "shock",
+      "ja": "衝撃",
+      "ko": "충격"
+    },
+    "愤怒": {
+      "en": "fury",
+      "ja": "怒り",
+      "ko": "분노"
+    },
+    "恐惧": {
+      "en": "fear",
+      "ja": "恐怖",
+      "ko": "공포"
+    },
+    "悲痛": {
+      "en": "anguish",
+      "ja": "悲痛",
+      "ko": "비통"
+    },
+    "焦虑": {
+      "en": "anxiety",
+      "ja": "焦慮",
+      "ko": "불안"
+    },
+    "期待": {
+      "en": "anticipation",
+      "ja": "期待",
+      "ko": "기대"
+    },
+    "担忧": {
+      "en": "worry",
+      "ja": "憂慮",
+      "ko": "걱정"
+    },
+    "惊喜": {
+      "en": "surprise",
+      "ja": "驚喜",
+      "ko": "경희"
+    },
+    "绝望": {
+      "en": "despair",
+      "ja": "絶望",
+      "ko": "절망"
+    },
+    "犹豫": {
+      "en": "hesitation",
+      "ja": "躊躇",
+      "ko": "주저"
+    },
+    "不屑": {
+      "en": "scorn",
+      "ja": "軽蔑",
+      "ko": "불쑤"
+    },
+    "兴奋": {
+      "en": "excitement",
+      "ja": "興奮",
+      "ko": "흥분"
+    },
+    "冷静": {
+      "en": "calm",
+      "ja": "冷静",
+      "ko": "냉정"
+    },
+    "悲伤": {
+      "en": "sorrow",
+      "ja": "悲しみ",
+      "ko": "비애"
+    },
+    "警惕": {
+      "en": "vigilance",
+      "ja": "警戒",
+      "ko": "경계"
+    },
+    "无奈": {
+      "en": "helplessness",
+      "ja": "無念",
+      "ko": "어찌할도리"
+    },
+    "得意": {
+      "en": "pride",
+      "ja": "得意",
+      "ko": "득의"
+    },
+    "疑惑": {
+      "en": "doubt",
+      "ja": "疑惑",
+      "ko": "의혹"
+    },
+    "紧张": {
+      "en": "tension",
+      "ja": "緊張",
+      "ko": "긴장"
+    },
+    "感动": {
+      "en": "emotion",
+      "ja": "感動",
+      "ko": "감동"
+    },
+    "茫然": {
+      "en": "bewilderment",
+      "ja": "呆然",
+      "ko": "망연"
+    },
+    "不甘": {
+      "en": "defiance",
+      "ja": "不甘",
+      "ko": "불간"
+    },
+    "疲惫": {
+      "en": "exhaustion",
+      "ja": "疲弊",
+      "ko": "피로"
+    },
+    "痛苦": {
+      "en": "agony",
+      "ja": "苦痛",
+      "ko": "고통"
+    },
+    "欣慰": {
+      "en": "gratification",
+      "ja": "欣慰",
+      "ko": "위안"
+    },
+    "苦涩": {
+      "en": "bitterness",
+      "ja": "苦渋",
+      "ko": "쓴맛"
+    },
+    "冷意": {
+      "en": "coldness",
+      "ja": "冷たさ",
+      "ko": "냉의"
+    },
+    "笑意": {
+      "en": "amusement",
+      "ja": "笑み",
+      "ko": "웃음"
+    },
+    "杀意": {
+      "en": "killing intent",
+      "ja": "殺意",
+      "ko": "살의"
+    },
+    "敬意": {
+      "en": "respect",
+      "ja": "敬意",
+      "ko": "경의"
+    }
+  },
+  "emotion_connectors": {
+    "中带着": {
+      "en": " with a hint of ",
+      "ja": "、少し〜を帯びて",
+      "ko": " 약간의 ~을/를 띠고 "
+    },
+    "中带着一丝": {
+      "en": " with a trace of ",
+      "ja": "、一縷の〜を帯びて",
+      "ko": " 미약한 ~을/를 띠고 "
+    },
+    "中夹杂着": {
+      "en": " mixed with ",
+      "ja": "、〜が交じって",
+      "ko": " ~이/가 섞여 "
+    },
+    "中透着": {
+      "en": " revealing ",
+      "ja": "、〜が透けて見え",
+      "ko": " ~이/가 비치며 "
+    },
+    "与...交织": {
+      "en": " intertwined with ",
+      "ja": "と交錯して",
+      "ko": " 와/과 얽혀서 "
+    },
+    "与...并存": {
+      "en": " coexisting with ",
+      "ja": "と共存して",
+      "ko": " 와/과 공존하여 "
+    },
+    "夹杂着": {
+      "en": " laced with ",
+      "ja": "〜が混じって",
+      "ko": " ~이/가 끼어들며 "
+    },
+    "混合着": {
+      "en": " blended with ",
+      "ja": "〜が混ざって",
+      "ko": " ~과/와 섞여 "
+    },
+    "掩不住": {
+      "en": " barely concealing ",
+      "ja": "隠しきれない〜",
+      "ko": " 감추지 못한 "
+    },
+    "下掩藏着": {
+      "en": " beneath which lurked ",
+      "ja": "その下に隠れた〜",
+      "ko": " 그 아래 숨겨진 "
+    }
+  }
+}

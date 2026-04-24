@@ -112,7 +112,7 @@ validate_env() {
 
   # Check for essential LLM keys (warn only, don't block)
   local has_llm_key=false
-  for key in ANTHROPIC_API_KEY OPENAI_API_KEY GOOGLE_API_KEY GEMINI_API_KEY; do
+  for key in ANTHROPIC_API_KEY OPENAI_API_KEY GOOGLE_API_KEY GEMINI_API_KEY MINIMAX_API_KEY NVIDIA_API_KEY NIM_API_KEY ARK_API_KEY VOLCENGINE_API_KEY VOLCENGINE_ARK_API_KEY; do
     local val
     val="$(grep -E "^${key}=" "$ROOT_DIR/.env" 2>/dev/null | head -1 | cut -d= -f2- || true)"
     if [[ -n "$val" && "$val" != *"your-"* && "$val" != *"here"* ]]; then

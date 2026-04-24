@@ -599,13 +599,15 @@ def test_continuity_parse_extraction_payload_accepts_bare_json() -> None:
         '{"facts": [{"name": "末日倒计时", "value": "20", "unit": "小时",'
         ' "kind": "countdown", "notes": "本章消耗 4 小时"}]}'
     )
-    facts, error = _parse_extraction_payload(raw)
+    facts, time_anchor, chapter_time_span, error = _parse_extraction_payload(raw)
     assert error is None
     assert len(facts) == 1
     assert facts[0].name == "末日倒计时"
     assert facts[0].value == "20"
     assert facts[0].unit == "小时"
     assert facts[0].kind == "countdown"
+    assert time_anchor is None
+    assert chapter_time_span is None
 
 
 def test_continuity_parse_extraction_payload_accepts_fenced_json() -> None:
@@ -617,7 +619,7 @@ def test_continuity_parse_extraction_payload_accepts_fenced_json() -> None:
         '{"facts": [{"name": "主角等级", "value": "3", "kind": "level"}]}\n'
         "```\n"
     )
-    facts, error = _parse_extraction_payload(raw)
+    facts, _time_anchor, _chapter_time_span, error = _parse_extraction_payload(raw)
     assert error is None
     assert len(facts) == 1
     assert facts[0].name == "主角等级"
@@ -628,7 +630,7 @@ def test_continuity_parse_extraction_payload_coerces_unknown_kind_to_other() -> 
     from bestseller.services.continuity import _parse_extraction_payload
 
     raw = '{"facts": [{"name": "氛围", "value": "紧张", "kind": "atmosphere"}]}'
-    facts, error = _parse_extraction_payload(raw)
+    facts, _time_anchor, _chapter_time_span, error = _parse_extraction_payload(raw)
     assert error is None
     assert len(facts) == 1
     assert facts[0].kind == "other"
@@ -637,7 +639,9 @@ def test_continuity_parse_extraction_payload_coerces_unknown_kind_to_other() -> 
 def test_continuity_parse_extraction_payload_rejects_non_json_response() -> None:
     from bestseller.services.continuity import _parse_extraction_payload
 
-    facts, error = _parse_extraction_payload("抱歉，我无法完成这个任务。")
+    facts, _time_anchor, _chapter_time_span, error = _parse_extraction_payload(
+        "抱歉，我无法完成这个任务。"
+    )
     assert facts == []
     assert error is not None
 
@@ -652,7 +656,7 @@ def test_continuity_parse_extraction_payload_skips_malformed_fact_entries() -> N
         '{"name": "背包饼干", "value": "5", "kind": "inventory_count"}'
         "]}"
     )
-    facts, error = _parse_extraction_payload(raw)
+    facts, _time_anchor, _chapter_time_span, error = _parse_extraction_payload(raw)
     assert error is None
     assert len(facts) == 1
     assert facts[0].name == "背包饼干"

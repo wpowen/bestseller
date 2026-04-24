@@ -29,7 +29,7 @@ detect_llm_mock() {
     return
   fi
 
-  for key in ANTHROPIC_API_KEY OPENAI_API_KEY GOOGLE_API_KEY GEMINI_API_KEY AZURE_API_KEY COHERE_API_KEY GROQ_API_KEY TOGETHERAI_API_KEY HUGGINGFACE_API_KEY; do
+  for key in ANTHROPIC_API_KEY OPENAI_API_KEY GOOGLE_API_KEY GEMINI_API_KEY MINIMAX_API_KEY NVIDIA_API_KEY NIM_API_KEY ARK_API_KEY VOLCENGINE_API_KEY VOLCENGINE_ARK_API_KEY AZURE_API_KEY COHERE_API_KEY GROQ_API_KEY TOGETHERAI_API_KEY HUGGINGFACE_API_KEY; do
     if [[ -n "${!key:-}" ]]; then
       echo false
       return
@@ -40,7 +40,7 @@ detect_llm_mock() {
     if [[ ! -f "$path" ]]; then
       continue
     fi
-    if grep -Eq '^(ANTHROPIC_API_KEY|OPENAI_API_KEY|GOOGLE_API_KEY|GEMINI_API_KEY|AZURE_API_KEY|COHERE_API_KEY|GROQ_API_KEY|TOGETHERAI_API_KEY|HUGGINGFACE_API_KEY)=.+' "$path"; then
+    if grep -Eq '^(ANTHROPIC_API_KEY|OPENAI_API_KEY|GOOGLE_API_KEY|GEMINI_API_KEY|MINIMAX_API_KEY|NVIDIA_API_KEY|NIM_API_KEY|ARK_API_KEY|VOLCENGINE_API_KEY|VOLCENGINE_ARK_API_KEY|AZURE_API_KEY|COHERE_API_KEY|GROQ_API_KEY|TOGETHERAI_API_KEY|HUGGINGFACE_API_KEY)=.+' "$path"; then
       echo false
       return
     fi
@@ -50,6 +50,21 @@ detect_llm_mock() {
 }
 
 LLM_MOCK="$(detect_llm_mock)"
+
+normalize_llm_provider() {
+  local provider="${1:-default}"
+  case "$provider" in
+    nvidia|nvidia-nim|nim)
+      echo nvidia
+      ;;
+    byte-coding|bytedance-coding|volcengine-coding|volcengine-coding-plan|ark-coding|ark-coding-plan|coding-plan)
+      echo volcengine-coding
+      ;;
+    *)
+      echo "$provider"
+      ;;
+  esac
+}
 
 detect_llm_provider() {
   if [[ -n "${BESTSELLER_LLM_PROVIDER:-}" ]]; then
@@ -81,6 +96,14 @@ detect_llm_provider() {
     echo minimax
     return
   fi
+  if [[ -n "${NVIDIA_API_KEY:-}" || -n "${NIM_API_KEY:-}" ]]; then
+    echo nvidia
+    return
+  fi
+  if [[ -n "${ARK_API_KEY:-}" || -n "${VOLCENGINE_API_KEY:-}" || -n "${VOLCENGINE_ARK_API_KEY:-}" ]]; then
+    echo volcengine-coding
+    return
+  fi
 
   for path in "$ROOT_DIR/.env" "$ROOT_DIR/.env.local"; do
     if [[ ! -f "$path" ]]; then
@@ -96,6 +119,14 @@ detect_llm_provider() {
     fi
     if grep -Eq '^MINIMAX_API_KEY=.+' "$path"; then
       echo minimax
+      return
+    fi
+    if grep -Eq '^(NVIDIA_API_KEY|NIM_API_KEY)=.+' "$path"; then
+      echo nvidia
+      return
+    fi
+    if grep -Eq '^(ARK_API_KEY|VOLCENGINE_API_KEY|VOLCENGINE_ARK_API_KEY)=.+' "$path"; then
+      echo volcengine-coding
       return
     fi
   done
@@ -130,8 +161,72 @@ detect_gemini_key_env_name() {
   echo GEMINI_API_KEY
 }
 
-LLM_PROVIDER="$(detect_llm_provider)"
+detect_nvidia_key_env_name() {
+  if [[ -n "${NVIDIA_API_KEY:-}" ]]; then
+    echo NVIDIA_API_KEY
+    return
+  fi
+  if [[ -n "${NIM_API_KEY:-}" ]]; then
+    echo NIM_API_KEY
+    return
+  fi
+
+  for path in "$ROOT_DIR/.env" "$ROOT_DIR/.env.local"; do
+    if [[ ! -f "$path" ]]; then
+      continue
+    fi
+    if grep -Eq '^NVIDIA_API_KEY=.+' "$path"; then
+      echo NVIDIA_API_KEY
+      return
+    fi
+    if grep -Eq '^NIM_API_KEY=.+' "$path"; then
+      echo NIM_API_KEY
+      return
+    fi
+  done
+
+  echo NVIDIA_API_KEY
+}
+
+detect_volcengine_key_env_name() {
+  if [[ -n "${ARK_API_KEY:-}" ]]; then
+    echo ARK_API_KEY
+    return
+  fi
+  if [[ -n "${VOLCENGINE_API_KEY:-}" ]]; then
+    echo VOLCENGINE_API_KEY
+    return
+  fi
+  if [[ -n "${VOLCENGINE_ARK_API_KEY:-}" ]]; then
+    echo VOLCENGINE_ARK_API_KEY
+    return
+  fi
+
+  for path in "$ROOT_DIR/.env" "$ROOT_DIR/.env.local"; do
+    if [[ ! -f "$path" ]]; then
+      continue
+    fi
+    if grep -Eq '^ARK_API_KEY=.+' "$path"; then
+      echo ARK_API_KEY
+      return
+    fi
+    if grep -Eq '^VOLCENGINE_API_KEY=.+' "$path"; then
+      echo VOLCENGINE_API_KEY
+      return
+    fi
+    if grep -Eq '^VOLCENGINE_ARK_API_KEY=.+' "$path"; then
+      echo VOLCENGINE_ARK_API_KEY
+      return
+    fi
+  done
+
+  echo ARK_API_KEY
+}
+
+LLM_PROVIDER="$(normalize_llm_provider "$(detect_llm_provider)")"
 GEMINI_KEY_ENV_NAME="$(detect_gemini_key_env_name)"
+NVIDIA_KEY_ENV_NAME="$(detect_nvidia_key_env_name)"
+VOLCENGINE_KEY_ENV_NAME="$(detect_volcengine_key_env_name)"
 
 require_command() {
   if ! command -v "$1" >/dev/null 2>&1; then
@@ -267,6 +362,72 @@ export BESTSELLER__LLM__SUMMARIZER__MODEL='openai/MiniMax-M2.7'
 export BESTSELLER__LLM__SUMMARIZER__API_BASE='https://api.minimaxi.com/v1'
 export BESTSELLER__LLM__SUMMARIZER__API_KEY_ENV='MINIMAX_API_KEY'
 export BESTSELLER__LLM__EDITOR__MODEL='anthropic/claude-sonnet-4-5'
+EOF
+  fi
+
+  if [[ "$LLM_PROVIDER" == "nvidia" ]]; then
+    # NVIDIA NIM hosted API is OpenAI-compatible. For self-hosted NIM, set
+    # NVIDIA_API_BASE (or NIM_API_BASE) to your local /v1 endpoint and use the
+    # served model name exposed by GET /v1/models.
+    local nvidia_api_base="${NVIDIA_API_BASE:-${NIM_API_BASE:-https://integrate.api.nvidia.com/v1}}"
+    local nvidia_model="${NVIDIA_LLM_MODEL:-nvidia/nemotron-4-340b-instruct}"
+    local nvidia_planner_model="${NVIDIA_PLANNER_MODEL:-$nvidia_model}"
+    local nvidia_writer_model="${NVIDIA_WRITER_MODEL:-$nvidia_model}"
+    local nvidia_writer_override="${NVIDIA_WRITER_MODEL_OVERRIDE:-$nvidia_writer_model}"
+    local nvidia_critic_model="${NVIDIA_CRITIC_MODEL:-$nvidia_model}"
+    local nvidia_summarizer_model="${NVIDIA_SUMMARIZER_MODEL:-$nvidia_model}"
+    local nvidia_editor_model="${NVIDIA_EDITOR_MODEL:-$nvidia_model}"
+    cat >>"$ENV_FILE" <<EOF
+export BESTSELLER__LLM__PLANNER__MODEL='openai/${nvidia_planner_model}'
+export BESTSELLER__LLM__PLANNER__API_BASE='${nvidia_api_base}'
+export BESTSELLER__LLM__PLANNER__API_KEY_ENV='${NVIDIA_KEY_ENV_NAME}'
+export BESTSELLER__LLM__WRITER__MODEL='openai/${nvidia_writer_model}'
+export BESTSELLER__LLM__WRITER__MODEL_OVERRIDE='openai/${nvidia_writer_override}'
+export BESTSELLER__LLM__WRITER__API_BASE='${nvidia_api_base}'
+export BESTSELLER__LLM__WRITER__API_KEY_ENV='${NVIDIA_KEY_ENV_NAME}'
+export BESTSELLER__LLM__WRITER__STREAM='false'
+export BESTSELLER__LLM__CRITIC__MODEL='openai/${nvidia_critic_model}'
+export BESTSELLER__LLM__CRITIC__API_BASE='${nvidia_api_base}'
+export BESTSELLER__LLM__CRITIC__API_KEY_ENV='${NVIDIA_KEY_ENV_NAME}'
+export BESTSELLER__LLM__SUMMARIZER__MODEL='openai/${nvidia_summarizer_model}'
+export BESTSELLER__LLM__SUMMARIZER__API_BASE='${nvidia_api_base}'
+export BESTSELLER__LLM__SUMMARIZER__API_KEY_ENV='${NVIDIA_KEY_ENV_NAME}'
+export BESTSELLER__LLM__EDITOR__MODEL='openai/${nvidia_editor_model}'
+export BESTSELLER__LLM__EDITOR__API_BASE='${nvidia_api_base}'
+export BESTSELLER__LLM__EDITOR__API_KEY_ENV='${NVIDIA_KEY_ENV_NAME}'
+EOF
+  fi
+
+  if [[ "$LLM_PROVIDER" == "volcengine-coding" ]]; then
+    # Volcengine Ark Coding Plan has a dedicated OpenAI-compatible gateway.
+    # Use ark-code-latest by default so model switching can be managed from
+    # the Ark console; set ARK_CODING_*_MODEL to pin a specific code model.
+    local ark_coding_api_base="${ARK_CODING_API_BASE:-${VOLCENGINE_CODING_API_BASE:-https://ark.cn-beijing.volces.com/api/coding/v3}}"
+    local ark_coding_model="${ARK_CODING_MODEL:-${VOLCENGINE_CODING_MODEL:-ark-code-latest}}"
+    local ark_coding_planner_model="${ARK_CODING_PLANNER_MODEL:-$ark_coding_model}"
+    local ark_coding_writer_model="${ARK_CODING_WRITER_MODEL:-$ark_coding_model}"
+    local ark_coding_writer_override="${ARK_CODING_WRITER_MODEL_OVERRIDE:-$ark_coding_writer_model}"
+    local ark_coding_critic_model="${ARK_CODING_CRITIC_MODEL:-$ark_coding_model}"
+    local ark_coding_summarizer_model="${ARK_CODING_SUMMARIZER_MODEL:-$ark_coding_model}"
+    local ark_coding_editor_model="${ARK_CODING_EDITOR_MODEL:-$ark_coding_model}"
+    cat >>"$ENV_FILE" <<EOF
+export BESTSELLER__LLM__PLANNER__MODEL='openai/${ark_coding_planner_model}'
+export BESTSELLER__LLM__PLANNER__API_BASE='${ark_coding_api_base}'
+export BESTSELLER__LLM__PLANNER__API_KEY_ENV='${VOLCENGINE_KEY_ENV_NAME}'
+export BESTSELLER__LLM__WRITER__MODEL='openai/${ark_coding_writer_model}'
+export BESTSELLER__LLM__WRITER__MODEL_OVERRIDE='openai/${ark_coding_writer_override}'
+export BESTSELLER__LLM__WRITER__API_BASE='${ark_coding_api_base}'
+export BESTSELLER__LLM__WRITER__API_KEY_ENV='${VOLCENGINE_KEY_ENV_NAME}'
+export BESTSELLER__LLM__WRITER__STREAM='false'
+export BESTSELLER__LLM__CRITIC__MODEL='openai/${ark_coding_critic_model}'
+export BESTSELLER__LLM__CRITIC__API_BASE='${ark_coding_api_base}'
+export BESTSELLER__LLM__CRITIC__API_KEY_ENV='${VOLCENGINE_KEY_ENV_NAME}'
+export BESTSELLER__LLM__SUMMARIZER__MODEL='openai/${ark_coding_summarizer_model}'
+export BESTSELLER__LLM__SUMMARIZER__API_BASE='${ark_coding_api_base}'
+export BESTSELLER__LLM__SUMMARIZER__API_KEY_ENV='${VOLCENGINE_KEY_ENV_NAME}'
+export BESTSELLER__LLM__EDITOR__MODEL='openai/${ark_coding_editor_model}'
+export BESTSELLER__LLM__EDITOR__API_BASE='${ark_coding_api_base}'
+export BESTSELLER__LLM__EDITOR__API_KEY_ENV='${VOLCENGINE_KEY_ENV_NAME}'
 EOF
   fi
 }

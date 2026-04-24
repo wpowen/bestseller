@@ -81,11 +81,13 @@ _CTRL_CHARS_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 
 _EXTRACTION_SYSTEM_PROMPT = (
     "你是小说连续性事实抽取器。你的任务是读完本章正文和上一章末的事实状态，"
-    "输出【严格 JSON】，列出本章结束时所有可枚举的硬事实。\n\n"
+    "输出【严格 JSON】，列出本章结束时所有可枚举的硬事实，以及本章在故事时间线上的锚点。\n\n"
     "硬事实包括：倒计时时间、人物等级/修为/境界、具名资源/物品计数、关键位置、"
     "故事内时间点、可度量距离。\n\n"
     "JSON 格式（严格遵守）：\n"
     "{\n"
+    "  \"time_anchor\": \"末世第 4 天 清晨\",\n"
+    "  \"chapter_time_span\": \"约 3 小时\",\n"
     "  \"facts\": [\n"
     "    {\n"
     "      \"name\": \"末日倒计时\",\n"
@@ -103,12 +105,17 @@ _EXTRACTION_SYSTEM_PROMPT = (
     "2. value 统一用字符串（包含数字）——JSON 数字和字符串都能，但必须避免歧义。\n"
     "3. 只抽取**本章正文里明确提到**的硬事实，不得编造、推测、补全。\n"
     "4. 不要输出 Markdown、解释、注释或任何非 JSON 内容。直接以 `{` 开头，以 `}` 结尾。\n"
-    "5. 如果本章没有任何可枚举硬事实，返回 `{\"facts\": []}`。\n"
+    "5. 如果本章没有任何可枚举硬事实，返回 `{\"facts\": []}`（time_anchor / chapter_time_span 仍需尽力填写）。\n"
     "6. 如果某条事实在上一章已经出现且本章未变化，**仍要列出**（标注 notes=\"无变化\"），便于下一章继续约束。\n"
     "7. 对 kind=level 的事实（修为/等级/境界），值只能单调递增。如果你发现本章值比上一章低，"
     "在 notes 中标注 `regression=true` 并说明原因。\n"
     "8. 对 kind=countdown 的事实，值只能单调递减。如果倒计时重置了，在 notes 中标注 `reset=true`。\n"
-    "9. 必须抽取一条 kind=elapsed_story_time 的事实，记录本章故事内经过的时间（如 \"3小时\"、\"1天\"、\"数分钟\"）。"
+    "9. 必须抽取一条 kind=elapsed_story_time 的事实，记录本章故事内经过的时间（如 \"3小时\"、\"1天\"、\"数分钟\"）。\n"
+    "10. time_anchor 字段：本章开始时的故事内时间点，格式推荐 `末世第 N 天 清晨/上午/下午/傍晚/晚上` 或 `Day N dawn/morning/noon/afternoon/evening/night`。"
+    "如果本章为回忆/倒叙/闪回，**必须**在 time_anchor 中包含关键字 `flashback` 或 `回忆`。\n"
+    "11. chapter_time_span 字段：本章故事内经过的时间跨度（如 `约 3 小时`、`半天`、`一整天`、`数分钟`）。"
+    "可以与步骤 9 的 elapsed_story_time 事实保持一致。\n"
+    "12. 若本章实在无法判断 time_anchor（例如纯内心独白、梦境），返回 null；不得编造。"
 )
 
 
@@ -140,13 +147,15 @@ def _build_extraction_user_prompt(
     )
 
 
-def _parse_extraction_payload(raw: str) -> tuple[list[HardFactContext], str | None]:
-    """Return (facts, error).
+def _parse_extraction_payload(
+    raw: str,
+) -> tuple[list[HardFactContext], str | None, str | None, str | None]:
+    """Return (facts, time_anchor, chapter_time_span, error).
 
     Tolerant parser: accepts fenced JSON, bare JSON, or leading/trailing text.
     """
     if not raw or not raw.strip():
-        return [], "empty_response"
+        return [], None, None, "empty_response"
 
     candidate: str | None = None
 
@@ -159,7 +168,7 @@ def _parse_extraction_payload(raw: str) -> tuple[list[HardFactContext], str | No
             candidate = bare.group(0)
 
     if candidate is None:
-        return [], "no_json_object_found"
+        return [], None, None, "no_json_object_found"
 
     # LLMs occasionally emit raw control characters (``\n``, ``\t``) inside
     # JSON string values — strict mode rejects them with
@@ -176,16 +185,16 @@ def _parse_extraction_payload(raw: str) -> tuple[list[HardFactContext], str | No
             try:
                 payload = json.loads(sanitized, strict=False)
             except json.JSONDecodeError as retry_exc:
-                return [], f"json_decode_error:{retry_exc.msg}"
+                return [], None, None, f"json_decode_error:{retry_exc.msg}"
         else:
-            return [], f"json_decode_error:{exc.msg}"
+            return [], None, None, f"json_decode_error:{exc.msg}"
 
     if not isinstance(payload, dict):
-        return [], "payload_not_object"
+        return [], None, None, "payload_not_object"
 
     raw_facts = payload.get("facts")
     if not isinstance(raw_facts, list):
-        return [], "missing_facts_list"
+        return [], None, None, "missing_facts_list"
 
     facts: list[HardFactContext] = []
     for entry in raw_facts:
@@ -212,7 +221,10 @@ def _parse_extraction_payload(raw: str) -> tuple[list[HardFactContext], str | No
             )
         )
 
-    return facts, None
+    time_anchor = _optional_str(payload.get("time_anchor"))
+    chapter_time_span = _optional_str(payload.get("chapter_time_span"))
+
+    return facts, time_anchor, chapter_time_span, None
 
 
 def _optional_str(raw: Any) -> str | None:
@@ -268,6 +280,8 @@ async def load_previous_chapter_snapshot(
     return ChapterStateSnapshotContext(
         chapter_number=row.chapter_number,
         facts=facts,
+        time_anchor=row.time_anchor,
+        chapter_time_span=row.chapter_time_span,
     )
 
 
@@ -324,7 +338,7 @@ async def extract_chapter_state_snapshot(
     )
 
     raw = completion.content or ""
-    facts, error = _parse_extraction_payload(raw)
+    facts, time_anchor, chapter_time_span, error = _parse_extraction_payload(raw)
     # Defensive truncation: older deployments still have the VARCHAR(32)
     # column (migration 0015 widens it to TEXT). Cap at 120 chars so a long
     # composite error like ``failed:json_decode_error:Invalid control character at``
@@ -362,6 +376,8 @@ async def extract_chapter_state_snapshot(
             raw_extraction=raw[:8000] if raw else None,
             extraction_model=completion.model_name,
             extraction_status=extraction_status,
+            time_anchor=time_anchor,
+            chapter_time_span=chapter_time_span,
         )
         session.add(snapshot)
     else:
@@ -369,6 +385,8 @@ async def extract_chapter_state_snapshot(
         existing.raw_extraction = raw[:8000] if raw else None
         existing.extraction_model = completion.model_name
         existing.extraction_status = extraction_status
+        existing.time_anchor = time_anchor
+        existing.chapter_time_span = chapter_time_span
         snapshot = existing
 
     await session.flush()

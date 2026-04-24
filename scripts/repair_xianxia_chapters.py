@@ -457,24 +457,85 @@ async def create_foreshadow_tasks(
 async def execute_rewrites(
     session: AsyncSession,
     settings: Any,
-    project_slug: str,
+    project: ProjectModel,
     limit: int | None = None,
 ) -> dict[str, int]:
-    """Execute pending rewrite tasks using the existing repair pipeline."""
-    from bestseller.services.repair import run_project_repair  # noqa: PLC0415
-
-    result = await run_project_repair(
-        session,
-        settings,
-        project_slug,
-        requested_by="repair_xianxia_chapters",
-        refresh_impacts=False,
-        export_markdown=True,
+    """Execute only OUR repair tasks (tagged with repair_source=repair_xianxia_chapters)."""
+    tasks_q = (
+        select(RewriteTaskModel)
+        .where(
+            RewriteTaskModel.project_id == project.id,
+            RewriteTaskModel.status.in_(["pending", "queued"]),
+            # Only pick tasks created by this script
+            RewriteTaskModel.metadata_json["repair_source"].as_string()
+            == "repair_xianxia_chapters",
+        )
+        .order_by(RewriteTaskModel.priority.asc(), RewriteTaskModel.created_at.asc())
     )
+    if limit:
+        tasks_q = tasks_q.limit(limit)
+    tasks = list(await session.scalars(tasks_q))
+
+    if not tasks:
+        print("No pending repair tasks from this script found.")
+        return {"chapters_attempted": 0, "chapters_succeeded": 0, "chapters_failed": 0}
+
+    print(f"  Executing {len(tasks)} repair task(s)...")
+    attempted = succeeded = failed = 0
+    for task in tasks:
+        if task.trigger_source_id is None:
+            continue
+        ch_num_row = await session.scalar(
+            text("SELECT chapter_number FROM chapters WHERE id = :cid"),
+            {"cid": str(task.trigger_source_id)},
+        )
+        if ch_num_row is None:
+            logger.warning("Could not resolve chapter for task %s", task.id)
+            continue
+
+        chapter_number = int(ch_num_row)
+        task.status = "queued"
+        await session.flush()
+
+        attempted += 1
+        print(
+            f"  [{attempted}/{len(tasks)}] ch{chapter_number} [{task.trigger_type}]...",
+            end=" ", flush=True,
+        )
+        try:
+            from bestseller.services.reviews import rewrite_chapter_from_task  # noqa: PLC0415
+            draft, _task = await rewrite_chapter_from_task(
+                session,
+                project_slug=project.slug,
+                chapter_number=chapter_number,
+                rewrite_task_id=task.id,
+                settings=settings,
+            )
+            task.status = "completed"
+            await session.flush()
+            print(f"✓ ({len(draft.content_md):,} chars)")
+            succeeded += 1
+        except Exception as exc:
+            # Roll back only the failed write; keep the session usable
+            try:
+                await session.rollback()
+            except Exception:
+                pass
+            task.status = "failed"
+            task.error_log = str(exc)[:500]
+            task.attempts += 1
+            try:
+                await session.flush()
+            except Exception:
+                pass
+            print(f"✗ {exc!s:.80}")
+            logger.error("Rewrite failed ch%d: %s", chapter_number, exc)
+            failed += 1
+
     return {
-        "chapters_attempted": result.chapters_attempted,
-        "chapters_succeeded": result.chapters_succeeded,
-        "chapters_failed": result.chapters_failed,
+        "chapters_attempted": attempted,
+        "chapters_succeeded": succeeded,
+        "chapters_failed": failed,
     }
 
 
@@ -567,6 +628,7 @@ async def run(
     dry_run: bool,
     create_tasks: bool,
     execute: bool,
+    execute_only: bool,
     limit: int | None,
     foreshadow_only: bool,
     violation_only: bool,
@@ -581,6 +643,19 @@ async def run(
 
         print(f"Project: 《{project.title}》 ({PROJECT_SLUG})")
         print()
+
+        # ── Execute-only: skip task creation, run Phase 3 on existing pending tasks ──
+        if execute_only:
+            print("Phase 3 (execute-only): Executing existing pending repair tasks...")
+            stats = await execute_rewrites(
+                session, settings, project, limit=limit
+            )
+            print(
+                f"\nRepair complete: {stats['chapters_succeeded']} succeeded, "
+                f"{stats['chapters_failed']} failed "
+                f"(of {stats['chapters_attempted']} attempted)"
+            )
+            return
 
         total_tasks_created = 0
 
@@ -615,29 +690,11 @@ async def run(
         print(f"\nTotal new tasks queued: {total_tasks_created}")
 
         # ── Phase 3: Execute ──
-        if execute and total_tasks_created > 0 or (execute and limit):
+        if execute:
             print("\nPhase 3: Executing rewrites (LLM calls)...")
-            if limit:
-                stats = await execute_rewrites_limited(
-                    session, settings, project, limit=limit
-                )
-            else:
-                stats = await execute_rewrites(session, settings, PROJECT_SLUG)
-
-            print(
-                f"\nRepair complete: {stats['chapters_succeeded']} succeeded, "
-                f"{stats['chapters_failed']} failed "
-                f"(of {stats['chapters_attempted']} attempted)"
+            stats = await execute_rewrites(
+                session, settings, project, limit=limit
             )
-        elif execute:
-            # No new tasks, but there might be existing pending ones
-            print("\nPhase 3: Executing any existing pending tasks...")
-            if limit:
-                stats = await execute_rewrites_limited(
-                    session, settings, project, limit=limit
-                )
-            else:
-                stats = await execute_rewrites(session, settings, PROJECT_SLUG)
             print(
                 f"\nRepair complete: {stats['chapters_succeeded']} succeeded, "
                 f"{stats['chapters_failed']} failed "
@@ -658,14 +715,15 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--dry-run", action="store_true", help="Show what would be done, no DB writes")
     parser.add_argument("--create-tasks", action="store_true", help="Create rewrite tasks in DB but don't call LLM")
     parser.add_argument("--execute", action="store_true", help="Create tasks + call LLM rewriter")
+    parser.add_argument("--execute-only", action="store_true", help="Skip task creation; run LLM on existing pending tasks")
     parser.add_argument("--limit", type=int, default=None, metavar="N", help="Max chapters to rewrite per run")
     parser.add_argument("--foreshadow-only", action="store_true", help="Only do foreshadowing tasks")
     parser.add_argument("--violation-only", action="store_true", help="Only do dead-character violation tasks")
     args = parser.parse_args(argv)
 
-    if not (args.dry_run or args.create_tasks or args.execute):
+    if not (args.dry_run or args.create_tasks or args.execute or args.execute_only):
         parser.print_help()
-        print("\nError: specify one of --dry-run, --create-tasks, or --execute", file=sys.stderr)
+        print("\nError: specify one of --dry-run, --create-tasks, --execute, or --execute-only", file=sys.stderr)
         sys.exit(1)
 
     asyncio.run(
@@ -673,6 +731,7 @@ def main(argv: list[str] | None = None) -> None:
             dry_run=args.dry_run,
             create_tasks=args.create_tasks,
             execute=args.execute,
+            execute_only=args.execute_only,
             limit=args.limit,
             foreshadow_only=args.foreshadow_only,
             violation_only=args.violation_only,

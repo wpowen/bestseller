@@ -27,8 +27,21 @@ from bestseller.services.audit_loop import (
     build_phase1_audit,
     run_and_persist_audit,
 )
+from bestseller.services.chase_debt_ledger import ChaseDebtLedger
+from bestseller.services.narrative_line_tracker import (
+    classify_chapter as classify_chapter_lines,
+    persist_history as persist_line_history,
+    report_gaps as report_line_gaps,
+)
+from bestseller.services.quality_gates_config import get_quality_gates_config
 from bestseller.services.context import build_scene_writer_context_from_models
-from bestseller.services.continuity import extract_chapter_state_snapshot, validate_fact_monotonicity
+from bestseller.services.continuity import (
+    check_countdown_arithmetic,
+    check_time_regression,
+    extract_chapter_state_snapshot,
+    load_previous_chapter_snapshot,
+    validate_fact_monotonicity,
+)
 from bestseller.services.drafts import assemble_chapter_draft, generate_scene_draft
 from bestseller.services.exports import export_chapter_markdown, export_project_markdown
 from bestseller.services.scorecard import compute_scorecard, save_scorecard
@@ -125,6 +138,140 @@ def _collect_output_files(output_dir: Path) -> list[str]:
         for path in sorted(output_dir.iterdir(), key=lambda item: item.name)
         if path.is_file()
     ]
+
+
+# Process-local ledger cache. Once a DB-backed ``ChaseDebtLedger`` lands we
+# can replace this with a repository, but until then in-memory state shared
+# across the workflow run is enough to exercise the accrual path end-to-end.
+_CHASE_DEBT_LEDGER: ChaseDebtLedger | None = None
+
+
+def _get_chase_debt_ledger() -> ChaseDebtLedger:
+    global _CHASE_DEBT_LEDGER
+    if _CHASE_DEBT_LEDGER is None:
+        _CHASE_DEBT_LEDGER = ChaseDebtLedger()
+    return _CHASE_DEBT_LEDGER
+
+
+async def _apply_post_chapter_phase_b(
+    *,
+    session: AsyncSession,
+    project: ProjectModel,
+    chapter: ChapterModel,
+    chapter_md: str,
+) -> None:
+    """Run Phase B1+B2 classification and persist history.
+
+    Controlled by ``phase_b_line_tracker.enabled`` in
+    ``config/quality_gates.yaml``. A no-op when the flag is off; safe to
+    call unconditionally from pipeline hooks.
+    """
+
+    try:
+        cfg = get_quality_gates_config()
+        if not cfg.phase_b.enabled:
+            return
+        language = getattr(project, "language", None) or "zh-CN"
+        classification = classify_chapter_lines(
+            chapter_md or "",
+            chapter_no=chapter.chapter_number,
+            language=language,
+        )
+        chapter.dominant_line = classification.dominant_line
+        chapter.support_lines = list(classification.support_lines) or None
+        chapter.line_intensity = (
+            float(classification.line_intensity)
+            if classification.line_intensity
+            else None
+        )
+        project.metadata_json = persist_line_history(
+            project.metadata_json,
+            classification,
+        )
+        logger.info(
+            "Phase B ch%d classified dominant=%s intensity=%.2f",
+            chapter.chapter_number,
+            classification.dominant_line,
+            classification.line_intensity,
+        )
+    except Exception:  # noqa: BLE001 — Phase B is advisory, never fail a chapter.
+        logger.debug("Phase B classification failed (non-fatal)", exc_info=True)
+
+
+async def _apply_post_chapter_phase_c(
+    *,
+    project_id: UUID,
+    chapter_number: int,
+) -> None:
+    """Run Phase C3 ledger interest accrual for the chapter tick.
+
+    Controlled by ``phase_c_overrides.enabled``. In-memory ledger until a
+    DB-backed model lands; the accrual path is idempotent per chapter so
+    repeated calls for the same ``current_chapter`` are safe.
+    """
+
+    try:
+        cfg = get_quality_gates_config()
+        if not cfg.phase_c.enabled:
+            return
+        ledger = _get_chase_debt_ledger()
+        touched = ledger.accrue_interest(str(project_id), chapter_number)
+        if touched:
+            logger.info(
+                "Phase C accrued interest on %d debt(s) at ch%d",
+                touched,
+                chapter_number,
+            )
+    except Exception:  # noqa: BLE001
+        logger.debug("Phase C accrual failed (non-fatal)", exc_info=True)
+
+
+async def _collect_phase_d_reports(
+    *,
+    session: AsyncSession,
+    project_id: UUID,
+    chapter_number: int,
+    snapshot: ChapterStateSnapshotModel | None,
+) -> list[Any]:
+    """Return Phase D3 ``CheckerReport`` envelopes for the just-finalized chapter.
+
+    Controlled by ``phase_d_time.enabled``; returns an empty list when the
+    flag is off. ``snapshot`` is the row we just persisted — we load the
+    previous chapter's snapshot and run the two pure validators against
+    the pair. Errors are logged and swallowed.
+    """
+
+    try:
+        cfg = get_quality_gates_config()
+        if not cfg.phase_d.enabled or snapshot is None:
+            return []
+        from bestseller.domain.context import (
+            ChapterStateSnapshotContext as _Ctx,
+        )
+        from bestseller.services.continuity import (
+            _facts_from_storage as _facts_from,
+        )
+
+        cur_ctx = _Ctx(
+            chapter_number=snapshot.chapter_number,
+            facts=_facts_from(snapshot.facts),
+            time_anchor=snapshot.time_anchor,
+            chapter_time_span=snapshot.chapter_time_span,
+        )
+        prev_ctx = await load_previous_chapter_snapshot(
+            session,
+            project_id=project_id,
+            current_chapter_number=chapter_number,
+        )
+        reports: list[Any] = []
+        if cfg.phase_d.countdown_arithmetic_enabled:
+            reports.append(check_countdown_arithmetic(cur_ctx, prev_ctx))
+        if cfg.phase_d.regression_check_enabled:
+            reports.append(check_time_regression(cur_ctx, prev_ctx))
+        return reports
+    except Exception:  # noqa: BLE001
+        logger.debug("Phase D validators failed (non-fatal)", exc_info=True)
+        return []
 
 
 def _emit_progress(
@@ -2041,6 +2188,33 @@ async def run_chapter_pipeline(
                         chapter_md=chapter_draft.content_md,
                         workflow_run_id=workflow_run.id,
                     )
+                    # Phase B — classify + persist dominance history.
+                    await _apply_post_chapter_phase_b(
+                        session=session,
+                        project=project,
+                        chapter=chapter,
+                        chapter_md=chapter_draft.content_md or "",
+                    )
+                    # Phase C — accrue interest on any outstanding debts.
+                    await _apply_post_chapter_phase_c(
+                        project_id=project.id,
+                        chapter_number=chapter.chapter_number,
+                    )
+                    # Phase D — run countdown / time-regression validators.
+                    phase_d_reports = await _collect_phase_d_reports(
+                        session=session,
+                        project_id=project.id,
+                        chapter_number=chapter.chapter_number,
+                        snapshot=snapshot,
+                    )
+                    for _pd_report in phase_d_reports:
+                        if not _pd_report.passed:
+                            logger.warning(
+                                "Phase D ch%d %s: %s",
+                                chapter.chapter_number,
+                                _pd_report.agent,
+                                _pd_report.summary,
+                            )
                     # Validate monotonic facts against previous chapter
                     if snapshot is not None and snapshot.facts:
                         from bestseller.domain.context import HardFactContext as _HFC
@@ -2266,7 +2440,7 @@ async def run_chapter_pipeline(
                 # transaction shared across the rest of the chapter loop.
                 try:
                     async with session.begin_nested():
-                        await extract_chapter_state_snapshot(
+                        _snapshot_row = await extract_chapter_state_snapshot(
                             session,
                             settings,
                             project_id=project.id,
@@ -2274,6 +2448,33 @@ async def run_chapter_pipeline(
                             chapter_md=chapter_draft.content_md,
                             workflow_run_id=workflow_run.id,
                         )
+                        # Phase B — classify + persist dominance history.
+                        await _apply_post_chapter_phase_b(
+                            session=session,
+                            project=project,
+                            chapter=chapter,
+                            chapter_md=chapter_draft.content_md or "",
+                        )
+                        # Phase C — accrue interest on outstanding debts.
+                        await _apply_post_chapter_phase_c(
+                            project_id=project.id,
+                            chapter_number=chapter.chapter_number,
+                        )
+                        # Phase D — run countdown / time-regression validators.
+                        _phase_d_reports = await _collect_phase_d_reports(
+                            session=session,
+                            project_id=project.id,
+                            chapter_number=chapter.chapter_number,
+                            snapshot=_snapshot_row,
+                        )
+                        for _pd_report in _phase_d_reports:
+                            if not _pd_report.passed:
+                                logger.warning(
+                                    "Phase D ch%d %s: %s",
+                                    chapter.chapter_number,
+                                    _pd_report.agent,
+                                    _pd_report.summary,
+                                )
                 except Exception as exc:  # noqa: BLE001
                     logger.warning(
                         "Chapter %d hard-fact extraction failed (non-fatal): %s",

@@ -1222,6 +1222,72 @@ def canon_list(
     asyncio.run(_run())
 
 
+@timeline_app.command("export")
+def timeline_export(
+    project_slug: str,
+    volume: int = typer.Option(
+        ...,
+        "--volume",
+        min=1,
+        help="Volume number whose timeline markdown will be exported.",
+    ),
+    output: Path | None = typer.Option(
+        None,
+        "--output",
+        help=(
+            "Output markdown path. Defaults to "
+            "``大纲/第{volume}卷-时间线.md`` under the project's working tree."
+        ),
+    ),
+) -> None:
+    """Export a volume's time-anchor + countdown timeline as markdown.
+
+    Reads each chapter's persisted ``ChapterStateSnapshotModel.time_anchor``
+    /``chapter_time_span`` + every ``countdown``-kind ``HardFact`` from the
+    snapshot, then renders a stable, diff-friendly markdown table per
+    chapter. Useful for authors validating D-n → D-(n-1) progression and
+    for catching time-anchor regressions Phase D's validators may have
+    missed.
+    """
+
+    from bestseller.services.story_bible import render_volume_timeline
+
+    async def _run() -> None:
+        settings = load_settings()
+        async with session_scope(settings) as session:
+            project = await get_project_by_slug(session, project_slug)
+            if project is None:
+                typer.echo(
+                    json.dumps(
+                        {"status": "error", "message": f"project {project_slug!r} not found"},
+                        ensure_ascii=False,
+                    )
+                )
+                raise typer.Exit(code=1)
+            body = await render_volume_timeline(
+                session,
+                project_id=project.id,
+                volume_number=int(volume),
+            )
+        target_path = output or Path("大纲") / f"第{int(volume)}卷-时间线.md"
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+        target_path.write_text(body, encoding="utf-8")
+        typer.echo(
+            json.dumps(
+                {
+                    "status": "ok",
+                    "project": project_slug,
+                    "volume": int(volume),
+                    "output": str(target_path),
+                    "bytes": len(body.encode("utf-8")),
+                },
+                ensure_ascii=False,
+            )
+        )
+
+    asyncio.run(_run())
+
+
 @timeline_app.command("list")
 def timeline_list(
     project_slug: str,

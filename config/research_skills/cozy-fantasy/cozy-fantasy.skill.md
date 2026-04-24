@@ -9,8 +9,6 @@ description: >
 matches_genres:
   - 种田
   - 田园
-  - 修仙
-  - 仙侠
   - cozy
   - cozy-fantasy
   - farming

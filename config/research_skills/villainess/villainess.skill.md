@@ -7,8 +7,6 @@ description: >
   拆解元小说意识、命运改写逻辑和反派视角的调研指导。
 matches_genres:
   - 穿书
-  - 穿越
-  - 重生
   - 乙女游戏
   - 反派千金
   - villainess

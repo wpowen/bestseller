@@ -47,6 +47,7 @@ from bestseller.services.consistency import (
 from bestseller.services.knowledge import propagate_scene_discoveries, refresh_scene_knowledge
 from bestseller.services.planner import generate_foundation_plan, generate_novel_plan, generate_volume_plan
 from bestseller.services.projects import create_project, get_project_by_slug, import_planning_artifact, load_json_file
+from bestseller.services.query_broker import run_scene_query_brief
 from bestseller.services.reviews import (
     review_chapter_draft,
     review_scene_draft,
@@ -64,7 +65,15 @@ from bestseller.services.workflows import (
     materialize_latest_story_bible,
 )
 from bestseller.services.summarization import compress_knowledge_window
+from bestseller.services.truth_version import assert_truth_materializations_fresh
 from bestseller.services.voice_drift import check_all_pov_voice_drift
+from bestseller.services.write_safety_gate import (
+    WriteSafetyBlockError,
+    assert_no_write_safety_blocks,
+    findings_from_contradiction_result,
+    findings_from_identity_violations,
+    serialize_write_safety_findings,
+)
 from bestseller.services.world_expansion import sync_world_expansion_progress
 from bestseller.settings import AppSettings
 
@@ -296,6 +305,16 @@ async def _ensure_project_invariants(
     logger.info("seeded invariants for project %s", project.slug)
 
 
+async def _enforce_truth_version_guard(
+    session: AsyncSession,
+    settings: AppSettings,
+    project: ProjectModel,
+) -> None:
+    if not getattr(settings.pipeline, "enable_truth_version_guard", True):
+        return
+    await assert_truth_materializations_fresh(session, project)
+
+
 async def _checkpoint_commit(session: AsyncSession) -> None:
     """Commit the current transaction at a pipeline checkpoint.
 
@@ -375,6 +394,7 @@ async def run_scene_pipeline(
         chapter_number,
         scene_number,
     )
+    await _enforce_truth_version_guard(session, settings, project)
 
     # Resume: skip already-complete scenes to avoid re-drafting
     if settings.pipeline.resume_enabled and scene.status == SceneStatus.APPROVED.value:
@@ -906,6 +926,8 @@ async def run_scene_pipeline(
         # ── Pre-scene contradiction check (zero LLM cost) ──
         if settings.pipeline.enable_contradiction_checks and shared_context is not None:
             try:
+                current_step_name = "pre_scene_contradiction_check"
+                workflow_run.current_step = current_step_name
                 from bestseller.services.contradiction import run_pre_scene_contradiction_checks
 
                 _contradiction_result = await run_pre_scene_contradiction_checks(
@@ -924,6 +946,31 @@ async def run_scene_pipeline(
                     shared_context.contradiction_warnings = [
                         v.message for v in _contradiction_result.violations
                     ] + [w.message for w in _contradiction_result.warnings]
+                _safety_findings = findings_from_contradiction_result(
+                    _contradiction_result,
+                    block_on_violation=getattr(
+                        settings.pipeline,
+                        "contradiction_block_on_violation",
+                        True,
+                    ),
+                )
+                if _safety_findings:
+                    workflow_run.metadata_json = {
+                        **workflow_run.metadata_json,
+                        "blocked_by_write_safety_gate": True,
+                        "write_safety_gate_source": "contradiction",
+                        "write_safety_findings": serialize_write_safety_findings(
+                            _safety_findings
+                        ),
+                    }
+                    assert_no_write_safety_blocks(
+                        _safety_findings,
+                        project_slug=project_slug,
+                        chapter_number=chapter_number,
+                        scene_number=scene_number,
+                    )
+            except WriteSafetyBlockError:
+                raise
             except Exception:
                 logger.warning(
                     "Pre-scene contradiction check failed for ch%d sc%d (non-fatal)",
@@ -1014,6 +1061,41 @@ async def run_scene_pipeline(
             except Exception:
                 logger.debug("Plan-richness gate failed (non-fatal)", exc_info=True)
 
+        if (
+            draft is None
+            and shared_context is not None
+            and getattr(settings.pipeline, "enable_story_query_brief", False)
+        ):
+            try:
+                query_brief = await run_scene_query_brief(
+                    session,
+                    settings,
+                    project=project,
+                    chapter_number=chapter_number,
+                    scene_number=scene_number,
+                    scene_title=scene.title,
+                    scene_type=scene.scene_type,
+                    participants=list(scene.participants or []),
+                    story_purpose=str(scene.purpose.get("story", "") or ""),
+                    emotion_purpose=str(scene.purpose.get("emotion", "") or ""),
+                    context_packet=shared_context,
+                )
+                shared_context.query_brief = query_brief.get("brief")
+                shared_context.query_trace = list(query_brief.get("trace") or [])
+                workflow_run.metadata_json = {
+                    **workflow_run.metadata_json,
+                    "query_brief_rounds": query_brief.get("rounds"),
+                    "query_brief_exit_reason": query_brief.get("exit_reason"),
+                    "query_tool_call_count": len(shared_context.query_trace),
+                }
+            except Exception:
+                logger.warning(
+                    "Scene query brief failed for ch%d sc%d (non-fatal)",
+                    chapter_number,
+                    scene_number,
+                    exc_info=True,
+                )
+
         if draft is None:
             current_step_name = "generate_scene_draft"
             workflow_run.current_step = current_step_name
@@ -1045,6 +1127,8 @@ async def run_scene_pipeline(
         # ── Post-draft identity validation (zero LLM cost) ──
         if draft is not None and draft.content_md:
             try:
+                current_step_name = "post_draft_identity_check"
+                workflow_run.current_step = current_step_name
                 from bestseller.services.identity_guard import (
                     load_identity_registry,
                     validate_scene_text_identity,
@@ -1069,6 +1153,37 @@ async def run_scene_pipeline(
                                 f"[身份违规] {v.character_name}: {v.violation_type} "
                                 f"(expected={v.expected}, found={v.found})"
                             )
+                    _safety_findings = findings_from_identity_violations(
+                        _id_violations,
+                        block_on_violation=getattr(
+                            settings.pipeline,
+                            "identity_block_on_violation",
+                            True,
+                        ),
+                        blocked_severities=getattr(
+                            settings.pipeline,
+                            "identity_block_severities",
+                            ["critical", "major"],
+                        ),
+                    )
+                    if _safety_findings:
+                        scene.status = SceneStatus.NEEDS_REWRITE.value
+                        workflow_run.metadata_json = {
+                            **workflow_run.metadata_json,
+                            "blocked_by_write_safety_gate": True,
+                            "write_safety_gate_source": "identity",
+                            "write_safety_findings": serialize_write_safety_findings(
+                                _safety_findings
+                            ),
+                        }
+                        assert_no_write_safety_blocks(
+                            _safety_findings,
+                            project_slug=project_slug,
+                            chapter_number=chapter_number,
+                            scene_number=scene_number,
+                        )
+            except WriteSafetyBlockError:
+                raise
             except Exception:
                 logger.debug("Post-draft identity check failed (non-fatal)", exc_info=True)
 
@@ -1405,6 +1520,7 @@ async def run_chapter_pipeline(
     project = await get_project_by_slug(session, project_slug)
     if project is None:
         raise ValueError(f"Project '{project_slug}' was not found.")
+    await _enforce_truth_version_guard(session, settings, project)
 
     chapter = await session.scalar(
         select(ChapterModel).where(
@@ -2497,6 +2613,8 @@ async def run_project_pipeline(
                 "node_count": narrative_tree_result.node_count,
             },
         )
+
+    await _enforce_truth_version_guard(session, settings, project)
 
     _emit_progress(
         progress,

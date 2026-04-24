@@ -21,6 +21,12 @@ from bestseller.domain.story_bible import (
     normalize_character_role_label,
 )
 from bestseller.infra.db.models import ChapterModel, ProjectModel, VolumeModel
+from bestseller.services.character_identity_resolver import (
+    canonical_character_key,
+    collect_entry_aliases,
+    merge_character_with_aliases,
+    resolve_character_match,
+)
 from bestseller.services.llm import LLMCompletionRequest, complete_text
 from bestseller.services.planning_context import (
     summarize_book_spec,
@@ -6195,27 +6201,55 @@ def _merge_volume_cast_expansion_into_cast_spec(
         if _non_empty_string(item.get("name"), "")
     }
 
+    # Primary characters are hoisted up so ``_upsert_character`` can
+    # cross-check before creating a supporting-cast duplicate of the
+    # protagonist / antagonist under a variant name.
+    _protagonist_entry = _mapping(merged.get("protagonist"))
+    _antagonist_entry = _mapping(merged.get("antagonist"))
+    primary_characters: dict[str, dict[str, Any]] = {}
+    _protagonist_name = _non_empty_string(_protagonist_entry.get("name"), "")
+    if _protagonist_name:
+        primary_characters[_protagonist_name] = _protagonist_entry
+    _antagonist_name = _non_empty_string(_antagonist_entry.get("name"), "")
+    if _antagonist_name:
+        primary_characters[_antagonist_name] = _antagonist_entry
+
+    def _assign_primary(key: str, value: dict[str, Any]) -> None:
+        primary_characters[key] = value
+        if merged.get("protagonist", {}).get("name") == key:
+            merged["protagonist"] = value
+        elif merged.get("antagonist", {}).get("name") == key:
+            merged["antagonist"] = value
+
     def _upsert_character(raw_value: Any) -> None:
         candidate = _sanitize_new_character_candidate(raw_value)
         name = _non_empty_string(candidate.get("name"), "")
         if not name:
             return
-        existing = supporting_by_name.get(name)
-        if existing is None:
+        # Cross-check primary characters — an LLM-generated "new character"
+        # that canonicalizes to the protagonist / antagonist should fold back
+        # into the primary entry rather than creating a duplicate row.
+        primary_hit = resolve_character_match(candidate, primary_characters)
+        if primary_hit is not None:
+            _assign_primary(
+                primary_hit,
+                merge_character_with_aliases(primary_characters[primary_hit], candidate),
+            )
+            return
+        matched_key = resolve_character_match(candidate, supporting_by_name)
+        if matched_key is None:
             supporting_by_name[name] = candidate
             supporting_cast.append(candidate)
             return
-        supporting_by_name[name] = _merge_mapping_non_empty(existing, candidate)
+        existing = supporting_by_name[matched_key]
+        updated = merge_character_with_aliases(existing, candidate)
+        supporting_by_name[matched_key] = updated
         idx = supporting_cast.index(existing)
-        supporting_cast[idx] = supporting_by_name[name]
+        supporting_cast[idx] = updated
 
     for raw_character in _mapping_list(cast_expansion.get("new_characters")):
         _upsert_character(raw_character)
 
-    primary_characters = {
-        _non_empty_string(_mapping(merged.get("protagonist")).get("name"), ""): _mapping(merged.get("protagonist")),
-        _non_empty_string(_mapping(merged.get("antagonist")).get("name"), ""): _mapping(merged.get("antagonist")),
-    }
     for evolution in _mapping_list(cast_expansion.get("character_evolutions")):
         evo_map = _mapping(evolution)
         name = _non_empty_string(evo_map.get("name") or evo_map.get("character"), "")
@@ -6228,25 +6262,44 @@ def _merge_volume_cast_expansion_into_cast_spec(
                 for key, value in evo_map.items()
                 if key not in {"name", "character"}
             }
-        target = primary_characters.get(name) or supporting_by_name.get(name)
-        if target is None:
+        # Alias-aware lookup so an evolution targeting "三叔" still finds
+        # the "王守真" entry when the two have been linked via aliases.
+        search_probe: dict[str, Any] = {"name": name}
+        if isinstance(evo_map.get("aliases"), (list, str)):
+            search_probe["aliases"] = evo_map["aliases"]
+        primary_hit = resolve_character_match(search_probe, primary_characters)
+        supporting_hit = (
+            None if primary_hit is not None
+            else resolve_character_match(search_probe, supporting_by_name)
+        )
+        if primary_hit is not None:
+            target_key = primary_hit
+            target = primary_characters[primary_hit]
+        elif supporting_hit is not None:
+            target_key = supporting_hit
+            target = supporting_by_name[supporting_hit]
+        else:
             _upsert_character({"name": name, **changes})
             continue
-        allow_role_change = name not in primary_characters
+        allow_role_change = target_key not in primary_characters
         sanitized_changes = _sanitize_character_evolution_changes(
             target,
             changes,
             allow_role_change=allow_role_change,
         )
         merged_target = _merge_mapping_non_empty(target, sanitized_changes)
-        if name == primary_characters.get(name, {}).get("name"):
-            if merged.get("protagonist", {}).get("name") == name:
-                merged["protagonist"] = merged_target
-            elif merged.get("antagonist", {}).get("name") == name:
-                merged["antagonist"] = merged_target
-        elif name in supporting_by_name:
-            idx = supporting_cast.index(supporting_by_name[name])
-            supporting_by_name[name] = merged_target
+        # If the evolution arrived under an alias (name != target_key), also
+        # fold the alias into the merged entry's alias list.
+        if name and name != target_key:
+            _aliases = list(collect_entry_aliases(merged_target))
+            if name not in _aliases:
+                _aliases.append(name)
+                merged_target["aliases"] = _aliases
+        if target_key in primary_characters:
+            _assign_primary(target_key, merged_target)
+        else:
+            idx = supporting_cast.index(target)
+            supporting_by_name[target_key] = merged_target
             supporting_cast[idx] = merged_target
 
     merged["supporting_cast"] = supporting_cast

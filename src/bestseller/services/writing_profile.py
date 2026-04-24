@@ -17,6 +17,7 @@ from bestseller.services.prompt_packs import (
     render_prompt_pack_prompt_block,
     resolve_prompt_pack,
 )
+from bestseller.services.truth_version import initialize_truth_metadata
 from bestseller.services.writing_presets import get_platform_preset, infer_genre_preset
 
 
@@ -352,7 +353,7 @@ def resolve_project_create_writing_profile(payload: ProjectCreate) -> WritingPro
 
 
 def build_project_metadata(payload: ProjectCreate, writing_profile: WritingProfile) -> dict[str, Any]:
-    metadata = dict(payload.metadata)
+    metadata = initialize_truth_metadata(payload.metadata)
     metadata["writing_profile"] = writing_profile.model_dump(mode="json")
     metadata.setdefault("platform_target", writing_profile.market.platform_target)
     metadata.setdefault("reader_promise", writing_profile.market.reader_promise)

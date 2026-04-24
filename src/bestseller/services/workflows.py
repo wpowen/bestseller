@@ -40,6 +40,7 @@ from bestseller.services.story_bible import (
     upsert_volume_plan,
     upsert_world_spec,
 )
+from bestseller.services.truth_version import truth_metadata_for_workflow
 from bestseller.services.world_expansion import refresh_world_expansion_boundaries
 from bestseller.settings import load_settings
 
@@ -223,6 +224,7 @@ async def materialize_chapter_outline_batch(
         requested_by=requested_by,
         current_step="validate_outline_batch",
         metadata={
+            **truth_metadata_for_workflow(project),
             "batch_name": batch.batch_name,
             "chapter_count": len(batch.chapters),
             "source_artifact_id": str(source_artifact_id) if source_artifact_id else None,
@@ -447,6 +449,7 @@ async def materialize_chapter_outline_batch(
         workflow_run.status = WorkflowStatus.COMPLETED.value
         workflow_run.metadata_json = {
             **workflow_run.metadata_json,
+            **truth_metadata_for_workflow(project),
             "chapters_created": chapters_created,
             "scenes_created": scenes_created,
             "chapters_updated": chapters_updated,
@@ -639,6 +642,7 @@ async def materialize_story_bible(
         requested_by=requested_by,
         current_step="load_story_bible",
         metadata={
+            **truth_metadata_for_workflow(project),
             "project_slug": project_slug,
             "applied_artifacts": applied_artifacts,
             "source_artifact_ids": {key: str(value) for key, value in artifact_ids.items()},
@@ -788,6 +792,7 @@ async def materialize_story_bible(
         workflow_run.status = WorkflowStatus.COMPLETED.value
         workflow_run.metadata_json = {
             **workflow_run.metadata_json,
+            **truth_metadata_for_workflow(project),
             **counts,
         }
         await session.flush()
@@ -886,6 +891,7 @@ async def materialize_narrative_graph(
         requested_by=requested_by,
         current_step="load_narrative_sources",
         metadata={
+            **truth_metadata_for_workflow(project),
             "project_slug": project_slug,
             "source_artifact_ids": {key: str(value) for key, value in artifact_ids.items()},
         },
@@ -928,6 +934,7 @@ async def materialize_narrative_graph(
         workflow_run.status = WorkflowStatus.COMPLETED.value
         workflow_run.metadata_json = {
             **workflow_run.metadata_json,
+            **truth_metadata_for_workflow(project),
             **counts,
         }
         await session.flush()

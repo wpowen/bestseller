@@ -109,6 +109,8 @@ class SceneWriterContextPacket(BaseModel):
     retrieval_chunks: list[RetrievedChunk] = Field(default_factory=list)
     hard_fact_snapshot: ChapterStateSnapshotContext | None = None
     contradiction_warnings: list[str] = Field(default_factory=list)
+    query_brief: str | None = None
+    query_trace: list[dict[str, Any]] = Field(default_factory=list)
     participant_knowledge_states: list[dict[str, Any]] = Field(default_factory=list)
     arc_summaries: list[dict[str, Any]] = Field(default_factory=list)
     world_snapshot: dict[str, Any] | None = None

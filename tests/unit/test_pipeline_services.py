@@ -19,12 +19,17 @@ from bestseller.infra.db.models import (
     WorkflowRunModel,
     WorkflowStepRunModel,
 )
+from bestseller.domain.context import SceneWriterContextPacket
+from bestseller.domain.contradiction import ContradictionCheckResult, ContradictionViolation
 from bestseller.domain.knowledge import SceneKnowledgeRefreshResult
 from bestseller.domain.pipeline import ProjectPipelineResult, ProjectRepairResult
+from bestseller.services import contradiction as contradiction_services
 from bestseller.services import drafts as draft_services
 from bestseller.services import exports as export_services
 from bestseller.services import pipelines as pipeline_services
 from bestseller.services import reviews as review_services
+from bestseller.services.truth_version import TruthVersionStaleError
+from bestseller.services.write_safety_gate import WriteSafetyBlockError
 from bestseller.settings import load_settings
 
 
@@ -44,6 +49,17 @@ class FakeSession:
         self.get_map = dict(get_map or {})
         self.added: list[object] = []
         self.executed: list[object] = []
+        self.is_active = True
+
+    def begin_nested(self):
+        class _NoopNestedTransaction:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, tb):
+                return False
+
+        return _NoopNestedTransaction()
 
     def add(self, obj: object) -> None:
         self.added.append(obj)
@@ -146,6 +162,114 @@ def build_style(project_id) -> StyleGuideModel:
         reference_works=[],
         custom_rules=[],
     )
+
+
+@pytest.mark.asyncio
+async def test_run_scene_pipeline_blocks_when_truth_materializations_are_stale(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = build_project()
+    project.metadata_json = {
+        "truth_version": 2,
+        "truth_updated_at": "2026-04-23T00:00:00+00:00",
+        "truth_last_changed_artifact_type": "book_spec",
+        "_truth_artifact_fingerprints": {},
+        "_truth_change_log": [],
+    }
+    chapter = build_chapter(project.id)
+    scene = build_scene(project.id, chapter.id)
+    session = FakeSession(scalar_results=[None, None, None])
+
+    async def fake_load_scene_identifiers(_session, _project_slug, _chapter_number, _scene_number):
+        return project, chapter, scene
+
+    monkeypatch.setattr(
+        pipeline_services,
+        "_load_scene_identifiers",
+        fake_load_scene_identifiers,
+    )
+
+    with pytest.raises(TruthVersionStaleError):
+        await pipeline_services.run_scene_pipeline(
+            session,
+            build_settings(),
+            "my-story",
+            1,
+            1,
+        )
+
+
+@pytest.mark.asyncio
+async def test_run_scene_pipeline_blocks_on_contradiction_violation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = build_project()
+    chapter = build_chapter(project.id)
+    scene = build_scene(project.id, chapter.id)
+    session = FakeSession(scalar_results=[None])
+    settings = build_settings()
+    settings.pipeline.enable_truth_version_guard = False
+    settings.pipeline.enable_contradiction_checks = True
+    settings.pipeline.contradiction_block_on_violation = True
+
+    async def fake_load_scene_identifiers(_session, _project_slug, _chapter_number, _scene_number):
+        return project, chapter, scene
+
+    async def fake_build_context(*args, **kwargs):
+        return SceneWriterContextPacket(
+            project_id=project.id,
+            project_slug=project.slug,
+            chapter_id=chapter.id,
+            scene_id=scene.id,
+            chapter_number=1,
+            scene_number=1,
+            query_text="封港命令",
+        )
+
+    async def fake_run_pre_scene_contradiction_checks(*args, **kwargs):
+        return ContradictionCheckResult(
+            passed=False,
+            violations=[
+                ContradictionViolation(
+                    check_type="knowledge_leak",
+                    severity="error",
+                    message="沈砚不能提前知道血莲印真相",
+                    evidence="reader_knowledge chapter=7",
+                )
+            ],
+            warnings=[],
+            checks_run=1,
+        )
+
+    monkeypatch.setattr(
+        pipeline_services,
+        "_load_scene_identifiers",
+        fake_load_scene_identifiers,
+    )
+    monkeypatch.setattr(
+        pipeline_services,
+        "build_scene_writer_context_from_models",
+        fake_build_context,
+    )
+    monkeypatch.setattr(
+        contradiction_services,
+        "run_pre_scene_contradiction_checks",
+        fake_run_pre_scene_contradiction_checks,
+    )
+
+    with pytest.raises(WriteSafetyBlockError):
+        await pipeline_services.run_scene_pipeline(
+            session,
+            settings,
+            "my-story",
+            1,
+            1,
+        )
+
+    workflow_runs = [obj for obj in session.added if isinstance(obj, WorkflowRunModel)]
+    assert workflow_runs[0].status == "failed"
+    assert workflow_runs[0].metadata_json["blocked_by_write_safety_gate"] is True
+    assert workflow_runs[0].metadata_json["write_safety_gate_source"] == "contradiction"
 
 
 @pytest.mark.asyncio

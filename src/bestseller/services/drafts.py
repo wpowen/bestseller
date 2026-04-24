@@ -2339,6 +2339,7 @@ def build_scene_draft_prompts(
     active_antagonist_plans: list[dict[str, Any]] | None = None,
     hard_fact_snapshot: dict[str, Any] | None = None,
     contradiction_warnings: list[str] | None = None,
+    query_brief: str | None = None,
     participant_knowledge_states: list[dict[str, Any]] | None = None,
     arc_summaries: list[dict[str, Any]] | None = None,
     world_snapshot: dict[str, Any] | None = None,
@@ -2573,6 +2574,13 @@ def build_scene_draft_prompts(
                 f"=== 不得违反以上约束 ===\n\n"
             )
         )
+    _query_brief_line = ""
+    if query_brief:
+        _query_brief_line = (
+            f"=== Active query brief ===\n{query_brief}\n\n"
+            if is_en
+            else f"=== 主动查询补充简报 ===\n{query_brief}\n\n"
+        )
     _knowledge_line = _render_knowledge_state_section(participant_knowledge_states, is_en=is_en)
     if _knowledge_line:
         _knowledge_line += "\n\n"
@@ -2760,6 +2768,7 @@ def build_scene_draft_prompts(
             "methodology_line": _methodology_line,
             "participant_fact_section": participant_fact_section,
             "contradiction_line": _contradiction_line,
+            "query_brief_line": _query_brief_line,
             "identity_line": _identity_line,
             "phrase_avoidance_line": _phrase_avoidance_line,
             "opening_diversity_line": _opening_diversity_line,
@@ -2811,6 +2820,7 @@ def build_scene_draft_prompts(
     _methodology_line = _ctx["methodology_line"]
     participant_fact_section = _ctx["participant_fact_section"]
     _contradiction_line = _ctx["contradiction_line"]
+    _query_brief_line = _ctx["query_brief_line"]
     _identity_line = _ctx["identity_line"]
     _phrase_avoidance_line = _ctx["phrase_avoidance_line"]
     _opening_diversity_line = _ctx["opening_diversity_line"]
@@ -2859,6 +2869,7 @@ def build_scene_draft_prompts(
         user_prompt = (
             f"{_hard_fact_line}"
             f"{_contradiction_line}"
+            f"{_query_brief_line}"
             f"{_reader_contract_line}"
             f"{_hype_constraints_line}"
             f"{_l3_prompt_line}"
@@ -2934,6 +2945,7 @@ def build_scene_draft_prompts(
         user_prompt = (
             f"{_hard_fact_line}"
             f"{_contradiction_line}"
+            f"{_query_brief_line}"
             f"{_reader_contract_line}"
             f"{_hype_constraints_line}"
             f"{_l3_prompt_line}"
@@ -3432,6 +3444,7 @@ async def generate_scene_draft(
             _packet_antagonist_plans(context_packet),
             hard_fact_snapshot=_packet_hard_fact_snapshot(context_packet),
             contradiction_warnings=getattr(context_packet, "contradiction_warnings", None) if context_packet else None,
+            query_brief=(context_packet.query_brief if context_packet else None),
             participant_knowledge_states=getattr(context_packet, "participant_knowledge_states", None) if context_packet else None,
             arc_summaries=getattr(context_packet, "arc_summaries", None) if context_packet else None,
             world_snapshot=getattr(context_packet, "world_snapshot", None) if context_packet else None,
@@ -3711,6 +3724,8 @@ async def generate_scene_draft(
             "antagonist_plan_count": len(_packet_antagonist_plans(context_packet)),
             "tree_context_count": len(_packet_tree_context(context_packet)),
             "retrieval_chunk_count": len(_packet_retrieval_context(context_packet)),
+            "query_brief_used": bool(getattr(context_packet, "query_brief", None)),
+            "query_tool_call_count": len(getattr(context_packet, "query_trace", []) or []),
             "regen_count": int(scene_regen_count),
             # Hype assignment — read by assemble_chapter_draft to stamp the
             # chapter row + register the moment on DiversityBudget.
@@ -3926,6 +3941,53 @@ async def assemble_chapter_draft(
                     else None
                 )
                 break
+        # ── Fallback classifier ───────────────────────────────────────────
+        # Blood-twins' 30/30 NULL-hype-type chapters happened because the
+        # upstream assignment pipeline never stamped ``assigned_hype_type`` on
+        # scene_drafts. Without this fallback the chapter row stays NULL
+        # silently. Read the assembled text, run the hype-engine classifier,
+        # and stamp a best-effort guess so downstream analytics (golden_three
+        # health, diversity budget decay, recipe variety scoring) at least
+        # have *something* to work with. The classifier never raises —
+        # ``None`` is returned when no keyword fires, in which case we stay
+        # NULL (honest signal that the chapter has zero readable payoff).
+        if _hype_type is None and content_md:
+            try:
+                from bestseller.services.hype_engine import (  # noqa: PLC0415
+                    HypeType as _HypeTypeEnum,
+                    classify_hype,
+                )
+
+                _classifier_language = (
+                    str(project.language or "zh-CN") if project is not None else "zh-CN"
+                )
+                _classifier_result = classify_hype(
+                    content_md,
+                    language=_classifier_language,
+                    segment="tail",
+                )
+                if _classifier_result is not None:
+                    _inferred_type, _inferred_confidence = _classifier_result
+                    _hype_type = _inferred_type.value
+                    # No recipe_key is available from the classifier path — it
+                    # was never actually picked by ``plan_chapter_hype``.
+                    _hype_recipe_key = None
+                    # Normalise confidence (0-10) into the 0-1 intensity scale
+                    # the downstream engine uses.
+                    _hype_intensity = max(0.0, min(1.0, float(_inferred_confidence) / 10.0))
+                    logger.info(
+                        "Chapter %d: hype_type fallback-classified as %s "
+                        "(confidence=%.1f) — upstream assignment was missing.",
+                        chapter_number,
+                        _hype_type,
+                        _inferred_confidence,
+                    )
+            except Exception:
+                logger.debug(
+                    "Chapter %d: hype fallback classifier failed (non-fatal)",
+                    chapter_number,
+                    exc_info=True,
+                )
         if _hype_type:
             chapter.hype_type = _hype_type
             chapter.hype_recipe_key = _hype_recipe_key

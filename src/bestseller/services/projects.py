@@ -22,6 +22,7 @@ from bestseller.services.writing_profile import (
     build_project_metadata,
     resolve_project_create_writing_profile,
 )
+from bestseller.services.truth_version import maybe_bump_project_truth_version
 from bestseller.settings import AppSettings
 
 
@@ -302,6 +303,12 @@ async def import_planning_artifact(
         notes=payload.notes,
     )
     session.add(artifact)
+    maybe_bump_project_truth_version(
+        project,
+        artifact_type=payload.artifact_type,
+        content=payload.content,
+        scope_ref_id=payload.scope_ref_id,
+    )
     await session.flush()
     return artifact
 

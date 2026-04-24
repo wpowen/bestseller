@@ -83,6 +83,7 @@ from bestseller.services.publishing.amazon_kdp import (
     validate_amazon_kdp_project,
 )
 from bestseller.services.repair import run_project_repair
+from bestseller.services.project_health import build_project_health_report, repair_project_health
 from bestseller.services.retrieval import refresh_project_retrieval_index, search_project_retrieval
 from bestseller.services.reviews import (
     review_chapter_draft,
@@ -836,6 +837,52 @@ def project_review(project_slug: str) -> None:
                     indent=2,
                 )
             )
+
+    asyncio.run(_run())
+
+
+@project_app.command("health")
+def project_health(project_slug: str) -> None:
+    """Show the project health snapshot: truth staleness, overdue clues, hook reuse, and payoff debt."""
+
+    async def _run() -> None:
+        settings = load_settings()
+        async with session_scope(settings) as session:
+            report = await build_project_health_report(session, settings, project_slug)
+            typer.echo(json.dumps(report, ensure_ascii=False, indent=2))
+
+    asyncio.run(_run())
+
+
+@project_app.command("health-repair")
+def project_health_repair(
+    project_slug: str,
+    requested_by: str = "system",
+    dry_run: bool = typer.Option(
+        True,
+        "--dry-run/--apply",
+        help="Preview actions by default; --apply writes safe materialization repairs.",
+    ),
+    materialize_truth: bool = typer.Option(
+        True,
+        "--materialize-truth/--no-materialize-truth",
+        help="Re-materialize stale story bible, outline, and narrative graph components.",
+    ),
+) -> None:
+    """Plan or apply safe project-health repairs."""
+
+    async def _run() -> None:
+        settings = load_settings()
+        async with session_scope(settings) as session:
+            report = await repair_project_health(
+                session,
+                settings,
+                project_slug,
+                requested_by=requested_by,
+                dry_run=dry_run,
+                materialize_truth=materialize_truth,
+            )
+            typer.echo(json.dumps(report, ensure_ascii=False, indent=2))
 
     asyncio.run(_run())
 

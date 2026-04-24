@@ -19,6 +19,11 @@ import yaml
 from bestseller.services.chapter_validator import (
     CliffhangerRotationCheck,
     DialogIntegrityCheck,
+    EndingSentenceImpactCheck,
+    GoldenThreeChapterCheck,
+    HypeDiversityCheck,
+    HypeOccurrenceCheck,
+    LineGapCheck,
     POVLockCheck,
 )
 from bestseller.services.output_validator import (
@@ -134,6 +139,54 @@ class L8Config:
     enabled: bool = False
 
 
+# ---------------------------------------------------------------------------
+# Phase B/C/D — webnovel-writer adoption flags (plan: shimmying-soaring-gadget).
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class PhaseBLineTrackerConfig:
+    """Phase B — per-chapter dominance classifier + gap validator.
+
+    Controls ``narrative_line_tracker.classify_chapter`` wiring on the
+    finalize-chapter path, plus ``LineGapCheck`` in the chapter validator.
+    """
+
+    enabled: bool = False
+    # Chapters below this threshold stay in audit_only regardless of gap
+    # severity — a project needs history before the gap check is meaningful.
+    warmup_until_chapter: int = 10
+
+
+@dataclass(frozen=True)
+class PhaseCOverridesConfig:
+    """Phase C — Override Contract + Debt Ledger.
+
+    Controls ``chase_debt_ledger`` interest accrual on every chapter tick and
+    the regen-loop fallback that proposes override contracts when per-chapter
+    regen budget is exhausted.
+    """
+
+    enabled: bool = False
+    default_interest_rate: float = 0.10
+    payback_window_default: int = 10
+
+
+@dataclass(frozen=True)
+class PhaseDTimeConfig:
+    """Phase D — Time anchor + countdown validators.
+
+    ``regression_check_enabled`` toggles ``TimeRegressionCheck`` as a soft,
+    overridable validator; ``countdown_arithmetic_enabled`` toggles
+    ``CountdownArithmeticCheck`` as a hard validator. Keep both on once
+    Phase D is opted-in per project.
+    """
+
+    enabled: bool = False
+    regression_check_enabled: bool = True
+    countdown_arithmetic_enabled: bool = True
+
+
 @dataclass(frozen=True)
 class QualityGatesConfig:
     l1_enabled: bool = True
@@ -146,6 +199,9 @@ class QualityGatesConfig:
     l6_gate: GateConfig = DEFAULT_GATE_CONFIG
     l7: L7Config = field(default_factory=L7Config)
     l8: L8Config = field(default_factory=L8Config)
+    phase_b: PhaseBLineTrackerConfig = field(default_factory=PhaseBLineTrackerConfig)
+    phase_c: PhaseCOverridesConfig = field(default_factory=PhaseCOverridesConfig)
+    phase_d: PhaseDTimeConfig = field(default_factory=PhaseDTimeConfig)
 
 
 def _as_dict(payload: Any) -> dict[str, Any]:
@@ -285,6 +341,49 @@ def load_quality_gates_config(
         l8=L8Config(
             enabled=bool(l8.get("enabled", False)),
         ),
+        phase_b=_build_phase_b(_as_dict(raw.get("phase_b_line_tracker"))),
+        phase_c=_build_phase_c(_as_dict(raw.get("phase_c_overrides"))),
+        phase_d=_build_phase_d(_as_dict(raw.get("phase_d_time"))),
+    )
+
+
+def _build_phase_b(raw: dict[str, Any]) -> PhaseBLineTrackerConfig:
+    warmup_raw = raw.get("warmup_until_chapter", 10)
+    try:
+        warmup = int(warmup_raw) if warmup_raw is not None else 10
+    except (TypeError, ValueError):
+        warmup = 10
+    return PhaseBLineTrackerConfig(
+        enabled=bool(raw.get("enabled", False)),
+        warmup_until_chapter=max(0, warmup),
+    )
+
+
+def _build_phase_c(raw: dict[str, Any]) -> PhaseCOverridesConfig:
+    rate_raw = raw.get("default_interest_rate", 0.10)
+    try:
+        rate = float(rate_raw) if rate_raw is not None else 0.10
+    except (TypeError, ValueError):
+        rate = 0.10
+    window_raw = raw.get("payback_window_default", 10)
+    try:
+        window = int(window_raw) if window_raw is not None else 10
+    except (TypeError, ValueError):
+        window = 10
+    return PhaseCOverridesConfig(
+        enabled=bool(raw.get("enabled", False)),
+        default_interest_rate=max(0.0, rate),
+        payback_window_default=max(1, window),
+    )
+
+
+def _build_phase_d(raw: dict[str, Any]) -> PhaseDTimeConfig:
+    return PhaseDTimeConfig(
+        enabled=bool(raw.get("enabled", False)),
+        regression_check_enabled=bool(raw.get("regression_check_enabled", True)),
+        countdown_arithmetic_enabled=bool(
+            raw.get("countdown_arithmetic_enabled", True)
+        ),
     )
 
 
@@ -345,4 +444,15 @@ def build_validator_from_config(cfg: QualityGatesConfig) -> OutputValidator:
             )
         if cfg.l5.cliffhanger_rotation_enabled:
             checks.append(CliffhangerRotationCheck())
+        # Hype engine checks — self-no-op when no hype assignment in ctx, so
+        # legacy projects predating the Phase-2 migration remain unaffected.
+        checks.append(HypeOccurrenceCheck())
+        checks.append(HypeDiversityCheck())
+        checks.append(EndingSentenceImpactCheck())
+        checks.append(GoldenThreeChapterCheck())
+    # Phase B1 — LineGapCheck. Runs whenever the Phase B flag is opted-in;
+    # the check itself no-ops when ``ctx.line_gap_report`` is ``None``, so
+    # projects that haven't populated line history skip the check naturally.
+    if cfg.phase_b.enabled:
+        checks.append(LineGapCheck())
     return OutputValidator(checks)

@@ -11,10 +11,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from bestseller.domain.enums import ChapterStatus, SceneStatus
 from bestseller.domain.context import SceneWriterContextPacket
 from bestseller.infra.db.models import (
+    ChaseDebtModel,
     ChapterDraftVersionModel,
     ChapterModel,
     ChapterQualityReportModel,
     CharacterModel,
+    OverrideContractModel,
     ProjectModel,
     SceneCardModel,
     SceneDraftVersionModel,
@@ -91,6 +93,92 @@ async def _load_character_name_roster(
             "character roster load failed for project %s", project_id, exc_info=True
         )
         return frozenset()
+
+
+async def _auto_sign_override_contracts(
+    session: AsyncSession,
+    *,
+    project_id: UUID,
+    chapter_number: int,
+    blocking_violations: tuple,
+    soft_constraint_codes: frozenset[str],
+    interest_rate: float,
+    payback_window: int,
+) -> int:
+    """Phase C — auto-sign one Override Contract per soft-blocking violation.
+
+    For each violation in ``blocking_violations`` whose ``code`` is present
+    in ``soft_constraint_codes``, persist an ``OverrideContractModel`` row
+    (status=active, rationale=ARC_TIMING) plus a sibling ``ChaseDebtModel``
+    row (principal=1.0, source=override_contract). Returns the number of
+    contract/debt pairs persisted.
+
+    Silent on any single failure; the chapter must never be blocked by a
+    debt-writer crash. When all operations succeed, the gate downstream
+    can treat these blocking violations as resolved for this chapter.
+    """
+
+    from bestseller.services.regen_loop import propose_overrides_from_report
+
+    filtered = QualityReport(violations=tuple(blocking_violations))
+    try:
+        proposals = propose_overrides_from_report(
+            filtered,
+            chapter_no=chapter_number,
+            soft_constraint_codes=soft_constraint_codes,
+            default_rationale_type="ARC_TIMING",
+            payback_window_default=max(1, int(payback_window)),
+        )
+    except Exception:  # pragma: no cover — defensive
+        logger.debug(
+            "propose_overrides_from_report failed for chapter %d",
+            chapter_number,
+            exc_info=True,
+        )
+        return 0
+
+    if not proposals:
+        return 0
+
+    persisted = 0
+    for p in proposals:
+        try:
+            contract_row = OverrideContractModel(
+                project_id=project_id,
+                chapter_no=p.chapter_no,
+                violation_code=p.violation_code,
+                rationale_type=p.suggested_rationale_type,
+                rationale_text=(p.rationale_text or f"自动签署：{p.violation_code}")[:4000],
+                payback_plan=(p.suggested_payback_plan or "自动生成的偿还计划")[:4000],
+                due_chapter=p.suggested_due_chapter,
+                status="active",
+            )
+            session.add(contract_row)
+            await session.flush()
+            debt_row = ChaseDebtModel(
+                project_id=project_id,
+                override_contract_id=contract_row.id,
+                chapter_no=p.chapter_no,
+                violation_code=p.violation_code,
+                source="override_contract",
+                principal=1.0,
+                balance=1.0,
+                interest_rate=float(interest_rate),
+                accrued_through_chapter=p.chapter_no,
+                due_chapter=p.suggested_due_chapter,
+                status="active",
+            )
+            session.add(debt_row)
+            await session.flush()
+            persisted += 1
+        except Exception:  # pragma: no cover — one failure must not poison the batch
+            logger.debug(
+                "override auto-sign persist failed (chapter=%d code=%s)",
+                chapter_number,
+                p.violation_code,
+                exc_info=True,
+            )
+    return persisted
 
 
 async def _evaluate_chapter_quality_gate(
@@ -201,6 +289,37 @@ async def _evaluate_chapter_quality_gate(
             exc_info=True,
         )
 
+    # Phase B1 — populate line_gap_report so LineGapCheck can fire when a
+    # layer has been dormant past its budget. Always computed when Phase B
+    # is enabled; the check itself skips gracefully when the report is None.
+    line_gap_report: Any = None
+    if gates_cfg.phase_b.enabled:
+        try:
+            from bestseller.services.narrative_line_tracker import (
+                load_history as _load_line_history,
+                report_gaps as _report_line_gaps,
+            )
+
+            _history = _load_line_history(project.metadata_json)
+            _genre_id = (
+                (project.metadata_json or {}).get("genre_id")
+                or getattr(project, "genre", None)
+                or "action-progression"
+            )
+            line_gap_report = _report_line_gaps(
+                project_id=str(project.id),
+                current_chapter=chapter_number,
+                history=_history,
+                genre_id=str(_genre_id) if _genre_id else None,
+            )
+        except Exception:  # pragma: no cover — defensive; gap report is advisory
+            logger.debug(
+                "line gap report failed for chapter %d (non-fatal)",
+                chapter_number,
+                exc_info=True,
+            )
+            line_gap_report = None
+
     ctx = ValidationContext(
         invariants=invariants,
         chapter_no=chapter_number,
@@ -210,12 +329,54 @@ async def _evaluate_chapter_quality_gate(
         assigned_hype_type=assigned_hype_type,
         assigned_hype_recipe=assigned_hype_recipe,
         recent_hype_types=recent_hype_types,
+        line_gap_report=line_gap_report,
     )
     report = validator.validate(content, ctx)
 
     blocking = filter_blocking(
         report, gates_cfg.l6_gate, chapter_no=chapter_number
     )
+
+    # ── Phase C1 — auto-sign override contracts for soft blockers ──
+    # When Phase C is enabled and every blocking violation's code lives in
+    # ``invariants.soft_constraint_codes``, persist an OverrideContract +
+    # ChaseDebt pair for each and treat them as resolved for this chapter.
+    # This keeps autonomous runs moving forward while preserving the debt
+    # ledger for later payback accountability.
+    override_autosign_count = 0
+    if (
+        gates_cfg.phase_c.enabled
+        and blocking
+        and invariants.soft_constraint_codes
+        and all(v.code in invariants.soft_constraint_codes for v in blocking)
+    ):
+        try:
+            override_autosign_count = await _auto_sign_override_contracts(
+                session,
+                project_id=project.id,
+                chapter_number=chapter_number,
+                blocking_violations=blocking,
+                soft_constraint_codes=invariants.soft_constraint_codes,
+                interest_rate=gates_cfg.phase_c.default_interest_rate,
+                payback_window=gates_cfg.phase_c.payback_window_default,
+            )
+            if override_autosign_count > 0:
+                logger.info(
+                    "chapter %d: phase_c auto-signed %d override contract(s) "
+                    "for soft blockers (%s)",
+                    chapter_number,
+                    override_autosign_count,
+                    ",".join(v.code for v in blocking),
+                )
+                # Treat these as resolved for this chapter — downstream outcome
+                # logic should no longer treat them as blocking.
+                blocking = tuple()
+        except Exception:  # pragma: no cover — never fail the gate on auto-sign
+            logger.debug(
+                "phase_c auto-sign path errored for chapter %d (non-fatal)",
+                chapter_number,
+                exc_info=True,
+            )
 
     # ── Length-stability gate ──
     # The L4 LengthEnvelopeCheck only fires when invariants.length_envelope

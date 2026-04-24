@@ -124,7 +124,9 @@ class ProjectInvariants:
     # for this (project, chapter, code). Defaults to the narrative-line
     # gap codes since those are the first soft checks shipping.
     soft_constraint_codes: frozenset[str] = field(
-        default_factory=lambda: frozenset({"LINE_GAP_OVER", "LINE_GAP_WARN"})
+        default_factory=lambda: frozenset(
+            {"LINE_GAP_OVER", "LINE_GAP_WARN", "TIME_ANCHOR_REGRESSION"}
+        )
     )
 
 
@@ -169,6 +171,7 @@ def invariants_to_dict(inv: ProjectInvariants) -> dict[str, Any]:
         "forced_methodology_fragments": list(inv.forced_methodology_fragments),
         "antagonist_uniqueness": inv.antagonist_uniqueness,
         "hype_scheme": hype_scheme_to_dict(inv.hype_scheme),
+        "soft_constraint_codes": sorted(inv.soft_constraint_codes),
     }
 
 
@@ -229,6 +232,14 @@ def invariants_from_dict(data: Mapping[str, Any]) -> ProjectInvariants:
         forced_methodology_fragments=tuple(data.get("forced_methodology_fragments") or ()),
         antagonist_uniqueness=bool(data.get("antagonist_uniqueness", True)),
         hype_scheme=hype_scheme_from_dict(data.get("hype_scheme")),
+        soft_constraint_codes=frozenset(
+            str(c)
+            for c in (
+                data.get("soft_constraint_codes")
+                or ["LINE_GAP_OVER", "LINE_GAP_WARN", "TIME_ANCHOR_REGRESSION"]
+            )
+            if c
+        ),
     )
 
 
@@ -384,4 +395,11 @@ def seed_invariants(
         ),
         antagonist_uniqueness=bool(overrides.get("antagonist_uniqueness", True)),
         hype_scheme=hype_scheme,
+        soft_constraint_codes=(
+            frozenset(str(c) for c in overrides.get("soft_constraint_codes") if c)
+            if overrides.get("soft_constraint_codes")
+            else frozenset(
+                {"LINE_GAP_OVER", "LINE_GAP_WARN", "TIME_ANCHOR_REGRESSION"}
+            )
+        ),
     )

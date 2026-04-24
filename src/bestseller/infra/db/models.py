@@ -473,6 +473,12 @@ class ChapterModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     hype_type: Mapped[str | None] = mapped_column(String(32))
     hype_intensity: Mapped[float | None] = mapped_column(Float)
     hype_recipe_key: Mapped[str | None] = mapped_column(String(120))
+    # Phase B1 — per-chapter narrative line dominance. All nullable so
+    # historical chapters remain valid; ``narrative_line_tracker`` fills
+    # these during chapter finalize.
+    dominant_line: Mapped[str | None] = mapped_column(String(32))
+    support_lines: Mapped[JSON_LIST | None] = mapped_column(JSONB)
+    line_intensity: Mapped[float | None] = mapped_column(Float)
     metadata_json: Mapped[JSON_DICT] = mapped_column("metadata", JSONB, nullable=False, default=dict)
 
     scenes: Mapped[list["SceneCardModel"]] = relationship(
@@ -525,6 +531,13 @@ class ChapterStateSnapshotModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         nullable=False,
         server_default=text("'ok'"),
     )
+    # Phase D2 — optional prose time anchor & span extracted from the
+    # chapter. ``continuity.CountdownArithmeticCheck`` and
+    # ``TimeRegressionCheck`` read these to catch timeline jumps that
+    # the structured ``facts`` table can't express (flashback detection,
+    # day-granularity regressions).
+    time_anchor: Mapped[str | None] = mapped_column(Text)
+    chapter_time_span: Mapped[str | None] = mapped_column(Text)
 
 
 class SceneCardModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -1764,6 +1777,9 @@ class DiversityBudgetModel(Base):
     hype_moments: Mapped[JSON_LIST] = mapped_column(
         JSONB, nullable=False, default=list, server_default=text("'[]'::jsonb")
     )
+    title_patterns: Mapped[JSON_DICT] = mapped_column(
+        JSONB, nullable=False, default=dict, server_default=text("'{}'::jsonb")
+    )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=text("NOW()")
     )
@@ -2057,3 +2073,103 @@ class CrossProjectFingerprintModel(Base):
         nullable=False,
         server_default=text("NOW()"),
     )
+
+
+class OverrideContractModel(Base):
+    """Phase C2 — signed soft-constraint waiver.
+
+    Persists an ``OverrideContract`` (see
+    ``bestseller.services.override_contract``). The write gate consults
+    an in-memory projection of the ``active`` rows (via
+    ``OverrideStore.as_lookup``) to downgrade ``block`` → ``audit_only``
+    for the covered chapter window. A sibling ``ChaseDebtModel`` row
+    accrues interest until the author closes the debt.
+    """
+
+    __tablename__ = "override_contracts"
+    __table_args__ = (
+        Index("ix_override_project_status", "project_id", "status"),
+        Index("ix_override_project_chapter", "project_id", "chapter_no"),
+        CheckConstraint(
+            "due_chapter > chapter_no",
+            name="ck_override_due_after_chapter",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+
+    project_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    chapter_no: Mapped[int] = mapped_column(Integer, nullable=False)
+    violation_code: Mapped[str] = mapped_column(String(64), nullable=False)
+    rationale_type: Mapped[str] = mapped_column(String(48), nullable=False)
+    rationale_text: Mapped[str] = mapped_column(Text, nullable=False)
+    payback_plan: Mapped[str] = mapped_column(Text, nullable=False)
+    due_chapter: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(16), nullable=False, server_default=text("'active'")
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("NOW()"),
+    )
+
+
+class ChaseDebtModel(Base):
+    """Phase C3 — interest-accruing debt spawned by an Override Contract.
+
+    Opened when an ``OverrideContract`` is signed; closed when the
+    author writes the promised payback chapter. While active the
+    balance accrues at ``interest_rate`` per chapter
+    (``balance *= 1 + interest_rate``) so a long overdue debt
+    progressively surfaces in the scorecard.
+
+    ``source`` identifies where the debt originated:
+      * ``override_contract`` — paired with an ``OverrideContractModel`` row.
+      * ``setup_payoff`` — legacy setup→payoff promises migrated from
+        ``setup_payoff_tracker``; these carry ``code="PLEASURE_SETUP_PAYOFF_DEBT"``
+        and have ``override_contract_id = NULL``.
+    """
+
+    __tablename__ = "chase_debts"
+    __table_args__ = (
+        Index("ix_debt_project_status", "project_id", "status"),
+        Index("ix_debt_due_chapter", "project_id", "due_chapter"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+
+    project_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    override_contract_id: Mapped[int | None] = mapped_column(
+        BigInteger,
+        ForeignKey("override_contracts.id", ondelete="SET NULL"),
+    )
+    chapter_no: Mapped[int] = mapped_column(Integer, nullable=False)
+    violation_code: Mapped[str] = mapped_column(String(64), nullable=False)
+    source: Mapped[str] = mapped_column(
+        String(32), nullable=False, server_default=text("'override_contract'")
+    )
+    principal: Mapped[float] = mapped_column(Numeric(10, 4), nullable=False)
+    balance: Mapped[float] = mapped_column(Numeric(10, 4), nullable=False)
+    interest_rate: Mapped[float] = mapped_column(
+        Numeric(6, 4), nullable=False, server_default=text("0.10")
+    )
+    accrued_through_chapter: Mapped[int] = mapped_column(Integer, nullable=False)
+    due_chapter: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(16), nullable=False, server_default=text("'active'")
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("NOW()"),
+    )
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

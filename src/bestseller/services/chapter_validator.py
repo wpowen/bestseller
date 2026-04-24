@@ -1046,6 +1046,106 @@ class GoldenThreeChapterCheck:
 
 
 # ---------------------------------------------------------------------------
+# Phase B1 — LineGapCheck (narrative-line dominance rotation).
+# ---------------------------------------------------------------------------
+
+
+_LINE_LABELS_ZH_LOCAL: dict[str, str] = {
+    "overt": "明线",
+    "undercurrent": "暗线",
+    "hidden": "隐藏线",
+    "core_axis": "核心轴",
+}
+
+
+class LineGapCheck:
+    """Fire when a narrative layer has been dormant past its budget.
+
+    This check reads ``ctx.line_gap_report`` (``LineGapReport`` produced
+    by ``narrative_line_tracker.report_gaps``) rather than scanning the
+    draft text; dominance is classified on the *previous* chapters, and
+    this validator's job is to keep the author from writing yet another
+    chapter in a single layer.
+
+    Severity tiers:
+
+    * ``"over"`` gap → ``block`` (critical). Routed through the Phase C
+      Override Contract when the call site registers
+      ``LINE_GAP_OVER`` in ``soft_constraint_codes``; otherwise a hard
+      regen trigger.
+    * ``"warn"`` gap → ``warn``. Never blocks; appears as a soft
+      suggestion the author may act on.
+
+    All outputs pass through ``Violation`` → ``CheckerReport`` via
+    ``QualityReport.as_checker_report`` at the call site so downstream
+    aggregation (scorecard, debt ledger) sees a consistent shape.
+    """
+
+    # Check Protocol requires a ``code`` attribute; emitted violations
+    # still use the tier-specific codes below so write_gate can resolve
+    # modes per-severity.
+    code = "LINE_GAP"
+    code_over = "LINE_GAP_OVER"
+    code_warn = "LINE_GAP_WARN"
+
+    def run(self, text: str, ctx: ValidationContext) -> Iterable[Violation]:
+        report = ctx.line_gap_report
+        if report is None:
+            return []
+        # Duck-type: we only need ``over_gaps`` / ``warn_gaps`` attrs and
+        # iterable ``LineGap``-shaped objects (line_id / current_gap /
+        # threshold / last_dominant_chapter).
+        over = getattr(report, "over_gaps", ()) or ()
+        warn = getattr(report, "warn_gaps", ()) or ()
+        violations: list[Violation] = []
+        chapter_no = ctx.chapter_no or getattr(report, "current_chapter", 0)
+
+        for gap in over:
+            label = _LINE_LABELS_ZH_LOCAL.get(gap.line_id, gap.line_id)
+            last = gap.last_dominant_chapter or 0
+            violations.append(
+                Violation(
+                    code=self.code_over,
+                    severity="block",
+                    location=f"chapter:{chapter_no}:line:{gap.line_id}",
+                    detail=(
+                        f"narrative layer '{gap.line_id}' dormant for "
+                        f"{gap.current_gap} chapters (budget {gap.threshold}); "
+                        f"last dominated at chapter {last}"
+                    ),
+                    prompt_feedback=(
+                        f"{label}已连续 {gap.current_gap} 章未作为主导线"
+                        f"（预算 {gap.threshold} 章，上次主导于第 {last} 章）。"
+                        f"请在本章以 {label} 为主导或底色，让该线重新浮出水面——"
+                        "例如回到该线的关键人物、推进该线的目标或揭示该线相关的线索。"
+                    ),
+                )
+            )
+
+        for gap in warn:
+            label = _LINE_LABELS_ZH_LOCAL.get(gap.line_id, gap.line_id)
+            last = gap.last_dominant_chapter or 0
+            violations.append(
+                Violation(
+                    code=self.code_warn,
+                    severity="warn",
+                    location=f"chapter:{chapter_no}:line:{gap.line_id}",
+                    detail=(
+                        f"narrative layer '{gap.line_id}' near budget "
+                        f"({gap.current_gap}/{gap.threshold})"
+                    ),
+                    prompt_feedback=(
+                        f"{label}距上次主导已 {gap.current_gap} 章"
+                        f"（预算 {gap.threshold} 章）；"
+                        "建议在本章安排一次明显的回归，避免读者感知这条线已被遗忘。"
+                    ),
+                )
+            )
+
+        return violations
+
+
+# ---------------------------------------------------------------------------
 # Factory.
 # ---------------------------------------------------------------------------
 
@@ -1058,7 +1158,9 @@ def build_chapter_validator_checks() -> list[Check]:
     no-op when their required context is absent: ``CliffhangerRotationCheck``
     skips without ``recent_cliffhangers``; the four hype checks skip when
     no hype is assigned or the project's ``HypeScheme`` is empty (legacy
-    projects predating migration 0019).
+    projects predating migration 0019); ``LineGapCheck`` skips when
+    ``line_gap_report`` is ``None`` (project hasn't opted into the
+    narrative-line tracker).
     """
 
     return [
@@ -1069,6 +1171,7 @@ def build_chapter_validator_checks() -> list[Check]:
         HypeDiversityCheck(),
         EndingSentenceImpactCheck(),
         GoldenThreeChapterCheck(),
+        LineGapCheck(),
     ]
 
 

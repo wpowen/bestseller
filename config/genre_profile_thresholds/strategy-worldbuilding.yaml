@@ -1,0 +1,52 @@
+# Strategy / political / large-scale worldbuilding — longer arcs, more
+# setup patience, but payoffs need to be decisive.
+id: strategy-worldbuilding
+name: 谋略/权谋/大世界观
+
+hook_config:
+  preferred_types:
+    - 悬念
+    - 渴望
+    - 选择
+  strength_baseline: medium
+  chapter_end_required: true
+  transition_allowance: 3       # setup-heavy genre needs more room
+
+coolpoint_config:
+  preferred_patterns:
+    - 打脸权威
+    - 扮猪吃虎
+    - 反派翻车
+    - 越级反杀
+  density_per_chapter: medium
+  combo_interval: 8
+  milestone_interval: 25        # set-piece battles are sparse but big
+
+micropayoff_config:
+  preferred_types:
+    - 阶段性胜利
+    - 联盟达成
+    - 计谋初显
+  min_per_chapter: 2
+  transition_min: 0             # pure exposition chapters exist
+
+pacing_config:
+  stagnation_threshold: 4
+  strand_max_gap:
+    overt: 7                    # strategy arcs span chapters
+    undercurrent: 12
+    hidden: 18
+    core_axis: 25
+  transition_max_consecutive: 4
+
+override_config:
+  allowed_rationale_types:
+    - WORLD_RULE_CONSTRAINT     # primary: faction logic must hold
+    - LOGIC_INTEGRITY
+    - TRANSITIONAL_SETUP
+    - ARC_TIMING
+    - GENRE_CONVENTION
+    - EDITORIAL_INTENT
+  debt_multiplier: 1.1
+  payback_window_default: 8
+  interest_rate_per_chapter: 0.08

@@ -253,15 +253,73 @@ def analyze_setup_payoff(
     )
 
 
+# ---------------------------------------------------------------------------
+# Phase C3 — adapter into the chase-debt ledger.
+#
+# The plan replaces this module's audit_only reporting with typed debt
+# rows so the L7 scorecard surfaces unresolved humiliation setups via
+# the same channel as override-contract debt. We keep the detection
+# logic above untouched (pure function, heavily unit-tested) and add an
+# adapter that translates a ``SetupPayoffReport`` into ledger rows.
+# ---------------------------------------------------------------------------
+
+
+SETUP_PAYOFF_DEBT_CODE = "PLEASURE_SETUP_PAYOFF_DEBT"
+
+# Per-debt principal for a setup→payoff miss. Chosen smaller than the
+# per-chapter override principal so a single unpaid humiliation doesn't
+# dominate the scorecard when compared to a signed contract.
+DEFAULT_SETUP_PAYOFF_PRINCIPAL: float = 25.0
+
+
+def emit_debts_into_ledger(
+    report: SetupPayoffReport,
+    *,
+    ledger,  # ``ChaseDebtLedger`` — typed as Any to avoid import cycle.
+    project_id: str,
+    principal: float = DEFAULT_SETUP_PAYOFF_PRINCIPAL,
+    interest_rate: float | None = None,
+) -> int:
+    """Write every unpaid setup as a ``SETUP_PAYOFF`` ledger row.
+
+    Returns the number of rows inserted. ``due_chapter`` is the
+    original ``window_end_chapter`` so ``scan_overdue`` fires
+    immediately on the next chapter pass — the setup has already
+    missed its payoff window by definition.
+    """
+
+    from bestseller.services.chase_debt_ledger import DebtSource
+
+    inserted = 0
+    for debt in report.debts:
+        kwargs = dict(
+            project_id=project_id,
+            chapter_no=debt.setup_chapter,
+            violation_code=SETUP_PAYOFF_DEBT_CODE,
+            principal=principal,
+            due_chapter=debt.window_end_chapter,
+            source=DebtSource.SETUP_PAYOFF,
+            override_contract_id=None,
+        )
+        if interest_rate is not None:
+            kwargs["interest_rate"] = interest_rate
+        ledger.open_debt(**kwargs)
+        inserted += 1
+    return inserted
+
+
 __all__ = [
     "DEFAULT_HUMILIATION_KEYWORDS",
     "DEFAULT_PAYOFF_HYPE_TYPES",
     "DEFAULT_PAYOFF_WINDOW_CHAPTERS",
+    "DEFAULT_SETUP_PAYOFF_PRINCIPAL",
     "PayoffEvent",
+    "SETUP_PAYOFF_DEBT_CODE",
     "SetupEvent",
     "SetupPayoffDebt",
     "SetupPayoffReport",
     "analyze_setup_payoff",
+    "emit_debts_into_ledger",
     "identify_payoffs",
     "scan_humiliation_setups",
 ]

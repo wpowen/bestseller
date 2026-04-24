@@ -3109,3 +3109,29 @@ def resolve_genre_review_profile(
 
     # --- strategy 4: default ---
     return profiles["default"]
+
+
+# ---------------------------------------------------------------------------
+# Phase A2 — Numeric threshold accessor.
+#
+# The prose profile above carries scoring weights + keywords + prompt
+# overrides. Phase B/C/D also need numeric thresholds (hook baseline,
+# strand max-gap, debt multiplier, etc.) that are centralized in
+# ``genre_profile_thresholds``. This thin accessor lets callers resolve
+# both layers from the same entrypoint if they want.
+# ---------------------------------------------------------------------------
+
+
+def load_thresholds(genre_id: str | None):  # type: ignore[no-untyped-def]
+    """Return the ``GenreProfileThresholds`` for a category key.
+
+    This is a re-export so callers can keep ``from
+    bestseller.services.genre_review_profiles import load_thresholds`` as
+    their single import point. Implementation lives in
+    ``genre_profile_thresholds`` to keep this mega-file from ballooning
+    further.
+    """
+
+    from bestseller.services.genre_profile_thresholds import resolve_thresholds
+
+    return resolve_thresholds(genre_id)

@@ -84,6 +84,19 @@ class ChapterStateSnapshotContext(BaseModel):
     chapter_number: int = Field(ge=1)
     facts: list[HardFactContext] = Field(default_factory=list)
 
+    # Phase D2 — optional time anchor & span for per-chapter timeline
+    # bookkeeping. When present the continuity layer can run the
+    # ``CountdownArithmeticCheck`` and ``TimeRegressionCheck`` validators
+    # in ``continuity.py`` to catch D-5 → D-2 jumps and backward time
+    # anchors that aren't tagged as flashbacks.
+    #
+    # ``time_anchor`` is opaque prose ("末世第4天 清晨" / "Day 12 — dawn")
+    # that the timeline parser can extract a structured point from;
+    # ``chapter_time_span`` is the prose estimate of how much in-story
+    # time elapsed during the chapter ("约 3 小时" / "about half a day").
+    time_anchor: str | None = None
+    chapter_time_span: str | None = None
+
 
 class SceneWriterContextPacket(BaseModel):
     project_id: UUID

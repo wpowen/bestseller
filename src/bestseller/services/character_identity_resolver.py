@@ -26,7 +26,6 @@ import copy
 import re
 from typing import Any, Iterable, Mapping
 
-
 __all__ = [
     "canonical_character_key",
     "collect_entry_aliases",

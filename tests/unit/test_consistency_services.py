@@ -371,6 +371,220 @@ def test_check_obligatory_scenes_uses_content_md_attribute(
     assert isinstance(findings, list)
 
 
+def test_missing_obligatory_scene_defaults_to_low_severity(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """L4 de-homogenisation: an un-annotated obligatory scene (``required``
+    missing or ``False``) must surface as ``low`` severity rather than
+    ``medium``.  This prevents every same-genre book from being forced
+    through the identical scene set — a main root cause of clone-like
+    drafts observed in xianxia projects.
+    """
+    project = ProjectModel(
+        slug="xian-b",
+        title="某仙侠",
+        genre="仙侠",
+        target_word_count=60000,
+        target_chapters=30,
+        language="zh-CN",
+        metadata_json={"prompt_pack_key": "xianxia-upgrade-core"},
+    )
+    project.id = uuid4()
+    project.sub_genre = None
+
+    chapter_id = uuid4()
+    draft = ChapterDraftVersionModel(
+        project_id=project.id,
+        chapter_id=chapter_id,
+        version_no=1,
+        content_md="一段完全不包含关键词的章节正文。",
+        word_count=16,
+        assembled_from_scene_draft_ids=[],
+        is_current=True,
+    )
+
+    # SimpleNamespace intentionally omits ``required`` — the getter default
+    # (``False``) is what drives the demotion.
+    suggested_only = SimpleNamespace(
+        obligatory_scenes=[
+            SimpleNamespace(
+                label="首次突破",
+                code="first_breakthrough",
+                timing="act_1",
+                check_keywords=["突破", "破境"],
+            )
+        ]
+    )
+    from bestseller.services import prompt_packs
+
+    monkeypatch.setattr(
+        prompt_packs, "resolve_prompt_pack", lambda *a, **k: suggested_only
+    )
+    monkeypatch.setattr(
+        consistency_services,
+        "resolve_prompt_pack",
+        lambda *a, **k: suggested_only,
+        raising=False,
+    )
+
+    findings = consistency_services._check_obligatory_scenes(
+        project=project,
+        chapter_count=30,
+        chapter_drafts=[draft],
+        chapter_number_by_id={chapter_id: 1},
+        language="zh-CN",
+    )
+
+    # Exactly one finding, low severity, non-blocking, wording flipped to 建议.
+    assert len(findings) == 1, findings
+    f = findings[0]
+    assert f.category == "obligatory_scene"
+    assert f.severity == "low"
+    assert "建议" in f.message
+    assert "必须" not in f.message
+
+
+def test_missing_obligatory_scene_keeps_medium_when_required_true(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Authors who genuinely want a hard requirement can opt back in with
+    ``required=True``; behaviour must then match the pre-L4 severity.
+    """
+    project = ProjectModel(
+        slug="xian-c",
+        title="某仙侠",
+        genre="仙侠",
+        target_word_count=60000,
+        target_chapters=30,
+        language="zh-CN",
+        metadata_json={},
+    )
+    project.id = uuid4()
+    project.sub_genre = None
+
+    chapter_id = uuid4()
+    draft = ChapterDraftVersionModel(
+        project_id=project.id,
+        chapter_id=chapter_id,
+        version_no=1,
+        content_md="普通章节，无关键词。",
+        word_count=8,
+        assembled_from_scene_draft_ids=[],
+        is_current=True,
+    )
+
+    hard_required = SimpleNamespace(
+        obligatory_scenes=[
+            SimpleNamespace(
+                label="拜师仪式",
+                code="initiation",
+                timing="act_1",
+                check_keywords=["拜师", "仪式"],
+                required=True,  # explicit opt-in
+            )
+        ]
+    )
+    from bestseller.services import prompt_packs
+
+    monkeypatch.setattr(
+        prompt_packs, "resolve_prompt_pack", lambda *a, **k: hard_required
+    )
+    monkeypatch.setattr(
+        consistency_services,
+        "resolve_prompt_pack",
+        lambda *a, **k: hard_required,
+        raising=False,
+    )
+
+    findings = consistency_services._check_obligatory_scenes(
+        project=project,
+        chapter_count=30,
+        chapter_drafts=[draft],
+        chapter_number_by_id={chapter_id: 1},
+        language="zh-CN",
+    )
+
+    assert len(findings) == 1, findings
+    f = findings[0]
+    assert f.severity == "medium"
+    assert "必须" in f.message
+    assert "建议" not in f.message
+
+
+def test_obligatory_scene_required_false_and_missing_field_are_equivalent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Explicit ``required=False`` and omitted attribute must produce the
+    same demoted finding (both default to suggestion)."""
+    project = ProjectModel(
+        slug="xian-d",
+        title="X",
+        genre="仙侠",
+        target_word_count=60000,
+        target_chapters=20,
+        language="zh-CN",
+        metadata_json={},
+    )
+    project.id = uuid4()
+    project.sub_genre = None
+
+    chapter_id = uuid4()
+    draft = ChapterDraftVersionModel(
+        project_id=project.id,
+        chapter_id=chapter_id,
+        version_no=1,
+        content_md="纯文字，无关键词。",
+        word_count=8,
+        assembled_from_scene_draft_ids=[],
+        is_current=True,
+    )
+
+    from bestseller.services import prompt_packs
+
+    def build_pack(required_attr: object) -> SimpleNamespace:
+        scene = SimpleNamespace(
+            label="秘境", code="secret_realm", timing="act_2_midpoint",
+            check_keywords=["秘境"],
+        )
+        if required_attr is not None:
+            scene.required = required_attr  # type: ignore[attr-defined]
+        return SimpleNamespace(obligatory_scenes=[scene])
+
+    # Case 1: explicit False
+    pack_false = build_pack(False)
+    monkeypatch.setattr(prompt_packs, "resolve_prompt_pack", lambda *a, **k: pack_false)
+    monkeypatch.setattr(
+        consistency_services, "resolve_prompt_pack",
+        lambda *a, **k: pack_false, raising=False,
+    )
+    findings_false = consistency_services._check_obligatory_scenes(
+        project=project,
+        chapter_count=20,
+        chapter_drafts=[draft],
+        chapter_number_by_id={chapter_id: 10},
+        language="zh-CN",
+    )
+
+    # Case 2: omitted attribute
+    pack_missing = build_pack(None)
+    monkeypatch.setattr(prompt_packs, "resolve_prompt_pack", lambda *a, **k: pack_missing)
+    monkeypatch.setattr(
+        consistency_services, "resolve_prompt_pack",
+        lambda *a, **k: pack_missing, raising=False,
+    )
+    findings_missing = consistency_services._check_obligatory_scenes(
+        project=project,
+        chapter_count=20,
+        chapter_drafts=[draft],
+        chapter_number_by_id={chapter_id: 10},
+        language="zh-CN",
+    )
+
+    assert len(findings_false) == 1
+    assert len(findings_missing) == 1
+    assert findings_false[0].severity == findings_missing[0].severity == "low"
+
+
 def test_check_obligatory_scenes_returns_empty_without_chapter_number_map(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

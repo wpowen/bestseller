@@ -116,6 +116,16 @@ class ProjectInvariants:
     forced_methodology_fragments: tuple[str, ...] = ()
     antagonist_uniqueness: bool = True
     hype_scheme: HypeScheme = field(default_factory=HypeScheme)
+    # Phase C1 — violation codes the author may resolve via an Override
+    # Contract (signed rationale + payback plan) instead of a hard regen.
+    # Everything not listed here remains a hard invariant. Soft codes
+    # still surface in the scorecard but ``write_gate.resolve_mode``
+    # downgrades them to ``audit_only`` when an active Override exists
+    # for this (project, chapter, code). Defaults to the narrative-line
+    # gap codes since those are the first soft checks shipping.
+    soft_constraint_codes: frozenset[str] = field(
+        default_factory=lambda: frozenset({"LINE_GAP_OVER", "LINE_GAP_WARN"})
+    )
 
 
 class InvariantSeedError(RuntimeError):

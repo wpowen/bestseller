@@ -216,12 +216,93 @@ async def _evaluate_chapter_quality_gate(
     blocking = filter_blocking(
         report, gates_cfg.l6_gate, chapter_no=chapter_number
     )
+
+    # ── Length-stability gate ──
+    # The L4 LengthEnvelopeCheck only fires when invariants.length_envelope
+    # exists; projects created before that bootstrap slip short chapters
+    # through unnoticed.  This complementary gate always pulls the target
+    # window from ``config.generation.words_per_chapter`` so a 3500-word
+    # chapter (vs. target=6400) always surfaces as a blocking finding.
+    length_block_code: str | None = None
+    length_report_payload: dict[str, Any] | None = None
+    try:
+        from bestseller.settings import get_settings
+        from bestseller.services.length_stability_gate import (
+            evaluate_chapter_length,
+        )
+
+        _settings = get_settings()
+        _pipeline_cfg = _settings.pipeline
+        if getattr(_pipeline_cfg, "enable_length_stability_gate", False):
+            _budget = _settings.generation.words_per_chapter
+            _wc = count_words(content)
+            _length_report = evaluate_chapter_length(
+                word_count=_wc,
+                min_words=int(_budget.min),
+                target_words=int(_budget.target),
+                max_words=int(_budget.max),
+                warn_margin=float(
+                    getattr(_pipeline_cfg, "length_stability_warn_margin", 0.10)
+                ),
+                enabled=True,
+            )
+            _severities = {
+                str(s).strip().lower()
+                for s in getattr(
+                    _pipeline_cfg, "length_stability_block_severities", ("major",)
+                )
+                or ()
+                if s
+            }
+            from bestseller.services.length_stability_gate import (
+                LENGTH_STABILITY_ISSUE_SEVERITY,
+            )
+
+            _length_severity = LENGTH_STABILITY_ISSUE_SEVERITY.get(
+                _length_report.band.value
+            )
+            # Always record the raw numbers so auto-repair / telemetry can
+            # read them later, regardless of whether the band is blocking.
+            length_report_payload = {
+                "word_count": int(_length_report.word_count),
+                "target_words": int(_length_report.target_words),
+                "min_words": int(_length_report.min_words),
+                "max_words": int(_length_report.max_words),
+                "band": _length_report.band.value,
+                "deviation_ratio": round(float(_length_report.deviation_ratio), 4),
+                "issue_code": _length_report.issue_code,
+            }
+            if (
+                _length_report.issue_code
+                and _length_severity is not None
+                and _length_severity in _severities
+            ):
+                length_block_code = _length_report.issue_code
+                logger.warning(
+                    "chapter %d: length-stability block — %s (wc=%d target=%d "
+                    "deviation=%.1f%%)",
+                    chapter_number,
+                    _length_report.issue_code,
+                    _length_report.word_count,
+                    _length_report.target_words,
+                    _length_report.deviation_ratio * 100.0,
+                )
+    except Exception:  # pragma: no cover — defensive, never fail the draft
+        logger.debug(
+            "length-stability gate errored for chapter %d (non-fatal)",
+            chapter_number,
+            exc_info=True,
+        )
+
     outcome: str
-    if blocking:
+    if blocking or length_block_code:
+        reasons = [v.code for v in blocking]
+        if length_block_code:
+            reasons.append(length_block_code)
         logger.warning(
             "chapter %d: blocked by quality gate — %s",
             chapter_number,
-            ", ".join(v.code for v in blocking),
+            ", ".join(reasons),
         )
         outcome = "blocked"
     else:
@@ -235,12 +316,22 @@ async def _evaluate_chapter_quality_gate(
 
     # Persist report row for L8 scorecard + Phase 2 promotion analysis.
     # Always write — even when passes — so the dashboard sees coverage.
+    # Length-stability is a pipeline-level gate (not an L4/L5 violation) but
+    # still records as a blocking code here so the auto-repair path below can
+    # read the report row to decide whether to retry.
+    _persisted_blocking_codes: tuple[str, ...] = tuple(v.code for v in blocking)
+    if length_block_code:
+        _persisted_blocking_codes = _persisted_blocking_codes + (length_block_code,)
+    _extra_payload: dict[str, Any] | None = None
+    if length_report_payload is not None:
+        _extra_payload = {"length_stability": length_report_payload}
     await _persist_chapter_quality_report(
         session,
         project_id=project.id,
         chapter_number=chapter_number,
         report=report,
-        blocking_codes=tuple(v.code for v in blocking),
+        blocking_codes=_persisted_blocking_codes,
+        extra_payload=_extra_payload,
     )
 
     # Only register diversity telemetry for chapters that actually ship —
@@ -291,12 +382,17 @@ async def _persist_chapter_quality_report(
     chapter_number: int,
     report: QualityReport,
     blocking_codes: tuple[str, ...],
+    extra_payload: dict[str, Any] | None = None,
 ) -> None:
     """Insert a ``ChapterQualityReportModel`` row snapshotting this gate pass.
 
     Failing to persist must NOT fail the gate — scoring infra loss is
     recoverable, a lost draft isn't. Wrapped in a broad ``except`` to
     degrade gracefully; the scorecard job can still read existing rows.
+
+    ``extra_payload`` is merged into ``report_json`` so gate-specific
+    metadata (e.g. the length-stability word-count / target numbers) can
+    survive to downstream consumers like the auto-repair helper.
     """
 
     try:
@@ -321,6 +417,14 @@ async def _persist_chapter_quality_report(
             ],
             "blocking_codes": list(blocking_codes),
         }
+        if extra_payload:
+            # Never let extra_payload overwrite the structural keys above —
+            # the contract with downstream readers is that those keys always
+            # hold the same shape.
+            for key, value in extra_payload.items():
+                if key in ("violations", "blocking_codes"):
+                    continue
+                payload[key] = value
         session.add(
             ChapterQualityReportModel(
                 chapter_id=chapter_id,
@@ -4047,3 +4151,182 @@ async def assemble_chapter_draft(
             logger.debug("Chapter %d: disk file sync failed (non-fatal)", chapter_number, exc_info=True)
 
     return chapter_draft
+
+
+async def maybe_prepare_chapter_auto_repair(
+    session: AsyncSession,
+    *,
+    project: ProjectModel,
+    chapter: ChapterModel,
+    repairable_codes: tuple[str, ...],
+) -> tuple[bool, tuple[str, ...]]:
+    """Decide whether the chapter's most recent block is auto-repairable.
+
+    Reads the latest :class:`ChapterQualityReportModel` row for ``chapter`` and
+    intersects its ``blocking_codes`` with the configured ``repairable_codes``
+    set.  When at least one code is in the repair allowlist, this helper:
+
+    1. Clears ``chapter.production_state`` (so the next gate pass starts fresh)
+    2. Resets every scene on the chapter to
+       :attr:`SceneStatus.NEEDS_REWRITE` and bumps the scene card's
+       ``rewrite_hint`` with block-specific guidance (e.g. "expand to
+       target length") so the downstream rewrite loop knows *what* to fix.
+
+    Returns ``(repair_triggered, block_codes)``.  ``repair_triggered=False``
+    means the caller should not loop — either there is no report row, the
+    blocks are deterministic (e.g. naming roster), or auto-repair is off.
+
+    The function is intentionally narrow: it only mutates scene status and
+    hint fields.  It does NOT re-run scene pipelines or re-assemble — that
+    is the caller's responsibility (see :func:`pipelines.run_chapter_pipeline`).
+    """
+
+    if not repairable_codes:
+        return False, ()
+
+    repair_set = {str(c).strip() for c in repairable_codes if c}
+    if not repair_set:
+        return False, ()
+
+    # Load the most recent report row — there can be multiple if the chapter
+    # has been re-drafted before; we only care about the latest verdict.
+    try:
+        latest_report = await session.scalar(
+            select(ChapterQualityReportModel)
+            .where(ChapterQualityReportModel.chapter_id == chapter.id)
+            .order_by(ChapterQualityReportModel.created_at.desc())
+            .limit(1)
+        )
+    except Exception:
+        logger.debug(
+            "chapter %d: auto-repair report lookup failed (non-fatal)",
+            chapter.chapter_number,
+            exc_info=True,
+        )
+        return False, ()
+
+    if latest_report is None:
+        return False, ()
+
+    payload = dict(latest_report.report_json or {})
+    block_codes: tuple[str, ...] = tuple(
+        str(c) for c in (payload.get("blocking_codes") or ()) if c
+    )
+    if not block_codes:
+        return False, ()
+
+    repairable_hit = tuple(c for c in block_codes if c in repair_set)
+    if not repairable_hit:
+        logger.info(
+            "chapter %d: block codes %s are not in repair allowlist %s — "
+            "leaving chapter in 'blocked' state for manual review",
+            chapter.chapter_number,
+            list(block_codes),
+            sorted(repair_set),
+        )
+        return False, block_codes
+
+    # Human-readable remediation hint — persisted under
+    # ``scene.metadata_json["auto_repair_hint"]``.  Downstream the scene
+    # writer picks this up and injects it into the rewrite reference block.
+    hint_fragments: list[str] = []
+    if "BLOCK_LOW" in repairable_hit:
+        hint_fragments.append(
+            "上一版本章节总字数过短，本次重写请在保留所有情节节拍的前提下，"
+            "大幅扩写环境、感官、心理与对话，让本场景至少达到 target_word_count。"
+        )
+    if "BLOCK_HIGH" in repairable_hit:
+        hint_fragments.append(
+            "上一版本章节总字数过长，本次重写请压缩冗余的叙述与重复描写，"
+            "优先保留冲突、决策与反转，使本场景回到 target_word_count 范围内。"
+        )
+    # Fallback so the writer still sees *something* if a new code is added
+    # to the allowlist without its own phrasing.
+    if not hint_fragments:
+        hint_fragments.append(
+            "上一版本触发了章节级质量门（{codes}），"
+            "请针对性改写。".format(codes=", ".join(repairable_hit))
+        )
+    repair_hint = "\n".join(hint_fragments)
+
+    # Reset the chapter state so the next gate pass is fresh.
+    chapter.production_state = None
+
+    scenes = list(
+        await session.scalars(
+            select(SceneCardModel)
+            .where(SceneCardModel.chapter_id == chapter.id)
+            .order_by(SceneCardModel.scene_number.asc())
+        )
+    )
+
+    # For BLOCK_LOW we also bump per-scene ``target_word_count`` so the
+    # scene writer has a concrete, deterministic signal to target a longer
+    # draft (the writer already honours this field).  Scale is computed
+    # from the shortfall ratio when the report row carries word-count
+    # metadata, otherwise we use a gentle +20% default, capped at 1.5x.
+    low_scale: float = 1.0
+    if "BLOCK_LOW" in repairable_hit:
+        try:
+            _length_meta = payload.get("length_stability") or {}
+            wc = int(_length_meta.get("word_count") or 0)
+            target = int(_length_meta.get("target_words") or 0)
+            if wc > 0 and target > 0:
+                ratio = target / float(wc)
+                low_scale = min(1.5, max(1.05, ratio))
+            else:
+                low_scale = 1.20
+        except Exception:
+            low_scale = 1.20
+
+    # Reset every scene of this chapter to NEEDS_REWRITE and write the
+    # auto-repair hint into ``metadata_json`` — keeping any prior hint so
+    # successive repair cycles don't wipe upstream context.
+    reset_count = 0
+    for sc in scenes:
+        sc.status = SceneStatus.NEEDS_REWRITE.value
+        meta = dict(sc.metadata_json or {})
+        existing_hint = str(meta.get("auto_repair_hint") or "").strip()
+        merged_hint = (
+            f"{existing_hint}\n{repair_hint}" if existing_hint else repair_hint
+        )
+        meta["auto_repair_hint"] = merged_hint
+        meta["auto_repair_block_codes"] = list(repairable_hit)
+        sc.metadata_json = meta
+        if "BLOCK_LOW" in repairable_hit and low_scale > 1.0:
+            try:
+                original_target = int(sc.target_word_count or 0)
+                if original_target > 0:
+                    sc.target_word_count = max(
+                        original_target,
+                        int(round(original_target * low_scale)),
+                    )
+            except Exception:
+                logger.debug(
+                    "chapter %d scene %d: target_word_count bump failed "
+                    "(non-fatal)",
+                    chapter.chapter_number,
+                    sc.scene_number,
+                    exc_info=True,
+                )
+        reset_count += 1
+
+    # Mark the previous report row as consumed so `regen_attempts` telemetry
+    # doesn't double-count.
+    try:
+        latest_report.regen_attempts = int(latest_report.regen_attempts or 0) + 1
+    except Exception:
+        logger.debug(
+            "chapter %d: regen_attempts bump failed (non-fatal)",
+            chapter.chapter_number,
+            exc_info=True,
+        )
+
+    await session.flush()
+    logger.info(
+        "chapter %d: auto-repair triggered (%d scenes reset) — block codes %s",
+        chapter.chapter_number,
+        reset_count,
+        list(repairable_hit),
+    )
+    return True, block_codes

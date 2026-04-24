@@ -67,6 +67,7 @@ async def forge_all_materials(
     *,
     sub_genre: str | None = None,
     max_rounds_per_dimension: int = 10,
+    cold_start_min_seeds: int = 1,
 ) -> list[ForgeResult]:
     """Run all 5 forges in order for *project_id*.
 
@@ -87,13 +88,45 @@ async def forge_all_materials(
         Optional sub-genre refinement forwarded to library queries.
     max_rounds_per_dimension:
         Hard cap on LLM tool-loop rounds per dimension.
+    cold_start_min_seeds:
+        Minimum number of library entries required for ``genre`` before
+        Forges are allowed to run.  Default ``1`` — a completely empty
+        library causes the pipeline to skip Forge and fall back to the
+        legacy pack path instead of producing baseline-less output that
+        would poison future book's library queries.
 
     Returns
     -------
     list[ForgeResult]
         One :class:`ForgeResult` per dimension across all forges (14 dimensions
-        total if all forges run to completion).
+        total if all forges run to completion).  Empty list when the
+        library cold-start guard blocked the run.
     """
+    # Cold-start guard: refuse to run if the library has no coverage for
+    # this genre.  See ``library_has_any_genre_coverage`` docstring for
+    # the "baseline to differentiate against" rationale.
+    try:
+        from bestseller.services.material_library import (  # noqa: PLC0415
+            library_has_any_genre_coverage,
+        )
+        has_seeds = await library_has_any_genre_coverage(
+            session, genre=genre, min_entries=cold_start_min_seeds
+        )
+    except Exception:  # noqa: BLE001 — cold-start probe must not crash pipeline
+        logger.exception(
+            "forge_all_materials: cold-start probe raised — assuming no seeds"
+        )
+        has_seeds = False
+    if not has_seeds:
+        logger.warning(
+            "forge_all_materials: library has no active entries for "
+            "genre=%s — skipping Forge (falling back to legacy pack path). "
+            "Run scripts/curate_library.py to populate the library before "
+            "new books start to benefit from material differentiation.",
+            genre,
+        )
+        return []
+
     all_results: list[ForgeResult] = []
     # Accumulated cross-forge materials keyed by dimension
     existing: dict[str, list[ProjectMaterial]] = {}

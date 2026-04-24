@@ -33,6 +33,7 @@ from bestseller.services.material_library import (
     _row_to_entry,
     ensure_coverage,
     insert_entry,
+    library_has_any_genre_coverage,
     mark_used,
     query_library,
 )
@@ -428,6 +429,76 @@ class TestEnsureCoverage:
         assert len(session.executed) == 2
         stale_sql = str(session.executed[1]).lower()
         assert "updated_at" in stale_sql
+
+
+# ── Tests: library_has_any_genre_coverage (cold-start guard) ───────────
+
+
+class TestLibraryHasAnyGenreCoverage:
+    """The Forge pipeline's cold-start guard.
+
+    When the library has zero active rows for a genre, running Forges
+    would produce "baseline-less" output that poisons future queries.
+    This helper is the precondition: ``True`` → safe to forge, ``False``
+    → skip and fall back to the legacy pack path.
+    """
+
+    async def test_returns_true_when_library_has_entries(self) -> None:
+        session = FakeAsyncSession()
+        session.scalar_count = 15
+        assert (
+            await library_has_any_genre_coverage(
+                session,  # type: ignore[arg-type]
+                genre="仙侠",
+            )
+            is True
+        )
+
+    async def test_returns_false_when_library_is_empty(self) -> None:
+        session = FakeAsyncSession()
+        session.scalar_count = 0
+        assert (
+            await library_has_any_genre_coverage(
+                session,  # type: ignore[arg-type]
+                genre="仙侠",
+            )
+            is False
+        )
+
+    async def test_min_entries_threshold_is_respected(self) -> None:
+        session = FakeAsyncSession()
+        session.scalar_count = 2
+        # 2 entries but min=3 required → still not covered
+        assert (
+            await library_has_any_genre_coverage(
+                session,  # type: ignore[arg-type]
+                genre="仙侠",
+                min_entries=3,
+            )
+            is False
+        )
+        # 2 entries with min=1 → covered
+        session.scalar_count = 2
+        assert (
+            await library_has_any_genre_coverage(
+                session,  # type: ignore[arg-type]
+                genre="仙侠",
+                min_entries=1,
+            )
+            is True
+        )
+
+    async def test_none_genre_filters_on_null(self) -> None:
+        """Passing ``genre=None`` must scope the count to universal rows
+        (``genre IS NULL``) rather than counting every row in the table."""
+        session = FakeAsyncSession()
+        session.scalar_count = 1
+        await library_has_any_genre_coverage(
+            session,  # type: ignore[arg-type]
+            genre=None,
+        )
+        compiled = str(session.executed[-1]).lower()
+        assert "is null" in compiled or "material_library.genre is null" in compiled
 
 
 # ── Tests: mark_used ───────────────────────────────────────────────────

@@ -37,11 +37,19 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from bestseller.infra.db.models import (
     ChapterAuditFindingModel,
     ChapterDraftVersionModel,
+    ChaseDebtModel,
     ChapterModel,
     ChapterQualityReportModel,
     DiversityBudgetModel,
     NovelScorecardModel,
+    OverrideContractModel,
     ProjectModel,
+)
+from bestseller.services.checker_schema import (
+    CheckerReport,
+    aggregate_issue_counts,
+    blocked_chapters,
+    merge_reports,
 )
 from bestseller.services.diversity_budget import DiversityBudget
 from bestseller.services.hype_engine import (
@@ -109,6 +117,16 @@ class NovelScorecard:
     comedic_beat_hit_ratio: float = 0.0  # observed / target, capped at 1.0
     hype_missing_chapters: int = 0  # chapters without assigned hype type
     golden_three_weak: bool = False  # any chapter 1-3 flagged WEAK
+    # ------------------------------------------------------------------
+    # Phase C — Override Contract + Debt Ledger counts.
+    # These are populated by ``compute_scorecard`` from the Phase C tables
+    # (OverrideContractModel, ChaseDebtModel). Default 0 for legacy projects
+    # and for runs where Phase C is disabled — they do not currently feed
+    # into ``quality_score`` so legacy scoring is preserved exactly.
+    # ------------------------------------------------------------------
+    overrides_count: int = 0          # total active Override Contracts
+    active_debts_count: int = 0       # ChaseDebt rows with status="active"
+    overdue_debts_count: int = 0      # ChaseDebt rows with status="overdue"
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -136,6 +154,9 @@ class NovelScorecard:
             "comedic_beat_hit_ratio": round(self.comedic_beat_hit_ratio, 4),
             "hype_missing_chapters": self.hype_missing_chapters,
             "golden_three_weak": self.golden_three_weak,
+            "overrides_count": self.overrides_count,
+            "active_debts_count": self.active_debts_count,
+            "overdue_debts_count": self.overdue_debts_count,
         }
 
 
@@ -359,6 +380,53 @@ def _aggregate_hype_metrics(
         missing,
         scored,
     )
+
+
+def aggregate_checker_reports(
+    reports: Iterable[CheckerReport | Mapping[str, Any]],
+) -> dict[str, Any]:
+    """Phase A1 roll-up: a heterogeneous list of ``CheckerReport`` becomes
+    a scorecard-friendly dict the driver can merge into ``NovelScorecard``.
+
+    The shape intentionally mirrors the sub-fields ``compute_scorecard``
+    already surfaces (blocked chapter count, top issue codes) so the driver
+    can swap per-checker queries for a single aggregator later.
+
+    Returned shape::
+
+        {
+            "blocked_chapters": frozenset[int],
+            "chapters_blocked": int,
+            "top_issue_codes": [(id, count), ...],  # up to 10
+            "agent_counts": {agent_name: int, ...},
+            "hard_violation_count": int,
+            "soft_suggestion_count": int,
+            "total_reports": int,
+        }
+    """
+
+    normalized = merge_reports(reports)
+    blocked = blocked_chapters(normalized)
+    issue_counts = aggregate_issue_counts(normalized)
+    top_issues = sorted(issue_counts.items(), key=lambda kv: kv[1], reverse=True)[:10]
+
+    agent_counts: dict[str, int] = {}
+    hard_total = 0
+    soft_total = 0
+    for r in normalized:
+        agent_counts[r.agent] = agent_counts.get(r.agent, 0) + 1
+        hard_total += len(r.hard_violations)
+        soft_total += len(r.soft_suggestions)
+
+    return {
+        "blocked_chapters": blocked,
+        "chapters_blocked": len(blocked),
+        "top_issue_codes": top_issues,
+        "agent_counts": agent_counts,
+        "hard_violation_count": hard_total,
+        "soft_suggestion_count": soft_total,
+        "total_reports": len(normalized),
+    }
 
 
 def _chapter_gap_count(
@@ -657,6 +725,31 @@ async def compute_scorecard(
         golden_three_weak=golden_three_weak,
     )
 
+    # Phase C — Override Contract + Debt Ledger counts. Tables are
+    # additive so legacy projects (which have zero rows) naturally
+    # produce zeroes. We count in a single round-trip per table to keep
+    # the scorecard fast on projects with hundreds of contracts.
+    overrides_count = int(
+        (
+            await session.execute(
+                select(func.count())
+                .select_from(OverrideContractModel)
+                .where(
+                    OverrideContractModel.project_id == project_id,
+                    OverrideContractModel.status == "active",
+                )
+            )
+        ).scalar_one()
+    )
+    debt_status_rows = (
+        await session.execute(
+            select(ChaseDebtModel.status, func.count())
+            .where(ChaseDebtModel.project_id == project_id)
+            .group_by(ChaseDebtModel.status)
+        )
+    ).all()
+    debt_counts = {str(s): int(c) for s, c in debt_status_rows}
+
     return NovelScorecard(
         project_id=project_id,
         total_chapters=total_chapters,
@@ -681,6 +774,9 @@ async def compute_scorecard(
         comedic_beat_hit_ratio=comedic_hit_ratio,
         hype_missing_chapters=hype_missing,
         golden_three_weak=golden_three_weak,
+        overrides_count=overrides_count,
+        active_debts_count=debt_counts.get("active", 0),
+        overdue_debts_count=debt_counts.get("overdue", 0),
     )
 
 

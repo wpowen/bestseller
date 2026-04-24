@@ -114,3 +114,34 @@ l7_continuous_audit:
 
 l8_scorecard:
   enabled: true
+
+# ---------------------------------------------------------------------------
+# Phase flags for the 2026-Q2 webnovel-writer adoption (plan:
+# shimmying-soaring-gadget). Each phase is shippable independently and
+# defaults OFF so historical projects are unaffected until explicitly
+# enabled per-project. Toggle a flag to ``true`` to opt that project into
+# the new validators / ledgers.
+# ---------------------------------------------------------------------------
+phase_b_line_tracker:
+  enabled: false
+  # Chapters before this number stay in audit_only regardless of gap
+  # threshold — a project needs history before the gap check is meaningful.
+  warmup_until_chapter: 10
+
+phase_c_overrides:
+  enabled: false
+  # Default compound interest applied to active ChaseDebtModel balances
+  # on every chapter accrual tick.
+  default_interest_rate: 0.10
+  # Default payback window (chapters) for a new override contract when
+  # the caller doesn't specify one.
+  payback_window_default: 10
+
+phase_d_time:
+  enabled: false
+  # When true, TimeRegressionCheck emits soft CheckerIssue with can_override=True;
+  # when false, the check is skipped entirely.
+  regression_check_enabled: true
+  # CountdownArithmeticCheck is hard by design — flipping this to false
+  # disables the validator; it never downgrades severity.
+  countdown_arithmetic_enabled: true

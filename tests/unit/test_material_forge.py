@@ -481,7 +481,13 @@ class TestForgeAllMaterials:
         async def mock_run(self_forge: Any, *args: Any, **kwargs: Any) -> list[ForgeResult]:
             return make_forge_results(type(self_forge))
 
-        with patch.object(WorldForge, "run", new=mock_run), \
+        async def always_covered(*_a: Any, **_kw: Any) -> bool:
+            return True
+
+        with patch(
+            "bestseller.services.material_library.library_has_any_genre_coverage",
+            new=always_covered,
+        ), patch.object(WorldForge, "run", new=mock_run), \
              patch.object(PowerSystemForge, "run", new=mock_run), \
              patch.object(CharacterForge, "run", new=mock_run), \
              patch.object(PlotForge, "run", new=mock_run), \
@@ -554,7 +560,13 @@ class TestForgeAllMaterials:
                 for dim in type(self_forge).dimensions
             ]
 
-        with patch.object(WorldForge, "run", new=world_run), \
+        async def always_covered(*_a: Any, **_kw: Any) -> bool:
+            return True
+
+        with patch(
+            "bestseller.services.material_library.library_has_any_genre_coverage",
+            new=always_covered,
+        ), patch.object(WorldForge, "run", new=world_run), \
              patch.object(PowerSystemForge, "run", new=power_run), \
              patch.object(CharacterForge, "run", new=stub_run), \
              patch.object(PlotForge, "run", new=stub_run), \
@@ -593,7 +605,13 @@ class TestForgeAllMaterials:
                 for dim in type(self_forge).dimensions
             ]
 
-        with patch.object(WorldForge, "run", new=failing_run), \
+        async def always_covered(*_a: Any, **_kw: Any) -> bool:
+            return True
+
+        with patch(
+            "bestseller.services.material_library.library_has_any_genre_coverage",
+            new=always_covered,
+        ), patch.object(WorldForge, "run", new=failing_run), \
              patch.object(PowerSystemForge, "run", new=ok_run), \
              patch.object(CharacterForge, "run", new=ok_run), \
              patch.object(PlotForge, "run", new=ok_run), \
@@ -608,6 +626,76 @@ class TestForgeAllMaterials:
         assert "world_settings" not in result_dims
         assert "factions" not in result_dims
         assert "locale_templates" not in result_dims
+
+    async def test_cold_start_guard_blocks_empty_library(self) -> None:
+        """When the library is empty for the target genre, forge_all_materials
+        must short-circuit *before* any Forge runs and return ``[]``.
+
+        Rationale: without seed entries to "differentiate against", the Forge
+        output would just be generic genre tropes — writing those to
+        ``project_materials`` would poison future books that query this
+        book's materials as seeds.
+        """
+        from bestseller.settings import load_settings
+        from bestseller.services.material_forge.world_forge import WorldForge
+        from bestseller.services.material_forge.power_forge import PowerSystemForge
+        from bestseller.services.material_forge.character_forge import CharacterForge
+        from bestseller.services.material_forge.plot_forge import PlotForge
+        from bestseller.services.material_forge.device_forge import DeviceForge
+
+        session = AsyncMock()
+        settings = load_settings(env={})
+
+        async def no_coverage(*_a: Any, **_kw: Any) -> bool:
+            return False
+
+        run_called: list[str] = []
+
+        async def tracking_run(self_forge: Any, *args: Any, **kwargs: Any) -> list[ForgeResult]:
+            run_called.append(type(self_forge).__name__)
+            return []
+
+        with patch(
+            "bestseller.services.material_library.library_has_any_genre_coverage",
+            new=no_coverage,
+        ), patch.object(WorldForge, "run", new=tracking_run), \
+             patch.object(PowerSystemForge, "run", new=tracking_run), \
+             patch.object(CharacterForge, "run", new=tracking_run), \
+             patch.object(PlotForge, "run", new=tracking_run), \
+             patch.object(DeviceForge, "run", new=tracking_run):
+            results = await forge_all_materials(session, "p", "仙侠", settings)
+
+        # Cold-start guard short-circuits → empty results + no forge ran.
+        assert results == []
+        assert run_called == []
+
+    async def test_cold_start_probe_error_is_treated_as_no_seeds(self) -> None:
+        """A DB error during the cold-start probe must NOT crash the pipeline;
+        the helper treats the failure as 'no seeds' and skips Forge."""
+        from bestseller.settings import load_settings
+        from bestseller.services.material_forge.world_forge import WorldForge
+
+        session = AsyncMock()
+        settings = load_settings(env={})
+
+        async def probe_raises(*_a: Any, **_kw: Any) -> bool:
+            raise RuntimeError("probe failed — db unreachable")
+
+        run_called: list[str] = []
+
+        async def tracking_run(self_forge: Any, *args: Any, **kwargs: Any) -> list[ForgeResult]:
+            run_called.append(type(self_forge).__name__)
+            return []
+
+        with patch(
+            "bestseller.services.material_library.library_has_any_genre_coverage",
+            new=probe_raises,
+        ), patch.object(WorldForge, "run", new=tracking_run):
+            results = await forge_all_materials(session, "p", "仙侠", settings)
+
+        # Probe raised → treated as no-seeds → empty results, no forge ran.
+        assert results == []
+        assert run_called == []
 
 
 # ── TestParseMaterialRefs ────────────────────────────────────────────────────

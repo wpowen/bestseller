@@ -9,7 +9,25 @@ from pydantic import BaseModel, Field
 
 
 class ObligatoryScene(BaseModel, frozen=True):
-    """A genre-required scene type that must appear somewhere in the novel."""
+    """A genre-signature scene type that the author *suggests* should appear.
+
+    L4 de-homogenisation note
+    -------------------------
+    Prior to Batch 3, every same-genre book was forced to contain the
+    identical scene set (``first_breakthrough`` → ``face_slap`` → ...)
+    because the consistency gate flagged absence at ``medium`` severity.
+    That turned genre "signature" scenes into a shared script and caused
+    clone convergence across unrelated projects.
+
+    Since Batch 3 the default is **suggested, not required**
+    (``required=False``).  Missing suggested scenes surface only as ``low``
+    severity advisory findings — they never block drafts.
+
+    Authors can still opt back into a hard requirement on a per-scene
+    basis by setting ``required: true`` in the facet fragment YAML.
+    Prefer using ``required=False`` so different books within the same
+    genre can diverge naturally.
+    """
 
     code: str = Field(min_length=1, max_length=64)
     label: str = Field(min_length=1, max_length=120)
@@ -21,6 +39,14 @@ class ObligatoryScene(BaseModel, frozen=True):
         ),
     )
     check_keywords: list[str] = Field(default_factory=list)
+    required: bool = Field(
+        default=False,
+        description=(
+            "If True, missing scene surfaces as medium-severity finding "
+            "(pre-L4 behaviour).  If False (default), surfaces only as "
+            "low-severity advisory — genre homogenisation mitigation."
+        ),
+    )
 
 
 class PromptPackFragments(BaseModel):
@@ -149,7 +175,65 @@ def infer_default_prompt_pack_key(genre: str, sub_genre: str | None = None) -> s
     # Eastern aesthetic fantasy
     if any(token in label for token in ("东方美学", "国风", "水墨", "诗词", "古典仙侠")):
         return "eastern-aesthetic"
-    # Xianxia / xuanhuan
+    # ── Xianxia sub-genre fan-out (L1 de-homogenisation) ──
+    # Problem: every plain "仙侠" / "玄幻" book routed to the same
+    # ``xianxia-upgrade-core`` pack, causing L3 script-injection collisions
+    # (废灵根 → 宗门压迫 → 反派方域) across unrelated projects. These
+    # sub-routes give users (or auto-categorisation) a way to pull a xianxia
+    # book onto an adjacent methodology pack with different beats/tropes.
+    # Each route is an intentional semantic bridge, not a misfit.
+    # -- revenge-driven / blood-feud xianxia → history-strategy
+    #    (scheming, power-games, long-arc plotting; fits revenge DNA)
+    if any(
+        token in label
+        for token in (
+            "复仇仙侠", "血仇修仙", "灭门修仙", "灭门仙侠",
+            "血海深仇", "复仇修仙",
+        )
+    ):
+        return "history-strategy"
+    # -- sect-management / dojo-builder xianxia → game-esport
+    #    (simulation/management loop; progression driven by roster+infra)
+    if any(
+        token in label
+        for token in (
+            "宗门经营", "宗门养成", "门派养成", "掌门仙侠", "建宗立派",
+            "宗门建造", "仙门模拟",
+        )
+    ):
+        return "game-esport"
+    # -- antihero / demonic-path / villain-pov xianxia → psychological-thriller
+    #    (dark-protagonist psychology, paranoia, moral compromise)
+    if any(
+        token in label
+        for token in (
+            "魔修", "魔头", "反派仙侠", "黑化仙侠", "魔道仙侠",
+            "反英雄仙侠", "反派修仙",
+        )
+    ):
+        return "psychological-thriller"
+    # -- crafting-focused xianxia (alchemy/forging/talisman) → litrpg-progression
+    #    (skill-tree / recipe / progression loops map cleanly to crafting)
+    if any(
+        token in label
+        for token in (
+            "炼丹仙侠", "炼器仙侠", "丹师修仙", "符修", "器修",
+            "炼丹修仙", "炼器修仙",
+        )
+    ):
+        return "litrpg-progression"
+    # -- slice-of-life / sect-farming xianxia → cozy-fantasy
+    #    (magical-inn / cozy-crafting vibe fits 种田/养成 pacing)
+    if any(
+        token in label
+        for token in (
+            "种田仙侠", "修仙种田", "仙门种田", "修仙养成",
+            "田园仙侠",
+        )
+    ):
+        return "cozy-fantasy"
+    # Generic Xianxia / xuanhuan (catch-all) — intentionally runs LAST so
+    # the specific sub-routes above win first.
     if any(token in label for token in ("仙", "玄幻", "奇幻", "升级", "修真")):
         return "xianxia-upgrade-core"
     # Urban power

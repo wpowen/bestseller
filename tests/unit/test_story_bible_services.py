@@ -348,6 +348,57 @@ async def test_upsert_cast_spec_counts_voice_profiles_and_moral_frameworks() -> 
 
 
 @pytest.mark.asyncio
+async def test_upsert_cast_spec_alias_relationships_do_not_create_duplicate_characters() -> None:
+    project = build_project()
+    session = FakeSession(scalar_results=[None, None, None])
+    cast = {
+        "protagonist": {
+            "name": "王守真",
+            "background": "重启后的主角",
+            "relationships": [],
+        },
+        "supporting_cast": [
+            {
+                "name": "三叔",
+                "aliases": ["王守真（三叔）"],
+                "role": "supporting",
+                "goal": "保护王家血脉",
+                "relationships": [
+                    {"character": "李渡", "type": "监护", "tension": "隐瞒血脉真相"},
+                ],
+            },
+            {
+                "name": "李渡",
+                "role": "ally",
+                "goal": "查清血脉异常",
+            },
+        ],
+        "conflict_map": [
+            {
+                "character_a": "王守真（三叔）",
+                "character_b": "李渡",
+                "conflict_type": "秘密冲突",
+                "trigger_condition": "李渡追问血脉真相",
+            }
+        ],
+    }
+
+    counts = await story_bible_services.upsert_cast_spec(session, project, cast)
+
+    characters = [item for item in session.added if isinstance(item, CharacterModel)]
+    names = {character.name for character in characters}
+    protagonist = next(character for character in characters if character.name == "王守真")
+
+    assert counts["characters_upserted"] == 2
+    assert names == {"王守真", "李渡"}
+    assert "王守真（三叔）" not in names
+    assert "三叔" not in names
+    assert protagonist.role == "protagonist"
+    assert protagonist.is_pov_character is True
+    assert set(protagonist.metadata_json["aliases"]) >= {"王守真（三叔）", "三叔"}
+
+
+@pytest.mark.asyncio
 async def test_upsert_volume_plan_creates_and_updates_volumes() -> None:
     project = build_project()
     session = FakeSession(scalar_results=[None])
@@ -576,3 +627,242 @@ def test_parse_models_cover_list_and_role_normalization() -> None:
     assert [item.name for item in cast_spec.all_characters()] == ["沈砚", "祁镇", "顾临"]
     assert volumes[0].volume_title == "失准航线"
     assert world_spec.locations[0].location_type == "星港"
+
+
+# ── C7: novelty_critic integration in upsert_cast_spec ─────────────────
+#
+# The novelty_critic hook is warn-only in the current phase: it logs,
+# registers a fingerprint, but *never* blocks the cast upsert.  These
+# tests pin down that behaviour + ensure the feature-flag wiring works.
+
+
+@pytest.mark.asyncio
+async def test_upsert_cast_spec_registers_novelty_fingerprints_when_enabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """With ``enable_novelty_guard=True`` every net-new character goes
+    through :func:`check_novelty` and has a fingerprint registered — but
+    a non-ok verdict only produces a WARNING, never blocks."""
+
+    project = build_project()
+    session = FakeSession(scalar_results=[None, None, None])
+
+    # Capture novelty_critic calls and force an "exact_name_collision" verdict
+    # on one of the characters to exercise the warn-only branch.
+    from bestseller.services import novelty_critic as novelty_mod
+    from bestseller.services.novelty_critic import NoveltyVerdict
+
+    check_calls: list[dict[str, object]] = []
+    register_calls: list[dict[str, object]] = []
+
+    async def _fake_check_novelty(
+        session, *, genre, dimension, entity_name, narrative_summary, **kwargs
+    ):
+        check_calls.append(
+            {
+                "genre": genre,
+                "dimension": dimension,
+                "entity_name": entity_name,
+                "narrative_summary": narrative_summary,
+            }
+        )
+        # Pretend the antagonist name already exists in another xianxia project.
+        if entity_name == "祁镇":
+            return NoveltyVerdict(
+                ok=False,
+                reason="exact_name_collision",
+                conflicting_project_id="other-proj",
+            )
+        return NoveltyVerdict(ok=True, reason="ok")
+
+    async def _fake_register_fingerprint(
+        session, *, project_id, genre, dimension, entity_name, slug,
+        narrative_summary, source_material_id=None,
+    ):
+        register_calls.append(
+            {
+                "project_id": project_id,
+                "genre": genre,
+                "dimension": dimension,
+                "entity_name": entity_name,
+                "slug": slug,
+            }
+        )
+
+    monkeypatch.setattr(novelty_mod, "check_novelty", _fake_check_novelty)
+    monkeypatch.setattr(
+        novelty_mod, "register_fingerprint", _fake_register_fingerprint
+    )
+
+    # Stub out settings so the flag is forced on without touching YAML.
+    import bestseller.settings as settings_mod
+    from types import SimpleNamespace
+
+    fake_settings = SimpleNamespace(
+        pipeline=SimpleNamespace(enable_novelty_guard=True)
+    )
+    _stub = lambda: fake_settings  # noqa: E731
+    _stub.cache_clear = lambda: None  # type: ignore[attr-defined]
+    monkeypatch.setattr(settings_mod, "get_settings", _stub)
+
+    counts = await story_bible_services.upsert_cast_spec(
+        session, project, build_cast_spec()
+    )
+
+    # All three new characters must reach the critic.
+    names_checked = {call["entity_name"] for call in check_calls}
+    assert names_checked == {"沈砚", "祁镇", "顾临"}
+    # Every character (including the "colliding" antagonist) gets a
+    # fingerprint registered — warn-only phase.
+    names_registered = {call["entity_name"] for call in register_calls}
+    assert names_registered == {"沈砚", "祁镇", "顾临"}
+    # Dimension is pinned to ``character_templates`` (matches Forge).
+    assert {call["dimension"] for call in check_calls} == {"character_templates"}
+    # Genre flows from the ProjectModel.
+    assert {call["genre"] for call in check_calls} == {project.genre}
+    # Critical: the upsert must not have been blocked.
+    assert counts["characters_upserted"] == 3
+    assert counts["novelty_fingerprints_registered"] == 3
+
+
+@pytest.mark.asyncio
+async def test_upsert_cast_spec_skips_novelty_when_flag_off(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Default feature flag is off — no novelty/critic calls should
+    execute, and the count surfaces zero without error."""
+
+    project = build_project()
+    session = FakeSession(scalar_results=[None, None, None])
+
+    from bestseller.services import novelty_critic as novelty_mod
+
+    async def _boom_check(*args, **kwargs):  # pragma: no cover
+        raise AssertionError("check_novelty must not be called when flag is off")
+
+    async def _boom_register(*args, **kwargs):  # pragma: no cover
+        raise AssertionError(
+            "register_fingerprint must not be called when flag is off"
+        )
+
+    monkeypatch.setattr(novelty_mod, "check_novelty", _boom_check)
+    monkeypatch.setattr(novelty_mod, "register_fingerprint", _boom_register)
+
+    import bestseller.settings as settings_mod
+    from types import SimpleNamespace
+
+    fake_settings = SimpleNamespace(
+        pipeline=SimpleNamespace(enable_novelty_guard=False)
+    )
+    _stub = lambda: fake_settings  # noqa: E731
+    _stub.cache_clear = lambda: None  # type: ignore[attr-defined]
+    monkeypatch.setattr(settings_mod, "get_settings", _stub)
+
+    counts = await story_bible_services.upsert_cast_spec(
+        session, project, build_cast_spec()
+    )
+
+    assert counts["novelty_fingerprints_registered"] == 0
+    # Regression: normal upsert counts remain unaffected.
+    assert counts["characters_upserted"] == 3
+
+
+@pytest.mark.asyncio
+async def test_upsert_cast_spec_novelty_is_noop_when_project_has_no_genre(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A project row stored without a genre string must skip the novelty
+    check — cross-project comparison is only meaningful within a genre."""
+
+    project = build_project()
+    project.genre = ""  # simulate legacy row
+    session = FakeSession(scalar_results=[None, None, None])
+
+    from bestseller.services import novelty_critic as novelty_mod
+
+    async def _boom_check(*args, **kwargs):  # pragma: no cover
+        raise AssertionError("check_novelty should not run without a genre")
+
+    monkeypatch.setattr(novelty_mod, "check_novelty", _boom_check)
+
+    import bestseller.settings as settings_mod
+    from types import SimpleNamespace
+
+    fake_settings = SimpleNamespace(
+        pipeline=SimpleNamespace(enable_novelty_guard=True)
+    )
+    _stub = lambda: fake_settings  # noqa: E731
+    _stub.cache_clear = lambda: None  # type: ignore[attr-defined]
+    monkeypatch.setattr(settings_mod, "get_settings", _stub)
+
+    counts = await story_bible_services.upsert_cast_spec(
+        session, project, build_cast_spec()
+    )
+    assert counts["novelty_fingerprints_registered"] == 0
+
+
+@pytest.mark.asyncio
+async def test_upsert_cast_spec_novelty_errors_are_swallowed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Any exception inside the novelty check must be logged and
+    swallowed — character persistence is the source of truth."""
+
+    project = build_project()
+    session = FakeSession(scalar_results=[None, None, None])
+
+    from bestseller.services import novelty_critic as novelty_mod
+
+    async def _explode(*args, **kwargs):
+        raise RuntimeError("pgvector offline")
+
+    monkeypatch.setattr(novelty_mod, "check_novelty", _explode)
+    monkeypatch.setattr(novelty_mod, "register_fingerprint", _explode)
+
+    import bestseller.settings as settings_mod
+    from types import SimpleNamespace
+
+    fake_settings = SimpleNamespace(
+        pipeline=SimpleNamespace(enable_novelty_guard=True)
+    )
+    _stub = lambda: fake_settings  # noqa: E731
+    _stub.cache_clear = lambda: None  # type: ignore[attr-defined]
+    monkeypatch.setattr(settings_mod, "get_settings", _stub)
+
+    counts = await story_bible_services.upsert_cast_spec(
+        session, project, build_cast_spec()
+    )
+    assert counts["characters_upserted"] == 3
+    # Every character's novelty call raised → nothing registered, but
+    # the upsert kept running.
+    assert counts["novelty_fingerprints_registered"] == 0
+
+
+def test_character_novelty_summary_packs_identity_fields() -> None:
+    """``_character_novelty_summary`` builds a deterministic text used
+    by the embedding, so rearranging fields in ``CharacterInput`` here
+    is an intentional breaking change we want test coverage on."""
+
+    from bestseller.domain.story_bible import CharacterInput
+
+    char = CharacterInput.model_validate(
+        {
+            "name": "沈砚",
+            "role": "protagonist",
+            "background": "被放逐的导航员",
+            "goal": "找到账目证据",
+            "fear": "再次害死同伴",
+            "flaw": "不信任别人",
+            "arc_trajectory": "从控制到协作",
+        }
+    )
+    summary = story_bible_services._character_novelty_summary(char)
+    for fragment in (
+        "role=protagonist",
+        "background=被放逐的导航员",
+        "goal=找到账目证据",
+        "flaw=不信任别人",
+        "fear=再次害死同伴",
+        "arc=从控制到协作",
+    ):
+        assert fragment in summary

@@ -19,6 +19,11 @@ import re
 from dataclasses import dataclass
 from typing import Any, Iterable, Literal, Protocol
 
+from bestseller.services.checker_schema import (
+    CheckerIssue,
+    CheckerReport,
+    Severity as CheckerSeverity,
+)
 from bestseller.services.invariants import CliffhangerType, ProjectInvariants
 
 
@@ -45,6 +50,37 @@ class Violation:
     location: str
     detail: str
     prompt_feedback: str
+
+    def as_checker_issue(
+        self,
+        *,
+        can_override: bool | None = None,
+        allowed_rationales: tuple[str, ...] = (),
+    ) -> CheckerIssue:
+        """Adapt to Phase A1 unified schema.
+
+        Severity mapping: ``block → critical``, ``warn → medium``, ``info → low``.
+        Default ``can_override``: block/critical is hard (False), everything
+        else is soft (True) unless the caller explicitly overrides.
+        """
+
+        sev_map: dict[str, CheckerSeverity] = {
+            "block": "critical",
+            "warn": "medium",
+            "info": "low",
+        }
+        checker_sev = sev_map.get(self.severity, "medium")
+        default_override = self.severity != "block"
+        return CheckerIssue(
+            id=self.code,
+            type="output_validator",
+            severity=checker_sev,
+            location=self.location,
+            description=self.detail,
+            suggestion=self.prompt_feedback,
+            can_override=can_override if can_override is not None else default_override,
+            allowed_rationales=allowed_rationales,
+        )
 
 
 @dataclass(frozen=True)
@@ -74,6 +110,13 @@ class ValidationContext:
     assigned_hype_type: Any = None
     assigned_hype_recipe: Any = None
     recent_hype_types: tuple[Any, ...] = ()
+    # Phase B1 — narrative-line gap report populated by call sites that
+    # pre-compute ``narrative_line_tracker.report_gaps``. Left as ``Any``
+    # to avoid a cycle with the tracker (the tracker already imports
+    # ``genre_profile_thresholds`` which is leaf-level). ``None`` means
+    # the project hasn't opted into line-dominance tracking, in which
+    # case ``LineGapCheck`` no-ops.
+    line_gap_report: Any = None
 
 
 @dataclass(frozen=True)
@@ -102,6 +145,45 @@ class QualityReport:
             for idx, v in enumerate(self.violations, 1)
         ]
         return header + "\n".join(lines)
+
+    def as_checker_report(
+        self,
+        *,
+        chapter: int,
+        agent: str = "output-validator",
+        soft_codes: frozenset[str] = frozenset(),
+    ) -> CheckerReport:
+        """Adapt to Phase A1 unified schema.
+
+        ``soft_codes`` lets callers mark specific ``Violation.code`` values
+        as soft (can_override=True) even if severity is ``block``. Used by
+        Phase C to route pre-agreed soft violations through the Override
+        Contract instead of hard-blocking.
+        """
+
+        issues = tuple(
+            v.as_checker_issue(can_override=(v.code in soft_codes) or (v.severity != "block"))
+            for v in self.violations
+        )
+        blocks = sum(1 for v in self.violations if v.severity == "block")
+        warns = sum(1 for v in self.violations if v.severity == "warn")
+        score = max(0, 100 - blocks * 20 - warns * 5)
+        return CheckerReport(
+            agent=agent,
+            chapter=chapter,
+            overall_score=score,
+            passed=not self.blocks_write,
+            issues=issues,
+            metrics={
+                "block_count": blocks,
+                "warn_count": warns,
+                "total_violations": len(self.violations),
+            },
+            summary=(
+                "输出校验通过" if not self.has_issues
+                else f"输出存在 {len(self.violations)} 条校验问题（{blocks} 阻塞 / {warns} 警告）"
+            ),
+        )
 
 
 class Check(Protocol):

@@ -80,7 +80,19 @@ from bestseller.settings import get_settings  # noqa: E402
 
 logger = logging.getLogger("scan_lifecycle_violations")
 
-SCANNABLE_STATUSES = {"written", "reviewed", "finalized", "passed", "completed", "revision"}
+# ChapterModel.status values seen in production: "planned" | "revision" |
+# "complete". The historical extras ("written", "reviewed", "finalized",
+# "passed", "completed") are kept for forward/backward compatibility in
+# case the writer is upgraded to use richer status names later.
+SCANNABLE_STATUSES = {
+    "written",
+    "reviewed",
+    "finalized",
+    "passed",
+    "complete",
+    "completed",
+    "revision",
+}
 
 
 @dataclass(frozen=True)

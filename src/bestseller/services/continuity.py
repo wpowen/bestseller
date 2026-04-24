@@ -43,6 +43,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from bestseller.domain.context import ChapterStateSnapshotContext, HardFactContext
 from bestseller.infra.db.models import ChapterModel, ChapterStateSnapshotModel
+from bestseller.services.checker_schema import CheckerIssue, CheckerReport
 from bestseller.services.llm import LLMCompletionRequest, complete_text
 from bestseller.settings import AppSettings
 
@@ -425,6 +426,359 @@ def _extract_numeric(value: str) -> float | None:
     if match:
         return float(match.group())
     return None
+
+
+# ---------------------------------------------------------------------------
+# Phase D3 — time / countdown arithmetic validators.
+#
+# These emit Phase-A1 ``CheckerReport`` envelopes so the scorecard and
+# write_gate layers consume them through the same contract as every other
+# audit surface. Inputs are pure ``ChapterStateSnapshotContext`` values so
+# the validators stay testable without touching the DB.
+# ---------------------------------------------------------------------------
+
+
+_TIME_CONTINUITY_AGENT = "time-continuity"
+
+_COUNTDOWN_KIND = "countdown"
+
+_FLASHBACK_KEYWORDS: frozenset[str] = frozenset(
+    {"flashback", "闪回", "回忆", "倒叙", "插叙", "追忆"}
+)
+
+
+def _snapshot_is_flashback(snapshot: ChapterStateSnapshotContext) -> bool:
+    """Infer flashback tag from fact notes.
+
+    We look for ``flashback=true`` / ``reset=true`` style hints in the
+    free-prose ``notes`` of any fact, plus common Chinese markers. The
+    continuity extractor is instructed (system prompt rule 8) to surface
+    ``reset=true`` for intentional countdown resets, which gives us the
+    same signal for free.
+    """
+
+    for fact in snapshot.facts:
+        notes = (fact.notes or "").lower()
+        if not notes:
+            continue
+        if "flashback=true" in notes or "reset=true" in notes:
+            return True
+        if any(keyword in notes for keyword in _FLASHBACK_KEYWORDS):
+            return True
+    return False
+
+
+def _index_facts_by_name(
+    facts: list[HardFactContext],
+    *,
+    kind: str | None = None,
+) -> dict[str, HardFactContext]:
+    """Return ``{fact.name: fact}`` optionally filtered by ``kind``."""
+
+    out: dict[str, HardFactContext] = {}
+    for fact in facts:
+        if kind is not None and fact.kind != kind:
+            continue
+        out[fact.name] = fact
+    return out
+
+
+def check_countdown_arithmetic(
+    current_snapshot: ChapterStateSnapshotContext,
+    previous_snapshot: ChapterStateSnapshotContext | None,
+    *,
+    is_flashback: bool | None = None,
+) -> CheckerReport:
+    """CountdownArithmeticCheck (Phase D3).
+
+    For each named countdown fact, verify that ``prev_value - current_value``
+    falls within ``{0, 1}`` — i.e. the countdown advanced by at most one
+    unit. Jumps > 1 (e.g. D-5 → D-2) are flagged ``critical`` /
+    ``can_override = False`` because the reader can't silently re-sync a
+    hard deadline; regen must fix the arithmetic or mark the chapter as a
+    flashback.
+
+    ``is_flashback`` overrides heuristic detection when the caller already
+    knows (e.g. from a chapter flag). When ``None`` we fall back to
+    sniffing notes on ``current_snapshot``.
+    """
+
+    chapter = int(current_snapshot.chapter_number)
+    issues: list[CheckerIssue] = []
+    metrics: dict[str, Any] = {
+        "countdowns_checked": 0,
+        "jumps_detected": 0,
+        "resets_detected": 0,
+    }
+
+    if previous_snapshot is None or not previous_snapshot.facts:
+        return CheckerReport(
+            agent=_TIME_CONTINUITY_AGENT,
+            chapter=chapter,
+            overall_score=100,
+            passed=True,
+            issues=(),
+            metrics=metrics,
+            summary="No previous snapshot — countdown arithmetic skipped.",
+        )
+
+    flashback = bool(_snapshot_is_flashback(current_snapshot)) if is_flashback is None else bool(is_flashback)
+
+    prev_countdowns = _index_facts_by_name(previous_snapshot.facts, kind=_COUNTDOWN_KIND)
+    cur_countdowns = _index_facts_by_name(current_snapshot.facts, kind=_COUNTDOWN_KIND)
+
+    for name, cur_fact in cur_countdowns.items():
+        prev_fact = prev_countdowns.get(name)
+        if prev_fact is None:
+            continue
+
+        cur_num = _extract_numeric(cur_fact.value)
+        prev_num = _extract_numeric(prev_fact.value)
+        if cur_num is None or prev_num is None:
+            continue
+
+        metrics["countdowns_checked"] += 1
+        delta = prev_num - cur_num
+
+        if delta < 0:
+            # Countdown went UP — only acceptable if flashback or explicit reset.
+            if flashback:
+                continue
+            metrics["resets_detected"] += 1
+            issues.append(
+                CheckerIssue(
+                    id="COUNTDOWN_RESET",
+                    type="countdown_reset",
+                    severity="critical",
+                    location=f"第 {chapter} 章末 — {name}",
+                    description=(
+                        f"倒计时 {name} 从 {prev_fact.value} 涨回 {cur_fact.value}，"
+                        f"但本章未标记 flashback/reset。硬事实倒计时只能单调递减。"
+                    ),
+                    suggestion=(
+                        "请在本章正文中明确倒计时被重置的触发事件（如外部干预、规则变更），"
+                        "并在事实 notes 中添加 reset=true；否则回退倒计时变化。"
+                    ),
+                    can_override=False,
+                    allowed_rationales=(),
+                )
+            )
+            continue
+
+        # delta >= 0; flag only if the gap exceeds one unit.
+        if delta > 1 and not flashback:
+            metrics["jumps_detected"] += 1
+            issues.append(
+                CheckerIssue(
+                    id="COUNTDOWN_ARITHMETIC_JUMP",
+                    type="countdown_arithmetic",
+                    severity="critical",
+                    location=f"第 {chapter} 章末 — {name}",
+                    description=(
+                        f"倒计时 {name} 从 {prev_fact.value} 直接跳到 {cur_fact.value}，"
+                        f"跨度 {delta:g} 单位。硬事实倒计时每章只能推进 0 或 1 个单位。"
+                    ),
+                    suggestion=(
+                        "请在本章正文里补足中间推进（每章减 1），或把跨度并入后续章节；"
+                        "如果这是必要的时间跳跃，请把本章标记为 flashback/过渡章再重新提交。"
+                    ),
+                    can_override=False,
+                    allowed_rationales=(),
+                )
+            )
+
+    passed = not issues
+    overall_score = 100 if passed else max(0, 100 - 40 * len(issues))
+
+    return CheckerReport(
+        agent=_TIME_CONTINUITY_AGENT,
+        chapter=chapter,
+        overall_score=overall_score,
+        passed=passed,
+        issues=tuple(issues),
+        metrics=metrics,
+        summary=(
+            "Countdown arithmetic clean."
+            if passed
+            else f"{len(issues)} countdown-arithmetic violation(s) detected."
+        ),
+    )
+
+
+# --- Time anchor parsing ---------------------------------------------------
+
+# Match "第 N 天" / "Day N" / "D-N" / "末世第 N 天" / "第 N 天 · 清晨". We pull
+# the first integer we find and a coarse part-of-day bucket for tie-breaking
+# within the same day.
+_DAY_NUMBER_RE = re.compile(r"(?:day|d[-\s]*|第)\s*([-+]?\d+)\s*(?:天|day|d)?", re.IGNORECASE)
+_BARE_INT_RE = re.compile(r"[-+]?\d+")
+
+_PART_OF_DAY_ORDER: dict[str, int] = {
+    "凌晨": 0,
+    "拂晓": 0,
+    "清晨": 1,
+    "早晨": 1,
+    "上午": 2,
+    "morning": 1,
+    "dawn": 0,
+    "中午": 3,
+    "正午": 3,
+    "noon": 3,
+    "下午": 4,
+    "afternoon": 4,
+    "傍晚": 5,
+    "黄昏": 5,
+    "evening": 5,
+    "晚上": 6,
+    "夜里": 6,
+    "深夜": 7,
+    "night": 6,
+    "midnight": 7,
+}
+
+
+def _parse_time_anchor(anchor: str | None) -> tuple[int, int] | None:
+    """Parse a free-prose time anchor into ``(day, part_of_day_order)``.
+
+    Returns ``None`` when no day integer can be extracted. The part-of-day
+    score is ``0`` when not recognised so two "Day 3" anchors compare
+    equal; a "Day 3 清晨" anchor precedes a "Day 3 傍晚" anchor on the
+    ordering axis.
+    """
+
+    if not anchor:
+        return None
+    text = anchor.strip()
+    if not text:
+        return None
+
+    day_match = _DAY_NUMBER_RE.search(text)
+    if day_match is None:
+        # Fall back to bare integer — handles "3 · 清晨" style anchors.
+        bare = _BARE_INT_RE.search(text)
+        if bare is None:
+            return None
+        try:
+            day = int(bare.group())
+        except ValueError:
+            return None
+    else:
+        try:
+            day = int(day_match.group(1))
+        except ValueError:
+            return None
+
+    lowered = text.lower()
+    part_score = 0
+    for keyword, order in _PART_OF_DAY_ORDER.items():
+        if keyword in lowered or keyword in text:
+            part_score = order
+            break
+
+    return day, part_score
+
+
+def check_time_regression(
+    current_snapshot: ChapterStateSnapshotContext,
+    previous_snapshot: ChapterStateSnapshotContext | None,
+    *,
+    is_flashback: bool | None = None,
+) -> CheckerReport:
+    """TimeRegressionCheck (Phase D3).
+
+    Flags a chapter whose ``time_anchor`` resolves to a point strictly
+    before the previous chapter's anchor, unless the chapter is tagged as
+    a flashback. Severity ``high`` / ``can_override = True`` because
+    legitimate narrative jumps (parallel POVs, dream sequences) exist —
+    the author can sign an Override Contract citing
+    ``WORLD_RULE_CONSTRAINT`` or ``LOGIC_INTEGRITY``.
+    """
+
+    chapter = int(current_snapshot.chapter_number)
+    metrics: dict[str, Any] = {
+        "current_anchor": current_snapshot.time_anchor,
+        "previous_anchor": (previous_snapshot.time_anchor if previous_snapshot else None),
+        "flashback_detected": False,
+    }
+
+    if previous_snapshot is None:
+        return CheckerReport(
+            agent=_TIME_CONTINUITY_AGENT,
+            chapter=chapter,
+            overall_score=100,
+            passed=True,
+            issues=(),
+            metrics=metrics,
+            summary="No previous snapshot — time anchor regression skipped.",
+        )
+
+    cur_parsed = _parse_time_anchor(current_snapshot.time_anchor)
+    prev_parsed = _parse_time_anchor(previous_snapshot.time_anchor)
+    metrics["current_parsed"] = cur_parsed
+    metrics["previous_parsed"] = prev_parsed
+
+    if cur_parsed is None or prev_parsed is None:
+        return CheckerReport(
+            agent=_TIME_CONTINUITY_AGENT,
+            chapter=chapter,
+            overall_score=100,
+            passed=True,
+            issues=(),
+            metrics=metrics,
+            summary="Unparseable time anchor — regression check skipped.",
+        )
+
+    flashback = bool(_snapshot_is_flashback(current_snapshot)) if is_flashback is None else bool(is_flashback)
+    metrics["flashback_detected"] = flashback
+
+    if cur_parsed >= prev_parsed:
+        return CheckerReport(
+            agent=_TIME_CONTINUITY_AGENT,
+            chapter=chapter,
+            overall_score=100,
+            passed=True,
+            issues=(),
+            metrics=metrics,
+            summary="Time anchor non-regressing.",
+        )
+
+    if flashback:
+        return CheckerReport(
+            agent=_TIME_CONTINUITY_AGENT,
+            chapter=chapter,
+            overall_score=100,
+            passed=True,
+            issues=(),
+            metrics={**metrics, "flashback_accepted": True},
+            summary="Time anchor regression accepted (flashback tagged).",
+        )
+
+    issue = CheckerIssue(
+        id="TIME_ANCHOR_REGRESSION",
+        type="time_regression",
+        severity="high",
+        location=f"第 {chapter} 章",
+        description=(
+            f"本章时间锚点 '{current_snapshot.time_anchor}' 早于上一章 "
+            f"'{previous_snapshot.time_anchor}'，但章节未标记 flashback。"
+        ),
+        suggestion=(
+            "请在事实 notes 中加入 flashback=true 或改章节正文标记为回忆/插叙，"
+            "或签署 Override Contract 并注明 rationale=WORLD_RULE_CONSTRAINT/LOGIC_INTEGRITY。"
+        ),
+        can_override=True,
+        allowed_rationales=("WORLD_RULE_CONSTRAINT", "LOGIC_INTEGRITY"),
+    )
+
+    return CheckerReport(
+        agent=_TIME_CONTINUITY_AGENT,
+        chapter=chapter,
+        overall_score=60,
+        passed=False,
+        issues=(issue,),
+        metrics=metrics,
+        summary="Time anchor regressed without flashback tag.",
+    )
 
 
 def render_hard_fact_snapshot_block(snapshot: ChapterStateSnapshotContext | None) -> str:

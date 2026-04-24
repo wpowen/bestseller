@@ -21,7 +21,12 @@ llm:
     model: "anthropic/claude-sonnet-4-5"
     model_override: null
     temperature: 0.85
-    max_tokens: 8192
+    # Chinese scene drafts of ~1600-2200 words can span 6-9K tokens when
+    # format/list overhead is counted; 8192 used to silently truncate the
+    # tail.  12288 gives room for a full 2200-word scene plus the system
+    # header without eviction.  For English, which trends to ~0.75 token
+    # per word, this is still ample (≈16K words worth).
+    max_tokens: 12288
     timeout_seconds: 180
     stream: true
 
@@ -222,3 +227,19 @@ pipeline:
   enable_golden_three_health: true
   golden_three_min_hype_chapters: 2
   golden_three_min_ending_hook_chapters: 2
+  # Chapter-length stability gate.  Reads min/target/max from
+  # ``generation.words_per_chapter`` above and turns large drifts
+  # (>±warn_margin beyond the hard window) into blocking findings.
+  enable_length_stability_gate: true
+  length_stability_block_severities:
+    - major
+  length_stability_warn_margin: 0.10
+  # Auto-repair a blocked chapter by running one extra scene-rewrite
+  # cycle.  Only the ``chapter_auto_repair_repairable_codes`` set triggers
+  # this path — length-stability blocks are the safe canary; L4/L5 gates
+  # with deterministic violations are deliberately excluded.
+  enable_chapter_auto_repair: true
+  chapter_auto_repair_max_attempts: 1
+  chapter_auto_repair_repairable_codes:
+    - BLOCK_LOW
+    - BLOCK_HIGH

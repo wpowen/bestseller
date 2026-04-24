@@ -151,19 +151,31 @@ def _check_obligatory_scenes(
         # Check if any keyword is present
         found = any(kw.lower() in target_text for kw in oblig.check_keywords)
         if not found:
+            # L4 de-homogenisation: respect ``ObligatoryScene.required``.
+            # Default ``required=False`` demotes missing-scene findings to
+            # ``low`` severity so the gate no longer forces every same-genre
+            # book into the same scene set. Authors who genuinely want a
+            # hard requirement opt in by setting ``required: true`` in the
+            # facet YAML.
+            _is_required = getattr(oblig, "required", False)
+            _severity = "medium" if _is_required else "low"
+            if _is_en:
+                _tag = "Required" if _is_required else "Suggested"
+                _msg = (
+                    f"{_tag} genre scene \"{oblig.label}\" ({oblig.code}) "
+                    f"expected in {timing_label}, but no matching signal words detected."
+                )
+            else:
+                _tag = "必须" if _is_required else "建议"
+                _msg = (
+                    f"题材{_tag}场景「{oblig.label}」({oblig.code}) "
+                    f"预期出现在{timing_label}，但未检测到相关信号词。"
+                )
             findings.append(
                 ProjectConsistencyFinding(
                     category="obligatory_scene",
-                    severity="medium",
-                    message=(
-                        (
-                            f"Required genre scene \"{oblig.label}\" ({oblig.code}) "
-                            f"expected in {timing_label}, but no matching signal words detected."
-                        ) if _is_en else (
-                            f"题材必须场景「{oblig.label}」({oblig.code}) "
-                            f"预期出现在{timing_label}，但未检测到相关信号词。"
-                        )
-                    ),
+                    severity=_severity,
+                    message=_msg,
                 )
             )
 

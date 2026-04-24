@@ -14,10 +14,13 @@ from bestseller.services.output_validator import QualityReport, Violation
 from bestseller.services.regen_loop import (
     DEFAULT_BUDGET_PER_CHAPTER,
     GlobalBudget,
+    OverrideProposal,
     RegenAttempt,
     RegenerationExhausted,
     RegenerationResult,
     compose_feedback_from_violations,
+    is_all_soft,
+    propose_overrides_from_report,
     regenerate_until_valid,
 )
 
@@ -364,3 +367,94 @@ class TestRegenerationResult:
         )
         assert result.regen_count == 2
         assert result.final_report.blocks_write is False
+
+
+# ---------------------------------------------------------------------------
+# Phase C3 — override-proposal helpers.
+# ---------------------------------------------------------------------------
+
+
+_SOFT = frozenset({"LINE_GAP_OVER", "LINE_GAP_WARN", "PLEASURE_SETUP_PAYOFF_DEBT"})
+
+
+class TestIsAllSoft:
+    def test_empty_report_is_all_soft(self) -> None:
+        assert is_all_soft(_passing_report(), _SOFT) is True
+
+    def test_soft_only(self) -> None:
+        assert is_all_soft(_failing_report("LINE_GAP_OVER"), _SOFT) is True
+
+    def test_mixed_is_false(self) -> None:
+        assert (
+            is_all_soft(
+                _failing_report("LINE_GAP_OVER", "LANG_LEAK_CJK_IN_EN"), _SOFT
+            )
+            is False
+        )
+
+    def test_all_hard_is_false(self) -> None:
+        assert is_all_soft(_failing_report("LANG_LEAK_CJK_IN_EN"), _SOFT) is False
+
+    def test_set_and_frozenset_both_accepted(self) -> None:
+        assert is_all_soft(_failing_report("LINE_GAP_OVER"), {"LINE_GAP_OVER"}) is True
+
+
+class TestProposeOverrides:
+    def test_no_violations_returns_empty(self) -> None:
+        assert (
+            propose_overrides_from_report(
+                _passing_report(),
+                chapter_no=5,
+                soft_constraint_codes=_SOFT,
+            )
+            == ()
+        )
+
+    def test_hard_violation_returns_empty(self) -> None:
+        assert (
+            propose_overrides_from_report(
+                _failing_report("LINE_GAP_OVER", "LANG_LEAK_CJK_IN_EN"),
+                chapter_no=5,
+                soft_constraint_codes=_SOFT,
+            )
+            == ()
+        )
+
+    def test_single_soft_emits_one_proposal(self) -> None:
+        proposals = propose_overrides_from_report(
+            _failing_report("LINE_GAP_OVER"),
+            chapter_no=15,
+            soft_constraint_codes=_SOFT,
+            payback_window_default=10,
+        )
+        assert len(proposals) == 1
+        p = proposals[0]
+        assert isinstance(p, OverrideProposal)
+        assert p.violation_code == "LINE_GAP_OVER"
+        assert p.chapter_no == 15
+        assert p.suggested_due_chapter == 25
+        assert p.suggested_rationale_type == "ARC_TIMING"
+        assert "fix LINE_GAP_OVER" in p.suggested_payback_plan  # from prompt_feedback
+
+    def test_multiple_soft_emits_one_per(self) -> None:
+        proposals = propose_overrides_from_report(
+            _failing_report("LINE_GAP_OVER", "PLEASURE_SETUP_PAYOFF_DEBT"),
+            chapter_no=20,
+            soft_constraint_codes=_SOFT,
+            payback_window_default=6,
+        )
+        assert len(proposals) == 2
+        assert {p.violation_code for p in proposals} == {
+            "LINE_GAP_OVER",
+            "PLEASURE_SETUP_PAYOFF_DEBT",
+        }
+        assert all(p.suggested_due_chapter == 26 for p in proposals)
+
+    def test_zero_window_defaults_to_ten(self) -> None:
+        proposals = propose_overrides_from_report(
+            _failing_report("LINE_GAP_OVER"),
+            chapter_no=5,
+            soft_constraint_codes=_SOFT,
+            payback_window_default=0,
+        )
+        assert proposals[0].suggested_due_chapter == 15

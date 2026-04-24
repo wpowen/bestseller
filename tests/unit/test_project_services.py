@@ -79,6 +79,8 @@ async def test_create_project_creates_default_style_guide(monkeypatch: pytest.Mo
 
     assert project.id is not None
     assert project.slug == "my-story"
+    assert project.metadata_json["truth_version"] == 1
+    assert project.metadata_json["truth_updated_at"] is None
     style_guides = [obj for obj in session.added if isinstance(obj, StyleGuideModel)]
     assert len(style_guides) == 1
     assert style_guides[0].project_id == project.id
@@ -284,6 +286,9 @@ async def test_import_planning_artifact_uses_null_scope_filter_and_increments_ve
 
     assert artifact.version_no == 3
     assert artifact.project_id == project.id
+    assert project.metadata_json["truth_version"] == 1
+    assert project.metadata_json["truth_last_changed_artifact_type"] is None
+    assert ArtifactType.BOOK_SPEC.value in project.metadata_json["_truth_artifact_fingerprints"]
     compiled_sql = str(
         session.last_scalar_statement.compile(
             dialect=postgresql.dialect(),
@@ -291,6 +296,49 @@ async def test_import_planning_artifact_uses_null_scope_filter_and_increments_ve
         )
     )
     assert "scope_ref_id IS NULL" in compiled_sql
+
+
+@pytest.mark.asyncio
+async def test_import_planning_artifact_bumps_truth_version_when_core_artifact_changes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = ProjectModel(
+        slug="my-story",
+        title="My Story",
+        genre="fantasy",
+        target_word_count=120000,
+        target_chapters=60,
+        metadata_json={
+            "truth_version": 1,
+            "truth_updated_at": None,
+            "truth_last_changed_artifact_type": None,
+            "_truth_artifact_fingerprints": {
+                ArtifactType.BOOK_SPEC.value: "old-hash",
+            },
+            "_truth_change_log": [],
+        },
+    )
+    project.id = uuid4()
+
+    async def fake_get_project_by_slug(session: object, slug: str) -> ProjectModel:
+        return project
+
+    monkeypatch.setattr(project_services, "get_project_by_slug", fake_get_project_by_slug)
+    session = FakeSession(scalar_results=[0])
+
+    await project_services.import_planning_artifact(
+        session,
+        "my-story",
+        PlanningArtifactCreate(
+            artifact_type=ArtifactType.BOOK_SPEC,
+            content={"logline": "A different hero survives."},
+        ),
+    )
+
+    assert project.metadata_json["truth_version"] == 2
+    assert project.metadata_json["truth_last_changed_artifact_type"] == ArtifactType.BOOK_SPEC.value
+    assert project.metadata_json["truth_updated_at"] is not None
+    assert len(project.metadata_json["_truth_change_log"]) == 1
 
 
 def test_load_json_file_reads_payload(tmp_path: Path) -> None:

@@ -31,6 +31,10 @@ from bestseller.infra.db.models import (
     VolumeModel,
     WorldRuleModel,
 )
+from bestseller.services.character_identity_resolver import (
+    canonical_character_key,
+    collect_entry_aliases,
+)
 from bestseller.services.stage_seed import seed_character_inner_structure
 from bestseller.services.world_expansion import load_world_expansion_context
 from bestseller.services.writing_profile import is_english_language
@@ -62,6 +66,123 @@ def _stable_relationship_id(project_id: UUID, character_a_id: UUID, character_b_
 
 def _normalize_name(value: str) -> str:
     return value.strip()
+
+
+def _character_aliases_from_input(char: CharacterInput) -> list[str]:
+    """Collect alias strings from a CharacterInput via model_extra.
+
+    ``CharacterInput`` keeps extra fields because it uses
+    ``ConfigDict(extra="allow")``. LLM output may stash aliases in either
+    ``aliases`` (list / string) or ``metadata.aliases``.
+    """
+    extras = getattr(char, "model_extra", None) or {}
+    found: list[str] = []
+    for source in (extras, char.metadata or {}):
+        raw = source.get("aliases") if isinstance(source, dict) else None
+        if isinstance(raw, str):
+            if raw.strip() and raw.strip() not in found:
+                found.append(raw.strip())
+        elif isinstance(raw, (list, tuple)):
+            for item in raw:
+                if isinstance(item, str):
+                    trimmed = item.strip()
+                    if trimmed and trimmed not in found:
+                        found.append(trimmed)
+    return found
+
+
+def _dedupe_cast_inputs_by_identity(
+    characters: list[CharacterInput],
+) -> list[CharacterInput]:
+    """Merge canonically-equivalent character inputs into a single entry.
+
+    The LLM sometimes emits ``{"name": "王守真"}``, ``{"name": "王守真(三叔)"}``,
+    and ``{"name": "三叔", "aliases": ["王守真"]}`` within the same cast_spec
+    payload — currently each becomes a separate DB row because
+    ``stable_character_id`` keys off the raw ``name``. This helper collapses
+    them into one entry using canonical-key + alias matching.
+
+    Match order per candidate against accumulated keepers:
+        1. Exact ``name`` match
+        2. Candidate ``name`` appears in keeper's aliases
+        3. Keeper ``name`` appears in candidate's aliases
+        4. ``canonical_character_key`` equal AND non-empty
+
+    Merged entries keep the first-seen ``name`` but accumulate aliases from
+    all folded duplicates. Non-empty scalar fields on duplicates fill holes
+    left by the keeper; existing values are never overwritten.
+    """
+    keepers: list[CharacterInput] = []
+    # Parallel cache of (name, aliases, canonical_key) per keeper for O(n²)
+    # but bounded — a book's cast_spec stays well under a few hundred entries.
+    keeper_alias_cache: list[tuple[str, list[str], str]] = []
+
+    for candidate in characters:
+        cand_name = _normalize_name(candidate.name)
+        if not cand_name:
+            continue
+        cand_aliases = _character_aliases_from_input(candidate)
+        cand_canonical = canonical_character_key(cand_name)
+
+        match_idx: int | None = None
+        for idx, (keeper_name, keeper_aliases, keeper_canonical) in enumerate(keeper_alias_cache):
+            if cand_name == keeper_name:
+                match_idx = idx
+                break
+            if cand_name in keeper_aliases:
+                match_idx = idx
+                break
+            if keeper_name in cand_aliases:
+                match_idx = idx
+                break
+            if cand_canonical and keeper_canonical and cand_canonical == keeper_canonical:
+                match_idx = idx
+                break
+
+        if match_idx is None:
+            keepers.append(candidate)
+            keeper_alias_cache.append((cand_name, list(cand_aliases), cand_canonical))
+            continue
+
+        # Fold candidate into the existing keeper. We mutate a single
+        # aliased dict — the keeper is the same object in ``keepers`` so
+        # downstream writes to metadata survive.
+        keeper = keepers[match_idx]
+        keeper_name, keeper_aliases, keeper_canonical = keeper_alias_cache[match_idx]
+
+        new_aliases = list(keeper_aliases)
+        for alias in [cand_name, *cand_aliases]:
+            if alias and alias != keeper_name and alias not in new_aliases:
+                new_aliases.append(alias)
+
+        # Persist aliases into keeper.metadata so the DB write path can pick
+        # them up (metadata is merged into CharacterModel.metadata_json).
+        keeper.metadata = dict(keeper.metadata or {})
+        keeper.metadata["aliases"] = new_aliases
+
+        # Hole-filling: copy non-empty scalars / strings from candidate where
+        # keeper has None/empty. Authoritative keeper values are preserved.
+        for field_name in (
+            "background",
+            "goal",
+            "fear",
+            "flaw",
+            "strength",
+            "secret",
+            "arc_trajectory",
+            "arc_state",
+            "power_tier",
+        ):
+            if getattr(keeper, field_name, None) in (None, ""):
+                _val = getattr(candidate, field_name, None)
+                if _val not in (None, ""):
+                    setattr(keeper, field_name, _val)
+        if keeper.age is None and candidate.age is not None:
+            keeper.age = candidate.age
+
+        keeper_alias_cache[match_idx] = (keeper_name, new_aliases, keeper_canonical)
+
+    return keepers
 
 
 def _base_role_strength(role_type: str) -> float:
@@ -540,9 +661,89 @@ async def upsert_cast_spec(
     moral_frameworks_populated = 0
     state_snapshots_created = 0
     characters_by_name: dict[str, CharacterModel] = {}
-    for character_input in cast_spec.all_characters():
-        character_id = stable_character_id(project.id, character_input.name)
-        character = await session.get(CharacterModel, character_id)
+
+    # Fold canonical / aliased duplicates *before* hitting the DB. This is
+    # the primary defence against blood-twins' 71-duplicate-character bug:
+    # ``{"name":"王守真"}`` and ``{"name":"王守真(三叔)"}`` collapse to one
+    # ``CharacterInput`` before ``stable_character_id`` fans them out.
+    deduped_inputs = _dedupe_cast_inputs_by_identity(list(cast_spec.all_characters()))
+
+    # Build a lookup of existing rows for the project once so we can match
+    # against alias lists stored on ``CharacterModel.metadata_json``. This
+    # handles the cross-session case where earlier cast_spec writes wrote
+    # ``王守真`` and a later one arrives with ``{"name":"三叔"}``.
+    _existing_rows = list(
+        await session.scalars(
+            select(CharacterModel).where(CharacterModel.project_id == project.id)
+        )
+    )
+    _existing_by_alias: dict[str, CharacterModel] = {}
+    for _row in _existing_rows:
+        _name = _normalize_name(_row.name or "")
+        if _name:
+            _existing_by_alias.setdefault(_name, _row)
+            _canonical_existing = canonical_character_key(_name)
+            if _canonical_existing and _canonical_existing != _name:
+                _existing_by_alias.setdefault(_canonical_existing, _row)
+        _row_meta = _row.metadata_json or {}
+        _row_aliases: list[str] = []
+        for _source_key in ("aliases",):
+            _raw = _row_meta.get(_source_key) if isinstance(_row_meta, dict) else None
+            if isinstance(_raw, list):
+                _row_aliases.extend([a for a in _raw if isinstance(a, str)])
+            elif isinstance(_raw, str) and _raw.strip():
+                _row_aliases.append(_raw.strip())
+        _cast_entry = _row_meta.get("cast_entry") if isinstance(_row_meta, dict) else None
+        if isinstance(_cast_entry, dict):
+            _raw_ce = _cast_entry.get("aliases")
+            if isinstance(_raw_ce, list):
+                _row_aliases.extend([a for a in _raw_ce if isinstance(a, str)])
+            elif isinstance(_raw_ce, str) and _raw_ce.strip():
+                _row_aliases.append(_raw_ce.strip())
+        for _alias in _row_aliases:
+            _alias_trim = _alias.strip()
+            if _alias_trim:
+                _existing_by_alias.setdefault(_alias_trim, _row)
+
+    for character_input in deduped_inputs:
+        # Alias-aware DB lookup: prefer an existing row under a different
+        # name over creating a new ``stable_character_id`` duplicate.
+        _candidate_aliases = _character_aliases_from_input(character_input)
+        _canonical_candidate = canonical_character_key(character_input.name)
+        _existing_row: CharacterModel | None = _existing_by_alias.get(
+            _normalize_name(character_input.name)
+        )
+        if _existing_row is None and _canonical_candidate:
+            _existing_row = _existing_by_alias.get(_canonical_candidate)
+        if _existing_row is None:
+            for _alias in _candidate_aliases:
+                _existing_row = _existing_by_alias.get(_alias.strip())
+                if _existing_row is not None:
+                    break
+
+        _reused_via_alias = False
+        if _existing_row is not None:
+            character = _existing_row
+            character_id = character.id
+            _reused_via_alias = True
+            # Fold the new name + aliases into the existing row so future
+            # lookups find it too. Existing ``character.name`` is preserved.
+            _meta = dict(character.metadata_json or {})
+            _current_aliases = list(collect_entry_aliases(_meta))
+            for _alias in [character_input.name, *_candidate_aliases]:
+                _alias_trim = _alias.strip() if isinstance(_alias, str) else ""
+                if (
+                    _alias_trim
+                    and _alias_trim != _normalize_name(character.name or "")
+                    and _alias_trim not in _current_aliases
+                ):
+                    _current_aliases.append(_alias_trim)
+            if _current_aliases:
+                _meta["aliases"] = _current_aliases
+            character.metadata_json = _meta
+        else:
+            character_id = stable_character_id(project.id, character_input.name)
+            character = await session.get(CharacterModel, character_id)
         if character is None:
             character = CharacterModel(
                 id=character_id,
@@ -555,8 +756,21 @@ async def upsert_cast_spec(
                 metadata_json={},
             )
             session.add(character)
-        character.name = _normalize_name(character_input.name)
+            # Register so subsequent inputs in this batch resolve to this row.
+            _existing_by_alias[_normalize_name(character_input.name)] = character
+            if _canonical_candidate:
+                _existing_by_alias.setdefault(_canonical_candidate, character)
+        _prior_role = character.role or ""
+        if not _reused_via_alias:
+            # Only rewrite the canonical name when we did NOT match via alias.
+            # Otherwise we'd overwrite ``王守真`` with ``三叔`` on a reuse.
+            character.name = _normalize_name(character_input.name)
         character.role = character_input.role
+        # Alias-reuse safeguard: never downgrade protagonist / antagonist to
+        # supporting via a merged alias entry. Preserves the identity role
+        # for the canonical keeper row.
+        if _reused_via_alias and _prior_role in ("protagonist", "antagonist"):
+            character.role = _prior_role
         character.age = character_input.age
         character.background = character_input.background
         character.goal = character_input.goal
@@ -574,7 +788,10 @@ async def upsert_cast_spec(
         # updates are event-gated in feedback._apply_character_state_updates.
         if getattr(character, "stance", None) in (None, ""):
             character.stance = _default_stance_from_role(character_input.role)
-        character.is_pov_character = character_input.role == "protagonist"
+        # Anchor POV on the canonical role after alias-reuse safeguards; this
+        # prevents an aliased ``supporting`` entry from stealing the protagonist
+        # flag away from a ``王守真`` row.
+        character.is_pov_character = character.role == "protagonist"
         character.knowledge_state_json = character_input.knowledge_state.model_dump(mode="json")
         _voice_data = character_input.voice_profile.model_dump(mode="json")
         character.voice_profile_json = _voice_data

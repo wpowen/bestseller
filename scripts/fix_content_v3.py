@@ -7,6 +7,11 @@ Strategy:
 2. Batch-translate via LLM (gpt-4o-mini)
 3. Mechanical replacement in chapter JSONs
 4. Supports resume via cache file
+
+For long text (content/description/text): translate 10 items per batch using
+numbered format to avoid JSON escaping issues.
+For short labels (process_label, memory_label, title, etc.): translate 60 per batch
+using JSON array format.
 """
 from __future__ import annotations
 
@@ -22,7 +27,6 @@ from typing import Any
 ROOT = Path(__file__).resolve().parent.parent
 TRANS_DIR = ROOT / "output" / "天机录" / "translations"
 AUDIT_DIR = ROOT / "output" / "天机录" / "amazon" / "quality_audit"
-GLOSSARY_PATH = ROOT / "config" / "metadata_glossary_tianjilu.json"
 
 CJK = re.compile(r"[\u4e00-\u9fff]")
 META_FIELDS = frozenset({"emotion", "satisfaction_type", "stat", "dimension"})
@@ -32,7 +36,9 @@ CONTENT_FIELDS = frozenset({
     "prompt", "title", "next_chapter_hook",
 })
 
-CHUNK_SIZE = 60
+LONG_TEXT_FIELDS = frozenset({"content", "description", "text"})
+SHORT_CHUNK = 60
+LONG_CHUNK = 10
 
 
 def _llm_call(prompt: str, model: str = "gpt-4o-mini", max_tokens: int = 4096,
@@ -42,7 +48,7 @@ def _llm_call(prompt: str, model: str = "gpt-4o-mini", max_tokens: int = 4096,
     kwargs = {
         "model": model,
         "messages": [
-            {"role": "system", "content": "You are a professional literary translator for a Chinese cultivation/xianxia novel. Translate accurately and naturally. Return ONLY the translation, no explanations."},
+            {"role": "system", "content": "You are a professional literary translator for a Chinese cultivation/xianxia novel. Translate accurately and naturally."},
             {"role": "user", "content": prompt},
         ],
         "max_tokens": max_tokens,
@@ -67,41 +73,96 @@ def _llm_call(prompt: str, model: str = "gpt-4o-mini", max_tokens: int = 4096,
     raise RuntimeError(f"LLM call failed after {max_attempts} attempts") from last_exc
 
 
-def extract_json(text: str) -> list[dict]:
-    text = text.strip()
+def parse_numbered_response(raw: str, count: int) -> list[str]:
+    results: list[str] = []
+    for i in range(1, count + 1):
+        patterns = [
+            rf"(?m)^{i}\.\s*(.+?)(?=\n{ i + 1}\.\s|\Z)",
+            rf"(?m)\[{i}\]\s*(.+?)(?=\n\[|)",
+        ]
+        found = False
+        for pat in patterns:
+            m = re.search(pat, raw)
+            if m:
+                results.append(m.group(1).strip())
+                found = True
+                break
+        if not found:
+            results.append("")
+    return results
+
+
+def parse_json_array(raw: str) -> list[str] | None:
+    text = raw.strip()
     if text.startswith("```"):
         text = re.sub(r"^```(?:json)?\s*", "", text)
         text = re.sub(r"\s*```$", "", text)
-    return json.loads(text)
+    try:
+        data = json.loads(text)
+        if isinstance(data, list):
+            return [str(x) if x else "" for x in data]
+    except json.JSONDecodeError:
+        pass
+    arr_match = re.search(r"\[.*\]", text, re.DOTALL)
+    if arr_match:
+        try:
+            data = json.loads(arr_match.group())
+            if isinstance(data, list):
+                return [str(x) if x else "" for x in data]
+        except json.JSONDecodeError:
+            pass
+    return None
 
 
-def build_batch_prompt(values: list[str], lang: str, field_type: str) -> str:
-    numbered = "\n".join(f"{i+1}. {v}" for i, v in enumerate(values))
+def build_short_prompt(values: list[str], lang: str, field_type: str) -> str:
     lang_names = {"en": "English", "ja": "Japanese", "ko": "Korean"}
     lang_name = lang_names.get(lang, lang)
 
     if field_type in ("process_label", "memory_label"):
-        hint = "These are short UI labels for story choices/memories. Translate concisely (2-5 words in English, equivalent in other languages). Keep them punchy and dramatic."
+        hint = "These are short UI labels for story choices/memories. Translate concisely (2-5 words). Keep them punchy and dramatic."
     elif field_type in ("visible_reward", "visible_cost", "risk_hint"):
-        hint = "These are reward/cost/risk descriptions for story choices. Translate naturally as full sentences or phrases."
-    elif field_type in ("text", "content", "description"):
-        hint = "These are narrative text/dialogue. Translate naturally preserving the literary style and tone."
+        hint = "These are reward/cost/risk descriptions. Translate as natural sentences/phrases."
     elif field_type == "title":
         hint = "These are chapter/section titles. Translate as short dramatic titles."
     elif field_type == "prompt":
-        hint = "These are story prompts/hooks. Translate naturally."
+        hint = "These are story prompts. Translate naturally."
     elif field_type == "next_chapter_hook":
-        hint = "These are cliffhanger hooks. Translate dramatically to maintain suspense."
+        hint = "These are cliffhanger hooks. Translate dramatically."
     else:
         hint = "Translate naturally."
 
-    return f"""Translate the following Chinese text into {lang_name}.
-{hint}
+    numbered = "\n".join(f"{i+1}. {v}" for i, v in enumerate(values))
+    return f"""Translate into {lang_name}. {hint}
 
-Return ONLY a JSON array of translations in the same order. No explanations, no numbering.
-Example: ["translation1", "translation2", ...]
+Return ONLY a JSON array of translations in same order.
+Example: ["translation1", "translation2"]
 
-Values to translate:
+Values:
+{numbered}"""
+
+
+def build_long_prompt(values: list[str], lang: str, field_type: str) -> str:
+    lang_names = {"en": "English", "ja": "Japanese", "ko": "Korean"}
+    lang_name = lang_names.get(lang, lang)
+
+    if field_type == "content":
+        hint = "These are narrative text or dialogue lines. Translate naturally preserving literary style."
+    elif field_type == "description":
+        hint = "These are scene/atmosphere descriptions. Translate with rich literary language."
+    elif field_type == "text":
+        hint = "These are narrative text passages. Translate naturally."
+    else:
+        hint = "Translate naturally preserving style."
+
+    numbered = "\n".join(f"[{i+1}] {v}" for i, v in enumerate(values))
+    return f"""Translate into {lang_name}. {hint}
+
+Format: Return each translation on its own line, prefixed with the same number.
+Example:
+[1] translated text one
+[2] translated text two
+
+Values:
 {numbered}"""
 
 
@@ -163,10 +224,55 @@ def _apply_to_obj(obj: Any, translation_map: dict[str, dict[str, str]]) -> int:
     return fixed
 
 
+def process_field(field: str, values: list[str], lang: str, translation_map: dict[str, dict[str, str]],
+                  cache_path: Path) -> int:
+    existing = translation_map.get(field, {})
+    todo = [v for v in values if v not in existing]
+    if not todo:
+        return 0
+
+    is_long = field in LONG_TEXT_FIELDS
+    chunk_size = LONG_CHUNK if is_long else SHORT_CHUNK
+    chunks = [todo[i:i + chunk_size] for i in range(0, len(todo), chunk_size)]
+    translated_count = 0
+
+    for ci, chunk in enumerate(chunks):
+        print(f"  Chunk {ci+1}/{len(chunks)} ({len(chunk)} items)...", end=" ", flush=True)
+        try:
+            if is_long:
+                prompt = build_long_prompt(chunk, lang, field)
+                raw = _llm_call(prompt, max_tokens=4096)
+                translations = parse_numbered_response(raw, len(chunk))
+            else:
+                prompt = build_short_prompt(chunk, lang, field)
+                raw = _llm_call(prompt, max_tokens=4096)
+                translations = parse_json_array(raw)
+                if translations is None:
+                    translations = parse_numbered_response(raw, len(chunk))
+
+            field_map = translation_map.setdefault(field, {})
+            for i, zh_val in enumerate(chunk):
+                if i < len(translations) and translations[i] and translations[i].strip():
+                    field_map[zh_val] = translations[i].strip()
+                    translated_count += 1
+
+            cache_path.write_text(json.dumps(translation_map, ensure_ascii=False, indent=2), encoding="utf-8")
+            ok_count = sum(1 for i in range(min(len(chunk), len(translations))) if translations[i] and translations[i].strip())
+            print(f"OK ({ok_count}/{len(chunk)})")
+        except Exception as e:
+            print(f"ERROR: {e}")
+            time.sleep(5)
+            continue
+        time.sleep(1)
+
+    return translated_count
+
+
 def main() -> int:
     lang = sys.argv[1] if len(sys.argv) > 1 else "en"
+    only_fields = sys.argv[2].split(",") if len(sys.argv) > 2 else []
     if lang not in ("en", "ja", "ko"):
-        print(f"Usage: {sys.argv[0]} [en|ja|ko]")
+        print(f"Usage: {sys.argv[0]} [en|ja|ko] [field1,field2,...]")
         return 1
 
     cache_path = AUDIT_DIR / f"content_translations_{lang}.json"
@@ -180,41 +286,23 @@ def main() -> int:
     total_unique = sum(len(v) for v in field_values.values())
     total_occurrences = sum(sum(v.values()) for v in field_values.values())
     print(f"[{lang}] Content fields with CJK: {total_unique} unique values across {total_occurrences} occurrences")
-    for field, counter in sorted(field_values.items(), key=lambda x: -sum(x[1].values())):
-        print(f"  {field}: {len(counter)} unique, {sum(counter.values())} total")
 
-    for field, counter in sorted(field_values.items(), key=lambda x: -sum(x[1].values())):
-        existing = translation_map.get(field, {})
-        todo = [v for v in sorted(counter.keys()) if v not in existing]
-        if not todo:
-            print(f"\n[{field}] All {len(counter)} values already translated, skipping")
+    order = ["title", "next_chapter_hook", "process_label", "memory_label",
+             "visible_reward", "visible_cost", "risk_hint", "prompt",
+             "description", "text", "content"]
+
+    for field in order:
+        if field not in field_values:
             continue
+        if only_fields and field not in only_fields:
+            continue
+        counter = field_values[field]
+        todo_count = len([v for v in counter if v not in translation_map.get(field, {})])
+        total_in_field = sum(counter.values())
+        print(f"\n[{field}] {todo_count} values to translate ({len(counter)} unique, {total_in_field} total occurrences)")
 
-        print(f"\n[{field}] {len(todo)} values to translate ({len(counter)} total unique)")
-        chunks = [todo[i:i + CHUNK_SIZE] for i in range(0, len(todo), CHUNK_SIZE)]
-
-        for ci, chunk in enumerate(chunks):
-            print(f"  Chunk {ci+1}/{len(chunks)} ({len(chunk)} items)...", end=" ", flush=True)
-            prompt = build_batch_prompt(chunk, lang, field)
-            try:
-                raw = _llm_call(prompt, max_tokens=4096)
-                translations = extract_json(raw)
-                if not isinstance(translations, list):
-                    print(f"FAILED: not a list")
-                    continue
-                if len(translations) != len(chunk):
-                    print(f"WARN: got {len(translations)} translations for {len(chunk)} items, padding")
-                field_map = translation_map.setdefault(field, {})
-                for i, zh_val in enumerate(chunk):
-                    if i < len(translations) and isinstance(translations[i], str) and translations[i].strip():
-                        field_map[zh_val] = translations[i].strip()
-                cache_path.write_text(json.dumps(translation_map, ensure_ascii=False, indent=2), encoding="utf-8")
-                print(f"OK")
-            except Exception as e:
-                print(f"ERROR: {e}")
-                time.sleep(5)
-                continue
-            time.sleep(1)
+        values = sorted(counter.keys())
+        process_field(field, values, lang, translation_map, cache_path)
 
     print(f"\nApplying translations to chapter files...")
     total_fixed = apply_translations(lang, translation_map)

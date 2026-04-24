@@ -189,12 +189,25 @@ class RedisSettings(BaseModel):
 
 
 class PipelineSettings(BaseModel):
+    # Block drafting when bible / graph / outline lag behind truth version.
+    enable_truth_version_guard: bool = True
     consistency_check_interval: int = 20  # Run consistency check every N chapters
     rolling_summary_interval: int = 25  # Compress knowledge window every N chapters
     resume_enabled: bool = True  # Skip already-completed chapters on resume
     accept_on_stall: bool = True  # Accept best draft when rewrite is stalled (no score improvement)
     enable_chapter_feedback: bool = True  # Post-chapter feedback extraction
     enable_contradiction_checks: bool = True  # Pre-scene contradiction checks
+    # Turn continuity/identity violations into hard write blocks.
+    # NOTE: ``identity_block_on_violation`` is kept False by default until the
+    # cast-side alias merge (story_bible._dedupe_cast_inputs_by_identity +
+    # planner resolver) has been validated on a canary project. While the
+    # character registry is still producing duplicate rows under variant
+    # names, the identity guard's exact-name matching will mis-label the
+    # second row as "dead character speaks" / "gender flip" and block the
+    # entire scene. Flip back to True once the alias merge is verified.
+    contradiction_block_on_violation: bool = True
+    identity_block_on_violation: bool = False
+    identity_block_severities: list[str] = Field(default_factory=lambda: ["critical", "major"])
     enable_scene_plan_richness_gate: bool = True  # Pre-draft scene card richness validation
     scene_richness_block_on_critical: bool = False  # If True, raise on critical richness failure instead of logging + injecting warnings
     feedback_stale_clue_threshold: int = 15  # Chapters before a clue is stale
@@ -231,6 +244,14 @@ class PipelineSettings(BaseModel):
     # How many library entries the soft-reference block may surface per
     # call.  Kept small so the prompt budget stays predictable.
     library_soft_reference_top_k: int = 4
+    # Write-time active query brief — lets the model ask targeted read-only
+    # questions before scene drafting. Disabled by default to preserve the
+    # historical pipeline cost/latency profile.
+    enable_story_query_brief: bool = False
+    story_query_brief_max_rounds: int = 4
+    enable_golden_three_health: bool = True
+    golden_three_min_hype_chapters: int = 2
+    golden_three_min_ending_hook_chapters: int = 2
     # Curator scheduling — overridable via env for admin triage.
     curator_weekly_cron_hour: int = 4  # 04:00 UTC Monday
     curator_weekly_cron_day_of_week: str = "mon"

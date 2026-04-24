@@ -494,6 +494,40 @@ def test_project_repair_command(monkeypatch: pytest.MonkeyPatch, tmp_path: Path)
     assert "repair 流程结束" in result.stderr
 
 
+def test_project_health_repair_command(monkeypatch: pytest.MonkeyPatch) -> None:
+    @asynccontextmanager
+    async def fake_session_scope(settings):
+        yield object()
+
+    async def fake_repair_project_health(session, settings, project_slug, **kwargs):
+        assert project_slug == "my-story"
+        assert kwargs["dry_run"] is False
+        assert kwargs["materialize_truth"] is True
+        return {
+            "project_slug": project_slug,
+            "dry_run": False,
+            "actions": [
+                {
+                    "action": "materialize_truth_component",
+                    "component": "story_bible",
+                    "status": "completed",
+                }
+            ],
+        }
+
+    monkeypatch.setattr("bestseller.cli.main.session_scope", fake_session_scope)
+    monkeypatch.setattr(
+        "bestseller.cli.main.repair_project_health",
+        fake_repair_project_health,
+    )
+
+    result = runner.invoke(app, ["project", "health-repair", "my-story", "--apply"])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["actions"][0]["component"] == "story_bible"
+
+
 def test_project_autowrite_command(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     @asynccontextmanager
     async def fake_session_scope(settings):

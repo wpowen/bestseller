@@ -203,3 +203,22 @@ logging:
     - "sentence_transformers"
     - "asyncpg"
     - "sqlalchemy.engine"
+
+# -----------------------------------------------------------------------------
+# Pipeline
+# -----------------------------------------------------------------------------
+pipeline:
+  enable_truth_version_guard: true
+  enable_story_query_brief: false
+  story_query_brief_max_rounds: 4
+  contradiction_block_on_violation: true
+  # Kept off by default until the alias-aware cast merge is validated end to
+  # end on a canary project. See settings.py::PipelineSettings for the full
+  # rationale (false positives when the registry holds duplicate name rows).
+  identity_block_on_violation: false
+  identity_block_severities:
+    - critical
+    - major
+  enable_golden_three_health: true
+  golden_three_min_hype_chapters: 2
+  golden_three_min_ending_hook_chapters: 2

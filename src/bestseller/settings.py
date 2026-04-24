@@ -220,19 +220,27 @@ class PipelineSettings(BaseModel):
     category_aware_planning: bool = True  # Use novel-category research for genre-specific planning
     # ── Multi-dimensional material library (Batch 1-3 rollout) ─────────
     # Batch 1 gate: Curator + Research Agent + query API available when
-    # this is True.  Default False so historical projects stay on the
-    # existing pipeline.  Managed via ``config/local.yaml`` or
-    # ``BESTSELLER__PIPELINE__ENABLE_MATERIAL_LIBRARY=true``.
-    enable_material_library: bool = False
+    # this is True.  Now **defaulted to True** after the L1–L4 recon
+    # (2026-04-24): historical projects have empty ``project_materials``
+    # rows and the planner + drafter already contain explicit "no-refs →
+    # legacy pack fragments" fallbacks, so enabling the library globally
+    # is byte-identical for old books.  Override with ``BESTSELLER__
+    # PIPELINE__ENABLE_MATERIAL_LIBRARY=false`` if a legacy environment
+    # ever regresses.
+    enable_material_library: bool = True
     # Batch 2 gate: 5 Forges produce ProjectMaterials + Planner/Drafter
-    # switch to reference-style prompts.  Depends on
-    # ``enable_material_library``.  Default False.
-    enable_forge_pipeline: bool = False
+    # switch to reference-style prompts.  Defaulted on alongside
+    # ``enable_material_library``; cold-start guards in
+    # ``material_forge.base`` handle an empty library without blocking.
+    enable_forge_pipeline: bool = True
     # Batch 2 gate: Planner / Drafter inject §dim/slug references instead
     # of pack-embedded plot fragments.  Orthogonal to forge_pipeline so
     # library-backed references can be authored manually for testing.
-    enable_reference_style_generation: bool = False
-    # Batch 3 gate: CrossProjectFingerprint + novelty critic.
+    enable_reference_style_generation: bool = True
+    # Batch 3 gate: CrossProjectFingerprint + novelty critic.  Remains
+    # opt-in until the first post-rollout canary proves false-positive
+    # rate is acceptable — C7 already warn-only-integrates novelty on
+    # character upsert without this flag.
     enable_novelty_guard: bool = False
     # Opt-in "soft reference" layer — lets historical projects' *new*
     # chapters pull inspirational entries straight from the global
@@ -252,6 +260,46 @@ class PipelineSettings(BaseModel):
     enable_golden_three_health: bool = True
     golden_three_min_hype_chapters: int = 2
     golden_three_min_ending_hook_chapters: int = 2
+    # Chapter-length stability gate.  Pulls the target window from
+    # ``generation.words_per_chapter`` so historical projects without a
+    # populated ``invariants.length_envelope`` still get hard feedback
+    # when a chapter lands 30%+ short/long.  Disabled by default until we
+    # canary one genre end-to-end; when enabled, ``BLOCK_*`` bands raise a
+    # ``WriteSafetyBlockError`` in the same way golden-three does.
+    enable_length_stability_gate: bool = True
+    # Warnings (soft-margin bands) do NOT block by default — only the
+    # hard BLOCK_LOW / BLOCK_HIGH bands surface.  Flip to
+    # ``["major", "minor"]`` to surface WARN_* as well (chatty).
+    length_stability_block_severities: list[str] = Field(
+        default_factory=lambda: ["major"]
+    )
+    # Extra tolerance beyond [min, max] before a drift is escalated from
+    # WARN_* to BLOCK_*.  0.10 == 10% extra slack (so with min=5000 the
+    # hard block trips at wc < 4500).  Tunable per project via
+    # ``BESTSELLER__PIPELINE__LENGTH_STABILITY_WARN_MARGIN``.
+    length_stability_warn_margin: float = 0.10
+    # ── Chapter auto-repair ──
+    # When ``enable_length_stability_gate`` (or other L4/L5 gates) flags a
+    # chapter as ``production_state="blocked"``, the chapter pipeline can
+    # auto-trigger a scene-level rewrite cycle instead of leaving the
+    # workflow stranded in FAILED / WAITING_HUMAN.  Only a narrow set of
+    # block codes are considered "repairable" to avoid infinite loops on
+    # deterministic violations (e.g. character-name roster issues can only
+    # be fixed by a schema change, not more rewriting).
+    enable_chapter_auto_repair: bool = True
+    # Hard cap on the number of (assemble → gate → rewrite → reassemble)
+    # cycles per chapter.  1 means at most one repair attempt in addition
+    # to the original generation; 0 disables auto-repair entirely even
+    # when ``enable_chapter_auto_repair`` is True.
+    chapter_auto_repair_max_attempts: int = 1
+    # Only these block codes trigger auto-repair.  Length-stability bands
+    # (BLOCK_LOW / BLOCK_HIGH) are the sweet spot — a rewrite with
+    # "expand / trim to hit target" guidance usually fixes them.  L4/L5
+    # block codes (POV_LOCK, NAMING, DIALOG_INTEGRITY, ...) are deliberately
+    # omitted until they've been canary-verified as auto-fixable.
+    chapter_auto_repair_repairable_codes: list[str] = Field(
+        default_factory=lambda: ["BLOCK_LOW", "BLOCK_HIGH"]
+    )
     # Curator scheduling — overridable via env for admin triage.
     curator_weekly_cron_hour: int = 4  # 04:00 UTC Monday
     curator_weekly_cron_day_of_week: str = "mon"

@@ -22,7 +22,6 @@ from bestseller.domain.story_bible import (
 )
 from bestseller.infra.db.models import ChapterModel, ProjectModel, VolumeModel
 from bestseller.services.character_identity_resolver import (
-    canonical_character_key,
     collect_entry_aliases,
     merge_character_with_aliases,
     resolve_character_match,
@@ -2416,6 +2415,62 @@ def _planner_prompt_pack(project: ProjectModel):
         genre=project.genre,
         sub_genre=project.sub_genre,
     )
+
+
+def _planner_fragment_or_ref(
+    prompt_pack: Any,
+    project: ProjectModel,
+    fragment_name: str,
+) -> str:
+    """Return a ``planner_*`` pack fragment unless reference-style generation is active.
+
+    When the project has a non-empty ``metadata_json["material_reference_block"]``
+    (i.e. Forge has already run and §slug URNs are injected into prompts),
+    returns ``""`` so the reference block fully replaces the B-class script
+    injection that causes theme homogenisation across same-genre books.
+
+    When no reference block is present (cold-start, flag off, or Forge
+    skipped because the library had no seeds), falls back to the legacy
+    pack fragment so baseline quality is preserved.
+
+    Parameters
+    ----------
+    prompt_pack:
+        Resolved prompt pack from :func:`_planner_prompt_pack`; ``None`` is
+        treated as "no pack available" and returns ``""``.
+    project:
+        The project model — used to check whether the reference block was
+        stashed during Batch-2 pre-fetch in ``generate_novel_plan``.
+    fragment_name:
+        The pack fragment key (e.g. ``"planner_book_spec"``).
+
+    Returns
+    -------
+    str
+        Either ``""`` (reference-style active) or ``f"{fragment}\\n"`` (legacy path).
+    """
+    if not prompt_pack:
+        return ""
+    # Honour the feature flag defensively — if the flag was flipped after
+    # the block was stashed, respect the current setting rather than stale
+    # metadata. ``get_settings()`` is cached so this is cheap.
+    try:
+        if not get_settings().pipeline.enable_reference_style_generation:
+            return f"{render_prompt_pack_fragment(prompt_pack, fragment_name)}\n"
+    except Exception:  # noqa: BLE001 — settings load must not break planner
+        pass
+    ref_block = ""
+    try:
+        md = project.metadata_json or {}
+        if isinstance(md, dict):
+            ref_block = md.get("material_reference_block", "") or ""
+    except Exception:  # noqa: BLE001
+        ref_block = ""
+    if ref_block:
+        # Reference-style active: suppress B-class fragment to avoid
+        # prescribing pre-baked beats that collide across same-genre books.
+        return ""
+    return f"{render_prompt_pack_fragment(prompt_pack, fragment_name)}\n"
 
 
 def _build_protagonist_from_category(
@@ -5266,7 +5321,7 @@ def _book_spec_prompts(project: ProjectModel, premise: str, fallback: dict[str, 
     if _genre_system:
         system_prompt += f"\n{_genre_system}"
     _pp_block = f"Prompt Pack：\n{render_prompt_pack_prompt_block(prompt_pack)}\n" if prompt_pack else ""
-    _pp_book_spec = f"{render_prompt_pack_fragment(prompt_pack, 'planner_book_spec')}\n" if prompt_pack else ""
+    _pp_book_spec = _planner_fragment_or_ref(prompt_pack, project, "planner_book_spec")
     _methodology_planner_block = render_methodology_block(prompt_pack, phase="planner")
     _methodology_line = f"\n{_methodology_planner_block}\n" if _methodology_planner_block else ""
     _story_package_block = _story_package_prompt_block(project, language=language)
@@ -5430,7 +5485,7 @@ def _world_spec_prompts(project: ProjectModel, premise: str, book_spec: dict[str
     if _genre_system:
         system_prompt += f"\n{_genre_system}"
     _pp_block = f"Prompt Pack：\n{render_prompt_pack_prompt_block(prompt_pack)}\n" if prompt_pack else ""
-    _pp_world_spec = f"{render_prompt_pack_fragment(prompt_pack, 'planner_world_spec')}\n" if prompt_pack else ""
+    _pp_world_spec = _planner_fragment_or_ref(prompt_pack, project, "planner_world_spec")
     # Batch 2: inject §slug material references when enable_reference_style_generation is on
     _mat_ref = (project.metadata_json or {}).get("material_reference_block", "")
     _mat_ref_block = f"\n{_mat_ref}\n" if _mat_ref else ""
@@ -5519,7 +5574,7 @@ def _cast_spec_prompts(project: ProjectModel, book_spec: dict[str, Any], world_s
     if _genre_system:
         system_prompt += f"\n{_genre_system}"
     _pp_block = f"Prompt Pack：\n{render_prompt_pack_prompt_block(prompt_pack)}\n" if prompt_pack else ""
-    _pp_cast_spec = f"{render_prompt_pack_fragment(prompt_pack, 'planner_cast_spec')}\n" if prompt_pack else ""
+    _pp_cast_spec = _planner_fragment_or_ref(prompt_pack, project, "planner_cast_spec")
     _story_package_block = _story_package_prompt_block(project, language=language)
     user_prompt = (
         (
@@ -5730,7 +5785,7 @@ def _volume_plan_prompts(
     if _genre_system:
         system_prompt += f"\n{_genre_system}"
     _pp_block = f"Prompt Pack：\n{render_prompt_pack_prompt_block(prompt_pack)}\n" if prompt_pack else ""
-    _pp_volume_plan = f"{render_prompt_pack_fragment(prompt_pack, 'planner_volume_plan')}\n" if prompt_pack else ""
+    _pp_volume_plan = _planner_fragment_or_ref(prompt_pack, project, "planner_volume_plan")
     _story_package_block = _story_package_prompt_block(project, language=language)
     user_prompt = (
         (
@@ -5903,7 +5958,7 @@ def _outline_prompts(project: ProjectModel, book_spec: dict[str, Any], cast_spec
     if _genre_system:
         system_prompt += f"\n{_genre_system}"
     _pp_block = f"Prompt Pack：\n{render_prompt_pack_prompt_block(prompt_pack)}\n" if prompt_pack else ""
-    _pp_outline = f"{render_prompt_pack_fragment(prompt_pack, 'planner_outline')}\n" if prompt_pack else ""
+    _pp_outline = _planner_fragment_or_ref(prompt_pack, project, "planner_outline")
     _methodology_planner_block = render_methodology_block(prompt_pack, phase="planner")
     _methodology_line = f"\n{_methodology_planner_block}\n" if _methodology_planner_block else ""
     user_prompt = (
@@ -5968,6 +6023,7 @@ def _volume_outline_prompts(
     volume_entry: dict[str, Any],
     *,
     revealed_ledger_block: str | None = None,
+    extra_constraints: list[str] | None = None,
 ) -> tuple[str, str]:
     """Prompts for generating chapter outlines for a single volume.
 
@@ -6005,7 +6061,7 @@ def _volume_outline_prompts(
     if _genre_system:
         system_prompt += f"\n{_genre_system}"
     _pp_block = f"Prompt Pack：\n{render_prompt_pack_prompt_block(prompt_pack)}\n" if prompt_pack else ""
-    _pp_outline = f"{render_prompt_pack_fragment(prompt_pack, 'planner_outline')}\n" if prompt_pack else ""
+    _pp_outline = _planner_fragment_or_ref(prompt_pack, project, "planner_outline")
     _methodology_planner_block = render_methodology_block(prompt_pack, phase="planner")
     _methodology_line = f"\n{_methodology_planner_block}\n" if _methodology_planner_block else ""
     _story_package_block = _story_package_prompt_block(project, language=language)
@@ -6059,6 +6115,10 @@ def _volume_outline_prompts(
     if _genre_instruction:
         user_prompt += f"\n\n{'[Genre planning requirements]' if is_en else '【品类规划要求】'}\n{_genre_instruction}"
     user_prompt = _append_category_context(user_prompt, project, is_en=is_en)
+    if extra_constraints:
+        header = "[Hard constraints — MUST be reflected in the outline]" if is_en else "【硬约束 — 必须体现在章纲中】"
+        constraint_lines = "\n".join(f"- {c}" for c in extra_constraints)
+        user_prompt += f"\n\n{header}\n{constraint_lines}"
     return system_prompt, user_prompt
 
 
@@ -6069,6 +6129,7 @@ def _volume_cast_expansion_prompts(
     cast_spec: dict[str, Any],
     volume_entry: dict[str, Any],
     prior_feedback_summary: str | None = None,
+    extra_constraints: list[str] | None = None,
 ) -> tuple[str, str]:
     """Prompts for expanding/evolving the cast for a specific volume (Phase 3)."""
     language = _planner_language(project)
@@ -6123,6 +6184,11 @@ def _volume_cast_expansion_prompts(
             "新角色应最少化——只引入本卷绝对必要的角色。"
         )
     )
+    if extra_constraints:
+        is_en = is_english_language(_planner_language(project))
+        header = "[Hard constraints — MUST shape cast decisions]" if is_en else "【硬约束 — 必须影响角色决策】"
+        constraint_lines = "\n".join(f"- {c}" for c in extra_constraints)
+        user_prompt += f"\n\n{header}\n{constraint_lines}"
     return system_prompt, user_prompt
 
 
@@ -7804,12 +7870,19 @@ async def generate_volume_plan(
     volume_plan: list[dict[str, Any]],
     prior_feedback_summary: str | None = None,
     prior_world_snapshot: str | None = None,
+    extra_constraints: list[str] | None = None,
     requested_by: str = "system",
 ) -> VolumePlanningResult:
     """Phase B of progressive planning: plan a single volume.
 
     Steps: cast expansion → world disclosure → volume outline.
     Uses prior volume's writing feedback to evolve characters and world.
+
+    ``extra_constraints`` — caller-supplied hard constraints injected verbatim
+    at the end of the cast-expansion and volume-outline prompts (before the
+    closing instruction line). Also merged with any directives stored in
+    ``project.metadata_json["mid_flight_directives"]`` so both in-flight rescue
+    operations and ad-hoc per-call overrides apply together.
     """
     project = await get_project_by_slug(session, project_slug)
     if project is None:
@@ -7827,6 +7900,17 @@ async def generate_volume_plan(
             break
     if vol_entry is None:
         raise ValueError(f"Volume {volume_number} not found in volume plan")
+
+    # Merge caller-supplied constraints with project-level mid-flight directives.
+    # Stored directives apply to ALL future volumes (rescue operation), while
+    # extra_constraints are per-call overrides. Both are appended to cast-expansion
+    # and volume-outline prompts so the LLM treats them as hard constraints.
+    _stored_directives: list[str] = []
+    if isinstance(project.metadata_json, dict):
+        _raw = project.metadata_json.get("mid_flight_directives") or []
+        if isinstance(_raw, list):
+            _stored_directives = [str(d) for d in _raw if d]
+    _all_constraints: list[str] = list(_stored_directives) + list(extra_constraints or [])
 
     workflow_run = await create_workflow_run(
         session,
@@ -7853,6 +7937,7 @@ async def generate_volume_plan(
             cast_exp_system, cast_exp_user = _volume_cast_expansion_prompts(
                 project, book_spec, world_spec, cast_spec, vol_entry,
                 prior_feedback_summary=prior_feedback_summary,
+                extra_constraints=_all_constraints or None,
             )
             cast_exp_payload, llm_run_id = await _generate_structured_artifact(
                 session, settings, project=project,
@@ -7975,6 +8060,7 @@ async def generate_volume_plan(
         vol_outline_system, vol_outline_user = _volume_outline_prompts(
             project, book_spec, effective_cast_spec, _mapping_list(volume_plan), vol_entry,
             revealed_ledger_block=_ledger_block,
+            extra_constraints=_all_constraints or None,
         )
         vol_outline_payload, llm_run_id = await _generate_structured_artifact(
             session, settings, project=project,

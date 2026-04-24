@@ -1,0 +1,52 @@
+# Romance / palace / female-growth romance — relationships drive pacing,
+# emotion beats > raw power fantasy.
+id: relationship-driven
+name: 关系/情感驱动
+
+hook_config:
+  preferred_types:
+    - 情绪
+    - 悬念
+    - 选择
+  strength_baseline: medium
+  chapter_end_required: true
+  transition_allowance: 3
+
+coolpoint_config:
+  preferred_patterns:
+    - 甜蜜超预期
+    - 迪化误解
+    - 身份掉马
+    - 打脸权威
+  density_per_chapter: medium
+  combo_interval: 6
+  milestone_interval: 18
+
+micropayoff_config:
+  preferred_types:
+    - 关系升级
+    - 真心显露
+    - 小确幸
+  min_per_chapter: 2
+  transition_min: 1
+
+pacing_config:
+  stagnation_threshold: 4
+  strand_max_gap:
+    overt: 6
+    undercurrent: 8      # undercurrent = 情感线 — tighter than default
+    hidden: 15
+    core_axis: 20
+  transition_max_consecutive: 3
+
+override_config:
+  allowed_rationale_types:
+    - TRANSITIONAL_SETUP
+    - CHARACTER_CREDIBILITY   # relationship authenticity often beats beat-timing
+    - LOGIC_INTEGRITY
+    - ARC_TIMING
+    - GENRE_CONVENTION
+    - EDITORIAL_INTENT
+  debt_multiplier: 1.0
+  payback_window_default: 6
+  interest_rate_per_chapter: 0.08

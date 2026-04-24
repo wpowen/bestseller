@@ -1,0 +1,52 @@
+# Eastern aesthetic / xianxia-lit / wuxia / 东方美学 — atmosphere +
+# moral-aesthetic payoffs. Slower cadence; payoffs leaning on poetic reveal
+# and philosophical beats rather than raw hype.
+id: eastern-aesthetic
+name: 东方美学/仙侠/文美
+
+hook_config:
+  preferred_types:
+    - 悬念
+    - 情绪
+    - 渴望
+  strength_baseline: medium
+  chapter_end_required: true
+  transition_allowance: 3
+
+coolpoint_config:
+  preferred_patterns:
+    - 打脸权威
+    - 扮猪吃虎
+    - 身份掉马
+  density_per_chapter: low     # atmosphere-heavy genre doesn't need high density
+  combo_interval: 7
+  milestone_interval: 25
+
+micropayoff_config:
+  preferred_types:
+    - 意境渲染
+    - 师徒/缘分
+    - 悟道瞬间
+  min_per_chapter: 2
+  transition_min: 1
+
+pacing_config:
+  stagnation_threshold: 5      # slower-paced genre tolerates quieter stretches
+  strand_max_gap:
+    overt: 7
+    undercurrent: 12
+    hidden: 18
+    core_axis: 15              # thematic axis is central to the book
+  transition_max_consecutive: 4
+
+override_config:
+  allowed_rationale_types:
+    - CHARACTER_CREDIBILITY
+    - WORLD_RULE_CONSTRAINT
+    - TRANSITIONAL_SETUP
+    - ARC_TIMING
+    - GENRE_CONVENTION         # poetic cadence is a genre norm
+    - EDITORIAL_INTENT
+  debt_multiplier: 0.9         # this genre tolerates softer payoffs
+  payback_window_default: 8
+  interest_rate_per_chapter: 0.06

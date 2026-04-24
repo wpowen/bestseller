@@ -43,6 +43,7 @@ from bestseller.domain.contradiction import (
     ContradictionWarning,
 )
 from bestseller.domain.story_bible import CharacterInput
+from bestseller.services.checker_schema import CheckerIssue, CheckerReport
 from bestseller.services.invariants import ProjectInvariants
 from bestseller.services.writing_profile import is_english_language
 
@@ -69,6 +70,20 @@ class BibleDeficiency:
     detail: str
     prompt_feedback: str
 
+    def as_checker_issue(self) -> CheckerIssue:
+        """Adapt to Phase A1 unified schema. Bible deficiencies are hard —
+        the bible is the foundation; you cannot override it."""
+
+        return CheckerIssue(
+            id=self.code,
+            type="bible_gate",
+            severity="high",
+            location=self.location,
+            description=self.detail,
+            suggestion=self.prompt_feedback,
+            can_override=False,
+        )
+
 
 @dataclass(frozen=True)
 class BibleCompletenessReport:
@@ -91,6 +106,27 @@ class BibleCompletenessReport:
         for idx, d in enumerate(self.deficiencies, 1):
             lines.append(f"\n{idx}) [{d.code}] {d.location}\n   现状：{d.detail}\n   整改：{d.prompt_feedback}")
         return "\n".join(lines)
+
+    def as_checker_report(self, chapter: int = 0) -> CheckerReport:
+        """Adapt to Phase A1 unified schema. ``chapter`` defaults to 0 because
+        bible-gate runs *before* chapter generation — it's a project-level
+        check, but the scorecard needs a chapter slot."""
+
+        issues = tuple(d.as_checker_issue() for d in self.deficiencies)
+        score = 100 if self.passes else max(0, 100 - len(self.deficiencies) * 10)
+        return CheckerReport(
+            agent="bible-gate",
+            chapter=chapter,
+            overall_score=score,
+            passed=self.passes,
+            issues=issues,
+            metrics={"deficiency_count": len(self.deficiencies)},
+            summary=(
+                "Bible 完备性校验通过"
+                if self.passes
+                else f"Bible 存在 {len(self.deficiencies)} 条硬性缺陷，必须整改"
+            ),
+        )
 
 
 @dataclass(frozen=True)

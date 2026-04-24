@@ -1,0 +1,55 @@
+# Action / progression / upgrade / xianxia — the default fallback profile.
+# Values cribbed from webnovel-writer's genre-profiles.md and tuned for
+# Chinese web-novel conventions (chapter-end hooks are mandatory, density
+# is high, pacing debt costs are above baseline because readers churn fast).
+id: action-progression
+name: 动作/进阶/升级流
+
+hook_config:
+  preferred_types:
+    - 危机
+    - 悬念
+    - 渴望
+  strength_baseline: strong
+  chapter_end_required: true
+  transition_allowance: 1
+
+coolpoint_config:
+  preferred_patterns:
+    - 装逼打脸
+    - 扮猪吃虎
+    - 越级反杀
+    - 打脸权威
+  density_per_chapter: high
+  combo_interval: 4
+  milestone_interval: 15
+
+micropayoff_config:
+  preferred_types:
+    - 小胜利
+    - 能力展示
+    - 朋友认可
+  min_per_chapter: 3
+  transition_min: 1
+
+pacing_config:
+  stagnation_threshold: 3
+  strand_max_gap:
+    overt: 5
+    undercurrent: 10
+    hidden: 15
+    core_axis: 20
+  transition_max_consecutive: 2
+
+override_config:
+  allowed_rationale_types:
+    - TRANSITIONAL_SETUP
+    - LOGIC_INTEGRITY
+    - CHARACTER_CREDIBILITY
+    - WORLD_RULE_CONSTRAINT
+    - ARC_TIMING
+    - GENRE_CONVENTION
+    - EDITORIAL_INTENT
+  debt_multiplier: 1.2
+  payback_window_default: 5
+  interest_rate_per_chapter: 0.10

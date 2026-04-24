@@ -5,6 +5,10 @@ from typing import TYPE_CHECKING, Any, Iterable, Sequence
 
 from bestseller.domain.contradiction import ContradictionCheckResult
 from bestseller.services.identity_guard import IdentityViolation
+from bestseller.services.length_stability_gate import (
+    LENGTH_STABILITY_ISSUE_SEVERITY,
+    LengthStabilityReport,
+)
 
 if TYPE_CHECKING:
     from bestseller.services.reader_power import GoldenThreeReport
@@ -181,6 +185,89 @@ def _golden_three_evidence(report: "GoldenThreeReport") -> str:
     return "; ".join(fragments)
 
 
+def findings_from_length_stability_report(
+    report: LengthStabilityReport | None,
+    *,
+    block_on_violation: bool = True,
+    blocked_severities: Iterable[str] = ("major",),
+) -> tuple[WriteSafetyFinding, ...]:
+    """Surface a chapter-length verdict as write-safety findings.
+
+    Without this wrapper, a 3500-word chapter (vs. ``target=6400``) would
+    only trigger ``LengthEnvelopeCheck`` when the project has a populated
+    ``invariants.length_envelope``. In practice many historical projects
+    don't — which is how chapters at 52% of target shipped silently.
+
+    The default ``blocked_severities=("major",)`` matches the severity we
+    assigned to ``BLOCK_LOW`` / ``BLOCK_HIGH`` in
+    :mod:`length_stability_gate`; warnings (``WARN_*``) do not surface
+    unless ``"minor"`` is included. When the report is ``None`` or
+    ``enabled=False``, no findings are returned.
+    """
+    if not block_on_violation or report is None:
+        return ()
+    if not getattr(report, "enabled", False):
+        return ()
+    if report.issue_code is None:
+        return ()
+
+    blocked = {severity.strip().lower() for severity in blocked_severities if severity}
+    if not blocked:
+        return ()
+
+    severity = LENGTH_STABILITY_ISSUE_SEVERITY.get(report.band.value, "minor")
+    if severity not in blocked:
+        return ()
+
+    message = _length_stability_message(report)
+    payload = {
+        "word_count": int(report.word_count),
+        "min_words": int(report.min_words),
+        "target_words": int(report.target_words),
+        "max_words": int(report.max_words),
+        "band": report.band.value,
+        "deviation_ratio": round(float(report.deviation_ratio), 4),
+    }
+    return (
+        WriteSafetyFinding(
+            source="length_stability",
+            code=str(report.issue_code),
+            severity=severity,
+            message=message,
+            evidence=_length_stability_evidence(report),
+            payload=payload,
+        ),
+    )
+
+
+def _length_stability_message(report: LengthStabilityReport) -> str:
+    deviation_pct = round(float(report.deviation_ratio) * 100.0, 1)
+    if report.band.value in ("BLOCK_LOW", "WARN_LOW"):
+        return (
+            f"Chapter length {report.word_count} words is "
+            f"{abs(deviation_pct):.1f}% under the {report.target_words}-word "
+            f"target (min={report.min_words})."
+        )
+    if report.band.value in ("BLOCK_HIGH", "WARN_HIGH"):
+        return (
+            f"Chapter length {report.word_count} words is "
+            f"{deviation_pct:+.1f}% over the {report.target_words}-word "
+            f"target (max={report.max_words})."
+        )
+    return (
+        f"Chapter length {report.word_count} words "
+        f"({deviation_pct:+.1f}% vs target={report.target_words})."
+    )
+
+
+def _length_stability_evidence(report: LengthStabilityReport) -> str:
+    return (
+        f"wc={report.word_count} target={report.target_words} "
+        f"min={report.min_words} max={report.max_words} "
+        f"band={report.band.value}"
+    )
+
+
 def serialize_write_safety_findings(
     findings: Iterable[WriteSafetyFinding],
 ) -> list[dict[str, Any]]:
@@ -238,6 +325,8 @@ __all__ = [
     "assert_no_write_safety_blocks",
     "describe_write_safety_findings",
     "findings_from_contradiction_result",
+    "findings_from_golden_three_report",
     "findings_from_identity_violations",
+    "findings_from_length_stability_report",
     "serialize_write_safety_findings",
 ]

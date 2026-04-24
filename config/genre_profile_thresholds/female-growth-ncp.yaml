@@ -1,0 +1,51 @@
+# Female-growth / non-centered-pairing — emotion + identity growth leads,
+# romance is secondary. "姐系女主" / 不谈恋爱 tropes.
+id: female-growth-ncp
+name: 女性成长/无 CP 向
+
+hook_config:
+  preferred_types:
+    - 情绪
+    - 选择
+    - 悬念
+  strength_baseline: medium
+  chapter_end_required: true
+  transition_allowance: 2
+
+coolpoint_config:
+  preferred_patterns:
+    - 扮猪吃虎
+    - 打脸权威
+    - 身份掉马
+    - 反派翻车
+  density_per_chapter: medium
+  combo_interval: 5
+  milestone_interval: 18
+
+micropayoff_config:
+  preferred_types:
+    - 自我突破
+    - 关系重建
+    - 内心成长
+  min_per_chapter: 2
+  transition_min: 1
+
+pacing_config:
+  stagnation_threshold: 3
+  strand_max_gap:
+    overt: 5
+    undercurrent: 10
+    hidden: 15
+    core_axis: 15               # identity / theme axis tighter — it IS the book
+  transition_max_consecutive: 2
+
+override_config:
+  allowed_rationale_types:
+    - CHARACTER_CREDIBILITY     # primary: growth must be earned
+    - TRANSITIONAL_SETUP
+    - LOGIC_INTEGRITY
+    - ARC_TIMING
+    - EDITORIAL_INTENT
+  debt_multiplier: 1.05
+  payback_window_default: 6
+  interest_rate_per_chapter: 0.09

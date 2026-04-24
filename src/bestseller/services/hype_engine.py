@@ -29,6 +29,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Iterable, Literal, Mapping
 
+from bestseller.services.checker_schema import CheckerIssue, CheckerReport
+
 
 # ---------------------------------------------------------------------------
 # HypeType — 12 canonical payoff flavours.
@@ -346,6 +348,134 @@ def evaluate_hype_diversity(
         "recent_types": [t for t in normalised[:forbid_run_length] if t],
         "suggested": suggested[:5],
     }
+
+
+# ---------------------------------------------------------------------------
+# Phase A1 — Unified CheckerReport adapter.
+# ---------------------------------------------------------------------------
+
+
+def build_hype_checker_report(
+    *,
+    chapter: int,
+    observed_intensity: float | None,
+    target_intensity: float,
+    observed_count: int,
+    min_count: int,
+    missing_types: tuple[str, ...] = (),
+    diversity: dict[str, Any] | None = None,
+    golden_three_weak: bool = False,
+) -> CheckerReport:
+    """Wrap hype-engine evaluations into the Phase A1 schema.
+
+    Hype issues are *soft* — a quiet arc can legitimately dip below target
+    density if the book plans a bigger swing afterward. Golden-three weak
+    (chapters 1-3) is bumped to ``high`` because the opening-chapter
+    commercial bar is non-negotiable by genre convention.
+    """
+
+    issues: list[CheckerIssue] = []
+
+    if observed_count < min_count:
+        issues.append(
+            CheckerIssue(
+                id="SOFT_HYPE_DENSITY_LOW",
+                type="hype",
+                severity="high" if chapter <= 3 else "medium",
+                location="整章",
+                description=(
+                    f"本章爽点数 {observed_count} 低于目标下限 {min_count}"
+                ),
+                suggestion="提升爽点密度或重新选择配方（recipe）",
+                can_override=True,
+                allowed_rationales=("ARC_TIMING", "GENRE_CONVENTION"),
+            )
+        )
+
+    if observed_intensity is not None and observed_intensity + 1.5 < target_intensity:
+        issues.append(
+            CheckerIssue(
+                id="SOFT_HYPE_INTENSITY_LOW",
+                type="hype",
+                severity="medium",
+                location="整章",
+                description=(
+                    f"爽点强度 {observed_intensity:.2f} 低于目标 {target_intensity:.2f}"
+                ),
+                suggestion="增强执行：更具体的打脸细节 / 更大反差的装逼",
+                can_override=True,
+                allowed_rationales=("ARC_TIMING", "EDITORIAL_INTENT"),
+            )
+        )
+
+    if missing_types:
+        issues.append(
+            CheckerIssue(
+                id="SOFT_HYPE_TYPE_MISSING",
+                type="hype",
+                severity="medium",
+                location="整章",
+                description=f"本章未覆盖到期望类型：{', '.join(missing_types)}",
+                suggestion=f"插入至少一个 {missing_types[0]} 节拍",
+                can_override=True,
+                allowed_rationales=("ARC_TIMING", "GENRE_CONVENTION"),
+            )
+        )
+
+    if diversity and diversity.get("forbid_types"):
+        issues.append(
+            CheckerIssue(
+                id="SOFT_HYPE_REPEAT",
+                type="hype",
+                severity="medium",
+                location="整章",
+                description=f"最近连续出现类型：{diversity['forbid_types']}",
+                suggestion=(
+                    f"建议切换至：{', '.join(diversity.get('suggested', [])[:3])}"
+                ),
+                can_override=True,
+                allowed_rationales=("ARC_TIMING", "EDITORIAL_INTENT"),
+            )
+        )
+
+    if golden_three_weak:
+        issues.append(
+            CheckerIssue(
+                id="SOFT_GOLDEN_THREE_WEAK",
+                type="hype",
+                severity="high",
+                location="黄金三章",
+                description="黄金三章爽点强度不达标，可能影响留存",
+                suggestion="强化开篇的金手指亮相 / 首次打脸执行细节",
+                can_override=True,
+                allowed_rationales=("GENRE_CONVENTION", "EDITORIAL_INTENT"),
+            )
+        )
+
+    passed = not issues
+    penalty = sum(
+        {"critical": 25, "high": 15, "medium": 8, "low": 3}[i.severity] for i in issues
+    )
+    score = max(0, 100 - penalty)
+    summary = (
+        "爽感引擎审查通过" if passed
+        else f"爽感引擎发现 {len(issues)} 条软建议，可通过 Override Contract 签署"
+    )
+    return CheckerReport(
+        agent="hype-engine",
+        chapter=chapter,
+        overall_score=score,
+        passed=passed,
+        issues=tuple(issues),
+        metrics={
+            "observed_count": observed_count,
+            "min_count": min_count,
+            "observed_intensity": observed_intensity,
+            "target_intensity": target_intensity,
+            "missing_types": list(missing_types),
+        },
+        summary=summary,
+    )
 
 
 def _normalise_type(value: HypeType | str | None) -> str | None:

@@ -1,0 +1,51 @@
+# Esports / tournament / sports competition — very tight hook cadence,
+# recurring match structure, "comeback" payoffs define the genre.
+id: esports-competition
+name: 电竞/竞技
+
+hook_config:
+  preferred_types:
+    - 危机
+    - 悬念
+    - 渴望
+  strength_baseline: strong
+  chapter_end_required: true
+  transition_allowance: 1
+
+coolpoint_config:
+  preferred_patterns:
+    - 装逼打脸
+    - 越级反杀
+    - 反派翻车
+    - 甜蜜超预期
+  density_per_chapter: high
+  combo_interval: 3             # tournaments reward tight combo beats
+  milestone_interval: 10        # matches are frequent
+
+micropayoff_config:
+  preferred_types:
+    - 微操爽点
+    - 队友羁绊
+    - 粉丝反应
+  min_per_chapter: 3
+  transition_min: 1
+
+pacing_config:
+  stagnation_threshold: 2
+  strand_max_gap:
+    overt: 4                    # main career arc needs very tight cadence
+    undercurrent: 7
+    hidden: 12
+    core_axis: 18
+  transition_max_consecutive: 1
+
+override_config:
+  allowed_rationale_types:
+    - CHARACTER_CREDIBILITY
+    - LOGIC_INTEGRITY
+    - TRANSITIONAL_SETUP
+    - ARC_TIMING
+    - GENRE_CONVENTION
+  debt_multiplier: 1.15
+  payback_window_default: 4
+  interest_rate_per_chapter: 0.10

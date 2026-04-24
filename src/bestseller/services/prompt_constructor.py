@@ -34,7 +34,7 @@ from __future__ import annotations
 import logging
 import random
 from dataclasses import dataclass, field, replace
-from typing import Sequence
+from typing import Any, Sequence
 
 from bestseller.services.diversity_budget import DiversityBudget
 from bestseller.services.hype_engine import (
@@ -865,6 +865,34 @@ def build_chapter_l3_blocks(
     )
 
 
+def build_line_rotation_nudge(
+    line_gap_report: Any,
+    *,
+    language: str = "zh-CN",
+) -> str:
+    """Render the narrative-line rotation nudge for the writing brief.
+
+    Delegates to ``narrative_line_tracker.render_rotation_nudge`` so the
+    exact wording (most-overdue layer, gap vs. budget) lives in one
+    place.  Returns an empty string when no nudge is needed so callers
+    can unconditionally concatenate this into their prompt assembly.
+
+    ``Any`` is used here to avoid a hard import cycle — the tracker
+    imports ``genre_profile_thresholds`` which is leaf, but keeping the
+    parameter ``Any`` lets the prompt constructor stay import-neutral.
+    """
+
+    if line_gap_report is None:
+        return ""
+    try:
+        from bestseller.services.narrative_line_tracker import (
+            render_rotation_nudge,
+        )
+    except ImportError:  # pragma: no cover - defensive
+        return ""
+    return render_rotation_nudge(line_gap_report, language=language)
+
+
 def rebuild_with_feedback(
     prior_plan: PromptPlan, feedback: str
 ) -> PromptPlan:
@@ -899,6 +927,7 @@ __all__ = [
     "build_diversity_constraints",
     "build_hype_constraints",
     "build_invariants_section",
+    "build_line_rotation_nudge",
     "build_methodology_inject",
     "build_prior_chapter_tail",
     "build_reader_contract_section",

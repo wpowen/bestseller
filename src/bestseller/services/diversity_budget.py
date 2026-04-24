@@ -59,6 +59,16 @@ DEFAULT_HOT_VOCAB_WINDOW = 5
 DEFAULT_HOT_VOCAB_TOP_N = 20
 DEFAULT_HOT_VOCAB_MIN_COUNT = 3
 
+# Title n-gram cooldown tracking (Bug "X决堤" / 风暴 / 异变 套路重复).
+# Per-project ledger maps each 2–3 char CJK n-gram seen in a chapter title to
+# the most-recent chapter it appeared in. We compare against the *current*
+# chapter at title-generation time and reject (or surface as a constraint to
+# the planner) any candidate n-gram still inside the cooldown window.
+TITLE_NGRAM_MIN_LEN = 2
+TITLE_NGRAM_MAX_LEN = 3
+DEFAULT_TITLE_COOLDOWN_CHAPTERS = 75
+TITLE_PATTERN_HISTORY_MAX = 2000  # cap pruning bound for unbounded growth
+
 
 # ---------------------------------------------------------------------------
 # Tokenization helpers.
@@ -94,6 +104,37 @@ def _english_tokens(text: str) -> list[str]:
 def _chinese_ngrams(text: str) -> list[str]:
     # Only emit the longest CJK run for each match to avoid double-counting.
     return [m.group(0) for m in _CJK_NGRAM_RE.finditer(text)]
+
+
+# CJK runs at least ``TITLE_NGRAM_MIN_LEN`` long; we then enumerate every
+# substring of length [MIN, MAX] from each run. Punctuation/spaces split runs
+# naturally because the regex matches CJK characters only.
+_CJK_RUN_RE = re.compile(r"[\u4e00-\u9fff]+")
+
+
+def extract_title_ngrams(title: str) -> tuple[str, ...]:
+    """Return the unique 2–3 char CJK n-grams found in ``title``.
+
+    Used by the title-pattern cooldown: each n-gram is the unit we track.
+    For a title like ``"血脉决堤"`` we emit ``("血脉", "脉决", "决堤", "血脉决",
+    "脉决堤")``. ASCII titles return empty (no n-gram analysis).
+    """
+    if not title:
+        return ()
+    grams: list[str] = []
+    seen: set[str] = set()
+    for run in _CJK_RUN_RE.findall(title):
+        if len(run) < TITLE_NGRAM_MIN_LEN:
+            continue
+        max_n = min(TITLE_NGRAM_MAX_LEN, len(run))
+        for n in range(TITLE_NGRAM_MIN_LEN, max_n + 1):
+            for i in range(0, len(run) - n + 1):
+                gram = run[i : i + n]
+                if gram in seen:
+                    continue
+                seen.add(gram)
+                grams.append(gram)
+    return tuple(grams)
 
 
 def extract_tokens(text: str, language: str | None) -> list[str]:
@@ -150,6 +191,10 @@ class DiversityBudget:
     titles_used: list[str] = field(default_factory=list)
     vocab_freq: dict[str, dict[str, int]] = field(default_factory=dict)
     hype_moments: list[HypeMoment] = field(default_factory=list)
+    # Maps each CJK title n-gram to the most recent chapter where it appeared.
+    # Used by ``title_pattern_cooldown_violations`` to block repeated patterns
+    # like 《血脉决堤》→《灵脉决堤》→《道心决堤》 within a sliding chapter window.
+    title_patterns: dict[str, int] = field(default_factory=dict)
 
     # -- queries ---------------------------------------------------------
 
@@ -340,10 +385,56 @@ class DiversityBudget:
             )
         )
 
-    def register_title(self, title: str) -> None:
+    def register_title(self, title: str, chapter_no: int = 0) -> None:
         title = (title or "").strip()
-        if title:
-            self.titles_used.append(title)
+        if not title:
+            return
+        self.titles_used.append(title)
+        if chapter_no > 0:
+            for gram in extract_title_ngrams(title):
+                self.title_patterns[gram] = max(
+                    self.title_patterns.get(gram, 0), chapter_no
+                )
+            # Prune oldest entries to cap unbounded JSONB growth.
+            if len(self.title_patterns) > TITLE_PATTERN_HISTORY_MAX:
+                sorted_items = sorted(
+                    self.title_patterns.items(), key=lambda kv: kv[1]
+                )
+                keep = sorted_items[len(sorted_items) - TITLE_PATTERN_HISTORY_MAX :]
+                self.title_patterns = dict(keep)
+
+    def title_pattern_cooldown_violations(
+        self,
+        candidate: str,
+        current_chapter: int,
+        *,
+        cooldown_chapters: int = DEFAULT_TITLE_COOLDOWN_CHAPTERS,
+    ) -> list[str]:
+        """Return n-grams from ``candidate`` still within the cooldown window.
+
+        An empty list means the candidate title is safe to use.  A non-empty
+        list names the specific n-grams that have been seen within the last
+        ``cooldown_chapters`` chapters and should trigger a title regen.
+
+        Parameters
+        ----------
+        candidate
+            The proposed chapter title to check.
+        current_chapter
+            The chapter number being planned (used to compute recency).
+        cooldown_chapters
+            A pattern is considered "in cooldown" if it last appeared in
+            chapter ``>= current_chapter - cooldown_chapters``.
+        """
+        if not candidate or cooldown_chapters <= 0:
+            return []
+        threshold = current_chapter - cooldown_chapters
+        violations: list[str] = []
+        for gram in extract_title_ngrams(candidate):
+            last_seen = self.title_patterns.get(gram)
+            if last_seen is not None and last_seen >= threshold:
+                violations.append(gram)
+        return violations
 
     def register_vocab(
         self, chapter_no: int, text: str, language: str | None
@@ -389,7 +480,7 @@ class DiversityBudget:
         if cliffhanger is not None:
             self.register_cliffhanger(chapter_no, cliffhanger)
         if title is not None:
-            self.register_title(title)
+            self.register_title(title, chapter_no)
         if text is not None:
             self.register_vocab(chapter_no, text, language)
         if hype_type is not None:
@@ -419,6 +510,7 @@ class DiversityBudget:
             "hype_moments": [
                 hype_moment_to_dict(m) for m in self.hype_moments
             ],
+            "title_patterns": dict(self.title_patterns),
         }
 
     @classmethod
@@ -468,6 +560,13 @@ class DiversityBudget:
             moment = hype_moment_from_dict(row)
             if moment is not None:
                 hype_moments.append(moment)
+        raw_patterns: Mapping[str, Any] = data.get("title_patterns") or {}
+        title_patterns: dict[str, int] = {}
+        for gram, last_ch in raw_patterns.items():
+            try:
+                title_patterns[str(gram)] = int(last_ch)
+            except (TypeError, ValueError):
+                continue
         return cls(
             project_id=project_id,
             openings_used=openings,
@@ -475,6 +574,7 @@ class DiversityBudget:
             titles_used=titles,
             vocab_freq=vocab,
             hype_moments=hype_moments,
+            title_patterns=title_patterns,
         )
 
 
@@ -513,6 +613,7 @@ async def load_diversity_budget(
             "titles_used": row.titles_used,
             "vocab_freq": row.vocab_freq,
             "hype_moments": getattr(row, "hype_moments", None) or [],
+            "title_patterns": getattr(row, "title_patterns", None) or {},
         },
     )
 
@@ -533,6 +634,8 @@ async def save_diversity_budget(
     update_cols: dict[str, Any] = {}
     if hasattr(DiversityBudgetModel, "hype_moments"):
         values["hype_moments"] = payload["hype_moments"]
+    if hasattr(DiversityBudgetModel, "title_patterns"):
+        values["title_patterns"] = payload["title_patterns"]
     stmt = pg_insert(DiversityBudgetModel).values(**values)
     update_cols = {
         "openings_used": stmt.excluded.openings_used,
@@ -542,6 +645,8 @@ async def save_diversity_budget(
     }
     if hasattr(DiversityBudgetModel, "hype_moments"):
         update_cols["hype_moments"] = stmt.excluded.hype_moments
+    if hasattr(DiversityBudgetModel, "title_patterns"):
+        update_cols["title_patterns"] = stmt.excluded.title_patterns
     stmt = stmt.on_conflict_do_update(
         index_elements=["project_id"],
         set_=update_cols,
@@ -665,10 +770,12 @@ __all__ = [
     "DEFAULT_HOT_VOCAB_MIN_COUNT",
     "DEFAULT_HOT_VOCAB_TOP_N",
     "DEFAULT_HOT_VOCAB_WINDOW",
+    "DEFAULT_TITLE_COOLDOWN_CHAPTERS",
     "DiversityBudget",
     "OpeningUse",
     "CliffhangerUse",
     "VOCAB_HISTORY_MAX_CHAPTERS",
+    "extract_title_ngrams",
     "extract_tokens",
     "load_diversity_budget",
     "render_budget_diversity_block",

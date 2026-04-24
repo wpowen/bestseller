@@ -410,6 +410,38 @@ async def ensure_coverage(
     )
 
 
+async def library_has_any_genre_coverage(
+    session: AsyncSession,
+    *,
+    genre: str | None,
+    min_entries: int = 1,
+) -> bool:
+    """Cold-start guard: does the library have *any* active entries for a genre?
+
+    Returns ``True`` once the active-row count for ``genre`` reaches
+    ``min_entries``.  A ``None`` genre counts rows that are explicitly
+    genre-neutral (``genre IS NULL`` in the DB) which is only useful for
+    truly universal dimensions like ``thematic_motifs``.
+
+    The Forge pipeline uses this as a boolean precondition — if the
+    library is completely empty for the target genre, running Forges
+    would produce generic output with no "baseline to differentiate
+    against", which would then poison future books that query *this*
+    book's materials as seeds.  Skipping Forge and falling back to the
+    legacy pack path is the safer default.
+    """
+    count_stmt = (
+        select(func.count(MaterialLibraryModel.id))
+        .where(MaterialLibraryModel.status == "active")
+    )
+    if genre is None:
+        count_stmt = count_stmt.where(MaterialLibraryModel.genre.is_(None))
+    else:
+        count_stmt = count_stmt.where(MaterialLibraryModel.genre == genre)
+    active_count = int((await session.execute(count_stmt)).scalar_one() or 0)
+    return active_count >= min_entries
+
+
 # ── Usage tracking ─────────────────────────────────────────────────────
 
 
@@ -441,5 +473,6 @@ __all__ = [
     "insert_entry",
     "insert_entries",
     "ensure_coverage",
+    "library_has_any_genre_coverage",
     "mark_used",
 ]

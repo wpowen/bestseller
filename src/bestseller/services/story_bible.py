@@ -5,12 +5,13 @@ import logging
 import re
 from collections import defaultdict
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from uuid import UUID, uuid5
 
 from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from bestseller.domain.context import ChapterStateSnapshotContext, HardFactContext
 from bestseller.domain.story_bible import (
     CastSpecInput,
     CharacterInput,
@@ -22,6 +23,7 @@ from bestseller.infra.db.models import (
     CharacterModel,
     CharacterStateSnapshotModel,
     ChapterModel,
+    ChapterStateSnapshotModel,
     FactionModel,
     LocationModel,
     ProjectModel,
@@ -38,6 +40,9 @@ from bestseller.services.character_identity_resolver import (
 from bestseller.services.stage_seed import seed_character_inner_structure
 from bestseller.services.world_expansion import load_world_expansion_context
 from bestseller.services.writing_profile import is_english_language
+
+if TYPE_CHECKING:
+    from bestseller.settings import AppSettings
 
 
 logger = logging.getLogger(__name__)
@@ -91,6 +96,18 @@ def _character_aliases_from_input(char: CharacterInput) -> list[str]:
     return found
 
 
+def _identity_lookup_keys(name: str, aliases: list[str]) -> set[str]:
+    keys: set[str] = set()
+    for value in [name, *aliases]:
+        normalized = _normalize_name(value)
+        if normalized:
+            keys.add(normalized)
+        canonical = canonical_character_key(normalized)
+        if canonical:
+            keys.add(canonical)
+    return keys
+
+
 def _dedupe_cast_inputs_by_identity(
     characters: list[CharacterInput],
 ) -> list[CharacterInput]:
@@ -123,6 +140,7 @@ def _dedupe_cast_inputs_by_identity(
             continue
         cand_aliases = _character_aliases_from_input(candidate)
         cand_canonical = canonical_character_key(cand_name)
+        cand_keys = _identity_lookup_keys(cand_name, cand_aliases)
 
         match_idx: int | None = None
         for idx, (keeper_name, keeper_aliases, keeper_canonical) in enumerate(keeper_alias_cache):
@@ -136,6 +154,9 @@ def _dedupe_cast_inputs_by_identity(
                 match_idx = idx
                 break
             if cand_canonical and keeper_canonical and cand_canonical == keeper_canonical:
+                match_idx = idx
+                break
+            if cand_keys & _identity_lookup_keys(keeper_name, keeper_aliases):
                 match_idx = idx
                 break
 
@@ -183,6 +204,21 @@ def _dedupe_cast_inputs_by_identity(
         keeper_alias_cache[match_idx] = (keeper_name, new_aliases, keeper_canonical)
 
     return keepers
+
+
+def _register_character_lookup(
+    lookup: dict[str, CharacterModel],
+    character: CharacterModel,
+    *names_or_aliases: str | None,
+) -> None:
+    for raw_name in names_or_aliases:
+        name = _normalize_name(raw_name or "")
+        if not name:
+            continue
+        lookup.setdefault(name, character)
+        canonical = canonical_character_key(name)
+        if canonical:
+            lookup.setdefault(canonical, character)
 
 
 def _base_role_strength(role_type: str) -> float:
@@ -648,6 +684,141 @@ async def _ensure_initial_character_state_snapshot(
     return True
 
 
+def _character_novelty_summary(character_input: CharacterInput) -> str:
+    """Build a 1–3 sentence narrative summary for cross-project novelty.
+
+    The fingerprint embedding compares ``name + narrative_summary``, so
+    we pack the most identity-bearing free-form fields (role, background,
+    goal, flaw, arc trajectory) into one string.  Empty slots are
+    tolerated — ``check_novelty`` only requires that at least one piece
+    of non-name text is present to distinguish two same-dimension
+    entries.
+    """
+    parts: list[str] = []
+    role = (character_input.role or "").strip()
+    if role:
+        parts.append(f"role={role}")
+    for label, value in (
+        ("background", character_input.background),
+        ("goal", character_input.goal),
+        ("flaw", character_input.flaw),
+        ("fear", character_input.fear),
+        ("arc", character_input.arc_trajectory),
+    ):
+        snippet = (value or "").strip() if isinstance(value, str) else ""
+        if snippet:
+            parts.append(f"{label}={snippet}")
+    return " | ".join(parts)
+
+
+async def _run_character_novelty_check(
+    session: AsyncSession,
+    *,
+    project: ProjectModel,
+    new_characters: list[tuple[CharacterModel, str]],
+) -> int:
+    """Warn-only cross-project novelty check for newly created characters.
+
+    Gate is ``settings.pipeline.enable_novelty_guard``. When enabled:
+
+    * every net-new character in ``new_characters`` is sent to
+      :func:`check_novelty` under ``dimension="character_templates"``;
+    * the verdict is **logged** (never raised) because character names
+      are load-bearing for the rest of the pipeline — blocking here would
+      strand a planner run;
+    * on any verdict a fingerprint is registered so subsequent projects
+      can detect the collision going forward.
+
+    Returns the count of fingerprints successfully registered (mainly for
+    tests).  Swallows exceptions — novelty tracking must never break
+    character persistence.
+    """
+    if not new_characters:
+        return 0
+
+    try:
+        from bestseller.settings import get_settings  # noqa: PLC0415
+        settings = get_settings()
+    except Exception:  # pragma: no cover — settings loading failure
+        logger.debug("novelty_critic: settings unavailable, skipping character check")
+        return 0
+
+    if not settings.pipeline.enable_novelty_guard:
+        return 0
+
+    genre = (project.genre or "").strip()
+    if not genre:
+        logger.debug(
+            "novelty_critic: project %s has no genre, skipping character check",
+            project.id,
+        )
+        return 0
+
+    from bestseller.services.novelty_critic import (  # noqa: PLC0415
+        check_novelty,
+        register_fingerprint,
+    )
+
+    dimension = "character_templates"
+    registered = 0
+    for character, narrative_summary in new_characters:
+        name = (character.name or "").strip()
+        if not name:
+            continue
+        try:
+            verdict = await check_novelty(
+                session,
+                genre=genre,
+                dimension=dimension,
+                entity_name=name,
+                narrative_summary=narrative_summary or name,
+            )
+            if not verdict.ok:
+                logger.warning(
+                    "novelty_critic[cast]: WARN-ONLY block genre=%s name=%r "
+                    "reason=%s conflicting_project=%s similarity=%.3f — "
+                    "character persisted anyway (Batch 3 warn-only phase)",
+                    genre,
+                    name,
+                    verdict.reason,
+                    verdict.conflicting_project_id,
+                    verdict.similarity_score,
+                )
+            elif verdict.reason == "usage_count_warning":
+                logger.info(
+                    "novelty_critic[cast]: seed-overuse warning genre=%s name=%r "
+                    "overused_library_ids=%s",
+                    genre,
+                    name,
+                    verdict.overused_library_ids,
+                )
+            # Always register — warn-only phase still needs the fingerprint
+            # so future projects can detect the collision.
+            await register_fingerprint(
+                session,
+                project_id=project.id,
+                genre=genre,
+                dimension=dimension,
+                entity_name=name,
+                slug=f"cast/{name}",
+                narrative_summary=narrative_summary or name,
+            )
+            registered += 1
+        except Exception:  # pragma: no cover — defensive catch-all
+            logger.exception(
+                "novelty_critic[cast]: unexpected error for name=%r (non-fatal)",
+                name,
+            )
+    if registered:
+        logger.info(
+            "novelty_critic[cast]: registered %d character fingerprint(s) for project=%s genre=%s",
+            registered,
+            project.id,
+            genre,
+        )
+    return registered
+
+
 async def upsert_cast_spec(
     session: AsyncSession,
     project: ProjectModel,
@@ -661,6 +832,10 @@ async def upsert_cast_spec(
     moral_frameworks_populated = 0
     state_snapshots_created = 0
     characters_by_name: dict[str, CharacterModel] = {}
+    # C7: track net-new characters for warn-only cross-project novelty check.
+    # Populated in the ``character is None → CharacterModel(...)`` branch so
+    # alias-reuses don't re-fingerprint the same row on every run.
+    _new_character_tracker: list[tuple[CharacterModel, str]] = []
 
     # Fold canonical / aliased duplicates *before* hitting the DB. This is
     # the primary defence against blood-twins' 71-duplicate-character bug:
@@ -703,7 +878,7 @@ async def upsert_cast_spec(
         for _alias in _row_aliases:
             _alias_trim = _alias.strip()
             if _alias_trim:
-                _existing_by_alias.setdefault(_alias_trim, _row)
+                _register_character_lookup(_existing_by_alias, _row, _alias_trim)
 
     for character_input in deduped_inputs:
         # Alias-aware DB lookup: prefer an existing row under a different
@@ -717,7 +892,12 @@ async def upsert_cast_spec(
             _existing_row = _existing_by_alias.get(_canonical_candidate)
         if _existing_row is None:
             for _alias in _candidate_aliases:
-                _existing_row = _existing_by_alias.get(_alias.strip())
+                for _alias_key in (_alias.strip(), canonical_character_key(_alias)):
+                    if not _alias_key:
+                        continue
+                    _existing_row = _existing_by_alias.get(_alias_key)
+                    if _existing_row is not None:
+                        break
                 if _existing_row is not None:
                     break
 
@@ -756,10 +936,18 @@ async def upsert_cast_spec(
                 metadata_json={},
             )
             session.add(character)
+            # C7: fingerprint only net-new rows; alias-reuses (handled above)
+            # don't need re-tracking.
+            _new_character_tracker.append(
+                (character, _character_novelty_summary(character_input))
+            )
             # Register so subsequent inputs in this batch resolve to this row.
-            _existing_by_alias[_normalize_name(character_input.name)] = character
-            if _canonical_candidate:
-                _existing_by_alias.setdefault(_canonical_candidate, character)
+            _register_character_lookup(
+                _existing_by_alias,
+                character,
+                character_input.name,
+                *_candidate_aliases,
+            )
         _prior_role = character.role or ""
         if not _reused_via_alias:
             # Only rewrite the canonical name when we did NOT match via alias.
@@ -848,7 +1036,14 @@ async def upsert_cast_spec(
             },
         )
         characters_upserted += 1
-        characters_by_name[character.name] = character
+        _register_character_lookup(
+            characters_by_name,
+            character,
+            character.name,
+            character_input.name,
+            *_candidate_aliases,
+            *collect_entry_aliases(character.metadata_json or {}),
+        )
 
     # Cross-reference antagonist_forces[].active_volumes into character.metadata_json
     # so downstream routing (narrative._build_antagonist_plan_specs, conflict arcs,
@@ -973,12 +1168,23 @@ async def upsert_cast_spec(
         )
 
     await session.flush()
+
+    # C7: Cross-project novelty check on net-new characters (warn-only).
+    # Runs *after* flush so the character rows exist, but never raises —
+    # any novelty verdict is surfaced via logs only in this phase.
+    fingerprints_registered = await _run_character_novelty_check(
+        session,
+        project=project,
+        new_characters=_new_character_tracker,
+    )
+
     return {
         "characters_upserted": characters_upserted,
         "relationships_upserted": relationships_upserted,
         "state_snapshots_created": state_snapshots_created,
         "voice_profiles_populated": voice_profiles_populated,
         "moral_frameworks_populated": moral_frameworks_populated,
+        "novelty_fingerprints_registered": fingerprints_registered,
     }
 
 
@@ -1489,7 +1695,7 @@ Output JSON only, nothing else. If no changes, use empty arrays."""
 
 async def update_story_bible_from_chapter(
     session: AsyncSession,
-    settings: "AppSettings",
+    settings: AppSettings,
     *,
     project: ProjectModel,
     chapter: ChapterModel,
@@ -1671,3 +1877,208 @@ async def update_story_bible_from_chapter(
         counts,
     )
     return counts
+
+
+# ---------------------------------------------------------------------------
+# Phase D1 — per-volume timeline renderer.
+#
+# Produces ``大纲/第{N}卷-时间线.md`` from per-chapter ``ChapterStateSnapshotModel``
+# rows. The table columns line up with what the Phase D3 validators read:
+# ``时间锚点 / 章内时间跨度 / 与上章时间差 / 倒计时状态``. The CLI writes the
+# returned markdown to disk; the renderer itself stays pure so tests can
+# drive it without a DB.
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class TimelineRow:
+    """One row in the per-volume timeline table."""
+
+    chapter_number: int
+    chapter_title: str | None
+    time_anchor: str | None
+    chapter_time_span: str | None
+    delta_from_previous: str | None
+    countdown_states: tuple[str, ...]
+
+
+def render_volume_timeline_markdown(
+    *,
+    volume_number: int,
+    volume_title: str | None,
+    rows: list[TimelineRow],
+) -> str:
+    """Render a volume's timeline as a markdown file body.
+
+    The output is stable and test-friendly: no timestamps, no prose beyond
+    the title header + table. Empty cells collapse to ``—`` so the table
+    still renders cleanly when a chapter hasn't extracted time anchors
+    yet.
+    """
+
+    title_line = f"# 第 {volume_number} 卷 · 时间线"
+    if volume_title:
+        title_line = f"{title_line} · {volume_title}"
+
+    header = (
+        "| 章节 | 标题 | 时间锚点 | 章内时间跨度 | 与上章时间差 | 倒计时状态 |\n"
+        "| --- | --- | --- | --- | --- | --- |"
+    )
+
+    body_lines: list[str] = []
+    for row in rows:
+        title = row.chapter_title or "—"
+        anchor = row.time_anchor or "—"
+        span = row.chapter_time_span or "—"
+        delta = row.delta_from_previous or "—"
+        countdowns = "；".join(row.countdown_states) if row.countdown_states else "—"
+        body_lines.append(
+            f"| 第 {row.chapter_number} 章 | {title} | {anchor} | {span} | {delta} | {countdowns} |"
+        )
+
+    if not body_lines:
+        body_lines.append(
+            "| — | — | — | — | — | — |"
+        )
+
+    return "\n".join([title_line, "", header, *body_lines, ""])
+
+
+def _format_day_delta(prev_day: int, prev_part: int, cur_day: int, cur_part: int) -> str:
+    """Human-friendly delta string for the timeline table."""
+
+    day_diff = cur_day - prev_day
+    part_diff = cur_part - prev_part
+    if day_diff == 0 and part_diff == 0:
+        return "同一时间点"
+    if day_diff == 0:
+        return f"当天 · 推进 {part_diff:+d} 时段"
+    sign = "+" if day_diff >= 0 else ""
+    return f"{sign}{day_diff} 天"
+
+
+def _extract_countdown_states(facts: list[HardFactContext]) -> tuple[str, ...]:
+    """Collect countdown facts as ``name=value[unit]`` short strings."""
+
+    from bestseller.domain.context import HardFactContext as _HF  # local alias for clarity
+
+    out: list[str] = []
+    for fact in facts:
+        if fact.kind != "countdown":
+            continue
+        unit = f" {fact.unit}" if fact.unit else ""
+        out.append(f"{fact.name}={fact.value}{unit}")
+    return tuple(out)
+
+
+def build_volume_timeline_rows(
+    snapshots: list[ChapterStateSnapshotContext],
+    *,
+    chapter_titles: dict[int, str | None] | None = None,
+) -> list[TimelineRow]:
+    """Pure helper: snapshots → ``TimelineRow`` list in chapter order.
+
+    ``snapshots`` may arrive unsorted; we sort ascending by chapter_number.
+    ``chapter_titles`` is an optional map so the renderer can show the
+    chapter title alongside the number without a second DB round-trip.
+    """
+
+    from bestseller.services.continuity import _parse_time_anchor
+
+    chapter_titles = chapter_titles or {}
+    ordered = sorted(snapshots, key=lambda s: s.chapter_number)
+
+    rows: list[TimelineRow] = []
+    prev_parsed: tuple[int, int] | None = None
+    for snap in ordered:
+        cur_parsed = _parse_time_anchor(snap.time_anchor)
+        delta: str | None = None
+        if prev_parsed is not None and cur_parsed is not None:
+            delta = _format_day_delta(*prev_parsed, *cur_parsed)
+        elif cur_parsed is not None and prev_parsed is None:
+            delta = "起点"
+
+        countdowns = _extract_countdown_states(snap.facts)
+
+        rows.append(
+            TimelineRow(
+                chapter_number=snap.chapter_number,
+                chapter_title=chapter_titles.get(snap.chapter_number),
+                time_anchor=snap.time_anchor,
+                chapter_time_span=snap.chapter_time_span,
+                delta_from_previous=delta,
+                countdown_states=countdowns,
+            )
+        )
+        if cur_parsed is not None:
+            prev_parsed = cur_parsed
+
+    return rows
+
+
+async def render_volume_timeline(
+    session: AsyncSession,
+    *,
+    project_id: UUID,
+    volume_number: int,
+) -> str:
+    """Load snapshots for ``volume_number`` and render the markdown file.
+
+    Returns the full markdown body. When the volume has no chapters yet,
+    returns a header + empty-table so the file still exists on disk. The
+    caller is responsible for writing to ``大纲/第{N}卷-时间线.md``.
+    """
+
+    from bestseller.services.continuity import _facts_from_storage
+
+    volume = await session.scalar(
+        select(VolumeModel).where(
+            VolumeModel.project_id == project_id,
+            VolumeModel.volume_number == volume_number,
+        )
+    )
+    if volume is None:
+        return render_volume_timeline_markdown(
+            volume_number=volume_number, volume_title=None, rows=[]
+        )
+
+    chapters = (
+        await session.scalars(
+            select(ChapterModel)
+            .where(ChapterModel.volume_id == volume.id)
+            .order_by(ChapterModel.chapter_number.asc())
+        )
+    ).all()
+    if not chapters:
+        return render_volume_timeline_markdown(
+            volume_number=volume_number, volume_title=volume.title, rows=[]
+        )
+
+    chapter_ids = [c.id for c in chapters]
+    chapter_titles = {c.chapter_number: c.title for c in chapters}
+
+    snapshot_rows = (
+        await session.scalars(
+            select(ChapterStateSnapshotModel)
+            .where(ChapterStateSnapshotModel.chapter_id.in_(chapter_ids))
+            .order_by(ChapterStateSnapshotModel.chapter_number.asc())
+        )
+    ).all()
+
+    snapshots: list[ChapterStateSnapshotContext] = []
+    for row in snapshot_rows:
+        snapshots.append(
+            ChapterStateSnapshotContext(
+                chapter_number=row.chapter_number,
+                facts=_facts_from_storage(row.facts),
+                time_anchor=row.time_anchor,
+                chapter_time_span=row.chapter_time_span,
+            )
+        )
+
+    rows = build_volume_timeline_rows(snapshots, chapter_titles=chapter_titles)
+    return render_volume_timeline_markdown(
+        volume_number=volume_number,
+        volume_title=volume.title,
+        rows=rows,
+    )

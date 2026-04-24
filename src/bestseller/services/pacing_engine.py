@@ -21,6 +21,8 @@ from collections import Counter
 from dataclasses import dataclass
 from typing import Any, Iterable
 
+from bestseller.services.checker_schema import CheckerIssue, CheckerReport
+
 
 # ---------------------------------------------------------------------------
 # Cliffhanger (章末钩子) taxonomy
@@ -193,3 +195,113 @@ def evaluate_tension_variance(
         "mean": round(mean, 3),
         "flag_flat": std < min_std,
     }
+
+
+# ---------------------------------------------------------------------------
+# Phase A1 — Unified CheckerReport adapter.
+# ---------------------------------------------------------------------------
+
+
+def build_pacing_checker_report(
+    *,
+    chapter: int,
+    tension_score: float,
+    target_tension: float,
+    hook_diversity: dict[str, Any] | None = None,
+    tension_variance: dict[str, Any] | None = None,
+    tension_tolerance: float = 1.5,
+) -> CheckerReport:
+    """Wrap this module's evaluations into the Phase A1 schema.
+
+    Pacing issues are *soft* — a book may legitimately sit below target
+    tension during a quiet arc if it's building toward a big swing. The
+    override rationale whitelist for the issues below is therefore
+    ``ARC_TIMING``/``GENRE_CONVENTION``/``EDITORIAL_INTENT``.
+    """
+
+    issues: list[CheckerIssue] = []
+    delta = tension_score - target_tension
+
+    if abs(delta) > tension_tolerance:
+        direction = "高于" if delta > 0 else "低于"
+        issues.append(
+            CheckerIssue(
+                id="SOFT_TENSION_OFF_TARGET",
+                type="pacing",
+                severity="medium" if abs(delta) < tension_tolerance * 2 else "high",
+                location="整章",
+                description=(
+                    f"张力评分 {tension_score:.2f} {direction}目标 {target_tension:.2f}"
+                    f"（容差 ±{tension_tolerance}）"
+                ),
+                suggestion=(
+                    "降低节奏密度，让读者喘息" if delta > 0
+                    else "增加冲突或信息密度，将张力拉回目标带"
+                ),
+                can_override=True,
+                allowed_rationales=(
+                    "ARC_TIMING",
+                    "GENRE_CONVENTION",
+                    "EDITORIAL_INTENT",
+                ),
+            )
+        )
+
+    if hook_diversity and hook_diversity.get("forbid"):
+        forbidden = hook_diversity["forbid"]
+        issues.append(
+            CheckerIssue(
+                id="SOFT_HOOK_REPEAT",
+                type="pacing",
+                severity="medium",
+                location="章末钩子",
+                description=f"最近连续使用了 {forbidden}，下一章需改换类型",
+                suggestion=(
+                    f"建议类型：{', '.join(hook_diversity.get('suggested', [])[:3])}"
+                ),
+                can_override=True,
+                allowed_rationales=("ARC_TIMING", "EDITORIAL_INTENT"),
+            )
+        )
+
+    if tension_variance and tension_variance.get("flag_flat"):
+        issues.append(
+            CheckerIssue(
+                id="SOFT_TENSION_FLAT",
+                type="pacing",
+                severity="high",
+                location="近期滑动窗口",
+                description=(
+                    f"近 {len(tension_variance.get('std', ())) if False else ''}"
+                    f"章张力标准差 {tension_variance.get('std')} 过低，出现同节奏循环"
+                ),
+                suggestion="引入张力反差或短收束章节，打破平台期",
+                can_override=True,
+                allowed_rationales=("ARC_TIMING", "GENRE_CONVENTION"),
+            )
+        )
+
+    passed = not issues
+    penalty = sum(
+        {"critical": 25, "high": 15, "medium": 8, "low": 3}[i.severity] for i in issues
+    )
+    score = max(0, 100 - penalty)
+    summary = (
+        "节奏引擎审查通过" if passed
+        else f"节奏引擎发现 {len(issues)} 条软建议，可通过 Override Contract 签署"
+    )
+    return CheckerReport(
+        agent="pacing-engine",
+        chapter=chapter,
+        overall_score=score,
+        passed=passed,
+        issues=tuple(issues),
+        metrics={
+            "tension_score": tension_score,
+            "target_tension": target_tension,
+            "delta": round(delta, 2),
+            "hook_diversity": hook_diversity or {},
+            "tension_variance": tension_variance or {},
+        },
+        summary=summary,
+    )

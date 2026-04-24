@@ -285,10 +285,10 @@ class TestValidateChapter:
     def test_factory_returns_expected_checks(self) -> None:
         checks = build_chapter_validator_checks()
         # Phase 2 adds 4 hype checks on top of the base 3
-        # (dialog / POV / cliffhanger). All 4 hype checks no-op gracefully
-        # when the project's HypeScheme is empty or when no hype is
-        # assigned, so the factory can include them unconditionally.
-        assert len(checks) == 7
+        # (dialog / POV / cliffhanger). Phase B1 adds LineGapCheck. All
+        # context-dependent checks no-op gracefully when their optional
+        # context is absent.
+        assert len(checks) == 8
         codes = {c.code for c in checks}
         assert codes == {
             "DIALOG_UNPAIRED",
@@ -298,6 +298,7 @@ class TestValidateChapter:
             "HYPE_REPEAT",
             "ENDING_SENTENCE_WEAK",
             "GOLDEN_THREE_WEAK",
+            "LINE_GAP",
         }
 
     def test_validate_chapter_accumulates_violations(self) -> None:

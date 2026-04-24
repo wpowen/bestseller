@@ -188,6 +188,53 @@ _WRITTEN_CHAPTER_STATUSES: tuple[str, ...] = (
 )
 
 
+async def maybe_persist_opening_archetype(
+    session: AsyncSession,
+    *,
+    chapter: ChapterModel | Any,
+    assigned_opening: Any,
+    chapter_number: int,
+) -> bool:
+    """Idempotently persist the L3-picked opening archetype onto the chapter.
+
+    The L3 ``PromptConstructor`` picks one ``OpeningArchetype`` per chapter as
+    part of its diversity budget; without this persistence the choice only
+    lives in in-memory state. Writing it to the chapter row is what makes
+    cross-project novelty audits and post-hoc archetype stats possible.
+
+    Idempotent: if ``chapter.opening_archetype`` is already set the call is a
+    no-op. The first scene of a chapter "wins" the archetype; every later
+    scene of the same chapter re-derives the same pick and must not clobber
+    the persisted value.
+
+    Non-fatal: any exception is swallowed with a debug log so a transient DB
+    hiccup cannot block the scene generation pipeline.
+
+    Returns ``True`` iff a new value was flushed in this call.
+    """
+    try:
+        if assigned_opening is None:
+            return False
+        if getattr(chapter, "opening_archetype", None):
+            return False
+        value = getattr(assigned_opening, "value", assigned_opening)
+        chapter.opening_archetype = str(value)
+        await session.flush()
+        logger.info(
+            "ch%d: opening_archetype persisted as '%s'",
+            chapter_number,
+            value,
+        )
+        return True
+    except Exception:
+        logger.debug(
+            "opening_archetype persist failed for ch%d (non-fatal)",
+            chapter_number,
+            exc_info=True,
+        )
+        return False
+
+
 async def _count_written_chapters_in_volume(
     session: AsyncSession,
     project_id: UUID,
@@ -503,6 +550,44 @@ async def run_scene_pipeline(
                 exc_info=True,
             )
             shared_context = None
+
+        # ── Inject chapter auto-repair hint (C6) ──
+        # When the chapter was blocked in a previous assembly and the auto-
+        # repair loop has just reset this scene to NEEDS_REWRITE, the hint
+        # stored on ``scene.metadata_json["auto_repair_hint"]`` tells the
+        # writer *why* the rewrite is happening (e.g. "chapter too short,
+        # expand this scene").  Surfacing it via ``contradiction_warnings``
+        # reuses the existing "continuity constraints" rendering path so no
+        # schema change is required.
+        if shared_context is not None:
+            try:
+                _scene_meta = (
+                    getattr(scene, "metadata_json", None) or {}
+                )
+                _repair_hint = str(
+                    _scene_meta.get("auto_repair_hint") or ""
+                ).strip()
+                if _repair_hint:
+                    _repair_codes = _scene_meta.get(
+                        "auto_repair_block_codes"
+                    ) or ()
+                    _prefix = (
+                        f"[章节自动修复 {','.join(_repair_codes)}] "
+                        if _repair_codes
+                        else "[章节自动修复] "
+                    )
+                    # Prepend so the writer sees the repair reason before
+                    # any subsequent non-critical warnings.
+                    shared_context.contradiction_warnings.insert(
+                        0, _prefix + _repair_hint
+                    )
+            except Exception:
+                logger.debug(
+                    "auto_repair_hint injection failed for ch%d sc%d (non-fatal)",
+                    chapter_number,
+                    scene_number,
+                    exc_info=True,
+                )
 
         # ── Inject character identity constraints (Tier 0 — never dropped) ──
         if shared_context is not None:
@@ -908,6 +993,16 @@ async def run_scene_pipeline(
                             shared_context.l3_prompt_block = (
                                 _l3_blocks.as_prompt_block() or None
                             )
+                        # Persist the chosen opening archetype onto the
+                        # chapter row the first time we see it. See
+                        # ``maybe_persist_opening_archetype`` for the
+                        # idempotency + non-fatal semantics.
+                        await maybe_persist_opening_archetype(
+                            session,
+                            chapter=chapter,
+                            assigned_opening=_l3_blocks.assigned_opening,
+                            chapter_number=chapter_number,
+                        )
                 except Exception:
                     logger.debug(
                         "L3 prompt block injection failed for ch%d sc%d (non-fatal)",
@@ -1653,6 +1748,155 @@ async def run_chapter_pipeline(
                 )
         if chapter_draft is None:
             chapter_draft = await assemble_chapter_draft(session, project_slug, chapter_number, settings=settings)
+
+        # ── Chapter auto-repair loop (C6) ──
+        # When the assembled chapter trips a repairable block code (default:
+        # BLOCK_LOW / BLOCK_HIGH from the length-stability gate), reset every
+        # scene to NEEDS_REWRITE with targeted hints, re-run the scene
+        # pipeline for that chapter, and re-assemble.  Capped by
+        # ``chapter_auto_repair_max_attempts`` so we fail closed on
+        # pathological drafts instead of spinning.  Deterministic blocks
+        # (L4/L5 naming / POV / dialog) fall through to the legacy blocked
+        # path — those need human or planner attention, not more rewriting.
+        auto_repair_attempts = 0
+        auto_repair_cap = int(
+            getattr(
+                settings.pipeline,
+                "chapter_auto_repair_max_attempts",
+                0,
+            )
+            or 0
+        )
+        auto_repair_enabled = bool(
+            getattr(settings.pipeline, "enable_chapter_auto_repair", False)
+        )
+        auto_repair_codes = tuple(
+            str(c) for c in getattr(
+                settings.pipeline,
+                "chapter_auto_repair_repairable_codes",
+                (),
+            )
+            or ()
+            if c
+        )
+        while (
+            auto_repair_enabled
+            and auto_repair_cap > 0
+            and auto_repair_attempts < auto_repair_cap
+            and getattr(chapter, "production_state", None) == "blocked"
+        ):
+            try:
+                from bestseller.services.drafts import (
+                    maybe_prepare_chapter_auto_repair,
+                )
+                repair_triggered, block_codes = await maybe_prepare_chapter_auto_repair(
+                    session,
+                    project=project,
+                    chapter=chapter,
+                    repairable_codes=auto_repair_codes,
+                )
+            except Exception:
+                logger.warning(
+                    "Chapter %d auto-repair prepare failed (non-fatal)",
+                    chapter_number,
+                    exc_info=True,
+                )
+                break
+
+            if not repair_triggered:
+                logger.info(
+                    "Chapter %d: block codes %s not auto-repairable — leaving "
+                    "chapter in blocked state",
+                    chapter_number,
+                    list(block_codes) if block_codes else [],
+                )
+                break
+
+            auto_repair_attempts += 1
+            current_step_name = f"chapter_auto_repair_attempt_{auto_repair_attempts}"
+            workflow_run.current_step = current_step_name
+            workflow_run.metadata_json = {
+                **workflow_run.metadata_json,
+                "chapter_auto_repair_attempts": auto_repair_attempts,
+                "chapter_auto_repair_last_block_codes": list(block_codes)
+                if block_codes
+                else [],
+            }
+            logger.warning(
+                "Chapter %d: auto-repair attempt %d/%d triggered for blocks %s",
+                chapter_number,
+                auto_repair_attempts,
+                auto_repair_cap,
+                list(block_codes) if block_codes else [],
+            )
+
+            # Re-run scene pipelines — every scene was reset to NEEDS_REWRITE
+            # by ``maybe_prepare_chapter_auto_repair``.  Iterate ALL scenes
+            # this time, not just ``pending_scenes`` from the initial pass,
+            # so the chapter reassembly has fresh content for every slot.
+            repair_scenes = list(
+                await session.scalars(
+                    select(SceneCardModel)
+                    .where(SceneCardModel.chapter_id == chapter.id)
+                    .order_by(SceneCardModel.scene_number.asc())
+                )
+            )
+            for _repair_scene in repair_scenes:
+                _repair_result = await run_scene_pipeline(
+                    session,
+                    settings,
+                    project_slug,
+                    chapter_number,
+                    _repair_scene.scene_number,
+                    requested_by=requested_by,
+                    parent_workflow_run_id=workflow_run.id,
+                )
+                if _repair_result.requires_human_review:
+                    scene_requires_human_review = True
+                await create_workflow_step_run(
+                    session,
+                    workflow_run_id=workflow_run.id,
+                    step_name=f"{current_step_name}_scene_{_repair_scene.scene_number}",
+                    step_order=step_order,
+                    status=WorkflowStatus.COMPLETED,
+                    output_ref={
+                        "scene_number": _repair_scene.scene_number,
+                        "scene_workflow_run_id": str(_repair_result.workflow_run_id),
+                        "final_verdict": _repair_result.final_verdict,
+                        "requires_human_review": _repair_result.requires_human_review,
+                    },
+                )
+                step_order += 1
+
+            # Re-assemble with the repaired scenes so the next gate pass sees
+            # a fresh chapter_draft + the length-stability helper re-scores.
+            current_step_name = f"chapter_auto_repair_reassemble_{auto_repair_attempts}"
+            workflow_run.current_step = current_step_name
+            chapter_draft = await assemble_chapter_draft(
+                session, project_slug, chapter_number, settings=settings
+            )
+            await create_workflow_step_run(
+                session,
+                workflow_run_id=workflow_run.id,
+                step_name=current_step_name,
+                step_order=step_order,
+                status=WorkflowStatus.COMPLETED,
+                output_ref={
+                    "chapter_draft_id": str(chapter_draft.id),
+                    "chapter_draft_version_no": chapter_draft.version_no,
+                    "auto_repair_attempt": auto_repair_attempts,
+                },
+            )
+            step_order += 1
+
+        if auto_repair_attempts > 0 and getattr(chapter, "production_state", None) == "blocked":
+            logger.warning(
+                "Chapter %d: auto-repair exhausted %d attempt(s), still blocked — "
+                "marking chapter for human review",
+                chapter_number,
+                auto_repair_attempts,
+            )
+            scene_requires_human_review = True
 
         # L2 per-chapter bible validation: detect stance flips lacking
         # a turning-point arc beat and deceased speakers; log findings on
@@ -3880,6 +4124,30 @@ async def run_progressive_autowrite_pipeline(
             "character_evolutions": len(feedback.get("character_states", [])),
             "unresolved_threads": len(feedback.get("arc_summary", {}).get("unresolved_threads", [])),
         })
+
+        # ── Volume audit (质量反哺) — best-effort; never fails the pipeline ──
+        try:
+            from bestseller.services.volume_audit import run_volume_audit  # noqa: PLC0415
+            _audit_output_root = Path(settings.output.base_dir)
+            audit_digest = await run_volume_audit(
+                session,
+                project.slug,
+                vol_num,
+                output_root=_audit_output_root,
+            )
+            if audit_digest and prior_feedback_summary:
+                prior_feedback_summary = audit_digest + "\n\n" + prior_feedback_summary
+            elif audit_digest:
+                prior_feedback_summary = audit_digest
+            _emit_progress(progress, "volume_audit_completed", {
+                "project_slug": project.slug, "volume_number": vol_num,
+                "digest": audit_digest[:120] if audit_digest else "",
+            })
+        except Exception as _audit_exc:
+            logger.warning(
+                "volume audit skipped for %s v%s: %s",
+                project.slug, vol_num, _audit_exc,
+            )
 
     # ── Final export + review ──
     # Best-effort project export: surface preflight failures as a warning

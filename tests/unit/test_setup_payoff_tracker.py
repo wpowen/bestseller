@@ -476,3 +476,68 @@ class TestModuleSurface:
             payoff_window_chapters=5,
         )
         assert report.debt_count == 1
+
+
+class TestEmitDebtsIntoLedger:
+    """Phase C3 adapter — setup→payoff debts flow into the ChaseDebtLedger."""
+
+    def test_empty_report_inserts_nothing(self) -> None:
+        from bestseller.services.chase_debt_ledger import ChaseDebtLedger
+        from bestseller.services.setup_payoff_tracker import emit_debts_into_ledger
+
+        led = ChaseDebtLedger()
+        report = SetupPayoffReport(
+            setups=(), payoffs=(), debts=(), payoff_window_chapters=5
+        )
+        n = emit_debts_into_ledger(report, ledger=led, project_id="p1")
+        assert n == 0
+        assert led.list_active("p1") == ()
+
+    def test_each_unpaid_debt_becomes_ledger_row(self) -> None:
+        from bestseller.services.chase_debt_ledger import ChaseDebtLedger, DebtSource
+        from bestseller.services.setup_payoff_tracker import (
+            SETUP_PAYOFF_DEBT_CODE,
+            emit_debts_into_ledger,
+        )
+
+        led = ChaseDebtLedger()
+        report = SetupPayoffReport(
+            setups=(),
+            payoffs=(),
+            debts=(
+                SetupPayoffDebt(
+                    setup_chapter=1, window_end_chapter=6, matched_keywords=("冤枉",)
+                ),
+                SetupPayoffDebt(
+                    setup_chapter=3, window_end_chapter=8, matched_keywords=("背叛",)
+                ),
+            ),
+            payoff_window_chapters=5,
+        )
+        n = emit_debts_into_ledger(report, ledger=led, project_id="p1", principal=25.0)
+        assert n == 2
+        active = led.list_active("p1")
+        assert len(active) == 2
+        assert all(r.source is DebtSource.SETUP_PAYOFF for r in active)
+        assert all(r.violation_code == SETUP_PAYOFF_DEBT_CODE for r in active)
+        assert all(r.override_contract_id is None for r in active)
+        due_chapters = sorted(r.due_chapter for r in active)
+        assert due_chapters == [6, 8]
+
+    def test_custom_interest_rate(self) -> None:
+        from bestseller.services.chase_debt_ledger import ChaseDebtLedger
+        from bestseller.services.setup_payoff_tracker import emit_debts_into_ledger
+
+        led = ChaseDebtLedger()
+        report = SetupPayoffReport(
+            setups=(),
+            payoffs=(),
+            debts=(
+                SetupPayoffDebt(
+                    setup_chapter=1, window_end_chapter=6, matched_keywords=("冤枉",)
+                ),
+            ),
+            payoff_window_chapters=5,
+        )
+        emit_debts_into_ledger(report, ledger=led, project_id="p1", interest_rate=0.05)
+        assert led.list_active("p1")[0].interest_rate == 0.05

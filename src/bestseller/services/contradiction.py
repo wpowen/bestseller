@@ -637,8 +637,11 @@ async def _check_resurrection(
 ) -> tuple[list[ContradictionViolation], list[ContradictionWarning]]:
     """Flag scenes that stage a deceased character as an active participant.
 
-    A character is "deceased" when ``characters.alive_status='deceased'`` or
-    ``characters.death_chapter_number`` is set below the current chapter.
+    A character is treated as dead in chapter N only when
+    ``characters.death_chapter_number`` is set and strictly less than N.
+    ``alive_status`` is *not* consulted: it reflects the character row's
+    current snapshot and contains no timeline information, so using it
+    here would spread the present-tense state to every historical chapter.
     Reincarnation is allowed only if the project invariants opt in.
     """
     violations: list[ContradictionViolation] = []
@@ -666,11 +669,13 @@ async def _check_resurrection(
         if character is None:
             continue
 
-        alive_status = getattr(character, "alive_status", "alive")
+        # alive_status is the *current* snapshot on the character row and
+        # carries no timeline information; using it to decide whether the
+        # character is dead in *this* chapter spreads the present-tense
+        # state across all earlier chapters and produces false positives.
+        # death_chapter_number is the only timeline-anchored signal.
         death_ch = getattr(character, "death_chapter_number", None)
-        is_dead = alive_status == "deceased" or (
-            death_ch is not None and death_ch < chapter_number
-        )
+        is_dead = death_ch is not None and death_ch < chapter_number
         if not is_dead:
             continue
 
@@ -711,7 +716,7 @@ async def _check_resurrection(
                 check_type="character_resurrection",
                 severity="error",
                 message=message,
-                evidence=f"alive_status={alive_status}; death_chapter={death_ch}",
+                evidence=f"death_chapter={death_ch}",
             )
         )
 
@@ -874,24 +879,46 @@ async def _check_power_tier_regression(
 
     project = await session.get(ProjectModel, project_id)
     tier_order: list[str] = []
+    tier_aliases: dict[str, str] = {}
     if project is not None and project.invariants_json:
         power_sys = project.invariants_json.get("power_system")
         if isinstance(power_sys, dict):
             tiers = power_sys.get("tiers")
             if isinstance(tiers, list):
                 tier_order = [str(t) for t in tiers if isinstance(t, (str, int))]
+            aliases = power_sys.get("tier_aliases")
+            if isinstance(aliases, dict):
+                tier_aliases = {str(k): str(v) for k, v in aliases.items()}
 
     _is_en = is_english_language(language)
 
+    def _canonical(tier: str) -> str:
+        # Direct alias hit first; otherwise look for any canonical token
+        # contained in the (often modifier-rich) tier label.
+        text = str(tier).strip()
+        if not text:
+            return text
+        if text in tier_aliases:
+            return tier_aliases[text]
+        for alias_key, canonical in tier_aliases.items():
+            if alias_key and alias_key in text:
+                return canonical
+        for canonical in tier_order:
+            if canonical and canonical in text:
+                return canonical
+        return text
+
     def _rank(tier: str | None) -> int:
-        if not tier:
+        # No tier_order configured → refuse to compare; never hash.
+        # Unknown tier → -1, also a no-compare signal (won't trigger
+        # spurious regression vs. a known-tier peak).
+        if not tier or not tier_order:
             return -1
-        if tier_order:
-            try:
-                return tier_order.index(str(tier))
-            except ValueError:
-                return -1
-        return hash(tier) & 0xFFFFFF
+        canonical = _canonical(tier)
+        try:
+            return tier_order.index(canonical)
+        except ValueError:
+            return -1
 
     for name in scene_participants:
         character = await session.scalar(
@@ -900,10 +927,48 @@ async def _check_power_tier_regression(
                 CharacterModel.name == name,
             )
         )
-        if character is None or not getattr(character, "power_tier", None):
+        if character is None:
             continue
 
-        curr = character.power_tier
+        # Prefer the snapshot AT this chapter (if one was recorded) over
+        # the live ``character.power_tier`` field. The live value reflects
+        # the present state and is misleading when scanning a historical
+        # chapter where the character had a different tier — e.g. a
+        # post-death "残存执念" current value compared against pre-death
+        # peaks would always look like a regression.
+        #
+        # Within at-chapter snapshots prefer scene_number IS NULL: those
+        # are post-write LLM extractions (services/feedback.py), which
+        # reflect what was actually narrated. Scene-numbered snapshots
+        # come from planning-time projections and lag the live taxonomy.
+        curr_snap = await session.scalar(
+            select(CharacterStateSnapshotModel)
+            .where(
+                CharacterStateSnapshotModel.project_id == project_id,
+                CharacterStateSnapshotModel.character_id == character.id,
+                CharacterStateSnapshotModel.chapter_number == chapter_number,
+                CharacterStateSnapshotModel.power_tier.is_not(None),
+            )
+            .order_by(CharacterStateSnapshotModel.scene_number.asc().nulls_first())
+            .limit(1)
+        )
+        if curr_snap is not None:
+            curr = curr_snap.power_tier
+        else:
+            # No snapshot at this chapter. Falling back to the live
+            # ``character.power_tier`` is only safe when the character
+            # hasn't died before this chapter — otherwise the live value
+            # is a *post-death* state ("残存执念", "已故", …) that has
+            # no meaningful tier rank to compare against earlier peaks.
+            death_ch = getattr(character, "death_chapter_number", None)
+            if death_ch is not None and chapter_number <= death_ch:
+                # Pre-death historical chapter without a per-chapter
+                # snapshot — refuse to compare; live value is wrong proxy.
+                continue
+            curr = getattr(character, "power_tier", None)
+        if not curr:
+            continue
+
         prior_snaps = list(
             await session.scalars(
                 select(CharacterStateSnapshotModel)
@@ -928,7 +993,20 @@ async def _check_power_tier_regression(
         if peak_tier is None:
             continue
 
-        if _rank(curr) < _rank(peak_tier):
+        curr_rank = _rank(curr)
+        peak_rank = _rank(peak_tier)
+        # Only warn when both endpoints are known canonical tiers AND the
+        # gap is at least two tiers. A 1-tier drop is below the noise
+        # floor: cross-taxonomy snapshots ("中阶" old-system vs "金丹期"
+        # new-system) routinely differ by one position even when story
+        # canon hasn't changed. Real plot regressions (sealing, severe
+        # injury) drop by 2+ tiers and are the ones worth flagging.
+        REGRESSION_MIN_GAP = 2
+        if (
+            curr_rank >= 0
+            and peak_rank >= 0
+            and (peak_rank - curr_rank) >= REGRESSION_MIN_GAP
+        ):
             if _is_en:
                 message = (
                     f"'{name}' power_tier regressed {peak_tier} → {curr} "

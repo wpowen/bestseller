@@ -356,15 +356,120 @@ def compose_feedback_from_violations(
     return (header or default_header) + "\n".join(lines)
 
 
+# ---------------------------------------------------------------------------
+# Phase C3 — Override Contract fallback helpers.
+#
+# When the per-chapter regen budget is exhausted AND every remaining
+# blocking violation is a "soft" constraint (listed in
+# ``ProjectInvariants.soft_constraint_codes``), the caller can offer
+# the author an override-contract stub instead of dumping the draft to
+# ``/rejected_drafts/``. These helpers are side-effect-free — they
+# build proposal records that the caller persists via
+# ``override_contract.OverrideStore.create``.
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class OverrideProposal:
+    """Stub suggestion for an override contract.
+
+    Surfaces the minimum fields needed for a sign-off UI:
+
+    * ``violation_code`` / ``rationale_text`` — what the author is
+      being asked to waive.
+    * ``suggested_rationale_type`` / ``suggested_due_chapter`` — the
+      loop's best guess given the genre configuration; the UI can
+      overwrite either before signing.
+    * ``suggested_payback_plan`` — placeholder prose so the UI can
+      pre-fill the textarea.
+
+    The author still has to hit "confirm" — this record is NOT a
+    signed contract.
+    """
+
+    chapter_no: int
+    violation_code: str
+    rationale_text: str
+    suggested_rationale_type: str
+    suggested_due_chapter: int
+    suggested_payback_plan: str
+
+
+def is_all_soft(
+    report: QualityReport,
+    soft_constraint_codes: "frozenset[str] | set[str]",
+) -> bool:
+    """True when every blocking violation's code is in ``soft_constraint_codes``.
+
+    Empty reports return ``True`` (nothing to waive). Used by the
+    caller to decide whether to raise ``RegenerationExhausted`` or to
+    offer override proposals.
+    """
+
+    codes = soft_constraint_codes if isinstance(soft_constraint_codes, (frozenset, set)) else frozenset(soft_constraint_codes)
+    for v in report.violations:
+        if v.code not in codes:
+            return False
+    return True
+
+
+def propose_overrides_from_report(
+    report: QualityReport,
+    *,
+    chapter_no: int,
+    soft_constraint_codes: "frozenset[str] | set[str]",
+    default_rationale_type: str = "ARC_TIMING",
+    payback_window_default: int = 10,
+) -> tuple[OverrideProposal, ...]:
+    """Emit one ``OverrideProposal`` per remaining soft violation.
+
+    Returns an empty tuple when *any* violation is hard (caller
+    should raise ``RegenerationExhausted`` in that case) or when the
+    report has no violations at all.
+
+    ``payback_window_default`` is typically sourced from the genre's
+    ``override_config.payback_window_default``; the proposal is
+    pre-filled with ``chapter_no + payback_window_default``.
+    """
+
+    if not report.violations:
+        return ()
+    if not is_all_soft(report, soft_constraint_codes):
+        return ()
+    if payback_window_default < 1:
+        payback_window_default = 10
+
+    proposals: list[OverrideProposal] = []
+    for v in report.violations:
+        proposals.append(
+            OverrideProposal(
+                chapter_no=chapter_no,
+                violation_code=v.code,
+                rationale_text=v.detail,
+                suggested_rationale_type=default_rationale_type,
+                suggested_due_chapter=chapter_no + payback_window_default,
+                suggested_payback_plan=(
+                    v.prompt_feedback
+                    or f"本章软约束 {v.code} 暂记为欠账，"
+                    f"应在 {chapter_no + payback_window_default} 章前完成兑现。"
+                ),
+            )
+        )
+    return tuple(proposals)
+
+
 __all__ = [
     "DEFAULT_BUDGET_PER_CHAPTER",
     "DEFAULT_GLOBAL_BUDGET",
     "GlobalBudget",
+    "OverrideProposal",
     "RegenAttempt",
     "RegenerationExhausted",
     "RegenerationResult",
     "Regenerator",
     "Validator",
     "compose_feedback_from_violations",
+    "is_all_soft",
+    "propose_overrides_from_report",
     "regenerate_until_valid",
 ]

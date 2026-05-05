@@ -788,7 +788,7 @@ GEMINI_API_KEY=...
 # NVIDIA NIM（hosted API；也可用 NVIDIA_API_BASE 指向自托管 NIM /v1）
 BESTSELLER_LLM_PROVIDER=nvidia
 NVIDIA_API_KEY=nvapi-...
-NVIDIA_LLM_MODEL=nvidia/nemotron-4-340b-instruct
+NVIDIA_LLM_MODEL=z-ai/glm-5.1
 
 # 火山方舟 Coding Plan（字节；专属 OpenAI-compatible coding 网关）
 BESTSELLER_LLM_PROVIDER=volcengine-coding

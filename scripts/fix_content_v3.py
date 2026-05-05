@@ -256,6 +256,7 @@ def process_field(field: str, values: list[str], lang: str, translation_map: dic
                     field_map[zh_val] = translations[i].strip()
                     translated_count += 1
 
+            cache_path.parent.mkdir(parents=True, exist_ok=True)
             cache_path.write_text(json.dumps(translation_map, ensure_ascii=False, indent=2), encoding="utf-8")
             ok_count = sum(1 for i in range(min(len(chunk), len(translations))) if translations[i] and translations[i].strip())
             print(f"OK ({ok_count}/{len(chunk)})")
@@ -276,6 +277,7 @@ def main() -> int:
         return 1
 
     cache_path = AUDIT_DIR / f"content_translations_{lang}.json"
+    AUDIT_DIR.mkdir(parents=True, exist_ok=True)
     translation_map: dict[str, dict[str, str]] = {}
     if cache_path.exists():
         translation_map = json.loads(cache_path.read_text(encoding="utf-8"))

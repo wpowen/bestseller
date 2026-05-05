@@ -370,7 +370,7 @@ EOF
     # NVIDIA_API_BASE (or NIM_API_BASE) to your local /v1 endpoint and use the
     # served model name exposed by GET /v1/models.
     local nvidia_api_base="${NVIDIA_API_BASE:-${NIM_API_BASE:-https://integrate.api.nvidia.com/v1}}"
-    local nvidia_model="${NVIDIA_LLM_MODEL:-nvidia/nemotron-4-340b-instruct}"
+    local nvidia_model="${NVIDIA_LLM_MODEL:-z-ai/glm-5.1}"
     local nvidia_planner_model="${NVIDIA_PLANNER_MODEL:-$nvidia_model}"
     local nvidia_writer_model="${NVIDIA_WRITER_MODEL:-$nvidia_model}"
     local nvidia_writer_override="${NVIDIA_WRITER_MODEL_OVERRIDE:-$nvidia_writer_model}"

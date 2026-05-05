@@ -55,7 +55,7 @@ def test_start_sh_writes_nvidia_nim_preset(tmp_path: Path) -> None:
     assert "export BESTSELLER__LLM__MOCK='false'" in output
     assert (
         "export BESTSELLER__LLM__WRITER__MODEL="
-        "'openai/nvidia/nemotron-4-340b-instruct'"
+        "'openai/z-ai/glm-5.1'"
     ) in output
     assert (
         "export BESTSELLER__LLM__WRITER__API_BASE="

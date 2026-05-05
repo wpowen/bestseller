@@ -28,6 +28,10 @@ class LLMRoleSettings(BaseModel):
     api_base: str | None = None
     api_key_env: str | None = None
     model_override: str | None = None
+    rate_limit_fallback_model: str | None = None
+    rate_limit_fallback_api_base: str | None = None
+    rate_limit_fallback_api_key_env: str | None = None
+    rate_limit_fallback_stream: bool = False
 
 
 class RetrySettings(BaseModel):
@@ -41,6 +45,8 @@ class RetrySettings(BaseModel):
     rate_limit_max_attempts: int = 60
     rate_limit_wait_min_seconds: int = 5
     rate_limit_wait_max_seconds: int = 120
+    rate_limit_fallback_enabled: bool = True
+    rate_limit_fallback_cooldown_seconds: int = 300
 
 
 class LLMSettings(BaseModel):

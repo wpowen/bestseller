@@ -209,6 +209,7 @@ def _apply_to_obj(obj: Any, translation_map: dict[str, dict[str, str]]) -> int:
 def main() -> int:
     only_fields = sys.argv[1].split(",") if len(sys.argv) > 1 and sys.argv[1] != "all" else []
     cache_path = AUDIT_DIR / "content_translations_ja_v2.json"
+    AUDIT_DIR.mkdir(parents=True, exist_ok=True)
     translation_map: dict[str, dict[str, str]] = {}
     if cache_path.exists():
         translation_map = json.loads(cache_path.read_text(encoding="utf-8"))
@@ -244,33 +245,34 @@ def main() -> int:
 
         print(f"\n[{field}] {len(todo)} values to translate ({len(counter)} unique, {sum(counter.values())} total)")
 
-        for ci, chunk in enumerate(chunks):
-            print(f"  Chunk {ci+1}/{len(chunks)} ({len(chunk)} items)...", end=" ", flush=True)
-            try:
-                if is_long:
-                    prompt = build_long_prompt(chunk, field)
-                    raw = _llm_call(prompt, max_tokens=4096)
+    for ci, chunk in enumerate(chunks):
+        print(f"  Chunk {ci+1}/{len(chunks)} ({len(chunk)} items)...", end=" ", flush=True)
+        try:
+            if is_long:
+                prompt = build_long_prompt(chunk, field)
+                raw = _llm_call(prompt, max_tokens=4096)
+                translations = parse_numbered_response(raw, len(chunk))
+            else:
+                prompt = build_short_prompt(chunk)
+                raw = _llm_call(prompt, max_tokens=4096)
+                translations = parse_json_array(raw)
+                if translations is None:
                     translations = parse_numbered_response(raw, len(chunk))
-                else:
-                    prompt = build_short_prompt(chunk)
-                    raw = _llm_call(prompt, max_tokens=4096)
-                    translations = parse_json_array(raw)
-                    if translations is None:
-                        translations = parse_numbered_response(raw, len(chunk))
 
-                field_map = translation_map.setdefault(field, {})
-                ok_count = 0
-                for i, zh_val in enumerate(chunk):
-                    if i < len(translations) and translations[i] and translations[i].strip():
-                        field_map[zh_val] = translations[i].strip()
-                        ok_count += 1
+            field_map = translation_map.setdefault(field, {})
+            ok_count = 0
+            for i, zh_val in enumerate(chunk):
+                if i < len(translations) and translations[i] and translations[i].strip():
+                    field_map[zh_val] = translations[i].strip()
+                    ok_count += 1
 
-                cache_path.write_text(json.dumps(translation_map, ensure_ascii=False, indent=2), encoding="utf-8")
-                print(f"OK ({ok_count}/{len(chunk)})")
-            except Exception as e:
-                print(f"ERROR: {e}")
-                time.sleep(5)
-                continue
+            cache_path.parent.mkdir(parents=True, exist_ok=True)
+            cache_path.write_text(json.dumps(translation_map, ensure_ascii=False, indent=2), encoding="utf-8")
+            print(f"OK ({ok_count}/{len(chunk)})")
+        except Exception as e:
+            print(f"ERROR: {e}")
+            time.sleep(5)
+            continue
             time.sleep(1)
 
     print(f"\nApplying translations to chapter files...")

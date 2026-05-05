@@ -703,7 +703,7 @@ async def materialize_story_bible(
             workflow_run.current_step = current_step_name
             world_counts = await upsert_world_spec(session, project, world_spec_content)
             for key, value in world_counts.items():
-                counts[key] += value
+                counts[key] = counts.get(key, 0) + value
             await create_workflow_step_run(
                 session,
                 workflow_run_id=workflow_run.id,
@@ -723,7 +723,7 @@ async def materialize_story_bible(
             workflow_run.current_step = current_step_name
             cast_counts = await upsert_cast_spec(session, project, cast_spec_content)
             for key, value in cast_counts.items():
-                counts[key] += value
+                counts[key] = counts.get(key, 0) + value
             await create_workflow_step_run(
                 session,
                 workflow_run_id=workflow_run.id,
@@ -743,7 +743,7 @@ async def materialize_story_bible(
             workflow_run.current_step = current_step_name
             volume_counts = await upsert_volume_plan(session, project, volume_plan_content)
             for key, value in volume_counts.items():
-                counts[key] += value
+                counts[key] = counts.get(key, 0) + value
             await create_workflow_step_run(
                 session,
                 workflow_run_id=workflow_run.id,
@@ -763,7 +763,7 @@ async def materialize_story_bible(
             workflow_run.current_step = current_step_name
             boundary_counts = await refresh_world_expansion_boundaries(session, project=project)
             for key, value in boundary_counts.items():
-                counts[key] += value
+                counts[key] = counts.get(key, 0) + value
             await create_workflow_step_run(
                 session,
                 workflow_run_id=workflow_run.id,

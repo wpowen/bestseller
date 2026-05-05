@@ -2173,3 +2173,57 @@ class ChaseDebtModel(Base):
         server_default=text("NOW()"),
     )
     closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class BookGenerationScheduleModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Defer the start of an autowrite / quickstart pipeline to a specific time.
+
+    The scheduler service registers a one-shot APScheduler ``trigger="date"``
+    job per ``pending`` row; on fire it materialises the stored payload as a
+    ``WebTaskState`` task exactly like a manual "Start" click.
+    """
+
+    __tablename__ = "book_generation_schedules"
+    __table_args__ = (
+        Index(
+            "idx_book_generation_schedules_status_time",
+            "status",
+            "scheduled_at",
+        ),
+        Index(
+            "idx_book_generation_schedules_slug",
+            "project_slug",
+        ),
+        CheckConstraint(
+            "task_type IN ('autowrite', 'quickstart')",
+            name="ck_book_generation_schedules_task_type",
+        ),
+        CheckConstraint(
+            "status IN ('pending', 'fired', 'completed', 'failed', 'cancelled')",
+            name="ck_book_generation_schedules_status",
+        ),
+    )
+
+    task_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    project_slug: Mapped[str | None] = mapped_column(String(64))
+    title: Mapped[str | None] = mapped_column(Text())
+    scheduled_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    timezone: Mapped[str] = mapped_column(
+        String(64),
+        nullable=False,
+        server_default=text("'Asia/Shanghai'"),
+    )
+    status: Mapped[str] = mapped_column(
+        String(16),
+        nullable=False,
+        server_default=text("'pending'"),
+    )
+    payload: Mapped[JSON_DICT] = mapped_column(
+        JSONB, nullable=False, default=dict, server_default=text("'{}'::jsonb")
+    )
+    task_id: Mapped[str | None] = mapped_column(String(64))
+    fired_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    error_message: Mapped[str | None] = mapped_column(Text())
+    requested_by: Mapped[str | None] = mapped_column(String(64))

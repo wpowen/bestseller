@@ -151,6 +151,13 @@ class _CircuitBreaker:
 
 _llm_breaker = _CircuitBreaker(failure_threshold=5, recovery_timeout=60.0)
 
+# Primary-model rate-limit cooldowns.  When a configured primary (MiniMax in
+# production) returns 429/quota-exhausted, we send traffic to the configured
+# fallback model for a short window.  When the window expires, the next call
+# probes the primary again; a successful probe automatically switches traffic
+# back without changing configuration.
+_rate_limit_fallback_until: dict[str, float] = {}
+
 
 # ── Rate-limit detection ────────────────────────────────────────────────
 #
@@ -177,6 +184,17 @@ def _is_rate_limit_error(exc: BaseException) -> bool:
         return True
     message = str(exc).lower()
     if "429" in message and ("rate" in message or "too many requests" in message):
+        return True
+    quota_markers = (
+        "quota exceeded",
+        "quota exhausted",
+        "insufficient quota",
+        "insufficient_quota",
+        "usage limit",
+        "resource exhausted",
+        "too many requests",
+    )
+    if any(marker in message for marker in quota_markers):
         return True
     return False
 
@@ -398,6 +416,62 @@ def _estimate_tokens(text: str) -> int:
 
 def _get_role_settings(settings: AppSettings, logical_role: LLMRole) -> LLMRoleSettings:
     return cast(LLMRoleSettings, getattr(settings.llm, logical_role))
+
+
+def _rate_limit_fallback_key(logical_role: LLMRole, role_settings: LLMRoleSettings) -> str:
+    return "|".join(
+        [
+            logical_role,
+            role_settings.model,
+            role_settings.api_base or "",
+            role_settings.api_key_env or "",
+        ]
+    )
+
+
+def _build_rate_limit_fallback_settings(
+    role_settings: LLMRoleSettings,
+) -> LLMRoleSettings | None:
+    if not role_settings.rate_limit_fallback_model:
+        return None
+    fallback_key_env = role_settings.rate_limit_fallback_api_key_env
+    if fallback_key_env and not get_runtime_env_value(fallback_key_env):
+        return None
+    return role_settings.model_copy(
+        update={
+            "model": role_settings.rate_limit_fallback_model,
+            "api_base": role_settings.rate_limit_fallback_api_base,
+            "api_key_env": fallback_key_env,
+            "stream": role_settings.rate_limit_fallback_stream,
+            "model_override": None,
+        }
+    )
+
+
+def _is_rate_limit_fallback_active(key: str) -> bool:
+    until = _rate_limit_fallback_until.get(key)
+    if until is None:
+        return False
+    if time.monotonic() >= until:
+        _rate_limit_fallback_until.pop(key, None)
+        return False
+    return True
+
+
+def _mark_rate_limit_fallback_active(key: str, cooldown_seconds: int) -> None:
+    _rate_limit_fallback_until[key] = time.monotonic() + max(0, cooldown_seconds)
+
+
+def _clear_rate_limit_fallback(key: str) -> None:
+    _rate_limit_fallback_until.pop(key, None)
+
+
+def _primary_retry_settings_for_rate_limit_fallback(
+    retry_settings: RetrySettings,
+) -> RetrySettings:
+    # If a fallback is configured, a provider 429 should fail over immediately
+    # instead of waiting through the normal patient 429 retry budget.
+    return retry_settings.model_copy(update={"rate_limit_max_attempts": 1})
 
 
 def _provider_from_model(model_name: str) -> str:
@@ -755,6 +829,15 @@ async def complete_text(
         role_settings = role_settings.model_copy(
             update={"model": role_settings.model_override}
         )
+    rate_limit_fallback_settings = (
+        _build_rate_limit_fallback_settings(role_settings)
+        if settings.llm.retry.rate_limit_fallback_enabled
+        else None
+    )
+    rate_limit_fallback_key = _rate_limit_fallback_key(
+        request.logical_role,
+        role_settings,
+    )
     prompt_hash = _hash_prompt(request.system_prompt, request.user_prompt)
     metadata = dict(request.metadata)
     latency_ms: int | None = None
@@ -770,8 +853,21 @@ async def complete_text(
     started_at = perf_counter()
     if not settings.llm.mock:
         try:
-            provider = _provider_from_model(role_settings.model)
-            model_name = role_settings.model
+            call_settings = role_settings
+            retry_settings = settings.llm.retry
+            if rate_limit_fallback_settings and _is_rate_limit_fallback_active(
+                rate_limit_fallback_key
+            ):
+                call_settings = rate_limit_fallback_settings
+                metadata["rate_limit_fallback_active"] = True
+                metadata["rate_limit_fallback_primary_model"] = role_settings.model
+            elif rate_limit_fallback_settings:
+                retry_settings = _primary_retry_settings_for_rate_limit_fallback(
+                    settings.llm.retry
+                )
+
+            provider = _provider_from_model(call_settings.model)
+            model_name = call_settings.model
             (
                 content,
                 input_tokens,
@@ -780,24 +876,74 @@ async def complete_text(
                 tool_calls,
                 raw_message,
             ) = await _call_litellm_with_retry(
-                request, role_settings, settings.llm.retry,
+                request, call_settings, retry_settings,
             )
+            if call_settings is role_settings:
+                _clear_rate_limit_fallback(rate_limit_fallback_key)
         except Exception as exc:
-            provider = "fallback"
-            model_name = f"fallback-{request.logical_role}"
-            metadata["configured_model"] = role_settings.model
-            metadata["fallback_reason"] = f"{type(exc).__name__}: {exc}"
-            metadata["retry_exhausted"] = True
-            finish_reason = "fallback"
-            logger.error(
-                "LLM call FAILED for role=%s model=%s template=%s — using fallback content. "
-                "Error: %s: %s",
-                request.logical_role,
-                role_settings.model,
-                request.prompt_template,
-                type(exc).__name__,
-                exc,
-            )
+            if (
+                call_settings is role_settings
+                and rate_limit_fallback_settings
+                and _is_rate_limit_error(exc)
+            ):
+                _mark_rate_limit_fallback_active(
+                    rate_limit_fallback_key,
+                    settings.llm.retry.rate_limit_fallback_cooldown_seconds,
+                )
+                metadata["rate_limit_fallback_primary_model"] = role_settings.model
+                metadata["rate_limit_fallback_reason"] = f"{type(exc).__name__}: {exc}"
+                try:
+                    provider = _provider_from_model(rate_limit_fallback_settings.model)
+                    model_name = rate_limit_fallback_settings.model
+                    (
+                        content,
+                        input_tokens,
+                        output_tokens,
+                        finish_reason,
+                        tool_calls,
+                        raw_message,
+                    ) = await _call_litellm_with_retry(
+                        request,
+                        rate_limit_fallback_settings,
+                        settings.llm.retry,
+                    )
+                except Exception as fallback_exc:
+                    provider = "fallback"
+                    model_name = f"fallback-{request.logical_role}"
+                    metadata["configured_model"] = role_settings.model
+                    metadata["fallback_model"] = rate_limit_fallback_settings.model
+                    metadata["fallback_reason"] = (
+                        f"{type(fallback_exc).__name__}: {fallback_exc}"
+                    )
+                    metadata["primary_rate_limit_reason"] = f"{type(exc).__name__}: {exc}"
+                    metadata["retry_exhausted"] = True
+                    finish_reason = "fallback"
+                    logger.error(
+                        "LLM rate-limit fallback FAILED for role=%s primary=%s fallback=%s "
+                        "template=%s — using fallback content. Error: %s: %s",
+                        request.logical_role,
+                        role_settings.model,
+                        rate_limit_fallback_settings.model,
+                        request.prompt_template,
+                        type(fallback_exc).__name__,
+                        fallback_exc,
+                    )
+            else:
+                provider = "fallback"
+                model_name = f"fallback-{request.logical_role}"
+                metadata["configured_model"] = role_settings.model
+                metadata["fallback_reason"] = f"{type(exc).__name__}: {exc}"
+                metadata["retry_exhausted"] = True
+                finish_reason = "fallback"
+                logger.error(
+                    "LLM call FAILED for role=%s model=%s template=%s — using fallback content. "
+                    "Error: %s: %s",
+                    request.logical_role,
+                    role_settings.model,
+                    request.prompt_template,
+                    type(exc).__name__,
+                    exc,
+                )
     latency_ms = int((perf_counter() - started_at) * 1000)
 
     llm_run = LlmRunModel(

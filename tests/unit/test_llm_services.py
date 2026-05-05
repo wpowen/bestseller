@@ -12,6 +12,7 @@ from bestseller.services.llm import (
     _extract_retry_after_seconds,
     _is_rate_limit_error,
     _llm_breaker,
+    _rate_limit_fallback_until,
     complete_text,
 )
 from bestseller.settings import LLMRoleSettings, RetrySettings, load_settings
@@ -24,6 +25,7 @@ pytestmark = pytest.mark.unit
 def _reset_circuit_breaker() -> None:
     """Prevent cross-test pollution from the module-level circuit breaker."""
     _llm_breaker.reset()
+    _rate_limit_fallback_until.clear()
 
 
 @pytest.fixture(autouse=True)
@@ -252,6 +254,133 @@ def test_complete_text_collects_streaming_chunks(monkeypatch: pytest.MonkeyPatch
     asyncio.run(_run())
 
 
+def test_complete_text_fails_over_to_rate_limit_fallback_model(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[str, int]] = []
+
+    async def fake_call_with_retry(request, role_settings, retry_settings):  # type: ignore[no-untyped-def]
+        calls.append((role_settings.model, retry_settings.rate_limit_max_attempts))
+        if role_settings.model == "openai/MiniMax-M2.7-highspeed":
+            raise FakeRateLimitError("MiniMax quota exhausted")
+        return ("glm output", 11, 22, "stop", None, None)
+
+    async def _run() -> None:
+        session = FakeSession()
+        settings = load_settings(
+            env={
+                "BESTSELLER__LLM__MOCK": "false",
+                "BESTSELLER__LLM__WRITER__MODEL": "openai/MiniMax-M2.7-highspeed",
+                "BESTSELLER__LLM__WRITER__API_BASE": "https://api.minimaxi.com/v1",
+                "BESTSELLER__LLM__WRITER__API_KEY_ENV": "MINIMAX_API_KEY",
+                "BESTSELLER__LLM__WRITER__STREAM": "false",
+                "BESTSELLER__LLM__WRITER__RATE_LIMIT_FALLBACK_MODEL": (
+                    "openai/z-ai/glm-5.1"
+                ),
+                "BESTSELLER__LLM__WRITER__RATE_LIMIT_FALLBACK_API_BASE": (
+                    "https://integrate.api.nvidia.com/v1"
+                ),
+                "BESTSELLER__LLM__WRITER__RATE_LIMIT_FALLBACK_API_KEY_ENV": (
+                    "NVIDIA_API_KEY"
+                ),
+                "BESTSELLER__LLM__RETRY__RATE_LIMIT_FALLBACK_COOLDOWN_SECONDS": "300",
+            }
+        )
+        result = await complete_text(
+            session,
+            settings,
+            LLMCompletionRequest(
+                logical_role="writer",
+                system_prompt="system",
+                user_prompt="user",
+                fallback_response="fallback output",
+            ),
+        )
+
+        assert result.content == "glm output"
+        assert result.model_name == "openai/z-ai/glm-5.1"
+        llm_run = next(obj for obj in session.added if isinstance(obj, LlmRunModel))
+        assert llm_run.metadata_json["rate_limit_fallback_primary_model"] == (
+            "openai/MiniMax-M2.7-highspeed"
+        )
+        assert "MiniMax quota exhausted" in llm_run.metadata_json[
+            "rate_limit_fallback_reason"
+        ]
+
+    monkeypatch.setattr(
+        "bestseller.services.llm._call_litellm_with_retry",
+        fake_call_with_retry,
+    )
+    monkeypatch.setattr(
+        "bestseller.services.llm.get_runtime_env_value",
+        lambda name: "key" if name in {"MINIMAX_API_KEY", "NVIDIA_API_KEY"} else None,
+    )
+
+    import asyncio
+
+    asyncio.run(_run())
+
+    assert calls == [
+        ("openai/MiniMax-M2.7-highspeed", 1),
+        ("openai/z-ai/glm-5.1", 60),
+    ]
+
+
+def test_complete_text_uses_active_rate_limit_fallback_then_reprobes_primary(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[str] = []
+
+    async def fake_call_with_retry(request, role_settings, retry_settings):  # type: ignore[no-untyped-def]
+        calls.append(role_settings.model)
+        return (f"ok:{role_settings.model}", 1, 2, "stop", None, None)
+
+    async def _run() -> None:
+        settings = load_settings(
+            env={
+                "BESTSELLER__LLM__MOCK": "false",
+                "BESTSELLER__LLM__WRITER__MODEL": "openai/MiniMax-M2.7-highspeed",
+                "BESTSELLER__LLM__WRITER__RATE_LIMIT_FALLBACK_MODEL": (
+                    "openai/z-ai/glm-5.1"
+                ),
+                "BESTSELLER__LLM__WRITER__RATE_LIMIT_FALLBACK_API_KEY_ENV": (
+                    "NVIDIA_API_KEY"
+                ),
+                "BESTSELLER__LLM__RETRY__RATE_LIMIT_FALLBACK_COOLDOWN_SECONDS": "300",
+            }
+        )
+        request = LLMCompletionRequest(
+            logical_role="writer",
+            system_prompt="system",
+            user_prompt="user",
+            fallback_response="fallback output",
+        )
+
+        key = "writer|openai/MiniMax-M2.7-highspeed||"
+        _rate_limit_fallback_until[key] = 10**12
+        fallback_result = await complete_text(FakeSession(), settings, request)
+        assert fallback_result.model_name == "openai/z-ai/glm-5.1"
+
+        _rate_limit_fallback_until.clear()
+        primary_result = await complete_text(FakeSession(), settings, request)
+        assert primary_result.model_name == "openai/MiniMax-M2.7-highspeed"
+
+    monkeypatch.setattr(
+        "bestseller.services.llm._call_litellm_with_retry",
+        fake_call_with_retry,
+    )
+    monkeypatch.setattr(
+        "bestseller.services.llm.get_runtime_env_value",
+        lambda name: "key" if name == "NVIDIA_API_KEY" else None,
+    )
+
+    import asyncio
+
+    asyncio.run(_run())
+
+    assert calls == ["openai/z-ai/glm-5.1", "openai/MiniMax-M2.7-highspeed"]
+
+
 # ── 429 rate-limit handling ─────────────────────────────────────────────
 
 
@@ -286,6 +415,10 @@ def test_is_rate_limit_error_detects_status_code() -> None:
 
 def test_is_rate_limit_error_detects_message_text() -> None:
     assert _is_rate_limit_error(Exception("HTTP 429: rate limit exceeded")) is True
+
+
+def test_is_rate_limit_error_detects_quota_exhaustion_text() -> None:
+    assert _is_rate_limit_error(Exception("MiniMax quota exhausted")) is True
 
 
 def test_is_rate_limit_error_rejects_generic_error() -> None:

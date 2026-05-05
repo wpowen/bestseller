@@ -867,6 +867,7 @@ class StoryBibleMaterializationResult(BaseModel):
     expansion_gates_upserted: int = 0
     voice_profiles_populated: int = 0
     moral_frameworks_populated: int = 0
+    novelty_fingerprints_registered: int = 0
     source_artifact_ids: dict[str, UUID] = Field(default_factory=dict)
 
 

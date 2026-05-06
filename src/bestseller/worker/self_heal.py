@@ -236,6 +236,31 @@ async def find_stuck_projects(session: Any) -> list[StuckProject]:
             )
             continue
 
+        blocked_chapters = (
+            await session.scalar(
+                select(func.count())
+                .select_from(ChapterModel)
+                .where(
+                    and_(
+                        ChapterModel.project_id == project.id,
+                        ChapterModel.production_state == "blocked",
+                    )
+                )
+            )
+        ) or 0
+        if blocked_chapters > 0:
+            stuck.append(
+                StuckProject(
+                    project_id=project.id,
+                    slug=project.slug,
+                    reason="blocked_chapters",
+                    stuck_at_chapter=None,
+                    chapters_total=int(chapters_total),
+                    chapters_with_draft=int(chapters_with_draft),
+                )
+            )
+            continue
+
         # Under-target: volumes never got planned past a certain point.
         # Only trigger for projects still in a writing state — a project
         # the user explicitly finished or abandoned (``completed`` /

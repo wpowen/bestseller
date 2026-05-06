@@ -907,13 +907,17 @@ class WebTaskManager:
         self,
         task_id: str,
         payload: dict[str, object],
+        *,
+        delegate_to_self_heal: bool = False,
+        heal_owned: bool = False,
     ) -> dict[str, object] | str | None:
         """Resume a stopped autowrite task *in place*, reusing the same task_id.
 
         Returns the updated task dict on success, the sentinel string
         ``"busy"`` if the task is currently running or queued, or ``None`` if
-        the task does not exist. The caller is responsible for mapping these
-        to HTTP responses.
+        the task does not exist. When ``delegate_to_self_heal`` is true, no
+        web thread is spawned; the task is marked as owned by worker self-heal.
+        The caller is responsible for mapping these to HTTP responses.
         """
         serialized_payload = json.loads(json.dumps(payload, default=_json_default))
         with self._lock:
@@ -923,6 +927,29 @@ class WebTaskManager:
             if task.status in ("running", "queued"):
                 return "busy"
             now = _utc_now()
+            if delegate_to_self_heal:
+                reason = (
+                    "ARQ heal job already active"
+                    if heal_owned
+                    else "worker self-heal owns resume; web will not spawn a competing thread"
+                )
+                task.status = "running"
+                task.current_stage = "delegated_to_worker_self_heal"
+                task.error = None
+                task.result = None
+                task.cancel_requested = False
+                task.updated_at = now
+                task.payload = serialized_payload
+                task.progress_events.append(
+                    {
+                        "timestamp": now,
+                        "stage": "delegated_to_worker_self_heal",
+                        "payload": {"reason": reason, "heal_owned": heal_owned},
+                    }
+                )
+                task.progress_events = task.progress_events[-300:]
+                self._save_to_disk()
+                return task.to_dict()
             task.status = "queued"
             task.current_stage = "queued"
             task.error = None
@@ -2299,6 +2326,218 @@ async def _load_workflow_payload(
     return overview.model_dump(mode="json")
 
 
+_BOOK_SCHEDULE_CHANNEL = "bestseller:book_schedule:events"
+
+
+def _serialize_schedule_row(row: object) -> dict[str, object]:
+    """Convert a ``BookGenerationScheduleModel`` to a JSON-friendly dict."""
+    scheduled_at = getattr(row, "scheduled_at", None)
+    fired_at = getattr(row, "fired_at", None)
+    created_at = getattr(row, "created_at", None)
+    return {
+        "id": str(getattr(row, "id", "")),
+        "task_type": getattr(row, "task_type", None),
+        "project_slug": getattr(row, "project_slug", None),
+        "title": getattr(row, "title", None),
+        "scheduled_at": scheduled_at.isoformat() if scheduled_at else None,
+        "timezone": getattr(row, "timezone", None),
+        "status": getattr(row, "status", None),
+        "task_id": getattr(row, "task_id", None),
+        "fired_at": fired_at.isoformat() if fired_at else None,
+        "error_message": getattr(row, "error_message", None),
+        "requested_by": getattr(row, "requested_by", None),
+        "created_at": created_at.isoformat() if created_at else None,
+        "payload": getattr(row, "payload", None),
+    }
+
+
+def _parse_scheduled_at(raw: object, schedule_timezone: str) -> datetime:
+    """Parse a user-supplied scheduled_at value into a timezone-aware UTC datetime.
+
+    Accepted forms:
+      - ISO 8601 string with offset, e.g. ``2026-04-30T22:00:00+08:00``.
+      - ISO 8601 string without offset (interpreted in ``schedule_timezone``).
+    """
+    if not isinstance(raw, str) or not raw.strip():
+        raise ValueError("scheduled_at must be a non-empty ISO 8601 string")
+    text = raw.strip().replace("Z", "+00:00")
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError as exc:
+        raise ValueError(f"scheduled_at is not a valid ISO 8601 datetime: {exc}") from exc
+    if parsed.tzinfo is None:
+        try:
+            from zoneinfo import ZoneInfo  # noqa: PLC0415
+            tz = ZoneInfo(schedule_timezone)
+        except Exception as exc:  # noqa: BLE001
+            raise ValueError(f"Unknown timezone {schedule_timezone!r}: {exc}") from exc
+        parsed = parsed.replace(tzinfo=tz)
+    return parsed.astimezone(UTC)
+
+
+def _publish_book_schedule_event(settings: AppSettings, event: dict[str, object]) -> None:
+    """Best-effort pubsub notification to the scheduler container.
+
+    Failures are logged but never raised — the scheduler also polls
+    pending rows on startup and periodically, so a missed pubsub event
+    only delays job registration until the next poll.
+    """
+    try:
+        import redis as _redis  # noqa: PLC0415
+
+        client = _redis.from_url(
+            settings.redis.url, decode_responses=True, socket_timeout=2
+        )
+        client.publish(_BOOK_SCHEDULE_CHANNEL, json.dumps(event))
+    except Exception:
+        logging.getLogger(__name__).warning(
+            "Failed to publish book schedule event %s",
+            event,
+            exc_info=True,
+        )
+
+
+def _create_book_generation_schedule(
+    settings: AppSettings,
+    *,
+    task_type: str,
+    payload: dict[str, object],
+) -> dict[str, object]:
+    from bestseller.services.book_generation_schedules import (  # noqa: PLC0415
+        create_schedule,
+    )
+
+    if not isinstance(payload, dict):
+        raise ValueError("Request body must be a JSON object")
+    raw_scheduled_at = payload.get("scheduled_at")
+    if not raw_scheduled_at:
+        raise ValueError("Field 'scheduled_at' is required for scheduled tasks")
+    schedule_timezone = str(payload.get("timezone") or "Asia/Shanghai")
+    scheduled_at = _parse_scheduled_at(raw_scheduled_at, schedule_timezone)
+
+    inner_payload: dict[str, object] = {
+        k: v for k, v in payload.items() if k not in {"scheduled_at", "timezone", "requested_by"}
+    }
+
+    if task_type == "autowrite":
+        required = ["slug", "title", "genre", "target_words", "target_chapters", "premise"]
+        missing = [k for k in required if not inner_payload.get(k)]
+        if missing:
+            raise ValueError(f"Missing required fields: {', '.join(missing)}")
+        validate_longform_scope(
+            int(inner_payload["target_words"]),
+            int(inner_payload["target_chapters"]),
+            language=inner_payload.get("language"),
+        )
+    elif task_type == "quickstart":
+        if not inner_payload.get("genre_key"):
+            raise ValueError("Field 'genre_key' is required.")
+    else:
+        raise ValueError(f"Unsupported task_type {task_type!r}")
+
+    project_slug = (
+        str(inner_payload.get("slug") or "") or None
+    ) if task_type == "autowrite" else None
+    title = (
+        str(inner_payload.get("title") or "") or None
+    ) if task_type == "autowrite" else (
+        str(inner_payload.get("genre_key") or "") or None
+    )
+    requested_by = (
+        str(payload.get("requested_by") or "").strip() or None
+    )
+
+    async def _do_create() -> dict[str, object]:
+        async with session_scope(settings) as session:
+            row = await create_schedule(
+                session,
+                task_type=task_type,
+                scheduled_at=scheduled_at,
+                payload=inner_payload,
+                project_slug=project_slug,
+                title=title,
+                requested_by=requested_by,
+                schedule_timezone=schedule_timezone,
+            )
+            return _serialize_schedule_row(row)
+
+    result = asyncio.run(_do_create())
+    _publish_book_schedule_event(
+        settings,
+        {"action": "create", "schedule_id": result["id"]},
+    )
+    return result
+
+
+def _list_book_generation_schedules(
+    settings: AppSettings,
+    *,
+    status_filter: str | None = None,
+) -> list[dict[str, object]]:
+    from bestseller.services.book_generation_schedules import (  # noqa: PLC0415
+        list_schedules,
+    )
+
+    async def _do_list() -> list[dict[str, object]]:
+        async with session_scope(settings) as session:
+            rows = await list_schedules(session, status_filter=status_filter)
+            return [_serialize_schedule_row(r) for r in rows]
+
+    return asyncio.run(_do_list())
+
+
+def _get_book_generation_schedule(
+    settings: AppSettings, schedule_id: str
+) -> dict[str, object] | None:
+    from bestseller.services.book_generation_schedules import (  # noqa: PLC0415
+        get_schedule,
+    )
+
+    try:
+        sid = UUID(schedule_id)
+    except ValueError:
+        return None
+
+    async def _do_get() -> dict[str, object] | None:
+        async with session_scope(settings) as session:
+            row = await get_schedule(session, sid)
+            return _serialize_schedule_row(row) if row is not None else None
+
+    return asyncio.run(_do_get())
+
+
+def _cancel_book_generation_schedule(
+    settings: AppSettings, schedule_id: str
+) -> str | dict[str, object]:
+    """Returns "not_found", "invalid_state: <msg>", or the serialized row."""
+    from bestseller.services.book_generation_schedules import (  # noqa: PLC0415
+        cancel_schedule,
+    )
+
+    try:
+        sid = UUID(schedule_id)
+    except ValueError:
+        return "not_found"
+
+    async def _do_cancel() -> str | dict[str, object]:
+        async with session_scope(settings) as session:
+            try:
+                row = await cancel_schedule(session, sid)
+            except ValueError as exc:
+                return f"invalid_state: {exc}"
+            if row is None:
+                return "not_found"
+            return _serialize_schedule_row(row)
+
+    outcome = asyncio.run(_do_cancel())
+    if isinstance(outcome, dict):
+        _publish_book_schedule_event(
+            settings,
+            {"action": "cancel", "schedule_id": schedule_id},
+        )
+    return outcome
+
+
 def _read_ui_html() -> str:
     if _UI_HTML_PATH.exists():
         return _UI_HTML_PATH.read_text(encoding="utf-8")
@@ -2772,6 +3011,23 @@ def serve_web_app(
                 if path == "/api/tasks":
                     self._send_json(task_manager.list_tasks())
                     return
+                if path == "/api/schedules":
+                    qs = parse_qs(parsed.query)
+                    status_filter = (qs.get("status") or [None])[0]
+                    self._send_json(
+                        _list_book_generation_schedules(settings, status_filter=status_filter)
+                    )
+                    return
+                if path.startswith("/api/schedules/"):
+                    schedule_id = path.removeprefix("/api/schedules/").strip("/")
+                    if not schedule_id:
+                        raise ValueError("Missing schedule_id in path")
+                    item = _get_book_generation_schedule(settings, schedule_id)
+                    if item is None:
+                        self._route_not_found()
+                        return
+                    self._send_json(item)
+                    return
                 if path.startswith("/api/tasks/"):
                     task_id = path.removeprefix("/api/tasks/")
                     task = task_manager.get_task(task_id)
@@ -3137,6 +3393,24 @@ def serve_web_app(
                     task = task_manager.create_quickstart_task(payload)
                     self._send_json(task, status=HTTPStatus.ACCEPTED)
                     return
+                if path == "/api/tasks/autowrite/schedule":
+                    payload = self._read_json_body()
+                    schedule_dict = _create_book_generation_schedule(
+                        settings,
+                        task_type="autowrite",
+                        payload=payload,
+                    )
+                    self._send_json(schedule_dict, status=HTTPStatus.ACCEPTED)
+                    return
+                if path == "/api/tasks/quickstart/schedule":
+                    payload = self._read_json_body()
+                    schedule_dict = _create_book_generation_schedule(
+                        settings,
+                        task_type="quickstart",
+                        payload=payload,
+                    )
+                    self._send_json(schedule_dict, status=HTTPStatus.ACCEPTED)
+                    return
                 if path == "/api/tasks/if-generate":
                     payload = self._read_json_body()
                     if not payload.get("project_slug"):
@@ -3188,7 +3462,18 @@ def serve_web_app(
                     # Force-disable conception so resume doesn't recreate from scratch
                     saved_payload = dict(saved_payload)
                     saved_payload["_run_conception"] = False
-                    resumed = task_manager.resume_autowrite_task(task_id, saved_payload)
+                    slug = str(saved_payload.get("slug") or old.get("project_slug") or "")
+                    heal_owned = bool(
+                        slug
+                        and settings.redis.url
+                        and slug in _fetch_heal_owned_slugs(settings.redis.url)
+                    )
+                    resumed = task_manager.resume_autowrite_task(
+                        task_id,
+                        saved_payload,
+                        delegate_to_self_heal=heal_owned,
+                        heal_owned=heal_owned,
+                    )
                     if resumed is None:
                         self._send_json(
                             {"ok": False, "error": "Task not found"},
@@ -3253,6 +3538,25 @@ def serve_web_app(
             parsed = urlparse(self.path)
             path = unquote(parsed.path)
             try:
+                if path.startswith("/api/schedules/"):
+                    schedule_id = path.removeprefix("/api/schedules/").strip("/")
+                    if not schedule_id:
+                        raise ValueError("Missing schedule_id in path")
+                    outcome = _cancel_book_generation_schedule(settings, schedule_id)
+                    if outcome == "not_found":
+                        self._send_json(
+                            {"ok": False, "error": "Schedule not found"},
+                            status=HTTPStatus.NOT_FOUND,
+                        )
+                        return
+                    if isinstance(outcome, str) and outcome.startswith("invalid_state:"):
+                        self._send_json(
+                            {"ok": False, "error": outcome.removeprefix("invalid_state:").strip()},
+                            status=HTTPStatus.CONFLICT,
+                        )
+                        return
+                    self._send_json({"ok": True, "schedule_id": schedule_id})
+                    return
                 if path.startswith("/api/tasks/"):
                     task_id = path.removeprefix("/api/tasks/").strip("/")
                     if not task_id:

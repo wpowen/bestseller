@@ -221,10 +221,119 @@ def summarize_cast_spec(
             f"语感：{_s(vp.get('speech_register'))}"
         )
 
+    def _personhood_lines(c: dict[str, Any], role_label: str) -> list[str]:
+        """Render the psych/life/family/belief layer into 4-6 compact lines.
+
+        Tightly budgeted (~120 tokens per character) so the chapter prompt
+        stays under its envelope. Skips empty fields entirely rather than
+        printing placeholders — an empty psych profile is silence, not
+        noise.
+        """
+        out: list[str] = []
+        psych = _mapping(c.get("psych_profile"))
+        if psych:
+            psych_bits: list[str] = []
+            if psych.get("mbti"):
+                psych_bits.append(f"MBTI={_s(psych.get('mbti'))}")
+            if psych.get("enneagram"):
+                psych_bits.append(f"九型={_s(psych.get('enneagram'))}")
+            if psych.get("attachment_style"):
+                psych_bits.append(f"依恋={_s(psych.get('attachment_style'))}")
+            big_five = psych.get("big_five") or {}
+            if isinstance(big_five, dict) and big_five:
+                ocean = ", ".join(f"{k}:{v}" for k, v in big_five.items())
+                psych_bits.append(f"OCEAN={ocean}")
+            if psych_bits:
+                tag = "Psych" if is_en else "人格"
+                out.append(f"  {tag}[{role_label}]: {' | '.join(psych_bits)}")
+
+        history = _mapping(c.get("life_history"))
+        if history:
+            evt = history.get("formative_events") or []
+            evt_titles: list[str] = []
+            if isinstance(evt, list):
+                for e in evt[:3]:
+                    em = _mapping(e)
+                    if em.get("title"):
+                        evt_titles.append(_s(em.get("title")))
+            if evt_titles or history.get("defining_moments"):
+                tag = "History" if is_en else "生平"
+                pieces = evt_titles[:]
+                if history.get("defining_moments"):
+                    pieces.extend(_list_s(history.get("defining_moments"))[:2])
+                out.append(f"  {tag}[{role_label}]: { '；'.join(pieces[:3]) }")
+
+        family = _mapping(c.get("family_imprint"))
+        if family:
+            fam_bits: list[str] = []
+            if family.get("parenting_style"):
+                fam_bits.append(_s(family.get("parenting_style")))
+            if family.get("sibling_dynamics"):
+                fam_bits.append(_s(family.get("sibling_dynamics")))
+            if fam_bits:
+                tag = "Family" if is_en else "原生家庭"
+                out.append(f"  {tag}[{role_label}]: { '；'.join(fam_bits) }")
+
+        beliefs = _mapping(c.get("beliefs"))
+        if beliefs:
+            blf_bits: list[str] = []
+            if beliefs.get("ideology"):
+                blf_bits.append(f"信念={_s(beliefs.get('ideology'))}")
+            if beliefs.get("religion"):
+                devot = _s(beliefs.get("devotion_level")) or ""
+                blf_bits.append(f"宗教={_s(beliefs.get('religion'))}{('/' + devot) if devot else ''}")
+            if beliefs.get("philosophical_stance"):
+                blf_bits.append(f"哲学={_s(beliefs.get('philosophical_stance'))}")
+            if blf_bits:
+                tag = "Beliefs" if is_en else "信仰"
+                out.append(f"  {tag}[{role_label}]: { ' | '.join(blf_bits) }")
+
+        social = _mapping(c.get("social_network"))
+        if social:
+            family_ties = social.get("family") or []
+            mentor_ties = social.get("mentors") or []
+            ties: list[str] = []
+            for t in (family_ties[:2] + mentor_ties[:1]) if isinstance(family_ties, list) and isinstance(mentor_ties, list) else []:
+                tm = _mapping(t)
+                if tm.get("name"):
+                    ties.append(f"{_s(tm.get('name'))}（{_s(tm.get('bond'))}）")
+            if ties:
+                tag = "Ties" if is_en else "关键关系"
+                out.append(f"  {tag}[{role_label}]: { '；'.join(ties) }")
+
+        return out
+
+    def _villain_lines(c: dict[str, Any]) -> list[str]:
+        """Render villain_charisma so the chapter prompt knows the antagonist
+        is a tragic rival, not a difficulty slider."""
+        v = _mapping(c.get("villain_charisma"))
+        if not v:
+            return []
+        bits: list[str] = []
+        if v.get("noble_motivation"):
+            bits.append(f"高尚动机：{_s(v.get('noble_motivation'))}")
+        if v.get("pain_origin"):
+            bits.append(f"伤痛起源：{_s(v.get('pain_origin'))}")
+        if v.get("personal_code"):
+            code = _list_s(v.get("personal_code"))
+            if code:
+                bits.append(f"底线：{ '/'.join(code[:2]) }")
+        if v.get("protagonist_mirror"):
+            bits.append(f"与主角对照：{_s(v.get('protagonist_mirror'))}")
+        if not bits:
+            return []
+        tag = "Villain charisma" if is_en else "反派魅力"
+        return [f"  {tag}: { ' | '.join(bits) }"]
+
+    protag_label = "Protagonist" if is_en else "主角"
+    antag_label = "Antagonist" if is_en else "反派"
     lines = [
-        _char_line(protag, "Protagonist" if is_en else "主角"),
-        _char_line(antag, "Antagonist" if is_en else "反派"),
+        _char_line(protag, protag_label),
+        _char_line(antag, antag_label),
     ]
+    lines.extend(_personhood_lines(protag, protag_label))
+    lines.extend(_personhood_lines(antag, antag_label))
+    lines.extend(_villain_lines(antag))
 
     # Antagonist forces (filter by volume if given)
     forces = _mapping(cast_spec).get("antagonist_forces") or []

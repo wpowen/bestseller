@@ -76,3 +76,16 @@ def test_written_statuses_exclude_planned_and_outlining() -> None:
     assert "complete" in statuses
     assert "planned" not in statuses
     assert "outlining" not in statuses
+
+
+@pytest.mark.asyncio
+async def test_written_volume_count_requires_ok_production_state() -> None:
+    """Pending repair chapters must keep the volume from being skipped."""
+    session = _FakeSession(count_value=50)
+
+    await pipeline_services._count_written_chapters_in_volume(
+        session, project_id="proj-1", volume_number=2,
+    )
+
+    sql = str(session.last_stmt)
+    assert "production_state" in sql

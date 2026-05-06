@@ -19,13 +19,16 @@ from sqlalchemy import select, text
 
 from bestseller.infra.db.session import init_db, shutdown_db, get_server_session
 from bestseller.infra.redis import init_redis, shutdown_redis, get_redis_client
-from bestseller.infra.db.models import PublishingScheduleModel
+from bestseller.infra.db.models import BookGenerationScheduleModel, PublishingScheduleModel
+from bestseller.scheduler.book_generation_jobs import fire_book_generation_schedule
 from bestseller.scheduler.jobs import publish_next_chapter
+from bestseller.services.book_generation_schedules import claim_pending_schedules
 from bestseller.settings import get_settings
 
 logger = logging.getLogger(__name__)
 
 _SCHEDULE_CHANNEL = "bestseller:schedule:events"
+_BOOK_SCHEDULE_CHANNEL = "bestseller:book_schedule:events"
 
 
 def _build_scheduler(db_url: str) -> AsyncIOScheduler:
@@ -87,6 +90,59 @@ def _parse_cron(expr: str) -> dict[str, str]:
     return dict(zip(keys, parts))
 
 
+# ── Book generation schedule registration ─────────────────────────────
+#
+# Each pending row in ``book_generation_schedules`` is registered with
+# APScheduler as a one-shot ``trigger="date"`` job. The job id is
+# ``bookgen_<uuid>`` so it can be deduplicated / cancelled. On fire,
+# ``fire_book_generation_schedule`` posts to the web service's
+# autowrite/quickstart endpoint, which is functionally identical to a
+# user clicking "Start" in the UI.
+
+
+async def _register_book_generation_schedule(
+    scheduler: AsyncIOScheduler,
+    row: BookGenerationScheduleModel,
+) -> None:
+    job_id = f"bookgen_{row.id}"
+    if scheduler.get_job(job_id):
+        scheduler.remove_job(job_id)
+
+    if row.status != "pending":
+        return  # Already fired, completed, failed, or cancelled.
+
+    scheduler.add_job(
+        fire_book_generation_schedule,
+        trigger="date",
+        id=job_id,
+        run_date=row.scheduled_at,
+        timezone=row.timezone or "Asia/Shanghai",
+        args=[str(row.id)],
+        replace_existing=True,
+        # APScheduler defaults misfire_grace_time to 1 second which means
+        # any clock drift past the run_date drops the job. 30 minutes is
+        # generous enough to absorb a scheduler restart.
+        misfire_grace_time=1800,
+    )
+    logger.info(
+        "Registered book generation schedule %s (%s, slug=%s, scheduled_at=%s, tz=%s)",
+        row.id,
+        row.task_type,
+        row.project_slug,
+        row.scheduled_at.isoformat(),
+        row.timezone,
+    )
+
+
+async def _unregister_book_generation_schedule(
+    scheduler: AsyncIOScheduler, schedule_id: str
+) -> None:
+    job_id = f"bookgen_{schedule_id}"
+    if scheduler.get_job(job_id):
+        scheduler.remove_job(job_id)
+        logger.info("Unregistered book generation schedule %s", schedule_id)
+
+
 async def _listen_for_changes(scheduler: AsyncIOScheduler) -> None:
     """Listen to Redis pubsub for schedule changes with automatic reconnection.
 
@@ -109,8 +165,12 @@ async def _listen_for_changes(scheduler: AsyncIOScheduler) -> None:
         try:
             redis = get_redis_client()
             pubsub = redis.pubsub()
-            await pubsub.subscribe(_SCHEDULE_CHANNEL)
-            logger.info("Listening for schedule change events on %s", _SCHEDULE_CHANNEL)
+            await pubsub.subscribe(_SCHEDULE_CHANNEL, _BOOK_SCHEDULE_CHANNEL)
+            logger.info(
+                "Listening for schedule change events on %s, %s",
+                _SCHEDULE_CHANNEL,
+                _BOOK_SCHEDULE_CHANNEL,
+            )
 
             while True:
                 message = await pubsub.get_message(
@@ -122,20 +182,15 @@ async def _listen_for_changes(scheduler: AsyncIOScheduler) -> None:
                     continue
                 if message.get("type") != "message":
                     continue
+                channel = message.get("channel")
+                if isinstance(channel, bytes):
+                    channel = channel.decode("utf-8", errors="replace")
                 try:
                     event = json.loads(message["data"])
-                    schedule_id = event.get("schedule_id")
-                    if not schedule_id:
-                        continue
-                    async with get_server_session() as session:
-                        result = await session.execute(
-                            select(PublishingScheduleModel).where(
-                                PublishingScheduleModel.id == schedule_id
-                            )
-                        )
-                        schedule = result.scalar_one_or_none()
-                        if schedule:
-                            await _register_schedule(scheduler, schedule)
+                    if channel == _BOOK_SCHEDULE_CHANNEL:
+                        await _handle_book_schedule_event(scheduler, event)
+                    else:
+                        await _handle_publish_schedule_event(scheduler, event)
                 except Exception:
                     logger.exception("Error processing schedule change event")
         except asyncio.CancelledError:
@@ -146,11 +201,54 @@ async def _listen_for_changes(scheduler: AsyncIOScheduler) -> None:
         finally:
             if pubsub is not None:
                 try:
-                    await pubsub.unsubscribe(_SCHEDULE_CHANNEL)
+                    await pubsub.unsubscribe(_SCHEDULE_CHANNEL, _BOOK_SCHEDULE_CHANNEL)
                     await pubsub.aclose()
                 except Exception:
                     pass
                 pubsub = None
+
+
+async def _handle_publish_schedule_event(
+    scheduler: AsyncIOScheduler, event: dict[str, object]
+) -> None:
+    schedule_id = event.get("schedule_id")
+    if not schedule_id:
+        return
+    async with get_server_session() as session:
+        result = await session.execute(
+            select(PublishingScheduleModel).where(
+                PublishingScheduleModel.id == schedule_id
+            )
+        )
+        schedule = result.scalar_one_or_none()
+        if schedule:
+            await _register_schedule(scheduler, schedule)
+
+
+async def _handle_book_schedule_event(
+    scheduler: AsyncIOScheduler, event: dict[str, object]
+) -> None:
+    """React to ``bestseller:book_schedule:events`` pubsub messages.
+
+    Event shape:
+      {"action": "create" | "cancel", "schedule_id": "<uuid>"}
+    """
+    action = str(event.get("action") or "")
+    schedule_id = str(event.get("schedule_id") or "")
+    if not schedule_id:
+        return
+    if action == "cancel":
+        await _unregister_book_generation_schedule(scheduler, schedule_id)
+        return
+    # Default: (re)load the row and (re)register.
+    async with get_server_session() as session:
+        row = await session.scalar(
+            select(BookGenerationScheduleModel).where(
+                BookGenerationScheduleModel.id == schedule_id
+            )
+        )
+        if row is not None:
+            await _register_book_generation_schedule(scheduler, row)
 
 
 # ── DB maintenance job ────────────────────────────────────────────────────
@@ -236,6 +334,21 @@ async def main() -> None:
 
     for schedule in schedules:
         await _register_schedule(scheduler, schedule)
+
+    # Load all pending book-generation schedules and register them as
+    # one-shot date jobs.  APScheduler keeps these in memory until they
+    # fire (or get cancelled via Redis pubsub).
+    async with get_server_session() as session:
+        pending_book_schedules = await claim_pending_schedules(session)
+
+    for row in pending_book_schedules:
+        try:
+            await _register_book_generation_schedule(scheduler, row)
+        except Exception:  # noqa: BLE001
+            logger.exception(
+                "Failed to register book generation schedule %s on startup",
+                row.id,
+            )
 
     retention_days = int(os.environ.get("BESTSELLER_DB_RETENTION_DAYS", "30"))
     scheduler.add_job(

@@ -57,10 +57,10 @@ services:
       # shared_buffers=128MB: page cache for hot data (default 128MB, kept low)
       # work_mem=16MB:        per-sort / per-hash allocation (16 concurrent ops → 256MB max)
       # maintenance_work_mem: used by VACUUM/ANALYZE, not concurrent
-      # max_connections=100:  bumped from 50 to support 5 concurrent books in Web UI.
-      #   Budget: web(5 tasks × ~4 conns) + worker(2 × ~10) + api/scheduler/mcp ≈ 50-60
-      #   @ ~8MB per backend → ~800MB worst case (fits DB memory limit of 768M with
-      #   shared_buffers overhead absorbed by effective_cache_size already bumped).
+      # max_connections=150: bumped from 100 to support 10 concurrent books in Web UI.
+      # Budget: web(10 tasks × ~4 conns) + worker(2 × ~10) + api/scheduler/mcp ≈ 70-80
+      # @ ~8MB per backend → ~1.2GB worst case (fits DB memory limit of 768M with
+      # shared_buffers overhead absorbed by effective_cache_size already bumped).
       POSTGRES_INITDB_ARGS: ""
     command: >
       postgres
@@ -68,7 +68,7 @@ services:
         -c work_mem=16MB
         -c maintenance_work_mem=64MB
         -c effective_cache_size=384MB
-        -c max_connections=100
+        -c max_connections=150
         -c wal_buffers=8MB
         -c checkpoint_completion_target=0.9
         -c random_page_cost=1.1

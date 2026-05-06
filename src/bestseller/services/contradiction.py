@@ -634,6 +634,8 @@ async def _check_resurrection(
     chapter_number: int,
     scene_participants: list[str] | None,
     language: str | None = None,
+    *,
+    scene: Any = None,
 ) -> tuple[list[ContradictionViolation], list[ContradictionWarning]]:
     """Flag scenes that stage a deceased character as an active participant.
 
@@ -643,11 +645,34 @@ async def _check_resurrection(
     current snapshot and contains no timeline information, so using it
     here would spread the present-tense state to every historical chapter.
     Reincarnation is allowed only if the project invariants opt in.
+
+    Flashback / memorial / vision / dream / quoted-reference scenes are
+    EXEMPT — a deceased character may legitimately appear there as memory
+    or quoted material, and the planner uses ``scene.scene_type`` or
+    ``scene.metadata_json.scene_mode`` to mark such scenes. Pass the
+    ``scene`` keyword so the check can read those annotations.
+
+    Fake-death characters whose reveal chapter has passed
+    (``metadata_json.fake_death.revealed_chapter <= N``) are also
+    exempt — the "death" was a ruse.
     """
+    from bestseller.services.character_lifecycle import (
+        is_character_dead_at_chapter,
+        scene_is_flashback_like,
+    )
+
     violations: list[ContradictionViolation] = []
     warnings: list[ContradictionWarning] = []
 
     if not scene_participants:
+        return violations, warnings
+
+    # Flashback / memorial / vision / dream scenes are allowed to stage
+    # deceased characters — that is the whole point of those modes.
+    # Returning early here also keeps the prompt's "deceased may be
+    # remembered / quoted / used as a corpse or letter" guidance
+    # consistent with what the contradiction layer enforces.
+    if scene is not None and scene_is_flashback_like(scene):
         return violations, warnings
 
     project = await session.get(ProjectModel, project_id)
@@ -669,13 +694,23 @@ async def _check_resurrection(
         if character is None:
             continue
 
-        # alive_status is the *current* snapshot on the character row and
-        # carries no timeline information; using it to decide whether the
-        # character is dead in *this* chapter spreads the present-tense
-        # state across all earlier chapters and produces false positives.
-        # death_chapter_number is the only timeline-anchored signal.
+        # death_chapter_number is the only timeline-anchored signal;
+        # the helper folds in the fake-death-revealed exemption so a
+        # character whose "death" was a ruse and has been revealed
+        # alive can resume normal scene participation.
         death_ch = getattr(character, "death_chapter_number", None)
-        is_dead = death_ch is not None and death_ch < chapter_number
+        # The original check used ``death_ch < chapter_number`` (strict);
+        # we keep that semantic — a character "died in chapter N" can
+        # still appear in chapter N's tail scenes as the death itself.
+        is_dead = (
+            death_ch is not None
+            and int(death_ch) < int(chapter_number)
+            and is_character_dead_at_chapter(
+                death_chapter_number=death_ch,
+                chapter_number=chapter_number,
+                character_metadata=getattr(character, "metadata_json", None),
+            )
+        )
         if not is_dead:
             continue
 
@@ -1047,6 +1082,8 @@ async def run_pre_scene_contradiction_checks(
     scene_information_release: str | None = None,
     settings: AppSettings | None = None,
     language: str | None = None,
+    *,
+    scene: Any = None,
 ) -> ContradictionCheckResult:
     """Run all pre-scene contradiction sub-checks and return an aggregate result.
 
@@ -1149,7 +1186,8 @@ async def run_pre_scene_contradiction_checks(
     # 7. Character resurrection
     try:
         resv, resw = await _check_resurrection(
-            session, project_id, chapter_number, scene_participants, language=language,
+            session, project_id, chapter_number, scene_participants,
+            language=language, scene=scene,
         )
         all_violations.extend(resv)
         all_warnings.extend(resw)
@@ -1212,3 +1250,346 @@ async def run_pre_scene_contradiction_checks(
         warnings=all_warnings,
         checks_run=checks_run,
     )
+
+
+# ---------------------------------------------------------------------------
+# Post-write premature-death scan
+# ---------------------------------------------------------------------------
+#
+# Why this exists
+# ---------------
+# ``_check_resurrection`` only fires when a character whose
+# ``death_chapter_number`` is *less than* the current chapter shows up as a
+# scene participant. It cannot catch the inverse failure mode: the writer
+# LLM stages a death scene for a character whose ``death_chapter_number`` is
+# scheduled *later* (e.g. the ch6 苏瑶 / 陆沉 incident — Su Yao's planned
+# death is ch435 and Lu Chen's is ch458, but ch6 prose still wrote them
+# dying). The pre-scene check passes because the participants are correctly
+# alive; the violation is in the prose itself.
+#
+# This scanner runs over the assembled chapter markdown, looks at the
+# ``protected roster`` (every character with ``death_chapter_number >
+# current_chapter``) and reports any prose passage that puts one of those
+# names within a small window of a death verb. The regex catalogue is
+# deliberately conservative — it only flags strong signals like
+# "X 倒下了/断气/殒命/咽下最后一口气/X 死前/X 永远闭上了眼" so it does not
+# misfire on metaphors ("他像死人一样睡着了") or on someone else dying nearby.
+
+# Death keywords. Two tiers:
+#   _STRONG: unambiguous death verbs / phrasings — direct hit produces a
+#       blocking violation.
+#   _IMPLIED: phrasings that frame the protected character as already dead
+#       even without a death verb in the same sentence ("X 死前", "X 临终").
+_PREMATURE_DEATH_STRONG_ZH: tuple[str, ...] = (
+    "死了", "死亡", "已死", "毙命", "咽气", "咽下最后一口气",
+    "断气", "气绝", "殒命", "身亡", "罹难", "魂飞", "魂断",
+    "永远闭上了眼", "缓缓倒下", "倒下不起", "倒在血泊",
+    "再也站不起来", "再也没醒来", "停止了呼吸", "心跳停止",
+    "化作齑粉", "形神俱灭", "灰飞烟灭", "丧命", "命陨", "命丧",
+)
+_PREMATURE_DEATH_IMPLIED_ZH: tuple[str, ...] = (
+    "死前", "临终前", "弥留之际", "遗体", "尸首", "之死",
+    "葬礼", "送葬", "祭奠",
+)
+_PREMATURE_DEATH_STRONG_EN: tuple[str, ...] = (
+    " died", " is dead", " was dead", " killed",
+    " passed away", " breathed his last", " breathed her last",
+    " breathed their last", " drew his last breath", " drew her last breath",
+    " stopped breathing", " heart stopped", " collapsed and never rose",
+    " never woke again",
+)
+_PREMATURE_DEATH_IMPLIED_EN: tuple[str, ...] = (
+    "before he died", "before she died", "before they died",
+    "his death", "her death", "their death",
+    "funeral", "corpse", "remains of",
+)
+
+# Window (in characters) inside which a name+death-keyword pair is treated
+# as "the character is being killed" rather than coincidence. CJK prose is
+# dense, so we use a tight window. English prose is looser.
+_PREMATURE_WINDOW_ZH: int = 30
+_PREMATURE_WINDOW_EN: int = 80
+
+
+def _scan_premature_death_in_text(
+    *,
+    chapter_md: str,
+    protected_names: list[str],
+    language: str | None,
+    other_names: list[str] | None = None,
+) -> list[tuple[str, str, str]]:
+    """Return tuples of ``(character_name, kind, evidence)`` for protected
+    characters whose name is the *closest* one to a death keyword in the
+    surrounding window.
+
+    The "closest name to the death verb" heuristic is what keeps the
+    scanner from misfiring on co-located names — a sentence like
+    "苏瑶冷冷一笑，叶长青已死" mentions 苏瑶 nearby but the death
+    actually attaches to 叶长青. Old position-of-name scans would flag
+    苏瑶 here; the proximity attribution does not.
+
+    Parameters
+    ----------
+    chapter_md : str
+        The assembled chapter markdown.
+    protected_names : list[str]
+        Characters whose ``death_chapter_number`` is later than this
+        chapter. A death keyword closest to one of these names produces a
+        finding.
+    other_names : list[str] | None
+        All other character names known to the project. They are used
+        only as "distractor" candidates to win the proximity contest —
+        they do not produce findings of their own. ``None`` falls back
+        to a tiny built-in pronoun list, which still catches the
+        most common false positives.
+    language : str | None
+        Language hint; when English, both name needles and prose are
+        casefolded for matching.
+
+    ``kind`` is either ``"strong"`` (direct death verb) or ``"implied"``
+    (post-mortem framing). ``evidence`` is a ~80-char window. Pure
+    function — no DB, deterministic, easy to unit-test.
+    """
+
+    if not chapter_md or not protected_names:
+        return []
+
+    is_en = is_english_language(language)
+    strong = _PREMATURE_DEATH_STRONG_EN if is_en else _PREMATURE_DEATH_STRONG_ZH
+    implied = _PREMATURE_DEATH_IMPLIED_EN if is_en else _PREMATURE_DEATH_IMPLIED_ZH
+    window = _PREMATURE_WINDOW_EN if is_en else _PREMATURE_WINDOW_ZH
+
+    haystack = chapter_md if not is_en else chapter_md.casefold()
+
+    # Build the candidate name set (protected + other) so the proximity
+    # contest can correctly attribute the death to whichever name is
+    # closest to the keyword.
+    protected_clean: list[str] = [
+        n.strip() for n in protected_names if isinstance(n, str) and n.strip()
+    ]
+    other_clean: list[str] = [
+        n.strip() for n in (other_names or []) if isinstance(n, str) and n.strip()
+    ]
+    # Distractors: at minimum, the bare pronouns. They catch the most
+    # common false-positive shape — protected name in clause 1, an
+    # unnamed third party dies in clause 2.
+    if not other_clean:
+        other_clean = (
+            ["he", "she", "they", "him", "her", "them"]
+            if is_en
+            else ["他", "她", "它"]
+        )
+
+    protected_set = {n.casefold() if is_en else n for n in protected_clean}
+    all_names = list(set(protected_clean) | set(other_clean))
+    name_needles: list[tuple[str, str]] = []  # (canonical, lookup)
+    for raw in all_names:
+        if not raw:
+            continue
+        name_needles.append((raw, raw.casefold() if is_en else raw))
+
+    def _all_name_positions() -> list[tuple[int, str]]:
+        """All ``(position, canonical_name)`` pairs in the haystack."""
+        positions: list[tuple[int, str]] = []
+        for canonical, needle in name_needles:
+            cursor = 0
+            while True:
+                hit = haystack.find(needle, cursor)
+                if hit < 0:
+                    break
+                positions.append((hit, canonical))
+                cursor = hit + max(1, len(needle))
+        positions.sort(key=lambda x: x[0])
+        return positions
+
+    name_positions = _all_name_positions()
+
+    def _closest_name(idx: int) -> str | None:
+        """Find the character name whose nearest occurrence is closest to
+        the death-keyword position ``idx``, within the proximity window.
+        Returns the canonical name or ``None`` when no name is in range.
+        """
+        best: tuple[int, str] | None = None
+        for pos, canonical in name_positions:
+            if abs(pos - idx) > window:
+                continue
+            distance = abs(pos - idx)
+            if best is None or distance < best[0]:
+                best = (distance, canonical)
+        return best[1] if best else None
+
+    findings: list[tuple[str, str, str]] = []
+    seen_keys: set[tuple[str, str]] = set()
+
+    def _record(name_canonical: str, kind: str, kw_idx: int) -> None:
+        # Check protected membership using the canonical (case-preserved)
+        # form when CJK, casefolded when EN.
+        compare_form = name_canonical.casefold() if is_en else name_canonical
+        if compare_form not in protected_set:
+            return
+        key = (name_canonical, kind)
+        if key in seen_keys:
+            return
+        seen_keys.add(key)
+        start = max(0, kw_idx - 30)
+        end = min(len(chapter_md), kw_idx + 60)
+        evidence = chapter_md[start:end].replace("\n", " ")
+        findings.append((name_canonical, kind, evidence))
+
+    def _scan_keywords(keywords: tuple[str, ...], kind: str) -> None:
+        for kw in keywords:
+            cursor = 0
+            while True:
+                hit = haystack.find(kw, cursor)
+                if hit < 0:
+                    break
+                cursor = hit + max(1, len(kw))
+                attributed = _closest_name(hit)
+                if attributed is None:
+                    continue
+                _record(attributed, kind, hit)
+
+    # NOTE: no flashback exemption here.
+    # The premature-death scanner targets *protected* characters whose
+    # death is scheduled for a LATER chapter — there is no legitimate
+    # retrospective frame for a death that hasn't happened yet, so any
+    # death-flavoured language around a protected name is a real leak.
+    # The flashback / memorial / vision exemption applies only to
+    # already-deceased characters (handled in ``_check_resurrection``
+    # and ``_filter_dead_scene_participants``).
+    #
+    # Order matters: strong wins over implied for the same name, because
+    # ``_record`` short-circuits on (name, kind). We record strong first.
+    _scan_keywords(strong, "strong")
+    _scan_keywords(implied, "implied")
+
+    return findings
+
+
+async def check_premature_death_in_prose(
+    session: AsyncSession,
+    project_id: UUID,
+    chapter_number: int,
+    chapter_md: str,
+    *,
+    language: str | None = None,
+) -> tuple[list[ContradictionViolation], list[ContradictionWarning]]:
+    """Scan an assembled chapter for death descriptions of protected
+    characters (``death_chapter_number`` strictly greater than the current
+    chapter).
+
+    Returns ``(violations, warnings)``. ``"strong"`` matches are violations
+    (block the chapter), ``"implied"`` matches are warnings (the prose
+    treats the character as already dead in passing — possibly a flashback,
+    possibly a leak; reviewer decides).
+    """
+
+    violations: list[ContradictionViolation] = []
+    warnings: list[ContradictionWarning] = []
+
+    if not chapter_md:
+        return violations, warnings
+
+    rows = await session.execute(
+        select(CharacterModel.name, CharacterModel.death_chapter_number).where(
+            CharacterModel.project_id == project_id,
+            CharacterModel.death_chapter_number.is_not(None),
+            CharacterModel.death_chapter_number > chapter_number,
+        )
+    )
+    protected: list[tuple[str, int]] = [
+        (str(name).strip(), int(death_ch))
+        for name, death_ch in rows
+        if name and death_ch is not None
+    ]
+    if not protected:
+        return violations, warnings
+
+    # Load every other character name on the project so the proximity
+    # attribution can correctly distinguish "protected died" from
+    # "another character died nearby".
+    protected_name_set = {name for name, _ in protected}
+    other_rows = await session.scalars(
+        select(CharacterModel.name).where(
+            CharacterModel.project_id == project_id,
+            CharacterModel.name.notin_(protected_name_set),
+        )
+    )
+    other_names: list[str] = [
+        str(name).strip() for name in other_rows if name and str(name).strip()
+    ]
+
+    is_en = is_english_language(language)
+    findings = _scan_premature_death_in_text(
+        chapter_md=chapter_md,
+        protected_names=[name for name, _ in protected],
+        other_names=other_names,
+        language=language,
+    )
+    if not findings:
+        return violations, warnings
+
+    death_ch_by_name = {name: death_ch for name, death_ch in protected}
+    for name, kind, evidence in findings:
+        scheduled = death_ch_by_name.get(name)
+        if kind == "strong":
+            if is_en:
+                msg = (
+                    f"Premature death: '{name}' is described as dying / dead in "
+                    f"chapter {chapter_number}, but the planner schedules the "
+                    f"death for chapter {scheduled}. Rewrite the passage so the "
+                    f"character survives this chapter."
+                )
+            else:
+                msg = (
+                    f"提前死亡：「{name}」在第{chapter_number}章的正文里出现"
+                    f"死亡/濒死描写，但其计划死亡章节为第{scheduled}章。"
+                    "请改写本章相关段落，让该角色在本章存活。"
+                )
+            violations.append(
+                ContradictionViolation(
+                    check_type="character_premature_death",
+                    severity="error",
+                    message=msg,
+                    evidence=f"…{evidence}…",
+                )
+            )
+        else:  # implied
+            if is_en:
+                msg = (
+                    f"Possible premature death: prose around '{name}' uses "
+                    f"post-mortem framing in chapter {chapter_number}, but the "
+                    f"planned death is chapter {scheduled}. Verify this is a "
+                    f"flashback or remove the framing."
+                )
+                rec = (
+                    "If this is a flashback, label the scene explicitly; "
+                    "otherwise rephrase to avoid 'before X died' / 'X's death' "
+                    "until chapter " + str(scheduled) + "."
+                )
+            else:
+                msg = (
+                    f"疑似提前死亡：「{name}」在第{chapter_number}章周围出现"
+                    f"事后追述（如「X死前」「临终」「遗体」），"
+                    f"但其计划死亡章节为第{scheduled}章。"
+                    "请确认这是回忆/前瞻还是误写。"
+                )
+                rec = (
+                    f"若为回忆/前瞻，请显式标记；否则改写表述，"
+                    f"避免在第{scheduled}章之前出现「{name}死前/临终/遗体」"
+                    "等已死去的修辞。"
+                )
+            warnings.append(
+                ContradictionWarning(
+                    check_type="character_premature_death_implied",
+                    message=msg,
+                    recommendation=rec,
+                )
+            )
+
+    if violations:
+        logger.warning(
+            "premature-death scan: %d violation(s) for project=%s ch=%d",
+            len(violations), project_id, chapter_number,
+        )
+    return violations, warnings

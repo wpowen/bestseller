@@ -31,14 +31,15 @@ servers:
       EXA_API_KEY: "${EXA_API_KEY}"
     enabled_for: [research_agent, curator]
     tools_expose: [web_search_exa, research_papers]
+    required_env: [EXA_API_KEY]
     timeout_seconds: 60
     enabled: true
 
   # Wikipedia — reference material for historical/cultural grounding.
-  # Install: uvx install mcp-server-wikipedia
+  # Install: uvx --from mcp-server-wikipedia wikipedia-mcp-server
   - name: wikipedia
     transport: stdio
-    command: ["uvx", "mcp-server-wikipedia"]
+    command: ["uvx", "--from", "mcp-server-wikipedia", "wikipedia-mcp-server"]
     env: {}
     enabled_for: [research_agent, curator]
     tools_expose: [search_wikipedia, get_article]

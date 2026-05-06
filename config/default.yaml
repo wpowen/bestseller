@@ -243,3 +243,6 @@ pipeline:
   chapter_auto_repair_repairable_codes:
     - BLOCK_LOW
     - BLOCK_HIGH
+    - DIALOG_UNPAIRED
+    - ENDING_SENTENCE_WEAK
+    - character_resurrection

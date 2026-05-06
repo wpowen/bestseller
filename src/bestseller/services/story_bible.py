@@ -1514,6 +1514,11 @@ async def load_scene_story_bible_context(
             before_scene_number=scene.scene_number,
         )
         stance_locked_until = getattr(character, "stance_locked_until_chapter", None)
+        # Pull rich personhood payloads out of metadata_json so non-POV
+        # participants also reach the writer prompt with their inner
+        # structure (lie/want/need/ghost/flaw) — previously only the POV
+        # got these, leaving every supporting character flat.
+        _meta = character.metadata_json or {}
         characters.append(
             {
                 "name": character.name,
@@ -1527,6 +1532,14 @@ async def load_scene_story_bible_context(
                 "knowledge_state": character.knowledge_state_json,
                 "voice_profile": character.voice_profile_json,
                 "moral_framework": character.moral_framework_json,
+                "inner_structure": _meta.get("inner_structure")
+                if isinstance(_meta, dict) else None,
+                "psych_profile": _meta.get("psych_profile")
+                if isinstance(_meta, dict) else None,
+                "life_history": _meta.get("life_history")
+                if isinstance(_meta, dict) else None,
+                "family_imprint": _meta.get("family_imprint")
+                if isinstance(_meta, dict) else None,
                 "latest_state": effective.notes,
                 "emotional_state": effective.emotional_state,
                 "physical_state": effective.physical_state,
@@ -1534,6 +1547,8 @@ async def load_scene_story_bible_context(
                 "stance": effective.stance,
                 "stance_locked_until_chapter": stance_locked_until,
                 "death_chapter_number": getattr(character, "death_chapter_number", None),
+                "latest_chapter_number": effective.latest_chapter_number,
+                "latest_scene_number": effective.latest_scene_number,
             }
         )
 
@@ -1557,7 +1572,8 @@ async def load_scene_story_bible_context(
 
     # Deceased roster — cap at recent 20 to avoid prompt bloat on long runs.
     # Filter to deaths that occurred before the current chapter so the prompt
-    # can explicitly warn "do not resurrect".
+    # can explicitly warn "do not resurrect". Fake-death characters whose
+    # reveal chapter has already passed are excluded — they are alive again.
     deceased_stmt = (
         select(CharacterModel)
         .where(
@@ -1571,6 +1587,9 @@ async def load_scene_story_bible_context(
         .order_by(CharacterModel.death_chapter_number.desc().nullslast())
         .limit(20)
     )
+    from bestseller.services.character_lifecycle import (  # noqa: PLC0415
+        is_character_dead_at_chapter,
+    )
     deceased_characters = [
         {
             "name": dead.name,
@@ -1578,6 +1597,36 @@ async def load_scene_story_bible_context(
             "role": dead.role,
         }
         for dead in await session.scalars(deceased_stmt)
+        if is_character_dead_at_chapter(
+            death_chapter_number=dead.death_chapter_number,
+            chapter_number=chapter.chapter_number,
+            character_metadata=getattr(dead, "metadata_json", None),
+        )
+    ]
+
+    # Protected roster — characters whose planned death is later than the
+    # current chapter. They MUST stay alive in this chapter even if a scene
+    # tempts the writer to push them off-screen permanently. The prompt
+    # surfaces this as a hard constraint so the LLM does not preempt the
+    # death schedule (root cause of the ch6 苏瑶/陆沉 incident: both had
+    # death_chapter_number > 6 but the prose still wrote them dead).
+    protected_stmt = (
+        select(CharacterModel)
+        .where(
+            CharacterModel.project_id == project.id,
+            CharacterModel.death_chapter_number.is_not(None),
+            CharacterModel.death_chapter_number > chapter.chapter_number,
+        )
+        .order_by(CharacterModel.death_chapter_number.asc())
+        .limit(20)
+    )
+    protected_characters = [
+        {
+            "name": prot.name,
+            "death_chapter_number": prot.death_chapter_number,
+            "role": prot.role,
+        }
+        for prot in await session.scalars(protected_stmt)
     ]
 
     return {
@@ -1607,6 +1656,7 @@ async def load_scene_story_bible_context(
         "participants": characters,
         "relationships": relationships,
         "deceased_characters": deceased_characters,
+        "protected_characters": protected_characters,
     }
 
 

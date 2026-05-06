@@ -21,6 +21,7 @@ from bestseller.services.mcp_bridge import (
     MCPToolSchema,
     MCPTransport,
     _expand_env,
+    _stdio_unavailable_reason,
     build_mcp_pool,
     load_mcp_config,
 )
@@ -135,6 +136,7 @@ class TestConfigLoading:
                             "transport": "stdio",
                             "command": ["npx", "exa-mcp-server"],
                             "env": {"EXA_API_KEY": "${MY_KEY}"},
+                            "required_env": ["EXA_API_KEY"],
                             "enabled_for": ["research_agent"],
                             "tools_expose": ["web_search_exa"],
                         },
@@ -151,6 +153,7 @@ class TestConfigLoading:
         configs = load_mcp_config(path, env={"MY_KEY": "abc123"})
         assert [c.name for c in configs] == ["exa", "local-http"]
         assert configs[0].env["EXA_API_KEY"] == "abc123"
+        assert configs[0].required_env == ["EXA_API_KEY"]
         assert configs[1].url == "http://127.0.0.1:3100/mcp"
 
     def test_invalid_transport_raises(self, tmp_path: Path) -> None:
@@ -224,6 +227,18 @@ class TestPoolLifecycle:
         await pool.start()
         assert pool.server_names() == ["on"]
 
+    async def test_missing_required_env_skips_before_transport_factory(self) -> None:
+        cfg = _cfg("exa")
+        cfg.env["EXA_API_KEY"] = ""
+        cfg.required_env.append("EXA_API_KEY")
+
+        def factory(unused_cfg: MCPServerConfig) -> MCPTransport:
+            raise AssertionError("transport factory should not be called")
+
+        pool = MCPConnectionPool([cfg], transport_factory=factory)
+        await pool.start()
+        assert pool.is_empty()
+
     async def test_start_unavailable_transport_is_skipped(self) -> None:
         cfg = _cfg("srv")
         transport = FakeTransport(cfg, never_available=True)
@@ -268,6 +283,17 @@ class TestPoolLifecycle:
         await pool.start()
         await pool.start()  # should be a no-op, not re-enter
         assert pool.qualified_tool_names() == ["srv__t"]
+
+    def test_stdio_python_module_preflight_skips_missing_module(self) -> None:
+        cfg = MCPServerConfig(
+            name="local-knowledge",
+            transport="stdio",
+            command=["python3", "-m", "bestseller.mcp.definitely_missing"],
+        )
+
+        reason = _stdio_unavailable_reason(cfg)
+
+        assert reason == "Python module 'bestseller.mcp.definitely_missing' not importable"
 
 
 # ── Dispatch ───────────────────────────────────────────────────────────

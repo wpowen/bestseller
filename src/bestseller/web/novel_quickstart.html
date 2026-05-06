@@ -796,6 +796,13 @@
       </div>
       <div class="nav-buttons" style="flex-direction:column;gap:12px;">
         <button class="btn btn-primary btn-start" id="startBtn">开始创作</button>
+        <div style="display:flex;flex-direction:column;gap:8px;border:1px dashed #d2d4de;padding:12px;border-radius:8px;background:#fafbff;">
+          <div style="font-size:13px;color:#444;font-weight:600;">⏱ 定时启动（可选）</div>
+          <div style="font-size:12px;color:#888;">选择一个未来时间，到点后自动按上面的配置开始创作。MiniMax token 周一刷新可设为周一 0:05。</div>
+          <input type="datetime-local" id="scheduleAt" style="font-size:14px;padding:6px 8px;border:1px solid #ccd;border-radius:6px;" />
+          <button class="btn btn-secondary" id="scheduleBtn" style="width:fit-content;">提交定时任务</button>
+          <div id="scheduleStatus" style="font-size:12px;"></div>
+        </div>
         <button class="btn btn-secondary" onclick="wizGo(2)" style="align-self:flex-start;">上一步</button>
       </div>
     </div>
@@ -1838,10 +1845,57 @@
     }
   }
 
+  function _localIsoWithOffset(input) {
+    if (!input) return null;
+    const dt = new Date(input);
+    if (Number.isNaN(dt.getTime())) return null;
+    const tzOffsetMin = -dt.getTimezoneOffset();
+    const sign = tzOffsetMin >= 0 ? '+' : '-';
+    const abs = Math.abs(tzOffsetMin);
+    const hh = String(Math.floor(abs / 60)).padStart(2, '0');
+    const mm = String(abs % 60).padStart(2, '0');
+    const pad = (n) => String(n).padStart(2, '0');
+    return `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}T${pad(dt.getHours())}:${pad(dt.getMinutes())}:00${sign}${hh}:${mm}`;
+  }
+
+  async function scheduleQuickstart() {
+    const statusEl = $('#scheduleStatus');
+    const btn = $('#scheduleBtn');
+    statusEl.textContent = '';
+    statusEl.style.color = '';
+    btn.disabled = true;
+    try {
+      const raw = $('#scheduleAt').value;
+      const isoWithTz = _localIsoWithOffset(raw);
+      if (!isoWithTz) throw new Error('请先选择一个有效的启动时间');
+      const body = {
+        genre_key: selectedGenreKey,
+        chapter_count: chapterCount,
+        draft_mode: !!$('#draftModeToggle').checked,
+        scheduled_at: isoWithTz,
+      };
+      const res = await fetch('/api/tasks/quickstart/schedule', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || data.detail || '提交定时任务失败');
+      statusEl.style.color = '#2c7a4d';
+      statusEl.textContent = `✅ 已排队：${data.id}（触发时间 ${data.scheduled_at}）`;
+    } catch (err) {
+      statusEl.style.color = '#c53030';
+      statusEl.textContent = `⚠️ ${err.message || String(err)}`;
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
   // Nav wiring
   $('#toStep2').addEventListener('click', () => { wizGo(2); fetchEstimate(chapterCount); });
   $('#toStep3').addEventListener('click', () => { updateSummary(); wizGo(3); });
   $('#startBtn').addEventListener('click', startCreation);
+  $('#scheduleBtn')?.addEventListener('click', scheduleQuickstart);
 
   /* ═══════════════════════════════════════
      UTILS

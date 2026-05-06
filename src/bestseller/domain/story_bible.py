@@ -517,6 +517,384 @@ class CharacterIPAnchorInput(BaseModel):
         return coerce_to_narrative_string(v)
 
 
+# ---------------------------------------------------------------------------
+# Personhood layer — psych profile, life history, social network, beliefs,
+# family imprint, villain charisma. All optional, all nested on CharacterInput.
+# Together they answer: "what makes this character feel like a real person, not
+# a plot function?" — bug #14's deeper sibling.
+# ---------------------------------------------------------------------------
+
+
+_BIG_FIVE_KEYS: tuple[str, ...] = (
+    "openness",
+    "conscientiousness",
+    "extraversion",
+    "agreeableness",
+    "neuroticism",
+)
+
+
+def _coerce_big_five(value: Any) -> Any:
+    """Normalise OCEAN scores into ``{trait: 0..100}``.
+
+    LLMs return Big Five scores in many shapes: 0-1 floats, 1-5 Likert,
+    Chinese trait names, or full sentences. We clamp to 0-100 ints and only
+    keep the canonical English keys so downstream lookup is stable.
+    """
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        return value  # let pydantic reject non-dicts loudly
+    aliases = {
+        "o": "openness", "开放性": "openness", "open": "openness",
+        "c": "conscientiousness", "尽责性": "conscientiousness", "responsibility": "conscientiousness",
+        "e": "extraversion", "外向性": "extraversion", "extroversion": "extraversion",
+        "a": "agreeableness", "宜人性": "agreeableness", "friendliness": "agreeableness",
+        "n": "neuroticism", "神经质": "neuroticism", "emotional_stability": "neuroticism",
+    }
+    out: dict[str, int] = {}
+    for raw_key, raw_score in value.items():
+        if not isinstance(raw_key, str):
+            continue
+        key = aliases.get(raw_key.strip().lower(), raw_key.strip().lower())
+        if key not in _BIG_FIVE_KEYS:
+            continue
+        score = raw_score
+        if isinstance(score, bool):
+            continue
+        if isinstance(score, (int, float)):
+            score_f = float(score)
+            if 0 <= score_f <= 1:
+                score_f *= 100
+            elif 1 <= score_f <= 5:
+                score_f = (score_f - 1) * 25
+            out[key] = max(0, min(100, int(round(score_f))))
+        elif isinstance(score, str):
+            m = re.search(r"-?\d+(?:\.\d+)?", score)
+            if m:
+                num = float(m.group(0))
+                if 0 <= num <= 1:
+                    num *= 100
+                elif 1 <= num <= 5:
+                    num = (num - 1) * 25
+                out[key] = max(0, min(100, int(round(num))))
+    return out
+
+
+class CharacterPsychProfile(BaseModel):
+    """Personality fingerprint anchored in real psychometric frameworks.
+
+    The point isn't clinical accuracy — it's giving the LLM a stable,
+    well-known reference so two prompts that mention the same character
+    converge on the same decision-making style. MBTI alone is famously
+    crude, so we layer four complementary frames: type (MBTI), trait
+    intensity (OCEAN), motivational core (Enneagram), and intimacy
+    response (attachment style).
+    """
+
+    mbti: str | None = None  # 如 "INTJ"，决策与认知风格
+    big_five: dict[str, int] = Field(default_factory=dict)  # OCEAN 五维 0-100
+    enneagram: str | None = None  # 如 "5w4"，动机内核 + 翼型
+    attachment_style: str | None = None  # 安全/焦虑/回避/混乱
+    cognitive_biases: list[str] = Field(default_factory=list)  # 解释非理性决定
+    temperament: str | None = None  # 胆汁/多血/黏液/抑郁
+
+    @field_validator("big_five", mode="before")
+    @classmethod
+    def _coerce_big_five_field(cls, v: Any) -> Any:
+        return _coerce_big_five(v)
+
+    @field_validator("cognitive_biases", mode="before")
+    @classmethod
+    def _coerce_psych_lists(cls, v: Any) -> Any:
+        return coerce_to_string_list(v)
+
+    @field_validator(
+        "mbti",
+        "enneagram",
+        "attachment_style",
+        "temperament",
+        mode="before",
+    )
+    @classmethod
+    def _coerce_psych_text(cls, v: Any) -> Any:
+        return coerce_to_narrative_string(v)
+
+
+class LifeEventInput(BaseModel):
+    """A single dated/aged formative event in the character's life."""
+
+    age: int | None = Field(default=None, ge=0)
+    title: str = Field(min_length=1, max_length=4000)
+    summary: str | None = None
+    impact: str | None = None  # 该事件对人格/选择的塑造方式
+
+    @field_validator("age", mode="before")
+    @classmethod
+    def _coerce_event_age(cls, v: Any) -> int | None:
+        return normalize_character_age(v)
+
+    @field_validator("title", "summary", "impact", mode="before")
+    @classmethod
+    def _coerce_event_text(cls, v: Any) -> Any:
+        return coerce_to_narrative_string(v)
+
+
+class CharacterLifeHistory(BaseModel):
+    """A character's biography — not the plot they're in, but who they were
+    before page one.
+
+    A protagonist who shows up at chapter 1 with no past is a plot function,
+    not a person. This schema captures the off-page life: education,
+    careers tried and abandoned, defining moments, lingering regrets.
+    Trauma is split out from generic ``formative_events`` because it has
+    different narrative behaviour (it gets *triggered*, not just remembered).
+    """
+
+    formative_events: list[LifeEventInput] = Field(default_factory=list)
+    education: str | None = None  # 学历/师承/自学路径
+    career_history: list[str] = Field(default_factory=list)  # 职业履历，含失败
+    defining_moments: list[str] = Field(default_factory=list)  # 3-5 个人格定型瞬间
+    trauma: list[str] = Field(default_factory=list)  # 可触发的 PTSD/回避场景
+    achievements: list[str] = Field(default_factory=list)  # 引以为傲的成就
+    regrets: list[str] = Field(default_factory=list)  # 终生遗憾
+
+    @field_validator(
+        "career_history",
+        "defining_moments",
+        "trauma",
+        "achievements",
+        "regrets",
+        mode="before",
+    )
+    @classmethod
+    def _coerce_history_lists(cls, v: Any) -> Any:
+        return coerce_to_string_list(v)
+
+    @field_validator("education", mode="before")
+    @classmethod
+    def _coerce_history_text(cls, v: Any) -> Any:
+        return coerce_to_narrative_string(v)
+
+    @field_validator("formative_events", mode="before")
+    @classmethod
+    def _coerce_event_list(cls, v: Any) -> Any:
+        if v is None:
+            return []
+        if isinstance(v, list):
+            return v
+        if isinstance(v, dict):
+            return [v]
+        if isinstance(v, str):
+            text = v.strip()
+            return [{"title": text}] if text else []
+        return v
+
+
+class SocialTieInput(BaseModel):
+    """One named tie in the social network — name + relationship + emotional
+    weight. Distinct from ``CharacterRelationshipInput`` (which is plot-scoped)
+    because social ties include people who never appear on-page but shape the
+    character (a dead grandmother, a missing father, a hometown rival)."""
+
+    name: str = Field(min_length=1, max_length=4000)
+    bond: str | None = None  # 关系性质：母亲/恩师/初恋/宿敌/…
+    emotional_weight: str | None = None  # 情感强度与色彩：依赖/愧疚/憎恨/敬畏/…
+    influence: str | None = None  # 此人如何塑造该角色的价值观或行为
+
+    @field_validator("name", "bond", "emotional_weight", "influence", mode="before")
+    @classmethod
+    def _coerce_tie_text(cls, v: Any) -> Any:
+        return coerce_to_narrative_string(v)
+
+
+class CharacterSocialNetwork(BaseModel):
+    """Layered social graph — family, mentors, peers, hierarchy, community.
+
+    A character without ties is a free-floating plot device. This schema
+    forces the planner to anchor every major character to at least a
+    handful of named others, so chapter generation can reach for "would
+    her brother approve?" or "the mentor's voice in her head" without
+    having to invent connections mid-scene.
+    """
+
+    family: list[SocialTieInput] = Field(default_factory=list)
+    mentors: list[SocialTieInput] = Field(default_factory=list)  # 恩师/影响 ta 价值观的人
+    peers: list[SocialTieInput] = Field(default_factory=list)  # 同辈/朋友/友谊
+    superiors: list[SocialTieInput] = Field(default_factory=list)  # 上级/组织内尊者
+    subordinates: list[SocialTieInput] = Field(default_factory=list)  # 下属/被庇护者
+    community: list[str] = Field(default_factory=list)  # 所属社群：家乡/校友/教派/行会
+    enemies: list[SocialTieInput] = Field(default_factory=list)  # 仇人，含成因
+    dependencies: list[str] = Field(default_factory=list)  # 谁需要 ta、ta 需要谁
+
+    @field_validator("community", "dependencies", mode="before")
+    @classmethod
+    def _coerce_social_lists(cls, v: Any) -> Any:
+        return coerce_to_string_list(v)
+
+    @field_validator(
+        "family",
+        "mentors",
+        "peers",
+        "superiors",
+        "subordinates",
+        "enemies",
+        mode="before",
+    )
+    @classmethod
+    def _coerce_tie_list(cls, v: Any) -> Any:
+        if v is None:
+            return []
+        if isinstance(v, list):
+            return v
+        if isinstance(v, dict):
+            return [v]
+        if isinstance(v, str):
+            text = v.strip()
+            return [{"name": text}] if text else []
+        return v
+
+
+class CharacterBelief(BaseModel):
+    """What the character believes about the universe and themselves.
+
+    Belief drives behaviour at the moments where personality alone is
+    ambiguous — does she pray before the duel? Does he sacrifice the one
+    for the many? Without a declared belief system, the LLM defaults
+    every character to a vaguely modern-secular stance, which flattens
+    historical, fantasy, and devout-character voices alike.
+    """
+
+    religion: str | None = None  # 宗教身份
+    devotion_level: str | None = None  # 虔诚程度：狂热/虔诚/挂名/怀疑/无信仰
+    philosophical_stance: str | None = None  # 儒/道/佛/法/虚无/实用/存在主义/…
+    political_view: str | None = None  # 政治立场（如剧情相关）
+    superstitions: list[str] = Field(default_factory=list)  # 个人迷信
+    ideology: str | None = None  # 终极信念：自由/秩序/革命/守旧/进化/混沌
+    crisis_of_faith: str | None = None  # 信仰可能动摇的触发点
+
+    @model_validator(mode="before")
+    @classmethod
+    def _coerce_legacy_belief_shape(cls, data: Any) -> Any:
+        if data is None:
+            return {}
+        if isinstance(data, str):
+            text = data.strip()
+            return {"ideology": text} if text else {}
+        if isinstance(data, (list, tuple, set)):
+            texts = [_flatten_to_text(item).strip() for item in data]
+            texts = [text for text in texts if text]
+            return {"ideology": "；".join(texts)} if texts else {}
+        return data
+
+    @field_validator("superstitions", mode="before")
+    @classmethod
+    def _coerce_belief_lists(cls, v: Any) -> Any:
+        return coerce_to_string_list(v)
+
+    @field_validator(
+        "religion",
+        "devotion_level",
+        "philosophical_stance",
+        "political_view",
+        "ideology",
+        "crisis_of_faith",
+        mode="before",
+    )
+    @classmethod
+    def _coerce_belief_text(cls, v: Any) -> Any:
+        return coerce_to_narrative_string(v)
+
+
+class CharacterFamilyImprint(BaseModel):
+    """The original-family blueprint — what the character was shaped by
+    before they could choose.
+
+    Distinct from ``CharacterSocialNetwork.family`` (which lists the *who*)
+    and ``CharacterLifeHistory.formative_events`` (which lists the *what*).
+    This schema is the *imprint*: the unspoken rules, role assignments,
+    and inherited assumptions a character carries into every adult choice,
+    often without noticing. Common source of "why does she always defer
+    to authority figures" / "why does he sabotage every promotion".
+    """
+
+    parenting_style: str | None = None  # 权威/放任/虎妈/缺席/溺爱/暴力
+    family_socioeconomic: str | None = None  # 出身阶层
+    sibling_dynamics: str | None = None  # 被偏爱/被忽视/替罪羊/长姐如母
+    inherited_values: list[str] = Field(default_factory=list)  # 从家庭继承的价值观
+    family_secrets: list[str] = Field(default_factory=list)  # 家族秘密
+    breaking_points: list[str] = Field(default_factory=list)  # 与原生家庭的决裂点
+
+    @field_validator(
+        "inherited_values",
+        "family_secrets",
+        "breaking_points",
+        mode="before",
+    )
+    @classmethod
+    def _coerce_imprint_lists(cls, v: Any) -> Any:
+        return coerce_to_string_list(v)
+
+    @field_validator(
+        "parenting_style",
+        "family_socioeconomic",
+        "sibling_dynamics",
+        mode="before",
+    )
+    @classmethod
+    def _coerce_imprint_text(cls, v: Any) -> Any:
+        return coerce_to_narrative_string(v)
+
+
+class VillainCharismaProfile(BaseModel):
+    """Antagonist humanity layer — what makes the villain magnetic, not just
+    obstructive.
+
+    A pure-evil antagonist is a difficulty slider, not a character. Readers
+    don't remember villains who lose; they remember villains who *almost
+    convinced them*. This schema demands the planner declare:
+    1. A noble-origin motivation (so cruelty has a heart).
+    2. A pain origin (so the cruelty is earned, not innate).
+    3. Redeeming qualities (so the reader feels the loss when the villain falls).
+    4. Philosophical appeal (so the reader briefly considers the villain right).
+    5. A personal code (so the villain isn't a chaos engine).
+    6. Tragic irony (so the arc has weight).
+    7. Mirror to protagonist (so the conflict means something).
+
+    Only required for ``role`` = ``antagonist`` (or roles containing it);
+    supporting heavies can leave it empty.
+    """
+
+    noble_motivation: str | None = None  # 高尚出发点：救妹妹/变革腐朽/守护理想
+    pain_origin: str | None = None  # 黑化起因：被背叛/被剥夺/亲历不公
+    redeeming_qualities: list[str] = Field(default_factory=list)  # 让读者心软的瞬间
+    philosophical_appeal: str | None = None  # 反派理念中合理的部分
+    personal_code: list[str] = Field(default_factory=list)  # 反派绝不做的事，让 ta 不疯
+    tragic_irony: str | None = None  # 为达目的反而毁掉初心所爱
+    protagonist_mirror: str | None = None  # 与主角的相似处：同根而异路
+
+    @field_validator(
+        "redeeming_qualities",
+        "personal_code",
+        mode="before",
+    )
+    @classmethod
+    def _coerce_villain_lists(cls, v: Any) -> Any:
+        return coerce_to_string_list(v)
+
+    @field_validator(
+        "noble_motivation",
+        "pain_origin",
+        "philosophical_appeal",
+        "tragic_irony",
+        "protagonist_mirror",
+        mode="before",
+    )
+    @classmethod
+    def _coerce_villain_text(cls, v: Any) -> Any:
+        return coerce_to_narrative_string(v)
+
+
 class CharacterInput(BaseModel):
     model_config = ConfigDict(extra="allow")
 
@@ -549,6 +927,12 @@ class CharacterInput(BaseModel):
     voice_profile: CharacterVoiceProfileInput = Field(default_factory=CharacterVoiceProfileInput)
     moral_framework: CharacterMoralFramework = Field(default_factory=CharacterMoralFramework)
     ip_anchor: CharacterIPAnchorInput = Field(default_factory=CharacterIPAnchorInput)
+    psych_profile: CharacterPsychProfile = Field(default_factory=CharacterPsychProfile)
+    life_history: CharacterLifeHistory = Field(default_factory=CharacterLifeHistory)
+    social_network: CharacterSocialNetwork = Field(default_factory=CharacterSocialNetwork)
+    beliefs: CharacterBelief = Field(default_factory=CharacterBelief)
+    family_imprint: CharacterFamilyImprint = Field(default_factory=CharacterFamilyImprint)
+    villain_charisma: VillainCharismaProfile = Field(default_factory=VillainCharismaProfile)
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 

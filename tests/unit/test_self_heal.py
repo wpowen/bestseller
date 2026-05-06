@@ -53,6 +53,7 @@ class _FakeWorkflowRun:
 class _FakeChapter:
     id: Any
     project_id: Any
+    production_state: str = "ok"
 
 
 @dataclass
@@ -129,7 +130,16 @@ class _FakeSession:
             return None
 
         if target is ChapterModel:
-            return sum(1 for c in self.chapters if c.project_id == project_id)
+            production_state = self._filter_production_state(stmt)
+            return sum(
+                1
+                for c in self.chapters
+                if c.project_id == project_id
+                and (
+                    production_state is None
+                    or c.production_state == production_state
+                )
+            )
 
         if target is ChapterDraftVersionModel:
             chapter_ids = {c.id for c in self.chapters if c.project_id == project_id}
@@ -252,6 +262,30 @@ class _FakeSession:
             whereclause = getattr(stmt, "_whereclause", None)
         return _walk(whereclause) or _dt.datetime.now(_dt.UTC)
 
+    @staticmethod
+    def _filter_production_state(stmt: Any) -> str | None:
+        def _walk(node: Any) -> Any:
+            try:
+                clauses = list(getattr(node, "clauses", []) or [])
+            except Exception:  # noqa: BLE001
+                clauses = []
+            for c in clauses:
+                found = _walk(c)
+                if found is not None:
+                    return found
+            left = getattr(node, "left", None)
+            right = getattr(node, "right", None)
+            if left is not None and right is not None:
+                key = getattr(left, "key", None) or getattr(left, "name", None)
+                if key == "production_state":
+                    return getattr(right, "value", None) or getattr(right, "effective_value", None)
+            return None
+
+        whereclause = getattr(stmt, "whereclause", None)
+        if whereclause is None:
+            whereclause = getattr(stmt, "_whereclause", None)
+        return _walk(whereclause)
+
 
 # ---------------------------------------------------------------------------
 # Tests
@@ -335,6 +369,28 @@ async def test_find_stuck_projects_ignores_complete_projects(now: _dt.datetime) 
     session = _FakeSession(projects=[p], runs=[], chapters=chapters, drafts=drafts)
 
     assert await find_stuck_projects(session) == []
+
+
+@pytest.mark.asyncio
+async def test_find_stuck_projects_detects_blocked_chapters(
+    now: _dt.datetime,
+) -> None:
+    """Blocked chapters with current drafts still need a worker heal run."""
+    p = _FakeProject(id=uuid4(), slug="book-blocked")
+    chapters = [
+        _FakeChapter(id=uuid4(), project_id=p.id, production_state="ok"),
+        _FakeChapter(id=uuid4(), project_id=p.id, production_state="blocked"),
+    ]
+    drafts = [_FakeDraft(id=uuid4(), chapter_id=c.id, is_current=True) for c in chapters]
+    session = _FakeSession(projects=[p], runs=[], chapters=chapters, drafts=drafts)
+
+    stuck = await find_stuck_projects(session)
+
+    assert len(stuck) == 1
+    assert stuck[0].slug == "book-blocked"
+    assert stuck[0].reason == "blocked_chapters"
+    assert stuck[0].chapters_total == 2
+    assert stuck[0].chapters_with_draft == 2
 
 
 @pytest.mark.asyncio

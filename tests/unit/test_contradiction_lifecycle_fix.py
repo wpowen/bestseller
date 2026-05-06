@@ -50,6 +50,9 @@ class _Character:
     alive_status: str = "alive"
     death_chapter_number: int | None = None
     power_tier: str | None = None
+    metadata_json: dict[str, Any] | None = None
+    stance: str | None = None
+    stance_locked_until_chapter: int | None = None
 
 
 @dataclass
@@ -218,6 +221,117 @@ class TestResurrection:
         )
         assert violations == []
         assert warnings == []
+
+    @pytest.mark.asyncio
+    async def test_flashback_scene_exempts_deceased_appearance(self) -> None:
+        """A flashback scene may legitimately stage a deceased character
+        as memory, vision, or quoted reference — the resurrection check
+        must not flag those passes. Pin the new ``scene`` keyword path."""
+
+        from types import SimpleNamespace
+
+        char = _Character(
+            name="陆沉",
+            alive_status="deceased",
+            death_chapter_number=458,
+        )
+        session = _make_session(
+            project=_Project(),
+            characters={"陆沉": char},
+        )
+        # Real post-death chapter — without scene context this would
+        # fire (test_real_post_death_appearance_still_fires pins that).
+        flashback_scene = SimpleNamespace(
+            scene_type="flashback", metadata_json={}
+        )
+        violations, warnings = await _check_resurrection(
+            session,
+            project_id=uuid.uuid4(),
+            chapter_number=600,
+            scene_participants=["陆沉"],
+            scene=flashback_scene,
+        )
+        assert violations == []
+        assert warnings == []
+
+    @pytest.mark.asyncio
+    async def test_memorial_scene_metadata_also_exempts(self) -> None:
+        """A scene marked via ``metadata_json.scene_mode = "memorial"``
+        is also exempt — the planner uses scene_mode for the long tail
+        of post-death framings (memorial, vision, dream, quoted).
+        """
+        from types import SimpleNamespace
+
+        char = _Character(
+            name="陆沉",
+            alive_status="deceased",
+            death_chapter_number=458,
+        )
+        session = _make_session(
+            project=_Project(),
+            characters={"陆沉": char},
+        )
+        memorial_scene = SimpleNamespace(
+            scene_type="setup",
+            metadata_json={"scene_mode": "memorial"},
+        )
+        violations, _ = await _check_resurrection(
+            session,
+            project_id=uuid.uuid4(),
+            chapter_number=600,
+            scene_participants=["陆沉"],
+            scene=memorial_scene,
+        )
+        assert violations == []
+
+    @pytest.mark.asyncio
+    async def test_fake_death_revealed_no_longer_blocks_appearance(self) -> None:
+        """A character whose 'death' was a ruse — and the reveal chapter
+        has already passed — must be allowed to act normally. We model
+        the fake death via ``metadata_json.fake_death.revealed_chapter``.
+        """
+        char = _Character(
+            name="林霄",
+            alive_status="deceased",
+            death_chapter_number=20,
+            metadata_json={"fake_death": {"revealed_chapter": 35}},
+        )
+        session = _make_session(
+            project=_Project(),
+            characters={"林霄": char},
+        )
+        # Chapter 50 — well past the reveal — so the resurrection
+        # check must NOT fire.
+        violations, _ = await _check_resurrection(
+            session,
+            project_id=uuid.uuid4(),
+            chapter_number=50,
+            scene_participants=["林霄"],
+        )
+        assert violations == []
+
+    @pytest.mark.asyncio
+    async def test_fake_death_before_reveal_still_blocks(self) -> None:
+        """A fake death that has NOT yet been revealed in-story still
+        keeps the character off-stage — otherwise the writer could
+        sneak a reveal in via the back door."""
+        char = _Character(
+            name="林霄",
+            alive_status="deceased",
+            death_chapter_number=20,
+            metadata_json={"fake_death": {"revealed_chapter": 35}},
+        )
+        session = _make_session(
+            project=_Project(),
+            characters={"林霄": char},
+        )
+        violations, _ = await _check_resurrection(
+            session,
+            project_id=uuid.uuid4(),
+            chapter_number=25,  # before reveal
+            scene_participants=["林霄"],
+        )
+        assert len(violations) == 1
 
     @pytest.mark.asyncio
     async def test_evidence_string_does_not_reference_alive_status(self) -> None:

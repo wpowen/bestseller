@@ -304,7 +304,13 @@ class PipelineSettings(BaseModel):
     # block codes (POV_LOCK, NAMING, DIALOG_INTEGRITY, ...) are deliberately
     # omitted until they've been canary-verified as auto-fixable.
     chapter_auto_repair_repairable_codes: list[str] = Field(
-        default_factory=lambda: ["BLOCK_LOW", "BLOCK_HIGH"]
+        default_factory=lambda: [
+            "BLOCK_LOW",
+            "BLOCK_HIGH",
+            "DIALOG_UNPAIRED",
+            "ENDING_SENTENCE_WEAK",
+            "character_resurrection",
+        ]
     )
     # Curator scheduling — overridable via env for admin triage.
     curator_weekly_cron_hour: int = 4  # 04:00 UTC Monday

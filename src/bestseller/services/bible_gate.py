@@ -10,6 +10,12 @@ anchors readers use to remember characters and feel suspense:
 
 * ``CharacterIPAnchorCheck`` — protagonists must carry 3+ concrete quirks
   and a core wound (bug #14: "no memorable features").
+* ``CharacterPersonhoodCheck`` — protagonists must carry a psych profile,
+  a life history, a family imprint, and a belief system (sibling of bug
+  #14: "characters feel like plot functions, not people").
+* ``VillainCharismaCheck`` — primary antagonists must declare ≥4 of the
+  7 villain_charisma fields so the villain reads as a tragic rival, not
+  a difficulty slider.
 * ``AntagonistMotiveLedger`` — distinct antagonists cannot share the same
   "被轻视/复仇" template (bug #8: "every antagonist feels the same").
 * ``WorldTaxonomyUniqueness`` — a power system that fully matches a
@@ -234,6 +240,151 @@ class CharacterIPAnchorCheck:
 
 
 # ---------------------------------------------------------------------------
+# Personhood layer — protagonist must read like a person, antagonist must
+# have charisma. The IP anchor check above guards memorability; these
+# checks guard humanity. (Sibling of bug #14 / bug #8.)
+# ---------------------------------------------------------------------------
+
+
+class CharacterPersonhoodCheck:
+    """Protagonists need a psychology, a past, a family, and beliefs.
+
+    The IP anchor check ensures readers *remember* a character; this check
+    ensures readers *believe* the character. Without psych_profile,
+    life_history, family_imprint, or beliefs, the LLM falls back to
+    archetype defaults — chapter prompts produce technically-correct
+    decisions that feel hollow because they have no internal cause.
+
+    Required for protagonists; optional for everyone else (forcing a 12-
+    field personhood layer on every supporting character would explode
+    the bible). Antagonists are handled by ``VillainCharismaCheck`` below.
+    """
+
+    code = "CHARACTER_PERSONHOOD_INCOMPLETE"
+
+    def check(
+        self, draft: BibleDraft, invariants: ProjectInvariants
+    ) -> Iterable[BibleDeficiency]:
+        for char in draft.characters:
+            if "protagonist" not in (char.role or "").lower():
+                continue
+
+            missing: list[str] = []
+            psych = char.psych_profile
+            if not (psych.mbti or psych.enneagram or psych.big_five or psych.temperament):
+                missing.append("psych_profile（MBTI/九型/OCEAN/气质 至少其一）")
+
+            history = char.life_history
+            has_history = bool(
+                history.formative_events
+                or history.education
+                or history.career_history
+                or history.defining_moments
+            )
+            if not has_history:
+                missing.append("life_history（formative_events / defining_moments / education / career_history）")
+
+            family = char.family_imprint
+            has_family = bool(
+                family.parenting_style
+                or family.family_socioeconomic
+                or family.sibling_dynamics
+                or family.inherited_values
+            )
+            if not has_family:
+                missing.append("family_imprint（parenting_style / sibling_dynamics / inherited_values）")
+
+            beliefs = char.beliefs
+            has_beliefs = bool(
+                beliefs.religion
+                or beliefs.philosophical_stance
+                or beliefs.ideology
+            )
+            if not has_beliefs:
+                missing.append("beliefs（religion / philosophical_stance / ideology）")
+
+            if missing:
+                yield BibleDeficiency(
+                    code=self.code,
+                    location=f"character:{char.name}",
+                    detail=f"{char.name} 缺少人格底层：{ '；'.join(missing) }",
+                    prompt_feedback=(
+                        f"主角 {char.name} 必须以真实的人来塑造。请补全以下字段：\n"
+                        + "\n".join(f"  - {m}" for m in missing)
+                        + "\n这些字段决定了 ta 在每一章中如何做选择、说什么话、对谁让步。"
+                        f"参考真实的 MBTI/九型/Big Five 数据集与生命经历，写出一个"
+                        f"具体的人，不要写抽象类型。"
+                    ),
+                )
+
+
+class VillainCharismaCheck:
+    """Antagonists must have a noble seed, a redeemable trait, and a code.
+
+    A pure-evil villain is a stat block. Commercial bestsellers turn
+    villains into rivals readers grieve when they fall — that requires
+    declaring the noble motivation, the pain origin, the redeeming
+    qualities, and a personal code. Without these, the LLM writes
+    villains who escalate violence linearly until the protagonist wins,
+    which reads as filler rather than tragedy.
+
+    Required for ``role`` = ``antagonist``. Major antagonists must declare
+    at least 4 of 7 fields; lieutenant-tier antagonists are exempt
+    (caught by ``"antagonist_lieutenant"`` substring).
+    """
+
+    code = "VILLAIN_CHARISMA_MISSING"
+    REQUIRED_FIELD_COUNT = 4
+
+    def check(
+        self, draft: BibleDraft, invariants: ProjectInvariants
+    ) -> Iterable[BibleDeficiency]:
+        for char in draft.characters:
+            role_lower = (char.role or "").lower()
+            if "antagonist" not in role_lower:
+                continue
+            if "lieutenant" in role_lower or "henchman" in role_lower:
+                continue  # supporting heavies exempt
+
+            v = char.villain_charisma
+            populated = sum(
+                1
+                for present in (
+                    v.noble_motivation,
+                    v.pain_origin,
+                    v.philosophical_appeal,
+                    v.tragic_irony,
+                    v.protagonist_mirror,
+                    bool(v.redeeming_qualities),
+                    bool(v.personal_code),
+                )
+                if present
+            )
+
+            if populated < self.REQUIRED_FIELD_COUNT:
+                yield BibleDeficiency(
+                    code=self.code,
+                    location=f"character:{char.name}",
+                    detail=(
+                        f"反派 {char.name} villain_charisma 仅填 {populated}/7，"
+                        f"需 >={self.REQUIRED_FIELD_COUNT}"
+                    ),
+                    prompt_feedback=(
+                        f"反派 {char.name} 不能是纯坏。请至少填写 "
+                        f"{self.REQUIRED_FIELD_COUNT} 项 villain_charisma 字段："
+                        f"\n  - noble_motivation：ta 出发点中合理甚至高尚的部分"
+                        f"\n  - pain_origin：ta 黑化的具体伤痛事件"
+                        f"\n  - redeeming_qualities：让读者心软的具体瞬间（≥1 条）"
+                        f"\n  - philosophical_appeal：ta 世界观中读者会动摇赞同的部分"
+                        f"\n  - personal_code：ta 绝不做的事（≥1 条），让 ta 不是疯子"
+                        f"\n  - tragic_irony：为达目的反而毁掉初心所爱"
+                        f"\n  - protagonist_mirror：与主角的相似处（同根而异路）"
+                        f"\n反派的目标是让读者在 ta 落败时也感到失落，不是只想看 ta 死。"
+                    ),
+                )
+
+
+# ---------------------------------------------------------------------------
 # Antagonist motive uniqueness (bug #8).
 # ---------------------------------------------------------------------------
 
@@ -450,6 +601,8 @@ def default_validators() -> list[BibleValidator]:
 
     return [
         CharacterIPAnchorCheck(),
+        CharacterPersonhoodCheck(),
+        VillainCharismaCheck(),
         AntagonistMotiveLedger(),
         WorldTaxonomyUniqueness(),
         NamingPoolSize(),

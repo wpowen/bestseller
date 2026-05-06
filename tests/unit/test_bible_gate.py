@@ -15,8 +15,13 @@ from uuid import uuid4
 import pytest
 
 from bestseller.domain.story_bible import (
+    CharacterBelief,
+    CharacterFamilyImprint,
     CharacterIPAnchorInput,
     CharacterInput,
+    CharacterLifeHistory,
+    CharacterPsychProfile,
+    LifeEventInput,
 )
 from bestseller.services.bible_gate import (
     AntagonistMotiveLedger,
@@ -56,7 +61,31 @@ def _character(
     goal: str | None = None,
     background: str | None = None,
     secret: str | None = None,
+    with_personhood: bool = False,
 ) -> CharacterInput:
+    """Build a test CharacterInput.
+
+    ``with_personhood=True`` populates psych_profile / life_history /
+    family_imprint / beliefs so the protagonist also satisfies the new
+    ``CharacterPersonhoodCheck``. Off by default so existing failure-mode
+    tests that target just the IP-anchor gate stay focused.
+    """
+
+    extras: dict = {}
+    if with_personhood:
+        extras = {
+            "psych_profile": CharacterPsychProfile(mbti="INTJ", enneagram="5w4"),
+            "life_history": CharacterLifeHistory(
+                formative_events=[LifeEventInput(age=7, title="母亲被处决")],
+                defining_moments=["当街以一抗百"],
+            ),
+            "family_imprint": CharacterFamilyImprint(
+                parenting_style="父亲严苛",
+                sibling_dynamics="长姐如母",
+            ),
+            "beliefs": CharacterBelief(ideology="秩序"),
+        }
+
     return CharacterInput(
         name=name,
         role=role,
@@ -67,6 +96,7 @@ def _character(
             quirks=quirks or [],
             core_wound=core_wound,
         ),
+        **extras,
     )
 
 
@@ -362,6 +392,7 @@ class TestValidateBibleCompleteness:
             "protagonist",
             quirks=["q1", "q2", "q3"],
             core_wound="mother executed",
+            with_personhood=True,
         )
         draft = _minimal_draft(
             characters=[hero],
@@ -411,6 +442,7 @@ class TestValidateBibleCompleteness:
             "protagonist",
             quirks=["q1", "q2", "q3"],
             core_wound="wound",
+            with_personhood=True,
         )
         draft = _minimal_draft(
             characters=[hero],
@@ -420,8 +452,9 @@ class TestValidateBibleCompleteness:
         report = validate_bible_completeness(draft, _invariants())
         assert report.feedback_for_regen() == ""
 
-    def test_default_validators_has_five_checks(self) -> None:
-        assert len(default_validators()) == 5
+    def test_default_validators_has_seven_checks(self) -> None:
+        # 5 original + CharacterPersonhoodCheck + VillainCharismaCheck.
+        assert len(default_validators()) == 7
 
 
 class TestBuildDraftFromMaterializationContent:

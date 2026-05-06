@@ -5588,6 +5588,24 @@ def _cast_spec_prompts(project: ProjectModel, book_spec: dict[str, Any], world_s
             "Generate a CastSpec JSON with protagonist, antagonist, antagonist_forces, supporting_cast, and conflict_map. "
             "The protagonist needs a vivid desire, a real weakness, visible growth space, and a memorable edge; the antagonist must actively counter the protagonist and keep escalating. "
             "Every major character must include a voice_profile object and a moral_framework object so their speech patterns stay distinct.\n\n"
+            "PERSONHOOD LAYER — every protagonist must read as a real person, not a plot function. "
+            "Populate ALL of:\n"
+            "  - psych_profile: {mbti (e.g. 'INTJ'), big_five (OCEAN scores 0-100), enneagram (e.g. '5w4'), "
+            "attachment_style (secure/anxious/avoidant/disorganized), cognitive_biases (list), temperament}\n"
+            "  - life_history: {formative_events [{age, title, summary, impact}], education, career_history, "
+            "defining_moments, trauma, achievements, regrets}\n"
+            "  - social_network: {family/mentors/peers/superiors/subordinates/enemies as lists of "
+            "{name, bond, emotional_weight, influence}; community and dependencies as string lists}\n"
+            "  - beliefs: {religion, devotion_level, philosophical_stance, political_view, superstitions, "
+            "ideology, crisis_of_faith}\n"
+            "  - family_imprint: {parenting_style, family_socioeconomic, sibling_dynamics, inherited_values, "
+            "family_secrets, breaking_points}\n"
+            "Pull from real psychometric data — a character whose MBTI, OCEAN scores, attachment style, "
+            "and family imprint all align is dramatically more consistent across chapters.\n\n"
+            "VILLAIN CHARISMA — primary antagonists must NOT be pure evil. Populate villain_charisma with at "
+            "least 4 of: noble_motivation, pain_origin, redeeming_qualities, philosophical_appeal, "
+            "personal_code, tragic_irony, protagonist_mirror. The reader should briefly think 'maybe the "
+            "villain is right' and feel loss when the villain falls.\n\n"
             "IMPORTANT — antagonist_forces:\n"
             "- Include an 'antagonist_forces' array with 2-4 conflict forces\n"
             "- Each force: {name, force_type (character/faction/environment/internal/systemic), active_volumes, threat_description, escalation_path}\n"
@@ -5620,6 +5638,24 @@ def _cast_spec_prompts(project: ProjectModel, book_spec: dict[str, Any], world_s
             "每个角色必须包含 voice_profile 对象（speech_register、verbal_tics、sentence_style、"
             "emotional_expression、mannerisms）和 moral_framework 对象（core_values、"
             "lines_never_crossed、willing_to_sacrifice），确保不同角色的说话方式有明显区分度。\n\n"
+            "【人格底层 — 让角色像真人，不是剧情齿轮】\n"
+            "主角必须完整填写以下五块（参考真实心理学数据，不要写抽象类型）：\n"
+            "  - psych_profile：{mbti（如 'INTJ'）、big_five（OCEAN 五维 0-100 分）、enneagram（如 '5w4'）、"
+            "attachment_style（安全/焦虑/回避/混乱）、cognitive_biases（认知偏差列表）、temperament（气质）}\n"
+            "  - life_history：{formative_events 列表 [{age, title, summary, impact}]、education、"
+            "career_history、defining_moments、trauma、achievements、regrets}\n"
+            "  - social_network：{family/mentors/peers/superiors/subordinates/enemies 均为对象列表 "
+            "[{name, bond, emotional_weight, influence}]；community 与 dependencies 为字符串列表}\n"
+            "  - beliefs：{religion、devotion_level（虔诚程度）、philosophical_stance（儒/道/佛/虚无/实用）、"
+            "political_view、superstitions、ideology（终极信念）、crisis_of_faith（信仰动摇触发点）}\n"
+            "  - family_imprint：{parenting_style（教养方式）、family_socioeconomic（出身阶层）、"
+            "sibling_dynamics（兄弟姐妹角色）、inherited_values、family_secrets、breaking_points}\n"
+            "MBTI/九型/Big Five/依恋类型 互相一致的角色，在每一章决策时会更稳定。\n\n"
+            "【反派必须有魅力 — 不要纯坏】\n"
+            "primary 反派必须填写 villain_charisma 至少 4 项："
+            "noble_motivation（高尚出发点）、pain_origin（黑化伤痛）、redeeming_qualities（让读者心软的瞬间）、"
+            "philosophical_appeal（理念中合理的部分）、personal_code（绝不做的事）、tragic_irony（悲剧反讽）、"
+            "protagonist_mirror（与主角相似处）。读者应该在反派落败时也感到失落，而不是只想看 ta 死。\n\n"
             "【角色命名硬性要求】\n"
             f"- 角色名字必须符合「{project.genre}」题材和「{era_hint}」时代背景\n"
             "- 主角名 2-3 字，音调优美朗朗上口，有记忆点\n"
@@ -6013,6 +6049,75 @@ def _outline_prompts(project: ProjectModel, book_spec: dict[str, Any], cast_spec
         user_prompt += f"\n\n{'[Genre planning requirements]' if is_en else '【品类规划要求】'}\n{_genre_instruction}"
     user_prompt = _append_category_context(user_prompt, project, is_en=is_en)
     return system_prompt, user_prompt
+
+
+def _build_deceased_character_constraints(
+    cast_spec: dict[str, Any],
+    volume_entry: dict[str, Any],
+    language: str = "zh-CN",
+) -> list[str]:
+    """Extract characters who are already dead at the start of this volume.
+
+    Returns constraint strings preventing the planner from assigning
+    deceased characters as active scene participants in chapters that
+    precede their death chapter.
+
+    This prevents ``character_resurrection`` safety-block errors at the
+    scene-contract check by embedding the timeline constraint directly
+    in the outline-generation prompt rather than patching them after
+    the fact.
+
+    ``cast_spec`` follows the ``CastSpecInput`` schema:
+    ``{protagonist: <character> | None, antagonist: <character> | None,
+    supporting_cast: [<character>, ...]}``. Each character is a dict
+    (post ``model_dump``) and may carry ``death_chapter_number`` either
+    as a top-level key (via ``CharacterInput.model_config = extra="allow"``)
+    or inside ``metadata``.
+    """
+    constraints: list[str] = []
+    cast_data = _mapping(cast_spec)
+
+    # Collect every named character in the cast spec — the schema stores
+    # protagonist / antagonist as single objects (not list-with-``characters``)
+    # and supporting_cast as a flat list of character dicts.
+    characters: list[dict[str, Any]] = []
+    protag = cast_data.get("protagonist")
+    if isinstance(protag, dict):
+        characters.append(protag)
+    antag = cast_data.get("antagonist")
+    if isinstance(antag, dict):
+        characters.append(antag)
+    supporting = cast_data.get("supporting_cast") or []
+    if isinstance(supporting, list):
+        for sc in supporting:
+            if isinstance(sc, dict):
+                characters.append(sc)
+
+    volume_number = int(volume_entry.get("volume_number", 1))
+    vol_start_ch = int(volume_entry.get("start_chapter_number", 1))
+
+    for char in characters:
+        meta = char.get("metadata") if isinstance(char.get("metadata"), dict) else {}
+        death_ch_raw = char.get("death_chapter_number")
+        if death_ch_raw is None and isinstance(meta, dict):
+            death_ch_raw = meta.get("death_chapter_number")
+        if death_ch_raw is None:
+            continue
+        try:
+            death_ch = int(death_ch_raw)
+        except (TypeError, ValueError):
+            continue
+        if death_ch < vol_start_ch:
+            name = str(char.get("name") or "Unknown")
+            if language == "zh-CN":
+                constraints.append(
+                    f"角色「{name}」已在第{death_ch}章死亡，不能作为活跃角色出现在第{volume_number}卷的场景/章节中（禁止复活）"
+                )
+            else:
+                constraints.append(
+                    f"Character「{name}」died in chapter {death_ch} and cannot appear as an active participant in volume {volume_number} scenes/chapters (no resurrection)."
+                )
+    return constraints
 
 
 def _volume_outline_prompts(
@@ -7391,6 +7496,14 @@ async def generate_novel_plan(
                 session, project.id, language=_planner_language(project)
             )
 
+            _deceased_constraints = _build_deceased_character_constraints(
+                cast_spec_payload, vol_entry, language=project.language or "zh-CN"
+            )
+            if _deceased_constraints:
+                logger.info(
+                    "Adding %d deceased-character constraints for volume %d: %s",
+                    len(_deceased_constraints), vol_num, _deceased_constraints,
+                )
             vol_outline_system, vol_outline_user = _volume_outline_prompts(
                 project,
                 book_spec_payload,
@@ -7398,6 +7511,7 @@ async def generate_novel_plan(
                 normalized_vp,
                 vol_entry,
                 revealed_ledger_block=_ledger_block,
+                extra_constraints=_deceased_constraints or None,
             )
             vol_outline_payload, llm_run_id = await _generate_structured_artifact(
                 session,
@@ -8057,6 +8171,10 @@ async def generate_volume_plan(
             session, project.id, language=_planner_language(project)
         )
 
+        _deceased_constraints = _build_deceased_character_constraints(
+            effective_cast_spec, vol_entry, language=project.language or "zh-CN"
+        )
+        _all_constraints = (_all_constraints or []) + _deceased_constraints
         vol_outline_system, vol_outline_user = _volume_outline_prompts(
             project, book_spec, effective_cast_spec, _mapping_list(volume_plan), vol_entry,
             revealed_ledger_block=_ledger_block,

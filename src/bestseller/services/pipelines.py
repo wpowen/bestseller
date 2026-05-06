@@ -401,6 +401,7 @@ async def _count_written_chapters_in_volume(
             ChapterModel.project_id == project_id,
             VolumeModel.volume_number == volume_number,
             ChapterModel.status.in_(_WRITTEN_CHAPTER_STATUSES),
+            ChapterModel.production_state == "ok",
         )
     )
     result = await session.scalar(stmt)
@@ -1183,6 +1184,7 @@ async def run_scene_pipeline(
                     ) if shared_context.scene_contract else None,
                     settings=settings,
                     language=getattr(project, "language", None),
+                    scene=scene,
                 )
                 if _contradiction_result.violations or _contradiction_result.warnings:
                     shared_context.contradiction_warnings = [
@@ -1833,18 +1835,39 @@ async def run_chapter_pipeline(
                 "Chapter %d resume: skipping %d completed scenes, %d pending",
                 chapter_number, skipped_scene_count, len(pending_scenes),
             )
+        _scene_loop_blocked = False
         for scene in pending_scenes:
             current_step_name = f"scene_pipeline_{scene.scene_number}"
             workflow_run.current_step = current_step_name
-            scene_result = await run_scene_pipeline(
-                session,
-                settings,
-                project_slug,
-                chapter_number,
-                scene.scene_number,
-                requested_by=requested_by,
-                parent_workflow_run_id=workflow_run.id,
-            )
+            try:
+                scene_result = await run_scene_pipeline(
+                    session,
+                    settings,
+                    project_slug,
+                    chapter_number,
+                    scene.scene_number,
+                    requested_by=requested_by,
+                    parent_workflow_run_id=workflow_run.id,
+                )
+            except WriteSafetyBlockError as exc:
+                # contradiction/identity block raised during scene pipeline —
+                # stamp the chapter as blocked so self-heal / auto-repair can
+                # engage on the next run.  Persist the block code + hint
+                # so maybe_prepare_chapter_auto_repair can find them.
+                _block_code = exc.findings[0].code if exc.findings else "unknown"
+                _hint = exc.findings[0].message if exc.findings else str(exc)
+                chapter.status = ChapterStatus.REVISION.value
+                chapter.production_state = "blocked"
+                chapter.metadata_json = {
+                    **(chapter.metadata_json or {}),
+                    "blocked_by_write_safety_gate": True,
+                    "write_safety_block_code": _block_code,
+                    "write_safety_hint": _hint,
+                }
+                await session.flush()
+                await _checkpoint_commit(session)
+                _scene_loop_blocked = True
+                break
             scene_results.append(
                 ChapterPipelineSceneSummary(
                     scene_number=scene.scene_number,
@@ -1893,7 +1916,7 @@ async def run_chapter_pipeline(
                     "Chapter %d resume: reusing existing draft v%d",
                     chapter_number, chapter_draft.version_no,
                 )
-        if chapter_draft is None:
+        if chapter_draft is None and not _scene_loop_blocked:
             chapter_draft = await assemble_chapter_draft(session, project_slug, chapter_number, settings=settings)
 
         # ── Chapter auto-repair loop (C6) ──
@@ -1930,7 +1953,10 @@ async def run_chapter_pipeline(
             auto_repair_enabled
             and auto_repair_cap > 0
             and auto_repair_attempts < auto_repair_cap
-            and getattr(chapter, "production_state", None) == "blocked"
+            and (
+                getattr(chapter, "production_state", None) == "blocked"
+                or _scene_loop_blocked
+            )
         ):
             try:
                 from bestseller.services.drafts import (
@@ -1988,16 +2014,38 @@ async def run_chapter_pipeline(
                     .order_by(SceneCardModel.scene_number.asc())
                 )
             )
+            _repair_blocked_again = False
             for _repair_scene in repair_scenes:
-                _repair_result = await run_scene_pipeline(
-                    session,
-                    settings,
-                    project_slug,
-                    chapter_number,
-                    _repair_scene.scene_number,
-                    requested_by=requested_by,
-                    parent_workflow_run_id=workflow_run.id,
-                )
+                try:
+                    _repair_result = await run_scene_pipeline(
+                        session,
+                        settings,
+                        project_slug,
+                        chapter_number,
+                        _repair_scene.scene_number,
+                        requested_by=requested_by,
+                        parent_workflow_run_id=workflow_run.id,
+                    )
+                except WriteSafetyBlockError as exc:
+                    # The repair pass tripped the same kind of safety block as
+                    # the initial run. Re-stamp the chapter so the next while
+                    # iteration (or the final post-loop check below) sees the
+                    # blocked state and either retries or escalates to human
+                    # review — whichever the auto_repair_cap dictates.
+                    _block_code = exc.findings[0].code if exc.findings else "unknown"
+                    _hint = exc.findings[0].message if exc.findings else str(exc)
+                    chapter.status = ChapterStatus.REVISION.value
+                    chapter.production_state = "blocked"
+                    chapter.metadata_json = {
+                        **(chapter.metadata_json or {}),
+                        "blocked_by_write_safety_gate": True,
+                        "write_safety_block_code": _block_code,
+                        "write_safety_hint": _hint,
+                    }
+                    await session.flush()
+                    await _checkpoint_commit(session)
+                    _repair_blocked_again = True
+                    break
                 if _repair_result.requires_human_review:
                     scene_requires_human_review = True
                 await create_workflow_step_run(
@@ -2014,6 +2062,13 @@ async def run_chapter_pipeline(
                     },
                 )
                 step_order += 1
+            # If the repair pass itself tripped a safety block, skip the
+            # reassemble step (the chapter is still blocked) and let the
+            # while-loop's blocked-state check decide whether to retry or
+            # escalate.
+            if _repair_blocked_again:
+                continue
+            _scene_loop_blocked = False
 
             # Re-assemble with the repaired scenes so the next gate pass sees
             # a fresh chapter_draft + the length-stability helper re-scores.
@@ -2035,6 +2090,37 @@ async def run_chapter_pipeline(
                 },
             )
             step_order += 1
+
+        if chapter_draft is None:
+            logger.warning(
+                "Chapter %d: scene pipeline blocked before any assemblable draft; "
+                "marking for human review instead of assembling missing scenes",
+                chapter_number,
+            )
+            scene_requires_human_review = True
+            workflow_run.status = WorkflowStatus.WAITING_HUMAN.value
+            workflow_run.current_step = "waiting_human_review"
+            workflow_run.metadata_json = {
+                **workflow_run.metadata_json,
+                "requires_human_review": True,
+                "chapter_draft_id": None,
+                "chapter_draft_version_no": None,
+                "scene_requires_human_review": True,
+                "blocked_before_chapter_assembly": True,
+            }
+            await session.flush()
+            return ChapterPipelineResult(
+                workflow_run_id=workflow_run.id,
+                project_id=project.id,
+                chapter_id=chapter.id,
+                chapter_number=chapter.chapter_number,
+                scene_results=scene_results,
+                chapter_draft_id=None,
+                chapter_draft_version_no=None,
+                export_artifact_id=None,
+                output_path=None,
+                requires_human_review=True,
+            )
 
         if auto_repair_attempts > 0 and getattr(chapter, "production_state", None) == "blocked":
             logger.warning(
@@ -2775,6 +2861,12 @@ async def _select_pending_chapters_for_resume(
         drafted_ids = {row for row in drafted_rows}
 
     def _is_resume_done(ch: ChapterModel) -> bool:
+        # ``production_state`` is the quality-gate state.  A chapter may still
+        # have ``status=complete`` or an existing draft from an earlier pass,
+        # but if the quality gate or a bulk repair reset it to pending/blocked
+        # it must be regenerated instead of accepted as a resume skip.
+        if getattr(ch, "production_state", None) != "ok":
+            return False
         if ch.status == ChapterStatus.COMPLETE.value:
             return True
         if (

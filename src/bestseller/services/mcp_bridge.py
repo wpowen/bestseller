@@ -49,9 +49,11 @@ Config file format (``config/mcp_servers.yaml``)
 from __future__ import annotations
 
 import asyncio
+import importlib.util
 import logging
 import os
 import re
+import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Mapping, Protocol, Sequence
@@ -81,6 +83,7 @@ class MCPServerConfig(BaseModel):
     headers: dict[str, str] = Field(default_factory=dict)
     enabled_for: list[str] = Field(default_factory=list)
     tools_expose: list[str] = Field(default_factory=list)  # empty = all
+    required_env: list[str] = Field(default_factory=list)
     timeout_seconds: float = 60.0
     enabled: bool = True
 
@@ -265,6 +268,36 @@ class _MCPImportError(RuntimeError):
     pass
 
 
+def _missing_required_env(config: MCPServerConfig) -> list[str]:
+    missing: list[str] = []
+    for name in config.required_env:
+        if config.env.get(name) or os.environ.get(name):
+            continue
+        missing.append(name)
+    return missing
+
+
+def _stdio_unavailable_reason(config: MCPServerConfig) -> str | None:
+    command = config.command or []
+    if not command:
+        return "stdio command is empty"
+
+    executable = command[0]
+    if shutil.which(executable) is None:
+        return f"executable {executable!r} not found"
+
+    if executable in {"python", "python3"} and len(command) >= 3 and command[1] == "-m":
+        module_name = command[2]
+        try:
+            module_spec = importlib.util.find_spec(module_name)
+        except (ImportError, AttributeError, ValueError):
+            module_spec = None
+        if module_spec is None:
+            return f"Python module {module_name!r} not importable"
+
+    return None
+
+
 def _import_mcp_client() -> Any:
     """Lazy import of ``mcp`` client SDK; raises :class:`_MCPImportError`."""
 
@@ -299,6 +332,16 @@ class _StdioTransport:
         return self._available
 
     async def start(self) -> None:
+        unavailable_reason = _stdio_unavailable_reason(self._config)
+        if unavailable_reason is not None:
+            logger.info(
+                "MCP stdio server %s skipped: %s",
+                self._config.name,
+                unavailable_reason,
+            )
+            await self.stop()
+            return
+
         try:
             from contextlib import AsyncExitStack
 
@@ -527,6 +570,14 @@ class MCPConnectionPool:
         factory = self.transport_factory or default_transport_factory
         for cfg in self.configs:
             if not cfg.enabled:
+                continue
+            missing_env = _missing_required_env(cfg)
+            if missing_env:
+                logger.info(
+                    "MCP server %s skipped: missing required env var(s): %s",
+                    cfg.name,
+                    ", ".join(missing_env),
+                )
                 continue
             transport = factory(cfg)
             try:

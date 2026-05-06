@@ -3,8 +3,8 @@
 The helper is the "auto-repair core" — given a ``ChapterQualityReportModel``
 it decides whether the latest blocking codes are inside the repair
 allowlist and, if so, resets every scene to ``NEEDS_REWRITE`` with a
-hint while clearing ``chapter.production_state``.  It does *not* kick off
-the next regen cycle — that is the pipeline's responsibility.
+hint while returning ``chapter.production_state`` to ``pending``.  It does
+*not* kick off the next regen cycle — that is the pipeline's responsibility.
 """
 
 from __future__ import annotations
@@ -36,7 +36,8 @@ class FakeChapter:
     id: Any = field(default_factory=uuid4)
     project_id: Any = field(default_factory=uuid4)
     chapter_number: int = 1
-    production_state: str | None = "blocked"
+    production_state: str = "blocked"
+    metadata_json: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -47,6 +48,7 @@ class FakeScene:
     status: str = SceneStatus.APPROVED.value
     metadata_json: dict[str, Any] = field(default_factory=dict)
     target_word_count: int = 1600
+    participants: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -170,6 +172,55 @@ async def test_non_repairable_code_returns_the_codes_but_not_triggered() -> None
 
 
 @pytest.mark.asyncio
+async def test_character_resurrection_removes_dead_participants_before_regen() -> None:
+    chapter = FakeChapter(
+        chapter_number=371,
+        metadata_json={
+            "blocked_by_write_safety_gate": True,
+            "write_safety_block_code": "character_resurrection",
+            "write_safety_hint": "Sam Blake died in chapter 323.",
+        },
+    )
+    scenes = [
+        FakeScene(
+            chapter_id=chapter.id,
+            scene_number=1,
+            participants=["Rowan Ashford", "Sam Blake"],
+        ),
+        FakeScene(
+            chapter_id=chapter.id,
+            scene_number=2,
+            participants=["Rowan Ashford"],
+        ),
+    ]
+    session = FakeSession(
+        scalar_queue=[None],
+        scalars_queue=[scenes, ["Sam Blake"]],
+    )
+
+    triggered, codes = await maybe_prepare_chapter_auto_repair(
+        session,
+        project=FakeProject(id=chapter.project_id),
+        chapter=chapter,
+        repairable_codes=("character_resurrection",),
+    )
+
+    assert triggered is True
+    assert codes == ("character_resurrection",)
+    assert chapter.production_state == "pending"
+    assert "write_safety_block_code" not in chapter.metadata_json
+    assert scenes[0].participants == ["Rowan Ashford"]
+    assert scenes[0].status == SceneStatus.NEEDS_REWRITE.value
+    assert scenes[0].metadata_json["auto_repair_removed_participants"] == [
+        "Sam Blake"
+    ]
+    assert "移除已故角色：Sam Blake" in scenes[0].metadata_json["auto_repair_hint"]
+    assert scenes[1].participants == ["Rowan Ashford"]
+    assert "auto_repair_removed_participants" not in scenes[1].metadata_json
+    assert session.flush_calls == 1
+
+
+@pytest.mark.asyncio
 async def test_block_low_resets_scenes_and_injects_hint() -> None:
     chapter = FakeChapter()
     scenes = [
@@ -197,7 +248,7 @@ async def test_block_low_resets_scenes_and_injects_hint() -> None:
 
     assert triggered is True
     assert set(codes) == {"BLOCK_LOW"}
-    assert chapter.production_state is None
+    assert chapter.production_state == "pending"
     # Every scene is reset to NEEDS_REWRITE with the hint attached.
     for scene in scenes:
         assert scene.status == SceneStatus.NEEDS_REWRITE.value
@@ -212,6 +263,77 @@ async def test_block_low_resets_scenes_and_injects_hint() -> None:
     # regen_attempts tick incremented on the underlying report row.
     assert report.regen_attempts == 1
     assert session.flush_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_legacy_length_block_low_alias_triggers_block_low_repair() -> None:
+    chapter = FakeChapter()
+    scenes = [
+        FakeScene(chapter_id=chapter.id, scene_number=1, target_word_count=1000),
+    ]
+    report = FakeQualityReport(
+        report_json={
+            "blocking_codes": ["CHAPTER_LENGTH_BLOCK_LOW"],
+            "length_stability": {"word_count": 1200, "target_words": 2400},
+        },
+    )
+    session = FakeSession(scalar_queue=[report], scalars_queue=[scenes])
+
+    triggered, codes = await maybe_prepare_chapter_auto_repair(
+        session,
+        project=FakeProject(),
+        chapter=chapter,
+        repairable_codes=("BLOCK_LOW",),
+    )
+
+    assert triggered is True
+    assert codes == ("CHAPTER_LENGTH_BLOCK_LOW",)
+    assert chapter.production_state == "pending"
+    assert scenes[0].status == SceneStatus.NEEDS_REWRITE.value
+    assert "大幅扩写" in scenes[0].metadata_json["auto_repair_hint"]
+    assert scenes[0].target_word_count == 1500
+
+
+@pytest.mark.asyncio
+async def test_dialog_unpaired_triggers_dialog_rewrite_hint() -> None:
+    chapter = FakeChapter()
+    scenes = [FakeScene(chapter_id=chapter.id, scene_number=1)]
+    report = FakeQualityReport(report_json={"blocking_codes": ["DIALOG_UNPAIRED"]})
+    session = FakeSession(scalar_queue=[report], scalars_queue=[scenes])
+
+    triggered, codes = await maybe_prepare_chapter_auto_repair(
+        session,
+        project=FakeProject(),
+        chapter=chapter,
+        repairable_codes=("DIALOG_UNPAIRED",),
+    )
+
+    assert triggered is True
+    assert codes == ("DIALOG_UNPAIRED",)
+    assert chapter.production_state == "pending"
+    assert scenes[0].status == SceneStatus.NEEDS_REWRITE.value
+    assert "未闭合或孤立的对话标记" in scenes[0].metadata_json["auto_repair_hint"]
+
+
+@pytest.mark.asyncio
+async def test_weak_ending_triggers_hook_rewrite_hint() -> None:
+    chapter = FakeChapter()
+    scenes = [FakeScene(chapter_id=chapter.id, scene_number=1)]
+    report = FakeQualityReport(report_json={"blocking_codes": ["ENDING_SENTENCE_WEAK"]})
+    session = FakeSession(scalar_queue=[report], scalars_queue=[scenes])
+
+    triggered, codes = await maybe_prepare_chapter_auto_repair(
+        session,
+        project=FakeProject(),
+        chapter=chapter,
+        repairable_codes=("ENDING_SENTENCE_WEAK",),
+    )
+
+    assert triggered is True
+    assert codes == ("ENDING_SENTENCE_WEAK",)
+    assert chapter.production_state == "pending"
+    assert scenes[0].status == SceneStatus.NEEDS_REWRITE.value
+    assert "章节结尾缺少明确钩子" in scenes[0].metadata_json["auto_repair_hint"]
 
 
 @pytest.mark.asyncio

@@ -29,7 +29,7 @@ from bestseller.services import exports as export_services
 from bestseller.services import pipelines as pipeline_services
 from bestseller.services import reviews as review_services
 from bestseller.services.truth_version import TruthVersionStaleError
-from bestseller.services.write_safety_gate import WriteSafetyBlockError
+from bestseller.services.write_safety_gate import WriteSafetyBlockError, WriteSafetyFinding
 from bestseller.settings import load_settings
 
 
@@ -1120,6 +1120,142 @@ async def test_run_chapter_pipeline_exports_checkpoint_when_scene_needs_human_re
     assert result.chapter_draft_id == chapter_draft.id
     assert result.export_artifact_id == export_artifact.id
     assert result.output_path is not None
+
+
+@pytest.mark.asyncio
+async def test_run_chapter_pipeline_repairs_scene_block_before_assembly(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    project = build_project()
+    chapter = build_chapter(project.id)
+    scene = build_scene(project.id, chapter.id)
+    chapter_draft = ChapterDraftVersionModel(
+        project_id=project.id,
+        chapter_id=chapter.id,
+        version_no=1,
+        content_md="# 第1章 失准星图\n\n修复后章节。",
+        word_count=1200,
+        assembled_from_scene_draft_ids=[],
+        is_current=True,
+    )
+    chapter_draft.id = uuid4()
+    export_artifact = ExportArtifactModel(
+        project_id=project.id,
+        export_type="markdown",
+        source_scope="chapter",
+        source_id=chapter.id,
+        storage_uri=str(tmp_path / "output" / "chapter-001.md"),
+        checksum="c" * 64,
+        version_label="chapter-001-v1",
+    )
+    export_artifact.id = uuid4()
+    report = type("ChapterReportStub", (), {"id": uuid4(), "llm_run_id": uuid4()})()
+    quality = type("ChapterQualityStub", (), {"id": uuid4()})()
+    scene_calls = {"count": 0}
+
+    async def fake_get_project_by_slug(session, slug: str) -> ProjectModel:
+        return project
+
+    async def fake_run_scene_pipeline(
+        session,
+        settings,
+        project_slug,
+        chapter_number,
+        scene_number,
+        **kwargs,
+    ):
+        scene_calls["count"] += 1
+        if scene_calls["count"] == 1:
+            raise WriteSafetyBlockError(
+                "blocked",
+                findings=[
+                    WriteSafetyFinding(
+                        source="contradiction",
+                        code="character_resurrection",
+                        severity="critical",
+                        message="dead character appeared",
+                    )
+                ],
+            )
+        return pipeline_services.ScenePipelineResult(
+            workflow_run_id=uuid4(),
+            project_id=project.id,
+            chapter_id=chapter.id,
+            scene_id=scene.id,
+            chapter_number=chapter.chapter_number,
+            scene_number=scene.scene_number,
+            current_draft_id=uuid4(),
+            current_draft_version_no=1,
+            final_verdict="pass",
+            review_report_id=uuid4(),
+            quality_score_id=uuid4(),
+            review_iterations=1,
+            rewrite_iterations=0,
+            requires_human_review=False,
+            llm_run_ids=[],
+        )
+
+    async def fake_prepare_auto_repair(session, *, project, chapter, repairable_codes):
+        chapter.production_state = "pending"
+        scene.status = "needs_rewrite"
+        return True, ("character_resurrection",)
+
+    async def fake_assemble_chapter_draft(session, project_slug: str, chapter_number: int, *, settings=None):
+        assert scene_calls["count"] == 2
+        return chapter_draft
+
+    async def fake_export_chapter_markdown(
+        session,
+        settings,
+        project_slug: str,
+        chapter_number: int,
+        **kwargs,
+    ):
+        output_path = tmp_path / "output" / "chapter-001.md"
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(chapter_draft.content_md, encoding="utf-8")
+        return export_artifact, output_path
+
+    async def fake_review_chapter_draft(
+        session,
+        settings,
+        project_slug,
+        chapter_number,
+        **kwargs,
+    ):
+        return (
+            type("ChapterReviewResultStub", (), {"verdict": "pass", "severity_max": "low"})(),
+            report,
+            quality,
+            None,
+        )
+
+    monkeypatch.setattr(pipeline_services, "get_project_by_slug", fake_get_project_by_slug)
+    monkeypatch.setattr(pipeline_services, "run_scene_pipeline", fake_run_scene_pipeline)
+    monkeypatch.setattr(pipeline_services, "assemble_chapter_draft", fake_assemble_chapter_draft)
+    monkeypatch.setattr(pipeline_services, "export_chapter_markdown", fake_export_chapter_markdown)
+    monkeypatch.setattr(pipeline_services, "review_chapter_draft", fake_review_chapter_draft)
+    monkeypatch.setattr(
+        "bestseller.services.drafts.maybe_prepare_chapter_auto_repair",
+        fake_prepare_auto_repair,
+    )
+
+    session = FakeSession(
+        scalar_results=[chapter],
+        scalars_results=[[scene], [scene]],
+    )
+    result = await pipeline_services.run_chapter_pipeline(
+        session,
+        build_settings(),
+        "my-story",
+        1,
+        requested_by="tester",
+        export_markdown=True,
+    )
+
+    assert result.chapter_draft_id == chapter_draft.id
+    assert scene_calls["count"] == 2
 
 
 @pytest.mark.asyncio

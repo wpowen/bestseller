@@ -372,6 +372,20 @@ class TestCastSpecInputCoercion:
         assert spec.protagonist is not None
         assert spec.protagonist.role == "protagonist"
 
+    def test_character_beliefs_accept_legacy_string(self) -> None:
+        spec = CastSpecInput.model_validate(
+            {
+                "supporting_cast": [
+                    {
+                        "name": "秩序官",
+                        "role": "official",
+                        "beliefs": "个人意志在秩序稳定面前不值一提",
+                    }
+                ]
+            }
+        )
+        assert spec.supporting_cast[0].beliefs.ideology == "个人意志在秩序稳定面前不值一提"
+
 
 class TestVolumePlanEntryInputCoercion:
     def test_word_count_target_parses_约_prefix(self) -> None:

@@ -3323,6 +3323,167 @@ async def _compute_chapter_antagonist_scope_signal(
     return findings, evidence
 
 
+async def _compute_premature_death_signal(
+    *,
+    session: AsyncSession,
+    project: ProjectModel,
+    chapter: ChapterModel,
+    draft: ChapterDraftVersionModel | None,
+) -> tuple[list["ChapterReviewFinding"], dict[str, Any]]:
+    """Scan the assembled chapter for death descriptions of characters
+    whose planned ``death_chapter_number`` is later than the current
+    chapter (the "protected roster"). Critical strong-match findings
+    force verdict='rewrite'; implied matches surface as warnings.
+
+    Returns ``(findings, evidence_summary)`` so callers can splice the
+    result into an existing ``ChapterReviewResult`` via
+    ``_merge_premature_death_into_review``. Empty / dry-run safe.
+    """
+
+    if not (draft and draft.content_md):
+        return [], {}
+
+    chapter_status = (getattr(chapter, "status", "") or "").lower()
+    if chapter_status in ("complete", "revision"):
+        # Pre-existing canon must not be retroactively flagged — same
+        # forward-only policy used by the antagonist-scope audit.
+        return [], {}
+
+    try:
+        from bestseller.services.contradiction import (
+            check_premature_death_in_prose,
+        )
+    except Exception:
+        logger.debug("premature_death scan import failed", exc_info=True)
+        return [], {}
+
+    try:
+        violations, warnings = await check_premature_death_in_prose(
+            session,
+            project.id,
+            chapter.chapter_number,
+            draft.content_md,
+            language=getattr(project, "language", None),
+        )
+    except Exception:
+        logger.debug(
+            "premature_death scan failed for ch=%s — non-fatal",
+            getattr(chapter, "chapter_number", "?"),
+            exc_info=True,
+        )
+        return [], {}
+
+    if not violations and not warnings:
+        return [], {}
+
+    findings: list[ChapterReviewFinding] = []
+    for v in violations:
+        findings.append(
+            ChapterReviewFinding(
+                severity="critical",
+                category="character_lifecycle",
+                code="character_premature_death",
+                message=v.message,
+                evidence=v.evidence,
+            )
+        )
+    for w in warnings:
+        findings.append(
+            ChapterReviewFinding(
+                severity="major",
+                category="character_lifecycle",
+                code="character_premature_death_implied",
+                message=w.message,
+                evidence=w.recommendation,
+            )
+        )
+
+    evidence_summary = {
+        "premature_death_strong": [v.evidence for v in violations],
+        "premature_death_implied": [w.recommendation for w in warnings],
+    }
+    return findings, evidence_summary
+
+
+def _merge_premature_death_into_review(
+    review_result: "ChapterReviewResult",
+    findings: list["ChapterReviewFinding"],
+    evidence: dict[str, Any],
+    *,
+    language: str | None = None,
+) -> "ChapterReviewResult":
+    """Fold premature-death findings into an existing review result.
+    Mirrors ``_merge_antagonist_scope_into_review`` so behaviour stays
+    consistent: any ``critical`` finding pushes verdict→'rewrite' and
+    prepends targeted rewrite instructions.
+    """
+
+    if not findings:
+        return review_result
+
+    has_critical = any(f.severity == "critical" for f in findings)
+
+    merged_findings = list(review_result.findings) + findings
+    merged_evidence = dict(review_result.evidence_summary)
+    merged_evidence.update(evidence)
+
+    severity_rank = {"info": 0, "major": 1, "warning": 1, "critical": 2}
+    new_severity_max = review_result.severity_max
+    for f in findings:
+        if severity_rank.get(f.severity, 0) > severity_rank.get(new_severity_max, 0):
+            new_severity_max = f.severity
+
+    new_verdict = review_result.verdict
+    rewrite_prefix: str | None = None
+    if has_critical:
+        new_verdict = "rewrite"
+        is_en = bool(language and str(language).lower().startswith("en"))
+        # Pull names out of finding messages — they appear inside 「」 (zh)
+        # or '...' (en).
+        protected_names: list[str] = []
+        for f in findings:
+            if f.severity != "critical":
+                continue
+            text = f.message or ""
+            if "「" in text and "」" in text:
+                protected_names.append(text.split("「", 1)[1].split("」", 1)[0])
+            elif "'" in text:
+                protected_names.append(text.split("'", 1)[1].split("'", 1)[0])
+        protected_names = sorted({n for n in protected_names if n})
+        if is_en:
+            rewrite_prefix = (
+                "[character lifecycle] The chapter wrote a death scene for "
+                f"protected characters whose planned death is later: {protected_names}. "
+                "Rewrite so they stay alive in this chapter — replace the death verbs, "
+                "remove 'before X died' framing, and let any threat resolve as "
+                "capture / sealing / injury / escape rather than death."
+            )
+        else:
+            rewrite_prefix = (
+                f"【角色生命周期】本章为保护角色 {protected_names} 写出了死亡描写，"
+                "但其计划死亡发生在更后面的章节。请改写：让其在本章存活——"
+                "把死亡动词改为重伤/封印/俘虏/失踪/退场等，"
+                "并删除「X死前」「X的遗体」等已死框架。"
+            )
+
+    merged_instructions = review_result.rewrite_instructions
+    if rewrite_prefix:
+        merged_instructions = (
+            f"{rewrite_prefix}\n\n{merged_instructions}"
+            if merged_instructions
+            else rewrite_prefix
+        )
+
+    return ChapterReviewResult(
+        verdict=new_verdict,
+        severity_max=new_severity_max,
+        scores=review_result.scores,
+        findings=merged_findings,
+        evidence_summary=merged_evidence,
+        rewrite_instructions=merged_instructions,
+    )
+
+
 def _merge_antagonist_scope_into_review(
     review_result: ChapterReviewResult,
     antagonist_findings: list[ChapterReviewFinding],
@@ -3457,6 +3618,27 @@ async def review_chapter_draft(
             review_result,
             antagonist_findings,
             antagonist_evidence,
+            language=getattr(project, "language", None),
+        )
+
+    # Premature-death scan: catches the inverse of resurrection — prose
+    # that describes a character dying before their planned death chapter.
+    # Without this, the writer LLM can ship a death scene for a protected
+    # character (the ch6 苏瑶 / 陆沉 incident) and the resurrection check
+    # passes because the character isn't yet dead in the database.
+    pdeath_findings, pdeath_evidence = (
+        await _compute_premature_death_signal(
+            session=session,
+            project=project,
+            chapter=chapter,
+            draft=draft,
+        )
+    )
+    if pdeath_findings:
+        review_result = _merge_premature_death_into_review(
+            review_result,
+            pdeath_findings,
+            pdeath_evidence,
             language=getattr(project, "language", None),
         )
 

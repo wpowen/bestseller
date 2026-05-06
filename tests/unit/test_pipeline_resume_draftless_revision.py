@@ -60,6 +60,7 @@ pytestmark = pytest.mark.unit
 class _FakeChapter:
     chapter_number: int
     status: str
+    production_state: str = "ok"
     id: UUID = field(default_factory=uuid4)
 
 
@@ -192,6 +193,52 @@ async def test_resume_disabled_returns_every_chapter() -> None:
     )
 
     assert [ch.chapter_number for ch in pending] == [1, 2, 3, 4, 5, 6]
+    assert draftless == []
+
+
+@pytest.mark.asyncio
+async def test_non_ok_production_state_forces_complete_chapter_to_rerun() -> None:
+    """A quality-gate repair must not be skipped just because an old draft exists."""
+    chapters = [
+        _FakeChapter(
+            chapter_number=1,
+            status=ChapterStatus.COMPLETE.value,
+            production_state="pending",
+        ),
+    ]
+    session = _FakeSession(drafted_chapter_ids={chapters[0].id})
+
+    pending, draftless = await _select_pending_chapters_for_resume(
+        session,  # type: ignore[arg-type]
+        chapters,  # type: ignore[arg-type]
+        resume_enabled=True,
+        accept_on_stall=True,
+    )
+
+    assert [ch.chapter_number for ch in pending] == [1]
+    assert draftless == []
+
+
+@pytest.mark.asyncio
+async def test_non_ok_production_state_forces_drafted_revision_to_rerun() -> None:
+    """Bulk consistency repair resets drafted REVISION chapters to pending."""
+    chapters = [
+        _FakeChapter(
+            chapter_number=1,
+            status=ChapterStatus.REVISION.value,
+            production_state="pending",
+        ),
+    ]
+    session = _FakeSession(drafted_chapter_ids={chapters[0].id})
+
+    pending, draftless = await _select_pending_chapters_for_resume(
+        session,  # type: ignore[arg-type]
+        chapters,  # type: ignore[arg-type]
+        resume_enabled=True,
+        accept_on_stall=True,
+    )
+
+    assert [ch.chapter_number for ch in pending] == [1]
     assert draftless == []
 
 

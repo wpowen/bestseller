@@ -2152,10 +2152,16 @@
             </div>
           </div>
 
-          <div class="actions" style="margin-top: 14px;">
+          <div class="actions" style="margin-top: 14px; display:flex; flex-wrap:wrap; gap:8px; align-items:center;">
             <button id="start-autowrite">开始本轮写作</button>
+            <span style="display:inline-flex;gap:6px;align-items:center;border:1px dashed var(--line);padding:6px 10px;border-radius:var(--radius-sm);">
+              <label for="schedule-autowrite-at" style="font-size:12px;color:var(--text-soft);">⏱ 定时启动</label>
+              <input type="datetime-local" id="schedule-autowrite-at" style="font-size:13px;" />
+              <button class="secondary" id="schedule-autowrite-btn" type="button">提交定时</button>
+            </span>
             <button class="secondary" id="refresh-projects">刷新项目列表</button>
           </div>
+          <div id="schedule-autowrite-status" style="font-size:12px;color:var(--text-soft);margin-top:6px;"></div>
       </section>
 
       <section class="workspace-grid">
@@ -4400,6 +4406,50 @@
       }
     }
 
+    function _localIsoWithOffset(input) {
+      // input is a value from <input type="datetime-local"> — naive local time.
+      // We append the browser's current UTC offset so the server can parse it
+      // as a timezone-aware datetime.
+      if (!input) return null;
+      const dt = new Date(input);
+      if (Number.isNaN(dt.getTime())) return null;
+      const tzOffsetMin = -dt.getTimezoneOffset();
+      const sign = tzOffsetMin >= 0 ? "+" : "-";
+      const abs = Math.abs(tzOffsetMin);
+      const hh = String(Math.floor(abs / 60)).padStart(2, "0");
+      const mm = String(abs % 60).padStart(2, "0");
+      const pad = (n) => String(n).padStart(2, "0");
+      return `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}T${pad(dt.getHours())}:${pad(dt.getMinutes())}:00${sign}${hh}:${mm}`;
+    }
+
+    async function scheduleAutowrite() {
+      const statusEl = document.getElementById("schedule-autowrite-status");
+      try {
+        const raw = document.getElementById("schedule-autowrite-at").value;
+        const isoWithTz = _localIsoWithOffset(raw);
+        if (!isoWithTz) {
+          throw new Error("请先选择一个有效的启动时间");
+        }
+        const payload = readAutowritePayload();
+        validateAutowritePayload(payload);
+        const body = { ...payload, scheduled_at: isoWithTz };
+        const result = await api("/api/tasks/autowrite/schedule", {
+          method: "POST",
+          body: JSON.stringify(body),
+        });
+        if (statusEl) {
+          statusEl.style.color = "var(--success, #4caf50)";
+          statusEl.textContent = `✅ 已排队：${result.id} · 触发时间 ${result.scheduled_at}`;
+        }
+        await loadSchedules?.();
+      } catch (error) {
+        if (statusEl) {
+          statusEl.style.color = "var(--danger, #d35454)";
+          statusEl.textContent = `⚠️ ${error.message || String(error)}`;
+        }
+      }
+    }
+
     async function runRepair() {
       if (!state.activeProjectSlug) {
         alert("请先选择一个项目。");
@@ -4541,6 +4591,7 @@
 
     document.getElementById("start-autowrite").addEventListener("click", startAutowrite);
     document.getElementById("hero-start-button").addEventListener("click", startAutowrite);
+    document.getElementById("schedule-autowrite-btn")?.addEventListener("click", scheduleAutowrite);
     document.getElementById("refresh-projects").addEventListener("click", refreshAll);
     document.getElementById("refresh-projects-2").addEventListener("click", refreshAll);
     document.getElementById("refresh-if-novels").addEventListener("click", loadIfNovels);

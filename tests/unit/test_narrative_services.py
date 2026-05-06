@@ -508,6 +508,25 @@ def test_build_pacing_curve_specs_creates_one_point_per_chapter() -> None:
     assert specs[-1]["chapter_number"] == 5
 
 
+def test_dedupe_emotion_track_specs_preserves_unique_truncated_codes() -> None:
+    base = "tension-rowanashfordthenineteenth-victorhalethelich".ljust(64, "x")
+    specs = [
+        {"track_code": base, "title": "first"},
+        {"track_code": base, "title": "second"},
+        {"track_code": base, "title": "third"},
+    ]
+
+    deduped = narrative_services._dedupe_emotion_track_specs(specs)
+    track_codes = [spec["track_code"] for spec in deduped]
+
+    assert len(set(track_codes)) == 3
+    assert all(len(track_code) <= 64 for track_code in track_codes)
+    assert track_codes[0] == base
+    assert track_codes[1].endswith("-2")
+    assert track_codes[2].endswith("-3")
+    assert specs[1]["track_code"] == base
+
+
 def test_build_relationship_event_specs_creates_milestone_events() -> None:
     project = build_project()
     protagonist = build_character(project.id, "沈砚", "protagonist")

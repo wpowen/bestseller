@@ -67,6 +67,19 @@ from bestseller.services.writing_profile import (
 from bestseller.settings import AppSettings
 
 
+_REPAIR_CODE_ALIASES: dict[str, str] = {
+    "CHAPTER_LENGTH_BLOCK_LOW": "BLOCK_LOW",
+    "LENGTH_UNDER": "BLOCK_LOW",
+    "CHAPTER_LENGTH_BLOCK_HIGH": "BLOCK_HIGH",
+    "LENGTH_OVER": "BLOCK_HIGH",
+}
+
+
+def _canonical_repair_code(code: str) -> str:
+    text = str(code).strip()
+    return _REPAIR_CODE_ALIASES.get(text, text)
+
+
 def count_words(text: str) -> int:
     han_chars = re.findall(r"[\u4e00-\u9fff]", text)
     latin_words = re.findall(r"[A-Za-z0-9_]+", text)
@@ -93,6 +106,112 @@ async def _load_character_name_roster(
             "character roster load failed for project %s", project_id, exc_info=True
         )
         return frozenset()
+
+
+async def _load_dead_character_names_before_chapter(
+    session: AsyncSession,
+    project_id: UUID,
+    chapter_number: int,
+) -> frozenset[str]:
+    """Return the set of characters who are *actually* dead in chapter N.
+
+    Excludes fake-death characters whose reveal chapter has already
+    passed — those are alive again and may participate normally. The
+    filter is applied in Python because the fake-death record lives in
+    ``metadata_json`` and a SQL JSON predicate would not be portable
+    across the test sqlite path.
+    """
+
+    try:
+        rows = list(
+            await session.scalars(
+                select(CharacterModel).where(
+                    CharacterModel.project_id == project_id,
+                    CharacterModel.death_chapter_number.is_not(None),
+                    CharacterModel.death_chapter_number < chapter_number,
+                )
+            )
+        )
+    except Exception:
+        logger.debug(
+            "chapter %d: dead-character roster lookup failed (non-fatal)",
+            chapter_number,
+            exc_info=True,
+        )
+        return frozenset()
+
+    try:
+        from bestseller.services.character_lifecycle import (
+            is_character_dead_at_chapter,
+        )
+    except Exception:  # pragma: no cover — defensive guard
+        # If the helper can't be imported, fall back to the original
+        # purely-SQL behaviour: every match is treated as dead.
+        return frozenset(
+            str(row.name).strip() for row in rows
+            if getattr(row, "name", None) and str(row.name).strip()
+        )
+
+    out: set[str] = set()
+    for row in rows:
+        name = getattr(row, "name", None)
+        if not name:
+            continue
+        if is_character_dead_at_chapter(
+            death_chapter_number=getattr(row, "death_chapter_number", None),
+            chapter_number=chapter_number,
+            character_metadata=getattr(row, "metadata_json", None),
+        ):
+            out.add(str(name).strip())
+    return frozenset(o for o in out if o)
+
+
+def _filter_dead_scene_participants(
+    scene: SceneCardModel,
+    dead_character_names: frozenset[str],
+) -> list[str]:
+    if not dead_character_names:
+        return []
+
+    # Flashback / memorial / vision / dream / quoted-reference scenes are
+    # legitimate venues for deceased characters — they may be remembered,
+    # quoted, mourned, or appear as a corpse / image / letter. Stripping
+    # their names here would force the writer to omit the very people
+    # the planner placed in the scene on purpose. Skip the filter.
+    try:
+        from bestseller.services.character_lifecycle import scene_is_flashback_like
+        if scene_is_flashback_like(scene):
+            return []
+    except Exception:  # pragma: no cover — defensive guard
+        pass
+
+    participants = list(getattr(scene, "participants", None) or [])
+    if not participants:
+        return []
+
+    dead_lookup = {name.casefold() for name in dead_character_names}
+    kept: list[str] = []
+    removed: list[str] = []
+    for participant in participants:
+        name = str(participant).strip()
+        if name and name.casefold() in dead_lookup:
+            removed.append(name)
+        else:
+            kept.append(participant)
+
+    if not removed:
+        return []
+
+    scene.participants = kept
+    meta = dict(scene.metadata_json or {})
+    previous = [
+        str(item)
+        for item in (meta.get("auto_repair_removed_participants") or [])
+        if item
+    ]
+    meta["auto_repair_removed_participants"] = list(dict.fromkeys([*previous, *removed]))
+    scene.metadata_json = meta
+    return removed
 
 
 async def _auto_sign_override_contracts(
@@ -1599,23 +1718,75 @@ def _render_story_bible_section(
     if deceased_characters:
         if is_en:
             dead_lines = [
-                f"- {dc['name']}(died ch{dc.get('death_chapter_number') or '?'}, "
-                "do not appear, speak, or act — reminisce/corpse only)"
+                f"- {dc['name']}(died ch{dc.get('death_chapter_number') or '?'})"
                 for dc in deceased_characters
             ]
             lines.append(
-                "[Deceased roster — treat as off-limits unless scene is a flashback]:\n"
+                "[Deceased roster — these characters CANNOT take present-tense "
+                "actions, speak new dialogue, or appear as scene participants. "
+                "They MAY be:\n"
+                "  * remembered / mourned by another character;\n"
+                "  * quoted from earlier dialogue, letters, recordings, or "
+                "written works they left behind;\n"
+                "  * referenced as a corpse, image, grave, or relic;\n"
+                "  * the subject of a clearly-labelled flashback / memorial / "
+                "vision / dream scene.\n"
+                "If a planted clue (a will, a cipher, a sealed message) was "
+                "left by them, surfacing it now is allowed — the character "
+                "stays off-stage; the artifact does the work.]:\n"
                 + "\n".join(dead_lines)
             )
         else:
             dead_lines = [
-                f"- {dc['name']}（死于第{dc.get('death_chapter_number') or '?'}章，"
-                "请勿让其出场/说话/行动，仅可作为回忆或遗体）"
+                f"- {dc['name']}（死于第{dc.get('death_chapter_number') or '?'}章）"
                 for dc in deceased_characters
             ]
             lines.append(
-                "【本书已故角色（本章禁止复活，除非显式标注回忆/遗体场景）】：\n"
+                "【本书已故角色 — 本章绝不可让其登场（不可发出当下动作、"
+                "不可说出新台词、不可作为场景活跃参与者）。\n"
+                "允许的做法：\n"
+                "  · 旁人怀念、悲悼、提起；\n"
+                "  · 引用其先前的对话、书信、遗书、录音、留下的文字或卷轴；\n"
+                "  · 以遗体／画像／坟前／灵堂／信物等形态出现；\n"
+                "  · 在显式标注的回忆／闪回／祭奠／梦境／幻象场景中出现。\n"
+                "若该角色生前留下的伏笔（密信、信物、机关）在本章被发现或"
+                "触发——可以让信物/线索发挥作用，但角色本人不登场。】：\n"
                 + "\n".join(dead_lines)
+            )
+
+    # Protected roster — characters whose planned death is later than this
+    # chapter. Surfacing them as a hard "do NOT kill in this chapter"
+    # constraint prevents the failure mode where the writer LLM kills off
+    # a character that the planner scheduled to die hundreds of chapters
+    # later (e.g. the ch6 苏瑶/陆沉 incident — death_chapter_number was
+    # 435/458 but the prose still staged a death).
+    protected_characters = story_bible_context.get("protected_characters") or []
+    if protected_characters:
+        if is_en:
+            prot_lines = [
+                f"- {pc['name']}(planned death ch{pc.get('death_chapter_number') or '?'}, "
+                "MUST stay alive in this chapter — no death scene, no fatal injury, "
+                "no 'before X died' framing, no 'fell and never rose' implication)"
+                for pc in protected_characters
+            ]
+            lines.append(
+                "[PROTECTED ROSTER — these characters MUST survive this chapter; "
+                "the planner has scheduled their death for a later chapter, "
+                "and any death/dying language here is a hard violation]:\n"
+                + "\n".join(prot_lines)
+            )
+        else:
+            prot_lines = [
+                f"- {pc['name']}（计划死于第{pc.get('death_chapter_number') or '?'}章，"
+                "本章必须存活：不得出现死亡、断气、倒地不起、临终遗言、"
+                "「X死前」「魂飞」「殒命」「气绝」等任何死亡相关描写或暗示）"
+                for pc in protected_characters
+            ]
+            lines.append(
+                "【保护名单（绝对硬约束）— 这些角色本章必须存活；"
+                "他们的死亡时机由长线规划者锁定在更后面的章节，"
+                "本章任何死亡/濒死/临终描写都是硬性违规】：\n"
+                + "\n".join(prot_lines)
             )
 
     participants = story_bible_context.get("participants") or []
@@ -1641,6 +1812,9 @@ def _render_story_bible_section(
                 return f" Alive:{alive}"
             return f" 存活:{alive}"
 
+        # Bumped from 4→8 so multi-character scenes don't lose half their cast
+        # to truncation; the character "saturation" failure mode came from
+        # the writer never seeing 5th–8th participants' state.
         rendered_participants = "；".join(
             (
                 f"{item['name']}[{item.get('role') or 'character'}]"
@@ -1652,13 +1826,101 @@ def _render_story_bible_section(
                 f"{_stance_suffix(item)}"
                 f"{_alive_suffix(item)}"
             )
-            for item in participants[:4]
+            for item in participants[:8]
         )
         lines.append(
             f"{'Current participant states' if is_en else '参与角色当前状态'}：{rendered_participants}"
         )
-        voice_lines: list[str] = []
+
+        # Inner structure (lie/want/need/ghost/flaw) for ALL active
+        # participants up to 4. Previously only the POV got an inner
+        # structure block via deduplication.build_arc_beat_block, leaving
+        # supporting characters as flat function-shapes. Surfacing the
+        # shadow desire + fatal flaw + believed-lie of every active
+        # participant is what gives the LLM the material to write
+        # multi-dimensional characters instead of stage props.
+        depth_lines: list[str] = []
         for item in participants[:4]:
+            inner = item.get("inner_structure") or {}
+            moral = item.get("moral_framework") or {}
+            psych = item.get("psych_profile") or {}
+            chunks: list[str] = []
+            if isinstance(inner, dict):
+                if inner.get("lie_believed"):
+                    chunks.append(
+                        f"{'lie' if is_en else '相信的谎言'}:{str(inner['lie_believed'])[:60]}"
+                    )
+                if inner.get("truth_to_learn"):
+                    chunks.append(
+                        f"{'truth' if is_en else '需要学到的真相'}:{str(inner['truth_to_learn'])[:60]}"
+                    )
+                if inner.get("want_external"):
+                    chunks.append(
+                        f"{'want' if is_en else '表层目标'}:{str(inner['want_external'])[:60]}"
+                    )
+                if inner.get("need_internal"):
+                    chunks.append(
+                        f"{'need' if is_en else '内在需求'}:{str(inner['need_internal'])[:60]}"
+                    )
+                if inner.get("ghost"):
+                    chunks.append(
+                        f"{'ghost' if is_en else '过往伤'}:{str(inner['ghost'])[:60]}"
+                    )
+                if inner.get("fatal_flaw"):
+                    chunks.append(
+                        f"{'flaw' if is_en else '致命缺陷'}:{str(inner['fatal_flaw'])[:60]}"
+                    )
+                if inner.get("fear_core"):
+                    chunks.append(
+                        f"{'fear' if is_en else '核心恐惧'}:{str(inner['fear_core'])[:60]}"
+                    )
+            elif item.get("fear") or item.get("flaw"):
+                # Fallback when inner_structure was never seeded — pull
+                # from the legacy fear/flaw columns so the writer at
+                # least sees the surface character.
+                if item.get("fear"):
+                    chunks.append(
+                        f"{'fear' if is_en else '恐惧'}:{str(item['fear'])[:60]}"
+                    )
+                if item.get("flaw"):
+                    chunks.append(
+                        f"{'flaw' if is_en else '缺陷'}:{str(item['flaw'])[:60]}"
+                    )
+            if isinstance(moral, dict):
+                if moral.get("lines_will_not_cross"):
+                    lines_arr = moral["lines_will_not_cross"]
+                    if isinstance(lines_arr, list) and lines_arr:
+                        chunks.append(
+                            f"{'won_t_cross' if is_en else '绝不跨越的底线'}:"
+                            f"{'/'.join(str(x)[:40] for x in lines_arr[:2])}"
+                        )
+                if moral.get("moral_compass"):
+                    chunks.append(
+                        f"{'compass' if is_en else '道德指南针'}:{str(moral['moral_compass'])[:50]}"
+                    )
+            if isinstance(psych, dict):
+                if psych.get("personality_label"):
+                    chunks.append(
+                        f"{'personality' if is_en else '人格'}:{str(psych['personality_label'])[:40]}"
+                    )
+            if chunks:
+                depth_lines.append(
+                    f"  · {item['name']}: {(' | ' if is_en else ' ｜ ').join(chunks)}"
+                )
+        if depth_lines:
+            lines.append(
+                (
+                    "Character inner structure (must show on the page through "
+                    "action / subtext / decision-shaping — never narrate the "
+                    "label aloud):\n"
+                    if is_en
+                    else "角色内在结构（必须通过动作/潜台词/决策反映出来，不得直接叙述标签）：\n"
+                )
+                + "\n".join(depth_lines)
+            )
+
+        voice_lines: list[str] = []
+        for item in participants[:8]:
             vp = item.get("voice_profile") or {}
             parts: list[str] = []
             if vp.get("speech_register"):
@@ -4327,7 +4589,8 @@ async def maybe_prepare_chapter_auto_repair(
     intersects its ``blocking_codes`` with the configured ``repairable_codes``
     set.  When at least one code is in the repair allowlist, this helper:
 
-    1. Clears ``chapter.production_state`` (so the next gate pass starts fresh)
+    1. Resets ``chapter.production_state`` to ``"pending"`` (so the next gate
+       pass starts fresh without violating the non-null DB constraint)
     2. Resets every scene on the chapter to
        :attr:`SceneStatus.NEEDS_REWRITE` and bumps the scene card's
        ``rewrite_hint`` with block-specific guidance (e.g. "expand to
@@ -4345,7 +4608,7 @@ async def maybe_prepare_chapter_auto_repair(
     if not repairable_codes:
         return False, ()
 
-    repair_set = {str(c).strip() for c in repairable_codes if c}
+    repair_set = {_canonical_repair_code(str(c)) for c in repairable_codes if c}
     if not repair_set:
         return False, ()
 
@@ -4366,6 +4629,77 @@ async def maybe_prepare_chapter_auto_repair(
         )
         return False, ()
 
+    # If no report row, check chapter metadata for a direct contradiction/identity
+    # block that was caught and stored by run_scene_pipeline before raising.
+    # This path handles character_resurrection blocks that bypass the quality gate.
+    chapter_meta = dict(chapter.metadata_json or {})
+    stored_code = chapter_meta.get("write_safety_block_code")
+    if stored_code and latest_report is None:
+        block_codes = (str(stored_code),)
+        # Substring match: "contradiction:character_resurrection:error" should
+        # match "character_resurrection" in repair_set (full code format vs short name).
+        repairable_hit = tuple(
+            c
+            for c in block_codes
+            if _canonical_repair_code(c) in repair_set
+            or any(r in c for r in repair_set)
+        )
+        if repairable_hit:
+            logger.info(
+                "chapter %d: repair from stored write-safety block code %s",
+                chapter.chapter_number,
+                stored_code,
+            )
+            # Build hint from stored metadata
+            hint_text = chapter_meta.get(
+                "write_safety_hint",
+                f"场景触发了 {stored_code} 矛盾，请修正后重写。",
+            )
+            # Persist the hint into scene metadata so the writer sees it
+            scenes = list(
+                await session.scalars(
+                    select(SceneCardModel)
+                    .where(SceneCardModel.chapter_id == chapter.id)
+                    .order_by(SceneCardModel.scene_number.asc())
+                )
+            )
+            dead_names = (
+                await _load_dead_character_names_before_chapter(
+                    session,
+                    project.id,
+                    chapter.chapter_number,
+                )
+                if any("character_resurrection" in c for c in repairable_hit)
+                else frozenset()
+            )
+            for sc in scenes:
+                sc.status = SceneStatus.NEEDS_REWRITE.value
+                removed = _filter_dead_scene_participants(sc, dead_names)
+                scene_hint = str(hint_text)
+                if removed:
+                    removed_text = "、".join(removed)
+                    scene_hint = (
+                        f"{scene_hint}\n"
+                        f"系统已从本场景参与者列表移除已故角色：{removed_text}。"
+                        "本次必须围绕剩余存活角色重新生成，禁止继续用回忆、幽灵、"
+                        "幻象或旁白让这些角色承担活跃场景功能。"
+                    )
+                sc_meta = dict(sc.metadata_json or {})
+                existing = str(sc_meta.get("auto_repair_hint") or "").strip()
+                merged = f"{existing}\n{scene_hint}" if existing else scene_hint
+                sc_meta["auto_repair_hint"] = merged
+                sc_meta["auto_repair_block_codes"] = list(repairable_hit)
+                sc.metadata_json = sc_meta
+            chapter_meta.pop("blocked_by_write_safety_gate", None)
+            chapter_meta.pop("write_safety_block_code", None)
+            chapter_meta.pop("write_safety_hint", None)
+            chapter_meta["auto_repair_last_block_codes"] = list(repairable_hit)
+            chapter.metadata_json = chapter_meta
+            chapter.production_state = "pending"
+            await session.flush()
+            return True, repairable_hit
+        # code stored but not repairable — fall through to normal path
+
     if latest_report is None:
         return False, ()
 
@@ -4376,7 +4710,9 @@ async def maybe_prepare_chapter_auto_repair(
     if not block_codes:
         return False, ()
 
-    repairable_hit = tuple(c for c in block_codes if c in repair_set)
+    repairable_hit = tuple(
+        c for c in block_codes if _canonical_repair_code(c) in repair_set
+    )
     if not repairable_hit:
         logger.info(
             "chapter %d: block codes %s are not in repair allowlist %s — "
@@ -4390,16 +4726,32 @@ async def maybe_prepare_chapter_auto_repair(
     # Human-readable remediation hint — persisted under
     # ``scene.metadata_json["auto_repair_hint"]``.  Downstream the scene
     # writer picks this up and injects it into the rewrite reference block.
+    canonical_hits = {_canonical_repair_code(code) for code in repairable_hit}
     hint_fragments: list[str] = []
-    if "BLOCK_LOW" in repairable_hit:
+    if "BLOCK_LOW" in canonical_hits:
         hint_fragments.append(
             "上一版本章节总字数过短，本次重写请在保留所有情节节拍的前提下，"
             "大幅扩写环境、感官、心理与对话，让本场景至少达到 target_word_count。"
         )
-    if "BLOCK_HIGH" in repairable_hit:
+    if "BLOCK_HIGH" in canonical_hits:
         hint_fragments.append(
             "上一版本章节总字数过长，本次重写请压缩冗余的叙述与重复描写，"
             "优先保留冲突、决策与反转，使本场景回到 target_word_count 范围内。"
+        )
+    if "DIALOG_UNPAIRED" in canonical_hits:
+        hint_fragments.append(
+            "上一版本存在未闭合或孤立的对话标记。本次重写请检查每一句对话的"
+            "开闭引号、说话人归属与上下文回应，避免留下半句对白或无回应对白。"
+        )
+    if "ENDING_SENTENCE_WEAK" in canonical_hits:
+        hint_fragments.append(
+            "上一版本的章节结尾缺少明确钩子。本次重写请把最后一段改成新的威胁、"
+            "发现、决定或反转，避免以平静收束、总结感想或问题已解决的句子结尾。"
+        )
+    if "character_resurrection" in canonical_hits:
+        hint_fragments.append(
+            "场景中出现了已死亡角色的活动。请检查所有场景参与者的生命状态，"
+            "确保已故角色不再以任何形式（出场、对话、回忆等）出现在当前章节中。"
         )
     # Fallback so the writer still sees *something* if a new code is added
     # to the allowlist without its own phrasing.
@@ -4410,9 +4762,8 @@ async def maybe_prepare_chapter_auto_repair(
         )
     repair_hint = "\n".join(hint_fragments)
 
-    # Reset the chapter state so the next gate pass is fresh.
-    chapter.production_state = None
-
+    # Load scenes first (before any state mutation) so that if the query fails
+    # we abort without having touched chapter.production_state.
     scenes = list(
         await session.scalars(
             select(SceneCardModel)
@@ -4427,7 +4778,7 @@ async def maybe_prepare_chapter_auto_repair(
     # from the shortfall ratio when the report row carries word-count
     # metadata, otherwise we use a gentle +20% default, capped at 1.5x.
     low_scale: float = 1.0
-    if "BLOCK_LOW" in repairable_hit:
+    if "BLOCK_LOW" in canonical_hits:
         try:
             _length_meta = payload.get("length_stability") or {}
             wc = int(_length_meta.get("word_count") or 0)
@@ -4443,18 +4794,37 @@ async def maybe_prepare_chapter_auto_repair(
     # Reset every scene of this chapter to NEEDS_REWRITE and write the
     # auto-repair hint into ``metadata_json`` — keeping any prior hint so
     # successive repair cycles don't wipe upstream context.
+    dead_names = (
+        await _load_dead_character_names_before_chapter(
+            session,
+            project.id,
+            chapter.chapter_number,
+        )
+        if "character_resurrection" in canonical_hits
+        else frozenset()
+    )
     reset_count = 0
     for sc in scenes:
         sc.status = SceneStatus.NEEDS_REWRITE.value
+        removed = _filter_dead_scene_participants(sc, dead_names)
+        scene_hint = repair_hint
+        if removed:
+            removed_text = "、".join(removed)
+            scene_hint = (
+                f"{repair_hint}\n"
+                f"系统已从本场景参与者列表移除已故角色：{removed_text}。"
+                "本次必须围绕剩余存活角色重新生成，禁止继续用回忆、幽灵、"
+                "幻象或旁白让这些角色承担活跃场景功能。"
+            )
         meta = dict(sc.metadata_json or {})
         existing_hint = str(meta.get("auto_repair_hint") or "").strip()
         merged_hint = (
-            f"{existing_hint}\n{repair_hint}" if existing_hint else repair_hint
+            f"{existing_hint}\n{scene_hint}" if existing_hint else scene_hint
         )
         meta["auto_repair_hint"] = merged_hint
         meta["auto_repair_block_codes"] = list(repairable_hit)
         sc.metadata_json = meta
-        if "BLOCK_LOW" in repairable_hit and low_scale > 1.0:
+        if "BLOCK_LOW" in canonical_hits and low_scale > 1.0:
             try:
                 original_target = int(sc.target_word_count or 0)
                 if original_target > 0:
@@ -4483,6 +4853,18 @@ async def maybe_prepare_chapter_auto_repair(
             exc_info=True,
         )
 
+    # ONLY reset production_state after all scene mutations succeed.  The
+    # column is NOT NULL, so use the normal "pending" state instead of None.
+    chapter_meta = dict(chapter.metadata_json or {})
+    chapter_meta.pop("blocked_by_write_safety_gate", None)
+    chapter_meta.pop("write_safety_block_code", None)
+    chapter_meta.pop("write_safety_hint", None)
+    chapter_meta["auto_repair_last_block_codes"] = list(repairable_hit)
+    chapter.metadata_json = chapter_meta
+    chapter.production_state = "pending"
+
+    # Flush everything in one shot after all state changes are internally
+    # consistent.
     await session.flush()
     logger.info(
         "chapter %d: auto-repair triggered (%d scenes reset) — block codes %s",

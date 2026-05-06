@@ -78,6 +78,51 @@ def _unique_preserve(items: list[str]) -> list[str]:
     return result
 
 
+def _dedupe_emotion_track_specs(specs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    used: set[str] = set()
+    deduped: list[dict[str, Any]] = []
+    max_length = 64
+
+    for spec in specs:
+        raw_code = spec.get("track_code")
+        base = str(raw_code).strip()[:max_length] if raw_code is not None else ""
+        if not base:
+            base = "track"
+        track_code = base
+        if track_code in used:
+            suffix_index = 2
+            while True:
+                suffix = f"-{suffix_index}"
+                candidate = f"{base[: max_length - len(suffix)]}{suffix}"
+                if candidate not in used:
+                    track_code = candidate
+                    break
+                suffix_index += 1
+        used.add(track_code)
+        deduped.append({**spec, "track_code": track_code})
+
+    return deduped
+
+
+def _is_volume_active(volume_number: int, active_volumes: list[Any]) -> bool:
+    """Check if a volume number is active, handling both int and dict range formats.
+
+    LLM sometimes outputs active_volumes items as {'start_volume': N, 'end_volume': M}
+    instead of plain integers.
+    """
+    for av in active_volumes:
+        if isinstance(av, dict):
+            start = av.get("start_volume")
+            end = av.get("end_volume")
+            if isinstance(start, int) and isinstance(end, int):
+                if start <= volume_number <= end:
+                    return True
+        elif isinstance(av, int):
+            if av == volume_number:
+                return True
+    return False
+
+
 def _build_arc_specs(
     project: ProjectModel,
     *,
@@ -224,7 +269,15 @@ def _build_arc_specs(
         # Determine active volumes from character metadata
         antag_meta = extra_antag.metadata_json if isinstance(extra_antag.metadata_json, dict) else {}
         active_vols = antag_meta.get("active_volumes", [])
-        scope_vol = active_vols[0] if active_vols else None
+        scope_vol_raw = active_vols[0] if active_vols else None
+        # LLM sometimes outputs a range dict like {'start_volume': 6, 'end_volume': 11}
+        # instead of an integer or a list of integers. Normalize to int.
+        if isinstance(scope_vol_raw, dict):
+            scope_vol = scope_vol_raw.get("start_volume")
+        elif isinstance(scope_vol_raw, int):
+            scope_vol = scope_vol_raw
+        else:
+            scope_vol = None
         arc_specs.append(
             {
                 "arc_code": f"volume_conflict_{extra_antag.name.lower().replace(' ', '_')}",
@@ -881,13 +934,13 @@ def _build_antagonist_plan_specs(
         extras = [c for c in (all_antagonists or []) if antagonist is None or c.id != antagonist.id]
         for extra in extras:
             extra_meta = extra.metadata_json if isinstance(extra.metadata_json, dict) else {}
-            if volume.volume_number in (extra_meta.get("active_volumes") or []):
+            if _is_volume_active(volume.volume_number, extra_meta.get("active_volumes") or []):
                 plan_antagonist = extra
                 break
         if plan_antagonist is None and antagonist is not None:
             prim_meta = antagonist.metadata_json if isinstance(antagonist.metadata_json, dict) else {}
             prim_active = prim_meta.get("active_volumes") or []
-            if not prim_active or volume.volume_number in prim_active:
+            if not prim_active or _is_volume_active(volume.volume_number, prim_active):
                 plan_antagonist = antagonist
         if plan_antagonist is None:
             plan_antagonist = antagonist
@@ -1201,7 +1254,7 @@ def _build_subplot_schedule_specs(
 
             # Hidden arcs stay dormant/mention until their active volume
             if plotline_visibility == "hidden":
-                if active_volumes and ch_vol not in active_volumes:
+                if active_volumes and not _is_volume_active(ch_vol, active_volumes):
                     prominence = "dormant"
                 elif arc_code in chapter_beat_arc_codes:
                     prominence = "secondary"  # hidden arcs don't dominate
@@ -1211,7 +1264,7 @@ def _build_subplot_schedule_specs(
                     prominence = "dormant"
             # Volume-scoped arcs are only active in their volumes
             elif active_volumes:
-                if ch_vol in active_volumes:
+                if _is_volume_active(ch_vol, active_volumes):
                     if arc_code in chapter_beat_arc_codes:
                         prominence = "primary"
                     else:
@@ -1747,6 +1800,7 @@ async def rebuild_narrative_graph(
         relationships=relationships,
         characters_by_id=characters_by_id,
     )
+    emotion_track_specs = _dedupe_emotion_track_specs(emotion_track_specs)
     emotion_track_models: list[EmotionTrackModel] = []
     for spec in emotion_track_specs:
         emotion_track = EmotionTrackModel(

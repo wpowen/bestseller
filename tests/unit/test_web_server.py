@@ -485,6 +485,54 @@ def test_auto_resume_zombies_delegates_when_redis_unreachable(
     assert task["current_stage"] == "delegated_to_worker_self_heal"
 
 
+def test_manual_resume_delegates_when_worker_heal_owns_slug(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Manual resume must not spawn a web thread for a slug already owned
+    by worker self-heal. Otherwise the two paths race on the same project row.
+    """
+    persist_path = _write_persisted_tasks(
+        tmp_path,
+        [
+            {
+                "task_id": "failed-heal-owned",
+                "task_type": "autowrite",
+                "status": "failed",
+                "created_at": "2026-01-01T00:00:00+00:00",
+                "updated_at": "2026-01-01T00:05:00+00:00",
+                "project_slug": "novel-a",
+                "title": "A",
+                "current_stage": "failed",
+                "progress_events": [],
+                "payload": {"slug": "novel-a", "title": "A"},
+            },
+        ],
+    )
+    manager = web_server.WebTaskManager(persist_path=persist_path)
+    invocations: list[str] = []
+
+    def fake_worker(self: object, task_id: str, payload: dict[str, object]) -> None:  # noqa: ARG001
+        invocations.append(task_id)
+
+    monkeypatch.setattr(web_server.WebTaskManager, "_run_autowrite_worker", fake_worker)
+
+    resumed = manager.resume_autowrite_task(
+        "failed-heal-owned",
+        {"slug": "novel-a", "title": "A"},
+        delegate_to_self_heal=True,
+        heal_owned=True,
+    )
+
+    assert isinstance(resumed, dict)
+    assert resumed["status"] == "running"
+    assert resumed["current_stage"] == "delegated_to_worker_self_heal"
+    assert invocations == []
+    task = manager.get_task("failed-heal-owned")
+    assert task is not None
+    assert task["progress_events"][-1]["stage"] == "delegated_to_worker_self_heal"
+    assert task["progress_events"][-1]["payload"]["heal_owned"] is True
+
+
 def test_fetch_heal_owned_slugs_parses_arq_keys(monkeypatch: pytest.MonkeyPatch) -> None:
     """The helper must scan all three ARQ heal-job key prefixes
     (``arq:job:``, ``arq:in-progress:``, ``arq:retry:``) and collect the

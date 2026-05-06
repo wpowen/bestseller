@@ -1008,6 +1008,73 @@ def test_render_story_bible_includes_participant_background() -> None:
     assert "旧搭档" in result
 
 
+def test_render_story_bible_renders_protected_characters_with_hard_warning() -> None:
+    """Forward death protection: characters whose planned death is later
+    than this chapter MUST surface as a hard "stay alive" constraint, so
+    the writer LLM cannot prematurely kill a character whose death is
+    scheduled hundreds of chapters away. This is the fix for the ch6
+    苏瑶 / 陆沉 incident."""
+    context = {
+        "protected_characters": [
+            {"name": "苏瑶", "death_chapter_number": 435, "role": "antagonist"},
+            {"name": "陆沉", "death_chapter_number": 458, "role": "mentor"},
+        ],
+    }
+    result = _render_story_bible_section(context)
+    # Both protected names appear together with their planned chapter
+    assert "苏瑶" in result
+    assert "435" in result
+    assert "陆沉" in result
+    assert "458" in result
+    # The block uses uppercase / hard-warning framing so the LLM cannot
+    # treat it as a soft suggestion.
+    assert "保护名单" in result
+    assert "本章必须存活" in result
+
+
+def test_render_story_bible_renders_participant_inner_structure() -> None:
+    """Saturation fix: the writer prompt must surface lie/want/need/ghost
+    /flaw for every active participant, not just the POV. Previously
+    only ``build_arc_beat_block`` rendered these — and only for the POV
+    — leaving every supporting character flat.
+    """
+    context = {
+        "participants": [
+            {
+                "name": "顾临",
+                "role": "ally",
+                "background": "前刑侦，转行做调查记者。",
+                "goal": "破译失踪舰队真相",
+                "arc_state": "questioning",
+                "power_tier": "调查员",
+                "inner_structure": {
+                    "lie_believed": "正义需要在体制内才能伸张",
+                    "truth_to_learn": "有些真相只有在体制外才说得出口",
+                    "want_external": "重返刑警岗位",
+                    "need_internal": "承认体制的局限性",
+                    "fatal_flaw": "对权威盲从",
+                    "fear_core": "再次被同袍背叛",
+                },
+                "moral_framework": {
+                    "lines_will_not_cross": ["伪造证据", "栽赃"],
+                    "moral_compass": "结果导向但守底线",
+                },
+            },
+        ],
+    }
+    result = _render_story_bible_section(context)
+    assert "角色内在结构" in result
+    # All five core inner-structure axes surface in the prompt
+    assert "相信的谎言" in result
+    assert "需要学到的真相" in result
+    assert "表层目标" in result
+    assert "内在需求" in result
+    assert "致命缺陷" in result
+    # Moral framework — bottom-line constraints make character action sticky
+    assert "绝不跨越的底线" in result
+    assert "伪造证据" in result
+
+
 # ── Draft mode: ScenePipelineResult accepts optional review fields ──────
 
 

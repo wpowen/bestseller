@@ -2227,3 +2227,84 @@ class BookGenerationScheduleModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     fired_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     error_message: Mapped[str | None] = mapped_column(Text())
     requested_by: Mapped[str | None] = mapped_column(String(64))
+
+
+class InterpersonalPromiseModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Promises / oaths / debts between two characters in the story.
+
+    Distinct from ``setup_payoff`` (author→reader narrative debts) and
+    ``chase_debt_ledger`` (override-contract narrative debts) — those
+    track the contract between book and reader. This table tracks the
+    contract between people inside the story: a master's deathbed wish,
+    a vow to avenge a lover, an oath to protect a sister. When the
+    promisor or promisee dies, the death-ripple service auto-transitions
+    the row to ``inherited`` (if a successor exists) or ``lapsed``.
+    """
+
+    __tablename__ = "interpersonal_promises"
+    __table_args__ = (
+        Index(
+            "idx_interpersonal_promises_project_status",
+            "project_id",
+            "status",
+        ),
+        Index(
+            "idx_interpersonal_promises_promisor",
+            "project_id",
+            "promisor_id",
+        ),
+        Index(
+            "idx_interpersonal_promises_promisee",
+            "project_id",
+            "promisee_id",
+        ),
+        Index(
+            "idx_interpersonal_promises_due_chapter",
+            "project_id",
+            "due_chapter_number",
+        ),
+        CheckConstraint(
+            "status IN ('active','fulfilled','broken','inherited','lapsed','cancelled')",
+            name="ck_interpersonal_promises_status",
+        ),
+        CheckConstraint(
+            "promisor_id IS NULL OR promisee_id IS NULL OR "
+            "promisor_id <> promisee_id",
+            name="ck_interpersonal_promises_distinct",
+        ),
+    )
+
+    project_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    promisor_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("characters.id", ondelete="SET NULL"),
+    )
+    promisee_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("characters.id", ondelete="SET NULL"),
+    )
+    promisor_label: Mapped[str] = mapped_column(Text(), nullable=False)
+    promisee_label: Mapped[str] = mapped_column(Text(), nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    kind: Mapped[str | None] = mapped_column(String(32))
+    made_chapter_number: Mapped[int | None] = mapped_column(Integer)
+    due_chapter_number: Mapped[int | None] = mapped_column(Integer)
+    status: Mapped[str] = mapped_column(
+        String(16),
+        nullable=False,
+        server_default=text("'active'"),
+    )
+    resolved_chapter_number: Mapped[int | None] = mapped_column(Integer)
+    resolution_summary: Mapped[str | None] = mapped_column(Text)
+    inherited_by_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("characters.id", ondelete="SET NULL"),
+    )
+    inherited_by_label: Mapped[str | None] = mapped_column(Text())
+    metadata_json: Mapped[JSON_DICT] = mapped_column(
+        "metadata", JSONB, nullable=False, default=dict
+    )

@@ -1572,6 +1572,460 @@ async def _repair_cast_foundation_if_needed(
         return cast_spec_payload, None
 
 
+_CAST_PERSONHOOD_REPAIR_CODES: frozenset[str] = frozenset(
+    {
+        "CHARACTER_IP_ANCHOR_MISSING",
+        "CORE_WOUND_MISSING",
+        "CHARACTER_PERSONHOOD_INCOMPLETE",
+        "VILLAIN_CHARISMA_MISSING",
+        "ANTAGONIST_MOTIVE_OVERLAP",
+    }
+)
+
+
+def _truthy_values(value: Any) -> bool:
+    if value is None:
+        return False
+    if isinstance(value, str):
+        return bool(value.strip())
+    if isinstance(value, dict):
+        return any(_truthy_values(item) for item in value.values())
+    if isinstance(value, (list, tuple, set)):
+        return any(_truthy_values(item) for item in value)
+    return True
+
+
+def _role_requires_ip_anchor(role: str) -> int:
+    role_lower = role.lower()
+    if "protagonist" in role_lower:
+        return 3
+    if "antagonist" in role_lower:
+        return 2
+    return 0
+
+
+def _short_character_basis(character: dict[str, Any], *, is_en: bool) -> str:
+    for key in ("fear", "secret", "goal", "background", "flaw"):
+        value = character.get(key)
+        if isinstance(value, str) and value.strip():
+            text = value.strip()
+            return text[:120]
+    return "the central wound behind the story" if is_en else "故事核心伤口"
+
+
+def _ensure_min_strings(items: Any, additions: list[str], minimum: int) -> list[str]:
+    current = _string_list(items)
+    for addition in additions:
+        if len(current) >= minimum:
+            break
+        if addition and addition not in current:
+            current.append(addition)
+    return current
+
+
+def _synthesized_quirks(
+    character: dict[str, Any],
+    *,
+    required: int,
+    is_en: bool,
+) -> list[str]:
+    name = _non_empty_string(character.get("name"), "the character" if is_en else "角色")
+    basis = _short_character_basis(character, is_en=is_en)
+    if is_en:
+        candidates = [
+            f"{name} checks exits before answering difficult questions.",
+            f"{name} touches a worn personal object when {basis} is mentioned.",
+            f"{name} repeats the last factual detail aloud before making a risky choice.",
+            f"{name} keeps their voice controlled until someone threatens an innocent.",
+        ]
+    else:
+        candidates = [
+            f"{name}进入陌生空间会先确认退路和窗位。",
+            f"提到「{basis}」相关线索时，{name}会下意识停顿半拍。",
+            f"{name}做危险决定前会把最后一个事实低声复述一遍。",
+            f"一旦有人威胁无辜者，{name}说话会突然压低到近乎无声。",
+        ]
+    return _ensure_min_strings(
+        _mapping(character.get("ip_anchor")).get("quirks"),
+        candidates,
+        required,
+    )
+
+
+def _synthesize_character_bible_fields(
+    character: dict[str, Any],
+    *,
+    is_en: bool,
+) -> dict[str, Any]:
+    repaired = copy.deepcopy(character)
+    name = _non_empty_string(repaired.get("name"), "the character" if is_en else "角色")
+    role = _non_empty_string(repaired.get("role"), "supporting")
+    role_lower = role.lower()
+    required_quirks = _role_requires_ip_anchor(role)
+    basis = _short_character_basis(repaired, is_en=is_en)
+
+    if required_quirks:
+        anchor = copy.deepcopy(_mapping(repaired.get("ip_anchor")))
+        anchor["quirks"] = _synthesized_quirks(
+            repaired,
+            required=required_quirks,
+            is_en=is_en,
+        )
+        anchor["sensory_signatures"] = _ensure_min_strings(
+            anchor.get("sensory_signatures"),
+            (
+                [
+                    f"a restrained pause before {name} speaks",
+                    "the dry smell of paper, metal, and rain",
+                ]
+                if is_en
+                else [
+                    f"{name}开口前那一瞬克制的停顿",
+                    "纸张、金属与雨水混在一起的冷味",
+                ]
+            ),
+            1,
+        )
+        anchor["signature_objects"] = _ensure_min_strings(
+            anchor.get("signature_objects"),
+            (
+                [f"{name}'s worn notebook", "a marked token kept out of sight"]
+                if is_en
+                else [f"{name}随身带着的旧册", "一枚总被藏在袖中的旧物"]
+            ),
+            1,
+        )
+        if not _non_empty_string(anchor.get("core_wound"), ""):
+            anchor["core_wound"] = (
+                f"{name} once trusted the wrong version of events around {basis}, and someone else paid the price."
+                if is_en
+                else f"{name}曾在「{basis}」上相信过错误叙事，结果让一个无法补偿的人替自己付出代价。"
+            )
+        repaired["ip_anchor"] = anchor
+
+    if "protagonist" in role_lower:
+        psych = copy.deepcopy(_mapping(repaired.get("psych_profile")))
+        if not _truthy_values(psych):
+            psych = (
+                {
+                    "mbti": "INTJ",
+                    "enneagram": "6w5",
+                    "attachment_style": "avoidant-secure under earned trust",
+                    "big_five": {
+                        "openness": 68,
+                        "conscientiousness": 84,
+                        "extraversion": 34,
+                        "agreeableness": 46,
+                        "neuroticism": 62,
+                    },
+                    "cognitive_biases": ["threat scanning", "responsibility overreach"],
+                    "temperament": "guarded analytical",
+                }
+                if is_en
+                else {
+                    "mbti": "INTJ",
+                    "enneagram": "6w5",
+                    "attachment_style": "回避型，但在被反复证明可信后转向稳定依恋",
+                    "big_five": {
+                        "openness": 68,
+                        "conscientiousness": 84,
+                        "extraversion": 34,
+                        "agreeableness": 46,
+                        "neuroticism": 62,
+                    },
+                    "cognitive_biases": ["威胁扫描", "责任过度归因"],
+                    "temperament": "克制的分析型",
+                }
+            )
+        repaired["psych_profile"] = psych
+
+        history = copy.deepcopy(_mapping(repaired.get("life_history")))
+        if not _truthy_values(history):
+            history = (
+                {
+                    "formative_events": [
+                        {
+                            "title": f"The cost of {basis}",
+                            "summary": f"{name} learned that a wrong conclusion can ruin someone else's life.",
+                            "impact": "Turns every later choice into an attempt to verify one more fact.",
+                        }
+                    ],
+                    "education": "self-trained through pressure, investigation, and repeated loss",
+                    "defining_moments": [f"Chose the harder truth over the safer official story."],
+                    "regrets": [f"Did not question {basis} early enough."],
+                }
+                if is_en
+                else {
+                    "formative_events": [
+                        {
+                            "title": f"围绕「{basis}」付出的代价",
+                            "summary": f"{name}第一次明白，错误判断会让别人替自己承受后果。",
+                            "impact": "从此每个重大选择都要多核验一个事实。",
+                        }
+                    ],
+                    "education": "在压力、调查和反复失去中形成的自学路径",
+                    "defining_moments": ["选择更痛的真相，而不是更安全的官方说法。"],
+                    "regrets": [f"没能更早质疑「{basis}」。"],
+                }
+            )
+        repaired["life_history"] = history
+
+        family = copy.deepcopy(_mapping(repaired.get("family_imprint")))
+        if not _truthy_values(family):
+            family = (
+                {
+                    "parenting_style": "love expressed through demands and silence",
+                    "family_socioeconomic": "unstable respectability",
+                    "sibling_dynamics": "learned to become the responsible one before being ready",
+                    "inherited_values": ["protect first, explain later", "debts must be repaid"],
+                }
+                if is_en
+                else {
+                    "parenting_style": "以要求和沉默表达爱的家庭模式",
+                    "family_socioeconomic": "体面但随时可能坠落的不稳定阶层",
+                    "sibling_dynamics": "过早学会承担那个必须负责的人",
+                    "inherited_values": ["先保护，再解释", "欠下的债必须偿还"],
+                }
+            )
+        repaired["family_imprint"] = family
+
+        beliefs = copy.deepcopy(_mapping(repaired.get("beliefs")))
+        if not _truthy_values(beliefs):
+            beliefs = (
+                {
+                    "philosophical_stance": "truth is a duty, not a comfort",
+                    "ideology": "systems only deserve loyalty when they protect the vulnerable",
+                    "crisis_of_faith": f"Whether exposing {basis} will destroy the people {name} wants to save.",
+                }
+                if is_en
+                else {
+                    "philosophical_stance": "真相不是安慰，而是一种责任",
+                    "ideology": "制度只有在保护弱者时才值得忠诚",
+                    "crisis_of_faith": f"揭开「{basis}」是否会反而毁掉{name}想保护的人。",
+                }
+            )
+        repaired["beliefs"] = beliefs
+
+    if "antagonist" in role_lower:
+        charisma = copy.deepcopy(_mapping(repaired.get("villain_charisma")))
+        if not _non_empty_string(charisma.get("noble_motivation"), ""):
+            charisma["noble_motivation"] = (
+                f"{name} believes harsh control can prevent a larger collapse."
+                if is_en
+                else f"{name}相信残酷控制可以阻止更大范围的崩塌。"
+            )
+        if not _non_empty_string(charisma.get("pain_origin"), ""):
+            charisma["pain_origin"] = (
+                f"A past failure around {basis} convinced {name} that mercy only creates future victims."
+                if is_en
+                else f"围绕「{basis}」的一次失败让{name}相信，仁慈只会制造更多未来受害者。"
+            )
+        if not _truthy_values(charisma.get("redeeming_qualities")):
+            charisma["redeeming_qualities"] = (
+                ["keeps promises to dependents", "never forgets the people lost in the first disaster"]
+                if is_en
+                else ["会兑现对依附者的承诺", "始终记得第一场灾难里失去的人"]
+            )
+        if not _non_empty_string(charisma.get("philosophical_appeal"), ""):
+            charisma["philosophical_appeal"] = (
+                "Order can look merciful when everyone remembers chaos."
+                if is_en
+                else "当所有人都记得混乱的代价时，秩序看起来也会像一种仁慈。"
+            )
+        if not _truthy_values(charisma.get("personal_code")):
+            charisma["personal_code"] = (
+                ["does not betray written bargains", "does not waste sacrifice for vanity"]
+                if is_en
+                else ["不会背弃明文交易", "不会为了虚荣浪费牺牲"]
+            )
+        if not _non_empty_string(charisma.get("tragic_irony"), ""):
+            charisma["tragic_irony"] = (
+                f"To prevent another {basis}, {name} becomes the reason others repeat the same wound."
+                if is_en
+                else f"为了阻止「{basis}」重演，{name}反而成为让更多人承受同类伤口的人。"
+            )
+        if not _non_empty_string(charisma.get("protagonist_mirror"), ""):
+            charisma["protagonist_mirror"] = (
+                f"Both {name} and the protagonist want to stop loss; they differ on who may be sacrificed."
+                if is_en
+                else f"{name}和主角都想阻止失去，只是对谁可以被牺牲给出了相反答案。"
+            )
+        repaired["villain_charisma"] = charisma
+
+    return repaired
+
+
+def _synthesize_missing_cast_bible_fields(
+    project: ProjectModel,
+    cast_spec_payload: dict[str, Any],
+) -> dict[str, Any]:
+    """Fill remaining L2 character-bible fields from existing cast facts.
+
+    This is a hard fallback after LLM repair. It writes actual character
+    anchors/personhood data derived from the role, goal, fear, secret, and
+    background already present in the cast; it does not mark deficiencies as
+    ignored.
+    """
+
+    cast_spec = parse_cast_spec_input(cast_spec_payload)
+    normalized = cast_spec.model_dump(mode="json")
+    is_en = is_english_language(getattr(project, "language", None))
+    repaired = copy.deepcopy(_mapping(cast_spec_payload))
+    if normalized.get("protagonist"):
+        repaired["protagonist"] = _synthesize_character_bible_fields(
+            normalized["protagonist"],
+            is_en=is_en,
+        )
+    if normalized.get("antagonist"):
+        repaired["antagonist"] = _synthesize_character_bible_fields(
+            normalized["antagonist"],
+            is_en=is_en,
+        )
+    repaired["supporting_cast"] = [
+        _synthesize_character_bible_fields(character, is_en=is_en)
+        for character in _mapping_list(normalized.get("supporting_cast"))
+    ]
+    repaired["antagonist_forces"] = normalized.get("antagonist_forces") or []
+    repaired["conflict_map"] = normalized.get("conflict_map") or []
+    return repaired
+
+
+async def _repair_cast_personhood_if_needed(
+    *,
+    session: AsyncSession,
+    settings: Any,
+    project: ProjectModel,
+    book_spec_payload: dict[str, Any],
+    world_spec_payload: dict[str, Any],
+    cast_spec_payload: dict[str, Any],
+    workflow_run_id: UUID,
+) -> tuple[dict[str, Any], UUID | None]:
+    """Regenerate CastSpec once when the character bible is structurally thin.
+
+    This wires the L2 Bible Gate feedback into the generation path for the
+    fields that CastSpec can actually fix: IP anchors, protagonist personhood,
+    primary-antagonist charisma, and antagonist motive separation. Non-cast deficiencies remain the
+    materialization gate's responsibility.
+    """
+
+    try:
+        from bestseller.services.bible_gate import (
+            BibleCompletenessReport,
+            build_draft_from_materialization_content,
+            validate_bible_completeness,
+        )
+        from bestseller.services.invariants import (
+            invariants_from_dict,
+            seed_invariants,
+        )
+
+        if getattr(project, "invariants_json", None):
+            invariants = invariants_from_dict(project.invariants_json)
+        else:
+            invariants = seed_invariants(
+                project_id=project.id,
+                language=getattr(project, "language", None),
+                words_per_chapter=getattr(
+                    settings.generation,
+                    "words_per_chapter",
+                    None,
+                ),
+            )
+        draft = build_draft_from_materialization_content(
+            book_spec_content=book_spec_payload,
+            world_spec_content=world_spec_payload,
+            cast_spec_content=cast_spec_payload,
+        )
+        report = validate_bible_completeness(draft, invariants)
+    except Exception:
+        logger.debug("Cast personhood bible scan failed (non-fatal)", exc_info=True)
+        return cast_spec_payload, None
+
+    actionable = tuple(
+        d for d in report.deficiencies if d.code in _CAST_PERSONHOOD_REPAIR_CODES
+    )
+    if not actionable:
+        return cast_spec_payload, None
+
+    logger.warning(
+        "Cast personhood gate found %d actionable deficiency(ies); attempting repair.",
+        len(actionable),
+    )
+
+    try:
+        language = _planner_language(project)
+        is_en = is_english_language(language)
+        repair_report = BibleCompletenessReport(deficiencies=actionable)
+        repair_system, repair_user = _cast_spec_prompts(
+            project, book_spec_payload, world_spec_payload
+        )
+        repair_user += (
+            "\n\n[Character bible repair - regenerate CastSpec to satisfy "
+            "these hard requirements]\n"
+            if is_en
+            else "\n\n【人物圣经修复 — 请重生 CastSpec 以满足以下硬性要求】\n"
+        )
+        repair_user += repair_report.feedback_for_regen()
+        repair_user += (
+            "\nRegenerate the ENTIRE CastSpec JSON. Preserve the core premise, names, "
+            "relationships, antagonist_forces, and conflict_map when possible, but "
+            "fill every missing IP anchor, personhood layer, and villain charisma field; "
+            "also separate any overlapping antagonist motives. "
+            "Do not return a partial patch."
+            if is_en
+            else "\n请重新生成整份 CastSpec JSON。尽量保留核心设定、角色姓名、关系、"
+            "antagonist_forces 和 conflict_map，但必须补齐所有缺失的 IP 锚点、"
+            "人格底层和反派魅力字段，并拆分任何过度重合的反派动机。不要输出局部补丁。"
+        )
+
+        repaired_payload, repair_llm_run_id = await _generate_structured_artifact(
+            session,
+            settings,
+            project=project,
+            logical_name="cast_spec_personhood_repair",
+            system_prompt=repair_system,
+            user_prompt=repair_user,
+            fallback_payload=cast_spec_payload,
+            workflow_run_id=workflow_run_id,
+            validator=parse_cast_spec_input,
+        )
+        if not isinstance(repaired_payload, dict):
+            return cast_spec_payload, None
+        repaired_payload = _synthesize_missing_cast_bible_fields(
+            project,
+            repaired_payload,
+        )
+
+        try:
+            repaired_draft = build_draft_from_materialization_content(
+                book_spec_content=book_spec_payload,
+                world_spec_content=world_spec_payload,
+                cast_spec_content=repaired_payload,
+            )
+            repaired_report = validate_bible_completeness(repaired_draft, invariants)
+            repaired_actionable = [
+                d
+                for d in repaired_report.deficiencies
+                if d.code in _CAST_PERSONHOOD_REPAIR_CODES
+            ]
+            if len(repaired_actionable) >= len(actionable):
+                logger.warning(
+                    "Cast personhood repair did not reduce deficiencies "
+                    "(%d -> %d); keeping original.",
+                    len(actionable),
+                    len(repaired_actionable),
+                )
+                return cast_spec_payload, None
+        except Exception:
+            logger.debug("Cast personhood repaired payload validation failed", exc_info=True)
+            return cast_spec_payload, None
+
+        return repaired_payload, repair_llm_run_id
+    except Exception:
+        logger.warning("Cast personhood repair failed; keeping original cast spec.", exc_info=True)
+        return cast_spec_payload, None
+
+
 async def _repair_world_spec_richness_if_needed(
     *,
     session: AsyncSession,
@@ -2530,6 +2984,176 @@ def _build_protagonist_from_category(
     }
 
 
+def _fallback_expected_character_count(project: ProjectModel) -> int:
+    """Return a bounded expected named-cast count for Bible gate sizing."""
+
+    target_chapters = max(int(getattr(project, "target_chapters", 0) or 0), 1)
+    return max(12, min(60, math.ceil(target_chapters / 15) + 8))
+
+
+def _fallback_theme_statement(
+    project: ProjectModel,
+    premise: str,
+    book_spec: dict[str, Any],
+) -> str:
+    themes = _string_list(book_spec.get("themes"))
+    if themes:
+        first_theme = themes[0]
+        if is_english_language(project.language):
+            return f"True power is proven by what a person refuses to sacrifice when {first_theme.lower()} is tested."
+        return f"真正的力量不是逃避{first_theme}，而是在代价逼近时仍守住自己不愿牺牲的东西。"
+
+    profile = _genre_profile(project.genre, language=project.language)
+    theme = _string_list(profile.get("themes"))[0] if _string_list(profile.get("themes")) else ""
+    if is_english_language(project.language):
+        return (
+            f"Survival becomes meaningful only when the protagonist can choose truth over control"
+            f" in a world shaped by {theme or 'fear'}."
+        )
+    return (
+        f"真正的胜利不是摆脱{theme or '恐惧'}，而是在真相与牺牲之间仍选择保护值得保护的人。"
+    )
+
+
+def _fallback_dramatic_question(
+    project: ProjectModel,
+    premise: str,
+    book_spec: dict[str, Any],
+) -> str:
+    protagonist = _mapping(book_spec.get("protagonist"))
+    protagonist_name = _non_empty_string(
+        protagonist.get("name"),
+        _derive_protagonist_name(
+            premise,
+            project.genre,
+            language=project.language,
+            seed_text=_project_name_seed(project, premise),
+        ),
+    )
+    external_goal = _non_empty_string(protagonist.get("external_goal"), "")
+    internal_need = _non_empty_string(protagonist.get("internal_need"), "")
+    if is_english_language(project.language):
+        goal_clause = external_goal.rstrip(".?!") if external_goal else "expose the truth behind the central crisis"
+        need_clause = internal_need.rstrip(".?!") if internal_need else "become someone who can trust others"
+        return f"Can {protagonist_name} {goal_clause} without losing the chance to {need_clause}?"
+    goal_clause = external_goal.rstrip("。？！") if external_goal else "查清核心危机背后的真相"
+    need_clause = internal_need.rstrip("。？！") if internal_need else "完成真正的自我转变"
+    return f"{protagonist_name}能否在{goal_clause}的同时，仍然{need_clause}？"
+
+
+def _fallback_naming_pool(
+    project: ProjectModel,
+    *,
+    premise: str,
+    desired_count: int,
+    reserved_names: list[str] | None = None,
+) -> list[str]:
+    seed_text = _project_name_seed(project, premise)
+    reserved = [name.strip() for name in (reserved_names or []) if isinstance(name, str) and name.strip()]
+    names = list(dict.fromkeys(reserved))
+
+    if is_english_language(project.language):
+        first_names = _stable_order(
+            [
+                "Mara", "Theo", "Nora", "Elias", "Rowan", "Iris", "Caleb", "Vera",
+                "Julian", "Mira", "Cassian", "Leah", "Silas", "Anika", "Dorian",
+                "Selene", "Jonah", "Rhea", "Adrian", "Lyra",
+            ],
+            seed_text=seed_text,
+            salt="naming-first",
+        )
+        last_names = _stable_order(
+            [
+                "Vale", "Cross", "Reed", "Hale", "Morrow", "Voss", "Ashford",
+                "Kade", "Lennox", "Stone", "Marsh", "Black", "Quinn", "Ward",
+                "Keene", "Rook", "Frost", "Sloane", "Wren", "Locke",
+            ],
+            seed_text=seed_text,
+            salt="naming-last",
+        )
+        for first in first_names:
+            for last in last_names:
+                candidate = f"{first} {last}"
+                if candidate not in names:
+                    names.append(candidate)
+                if len(names) >= desired_count:
+                    return names
+        return names
+
+    surnames = _stable_order(
+        [
+            "林", "沈", "陆", "顾", "谢", "苏", "秦", "叶", "周", "许",
+            "韩", "楚", "江", "白", "程", "姜", "洛", "方", "纪", "宋",
+        ],
+        seed_text=seed_text,
+        salt="naming-surname",
+    )
+    given_a = _stable_order(
+        [
+            "青", "玄", "昭", "怀", "知", "临", "远", "澜", "星", "砚",
+            "云", "照", "无", "清", "明", "若", "承", "景", "寒", "予",
+        ],
+        seed_text=seed_text,
+        salt="naming-given-a",
+    )
+    given_b = _stable_order(
+        [
+            "川", "衡", "辞", "微", "舟", "宁", "晏", "真", "珩", "野",
+            "棠", "声", "行", "尘", "阙", "安", "渊", "庭", "殊", "曜",
+        ],
+        seed_text=seed_text,
+        salt="naming-given-b",
+    )
+    for surname in surnames:
+        for first in given_a:
+            for second in given_b:
+                candidate = f"{surname}{first}{second}"
+                if candidate not in names:
+                    names.append(candidate)
+                if len(names) >= desired_count:
+                    return names
+    return names
+
+
+def _ensure_book_spec_bible_fields(
+    project: ProjectModel,
+    premise: str,
+    book_spec: dict[str, Any],
+) -> dict[str, Any]:
+    """Ensure BookSpec carries the project-level L2 Bible Gate fields."""
+
+    normalized = copy.deepcopy(_mapping(book_spec))
+    expected = normalized.get("expected_character_count")
+    try:
+        expected_count = int(expected)
+    except (TypeError, ValueError):
+        expected_count = 0
+    if expected_count <= 0:
+        expected_count = _fallback_expected_character_count(project)
+        normalized["expected_character_count"] = expected_count
+
+    if not _non_empty_string(normalized.get("theme_statement"), ""):
+        normalized["theme_statement"] = _fallback_theme_statement(project, premise, normalized)
+
+    if not _non_empty_string(normalized.get("dramatic_question"), ""):
+        normalized["dramatic_question"] = _fallback_dramatic_question(project, premise, normalized)
+
+    protagonist = _mapping(normalized.get("protagonist"))
+    reserved_names = [str(protagonist.get("name") or "").strip()]
+    existing_pool = _string_list(normalized.get("naming_pool"))
+    required_pool_size = max(1, expected_count * 2)
+    merged_pool = list(dict.fromkeys([*reserved_names, *existing_pool]))
+    if len([name for name in merged_pool if name]) < required_pool_size:
+        merged_pool = _fallback_naming_pool(
+            project,
+            premise=premise,
+            desired_count=required_pool_size,
+            reserved_names=merged_pool,
+        )
+    normalized["naming_pool"] = [name for name in merged_pool if name][:required_pool_size]
+    return normalized
+
+
 def _fallback_book_spec(project: ProjectModel, premise: str, *, category_key: str | None = None) -> dict[str, Any]:
     profile = _genre_profile(project.genre, category_key=category_key, language=project.language)
     writing_profile = _planner_writing_profile(project)
@@ -2552,7 +3176,7 @@ def _fallback_book_spec(project: ProjectModel, premise: str, *, category_key: st
     ]
     story_tags = _string_list(book_seed.get("tags")) + _string_list(book_seed.get("interaction_tags"))
     story_themes = _string_list(story_bible.get("side_threads"))
-    return {
+    book_spec = {
         "title": project.title,
         "logline": (
             _non_empty_string(story_bible.get("premise"), "")
@@ -2603,6 +3227,7 @@ def _fallback_book_spec(project: ProjectModel, premise: str, *, category_key: st
             "mainline_milestones": milestone_titles[:6],
         },
     }
+    return _ensure_book_spec_bible_fields(project, premise, book_spec)
 
 
 def _fallback_world_spec(project: ProjectModel, premise: str, book_spec: dict[str, Any], *, category_key: str | None = None) -> dict[str, Any]:
@@ -4814,15 +5439,30 @@ async def _next_chapter_number_for_volume(
     """Return the first ``chapter_number`` that a fresh replan of ``volume_number`` should use.
 
     Authority chain (strongest → weakest):
-      1. ``max(chapter_number) + 1`` across ALL chapters belonging to *earlier*
+      1. ``min(chapter_number)`` across chapters already belonging to this
+         volume. Replanning an existing volume must replace/update its current
+         chapter range, never append a duplicate copy after the book frontier.
+      2. ``max(chapter_number) + 1`` across ALL chapters belonging to *earlier*
          volumes (volume_number < N). This binds the start of volume N to the
          real DB layout regardless of what VOLUME_PLAN targets claim.
-      2. ``max(chapter_number) + 1`` across all chapters in the project when
+      3. ``max(chapter_number) + 1`` across all chapters in the project when
          no earlier-volume chapter exists (e.g. volume 1 or an empty project).
 
     Never trusts VOLUME_PLAN targets — those are exactly what drifted during
     the 200-chapter gap incident. Always ≥ 1.
     """
+    current_stmt = (
+        select(func.min(ChapterModel.chapter_number))
+        .join(VolumeModel, ChapterModel.volume_id == VolumeModel.id)
+        .where(
+            ChapterModel.project_id == project_id,
+            VolumeModel.volume_number == int(volume_number),
+        )
+    )
+    current_min = int(await session.scalar(current_stmt) or 0)
+    if current_min > 0:
+        return current_min
+
     prior_stmt = (
         select(func.max(ChapterModel.chapter_number))
         .join(VolumeModel, ChapterModel.volume_id == VolumeModel.id)
@@ -5340,7 +5980,10 @@ def _book_spec_prompts(project: ProjectModel, premise: str, fallback: dict[str, 
             f"{_story_package_block}\n"
             f"{_pp_book_spec}"
             f"{_methodology_line}"
-            "Generate a BookSpec JSON with title, logline, genre, target_audience, tone, themes, protagonist, stakes, and series_engine. "
+            "Generate a BookSpec JSON with title, logline, genre, target_audience, tone, themes, "
+            "theme_statement, dramatic_question, expected_character_count, naming_pool, protagonist, stakes, and series_engine. "
+            "theme_statement must be a single falsifiable sentence. dramatic_question must be a yes/no question answered only in the finale. "
+            "naming_pool must contain at least 2x expected_character_count style-consistent names. "
             "Inside series_engine, explicitly define the core serial engine, reader promise, first-three-chapter hook, chapter-ending hook strategy, and the rhythm of short and long payoffs."
         )
     else:
@@ -5358,7 +6001,10 @@ def _book_spec_prompts(project: ProjectModel, premise: str, fallback: dict[str, 
             f"{_pp_book_spec}"
             f"{_methodology_line}"
             "请生成一个 BookSpec JSON，包含 title、logline、genre、target_audience、tone、themes、"
+            "theme_statement、dramatic_question、expected_character_count、naming_pool、"
             "protagonist、stakes、series_engine。"
+            "theme_statement 必须是一句可被全书证明/反证的核心命题；dramatic_question 必须是结尾才能回答的 yes/no 问题；"
+            "naming_pool 至少包含 expected_character_count 两倍数量、风格一致的候选姓名。"
             "其中 series_engine 必须清楚写出：核心连载引擎、读者承诺、前三章抓手、章节尾钩策略、"
             "短回报与长回报的节奏安排。"
         )
@@ -7005,6 +7651,11 @@ async def generate_novel_plan(
         )
         if llm_run_id is not None:
             llm_run_ids.append(llm_run_id)
+        book_spec_payload = _ensure_book_spec_bible_fields(
+            project,
+            premise,
+            book_spec_payload,
+        )
 
         # ── Narrative-lines gate: validate the four-layer macro contract
         # (明线/暗线/隐藏线/核心轴) is present in the BookSpec before
@@ -7021,6 +7672,11 @@ async def generate_novel_plan(
         if narrative_lines_repair_llm_run_id is not None:
             llm_run_ids.append(narrative_lines_repair_llm_run_id)
             book_spec_payload = repaired_book_spec
+        book_spec_payload = _ensure_book_spec_bible_fields(
+            project,
+            premise,
+            book_spec_payload,
+        )
 
         book_artifact = await import_planning_artifact(
             session,
@@ -7140,6 +7796,37 @@ async def generate_novel_plan(
             output_ref={"artifact_id": str(cast_artifact.id), "llm_run_id": str(llm_run_id) if llm_run_id else None},
         )
         step_order += 1
+
+        (
+            repaired_cast_spec,
+            personhood_repair_llm_run_id,
+        ) = await _repair_cast_personhood_if_needed(
+            session=session,
+            settings=settings,
+            project=project,
+            book_spec_payload=book_spec_payload,
+            world_spec_payload=world_spec_payload,
+            cast_spec_payload=cast_spec_payload,
+            workflow_run_id=workflow_run.id,
+        )
+        if personhood_repair_llm_run_id is not None:
+            llm_run_ids.append(personhood_repair_llm_run_id)
+            cast_spec_payload = repaired_cast_spec
+            cast_artifact = await import_planning_artifact(
+                session,
+                project_slug,
+                PlanningArtifactCreate(
+                    artifact_type=ArtifactType.CAST_SPEC,
+                    content=cast_spec_payload,
+                ),
+            )
+            artifact_records.append(
+                PlanningArtifactRecord(
+                    artifact_type=ArtifactType.CAST_SPEC,
+                    artifact_id=cast_artifact.id,
+                    version_no=cast_artifact.version_no,
+                )
+            )
 
         # ── Foundation richness gate: scan the cast spec for thin
         # antagonist roster / insufficient active_volumes coverage before
@@ -7555,6 +8242,17 @@ async def generate_novel_plan(
             for idx, ch in enumerate(vol_chapters):
                 ch["volume_number"] = vol_num
                 ch["chapter_number"] = chapter_offset + idx
+            # Fill in any titles the LLM omitted, using the deterministic
+            # fallback so materialization never writes title=NULL.
+            _fallback_titles = {
+                fb["chapter_number"]: fb.get("title", "")
+                for fb in vol_fallback_chapters
+            }
+            for ch in vol_chapters:
+                if not ch.get("title"):
+                    fb_title = _fallback_titles.get(ch["chapter_number"])
+                    if fb_title:
+                        ch["title"] = fb_title
             all_outline_chapters.extend(vol_chapters)
 
             # Save per-volume artifact
@@ -7777,6 +8475,11 @@ async def generate_foundation_plan(
         )
         if llm_run_id is not None:
             llm_run_ids.append(llm_run_id)
+        book_spec_payload = _ensure_book_spec_bible_fields(
+            project,
+            premise,
+            book_spec_payload,
+        )
 
         # ── Narrative-lines gate (see long-form generator for rationale) ──
         repaired_book_spec, narrative_lines_repair_llm_run_id = await _repair_book_spec_narrative_lines_if_needed(
@@ -7842,6 +8545,22 @@ async def generate_foundation_plan(
         )
         if llm_run_id is not None:
             llm_run_ids.append(llm_run_id)
+
+        (
+            repaired_cast_spec,
+            personhood_repair_llm_run_id,
+        ) = await _repair_cast_personhood_if_needed(
+            session=session,
+            settings=settings,
+            project=project,
+            book_spec_payload=book_spec_payload,
+            world_spec_payload=world_spec_payload,
+            cast_spec_payload=cast_spec_payload,
+            workflow_run_id=workflow_run.id,
+        )
+        if personhood_repair_llm_run_id is not None:
+            llm_run_ids.append(personhood_repair_llm_run_id)
+            cast_spec_payload = repaired_cast_spec
 
         # ── Foundation richness gate (see long-form generator for rationale) ──
         _foundation_hierarchy = compute_linear_hierarchy(max(project.target_chapters, 1))
@@ -8213,6 +8932,16 @@ async def generate_volume_plan(
         for idx, ch in enumerate(vol_chapters):
             ch["volume_number"] = volume_number
             ch["chapter_number"] = chapter_number_offset + idx
+        # Fill in any titles the LLM omitted from the fallback.
+        _fb_chapter_titles = {
+            fb["chapter_number"]: fb.get("title", "")
+            for fb in vol_fallback_chapters
+        }
+        for ch in vol_chapters:
+            if not ch.get("title"):
+                fb_title = _fb_chapter_titles.get(ch["chapter_number"])
+                if fb_title:
+                    ch["title"] = fb_title
 
         vol_outline_artifact = await import_planning_artifact(
             session, project_slug,

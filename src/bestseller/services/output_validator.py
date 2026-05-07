@@ -15,17 +15,19 @@ enabled — the caller picks the list.
 
 from __future__ import annotations
 
-import re
+from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Any, Iterable, Literal, Protocol
+import re
+from typing import Any, Literal, Protocol
 
 from bestseller.services.checker_schema import (
     CheckerIssue,
     CheckerReport,
+)
+from bestseller.services.checker_schema import (
     Severity as CheckerSeverity,
 )
 from bestseller.services.invariants import CliffhangerType, ProjectInvariants
-
 
 Severity = Literal["block", "warn", "info"]
 
@@ -117,6 +119,11 @@ class ValidationContext:
     # the project hasn't opted into line-dominance tracking, in which
     # case ``LineGapCheck`` no-ops.
     line_gap_report: Any = None
+    # Project-specific canon guardrails (forbidden legacy terms and
+    # state-regression rules). Populated by chapter gate call sites from
+    # project metadata or output/<slug>/story-bible/canon-guardrails.json.
+    # ``None`` means the project has not opted into this layer.
+    canon_guardrails: Any = None
 
 
 @dataclass(frozen=True)
@@ -189,7 +196,11 @@ class QualityReport:
 class Check(Protocol):
     code: str
 
-    def run(self, text: str, ctx: ValidationContext) -> Iterable[Violation]:  # pragma: no cover - protocol
+    def run(
+        self,
+        text: str,
+        ctx: ValidationContext,
+    ) -> Iterable[Violation]:  # pragma: no cover - protocol
         ...
 
 
@@ -1138,6 +1149,9 @@ def build_full_audit_validator(
     * L4: ``EntityDensityCheck``   — first-chapter 150-line entity cap.
     * L5: ``DialogIntegrityCheck`` — unclosed quote paragraphs.
     * L5: ``POVLockCheck``         — narrative POV drift.
+    * L5: ``RepeatedEventBeatCheck`` — repeated pasted event beats.
+    * L5: ``CanonForbiddenTermCheck`` / ``CanonStateRegressionCheck`` —
+      project-specific canon guardrails when supplied by context.
 
     ``CliffhangerRotationCheck`` is deliberately excluded — it requires a
     time-series ``ctx.recent_cliffhangers`` window that only the iterative
@@ -1154,8 +1168,11 @@ def build_full_audit_validator(
     # chapter_validator at module load because chapter_validator imports
     # Check/Violation/ValidationContext from here.
     from bestseller.services.chapter_validator import (
+        CanonForbiddenTermCheck,
+        CanonStateRegressionCheck,
         DialogIntegrityCheck,
         POVLockCheck,
+        RepeatedEventBeatCheck,
     )
 
     checks: list[Check] = [
@@ -1171,5 +1188,13 @@ def build_full_audit_validator(
         ),
     ]
     if include_chapter_checks:
-        checks.extend([DialogIntegrityCheck(), POVLockCheck()])
+        checks.extend(
+            [
+                DialogIntegrityCheck(),
+                POVLockCheck(),
+                RepeatedEventBeatCheck(),
+                CanonForbiddenTermCheck(),
+                CanonStateRegressionCheck(),
+            ]
+        )
     return OutputValidator(checks)

@@ -1032,6 +1032,99 @@ def test_render_story_bible_renders_protected_characters_with_hard_warning() -> 
     assert "本章必须存活" in result
 
 
+def test_render_story_bible_renders_participant_change_delta() -> None:
+    """Growth visibility: when a participant's tracked axis changed
+    since their last appearance, the prompt must surface
+    "A → B since chapter K" so the writer can dramatise the shift.
+
+    Without this block the writer sees only current state and has
+    nothing to weave change into action / dialogue / body — the
+    "no growth" failure mode the user originally flagged.
+    """
+    context = {
+        "participants": [
+            {
+                "name": "宁尘",
+                "role": "protagonist",
+                "background": "前刑警",
+                "goal": "查案",
+                "arc_state": "questioning_lie",
+                "power_tier": "金丹",
+                "emotional_state": "压抑",
+                "alive_status": "alive",
+                "stance": "ally",
+                "previous_arc_state": "believing_lie",
+                "previous_power_tier": "筑基",
+                "previous_emotional_state": "茫然",
+                "previous_alive_status": "alive",
+                "previous_stance": "ally",
+                "previous_state_chapter_number": 42,
+            },
+        ],
+    }
+    result = _render_story_bible_section(context)
+    # Header + axis label + arrow + chapter anchor must all show.
+    assert "自上次出场以来的变化" in result
+    assert "宁尘" in result
+    assert "弧线: believing_lie → questioning_lie" in result
+    assert "力量: 筑基 → 金丹" in result
+    assert "情绪: 茫然 → 压抑" in result
+    assert "第42章" in result
+    # Unchanged axes (alive_status, stance) must NOT show.
+    assert "存活: alive → alive" not in result
+    assert "立场: ally → ally" not in result
+
+
+def test_render_story_bible_skips_delta_when_no_changes() -> None:
+    """When a participant has no recorded change, the delta block
+    must stay empty — we don't want the writer to be told a
+    fictional shift happened just because the field is non-null."""
+    context = {
+        "participants": [
+            {
+                "name": "宁尘",
+                "arc_state": "rising",
+                "power_tier": "筑基",
+                # No previous_* values → no delta possible.
+            },
+        ],
+    }
+    result = _render_story_bible_section(context)
+    assert "自上次出场以来的变化" not in result
+
+
+def test_render_story_bible_renders_restricted_characters_with_kind_specific_rules() -> None:
+    """Restricted-but-not-dead characters (missing / sealed / sleeping /
+    comatose) must surface in the prompt with their lifecycle kind and
+    the kind-specific allowed framing — different from deceased rules.
+    """
+    context = {
+        "restricted_characters": [
+            {
+                "name": "苏瑶",
+                "kind": "sealed",
+                "since_chapter": 30,
+                "scheduled_exit_chapter": 200,
+                "appearance_notes_zh": "被封印，本章不可主动行动或对话。可作为封印体被提及；解封章节确定后，需按计划解封后再恢复活动。",
+                "can_appear_as_body": True,
+            },
+            {
+                "name": "陆沉",
+                "kind": "missing",
+                "since_chapter": 50,
+                "appearance_notes_zh": "下落不明，本章不可登场。但他可在未来任何章节回归——回归时不会触发『复活』违规。",
+            },
+        ],
+    }
+    result = _render_story_bible_section(context)
+    assert "受限角色（未死但本章不可登场）" in result
+    assert "苏瑶" in result
+    assert "封印" in result
+    assert "200" in result  # scheduled exit chapter visible
+    assert "陆沉" in result
+    assert "失踪" in result
+
+
 def test_render_story_bible_renders_participant_inner_structure() -> None:
     """Saturation fix: the writer prompt must surface lie/want/need/ghost
     /flaw for every active participant, not just the POV. Previously
@@ -1073,6 +1166,53 @@ def test_render_story_bible_renders_participant_inner_structure() -> None:
     # Moral framework — bottom-line constraints make character action sticky
     assert "绝不跨越的底线" in result
     assert "伪造证据" in result
+
+
+def test_render_story_bible_uses_canonical_personhood_and_ip_anchor_keys() -> None:
+    context = {
+        "participants": [
+            {
+                "name": "沈砚",
+                "role": "protagonist",
+                "goal": "找到账目证据",
+                "arc_state": "开场",
+                "ip_anchor": {
+                    "quirks": ["左手关节断裂", "洁癖", "口头禅：这不对劲"],
+                    "sensory_signatures": ["冷金属气味"],
+                    "signature_objects": ["旧导航罗盘"],
+                    "core_wound": "七岁目睹母亲被处决",
+                },
+                "moral_framework": {
+                    "core_values": ["真相高于秩序"],
+                    "lines_never_crossed": ["不伤害无辜"],
+                    "willing_to_sacrifice": "个人安全和社会地位",
+                },
+                "psych_profile": {
+                    "mbti": "INTJ",
+                    "enneagram": "5w4",
+                    "attachment_style": "avoidant",
+                    "big_five": {"openness": 80, "neuroticism": 65},
+                },
+            },
+        ],
+    }
+
+    result = _render_story_bible_section(context)
+
+    assert "角色内在结构" in result
+    assert "核心创伤" in result
+    assert "七岁目睹母亲被处决" in result
+    assert "记忆特征" in result
+    assert "左手关节断裂" in result
+    assert "标志物" in result
+    assert "旧导航罗盘" in result
+    assert "价值观" in result
+    assert "真相高于秩序" in result
+    assert "绝不跨越的底线" in result
+    assert "不伤害无辜" in result
+    assert "人格" in result
+    assert "INTJ" in result
+    assert "OCEAN" in result
 
 
 # ── Draft mode: ScenePipelineResult accepts optional review fields ──────

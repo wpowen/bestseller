@@ -34,6 +34,7 @@ from bestseller.infra.db.models import (
     ChapterModel,
     DiversityBudgetModel,
     ProjectModel,
+    VolumeModel,
 )
 from bestseller.services.projects import get_project_by_slug
 
@@ -140,30 +141,29 @@ async def _volume_chapters(
     volume_number: int,
 ) -> list[ChapterModel]:
     volume_number = int(volume_number)
+    volume_id = await session.scalar(
+        select(VolumeModel.id).where(
+            VolumeModel.project_id == project_id,
+            VolumeModel.volume_number == volume_number,
+        )
+    )
+    if volume_id is not None:
+        rows = await session.scalars(
+            select(ChapterModel)
+            .where(
+                ChapterModel.project_id == project_id,
+                ChapterModel.volume_id == volume_id,
+            )
+            .order_by(ChapterModel.chapter_number.asc())
+        )
+        return list(rows)
+
     rows = await session.scalars(
         select(ChapterModel)
-        .join(ChapterModel.volume, isouter=True)
-        .where(
-            ChapterModel.project_id == project_id,
-        )
+        .where(ChapterModel.project_id == project_id)
         .order_by(ChapterModel.chapter_number.asc())
     )
-    # Filter by volume via volume.volume_number after fetch to avoid complex join
-    # (volume_id is nullable; use getattr for safety).
     all_chapters = list(rows)
-
-    # Try to narrow by volume model
-    from bestseller.infra.db.models import VolumeModel  # noqa: PLC0415
-    vol = (
-        await session.scalar(
-            select(VolumeModel).where(
-                VolumeModel.project_id == project_id,
-                VolumeModel.volume_number == volume_number,
-            )
-        )
-    )
-    if vol is not None:
-        return [c for c in all_chapters if c.volume_id == vol.id]
 
     # Fallback: infer volume from chapter_number range (50 chapters/volume default)
     chapters_per_vol = 50
@@ -279,9 +279,9 @@ async def _title_heat(
 
 def _chapter_length_stats(chapters: list[ChapterModel]) -> tuple[float, int, int]:
     lengths = [
-        len(c.content or "")
+        int(c.current_word_count or 0)
         for c in chapters
-        if c.content
+        if int(c.current_word_count or 0) > 0
     ]
     if not lengths:
         return 0.0, 0, 0

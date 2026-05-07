@@ -39,6 +39,24 @@ class _ScalarQueue:
         return self.values.pop(0)
 
 
+@dataclass
+class _ScalarRows:
+    values: list[Any]
+
+    def all(self) -> list[Any]:
+        return self.values
+
+
+@dataclass
+class _ScalarsSession:
+    values: list[Any]
+    calls: list[Any] = field(default_factory=list)
+
+    async def scalars(self, stmt: Any) -> _ScalarRows:
+        self.calls.append(stmt)
+        return _ScalarRows(self.values)
+
+
 # ---------------------------------------------------------------------------
 # _next_chapter_number_for_volume — planner.py
 # ---------------------------------------------------------------------------
@@ -47,31 +65,42 @@ class _ScalarQueue:
 @pytest.mark.asyncio
 async def test_offset_uses_prior_volume_max_when_present() -> None:
     """If vols < N have drafted chapters, offset = max(those) + 1."""
-    # First scalar: max chapter_number in prior volumes → 150.
-    session = _ScalarQueue(values=[150])
+    # current volume has no rows; prior volume max → 150.
+    session = _ScalarQueue(values=[None, 150])
     offset = await planner_services._next_chapter_number_for_volume(
         session, project_id=uuid4(), volume_number=4,
     )
     assert offset == 151
-    # Only the prior-volume query was issued — project-wide fallback unused.
+    # Current-volume and prior-volume queries were issued; fallback unused.
+    assert len(session.calls) == 2
+
+
+@pytest.mark.asyncio
+async def test_offset_reuses_existing_volume_start_when_present() -> None:
+    """A replan of an existing volume must not append after project max."""
+    session = _ScalarQueue(values=[101])
+    offset = await planner_services._next_chapter_number_for_volume(
+        session, project_id=uuid4(), volume_number=3,
+    )
+    assert offset == 101
     assert len(session.calls) == 1
 
 
 @pytest.mark.asyncio
 async def test_offset_falls_back_to_project_max_when_no_prior_volume() -> None:
     """When no chapters exist in vols < N, fall back to project-wide max."""
-    # prior_max=0 (None → 0) forces the fallback; any_max=80 → 81.
-    session = _ScalarQueue(values=[None, 80])
+    # current_min/prior_max are absent; any_max=80 → 81.
+    session = _ScalarQueue(values=[None, None, 80])
     offset = await planner_services._next_chapter_number_for_volume(
         session, project_id=uuid4(), volume_number=1,
     )
     assert offset == 81
-    assert len(session.calls) == 2
+    assert len(session.calls) == 3
 
 
 @pytest.mark.asyncio
 async def test_offset_is_one_on_empty_project() -> None:
-    session = _ScalarQueue(values=[None, None])
+    session = _ScalarQueue(values=[None, None, None])
     offset = await planner_services._next_chapter_number_for_volume(
         session, project_id=uuid4(), volume_number=1,
     )
@@ -81,7 +110,7 @@ async def test_offset_is_one_on_empty_project() -> None:
 @pytest.mark.asyncio
 async def test_offset_never_depends_on_volume_plan_targets() -> None:
     """Even if caller has drifted targets (350), offset tracks DB (151)."""
-    session = _ScalarQueue(values=[150])
+    session = _ScalarQueue(values=[None, 150])
     offset = await planner_services._next_chapter_number_for_volume(
         session, project_id=uuid4(), volume_number=4,
     )
@@ -118,8 +147,8 @@ async def test_fully_written_when_all_chapters_in_written_status() -> None:
 
 
 @pytest.mark.asyncio
-async def test_partial_progress_is_not_skipped() -> None:
-    """49/50 chapters written must not flip the skip guard."""
+async def test_partial_progress_is_not_fully_written() -> None:
+    """49/50 chapters written must not be considered a complete volume."""
     session = _ScalarQueue(values=[50, 49])
     done, written, total = await pipeline_services._volume_fully_written(
         session, project_id=uuid4(), volume_number=3,
@@ -127,6 +156,18 @@ async def test_partial_progress_is_not_skipped() -> None:
     assert done is False
     assert written == 49
     assert total == 50
+
+
+@pytest.mark.asyncio
+async def test_chapter_numbers_in_volume_returns_materialized_rows() -> None:
+    session = _ScalarsSession(values=[3, 1, None, 2, 0, "5"])
+
+    chapter_numbers = await pipeline_services._chapter_numbers_in_volume(
+        session, project_id=uuid4(), volume_number=3,
+    )
+
+    assert chapter_numbers == {1, 2, 3}
+    assert len(session.calls) == 1
 
 
 @pytest.mark.asyncio

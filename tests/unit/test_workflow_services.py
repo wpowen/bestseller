@@ -14,6 +14,7 @@ from bestseller.infra.db.models import (
     WorkflowStepRunModel,
 )
 from bestseller.domain.enums import ArtifactType, ChapterStatus, SceneStatus
+from bestseller.services.invariants import invariants_to_dict, seed_invariants
 from bestseller.services import workflows as workflow_services
 
 
@@ -67,6 +68,39 @@ def build_project() -> ProjectModel:
     )
     project.id = uuid4()
     return project
+
+
+def test_bible_completeness_gate_blocks_incomplete_materialization() -> None:
+    project = build_project()
+    project.invariants_json = invariants_to_dict(
+        seed_invariants(
+            project_id=project.id,
+            language="zh-CN",
+            words_per_chapter=type(
+                "Words",
+                (),
+                {"min": 5000, "target": 6400, "max": 7500},
+            )(),
+        )
+    )
+
+    with pytest.raises(ValueError, match="L2 bible gate failed"):
+        workflow_services._audit_bible_completeness(
+            project=project,
+            project_slug=project.slug,
+            book_spec_content={
+                "title": "长夜巡航",
+                "themes": ["真相"],
+                "dramatic_question": "沈砚能否找回真相？",
+            },
+            world_spec_content={
+                "power_system": {"name": "导航印记", "tiers": ["学徒"]}
+            },
+            cast_spec_content={
+                "protagonist": {"name": "沈砚"},
+                "antagonist": {"name": "祁镇"},
+            },
+        )
 
 
 def build_batch() -> ChapterOutlineBatchInput:

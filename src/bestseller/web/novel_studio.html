@@ -469,6 +469,101 @@
       grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
       gap: 12px;
     }
+    .book-detail-status {
+      display: grid;
+      grid-template-columns: minmax(180px, 0.45fr) minmax(0, 1fr);
+      gap: 12px;
+      align-items: stretch;
+    }
+    .listing-score-card {
+      padding: 16px 20px;
+      background: rgba(255,255,255,0.72);
+      border-radius: var(--radius-md);
+      border: 1px solid rgba(104,79,56,0.10);
+    }
+    .listing-score-card strong {
+      display: block;
+      font-size: 30px;
+      line-height: 1;
+      margin-bottom: 8px;
+    }
+    .listing-score-card span {
+      display: block;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.6;
+    }
+    .listing-checks {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+      gap: 8px;
+    }
+    .listing-check {
+      min-height: 74px;
+      padding: 10px 12px;
+      border-radius: var(--radius-sm);
+      border: 1px solid rgba(104,79,56,0.12);
+      background: rgba(255,255,255,0.68);
+    }
+    .listing-check strong {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 4px;
+      font-size: 12px;
+    }
+    .listing-check small {
+      display: block;
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1.55;
+    }
+    .listing-check.pass strong { color: var(--ok); }
+    .listing-check.fail strong { color: var(--err); }
+    .book-detail-columns {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+    }
+    .listing-copy-list {
+      display: grid;
+      gap: 10px;
+    }
+    .listing-copy {
+      padding: 12px 14px;
+      border-radius: var(--radius-sm);
+      border: 1px solid rgba(104,79,56,0.10);
+      background: rgba(255,255,255,0.72);
+      font-size: 13px;
+      line-height: 1.75;
+    }
+    #book-detail-title-candidates {
+      overflow-x: auto;
+    }
+    .title-candidate-table {
+      width: 100%;
+      min-width: 780px;
+      border-collapse: collapse;
+      overflow: hidden;
+      border-radius: var(--radius-md);
+      background: rgba(255,255,255,0.72);
+      border: 1px solid rgba(104,79,56,0.10);
+    }
+    .title-candidate-table th,
+    .title-candidate-table td {
+      padding: 10px 12px;
+      border-bottom: 1px solid rgba(104,79,56,0.10);
+      text-align: left;
+      vertical-align: top;
+      font-size: 12px;
+      line-height: 1.6;
+    }
+    .title-candidate-table th {
+      color: var(--muted);
+      font-weight: 700;
+      background: rgba(155,67,37,0.06);
+    }
+    .title-candidate-table tr:last-child td { border-bottom: 0; }
     .positioning-card {
       padding: 12px 16px;
       background: rgba(255,255,255,0.72);
@@ -1653,6 +1748,8 @@
       .story-bible-overview,
       .status-overview,
       .narrative-overview,
+      .book-detail-status,
+      .book-detail-columns,
       .narrative-grid {
         grid-template-columns: 1fr 1fr;
       }
@@ -1681,6 +1778,8 @@
       .story-bible-overview,
       .status-overview,
       .narrative-overview,
+      .book-detail-status,
+      .book-detail-columns,
       .narrative-grid {
         grid-template-columns: 1fr;
       }
@@ -2383,30 +2482,52 @@
               </div>
 
               <div class="book-detail-section">
-                <h4>作品简介</h4>
+                <h4>上架完整度</h4>
+                <div class="book-detail-status">
+                  <div class="listing-score-card">
+                    <strong id="book-detail-readiness">-</strong>
+                    <span id="book-detail-readiness-label">等待加载上架资料。</span>
+                  </div>
+                  <div class="listing-checks" id="book-detail-compliance">
+                    <div class="empty">暂无校验结果。</div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="book-detail-section">
+                <h4>上架基础信息</h4>
+                <div class="book-detail-positioning" id="book-detail-basics">
+                  <div class="empty">暂无基础信息。</div>
+                </div>
+              </div>
+
+              <div class="book-detail-section">
+                <h4>简介与宣传文案</h4>
                 <div class="book-detail-synopsis" id="book-detail-synopsis">
                   <p class="empty">暂无作品简介。新建项目完成构思后会自动生成宣传简介。</p>
                 </div>
               </div>
 
               <div class="book-detail-section">
-                <h4>主角档案</h4>
-                <div class="book-detail-protagonist" id="book-detail-protagonist">
-                  <div class="empty">暂无主角信息。等待故事圣经生成后会自动展示。</div>
+                <h4>标题/数据名候选</h4>
+                <div id="book-detail-title-candidates">
+                  <div class="empty">暂无标题候选。</div>
                 </div>
               </div>
 
-              <div class="book-detail-section">
-                <h4>核心角色</h4>
-                <div class="book-detail-characters" id="book-detail-characters">
-                  <div class="empty">暂无角色信息。</div>
+              <div class="book-detail-columns">
+                <div class="book-detail-section">
+                  <h4>角色信息</h4>
+                  <div class="book-detail-characters" id="book-detail-characters">
+                    <div class="empty">暂无角色信息。</div>
+                  </div>
                 </div>
-              </div>
 
-              <div class="book-detail-section">
-                <h4>作品定位</h4>
-                <div class="book-detail-positioning" id="book-detail-positioning">
-                  <div class="empty">暂无定位信息。</div>
+                <div class="book-detail-section">
+                  <h4>读者承诺与投放定位</h4>
+                  <div class="book-detail-positioning" id="book-detail-positioning">
+                    <div class="empty">暂无定位信息。</div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -2561,8 +2682,12 @@
       bookDetailTitle: document.getElementById("book-detail-title"),
       bookDetailGenre: document.getElementById("book-detail-genre"),
       bookDetailTags: document.getElementById("book-detail-tags"),
+      bookDetailReadiness: document.getElementById("book-detail-readiness"),
+      bookDetailReadinessLabel: document.getElementById("book-detail-readiness-label"),
+      bookDetailCompliance: document.getElementById("book-detail-compliance"),
+      bookDetailBasics: document.getElementById("book-detail-basics"),
       bookDetailSynopsis: document.getElementById("book-detail-synopsis"),
-      bookDetailProtagonist: document.getElementById("book-detail-protagonist"),
+      bookDetailTitleCandidates: document.getElementById("book-detail-title-candidates"),
       bookDetailCharacters: document.getElementById("book-detail-characters"),
       bookDetailPositioning: document.getElementById("book-detail-positioning"),
       narrativeJson: document.getElementById("narrative-json"),
@@ -3897,108 +4022,143 @@
       const project = summary?.project || {};
       const wp = summary?.writing_profile || {};
       const market = wp.market || {};
-      const charConfig = wp.character || {};
       const style = wp.style || {};
+      const listing = summary?.listing_profile || {};
+      const compliance = listing.compliance || {};
 
-      // Title & genre
-      els.bookDetailTitle.textContent = project.title || "-";
-      const genreParts = [project.genre, project.sub_genre].filter(Boolean);
-      const audiencePart = project.audience ? ` · ${project.audience}` : "";
-      els.bookDetailGenre.textContent = (genreParts.join(" / ") || "未分类") + audiencePart
-        + ` · ${Number(project.target_word_count || 0).toLocaleString("zh-CN")} 字 / ${Number(project.target_chapters || 0).toLocaleString("zh-CN")} 章`;
+      const title = listing.primary_title || project.title || "-";
+      const categoryText = [listing.primary_category, listing.secondary_category].filter(Boolean).join(" / ")
+        || [project.genre, project.sub_genre].filter(Boolean).join(" / ")
+        || "未分类";
+      const titleCount = Array.isArray(listing.title_candidates) ? listing.title_candidates.length : 0;
+      els.bookDetailTitle.textContent = title;
+      els.bookDetailGenre.textContent = `${categoryText} · ${listing.length_type || "长篇连载"} · ${Number(project.target_word_count || 0).toLocaleString("zh-CN")} 字 / ${Number(project.target_chapters || 0).toLocaleString("zh-CN")} 章 · ${titleCount} 个标题候选`;
 
-      // Tags
-      const tags = Array.isArray(project.tags) ? project.tags : [];
+      const tags = Array.isArray(listing.tags) && listing.tags.length
+        ? listing.tags
+        : (Array.isArray(project.tags) ? project.tags : []);
       els.bookDetailTags.innerHTML = tags.length
         ? tags.map((t) => `<span class="book-detail-tag">${escapeHtml(t)}</span>`).join("")
-        : "";
+        : `<span class="book-detail-tag">待补标签</span>`;
 
-      // Synopsis
-      const synopsis = project.synopsis || "";
-      els.bookDetailSynopsis.innerHTML = synopsis
-        ? `<p style="margin:0;">${escapeHtml(synopsis)}</p>`
+      const statusLabel = {
+        ready: "上架资料完整",
+        needs_attention: "可查看但仍需补强",
+        blocked: "暂不建议上架",
+      }[compliance.status] || "等待校验";
+      els.bookDetailReadiness.textContent = `${Number(compliance.score || 0)}%`;
+      els.bookDetailReadinessLabel.textContent = `${statusLabel} · 阻断 ${Number(compliance.blocker_count || 0)} 项 / 警告 ${Number(compliance.warning_count || 0)} 项`;
+      const checks = Array.isArray(compliance.checks) ? compliance.checks : [];
+      els.bookDetailCompliance.innerHTML = checks.length ? checks.map((item) => `
+        <div class="listing-check ${item.passed ? "pass" : "fail"}">
+          <strong>
+            <span>${escapeHtml(item.label || item.code || "校验项")}</span>
+            <span>${item.passed ? "通过" : "需处理"}</span>
+          </strong>
+          <small>${escapeHtml(item.passed ? "当前资料满足此项要求。" : (item.message || "需要补充。"))}</small>
+        </div>
+      `).join("") : `<div class="empty">暂无校验结果。</div>`;
+
+      const platformSuggestions = listing.platform_category_suggestions || {};
+      const platformText = Object.entries(platformSuggestions)
+        .flatMap(([, values]) => Array.isArray(values) ? values : [])
+        .filter(Boolean)
+        .slice(0, 8)
+        .join("、");
+      const basicItems = [
+        ["书籍 ID", listing.book_id || project.slug],
+        ["推荐副标题", listing.recommended_subtitle],
+        ["频道", listing.channel || project.audience],
+        ["连载状态", listing.serialization_status || project.status],
+        ["语言", listing.language || "zh-CN"],
+        ["主分类", listing.primary_category],
+        ["二级分类", listing.secondary_category],
+        ["细分类", Array.isArray(listing.tertiary_categories) ? listing.tertiary_categories.join("、") : ""],
+        ["平台分类建议", platformText],
+        ["不建议分类", Array.isArray(listing.not_recommended_categories) ? listing.not_recommended_categories.join("、") : ""],
+        ["资料来源", Array.isArray(listing.source_files) && listing.source_files.length ? `已接入 ${listing.source_files.length} 个资料文件` : "系统自动生成"],
+      ].filter(([, value]) => value);
+      els.bookDetailBasics.innerHTML = basicItems.length ? basicItems.map(([label, value]) => `
+        <div class="positioning-card">
+          <strong>${escapeHtml(label)}</strong>
+          <span>${escapeHtml(value)}</span>
+        </div>
+      `).join("") : `<div class="empty">暂无基础信息。</div>`;
+
+      const introBlocks = [];
+      if (listing.logline) {
+        introBlocks.push(`<p style="margin:0 0 12px;"><strong>一句话钩子：</strong>${escapeHtml(listing.logline)}</p>`);
+      }
+      if (listing.short_intro) {
+        introBlocks.push(`<p style="margin:0 0 12px;"><strong>短简介：</strong>${escapeHtml(listing.short_intro)}</p>`);
+      }
+      if (listing.long_intro) {
+        introBlocks.push(`<p style="margin:0 0 12px;"><strong>长简介：</strong>${escapeHtml(listing.long_intro)}</p>`);
+      }
+      const promoCopy = Array.isArray(listing.promo_copy) ? listing.promo_copy : [];
+      if (promoCopy.length) {
+        introBlocks.push(`
+          <div class="listing-copy-list">
+            ${promoCopy.map((item, index) => `
+              <div class="listing-copy"><strong>宣传文案 ${index + 1}：</strong>${escapeHtml(item)}</div>
+            `).join("")}
+          </div>
+        `);
+      }
+      els.bookDetailSynopsis.innerHTML = introBlocks.length
+        ? introBlocks.join("")
         : `<p class="empty">暂无作品简介。新建项目完成构思后会自动生成宣传简介。</p>`;
 
-      // Protagonist from story bible characters
-      const characters = Array.isArray(storyBiblePayload?.characters) ? storyBiblePayload.characters : [];
-      const protagonists = characters.filter((c) => c.role === "protagonist" || c.is_pov_character);
-      const supportingCast = characters.filter((c) => c.role !== "protagonist" && !c.is_pov_character);
+      const candidates = Array.isArray(listing.title_candidates) ? listing.title_candidates.slice(0, 20) : [];
+      els.bookDetailTitleCandidates.innerHTML = candidates.length ? `
+        <table class="title-candidate-table">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>标题/数据名</th>
+              <th>副标题</th>
+              <th>角度</th>
+              <th>建议</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${candidates.map((item, index) => `
+              <tr>
+                <td>${Number(item.id || index + 1).toLocaleString("zh-CN")}</td>
+                <td><strong>${escapeHtml(item.title || "")}</strong></td>
+                <td>${escapeHtml(item.subtitle || "")}</td>
+                <td>${escapeHtml(item.angle || "")}</td>
+                <td>${escapeHtml(item.recommendation || "")}</td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      ` : `<div class="empty">暂无标题候选。</div>`;
 
-      if (protagonists.length) {
-        els.bookDetailProtagonist.innerHTML = protagonists.map((p) => {
-          const attrs = [];
-          if (charConfig.protagonist_archetype) attrs.push(["原型", charConfig.protagonist_archetype]);
-          if (charConfig.protagonist_core_drive) attrs.push(["核心驱动", charConfig.protagonist_core_drive]);
-          if (charConfig.golden_finger) attrs.push(["金手指", charConfig.golden_finger]);
-          if (charConfig.growth_curve) attrs.push(["成长弧线", charConfig.growth_curve]);
-          if (p.goal) attrs.push(["目标", p.goal]);
-          if (p.fear) attrs.push(["恐惧", p.fear]);
-          if (p.flaw) attrs.push(["缺陷", p.flaw]);
-          if (p.secret) attrs.push(["秘密", p.secret]);
-          if (p.arc_trajectory) attrs.push(["角色轨迹", p.arc_trajectory]);
-          if (p.arc_state) attrs.push(["当前状态", p.arc_state]);
-          if (p.power_tier) attrs.push(["境界/等级", p.power_tier]);
+      const characters = Array.isArray(listing.main_characters) && listing.main_characters.length
+        ? listing.main_characters
+        : (Array.isArray(storyBiblePayload?.characters) ? storyBiblePayload.characters : []);
+      els.bookDetailCharacters.innerHTML = characters.length ? characters.slice(0, 12).map((c) => `
+        <div class="character-mini-card">
+          <strong>${escapeHtml(c.name || "未命名角色")} <span style="font-weight:400;color:var(--muted);font-size:12px;">${escapeHtml(c.role || "")}</span></strong>
+          ${c.identity ? `<p>身份：${escapeHtml(c.identity)}</p>` : ""}
+          ${c.appeal ? `<p>吸引力：${escapeHtml(truncateText(c.appeal, 72))}</p>` : ""}
+          ${c.goal ? `<p>目标：${escapeHtml(truncateText(c.goal, 60))}</p>` : ""}
+          ${c.arc_state ? `<p>当前：${escapeHtml(truncateText(c.arc_state, 60))}</p>` : ""}
+        </div>
+      `).join("") : `<div class="empty">暂无角色信息。</div>`;
 
-          const attrHtml = attrs.length ? `
-            <div class="protagonist-attrs">
-              ${attrs.map(([label, value]) => `<div class="protagonist-attr"><strong>${escapeHtml(label)}</strong>${escapeHtml(value)}</div>`).join("")}
-            </div>
-          ` : "";
-
-          return `
-            <div class="protagonist-card">
-              <div class="protagonist-name">
-                ${escapeHtml(p.name)}
-                <span class="role-badge">${p.is_pov_character ? "POV 主角" : "主角"}</span>
-              </div>
-              ${attrHtml}
-            </div>
-          `;
-        }).join("");
-      } else {
-        // Fallback: show writing profile protagonist info even without story bible characters
-        const fallbackAttrs = [];
-        if (charConfig.protagonist_archetype) fallbackAttrs.push(["原型", charConfig.protagonist_archetype]);
-        if (charConfig.protagonist_core_drive) fallbackAttrs.push(["核心驱动", charConfig.protagonist_core_drive]);
-        if (charConfig.golden_finger) fallbackAttrs.push(["金手指", charConfig.golden_finger]);
-        if (charConfig.growth_curve) fallbackAttrs.push(["成长弧线", charConfig.growth_curve]);
-        if (charConfig.romance_mode) fallbackAttrs.push(["情感线", charConfig.romance_mode]);
-        if (charConfig.antagonist_mode) fallbackAttrs.push(["反派模式", charConfig.antagonist_mode]);
-
-        els.bookDetailProtagonist.innerHTML = fallbackAttrs.length ? `
-          <div class="protagonist-card">
-            <div class="protagonist-name">主角设定 <span class="role-badge">来自写作配置</span></div>
-            <div class="protagonist-attrs">
-              ${fallbackAttrs.map(([label, value]) => `<div class="protagonist-attr"><strong>${escapeHtml(label)}</strong>${escapeHtml(value)}</div>`).join("")}
-            </div>
-          </div>
-        ` : `<div class="empty">暂无主角信息。等待故事圣经生成后会自动展示。</div>`;
-      }
-
-      // Supporting characters
-      if (supportingCast.length) {
-        els.bookDetailCharacters.innerHTML = supportingCast.slice(0, 12).map((c) => `
-          <div class="character-mini-card">
-            <strong>${escapeHtml(c.name)} <span style="font-weight:400;color:var(--muted);font-size:12px;">${escapeHtml(c.role || "")}</span></strong>
-            ${c.goal ? `<p>目标：${escapeHtml(c.goal)}</p>` : ""}
-            ${c.arc_trajectory ? `<p>轨迹：${escapeHtml(truncateText(c.arc_trajectory, 60))}</p>` : ""}
-            ${c.arc_state ? `<p>当前：${escapeHtml(c.arc_state)}</p>` : ""}
-          </div>
-        `).join("");
-      } else {
-        els.bookDetailCharacters.innerHTML = `<div class="empty">暂无角色信息。</div>`;
-      }
-
-      // Market positioning
       const posItems = [];
       if (market.platform_target) posItems.push(["目标平台", market.platform_target]);
-      if (market.reader_promise) posItems.push(["读者承诺", market.reader_promise]);
       if (market.pacing_profile) posItems.push(["节奏", market.pacing_profile]);
       if (market.payoff_rhythm) posItems.push(["爽点节奏", market.payoff_rhythm]);
       if (style.pov_type) posItems.push(["视角", style.pov_type]);
       if (style.prose_style) posItems.push(["文风", style.prose_style]);
       if (style.tone_keywords?.length) posItems.push(["基调", style.tone_keywords.join("、")]);
-      if (market.selling_points?.length) posItems.push(["卖点", market.selling_points.join("、")]);
+      const promises = Array.isArray(listing.reader_promise) ? listing.reader_promise : [];
+      promises.slice(0, 5).forEach((item, index) => posItems.push([`读者承诺 ${index + 1}`, item]));
+      const warnings = Array.isArray(listing.load_warnings) ? listing.load_warnings : [];
+      warnings.forEach((item, index) => posItems.push([`资料警告 ${index + 1}`, item]));
 
       els.bookDetailPositioning.innerHTML = posItems.length ? posItems.map(([label, value]) => `
         <div class="positioning-card">

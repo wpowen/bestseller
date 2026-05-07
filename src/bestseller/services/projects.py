@@ -5,7 +5,7 @@ import shutil
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bestseller.domain.planning import PlanningArtifactCreate
@@ -60,6 +60,8 @@ async def delete_project_completely(
         result["errors"].append("project_not_found_in_db")
     else:
         try:
+            await session.execute(text("SET LOCAL statement_timeout = '5min'"))
+            await session.execute(text("SET LOCAL lock_timeout = '30s'"))
             await session.delete(project)
             await session.commit()
             result["db_deleted"] = True

@@ -239,7 +239,7 @@ pipeline:
   # this path — length-stability blocks are the safe canary; L4/L5 gates
   # with deterministic violations are deliberately excluded.
   enable_chapter_auto_repair: true
-  chapter_auto_repair_max_attempts: 1
+  chapter_auto_repair_max_attempts: 3
   chapter_auto_repair_repairable_codes:
     - BLOCK_LOW
     - BLOCK_HIGH

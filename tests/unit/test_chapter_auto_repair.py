@@ -49,6 +49,8 @@ class FakeScene:
     metadata_json: dict[str, Any] = field(default_factory=dict)
     target_word_count: int = 1600
     participants: list[str] = field(default_factory=list)
+    entry_state: dict[str, Any] = field(default_factory=dict)
+    exit_state: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -186,6 +188,14 @@ async def test_character_resurrection_removes_dead_participants_before_regen() -
             chapter_id=chapter.id,
             scene_number=1,
             participants=["Rowan Ashford", "Sam Blake"],
+            entry_state={
+                "Rowan Ashford": {"arc_state": "cornered"},
+                "Sam Blake": {"arc_state": "active"},
+            },
+            exit_state={
+                "Rowan Ashford": {"arc_state": "chooses"},
+                "Sam Blake": {"arc_state": "presses"},
+            },
         ),
         FakeScene(
             chapter_id=chapter.id,
@@ -210,14 +220,65 @@ async def test_character_resurrection_removes_dead_participants_before_regen() -
     assert chapter.production_state == "pending"
     assert "write_safety_block_code" not in chapter.metadata_json
     assert scenes[0].participants == ["Rowan Ashford"]
+    assert "Sam Blake" not in scenes[0].entry_state
+    assert "Sam Blake" not in scenes[0].exit_state
     assert scenes[0].status == SceneStatus.NEEDS_REWRITE.value
     assert scenes[0].metadata_json["auto_repair_removed_participants"] == [
+        "Sam Blake"
+    ]
+    assert scenes[0].metadata_json["auto_repair_removed_state_refs"] == [
         "Sam Blake"
     ]
     assert "移除已故角色：Sam Blake" in scenes[0].metadata_json["auto_repair_hint"]
     assert scenes[1].participants == ["Rowan Ashford"]
     assert "auto_repair_removed_participants" not in scenes[1].metadata_json
     assert session.flush_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_character_resurrection_removes_dead_state_refs_even_after_participant_was_cleaned() -> None:
+    chapter = FakeChapter(
+        chapter_number=502,
+        metadata_json={
+            "blocked_by_write_safety_gate": True,
+            "write_safety_block_code": "character_resurrection",
+            "write_safety_hint": "陆沉死于第458章。",
+        },
+    )
+    scenes = [
+        FakeScene(
+            chapter_id=chapter.id,
+            scene_number=1,
+            participants=["宁尘"],
+            entry_state={
+                "宁尘": {"arc_state": "重振旗鼓"},
+                "陆沉": {"arc_state": "独立行动"},
+            },
+            exit_state={
+                "宁尘": {"arc_state": "做出抉择"},
+                "陆沉": {"arc_state": "暗自打算"},
+            },
+        )
+    ]
+    session = FakeSession(
+        scalar_queue=[None],
+        scalars_queue=[scenes, ["陆沉"]],
+    )
+
+    triggered, codes = await maybe_prepare_chapter_auto_repair(
+        session,
+        project=FakeProject(id=chapter.project_id),
+        chapter=chapter,
+        repairable_codes=("character_resurrection",),
+    )
+
+    assert triggered is True
+    assert codes == ("character_resurrection",)
+    assert scenes[0].participants == ["宁尘"]
+    assert scenes[0].entry_state == {"宁尘": {"arc_state": "重振旗鼓"}}
+    assert scenes[0].exit_state == {"宁尘": {"arc_state": "做出抉择"}}
+    assert scenes[0].metadata_json["auto_repair_removed_state_refs"] == ["陆沉"]
+    assert "auto_repair_removed_participants" not in scenes[0].metadata_json
 
 
 @pytest.mark.asyncio

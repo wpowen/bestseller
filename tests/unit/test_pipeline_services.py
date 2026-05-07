@@ -1196,7 +1196,7 @@ async def test_run_chapter_pipeline_repairs_scene_block_before_assembly(
             llm_run_ids=[],
         )
 
-    async def fake_prepare_auto_repair(session, *, project, chapter, repairable_codes):
+    async def fake_prepare_auto_repair(session, *, project, chapter, repairable_codes, attempt_number=1):
         chapter.production_state = "pending"
         scene.status = "needs_rewrite"
         return True, ("character_resurrection",)

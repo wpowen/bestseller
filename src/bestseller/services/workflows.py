@@ -82,7 +82,8 @@ async def _sync_existing_chapter_from_outline(
         ),
     )
     chapter.volume_id = volume.id
-    chapter.title = chapter_outline.title
+    if chapter_outline.title:
+        chapter.title = chapter_outline.title
     chapter.chapter_goal = chapter_outline.chapter_goal
     chapter.opening_situation = chapter_outline.opening_situation
     chapter.main_conflict = chapter_outline.main_conflict
@@ -522,12 +523,11 @@ def _audit_bible_completeness(
     world_spec_content: dict[str, Any] | None,
     cast_spec_content: dict[str, Any] | None,
 ) -> None:
-    """Run L2 BibleCompletenessGate in audit-only mode.
+    """Run L2 BibleCompletenessGate before persisting story-bible rows.
 
-    Phase 1 behaviour: log the deficiencies so operators can review them
-    before flipping the gate to block mode. Failures inside the gate must
-    not break bible materialization — the gate is advisory until the
-    regen loop (L4.5) is wired in.
+    Generation-time repair should already have consumed this feedback. If an
+    incomplete bible still reaches materialization, fail here rather than
+    persisting a known-broken character foundation.
     """
 
     try:
@@ -582,8 +582,9 @@ def _audit_bible_completeness(
     # already wrapped by report.feedback_for_regen() — log it at DEBUG so
     # the info level stays scannable.
     codes = sorted({d.code for d in report.deficiencies})
+    feedback = report.feedback_for_regen()
     logger.warning(
-        "L2 bible gate (audit_only) flagged %d deficiencies for project %s: codes=%s",
+        "L2 bible gate blocked materialization with %d deficiencies for project %s: codes=%s",
         len(report.deficiencies),
         project_slug,
         codes,
@@ -591,7 +592,11 @@ def _audit_bible_completeness(
     logger.debug(
         "L2 bible gate full feedback for project %s:\n%s",
         project_slug,
-        report.feedback_for_regen(),
+        feedback,
+    )
+    raise ValueError(
+        f"L2 bible gate failed for project '{project_slug}'. Regenerate the story bible.\n"
+        f"{feedback}"
     )
 
 
@@ -621,9 +626,9 @@ async def materialize_story_bible(
     if not applied_artifacts:
         raise ValueError("No story bible content was provided.")
 
-    # L2 Bible Completeness Gate — run pre-persistence so we surface
-    # deficiencies before the cast/world rows are committed. Phase 1 mode:
-    # audit-only (log + keep going). Phase 2 will flip to regen + block.
+    # L2 Bible Completeness Gate — run pre-persistence so a known-incomplete
+    # character/world bible never gets committed. Planner generation gets the
+    # first repair attempt; this is the final blocking guard.
     _audit_bible_completeness(
         project=project,
         project_slug=project_slug,

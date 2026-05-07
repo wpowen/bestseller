@@ -125,7 +125,7 @@ class WorkerSettings:
     on_startup = startup
     on_shutdown = shutdown
     redis_settings = _redis_settings()
-    max_jobs = int(os.getenv("WORKER_MAX_JOBS", "4"))
+    max_jobs = int(os.getenv("WORKER_MAX_JOBS", "1"))
     job_timeout = int(os.getenv("WORKER_JOB_TIMEOUT", "86400"))  # 24 h (supports 200+ chapter novels)
 
 

@@ -37,17 +37,210 @@ circular-import risk.
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 from typing import Any, Iterable, Mapping
 
 __all__ = [
     "FLASHBACK_MARKERS_ZH",
     "FLASHBACK_MARKERS_EN",
     "FLASHBACK_SCENE_MODES",
+    "LIFECYCLE_KINDS",
+    "OFFSTAGE_KINDS",
     "is_character_dead_at_chapter",
     "fake_death_revealed_at_chapter",
     "scene_is_flashback_like",
     "prose_window_is_flashback",
+    "filter_alive_at_chapter",
+    "effective_lifecycle_state",
+    "appearance_rule_for",
+    "characters_offstage_at_chapter",
 ]
+
+
+# ---------------------------------------------------------------------------
+# Lifecycle taxonomy
+# ---------------------------------------------------------------------------
+
+# Canonical lifecycle kinds the engine recognises. The first 4 mirror the
+# legacy ``alive_status`` enum (kept for SQL compatibility); the rest are
+# rich states that live in ``metadata_json.lifecycle_status.kind`` because
+# adding columns requires a migration and these states often co-exist
+# with an alive_status row (e.g. a character marked alive in the DB but
+# kept off-stage by a "sealed" lifecycle annotation).
+LIFECYCLE_KINDS: tuple[str, ...] = (
+    # Default — fully present, may speak/act/be a participant.
+    "alive",
+    # Alive but visibly hurt; may still act.
+    "injured",
+    # Actively dying; may speak final words but cannot drive future
+    # scenes after the death event commits.
+    "dying",
+    # Death event has occurred (and not retracted by fake-death reveal).
+    "deceased",
+    # Whereabouts unknown to the in-story world. Cannot appear as an
+    # active participant; MAY return at a later chapter without
+    # triggering the resurrection check.
+    "missing",
+    # Locked away by formation / spell / institution. Cannot appear
+    # until released; release chapter is in metadata when planned.
+    "sealed",
+    # Long sleep / cryostasis / coma — body present but no agency.
+    # Cannot drive scenes; may be referenced as a body that someone
+    # else acts upon.
+    "sleeping",
+    # Comatose — same restrictions as sleeping but in non-magical
+    # registers (medical / mundane).
+    "comatose",
+    # Banished from the active locale. May appear in scenes that go
+    # to the place they were exiled to, but cannot return to the
+    # main stage until recalled.
+    "exiled",
+)
+
+# States that forbid present-tense scene participation (i.e. "登场"
+# in the user's words). The character may still be remembered,
+# quoted, mourned, treated as a body / image / letter / relic, or
+# appear in clearly-labelled flashback / vision / dream scenes.
+OFFSTAGE_KINDS: frozenset[str] = frozenset({
+    "deceased",
+    "missing",
+    "sealed",
+    "sleeping",
+    "comatose",
+    # ``exiled`` is offstage *for the home setting* but allowed to
+    # appear in scenes set at the exile location — handled at the
+    # appearance-rule level, not flat-blocked here.
+})
+
+
+@dataclass(frozen=True)
+class AppearanceRule:
+    """Per-state rules for whether a character may appear in a scene."""
+
+    kind: str
+    can_act_in_present: bool          # speak new dialogue, take actions
+    can_appear_as_body: bool          # corpse / sleeping form / sealed shell
+    can_be_remembered: bool           # quoted, mourned, referenced
+    can_appear_in_flashback: bool     # in scene_type=flashback / vision / dream
+    can_return_without_resurrection_block: bool  # missing → returns naturally
+    notes_zh: str
+    notes_en: str
+
+
+_APPEARANCE_RULES: dict[str, AppearanceRule] = {
+    "alive": AppearanceRule(
+        kind="alive",
+        can_act_in_present=True,
+        can_appear_as_body=True,
+        can_be_remembered=True,
+        can_appear_in_flashback=True,
+        can_return_without_resurrection_block=True,
+        notes_zh="正常出场。",
+        notes_en="Normal participation.",
+    ),
+    "injured": AppearanceRule(
+        kind="injured",
+        can_act_in_present=True,
+        can_appear_as_body=True,
+        can_be_remembered=True,
+        can_appear_in_flashback=True,
+        can_return_without_resurrection_block=True,
+        notes_zh="可正常出场，但需体现伤情对动作/语调的拖累。",
+        notes_en="May act, but injuries should drag actions / tone.",
+    ),
+    "dying": AppearanceRule(
+        kind="dying",
+        can_act_in_present=True,
+        can_appear_as_body=True,
+        can_be_remembered=True,
+        can_appear_in_flashback=True,
+        can_return_without_resurrection_block=False,
+        notes_zh="生命垂危，对白与动作受限于濒死状态。",
+        notes_en="At death's door — speech/action limited.",
+    ),
+    "deceased": AppearanceRule(
+        kind="deceased",
+        can_act_in_present=False,
+        can_appear_as_body=True,
+        can_be_remembered=True,
+        can_appear_in_flashback=True,
+        can_return_without_resurrection_block=False,
+        notes_zh="不可登场。可被怀念/引用/作为遗体或信物提及；闪回/祭奠场景例外。",
+        notes_en="No present-tense action. May be remembered, quoted, "
+        "appear as corpse / relic, or in flashback / memorial scenes.",
+    ),
+    "missing": AppearanceRule(
+        kind="missing",
+        can_act_in_present=False,
+        can_appear_as_body=False,
+        can_be_remembered=True,
+        can_appear_in_flashback=True,
+        can_return_without_resurrection_block=True,
+        notes_zh="下落不明，本章不可登场。但他可在未来任何章节回归——"
+        "回归时不会触发『复活』违规。",
+        notes_en="Whereabouts unknown — no present scene participation. "
+        "May reappear in any future chapter without triggering the "
+        "resurrection check.",
+    ),
+    "sealed": AppearanceRule(
+        kind="sealed",
+        can_act_in_present=False,
+        can_appear_as_body=True,
+        can_be_remembered=True,
+        can_appear_in_flashback=True,
+        can_return_without_resurrection_block=True,
+        notes_zh="被封印，本章不可主动行动或对话。可作为封印体被提及；"
+        "解封章节确定后，需按计划解封后再恢复活动。",
+        notes_en="Sealed — no present action or dialogue. May be "
+        "referenced as a sealed form; release follows the planned "
+        "release chapter.",
+    ),
+    "sleeping": AppearanceRule(
+        kind="sleeping",
+        can_act_in_present=False,
+        can_appear_as_body=True,
+        can_be_remembered=True,
+        can_appear_in_flashback=True,
+        can_return_without_resurrection_block=True,
+        notes_zh="处于沉睡/休眠状态，本章不可发出当下动作或对话。"
+        "可作为肉身被他人照看、移动、保护。",
+        notes_en="Sleeping / dormant — no present action. May be tended, "
+        "moved, or guarded as a body by other characters.",
+    ),
+    "comatose": AppearanceRule(
+        kind="comatose",
+        can_act_in_present=False,
+        can_appear_as_body=True,
+        can_be_remembered=True,
+        can_appear_in_flashback=True,
+        can_return_without_resurrection_block=True,
+        notes_zh="昏迷，本章不可发出当下动作或对话。可作为病榻上的身体被照护。",
+        notes_en="Comatose — no present action. May be tended as a body.",
+    ),
+    "exiled": AppearanceRule(
+        kind="exiled",
+        can_act_in_present=True,  # only at exile location — caller must judge
+        can_appear_as_body=True,
+        can_be_remembered=True,
+        can_appear_in_flashback=True,
+        can_return_without_resurrection_block=True,
+        notes_zh="被流放，原舞台不可登场。仅可在流放地相关场景中出场。",
+        notes_en="Exiled from the main stage. May only appear in scenes "
+        "set at the exile location.",
+    ),
+}
+
+
+def appearance_rule_for(kind: str | None) -> AppearanceRule:
+    """Look up the canonical appearance rule for a lifecycle kind.
+
+    Returns the ``alive`` rule when the kind is unknown / missing — a
+    permissive default avoids false positives on legacy data.
+    """
+
+    if isinstance(kind, str) and kind.strip().lower() in _APPEARANCE_RULES:
+        return _APPEARANCE_RULES[kind.strip().lower()]
+    return _APPEARANCE_RULES["alive"]
 
 
 # Scene-mode strings that exempt the scene from "deceased may not appear"
@@ -227,6 +420,100 @@ def prose_window_is_flashback(
         return False
     pattern = _FLASHBACK_RE_EN if is_english else _FLASHBACK_RE_ZH
     return bool(pattern.search(text))
+
+
+def effective_lifecycle_state(
+    *,
+    alive_status: str | None,
+    death_chapter_number: int | None,
+    chapter_number: int,
+    character_metadata: Mapping[str, Any] | None,
+) -> tuple[str, dict[str, Any]]:
+    """Resolve a character's effective lifecycle kind in chapter N.
+
+    Returns ``(kind, payload)`` where ``payload`` is the rich record
+    pulled from ``metadata_json.lifecycle_status`` (or built from
+    legacy fields when no rich record exists).
+
+    Resolution priority — the first match wins:
+
+    1. ``metadata_json.lifecycle_status`` if it has a recognised
+       ``kind`` AND its ``since_chapter`` is on/before this chapter
+       AND its ``scheduled_exit_chapter`` is in the future / unset.
+    2. Death timeline: ``death_chapter_number <= N`` AND no fake-death
+       reveal yet → ``deceased``.
+    3. Legacy ``alive_status`` column (``alive`` / ``injured`` /
+       ``dying``).
+
+    Callers use this to drive ``appearance_rule_for`` when deciding
+    whether a participant slot is allowed.
+    """
+
+    meta = _as_dict(character_metadata)
+
+    # 1. Rich lifecycle record — preferred when present and active.
+    rich = meta.get("lifecycle_status")
+    if isinstance(rich, Mapping):
+        kind = rich.get("kind")
+        if isinstance(kind, str) and kind.strip().lower() in LIFECYCLE_KINDS:
+            since = rich.get("since_chapter")
+            try:
+                since_int = int(since) if since is not None else None
+            except (TypeError, ValueError):
+                since_int = None
+            exit_ch = rich.get("scheduled_exit_chapter")
+            try:
+                exit_int = int(exit_ch) if exit_ch is not None else None
+            except (TypeError, ValueError):
+                exit_int = None
+            if (since_int is None or since_int <= int(chapter_number)) and (
+                exit_int is None or exit_int > int(chapter_number)
+            ):
+                return kind.strip().lower(), dict(rich)
+
+    # 2. Death timeline overrides legacy alive_status.
+    if is_character_dead_at_chapter(
+        death_chapter_number=death_chapter_number,
+        chapter_number=chapter_number,
+        character_metadata=character_metadata,
+    ):
+        return "deceased", {
+            "kind": "deceased",
+            "since_chapter": death_chapter_number,
+            "source": "death_chapter_number",
+        }
+
+    # 3. Legacy alive_status fallback.
+    legacy = (alive_status or "alive").strip().lower()
+    if legacy not in LIFECYCLE_KINDS:
+        legacy = "alive"
+    return legacy, {"kind": legacy, "source": "alive_status"}
+
+
+def characters_offstage_at_chapter(
+    rows: Iterable[Any],
+    chapter_number: int,
+) -> list[tuple[Any, str, dict[str, Any]]]:
+    """Return ``(row, kind, payload)`` triples for characters whose
+    effective lifecycle kind forbids present-tense scene participation.
+
+    "Offstage" here means the rule says ``can_act_in_present == False``
+    OR the kind is in :data:`OFFSTAGE_KINDS`. The exiled state is left
+    out — exile is location-conditional and the caller decides scene
+    by scene.
+    """
+
+    out: list[tuple[Any, str, dict[str, Any]]] = []
+    for row in rows:
+        kind, payload = effective_lifecycle_state(
+            alive_status=getattr(row, "alive_status", None),
+            death_chapter_number=getattr(row, "death_chapter_number", None),
+            chapter_number=chapter_number,
+            character_metadata=getattr(row, "metadata_json", None),
+        )
+        if kind in OFFSTAGE_KINDS:
+            out.append((row, kind, payload))
+    return out
 
 
 def filter_alive_at_chapter(

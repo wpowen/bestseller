@@ -7,8 +7,9 @@ minimal async stub is enough to exercise it.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Any, Iterable
+from typing import Any
 from uuid import UUID, uuid4
 
 import pytest
@@ -388,12 +389,15 @@ def test_build_full_audit_validator_registers_expected_checks() -> None:
     validator = build_full_audit_validator()
     class_names = {type(c).__name__ for c in validator.checks}
     assert class_names == {
+        "CanonForbiddenTermCheck",
+        "CanonStateRegressionCheck",
         "LanguageSignatureCheck",
         "LengthEnvelopeCheck",
         "NamingConsistencyCheck",
         "EntityDensityCheck",
         "DialogIntegrityCheck",
         "POVLockCheck",
+        "RepeatedEventBeatCheck",
     }
 
 

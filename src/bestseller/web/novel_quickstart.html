@@ -498,6 +498,126 @@
   .pv-tl-time { color: var(--text-dim); min-width: 55px; }
   .pv-tl-text { color: var(--text); flex: 1; }
 
+  /* ═══════════════════════════════════
+     LISTING PROFILE (book listing)
+     ═══════════════════════════════════ */
+  .listing-panel {
+    display: none;
+    animation: fadeIn .4s ease;
+    margin-bottom: 20px;
+  }
+  .listing-panel.visible { display: block; }
+  .listing-panel h3 {
+    font-size: 18px; color: var(--text-bright); margin-bottom: 16px; font-weight: 700;
+  }
+  .listing-panel h4 {
+    font-size: 14px; color: var(--text-dim); margin-bottom: 10px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: .5px;
+  }
+  .listing-section {
+    background: var(--card);
+    backdrop-filter: var(--glass-blur);
+    -webkit-backdrop-filter: var(--glass-blur);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--glass-shadow);
+    padding: 20px;
+    margin-bottom: 14px;
+  }
+  .listing-header-row {
+    display: flex; justify-content: space-between; align-items: flex-start;
+    flex-wrap: wrap; gap: 8px; margin-bottom: 14px;
+  }
+  .listing-title { font-size: 20px; font-weight: 700; color: var(--text-bright); }
+  .listing-subtitle { font-size: 13px; color: var(--text-dim); margin-top: 2px; }
+  .listing-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+  .listing-tag {
+    padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 500;
+    background: rgba(74, 158, 255, 0.12); color: var(--blue); border: 1px solid rgba(74, 158, 255, 0.25);
+  }
+  .listing-score-row {
+    display: grid; grid-template-columns: minmax(160px, 0.4fr) minmax(0, 1fr);
+    gap: 12px; align-items: stretch;
+  }
+  .ls-score-card {
+    padding: 16px 20px;
+    background: rgba(74, 158, 255, 0.06);
+    border-radius: var(--radius-sm);
+    border: 1px solid rgba(74, 158, 255, 0.18);
+  }
+  .ls-score-card strong {
+    display: block; font-size: 30px; line-height: 1; margin-bottom: 8px; color: var(--text-bright);
+  }
+  .ls-score-card span { display: block; color: var(--text-dim); font-size: 13px; line-height: 1.6; }
+  .ls-checks {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 8px;
+  }
+  .ls-check {
+    min-height: 68px; padding: 10px 12px; border-radius: 10px;
+    border: 1px solid var(--border); background: rgba(255, 255, 255, 0.04);
+  }
+  .ls-check strong {
+    display: flex; justify-content: space-between; gap: 6px; margin-bottom: 4px; font-size: 12px;
+  }
+  .ls-check small { display: block; color: var(--text-dim); font-size: 11px; line-height: 1.5; }
+  .ls-check.pass strong { color: var(--success); }
+  .ls-check.fail strong { color: var(--danger); }
+  .ls-basics {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px;
+  }
+  .ls-basic-item {
+    padding: 10px 12px; border-radius: 10px;
+    border: 1px solid var(--border); background: rgba(255, 255, 255, 0.04);
+  }
+  .ls-basic-item strong { display: block; font-size: 11px; color: var(--text-dim); margin-bottom: 2px; text-transform: uppercase; letter-spacing: .3px; }
+  .ls-basic-item span { font-size: 13px; color: var(--text); }
+  .ls-intro p { margin: 0 0 10px; font-size: 14px; color: var(--text); line-height: 1.7; }
+  .ls-intro p strong { color: var(--text-bright); }
+  .ls-promo {
+    padding: 10px 14px; border-radius: 10px; margin-bottom: 8px;
+    border: 1px solid var(--border); background: rgba(255, 255, 255, 0.04);
+    font-size: 13px; color: var(--text); line-height: 1.6;
+  }
+  .ls-promo strong { color: var(--text-dim); font-size: 11px; display: block; margin-bottom: 2px; }
+  .ls-candidates-table {
+    width: 100%; border-collapse: collapse; font-size: 13px;
+  }
+  .ls-candidates-table th {
+    text-align: left; padding: 8px 10px; font-size: 11px; color: var(--text-dim);
+    border-bottom: 1px solid var(--border); font-weight: 600; text-transform: uppercase; letter-spacing: .3px;
+  }
+  .ls-candidates-table td {
+    padding: 7px 10px; border-bottom: 1px solid rgba(255,255,255,0.04); color: var(--text);
+  }
+  .ls-candidates-table td strong { color: var(--text-bright); }
+  .ls-candidates-table tbody tr:hover { background: rgba(74, 158, 255, 0.04); }
+  .ls-char-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px;
+  }
+  .ls-char-card {
+    padding: 12px 14px; border-radius: 10px;
+    border: 1px solid var(--border); background: rgba(255, 255, 255, 0.04);
+  }
+  .ls-char-card strong { font-size: 14px; color: var(--text-bright); }
+  .ls-char-card .role { font-size: 11px; color: var(--text-dim); font-weight: 400; margin-left: 6px; }
+  .ls-char-card p { font-size: 12px; color: var(--text-dim); margin: 4px 0 0; line-height: 1.5; }
+  .ls-promise-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px;
+  }
+  .ls-promise-item {
+    padding: 10px 12px; border-radius: 10px;
+    border: 1px solid var(--border); background: rgba(255, 255, 255, 0.04);
+  }
+  .ls-promise-item strong { display: block; font-size: 11px; color: var(--text-dim); margin-bottom: 2px; }
+  .ls-promise-item span { font-size: 13px; color: var(--text); }
+  .ls-columns {
+    display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px;
+  }
+  @media (max-width: 700px) {
+    .listing-score-row { grid-template-columns: 1fr; }
+    .ls-columns { grid-template-columns: 1fr; }
+  }
+
   /* Error */
   .pv-error {
     background: rgba(231, 76, 60, 0.1); border: 1px solid rgba(231, 76, 60, 0.3);
@@ -875,6 +995,70 @@
         <a href="/" class="btn btn-secondary">返回工作室</a>
       </div>
     </div>
+
+    <!-- ═══════════ LISTING PROFILE PANEL ═══════════ -->
+    <div class="listing-panel" id="pvListing">
+      <h3>上架资料</h3>
+
+      <div class="listing-section">
+        <div class="listing-header-row">
+          <div>
+            <div class="listing-title" id="lsTitle">-</div>
+            <div class="listing-subtitle" id="lsSubtitle"></div>
+          </div>
+          <div class="listing-tags" id="lsTags"></div>
+        </div>
+      </div>
+
+      <div class="listing-section">
+        <h4>上架完整度</h4>
+        <div class="listing-score-row">
+          <div class="ls-score-card">
+            <strong id="lsScore">-</strong>
+            <span id="lsScoreLabel">等待加载上架资料。</span>
+          </div>
+          <div class="ls-checks" id="lsChecks">
+            <div style="color:var(--text-dim);font-size:13px;">暂无校验结果。</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="listing-section">
+        <h4>上架基础信息</h4>
+        <div class="ls-basics" id="lsBasics">
+          <div style="color:var(--text-dim);font-size:13px;">暂无基础信息。</div>
+        </div>
+      </div>
+
+      <div class="listing-section">
+        <h4>简介与宣传文案</h4>
+        <div class="ls-intro" id="lsSynopsis">
+          <p style="color:var(--text-dim);">暂无作品简介。</p>
+        </div>
+      </div>
+
+      <div class="listing-section">
+        <h4>标题/数据名候选</h4>
+        <div id="lsCandidates" style="overflow-x:auto;">
+          <div style="color:var(--text-dim);font-size:13px;">暂无标题候选。</div>
+        </div>
+      </div>
+
+      <div class="ls-columns">
+        <div class="listing-section">
+          <h4>角色信息</h4>
+          <div class="ls-char-grid" id="lsCharacters">
+            <div style="color:var(--text-dim);font-size:13px;">暂无角色信息。</div>
+          </div>
+        </div>
+        <div class="listing-section">
+          <h4>读者承诺与投放定位</h4>
+          <div class="ls-promise-grid" id="lsPromises">
+            <div style="color:var(--text-dim);font-size:13px;">暂无定位信息。</div>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 
 </div>
@@ -1102,6 +1286,24 @@
     updateSelectionUI();
   }
 
+  function parseProgressFraction(value) {
+    if (typeof value !== 'string') return null;
+    const parts = value.split('/').map((part) => Number(part));
+    if (parts.length !== 2 || !Number.isFinite(parts[0]) || !Number.isFinite(parts[1])) {
+      return null;
+    }
+    return { done: parts[0], total: parts[1] };
+  }
+
+  function latestProgressFraction(events, stage, field) {
+    for (const event of [...events].reverse()) {
+      if (event.stage !== stage) continue;
+      const parsed = parseProgressFraction(event.payload?.[field]);
+      if (parsed) return parsed;
+    }
+    return null;
+  }
+
   function renderTaskCard(task) {
     const events = task.progress_events || [];
     const status = task.status || 'queued';
@@ -1123,6 +1325,9 @@
     const completedChapterEvents = Array.from(_completedByCh.values())
       .sort((a, b) => a.payload.chapter_number - b.payload.chapter_number);
     const completedChs = completedChapterEvents.map(e => e.payload.chapter_number);
+    const completedGlobal = latestProgressFraction(events, 'chapter_pipeline_completed', 'global_progress');
+    const startedGlobal = latestProgressFraction(events, 'chapter_pipeline_started', 'global_progress');
+    const completedLocal = latestProgressFraction(events, 'chapter_pipeline_completed', 'progress');
 
     // ── Book-wide totals (same priority chain as the detail view) ──
     const autowriteEvt = events.find(e => e.stage === 'progressive_autowrite_started');
@@ -1133,9 +1338,12 @@
     const total =
       autowriteEvt?.payload?.project_chapter_count ||
       latestPipelineEvt?.payload?.project_chapter_count ||
+      startedGlobal?.total ||
+      completedGlobal?.total ||
       firstPipelineEvt?.payload?.chapter_count ||
       planDoneEvt?.payload?.chapter_count ||
       0;
+    const bookCompletedChapters = completedGlobal?.done ?? completedChs.length;
 
     // ── Volume context (only populated for multi-volume projects) ──
     const totalVolumes =
@@ -1159,17 +1367,24 @@
       0;
     const volumeOffset = latestPipelineEvt?.payload?.global_chapter_offset ?? 0;
     const volumeDoneChs = completedChs.filter(n => n > volumeOffset);
+    const volumeCompletedChapters = completedLocal?.done ?? volumeDoneChs.length;
 
     // ── Chapter cursor (currently writing) ──
     const lastStarted = [...events].reverse().find(e => e.stage === 'chapter_pipeline_started');
-    const writingCh = (status === 'running' && lastStarted && !events.find(e => e.stage === 'chapter_pipeline_completed' && e.payload?.chapter_number === lastStarted.payload?.chapter_number))
+    const lastStartedTime = lastStarted ? new Date(lastStarted.timestamp).getTime() : 0;
+    const completedAfterLastStart = lastStarted ? events.some(e =>
+      e.stage === 'chapter_pipeline_completed' &&
+      e.payload?.chapter_number === lastStarted.payload?.chapter_number &&
+      new Date(e.timestamp).getTime() >= lastStartedTime
+    ) : false;
+    const writingCh = (status === 'running' && lastStarted && !completedAfterLastStart)
       ? lastStarted.payload?.chapter_number : null;
 
     // ── Progress metrics ──
-    const pct = total > 0 ? Math.min(99, 5 + Math.round((completedChs.length / total) * 95)) : (status === 'completed' ? 100 : 0);
+    const pct = total > 0 ? Math.min(99, 5 + Math.round((bookCompletedChapters / total) * 95)) : (status === 'completed' ? 100 : 0);
     const displayPct = status === 'completed' ? 100 : pct;
     const volumePct = currentVolumeChapterCount > 0
-      ? Math.min(100, Math.round((volumeDoneChs.length / currentVolumeChapterCount) * 100))
+      ? Math.min(100, Math.round((volumeCompletedChapters / currentVolumeChapterCount) * 100))
       : 0;
     const completedWordCount = completedChapterEvents.reduce((sum, e) => sum + Number(e.payload?.word_count || 0), 0);
     const projectedTotalWords = targetWordsPerChapter > 0 && total > 0
@@ -1181,7 +1396,7 @@
     let etaText = '';
     if (status === 'running' && chTimes.length >= 2 && total > 0) {
       const avgMs = (chTimes[chTimes.length - 1] - chTimes[0]) / (chTimes.length - 1);
-      const rem = total - completedChs.length;
+      const rem = total - bookCompletedChapters;
       if (rem > 0 && avgMs > 0) {
         etaText = `预计还需 ${fmtShort(Math.round(avgMs * rem / 1000))}`;
       }
@@ -1221,12 +1436,12 @@
       headlineItems.push({ label: '卷', value: volVal, sub: '', pulse: status === 'running' });
     }
     if (total > 0) {
-      const chVal = completedChs.length > 0 || writingCh
-        ? `<span>${writingCh || completedChs.length}</span> <span class="dim">/ ${total}</span> 章`
+      const chVal = bookCompletedChapters > 0 || writingCh
+        ? `<span>${writingCh || bookCompletedChapters}</span> <span class="dim">/ ${total}</span> 章`
         : `共 <span class="dim">${total}</span> 章`;
       const chSub = writingCh && lastStarted?.payload?.global_progress
-        ? `全书 ${lastStarted.payload.global_progress}`
-        : (completedChs.length > 0 ? `已完成 ${completedChs.length} 章` : '待写');
+        ? `已完成 ${bookCompletedChapters} 章 · 全书 ${lastStarted.payload.global_progress}`
+        : (bookCompletedChapters > 0 ? `已完成 ${bookCompletedChapters} 章` : '待写');
       headlineItems.push({ label: '章', value: chVal, sub: chSub, pulse: status === 'running' });
     }
     if (completedWordCount > 0 || projectedTotalWords > 0) {
@@ -1266,11 +1481,11 @@
       return `<a class="ch-pill done" href="/read/${esc(slug)}#${n}" target="_blank" title="${esc(tip)}">第${n}章${wc > 0 ? ` · ${esc(fmtWords(wc))}` : ''}</a>`;
     }).join('');
     const writingPill = writingCh ? `<span class="ch-pill writing">第${writingCh}章 写作中</span>` : '';
-    const morePills = completedChs.length > pillLimit ? `<span class="ch-pill done" style="cursor:default;">+${completedChs.length - pillLimit}章</span>` : '';
+    const morePills = bookCompletedChapters > pillLimit ? `<span class="ch-pill done" style="cursor:default;">+${bookCompletedChapters - Math.min(completedChapterEvents.length, pillLimit)}章</span>` : '';
 
     // Detect "completed but actually unfinished" — recovered tasks may have
     // status=completed while chapters on disk < target. Treat as resumable.
-    const writtenCount = (task.result && task.result.chapters_written) || completedChs.length;
+    const writtenCount = (task.result && task.result.chapters_written) || bookCompletedChapters;
     const targetCount = (task.result && task.result.target_chapters) || total || 0;
     const isTrulyComplete = status === 'completed' && !(targetCount > 0 && writtenCount < targetCount);
 
@@ -1291,6 +1506,7 @@
     }
     if (isTrulyComplete && slug) {
       actions += `<a class="btn btn-success btn-sm" href="/read/${esc(slug)}" target="_blank">阅读全书</a>`;
+      actions += `<button class="btn btn-secondary btn-sm" onclick="openProgress('${esc(task.task_id)}')">上架资料</button>`;
     }
     const showResume = slug && (
       status === 'failed' || status === 'cancelled' || status === 'incomplete'
@@ -1324,7 +1540,7 @@
       <div class="tc-progress">
         <div class="tc-prog-header">
           <span class="label">全书进度</span>
-          <span class="pct">${displayPct}% · ${completedChs.length}/${total}</span>
+          <span class="pct">${displayPct}% · ${bookCompletedChapters}/${total}</span>
         </div>
         <div class="tc-bar"><div class="tc-bar-fill ${esc(status)}" style="width:${displayPct}%"></div></div>
       </div>` : '';
@@ -1332,7 +1548,7 @@
       <div class="tc-progress">
         <div class="tc-prog-header volume">
           <span class="label">第 ${currentVolume} 卷进度</span>
-          <span class="pct">${volumePct}% · ${volumeDoneChs.length}/${currentVolumeChapterCount}</span>
+          <span class="pct">${volumePct}% · ${volumeCompletedChapters}/${currentVolumeChapterCount}</span>
         </div>
         <div class="tc-bar"><div class="tc-bar-fill volume" style="width:${volumePct}%"></div></div>
       </div>` : '';
@@ -1354,7 +1570,7 @@
       ${overallBarHtml}
       ${volumeBarHtml}
       ${metaFooter}
-      ${(completedChs.length > 0 || writingCh) ? `<div class="tc-chapters">${pills}${writingPill}${morePills}</div>` : ''}
+      ${(bookCompletedChapters > 0 || writingCh) ? `<div class="tc-chapters">${pills}${writingPill}${morePills}</div>` : ''}
       <div class="tc-actions">${actions}</div>
     </div>`;
   }
@@ -1362,6 +1578,8 @@
   /* Open single-task progress view */
   window.openProgress = function(taskId) {
     focusTaskId = taskId;
+    listingLoadedForSlug = null;
+    $('#pvListing').classList.remove('visible');
     switchView('progress');
     startProgressPoll(taskId);
   };
@@ -1544,6 +1762,8 @@
     const events = data.progress_events || [];
     const status = data.status;
     const slug = data.project_slug || '';
+    const completedGlobal = latestProgressFraction(events, 'chapter_pipeline_completed', 'global_progress');
+    const startedGlobal = latestProgressFraction(events, 'chapter_pipeline_started', 'global_progress');
 
     taskStartTime = data.created_at;
 
@@ -1568,6 +1788,8 @@
     const total =
       autowriteEvt?.payload?.project_chapter_count ||
       latestPipeEvt?.payload?.project_chapter_count ||
+      startedGlobal?.total ||
+      completedGlobal?.total ||
       firstPipeEvt?.payload?.chapter_count ||
       planDoneEvt?.payload?.chapter_count ||
       0;
@@ -1593,11 +1815,13 @@
       .sort((a, b) => a.payload.chapter_number - b.payload.chapter_number);
     const doneChs = _dedupedDone.map(e => e.payload.chapter_number);
     const chTimes = _dedupedDone.map(e => new Date(e.timestamp));
+    const bookDoneCount = completedGlobal?.done ?? doneChs.length;
+    const latestStartedEvt = [...events].reverse().find(e => e.stage === 'chapter_pipeline_started');
 
     // Pct
     let pct = 0;
     if (status === 'completed') pct = 100;
-    else if (total > 0 && doneChs.length > 0) pct = Math.min(99, 5 + Math.round((doneChs.length / total) * 95));
+    else if (total > 0 && bookDoneCount > 0) pct = Math.min(99, 5 + Math.round((bookDoneCount / total) * 95));
     else if (data.current_stage?.includes('materialization') || data.current_stage?.includes('pipeline_started')) pct = 5;
     else if (data.current_stage?.includes('planning')) pct = 2;
     else if (data.current_stage?.startsWith('conception')) pct = 3;
@@ -1610,13 +1834,12 @@
     $('#pvPct').textContent = pct + '%';
 
     // Stage
-    const lastEvt = events[events.length - 1];
     let stageTxt = STAGE[data.current_stage] || data.current_stage || '-';
-    if (data.current_stage === 'chapter_pipeline_started' && lastEvt?.payload) {
-      const chNum = lastEvt.payload.chapter_number ?? '-';
-      const prog = lastEvt.payload.progress ?? '';
-      const targetText = Number(lastEvt.payload.target_word_count || 0) > 0
-        ? ` · 目标约 ${fmtWords(lastEvt.payload.target_word_count)}`
+    if (data.current_stage === 'chapter_pipeline_started' && latestStartedEvt?.payload) {
+      const chNum = latestStartedEvt.payload.chapter_number ?? '-';
+      const prog = latestStartedEvt.payload.progress ?? '';
+      const targetText = Number(latestStartedEvt.payload.target_word_count || 0) > 0
+        ? ` · 目标约 ${fmtWords(latestStartedEvt.payload.target_word_count)}`
         : '';
       const volPrefix = (currentVolume && totalVolumes > 1)
         ? `第 ${currentVolume}/${totalVolumes} 卷 · `
@@ -1630,7 +1853,7 @@
 
     // Stats — chapter count is book-wide; append volume progress when the
     // project has more than one volume so users see 12/1200 章 · 1/24 卷.
-    $('#pvDone').textContent = doneChs.length;
+    $('#pvDone').textContent = bookDoneCount;
     $('#pvTotal').textContent = total
       ? (totalVolumes > 1 && currentVolume
           ? `${total}（卷 ${currentVolume}/${totalVolumes}）`
@@ -1641,12 +1864,12 @@
     if (chTimes.length >= 2) {
       const avgMs = (chTimes[chTimes.length - 1] - chTimes[0]) / (chTimes.length - 1);
       $('#pvAvg').textContent = fmtShort(Math.round(avgMs / 1000));
-      const rem = total - doneChs.length;
+      const rem = total - bookDoneCount;
       $('#pvEta').textContent = rem > 0 ? fmtShort(Math.round(avgMs * rem / 1000)) : '-';
     } else if (chTimes.length === 1 && pipeEvt) {
       const ms = chTimes[0] - new Date(pipeEvt.timestamp);
       $('#pvAvg').textContent = fmtShort(Math.round(ms / 1000));
-      const rem = total - 1;
+      const rem = total - bookDoneCount;
       $('#pvEta').textContent = rem > 0 ? fmtShort(Math.round(ms * rem / 1000)) : '-';
     } else {
       $('#pvAvg').textContent = '-';
@@ -1657,7 +1880,7 @@
     const pvs = $('#pvStatus');
     if (status === 'completed') { pvs.textContent = '已完成'; pvs.style.color = 'var(--success)'; }
     else if (status === 'failed') { pvs.textContent = '失败'; pvs.style.color = 'var(--danger)'; }
-    else if (doneChs.length > 0) { pvs.textContent = '写作中'; pvs.style.color = 'var(--blue)'; }
+    else if (bookDoneCount > 0) { pvs.textContent = '写作中'; pvs.style.color = 'var(--blue)'; }
     else { pvs.textContent = '准备中'; pvs.style.color = ''; }
 
     // Model
@@ -1689,7 +1912,7 @@
     }).join('');
 
     // Chapters
-    if (doneChs.length > 0 && slug) {
+    if (bookDoneCount > 0 && slug) {
       $('#pvChSec').style.display = '';
       $('#pvReadAll').href = `/read/${encodeURIComponent(slug)}`;
       try {
@@ -1716,8 +1939,9 @@
     if (status === 'completed') {
       stopProgressPoll();
       $('#pvDoneBanner').style.display = '';
-      $('#pvDoneSummary').textContent = `共 ${doneChs.length} 章已完成`;
+      $('#pvDoneSummary').textContent = `共 ${bookDoneCount} 章已完成`;
       $('#pvReaderLink').href = `/read/${encodeURIComponent(slug)}`;
+      loadAndRenderListing(slug);
     }
     if (status === 'failed') {
       stopProgressPoll();
@@ -1896,6 +2120,135 @@
   $('#toStep3').addEventListener('click', () => { updateSummary(); wizGo(3); });
   $('#startBtn').addEventListener('click', startCreation);
   $('#scheduleBtn')?.addEventListener('click', scheduleQuickstart);
+
+  /* ═══════════════════════════════════════
+     LISTING PROFILE
+     ═══════════════════════════════════════ */
+  let listingLoadedForSlug = null;
+
+  async function loadAndRenderListing(slug) {
+    if (!slug || listingLoadedForSlug === slug) return;
+    const panel = $('#pvListing');
+    try {
+      const res = await fetch(`/api/projects/${encodeURIComponent(slug)}/summary`);
+      if (!res.ok) { panel.classList.remove('visible'); return; }
+      const summary = await res.json();
+      const listing = summary?.listing_profile;
+      if (!listing) { panel.classList.remove('visible'); return; }
+      renderListingProfile(listing, summary?.project);
+      listingLoadedForSlug = slug;
+      panel.classList.add('visible');
+    } catch {
+      panel.classList.remove('visible');
+    }
+  }
+
+  function renderListingProfile(listing, project) {
+    const compliance = listing.compliance || {};
+    const proj = project || {};
+
+    // Header
+    const title = listing.primary_title || proj.title || '-';
+    const categoryText = [listing.primary_category, listing.secondary_category].filter(Boolean).join(' / ') || '未分类';
+    const titleCount = Array.isArray(listing.title_candidates) ? listing.title_candidates.length : 0;
+    $('#lsTitle').textContent = title;
+    $('#lsSubtitle').textContent = `${categoryText} · ${listing.length_type || '长篇连载'} · ${titleCount} 个标题候选`;
+
+    // Tags
+    const tags = Array.isArray(listing.tags) && listing.tags.length ? listing.tags : (Array.isArray(proj.tags) ? proj.tags : []);
+    $('#lsTags').innerHTML = tags.length
+      ? tags.map(t => `<span class="listing-tag">${esc(t)}</span>`).join('')
+      : '<span class="listing-tag">待补标签</span>';
+
+    // Compliance score
+    const statusLabel = { ready: '上架资料完整', needs_attention: '可查看但仍需补强', blocked: '暂不建议上架' }[compliance.status] || '等待校验';
+    $('#lsScore').textContent = `${Number(compliance.score || 0)}%`;
+    $('#lsScoreLabel').textContent = `${statusLabel} · 阻断 ${Number(compliance.blocker_count || 0)} 项 / 警告 ${Number(compliance.warning_count || 0)} 项`;
+
+    const checks = Array.isArray(compliance.checks) ? compliance.checks : [];
+    $('#lsChecks').innerHTML = checks.length ? checks.map(item => `
+      <div class="ls-check ${item.passed ? 'pass' : 'fail'}">
+        <strong><span>${esc(item.label || item.code || '校验项')}</span><span>${item.passed ? '通过' : '需处理'}</span></strong>
+        <small>${esc(item.passed ? '当前资料满足此项要求。' : (item.message || '需要补充。'))}</small>
+      </div>
+    `).join('') : '<div style="color:var(--text-dim);font-size:13px;">暂无校验结果。</div>';
+
+    // Basics
+    const platformSuggestions = listing.platform_category_suggestions || {};
+    const platformText = Object.entries(platformSuggestions)
+      .flatMap(([, values]) => Array.isArray(values) ? values : [])
+      .filter(Boolean).slice(0, 8).join('、');
+    const basicItems = [
+      ['书籍 ID', listing.book_id || proj.slug],
+      ['推荐副标题', listing.recommended_subtitle],
+      ['频道', listing.channel || proj.audience],
+      ['连载状态', listing.serialization_status || proj.status],
+      ['语言', listing.language || 'zh-CN'],
+      ['主分类', listing.primary_category],
+      ['二级分类', listing.secondary_category],
+      ['细分类', Array.isArray(listing.tertiary_categories) ? listing.tertiary_categories.join('、') : ''],
+      ['平台分类建议', platformText],
+      ['不建议分类', Array.isArray(listing.not_recommended_categories) ? listing.not_recommended_categories.join('、') : ''],
+      ['资料来源', Array.isArray(listing.source_files) && listing.source_files.length ? `已接入 ${listing.source_files.length} 个资料文件` : '系统自动生成'],
+    ].filter(([, v]) => v);
+    $('#lsBasics').innerHTML = basicItems.length ? basicItems.map(([label, value]) => `
+      <div class="ls-basic-item"><strong>${esc(label)}</strong><span>${esc(value)}</span></div>
+    `).join('') : '<div style="color:var(--text-dim);font-size:13px;">暂无基础信息。</div>';
+
+    // Synopsis & promo
+    const introBlocks = [];
+    if (listing.logline) introBlocks.push(`<p><strong>一句话钩子：</strong>${esc(listing.logline)}</p>`);
+    if (listing.short_intro) introBlocks.push(`<p><strong>短简介：</strong>${esc(listing.short_intro)}</p>`);
+    if (listing.long_intro) introBlocks.push(`<p><strong>长简介：</strong>${esc(listing.long_intro)}</p>`);
+    const promoCopy = Array.isArray(listing.promo_copy) ? listing.promo_copy : [];
+    if (promoCopy.length) {
+      introBlocks.push(promoCopy.map((item, i) =>
+        `<div class="ls-promo"><strong>宣传文案 ${i + 1}：</strong>${esc(item)}</div>`
+      ).join(''));
+    }
+    $('#lsSynopsis').innerHTML = introBlocks.length
+      ? introBlocks.join('')
+      : '<p style="color:var(--text-dim);">暂无作品简介。</p>';
+
+    // Title candidates
+    const candidates = Array.isArray(listing.title_candidates) ? listing.title_candidates.slice(0, 20) : [];
+    $('#lsCandidates').innerHTML = candidates.length ? `
+      <table class="ls-candidates-table">
+        <thead><tr><th>#</th><th>标题/数据名</th><th>副标题</th><th>角度</th><th>建议</th></tr></thead>
+        <tbody>${candidates.map((item, i) => `
+          <tr>
+            <td>${Number(item.id || i + 1)}</td>
+            <td><strong>${esc(item.title || '')}</strong></td>
+            <td>${esc(item.subtitle || '')}</td>
+            <td>${esc(item.angle || '')}</td>
+            <td>${esc(item.recommendation || '')}</td>
+          </tr>
+        `).join('')}</tbody>
+      </table>
+    ` : '<div style="color:var(--text-dim);font-size:13px;">暂无标题候选。</div>';
+
+    // Characters
+    const characters = Array.isArray(listing.main_characters) ? listing.main_characters : [];
+    $('#lsCharacters').innerHTML = characters.length ? characters.slice(0, 12).map(c => `
+      <div class="ls-char-card">
+        <strong>${esc(c.name || '未命名角色')}<span class="role">${esc(c.role || '')}</span></strong>
+        ${c.identity ? `<p>身份：${esc(c.identity)}</p>` : ''}
+        ${c.appeal ? `<p>吸引力：${esc((c.appeal || '').slice(0, 72))}</p>` : ''}
+        ${c.goal ? `<p>目标：${esc((c.goal || '').slice(0, 60))}</p>` : ''}
+        ${c.arc_state ? `<p>当前：${esc((c.arc_state || '').slice(0, 60))}</p>` : ''}
+      </div>
+    `).join('') : '<div style="color:var(--text-dim);font-size:13px;">暂无角色信息。</div>';
+
+    // Reader promise & positioning
+    const posItems = [];
+    const promises = Array.isArray(listing.reader_promise) ? listing.reader_promise : [];
+    promises.slice(0, 5).forEach((item, i) => posItems.push([`读者承诺 ${i + 1}`, item]));
+    const warnings = Array.isArray(listing.load_warnings) ? listing.load_warnings : [];
+    warnings.forEach((item, i) => posItems.push([`资料警告 ${i + 1}`, item]));
+    $('#lsPromises').innerHTML = posItems.length ? posItems.map(([label, value]) => `
+      <div class="ls-promise-item"><strong>${esc(label)}</strong><span>${esc(value)}</span></div>
+    `).join('') : '<div style="color:var(--text-dim);font-size:13px;">暂无定位信息。</div>';
+  }
 
   /* ═══════════════════════════════════════
      UTILS

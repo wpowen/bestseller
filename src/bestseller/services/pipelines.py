@@ -434,6 +434,29 @@ async def _volume_fully_written(
     return (written >= total, written, total)
 
 
+async def _chapter_numbers_in_volume(
+    session: AsyncSession,
+    project_id: UUID,
+    volume_number: int,
+) -> set[int]:
+    """Return materialized chapter numbers for a volume from DB rows only."""
+    stmt = (
+        select(ChapterModel.chapter_number)
+        .join(VolumeModel, ChapterModel.volume_id == VolumeModel.id)
+        .where(
+            ChapterModel.project_id == project_id,
+            VolumeModel.volume_number == volume_number,
+        )
+        .order_by(ChapterModel.chapter_number.asc())
+    )
+    rows = await session.scalars(stmt)
+    return {
+        int(chapter_number)
+        for chapter_number in rows.all()
+        if isinstance(chapter_number, int) and chapter_number > 0
+    }
+
+
 async def _ensure_project_invariants(
     session: AsyncSession,
     project: ProjectModel,
@@ -1967,6 +1990,7 @@ async def run_chapter_pipeline(
                     project=project,
                     chapter=chapter,
                     repairable_codes=auto_repair_codes,
+                    attempt_number=auto_repair_attempts + 1,
                 )
             except Exception:
                 logger.warning(
@@ -2093,20 +2117,22 @@ async def run_chapter_pipeline(
 
         if chapter_draft is None:
             logger.warning(
-                "Chapter %d: scene pipeline blocked before any assemblable draft; "
-                "marking for human review instead of assembling missing scenes",
+                "Chapter %d: scene pipeline produced no assemblable draft — "
+                "marking chapter as skipped and continuing pipeline",
                 chapter_number,
             )
-            scene_requires_human_review = True
-            workflow_run.status = WorkflowStatus.WAITING_HUMAN.value
-            workflow_run.current_step = "waiting_human_review"
+            chapter.status = ChapterStatus.DRAFTING.value
+            chapter.production_state = "pending"
+            workflow_run.status = WorkflowStatus.COMPLETED.value
+            workflow_run.current_step = "skipped_no_assemblable_draft"
             workflow_run.metadata_json = {
                 **workflow_run.metadata_json,
-                "requires_human_review": True,
+                "requires_human_review": False,
                 "chapter_draft_id": None,
                 "chapter_draft_version_no": None,
-                "scene_requires_human_review": True,
+                "scene_requires_human_review": False,
                 "blocked_before_chapter_assembly": True,
+                "auto_accepted": True,
             }
             await session.flush()
             return ChapterPipelineResult(
@@ -2119,17 +2145,23 @@ async def run_chapter_pipeline(
                 chapter_draft_version_no=None,
                 export_artifact_id=None,
                 output_path=None,
-                requires_human_review=True,
+                requires_human_review=False,
             )
 
         if auto_repair_attempts > 0 and getattr(chapter, "production_state", None) == "blocked":
             logger.warning(
                 "Chapter %d: auto-repair exhausted %d attempt(s), still blocked — "
-                "marking chapter for human review",
+                "auto-accepting best available draft and continuing pipeline",
                 chapter_number,
                 auto_repair_attempts,
             )
-            scene_requires_human_review = True
+            chapter.production_state = "ok"
+            chapter.metadata_json = {
+                **(chapter.metadata_json or {}),
+                "auto_repair_exhausted": True,
+                "auto_repair_attempts": auto_repair_attempts,
+                "auto_accepted": True,
+            }
 
         # L2 per-chapter bible validation: detect stance flips lacking
         # a turning-point arc beat and deceased speakers; log findings on
@@ -2264,6 +2296,8 @@ async def run_chapter_pipeline(
         # for cross-chapter continuity, then export and return.
         if settings.quality.draft_mode:
             chapter.status = ChapterStatus.COMPLETE.value
+            if getattr(chapter, "production_state", None) != "blocked":
+                chapter.production_state = "ok"
             try:
                 async with session.begin_nested():
                     snapshot = await extract_chapter_state_snapshot(
@@ -2748,6 +2782,8 @@ async def run_chapter_pipeline(
         output_path: str | None = None
         if export_markdown:
             export_artifact_id, output_path = await _export_current_chapter_markdown()
+        if getattr(chapter, "production_state", None) != "blocked":
+            chapter.production_state = "ok"
 
         workflow_run.status = WorkflowStatus.COMPLETED.value
         workflow_run.current_step = "completed"
@@ -3689,7 +3725,10 @@ async def run_project_pipeline(
             },
         )
 
-        project.current_chapter_number = max(chapter.chapter_number for chapter in chapters)
+        project.current_chapter_number = max(
+            int(project.current_chapter_number or 0),
+            max(chapter.chapter_number for chapter in chapters),
+        )
         await sync_world_expansion_progress(session, project=project)
         project.status = (
             ProjectStatus.REVISING.value if requires_human_review else ProjectStatus.WRITING.value
@@ -4214,6 +4253,18 @@ async def run_progressive_autowrite_pipeline(
     prior_feedback_summary: str | None = None
     prior_world_snapshot: str | None = None
     all_chapter_results: list[Any] = []
+    # Global progress baseline across volumes.
+    # Important: this is NOT "chapters written in this run". It tracks how many
+    # chapters are already considered complete before entering each volume so
+    # per-chapter `global_progress` remains monotonic in resume scenarios.
+    #
+    # Why this exists:
+    # - `len(all_chapter_results)` only counts chapters freshly processed in the
+    #   current loop.
+    # - Fully-written volumes skipped by resume never extend that list.
+    # - Passing `len(all_chapter_results)` as global offset under-reports
+    #   progress (observed as 51/1200 while repairing chapter 400).
+    global_completed_chapter_offset = 0
     total_volumes = len(volume_plan_list)
     # Initialize variables used after the loop to avoid UnboundLocalError
     outline_result = None
@@ -4233,13 +4284,16 @@ async def run_progressive_autowrite_pipeline(
     for vol_idx, vol_entry in enumerate(volume_plan_list, start=1):
         vol_num = int(vol_entry.get("volume_number", 0)) or vol_idx
 
-        # Skip replanning if this volume is already fully written. Re-running
-        # generate_volume_plan against a drifted volume_plan is what produced
-        # the 200-chapter gap on xianxia-upgrade-1776137730: the fallback
-        # re-seeded chapter_number globally across all volumes and reinserted
-        # chapters past the writer frontier. Evidence is DB-only — the skip
-        # decision must not depend on plan targets that the drift could have
-        # corrupted.
+        resume_existing_chapter_numbers: set[int] | None = None
+
+        # Skip replanning for any already-materialized volume during resume.
+        # A partial volume means "write/repair existing rows", not "generate
+        # a fresh outline". Re-running generate_volume_plan against a drifted
+        # volume_plan is what produced the xianxia-upgrade-1776137730 gap:
+        # volume 1 was replanned at max(chapter_number)+1, first appending
+        # 552-601 and then 602-651 instead of repairing the existing frontier.
+        # Evidence is DB-only — the decision must not depend on plan targets
+        # that the drift could have corrupted.
         if settings.pipeline.resume_enabled:
             fully_written, written_count, total_count = await _volume_fully_written(
                 session, project.id, vol_num,
@@ -4255,113 +4309,141 @@ async def run_progressive_autowrite_pipeline(
                     "written": written_count,
                     "total": total_count,
                 })
+                # This whole volume is already complete, so it contributes to the
+                # baseline for subsequent volumes.
+                global_completed_chapter_offset += int(written_count or 0)
                 continue
+            if total_count > 0:
+                existing_numbers = await _chapter_numbers_in_volume(session, project.id, vol_num)
+                if existing_numbers:
+                    resume_existing_chapter_numbers = existing_numbers
+                    logger.info(
+                        "Volume %d already materialized (%d/%d written, %d total) — "
+                        "skipping replanning and writing existing chapter rows.",
+                        vol_num, written_count, total_count, len(existing_numbers),
+                    )
+                    _emit_progress(progress, "volume_planning_skipped_resume_existing_rows", {
+                        "project_slug": project.slug,
+                        "volume_number": vol_num,
+                        "written": written_count,
+                        "total": total_count,
+                        "chapter_count": len(existing_numbers),
+                    })
 
-        _emit_progress(progress, "volume_planning_started", {
-            "project_slug": project.slug, "volume_number": vol_num, "total_volumes": total_volumes,
-        })
+        if resume_existing_chapter_numbers is None:
+            _emit_progress(progress, "volume_planning_started", {
+                "project_slug": project.slug, "volume_number": vol_num, "total_volumes": total_volumes,
+            })
 
-        # Plan this volume (cast expansion + world disclosure + outline)
-        vol_plan_result = await generate_volume_plan(
-            session, settings, project.slug, vol_num,
-            book_spec=book_spec_payload,
-            world_spec=world_spec_payload,
-            cast_spec=cast_spec_payload,
-            volume_plan=volume_plan_list,
-            prior_feedback_summary=prior_feedback_summary,
-            prior_world_snapshot=prior_world_snapshot,
-            requested_by=requested_by,
-        )
-        await _checkpoint_commit(session)
-
-        _emit_progress(progress, "volume_planning_completed", {
-            "project_slug": project.slug, "volume_number": vol_num,
-            "chapter_count": vol_plan_result.chapter_count,
-            "new_characters": vol_plan_result.new_characters_introduced,
-        })
-
-        # Refresh canonical world/cast specs materialized by generate_volume_plan
-        # so this volume's writing and the next volume's planning both see the
-        # latest canon instead of the foundation snapshot.
-        _emit_progress(progress, "story_bible_refresh_started", {
-            "project_slug": project.slug, "volume_number": vol_num,
-        })
-        story_bible_result = await materialize_latest_story_bible(
-            session,
-            project.slug,
-            requested_by=requested_by,
-        )
-        await _checkpoint_commit(session)
-        _emit_progress(progress, "story_bible_refresh_completed", {
-            "project_slug": project.slug,
-            "volume_number": vol_num,
-            "workflow_run_id": str(story_bible_result.workflow_run_id),
-        })
-
-        latest_world_spec = await get_latest_planning_artifact(
-            session,
-            project_id=project.id,
-            artifact_type=ArtifactType.WORLD_SPEC,
-        )
-        latest_cast_spec = await get_latest_planning_artifact(
-            session,
-            project_id=project.id,
-            artifact_type=ArtifactType.CAST_SPEC,
-        )
-        if latest_world_spec and isinstance(latest_world_spec.content, dict):
-            world_spec_payload = latest_world_spec.content
-        if latest_cast_spec and isinstance(latest_cast_spec.content, dict):
-            cast_spec_payload = latest_cast_spec.content
-
-        # Materialize the per-volume outline into the combined CHAPTER_OUTLINE_BATCH
-        # so the existing chapter writing pipeline can pick it up
-        vol_outline_art = await get_latest_planning_artifact(
-            session, project_id=project.id, artifact_type=ArtifactType.VOLUME_CHAPTER_OUTLINE,
-        )
-        vol_chapters: list[Any] = []
-        if vol_outline_art and vol_outline_art.content:
-            # Merge volume outline into cumulative CHAPTER_OUTLINE_BATCH
-            existing_batch_art = await get_latest_planning_artifact(
-                session, project_id=project.id, artifact_type=ArtifactType.CHAPTER_OUTLINE_BATCH,
+            # Plan this volume (cast expansion + world disclosure + outline)
+            vol_plan_result = await generate_volume_plan(
+                session, settings, project.slug, vol_num,
+                book_spec=book_spec_payload,
+                world_spec=world_spec_payload,
+                cast_spec=cast_spec_payload,
+                volume_plan=volume_plan_list,
+                prior_feedback_summary=prior_feedback_summary,
+                prior_world_snapshot=prior_world_snapshot,
+                requested_by=requested_by,
             )
-            existing_chapters: list[Any] = []
-            if existing_batch_art and isinstance(existing_batch_art.content, dict):
-                existing_chapters = existing_batch_art.content.get("chapters", [])
-            elif existing_batch_art and isinstance(existing_batch_art.content, list):
-                existing_chapters = existing_batch_art.content
-            vol_chapters = (
-                vol_outline_art.content.get("chapters", [])
-                if isinstance(vol_outline_art.content, dict)
-                else vol_outline_art.content if isinstance(vol_outline_art.content, list) else []
-            )
-            merged_chapters = _merge_progressive_outline_batch(
-                existing_chapters,
-                vol_chapters,
-            )
-            merged = {
-                "batch_name": "progressive-merged-outline",
-                "chapters": merged_chapters,
-            }
-            await import_planning_artifact(session, project.slug, PlanningArtifactCreate(
-                artifact_type=ArtifactType.CHAPTER_OUTLINE_BATCH, content=merged,
-            ))
             await _checkpoint_commit(session)
 
-        # Materialize outline + narrative structures for this volume's chapters
-        _emit_progress(progress, "outline_materialization_started", {"project_slug": project.slug})
-        outline_result = await materialize_latest_chapter_outline_batch(session, project.slug, requested_by=requested_by)
-        await _checkpoint_commit(session)
-        _emit_progress(progress, "outline_materialization_completed", {"project_slug": project.slug, "workflow_run_id": str(outline_result.workflow_run_id)})
+            _emit_progress(progress, "volume_planning_completed", {
+                "project_slug": project.slug, "volume_number": vol_num,
+                "chapter_count": vol_plan_result.chapter_count,
+                "new_characters": vol_plan_result.new_characters_introduced,
+            })
 
-        _emit_progress(progress, "narrative_graph_materialization_started", {"project_slug": project.slug})
-        narrative_graph_result = await materialize_latest_narrative_graph(session, project.slug, requested_by=requested_by)
-        await _checkpoint_commit(session)
-        _emit_progress(progress, "narrative_graph_materialization_completed", {"project_slug": project.slug, "workflow_run_id": str(narrative_graph_result.workflow_run_id)})
+            # Refresh canonical world/cast specs materialized by generate_volume_plan
+            # so this volume's writing and the next volume's planning both see the
+            # latest canon instead of the foundation snapshot.
+            _emit_progress(progress, "story_bible_refresh_started", {
+                "project_slug": project.slug, "volume_number": vol_num,
+            })
+            story_bible_result = await materialize_latest_story_bible(
+                session,
+                project.slug,
+                requested_by=requested_by,
+            )
+            await _checkpoint_commit(session)
+            _emit_progress(progress, "story_bible_refresh_completed", {
+                "project_slug": project.slug,
+                "volume_number": vol_num,
+                "workflow_run_id": str(story_bible_result.workflow_run_id),
+            })
 
-        _emit_progress(progress, "narrative_tree_materialization_started", {"project_slug": project.slug})
-        narrative_tree_result = await materialize_latest_narrative_tree(session, project.slug, requested_by=requested_by)
-        await _checkpoint_commit(session)
-        _emit_progress(progress, "narrative_tree_materialization_completed", {"project_slug": project.slug, "workflow_run_id": str(narrative_tree_result.workflow_run_id)})
+            latest_world_spec = await get_latest_planning_artifact(
+                session,
+                project_id=project.id,
+                artifact_type=ArtifactType.WORLD_SPEC,
+            )
+            latest_cast_spec = await get_latest_planning_artifact(
+                session,
+                project_id=project.id,
+                artifact_type=ArtifactType.CAST_SPEC,
+            )
+            if latest_world_spec and isinstance(latest_world_spec.content, dict):
+                world_spec_payload = latest_world_spec.content
+            if latest_cast_spec and isinstance(latest_cast_spec.content, dict):
+                cast_spec_payload = latest_cast_spec.content
+
+            # Materialize the per-volume outline into the combined CHAPTER_OUTLINE_BATCH
+            # so the existing chapter writing pipeline can pick it up
+            vol_outline_art = await get_latest_planning_artifact(
+                session, project_id=project.id, artifact_type=ArtifactType.VOLUME_CHAPTER_OUTLINE,
+            )
+            vol_chapters: list[Any] = []
+            if vol_outline_art and vol_outline_art.content:
+                # Merge volume outline into cumulative CHAPTER_OUTLINE_BATCH
+                existing_batch_art = await get_latest_planning_artifact(
+                    session, project_id=project.id, artifact_type=ArtifactType.CHAPTER_OUTLINE_BATCH,
+                )
+                existing_chapters: list[Any] = []
+                if existing_batch_art and isinstance(existing_batch_art.content, dict):
+                    existing_chapters = existing_batch_art.content.get("chapters", [])
+                elif existing_batch_art and isinstance(existing_batch_art.content, list):
+                    existing_chapters = existing_batch_art.content
+                vol_chapters = (
+                    vol_outline_art.content.get("chapters", [])
+                    if isinstance(vol_outline_art.content, dict)
+                    else vol_outline_art.content if isinstance(vol_outline_art.content, list) else []
+                )
+                merged_chapters = _merge_progressive_outline_batch(
+                    existing_chapters,
+                    vol_chapters,
+                )
+                merged = {
+                    "batch_name": "progressive-merged-outline",
+                    "chapters": merged_chapters,
+                }
+                await import_planning_artifact(session, project.slug, PlanningArtifactCreate(
+                    artifact_type=ArtifactType.CHAPTER_OUTLINE_BATCH, content=merged,
+                ))
+                await _checkpoint_commit(session)
+
+            # Materialize outline + narrative structures for this volume's chapters
+            _emit_progress(progress, "outline_materialization_started", {"project_slug": project.slug})
+            outline_result = await materialize_latest_chapter_outline_batch(session, project.slug, requested_by=requested_by)
+            await _checkpoint_commit(session)
+            _emit_progress(progress, "outline_materialization_completed", {"project_slug": project.slug, "workflow_run_id": str(outline_result.workflow_run_id)})
+
+            _emit_progress(progress, "narrative_graph_materialization_started", {"project_slug": project.slug})
+            narrative_graph_result = await materialize_latest_narrative_graph(session, project.slug, requested_by=requested_by)
+            await _checkpoint_commit(session)
+            _emit_progress(progress, "narrative_graph_materialization_completed", {"project_slug": project.slug, "workflow_run_id": str(narrative_graph_result.workflow_run_id)})
+
+            _emit_progress(progress, "narrative_tree_materialization_started", {"project_slug": project.slug})
+            narrative_tree_result = await materialize_latest_narrative_tree(session, project.slug, requested_by=requested_by)
+            await _checkpoint_commit(session)
+            _emit_progress(progress, "narrative_tree_materialization_completed", {"project_slug": project.slug, "workflow_run_id": str(narrative_tree_result.workflow_run_id)})
+
+            current_volume_chapter_numbers = {
+                ch.get("chapter_number")
+                for ch in vol_chapters
+                if isinstance(ch, dict) and isinstance(ch.get("chapter_number"), int)
+            }
+        else:
+            current_volume_chapter_numbers = resume_existing_chapter_numbers
 
         # Write this volume's chapters via the existing project pipeline.
         # In multi-volume mode we deliberately skip the per-volume full-book
@@ -4375,11 +4457,6 @@ async def run_progressive_autowrite_pipeline(
             "project_slug": project.slug, "volume_number": vol_num,
             "total_volumes": total_volumes,
         })
-        current_volume_chapter_numbers = {
-            ch.get("chapter_number")
-            for ch in vol_chapters
-            if isinstance(ch, dict) and isinstance(ch.get("chapter_number"), int)
-        }
         vol_project_result = await run_project_pipeline(
             session, settings, project.slug,
             requested_by=requested_by,
@@ -4389,13 +4466,28 @@ async def run_progressive_autowrite_pipeline(
             materialize_narrative_tree=False,
             export_markdown=False,
             progress=progress,
-            global_chapter_offset=len(all_chapter_results),
+            # Use the true completed baseline, not just chapters written in this
+            # process, so global progress stays aligned with DB reality.
+            global_chapter_offset=global_completed_chapter_offset,
             total_target_chapters=project.target_chapters or 0,
             current_volume_number=vol_num,
             total_volumes=total_volumes,
             chapter_numbers=current_volume_chapter_numbers,
         )
         await _checkpoint_commit(session)
+        # For the next volume's baseline, add both:
+        # 1) chapters already written in this volume before this run; and
+        # 2) chapters processed by this run in this volume.
+        if settings.pipeline.resume_enabled:
+            _vw_fully_written, _vw_written_count, _vw_total_count = await _volume_fully_written(
+                session, project.id, vol_num,
+            )
+            if _vw_fully_written:
+                global_completed_chapter_offset += int(_vw_written_count or 0)
+            else:
+                global_completed_chapter_offset += int(len(vol_project_result.chapter_results))
+        else:
+            global_completed_chapter_offset += int(len(vol_project_result.chapter_results))
         all_chapter_results.extend(vol_project_result.chapter_results)
         _emit_progress(progress, "volume_writing_completed", {
             "project_slug": project.slug, "volume_number": vol_num,

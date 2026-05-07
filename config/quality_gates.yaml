@@ -11,6 +11,12 @@ l2_bible_gate:
   checks:
     quirk_slot_requirement:
       min_quirks: 3
+    tag_memory_requirement:
+      enabled: true
+    independent_life_requirement:
+      enabled: true
+    contrast_design_requirement:
+      enabled: true
     antagonist_motive_ledger:
       jaccard_threshold: 0.4
     world_taxonomy_uniqueness:
@@ -65,6 +71,10 @@ l5_chapter_validator:
       # only appears mid-chapter.
       sample_size: 40
       min_drift_sentences: 3
+    repeated_beat:
+      enabled: true
+    canon_guardrails:
+      enabled: true
     # CliffhangerRotationCheck is deferred until DiversityBudget lands
     # (Phase 3).  Leaving the block here for forward compatibility.
     cliffhanger_rotation:
@@ -80,8 +90,15 @@ l6_write_gate:
     LENGTH_UNDER: block
     LENGTH_OVER: block
     DIALOG_UNPAIRED: block
+    REPEATED_EVENT_BEAT: block
+    CANON_FORBIDDEN_TERM: block
+    CANON_STATE_REGRESSION: block
     CHAPTER_GAP: block
     QUIRK_SLOT_MISSING: block
+    TAG_MEMORY_MISSING: block
+    CHARACTER_CONTRAST_MISSING: block
+    CORE_WOUND_MISSING: block
+    CHARACTER_PERSONHOOD_INCOMPLETE: block
     ANTAGONIST_MOTIVE_OVERLAP: block
     WORLD_TAXONOMY_BOILERPLATE: block
     NAMING_POOL_UNDERSIZED: block

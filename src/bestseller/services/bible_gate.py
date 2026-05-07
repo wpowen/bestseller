@@ -246,6 +246,140 @@ class CharacterIPAnchorCheck:
 # ---------------------------------------------------------------------------
 
 
+class SupportingCharacterTagCheck:
+    """Every character — including supporting cast — must have a tag_memory.
+
+    The tag_memory is a single repeatable action or verbal tic (e.g., "思考时
+    拇指摩挲铜钱边缘", "紧张时推眼镜"). It is the cheapest possible memorability
+    anchor: one string field per character, validated at bible time.
+
+    Historical bug: 4 productions shipped with zero tag_memory coverage for
+    supporting characters, leaving them as plot functions rather than people.
+    This check closes that gap without requiring a 12-field personhood layer
+    on every walk-on character.
+    """
+
+    code = "TAG_MEMORY_MISSING"
+
+    def check(
+        self, draft: BibleDraft, invariants: ProjectInvariants
+    ) -> Iterable[BibleDeficiency]:
+        for char in draft.characters:
+            tag = (char.ip_anchor.tag_memory or "").strip()
+            if not tag:
+                yield BibleDeficiency(
+                    code=self.code,
+                    location=f"character:{char.name}",
+                    detail=f"{char.name} 缺少 tag_memory（标签动作/口头禅）",
+                    prompt_feedback=(
+                        f"为角色 {char.name} 设计一个 tag_memory：一个跨章节重复的"
+                        f"具体动作或口头禅。要求：\n"
+                        f"  - 必须是具体动作或特定句式，不能是抽象描述\n"
+                        f"  - 每次出场至少出现一次（不必强求但应保持频率）\n"
+                        f"  - 示例：'思考时拇指摩挲铜钱边缘'、'抱怨时念叨差一两'、"
+                        f"'紧张时拧袖口'、'说话时桃木杖顿地'\n"
+                        f"标签是读者记住一个角色最快的方式。没有标签的配角会变成"
+                        f"情节工具人。"
+                    ),
+                )
+
+
+class IndependentLifeCheck:
+    """Every supporting character must have an independent_life detail.
+
+    The independent_life is a one-sentence hint that the character has a life
+    outside the main plot — a job, a family obligation, a personal habit, a
+    worry that has nothing to do with the protagonist. It prevents the "plot
+    function" syndrome where supporting characters exist only to serve the
+    protagonist's story.
+
+    Required for supporting_cast; optional for protagonist/antagonist (their
+    personhood is covered by CharacterPersonhoodCheck / VillainCharismaCheck).
+    """
+
+    code = "INDEPENDENT_LIFE_MISSING"
+
+    def check(
+        self, draft: BibleDraft, invariants: ProjectInvariants
+    ) -> Iterable[BibleDeficiency]:
+        for char in draft.characters:
+            role_lower = (char.role or "").lower()
+            if "protagonist" in role_lower or "antagonist" in role_lower:
+                continue  # covered by personhood / villain charisma checks
+
+            il = (char.ip_anchor.independent_life or "").strip()
+            if not il:
+                yield BibleDeficiency(
+                    code=self.code,
+                    location=f"character:{char.name}",
+                    detail=f"{char.name} 缺少 independent_life（独立于主线的生活细节）",
+                    prompt_feedback=(
+                        f"为配角 {char.name} 添加一个 independent_life 细节："
+                        f"一个暗示 ta 在进入这个故事之前有自己的工作/家庭/习惯/烦恼的"
+                        f"具体信息。一句话即可。\n"
+                        f"示例：'今天上午还在工地刮大白，一天260块'、"
+                        f"'左手腕有长期戴橡胶实验手套留下的晒痕'、"
+                        f"'私人手机一直在震动，同一个人来电'。\n"
+                        f"这个细节让配角读起来像真实的人，而不是情节工具人。"
+                    ),
+                )
+
+
+class CharacterContrastCheck:
+    """Protagonist and primary antagonist must declare a contrast design.
+
+    The contrast formula: "surface trait (extremely amplified) + hidden essence
+    (unexpected)". Without it, characters flatten into single-note archetypes.
+    This check requires at minimum that the character's background/goal and
+    secret/flaw point in genuinely different directions — not just "表面冷酷
+    内心温柔" boilerplate.
+    """
+
+    code = "CHARACTER_CONTRAST_MISSING"
+
+    def check(
+        self, draft: BibleDraft, invariants: ProjectInvariants
+    ) -> Iterable[BibleDeficiency]:
+        for char in draft.characters:
+            role_lower = (char.role or "").lower()
+            if "protagonist" not in role_lower and "antagonist" not in role_lower:
+                continue  # supporting cast exempt — caught by tag_memory check
+
+            # A valid contrast means surface and hidden pull in different
+            # directions. We check that at least 2 of {background, goal, strength}
+            # are populated AND at least 1 of {secret, fear, flaw} reveals a
+            # counter-intuitive dimension.
+            surface_fields = [
+                f for f in [char.background, char.goal, char.strength] if f and f.strip()
+            ]
+            hidden_fields = [
+                f for f in [char.secret, char.fear, char.flaw] if f and f.strip()
+            ]
+
+            if len(surface_fields) < 2:
+                yield BibleDeficiency(
+                    code=self.code,
+                    location=f"character:{char.name}",
+                    detail=f"{char.name} 表面特征不足（background/goal/strength 至少2项）",
+                    prompt_feedback=(
+                        f"角色 {char.name} 需要至少2项表面特征（background/goal/strength）"
+                        f"来建立读者第一印象。这些必须极度强化，让读者一眼记住。"
+                    ),
+                )
+
+            if len(hidden_fields) < 1:
+                yield BibleDeficiency(
+                    code=self.code,
+                    location=f"character:{char.name}",
+                    detail=f"{char.name} 缺少隐藏维度（secret/fear/flaw 至少1项）",
+                    prompt_feedback=(
+                        f"角色 {char.name} 需要至少1项隐藏维度（secret/fear/flaw）"
+                        f"——读者意想不到的、与表面特征形成反差的另一面。"
+                        f"不能写成通用模板（如'表面冷酷内心温柔'），必须具体。"
+                    ),
+                )
+
+
 class CharacterPersonhoodCheck:
     """Protagonists need a psychology, a past, a family, and beliefs.
 
@@ -603,6 +737,9 @@ def default_validators() -> list[BibleValidator]:
         CharacterIPAnchorCheck(),
         CharacterPersonhoodCheck(),
         VillainCharismaCheck(),
+        SupportingCharacterTagCheck(),
+        IndependentLifeCheck(),
+        CharacterContrastCheck(),
         AntagonistMotiveLedger(),
         WorldTaxonomyUniqueness(),
         NamingPoolSize(),

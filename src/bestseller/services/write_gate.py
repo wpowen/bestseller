@@ -88,8 +88,15 @@ DEFAULT_GATE_CONFIG: GateConfig = GateConfig(
         "LENGTH_UNDER": "block",
         "LENGTH_OVER": "block",
         "DIALOG_UNPAIRED": "block",
+        "REPEATED_EVENT_BEAT": "block",
+        "CANON_FORBIDDEN_TERM": "block",
+        "CANON_STATE_REGRESSION": "block",
         "CHAPTER_GAP": "block",
         "QUIRK_SLOT_MISSING": "block",
+        "TAG_MEMORY_MISSING": "block",
+        "CHARACTER_CONTRAST_MISSING": "block",
+        "CORE_WOUND_MISSING": "block",
+        "CHARACTER_PERSONHOOD_INCOMPLETE": "block",
         "ANTAGONIST_MOTIVE_OVERLAP": "block",
         "WORLD_TAXONOMY_BOILERPLATE": "block",
         "NAMING_POOL_UNDERSIZED": "block",
@@ -97,8 +104,14 @@ DEFAULT_GATE_CONFIG: GateConfig = GateConfig(
         "OPENING_ENTITY_OVERLOAD": "audit_only",
         "POV_DRIFT": "audit_only",
         "CLIFFHANGER_REPEAT": "audit_only",
-        # Hype engine — all audit_only by default; the per-violation
-        # severity escalates chapters 1-3 for ENDING_SENTENCE_WEAK.
+        # Phase A — character lifecycle
+        "CHARACTER_RESURRECTION": "block",
+        "STANCE_FLIP_UNJUSTIFIED": "block",
+        "STANCE_FLIP_NO_ARC_BEAT": "block",
+        "POWER_TIER_REGRESSION": "audit_only",
+        # Phase A2 — independent life for supporting characters
+        "INDEPENDENT_LIFE_MISSING": "audit_only",
+        # Hype engine
         "HYPE_MISSING": "audit_only",
         "HYPE_REPEAT": "audit_only",
         "ENDING_SENTENCE_WEAK": "audit_only",
@@ -106,11 +119,11 @@ DEFAULT_GATE_CONFIG: GateConfig = GateConfig(
         "PLEASURE_HYPE_GAP": "audit_only",
         "PLEASURE_COMEDIC_BEAT_STARVED": "audit_only",
         "PLEASURE_SETUP_PAYOFF_DEBT": "audit_only",
-        # Phase B1 — narrative-line rotation. ``OVER`` is ``block`` by
-        # default (but see ``_LINE_GAP_WARMUP_CHAPTERS`` below which
-        # demotes it to ``audit_only`` until the project has enough
-        # history for the gap metric to be meaningful). ``WARN`` never
-        # blocks.
+        # Pacing engine — advisory
+        "BREATHING_RHYTHM_VIOLATION": "audit_only",
+        "WIN_LOSS_MONOTONE": "audit_only",
+        "CASE_TYPE_MONOTONE": "audit_only",
+        # Phase B1 — narrative-line rotation
         "LINE_GAP_OVER": "block",
         "LINE_GAP_WARN": "audit_only",
     },

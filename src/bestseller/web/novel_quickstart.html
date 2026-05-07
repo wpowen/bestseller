@@ -1506,7 +1506,6 @@
     }
     if (isTrulyComplete && slug) {
       actions += `<a class="btn btn-success btn-sm" href="/read/${esc(slug)}" target="_blank">阅读全书</a>`;
-      actions += `<button class="btn btn-secondary btn-sm" onclick="openProgress('${esc(task.task_id)}')">上架资料</button>`;
     }
     const showResume = slug && (
       status === 'failed' || status === 'cancelled' || status === 'incomplete'
@@ -1517,6 +1516,7 @@
     }
     if (slug) {
       actions += `<a class="btn btn-secondary btn-sm" href="/read/${esc(slug)}" target="_blank">预览章节</a>`;
+      actions += `<button class="btn btn-secondary btn-sm" onclick="openProgress('${esc(task.task_id)}')">上架资料</button>`;
     }
     if (status === 'running') {
       actions += `<button class="btn btn-secondary btn-sm" onclick="openProgress('${esc(task.task_id)}')">实时日志</button>`;
@@ -1935,13 +1935,17 @@
       $('#pvError').style.display = 'none';
     }
 
+    // Listing profile — load for any task that has a project slug
+    if (slug) {
+      loadAndRenderListing(slug, status);
+    }
+
     // Completed
     if (status === 'completed') {
       stopProgressPoll();
       $('#pvDoneBanner').style.display = '';
       $('#pvDoneSummary').textContent = `共 ${bookDoneCount} 章已完成`;
       $('#pvReaderLink').href = `/read/${encodeURIComponent(slug)}`;
-      loadAndRenderListing(slug);
     }
     if (status === 'failed') {
       stopProgressPoll();
@@ -2125,18 +2129,24 @@
      LISTING PROFILE
      ═══════════════════════════════════════ */
   let listingLoadedForSlug = null;
+  let listingLoadedForStatus = null;
 
-  async function loadAndRenderListing(slug) {
-    if (!slug || listingLoadedForSlug === slug) return;
+  async function loadAndRenderListing(slug, taskStatus) {
+    // For completed/failed tasks, only load once per slug.
+    // For running tasks, refresh every poll cycle.
+    const isTerminal = taskStatus === 'completed' || taskStatus === 'failed' || taskStatus === 'cancelled';
+    if (!slug) return;
+    if (isTerminal && listingLoadedForSlug === slug) return;
     const panel = $('#pvListing');
     try {
-      const res = await fetch(`/api/projects/${encodeURIComponent(slug)}/summary`);
+      const res = await fetch(`/api/projects/${encodeURIComponent(slug)}/listing`);
       if (!res.ok) { panel.classList.remove('visible'); return; }
       const summary = await res.json();
       const listing = summary?.listing_profile;
       if (!listing) { panel.classList.remove('visible'); return; }
       renderListingProfile(listing, summary?.project);
       listingLoadedForSlug = slug;
+      listingLoadedForStatus = taskStatus;
       panel.classList.add('visible');
     } catch {
       panel.classList.remove('visible');

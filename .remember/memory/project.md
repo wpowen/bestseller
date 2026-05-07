@@ -12,3 +12,4 @@
 - For this repository, prefer adding runnable planning artifacts under `examples/planning/` when building story content through the framework.
 - When user requests novel writing via specific skill, deliver both planning artifacts and full chapter prose in project files (not only outlines).
 - For full-length novel generation requests, place final readable deliverables under `output/ai-generated/<novel-slug>/` with volume/chapter structure.
+- Keep `.audit-reports/backups/` out of version control; do not commit backup chapter files to GitHub.

@@ -68,8 +68,10 @@ from bestseller.services.reviews import (
     rewrite_scene_from_task,
 )
 from bestseller.services.workflows import (
+    WORKFLOW_TYPE_MATERIALIZE_STORY_BIBLE,
     create_workflow_run,
     create_workflow_step_run,
+    get_latest_completed_workflow_run,
     get_latest_planning_artifact,
     materialize_chapter_outline_batch,
     materialize_latest_chapter_outline_batch,
@@ -4226,10 +4228,31 @@ async def run_progressive_autowrite_pipeline(
         })
 
     # ── Materialize story bible from foundation ──
-    _emit_progress(progress, "story_bible_materialization_started", {"project_slug": project.slug})
-    story_bible_result = await materialize_latest_story_bible(session, project.slug, requested_by=requested_by)
-    await _checkpoint_commit(session)
-    _emit_progress(progress, "story_bible_materialization_completed", {"project_slug": project.slug, "workflow_run_id": str(story_bible_result.workflow_run_id)})
+    # Resume guard: re-running materialization on every restart is non-idempotent
+    # because the L2 bible-completeness gate may now reject content that was
+    # previously accepted (gate criteria can tighten over time). Once a project
+    # has a completed bible materialization the persisted DB state is already
+    # the source of truth — re-running risks looping forever on resumes.
+    existing_bible_run = await get_latest_completed_workflow_run(
+        session,
+        project_id=project.id,
+        workflow_type=WORKFLOW_TYPE_MATERIALIZE_STORY_BIBLE,
+    )
+    if existing_bible_run is not None and settings.pipeline.resume_enabled:
+        _emit_progress(progress, "story_bible_materialization_skipped_resume", {
+            "project_slug": project.slug,
+            "workflow_run_id": str(existing_bible_run.id),
+        })
+        from bestseller.domain.story_bible import StoryBibleMaterializationResult  # noqa: PLC0415
+        story_bible_result = StoryBibleMaterializationResult(
+            workflow_run_id=existing_bible_run.id,
+            project_id=project.id,
+        )
+    else:
+        _emit_progress(progress, "story_bible_materialization_started", {"project_slug": project.slug})
+        story_bible_result = await materialize_latest_story_bible(session, project.slug, requested_by=requested_by)
+        await _checkpoint_commit(session)
+        _emit_progress(progress, "story_bible_materialization_completed", {"project_slug": project.slug, "workflow_run_id": str(story_bible_result.workflow_run_id)})
 
     # ── Load planning artifacts for volume loop ──
     book_spec_art = await get_latest_planning_artifact(session, project_id=project.id, artifact_type=ArtifactType.BOOK_SPEC)

@@ -47,7 +47,7 @@ def test_project_create_rejects_target_word_count_below_minimum() -> None:
             slug="too-short",
             title="Too Short",
             genre="fantasy",
-            target_word_count=4999,
+            target_word_count=1999,
             target_chapters=1,
         )
 

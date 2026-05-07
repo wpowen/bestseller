@@ -1910,7 +1910,7 @@
 
             <div class="field">
               <label for="length-preset-key">篇幅预设</label>
-              <div class="field-meta">会自动填写本轮目标总字数和章节数，并满足每章最低 5000 字。</div>
+              <div class="field-meta">会自动填写本轮目标总字数和章节数，并满足每章最低 1800 字。</div>
               <select id="length-preset-key">
                 <option value="">加载中…</option>
               </select>
@@ -1918,13 +1918,13 @@
 
             <div class="field">
               <label for="target-words">本轮目标总字数</label>
-              <div class="field-meta">本轮计划推进到多少字。系统按每章约 5000 字、建议上限 5500 字设计，低于章节下限会被直接拦截。</div>
-              <input id="target-words" type="number" value="22000" min="5000" step="1000" />
+              <div class="field-meta">本轮计划推进到多少字。系统按每章约 2200 字、建议上限 3000 字设计，低于章节下限会被直接拦截。</div>
+              <input id="target-words" type="number" value="8800" min="1800" step="500" />
             </div>
 
             <div class="field">
               <label for="target-chapters">本轮目标章节数</label>
-              <div class="field-meta">本轮要写几章。系统会按每章最低 5000 字做校验，目标控制在每章约 5000 字。</div>
+              <div class="field-meta">本轮要写几章。系统会按每章最低 1800 字做校验，目标控制在每章约 2200 字。</div>
               <input id="target-chapters" type="number" value="4" min="1" />
             </div>
 
@@ -2122,7 +2122,7 @@
           <div class="tag-row">
             <span class="tag">建议先做 4 到 8 章样书</span>
             <span class="tag">百万字建议按卷推进</span>
-            <span class="tag">每章最低 5000 字，目标约 5000 字，建议上限 5500 字</span>
+            <span class="tag">每章最低 1800 字，目标约 2200 字，建议上限 3000 字</span>
             <span class="tag">千万字建议多轮规划与人工把关</span>
           </div>
 
@@ -2196,7 +2196,7 @@
               <div class="form-grid" style="margin-top:10px;">
                 <div class="field">
                   <label for="if-chapter-length">每章字数范围</label>
-                  <input id="if-chapter-length" value="3000-6000" />
+                  <input id="if-chapter-length" value="1800-3000" />
                 </div>
                 <div class="field">
                   <label for="if-choice-nodes">每章选择节点数</label>
@@ -2234,7 +2234,7 @@
             <div class="formula-grid">
               <div class="formula-item">
                 <strong>平均每章字数</strong>
-                <span id="words-per-chapter">5000</span>
+                <span id="words-per-chapter">2200</span>
               </div>
               <div class="formula-item">
                 <strong>预估总场景数</strong>
@@ -2247,7 +2247,7 @@
             </div>
             <div class="scope-banner">
               <strong id="scope-mode">建议模式：4 章样书试写</strong>
-              <p id="scope-advice">当前体量满足每章最低 5000 字，适合先验证书名、题材、节奏和主角卖点。确认可读性后，再扩写到单卷或整书。</p>
+              <p id="scope-advice">当前体量满足每章最低 1800 字，适合先验证书名、题材、节奏和主角卖点。确认可读性后，再扩写到单卷或整书。</p>
             </div>
           </div>
 
@@ -2617,7 +2617,7 @@
 
         <section class="footer-note">
           真正的大体量长篇不应该一次性生成。正确方式是先建立世界观、人物、主线和卷级目标，再逐轮扩写、审校和修订。
-          这个页面已经按这个思路包装了当前系统：你可以把 22000 到 50000 字当作样书或单卷试写，把 100000 到 300000 字当作阶段推进，
+          这个页面已经按这个思路包装了当前系统：你可以把 8000 到 20000 字当作样书或单卷试写，把 40000 到 120000 字当作阶段推进，
           再逐卷扩充到百万字项目。千万字项目也不是不能做，但应该拆成多个连续项目阶段来推进，而不是一次运行完成。
         </section>
       </main>
@@ -2826,7 +2826,7 @@
 
     function getWritingPresetCatalog() {
       return state.writingPresets || {
-        chapter_word_policy: { min: 5000, target: 5000, max: 5500 },
+        chapter_word_policy: { min: 1800, target: 2200, max: 3000 },
         platform_presets: [],
         genre_presets: [],
         length_presets: [],
@@ -2852,7 +2852,7 @@
       const genrePreset = getSelectedGenrePreset();
       const lengthPreset = getSelectedLengthPreset();
       const platformPreset = getSelectedPlatformPreset();
-      const policy = getWritingPresetCatalog().chapter_word_policy || { min: 5000, target: 5000, max: 5500 };
+      const policy = getWritingPresetCatalog().chapter_word_policy || { min: 1800, target: 2200, max: 3000 };
       const blocks = [];
 
       if (genrePreset) {
@@ -3474,7 +3474,7 @@
     function updateScopeEstimator() {
       const targetWords = Number(document.getElementById("target-words").value || 0);
       const targetChapters = Math.max(Number(document.getElementById("target-chapters").value || 0), 1);
-      const policy = getWritingPresetCatalog().chapter_word_policy || { min: 5000, target: 5000, max: 5500 };
+      const policy = getWritingPresetCatalog().chapter_word_policy || { min: 1800, target: 2200, max: 3000 };
       const wordsPerChapter = Math.max(Math.round(targetWords / targetChapters), 0);
       const estimatedScenes = Math.max(targetChapters * 5, 0);
       const wordsPerScene = estimatedScenes > 0 ? Math.round(targetWords / estimatedScenes) : 0;
@@ -4537,13 +4537,13 @@
       if (!payload.slug || !payload.title || !payload.genre || !payload.premise) {
         throw new Error("请至少填写项目代号、书名、主类型和一句话设定。");
       }
-      if (!Number.isFinite(payload.target_words) || payload.target_words < 5000) {
-        throw new Error("本轮目标总字数至少填写 5000。");
+      if (!Number.isFinite(payload.target_words) || payload.target_words < 1800) {
+        throw new Error("本轮目标总字数至少填写 1800。");
       }
       if (!Number.isFinite(payload.target_chapters) || payload.target_chapters < 1) {
         throw new Error("本轮目标章节数至少填写 1。");
       }
-      const chapterWordMin = Number(getWritingPresetCatalog().chapter_word_policy?.min || 5000);
+      const chapterWordMin = Number(getWritingPresetCatalog().chapter_word_policy?.min || 1800);
       const averageWords = payload.target_words / payload.target_chapters;
       if (averageWords < chapterWordMin) {
         throw new Error(`当前平均每章仅 ${Math.floor(averageWords)} 字，不满足每章最低 ${chapterWordMin} 字。请提高总字数或减少章节数。`);

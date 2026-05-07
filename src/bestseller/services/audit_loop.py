@@ -233,11 +233,11 @@ class ContentAuditor:
                 )
         target_chapters = max(int(project.target_chapters or 0), 1)
         target_words_total = max(int(project.target_word_count or 0), 0)
-        per_chapter = target_words_total // target_chapters if target_words_total else 6400
+        per_chapter = target_words_total // target_chapters if target_words_total else 2000
         words = SimpleNamespace(
-            min=int(per_chapter * 0.7) or 2000,
-            target=per_chapter or 6400,
-            max=int(per_chapter * 1.3) or 8000,
+            min=int(per_chapter * 0.7) or 1500,
+            target=per_chapter or 2000,
+            max=int(per_chapter * 1.3) or 2500,
         )
         # Auto-detect POV from actual chapter content so projects produced
         # before L1 was in place (no invariants_json) don't default to the

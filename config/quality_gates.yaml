@@ -78,7 +78,7 @@ l5_chapter_validator:
     # CliffhangerRotationCheck is deferred until DiversityBudget lands
     # (Phase 3).  Leaving the block here for forward compatibility.
     cliffhanger_rotation:
-      enabled: false
+      enabled: true
       no_repeat_within: 3
 
 l6_write_gate:
@@ -102,7 +102,7 @@ l6_write_gate:
     ANTAGONIST_MOTIVE_OVERLAP: block
     WORLD_TAXONOMY_BOILERPLATE: block
     NAMING_POOL_UNDERSIZED: block
-    NAMING_OUT_OF_POOL: audit_only
+    NAMING_OUT_OF_POOL: block
     OPENING_ENTITY_OVERLOAD: audit_only
     POV_DRIFT: audit_only
     CLIFFHANGER_REPEAT: audit_only
@@ -123,6 +123,9 @@ l6_write_gate:
     STANCE_FLIP_UNJUSTIFIED: block
     POWER_TIER_REGRESSION: audit_only
     STANCE_FLIP_NO_ARC_BEAT: block
+    CHARACTER_NAME_MISMATCH: block
+    NUMERICAL_CONTRADICTION: block
+    STATE_TRANSITION_UNEXPLAINED: block
 
 l7_continuous_audit:
   enabled: true

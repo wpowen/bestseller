@@ -16,3 +16,4 @@ htmlcov/
 artifacts/
 output/
 logs/
+.audit-reports/backups/

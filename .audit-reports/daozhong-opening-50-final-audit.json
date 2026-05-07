@@ -1,0 +1,370 @@
+{
+  "project": "xianxia-upgrade-1776137730",
+  "title": "道种破虚",
+  "range": [
+    1,
+    50
+  ],
+  "target_min": 1800,
+  "target_max": 3000,
+  "generated_at": "2026-05-07T04:54:01.614397+00:00",
+  "summary": {
+    "min": 1819,
+    "max": 2997,
+    "avg": 2329,
+    "under1800": [],
+    "over3000": []
+  },
+  "chapters": [
+    {
+      "chapter": 1,
+      "file": "/Users/owen/Documents/workspace/bestseller/output/xianxia-upgrade-1776137730/chapter-001.md",
+      "title": "# 第1章：暗潮试探",
+      "count": 2490,
+      "status": "ok"
+    },
+    {
+      "chapter": 2,
+      "file": "/Users/owen/Documents/workspace/bestseller/output/xianxia-upgrade-1776137730/chapter-002.md",
+      "title": "# 第2章：断点落子",
+      "count": 2581,
+      "status": "ok"
+    },
+    {
+      "chapter": 3,
+      "file": "/Users/owen/Documents/workspace/bestseller/output/xianxia-upgrade-1776137730/chapter-003.md",
+      "title": "# 第3章：变局入局",
+      "count": 2157,
+      "status": "ok"
+    },
+    {
+      "chapter": 4,
+      "file": "/Users/owen/Documents/workspace/bestseller/output/xianxia-upgrade-1776137730/chapter-004.md",
+      "title": "# 第4章：风眼露锋",
+      "count": 2856,
+      "status": "ok"
+    },
+    {
+      "chapter": 5,
+      "file": "/Users/owen/Documents/workspace/bestseller/output/xianxia-upgrade-1776137730/chapter-005.md",
+      "title": "# 第5章：冷锋掀幕",
+      "count": 2622,
+      "status": "ok"
+    },
+    {
+      "chapter": 6,
+      "file": "/Users/owen/Documents/workspace/bestseller/output/xianxia-upgrade-1776137730/chapter-006.md",
+      "title": "# 第6章：沉渊初现",
+      "count": 1993,
+      "status": "ok"
+    },
+    {
+      "chapter": 7,
+      "file": "/Users/owen/Documents/workspace/bestseller/output/xianxia-upgrade-1776137730/chapter-007.md",
+      "title": "# 第7章：荒火投石",
+      "count": 1819,
+      "status": "ok"
+    },
+    {
+      "chapter": 8,
+      "file": "/Users/owen/Documents/workspace/bestseller/output/xianxia-upgrade-1776137730/chapter-008.md",
+      "title": "# 第8章：盲区起手",
+      "count": 2720,
+      "status": "ok"
+    },
+    {
+      "chapter": 9,
+      "file": "/Users/owen/Documents/workspace/bestseller/output/xianxia-upgrade-1776137730/chapter-009.md",
+      "title": "# 第9章：锈迹铺火",
+      "count": 2654,
+      "status": "ok"
+    },
+    {
+      "chapter": 10,
+      "file": "/Users/owen/Documents/workspace/bestseller/output/xianxia-upgrade-1776137730/chapter-010.md",
+      "title": "# 第10章：悬灯破冰",
+      "count": 2430,
+      "status": "ok"
+    },
+    {
+      "chapter": 11,
+      "file": "/Users/owen/Documents/workspace/bestseller/output/xianxia-upgrade-1776137730/chapter-011.md",
+      "title": "# 第11章：裂痕寻隙",
+      "count": 1986,
+      "status": "ok"
+    },
+    {
+      "chapter": 12,
+      "file": "/Users/owen/Documents/workspace/bestseller/output/xianxia-upgrade-1776137730/chapter-012.md",
+      "title": "# 第12章：铁壁破壁",
+      "count": 2328,
+      "status": "ok"
+    },
+    {
+      "chapter": 13,
+      "file": "/Users/owen/Documents/workspace/bestseller/output/xianxia-upgrade-1776137730/chapter-013.md",
+      "title": "# 第13章：浮标摸底",
+      "count": 1933,
+      "status": "ok"
+    },
+    {
+      "chapter": 14,
+      "file": "/Users/owen/Documents/workspace/bestseller/output/xianxia-upgrade-1776137730/chapter-014.md",
+      "title": "# 第14章：夜隙回查",
+      "count": 2781,
+      "status": "ok"
+    },
+    {
+      "chapter": 15,
+      "file": "/Users/owen/Documents/workspace/bestseller/output/xianxia-upgrade-1776137730/chapter-015.md",
+      "title": "# 第15章：逆流织网",
+      "count": 2002,
+      "status": "ok"
+    },
+    {
+      "chapter": 16,
+      "file": "/Users/owen/Documents/workspace/bestseller/output/xianxia-upgrade-1776137730/chapter-016.md",
+      "title": "# 第16章：回声追索",
+      "count": 2009,
+      "status": "ok"
+    },
+    {
+      "chapter": 17,
+      "file": "/Users/owen/Documents/workspace/bestseller/output/xianxia-upgrade-1776137730/chapter-017.md",
+      "title": "# 第17章：余烬拆解",
+      "count": 2510,
+      "status": "ok"
+    },
+    {
+      "chapter": 18,
+      "file": "/Users/owen/Documents/workspace/bestseller/output/xianxia-upgrade-1776137730/chapter-018.md",
+      "title": "# 第18章：棱线揭层",
+      "count": 1898,
+      "status": "ok"
+    },
+    {
+      "chapter": 19,
+      "file": "/Users/owen/Documents/workspace/bestseller/output/xianxia-upgrade-1776137730/chapter-019.md",
+      "title": "# 第19章：碎影探针",
+      "count": 2281,
+      "status": "ok"
+    },
+    {
+      "chapter": 20,
+      "file": "/Users/owen/Documents/workspace/bestseller/output/xianxia-upgrade-1776137730/chapter-020.md",
+      "title": "# 第20章：伏线溯源",
+      "count": 2161,
+      "status": "ok"
+    },
+    {
+      "chapter": 21,
+      "file": "/Users/owen/Documents/workspace/bestseller/output/xianxia-upgrade-1776137730/chapter-021.md",
+      "title": "# 第21章：残局寻隙",
+      "count": 1820,
+      "status": "ok"
+    },
+    {
+      "chapter": 22,
+      "file": "/Users/owen/Documents/workspace/bestseller/output/xianxia-upgrade-1776137730/chapter-022.md",
+      "title": "# 第22章：边界破壁",
+      "count": 1942,
+      "status": "ok"
+    },
+    {
+      "chapter": 23,
+      "file": "/Users/owen/Documents/workspace/bestseller/output/xianxia-upgrade-1776137730/chapter-023.md",
+      "title": "# 第23章：灰幕摸底",
+      "count": 2293,
+      "status": "ok"
+    },
+    {
+      "chapter": 24,
+      "file": "/Users/owen/Documents/workspace/bestseller/output/xianxia-upgrade-1776137730/chapter-024.md",
+      "title": "# 第24章：雾锁回查",
+      "count": 2995,
+      "status": "ok"
+    },
+    {
+      "chapter": 25,
+      "file": "/Users/owen/Documents/workspace/bestseller/output/xianxia-upgrade-1776137730/chapter-025.md",
+      "title": "# 第25章：暗潮织网",
+      "count": 2633,
+      "status": "ok"
+    },
+    {
+      "chapter": 26,
+      "file": "/Users/owen/Documents/workspace/bestseller/output/xianxia-upgrade-1776137730/chapter-026.md",
+      "title": "# 第26章：断点加压",
+      "count": 2892,
+      "status": "ok"
+    },
+    {
+      "chapter": 27,
+      "file": "/Users/owen/Documents/workspace/bestseller/output/xianxia-upgrade-1776137730/chapter-027.md",
+      "title": "# 第27章：变局失衡",
+      "count": 2992,
+      "status": "ok"
+    },
+    {
+      "chapter": 28,
+      "file": "/Users/owen/Documents/workspace/bestseller/output/xianxia-upgrade-1776137730/chapter-028.md",
+      "title": "# 第28章：风眼窒息",
+      "count": 2563,
+      "status": "ok"
+    },
+    {
+      "chapter": 29,
+      "file": "/Users/owen/Documents/workspace/bestseller/output/xianxia-upgrade-1776137730/chapter-029.md",
+      "title": "# 第29章：冷锋死线",
+      "count": 1962,
+      "status": "ok"
+    },
+    {
+      "chapter": 30,
+      "file": "/Users/owen/Documents/workspace/bestseller/output/xianxia-upgrade-1776137730/chapter-030.md",
+      "title": "# 第30章：沉渊绞杀",
+      "count": 2176,
+      "status": "ok"
+    },
+    {
+      "chapter": 31,
+      "file": "/Users/owen/Documents/workspace/bestseller/output/xianxia-upgrade-1776137730/chapter-031.md",
+      "title": "# 第31章：荒火封锁",
+      "count": 2997,
+      "status": "ok"
+    },
+    {
+      "chapter": 32,
+      "file": "/Users/owen/Documents/workspace/bestseller/output/xianxia-upgrade-1776137730/chapter-032.md",
+      "title": "# 第32章：盲区缩网",
+      "count": 2133,
+      "status": "ok"
+    },
+    {
+      "chapter": 33,
+      "file": "/Users/owen/Documents/workspace/bestseller/output/xianxia-upgrade-1776137730/chapter-033.md",
+      "title": "# 第33章：锈迹围拢",
+      "count": 2014,
+      "status": "ok"
+    },
+    {
+      "chapter": 34,
+      "file": "/Users/owen/Documents/workspace/bestseller/output/xianxia-upgrade-1776137730/chapter-034.md",
+      "title": "# 第34章：悬灯逼近",
+      "count": 2041,
+      "status": "ok"
+    },
+    {
+      "chapter": 35,
+      "file": "/Users/owen/Documents/workspace/bestseller/output/xianxia-upgrade-1776137730/chapter-035.md",
+      "title": "# 第35章：裂痕崩弦",
+      "count": 2016,
+      "status": "ok"
+    },
+    {
+      "chapter": 36,
+      "file": "/Users/owen/Documents/workspace/bestseller/output/xianxia-upgrade-1776137730/chapter-036.md",
+      "title": "# 第36章：铁壁加压",
+      "count": 1916,
+      "status": "ok"
+    },
+    {
+      "chapter": 37,
+      "file": "/Users/owen/Documents/workspace/bestseller/output/xianxia-upgrade-1776137730/chapter-037.md",
+      "title": "# 第37章：浮标失衡",
+      "count": 1835,
+      "status": "ok"
+    },
+    {
+      "chapter": 38,
+      "file": "/Users/owen/Documents/workspace/bestseller/output/xianxia-upgrade-1776137730/chapter-038.md",
+      "title": "# 第38章：夜隙倒戈",
+      "count": 2958,
+      "status": "ok"
+    },
+    {
+      "chapter": 39,
+      "file": "/Users/owen/Documents/workspace/bestseller/output/xianxia-upgrade-1776137730/chapter-039.md",
+      "title": "# 第39章：逆流换轨",
+      "count": 2313,
+      "status": "ok"
+    },
+    {
+      "chapter": 40,
+      "file": "/Users/owen/Documents/workspace/bestseller/output/xianxia-upgrade-1776137730/chapter-040.md",
+      "title": "# 第40章：回声翻盘",
+      "count": 2986,
+      "status": "ok"
+    },
+    {
+      "chapter": 41,
+      "file": "/Users/owen/Documents/workspace/bestseller/output/xianxia-upgrade-1776137730/chapter-041.md",
+      "title": "# 第41章：余烬脱钩",
+      "count": 1860,
+      "status": "ok"
+    },
+    {
+      "chapter": 42,
+      "file": "/Users/owen/Documents/workspace/bestseller/output/xianxia-upgrade-1776137730/chapter-042.md",
+      "title": "# 第42章：棱线重铸",
+      "count": 2724,
+      "status": "ok"
+    },
+    {
+      "chapter": 43,
+      "file": "/Users/owen/Documents/workspace/bestseller/output/xianxia-upgrade-1776137730/chapter-043.md",
+      "title": "# 第43章：碎影逆转",
+      "count": 2072,
+      "status": "ok"
+    },
+    {
+      "chapter": 44,
+      "file": "/Users/owen/Documents/workspace/bestseller/output/xianxia-upgrade-1776137730/chapter-044.md",
+      "title": "# 第44章：伏线回火",
+      "count": 2415,
+      "status": "ok"
+    },
+    {
+      "chapter": 45,
+      "file": "/Users/owen/Documents/workspace/bestseller/output/xianxia-upgrade-1776137730/chapter-045.md",
+      "title": "# 第45章：残局破局",
+      "count": 2290,
+      "status": "ok"
+    },
+    {
+      "chapter": 46,
+      "file": "/Users/owen/Documents/workspace/bestseller/output/xianxia-upgrade-1776137730/chapter-046.md",
+      "title": "# 第46章：边界爆裂",
+      "count": 2568,
+      "status": "ok"
+    },
+    {
+      "chapter": 47,
+      "file": "/Users/owen/Documents/workspace/bestseller/output/xianxia-upgrade-1776137730/chapter-047.md",
+      "title": "# 第47章：灰幕崩口",
+      "count": 1912,
+      "status": "ok"
+    },
+    {
+      "chapter": 48,
+      "file": "/Users/owen/Documents/workspace/bestseller/output/xianxia-upgrade-1776137730/chapter-048.md",
+      "title": "# 第48章：雾锁焚天",
+      "count": 1935,
+      "status": "ok"
+    },
+    {
+      "chapter": 49,
+      "file": "/Users/owen/Documents/workspace/bestseller/output/xianxia-upgrade-1776137730/chapter-049.md",
+      "title": "# 第49章：暗潮归零",
+      "count": 2875,
+      "status": "ok"
+    },
+    {
+      "chapter": 50,
+      "file": "/Users/owen/Documents/workspace/bestseller/output/xianxia-upgrade-1776137730/chapter-050.md",
+      "title": "# 第50章：断点决堤",
+      "count": 2123,
+      "status": "ok"
+    }
+  ]
+}

@@ -505,13 +505,23 @@ class CharacterIPAnchorInput(BaseModel):
     sensory_signatures: list[str] = Field(default_factory=list)
     signature_objects: list[str] = Field(default_factory=list)
     core_wound: str | None = None
+    tag_memory: str | None = Field(
+        default=None,
+        max_length=4000,
+        description="每角色1个跨章节重复的标签动作/口头禅，如'拇指摩挲铜钱边缘''推眼镜'",
+    )
+    independent_life: str | None = Field(
+        default=None,
+        max_length=4000,
+        description="配角独立于主线之外的生活细节，如'今天上午还在工地刮大白，一天260块'",
+    )
 
     @field_validator("quirks", "sensory_signatures", "signature_objects", mode="before")
     @classmethod
     def _coerce_ip_lists(cls, v: Any) -> Any:
         return coerce_to_string_list(v)
 
-    @field_validator("core_wound", mode="before")
+    @field_validator("core_wound", "tag_memory", "independent_life", mode="before")
     @classmethod
     def _coerce_ip_text(cls, v: Any) -> Any:
         return coerce_to_narrative_string(v)
@@ -701,6 +711,26 @@ class SocialTieInput(BaseModel):
     bond: str | None = None  # 关系性质：母亲/恩师/初恋/宿敌/…
     emotional_weight: str | None = None  # 情感强度与色彩：依赖/愧疚/憎恨/敬畏/…
     influence: str | None = None  # 此人如何塑造该角色的价值观或行为
+
+    @model_validator(mode="before")
+    @classmethod
+    def _coerce_keyed_tie(cls, data: Any) -> Any:
+        if not isinstance(data, dict) or "name" in data:
+            return data
+        if len(data) != 1:
+            return data
+        ((bond, inner),) = data.items()
+        if isinstance(inner, dict):
+            merged = {**inner}
+            merged.setdefault("bond", str(bond))
+            if not str(merged.get("name") or "").strip():
+                merged["name"] = str(bond)
+            return merged
+        text = _flatten_to_text(inner).strip()
+        return {
+            "name": text or str(bond),
+            "bond": str(bond),
+        }
 
     @field_validator("name", "bond", "emotional_weight", "influence", mode="before")
     @classmethod
@@ -1025,6 +1055,12 @@ _CHARACTER_DICT_INNER_KEYS: tuple[str, ...] = (
     "voice_profile",
     "moral_framework",
     "ip_anchor",
+    "psych_profile",
+    "life_history",
+    "social_network",
+    "beliefs",
+    "family_imprint",
+    "villain_charisma",
     "metadata",
 )
 
@@ -1108,6 +1144,35 @@ def _coerce_conflict_map(value: Any) -> Any:
     return value
 
 
+def _pop_primary_character(
+    data: dict[str, Any],
+    key: str,
+    supporting_cast: list[Any],
+) -> Any:
+    value = data.get(key)
+    if isinstance(value, list):
+        characters = [
+            _unwrap_name_keyed_character(item) if _looks_like_name_keyed_character(item) else item
+            for item in value
+            if isinstance(item, dict)
+        ]
+        if not characters:
+            return value
+        for extra in characters[1:]:
+            if isinstance(extra, dict):
+                extra = {**extra}
+                extra.setdefault("role", key)
+            supporting_cast.append(extra)
+        first = characters[0]
+        if isinstance(first, dict):
+            first = {**first}
+            first.setdefault("role", key)
+        return first
+    if _looks_like_name_keyed_character(value):
+        return _unwrap_name_keyed_character(value)
+    return value
+
+
 class CastSpecInput(BaseModel):
     protagonist: CharacterInput | None = None
     antagonist: CharacterInput | None = None
@@ -1121,12 +1186,23 @@ class CastSpecInput(BaseModel):
         if not isinstance(data, dict):
             return data
         patched = {**data}
-        if "protagonist" in patched and _looks_like_name_keyed_character(patched["protagonist"]):
-            patched["protagonist"] = _unwrap_name_keyed_character(patched["protagonist"])
-        if "antagonist" in patched and _looks_like_name_keyed_character(patched["antagonist"]):
-            patched["antagonist"] = _unwrap_name_keyed_character(patched["antagonist"])
-        if "supporting_cast" in patched:
-            patched["supporting_cast"] = _coerce_character_list(patched["supporting_cast"])
+        supporting_cast = _coerce_character_list(patched.get("supporting_cast"))
+        if not isinstance(supporting_cast, list):
+            supporting_cast = []
+        if "protagonist" in patched:
+            patched["protagonist"] = _pop_primary_character(
+                patched,
+                "protagonist",
+                supporting_cast,
+            )
+        if "antagonist" in patched:
+            patched["antagonist"] = _pop_primary_character(
+                patched,
+                "antagonist",
+                supporting_cast,
+            )
+        if "supporting_cast" in patched or supporting_cast:
+            patched["supporting_cast"] = supporting_cast
         if "conflict_map" in patched:
             patched["conflict_map"] = _coerce_conflict_map(patched["conflict_map"])
         return patched

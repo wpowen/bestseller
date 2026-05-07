@@ -171,6 +171,42 @@ class CliffhangerUse:
     kind: CliffhangerType
 
 
+# ---------------------------------------------------------------------------
+# Case type diversity tracking (Phase A5).
+# ---------------------------------------------------------------------------
+
+CaseType = str  # "guilt_denial" | "pursuit_chase" | "puzzle_mystery" | ...
+
+CASE_TYPES: tuple[CaseType, ...] = (
+    "guilt_denial",
+    "pursuit_chase",
+    "puzzle_mystery",
+    "survival_escape",
+    "betrayal_trust",
+    "sacrifice_choice",
+)
+
+CASE_TYPE_LABELS_ZH: dict[CaseType, str] = {
+    "guilt_denial": "认罪/抵赖型",
+    "pursuit_chase": "追踪/追逐型",
+    "puzzle_mystery": "解谜/推理型",
+    "survival_escape": "生存/逃脱型",
+    "betrayal_trust": "背叛/信任型",
+    "sacrifice_choice": "牺牲/抉择型",
+}
+
+
+@dataclass(frozen=True)
+class CaseTypeUse:
+    """One recorded case type, keyed by chapter."""
+
+    chapter_no: int
+    case_type: CaseType
+
+
+# ---------------------------------------------------------------------------
+
+
 @dataclass
 class DiversityBudget:
     """Mutable per-project rotation tracker.
@@ -191,6 +227,7 @@ class DiversityBudget:
     titles_used: list[str] = field(default_factory=list)
     vocab_freq: dict[str, dict[str, int]] = field(default_factory=dict)
     hype_moments: list[HypeMoment] = field(default_factory=list)
+    case_types_used: list[CaseTypeUse] = field(default_factory=list)
     # Maps each CJK title n-gram to the most recent chapter where it appeared.
     # Used by ``title_pattern_cooldown_violations`` to block repeated patterns
     # like 《血脉决堤》→《灵脉决堤》→《道心决堤》 within a sliding chapter window.
@@ -220,6 +257,17 @@ class DiversityBudget:
             return ()
         return tuple(
             m.recipe_key for m in self.hype_moments[-n:] if m.recipe_key
+        )
+
+    def recent_case_types(self, n: int) -> tuple[CaseType, ...]:
+        """Return the last ``n`` case types, most-recent-last."""
+        if n <= 0:
+            return ()
+        return tuple(u.case_type for u in self.case_types_used[-n:])
+
+    def register_case_type(self, chapter_no: int, case_type: CaseType) -> None:
+        self.case_types_used.append(
+            CaseTypeUse(chapter_no=chapter_no, case_type=case_type)
         )
 
     def next_opening(
@@ -468,6 +516,7 @@ class DiversityBudget:
         hype_type: HypeType | None = None,
         hype_recipe_key: str | None = None,
         hype_intensity: float | None = None,
+        case_type: CaseType | None = None,
     ) -> None:
         """One-call registration after a chapter finalises.
 
@@ -490,6 +539,8 @@ class DiversityBudget:
                 hype_recipe_key,
                 hype_intensity if hype_intensity is not None else 0.0,
             )
+        if case_type is not None:
+            self.register_case_type(chapter_no, case_type)
 
     # -- serialization ---------------------------------------------------
 
@@ -509,6 +560,10 @@ class DiversityBudget:
             },
             "hype_moments": [
                 hype_moment_to_dict(m) for m in self.hype_moments
+            ],
+            "case_types_used": [
+                {"chapter_no": u.chapter_no, "case_type": u.case_type}
+                for u in self.case_types_used
             ],
             "title_patterns": dict(self.title_patterns),
         }
@@ -560,6 +615,17 @@ class DiversityBudget:
             moment = hype_moment_from_dict(row)
             if moment is not None:
                 hype_moments.append(moment)
+        case_types_used: list[CaseTypeUse] = []
+        for row in data.get("case_types_used") or []:
+            try:
+                case_types_used.append(
+                    CaseTypeUse(
+                        chapter_no=int(row["chapter_no"]),
+                        case_type=row["case_type"],
+                    )
+                )
+            except (KeyError, ValueError, TypeError):
+                logger.debug("Skipping malformed case_type row: %r", row)
         raw_patterns: Mapping[str, Any] = data.get("title_patterns") or {}
         title_patterns: dict[str, int] = {}
         for gram, last_ch in raw_patterns.items():
@@ -574,12 +640,105 @@ class DiversityBudget:
             titles_used=titles,
             vocab_freq=vocab,
             hype_moments=hype_moments,
+            case_types_used=case_types_used,
             title_patterns=title_patterns,
         )
 
 
 def _chapter_key(raw: str) -> int:
     """Sort key that treats str keys as integers when possible."""
+
+
+# ---------------------------------------------------------------------------
+# Case type diversity check.
+# ---------------------------------------------------------------------------
+
+
+# Keyword signals for case type detection from chapter text.
+_CASE_GUILT_MARKERS_ZH: tuple[str, ...] = (
+    "不是我", "我没有", "不关我的事", "认罪", "认账", "抵赖",
+    "冤枉", "清白", "不是我干的", "替罪", "代人受过",
+)
+_CASE_PURSUIT_MARKERS_ZH: tuple[str, ...] = (
+    "追", "跟踪", "寻找", "搜索", "追查", "追捕", "追击",
+    "逃犯", "在逃", "下落不明",
+)
+_CASE_PUZZLE_MARKERS_ZH: tuple[str, ...] = (
+    "线索", "推理", "密码", "谜题", "暗号", "符号", "规律",
+    "日记", "遗书", "证据", "拼图",
+)
+_CASE_SURVIVAL_MARKERS_ZH: tuple[str, ...] = (
+    "逃命", "逃生", "活下去", "活命", "食物", "水源",
+    "封闭", "密室", "倒计时", "出口",
+)
+_CASE_BETRAYAL_MARKERS_ZH: tuple[str, ...] = (
+    "背叛", "出卖", "内鬼", "卧底", "欺骗", "骗了我",
+    "没想到是你", "原来是你",
+)
+_CASE_SACRIFICE_MARKERS_ZH: tuple[str, ...] = (
+    "牺牲", "选择", "只能救一个", "交换", "代价",
+    "用我的命", "换你", "代替",
+)
+
+_CASE_MARKER_MAP: dict[CaseType, tuple[str, ...]] = {
+    "guilt_denial": _CASE_GUILT_MARKERS_ZH,
+    "pursuit_chase": _CASE_PURSUIT_MARKERS_ZH,
+    "puzzle_mystery": _CASE_PUZZLE_MARKERS_ZH,
+    "survival_escape": _CASE_SURVIVAL_MARKERS_ZH,
+    "betrayal_trust": _CASE_BETRAYAL_MARKERS_ZH,
+    "sacrifice_choice": _CASE_SACRIFICE_MARKERS_ZH,
+}
+
+
+def detect_case_type(chapter_text: str) -> CaseType | None:
+    """Heuristic detection of the dominant case type from chapter text.
+
+    Scans keyword counts across the 6 canonical case types. Returns the
+    type with the most hits, or None when no type scores above the floor.
+    """
+    if not chapter_text:
+        return None
+
+    scores: dict[CaseType, int] = {}
+    for case_type, markers in _CASE_MARKER_MAP.items():
+        scores[case_type] = sum(1 for m in markers if m in chapter_text)
+
+    if not scores or max(scores.values()) == 0:
+        return None
+
+    return max(scores, key=lambda k: scores[k])
+
+
+def check_case_type_diversity(
+    recent_case_types: Sequence[CaseType],
+    *,
+    max_consecutive_same: int = 4,
+) -> dict[str, Any]:
+    """Flag when the same case type dominates too many consecutive chapters.
+
+    Returns a dict with:
+      * violation: True when >= max_consecutive_same consecutive same type
+      * dominant_type: the repeating type (or None)
+      * streak: length of the current streak
+    """
+    if not recent_case_types:
+        return {"violation": False, "dominant_type": None, "streak": 0}
+
+    # Count the streak from the most recent chapter backwards.
+    streak = 1
+    dominant = recent_case_types[-1]
+    for ct in reversed(recent_case_types[:-1]):
+        if ct == dominant:
+            streak += 1
+        else:
+            break
+
+    return {
+        "violation": streak >= max_consecutive_same,
+        "dominant_type": dominant,
+        "streak": streak,
+        "max_consecutive_same": max_consecutive_same,
+    }
 
     try:
         return int(raw)

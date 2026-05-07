@@ -58,9 +58,14 @@ def _character(
     *,
     quirks: list[str] | None = None,
     core_wound: str | None = None,
+    tag_memory: str | None = None,
+    independent_life: str | None = None,
     goal: str | None = None,
     background: str | None = None,
     secret: str | None = None,
+    fear: str | None = None,
+    flaw: str | None = None,
+    strength: str | None = None,
     with_personhood: bool = False,
 ) -> CharacterInput:
     """Build a test CharacterInput.
@@ -92,9 +97,14 @@ def _character(
         goal=goal,
         background=background,
         secret=secret,
+        fear=fear,
+        flaw=flaw,
+        strength=strength,
         ip_anchor=CharacterIPAnchorInput(
             quirks=quirks or [],
             core_wound=core_wound,
+            tag_memory=tag_memory,
+            independent_life=independent_life,
         ),
         **extras,
     )
@@ -392,6 +402,13 @@ class TestValidateBibleCompleteness:
             "protagonist",
             quirks=["q1", "q2", "q3"],
             core_wound="mother executed",
+            tag_memory="思考时拇指摩挲剑柄",
+            background="流浪剑客出身，曾为将军府侍卫",
+            goal="找到杀母仇人",
+            strength="剑术过人，能在百人之中取敌首",
+            secret="杀母仇人即是抚养自己长大的师父",
+            fear="害怕发现自己和仇人是同一种人",
+            flaw="过度执着于复仇，无视身边人的关心",
             with_personhood=True,
         )
         draft = _minimal_draft(
@@ -442,6 +459,13 @@ class TestValidateBibleCompleteness:
             "protagonist",
             quirks=["q1", "q2", "q3"],
             core_wound="wound",
+            tag_memory="思考时摩挲剑柄",
+            background="流浪剑客",
+            goal="复仇",
+            strength="以一敌百",
+            secret="师父是仇人",
+            fear="变成仇人那样",
+            flaw="过度执着复仇",
             with_personhood=True,
         )
         draft = _minimal_draft(
@@ -452,9 +476,11 @@ class TestValidateBibleCompleteness:
         report = validate_bible_completeness(draft, _invariants())
         assert report.feedback_for_regen() == ""
 
-    def test_default_validators_has_seven_checks(self) -> None:
-        # 5 original + CharacterPersonhoodCheck + VillainCharismaCheck.
-        assert len(default_validators()) == 7
+    def test_default_validators_has_ten_checks(self) -> None:
+        # 5 original + CharacterPersonhoodCheck + VillainCharismaCheck
+        # + SupportingCharacterTagCheck + IndependentLifeCheck
+        # + CharacterContrastCheck.
+        assert len(default_validators()) == 10
 
 
 class TestBuildDraftFromMaterializationContent:

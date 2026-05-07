@@ -176,6 +176,37 @@ def score_tension(components: dict[str, float]) -> float:
     return round(total, 2)
 
 
+def evaluate_breathing_rhythm(
+    recent_scores: list[float],
+    *,
+    high_tension_threshold: float = 7.0,
+    max_high_streak: int = 3,
+) -> dict[str, Any]:
+    """Flag when >= N consecutive chapters stay above the high-tension threshold.
+
+    Methodology rule: "连续3章高强度后必须给1章喘息口" (after 3 consecutive
+    high-tension chapters, you must give 1 breathing chapter). This function
+    detects violations of that rule so the pacing engine can nudge the planner.
+
+    Returns a dict with:
+      * current_streak: how many consecutive high-tension chapters (most recent)
+      * violation: True when current_streak >= max_high_streak
+      * chapters_in_streak: list of chapter indices in the streak (1-based, inferred)
+    """
+    streak = 0
+    for s in recent_scores:
+        if isinstance(s, (int, float)) and s >= high_tension_threshold:
+            streak += 1
+        else:
+            break
+    return {
+        "current_streak": streak,
+        "violation": streak >= max_high_streak,
+        "high_tension_threshold": high_tension_threshold,
+        "max_high_streak": max_high_streak,
+    }
+
+
 def evaluate_tension_variance(
     recent_scores: list[float],
     *,
@@ -209,6 +240,8 @@ def build_pacing_checker_report(
     target_tension: float,
     hook_diversity: dict[str, Any] | None = None,
     tension_variance: dict[str, Any] | None = None,
+    breathing_rhythm: dict[str, Any] | None = None,
+    recent_outcomes: list[str] | None = None,
     tension_tolerance: float = 1.5,
 ) -> CheckerReport:
     """Wrap this module's evaluations into the Phase A1 schema.
@@ -280,6 +313,52 @@ def build_pacing_checker_report(
                 allowed_rationales=("ARC_TIMING", "GENRE_CONVENTION"),
             )
         )
+
+    if breathing_rhythm and breathing_rhythm.get("violation"):
+        streak = breathing_rhythm.get("current_streak", 0)
+        max_streak = breathing_rhythm.get("max_high_streak", 3)
+        issues.append(
+            CheckerIssue(
+                id="SOFT_BREATHING_RHYTHM_VIOLATION",
+                type="pacing",
+                severity="high",
+                location="近期章节张力序列",
+                description=(
+                    f"连续 {streak} 章处于高张力（>={breathing_rhythm.get('high_tension_threshold', 7.0)}），"
+                    f"已超过 {max_streak} 章上限，读者需要喘息口"
+                ),
+                suggestion=(
+                    "下一章安排低压或中压场景（日常/温馨/推理整理/人际温暖），"
+                    "植入伏笔和感情线，为下一轮高压蓄力"
+                ),
+                can_override=True,
+                allowed_rationales=("ARC_TIMING", "GENRE_CONVENTION", "EDITORIAL_INTENT"),
+            )
+        )
+
+    if recent_outcomes is not None:
+        loss_count = sum(1 for o in recent_outcomes if o == "loss")
+        win_count = sum(1 for o in recent_outcomes if o == "win")
+        n = len(recent_outcomes)
+        if n >= 4 and loss_count >= 4 and win_count == 0:
+            issues.append(
+                CheckerIssue(
+                    id="SOFT_WIN_LOSS_MONOTONE",
+                    type="pacing",
+                    severity="high",
+                    location=f"最近 {n} 章",
+                    description=(
+                        f"最近 {n} 章中 {loss_count} 章以失败/失去收尾，"
+                        f"无一次胜利，读者可能因连续打击而放弃阅读"
+                    ),
+                    suggestion=(
+                        "方法论要求'至少压缩2章再释放'，但也不能无限压缩。"
+                        "安排一次明确的胜利（救下人/解开谜/打破规则），即使是局部胜利。"
+                    ),
+                    can_override=True,
+                    allowed_rationales=("ARC_TIMING", "GENRE_CONVENTION", "EDITORIAL_INTENT"),
+                )
+            )
 
     passed = not issues
     penalty = sum(

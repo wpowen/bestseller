@@ -55,6 +55,86 @@ logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
+# Phase A4 — Chapter outcome classification (win/loss ratio tracking).
+# ---------------------------------------------------------------------------
+
+# Win markers: rescue, save, escape, breakthrough, victory, solve, heal
+_WIN_MARKERS_ZH: tuple[str, ...] = (
+    "救出", "救下", "救回", "得救", "脱困", "逃出", "逃生",
+    "突破", "击败", "战胜", "破解", "解开", "真相大白",
+    "恢复", "愈合", "归来", "回归", "重逢",
+)
+_WIN_MARKERS_EN: tuple[str, ...] = (
+    "rescued", "saved", "escaped", "freed", "broke through",
+    "defeated", "vanquished", "solved", "uncovered the truth",
+    "healed", "recovered", "returned", "reunited",
+)
+
+# Loss markers: death, trap, taken, lost, sacrifice, betray
+_LOSS_MARKERS_ZH: tuple[str, ...] = (
+    "死了", "死去", "死亡", "丧命", "牺牲", "被杀",
+    "被困", "被关", "被囚", "被抓", "被带走",
+    "消失", "失踪", "失去", "永别", "回不来了",
+    "背叛", "出卖", "反水",
+)
+_LOSS_MARKERS_EN: tuple[str, ...] = (
+    "died", "killed", "dead", "sacrificed", "lost",
+    "trapped", "captured", "taken", "disappeared",
+    "betrayed", "gone forever",
+)
+
+# Stalemate / partial markers
+_STALEMATE_MARKERS_ZH: tuple[str, ...] = (
+    "暂时", "权宜", "代价", "交换", "选择",
+    "只能", "不得不", "没有赢", "平局",
+)
+_STALEMATE_MARKERS_EN: tuple[str, ...] = (
+    "temporary", "for now", "at a cost", "trade", "choice",
+    "had to", "no choice", "stalemate",
+)
+
+OutcomeKind = str  # "win" | "loss" | "stalemate" | "unknown"
+
+
+def classify_chapter_outcome(
+    chapter_text: str,
+    *,
+    language: str = "zh-CN",
+) -> OutcomeKind:
+    """Classify a chapter's outcome by scanning its last 20% for win/loss markers.
+
+    Only the tail of the chapter is scanned — the chapter's final emotional
+    register is what the reader carries into the next chapter, which is what
+    the win/loss ratio cares about.
+
+    Returns one of ``"win"``, ``"loss"``, ``"stalemate"``, or ``"unknown"``.
+    """
+    if not chapter_text:
+        return "unknown"
+
+    is_en = bool(language and language.lower().startswith("en"))
+    win_markers = _WIN_MARKERS_EN if is_en else _WIN_MARKERS_ZH
+    loss_markers = _LOSS_MARKERS_EN if is_en else _LOSS_MARKERS_ZH
+    stalemate_markers = _STALEMATE_MARKERS_EN if is_en else _STALEMATE_MARKERS_ZH
+
+    # Scan the last 20% of the chapter.
+    tail_start = max(0, len(chapter_text) - len(chapter_text) // 5)
+    tail = chapter_text[tail_start:]
+
+    win_hits = sum(1 for m in win_markers if m in tail)
+    loss_hits = sum(1 for m in loss_markers if m in tail)
+    stalemate_hits = sum(1 for m in stalemate_markers if m in tail)
+
+    if win_hits > loss_hits and win_hits > stalemate_hits:
+        return "win"
+    if loss_hits > win_hits and loss_hits > stalemate_hits:
+        return "loss"
+    if stalemate_hits > 0 or (win_hits > 0 and loss_hits > 0):
+        return "stalemate"
+    return "unknown"
+
+
+# ---------------------------------------------------------------------------
 # Classification — keyword signals per line.
 # ---------------------------------------------------------------------------
 # These lexicons are deliberately broad-strokes; the tracker's job is to

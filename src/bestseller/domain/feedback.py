@@ -18,6 +18,13 @@ class CharacterStateExtraction(BaseModel):
     stance: str | None = None  # ally | enemy | neutral | conflicted | protagonist | rival
     stance_change_reason: str | None = None
     power_tier_downgrade_reason: str | None = None
+    # Non-deceased offstage lifecycle states — written to
+    # metadata_json.lifecycle_status (kind must be in
+    # missing|sealed|sleeping|comatose|exiled).  A reason is required
+    # or the field is silently dropped.
+    lifecycle_status: str | None = None  # missing|sealed|sleeping|comatose|exiled
+    lifecycle_status_reason: str | None = None  # one-sentence triggering event
+    lifecycle_exit_chapter: int | None = None  # planned chapter when state ends
     beliefs_gained: list[str] = Field(default_factory=list)
     beliefs_invalidated: list[str] = Field(default_factory=list)
     knowledge_gained: list[str] = Field(default_factory=list)
@@ -68,6 +75,20 @@ class CanonFactExtraction(BaseModel):
     fact_type: str = "extracted"
 
 
+class PromiseMadeExtraction(BaseModel):
+    """A new promise / oath / vow / debt established in the prose.
+
+    Only "newly made" promises are extracted here.  Resolution
+    (fulfilled / broken) is detected separately.
+    """
+
+    promisor: str  # name of the character making the promise
+    promisee: str  # name of the character receiving the promise
+    content: str   # what exactly was promised (one sentence)
+    kind: str | None = None  # revenge|protection|message|fealty|debt|quest|deathbed
+    due_chapter: int | None = None  # planned resolution chapter, if the prose mentions one
+
+
 class ChapterFeedbackPayload(BaseModel):
     """Raw LLM extraction result before applying to DB."""
 
@@ -77,6 +98,7 @@ class ChapterFeedbackPayload(BaseModel):
     clue_observations: list[ClueObservationExtraction] = Field(default_factory=list)
     world_details: list[WorldDetailExtraction] = Field(default_factory=list)
     canon_facts: list[CanonFactExtraction] = Field(default_factory=list)
+    promises_made: list[PromiseMadeExtraction] = Field(default_factory=list)
 
 
 class ChapterFeedbackResult(BaseModel):
@@ -91,5 +113,6 @@ class ChapterFeedbackResult(BaseModel):
     clue_observations_applied: int = 0
     world_details_enriched: int = 0
     canon_facts_created: int = 0
+    promises_created: int = 0
     extraction_status: str = "ok"  # ok | empty | parse_error | llm_error
     llm_run_id: UUID | None = None

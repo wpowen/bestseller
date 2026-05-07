@@ -15,10 +15,18 @@ from uuid import uuid4
 
 import pytest
 
+from bestseller.services.canon_guardrails import (
+    CanonForbiddenTerm,
+    CanonGuardrails,
+    CanonStateRule,
+)
 from bestseller.services.chapter_validator import (
+    CanonForbiddenTermCheck,
+    CanonStateRegressionCheck,
     CliffhangerRotationCheck,
     DialogIntegrityCheck,
     POVLockCheck,
+    RepeatedEventBeatCheck,
     build_chapter_validator_checks,
     classify_cliffhanger,
     validate_chapter,
@@ -38,6 +46,8 @@ def _ctx(
     language: str = "zh-CN",
     pov: str = "close_third",
     chapter_no: int = 1,
+    allowed_names: frozenset[str] | None = None,
+    canon_guardrails: CanonGuardrails | None = None,
 ) -> ValidationContext:
     inv = seed_invariants(
         project_id=uuid4(),
@@ -45,7 +55,13 @@ def _ctx(
         words_per_chapter=SimpleNamespace(min=5000, target=6400, max=7500),
         pov=pov,
     )
-    return ValidationContext(invariants=inv, chapter_no=chapter_no, scope="chapter")
+    return ValidationContext(
+        invariants=inv,
+        chapter_no=chapter_no,
+        scope="chapter",
+        allowed_names=allowed_names or frozenset(),
+        canon_guardrails=canon_guardrails,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -277,6 +293,150 @@ class TestPOVLockCheck:
 
 
 # ---------------------------------------------------------------------------
+# RepeatedEventBeatCheck.
+# ---------------------------------------------------------------------------
+
+
+class TestRepeatedEventBeatCheck:
+    def test_repeated_mirror_entry_beat_blocks(self) -> None:
+        text = (
+            "林渊推开浴室门，寒意从瓷砖缝里冒出来。\n\n"
+            "小雨被困在镜子里面，掌心拍得发红，声音像隔着一层水。\n\n"
+            "孙九斤把桃木珠按在镜框上，火星一闪就灭。\n\n"
+            "小雨的影子被拖进镜面深处，只剩一截发白的手腕。\n\n"
+            "林渊翻开青囊秘卷，看见纸页上渗出一行小字。\n\n"
+            "他没有立刻念咒，而是问陈默昨晚到底隐瞒了什么。\n\n"
+            "陈默脸色惨白，眼神躲开，喉结上下滚动。\n\n"
+            "走廊里的灯接连熄灭，所有人的呼吸都慢了半拍。\n\n"
+            "墙皮底下传来指甲刮擦的声音，像有人从墙里往外爬。\n\n"
+            "林渊听见镜中有人叫他的名字，声音和父亲一模一样。\n\n"
+            "他强迫自己没有回头，先把铜钱压进门槛。\n\n"
+            "王老板忽然哭着说自己只是收钱带路。\n\n"
+            "孙九斤逼他交代付款人的电话尾号。\n\n"
+            "走廊尽头的门牌一块块翻转，露出陌生的血字。\n\n"
+            "林渊把那些字记在青囊秘卷的空白页上。\n\n"
+            "陈默想冲过去，被小雨嘶声叫住。\n\n"
+            "所有人都以为这轮镜眼已经暂时合上。\n\n"
+            "可电灯重新亮起时，镜框里多了一只苍白的手。\n\n"
+            "林渊意识到刚才的答案只关住了半扇门。\n\n"
+            "下一秒，镜面重新泛起涟漪，小雨再次被往里拖。\n\n"
+            "小雨半截身体没入镜子，指甲在地上划出血痕。"
+        )
+        violations = list(
+            RepeatedEventBeatCheck().run(
+                text,
+                _ctx(allowed_names=frozenset({"小雨", "陈默", "林渊", "孙九斤"})),
+            )
+        )
+        assert len(violations) == 1
+        assert violations[0].code == "REPEATED_EVENT_BEAT"
+        assert "小雨" in violations[0].prompt_feedback
+
+    def test_single_sustained_mirror_scene_passes(self) -> None:
+        text = (
+            "林渊推开浴室门，寒意从瓷砖缝里冒出来。\n\n"
+            "小雨被困在镜子里面，掌心拍得发红，声音像隔着一层水。\n\n"
+            "小雨的影子被拖进镜面深处，只剩一截发白的手腕。\n\n"
+            "小雨半截身体没入镜子，指甲在地上划出血痕。\n\n"
+            "林渊咬破指尖，把血按在青囊秘卷的朱砂线上。\n\n"
+            "镜面轰然裂开，新的血字从裂缝里爬出来。"
+        )
+        violations = list(
+            RepeatedEventBeatCheck().run(
+                text,
+                _ctx(allowed_names=frozenset({"小雨", "林渊"})),
+            )
+        )
+        assert violations == []
+
+
+# ---------------------------------------------------------------------------
+# Canon guardrails.
+# ---------------------------------------------------------------------------
+
+
+class TestCanonGuardrails:
+    def test_forbidden_term_blocks_legacy_setting(self) -> None:
+        guardrails = CanonGuardrails(
+            forbidden_terms=(
+                CanonForbiddenTerm(
+                    term="守夜人",
+                    reason="旧版世界观已废弃",
+                    suggestion="三族契约/张家开门人",
+                ),
+            )
+        )
+        violations = list(
+            CanonForbiddenTermCheck().run(
+                "林渊想起守夜人的首领曾经留下铜镜。",
+                _ctx(canon_guardrails=guardrails),
+            )
+        )
+        assert len(violations) == 1
+        assert violations[0].code == "CANON_FORBIDDEN_TERM"
+        assert "守夜人" in violations[0].prompt_feedback
+
+    def test_state_regression_blocks_declared_pattern(self) -> None:
+        guardrails = CanonGuardrails(
+            state_rules=(
+                CanonStateRule(
+                    subject="小雨",
+                    status="已认账获救",
+                    forbidden_patterns=(r"小雨.{0,20}被困在镜子",),
+                    reason="第4章已完成救援",
+                    allowed_next="只能作为证人、陈默锚点或现实压力继续推进",
+                ),
+            )
+        )
+        violations = list(
+            CanonStateRegressionCheck().run(
+                "小雨再次被困在镜子里面，掌心拍得发红。",
+                _ctx(canon_guardrails=guardrails),
+            )
+        )
+        assert len(violations) == 1
+        assert violations[0].code == "CANON_STATE_REGRESSION"
+        assert "已认账获救" in violations[0].prompt_feedback
+
+    def test_state_regression_allows_forward_progress(self) -> None:
+        guardrails = CanonGuardrails(
+            state_rules=(
+                CanonStateRule(
+                    subject="小雨",
+                    status="已认账获救",
+                    forbidden_patterns=(r"小雨.{0,20}被困在镜子",),
+                ),
+            )
+        )
+        violations = list(
+            CanonStateRegressionCheck().run(
+                "小雨把三天前收到小圆镜的细节说给苏婉宁听。",
+                _ctx(canon_guardrails=guardrails),
+            )
+        )
+        assert violations == []
+
+    def test_state_regression_respects_applies_after_chapter(self) -> None:
+        guardrails = CanonGuardrails(
+            state_rules=(
+                CanonStateRule(
+                    subject="周雪",
+                    status="第5章已死亡",
+                    applies_after_chapter=5,
+                    forbidden_patterns=(r"周雪.{0,20}正在被手机吞",),
+                ),
+            )
+        )
+
+        chapter_five_ctx = _ctx(chapter_no=5, canon_guardrails=guardrails)
+        chapter_six_ctx = _ctx(chapter_no=6, canon_guardrails=guardrails)
+        text = "周雪正在被手机吞进去，指甲抠住地砖。"
+
+        assert list(CanonStateRegressionCheck().run(text, chapter_five_ctx)) == []
+        assert len(list(CanonStateRegressionCheck().run(text, chapter_six_ctx))) == 1
+
+
+# ---------------------------------------------------------------------------
 # Orchestrator + factory.
 # ---------------------------------------------------------------------------
 
@@ -284,15 +444,19 @@ class TestPOVLockCheck:
 class TestValidateChapter:
     def test_factory_returns_expected_checks(self) -> None:
         checks = build_chapter_validator_checks()
-        # Phase 2 adds 4 hype checks on top of the base 3
-        # (dialog / POV / cliffhanger). Phase B1 adds LineGapCheck. All
+        # Phase 2 adds 4 hype checks on top of the base 6
+        # (dialog / POV / repeated beat / canon guardrails / cliffhanger).
+        # Phase B1 adds LineGapCheck. All
         # context-dependent checks no-op gracefully when their optional
         # context is absent.
-        assert len(checks) == 8
+        assert len(checks) == 11
         codes = {c.code for c in checks}
         assert codes == {
             "DIALOG_UNPAIRED",
             "POV_DRIFT",
+            "REPEATED_EVENT_BEAT",
+            "CANON_FORBIDDEN_TERM",
+            "CANON_STATE_REGRESSION",
             "CLIFFHANGER_REPEAT",
             "HYPE_MISSING",
             "HYPE_REPEAT",

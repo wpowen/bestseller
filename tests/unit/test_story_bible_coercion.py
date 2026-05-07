@@ -261,6 +261,28 @@ class TestCharacterInputCoercion:
         )
         assert len(character.role) <= 64
 
+    def test_social_network_family_accepts_relation_keyed_dict(self) -> None:
+        character = CharacterInput.model_validate(
+            {
+                "name": "王六",
+                "role": "ally",
+                "social_network": {
+                    "family": [
+                        {
+                            "father（已故）": {
+                                "emotional_weight": "愧疚",
+                                "influence": "让他无法放弃承诺",
+                            }
+                        }
+                    ]
+                },
+            }
+        )
+
+        assert character.social_network.family[0].name == "father（已故）"
+        assert character.social_network.family[0].bond == "father（已故）"
+        assert character.social_network.family[0].influence == "让他无法放弃承诺"
+
 
 class TestConflictForceInputCoercion:
     def test_active_volumes_accepts_range_string(self) -> None:
@@ -385,6 +407,26 @@ class TestCastSpecInputCoercion:
             }
         )
         assert spec.supporting_cast[0].beliefs.ideology == "个人意志在秩序稳定面前不值一提"
+
+    def test_primary_character_lists_use_first_and_preserve_extras(self) -> None:
+        spec = CastSpecInput.model_validate(
+            {
+                "protagonist": [
+                    {"name": "主角甲", "role": "protagonist"},
+                    {"name": "主角乙", "role": "protagonist"},
+                ],
+                "antagonist": [
+                    {"name": "反派甲", "role": "antagonist"},
+                    {"name": "反派乙", "role": "antagonist"},
+                ],
+            }
+        )
+
+        assert spec.protagonist is not None
+        assert spec.protagonist.name == "主角甲"
+        assert spec.antagonist is not None
+        assert spec.antagonist.name == "反派甲"
+        assert {character.name for character in spec.supporting_cast} == {"主角乙", "反派乙"}
 
 
 class TestVolumePlanEntryInputCoercion:

@@ -8,6 +8,8 @@ single scene but breaks on stitching:
   chapter-050 class of bug where quotes open but never close (bug #2).
 * ``POVLockCheck`` — samples narrative prose (excluding quoted dialogue)
   and rejects drafts that drift across POV persons (bug #12).
+* ``RepeatedEventBeatCheck`` — catches chapter assemblies that replay the
+  same high-impact event beat instead of escalating it.
 * ``CliffhangerRotationCheck`` — classifies the chapter ending's
   cliffhanger type and rejects it when the same type appears in the
   most-recent-N window tracked by ``DiversityBudget`` (bug #10).
@@ -21,9 +23,10 @@ checks mixed together if they want one pass.
 
 from __future__ import annotations
 
-import re
+from collections import defaultdict
+from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Iterable
+import re
 
 from bestseller.services.hype_engine import (
     HypeRecipe,
@@ -31,14 +34,13 @@ from bestseller.services.hype_engine import (
     classify_hype,
     extract_ending_sentence,
 )
-from bestseller.services.invariants import CliffhangerType, ProjectInvariants
+from bestseller.services.invariants import CliffhangerType
 from bestseller.services.output_validator import (
     Check,
     QualityReport,
     ValidationContext,
     Violation,
 )
-
 
 # ---------------------------------------------------------------------------
 # Quote pairs — per-language.
@@ -1146,6 +1148,379 @@ class LineGapCheck:
 
 
 # ---------------------------------------------------------------------------
+# RepeatedEventBeatCheck — prevents pasted/replayed chapter beats.
+# ---------------------------------------------------------------------------
+
+
+_ZH_EVENT_OBJECT_GROUPS: dict[str, tuple[str, ...]] = {
+    "mirror": ("困魂镜", "穿衣镜", "镜面", "镜子", "镜框", "铜镜"),
+    "screen": ("手机屏幕", "屏幕", "手机", "直播间", "短视频"),
+}
+
+_ZH_EVENT_ACTION_GROUPS: dict[str, tuple[str, ...]] = {
+    "trap_or_entry": (
+        "困在",
+        "拖进",
+        "拖入",
+        "拖走",
+        "往里拖",
+        "拽进",
+        "拽住",
+        "吞",
+        "吞咽",
+        "没入",
+        "穿过",
+        "伸进",
+        "滑进",
+        "走进",
+        "消失在",
+        "被拖",
+        "被吞",
+        "被困",
+    ),
+}
+
+_ZH_EVENT_OBJECT_LABELS: dict[str, str] = {
+    "mirror": "镜面/镜子",
+    "screen": "手机/屏幕",
+}
+
+_ZH_EVENT_ACTION_LABELS: dict[str, str] = {
+    "trap_or_entry": "被困、被拖入或没入",
+}
+
+_ZH_FALLBACK_NAME_RE = re.compile(
+    r"(?:[老小][\u4e00-\u9fff]{1,2}|[\u4e00-\u9fff]{2,3})"
+)
+
+_ZH_NAME_STOPWORDS = frozenset(
+    {
+        "下一秒",
+        "镜面",
+        "镜子",
+        "手机",
+        "屏幕",
+        "穿衣镜",
+        "困魂镜",
+        "走廊",
+        "房间",
+        "声音",
+        "身体",
+        "眼睛",
+        "黑影",
+        "那团",
+        "所有人",
+        "没有人",
+        "为什么",
+        "怎么办",
+    }
+)
+
+
+@dataclass(frozen=True)
+class _BeatOccurrence:
+    paragraph_idx: int
+    snippet: str
+
+
+class RepeatedEventBeatCheck:
+    """Detect repeated high-impact event beats within one assembled chapter.
+
+    The failure this catches is not generic word repetition, nor a legitimate
+    chapter-break continuation. Long serials often let one rescue, trial,
+    pursuit, or reveal run across multiple chapters. That is fine when the
+    later passage starts from a changed state: new clue, new cost, new tactic,
+    new location, new participant, or an irreversible result.
+
+    This check only inspects one assembled chapter and only fires when that
+    chapter appears to replay the same event beat after a long gap: the same
+    named character is again trapped, swallowed, dragged into, or lost through
+    the same mirror/screen mechanism. That pattern makes the reader feel the
+    chapter is stitched from alternate drafts instead of moving forward.
+
+    The check is intentionally conservative:
+    * Chinese keyword heuristic only; English projects no-op.
+    * Requires named actors plus an object group and action group.
+    * Adjacent paragraphs are clustered as one event, so a multi-paragraph
+      rescue/death scene is allowed. Two separated clusters for the same
+      signature are blocked.
+    """
+
+    code = "REPEATED_EVENT_BEAT"
+
+    def __init__(
+        self,
+        *,
+        min_paragraph_chars: int = 18,
+        max_cluster_gap: int = 3,
+        min_cluster_separation: int = 16,
+        min_total_occurrences: int = 3,
+    ) -> None:
+        self.min_paragraph_chars = min_paragraph_chars
+        self.max_cluster_gap = max_cluster_gap
+        self.min_cluster_separation = min_cluster_separation
+        self.min_total_occurrences = min_total_occurrences
+
+    def run(self, text: str, ctx: ValidationContext) -> Iterable[Violation]:
+        if ctx.scope != "chapter" or not text:
+            return []
+        if not (ctx.invariants.language or "").lower().startswith("zh"):
+            return []
+
+        names = _character_names_for_repeated_beats(text, ctx)
+        if not names:
+            return []
+
+        paragraphs = [
+            para.strip()
+            for para in _PARAGRAPH_BREAK_RE.split(text)
+            if para and para.strip()
+        ]
+        occurrences: dict[tuple[str, str, str], list[_BeatOccurrence]] = defaultdict(list)
+
+        for idx, para in enumerate(paragraphs, 1):
+            normalized = _normalize_repeated_beat_paragraph(para)
+            if len(normalized) < self.min_paragraph_chars:
+                continue
+            object_group = _first_group_hit(normalized, _ZH_EVENT_OBJECT_GROUPS)
+            action_group = _first_group_hit(normalized, _ZH_EVENT_ACTION_GROUPS)
+            if object_group is None or action_group is None:
+                continue
+            for name in names:
+                if name in normalized:
+                    occurrences[(name, object_group, action_group)].append(
+                        _BeatOccurrence(
+                            paragraph_idx=idx,
+                            snippet=_context_window(para, 0, radius=36),
+                        )
+                    )
+
+        for (name, object_group, action_group), hits in occurrences.items():
+            if len(hits) < self.min_total_occurrences:
+                continue
+            clusters = _cluster_beat_occurrences(
+                hits,
+                max_gap=self.max_cluster_gap,
+            )
+            if len(clusters) < 2:
+                continue
+            separation = clusters[1][0].paragraph_idx - clusters[0][-1].paragraph_idx
+            if separation < self.min_cluster_separation:
+                continue
+
+            first_para = clusters[0][0].paragraph_idx
+            second_para = clusters[1][0].paragraph_idx
+            object_label = _ZH_EVENT_OBJECT_LABELS.get(object_group, object_group)
+            action_label = _ZH_EVENT_ACTION_LABELS.get(action_group, action_group)
+            sample_a = clusters[0][0].snippet
+            sample_b = clusters[1][0].snippet
+            return [
+                Violation(
+                    code=self.code,
+                    severity="block",
+                    location=f"paragraph:{first_para},paragraph:{second_para}",
+                    detail=(
+                        "Repeated event beat in one chapter: "
+                        f"{name} + {object_group} + {action_group} appears in "
+                        f"separated clusters starting at paragraphs "
+                        f"{first_para} and {second_para}"
+                    ),
+                    prompt_feedback=(
+                        f"本章在第 {first_para} 段和第 {second_para} 段附近重复上演"
+                        f"“{name} 与{object_label}{action_label}”这一事件。"
+                        f"第一次样例：『{sample_a}』；第二次样例：『{sample_b}』。"
+                        "请只保留一次完整事件，把另一处改写为新的状态推进："
+                        "例如线索揭露、代价升级、人物选择、规则变化或章末反转。"
+                        "如果这是上一章未完成事件的续写，必须从新状态继续，"
+                        "不要回放已发生的拖入/吞入/困住过程；"
+                        "如果仍在同一章内推进，则需要让第二处承担新的不可逆结果。"
+                    ),
+                )
+            ]
+
+        return []
+
+
+def _character_names_for_repeated_beats(
+    text: str,
+    ctx: ValidationContext,
+) -> tuple[str, ...]:
+    names: set[str] = set()
+    names.update(n.strip() for n in ctx.allowed_names if n and n.strip())
+    naming_scheme = ctx.invariants.naming_scheme
+    if naming_scheme is not None:
+        names.update(n.strip() for n in naming_scheme.seed_pool if n and n.strip())
+
+    if not names:
+        # Fallback for ad-hoc/manual validation without a populated roster.
+        counts: dict[str, int] = {}
+        for match in _ZH_FALLBACK_NAME_RE.finditer(text):
+            candidate = match.group(0)
+            if candidate in _ZH_NAME_STOPWORDS:
+                continue
+            if len(candidate) < 2 or len(candidate) > 4:
+                continue
+            counts[candidate] = counts.get(candidate, 0) + 1
+        names.update(name for name, count in counts.items() if count >= 2)
+
+    filtered = {
+        name
+        for name in names
+        if 2 <= len(name) <= 4 and name not in _ZH_NAME_STOPWORDS
+    }
+    return tuple(sorted(filtered, key=lambda item: (-len(item), item)))
+
+
+def _normalize_repeated_beat_paragraph(paragraph: str) -> str:
+    return re.sub(r"\s+", "", paragraph)
+
+
+def _first_group_hit(
+    text: str,
+    groups: dict[str, tuple[str, ...]],
+) -> str | None:
+    for group, needles in groups.items():
+        if any(needle in text for needle in needles):
+            return group
+    return None
+
+
+def _cluster_beat_occurrences(
+    occurrences: list[_BeatOccurrence],
+    *,
+    max_gap: int,
+) -> list[list[_BeatOccurrence]]:
+    ordered = sorted(occurrences, key=lambda item: item.paragraph_idx)
+    clusters: list[list[_BeatOccurrence]] = []
+    for occurrence in ordered:
+        if not clusters:
+            clusters.append([occurrence])
+            continue
+        if occurrence.paragraph_idx - clusters[-1][-1].paragraph_idx <= max_gap:
+            clusters[-1].append(occurrence)
+        else:
+            clusters.append([occurrence])
+    return clusters
+
+
+# ---------------------------------------------------------------------------
+# Canon guardrails — per-book forbidden terms + state-regression checks.
+# ---------------------------------------------------------------------------
+
+
+class CanonForbiddenTermCheck:
+    """Block deprecated/foreign canon terms from leaking into new chapters."""
+
+    code = "CANON_FORBIDDEN_TERM"
+
+    def run(self, text: str, ctx: ValidationContext) -> Iterable[Violation]:
+        if ctx.scope != "chapter" or not text:
+            return []
+        guardrails = ctx.canon_guardrails
+        terms = tuple(getattr(guardrails, "forbidden_terms", ()) or ())
+        if not terms:
+            return []
+
+        violations: list[Violation] = []
+        for item in terms:
+            term = str(getattr(item, "term", "") or "").strip()
+            if not term or term not in text:
+                continue
+            offset = text.find(term)
+            reason = str(getattr(item, "reason", "") or "").strip()
+            suggestion = str(getattr(item, "suggestion", "") or "").strip()
+            detail = f"Forbidden canon term appears in chapter: {term}"
+            if reason:
+                detail += f" ({reason})"
+            feedback = (
+                f"本章出现了已禁止的旧设定/非正典词：『{term}』。"
+                f"{'原因：' + reason + '。' if reason else ''}"
+                f"{'请改用：' + suggestion + '。' if suggestion else ''}"
+                "请删除该词及其关联设定，不要把废弃体系重新带回当前正典。"
+            )
+            violations.append(
+                Violation(
+                    code=self.code,
+                    severity="block",
+                    location=f"char:{offset}",
+                    detail=detail,
+                    prompt_feedback=feedback,
+                )
+            )
+            break
+
+        return violations
+
+
+class CanonStateRegressionCheck:
+    """Block project-declared character/event state rollback patterns."""
+
+    code = "CANON_STATE_REGRESSION"
+
+    def run(self, text: str, ctx: ValidationContext) -> Iterable[Violation]:
+        if ctx.scope != "chapter" or not text:
+            return []
+        guardrails = ctx.canon_guardrails
+        rules = tuple(getattr(guardrails, "state_rules", ()) or ())
+        if not rules:
+            return []
+
+        for rule in rules:
+            subject = str(getattr(rule, "subject", "") or "").strip()
+            status = str(getattr(rule, "status", "") or "").strip()
+            applies_after = getattr(rule, "applies_after_chapter", None)
+            if (
+                isinstance(applies_after, int)
+                and ctx.chapter_no is not None
+                and ctx.chapter_no <= applies_after
+            ):
+                continue
+            reason = str(getattr(rule, "reason", "") or "").strip()
+            allowed_next = str(getattr(rule, "allowed_next", "") or "").strip()
+            patterns = tuple(getattr(rule, "forbidden_patterns", ()) or ())
+            for raw_pattern in patterns:
+                pattern = str(raw_pattern or "").strip()
+                if not pattern:
+                    continue
+                match = _search_canon_state_pattern(pattern, text)
+                if match is None:
+                    continue
+                snippet = _context_window(text, match.start(), radius=42)
+                return [
+                    Violation(
+                        code=self.code,
+                        severity="block",
+                        location=f"char:{match.start()}",
+                        detail=(
+                            f"Canon state regression for {subject or 'unknown'}"
+                            f"{' (' + status + ')' if status else ''}: "
+                            f"matched pattern {pattern!r}"
+                        ),
+                        prompt_feedback=(
+                            f"本章触发了正典状态回滚规则："
+                            f"{subject or '（未命名对象）'}"
+                            f"{' 当前状态为“' + status + '”' if status else ''}。"
+                            f"{'原因：' + reason + '。' if reason else ''}"
+                            f"命中片段：『{snippet}』。"
+                            f"{'后续允许方向：' + allowed_next + '。' if allowed_next else ''}"
+                            "请从上一章末已经改变的状态继续推进，不要把已死亡、"
+                            "已获救、已离局、已入镜或已揭露的事件重置回旧过程。"
+                        ),
+                    )
+                ]
+
+        return []
+
+
+def _search_canon_state_pattern(pattern: str, text: str) -> re.Match[str] | None:
+    try:
+        return re.search(pattern, text, flags=re.DOTALL)
+    except re.error:
+        escaped = re.escape(pattern)
+        return re.search(escaped, text, flags=re.DOTALL)
+
+
+# ---------------------------------------------------------------------------
 # Factory.
 # ---------------------------------------------------------------------------
 
@@ -1166,6 +1541,9 @@ def build_chapter_validator_checks() -> list[Check]:
     return [
         DialogIntegrityCheck(),
         POVLockCheck(),
+        RepeatedEventBeatCheck(),
+        CanonForbiddenTermCheck(),
+        CanonStateRegressionCheck(),
         CliffhangerRotationCheck(),
         HypeOccurrenceCheck(),
         HypeDiversityCheck(),

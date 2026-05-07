@@ -77,6 +77,12 @@ SELF_HEAL_LOCK_TTL_SECONDS = 180
 SELF_HEAL_SCAN_DONE_KEY = "bestseller:self_heal:scan_done"
 SELF_HEAL_SCAN_DONE_TTL_SECONDS = 7200
 
+# ARQ's default job expiry is 24 hours.  A single long-form autowrite job can
+# legitimately occupy a worker for longer than that, so startup self-heal jobs
+# queued behind it must survive a multi-day backlog instead of expiring before
+# they ever start.
+SELF_HEAL_JOB_EXPIRES_DAYS = 7
+
 logger = logging.getLogger(__name__)
 
 
@@ -325,6 +331,7 @@ async def _requeue_autowrite(
         workflow_run_id=job_id,
         payload={"project_slug": stuck.slug, "premise": None},
         _job_id=job_id,
+        _expires=_dt.timedelta(days=SELF_HEAL_JOB_EXPIRES_DAYS),
     )
     if job is None:
         return None

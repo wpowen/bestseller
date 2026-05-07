@@ -23,6 +23,7 @@ from bestseller.infra.db.models import (
     StyleGuideModel,
 )
 from bestseller.services.context import build_scene_writer_context_from_models
+from bestseller.services.canon_guardrails import load_canon_guardrails_for_project
 from bestseller.services.llm import LLMCompletionRequest, complete_text
 from bestseller.services.methodology import render_methodology_scene_rules
 from bestseller.services.prompt_packs import (
@@ -108,18 +109,23 @@ async def _load_character_name_roster(
         return frozenset()
 
 
-async def _load_dead_character_names_before_chapter(
+async def _load_offstage_character_names_before_chapter(
     session: AsyncSession,
     project_id: UUID,
     chapter_number: int,
 ) -> frozenset[str]:
-    """Return the set of characters who are *actually* dead in chapter N.
+    """Return the set of characters who cannot take present-tense action
+    in chapter N.
 
-    Excludes fake-death characters whose reveal chapter has already
-    passed — those are alive again and may participate normally. The
-    filter is applied in Python because the fake-death record lives in
-    ``metadata_json`` and a SQL JSON predicate would not be portable
-    across the test sqlite path.
+    Includes:
+      * Truly dead characters (``death_chapter_number < N`` and no
+        fake-death reveal yet);
+      * Characters whose ``metadata_json.lifecycle_status`` resolves to
+        an offstage kind in the current chapter (``missing``,
+        ``sealed``, ``sleeping``, ``comatose``).
+
+    The filter is applied in Python because the rich state lives in
+    JSON and predicates over JSON don't port to the sqlite test path.
     """
 
     try:
@@ -127,14 +133,12 @@ async def _load_dead_character_names_before_chapter(
             await session.scalars(
                 select(CharacterModel).where(
                     CharacterModel.project_id == project_id,
-                    CharacterModel.death_chapter_number.is_not(None),
-                    CharacterModel.death_chapter_number < chapter_number,
                 )
             )
         )
     except Exception:
         logger.debug(
-            "chapter %d: dead-character roster lookup failed (non-fatal)",
+            "chapter %d: offstage-character roster lookup failed (non-fatal)",
             chapter_number,
             exc_info=True,
         )
@@ -142,54 +146,77 @@ async def _load_dead_character_names_before_chapter(
 
     try:
         from bestseller.services.character_lifecycle import (
-            is_character_dead_at_chapter,
+            OFFSTAGE_KINDS,
+            effective_lifecycle_state,
         )
     except Exception:  # pragma: no cover — defensive guard
-        # If the helper can't be imported, fall back to the original
-        # purely-SQL behaviour: every match is treated as dead.
-        return frozenset(
-            str(row.name).strip() for row in rows
-            if getattr(row, "name", None) and str(row.name).strip()
-        )
+        return frozenset()
 
     out: set[str] = set()
     for row in rows:
+        if isinstance(row, str):
+            if row.strip():
+                out.add(row.strip())
+            continue
         name = getattr(row, "name", None)
         if not name:
             continue
-        if is_character_dead_at_chapter(
+        kind, _ = effective_lifecycle_state(
+            alive_status=getattr(row, "alive_status", None),
             death_chapter_number=getattr(row, "death_chapter_number", None),
             chapter_number=chapter_number,
             character_metadata=getattr(row, "metadata_json", None),
-        ):
+        )
+        if kind in OFFSTAGE_KINDS:
             out.add(str(name).strip())
     return frozenset(o for o in out if o)
 
 
-def _filter_dead_scene_participants(
+# Backward-compatibility alias — the function used to load only deceased
+# names. We keep the old name so any caller that still imports it gets
+# the broader semantics for free; the call sites have been updated to
+# use the new name.
+_load_dead_character_names_before_chapter = _load_offstage_character_names_before_chapter
+
+
+def _scrub_offstage_scene_references(
     scene: SceneCardModel,
-    dead_character_names: frozenset[str],
-) -> list[str]:
+    offstage_character_names: frozenset[str],
+) -> tuple[list[str], list[str]]:
+    """Strip offstage character names from active scene-card fields.
+
+    "Offstage" covers every state that forbids present-tense
+    participation: deceased / missing / sealed / sleeping / comatose.
+    Flashback / memorial / vision / dream scenes are exempted because
+    those modes may legitimately stage offstage characters as memory,
+    body, or symbol.
+
+    Returns ``(removed_participants, removed_state_refs)``.  State refs are
+    character-keyed entries in ``entry_state`` / ``exit_state``; leaving them
+    behind after removing a participant gives the drafter contradictory input
+    ("参与者：宁尘" but "入场状态：陆沉...") and can recreate the same
+    resurrection block on the next pass.
+    """
+
+    dead_character_names = offstage_character_names
     if not dead_character_names:
-        return []
+        return [], []
 
     # Flashback / memorial / vision / dream / quoted-reference scenes are
-    # legitimate venues for deceased characters — they may be remembered,
+    # legitimate venues for offstage characters — they may be remembered,
     # quoted, mourned, or appear as a corpse / image / letter. Stripping
     # their names here would force the writer to omit the very people
     # the planner placed in the scene on purpose. Skip the filter.
     try:
         from bestseller.services.character_lifecycle import scene_is_flashback_like
         if scene_is_flashback_like(scene):
-            return []
+            return [], []
     except Exception:  # pragma: no cover — defensive guard
         pass
 
-    participants = list(getattr(scene, "participants", None) or [])
-    if not participants:
-        return []
-
     dead_lookup = {name.casefold() for name in dead_character_names}
+
+    participants = list(getattr(scene, "participants", None) or [])
     kept: list[str] = []
     removed: list[str] = []
     for participant in participants:
@@ -199,19 +226,60 @@ def _filter_dead_scene_participants(
         else:
             kept.append(participant)
 
-    if not removed:
-        return []
+    if removed:
+        scene.participants = kept
 
-    scene.participants = kept
-    meta = dict(scene.metadata_json or {})
-    previous = [
-        str(item)
-        for item in (meta.get("auto_repair_removed_participants") or [])
-        if item
-    ]
-    meta["auto_repair_removed_participants"] = list(dict.fromkeys([*previous, *removed]))
-    scene.metadata_json = meta
+    removed_state_refs: list[str] = []
+    for attr in ("entry_state", "exit_state"):
+        value = getattr(scene, attr, None)
+        if not isinstance(value, dict):
+            continue
+        next_value = dict(value)
+        for key in list(next_value.keys()):
+            name = str(key).strip()
+            if name and name.casefold() in dead_lookup:
+                removed_state_refs.append(name)
+                next_value.pop(key, None)
+        if next_value != value:
+            setattr(scene, attr, next_value)
+
+    if removed or removed_state_refs:
+        meta = dict(scene.metadata_json or {})
+        if removed:
+            previous = [
+                str(item)
+                for item in (meta.get("auto_repair_removed_participants") or [])
+                if item
+            ]
+            meta["auto_repair_removed_participants"] = list(
+                dict.fromkeys([*previous, *removed])
+            )
+        if removed_state_refs:
+            previous_state = [
+                str(item)
+                for item in (meta.get("auto_repair_removed_state_refs") or [])
+                if item
+            ]
+            meta["auto_repair_removed_state_refs"] = list(
+                dict.fromkeys([*previous_state, *removed_state_refs])
+            )
+        scene.metadata_json = meta
+
+    return removed, list(dict.fromkeys(removed_state_refs))
+
+
+def _filter_offstage_scene_participants(
+    scene: SceneCardModel,
+    offstage_character_names: frozenset[str],
+) -> list[str]:
+    removed, _ = _scrub_offstage_scene_references(scene, offstage_character_names)
     return removed
+
+
+# Backward-compatibility alias — older callers and tests import the
+# original "dead" name. The function semantics now cover every offstage
+# kind, but the alias keeps imports stable.
+_filter_dead_scene_participants = _filter_offstage_scene_participants
 
 
 async def _auto_sign_override_contracts(
@@ -344,6 +412,18 @@ async def _evaluate_chapter_quality_gate(
     # effect between chapters without process restarts.
     validator = build_validator_from_config(gates_cfg)
     allowed_names = await _load_character_name_roster(session, project.id)
+    try:
+        from bestseller.settings import get_settings
+
+        canon_guardrails = load_canon_guardrails_for_project(
+            project,
+            output_base_dir=get_settings().output.base_dir,
+        )
+    except Exception:
+        logger.debug(
+            "canon guardrails load failed for project %s", project.id, exc_info=True
+        )
+        canon_guardrails = None
 
     # Load diversity budget so CliffhangerRotationCheck can see the recent
     # kinds. Missing budget row → empty tuple, which makes the check no-op.
@@ -449,6 +529,7 @@ async def _evaluate_chapter_quality_gate(
         assigned_hype_recipe=assigned_hype_recipe,
         recent_hype_types=recent_hype_types,
         line_gap_report=line_gap_report,
+        canon_guardrails=canon_guardrails,
     )
     report = validator.validate(content, ctx)
 
@@ -1754,6 +1835,132 @@ def _render_story_bible_section(
                 + "\n".join(dead_lines)
             )
 
+    # Open interpersonal promises — vows / oaths / debts between
+    # characters that are still binding. Travel with the cast for
+    # hundreds of chapters; surfacing them keeps the writer from
+    # dropping the emotional anchor mid-arc. Overdue rows nudge
+    # resolution; fresh ones remind the cast the obligation hangs.
+    interpersonal_promises = story_bible_context.get("interpersonal_promises") or []
+    if interpersonal_promises:
+        try:
+            from bestseller.services.interpersonal_promises import (  # noqa: PLC0415
+                PromiseSnapshot,
+                render_promises_block,
+            )
+            from uuid import UUID as _UUID  # noqa: PLC0415
+
+            snap_objs: list[PromiseSnapshot] = []
+            for p in interpersonal_promises:
+                if not isinstance(p, dict) or not p.get("promisor_label"):
+                    continue
+                try:
+                    pid = _UUID(p["id"]) if p.get("id") else _UUID(int=0)
+                except (ValueError, TypeError):
+                    pid = _UUID(int=0)
+                snap_objs.append(PromiseSnapshot(
+                    id=pid,
+                    promisor_label=p["promisor_label"],
+                    promisee_label=p.get("promisee_label", ""),
+                    content=p.get("content", ""),
+                    kind=p.get("kind"),
+                    made_chapter_number=p.get("made_chapter_number"),
+                    due_chapter_number=p.get("due_chapter_number"),
+                    status=str(p.get("status") or "active"),
+                    inherited_by_label=p.get("inherited_by_label"),
+                    chapters_until_due=p.get("chapters_until_due"),
+                    is_overdue=bool(p.get("is_overdue")),
+                ))
+            block = render_promises_block(
+                snap_objs, language=language or "zh-CN",
+            )
+            if block:
+                lines.append(block)
+        except Exception:  # pragma: no cover — defensive
+            pass
+
+    # Memory-recall cues — at +3 / +10 / +30 / +80 chapters past a
+    # close-relationship death, suggest a brief memory beat for the
+    # survivor. Soft constraint: writer is asked to weave at most one
+    # or two in if narratively natural; explicit "do not force" framing
+    # in the block keeps deterministic acceptance from harming pacing.
+    memory_recall_cues = story_bible_context.get("memory_recall_cues") or []
+    if memory_recall_cues:
+        try:
+            from bestseller.services.memory_recall import (  # noqa: PLC0415
+                MemoryRecallCue,
+                render_memory_recall_block,
+            )
+            cue_objs = [
+                MemoryRecallCue(
+                    survivor_name=c["survivor_name"],
+                    deceased_name=c["deceased_name"],
+                    deceased_role=c.get("deceased_role"),
+                    relationship_type=c["relationship_type"],
+                    relationship_strength=float(c.get("relationship_strength") or 0.0),
+                    chapters_since_death=int(c.get("chapters_since_death") or 0),
+                    intensity=str(c.get("intensity") or "settled"),
+                )
+                for c in memory_recall_cues
+                if isinstance(c, dict) and c.get("survivor_name") and c.get("deceased_name")
+            ]
+            block = render_memory_recall_block(
+                cue_objs, language=language or "zh-CN",
+            )
+            if block:
+                lines.append(block)
+        except Exception:  # pragma: no cover — defensive
+            pass
+
+    # Restricted-but-not-dead roster — characters whose lifecycle state
+    # in this chapter forbids present-tense action even though they are
+    # not deceased. Each state has its own affordances (sealed forms can
+    # be referenced; missing ones can be searched for; sleeping bodies
+    # can be tended) so the prompt explains the exact rules.
+    restricted_characters = story_bible_context.get("restricted_characters") or []
+    if restricted_characters:
+        kind_label_zh = {
+            "missing": "失踪",
+            "sealed": "被封印",
+            "sleeping": "沉睡",
+            "comatose": "昏迷",
+            "exiled": "流放",
+        }
+        if is_en:
+            rest_lines = []
+            for rc in restricted_characters:
+                exit_clause = (
+                    f", expected to resume at ch{rc['scheduled_exit_chapter']}"
+                    if rc.get("scheduled_exit_chapter") else ""
+                )
+                rest_lines.append(
+                    f"- {rc['name']} [{rc.get('kind')}{exit_clause}]: "
+                    f"{rc.get('appearance_notes_en') or ''}"
+                )
+            lines.append(
+                "[Restricted-but-not-dead roster — these characters CANNOT "
+                "speak new dialogue or take present-tense actions in this "
+                "chapter. Each kind has its own allowed framing — read each "
+                "row carefully]:\n"
+                + "\n".join(rest_lines)
+            )
+        else:
+            rest_lines = []
+            for rc in restricted_characters:
+                kind_zh = kind_label_zh.get(rc.get("kind"), rc.get("kind") or "")
+                exit_clause = (
+                    f"，预计第{rc['scheduled_exit_chapter']}章解除"
+                    if rc.get("scheduled_exit_chapter") else ""
+                )
+                rest_lines.append(
+                    f"- {rc['name']}（{kind_zh}{exit_clause}）："
+                    f"{rc.get('appearance_notes_zh') or ''}"
+                )
+            lines.append(
+                "【受限角色（未死但本章不可登场）— 不可发出当下动作或新对白；"
+                "每种状态各自的允许形态见下，请逐条遵守】：\n"
+                + "\n".join(rest_lines)
+            )
+
     # Protected roster — characters whose planned death is later than this
     # chapter. Surfacing them as a hard "do NOT kill in this chapter"
     # constraint prevents the failure mode where the writer LLM kills off
@@ -1791,6 +1998,19 @@ def _render_story_bible_section(
 
     participants = story_bible_context.get("participants") or []
     if participants:
+        def _as_mapping(value: Any) -> dict[str, Any]:
+            return value if isinstance(value, dict) else {}
+
+        def _list_items(value: Any) -> list[str]:
+            if isinstance(value, str):
+                return [value] if value.strip() else []
+            if isinstance(value, (list, tuple)):
+                return [str(item).strip() for item in value if str(item).strip()]
+            return []
+
+        def _short_join(value: Any, *, limit: int = 2, item_chars: int = 40) -> str:
+            return "/".join(item[:item_chars] for item in _list_items(value)[:limit])
+
         def _stance_suffix(item: dict[str, Any]) -> str:
             stance = item.get("stance")
             if not stance:
@@ -1832,6 +2052,66 @@ def _render_story_bible_section(
             f"{'Current participant states' if is_en else '参与角色当前状态'}：{rendered_participants}"
         )
 
+        # Delta-since-last-appearance — for every participant whose
+        # tracked axes (arc_state / power_tier / emotional / alive /
+        # stance) changed compared to the previous-non-null snapshot,
+        # surface "A → B since chapter K". Without this, the writer
+        # only sees the current state and has nothing to *dramatise*;
+        # this is the "成长可见化" piece — when X grew, the prose
+        # should reflect that something shifted in them.
+        delta_lines: list[str] = []
+        for item in participants[:8]:
+            change_chapter = item.get("previous_state_chapter_number")
+            axes_changes: list[str] = []
+            axis_pairs = (
+                ("arc_state", "previous_arc_state",
+                 "Arc" if is_en else "弧线"),
+                ("power_tier", "previous_power_tier",
+                 "Power" if is_en else "力量"),
+                ("emotional_state", "previous_emotional_state",
+                 "Emotion" if is_en else "情绪"),
+                ("alive_status", "previous_alive_status",
+                 "Alive" if is_en else "存活"),
+                ("stance", "previous_stance",
+                 "Stance" if is_en else "立场"),
+            )
+            for current_key, previous_key, label in axis_pairs:
+                cur = item.get(current_key)
+                prev = item.get(previous_key)
+                if not prev or not cur:
+                    continue
+                if str(cur).strip() == str(prev).strip():
+                    continue
+                axes_changes.append(f"{label}: {prev} → {cur}")
+            if not axes_changes:
+                continue
+            anchor = (
+                f" since ch{change_chapter}"
+                if (is_en and change_chapter is not None)
+                else (
+                    f"（自第{change_chapter}章起）"
+                    if change_chapter is not None
+                    else ""
+                )
+            )
+            delta_lines.append(
+                f"  · {item['name']}{anchor}: "
+                f"{(' | ' if is_en else '；').join(axes_changes)}"
+            )
+        if delta_lines:
+            lines.append(
+                (
+                    "Participant change since last appearance "
+                    "(dramatise the shift — let the change show in "
+                    "action / dialogue / body, not narrated as a label):\n"
+                    if is_en
+                    else "参与角色自上次出场以来的变化"
+                    "（必须通过动作/对白/身体语言体现出来，不可"
+                    "直接报标签）：\n"
+                )
+                + "\n".join(delta_lines)
+            )
+
         # Inner structure (lie/want/need/ghost/flaw) for ALL active
         # participants up to 4. Previously only the POV got an inner
         # structure block via deduplication.build_arc_beat_block, leaving
@@ -1844,6 +2124,7 @@ def _render_story_bible_section(
             inner = item.get("inner_structure") or {}
             moral = item.get("moral_framework") or {}
             psych = item.get("psych_profile") or {}
+            ip_anchor = _as_mapping(item.get("ip_anchor"))
             chunks: list[str] = []
             if isinstance(inner, dict):
                 if inner.get("lie_believed"):
@@ -1886,22 +2167,72 @@ def _render_story_bible_section(
                     chunks.append(
                         f"{'flaw' if is_en else '缺陷'}:{str(item['flaw'])[:60]}"
                     )
+            core_wound = item.get("core_wound") or ip_anchor.get("core_wound")
+            if core_wound:
+                chunks.append(
+                    f"{'core wound' if is_en else '核心创伤'}:{str(core_wound)[:60]}"
+                )
+            quirks = ip_anchor.get("quirks") or item.get("quirks")
+            if _list_items(quirks):
+                chunks.append(
+                    f"{'quirks' if is_en else '记忆特征'}:{_short_join(quirks, limit=3)}"
+                )
+            sensory = ip_anchor.get("sensory_signatures") or item.get(
+                "sensory_signatures"
+            )
+            if _list_items(sensory):
+                chunks.append(
+                    f"{'sensory' if is_en else '感官标识'}:{_short_join(sensory, limit=2)}"
+                )
+            objects = ip_anchor.get("signature_objects") or item.get("signature_objects")
+            if _list_items(objects):
+                chunks.append(
+                    f"{'objects' if is_en else '标志物'}:{_short_join(objects, limit=2)}"
+                )
             if isinstance(moral, dict):
-                if moral.get("lines_will_not_cross"):
-                    lines_arr = moral["lines_will_not_cross"]
-                    if isinstance(lines_arr, list) and lines_arr:
-                        chunks.append(
-                            f"{'won_t_cross' if is_en else '绝不跨越的底线'}:"
-                            f"{'/'.join(str(x)[:40] for x in lines_arr[:2])}"
-                        )
+                core_values = moral.get("core_values")
+                if _list_items(core_values):
+                    chunks.append(
+                        f"{'values' if is_en else '价值观'}:{_short_join(core_values, limit=2)}"
+                    )
+                lines_arr = (
+                    moral.get("lines_never_crossed")
+                    or moral.get("lines_will_not_cross")
+                )
+                if _list_items(lines_arr):
+                    chunks.append(
+                        f"{'won_t_cross' if is_en else '绝不跨越的底线'}:"
+                        f"{_short_join(lines_arr, limit=2)}"
+                    )
+                sacrifice = moral.get("willing_to_sacrifice")
+                if sacrifice:
+                    chunks.append(
+                        f"{'sacrifice' if is_en else '愿牺牲'}:{str(sacrifice)[:50]}"
+                    )
                 if moral.get("moral_compass"):
                     chunks.append(
                         f"{'compass' if is_en else '道德指南针'}:{str(moral['moral_compass'])[:50]}"
                     )
             if isinstance(psych, dict):
+                psych_bits: list[str] = []
                 if psych.get("personality_label"):
+                    psych_bits.append(str(psych["personality_label"])[:40])
+                if psych.get("mbti"):
+                    psych_bits.append(f"MBTI={str(psych['mbti'])[:12]}")
+                if psych.get("enneagram"):
+                    psych_bits.append(f"九型={str(psych['enneagram'])[:12]}")
+                if psych.get("attachment_style"):
+                    psych_bits.append(f"依恋={str(psych['attachment_style'])[:16]}")
+                big_five = psych.get("big_five")
+                if isinstance(big_five, dict) and big_five:
+                    ocean = ",".join(
+                        f"{str(k)[:4]}:{str(v)[:4]}"
+                        for k, v in list(big_five.items())[:5]
+                    )
+                    psych_bits.append(f"OCEAN={ocean}")
+                if psych_bits:
                     chunks.append(
-                        f"{'personality' if is_en else '人格'}:{str(psych['personality_label'])[:40]}"
+                        f"{'personality' if is_en else '人格'}:{'/'.join(psych_bits[:5])}"
                     )
             if chunks:
                 depth_lines.append(
@@ -4582,6 +4913,7 @@ async def maybe_prepare_chapter_auto_repair(
     project: ProjectModel,
     chapter: ChapterModel,
     repairable_codes: tuple[str, ...],
+    attempt_number: int = 1,
 ) -> tuple[bool, tuple[str, ...]]:
     """Decide whether the chapter's most recent block is auto-repairable.
 
@@ -4681,8 +5013,12 @@ async def maybe_prepare_chapter_auto_repair(
                     scene_hint = (
                         f"{scene_hint}\n"
                         f"系统已从本场景参与者列表移除已故角色：{removed_text}。"
-                        "本次必须围绕剩余存活角色重新生成，禁止继续用回忆、幽灵、"
-                        "幻象或旁白让这些角色承担活跃场景功能。"
+                        "本次重写请围绕剩余存活角色推进当下情节——"
+                        "不得让已故角色「登场」（不可发出当下动作、不可说出新台词、"
+                        "不可作为活跃参与者）。\n"
+                        "如需提及，仅可：旁人怀念/悲悼/提起；引用其先前的话或留下的文字；"
+                        "以遗体/画像/坟前/灵堂/信物的形态被提及；"
+                        "或在显式标注的回忆/闪回/祭奠/梦境/幻象场景中出现。"
                     )
                 sc_meta = dict(sc.metadata_json or {})
                 existing = str(sc_meta.get("auto_repair_hint") or "").strip()
@@ -4728,30 +5064,104 @@ async def maybe_prepare_chapter_auto_repair(
     # writer picks this up and injects it into the rewrite reference block.
     canonical_hits = {_canonical_repair_code(code) for code in repairable_hit}
     hint_fragments: list[str] = []
+
+    # ── Progressive repair strategy ──
+    # Attempt 1: gentle hint-based guidance
+    # Attempt 2: aggressive concrete instructions with explicit targets
+    # Attempt 3+: maximum intervention — accept whatever comes out and move on
+    _attempt = max(1, int(attempt_number))
+
     if "BLOCK_LOW" in canonical_hits:
-        hint_fragments.append(
-            "上一版本章节总字数过短，本次重写请在保留所有情节节拍的前提下，"
-            "大幅扩写环境、感官、心理与对话，让本场景至少达到 target_word_count。"
-        )
+        if _attempt == 1:
+            hint_fragments.append(
+                "上一版本章节总字数过短，本次重写请在保留所有情节节拍的前提下，"
+                "大幅扩写环境、感官、心理与对话，让本场景至少达到 target_word_count。"
+            )
+        elif _attempt == 2:
+            hint_fragments.append(
+                "【紧急修复第2次】上一版本章节字数严重不足。本次重写必须采用以下"
+                "具体策略：\n"
+                "1. 每个情节节拍之后增加至少100字的环境描写或感官细节\n"
+                "2. 每段对话之后加入角色的内心反应或心理活动\n"
+                "3. 动作场景中加入身体感受和空间位置变化描述\n"
+                "4. 确保本场景最终字数 ≥ target_word_count × 1.2"
+            )
+        else:
+            hint_fragments.append(
+                "【最终修复尝试】章节字数不足问题持续存在。本次为最后一次重写——"
+                "请在保证情节完整的前提下尽可能扩写，但即使字数未达标也将被接受。"
+            )
+
     if "BLOCK_HIGH" in canonical_hits:
-        hint_fragments.append(
-            "上一版本章节总字数过长，本次重写请压缩冗余的叙述与重复描写，"
-            "优先保留冲突、决策与反转，使本场景回到 target_word_count 范围内。"
-        )
+        if _attempt == 1:
+            hint_fragments.append(
+                "上一版本章节总字数过长，本次重写请压缩冗余的叙述与重复描写，"
+                "优先保留冲突、决策与反转，使本场景回到 target_word_count 范围内。"
+            )
+        elif _attempt == 2:
+            hint_fragments.append(
+                "【紧急修复第2次】上一版本章节字数严重超标。本次重写必须：\n"
+                "1. 删除所有非推进情节的环境描写（保留关键场景的氛围描写）\n"
+                "2. 合并重复的心理活动段落，每个情绪变化最多一段\n"
+                "3. 对话去掉多余的寒暄和客套，直接进入冲突或信息交换\n"
+                "4. 确保本场景最终字数 ≤ target_word_count × 0.9"
+            )
+        else:
+            hint_fragments.append(
+                "【最终修复尝试】章节字数超标问题持续存在。本次为最后一次重写——"
+                "请尽量压缩但不必严格达标，保证情节完整优先。"
+            )
+
     if "DIALOG_UNPAIRED" in canonical_hits:
-        hint_fragments.append(
-            "上一版本存在未闭合或孤立的对话标记。本次重写请检查每一句对话的"
-            "开闭引号、说话人归属与上下文回应，避免留下半句对白或无回应对白。"
-        )
+        if _attempt == 1:
+            hint_fragments.append(
+                "上一版本存在未闭合或孤立的对话标记。本次重写请检查每一句对话的"
+                "开闭引号、说话人归属与上下文回应，避免留下半句对白或无回应对白。"
+            )
+        elif _attempt == 2:
+            hint_fragments.append(
+                "【紧急修复第2次】对话标记问题未解决。本次重写请逐句检查：\n"
+                "1. 每句对话是否有完整的开引号「和闭引号」\n"
+                "2. 每句对话是否有明确的说话人（动作描写或「某某说」）\n"
+                "3. 每句对话是否有上下文回应（A 说完 B 必须接话，不能单方面结束）\n"
+                "4. 如果存在独白，必须显式标注为「心想」「暗自道」等内心独白标记"
+            )
+        else:
+            hint_fragments.append(
+                "【最终修复尝试】对话标记问题持续存在。本次为最后一次重写——"
+                "请只关注引号闭合这一最基础的问题，其他方面可以放松。"
+            )
+
     if "ENDING_SENTENCE_WEAK" in canonical_hits:
-        hint_fragments.append(
-            "上一版本的章节结尾缺少明确钩子。本次重写请把最后一段改成新的威胁、"
-            "发现、决定或反转，避免以平静收束、总结感想或问题已解决的句子结尾。"
-        )
+        if _attempt == 1:
+            hint_fragments.append(
+                "上一版本的章节结尾缺少明确钩子。本次重写请把最后一段改成新的威胁、"
+                "发现、决定或反转，避免以平静收束、总结感想或问题已解决的句子结尾。"
+            )
+        elif _attempt == 2:
+            hint_fragments.append(
+                "【紧急修复第2次】章节结尾钩子仍然不够强。最后 200 字必须包含"
+                "以下任一项：\n"
+                "1. 一个突然出现的威胁或敌人（打破当前的平静状态）\n"
+                "2. 一个颠覆性的发现（推翻之前认定的真相）\n"
+                "3. 一个艰难的决定（让读者想知道后果）\n"
+                "4. 一个强烈的反转（预期方向被彻底改变）\n"
+                "禁止以「他知道，明天会更好」这类概括性总结收尾。"
+            )
+        else:
+            hint_fragments.append(
+                "【最终修复尝试】章节结尾钩子问题持续存在。本次为最后一次重写——"
+                "请在最后一段加入一个悬念性的句子即可，即使不够强也将被接受。"
+            )
+
     if "character_resurrection" in canonical_hits:
         hint_fragments.append(
-            "场景中出现了已死亡角色的活动。请检查所有场景参与者的生命状态，"
-            "确保已故角色不再以任何形式（出场、对话、回忆等）出现在当前章节中。"
+            "场景中出现了已死亡角色的活动。请把他们从当前场景的当下动作中移除——"
+            "不可让其在本章「登场」（即不可发出当下动作、不可说出新台词、"
+            "不可作为活跃参与者参与场景）。\n"
+            "允许的处理：旁人怀念、悲悼、提起；引用其先前说过的话或留下的文字；"
+            "以遗体、画像、坟前、灵堂、信物等形态被提及；"
+            "或仅在显式标注的回忆／闪回／祭奠／梦境／幻象场景中出现。"
         )
     # Fallback so the writer still sees *something* if a new code is added
     # to the allowlist without its own phrasing.
@@ -4788,8 +5198,14 @@ async def maybe_prepare_chapter_auto_repair(
                 low_scale = min(1.5, max(1.05, ratio))
             else:
                 low_scale = 1.20
+            # Progressive: attempt 2+ uses a higher floor so the writer
+            # gets a stronger deterministic push to write longer scenes.
+            if _attempt >= 2:
+                low_scale = max(low_scale, 1.30)
+            if _attempt >= 3:
+                low_scale = max(low_scale, 1.50)
         except Exception:
-            low_scale = 1.20
+            low_scale = 1.20 if _attempt == 1 else 1.40
 
     # Reset every scene of this chapter to NEEDS_REWRITE and write the
     # auto-repair hint into ``metadata_json`` — keeping any prior hint so
@@ -4813,8 +5229,12 @@ async def maybe_prepare_chapter_auto_repair(
             scene_hint = (
                 f"{repair_hint}\n"
                 f"系统已从本场景参与者列表移除已故角色：{removed_text}。"
-                "本次必须围绕剩余存活角色重新生成，禁止继续用回忆、幽灵、"
-                "幻象或旁白让这些角色承担活跃场景功能。"
+                "本次重写请围绕剩余存活角色推进当下情节——"
+                "不得让已故角色「登场」（不可发出当下动作、不可说出新台词、"
+                "不可作为活跃参与者）。\n"
+                "如需提及，仅可：旁人怀念/悲悼/提起；引用其先前的话或留下的文字；"
+                "以遗体/画像/坟前/灵堂/信物的形态被提及；"
+                "或在显式标注的回忆/闪回/祭奠/梦境/幻象场景中出现。"
             )
         meta = dict(sc.metadata_json or {})
         existing_hint = str(meta.get("auto_repair_hint") or "").strip()

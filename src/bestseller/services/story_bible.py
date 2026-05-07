@@ -281,6 +281,64 @@ def _merge_metadata(existing: dict[str, Any] | None, incoming: dict[str, Any] | 
     return merged
 
 
+def _compact_json_payload(value: Any) -> Any:
+    """Return a JSON-ish payload with empty leaves removed.
+
+    Pydantic character submodels dump their defaults as ``None`` / empty lists.
+    Persisting those empty shells would make downstream code think a rich
+    personhood layer exists when it does not, so only meaningful leaves survive.
+    """
+
+    if hasattr(value, "model_dump"):
+        value = value.model_dump(mode="json")
+    if isinstance(value, dict):
+        compact: dict[str, Any] = {}
+        for key, raw in value.items():
+            item = _compact_json_payload(raw)
+            if _has_meaningful_payload(item):
+                compact[key] = item
+        return compact
+    if isinstance(value, (list, tuple)):
+        compact_list = []
+        for raw in value:
+            item = _compact_json_payload(raw)
+            if _has_meaningful_payload(item):
+                compact_list.append(item)
+        return compact_list
+    if isinstance(value, str):
+        return value.strip() or None
+    return value
+
+
+def _has_meaningful_payload(value: Any) -> bool:
+    if value is None:
+        return False
+    if isinstance(value, str):
+        return bool(value.strip())
+    if isinstance(value, dict):
+        return any(_has_meaningful_payload(item) for item in value.values())
+    if isinstance(value, (list, tuple)):
+        return any(_has_meaningful_payload(item) for item in value)
+    return True
+
+
+def _character_personhood_metadata(character_input: CharacterInput) -> dict[str, Any]:
+    payload: dict[str, Any] = {}
+    for key in (
+        "ip_anchor",
+        "psych_profile",
+        "life_history",
+        "social_network",
+        "beliefs",
+        "family_imprint",
+        "villain_charisma",
+    ):
+        compact = _compact_json_payload(getattr(character_input, key, None))
+        if _has_meaningful_payload(compact):
+            payload[key] = compact
+    return payload
+
+
 def _character_beliefs(knowledge_state: CharacterKnowledgeStateInput, *, language: str | None = None) -> list[str]:
     _is_en = (language or "").lower().startswith("en")
     beliefs = [str(item) for item in knowledge_state.knows]
@@ -515,6 +573,20 @@ async def apply_book_spec(
 ) -> bool:
     style_guide = await _get_or_create_style_guide(session, project.id)
 
+    theme_statement = content.get("theme_statement") or content.get("theme")
+    if not isinstance(theme_statement, str) or not theme_statement.strip():
+        themes = content.get("themes")
+        if isinstance(themes, list):
+            theme_statement = next(
+                (item.strip() for item in themes if isinstance(item, str) and item.strip()),
+                None,
+            )
+    dramatic_question = content.get("dramatic_question")
+    if isinstance(theme_statement, str) and theme_statement.strip():
+        project.theme_statement = theme_statement.strip()
+    if isinstance(dramatic_question, str) and dramatic_question.strip():
+        project.dramatic_question = dramatic_question.strip()
+
     project.title = str(content.get("title") or project.title)
     project.genre = str(content.get("genre") or project.genre)
     project.audience = str(content.get("target_audience") or project.audience or "") or project.audience
@@ -523,6 +595,8 @@ async def apply_book_spec(
         {
             "book_spec": content,
             "logline": content.get("logline"),
+            "theme_statement": project.theme_statement,
+            "dramatic_question": project.dramatic_question,
             "themes": content.get("themes", []),
             "stakes": content.get("stakes", {}),
             "series_engine": content.get("series_engine", {}),
@@ -989,6 +1063,15 @@ async def upsert_cast_spec(
         character.moral_framework_json = _moral_data
         if any(v for v in _moral_data.values() if v):
             moral_frameworks_populated += 1
+        _ip_anchor_data = character_input.ip_anchor.model_dump(mode="json")
+        character.quirks_json = list(_ip_anchor_data.get("quirks") or [])
+        character.sensory_signatures_json = list(
+            _ip_anchor_data.get("sensory_signatures") or []
+        )
+        character.signature_objects_json = list(
+            _ip_anchor_data.get("signature_objects") or []
+        )
+        character.core_wound = _ip_anchor_data.get("core_wound") or None
         # ── Phase-4: generate lie_truth_arc from knowledge_state ──
         _ks = character_input.knowledge_state
         _lie_truth_extra: dict[str, Any] = {}
@@ -1025,12 +1108,14 @@ async def upsert_cast_spec(
         _stage_c_extra: dict[str, Any] = (
             {"inner_structure": _inner_structure} if _inner_structure else {}
         )
+        _personhood_extra = _character_personhood_metadata(character_input)
 
         character.metadata_json = _merge_metadata(
             character.metadata_json,
             {
                 **character_input.metadata,
                 **(character_input.model_extra or {}),
+                **_personhood_extra,
                 **_lie_truth_extra,
                 **_stage_c_extra,
             },
@@ -1380,6 +1465,11 @@ class EffectiveCharacterState:
     fallback. This prevents prompt renderings like "Power:未定义" when a
     more recent snapshot happened to leave power_tier null while earlier
     snapshots already established the value.
+
+    The ``previous_*`` fields capture the *second*-most-recent non-null
+    value for each axis, used by the chapter prompt renderer to surface
+    a "since last appearance" delta block — without it, the writer
+    sees only the current state and has no way to dramatize change.
     """
 
     arc_state: str | None
@@ -1391,6 +1481,18 @@ class EffectiveCharacterState:
     notes: str | None
     latest_chapter_number: int | None
     latest_scene_number: int | None
+
+    # Delta-tracking — the value the field held BEFORE the most recent
+    # change, plus the chapter number where the change was recorded.
+    # ``None`` means either the field never changed or there is no
+    # prior history (first appearance). Comparators in the prompt
+    # layer treat ``None`` as "no delta to show".
+    previous_arc_state: str | None = None
+    previous_power_tier: str | None = None
+    previous_emotional_state: str | None = None
+    previous_alive_status: str | None = None
+    previous_stance: str | None = None
+    previous_state_chapter_number: int | None = None
 
 
 async def get_effective_character_state(
@@ -1447,12 +1549,50 @@ async def get_effective_character_state(
                 return value
         return None
 
+    def _second_non_null(attr: str) -> tuple[Any, int | None]:
+        """Return the second-most-recent non-null value for a field plus
+        the chapter where the *most recent* (current) value first appeared.
+
+        Used by the prompt layer to render "X 自第N章后由 A → B" deltas.
+        Walks the descending snapshot list, finds the first value, and
+        keeps walking until the field changes — that earlier value is
+        the "previous" half of the delta.
+        """
+        first_value: Any = None
+        first_chapter: int | None = None
+        for snap in snapshots:
+            value = getattr(snap, attr, None)
+            if value in (None, ""):
+                continue
+            if first_value is None:
+                first_value = value
+                first_chapter = getattr(snap, "chapter_number", None)
+                continue
+            if value != first_value:
+                return value, first_chapter
+        return None, first_chapter
+
     arc_state = _first_non_null("arc_state") or character.arc_state
     power_tier = _first_non_null("power_tier") or character.power_tier
     emotional_state = _first_non_null("emotional_state")
     physical_state = _first_non_null("physical_state")
     alive_status = _first_non_null("alive_status") or getattr(character, "alive_status", None)
     stance = _first_non_null("stance") or getattr(character, "stance", None)
+
+    prev_arc, _arc_change_ch = _second_non_null("arc_state")
+    prev_power, _power_change_ch = _second_non_null("power_tier")
+    prev_emotion, _emo_change_ch = _second_non_null("emotional_state")
+    prev_alive, _alive_change_ch = _second_non_null("alive_status")
+    prev_stance, _stance_change_ch = _second_non_null("stance")
+    # Pick the most recent change-chapter across all axes — gives the
+    # writer a single anchor "since chapter K" for the delta block.
+    change_chapters = [
+        c for c in (
+            _arc_change_ch, _power_change_ch, _emo_change_ch,
+            _alive_change_ch, _stance_change_ch,
+        ) if isinstance(c, int)
+    ]
+    prev_state_chapter = max(change_chapters) if change_chapters else None
 
     latest = snapshots[0] if snapshots else None
     return EffectiveCharacterState(
@@ -1465,6 +1605,12 @@ async def get_effective_character_state(
         notes=latest.notes if latest is not None else None,
         latest_chapter_number=latest.chapter_number if latest is not None else None,
         latest_scene_number=latest.scene_number if latest is not None else None,
+        previous_arc_state=prev_arc,
+        previous_power_tier=prev_power,
+        previous_emotional_state=prev_emotion,
+        previous_alive_status=prev_alive,
+        previous_stance=prev_stance,
+        previous_state_chapter_number=prev_state_chapter,
     )
 
 
@@ -1501,11 +1647,13 @@ async def load_scene_story_bible_context(
         world_rule_stmt = world_rule_stmt.where(WorldRuleModel.rule_code.in_(sorted(visible_rule_codes)))
     world_rules = list(await session.scalars(world_rule_stmt))
     characters = []
+    participant_character_ids: list[UUID] = []
     relationships = []
     for participant_name in scene.participants:
         character = await session.get(CharacterModel, stable_character_id(project.id, participant_name))
         if character is None:
             continue
+        participant_character_ids.append(character.id)
         effective = await get_effective_character_state(
             session,
             project_id=project.id,
@@ -1519,6 +1667,20 @@ async def load_scene_story_bible_context(
         # structure (lie/want/need/ghost/flaw) — previously only the POV
         # got these, leaving every supporting character flat.
         _meta = character.metadata_json or {}
+        _ip_anchor = _meta.get("ip_anchor") if isinstance(_meta, dict) else None
+        if not isinstance(_ip_anchor, dict):
+            _ip_anchor = _compact_json_payload(
+                {
+                    "quirks": getattr(character, "quirks_json", None) or [],
+                    "sensory_signatures": (
+                        getattr(character, "sensory_signatures_json", None) or []
+                    ),
+                    "signature_objects": (
+                        getattr(character, "signature_objects_json", None) or []
+                    ),
+                    "core_wound": getattr(character, "core_wound", None),
+                }
+            )
         characters.append(
             {
                 "name": character.name,
@@ -1532,13 +1694,28 @@ async def load_scene_story_bible_context(
                 "knowledge_state": character.knowledge_state_json,
                 "voice_profile": character.voice_profile_json,
                 "moral_framework": character.moral_framework_json,
+                "ip_anchor": _ip_anchor if isinstance(_ip_anchor, dict) else None,
+                "quirks": getattr(character, "quirks_json", None) or [],
+                "sensory_signatures": (
+                    getattr(character, "sensory_signatures_json", None) or []
+                ),
+                "signature_objects": (
+                    getattr(character, "signature_objects_json", None) or []
+                ),
+                "core_wound": getattr(character, "core_wound", None),
                 "inner_structure": _meta.get("inner_structure")
                 if isinstance(_meta, dict) else None,
                 "psych_profile": _meta.get("psych_profile")
                 if isinstance(_meta, dict) else None,
                 "life_history": _meta.get("life_history")
                 if isinstance(_meta, dict) else None,
+                "social_network": _meta.get("social_network")
+                if isinstance(_meta, dict) else None,
+                "beliefs": _meta.get("beliefs")
+                if isinstance(_meta, dict) else None,
                 "family_imprint": _meta.get("family_imprint")
+                if isinstance(_meta, dict) else None,
+                "villain_charisma": _meta.get("villain_charisma")
                 if isinstance(_meta, dict) else None,
                 "latest_state": effective.notes,
                 "emotional_state": effective.emotional_state,
@@ -1549,11 +1726,19 @@ async def load_scene_story_bible_context(
                 "death_chapter_number": getattr(character, "death_chapter_number", None),
                 "latest_chapter_number": effective.latest_chapter_number,
                 "latest_scene_number": effective.latest_scene_number,
+                # Delta tracking — earlier non-null values for each axis
+                # so the prompt can render "since chapter K, X changed
+                # A → B" without the writer having to remember.
+                "previous_arc_state": effective.previous_arc_state,
+                "previous_power_tier": effective.previous_power_tier,
+                "previous_emotional_state": effective.previous_emotional_state,
+                "previous_alive_status": effective.previous_alive_status,
+                "previous_stance": effective.previous_stance,
+                "previous_state_chapter_number": effective.previous_state_chapter_number,
             }
         )
 
-    if len(scene.participants) >= 2:
-        participant_ids = [stable_character_id(project.id, name) for name in scene.participants]
+    if len(participant_character_ids) >= 2:
         relationships = [
             {
                 "relationship_type": item.relationship_type,
@@ -1564,8 +1749,8 @@ async def load_scene_story_bible_context(
             for item in await session.scalars(
                 select(RelationshipModel).where(
                     RelationshipModel.project_id == project.id,
-                    RelationshipModel.character_a_id.in_(participant_ids),
-                    RelationshipModel.character_b_id.in_(participant_ids),
+                    RelationshipModel.character_a_id.in_(participant_character_ids),
+                    RelationshipModel.character_b_id.in_(participant_character_ids),
                 )
             )
         ]
@@ -1629,6 +1814,118 @@ async def load_scene_story_bible_context(
         for prot in await session.scalars(protected_stmt)
     ]
 
+    # Offstage-but-not-dead roster — characters whose
+    # ``metadata_json.lifecycle_status`` resolves to missing / sealed /
+    # sleeping / comatose at the current chapter. They cannot take
+    # present-tense action, but each kind has its own narrative
+    # affordances (a sealed character may be referenced as a sealed
+    # form; a missing one may be sought; a sleeping one may be tended).
+    from bestseller.services.character_lifecycle import (  # noqa: PLC0415
+        OFFSTAGE_KINDS,
+        appearance_rule_for,
+        effective_lifecycle_state,
+    )
+    all_chars_stmt = select(CharacterModel).where(
+        CharacterModel.project_id == project.id
+    )
+    restricted_characters: list[dict[str, Any]] = []
+    for char_row in await session.scalars(all_chars_stmt):
+        kind, payload = effective_lifecycle_state(
+            alive_status=getattr(char_row, "alive_status", None),
+            death_chapter_number=getattr(char_row, "death_chapter_number", None),
+            chapter_number=chapter.chapter_number,
+            character_metadata=getattr(char_row, "metadata_json", None),
+        )
+        if kind == "deceased":
+            continue  # already in deceased_characters
+        if kind not in OFFSTAGE_KINDS:
+            continue
+        rule = appearance_rule_for(kind)
+        restricted_characters.append({
+            "name": char_row.name,
+            "kind": kind,
+            "since_chapter": payload.get("since_chapter"),
+            "scheduled_exit_chapter": payload.get("scheduled_exit_chapter"),
+            "exit_condition": payload.get("exit_condition"),
+            "role": char_row.role,
+            "appearance_notes_zh": rule.notes_zh,
+            "appearance_notes_en": rule.notes_en,
+            "can_appear_as_body": rule.can_appear_as_body,
+            "can_be_remembered": rule.can_be_remembered,
+            "can_appear_in_flashback": rule.can_appear_in_flashback,
+        })
+
+    # Interpersonal promise ledger — open promises / oaths / debts
+    # between characters. Surfaces both fresh active rows and recently-
+    # overdue ones so the writer feels the long-running emotional debt
+    # the cast carries even when this chapter doesn't advance them.
+    interpersonal_promises_payload: list[dict[str, Any]] = []
+    try:
+        from bestseller.services.interpersonal_promises import (  # noqa: PLC0415
+            active_promises_for_chapter,
+        )
+        promise_snaps = await active_promises_for_chapter(
+            session,
+            project_id=project.id,
+            chapter_number=chapter.chapter_number,
+        )
+        interpersonal_promises_payload = [
+            {
+                "id": str(p.id),
+                "promisor_label": p.promisor_label,
+                "promisee_label": p.promisee_label,
+                "content": p.content,
+                "kind": p.kind,
+                "made_chapter_number": p.made_chapter_number,
+                "due_chapter_number": p.due_chapter_number,
+                "status": p.status,
+                "inherited_by_label": p.inherited_by_label,
+                "chapters_until_due": p.chapters_until_due,
+                "is_overdue": p.is_overdue,
+            }
+            for p in promise_snaps
+        ]
+    except Exception:
+        logger.debug(
+            "interpersonal_promises load failed for ch=%s — non-fatal",
+            getattr(chapter, "chapter_number", "?"),
+            exc_info=True,
+        )
+
+    # Memory-recall cues — brief reminders for the writer that someone
+    # close to the protagonist died N chapters ago and naturally would
+    # think of them now. The schedule decays at +3/+10/+30/+80 anchors
+    # so the cast neither forgets the dead nor mourns nonstop. Loaded
+    # lazily so the helper module is optional in trimmed environments.
+    memory_recall_cues: list[dict[str, Any]] = []
+    try:
+        from bestseller.services.memory_recall import (  # noqa: PLC0415
+            compute_memory_recall_cues,
+        )
+        recall_cues = await compute_memory_recall_cues(
+            session,
+            project.id,
+            chapter_number=chapter.chapter_number,
+        )
+        memory_recall_cues = [
+            {
+                "survivor_name": c.survivor_name,
+                "deceased_name": c.deceased_name,
+                "deceased_role": c.deceased_role,
+                "relationship_type": c.relationship_type,
+                "relationship_strength": c.relationship_strength,
+                "chapters_since_death": c.chapters_since_death,
+                "intensity": c.intensity,
+            }
+            for c in recall_cues
+        ]
+    except Exception:
+        logger.debug(
+            "memory_recall_cues unavailable for ch=%s — non-fatal",
+            getattr(chapter, "chapter_number", "?"),
+            exc_info=True,
+        )
+
     return {
         "book_spec": project.metadata_json.get("book_spec", {}),
         "cast_spec": project.metadata_json.get("cast_spec", {}),
@@ -1657,6 +1954,9 @@ async def load_scene_story_bible_context(
         "relationships": relationships,
         "deceased_characters": deceased_characters,
         "protected_characters": protected_characters,
+        "restricted_characters": restricted_characters,
+        "memory_recall_cues": memory_recall_cues,
+        "interpersonal_promises": interpersonal_promises_payload,
     }
 
 

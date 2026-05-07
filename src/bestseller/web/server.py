@@ -22,8 +22,9 @@ from uuid import UUID, uuid4
 from bestseller.domain.project import InteractiveFictionConfig, ProjectCreate
 from bestseller.infra.db.models import StyleGuideModel
 from bestseller.infra.db.session import session_scope
+from bestseller.services.book_listing import build_book_listing_profile
 from bestseller.services.exports import build_markdown_reading_stats, markdown_to_html
-from bestseller.services.if_generation import run_if_pipeline, run_if_pipeline_integrated
+from bestseller.services.if_generation import run_if_pipeline_integrated
 from bestseller.services.inspection import (
     build_project_structure,
     build_project_workflow_overview,
@@ -2223,6 +2224,12 @@ async def _load_project_summary_payload(
         current_chapter_number=int(project.current_chapter_number or 0),
     )
     project_meta = project.metadata_json or {}
+    listing_profile = build_book_listing_profile(
+        project=project,
+        writing_profile=writing_profile,
+        story_bible=story_bible,
+        output_base_dir=settings.output.base_dir,
+    )
     return {
         "project": {
             "id": str(project.id),
@@ -2240,6 +2247,7 @@ async def _load_project_summary_payload(
             "tags": project_meta.get("tags", []),
             "premise": project_meta.get("premise", ""),
         },
+        "listing_profile": listing_profile,
         "writing_profile": writing_profile,
         "structure_summary": {
             "total_chapters": structure.total_chapters,
@@ -2297,6 +2305,14 @@ async def _load_project_structure_payload(
     async with session_scope(settings) as session:
         structure = await build_project_structure(session, project_slug)
     return structure.model_dump(mode="json")
+
+
+async def _load_project_listing_payload(
+    settings: AppSettings,
+    project_slug: str,
+) -> dict[str, object]:
+    summary = await _load_project_summary_payload(settings, project_slug)
+    return dict(summary["listing_profile"])
 
 
 async def _load_story_bible_payload(
@@ -3039,6 +3055,12 @@ def serve_web_app(
                 project_slug = _match_project_route(path, "summary")
                 if project_slug is not None:
                     self._send_json(asyncio.run(_load_project_summary_payload(settings, project_slug)))
+                    return
+                project_slug = _match_project_route(path, "listing")
+                if project_slug is not None:
+                    self._send_json(
+                        asyncio.run(_load_project_listing_payload(settings, project_slug))
+                    )
                     return
                 project_slug = _match_project_route(path, "structure")
                 if project_slug is not None:

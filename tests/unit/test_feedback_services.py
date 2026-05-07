@@ -12,6 +12,7 @@ from bestseller.domain.feedback import (
     ChapterFeedbackResult,
     CharacterStateExtraction,
     ClueObservationExtraction,
+    PromiseMadeExtraction,
     RelationshipEventExtraction,
     WorldDetailExtraction,
 )
@@ -252,3 +253,229 @@ def test_chapter_feedback_result_defaults() -> None:
     assert result.canon_facts_created == 0
     assert result.extraction_status == "ok"
     assert result.llm_run_id is None
+
+
+# ── Lifecycle status extraction ──────────────────────────────────
+
+
+def test_character_state_extraction_accepts_lifecycle_fields() -> None:
+    """lifecycle_status + reason + exit_chapter should all parse."""
+    state = CharacterStateExtraction(
+        character_name="Shen Yan",
+        lifecycle_status="missing",
+        lifecycle_status_reason="Fell into the Void Rift in chapter 12",
+        lifecycle_exit_chapter=25,
+    )
+    assert state.lifecycle_status == "missing"
+    assert state.lifecycle_status_reason == "Fell into the Void Rift in chapter 12"
+    assert state.lifecycle_exit_chapter == 25
+
+
+def test_character_state_extraction_defaults_lifecycle_fields_to_none() -> None:
+    """Lifecycle fields must default to None for backward compatibility."""
+    state = CharacterStateExtraction(character_name="Test")
+    assert state.lifecycle_status is None
+    assert state.lifecycle_status_reason is None
+    assert state.lifecycle_exit_chapter is None
+
+
+def test_parse_feedback_payload_parses_lifecycle_status() -> None:
+    """_parse_feedback_payload should round-trip lifecycle_status fields."""
+    import json
+
+    raw = json.dumps(
+        {
+            "character_states": [
+                {
+                    "character_name": "Shen Yan",
+                    "lifecycle_status": "sealed",
+                    "lifecycle_status_reason": "Imprisoned in the Blood Formation at chapter end",
+                    "lifecycle_exit_chapter": 30,
+                }
+            ],
+            "relationship_events": [],
+            "arc_beat_updates": [],
+            "clue_observations": [],
+            "world_details": [],
+            "canon_facts": [],
+        }
+    )
+
+    payload = _parse_feedback_payload(raw)
+    assert payload is not None
+    assert len(payload.character_states) == 1
+    cs = payload.character_states[0]
+    assert cs.lifecycle_status == "sealed"
+    assert cs.lifecycle_status_reason == "Imprisoned in the Blood Formation at chapter end"
+    assert cs.lifecycle_exit_chapter == 30
+
+
+def test_parse_feedback_payload_lifecycle_status_null_is_none() -> None:
+    """lifecycle_status=null should parse as Python None."""
+    import json
+
+    raw = json.dumps(
+        {
+            "character_states": [
+                {
+                    "character_name": "Shen Yan",
+                    "lifecycle_status": None,
+                    "lifecycle_status_reason": None,
+                    "lifecycle_exit_chapter": None,
+                }
+            ],
+            "relationship_events": [],
+            "arc_beat_updates": [],
+            "clue_observations": [],
+            "world_details": [],
+            "canon_facts": [],
+        }
+    )
+
+    payload = _parse_feedback_payload(raw)
+    assert payload is not None
+    cs = payload.character_states[0]
+    assert cs.lifecycle_status is None
+    assert cs.lifecycle_status_reason is None
+    assert cs.lifecycle_exit_chapter is None
+
+
+def test_feedback_extraction_schema_includes_lifecycle_fields() -> None:
+    """The _OUTPUT_SCHEMA constant must advertise all three lifecycle fields."""
+    from bestseller.services.feedback import _OUTPUT_SCHEMA
+
+    assert "lifecycle_status" in _OUTPUT_SCHEMA
+    assert "lifecycle_status_reason" in _OUTPUT_SCHEMA
+    assert "lifecycle_exit_chapter" in _OUTPUT_SCHEMA
+
+
+def test_system_prompt_zh_mentions_lifecycle_kinds() -> None:
+    """Chinese system prompt must list all non-deceased offstage lifecycle kinds."""
+    from bestseller.services.feedback import _SYSTEM_PROMPT_ZH
+
+    for kind in ("missing", "sealed", "sleeping", "comatose", "exiled"):
+        assert kind in _SYSTEM_PROMPT_ZH, f"_SYSTEM_PROMPT_ZH missing lifecycle kind: {kind}"
+
+
+def test_system_prompt_en_mentions_lifecycle_kinds() -> None:
+    """English system prompt must list all non-deceased offstage lifecycle kinds."""
+    from bestseller.services.feedback import _SYSTEM_PROMPT_EN
+
+    for kind in ("missing", "sealed", "sleeping", "comatose", "exiled"):
+        assert kind in _SYSTEM_PROMPT_EN, f"_SYSTEM_PROMPT_EN missing lifecycle kind: {kind}"
+
+
+# ── Promise extraction ───────────────────────────────────────────
+
+
+def test_promise_made_extraction_accepts_all_fields() -> None:
+    """PromiseMadeExtraction must parse all documented fields."""
+    promise = PromiseMadeExtraction(
+        promisor="Shen Yan",
+        promisee="Lin Mei",
+        content="I will avenge your father's death",
+        kind="revenge",
+        due_chapter=45,
+    )
+    assert promise.promisor == "Shen Yan"
+    assert promise.promisee == "Lin Mei"
+    assert promise.content == "I will avenge your father's death"
+    assert promise.kind == "revenge"
+    assert promise.due_chapter == 45
+
+
+def test_promise_made_extraction_defaults() -> None:
+    """kind and due_chapter default to None."""
+    promise = PromiseMadeExtraction(
+        promisor="A",
+        promisee="B",
+        content="I'll protect you",
+    )
+    assert promise.kind is None
+    assert promise.due_chapter is None
+
+
+def test_chapter_feedback_payload_includes_promises_made() -> None:
+    """ChapterFeedbackPayload must carry a promises_made list."""
+    payload = ChapterFeedbackPayload()
+    assert hasattr(payload, "promises_made")
+    assert payload.promises_made == []
+
+
+def test_chapter_feedback_result_includes_promises_created() -> None:
+    """ChapterFeedbackResult must track promises_created count."""
+    result = ChapterFeedbackResult(
+        project_id=uuid4(),
+        chapter_id=uuid4(),
+        chapter_number=5,
+        promises_created=3,
+    )
+    assert result.promises_created == 3
+
+
+def test_parse_feedback_payload_parses_promises_made() -> None:
+    """_parse_feedback_payload round-trips the promises_made array."""
+    raw = json.dumps(
+        {
+            "character_states": [],
+            "relationship_events": [],
+            "arc_beat_updates": [],
+            "clue_observations": [],
+            "world_details": [],
+            "canon_facts": [],
+            "promises_made": [
+                {
+                    "promisor": "Shen Yan",
+                    "promisee": "Mentor Liu",
+                    "content": "I will carry on the sect's legacy",
+                    "kind": "fealty",
+                    "due_chapter": None,
+                },
+                {
+                    "promisor": "Lin Mei",
+                    "promisee": "Brother Wei",
+                    "content": "I will deliver your message to the Emperor",
+                    "kind": "message",
+                    "due_chapter": 20,
+                },
+            ],
+        }
+    )
+
+    payload = _parse_feedback_payload(raw)
+    assert payload is not None
+    assert len(payload.promises_made) == 2
+    p0, p1 = payload.promises_made
+    assert p0.promisor == "Shen Yan"
+    assert p0.kind == "fealty"
+    assert p0.due_chapter is None
+    assert p1.promisee == "Brother Wei"
+    assert p1.kind == "message"
+    assert p1.due_chapter == 20
+
+
+def test_parse_feedback_payload_missing_promises_key_defaults_to_empty() -> None:
+    """JSON without promises_made key should still parse cleanly."""
+    raw = json.dumps(
+        {
+            "character_states": [],
+            "relationship_events": [],
+            "arc_beat_updates": [],
+            "clue_observations": [],
+            "world_details": [],
+            "canon_facts": [],
+        }
+    )
+    payload = _parse_feedback_payload(raw)
+    assert payload is not None
+    assert payload.promises_made == []
+
+
+def test_output_schema_includes_promises_made() -> None:
+    """The _OUTPUT_SCHEMA must document the promises_made field."""
+    from bestseller.services.feedback import _OUTPUT_SCHEMA
+
+    assert "promises_made" in _OUTPUT_SCHEMA
+    assert "promisor" in _OUTPUT_SCHEMA
+    assert "promisee" in _OUTPUT_SCHEMA
+    assert "due_chapter" in _OUTPUT_SCHEMA

@@ -28,6 +28,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from bestseller.services.contradiction import (
+    _check_offstage_state_appearances,
     _check_power_tier_regression,
     _check_resurrection,
 )
@@ -360,6 +361,141 @@ class TestResurrection:
 
 
 # ── _check_power_tier_regression ──────────────────────────────────────────
+
+
+class TestOffstateStateAppearances:
+    """``_check_offstage_state_appearances`` covers missing / sealed /
+    sleeping / comatose — states where a character is *not* dead but
+    cannot take present-tense action. Deceased flows through the older
+    ``_check_resurrection`` so the message shape stays stable."""
+
+    @pytest.mark.asyncio
+    async def test_sealed_character_blocks_active_participation(self) -> None:
+        char = _Character(
+            name="陆沉",
+            alive_status="alive",
+            metadata_json={
+                "lifecycle_status": {
+                    "kind": "sealed",
+                    "since_chapter": 30,
+                    "scheduled_exit_chapter": 200,
+                }
+            },
+        )
+        session = _make_session(project=_Project(), characters={"陆沉": char})
+        violations, _ = await _check_offstage_state_appearances(
+            session,
+            project_id=uuid.uuid4(),
+            chapter_number=80,  # within the sealed window
+            scene_participants=["陆沉"],
+        )
+        assert len(violations) == 1
+        assert violations[0].check_type == "character_sealed_appearance"
+
+    @pytest.mark.asyncio
+    async def test_missing_character_blocks_active_participation(self) -> None:
+        char = _Character(
+            name="陆沉",
+            metadata_json={"lifecycle_status": {"kind": "missing", "since_chapter": 30}},
+        )
+        session = _make_session(project=_Project(), characters={"陆沉": char})
+        violations, _ = await _check_offstage_state_appearances(
+            session,
+            project_id=uuid.uuid4(),
+            chapter_number=50,
+            scene_participants=["陆沉"],
+        )
+        assert len(violations) == 1
+        assert violations[0].check_type == "character_missing_appearance"
+
+    @pytest.mark.asyncio
+    async def test_sleeping_character_blocks_active_participation(self) -> None:
+        char = _Character(
+            name="陆沉",
+            metadata_json={"lifecycle_status": {"kind": "sleeping", "since_chapter": 30}},
+        )
+        session = _make_session(project=_Project(), characters={"陆沉": char})
+        violations, _ = await _check_offstage_state_appearances(
+            session,
+            project_id=uuid.uuid4(),
+            chapter_number=50,
+            scene_participants=["陆沉"],
+        )
+        assert len(violations) == 1
+        assert violations[0].check_type == "character_sleeping_appearance"
+
+    @pytest.mark.asyncio
+    async def test_alive_character_passes(self) -> None:
+        char = _Character(name="陆沉")  # alive, no metadata
+        session = _make_session(project=_Project(), characters={"陆沉": char})
+        violations, warnings = await _check_offstage_state_appearances(
+            session,
+            project_id=uuid.uuid4(),
+            chapter_number=50,
+            scene_participants=["陆沉"],
+        )
+        assert violations == []
+        assert warnings == []
+
+    @pytest.mark.asyncio
+    async def test_deceased_skipped_for_resurrection_check(self) -> None:
+        # Deceased intentionally falls through to ``_check_resurrection`` —
+        # this check should NOT double-report.
+        char = _Character(
+            name="陆沉",
+            alive_status="deceased",
+            death_chapter_number=20,
+        )
+        session = _make_session(project=_Project(), characters={"陆沉": char})
+        violations, _ = await _check_offstage_state_appearances(
+            session,
+            project_id=uuid.uuid4(),
+            chapter_number=50,
+            scene_participants=["陆沉"],
+        )
+        assert violations == []
+
+    @pytest.mark.asyncio
+    async def test_post_release_sealed_character_passes(self) -> None:
+        # Sealed but the scheduled release is in the past: the helper
+        # resolves the lifecycle to alive, and this check stays silent.
+        char = _Character(
+            name="陆沉",
+            metadata_json={
+                "lifecycle_status": {
+                    "kind": "sealed",
+                    "since_chapter": 30,
+                    "scheduled_exit_chapter": 100,
+                }
+            },
+        )
+        session = _make_session(project=_Project(), characters={"陆沉": char})
+        violations, _ = await _check_offstage_state_appearances(
+            session,
+            project_id=uuid.uuid4(),
+            chapter_number=150,
+            scene_participants=["陆沉"],
+        )
+        assert violations == []
+
+    @pytest.mark.asyncio
+    async def test_flashback_scene_exempts_offstage_state(self) -> None:
+        from types import SimpleNamespace
+
+        char = _Character(
+            name="陆沉",
+            metadata_json={"lifecycle_status": {"kind": "sealed", "since_chapter": 30}},
+        )
+        session = _make_session(project=_Project(), characters={"陆沉": char})
+        flashback = SimpleNamespace(scene_type="flashback", metadata_json={})
+        violations, _ = await _check_offstage_state_appearances(
+            session,
+            project_id=uuid.uuid4(),
+            chapter_number=50,
+            scene_participants=["陆沉"],
+            scene=flashback,
+        )
+        assert violations == []
 
 
 class TestPowerTierRegression:

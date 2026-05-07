@@ -16,6 +16,11 @@ import pytest
 
 from bestseller.services.character_lifecycle import (
     FLASHBACK_SCENE_MODES,
+    LIFECYCLE_KINDS,
+    OFFSTAGE_KINDS,
+    appearance_rule_for,
+    characters_offstage_at_chapter,
+    effective_lifecycle_state,
     fake_death_revealed_at_chapter,
     filter_alive_at_chapter,
     is_character_dead_at_chapter,
@@ -189,6 +194,214 @@ class TestProseWindowIsFlashback:
 # ---------------------------------------------------------------------------
 # filter_alive_at_chapter
 # ---------------------------------------------------------------------------
+
+
+class TestAppearanceRuleFor:
+    """Each canonical lifecycle kind exposes a single source of truth for
+    appearance rules. Other layers (prompt, contradiction check, scene
+    filter) all consult these rules so behaviour stays aligned."""
+
+    def test_alive_can_act(self) -> None:
+        rule = appearance_rule_for("alive")
+        assert rule.can_act_in_present is True
+        assert rule.can_be_remembered is True
+
+    def test_deceased_cannot_act(self) -> None:
+        rule = appearance_rule_for("deceased")
+        assert rule.can_act_in_present is False
+        assert rule.can_be_remembered is True
+        assert rule.can_appear_as_body is True
+        assert rule.can_appear_in_flashback is True
+
+    def test_missing_can_return_without_resurrection(self) -> None:
+        rule = appearance_rule_for("missing")
+        assert rule.can_act_in_present is False
+        assert rule.can_return_without_resurrection_block is True
+
+    def test_sealed_cannot_act_but_body_referencable(self) -> None:
+        rule = appearance_rule_for("sealed")
+        assert rule.can_act_in_present is False
+        assert rule.can_appear_as_body is True
+
+    def test_sleeping_cannot_act(self) -> None:
+        assert appearance_rule_for("sleeping").can_act_in_present is False
+
+    def test_unknown_kind_falls_back_to_alive(self) -> None:
+        rule = appearance_rule_for("nonsense")
+        assert rule.kind == "alive"
+        assert rule.can_act_in_present is True
+
+
+class TestEffectiveLifecycleState:
+    """Resolution priority — the helper picks rich lifecycle metadata
+    over the legacy alive_status column when both exist, but falls back
+    cleanly when the rich record is absent / inactive."""
+
+    def test_legacy_alive_status_used_when_no_metadata(self) -> None:
+        kind, payload = effective_lifecycle_state(
+            alive_status="injured",
+            death_chapter_number=None,
+            chapter_number=10,
+            character_metadata=None,
+        )
+        assert kind == "injured"
+        assert payload["source"] == "alive_status"
+
+    def test_death_chapter_overrides_legacy_status(self) -> None:
+        kind, _ = effective_lifecycle_state(
+            alive_status="alive",
+            death_chapter_number=5,
+            chapter_number=20,
+            character_metadata=None,
+        )
+        assert kind == "deceased"
+
+    def test_active_lifecycle_metadata_wins(self) -> None:
+        meta = {
+            "lifecycle_status": {
+                "kind": "sealed",
+                "since_chapter": 5,
+                "scheduled_exit_chapter": 200,
+            }
+        }
+        kind, payload = effective_lifecycle_state(
+            alive_status="alive",
+            death_chapter_number=None,
+            chapter_number=50,
+            character_metadata=meta,
+        )
+        assert kind == "sealed"
+        assert payload["scheduled_exit_chapter"] == 200
+
+    def test_lifecycle_metadata_expires_after_scheduled_exit(self) -> None:
+        meta = {
+            "lifecycle_status": {
+                "kind": "sealed",
+                "since_chapter": 5,
+                "scheduled_exit_chapter": 200,
+            }
+        }
+        kind, _ = effective_lifecycle_state(
+            alive_status="alive",
+            death_chapter_number=None,
+            chapter_number=250,  # past the scheduled release
+            character_metadata=meta,
+        )
+        assert kind == "alive"
+
+    def test_lifecycle_metadata_inactive_before_since(self) -> None:
+        meta = {
+            "lifecycle_status": {
+                "kind": "missing",
+                "since_chapter": 50,
+            }
+        }
+        kind, _ = effective_lifecycle_state(
+            alive_status="alive",
+            death_chapter_number=None,
+            chapter_number=10,  # before the missing event
+            character_metadata=meta,
+        )
+        assert kind == "alive"
+
+    def test_unknown_kind_in_metadata_falls_back(self) -> None:
+        meta = {"lifecycle_status": {"kind": "frozen-by-aliens"}}
+        kind, _ = effective_lifecycle_state(
+            alive_status="alive",
+            death_chapter_number=None,
+            chapter_number=10,
+            character_metadata=meta,
+        )
+        # Unknown kind ignored → falls back to alive_status / death.
+        assert kind == "alive"
+
+
+class TestCharactersOffstageAtChapter:
+    """Roster-level helper that picks every offstage character in one
+    pass — used by the chapter prompt loader."""
+
+    def test_picks_missing_and_sealed_skips_alive(self) -> None:
+        rows = [
+            SimpleNamespace(
+                name="陆沉", alive_status="alive", death_chapter_number=None,
+                metadata_json={"lifecycle_status": {"kind": "missing", "since_chapter": 5}},
+            ),
+            SimpleNamespace(
+                name="苏瑶", alive_status="alive", death_chapter_number=None,
+                metadata_json={"lifecycle_status": {"kind": "sealed", "since_chapter": 8, "scheduled_exit_chapter": 100}},
+            ),
+            SimpleNamespace(
+                name="宁尘", alive_status="alive", death_chapter_number=None,
+                metadata_json=None,
+            ),
+        ]
+        out = characters_offstage_at_chapter(rows, 50)
+        kinds = {row.name: kind for row, kind, _ in out}
+        assert kinds == {"陆沉": "missing", "苏瑶": "sealed"}
+
+    def test_includes_deceased(self) -> None:
+        rows = [
+            SimpleNamespace(
+                name="王守真", alive_status="deceased", death_chapter_number=10,
+                metadata_json=None,
+            ),
+        ]
+        out = characters_offstage_at_chapter(rows, 50)
+        assert len(out) == 1
+        assert out[0][1] == "deceased"
+
+    def test_kinds_all_in_canonical_set(self) -> None:
+        for kind in OFFSTAGE_KINDS:
+            assert kind in LIFECYCLE_KINDS
+
+
+class TestFilterDeadSceneParticipants:
+    """Integration of the lifecycle helper with the scene-card filter
+    used by the chapter auto-repair path. The filter must:
+
+    1. Remove dead participants from a normal scene's participant list.
+    2. Skip the removal entirely when the scene is flashback / memorial /
+       vision / dream — those modes legitimately stage the deceased as
+       memory, mourning, quoted, or relic.
+    """
+
+    def test_filter_strips_dead_in_normal_scene(self) -> None:
+        from bestseller.services.drafts import _filter_dead_scene_participants
+
+        scene = SimpleNamespace(
+            scene_type="setup",
+            metadata_json={},
+            participants=["陆沉", "宁尘"],
+        )
+        removed = _filter_dead_scene_participants(scene, frozenset({"陆沉"}))
+        assert "陆沉" in removed
+        assert scene.participants == ["宁尘"]
+
+    def test_filter_skips_flashback_scene(self) -> None:
+        from bestseller.services.drafts import _filter_dead_scene_participants
+
+        scene = SimpleNamespace(
+            scene_type="flashback",
+            metadata_json={},
+            participants=["陆沉", "宁尘"],
+        )
+        removed = _filter_dead_scene_participants(scene, frozenset({"陆沉"}))
+        assert removed == []
+        # Participants list is left untouched — the deceased may speak in
+        # flashback as remembered prior dialogue.
+        assert scene.participants == ["陆沉", "宁尘"]
+
+    def test_filter_skips_memorial_scene_via_metadata(self) -> None:
+        from bestseller.services.drafts import _filter_dead_scene_participants
+
+        scene = SimpleNamespace(
+            scene_type="setup",
+            metadata_json={"scene_mode": "memorial"},
+            participants=["陆沉", "宁尘"],
+        )
+        removed = _filter_dead_scene_participants(scene, frozenset({"陆沉"}))
+        assert removed == []
+        assert scene.participants == ["陆沉", "宁尘"]
 
 
 class TestFilterAliveAtChapter:

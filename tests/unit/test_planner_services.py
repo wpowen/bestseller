@@ -900,21 +900,115 @@ async def test_generate_novel_plan_creates_all_artifacts_and_workflow_records(
     assert result.chapter_count == project.target_chapters
     assert result.volume_count >= 1
     artifact_types = [item.artifact_type for item in result.artifacts]
-    assert artifact_types[:6] == [
+    assert artifact_types[:4] == [
         ArtifactType.PREMISE,
         ArtifactType.BOOK_SPEC,
         ArtifactType.WORLD_SPEC,
         ArtifactType.CAST_SPEC,
-        ArtifactType.VOLUME_PLAN,
-        ArtifactType.PLAN_VALIDATION,
     ]
+    assert ArtifactType.VOLUME_PLAN in artifact_types
+    assert ArtifactType.PLAN_VALIDATION in artifact_types
+    assert artifact_types.index(ArtifactType.VOLUME_PLAN) < artifact_types.index(ArtifactType.PLAN_VALIDATION)
     assert ArtifactType.PROMOTIONAL_BRIEF in artifact_types
     assert ArtifactType.VOLUME_CHAPTER_OUTLINE in artifact_types
     assert ArtifactType.CHAPTER_OUTLINE_BATCH in artifact_types
-    assert len(result.llm_run_ids) == 8
+    assert len(result.llm_run_ids) >= 8
     assert len(workflow_runs) == 1
     assert workflow_runs[0].status == "completed"
     assert len(workflow_steps) >= 7
+
+
+@pytest.mark.asyncio
+async def test_repair_cast_personhood_regenerates_incomplete_character_bible(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = build_project()
+    thin_cast = {
+        "protagonist": {"name": "沈砚", "goal": "找到账目证据"},
+        "antagonist": {"name": "祁镇", "goal": "删光旧记录"},
+        "supporting_cast": [],
+        "conflict_map": [],
+    }
+    repaired_cast = {
+        "protagonist": {
+            "name": "沈砚",
+            "goal": "找到账目证据",
+            "ip_anchor": {
+                "quirks": ["左手关节断裂", "洁癖", "口头禅：这不对劲"],
+                "core_wound": "七岁目睹母亲被处决",
+            },
+            "psych_profile": {"mbti": "INTJ"},
+            "life_history": {"education": "帝国导航学院"},
+            "family_imprint": {"parenting_style": "父亲严苛"},
+            "beliefs": {"ideology": "真相高于秩序"},
+        },
+        "antagonist": {
+            "name": "祁镇",
+            "goal": "删光旧记录",
+            "ip_anchor": {"quirks": ["整理袖口", "永远戴白手套"]},
+            "villain_charisma": {
+                "noble_motivation": "维护航道秩序",
+                "pain_origin": "曾因混乱失去家人",
+                "personal_code": ["不亲手杀孩童"],
+                "protagonist_mirror": "同样相信记录能决定命运",
+            },
+        },
+        "supporting_cast": [],
+        "conflict_map": [],
+    }
+    prompts: list[str] = []
+
+    async def fake_generate_structured_artifact(
+        session: object,
+        settings: object,
+        *,
+        project: object,
+        logical_name: str,
+        system_prompt: str,
+        user_prompt: str,
+        fallback_payload: object,
+        workflow_run_id,
+        step_run_id=None,
+        validator=None,
+        **kwargs: object,
+    ):
+        assert logical_name == "cast_spec_personhood_repair"
+        prompts.append(user_prompt)
+        return repaired_cast, uuid4()
+
+    monkeypatch.setattr(
+        planner_services,
+        "_generate_structured_artifact",
+        fake_generate_structured_artifact,
+    )
+
+    payload, llm_run_id = await planner_services._repair_cast_personhood_if_needed(
+        session=FakeSession(),
+        settings=build_settings(),
+        project=project,
+        book_spec_payload={
+            "title": "长夜巡航",
+            "themes": ["真相"],
+            "dramatic_question": "沈砚能否找回真相？",
+        },
+        world_spec_payload={
+            "power_system": {"name": "导航印记", "tiers": ["学徒", "导航员"]}
+        },
+        cast_spec_payload=thin_cast,
+        workflow_run_id=uuid4(),
+    )
+
+    assert llm_run_id is not None
+    assert payload["protagonist"]["ip_anchor"]["quirks"][:3] == [
+        "左手关节断裂",
+        "洁癖",
+        "口头禅：这不对劲",
+    ]
+    assert payload["protagonist"]["psych_profile"]["mbti"] == "INTJ"
+    assert payload["antagonist"]["villain_charisma"]["noble_motivation"] == "维护航道秩序"
+    assert payload["antagonist"]["ip_anchor"]["core_wound"]
+    assert "Bible 回炉整改清单" in prompts[0]
+    assert "CHARACTER_PERSONHOOD_INCOMPLETE" in prompts[0]
 
 
 def test_fallback_volume_plan_has_different_obstacles_per_volume() -> None:
@@ -933,6 +1027,82 @@ def test_fallback_volume_plan_has_different_obstacles_per_volume() -> None:
     assert len(set(obstacles)) == len(obstacles), (
         f"Volume obstacles must be unique; got {obstacles}"
     )
+
+
+def test_fallback_book_spec_satisfies_project_level_bible_fields() -> None:
+    project = build_project()
+    project.target_chapters = 120
+    premise = "一名被放逐的导航员发现帝国正在篡改边境航线记录。"
+
+    book_spec = planner_services._fallback_book_spec(project, premise)
+
+    assert book_spec["theme_statement"]
+    assert book_spec["dramatic_question"].endswith("？")
+    assert book_spec["expected_character_count"] >= 12
+    assert len(book_spec["naming_pool"]) >= book_spec["expected_character_count"] * 2
+
+
+def test_ensure_book_spec_bible_fields_extends_thin_llm_payload() -> None:
+    project = build_project()
+    premise = "一名被放逐的导航员发现帝国正在篡改边境航线记录。"
+    thin_payload = {
+        "title": "长夜巡航",
+        "themes": ["真相与代价"],
+        "protagonist": {
+            "name": "沈砚",
+            "external_goal": "追查被篡改的航线记录",
+            "internal_need": "重新学会信任同伴",
+        },
+        "expected_character_count": 4,
+        "naming_pool": ["沈砚"],
+    }
+
+    normalized = planner_services._ensure_book_spec_bible_fields(
+        project,
+        premise,
+        thin_payload,
+    )
+
+    assert normalized["theme_statement"].startswith("真正的力量")
+    assert normalized["dramatic_question"] == "沈砚能否在追查被篡改的航线记录的同时，仍然重新学会信任同伴？"
+    assert len(normalized["naming_pool"]) == 8
+    assert "沈砚" in normalized["naming_pool"]
+
+
+def test_synthesize_missing_cast_bible_fields_closes_character_gate_fields() -> None:
+    project = build_project()
+    cast_spec = {
+        "protagonist": {
+            "name": "沈砚",
+            "role": "protagonist",
+            "goal": "追查被篡改的航线记录",
+            "fear": "再次害死搭档",
+        },
+        "antagonist": {
+            "name": "程砚",
+            "role": "antagonist",
+            "goal": "封锁所有底层日志",
+            "secret": "当年参与删改航线",
+        },
+        "supporting_cast": [],
+    }
+
+    repaired = planner_services._synthesize_missing_cast_bible_fields(
+        project,
+        cast_spec,
+    )
+
+    protagonist = repaired["protagonist"]
+    antagonist = repaired["antagonist"]
+    assert len(protagonist["ip_anchor"]["quirks"]) >= 3
+    assert protagonist["ip_anchor"]["core_wound"]
+    assert protagonist["psych_profile"]["mbti"]
+    assert protagonist["life_history"]["formative_events"]
+    assert protagonist["family_imprint"]["inherited_values"]
+    assert protagonist["beliefs"]["ideology"]
+    assert len(antagonist["ip_anchor"]["quirks"]) >= 2
+    assert antagonist["villain_charisma"]["noble_motivation"]
+    assert len(antagonist["villain_charisma"]["personal_code"]) >= 1
 
 
 def test_fallback_volume_plan_carries_conflict_phase() -> None:

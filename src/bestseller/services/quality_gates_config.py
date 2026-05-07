@@ -17,6 +17,8 @@ from typing import Any
 import yaml
 
 from bestseller.services.chapter_validator import (
+    CanonForbiddenTermCheck,
+    CanonStateRegressionCheck,
     CliffhangerRotationCheck,
     DialogIntegrityCheck,
     EndingSentenceImpactCheck,
@@ -25,6 +27,7 @@ from bestseller.services.chapter_validator import (
     HypeOccurrenceCheck,
     LineGapCheck,
     POVLockCheck,
+    RepeatedEventBeatCheck,
 )
 from bestseller.services.output_validator import (
     EntityDensityCheck,
@@ -34,7 +37,6 @@ from bestseller.services.output_validator import (
     OutputValidator,
 )
 from bestseller.services.write_gate import DEFAULT_GATE_CONFIG, GateConfig, GateMode
-
 
 DEFAULT_QUALITY_GATES_PATH = Path("config/quality_gates.yaml")
 
@@ -118,6 +120,8 @@ class L5Config:
     # drift — first-person legitimately describes other characters in
     # third-person, so absolute counts false-fire.
     pov_lock_min_drift_ratio_first: float = 0.5
+    repeated_beat_enabled: bool = True
+    canon_guardrails_enabled: bool = True
     cliffhanger_rotation_enabled: bool = True
 
 
@@ -261,6 +265,8 @@ def load_quality_gates_config(
     l5_checks = _as_dict(l5.get("checks"))
     l5_dialog = _as_dict(l5_checks.get("dialog_integrity"))
     l5_pov = _as_dict(l5_checks.get("pov_lock"))
+    l5_repeated_beat = _as_dict(l5_checks.get("repeated_beat"))
+    l5_canon_guardrails = _as_dict(l5_checks.get("canon_guardrails"))
     l6 = _as_dict(raw.get("l6_write_gate"))
     l7 = _as_dict(raw.get("l7_continuous_audit"))
     l8 = _as_dict(raw.get("l8_scorecard"))
@@ -327,6 +333,8 @@ def load_quality_gates_config(
             pov_lock_min_drift_ratio_first=float(
                 l5_pov.get("min_drift_ratio_first", 0.5)
             ),
+            repeated_beat_enabled=bool(l5_repeated_beat.get("enabled", True)),
+            canon_guardrails_enabled=bool(l5_canon_guardrails.get("enabled", True)),
             cliffhanger_rotation_enabled=bool(
                 _as_dict(l5_checks.get("cliffhanger_rotation")).get("enabled", True)
             ),
@@ -442,6 +450,11 @@ def build_validator_from_config(cfg: QualityGatesConfig) -> OutputValidator:
                     min_drift_ratio_first=cfg.l5.pov_lock_min_drift_ratio_first,
                 )
             )
+        if cfg.l5.repeated_beat_enabled:
+            checks.append(RepeatedEventBeatCheck())
+        if cfg.l5.canon_guardrails_enabled:
+            checks.append(CanonForbiddenTermCheck())
+            checks.append(CanonStateRegressionCheck())
         if cfg.l5.cliffhanger_rotation_enabled:
             checks.append(CliffhangerRotationCheck())
         # Hype engine checks — self-no-op when no hype assignment in ctx, so

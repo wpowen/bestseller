@@ -1003,7 +1003,20 @@ def _build_theme_arc_specs(
     volume_entries: dict[int, Any],
 ) -> list[dict[str, Any]]:
     specs: list[dict[str, Any]] = []
-    book_theme = (project.metadata_json or {}).get("book_spec", {}).get("theme")
+    book_spec = (project.metadata_json or {}).get("book_spec", {})
+    book_theme = (
+        (project.metadata_json or {}).get("theme_statement")
+        or getattr(project, "theme_statement", None)
+        or (book_spec.get("theme_statement") if isinstance(book_spec, dict) else None)
+        or (book_spec.get("theme") if isinstance(book_spec, dict) else None)
+    )
+    if not book_theme and isinstance(book_spec, dict):
+        themes = book_spec.get("themes")
+        if isinstance(themes, list):
+            book_theme = next(
+                (item.strip() for item in themes if isinstance(item, str) and item.strip()),
+                None,
+            )
     if book_theme and isinstance(book_theme, str):
         specs.append({
             "theme_code": "main-theme",

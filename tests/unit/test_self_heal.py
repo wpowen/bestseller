@@ -630,6 +630,7 @@ class _FakeArqPool:
         workflow_run_id: str,
         payload: dict[str, Any],
         _job_id: str,
+        _expires: Any = None,
     ) -> Any:
         self.enqueued.append(
             {
@@ -637,6 +638,7 @@ class _FakeArqPool:
                 "workflow_run_id": workflow_run_id,
                 "payload": payload,
                 "_job_id": _job_id,
+                "_expires": _expires,
             }
         )
         if _job_id in self.reject_job_ids:
@@ -664,6 +666,7 @@ async def test_requeue_autowrite_returns_job_id_on_success() -> None:
     assert len(pool.enqueued) == 1
     assert pool.enqueued[0]["_job_id"] == "autowrite:heal:book-z"
     assert pool.enqueued[0]["payload"] == {"project_slug": "book-z", "premise": None}
+    assert pool.enqueued[0]["_expires"].days >= 7
 
 
 @pytest.mark.asyncio

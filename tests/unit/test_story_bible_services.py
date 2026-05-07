@@ -131,6 +131,24 @@ def build_world_spec() -> dict[str, object]:
     }
 
 
+@pytest.mark.asyncio
+async def test_apply_book_spec_persists_theme_signature_fields() -> None:
+    project = build_project()
+    session = FakeSession()
+    book_spec = {
+        **build_book_spec(),
+        "theme_statement": "真正的力量来自承认自己的脆弱",
+        "dramatic_question": "沈砚能否在救人与揭露真相之间两全？",
+    }
+
+    await story_bible_services.apply_book_spec(session, project, book_spec)
+
+    assert project.theme_statement == "真正的力量来自承认自己的脆弱"
+    assert project.dramatic_question == "沈砚能否在救人与揭露真相之间两全？"
+    assert project.metadata_json["theme_statement"] == project.theme_statement
+    assert project.metadata_json["dramatic_question"] == project.dramatic_question
+
+
 def build_cast_spec() -> dict[str, object]:
     return {
         "protagonist": {
@@ -348,6 +366,66 @@ async def test_upsert_cast_spec_counts_voice_profiles_and_moral_frameworks() -> 
 
 
 @pytest.mark.asyncio
+async def test_upsert_cast_spec_persists_ip_anchor_and_personhood_payloads() -> None:
+    project = build_project()
+    session = FakeSession(scalar_results=[None, None, None])
+
+    cast = build_cast_spec()
+    cast["protagonist"]["ip_anchor"] = {
+        "quirks": ["左手关节断裂", "洁癖", "口头禅：这不对劲"],
+        "sensory_signatures": ["身上总有冷金属气味"],
+        "signature_objects": ["旧导航罗盘"],
+        "core_wound": "七岁目睹母亲被处决",
+    }
+    cast["protagonist"]["psych_profile"] = {
+        "mbti": "INTJ",
+        "big_five": {"openness": 80, "neuroticism": 65},
+        "enneagram": "5w4",
+        "attachment_style": "avoidant",
+    }
+    cast["protagonist"]["life_history"] = {
+        "formative_events": [{"age": 7, "title": "目睹母亲被处决"}],
+        "education": "帝国导航学院",
+    }
+    cast["protagonist"]["social_network"] = {
+        "family": [{"name": "沈晚", "bond": "妹妹"}],
+        "mentors": [{"name": "陆师", "bond": "授业恩师"}],
+    }
+    cast["protagonist"]["beliefs"] = {
+        "ideology": "真相高于秩序",
+        "philosophical_stance": "实用主义",
+    }
+    cast["protagonist"]["family_imprint"] = {
+        "parenting_style": "父亲严苛",
+        "inherited_values": ["守诺"],
+    }
+    cast["antagonist"]["villain_charisma"] = {
+        "noble_motivation": "维护航道秩序",
+        "pain_origin": "曾因混乱失去家人",
+        "personal_code": ["不亲手杀孩童"],
+        "protagonist_mirror": "同样相信记录能决定命运",
+    }
+
+    await story_bible_services.upsert_cast_spec(session, project, cast)
+
+    characters = [item for item in session.added if isinstance(item, CharacterModel)]
+    protagonist = next(item for item in characters if item.name == "沈砚")
+    antagonist = next(item for item in characters if item.name == "祁镇")
+
+    assert protagonist.quirks_json == ["左手关节断裂", "洁癖", "口头禅：这不对劲"]
+    assert protagonist.sensory_signatures_json == ["身上总有冷金属气味"]
+    assert protagonist.signature_objects_json == ["旧导航罗盘"]
+    assert protagonist.core_wound == "七岁目睹母亲被处决"
+    assert protagonist.metadata_json["ip_anchor"]["core_wound"] == "七岁目睹母亲被处决"
+    assert protagonist.metadata_json["psych_profile"]["mbti"] == "INTJ"
+    assert protagonist.metadata_json["life_history"]["education"] == "帝国导航学院"
+    assert protagonist.metadata_json["social_network"]["family"][0]["name"] == "沈晚"
+    assert protagonist.metadata_json["beliefs"]["ideology"] == "真相高于秩序"
+    assert protagonist.metadata_json["family_imprint"]["parenting_style"] == "父亲严苛"
+    assert antagonist.metadata_json["villain_charisma"]["noble_motivation"] == "维护航道秩序"
+
+
+@pytest.mark.asyncio
 async def test_upsert_cast_spec_alias_relationships_do_not_create_duplicate_characters() -> None:
     project = build_project()
     session = FakeSession(scalar_results=[None, None, None])
@@ -500,7 +578,14 @@ async def test_load_scene_story_bible_context_includes_roles_states_and_rules(
         role="protagonist",
         goal="找证据",
         knowledge_state_json={"knows": ["事故数据不对劲"]},
-        metadata_json={},
+        quirks_json=["左手关节断裂"],
+        sensory_signatures_json=["冷金属气味"],
+        signature_objects_json=["旧导航罗盘"],
+        core_wound="七岁目睹母亲被处决",
+        metadata_json={
+            "psych_profile": {"mbti": "INTJ"},
+            "beliefs": {"ideology": "真相高于秩序"},
+        },
     )
     gu = CharacterModel(
         id=story_bible_services.stable_character_id(project.id, "顾临"),
@@ -612,6 +697,10 @@ async def test_load_scene_story_bible_context_includes_roles_states_and_rules(
     assert context["next_expansion_gate"]["unlock_volume_number"] == 2
     assert context["world_rules"][0]["rule_code"] == "R001"
     assert context["participants"][0]["name"] == "沈砚"
+    assert context["participants"][0]["ip_anchor"]["core_wound"] == "七岁目睹母亲被处决"
+    assert context["participants"][0]["quirks"] == ["左手关节断裂"]
+    assert context["participants"][0]["psych_profile"]["mbti"] == "INTJ"
+    assert context["participants"][0]["beliefs"]["ideology"] == "真相高于秩序"
     assert context["relationships"][0]["relationship_type"] == "旧搭档"
 
 

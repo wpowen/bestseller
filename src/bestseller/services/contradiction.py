@@ -758,6 +758,122 @@ async def _check_resurrection(
     return violations, warnings
 
 
+async def _check_offstage_state_appearances(
+    session: AsyncSession,
+    project_id: UUID,
+    chapter_number: int,
+    scene_participants: list[str] | None,
+    language: str | None = None,
+    *,
+    scene: Any = None,
+) -> tuple[list[ContradictionViolation], list[ContradictionWarning]]:
+    """Flag participants whose lifecycle kind forbids present-tense
+    participation in this chapter.
+
+    Complementary to ``_check_resurrection``:
+
+    * ``_check_resurrection`` covers the canonical death case (the
+      character has *died* and should not act).
+    * This check covers the other offstage states — ``missing``,
+      ``sealed``, ``sleeping``, ``comatose`` — which are not deaths
+      but still forbid present-tense scene participation.
+
+    The lifecycle kind is read from ``metadata_json.lifecycle_status``
+    via :func:`character_lifecycle.effective_lifecycle_state`. A
+    character whose effective kind is ``deceased`` is left for the
+    older check so we keep evidence shapes / messages stable.
+
+    Like the resurrection check, this is exempted by flashback /
+    memorial / vision / dream / quoted-reference scenes — those modes
+    legitimately stage offstage characters as memory or symbol.
+    """
+    from bestseller.services.character_lifecycle import (
+        OFFSTAGE_KINDS,
+        appearance_rule_for,
+        effective_lifecycle_state,
+        scene_is_flashback_like,
+    )
+
+    violations: list[ContradictionViolation] = []
+    warnings: list[ContradictionWarning] = []
+
+    if not scene_participants:
+        return violations, warnings
+
+    if scene is not None and scene_is_flashback_like(scene):
+        return violations, warnings
+
+    _is_en = is_english_language(language)
+
+    for name in scene_participants:
+        character = await session.scalar(
+            select(CharacterModel).where(
+                CharacterModel.project_id == project_id,
+                CharacterModel.name == name,
+            )
+        )
+        if character is None:
+            continue
+
+        kind, payload = effective_lifecycle_state(
+            alive_status=getattr(character, "alive_status", None),
+            death_chapter_number=getattr(character, "death_chapter_number", None),
+            chapter_number=chapter_number,
+            character_metadata=getattr(character, "metadata_json", None),
+        )
+
+        # Deceased flows through ``_check_resurrection`` for stable
+        # evidence / message shape; here we only police the other
+        # offstage kinds.
+        if kind == "deceased" or kind not in OFFSTAGE_KINDS:
+            continue
+
+        rule = appearance_rule_for(kind)
+        if rule.can_act_in_present:
+            continue
+
+        since = payload.get("since_chapter")
+        scheduled_exit = payload.get("scheduled_exit_chapter")
+        kind_zh = {
+            "missing": "失踪",
+            "sealed": "被封印",
+            "sleeping": "沉睡",
+            "comatose": "昏迷",
+        }.get(kind, kind)
+
+        if _is_en:
+            msg = (
+                f"Character '{name}' is currently {kind} (since chapter "
+                f"{since or '?'}"
+                f"{f', release planned at chapter {scheduled_exit}' if scheduled_exit else ''})"
+                f" and cannot act in chapter {chapter_number}. "
+                "They may be referenced as a body / sealed form / vague "
+                "rumour, or surface in a flashback / vision scene, but "
+                "no present-tense action or new dialogue."
+            )
+        else:
+            msg = (
+                f"角色「{name}」当前处于「{kind_zh}」状态"
+                f"（自第{since or '?'}章起"
+                f"{f'，计划于第{scheduled_exit}章解除' if scheduled_exit else ''}），"
+                f"第{chapter_number}章不可发出当下动作或新对话。"
+                "可作为肉身/封印体/远闻被提及，"
+                "或在显式标注的回忆/幻象/梦境场景中出现。"
+            )
+        violations.append(
+            ContradictionViolation(
+                check_type=f"character_{kind}_appearance",
+                severity="error",
+                message=msg,
+                evidence=(
+                    f"kind={kind}; since={since}; scheduled_exit={scheduled_exit}"
+                ),
+            )
+        )
+
+    return violations, warnings
+
+
 async def _check_stance_flip(
     session: AsyncSession,
     project_id: UUID,
@@ -1183,7 +1299,7 @@ async def run_pre_scene_contradiction_checks(
             scene_number,
         )
 
-    # 7. Character resurrection
+    # 7. Character resurrection (deceased)
     try:
         resv, resw = await _check_resurrection(
             session, project_id, chapter_number, scene_participants,
@@ -1195,6 +1311,21 @@ async def run_pre_scene_contradiction_checks(
     except Exception:
         logger.exception(
             "character_resurrection 检查失败 (project=%s, ch=%d, sc=%d)",
+            project_id, chapter_number, scene_number,
+        )
+
+    # 7b. Other offstage states (missing / sealed / sleeping / comatose)
+    try:
+        offv, offw = await _check_offstage_state_appearances(
+            session, project_id, chapter_number, scene_participants,
+            language=language, scene=scene,
+        )
+        all_violations.extend(offv)
+        all_warnings.extend(offw)
+        checks_run += 1
+    except Exception:
+        logger.exception(
+            "character_offstage_state 检查失败 (project=%s, ch=%d, sc=%d)",
             project_id, chapter_number, scene_number,
         )
 
@@ -1388,6 +1519,46 @@ def _scan_premature_death_in_text(
             continue
         name_needles.append((raw, raw.casefold() if is_en else raw))
 
+    def _protected_death_window_is_exempt(evidence: str) -> bool:
+        """Exempt only explicit non-present-tense frames for protected deaths.
+
+        Generic memory words such as "记得" are not enough here: "他记得陆沉死前"
+        is still a premature post-mortem leak. Stronger frames like dreams,
+        visions, flash-forwards, and funeral recollection are allowed.
+        """
+
+        if not evidence:
+            return False
+        if is_en:
+            lowered = evidence.casefold()
+            return any(
+                marker in lowered
+                for marker in (
+                    "in a dream",
+                    "in a vision",
+                    "years later",
+                    "in the future",
+                    "at the funeral",
+                    "the funeral that day",
+                )
+            )
+        return any(
+            marker in evidence
+            for marker in (
+                "脑海中浮现",
+                "脑海里浮现",
+                "梦中",
+                "梦里",
+                "幻象",
+                "幻视",
+                "预见",
+                "预知",
+                "多年以后",
+                "未来",
+                "葬礼那天",
+            )
+        )
+
     def _all_name_positions() -> list[tuple[int, str]]:
         """All ``(position, canonical_name)`` pairs in the haystack."""
         positions: list[tuple[int, str]] = []
@@ -1434,6 +1605,8 @@ def _scan_premature_death_in_text(
         start = max(0, kw_idx - 30)
         end = min(len(chapter_md), kw_idx + 60)
         evidence = chapter_md[start:end].replace("\n", " ")
+        if _protected_death_window_is_exempt(evidence):
+            return
         findings.append((name_canonical, kind, evidence))
 
     def _scan_keywords(keywords: tuple[str, ...], kind: str) -> None:

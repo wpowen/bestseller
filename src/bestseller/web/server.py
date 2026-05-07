@@ -1696,7 +1696,7 @@ class WebTaskManager:
                             slug=project_slug,
                             title=title,
                             genre=str(genre),
-                            target_word_count=int(cfg_dict.get("target_chapters", 100)) * 5000,
+                            target_word_count=int(cfg_dict.get("target_chapters", 100)) * 2000,
                             target_chapters=int(cfg_dict.get("target_chapters", 100)),
                             project_type=ProjectType.INTERACTIVE,
                             writing_profile=wp_override,
@@ -2042,7 +2042,7 @@ async def _recover_projects_from_output(settings: AppSettings) -> list[dict[str,
                 title=title,
                 genre=genre,
                 sub_genre=None,
-                target_word_count=estimated_total or target_chapters * 5000,
+                target_word_count=estimated_total or target_chapters * 2000,
                 target_chapters=target_chapters,
                 status=recovered_status,
                 metadata_json={
@@ -2082,7 +2082,7 @@ async def _recover_projects_from_output(settings: AppSettings) -> list[dict[str,
                     information_withheld=[],
                     foreshadowing_actions={},
                     current_word_count=len(body),
-                    target_word_count=5000,
+                    target_word_count=2000,
                     status=ChapterStatus.COMPLETE.value,
                     metadata_json={"recovered": True, "source_file": ch_file.name},
                 ))
@@ -2311,8 +2311,33 @@ async def _load_project_listing_payload(
     settings: AppSettings,
     project_slug: str,
 ) -> dict[str, object]:
-    summary = await _load_project_summary_payload(settings, project_slug)
-    return dict(summary["listing_profile"])
+    async with session_scope(settings) as session:
+        project = await get_project_by_slug(session, project_slug)
+        if project is None:
+            raise ValueError(f"Project '{project_slug}' was not found.")
+        style_guide = await session.get(StyleGuideModel, project.id)
+        writing_profile = get_project_writing_profile(project, style_guide).model_dump(mode="json")
+        story_bible = await build_story_bible_overview(session, project_slug)
+    listing = build_book_listing_profile(
+        project=project,
+        writing_profile=writing_profile,
+        story_bible=story_bible,
+        output_base_dir=settings.output.base_dir,
+    )
+    return {
+        "listing_profile": listing,
+        "project": {
+            "slug": project.slug,
+            "title": project.title,
+            "genre": project.genre,
+            "sub_genre": project.sub_genre,
+            "audience": project.audience,
+            "status": project.status,
+            "target_word_count": project.target_word_count,
+            "target_chapters": project.target_chapters,
+            "tags": (project.metadata_json or {}).get("tags", []),
+        },
+    }
 
 
 async def _load_story_bible_payload(

@@ -182,6 +182,31 @@ async def get_workflow_run(
     return await session.get(WorkflowRunModel, workflow_run_id)
 
 
+async def get_latest_completed_workflow_run(
+    session: AsyncSession,
+    *,
+    project_id: UUID,
+    workflow_type: str,
+) -> WorkflowRunModel | None:
+    """Return the most recent completed workflow run of the given type, if any.
+
+    Used by resume paths to detect that a one-shot materialization step has
+    already finished successfully so it does not get re-run on every restart —
+    re-running L2-gated materializers is non-idempotent (the gate may now
+    reject content that was previously accepted) and stalls progress.
+    """
+    return await session.scalar(
+        select(WorkflowRunModel)
+        .where(
+            WorkflowRunModel.project_id == project_id,
+            WorkflowRunModel.workflow_type == workflow_type,
+            WorkflowRunModel.status == WorkflowStatus.COMPLETED.value,
+        )
+        .order_by(WorkflowRunModel.created_at.desc())
+        .limit(1)
+    )
+
+
 async def get_latest_planning_artifact(
     session: AsyncSession,
     *,
@@ -421,6 +446,36 @@ async def materialize_chapter_outline_batch(
                     },
                 )
                 step_order += 1
+
+            # ── Normalize chapter + scene target_word_count to config limits ──
+            # The planner LLM picks arbitrary per-scene word targets (1000,
+            # 1500, 956, …) that don't respect words_per_chapter.  Normalize
+            # them so the writer prompt receives a target that, when summed
+            # across all scenes, stays within the chapter length envelope.
+            _num_scenes = len(chapter_outline.scenes)
+            if _num_scenes > 0:
+                # Hard limits from config — inline to avoid import dependency
+                _CHAPTER_WORD_MIN = 1800
+                _CHAPTER_WORD_MAX = 3000
+                _CHAPTER_WORD_TARGET = 2200
+                _SCENE_WORD_MIN = 500
+                _SCENE_WORD_MAX = 800
+
+                # 1. Normalize chapter target to config range
+                _raw_ch = int(chapter.target_word_count or 0)
+                if _raw_ch < _CHAPTER_WORD_MIN or _raw_ch > _CHAPTER_WORD_MAX:
+                    chapter.target_word_count = _CHAPTER_WORD_TARGET
+
+                # 2. Normalize per-scene targets so sum ≈ chapter target
+                _ch_target = max(1, int(chapter.target_word_count or _CHAPTER_WORD_TARGET))
+                _per_scene = max(_SCENE_WORD_MIN, min(_SCENE_WORD_MAX, _ch_target // _num_scenes))
+
+                for _sc in list(await session.scalars(
+                    select(SceneCardModel).where(
+                        SceneCardModel.chapter_id == chapter.id,
+                    ).order_by(SceneCardModel.scene_number)
+                )):
+                    _sc.target_word_count = _per_scene
 
             if prune_missing_planned:
                 for existing_scene in existing_scenes:

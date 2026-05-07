@@ -4019,6 +4019,7 @@ async def rewrite_chapter_from_task(
         "rewritten_chapter_draft_id": str(new_draft.id),
         "generation_mode": generation_mode,
     }
+    chapter.current_word_count = word_count
     chapter.status = ChapterStatus.REVIEW.value
     return new_draft, rewrite_task
 

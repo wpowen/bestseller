@@ -214,7 +214,7 @@ async def build_project_structure(
                     chapter_goal=chapter.chapter_goal,
                     status=ChapterStatus(chapter.status),
                     target_word_count=chapter.target_word_count,
-                    current_word_count=chapter.current_word_count,
+                    current_word_count=chapter_draft.word_count if chapter_draft is not None else chapter.current_word_count,
                     current_draft_version_no=chapter_draft.version_no if chapter_draft is not None else None,
                     scenes=scene_views,
                 )

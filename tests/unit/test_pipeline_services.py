@@ -2172,3 +2172,94 @@ async def test_run_autowrite_pipeline_reroutes_large_target_to_progressive(
     assert result is sentinel
     assert captured["called"] is True
     assert captured["target_chapters"] == pipeline_services.PROGRESSIVE_CHAPTER_THRESHOLD + 1
+
+
+@pytest.mark.asyncio
+async def test_progressive_autowrite_skips_bible_materialization_on_resume(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When a project already has a completed `materialize_story_bible` workflow
+    run AND resume is enabled, the resume path must NOT re-run materialization.
+
+    Regression guard for a stall observed on `exorcist-detective-1778051012`
+    (chapter 9 of "青囊不语问阴阳"): the worker self-heal kept entering the
+    progressive pipeline, hit `materialize_latest_story_bible`, the L2 bible
+    completeness gate raised on stricter rules added after foundation, and the
+    job retried forever — chapter 9 never resumed.
+    """
+    project = build_project()
+    settings = build_settings()
+    settings.pipeline.resume_enabled = True
+
+    completed_bible_run = WorkflowRunModel(
+        project_id=project.id,
+        workflow_type=pipeline_services.WORKFLOW_TYPE_MATERIALIZE_STORY_BIBLE,
+        status="completed",
+    )
+    completed_bible_run.id = uuid4()
+
+    existing_volume_plan = type(
+        "PlanningArtifactStub",
+        (),
+        {"source_run_id": uuid4(), "content": []},
+    )()
+
+    async def fake_get_project_by_slug(session, slug: str):
+        return project
+
+    async def fake_get_latest_planning_artifact(session, *, project_id, artifact_type):
+        if artifact_type == pipeline_services.ArtifactType.VOLUME_PLAN:
+            return existing_volume_plan
+        return None
+
+    async def fake_get_latest_completed_workflow_run(session, *, project_id, workflow_type):
+        assert project_id == project.id
+        assert workflow_type == pipeline_services.WORKFLOW_TYPE_MATERIALIZE_STORY_BIBLE
+        return completed_bible_run
+
+    async def fake_materialize_latest_story_bible(*args, **kwargs):
+        raise AssertionError(
+            "materialize_latest_story_bible must be skipped on resume when a "
+            "completed run already exists"
+        )
+
+    async def fake_checkpoint_commit(session) -> None:
+        return None
+
+    monkeypatch.setattr(pipeline_services, "get_project_by_slug", fake_get_project_by_slug)
+    monkeypatch.setattr(
+        pipeline_services, "get_latest_planning_artifact", fake_get_latest_planning_artifact
+    )
+    monkeypatch.setattr(
+        pipeline_services,
+        "get_latest_completed_workflow_run",
+        fake_get_latest_completed_workflow_run,
+    )
+    monkeypatch.setattr(
+        pipeline_services,
+        "materialize_latest_story_bible",
+        fake_materialize_latest_story_bible,
+    )
+    monkeypatch.setattr(pipeline_services, "_checkpoint_commit", fake_checkpoint_commit)
+
+    progress_events: list[str] = []
+
+    def fake_progress(stage: str, payload: dict[str, object] | None = None) -> None:
+        progress_events.append(stage)
+
+    payload = pipeline_services.ProjectCreate(
+        slug=project.slug, title=project.title, genre=project.genre,
+        target_word_count=project.target_word_count, target_chapters=project.target_chapters,
+    )
+
+    # Empty volume plan exits the per-volume loop after the bible-resume decision,
+    # so the pipeline returns cleanly. Any call to the bible materializer would
+    # have raised AssertionError above.
+    await pipeline_services.run_progressive_autowrite_pipeline(
+        FakeSession(), settings,
+        project_payload=payload, premise="...", progress=fake_progress,
+    )
+
+    assert "foundation_planning_skipped_resume" in progress_events
+    assert "story_bible_materialization_skipped_resume" in progress_events
+    assert "story_bible_materialization_started" not in progress_events

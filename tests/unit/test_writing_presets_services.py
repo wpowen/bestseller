@@ -12,7 +12,7 @@ pytestmark = pytest.mark.unit
 def test_writing_preset_catalog_contains_rich_platform_genre_and_length_presets() -> None:
     catalog = preset_services.load_writing_preset_catalog()
 
-    assert catalog.chapter_word_policy.min == 5000
+    assert catalog.chapter_word_policy.min == 1800
     assert len(catalog.platform_presets) >= 7
     assert len(catalog.genre_presets) >= 27
     assert len(catalog.length_presets) >= 9
@@ -27,17 +27,17 @@ def test_infer_genre_preset_matches_apocalypse_supply_chain_keywords() -> None:
 
 
 def test_validate_longform_scope_rejects_total_word_count_below_minimum() -> None:
-    with pytest.raises(ValueError, match="低于最低要求 5000 字"):
-        preset_services.validate_longform_scope(4999, 1)
+    with pytest.raises(ValueError, match="低于最低要求 1800 字"):
+        preset_services.validate_longform_scope(1799, 1)
 
 
 def test_validate_longform_scope_accepts_total_at_minimum() -> None:
-    preset_services.validate_longform_scope(5000, 1)
+    preset_services.validate_longform_scope(1800, 1)
 
 
 def test_validate_longform_scope_rejects_average_chapter_word_count_below_floor() -> None:
-    with pytest.raises(ValueError, match="每章最低 5000 字"):
-        preset_services.validate_longform_scope(12000, 4)
+    with pytest.raises(ValueError, match="每章最低 1800 字"):
+        preset_services.validate_longform_scope(4000, 4)
 
 
 def test_resolve_writing_profile_keeps_genre_presets_framework_level_only() -> None:

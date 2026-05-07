@@ -6,13 +6,18 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 
-MINIMUM_NOVEL_WORD_COUNT: int = 5000
+MINIMUM_NOVEL_WORD_COUNT: int = 1800
 
 
 class ChapterWordPolicy(BaseModel):
-    min: int = Field(default=5000, ge=1000)
-    target: int = Field(default=5000, ge=1000)
-    max: int = Field(default=5500, ge=1000)
+    # Chapter envelope locked to 1800-3000 chars (target 2200) — see
+    # ``config/default.yaml::generation.words_per_chapter`` and
+    # ``services/invariants.py::_derive_length_envelope``. Keep all three
+    # in sync; the L4 length-stability gate reads from the project
+    # invariants which fall back to these defaults.
+    min: int = Field(default=1800, ge=500)
+    target: int = Field(default=2200, ge=500)
+    max: int = Field(default=3000, ge=500)
 
 
 class PlatformPreset(BaseModel):
@@ -284,7 +289,7 @@ _PLATFORM_PRESETS: list[dict[str, Any]] = [
                 "dialogue_ratio": 0.40,
             },
             "serialization": {
-                "opening_mandate": "Chapter 1 must establish protagonist voice, core conflict, and the genre's central hook within the first 2000 words.",
+                "opening_mandate": "Chapter 1 must establish protagonist voice, core conflict, and the genre's central hook within the first 1800 words.",
                 "first_three_chapter_goal": "Chapters 1-3 deliver the inciting incident, establish stakes, and lock the reader into the central tension.",
                 "chapter_ending_rule": "Every chapter ends with a cliffhanger, revelation, or unresolved tension that compels the next click.",
                 "free_chapter_strategy": "KU Look Inside (~10%) must showcase voice, hook, and genre promise. No slow world-building preambles.",
@@ -302,7 +307,7 @@ _PLATFORM_PRESETS: list[dict[str, Any]] = [
                 "platform_target": "Royal Road",
                 "content_mode": "English web serial (community-driven)",
                 "reader_promise": "Clear progression system, satisfying power growth, and consistent world rules. Readers expect regular updates and meaningful stat/level advancement.",
-                "hook_deadline_words": 2000,
+                "hook_deadline_words": 1800,
                 "payoff_rhythm": "Stat-up or power reveal every 2-3 chapters, major arc payoff every 15-25 chapters",
                 "update_strategy": "Regular serial updates (2-5 chapters per week)",
             },
@@ -340,7 +345,7 @@ _PLATFORM_PRESETS: list[dict[str, Any]] = [
                 "dialogue_ratio": 0.50,
             },
             "serialization": {
-                "opening_mandate": "First paragraph must establish voice and emotional stakes. Short chapters (1500-2500 words) optimized for mobile reading.",
+                "opening_mandate": "First paragraph must establish voice and emotional stakes. Short chapters (1800-3000 chars) optimized for mobile reading.",
                 "chapter_ending_rule": "End on an emotional high, a question, or a dramatic reveal. Readers vote and comment — give them reasons to.",
             },
         },
@@ -2960,7 +2965,7 @@ def _normalize_text(value: str | None) -> str:
 @lru_cache(maxsize=1)
 def load_writing_preset_catalog() -> WritingPresetCatalog:
     return WritingPresetCatalog(
-        chapter_word_policy=ChapterWordPolicy(min=5000, target=5000, max=5500),
+        chapter_word_policy=ChapterWordPolicy(min=1800, target=2200, max=3000),
         platform_presets=[PlatformPreset.model_validate(item) for item in _PLATFORM_PRESETS],
         genre_presets=[GenrePreset.model_validate(item) for item in _GENRE_PRESETS],
         length_presets=[LengthPreset.model_validate(item) for item in _LENGTH_PRESETS],

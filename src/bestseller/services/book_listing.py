@@ -5,8 +5,12 @@ import json
 from pathlib import Path
 from typing import Any
 
-LISTING_SCHEMA_VERSION = "1.0"
+LISTING_SCHEMA_VERSION = "1.1"
 REQUIRED_TITLE_CANDIDATE_COUNT = 20
+
+
+def _is_english(language: str) -> bool:
+    return (language or "").lower().startswith("en")
 
 
 def _get_value(source: Any, key: str, default: Any = None) -> Any:
@@ -124,16 +128,29 @@ def load_book_listing_file_overrides(
     return overrides
 
 
-def _category_suggestions(primary: str, secondary: str, platform: str) -> dict[str, list[str]]:
-    general = _dedupe_strings(
-        [
-            primary,
-            secondary,
-            f"{primary}脑洞" if primary else "",
-            f"{primary}爽文" if primary else "",
-            f"{secondary}长篇" if secondary else "",
-        ]
-    )
+def _category_suggestions(
+    primary: str, secondary: str, platform: str, *, language: str = ""
+) -> dict[str, list[str]]:
+    if _is_english(language):
+        general = _dedupe_strings(
+            [
+                primary,
+                secondary,
+                f"{primary} Fiction" if primary else "",
+                f"{primary} Adventure" if primary else "",
+                f"{secondary} Series" if secondary else "",
+            ]
+        )
+    else:
+        general = _dedupe_strings(
+            [
+                primary,
+                secondary,
+                f"{primary}脑洞" if primary else "",
+                f"{primary}爽文" if primary else "",
+                f"{secondary}长篇" if secondary else "",
+            ]
+        )
     target = _dedupe_strings(
         [
             f"{platform}/{primary}" if platform and primary else "",
@@ -144,37 +161,65 @@ def _category_suggestions(primary: str, secondary: str, platform: str) -> dict[s
 
 
 def _fallback_title_candidates(profile: dict[str, Any]) -> list[dict[str, Any]]:
-    title = _clean_text(profile.get("primary_title")) or "未命名作品"
+    language = _clean_text(profile.get("language"))
+    is_en = _is_english(language)
+
+    title = _clean_text(profile.get("primary_title")) or ("Untitled" if is_en else "未命名作品")
     subtitle = _clean_text(profile.get("recommended_subtitle"))
-    primary = _clean_text(profile.get("primary_category")) or "类型"
+    primary = _clean_text(profile.get("primary_category")) or ("Genre" if is_en else "类型")
     secondary = _clean_text(profile.get("secondary_category")) or primary
     tags = _string_list(profile.get("tags"))
     hook = tags[0] if tags else secondary
     promise = _clean_text(profile.get("logline") or profile.get("short_intro"))
-    short_promise = promise[:26] if promise else f"{hook}开局，强冲突推进"
 
-    specs = [
-        (title, subtitle, "当前主书名", "主推"),
-        (f"{title}：{hook}", short_promise, "强化类型入口", "平台测试"),
-        (f"{hook}之书", subtitle, "突出核心卖点", "备选"),
-        (f"{primary}档案", short_promise, "类型识别明确", "备选"),
-        (f"{secondary}异闻录", subtitle, "系列化空间强", "备选"),
-        (f"我在{primary}里破局", short_promise, "爽文表达直接", "下沉测试"),
-        (f"{title}前传", subtitle, "适合番外/卷名", "卷名"),
-        (f"{hook}账本", short_promise, "悬念与因果感", "备选"),
-        (f"{primary}第一案", subtitle, "单元案入口", "卷名"),
-        (f"{secondary}生死局", short_promise, "危机感强", "广告测试"),
-        (f"开局撞见{hook}", subtitle, "开篇事件感", "广告测试"),
-        (f"{hook}规则", short_promise, "规则钩子", "备选"),
-        (f"{primary}秘卷", subtitle, "神秘感强", "备选"),
-        (f"{secondary}追凶", short_promise, "行动目标明确", "备选"),
-        (f"{title}录", subtitle, "传统系列感", "备选"),
-        (f"{hook}不眠夜", short_promise, "氛围与危机", "卷名"),
-        (f"{primary}回执", subtitle, "结果与代价感", "备选"),
-        (f"{secondary}开局", short_promise, "强开场", "广告测试"),
-        (f"{hook}名单", subtitle, "名单悬念", "备选"),
-        (f"{title}：终局前夜", short_promise, "阶段高潮", "卷名"),
-    ]
+    if is_en:
+        short_promise = promise[:40] if promise else f"{hook} — high-conflict opening"
+        specs = [
+            (title, subtitle, "Current main title / 当前主书名", "Primary / 主推"),
+            (f"{title}: {hook}", short_promise, "Genre-hook title / 强化类型入口", "Platform test / 平台测试"),
+            (f"The {hook} Files", subtitle, "Core appeal highlight / 突出核心卖点", "Alt / 备选"),
+            (f"{primary} Chronicles", short_promise, "Clear genre signal / 类型识别明确", "Alt / 备选"),
+            (f"{secondary} Diaries", subtitle, "Series potential / 系列化空间强", "Alt / 备选"),
+            (f"Breaking {primary}", short_promise, "Power-fantasy direct / 爽文表达直接", "Ad test / 广告测试"),
+            (f"{title}: Origins", subtitle, "Prequel/arc name / 适合番外/卷名", "Arc name / 卷名"),
+            (f"The {hook} Ledger", short_promise, "Suspense & consequence / 悬念与因果感", "Alt / 备选"),
+            (f"{primary}: Case One", subtitle, "Case entry / 单元案入口", "Arc name / 卷名"),
+            (f"{secondary} Endgame", short_promise, "High stakes / 危机感强", "Ad test / 广告测试"),
+            (f"When I Met the {hook}", subtitle, "Opening incident / 开篇事件感", "Ad test / 广告测试"),
+            (f"Rules of {hook}", short_promise, "Rule hook / 规则钩子", "Alt / 备选"),
+            (f"The {primary} Codex", subtitle, "Mystery appeal / 神秘感强", "Alt / 备选"),
+            (f"{secondary}: The Hunt", short_promise, "Clear objective / 行动目标明确", "Alt / 备选"),
+            (f"The {title} Records", subtitle, "Classic series / 传统系列感", "Alt / 备选"),
+            (f"{hook}: Sleepless Night", short_promise, "Atmosphere & crisis / 氛围与危机", "Arc name / 卷名"),
+            (f"The {primary} Receipt", subtitle, "Cost & consequence / 结果与代价感", "Alt / 备选"),
+            (f"{secondary}: Day One", short_promise, "Strong opener / 强开场", "Ad test / 广告测试"),
+            (f"The {hook} List", subtitle, "List suspense / 名单悬念", "Alt / 备选"),
+            (f"{title}: Eve of the Finale", short_promise, "Climax arc / 阶段高潮", "Arc name / 卷名"),
+        ]
+    else:
+        short_promise = promise[:26] if promise else f"{hook}开局，强冲突推进"
+        specs = [
+            (title, subtitle, "当前主书名", "主推"),
+            (f"{title}：{hook}", short_promise, "强化类型入口", "平台测试"),
+            (f"{hook}之书", subtitle, "突出核心卖点", "备选"),
+            (f"{primary}档案", short_promise, "类型识别明确", "备选"),
+            (f"{secondary}异闻录", subtitle, "系列化空间强", "备选"),
+            (f"我在{primary}里破局", short_promise, "爽文表达直接", "下沉测试"),
+            (f"{title}前传", subtitle, "适合番外/卷名", "卷名"),
+            (f"{hook}账本", short_promise, "悬念与因果感", "备选"),
+            (f"{primary}第一案", subtitle, "单元案入口", "卷名"),
+            (f"{secondary}生死局", short_promise, "危机感强", "广告测试"),
+            (f"开局撞见{hook}", subtitle, "开篇事件感", "广告测试"),
+            (f"{hook}规则", short_promise, "规则钩子", "备选"),
+            (f"{primary}秘卷", subtitle, "神秘感强", "备选"),
+            (f"{secondary}追凶", short_promise, "行动目标明确", "备选"),
+            (f"{title}录", subtitle, "传统系列感", "备选"),
+            (f"{hook}不眠夜", short_promise, "氛围与危机", "卷名"),
+            (f"{primary}回执", subtitle, "结果与代价感", "备选"),
+            (f"{secondary}开局", short_promise, "强开场", "广告测试"),
+            (f"{hook}名单", subtitle, "名单悬念", "备选"),
+            (f"{title}：终局前夜", short_promise, "阶段高潮", "卷名"),
+        ]
 
     seen: set[str] = set()
     rows: list[dict[str, Any]] = []
@@ -193,20 +238,26 @@ def _fallback_title_candidates(profile: dict[str, Any]) -> list[dict[str, Any]]:
             }
         )
 
+    filler_label = "Auto-fill candidate / 自动补足候选" if is_en else "自动补足候选"
+    filler_rec = "Alt / 备选" if is_en else "备选"
     while len(rows) < REQUIRED_TITLE_CANDIDATE_COUNT:
+        suffix = f"Candidate {len(rows) + 1}" if is_en else f"候选{len(rows) + 1}"
         rows.append(
             {
                 "id": len(rows) + 1,
-                "title": f"{title}·候选{len(rows) + 1}",
+                "title": f"{title} · {suffix}",
                 "subtitle": short_promise,
-                "angle": "自动补足候选",
-                "recommendation": "备选",
+                "angle": filler_label,
+                "recommendation": filler_rec,
             }
         )
     return rows[:REQUIRED_TITLE_CANDIDATE_COUNT]
 
 
-def _derive_characters(story_bible: Any, writing_profile: Any) -> list[dict[str, Any]]:
+def _derive_characters(
+    story_bible: Any, writing_profile: Any, *, language: str = ""
+) -> list[dict[str, Any]]:
+    is_en = _is_english(language)
     characters = [_character_dict(item) for item in _get_value(story_bible, "characters", []) or []]
     characters = [item for item in characters if item["name"]]
     if characters:
@@ -223,7 +274,8 @@ def _derive_characters(story_bible: Any, writing_profile: Any) -> list[dict[str,
         normalized: list[dict[str, Any]] = []
         for item in protagonists:
             item = dict(item)
-            item["role"] = "主角" if item["role"] == "protagonist" else item["role"]
+            if item["role"] == "protagonist":
+                item["role"] = "Protagonist / 主角" if is_en else "主角"
             normalized.append(item)
         normalized.extend(supporting)
         return normalized[:12]
@@ -233,12 +285,13 @@ def _derive_characters(story_bible: Any, writing_profile: Any) -> list[dict[str,
     golden_finger = _clean_text(_get_nested(writing_profile, "character", "golden_finger"))
     if not (protagonist or drive or golden_finger):
         return []
+    sep = "; " if is_en else "；"
     return [
         {
-            "name": "主角设定",
-            "role": "主角",
+            "name": "Protagonist Profile / 主角设定" if is_en else "主角设定",
+            "role": "Protagonist / 主角" if is_en else "主角",
             "identity": protagonist,
-            "appeal": "；".join(_dedupe_strings([drive, golden_finger])),
+            "appeal": sep.join(_dedupe_strings([drive, golden_finger])),
             "goal": drive,
             "arc_state": "",
             "is_pov_character": True,
@@ -247,55 +300,91 @@ def _derive_characters(story_bible: Any, writing_profile: Any) -> list[dict[str,
 
 
 def validate_book_listing_profile(profile: dict[str, Any]) -> dict[str, Any]:
+    is_en = _is_english(_clean_text(profile.get("language")))
     checks = [
         {
             "code": "title_candidates",
-            "label": "书名候选",
+            "label": "Title Candidates / 书名候选" if is_en else "书名候选",
             "severity": "blocker",
             "passed": len(profile.get("title_candidates") or []) >= REQUIRED_TITLE_CANDIDATE_COUNT,
-            "message": f"至少需要 {REQUIRED_TITLE_CANDIDATE_COUNT} 个可测试书名/数据名。",
+            "message": (
+                f"At least {REQUIRED_TITLE_CANDIDATE_COUNT} testable title candidates required.\n"
+                f"至少需要 {REQUIRED_TITLE_CANDIDATE_COUNT} 个可测试书名/数据名。"
+                if is_en
+                else f"至少需要 {REQUIRED_TITLE_CANDIDATE_COUNT} 个可测试书名/数据名。"
+            ),
         },
         {
             "code": "categories",
-            "label": "分类信息",
+            "label": "Categories / 分类信息" if is_en else "分类信息",
             "severity": "blocker",
             "passed": bool(profile.get("primary_category") and profile.get("secondary_category")),
-            "message": "必须具备主分类和二级分类，才能稳定上架与推荐。",
+            "message": (
+                "Primary and secondary categories are required for stable shelving and recommendations.\n"
+                "必须具备主分类和二级分类，才能稳定上架与推荐。"
+                if is_en
+                else "必须具备主分类和二级分类，才能稳定上架与推荐。"
+            ),
         },
         {
             "code": "intro",
-            "label": "简介",
+            "label": "Synopsis / 简介" if is_en else "简介",
             "severity": "blocker",
             "passed": len(_clean_text(profile.get("short_intro"))) >= 40,
-            "message": "短简介需要足够明确地说明主角、冲突、卖点和追读钩子。",
+            "message": (
+                "The short intro must clearly convey protagonist, conflict, appeal, and reading hook.\n"
+                "短简介需要足够明确地说明主角、冲突、卖点和追读钩子。"
+                if is_en
+                else "短简介需要足够明确地说明主角、冲突、卖点和追读钩子。"
+            ),
         },
         {
             "code": "promo_copy",
-            "label": "宣传文案",
+            "label": "Promo Copy / 宣传文案" if is_en else "宣传文案",
             "severity": "warning",
             "passed": len(profile.get("promo_copy") or []) >= 3,
-            "message": "建议至少准备 3 条用于推荐位、广告和站内露出的宣传文案。",
+            "message": (
+                "Recommend at least 3 promo copies for recommendation slots, ads, and on-site exposure.\n"
+                "建议至少准备 3 条用于推荐位、广告和站内露出的宣传文案。"
+                if is_en
+                else "建议至少准备 3 条用于推荐位、广告和站内露出的宣传文案。"
+            ),
         },
         {
             "code": "characters",
-            "label": "角色信息",
+            "label": "Characters / 角色信息" if is_en else "角色信息",
             "severity": "warning",
             "passed": len(profile.get("main_characters") or []) >= 1,
-            "message": "至少需要一个主角或核心角色档案。",
+            "message": (
+                "At least one protagonist or core character profile is needed.\n"
+                "至少需要一个主角或核心角色档案。"
+                if is_en
+                else "至少需要一个主角或核心角色档案。"
+            ),
         },
         {
             "code": "tags",
-            "label": "标签",
+            "label": "Tags / 标签" if is_en else "标签",
             "severity": "warning",
             "passed": len(profile.get("tags") or []) >= 5,
-            "message": "建议至少 5 个可供分发和推荐使用的标签。",
+            "message": (
+                "Recommend at least 5 tags for distribution and recommendations.\n"
+                "建议至少 5 个可供分发和推荐使用的标签。"
+                if is_en
+                else "建议至少 5 个可供分发和推荐使用的标签。"
+            ),
         },
         {
             "code": "reader_promise",
-            "label": "读者承诺",
+            "label": "Reader Promise / 读者承诺" if is_en else "读者承诺",
             "severity": "warning",
             "passed": len(profile.get("reader_promise") or []) >= 2,
-            "message": "建议明确列出读者能持续获得什么爽感和吸引力。",
+            "message": (
+                "List what readers consistently gain — what thrill and appeal keeps them reading.\n"
+                "建议明确列出读者能持续获得什么爽感和吸引力。"
+                if is_en
+                else "建议明确列出读者能持续获得什么爽感和吸引力。"
+            ),
         },
     ]
     blocker_count = sum(
@@ -340,8 +429,14 @@ def build_book_listing_profile(
     )
     overrides = {**file_overrides, **metadata_overrides}
 
-    project_title = _clean_text(_get_value(project, "title")) or "未命名作品"
-    platform = _clean_text(_get_nested(writing_profile, "market", "platform_target")) or "全平台"
+    project_language = (
+        _clean_text(_get_value(project, "language")) or "zh-CN"
+    )
+    is_en = _is_english(project_language)
+    project_title = _clean_text(_get_value(project, "title")) or ("Untitled" if is_en else "未命名作品")
+    platform = _clean_text(_get_nested(writing_profile, "market", "platform_target")) or (
+        "All Platforms" if is_en else "全平台"
+    )
     override_tags = _string_list(overrides.get("tags"))
     if override_tags:
         tags = override_tags
@@ -369,26 +464,58 @@ def build_book_listing_profile(
         or _clean_text(metadata.get("premise"))
         or _clean_text(_get_nested(writing_profile, "market", "reader_promise"))
     )
-    short_intro = (
-        _clean_text(overrides.get("short_intro"))
-        or _clean_text(metadata.get("synopsis"))
-        or (
-            f"《{project_title}》是一部{primary_category}长篇连载。{logline}"
-            f"主角必须在危机升级前持续破局，把每一章都推向新的冲突和追读钩子。"
-            if logline
-            else ""
+    if is_en:
+        short_intro = (
+            _clean_text(overrides.get("short_intro"))
+            or _clean_text(metadata.get("synopsis"))
+            or (
+                f'"{project_title}" is a serialized {primary_category} novel. {logline} '
+                f"The protagonist must keep breaking through before the crisis escalates, "
+                f"driving every chapter toward new conflict and page-turning hooks.\n"
+                f"《{project_title}》是一部{primary_category}长篇连载。{logline}"
+                f"主角必须在危机升级前持续破局，把每一章都推向新的冲突和追读钩子。"
+                if logline
+                else ""
+            )
         )
-    )
+    else:
+        short_intro = (
+            _clean_text(overrides.get("short_intro"))
+            or _clean_text(metadata.get("synopsis"))
+            or (
+                f"《{project_title}》是一部{primary_category}长篇连载。{logline}"
+                f"主角必须在危机升级前持续破局，把每一章都推向新的冲突和追读钩子。"
+                if logline
+                else ""
+            )
+        )
     promo_copy = _string_list(overrides.get("promo_copy"))
     if not promo_copy:
         core_hook = tags[0] if tags else primary_category
-        promo_copy = _dedupe_strings(
-            [
-                logline,
-                f"不是所有{primary_category}都靠设定取胜，这本书靠主角选择和危机反压追着读者往下看。",
-                f"开局就给冲突，章节尾持续留钩，核心爽点围绕{core_hook}不断升级。",
-            ]
-        )
+        if is_en:
+            promo_copy = _dedupe_strings(
+                [
+                    logline,
+                    (
+                        f"Not every {primary_category} novel wins on worldbuilding alone — "
+                        f"this one hooks you through protagonist choices and relentless pressure.\n"
+                        f"不是所有{primary_category}都靠设定取胜，这本书靠主角选择和危机反压追着读者往下看。"
+                    ),
+                    (
+                        f"Conflict from the first page, cliffhangers at every chapter end, "
+                        f"core appeal escalating around {core_hook}.\n"
+                        f"开局就给冲突，章节尾持续留钩，核心爽点围绕{core_hook}不断升级。"
+                    ),
+                ]
+            )
+        else:
+            promo_copy = _dedupe_strings(
+                [
+                    logline,
+                    f"不是所有{primary_category}都靠设定取胜，这本书靠主角选择和危机反压追着读者往下看。",
+                    f"开局就给冲突，章节尾持续留钩，核心爽点围绕{core_hook}不断升级。",
+                ]
+            )
 
     reader_promise = _string_list(overrides.get("reader_promise"))
     if not reader_promise:
@@ -408,7 +535,9 @@ def build_book_listing_profile(
         "channel": (
             _clean_text(overrides.get("channel")) or _clean_text(_get_value(project, "audience"))
         ),
-        "length_type": _clean_text(overrides.get("length_type")) or "长篇连载",
+        "length_type": _clean_text(overrides.get("length_type")) or (
+            "Serialized Novel / 长篇连载" if is_en else "长篇连载"
+        ),
         "serialization_status": _clean_text(overrides.get("serialization_status"))
         or _clean_text(_get_value(project, "status")),
         "language": (
@@ -418,7 +547,7 @@ def build_book_listing_profile(
         "secondary_category": secondary_category,
         "tertiary_categories": _string_list(overrides.get("tertiary_categories")) or tags[:4],
         "platform_category_suggestions": overrides.get("platform_category_suggestions")
-        or _category_suggestions(primary_category, secondary_category, platform),
+        or _category_suggestions(primary_category, secondary_category, platform, language=project_language),
         "tags": tags,
         "short_intro": short_intro,
         "long_intro": _clean_text(overrides.get("long_intro")),
@@ -426,7 +555,7 @@ def build_book_listing_profile(
         "main_characters": (
             [_character_dict(item) for item in overrides.get("main_characters", [])]
             if isinstance(overrides.get("main_characters"), list)
-            else _derive_characters(story_bible, writing_profile)
+            else _derive_characters(story_bible, writing_profile, language=project_language)
         ),
         "reader_promise": reader_promise,
         "not_recommended_categories": _string_list(overrides.get("not_recommended_categories")),

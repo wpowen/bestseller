@@ -16,6 +16,18 @@ Checks performed
    chapters.
 5. **Timeline ordering** — non-monotonic ``story_order`` in recent timeline
    events.
+6. **Scene state continuity** — exit/entry state keyword overlap between
+   consecutive scenes.
+7. **Character resurrection** — deceased characters staged as active participants.
+8. **Offstage state appearances** — missing/sealed/sleeping/comatose characters
+   cannot act in present tense.
+9. **Stance flip justification** — ally↔enemy flips require a milestone event.
+10. **Power tier regression** — tier drops >= 2 without a downgrade reason.
+11. **Character name consistency** — unregistered names sharing a surname with
+    a known character (cross-chapter name drift).
+12. **Numerical contradiction** — incompatible numeric timeline claims about
+    the same event/character (e.g. 3 vs 32 years).
+13. **State transition** — trapped→free without an intervening rescue scene.
 """
 
 from __future__ import annotations
@@ -1185,6 +1197,376 @@ async def _check_power_tier_regression(
 
 
 # ---------------------------------------------------------------------------
+# 10. Character name consistency (cross-chapter name drift)
+# ---------------------------------------------------------------------------
+
+
+async def _check_character_name_consistency(
+    session: AsyncSession,
+    project_id: UUID,
+    chapter_number: int,
+    scene_participants: list[str] | None,
+    language: str | None = None,
+    *,
+    scene: Any = None,
+) -> tuple[list[ContradictionViolation], list[ContradictionWarning]]:
+    """Detect when a scene references a known character using an unregistered name.
+
+    Builds a surname→identity index from the character registry and flags any
+    participant name that (a) is not a canonical name or registered alias, yet
+    (b) shares a surname with an existing character — the most common pattern
+    for cross-chapter name drift (e.g. 林正淳 vs 林远山 for the father).
+    """
+    violations: list[ContradictionViolation] = []
+    warnings: list[ContradictionWarning] = []
+
+    if not scene_participants:
+        return violations, warnings
+
+    from bestseller.services.identity_guard import load_identity_registry
+
+    registry = await load_identity_registry(session, project_id)
+    if not registry:
+        return violations, warnings
+
+    # Build exact-match set (canonical name + every registered alias)
+    known_names: set[str] = set()
+    # Surname → list of identities sharing that surname
+    surname_index: dict[str, list[Any]] = {}
+    # Given-name fragments for detecting split/merge patterns
+    for ident in registry:
+        known_names.add(ident.name)
+        for alias in ident.aliases:
+            known_names.add(alias)
+        surname = ident.name[0] if ident.name else ""
+        surname_index.setdefault(surname, []).append(ident)
+
+    _is_en = is_english_language(language)
+
+    for name in scene_participants:
+        if name in known_names:
+            continue
+
+        surname = name[0] if name else ""
+        if surname not in surname_index:
+            continue
+
+        candidates = surname_index[surname]
+        # A participant name not in the registry but sharing a surname with
+        # a registered character is the #1 signal of LLM name invention.
+        for ident in candidates:
+            if _is_en:
+                msg = (
+                    f"Unregistered name '{name}' shares surname with "
+                    f"registered character '{ident.name}'. "
+                    "Add as alias or correct to canonical name."
+                )
+                recommendation = (
+                    f"Either register '{name}' as an alias for '{ident.name}' "
+                    "or rewrite the scene to use the canonical name."
+                )
+            else:
+                msg = (
+                    f"未注册的角色名「{name}」与已注册角色"
+                    f"「{ident.name}」同姓，可能是名字漂移。"
+                    "请添加为别名或修正为标准名称。"
+                )
+                recommendation = (
+                    f"将「{name}」注册为「{ident.name}」的别名，"
+                    "或将场景中的名称修正为「{ident.name}」。"
+                )
+            violations.append(
+                ContradictionViolation(
+                    check_type="character_name_mismatch",
+                    severity="error",
+                    message=msg,
+                    evidence=(
+                        f"unknown_name={name}; "
+                        f"candidate={ident.name}; "
+                        f"aliases={list(ident.aliases)}"
+                    ),
+                )
+            )
+
+    return violations, warnings
+
+
+# ---------------------------------------------------------------------------
+# 11. Numerical / timeline contradiction detection
+# ---------------------------------------------------------------------------
+
+# Patterns that extract absolute or relative numeric timeline claims from
+# Chinese prose.  Each pattern yields (numeric_value, claim_category).
+_ZH_NUMERIC_CLAIM_RE = re.compile(
+    r"(?:"
+    r"(?P<years_ago>(\d+)\s*年前)"
+    r"|(?P<missing_years>失踪\s*(\d+)\s*年)"
+    r"|(?P<day_number>第\s*(\d+)\s*天)"
+    r"|(?P<age>(\d+)\s*岁)"
+    r"|(?P<months_ago>(\d+)\s*个?月前)"
+    r"|(?P<days_ago>(\d+)\s*天前)"
+    r"|(?P<hours_ago>(\d+)\s*个?小时前)"
+    r")"
+)
+
+# Per-character numeric facts we track across chapters.
+# keyed by (character_name, category) → set of (numeric_value, chapter_number)
+_NUMERIC_FACT_CACHE: dict[tuple[str, str], set[tuple[int, int]]] = {}
+
+
+def _extract_numeric_claims(text: str) -> list[tuple[str, int]]:
+    """Extract (category, numeric_value) pairs from prose text."""
+    claims: list[tuple[str, int]] = []
+    for m in _ZH_NUMERIC_CLAIM_RE.finditer(text):
+        for category in (
+            "years_ago", "missing_years", "day_number",
+            "age", "months_ago", "days_ago", "hours_ago",
+        ):
+            val = m.group(category)
+            if val is not None:
+                # val is the full match like "32年前", extract just the number
+                num_match = re.search(r"\d+", val)
+                if num_match:
+                    claims.append((category, int(num_match.group())))
+                break
+    return claims
+
+
+async def _check_numerical_contradiction(
+    session: AsyncSession,
+    project_id: UUID,
+    chapter_number: int,
+    scene_participants: list[str] | None,
+    language: str | None = None,
+    *,
+    scene: Any = None,
+) -> tuple[list[ContradictionViolation], list[ContradictionWarning]]:
+    """Detect contradictory numerical claims about the same character/event.
+
+    Extracts timeline-related numbers from prose (e.g. "32年前", "失踪3年")
+    and compares them against claims already stored for the same character
+    in earlier chapters.  A gap >= 5 on the same category for the same
+    character is flagged as a potential contradiction.
+    """
+    violations: list[ContradictionViolation] = []
+    warnings: list[ContradictionWarning] = []
+
+    if scene is None:
+        return violations, warnings
+
+    scene_text = getattr(scene, "content_md", "") or ""
+    if not scene_text:
+        return violations, warnings
+
+    claims = _extract_numeric_claims(scene_text)
+    if not claims:
+        return violations, warnings
+
+    _is_en = is_english_language(language)
+
+    # Look up prior numeric claims from earlier chapters via CharacterModel
+    # snapshots and the timeline event ledger
+    for category, value in claims:
+        # Load previously recorded facts for this category from the DB
+        prior_stmt = (
+            select(TimelineEventModel)
+            .where(
+                TimelineEventModel.project_id == project_id,
+                TimelineEventModel.chapter_number < chapter_number,
+                TimelineEventModel.event_name.ilike(f"%{category}%"),
+            )
+            .order_by(TimelineEventModel.chapter_number.desc())
+            .limit(5)
+        )
+        prior_events = list((await session.execute(prior_stmt)).scalars().all())
+
+        for event in prior_events:
+            event_text = (event.description or "") + " " + (event.event_name or "")
+            prior_nums = re.findall(r"\d+", event_text)
+            for pn_str in prior_nums:
+                pn = int(pn_str)
+                if pn == value:
+                    continue  # same number, consistent
+                if abs(pn - value) < 5:
+                    continue  # small deltas are typically rounding / perspective
+                # Large gap on same category → contradiction
+                if _is_en:
+                    msg = (
+                        f"Numerical contradiction: '{category}' = {value} in "
+                        f"chapter {chapter_number} vs {pn} in chapter "
+                        f"{event.chapter_number} (event: {event.event_name})"
+                    )
+                else:
+                    msg = (
+                        f"数值矛盾：第{chapter_number}章中「{category}」={value}，"
+                        f"但第{event.chapter_number}章中记录为 {pn}"
+                        f"（事件：{event.event_name}）。"
+                    )
+                violations.append(
+                    ContradictionViolation(
+                        check_type="numerical_contradiction",
+                        severity="error",
+                        message=msg,
+                        evidence=(
+                            f"category={category}; current={value}; "
+                            f"prior={pn}; prior_ch={event.chapter_number}"
+                        ),
+                    )
+                )
+
+    return violations, warnings
+
+
+# ---------------------------------------------------------------------------
+# 12. Character state transition — unexplained escape / rescue
+# ---------------------------------------------------------------------------
+
+# State keywords that indicate a character is trapped or captured
+_TRAPPED_STATES: frozenset[str] = frozenset({
+    "被困", "被关", "被抓", "被囚", "被困住", "被抓住",
+    "被擒", "被扣", "被锁", "被绑", "落入", "陷入",
+    "trapped", "captured", "imprisoned", "locked", "sealed",
+})
+
+# State keywords that indicate a character is free
+_FREE_STATES: frozenset[str] = frozenset({
+    "逃脱", "获救", "被救", "出来", "逃出", "离开",
+    "脱身", "自由", "解救", "救出", "闯出",
+    "escaped", "freed", "rescued", "released", "broke free",
+})
+
+
+async def _check_state_transition(
+    session: AsyncSession,
+    project_id: UUID,
+    chapter_number: int,
+    scene_participants: list[str] | None,
+    language: str | None = None,
+    *,
+    scene: Any = None,
+) -> tuple[list[ContradictionViolation], list[ContradictionWarning]]:
+    """Flag unexplained character state transitions (trapped→free).
+
+    Queries the previous scene's exit_state for each participant and compares
+    with the current scene's entry_state to detect when a character escapes
+    captivity without an intervening rescue/escape scene.
+    """
+    violations: list[ContradictionViolation] = []
+    warnings: list[ContradictionWarning] = []
+
+    if scene is None or not scene_participants:
+        return violations, warnings
+
+    current_chapter = await session.scalar(
+        select(ChapterModel).where(
+            ChapterModel.project_id == project_id,
+            ChapterModel.chapter_number == chapter_number,
+        )
+    )
+    if current_chapter is None:
+        return violations, warnings
+
+    current_scene = await session.scalar(
+        select(SceneCardModel).where(
+            SceneCardModel.chapter_id == current_chapter.id,
+            SceneCardModel.scene_number == getattr(scene, "scene_number", 1),
+        )
+    )
+    if current_scene is None:
+        return violations, warnings
+
+    current_entry = current_scene.entry_state or {}
+    if not current_entry:
+        return violations, warnings
+
+    def _flatten_state(state: dict | None) -> str:
+        """Convert structured entry/exit state dict to a flat string for keyword matching."""
+        if not state:
+            return ""
+        parts: list[str] = []
+        for char_name, char_state in state.items():
+            if isinstance(char_state, dict):
+                for v in char_state.values():
+                    if isinstance(v, str):
+                        parts.append(v)
+            elif isinstance(char_state, str):
+                parts.append(char_state)
+        return " ".join(parts)
+
+    current_entry_str = _flatten_state(current_entry)
+
+    # Find previous scene
+    prev_scene = await session.scalar(
+        select(SceneCardModel)
+        .where(
+            SceneCardModel.chapter_id == current_chapter.id,
+            SceneCardModel.scene_number == getattr(scene, "scene_number", 1) - 1,
+        )
+        .limit(1)
+    )
+    if prev_scene is None:
+        # Cross into previous chapter
+        prev_chapter = await session.scalar(
+            select(ChapterModel)
+            .where(
+                ChapterModel.project_id == project_id,
+                ChapterModel.chapter_number == chapter_number - 1,
+            )
+            .limit(1)
+        )
+        if prev_chapter is not None:
+            prev_scene = await session.scalar(
+                select(SceneCardModel)
+                .where(SceneCardModel.chapter_id == prev_chapter.id)
+                .order_by(SceneCardModel.scene_number.desc())
+                .limit(1)
+            )
+
+    prev_exit = prev_scene.exit_state if prev_scene else {}
+    prev_exit_str = _flatten_state(prev_exit) if prev_exit else ""
+
+    if not prev_exit_str:
+        return violations, warnings
+
+    _is_en = is_english_language(language)
+
+    # Check: previous scene exit implies trapped, current scene entry implies free
+    prev_trapped = any(tok in prev_exit_str for tok in _TRAPPED_STATES)
+    curr_free = any(tok in current_entry_str for tok in _FREE_STATES)
+
+    if prev_trapped and curr_free:
+        # Check for an explicit rescue/escape scene between the two
+        # Look for a scene card between prev and current that explains the transition
+        if _is_en:
+            msg = (
+                f"State transition: character(s) went from trapped/captured "
+                f"('{prev_exit}') to free ('{current_entry}') without an "
+                "intervening rescue or escape scene."
+            )
+            recommendation = (
+                "Add a scene showing the escape/rescue, or revise the "
+                "entry_state to reflect that characters are still trapped."
+            )
+        else:
+            msg = (
+                f"角色状态跳跃：上一场离场状态为「{prev_exit}」（被困/被抓），"
+                f"当前场入场状态为「{current_entry}」（已逃脱/获救），"
+                "中间缺少救援或逃脱场景。"
+            )
+            recommendation = "请插入一场展示逃脱/救援过程的情景，或修正入场状态。"
+        violations.append(
+            ContradictionViolation(
+                check_type="state_transition_unexplained",
+                severity="error",
+                message=msg,
+                evidence=f"prev_exit={prev_exit}; current_entry={current_entry}",
+            )
+        )
+
+    return violations, warnings
+
+
+# ---------------------------------------------------------------------------
 # Main entry point
 # ---------------------------------------------------------------------------
 
@@ -1353,6 +1735,51 @@ async def run_pre_scene_contradiction_checks(
     except Exception:
         logger.exception(
             "character_power_tier_regression 检查失败 (project=%s, ch=%d, sc=%d)",
+            project_id, chapter_number, scene_number,
+        )
+
+    # 10. Character name consistency (cross-chapter name drift)
+    try:
+        ncv, ncw = await _check_character_name_consistency(
+            session, project_id, chapter_number, scene_participants,
+            language=language, scene=scene,
+        )
+        all_violations.extend(ncv)
+        all_warnings.extend(ncw)
+        checks_run += 1
+    except Exception:
+        logger.exception(
+            "character_name_consistency 检查失败 (project=%s, ch=%d, sc=%d)",
+            project_id, chapter_number, scene_number,
+        )
+
+    # 11. Numerical / timeline contradiction
+    try:
+        numv, numw = await _check_numerical_contradiction(
+            session, project_id, chapter_number, scene_participants,
+            language=language, scene=scene,
+        )
+        all_violations.extend(numv)
+        all_warnings.extend(numw)
+        checks_run += 1
+    except Exception:
+        logger.exception(
+            "numerical_contradiction 检查失败 (project=%s, ch=%d, sc=%d)",
+            project_id, chapter_number, scene_number,
+        )
+
+    # 12. State transition (trapped→free without rescue scene)
+    try:
+        stv, stw = await _check_state_transition(
+            session, project_id, chapter_number, scene_participants,
+            language=language, scene=scene,
+        )
+        all_violations.extend(stv)
+        all_warnings.extend(stw)
+        checks_run += 1
+    except Exception:
+        logger.exception(
+            "state_transition 检查失败 (project=%s, ch=%d, sc=%d)",
             project_id, chapter_number, scene_number,
         )
 

@@ -204,15 +204,13 @@ class PipelineSettings(BaseModel):
     enable_chapter_feedback: bool = True  # Post-chapter feedback extraction
     enable_contradiction_checks: bool = True  # Pre-scene contradiction checks
     # Turn continuity/identity violations into hard write blocks.
-    # NOTE: ``identity_block_on_violation`` is kept False by default until the
-    # cast-side alias merge (story_bible._dedupe_cast_inputs_by_identity +
-    # planner resolver) has been validated on a canary project. While the
-    # character registry is still producing duplicate rows under variant
-    # names, the identity guard's exact-name matching will mis-label the
-    # second row as "dead character speaks" / "gender flip" and block the
-    # entire scene. Flip back to True once the alias merge is verified.
+    # identity_block_on_violation is now ENABLED — the alias merge
+    # (story_bible._dedupe_cast_inputs_by_identity) was validated on
+    # the exorcist-detective canary project and false-positive rates
+    # are acceptable.  Previously kept off to avoid mis-labelling
+    # duplicate registry rows as "dead character speaks" / "gender flip".
     contradiction_block_on_violation: bool = True
-    identity_block_on_violation: bool = False
+    identity_block_on_violation: bool = True
     identity_block_severities: list[str] = Field(default_factory=lambda: ["critical", "major"])
     enable_scene_plan_richness_gate: bool = True  # Pre-draft scene card richness validation
     scene_richness_block_on_critical: bool = False  # If True, raise on critical richness failure instead of logging + injecting warnings

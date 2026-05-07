@@ -487,6 +487,35 @@ def _collect_export_blockers(
                     target,
                     ratio * 100,
                 )
+        # ── Hard length-envelope block ──
+        # The length_stability_gate runs during assembly but auto-accepts
+        # after 3 failed auto-repair attempts.  This export-time check is the
+        # final safety net: chapters that slip past the gate with an
+        # over-length draft are refused at export instead of being written to
+        # disk.  We read the envelope from config (not invariants) so it
+        # applies uniformly to all projects regardless of bootstrap state.
+        try:
+            from bestseller.settings import get_settings as _get_settings
+            from bestseller.services.drafts import count_words as _count_words
+            _cfg = _get_settings()
+            _budget = _cfg.generation.words_per_chapter
+            _wc = _count_words(draft.content_md or "")
+            _env_max = int(_budget.max)
+            if _wc > _env_max:
+                _lang_tag = normalize_language(language)
+                if _lang_tag.lower().startswith("en"):
+                    _msg = (
+                        f"Chapter {chapter.chapter_number}: {_wc} words exceeds "
+                        f"hard maximum of {_env_max} — export blocked"
+                    )
+                else:
+                    _msg = (
+                        f"第{chapter.chapter_number}章：{_wc}字超过硬上限{_env_max}字，"
+                        f"禁止导出"
+                    )
+                blockers.append(_msg)
+        except Exception:
+            pass  # Never let a config read error crash an export.
         hygiene_issues = collect_unfinished_artifact_issues(draft.content_md, language=language)
         for issue in hygiene_issues:
             blockers.append(

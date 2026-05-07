@@ -259,9 +259,9 @@ def _derive_length_envelope(settings_words: Any, language: str | None) -> Length
     Chinese (the default) so the envelope stays deterministic.
     """
 
-    words_min = int(getattr(settings_words, "min", 5000))
-    words_target = int(getattr(settings_words, "target", 6400))
-    words_max = int(getattr(settings_words, "max", 7500))
+    words_min = int(getattr(settings_words, "min", 1800))
+    words_target = int(getattr(settings_words, "target", 2200))
+    words_max = int(getattr(settings_words, "max", 3000))
 
     language_str = str(language or "zh-CN")
     if language_str.lower().startswith("en"):

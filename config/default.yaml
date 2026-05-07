@@ -102,23 +102,23 @@ retrieval:
 # Generation
 # -----------------------------------------------------------------------------
 generation:
-  target_total_words: 150000
+  target_total_words: 60000
   target_chapters: 30
 
   words_per_chapter:
-    min: 5000
-    target: 6400
-    max: 7500
+    min: 1800
+    target: 2200
+    max: 3000
 
   scenes_per_chapter:
-    min: 3
-    target: 4
-    max: 5
+    min: 2
+    target: 3
+    max: 4
 
   words_per_scene:
-    min: 1200
-    target: 1600
-    max: 2200
+    min: 500
+    target: 700
+    max: 900
 
   context_budget_tokens: 8000
   active_context_scenes: 12

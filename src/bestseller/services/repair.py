@@ -308,6 +308,7 @@ async def run_project_repair(
                 chapter_number,
                 requested_by=requested_by,
                 export_markdown=export_markdown,
+                allow_structural_repair=True,
             )
             processed_chapters.append(
                 ProjectRepairChapterSummary(

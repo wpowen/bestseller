@@ -380,12 +380,13 @@ def _count_effective_chars(text: str, language: str) -> int:
 
 
 class LengthEnvelopeCheck:
-    """Reject drafts outside the per-project length envelope.
+    """Reject drafts outside the global chapter-length envelope.
 
-    The envelope is a hard wall: the 201-character ``xianxia ch-9`` and the
-    10k-character over-long chapters both must be regenerated.  Borderline
-    cases (±5% of wall) are not special-cased — regen with feedback is
-    cheap relative to publishing a broken chapter.
+    Reads ``generation.words_per_chapter`` from config (not DB invariants)
+    so the envelope stays uniform across all projects.  The envelope is a
+    hard wall: chapters below ``min`` or above ``max`` must be regenerated.
+    Borderline cases (±5% of wall) are not special-cased — regen with
+    feedback is cheap relative to publishing a broken chapter.
     """
 
     code_under = "LENGTH_UNDER"
@@ -402,30 +403,42 @@ class LengthEnvelopeCheck:
         if ctx.scope != "chapter":
             return []
         count = _count_effective_chars(text, ctx.invariants.language)
-        env = ctx.invariants.length_envelope
-        if count < env.min_chars:
+        # Use config generation.words_per_chapter as the authoritative
+        # length envelope — DB invariants can drift from the global
+        # standard (1800-3000), and the length-stability gate in
+        # drafts.py already uses config values.  Keeping both checks
+        # on the same data source prevents the "DB says 5000, config
+        # says 1800" divergence that let out-of-range chapters ship.
+        from bestseller.settings import get_settings
+
+        _settings = get_settings()
+        _budget = _settings.generation.words_per_chapter
+        min_chars = int(_budget.min)
+        target_chars = int(_budget.target)
+        max_chars = int(_budget.max)
+        if count < min_chars:
             return [
                 Violation(
                     code=self.code_under,
                     severity="block",
                     location="chapter",
-                    detail=f"{count} chars < min {env.min_chars}",
+                    detail=f"{count} chars < min {min_chars}",
                     prompt_feedback=(
-                        f"本章有效字符数 {count}，低于下限 {env.min_chars}。"
-                        f"请补充场景细节、感官描写、内心活动，达到 {env.target_chars} 字左右。"
+                        f"本章有效字符数 {count}，低于下限 {min_chars}。"
+                        f"请补充场景细节、感官描写、内心活动，达到 {target_chars} 字左右。"
                         "不要添加无关剧情或角色。"
                     ),
                 )
             ]
-        if count > env.max_chars:
+        if count > max_chars:
             return [
                 Violation(
                     code=self.code_over,
                     severity="block",
                     location="chapter",
-                    detail=f"{count} chars > max {env.max_chars}",
+                    detail=f"{count} chars > max {max_chars}",
                     prompt_feedback=(
-                        f"本章有效字符数 {count}，超过上限 {env.max_chars}。"
+                        f"本章有效字符数 {count}，超过上限 {max_chars}。"
                         "请压缩冗余描写、合并重复对白，保持情节结构不变。"
                     ),
                 )
@@ -507,6 +520,16 @@ _ZH_COMMON_WORD_2ND_CHARS: frozenset[str] = frozenset(
     # 方传来/方案/方势/方法/方便, 成一个/成某种/成交, 水一样/水道,
     # 计算, 云层/云海, 于有, 贺礼, 汤药, 雷云, 金灰/金红/金黑.
     "传案势法便某交样道算层海有礼药云灰红黑将"
+    # Verb/adjective glue after measure-word/surname-looking characters:
+    # 老张直起 -> regex sees 张直起, but 张 is a measure/name and 直起 is action.
+    # 瞳孔骤然 -> regex sees 孔骤然, then would trim to false name 孔骤.
+    "直骤"
+    # Object-state/action glue seen in exorcist-detective audit:
+    # 铜钱在口袋里 -> 钱在口; 一张泛黄的信纸 -> 张泛黄; 铜钱裂开 -> 钱裂.
+    "在泛裂"
+    # Material/readiness/action false positives:
+    # 朱砂 -> cinnabar; 齐备 -> ready; 铜钱按在 -> 钱按.
+    "砂备按"
 )
 
 # Third-character stoplist — for 3-char candidates the regex greedily
@@ -518,6 +541,9 @@ _ZH_GRAMMATICAL_TAIL_CHARS: frozenset[str] = frozenset(
     # 钱福说/钱福没/孔微微/苏雪没/云掌第/方入场/孔骤然 —
     # these should retain their 2-char core.
     "说没微第场然看在和与到不就"
+    # Name + action/body/object glue from Chinese prose: 孙乾剑/孙乾脸/
+    # 赵峥走 are "孙乾 + 剑尖/脸色", not new three-character names.
+    "开剑脸手动收走起眼身步声气符光路门影"
 )
 
 
@@ -531,6 +557,7 @@ _ZH_ROLE_SUFFIXES: tuple[str, ...] = (
     "师兄", "师姐", "师弟", "师妹", "师父", "师母", "师叔", "师伯",
     "管事", "长老", "前辈", "后辈", "道友", "道长", "真人", "真君",
     "公子", "小姐", "姑娘", "夫人", "娘子", "郎君", "少爷", "掌柜",
+    "执事",
     "城主", "宗主", "门主", "教主", "仙子", "仙君", "上仙",
     # Honorifics
     "大人", "老爷", "奶奶", "爷爷",

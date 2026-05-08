@@ -212,8 +212,11 @@ class PipelineSettings(BaseModel):
     contradiction_block_on_violation: bool = True
     identity_block_on_violation: bool = True
     identity_block_severities: list[str] = Field(default_factory=lambda: ["critical", "major"])
+    require_foundation_identity_lock: bool = True  # CastSpec must lock gender/pronouns before persistence
+    require_chapter_plan_contract: bool = True  # Outline materialization must validate scene time/purpose/participants
+    require_pre_draft_scene_contract: bool = True  # Scene pipeline validates persisted scene cards before drafting
     enable_scene_plan_richness_gate: bool = True  # Pre-draft scene card richness validation
-    scene_richness_block_on_critical: bool = False  # If True, raise on critical richness failure instead of logging + injecting warnings
+    scene_richness_block_on_critical: bool = True  # Raise on critical richness failure instead of logging + injecting warnings
     feedback_stale_clue_threshold: int = 15  # Chapters before a clue is stale
     feedback_dormant_plan_threshold: int = 10  # Chapters before antagonist plan is dormant
     feedback_arc_inactivity_threshold: int = 8  # Chapters before arc is dead-ended
@@ -296,11 +299,9 @@ class PipelineSettings(BaseModel):
     # to the original generation; 0 disables auto-repair entirely even
     # when ``enable_chapter_auto_repair`` is True.
     chapter_auto_repair_max_attempts: int = 1
-    # Only these block codes trigger auto-repair.  Length-stability bands
-    # (BLOCK_LOW / BLOCK_HIGH) are the sweet spot — a rewrite with
-    # "expand / trim to hit target" guidance usually fixes them.  L4/L5
-    # block codes (POV_LOCK, NAMING, DIALOG_INTEGRITY, ...) are deliberately
-    # omitted until they've been canary-verified as auto-fixable.
+    # Only these block codes trigger auto-repair. Length, dialogue,
+    # ending-hook, lifecycle, and canon-term leaks are rewrite-fixable.
+    # Deterministic schema blocks (POV_LOCK, NAMING, etc.) stay excluded.
     chapter_auto_repair_repairable_codes: list[str] = Field(
         default_factory=lambda: [
             "BLOCK_LOW",
@@ -308,6 +309,7 @@ class PipelineSettings(BaseModel):
             "DIALOG_UNPAIRED",
             "ENDING_SENTENCE_WEAK",
             "character_resurrection",
+            "CANON_FORBIDDEN_TERM",
         ]
     )
     # Curator scheduling — overridable via env for admin triage.

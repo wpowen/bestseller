@@ -1258,6 +1258,131 @@ async def test_rewrite_chapter_from_task_creates_new_version(
     assert chapter.status == "review"
 
 
+@pytest.mark.asyncio
+async def test_rewrite_chapter_from_task_preserves_current_when_gate_blocks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = ProjectModel(
+        slug="my-story",
+        title="长夜巡航",
+        genre="science-fantasy",
+        target_word_count=80000,
+        target_chapters=12,
+        metadata_json={},
+    )
+    project.id = uuid4()
+    chapter = ChapterModel(
+        project_id=project.id,
+        chapter_number=3,
+        title="静默航道",
+        chapter_goal="推进调查",
+        information_revealed=[],
+        information_withheld=[],
+        foreshadowing_actions={},
+        metadata_json={},
+        target_word_count=2400,
+        production_state="ok",
+    )
+    chapter.id = uuid4()
+    scenes = [
+        SceneCardModel(
+            project_id=project.id,
+            chapter_id=chapter.id,
+            scene_number=1,
+            scene_type="setup",
+            title="旧搭档回舰",
+            participants=["沈砚"],
+            purpose={"story": "推进调查", "emotion": "警觉"},
+            entry_state={},
+            exit_state={},
+            metadata_json={},
+            target_word_count=1000,
+        )
+    ]
+    scenes[0].id = uuid4()
+    current_draft = ChapterDraftVersionModel(
+        project_id=project.id,
+        chapter_id=chapter.id,
+        version_no=1,
+        content_md="# 第3章 静默航道\n\n## 场景 1：旧搭档回舰\n\n章节旧稿。",
+        word_count=820,
+        assembled_from_scene_draft_ids=[],
+        is_current=True,
+    )
+    current_draft.id = uuid4()
+    rewrite_task = RewriteTaskModel(
+        project_id=project.id,
+        trigger_type="chapter_review",
+        trigger_source_id=chapter.id,
+        rewrite_strategy="chapter_coherence_bridge_rewrite",
+        priority=4,
+        status="pending",
+        instructions="补强场景衔接与章节收尾",
+        context_required=[],
+        metadata_json={},
+    )
+    rewrite_task.id = uuid4()
+    rewrite_task.attempts = 0
+
+    async def fake_get_project_by_slug(session, slug: str):
+        return project
+
+    async def fake_build_chapter_writer_context(session, settings, project_slug, chapter_number):
+        return SimpleNamespace(
+            previous_scene_summaries=[],
+            recent_timeline_events=[],
+            chapter_scenes=[],
+            retrieval_chunks=[],
+        )
+
+    async def fake_complete_text(session, settings, request):
+        return SimpleNamespace(
+            content="# 第3章 静默航道\n\n" + ("过长候选稿。" * 500),
+            model_name="mock-editor",
+            llm_run_id=uuid4(),
+            provider="mock",
+        )
+
+    async def fake_quality_gate(**kwargs):
+        return "blocked"
+
+    monkeypatch.setattr(review_services, "get_project_by_slug", fake_get_project_by_slug)
+    monkeypatch.setattr(
+        review_services,
+        "build_chapter_writer_context",
+        fake_build_chapter_writer_context,
+    )
+    monkeypatch.setattr(review_services, "complete_text", fake_complete_text)
+    monkeypatch.setattr(review_services, "_evaluate_chapter_quality_gate", fake_quality_gate)
+
+    session = FakeSession(
+        scalar_results=[chapter, current_draft, rewrite_task, 1],
+        scalars_results=[scenes],
+    )
+
+    returned_draft, completed_task = await review_services.rewrite_chapter_from_task(
+        session,
+        "my-story",
+        3,
+        settings=build_settings(),
+    )
+
+    rejected = [
+        obj for obj in session.added
+        if isinstance(obj, ChapterDraftVersionModel) and obj is not current_draft
+    ]
+    assert returned_draft is current_draft
+    assert len(rejected) == 1
+    assert rejected[0].version_no == 2
+    assert rejected[0].is_current is False
+    assert session.executed == []
+    assert completed_task.status == "failed"
+    assert completed_task.metadata_json["quality_gate_rejected_current_promotion"] is True
+    assert completed_task.metadata_json["preserved_current_chapter_draft_id"] == str(current_draft.id)
+    assert chapter.current_word_count is None
+    assert chapter.production_state == "ok"
+
+
 # ---------------------------------------------------------------------------
 # Layer 1 — duplication_score / duplication_findings wiring into review
 # ---------------------------------------------------------------------------

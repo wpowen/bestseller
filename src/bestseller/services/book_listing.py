@@ -32,6 +32,19 @@ def _clean_text(value: Any) -> str:
     return str(value or "").strip()
 
 
+def _compact_text(value: Any) -> str:
+    return " ".join(_clean_text(value).split())
+
+
+def _limit_chars(value: Any, max_chars: int = 500) -> str:
+    text = _compact_text(value)
+    if len(text) <= max_chars:
+        return text
+    if max_chars <= 3:
+        return text[:max_chars]
+    return text[: max_chars - 3].rstrip() + "..."
+
+
 def _dedupe_strings(values: list[Any]) -> list[str]:
     result: list[str] = []
     for value in values:
@@ -66,6 +79,57 @@ def _character_dict(item: Any) -> dict[str, Any]:
         "arc_state": _clean_text(_get_value(item, "arc_state")),
         "is_pov_character": bool(_get_value(item, "is_pov_character", False)),
     }
+
+
+def _build_shelf_intro(profile: dict[str, Any], *, max_chars: int = 500) -> str:
+    """Build a reader-facing listing intro that is short enough to paste."""
+    is_en = _is_english(_clean_text(profile.get("language")))
+    title = _clean_text(profile.get("primary_title")) or ("Untitled" if is_en else "未命名作品")
+    primary = _clean_text(profile.get("primary_category"))
+    secondary = _clean_text(profile.get("secondary_category"))
+    tags = _string_list(profile.get("tags"))
+    tag_text = (" / ".join(tags[:4]) if is_en else "、".join(tags[:4]))
+
+    preferred = (
+        _compact_text(profile.get("short_intro"))
+        or _compact_text(profile.get("long_intro"))
+        or _compact_text(profile.get("logline"))
+    )
+    if len(preferred) >= (100 if is_en else 80):
+        return _limit_chars(preferred, max_chars)
+
+    pieces: list[str] = []
+    if preferred:
+        ending = "." if is_en else "。"
+        pieces.append(preferred.rstrip("。.!?！？") + ending)
+    else:
+        if is_en:
+            category = " / ".join([item for item in [primary, secondary] if item]) or "commercial fiction"
+            pieces.append(f"{title} is a serialized {category} novel built around fast hooks, escalating choices, and chapter-end tension.")
+        else:
+            category = " / ".join([item for item in [primary, secondary] if item]) or "商业类型"
+            pieces.append(f"《{title}》是一部主打{category}的长篇连载，核心看点是高压选择、持续破局和章节尾钩。")
+
+    promo = next((_compact_text(item) for item in _string_list(profile.get("promo_copy")) if _compact_text(item)), "")
+    if promo and promo not in pieces[0]:
+        pieces.append(promo.rstrip("。.!?！？") + ("." if is_en else "。"))
+
+    if tag_text:
+        if is_en:
+            pieces.append(
+                f"For readers who want {tag_text}, sharp conflict, constant reversals, and a protagonist whose every win raises the stakes."
+            )
+        else:
+            pieces.append(
+                f"如果你喜欢{tag_text}、强冲突、持续反转和爽点升级，这本书会把你直接拉进主角的选择与代价之中。"
+            )
+    else:
+        pieces.append(
+            "Every chapter pushes a new hook, a new cost, and a stronger reason to keep reading."
+            if is_en
+            else "每一章都推进新的钩子、新的代价和新的追读理由。"
+        )
+    return _limit_chars(" ".join(piece for piece in pieces if piece), max_chars)
 
 
 def _safe_listing_dir(output_base_dir: str | Path | None, project_slug: str) -> Path | None:
@@ -330,12 +394,15 @@ def validate_book_listing_profile(profile: dict[str, Any]) -> dict[str, Any]:
             "code": "intro",
             "label": "Synopsis / 简介" if is_en else "简介",
             "severity": "blocker",
-            "passed": len(_clean_text(profile.get("short_intro"))) >= 40,
+            "passed": (
+                len(_clean_text(profile.get("shelf_intro") or profile.get("short_intro"))) >= 40
+                and len(_clean_text(profile.get("shelf_intro") or profile.get("short_intro"))) <= 500
+            ),
             "message": (
                 "The short intro must clearly convey protagonist, conflict, appeal, and reading hook.\n"
-                "短简介需要足够明确地说明主角、冲突、卖点和追读钩子。"
+                "短简介需要在 500 字以内，并明确说明主角、冲突、卖点和追读钩子。"
                 if is_en
-                else "短简介需要足够明确地说明主角、冲突、卖点和追读钩子。"
+                else "短简介需要在 500 字以内，并明确说明主角、冲突、卖点和追读钩子。"
             ),
         },
         {
@@ -587,5 +654,25 @@ def build_book_listing_profile(
             profile["title_candidates"] + _fallback_title_candidates(profile)
         )[:REQUIRED_TITLE_CANDIDATE_COUNT]
 
+    profile["shelf_intro"] = _build_shelf_intro(profile, max_chars=500)
+    character_names = _dedupe_strings(
+        [
+            item.get("name")
+            for item in profile.get("main_characters", [])
+            if isinstance(item, dict)
+        ]
+    )
+    profile["character_names"] = character_names
+    profile["copy_pack"] = {
+        "title": profile["primary_title"],
+        "subtitle": profile["recommended_subtitle"],
+        "book_id": profile["book_id"],
+        "category": " / ".join(
+            item for item in [profile["primary_category"], profile["secondary_category"]] if item
+        ),
+        "tags": "、".join(profile["tags"]),
+        "character_names": "、".join(character_names),
+        "shelf_intro": profile["shelf_intro"],
+    }
     profile["compliance"] = validate_book_listing_profile(profile)
     return profile

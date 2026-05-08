@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any
 from uuid import UUID
 
 import typer
@@ -21,6 +21,15 @@ from bestseller.domain.project import (
 from bestseller.domain.workflow import ChapterOutlineBatchInput
 from bestseller.infra.db.schema import initialize_database, render_schema_sql
 from bestseller.infra.db.session import create_engine, session_scope
+from bestseller.services.audit_loop import (
+    build_full_audit,
+    build_phase1_audit,
+    persist_audit_findings,
+)
+from bestseller.services.commercial_novel_gate import (
+    commercial_gate_report_to_dict,
+    evaluate_book_package,
+)
 from bestseller.services.consistency import review_project_consistency
 from bestseller.services.context import build_chapter_writer_context, build_scene_writer_context
 from bestseller.services.drafts import assemble_chapter_draft, generate_scene_draft
@@ -53,12 +62,6 @@ from bestseller.services.narrative_tree import (
     get_narrative_tree_node_by_path,
     search_narrative_tree_for_project,
 )
-from bestseller.services.audit_loop import (
-    build_full_audit,
-    build_phase1_audit,
-    persist_audit_findings,
-)
-from bestseller.services.scorecard import compute_scorecard, save_scorecard
 from bestseller.services.pipelines import (
     run_autowrite_pipeline,
     run_chapter_pipeline,
@@ -66,6 +69,7 @@ from bestseller.services.pipelines import (
     run_scene_pipeline,
 )
 from bestseller.services.planner import generate_novel_plan
+from bestseller.services.project_health import build_project_health_report, repair_project_health
 from bestseller.services.projects import (
     create_chapter,
     create_project,
@@ -83,7 +87,6 @@ from bestseller.services.publishing.amazon_kdp import (
     validate_amazon_kdp_project,
 )
 from bestseller.services.repair import run_project_repair
-from bestseller.services.project_health import build_project_health_report, repair_project_health
 from bestseller.services.retrieval import refresh_project_retrieval_index, search_project_retrieval
 from bestseller.services.reviews import (
     review_chapter_draft,
@@ -93,6 +96,7 @@ from bestseller.services.reviews import (
 )
 from bestseller.services.rewrite_cascade import run_rewrite_cascade
 from bestseller.services.rewrite_impacts import list_rewrite_impacts, refresh_rewrite_impacts
+from bestseller.services.scorecard import compute_scorecard, save_scorecard
 from bestseller.services.workflows import (
     get_workflow_run,
     list_workflow_runs,
@@ -134,6 +138,7 @@ retrieval_app = typer.Typer(help="Retrieval operations.")
 story_bible_app = typer.Typer(help="Story bible inspection operations.")
 narrative_app = typer.Typer(help="Narrative graph inspection operations.")
 benchmark_app = typer.Typer(help="Benchmark and evaluation operations.")
+commercial_gate_app = typer.Typer(help="Commercial novel package gate operations.")
 ui_app = typer.Typer(help="Web UI operations.")
 prompt_pack_app = typer.Typer(help="Prompt pack operations.")
 writing_preset_app = typer.Typer(help="Writing preset operations.")
@@ -155,6 +160,7 @@ app.add_typer(retrieval_app, name="retrieval")
 app.add_typer(story_bible_app, name="story-bible")
 app.add_typer(narrative_app, name="narrative")
 app.add_typer(benchmark_app, name="benchmark")
+app.add_typer(commercial_gate_app, name="commercial-gate")
 app.add_typer(ui_app, name="ui")
 app.add_typer(prompt_pack_app, name="prompt-pack")
 app.add_typer(writing_preset_app, name="writing-preset")
@@ -1469,6 +1475,61 @@ def benchmark_run(
             typer.echo(json.dumps(result.model_dump(mode="json"), ensure_ascii=False, indent=2))
 
     asyncio.run(_run())
+
+
+@commercial_gate_app.command("package")
+def commercial_gate_package(
+    package_dir: Annotated[
+        Path,
+        typer.Argument(
+            exists=True,
+            file_okay=False,
+            dir_okay=True,
+            readable=True,
+            help="Output book package directory, e.g. output/<book-id>.",
+        ),
+    ],
+    json_output: Annotated[
+        bool,
+        typer.Option(
+            "--json",
+            help="Print the full commercial gate report as JSON.",
+        ),
+    ] = False,
+    fail: Annotated[
+        bool,
+        typer.Option(
+            "--fail/--no-fail",
+            help="Exit non-zero when the commercial gate does not pass.",
+        ),
+    ] = True,
+) -> None:
+    """Evaluate an output package before promoting generated chapters."""
+
+    report = evaluate_book_package(package_dir)
+    if json_output:
+        typer.echo(
+            json.dumps(
+                commercial_gate_report_to_dict(report),
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+    else:
+        status = "PASS" if report.passed else "FAIL"
+        typer.echo(
+            f"{status} {report.title} "
+            f"score={report.overall_score} chapters={report.total_chapters}"
+        )
+        for issue in report.issues:
+            location = f"ch{issue.chapter_no}" if issue.chapter_no else "book"
+            typer.echo(
+                f"- [{issue.severity}] {issue.code} {location}: {issue.detail}"
+            )
+            typer.echo(f"  fix: {issue.suggestion}")
+
+    if fail and not report.passed:
+        raise typer.Exit(1)
 
 
 @retrieval_app.command("refresh")

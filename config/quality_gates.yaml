@@ -158,7 +158,7 @@ phase_c_overrides:
   payback_window_default: 10
 
 phase_d_time:
-  enabled: false
+  enabled: true
   # When true, TimeRegressionCheck emits soft CheckerIssue with can_override=True;
   # when false, the check is skipped entirely.
   regression_check_enabled: true

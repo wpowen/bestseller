@@ -648,6 +648,12 @@ class DiversityBudget:
 def _chapter_key(raw: str) -> int:
     """Sort key that treats str keys as integers when possible."""
 
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        match = re.search(r"\d+", str(raw))
+        return int(match.group(0)) if match is not None else -1
+
 
 # ---------------------------------------------------------------------------
 # Case type diversity check.

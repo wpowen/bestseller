@@ -217,13 +217,20 @@ pipeline:
   enable_story_query_brief: false
   story_query_brief_max_rounds: 4
   contradiction_block_on_violation: true
-  # Kept off by default until the alias-aware cast merge is validated end to
-  # end on a canary project. See settings.py::PipelineSettings for the full
-  # rationale (false positives when the registry holds duplicate name rows).
-  identity_block_on_violation: false
+  # Identity violations must fail closed. Earlier canary-only wiring left this
+  # off in YAML, overriding the enabled default in settings.py and turning
+  # gender/name consistency into warnings.
+  identity_block_on_violation: true
   identity_block_severities:
     - critical
     - major
+  # Upstream narrative contracts fail closed before model generation.
+  require_foundation_identity_lock: true
+  require_chapter_plan_contract: true
+  require_pre_draft_scene_contract: true
+  # Critical scene-card richness failures should re-plan before prose drafting;
+  # otherwise repeated/thin scene patterns only become prompt warnings.
+  scene_richness_block_on_critical: true
   enable_golden_three_health: true
   golden_three_min_hype_chapters: 2
   golden_three_min_ending_hook_chapters: 2
@@ -236,8 +243,8 @@ pipeline:
   length_stability_warn_margin: 0.10
   # Auto-repair a blocked chapter by running one extra scene-rewrite
   # cycle.  Only the ``chapter_auto_repair_repairable_codes`` set triggers
-  # this path — length-stability blocks are the safe canary; L4/L5 gates
-  # with deterministic violations are deliberately excluded.
+  # this path. Length, dialogue, ending-hook, lifecycle, and canon-term
+  # leaks are rewrite-fixable; deterministic schema blocks remain excluded.
   enable_chapter_auto_repair: true
   chapter_auto_repair_max_attempts: 3
   chapter_auto_repair_repairable_codes:
@@ -246,3 +253,4 @@ pipeline:
     - DIALOG_UNPAIRED
     - ENDING_SENTENCE_WEAK
     - character_resurrection
+    - CANON_FORBIDDEN_TERM

@@ -4,7 +4,6 @@ import pytest
 
 from bestseller.services.identity_guard import (
     CharacterIdentity,
-    IdentityViolation,
     build_identity_constraint_block,
     validate_scene_text_identity,
 )
@@ -142,6 +141,125 @@ def test_validate_zh_gender_flip_detected() -> None:
     # Should detect pronoun mismatch
     assert len(violations) >= 1
     assert any(v.violation_type == "pronoun_mismatch" for v in violations)
+
+
+def test_validate_checks_registered_mentions_outside_participant_list() -> None:
+    registry = [
+        CharacterIdentity(name="顾清衍", gender="male", pronoun_set_zh="他"),
+        CharacterIdentity(name="苏婉", gender="female", pronoun_set_zh="她"),
+    ]
+    text = "顾清衍退出殿门。苏婉，他的目光却躲闪了一下。"
+
+    violations = validate_scene_text_identity(
+        text,
+        registry,
+        language="zh-CN",
+        participant_names=["顾清衍"],
+    )
+
+    assert any(v.character_name == "苏婉" for v in violations)
+
+
+def test_validate_zh_skips_pronoun_after_another_named_character() -> None:
+    registry = [
+        CharacterIdentity(name="顾清衍", gender="male", pronoun_set_zh="他"),
+        CharacterIdentity(name="苏婉", gender="female", pronoun_set_zh="她"),
+    ]
+    text = "顾清衍看向苏婉，她点了点头。"
+
+    violations = validate_scene_text_identity(
+        text,
+        registry,
+        language="zh-CN",
+        participant_names=["顾清衍", "苏婉"],
+    )
+
+    assert violations == []
+
+
+def test_validate_zh_skips_object_pronoun_in_mixed_gender_scene() -> None:
+    registry = [
+        CharacterIdentity(name="顾清衍", gender="male", pronoun_set_zh="他"),
+        CharacterIdentity(name="苏婉", gender="female", pronoun_set_zh="她"),
+    ]
+    text = "苏婉走近两步，目光从他脸上扫过。她抬手扣住剑柄。"
+
+    violations = validate_scene_text_identity(
+        text,
+        registry,
+        language="zh-CN",
+        participant_names=["顾清衍", "苏婉"],
+    )
+
+    assert violations == []
+
+
+def test_validate_zh_skips_dialogue_pronoun_reference() -> None:
+    registry = [
+        CharacterIdentity(name="顾清衍", gender="male", pronoun_set_zh="他"),
+        CharacterIdentity(name="苏婉", gender="female", pronoun_set_zh="她"),
+    ]
+    text = "顾清衍压低声音：“我猜她会在你突破时动手。”苏婉没有反驳。"
+
+    violations = validate_scene_text_identity(
+        text,
+        registry,
+        language="zh-CN",
+        participant_names=["顾清衍", "苏婉"],
+    )
+
+    assert violations == []
+
+
+def test_validate_zh_skips_short_name_inside_longer_registered_name() -> None:
+    registry = [
+        CharacterIdentity(name="周沉", gender="male", pronoun_set_zh="他"),
+        CharacterIdentity(name="周沉渊", gender="male", pronoun_set_zh="他"),
+        CharacterIdentity(name="叶清漪", gender="female", pronoun_set_zh="她"),
+    ]
+    text = "周沉渊的脸色彻底沉下去。她没有退后。"
+
+    violations = validate_scene_text_identity(
+        text,
+        registry,
+        language="zh-CN",
+        participant_names=["周沉渊", "叶清漪"],
+    )
+
+    assert violations == []
+
+
+def test_validate_zh_skips_name_mentioned_as_object() -> None:
+    registry = [
+        CharacterIdentity(name="宁尘", gender="male", pronoun_set_zh="他"),
+        CharacterIdentity(name="燕青", gender="female", pronoun_set_zh="她"),
+    ]
+    text = "燕青终于看见宁尘，她先是一愣，然后眼眶红了。"
+
+    violations = validate_scene_text_identity(
+        text,
+        registry,
+        language="zh-CN",
+        participant_names=["宁尘", "燕青"],
+    )
+
+    assert violations == []
+
+
+def test_validate_zh_skips_when_context_shifts_to_gendered_person() -> None:
+    registry = [
+        CharacterIdentity(name="叶长青", gender="male", pronoun_set_zh="他"),
+    ]
+    text = "叶长青给了他七天。这个女人，也给了他七天。少女的声音没有波动，她的手指向黑暗。"
+
+    violations = validate_scene_text_identity(
+        text,
+        registry,
+        language="zh-CN",
+        participant_names=["叶长青"],
+    )
+
+    assert violations == []
 
 
 def test_validate_en_correct_pronouns_no_violations() -> None:

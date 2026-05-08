@@ -5,796 +5,2120 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>BestSeller 一键创作</title>
 <style>
-  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+  *, *::before, *::after { box-sizing: border-box; }
+  * { margin: 0; padding: 0; }
 
   :root {
-    --bg: #0e1020;
-    --card: rgba(22, 26, 38, 0.62);
-    --card-hover: rgba(32, 38, 56, 0.72);
-    --accent: rgba(15, 52, 96, 0.6);
-    --accent-light: #1a5276;
-    --blue: #4a9eff;
-    --blue-glow: rgba(74, 158, 255, 0.18);
-    --text: #e8ecf3;
-    --text-dim: #9aa6b8;
-    --text-bright: #ffffff;
-    --border: rgba(255, 255, 255, 0.10);
-    --success: #2ecc71;
-    --warning: #f39c12;
-    --danger: #e74c3c;
-    --radius: 20px;
-    --radius-sm: 14px;
-    --radius-pill: 999px;
-    --glass-blur: blur(24px) saturate(180%);
-    --glass-shadow: 0 1px 0 rgba(255,255,255,0.06) inset, 0 24px 60px -20px rgba(0,0,0,0.55);
+    --bg: #f5f7fb;
+    --bg-2: #edf2f8;
+    --surface: #ffffff;
+    --surface-soft: #f8fafc;
+    --surface-tint: #eef4ff;
+    --text: #182230;
+    --text-dim: #667085;
+    --text-faint: #98a2b3;
+    --text-bright: #101828;
+    --border: #d8e0ea;
+    --border-strong: #bfc9d8;
+    --blue: #2563eb;
+    --blue-dark: #1d4ed8;
+    --blue-soft: #dbeafe;
+    --success: #12805c;
+    --success-soft: #ddf7ea;
+    --warning: #b76e00;
+    --warning-soft: #fff3d6;
+    --danger: #c24132;
+    --danger-soft: #ffe7e4;
+    --violet: #6d35d6;
+    --radius: 8px;
+    --radius-sm: 6px;
+    --shadow-sm: 0 1px 2px rgba(16, 24, 40, 0.06);
+    --shadow: 0 18px 50px rgba(29, 43, 68, 0.10);
+    --focus: 0 0 0 3px rgba(37, 99, 235, 0.18);
   }
+
+  html { scroll-behavior: smooth; }
 
   body {
-    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "PingFang SC", "Hiragino Sans GB", system-ui, sans-serif;
-    background:
-      radial-gradient(120% 80% at 20% 0%, #1f2540 0%, #0e1020 60%, #07080f 100%) fixed;
-    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
     min-height: 100vh;
-    line-height: 1.6;
+    background:
+      linear-gradient(180deg, rgba(255,255,255,0.80), rgba(245,247,251,0.92)),
+      linear-gradient(90deg, rgba(37,99,235,0.06) 1px, transparent 1px),
+      linear-gradient(0deg, rgba(18,128,92,0.045) 1px, transparent 1px),
+      var(--bg);
+    background-size: auto, 44px 44px, 44px 44px, auto;
+    color: var(--text);
+    line-height: 1.55;
     -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
   }
 
-  /* ── Header ── */
+  button, input, select, textarea {
+    font: inherit;
+  }
+
+  a { color: inherit; }
+
   .header {
+    position: sticky;
+    top: 0;
+    z-index: 50;
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 16px 28px;
-    border-bottom: 1px solid var(--border);
+    gap: 18px;
+    min-height: 68px;
+    padding: 14px 28px;
+    background: rgba(255, 255, 255, 0.88);
+    border-bottom: 1px solid rgba(216, 224, 234, 0.82);
+    backdrop-filter: blur(18px);
+    -webkit-backdrop-filter: blur(18px);
   }
-  .header h1 { font-size: 20px; font-weight: 700; color: var(--text-bright); }
-  .header h1 span { color: var(--blue); }
-  .header-nav { display: flex; gap: 6px; }
-  .header-nav a, .header-nav button {
-    padding: 7px 16px;
-    border-radius: 8px;
-    font-size: 13px;
-    font-weight: 500;
-    text-decoration: none;
-    cursor: pointer;
-    transition: all .2s;
-    border: 1px solid var(--border);
-    background: transparent;
-    color: var(--text-dim);
-  }
-  .header-nav a:hover, .header-nav button:hover {
-    background: var(--card);
+
+  .header h1 {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
     color: var(--text-bright);
-  }
-  .header-nav .active {
-    background: var(--blue);
-    color: #fff;
-    border-color: var(--blue);
-  }
-
-  /* ── Container ── */
-  .container {
-    max-width: 1080px;
-    margin: 0 auto;
-    padding: 24px 24px 60px;
+    font-size: 18px;
+    font-weight: 760;
+    line-height: 1.1;
+    letter-spacing: 0;
+    white-space: nowrap;
   }
 
-  /* ── View tabs ── */
-  .view { display: none; animation: fadeIn .3s ease; }
-  .view.active { display: block; }
-  @keyframes fadeIn {
-    from { opacity: 0; transform: translateY(8px); }
-    to   { opacity: 1; transform: translateY(0); }
+  .header h1 span {
+    color: var(--blue);
+    font-weight: 820;
   }
 
-  /* ═══════════════════════════════════
-     DASHBOARD VIEW
-     ═══════════════════════════════════ */
-  .dash-empty {
-    text-align: center;
-    padding: 80px 20px;
-  }
-  .dash-empty h2 {
-    font-size: 20px;
-    color: var(--text-bright);
-    margin-bottom: 8px;
-  }
-  .dash-empty p {
-    color: var(--text-dim);
-    margin-bottom: 24px;
-    font-size: 15px;
+  .header-nav {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+    min-width: 0;
   }
 
-  /* Task card */
-  .task-card {
-    background: var(--card);
+  .header-nav a,
+  .header-nav button {
+    min-height: 36px;
+    padding: 8px 14px;
     border: 1px solid var(--border);
     border-radius: var(--radius);
-    padding: 20px;
-    margin-bottom: 16px;
-    transition: border-color .2s;
+    background: var(--surface);
+    color: var(--text-dim);
+    box-shadow: var(--shadow-sm);
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 650;
+    line-height: 1;
+    text-decoration: none;
+    transition: background .18s ease, border-color .18s ease, color .18s ease, transform .18s ease, box-shadow .18s ease;
   }
-  .task-card:hover { border-color: rgba(74, 158, 255, 0.3); }
-  .task-card.status-running { border-left: 3px solid var(--blue); }
-  .task-card.status-completed { border-left: 3px solid var(--success); }
-  .task-card.status-failed { border-left: 3px solid var(--danger); }
-  .task-card.status-cancelled { border-left: 3px solid #95a5a6; }
-  .tc-badge.cancelled { background: rgba(149, 165, 166, 0.18); color: #6c7a7a; }
-  .task-card.status-incomplete { border-left: 3px solid #f39c12; }
-  .tc-badge.incomplete { background: rgba(243, 156, 18, 0.18); color: #b9770e; }
-  .task-card.status-queued { border-left: 3px solid var(--warning); }
+
+  .header-nav a:hover,
+  .header-nav button:hover {
+    border-color: var(--border-strong);
+    color: var(--text-bright);
+    transform: translateY(-1px);
+  }
+
+  .header-nav .active {
+    border-color: var(--blue-dark);
+    background: var(--blue);
+    color: #fff;
+    box-shadow: 0 8px 20px rgba(37, 99, 235, 0.22);
+  }
+
+  .container {
+    width: min(1120px, calc(100% - 40px));
+    margin: 0 auto;
+    padding: 28px 0 64px;
+  }
+
+  .view {
+    display: none;
+    animation: fadeIn .22s ease;
+  }
+  .view.active { display: block; }
+
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(6px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .dashboard-head,
+  .wizard-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    gap: 18px;
+    margin-bottom: 18px;
+  }
+
+  .dashboard-head h2,
+  .wizard-head h2 {
+    color: var(--text-bright);
+    font-size: 26px;
+    font-weight: 780;
+    line-height: 1.2;
+    letter-spacing: 0;
+  }
+
+  .dashboard-head p,
+  .wizard-head p {
+    margin-top: 6px;
+    color: var(--text-dim);
+    font-size: 14px;
+  }
+
+  .dash-command {
+    position: relative;
+    overflow: hidden;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(420px, .78fr);
+    gap: 22px;
+    margin-bottom: 18px;
+    padding: 24px;
+    border: 1px solid #172033;
+    border-radius: var(--radius);
+    background:
+      linear-gradient(135deg, rgba(37, 99, 235, .20), transparent 42%),
+      linear-gradient(160deg, #101828 0%, #182033 58%, #202018 100%);
+    color: #f8fafc;
+    box-shadow: 0 20px 60px rgba(16, 24, 40, .18);
+  }
+
+  .dash-command::after {
+    content: "";
+    position: absolute;
+    inset: auto 0 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,.30), transparent);
+  }
+
+  .dash-command-main {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    gap: 24px;
+  }
+
+  .dash-command h2 {
+    max-width: 560px;
+    color: #fff;
+    font-size: 30px;
+    font-weight: 800;
+    line-height: 1.12;
+    letter-spacing: 0;
+  }
+
+  .dash-command p {
+    max-width: 600px;
+    margin-top: 8px;
+    color: #cbd5e1;
+    font-size: 14px;
+  }
+
+  .dash-command-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  .dash-command-actions .btn-secondary {
+    border-color: rgba(255,255,255,.18);
+    background: rgba(255,255,255,.08);
+    color: #e2e8f0;
+  }
+
+  .dash-command-actions .btn-secondary:hover {
+    background: rgba(255,255,255,.14);
+    color: #fff;
+  }
+
+  .dash-overview {
+    position: relative;
+    z-index: 1;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .dash-metric {
+    min-height: 104px;
+    padding: 14px;
+    border: 1px solid rgba(255,255,255,.14);
+    border-radius: var(--radius);
+    background: rgba(255,255,255,.075);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.08);
+  }
+
+  .dash-metric-label {
+    color: #aab8cc;
+    font-size: 12px;
+    font-weight: 720;
+  }
+
+  .dash-metric-value {
+    margin-top: 10px;
+    color: #fff;
+    font-size: 30px;
+    font-weight: 820;
+    line-height: 1;
+  }
+
+  .dash-metric-note {
+    margin-top: 8px;
+    color: #aab8cc;
+    font-size: 12px;
+    line-height: 1.35;
+  }
+
+  .dash-viewbar {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(240px, 320px);
+    gap: 12px;
+    align-items: center;
+    margin-bottom: 12px;
+  }
+
+  .dash-filter-tabs {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: rgba(255, 255, 255, .76);
+    box-shadow: var(--shadow-sm);
+    overflow-x: auto;
+  }
+
+  .dash-filter {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    min-height: 34px;
+    padding: 7px 11px;
+    border: 0;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--text-dim);
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 720;
+    transition: background .16s ease, color .16s ease, box-shadow .16s ease;
+  }
+
+  .dash-filter:hover {
+    color: var(--text-bright);
+  }
+
+  .dash-filter.active {
+    background: var(--surface);
+    color: var(--blue-dark);
+    box-shadow: var(--shadow-sm);
+  }
+
+  .dash-filter span {
+    min-width: 20px;
+    padding: 2px 6px;
+    border-radius: 999px;
+    background: var(--surface-soft);
+    color: var(--text-faint);
+    font-size: 11px;
+    text-align: center;
+  }
+
+  .dash-filter.active span {
+    background: var(--blue-soft);
+    color: var(--blue-dark);
+  }
+
+  .dash-search {
+    position: relative;
+  }
+
+  .dash-search input {
+    width: 100%;
+    min-height: 44px;
+    padding: 10px 13px 10px 38px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: rgba(255,255,255,.82);
+    color: var(--text);
+    outline: none;
+    box-shadow: var(--shadow-sm);
+  }
+
+  .dash-search input:focus {
+    border-color: var(--blue);
+    box-shadow: var(--focus);
+  }
+
+  .dash-search::before {
+    content: "";
+    position: absolute;
+    left: 14px;
+    top: 50%;
+    width: 13px;
+    height: 13px;
+    border: 2px solid var(--text-faint);
+    border-radius: 50%;
+    transform: translateY(-52%);
+  }
+
+  .dash-search::after {
+    content: "";
+    position: absolute;
+    left: 25px;
+    top: calc(50% + 6px);
+    width: 7px;
+    height: 2px;
+    border-radius: 999px;
+    background: var(--text-faint);
+    transform: rotate(45deg);
+  }
+
+  .task-list-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    margin: 16px 0 12px;
+  }
+
+  .task-list-head h3 {
+    color: var(--text-bright);
+    font-size: 16px;
+    font-weight: 780;
+  }
+
+  .task-list-head p {
+    color: var(--text-dim);
+    font-size: 13px;
+  }
+
+  .dash-no-results {
+    padding: 44px 18px;
+    border: 1px dashed var(--border-strong);
+    border-radius: var(--radius);
+    background: rgba(255,255,255,.76);
+    color: var(--text-dim);
+    text-align: center;
+  }
+
+  #dashStatusBanner {
+    display: none;
+    margin: 0 0 14px !important;
+    padding: 12px 14px !important;
+    border: 1px solid #b8d4ff !important;
+    border-radius: var(--radius) !important;
+    background: #eff6ff !important;
+    color: #1e3a8a !important;
+    font-size: 14px !important;
+    box-shadow: var(--shadow-sm);
+  }
+
+  #dashStatusBanner strong { color: #1d4ed8; }
+
+  #dashToolbar {
+    display: flex !important;
+    justify-content: space-between !important;
+    align-items: center !important;
+    gap: 10px !important;
+    margin: 0 0 14px !important;
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: rgba(255, 255, 255, 0.76);
+    box-shadow: var(--shadow-sm);
+  }
+
+  .dash-select-row,
+  .dash-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  #dashToolbar label {
+    color: var(--text-dim) !important;
+    font-size: 13px !important;
+    font-weight: 600;
+  }
+
+  #dashToolbar input,
+  .task-select,
+  #draftModeToggle {
+    accent-color: var(--blue);
+  }
+
+  #dashSelectedCount {
+    color: var(--blue-dark) !important;
+    font-size: 13px !important;
+    font-weight: 700;
+  }
+
+  #dashTasks {
+    display: grid;
+    gap: 16px;
+  }
+
+  .dash-empty {
+    display: grid;
+    place-items: center;
+    min-height: 340px;
+    padding: 48px 24px;
+    border: 1px dashed var(--border-strong);
+    border-radius: var(--radius);
+    background: rgba(255, 255, 255, 0.72);
+    text-align: center;
+  }
+
+  .dash-empty h2 {
+    margin-bottom: 8px;
+    color: var(--text-bright);
+    font-size: 22px;
+    font-weight: 760;
+  }
+
+  .dash-empty p {
+    margin-bottom: 22px;
+    color: var(--text-dim);
+    font-size: 14px;
+  }
+
+  .task-card {
+    position: relative;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    border-left: 4px solid var(--border-strong);
+    border-radius: var(--radius);
+    background: var(--surface);
+    box-shadow: var(--shadow-sm);
+    padding: 20px;
+    transition: transform .18s ease, border-color .18s ease, box-shadow .18s ease;
+  }
+
+  .task-card::before {
+    content: "";
+    position: absolute;
+    inset: 0 0 auto;
+    height: 3px;
+    background: linear-gradient(90deg, rgba(37,99,235,0.18), rgba(18,128,92,0.18), transparent);
+    opacity: 0;
+    transition: opacity .18s ease;
+  }
+
+  .task-card:hover {
+    border-color: var(--border-strong);
+    box-shadow: var(--shadow);
+    transform: translateY(-2px);
+  }
+
+  .task-card:hover::before { opacity: 1; }
+
+  .task-card.status-running { border-left-color: var(--blue); }
+  .task-card.status-completed { border-left-color: var(--success); }
+  .task-card.status-failed { border-left-color: var(--danger); }
+  .task-card.status-cancelled { border-left-color: var(--text-faint); }
+  .task-card.status-incomplete,
+  .task-card.status-queued { border-left-color: var(--warning); }
 
   .tc-header {
     display: flex;
     justify-content: space-between;
     align-items: flex-start;
-    margin-bottom: 12px;
+    gap: 16px;
+    margin-bottom: 14px;
   }
+
   .tc-title {
-    font-size: 16px;
-    font-weight: 600;
     color: var(--text-bright);
+    font-size: 17px;
+    font-weight: 760;
+    line-height: 1.35;
   }
-  .tc-subtitle { font-size: 11px; color: var(--text-dim); margin-top: 2px; font-family: monospace; }
+
+  .tc-subtitle {
+    margin-top: 3px;
+    color: var(--text-faint);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12px;
+  }
+
   .tc-badge {
-    padding: 3px 10px;
-    border-radius: 20px;
-    font-size: 11px;
-    font-weight: 600;
-    letter-spacing: .5px;
+    display: inline-flex;
+    align-items: center;
+    min-height: 26px;
+    padding: 5px 10px;
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+    white-space: nowrap;
+    font-size: 12px;
+    font-weight: 740;
   }
-  .tc-badge.running { background: rgba(74, 158, 255, 0.15); color: var(--blue); }
-  .tc-badge.completed { background: rgba(46, 204, 113, 0.15); color: var(--success); }
-  .tc-badge.failed { background: rgba(231, 76, 60, 0.15); color: var(--danger); }
-  .tc-badge.queued { background: rgba(243, 156, 18, 0.15); color: var(--warning); }
 
-  .tc-meta {
-    display: flex;
-    gap: 20px;
-    font-size: 13px;
-    color: var(--text-dim);
-    margin-bottom: 14px;
-    flex-wrap: wrap;
-  }
-  .tc-meta strong { color: var(--text); }
+  .tc-badge.running { border-color: #bdd2ff; background: var(--blue-soft); color: #1e40af; }
+  .tc-badge.completed { border-color: #bdebcf; background: var(--success-soft); color: var(--success); }
+  .tc-badge.failed { border-color: #ffc1ba; background: var(--danger-soft); color: var(--danger); }
+  .tc-badge.queued,
+  .tc-badge.incomplete { border-color: #f7d58a; background: var(--warning-soft); color: var(--warning); }
+  .tc-badge.cancelled { border-color: var(--border); background: var(--surface-soft); color: var(--text-dim); }
 
-  /* Headline stats: the at-a-glance "volume/chapter" position */
   .tc-headline {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 18px 24px;
-    align-items: baseline;
-    padding: 12px 14px;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(128px, 1fr));
+    gap: 12px 18px;
+    padding: 14px 0;
     margin-bottom: 14px;
-    background: linear-gradient(180deg, rgba(74, 158, 255, 0.06), rgba(74, 158, 255, 0.02));
-    border: 1px solid rgba(74, 158, 255, 0.18);
-    border-radius: 10px;
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
   }
-  .tc-headline .hl-item { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+
+  .tc-headline .hl-item {
+    min-width: 0;
+    padding-right: 14px;
+    border-right: 1px solid var(--border);
+  }
+
+  .tc-headline .hl-item:last-child { border-right: 0; }
+
   .tc-headline .hl-label {
+    margin-bottom: 3px;
+    color: var(--text-faint);
     font-size: 11px;
-    color: var(--text-dim);
-    text-transform: uppercase;
-    letter-spacing: .5px;
+    font-weight: 720;
   }
+
   .tc-headline .hl-value {
-    font-size: 15px;
-    font-weight: 700;
     color: var(--text-bright);
-    line-height: 1.3;
+    font-size: 17px;
+    font-weight: 780;
+    line-height: 1.25;
   }
+
   .tc-headline .hl-value.pulse { color: var(--blue); }
-  .tc-headline .hl-value .dim { color: var(--text-dim); font-weight: 500; font-size: 13px; }
-  .tc-headline .hl-sub { font-size: 11px; color: var(--text-dim); }
+  .tc-headline .hl-value .dim {
+    color: var(--text-dim);
+    font-size: 13px;
+    font-weight: 620;
+  }
+  .tc-headline .hl-sub {
+    margin-top: 3px;
+    color: var(--text-faint);
+    font-size: 12px;
+  }
 
   .tc-stage {
-    font-size: 13px;
-    color: var(--text);
     margin-bottom: 12px;
-    padding: 8px 12px;
-    background: rgba(42, 58, 94, 0.35);
+    padding: 9px 11px;
+    border: 1px solid var(--border);
     border-left: 3px solid var(--blue);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
+    background: var(--surface-soft);
+    color: var(--text);
+    font-size: 13px;
+    line-height: 1.45;
   }
-  .tc-stage.completed { border-left-color: var(--success); }
-  .tc-stage.failed { border-left-color: var(--danger); }
-  .tc-stage.queued { border-left-color: var(--warning); }
 
-  /* Progress inside task card */
+  .tc-stage.completed { border-left-color: var(--success); }
+  .tc-stage.failed { border-left-color: var(--danger); background: #fff7f6; }
+  .tc-stage.queued { border-left-color: var(--warning); background: #fffaf0; }
+
+  .tc-live,
+  .pv-live {
+    margin-bottom: 12px;
+    padding: 12px;
+    border: 1px solid #bdd2ff;
+    border-left: 3px solid var(--blue);
+    border-radius: var(--radius-sm);
+    background: linear-gradient(180deg, #f7fbff, #ffffff);
+  }
+
+  .tc-live-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    align-items: flex-start;
+  }
+
+  .tc-live-kicker {
+    margin-bottom: 3px;
+    color: var(--blue-dark);
+    font-size: 11px;
+    font-weight: 820;
+  }
+
+  .tc-live-primary {
+    color: var(--text-bright);
+    font-size: 14px;
+    font-weight: 760;
+    line-height: 1.45;
+  }
+
+  .tc-live-secondary {
+    margin-top: 5px;
+    color: var(--text-dim);
+    font-size: 12px;
+    line-height: 1.55;
+  }
+
+  .tc-live-chips {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 6px;
+    min-width: 160px;
+  }
+
+  .tc-live-chip {
+    display: inline-flex;
+    align-items: center;
+    min-height: 24px;
+    padding: 4px 8px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--surface);
+    color: var(--text-dim);
+    font-size: 11px;
+    font-weight: 720;
+    white-space: nowrap;
+  }
+
+  .tc-live-chip.active {
+    border-color: #bdd2ff;
+    background: var(--blue-soft);
+    color: var(--blue-dark);
+  }
+
+  .tc-live-chip.warn {
+    border-color: #f7d58a;
+    background: var(--warning-soft);
+    color: var(--warning);
+  }
+
   .tc-progress { margin-bottom: 10px; }
-  .tc-progress + .tc-progress { margin-top: 0; }
+
   .tc-prog-header {
     display: flex;
     justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 6px;
+    color: var(--text-dim);
     font-size: 12px;
-    margin-bottom: 4px;
   }
-  .tc-prog-header .label { color: var(--text-dim); }
-  .tc-prog-header .pct { color: var(--blue); font-weight: 700; }
-  .tc-prog-header.volume .pct { color: var(--success); }
-  .tc-bar {
-    width: 100%;
-    height: 6px;
-    background: rgba(42, 58, 94, 0.6);
-    border-radius: 3px;
-    overflow: hidden;
-  }
-  .tc-bar-fill {
-    height: 100%;
-    border-radius: 3px;
-    transition: width .6s ease;
-  }
-  .tc-bar-fill.running { background: linear-gradient(90deg, var(--accent-light), var(--blue)); }
-  .tc-bar-fill.completed { background: var(--success); }
-  .tc-bar-fill.failed { background: var(--danger); }
-  .tc-bar-fill.volume { background: linear-gradient(90deg, #27ae60, #2ecc71); }
 
-  /* Chapter pills */
+  .tc-prog-header .label { font-weight: 650; }
+  .tc-prog-header .pct { color: var(--blue); font-weight: 780; }
+  .tc-prog-header.volume .pct { color: var(--success); }
+
+  .tc-bar,
+  .pv-bar {
+    width: 100%;
+    height: 8px;
+    overflow: hidden;
+    border-radius: 999px;
+    background: #e7edf5;
+  }
+
+  .tc-bar-fill,
+  .pv-bar-fill {
+    height: 100%;
+    border-radius: inherit;
+    transition: width .5s ease;
+  }
+
+  .tc-bar-fill.running,
+  .pv-bar-fill.running { background: linear-gradient(90deg, var(--blue), var(--violet)); }
+  .tc-bar-fill.completed,
+  .pv-bar-fill.completed { background: linear-gradient(90deg, var(--success), #20b486); }
+  .tc-bar-fill.failed,
+  .pv-bar-fill.failed { background: var(--danger); }
+  .tc-bar-fill.volume { background: linear-gradient(90deg, var(--success), #20b486); }
+
+  .tc-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 18px;
+    margin: 12px 0 14px;
+    color: var(--text-dim);
+    font-size: 13px;
+  }
+
+  .tc-meta strong {
+    color: var(--text-bright);
+    font-weight: 720;
+  }
+
   .tc-chapters {
     display: flex;
     flex-wrap: wrap;
-    gap: 6px;
+    gap: 7px;
     margin-bottom: 14px;
   }
+
   .ch-pill {
     display: inline-flex;
     align-items: center;
-    gap: 4px;
-    padding: 4px 10px;
-    border-radius: 6px;
+    min-height: 28px;
+    padding: 5px 9px;
+    border-radius: var(--radius-sm);
     font-size: 12px;
+    font-weight: 650;
     text-decoration: none;
-    transition: all .15s;
-  }
-  .ch-pill.done {
-    background: rgba(46, 204, 113, 0.1);
-    border: 1px solid rgba(46, 204, 113, 0.25);
-    color: var(--success);
-    cursor: pointer;
-  }
-  .ch-pill.done:hover {
-    background: rgba(46, 204, 113, 0.2);
-    color: var(--text-bright);
-  }
-  .ch-pill.writing {
-    background: rgba(74, 158, 255, 0.1);
-    border: 1px solid rgba(74, 158, 255, 0.25);
-    color: var(--blue);
-    animation: pulse 2s infinite;
-  }
-  @keyframes pulse {
-    0%,100% { opacity: 1; }
-    50% { opacity: .5; }
+    transition: background .16s ease, border-color .16s ease, color .16s ease, transform .16s ease;
   }
 
-  /* Actions row */
+  .ch-pill.done {
+    border: 1px solid #bdebcf;
+    background: var(--success-soft);
+    color: var(--success);
+  }
+
+  .ch-pill.done:hover {
+    border-color: var(--success);
+    background: #c8f1d9;
+    transform: translateY(-1px);
+  }
+
+  .ch-pill.writing {
+    border: 1px solid #bdd2ff;
+    background: var(--blue-soft);
+    color: var(--blue-dark);
+    animation: pulse 1.8s ease-in-out infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: .62; }
+  }
+
   .tc-actions {
     display: flex;
-    gap: 8px;
     flex-wrap: wrap;
+    gap: 8px;
   }
 
-  /* Timeline inside expanded card */
   .tc-timeline {
+    max-height: 180px;
+    overflow-y: auto;
     margin-top: 14px;
     padding-top: 14px;
     border-top: 1px solid var(--border);
-    max-height: 180px;
-    overflow-y: auto;
   }
+
   .tl-item {
     display: flex;
     gap: 8px;
     padding: 4px 0;
     font-size: 12px;
   }
-  .tl-item .tl-time { color: var(--text-dim); min-width: 60px; }
+
+  .tl-item .tl-time {
+    min-width: 60px;
+    color: var(--text-faint);
+  }
   .tl-item .tl-text { color: var(--text); }
 
-  /* ═══════════════════════════════════
-     WIZARD VIEW (create new)
-     ═══════════════════════════════════ */
+  #viewWizard {
+    padding: 22px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: rgba(255, 255, 255, 0.82);
+    box-shadow: var(--shadow-sm);
+  }
 
-  /* Stepper */
   .stepper {
-    display: flex;
-    justify-content: center;
-    gap: 8px;
-    padding: 20px 0 8px;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+    padding: 0;
+    margin: 18px 0 8px;
   }
+
   .step-dot {
-    width: 10px; height: 10px;
+    position: relative;
+    height: 4px;
+    border-radius: 999px;
+    background: #dbe3ee;
+    transition: background .22s ease;
+  }
+
+  .step-dot::before {
+    content: attr(data-step);
+    position: absolute;
+    top: -12px;
+    left: 0;
+    display: grid;
+    place-items: center;
+    width: 28px;
+    height: 28px;
+    border: 1px solid var(--border);
     border-radius: 50%;
-    background: var(--border);
-    transition: all .3s;
-  }
-  .step-dot.active { background: var(--blue); box-shadow: 0 0 8px var(--blue); }
-  .step-dot.done { background: var(--success); }
-  .step-labels {
-    display: flex;
-    justify-content: center;
-    gap: 48px;
-    padding: 4px 0 20px;
-    font-size: 13px;
+    background: var(--surface);
     color: var(--text-dim);
+    font-size: 12px;
+    font-weight: 760;
+    box-shadow: var(--shadow-sm);
   }
-  .step-labels span.active { color: var(--blue); font-weight: 600; }
+
+  .step-dot.active,
+  .step-dot.done { background: var(--blue); }
+  .step-dot.done { background: var(--success); }
+  .step-dot.active::before {
+    border-color: var(--blue);
+    background: var(--blue);
+    color: #fff;
+  }
+  .step-dot.done::before {
+    border-color: var(--success);
+    background: var(--success);
+    color: #fff;
+  }
+
+  .step-labels {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+    padding: 12px 0 22px;
+    color: var(--text-dim);
+    font-size: 13px;
+    font-weight: 650;
+  }
+
+  .step-labels span.active { color: var(--blue-dark); }
   .step-labels span.done { color: var(--success); }
 
-  /* Panels */
-  .wpanel { display: none; animation: fadeIn .3s ease; }
+  .wpanel {
+    display: none;
+    animation: fadeIn .22s ease;
+  }
   .wpanel.active { display: block; }
 
-  /* Step 1: Genre grid */
-  .search-box { position: relative; margin-bottom: 20px; }
-  .search-box input {
-    width: 100%;
-    padding: 12px 16px 12px 42px;
-    background: var(--card);
+  .lang-tabs {
+    display: inline-flex;
+    gap: 4px;
+    margin-bottom: 14px;
+    padding: 4px;
     border: 1px solid var(--border);
     border-radius: var(--radius);
-    color: var(--text);
-    font-size: 15px;
-    outline: none;
+    background: var(--surface-soft);
   }
-  .search-box input:focus { border-color: var(--blue); }
-  .search-box::before {
-    content: "\1F50D";
-    position: absolute;
-    left: 14px; top: 50%;
-    transform: translateY(-50%);
-    font-size: 16px;
-    opacity: .5;
+
+  .lang-tab {
+    min-height: 34px;
+    padding: 7px 14px;
+    border: 0;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--text-dim);
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 720;
+    transition: background .16s ease, color .16s ease, box-shadow .16s ease;
   }
-  .lang-tabs {
-    display: flex;
-    gap: 8px;
+
+  .lang-tab:hover { color: var(--text-bright); }
+  .lang-tab.active {
+    background: var(--surface);
+    color: var(--blue-dark);
+    box-shadow: var(--shadow-sm);
+  }
+
+  .search-box {
+    position: relative;
     margin-bottom: 16px;
   }
-  .lang-tab {
-    padding: 8px 20px;
-    border-radius: 20px;
-    font-size: 14px;
-    font-weight: 600;
-    cursor: pointer;
+
+  .search-box::before {
+    content: "";
+    position: absolute;
+    left: 15px;
+    top: 50%;
+    width: 14px;
+    height: 14px;
+    border: 2px solid var(--text-faint);
+    border-radius: 50%;
+    transform: translateY(-52%);
+  }
+
+  .search-box::after {
+    content: "";
+    position: absolute;
+    left: 27px;
+    top: calc(50% + 7px);
+    width: 7px;
+    height: 2px;
+    border-radius: 999px;
+    background: var(--text-faint);
+    transform: rotate(45deg);
+  }
+
+  .search-box input {
+    width: 100%;
+    min-height: 44px;
+    padding: 11px 14px 11px 42px;
     border: 1px solid var(--border);
-    background: rgba(255,255,255,0.04);
-    color: var(--text-dim);
-    transition: all .2s;
+    border-radius: var(--radius);
+    background: var(--surface);
+    color: var(--text);
+    outline: none;
+    font-size: 14px;
+    transition: border-color .16s ease, box-shadow .16s ease;
   }
-  .lang-tab:hover { background: rgba(255,255,255,0.08); color: var(--text); }
-  .lang-tab.active {
-    background: linear-gradient(180deg, rgba(74,158,255,0.95), rgba(60,130,220,0.85));
-    color: #fff;
-    border-color: rgba(74,158,255,0.5);
+
+  .search-box input:focus,
+  .custom-row input:focus,
+  #scheduleAt:focus {
+    border-color: var(--blue);
+    box-shadow: var(--focus);
   }
+
+  #genreLangHint {
+    color: var(--text-dim) !important;
+    font-size: 13px !important;
+  }
+
   .genre-grid {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 14px;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 12px;
   }
-  @media (max-width: 768px) { .genre-grid { grid-template-columns: repeat(2, 1fr); } }
+
   .genre-card {
-    background: var(--card);
-    border: 2px solid transparent;
+    min-height: 150px;
+    padding: 16px;
+    border: 1px solid var(--border);
     border-radius: var(--radius);
-    padding: 18px 16px;
+    background: var(--surface);
+    box-shadow: var(--shadow-sm);
     cursor: pointer;
-    transition: all .2s;
+    transition: transform .16s ease, border-color .16s ease, box-shadow .16s ease, background .16s ease;
   }
-  .genre-card:hover { background: var(--card-hover); border-color: var(--border); transform: translateY(-2px); }
-  .genre-card.selected { border-color: var(--blue); background: var(--blue-glow); }
-  .genre-card .name { font-size: 16px; font-weight: 600; color: var(--text-bright); margin-bottom: 4px; }
-  .genre-card .genre-tag { font-size: 12px; color: var(--blue); margin-bottom: 8px; }
+
+  .genre-card:hover {
+    border-color: var(--border-strong);
+    box-shadow: 0 10px 24px rgba(16, 24, 40, 0.08);
+    transform: translateY(-2px);
+  }
+
+  .genre-card.selected {
+    border-color: var(--blue);
+    background: var(--surface-tint);
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.10);
+  }
+
+  .genre-card .name {
+    margin-bottom: 5px;
+    color: var(--text-bright);
+    font-size: 16px;
+    font-weight: 760;
+  }
+
+  .genre-card .genre-tag {
+    margin-bottom: 10px;
+    color: var(--blue-dark);
+    font-size: 12px;
+    font-weight: 720;
+  }
+
   .genre-card .desc {
-    font-size: 13px; color: var(--text-dim); line-height: 1.5;
-    display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
+    display: -webkit-box;
+    overflow: hidden;
+    color: var(--text-dim);
+    font-size: 13px;
+    line-height: 1.55;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
   }
-  .empty-state { text-align: center; padding: 48px 0; color: var(--text-dim); }
 
-  /* Step 2: Length */
-  .length-presets { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 28px; }
-  @media (max-width: 600px) { .length-presets { grid-template-columns: repeat(2, 1fr); } }
+  .empty-state {
+    padding: 42px 0;
+    color: var(--text-dim);
+    text-align: center;
+  }
+
+  .length-presets {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+    margin-bottom: 22px;
+  }
+
   .length-btn {
-    background: var(--card); border: 2px solid transparent; border-radius: var(--radius);
-    padding: 24px 16px; cursor: pointer; text-align: center; transition: all .2s; color: var(--text);
-  }
-  .length-btn:hover { background: var(--card-hover); border-color: var(--border); }
-  .length-btn.selected { border-color: var(--blue); background: var(--blue-glow); }
-  .length-btn .label { font-size: 20px; font-weight: 700; color: var(--text-bright); margin-bottom: 4px; }
-  .length-btn .chapters { font-size: 13px; color: var(--text-dim); }
-
-  .custom-row { display: flex; align-items: center; gap: 12px; margin-bottom: 24px; }
-  .custom-row label { font-size: 14px; color: var(--text-dim); white-space: nowrap; }
-  .custom-row input {
-    width: 120px; padding: 10px 14px; background: var(--card); border: 1px solid var(--border);
-    border-radius: 8px; color: var(--text); font-size: 15px; outline: none; text-align: center;
-  }
-  .custom-row input:focus { border-color: var(--blue); }
-
-  .estimate-box { background: var(--card); border-radius: var(--radius); padding: 16px 20px; margin-bottom: 24px; }
-  .estimate-box .cost { font-size: 20px; font-weight: 600; color: var(--blue); margin-top: 4px; }
-
-  /* Step 3: Summary */
-  .summary-card { background: var(--card); border-radius: var(--radius); padding: 28px; margin-bottom: 28px; }
-  .summary-card h3 { font-size: 18px; color: var(--text-bright); margin-bottom: 16px; }
-  .summary-row {
-    display: flex; justify-content: space-between; padding: 10px 0;
-    border-bottom: 1px solid var(--border); font-size: 15px;
-  }
-  .summary-row:last-child { border-bottom: none; }
-  .summary-row .lbl { color: var(--text-dim); }
-  .summary-row .val { color: var(--text-bright); font-weight: 500; }
-
-  /* ═══════════════════════════════════
-     PROGRESS VIEW (single task detail)
-     ═══════════════════════════════════ */
-  .pv-header { text-align: center; margin-bottom: 20px; }
-  .pv-header h2 { font-size: 22px; color: var(--text-bright); margin-bottom: 4px; }
-  .pv-header .sub { font-size: 14px; color: var(--text-dim); }
-
-  .pv-info-bar {
-    display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px;
-    background: var(--card); border-radius: var(--radius); padding: 14px 20px;
-    margin-bottom: 20px; font-size: 13px;
-  }
-  .pv-info-item { display: flex; gap: 6px; color: var(--text-dim); }
-  .pv-info-item strong { color: var(--text-bright); font-weight: 500; }
-
-  .pv-bar-wrap { margin-bottom: 20px; }
-  .pv-bar-top { display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 14px; }
-  .pv-bar-top .stage { color: var(--text); }
-  .pv-bar-top .pct { color: var(--blue); font-weight: 700; font-size: 18px; }
-  .pv-bar { width: 100%; height: 10px; background: var(--card); border-radius: 5px; overflow: hidden; }
-  .pv-bar-fill { height: 100%; border-radius: 5px; transition: width .6s ease; }
-  .pv-bar-fill.running { background: linear-gradient(90deg, var(--accent-light), var(--blue)); }
-  .pv-bar-fill.completed { background: linear-gradient(90deg, #27ae60, var(--success)); }
-  .pv-bar-fill.failed { background: var(--danger); }
-
-  .pv-stats {
-    display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 20px;
-  }
-  @media (max-width: 600px) { .pv-stats { grid-template-columns: repeat(2, 1fr); } }
-  .pv-stat {
-    background: var(--card); border-radius: 8px; padding: 14px 16px; text-align: center;
-  }
-  .pv-stat .v { font-size: 22px; font-weight: 700; color: var(--text-bright); }
-  .pv-stat .l { font-size: 12px; color: var(--text-dim); margin-top: 2px; }
-
-  /* Chapters grid */
-  .pv-chapters {
-    background: var(--card); border-radius: var(--radius); padding: 20px; margin-bottom: 20px;
-  }
-  .pv-chapters h4 {
-    font-size: 14px; color: var(--text-dim); margin-bottom: 12px; font-weight: 500;
-    display: flex; justify-content: space-between; align-items: center;
-  }
-  .pv-ch-grid {
-    display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-    gap: 6px; max-height: 280px; overflow-y: auto;
-  }
-  .pv-ch-link {
-    display: grid; grid-template-columns: auto 1fr; gap: 6px 8px; padding: 7px 10px;
-    background: rgba(74, 158, 255, 0.05); border: 1px solid rgba(74, 158, 255, 0.12);
-    border-radius: 6px; color: var(--text); text-decoration: none; font-size: 13px;
-    transition: all .2s;
-  }
-  .pv-ch-link:hover { background: rgba(74, 158, 255, 0.12); border-color: var(--blue); color: var(--text-bright); }
-  .pv-ch-link .n { color: var(--blue); font-weight: 600; min-width: 32px; }
-  .pv-ch-link .t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .pv-ch-link .m { color: var(--text-dim); font-size: 12px; grid-column: 2; }
-
-  /* Timeline log */
-  .pv-timeline {
-    background: var(--card); border-radius: var(--radius); padding: 20px; margin-bottom: 20px;
-    max-height: 220px; overflow-y: auto;
-  }
-  .pv-timeline h4 { font-size: 14px; color: var(--text-dim); margin-bottom: 12px; font-weight: 500; }
-  .pv-tl-item { display: flex; gap: 8px; padding: 5px 0; font-size: 12px; border-bottom: 1px solid rgba(42,58,94,0.4); }
-  .pv-tl-item:last-child { border-bottom: none; }
-  .pv-tl-dot { width: 7px; height: 7px; border-radius: 50%; margin-top: 4px; flex-shrink: 0; }
-  .pv-tl-dot.done { background: var(--success); }
-  .pv-tl-dot.active { background: var(--blue); animation: pulse 1.5s infinite; }
-  .pv-tl-time { color: var(--text-dim); min-width: 55px; }
-  .pv-tl-text { color: var(--text); flex: 1; }
-
-  /* ═══════════════════════════════════
-     LISTING PROFILE (book listing)
-     ═══════════════════════════════════ */
-  .listing-panel {
-    display: none;
-    animation: fadeIn .4s ease;
-    margin-bottom: 20px;
-  }
-  .listing-panel.visible { display: block; }
-  .listing-panel h3 {
-    font-size: 18px; color: var(--text-bright); margin-bottom: 16px; font-weight: 700;
-  }
-  .listing-panel h4 {
-    font-size: 14px; color: var(--text-dim); margin-bottom: 10px; font-weight: 600;
-    text-transform: uppercase; letter-spacing: .5px;
-  }
-  .listing-section {
-    background: var(--card);
-    backdrop-filter: var(--glass-blur);
-    -webkit-backdrop-filter: var(--glass-blur);
+    min-height: 112px;
+    padding: 20px 14px;
     border: 1px solid var(--border);
     border-radius: var(--radius);
-    box-shadow: var(--glass-shadow);
-    padding: 20px;
-    margin-bottom: 14px;
-  }
-  .listing-header-row {
-    display: flex; justify-content: space-between; align-items: flex-start;
-    flex-wrap: wrap; gap: 8px; margin-bottom: 14px;
-  }
-  .listing-title { font-size: 20px; font-weight: 700; color: var(--text-bright); }
-  .listing-subtitle { font-size: 13px; color: var(--text-dim); margin-top: 2px; }
-  .listing-tags { display: flex; flex-wrap: wrap; gap: 6px; }
-  .listing-tag {
-    padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 500;
-    background: rgba(74, 158, 255, 0.12); color: var(--blue); border: 1px solid rgba(74, 158, 255, 0.25);
-  }
-  .listing-score-row {
-    display: grid; grid-template-columns: minmax(160px, 0.4fr) minmax(0, 1fr);
-    gap: 12px; align-items: stretch;
-  }
-  .ls-score-card {
-    padding: 16px 20px;
-    background: rgba(74, 158, 255, 0.06);
-    border-radius: var(--radius-sm);
-    border: 1px solid rgba(74, 158, 255, 0.18);
-  }
-  .ls-score-card strong {
-    display: block; font-size: 30px; line-height: 1; margin-bottom: 8px; color: var(--text-bright);
-  }
-  .ls-score-card span { display: block; color: var(--text-dim); font-size: 13px; line-height: 1.6; }
-  .ls-checks {
-    display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 8px;
-  }
-  .ls-check {
-    min-height: 68px; padding: 10px 12px; border-radius: 10px;
-    border: 1px solid var(--border); background: rgba(255, 255, 255, 0.04);
-  }
-  .ls-check strong {
-    display: flex; justify-content: space-between; gap: 6px; margin-bottom: 4px; font-size: 12px;
-  }
-  .ls-check small { display: block; color: var(--text-dim); font-size: 11px; line-height: 1.5; }
-  .ls-check.pass strong { color: var(--success); }
-  .ls-check.fail strong { color: var(--danger); }
-  .ls-basics {
-    display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px;
-  }
-  .ls-basic-item {
-    padding: 10px 12px; border-radius: 10px;
-    border: 1px solid var(--border); background: rgba(255, 255, 255, 0.04);
-  }
-  .ls-basic-item strong { display: block; font-size: 11px; color: var(--text-dim); margin-bottom: 2px; text-transform: uppercase; letter-spacing: .3px; }
-  .ls-basic-item span { font-size: 13px; color: var(--text); }
-  .ls-intro p { margin: 0 0 10px; font-size: 14px; color: var(--text); line-height: 1.7; }
-  .ls-intro p strong { color: var(--text-bright); }
-  .ls-promo {
-    padding: 10px 14px; border-radius: 10px; margin-bottom: 8px;
-    border: 1px solid var(--border); background: rgba(255, 255, 255, 0.04);
-    font-size: 13px; color: var(--text); line-height: 1.6;
-  }
-  .ls-promo strong { color: var(--text-dim); font-size: 11px; display: block; margin-bottom: 2px; }
-  .ls-candidates-table {
-    width: 100%; border-collapse: collapse; font-size: 13px;
-  }
-  .ls-candidates-table th {
-    text-align: left; padding: 8px 10px; font-size: 11px; color: var(--text-dim);
-    border-bottom: 1px solid var(--border); font-weight: 600; text-transform: uppercase; letter-spacing: .3px;
-  }
-  .ls-candidates-table td {
-    padding: 7px 10px; border-bottom: 1px solid rgba(255,255,255,0.04); color: var(--text);
-  }
-  .ls-candidates-table td strong { color: var(--text-bright); }
-  .ls-candidates-table tbody tr:hover { background: rgba(74, 158, 255, 0.04); }
-  .ls-char-grid {
-    display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px;
-  }
-  .ls-char-card {
-    padding: 12px 14px; border-radius: 10px;
-    border: 1px solid var(--border); background: rgba(255, 255, 255, 0.04);
-  }
-  .ls-char-card strong { font-size: 14px; color: var(--text-bright); }
-  .ls-char-card .role { font-size: 11px; color: var(--text-dim); font-weight: 400; margin-left: 6px; }
-  .ls-char-card p { font-size: 12px; color: var(--text-dim); margin: 4px 0 0; line-height: 1.5; }
-  .ls-promise-grid {
-    display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px;
-  }
-  .ls-promise-item {
-    padding: 10px 12px; border-radius: 10px;
-    border: 1px solid var(--border); background: rgba(255, 255, 255, 0.04);
-  }
-  .ls-promise-item strong { display: block; font-size: 11px; color: var(--text-dim); margin-bottom: 2px; }
-  .ls-promise-item span { font-size: 13px; color: var(--text); }
-  .ls-columns {
-    display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px;
-  }
-  @media (max-width: 700px) {
-    .listing-score-row { grid-template-columns: 1fr; }
-    .ls-columns { grid-template-columns: 1fr; }
+    background: var(--surface);
+    color: var(--text);
+    cursor: pointer;
+    text-align: center;
+    box-shadow: var(--shadow-sm);
+    transition: transform .16s ease, border-color .16s ease, box-shadow .16s ease, background .16s ease;
   }
 
-  /* Error */
-  .pv-error {
-    background: rgba(231, 76, 60, 0.1); border: 1px solid rgba(231, 76, 60, 0.3);
-    border-radius: var(--radius); padding: 16px 20px; margin-bottom: 20px; display: none;
+  .length-btn:hover {
+    border-color: var(--border-strong);
+    transform: translateY(-2px);
   }
-  .pv-error .err-title { color: var(--danger); font-weight: 600; margin-bottom: 4px; }
-  .pv-error .err-detail { color: var(--text-dim); font-size: 13px; max-height: 100px; overflow-y: auto; white-space: pre-wrap; word-break: break-all; }
 
-  /* Completed banner */
-  .pv-done {
-    text-align: center; padding: 28px 0; display: none; animation: fadeIn .5s ease;
+  .length-btn.selected {
+    border-color: var(--blue);
+    background: var(--surface-tint);
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.10);
   }
-  .pv-done h2 { font-size: 22px; color: var(--success); margin-bottom: 6px; }
-  .pv-done p { color: var(--text-dim); margin-bottom: 16px; }
-  .pv-done-actions { display: flex; justify-content: center; gap: 10px; flex-wrap: wrap; }
 
-  /* ── Common buttons ── */
-  .btn {
-    padding: 10px 24px; border: none; border-radius: var(--radius); font-size: 14px;
-    font-weight: 600; cursor: pointer; transition: all .2s; text-decoration: none;
-    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  .length-btn .label {
+    margin-bottom: 4px;
+    color: var(--text-bright);
+    font-size: 20px;
+    font-weight: 800;
   }
-  .btn-sm { padding: 6px 14px; font-size: 12px; border-radius: 8px; }
-  .btn-secondary { background: var(--card); color: var(--text); border: 1px solid var(--border); }
-  .btn-secondary:hover { background: var(--card-hover); }
-  .btn-primary { background: var(--blue); color: #fff; }
-  .btn-primary:hover { opacity: .85; }
-  .btn-primary:disabled { opacity: .4; cursor: not-allowed; }
-  .btn-success { background: var(--success); color: #fff; }
-  .btn-success:hover { opacity: .85; }
-  .btn-warning { background: var(--warning); color: #fff; }
-  .btn-start { width: 100%; padding: 18px; font-size: 20px; letter-spacing: 2px; }
 
-  .nav-buttons { display: flex; justify-content: space-between; margin-top: 28px; }
-
-  .loading-spinner {
-    display: inline-block; width: 16px; height: 16px;
-    border: 2px solid rgba(255,255,255,.3); border-top-color: #fff;
-    border-radius: 50%; animation: spin .6s linear infinite;
+  .length-btn .chapters {
+    color: var(--text-dim);
+    font-size: 13px;
   }
-  @keyframes spin { to { transform: rotate(360deg); } }
 
-  ::-webkit-scrollbar { width: 5px; }
-  ::-webkit-scrollbar-track { background: transparent; }
-  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
-
-  /* ═══════════════════════════════════
-     LIQUID GLASS OVERRIDES (iOS 26 inspired)
-     ═══════════════════════════════════ */
-  .header {
-    background: rgba(14, 16, 32, 0.55);
-    backdrop-filter: var(--glass-blur);
-    -webkit-backdrop-filter: var(--glass-blur);
-    border-bottom: 1px solid var(--border);
-    position: sticky; top: 0; z-index: 50;
+  .custom-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 18px;
+    color: var(--text-dim);
   }
-  .header-nav a, .header-nav button {
-    border-radius: var(--radius-pill);
+
+  .custom-row label {
+    color: var(--text-dim);
+    font-size: 14px;
+    font-weight: 650;
+    white-space: nowrap;
+  }
+
+  .custom-row input,
+  #scheduleAt {
+    width: 132px;
+    min-height: 40px;
+    padding: 9px 12px;
     border: 1px solid var(--border);
-    background: rgba(255,255,255,0.04);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-    transition: transform .15s ease, filter .15s ease, background .15s ease;
-  }
-  .header-nav a:hover, .header-nav button:hover {
-    background: rgba(255,255,255,0.10);
-    filter: brightness(1.1);
-  }
-  .header-nav a:active, .header-nav button:active { transform: scale(.97); }
-  .header-nav .active {
-    background: linear-gradient(180deg, rgba(74,158,255,0.95), rgba(60,130,220,0.85));
-    color: #fff; border-color: rgba(74,158,255,0.5);
-    box-shadow: 0 6px 20px -8px rgba(74,158,255,0.7);
+    border-radius: var(--radius-sm);
+    background: var(--surface);
+    color: var(--text);
+    outline: none;
+    text-align: center;
+    transition: border-color .16s ease, box-shadow .16s ease;
   }
 
-  /* Cards: glassy translucent */
-  .task-card,
-  .genre-card,
-  .length-btn,
-  .summary-card,
   .estimate-box,
+  .summary-card,
+  .schedule-card,
   .pv-info-bar,
   .pv-stat,
   .pv-chapters,
-  .search-box input,
-  .custom-row input {
-    background: var(--card);
-    backdrop-filter: var(--glass-blur);
-    -webkit-backdrop-filter: var(--glass-blur);
+  .pv-timeline,
+  .listing-section {
     border: 1px solid var(--border);
     border-radius: var(--radius);
-    box-shadow: var(--glass-shadow);
-  }
-  .task-card { padding: 22px; margin-bottom: 0; transition: transform .2s ease, box-shadow .2s ease, background .2s ease; }
-  .task-card:hover {
-    background: var(--card-hover);
-    border-color: rgba(255,255,255,0.16);
-    transform: translateY(-2px);
-    box-shadow: 0 1px 0 rgba(255,255,255,0.08) inset, 0 30px 70px -20px rgba(0,0,0,0.6);
+    background: var(--surface);
+    box-shadow: var(--shadow-sm);
   }
 
-  /* Status ring tints (replace hard border-left) */
-  .task-card.status-running    { border-left: 1px solid var(--border); box-shadow: 0 0 0 1px rgba(74,158,255,0.32), var(--glass-shadow); }
-  .task-card.status-completed  { border-left: 1px solid var(--border); box-shadow: 0 0 0 1px rgba(46,204,113,0.32), var(--glass-shadow); }
-  .task-card.status-failed     { border-left: 1px solid var(--border); box-shadow: 0 0 0 1px rgba(231,76,60,0.32), var(--glass-shadow); }
-  .task-card.status-cancelled  { border-left: 1px solid var(--border); box-shadow: 0 0 0 1px rgba(149,165,166,0.32), var(--glass-shadow); }
-  .task-card.status-incomplete { border-left: 1px solid var(--border); box-shadow: 0 0 0 1px rgba(243,156,18,0.32), var(--glass-shadow); }
-  .task-card.status-queued     { border-left: 1px solid var(--border); box-shadow: 0 0 0 1px rgba(243,156,18,0.32), var(--glass-shadow); }
-
-  /* Dashboard list: breathing grid */
-  #dashTasks { display: grid; gap: 18px; }
-
-  /* Badges → pill glass */
-  .tc-badge {
-    border-radius: var(--radius-pill);
-    padding: 4px 12px;
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-    border: 1px solid rgba(255,255,255,0.08);
+  .estimate-box {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 18px;
+    padding: 16px;
+    margin-bottom: 22px;
   }
 
-  /* Buttons: glass + interactive */
+  .estimate-box .cost {
+    margin-top: 2px;
+    color: var(--blue-dark);
+    font-size: 22px;
+    font-weight: 800;
+  }
+
+  .summary-card {
+    padding: 22px;
+    margin-bottom: 18px;
+  }
+
+  .summary-card h3 {
+    margin-bottom: 14px;
+    color: var(--text-bright);
+    font-size: 18px;
+    font-weight: 760;
+  }
+
+  .summary-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 18px;
+    padding: 12px 0;
+    border-bottom: 1px solid var(--border);
+    color: var(--text);
+    font-size: 14px;
+  }
+
+  .summary-row:last-child { border-bottom: 0; }
+  .summary-row .lbl { color: var(--text-dim); }
+  .summary-row .val {
+    color: var(--text-bright);
+    font-weight: 720;
+    text-align: right;
+  }
+
+  .summary-option {
+    margin-top: 12px;
+    border-bottom: 0;
+  }
+
+  .summary-option label {
+    color: var(--text);
+    font-size: 14px !important;
+    font-weight: 650;
+  }
+
+  .summary-option span span,
+  .summary-option .hint,
+  .schedule-card .hint {
+    color: var(--text-faint) !important;
+  }
+
+  .schedule-card {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 10px !important;
+    padding: 14px !important;
+    border-style: solid !important;
+    background: var(--surface-soft) !important;
+  }
+
+  .schedule-card strong {
+    color: var(--text-bright);
+    font-size: 13px;
+  }
+
+  .schedule-card p {
+    color: var(--text-dim);
+    font-size: 12px;
+  }
+
+  #scheduleAt {
+    width: min(100%, 260px);
+    text-align: left;
+    color-scheme: light;
+  }
+
+  #scheduleStatus {
+    color: var(--text-dim);
+    font-size: 12px !important;
+  }
+
+  .pv-header {
+    margin-bottom: 18px;
+    padding: 18px 20px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--surface);
+    box-shadow: var(--shadow-sm);
+    text-align: left;
+  }
+
+  .pv-header h2 {
+    margin-bottom: 4px;
+    color: var(--text-bright);
+    font-size: 24px;
+    font-weight: 780;
+  }
+
+  .pv-header .sub {
+    color: var(--text-dim);
+    font-size: 14px;
+  }
+
+  .pv-info-bar {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+    padding: 14px 16px;
+    margin-bottom: 18px;
+    font-size: 13px;
+  }
+
+  .pv-info-item {
+    display: flex;
+    gap: 6px;
+    color: var(--text-dim);
+  }
+  .pv-info-item strong {
+    color: var(--text-bright);
+    font-weight: 720;
+  }
+
+  .pv-bar-wrap { margin-bottom: 18px; }
+
+  .pv-bar-top {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 8px;
+    font-size: 14px;
+  }
+
+  .pv-bar-top .stage {
+    color: var(--text);
+    font-weight: 650;
+  }
+  .pv-bar-top .pct {
+    color: var(--blue-dark);
+    font-size: 18px;
+    font-weight: 800;
+  }
+
+  .pv-bar { height: 10px; }
+
+  .pv-stats {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+    margin-bottom: 18px;
+  }
+
+  .pv-stat {
+    padding: 16px;
+    text-align: left;
+  }
+
+  .pv-stat .v {
+    color: var(--text-bright);
+    font-size: 24px;
+    font-weight: 800;
+    line-height: 1.15;
+  }
+
+  .pv-stat .l {
+    margin-top: 5px;
+    color: var(--text-dim);
+    font-size: 12px;
+    font-weight: 650;
+  }
+
+  .pv-chapters,
+  .pv-timeline {
+    padding: 18px;
+    margin-bottom: 18px;
+  }
+
+  .pv-chapters h4,
+  .pv-timeline h4 {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 12px;
+    color: var(--text-dim);
+    font-size: 13px;
+    font-weight: 720;
+  }
+
+  .pv-ch-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+    gap: 8px;
+    max-height: 280px;
+    overflow-y: auto;
+  }
+
+  .pv-ch-link {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 5px 8px;
+    padding: 9px 10px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--surface-soft);
+    color: var(--text);
+    font-size: 13px;
+    text-decoration: none;
+    transition: border-color .16s ease, background .16s ease, transform .16s ease;
+  }
+
+  .pv-ch-link:hover {
+    border-color: var(--blue);
+    background: var(--surface-tint);
+    transform: translateY(-1px);
+  }
+
+  .pv-ch-link .n {
+    min-width: 34px;
+    color: var(--blue-dark);
+    font-weight: 760;
+  }
+  .pv-ch-link .t {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .pv-ch-link .m {
+    grid-column: 2;
+    color: var(--text-dim);
+    font-size: 12px;
+  }
+
+  .pv-timeline {
+    max-height: 250px;
+    overflow-y: auto;
+  }
+
+  .pv-tl-item {
+    display: flex;
+    gap: 9px;
+    padding: 7px 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 12px;
+  }
+
+  .pv-tl-item:last-child { border-bottom: 0; }
+  .pv-tl-dot {
+    width: 8px;
+    height: 8px;
+    margin-top: 5px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .pv-tl-dot.done { background: var(--success); }
+  .pv-tl-dot.active {
+    background: var(--blue);
+    animation: pulse 1.5s infinite;
+  }
+  .pv-tl-time {
+    min-width: 58px;
+    color: var(--text-faint);
+  }
+  .pv-tl-text {
+    flex: 1;
+    color: var(--text);
+  }
+
+  .pv-error {
+    display: none;
+    margin-bottom: 18px;
+    padding: 16px;
+    border: 1px solid #ffc1ba;
+    border-radius: var(--radius);
+    background: var(--danger-soft);
+  }
+
+  .pv-error .err-title {
+    margin-bottom: 4px;
+    color: var(--danger);
+    font-weight: 760;
+  }
+
+  .pv-error .err-detail {
+    max-height: 120px;
+    overflow-y: auto;
+    color: #7a271a;
+    font-size: 13px;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+  .pv-done {
+    display: none;
+    padding: 28px 0;
+    text-align: center;
+    animation: fadeIn .28s ease;
+  }
+
+  .pv-done h2 {
+    margin-bottom: 6px;
+    color: var(--success);
+    font-size: 24px;
+  }
+
+  .pv-done p {
+    margin-bottom: 16px;
+    color: var(--text-dim);
+  }
+
+  .pv-done-actions {
+    display: flex;
+    justify-content: center;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  .listing-panel {
+    display: none;
+    margin-bottom: 20px;
+    animation: fadeIn .28s ease;
+  }
+  .listing-panel.visible { display: block; }
+
+  .listing-panel h3 {
+    margin: 6px 0 14px;
+    color: var(--text-bright);
+    font-size: 20px;
+    font-weight: 780;
+  }
+
+  .listing-panel h4 {
+    margin-bottom: 10px;
+    color: var(--text-dim);
+    font-size: 12px;
+    font-weight: 780;
+  }
+
+  .listing-section {
+    padding: 18px;
+    margin-bottom: 12px;
+  }
+
+  .listing-section-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 12px;
+  }
+
+  .listing-section-head h4 {
+    margin-bottom: 3px;
+  }
+
+  .listing-section-head p {
+    margin: 0;
+    color: var(--text-dim);
+    font-size: 12px;
+    line-height: 1.5;
+  }
+
+  .listing-actions {
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+
+  .listing-header-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+
+  .listing-title {
+    color: var(--text-bright);
+    font-size: 20px;
+    font-weight: 780;
+  }
+
+  .listing-subtitle {
+    margin-top: 2px;
+    color: var(--text-dim);
+    font-size: 13px;
+  }
+
+  .listing-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .listing-tag {
+    display: inline-flex;
+    align-items: center;
+    min-height: 24px;
+    padding: 4px 8px;
+    border: 1px solid #bdd2ff;
+    border-radius: var(--radius-sm);
+    background: var(--blue-soft);
+    color: var(--blue-dark);
+    font-size: 12px;
+    font-weight: 700;
+  }
+
+  .listing-score-row {
+    display: grid;
+    grid-template-columns: minmax(170px, .36fr) minmax(0, 1fr);
+    gap: 12px;
+  }
+
+  .ls-score-card,
+  .ls-check,
+  .ls-basic-item,
+  .ls-promo,
+  .ls-char-card,
+  .ls-promise-item {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--surface-soft);
+  }
+
+  .ls-score-card {
+    padding: 16px;
+  }
+
+  .ls-score-card strong {
+    display: block;
+    margin-bottom: 8px;
+    color: var(--text-bright);
+    font-size: 34px;
+    line-height: 1;
+  }
+
+  .ls-score-card span {
+    display: block;
+    color: var(--text-dim);
+    font-size: 13px;
+    line-height: 1.5;
+  }
+
+  .ls-checks,
+  .ls-basics,
+  .ls-char-grid,
+  .ls-promise-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+    gap: 8px;
+  }
+
+  .ls-check {
+    min-height: 70px;
+    padding: 10px 12px;
+  }
+
+  .ls-check strong {
+    display: flex;
+    justify-content: space-between;
+    gap: 6px;
+    margin-bottom: 4px;
+    font-size: 12px;
+  }
+
+  .ls-check small {
+    display: block;
+    color: var(--text-dim);
+    font-size: 11px;
+    line-height: 1.5;
+  }
+  .ls-check.pass strong { color: var(--success); }
+  .ls-check.fail strong { color: var(--danger); }
+
+  .ls-basic-item,
+  .ls-copy-item,
+  .ls-char-card,
+  .ls-promise-item {
+    padding: 11px 12px;
+  }
+
+  .ls-basic-item strong,
+  .ls-copy-item strong,
+  .ls-promise-item strong {
+    display: block;
+    margin-bottom: 3px;
+    color: var(--text-dim);
+    font-size: 11px;
+    font-weight: 760;
+  }
+
+  .ls-basic-item span,
+  .ls-copy-item span,
+  .ls-promise-item span {
+    color: var(--text);
+    font-size: 13px;
+  }
+
+  .ls-copy-kit {
+    display: grid;
+    grid-template-columns: minmax(240px, .42fr) minmax(0, 1fr);
+    gap: 10px;
+  }
+
+  .ls-copy-list {
+    display: grid;
+    gap: 8px;
+  }
+
+  .ls-copy-item {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--surface-soft);
+  }
+
+  .ls-basic-item .row,
+  .ls-copy-item .row {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  .ls-copy-item span {
+    display: block;
+    line-height: 1.55;
+    word-break: break-word;
+  }
+
+  .ls-copy-textarea {
+    width: 100%;
+    min-height: 210px;
+    resize: vertical;
+    padding: 12px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--surface);
+    color: var(--text);
+    font-size: 13px;
+    line-height: 1.65;
+  }
+
+  .copy-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 28px;
+    padding: 5px 9px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--surface);
+    color: var(--blue-dark);
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 760;
+    line-height: 1;
+    white-space: nowrap;
+    box-shadow: var(--shadow-sm);
+  }
+
+  .copy-btn:hover {
+    border-color: #9bbcff;
+    background: var(--blue-soft);
+  }
+
+  .copy-btn.copied {
+    border-color: #9fd9bf;
+    background: var(--success-soft);
+    color: var(--success);
+  }
+
+  .shelf-intro-card {
+    padding: 13px 14px;
+    border: 1px solid #bdd2ff;
+    border-radius: var(--radius-sm);
+    background: linear-gradient(180deg, #f7fbff, #ffffff);
+  }
+
+  .shelf-intro-card .meta {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 8px;
+    color: var(--text-dim);
+    font-size: 12px;
+    font-weight: 720;
+  }
+
+  .shelf-intro-card p {
+    margin: 0;
+  }
+
+  .ls-intro p {
+    margin: 0 0 10px;
+    color: var(--text);
+    font-size: 14px;
+    line-height: 1.7;
+  }
+
+  .ls-intro p strong { color: var(--text-bright); }
+
+  .ls-promo {
+    padding: 10px 12px;
+    margin-bottom: 8px;
+    color: var(--text);
+    font-size: 13px;
+    line-height: 1.6;
+  }
+
+  .ls-promo strong {
+    display: block;
+    margin-bottom: 2px;
+    color: var(--text-dim);
+    font-size: 11px;
+  }
+
+  .ls-promo-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 4px;
+  }
+
+  .ls-promo-head strong {
+    margin-bottom: 0;
+  }
+
+  .ls-promo > span {
+    display: block;
+  }
+
+  .ls-candidates-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+
+  .ls-candidates-table th {
+    padding: 9px 10px;
+    border-bottom: 1px solid var(--border);
+    color: var(--text-dim);
+    font-size: 11px;
+    font-weight: 780;
+    text-align: left;
+    white-space: nowrap;
+  }
+
+  .ls-candidates-table td {
+    padding: 9px 10px;
+    border-bottom: 1px solid var(--border);
+    color: var(--text);
+    vertical-align: top;
+  }
+
+  .ls-candidates-table td strong { color: var(--text-bright); }
+  .ls-candidates-table tbody tr:hover { background: var(--surface-tint); }
+
+  .ls-char-card strong {
+    color: var(--text-bright);
+    font-size: 14px;
+  }
+
+  .ls-char-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  .ls-char-card .role {
+    margin-left: 6px;
+    color: var(--text-dim);
+    font-size: 11px;
+    font-weight: 500;
+  }
+
+  .ls-char-card p {
+    margin: 4px 0 0;
+    color: var(--text-dim);
+    font-size: 12px;
+    line-height: 1.5;
+  }
+
+  .ls-columns {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+  }
+
   .btn {
-    border-radius: var(--radius-pill) !important;
-    backdrop-filter: blur(14px);
-    -webkit-backdrop-filter: blur(14px);
-    transition: transform .15s ease, filter .15s ease, background .15s ease;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    min-height: 40px;
+    padding: 10px 16px;
+    border: 1px solid transparent;
+    border-radius: var(--radius);
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 720;
+    line-height: 1;
+    text-decoration: none;
+    transition: background .16s ease, border-color .16s ease, color .16s ease, transform .16s ease, box-shadow .16s ease;
   }
-  .btn:hover { filter: brightness(1.12); }
-  .btn:active { transform: scale(.97); }
+
+  .btn:hover { transform: translateY(-1px); }
+  .btn:active { transform: translateY(0); }
+  .btn:focus-visible,
+  .header-nav a:focus-visible,
+  .header-nav button:focus-visible,
+  .lang-tab:focus-visible,
+  .genre-card:focus-visible,
+  .length-btn:focus-visible {
+    outline: none;
+    box-shadow: var(--focus);
+  }
+
+  .btn-sm {
+    min-height: 32px;
+    padding: 7px 11px;
+    border-radius: var(--radius-sm);
+    font-size: 12px;
+  }
+
   .btn-primary {
-    background: linear-gradient(180deg, rgba(74,158,255,0.95), rgba(60,130,220,0.88)) !important;
-    border: 1px solid rgba(74,158,255,0.5) !important;
-    color: #fff !important;
-    box-shadow: 0 8px 22px -10px rgba(74,158,255,0.7);
+    border-color: var(--blue);
+    background: var(--blue);
+    color: #fff;
+    box-shadow: 0 8px 18px rgba(37, 99, 235, 0.18);
   }
+
+  .btn-primary:hover { background: var(--blue-dark); }
+  .btn-primary:disabled {
+    cursor: not-allowed;
+    opacity: .45;
+    transform: none;
+    box-shadow: none;
+  }
+
   .btn-secondary {
-    background: rgba(255,255,255,0.06) !important;
-    border: 1px solid var(--border) !important;
-    color: var(--text) !important;
+    border-color: var(--border);
+    background: var(--surface);
+    color: var(--text-dim);
   }
-  .btn-danger {
-    background: linear-gradient(180deg, rgba(231,76,60,0.92), rgba(190,50,40,0.88)) !important;
-    border: 1px solid rgba(231,76,60,0.5) !important;
-    color: #fff !important;
+
+  .btn-secondary:hover {
+    border-color: var(--border-strong);
+    color: var(--text-bright);
   }
+
   .btn-success {
-    background: linear-gradient(180deg, rgba(46,204,113,0.92), rgba(36,170,90,0.88)) !important;
-    border: 1px solid rgba(46,204,113,0.5) !important;
-    color: #fff !important;
+    border-color: var(--success);
+    background: var(--success);
+    color: #fff;
   }
+
+  .btn-success:hover { background: #0f6f50; }
+
   .btn-warning {
-    background: linear-gradient(180deg, rgba(243,156,18,0.92), rgba(210,130,10,0.88)) !important;
-    border: 1px solid rgba(243,156,18,0.5) !important;
-    color: #fff !important;
+    border-color: var(--warning);
+    background: var(--warning);
+    color: #fff;
   }
 
-  /* Genre / length cards: hover lift */
-  .genre-card, .length-btn {
-    transition: transform .2s ease, background .2s ease, border-color .2s ease;
-  }
-  .genre-card:hover, .length-btn:hover { transform: translateY(-3px); background: var(--card-hover); }
-  .genre-card.selected, .length-btn.selected {
-    border-color: rgba(74,158,255,0.55);
-    box-shadow: 0 0 0 1px rgba(74,158,255,0.45), 0 16px 40px -12px rgba(74,158,255,0.35), var(--glass-shadow);
+  .btn-warning:hover { background: #965a00; }
+
+  .btn-danger {
+    border-color: var(--danger);
+    background: var(--danger);
+    color: #fff;
   }
 
-  /* Inputs */
-  .search-box input:focus, .custom-row input:focus {
-    border-color: rgba(74,158,255,0.5);
-    box-shadow: 0 0 0 3px rgba(74,158,255,0.18);
+  .btn-danger:hover { background: #a53a2d; }
+
+  .btn-start {
+    width: 100%;
+    min-height: 52px;
+    font-size: 17px;
   }
 
-  /* Progress bars */
-  .tc-bar, .pv-bar {
-    background: rgba(255,255,255,0.06);
-    backdrop-filter: blur(8px);
+  .nav-buttons {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    margin-top: 24px;
+  }
+
+  .loading-spinner {
+    display: inline-block;
+    width: 16px;
+    height: 16px;
+    border: 2px solid rgba(255,255,255,.42);
+    border-top-color: #fff;
+    border-radius: 50%;
+    animation: spin .65s linear infinite;
+  }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb {
+    border: 2px solid transparent;
+    border-radius: 999px;
+    background: #c4ceda;
+    background-clip: padding-box;
+  }
+
+  @media (max-width: 900px) {
+    .container { width: min(100% - 28px, 1120px); }
+    .dash-command {
+      grid-template-columns: 1fr;
+    }
+    .dash-viewbar {
+      grid-template-columns: 1fr;
+    }
+    .dashboard-head,
+    .wizard-head {
+      align-items: flex-start;
+      flex-direction: column;
+    }
+    .length-presets { grid-template-columns: repeat(2, 1fr); }
+    .pv-info-bar,
+    .pv-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .listing-score-row,
+    .ls-copy-kit,
+    .ls-columns { grid-template-columns: 1fr; }
+  }
+
+  @media (max-width: 700px) {
+    .header {
+      align-items: flex-start;
+      flex-direction: column;
+      padding: 13px 16px;
+    }
+
+    .header h1 { font-size: 17px; }
+
+    .header-nav {
+      width: 100%;
+      justify-content: flex-start;
+      overflow-x: auto;
+      padding-bottom: 2px;
+    }
+
+    .header-nav a,
+    .header-nav button {
+      flex: 0 0 auto;
+    }
+
+    .container {
+      width: min(100% - 20px, 1120px);
+      padding-top: 18px;
+    }
+
+    .dashboard-head h2,
+    .wizard-head h2 { font-size: 23px; }
+
+    #dashToolbar {
+      align-items: flex-start !important;
+      flex-direction: column !important;
+    }
+
+    .dash-command {
+      padding: 18px;
+    }
+
+    .dash-command h2 {
+      font-size: 26px;
+    }
+
+    .dash-overview {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .dash-metric {
+      min-height: 96px;
+      padding: 12px;
+    }
+
+    .dash-metric-value {
+      font-size: 25px;
+    }
+
+    .task-list-head {
+      align-items: flex-start;
+      flex-direction: column;
+    }
+
+    .task-card { padding: 16px; }
+
+    .tc-header {
+      align-items: flex-start;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .tc-headline {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .tc-live-row {
+      flex-direction: column;
+    }
+
+    .tc-live-chips {
+      justify-content: flex-start;
+      min-width: 0;
+    }
+
+    .tc-headline .hl-item {
+      border-right: 0;
+      padding-right: 0;
+    }
+
+    .tc-prog-header,
+    .summary-row {
+      align-items: flex-start;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .tc-actions .btn,
+    .pv-done-actions .btn {
+      flex: 1 1 150px;
+    }
+
+    .listing-section-head {
+      align-items: flex-start;
+      flex-direction: column;
+    }
+
+    .listing-actions {
+      justify-content: flex-start;
+      width: 100%;
+    }
+
+    #viewWizard { padding: 16px; }
+    .genre-grid { grid-template-columns: 1fr; }
+    .length-presets { grid-template-columns: 1fr; }
+    .custom-row {
+      align-items: flex-start;
+      flex-direction: column;
+    }
+    .estimate-box {
+      align-items: flex-start;
+      flex-direction: column;
+    }
+    .nav-buttons {
+      flex-direction: column;
+    }
+    .nav-buttons .btn { width: 100%; }
+    .pv-header > div {
+      align-items: flex-start !important;
+      flex-direction: column !important;
+    }
+    .pv-info-bar,
+    .pv-stats { grid-template-columns: 1fr; }
+    .pv-chapters h4 { align-items: flex-start; flex-direction: column; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: .01ms !important;
+      animation-iteration-count: 1 !important;
+      scroll-behavior: auto !important;
+      transition-duration: .01ms !important;
+    }
   }
 </style>
 </head>
@@ -814,28 +2138,89 @@
 
   <!-- ═══════════ DASHBOARD VIEW ═══════════ -->
   <div class="view active" id="viewDashboard">
-    <div id="dashStatusBanner" style="display:none;margin-bottom:12px;padding:12px 16px;border-radius:14px;background:rgba(74,158,255,0.08);border:1px solid rgba(74,158,255,0.25);font-size:14px;color:#2c5e9e;"></div>
+    <section class="dash-command">
+      <div class="dash-command-main">
+        <div>
+          <h2>创作指挥台</h2>
+          <p>把生成队列、章节产出、断点续写和上架资料放在同一个操作面板里，先看状态，再处理任务。</p>
+        </div>
+        <div class="dash-command-actions">
+          <button class="btn btn-primary" onclick="startNewCreationFlow()">新建创作</button>
+          <button class="btn btn-secondary" onclick="refreshDashboard()">同步任务</button>
+        </div>
+      </div>
+      <div class="dash-overview" id="dashOverview">
+        <div class="dash-metric">
+          <div class="dash-metric-label">进行中 / 队列</div>
+          <div class="dash-metric-value" id="dashMetricActive">0</div>
+          <div class="dash-metric-note" id="dashMetricCapacity">等待服务状态</div>
+        </div>
+        <div class="dash-metric">
+          <div class="dash-metric-label">已完成作品</div>
+          <div class="dash-metric-value" id="dashMetricCompleted">0</div>
+          <div class="dash-metric-note">可直接进入阅读或上架资料</div>
+        </div>
+        <div class="dash-metric">
+          <div class="dash-metric-label">需要处理</div>
+          <div class="dash-metric-value" id="dashMetricAttention">0</div>
+          <div class="dash-metric-note">失败、停止或未完成任务</div>
+        </div>
+        <div class="dash-metric">
+          <div class="dash-metric-label">任务总数</div>
+          <div class="dash-metric-value" id="dashMetricTotal">0</div>
+          <div class="dash-metric-note">当前工作区可见记录</div>
+        </div>
+      </div>
+    </section>
+    <div id="dashStatusBanner"></div>
     <div id="dashContent">
       <div class="dash-empty" id="dashEmpty">
         <h2>还没有创作任务</h2>
         <p>点击「新建创作」开始你的第一本小说</p>
-        <button class="btn btn-primary" onclick="startNewCreationFlow()">⚡ 新建创作</button>
+        <button class="btn btn-primary" onclick="startNewCreationFlow()">新建创作</button>
       </div>
     </div>
-    <div id="dashToolbar" style="display:flex;justify-content:flex-end;gap:8px;margin-bottom:12px;align-items:center;flex-wrap:wrap;">
-      <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:#555;cursor:pointer;">
-        <input type="checkbox" id="dashSelectAll" onchange="toggleSelectAll(this.checked)"> 全选
-      </label>
-      <span id="dashSelectedCount" style="font-size:13px;color:#888;"></span>
-      <button class="btn btn-danger btn-sm" id="dashBatchDelete" onclick="batchDeleteProjects()" style="display:none;">删除选中（含文件）</button>
-      <button class="btn btn-secondary btn-sm" onclick="cleanupTasks()">清理已结束任务</button>
-      <button class="btn btn-secondary btn-sm" onclick="refreshDashboard()">刷新</button>
+    <div class="dash-viewbar">
+      <div class="dash-filter-tabs" aria-label="任务筛选">
+        <button class="dash-filter active" data-filter="all" onclick="setDashboardFilter('all')">全部 <span id="filterAllCount">0</span></button>
+        <button class="dash-filter" data-filter="active" onclick="setDashboardFilter('active')">进行中 <span id="filterActiveCount">0</span></button>
+        <button class="dash-filter" data-filter="completed" onclick="setDashboardFilter('completed')">已完成 <span id="filterCompletedCount">0</span></button>
+        <button class="dash-filter" data-filter="attention" onclick="setDashboardFilter('attention')">需处理 <span id="filterAttentionCount">0</span></button>
+      </div>
+      <div class="dash-search">
+        <input type="search" id="dashSearch" placeholder="搜索书名、slug、状态">
+      </div>
+    </div>
+    <div class="task-list-head">
+      <div>
+        <h3>作品队列</h3>
+        <p id="dashResultSummary">正在加载任务。</p>
+      </div>
+    </div>
+    <div id="dashToolbar">
+      <div class="dash-select-row">
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+          <input type="checkbox" id="dashSelectAll" onchange="toggleSelectAll(this.checked)"> 全选
+        </label>
+        <span id="dashSelectedCount"></span>
+      </div>
+      <div class="dash-actions">
+        <button class="btn btn-danger btn-sm" id="dashBatchDelete" onclick="batchDeleteProjects()" style="display:none;">删除选中（含文件）</button>
+        <button class="btn btn-secondary btn-sm" onclick="cleanupTasks()">清理已结束任务</button>
+        <button class="btn btn-secondary btn-sm" onclick="refreshDashboard()">刷新</button>
+      </div>
     </div>
     <div id="dashTasks"></div>
   </div>
 
   <!-- ═══════════ WIZARD VIEW ═══════════ -->
   <div class="view" id="viewWizard">
+    <div class="wizard-head">
+      <div>
+        <h2>新建创作</h2>
+        <p>先定题材，再定篇幅，最后确认启动方式。</p>
+      </div>
+    </div>
     <div class="stepper" id="wizStepper">
       <div class="step-dot active" data-step="1"></div>
       <div class="step-dot" data-step="2"></div>
@@ -906,22 +2291,22 @@
         <div class="summary-row"><span class="lbl">子类型</span><span class="val" id="sumSub">-</span></div>
         <div class="summary-row"><span class="lbl">章节数</span><span class="val" id="sumCh">-</span></div>
         <div class="summary-row"><span class="lbl">写作模型</span><span class="val" id="sumModel">-</span></div>
-        <div class="summary-row" style="margin-top:12px;">
-          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:14px;">
+        <div class="summary-row summary-option">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
             <input type="checkbox" id="draftModeToggle" style="width:18px;height:18px;">
             <span>快速草稿模式</span>
-            <span style="color:#888;font-size:12px;">（跳过审核循环，速度提升 3x）</span>
+            <span class="hint" style="font-size:12px;">（跳过审核循环，速度提升 3x）</span>
           </label>
         </div>
       </div>
       <div class="nav-buttons" style="flex-direction:column;gap:12px;">
         <button class="btn btn-primary btn-start" id="startBtn">开始创作</button>
-        <div style="display:flex;flex-direction:column;gap:8px;border:1px dashed #d2d4de;padding:12px;border-radius:8px;background:#fafbff;">
-          <div style="font-size:13px;color:#444;font-weight:600;">⏱ 定时启动（可选）</div>
-          <div style="font-size:12px;color:#888;">选择一个未来时间，到点后自动按上面的配置开始创作。MiniMax token 周一刷新可设为周一 0:05。</div>
-          <input type="datetime-local" id="scheduleAt" style="font-size:14px;padding:6px 8px;border:1px solid #ccd;border-radius:6px;" />
+        <div class="schedule-card">
+          <strong>定时启动（可选）</strong>
+          <p class="hint">选择一个未来时间，到点后自动按上面的配置开始创作。MiniMax token 周一刷新可设为周一 0:05。</p>
+          <input type="datetime-local" id="scheduleAt" />
           <button class="btn btn-secondary" id="scheduleBtn" style="width:fit-content;">提交定时任务</button>
-          <div id="scheduleStatus" style="font-size:12px;"></div>
+          <div id="scheduleStatus"></div>
         </div>
         <button class="btn btn-secondary" onclick="wizGo(2)" style="align-self:flex-start;">上一步</button>
       </div>
@@ -956,6 +2341,17 @@
       <div class="pv-info-item"><span>模型：</span><strong id="pvModel">-</strong></div>
       <div class="pv-info-item"><span>已用时：</span><strong id="pvElapsed">00:00:00</strong></div>
       <div class="pv-info-item"><span>预计剩余：</span><strong id="pvEta">计算中...</strong></div>
+    </div>
+
+    <div class="pv-live" id="pvLive">
+      <div class="tc-live-row">
+        <div>
+          <div class="tc-live-kicker">当前动作</div>
+          <div class="tc-live-primary" id="pvLivePrimary">等待任务进展</div>
+          <div class="tc-live-secondary" id="pvLiveSecondary">暂无实时事件。</div>
+        </div>
+        <div class="tc-live-chips" id="pvLiveChips"></div>
+      </div>
     </div>
 
     <div class="pv-bar-wrap">
@@ -1011,6 +2407,19 @@
       </div>
 
       <div class="listing-section">
+        <div class="listing-section-head">
+          <div>
+            <h4>上架复制包</h4>
+            <p>常用上架字段已整理成可复制文本，简介控制在 500 字以内。</p>
+          </div>
+          <div class="listing-actions" id="lsCopyKitActions"></div>
+        </div>
+        <div class="ls-copy-kit" id="lsCopyKit">
+          <div style="color:var(--text-dim);font-size:13px;">等待加载可复制上架素材。</div>
+        </div>
+      </div>
+
+      <div class="listing-section">
         <h4>上架完整度</h4>
         <div class="listing-score-row">
           <div class="ls-score-card">
@@ -1031,7 +2440,13 @@
       </div>
 
       <div class="listing-section">
-        <h4>简介与宣传文案</h4>
+        <div class="listing-section-head">
+          <div>
+            <h4>简介与宣传文案</h4>
+            <p id="lsIntroMeta">简介建议不超过 500 字。</p>
+          </div>
+          <div class="listing-actions" id="lsIntroActions"></div>
+        </div>
         <div class="ls-intro" id="lsSynopsis">
           <p style="color:var(--text-dim);">暂无作品简介。</p>
         </div>
@@ -1046,7 +2461,13 @@
 
       <div class="ls-columns">
         <div class="listing-section">
-          <h4>角色信息</h4>
+          <div class="listing-section-head">
+            <div>
+              <h4>角色信息</h4>
+              <p>角色名和角色卡可直接复制。</p>
+            </div>
+            <div class="listing-actions" id="lsCharacterActions"></div>
+          </div>
           <div class="ls-char-grid" id="lsCharacters">
             <div style="color:var(--text-dim);font-size:13px;">暂无角色信息。</div>
           </div>
@@ -1082,6 +2503,9 @@
   let taskStartTime = null;
   let maxConcurrentTasks = 3;  // populated from /api/status; default matches backend env
   let highlightTaskId = null;  // visually highlight a freshly-created task on the dashboard
+  let dashboardFilter = 'all';
+  let dashboardQuery = '';
+  let visibleDashboardTasks = [];
   const DEFAULT_LANG = 'zh';
   const DEFAULT_CHAPTER_COUNT = 100;
   const ENGLISH_GENRE_DESCRIPTION_ZH = {
@@ -1139,6 +2563,7 @@
     volume_feedback_collection_started: '🧠 收集卷末反馈', volume_feedback_collected: '🧠 卷末反馈已吸收',
     // Chapter pipeline stages
     project_pipeline_started: '🎬 进入写作循环', resume_skipped_chapters: '跳过已完成章节（续传）',
+    project_pipeline_completed: '写作流程完成',
     chapter_pipeline_started: '写作章节', chapter_pipeline_completed: '章节完成',
     // Quality assurance stages
     periodic_consistency_check_started: '一致性检查', periodic_consistency_check_completed: '一致性检查完成',
@@ -1218,6 +2643,75 @@
   // Module-level selection state — persists across re-renders.
   const selectedSlugs = new Set();
 
+  function isActiveTask(task) {
+    return task?.status === 'running' || task?.status === 'queued';
+  }
+
+  function isAttentionTask(task) {
+    const status = task?.status;
+    if (status === 'failed' || status === 'cancelled' || status === 'incomplete') return true;
+    const stats = getTaskChapterWordStats(task);
+    const writtenCount = stats.hasStats
+      ? stats.completedChapters
+      : ((task.result && task.result.chapters_written) || 0);
+    const targetCount = stats.targetChapters || (task.result && task.result.target_chapters) || 0;
+    return status === 'completed' && targetCount > 0 && writtenCount < targetCount;
+  }
+
+  function matchesDashboardFilter(task) {
+    if (dashboardFilter === 'active') return isActiveTask(task);
+    if (dashboardFilter === 'completed') return task.status === 'completed' && !isAttentionTask(task);
+    if (dashboardFilter === 'attention') return isAttentionTask(task);
+    return true;
+  }
+
+  function matchesDashboardQuery(task) {
+    if (!dashboardQuery) return true;
+    const haystack = [
+      task.title,
+      task.project_slug,
+      task.status,
+      task.current_stage,
+      STAGE[task.status],
+      STAGE[task.current_stage],
+    ].filter(Boolean).join(' ').toLowerCase();
+    return haystack.includes(dashboardQuery);
+  }
+
+  function updateDashboardMetrics() {
+    const active = allTasks.filter(isActiveTask).length;
+    const completed = allTasks.filter(t => t.status === 'completed' && !isAttentionTask(t)).length;
+    const attention = allTasks.filter(isAttentionTask).length;
+    const total = allTasks.length;
+    const free = Math.max(0, maxConcurrentTasks - active);
+
+    const setText = (id, value) => {
+      const el = $(id);
+      if (el) el.textContent = value;
+    };
+    setText('#dashMetricActive', active);
+    setText('#dashMetricCompleted', completed);
+    setText('#dashMetricAttention', attention);
+    setText('#dashMetricTotal', total);
+    setText('#dashMetricCapacity', active > 0
+      ? `${free > 0 ? `还可新建 ${free} 本` : '已达并发上限'} · 上限 ${maxConcurrentTasks}`
+      : `当前空闲 · 可同时新建 ${maxConcurrentTasks} 本`);
+
+    setText('#filterAllCount', total);
+    setText('#filterActiveCount', active);
+    setText('#filterCompletedCount', completed);
+    setText('#filterAttentionCount', attention);
+
+    $$('.dash-filter').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.filter === dashboardFilter);
+    });
+  }
+
+  window.setDashboardFilter = function(filter) {
+    dashboardFilter = filter;
+    renderDashboard();
+  };
+
   function updateSelectionUI() {
     const count = selectedSlugs.size;
     const countEl = $('#dashSelectedCount');
@@ -1225,7 +2719,10 @@
     if (countEl) countEl.textContent = count > 0 ? `已选 ${count} 项` : '';
     if (btnEl) btnEl.style.display = count > 0 ? '' : 'none';
     // Reflect "全选" checkbox state based on selectable slugs on screen.
-    const selectableSlugs = [...new Set(allTasks.map(t => t.project_slug).filter(Boolean))];
+    const selectableSlugs = [...new Set(visibleDashboardTasks
+      .filter(t => t.status !== 'running' && t.status !== 'queued')
+      .map(t => t.project_slug)
+      .filter(Boolean))];
     const all = $('#dashSelectAll');
     if (all) {
       all.checked = selectableSlugs.length > 0 && selectableSlugs.every(s => selectedSlugs.has(s));
@@ -1234,7 +2731,11 @@
 
   window.toggleSelectAll = function(checked) {
     if (checked) {
-      allTasks.forEach(t => { if (t.project_slug) selectedSlugs.add(t.project_slug); });
+      visibleDashboardTasks.forEach(t => {
+        if (t.project_slug && t.status !== 'running' && t.status !== 'queued') {
+          selectedSlugs.add(t.project_slug);
+        }
+      });
     } else {
       selectedSlugs.clear();
     }
@@ -1261,15 +2762,19 @@
       ? `还可同时新建 ${free} 本`
       : `已达并发上限，新建的任务会自动排队`;
     banner.style.display = '';
-    banner.innerHTML = `🟢 正在进行 <strong>${active}</strong> / ${maxConcurrentTasks} 项 · ${freeText}`;
+    banner.innerHTML = `正在进行 <strong>${active}</strong> / ${maxConcurrentTasks} 项 · ${freeText}`;
   }
 
   function renderDashboard() {
     const container = $('#dashTasks');
     const empty = $('#dashEmpty');
+    updateDashboardMetrics();
     if (!allTasks.length) {
       empty.style.display = '';
       container.innerHTML = '';
+      visibleDashboardTasks = [];
+      const summary = $('#dashResultSummary');
+      if (summary) summary.textContent = '暂无任务。';
       selectedSlugs.clear();
       updateSelectionUI();
       updateStatusBanner();
@@ -1277,12 +2782,25 @@
     }
     empty.style.display = 'none';
     updateStatusBanner();
+    visibleDashboardTasks = allTasks.filter(t => matchesDashboardFilter(t) && matchesDashboardQuery(t));
     // Prune selected slugs that no longer exist in the task list.
     const liveSlugs = new Set(allTasks.map(t => t.project_slug).filter(Boolean));
     for (const s of [...selectedSlugs]) {
       if (!liveSlugs.has(s)) selectedSlugs.delete(s);
     }
-    container.innerHTML = allTasks.map(renderTaskCard).join('');
+    const summary = $('#dashResultSummary');
+    if (summary) {
+      const filterText = {
+        all: '全部任务',
+        active: '进行中任务',
+        completed: '已完成作品',
+        attention: '需要处理的任务',
+      }[dashboardFilter] || '任务';
+      summary.textContent = `${filterText} · 显示 ${visibleDashboardTasks.length} / ${allTasks.length} 项`;
+    }
+    container.innerHTML = visibleDashboardTasks.length
+      ? visibleDashboardTasks.map(renderTaskCard).join('')
+      : '<div class="dash-no-results">没有匹配的任务。可以调整筛选条件或清空搜索词。</div>';
     updateSelectionUI();
   }
 
@@ -1304,12 +2822,177 @@
     return null;
   }
 
+  function getTaskChapterWordStats(task) {
+    const stats = task?.chapter_word_stats || {};
+    const chapters = (Array.isArray(stats.chapters) ? stats.chapters : [])
+      .map((ch) => ({
+        ...ch,
+        number: Number(ch.number),
+        word_count: Number(ch.word_count || 0),
+        estimated_read_minutes: Number(ch.estimated_read_minutes || 0),
+      }))
+      .filter((ch) => Number.isFinite(ch.number) && ch.number > 0)
+      .sort((a, b) => a.number - b.number);
+    const wordTotalFromChapters = chapters.reduce((sum, ch) => sum + Math.max(0, Number(ch.word_count || 0)), 0);
+    const wordTotal = Number(stats.word_count_total || 0) || wordTotalFromChapters;
+    const completedChapters = Number(stats.completed_chapters || 0) || chapters.length;
+    return {
+      hasStats: chapters.length > 0 || wordTotal > 0 || completedChapters > 0,
+      chapters,
+      byNumber: new Map(chapters.map(ch => [ch.number, ch])),
+      completedChapters,
+      wordTotal,
+      targetChapters: Number(stats.target_chapters || 0),
+      targetWordCount: Number(stats.target_word_count || 0),
+    };
+  }
+
+  function formatEventClock(value) {
+    if (!value) return '';
+    const time = new Date(value);
+    if (Number.isNaN(time.getTime())) return '';
+    return time.toLocaleString('zh-CN', {
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    });
+  }
+
+  function latestStageEvent(events, stage) {
+    if (!Array.isArray(events) || !events.length) return null;
+    if (stage) {
+      for (const event of [...events].reverse()) {
+        if (event.stage === stage) return event;
+      }
+    }
+    return events[events.length - 1] || null;
+  }
+
+  function describeStageEvent(stage, payload = {}, context = {}) {
+    const label = STAGE[stage] || stage || '等待任务进展';
+    const n = payload.chapter_number ?? payload.chapter ?? null;
+    const progress = payload.progress || payload.global_progress || '';
+    const target = Number(payload.target_word_count || 0);
+    const volume = payload.volume_number || context.currentVolume;
+    const volumeCount = payload.volume_count || context.totalVolumes;
+    const chapterCount = payload.chapter_count || payload.total_count || 0;
+    const projectSlug = payload.project_slug || '';
+    switch (stage) {
+      case 'chapter_pipeline_started':
+        if (context.displayWritingCh) {
+          return `正在写第 ${context.displayWritingCh} 章${progress ? `（${progress}）` : ''}${target > 0 ? `，目标约 ${fmtWords(target)}` : ''}`;
+        }
+        if (context.hasChapterStats && n && Number(n) <= Number(context.bookCompletedChapters || 0)) {
+          return `数据库已记录 ${context.bookCompletedChapters} 章，后台写作事件正在同步`;
+        }
+        return n ? `正在准备第 ${n} 章写作${progress ? `（${progress}）` : ''}` : label;
+      case 'chapter_pipeline_completed':
+        return n ? `第 ${n} 章已完成${payload.word_count ? `，${fmtWords(payload.word_count)}` : ''}` : '章节已完成';
+      case 'resume_skipped_chapters':
+        return `续写扫描完成：跳过 ${Number(payload.skipped_count || 0)} 章，待写 ${Number(payload.pending_count || 0)} 章${chapterCount ? `，本轮共 ${chapterCount} 章` : ''}`;
+      case 'delegated_to_worker_self_heal':
+        return payload.heal_owned
+          ? '后台恢复任务已接管，正在等待 worker 同步新的写作进展'
+          : '后台自愈流程正在续写，页面不会重复启动同一个任务';
+      case 'auto_resume_queued':
+        return '服务重启后已自动加入续写队列';
+      case 'progressive_autowrite_started':
+        return `多卷本写作已启动${volumeCount ? `，共 ${volumeCount} 卷` : ''}${payload.project_chapter_count ? ` / ${payload.project_chapter_count} 章` : ''}`;
+      case 'volume_planning_started':
+        return `正在规划第 ${volume || '-'} 卷大纲${chapterCount ? `，预计 ${chapterCount} 章` : ''}`;
+      case 'volume_planning_completed':
+        return `第 ${volume || '-'} 卷大纲已完成${chapterCount ? `，共 ${chapterCount} 章` : ''}`;
+      case 'volume_writing_started':
+        return `开始写作第 ${volume || '-'} 卷${chapterCount ? `，本卷 ${chapterCount} 章` : ''}`;
+      case 'volume_writing_completed':
+        return `第 ${volume || '-'} 卷写作完成`;
+      case 'material_forge_completed':
+        return `素材整理完成${Number(payload.total_forged || 0) > 0 ? `，新增 ${payload.total_forged} 条` : ''}`;
+      case 'project_pipeline_started':
+        return `进入章节写作循环${chapterCount ? `，本轮 ${chapterCount} 章` : ''}${payload.global_chapter_offset ? `，从全书第 ${payload.global_chapter_offset + 1} 章附近继续` : ''}`;
+      case 'planning_started':
+      case 'foundation_planning_started':
+      case 'story_bible_materialization_started':
+      case 'outline_materialization_started':
+      case 'narrative_graph_materialization_started':
+      case 'narrative_tree_materialization_started':
+        return `${label}，正在生成写作前置资料`;
+      case 'periodic_consistency_check_started':
+        return '正在做一致性检查，避免设定和剧情前后冲突';
+      case 'rolling_summary_started':
+        return '正在压缩近期剧情记忆，供后续章节继续使用';
+      case 'project_export_started':
+        return '正在导出阅读文件和项目产物';
+      case 'project_pipeline_completed':
+        return '写作流程已完成，可进入阅读和上架资料';
+      case 'queued':
+        return '任务已排队，等待并发槽位';
+      case 'running':
+        return projectSlug ? `任务运行中：${projectSlug}` : '任务运行中';
+      default:
+        return label;
+    }
+  }
+
+  function buildTaskProgressInsight(task, context = {}) {
+    const events = task.progress_events || [];
+    const stageEvent = latestStageEvent(events, task.current_stage);
+    const latestEvent = events[events.length - 1] || stageEvent;
+    let primary = describeStageEvent(
+      task.status === 'queued' ? 'queued' : task.current_stage,
+      stageEvent?.payload || {},
+      context
+    );
+    if (task.status === 'completed') primary = '作品已完成，可阅读、预览章节或整理上架资料';
+    if (task.status === 'failed') primary = `任务失败：${task.error || '请查看执行日志'}`;
+    if (task.status === 'cancelled') primary = '任务已停止，已完成章节会保留';
+    if (task.cancel_requested && task.status === 'running') primary = '正在停止任务，等待当前步骤安全退出';
+
+    const secondary = [];
+    if (context.total > 0) secondary.push(`全书 ${context.bookCompletedChapters || 0}/${context.total} 章`);
+    if (context.totalVolumes > 1 && context.currentVolume) secondary.push(`第 ${context.currentVolume}/${context.totalVolumes} 卷`);
+    if (context.currentVolumeChapterCount > 0) secondary.push(`本卷 ${context.volumeCompletedChapters || 0}/${context.currentVolumeChapterCount} 章`);
+    if (context.completedWordCount > 0) secondary.push(`累计 ${fmtWords(context.completedWordCount)}`);
+    const updatedText = formatEventClock(task.updated_at || latestEvent?.timestamp);
+    if (updatedText) secondary.push(`最近更新 ${updatedText}`);
+    if (latestEvent && latestEvent.stage !== task.current_stage) {
+      secondary.push(`最近事件：${describeStageEvent(latestEvent.stage, latestEvent.payload || {}, context)}`);
+    }
+
+    const chips = [];
+    chips.push({ text: STAGE[task.status] || task.status || '未知状态', tone: task.status === 'running' ? 'active' : '' });
+    if (task.current_stage) chips.push({ text: STAGE[task.current_stage] || task.current_stage, tone: 'active' });
+    if (context.hasChapterStats) chips.push({ text: 'DB 统计', tone: '' });
+    if (context.progressEventsSynced === false) chips.push({ text: '事件同步滞后', tone: 'warn' });
+    return { primary, secondary: secondary.join(' · '), chips };
+  }
+
+  function renderProgressInsightHtml(insight) {
+    const chips = (insight.chips || []).map(chip =>
+      `<span class="tc-live-chip ${esc(chip.tone || '')}">${esc(chip.text || '')}</span>`
+    ).join('');
+    return `
+      <div class="tc-live">
+        <div class="tc-live-row">
+          <div>
+            <div class="tc-live-kicker">当前动作</div>
+            <div class="tc-live-primary">${esc(insight.primary || '等待任务进展')}</div>
+            <div class="tc-live-secondary">${esc(insight.secondary || '暂无实时事件。')}</div>
+          </div>
+          <div class="tc-live-chips">${chips}</div>
+        </div>
+      </div>`;
+  }
+
   function renderTaskCard(task) {
     const events = task.progress_events || [];
     const status = task.status || 'queued';
     const slug = task.project_slug || '';
-    const targetWords = Number(task.payload?.target_words || task.result?.target_words || 0);
-    const targetChapters = Number(task.payload?.target_chapters || task.result?.target_chapters || 0);
+    const chapterWordStats = getTaskChapterWordStats(task);
+    const targetWords = Number(task.payload?.target_words || task.result?.target_words || chapterWordStats.targetWordCount || 0);
+    const targetChapters = Number(task.payload?.target_chapters || task.result?.target_chapters || chapterWordStats.targetChapters || 0);
     const targetWordsPerChapter = targetWords > 0 && targetChapters > 0
       ? Math.round(targetWords / targetChapters)
       : 0;
@@ -1342,8 +3025,14 @@
       completedGlobal?.total ||
       firstPipelineEvt?.payload?.chapter_count ||
       planDoneEvt?.payload?.chapter_count ||
+      chapterWordStats.targetChapters ||
       0;
-    const bookCompletedChapters = completedGlobal?.done ?? completedChs.length;
+    const eventCompletedChapters = completedGlobal?.done ?? completedChs.length;
+    const bookCompletedChapters = chapterWordStats.hasStats
+      ? chapterWordStats.completedChapters
+      : eventCompletedChapters;
+    const progressEventsSynced = !chapterWordStats.hasStats
+      || (eventCompletedChapters > 0 && Math.abs(eventCompletedChapters - bookCompletedChapters) <= 1);
 
     // ── Volume context (only populated for multi-volume projects) ──
     const totalVolumes =
@@ -1378,7 +3067,10 @@
       new Date(e.timestamp).getTime() >= lastStartedTime
     ) : false;
     const writingCh = (status === 'running' && lastStarted && !completedAfterLastStart)
-      ? lastStarted.payload?.chapter_number : null;
+      ? Number(lastStarted.payload?.chapter_number || 0) : null;
+    const displayWritingCh = writingCh && (!chapterWordStats.hasStats || writingCh > bookCompletedChapters)
+      ? writingCh
+      : null;
 
     // ── Progress metrics ──
     const pct = total > 0 ? Math.min(99, 5 + Math.round((bookCompletedChapters / total) * 95)) : (status === 'completed' ? 100 : 0);
@@ -1386,21 +3078,25 @@
     const volumePct = currentVolumeChapterCount > 0
       ? Math.min(100, Math.round((volumeCompletedChapters / currentVolumeChapterCount) * 100))
       : 0;
-    const completedWordCount = completedChapterEvents.reduce((sum, e) => sum + Number(e.payload?.word_count || 0), 0);
-    const projectedTotalWords = targetWordsPerChapter > 0 && total > 0
+    const completedWordCount = chapterWordStats.wordTotal > 0
+      ? chapterWordStats.wordTotal
+      : completedChapterEvents.reduce((sum, e) => sum + Number(e.payload?.word_count || 0), 0);
+    const projectedTotalWords = chapterWordStats.targetWordCount > 0
+      ? chapterWordStats.targetWordCount
+      : targetWordsPerChapter > 0 && total > 0
       ? targetWordsPerChapter * total
       : targetWords;
 
     // ── ETA (based on completed chapter timestamps) ──
     const chTimes = completedChapterEvents.map(e => new Date(e.timestamp));
     let etaText = '';
-    if (status === 'running' && chTimes.length >= 2 && total > 0) {
+    if (status === 'running' && progressEventsSynced && chTimes.length >= 2 && total > 0) {
       const avgMs = (chTimes[chTimes.length - 1] - chTimes[0]) / (chTimes.length - 1);
       const rem = total - bookCompletedChapters;
       if (rem > 0 && avgMs > 0) {
         etaText = `预计还需 ${fmtShort(Math.round(avgMs * rem / 1000))}`;
       }
-    } else if (status === 'running' && chTimes.length < 2) {
+    } else if (status === 'running' && progressEventsSynced && chTimes.length < 2) {
       etaText = '预计计算中…';
     }
 
@@ -1413,7 +3109,7 @@
       ? `第 ${currentVolume}/${totalVolumes} 卷 · `
       : '';
     let stageLabel = STAGE[task.current_stage] || task.current_stage || '-';
-    if (task.current_stage === 'chapter_pipeline_started' && lastStarted?.payload) {
+    if (task.current_stage === 'chapter_pipeline_started' && lastStarted?.payload && displayWritingCh) {
       const chNum = lastStarted.payload.chapter_number ?? '-';
       const prog = lastStarted.payload.progress ?? '';
       const targetText = Number(lastStarted.payload.target_word_count || 0) > 0
@@ -1436,10 +3132,10 @@
       headlineItems.push({ label: '卷', value: volVal, sub: '', pulse: status === 'running' });
     }
     if (total > 0) {
-      const chVal = bookCompletedChapters > 0 || writingCh
-        ? `<span>${writingCh || bookCompletedChapters}</span> <span class="dim">/ ${total}</span> 章`
+      const chVal = bookCompletedChapters > 0 || displayWritingCh
+        ? `<span>${displayWritingCh || bookCompletedChapters}</span> <span class="dim">/ ${total}</span> 章`
         : `共 <span class="dim">${total}</span> 章`;
-      const chSub = writingCh && lastStarted?.payload?.global_progress
+      const chSub = displayWritingCh && lastStarted?.payload?.global_progress && progressEventsSynced
         ? `已完成 ${bookCompletedChapters} 章 · 全书 ${lastStarted.payload.global_progress}`
         : (bookCompletedChapters > 0 ? `已完成 ${bookCompletedChapters} 章` : '待写');
       headlineItems.push({ label: '章', value: chVal, sub: chSub, pulse: status === 'running' });
@@ -1448,7 +3144,9 @@
       const wordVal = completedWordCount > 0
         ? `<span>${fmtWords(completedWordCount)}</span>${projectedTotalWords > 0 ? ` <span class="dim">/ 约 ${fmtWords(projectedTotalWords)}</span>` : ''}`
         : `<span class="dim">约 ${fmtWords(projectedTotalWords)}</span>`;
-      const perChSub = targetWordsPerChapter > 0 ? `约 ${fmtWords(targetWordsPerChapter)}/章` : '';
+      const perChSub = chapterWordStats.hasStats
+        ? `${chapterWordStats.completedChapters} 章 · 数据库统计`
+        : (targetWordsPerChapter > 0 ? `约 ${fmtWords(targetWordsPerChapter)}/章` : '');
       headlineItems.push({ label: '字数', value: wordVal, sub: perChSub, pulse: false });
     }
     if (etaText) {
@@ -1468,25 +3166,47 @@
     // ── Stage strip (rich text, distinct from raw badge) ──
     const stageClass = status === 'completed' ? 'completed' : status === 'failed' ? 'failed' : status === 'queued' ? 'queued' : '';
     const stageStrip = `<div class="tc-stage ${stageClass}">${esc(stageLabel)}</div>`;
+    const progressInsight = buildTaskProgressInsight(task, {
+      total,
+      totalVolumes,
+      currentVolume,
+      currentVolumeChapterCount,
+      bookCompletedChapters,
+      volumeCompletedChapters,
+      completedWordCount,
+      displayWritingCh,
+      hasChapterStats: chapterWordStats.hasStats,
+      progressEventsSynced,
+    });
+    const progressInsightHtml = renderProgressInsightHtml(progressInsight);
 
     // ── Chapter pills ──
     const pillLimit = 20;
-    const pills = completedChapterEvents.slice(0, pillLimit).map((e) => {
-      const n = e.payload?.chapter_number;
-      const wc = Number(e.payload?.word_count || 0);
-      const title = e.payload?.chapter_title || '';
+    const chapterPillItems = chapterWordStats.hasStats
+      ? chapterWordStats.chapters
+      : completedChapterEvents.map((e) => ({
+          number: e.payload?.chapter_number,
+          word_count: e.payload?.word_count,
+          title: e.payload?.chapter_title,
+        }));
+    const pills = chapterPillItems.slice(0, pillLimit).map((item) => {
+      const n = item.number;
+      const wc = Number(item.word_count || 0);
+      const title = item.title || '';
       const tip = [title ? `第${n}章：${title}` : `第${n}章`, wc > 0 ? fmtWords(wc) : '']
         .filter(Boolean)
         .join(' · ');
       return `<a class="ch-pill done" href="/read/${esc(slug)}#${n}" target="_blank" title="${esc(tip)}">第${n}章${wc > 0 ? ` · ${esc(fmtWords(wc))}` : ''}</a>`;
     }).join('');
-    const writingPill = writingCh ? `<span class="ch-pill writing">第${writingCh}章 写作中</span>` : '';
-    const morePills = bookCompletedChapters > pillLimit ? `<span class="ch-pill done" style="cursor:default;">+${bookCompletedChapters - Math.min(completedChapterEvents.length, pillLimit)}章</span>` : '';
+    const writingPill = displayWritingCh ? `<span class="ch-pill writing">第${displayWritingCh}章 写作中</span>` : '';
+    const morePills = bookCompletedChapters > pillLimit ? `<span class="ch-pill done" style="cursor:default;">+${bookCompletedChapters - Math.min(chapterPillItems.length, pillLimit)}章</span>` : '';
 
     // Detect "completed but actually unfinished" — recovered tasks may have
     // status=completed while chapters on disk < target. Treat as resumable.
-    const writtenCount = (task.result && task.result.chapters_written) || bookCompletedChapters;
-    const targetCount = (task.result && task.result.target_chapters) || total || 0;
+    const writtenCount = chapterWordStats.hasStats
+      ? bookCompletedChapters
+      : ((task.result && task.result.chapters_written) || bookCompletedChapters);
+    const targetCount = chapterWordStats.targetChapters || (task.result && task.result.target_chapters) || total || 0;
     const isTrulyComplete = status === 'completed' && !(targetCount > 0 && writtenCount < targetCount);
 
     // ── Compact metadata footer (created-at / slug) ──
@@ -1567,10 +3287,11 @@
       </div>
       ${headlineHtml}
       ${stageStrip}
+      ${progressInsightHtml}
       ${overallBarHtml}
       ${volumeBarHtml}
       ${metaFooter}
-      ${(bookCompletedChapters > 0 || writingCh) ? `<div class="tc-chapters">${pills}${writingPill}${morePills}</div>` : ''}
+      ${(bookCompletedChapters > 0 || displayWritingCh) ? `<div class="tc-chapters">${pills}${writingPill}${morePills}</div>` : ''}
       <div class="tc-actions">${actions}</div>
     </div>`;
   }
@@ -1762,6 +3483,7 @@
     const events = data.progress_events || [];
     const status = data.status;
     const slug = data.project_slug || '';
+    const chapterWordStats = getTaskChapterWordStats(data);
     const completedGlobal = latestProgressFraction(events, 'chapter_pipeline_completed', 'global_progress');
     const startedGlobal = latestProgressFraction(events, 'chapter_pipeline_started', 'global_progress');
 
@@ -1792,6 +3514,7 @@
       completedGlobal?.total ||
       firstPipeEvt?.payload?.chapter_count ||
       planDoneEvt?.payload?.chapter_count ||
+      chapterWordStats.targetChapters ||
       0;
 
     // Multi-volume context (optional).
@@ -1815,8 +3538,43 @@
       .sort((a, b) => a.payload.chapter_number - b.payload.chapter_number);
     const doneChs = _dedupedDone.map(e => e.payload.chapter_number);
     const chTimes = _dedupedDone.map(e => new Date(e.timestamp));
-    const bookDoneCount = completedGlobal?.done ?? doneChs.length;
+    const eventDoneCount = completedGlobal?.done ?? doneChs.length;
+    const bookDoneCount = chapterWordStats.hasStats
+      ? chapterWordStats.completedChapters
+      : eventDoneCount;
+    const progressEventsSynced = !chapterWordStats.hasStats
+      || (eventDoneCount > 0 && Math.abs(eventDoneCount - bookDoneCount) <= 1);
     const latestStartedEvt = [...events].reverse().find(e => e.stage === 'chapter_pipeline_started');
+    const latestVolPlanCompletedEvt = [...events].reverse().find(e => e.stage === 'volume_planning_completed');
+    const completedLocal = latestProgressFraction(events, 'chapter_pipeline_completed', 'progress');
+    const currentVolumeChapterCount =
+      (latestVolPlanCompletedEvt?.payload?.volume_number === currentVolume
+        ? latestVolPlanCompletedEvt.payload.chapter_count
+        : null) ||
+      latestPipeEvt?.payload?.chapter_count ||
+      0;
+    const volumeOffset = latestPipeEvt?.payload?.global_chapter_offset ?? 0;
+    const volumeDoneChs = doneChs.filter(n => n > volumeOffset);
+    const volumeCompletedChapters = completedLocal?.done ?? volumeDoneChs.length;
+    const latestStartedChapter = Number(latestStartedEvt?.payload?.chapter_number || 0);
+    const displayWritingCh = latestStartedChapter && (!chapterWordStats.hasStats || latestStartedChapter > bookDoneCount)
+      ? latestStartedChapter
+      : null;
+    const completedWordCount = chapterWordStats.wordTotal > 0
+      ? chapterWordStats.wordTotal
+      : _dedupedDone.reduce((sum, e) => sum + Number(e.payload?.word_count || 0), 0);
+    const progressInsight = buildTaskProgressInsight(data, {
+      total,
+      totalVolumes,
+      currentVolume,
+      currentVolumeChapterCount,
+      bookCompletedChapters: bookDoneCount,
+      volumeCompletedChapters,
+      completedWordCount,
+      displayWritingCh,
+      hasChapterStats: chapterWordStats.hasStats,
+      progressEventsSynced,
+    });
 
     // Pct
     let pct = 0;
@@ -1835,7 +3593,11 @@
 
     // Stage
     let stageTxt = STAGE[data.current_stage] || data.current_stage || '-';
-    if (data.current_stage === 'chapter_pipeline_started' && latestStartedEvt?.payload) {
+    if (
+      data.current_stage === 'chapter_pipeline_started' &&
+      latestStartedEvt?.payload &&
+      (!chapterWordStats.hasStats || Number(latestStartedEvt.payload.chapter_number || 0) > bookDoneCount)
+    ) {
       const chNum = latestStartedEvt.payload.chapter_number ?? '-';
       const prog = latestStartedEvt.payload.progress ?? '';
       const targetText = Number(latestStartedEvt.payload.target_word_count || 0) > 0
@@ -1850,6 +3612,11 @@
       stageTxt = '🛑 正在停止…';
     }
     $('#pvStage').textContent = stageTxt;
+    $('#pvLivePrimary').textContent = progressInsight.primary || '等待任务进展';
+    $('#pvLiveSecondary').textContent = progressInsight.secondary || '暂无实时事件。';
+    $('#pvLiveChips').innerHTML = (progressInsight.chips || []).map(chip =>
+      `<span class="tc-live-chip ${esc(chip.tone || '')}">${esc(chip.text || '')}</span>`
+    ).join('');
 
     // Stats — chapter count is book-wide; append volume progress when the
     // project has more than one volume so users see 12/1200 章 · 1/24 卷.
@@ -1861,13 +3628,13 @@
       : '-';
 
     // Avg time & ETA
-    if (chTimes.length >= 2) {
+    if (progressEventsSynced && chTimes.length >= 2) {
       const avgMs = (chTimes[chTimes.length - 1] - chTimes[0]) / (chTimes.length - 1);
       $('#pvAvg').textContent = fmtShort(Math.round(avgMs / 1000));
       const rem = total - bookDoneCount;
       $('#pvEta').textContent = rem > 0 ? fmtShort(Math.round(avgMs * rem / 1000)) : '-';
-    } else if (chTimes.length === 1 && pipeEvt) {
-      const ms = chTimes[0] - new Date(pipeEvt.timestamp);
+    } else if (progressEventsSynced && chTimes.length === 1 && firstPipeEvt) {
+      const ms = chTimes[0] - new Date(firstPipeEvt.timestamp);
       $('#pvAvg').textContent = fmtShort(Math.round(ms / 1000));
       const rem = total - bookDoneCount;
       $('#pvEta').textContent = rem > 0 ? fmtShort(Math.round(ms * rem / 1000)) : '-';
@@ -1901,7 +3668,10 @@
       }
       else if (e.stage === 'chapter_pipeline_completed' && e.payload) {
         const chapterTitle = e.payload.chapter_title ? `《${e.payload.chapter_title}》` : '';
-        const wordText = Number(e.payload.word_count || 0) > 0 ? ` · ${fmtWords(e.payload.word_count)}` : '';
+        const chapterNumber = Number(e.payload.chapter_number || 0);
+        const dbChapter = chapterWordStats.byNumber.get(chapterNumber);
+        const wordCount = dbChapter ? dbChapter.word_count : Number(e.payload.word_count || 0);
+        const wordText = Number(wordCount || 0) > 0 ? ` · ${fmtWords(wordCount)}` : '';
         detail = ` — 第${e.payload.chapter_number ?? '-'}章${chapterTitle}${wordText}`;
       }
       else if (e.stage === 'planning_completed' && e.payload) detail = ` — ${e.payload.volume_count ?? '-'}卷 ${e.payload.chapter_count ?? '-'}章`;
@@ -2124,12 +3894,120 @@
   $('#toStep3').addEventListener('click', () => { updateSummary(); wizGo(3); });
   $('#startBtn').addEventListener('click', startCreation);
   $('#scheduleBtn')?.addEventListener('click', scheduleQuickstart);
+  $('#dashSearch')?.addEventListener('input', (event) => {
+    dashboardQuery = event.target.value.trim().toLowerCase();
+    renderDashboard();
+  });
 
   /* ═══════════════════════════════════════
      LISTING PROFILE
      ═══════════════════════════════════════ */
   let listingLoadedForSlug = null;
   let listingLoadedForStatus = null;
+  const listingCopyStore = new Map();
+  let listingCopyCounter = 0;
+
+  function compactListingText(value) {
+    return String(value || '').replace(/\s+/g, ' ').trim();
+  }
+
+  function limitListingText(value, maxChars = 500) {
+    const text = compactListingText(value);
+    if (text.length <= maxChars) return text;
+    return text.slice(0, Math.max(0, maxChars - 3)).trimEnd() + '...';
+  }
+
+  function registerListingCopyText(text) {
+    const key = `listing-copy-${++listingCopyCounter}`;
+    listingCopyStore.set(key, String(text || '').trim());
+    return key;
+  }
+
+  function copyButton(label, key, className = '') {
+    return `<button type="button" class="copy-btn ${esc(className)}" onclick="copyListingText('${esc(key)}', this)">${esc(label)}</button>`;
+  }
+
+  async function writeClipboardText(text) {
+    if (!text) return false;
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+    const area = document.createElement('textarea');
+    area.value = text;
+    area.setAttribute('readonly', '');
+    area.style.position = 'fixed';
+    area.style.left = '-9999px';
+    area.style.top = '0';
+    document.body.appendChild(area);
+    area.select();
+    const ok = document.execCommand('copy');
+    area.remove();
+    return ok;
+  }
+
+  window.copyListingText = async function(key, button) {
+    const text = listingCopyStore.get(key) || '';
+    if (!text) return;
+    const original = button ? button.textContent : '';
+    try {
+      const ok = await writeClipboardText(text);
+      if (button) {
+        button.textContent = ok ? '已复制' : '复制失败';
+        button.classList.toggle('copied', ok);
+        setTimeout(() => {
+          button.textContent = original || '复制';
+          button.classList.remove('copied');
+        }, 1400);
+      }
+    } catch {
+      if (button) {
+        button.textContent = '复制失败';
+        setTimeout(() => { button.textContent = original || '复制'; }, 1400);
+      }
+    }
+  };
+
+  function buildShelfIntro(listing, project) {
+    const direct = compactListingText(listing.shelf_intro);
+    if (direct) return limitListingText(direct, 500);
+    const source = (
+      compactListingText(listing.short_intro) ||
+      compactListingText(listing.long_intro) ||
+      compactListingText(listing.logline)
+    );
+    if (source.length >= 80) return limitListingText(source, 500);
+    const title = listing.primary_title || project?.title || '未命名作品';
+    const category = [listing.primary_category, listing.secondary_category].filter(Boolean).join(' / ') || '商业类型';
+    const tags = Array.isArray(listing.tags) ? listing.tags.slice(0, 4).join('、') : '';
+    const promo = Array.isArray(listing.promo_copy) ? compactListingText(listing.promo_copy[0]) : '';
+    return limitListingText([
+      source || `《${title}》是一部主打${category}的长篇连载，核心看点是高压选择、持续破局和章节尾钩。`,
+      promo,
+      tags ? `如果你喜欢${tags}、强冲突、持续反转和爽点升级，这本书会把你直接拉进主角的选择与代价之中。` : '',
+    ].filter(Boolean).join(' '), 500);
+  }
+
+  function buildCharacterNames(listing) {
+    const direct = Array.isArray(listing.character_names) ? listing.character_names : [];
+    const fromCards = Array.isArray(listing.main_characters)
+      ? listing.main_characters.map(c => c?.name).filter(Boolean)
+      : [];
+    return [...new Set([...direct, ...fromCards].map(compactListingText).filter(Boolean))];
+  }
+
+  function buildCharacterCopyText(characters) {
+    return characters.map((c) => {
+      const lines = [
+        `角色：${c.name || '未命名角色'}${c.role ? `（${c.role}）` : ''}`,
+        c.identity ? `身份：${c.identity}` : '',
+        c.appeal ? `吸引力：${c.appeal}` : '',
+        c.goal ? `目标：${c.goal}` : '',
+        c.arc_state ? `当前：${c.arc_state}` : '',
+      ].filter(Boolean);
+      return lines.join('\n');
+    }).join('\n\n');
+  }
 
   async function loadAndRenderListing(slug, taskStatus) {
     // For completed/failed tasks, only load once per slug.
@@ -2154,8 +4032,16 @@
   }
 
   function renderListingProfile(listing, project) {
+    listingCopyStore.clear();
+    listingCopyCounter = 0;
     const compliance = listing.compliance || {};
     const proj = project || {};
+    const shelfIntro = buildShelfIntro(listing, proj);
+    const shelfIntroKey = registerListingCopyText(shelfIntro);
+    const tags = Array.isArray(listing.tags) && listing.tags.length ? listing.tags : (Array.isArray(proj.tags) ? proj.tags : []);
+    const characterNames = buildCharacterNames(listing);
+    const characterNameText = characterNames.join('、');
+    const characterNameKey = registerListingCopyText(characterNameText);
 
     // Header
     const title = listing.primary_title || proj.title || '-';
@@ -2165,10 +4051,45 @@
     $('#lsSubtitle').textContent = `${categoryText} · ${listing.length_type || '长篇连载'} · ${titleCount} 个标题候选`;
 
     // Tags
-    const tags = Array.isArray(listing.tags) && listing.tags.length ? listing.tags : (Array.isArray(proj.tags) ? proj.tags : []);
     $('#lsTags').innerHTML = tags.length
       ? tags.map(t => `<span class="listing-tag">${esc(t)}</span>`).join('')
       : '<span class="listing-tag">待补标签</span>';
+
+    // Copy kit
+    const copyPack = listing.copy_pack || {};
+    const packText = [
+      ['书名', title],
+      ['副标题', copyPack.subtitle || listing.recommended_subtitle],
+      ['书籍 ID', copyPack.book_id || listing.book_id || proj.slug],
+      ['分类', copyPack.category || categoryText],
+      ['标签', copyPack.tags || tags.join('、')],
+      ['角色名', copyPack.character_names || characterNameText],
+      [`简介（${shelfIntro.length}/500）`, shelfIntro],
+    ]
+      .filter(([, value]) => value)
+      .map(([label, value]) => `${label}：${value}`)
+      .join('\n');
+    const packKey = registerListingCopyText(packText);
+    const titleKey = registerListingCopyText(title);
+    const tagsKey = registerListingCopyText(tags.join('、'));
+    $('#lsCopyKitActions').innerHTML = copyButton('复制整包', packKey);
+    $('#lsCopyKit').innerHTML = `
+      <div class="ls-copy-list">
+        <div class="ls-copy-item">
+          <div class="row"><strong>书名</strong>${copyButton('复制', titleKey)}</div>
+          <span>${esc(title)}</span>
+        </div>
+        <div class="ls-copy-item">
+          <div class="row"><strong>标签</strong>${copyButton('复制', tagsKey)}</div>
+          <span>${esc(tags.length ? tags.join('、') : '待补标签')}</span>
+        </div>
+        <div class="ls-copy-item">
+          <div class="row"><strong>角色名</strong>${copyButton('复制', characterNameKey)}</div>
+          <span>${esc(characterNameText || '暂无角色名')}</span>
+        </div>
+      </div>
+      <textarea class="ls-copy-textarea" readonly onclick="this.select()">${esc(packText)}</textarea>
+    `;
 
     // Compliance score
     const statusLabel = { ready: '上架资料完整', needs_attention: '可查看但仍需补强', blocked: '暂不建议上架' }[compliance.status] || '等待校验';
@@ -2202,18 +4123,32 @@
       ['资料来源', Array.isArray(listing.source_files) && listing.source_files.length ? `已接入 ${listing.source_files.length} 个资料文件` : '系统自动生成'],
     ].filter(([, v]) => v);
     $('#lsBasics').innerHTML = basicItems.length ? basicItems.map(([label, value]) => `
-      <div class="ls-basic-item"><strong>${esc(label)}</strong><span>${esc(value)}</span></div>
+      <div class="ls-basic-item">
+        <div class="row"><strong>${esc(label)}</strong>${copyButton('复制', registerListingCopyText(value))}</div>
+        <span>${esc(value)}</span>
+      </div>
     `).join('') : '<div style="color:var(--text-dim);font-size:13px;">暂无基础信息。</div>';
 
     // Synopsis & promo
     const introBlocks = [];
+    $('#lsIntroMeta').textContent = `可复制上架简介：${shelfIntro.length}/500 字`;
+    $('#lsIntroActions').innerHTML = copyButton('复制简介', shelfIntroKey);
+    introBlocks.push(`
+      <div class="shelf-intro-card">
+        <div class="meta"><span>500字内上架简介</span><span>${shelfIntro.length}/500</span></div>
+        <p>${esc(shelfIntro)}</p>
+      </div>
+    `);
     if (listing.logline) introBlocks.push(`<p><strong>一句话钩子：</strong>${esc(listing.logline)}</p>`);
     if (listing.short_intro) introBlocks.push(`<p><strong>短简介：</strong>${esc(listing.short_intro)}</p>`);
     if (listing.long_intro) introBlocks.push(`<p><strong>长简介：</strong>${esc(listing.long_intro)}</p>`);
     const promoCopy = Array.isArray(listing.promo_copy) ? listing.promo_copy : [];
     if (promoCopy.length) {
       introBlocks.push(promoCopy.map((item, i) =>
-        `<div class="ls-promo"><strong>宣传文案 ${i + 1}：</strong>${esc(item)}</div>`
+        `<div class="ls-promo">
+          <div class="ls-promo-head"><strong>宣传文案 ${i + 1}</strong>${copyButton('复制', registerListingCopyText(item))}</div>
+          <span>${esc(item)}</span>
+        </div>`
       ).join(''));
     }
     $('#lsSynopsis').innerHTML = introBlocks.length
@@ -2239,9 +4174,18 @@
 
     // Characters
     const characters = Array.isArray(listing.main_characters) ? listing.main_characters : [];
+    const characterCardsText = buildCharacterCopyText(characters);
+    const characterCardsKey = registerListingCopyText(characterCardsText);
+    $('#lsCharacterActions').innerHTML = [
+      characterNameText ? copyButton('复制角色名', characterNameKey) : '',
+      characterCardsText ? copyButton('复制角色卡', characterCardsKey) : '',
+    ].filter(Boolean).join('');
     $('#lsCharacters').innerHTML = characters.length ? characters.slice(0, 12).map(c => `
       <div class="ls-char-card">
-        <strong>${esc(c.name || '未命名角色')}<span class="role">${esc(c.role || '')}</span></strong>
+        <div class="ls-char-head">
+          <strong>${esc(c.name || '未命名角色')}<span class="role">${esc(c.role || '')}</span></strong>
+          ${copyButton('复制', registerListingCopyText(c.name || ''))}
+        </div>
         ${c.identity ? `<p>身份：${esc(c.identity)}</p>` : ''}
         ${c.appeal ? `<p>吸引力：${esc((c.appeal || '').slice(0, 72))}</p>` : ''}
         ${c.goal ? `<p>目标：${esc((c.goal || '').slice(0, 60))}</p>` : ''}

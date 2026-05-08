@@ -703,14 +703,24 @@ async def get_or_create_character_by_name(
     character_name: str,
     role: str = "supporting",
 ) -> CharacterModel:
-    character_id = stable_character_id(project_id, character_name)
+    normalized_name = _normalize_name(character_name)
+    character = await session.scalar(
+        select(CharacterModel).where(
+            CharacterModel.project_id == project_id,
+            CharacterModel.name == normalized_name,
+        )
+    )
+    if character is not None:
+        return character
+
+    character_id = stable_character_id(project_id, normalized_name)
     character = await session.get(CharacterModel, character_id)
     if character is not None:
         return character
     character = CharacterModel(
         id=character_id,
         project_id=project_id,
-        name=_normalize_name(character_name),
+        name=normalized_name,
         role=role,
         knowledge_state_json={},
         voice_profile_json={},
@@ -1109,12 +1119,32 @@ async def upsert_cast_spec(
             {"inner_structure": _inner_structure} if _inner_structure else {}
         )
         _personhood_extra = _character_personhood_metadata(character_input)
+        _cast_entry_payload = _compact_json_payload(character_input.model_dump(mode="json"))
+        if not isinstance(_cast_entry_payload, dict):
+            _cast_entry_payload = {}
+        _cast_entry_payload["role"] = character.role or character_input.role
+        _cast_entry_payload["gender"] = character_input.gender
+        if character_input.pronoun_set_zh:
+            _cast_entry_payload["pronoun_set_zh"] = character_input.pronoun_set_zh
+        if character_input.pronoun_set_en:
+            _cast_entry_payload["pronoun_set_en"] = character_input.pronoun_set_en
+        if _candidate_aliases and "aliases" not in _cast_entry_payload:
+            _cast_entry_payload["aliases"] = list(_candidate_aliases)
+        _identity_extra: dict[str, Any] = {
+            "gender": character_input.gender,
+            "cast_entry": _cast_entry_payload,
+        }
+        if character_input.pronoun_set_zh:
+            _identity_extra["pronoun_set_zh"] = character_input.pronoun_set_zh
+        if character_input.pronoun_set_en:
+            _identity_extra["pronoun_set_en"] = character_input.pronoun_set_en
 
         character.metadata_json = _merge_metadata(
             character.metadata_json,
             {
                 **character_input.metadata,
                 **(character_input.model_extra or {}),
+                **_identity_extra,
                 **_personhood_extra,
                 **_lie_truth_extra,
                 **_stage_c_extra,

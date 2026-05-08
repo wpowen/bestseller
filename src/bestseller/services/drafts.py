@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import math
 import re
 from typing import Any
 from uuid import UUID
@@ -65,7 +66,7 @@ from bestseller.services.writing_profile import (
     render_writing_profile_prompt_block,
     resolve_writing_profile,
 )
-from bestseller.settings import AppSettings
+from bestseller.settings import AppSettings, load_settings
 
 
 _REPAIR_CODE_ALIASES: dict[str, str] = {
@@ -81,10 +82,65 @@ def _canonical_repair_code(code: str) -> str:
     return _REPAIR_CODE_ALIASES.get(text, text)
 
 
+_CJK_CHAR_PATTERN = re.compile(r"[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]")
+_LATIN_WORD_PATTERN = re.compile(r"[A-Za-z0-9]+(?:['\u2019._-][A-Za-z0-9]+)*")
+
+
+def _strip_markdown_plain(text: str) -> str:
+    """Lightweight markdown-to-plain-text for word counting.
+
+    Strips heading / blockquote / list-item prefixes so the
+    counters below see only prose, not markup.
+    """
+
+    lines: list[str] = []
+    for raw_line in text.splitlines():
+        stripped = raw_line.strip()
+        if not stripped:
+            lines.append("")
+            continue
+        if stripped.startswith("# "):
+            lines.append(stripped[2:].strip())
+        elif stripped.startswith("## "):
+            lines.append(stripped[3:].strip())
+        elif stripped.startswith("> "):
+            lines.append(stripped[2:].strip())
+        elif stripped.startswith("- "):
+            lines.append(stripped[2:].strip())
+        else:
+            lines.append(stripped)
+    return "\n".join(lines).strip()
+
+
 def count_words(text: str) -> int:
-    han_chars = re.findall(r"[\u4e00-\u9fff]", text)
-    latin_words = re.findall(r"[A-Za-z0-9_]+", text)
-    return len(han_chars) + len(latin_words)
+    plain = _strip_markdown_plain(text)
+    non_ws = re.sub(r"\s+", "", plain)
+    return len(_CJK_CHAR_PATTERN.findall(non_ws)) + len(_LATIN_WORD_PATTERN.findall(plain))
+
+
+def prose_output_max_tokens_for_target(
+    target_word_count: int | None,
+    *,
+    language: str | None = None,
+) -> int | None:
+    """Return a conservative output-token cap for a prose target.
+
+    The global writer cap is intentionally high so long scenes are not
+    truncated, but short 500-800字 scene prompts also inherit that cap and can
+    over-generate by thousands of characters.  This per-request cap keeps the
+    model's output budget aligned with the target while leaving enough room
+    for Chinese tokenization variance and a clean ending.
+    """
+
+    try:
+        target = int(target_word_count or 0)
+    except (TypeError, ValueError):
+        return None
+    if target <= 0:
+        return None
+    multiplier = 2.8 if is_english_language(language) else 3.2
+    floor = 1024 if is_english_language(language) else 1536
+    return max(floor, int(round(target * multiplier)) + 512)
 
 
 async def _load_character_name_roster(
@@ -97,11 +153,44 @@ async def _load_character_name_roster(
     check no-ops on empty allowlists rather than flagging every name).
     """
 
+    def add_name(target: set[str], value: Any) -> None:
+        if isinstance(value, str) and value.strip():
+            target.add(value.strip())
+
+    def add_aliases(target: set[str], value: Any) -> None:
+        if isinstance(value, str):
+            add_name(target, value)
+        elif isinstance(value, (list, tuple)):
+            for item in value:
+                add_name(target, item)
+
     try:
-        rows = await session.scalars(
-            select(CharacterModel.name).where(CharacterModel.project_id == project_id)
+        names: set[str] = set()
+        characters = list(
+            await session.scalars(
+                select(CharacterModel).where(CharacterModel.project_id == project_id)
+            )
         )
-        return frozenset(str(n).strip() for n in rows if n and str(n).strip())
+        for character in characters:
+            add_name(names, character.name)
+            meta = character.metadata_json or {}
+            if not isinstance(meta, dict):
+                continue
+            add_aliases(names, meta.get("aliases"))
+            cast_entry = meta.get("cast_entry")
+            if isinstance(cast_entry, dict):
+                add_aliases(names, cast_entry.get("aliases"))
+
+        project = await session.get(ProjectModel, project_id)
+        if project is not None and isinstance(project.metadata_json, dict):
+            manifest = project.metadata_json.get("identity_manifest")
+            if isinstance(manifest, list):
+                for item in manifest:
+                    if not isinstance(item, dict):
+                        continue
+                    add_name(names, item.get("name"))
+                    add_aliases(names, item.get("aliases"))
+        return frozenset(names)
     except Exception:  # pragma: no cover — defensive guard for gate robustness
         logger.debug(
             "character roster load failed for project %s", project_id, exc_info=True
@@ -3221,6 +3310,9 @@ def build_scene_draft_prompts(
     identity_constraint_block: str | None = None,
     overused_phrase_block: str | None = None,
     genre_constraint_block: str | None = None,
+    progression_context_block: str | None = None,
+    decision_policy_block: str | None = None,
+    rule_system_context_block: str | None = None,
     # Opening diversity block: list of (chapter_number, opening_snippet) for recent chapters
     opening_diversity_block: str | None = None,
     # Stage A — conflict diversity (per-scene, all scenes)
@@ -3463,6 +3555,17 @@ def build_scene_draft_prompts(
     if genre_constraint_block:
         _genre_constraint_line = f"{genre_constraint_block}\n\n"
 
+    # Premium genre engine constraints (Tier 1 — always included)
+    _progression_context_line = ""
+    if progression_context_block:
+        _progression_context_line = f"{progression_context_block}\n\n"
+    _decision_policy_line = ""
+    if decision_policy_block:
+        _decision_policy_line = f"{decision_policy_block}\n\n"
+    _rule_system_line = ""
+    if rule_system_context_block:
+        _rule_system_line = f"{rule_system_context_block}\n\n"
+
     # Stage A — conflict diversity (ALL scenes, not just scene 1)
     _conflict_diversity_line = ""
     if conflict_diversity_block:
@@ -3631,6 +3734,9 @@ def build_scene_draft_prompts(
             "phrase_avoidance_line": _phrase_avoidance_line,
             "opening_diversity_line": _opening_diversity_line,
             "genre_constraint_line": _genre_constraint_line,
+            "progression_context_line": _progression_context_line,
+            "decision_policy_line": _decision_policy_line,
+            "rule_system_line": _rule_system_line,
             "conflict_diversity_line": _conflict_diversity_line,
             "scene_purpose_line": _scene_purpose_line,
             "env_diversity_line": _env_diversity_line,
@@ -3683,6 +3789,9 @@ def build_scene_draft_prompts(
     _phrase_avoidance_line = _ctx["phrase_avoidance_line"]
     _opening_diversity_line = _ctx["opening_diversity_line"]
     _genre_constraint_line = _ctx["genre_constraint_line"]
+    _progression_context_line = _ctx["progression_context_line"]
+    _decision_policy_line = _ctx["decision_policy_line"]
+    _rule_system_line = _ctx["rule_system_line"]
     _conflict_diversity_line = _ctx["conflict_diversity_line"]
     _scene_purpose_line = _ctx["scene_purpose_line"]
     _env_diversity_line = _ctx["env_diversity_line"]
@@ -3736,6 +3845,9 @@ def build_scene_draft_prompts(
             f"{_identity_line}"
             f"{_scene_scope_isolation_line}"
             f"{_genre_constraint_line}"
+            f"{_progression_context_line}"
+            f"{_decision_policy_line}"
+            f"{_rule_system_line}"
             f"{_phrase_avoidance_line}"
             f"{_opening_diversity_line}"
             f"{_budget_diversity_line}"
@@ -3812,6 +3924,9 @@ def build_scene_draft_prompts(
             f"{_identity_line}"
             f"{_scene_scope_isolation_line}"
             f"{_genre_constraint_line}"
+            f"{_progression_context_line}"
+            f"{_decision_policy_line}"
+            f"{_rule_system_line}"
             f"{_phrase_avoidance_line}"
             f"{_opening_diversity_line}"
             f"{_budget_diversity_line}"
@@ -4207,6 +4322,33 @@ async def generate_scene_draft(
             f"Scene {scene_number} was not found in chapter {chapter_number} for '{project_slug}'."
         )
 
+    effective_settings = settings or load_settings()
+    if getattr(effective_settings.pipeline, "require_pre_draft_scene_contract", True):
+        from bestseller.services.identity_guard import load_identity_registry
+        from bestseller.services.narrative_contracts import validate_scene_contract_pre_draft
+
+        identity_registry = (
+            getattr(context_packet, "identity_registry", None)
+            if context_packet is not None
+            else None
+        )
+        if identity_registry is None:
+            identity_registry = await load_identity_registry(session, project.id)
+        contract = validate_scene_contract_pre_draft(
+            scene,
+            identity_registry=identity_registry,
+            require_identity_registry=True,
+        )
+        if contract.violations or contract.warnings:
+            scene.metadata_json = {
+                **(getattr(scene, "metadata_json", None) or {}),
+                "pre_draft_scene_contract": contract.to_dict(),
+            }
+        contract.raise_for_blocks(
+            project_slug=project_slug,
+            artifact=f"scene {chapter_number}.{scene_number}",
+        )
+
     style_guide = await session.get(StyleGuideModel, project.id)
     if context_packet is not None:
         # Caller (run_scene_pipeline) already built a shared context for this scene —
@@ -4256,6 +4398,58 @@ async def generate_scene_draft(
             tree_context_nodes=[],
             retrieval_chunks=[],
         )
+    if context_packet is not None:
+        try:
+            from bestseller.services.premium_genre_engine import (
+                build_premium_genre_engine_blocks,
+            )
+
+            _project_meta = getattr(project, "metadata_json", None) or {}
+            _story_bible = (
+                context_packet.story_bible if isinstance(context_packet.story_bible, dict) else {}
+            )
+            _volume_payload = _story_bible.get("volume", {})
+            _current_volume = None
+            if isinstance(_volume_payload, dict):
+                _volume_no = _volume_payload.get("volume_number")
+                if isinstance(_volume_no, int):
+                    _current_volume = _volume_no
+            _sub_genre = _project_meta.get("sub_genre") if isinstance(_project_meta, dict) else None
+            _premium_blocks = build_premium_genre_engine_blocks(
+                project_metadata=_project_meta if isinstance(_project_meta, dict) else {},
+                story_bible_context=_story_bible,
+                genre=getattr(project, "genre", None)
+                or getattr(effective_settings.generation, "genre", None),
+                sub_genre=_sub_genre if isinstance(_sub_genre, str) else None,
+                language=getattr(project, "language", None)
+                or getattr(effective_settings.generation, "language", "zh-CN"),
+                current_volume=_current_volume,
+            )
+            if (
+                _premium_blocks.progression_context_block
+                and not context_packet.progression_context_block
+            ):
+                context_packet.progression_context_block = (
+                    _premium_blocks.progression_context_block
+                )
+            if _premium_blocks.decision_policy_block and not context_packet.decision_policy_block:
+                context_packet.decision_policy_block = _premium_blocks.decision_policy_block
+            if (
+                _premium_blocks.rule_system_context_block
+                and not context_packet.rule_system_context_block
+            ):
+                context_packet.rule_system_context_block = (
+                    _premium_blocks.rule_system_context_block
+                )
+            if _premium_blocks.warnings:
+                context_packet.contradiction_warnings.extend(
+                    f"[精品类型引擎] {warning}" for warning in _premium_blocks.warnings
+                )
+        except Exception:
+            logger.debug(
+                "Premium genre engine direct-draft injection failed (non-fatal)",
+                exc_info=True,
+            )
     fallback_content = render_scene_draft_markdown(
         project,
         chapter,
@@ -4361,6 +4555,15 @@ async def generate_scene_draft(
             genre_constraint_block=(
                 context_packet.genre_constraint_block if context_packet else None
             ),
+            progression_context_block=(
+                context_packet.progression_context_block if context_packet else None
+            ),
+            decision_policy_block=(
+                context_packet.decision_policy_block if context_packet else None
+            ),
+            rule_system_context_block=(
+                context_packet.rule_system_context_block if context_packet else None
+            ),
             opening_diversity_block=(
                 context_packet.opening_diversity_block if context_packet else None
             ),
@@ -4449,6 +4652,10 @@ async def generate_scene_draft(
                 project_id=project.id,
                 workflow_run_id=workflow_run_id,
                 step_run_id=step_run_id,
+                max_tokens_override=prose_output_max_tokens_for_target(
+                    scene.target_word_count,
+                    language=_project_language(project),
+                ),
                 metadata={
                     "project_slug": project.slug,
                     "chapter_number": chapter.chapter_number,
@@ -5068,18 +5275,56 @@ async def maybe_prepare_chapter_auto_repair(
     # ── Progressive repair strategy ──
     # Attempt 1: gentle hint-based guidance
     # Attempt 2: aggressive concrete instructions with explicit targets
-    # Attempt 3+: maximum intervention — accept whatever comes out and move on
+    # Attempt 3+: maximum intervention — smallest/strongest budget change;
+    # still fail closed if the gate remains blocked.
     _attempt = max(1, int(attempt_number))
+    _length_meta = payload.get("length_stability") or {}
+    try:
+        _length_wc = int(_length_meta.get("word_count") or 0)
+    except (TypeError, ValueError):
+        _length_wc = 0
+    try:
+        _length_target = int(_length_meta.get("target_words") or 0)
+    except (TypeError, ValueError):
+        _length_target = 0
+    try:
+        _length_min = int(_length_meta.get("min_words") or 0)
+    except (TypeError, ValueError):
+        _length_min = 0
+    try:
+        _length_max = int(_length_meta.get("max_words") or 0)
+    except (TypeError, ValueError):
+        _length_max = 0
+    _length_budget_note = ""
+    if _length_wc and _length_target:
+        _length_budget_note = (
+            f"本章当前约 {_length_wc} 字，目标约 {_length_target} 字"
+            + (
+                f"，发布硬范围 {_length_min}-{_length_max} 字"
+                if _length_min and _length_max
+                else ""
+            )
+            + "。"
+        )
+    _canon_violation_details: list[str] = []
+    for _violation in payload.get("violations") or ():
+        if not isinstance(_violation, dict):
+            continue
+        if str(_violation.get("code") or "") != "CANON_FORBIDDEN_TERM":
+            continue
+        _detail = str(_violation.get("detail") or "").strip()
+        if _detail:
+            _canon_violation_details.append(_detail)
 
     if "BLOCK_LOW" in canonical_hits:
         if _attempt == 1:
             hint_fragments.append(
-                "上一版本章节总字数过短，本次重写请在保留所有情节节拍的前提下，"
+                f"{_length_budget_note}上一版本章节总字数过短，本次重写请在保留所有情节节拍的前提下，"
                 "大幅扩写环境、感官、心理与对话，让本场景至少达到 target_word_count。"
             )
         elif _attempt == 2:
             hint_fragments.append(
-                "【紧急修复第2次】上一版本章节字数严重不足。本次重写必须采用以下"
+                f"【紧急修复第2次】{_length_budget_note}上一版本章节字数严重不足。本次重写必须采用以下"
                 "具体策略：\n"
                 "1. 每个情节节拍之后增加至少100字的环境描写或感官细节\n"
                 "2. 每段对话之后加入角色的内心反应或心理活动\n"
@@ -5088,19 +5333,19 @@ async def maybe_prepare_chapter_auto_repair(
             )
         else:
             hint_fragments.append(
-                "【最终修复尝试】章节字数不足问题持续存在。本次为最后一次重写——"
-                "请在保证情节完整的前提下尽可能扩写，但即使字数未达标也将被接受。"
+                f"【最终修复尝试】{_length_budget_note}章节字数不足问题持续存在。"
+                "本次必须优先补足关键冲突、动作、对话和尾钩，使章节回到发布硬范围内。"
             )
 
     if "BLOCK_HIGH" in canonical_hits:
         if _attempt == 1:
             hint_fragments.append(
-                "上一版本章节总字数过长，本次重写请压缩冗余的叙述与重复描写，"
+                f"{_length_budget_note}上一版本章节总字数过长，本次重写请压缩冗余的叙述与重复描写，"
                 "优先保留冲突、决策与反转，使本场景回到 target_word_count 范围内。"
             )
         elif _attempt == 2:
             hint_fragments.append(
-                "【紧急修复第2次】上一版本章节字数严重超标。本次重写必须：\n"
+                f"【紧急修复第2次】{_length_budget_note}上一版本章节字数严重超标。本次重写必须：\n"
                 "1. 删除所有非推进情节的环境描写（保留关键场景的氛围描写）\n"
                 "2. 合并重复的心理活动段落，每个情绪变化最多一段\n"
                 "3. 对话去掉多余的寒暄和客套，直接进入冲突或信息交换\n"
@@ -5108,8 +5353,9 @@ async def maybe_prepare_chapter_auto_repair(
             )
         else:
             hint_fragments.append(
-                "【最终修复尝试】章节字数超标问题持续存在。本次为最后一次重写——"
-                "请尽量压缩但不必严格达标，保证情节完整优先。"
+                f"【最终修复尝试】{_length_budget_note}章节字数超标问题持续存在。"
+                "本次必须只保留主冲突、关键动作、必要对白和尾钩，删除解释性铺陈，"
+                "使章节回到发布硬范围内。"
             )
 
     if "DIALOG_UNPAIRED" in canonical_hits:
@@ -5163,6 +5409,18 @@ async def maybe_prepare_chapter_auto_repair(
             "以遗体、画像、坟前、灵堂、信物等形态被提及；"
             "或仅在显式标注的回忆／闪回／祭奠／梦境／幻象场景中出现。"
         )
+    if "CANON_FORBIDDEN_TERM" in canonical_hits:
+        _canon_detail_note = (
+            "具体命中：" + "；".join(_canon_violation_details) + "。"
+            if _canon_violation_details
+            else ""
+        )
+        hint_fragments.append(
+            f"上一版本混入了已禁止的旧设定/非正典词。{_canon_detail_note}"
+            "本次重写必须删除这些词及其关联体系，"
+            "改用当前项目设定中的正典称谓和规则；不要解释旧设定、不要把旧体系合理化，"
+            "只保留当前章节需要的信息和冲突。"
+        )
     # Fallback so the writer still sees *something* if a new code is added
     # to the allowlist without its own phrasing.
     if not hint_fragments:
@@ -5182,19 +5440,15 @@ async def maybe_prepare_chapter_auto_repair(
         )
     )
 
-    # For BLOCK_LOW we also bump per-scene ``target_word_count`` so the
-    # scene writer has a concrete, deterministic signal to target a longer
-    # draft (the writer already honours this field).  Scale is computed
-    # from the shortfall ratio when the report row carries word-count
-    # metadata, otherwise we use a gentle +20% default, capped at 1.5x.
+    # Length repair must mutate concrete per-scene budgets, not just append
+    # prose hints.  Otherwise the writer keeps using the stale targets and
+    # the auto-repair loop can observe the block without changing the
+    # generation surface.
     low_scale: float = 1.0
     if "BLOCK_LOW" in canonical_hits:
         try:
-            _length_meta = payload.get("length_stability") or {}
-            wc = int(_length_meta.get("word_count") or 0)
-            target = int(_length_meta.get("target_words") or 0)
-            if wc > 0 and target > 0:
-                ratio = target / float(wc)
+            if _length_wc > 0 and _length_target > 0:
+                ratio = _length_target / float(_length_wc)
                 low_scale = min(1.5, max(1.05, ratio))
             else:
                 low_scale = 1.20
@@ -5206,6 +5460,41 @@ async def maybe_prepare_chapter_auto_repair(
                 low_scale = max(low_scale, 1.50)
         except Exception:
             low_scale = 1.20 if _attempt == 1 else 1.40
+
+    scene_count = max(len(scenes), 1)
+    low_scene_target_floor = 0
+    if "BLOCK_LOW" in canonical_hits:
+        try:
+            if _length_target > 0:
+                floor_multiplier = 1.05 if _attempt == 1 else 1.15
+                if _attempt >= 3:
+                    floor_multiplier = 1.25
+                low_scene_target_floor = max(
+                    low_scene_target_floor,
+                    int(math.ceil((_length_target / scene_count) * floor_multiplier)),
+                )
+            if _length_min > 0:
+                low_scene_target_floor = max(
+                    low_scene_target_floor,
+                    int(math.ceil((_length_min / scene_count) * 1.05)),
+                )
+        except Exception:
+            low_scene_target_floor = 0
+
+    high_scale: float = 1.0
+    if "BLOCK_HIGH" in canonical_hits:
+        try:
+            if _length_wc > 0 and _length_target > 0:
+                high_scale = _length_target / float(_length_wc)
+            else:
+                high_scale = 0.75
+            if _attempt >= 2:
+                high_scale *= 0.85
+            if _attempt >= 3:
+                high_scale *= 0.75
+            high_scale = max(0.35, min(0.95, high_scale))
+        except Exception:
+            high_scale = 0.75 if _attempt == 1 else 0.60
 
     # Reset every scene of this chapter to NEEDS_REWRITE and write the
     # auto-repair hint into ``metadata_json`` — keeping any prior hint so
@@ -5248,13 +5537,68 @@ async def maybe_prepare_chapter_auto_repair(
             try:
                 original_target = int(sc.target_word_count or 0)
                 if original_target > 0:
-                    sc.target_word_count = max(
+                    adjusted_target = max(
                         original_target,
                         int(round(original_target * low_scale)),
+                        low_scene_target_floor,
                     )
+                    sc.target_word_count = adjusted_target
+                    meta = dict(sc.metadata_json or {})
+                    meta.setdefault(
+                        "auto_repair_original_target_word_count",
+                        original_target,
+                    )
+                    meta["auto_repair_adjusted_target_word_count"] = int(
+                        sc.target_word_count
+                    )
+                    meta["auto_repair_length_scale"] = round(low_scale, 4)
+                    if low_scene_target_floor > 0:
+                        meta["auto_repair_min_scene_target_floor"] = (
+                            low_scene_target_floor
+                        )
+                    sc.metadata_json = meta
             except Exception:
                 logger.debug(
                     "chapter %d scene %d: target_word_count bump failed "
+                    "(non-fatal)",
+                    chapter.chapter_number,
+                    sc.scene_number,
+                    exc_info=True,
+                )
+        if "BLOCK_HIGH" in canonical_hits and high_scale < 1.0:
+            try:
+                original_target = int(sc.target_word_count or 0)
+                min_scene_target = 250
+                if _length_min > 0:
+                    min_scene_target = max(
+                        250,
+                        int(round((_length_min / scene_count) * 0.5)),
+                    )
+                if original_target > 0:
+                    scaled_target = max(
+                        min_scene_target,
+                        int(round(original_target * high_scale)),
+                    )
+                    if _length_target > 0:
+                        per_scene_ceiling = max(
+                            min_scene_target,
+                            int(round((_length_target / scene_count) * 0.95)),
+                        )
+                        scaled_target = min(scaled_target, per_scene_ceiling)
+                    sc.target_word_count = min(original_target, scaled_target)
+                    meta = dict(sc.metadata_json or {})
+                    meta.setdefault(
+                        "auto_repair_original_target_word_count",
+                        original_target,
+                    )
+                    meta["auto_repair_adjusted_target_word_count"] = int(
+                        sc.target_word_count
+                    )
+                    meta["auto_repair_length_scale"] = round(high_scale, 4)
+                    sc.metadata_json = meta
+            except Exception:
+                logger.debug(
+                    "chapter %d scene %d: target_word_count trim failed "
                     "(non-fatal)",
                     chapter.chapter_number,
                     sc.scene_number,

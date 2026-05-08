@@ -20,7 +20,7 @@ from bestseller.infra.db.models import (
     ExportArtifactModel,
     ProjectModel,
 )
-from bestseller.services.drafts import format_chapter_heading, sanitize_novel_markdown_content
+from bestseller.services.drafts import count_words, format_chapter_heading, sanitize_novel_markdown_content
 from bestseller.services.output_hygiene import collect_unfinished_artifact_issues
 from bestseller.services.projects import get_project_by_slug
 from bestseller.services.writing_profile import normalize_language
@@ -28,8 +28,6 @@ from bestseller.settings import AppSettings
 
 logger = logging.getLogger(__name__)
 
-_CJK_CHAR_PATTERN = re.compile(r"[\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF]")
-_LATIN_WORD_PATTERN = re.compile(r"[A-Za-z0-9]+(?:['’._-][A-Za-z0-9]+)*")
 
 
 def _ensure_chapter_heading(
@@ -125,9 +123,7 @@ def markdown_to_html(content_md: str, *, language: str | None = None) -> str:
 def build_markdown_reading_stats(content_md: str) -> dict[str, int]:
     plain_text = markdown_to_plain_text(content_md)
     non_whitespace_text = re.sub(r"\s+", "", plain_text)
-    word_count = len(_CJK_CHAR_PATTERN.findall(non_whitespace_text)) + len(
-        _LATIN_WORD_PATTERN.findall(plain_text)
-    )
+    word_count = count_words(content_md)
     character_count = len(non_whitespace_text)
     paragraph_count = len([line for line in plain_text.splitlines() if line.strip()])
     estimated_read_minutes = math.ceil(word_count / 500) if word_count > 0 else 0

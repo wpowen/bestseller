@@ -216,13 +216,23 @@ async def find_stuck_projects(session: Any) -> list[StuckProject]:
             )
         ) or 0
 
+        explicit_stuck_chapter: int | None = None
         if explicit_stuck_ch is not None:
+            try:
+                explicit_stuck_chapter = int(explicit_stuck_ch)
+            except (TypeError, ValueError):
+                explicit_stuck_chapter = None
+
+        if (
+            explicit_stuck_chapter is not None
+            and chapters_with_draft < explicit_stuck_chapter
+        ):
             stuck.append(
                 StuckProject(
                     project_id=project.id,
                     slug=project.slug,
                     reason="explicit_stuck_marker",
-                    stuck_at_chapter=int(explicit_stuck_ch),
+                    stuck_at_chapter=explicit_stuck_chapter,
                     chapters_total=int(chapters_total),
                     chapters_with_draft=int(chapters_with_draft),
                 )

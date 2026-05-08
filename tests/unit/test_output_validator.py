@@ -261,6 +261,41 @@ class TestNamingConsistencyCheck:
         violations = check.run(text, _ctx_with_allowed(inv))
         assert violations == []
 
+    def test_zh_role_suffix_and_action_tail_do_not_create_rogue_names(self) -> None:
+        check = NamingConsistencyCheck()
+        inv = _zh_invariants_with_pool(("苏瑶", "孙乾", "老张"))
+        text = (
+            "苏执事站在堂前。苏执事看向宁尘。"
+            "孙乾剑尖点地。孙乾脸色微变。"
+            "老张直起腰。老张直起身。"
+            "宁尘的瞳孔骤然收缩。宁尘的瞳孔骤然收缩。"
+        )
+        violations = check.run(text, _ctx_with_allowed(inv))
+        assert violations == []
+
+    def test_zh_measure_words_and_object_actions_do_not_create_rogue_names(self) -> None:
+        check = NamingConsistencyCheck()
+        inv = _zh_invariants_with_pool(("林渊", "苏婉宁"))
+        text = (
+            "林渊把铜钱在口袋里攥紧。一张泛黄的信纸从卷宗里滑落。"
+            "铜钱在口袋里又震了一下，那张泛黄的信纸边缘发黑。"
+            "苏婉宁看着铜钱在口袋里顶出的轮廓，翻开另一张泛黄的照片。"
+        )
+        violations = check.run(text, _ctx_with_allowed(inv))
+        assert violations == []
+
+    def test_zh_materials_and_readiness_words_do_not_create_rogue_names(self) -> None:
+        check = NamingConsistencyCheck()
+        inv = _zh_invariants_with_pool(("林渊", "苏婉宁"))
+        text = (
+            "朱砂洒在门槛上，朱砂的味道呛得人后退。"
+            "苏婉宁确认纸符齐备，供品也已经齐备。"
+            "林渊把铜钱按在掌心，铜钱按在符纸边缘不动。"
+            "朱砂又被雨水冲开，齐备的器物只剩半数。"
+        )
+        violations = check.run(text, _ctx_with_allowed(inv))
+        assert violations == []
+
     def test_zh_compound_surname_in_pool_passes(self) -> None:
         check = NamingConsistencyCheck()
         inv = _zh_invariants_with_pool(("慕容雪",))

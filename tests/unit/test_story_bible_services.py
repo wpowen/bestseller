@@ -275,8 +275,11 @@ async def test_upsert_world_spec_creates_world_entities() -> None:
 async def test_upsert_cast_spec_creates_characters_relationships_and_snapshots() -> None:
     project = build_project()
     session = FakeSession(scalar_results=[None, None, None])
+    cast = build_cast_spec()
+    cast["protagonist"]["gender"] = "male"
+    cast["protagonist"]["pronoun_set_zh"] = "他"
 
-    counts = await story_bible_services.upsert_cast_spec(session, project, build_cast_spec())
+    counts = await story_bible_services.upsert_cast_spec(session, project, cast)
 
     characters = [item for item in session.added if isinstance(item, CharacterModel)]
     relationships = [item for item in session.added if isinstance(item, RelationshipModel)]
@@ -291,6 +294,9 @@ async def test_upsert_cast_spec_creates_characters_relationships_and_snapshots()
     assert protagonist.role == "protagonist"
     assert protagonist.is_pov_character is True
     assert protagonist.knowledge_state_json["knows"] == ["事故数据不对劲"]
+    assert protagonist.metadata_json["gender"] == "male"
+    assert protagonist.metadata_json["pronoun_set_zh"] == "他"
+    assert protagonist.metadata_json["cast_entry"]["gender"] == "male"
 
 
 @pytest.mark.asyncio

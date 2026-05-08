@@ -16,7 +16,12 @@ from bestseller.domain.feedback import (
     RelationshipEventExtraction,
     WorldDetailExtraction,
 )
-from bestseller.services.feedback import _parse_feedback_payload
+from bestseller.services.feedback import (
+    _close_active_lifecycle_on_recovery,
+    _is_historical_character_state_writeback,
+    _parse_feedback_payload,
+    _resolve_alive_status_writeback,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -363,6 +368,94 @@ def test_system_prompt_en_mentions_lifecycle_kinds() -> None:
 
     for kind in ("missing", "sealed", "sleeping", "comatose", "exiled"):
         assert kind in _SYSTEM_PROMPT_EN, f"_SYSTEM_PROMPT_EN missing lifecycle kind: {kind}"
+
+
+def test_recovery_alive_status_closes_stale_lifecycle_metadata() -> None:
+    metadata = {
+        "lifecycle_status": {
+            "kind": "comatose",
+            "since_chapter": 4,
+            "reason": "injured in chapter 4",
+        }
+    }
+
+    updated, changed = _close_active_lifecycle_on_recovery(
+        metadata,
+        chapter_number=5,
+        accepted_alive_status="alive",
+        extracted_lifecycle_status=None,
+    )
+
+    assert changed is True
+    assert updated["lifecycle_status"]["scheduled_exit_chapter"] == 5
+    assert updated["lifecycle_status"]["recovered_at_chapter"] == 5
+
+
+def test_recovery_does_not_close_fresh_lifecycle_status() -> None:
+    metadata = {
+        "lifecycle_status": {
+            "kind": "comatose",
+            "since_chapter": 4,
+            "reason": "injured in chapter 4",
+        }
+    }
+
+    updated, changed = _close_active_lifecycle_on_recovery(
+        metadata,
+        chapter_number=4,
+        accepted_alive_status="alive",
+        extracted_lifecycle_status="comatose",
+    )
+
+    assert changed is False
+    assert "scheduled_exit_chapter" not in updated["lifecycle_status"]
+
+
+def test_alive_status_before_future_death_is_snapshot_only() -> None:
+    writeback, reason = _resolve_alive_status_writeback(
+        current_alive_status="deceased",
+        extracted_alive_status="alive",
+        death_chapter_number=435,
+        chapter_number=51,
+    )
+
+    assert writeback is None
+    assert reason == "pre_death_historical_state"
+
+
+def test_alive_status_after_death_chapter_rejects_resurrection() -> None:
+    writeback, reason = _resolve_alive_status_writeback(
+        current_alive_status="deceased",
+        extracted_alive_status="alive",
+        death_chapter_number=40,
+        chapter_number=51,
+    )
+
+    assert writeback is None
+    assert reason == "already_deceased"
+
+
+def test_premature_death_before_planned_death_is_not_written_back() -> None:
+    writeback, reason = _resolve_alive_status_writeback(
+        current_alive_status="alive",
+        extracted_alive_status="deceased",
+        death_chapter_number=435,
+        chapter_number=51,
+    )
+
+    assert writeback is None
+    assert reason == "premature_death_before_planned_death"
+
+
+def test_historical_character_state_writeback_detects_older_repair_pass() -> None:
+    assert _is_historical_character_state_writeback(
+        {"last_seen_chapter_number": 389},
+        chapter_number=51,
+    )
+    assert not _is_historical_character_state_writeback(
+        {"last_seen_chapter_number": 51},
+        chapter_number=51,
+    )
 
 
 # ── Promise extraction ───────────────────────────────────────────

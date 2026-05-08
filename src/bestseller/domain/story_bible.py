@@ -53,6 +53,60 @@ _AGE_APPROX_PREFIX_OFFSETS: dict[str, int] = {
     "mid": 5,
     "late": 8,
 }
+_GENDER_UNKNOWN_MARKERS: tuple[str, ...] = (
+    "unknown",
+    "unspecified",
+    "undisclosed",
+    "n/a",
+    "na",
+    "none",
+    "待定",
+    "未知",
+    "不详",
+    "未指定",
+)
+_GENDER_MALE_MARKERS: tuple[str, ...] = (
+    "male",
+    "man",
+    "boy",
+    "masculine",
+    "he/him",
+    "he",
+    "him",
+    "男",
+    "男性",
+    "男主",
+    "少年",
+    "男子",
+    "青年男子",
+)
+_GENDER_FEMALE_MARKERS: tuple[str, ...] = (
+    "female",
+    "woman",
+    "girl",
+    "feminine",
+    "she/her",
+    "she",
+    "her",
+    "女",
+    "女性",
+    "女主",
+    "少女",
+    "女子",
+    "姑娘",
+)
+_GENDER_NONBINARY_MARKERS: tuple[str, ...] = (
+    "nonbinary",
+    "non-binary",
+    "non binary",
+    "nb",
+    "they/them",
+    "genderfluid",
+    "neutral",
+    "非二元",
+    "中性",
+    "无性别",
+)
 
 
 def normalize_character_role_label(value: Any, *, fallback: str | None = None) -> Any:
@@ -143,6 +197,34 @@ def normalize_character_age(value: Any) -> int | None:
     if precise_match:
         return int(precise_match.group(1))
     return None
+
+
+def normalize_character_gender(value: Any) -> str:
+    """Normalize LLM gender labels into the identity-guardian enum."""
+    if value is None or value == "":
+        return "unknown"
+    if not isinstance(value, str):
+        return "unknown"
+    raw = value.strip()
+    if not raw:
+        return "unknown"
+    lowered = raw.lower()
+    compact = re.sub(r"[\s_\-]+", "", lowered)
+    if lowered in _GENDER_NONBINARY_MARKERS or compact in {"nonbinary", "theythem"}:
+        return "nonbinary"
+    if lowered in _GENDER_UNKNOWN_MARKERS:
+        return "unknown"
+    if lowered in _GENDER_MALE_MARKERS or compact in {"male", "hehim"}:
+        return "male"
+    if lowered in _GENDER_FEMALE_MARKERS or compact in {"female", "sheher"}:
+        return "female"
+    if any(marker in raw for marker in ("非二元", "无性别", "中性")):
+        return "nonbinary"
+    if any(marker in raw for marker in ("女主", "女性", "少女", "女子", "姑娘")):
+        return "female"
+    if any(marker in raw for marker in ("男主", "男性", "少年", "男子")):
+        return "male"
+    return "unknown"
 
 
 _LLM_STRING_FALLBACK_KEYS: tuple[str, ...] = (
@@ -943,6 +1025,15 @@ class CharacterInput(BaseModel):
     def _coerce_age_to_int(cls, v: Any) -> int | None:
         return normalize_character_age(v)
 
+    gender: Literal["male", "female", "nonbinary", "unknown"] = "unknown"
+    pronoun_set_zh: str | None = None
+    pronoun_set_en: str | None = None
+
+    @field_validator("gender", mode="before")
+    @classmethod
+    def _coerce_gender_to_identity_label(cls, v: Any) -> str:
+        return normalize_character_gender(v)
+
     background: str | None = None
     goal: str | None = None
     fear: str | None = None
@@ -964,6 +1055,19 @@ class CharacterInput(BaseModel):
     family_imprint: CharacterFamilyImprint = Field(default_factory=CharacterFamilyImprint)
     villain_charisma: VillainCharismaProfile = Field(default_factory=VillainCharismaProfile)
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def _default_pronouns_from_gender(self) -> CharacterInput:
+        if self.gender == "male":
+            self.pronoun_set_zh = self.pronoun_set_zh or "他"
+            self.pronoun_set_en = self.pronoun_set_en or "he/him"
+        elif self.gender == "female":
+            self.pronoun_set_zh = self.pronoun_set_zh or "她"
+            self.pronoun_set_en = self.pronoun_set_en or "she/her"
+        elif self.gender == "nonbinary":
+            self.pronoun_set_zh = self.pronoun_set_zh or "ta"
+            self.pronoun_set_en = self.pronoun_set_en or "they/them"
+        return self
 
 
 class ConflictMapInput(BaseModel):
@@ -1041,6 +1145,10 @@ class ConflictForceInput(BaseModel):
 _CHARACTER_DICT_INNER_KEYS: tuple[str, ...] = (
     "role",
     "age",
+    "gender",
+    "pronoun_set_zh",
+    "pronoun_set_en",
+    "aliases",
     "background",
     "goal",
     "fear",

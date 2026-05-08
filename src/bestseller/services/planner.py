@@ -3519,6 +3519,9 @@ def _fallback_cast_spec(
             {
                 "name": name,
                 "role": normalized_role,
+                "gender": "unknown",
+                "pronoun_set_zh": "",
+                "pronoun_set_en": "",
                 "background": _non_empty_string(item.get("description"), item.get("title")),
                 "goal": item.get("title"),
                 "value_to_story": (
@@ -3540,6 +3543,9 @@ def _fallback_cast_spec(
             "name": protagonist_name,
             "age": 28,
             "role": "protagonist",
+            "gender": "unknown",
+            "pronoun_set_zh": "",
+            "pronoun_set_en": "",
             "background": (
                 f"Formerly worked within the system tied to {home_location['name']}, later pushed to the margins."
                 if is_en
@@ -3650,6 +3656,9 @@ def _fallback_cast_spec(
         "antagonist": {
             "name": antagonist_name,
             "role": "antagonist",
+            "gender": "unknown",
+            "pronoun_set_zh": "",
+            "pronoun_set_en": "",
             "background": (
                 f"A high-ranking power broker within {ruling_faction['name']}."
                 if is_en
@@ -3775,6 +3784,9 @@ def _fallback_cast_spec(
             {
                 "name": ally_name,
                 "role": "ally",
+                "gender": "unknown",
+                "pronoun_set_zh": "",
+                "pronoun_set_en": "",
                 "background": (
                     "A former partner still operating inside the system."
                     if is_en
@@ -3847,6 +3859,9 @@ def _fallback_cast_spec(
             {
                 "name": local_threat_name,
                 "role": "antagonist",
+                "gender": "unknown",
+                "pronoun_set_zh": "",
+                "pronoun_set_en": "",
                 "background": (
                     f"A local power figure and {ruling_faction['name']}'s ground-level enforcer in the protagonist's area."
                     if is_en
@@ -3917,6 +3932,9 @@ def _fallback_cast_spec(
             {
                 "name": betrayer_name,
                 "role": "ally",
+                "gender": "unknown",
+                "pronoun_set_zh": "",
+                "pronoun_set_en": "",
                 "background": (
                     "One of the protagonist's trusted companions who helped at a critical moment."
                     if is_en
@@ -6234,6 +6252,10 @@ def _cast_spec_prompts(project: ProjectModel, book_spec: dict[str, Any], world_s
             "Generate a CastSpec JSON with protagonist, antagonist, antagonist_forces, supporting_cast, and conflict_map. "
             "The protagonist needs a vivid desire, a real weakness, visible growth space, and a memorable edge; the antagonist must actively counter the protagonist and keep escalating. "
             "Every major character must include a voice_profile object and a moral_framework object so their speech patterns stay distinct.\n\n"
+            "IDENTITY LOCK — every protagonist, antagonist, and supporting_cast character must include "
+            "gender (male/female/nonbinary/unknown), pronoun_set_en, and pronoun_set_zh. "
+            "Do not omit these fields. For named person characters, gender must be male/female/nonbinary; "
+            "unknown is only allowed for explicitly non-person entities marked with entity_type.\n\n"
             "PERSONHOOD LAYER — every protagonist must read as a real person, not a plot function. "
             "Populate ALL of:\n"
             "  - psych_profile: {mbti (e.g. 'INTJ'), big_five (OCEAN scores 0-100), enneagram (e.g. '5w4'), "
@@ -6284,6 +6306,10 @@ def _cast_spec_prompts(project: ProjectModel, book_spec: dict[str, Any], world_s
             "每个角色必须包含 voice_profile 对象（speech_register、verbal_tics、sentence_style、"
             "emotional_expression、mannerisms）和 moral_framework 对象（core_values、"
             "lines_never_crossed、willing_to_sacrifice），确保不同角色的说话方式有明显区分度。\n\n"
+            "【身份锁定】protagonist、antagonist、supporting_cast 中每个角色都必须包含 "
+            "gender（male/female/nonbinary/unknown）、pronoun_set_zh、pronoun_set_en。"
+            "不要省略。具名人物角色的 gender 必须是 male/female/nonbinary；"
+            "unknown 只允许用于明确标记 entity_type 的非人物实体。\n\n"
             "【人格底层 — 让角色像真人，不是剧情齿轮】\n"
             "主角必须完整填写以下五块（参考真实心理学数据，不要写抽象类型）：\n"
             "  - psych_profile：{mbti（如 'INTJ'）、big_five（OCEAN 五维 0-100 分）、enneagram（如 '5w4'）、"

@@ -322,7 +322,7 @@ async def test_find_stuck_projects_detects_missing_drafts(now: _dt.datetime) -> 
 async def test_find_stuck_projects_detects_explicit_stuck_marker(
     now: _dt.datetime,
 ) -> None:
-    """A project with ``stuck_at_chapter`` in metadata is stuck regardless of draft count."""
+    """A project with ``stuck_at_chapter`` and no persisted draft is stuck."""
     p = _FakeProject(
         id=uuid4(),
         slug="book-2",
@@ -335,6 +335,28 @@ async def test_find_stuck_projects_detects_explicit_stuck_marker(
     assert len(stuck) == 1
     assert stuck[0].reason == "explicit_stuck_marker"
     assert stuck[0].stuck_at_chapter == 42
+
+
+@pytest.mark.asyncio
+async def test_find_stuck_projects_ignores_stale_explicit_marker_when_draft_exists(
+    now: _dt.datetime,
+) -> None:
+    """A stale marker must not requeue work that already has current drafts."""
+    p = _FakeProject(
+        id=uuid4(),
+        slug="book-stale",
+        metadata_json={"stuck_at_chapter": 3, "last_error": "old"},
+    )
+    chapters = [_FakeChapter(id=uuid4(), project_id=p.id) for _ in range(3)]
+    drafts = [
+        _FakeDraft(id=uuid4(), chapter_id=chapter.id, is_current=True)
+        for chapter in chapters
+    ]
+    session = _FakeSession(projects=[p], runs=[], chapters=chapters, drafts=drafts)
+
+    stuck = await find_stuck_projects(session)
+
+    assert stuck == []
 
 
 @pytest.mark.asyncio

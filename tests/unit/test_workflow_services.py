@@ -6,6 +6,7 @@ import pytest
 
 from bestseller.domain.workflow import ChapterOutlineBatchInput
 from bestseller.infra.db.models import (
+    CharacterModel,
     ChapterModel,
     PlanningArtifactVersionModel,
     ProjectModel,
@@ -64,7 +65,27 @@ def build_project() -> ProjectModel:
         genre="fantasy",
         target_word_count=120000,
         target_chapters=60,
-        metadata_json={},
+        metadata_json={
+            "identity_manifest_status": "locked",
+            "identity_manifest": [
+                {
+                    "name": "沈砚",
+                    "role": "protagonist",
+                    "gender": "male",
+                    "pronoun_set_zh": "他",
+                    "pronoun_set_en": "he/him",
+                    "aliases": ["沈导航"],
+                },
+                {
+                    "name": "港务官",
+                    "role": "supporting",
+                    "gender": "female",
+                    "pronoun_set_zh": "她",
+                    "pronoun_set_en": "she/her",
+                    "aliases": [],
+                },
+            ],
+        },
     )
     project.id = uuid4()
     return project
@@ -112,11 +133,19 @@ def build_batch() -> ChapterOutlineBatchInput:
                     "chapter_number": 1,
                     "title": "The Signal",
                     "goal": "Introduce the investigation.",
+                    "main_conflict": "沈砚必须在封港命令生效前确认信号来源。",
+                    "hook_description": "封港倒计时只剩一小时。",
                     "scenes": [
                         {
                             "scene_number": 1,
                             "scene_type": "setup",
                             "title": "Silent Dock",
+                            "time_label": "第一日夜，封港前一小时",
+                            "participants": ["沈砚", "港务官"],
+                            "purpose": {
+                                "story": "抛出封港命令并逼迫沈砚接下调查任务。",
+                                "emotion": "压迫感和抗拒同时上升。",
+                            },
                         }
                     ],
                 }
@@ -177,7 +206,15 @@ async def test_materialize_chapter_outline_batch_creates_workflow_records(
         return project
 
     async def fake_create_chapter(session: object, project_slug: str, payload: object) -> object:
-        return type("ChapterStub", (), {"id": uuid4(), "chapter_number": payload.chapter_number})()
+        return type(
+            "ChapterStub",
+            (),
+            {
+                "id": uuid4(),
+                "chapter_number": payload.chapter_number,
+                "target_word_count": payload.target_word_count,
+            },
+        )()
 
     async def fake_create_scene_card(
         session: object,
@@ -232,7 +269,15 @@ async def test_materialize_latest_chapter_outline_batch_uses_stored_artifact(
         return project
 
     async def fake_create_chapter(session: object, project_slug: str, payload: object) -> object:
-        return type("ChapterStub", (), {"id": uuid4(), "chapter_number": payload.chapter_number})()
+        return type(
+            "ChapterStub",
+            (),
+            {
+                "id": uuid4(),
+                "chapter_number": payload.chapter_number,
+                "target_word_count": payload.target_word_count,
+            },
+        )()
 
     async def fake_create_scene_card(
         session: object,
@@ -313,6 +358,112 @@ async def test_materialize_latest_chapter_outline_batch_updates_existing_planned
     assert workflow_runs[0].metadata_json["chapters_updated"] == 1
     assert workflow_runs[0].metadata_json["scenes_updated"] == 1
     assert workflow_runs[0].metadata_json["chapters_pruned"] == 1
+
+
+@pytest.mark.asyncio
+async def test_materialize_chapter_outline_batch_blocks_critical_plan_fingerprint(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = build_project()
+    artifact = PlanningArtifactVersionModel(
+        project_id=project.id,
+        artifact_type="chapter_outline_batch",
+        scope_ref_id=None,
+        version_no=1,
+        status="approved",
+        schema_version="1.0",
+        content=build_batch().model_dump(mode="json", by_alias=True),
+        created_by="tester",
+    )
+    artifact.id = uuid4()
+
+    async def fake_get_project_by_slug(session: object, slug: str) -> ProjectModel:
+        return project
+
+    async def fake_create_or_get_volume(session: object, project_id, payload: object) -> object:
+        return type("VolumeStub", (), {"id": uuid4()})()
+
+    class Finding:
+        chapter_a = 1
+        chapter_b = 2
+        similarity = 0.91
+        severity = "critical"
+        reason = "same conflict and hook"
+
+    class Report:
+        findings = (Finding(),)
+        has_critical = True
+
+    def fake_scan_batch_for_duplicates(batch_outlines: object, existing_db_chapters: object) -> Report:
+        return Report()
+
+    from bestseller.services import plan_fingerprint as plan_fingerprint_services
+
+    monkeypatch.setattr(workflow_services, "get_project_by_slug", fake_get_project_by_slug)
+    monkeypatch.setattr(workflow_services, "create_or_get_volume", fake_create_or_get_volume)
+    monkeypatch.setattr(
+        plan_fingerprint_services,
+        "scan_batch_for_duplicates",
+        fake_scan_batch_for_duplicates,
+    )
+
+    session = FakeSession(scalar_results=[artifact], scalars_results=[[]])
+
+    with pytest.raises(ValueError, match="plan fingerprint gate"):
+        await workflow_services.materialize_latest_chapter_outline_batch(
+            session,
+            "my-story",
+            requested_by="tester",
+        )
+
+    workflow_runs = [obj for obj in session.added if isinstance(obj, WorkflowRunModel)]
+    assert workflow_runs[0].status == "failed"
+    assert workflow_runs[0].metadata_json["plan_fingerprint_has_critical"] is True
+
+
+@pytest.mark.asyncio
+async def test_materialize_chapter_outline_batch_blocks_contract_violation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = build_project()
+    bad_batch = ChapterOutlineBatchInput.model_validate(
+        {
+            "batch_name": "bad-plan",
+            "chapters": [
+                {
+                    "chapter_number": 1,
+                    "title": "Bad Plan",
+                    "main_conflict": "沈砚必须处理封港命令。",
+                    "scenes": [
+                        {
+                            "scene_number": 1,
+                            "scene_type": "setup",
+                            "participants": ["陌生人"],
+                            "purpose": {"story": "引出封港命令。"},
+                        }
+                    ],
+                }
+            ],
+        }
+    )
+
+    async def fake_get_project_by_slug(session: object, slug: str) -> ProjectModel:
+        return project
+
+    monkeypatch.setattr(workflow_services, "get_project_by_slug", fake_get_project_by_slug)
+    session = FakeSession(scalars_results=[[]])
+
+    with pytest.raises(ValueError, match="chapter_plan_contract"):
+        await workflow_services.materialize_chapter_outline_batch(
+            session,
+            "my-story",
+            bad_batch,
+            requested_by="tester",
+        )
+
+    workflow_runs = [obj for obj in session.added if isinstance(obj, WorkflowRunModel)]
+    assert workflow_runs[0].status == "failed"
+    assert workflow_runs[0].metadata_json["chapter_plan_contract"]["passed"] is False
 
 
 @pytest.mark.asyncio
@@ -425,6 +576,105 @@ async def test_materialize_story_bible_creates_workflow_records(
     assert len(workflow_runs) == 1
     assert workflow_runs[0].status == "completed"
     assert len(workflow_steps) == 7
+
+
+@pytest.mark.asyncio
+async def test_materialize_story_bible_blocks_missing_identity_lock(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = build_project()
+
+    async def fake_get_project_by_slug(session: object, slug: str) -> ProjectModel:
+        return project
+
+    monkeypatch.setattr(workflow_services, "get_project_by_slug", fake_get_project_by_slug)
+
+    session = FakeSession()
+    with pytest.raises(ValueError, match="foundation_identity_contract"):
+        await workflow_services.materialize_story_bible(
+            session,
+            "my-story",
+            requested_by="tester",
+            cast_spec_content={
+                "protagonist": {
+                    "name": "沈砚",
+                    "role": "protagonist",
+                }
+            },
+        )
+
+    assert not [obj for obj in session.added if isinstance(obj, WorkflowRunModel)]
+
+
+@pytest.mark.asyncio
+async def test_ensure_project_identity_manifest_blocks_invalid_resume_cast() -> None:
+    project = build_project()
+    project.metadata_json = {}
+    artifact = PlanningArtifactVersionModel(
+        project_id=project.id,
+        artifact_type=ArtifactType.CAST_SPEC.value,
+        scope_ref_id=None,
+        version_no=1,
+        status="approved",
+        schema_version="1.0",
+        content={"protagonist": {"name": "沈砚", "role": "protagonist"}},
+        created_by="tester",
+    )
+    artifact.id = uuid4()
+    session = FakeSession(scalar_results=[artifact])
+
+    with pytest.raises(ValueError, match="foundation_identity_contract"):
+        await workflow_services.ensure_project_identity_manifest(
+            session,
+            project,
+            project_slug=project.slug,
+        )
+
+    assert project.metadata_json == {}
+
+
+@pytest.mark.asyncio
+async def test_ensure_project_identity_manifest_backfills_project_and_characters() -> None:
+    project = build_project()
+    project.metadata_json = {}
+    artifact = PlanningArtifactVersionModel(
+        project_id=project.id,
+        artifact_type=ArtifactType.CAST_SPEC.value,
+        scope_ref_id=None,
+        version_no=1,
+        status="approved",
+        schema_version="1.0",
+        content={
+            "protagonist": {
+                "name": "沈砚",
+                "role": "protagonist",
+                "gender": "male",
+                "aliases": ["沈导航"],
+            }
+        },
+        created_by="tester",
+    )
+    artifact.id = uuid4()
+    character = CharacterModel(
+        project_id=project.id,
+        name="沈砚",
+        role="protagonist",
+        metadata_json={},
+    )
+    character.id = uuid4()
+    session = FakeSession(scalar_results=[artifact], scalars_results=[[character]])
+
+    manifest = await workflow_services.ensure_project_identity_manifest(
+        session,
+        project,
+        project_slug=project.slug,
+    )
+
+    assert manifest[0]["name"] == "沈砚"
+    assert project.metadata_json["identity_manifest_status"] == "locked"
+    assert character.metadata_json["gender"] == "male"
+    assert character.metadata_json["pronoun_set_zh"] == "他"
+    assert character.metadata_json["cast_entry"]["pronoun_set_en"] == "he/him"
 
 
 @pytest.mark.asyncio

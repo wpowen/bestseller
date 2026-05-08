@@ -42,7 +42,7 @@ from bestseller.services.continuity import (
     load_previous_chapter_snapshot,
     validate_fact_monotonicity,
 )
-from bestseller.services.drafts import assemble_chapter_draft, generate_scene_draft
+from bestseller.services.drafts import assemble_chapter_draft, count_words, generate_scene_draft
 from bestseller.services.exports import export_chapter_markdown, export_project_markdown
 from bestseller.services.scorecard import compute_scorecard, save_scorecard
 from bestseller.services.invariants import (
@@ -59,6 +59,7 @@ from bestseller.services.consistency import (
 )
 from bestseller.services.knowledge import propagate_scene_discoveries, refresh_scene_knowledge
 from bestseller.services.planner import generate_foundation_plan, generate_novel_plan, generate_volume_plan
+from bestseller.services.premium_genre_engine import build_premium_genre_engine_blocks
 from bestseller.services.projects import create_project, get_project_by_slug, import_planning_artifact, load_json_file
 from bestseller.services.query_broker import run_scene_query_brief
 from bestseller.services.reviews import (
@@ -71,6 +72,7 @@ from bestseller.services.workflows import (
     WORKFLOW_TYPE_MATERIALIZE_STORY_BIBLE,
     create_workflow_run,
     create_workflow_step_run,
+    ensure_project_identity_manifest,
     get_latest_completed_workflow_run,
     get_latest_planning_artifact,
     materialize_chapter_outline_batch,
@@ -100,6 +102,37 @@ WORKFLOW_TYPE_SCENE_PIPELINE = "scene_pipeline"
 WORKFLOW_TYPE_CHAPTER_PIPELINE = "chapter_pipeline"
 WORKFLOW_TYPE_PROJECT_PIPELINE = "project_pipeline"
 ProgressCallback = Callable[[str, dict[str, Any] | None], None]
+
+
+class ProjectRepairPauseError(RuntimeError):
+    """Raised when normal writing is blocked by a structural repair pause."""
+
+
+def _project_blocked_for_structural_repair(project: ProjectModel) -> bool:
+    metadata = getattr(project, "metadata_json", None) or {}
+    return bool(
+        metadata.get("generation_resume_blocked_until_repair_audit")
+        or metadata.get("production_paused")
+        or metadata.get("structural_repair_required")
+    )
+
+
+def _assert_project_not_blocked_for_structural_repair(
+    project: ProjectModel,
+    *,
+    project_slug: str,
+    operation: str,
+    allow_structural_repair: bool = False,
+) -> None:
+    if allow_structural_repair or not _project_blocked_for_structural_repair(project):
+        return
+    metadata = getattr(project, "metadata_json", None) or {}
+    reason = metadata.get("production_pause_reason") or "structural repair is required"
+    raise ProjectRepairPauseError(
+        f"Project '{project_slug}' is paused for structural repair and cannot run "
+        f"{operation}. reason={reason!r}. Run the repair workflow or clear "
+        "generation_resume_blocked_until_repair_audit after the repair audit passes."
+    )
 
 # Books above this chapter target require progressive planning: a single
 # monolithic plan would take hours and cannot evolve cast/world with feedback
@@ -274,6 +307,28 @@ async def _collect_phase_d_reports(
     except Exception:  # noqa: BLE001
         logger.debug("Phase D validators failed (non-fatal)", exc_info=True)
         return []
+
+
+def _checker_report_gate_payload(report: Any) -> dict[str, Any]:
+    def _issue_payload(issue: Any) -> dict[str, Any]:
+        if hasattr(issue, "to_dict"):
+            return issue.to_dict()
+        return {
+            "id": getattr(issue, "id", ""),
+            "type": getattr(issue, "type", ""),
+            "severity": getattr(issue, "severity", ""),
+            "location": getattr(issue, "location", ""),
+            "description": getattr(issue, "description", str(issue)),
+            "suggestion": getattr(issue, "suggestion", ""),
+            "can_override": getattr(issue, "can_override", False),
+        }
+
+    return {
+        "agent": getattr(report, "agent", ""),
+        "chapter": getattr(report, "chapter", None),
+        "summary": getattr(report, "summary", ""),
+        "issues": [_issue_payload(issue) for issue in list(getattr(report, "issues", ()) or ())[:10]],
+    }
 
 
 def _emit_progress(
@@ -607,12 +662,19 @@ async def run_scene_pipeline(
     *,
     requested_by: str = "system",
     parent_workflow_run_id: UUID | None = None,
+    allow_structural_repair: bool = False,
 ) -> ScenePipelineResult:
     project, chapter, scene = await _load_scene_identifiers(
         session,
         project_slug,
         chapter_number,
         scene_number,
+    )
+    _assert_project_not_blocked_for_structural_repair(
+        project,
+        project_slug=project_slug,
+        operation=f"scene pipeline {chapter_number}.{scene_number}",
+        allow_structural_repair=allow_structural_repair,
     )
     await _enforce_truth_version_guard(session, settings, project)
 
@@ -763,26 +825,59 @@ async def run_scene_pipeline(
                 )
 
         # ── Inject character identity constraints (Tier 0 — never dropped) ──
-        if shared_context is not None:
+        _identity_registry = []
+        try:
+            from bestseller.services.identity_guard import (
+                build_identity_constraint_block,
+                load_identity_registry,
+            )
+
+            _identity_registry = await load_identity_registry(session, project.id)
+            if shared_context is not None and _identity_registry:
+                shared_context.identity_registry = _identity_registry
+                shared_context.identity_constraint_block = build_identity_constraint_block(
+                    _identity_registry,
+                    language=getattr(project, "language", None) or "zh-CN",
+                    participant_names=list(scene.participants or []),
+                )
+        except Exception:
+            logger.warning(
+                "Identity guard load failed for ch%d sc%d (non-fatal)",
+                chapter_number, scene_number,
+                exc_info=True,
+            )
+
+        # ── Narrative contract gate (zero LLM cost, pre-draft) ──
+        if (
+            draft is None
+            and getattr(settings.pipeline, "require_pre_draft_scene_contract", True)
+        ):
             try:
-                from bestseller.services.identity_guard import (
-                    build_identity_constraint_block,
-                    load_identity_registry,
+                from bestseller.services.narrative_contracts import (
+                    validate_scene_contract_pre_draft,
                 )
-                _identity_registry = await load_identity_registry(session, project.id)
-                if _identity_registry:
-                    shared_context.identity_registry = _identity_registry
-                    shared_context.identity_constraint_block = build_identity_constraint_block(
-                        _identity_registry,
-                        language=getattr(project, "language", None) or "zh-CN",
-                        participant_names=list(scene.participants or []),
-                    )
+
+                _contract = validate_scene_contract_pre_draft(
+                    scene,
+                    identity_registry=_identity_registry,
+                    require_identity_registry=True,
+                )
+                if _contract.violations or _contract.warnings:
+                    _scene_meta = dict(getattr(scene, "metadata_json", {}) or {})
+                    _scene_meta["pre_draft_scene_contract"] = _contract.to_dict()
+                    scene.metadata_json = _scene_meta
+                    workflow_run.metadata_json = {
+                        **(workflow_run.metadata_json or {}),
+                        "pre_draft_scene_contract": _contract.to_dict(),
+                    }
+                _contract.raise_for_blocks(
+                    project_slug=project_slug,
+                    artifact=f"scene {chapter_number}.{scene_number}",
+                )
+            except ValueError:
+                raise
             except Exception:
-                logger.warning(
-                    "Identity guard load failed for ch%d sc%d (non-fatal)",
-                    chapter_number, scene_number,
-                    exc_info=True,
-                )
+                logger.debug("Pre-draft scene contract gate failed (non-fatal)", exc_info=True)
 
         # ── Inject overused phrase avoidance + genre constraints ──
         if shared_context is not None:
@@ -823,6 +918,53 @@ async def run_scene_pipeline(
                         )
             except Exception:
                 logger.debug("Genre constraint injection failed (non-fatal)", exc_info=True)
+
+        # ── Premium genre engines: progression causality + protagonist decisions ──
+        # These blocks are built from persisted story-bible metadata and injected into
+        # the same shared context that the live scene writer prompt consumes.
+        if shared_context is not None:
+            try:
+                _project_meta = project.metadata_json or {}
+                _lang = getattr(project, "language", None) or settings.generation.language
+                _volume_payload = (
+                    shared_context.story_bible.get("volume", {})
+                    if isinstance(shared_context.story_bible, dict)
+                    else {}
+                )
+                _current_volume = None
+                if isinstance(_volume_payload, dict):
+                    _volume_no = _volume_payload.get("volume_number")
+                    if isinstance(_volume_no, int):
+                        _current_volume = _volume_no
+                _sub_genre = _project_meta.get("sub_genre")
+                _engine_blocks = build_premium_genre_engine_blocks(
+                    project_metadata=_project_meta,
+                    story_bible_context=shared_context.story_bible,
+                    genre=getattr(project, "genre", None) or settings.generation.genre,
+                    sub_genre=_sub_genre if isinstance(_sub_genre, str) else None,
+                    language=_lang,
+                    current_volume=_current_volume,
+                )
+                if _engine_blocks.progression_context_block:
+                    shared_context.progression_context_block = (
+                        _engine_blocks.progression_context_block
+                    )
+                if _engine_blocks.decision_policy_block:
+                    shared_context.decision_policy_block = _engine_blocks.decision_policy_block
+                if _engine_blocks.rule_system_context_block:
+                    shared_context.rule_system_context_block = (
+                        _engine_blocks.rule_system_context_block
+                    )
+                if _engine_blocks.warnings:
+                    shared_context.contradiction_warnings.extend(
+                        f"[精品类型引擎] {warning}" for warning in _engine_blocks.warnings
+                    )
+                    workflow_run.metadata_json = {
+                        **(workflow_run.metadata_json or {}),
+                        "premium_genre_engine_warnings": list(_engine_blocks.warnings),
+                    }
+            except Exception:
+                logger.debug("Premium genre engine injection failed (non-fatal)", exc_info=True)
 
         # ── Inject opening diversity block (only for scene 1 — chapter opener) ──
         # Show the LLM the last 5 chapter openings so it avoids repeating the
@@ -1785,10 +1927,17 @@ async def run_chapter_pipeline(
     *,
     requested_by: str = "system",
     export_markdown: bool = False,
+    allow_structural_repair: bool = False,
 ) -> ChapterPipelineResult:
     project = await get_project_by_slug(session, project_slug)
     if project is None:
         raise ValueError(f"Project '{project_slug}' was not found.")
+    _assert_project_not_blocked_for_structural_repair(
+        project,
+        project_slug=project_slug,
+        operation=f"chapter pipeline {chapter_number}",
+        allow_structural_repair=allow_structural_repair,
+    )
     await _enforce_truth_version_guard(session, settings, project)
 
     chapter = await session.scalar(
@@ -1873,6 +2022,7 @@ async def run_chapter_pipeline(
                     scene.scene_number,
                     requested_by=requested_by,
                     parent_workflow_run_id=workflow_run.id,
+                    allow_structural_repair=allow_structural_repair,
                 )
             except WriteSafetyBlockError as exc:
                 # contradiction/identity block raised during scene pipeline —
@@ -1929,17 +2079,53 @@ async def run_chapter_pipeline(
         current_step_name = "assemble_chapter_draft"
         workflow_run.current_step = current_step_name
         chapter_draft = None
-        if settings.pipeline.resume_enabled and not pending_scenes:
-            chapter_draft = await session.scalar(
+        _existing_chapter_draft: ChapterDraftVersionModel | None = None
+        if (
+            settings.pipeline.resume_enabled
+            and not pending_scenes
+            and getattr(chapter, "production_state", None) != "blocked"
+        ):
+            _existing_chapter_draft = await session.scalar(
                 select(ChapterDraftVersionModel).where(
                     ChapterDraftVersionModel.chapter_id == chapter.id,
                     ChapterDraftVersionModel.is_current.is_(True),
                 )
             )
-            if chapter_draft is not None:
+            try:
+                _budget = settings.generation.words_per_chapter
+                _actual_wc = (
+                    count_words(_existing_chapter_draft.content_md or "")
+                    if _existing_chapter_draft is not None
+                    else 0
+                )
+                _stored_wc = int(getattr(chapter, "current_word_count", None) or 0)
+                _draft_wc = (
+                    int(getattr(_existing_chapter_draft, "word_count", None) or 0)
+                    if _existing_chapter_draft is not None
+                    else 0
+                )
+                _wc_candidates = [wc for wc in (_actual_wc, _stored_wc, _draft_wc) if wc > 0]
+                _chapter_length_recheck_needed = any(
+                    wc < int(_budget.min) or wc > int(_budget.max)
+                    for wc in _wc_candidates
+                )
+            except Exception:
+                _chapter_length_recheck_needed = False
+            if _existing_chapter_draft is not None and not _chapter_length_recheck_needed:
+                chapter_draft = _existing_chapter_draft
                 logger.info(
                     "Chapter %d resume: reusing existing draft v%d",
                     chapter_number, chapter_draft.version_no,
+                )
+            elif _existing_chapter_draft is not None:
+                logger.info(
+                    "Chapter %d resume: current draft v%d needs length recheck; "
+                    "chapter_wc=%s draft_wc=%s actual_wc=%s",
+                    chapter_number,
+                    _existing_chapter_draft.version_no,
+                    getattr(chapter, "current_word_count", None),
+                    getattr(_existing_chapter_draft, "word_count", None),
+                    locals().get("_actual_wc"),
                 )
         if chapter_draft is None and not _scene_loop_blocked:
             chapter_draft = await assemble_chapter_draft(session, project_slug, chapter_number, settings=settings)
@@ -2051,6 +2237,7 @@ async def run_chapter_pipeline(
                         _repair_scene.scene_number,
                         requested_by=requested_by,
                         parent_workflow_run_id=workflow_run.id,
+                        allow_structural_repair=allow_structural_repair,
                     )
                 except WriteSafetyBlockError as exc:
                     # The repair pass tripped the same kind of safety block as
@@ -2120,21 +2307,21 @@ async def run_chapter_pipeline(
         if chapter_draft is None:
             logger.warning(
                 "Chapter %d: scene pipeline produced no assemblable draft — "
-                "marking chapter as skipped and continuing pipeline",
+                "blocking chapter for human review",
                 chapter_number,
             )
-            chapter.status = ChapterStatus.DRAFTING.value
-            chapter.production_state = "pending"
-            workflow_run.status = WorkflowStatus.COMPLETED.value
-            workflow_run.current_step = "skipped_no_assemblable_draft"
+            chapter.status = ChapterStatus.REVISION.value
+            chapter.production_state = "blocked"
+            workflow_run.status = WorkflowStatus.WAITING_HUMAN.value
+            workflow_run.current_step = "blocked_no_assemblable_draft"
             workflow_run.metadata_json = {
                 **workflow_run.metadata_json,
-                "requires_human_review": False,
+                "requires_human_review": True,
                 "chapter_draft_id": None,
                 "chapter_draft_version_no": None,
-                "scene_requires_human_review": False,
+                "scene_requires_human_review": True,
                 "blocked_before_chapter_assembly": True,
-                "auto_accepted": True,
+                "auto_accepted": False,
             }
             await session.flush()
             return ChapterPipelineResult(
@@ -2147,22 +2334,24 @@ async def run_chapter_pipeline(
                 chapter_draft_version_no=None,
                 export_artifact_id=None,
                 output_path=None,
-                requires_human_review=False,
+                requires_human_review=True,
             )
 
         if auto_repair_attempts > 0 and getattr(chapter, "production_state", None) == "blocked":
             logger.warning(
                 "Chapter %d: auto-repair exhausted %d attempt(s), still blocked — "
-                "auto-accepting best available draft and continuing pipeline",
+                "routing best available draft to human review",
                 chapter_number,
                 auto_repair_attempts,
             )
-            chapter.production_state = "ok"
+            chapter.status = ChapterStatus.REVISION.value
+            chapter.production_state = "blocked"
+            scene_requires_human_review = True
             chapter.metadata_json = {
                 **(chapter.metadata_json or {}),
                 "auto_repair_exhausted": True,
                 "auto_repair_attempts": auto_repair_attempts,
-                "auto_accepted": True,
+                "auto_accepted": False,
             }
 
         # L2 per-chapter bible validation: detect stance flips lacking
@@ -2196,6 +2385,22 @@ async def run_chapter_pipeline(
                         len(_bible_result.violations),
                         len(_bible_result.warnings),
                     )
+                    chapter.status = ChapterStatus.REVISION.value
+                    chapter.production_state = "blocked"
+                    scene_requires_human_review = True
+                    workflow_run.metadata_json = {
+                        **workflow_run.metadata_json,
+                        "blocked_by_l2_bible_gate": True,
+                        "bible_gate_violations": [
+                            {
+                                "check_type": getattr(v, "check_type", ""),
+                                "severity": getattr(v, "severity", ""),
+                                "message": getattr(v, "message", ""),
+                                "evidence": getattr(v, "evidence", ""),
+                            }
+                            for v in _bible_result.violations[:10]
+                        ],
+                    }
         except Exception:
             logger.debug(
                 "L2 bible_gate per-chapter validation failed (non-fatal)",
@@ -2300,6 +2505,7 @@ async def run_chapter_pipeline(
             chapter.status = ChapterStatus.COMPLETE.value
             if getattr(chapter, "production_state", None) != "blocked":
                 chapter.production_state = "ok"
+            phase_d_block_reports: list[dict[str, Any]] = []
             try:
                 async with session.begin_nested():
                     snapshot = await extract_chapter_state_snapshot(
@@ -2336,6 +2542,10 @@ async def run_chapter_pipeline(
                                 chapter.chapter_number,
                                 _pd_report.agent,
                                 _pd_report.summary,
+                            )
+                        if getattr(_pd_report, "blocks_write", False):
+                            phase_d_block_reports.append(
+                                _checker_report_gate_payload(_pd_report)
                             )
                     # Validate monotonic facts against previous chapter
                     if snapshot is not None and snapshot.facts:
@@ -2467,6 +2677,35 @@ async def run_chapter_pipeline(
                     chapter.chapter_number,
                     exc,
                 )
+            if phase_d_block_reports:
+                chapter.status = ChapterStatus.REVISION.value
+                chapter.production_state = "blocked"
+                export_artifact_id, output_path = await _export_current_chapter_markdown()
+                workflow_run.status = WorkflowStatus.WAITING_HUMAN.value
+                workflow_run.current_step = "waiting_human_review"
+                workflow_run.metadata_json = {
+                    **workflow_run.metadata_json,
+                    "draft_mode": True,
+                    "requires_human_review": True,
+                    "blocked_by_phase_d_time_gate": True,
+                    "phase_d_reports": phase_d_block_reports,
+                    "chapter_draft_id": str(chapter_draft.id),
+                    "chapter_draft_version_no": chapter_draft.version_no,
+                    "export_artifact_id": str(export_artifact_id) if export_artifact_id else None,
+                }
+                await session.flush()
+                return ChapterPipelineResult(
+                    workflow_run_id=workflow_run.id,
+                    project_id=project.id,
+                    chapter_id=chapter.id,
+                    chapter_number=chapter.chapter_number,
+                    scene_results=scene_results,
+                    chapter_draft_id=chapter_draft.id,
+                    chapter_draft_version_no=chapter_draft.version_no,
+                    export_artifact_id=export_artifact_id,
+                    output_path=str(output_path) if output_path else None,
+                    requires_human_review=True,
+                )
             export_artifact_id: UUID | None = None
             output_path: str | None = None
             if export_markdown:
@@ -2597,6 +2836,20 @@ async def run_chapter_pipeline(
                                     _pd_report.agent,
                                     _pd_report.summary,
                                 )
+                            if getattr(_pd_report, "blocks_write", False):
+                                requires_human_review = True
+                                chapter.status = ChapterStatus.REVISION.value
+                                chapter.production_state = "blocked"
+                                workflow_run.status = WorkflowStatus.WAITING_HUMAN.value
+                                workflow_run.current_step = "waiting_human_review"
+                                workflow_run.metadata_json = {
+                                    **workflow_run.metadata_json,
+                                    "blocked_by_phase_d_time_gate": True,
+                                    "phase_d_reports": (
+                                        (workflow_run.metadata_json or {}).get("phase_d_reports", [])
+                                        + [_checker_report_gate_payload(_pd_report)]
+                                    ),
+                                }
                 except Exception as exc:  # noqa: BLE001
                     logger.warning(
                         "Chapter %d hard-fact extraction failed (non-fatal): %s",
@@ -2745,6 +2998,19 @@ async def run_chapter_pipeline(
                 },
             )
             step_order += 1
+
+        if getattr(chapter, "production_state", None) == "blocked":
+            requires_human_review = True
+            chapter.status = ChapterStatus.REVISION.value
+            workflow_run.status = WorkflowStatus.WAITING_HUMAN.value
+            workflow_run.current_step = "waiting_human_review"
+            workflow_run.metadata_json = {
+                **workflow_run.metadata_json,
+                "requires_human_review": True,
+                "blocked_after_chapter_rewrite_quality_gate": True,
+                "chapter_draft_id": str(chapter_draft.id),
+                "chapter_draft_version_no": chapter_draft.version_no,
+            }
 
         if requires_human_review:
             export_artifact_id, output_path = await _export_current_chapter_markdown()
@@ -2943,15 +3209,29 @@ async def run_project_pipeline(
     current_volume_number: int | None = None,
     total_volumes: int | None = None,
     chapter_numbers: set[int] | None = None,
+    allow_structural_repair: bool = False,
 ) -> ProjectPipelineResult:
     project = await get_project_by_slug(session, project_slug)
     if project is None:
         raise ValueError(f"Project '{project_slug}' was not found.")
+    _assert_project_not_blocked_for_structural_repair(
+        project,
+        project_slug=project_slug,
+        operation="project pipeline",
+        allow_structural_repair=allow_structural_repair,
+    )
 
     # L1 ProjectInvariants — seed once, re-use across all downstream stages.
     # Seeding must happen before any LLM call so prompt construction and
     # output validation see a coherent contract from chapter 1 onward.
     await _ensure_project_invariants(session, project, settings)
+
+    if getattr(settings.pipeline, "require_foundation_identity_lock", True):
+        await ensure_project_identity_manifest(
+            session,
+            project,
+            project_slug=project_slug,
+        )
 
     # ── Batch 2: Material Forge ────────────────────────────────────────────
     # When ``enable_forge_pipeline`` is on, run all 5 Forges before the
@@ -3324,6 +3604,7 @@ async def run_project_pipeline(
                 chapter.chapter_number,
                 requested_by=requested_by,
                 export_markdown=export_markdown,
+                allow_structural_repair=allow_structural_repair,
             )
             chapter_results.append(
                 ProjectPipelineChapterSummary(
@@ -3931,6 +4212,11 @@ async def run_autowrite_pipeline(
                 "project_id": str(project.id),
             },
         )
+    _assert_project_not_blocked_for_structural_repair(
+        project,
+        project_slug=project.slug,
+        operation="autowrite pipeline",
+    )
 
     # Resume: check if planning artifact already exists
     existing_plan_artifact = await get_latest_planning_artifact(
@@ -4203,6 +4489,11 @@ async def run_progressive_autowrite_pipeline(
         project = await create_project(session, project_payload, settings)
         await _checkpoint_commit(session)
         _emit_progress(progress, "project_creation_completed", {"project_slug": project.slug, "project_id": str(project.id)})
+    _assert_project_not_blocked_for_structural_repair(
+        project,
+        project_slug=project.slug,
+        operation="progressive autowrite pipeline",
+    )
 
     # ── Phase A: Foundation Plan ──
     existing_volume_plan = await get_latest_planning_artifact(
@@ -4253,6 +4544,14 @@ async def run_progressive_autowrite_pipeline(
         story_bible_result = await materialize_latest_story_bible(session, project.slug, requested_by=requested_by)
         await _checkpoint_commit(session)
         _emit_progress(progress, "story_bible_materialization_completed", {"project_slug": project.slug, "workflow_run_id": str(story_bible_result.workflow_run_id)})
+
+    if getattr(settings.pipeline, "require_foundation_identity_lock", True):
+        await ensure_project_identity_manifest(
+            session,
+            project,
+            project_slug=project.slug,
+        )
+        await _checkpoint_commit(session)
 
     # ── Load planning artifacts for volume loop ──
     book_spec_art = await get_latest_planning_artifact(session, project_id=project.id, artifact_type=ArtifactType.BOOK_SPEC)

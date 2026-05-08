@@ -39,6 +39,8 @@ def _reset_litellm_module_cache() -> None:
 class FakeSession:
     def __init__(self) -> None:
         self.added: list[object] = []
+        self.commits = 0
+        self.rollbacks = 0
 
     def add(self, obj: object) -> None:
         self.added.append(obj)
@@ -50,6 +52,20 @@ class FakeSession:
                 continue
             if getattr(obj, "id", None) is None:
                 setattr(obj, "id", uuid4())
+
+    async def commit(self) -> None:
+        self.commits += 1
+
+    async def rollback(self) -> None:
+        self.rollbacks += 1
+
+    def in_nested_transaction(self) -> bool:
+        return False
+
+
+class FailingFlushSession(FakeSession):
+    async def flush(self) -> None:
+        raise RuntimeError("connection closed during telemetry flush")
 
 
 def test_complete_text_records_mock_run_when_mock_enabled() -> None:
@@ -70,6 +86,33 @@ def test_complete_text_records_mock_run_when_mock_enabled() -> None:
         assert result.provider == "mock"
         assert result.model_name == "mock-writer"
         assert result.llm_run_id is not None
+        assert any(isinstance(obj, LlmRunModel) for obj in session.added)
+        assert session.commits == 0
+
+    import asyncio
+
+    asyncio.run(_run())
+
+
+def test_complete_text_does_not_fail_when_llm_run_logging_flush_fails() -> None:
+    async def _run() -> None:
+        session = FailingFlushSession()
+        settings = load_settings(env={"BESTSELLER__LLM__MOCK": "true"})
+        result = await complete_text(
+            session,
+            settings,
+            LLMCompletionRequest(
+                logical_role="writer",
+                system_prompt="system",
+                user_prompt="user",
+                fallback_response="fallback output",
+            ),
+        )
+
+        assert result.provider == "mock"
+        assert result.content == "fallback output"
+        assert result.llm_run_id is None
+        assert session.rollbacks == 1
         assert any(isinstance(obj, LlmRunModel) for obj in session.added)
 
     import asyncio
@@ -100,6 +143,7 @@ def test_complete_text_falls_back_when_litellm_is_unavailable(
         assert result.llm_run_id is not None
         assert len(llm_runs) == 1
         assert "fallback_reason" in llm_runs[0].metadata_json
+        assert session.commits == 1
 
     def fake_import_module(name: str):
         raise ModuleNotFoundError(name)
@@ -175,6 +219,68 @@ def test_complete_text_uses_api_base_and_api_key_env_for_real_mode(
     monkeypatch.setattr(
         "bestseller.services.llm.get_runtime_env_value",
         lambda name: "test-gemini-key" if name == "GEMINI_API_KEY" else None,
+    )
+
+    import asyncio
+
+    asyncio.run(_run())
+
+
+def test_complete_text_applies_request_max_tokens_override(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured_kwargs: dict[str, object] = {}
+
+    class FakeUsage:
+        prompt_tokens = 10
+        completion_tokens = 20
+
+    class FakeMessage:
+        content = "bounded output"
+
+    class FakeChoice:
+        message = FakeMessage()
+        finish_reason = "stop"
+
+    class FakeResponse:
+        choices = [FakeChoice()]
+        usage = FakeUsage()
+
+    class FakeLiteLLMModule:
+        @staticmethod
+        async def acompletion(**kwargs):
+            captured_kwargs.update(kwargs)
+            return FakeResponse()
+
+    async def _run() -> None:
+        session = FakeSession()
+        settings = load_settings(
+            env={
+                "BESTSELLER__LLM__MOCK": "false",
+                "BESTSELLER__LLM__WRITER__MODEL": "openai/gemini-2.5-flash",
+                "BESTSELLER__LLM__WRITER__STREAM": "false",
+            }
+        )
+        result = await complete_text(
+            session,
+            settings,
+            LLMCompletionRequest(
+                logical_role="writer",
+                system_prompt="system",
+                user_prompt="user",
+                fallback_response="fallback output",
+                max_tokens_override=321,
+            ),
+        )
+
+        assert result.content == "bounded output"
+        assert captured_kwargs["max_tokens"] == 321
+        run = next(obj for obj in session.added if isinstance(obj, LlmRunModel))
+        assert run.metadata_json["max_tokens_override"] == 321
+
+    monkeypatch.setattr(
+        "bestseller.services.llm._get_litellm",
+        lambda: FakeLiteLLMModule(),
     )
 
     import asyncio

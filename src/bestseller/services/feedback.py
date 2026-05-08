@@ -564,6 +564,117 @@ def _partial_extract_payload(data: dict[str, Any]) -> ChapterFeedbackPayload:
 # ---------------------------------------------------------------------------
 
 
+def _coerce_chapter_number(value: Any) -> int | None:
+    try:
+        if value is None or value == "":
+            return None
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _is_historical_character_state_writeback(
+    metadata: dict[str, Any] | None,
+    *,
+    chapter_number: int,
+) -> bool:
+    """Return true when an old repair pass should only create snapshots.
+
+    ``CharacterModel`` represents the latest/current state, while
+    ``CharacterStateSnapshotModel`` records chapter-time evidence. Replaying
+    an early chapter after later chapters exist must not roll the current row
+    back to that older state.
+    """
+
+    last_seen = _coerce_chapter_number(
+        (metadata or {}).get("last_seen_chapter_number")
+    )
+    return last_seen is not None and last_seen > int(chapter_number)
+
+
+def _resolve_alive_status_writeback(
+    *,
+    current_alive_status: str | None,
+    extracted_alive_status: str | None,
+    death_chapter_number: int | None,
+    chapter_number: int,
+) -> tuple[str | None, str | None]:
+    """Decide whether an extracted alive_status may update CharacterModel.
+
+    Returns ``(writeback_value, rejection_reason)``. A non-deceased status in
+    a chapter before a known future death is valid chapter-time evidence, but
+    it must not resurrect the latest/current character row.
+    """
+
+    extracted = (extracted_alive_status or "").strip().lower()
+    if not extracted:
+        return None, None
+
+    current = (current_alive_status or "alive").strip().lower()
+    death_chapter = _coerce_chapter_number(death_chapter_number)
+    before_known_future_death = (
+        death_chapter is not None and int(death_chapter) > int(chapter_number)
+    )
+
+    if extracted != "deceased":
+        if current == "deceased":
+            if before_known_future_death:
+                return None, "pre_death_historical_state"
+            return None, "already_deceased"
+        return extracted, None
+
+    if before_known_future_death:
+        return None, "premature_death_before_planned_death"
+    return extracted, None
+
+
+def _close_active_lifecycle_on_recovery(
+    metadata: dict[str, Any],
+    *,
+    chapter_number: int,
+    accepted_alive_status: str | None,
+    extracted_lifecycle_status: str | None,
+) -> tuple[dict[str, Any], bool]:
+    """Close stale offstage lifecycle metadata when feedback confirms recovery.
+
+    Non-death lifecycle states such as ``comatose`` are stored on
+    CharacterModel metadata and can span chapters. When a later feedback pass
+    explicitly extracts ``alive`` / ``injured`` / ``dying`` without also
+    extracting a fresh lifecycle state, the old offstage record must stop
+    applying from this chapter onward. Otherwise one stale ``comatose`` flag
+    can block every future chapter even after many snapshots show the character
+    acting normally.
+    """
+
+    if accepted_alive_status not in {"alive", "injured", "dying"}:
+        return metadata, False
+    if extracted_lifecycle_status:
+        return metadata, False
+
+    lifecycle = metadata.get("lifecycle_status")
+    if not isinstance(lifecycle, dict):
+        return metadata, False
+    kind = str(lifecycle.get("kind") or "").strip().lower()
+    if kind not in {"missing", "sealed", "sleeping", "comatose", "exiled"}:
+        return metadata, False
+
+    exit_chapter_raw = lifecycle.get("scheduled_exit_chapter")
+    try:
+        exit_chapter = int(exit_chapter_raw) if exit_chapter_raw is not None else None
+    except (TypeError, ValueError):
+        exit_chapter = None
+    if exit_chapter is not None and exit_chapter <= chapter_number:
+        return metadata, False
+
+    closed = {
+        **lifecycle,
+        "scheduled_exit_chapter": chapter_number,
+        "exit_condition": lifecycle.get("exit_condition") or "closed_by_alive_status_feedback",
+        "recovered_at_chapter": chapter_number,
+    }
+    return {**metadata, "lifecycle_status": closed}, True
+
+
 async def _apply_character_state_updates(
     session: AsyncSession,
     project_id: UUID,
@@ -601,21 +712,51 @@ async def _apply_character_state_updates(
         # downgrade requires a reason. Values that fail gating are kept in
         # the snapshot as evidence but never propagated to CharacterModel.
         _current_alive = getattr(character, "alive_status", None) or "alive"
-        _accepted_alive: str | None = None
-        if extraction.alive_status:
-            if _current_alive == "deceased" and extraction.alive_status != "deceased":
-                # Never resurrect — keep existing deceased state. Log so the
-                # contradiction check has evidence if the prose slipped through.
-                logger.warning(
-                    "Feedback ch%d: rejecting alive_status %s→%s for '%s' "
-                    "(character is already deceased)",
-                    chapter.chapter_number,
-                    _current_alive,
-                    extraction.alive_status,
-                    character.name,
-                )
-            else:
-                _accepted_alive = extraction.alive_status
+        _state_writeback_historical = _is_historical_character_state_writeback(
+            dict(character.metadata_json or {}),
+            chapter_number=chapter.chapter_number,
+        )
+        _accepted_alive, _alive_rejection_reason = _resolve_alive_status_writeback(
+            current_alive_status=_current_alive,
+            extracted_alive_status=extraction.alive_status,
+            death_chapter_number=getattr(character, "death_chapter_number", None),
+            chapter_number=chapter.chapter_number,
+        )
+        if extraction.alive_status and _alive_rejection_reason == "already_deceased":
+            # Never resurrect after the death chapter. A character whose
+            # death_chapter_number is still in the future is handled as
+            # chapter-time evidence above and does not log as a contradiction.
+            logger.warning(
+                "Feedback ch%d: rejecting alive_status %s→%s for '%s' "
+                "(character is already deceased)",
+                chapter.chapter_number,
+                _current_alive,
+                extraction.alive_status,
+                character.name,
+            )
+        elif (
+            extraction.alive_status
+            and _alive_rejection_reason == "premature_death_before_planned_death"
+        ):
+            logger.warning(
+                "Feedback ch%d: rejecting premature alive_status=%s for '%s' "
+                "(planned death chapter is %s)",
+                chapter.chapter_number,
+                extraction.alive_status,
+                character.name,
+                getattr(character, "death_chapter_number", None),
+            )
+        elif extraction.alive_status and _alive_rejection_reason == "pre_death_historical_state":
+            logger.debug(
+                "Feedback ch%d: keeping alive_status=%s for '%s' as snapshot-only "
+                "(future death chapter is %s)",
+                chapter.chapter_number,
+                extraction.alive_status,
+                character.name,
+                getattr(character, "death_chapter_number", None),
+            )
+        if _state_writeback_historical and _accepted_alive:
+            _accepted_alive = None
 
         _current_stance = getattr(character, "stance", None)
         _accepted_stance: str | None = None
@@ -660,6 +801,16 @@ async def _apply_character_state_updates(
             notes=f"feedback_extraction:ch{chapter.chapter_number}",
         )
         session.add(snapshot)
+
+        if _state_writeback_historical:
+            logger.debug(
+                "Feedback ch%d: snapshot-only character state for '%s' "
+                "(latest row is ahead of this chapter)",
+                chapter.chapter_number,
+                character.name,
+            )
+            applied += 1
+            continue
 
         # Update character knowledge state
         updated_knowledge = _merge_knowledge_state(
@@ -724,6 +875,14 @@ async def _apply_character_state_updates(
         # Also handles lifecycle writeback here since both mutate metadata_json.
         _char_meta = dict(character.metadata_json or {})
         _meta_dirty = False
+
+        _char_meta, _closed_lifecycle = _close_active_lifecycle_on_recovery(
+            _char_meta,
+            chapter_number=chapter.chapter_number,
+            accepted_alive_status=_accepted_alive,
+            extracted_lifecycle_status=extraction.lifecycle_status,
+        )
+        _meta_dirty = _meta_dirty or _closed_lifecycle
 
         if extraction.beliefs_invalidated:
             _lt_arc = _char_meta.get("lie_truth_arc")

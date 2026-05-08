@@ -2739,20 +2739,32 @@ def _load_project_chapter_index(
 
                 # Look up which chapters have a current draft; we only
                 # surface *draftable* chapters (a placeholder row with no
-                # draft yet would confuse the reader).
-                draft_chapter_ids: set = set(
-                    await sess.scalars(
-                        select(ChapterDraftVersionModel.chapter_id).where(
+                # draft yet would confuse the reader).  Prefer the chapter
+                # row's recalibrated current_word_count, with the current
+                # draft row as a legacy fallback.
+                draft_rows = list(
+                    await sess.execute(
+                        select(
+                            ChapterDraftVersionModel.chapter_id,
+                            ChapterDraftVersionModel.word_count,
+                        ).where(
                             ChapterDraftVersionModel.project_id == proj.id,
                             ChapterDraftVersionModel.is_current.is_(True),
                         )
                     )
                 )
+                draft_word_count_by_chapter_id = {
+                    chapter_id: int(word_count or 0)
+                    for chapter_id, word_count in draft_rows
+                }
 
                 chapters_out: list[dict[str, object]] = []
                 volume_map: dict[int, dict[str, object]] = {}
                 for ch in chapter_rows:
-                    if ch.id not in draft_chapter_ids:
+                    word_count = int(ch.current_word_count or 0)
+                    if word_count <= 0:
+                        word_count = draft_word_count_by_chapter_id.get(ch.id, 0)
+                    if ch.id not in draft_word_count_by_chapter_id and word_count <= 0:
                         # Planned but not written yet — skip.  The user
                         # only wants readable chapters in the reader TOC.
                         continue
@@ -2768,6 +2780,10 @@ def _load_project_chapter_index(
                         {
                             "number": ch.chapter_number,
                             "title": ch.title or f"第{ch.chapter_number}章",
+                            "word_count": word_count,
+                            "estimated_read_minutes": (
+                                (word_count + 499) // 500 if word_count > 0 else 0
+                            ),
                             "volume_number": vol_summary["volume_number"] if vol_summary else None,
                             "volume_title": vol_summary["volume_title"] if vol_summary else None,
                         }
@@ -2787,6 +2803,127 @@ def _load_project_chapter_index(
         return asyncio.run(_fetch())
     except Exception:
         return [], {}, []
+
+
+def _load_task_chapter_word_stats(
+    settings: AppSettings,
+    project_slugs: list[str],
+) -> dict[str, dict[str, object]]:
+    """Return DB-authoritative chapter counts for quickstart task cards."""
+    slugs = sorted({slug for slug in project_slugs if slug})
+    if not slugs:
+        return {}
+
+    try:
+        from sqlalchemy import select
+
+        from bestseller.infra.db.models import (  # noqa: PLC0415
+            ChapterDraftVersionModel,
+            ChapterModel,
+            ProjectModel,
+        )
+
+        async def _fetch() -> dict[str, dict[str, object]]:
+            async with session_scope(settings) as sess:
+                project_rows = list(
+                    await sess.scalars(
+                        select(ProjectModel).where(ProjectModel.slug.in_(slugs))
+                    )
+                )
+                if not project_rows:
+                    return {}
+
+                project_by_id = {project.id: project for project in project_rows}
+                project_ids = list(project_by_id)
+                stats_by_slug: dict[str, dict[str, object]] = {
+                    project.slug: {
+                        "source": "db",
+                        "project_slug": project.slug,
+                        "target_chapters": int(project.target_chapters or 0),
+                        "target_word_count": int(project.target_word_count or 0),
+                        "completed_chapters": 0,
+                        "word_count_total": 0,
+                        "chapters": [],
+                    }
+                    for project in project_rows
+                }
+
+                draft_rows = list(
+                    await sess.execute(
+                        select(
+                            ChapterDraftVersionModel.chapter_id,
+                            ChapterDraftVersionModel.word_count,
+                        ).where(
+                            ChapterDraftVersionModel.project_id.in_(project_ids),
+                            ChapterDraftVersionModel.is_current.is_(True),
+                        )
+                    )
+                )
+                draft_word_count_by_chapter_id = {
+                    chapter_id: int(word_count or 0)
+                    for chapter_id, word_count in draft_rows
+                }
+
+                chapter_rows = list(
+                    await sess.scalars(
+                        select(ChapterModel)
+                        .where(ChapterModel.project_id.in_(project_ids))
+                        .order_by(ChapterModel.project_id, ChapterModel.chapter_number)
+                    )
+                )
+                for chapter in chapter_rows:
+                    project = project_by_id.get(chapter.project_id)
+                    if project is None:
+                        continue
+                    word_count = int(chapter.current_word_count or 0)
+                    if word_count <= 0:
+                        word_count = draft_word_count_by_chapter_id.get(chapter.id, 0)
+                    if chapter.id not in draft_word_count_by_chapter_id and word_count <= 0:
+                        continue
+
+                    stats = stats_by_slug[project.slug]
+                    chapter_payload = {
+                        "number": int(chapter.chapter_number),
+                        "title": chapter.title or f"第{chapter.chapter_number}章",
+                        "word_count": word_count,
+                        "estimated_read_minutes": (
+                            (word_count + 499) // 500 if word_count > 0 else 0
+                        ),
+                        "target_word_count": int(chapter.target_word_count or 0),
+                        "status": chapter.status,
+                    }
+                    stats["chapters"].append(chapter_payload)  # type: ignore[index]
+                    stats["word_count_total"] = int(stats["word_count_total"]) + word_count
+
+                for stats in stats_by_slug.values():
+                    chapters = list(stats["chapters"])  # type: ignore[arg-type]
+                    chapters.sort(key=lambda item: int(item.get("number") or 0))
+                    stats["chapters"] = chapters
+                    stats["completed_chapters"] = len(chapters)
+
+                return stats_by_slug
+
+        return asyncio.run(_fetch())
+    except Exception:
+        logger.warning("Failed to load quickstart chapter word stats", exc_info=True)
+        return {}
+
+
+def _attach_task_chapter_word_stats(
+    settings: AppSettings,
+    tasks: list[dict[str, object]],
+) -> list[dict[str, object]]:
+    stats_by_slug = _load_task_chapter_word_stats(
+        settings,
+        [str(task.get("project_slug") or "") for task in tasks],
+    )
+    if not stats_by_slug:
+        return tasks
+    for task in tasks:
+        slug = str(task.get("project_slug") or "")
+        if slug in stats_by_slug:
+            task["chapter_word_stats"] = stats_by_slug[slug]
+    return tasks
 
 
 def serve_web_app(
@@ -3050,7 +3187,9 @@ def serve_web_app(
                     self._send_json(estimate_project_cost(ch_count, settings))
                     return
                 if path == "/api/tasks":
-                    self._send_json(task_manager.list_tasks())
+                    self._send_json(
+                        _attach_task_chapter_word_stats(settings, task_manager.list_tasks())
+                    )
                     return
                 if path == "/api/schedules":
                     qs = parse_qs(parsed.query)
@@ -3075,7 +3214,8 @@ def serve_web_app(
                     if task is None:
                         self._route_not_found()
                         return
-                    self._send_json(task)
+                    enriched_tasks = _attach_task_chapter_word_stats(settings, [task])
+                    self._send_json(enriched_tasks[0] if enriched_tasks else task)
                     return
                 project_slug = _match_project_route(path, "summary")
                 if project_slug is not None:
@@ -3303,15 +3443,20 @@ def serve_web_app(
                         for ch in db_chapters:
                             n = int(ch["number"])
                             fs_entry = fs_by_number.get(n) or {}
+                            db_word_count = int(ch.get("word_count") or 0)
+                            fs_word_count = int(fs_entry.get("word_count") or 0)
+                            word_count = db_word_count or fs_word_count
+                            estimated_read_minutes = (
+                                int(ch.get("estimated_read_minutes") or 0)
+                                or int(fs_entry.get("estimated_read_minutes") or 0)
+                            )
                             merged_toc.append(
                                 {
                                     "number": n,
                                     "title": fs_entry.get("title") or ch.get("title") or f"第{n}章",
                                     "filename": fs_entry.get("filename") or f"chapter-{n:03d}.md",
-                                    "word_count": int(fs_entry.get("word_count") or 0),
-                                    "estimated_read_minutes": int(
-                                        fs_entry.get("estimated_read_minutes") or 0
-                                    ),
+                                    "word_count": word_count,
+                                    "estimated_read_minutes": estimated_read_minutes,
                                     "volume_number": ch.get("volume_number"),
                                     "volume_title": ch.get("volume_title"),
                                     "exported": n in fs_by_number,

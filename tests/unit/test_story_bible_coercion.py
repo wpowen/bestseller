@@ -252,6 +252,14 @@ class TestCharacterInputCoercion:
         )
         assert character.age is None
 
+    def test_character_gender_normalizes_chinese_labels_and_defaults_pronouns(self) -> None:
+        character = CharacterInput.model_validate(
+            {"name": "苏婉", "role": "女主", "gender": "女性"}
+        )
+        assert character.gender == "female"
+        assert character.pronoun_set_zh == "她"
+        assert character.pronoun_set_en == "she/her"
+
     def test_character_role_truncates_arc_sentence(self) -> None:
         character = CharacterInput.model_validate(
             {

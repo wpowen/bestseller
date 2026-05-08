@@ -136,6 +136,8 @@ class PromptPlan:
     system: str = ""
     invariants_section: str = ""
     bible_slice: str = ""
+    progression_constraints: str = ""
+    decision_policy_constraints: str = ""
     reader_contract_section: str = ""
     methodology_inject: str = ""
     hype_constraints: str = ""
@@ -158,6 +160,8 @@ class PromptPlan:
             self.system,
             self.invariants_section,
             self.bible_slice,
+            self.progression_constraints,
+            self.decision_policy_constraints,
             self.reader_contract_section,
             self.methodology_inject,
             self.hype_constraints,
@@ -551,6 +555,8 @@ def build_chapter_prompt(
     pacing_profile: str = "medium",
     system: str = "",
     bible_slice: str = "",
+    progression_context_block: str = "",
+    decision_policy_block: str = "",
     scene_spec: str = "",
     prior_chapter_text: str | None = None,
     preassigned_opening: OpeningArchetype | None = None,
@@ -633,6 +639,8 @@ def build_chapter_prompt(
         system=system,
         invariants_section=build_invariants_section(invariants),
         bible_slice=bible_slice,
+        progression_constraints=progression_context_block,
+        decision_policy_constraints=decision_policy_block,
         reader_contract_section=reader_contract,
         methodology_inject=build_methodology_inject(invariants),
         hype_constraints=hype_section,

@@ -317,10 +317,10 @@ async def test_block_low_resets_scenes_and_injects_hint() -> None:
         assert isinstance(hint, str)
         assert "大幅扩写" in hint  # Chinese hint for BLOCK_LOW
         assert scene.metadata_json.get("auto_repair_block_codes") == ["BLOCK_LOW"]
-    # target_word_count is bumped proportionally to the shortfall.
-    # target=6400, wc=3500 → ratio=1.82, capped to 1.5.
-    assert scenes[0].target_word_count == int(round(1500 * 1.5))
-    assert scenes[1].target_word_count == int(round(1600 * 1.5))
+    # target_word_count is bumped to at least the per-scene chapter target.
+    # target=6400, 2 scenes, attempt 1 floor=6400/2*1.05 → 3360.
+    assert scenes[0].target_word_count == 3360
+    assert scenes[1].target_word_count == 3360
     # regen_attempts tick incremented on the underlying report row.
     assert report.regen_attempts == 1
     assert session.flush_calls == 1
@@ -352,7 +352,47 @@ async def test_legacy_length_block_low_alias_triggers_block_low_repair() -> None
     assert chapter.production_state == "pending"
     assert scenes[0].status == SceneStatus.NEEDS_REWRITE.value
     assert "大幅扩写" in scenes[0].metadata_json["auto_repair_hint"]
-    assert scenes[0].target_word_count == 1500
+    assert scenes[0].target_word_count == 2520
+
+
+@pytest.mark.asyncio
+async def test_block_low_after_overlong_trim_restores_publishable_scene_budgets() -> None:
+    chapter = FakeChapter(chapter_number=52)
+    scenes = [
+        FakeScene(chapter_id=chapter.id, scene_number=1, target_word_count=658),
+        FakeScene(chapter_id=chapter.id, scene_number=2, target_word_count=658),
+        FakeScene(chapter_id=chapter.id, scene_number=3, target_word_count=658),
+    ]
+    report = FakeQualityReport(
+        report_json={
+            "blocking_codes": ["CHAPTER_LENGTH_BLOCK_LOW"],
+            "length_stability": {
+                "word_count": 1295,
+                "target_words": 2200,
+                "min_words": 1980,
+                "max_words": 2420,
+            },
+        },
+    )
+    session = FakeSession(scalar_queue=[report], scalars_queue=[scenes])
+
+    triggered, codes = await maybe_prepare_chapter_auto_repair(
+        session,
+        project=FakeProject(),
+        chapter=chapter,
+        repairable_codes=("BLOCK_LOW", "BLOCK_HIGH"),
+        attempt_number=3,
+    )
+
+    assert triggered is True
+    assert codes == ("CHAPTER_LENGTH_BLOCK_LOW",)
+    # attempt 3 must not keep the prior BLOCK_HIGH-trimmed 658字 budget; it
+    # raises each scene back toward the chapter target so the next pass can
+    # land inside the 1980-2420 publish range.
+    for scene in scenes:
+        assert scene.target_word_count == 987
+        assert scene.metadata_json["auto_repair_min_scene_target_floor"] == 917
+        assert scene.metadata_json["auto_repair_adjusted_target_word_count"] == 987
 
 
 @pytest.mark.asyncio
@@ -398,7 +438,40 @@ async def test_weak_ending_triggers_hook_rewrite_hint() -> None:
 
 
 @pytest.mark.asyncio
-async def test_block_high_resets_scenes_with_trim_hint_no_target_bump() -> None:
+async def test_canon_forbidden_term_triggers_canon_rewrite_hint() -> None:
+    chapter = FakeChapter()
+    scenes = [FakeScene(chapter_id=chapter.id, scene_number=1)]
+    report = FakeQualityReport(
+        report_json={
+            "blocking_codes": ["CANON_FORBIDDEN_TERM"],
+            "violations": [
+                {
+                    "code": "CANON_FORBIDDEN_TERM",
+                    "detail": "Forbidden canon term appears in chapter: 守夜人",
+                }
+            ],
+        },
+    )
+    session = FakeSession(scalar_queue=[report], scalars_queue=[scenes])
+
+    triggered, codes = await maybe_prepare_chapter_auto_repair(
+        session,
+        project=FakeProject(),
+        chapter=chapter,
+        repairable_codes=("CANON_FORBIDDEN_TERM",),
+    )
+
+    assert triggered is True
+    assert codes == ("CANON_FORBIDDEN_TERM",)
+    assert chapter.production_state == "pending"
+    assert scenes[0].status == SceneStatus.NEEDS_REWRITE.value
+    hint = scenes[0].metadata_json["auto_repair_hint"]
+    assert "已禁止的旧设定" in hint
+    assert "守夜人" in hint
+
+
+@pytest.mark.asyncio
+async def test_block_high_resets_scenes_with_trim_hint_and_reduced_target() -> None:
     chapter = FakeChapter()
     scenes = [
         FakeScene(chapter_id=chapter.id, scene_number=1, target_word_count=1600),
@@ -429,9 +502,11 @@ async def test_block_high_resets_scenes_with_trim_hint_no_target_bump() -> None:
     hint = scene.metadata_json.get("auto_repair_hint")
     assert isinstance(hint, str)
     assert "压缩冗余" in hint
-    # BLOCK_HIGH must NOT bump target_word_count — that would make
-    # the next draft even longer.
-    assert scene.target_word_count == 1600
+    # BLOCK_HIGH must lower the concrete generation budget, not only append
+    # a prose hint, or the next draft will keep using the stale target.
+    assert scene.target_word_count == int(round(1600 * (6400 / 9500)))
+    assert scene.metadata_json["auto_repair_original_target_word_count"] == 1600
+    assert scene.metadata_json["auto_repair_adjusted_target_word_count"] == scene.target_word_count
 
 
 @pytest.mark.asyncio

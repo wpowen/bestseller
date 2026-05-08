@@ -92,6 +92,9 @@ class TestSceneContextPacketHypeDefaults:
         assert packet.assigned_hype_type is None
         assert packet.assigned_hype_recipe_key is None
         assert packet.assigned_hype_intensity is None
+        assert packet.progression_context_block is None
+        assert packet.decision_policy_block is None
+        assert packet.rule_system_context_block is None
 
     def test_packet_accepts_populated_hype_fields(self) -> None:
         packet = SceneWriterContextPacket(
@@ -107,6 +110,17 @@ class TestSceneContextPacketHypeDefaults:
         assert packet.assigned_hype_type == "face_slap"
         assert packet.assigned_hype_recipe_key == "冥符拍脸"
         assert packet.assigned_hype_intensity == 8.5
+
+    def test_packet_accepts_premium_engine_fields(self) -> None:
+        packet = SceneWriterContextPacket(
+            **_minimal_packet_kwargs(),
+            progression_context_block="【进阶体系约束】不得无因升级。",
+            decision_policy_block="【主角决策策略】不得为虚荣冒险。",
+            rule_system_context_block="【规则系统约束】规则必须有代价。",
+        )
+        assert packet.progression_context_block == "【进阶体系约束】不得无因升级。"
+        assert packet.decision_policy_block == "【主角决策策略】不得为虚荣冒险。"
+        assert packet.rule_system_context_block == "【规则系统约束】规则必须有代价。"
 
 
 # ---------------------------------------------------------------------------
@@ -145,8 +159,8 @@ class TestSceneDraftPromptsHypeBlocks:
 
     def test_populated_blocks_land_in_user_prompt_zh(self) -> None:
         reader_block = (
-            "【读者契约】(卖点：诡异复苏 / 阴阳万亿资产)\n"
-            "本书承诺：第一章就要亮出冥符阴兵才是万亿资产的世界规则。"
+            "【读者契约】(卖点: 诡异复苏 / 阴阳万亿资产)\n"
+            "本书承诺: 第一章就要亮出冥符阴兵才是万亿资产的世界规则。"
         )
         hype_block = (
             "【本章爽点约束】\n"
@@ -224,3 +238,27 @@ class TestSceneDraftPromptsHypeBlocks:
         assert "【读者契约】" not in user_prompt
         assert "【本章爽点约束】" in user_prompt
         assert "hype-only" in user_prompt
+
+    def test_premium_engine_blocks_land_in_user_prompt_zh(self) -> None:
+        progression_block = "【进阶体系约束】PROGRESSION_MARKER: 当前炼气十层, 不得无因突破筑基。"
+        decision_block = (
+            "【主角决策策略】DECISION_MARKER: 不可为虚荣公开决斗, 优先避险夺取稀缺资源。"
+        )
+        rule_block = "【规则系统约束】RULE_MARKER: 每条民俗规则必须有可见效果、破局路径和反噬。"
+        _, user_prompt = build_scene_draft_prompts(
+            _sample_project(),
+            _sample_chapter(),
+            _sample_scene(),
+            _sample_style_guide(),
+            progression_context_block=progression_block,
+            decision_policy_block=decision_block,
+            rule_system_context_block=rule_block,
+        )
+        assert "【进阶体系约束】" in user_prompt
+        assert "不得无因突破筑基" in user_prompt
+        assert "【主角决策策略】" in user_prompt
+        assert "不可为虚荣公开决斗" in user_prompt
+        assert "【规则系统约束】" in user_prompt
+        assert "每条民俗规则必须有可见效果" in user_prompt
+        assert user_prompt.index("PROGRESSION_MARKER") < user_prompt.index("DECISION_MARKER")
+        assert user_prompt.index("DECISION_MARKER") < user_prompt.index("RULE_MARKER")

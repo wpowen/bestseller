@@ -35,9 +35,11 @@ from bestseller.services.context import build_chapter_writer_context, build_scen
 from bestseller.services.drafts import (
     _NOVEL_OUTPUT_PROHIBITION,
     _NOVEL_OUTPUT_PROHIBITION_EN,
+    _evaluate_chapter_quality_gate,
     _normalize_fragment,
     count_words,
     has_meta_leak,
+    prose_output_max_tokens_for_target,
     sanitize_novel_markdown_content,
     strip_scaffolding_echoes,
     validate_and_clean_novel_content,
@@ -60,7 +62,7 @@ from bestseller.services.writing_profile import (
     render_writing_profile_prompt_block,
     resolve_writing_profile,
 )
-from bestseller.settings import AppSettings
+from bestseller.settings import AppSettings, get_settings
 
 
 # Absolute rule appended to rewrite system prompts. The writer occasionally
@@ -827,7 +829,7 @@ def build_scene_rewrite_prompts(
     # The scene writer already enforces a strict word range; the rewriter must
     # enforce the SAME envelope or it will inflate past target on every pass.
     _target_wc = int(scene.target_word_count or 0)
-    _current_wc = int(current_draft.word_count or 0)
+    _current_wc = int(getattr(current_draft, "word_count", 0) or 0)
     _wc_lo = int(_target_wc * 0.9) if _target_wc > 0 else 0
     _wc_hi = int(_target_wc * 1.1) if _target_wc > 0 else 0
     _is_over = _target_wc > 0 and _current_wc > int(_target_wc * 1.2)
@@ -1209,12 +1211,66 @@ def build_chapter_rewrite_prompts(
         _methodology_line += f"\n{_methodology_scene_block}\n"
     if _methodology_rules:
         _methodology_line += f"\n{_methodology_rules}\n"
+    try:
+        _budget = get_settings().generation.words_per_chapter
+        _target_wc = int(_budget.target)
+        _wc_lo = int(_budget.min)
+        _wc_hi = int(_budget.max)
+    except Exception:
+        _target_wc = int(chapter.target_word_count or 2200)
+        _wc_lo = int(_target_wc * 0.85)
+        _wc_hi = int(_target_wc * 1.35)
+    _current_wc = int(getattr(current_draft, "word_count", 0) or 0)
+    if is_en:
+        if _current_wc > _wc_hi:
+            _wc_directive = (
+                f"WORD COUNT GATE (MANDATORY): current draft {_current_wc}, "
+                f"target {_target_wc}, hard publish range {_wc_lo}-{_wc_hi}. "
+                "You MUST trim and keep the rewritten chapter inside the hard range. "
+                "Do not add new scenes, new exposition, or repeated emotional beats.\n"
+            )
+        elif _current_wc < _wc_lo:
+            _wc_directive = (
+                f"WORD COUNT GATE (MANDATORY): current draft {_current_wc}, "
+                f"target {_target_wc}, hard publish range {_wc_lo}-{_wc_hi}. "
+                "Expand only the missing conflict/action/hook beats until inside range; "
+                "do not add unrelated plot.\n"
+            )
+        else:
+            _wc_directive = (
+                f"WORD COUNT GATE (MANDATORY): current draft {_current_wc}, "
+                f"target {_target_wc}, hard publish range {_wc_lo}-{_wc_hi}. "
+                "Keep the rewrite inside this range and preserve roughly the current length. "
+                "Fix only the flagged issues.\n"
+            )
+    else:
+        if _current_wc > _wc_hi:
+            _wc_directive = (
+                f"【章节字数闸门·硬性要求】当前稿 {_current_wc} 字，"
+                f"目标约 {_target_wc} 字，发布硬范围 {_wc_lo}-{_wc_hi} 字。"
+                "本次必须压缩到硬范围内：不得新增场景、不得新增解释性铺陈、"
+                "不得重复情绪反应，只保留主冲突、关键动作、必要对白和尾钩。\n"
+            )
+        elif _current_wc < _wc_lo:
+            _wc_directive = (
+                f"【章节字数闸门·硬性要求】当前稿 {_current_wc} 字，"
+                f"目标约 {_target_wc} 字，发布硬范围 {_wc_lo}-{_wc_hi} 字。"
+                "只补足缺失的冲突、行动、信息释放和尾钩，使章节进入硬范围，"
+                "不得添加无关支线。\n"
+            )
+        else:
+            _wc_directive = (
+                f"【章节字数闸门·硬性要求】当前稿 {_current_wc} 字，"
+                f"目标约 {_target_wc} 字，发布硬范围 {_wc_lo}-{_wc_hi} 字。"
+                "重写后必须仍在硬范围内，并尽量保持当前篇幅；只修复被标记的问题。\n"
+            )
     user_prompt = (
         (
             f"Project: {project.title}\n"
             f"Chapter {chapter.chapter_number}: {chapter.title or ''}\n"
             f"Chapter goal: {chapter.chapter_goal}\n"
             f"{_wrap_rewrite_reference_for_language(rewrite_task.instructions, rewrite_task.rewrite_strategy, language=language)}"
+            f"{_wc_directive}"
             f"Writing profile:\n{render_writing_profile_prompt_block(writing_profile, language=language)}\n"
             f"{_pp_block}"
             f"Serial fiction guardrails:\n{render_serial_fiction_guardrails(writing_profile, language=language)}\n"
@@ -1230,6 +1286,7 @@ def build_chapter_rewrite_prompts(
             f"章节：第{chapter.chapter_number}章 {chapter.title or ''}\n"
             f"章节目标：{chapter.chapter_goal}\n"
             f"{_wrap_rewrite_reference_for_language(rewrite_task.instructions, rewrite_task.rewrite_strategy, language=language)}"
+            f"{_wc_directive}"
             f"写作画像：\n{render_writing_profile_prompt_block(writing_profile, language=language)}\n"
             f"{_pp_block}"
             f"商业网文硬约束：\n{render_serial_fiction_guardrails(writing_profile, language=language)}\n"
@@ -3924,6 +3981,10 @@ async def rewrite_chapter_from_task(
                 project_id=project.id,
                 workflow_run_id=workflow_run_id,
                 step_run_id=step_run_id,
+                max_tokens_override=prose_output_max_tokens_for_target(
+                    chapter.target_word_count,
+                    language=_project_language(project),
+                ),
                 metadata={
                     "project_slug": project.slug,
                     "chapter_number": chapter.chapter_number,
@@ -3980,6 +4041,13 @@ async def rewrite_chapter_from_task(
         logger.debug("Post-rewrite dedup failed (non-fatal)", exc_info=True)
 
     word_count = count_words(content_md)
+    quality_gate_outcome = await _evaluate_chapter_quality_gate(
+        session=session,
+        project=project,
+        chapter_number=chapter_number,
+        content=content_md,
+    )
+    quality_gate_rejected_current_promotion = quality_gate_outcome == "blocked"
     next_version = int(
         (
             await session.scalar(
@@ -3991,14 +4059,15 @@ async def rewrite_chapter_from_task(
         or 0
     ) + 1
 
-    await session.execute(
-        update(ChapterDraftVersionModel)
-        .where(
-            ChapterDraftVersionModel.chapter_id == chapter.id,
-            ChapterDraftVersionModel.is_current.is_(True),
+    if not quality_gate_rejected_current_promotion:
+        await session.execute(
+            update(ChapterDraftVersionModel)
+            .where(
+                ChapterDraftVersionModel.chapter_id == chapter.id,
+                ChapterDraftVersionModel.is_current.is_(True),
+            )
+            .values(is_current=False)
         )
-        .values(is_current=False)
-    )
 
     new_draft = ChapterDraftVersionModel(
         project_id=project.id,
@@ -4007,20 +4076,49 @@ async def rewrite_chapter_from_task(
         content_md=content_md,
         word_count=word_count,
         assembled_from_scene_draft_ids=list(current_draft.assembled_from_scene_draft_ids),
-        is_current=True,
+        is_current=not quality_gate_rejected_current_promotion,
         llm_run_id=llm_run_id,
     )
     session.add(new_draft)
     await session.flush()
-    rewrite_task.status = "completed"
     rewrite_task.attempts = int(rewrite_task.attempts or 0) + 1
-    rewrite_task.metadata_json = {
+    metadata = {
         **(rewrite_task.metadata_json or {}),
-        "rewritten_chapter_draft_id": str(new_draft.id),
         "generation_mode": generation_mode,
+        "candidate_chapter_draft_id": str(new_draft.id),
+        "candidate_chapter_draft_version_no": next_version,
+        "candidate_word_count": word_count,
+        "candidate_quality_gate_outcome": quality_gate_outcome,
+    }
+    if quality_gate_rejected_current_promotion:
+        rewrite_task.status = "failed"
+        rewrite_task.error_log = (
+            "chapter rewrite rejected by quality gate; current draft preserved"
+        )
+        rewrite_task.metadata_json = {
+            **metadata,
+            "quality_gate_rejected_current_promotion": True,
+            "preserved_current_chapter_draft_id": str(current_draft.id),
+            "preserved_current_chapter_draft_version_no": current_draft.version_no,
+        }
+        logger.warning(
+            "chapter %d rewrite candidate v%d rejected by quality gate; "
+            "preserving current draft v%d",
+            chapter.chapter_number,
+            next_version,
+            current_draft.version_no,
+        )
+        return current_draft, rewrite_task
+
+    rewrite_task.status = "completed"
+    rewrite_task.metadata_json = {
+        **metadata,
+        "rewritten_chapter_draft_id": str(new_draft.id),
     }
     chapter.current_word_count = word_count
     chapter.status = ChapterStatus.REVIEW.value
+    if quality_gate_outcome is not None:
+        chapter.production_state = quality_gate_outcome
     return new_draft, rewrite_task
 
 
@@ -4092,6 +4190,10 @@ async def rewrite_scene_from_task(
                 project_id=project.id,
                 workflow_run_id=workflow_run_id,
                 step_run_id=step_run_id,
+                max_tokens_override=prose_output_max_tokens_for_target(
+                    scene.target_word_count,
+                    language=_project_language(project),
+                ),
                 metadata={
                     "project_slug": project.slug,
                     "chapter_number": chapter.chapter_number,

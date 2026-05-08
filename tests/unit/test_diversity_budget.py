@@ -212,6 +212,17 @@ class TestHotVocab:
         assert "1" not in budget.vocab_freq
         assert str(VOCAB_HISTORY_MAX_CHAPTERS + 4) in budget.vocab_freq
 
+    def test_malformed_persisted_chapter_keys_do_not_break_sorting(self) -> None:
+        budget = DiversityBudget(project_id=uuid4())
+        budget.vocab_freq = {
+            "legacy": {"old": 10},
+            "2": {"new": 3},
+            "chapter-3": {"new": 3},
+        }
+        hot = budget.hot_vocab(window=2, top=5, min_count=3)
+        assert "new" in hot
+        assert "old" not in hot
+
     def test_default_constants_sane(self) -> None:
         assert DEFAULT_HOT_VOCAB_WINDOW == 5
         assert DEFAULT_HOT_VOCAB_TOP_N == 20
@@ -594,4 +605,3 @@ class TestRenderBudgetDiversityBlock:
         assert "glimmer" in block
         assert "humiliation" in block
         assert "revelation" in block
-

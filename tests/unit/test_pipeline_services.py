@@ -26,6 +26,7 @@ from bestseller.domain.pipeline import ProjectPipelineResult, ProjectRepairResul
 from bestseller.services import contradiction as contradiction_services
 from bestseller.services import drafts as draft_services
 from bestseller.services import exports as export_services
+from bestseller.services import identity_guard as identity_guard_services
 from bestseller.services import pipelines as pipeline_services
 from bestseller.services import reviews as review_services
 from bestseller.services.truth_version import TruthVersionStaleError
@@ -104,10 +105,40 @@ def build_project() -> ProjectModel:
         genre="fantasy",
         target_word_count=60000,
         target_chapters=30,
-        metadata_json={},
+        metadata_json={
+            "identity_manifest_status": "locked",
+            "identity_manifest": [
+                {
+                    "name": "沈砚",
+                    "role": "protagonist",
+                    "gender": "male",
+                    "pronoun_set_zh": "他",
+                    "pronoun_set_en": "he/him",
+                    "aliases": [],
+                },
+                {
+                    "name": "港务官",
+                    "role": "supporting",
+                    "gender": "female",
+                    "pronoun_set_zh": "她",
+                    "pronoun_set_en": "she/her",
+                    "aliases": [],
+                },
+            ],
+        },
     )
     project.id = uuid4()
     return project
+
+
+def mark_project_blocked_for_structural_repair(project: ProjectModel) -> None:
+    project.status = "paused"
+    project.metadata_json = {
+        **(project.metadata_json or {}),
+        "production_paused": True,
+        "production_pause_reason": "structural_repair_before_continuation",
+        "generation_resume_blocked_until_repair_audit": True,
+    }
 
 
 def build_chapter(project_id) -> ChapterModel:
@@ -133,6 +164,7 @@ def build_scene(project_id, chapter_id) -> SceneCardModel:
         scene_number=1,
         scene_type="setup",
         title="封港命令",
+        time_label="第一日夜，封港前一小时",
         participants=["沈砚", "港务官"],
         purpose={"story": "抛出禁令任务", "emotion": "压迫感和抗拒"},
         entry_state={},
@@ -199,6 +231,58 @@ async def test_run_scene_pipeline_blocks_when_truth_materializations_are_stale(
         )
 
 
+def test_structural_repair_pause_guard_allows_explicit_repair() -> None:
+    project = build_project()
+    mark_project_blocked_for_structural_repair(project)
+
+    with pytest.raises(pipeline_services.ProjectRepairPauseError):
+        pipeline_services._assert_project_not_blocked_for_structural_repair(
+            project,
+            project_slug="my-story",
+            operation="chapter pipeline 1",
+        )
+
+    pipeline_services._assert_project_not_blocked_for_structural_repair(
+        project,
+        project_slug="my-story",
+        operation="chapter pipeline 1",
+        allow_structural_repair=True,
+    )
+
+
+@pytest.mark.asyncio
+async def test_run_scene_pipeline_blocks_structural_repair_pause_before_writing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = build_project()
+    mark_project_blocked_for_structural_repair(project)
+    chapter = build_chapter(project.id)
+    scene = build_scene(project.id, chapter.id)
+    session = FakeSession()
+
+    async def fake_load_scene_identifiers(_session, _project_slug, _chapter_number, _scene_number):
+        return project, chapter, scene
+
+    async def fail_truth_guard(*args, **kwargs):
+        raise AssertionError("truth guard should not run after structural pause block")
+
+    monkeypatch.setattr(
+        pipeline_services,
+        "_load_scene_identifiers",
+        fake_load_scene_identifiers,
+    )
+    monkeypatch.setattr(pipeline_services, "_enforce_truth_version_guard", fail_truth_guard)
+
+    with pytest.raises(pipeline_services.ProjectRepairPauseError):
+        await pipeline_services.run_scene_pipeline(
+            session,
+            build_settings(),
+            "my-story",
+            1,
+            1,
+        )
+
+
 @pytest.mark.asyncio
 async def test_run_scene_pipeline_blocks_on_contradiction_violation(
     monkeypatch: pytest.MonkeyPatch,
@@ -241,6 +325,22 @@ async def test_run_scene_pipeline_blocks_on_contradiction_violation(
             checks_run=1,
         )
 
+    async def fake_load_identity_registry(*args, **kwargs):
+        return [
+            identity_guard_services.CharacterIdentity(
+                name="沈砚",
+                gender="male",
+                pronoun_set_zh="他",
+                pronoun_set_en="he/him",
+            ),
+            identity_guard_services.CharacterIdentity(
+                name="港务官",
+                gender="female",
+                pronoun_set_zh="她",
+                pronoun_set_en="she/her",
+            ),
+        ]
+
     monkeypatch.setattr(
         pipeline_services,
         "_load_scene_identifiers",
@@ -256,6 +356,7 @@ async def test_run_scene_pipeline_blocks_on_contradiction_violation(
         "run_pre_scene_contradiction_checks",
         fake_run_pre_scene_contradiction_checks,
     )
+    monkeypatch.setattr(identity_guard_services, "load_identity_registry", fake_load_identity_registry)
 
     with pytest.raises(WriteSafetyBlockError):
         await pipeline_services.run_scene_pipeline(
@@ -273,6 +374,211 @@ async def test_run_scene_pipeline_blocks_on_contradiction_violation(
 
 
 @pytest.mark.asyncio
+async def test_run_scene_pipeline_blocks_pre_draft_scene_contract_before_writer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = build_project()
+    project.metadata_json = {"identity_manifest_status": "locked"}
+    chapter = build_chapter(project.id)
+    scene = build_scene(project.id, chapter.id)
+    scene.participants = ["陌生人"]
+    scene.time_label = None
+    session = FakeSession()
+    settings = build_settings()
+    settings.pipeline.enable_truth_version_guard = False
+
+    async def fake_load_scene_identifiers(_session, _project_slug, _chapter_number, _scene_number):
+        return project, chapter, scene
+
+    async def fake_load_current_scene_draft(_session, _scene_id):
+        return None
+
+    async def fake_build_context(*args, **kwargs):
+        return SceneWriterContextPacket(
+            project_id=project.id,
+            project_slug=project.slug,
+            chapter_id=chapter.id,
+            scene_id=scene.id,
+            chapter_number=1,
+            scene_number=1,
+            query_text="封港命令",
+        )
+
+    async def fake_load_identity_registry(*args, **kwargs):
+        return [
+            identity_guard_services.CharacterIdentity(
+                name="沈砚",
+                gender="male",
+                pronoun_set_zh="他",
+                pronoun_set_en="he/him",
+            )
+        ]
+
+    async def fake_generate_scene_draft(*args, **kwargs):
+        raise AssertionError("writer should not be called when the pre-draft contract blocks")
+
+    monkeypatch.setattr(pipeline_services, "_load_scene_identifiers", fake_load_scene_identifiers)
+    monkeypatch.setattr(pipeline_services, "_load_current_scene_draft", fake_load_current_scene_draft)
+    monkeypatch.setattr(pipeline_services, "build_scene_writer_context_from_models", fake_build_context)
+    monkeypatch.setattr(identity_guard_services, "load_identity_registry", fake_load_identity_registry)
+    monkeypatch.setattr(pipeline_services, "generate_scene_draft", fake_generate_scene_draft)
+
+    with pytest.raises(ValueError, match="pre_draft_scene_contract"):
+        await pipeline_services.run_scene_pipeline(
+            session,
+            settings,
+            "my-story",
+            1,
+            1,
+        )
+
+    workflow_runs = [obj for obj in session.added if isinstance(obj, WorkflowRunModel)]
+    assert workflow_runs[0].status == "failed"
+    assert workflow_runs[0].metadata_json["pre_draft_scene_contract"]["passed"] is False
+
+
+@pytest.mark.asyncio
+async def test_run_scene_pipeline_injects_premium_engine_blocks_into_writer_context(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = build_project()
+    project.genre = "xianxia"
+    project.metadata_json = {
+        **(project.metadata_json or {}),
+        "sub_genre": "凡人流修仙",
+        "world_spec": {
+            "world_name": "青岚界",
+            "power_system": {
+                "name": "灵根修行",
+                "tiers": ["炼气", "筑基", "金丹"],
+                "protagonist_starting_tier": "炼气十层",
+            },
+        },
+        "cast_spec": {
+            "protagonist": {
+                "name": "沈砚",
+                "power_tier": "炼气十层",
+                "resources": [{"resource_key": "筑基丹", "amount": 1}],
+            }
+        },
+        "volume_plan": [
+            {
+                "volume_number": 1,
+                "volume_title": "入宗夺丹",
+                "opening_state": {"protagonist_power_tier": "炼气十层"},
+            }
+        ],
+    }
+    chapter = build_chapter(project.id)
+    scene = build_scene(project.id, chapter.id)
+    captured: dict[str, SceneWriterContextPacket] = {}
+
+    async def fake_load_scene_identifiers(_session, _project_slug, _chapter_number, _scene_number):
+        return project, chapter, scene
+
+    async def fake_load_current_scene_draft(_session, _scene_id):
+        return None
+
+    async def fake_build_context(*args, **kwargs):
+        return SceneWriterContextPacket(
+            project_id=project.id,
+            project_slug=project.slug,
+            chapter_id=chapter.id,
+            scene_id=scene.id,
+            chapter_number=1,
+            scene_number=1,
+            query_text="封港命令",
+            story_bible={
+                "volume": {"volume_number": 1},
+                "world_rules": [
+                    {
+                        "rule_code": "R-001",
+                        "name": "试炼禁令",
+                        "description": "秘境试炼中偷取筑基丹会引发执法堂追索。",
+                        "exploitation_potential": "先藏丹后换身份离场。",
+                        "future_backlash": "宗门会追查资源流向。",
+                    }
+                ],
+            },
+        )
+
+    async def fake_generate_scene_draft(*args, **kwargs):
+        captured["context"] = kwargs["context_packet"]
+        draft = SceneDraftVersionModel(
+            project_id=project.id,
+            scene_card_id=scene.id,
+            version_no=1,
+            content_md="沈砚握紧筑基丹, 先退入阴影观察局势。",
+            word_count=200,
+            is_current=True,
+            generation_params={},
+        )
+        draft.id = uuid4()
+        draft.llm_run_id = uuid4()
+        return draft
+
+    async def fake_review_scene_draft(*args, **kwargs):
+        return (
+            type("ReviewResultStub", (), {"verdict": "pass", "severity_max": "low"})(),
+            type("ReportStub", (), {"id": uuid4(), "llm_run_id": uuid4()})(),
+            type("QualityStub", (), {"id": uuid4()})(),
+            None,
+        )
+
+    async def fake_refresh_scene_knowledge(*args, **kwargs):
+        return SceneKnowledgeRefreshResult(
+            project_id=project.id,
+            chapter_id=chapter.id,
+            scene_id=scene.id,
+            chapter_number=1,
+            scene_number=1,
+            canon_fact_ids=[],
+            timeline_event_ids=[],
+            canon_facts_created=0,
+            canon_facts_reused=0,
+            timeline_events_created=0,
+            timeline_events_reused=0,
+            summary_text="无新增知识",
+            llm_run_id=None,
+        )
+
+    monkeypatch.setattr(pipeline_services, "_load_scene_identifiers", fake_load_scene_identifiers)
+    monkeypatch.setattr(pipeline_services, "_load_current_scene_draft", fake_load_current_scene_draft)
+    monkeypatch.setattr(pipeline_services, "build_scene_writer_context_from_models", fake_build_context)
+    monkeypatch.setattr(pipeline_services, "generate_scene_draft", fake_generate_scene_draft)
+    monkeypatch.setattr(pipeline_services, "review_scene_draft", fake_review_scene_draft)
+    monkeypatch.setattr(pipeline_services, "refresh_scene_knowledge", fake_refresh_scene_knowledge)
+
+    settings = build_settings()
+    settings.pipeline.enable_truth_version_guard = False
+    settings.pipeline.enable_contradiction_checks = False
+    settings.pipeline.require_pre_draft_scene_contract = False
+    settings.pipeline.enable_scene_plan_richness_gate = False
+
+    result = await pipeline_services.run_scene_pipeline(
+        FakeSession(),
+        settings,
+        "my-story",
+        1,
+        1,
+        requested_by="tester",
+    )
+
+    context = captured["context"]
+    assert result.final_verdict == "pass"
+    assert context.progression_context_block is not None
+    assert "【进阶体系约束】" in context.progression_context_block
+    assert "炼气 → 筑基 → 金丹" in context.progression_context_block
+    assert "筑基丹=1" in context.progression_context_block
+    assert context.decision_policy_block is not None
+    assert "【主角决策策略】" in context.decision_policy_block
+    assert "public_vanity_duel" in context.decision_policy_block
+    assert context.rule_system_context_block is not None
+    assert "【规则系统约束】" in context.rule_system_context_block
+    assert "试炼禁令" in context.rule_system_context_block
+
+
+@pytest.mark.asyncio
 async def test_generate_scene_draft_creates_new_current_version(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -284,7 +590,24 @@ async def test_generate_scene_draft_creates_new_current_version(
     async def fake_get_project_by_slug(session, slug: str) -> ProjectModel:
         return project
 
+    async def fake_load_identity_registry(*args, **kwargs):
+        return [
+            identity_guard_services.CharacterIdentity(
+                name="沈砚",
+                gender="male",
+                pronoun_set_zh="他",
+                pronoun_set_en="he/him",
+            ),
+            identity_guard_services.CharacterIdentity(
+                name="港务官",
+                gender="female",
+                pronoun_set_zh="她",
+                pronoun_set_en="she/her",
+            ),
+        ]
+
     monkeypatch.setattr(draft_services, "get_project_by_slug", fake_get_project_by_slug)
+    monkeypatch.setattr(identity_guard_services, "load_identity_registry", fake_load_identity_registry)
     session = FakeSession(
         scalar_results=[chapter, scene, 0],
         get_map={(StyleGuideModel, project.id): style},
@@ -624,6 +947,24 @@ async def test_generate_scene_draft_with_settings_records_llm_run(
 
     settings = build_settings()
     settings.llm.mock = True
+
+    async def fake_load_identity_registry(*args, **kwargs):
+        return [
+            identity_guard_services.CharacterIdentity(
+                name="沈砚",
+                gender="male",
+                pronoun_set_zh="他",
+                pronoun_set_en="he/him",
+            ),
+            identity_guard_services.CharacterIdentity(
+                name="港务官",
+                gender="female",
+                pronoun_set_zh="她",
+                pronoun_set_en="she/her",
+            ),
+        ]
+
+    monkeypatch.setattr(identity_guard_services, "load_identity_registry", fake_load_identity_registry)
     draft = await draft_services.generate_scene_draft(
         session,
         "my-story",
@@ -634,6 +975,151 @@ async def test_generate_scene_draft_with_settings_records_llm_run(
 
     assert draft.llm_run_id is not None
     assert any(isinstance(obj, LlmRunModel) for obj in session.added)
+
+
+@pytest.mark.asyncio
+async def test_generate_scene_draft_direct_settings_injects_premium_blocks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = build_project()
+    project.genre = "xianxia"
+    project.metadata_json = {
+        **(project.metadata_json or {}),
+        "sub_genre": "凡人流修仙",
+        "world_spec": {
+            "world_name": "青岚界",
+            "power_system": {
+                "name": "灵根修行",
+                "tiers": ["炼气", "筑基"],
+                "protagonist_starting_tier": "炼气十层",
+            },
+        },
+        "cast_spec": {
+            "protagonist": {
+                "name": "沈砚",
+                "power_tier": "炼气十层",
+                "resources": [{"resource_key": "筑基丹", "amount": 1}],
+            }
+        },
+    }
+    chapter = build_chapter(project.id)
+    scene = build_scene(project.id, chapter.id)
+    style = build_style(project.id)
+    captured: dict[str, SceneWriterContextPacket] = {}
+
+    async def fake_get_project_by_slug(session, slug: str) -> ProjectModel:
+        return project
+
+    async def fake_load_identity_registry(*args, **kwargs):
+        return [
+            identity_guard_services.CharacterIdentity(
+                name="沈砚",
+                gender="male",
+                pronoun_set_zh="他",
+                pronoun_set_en="he/him",
+            ),
+            identity_guard_services.CharacterIdentity(
+                name="港务官",
+                gender="female",
+                pronoun_set_zh="她",
+                pronoun_set_en="she/her",
+            ),
+        ]
+
+    async def fake_build_context(*args, **kwargs):
+        packet = SceneWriterContextPacket(
+            project_id=project.id,
+            project_slug=project.slug,
+            chapter_id=chapter.id,
+            scene_id=scene.id,
+            chapter_number=1,
+            scene_number=1,
+            query_text="封港命令",
+            story_bible={
+                "volume": {"volume_number": 1},
+                "world_rules": [
+                    {
+                        "rule_code": "R-001",
+                        "name": "试炼禁令",
+                        "description": "秘境偷取筑基丹会触发执法堂追索。",
+                        "exploitation_potential": "先藏丹后换身份离场。",
+                        "future_backlash": "宗门会追查资源流向。",
+                    }
+                ],
+            },
+        )
+        captured["context"] = packet
+        return packet
+
+    monkeypatch.setattr(draft_services, "get_project_by_slug", fake_get_project_by_slug)
+    monkeypatch.setattr(identity_guard_services, "load_identity_registry", fake_load_identity_registry)
+    monkeypatch.setattr(draft_services, "build_scene_writer_context_from_models", fake_build_context)
+
+    session = FakeSession(
+        scalar_results=[chapter, scene, 0],
+        get_map={(StyleGuideModel, project.id): style},
+    )
+    settings = build_settings()
+    settings.llm.mock = True
+
+    await draft_services.generate_scene_draft(
+        session,
+        "my-story",
+        1,
+        1,
+        settings=settings,
+    )
+
+    context = captured["context"]
+    assert context.progression_context_block is not None
+    assert "炼气 → 筑基" in context.progression_context_block
+    assert context.decision_policy_block is not None
+    assert "public_vanity_duel" in context.decision_policy_block
+    assert context.rule_system_context_block is not None
+    assert "试炼禁令" in context.rule_system_context_block
+
+
+@pytest.mark.asyncio
+async def test_generate_scene_draft_direct_call_blocks_pre_draft_contract(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = build_project()
+    project.metadata_json = {"identity_manifest_status": "locked"}
+    chapter = build_chapter(project.id)
+    scene = build_scene(project.id, chapter.id)
+    scene.participants = ["陌生人"]
+    scene.time_label = None
+
+    async def fake_get_project_by_slug(session: object, slug: str) -> ProjectModel:
+        return project
+
+    async def fake_load_identity_registry(*args, **kwargs):
+        return [
+            identity_guard_services.CharacterIdentity(
+                name="沈砚",
+                gender="male",
+                pronoun_set_zh="他",
+                pronoun_set_en="he/him",
+            )
+        ]
+
+    monkeypatch.setattr(draft_services, "get_project_by_slug", fake_get_project_by_slug)
+    monkeypatch.setattr(identity_guard_services, "load_identity_registry", fake_load_identity_registry)
+
+    session = FakeSession(scalar_results=[chapter, scene])
+    settings = build_settings()
+    settings.llm.mock = True
+
+    with pytest.raises(ValueError, match="pre_draft_scene_contract"):
+        await draft_services.generate_scene_draft(
+            session,
+            "my-story",
+            1,
+            1,
+            settings=settings,
+        )
+
+    assert scene.metadata_json["pre_draft_scene_contract"]["passed"] is False
 
 
 @pytest.mark.asyncio

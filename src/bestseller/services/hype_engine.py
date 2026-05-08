@@ -959,6 +959,7 @@ def classify_hype(
 # Chinese sentence terminators (including full-width and half-width variants).
 _ENDING_TERMINATORS_ZH = "。！？…"
 _ENDING_TERMINATORS_EN = ".!?"
+_ENDING_TRAILING_CLOSERS = "”’」』\"'）)]】》"
 
 
 def extract_ending_sentence(text: str, language: str = "zh-CN") -> str:
@@ -979,9 +980,17 @@ def extract_ending_sentence(text: str, language: str = "zh-CN") -> str:
         else _ENDING_TERMINATORS_EN
     )
 
-    # Walk past any trailing terminator to find the real content.
+    # Walk past trailing closers/terminators to find the real content. A
+    # dialogue line commonly ends as `。”`; without removing the quote first,
+    # the extracted "sentence" becomes just `”`.
     end = len(trimmed)
+    while end > 0 and trimmed[end - 1] in " \n\t":
+        end -= 1
+    while end > 0 and trimmed[end - 1] in _ENDING_TRAILING_CLOSERS:
+        end -= 1
     while end > 0 and trimmed[end - 1] in terminators + " \n\t":
+        end -= 1
+    while end > 0 and trimmed[end - 1] in _ENDING_TRAILING_CLOSERS:
         end -= 1
     # Now find the start of the final sentence: nearest prior terminator.
     start = end

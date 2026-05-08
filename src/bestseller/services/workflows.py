@@ -17,6 +17,7 @@ from bestseller.domain.workflow import (
     WorkflowMaterializationResult,
 )
 from bestseller.infra.db.models import (
+    CharacterModel,
     ChapterModel,
     PlanningArtifactVersionModel,
     ProjectModel,
@@ -32,6 +33,11 @@ from bestseller.services.invariants import invariants_from_dict
 from bestseller.services.projects import create_chapter, create_or_get_volume, create_scene_card, get_project_by_slug
 from bestseller.services.narrative import rebuild_narrative_graph
 from bestseller.services.narrative_tree import rebuild_narrative_tree
+from bestseller.services.narrative_contracts import (
+    build_identity_manifest,
+    validate_chapter_plan_contract,
+    validate_foundation_identity_contract,
+)
 from bestseller.services.quality_gates_config import get_quality_gates_config
 from bestseller.services.retrieval import refresh_story_bible_retrieval_index
 from bestseller.services.story_bible import (
@@ -60,6 +66,109 @@ _MATERIALIZATION_MUTABLE_CHAPTER_STATUSES = {
 _MATERIALIZATION_MUTABLE_SCENE_STATUSES = {
     SceneStatus.PLANNED.value,
 }
+
+
+def _project_identity_manifest(project: ProjectModel) -> list[dict[str, Any]]:
+    metadata = getattr(project, "metadata_json", None) or {}
+    manifest = metadata.get("identity_manifest") if isinstance(metadata, dict) else None
+    if not isinstance(manifest, list):
+        return []
+    return [item for item in manifest if isinstance(item, dict)]
+
+
+def _identity_token(value: Any) -> str:
+    if value is None:
+        return ""
+    return "".join(str(value).strip().lower().split())
+
+
+async def ensure_project_identity_manifest(
+    session: AsyncSession,
+    project: ProjectModel,
+    *,
+    project_slug: str,
+) -> list[dict[str, Any]]:
+    """Ensure a project has a locked identity manifest before writing resumes.
+
+    Historical projects may have completed story-bible materialization before
+    the identity contract existed. Resume paths must not treat that completed
+    workflow as sufficient unless the project metadata now contains a locked
+    manifest, or the latest CastSpec can pass the new identity contract.
+    """
+
+    existing_manifest = _project_identity_manifest(project)
+    metadata = getattr(project, "metadata_json", None) or {}
+    if (
+        existing_manifest
+        and isinstance(metadata, dict)
+        and metadata.get("identity_manifest_status") == "locked"
+    ):
+        return existing_manifest
+
+    artifact = await get_latest_planning_artifact(
+        session,
+        project_id=project.id,
+        artifact_type=ArtifactType.CAST_SPEC,
+    )
+    if artifact is None:
+        raise ValueError(
+            f"Project '{project_slug}' is missing a locked identity manifest and has no CastSpec artifact."
+        )
+
+    report = validate_foundation_identity_contract(artifact.content)
+    report.raise_for_blocks(project_slug=project_slug, artifact="cast_spec")
+    manifest = build_identity_manifest(artifact.content)
+    if not manifest:
+        raise ValueError(
+            f"Project '{project_slug}' CastSpec produced an empty identity manifest."
+        )
+
+    project.metadata_json = {
+        **(metadata if isinstance(metadata, dict) else {}),
+        "identity_manifest": manifest,
+        "identity_manifest_status": "locked",
+    }
+
+    manifest_by_token: dict[str, dict[str, Any]] = {}
+    for entry in manifest:
+        tokens = [entry.get("name"), *(entry.get("aliases") or [])]
+        for token in tokens:
+            key = _identity_token(token)
+            if key:
+                manifest_by_token[key] = entry
+
+    characters = list(
+        await session.scalars(
+            select(CharacterModel).where(CharacterModel.project_id == project.id)
+        )
+    )
+    for character in characters:
+        entry = manifest_by_token.get(_identity_token(character.name))
+        if entry is None:
+            continue
+        char_meta = dict(getattr(character, "metadata_json", None) or {})
+        cast_entry = dict(char_meta.get("cast_entry") or {})
+        cast_entry.update(
+            {
+                "gender": entry.get("gender") or "unknown",
+                "pronoun_set_zh": entry.get("pronoun_set_zh") or "",
+                "pronoun_set_en": entry.get("pronoun_set_en") or "",
+                "aliases": entry.get("aliases") or [],
+            }
+        )
+        char_meta.update(
+            {
+                "gender": cast_entry["gender"],
+                "pronoun_set_zh": cast_entry["pronoun_set_zh"],
+                "pronoun_set_en": cast_entry["pronoun_set_en"],
+                "aliases": cast_entry["aliases"],
+                "cast_entry": cast_entry,
+            }
+        )
+        character.metadata_json = char_meta
+
+    await session.flush()
+    return manifest
 
 
 async def _sync_existing_chapter_from_outline(
@@ -322,11 +431,35 @@ async def materialize_chapter_outline_batch(
                     "plan_fingerprint_findings": _fp_summary,
                     "plan_fingerprint_has_critical": _fp_report.has_critical,
                 }
+                if _fp_report.has_critical:
+                    raise ValueError(
+                        "Chapter outline batch blocked by plan fingerprint gate: "
+                        f"{len(_fp_report.findings)} duplicate chapter pair(s) found."
+                    )
+        except ValueError:
+            raise
         except Exception:
             logger.debug(
                 "Plan fingerprint scan failed for batch '%s' (non-fatal)",
                 batch.batch_name,
                 exc_info=True,
+            )
+
+        settings = load_settings()
+        if getattr(settings.pipeline, "require_chapter_plan_contract", True):
+            _plan_contract = validate_chapter_plan_contract(
+                batch,
+                identity_manifest=_project_identity_manifest(project),
+                require_identity_registry=True,
+            )
+            if _plan_contract.violations or _plan_contract.warnings:
+                workflow_run.metadata_json = {
+                    **(workflow_run.metadata_json or {}),
+                    "chapter_plan_contract": _plan_contract.to_dict(),
+                }
+            _plan_contract.raise_for_blocks(
+                project_slug=project_slug,
+                artifact="chapter_outline_batch",
             )
 
         for chapter_outline in batch.chapters:
@@ -400,6 +533,7 @@ async def materialize_chapter_outline_batch(
                 scene_outline.scene_number
                 for scene_outline in chapter_outline.scenes
             }
+            materialized_scenes_for_chapter: list[Any] = []
 
             for scene_outline in chapter_outline.scenes:
                 current_step_name = (
@@ -430,6 +564,7 @@ async def materialize_chapter_outline_batch(
                         ),
                     )
                     scenes_created += 1
+                materialized_scenes_for_chapter.append(scene)
                 await create_workflow_step_run(
                     session,
                     workflow_run_id=workflow_run.id,
@@ -470,11 +605,7 @@ async def materialize_chapter_outline_batch(
                 _ch_target = max(1, int(chapter.target_word_count or _CHAPTER_WORD_TARGET))
                 _per_scene = max(_SCENE_WORD_MIN, min(_SCENE_WORD_MAX, _ch_target // _num_scenes))
 
-                for _sc in list(await session.scalars(
-                    select(SceneCardModel).where(
-                        SceneCardModel.chapter_id == chapter.id,
-                    ).order_by(SceneCardModel.scene_number)
-                )):
+                for _sc in materialized_scenes_for_chapter:
                     _sc.target_word_count = _per_scene
 
             if prune_missing_planned:
@@ -681,6 +812,17 @@ async def materialize_story_bible(
     if not applied_artifacts:
         raise ValueError("No story bible content was provided.")
 
+    settings = load_settings()
+    if (
+        cast_spec_content is not None
+        and getattr(settings.pipeline, "require_foundation_identity_lock", True)
+    ):
+        _identity_contract = validate_foundation_identity_contract(cast_spec_content)
+        _identity_contract.raise_for_blocks(
+            project_slug=project_slug,
+            artifact="cast_spec",
+        )
+
     # L2 Bible Completeness Gate — run pre-persistence so a known-incomplete
     # character/world bible never gets committed. Planner generation gets the
     # first repair attempt; this is the final blocking guard.
@@ -782,6 +924,13 @@ async def materialize_story_bible(
             current_step_name = "apply_cast_spec"
             workflow_run.current_step = current_step_name
             cast_counts = await upsert_cast_spec(session, project, cast_spec_content)
+            identity_manifest = build_identity_manifest(cast_spec_content)
+            if identity_manifest:
+                project.metadata_json = {
+                    **(project.metadata_json or {}),
+                    "identity_manifest": identity_manifest,
+                    "identity_manifest_status": "locked",
+                }
             for key, value in cast_counts.items():
                 counts[key] = counts.get(key, 0) + value
             await create_workflow_step_run(
@@ -792,6 +941,7 @@ async def materialize_story_bible(
                 status=WorkflowStatus.COMPLETED,
                 output_ref={
                     **cast_counts,
+                    "identity_manifest_count": len(identity_manifest),
                     "artifact_type": ArtifactType.CAST_SPEC.value,
                     "source_artifact_id": str(artifact_ids["cast_spec"]) if "cast_spec" in artifact_ids else None,
                 },

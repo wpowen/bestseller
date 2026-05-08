@@ -285,6 +285,8 @@ class TestBuildChapterPrompt:
             chapter_no=2,
             system="你是畅销小说作家。",
             bible_slice="【角色】主角：林奚。",
+            progression_context_block="【进阶体系约束】当前境界: 炼气十层。不得空升级。",
+            decision_policy_block="【主角决策策略】风险承受: low。不可为虚荣决斗。",
             scene_spec="【本章任务】主角初入宗门。",
             prior_chapter_text="他闭上双眼，深吸一口气。",
             preassigned_opening=OpeningArchetype.CRISIS,
@@ -298,6 +300,8 @@ class TestBuildChapterPrompt:
         assert "禁止项" in rendered
         # All supplied sections present.
         assert "主角：林奚" in rendered
+        assert "当前境界: 炼气十层" in rendered
+        assert "风险承受: low" in rendered
         assert "本章任务" in rendered
         assert "前一章结尾" in rendered
         # Diversity section included.
@@ -368,6 +372,8 @@ class TestPromptPlanRender:
             system="SYSTEM",
             invariants_section="INV",
             bible_slice="BIBLE",
+            progression_constraints="PROGRESSION",
+            decision_policy_constraints="DECISION",
             methodology_inject="METHOD",
             diversity_constraints="DIVERSITY",
             prior_chapter_tail="TAIL",
@@ -380,6 +386,8 @@ class TestPromptPlanRender:
             out.index("SYSTEM"),
             out.index("INV"),
             out.index("BIBLE"),
+            out.index("PROGRESSION"),
+            out.index("DECISION"),
             out.index("METHOD"),
             out.index("DIVERSITY"),
             out.index("TAIL"),

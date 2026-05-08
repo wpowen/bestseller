@@ -363,6 +363,7 @@ class LLMCompletionRequest(BaseModel):
     workflow_run_id: UUID | None = None
     step_run_id: UUID | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
+    max_tokens_override: int | None = Field(default=None, ge=1)
 
     # ── Tool-use / function-calling extensions (Batch 1 Stage 0) ──────────
     # ``tools`` is the OpenAI-style function schema list passed straight
@@ -625,6 +626,61 @@ def _build_raw_assistant_message(
     return msg
 
 
+async def _release_session_before_external_llm_call(session: AsyncSession) -> None:
+    """Commit pending DB work before a potentially long provider call.
+
+    Chapter generation can spend 60s+ inside a single LLM request. Holding an
+    open DB transaction during that wait makes the next flush vulnerable to a
+    stale/closed connection. Pipeline checkpoints already commit between major
+    stages; this does the same at the LLM boundary.
+    """
+
+    commit = getattr(session, "commit", None)
+    if commit is None:
+        return
+    in_nested_transaction = getattr(session, "in_nested_transaction", None)
+    try:
+        if callable(in_nested_transaction) and in_nested_transaction():
+            return
+        await commit()
+    except Exception:
+        logger.debug(
+            "LLM pre-call DB checkpoint failed; continuing with existing session",
+            exc_info=True,
+        )
+
+
+async def _persist_llm_run_safely(
+    session: AsyncSession,
+    llm_run: LlmRunModel,
+) -> UUID | None:
+    """Persist LLM telemetry without turning a good completion into a failure."""
+
+    try:
+        session.add(llm_run)
+        await session.flush()
+        return llm_run.id
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "Failed to persist llm_run telemetry for role=%s model=%s; "
+            "continuing without llm_run_id: %s: %s",
+            getattr(llm_run, "logical_role", None),
+            getattr(llm_run, "model_name", None),
+            type(exc).__name__,
+            exc,
+        )
+        rollback = getattr(session, "rollback", None)
+        if rollback is not None:
+            try:
+                await rollback()
+            except Exception:
+                logger.debug(
+                    "Rollback after llm_run telemetry failure also failed",
+                    exc_info=True,
+                )
+        return None
+
+
 async def _call_litellm(
     request: LLMCompletionRequest,
     role_settings: LLMRoleSettings,
@@ -657,11 +713,15 @@ async def _call_litellm(
             {"role": "user", "content": request.user_prompt},
         ]
 
+    max_tokens = role_settings.max_tokens
+    if request.max_tokens_override is not None:
+        max_tokens = min(max_tokens, int(request.max_tokens_override))
+
     completion_kwargs: dict[str, Any] = {
         "model": role_settings.model,
         "messages": messages,
         "temperature": role_settings.temperature,
-        "max_tokens": role_settings.max_tokens,
+        "max_tokens": max_tokens,
         "timeout": role_settings.timeout_seconds,
         "stream": role_settings.stream,
     }
@@ -840,6 +900,8 @@ async def complete_text(
     )
     prompt_hash = _hash_prompt(request.system_prompt, request.user_prompt)
     metadata = dict(request.metadata)
+    if request.max_tokens_override is not None:
+        metadata["max_tokens_override"] = int(request.max_tokens_override)
     latency_ms: int | None = None
     provider = "mock"
     model_name = f"mock-{request.logical_role}"
@@ -853,6 +915,7 @@ async def complete_text(
     started_at = perf_counter()
     if not settings.llm.mock:
         try:
+            await _release_session_before_external_llm_call(session)
             call_settings = role_settings
             retry_settings = settings.llm.retry
             if rate_limit_fallback_settings and _is_rate_limit_fallback_active(
@@ -962,14 +1025,13 @@ async def complete_text(
         finish_reason=finish_reason,
         metadata_json=metadata,
     )
-    session.add(llm_run)
-    await session.flush()
+    llm_run_id = await _persist_llm_run_safely(session, llm_run)
 
     return LLMCompletionResult(
         content=content,
         provider=provider,
         model_name=model_name,
-        llm_run_id=llm_run.id,
+        llm_run_id=llm_run_id,
         input_tokens=input_tokens,
         output_tokens=output_tokens,
         latency_ms=latency_ms,

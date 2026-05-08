@@ -160,6 +160,14 @@ class SceneWriterContextPacket(BaseModel):
     # ── Genre-specific constraint block ──
     genre_constraint_block: str | None = None
 
+    # ── Premium genre engine blocks ──
+    # Progression captures realm/resource/technique/artifact causality.
+    # Decision policy captures protagonist risk profile, preferred tactics,
+    # moral boundaries, and forbidden behavior.
+    progression_context_block: str | None = None
+    decision_policy_block: str | None = None
+    rule_system_context_block: str | None = None
+
     # ── Opening diversity block: recent chapter openings to avoid repeating ──
     opening_diversity_block: str | None = None
 

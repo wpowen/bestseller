@@ -1,0 +1,67 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - heading "BestSeller 一键创作" [level=1] [ref=e3]:
+      - generic [ref=e4]: BestSeller
+      - text: 一键创作
+    - generic [ref=e5]:
+      - button "任务仪表板" [ref=e6] [cursor=pointer]
+      - button "新建创作" [ref=e7] [cursor=pointer]
+      - link "工作室" [ref=e8] [cursor=pointer]:
+        - /url: /
+  - generic [ref=e9]:
+    - generic [ref=e10]:
+      - generic [ref=e11]:
+        - generic [ref=e12]:
+          - generic [ref=e13]:
+            - heading "创作指挥台" [level=2] [ref=e14]
+            - paragraph [ref=e15]: 把生成队列、章节产出、断点续写和上架资料放在同一个操作面板里，先看状态，再处理任务。
+          - generic [ref=e16]:
+            - button "新建创作" [ref=e17] [cursor=pointer]
+            - button "同步任务" [ref=e18] [cursor=pointer]
+        - generic [ref=e19]:
+          - generic [ref=e20]:
+            - generic [ref=e21]: 进行中 / 队列
+            - generic [ref=e22]: "0"
+            - generic [ref=e23]: 等待服务状态
+          - generic [ref=e24]:
+            - generic [ref=e25]: 已完成作品
+            - generic [ref=e26]: "0"
+            - generic [ref=e27]: 可直接进入阅读或上架资料
+          - generic [ref=e28]:
+            - generic [ref=e29]: 需要处理
+            - generic [ref=e30]: "0"
+            - generic [ref=e31]: 失败、停止或未完成任务
+          - generic [ref=e32]:
+            - generic [ref=e33]: 任务总数
+            - generic [ref=e34]: "0"
+            - generic [ref=e35]: 当前工作区可见记录
+      - generic [ref=e37]:
+        - heading "还没有创作任务" [level=2] [ref=e38]
+        - paragraph [ref=e39]: 点击「新建创作」开始你的第一本小说
+        - button "新建创作" [ref=e40] [cursor=pointer]
+      - generic [ref=e41]:
+        - generic "任务筛选" [ref=e42]:
+          - button "全部 0" [ref=e43] [cursor=pointer]:
+            - text: 全部
+            - generic [ref=e44]: "0"
+          - button "进行中 0" [ref=e45] [cursor=pointer]:
+            - text: 进行中
+            - generic [ref=e46]: "0"
+          - button "已完成 0" [ref=e47] [cursor=pointer]:
+            - text: 已完成
+            - generic [ref=e48]: "0"
+          - button "需处理 0" [ref=e49] [cursor=pointer]:
+            - text: 需处理
+            - generic [ref=e50]: "0"
+        - searchbox "搜索书名、slug、状态" [ref=e52]
+      - generic [ref=e54]:
+        - heading "作品队列" [level=3] [ref=e55]
+        - paragraph [ref=e56]: 正在加载任务。
+      - generic [ref=e57]:
+        - generic [ref=e59] [cursor=pointer]:
+          - checkbox "全选" [ref=e60]
+          - text: 全选
+        - generic [ref=e61]:
+          - button "清理已结束任务" [ref=e62] [cursor=pointer]
+          - button "刷新" [ref=e63] [cursor=pointer]
+    - text: 1 2 3

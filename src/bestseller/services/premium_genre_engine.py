@@ -22,6 +22,8 @@ class PremiumGenreEngineBlocks:
     progression_context_block: str = ""
     decision_policy_block: str = ""
     rule_system_context_block: str = ""
+    faction_ecology_context_block: str = ""
+    relationship_agency_context_block: str = ""
     warnings: tuple[str, ...] = ()
 
 
@@ -54,6 +56,73 @@ _RULE_SYSTEM_GENRE_MARKERS = (
 )
 
 
+_RELATIONSHIP_AGENCY_GENRE_MARKERS = (
+    "romance",
+    "romantasy",
+    "paranormal romance",
+    "dark romance",
+    "reverse harem",
+    "mafia romance",
+    "enemies to lovers",
+    "relationship",
+    "female",
+    "no-cp",
+    "no_cp",
+    "女频",
+    "女性",
+    "无cp",
+    "无CP",
+    "言情",
+    "恋爱",
+    "感情",
+    "成长",
+)
+
+
+_FACTION_ECOLOGY_GENRE_MARKERS = (
+    "strategy-worldbuilding",
+    "kingdom-building",
+    "base-building",
+    "sect politics",
+    "clan",
+    "faction",
+    "court",
+    "political",
+    "家族",
+    "宗门",
+    "门派",
+    "势力",
+    "阵营",
+    "朝堂",
+    "权谋",
+    "机构",
+    "公会",
+    "基地",
+    "领地",
+)
+
+
+_FACTION_CONTAINER_KEYS = (
+    "factions",
+    "faction_ecology",
+    "faction_pressure",
+    "sects",
+    "clans",
+    "organizations",
+    "institutions",
+    "forces",
+)
+
+
+_PREMIUM_STATE_LEDGER_KEYS = (
+    "progression_events",
+    "rule_events",
+    "faction_reactions",
+    "relationship_events",
+    "agency_debts",
+)
+
+
 def _as_mapping(value: object) -> dict[str, object]:
     return dict(value) if isinstance(value, Mapping) else {}
 
@@ -73,6 +142,35 @@ def _clean_text(value: object) -> str | None:
         return None
     text = value.strip()
     return text or None
+
+
+def _premium_state_ledger(container: Mapping[str, object]) -> dict[str, object]:
+    return _as_mapping(container.get("premium_state_ledger"))
+
+
+def _ledger_entries(container: Mapping[str, object], key: str) -> list[dict[str, object]]:
+    ledger = _premium_state_ledger(container)
+    entries: list[dict[str, object]] = []
+    for raw in _as_sequence(ledger.get(key)):
+        item = _as_mapping(raw)
+        if item:
+            entries.append({**item, "_source_key": f"premium_state_ledger.{key}"})
+    return entries
+
+
+def _premium_state_ledger_report_warnings(
+    metadata: Mapping[str, object],
+) -> tuple[str, ...]:
+    report = _as_mapping(metadata.get("premium_state_ledger_report"))
+    if report.get("passed") is not False:
+        return ()
+    warnings: list[str] = []
+    for raw in _as_sequence(report.get("findings"))[:8]:
+        finding = _as_mapping(raw)
+        code = _clean_text(finding.get("code"))
+        if code:
+            warnings.append(f"premium_state_ledger:{code}")
+    return tuple(warnings)
 
 
 def _extract_world_spec(metadata: Mapping[str, object]) -> dict[str, object]:
@@ -103,6 +201,13 @@ def _extract_cast_spec(metadata: Mapping[str, object]) -> dict[str, object]:
     if cast_spec:
         return cast_spec
     return _as_mapping(_as_mapping(metadata.get("book_spec")).get("cast_spec"))
+
+
+def _extract_character_config(metadata: Mapping[str, object]) -> dict[str, object]:
+    character_config = _as_mapping(metadata.get("character"))
+    if character_config:
+        return character_config
+    return _as_mapping(_as_mapping(metadata.get("book_spec")).get("character"))
 
 
 def _extract_volume_plan(metadata: Mapping[str, object]) -> list[object]:
@@ -178,6 +283,48 @@ def _should_emit_rule_system(
     return any(marker in haystack for marker in _RULE_SYSTEM_GENRE_MARKERS)
 
 
+def _should_emit_relationship_agency(
+    *,
+    genre: str | None,
+    sub_genre: str | None,
+    metadata: Mapping[str, object],
+) -> bool:
+    book_spec = _as_mapping(metadata.get("book_spec"))
+    character_config = _extract_character_config(metadata)
+    haystack_parts = [
+        genre or "",
+        sub_genre or "",
+        str(metadata.get("category") or ""),
+        str(metadata.get("prompt_pack_key") or ""),
+        str(book_spec.get("genre") or ""),
+        str(book_spec.get("sub_genre") or ""),
+        str(character_config.get("romance_mode") or ""),
+        str(character_config.get("relationship_tension") or ""),
+    ]
+    haystack = " ".join(haystack_parts).lower()
+    return any(marker.lower() in haystack for marker in _RELATIONSHIP_AGENCY_GENRE_MARKERS)
+
+
+def _should_emit_faction_ecology(
+    *,
+    genre: str | None,
+    sub_genre: str | None,
+    metadata: Mapping[str, object],
+    world_spec: Mapping[str, object],
+) -> bool:
+    book_spec = _as_mapping(metadata.get("book_spec"))
+    haystack_parts = [
+        genre or "",
+        sub_genre or "",
+        str(metadata.get("category") or ""),
+        str(metadata.get("prompt_pack_key") or ""),
+        str(book_spec.get("genre") or ""),
+        str(book_spec.get("sub_genre") or ""),
+    ]
+    haystack = " ".join(haystack_parts).lower()
+    return any(marker.lower() in haystack for marker in _FACTION_ECOLOGY_GENRE_MARKERS)
+
+
 def _build_decision_policy_block(
     *,
     metadata: Mapping[str, object],
@@ -229,6 +376,7 @@ def _rule_entries_from_container(container: Mapping[str, object]) -> list[dict[s
             item = _as_mapping(raw)
             if item:
                 entries.append(item)
+    entries.extend(_ledger_entries(container, "rule_events"))
 
     series_engine = _as_mapping(container.get("series_engine"))
     for key in ("rule_ledger", "rules", "world_rules"):
@@ -274,6 +422,503 @@ def _first_text(entry: Mapping[str, object], *keys: str) -> str | None:
         if text:
             return text
     return None
+
+
+def _render_progression_ledger_appendix(
+    entries: tuple[dict[str, object], ...],
+    *,
+    language: str,
+) -> str:
+    if not entries:
+        return ""
+    is_zh = language.lower().startswith("zh")
+    lines = ["【近期进阶状态变更】" if is_zh else "[RECENT PROGRESSION STATE CHANGES]"]
+    for entry in entries[-8:]:
+        chapter = entry.get("chapter_number")
+        event_type = _first_text(entry, "event_type", "type", "kind") or "state_change"
+        subject = _first_text(entry, "subject", "character", "owner")
+        resource = _first_text(entry, "resource_key", "resource", "realm", "technique", "artifact")
+        delta = entry.get("delta")
+        cause = _first_text(entry, "cause", "reason", "trigger")
+        cost = _first_text(entry, "cost", "price", "backlash")
+        parts: list[str] = []
+        if chapter:
+            parts.append(f"Ch{chapter}")
+        parts.append(event_type)
+        if subject:
+            parts.append(subject)
+        if resource:
+            parts.append(f"{'对象' if is_zh else 'target'}: {resource}")
+        if delta not in (None, ""):
+            parts.append(f"{'变化' if is_zh else 'delta'}: {delta}")
+        if cause:
+            parts.append(f"{'因果' if is_zh else 'cause'}: {cause}")
+        if cost:
+            parts.append(f"{'代价' if is_zh else 'cost'}: {cost}")
+        lines.append(("• " if is_zh else "- ") + " | ".join(str(item) for item in parts))
+    if is_zh:
+        lines.append("硬规则: 后续章节必须承认以上资源、伤势、突破、功法或法宝状态变化。")
+    else:
+        lines.append(
+            "Hard rule: future chapters must acknowledge the resource, injury, "
+            "breakthrough, technique, or artifact state changes above.",
+        )
+    return "\n".join(lines)
+
+
+def _relationship_entries_from_container(
+    container: Mapping[str, object],
+) -> list[dict[str, object]]:
+    entries: list[dict[str, object]] = []
+    for key in (
+        "relationship_contracts",
+        "relationship_arcs",
+        "relationships",
+        "interpersonal_promises",
+        "romance_contracts",
+        "promises",
+    ):
+        for raw in _as_sequence(container.get(key)):
+            item = _as_mapping(raw)
+            if item:
+                item = {**item, "_source_key": key}
+                entries.append(item)
+    entries.extend(_ledger_entries(container, "relationship_events"))
+    entries.extend(_ledger_entries(container, "agency_debts"))
+
+    series_engine = _as_mapping(container.get("series_engine"))
+    for key in (
+        "relationship_contracts",
+        "relationship_arcs",
+        "relationships",
+        "interpersonal_promises",
+        "romance_contracts",
+        "promises",
+    ):
+        for raw in _as_sequence(series_engine.get(key)):
+            item = _as_mapping(raw)
+            if item:
+                item = {**item, "_source_key": f"series_engine.{key}"}
+                entries.append(item)
+    return entries
+
+
+def _relationship_entries_from_cast(
+    cast_spec: Mapping[str, object],
+) -> list[dict[str, object]]:
+    entries: list[dict[str, object]] = []
+    protagonist = _protagonist_from_cast(cast_spec)
+    protagonist_name = _clean_text(protagonist.get("name")) or "protagonist"
+
+    for raw in _as_sequence(protagonist.get("relationships")):
+        item = _as_mapping(raw)
+        if not item:
+            continue
+        target = _first_text(item, "character", "character_name", "target", "name")
+        entries.append(
+            {
+                **item,
+                "_source_key": "cast_spec.protagonist.relationships",
+                "character_a": protagonist_name,
+                "character_b": target,
+                "relationship_type": _first_text(item, "relationship_type", "type", "role"),
+                "tension_summary": _first_text(
+                    item,
+                    "tension_summary",
+                    "tension",
+                    "private_reality",
+                    "public_face",
+                ),
+            }
+        )
+
+    for raw in _as_sequence(cast_spec.get("supporting_cast")):
+        item = _as_mapping(raw)
+        if not item:
+            continue
+        relationship = _first_text(item, "relationship_to_protagonist", "relationship")
+        evolution = _first_text(item, "evolution_arc", "arc_trajectory", "arc")
+        role = _first_text(item, "role", "function")
+        if not any((relationship, evolution, role)):
+            continue
+        entries.append(
+            {
+                **item,
+                "_source_key": "cast_spec.supporting_cast",
+                "character_a": _first_text(item, "name", "character") or "supporting cast",
+                "character_b": protagonist_name,
+                "relationship_type": role,
+                "tension_summary": relationship,
+                "evolution_arc": evolution,
+            }
+        )
+
+    for raw in _as_sequence(cast_spec.get("conflict_map")):
+        item = _as_mapping(raw)
+        if not item:
+            continue
+        tension = _first_text(
+            item,
+            "tension",
+            "conflict",
+            "tension_summary",
+            "stakes",
+            "private_reality",
+        )
+        if not tension:
+            continue
+        entries.append(
+            {
+                **item,
+                "_source_key": "cast_spec.conflict_map",
+                "relationship_type": _first_text(item, "relationship_type", "type")
+                or "conflict",
+                "tension_summary": tension,
+            }
+        )
+    return entries
+
+
+def _extract_relationship_entries(
+    *,
+    metadata: Mapping[str, object],
+    story_bible_context: Mapping[str, object],
+    cast_spec: Mapping[str, object],
+) -> tuple[dict[str, object], ...]:
+    entries = _relationship_entries_from_container(metadata)
+    book_spec = _as_mapping(metadata.get("book_spec"))
+    entries.extend(_relationship_entries_from_container(book_spec))
+    entries.extend(_relationship_entries_from_container(story_bible_context))
+    entries.extend(_relationship_entries_from_cast(cast_spec))
+
+    seen: set[str] = set()
+    deduped: list[dict[str, object]] = []
+    for entry in entries:
+        character_a = _first_text(
+            entry,
+            "character_a",
+            "promisor_label",
+            "from_character",
+            "source_character",
+        )
+        character_b = _first_text(
+            entry,
+            "character_b",
+            "promisee_label",
+            "character",
+            "target",
+            "target_character",
+        )
+        anchor = _first_text(
+            entry,
+            "id",
+            "relationship_id",
+            "content",
+            "tension_summary",
+            "tension",
+            "relationship_type",
+        )
+        dedupe_key = f"{character_a}|{character_b}|{anchor or len(deduped)}".lower()
+        if dedupe_key in seen:
+            continue
+        seen.add(dedupe_key)
+        deduped.append(entry)
+    return tuple(deduped)
+
+
+def _relationship_mode_lines(
+    *,
+    metadata: Mapping[str, object],
+    language: str,
+) -> list[str]:
+    is_zh = language.lower().startswith("zh")
+    character_config = _extract_character_config(metadata)
+    romance_mode = _clean_text(
+        character_config.get("romance_mode") or metadata.get("romance_mode")
+    )
+    relationship_tension = _clean_text(
+        character_config.get("relationship_tension") or metadata.get("relationship_tension")
+    )
+    lines: list[str] = []
+    if romance_mode:
+        label = "关系模式" if is_zh else "relationship mode"
+        lines.append(f"{label}: {romance_mode}")
+    if relationship_tension:
+        label = "核心张力" if is_zh else "core tension"
+        lines.append(f"{label}: {relationship_tension}")
+    return lines
+
+
+def _relationship_parties(entry: Mapping[str, object]) -> str:
+    character_a = _first_text(
+        entry,
+        "character_a",
+        "promisor_label",
+        "from_character",
+        "source_character",
+    )
+    character_b = _first_text(
+        entry,
+        "character_b",
+        "promisee_label",
+        "character",
+        "target",
+        "target_character",
+    )
+    if character_a and character_b:
+        return f"{character_a} -> {character_b}"
+    if character_a:
+        return character_a
+    if character_b:
+        return character_b
+    return _first_text(entry, "name", "title", "relationship_type", "type") or "relationship"
+
+
+def _render_relationship_entry(entry: Mapping[str, object], *, is_zh: bool) -> str:
+    parties = _relationship_parties(entry)
+    relation_type = _first_text(entry, "relationship_type", "type", "kind", "role")
+    tension = _first_text(
+        entry,
+        "tension_summary",
+        "tension",
+        "private_reality",
+        "public_face",
+        "relationship_to_protagonist",
+        "content",
+    )
+    evolution = _first_text(entry, "evolution_arc", "arc_trajectory", "planned_shift")
+    promise = _first_text(entry, "promise", "content", "oath", "commitment")
+    agency_cost = _first_text(entry, "agency_cost", "cost", "price", "tradeoff")
+
+    parts = [parties]
+    if relation_type:
+        parts.append(f"{'类型' if is_zh else 'type'}: {relation_type}")
+    if tension:
+        parts.append(f"{'张力' if is_zh else 'tension'}: {tension}")
+    if evolution:
+        parts.append(f"{'阶段变化' if is_zh else 'stage shift'}: {evolution}")
+    if promise:
+        parts.append(f"{'承诺' if is_zh else 'promise'}: {promise}")
+    if agency_cost:
+        parts.append(f"{'选择代价' if is_zh else 'agency cost'}: {agency_cost}")
+    return ("• " if is_zh else "- ") + " | ".join(parts)
+
+
+def _build_relationship_agency_context_block(
+    *,
+    metadata: Mapping[str, object],
+    story_bible_context: Mapping[str, object],
+    cast_spec: Mapping[str, object],
+    genre: str | None,
+    sub_genre: str | None,
+    language: str,
+) -> tuple[str, tuple[str, ...]]:
+    explicit_block = _clean_text(
+        metadata.get("relationship_agency_context_block")
+        or metadata.get("relationship_agency_block")
+        or metadata.get("romance_contract_block")
+        or metadata.get("agency_contract_block"),
+    )
+    if explicit_block:
+        return explicit_block, ()
+
+    entries = _extract_relationship_entries(
+        metadata=metadata,
+        story_bible_context=story_bible_context,
+        cast_spec=cast_spec,
+    )
+    if not entries:
+        if _should_emit_relationship_agency(
+            genre=genre,
+            sub_genre=sub_genre,
+            metadata=metadata,
+        ):
+            return "", ("relationship_agency_missing",)
+        return "", ()
+
+    is_zh = language.lower().startswith("zh")
+    lines = (
+        ["【关系张力与主角能动性约束】"]
+        if is_zh
+        else ["[RELATIONSHIP / AGENCY CONSTRAINTS]"]
+    )
+    lines.extend(_relationship_mode_lines(metadata=metadata, language=language))
+    for entry in entries[:8]:
+        lines.append(_render_relationship_entry(entry, is_zh=is_zh))
+    if is_zh:
+        lines.append(
+            "硬规则: 每场关系戏必须改变距离/信任/权力/误会/承诺中的至少一项; "
+            "主角必须有主动选择和代价; 无CP项目不得把成长动力滑向隐藏恋爱; "
+            "恋爱/romantasy项目不得让关系原地暧昧。",
+        )
+    else:
+        lines.append(
+            "Hard rule: every relationship beat must change at least one of distance, "
+            "trust, power, misunderstanding, or promise; the protagonist must make an "
+            "active choice with a cost; no-CP projects must not drift into hidden romance; "
+            "romance/romantasy projects must not let tension idle in static ambiguity.",
+        )
+    return "\n".join(lines), ()
+
+
+def _faction_entries_from_container(container: Mapping[str, object]) -> list[dict[str, object]]:
+    entries: list[dict[str, object]] = []
+    for key in _FACTION_CONTAINER_KEYS:
+        value = container.get(key)
+        for raw in _as_sequence(value):
+            item = _as_mapping(raw)
+            if item:
+                entries.append({**item, "_source_key": key})
+
+        keyed = _as_mapping(value)
+        if keyed and any(field in keyed for field in ("name", "goal", "method")):
+            entries.append({**keyed, "_source_key": key})
+        elif keyed:
+            for name, raw in keyed.items():
+                item = _as_mapping(raw)
+                if item:
+                    entries.append({"name": str(name), **item, "_source_key": key})
+
+    series_engine = _as_mapping(container.get("series_engine"))
+    for key in _FACTION_CONTAINER_KEYS:
+        for raw in _as_sequence(series_engine.get(key)):
+            item = _as_mapping(raw)
+            if item:
+                entries.append({**item, "_source_key": f"series_engine.{key}"})
+    entries.extend(_ledger_entries(container, "faction_reactions"))
+    return entries
+
+
+def _extract_faction_entries(
+    *,
+    metadata: Mapping[str, object],
+    story_bible_context: Mapping[str, object],
+    world_spec: Mapping[str, object],
+) -> tuple[dict[str, object], ...]:
+    entries = _faction_entries_from_container(metadata)
+    entries.extend(_faction_entries_from_container(_as_mapping(metadata.get("book_spec"))))
+    entries.extend(_faction_entries_from_container(world_spec))
+    entries.extend(_faction_entries_from_container(story_bible_context))
+
+    active_factions = _as_sequence(story_bible_context.get("active_factions"))
+    for raw_name in active_factions:
+        name = _clean_text(raw_name)
+        if name:
+            entries.append({"name": name, "_source_key": "active_factions"})
+
+    seen: set[str] = set()
+    deduped: list[dict[str, object]] = []
+    for entry in entries:
+        name = _first_text(entry, "name", "faction", "organization", "sect", "clan")
+        anchor = _first_text(
+            entry,
+            "goal",
+            "method",
+            "relationship_to_protagonist",
+            "current_pressure",
+        )
+        dedupe_key = f"{name or len(deduped)}|{anchor or ''}".lower()
+        if dedupe_key in seen:
+            continue
+        seen.add(dedupe_key)
+        deduped.append(entry)
+    return tuple(deduped)
+
+
+def _render_faction_entry(entry: Mapping[str, object], *, is_zh: bool) -> str:
+    name = _first_text(entry, "name", "faction", "organization", "sect", "clan") or "faction"
+    goal = _first_text(entry, "goal", "interest", "core_goal", "agenda")
+    method = _first_text(entry, "method", "strategy", "operating_method", "means")
+    relation = _first_text(
+        entry,
+        "relationship_to_protagonist",
+        "stance",
+        "attitude",
+        "relation",
+    )
+    internal_conflict = _first_text(
+        entry,
+        "internal_conflict",
+        "internal_tension",
+        "contradiction",
+    )
+    pressure = _first_text(entry, "current_pressure", "pressure", "active_pressure")
+    reaction = _first_text(entry, "next_reaction", "reaction", "reaction_plan")
+    resource = _first_text(entry, "resource_need", "resource", "scarce_resource")
+
+    parts = [name]
+    if goal:
+        parts.append(f"{'目标' if is_zh else 'goal'}: {goal}")
+    if method:
+        parts.append(f"{'手段' if is_zh else 'method'}: {method}")
+    if relation:
+        parts.append(f"{'对主角关系' if is_zh else 'stance to protagonist'}: {relation}")
+    if internal_conflict:
+        parts.append(f"{'内部矛盾' if is_zh else 'internal conflict'}: {internal_conflict}")
+    if resource:
+        parts.append(f"{'资源需求' if is_zh else 'resource need'}: {resource}")
+    if pressure:
+        parts.append(f"{'当前压力' if is_zh else 'current pressure'}: {pressure}")
+    if reaction:
+        parts.append(f"{'下一步反应' if is_zh else 'next reaction'}: {reaction}")
+    return ("• " if is_zh else "- ") + " | ".join(parts)
+
+
+def _build_faction_ecology_context_block(
+    *,
+    metadata: Mapping[str, object],
+    story_bible_context: Mapping[str, object],
+    world_spec: Mapping[str, object],
+    genre: str | None,
+    sub_genre: str | None,
+    language: str,
+) -> tuple[str, tuple[str, ...]]:
+    explicit_block = _clean_text(
+        metadata.get("faction_ecology_context_block")
+        or metadata.get("faction_ecology_block")
+        or metadata.get("faction_reaction_block"),
+    )
+    if explicit_block:
+        return explicit_block, ()
+
+    entries = _extract_faction_entries(
+        metadata=metadata,
+        story_bible_context=story_bible_context,
+        world_spec=world_spec,
+    )
+    if not entries:
+        if _should_emit_faction_ecology(
+            genre=genre,
+            sub_genre=sub_genre,
+            metadata=metadata,
+            world_spec=world_spec,
+        ):
+            return "", ("faction_ecology_missing",)
+        return "", ()
+
+    is_zh = language.lower().startswith("zh")
+    lines = (
+        ["【阵营生态与反应压力约束】"]
+        if is_zh
+        else ["[FACTION ECOLOGY / REACTION CONSTRAINTS]"]
+    )
+    for entry in entries[:8]:
+        lines.append(_render_faction_entry(entry, is_zh=is_zh))
+    if is_zh:
+        lines.append(
+            "硬规则: 主角影响资源、身份、规则或公共声望时, 至少一个相关势力必须产生差异化反应, "
+            "或明确说明为什么暂不反应; 不得只写“所有势力震惊”; 同一势力再次出现必须推进目标、"
+            "手段、内部矛盾或对主角立场之一。",
+        )
+    else:
+        lines.append(
+            "Hard rule: when the protagonist affects resources, status, rules, or public "
+            "reputation, at least one relevant faction must produce a differentiated "
+            "reaction or a concrete reason for no reaction; do not write only 'all "
+            "factions are shocked'; repeated faction appearances must advance goal, "
+            "method, internal conflict, or stance toward the protagonist.",
+        )
+    return "\n".join(lines), ()
 
 
 def _build_rule_system_context_block(
@@ -376,7 +1021,7 @@ def build_premium_genre_engine_blocks(
     if not metadata:
         metadata = {}
 
-    warnings: list[str] = []
+    warnings: list[str] = list(_premium_state_ledger_report_warnings(metadata))
     world_spec = _extract_world_spec(metadata)
     cast_spec = _extract_cast_spec(metadata)
     volume_plan = _extract_volume_plan(metadata)
@@ -401,6 +1046,20 @@ def build_premium_genre_engine_blocks(
             )
         except Exception as exc:
             warnings.append(f"progression_context_invalid:{exc.__class__.__name__}")
+    progression_ledger_entries = (
+        *_ledger_entries(metadata, "progression_events"),
+        *_ledger_entries(story_context, "progression_events"),
+    )
+    progression_ledger_block = _render_progression_ledger_appendix(
+        progression_ledger_entries,
+        language=language,
+    )
+    if progression_ledger_block:
+        progression_block = (
+            f"{progression_block}\n{progression_ledger_block}"
+            if progression_block
+            else progression_ledger_block
+        )
 
     decision_block, decision_warnings = _build_decision_policy_block(
         metadata=metadata,
@@ -419,10 +1078,30 @@ def build_premium_genre_engine_blocks(
         language=language,
     )
     warnings.extend(rule_warnings)
+    faction_block, faction_warnings = _build_faction_ecology_context_block(
+        metadata=metadata,
+        story_bible_context=story_context,
+        world_spec=world_spec,
+        genre=genre,
+        sub_genre=sub_genre,
+        language=language,
+    )
+    warnings.extend(faction_warnings)
+    relationship_block, relationship_warnings = _build_relationship_agency_context_block(
+        metadata=metadata,
+        story_bible_context=story_context,
+        cast_spec=cast_spec,
+        genre=genre,
+        sub_genre=sub_genre,
+        language=language,
+    )
+    warnings.extend(relationship_warnings)
     return PremiumGenreEngineBlocks(
         progression_context_block=progression_block,
         decision_policy_block=decision_block,
         rule_system_context_block=rule_block,
+        faction_ecology_context_block=faction_block,
+        relationship_agency_context_block=relationship_block,
         warnings=tuple(warnings),
     )
 

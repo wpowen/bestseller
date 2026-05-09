@@ -955,6 +955,14 @@ async def run_scene_pipeline(
                     shared_context.rule_system_context_block = (
                         _engine_blocks.rule_system_context_block
                     )
+                if _engine_blocks.faction_ecology_context_block:
+                    shared_context.faction_ecology_context_block = (
+                        _engine_blocks.faction_ecology_context_block
+                    )
+                if _engine_blocks.relationship_agency_context_block:
+                    shared_context.relationship_agency_context_block = (
+                        _engine_blocks.relationship_agency_context_block
+                    )
                 if _engine_blocks.warnings:
                     shared_context.contradiction_warnings.extend(
                         f"[精品类型引擎] {warning}" for warning in _engine_blocks.warnings

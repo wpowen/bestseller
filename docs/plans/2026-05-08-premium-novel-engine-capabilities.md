@@ -20,7 +20,7 @@ Direct publishing, monetization, platform upload, ads, and sales operations are 
 
 ## Current Implementation Status
 
-Status on 2026-05-08:
+Status on 2026-05-09:
 
 - First engineering slice is implemented.
 - `diversity_budget.hot_vocab` no longer crashes on malformed persisted chapter keys.
@@ -36,21 +36,35 @@ Status on 2026-05-08:
 - `src/bestseller/services/pipelines.py` now injects premium genre blocks into `shared_context` before `generate_scene_draft`.
 - Rule-system projects now get `rule_system_context_block` from `project.metadata_json` or `shared_context.story_bible.world_rules`, so民俗悬疑/规则怪谈/无限流类项目 can expose visible rule effects, exploit paths, and costs to the writer.
 - If a rule-system genre declares no usable rules, the premium engine records `rule_system_missing` and surfaces it through context warnings instead of silently falling back to generic prose.
+- Faction-heavy family, sect, strategy-worldbuilding, base-building, court, political, and institution-pressure projects now get `faction_ecology_context_block` from `factions`, `sects`, `clans`, `organizations`, `institutions`, `forces`, and `active_factions` metadata.
+- The faction block hard-requires differentiated faction reactions when the protagonist affects resources, status, rules, or public reputation; it blocks generic "all factions are shocked" reactions.
+- If a faction-heavy genre declares no usable faction network, the premium engine records `faction_ecology_missing` and surfaces it through context warnings.
+- Relationship-driven, romantasy, romance, female-growth, and no-CP projects now get `relationship_agency_context_block` from `cast_spec`, `relationships`, `interpersonal_promises`, and relationship/romance contract metadata.
+- The relationship/agency block hard-requires every relationship beat to change distance, trust, power, misunderstanding, or promise; it also requires protagonist agency and blocks no-CP drift into hidden romance.
+- If a relationship/agency-driven genre declares no usable relationship network, the premium engine records `relationship_agency_missing` and surfaces it through context warnings.
+- Living story bible chapter updates now ask the editor LLM for `premium_engine_updates` and append them to `project.metadata_json["premium_state_ledger"]`.
+- The premium engine now reads `premium_state_ledger` back into the next scene's progression, rule, faction, and relationship blocks, creating the first append-only state loop across chapters.
+- `src/bestseller/services/premium_state_ledger.py` now validates that ledger events have causal support: progression events need causes, rule events need visible effect plus cost/exploit path, faction reactions must be differentiated, relationship events need changed axis plus active choice, and agency debts need due windows.
+- Living story bible updates persist `premium_state_ledger_report`, and the premium engine surfaces failing ledger findings as writer-context warnings.
 - `tests/unit/test_progression_services.py` proves a xianxia unearned breakthrough fails and an earned breakthrough passes.
 - `tests/unit/test_decision_policy.py` proves a cautious protagonist rejects public vanity duels and allows high risk when rare upside plus escape route is explicit.
 - `tests/unit/test_premium_genre_engine.py` proves xianxia metadata produces progression context plus cautious protagonist policy.
-- `tests/unit/test_premium_genre_engine.py` also proves rule-system metadata produces a writer-ready rule block.
-- `tests/unit/test_hype_draft_plumbing.py` proves premium engine blocks land in the scene writer prompt.
-- `tests/unit/test_pipeline_services.py::test_run_scene_pipeline_injects_premium_engine_blocks_into_writer_context` proves the real scene pipeline injects the blocks into writer context.
+- `tests/unit/test_premium_genre_engine.py` also proves rule-system metadata produces a writer-ready rule block, family-cultivation metadata produces a faction ecology block, and romantasy metadata produces a writer-ready relationship/agency block.
+- `tests/unit/test_hype_draft_plumbing.py` proves premium engine blocks land in the scene writer prompt in the intended order.
+- `tests/unit/test_pipeline_services.py::test_run_scene_pipeline_injects_premium_engine_blocks_into_writer_context` proves the real scene pipeline injects all five blocks into writer context.
+- `tests/unit/test_pipeline_services.py::test_generate_scene_draft_direct_settings_injects_premium_blocks` proves direct scene writing also injects all five blocks.
+- `tests/unit/test_story_bible_services.py::test_update_story_bible_records_premium_state_ledger` proves chapter-end extraction records premium state events.
+- `tests/unit/test_premium_genre_engine.py::test_premium_state_ledger_feeds_next_scene_blocks` proves those events feed the next scene's premium blocks.
+- `tests/unit/test_premium_state_ledger.py` proves valid state events pass and fake events produce actionable findings.
 
 Latest verification:
 
 - `./.venv/bin/python -m ruff check src/bestseller/domain/progression.py src/bestseller/services/progression.py tests/unit/test_progression_services.py` passes.
 - `./.venv/bin/python -m ruff check src/bestseller/domain/decision_policy.py src/bestseller/services/decision_policy.py tests/unit/test_decision_policy.py src/bestseller/domain/progression.py src/bestseller/services/progression.py tests/unit/test_progression_services.py` passes.
 - `./.venv/bin/python -m ruff check src/bestseller/services/premium_genre_engine.py tests/unit/test_premium_genre_engine.py src/bestseller/domain/context.py tests/unit/test_hype_draft_plumbing.py` passes.
-- `./.venv/bin/python -m pytest tests/unit/test_premium_genre_engine.py tests/unit/test_hype_draft_plumbing.py tests/unit/test_pipeline_services.py::test_run_scene_pipeline_injects_premium_engine_blocks_into_writer_context tests/unit/test_prompt_constructor.py tests/unit/test_decision_policy.py tests/unit/test_progression_services.py -q --no-cov` passes with 69 tests.
+- `./.venv/bin/python -m pytest tests/unit/test_premium_state_ledger.py tests/unit/test_story_bible_services.py tests/unit/test_premium_genre_engine.py tests/unit/test_hype_draft_plumbing.py tests/unit/test_pipeline_services.py::test_generate_scene_draft_direct_settings_injects_premium_blocks tests/unit/test_pipeline_services.py::test_run_scene_pipeline_injects_premium_engine_blocks_into_writer_context tests/unit/test_progression_services.py tests/unit/test_decision_policy.py -q --no-cov` passes with 72 tests.
 - `./.venv/bin/python -m pytest tests/unit/test_decision_policy.py tests/unit/test_diversity_budget.py tests/unit/test_prompt_constructor.py tests/unit/test_progression_services.py tests/unit/test_story_bible_coercion.py -q --no-cov` passes with 157 tests.
-- `./.venv/bin/python -m pytest -q --no-cov` passes with 3075 tests.
+- `./.venv/bin/python -m pytest -q --no-cov` passes with 3085 tests.
 - `./.venv/bin/python -m pytest -q` currently fails only on the existing global coverage threshold: total coverage is below `--cov-fail-under=80` even though all behavior tests pass.
 
 ## Live Integration Map
@@ -63,11 +77,15 @@ The premium engine is now connected at the pre-draft scene-writing seam:
    - `progression_context_block`
    - `decision_policy_block`
    - `rule_system_context_block`
+   - `faction_ecology_context_block`
+   - `relationship_agency_context_block`
 4. `run_scene_pipeline` attaches those blocks to `shared_context`.
 5. `generate_scene_draft` forwards the packet to `build_scene_draft_prompts`.
 6. `build_scene_draft_prompts` injects the blocks before lower-tier diversity and craft guidance.
 
-This means current xianxia/progression projects can use the new ability if their story bible has enough structured metadata. Current民俗悬疑/rule-system projects can also use the rule block if `world_rules` or rule-ledger metadata is present. The remaining gap is post-chapter state mutation: generated chapters do not yet automatically update resources, techniques, artifacts, bottlenecks, rules, costs, and decision events.
+Direct `generate_scene_draft` calls now also run the same premium engine injection after building their local context, so non-pipeline scene writing tasks do not silently bypass the architecture.
+
+This means current xianxia/progression projects can use the new ability if their story bible has enough structured metadata. Current民俗悬疑/rule-system projects can also use the rule block if `world_rules` or rule-ledger metadata is present. Current family/sect/court/faction-heavy projects can receive faction ecology constraints if faction metadata is present. Current female-growth/no-CP and romantasy projects can now receive relationship/agency constraints if `cast_spec`, `relationships`, `interpersonal_promises`, or explicit relationship contract metadata is present. Chapter-end updates now also record an append-only `premium_state_ledger` and feed it back into the next scene's premium blocks. The remaining gap is authoritative mutation and validation: generated chapters record resources, rules, faction reactions, relationship stages, promises, and agency debts, but do not yet safely mutate canonical resource balances or block invalid state transitions.
 
 ## Current Project Readiness Audit
 
@@ -75,8 +93,8 @@ Observed local outputs on 2026-05-08:
 
 - `xianxia-upgrade-1776137730`: 551 exported chapters. Most aligned with the new progression/decision engine, but only future generation benefits automatically; existing exported chapters still contain historical audit issues. Needs DB metadata to include `world_spec.power_system`, `cast_spec.protagonist.power_tier`, resources, and `volume_plan`.
 - `exorcist-detective-1778051012`: 16 exported chapters plus `story-bible/rule-ledger.md`. This project needs rule-system support more than cultivation support; the rule-system block was added specifically so future scenes can consume `world_rules`/rule-ledger state through the same writer context path.
-- `female-no-cp-1776303225`: 481 exported chapters. Current premium slice helps only indirectly. It still needs a female-growth/no-CP relationship-agency engine: career/resource ladder, social pressure, non-romance bond network, and agency checks.
-- `romantasy-1776330993`: 412 exported chapters. Current premium slice helps only if the world has hard magic/rules, but it still lacks romance/consent/tension/payoff contracts.
+- `female-no-cp-1776303225`: 481 exported chapters. Future generation can now consume relationship/agency constraints if the metadata contains a non-romance bond network. It still needs career/resource ladder state, social pressure validators, and post-chapter agency-debt mutation.
+- `romantasy-1776330993`: 412 exported chapters. Future generation can now consume romance/relationship tension contracts if metadata contains relationship arcs or promises. It still needs consent/intimacy boundary validators, jealousy topology, and romantic payoff cadence tracking.
 - `superhero-fiction-*`: long exported projects. Current premium slice can represent power constraints only if stored as `power_system`, but superhero fiction still needs ability-limit ledgers, civilian-cost contracts, villain-reaction ecology, and public-trust state.
 
 Current audit conclusion:
@@ -89,13 +107,14 @@ Current audit conclusion:
 
 Support levels after the current engineering slice:
 
-- Cultivation survival / `凡人流`: partially supported. Realm ladder, current realm, resource ledger, active bottleneck, and cautious decision policy can now reach the writer prompt. Missing faction ecology, opportunity map, and post-chapter resource mutation.
+- Cultivation survival / `凡人流`: partially supported. Realm ladder, current realm, resource ledger, active bottleneck, cautious decision policy, optional faction ecology, and recent premium state events can now reach the writer prompt. Missing opportunity map and authoritative post-chapter resource/faction mutation.
 - LitRPG / system progression: partially supported. Progression scaffolding is reusable, but stat sheets, quests, rewards, cooldowns, and system-law validation are not first-class yet.
-- Rule-system mystery / `诡秘式`: weak partial support. Clues and payoffs exist, but rule lattice, pathway legality, ritual costs, and forbidden knowledge are still missing.
+- Rule-system mystery / `诡秘式`: weak partial support. Clues, payoffs, rule blocks, and recent rule-use events exist, but rule lattice, pathway legality, ritual costs, and forbidden knowledge are still missing.
 - Case/court/cultivation hybrid / `大奉式`: weak partial support. Case-like presets and narrative lines exist, but evidence chain, suspects, institution pressure, and case-to-conspiracy linkage are not first-class.
-- Apocalypse/resource/base-building: prompt-level support. Resource scarcity is represented only for protagonist progression, not settlement inventory, logistics, faction needs, or territory state.
+- Apocalypse/resource/base-building: weak partial support. Faction/organization pressure can now reach the writer prompt, but resource scarcity is represented only for protagonist progression, not settlement inventory, logistics, faction needs, or territory state.
 - Urban cultivation / black-tech rise: prompt-level to weak partial support. Power progression fallback works when metadata has `power_system`, but tech tree, business competitors, patents, capital, and public reaction are not modeled.
-- Romance / dark romance / romantasy / reverse harem: prompt-level support. Relationship milestones exist, but consent/tension contracts, jealousy topology, intimacy boundaries, and romantic payoff cadence need a dedicated engine.
+- Female-growth / no-CP: partial support. Relationship/agency constraints and recent agency debts now reach the writer prompt and explicitly prevent hidden-romance drift, but career/resource ladders, social pressure state, and agency-debt validators are not first-class yet.
+- Romance / dark romance / romantasy / reverse harem: partial support. Relationship/agency contracts now reach the writer prompt and prevent static ambiguity, but consent/tension validators, jealousy topology, intimacy boundaries, and romantic payoff cadence are not first-class yet.
 - Mystery / police / cozy mystery: partial support. Clue/payoff tools exist, but legality of evidence, suspect state, alibi, and reveal fairness need structured validators.
 - Esports / game competition: prompt-level support. Match state, tournament bracket, team tactics, patch/meta changes, and viewer pressure are not first-class.
 - Sci-fi / mecha / military / space opera: prompt-level support. World and fleet details can be prompted, but logistics, tech constraints, command doctrine, and battle-state ledgers are not modeled.

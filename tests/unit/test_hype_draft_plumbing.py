@@ -95,6 +95,8 @@ class TestSceneContextPacketHypeDefaults:
         assert packet.progression_context_block is None
         assert packet.decision_policy_block is None
         assert packet.rule_system_context_block is None
+        assert packet.faction_ecology_context_block is None
+        assert packet.relationship_agency_context_block is None
 
     def test_packet_accepts_populated_hype_fields(self) -> None:
         packet = SceneWriterContextPacket(
@@ -117,10 +119,17 @@ class TestSceneContextPacketHypeDefaults:
             progression_context_block="【进阶体系约束】不得无因升级。",
             decision_policy_block="【主角决策策略】不得为虚荣冒险。",
             rule_system_context_block="【规则系统约束】规则必须有代价。",
+            faction_ecology_context_block="【阵营生态与反应压力约束】势力必须反应。",
+            relationship_agency_context_block="【关系张力与主角能动性约束】关系戏必须推进。",
         )
         assert packet.progression_context_block == "【进阶体系约束】不得无因升级。"
         assert packet.decision_policy_block == "【主角决策策略】不得为虚荣冒险。"
         assert packet.rule_system_context_block == "【规则系统约束】规则必须有代价。"
+        assert packet.faction_ecology_context_block == "【阵营生态与反应压力约束】势力必须反应。"
+        assert (
+            packet.relationship_agency_context_block
+            == "【关系张力与主角能动性约束】关系戏必须推进。"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -245,6 +254,11 @@ class TestSceneDraftPromptsHypeBlocks:
             "【主角决策策略】DECISION_MARKER: 不可为虚荣公开决斗, 优先避险夺取稀缺资源。"
         )
         rule_block = "【规则系统约束】RULE_MARKER: 每条民俗规则必须有可见效果、破局路径和反噬。"
+        faction_block = "【阵营生态与反应压力约束】FACTION_MARKER: 势力反应必须差异化。"
+        relationship_block = (
+            "【关系张力与主角能动性约束】RELATIONSHIP_MARKER: "
+            "关系戏必须改变信任/权力/误会/承诺。"
+        )
         _, user_prompt = build_scene_draft_prompts(
             _sample_project(),
             _sample_chapter(),
@@ -253,6 +267,8 @@ class TestSceneDraftPromptsHypeBlocks:
             progression_context_block=progression_block,
             decision_policy_block=decision_block,
             rule_system_context_block=rule_block,
+            faction_ecology_context_block=faction_block,
+            relationship_agency_context_block=relationship_block,
         )
         assert "【进阶体系约束】" in user_prompt
         assert "不得无因突破筑基" in user_prompt
@@ -260,5 +276,11 @@ class TestSceneDraftPromptsHypeBlocks:
         assert "不可为虚荣公开决斗" in user_prompt
         assert "【规则系统约束】" in user_prompt
         assert "每条民俗规则必须有可见效果" in user_prompt
+        assert "【阵营生态与反应压力约束】" in user_prompt
+        assert "势力反应必须差异化" in user_prompt
+        assert "【关系张力与主角能动性约束】" in user_prompt
+        assert "关系戏必须改变信任/权力/误会/承诺" in user_prompt
         assert user_prompt.index("PROGRESSION_MARKER") < user_prompt.index("DECISION_MARKER")
         assert user_prompt.index("DECISION_MARKER") < user_prompt.index("RULE_MARKER")
+        assert user_prompt.index("RULE_MARKER") < user_prompt.index("FACTION_MARKER")
+        assert user_prompt.index("FACTION_MARKER") < user_prompt.index("RELATIONSHIP_MARKER")

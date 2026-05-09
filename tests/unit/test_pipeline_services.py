@@ -459,13 +459,41 @@ async def test_run_scene_pipeline_injects_premium_engine_blocks_into_writer_cont
                 "name": "沈砚",
                 "power_tier": "炼气十层",
                 "resources": [{"resource_key": "筑基丹", "amount": 1}],
-            }
+                "relationships": [
+                    {
+                        "character": "港务官",
+                        "type": "temporary ally",
+                        "tension": (
+                            "她要查清筑基丹流向, "
+                            "沈砚必须决定是否借她的船离场。"
+                        ),
+                    }
+                ],
+            },
+            "supporting_cast": [
+                {
+                    "name": "港务官",
+                    "role": "broker",
+                    "relationship_to_protagonist": "互相利用的临时盟友",
+                    "evolution_arc": "从利益交换到一次有限信任",
+                }
+            ],
         },
         "volume_plan": [
             {
                 "volume_number": 1,
                 "volume_title": "入宗夺丹",
                 "opening_state": {"protagonist_power_tier": "炼气十层"},
+            }
+        ],
+        "factions": [
+            {
+                "name": "执法堂",
+                "goal": "追回秘境中流失的筑基资源。",
+                "method": "盘查、封港、追踪丹药气息。",
+                "relationship_to_protagonist": "制度性压力",
+                "internal_conflict": "长老要立威, 外务执事想私下分润。",
+                "next_reaction": "若筑基丹消失, 会先封锁码头再查散修。",
             }
         ],
     }
@@ -576,6 +604,13 @@ async def test_run_scene_pipeline_injects_premium_engine_blocks_into_writer_cont
     assert context.rule_system_context_block is not None
     assert "【规则系统约束】" in context.rule_system_context_block
     assert "试炼禁令" in context.rule_system_context_block
+    assert context.faction_ecology_context_block is not None
+    assert "【阵营生态与反应压力约束】" in context.faction_ecology_context_block
+    assert "执法堂" in context.faction_ecology_context_block
+    assert context.relationship_agency_context_block is not None
+    assert "【关系张力与主角能动性约束】" in context.relationship_agency_context_block
+    assert "沈砚 -> 港务官" in context.relationship_agency_context_block
+    assert "主角必须有主动选择和代价" in context.relationship_agency_context_block
 
 
 @pytest.mark.asyncio
@@ -999,8 +1034,36 @@ async def test_generate_scene_draft_direct_settings_injects_premium_blocks(
                 "name": "沈砚",
                 "power_tier": "炼气十层",
                 "resources": [{"resource_key": "筑基丹", "amount": 1}],
-            }
+                "relationships": [
+                    {
+                        "character": "港务官",
+                        "type": "temporary ally",
+                        "tension": (
+                            "她要查清筑基丹流向, "
+                            "沈砚必须决定是否借她的船离场。"
+                        ),
+                    }
+                ],
+            },
+            "supporting_cast": [
+                {
+                    "name": "港务官",
+                    "role": "broker",
+                    "relationship_to_protagonist": "互相利用的临时盟友",
+                    "evolution_arc": "从利益交换到一次有限信任",
+                }
+            ],
         },
+        "factions": [
+            {
+                "name": "执法堂",
+                "goal": "追回秘境中流失的筑基资源。",
+                "method": "盘查、封港、追踪丹药气息。",
+                "relationship_to_protagonist": "制度性压力",
+                "internal_conflict": "长老要立威, 外务执事想私下分润。",
+                "next_reaction": "若筑基丹消失, 会先封锁码头再查散修。",
+            }
+        ],
     }
     chapter = build_chapter(project.id)
     scene = build_scene(project.id, chapter.id)
@@ -1042,6 +1105,7 @@ async def test_generate_scene_draft_direct_settings_injects_premium_blocks(
                         "rule_code": "R-001",
                         "name": "试炼禁令",
                         "description": "秘境偷取筑基丹会触发执法堂追索。",
+                        "story_consequence": "主角不能正面带丹离开秘境。",
                         "exploitation_potential": "先藏丹后换身份离场。",
                         "future_backlash": "宗门会追查资源流向。",
                     }
@@ -1077,6 +1141,10 @@ async def test_generate_scene_draft_direct_settings_injects_premium_blocks(
     assert "public_vanity_duel" in context.decision_policy_block
     assert context.rule_system_context_block is not None
     assert "试炼禁令" in context.rule_system_context_block
+    assert context.faction_ecology_context_block is not None
+    assert "执法堂" in context.faction_ecology_context_block
+    assert context.relationship_agency_context_block is not None
+    assert "沈砚 -> 港务官" in context.relationship_agency_context_block
 
 
 @pytest.mark.asyncio

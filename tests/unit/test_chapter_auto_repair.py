@@ -155,6 +155,35 @@ async def test_report_without_blocking_codes_returns_no_trigger() -> None:
 
 
 @pytest.mark.asyncio
+async def test_stored_duplicate_block_triggers_repair_even_with_latest_report() -> None:
+    chapter = FakeChapter(
+        metadata_json={
+            "blocked_by_write_safety_gate": True,
+            "write_safety_block_code": "CROSS_CHAPTER_REPETITION",
+            "write_safety_hint": "第30章复用了第29章段落。",
+            "post_assembly_duplicate_gate": {"status": "blocked"},
+        },
+    )
+    scene = FakeScene(chapter_id=chapter.id, scene_number=1)
+    report = FakeQualityReport(report_json={"blocking_codes": []})
+    session = FakeSession(scalar_queue=[report], scalars_queue=[[scene]])
+
+    triggered, codes = await maybe_prepare_chapter_auto_repair(
+        session,
+        project=FakeProject(),
+        chapter=chapter,
+        repairable_codes=("CROSS_CHAPTER_REPETITION",),
+    )
+
+    assert triggered is True
+    assert codes == ("CROSS_CHAPTER_REPETITION",)
+    assert chapter.production_state == "pending"
+    assert scene.status == SceneStatus.NEEDS_REWRITE.value
+    assert "第30章复用了第29章段落" in scene.metadata_json["auto_repair_hint"]
+    assert "post_assembly_duplicate_gate" not in chapter.metadata_json
+
+
+@pytest.mark.asyncio
 async def test_non_repairable_code_returns_the_codes_but_not_triggered() -> None:
     """A deterministic block (e.g. naming) must surface the codes but
     *not* trigger auto-repair — user intervention is required."""
@@ -468,6 +497,40 @@ async def test_canon_forbidden_term_triggers_canon_rewrite_hint() -> None:
     hint = scenes[0].metadata_json["auto_repair_hint"]
     assert "已禁止的旧设定" in hint
     assert "守夜人" in hint
+
+
+@pytest.mark.asyncio
+async def test_naming_out_of_pool_triggers_roster_rewrite_hint() -> None:
+    chapter = FakeChapter()
+    scenes = [FakeScene(chapter_id=chapter.id, scene_number=1)]
+    report = FakeQualityReport(
+        report_json={
+            "blocking_codes": ["NAMING_OUT_OF_POOL"],
+            "violations": [
+                {
+                    "code": "NAMING_OUT_OF_POOL",
+                    "detail": "1 name(s) not in pool: 严评委×3",
+                }
+            ],
+        },
+    )
+    session = FakeSession(scalar_queue=[report], scalars_queue=[scenes])
+
+    triggered, codes = await maybe_prepare_chapter_auto_repair(
+        session,
+        project=FakeProject(),
+        chapter=chapter,
+        repairable_codes=("NAMING_OUT_OF_POOL",),
+    )
+
+    assert triggered is True
+    assert codes == ("NAMING_OUT_OF_POOL",)
+    assert chapter.production_state == "pending"
+    assert scenes[0].status == SceneStatus.NEEDS_REWRITE.value
+    hint = scenes[0].metadata_json["auto_repair_hint"]
+    assert "角色池外姓名" in hint
+    assert "严评委" in hint
+    assert "不要再创造新的中文或英文专名" in hint
 
 
 @pytest.mark.asyncio

@@ -19,6 +19,10 @@ from bestseller.infra.db.models import (
 )
 from bestseller.services.publishing.base import ChapterPublishMeta
 from bestseller.services.publishing.registry import get_adapter
+from bestseller.services.exports import (
+    collect_publication_blockers,
+    load_publication_comparison_payloads,
+)
 from bestseller.settings import AppSettings
 
 logger = logging.getLogger(__name__)
@@ -114,6 +118,28 @@ async def publish_next_chapter(
         await session.flush()
 
         try:
+            comparison_payloads = await load_publication_comparison_payloads(
+                session,
+                schedule.project_id,
+                through_chapter_number=next_chapter_number,
+            )
+            publication_blockers = collect_publication_blockers(
+                project,
+                [(chapter, draft)],
+                comparison_payloads=comparison_payloads,
+            )
+            if publication_blockers:
+                history.status = "failed"
+                history.error_message = "; ".join(publication_blockers[:10])
+                history.retry_count = (history.retry_count or 0) + 1
+                logger.warning(
+                    "Publication gate blocked chapter %d for schedule %s: %s",
+                    next_chapter_number,
+                    schedule_id,
+                    history.error_message,
+                )
+                break
+
             result = await adapter.publish_chapter(content=draft.content_md, meta=meta)
             history.published_at = datetime.now(timezone.utc)
             history.status = "success" if result.success else "failed"
@@ -126,7 +152,7 @@ async def publish_next_chapter(
                 any_success = True
                 logger.info("Published chapter %d for schedule %s", next_chapter_number, schedule_id)
             else:
-                history.retry_count += 1
+                history.retry_count = (history.retry_count or 0) + 1
                 logger.warning(
                     "Failed to publish chapter %d: %s — stopping batch",
                     next_chapter_number,
@@ -136,7 +162,7 @@ async def publish_next_chapter(
         except Exception as exc:
             history.status = "failed"
             history.error_message = str(exc)
-            history.retry_count += 1
+            history.retry_count = (history.retry_count or 0) + 1
             logger.exception("Unexpected error publishing chapter %d — stopping batch", next_chapter_number)
             break  # Stop batch on exception
 

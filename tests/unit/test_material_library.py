@@ -32,6 +32,7 @@ from bestseller.services.material_library import (
     _rerank_in_python,
     _row_to_entry,
     ensure_coverage,
+    genre_aliases,
     insert_entry,
     library_has_any_genre_coverage,
     mark_used,
@@ -39,6 +40,12 @@ from bestseller.services.material_library import (
 )
 
 pytestmark = pytest.mark.unit
+
+
+def test_genre_aliases_expand_composite_occult_detective_genre() -> None:
+    aliases = genre_aliases("惊悚灵异", "驱魔探案综合")
+
+    assert aliases == ("惊悚灵异", "灵异", "悬疑")
 
 
 # ── Fake session + fake rows ───────────────────────────────────────────

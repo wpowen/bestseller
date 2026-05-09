@@ -249,6 +249,11 @@ async def test_update_story_bible_records_premium_state_ledger(
     assert ledger["relationship_events"][0]["character_a"] == "沈砚"
     assert ledger["agency_debts"][0]["debt"] == "必须补回筑基资源"
     assert project.metadata_json["premium_state_ledger_report"]["passed"] is True
+    snapshot = project.metadata_json["premium_state_snapshot"]
+    assert snapshot["passed"] is True
+    assert snapshot["resource_balances"]["沈砚"]["筑基丹"] == -1.0
+    assert snapshot["rule_state"]["R-001"]["last_cost"] == "散修身份暴露"
+    assert snapshot["relationship_state"]["沈砚 -> 港务官"]["axes"]["trust"] == "有限合作"
 
 
 def build_cast_spec() -> dict[str, object]:

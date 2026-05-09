@@ -12,6 +12,14 @@ class PremiumStateFinding:
     message: str
     path: str
 
+    def to_dict(self) -> dict[str, str]:
+        return {
+            "code": self.code,
+            "severity": self.severity,
+            "message": self.message,
+            "path": self.path,
+        }
+
 
 @dataclass(frozen=True, slots=True)
 class PremiumStateLedgerReport:
@@ -21,15 +29,7 @@ class PremiumStateLedgerReport:
     def to_dict(self) -> dict[str, Any]:
         return {
             "passed": self.passed,
-            "findings": [
-                {
-                    "code": finding.code,
-                    "severity": finding.severity,
-                    "message": finding.message,
-                    "path": finding.path,
-                }
-                for finding in self.findings
-            ],
+            "findings": [finding.to_dict() for finding in self.findings],
         }
 
 
@@ -57,6 +57,22 @@ def _text(entry: Mapping[str, object], *keys: str) -> str:
             if text:
                 return text
     return ""
+
+
+def _number(value: object) -> float | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int | float):
+        return float(value)
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return None
+        try:
+            return float(text)
+        except ValueError:
+            return None
+    return None
 
 
 def _finding(code: str, message: str, path: str, severity: str = "critical") -> PremiumStateFinding:
@@ -256,8 +272,132 @@ def validate_premium_state_ledger(ledger: Mapping[str, object] | None) -> Premiu
     return PremiumStateLedgerReport(passed=passed, findings=tuple(findings))
 
 
+def _add_resource_balance(
+    balances: dict[str, dict[str, float]],
+    *,
+    owner: str,
+    resource: str,
+    delta: float,
+) -> None:
+    owner_balances = balances.setdefault(owner, {})
+    owner_balances[resource] = owner_balances.get(resource, 0.0) + delta
+
+
+def _progression_delta(entry: Mapping[str, object]) -> float | None:
+    parsed = _number(entry.get("delta"))
+    if parsed is not None:
+        return parsed
+    event_type = _text(entry, "event_type", "type", "kind")
+    if event_type == "resource_spent":
+        return -1.0
+    if event_type == "resource_gained":
+        return 1.0
+    return None
+
+
+def _relationship_key(entry: Mapping[str, object]) -> str:
+    character_a = _text(entry, "character_a", "from_character")
+    character_b = _text(entry, "character_b", "target_character", "to_character")
+    return f"{character_a} -> {character_b}"
+
+
+def materialize_premium_state_snapshot(
+    ledger: Mapping[str, object] | None,
+) -> dict[str, Any]:
+    """Fold a valid append-only premium ledger into a compact authoritative snapshot."""
+    payload = _as_mapping(ledger)
+    report = validate_premium_state_ledger(payload)
+    snapshot: dict[str, Any] = {
+        "passed": report.passed,
+        "blocking_findings": [
+            finding.to_dict()
+            for finding in report.findings
+            if finding.severity == "critical"
+        ],
+        "resource_balances": {},
+        "rule_state": {},
+        "faction_pressure_queue": [],
+        "relationship_state": {},
+        "open_agency_debts": [],
+    }
+    if not report.passed:
+        return snapshot
+
+    balances: dict[str, dict[str, float]] = {}
+    for raw in _as_sequence(payload.get("progression_events")):
+        entry = _as_mapping(raw)
+        resource = _text(entry, "resource_key", "resource")
+        owner = _text(entry, "subject", "character", "owner") or "global"
+        delta = _progression_delta(entry)
+        if resource and delta is not None:
+            _add_resource_balance(balances, owner=owner, resource=resource, delta=delta)
+
+    rule_state: dict[str, dict[str, object]] = {}
+    for raw in _as_sequence(payload.get("rule_events")):
+        entry = _as_mapping(raw)
+        rule_key = _text(entry, "rule_code", "id", "name", "rule")
+        if not rule_key:
+            continue
+        rule_state[rule_key] = {
+            "name": _text(entry, "name", "rule") or rule_key,
+            "last_visible_effect": _text(entry, "visible_effect", "surface_effect", "effect"),
+            "last_exploit": _text(entry, "exploit_used", "exploitation_potential", "solution"),
+            "last_cost": _text(entry, "cost", "backlash", "price"),
+            "last_chapter": entry.get("chapter_number"),
+        }
+
+    faction_queue: list[dict[str, object]] = []
+    for raw in _as_sequence(payload.get("faction_reactions")):
+        entry = _as_mapping(raw)
+        faction_queue.append(
+            {
+                "faction": _text(entry, "faction", "name", "organization"),
+                "trigger": _text(entry, "trigger", "cause"),
+                "reaction": _text(entry, "reaction", "next_reaction", "response"),
+                "stance_change": _text(entry, "stance_change", "stance"),
+                "next_pressure": _text(entry, "next_pressure", "pressure"),
+                "chapter_number": entry.get("chapter_number"),
+            }
+        )
+
+    relationship_state: dict[str, dict[str, object]] = {}
+    for raw in _as_sequence(payload.get("relationship_events")):
+        entry = _as_mapping(raw)
+        key = _relationship_key(entry)
+        state = dict(relationship_state.get(key) or {"axes": {}})
+        axes = dict(state.get("axes") or {})
+        axis = _text(entry, "axis", "dimension")
+        if axis:
+            axes[axis] = _text(entry, "after", "state_after", "result")
+        state["axes"] = axes
+        state["last_active_choice"] = _text(entry, "active_choice", "choice")
+        state["last_cost"] = _text(entry, "cost", "price")
+        state["last_chapter"] = entry.get("chapter_number")
+        relationship_state[key] = state
+
+    open_debts: list[dict[str, object]] = []
+    for raw in _as_sequence(payload.get("agency_debts")):
+        entry = _as_mapping(raw)
+        open_debts.append(
+            {
+                "owner": _text(entry, "owner", "character", "subject"),
+                "debt": _text(entry, "debt", "promise", "obligation"),
+                "due_window": _text(entry, "due_window", "due", "deadline"),
+                "chapter_number": entry.get("chapter_number"),
+            }
+        )
+
+    snapshot["resource_balances"] = balances
+    snapshot["rule_state"] = rule_state
+    snapshot["faction_pressure_queue"] = faction_queue[-20:]
+    snapshot["relationship_state"] = relationship_state
+    snapshot["open_agency_debts"] = open_debts[-40:]
+    return snapshot
+
+
 __all__ = [
     "PremiumStateFinding",
     "PremiumStateLedgerReport",
+    "materialize_premium_state_snapshot",
     "validate_premium_state_ledger",
 ]

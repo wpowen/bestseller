@@ -134,6 +134,60 @@ def test_uses_power_system_metadata_fallback_when_world_spec_missing() -> None:
     assert "林澈" in blocks.decision_policy_block
 
 
+def test_premium_specs_override_invalid_legacy_world_spec() -> None:
+    blocks = build_premium_genre_engine_blocks(
+        project_metadata={
+            "sub_genre": "仙侠升级流",
+            "world_spec": {"power_system": {"tiers": [{"legacy": "invalid"}]}},
+            "premium_world_spec": {
+                "world_name": "末法宗门",
+                "power_system": {
+                    "name": "道种修行",
+                    "tiers": ["炼气", "筑基", "金丹"],
+                    "protagonist_starting_tier": "炼气",
+                },
+                "power_structure": "境界突破受资源账和宗门反馈约束。",
+            },
+            "premium_cast_spec": {
+                "protagonist": {
+                    "name": "宁尘",
+                    "role": "protagonist",
+                    "power_tier": "炼气",
+                }
+            },
+            "premium_volume_plan": [
+                {
+                    "volume_number": 1,
+                    "title": "杂役峰道种初动",
+                    "opening_state": {"protagonist_power_tier": "炼气"},
+                    "volume_resolution": {"protagonist_power_tier": "筑基"},
+                }
+            ],
+            "decision_policy": {
+                "character_name": "宁尘",
+                "archetype": "low-status-cautious-cultivation-upgrader",
+                "risk_tolerance": "low",
+            },
+            "premium_state_snapshot": {
+                "passed": True,
+                "faction_pressure_queue": [
+                    {
+                        "faction": "杂役峰",
+                        "trigger": "宁尘突破迹象",
+                        "reaction": "执事克扣资源并试探其后手",
+                    }
+                ],
+            },
+        },
+        genre="仙侠升级流",
+        sub_genre="宗门逆袭",
+    )
+
+    assert "炼气 → 筑基 → 金丹" in blocks.progression_context_block
+    assert "宁尘" in blocks.decision_policy_block
+    assert blocks.warnings == ()
+
+
 def test_builds_rule_system_block_from_story_bible_context() -> None:
     blocks = build_premium_genre_engine_blocks(
         project_metadata={"sub_genre": "民俗悬疑"},
@@ -369,3 +423,51 @@ def test_premium_state_ledger_report_surfaces_warnings() -> None:
     )
 
     assert "premium_state_ledger:generic_faction_reaction" in blocks.warnings
+
+
+def test_premium_state_snapshot_feeds_writer_blocks() -> None:
+    blocks = build_premium_genre_engine_blocks(
+        project_metadata={
+            "sub_genre": "家族修仙",
+            "premium_state_snapshot": {
+                "passed": True,
+                "resource_balances": {"沈砚": {"筑基丹": 1}},
+                "rule_state": {
+                    "R-001": {
+                        "name": "试炼禁令",
+                        "last_visible_effect": "执法堂封港",
+                        "last_cost": "散修身份暴露",
+                    }
+                },
+                "faction_pressure_queue": [
+                    {
+                        "faction": "执法堂",
+                        "trigger": "筑基丹消失",
+                        "reaction": "封锁码头并优先查散修",
+                    }
+                ],
+                "relationship_state": {
+                    "沈砚 -> 港务官": {
+                        "axes": {"trust": "有限合作"},
+                        "last_active_choice": "主动交出丹药",
+                    }
+                },
+                "open_agency_debts": [
+                    {
+                        "owner": "沈砚",
+                        "debt": "补回筑基资源",
+                        "due_window": "5章内",
+                    }
+                ],
+            },
+        },
+        genre="xianxia",
+        sub_genre="家族修仙",
+    )
+
+    assert "【权威进阶状态快照】" in blocks.progression_context_block
+    assert "沈砚: 筑基丹=1" in blocks.progression_context_block
+    assert "试炼禁令" in blocks.rule_system_context_block
+    assert "执法堂" in blocks.faction_ecology_context_block
+    assert "沈砚 -> 港务官" in blocks.relationship_agency_context_block
+    assert "补回筑基资源" in blocks.relationship_agency_context_block

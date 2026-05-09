@@ -88,6 +88,103 @@ async def test_create_project_creates_default_style_guide(monkeypatch: pytest.Mo
 
 
 @pytest.mark.asyncio
+async def test_create_project_initializes_genre_capabilities(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def fake_get_project_by_slug(session: object, slug: str) -> None:
+        return None
+
+    calls: list[tuple[object, str, str, str]] = []
+
+    async def fake_initialize(
+        session: object,
+        project: ProjectModel,
+    ) -> dict[str, object]:
+        calls.append((session, project.slug, project.genre, project.language))
+        return {"supported_pack": "category_action_progression_zh"}
+
+    monkeypatch.setattr(project_services, "get_project_by_slug", fake_get_project_by_slug)
+    monkeypatch.setattr(
+        project_services,
+        "initialize_project_genre_capabilities",
+        fake_initialize,
+    )
+    session = FakeSession()
+
+    project = await project_services.create_project(
+        session,
+        ProjectCreate(
+            slug="my-story",
+            title="My Story",
+            genre="仙侠升级",
+            sub_genre="宗门逆袭",
+            target_word_count=120000,
+            target_chapters=60,
+        ),
+        build_settings(),
+    )
+
+    assert calls == [(session, "my-story", "仙侠升级", project.language)]
+
+
+@pytest.mark.asyncio
+async def test_create_project_seeds_initial_planning_kernel(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def fake_get_project_by_slug(session: object, slug: str) -> None:
+        return None
+
+    async def fake_initialize(session: object, project: ProjectModel) -> dict[str, object]:
+        return {"supported_pack": "category_action_progression_zh"}
+
+    monkeypatch.setattr(project_services, "get_project_by_slug", fake_get_project_by_slug)
+    monkeypatch.setattr(
+        project_services,
+        "initialize_project_genre_capabilities",
+        fake_initialize,
+    )
+    session = FakeSession()
+
+    project = await project_services.create_project(
+        session,
+        ProjectCreate(
+            slug="my-story",
+            title="My Story",
+            genre="仙侠升级",
+            sub_genre="宗门逆袭",
+            target_word_count=120000,
+            target_chapters=60,
+            metadata={
+                "premise": "外门杂役得到会记账的道种。",
+                "story_facets": {
+                    "setting": "外门杂役峰与三月秘境",
+                    "narrative_drive": "低位反制",
+                    "trope_tags": ["凡人流", "宗门生存"],
+                },
+                "benchmark_works": ["凡人修仙传结构对标"],
+            },
+        ),
+        build_settings(),
+    )
+
+    report = project.metadata_json["prewrite_readiness_report"]
+    assert project.metadata_json["planning_kernel"]["project_slug"] == "my-story"
+    assert report["passed"] is False
+    assert any(
+        finding["code"] == "progression_engine_missing"
+        for finding in report["blocking_findings"]
+    )
+    assert any(
+        "补齐可计量的升级体系" in action
+        for action in report["recommended_repair_actions"]
+    )
+    assert any(
+        "资源账" in directive
+        for directive in project.metadata_json["prewrite_repair_directives"]
+    )
+
+
+@pytest.mark.asyncio
 async def test_create_project_applies_writing_profile_to_style_guide_and_metadata(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

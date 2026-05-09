@@ -151,6 +151,65 @@ def test_novel_studio_defaults_do_not_seed_apocalypse_story_template() -> None:
     assert 'const defaultGenrePreset = genrePresets.find((item) => item.key === "apocalypse-supply");' not in html
 
 
+def test_project_repair_status_payload_marks_repair_gate() -> None:
+    project = SimpleNamespace(
+        status="paused",
+        metadata_json={
+            "production_paused": True,
+            "generation_resume_blocked_until_repair_audit": True,
+            "repair_audit_out_of_range_chapters": 470,
+        },
+    )
+    payload = web_server._build_project_repair_status_payload(  # noqa: SLF001
+        project,
+        [
+            {"status": "complete", "production_state": "ok", "count": 27},
+            {"status": "revision", "production_state": "blocked", "count": 470},
+            {"status": "revision", "production_state": "ok", "count": 3},
+        ],
+    )
+
+    assert payload["phase"] == "repair_gate"
+    assert payload["is_repairing"] is True
+    assert payload["repair_scope_total"] == 470
+    assert payload["repair_remaining"] == 470
+    assert payload["repair_completed"] == 0
+    assert payload["progress_percent"] == 0
+    assert payload["complete_ok_chapters"] == 27
+
+
+def test_project_repair_status_payload_tracks_progress_after_unblocking() -> None:
+    project = SimpleNamespace(
+        status="paused",
+        metadata_json={
+            "production_paused": True,
+            "repair_audit_out_of_range_chapters": 470,
+        },
+    )
+    payload = web_server._build_project_repair_status_payload(  # noqa: SLF001
+        project,
+        [
+            {"status": "complete", "production_state": "ok", "count": 127},
+            {"status": "revision", "production_state": "blocked", "count": 370},
+        ],
+    )
+
+    assert payload["repair_scope_total"] == 470
+    assert payload["repair_remaining"] == 370
+    assert payload["repair_completed"] == 100
+    assert payload["progress_percent"] == 21.3
+
+
+def test_novel_studio_has_repair_status_surface() -> None:
+    html = web_server._UI_HTML_PATH.read_text(encoding="utf-8")  # noqa: SLF001
+
+    assert 'id="repair-status-panel"' in html
+    assert 'id="summary-repair-progress"' in html
+    assert "function renderRepairStatus" in html
+    assert "function renderProjectShellFromList" in html
+    assert "repair_status?.is_repairing" in html
+
+
 def test_resolve_story_bible_progress_returns_current_frontier_and_next_gate() -> None:
     story_bible = SimpleNamespace(
         world_backbone=SimpleNamespace(title="全书世界主干"),

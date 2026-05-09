@@ -160,6 +160,12 @@ class SceneWriterContextPacket(BaseModel):
     # ── Genre-specific constraint block ──
     genre_constraint_block: str | None = None
 
+    # ── Ranking-level book capability profile ──
+    # Per-book writing constraints derived from benchmark/ranking analysis.
+    # This is separate from generic genre constraints: it captures the exact
+    # engines this specific book must keep alive across all execution tasks.
+    ranking_capability_profile_block: str | None = None
+
     # ── Premium genre engine blocks ──
     # Progression captures realm/resource/technique/artifact causality.
     # Decision policy captures protagonist risk profile, preferred tactics,

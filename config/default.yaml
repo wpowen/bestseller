@@ -254,3 +254,10 @@ pipeline:
     - ENDING_SENTENCE_WEAK
     - character_resurrection
     - CANON_FORBIDDEN_TERM
+    - CROSS_CHAPTER_REPETITION
+    - INTRA_CHAPTER_REPETITION
+    - NAMING_OUT_OF_POOL
+  # Records a project-level planning kernel before chapter production entry
+  # points. Telemetry-only by default; flip block_on_failure for strict runs.
+  enable_prewrite_readiness_gate: true
+  prewrite_readiness_block_on_failure: false

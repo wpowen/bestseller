@@ -1,0 +1,10 @@
+{
+  "name": "Bean",
+  "species": "workspace cat",
+  "born_at": "2026-05-09T00:00:00+08:00",
+  "last_updated_at": "2026-05-09T00:00:00+08:00",
+  "fullness": 78,
+  "mood": 82,
+  "energy": 70,
+  "care_count": 1
+}

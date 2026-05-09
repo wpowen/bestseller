@@ -55,6 +55,12 @@ from bestseller.services.inspection import (
     get_planning_artifact_detail,
     list_planning_artifacts,
 )
+from bestseller.services.material_density import (
+    audit_project_material_density,
+    hydrate_story_bible_materials,
+    material_density_report_to_dict,
+    refresh_project_material_reference_block,
+)
 from bestseller.services.knowledge import list_canon_facts, list_timeline_events
 from bestseller.services.narrative import build_narrative_overview
 from bestseller.services.narrative_tree import (
@@ -69,6 +75,12 @@ from bestseller.services.pipelines import (
     run_scene_pipeline,
 )
 from bestseller.services.planner import generate_novel_plan
+from bestseller.services.premium_book_gate import (
+    PremiumBookGateReport,
+    evaluate_premium_project_readiness,
+    premium_book_gate_report_to_dict,
+)
+from bestseller.services.premium_benchmark import run_premium_benchmark_cases
 from bestseller.services.project_health import build_project_health_report, repair_project_health
 from bestseller.services.projects import (
     create_chapter,
@@ -139,6 +151,8 @@ story_bible_app = typer.Typer(help="Story bible inspection operations.")
 narrative_app = typer.Typer(help="Narrative graph inspection operations.")
 benchmark_app = typer.Typer(help="Benchmark and evaluation operations.")
 commercial_gate_app = typer.Typer(help="Commercial novel package gate operations.")
+premium_gate_app = typer.Typer(help="Premium novel readiness gate operations.")
+material_app = typer.Typer(help="Material library density and project material operations.")
 ui_app = typer.Typer(help="Web UI operations.")
 prompt_pack_app = typer.Typer(help="Prompt pack operations.")
 writing_preset_app = typer.Typer(help="Writing preset operations.")
@@ -161,6 +175,8 @@ app.add_typer(story_bible_app, name="story-bible")
 app.add_typer(narrative_app, name="narrative")
 app.add_typer(benchmark_app, name="benchmark")
 app.add_typer(commercial_gate_app, name="commercial-gate")
+app.add_typer(premium_gate_app, name="premium-gate")
+app.add_typer(material_app, name="material")
 app.add_typer(ui_app, name="ui")
 app.add_typer(prompt_pack_app, name="prompt-pack")
 app.add_typer(writing_preset_app, name="writing-preset")
@@ -1530,6 +1546,288 @@ def commercial_gate_package(
 
     if fail and not report.passed:
         raise typer.Exit(1)
+
+
+@premium_gate_app.command("project")
+def premium_gate_project(
+    project_slug: Annotated[str, typer.Argument(help="Project slug to evaluate.")],
+    json_output: Annotated[
+        bool,
+        typer.Option(
+            "--json",
+            help="Print the full premium gate report as JSON.",
+        ),
+    ] = False,
+    fail: Annotated[
+        bool,
+        typer.Option(
+            "--fail/--no-fail",
+            help="Exit non-zero when the premium gate does not pass.",
+        ),
+    ] = True,
+) -> None:
+    """Evaluate whether a project has a complete premium genre engine."""
+
+    async def _run() -> PremiumBookGateReport:
+        settings = load_settings()
+        async with session_scope(settings) as session:
+            project = await get_project_by_slug(session, project_slug)
+            if project is None:
+                raise ValueError(f"Project '{project_slug}' was not found.")
+            return evaluate_premium_project_readiness(project)
+
+    report = asyncio.run(_run())
+    if json_output:
+        typer.echo(
+            json.dumps(
+                premium_book_gate_report_to_dict(report),
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+    else:
+        status = "PASS" if report.passed else "FAIL"
+        typer.echo(
+            f"{status} {report.project_slug or project_slug} "
+            f"score={report.score} genre={report.genre or '-'}"
+        )
+        for finding in (*report.blocking_findings, *report.warnings):
+            typer.echo(
+                f"- [{finding.severity}] {finding.code} {finding.path}: "
+                f"{finding.message}"
+            )
+            typer.echo(f"  fix: {finding.repair_action}")
+
+    if fail and not report.passed:
+        raise typer.Exit(1)
+
+
+@premium_gate_app.command("benchmark")
+def premium_gate_benchmark(
+    json_output: Annotated[
+        bool,
+        typer.Option(
+            "--json",
+            help="Print the full premium benchmark report as JSON.",
+        ),
+    ] = False,
+    fail: Annotated[
+        bool,
+        typer.Option(
+            "--fail/--no-fail",
+            help="Exit non-zero when any premium benchmark fixture fails.",
+        ),
+    ] = True,
+) -> None:
+    """Run deterministic good/bad premium-genre structure fixtures."""
+
+    result = run_premium_benchmark_cases()
+    if json_output:
+        typer.echo(json.dumps(result.to_dict(), ensure_ascii=False, indent=2))
+    else:
+        status = "PASS" if result.passed else "FAIL"
+        typer.echo(
+            f"{status} {result.suite_id} "
+            f"passed={result.passed_case_count} failed={result.failed_case_count}"
+        )
+        for case_result in result.case_results:
+            if case_result.passed:
+                continue
+            typer.echo(
+                f"- {case_result.case_id}: gate_passed={case_result.gate_passed} "
+                f"expected={case_result.expected_gate_passed} "
+                f"codes={', '.join(case_result.actual_blocking_codes)}"
+            )
+
+    if fail and not result.passed:
+        raise typer.Exit(1)
+
+
+@material_app.command("audit-density")
+def material_audit_density(
+    project_slug: Annotated[str, typer.Argument(help="Project slug to audit.")],
+    json_output: Annotated[
+        bool,
+        typer.Option("--json", help="Print the full density report as JSON."),
+    ] = False,
+    fail: Annotated[
+        bool,
+        typer.Option(
+            "--fail/--no-fail",
+            help="Exit non-zero when project material density is below target.",
+        ),
+    ] = False,
+) -> None:
+    """Audit project-scoped material density by dimension."""
+
+    async def _run() -> dict[str, Any]:
+        settings = load_settings()
+        async with session_scope(settings) as session:
+            project = await get_project_by_slug(session, project_slug)
+            if project is None:
+                raise ValueError(f"Project '{project_slug}' was not found.")
+            report = await audit_project_material_density(
+                session,
+                project_id=str(project.id),
+                genre=project.genre,
+                sub_genre=project.sub_genre,
+            )
+            return material_density_report_to_dict(report)
+
+    payload = asyncio.run(_run())
+    if json_output:
+        typer.echo(json.dumps(payload, ensure_ascii=False, indent=2))
+    else:
+        status = "PASS" if payload["passed"] else "FAIL"
+        typer.echo(
+            f"{status} {project_slug} material_density="
+            f"{payload['total_active']}/{payload['total_target']} "
+            f"buckets={','.join(payload['genre_buckets']) or '-'}"
+        )
+        for item in payload["dimensions"]:
+            if item["satisfied"]:
+                continue
+            typer.echo(
+                f"- {item['dimension']}: "
+                f"{item['active_count']}/{item['target_count']} "
+                f"(gap={item['gap']}, global_seeds={item['global_seed_count']})"
+            )
+    if fail and not payload["passed"]:
+        raise typer.Exit(1)
+
+
+@material_app.command("hydrate-canon-pack")
+def material_hydrate_canon_pack(
+    project_slug: Annotated[str, typer.Argument(help="Project slug to hydrate.")],
+    package_dir: Annotated[
+        Path,
+        typer.Argument(
+            exists=True,
+            file_okay=False,
+            dir_okay=True,
+            readable=True,
+            help="Output book package directory, e.g. output/<book-id>.",
+        ),
+    ],
+    apply: Annotated[
+        bool,
+        typer.Option("--apply/--dry-run", help="Write project_materials rows."),
+    ] = False,
+) -> None:
+    """Hydrate project materials from a locked story-bible package."""
+
+    async def _run() -> dict[str, Any]:
+        settings = load_settings()
+        async with session_scope(settings) as session:
+            project = await get_project_by_slug(session, project_slug)
+            if project is None:
+                raise ValueError(f"Project '{project_slug}' was not found.")
+            result = await hydrate_story_bible_materials(
+                session,
+                project_id=str(project.id),
+                package_root=package_dir,
+                title=project.title,
+                genre=project.genre,
+                sub_genre=project.sub_genre,
+                language=project.language,
+                apply=apply,
+            )
+            density = await audit_project_material_density(
+                session,
+                project_id=str(project.id),
+                genre=project.genre,
+                sub_genre=project.sub_genre,
+            )
+            result["density"] = material_density_report_to_dict(density)
+            return result
+
+    payload = asyncio.run(_run())
+    typer.echo(json.dumps(payload, ensure_ascii=False, indent=2))
+
+
+@material_app.command("hydrate-all-canon-packs")
+def material_hydrate_all_canon_packs(
+    apply: Annotated[
+        bool,
+        typer.Option("--apply/--dry-run", help="Write project_materials rows."),
+    ] = False,
+) -> None:
+    """Hydrate every project with a supported deterministic material pack."""
+
+    async def _run() -> list[dict[str, Any]]:
+        settings = load_settings()
+        output_base = Path(settings.output.base_dir)
+        payloads: list[dict[str, Any]] = []
+        async with session_scope(settings) as session:
+            for project in await list_projects(session):
+                package_dir = output_base / project.slug
+                if not package_dir.exists():
+                    payloads.append(
+                        {
+                            "project_slug": project.slug,
+                            "project_id": str(project.id),
+                            "supported_pack": None,
+                            "skipped": "package_dir_missing",
+                            "package_root": str(package_dir),
+                        }
+                    )
+                    continue
+                result = await hydrate_story_bible_materials(
+                    session,
+                    project_id=str(project.id),
+                    package_root=package_dir,
+                    title=project.title,
+                    genre=project.genre,
+                    sub_genre=project.sub_genre,
+                    language=project.language,
+                    apply=apply,
+                )
+                density = await audit_project_material_density(
+                    session,
+                    project_id=str(project.id),
+                    genre=project.genre,
+                    sub_genre=project.sub_genre,
+                )
+                result["project_slug"] = project.slug
+                result["title"] = project.title
+                result["language"] = project.language
+                result["genre"] = project.genre
+                result["sub_genre"] = project.sub_genre
+                result["density"] = material_density_report_to_dict(density)
+                payloads.append(result)
+        return payloads
+
+    payload = asyncio.run(_run())
+    typer.echo(json.dumps(payload, ensure_ascii=False, indent=2))
+
+
+@material_app.command("refresh-reference-block")
+def material_refresh_reference_block(
+    project_slug: Annotated[str, typer.Argument(help="Project slug to refresh.")],
+    include_content_preview: Annotated[
+        bool,
+        typer.Option(
+            "--include-content-preview/--no-content-preview",
+            help="Include short content_json previews in the prompt block.",
+        ),
+    ] = False,
+) -> None:
+    """Refresh project metadata material_reference_block from project materials."""
+
+    async def _run() -> dict[str, Any]:
+        settings = load_settings()
+        async with session_scope(settings) as session:
+            project = await get_project_by_slug(session, project_slug)
+            if project is None:
+                raise ValueError(f"Project '{project_slug}' was not found.")
+            return await refresh_project_material_reference_block(
+                session,
+                project_id=str(project.id),
+                include_content_preview=include_content_preview,
+            )
+
+    payload = asyncio.run(_run())
+    typer.echo(json.dumps(payload, ensure_ascii=False, indent=2))
 
 
 @retrieval_app.command("refresh")

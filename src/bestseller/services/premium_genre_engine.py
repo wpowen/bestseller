@@ -148,6 +148,10 @@ def _premium_state_ledger(container: Mapping[str, object]) -> dict[str, object]:
     return _as_mapping(container.get("premium_state_ledger"))
 
 
+def _premium_state_snapshot(container: Mapping[str, object]) -> dict[str, object]:
+    return _as_mapping(container.get("premium_state_snapshot"))
+
+
 def _ledger_entries(container: Mapping[str, object], key: str) -> list[dict[str, object]]:
     ledger = _premium_state_ledger(container)
     entries: list[dict[str, object]] = []
@@ -155,6 +159,99 @@ def _ledger_entries(container: Mapping[str, object], key: str) -> list[dict[str,
         item = _as_mapping(raw)
         if item:
             entries.append({**item, "_source_key": f"premium_state_ledger.{key}"})
+    return entries
+
+
+def _snapshot_rule_entries(container: Mapping[str, object]) -> list[dict[str, object]]:
+    snapshot = _premium_state_snapshot(container)
+    rule_state = _as_mapping(snapshot.get("rule_state"))
+    entries: list[dict[str, object]] = []
+    for rule_key, raw in rule_state.items():
+        item = _as_mapping(raw)
+        if not item:
+            continue
+        entries.append(
+            {
+                "rule_code": str(rule_key),
+                "name": item.get("name") or str(rule_key),
+                "visible_effect": item.get("last_visible_effect"),
+                "exploitation_potential": item.get("last_exploit"),
+                "cost": item.get("last_cost"),
+                "chapter_number": item.get("last_chapter"),
+                "_source_key": "premium_state_snapshot.rule_state",
+            }
+        )
+    return entries
+
+
+def _snapshot_faction_entries(container: Mapping[str, object]) -> list[dict[str, object]]:
+    snapshot = _premium_state_snapshot(container)
+    entries: list[dict[str, object]] = []
+    for raw in _as_sequence(snapshot.get("faction_pressure_queue")):
+        item = _as_mapping(raw)
+        faction = _clean_text(item.get("faction"))
+        if not faction:
+            continue
+        entries.append(
+            {
+                "name": faction,
+                "current_pressure": item.get("trigger"),
+                "next_reaction": item.get("reaction"),
+                "relationship_to_protagonist": item.get("stance_change"),
+                "chapter_number": item.get("chapter_number"),
+                "_source_key": "premium_state_snapshot.faction_pressure_queue",
+            }
+        )
+    return entries
+
+
+def _snapshot_relationship_entries(container: Mapping[str, object]) -> list[dict[str, object]]:
+    snapshot = _premium_state_snapshot(container)
+    entries: list[dict[str, object]] = []
+    relationship_state = _as_mapping(snapshot.get("relationship_state"))
+    for relationship_key, raw in relationship_state.items():
+        item = _as_mapping(raw)
+        if not item:
+            continue
+        if " -> " in str(relationship_key):
+            character_a, character_b = str(relationship_key).split(" -> ", 1)
+        else:
+            character_a, character_b = str(relationship_key), ""
+        axes = _as_mapping(item.get("axes"))
+        axis_summary = "; ".join(
+            f"{axis}: {state}"
+            for axis, state in axes.items()
+            if state not in (None, "")
+        )
+        entries.append(
+            {
+                "character_a": character_a,
+                "character_b": character_b,
+                "relationship_type": "state_snapshot",
+                "tension_summary": axis_summary,
+                "evolution_arc": item.get("last_active_choice"),
+                "agency_cost": item.get("last_cost"),
+                "chapter_number": item.get("last_chapter"),
+                "_source_key": "premium_state_snapshot.relationship_state",
+            }
+        )
+
+    for raw in _as_sequence(snapshot.get("open_agency_debts")):
+        item = _as_mapping(raw)
+        owner = _clean_text(item.get("owner"))
+        debt = _clean_text(item.get("debt"))
+        if not owner or not debt:
+            continue
+        entries.append(
+            {
+                "character_a": owner,
+                "relationship_type": "agency_debt",
+                "tension_summary": debt,
+                "agency_cost": item.get("due_window"),
+                "chapter_number": item.get("chapter_number"),
+                "_source_key": "premium_state_snapshot.open_agency_debts",
+            }
+        )
     return entries
 
 
@@ -174,6 +271,10 @@ def _premium_state_ledger_report_warnings(
 
 
 def _extract_world_spec(metadata: Mapping[str, object]) -> dict[str, object]:
+    premium_world_spec = _as_mapping(metadata.get("premium_world_spec"))
+    if premium_world_spec:
+        return premium_world_spec
+
     world_spec = _as_mapping(metadata.get("world_spec"))
     if world_spec:
         return world_spec
@@ -197,6 +298,10 @@ def _extract_world_spec(metadata: Mapping[str, object]) -> dict[str, object]:
 
 
 def _extract_cast_spec(metadata: Mapping[str, object]) -> dict[str, object]:
+    premium_cast_spec = _as_mapping(metadata.get("premium_cast_spec"))
+    if premium_cast_spec:
+        return premium_cast_spec
+
     cast_spec = _as_mapping(metadata.get("cast_spec"))
     if cast_spec:
         return cast_spec
@@ -211,6 +316,9 @@ def _extract_character_config(metadata: Mapping[str, object]) -> dict[str, objec
 
 
 def _extract_volume_plan(metadata: Mapping[str, object]) -> list[object]:
+    if "premium_volume_plan" in metadata:
+        return _as_sequence(metadata.get("premium_volume_plan"))
+
     volume_plan = _as_sequence(metadata.get("volume_plan"))
     if volume_plan:
         return volume_plan
@@ -376,6 +484,7 @@ def _rule_entries_from_container(container: Mapping[str, object]) -> list[dict[s
             item = _as_mapping(raw)
             if item:
                 entries.append(item)
+    entries.extend(_snapshot_rule_entries(container))
     entries.extend(_ledger_entries(container, "rule_events"))
 
     series_engine = _as_mapping(container.get("series_engine"))
@@ -466,6 +575,40 @@ def _render_progression_ledger_appendix(
     return "\n".join(lines)
 
 
+def _render_progression_snapshot_appendix(
+    metadata: Mapping[str, object],
+    *,
+    language: str,
+) -> str:
+    snapshot = _premium_state_snapshot(metadata)
+    balances = _as_mapping(snapshot.get("resource_balances"))
+    if not balances:
+        return ""
+    is_zh = language.lower().startswith("zh")
+    lines = ["【权威进阶状态快照】" if is_zh else "[AUTHORITATIVE PROGRESSION SNAPSHOT]"]
+    for owner, raw_resources in list(balances.items())[:8]:
+        resources = _as_mapping(raw_resources)
+        if not resources:
+            continue
+        resource_text = ", ".join(
+            f"{resource}={amount}"
+            for resource, amount in resources.items()
+            if amount not in (None, "")
+        )
+        if resource_text:
+            lines.append(("• " if is_zh else "- ") + f"{owner}: {resource_text}")
+    if len(lines) == 1:
+        return ""
+    if is_zh:
+        lines.append("硬规则: 后续章节必须以此快照为准处理资源余额和进阶条件。")
+    else:
+        lines.append(
+            "Hard rule: future chapters must use this snapshot for resource "
+            "balances and progression conditions.",
+        )
+    return "\n".join(lines)
+
+
 def _relationship_entries_from_container(
     container: Mapping[str, object],
 ) -> list[dict[str, object]]:
@@ -483,6 +626,7 @@ def _relationship_entries_from_container(
             if item:
                 item = {**item, "_source_key": key}
                 entries.append(item)
+    entries.extend(_snapshot_relationship_entries(container))
     entries.extend(_ledger_entries(container, "relationship_events"))
     entries.extend(_ledger_entries(container, "agency_debts"))
 
@@ -785,6 +929,7 @@ def _faction_entries_from_container(container: Mapping[str, object]) -> list[dic
             item = _as_mapping(raw)
             if item:
                 entries.append({**item, "_source_key": f"series_engine.{key}"})
+    entries.extend(_snapshot_faction_entries(container))
     entries.extend(_ledger_entries(container, "faction_reactions"))
     return entries
 
@@ -1046,6 +1191,16 @@ def build_premium_genre_engine_blocks(
             )
         except Exception as exc:
             warnings.append(f"progression_context_invalid:{exc.__class__.__name__}")
+    progression_snapshot_block = _render_progression_snapshot_appendix(
+        metadata,
+        language=language,
+    )
+    if progression_snapshot_block:
+        progression_block = (
+            f"{progression_block}\n{progression_snapshot_block}"
+            if progression_block
+            else progression_snapshot_block
+        )
     progression_ledger_entries = (
         *_ledger_entries(metadata, "progression_events"),
         *_ledger_entries(story_context, "progression_events"),

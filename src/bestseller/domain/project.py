@@ -31,6 +31,7 @@ class MarketPositioningConfig(BaseModel):
     selling_points: list[str] = Field(default_factory=list)
     trope_keywords: list[str] = Field(default_factory=list)
     hook_keywords: list[str] = Field(default_factory=list)
+    opening_contract: str | None = Field(default=None, max_length=4000)
     opening_strategy: str = Field(
         default="开篇先亮出主角差异化优势、异常事件、即时利益与明确危险。",
         min_length=1,
@@ -422,6 +423,7 @@ class ChapterStructureRead(BaseModel):
     volume_number: int | None = None
     chapter_goal: str = Field(min_length=1)
     status: ChapterStatus
+    production_state: str | None = None
     target_word_count: int = Field(ge=0)
     current_word_count: int = Field(ge=0)
     current_draft_version_no: int | None = None

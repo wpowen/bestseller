@@ -911,8 +911,7 @@ class TestInsertProjectMaterial:
     """Tests for insert_project_material DB helper.
 
     The function uses a PostgreSQL-specific ``on_conflict_do_update`` clause
-    via ``sqlalchemy.insert``.  We mock the ``insert`` function inside
-    ``bestseller.infra.db.models`` (imported locally inside the function) to
+    via PostgreSQL's dialect-specific ``insert``.  We mock the local import to
     return a chainable mock so the test doesn't require a live PG connection.
     """
 
@@ -930,9 +929,10 @@ class TestInsertProjectMaterial:
         mat = _make_project_material(slug="persist-me", material_type="world_settings")
         insert_mock = self._make_mock_insert()
 
-        # The function does `from sqlalchemy import insert` locally — patch at sqlalchemy level
-        import sqlalchemy as _sa
-        with patch.object(_sa, "insert", insert_mock):
+        with patch(
+            "sqlalchemy.dialects.postgresql.insert",
+            insert_mock,
+        ):
             returned = await insert_project_material(session, mat)
 
         assert returned is mat
@@ -944,8 +944,10 @@ class TestInsertProjectMaterial:
         mat = _make_project_material()
         insert_mock = self._make_mock_insert()
 
-        import sqlalchemy as _sa
-        with patch.object(_sa, "insert", insert_mock):
+        with patch(
+            "sqlalchemy.dialects.postgresql.insert",
+            insert_mock,
+        ):
             await insert_project_material(session, mat)
 
         assert session.execute.called

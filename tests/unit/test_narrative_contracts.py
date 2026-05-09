@@ -8,6 +8,10 @@ from bestseller.domain.workflow import ChapterOutlineBatchInput
 from bestseller.services.identity_guard import CharacterIdentity
 from bestseller.services.narrative_contracts import (
     build_identity_manifest,
+    repair_legacy_foundation_identity_locks,
+    repair_legacy_scene_contract_model_pre_draft,
+    repair_legacy_scene_contract_pre_draft,
+    repair_missing_scene_participants_pre_draft,
     validate_chapter_plan_contract,
     validate_foundation_identity_contract,
     validate_scene_contract_pre_draft,
@@ -60,6 +64,45 @@ def test_foundation_identity_contract_builds_locked_manifest() -> None:
     assert manifest[1]["pronoun_set_en"] == "she/her"
 
 
+def test_repair_legacy_foundation_identity_locks_uses_hints() -> None:
+    repaired, count = repair_legacy_foundation_identity_locks(
+        {
+            "protagonist": {"name": "Rowan Ashford", "role": "protagonist"},
+            "antagonist": {"name": "Victor Hale", "role": "antagonist"},
+        },
+        identity_hints=[
+            {
+                "name": "Rowan Ashford",
+                "gender": "female",
+                "pronoun_set_zh": "她",
+                "pronoun_set_en": "she/her",
+            }
+        ],
+    )
+
+    assert count > 0
+    assert repaired is not None
+    report = validate_foundation_identity_contract(repaired)
+    assert report.passed is True
+    assert repaired["protagonist"]["gender"] == "female"
+    assert repaired["antagonist"]["gender"] == "male"
+
+
+def test_repair_legacy_foundation_identity_locks_defaults_unknowns_to_nonbinary() -> None:
+    repaired, _ = repair_legacy_foundation_identity_locks(
+        {
+            "protagonist": {"name": "QX-17", "role": "protagonist"},
+            "supporting_cast": [{"name": "Archive Witness", "role": "supporting"}],
+        }
+    )
+
+    assert repaired is not None
+    report = validate_foundation_identity_contract(repaired)
+    assert report.passed is True
+    assert repaired["protagonist"]["gender"] == "nonbinary"
+    assert repaired["protagonist"]["pronoun_set_en"] == "they/them"
+
+
 def test_chapter_plan_contract_blocks_unknown_participant_and_missing_time() -> None:
     batch = ChapterOutlineBatchInput.model_validate(
         {
@@ -103,6 +146,7 @@ def test_chapter_plan_contract_blocks_placeholder_planning_text() -> None:
                     "chapter_number": 12,
                     "title": "回声假章",
                     "chapter_goal": "推动本章剧情发展",
+                    "opening_situation": "承接上一章尾钩，主角没有空档去长篇解释设定。",
                     "main_conflict": "宁尘必须在生存压力代表的势力角力中找到位置。",
                     "hook_description": "回声假章尾声把「尾钩」转化为下一章必须处理的新压力。",
                     "scenes": [
@@ -112,7 +156,7 @@ def test_chapter_plan_contract_blocks_placeholder_planning_text() -> None:
                             "time_label": "章节开场",
                             "participants": ["宁尘"],
                             "purpose": {
-                                "story": "第12章第1场：具体事件是「开场」。",
+                                "story": "推动本章局势前进，并换来新的代价或信息。",
                                 "emotion": "压力上升。",
                             },
                         }
@@ -130,6 +174,7 @@ def test_chapter_plan_contract_blocks_placeholder_planning_text() -> None:
     assert report.blocks is True
     assert {
         "PLAN_CHAPTER_GOAL_GENERIC",
+        "PLAN_CHAPTER_OPENING_GENERIC",
         "PLAN_CHAPTER_CONFLICT_GENERIC",
         "PLAN_CHAPTER_HOOK_GENERIC",
         "PLAN_SCENE_TIME_GENERIC",
@@ -239,6 +284,116 @@ def test_pre_draft_scene_contract_blocks_purpose_character_missing_from_particip
     assert "PREDRAFT_SCENE_PURPOSE_CHARACTER_NOT_IN_PARTICIPANTS" in {
         violation.code for violation in report.violations
     }
+
+
+def test_repair_missing_scene_participants_pre_draft_uses_identity_context() -> None:
+    scene = SimpleNamespace(
+        scene_number=4,
+        participants=[],
+        time_label="Chapter 365 aftermath",
+        purpose={
+            "story": "Maya reads the letter with Kade and recognizes their father's handwriting."
+        },
+        entry_state={"Kade Mercer": {"emotion": "tense"}},
+        exit_state={},
+    )
+    registry = [
+        CharacterIdentity(
+            name="Kade Mercer",
+            gender="male",
+            pronoun_set_zh="他",
+            pronoun_set_en="he/him",
+        ),
+        CharacterIdentity(
+            name="Maya",
+            gender="female",
+            pronoun_set_zh="她",
+            pronoun_set_en="she/her",
+        ),
+        CharacterIdentity(
+            name="Sam Blake",
+            gender="male",
+            pronoun_set_zh="他",
+            pronoun_set_en="he/him",
+            is_alive=False,
+        ),
+    ]
+
+    repaired = repair_missing_scene_participants_pre_draft(
+        scene,
+        identity_registry=registry,
+    )
+    report = validate_scene_contract_pre_draft(
+        scene,
+        identity_registry=registry,
+        require_identity_registry=True,
+    )
+
+    assert repaired == 2
+    assert scene.participants == ["Kade Mercer", "Maya"]
+    assert "PREDRAFT_SCENE_PARTICIPANTS_MISSING" not in {
+        violation.code for violation in report.violations
+    }
+
+
+def test_repair_missing_scene_participants_prefers_resolved_identity_aliases() -> None:
+    scene = SimpleNamespace(
+        scene_number=4,
+        participants=[],
+        time_label="Chapter 365 letter reveal",
+        purpose={
+            "story": (
+                "Maya reads the letter with Kade and recognizes their father's "
+                "handwriting before the powered community displacement."
+            )
+        },
+        entry_state={},
+        exit_state={},
+    )
+    registry = [
+        CharacterIdentity(name="Father", role="supporting"),
+        CharacterIdentity(name="Maya", role="supporting"),
+        CharacterIdentity(name="Kade", role="supporting"),
+        CharacterIdentity(name="Powered Community", role="supporting"),
+        CharacterIdentity(
+            name="Kade Mercer",
+            aliases=("Kade",),
+            gender="male",
+            pronoun_set_zh="他",
+            pronoun_set_en="he/him",
+            role="protagonist",
+        ),
+        CharacterIdentity(
+            name="Maya Mercer",
+            aliases=("Maya",),
+            gender="female",
+            pronoun_set_zh="她",
+            pronoun_set_en="she/her",
+            role="family",
+        ),
+        CharacterIdentity(
+            name="Alex Reed",
+            aliases=("Father",),
+            gender="nonbinary",
+            pronoun_set_zh="ta",
+            pronoun_set_en="they/them",
+            role="family",
+        ),
+    ]
+
+    repaired = repair_missing_scene_participants_pre_draft(
+        scene,
+        identity_registry=registry,
+    )
+    report = validate_scene_contract_pre_draft(
+        scene,
+        identity_registry=registry,
+        require_identity_registry=True,
+    )
+
+    assert repaired == 3
+    assert scene.participants == ["Alex Reed", "Maya Mercer", "Kade Mercer"]
+    assert report.passed is True
 
 
 def test_pre_draft_scene_contract_allows_case_subjects_and_dead_references() -> None:
@@ -396,3 +551,60 @@ def test_pre_draft_scene_contract_blocks_placeholder_scene_card() -> None:
         "PREDRAFT_SCENE_TIME_GENERIC",
         "PREDRAFT_SCENE_STORY_PURPOSE_GENERIC",
     }.issubset({violation.code for violation in report.violations})
+
+
+def test_repair_legacy_scene_contract_replaces_generic_hook_fields() -> None:
+    scene = SimpleNamespace(
+        scene_number=4,
+        participants=["Rowan Ashford"],
+        time_label="章节结尾",
+        title="Closing Hook",
+        scene_type="hook",
+        purpose={
+            "story": (
+                "End every chapter with a sharper question. "
+                "[chapter goal: The High Lord's ultimatum forces Rowan to choose.]"
+            ),
+            "emotion": "",
+        },
+    )
+
+    repaired = repair_legacy_scene_contract_pre_draft(scene, chapter_number=343)
+    report = validate_scene_contract_pre_draft(
+        scene,
+        identity_registry=[
+            CharacterIdentity(
+                name="Rowan Ashford",
+                gender="female",
+                pronoun_set_zh="她",
+                pronoun_set_en="she/her",
+            )
+        ],
+        require_identity_registry=True,
+    )
+
+    assert repaired == 2
+    assert report.passed is True
+    assert scene.time_label.startswith("Chapter 343 scene 4:")
+    assert "End every chapter" not in scene.purpose["story"]
+
+
+def test_repair_legacy_scene_contract_model_removes_template_labels() -> None:
+    scene_contract = SimpleNamespace(
+        chapter_number=365,
+        scene_number=3,
+        contract_summary=(
+            "End each chapter with escalating threat, revealed secret, or forced choice. "
+            "[chapter goal: A bystander is drawn into the conflict by accident.]"
+        ),
+        information_release="Closing Hook",
+        tail_hook="Closing Hook",
+    )
+
+    repaired = repair_legacy_scene_contract_model_pre_draft(scene_contract)
+
+    assert repaired == 3
+    assert "Closing Hook" not in scene_contract.information_release
+    assert "closing" not in scene_contract.information_release.lower()
+    assert "bystander" in scene_contract.information_release
+    assert scene_contract.contract_summary.startswith("Chapter 365 scene 3")

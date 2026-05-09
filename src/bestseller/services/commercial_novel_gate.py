@@ -255,7 +255,10 @@ def _infer_commercial_anchors(
     if "青囊" in contract or "秘卷" in contract:
         anchors.append(CommercialAnchor("core_artifact", ("青囊", "秘卷"), 6, 80, 3))
     if any(term in contract for term in ("否认", "认账", "入账")):
-        anchors.append(CommercialAnchor("core_rule", ("否认", "认账", "入账"), 5, 80, 4))
+        terms = ["否认", "认账", "入账"]
+        if "镜债" in contract or "困魂镜" in contract:
+            terms.extend(["镜债", "承认", "替认", "偿"])
+        anchors.append(CommercialAnchor("core_rule", tuple(terms), 5, 80, 4))
     if "困魂镜" in contract:
         anchors.append(CommercialAnchor("core_threat", ("困魂镜", "回执", "镜影"), 6, 80, 4))
     if "三族" in contract:
@@ -438,19 +441,36 @@ def _load_planning_artifact_texts(root: Path) -> dict[str, str]:
 def _check_golden_three(chapters: Sequence[ChapterText]) -> list[CommercialGateIssue]:
     chapter_texts = tuple((chapter.chapter_no, chapter.text) for chapter in chapters[:3])
     report = analyze_golden_three(chapter_texts=chapter_texts, language="zh-CN")
-    if not report.issue_codes:
+    issue_codes = tuple(report.issue_codes)
+    if not issue_codes:
         return []
-    if _has_serial_suspense_opening(chapters[:3]):
+
+    suspense_fallback_applied = _has_serial_suspense_opening(chapters[:3])
+    if suspense_fallback_applied:
+        # Suspense openings can be compelling without power-fantasy hype words.
+        # They still need active conflict and chapter-end pursuit hooks.
+        issue_codes = tuple(code for code in issue_codes if code != "GOLDEN_THREE_LOW_HYPE")
+    if not issue_codes:
         return []
+    severity: GateSeverity = (
+        "critical"
+        if any(
+            code in issue_codes
+            for code in ("GOLDEN_THREE_WEAK_ENDING_HOOKS", "GOLDEN_THREE_WEAK_OPEN_CONFLICT")
+        )
+        else "high"
+    )
     return [
         CommercialGateIssue(
             code="GOLDEN_THREE_COMMERCIAL_WEAK",
-            severity="high",
+            severity=severity,
             chapter_no=None,
-            detail=f"Golden-three opening issues: {', '.join(report.issue_codes)}",
+            detail=f"Golden-three opening issues: {', '.join(issue_codes)}",
             suggestion="前三章必须同时有钩子、冲突、短回报和章末追读理由；先修开篇再扩写后文。",
             evidence={
-                "issue_codes": list(report.issue_codes),
+                "issue_codes": list(issue_codes),
+                "original_issue_codes": list(report.issue_codes),
+                "suspense_fallback_applied": suspense_fallback_applied,
                 "strong_hype_chapters": report.strong_hype_chapters,
                 "ending_hook_chapters": report.ending_hook_chapters,
             },
@@ -767,11 +787,12 @@ def _split_callbacks(raw: str) -> tuple[str, ...]:
 def _callback_present(callback: str, text: str) -> bool:
     if callback in text:
         return True
-    terms = _callback_terms(callback)
-    if not terms:
+    term_groups = _callback_term_groups(callback)
+    if not term_groups:
         return False
-    required = min(2, len(terms))
-    return sum(1 for term in terms if term in text) >= required
+    required = min(2, len(term_groups))
+    matched = sum(1 for group in term_groups if any(term in text for term in group))
+    return matched >= required
 
 
 _CALLBACK_TOKEN_BANK = (
@@ -812,6 +833,28 @@ def _callback_terms(callback: str) -> tuple[str, ...]:
         if term not in deduped:
             deduped.append(term)
     return tuple(deduped)
+
+
+_CALLBACK_ALIASES: dict[str, tuple[str, ...]] = {
+    "王老板": ("王老板", "王建业"),
+    "王建业": ("王建业", "王老板"),
+    "回执": ("回执", "回执镜片", "小圆镜"),
+    "老张": ("老张", "张建军"),
+    "张建军": ("张建军", "老张"),
+    "临死话": ("临死话", "临死前", "临死前留了一句话", "遗言"),
+}
+
+
+def _callback_term_groups(callback: str) -> tuple[tuple[str, ...], ...]:
+    groups: list[tuple[str, ...]] = []
+    seen: set[tuple[str, ...]] = set()
+    for term in _callback_terms(callback):
+        aliases = _CALLBACK_ALIASES.get(term, (term,))
+        group = tuple(dict.fromkeys(alias for alias in aliases if alias))
+        if group and group not in seen:
+            groups.append(group)
+            seen.add(group)
+    return tuple(groups)
 
 
 def _check_premature_payoff(

@@ -33,6 +33,37 @@ async def get_project_by_slug(session: AsyncSession, slug: str) -> ProjectModel 
     return await session.scalar(select(ProjectModel).where(ProjectModel.slug == slug))
 
 
+async def initialize_project_genre_capabilities(
+    session: AsyncSession,
+    project: ProjectModel,
+) -> dict[str, Any] | None:
+    """Attach material-density and premium capability packs to a new project.
+
+    Project creation should not fail just because the optional genre pack
+    bootstrap cannot write in a test double or degraded environment.
+    """
+
+    try:
+        from bestseller.services.material_density import hydrate_project_genre_pack
+
+        return await hydrate_project_genre_pack(
+            session,
+            project_id=str(project.id),
+            title=project.title,
+            genre=project.genre,
+            sub_genre=project.sub_genre,
+            language=project.language,
+            apply=True,
+        )
+    except Exception:
+        logger.warning(
+            "Failed to initialize genre capabilities for project %s",
+            project.slug,
+            exc_info=True,
+        )
+        return None
+
+
 async def delete_project_completely(
     session: AsyncSession,
     settings: AppSettings,
@@ -137,6 +168,20 @@ async def create_project(
     )
     session.add(style)
     await session.flush()
+    await initialize_project_genre_capabilities(session, project)
+    try:
+        from bestseller.services.planning_kernel import persist_project_planning_kernel
+
+        persist_project_planning_kernel(
+            project,
+            output_base_dir=settings.output.base_dir,
+        )
+    except Exception:
+        logger.warning(
+            "Failed to initialize planning kernel for project %s",
+            project.slug,
+            exc_info=True,
+        )
     return project
 
 

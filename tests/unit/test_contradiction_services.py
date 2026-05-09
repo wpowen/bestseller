@@ -1,11 +1,18 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+from uuid import uuid4
+
 import pytest
 
 from bestseller.domain.contradiction import (
     ContradictionCheckResult,
     ContradictionViolation,
     ContradictionWarning,
+)
+from bestseller.services.contradiction import (
+    _check_character_knowledge_leaks,
+    _extract_keywords,
 )
 
 pytestmark = pytest.mark.unit
@@ -44,6 +51,58 @@ def test_contradiction_warning_default_recommendation() -> None:
         message="Arc ARC-01 has no recent beats.",
     )
     assert warning.recommendation == ""
+
+
+def test_extract_keywords_filters_generic_english_stopwords() -> None:
+    keywords = _extract_keywords(
+        "Maya reads the letter with Kade before the powered community displacement."
+    )
+
+    assert "with" not in keywords
+    assert "the" not in keywords
+    assert {"maya", "letter", "kade", "powered", "community", "displacement"}.issubset(
+        keywords
+    )
+
+
+@pytest.mark.asyncio
+async def test_character_knowledge_leak_ignores_stopwords_and_participant_names() -> None:
+    class _Result:
+        def scalars(self) -> "_Result":
+            return self
+
+        def all(self) -> list[SimpleNamespace]:
+            return [
+                SimpleNamespace(
+                    name="Kade Mercer",
+                    knowledge_state_json={
+                        "falsely_believes": [
+                            "Registration program could work with proper safeguards",
+                            "Maya is simply closing a door",
+                        ],
+                        "unaware_of": [],
+                    },
+                )
+            ]
+
+    class _Session:
+        async def execute(self, _stmt: object) -> _Result:
+            return _Result()
+
+    violations, warnings = await _check_character_knowledge_leaks(
+        _Session(),
+        uuid4(),
+        365,
+        ["Kade Mercer", "Maya Mercer"],
+        (
+            "Maya reads the letter with Kade and recognizes their father's "
+            "handwriting before the powered community displacement."
+        ),
+        language="en",
+    )
+
+    assert violations == []
+    assert warnings == []
 
 
 # ── ContradictionCheckResult model ───────────────────────────────

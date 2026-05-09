@@ -28,6 +28,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bestseller.infra.db.models import CharacterModel, ProjectModel
+from bestseller.services.character_identity_resolver import canonical_character_key
 
 logger = logging.getLogger(__name__)
 
@@ -139,37 +140,24 @@ async def load_identity_registry(
                 role=char.role or "",
             )
         )
-    seen_tokens = {
-        _identity_registry_token(name)
-        for entry in registry
-        for name in _identity_names(entry)
-        if _identity_registry_token(name)
-    }
     project = await session.get(ProjectModel, project_id)
     manifest = None
     if project is not None and isinstance(project.metadata_json, dict):
         manifest = project.metadata_json.get("identity_manifest")
     if isinstance(manifest, list):
+        manifest_first_counts = _manifest_first_token_counts(manifest)
         for item in manifest:
             if not isinstance(item, dict):
                 continue
             name = str(item.get("name") or "").strip()
             if not name:
                 continue
-            aliases = tuple(
-                str(alias).strip()
-                for alias in item.get("aliases", [])
-                if isinstance(alias, str) and alias.strip()
-            )
-            tokens = {_identity_registry_token(name)}
-            tokens.update(_identity_registry_token(alias) for alias in aliases)
-            tokens.discard("")
-            if tokens and tokens.issubset(seen_tokens):
-                continue
+            aliases = tuple(_manifest_identity_aliases(item, manifest_first_counts))
             gender = _normalize_gender_label(item.get("gender"))
             default_pronoun_zh, default_pronoun_en = _gender_to_pronouns(gender)
             alive_status = str(item.get("alive_status") or item.get("status") or "").lower()
-            registry.append(
+            registry = _upsert_manifest_identity(
+                registry,
                 CharacterIdentity(
                     name=name,
                     aliases=aliases,
@@ -180,8 +168,104 @@ async def load_identity_registry(
                     is_alive=alive_status not in {"dead", "deceased", "死亡", "已死亡"},
                 )
             )
-            seen_tokens.update(tokens)
     return registry
+
+
+def _upsert_manifest_identity(
+    registry: list[CharacterIdentity],
+    manifest_identity: CharacterIdentity,
+) -> list[CharacterIdentity]:
+    """Overlay locked manifest identity onto the registry.
+
+    Historical projects may already contain many generated/temporary character
+    rows. The locked manifest is more authoritative for drafting gates, so we
+    merge it into an exact or canonical-name match instead of letting an
+    unresolved legacy row shadow the manifest.
+    """
+
+    match_index: int | None = None
+    manifest_token = _identity_registry_token(manifest_identity.name)
+    manifest_canonical = _identity_registry_token(
+        canonical_character_key(manifest_identity.name)
+    )
+    for index, existing in enumerate(registry):
+        existing_token = _identity_registry_token(existing.name)
+        if existing_token and existing_token == manifest_token:
+            match_index = index
+            break
+    if match_index is None and manifest_canonical:
+        for index, existing in enumerate(registry):
+            existing_canonical = _identity_registry_token(
+                canonical_character_key(existing.name)
+            )
+            if existing_canonical and existing_canonical == manifest_canonical:
+                match_index = index
+                break
+
+    if match_index is None:
+        return [*registry, manifest_identity]
+
+    existing = registry[match_index]
+    aliases = tuple(
+        dict.fromkeys(
+            alias
+            for alias in (*existing.aliases, *manifest_identity.aliases)
+            if alias and alias != existing.name
+        )
+    )
+    merged = CharacterIdentity(
+        name=existing.name,
+        aliases=aliases,
+        gender=manifest_identity.gender
+        if manifest_identity.gender != "unknown"
+        else existing.gender,
+        pronoun_set_zh=manifest_identity.pronoun_set_zh or existing.pronoun_set_zh,
+        pronoun_set_en=manifest_identity.pronoun_set_en or existing.pronoun_set_en,
+        physical_markers=existing.physical_markers,
+        power_baseline=existing.power_baseline,
+        is_alive=manifest_identity.is_alive,
+        role=manifest_identity.role or existing.role,
+    )
+    return [*registry[:match_index], merged, *registry[match_index + 1:]]
+
+
+def _manifest_identity_aliases(
+    item: dict[str, Any],
+    first_counts: dict[str, int],
+) -> list[str]:
+    aliases: list[str] = []
+    raw_aliases = item.get("aliases", [])
+    if isinstance(raw_aliases, str):
+        aliases.append(raw_aliases.strip())
+    elif isinstance(raw_aliases, list):
+        aliases.extend(alias.strip() for alias in raw_aliases if isinstance(alias, str))
+
+    name = str(item.get("name") or "").strip()
+    first = _english_first_token(name)
+    if first and first_counts.get(first.lower()) == 1:
+        aliases.append(first)
+
+    return list(dict.fromkeys(alias for alias in aliases if alias and alias != name))
+
+
+def _manifest_first_token_counts(manifest: list[Any]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for item in manifest:
+        if not isinstance(item, dict):
+            continue
+        first = _english_first_token(str(item.get("name") or ""))
+        if first:
+            key = first.lower()
+            counts[key] = counts.get(key, 0) + 1
+    return counts
+
+
+def _english_first_token(value: str) -> str:
+    parts = [part for part in re.split(r"[^A-Za-z]+", value.strip()) if part]
+    if len(parts) < 2:
+        return ""
+    first = parts[0]
+    return first if len(first) >= 3 else ""
 
 
 def _identity_registry_token(value: str) -> str:
@@ -460,7 +544,13 @@ def validate_scene_text_identity(
                 )
             else:
                 violations.extend(
-                    _check_en_pronoun_consistency(text, name, entry, other_names=other_names)
+                    _check_en_pronoun_consistency(
+                        text,
+                        name,
+                        entry,
+                        other_names=other_names,
+                        other_entries=other_entries,
+                    )
                 )
 
         # Check dead character appearing alive
@@ -816,6 +906,7 @@ def _check_en_pronoun_consistency(
     entry: CharacterIdentity,
     *,
     other_names: list[str] | None = None,
+    other_entries: list[CharacterIdentity] | None = None,
 ) -> list[IdentityViolation]:
     """Check English pronoun consistency near character name mentions."""
     violations: list[IdentityViolation] = []
@@ -823,13 +914,17 @@ def _check_en_pronoun_consistency(
     if entry.gender == "male":
         wrong_pattern = r"\b(she|her|hers|herself)\b"
         expected = "he/him"
+        found_gender = "female"
     elif entry.gender == "female":
         wrong_pattern = r"\b(he|him|his|himself)\b"
         expected = "she/her"
+        found_gender = "male"
     else:
         return violations
 
     competing_names = [item for item in (other_names or []) if item and item.lower() != name.lower()]
+    competing_entries = list(other_entries or [])
+    has_competing_found_gender = any(other.gender == found_gender for other in competing_entries)
 
     # Find contexts after character name (window of 200 chars for English)
     for match in re.finditer(re.escape(name), text, re.IGNORECASE):
@@ -840,18 +935,142 @@ def _check_en_pronoun_consistency(
 
         wrong_match = re.search(wrong_pattern, right_context, re.IGNORECASE)
         if wrong_match:
+            wrong = wrong_match.group(0)
             before_wrong = right_context[:wrong_match.start()].lower()
             if any(other.lower() in before_wrong for other in competing_names):
+                continue
+            if has_competing_found_gender and _en_wrong_pronoun_is_object_or_possessive(wrong):
+                continue
+            if _en_name_mention_is_possessive_form(before_wrong):
+                continue
+            if has_competing_found_gender and _en_wrong_pronoun_starts_new_sentence(
+                right_context[: wrong_match.start()]
+            ):
+                continue
+            if _en_name_is_prepositional_modifier_for_gender(
+                text[max(0, start - 80):start],
+                found_gender=found_gender,
+            ):
+                continue
+            if _en_name_mention_is_possessive_location(before_wrong):
+                continue
+            if _en_competing_gender_in_sentence_prefix(
+                text,
+                start,
+                competing_entries=competing_entries,
+                found_gender=found_gender,
+            ) and _en_wrong_pronoun_starts_coordinated_clause(before_wrong):
                 continue
             violations.append(
                 IdentityViolation(
                     character_name=entry.name,
                     violation_type="pronoun_mismatch",
                     expected=expected,
-                    found=wrong_match.group(0),
+                    found=wrong,
                     severity="major",
                     evidence=context.strip()[:120],
                 )
             )
 
     return violations
+
+
+def _en_name_mention_is_possessive_location(before_wrong: str) -> bool:
+    before = before_wrong.strip().lower()
+    return re.match(
+        r"^'s\s+(?:left|right|side|front|back|flank|shoulder|doorway|path|"
+        r"line|angle|position|direction)\b",
+        before,
+    ) is not None
+
+
+def _en_name_mention_is_possessive_form(before_wrong: str) -> bool:
+    return before_wrong.lstrip().startswith("'s")
+
+
+def _en_wrong_pronoun_is_object_or_possessive(pronoun: str) -> bool:
+    return pronoun.lower() in {"her", "hers", "herself", "him", "his", "himself"}
+
+
+_EN_GENDERED_NOUNS = {
+    "female": (
+        "woman",
+        "girl",
+        "mother",
+        "daughter",
+        "sister",
+        "wife",
+        "aunt",
+        "queen",
+        "lady",
+    ),
+    "male": (
+        "man",
+        "boy",
+        "father",
+        "son",
+        "brother",
+        "husband",
+        "uncle",
+        "king",
+        "lord",
+    ),
+}
+
+
+def _en_name_is_prepositional_modifier_for_gender(
+    left_context: str,
+    *,
+    found_gender: str,
+) -> bool:
+    """Skip "the woman behind Kade ... her" style object-of-preposition cases."""
+
+    nouns = _EN_GENDERED_NOUNS.get(found_gender, ())
+    if not nouns:
+        return False
+    noun_group = "|".join(re.escape(noun) for noun in nouns)
+    return re.search(
+        rf"\b(?:the|a|an|that|this|his|her|their)?\s*(?:{noun_group})\s+"
+        r"(?:behind|beside|near|with|before|after|around|next\s+to|in\s+front\s+of)\s*$",
+        left_context,
+        flags=re.IGNORECASE,
+    ) is not None
+
+
+def _en_competing_gender_in_sentence_prefix(
+    text: str,
+    name_start: int,
+    *,
+    competing_entries: list[CharacterIdentity],
+    found_gender: str,
+) -> bool:
+    sentence_start = max(
+        text.rfind(".", 0, name_start),
+        text.rfind("!", 0, name_start),
+        text.rfind("?", 0, name_start),
+        text.rfind("\n", 0, name_start),
+    )
+    prefix = text[sentence_start + 1:name_start].lower()
+    if not prefix.strip():
+        return False
+    for other in competing_entries:
+        if other.gender != found_gender:
+            continue
+        for other_name in _identity_names(other):
+            if other_name and other_name.lower() in prefix:
+                return True
+    return False
+
+
+def _en_wrong_pronoun_starts_coordinated_clause(before_wrong: str) -> bool:
+    before = before_wrong.strip().lower()
+    return bool(re.search(r"(?:^|[,;:]\s*|\s)(?:and|but|while|as|then)\s*$", before))
+
+
+def _en_wrong_pronoun_starts_new_sentence(before_wrong: str) -> bool:
+    """Return true when a wrong-gender pronoun is across a hard sentence break."""
+
+    before = before_wrong.strip()
+    if not before:
+        return False
+    return bool(re.search(r"[.!?;\n]", before))

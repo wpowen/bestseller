@@ -69,14 +69,17 @@ async def startup(ctx: dict[str, Any]) -> None:
         import datetime as _dt  # noqa: PLC0415
         import socket  # noqa: PLC0415
 
-        startup_cutoff = _dt.datetime.now(_dt.UTC) - _dt.timedelta(seconds=60)
         worker_id = f"{socket.gethostname()}:{os.getpid()}"
         try:
-            from bestseller.worker.self_heal import heal_stuck_projects  # noqa: PLC0415
+            from bestseller.worker.self_heal import (  # noqa: PLC0415
+                STARTUP_GRACE_SECONDS,
+                heal_stuck_projects,
+            )
 
             dispatched = await heal_stuck_projects(
                 settings,
-                startup_cutoff=startup_cutoff,
+                startup_cutoff=_dt.datetime.now(_dt.UTC)
+                - _dt.timedelta(seconds=STARTUP_GRACE_SECONDS),
                 redis=ctx["redis"],
                 worker_id=worker_id,
             )

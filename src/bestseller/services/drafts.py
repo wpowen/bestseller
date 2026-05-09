@@ -26,7 +26,10 @@ from bestseller.infra.db.models import (
 from bestseller.services.context import build_scene_writer_context_from_models
 from bestseller.services.canon_guardrails import load_canon_guardrails_for_project
 from bestseller.services.llm import LLMCompletionRequest, complete_text
-from bestseller.services.methodology import render_methodology_scene_rules
+from bestseller.services.methodology import (
+    render_methodology_scene_rules,
+    render_qimao_opening_contract_block,
+)
 from bestseller.services.prompt_packs import (
     render_methodology_block,
     render_prompt_pack_fragment,
@@ -37,8 +40,6 @@ from bestseller.services.projects import get_project_by_slug
 from bestseller.services.invariants import InvariantSeedError, invariants_from_dict
 from bestseller.services.chapter_validator import classify_cliffhanger
 from bestseller.services.diversity_budget import (
-    DEFAULT_HOT_VOCAB_WINDOW,
-    DiversityBudget,
     load_diversity_budget,
     save_diversity_budget,
 )
@@ -58,6 +59,7 @@ from bestseller.services.regen_loop import (
     regenerate_until_valid,
 )
 from bestseller.services.write_gate import filter_blocking
+from bestseller.services.write_safety_gate import WriteSafetyFinding
 from bestseller.services.story_bible import load_scene_story_bible_context
 from bestseller.services.writing_profile import (
     is_english_language,
@@ -80,6 +82,10 @@ _REPAIR_CODE_ALIASES: dict[str, str] = {
 def _canonical_repair_code(code: str) -> str:
     text = str(code).strip()
     return _REPAIR_CODE_ALIASES.get(text, text)
+
+
+DUPLICATE_CONTENT_BLOCK_CODE = "CROSS_CHAPTER_REPETITION"
+INTRA_CHAPTER_DUPLICATE_BLOCK_CODE = "INTRA_CHAPTER_REPETITION"
 
 
 _CJK_CHAR_PATTERN = re.compile(r"[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]")
@@ -1087,6 +1093,7 @@ _CONTEXT_TIER_1 = frozenset({
     "methodology_line",
     "participant_fact_section",
     "contradiction_line",
+    "project_material_reference_line",
     "hard_fact_line",
     "knowledge_line",
     "identity_line",
@@ -1566,7 +1573,8 @@ def strip_scaffolding_echoes(content_md: str) -> str:
     # Normalize quotation marks to a consistent format
     try:
         from bestseller.services.output_hygiene import normalize_quote_format
-        content_md = normalize_quote_format(content_md, language=language)
+
+        content_md = normalize_quote_format(content_md, language=None)
     except Exception:
         pass  # Non-fatal
 
@@ -1768,6 +1776,104 @@ async def validate_and_clean_novel_content(
         logger.warning("LLM cleanup returned empty content, falling back to original")
         return content_md
     return cleaned
+
+
+async def _collect_post_assembly_duplicate_findings(
+    session: AsyncSession,
+    *,
+    project: ProjectModel,
+    chapter: ChapterModel,
+    content_md: str,
+) -> tuple[WriteSafetyFinding, ...]:
+    """Run final duplicate checks before an assembled chapter becomes usable."""
+    from bestseller.services.deduplication import (
+        detect_chapter_text_loop,
+        detect_cross_chapter_repetition,
+        detect_intra_chapter_repetition,
+        detect_short_cluster_near_repeat,
+    )
+
+    findings: list[WriteSafetyFinding] = []
+    local_findings = (
+        detect_chapter_text_loop(content_md or "")
+        + detect_short_cluster_near_repeat(content_md or "")
+        + detect_intra_chapter_repetition(content_md or "")
+    )
+    for finding in local_findings:
+        findings.append(
+            WriteSafetyFinding(
+                source="post_assembly_duplicate_gate",
+                code=INTRA_CHAPTER_DUPLICATE_BLOCK_CODE,
+                severity=str(finding.get("severity") or "critical"),
+                message=str(finding.get("message") or "章节内部仍存在重复内容。"),
+                evidence=str(finding.get("text") or finding.get("sample") or ""),
+                payload=dict(finding),
+            )
+        )
+
+    result = await session.execute(
+        select(ChapterModel.chapter_number, ChapterDraftVersionModel.content_md)
+        .join(
+            ChapterDraftVersionModel,
+            ChapterDraftVersionModel.chapter_id == ChapterModel.id,
+        )
+        .where(
+            ChapterModel.project_id == project.id,
+            ChapterModel.chapter_number < chapter.chapter_number,
+            ChapterDraftVersionModel.is_current.is_(True),
+        )
+        .order_by(ChapterModel.chapter_number.asc())
+    )
+    previous_rows = list(result.all()) if hasattr(result, "all") else []
+    chapter_texts: list[tuple[int, str]] = [
+        (int(chapter_number), text or "")
+        for chapter_number, text in previous_rows
+        if text
+    ]
+    chapter_texts.append((int(chapter.chapter_number), content_md or ""))
+    for finding in detect_cross_chapter_repetition(chapter_texts):
+        if int(finding.get("chapter") or 0) != int(chapter.chapter_number):
+            continue
+        findings.append(
+            WriteSafetyFinding(
+                source="post_assembly_duplicate_gate",
+                code=DUPLICATE_CONTENT_BLOCK_CODE,
+                severity=str(finding.get("severity") or "critical"),
+                message=str(finding.get("message") or "章节与前文存在重复内容。"),
+                evidence=str(finding.get("text") or ""),
+                payload=dict(finding),
+            )
+        )
+    return tuple(findings)
+
+
+def _stamp_duplicate_content_block(
+    chapter: ChapterModel,
+    findings: tuple[WriteSafetyFinding, ...],
+) -> None:
+    if not findings:
+        return
+    first = findings[0]
+    chapter_meta = dict(chapter.metadata_json or {})
+    chapter_meta["blocked_by_write_safety_gate"] = True
+    chapter_meta["write_safety_block_code"] = first.code
+    chapter_meta["write_safety_hint"] = first.message
+    chapter_meta["post_assembly_duplicate_gate"] = {
+        "status": "blocked",
+        "finding_count": len(findings),
+        "findings": [
+            {
+                "source": finding.source,
+                "code": finding.code,
+                "severity": finding.severity,
+                "message": finding.message,
+                "evidence": finding.evidence,
+                "payload": finding.payload,
+            }
+            for finding in findings[:20]
+        ],
+    }
+    chapter.metadata_json = chapter_meta
 
 
 def _render_state(state: dict[str, Any]) -> str:
@@ -3004,7 +3110,7 @@ def _render_scene_sequel_section(
         if swain_pattern == "action":
             lines = [
                 f"\n{header}",
-                f"This is an ACTION scene (Goal → Conflict → Disaster).",
+                "This is an ACTION scene (Goal → Conflict → Disaster).",
             ]
             if scene_skeleton:
                 lines.append(f"- Goal: {scene_skeleton.get('goal', '')}")
@@ -3013,7 +3119,7 @@ def _render_scene_sequel_section(
         else:
             lines = [
                 f"\n{header}",
-                f"This is a SEQUEL scene (Reaction → Dilemma → Decision).",
+                "This is a SEQUEL scene (Reaction → Dilemma → Decision).",
             ]
             if scene_skeleton:
                 lines.append(f"- Reaction: {scene_skeleton.get('reaction', '')}")
@@ -3315,6 +3421,7 @@ def build_scene_draft_prompts(
     identity_constraint_block: str | None = None,
     overused_phrase_block: str | None = None,
     genre_constraint_block: str | None = None,
+    ranking_capability_profile_block: str | None = None,
     progression_context_block: str | None = None,
     decision_policy_block: str | None = None,
     rule_system_context_block: str | None = None,
@@ -3369,6 +3476,13 @@ def build_scene_draft_prompts(
     is_en = is_english_language(language)
     writing_profile = _resolve_project_writing_profile(project, style_guide)
     prompt_pack = _resolve_project_prompt_pack(project, writing_profile)
+    _project_meta = getattr(project, "metadata_json", None)
+    _project_meta = _project_meta if isinstance(_project_meta, dict) else {}
+    _rejection_reasons = (
+        _project_meta.get("editor_rejection_reasons")
+        or _project_meta.get("rejection_reasons")
+        or _project_meta.get("rejection_reason")
+    )
     writing_profile_section = render_writing_profile_prompt_block(writing_profile, language=language)
     serial_guardrails = render_serial_fiction_guardrails(writing_profile, language=language)
     # Build system prompt with project-level static content first (cache-
@@ -3510,6 +3624,9 @@ def build_scene_draft_prompts(
         is_opening=(chapter.chapter_number <= 3),
         is_climax=_is_climax,
         pacing_mode=_pacing_mode_val,
+        platform_target=getattr(writing_profile.market, "platform_target", ""),
+        language=language,
+        rejection_reasons=str(_rejection_reasons) if _rejection_reasons else None,
     )
     _methodology_line = ""
     if _methodology_pack_block or _methodology_rules:
@@ -3518,6 +3635,15 @@ def build_scene_draft_prompts(
             if _methodology_pack_block
             else f"{_methodology_rules}\n\n"
         )
+    _qimao_opening_contract_line = ""
+    _qimao_opening_contract_block = render_qimao_opening_contract_block(
+        _project_meta.get("opening_quality_contract") or _project_meta.get("qimao_opening_contract"),
+        chapter_number=chapter.chapter_number,
+        language=language,
+        rejection_reasons=str(_rejection_reasons) if _rejection_reasons else None,
+    )
+    if _qimao_opening_contract_block:
+        _qimao_opening_contract_line = f"{_qimao_opening_contract_block}\n\n"
     _hard_fact_line = f"{hard_fact_section}\n\n" if hard_fact_section else ""
     _contradiction_line = ""
     if contradiction_warnings:
@@ -3561,6 +3687,11 @@ def build_scene_draft_prompts(
     _genre_constraint_line = ""
     if genre_constraint_block:
         _genre_constraint_line = f"{genre_constraint_block}\n\n"
+
+    # Ranking-level book capability profile (Tier 1 — book-specific).
+    _ranking_profile_line = ""
+    if ranking_capability_profile_block:
+        _ranking_profile_line = f"{ranking_capability_profile_block}\n\n"
 
     # Premium genre engine constraints (Tier 1 — always included)
     _progression_context_line = ""
@@ -3662,6 +3793,28 @@ def build_scene_draft_prompts(
     if library_reference_block:
         _library_reference_line = f"{library_reference_block}\n\n"
 
+    _project_material_reference_line = ""
+    if _project_meta:
+        _project_material_reference_block = str(
+            _project_meta.get("material_reference_block") or ""
+        ).strip()
+        if _project_material_reference_block:
+            _project_material_lead = (
+                "=== Project material anchors ===\n"
+                "Use these §slug anchors as canonical project material. Do not invent "
+                "equivalent rules, factions, devices, locations, or motif systems when "
+                "an anchor already covers the function.\n"
+                if is_en
+                else (
+                    "=== 本书素材锚点（必须优先使用）===\n"
+                    "以下 §slug 是本书已落库素材。写作时必须优先使用这些既有规则、地点、人物、物件、情绪弧和反套路约束；"
+                    "不得另造同功能的新名词、新规则或无关怪谈。\n"
+                )
+            )
+            _project_material_reference_line = (
+                f"{_project_material_lead}{_project_material_reference_block}\n\n"
+            )
+
     # Phase-3 wiring: scene/sequel pattern
     _scene_sequel_line = _render_scene_sequel_section(
         swain_pattern, scene_skeleton, is_en=is_en,
@@ -3747,6 +3900,7 @@ def build_scene_draft_prompts(
             "phrase_avoidance_line": _phrase_avoidance_line,
             "opening_diversity_line": _opening_diversity_line,
             "genre_constraint_line": _genre_constraint_line,
+            "ranking_profile_line": _ranking_profile_line,
             "progression_context_line": _progression_context_line,
             "decision_policy_line": _decision_policy_line,
             "rule_system_line": _rule_system_line,
@@ -3765,7 +3919,9 @@ def build_scene_draft_prompts(
             "plan_richness_line": _plan_richness_line,
             "reader_contract_line": _reader_contract_line,
             "hype_constraints_line": _hype_constraints_line,
+            "qimao_opening_contract_line": _qimao_opening_contract_line,
             "l3_prompt_line": _l3_prompt_line,
+            "project_material_reference_line": _project_material_reference_line,
             "library_reference_line": _library_reference_line,
             "hard_fact_line": _hard_fact_line,
             "knowledge_line": _knowledge_line,
@@ -3804,6 +3960,7 @@ def build_scene_draft_prompts(
     _phrase_avoidance_line = _ctx["phrase_avoidance_line"]
     _opening_diversity_line = _ctx["opening_diversity_line"]
     _genre_constraint_line = _ctx["genre_constraint_line"]
+    _ranking_profile_line = _ctx["ranking_profile_line"]
     _progression_context_line = _ctx["progression_context_line"]
     _decision_policy_line = _ctx["decision_policy_line"]
     _rule_system_line = _ctx["rule_system_line"]
@@ -3822,7 +3979,9 @@ def build_scene_draft_prompts(
     _plan_richness_line = _ctx["plan_richness_line"]
     _reader_contract_line = _ctx["reader_contract_line"]
     _hype_constraints_line = _ctx["hype_constraints_line"]
+    _qimao_opening_contract_line = _ctx["qimao_opening_contract_line"]
     _l3_prompt_line = _ctx["l3_prompt_line"]
+    _project_material_reference_line = _ctx["project_material_reference_line"]
     _library_reference_line = _ctx["library_reference_line"]
     _hard_fact_line = _ctx["hard_fact_line"]
     _knowledge_line = _ctx["knowledge_line"]
@@ -3856,12 +4015,15 @@ def build_scene_draft_prompts(
             f"{_query_brief_line}"
             f"{_reader_contract_line}"
             f"{_hype_constraints_line}"
+            f"{_qimao_opening_contract_line}"
             f"{_l3_prompt_line}"
+            f"{_project_material_reference_line}"
             f"{_library_reference_line}"
             f"{_plan_richness_line}"
             f"{_identity_line}"
             f"{_scene_scope_isolation_line}"
             f"{_genre_constraint_line}"
+            f"{_ranking_profile_line}"
             f"{_progression_context_line}"
             f"{_decision_policy_line}"
             f"{_rule_system_line}"
@@ -3937,12 +4099,15 @@ def build_scene_draft_prompts(
             f"{_query_brief_line}"
             f"{_reader_contract_line}"
             f"{_hype_constraints_line}"
+            f"{_qimao_opening_contract_line}"
             f"{_l3_prompt_line}"
+            f"{_project_material_reference_line}"
             f"{_library_reference_line}"
             f"{_plan_richness_line}"
             f"{_identity_line}"
             f"{_scene_scope_isolation_line}"
             f"{_genre_constraint_line}"
+            f"{_ranking_profile_line}"
             f"{_progression_context_line}"
             f"{_decision_policy_line}"
             f"{_rule_system_line}"
@@ -4421,6 +4586,27 @@ async def generate_scene_draft(
         )
     if context_packet is not None:
         try:
+            from bestseller.services.ranking_capability_profile import (  # noqa: PLC0415
+                apply_ranking_capability_profile_to_context,
+            )
+
+            _project_meta = getattr(project, "metadata_json", None) or {}
+            _story_bible = (
+                context_packet.story_bible if isinstance(context_packet.story_bible, dict) else {}
+            )
+            apply_ranking_capability_profile_to_context(
+                context_packet,
+                project_slug=project.slug,
+                project_metadata=_project_meta if isinstance(_project_meta, dict) else {},
+                story_bible_context=_story_bible,
+                output_base_dir=getattr(effective_settings.output, "base_dir", None),
+            )
+        except Exception:
+            logger.debug(
+                "Ranking capability profile direct-draft injection failed (non-fatal)",
+                exc_info=True,
+            )
+        try:
             from bestseller.services.premium_genre_engine import (
                 build_premium_genre_engine_blocks,
             )
@@ -4589,6 +4775,11 @@ async def generate_scene_draft(
             ),
             genre_constraint_block=(
                 context_packet.genre_constraint_block if context_packet else None
+            ),
+            ranking_capability_profile_block=(
+                context_packet.ranking_capability_profile_block
+                if context_packet
+                else None
             ),
             progression_context_block=(
                 context_packet.progression_context_block if context_packet else None
@@ -4974,6 +5165,20 @@ async def assemble_chapter_draft(
     except Exception:
         logger.debug("Post-assembly dedup failed (non-fatal)", exc_info=True)
 
+    duplicate_gate_findings = await _collect_post_assembly_duplicate_findings(
+        session,
+        project=project,
+        chapter=chapter,
+        content_md=content_md,
+    )
+    if duplicate_gate_findings:
+        logger.warning(
+            "Chapter %d: post-assembly duplicate gate blocked %d finding(s).",
+            chapter_number,
+            len(duplicate_gate_findings),
+        )
+        _stamp_duplicate_content_block(chapter, duplicate_gate_findings)
+
     # ── L4/L5/L6 pre-write quality gate ──
     # Runs before the draft row + disk file land. L4 checks language/length/
     # naming/density, L5 checks dialog integrity & POV lock, L6 resolves the
@@ -4986,6 +5191,8 @@ async def assemble_chapter_draft(
         chapter_number=chapter_number,
         content=content_md,
     )
+    if duplicate_gate_findings:
+        quality_gate_outcome = "blocked"
 
     word_count = count_words(content_md)
     next_version = int(
@@ -5209,12 +5416,11 @@ async def maybe_prepare_chapter_auto_repair(
         )
         return False, ()
 
-    # If no report row, check chapter metadata for a direct contradiction/identity
-    # block that was caught and stored by run_scene_pipeline before raising.
-    # This path handles character_resurrection blocks that bypass the quality gate.
+    # Check chapter metadata for direct write-safety blocks that can bypass or
+    # sit alongside the quality-report row.
     chapter_meta = dict(chapter.metadata_json or {})
     stored_code = chapter_meta.get("write_safety_block_code")
-    if stored_code and latest_report is None:
+    if stored_code:
         block_codes = (str(stored_code),)
         # Substring match: "contradiction:character_resurrection:error" should
         # match "character_resurrection" in repair_set (full code format vs short name).
@@ -5277,6 +5483,7 @@ async def maybe_prepare_chapter_auto_repair(
             chapter_meta.pop("blocked_by_write_safety_gate", None)
             chapter_meta.pop("write_safety_block_code", None)
             chapter_meta.pop("write_safety_hint", None)
+            chapter_meta.pop("post_assembly_duplicate_gate", None)
             chapter_meta["auto_repair_last_block_codes"] = list(repairable_hit)
             chapter.metadata_json = chapter_meta
             chapter.production_state = "pending"
@@ -5348,14 +5555,16 @@ async def maybe_prepare_chapter_auto_repair(
             + "。"
         )
     _canon_violation_details: list[str] = []
+    _naming_violation_details: list[str] = []
     for _violation in payload.get("violations") or ():
         if not isinstance(_violation, dict):
             continue
-        if str(_violation.get("code") or "") != "CANON_FORBIDDEN_TERM":
-            continue
         _detail = str(_violation.get("detail") or "").strip()
-        if _detail:
+        _code = str(_violation.get("code") or "")
+        if _code == "CANON_FORBIDDEN_TERM" and _detail:
             _canon_violation_details.append(_detail)
+        if _code == "NAMING_OUT_OF_POOL" and _detail:
+            _naming_violation_details.append(_detail)
 
     if "BLOCK_LOW" in canonical_hits:
         if _attempt == 1:
@@ -5461,6 +5670,18 @@ async def maybe_prepare_chapter_auto_repair(
             "本次重写必须删除这些词及其关联体系，"
             "改用当前项目设定中的正典称谓和规则；不要解释旧设定、不要把旧体系合理化，"
             "只保留当前章节需要的信息和冲突。"
+        )
+    if "NAMING_OUT_OF_POOL" in canonical_hits:
+        _naming_detail_note = (
+            "具体命中：" + "；".join(_naming_violation_details) + "。"
+            if _naming_violation_details
+            else ""
+        )
+        hint_fragments.append(
+            f"上一版本出现了角色池外姓名。{_naming_detail_note}"
+            "本次重写必须删除这些临时姓名：如果是重要角色，改用项目角色池/本章参与者中的既有人名；"
+            "如果只是路人或功能性人物，改为职务/身份称谓（如评委、助手、记者、守卫），"
+            "不要再创造新的中文或英文专名。"
         )
     # Fallback so the writer still sees *something* if a new code is added
     # to the allowlist without its own phrasing.

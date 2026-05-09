@@ -213,6 +213,7 @@ async def build_project_structure(
                     volume_number=volume.volume_number,
                     chapter_goal=chapter.chapter_goal,
                     status=ChapterStatus(chapter.status),
+                    production_state=chapter.production_state,
                     target_word_count=chapter.target_word_count,
                     current_word_count=chapter_draft.word_count if chapter_draft is not None else chapter.current_word_count,
                     current_draft_version_no=chapter_draft.version_no if chapter_draft is not None else None,

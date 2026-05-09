@@ -23,6 +23,7 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bestseller.services.llm import LLMCompletionRequest, LLMRole, complete_text
+from bestseller.services.methodology import render_qimao_regeneration_contract
 from bestseller.services.writing_profile import resolve_writing_profile, sanitize_genre_story_overrides
 from bestseller.services.writing_presets import list_genre_presets, list_platform_presets
 from bestseller.settings import AppSettings
@@ -83,6 +84,68 @@ def _extract_json(text: str) -> dict[str, Any]:
 def _safe_get(data: dict[str, Any], key: str, default: Any = None) -> Any:
     val = data.get(key)
     return val if val is not None else default
+
+
+def _deep_merge_dict(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
+    merged = dict(base)
+    for key, value in override.items():
+        if isinstance(value, dict) and isinstance(merged.get(key), dict):
+            merged[key] = _deep_merge_dict(merged[key], value)
+        else:
+            merged[key] = value
+    return merged
+
+
+def _is_qimao_text(value: Any) -> bool:
+    text = str(value or "").strip().lower()
+    return "七猫" in text or "qimao" in text
+
+
+def _qimao_regeneration_prompt_block(ctx: dict[str, Any]) -> str:
+    market = {}
+    overrides = ctx.get("existing_overrides")
+    if isinstance(overrides, dict) and isinstance(overrides.get("market"), dict):
+        market = overrides["market"]
+    platform_target = (
+        market.get("platform_target")
+        or ctx.get("platform_target")
+        or ctx.get("default_platform")
+    )
+    block = render_qimao_regeneration_contract(
+        platform_target=str(platform_target or ""),
+        language=str(ctx.get("language") or "zh-CN"),
+        rejection_reasons=ctx.get("editor_rejection_reasons"),
+    )
+    return f"\n\n{block}\n" if block else ""
+
+
+def _apply_qimao_hints_to_context(ctx: dict[str, Any]) -> None:
+    hints = ctx.get("user_hints")
+    if not isinstance(hints, dict):
+        return
+    requested_platform = (
+        hints.get("platform_target")
+        or hints.get("platform")
+        or hints.get("target_platform")
+    )
+    if not _is_qimao_text(requested_platform):
+        return
+    ctx["default_platform"] = "七猫小说"
+    ctx["platform_target"] = "七猫小说"
+    if "七猫小说" not in ctx.get("recommended_platforms", []):
+        ctx["recommended_platforms"] = ["七猫小说", *ctx.get("recommended_platforms", [])]
+    overrides = ctx.setdefault("existing_overrides", {})
+    if isinstance(overrides, dict):
+        market = overrides.setdefault("market", {})
+        if isinstance(market, dict):
+            market["platform_target"] = "七猫小说"
+            market.setdefault(
+                "opening_contract",
+                "第一章禁止普通日常/背景/风景开场；必须从异常、危机、误会、侮辱、损失、利益冲突或被迫选择切入。",
+            )
+    reasons = hints.get("editor_rejection_reasons") or hints.get("rejection_reasons")
+    if reasons:
+        ctx["editor_rejection_reasons"] = reasons
 
 
 async def _llm_call(
@@ -201,10 +264,11 @@ def _build_genre_context(
 
 def _commercial_brief_prompt_block(ctx: dict[str, Any]) -> str:
     brief = ctx.get("commercial_brief")
+    qimao_block = _qimao_regeneration_prompt_block(ctx)
     if not isinstance(brief, dict) or not brief:
-        return ""
+        return qimao_block
     label = "[Auto commercial positioning brief]" if str(ctx.get("language", "")).startswith("en") else "【自动商业化立项 brief】"
-    return f"\n\n{label}\n{json.dumps(brief, ensure_ascii=False, indent=2)}\n"
+    return f"\n\n{label}\n{json.dumps(brief, ensure_ascii=False, indent=2)}\n{qimao_block}"
 
 
 def _normalize_string_list(values: Any) -> list[str]:
@@ -250,6 +314,11 @@ def _build_commercial_fallback(ctx: dict[str, Any]) -> dict[str, Any]:
         "content_mode": market.get("content_mode") or (
             "中文网文长篇连载" if not is_en else "Commercial English web serial"
         ),
+        "opening_contract": market.get("opening_contract") or (
+            "第一章必须以异常、危机、误会、损失、利益冲突或被迫选择切入。"
+            if _is_qimao_text(market.get("platform_target") or ctx.get("default_platform"))
+            else ""
+        ),
         "opening_strategy": market.get("opening_strategy") or (
             "开篇先亮出主角差异化优势、即时利益和明确危险。"
             if not is_en else "Reveal the protagonist edge, immediate upside, and visible danger in the opening."
@@ -292,6 +361,7 @@ def _apply_commercial_brief_to_profile(
         "platform_target",
         "reader_promise",
         "content_mode",
+        "opening_contract",
         "opening_strategy",
         "chapter_hook_strategy",
         "pacing_profile",
@@ -381,6 +451,7 @@ def _commercial_positioning_user_prompt(
         instruction = genre_profile.planner_prompts.book_spec_instruction_zh
         if instruction:
             prompt += f"\n\n【品类商业定位要求】\n{instruction}"
+    prompt += _qimao_regeneration_prompt_block(ctx)
     return prompt
 
 
@@ -422,6 +493,7 @@ def _commercial_positioning_user_prompt_en(
         instruction = genre_profile.planner_prompts.book_spec_instruction_en
         if instruction:
             prompt += f"\n\n[Genre commercial requirements]\n{instruction}"
+    prompt += _qimao_regeneration_prompt_block(ctx)
     return prompt
 
 
@@ -1117,6 +1189,7 @@ async def run_conception_pipeline(
     ctx = _build_genre_context(genre_key, chapter_count, story_facets=story_facets)
     if user_hints:
         ctx["user_hints"] = user_hints
+        _apply_qimao_hints_to_context(ctx)
 
     is_en = ctx.get("language", "zh-CN").startswith("en")
 
@@ -1339,19 +1412,40 @@ def _ensure_complete_profile(
 ) -> dict[str, Any]:
     """Ensure the writing profile has all required sections, filling from proposals if needed."""
     existing_overrides = ctx.get("existing_overrides", {})
+    if not isinstance(existing_overrides, dict):
+        existing_overrides = {}
+    existing_market = (
+        existing_overrides.get("market", {})
+        if isinstance(existing_overrides, dict) and isinstance(existing_overrides.get("market"), dict)
+        else {}
+    )
+    profile_market = profile.get("market", {}) if isinstance(profile.get("market"), dict) else {}
+    target_platform = (
+        profile_market.get("platform_target")
+        or market.get("platform_target")
+        or existing_market.get("platform_target")
+        or ctx.get("platform_target")
+        or ctx.get("default_platform")
+    )
+    seed_profile = (
+        {"market": {"platform_target": str(target_platform)}}
+        if target_platform
+        else None
+    )
     fallback_profile = resolve_writing_profile(
-        None,
+        seed_profile,
         genre=str(ctx.get("genre", "general-fiction") or "general-fiction"),
         sub_genre=ctx.get("sub_genre"),
         language=ctx.get("language"),
     ).model_dump(mode="json")
 
-    if "market" not in profile or not profile["market"]:
-        profile["market"] = (
-            market
-            or existing_overrides.get("market", {})
-            or fallback_profile.get("market", {})
-        )
+    profile["market"] = _deep_merge_dict(
+        _deep_merge_dict(
+            _deep_merge_dict(fallback_profile.get("market", {}), existing_market),
+            market if isinstance(market, dict) else {},
+        ),
+        profile_market,
+    )
 
     if "character" not in profile or not profile["character"]:
         profile["character"] = {}

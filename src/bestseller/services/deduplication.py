@@ -94,6 +94,103 @@ def compute_jaccard_similarity(text_a: str, text_b: str) -> float:
     return intersection / union if union > 0 else 0.0
 
 
+_CROSS_CHAPTER_PUNCT_RE = re.compile(r"[\s#*_`>\-=，。！？、；：“”‘’（）()【】\[\]《》,.!?;:'\"…·]+")
+
+
+def _normalize_cross_chapter_paragraph(text: str) -> str:
+    """Normalize a paragraph key for publication-grade cross-chapter checks."""
+    return _CROSS_CHAPTER_PUNCT_RE.sub("", _normalize_text(text))
+
+
+def detect_cross_chapter_repetition(
+    chapter_texts: list[tuple[int, str]],
+    *,
+    min_paragraph_length: int = 20,
+    chapter_similarity_threshold: float = 0.35,
+    chapter_similarity_window: int = 5,
+    max_findings: int = 50,
+) -> list[dict[str, Any]]:
+    """Detect repeated publishable material across chapters.
+
+    This is a hard publication safety net. Generation-time scene checks may
+    warn or auto-clean, but platform submission needs a deterministic final
+    check for copied paragraphs or near-duplicate adjacent chapters.
+    """
+    ordered = [(int(chapter), text or "") for chapter, text in chapter_texts if text]
+    ordered.sort(key=lambda item: item[0])
+    findings: list[dict[str, Any]] = []
+
+    seen_paragraphs: dict[str, tuple[int, int, str]] = {}
+    reported_paragraph_pairs: set[tuple[int, int, int, int]] = set()
+    for chapter_number, text in ordered:
+        for para_index, paragraph in enumerate(_split_paragraphs(text), start=1):
+            key = _normalize_cross_chapter_paragraph(paragraph)
+            if len(key) < min_paragraph_length:
+                continue
+            prior = seen_paragraphs.get(key)
+            if prior is None:
+                seen_paragraphs[key] = (chapter_number, para_index, paragraph)
+                continue
+            prior_chapter, prior_index, prior_text = prior
+            if prior_chapter == chapter_number:
+                continue
+            pair_key = (prior_chapter, prior_index, chapter_number, para_index)
+            if pair_key in reported_paragraph_pairs:
+                continue
+            reported_paragraph_pairs.add(pair_key)
+            sample = paragraph[:120].replace("\n", " ")
+            findings.append({
+                "chapter": chapter_number,
+                "source_chapter": prior_chapter,
+                "paragraph": para_index,
+                "source_paragraph": prior_index,
+                "similarity": 1.0,
+                "severity": "critical",
+                "text": sample,
+                "source_text": prior_text[:120].replace("\n", " "),
+                "message": (
+                    f"[跨章段落重复] 第{chapter_number}章第{para_index}段与"
+                    f"第{prior_chapter}章第{prior_index}段重复：{sample}。"
+                    f"发布前必须重写。"
+                ),
+            })
+            if len(findings) >= max_findings:
+                return findings
+
+    shingle_sets = [
+        (chapter_number, _compute_shingle_set(text))
+        for chapter_number, text in ordered
+    ]
+    for idx, (chapter_a, shingles_a) in enumerate(shingle_sets):
+        if not shingles_a:
+            continue
+        for chapter_b, shingles_b in shingle_sets[idx + 1 :]:
+            if chapter_b - chapter_a > chapter_similarity_window:
+                break
+            if not shingles_b:
+                continue
+            union = len(shingles_a | shingles_b)
+            if union == 0:
+                continue
+            similarity = len(shingles_a & shingles_b) / union
+            if similarity < chapter_similarity_threshold:
+                continue
+            findings.append({
+                "chapter": chapter_b,
+                "source_chapter": chapter_a,
+                "similarity": round(similarity, 3),
+                "severity": "critical",
+                "message": (
+                    f"[跨章整体重复] 第{chapter_b}章与第{chapter_a}章整体相似度"
+                    f" {similarity:.1%}，疑似重复章节。发布前必须重写。"
+                ),
+            })
+            if len(findings) >= max_findings:
+                return findings
+
+    return findings
+
+
 def check_scene_duplication(
     new_scene_text: str,
     existing_scene_texts: list[tuple[int, int, str]],

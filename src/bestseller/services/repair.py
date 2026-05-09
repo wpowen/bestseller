@@ -12,6 +12,7 @@ from bestseller.domain.enums import ProjectStatus, WorkflowStatus
 from bestseller.domain.pipeline import ProjectRepairChapterSummary, ProjectRepairResult
 from bestseller.infra.db.models import (
     ChapterModel,
+    ChapterDraftVersionModel,
     RewriteImpactModel,
     RewriteTaskModel,
     SceneCardModel,
@@ -58,6 +59,80 @@ async def _load_pending_rewrite_tasks(
             )
         )
     )
+
+
+async def _load_publication_blocked_chapter_numbers(
+    session: AsyncSession,
+    *,
+    project: Any,
+    settings: AppSettings,
+) -> set[int]:
+    """Find current chapters that cannot pass publication/export gates.
+
+    Project repair used to depend only on pending ``rewrite_tasks``. That left
+    chapters marked ``production_state=blocked`` by deterministic gates, such
+    as cross-chapter repetition, outside the actual repair run unless some
+    separate review task also existed. Use the publication gate itself as the
+    repair target oracle so blocked chapters cannot fall through that gap.
+    """
+
+    rows = await session.execute(
+        select(ChapterModel, ChapterDraftVersionModel)
+        .join(
+            ChapterDraftVersionModel,
+            ChapterDraftVersionModel.chapter_id == ChapterModel.id,
+        )
+        .where(
+            ChapterModel.project_id == project.id,
+            ChapterDraftVersionModel.is_current.is_(True),
+        )
+        .order_by(ChapterModel.chapter_number.asc())
+    )
+    payloads = list(rows.all())
+    from bestseller.services.deduplication import (  # noqa: PLC0415
+        detect_chapter_text_loop,
+        detect_cross_chapter_repetition,
+        detect_intra_chapter_repetition,
+        detect_short_cluster_near_repeat,
+    )
+    from bestseller.services.drafts import count_words  # noqa: PLC0415
+    from bestseller.services.output_hygiene import collect_unfinished_artifact_issues  # noqa: PLC0415
+
+    blocked: set[int] = set()
+    language = getattr(project, "language", None)
+    hard_word_max = int(getattr(settings.generation.words_per_chapter, "max", 0) or 0)
+    for chapter, draft in payloads:
+        chapter_number = int(chapter.chapter_number)
+        status = (getattr(chapter, "status", "") or "").lower()
+        production_state = (getattr(chapter, "production_state", "") or "").lower()
+        content = draft.content_md or ""
+        if status != "complete" or production_state != "ok":
+            blocked.add(chapter_number)
+        if not list(getattr(draft, "assembled_from_scene_draft_ids", None) or []):
+            blocked.add(chapter_number)
+        if hard_word_max > 0 and count_words(content) > hard_word_max:
+            blocked.add(chapter_number)
+        if collect_unfinished_artifact_issues(content, language=language):
+            blocked.add(chapter_number)
+        if (
+            detect_chapter_text_loop(content)
+            or detect_short_cluster_near_repeat(content)
+            or detect_intra_chapter_repetition(content)
+        ):
+            blocked.add(chapter_number)
+
+    cross_findings = detect_cross_chapter_repetition(
+        [
+            (int(chapter.chapter_number), draft.content_md or "")
+            for chapter, draft in payloads
+            if getattr(chapter, "chapter_number", None) is not None
+        ]
+    )
+    for finding in cross_findings:
+        chapter_number = int(finding.get("chapter") or 0)
+        if chapter_number > 0:
+            blocked.add(chapter_number)
+    return blocked
 
 
 def _metadata_uuid(payload: dict[str, object] | None, key: str) -> UUID | None:
@@ -232,6 +307,14 @@ async def run_project_repair(
             for chapter_number in chapter_numbers:
                 chapter_task_ids[chapter_number].append(task.id)
 
+        repair_gate_chapter_numbers = await _load_publication_blocked_chapter_numbers(
+            session,
+            project=project,
+            settings=settings,
+        )
+        for chapter_number in repair_gate_chapter_numbers:
+            chapter_task_ids.setdefault(chapter_number, [])
+
         await create_workflow_step_run(
             session,
             workflow_run_id=workflow_run.id,
@@ -241,6 +324,7 @@ async def run_project_repair(
             output_ref={
                 "pending_rewrite_task_ids": [str(task.id) for task in pending_tasks],
                 "target_chapter_numbers": _dedupe_sorted(chapter_task_ids.keys()),
+                "repair_gate_chapter_numbers": _dedupe_sorted(repair_gate_chapter_numbers),
             },
         )
         step_order += 1
@@ -251,6 +335,7 @@ async def run_project_repair(
                 "project_slug": project_slug,
                 "pending_rewrite_task_count": task_count,
                 "target_chapter_numbers": _dedupe_sorted(chapter_task_ids.keys()),
+                "repair_gate_chapter_numbers": _dedupe_sorted(repair_gate_chapter_numbers),
             },
         )
 

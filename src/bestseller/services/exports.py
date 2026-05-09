@@ -462,15 +462,71 @@ def create_export_artifact(
     )
 
 
-def _collect_export_blockers(
+async def load_publication_comparison_payloads(
+    session: AsyncSession,
+    project_id: UUID,
+    *,
+    through_chapter_number: int | None = None,
+) -> list[tuple[ChapterModel, ChapterDraftVersionModel]]:
+    """Load current chapter drafts used by publication/export safety gates."""
+    stmt = (
+        select(ChapterModel, ChapterDraftVersionModel)
+        .join(
+            ChapterDraftVersionModel,
+            ChapterDraftVersionModel.chapter_id == ChapterModel.id,
+        )
+        .where(
+            ChapterModel.project_id == project_id,
+            ChapterDraftVersionModel.is_current.is_(True),
+        )
+        .order_by(ChapterModel.chapter_number.asc())
+    )
+    if through_chapter_number is not None:
+        stmt = stmt.where(ChapterModel.chapter_number <= through_chapter_number)
+    result = await session.execute(stmt)
+    return list(result.all())
+
+
+def collect_publication_blockers(
     project: ProjectModel,
     chapter_payloads: list[tuple[ChapterModel, ChapterDraftVersionModel]],
+    *,
+    comparison_payloads: list[tuple[ChapterModel, ChapterDraftVersionModel]] | None = None,
 ) -> list[str]:
     language = getattr(project, "language", None)
     is_en = normalize_language(language).lower().startswith("en")
     blockers: list[str] = []
+    target_chapter_numbers = {
+        int(chapter.chapter_number)
+        for chapter, _draft in chapter_payloads
+        if getattr(chapter, "chapter_number", None) is not None
+    }
 
     for chapter, draft in chapter_payloads:
+        chapter_number = int(chapter.chapter_number)
+        status = (getattr(chapter, "status", "") or "").lower()
+        production_state = (getattr(chapter, "production_state", "") or "").lower()
+        if status != "complete":
+            blockers.append(
+                (
+                    f"Chapter {chapter_number}: status is {status or 'unset'}, not complete"
+                    if is_en else f"第{chapter_number}章：状态为{status or '未设置'}，不是 complete，禁止发布"
+                )
+            )
+        if production_state != "ok":
+            blockers.append(
+                (
+                    f"Chapter {chapter_number}: production_state is {production_state or 'unset'}, not ok"
+                    if is_en else f"第{chapter_number}章：门禁状态为{production_state or '未设置'}，不是 ok，禁止发布"
+                )
+            )
+        if not list(getattr(draft, "assembled_from_scene_draft_ids", None) or []):
+            blockers.append(
+                (
+                    f"Chapter {chapter_number}: current draft has no scene provenance, export blocked"
+                    if is_en else f"第{chapter_number}章：当前稿缺少场景来源记录，禁止发布"
+                )
+            )
         # Word-count deviations are logged as warnings but never block export.
         target = max(int(chapter.target_word_count or 0), 0)
         if target > 0:
@@ -520,14 +576,84 @@ def _collect_export_blockers(
                     if is_en else f"第{chapter.chapter_number}章：{issue}"
                 )
             )
+        try:
+            from bestseller.services.deduplication import (
+                detect_chapter_text_loop,
+                detect_intra_chapter_repetition,
+                detect_short_cluster_near_repeat,
+            )
+
+            local_findings = (
+                detect_chapter_text_loop(draft.content_md or "")
+                + detect_short_cluster_near_repeat(draft.content_md or "")
+                + detect_intra_chapter_repetition(draft.content_md or "")
+            )
+            for finding in local_findings[:5]:
+                message = str(finding.get("message") or "duplicate content")
+                blockers.append(
+                    (
+                        f"Chapter {chapter_number}: {message}"
+                        if is_en else f"第{chapter_number}章：{message}"
+                    )
+                )
+            if len(local_findings) > 5:
+                blockers.append(
+                    (
+                        f"Chapter {chapter_number}: {len(local_findings) - 5} more duplicate findings"
+                        if is_en else f"第{chapter_number}章：另有{len(local_findings) - 5}条重复问题"
+                    )
+                )
+        except Exception:
+            logger.debug("Publication gate: local duplicate check failed", exc_info=True)
+
+    try:
+        from bestseller.services.deduplication import detect_cross_chapter_repetition
+
+        comparison = comparison_payloads if comparison_payloads is not None else chapter_payloads
+        cross_findings = detect_cross_chapter_repetition(
+            [
+                (int(chapter.chapter_number), draft.content_md or "")
+                for chapter, draft in comparison
+                if getattr(chapter, "chapter_number", None) is not None
+            ]
+        )
+        emitted = 0
+        for finding in cross_findings:
+            if int(finding.get("chapter") or 0) not in target_chapter_numbers:
+                continue
+            message = str(finding.get("message") or "cross-chapter duplicate content")
+            blockers.append(message if not is_en else f"Chapter {finding.get('chapter')}: {message}")
+            emitted += 1
+            if emitted >= 10:
+                break
+        remaining = len([
+            finding for finding in cross_findings
+            if int(finding.get("chapter") or 0) in target_chapter_numbers
+        ]) - emitted
+        if remaining > 0:
+            blockers.append(
+                (
+                    f"{remaining} more cross-chapter duplicate finding(s)"
+                    if is_en else f"另有{remaining}条跨章重复问题"
+                )
+            )
+    except Exception:
+        logger.debug("Publication gate: cross-chapter duplicate check failed", exc_info=True)
+
     return blockers
 
 
 def _raise_if_export_blocked(
     project: ProjectModel,
     chapter_payloads: list[tuple[ChapterModel, ChapterDraftVersionModel]],
+    *,
+    comparison_payloads: list[tuple[ChapterModel, ChapterDraftVersionModel]] | None = None,
 ) -> None:
-    blockers = _collect_export_blockers(project, chapter_payloads)
+    blockers = collect_publication_blockers(
+        project,
+        chapter_payloads,
+        comparison_payloads=comparison_payloads,
+    )
     if not blockers:
         return
     raise ValueError("; ".join(blockers))
@@ -612,7 +738,16 @@ async def export_chapter_markdown(
     created_by_run_id: UUID | None = None,
 ) -> tuple[ExportArtifactModel, Path]:
     project, chapter, draft = await _load_chapter_export_payload(session, project_slug, chapter_number)
-    _raise_if_export_blocked(project, [(chapter, draft)])
+    comparison_payloads = await load_publication_comparison_payloads(
+        session,
+        project.id,
+        through_chapter_number=chapter.chapter_number,
+    )
+    _raise_if_export_blocked(
+        project,
+        [(chapter, draft)],
+        comparison_payloads=comparison_payloads,
+    )
     output_path = Path(settings.output.base_dir) / project.slug / f"chapter-{chapter.chapter_number:03d}.md"
     content_md = _ensure_chapter_heading(
         chapter,
@@ -674,7 +809,16 @@ async def export_chapter_docx(
     created_by_run_id: UUID | None = None,
 ) -> tuple[ExportArtifactModel, Path]:
     project, chapter, draft = await _load_chapter_export_payload(session, project_slug, chapter_number)
-    _raise_if_export_blocked(project, [(chapter, draft)])
+    comparison_payloads = await load_publication_comparison_payloads(
+        session,
+        project.id,
+        through_chapter_number=chapter.chapter_number,
+    )
+    _raise_if_export_blocked(
+        project,
+        [(chapter, draft)],
+        comparison_payloads=comparison_payloads,
+    )
     title = format_chapter_heading(chapter.chapter_number, chapter.title, language=project.language).lstrip("# ").strip()
     output_path = Path(settings.output.base_dir) / project.slug / f"chapter-{chapter.chapter_number:03d}.docx"
     storage_uri, checksum = write_binary_output(output_path, build_docx_bytes(title, draft.content_md))
@@ -732,7 +876,16 @@ async def export_chapter_epub(
     created_by_run_id: UUID | None = None,
 ) -> tuple[ExportArtifactModel, Path]:
     project, chapter, draft = await _load_chapter_export_payload(session, project_slug, chapter_number)
-    _raise_if_export_blocked(project, [(chapter, draft)])
+    comparison_payloads = await load_publication_comparison_payloads(
+        session,
+        project.id,
+        through_chapter_number=chapter.chapter_number,
+    )
+    _raise_if_export_blocked(
+        project,
+        [(chapter, draft)],
+        comparison_payloads=comparison_payloads,
+    )
     title = format_chapter_heading(chapter.chapter_number, chapter.title, language=project.language).lstrip("# ").strip()
     output_path = Path(settings.output.base_dir) / project.slug / f"chapter-{chapter.chapter_number:03d}.epub"
     storage_uri, checksum = write_binary_output(
@@ -796,7 +949,16 @@ async def export_chapter_pdf(
     created_by_run_id: UUID | None = None,
 ) -> tuple[ExportArtifactModel, Path]:
     project, chapter, draft = await _load_chapter_export_payload(session, project_slug, chapter_number)
-    _raise_if_export_blocked(project, [(chapter, draft)])
+    comparison_payloads = await load_publication_comparison_payloads(
+        session,
+        project.id,
+        through_chapter_number=chapter.chapter_number,
+    )
+    _raise_if_export_blocked(
+        project,
+        [(chapter, draft)],
+        comparison_payloads=comparison_payloads,
+    )
     title = format_chapter_heading(chapter.chapter_number, chapter.title, language=project.language).lstrip("# ").strip()
     output_path = Path(settings.output.base_dir) / project.slug / f"chapter-{chapter.chapter_number:03d}.pdf"
     storage_uri, checksum = write_binary_output(output_path, build_pdf_bytes(title, draft.content_md))

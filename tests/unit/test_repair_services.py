@@ -8,6 +8,7 @@ import pytest
 from bestseller.domain.pipeline import ChapterPipelineResult
 from bestseller.infra.db.models import (
     ChapterModel,
+    ChapterDraftVersionModel,
     ExportArtifactModel,
     ProjectModel,
     RewriteTaskModel,
@@ -28,10 +29,12 @@ class FakeSession:
         *,
         scalar_results: list[object | None] | None = None,
         scalars_results: list[list[object]] | None = None,
+        execute_results: list[list[object]] | None = None,
         get_map: dict[tuple[object, object], object] | None = None,
     ) -> None:
         self.scalar_results = list(scalar_results or [])
         self.scalars_results = list(scalars_results or [])
+        self.execute_results = list(execute_results or [])
         self.get_map = dict(get_map or {})
         self.added: list[object] = []
 
@@ -55,6 +58,18 @@ class FakeSession:
         if not self.scalars_results:
             return []
         return self.scalars_results.pop(0)
+
+    async def execute(self, stmt: object) -> object:
+        rows = self.execute_results.pop(0) if self.execute_results else []
+
+        class FakeRows:
+            def __init__(self, values: list[object]) -> None:
+                self._values = values
+
+            def all(self) -> list[object]:
+                return self._values
+
+        return FakeRows(rows)
 
     async def get(self, model: object, key: object) -> object | None:
         return self.get_map.get((model, key))
@@ -91,6 +106,20 @@ def build_chapter(project_id, chapter_number: int) -> ChapterModel:
     )
     chapter.id = uuid4()
     return chapter
+
+
+def build_chapter_draft(project_id, chapter_id, *, content: str = "# 第1章") -> ChapterDraftVersionModel:
+    draft = ChapterDraftVersionModel(
+        project_id=project_id,
+        chapter_id=chapter_id,
+        version_no=1,
+        content_md=content,
+        word_count=1000,
+        assembled_from_scene_draft_ids=[str(uuid4())],
+        is_current=True,
+    )
+    draft.id = uuid4()
+    return draft
 
 
 def build_scene(project_id, chapter_id, scene_number: int) -> SceneCardModel:
@@ -214,6 +243,7 @@ async def test_run_project_repair_supersedes_tasks_and_reruns_affected_chapters(
     session = FakeSession(
         scalar_results=[0],
         scalars_results=[[task_scene, task_chapter]],
+        execute_results=[[]],
         get_map={
             (ChapterModel, chapter1.id): chapter1,
             (ChapterModel, chapter2.id): chapter2,
@@ -270,6 +300,7 @@ async def test_run_project_repair_handles_no_pending_rewrites(
     session = FakeSession(
         scalar_results=[0],
         scalars_results=[[]],
+        execute_results=[[]],
     )
     result = await repair_services.run_project_repair(
         session,
@@ -284,3 +315,63 @@ async def test_run_project_repair_handles_no_pending_rewrites(
     assert result.export_artifact_id is None
     assert result.final_verdict == "pass"
     assert result.requires_human_review is False
+
+
+@pytest.mark.asyncio
+async def test_run_project_repair_includes_publication_blocked_chapters_without_rewrite_tasks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = build_project()
+    chapter30 = build_chapter(project.id, 30)
+    chapter30.status = "revision"
+    chapter30.production_state = "blocked"
+    draft30 = build_chapter_draft(project.id, chapter30.id, content="# 第30章\n\n需要重建。")
+    processed: list[int] = []
+
+    async def fake_get_project_by_slug(session, slug: str):
+        return project
+
+    async def fake_run_chapter_pipeline(session, settings, project_slug: str, chapter_number: int, **kwargs):
+        processed.append(chapter_number)
+        return ChapterPipelineResult(
+            workflow_run_id=uuid4(),
+            project_id=project.id,
+            chapter_id=chapter30.id,
+            chapter_number=chapter_number,
+            scene_results=[],
+            chapter_draft_id=uuid4(),
+            chapter_draft_version_no=2,
+            final_verdict="pass",
+            requires_human_review=False,
+        )
+
+    async def fake_review_project_consistency(session, settings, project_slug: str, **kwargs):
+        return (
+            type("ReviewResultStub", (), {"verdict": "pass"})(),
+            type("ReportStub", (), {"id": uuid4()})(),
+            type("QualityStub", (), {"id": uuid4()})(),
+        )
+
+    monkeypatch.setattr(repair_services, "get_project_by_slug", fake_get_project_by_slug)
+    monkeypatch.setattr(repair_services, "run_chapter_pipeline", fake_run_chapter_pipeline)
+    monkeypatch.setattr(
+        repair_services,
+        "review_project_consistency",
+        fake_review_project_consistency,
+    )
+
+    session = FakeSession(
+        scalar_results=[0],
+        scalars_results=[[]],
+        execute_results=[[(chapter30, draft30)]],
+    )
+    result = await repair_services.run_project_repair(
+        session,
+        build_settings(),
+        "my-story",
+        export_markdown=False,
+    )
+
+    assert result.pending_rewrite_task_count == 0
+    assert processed == [30]
+    assert [item.chapter_number for item in result.processed_chapters] == [30]

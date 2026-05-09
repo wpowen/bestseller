@@ -46,6 +46,14 @@ Status on 2026-05-09:
 - The premium engine now reads `premium_state_ledger` back into the next scene's progression, rule, faction, and relationship blocks, creating the first append-only state loop across chapters.
 - `src/bestseller/services/premium_state_ledger.py` now validates that ledger events have causal support: progression events need causes, rule events need visible effect plus cost/exploit path, faction reactions must be differentiated, relationship events need changed axis plus active choice, and agency debts need due windows.
 - Living story bible updates persist `premium_state_ledger_report`, and the premium engine surfaces failing ledger findings as writer-context warnings.
+- Valid premium ledgers now fold into `project.metadata_json["premium_state_snapshot"]`, which stores authoritative short-state for resource balances, recent rule costs, faction pressure queue, relationship axes, and open agency debts.
+- The premium engine now renders `premium_state_snapshot` into writer blocks before lower-confidence append-only ledger events, so future scenes can obey compact canonical state instead of rereading the whole history.
+- `src/bestseller/services/premium_book_gate.py` now evaluates project-level premium readiness with a stable report containing `passed`, `score`, `blocking_findings`, `warnings`, `recommended_repair_actions`, and a capability snapshot.
+- The premium book gate fails projects whose required genre engine is missing: progression-heavy genres need progression state, rule-heavy genres need rules, faction-heavy genres need faction ecology, and relationship-heavy genres need relationship/agency state.
+- `bestseller premium-gate project <slug>` exposes the same gate from CLI.
+- `run_project_pipeline` now runs the premium book gate as Stage 12 and persists `premium_book_gate_report` to project and workflow metadata. It is telemetry-on by default and becomes a hard final gate when `pipeline.premium_book_gate_block_on_failure=true`.
+- `src/bestseller/services/premium_benchmark.py` now provides deterministic good/bad structural fixtures for凡人流修仙、规则悬疑、女频无CP and runs them through the same premium book gate.
+- `bestseller premium-gate benchmark` runs the built-in structural benchmark and emits stable JSON.
 - `tests/unit/test_progression_services.py` proves a xianxia unearned breakthrough fails and an earned breakthrough passes.
 - `tests/unit/test_decision_policy.py` proves a cautious protagonist rejects public vanity duels and allows high risk when rare upside plus escape route is explicit.
 - `tests/unit/test_premium_genre_engine.py` proves xianxia metadata produces progression context plus cautious protagonist policy.
@@ -56,15 +64,24 @@ Status on 2026-05-09:
 - `tests/unit/test_story_bible_services.py::test_update_story_bible_records_premium_state_ledger` proves chapter-end extraction records premium state events.
 - `tests/unit/test_premium_genre_engine.py::test_premium_state_ledger_feeds_next_scene_blocks` proves those events feed the next scene's premium blocks.
 - `tests/unit/test_premium_state_ledger.py` proves valid state events pass and fake events produce actionable findings.
+- `tests/unit/test_premium_state_ledger.py::test_materialize_premium_state_snapshot_from_valid_ledger` proves valid ledgers produce canonical resource/rule/faction/relationship/debt snapshots.
+- `tests/unit/test_premium_genre_engine.py::test_premium_state_snapshot_feeds_writer_blocks` proves those snapshots reach the writer prompt blocks.
+- `tests/unit/test_premium_book_gate.py` proves complete xianxia state passes, missing rule systems fail, invalid premium ledgers fail, and missing relationship agency fails.
+- `tests/unit/test_cli.py::test_premium_gate_project_command_outputs_json` proves the CLI uses the same gate and emits stable JSON.
+- `tests/unit/test_premium_benchmark.py` proves built-in good/bad fixtures cover the first three target genre families and match expected pass/fail reasons.
+- `tests/unit/test_cli.py::test_premium_gate_benchmark_command_outputs_json` proves the benchmark CLI emits stable JSON.
 
 Latest verification:
 
 - `./.venv/bin/python -m ruff check src/bestseller/domain/progression.py src/bestseller/services/progression.py tests/unit/test_progression_services.py` passes.
 - `./.venv/bin/python -m ruff check src/bestseller/domain/decision_policy.py src/bestseller/services/decision_policy.py tests/unit/test_decision_policy.py src/bestseller/domain/progression.py src/bestseller/services/progression.py tests/unit/test_progression_services.py` passes.
 - `./.venv/bin/python -m ruff check src/bestseller/services/premium_genre_engine.py tests/unit/test_premium_genre_engine.py src/bestseller/domain/context.py tests/unit/test_hype_draft_plumbing.py` passes.
-- `./.venv/bin/python -m pytest tests/unit/test_premium_state_ledger.py tests/unit/test_story_bible_services.py tests/unit/test_premium_genre_engine.py tests/unit/test_hype_draft_plumbing.py tests/unit/test_pipeline_services.py::test_generate_scene_draft_direct_settings_injects_premium_blocks tests/unit/test_pipeline_services.py::test_run_scene_pipeline_injects_premium_engine_blocks_into_writer_context tests/unit/test_progression_services.py tests/unit/test_decision_policy.py -q --no-cov` passes with 72 tests.
+- `./.venv/bin/python -m ruff check src/bestseller/services/premium_book_gate.py tests/unit/test_premium_book_gate.py` passes.
+- `./.venv/bin/python -m ruff check src/bestseller/services/premium_benchmark.py tests/unit/test_premium_benchmark.py src/bestseller/services/premium_book_gate.py tests/unit/test_premium_book_gate.py` passes.
+- `./.venv/bin/python -m pytest tests/unit/test_premium_benchmark.py tests/unit/test_premium_book_gate.py tests/unit/test_cli.py::test_premium_gate_project_command_outputs_json tests/unit/test_cli.py::test_premium_gate_benchmark_command_outputs_json tests/unit/test_premium_state_ledger.py tests/unit/test_story_bible_services.py tests/unit/test_premium_genre_engine.py tests/unit/test_hype_draft_plumbing.py tests/unit/test_pipeline_services.py::test_generate_scene_draft_direct_settings_injects_premium_blocks tests/unit/test_pipeline_services.py::test_run_scene_pipeline_injects_premium_engine_blocks_into_writer_context tests/unit/test_progression_services.py tests/unit/test_decision_policy.py -q --no-cov` passes with 84 tests.
+- `./.venv/bin/python -m pytest tests/unit/test_premium_benchmark.py tests/unit/test_premium_book_gate.py tests/unit/test_cli.py::test_premium_gate_project_command_outputs_json tests/unit/test_cli.py::test_premium_gate_benchmark_command_outputs_json -q --no-cov` passes with 9 tests.
 - `./.venv/bin/python -m pytest tests/unit/test_decision_policy.py tests/unit/test_diversity_budget.py tests/unit/test_prompt_constructor.py tests/unit/test_progression_services.py tests/unit/test_story_bible_coercion.py -q --no-cov` passes with 157 tests.
-- `./.venv/bin/python -m pytest -q --no-cov` passes with 3085 tests.
+- `./.venv/bin/python -m pytest -q --no-cov` passes with 3097 tests.
 - `./.venv/bin/python -m pytest -q` currently fails only on the existing global coverage threshold: total coverage is below `--cov-fail-under=80` even though all behavior tests pass.
 
 ## Live Integration Map
@@ -82,10 +99,13 @@ The premium engine is now connected at the pre-draft scene-writing seam:
 4. `run_scene_pipeline` attaches those blocks to `shared_context`.
 5. `generate_scene_draft` forwards the packet to `build_scene_draft_prompts`.
 6. `build_scene_draft_prompts` injects the blocks before lower-tier diversity and craft guidance.
+7. Chapter-end story-bible update extracts premium state deltas into `premium_state_ledger`, validates them, and folds valid events into `premium_state_snapshot`.
+8. Project pipeline Stage 12 runs `premium_book_gate`, persists the report, and can block final completion when the hard gate setting is enabled.
+9. `premium_benchmark` runs deterministic good/bad structural fixtures through the same gate before any live ranking benchmark is attempted.
 
 Direct `generate_scene_draft` calls now also run the same premium engine injection after building their local context, so non-pipeline scene writing tasks do not silently bypass the architecture.
 
-This means current xianxia/progression projects can use the new ability if their story bible has enough structured metadata. Current民俗悬疑/rule-system projects can also use the rule block if `world_rules` or rule-ledger metadata is present. Current family/sect/court/faction-heavy projects can receive faction ecology constraints if faction metadata is present. Current female-growth/no-CP and romantasy projects can now receive relationship/agency constraints if `cast_spec`, `relationships`, `interpersonal_promises`, or explicit relationship contract metadata is present. Chapter-end updates now also record an append-only `premium_state_ledger` and feed it back into the next scene's premium blocks. The remaining gap is authoritative mutation and validation: generated chapters record resources, rules, faction reactions, relationship stages, promises, and agency debts, but do not yet safely mutate canonical resource balances or block invalid state transitions.
+This means current xianxia/progression projects can use the new ability if their story bible has enough structured metadata. Current民俗悬疑/rule-system projects can also use the rule block if `world_rules` or rule-ledger metadata is present. Current family/sect/court/faction-heavy projects can receive faction ecology constraints if faction metadata is present. Current female-growth/no-CP and romantasy projects can now receive relationship/agency constraints if `cast_spec`, `relationships`, `interpersonal_promises`, or explicit relationship contract metadata is present. Chapter-end updates now record an append-only `premium_state_ledger`, validate it, fold valid events into `premium_state_snapshot`, and feed both canonical snapshot and recent ledger events back into the next scene's premium blocks. Project completion now receives a premium-readiness report, and the built-in structural benchmark checks good/bad fixtures before live market benchmarking. The remaining deeper gap is database-level domain mutation and live ranking fixtures: generated chapters maintain canonical metadata snapshots, but they do not yet mutate dedicated DB tables for resource balances, faction tasks, relationship stages, or agency debts.
 
 ## Current Project Readiness Audit
 
@@ -433,7 +453,7 @@ Purpose: decide whether a generated book is usable as a commercial novel, indepe
 
 New service:
 
-- `src/bestseller/services/premium_book_gate.py`
+- `src/bestseller/services/premium_book_gate.py` implemented.
 
 Gate dimensions:
 
@@ -449,42 +469,47 @@ Gate dimensions:
 
 Implementation scope:
 
-- Reuse `commercial_novel_gate.py`, `project_health.py`, `scorecard.py`, and `volume_fingerprint.py`.
-- Add a structured report with `passed`, `score`, `blocking_findings`, and `recommended_repair_actions`.
-- Integrate the gate into project pipeline completion as a configurable final gate.
+- Reuses scorecard quality score and accepts project-health evidence when supplied.
+- Adds a structured report with `passed`, `score`, `blocking_findings`, `warnings`, `recommended_repair_actions`, and capability snapshot.
+- Integrated into project pipeline completion as a configurable final gate.
+- Exposed through `bestseller premium-gate project <slug>`.
 
 Acceptance:
 
-- A book with empty upgrades fails.
-- A book with repeated faction shock reactions fails.
-- A book with stale protagonist decision policy warnings fails or requires repair.
+- A book with empty upgrades fails through `progression_engine_missing` or invalid premium-state findings.
+- A book with repeated faction shock reactions fails through `premium_state_ledger_blocking` when ledger validation reports `generic_faction_reaction`.
+- A book with stale protagonist decision policy warnings fails or requires repair through `decision_policy_stale`.
 - A passing sample fixture produces a stable JSON report.
 
 ### Phase 7: Batch Benchmark Harness
 
 Purpose: prove the system can repeatedly produce usable genre books, not just one lucky output.
 
-New examples:
+Implemented structural fixtures:
 
-- `examples/benchmarks/xianxia-survival-30ch`
-- `examples/benchmarks/rule-mystery-30ch`
-- `examples/benchmarks/case-court-30ch`
+- `xianxia-survival-good`
+- `xianxia-survival-bad-empty-upgrade`
+- `rule-mystery-good`
+- `rule-mystery-bad-missing-rules`
+- `female-no-cp-good`
+- `female-no-cp-bad-missing-agency`
 
 Benchmark runner:
 
-- generate or load fixture projects
-- run planning/materialization
-- run pure validators
-- optionally run mock LLM generation
-- run premium book gate
-- export benchmark report
+- `run_premium_benchmark_cases()` loads deterministic metadata fixtures.
+- Each fixture runs the premium book gate.
+- Bad fixtures must fail for expected blocking codes.
+- CLI: `bestseller premium-gate benchmark --json`.
 
 Acceptance:
 
-- `xianxia-survival-30ch` passes all pure progression and payoff gates.
-- `rule-mystery-30ch` passes rule lattice and clue chain checks.
-- `case-court-30ch` passes case arc and institution pressure checks.
-- A deliberately bad fixture fails with actionable findings.
+- `xianxia-survival-good` passes the progression/faction gate.
+- `xianxia-survival-bad-empty-upgrade` fails for missing progression and faction ecology.
+- `rule-mystery-good` passes the rule-system gate.
+- `rule-mystery-bad-missing-rules` fails for missing rules.
+- `female-no-cp-good` passes relationship agency.
+- `female-no-cp-bad-missing-agency` fails for missing relationship agency.
+- Live 30-chapter generated fixtures remain the next layer after deterministic structural fixtures.
 
 ## Test Matrix
 

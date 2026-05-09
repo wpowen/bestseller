@@ -67,6 +67,37 @@ def test_build_fingerprint_extracts_all_fields():
 
 
 @pytest.mark.unit
+def test_build_fingerprint_includes_structural_scene_inputs():
+    ch = {
+        "chapter_number": 30,
+        "main_conflict": "宁尘必须在旧药圃确认筑基丹线索。",
+        "opening_situation": "宁尘在旧药圃接到陆沉递来的纸条。",
+        "scenes": [
+            {
+                "scene_number": 1,
+                "scene_type": "confrontation",
+                "title": "旧药圃对质",
+                "time_label": "第四日清晨，旧药圃",
+                "participants": ["宁尘", "陆沉"],
+                "purpose": {
+                    "story": "陆沉交出叶长青改阵证据，逼宁尘决定是否合作。",
+                    "emotion": "戒备转为冷静结盟",
+                },
+                "entry_state": {"宁尘": "独自在药圃等周长老消息"},
+                "exit_state": {"宁尘": "拿到叶长青改阵证据并同意合作"},
+            }
+        ],
+    }
+
+    fp = build_chapter_fingerprint(ch)
+
+    assert "旧药圃对质" in fp.combined_text
+    assert "第四日清晨" in fp.combined_text
+    assert "戒备转为冷静结盟" in fp.combined_text
+    assert "拿到叶长青改阵证据" in fp.combined_text
+
+
+@pytest.mark.unit
 def test_build_fingerprint_handles_missing_fields():
     fp = build_chapter_fingerprint({"chapter_number": 1})
     assert fp.chapter_number == 1

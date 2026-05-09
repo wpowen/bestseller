@@ -43,14 +43,17 @@ class FakeSession:
         *,
         scalar_results: list[object | None] | None = None,
         scalars_results: list[list[object]] | None = None,
+        execute_results: list[object | None] | None = None,
         get_map: dict[object, object] | None = None,
     ) -> None:
         self.scalar_results = list(scalar_results or [])
         self.scalars_results = list(scalars_results or [])
+        self.execute_results = list(execute_results or [])
         self.get_map = dict(get_map or {})
         self.added: list[object] = []
         self.executed: list[object] = []
         self.is_active = True
+        self.rollback_calls = 0
 
     def begin_nested(self):
         class _NoopNestedTransaction:
@@ -89,10 +92,39 @@ class FakeSession:
     async def execute(self, *args: object, **kwargs: object) -> None:
         if args:
             self.executed.append(args[0])
+        if self.execute_results:
+            return self.execute_results.pop(0)
+        return None
+
+    async def rollback(self) -> None:
+        self.rollback_calls += 1
+        self.is_active = True
+
+
+class FakeExecuteRows:
+    def __init__(self, rows: list[tuple[object, ...]]) -> None:
+        self._rows = list(rows)
+
+    def all(self) -> list[tuple[object, ...]]:
+        return list(self._rows)
 
 
 def build_settings():
     return load_settings(env={})
+
+
+@pytest.mark.asyncio
+async def test_recover_session_after_nonfatal_error_rolls_back_dirty_session() -> None:
+    session = FakeSession()
+    session.is_active = False
+
+    await pipeline_services._recover_session_after_nonfatal_error(
+        session,
+        RuntimeError("context helper failed"),
+    )
+
+    assert session.rollback_calls == 1
+    assert session.is_active is True
 
 
 def build_project() -> ProjectModel:
@@ -440,6 +472,7 @@ async def test_run_scene_pipeline_blocks_pre_draft_scene_contract_before_writer(
 @pytest.mark.asyncio
 async def test_run_scene_pipeline_injects_premium_engine_blocks_into_writer_context(
     monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
     project = build_project()
     project.genre = "xianxia"
@@ -485,6 +518,9 @@ async def test_run_scene_pipeline_injects_premium_engine_blocks_into_writer_cont
                 "volume_title": "入宗夺丹",
                 "opening_state": {"protagonist_power_tier": "炼气十层"},
             }
+        ],
+        "prewrite_repair_directives": [
+            "后续卷规划必须更换相邻卷主压力源；当前卷章节也要引入新的外部压力或内部代价，避免同一反派/势力连续驱动。"
         ],
         "factions": [
             {
@@ -578,6 +614,16 @@ async def test_run_scene_pipeline_injects_premium_engine_blocks_into_writer_cont
     monkeypatch.setattr(pipeline_services, "refresh_scene_knowledge", fake_refresh_scene_knowledge)
 
     settings = build_settings()
+    settings.output.base_dir = str(tmp_path)
+    profile_path = tmp_path / project.slug / "story-bible" / "ranking-capability-profile.md"
+    profile_path.parent.mkdir(parents=True)
+    profile_path.write_text(
+        "# 《测试书》榜单级能力 Profile\n\n"
+        "- 固定入口：港口秘境。\n"
+        "- 可解规则：禁令必须有破局路径和代价。\n"
+        "- 单元案推动主线：每个试炼案都回收筑基资源线。\n",
+        encoding="utf-8",
+    )
     settings.pipeline.enable_truth_version_guard = False
     settings.pipeline.enable_contradiction_checks = False
     settings.pipeline.require_pre_draft_scene_contract = False
@@ -594,6 +640,11 @@ async def test_run_scene_pipeline_injects_premium_engine_blocks_into_writer_cont
 
     context = captured["context"]
     assert result.final_verdict == "pass"
+    assert context.ranking_capability_profile_block is not None
+    assert any("[写前规划门禁]" in item for item in context.contradiction_warnings)
+    assert any("更换相邻卷主压力源" in item for item in context.contradiction_warnings)
+    assert "榜单级能力 Profile" in context.ranking_capability_profile_block
+    assert "港口秘境" in context.ranking_capability_profile_block
     assert context.progression_context_block is not None
     assert "【进阶体系约束】" in context.progression_context_block
     assert "炼气 → 筑基 → 金丹" in context.progression_context_block
@@ -690,6 +741,46 @@ async def test_assemble_chapter_draft_creates_assembled_version(
     assert chapter_draft.is_current is True
     assert chapter.current_word_count > 0
     assert any(isinstance(obj, ChapterDraftVersionModel) for obj in session.added)
+
+
+@pytest.mark.asyncio
+async def test_assemble_chapter_draft_blocks_cross_chapter_repetition(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = build_project()
+    chapter = build_chapter(project.id)
+    chapter.chapter_number = 2
+    scene = build_scene(project.id, chapter.id)
+    repeated = "三年前试炼场崩塌，不是意外。叶长青提前改了阵法参数，宁尘的父亲冲进了崩塌区。"
+    scene_draft = SceneDraftVersionModel(
+        project_id=project.id,
+        scene_card_id=scene.id,
+        version_no=1,
+        content_md=repeated,
+        word_count=128,
+        is_current=True,
+        generation_params={},
+    )
+    scene_draft.id = uuid4()
+
+    async def fake_get_project_by_slug(session, slug: str) -> ProjectModel:
+        return project
+
+    monkeypatch.setattr(draft_services, "get_project_by_slug", fake_get_project_by_slug)
+    session = FakeSession(
+        scalar_results=[chapter, scene_draft, 0],
+        scalars_results=[[scene]],
+        execute_results=[
+            FakeExecuteRows([(1, f"# 第1章 暗潮试探\n\n{repeated}")]),
+        ],
+    )
+
+    chapter_draft = await draft_services.assemble_chapter_draft(session, "my-story", 2)
+
+    assert chapter_draft.is_current is True
+    assert chapter.production_state == "blocked"
+    assert chapter.metadata_json["write_safety_block_code"] == "CROSS_CHAPTER_REPETITION"
+    assert chapter.metadata_json["post_assembly_duplicate_gate"]["finding_count"] >= 1
 
 
 @pytest.mark.asyncio
@@ -809,13 +900,15 @@ async def test_export_project_markdown_writes_artifact(
     project = build_project()
     chapter = build_chapter(project.id)
     chapter.target_word_count = 120
+    chapter.status = "complete"
+    chapter.production_state = "ok"
     chapter_draft = ChapterDraftVersionModel(
         project_id=project.id,
         chapter_id=chapter.id,
         version_no=1,
         content_md="# 第1章 失准星图",
         word_count=120,
-        assembled_from_scene_draft_ids=[],
+        assembled_from_scene_draft_ids=[str(uuid4())],
         is_current=True,
     )
     chapter_draft.id = uuid4()
@@ -850,13 +943,15 @@ async def test_export_project_docx_writes_artifact(
     project = build_project()
     chapter = build_chapter(project.id)
     chapter.target_word_count = 120
+    chapter.status = "complete"
+    chapter.production_state = "ok"
     chapter_draft = ChapterDraftVersionModel(
         project_id=project.id,
         chapter_id=chapter.id,
         version_no=1,
         content_md="# 第1章 失准星图",
         word_count=120,
-        assembled_from_scene_draft_ids=[],
+        assembled_from_scene_draft_ids=[str(uuid4())],
         is_current=True,
     )
     chapter_draft.id = uuid4()
@@ -891,13 +986,15 @@ async def test_export_project_epub_writes_artifact(
     project = build_project()
     chapter = build_chapter(project.id)
     chapter.target_word_count = 120
+    chapter.status = "complete"
+    chapter.production_state = "ok"
     chapter_draft = ChapterDraftVersionModel(
         project_id=project.id,
         chapter_id=chapter.id,
         version_no=1,
         content_md="# 第1章 失准星图",
         word_count=120,
-        assembled_from_scene_draft_ids=[],
+        assembled_from_scene_draft_ids=[str(uuid4())],
         is_current=True,
     )
     chapter_draft.id = uuid4()
@@ -932,6 +1029,8 @@ async def test_export_project_markdown_blocks_unfinished_placeholder_content(
     project = build_project()
     chapter = build_chapter(project.id)
     chapter.target_word_count = 120
+    chapter.status = "complete"
+    chapter.production_state = "ok"
     chapter_draft = ChapterDraftVersionModel(
         project_id=project.id,
         chapter_id=chapter.id,
@@ -955,6 +1054,124 @@ async def test_export_project_markdown_blocks_unfinished_placeholder_content(
     )
 
     with pytest.raises(ValueError, match="盟友甲"):
+        await export_services.export_project_markdown(
+            session,
+            settings,
+            "my-story",
+        )
+
+
+def test_publication_gate_blocks_unapproved_chapter_state() -> None:
+    project = build_project()
+    chapter = build_chapter(project.id)
+    chapter.chapter_number = 30
+    chapter.status = "drafting"
+    chapter.production_state = "pending"
+    chapter_draft = ChapterDraftVersionModel(
+        project_id=project.id,
+        chapter_id=chapter.id,
+        version_no=1,
+        content_md="# 第30章 沉渊绞杀\n\n宁尘向前走了一步。",
+        word_count=20,
+        assembled_from_scene_draft_ids=[],
+        is_current=True,
+    )
+
+    blockers = export_services.collect_publication_blockers(project, [(chapter, chapter_draft)])
+
+    assert any("不是 complete" in blocker for blocker in blockers)
+    assert any("不是 ok" in blocker for blocker in blockers)
+
+
+def test_publication_gate_blocks_cross_chapter_repeated_paragraph() -> None:
+    project = build_project()
+    chapter_29 = build_chapter(project.id)
+    chapter_29.chapter_number = 29
+    chapter_29.title = "冷锋死线"
+    chapter_29.status = "complete"
+    chapter_29.production_state = "ok"
+    chapter_30 = build_chapter(project.id)
+    chapter_30.chapter_number = 30
+    chapter_30.title = "沉渊绞杀"
+    chapter_30.status = "complete"
+    chapter_30.production_state = "ok"
+    repeated = "三年前试炼场崩塌，不是意外。叶长青提前改了阵法参数，你爹为了救人，冲进了崩塌区。"
+    draft_29 = ChapterDraftVersionModel(
+        project_id=project.id,
+        chapter_id=chapter_29.id,
+        version_no=1,
+        content_md=f"# 第29章 冷锋死线\n\n{repeated}\n\n宁尘没有立刻回答。",
+        word_count=60,
+        assembled_from_scene_draft_ids=[],
+        is_current=True,
+    )
+    draft_30 = ChapterDraftVersionModel(
+        project_id=project.id,
+        chapter_id=chapter_30.id,
+        version_no=1,
+        content_md=f"# 第30章 沉渊绞杀\n\n{repeated}\n\n陆沉的脸色变得难看。",
+        word_count=60,
+        assembled_from_scene_draft_ids=[],
+        is_current=True,
+    )
+
+    blockers = export_services.collect_publication_blockers(
+        project,
+        [(chapter_30, draft_30)],
+        comparison_payloads=[(chapter_29, draft_29), (chapter_30, draft_30)],
+    )
+
+    assert any("跨章段落重复" in blocker for blocker in blockers)
+
+
+@pytest.mark.asyncio
+async def test_export_project_markdown_blocks_cross_chapter_repetition(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    project = build_project()
+    chapter_29 = build_chapter(project.id)
+    chapter_29.chapter_number = 29
+    chapter_29.title = "冷锋死线"
+    chapter_29.status = "complete"
+    chapter_29.production_state = "ok"
+    chapter_30 = build_chapter(project.id)
+    chapter_30.chapter_number = 30
+    chapter_30.title = "沉渊绞杀"
+    chapter_30.status = "complete"
+    chapter_30.production_state = "ok"
+    repeated = "周长老的手心滚烫，灵力顺着经脉一路向下，直直撞向丹田深处那枚沉睡的道种。"
+    draft_29 = ChapterDraftVersionModel(
+        project_id=project.id,
+        chapter_id=chapter_29.id,
+        version_no=1,
+        content_md=f"# 第29章 冷锋死线\n\n{repeated}\n\n宁尘听见风声贴着耳侧刮过。",
+        word_count=80,
+        assembled_from_scene_draft_ids=[],
+        is_current=True,
+    )
+    draft_30 = ChapterDraftVersionModel(
+        project_id=project.id,
+        chapter_id=chapter_30.id,
+        version_no=1,
+        content_md=f"# 第30章 沉渊绞杀\n\n{repeated}\n\n陆沉把纸条攥进掌心。",
+        word_count=80,
+        assembled_from_scene_draft_ids=[],
+        is_current=True,
+    )
+
+    async def fake_get_project_by_slug(session, slug: str) -> ProjectModel:
+        return project
+
+    monkeypatch.setattr(export_services, "get_project_by_slug", fake_get_project_by_slug)
+    settings = build_settings()
+    settings.output.base_dir = str(tmp_path / "output")
+    session = FakeSession(
+        scalar_results=[draft_29, draft_30],
+        scalars_results=[[chapter_29, chapter_30]],
+    )
+
+    with pytest.raises(ValueError, match="跨章段落重复"):
         await export_services.export_project_markdown(
             session,
             settings,
@@ -1015,6 +1232,7 @@ async def test_generate_scene_draft_with_settings_records_llm_run(
 @pytest.mark.asyncio
 async def test_generate_scene_draft_direct_settings_injects_premium_blocks(
     monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
     project = build_project()
     project.genre = "xianxia"
@@ -1125,6 +1343,15 @@ async def test_generate_scene_draft_direct_settings_injects_premium_blocks(
     )
     settings = build_settings()
     settings.llm.mock = True
+    settings.output.base_dir = str(tmp_path)
+    profile_path = tmp_path / project.slug / "story-bible" / "ranking-capability-profile.md"
+    profile_path.parent.mkdir(parents=True)
+    profile_path.write_text(
+        "# 《测试书》榜单级能力 Profile\n\n"
+        "- 固定入口：港口秘境。\n"
+        "- 可解规则：禁令必须有破局路径和代价。\n",
+        encoding="utf-8",
+    )
 
     await draft_services.generate_scene_draft(
         session,
@@ -1135,6 +1362,8 @@ async def test_generate_scene_draft_direct_settings_injects_premium_blocks(
     )
 
     context = captured["context"]
+    assert context.ranking_capability_profile_block is not None
+    assert "港口秘境" in context.ranking_capability_profile_block
     assert context.progression_context_block is not None
     assert "炼气 → 筑基" in context.progression_context_block
     assert context.decision_policy_block is not None
@@ -2226,6 +2455,146 @@ async def test_run_project_pipeline_materializes_and_exports(
     assert len(result.chapter_results) == 1
     assert len(workflow_runs) == 1
     assert workflow_runs[0].status == "completed"
+
+
+@pytest.mark.asyncio
+async def test_run_project_pipeline_blocks_qimao_without_planning_contract(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = build_project()
+    project.metadata_json = {
+        **(project.metadata_json or {}),
+        "platform_target": "七猫小说",
+    }
+    chapter = build_chapter(project.id)
+    child_called = False
+    progress_events: list[str] = []
+
+    async def fake_get_project_by_slug(session, slug: str) -> ProjectModel:
+        return project
+
+    async def fake_load_project_chapters(session, project_id):
+        return [chapter]
+
+    async def fake_run_chapter_pipeline(*args, **kwargs):
+        nonlocal child_called
+        child_called = True
+        raise AssertionError("chapter pipeline should not run when Qimao planning gate fails")
+
+    monkeypatch.setattr(pipeline_services, "get_project_by_slug", fake_get_project_by_slug)
+    monkeypatch.setattr(pipeline_services, "_load_project_chapters", fake_load_project_chapters)
+    monkeypatch.setattr(pipeline_services, "run_chapter_pipeline", fake_run_chapter_pipeline)
+
+    session = FakeSession()
+    with pytest.raises(ValueError, match="Qimao planning gate failed"):
+        await pipeline_services.run_project_pipeline(
+            session,
+            build_settings(),
+            "my-story",
+            requested_by="tester",
+            export_markdown=False,
+            materialize_narrative_graph=False,
+            materialize_narrative_tree=False,
+            progress=lambda event, payload: progress_events.append(event),
+        )
+
+    workflow_runs = [obj for obj in session.added if isinstance(obj, WorkflowRunModel)]
+    assert child_called is False
+    assert project.metadata_json["qimao_planning_gate_report"]["passed"] is False
+    assert (
+        project.metadata_json["qimao_planning_gate_report"]["findings"][0]["code"]
+        == "missing_opening_quality_contract"
+    )
+    assert workflow_runs[0].status == "failed"
+    assert workflow_runs[0].metadata_json["qimao_planning_gate_report"]["passed"] is False
+    assert "qimao_planning_gate_failed" in progress_events
+
+
+@pytest.mark.asyncio
+async def test_run_project_pipeline_creates_opening_quality_rewrite_task_for_general_project(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = build_project()
+    project.metadata_json = {
+        **(project.metadata_json or {}),
+        "editor_rejection_reasons": "开篇切入点比较普通，缺乏足够吸引力。",
+        "opening_quality_contract": {
+            "platform_target": "商业网文签约口径",
+            "protagonist_name": "沈姝",
+            "opening_incident": "第一章从被迫选择和直接损失切入。",
+            "first_page_conflict": "前600字内被逼交出账本，否则旧案证据被毁。",
+            "protagonist_immediate_goal": "先保住账本并确认谁在灭口。",
+            "visible_loss_if_fail": "失败会失去唯一翻案证据。",
+            "protagonist_edge": "主角能从账目细节看出隐藏漏洞。",
+            "edge_limit": "账本只能救第一轮，不能直接推翻主谋。",
+            "chapter_1_small_turn": "主角当众反制逼迫者。",
+            "chapter_2_reveal": "逼迫者背后另有主谋。",
+            "chapter_3_payoff": "拿到第一个筹码并打开下一轮钩子。",
+            "first_10000_loop": "触发冲突 -> 主角行动 -> 收益/代价 -> 新钩子",
+            "forbidden_opening_modes": ["background_exposition", "normal_day", "scenery_first"],
+        },
+    }
+    chapter = build_chapter(project.id)
+    draft_id = uuid4()
+    chapter_draft = ChapterDraftVersionModel(
+        chapter_id=chapter.id,
+        version_no=1,
+        content_md=(
+            "天玄大陆有三千年历史，家族制度复杂，世界观设定分为内城与外城。"
+            "多年以前，沈姝所在的沈家曾经掌握账房权力，家族由来可以追溯到前朝。"
+            "她站在窗前看天气，街道很安静。"
+        ),
+        word_count=120,
+        is_current=True,
+    )
+    chapter_draft.id = draft_id
+    chapter_result = pipeline_services.ChapterPipelineResult(
+        workflow_run_id=uuid4(),
+        project_id=project.id,
+        chapter_id=chapter.id,
+        chapter_number=1,
+        scene_results=[],
+        chapter_draft_id=draft_id,
+        chapter_draft_version_no=1,
+        export_artifact_id=None,
+        output_path=None,
+        requires_human_review=False,
+    )
+
+    async def fake_get_project_by_slug(session, slug: str) -> ProjectModel:
+        return project
+
+    async def fake_load_project_chapters(session, project_id):
+        return [chapter]
+
+    async def fake_run_chapter_pipeline(*args, **kwargs):
+        return chapter_result
+
+    monkeypatch.setattr(pipeline_services, "get_project_by_slug", fake_get_project_by_slug)
+    monkeypatch.setattr(pipeline_services, "_load_project_chapters", fake_load_project_chapters)
+    monkeypatch.setattr(pipeline_services, "run_chapter_pipeline", fake_run_chapter_pipeline)
+
+    session = FakeSession(get_map={(ChapterDraftVersionModel, draft_id): chapter_draft})
+    with pytest.raises(ValueError, match="Qimao opening gate failed"):
+        await pipeline_services.run_project_pipeline(
+            session,
+            build_settings(),
+            "my-story",
+            requested_by="tester",
+            export_markdown=False,
+            materialize_narrative_graph=False,
+            materialize_narrative_tree=False,
+        )
+
+    rewrite_tasks = [obj for obj in session.added if isinstance(obj, RewriteTaskModel)]
+    assert len(rewrite_tasks) == 1
+    assert rewrite_tasks[0].trigger_type == "qimao_opening_gate"
+    assert rewrite_tasks[0].rewrite_strategy == "qimao_opening_incident_rewrite"
+    assert "这不是润色任务" in rewrite_tasks[0].instructions
+    assert project.metadata_json["opening_quality_gate_blocked"] is True
+    assert project.metadata_json["opening_quality_gate_report"]["passed"] is False
+    assert project.metadata_json["qimao_opening_gate_blocked"] is True
+    assert project.metadata_json["qimao_opening_gate_report"]["passed"] is False
 
 
 @pytest.mark.asyncio

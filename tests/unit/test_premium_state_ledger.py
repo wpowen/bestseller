@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import pytest
 
-from bestseller.services.premium_state_ledger import validate_premium_state_ledger
+from bestseller.services.premium_state_ledger import (
+    materialize_premium_state_snapshot,
+    validate_premium_state_ledger,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -84,3 +87,80 @@ def test_invalid_premium_state_ledger_reports_actionable_findings() -> None:
     assert "relationship_axis_missing" in codes
     assert "relationship_active_choice_missing" in codes
     assert "agency_debt_due_missing" in codes
+
+
+def test_materialize_premium_state_snapshot_from_valid_ledger() -> None:
+    snapshot = materialize_premium_state_snapshot(
+        {
+            "progression_events": [
+                {
+                    "chapter_number": 3,
+                    "event_type": "resource_gained",
+                    "subject": "沈砚",
+                    "resource_key": "筑基丹",
+                    "delta": 2,
+                    "cause": "秘境所得",
+                },
+                {
+                    "chapter_number": 4,
+                    "event_type": "resource_spent",
+                    "subject": "沈砚",
+                    "resource_key": "筑基丹",
+                    "delta": -1,
+                    "cause": "换取港务官放行",
+                },
+            ],
+            "rule_events": [
+                {
+                    "chapter_number": 4,
+                    "rule_code": "R-001",
+                    "name": "试炼禁令",
+                    "visible_effect": "执法堂封港",
+                    "cost": "散修身份暴露",
+                }
+            ],
+            "faction_reactions": [
+                {
+                    "chapter_number": 4,
+                    "faction": "执法堂",
+                    "trigger": "筑基丹消失",
+                    "reaction": "封锁码头并优先查散修",
+                }
+            ],
+            "relationship_events": [
+                {
+                    "chapter_number": 4,
+                    "character_a": "沈砚",
+                    "character_b": "港务官",
+                    "axis": "trust",
+                    "after": "有限合作",
+                    "active_choice": "主动交出丹药",
+                }
+            ],
+            "agency_debts": [
+                {
+                    "chapter_number": 4,
+                    "owner": "沈砚",
+                    "debt": "补回筑基资源",
+                    "due_window": "5章内",
+                }
+            ],
+        }
+    )
+
+    assert snapshot["passed"] is True
+    assert snapshot["resource_balances"]["沈砚"]["筑基丹"] == 1.0
+    assert snapshot["rule_state"]["R-001"]["last_cost"] == "散修身份暴露"
+    assert snapshot["faction_pressure_queue"][0]["faction"] == "执法堂"
+    assert snapshot["relationship_state"]["沈砚 -> 港务官"]["axes"]["trust"] == "有限合作"
+    assert snapshot["open_agency_debts"][0]["debt"] == "补回筑基资源"
+
+
+def test_materialize_premium_state_snapshot_does_not_apply_invalid_ledger() -> None:
+    snapshot = materialize_premium_state_snapshot(
+        {"progression_events": [{"event_type": "breakthrough", "subject": "沈砚"}]}
+    )
+
+    assert snapshot["passed"] is False
+    assert snapshot["resource_balances"] == {}
+    assert snapshot["blocking_findings"][0]["code"] == "progression_cause_missing"

@@ -114,6 +114,7 @@ async def test_build_project_structure_returns_nested_structure(
         information_withheld=[],
         foreshadowing_actions={},
         metadata_json={},
+        production_state="blocked",
     )
     chapter.id = uuid4()
     scene = SceneCardModel(
@@ -160,6 +161,7 @@ async def test_build_project_structure_returns_nested_structure(
     assert result.project_slug == "my-story"
     assert result.total_chapters == 1
     assert result.total_scenes == 1
+    assert result.volumes[0].chapters[0].production_state == "blocked"
     assert result.volumes[0].chapters[0].scenes[0].current_draft_version_no == 2
 
 

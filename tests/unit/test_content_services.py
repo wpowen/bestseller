@@ -136,7 +136,16 @@ def test_render_scene_draft_markdown_context_flows_via_llm_prompt() -> None:
 
 
 def test_scene_draft_prompt_includes_recent_context_sections() -> None:
-    project = SimpleNamespace(title="长夜巡航", slug="chang-ye-xun-hang")
+    project = SimpleNamespace(
+        title="长夜巡航",
+        slug="chang-ye-xun-hang",
+        metadata_json={
+            "material_reference_block": (
+                "## 可引用物料\n"
+                "§scene_templates/proj/old-door-knock：旧门敲门场景 — 三短一长召回父亲线"
+            )
+        },
+    )
     chapter = SimpleNamespace(chapter_number=2, chapter_goal="沿线追查巡逻舰", title="静默航道")
     scene = SimpleNamespace(
         scene_number=1,
@@ -192,6 +201,8 @@ def test_scene_draft_prompt_includes_recent_context_sections() -> None:
     assert "近期剧情回顾" in user_prompt
     assert "已知时间线节点" in user_prompt
     assert "参与角色当前可见事实" in user_prompt
+    assert "=== 本书素材锚点（必须优先使用）===" in user_prompt
+    assert "§scene_templates/proj/old-door-knock" in user_prompt
     assert "不得泄露未来章节才会揭示的信息" in user_prompt
 
 

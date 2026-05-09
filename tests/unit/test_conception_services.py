@@ -5,6 +5,7 @@ import json
 import pytest
 
 from bestseller.services import conception as conception_services
+from bestseller.services.writing_presets import get_platform_preset
 
 
 pytestmark = pytest.mark.unit
@@ -94,3 +95,61 @@ def test_apply_commercial_brief_merges_market_and_style_signals() -> None:
     assert merged["style"]["reference_works"] == ["旧参考", "全球高武"]
     assert "拖沓开局" in merged["style"]["taboo_topics"]
     assert "优先保证前三章留存。" in merged["style"]["custom_rules"]
+
+
+def test_qimao_platform_preset_carries_regeneration_contract() -> None:
+    preset = get_platform_preset("七猫小说")
+
+    assert preset is not None
+    market = preset.writing_profile_overrides["market"]
+    serialization = preset.writing_profile_overrides["serialization"]
+    assert market["platform_target"] == "七猫小说"
+    assert "第一页" in market["reader_promise"]
+    assert "普通日常" in market["opening_contract"]
+    assert market["hook_deadline_words"] == 600
+    assert "第1章立冲突" in serialization["first_three_chapter_goal"]
+
+
+def test_ensure_complete_profile_applies_qimao_platform_preset() -> None:
+    profile = conception_services._ensure_complete_profile(
+        {},
+        {
+            "genre": "都市",
+            "sub_genre": "都市逆袭",
+            "language": "zh-CN",
+            "default_platform": "七猫小说",
+            "existing_overrides": {"market": {"platform_target": "七猫小说"}},
+        },
+        {},
+        {},
+        {},
+    )
+
+    assert profile["market"]["platform_target"] == "七猫小说"
+    assert "普通日常" in profile["market"]["opening_contract"]
+    assert profile["market"]["hook_deadline_words"] == 600
+    assert "第1章立冲突" in profile["serialization"]["first_three_chapter_goal"]
+
+
+def test_qimao_conception_prompt_includes_regeneration_contract() -> None:
+    ctx = {
+        "genre": "都市",
+        "sub_genre": "都市逆袭",
+        "description": "主角被诬陷后抓住一次翻身机会。",
+        "language": "zh-CN",
+        "chapter_count": 120,
+        "recommended_platforms": ["七猫小说"],
+        "recommended_audiences": ["移动端追读读者"],
+        "trend_keywords": ["逆袭", "反打"],
+        "trend_score": 80,
+        "trend_summary": "强冲突开篇。",
+        "default_platform": "七猫小说",
+        "existing_overrides": {"market": {"platform_target": "七猫小说"}},
+        "editor_rejection_reasons": "代入感较弱，故事的叙述较为平淡。",
+    }
+
+    prompt = conception_services._commercial_positioning_user_prompt(ctx)
+
+    assert "七猫再生成合同" in prompt
+    assert "这不是润色任务" in prompt
+    assert "weak_immersion" in prompt

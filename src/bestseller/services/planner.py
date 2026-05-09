@@ -577,6 +577,247 @@ def _non_empty_string(value: Any, default: str) -> str:
     return default
 
 
+def _first_non_empty_text(*values: Any, default: str = "") -> str:
+    for value in values:
+        text = _non_empty_string(value, "")
+        if text:
+            return text
+    return default
+
+
+def _text_mentions_qimao(value: Any) -> bool:
+    if not isinstance(value, str):
+        return False
+    text = value.strip().lower()
+    return "七猫" in text or "qimao" in text
+
+
+def project_targets_qimao(project: ProjectModel) -> bool:
+    metadata = _mapping(project.metadata_json)
+    profile = _mapping(metadata.get("writing_profile"))
+    market = _mapping(profile.get("market"))
+    serialization = _mapping(profile.get("serialization"))
+    candidates = [
+        metadata.get("platform_target"),
+        metadata.get("target_platform"),
+        metadata.get("platform"),
+        metadata.get("content_mode"),
+        market.get("platform_target"),
+        market.get("target_platform"),
+        market.get("content_mode"),
+        market.get("reader_promise"),
+        serialization.get("opening_mandate"),
+        project.audience,
+    ]
+    return any(_text_mentions_qimao(item) for item in candidates)
+
+
+def project_uses_signing_quality_gate(project: ProjectModel) -> bool:
+    metadata = _mapping(project.metadata_json)
+    if metadata.get("opening_quality_gate_disabled") is True:
+        return False
+    return bool(
+        metadata.get("opening_quality_contract")
+        or metadata.get("qimao_opening_contract")
+        or project_targets_qimao(project)
+    )
+
+
+def _project_platform_label(project: ProjectModel, market: dict[str, Any]) -> str:
+    metadata = _mapping(project.metadata_json)
+    return _first_non_empty_text(
+        market.get("platform_target"),
+        market.get("target_platform"),
+        metadata.get("platform_target"),
+        metadata.get("target_platform"),
+        metadata.get("platform"),
+        default="商业网文签约口径",
+    )
+
+
+def _normalize_volume_plan_payload(value: Any) -> list[dict[str, Any]]:
+    if isinstance(value, dict):
+        return _mapping_list(value.get("volumes"))
+    return _mapping_list(value)
+
+
+def build_qimao_opening_contract(
+    project: ProjectModel,
+    *,
+    premise: str,
+    book_spec: dict[str, Any],
+    cast_spec: dict[str, Any],
+    volume_plan: Any,
+) -> dict[str, Any]:
+    is_en = is_english_language(getattr(project, "language", None))
+    metadata = _mapping(project.metadata_json)
+    profile = _mapping(metadata.get("writing_profile"))
+    market = _mapping(profile.get("market"))
+    series_engine = _mapping(_mapping(book_spec).get("series_engine"))
+    book_protagonist = _mapping(_mapping(book_spec).get("protagonist"))
+    cast_protagonist = _mapping(_mapping(cast_spec).get("protagonist"))
+    stakes = _mapping(_mapping(book_spec).get("stakes"))
+    volumes = _normalize_volume_plan_payload(volume_plan)
+    first_volume = volumes[0] if volumes else {}
+    opening_state = _mapping(first_volume.get("opening_state"))
+    volume_resolution = _mapping(first_volume.get("volume_resolution"))
+
+    protagonist_name = _first_non_empty_text(
+        book_protagonist.get("name"),
+        cast_protagonist.get("name"),
+        default="protagonist" if is_en else "主角",
+    )
+    opening_strategy = _first_non_empty_text(
+        market.get("opening_contract"),
+        market.get("opening_strategy"),
+        metadata.get("opening_strategy"),
+        series_engine.get("opening_strategy"),
+        default=(
+            "Open from an anomaly, crisis, misunderstanding, humiliation, loss, conflict of interest, or forced choice."
+            if is_en else "从异常、危机、误会、侮辱、损失、利益冲突或被迫选择切入。"
+        ),
+    )
+    first_page_pressure = _first_non_empty_text(
+        opening_state.get("world_situation"),
+        first_volume.get("volume_obstacle"),
+        stakes.get("personal"),
+        default=(
+            f"{protagonist_name} faces visible pressure on the first page; the story cannot sit in normal daily setup."
+            if is_en else f"{protagonist_name}在第一页遭遇可见压力，不能停在普通日常里。"
+        ),
+    )
+    immediate_goal = _first_non_empty_text(
+        book_protagonist.get("external_goal"),
+        cast_protagonist.get("goal"),
+        first_volume.get("volume_goal"),
+        default=(
+            f"{protagonist_name} must act immediately to secure the main-story entry point."
+            if is_en else f"{protagonist_name}必须立刻做出行动，先保住主线入口。"
+        ),
+    )
+    visible_loss = _first_non_empty_text(
+        stakes.get("personal"),
+        first_volume.get("volume_obstacle"),
+        volume_resolution.get("cost_paid"),
+        default=(
+            f"If they fail, {protagonist_name} loses a key opportunity, relationship, or survival space."
+            if is_en else f"如果失败，{protagonist_name}会失去关键机会、关系或生存空间。"
+        ),
+    )
+    protagonist_edge = _first_non_empty_text(
+        book_protagonist.get("golden_finger"),
+        book_protagonist.get("core_strength"),
+        cast_protagonist.get("golden_finger"),
+        cast_protagonist.get("core_strength"),
+        default=(
+            f"{protagonist_name} can spot an overlooked flaw under pressure and create the first reversal."
+            if is_en else f"{protagonist_name}能在高压下抓住别人忽略的漏洞并制造第一次反转。"
+        ),
+    )
+    edge_limit = _first_non_empty_text(
+        book_protagonist.get("weakness"),
+        cast_protagonist.get("weakness"),
+        cast_protagonist.get("fatal_flaw"),
+        default=(
+            "The edge can solve only the first layer of pressure; it cannot bypass the main cost."
+            if is_en else "优势只能解决第一轮压力，不能直接跳过主线代价。"
+        ),
+    )
+    first_three_goal = _first_non_empty_text(
+        series_engine.get("first_three_chapter_goal"),
+        market.get("first_three_chapter_goal"),
+        default=(
+            "The first three chapters must land conflict, protagonist edge, a small payoff, and the next hook."
+            if is_en else "前三章完成冲突、优势、小爽点、下一轮钩子。"
+        ),
+    )
+    payoff_rhythm = _first_non_empty_text(
+        series_engine.get("payoff_rhythm"),
+        market.get("payoff_rhythm"),
+        default=(
+            "Dense short payoffs; even transition chapters need conflict, gain, or information gap."
+            if is_en else "短回报密集，过渡章也要有小冲突、小收益或小信息差。"
+        ),
+    )
+    core_loop = _first_non_empty_text(
+        series_engine.get("core_loop"),
+        first_volume.get("reader_hook_to_next"),
+        default="trigger conflict -> protagonist action -> reward/cost -> next hook"
+        if is_en else "触发冲突 -> 主角行动 -> 收益/代价 -> 新钩子",
+    )
+
+    return {
+        "platform_target": _project_platform_label(project, market),
+        "source": "commercial_fiction_opening_quality_framework",
+        "protagonist_name": protagonist_name,
+        "rejection_causes_addressed": [
+            "weak prose / 文笔还有待提升",
+            "weak immersion / 代入感较弱",
+            "ordinary entry point / 开篇的切入点比较普通",
+            "weak attraction / 缺乏足够的吸引力",
+            "flat narration / 故事的叙述较为平淡",
+        ],
+        "opening_incident": opening_strategy,
+        "first_page_conflict": (
+            f"{first_page_pressure} The first page must form visible conflict."
+            if is_en else f"{first_page_pressure} 必须在前600字内形成可感冲突。"
+        ),
+        "protagonist_immediate_goal": immediate_goal,
+        "visible_loss_if_fail": visible_loss,
+        "protagonist_edge": protagonist_edge,
+        "edge_limit": edge_limit,
+        "chapter_1_small_turn": (
+            f"{protagonist_name} takes active action and creates a local reversal or information edge."
+            if is_en else f"{protagonist_name}主动行动，至少完成一次局部反制或信息差建立。"
+        ),
+        "chapter_2_reveal": (
+            "Chapter 2 reveals new information, an expanded misunderstanding, or a hidden rule that changes the situation."
+            if is_en else "第二章放出会改变局势判断的新信息、误会扩大或隐藏规则。"
+        ),
+        "chapter_3_payoff": (
+            f"{first_three_goal} Payoff rhythm: {payoff_rhythm}"
+            if is_en else f"{first_three_goal} 节奏口径：{payoff_rhythm}"
+        ),
+        "first_10000_loop": core_loop,
+        "forbidden_opening_modes": [
+            "background_exposition",
+            "normal_day",
+            "scenery_first",
+            "worldbuilding_first",
+            "slow_relationship_setup",
+        ],
+        "premise_anchor": _first_non_empty_text(
+            _mapping(book_spec).get("logline"),
+            premise,
+            default=project.title,
+        ),
+    }
+
+
+def persist_qimao_opening_contract(
+    project: ProjectModel,
+    *,
+    premise: str,
+    book_spec: dict[str, Any],
+    cast_spec: dict[str, Any],
+    volume_plan: Any,
+) -> dict[str, Any] | None:
+    contract = build_qimao_opening_contract(
+        project,
+        premise=premise,
+        book_spec=book_spec,
+        cast_spec=cast_spec,
+        volume_plan=volume_plan,
+    )
+    metadata = dict(_mapping(project.metadata_json))
+    metadata["opening_quality_contract"] = contract
+    metadata["opening_quality_contract_status"] = "planned"
+    metadata["qimao_opening_contract"] = contract
+    metadata["qimao_opening_contract_status"] = "planned"
+    project.metadata_json = metadata
+    return contract
+
+
 def _role_metadata_with_evolution_note(
     current_metadata: Any,
     *,
@@ -7551,6 +7792,85 @@ async def _generate_promotional_brief(
     return brief_payload
 
 
+async def _run_prewrite_readiness_gate(
+    session: AsyncSession,
+    settings: AppSettings,
+    *,
+    project: ProjectModel,
+    project_slug: str,
+    book_spec_payload: dict[str, Any],
+    world_spec_payload: dict[str, Any],
+    cast_spec_payload: dict[str, Any],
+    volume_plan_payload: object,
+    workflow_run_id: UUID,
+    step_order: int,
+    artifact_records: list[PlanningArtifactRecord],
+) -> dict[str, Any]:
+    """Persist the planning kernel and readiness report before drafting entry."""
+
+    from bestseller.services.planning_kernel import persist_project_planning_kernel
+
+    payload = persist_project_planning_kernel(
+        project,
+        book_spec=book_spec_payload,
+        world_spec=world_spec_payload,
+        cast_spec=cast_spec_payload,
+        volume_plan=volume_plan_payload,
+        output_base_dir=settings.output.base_dir,
+    )
+    report = _mapping(payload.get("prewrite_readiness_report"))
+    readiness_artifact = await import_planning_artifact(
+        session,
+        project_slug,
+        PlanningArtifactCreate(
+            artifact_type=ArtifactType.PREWRITE_READINESS,
+            content={
+                "validation_type": "prewrite_readiness",
+                **payload,
+            },
+        ),
+    )
+    artifact_records.append(
+        PlanningArtifactRecord(
+            artifact_type=ArtifactType.PREWRITE_READINESS,
+            artifact_id=readiness_artifact.id,
+            version_no=readiness_artifact.version_no,
+        )
+    )
+    blocking_codes = [
+        str(item.get("code"))
+        for item in _mapping_list(report.get("blocking_findings"))
+        if item.get("code")
+    ]
+    passed = bool(report.get("passed"))
+    should_block = (
+        settings.pipeline.prewrite_readiness_block_on_failure and not passed
+    )
+    await create_workflow_step_run(
+        session,
+        workflow_run_id=workflow_run_id,
+        step_name="prewrite_readiness_gate",
+        step_order=step_order,
+        status=WorkflowStatus.FAILED if should_block else WorkflowStatus.COMPLETED,
+        output_ref={
+            "artifact_id": str(readiness_artifact.id),
+            "passed": passed,
+            "score": report.get("score"),
+            "blocking_codes": blocking_codes,
+        },
+        error_message=(
+            "Prewrite readiness gate failed: " + ", ".join(blocking_codes)
+            if should_block
+            else None
+        ),
+    )
+    if should_block:
+        raise PlannerFallbackError(
+            "Prewrite readiness gate failed: " + ", ".join(blocking_codes)
+        )
+    return payload
+
+
 async def generate_novel_plan(
     session: AsyncSession,
     settings: AppSettings,
@@ -8176,6 +8496,42 @@ async def generate_novel_plan(
                     except Exception:
                         logger.warning("Plan auto-repair failed; continuing with original plan", exc_info=True)
 
+        qimao_opening_contract = persist_qimao_opening_contract(
+            project,
+            premise=premise,
+            book_spec=book_spec_payload,
+            cast_spec=cast_spec_payload,
+            volume_plan=volume_plan_payload,
+        )
+        if qimao_opening_contract:
+            workflow_run.metadata_json = {
+                **(workflow_run.metadata_json or {}),
+                "opening_quality_contract": qimao_opening_contract,
+                "qimao_opening_contract": qimao_opening_contract,
+            }
+
+        prewrite_repair_directives: list[str] = []
+        if settings.pipeline.enable_prewrite_readiness_gate:
+            current_step_name = "prewrite_readiness_gate"
+            workflow_run.current_step = current_step_name
+            prewrite_payload = await _run_prewrite_readiness_gate(
+                session,
+                settings,
+                project=project,
+                project_slug=project_slug,
+                book_spec_payload=book_spec_payload,
+                world_spec_payload=world_spec_payload,
+                cast_spec_payload=cast_spec_payload,
+                volume_plan_payload=volume_plan_payload,
+                workflow_run_id=workflow_run.id,
+                step_order=step_order,
+                artifact_records=artifact_records,
+            )
+            prewrite_repair_directives = _string_list(
+                prewrite_payload.get("prewrite_repair_directives")
+            )
+            step_order += 1
+
         # ── Per-volume chapter outline generation ──
         normalized_vp = _mapping_list(volume_plan_payload)
         outline_fallback = _fallback_chapter_outline_batch(
@@ -8217,6 +8573,10 @@ async def generate_novel_plan(
                     "Adding %d deceased-character constraints for volume %d: %s",
                     len(_deceased_constraints), vol_num, _deceased_constraints,
                 )
+            _outline_constraints = [
+                *prewrite_repair_directives,
+                *_deceased_constraints,
+            ]
             vol_outline_system, vol_outline_user = _volume_outline_prompts(
                 project,
                 book_spec_payload,
@@ -8224,7 +8584,7 @@ async def generate_novel_plan(
                 normalized_vp,
                 vol_entry,
                 revealed_ledger_block=_ledger_block,
-                extra_constraints=_deceased_constraints or None,
+                extra_constraints=_outline_constraints or None,
             )
             vol_outline_payload, llm_run_id = await _generate_structured_artifact(
                 session,
@@ -8675,6 +9035,38 @@ async def generate_foundation_plan(
         await create_workflow_step_run(session, workflow_run_id=workflow_run.id, step_name=current_step_name, step_order=step_order, status=WorkflowStatus.COMPLETED, output_ref={"artifact_id": str(volume_artifact.id)})
         step_order += 1
 
+        qimao_opening_contract = persist_qimao_opening_contract(
+            project,
+            premise=premise,
+            book_spec=book_spec_payload,
+            cast_spec=cast_spec_payload,
+            volume_plan=volume_plan_payload,
+        )
+        if qimao_opening_contract:
+            workflow_run.metadata_json = {
+                **(workflow_run.metadata_json or {}),
+                "opening_quality_contract": qimao_opening_contract,
+                "qimao_opening_contract": qimao_opening_contract,
+            }
+
+        if settings.pipeline.enable_prewrite_readiness_gate:
+            current_step_name = "prewrite_readiness_gate"
+            workflow_run.current_step = current_step_name
+            await _run_prewrite_readiness_gate(
+                session,
+                settings,
+                project=project,
+                project_slug=project_slug,
+                book_spec_payload=book_spec_payload,
+                world_spec_payload=world_spec_payload,
+                cast_spec_payload=cast_spec_payload,
+                volume_plan_payload=volume_plan_payload,
+                workflow_run_id=workflow_run.id,
+                step_order=step_order,
+                artifact_records=artifact_records,
+            )
+            step_order += 1
+
         # ── Promotional brief: title + tags + protagonist + blurb ──
         current_step_name = "generate_promotional_brief"
         workflow_run.current_step = current_step_name
@@ -8769,6 +9161,12 @@ async def generate_volume_plan(
         _raw = project.metadata_json.get("mid_flight_directives") or []
         if isinstance(_raw, list):
             _stored_directives = [str(d) for d in _raw if d]
+        _prewrite_raw = project.metadata_json.get("prewrite_repair_directives") or []
+        if isinstance(_prewrite_raw, list):
+            for directive in _prewrite_raw:
+                text = str(directive).strip()
+                if text and text not in _stored_directives:
+                    _stored_directives.append(text)
     _all_constraints: list[str] = list(_stored_directives) + list(extra_constraints or [])
 
     workflow_run = await create_workflow_run(
@@ -8878,6 +9276,24 @@ async def generate_volume_plan(
             ))
         await create_workflow_step_run(session, workflow_run_id=workflow_run.id, step_name=current_step_name, step_order=step_order, status=WorkflowStatus.COMPLETED, output_ref={"artifact_id": str(world_disc_artifact.id)})
         step_order += 1
+
+        if settings.pipeline.enable_prewrite_readiness_gate:
+            current_step_name = "prewrite_readiness_gate"
+            workflow_run.current_step = current_step_name
+            await _run_prewrite_readiness_gate(
+                session,
+                settings,
+                project=project,
+                project_slug=project_slug,
+                book_spec_payload=_mapping(book_spec),
+                world_spec_payload=effective_world_spec,
+                cast_spec_payload=effective_cast_spec,
+                volume_plan_payload=volume_plan,
+                workflow_run_id=workflow_run.id,
+                step_order=step_order,
+                artifact_records=artifact_records,
+            )
+            step_order += 1
 
         # ── Volume Outline ──
         current_step_name = f"generate_volume_{volume_number}_outline"

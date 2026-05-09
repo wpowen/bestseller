@@ -35,8 +35,10 @@ from bestseller.services.context import build_chapter_writer_context, build_scen
 from bestseller.services.drafts import (
     _NOVEL_OUTPUT_PROHIBITION,
     _NOVEL_OUTPUT_PROHIBITION_EN,
+    _collect_post_assembly_duplicate_findings,
     _evaluate_chapter_quality_gate,
     _normalize_fragment,
+    _stamp_duplicate_content_block,
     count_words,
     has_meta_leak,
     prose_output_max_tokens_for_target,
@@ -45,7 +47,10 @@ from bestseller.services.drafts import (
     validate_and_clean_novel_content,
 )
 from bestseller.services.llm import LLMCompletionRequest, complete_text
-from bestseller.services.methodology import render_methodology_scene_rules
+from bestseller.services.methodology import (
+    render_methodology_scene_rules,
+    render_qimao_opening_contract_block,
+)
 from bestseller.services.output_hygiene import collect_unfinished_artifact_issues
 from bestseller.services.prompt_packs import (
     render_methodology_block,
@@ -54,6 +59,7 @@ from bestseller.services.prompt_packs import (
     resolve_prompt_pack,
 )
 from bestseller.services.projects import get_project_by_slug
+from bestseller.services.qimao_opening_gate import QimaoOpeningFinding
 from bestseller.services.rewrite_impacts import analyze_rewrite_impacts_for_scene_task
 from bestseller.services.writing_profile import (
     is_english_language,
@@ -131,6 +137,132 @@ def _wrap_rewrite_reference_for_language(
             "=== do not quote, paraphrase, summarize, or use this as an opening paragraph ===\n"
         )
     return _wrap_rewrite_reference(instructions, strategy)
+
+
+def _project_metadata(project: ProjectModel) -> dict[str, Any]:
+    metadata = getattr(project, "metadata_json", None)
+    return metadata if isinstance(metadata, dict) else {}
+
+
+def _project_rejection_reasons(project: ProjectModel) -> str | None:
+    metadata = _project_metadata(project)
+    reason = (
+        metadata.get("editor_rejection_reasons")
+        or metadata.get("rejection_reasons")
+        or metadata.get("rejection_reason")
+    )
+    return str(reason) if reason else None
+
+
+def _qimao_opening_contract_prompt_block(
+    project: ProjectModel,
+    *,
+    chapter_number: int,
+    language: str | None,
+) -> str:
+    block = render_qimao_opening_contract_block(
+        _project_metadata(project).get("opening_quality_contract")
+        or _project_metadata(project).get("qimao_opening_contract"),
+        chapter_number=chapter_number,
+        language=language,
+        rejection_reasons=_project_rejection_reasons(project),
+    )
+    return f"{block}\n" if block else ""
+
+
+_QIMAO_REWRITE_STRATEGY_BY_FINDING = {
+    "ordinary_entry": "qimao_opening_incident_rewrite",
+    "weak_immersion": "qimao_pov_immersion_rewrite",
+    "weak_hook": "qimao_hook_rebuild",
+    "flat_narration": "qimao_conflict_loop_rewrite",
+    "weak_golden_three_payoff": "qimao_golden_three_payoff_rewrite",
+    "first_10k_loop_missing": "qimao_conflict_loop_rewrite",
+}
+
+
+def qimao_opening_rewrite_strategy_for_findings(
+    findings: tuple[QimaoOpeningFinding, ...] | list[QimaoOpeningFinding],
+) -> str:
+    for finding in findings:
+        strategy = _QIMAO_REWRITE_STRATEGY_BY_FINDING.get(finding.code)
+        if strategy and finding.severity == "critical":
+            return strategy
+    for finding in findings:
+        strategy = _QIMAO_REWRITE_STRATEGY_BY_FINDING.get(finding.code)
+        if strategy:
+            return strategy
+    return "qimao_opening_incident_rewrite"
+
+
+def build_qimao_opening_rewrite_instructions(
+    findings: tuple[QimaoOpeningFinding, ...] | list[QimaoOpeningFinding],
+    *,
+    chapter_number: int,
+    opening_contract: dict[str, Any],
+    rejection_reasons: str | None,
+) -> str:
+    strategy = qimao_opening_rewrite_strategy_for_findings(findings)
+    chapter_task = {
+        1: opening_contract.get("chapter_1_small_turn"),
+        2: opening_contract.get("chapter_2_reveal"),
+        3: opening_contract.get("chapter_3_payoff"),
+    }.get(chapter_number)
+    lines = [
+        "【七猫开篇门禁重写任务】",
+        f"- rewrite_strategy: {strategy}",
+        "- 这不是润色任务；优先重建切入点、主角代入、可感冲突、章节钩子和前三章爽点闭环。",
+        f"- 章节：第{chapter_number}章",
+    ]
+    if rejection_reasons and rejection_reasons.strip():
+        lines.append(f"- 已知拒稿原因：{rejection_reasons.strip()}")
+    for key, label in (
+        ("opening_incident", "开篇事件"),
+        ("first_page_conflict", "第一页冲突"),
+        ("protagonist_immediate_goal", "主角即时目标"),
+        ("visible_loss_if_fail", "失败可见损失"),
+        ("protagonist_edge", "主角差异化优势"),
+        ("first_10000_loop", "前一万字循环"),
+    ):
+        value = opening_contract.get(key)
+        if isinstance(value, str) and value.strip():
+            lines.append(f"- {label}：{value.strip()}")
+    if isinstance(chapter_task, str) and chapter_task.strip():
+        lines.append(f"- 本章必须完成：{chapter_task.strip()}")
+    if findings:
+        lines.append("- 门禁失败项：")
+        for finding in findings:
+            mapped = _QIMAO_REWRITE_STRATEGY_BY_FINDING.get(finding.code, "qimao_opening_incident_rewrite")
+            lines.append(
+                f"  - {finding.code} [{finding.severity}] -> {mapped}：{finding.message}"
+            )
+    lines.append(
+        "- 输出要求：直接重写正文，不输出分析、计划、修改说明；用动作、对话压力、感官后果和选择代价提升文笔与代入。"
+    )
+    return "\n".join(lines)
+
+
+def _material_reference_prompt_block(
+    project: ProjectModel,
+    *,
+    language: str | None,
+) -> str:
+    metadata = project.metadata_json if isinstance(project.metadata_json, dict) else {}
+    block = str(metadata.get("material_reference_block") or "").strip()
+    if not block:
+        return ""
+    if is_english_language(language):
+        lead = (
+            "[Project material anchors]\n"
+            "Use these §slug anchors as canonical project material. Do not invent "
+            "new equivalent names, rules, factions, or devices when an anchor already covers the function.\n"
+        )
+    else:
+        lead = (
+            "【本书素材锚点】\n"
+            "以下 §slug 是本书已落库素材。重写时必须优先使用这些既有规则、地点、人物、物件、情绪弧和反套路约束；"
+            "不得另造同功能的新名词、新规则或无关怪谈。\n"
+        )
+    return f"{lead}{block}\n"
 
 
 def _clamp_score(value: float) -> float:
@@ -813,18 +945,30 @@ def build_scene_rewrite_prompts(
         tone = "克制、紧张"
     _pp_block = f"Prompt Pack：\n{render_prompt_pack_prompt_block(prompt_pack)}\n" if prompt_pack else ""
     _pp_scene_rewrite = f"{render_prompt_pack_fragment(prompt_pack, 'scene_rewrite')}\n" if prompt_pack else ""
+    _material_reference_block = _material_reference_prompt_block(
+        project,
+        language=language,
+    )
     _methodology_scene_block = render_methodology_block(prompt_pack, phase="scene")
     _methodology_rules = render_methodology_scene_rules(
         chapter_number=chapter.chapter_number,
         is_opening=(chapter.chapter_number <= 3),
         is_climax=False,
         pacing_mode="build",
+        platform_target=getattr(writing_profile.market, "platform_target", ""),
+        language=language,
+        rejection_reasons=_project_rejection_reasons(project),
     )
     _methodology_line = ""
     if _methodology_scene_block:
         _methodology_line += f"\n{_methodology_scene_block}\n"
     if _methodology_rules:
         _methodology_line += f"\n{_methodology_rules}\n"
+    _qimao_opening_contract_block = _qimao_opening_contract_prompt_block(
+        project,
+        chapter_number=chapter.chapter_number,
+        language=language,
+    )
     # ── Word-count envelope: hard constraint to prevent rewrite-bloat spiral ──
     # The scene writer already enforces a strict word range; the rewriter must
     # enforce the SAME envelope or it will inflate past target on every pass.
@@ -908,6 +1052,8 @@ def build_scene_rewrite_prompts(
             f"{_pp_block}"
             f"Serial fiction guardrails:\n{render_serial_fiction_guardrails(writing_profile, language=language)}\n"
             f"{_pp_scene_rewrite}"
+            f"{_material_reference_block}"
+            f"{_qimao_opening_contract_block}"
             f"{_methodology_line}"
             f"Current draft:\n{current_draft.content_md}\n"
             "Rewrite the current scene in English only. Fix the flagged issues while "
@@ -929,6 +1075,8 @@ def build_scene_rewrite_prompts(
             f"{_pp_block}"
             f"商业网文硬约束：\n{render_serial_fiction_guardrails(writing_profile, language=language)}\n"
             f"{_pp_scene_rewrite}"
+            f"{_material_reference_block}"
+            f"{_qimao_opening_contract_block}"
             f"{_methodology_line}"
             f"当前草稿：\n{current_draft.content_md}\n"
             "请按上述字数闸门重写本场景：修复被标记的问题的同时严格控制字数。"
@@ -1199,18 +1347,30 @@ def build_chapter_rewrite_prompts(
     )
     _pp_block = f"Prompt Pack：\n{render_prompt_pack_prompt_block(prompt_pack)}\n" if prompt_pack else ""
     _pp_chapter_rewrite = f"{render_prompt_pack_fragment(prompt_pack, 'chapter_rewrite')}\n" if prompt_pack else ""
+    _material_reference_block = _material_reference_prompt_block(
+        project,
+        language=language,
+    )
     _methodology_scene_block = render_methodology_block(prompt_pack, phase="scene")
     _methodology_rules = render_methodology_scene_rules(
         chapter_number=chapter.chapter_number,
         is_opening=(chapter.chapter_number <= 3),
         is_climax=False,
         pacing_mode="build",
+        platform_target=getattr(writing_profile.market, "platform_target", ""),
+        language=language,
+        rejection_reasons=_project_rejection_reasons(project),
     )
     _methodology_line = ""
     if _methodology_scene_block:
         _methodology_line += f"\n{_methodology_scene_block}\n"
     if _methodology_rules:
         _methodology_line += f"\n{_methodology_rules}\n"
+    _qimao_opening_contract_block = _qimao_opening_contract_prompt_block(
+        project,
+        chapter_number=chapter.chapter_number,
+        language=language,
+    )
     try:
         _budget = get_settings().generation.words_per_chapter
         _target_wc = int(_budget.target)
@@ -1275,6 +1435,8 @@ def build_chapter_rewrite_prompts(
             f"{_pp_block}"
             f"Serial fiction guardrails:\n{render_serial_fiction_guardrails(writing_profile, language=language)}\n"
             f"{_pp_chapter_rewrite}"
+            f"{_material_reference_block}"
+            f"{_qimao_opening_contract_block}"
             f"{_methodology_line}"
             f"Chapter context:\n{_render_chapter_context_section(chapter_context, language=language)}\n"
             f"Current draft:\n{current_draft.content_md}\n"
@@ -1291,6 +1453,8 @@ def build_chapter_rewrite_prompts(
             f"{_pp_block}"
             f"商业网文硬约束：\n{render_serial_fiction_guardrails(writing_profile, language=language)}\n"
             f"{_pp_chapter_rewrite}"
+            f"{_material_reference_block}"
+            f"{_qimao_opening_contract_block}"
             f"{_methodology_line}"
             f"章节上下文：\n{_render_chapter_context_section(chapter_context, language=language)}\n"
             f"当前草稿：\n{current_draft.content_md}\n"
@@ -4040,6 +4204,19 @@ async def rewrite_chapter_from_task(
     except Exception:
         logger.debug("Post-rewrite dedup failed (non-fatal)", exc_info=True)
 
+    duplicate_gate_findings = await _collect_post_assembly_duplicate_findings(
+        session,
+        project=project,
+        chapter=chapter,
+        content_md=content_md,
+    )
+    if duplicate_gate_findings:
+        logger.warning(
+            "rewrite_chapter %d: duplicate gate rejected candidate with %d finding(s).",
+            chapter.chapter_number,
+            len(duplicate_gate_findings),
+        )
+
     word_count = count_words(content_md)
     quality_gate_outcome = await _evaluate_chapter_quality_gate(
         session=session,
@@ -4047,6 +4224,8 @@ async def rewrite_chapter_from_task(
         chapter_number=chapter_number,
         content=content_md,
     )
+    if duplicate_gate_findings:
+        quality_gate_outcome = "blocked"
     quality_gate_rejected_current_promotion = quality_gate_outcome == "blocked"
     next_version = int(
         (
@@ -4090,7 +4269,29 @@ async def rewrite_chapter_from_task(
         "candidate_word_count": word_count,
         "candidate_quality_gate_outcome": quality_gate_outcome,
     }
+    if duplicate_gate_findings:
+        metadata["candidate_duplicate_gate_findings"] = [
+            {
+                "source": finding.source,
+                "code": finding.code,
+                "severity": finding.severity,
+                "message": finding.message,
+                "evidence": finding.evidence,
+                "payload": finding.payload,
+            }
+            for finding in duplicate_gate_findings
+        ]
     if quality_gate_rejected_current_promotion:
+        if duplicate_gate_findings:
+            current_duplicate_findings = await _collect_post_assembly_duplicate_findings(
+                session,
+                project=project,
+                chapter=chapter,
+                content_md=current_draft.content_md or "",
+            )
+            if current_duplicate_findings:
+                _stamp_duplicate_content_block(chapter, current_duplicate_findings)
+                chapter.production_state = "blocked"
         rewrite_task.status = "failed"
         rewrite_task.error_log = (
             "chapter rewrite rejected by quality gate; current draft preserved"

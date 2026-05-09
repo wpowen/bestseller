@@ -7,7 +7,11 @@ from pathlib import Path
 
 import pytest
 
-from bestseller.services.commercial_novel_gate import evaluate_book_package
+from bestseller.services.commercial_novel_gate import (
+    _callback_present,
+    _infer_commercial_anchors,
+    evaluate_book_package,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -91,9 +95,15 @@ def _write_package(root: Path, *, drift: bool = False) -> None:
         }
     else:
         chapters = {
-            1: "林渊持青囊进凶宅，罗盘疯转。否认者先入账，回执在镜中亮起！",
-            2: "困魂镜开局，阴阳眼看见灰线。小雨否认，林渊逼她认账？",
-            3: "青囊秘卷显字，三族契约浮出水面。张家开门，钱家守镜！",
+            1: (
+                "林渊持青囊进凶宅，罗盘疯转。王建业逼他子时入镜，"
+                "否认者先入账，回执在镜中亮起：第一名会死？"
+            ),
+            2: "困魂镜开局，阴阳眼看见灰线。小雨否认，林渊逼她认账，门外突然传来老张被拖走的血声？",
+            3: (
+                "青囊秘卷显字，三族契约浮出水面。张家开门，"
+                "钱家守镜，镜影冷笑着逼林渊交出父亲的真相？"
+            ),
             4: "林渊以铜钱定方位，风水局压住回执。林正淳的名字出现。",
             5: "镜影逼近，困魂镜吞光。林渊让陈默承认隐瞒，认账才可活！",
             6: "青囊发烫，张家线索落地。王建业留下回执，门外传来敲门声？",
@@ -113,6 +123,29 @@ def test_commercial_gate_accepts_aligned_package(tmp_path: Path) -> None:
     assert report.passed
     assert report.overall_score >= 75
     assert not any(issue.severity == "critical" for issue in report.issues)
+
+
+def test_suspense_terms_do_not_hide_weak_golden_three(tmp_path: Path) -> None:
+    _write_package(tmp_path, drift=False)
+    weak_chapters = {
+        1: "林渊接过钥匙，十五分钟凶宅，子时，青囊，镜，否认，入账。最后他收好东西。",
+        2: "走廊里出现血字规则和灰线。父亲失踪，真相秘密都在镜里。最后青囊合上。",
+        3: "困魂镜仍在，林渊说明三族契约和凶宅来历。最后他把铜钱放回口袋。",
+    }
+    for chapter_no, body in weak_chapters.items():
+        (tmp_path / f"chapter-{chapter_no:03d}.md").write_text(
+            f"# 第{chapter_no}章 测试\n\n{body}",
+            encoding="utf-8",
+        )
+
+    report = evaluate_book_package(tmp_path)
+    issue = next(issue for issue in report.issues if issue.code == "GOLDEN_THREE_COMMERCIAL_WEAK")
+
+    assert not report.passed
+    assert issue.severity == "critical"
+    assert issue.evidence["suspense_fallback_applied"] is True
+    assert "GOLDEN_THREE_LOW_HYPE" not in issue.evidence["issue_codes"]
+    assert "GOLDEN_THREE_WEAK_OPEN_CONFLICT" in issue.evidence["issue_codes"]
 
 
 def test_commercial_gate_skips_incomplete_batch_callbacks(tmp_path: Path) -> None:
@@ -137,3 +170,23 @@ def test_commercial_gate_flags_contract_drift_and_canon_leak(tmp_path: Path) -> 
     assert "PLANNING_ARTIFACT_GENRE_DRIFT" in codes
     assert "READER_CONTRACT_GAP" in codes
     assert "PREMATURE_MAJOR_PAYOFF" in codes
+
+
+def test_batch_callback_matching_accepts_qingnang_aliases() -> None:
+    assert _callback_present("王老板回执", "王建业尸体手里攥着回执镜片。")
+    assert _callback_present("老张临死话", "张建军临死前留了一句话：那扇门不是张家开的。")
+
+
+def test_qingnang_core_rule_anchor_accepts_evolved_debt_vocabulary() -> None:
+    anchors = _infer_commercial_anchors(
+        {
+            "primary_title": "青囊不语问阴阳",
+            "reader_promise": ["否认者先入账，镜债会不断升级。"],
+        },
+        "第22章开始出现镜债过户、承认与替认、第四人偿。",
+    )
+    core_rule = next(anchor for anchor in anchors if anchor.key == "core_rule")
+
+    assert "镜债" in core_rule.terms
+    assert "替认" in core_rule.terms
+    assert "偿" in core_rule.terms

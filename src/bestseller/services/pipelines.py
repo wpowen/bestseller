@@ -22,7 +22,16 @@ from bestseller.domain.pipeline import (
 )
 from bestseller.domain.project import ProjectCreate
 from bestseller.domain.workflow import ChapterOutlineBatchInput
-from bestseller.infra.db.models import ChapterDraftVersionModel, ChapterModel, ChapterStateSnapshotModel, ProjectModel, SceneCardModel, SceneDraftVersionModel, VolumeModel
+from bestseller.infra.db.models import (
+    ChapterDraftVersionModel,
+    ChapterModel,
+    ChapterStateSnapshotModel,
+    ProjectModel,
+    RewriteTaskModel,
+    SceneCardModel,
+    SceneDraftVersionModel,
+    VolumeModel,
+)
 from bestseller.services.audit_loop import (
     build_phase1_audit,
     run_and_persist_audit,
@@ -31,7 +40,6 @@ from bestseller.services.chase_debt_ledger import ChaseDebtLedger
 from bestseller.services.narrative_line_tracker import (
     classify_chapter as classify_chapter_lines,
     persist_history as persist_line_history,
-    report_gaps as report_line_gaps,
 )
 from bestseller.services.quality_gates_config import get_quality_gates_config
 from bestseller.services.context import build_scene_writer_context_from_models
@@ -58,17 +66,34 @@ from bestseller.services.consistency import (
     review_project_consistency,
 )
 from bestseller.services.knowledge import propagate_scene_discoveries, refresh_scene_knowledge
-from bestseller.services.planner import generate_foundation_plan, generate_novel_plan, generate_volume_plan
+from bestseller.services.planner import (
+    generate_foundation_plan,
+    generate_novel_plan,
+    generate_volume_plan,
+    project_uses_signing_quality_gate,
+)
 from bestseller.services.premium_genre_engine import build_premium_genre_engine_blocks
 from bestseller.services.projects import create_project, get_project_by_slug, import_planning_artifact, load_json_file
+from bestseller.services.qimao_planning_gate import (
+    evaluate_qimao_planning_gate,
+    qimao_planning_gate_report_to_dict,
+)
+from bestseller.services.qimao_opening_gate import (
+    evaluate_qimao_opening_gate,
+    qimao_opening_gate_report_to_dict,
+)
 from bestseller.services.query_broker import run_scene_query_brief
 from bestseller.services.reviews import (
+    build_qimao_opening_rewrite_instructions,
     review_chapter_draft,
     review_scene_draft,
+    qimao_opening_rewrite_strategy_for_findings,
     rewrite_chapter_from_task,
     rewrite_scene_from_task,
 )
 from bestseller.services.workflows import (
+    WORKFLOW_TYPE_MATERIALIZE_CHAPTER_OUTLINE,
+    WORKFLOW_TYPE_MATERIALIZE_NARRATIVE_GRAPH,
     WORKFLOW_TYPE_MATERIALIZE_STORY_BIBLE,
     create_workflow_run,
     create_workflow_step_run,
@@ -82,7 +107,11 @@ from bestseller.services.workflows import (
     materialize_latest_story_bible,
 )
 from bestseller.services.summarization import compress_knowledge_window
-from bestseller.services.truth_version import assert_truth_materializations_fresh
+from bestseller.services.truth_version import (
+    TruthVersionStaleError,
+    assert_truth_materializations_fresh,
+    truth_metadata_for_workflow,
+)
 from bestseller.services.voice_drift import check_all_pov_voice_drift
 from bestseller.services.write_safety_gate import (
     WriteSafetyBlockError,
@@ -91,6 +120,7 @@ from bestseller.services.write_safety_gate import (
     findings_from_identity_violations,
     serialize_write_safety_findings,
 )
+from bestseller.services.writing_profile import is_english_language
 from bestseller.services.world_expansion import sync_world_expansion_progress
 from bestseller.settings import AppSettings
 
@@ -133,6 +163,189 @@ def _assert_project_not_blocked_for_structural_repair(
         f"{operation}. reason={reason!r}. Run the repair workflow or clear "
         "generation_resume_blocked_until_repair_audit after the repair audit passes."
     )
+
+
+def _record_qimao_planning_gate(project: ProjectModel) -> dict[str, Any] | None:
+    if not project_uses_signing_quality_gate(project):
+        return None
+    metadata = getattr(project, "metadata_json", None) or {}
+    contract = metadata.get("opening_quality_contract") or metadata.get("qimao_opening_contract")
+    payload_to_check = {"qimao_opening_contract": contract} if contract else metadata
+    report = evaluate_qimao_planning_gate(payload_to_check)
+    payload = qimao_planning_gate_report_to_dict(report)
+    project.metadata_json = {
+        **(getattr(project, "metadata_json", None) or {}),
+        "opening_quality_planning_gate_report": payload,
+        "qimao_planning_gate_report": payload,
+    }
+    return payload
+
+
+def _qimao_planning_gate_error_message(report_payload: dict[str, Any]) -> str:
+    findings = report_payload.get("findings")
+    codes: list[str] = []
+    if isinstance(findings, list):
+        codes = [
+            str(item.get("code"))
+            for item in findings
+            if isinstance(item, dict) and item.get("severity") == "critical"
+        ]
+    suffix = ", ".join(codes) if codes else "unknown"
+    return f"Qimao planning gate failed: {suffix}"
+
+
+async def _load_chapter_draft_for_pipeline_result(
+    session: AsyncSession,
+    chapter_result: ChapterPipelineResult,
+) -> ChapterDraftVersionModel | None:
+    if chapter_result.chapter_draft_id is not None:
+        draft = await session.get(ChapterDraftVersionModel, chapter_result.chapter_draft_id)
+        if draft is not None:
+            return draft
+    return await session.scalar(
+        select(ChapterDraftVersionModel).where(
+            ChapterDraftVersionModel.chapter_id == chapter_result.chapter_id,
+            ChapterDraftVersionModel.is_current.is_(True),
+        )
+    )
+
+
+def _qimao_opening_gate_error_message(report_payload: dict[str, Any]) -> str:
+    findings = report_payload.get("findings")
+    codes: list[str] = []
+    if isinstance(findings, list):
+        codes = [
+            str(item.get("code"))
+            for item in findings
+            if isinstance(item, dict) and item.get("severity") == "critical"
+        ]
+    suffix = ", ".join(codes) if codes else "unknown"
+    return f"Qimao opening gate failed: {suffix}"
+
+
+async def _enforce_qimao_opening_gate_after_chapter(
+    session: AsyncSession,
+    *,
+    project: ProjectModel,
+    chapter: ChapterModel,
+    chapter_result: ChapterPipelineResult,
+    opening_texts: dict[int, str],
+    workflow_run,
+    progress: ProgressCallback | None,
+) -> None:
+    if not project_uses_signing_quality_gate(project):
+        return
+    if chapter.chapter_number > 3:
+        return
+    metadata = getattr(project, "metadata_json", None) or {}
+    opening_contract = metadata.get("opening_quality_contract") or metadata.get("qimao_opening_contract")
+    if not isinstance(opening_contract, dict) or not opening_contract:
+        return
+
+    chapter_draft = await _load_chapter_draft_for_pipeline_result(session, chapter_result)
+    if chapter_draft is None or not getattr(chapter_draft, "content_md", None):
+        return
+    opening_texts[chapter.chapter_number] = chapter_draft.content_md or ""
+    if chapter.chapter_number not in {1, 3}:
+        return
+    if chapter.chapter_number == 1:
+        gate_texts = {1: opening_texts[1]}
+    else:
+        if not all(number in opening_texts for number in (1, 2, 3)):
+            return
+        gate_texts = {number: opening_texts[number] for number in (1, 2, 3)}
+
+    protagonist_name = opening_contract.get("protagonist_name")
+    report = evaluate_qimao_opening_gate(
+        gate_texts,
+        opening_contract=opening_contract,
+        protagonist_name=str(protagonist_name) if protagonist_name else None,
+    )
+    report_payload = qimao_opening_gate_report_to_dict(report)
+    project.metadata_json = {
+        **(getattr(project, "metadata_json", None) or {}),
+        "opening_quality_gate_report": report_payload,
+        "opening_quality_gate_reports": [
+            *((getattr(project, "metadata_json", None) or {}).get("opening_quality_gate_reports") or []),
+            {"chapter_number": chapter.chapter_number, **report_payload},
+        ],
+        "qimao_opening_gate_report": report_payload,
+        "qimao_opening_gate_reports": [
+            *((getattr(project, "metadata_json", None) or {}).get("qimao_opening_gate_reports") or []),
+            {"chapter_number": chapter.chapter_number, **report_payload},
+        ],
+    }
+    workflow_run.metadata_json = {
+        **(workflow_run.metadata_json or {}),
+        "opening_quality_gate_report": report_payload,
+        "qimao_opening_gate_report": report_payload,
+    }
+
+    if report.passed:
+        _emit_progress(
+            progress,
+            "qimao_opening_gate_passed",
+            {"project_slug": project.slug, "chapter_number": chapter.chapter_number},
+        )
+        return
+
+    rejection_reasons = (
+        metadata.get("editor_rejection_reasons")
+        or metadata.get("rejection_reasons")
+        or metadata.get("rejection_reason")
+    )
+    strategy = qimao_opening_rewrite_strategy_for_findings(report.findings)
+    rewrite_task = RewriteTaskModel(
+        project_id=project.id,
+        trigger_type="qimao_opening_gate",
+        trigger_source_id=chapter.id,
+        rewrite_strategy=strategy,
+        priority=1,
+        status="pending",
+        instructions=build_qimao_opening_rewrite_instructions(
+            report.findings,
+            chapter_number=chapter.chapter_number,
+            opening_contract=opening_contract,
+            rejection_reasons=str(rejection_reasons) if rejection_reasons else None,
+        ),
+        context_required=[
+            "opening_quality_contract",
+            "current_chapter_draft",
+            "qimao_opening_gate_findings",
+        ],
+        metadata_json={
+            "chapter_id": str(chapter.id),
+            "chapter_number": chapter.chapter_number,
+            "chapter_draft_id": str(chapter_draft.id),
+            "opening_quality_gate_report": report_payload,
+            "opening_quality_contract": opening_contract,
+            "qimao_opening_gate_report": report_payload,
+            "qimao_opening_contract": opening_contract,
+        },
+    )
+    session.add(rewrite_task)
+    project.metadata_json = {
+        **(project.metadata_json or {}),
+        "opening_quality_gate_blocked": True,
+        "qimao_opening_gate_blocked": True,
+    }
+    workflow_run.metadata_json = {
+        **(workflow_run.metadata_json or {}),
+        "qimao_opening_gate_blocked": True,
+        "qimao_opening_rewrite_strategy": strategy,
+    }
+    _emit_progress(
+        progress,
+        "qimao_opening_gate_failed",
+        {
+            "project_slug": project.slug,
+            "chapter_number": chapter.chapter_number,
+            "findings": report_payload.get("findings", []),
+            "rewrite_strategy": strategy,
+        },
+    )
+    raise ValueError(_qimao_opening_gate_error_message(report_payload))
+
 
 # Books above this chapter target require progressive planning: a single
 # monolithic plan would take hours and cannot evolve cast/world with feedback
@@ -590,6 +803,110 @@ async def _enforce_truth_version_guard(
     await assert_truth_materializations_fresh(session, project)
 
 
+async def _refresh_stale_truth_materializations_for_resume(
+    session: AsyncSession,
+    settings: AppSettings,
+    project: ProjectModel,
+    *,
+    requested_by: str,
+    progress: ProgressCallback | None = None,
+) -> bool:
+    if not getattr(settings.pipeline, "enable_truth_version_guard", True):
+        return False
+    try:
+        await assert_truth_materializations_fresh(session, project)
+        return False
+    except TruthVersionStaleError as exc:
+        _emit_progress(
+            progress,
+            "truth_materialization_refresh_started",
+            {
+                "project_slug": project.slug,
+                "truth_version": exc.truth_version,
+                "components": [item.component for item in exc.stale_components],
+            },
+        )
+
+    try:
+        await materialize_latest_story_bible(
+            session,
+            project.slug,
+            requested_by=requested_by,
+        )
+        await _checkpoint_commit(session)
+        await materialize_latest_chapter_outline_batch(
+            session,
+            project.slug,
+            requested_by=requested_by,
+        )
+        await _checkpoint_commit(session)
+        await materialize_latest_narrative_graph(
+            session,
+            project.slug,
+            requested_by=requested_by,
+        )
+        await _checkpoint_commit(session)
+        await materialize_latest_narrative_tree(
+            session,
+            project.slug,
+            requested_by=requested_by,
+        )
+        await _checkpoint_commit(session)
+    except ValueError as exc:
+        if "L2 bible gate failed" not in str(exc):
+            raise
+        await _accept_legacy_truth_materializations_for_resume(
+            session,
+            project,
+            reason=str(exc).splitlines()[0],
+        )
+        await _checkpoint_commit(session)
+        _emit_progress(
+            progress,
+            "truth_materialization_refresh_legacy_accepted",
+            {
+                "project_slug": project.slug,
+                "reason": str(exc).splitlines()[0],
+            },
+        )
+        return True
+    _emit_progress(
+        progress,
+        "truth_materialization_refresh_completed",
+        {"project_slug": project.slug},
+    )
+    return True
+
+
+async def _accept_legacy_truth_materializations_for_resume(
+    session: AsyncSession,
+    project: ProjectModel,
+    *,
+    reason: str,
+) -> None:
+    truth_metadata = truth_metadata_for_workflow(project)
+    for workflow_type in (
+        WORKFLOW_TYPE_MATERIALIZE_STORY_BIBLE,
+        WORKFLOW_TYPE_MATERIALIZE_CHAPTER_OUTLINE,
+        WORKFLOW_TYPE_MATERIALIZE_NARRATIVE_GRAPH,
+    ):
+        run = await get_latest_completed_workflow_run(
+            session,
+            project_id=project.id,
+            workflow_type=workflow_type,
+        )
+        if run is None:
+            continue
+        run.metadata_json = {
+            **(run.metadata_json or {}),
+            **truth_metadata,
+            "legacy_truth_acceptance": {
+                "reason": reason,
+                "mode": "resume_after_l2_gate_tightening",
+            },
+        }
+
+
 async def _checkpoint_commit(session: AsyncSession) -> None:
     """Commit the current transaction at a pipeline checkpoint.
 
@@ -606,6 +923,23 @@ async def _checkpoint_commit(session: AsyncSession) -> None:
     if commit is None:
         return
     await commit()
+
+
+async def _recover_session_after_nonfatal_error(
+    session: AsyncSession,
+    exc: Exception,
+) -> None:
+    """Rollback when a tolerated helper error leaves the DB session dirty."""
+
+    if not (
+        isinstance(exc, (PendingRollbackError, DBAPIError))
+        or not getattr(session, "is_active", True)
+    ):
+        return
+    rollback = getattr(session, "rollback", None)
+    if rollback is None:
+        return
+    await rollback()
 
 
 async def _load_scene_identifiers(
@@ -772,12 +1106,13 @@ async def run_scene_pipeline(
                     scene,
                     draft_mode=settings.quality.draft_mode,
                 )
-        except Exception:
+        except Exception as exc:
             # Match the pre-Opt-B behavior in review_scene_draft: tolerate context
             # build failures (tests / mocks may not provide everything). Downstream
             # functions handle context_packet=None correctly. The SAVEPOINT above
             # ensures any failed query inside the context build does not poison the
             # outer transaction (asyncpg PendingRollbackError).
+            await _recover_session_after_nonfatal_error(session, exc)
             logger.warning(
                 "Context build failed for ch%d sc%d, proceeding without context",
                 chapter.chapter_number,
@@ -824,6 +1159,55 @@ async def run_scene_pipeline(
                     exc_info=True,
                 )
 
+        # ── Prewrite planning-kernel directives ──
+        # These are generated from the project-level prewrite readiness gate.
+        # They make macro-planning failures immediately visible to active
+        # scene drafting instead of waiting for the next full replanning run.
+        if shared_context is not None:
+            try:
+                _project_meta = project.metadata_json or {}
+                _directives = _project_meta.get("prewrite_repair_directives") or []
+                if not _directives and _project_meta.get("prewrite_readiness_report"):
+                    from bestseller.services.planning_kernel import (
+                        build_prewrite_repair_directives,
+                    )
+
+                    _directives = build_prewrite_repair_directives(
+                        _project_meta.get("prewrite_readiness_report"),
+                        language=getattr(project, "language", None)
+                        or settings.generation.language,
+                    )
+                _directive_texts = [
+                    str(item).strip()
+                    for item in _directives
+                    if str(item).strip()
+                ]
+                if _directive_texts:
+                    _prefix = (
+                        "[Prewrite planning gate] "
+                        if is_english_language(
+                            getattr(project, "language", None)
+                            or settings.generation.language
+                        )
+                        else "[写前规划门禁] "
+                    )
+                    for directive in reversed(_directive_texts[:5]):
+                        shared_context.contradiction_warnings.insert(
+                            0,
+                            _prefix + directive,
+                        )
+                    workflow_run.metadata_json = {
+                        **(workflow_run.metadata_json or {}),
+                        "prewrite_repair_directives_applied": True,
+                    }
+            except Exception:
+                logger.debug(
+                    "Prewrite repair directive injection failed for ch%d sc%d (non-fatal)",
+                    chapter_number,
+                    scene_number,
+                    exc_info=True,
+                )
+
         # ── Inject character identity constraints (Tier 0 — never dropped) ──
         _identity_registry = []
         try:
@@ -840,7 +1224,8 @@ async def run_scene_pipeline(
                     language=getattr(project, "language", None) or "zh-CN",
                     participant_names=list(scene.participants or []),
                 )
-        except Exception:
+        except Exception as exc:
+            await _recover_session_after_nonfatal_error(session, exc)
             logger.warning(
                 "Identity guard load failed for ch%d sc%d (non-fatal)",
                 chapter_number, scene_number,
@@ -854,8 +1239,34 @@ async def run_scene_pipeline(
         ):
             try:
                 from bestseller.services.narrative_contracts import (
+                    repair_missing_scene_participants_pre_draft,
+                    repair_legacy_scene_contract_pre_draft,
                     validate_scene_contract_pre_draft,
                 )
+
+                _repair_count = repair_legacy_scene_contract_pre_draft(
+                    scene,
+                    chapter_number=chapter_number,
+                )
+                _participant_repair_count = repair_missing_scene_participants_pre_draft(
+                    scene,
+                    identity_registry=_identity_registry,
+                )
+                _repair_count += _participant_repair_count
+                if _repair_count:
+                    _scene_meta = dict(getattr(scene, "metadata_json", {}) or {})
+                    _scene_meta["legacy_scene_contract_repair"] = {
+                        "field_updates": _repair_count,
+                        "chapter_number": chapter_number,
+                        "scene_number": scene_number,
+                    }
+                    if _participant_repair_count:
+                        _scene_meta["participant_repair"] = {
+                            "source": "identity_registry_and_scene_context",
+                            "added_count": _participant_repair_count,
+                            "participants": list(scene.participants or []),
+                        }
+                    scene.metadata_json = _scene_meta
 
                 _contract = validate_scene_contract_pre_draft(
                     scene,
@@ -918,6 +1329,40 @@ async def run_scene_pipeline(
                         )
             except Exception:
                 logger.debug("Genre constraint injection failed (non-fatal)", exc_info=True)
+
+        # ── Ranking capability profile: book-specific benchmark constraints ──
+        # This reads DB metadata first and falls back to output/<slug>/story-bible/
+        # ranking-capability-profile.md so recovered/current tasks can consume
+        # the new capability without needing their persisted payload rewritten.
+        if shared_context is not None:
+            try:
+                from bestseller.services.ranking_capability_profile import (
+                    apply_ranking_capability_profile_to_context,
+                )
+
+                _project_meta = project.metadata_json or {}
+                _story_bible = (
+                    shared_context.story_bible
+                    if isinstance(shared_context.story_bible, dict)
+                    else {}
+                )
+                _applied_profile = apply_ranking_capability_profile_to_context(
+                    shared_context,
+                    project_slug=project.slug,
+                    project_metadata=_project_meta,
+                    story_bible_context=_story_bible,
+                    output_base_dir=getattr(settings.output, "base_dir", None),
+                )
+                if _applied_profile:
+                    workflow_run.metadata_json = {
+                        **(workflow_run.metadata_json or {}),
+                        "ranking_capability_profile_applied": True,
+                    }
+            except Exception:
+                logger.debug(
+                    "Ranking capability profile injection failed (non-fatal)",
+                    exc_info=True,
+                )
 
         # ── Premium genre engines: progression causality + protagonist decisions ──
         # These blocks are built from persisted story-bible metadata and injected into
@@ -1426,10 +1871,32 @@ async def run_scene_pipeline(
             and getattr(settings.pipeline, "enable_scene_plan_richness_gate", True)
         ):
             try:
-                from bestseller.services.scene_plan_richness import validate_scene_model
+                from bestseller.services.scene_plan_richness import (
+                    repair_scene_model_state_defaults,
+                    validate_scene_model,
+                )
 
                 _lang = getattr(project, "language", None) or settings.generation.language
                 _richness = validate_scene_model(scene, language=_lang)
+                if (
+                    _richness.severity == "critical"
+                    and any(
+                        i.code
+                        in {
+                            "entry_state_empty_or_generic",
+                            "exit_state_empty_or_generic",
+                            "no_state_delta",
+                        }
+                        for i in _richness.critical_issues
+                    )
+                    and repair_scene_model_state_defaults(scene, language=_lang)
+                ):
+                    await session.flush()
+                    _richness = validate_scene_model(scene, language=_lang)
+                    workflow_run.metadata_json = {
+                        **workflow_run.metadata_json,
+                        "plan_richness_state_auto_repaired": True,
+                    }
                 if _richness.issues:
                     _codes = [i.code for i in _richness.issues]
                     logger.warning(
@@ -2558,7 +3025,6 @@ async def run_chapter_pipeline(
                     # Validate monotonic facts against previous chapter
                     if snapshot is not None and snapshot.facts:
                         from bestseller.domain.context import HardFactContext as _HFC
-                        from bestseller.services.continuity import _extract_numeric  # noqa: F811
 
                         _prev_snapshot = None
                         if chapter.chapter_number > 1:
@@ -2598,7 +3064,6 @@ async def run_chapter_pipeline(
                         from bestseller.services.genre_consistency import (
                             get_genre_profile,
                             validate_xianxia_progression,
-                            validate_litrpg_stats,
                         )
                         _genre = getattr(project, "genre", None) or settings.generation.genre
                         _sub_genre = (project.metadata_json or {}).get("sub_genre")
@@ -3258,15 +3723,29 @@ async def run_project_pipeline(
                     ProjectMaterialModel.project_id == project.id
                 )
             )
-            existing_count = existing_count_result.scalar_one()
+            if existing_count_result is None or not hasattr(
+                existing_count_result,
+                "scalar_one",
+            ):
+                existing_count = 1
+            else:
+                existing_count = existing_count_result.scalar_one()
             if existing_count == 0:
                 _emit_progress(
                     progress,
                     "material_forge_started",
                     {"project_slug": project_slug},
                 )
-                genre = (project.metadata_json or {}).get("genre", "")
-                sub_genre = (project.metadata_json or {}).get("sub_genre")
+                project_metadata = project.metadata_json or {}
+                genre = (
+                    getattr(project, "genre", None)
+                    or project_metadata.get("genre")
+                    or ""
+                )
+                sub_genre = (
+                    getattr(project, "sub_genre", None)
+                    or project_metadata.get("sub_genre")
+                )
                 forge_results = await forge_all_materials(
                     session,
                     project_id=project.id,
@@ -3406,10 +3885,25 @@ async def run_project_pipeline(
     # NOT be skipped — that path leaves permanent holes in the book
     # (prod incident on 2026-04-17, multiple projects).  See
     # ``_select_pending_chapters_for_resume`` for full rationale.
+    resume_filter_enabled = settings.pipeline.resume_enabled
+    if should_materialize:
+        resume_filter_enabled = False
+    elif (
+        chapter_numbers is not None
+        and current_volume_number is None
+        and total_volumes is None
+    ):
+        # A direct project-pipeline call with an explicit chapter slice is a
+        # manual rerun/repair request. Do not silently skip the selected
+        # chapter just because an earlier run marked it complete. Progressive
+        # autowrite passes volume context, so it still gets true resume
+        # behavior for already-written volume slices.
+        resume_filter_enabled = False
+
     pending_chapters, draftless_revisions = await _select_pending_chapters_for_resume(
         session,
         chapters,
-        resume_enabled=settings.pipeline.resume_enabled,
+        resume_enabled=resume_filter_enabled,
         accept_on_stall=settings.pipeline.accept_on_stall,
     )
     if draftless_revisions:
@@ -3557,6 +4051,40 @@ async def run_project_pipeline(
             },
         )
         step_order += 1
+
+        qimao_gate_report = _record_qimao_planning_gate(project)
+        if qimao_gate_report is not None:
+            current_step_name = "qimao_planning_gate"
+            workflow_run.current_step = current_step_name
+            workflow_run.metadata_json = {
+                **(workflow_run.metadata_json or {}),
+                "qimao_planning_gate_report": qimao_gate_report,
+            }
+            if not qimao_gate_report.get("passed", False):
+                _emit_progress(
+                    progress,
+                    "qimao_planning_gate_failed",
+                    {
+                        "project_slug": project_slug,
+                        "findings": qimao_gate_report.get("findings", []),
+                    },
+                )
+                raise ValueError(_qimao_planning_gate_error_message(qimao_gate_report))
+            await create_workflow_step_run(
+                session,
+                workflow_run_id=workflow_run.id,
+                step_name=current_step_name,
+                step_order=step_order,
+                status=WorkflowStatus.COMPLETED,
+                output_ref=qimao_gate_report,
+            )
+            step_order += 1
+            _emit_progress(
+                progress,
+                "qimao_planning_gate_passed",
+                {"project_slug": project_slug},
+            )
+
         # Child chapter pipelines can roll back the shared session. Persist
         # the project workflow shell before entering the chapter loop.
         await _checkpoint_commit(session)
@@ -3587,6 +4115,8 @@ async def run_project_pipeline(
                                 "arc_index": _global_arc_idx,
                             }
                             _global_arc_idx += 1
+
+        qimao_opening_texts: dict[int, str] = {}
 
         for chapter in pending_chapters:
             local_done = len(chapter_results) + skipped_count + 1
@@ -3638,6 +4168,18 @@ async def run_project_pipeline(
                 },
             )
             step_order += 1
+            if project_uses_signing_quality_gate(project) and chapter.chapter_number <= 3:
+                current_step_name = f"qimao_opening_gate_chapter_{chapter.chapter_number}"
+                workflow_run.current_step = current_step_name
+                await _enforce_qimao_opening_gate_after_chapter(
+                    session,
+                    project=project,
+                    chapter=chapter,
+                    chapter_result=chapter_result,
+                    opening_texts=qimao_opening_texts,
+                    workflow_run=workflow_run,
+                    progress=progress,
+                )
             if chapter_result.requires_human_review:
                 requires_human_review = True
             _completed_local = len(chapter_results) + skipped_count
@@ -4022,7 +4564,9 @@ async def run_project_pipeline(
         )
         await sync_world_expansion_progress(session, project=project)
         project.status = (
-            ProjectStatus.REVISING.value if requires_human_review else ProjectStatus.WRITING.value
+            ProjectStatus.REVISING.value
+            if requires_human_review
+            else ProjectStatus.WRITING.value
         )
 
         workflow_run.status = (
@@ -4105,10 +4649,96 @@ async def run_project_pipeline(
                 scorecard_exc,
             )
 
+        # Stage 12 — Premium Book Gate.
+        # ---------------------------------------------------------------
+        # This is a project-level structural readiness gate. By default it
+        # records telemetry and repair actions without blocking legacy runs;
+        # operators can enable hard blocking via pipeline settings.
+        premium_book_gate_payload: dict[str, Any] | None = None
+        premium_book_gate_passed: bool | None = None
+        try:
+            if getattr(settings.pipeline, "enable_premium_book_gate", True):
+                current_step_name = "premium_book_gate"
+                workflow_run.current_step = current_step_name
+                from bestseller.services.premium_book_gate import (
+                    evaluate_premium_project_readiness,
+                    premium_book_gate_report_to_dict,
+                )
+
+                premium_report = evaluate_premium_project_readiness(
+                    project,
+                    scorecard_quality_score=scorecard_quality_score,
+                )
+                premium_book_gate_payload = premium_book_gate_report_to_dict(
+                    premium_report
+                )
+                premium_book_gate_passed = premium_report.passed
+                project.metadata_json = {
+                    **(project.metadata_json or {}),
+                    "premium_book_gate_report": premium_book_gate_payload,
+                }
+                await create_workflow_step_run(
+                    session,
+                    workflow_run_id=workflow_run.id,
+                    step_name=current_step_name,
+                    step_order=step_order,
+                    status=WorkflowStatus.COMPLETED,
+                    output_ref={
+                        "passed": premium_report.passed,
+                        "score": premium_report.score,
+                        "blocking_codes": [
+                            finding.code
+                            for finding in premium_report.blocking_findings
+                        ],
+                    },
+                )
+                step_order += 1
+                if (
+                    not premium_report.passed
+                    and getattr(
+                        settings.pipeline,
+                        "premium_book_gate_block_on_failure",
+                        False,
+                    )
+                ):
+                    requires_human_review = True
+                    project.status = ProjectStatus.REVISING.value
+                    workflow_run.status = WorkflowStatus.WAITING_HUMAN.value
+                    workflow_run.current_step = "waiting_human_review"
+                _emit_progress(
+                    progress,
+                    "premium_book_gate_completed",
+                    {
+                        "project_slug": project.slug,
+                        "passed": premium_report.passed,
+                        "score": premium_report.score,
+                        "blocking_count": len(premium_report.blocking_findings),
+                    },
+                )
+        except Exception as premium_gate_exc:  # pragma: no cover - telemetry guard
+            logger.warning(
+                "Stage 12 premium book gate failed for project %s: %s",
+                project.slug,
+                premium_gate_exc,
+            )
+
+        project.status = (
+            ProjectStatus.REVISING.value if requires_human_review else ProjectStatus.WRITING.value
+        )
+        workflow_run.status = (
+            WorkflowStatus.WAITING_HUMAN.value
+            if requires_human_review
+            else WorkflowStatus.COMPLETED.value
+        )
+        workflow_run.current_step = (
+            "waiting_human_review" if requires_human_review else "completed"
+        )
         workflow_run.metadata_json = {
             **workflow_run.metadata_json,
             "audit_finding_count": audit_finding_count,
             "scorecard_quality_score": scorecard_quality_score,
+            "premium_book_gate_passed": premium_book_gate_passed,
+            "premium_book_gate_report": premium_book_gate_payload,
         }
 
         # Final commit so the project pipeline closes its transaction before
@@ -4125,6 +4755,7 @@ async def run_project_pipeline(
                 "output_path": output_path,
                 "audit_finding_count": audit_finding_count,
                 "scorecard_quality_score": scorecard_quality_score,
+                "premium_book_gate_passed": premium_book_gate_passed,
             },
         )
 
@@ -4787,6 +5418,14 @@ async def run_progressive_autowrite_pipeline(
             "project_slug": project.slug, "volume_number": vol_num,
             "total_volumes": total_volumes,
         })
+        if resume_existing_chapter_numbers is not None:
+            await _refresh_stale_truth_materializations_for_resume(
+                session,
+                settings,
+                project,
+                requested_by=requested_by,
+                progress=progress,
+            )
         vol_project_result = await run_project_pipeline(
             session, settings, project.slug,
             requested_by=requested_by,

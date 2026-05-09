@@ -10,6 +10,8 @@ from bestseller.services.scene_plan_richness import (
     GENERIC_STORY_PATTERNS,
     RichnessIssue,
     RichnessReport,
+    repair_scene_card_state_defaults,
+    repair_scene_model_state_defaults,
     validate_scene_card_richness,
     validate_scene_model,
 )
@@ -81,6 +83,10 @@ def test_short_story_purpose_is_critical():
     "推进剧情",
     "展开冲突",
     "承接上文",
+    "承接上章后果并明确本章行动目标",
+    "推动本章局势前进，并换来新的代价或信息",
+    "采用三层悬念叠加：①当前冲突打断式悬念",
+    "第30章第1场：开场把沉渊绞杀的核心压力落到行动层",
     "advance the chapter spine",
     "push the story forward",
 ])
@@ -158,6 +164,68 @@ def test_empty_entry_state_is_warning():
         i.code == "entry_state_empty_or_generic" and i.severity == "warning"
         for i in report.issues
     )
+
+
+@pytest.mark.unit
+def test_repair_state_defaults_fills_empty_english_states():
+    entry_state, exit_state, changed = repair_scene_card_state_defaults(
+        scene_type="development",
+        title="Second Bearer",
+        purpose={
+            "story": (
+                "Maya reads the letter with Kade and recognizes their father's "
+                "handwriting before the powered community displacement"
+            ),
+            "emotion": "family confirmation under pressure",
+        },
+        entry_state={},
+        exit_state={},
+        participants=["Kade Mercer", "Maya Mercer"],
+        language="en",
+    )
+
+    assert changed is True
+    report = validate_scene_card_richness(
+        scene_type="development",
+        purpose={
+            "story": (
+                "Maya reads the letter with Kade and recognizes their father's "
+                "handwriting before the powered community displacement"
+            ),
+            "emotion": "family confirmation under pressure",
+        },
+        entry_state=entry_state,
+        exit_state=exit_state,
+        participants=["Kade Mercer", "Maya Mercer"],
+        language="en",
+    )
+    assert report.is_rich_enough
+    assert "Kade Mercer" in entry_state
+    assert "Maya Mercer" in exit_state
+
+
+@pytest.mark.unit
+def test_repair_state_defaults_does_not_hide_generic_story():
+    entry_state, exit_state, changed = repair_scene_card_state_defaults(
+        scene_type="development",
+        purpose={"story": "advance the plot", "emotion": "build tension"},
+        entry_state={},
+        exit_state={},
+        participants=["Kade Mercer"],
+        language="en",
+    )
+
+    assert changed is True
+    report = validate_scene_card_richness(
+        scene_type="development",
+        purpose={"story": "advance the plot", "emotion": "build tension"},
+        entry_state=entry_state,
+        exit_state=exit_state,
+        participants=["Kade Mercer"],
+        language="en",
+    )
+    assert not report.is_rich_enough
+    assert any(i.code == "story_purpose_generic_template" for i in report.issues)
 
 
 @pytest.mark.unit
@@ -345,6 +413,29 @@ def test_validate_scene_model_missing_attrs_handled():
     # Should produce many critical issues but not raise
     assert not report.is_rich_enough
     assert report.severity == "critical"
+
+
+@pytest.mark.unit
+def test_repair_scene_model_state_defaults_mutates_scene():
+    scene = _FakeScene(
+        scene_type="development",
+        title="Second Bearer",
+        purpose={
+            "story": (
+                "Maya reads the letter with Kade and recognizes their father's "
+                "handwriting before the powered community displacement"
+            ),
+            "emotion": "family confirmation under pressure",
+        },
+        entry_state={},
+        exit_state={},
+        participants=["Kade Mercer", "Maya Mercer"],
+    )
+
+    assert repair_scene_model_state_defaults(scene, language="en") is True
+    assert validate_scene_model(scene, language="en").is_rich_enough
+    assert "Kade Mercer" in scene.entry_state
+    assert "Maya Mercer" in scene.exit_state
 
 
 # ---------------------------------------------------------------------------

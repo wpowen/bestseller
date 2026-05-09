@@ -1,9 +1,11 @@
+# ruff: noqa: RUF001
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 import json
 from pathlib import Path
+from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
@@ -99,6 +101,74 @@ def test_prompt_pack_show_command(monkeypatch: pytest.MonkeyPatch) -> None:
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
     assert payload["key"] == "apocalypse-supply-chain"
+
+
+def test_premium_gate_project_command_outputs_json(monkeypatch: pytest.MonkeyPatch) -> None:
+    @asynccontextmanager
+    async def fake_session_scope(settings):
+        yield object()
+
+    async def fake_get_project_by_slug(session, slug: str):
+        return SimpleNamespace(
+            slug=slug,
+            genre="仙侠",
+            sub_genre="凡人流",
+            metadata_json={
+                "world_spec": {
+                    "power_system": {"realms": ["炼气", "筑基"]},
+                    "factions": [
+                        {
+                            "name": "青炉宗",
+                            "goal": "垄断筑基丹",
+                            "relationship_to_protagonist": "压价观察",
+                        }
+                    ],
+                },
+                "cast_spec": {
+                    "protagonist": {
+                        "name": "沈砚",
+                        "decision_policy": {"core_rule": "先保命，再换资源。"},
+                    }
+                },
+                "premium_state_snapshot": {
+                    "passed": True,
+                    "resource_balances": {"沈砚": {"筑基丹": 1}},
+                    "faction_pressure_queue": [
+                        {
+                            "faction": "青炉宗",
+                            "trigger": "沈砚取得筑基丹",
+                            "reaction": "派外门执事压价收购",
+                        }
+                    ],
+                },
+            },
+        )
+
+    monkeypatch.setattr("bestseller.cli.main.session_scope", fake_session_scope)
+    monkeypatch.setattr("bestseller.cli.main.load_settings", lambda: object())
+    monkeypatch.setattr("bestseller.cli.main.get_project_by_slug", fake_get_project_by_slug)
+
+    result = runner.invoke(
+        app,
+        ["premium-gate", "project", "xianxia-test", "--json", "--no-fail"],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["passed"] is True
+    assert payload["project_slug"] == "xianxia-test"
+
+
+def test_premium_gate_benchmark_command_outputs_json() -> None:
+    result = runner.invoke(
+        app,
+        ["premium-gate", "benchmark", "--json", "--no-fail"],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["passed"] is True
+    assert payload["passed_case_count"] == 6
 
 
 def test_benchmark_run_command(monkeypatch: pytest.MonkeyPatch) -> None:

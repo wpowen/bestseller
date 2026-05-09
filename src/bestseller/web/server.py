@@ -2100,6 +2100,10 @@ async def _recover_projects_from_output(settings: AppSettings) -> list[dict[str,
 async def _load_projects_payload(settings: AppSettings) -> list[dict[str, object]]:
     async with session_scope(settings) as session:
         rows = await list_projects(session)
+        repair_counts = await _load_project_chapter_state_counts(
+            session,
+            [row.id for row in rows],
+        )
         return [
             {
                 "id": str(row.id),
@@ -2109,9 +2113,152 @@ async def _load_projects_payload(settings: AppSettings) -> list[dict[str, object
                 "status": row.status,
                 "target_word_count": row.target_word_count,
                 "target_chapters": row.target_chapters,
+                "repair_status": _build_project_repair_status_payload(
+                    row,
+                    repair_counts.get(row.id, []),
+                ),
             }
             for row in rows
         ]
+
+
+async def _load_project_chapter_state_counts(
+    session: Any,
+    project_ids: list[UUID],
+) -> dict[UUID, list[dict[str, object]]]:
+    if not project_ids:
+        return {}
+    from sqlalchemy import func, select  # noqa: PLC0415
+    from bestseller.infra.db.models import ChapterModel  # noqa: PLC0415
+
+    rows = await session.execute(
+        select(
+            ChapterModel.project_id,
+            ChapterModel.status,
+            ChapterModel.production_state,
+            func.count(),
+        )
+        .where(ChapterModel.project_id.in_(project_ids))
+        .group_by(
+            ChapterModel.project_id,
+            ChapterModel.status,
+            ChapterModel.production_state,
+        )
+    )
+    grouped: dict[UUID, list[dict[str, object]]] = {}
+    for project_id, status, production_state, count in rows:
+        grouped.setdefault(project_id, []).append(
+            {
+                "status": status,
+                "production_state": production_state,
+                "count": int(count or 0),
+            }
+        )
+    return grouped
+
+
+def _safe_int(value: object, default: int = 0) -> int:
+    try:
+        if value is None or value == "":
+            return default
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _build_project_repair_status_payload(
+    project: Any,
+    chapter_state_counts: list[dict[str, object]],
+) -> dict[str, object]:
+    metadata = getattr(project, "metadata_json", None) or {}
+    if not isinstance(metadata, dict):
+        metadata = {}
+
+    total_chapters = sum(_safe_int(item.get("count")) for item in chapter_state_counts)
+    blocked_chapters = sum(
+        _safe_int(item.get("count"))
+        for item in chapter_state_counts
+        if str(item.get("production_state") or "") == "blocked"
+    )
+    complete_ok_chapters = sum(
+        _safe_int(item.get("count"))
+        for item in chapter_state_counts
+        if str(item.get("status") or "") == "complete"
+        and str(item.get("production_state") or "") == "ok"
+    )
+    revision_chapters = sum(
+        _safe_int(item.get("count"))
+        for item in chapter_state_counts
+        if str(item.get("status") or "") == "revision"
+    )
+    pending_chapters = sum(
+        _safe_int(item.get("count"))
+        for item in chapter_state_counts
+        if str(item.get("production_state") or "") == "pending"
+        or str(item.get("status") or "") in {"drafting", "planned", "review"}
+    )
+
+    initial_repair_scope = _safe_int(
+        metadata.get("repair_audit_out_of_range_chapters")
+        or metadata.get("repair_audit_blocked_chapters")
+        or metadata.get("repair_scope_total")
+    )
+    repair_scope_total = initial_repair_scope if initial_repair_scope > 0 else blocked_chapters
+    repair_remaining = (
+        min(blocked_chapters, repair_scope_total)
+        if repair_scope_total > 0
+        else blocked_chapters
+    )
+    repair_completed = max(repair_scope_total - repair_remaining, 0)
+    progress_percent = (
+        round((repair_completed / repair_scope_total) * 100, 1)
+        if repair_scope_total > 0
+        else None
+    )
+
+    production_paused = bool(metadata.get("production_paused"))
+    resume_blocked = bool(metadata.get("generation_resume_blocked_until_repair_audit"))
+    structural_repair_required = bool(metadata.get("structural_repair_required"))
+    project_status = str(getattr(project, "status", "") or "")
+
+    if production_paused or resume_blocked:
+        phase = "repair_gate"
+        label = "修复门控中"
+        detail = "项目已暂停继续生产，需先完成阻塞章节修复并通过审计。"
+    elif structural_repair_required:
+        phase = "repair_required"
+        label = "需要结构修复"
+        detail = "项目被标记为需要结构修复，继续写作前应先处理阻塞项。"
+    elif blocked_chapters > 0:
+        phase = "needs_attention"
+        label = "存在阻塞章节"
+        detail = "仍有章节没有通过生产门禁。"
+    else:
+        phase = "normal"
+        label = "正常"
+        detail = "当前没有检测到修复门控。"
+
+    is_repairing = phase != "normal" or project_status == "paused"
+    return {
+        "phase": phase,
+        "label": label,
+        "detail": detail,
+        "is_repairing": is_repairing,
+        "production_paused": production_paused,
+        "resume_blocked_until_repair_audit": resume_blocked,
+        "structural_repair_required": structural_repair_required,
+        "total_chapters": total_chapters,
+        "repair_scope_total": repair_scope_total,
+        "repair_completed": repair_completed,
+        "repair_remaining": repair_remaining,
+        "progress_percent": progress_percent,
+        "blocked_chapters": blocked_chapters,
+        "complete_ok_chapters": complete_ok_chapters,
+        "revision_chapters": revision_chapters,
+        "pending_chapters": pending_chapters,
+        "initial_out_of_range_chapters": initial_repair_scope,
+        "chapter_state_counts": chapter_state_counts,
+    }
 
 
 def _resolve_story_bible_progress(
@@ -2207,6 +2354,11 @@ async def _load_project_summary_payload(
         workflow = await build_project_workflow_overview(session, project_slug)
         style_guide = await session.get(StyleGuideModel, project.id)
         writing_profile = get_project_writing_profile(project, style_guide).model_dump(mode="json")
+        repair_counts = await _load_project_chapter_state_counts(session, [project.id])
+        repair_status = _build_project_repair_status_payload(
+            project,
+            repair_counts.get(project.id, []),
+        )
     outputs = collect_project_artifact_entries(settings, project_slug)
     markdown_entries = [item for item in outputs if str(item["suffix"]) == ".md"]
     default_preview_entry = (
@@ -2248,6 +2400,7 @@ async def _load_project_summary_payload(
             "premise": project_meta.get("premise", ""),
         },
         "listing_profile": listing_profile,
+        "repair_status": repair_status,
         "writing_profile": writing_profile,
         "structure_summary": {
             "total_chapters": structure.total_chapters,
@@ -3552,6 +3705,8 @@ def serve_web_app(
                     })
                     return
                 self._route_not_found()
+            except BrokenPipeError:
+                return
             except FileNotFoundError:
                 self._route_not_found()
             except Exception as exc:

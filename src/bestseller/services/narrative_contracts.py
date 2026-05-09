@@ -9,9 +9,10 @@ prose has already been generated.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import re
 from typing import Any, Iterable
 
-from bestseller.domain.story_bible import CastSpecInput
+from bestseller.domain.story_bible import CastSpecInput, normalize_character_gender
 from bestseller.domain.workflow import ChapterOutlineBatchInput
 from bestseller.services.identity_guard import CharacterIdentity
 
@@ -31,6 +32,12 @@ GENERIC_CHAPTER_GOAL_MARKERS = (
     "一种环境或体系层面的威胁出现",
     "宁尘过去埋下的秘密突然浮现",
 )
+GENERIC_OPENING_SITUATION_MARKERS = (
+    "承接上一章尾钩，主角没有空档去长篇解释设定",
+    "主角没有空档去长篇解释设定",
+    "承接上一章尾钩",
+    "承接上章尾钩",
+)
 GENERIC_CONFLICT_MARKERS = (
     "「生存压力」",
     "生存压力代表的势力角力",
@@ -47,10 +54,37 @@ GENERIC_SCENE_PURPOSE_MARKERS = (
     "推动本章剧情发展",
     "承接本章主线，补足场景推进、信息释放与结尾钩子",
     "承接上章后果并明确本章行动目标",
+    "推动本章局势前进，并换来新的代价或信息",
+    "推动本章局势前进",
+    "换来新的代价或信息",
     "用更深一层的代价、真相或变化把局势再往前推",
+    "采用三层悬念叠加",
+    "当前冲突打断式悬念",
+    "长期伏笔轻触式悬念",
+    "更大威胁露头式悬念",
+    "核心压力落到行动层",
+    "本章行动目标",
     "具体事件是「开场」",
     "具体事件是「推进」",
     "具体事件是「尾钩」",
+    "End every chapter",
+)
+GENERIC_SCENE_CONTRACT_LABELS = {
+    "Opening Beat",
+    "Primary Move",
+    "Closing Hook",
+    "章节开场",
+    "章节推进",
+    "章节中段",
+    "章节结尾",
+    "章节补充钩子",
+}
+GENERIC_SCENE_CONTRACT_SUMMARY_MARKERS = (
+    "Carry forward the previous result",
+    "Move the chapter forward",
+    "End each chapter with",
+    "End every chapter with",
+    "Chapter N poses question",
 )
 REFERENCE_ONLY_PURPOSE_MARKERS = (
     "旧照",
@@ -271,6 +305,258 @@ def build_identity_manifest(cast_spec_content: dict[str, Any] | None) -> list[di
     return manifest
 
 
+def repair_legacy_foundation_identity_locks(
+    cast_spec_content: dict[str, Any] | None,
+    *,
+    identity_hints: Iterable[dict[str, Any]] = (),
+) -> tuple[dict[str, Any] | None, int]:
+    """Backfill identity locks for historical CastSpec artifacts.
+
+    New story-bible materialization still fails closed before persistence. This
+    repair exists for resume/self-heal paths where an older project already has
+    a CastSpec artifact created before foundation identity locks were required.
+    """
+
+    if not isinstance(cast_spec_content, dict):
+        return cast_spec_content, 0
+
+    hint_index = _identity_index_from_manifest(identity_hints)
+    patched = _deepcopy_json_mapping(cast_spec_content)
+    repaired = 0
+    for character in _iter_raw_cast_character_dicts(patched):
+        name = _clean(character.get("name"))
+        if not name or not _requires_identity_lock(character):
+            continue
+        hint = hint_index.get(_normalize_identity_token(name), {})
+        gender = _coerce_lock_gender(character.get("gender")) or _coerce_lock_gender(
+            hint.get("gender"),
+        )
+        if gender is None:
+            gender = _infer_legacy_gender(name, character) or "nonbinary"
+            character.setdefault("metadata", {})
+            if isinstance(character["metadata"], dict):
+                character["metadata"].setdefault(
+                    "identity_lock_repair",
+                    "legacy_resume_default",
+                )
+
+        if _coerce_lock_gender(character.get("gender")) != gender:
+            character["gender"] = gender
+            repaired += 1
+
+        pronoun_zh, pronoun_en = _pronouns_for_gender(gender)
+        hint_zh = _clean(hint.get("pronoun_set_zh"))
+        hint_en = _clean(hint.get("pronoun_set_en"))
+        if not _clean(character.get("pronoun_set_zh")):
+            character["pronoun_set_zh"] = hint_zh or pronoun_zh
+            repaired += 1
+        if not _clean(character.get("pronoun_set_en")):
+            character["pronoun_set_en"] = hint_en or pronoun_en
+            repaired += 1
+
+    return patched, repaired
+
+
+def repair_legacy_scene_contract_pre_draft(
+    scene: Any,
+    *,
+    chapter_number: int | None = None,
+) -> int:
+    """Mutate legacy scene cards enough to pass deterministic pre-draft gates.
+
+    Older recovered projects can contain template scene labels such as
+    ``章节结尾`` and boilerplate hook recipes. Blocking on those rows prevents
+    resume from ever reaching the writer. This repair replaces only the
+    template fields; it does not invent participants or bypass identity gates.
+    """
+
+    repaired = 0
+    scene_number = getattr(scene, "scene_number", "?")
+    purpose = getattr(scene, "purpose", None)
+    purpose_map = dict(purpose) if isinstance(purpose, dict) else {}
+    story = _clean(purpose_map.get("story"))
+
+    if (
+        not _clean(getattr(scene, "time_label", None))
+        or _is_generic_time_label(getattr(scene, "time_label", None))
+    ):
+        setattr(
+            scene,
+            "time_label",
+            _legacy_scene_time_label(
+                scene,
+                chapter_number=chapter_number,
+                scene_number=scene_number,
+                story=story,
+            ),
+        )
+        repaired += 1
+
+    if not story or _contains_marker(story, GENERIC_SCENE_PURPOSE_MARKERS):
+        purpose_map["story"] = _legacy_scene_story_purpose(
+            scene,
+            chapter_number=chapter_number,
+            scene_number=scene_number,
+            story=story,
+        )
+        if not _clean(purpose_map.get("emotion")):
+            purpose_map["emotion"] = "Escalate pressure through a visible choice, cost, or leverage shift."
+        setattr(scene, "purpose", purpose_map)
+        repaired += 1
+
+    return repaired
+
+
+def repair_missing_scene_participants_pre_draft(
+    scene: Any,
+    *,
+    identity_registry: Iterable[CharacterIdentity] = (),
+) -> int:
+    """Fill empty legacy participant lists from deterministic scene context.
+
+    This repair is conservative: it only adds characters already known in the
+    identity registry, only when the scene currently has no participants, and
+    never adds characters marked dead.
+    """
+
+    current = [
+        _clean(item)
+        for item in (getattr(scene, "participants", None) or [])
+        if _clean(item)
+    ]
+    if current:
+        return 0
+
+    identity_index = _identity_index_from_registry(identity_registry)
+    if not identity_index:
+        return 0
+
+    candidates: list[str] = []
+
+    def _add_candidate(value: object) -> None:
+        name = _clean(value)
+        if not name:
+            return
+        identity = identity_index.get(_normalize_identity_token(name))
+        if identity is None or not identity.is_alive or not _identity_is_resolved(identity):
+            return
+        if identity.name not in candidates:
+            candidates.append(identity.name)
+
+    for state_name in ("entry_state", "exit_state"):
+        state = getattr(scene, state_name, None)
+        if isinstance(state, dict):
+            for key in state:
+                _add_candidate(key)
+
+    purpose = getattr(scene, "purpose", None) or {}
+    if isinstance(purpose, dict):
+        story_purpose = _clean(purpose.get("story"))
+        if story_purpose:
+            for referenced_name in _extract_purpose_character_names(
+                story_purpose,
+                identity_index,
+            ):
+                _add_candidate(referenced_name)
+            for referenced_name in _extract_purpose_identity_mentions(
+                story_purpose,
+                identity_index,
+            ):
+                _add_candidate(referenced_name)
+
+    if not candidates:
+        return 0
+
+    setattr(scene, "participants", candidates)
+    return len(candidates)
+
+
+def _extract_chapter_goal(text: str | None) -> str:
+    if not text:
+        return ""
+    match = re.search(r"\[chapter goal:\s*(.*?)\]", text, flags=re.IGNORECASE)
+    if match:
+        return _clean(match.group(1).rstrip(".。"))
+    return ""
+
+
+def _is_generic_scene_contract_text(value: str | None) -> bool:
+    text = _clean(value)
+    if not text:
+        return True
+    if text in GENERIC_SCENE_CONTRACT_LABELS:
+        return True
+    return _contains_marker(text, GENERIC_SCENE_CONTRACT_SUMMARY_MARKERS)
+
+
+def _legacy_scene_contract_replacement(
+    *,
+    chapter_number: int | None,
+    scene_number: int | None,
+    summary: str | None,
+) -> str:
+    goal = _extract_chapter_goal(summary)
+    suffix = f": {goal}" if goal else "."
+    scene_label = (
+        f"Chapter {chapter_number} scene {scene_number}"
+        if chapter_number and scene_number
+        else f"Scene {scene_number or '?'}"
+    )
+    if scene_number == 1:
+        task = "clarifies the immediate objective through visible pressure"
+    elif scene_number == 2:
+        task = "adds a fresh cost, obstacle, or leverage shift"
+    elif scene_number == 3:
+        task = "turns the active objective into a concrete threat or forced choice"
+    else:
+        task = "advances a specific choice, cost, discovery, or relationship shift"
+    return f"{scene_label} {task}{suffix}"
+
+
+def repair_legacy_scene_contract_model_pre_draft(
+    scene_contract: Any,
+    *,
+    chapter_number: int | None = None,
+    scene_number: int | None = None,
+) -> int:
+    """Mutate legacy scene-contract text that leaks planning template labels.
+
+    Recovered long-running projects can contain fields like ``Closing Hook`` in
+    ``information_release``. Those labels are not story facts and can trigger
+    deterministic contradiction checks as if the scene revealed information
+    about closing a door. Replace them with concrete scene tasks before prompts
+    and safety gates consume the contract.
+    """
+
+    repaired = 0
+    contract_chapter = chapter_number or getattr(scene_contract, "chapter_number", None)
+    contract_scene = scene_number or getattr(scene_contract, "scene_number", None)
+    summary = _clean(getattr(scene_contract, "contract_summary", None))
+    replacement = _legacy_scene_contract_replacement(
+        chapter_number=contract_chapter,
+        scene_number=contract_scene,
+        summary=summary,
+    )
+
+    if _is_generic_scene_contract_text(getattr(scene_contract, "information_release", None)):
+        setattr(scene_contract, "information_release", replacement)
+        repaired += 1
+
+    if _is_generic_scene_contract_text(getattr(scene_contract, "tail_hook", None)):
+        setattr(
+            scene_contract,
+            "tail_hook",
+            f"{replacement} Leave a visible unresolved consequence for the next beat.",
+        )
+        repaired += 1
+
+    if _is_generic_scene_contract_text(summary):
+        setattr(scene_contract, "contract_summary", replacement)
+        repaired += 1
+
+    return repaired
+
+
 def validate_chapter_plan_contract(
     batch: ChapterOutlineBatchInput,
     *,
@@ -332,6 +618,22 @@ def validate_chapter_plan_contract(
                     message=(
                         f"Chapter {chapter.chapter_number} goal is generic; it must name the unique "
                         "action, pressure, and state change for this chapter."
+                    ),
+                    metadata={"chapter_number": chapter.chapter_number},
+                )
+            )
+        if _clean(chapter.opening_situation) and _contains_marker(
+            chapter.opening_situation,
+            GENERIC_OPENING_SITUATION_MARKERS,
+        ):
+            violations.append(
+                NarrativeContractViolation(
+                    code="PLAN_CHAPTER_OPENING_GENERIC",
+                    location=f"{chapter_location}.opening_situation",
+                    message=(
+                        f"Chapter {chapter.chapter_number} opening situation must name the "
+                        "specific carry-over event, location, pressure, and active choice; "
+                        "template continuity text is not enough."
                     ),
                     metadata={"chapter_number": chapter.chapter_number},
                 )
@@ -662,6 +964,183 @@ def _iter_cast_characters(cast_spec: CastSpecInput) -> Iterable[tuple[str, Any]]
         yield f"cast_spec.supporting_cast[{index}]", character
 
 
+def _deepcopy_json_mapping(value: dict[str, Any]) -> dict[str, Any]:
+    copied: dict[str, Any] = {}
+    for key, item in value.items():
+        if isinstance(item, dict):
+            copied[key] = _deepcopy_json_mapping(item)
+        elif isinstance(item, list):
+            copied[key] = [
+                _deepcopy_json_mapping(child) if isinstance(child, dict) else child
+                for child in item
+            ]
+        else:
+            copied[key] = item
+    return copied
+
+
+def _iter_raw_cast_character_dicts(cast_spec: dict[str, Any]) -> Iterable[dict[str, Any]]:
+    for key in ("protagonist", "antagonist"):
+        value = cast_spec.get(key)
+        if isinstance(value, dict):
+            yield value
+    supporting_cast = cast_spec.get("supporting_cast")
+    if isinstance(supporting_cast, list):
+        for value in supporting_cast:
+            if isinstance(value, dict):
+                yield value
+
+
+def _coerce_lock_gender(value: Any) -> str | None:
+    gender = normalize_character_gender(value)
+    return None if gender == "unknown" else gender
+
+
+def _pronouns_for_gender(gender: str) -> tuple[str, str]:
+    if gender == "male":
+        return ("他", "he/him")
+    if gender == "female":
+        return ("她", "she/her")
+    return ("ta", "they/them")
+
+
+_LEGACY_FEMALE_NAME_MARKERS = {
+    "aisha",
+    "alice",
+    "elena",
+    "emily",
+    "maya",
+    "mira",
+    "nora",
+    "sophie",
+}
+_LEGACY_MALE_NAME_MARKERS = {
+    "cole",
+    "elias",
+    "garrett",
+    "kade",
+    "kane",
+    "marcus",
+    "silas",
+    "victor",
+}
+_LEGACY_FEMALE_HANZI = set("女母妹姐婉鸢霜棠蝉静蕴璃鹂曼薇荷蘅琳瑶雪婵妍娜莉姝媛")
+_LEGACY_MALE_HANZI = set("男父兄弟沉骁域铮彦铎峥屿鹤达朔锋山川杰刚强峰龙")
+
+
+def _infer_legacy_gender(name: str, character: dict[str, Any]) -> str | None:
+    lowered = name.lower()
+    if any(marker in lowered for marker in _LEGACY_FEMALE_NAME_MARKERS):
+        return "female"
+    if any(marker in lowered for marker in _LEGACY_MALE_NAME_MARKERS):
+        return "male"
+
+    labels = " ".join(
+        _clean(character.get(key))
+        for key in ("role", "archetype", "background", "relationship_to_protagonist")
+    )
+    combined = f"{name} {labels}"
+    if any(marker in combined for marker in ("女人", "女性", "女孩", "母亲", "妹妹", "姐姐")):
+        return "female"
+    if any(marker in combined for marker in ("男人", "男性", "男孩", "父亲", "哥哥", "弟弟")):
+        return "male"
+    if any(char in _LEGACY_FEMALE_HANZI for char in name):
+        return "female"
+    if any(char in _LEGACY_MALE_HANZI for char in name):
+        return "male"
+    return None
+
+
+def _looks_english_text(value: str) -> bool:
+    letters = sum(1 for char in value if char.isascii() and char.isalpha())
+    non_ascii = sum(1 for char in value if not char.isascii() and not char.isspace())
+    return letters > non_ascii
+
+
+def _legacy_chapter_scene_prefix(
+    *,
+    chapter_number: int | None,
+    scene_number: Any,
+    english: bool,
+) -> str:
+    if english:
+        if chapter_number is not None:
+            return f"Chapter {chapter_number} scene {scene_number}"
+        return f"Scene {scene_number}"
+    if chapter_number is not None:
+        return f"第{chapter_number}章第{scene_number}场"
+    return f"第{scene_number}场"
+
+
+def _extract_legacy_chapter_goal(story: str) -> str:
+    markers = ("本章目标：", "[chapter goal:")
+    for marker in markers:
+        start = story.find(marker)
+        if start < 0:
+            continue
+        goal = story[start + len(marker):]
+        for end_marker in ("）", ")", "]"):
+            end = goal.find(end_marker)
+            if end >= 0:
+                goal = goal[:end]
+                break
+        goal = goal.strip(" .。；;]")
+        if goal:
+            return goal
+    return ""
+
+
+def _legacy_scene_anchor(scene: Any, story: str) -> str:
+    for value in (
+        _clean(getattr(scene, "title", None)),
+        _clean(getattr(scene, "hook_requirement", None)),
+        _extract_legacy_chapter_goal(story),
+        _clean(getattr(scene, "scene_type", None)),
+    ):
+        if value:
+            return value
+    return "legacy recovered scene"
+
+
+def _legacy_scene_time_label(
+    scene: Any,
+    *,
+    chapter_number: int | None,
+    scene_number: Any,
+    story: str,
+) -> str:
+    anchor = _legacy_scene_anchor(scene, story)
+    english = _looks_english_text(f"{anchor} {story}")
+    prefix = _legacy_chapter_scene_prefix(
+        chapter_number=chapter_number,
+        scene_number=scene_number,
+        english=english,
+    )
+    return f"{prefix}: {anchor}" if english else f"{prefix}：{anchor}"
+
+
+def _legacy_scene_story_purpose(
+    scene: Any,
+    *,
+    chapter_number: int | None,
+    scene_number: Any,
+    story: str,
+) -> str:
+    anchor = _legacy_scene_anchor(scene, story)
+    english = _looks_english_text(f"{anchor} {story}")
+    prefix = _legacy_chapter_scene_prefix(
+        chapter_number=chapter_number,
+        scene_number=scene_number,
+        english=english,
+    )
+    if english:
+        return (
+            f"{prefix}: turn \"{anchor}\" into a concrete on-page beat with "
+            "a visible choice, cost, leverage shift, and next-scene pressure."
+        )
+    return f"{prefix}围绕「{anchor}」交付可见选择、代价变化、关系/势力位移和下一场压力。"
+
+
 def _requires_identity_lock(character: dict[str, Any]) -> bool:
     metadata = character.get("metadata")
     if isinstance(metadata, dict) and metadata.get("identity_contract_exempt") is True:
@@ -709,8 +1188,58 @@ def _identity_index_from_registry(
         for token in tokens:
             normalized = _normalize_identity_token(token)
             if normalized:
-                index[normalized] = identity
+                existing = index.get(normalized)
+                if existing is None or _prefer_identity_for_token(
+                    identity,
+                    existing,
+                    normalized_token=normalized,
+                ):
+                    index[normalized] = identity
     return index
+
+
+def _prefer_identity_for_token(
+    candidate: CharacterIdentity,
+    existing: CharacterIdentity,
+    *,
+    normalized_token: str,
+) -> bool:
+    """Prefer draft-ready canonical identities over unresolved legacy rows."""
+
+    candidate_resolved = _identity_is_resolved(candidate)
+    existing_resolved = _identity_is_resolved(existing)
+    if candidate_resolved != existing_resolved:
+        return candidate_resolved
+    candidate_exact = _normalize_identity_token(candidate.name) == normalized_token
+    existing_exact = _normalize_identity_token(existing.name) == normalized_token
+    if candidate_exact != existing_exact:
+        return candidate_exact
+    if candidate.is_alive != existing.is_alive:
+        return candidate.is_alive
+    candidate_role_score = _identity_role_priority(candidate.role)
+    existing_role_score = _identity_role_priority(existing.role)
+    if candidate_role_score != existing_role_score:
+        return candidate_role_score > existing_role_score
+    return len(_clean(candidate.name)) > len(_clean(existing.name))
+
+
+def _identity_role_priority(role: str) -> int:
+    normalized = _clean(role).lower()
+    if normalized in {"protagonist", "main", "lead", "主角", "男主", "女主"}:
+        return 3
+    if normalized in {"family", "ally", "antagonist", "love_interest"}:
+        return 2
+    if normalized:
+        return 1
+    return 0
+
+
+def _identity_is_resolved(identity: CharacterIdentity) -> bool:
+    return (
+        identity.gender != "unknown"
+        and bool(identity.pronoun_set_zh)
+        and bool(identity.pronoun_set_en)
+    )
 
 
 def _string_list(value: Any) -> list[str]:
@@ -797,6 +1326,72 @@ def _extract_purpose_character_names(
     return tuple(found)
 
 
+def _extract_purpose_identity_mentions(
+    text: str,
+    identity_index: dict[str, Any],
+) -> tuple[str, ...]:
+    """Find already-known identity names/aliases mentioned in free-form prose."""
+
+    if not text:
+        return ()
+
+    identities: dict[str, Any] = {}
+    first_token_counts: dict[str, int] = {}
+    for identity in identity_index.values():
+        display_name = _identity_display_name(identity)
+        normalized_name = _normalize_identity_token(display_name)
+        if not normalized_name or normalized_name in identities:
+            continue
+        identities[normalized_name] = identity
+        first = _english_first_token(display_name)
+        if first:
+            first_token_counts[first] = first_token_counts.get(first, 0) + 1
+
+    found: list[str] = []
+    seen: set[str] = set()
+    for identity in identities.values():
+        if _purpose_identity_is_inactive(identity):
+            continue
+        display_name = _identity_display_name(identity)
+        tokens = [display_name, *_identity_aliases(identity)]
+        first = _english_first_token(display_name)
+        if first and first_token_counts.get(first) == 1:
+            tokens.append(first)
+        if not any(_text_mentions_identity_token(text, token) for token in tokens):
+            continue
+        key = _normalize_identity_token(display_name)
+        if key and key not in seen:
+            seen.add(key)
+            found.append(display_name)
+    return tuple(found)
+
+
+def _identity_aliases(identity: Any) -> list[str]:
+    if isinstance(identity, CharacterIdentity):
+        return list(identity.aliases)
+    if isinstance(identity, dict):
+        return _string_list(identity.get("aliases"))
+    return _string_list(getattr(identity, "aliases", []))
+
+
+def _english_first_token(value: str) -> str:
+    parts = [part for part in re.split(r"[^A-Za-z]+", _clean(value)) if part]
+    if len(parts) < 2:
+        return ""
+    first = parts[0]
+    return first if len(first) >= 3 else ""
+
+
+def _text_mentions_identity_token(text: str, token: str) -> bool:
+    token = _clean(token)
+    if not token:
+        return False
+    if any(char.isascii() and char.isalpha() for char in token):
+        pattern = rf"(?<![A-Za-z0-9_]){re.escape(token)}(?![A-Za-z0-9_])"
+        return re.search(pattern, text, flags=re.IGNORECASE) is not None
+    return token in text
+
+
 def _is_reference_only_purpose_mention(text: str, start: int, end: int) -> bool:
     window = text[max(0, start - 8): min(len(text), end + 12)]
     return any(marker in window for marker in REFERENCE_ONLY_PURPOSE_MARKERS)
@@ -816,6 +1411,8 @@ def _resolve_purpose_identity_name(
 ) -> str | None:
     identity = identity_index.get(_normalize_identity_token(candidate))
     if identity is None or _purpose_identity_is_inactive(identity):
+        return None
+    if isinstance(identity, CharacterIdentity) and not _identity_is_resolved(identity):
         return None
     return _identity_display_name(identity) or candidate
 

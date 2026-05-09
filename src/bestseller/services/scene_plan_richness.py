@@ -48,9 +48,13 @@ GENERIC_STORY_PATTERNS: tuple[str, ...] = (
     "推进情节",
     "推进故事",
     "推进章节",
+    "推动本章局势前进",
+    "换来新的代价或信息",
     "展开剧情",
     "展开冲突",
     "承接上文",
+    "承接上章后果并明确本章行动目标",
+    "承接上一章尾钩",
     "引出下文",
     "过渡场景",
     "铺垫后续",
@@ -64,6 +68,12 @@ GENERIC_STORY_PATTERNS: tuple[str, ...] = (
     "继续推进",
     "完成本章目标",
     "按章节大纲",
+    "采用三层悬念叠加",
+    "当前冲突打断式悬念",
+    "长期伏笔轻触式悬念",
+    "更大威胁露头式悬念",
+    "核心压力落到行动层",
+    "本章行动目标",
 )
 
 GENERIC_EMOTION_PATTERNS: tuple[str, ...] = (
@@ -482,6 +492,100 @@ def validate_scene_card_richness(
     )
 
 
+def repair_scene_card_state_defaults(
+    *,
+    scene_type: str | None,
+    title: str | None = None,
+    purpose: dict[str, Any] | None,
+    entry_state: dict[str, Any] | None,
+    exit_state: dict[str, Any] | None,
+    participants: list[str] | tuple[str, ...] | None,
+    language: str = "zh-CN",
+) -> tuple[dict[str, Any], dict[str, Any], bool]:
+    """Fill missing/generic entry/exit states from the scene's concrete anchor.
+
+    This is deliberately deterministic and conservative: it only rewrites state
+    fields already classified as empty/generic. Purpose/story deficiencies still
+    fail the richness gate and require a planner-level rewrite.
+    """
+    entry_empty, _ = _state_is_empty_or_generic(entry_state)
+    exit_empty, _ = _state_is_empty_or_generic(exit_state)
+    if not entry_empty and not exit_empty:
+        return dict(entry_state or {}), dict(exit_state or {}), False
+
+    purpose = purpose or {}
+    story = _coerce_to_string(purpose.get("story") if isinstance(purpose, dict) else "").strip()
+    emotion = _coerce_to_string(purpose.get("emotion") if isinstance(purpose, dict) else "").strip()
+    label = " / ".join(x for x in (title or "", scene_type or "") if x).strip()
+    anchor = story or label or "this scene's unresolved pressure"
+    anchor = anchor[:220]
+    emotion_anchor = emotion or ("focused pressure" if not language.startswith("zh") else "压力与判断交织")
+
+    names = [str(p).strip() for p in (participants or []) if str(p).strip()]
+    if not names:
+        names = ["scene"]
+
+    repaired_entry = dict(entry_state or {})
+    repaired_exit = dict(exit_state or {})
+    if entry_empty:
+        repaired_entry = _build_repaired_state(
+            names,
+            anchor=anchor,
+            emotion_anchor=emotion_anchor,
+            phase="entry",
+            language=language,
+        )
+    if exit_empty:
+        repaired_exit = _build_repaired_state(
+            names,
+            anchor=anchor,
+            emotion_anchor=emotion_anchor,
+            phase="exit",
+            language=language,
+        )
+    return repaired_entry, repaired_exit, True
+
+
+def _build_repaired_state(
+    participants: list[str],
+    *,
+    anchor: str,
+    emotion_anchor: str,
+    phase: str,
+    language: str,
+) -> dict[str, Any]:
+    state: dict[str, Any] = {}
+    for name in participants[:6]:
+        if language.startswith("zh"):
+            if phase == "entry":
+                state[name] = {
+                    "objective": f"带着未解决压力进入场景：{anchor}",
+                    "knowledge": "尚未把本场景的关键线索转化为行动判断",
+                    "emotion": f"情绪底色：{emotion_anchor}",
+                }
+            else:
+                state[name] = {
+                    "objective": f"因本场景事件被迫调整下一步行动：{anchor}",
+                    "knowledge": "已经获得会影响后续选择的具体新信息",
+                    "emotion": f"情绪被本场景结果改变：{emotion_anchor}",
+                }
+            continue
+
+        if phase == "entry":
+            state[name] = {
+                "objective": f"enters with unresolved pressure around: {anchor}",
+                "knowledge": "has not yet converted this scene's key clue into a decision",
+                "emotion": f"emotional baseline: {emotion_anchor}",
+            }
+        else:
+            state[name] = {
+                "objective": f"leaves forced to adjust the next move because of: {anchor}",
+                "knowledge": "now carries a concrete implication that must affect the next scene",
+                "emotion": f"emotion shifted by the scene result: {emotion_anchor}",
+            }
+    return state
+
+
 def validate_scene_model(scene: Any, *, language: str = "zh-CN") -> RichnessReport:
     """Convenience wrapper — accept a ``SceneCardModel`` instance directly."""
     return validate_scene_card_richness(
@@ -492,3 +596,20 @@ def validate_scene_model(scene: Any, *, language: str = "zh-CN") -> RichnessRepo
         participants=getattr(scene, "participants", None),
         language=language,
     )
+
+
+def repair_scene_model_state_defaults(scene: Any, *, language: str = "zh-CN") -> bool:
+    """Mutate a scene model in-place if entry/exit states can be repaired."""
+    entry_state, exit_state, changed = repair_scene_card_state_defaults(
+        scene_type=getattr(scene, "scene_type", None),
+        title=getattr(scene, "title", None),
+        purpose=getattr(scene, "purpose", None),
+        entry_state=getattr(scene, "entry_state", None),
+        exit_state=getattr(scene, "exit_state", None),
+        participants=getattr(scene, "participants", None),
+        language=language,
+    )
+    if changed:
+        scene.entry_state = entry_state
+        scene.exit_state = exit_state
+    return changed

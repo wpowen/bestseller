@@ -310,8 +310,22 @@ class PipelineSettings(BaseModel):
             "ENDING_SENTENCE_WEAK",
             "character_resurrection",
             "CANON_FORBIDDEN_TERM",
+            "CROSS_CHAPTER_REPETITION",
+            "INTRA_CHAPTER_REPETITION",
+            "NAMING_OUT_OF_POOL",
         ]
     )
+    # Project-level premium-readiness gate. It is enabled as telemetry by
+    # default so every project pipeline records whether the structured genre
+    # engine is complete; set ``premium_book_gate_block_on_failure`` to turn
+    # the report into a hard final gate.
+    enable_premium_book_gate: bool = True
+    premium_book_gate_block_on_failure: bool = False
+    # Write-preparation planning kernel. This runs before chapter production
+    # entry points and records whether benchmark alignment, unique hook,
+    # series engine, long-arc capacity, and genre-specific engines are present.
+    enable_prewrite_readiness_gate: bool = True
+    prewrite_readiness_block_on_failure: bool = False
     # Curator scheduling — overridable via env for admin triage.
     curator_weekly_cron_hour: int = 4  # 04:00 UTC Monday
     curator_weekly_cron_day_of_week: str = "mon"

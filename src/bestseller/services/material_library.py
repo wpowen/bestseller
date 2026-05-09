@@ -41,7 +41,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Iterable, Sequence
 
-from sqlalchemy import func, select, update
+from sqlalchemy import func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -116,6 +116,35 @@ class CoverageReport:
     @property
     def gap(self) -> int:
         return max(self.min_required - self.active_count, 0)
+
+
+def genre_aliases(genre: str | None, sub_genre: str | None = None) -> tuple[str, ...]:
+    """Return retrieval buckets that can safely seed a composite genre.
+
+    Projects often use commercial composite genres such as ``惊悚灵异`` or
+    ``驱魔探案综合`` while the global library is curated under broader buckets
+    like ``灵异`` and ``悬疑``. Exact-only matching makes those projects look
+    empty and prevents Material Forge from running. Aliases are deliberately
+    conservative: they widen within the same reader promise instead of mixing
+    unrelated genres.
+    """
+
+    values: list[str] = []
+
+    def _add(value: str | None) -> None:
+        cleaned = (value or "").strip()
+        if cleaned and cleaned not in values:
+            values.append(cleaned)
+
+    _add(genre)
+    haystack = f"{genre or ''} {sub_genre or ''}"
+    if any(token in haystack for token in ("灵异", "驱魔", "民俗", "玄学", "鬼")):
+        _add("灵异")
+    if any(token in haystack for token in ("悬疑", "探案", "断案", "推理", "惊悚")):
+        _add("悬疑")
+    if "都市" in haystack:
+        _add("都市")
+    return tuple(values)
 
 
 # ── Conversions ────────────────────────────────────────────────────────
@@ -214,14 +243,17 @@ async def query_library(
         MaterialLibraryModel.dimension == dimension,
         MaterialLibraryModel.status == "active",
     )
-    if genre is not None:
+    genre_values = genre_aliases(genre, sub_genre)
+    if genre_values:
         if include_generic:
             stmt = stmt.where(
-                (MaterialLibraryModel.genre == genre)
-                | (MaterialLibraryModel.genre.is_(None))
+                or_(
+                    MaterialLibraryModel.genre.in_(genre_values),
+                    MaterialLibraryModel.genre.is_(None),
+                )
             )
         else:
-            stmt = stmt.where(MaterialLibraryModel.genre == genre)
+            stmt = stmt.where(MaterialLibraryModel.genre.in_(genre_values))
     if sub_genre is not None:
         stmt = stmt.where(
             (MaterialLibraryModel.sub_genre == sub_genre)
@@ -380,8 +412,9 @@ async def ensure_coverage(
         .where(MaterialLibraryModel.dimension == dimension)
         .where(MaterialLibraryModel.status == "active")
     )
-    if genre is not None:
-        count_stmt = count_stmt.where(MaterialLibraryModel.genre == genre)
+    genre_values = genre_aliases(genre, sub_genre)
+    if genre_values:
+        count_stmt = count_stmt.where(MaterialLibraryModel.genre.in_(genre_values))
     if sub_genre is not None:
         count_stmt = count_stmt.where(MaterialLibraryModel.sub_genre == sub_genre)
     active_count = int((await session.execute(count_stmt)).scalar_one() or 0)
@@ -394,8 +427,8 @@ async def ensure_coverage(
             MaterialLibraryModel.status == "active",
             MaterialLibraryModel.updated_at < cutoff_sql,
         )
-        if genre is not None:
-            stale_stmt = stale_stmt.where(MaterialLibraryModel.genre == genre)
+        if genre_values:
+            stale_stmt = stale_stmt.where(MaterialLibraryModel.genre.in_(genre_values))
         stale_rows = (await session.execute(stale_stmt)).scalars().all()
         stale_ids = tuple(int(i) for i in stale_rows)
 
@@ -434,10 +467,11 @@ async def library_has_any_genre_coverage(
         select(func.count(MaterialLibraryModel.id))
         .where(MaterialLibraryModel.status == "active")
     )
-    if genre is None:
+    genre_values = genre_aliases(genre)
+    if not genre_values:
         count_stmt = count_stmt.where(MaterialLibraryModel.genre.is_(None))
     else:
-        count_stmt = count_stmt.where(MaterialLibraryModel.genre == genre)
+        count_stmt = count_stmt.where(MaterialLibraryModel.genre.in_(genre_values))
     active_count = int((await session.execute(count_stmt)).scalar_one() or 0)
     return active_count >= min_entries
 
@@ -469,6 +503,7 @@ __all__ = [
     "NoveltyFilter",
     "CoverageReport",
     "EMBEDDING_DIM",
+    "genre_aliases",
     "query_library",
     "insert_entry",
     "insert_entries",

@@ -2235,11 +2235,17 @@ def _append_premium_state_ledger(
     if recorded:
         project_meta["premium_state_ledger"] = ledger
         try:
-            from bestseller.services.premium_state_ledger import validate_premium_state_ledger
+            from bestseller.services.premium_state_ledger import (
+                materialize_premium_state_snapshot,
+                validate_premium_state_ledger,
+            )
 
             project_meta["premium_state_ledger_report"] = validate_premium_state_ledger(
                 ledger,
             ).to_dict()
+            project_meta["premium_state_snapshot"] = materialize_premium_state_snapshot(
+                ledger,
+            )
         except Exception:
             logger.debug("premium state ledger validation failed (non-fatal)", exc_info=True)
         project.metadata_json = project_meta

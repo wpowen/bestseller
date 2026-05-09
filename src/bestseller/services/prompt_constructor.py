@@ -33,7 +33,7 @@ from __future__ import annotations
 
 import logging
 import random
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, replace
 from typing import Any, Sequence
 
 from bestseller.services.diversity_budget import DiversityBudget
@@ -136,8 +136,12 @@ class PromptPlan:
     system: str = ""
     invariants_section: str = ""
     bible_slice: str = ""
+    ranking_capability_profile_section: str = ""
     progression_constraints: str = ""
     decision_policy_constraints: str = ""
+    rule_system_constraints: str = ""
+    faction_ecology_constraints: str = ""
+    relationship_agency_constraints: str = ""
     reader_contract_section: str = ""
     methodology_inject: str = ""
     hype_constraints: str = ""
@@ -160,8 +164,12 @@ class PromptPlan:
             self.system,
             self.invariants_section,
             self.bible_slice,
+            self.ranking_capability_profile_section,
             self.progression_constraints,
             self.decision_policy_constraints,
+            self.rule_system_constraints,
+            self.faction_ecology_constraints,
+            self.relationship_agency_constraints,
             self.reader_contract_section,
             self.methodology_inject,
             self.hype_constraints,
@@ -555,8 +563,12 @@ def build_chapter_prompt(
     pacing_profile: str = "medium",
     system: str = "",
     bible_slice: str = "",
+    ranking_capability_profile_block: str = "",
     progression_context_block: str = "",
     decision_policy_block: str = "",
+    rule_system_context_block: str = "",
+    faction_ecology_context_block: str = "",
+    relationship_agency_context_block: str = "",
     scene_spec: str = "",
     prior_chapter_text: str | None = None,
     preassigned_opening: OpeningArchetype | None = None,
@@ -639,8 +651,12 @@ def build_chapter_prompt(
         system=system,
         invariants_section=build_invariants_section(invariants),
         bible_slice=bible_slice,
+        ranking_capability_profile_section=ranking_capability_profile_block,
         progression_constraints=progression_context_block,
         decision_policy_constraints=decision_policy_block,
+        rule_system_constraints=rule_system_context_block,
+        faction_ecology_constraints=faction_ecology_context_block,
+        relationship_agency_constraints=relationship_agency_context_block,
         reader_contract_section=reader_contract,
         methodology_inject=build_methodology_inject(invariants),
         hype_constraints=hype_section,

@@ -285,8 +285,14 @@ class TestBuildChapterPrompt:
             chapter_no=2,
             system="你是畅销小说作家。",
             bible_slice="【角色】主角：林奚。",
+            ranking_capability_profile_block=(
+                "【榜单级能力 Profile】固定入口 + 可解规则 + 单元案推动主线。"
+            ),
             progression_context_block="【进阶体系约束】当前境界: 炼气十层。不得空升级。",
             decision_policy_block="【主角决策策略】风险承受: low。不可为虚荣决斗。",
+            rule_system_context_block="【规则系统约束】规则必须有破局路径和代价。",
+            faction_ecology_context_block="【阵营生态与反应压力约束】敌方必须反应。",
+            relationship_agency_context_block="【关系张力与主角能动性约束】关系戏必须推进。",
             scene_spec="【本章任务】主角初入宗门。",
             prior_chapter_text="他闭上双眼，深吸一口气。",
             preassigned_opening=OpeningArchetype.CRISIS,
@@ -300,8 +306,12 @@ class TestBuildChapterPrompt:
         assert "禁止项" in rendered
         # All supplied sections present.
         assert "主角：林奚" in rendered
+        assert "固定入口 + 可解规则 + 单元案推动主线" in rendered
         assert "当前境界: 炼气十层" in rendered
         assert "风险承受: low" in rendered
+        assert "规则必须有破局路径和代价" in rendered
+        assert "敌方必须反应" in rendered
+        assert "关系戏必须推进" in rendered
         assert "本章任务" in rendered
         assert "前一章结尾" in rendered
         # Diversity section included.

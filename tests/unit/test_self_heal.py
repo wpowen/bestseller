@@ -46,7 +46,9 @@ class _FakeWorkflowRun:
     workflow_type: str
     status: str
     updated_at: _dt.datetime
+    created_at: _dt.datetime | None = None
     error_message: str | None = None
+    metadata_json: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -152,15 +154,41 @@ class _FakeSession:
         raise NotImplementedError(f"scalar for {target}")
 
     # --- execute (used by update()) --------------------------------------
-    async def execute(self, stmt: Any) -> Any:
+    async def execute(self, stmt: Any, params: Any | None = None) -> Any:
         from bestseller.domain.enums import WorkflowStatus  # noqa: PLC0415
 
         # Only update(WorkflowRunModel) is exercised here.
+        sql_text = str(stmt)
+        if "parent_workflow_run_id" in sql_text:
+            active = {"pending", "queued", "running"}
+            parents = {str(r.id): r for r in self.runs}
+            count = 0
+            for r in self.runs:
+                if r.status not in active:
+                    continue
+                parent_id = (r.metadata_json or {}).get("parent_workflow_run_id")
+                parent = parents.get(str(parent_id))
+                if parent is None or parent.status in active:
+                    continue
+                r.status = WorkflowStatus.FAILED.value
+                r.error_message = "reaped by self-heal (abandoned by prior worker)"
+                count += 1
+
+            class _ExecResult:
+                def __init__(self, n: int) -> None:
+                    self.rowcount = n
+
+            return _ExecResult(count)
+
         cutoff = self._filter_updated_before(stmt)
+        created_cutoff = self._filter_created_before(stmt)
         statuses = {"pending", "queued", "running"}
         count = 0
         for r in self.runs:
-            if r.status in statuses and r.updated_at < cutoff:
+            created_at = r.created_at or r.updated_at
+            stale_by_heartbeat = r.updated_at < cutoff
+            stale_by_startup = created_cutoff is not None and created_at < created_cutoff
+            if r.status in statuses and (stale_by_heartbeat or stale_by_startup):
                 r.status = WorkflowStatus.FAILED.value
                 r.error_message = "reaped by self-heal (abandoned by prior worker)"
                 count += 1
@@ -261,6 +289,30 @@ class _FakeSession:
         if whereclause is None:
             whereclause = getattr(stmt, "_whereclause", None)
         return _walk(whereclause) or _dt.datetime.now(_dt.UTC)
+
+    @staticmethod
+    def _filter_created_before(stmt: Any) -> _dt.datetime | None:
+        def _walk(node: Any) -> Any:
+            try:
+                clauses = list(getattr(node, "clauses", []) or [])
+            except Exception:  # noqa: BLE001
+                clauses = []
+            for c in clauses:
+                found = _walk(c)
+                if found is not None:
+                    return found
+            left = getattr(node, "left", None)
+            right = getattr(node, "right", None)
+            if left is not None and right is not None:
+                key = getattr(left, "key", None) or getattr(left, "name", None)
+                if key == "created_at":
+                    return getattr(right, "value", None)
+            return None
+
+        whereclause = getattr(stmt, "whereclause", None)
+        if whereclause is None:
+            whereclause = getattr(stmt, "_whereclause", None)
+        return _walk(whereclause)
 
     @staticmethod
     def _filter_production_state(stmt: Any) -> str | None:
@@ -416,6 +468,28 @@ async def test_find_stuck_projects_detects_blocked_chapters(
 
 
 @pytest.mark.asyncio
+async def test_find_stuck_projects_skips_paused_structural_repair_project(
+    now: _dt.datetime,
+) -> None:
+    p = _FakeProject(
+        id=uuid4(),
+        slug="book-paused",
+        status="paused",
+        metadata_json={
+            "generation_resume_blocked_until_repair_audit": True,
+            "production_pause_reason": "structural_repair_before_continuation",
+        },
+    )
+    chapters = [
+        _FakeChapter(id=uuid4(), project_id=p.id, production_state="blocked"),
+    ]
+    drafts = [_FakeDraft(id=uuid4(), chapter_id=chapters[0].id, is_current=True)]
+    session = _FakeSession(projects=[p], runs=[], chapters=chapters, drafts=drafts)
+
+    assert await find_stuck_projects(session) == []
+
+
+@pytest.mark.asyncio
 async def test_find_stuck_projects_detects_under_target_chapters(
     now: _dt.datetime,
 ) -> None:
@@ -526,6 +600,34 @@ async def test_reap_orphan_workflow_runs_by_startup_cutoff(
 
 
 @pytest.mark.asyncio
+async def test_reap_orphan_workflow_runs_by_startup_created_at(
+    now: _dt.datetime,
+) -> None:
+    """A pre-boot child row is stale even if it heartbeated right before restart."""
+    p = _FakeProject(id=uuid4(), slug="book-created-before-boot")
+    startup_cutoff = now - _dt.timedelta(seconds=STARTUP_GRACE_SECONDS)
+    runs = [
+        _FakeWorkflowRun(
+            id=uuid4(),
+            project_id=p.id,
+            workflow_type="chapter_pipeline",
+            status="running",
+            created_at=startup_cutoff - _dt.timedelta(minutes=5),
+            updated_at=now - _dt.timedelta(seconds=5),
+        ),
+    ]
+    session = _FakeSession(projects=[p], runs=runs, chapters=[], drafts=[])
+
+    reaped = await reap_orphan_workflow_runs(
+        session,
+        startup_cutoff=startup_cutoff,
+    )
+
+    assert reaped == 1
+    assert runs[0].status == "failed"
+
+
+@pytest.mark.asyncio
 async def test_reap_orphan_workflow_runs_by_heartbeat_timeout(
     now: _dt.datetime,
 ) -> None:
@@ -546,6 +648,58 @@ async def test_reap_orphan_workflow_runs_by_heartbeat_timeout(
 
     assert reaped == 1
     assert runs[0].status == "failed"
+
+
+@pytest.mark.asyncio
+async def test_reap_orphan_workflow_runs_reaps_child_when_parent_terminal(
+    now: _dt.datetime,
+) -> None:
+    """A child scene workflow cannot remain running after its parent failed."""
+    p = _FakeProject(id=uuid4(), slug="book-child")
+    parent_failed_id = uuid4()
+    parent_active_id = uuid4()
+    runs = [
+        _FakeWorkflowRun(
+            id=parent_failed_id,
+            project_id=p.id,
+            workflow_type="chapter_pipeline",
+            status="failed",
+            updated_at=now,
+        ),
+        _FakeWorkflowRun(
+            id=uuid4(),
+            project_id=p.id,
+            workflow_type="scene_pipeline",
+            status="running",
+            updated_at=now,
+            metadata_json={"parent_workflow_run_id": str(parent_failed_id)},
+        ),
+        _FakeWorkflowRun(
+            id=parent_active_id,
+            project_id=p.id,
+            workflow_type="chapter_pipeline",
+            status="running",
+            updated_at=now,
+        ),
+        _FakeWorkflowRun(
+            id=uuid4(),
+            project_id=p.id,
+            workflow_type="scene_pipeline",
+            status="running",
+            updated_at=now,
+            metadata_json={"parent_workflow_run_id": str(parent_active_id)},
+        ),
+    ]
+    session = _FakeSession(projects=[p], runs=runs, chapters=[], drafts=[])
+
+    reaped = await reap_orphan_workflow_runs(
+        session,
+        startup_cutoff=now - _dt.timedelta(seconds=STARTUP_GRACE_SECONDS),
+    )
+
+    assert reaped == 1
+    assert runs[1].status == "failed"
+    assert runs[3].status == "running"
 
 
 @pytest.mark.asyncio
@@ -641,9 +795,20 @@ def test_autowrite_heal_job_id_is_deterministic() -> None:
 
 
 class _FakeArqPool:
-    def __init__(self, reject_job_ids: set[str] | None = None) -> None:
+    def __init__(
+        self,
+        reject_job_ids: set[str] | None = None,
+        reject_once_job_ids: set[str] | None = None,
+        existing_keys: set[str] | None = None,
+        queue_scores: dict[str, float] | None = None,
+    ) -> None:
         self.reject_job_ids = reject_job_ids or set()
+        self.reject_once_job_ids = reject_once_job_ids or set()
+        self.existing_keys = existing_keys or set()
+        self.queue_scores = queue_scores or {}
         self.enqueued: list[dict[str, Any]] = []
+        self.deleted: list[str] = []
+        self.zremoved: list[tuple[str, str]] = []
 
     async def enqueue_job(
         self,
@@ -663,9 +828,31 @@ class _FakeArqPool:
                 "_expires": _expires,
             }
         )
+        if _job_id in self.reject_once_job_ids:
+            self.reject_once_job_ids.remove(_job_id)
+            return None
         if _job_id in self.reject_job_ids:
             return None
         return object()  # non-None sentinel — ARQ returns a Job instance
+
+    async def exists(self, *keys: str) -> int:
+        return sum(1 for key in keys if key in self.existing_keys)
+
+    async def delete(self, *keys: str) -> int:
+        self.deleted.extend(keys)
+        count = 0
+        for key in keys:
+            if key in self.existing_keys:
+                self.existing_keys.remove(key)
+                count += 1
+        return count
+
+    async def zscore(self, key: str, member: str) -> float | None:
+        return self.queue_scores.get(f"{key}:{member}")
+
+    async def zrem(self, key: str, member: str) -> int:
+        self.zremoved.append((key, member))
+        return 1 if self.queue_scores.pop(f"{key}:{member}", None) is not None else 0
 
 
 @pytest.mark.asyncio
@@ -696,7 +883,10 @@ async def test_requeue_autowrite_returns_none_when_arq_dedups() -> None:
     """ARQ returning None means a same-id job is already pending/running."""
     from bestseller.worker.self_heal import _requeue_autowrite
 
-    pool = _FakeArqPool(reject_job_ids={"autowrite:heal:book-dup"})
+    pool = _FakeArqPool(
+        reject_job_ids={"autowrite:heal:book-dup"},
+        existing_keys={"arq:job:autowrite:heal:book-dup"},
+    )
     stuck = StuckProject(
         project_id="p2",
         slug="book-dup",
@@ -709,3 +899,62 @@ async def test_requeue_autowrite_returns_none_when_arq_dedups() -> None:
     job_id = await _requeue_autowrite(pool, stuck)  # type: ignore[arg-type]
 
     assert job_id is None
+
+
+@pytest.mark.asyncio
+async def test_requeue_autowrite_clears_stale_result_before_retry() -> None:
+    """A stale ARQ result key must not permanently block self-heal requeue."""
+    from bestseller.worker.self_heal import _requeue_autowrite
+
+    pool = _FakeArqPool(
+        reject_once_job_ids={"autowrite:heal:book-result"},
+        existing_keys={"arq:result:autowrite:heal:book-result"},
+    )
+    stuck = StuckProject(
+        project_id="p3",
+        slug="book-result",
+        reason="missing_drafts",
+        stuck_at_chapter=1,
+        chapters_total=5,
+        chapters_with_draft=0,
+    )
+
+    job_id = await _requeue_autowrite(pool, stuck)  # type: ignore[arg-type]
+
+    assert job_id == "autowrite:heal:book-result"
+    assert len(pool.enqueued) == 2
+    assert "arq:result:autowrite:heal:book-result" in pool.deleted
+
+
+@pytest.mark.asyncio
+async def test_requeue_autowrite_clears_stale_in_progress_before_retry() -> None:
+    """A ghost in-progress ARQ key must not permanently block self-heal."""
+    from bestseller.worker.self_heal import _requeue_autowrite
+
+    job_id = "autowrite:heal:book-ghost"
+    pool = _FakeArqPool(
+        reject_once_job_ids={job_id},
+        existing_keys={
+            f"arq:job:{job_id}",
+            f"arq:in-progress:{job_id}",
+            f"arq:retry:{job_id}",
+        },
+        queue_scores={f"arq:queue:{job_id}": 0.0},
+    )
+    stuck = StuckProject(
+        project_id="p4",
+        slug="book-ghost",
+        reason="missing_drafts",
+        stuck_at_chapter=1,
+        chapters_total=5,
+        chapters_with_draft=0,
+    )
+
+    actual_job_id = await _requeue_autowrite(pool, stuck)  # type: ignore[arg-type]
+
+    assert actual_job_id == job_id
+    assert len(pool.enqueued) == 2
+    assert f"arq:job:{job_id}" in pool.deleted
+    assert f"arq:in-progress:{job_id}" in pool.deleted
+    assert f"arq:retry:{job_id}" in pool.deleted
+    assert ("arq:queue", job_id) in pool.zremoved

@@ -15,7 +15,9 @@ from bestseller.infra.db.models import (
     StyleGuideModel,
 )
 from bestseller.services import reviews as review_services
+from bestseller.services.qimao_opening_gate import QimaoOpeningFinding
 from bestseller.services.reviews import (
+    build_qimao_opening_rewrite_instructions,
     build_chapter_review_prompts,
     build_chapter_rewrite_prompts,
     build_scene_rewrite_prompts,
@@ -25,6 +27,7 @@ from bestseller.services.reviews import (
     render_rewritten_chapter_markdown,
     render_rewritten_scene_markdown,
 )
+from bestseller.services.write_safety_gate import WriteSafetyFinding
 from bestseller.settings import load_settings
 
 
@@ -75,6 +78,52 @@ def build_settings():
     return load_settings(env={})
 
 
+def _qimao_project() -> SimpleNamespace:
+    return SimpleNamespace(
+        title="退婚账本",
+        genre="fantasy",
+        sub_genre=None,
+        language="zh-CN",
+        metadata_json={
+            "writing_profile": {"market": {"platform_target": "七猫小说"}},
+            "editor_rejection_reasons": "文笔还有待提升，代入感较弱，开篇切入点普通。",
+            "qimao_opening_contract": {
+                "opening_incident": "第一章从被迫选择和直接损失切入。",
+                "first_page_conflict": "前600字内被逼交出账本，否则母亲旧案证据被毁。",
+                "protagonist_immediate_goal": "先保住账本并确认谁在灭口。",
+                "visible_loss_if_fail": "失败会失去唯一翻案证据。",
+                "protagonist_edge": "主角能从账目细节看出隐藏漏洞。",
+                "edge_limit": "账本只能救第一轮，不能直接推翻主谋。",
+                "chapter_1_small_turn": "主角当众反制逼迫者。",
+                "chapter_2_reveal": "逼迫者背后另有主谋。",
+                "chapter_3_payoff": "拿到第一个筹码并打开下一轮钩子。",
+                "first_10000_loop": "触发冲突 -> 主角行动 -> 收益/代价 -> 新钩子",
+                "forbidden_opening_modes": ["background_exposition", "normal_day", "scenery_first"],
+            },
+        },
+    )
+
+
+def _qimao_chapter() -> SimpleNamespace:
+    return SimpleNamespace(
+        chapter_number=1,
+        title="账本被夺",
+        chapter_goal="让主角在逼迫中保住账本。",
+        target_word_count=2200,
+    )
+
+
+def _qimao_rewrite_task() -> SimpleNamespace:
+    return SimpleNamespace(
+        instructions="修复开篇普通、代入弱和吸引力不足。",
+        rewrite_strategy="qimao_opening_incident_rewrite",
+    )
+
+
+async def _empty_async_tuple(*args: object, **kwargs: object) -> tuple:
+    return ()
+
+
 def test_evaluate_scene_draft_marks_short_template_for_rewrite() -> None:
     scene = SimpleNamespace(
         target_word_count=1000,
@@ -104,6 +153,84 @@ def test_evaluate_scene_draft_marks_short_template_for_rewrite() -> None:
     assert result.scores.hook_strength >= 0
     assert result.scores.voice_consistency >= 0
     assert any(finding.category == "goal" for finding in result.findings)
+
+
+def test_scene_rewrite_prompt_includes_qimao_opening_contract() -> None:
+    scene = SimpleNamespace(
+        scene_number=1,
+        title="逼交账本",
+        purpose={"story": "逼出账本冲突", "emotion": "压迫感"},
+        target_word_count=1200,
+    )
+    current_draft = SimpleNamespace(content_md="旧稿开篇太平。", word_count=900)
+    style_guide = SimpleNamespace(pov_type="third-limited", tone_keywords=["紧张"])
+
+    _, user_prompt = build_scene_rewrite_prompts(
+        _qimao_project(),
+        _qimao_chapter(),
+        scene,
+        current_draft,
+        _qimao_rewrite_task(),
+        style_guide,
+    )
+
+    assert "【七猫再生成合同】" in user_prompt
+    assert "【opening_quality_contract｜商业签约开篇合同】" in user_prompt
+    assert "本章不是自由发挥" in user_prompt
+    assert "第一章从被迫选择和直接损失切入" in user_prompt
+    assert "文笔还有待提升" in user_prompt
+
+
+def test_chapter_rewrite_prompt_includes_qimao_opening_contract() -> None:
+    current_draft = SimpleNamespace(content_md="旧稿开篇太平。", word_count=1800)
+
+    _, user_prompt = build_chapter_rewrite_prompts(
+        _qimao_project(),
+        _qimao_chapter(),
+        current_draft,
+        _qimao_rewrite_task(),
+        chapter_context=None,
+    )
+
+    assert "【七猫签约门槛】" in user_prompt
+    assert "【七猫再生成合同】" in user_prompt
+    assert "【opening_quality_contract｜商业签约开篇合同】" in user_prompt
+    assert "黄金三章任务" in user_prompt
+    assert "先保住账本并确认谁在灭口" in user_prompt
+
+
+def test_build_qimao_opening_rewrite_instructions_maps_findings() -> None:
+    contract = _qimao_project().metadata_json["qimao_opening_contract"]
+    findings = (
+        QimaoOpeningFinding(
+            code="ordinary_entry",
+            severity="critical",
+            message="前300字疑似普通日常切入。",
+            evidence="清晨醒来。",
+            chapter_number=1,
+        ),
+        QimaoOpeningFinding(
+            code="weak_immersion",
+            severity="critical",
+            message="主角没有成为视角焦点。",
+            evidence="无主角。",
+            chapter_number=1,
+        ),
+    )
+
+    instructions = build_qimao_opening_rewrite_instructions(
+        findings,
+        chapter_number=1,
+        opening_contract=contract,
+        rejection_reasons="开篇切入点比较普通，缺乏足够吸引力。",
+    )
+
+    assert "qimao_opening_incident_rewrite" in instructions
+    assert "ordinary_entry [critical] -> qimao_opening_incident_rewrite" in instructions
+    assert "weak_immersion [critical] -> qimao_pov_immersion_rewrite" in instructions
+    assert "这不是润色任务" in instructions
+    assert "第一章从被迫选择和直接损失切入" in instructions
+    assert "直接重写正文" in instructions
 
 
 def test_evaluate_scene_draft_flags_contract_deviation() -> None:
@@ -267,7 +394,11 @@ def test_scene_rewrite_prompts_switch_to_english_for_english_projects() -> None:
                     "scene_drive_rule": "Every scene must create a gain, a loss, or a sharper choice.",
                     "chapter_ending_rule": "Every chapter must end on a question, a threat, or a costly next move.",
                 },
-            }
+            },
+            "material_reference_block": (
+                "## 可引用物料\n"
+                "§world_settings/proj/storm-archive：Storm Archive — buried dynasty ledger"
+            ),
         },
     )
     project.id = uuid4()
@@ -339,6 +470,8 @@ def test_scene_rewrite_prompts_switch_to_english_for_english_projects() -> None:
     assert "Rewrite the current scene in English only" in user_prompt
     assert "Project: Storm Ledger" in user_prompt
     assert "Chapter 1" in user_prompt
+    assert "[Project material anchors]" in user_prompt
+    assert "§world_settings/proj/storm-archive" in user_prompt
     assert "长篇中文小说" not in combined
 
 
@@ -666,7 +799,18 @@ def test_evaluate_chapter_draft_flags_unfinished_placeholder_names() -> None:
 
 
 def test_render_chapter_review_summary_and_prompts_include_context() -> None:
-    project = SimpleNamespace(title="长夜巡航", genre="末日科幻", sub_genre="重生囤货", language="zh-CN", metadata_json={})
+    project = SimpleNamespace(
+        title="长夜巡航",
+        genre="末日科幻",
+        sub_genre="重生囤货",
+        language="zh-CN",
+        metadata_json={
+            "material_reference_block": (
+                "## 可引用物料\n"
+                "§scene_templates/proj/warehouse-pressure：仓库压迫场景 — 现实证据和危险交易夹击"
+            )
+        },
+    )
     chapter = SimpleNamespace(chapter_number=3, title="静默航道", chapter_goal="推进调查")
     draft = SimpleNamespace(content_md="# 第3章 静默航道\n\n## 场景 1：旧搭档回舰")
     chapter_context = SimpleNamespace(
@@ -743,6 +887,8 @@ def test_render_chapter_review_summary_and_prompts_include_context() -> None:
     assert "反派推进" in user_prompt
     assert "章节重写编辑" in rewrite_system_prompt
     assert "补强场景衔接" in rewrite_user_prompt
+    assert "【本书素材锚点】" in rewrite_user_prompt
+    assert "§scene_templates/proj/warehouse-pressure" in rewrite_user_prompt
 
 
 def test_render_rewritten_chapter_markdown_preserves_existing_body_verbatim() -> None:
@@ -903,6 +1049,11 @@ async def test_review_chapter_draft_creates_rewrite_task_for_low_score(
         fake_build_chapter_writer_context,
     )
     monkeypatch.setattr(review_services, "complete_text", fake_complete_text)
+    monkeypatch.setattr(
+        review_services,
+        "_collect_post_assembly_duplicate_findings",
+        lambda *args, **kwargs: _empty_async_tuple(),
+    )
 
     session = FakeSession(
         scalar_results=[chapter, draft],
@@ -1354,6 +1505,11 @@ async def test_rewrite_chapter_from_task_preserves_current_when_gate_blocks(
     )
     monkeypatch.setattr(review_services, "complete_text", fake_complete_text)
     monkeypatch.setattr(review_services, "_evaluate_chapter_quality_gate", fake_quality_gate)
+    monkeypatch.setattr(
+        review_services,
+        "_collect_post_assembly_duplicate_findings",
+        lambda *args, **kwargs: _empty_async_tuple(),
+    )
 
     session = FakeSession(
         scalar_results=[chapter, current_draft, rewrite_task, 1],
@@ -1380,6 +1536,149 @@ async def test_rewrite_chapter_from_task_preserves_current_when_gate_blocks(
     assert completed_task.metadata_json["quality_gate_rejected_current_promotion"] is True
     assert completed_task.metadata_json["preserved_current_chapter_draft_id"] == str(current_draft.id)
     assert chapter.current_word_count is None
+    assert chapter.production_state == "ok"
+
+
+@pytest.mark.asyncio
+async def test_rewrite_chapter_from_task_preserves_current_when_duplicate_gate_blocks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = ProjectModel(
+        slug="my-story",
+        title="长夜巡航",
+        genre="science-fantasy",
+        target_word_count=80000,
+        target_chapters=12,
+        metadata_json={},
+    )
+    project.id = uuid4()
+    chapter = ChapterModel(
+        project_id=project.id,
+        chapter_number=3,
+        title="静默航道",
+        chapter_goal="推进调查",
+        information_revealed=[],
+        information_withheld=[],
+        foreshadowing_actions={},
+        metadata_json={},
+        target_word_count=2400,
+        production_state="ok",
+    )
+    chapter.id = uuid4()
+    scenes = [
+        SceneCardModel(
+            project_id=project.id,
+            chapter_id=chapter.id,
+            scene_number=1,
+            scene_type="setup",
+            title="旧搭档回舰",
+            participants=["沈砚"],
+            purpose={"story": "沈砚确认航标异常并决定追查黑匣子缺页", "emotion": "警觉转冷怒"},
+            entry_state={"location": "空港"},
+            exit_state={"location": "封锁舱门"},
+            metadata_json={},
+            target_word_count=1000,
+        )
+    ]
+    scenes[0].id = uuid4()
+    current_draft = ChapterDraftVersionModel(
+        project_id=project.id,
+        chapter_id=chapter.id,
+        version_no=1,
+        content_md="# 第3章 静默航道\n\n## 场景 1：旧搭档回舰\n\n章节旧稿。",
+        word_count=820,
+        assembled_from_scene_draft_ids=["scene-draft-1"],
+        is_current=True,
+    )
+    current_draft.id = uuid4()
+    rewrite_task = RewriteTaskModel(
+        project_id=project.id,
+        trigger_type="chapter_review",
+        trigger_source_id=chapter.id,
+        rewrite_strategy="chapter_coherence_bridge_rewrite",
+        priority=4,
+        status="pending",
+        instructions="补强场景衔接与章节收尾",
+        context_required=[],
+        metadata_json={},
+    )
+    rewrite_task.id = uuid4()
+    rewrite_task.attempts = 0
+
+    async def fake_get_project_by_slug(session, slug: str):
+        return project
+
+    async def fake_build_chapter_writer_context(session, settings, project_slug, chapter_number):
+        return SimpleNamespace(
+            previous_scene_summaries=[],
+            recent_timeline_events=[],
+            chapter_scenes=[],
+            retrieval_chunks=[],
+        )
+
+    async def fake_complete_text(session, settings, request):
+        return SimpleNamespace(
+            content="# 第3章 静默航道\n\n重复段落。" * 120,
+            model_name="mock-editor",
+            llm_run_id=uuid4(),
+            provider="mock",
+        )
+
+    async def fake_quality_gate(**kwargs):
+        return "ok"
+
+    async def fake_duplicate_gate(*args, **kwargs):
+        content = str(kwargs.get("content_md") or "")
+        if "重复段落" not in content:
+            return ()
+        return (
+            WriteSafetyFinding(
+                source="post_assembly_duplicate_gate",
+                code="CROSS_CHAPTER_REPETITION",
+                severity="critical",
+                message="第3章与第2章存在跨章段落重复。",
+                evidence="重复段落。",
+                payload={"chapter": 3, "other_chapter": 2},
+            ),
+        )
+
+    monkeypatch.setattr(review_services, "get_project_by_slug", fake_get_project_by_slug)
+    monkeypatch.setattr(
+        review_services,
+        "build_chapter_writer_context",
+        fake_build_chapter_writer_context,
+    )
+    monkeypatch.setattr(review_services, "complete_text", fake_complete_text)
+    monkeypatch.setattr(review_services, "_evaluate_chapter_quality_gate", fake_quality_gate)
+    monkeypatch.setattr(
+        review_services,
+        "_collect_post_assembly_duplicate_findings",
+        fake_duplicate_gate,
+    )
+
+    session = FakeSession(
+        scalar_results=[chapter, current_draft, rewrite_task, 1],
+        scalars_results=[scenes],
+    )
+
+    returned_draft, completed_task = await review_services.rewrite_chapter_from_task(
+        session,
+        "my-story",
+        3,
+        settings=build_settings(),
+    )
+
+    rejected = [
+        obj for obj in session.added
+        if isinstance(obj, ChapterDraftVersionModel) and obj is not current_draft
+    ]
+    assert returned_draft is current_draft
+    assert len(rejected) == 1
+    assert rejected[0].is_current is False
+    assert session.executed == []
+    assert completed_task.status == "failed"
+    assert completed_task.metadata_json["candidate_quality_gate_outcome"] == "blocked"
+    assert completed_task.metadata_json["candidate_duplicate_gate_findings"][0]["code"] == "CROSS_CHAPTER_REPETITION"
     assert chapter.production_state == "ok"
 
 

@@ -89,14 +89,15 @@ async def insert_project_material(
 ) -> ProjectMaterial:
     """Persist *mat* into ``project_materials`` and return it.
 
-    Uses SQLAlchemy core INSERT for portability without ORM dependencies
-    inside the forge package.
+    Uses PostgreSQL's dialect-specific INSERT because project materials are
+    idempotent on ``(project_id, material_type, slug)``.
     """
-    from sqlalchemy import insert, text  # noqa: PLC0415
+    from sqlalchemy import text  # noqa: PLC0415
+    from sqlalchemy.dialects.postgresql import insert as pg_insert  # noqa: PLC0415
     from bestseller.infra.db.models import ProjectMaterialModel  # noqa: PLC0415
 
     stmt = (
-        insert(ProjectMaterialModel)
+        pg_insert(ProjectMaterialModel)
         .values(
             project_id=mat.project_id,
             material_type=mat.material_type,
@@ -583,5 +584,4 @@ def _coerce_emit_args(
         source_library_ids=source_ids,
         variation_notes=variation_notes or "",
     )
-
 

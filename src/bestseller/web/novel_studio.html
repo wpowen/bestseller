@@ -1215,6 +1215,12 @@
     .status.completed { color: var(--ok); }
     .status.failed { color: var(--err); }
     .status.queued { color: var(--soft); }
+    .status.paused,
+    .status.repair {
+      color: var(--err);
+      background: rgba(143, 48, 41, 0.08);
+      border-color: rgba(143, 48, 41, 0.18);
+    }
 
     .main-grid {
       display: grid;
@@ -1307,6 +1313,99 @@
       color: var(--muted);
       line-height: 1.6;
       font-size: 12px;
+    }
+
+    .repair-status-panel {
+      display: grid;
+      gap: 16px;
+      border-color: rgba(143, 48, 41, 0.2);
+      background:
+        linear-gradient(135deg, rgba(255, 247, 241, 0.96) 0%, rgba(255, 238, 231, 0.92) 100%);
+    }
+
+    .repair-status-panel[hidden] {
+      display: none;
+    }
+
+    .repair-status-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      align-items: flex-start;
+    }
+
+    .repair-status-head h3 {
+      margin: 0 0 6px;
+      font-size: 18px;
+    }
+
+    .repair-status-head p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.75;
+    }
+
+    .repair-status-badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 34px;
+      padding: 0 12px;
+      border-radius: 999px;
+      border: 1px solid rgba(143, 48, 41, 0.18);
+      background: rgba(143, 48, 41, 0.08);
+      color: var(--err);
+      font-size: 12px;
+      font-weight: 800;
+      white-space: nowrap;
+    }
+
+    .repair-progress-track {
+      height: 12px;
+      overflow: hidden;
+      border-radius: 999px;
+      border: 1px solid rgba(104, 79, 56, 0.12);
+      background: rgba(255, 255, 255, 0.74);
+    }
+
+    .repair-progress-fill {
+      width: 0%;
+      height: 100%;
+      border-radius: inherit;
+      background: linear-gradient(90deg, #8f3029 0%, #c86632 100%);
+      transition: width 0.25s ease;
+    }
+
+    .repair-status-grid {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .repair-status-stat {
+      border-radius: 16px;
+      border: 1px solid rgba(104, 79, 56, 0.12);
+      background: rgba(255, 255, 255, 0.74);
+      padding: 12px 14px;
+      min-width: 0;
+    }
+
+    .repair-status-stat strong {
+      display: block;
+      margin-bottom: 6px;
+      color: var(--soft);
+      font-size: 11px;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    .repair-status-stat span {
+      display: block;
+      color: var(--ink);
+      font-size: 22px;
+      font-weight: 800;
+      line-height: 1.2;
     }
 
     .execution-panel {
@@ -1748,6 +1847,7 @@
       .story-bible-overview,
       .status-overview,
       .narrative-overview,
+      .repair-status-grid,
       .book-detail-status,
       .book-detail-columns,
       .narrative-grid {
@@ -1778,10 +1878,15 @@
       .story-bible-overview,
       .status-overview,
       .narrative-overview,
+      .repair-status-grid,
       .book-detail-status,
       .book-detail-columns,
       .narrative-grid {
         grid-template-columns: 1fr;
+      }
+
+      .repair-status-head {
+        flex-direction: column;
       }
 
       .workflow-step {
@@ -2318,6 +2423,41 @@
           </div>
         </section>
 
+        <section class="panel repair-status-panel" id="repair-status-panel" hidden>
+          <div class="repair-status-head">
+            <div>
+              <h3 id="repair-status-title">修复状态</h3>
+              <p id="repair-status-detail">当前项目没有进入修复门控。</p>
+            </div>
+            <span class="repair-status-badge" id="repair-status-badge">正常</span>
+          </div>
+          <div class="repair-progress-track" aria-label="修复进度">
+            <div class="repair-progress-fill" id="repair-progress-fill"></div>
+          </div>
+          <div class="repair-status-grid">
+            <div class="repair-status-stat">
+              <strong>修复进度</strong>
+              <span id="repair-progress-percent">-</span>
+            </div>
+            <div class="repair-status-stat">
+              <strong>待修章节</strong>
+              <span id="repair-remaining">-</span>
+            </div>
+            <div class="repair-status-stat">
+              <strong>已恢复</strong>
+              <span id="repair-completed">-</span>
+            </div>
+            <div class="repair-status-stat">
+              <strong>通过章节</strong>
+              <span id="repair-complete-ok">-</span>
+            </div>
+            <div class="repair-status-stat">
+              <strong>章节总数</strong>
+              <span id="repair-total-chapters">-</span>
+            </div>
+          </div>
+        </section>
+
         <section class="panel">
           <div class="summary-cards">
             <div class="summary-card">
@@ -2374,6 +2514,11 @@
               <strong>流程运行数</strong>
               <span id="summary-workflows">-</span>
               <small>当前项目历史上已经跑过多少条 workflow，以及最近一条的状态。</small>
+            </div>
+            <div class="summary-card">
+              <strong>修复进度</strong>
+              <span id="summary-repair-progress">-</span>
+              <small id="summary-repair-detail">当前项目没有进入修复门控。</small>
             </div>
           </div>
         </section>
@@ -2646,6 +2791,16 @@
       projectList: document.getElementById("project-list"),
       projectTitle: document.getElementById("project-title"),
       projectSubtitle: document.getElementById("project-subtitle"),
+      repairStatusPanel: document.getElementById("repair-status-panel"),
+      repairStatusTitle: document.getElementById("repair-status-title"),
+      repairStatusDetail: document.getElementById("repair-status-detail"),
+      repairStatusBadge: document.getElementById("repair-status-badge"),
+      repairProgressFill: document.getElementById("repair-progress-fill"),
+      repairProgressPercent: document.getElementById("repair-progress-percent"),
+      repairRemaining: document.getElementById("repair-remaining"),
+      repairCompleted: document.getElementById("repair-completed"),
+      repairCompleteOk: document.getElementById("repair-complete-ok"),
+      repairTotalChapters: document.getElementById("repair-total-chapters"),
       summaryStatus: document.getElementById("summary-status"),
       summaryChapters: document.getElementById("summary-chapters"),
       summaryScenes: document.getElementById("summary-scenes"),
@@ -2659,6 +2814,8 @@
       summaryPlatform: document.getElementById("summary-platform"),
       summaryReaderPromise: document.getElementById("summary-reader-promise"),
       summaryWorkflows: document.getElementById("summary-workflows"),
+      summaryRepairProgress: document.getElementById("summary-repair-progress"),
+      summaryRepairDetail: document.getElementById("summary-repair-detail"),
       executionTaskStatus: document.getElementById("execution-task-status"),
       executionTaskTitle: document.getElementById("execution-task-title"),
       executionCurrentStage: document.getElementById("execution-current-stage"),
@@ -3022,8 +3179,48 @@
         complete: "已完成",
         draft: "草稿中",
         queued: "排队中",
+        paused: "已暂停",
       };
       return mapping[status] || status || "-";
+    }
+
+    function repairProgressLabel(repairStatus) {
+      if (!repairStatus || repairStatus.progress_percent === null || repairStatus.progress_percent === undefined) {
+        return "-";
+      }
+      return `${Number(repairStatus.progress_percent).toFixed(1).replace(".0", "")}%`;
+    }
+
+    function repairDetailLabel(repairStatus) {
+      if (!repairStatus || !repairStatus.is_repairing) {
+        return "当前项目没有进入修复门控。";
+      }
+      const remaining = Number(repairStatus.repair_remaining || 0).toLocaleString("zh-CN");
+      const total = Number(repairStatus.repair_scope_total || 0).toLocaleString("zh-CN");
+      const blocked = Number(repairStatus.blocked_chapters || 0).toLocaleString("zh-CN");
+      return `${repairStatus.label || "修复中"} · 待修 ${remaining} / ${total} 章 · 当前阻塞 ${blocked} 章`;
+    }
+
+    function renderRepairStatus(repairStatus) {
+      const active = Boolean(repairStatus && repairStatus.is_repairing);
+      els.repairStatusPanel.hidden = !active;
+      const percent = Number(repairStatus?.progress_percent ?? 0);
+      const boundedPercent = Math.max(0, Math.min(100, Number.isFinite(percent) ? percent : 0));
+      els.summaryRepairProgress.textContent = repairProgressLabel(repairStatus);
+      els.summaryRepairDetail.textContent = repairDetailLabel(repairStatus);
+      if (!active) {
+        els.repairProgressFill.style.width = "0%";
+        return;
+      }
+      els.repairStatusTitle.textContent = repairStatus.label || "修复状态";
+      els.repairStatusDetail.textContent = repairStatus.detail || repairDetailLabel(repairStatus);
+      els.repairStatusBadge.textContent = repairStatus.production_paused ? "暂停生产" : (repairStatus.label || "修复中");
+      els.repairProgressFill.style.width = `${boundedPercent}%`;
+      els.repairProgressPercent.textContent = repairProgressLabel(repairStatus);
+      els.repairRemaining.textContent = Number(repairStatus.repair_remaining || 0).toLocaleString("zh-CN");
+      els.repairCompleted.textContent = Number(repairStatus.repair_completed || 0).toLocaleString("zh-CN");
+      els.repairCompleteOk.textContent = Number(repairStatus.complete_ok_chapters || 0).toLocaleString("zh-CN");
+      els.repairTotalChapters.textContent = Number(repairStatus.total_chapters || 0).toLocaleString("zh-CN");
     }
 
     function humanizeStructureStatus(status) {
@@ -3040,6 +3237,15 @@
         needs_rewrite: "待重写",
       };
       return mapping[status] || status || "-";
+    }
+
+    function humanizeProductionState(stateValue) {
+      const mapping = {
+        ok: "门禁通过",
+        pending: "等待门禁",
+        blocked: "门禁阻塞",
+      };
+      return mapping[stateValue] || stateValue || "-";
     }
 
     function truncateText(value, limit = 68) {
@@ -3564,7 +3770,7 @@
       }
 
       els.projectSelector.innerHTML = state.projects.map((project) => `
-        <option value="${escapeHtml(project.slug)}">${escapeHtml(project.title)} · ${escapeHtml(project.slug)} · ${escapeHtml(humanizeProjectStatus(project.status))}</option>
+        <option value="${escapeHtml(project.slug)}">${escapeHtml(project.title)} · ${escapeHtml(project.slug)} · ${escapeHtml(project.repair_status?.is_repairing ? project.repair_status.label : humanizeProjectStatus(project.status))}</option>
       `).join("");
 
       if (state.activeProjectSlug && state.projects.some((project) => project.slug === state.activeProjectSlug)) {
@@ -3575,7 +3781,7 @@
 
       const activeProject = state.projects.find((project) => project.slug === state.activeProjectSlug) || null;
       els.projectSelectorNote.textContent = activeProject
-        ? `当前正在查看《${activeProject.title}》，目标 ${Number(activeProject.target_word_count || 0).toLocaleString("zh-CN")} 字 / ${Number(activeProject.target_chapters || 0).toLocaleString("zh-CN")} 章。`
+        ? `当前正在查看《${activeProject.title}》，目标 ${Number(activeProject.target_word_count || 0).toLocaleString("zh-CN")} 字 / ${Number(activeProject.target_chapters || 0).toLocaleString("zh-CN")} 章。${activeProject.repair_status?.is_repairing ? ` ${repairDetailLabel(activeProject.repair_status)}。` : ""}`
         : "页面会默认选中最近的项目；你也可以用这个下拉框随时切换查看对象。";
     }
 
@@ -3599,7 +3805,10 @@
         return;
       }
 
-      els.projectList.innerHTML = state.projects.map((project) => `
+      els.projectList.innerHTML = state.projects.map((project) => {
+        const repairStatus = project.repair_status || null;
+        const isRepairing = Boolean(repairStatus?.is_repairing);
+        return `
         <div
           class="project ${project.slug === state.activeProjectSlug ? "current" : ""}"
           role="button"
@@ -3609,13 +3818,15 @@
         >
           <div class="project-head">
             <strong>${escapeHtml(project.title)}</strong>
-            <span class="status">${escapeHtml(humanizeProjectStatus(project.status))}</span>
+            <span class="status ${isRepairing ? "repair" : ""}">${escapeHtml(isRepairing ? repairStatus.label : humanizeProjectStatus(project.status))}</span>
           </div>
           <div class="hint" style="margin-top: 6px;">${escapeHtml(project.slug)} · ${escapeHtml(project.genre)}</div>
           <div class="hint" style="margin-top: 6px;">本轮目标 ${Number(project.target_word_count || 0).toLocaleString("zh-CN")} 字 / ${Number(project.target_chapters || 0).toLocaleString("zh-CN")} 章</div>
+          ${isRepairing ? `<div class="hint" style="margin-top: 6px; color: var(--err);">${escapeHtml(repairDetailLabel(repairStatus))}</div>` : ""}
           <div class="hint" style="margin-top: 10px;">${project.slug === state.activeProjectSlug ? "当前正在查看这个项目。" : "点击卡片即可切换到这个项目。"}</div>
         </div>
-      `).join("");
+      `;
+      }).join("");
       syncProjectSelector();
     }
 
@@ -3742,6 +3953,7 @@
       els.summaryPlatform.textContent = summary.writing_profile?.market?.platform_target || "未配置";
       els.summaryReaderPromise.textContent = summary.writing_profile?.market?.reader_promise || "当前还没有显式读者承诺。";
       els.summaryWorkflows.textContent = `${Number(summary.workflow_counts?.run_count || 0).toLocaleString("zh-CN")} / ${humanizeTaskStatus(summary.workflow_counts?.latest_run_status || "-")}`;
+      renderRepairStatus(summary.repair_status || null);
       const readingStats = summary.output_stats || {};
       const headlineWordCount = Number(readingStats.project_word_count || readingStats.default_preview_word_count || 0);
       els.summaryReadingWords.textContent = formatWordCount(headlineWordCount);
@@ -3752,6 +3964,15 @@
       applyPreviewOptions(summary);
       renderArtifacts(summary.outputs);
       renderBookDetail(summary, state.storyBiblePayload || null);
+    }
+
+    function renderProjectShellFromList(slug) {
+      const project = state.projects.find((item) => item.slug === slug);
+      if (!project) return;
+      els.projectTitle.textContent = project.title;
+      els.projectSubtitle.textContent = `${project.slug} · ${project.genre} · 目标 ${Number(project.target_word_count || 0).toLocaleString("zh-CN")} 字 / ${Number(project.target_chapters || 0).toLocaleString("zh-CN")} 章`;
+      els.summaryStatus.textContent = humanizeProjectStatus(project.status);
+      renderRepairStatus(project.repair_status || null);
     }
 
     function renderStructure(payload) {
@@ -3794,6 +4015,7 @@
               <p>${escapeHtml(truncateText(chapter.chapter_goal || "暂无章节目标。", 96))}</p>
               <div class="narrative-meta">
                 <span class="narrative-pill">状态：${escapeHtml(humanizeStructureStatus(chapter.status))}</span>
+                ${chapter.production_state ? `<span class="narrative-pill">修复：${escapeHtml(humanizeProductionState(chapter.production_state))}</span>` : ""}
                 <span class="narrative-pill">目标 ${formatWordCount(chapter.target_word_count || 0)}</span>
                 <span class="narrative-pill">当前 ${formatWordCount(chapter.current_word_count || 0)}</span>
                 <span class="narrative-pill">草稿版本 ${escapeHtml(chapter.current_draft_version_no ? String(chapter.current_draft_version_no) : "-")}</span>
@@ -4333,6 +4555,7 @@
         state.currentPreviewName = null;
       }
       renderProjects();
+      renderProjectShellFromList(slug);
       const summary = await api(`/api/projects/${slug}/summary`);
       renderSummary(summary);
       const relatedTask = getRelevantTaskForCurrentView();

@@ -144,6 +144,40 @@ def _coerce_text(value: Any) -> str:
     return str(value).strip()
 
 
+def _scene_get(scene: Any, key: str) -> Any:
+    if isinstance(scene, dict):
+        return scene.get(key)
+    return getattr(scene, key, None)
+
+
+def _extract_scene_planning_fragments(scenes: Iterable[Any]) -> list[str]:
+    """Pull non-prose structural fields that make two scene cards distinct."""
+    out: list[str] = []
+    for scene in scenes:
+        for key in ("title", "time_label", "scene_type"):
+            value = _coerce_text(_scene_get(scene, key))
+            if value:
+                out.append(value)
+
+        purpose = _scene_get(scene, "purpose")
+        if isinstance(purpose, dict):
+            emotion = _coerce_text(purpose.get("emotion"))
+            if emotion:
+                out.append(emotion)
+
+        participants = _scene_get(scene, "participants")
+        if isinstance(participants, (list, tuple)):
+            names = " ".join(_coerce_text(item) for item in participants if _coerce_text(item))
+            if names:
+                out.append(names)
+
+        for key in ("entry_state", "exit_state"):
+            value = _coerce_text(_scene_get(scene, key))
+            if value:
+                out.append(value)
+    return out
+
+
 def build_chapter_fingerprint(outline: Any) -> ChapterFingerprint:
     """Build a ``ChapterFingerprint`` from an outline dict / model / ORM row.
 
@@ -168,10 +202,12 @@ def build_chapter_fingerprint(outline: Any) -> ChapterFingerprint:
     hook_description = _coerce_text(_get("hook_description"))
     main_conflict = _coerce_text(_get("main_conflict"))
     chapter_goal = _coerce_text(_get("chapter_goal"))
+    opening_situation = _coerce_text(_get("opening_situation"))
     scenes = _get("scenes") or []
     if not isinstance(scenes, (list, tuple)):
         scenes = []
     scene_purposes = _extract_scene_story_purposes(scenes)
+    scene_fragments = _extract_scene_planning_fragments(scenes)
 
     # Combined Jaccard payload: weighted by importance.  main_conflict is
     # included twice to give it ~2x the shingle mass vs. scene purposes.
@@ -180,8 +216,10 @@ def build_chapter_fingerprint(outline: Any) -> ChapterFingerprint:
         main_conflict,
         hook_description,
         chapter_goal,
+        opening_situation,
     ]
     combined_parts.extend(scene_purposes)
+    combined_parts.extend(scene_fragments)
     combined_text = " | ".join(p for p in combined_parts if p)
 
     return ChapterFingerprint(

@@ -82,6 +82,46 @@ _DEFAULT_ARC_INACTIVITY_THRESHOLD: int = 8
 
 _CJK_WORD_RE = re.compile(r"[\u4e00-\u9fff\u3400-\u4dbf]{2,}")
 _LATIN_WORD_RE = re.compile(r"[A-Za-z\u00C0-\u024F]{3,}")
+_LATIN_STOPWORDS = frozenset(
+    {
+        "about",
+        "after",
+        "again",
+        "against",
+        "already",
+        "also",
+        "and",
+        "are",
+        "but",
+        "can",
+        "could",
+        "for",
+        "from",
+        "has",
+        "have",
+        "him",
+        "his",
+        "into",
+        "not",
+        "off",
+        "one",
+        "our",
+        "out",
+        "she",
+        "the",
+        "their",
+        "them",
+        "then",
+        "this",
+        "through",
+        "was",
+        "were",
+        "when",
+        "with",
+        "would",
+        "you",
+    }
+)
 
 
 def _extract_keywords(text: str | None) -> set[str]:
@@ -96,7 +136,9 @@ def _extract_keywords(text: str | None) -> set[str]:
     for match in _CJK_WORD_RE.finditer(text):
         keywords.add(match.group(0))
     for match in _LATIN_WORD_RE.finditer(text):
-        keywords.add(match.group(0).lower())
+        word = match.group(0).lower()
+        if word not in _LATIN_STOPWORDS:
+            keywords.add(word)
     return keywords
 
 
@@ -137,6 +179,9 @@ async def _check_character_knowledge_leaks(
     release_keywords = _extract_keywords(scene_information_release)
     if not release_keywords:
         return violations, warnings
+    participant_keywords: set[str] = set()
+    for participant in scene_participants:
+        participant_keywords.update(_extract_keywords(participant))
 
     stmt = (
         select(CharacterModel)
@@ -155,7 +200,7 @@ async def _check_character_knowledge_leaks(
 
         for item in falsely_believes:
             item_keywords = _extract_keywords(item)
-            overlap = release_keywords & item_keywords
+            overlap = (release_keywords & item_keywords) - participant_keywords
             if overlap:
                 kw_str = ", ".join(sorted(overlap))
                 message = (
@@ -178,7 +223,7 @@ async def _check_character_knowledge_leaks(
 
         for item in unaware_of:
             item_keywords = _extract_keywords(item)
-            overlap = release_keywords & item_keywords
+            overlap = (release_keywords & item_keywords) - participant_keywords
             if overlap:
                 kw_str = ", ".join(sorted(overlap))
                 message = (

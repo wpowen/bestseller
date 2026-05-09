@@ -35,6 +35,7 @@ from bestseller.services.narrative import rebuild_narrative_graph
 from bestseller.services.narrative_tree import rebuild_narrative_tree
 from bestseller.services.narrative_contracts import (
     build_identity_manifest,
+    repair_legacy_foundation_identity_locks,
     validate_chapter_plan_contract,
     validate_foundation_identity_contract,
 )
@@ -82,6 +83,34 @@ def _identity_token(value: Any) -> str:
     return "".join(str(value).strip().lower().split())
 
 
+def _has_unsupported_identity_default(cast_spec_content: dict[str, Any] | None) -> bool:
+    """Detect identity repairs that invented a lock without reliable evidence."""
+
+    if not isinstance(cast_spec_content, dict):
+        return False
+
+    def iter_character_dicts(value: Any) -> list[dict[str, Any]]:
+        if isinstance(value, dict):
+            results: list[dict[str, Any]] = []
+            if "name" in value:
+                results.append(value)
+            for item in value.values():
+                results.extend(iter_character_dicts(item))
+            return results
+        if isinstance(value, list):
+            results = []
+            for item in value:
+                results.extend(iter_character_dicts(item))
+            return results
+        return []
+
+    for character in iter_character_dicts(cast_spec_content):
+        metadata = character.get("metadata")
+        if isinstance(metadata, dict) and metadata.get("identity_lock_repair") == "legacy_resume_default":
+            return True
+    return False
+
+
 async def ensure_project_identity_manifest(
     session: AsyncSession,
     project: ProjectModel,
@@ -115,9 +144,33 @@ async def ensure_project_identity_manifest(
             f"Project '{project_slug}' is missing a locked identity manifest and has no CastSpec artifact."
         )
 
-    report = validate_foundation_identity_contract(artifact.content)
+    characters = list(
+        await session.scalars(
+            select(CharacterModel).where(CharacterModel.project_id == project.id)
+        )
+    )
+    identity_hints = [*existing_manifest, *_identity_hints_from_characters(characters)]
+    artifact_content = artifact.content
+    repaired_content, repair_count = repair_legacy_foundation_identity_locks(
+        artifact_content,
+        identity_hints=identity_hints,
+    )
+    if repair_count and repaired_content is not None:
+        if _has_unsupported_identity_default(repaired_content):
+            raise ValueError(
+                "foundation_identity_contract: CastSpec is missing reliable identity locks; "
+                "resume repair refused to invent gender/pronoun defaults."
+            )
+        artifact.content = repaired_content
+        artifact.notes = _append_note(
+            artifact.notes,
+            f"legacy identity lock repair applied ({repair_count} field updates)",
+        )
+        artifact_content = repaired_content
+
+    report = validate_foundation_identity_contract(artifact_content)
     report.raise_for_blocks(project_slug=project_slug, artifact="cast_spec")
-    manifest = build_identity_manifest(artifact.content)
+    manifest = build_identity_manifest(artifact_content)
     if not manifest:
         raise ValueError(
             f"Project '{project_slug}' CastSpec produced an empty identity manifest."
@@ -137,11 +190,6 @@ async def ensure_project_identity_manifest(
             if key:
                 manifest_by_token[key] = entry
 
-    characters = list(
-        await session.scalars(
-            select(CharacterModel).where(CharacterModel.project_id == project.id)
-        )
-    )
     for character in characters:
         entry = manifest_by_token.get(_identity_token(character.name))
         if entry is None:
@@ -169,6 +217,38 @@ async def ensure_project_identity_manifest(
 
     await session.flush()
     return manifest
+
+
+def _append_note(existing: str | None, note: str) -> str:
+    if not existing:
+        return note
+    if note in existing:
+        return existing
+    return f"{existing}\n{note}"
+
+
+def _identity_hints_from_characters(
+    characters: list[CharacterModel],
+) -> list[dict[str, Any]]:
+    hints: list[dict[str, Any]] = []
+    for character in characters:
+        metadata = getattr(character, "metadata_json", None) or {}
+        cast_entry = metadata.get("cast_entry") if isinstance(metadata, dict) else None
+        if not isinstance(cast_entry, dict):
+            cast_entry = {}
+        hint = {
+            "name": character.name,
+            "role": character.role,
+            "gender": metadata.get("gender") or cast_entry.get("gender"),
+            "pronoun_set_zh": metadata.get("pronoun_set_zh")
+            or cast_entry.get("pronoun_set_zh"),
+            "pronoun_set_en": metadata.get("pronoun_set_en")
+            or cast_entry.get("pronoun_set_en"),
+            "aliases": cast_entry.get("aliases") or [],
+        }
+        if hint["gender"] or hint["pronoun_set_zh"] or hint["pronoun_set_en"]:
+            hints.append(hint)
+    return hints
 
 
 async def _sync_existing_chapter_from_outline(

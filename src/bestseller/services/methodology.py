@@ -265,6 +265,263 @@ def get_opening_constraints() -> OpeningConstraints:
     )
 
 
+@dataclass(frozen=True)
+class QimaoSigningConstraints:
+    """Platform-specific signing-readiness thresholds for Qimao submissions."""
+
+    sample_words: int
+    protagonist_focus_by_words: int
+    visible_conflict_by_words: int
+    core_conflict_by_words: int
+    emotional_hook_by_words: int
+    mainline_clear_by_words: int
+    first_chapter_rules: tuple[str, ...]
+    golden_three_rules: tuple[str, ...]
+    first_10000_words_rules: tuple[str, ...]
+    per_chapter_loop_rules: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class QimaoRegenerationContract:
+    """Qimao-specific regeneration contract applied before prose drafting."""
+
+    target_platform: str
+    non_negotiables: tuple[str, ...]
+    rejection_cause_map: dict[str, str]
+    regeneration_decision_order: tuple[str, ...]
+
+
+def _as_tuple(value: Any) -> tuple[str, ...]:
+    if isinstance(value, str):
+        cleaned = value.strip()
+        return (cleaned,) if cleaned else ()
+    if isinstance(value, (list, tuple)):
+        items: list[str] = []
+        for item in value:
+            if isinstance(item, dict):
+                for key, val in item.items():
+                    text = f"{key}: {val}".strip()
+                    if text:
+                        items.append(text)
+                continue
+            text = str(item).strip()
+            if text:
+                items.append(text)
+        return tuple(items)
+    return ()
+
+
+def _qimao_signing_config() -> dict[str, Any]:
+    raw = load_methodology().get("qimao_signing_gate")
+    return raw if isinstance(raw, dict) else {}
+
+
+def _qimao_regeneration_config() -> dict[str, Any]:
+    raw = load_methodology().get("qimao_regeneration_contract")
+    return raw if isinstance(raw, dict) else {}
+
+
+def get_qimao_signing_constraints() -> QimaoSigningConstraints:
+    """Return Qimao signing-readiness constraints from methodology config."""
+
+    cfg = _qimao_signing_config()
+    opening = cfg.get("submission_opening_gate")
+    opening = opening if isinstance(opening, dict) else {}
+    return QimaoSigningConstraints(
+        sample_words=int(opening.get("sample_words") or 10000),
+        protagonist_focus_by_words=int(opening.get("protagonist_focus_by_words") or 100),
+        visible_conflict_by_words=int(opening.get("visible_conflict_by_words") or 200),
+        core_conflict_by_words=int(opening.get("core_conflict_by_words") or 600),
+        emotional_hook_by_words=int(opening.get("emotional_hook_by_words") or 2000),
+        mainline_clear_by_words=int(opening.get("mainline_clear_by_words") or 6000),
+        first_chapter_rules=_as_tuple(opening.get("first_chapter")),
+        golden_three_rules=_as_tuple(opening.get("golden_three")),
+        first_10000_words_rules=_as_tuple(opening.get("first_10000_words")),
+        per_chapter_loop_rules=_as_tuple(cfg.get("per_chapter_loop")),
+    )
+
+
+def get_qimao_regeneration_contract() -> QimaoRegenerationContract:
+    """Return the Qimao regeneration contract from methodology config."""
+
+    cfg = _qimao_regeneration_config()
+    cause_map = cfg.get("rejection_cause_map")
+    return QimaoRegenerationContract(
+        target_platform=str(cfg.get("target_platform") or "七猫"),
+        non_negotiables=_as_tuple(cfg.get("non_negotiables")),
+        rejection_cause_map={
+            str(key): str(value)
+            for key, value in (cause_map.items() if isinstance(cause_map, dict) else ())
+            if str(key).strip() and str(value).strip()
+        },
+        regeneration_decision_order=_as_tuple(cfg.get("regeneration_decision_order")),
+    )
+
+
+def _is_qimao_target(platform_target: str | None) -> bool:
+    normalized = (platform_target or "").strip().lower()
+    return "七猫" in normalized or "qimao" in normalized
+
+
+def _project_is_english(language: str | None) -> bool:
+    return (language or "").lower().startswith("en")
+
+
+def render_qimao_signing_rules(
+    *,
+    chapter_number: int,
+    platform_target: str | None = None,
+    language: str | None = None,
+) -> str:
+    """Render prompt-ready Qimao signing rules when the platform matches."""
+
+    if not _is_qimao_target(platform_target):
+        return ""
+    if _project_is_english(language):
+        return ""
+
+    constraints = get_qimao_signing_constraints()
+    lines = [
+        "【七猫签约门槛】",
+        (
+            f"- 前{constraints.protagonist_focus_by_words}字聚焦主角；"
+            f"前{constraints.visible_conflict_by_words}字出现可感冲突；"
+            f"前{constraints.core_conflict_by_words}字让核心矛盾可读；"
+            f"前{constraints.emotional_hook_by_words}字完成情绪钩子；"
+            f"前{constraints.mainline_clear_by_words}字看清主线目标/障碍/行动。"
+        ),
+    ]
+    if chapter_number <= 1 and constraints.first_chapter_rules:
+        lines.append("- 第一章：" + "；".join(constraints.first_chapter_rules))
+    if chapter_number <= 3 and constraints.golden_three_rules:
+        lines.append("- 前三章：" + "；".join(constraints.golden_three_rules))
+    if chapter_number <= 10 and constraints.first_10000_words_rules:
+        lines.append(
+            f"- 前{constraints.sample_words}字："
+            + "；".join(constraints.first_10000_words_rules)
+        )
+    if constraints.per_chapter_loop_rules:
+        lines.append("- 每章无线风循环：" + "；".join(constraints.per_chapter_loop_rules))
+    return "\n".join(lines)
+
+
+def render_qimao_regeneration_contract(
+    *,
+    platform_target: str | None = None,
+    language: str | None = None,
+    rejection_reasons: str | None = None,
+) -> str:
+    """Render Qimao regeneration contract for planning/drafting prompts."""
+
+    if not _is_qimao_target(platform_target):
+        return ""
+    if _project_is_english(language):
+        return ""
+
+    contract = get_qimao_regeneration_contract()
+    lines = [
+        "【七猫再生成合同】",
+        "- 这不是润色任务；必须从立项、开篇事件、代入、冲突和前三章爽点闭环上重建签约口径。",
+    ]
+    if contract.non_negotiables:
+        lines.append("- 不可让步项：" + "；".join(contract.non_negotiables))
+    if contract.regeneration_decision_order:
+        lines.append("- 再生成决策顺序：" + " -> ".join(contract.regeneration_decision_order))
+
+    reason_text = (rejection_reasons or "").strip()
+    if reason_text:
+        lines.append(f"- 已知拒稿原因：{reason_text}")
+        if contract.rejection_cause_map:
+            mapped = "；".join(
+                f"{code}: {description}"
+                for code, description in contract.rejection_cause_map.items()
+            )
+        lines.append("- 拒稿原因映射：" + mapped)
+    return "\n".join(lines)
+
+
+def render_qimao_opening_contract_block(
+    opening_contract: dict[str, Any] | None,
+    *,
+    chapter_number: int,
+    language: str | None = None,
+    rejection_reasons: str | None = None,
+) -> str:
+    """Render persisted qimao_opening_contract for drafting/rewrite prompts."""
+
+    if chapter_number > 3:
+        return ""
+    if not isinstance(opening_contract, dict) or not opening_contract:
+        return ""
+    is_en = _project_is_english(language)
+
+    chapter_task = {
+        1: opening_contract.get("chapter_1_small_turn"),
+        2: opening_contract.get("chapter_2_reveal"),
+        3: opening_contract.get("chapter_3_payoff"),
+    }.get(chapter_number)
+    lines = (
+        [
+            "[opening_quality_contract | commercial opening contract]",
+            "- This chapter is not free-form prose; execute the opening_quality_contract chapter task.",
+            "- First-page threshold: protagonist focus fast; visible conflict early; core contradiction readable on the first page.",
+            "- Golden-three task: Ch1 strong entry/local turn; Ch2 protagonist edge; Ch3 small payoff plus next hook.",
+        ]
+        if is_en
+        else [
+            "【opening_quality_contract｜商业签约开篇合同】",
+            "- 本章不是自由发挥；必须执行 opening_quality_contract 对应章节任务。",
+            "- 第一页阈值：前100字聚焦主角；前200字出现可感冲突；前600字让核心矛盾可读。",
+            "- 黄金三章任务：第1章完成强切入和小反制；第2章展示主角差异化优势；第3章兑现小爽点并打开下一轮钩子。",
+        ]
+    )
+    if rejection_reasons and rejection_reasons.strip():
+        lines.append(
+            f"- Known rejection/quality reasons: {rejection_reasons.strip()}"
+            if is_en else f"- 已知拒稿原因：{rejection_reasons.strip()}"
+        )
+
+    field_labels = (
+        (
+            ("opening_incident", "Opening incident"),
+            ("first_page_conflict", "First-page conflict"),
+            ("protagonist_immediate_goal", "Protagonist immediate goal"),
+            ("visible_loss_if_fail", "Visible loss if fail"),
+            ("protagonist_edge", "Protagonist edge"),
+            ("edge_limit", "Edge limit"),
+            ("first_10000_loop", "First-10k loop"),
+        )
+        if is_en
+        else (
+            ("opening_incident", "开篇事件"),
+            ("first_page_conflict", "第一页冲突"),
+            ("protagonist_immediate_goal", "主角即时目标"),
+            ("visible_loss_if_fail", "失败可见损失"),
+            ("protagonist_edge", "主角差异化优势"),
+            ("edge_limit", "优势限制"),
+            ("first_10000_loop", "前一万字循环"),
+        )
+    )
+    for key, label in field_labels:
+        value = opening_contract.get(key)
+        if isinstance(value, str) and value.strip():
+            lines.append(f"- {label}: {value.strip()}" if is_en else f"- {label}：{value.strip()}")
+    if isinstance(chapter_task, str) and chapter_task.strip():
+        lines.append(
+            f"- Mandatory chapter task: {chapter_task.strip()}"
+            if is_en else f"- 本章硬任务：{chapter_task.strip()}"
+        )
+    forbidden_modes = opening_contract.get("forbidden_opening_modes")
+    if isinstance(forbidden_modes, list) and forbidden_modes:
+        rendered_modes = "、".join(str(item) for item in forbidden_modes if str(item).strip())
+        if rendered_modes:
+            lines.append(
+                f"- Forbidden opening modes: {rendered_modes}"
+                if is_en else f"- 禁用开篇模式：{rendered_modes}"
+            )
+    return "\n".join(lines)
+
+
 # ---------------------------------------------------------------------------
 # Climax Blueprint
 # ---------------------------------------------------------------------------
@@ -336,6 +593,9 @@ def render_methodology_scene_rules(
     is_opening: bool = False,
     is_climax: bool = False,
     pacing_mode: str = "build",
+    platform_target: str | None = None,
+    language: str | None = None,
+    rejection_reasons: str | None = None,
 ) -> str:
     """Render methodology rules applicable to the current scene context.
 
@@ -372,6 +632,22 @@ def render_methodology_scene_rules(
             "- 金手指/核心卖点在前3章清晰展示\n"
             "- 不允许大段环境描写和背景介绍"
         )
+
+    _qimao_rules = render_qimao_signing_rules(
+        chapter_number=chapter_number,
+        platform_target=platform_target,
+        language=language,
+    )
+    if _qimao_rules:
+        rules.append(_qimao_rules)
+
+    _qimao_regeneration_rules = render_qimao_regeneration_contract(
+        platform_target=platform_target,
+        language=language,
+        rejection_reasons=rejection_reasons,
+    )
+    if _qimao_regeneration_rules:
+        rules.append(_qimao_regeneration_rules)
 
     # Climax-specific rules
     if is_climax:

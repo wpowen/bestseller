@@ -47,6 +47,7 @@ def _sample_project(*, language: str = "zh-CN") -> SimpleNamespace:
         title="诡豪试炼",
         slug="gui-hao-trial",
         language=language,
+        metadata_json={},
     )
 
 
@@ -92,6 +93,7 @@ class TestSceneContextPacketHypeDefaults:
         assert packet.assigned_hype_type is None
         assert packet.assigned_hype_recipe_key is None
         assert packet.assigned_hype_intensity is None
+        assert packet.ranking_capability_profile_block is None
         assert packet.progression_context_block is None
         assert packet.decision_policy_block is None
         assert packet.rule_system_context_block is None
@@ -116,12 +118,14 @@ class TestSceneContextPacketHypeDefaults:
     def test_packet_accepts_premium_engine_fields(self) -> None:
         packet = SceneWriterContextPacket(
             **_minimal_packet_kwargs(),
+            ranking_capability_profile_block="【榜单级能力 Profile】固定入口和可解规则。",
             progression_context_block="【进阶体系约束】不得无因升级。",
             decision_policy_block="【主角决策策略】不得为虚荣冒险。",
             rule_system_context_block="【规则系统约束】规则必须有代价。",
             faction_ecology_context_block="【阵营生态与反应压力约束】势力必须反应。",
             relationship_agency_context_block="【关系张力与主角能动性约束】关系戏必须推进。",
         )
+        assert packet.ranking_capability_profile_block == "【榜单级能力 Profile】固定入口和可解规则。"
         assert packet.progression_context_block == "【进阶体系约束】不得无因升级。"
         assert packet.decision_policy_block == "【主角决策策略】不得为虚荣冒险。"
         assert packet.rule_system_context_block == "【规则系统约束】规则必须有代价。"
@@ -192,6 +196,42 @@ class TestSceneDraftPromptsHypeBlocks:
         assert "冥符拍脸-当众羞辱反转" in user_prompt
         assert "爽点 ≠ 章末悬念" in user_prompt
 
+    def test_qimao_opening_contract_lands_in_opening_prompt_zh(self) -> None:
+        project = _sample_project()
+        project.metadata_json = {
+            "writing_profile": {"market": {"platform_target": "七猫小说"}},
+            "editor_rejection_reasons": "文笔还有待提升，代入感较弱，开篇切入点普通。",
+            "qimao_opening_contract": {
+                "opening_incident": "第一章从被迫选择和直接损失切入。",
+                "first_page_conflict": "前600字内被逼交出冥符，否则母亲旧案证据被毁。",
+                "protagonist_immediate_goal": "先保住冥符并确认谁在灭口。",
+                "visible_loss_if_fail": "失败会失去唯一翻案证据。",
+                "protagonist_edge": "主角能从冥符纹路看出隐藏漏洞。",
+                "edge_limit": "冥符只能救第一轮，不能直接推翻主谋。",
+                "chapter_1_small_turn": "主角当众反制逼迫者。",
+                "chapter_2_reveal": "逼迫者背后另有主谋。",
+                "chapter_3_payoff": "拿到第一个筹码并打开下一轮钩子。",
+                "first_10000_loop": "触发冲突 -> 主角行动 -> 收益/代价 -> 新钩子",
+                "forbidden_opening_modes": ["background_exposition", "normal_day", "scenery_first"],
+            },
+        }
+
+        _, user_prompt = build_scene_draft_prompts(
+            project,
+            _sample_chapter(),
+            _sample_scene(),
+            _sample_style_guide(),
+        )
+
+        assert "【七猫签约门槛】" in user_prompt
+        assert "【七猫再生成合同】" in user_prompt
+        assert "【opening_quality_contract｜商业签约开篇合同】" in user_prompt
+        assert "本章不是自由发挥" in user_prompt
+        assert "前100字聚焦主角" in user_prompt
+        assert "黄金三章任务" in user_prompt
+        assert "第一章从被迫选择和直接损失切入" in user_prompt
+        assert "文笔还有待提升" in user_prompt
+
     def test_populated_blocks_land_in_user_prompt_en(self) -> None:
         reader_block = (
             "[READER CONTRACT] selling points: ghost wealth, supernatural capitalism\n"
@@ -249,6 +289,7 @@ class TestSceneDraftPromptsHypeBlocks:
         assert "hype-only" in user_prompt
 
     def test_premium_engine_blocks_land_in_user_prompt_zh(self) -> None:
+        ranking_block = "【榜单级能力 Profile】RANKING_MARKER: 固定入口、可解规则、单元案推动主线。"
         progression_block = "【进阶体系约束】PROGRESSION_MARKER: 当前炼气十层, 不得无因突破筑基。"
         decision_block = (
             "【主角决策策略】DECISION_MARKER: 不可为虚荣公开决斗, 优先避险夺取稀缺资源。"
@@ -264,12 +305,15 @@ class TestSceneDraftPromptsHypeBlocks:
             _sample_chapter(),
             _sample_scene(),
             _sample_style_guide(),
+            ranking_capability_profile_block=ranking_block,
             progression_context_block=progression_block,
             decision_policy_block=decision_block,
             rule_system_context_block=rule_block,
             faction_ecology_context_block=faction_block,
             relationship_agency_context_block=relationship_block,
         )
+        assert "【榜单级能力 Profile】" in user_prompt
+        assert "固定入口、可解规则、单元案推动主线" in user_prompt
         assert "【进阶体系约束】" in user_prompt
         assert "不得无因突破筑基" in user_prompt
         assert "【主角决策策略】" in user_prompt
@@ -280,6 +324,7 @@ class TestSceneDraftPromptsHypeBlocks:
         assert "势力反应必须差异化" in user_prompt
         assert "【关系张力与主角能动性约束】" in user_prompt
         assert "关系戏必须改变信任/权力/误会/承诺" in user_prompt
+        assert user_prompt.index("RANKING_MARKER") < user_prompt.index("PROGRESSION_MARKER")
         assert user_prompt.index("PROGRESSION_MARKER") < user_prompt.index("DECISION_MARKER")
         assert user_prompt.index("DECISION_MARKER") < user_prompt.index("RULE_MARKER")
         assert user_prompt.index("RULE_MARKER") < user_prompt.index("FACTION_MARKER")

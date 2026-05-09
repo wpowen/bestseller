@@ -4,6 +4,9 @@ import pytest
 
 from bestseller.services.identity_guard import (
     CharacterIdentity,
+    _manifest_first_token_counts,
+    _manifest_identity_aliases,
+    _upsert_manifest_identity,
     build_identity_constraint_block,
     validate_scene_text_identity,
 )
@@ -19,6 +22,44 @@ def test_character_identity_is_frozen() -> None:
     ci = CharacterIdentity(name="Alice", gender="female")
     with pytest.raises(AttributeError):
         ci.name = "Bob"  # type: ignore[misc]
+
+
+def test_manifest_identity_overlay_adds_unique_short_alias_to_existing_row() -> None:
+    manifest = [
+        {
+            "name": "Kade Mercer",
+            "role": "protagonist",
+            "gender": "male",
+            "pronoun_set_zh": "他",
+            "pronoun_set_en": "he/him",
+        },
+        {
+            "name": "Maya Mercer",
+            "role": "family",
+            "gender": "female",
+            "pronoun_set_zh": "她",
+            "pronoun_set_en": "she/her",
+        },
+    ]
+    aliases = _manifest_identity_aliases(manifest[0], _manifest_first_token_counts(manifest))
+    registry = _upsert_manifest_identity(
+        [
+            CharacterIdentity(name="Kade", role="supporting"),
+            CharacterIdentity(name="Kade Mercer", role="protagonist"),
+        ],
+        CharacterIdentity(
+            name="Kade Mercer",
+            aliases=tuple(aliases),
+            gender="male",
+            pronoun_set_zh="他",
+            pronoun_set_en="he/him",
+            role="protagonist",
+        ),
+    )
+
+    kade_mercer = next(item for item in registry if item.name == "Kade Mercer")
+    assert "Kade" in kade_mercer.aliases
+    assert kade_mercer.gender == "male"
 
 
 # ---------------------------------------------------------------------------
@@ -283,6 +324,140 @@ def test_validate_en_gender_flip_detected() -> None:
     )
     assert len(violations) >= 1
     assert any(v.violation_type == "pronoun_mismatch" for v in violations)
+
+
+def test_validate_en_skips_new_sentence_pronoun_with_competing_character() -> None:
+    registry = [
+        CharacterIdentity(name="Victor Kane", gender="male", pronoun_set_en="he/him"),
+        CharacterIdentity(name="Elena Vasquez", gender="female", pronoun_set_en="she/her"),
+    ]
+    text = (
+        "Victor Kane finishes whatever ritual he is conducting three levels below us. "
+        "She turns back to the console, hands shaking."
+    )
+
+    violations = validate_scene_text_identity(
+        text,
+        registry,
+        language="en",
+        participant_names=["Victor Kane", "Elena Vasquez"],
+    )
+
+    assert violations == []
+
+
+def test_validate_en_skips_later_paragraph_pronoun_with_competing_character() -> None:
+    registry = [
+        CharacterIdentity(name="Victor Kane", gender="male", pronoun_set_en="he/him"),
+        CharacterIdentity(name="Elena Vasquez", gender="female", pronoun_set_en="she/her"),
+    ]
+    text = (
+        "Victor Kane's ancient entity stirred toward whatever came next.\n\n"
+        "\"I'm asking you to help me save them.\" I met her eyes."
+    )
+
+    violations = validate_scene_text_identity(
+        text,
+        registry,
+        language="en",
+        participant_names=["Victor Kane", "Elena Vasquez"],
+    )
+
+    assert violations == []
+
+
+def test_validate_en_skips_gendered_noun_behind_character_reference() -> None:
+    registry = [
+        CharacterIdentity(name="Kade Mercer", gender="male", pronoun_set_en="he/him"),
+        CharacterIdentity(name="Zoe Chen", gender="female", pronoun_set_en="she/her"),
+    ]
+    text = (
+        "The woman behind Kade Mercer was still shaking, still clutching her "
+        "briefcase like a lifeline. Kade looked at the fracture."
+    )
+
+    violations = validate_scene_text_identity(
+        text,
+        registry,
+        language="en",
+        participant_names=["Kade Mercer", "Zoe Chen"],
+    )
+
+    assert violations == []
+
+
+def test_validate_en_skips_coordinated_clause_returning_to_prior_character() -> None:
+    registry = [
+        CharacterIdentity(name="Kade Mercer", gender="male", pronoun_set_en="he/him"),
+        CharacterIdentity(name="Maya Mercer", gender="female", pronoun_set_en="she/her"),
+    ]
+    text = (
+        "Kade Mercer moved toward something older, something Maya Mercer had "
+        "locked away and he'd spent months learning to reach."
+    )
+
+    violations = validate_scene_text_identity(
+        text,
+        registry,
+        language="en",
+        participant_names=["Kade Mercer", "Maya Mercer"],
+    )
+
+    assert violations == []
+
+
+def test_validate_en_skips_possessive_location_reference() -> None:
+    registry = [
+        CharacterIdentity(
+            name="Kade Mercer",
+            aliases=("Kade",),
+            gender="male",
+            pronoun_set_en="he/him",
+        ),
+    ]
+    text = (
+        "Elena Vance materialized from the doorway three meters to Kade's left, "
+        "her gun already drawn. Kade turned toward Dominic."
+    )
+
+    violations = validate_scene_text_identity(
+        text,
+        registry,
+        language="en",
+        participant_names=["Kade Mercer"],
+    )
+
+    assert violations == []
+
+
+def test_validate_en_skips_object_pronouns_in_mixed_gender_scene() -> None:
+    registry = [
+        CharacterIdentity(
+            name="Kade Mercer",
+            aliases=("Kade",),
+            gender="male",
+            pronoun_set_en="he/him",
+        ),
+        CharacterIdentity(
+            name="Maya Mercer",
+            aliases=("Maya",),
+            gender="female",
+            pronoun_set_en="she/her",
+        ),
+    ]
+    text = (
+        "Maya's hand convulsed in his grip. Her lips were still moving. "
+        "Kade spun to see her clutching her head."
+    )
+
+    violations = validate_scene_text_identity(
+        text,
+        registry,
+        language="en",
+        participant_names=["Kade Mercer", "Maya Mercer"],
+    )
+
+    assert violations == []
 
 
 def test_validate_empty_text_no_violations() -> None:

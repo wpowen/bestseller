@@ -72,6 +72,9 @@ from bestseller.services.narrative_tree import (
     volume_frontier_path,
     world_backbone_path,
 )
+from bestseller.services.narrative_contracts import (
+    repair_legacy_scene_contract_model_pre_draft,
+)
 from bestseller.services.retrieval import search_retrieval_for_project
 from bestseller.services.story_bible import load_scene_story_bible_context, stable_character_id
 from bestseller.settings import AppSettings
@@ -548,6 +551,11 @@ def _chapter_contract_read(item: ChapterContractModel) -> ChapterContractRead:
 
 
 def _scene_contract_read(item: SceneContractModel) -> SceneContractRead:
+    repair_legacy_scene_contract_model_pre_draft(
+        item,
+        chapter_number=item.chapter_number,
+        scene_number=item.scene_number,
+    )
     return SceneContractRead(
         id=item.id,
         chapter_id=item.chapter_id,

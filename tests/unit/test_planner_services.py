@@ -238,6 +238,85 @@ def test_fallback_generators_create_complete_chain() -> None:
     assert len(outline_batch["chapters"][0]["scenes"]) == 3
 
 
+def test_build_qimao_opening_contract_uses_plan_context() -> None:
+    project = build_project()
+    project.metadata_json = {
+        "writing_profile": {
+            "market": {
+                "platform_target": "七猫小说",
+                "opening_contract": "第一章从被迫选择和直接损失切入。",
+            }
+        }
+    }
+    premise = "被退婚的女主发现家族账本藏着一条会害死母亲的旧案。"
+
+    book_spec = planner_services._fallback_book_spec(project, premise)
+    world_spec = planner_services._fallback_world_spec(project, premise, book_spec)
+    cast_spec = planner_services._fallback_cast_spec(project, premise, book_spec, world_spec)
+    volume_plan = planner_services._fallback_volume_plan(project, book_spec, cast_spec, world_spec)
+
+    contract = planner_services.build_qimao_opening_contract(
+        project,
+        premise=premise,
+        book_spec=book_spec,
+        cast_spec=cast_spec,
+        volume_plan=volume_plan,
+    )
+
+    assert contract["platform_target"] == "七猫小说"
+    assert "直接损失" in contract["opening_incident"]
+    assert "前600字" in contract["first_page_conflict"]
+    assert contract["protagonist_immediate_goal"]
+    assert "background_exposition" in contract["forbidden_opening_modes"]
+    assert any("代入感较弱" in item for item in contract["rejection_causes_addressed"])
+
+
+def test_persist_qimao_opening_contract_updates_project_metadata() -> None:
+    project = build_project()
+    project.metadata_json = {"platform_target": "七猫小说"}
+    premise = "被退婚的女主发现家族账本藏着一条会害死母亲的旧案。"
+
+    book_spec = planner_services._fallback_book_spec(project, premise)
+    world_spec = planner_services._fallback_world_spec(project, premise, book_spec)
+    cast_spec = planner_services._fallback_cast_spec(project, premise, book_spec, world_spec)
+    volume_plan = planner_services._fallback_volume_plan(project, book_spec, cast_spec, world_spec)
+
+    contract = planner_services.persist_qimao_opening_contract(
+        project,
+        premise=premise,
+        book_spec=book_spec,
+        cast_spec=cast_spec,
+        volume_plan=volume_plan,
+    )
+
+    assert contract is not None
+    assert project.metadata_json["qimao_opening_contract"] == contract
+    assert project.metadata_json["qimao_opening_contract_status"] == "planned"
+
+
+def test_persist_qimao_opening_contract_applies_to_general_projects() -> None:
+    project = build_project()
+    premise = "一名被放逐的导航员发现帝国正在篡改边境航线记录。"
+
+    book_spec = planner_services._fallback_book_spec(project, premise)
+    world_spec = planner_services._fallback_world_spec(project, premise, book_spec)
+    cast_spec = planner_services._fallback_cast_spec(project, premise, book_spec, world_spec)
+    volume_plan = planner_services._fallback_volume_plan(project, book_spec, cast_spec, world_spec)
+
+    contract = planner_services.persist_qimao_opening_contract(
+        project,
+        premise=premise,
+        book_spec=book_spec,
+        cast_spec=cast_spec,
+        volume_plan=volume_plan,
+    )
+
+    assert contract is not None
+    assert project.metadata_json["opening_quality_contract"] == contract
+    assert project.metadata_json["opening_quality_contract_status"] == "planned"
+    assert project.metadata_json["qimao_opening_contract"] == contract
+
+
 def test_resolve_fallback_volume_title_cycles_phase_pool() -> None:
     first = planner_services._resolve_fallback_volume_title(
         "power_system_test", 0, 3, is_en=False
@@ -909,6 +988,8 @@ async def test_generate_novel_plan_creates_all_artifacts_and_workflow_records(
     assert ArtifactType.VOLUME_PLAN in artifact_types
     assert ArtifactType.PLAN_VALIDATION in artifact_types
     assert artifact_types.index(ArtifactType.VOLUME_PLAN) < artifact_types.index(ArtifactType.PLAN_VALIDATION)
+    assert ArtifactType.PREWRITE_READINESS in artifact_types
+    assert artifact_types.index(ArtifactType.PLAN_VALIDATION) < artifact_types.index(ArtifactType.PREWRITE_READINESS)
     assert ArtifactType.PROMOTIONAL_BRIEF in artifact_types
     assert ArtifactType.VOLUME_CHAPTER_OUTLINE in artifact_types
     assert ArtifactType.CHAPTER_OUTLINE_BATCH in artifact_types
@@ -916,6 +997,9 @@ async def test_generate_novel_plan_creates_all_artifacts_and_workflow_records(
     assert len(workflow_runs) == 1
     assert workflow_runs[0].status == "completed"
     assert len(workflow_steps) >= 7
+    assert any(step.step_name == "prewrite_readiness_gate" for step in workflow_steps)
+    assert "planning_kernel" in project.metadata_json
+    assert "prewrite_readiness_report" in project.metadata_json
 
 
 @pytest.mark.asyncio

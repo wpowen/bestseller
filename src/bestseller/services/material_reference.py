@@ -53,6 +53,10 @@ _PLANNER_PRIORITY_DIMS = [
     "device_templates",
     "locale_templates",
     "thematic_motifs",
+    "emotion_arcs",
+    "dialogue_styles",
+    "anti_cliche_patterns",
+    "real_world_references",
 ]
 
 

@@ -167,6 +167,8 @@ class SceneWriterContextPacket(BaseModel):
     progression_context_block: str | None = None
     decision_policy_block: str | None = None
     rule_system_context_block: str | None = None
+    faction_ecology_context_block: str | None = None
+    relationship_agency_context_block: str | None = None
 
     # ── Opening diversity block: recent chapter openings to avoid repeating ──
     opening_diversity_block: str | None = None

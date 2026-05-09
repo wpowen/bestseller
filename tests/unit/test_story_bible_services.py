@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
@@ -8,6 +9,7 @@ from bestseller.domain.story_bible import CastSpecInput
 from bestseller.infra.db.models import (
     CharacterModel,
     CharacterStateSnapshotModel,
+    ChapterModel,
     ExpansionGateModel,
     FactionModel,
     LocationModel,
@@ -74,6 +76,22 @@ def build_project() -> ProjectModel:
     )
     project.id = uuid4()
     return project
+
+
+def build_chapter(project_id) -> ChapterModel:
+    chapter = ChapterModel(
+        project_id=project_id,
+        chapter_number=3,
+        title="水脉归宗",
+        chapter_goal="完成一次资源夺取并触发势力反应",
+        information_revealed=[],
+        information_withheld=[],
+        foreshadowing_actions={},
+        metadata_json={},
+        target_word_count=3000,
+    )
+    chapter.id = uuid4()
+    return chapter
 
 
 def build_book_spec() -> dict[str, object]:
@@ -147,6 +165,90 @@ async def test_apply_book_spec_persists_theme_signature_fields() -> None:
     assert project.dramatic_question == "沈砚能否在救人与揭露真相之间两全？"
     assert project.metadata_json["theme_statement"] == project.theme_statement
     assert project.metadata_json["dramatic_question"] == project.dramatic_question
+
+
+@pytest.mark.asyncio
+async def test_update_story_bible_records_premium_state_ledger(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = build_project()
+    chapter = build_chapter(project.id)
+    session = FakeSession()
+
+    async def fake_complete_text(*args, **kwargs):
+        return SimpleNamespace(
+            content="""
+            {
+              "character_updates": [],
+              "relationship_updates": [],
+              "world_updates": [],
+              "premium_engine_updates": {
+                "progression_events": [
+                  {
+                    "event_type": "resource_spent",
+                    "subject": "沈砚",
+                    "resource_key": "筑基丹",
+                    "delta": -1,
+                    "cause": "换取港务官放行"
+                  }
+                ],
+                "rule_events": [
+                  {
+                    "rule_code": "R-001",
+                    "name": "试炼禁令",
+                    "visible_effect": "执法堂封港",
+                    "cost": "散修身份暴露"
+                  }
+                ],
+                "faction_reactions": [
+                  {
+                    "faction": "执法堂",
+                    "trigger": "筑基丹消失",
+                    "reaction": "封锁码头并先查散修",
+                    "stance_change": "怀疑主角"
+                  }
+                ],
+                "relationship_events": [
+                  {
+                    "character_a": "沈砚",
+                    "character_b": "港务官",
+                    "axis": "trust",
+                    "after": "有限合作",
+                    "active_choice": "主动交出一枚丹药换取通道",
+                    "cost": "失去突破资源"
+                  }
+                ],
+                "agency_debts": [
+                  {
+                    "owner": "沈砚",
+                    "debt": "必须补回筑基资源",
+                    "due_window": "5章内"
+                  }
+                ]
+              }
+            }
+            """
+        )
+
+    monkeypatch.setattr("bestseller.services.llm.complete_text", fake_complete_text)
+
+    counts = await story_bible_services.update_story_bible_from_chapter(
+        session,
+        SimpleNamespace(),
+        project=project,
+        chapter=chapter,
+        chapter_text="沈砚用筑基丹换取港务官放行, 执法堂随后封港。",
+    )
+
+    ledger = project.metadata_json["premium_state_ledger"]
+    assert counts["premium_state_events_recorded"] == 5
+    assert ledger["progression_events"][0]["chapter_number"] == 3
+    assert ledger["progression_events"][0]["resource_key"] == "筑基丹"
+    assert ledger["rule_events"][0]["rule_code"] == "R-001"
+    assert ledger["faction_reactions"][0]["faction"] == "执法堂"
+    assert ledger["relationship_events"][0]["character_a"] == "沈砚"
+    assert ledger["agency_debts"][0]["debt"] == "必须补回筑基资源"
+    assert project.metadata_json["premium_state_ledger_report"]["passed"] is True
 
 
 def build_cast_spec() -> dict[str, object]:

@@ -2001,6 +2001,7 @@ _BIBLE_UPDATE_SYSTEM_PROMPT_ZH = """\
 2. **关系变化**: 角色之间关系的变化（亲密度、敌意、信任等）
 3. **世界观更新**: 新揭示的世界规则或位置
 4. **角色状态变化**: 身体状态、情感状态、力量等级变化
+5. **精品引擎状态变化**: 升级资源、规则代价、阵营反应、关系阶段、主角选择债务
 
 请以JSON格式输出：
 ```json
@@ -2028,7 +2029,54 @@ _BIBLE_UPDATE_SYSTEM_PROMPT_ZH = """\
       "rule_or_location": "规则或位置名称",
       "description": "描述"
     }
-  ]
+  ],
+  "premium_engine_updates": {
+    "progression_events": [
+      {
+        "event_type": "resource_spent|resource_gained|breakthrough|injury|technique_unlock",
+        "subject": "角色名",
+        "resource_key": "资源/境界/功法/法宝名",
+        "delta": "数量或变化",
+        "cause": "明确因果",
+        "cost": "代价"
+      }
+    ],
+    "rule_events": [
+      {
+        "rule_code": "规则ID",
+        "name": "规则名",
+        "visible_effect": "本章可见效果",
+        "exploit_used": "破局方式",
+        "cost": "代价/反噬"
+      }
+    ],
+    "faction_reactions": [
+      {
+        "faction": "势力名",
+        "trigger": "触发原因",
+        "reaction": "差异化反应",
+        "stance_change": "对主角立场变化",
+        "next_pressure": "下一步压力"
+      }
+    ],
+    "relationship_events": [
+      {
+        "character_a": "角色A",
+        "character_b": "角色B",
+        "axis": "distance|trust|power|misunderstanding|promise",
+        "after": "变化后状态",
+        "active_choice": "主角主动选择",
+        "cost": "选择代价"
+      }
+    ],
+    "agency_debts": [
+      {
+        "owner": "角色名",
+        "debt": "后续必须偿还/兑现的选择债务",
+        "due_window": "期限"
+      }
+    ]
+  }
 }
 ```
 只输出JSON，不要输出其他内容。如果没有变化，对应数组为空。"""
@@ -2040,6 +2088,7 @@ Read the chapter text below and extract the following changes:
 2. **Relationship changes**: Changes in relationships between characters (intimacy, hostility, trust, etc.)
 3. **World updates**: Newly revealed world rules or locations
 4. **Character state changes**: Physical state, emotional state, power level changes
+5. **Premium engine state changes**: progression resources, rule costs, faction reactions, relationship stages, protagonist agency debts
 
 Output in JSON format:
 ```json
@@ -2067,10 +2116,134 @@ Output in JSON format:
       "rule_or_location": "rule or location name",
       "description": "description"
     }
-  ]
+  ],
+  "premium_engine_updates": {
+    "progression_events": [
+      {
+        "event_type": "resource_spent|resource_gained|breakthrough|injury|technique_unlock",
+        "subject": "character name",
+        "resource_key": "resource/realm/technique/artifact name",
+        "delta": "amount or state change",
+        "cause": "explicit cause",
+        "cost": "cost"
+      }
+    ],
+    "rule_events": [
+      {
+        "rule_code": "rule id",
+        "name": "rule name",
+        "visible_effect": "visible effect in this chapter",
+        "exploit_used": "exploit path used",
+        "cost": "cost/backlash"
+      }
+    ],
+    "faction_reactions": [
+      {
+        "faction": "faction name",
+        "trigger": "trigger",
+        "reaction": "differentiated reaction",
+        "stance_change": "stance shift toward protagonist",
+        "next_pressure": "next pressure"
+      }
+    ],
+    "relationship_events": [
+      {
+        "character_a": "Character A",
+        "character_b": "Character B",
+        "axis": "distance|trust|power|misunderstanding|promise",
+        "after": "state after the change",
+        "active_choice": "protagonist's active choice",
+        "cost": "choice cost"
+      }
+    ],
+    "agency_debts": [
+      {
+        "owner": "character name",
+        "debt": "choice debt that must be repaid or fulfilled later",
+        "due_window": "deadline window"
+      }
+    ]
+  }
 }
 ```
 Output JSON only, nothing else. If no changes, use empty arrays."""
+
+
+_PREMIUM_STATE_LEDGER_KEYS = (
+    "progression_events",
+    "rule_events",
+    "faction_reactions",
+    "relationship_events",
+    "agency_debts",
+)
+_PREMIUM_STATE_LEDGER_CAP = 120
+
+
+def _premium_update_payload(updates: dict[str, Any]) -> dict[str, Any]:
+    payload = updates.get("premium_engine_updates") or updates.get("premium_state_updates")
+    return payload if isinstance(payload, dict) else {}
+
+
+def _normalize_premium_state_event(
+    raw: object,
+    *,
+    chapter_number: int,
+) -> dict[str, Any] | None:
+    if not isinstance(raw, dict):
+        return None
+    compacted = _compact_json_payload(raw)
+    if not isinstance(compacted, dict) or not compacted:
+        return None
+    event = dict(compacted)
+    event.setdefault("chapter_number", chapter_number)
+    event.setdefault("source", f"chapter_{chapter_number}")
+    return event
+
+
+def _append_premium_state_ledger(
+    project: ProjectModel,
+    *,
+    updates: dict[str, Any],
+    chapter_number: int,
+) -> int:
+    """Append extracted premium-engine state events to project metadata.
+
+    This is intentionally an append-only audit ledger. It avoids silently
+    mutating canonical realm/resource/faction state before validators can
+    inspect the causal chain.
+    """
+    payload = _premium_update_payload(updates)
+    if not payload:
+        return 0
+
+    project_meta = dict(project.metadata_json or {})
+    ledger = dict(project_meta.get("premium_state_ledger") or {})
+    recorded = 0
+    for key in _PREMIUM_STATE_LEDGER_KEYS:
+        existing = list(ledger.get(key) or [])
+        incoming: list[dict[str, Any]] = []
+        for raw in payload.get(key) or []:
+            event = _normalize_premium_state_event(raw, chapter_number=chapter_number)
+            if event is not None:
+                incoming.append(event)
+        if incoming:
+            ledger[key] = [*existing, *incoming][-_PREMIUM_STATE_LEDGER_CAP:]
+            recorded += len(incoming)
+        elif key not in ledger:
+            ledger[key] = existing[-_PREMIUM_STATE_LEDGER_CAP:]
+
+    if recorded:
+        project_meta["premium_state_ledger"] = ledger
+        try:
+            from bestseller.services.premium_state_ledger import validate_premium_state_ledger
+
+            project_meta["premium_state_ledger_report"] = validate_premium_state_ledger(
+                ledger,
+            ).to_dict()
+        except Exception:
+            logger.debug("premium state ledger validation failed (non-fatal)", exc_info=True)
+        project.metadata_json = project_meta
+    return recorded
 
 
 async def update_story_bible_from_chapter(
@@ -2087,7 +2260,7 @@ async def update_story_bible_from_chapter(
     Uses the ``editor`` LLM role to extract character knowledge, relationship,
     and world-building changes, then persists them to the database.
 
-    Returns a dict of counts: characters_updated, relationships_updated, world_rules_added.
+    Returns counts for persisted story-bible and premium-state updates.
     """
     from bestseller.services.llm import LLMCompletionRequest, complete_text
 
@@ -2129,9 +2302,23 @@ async def update_story_bible_from_chapter(
         updates = json.loads(raw)
     except (json.JSONDecodeError, ValueError):
         logger.warning("Failed to parse bible update JSON for ch%d", chapter.chapter_number)
-        return {"characters_updated": 0, "relationships_updated": 0, "world_rules_added": 0}
+        return {
+            "characters_updated": 0,
+            "relationships_updated": 0,
+            "world_rules_added": 0,
+            "premium_state_events_recorded": 0,
+        }
 
-    counts = {"characters_updated": 0, "relationships_updated": 0, "world_rules_added": 0}
+    counts = {
+        "characters_updated": 0,
+        "relationships_updated": 0,
+        "world_rules_added": 0,
+        "premium_state_events_recorded": _append_premium_state_ledger(
+            project,
+            updates=updates,
+            chapter_number=chapter.chapter_number,
+        ),
+    }
 
     # Apply character updates
     for cu in updates.get("character_updates", []):

@@ -1092,6 +1092,11 @@ _CONTEXT_TIER_1 = frozenset({
     "identity_line",
     "phrase_avoidance_line",
     "genre_constraint_line",
+    "progression_context_line",
+    "decision_policy_line",
+    "rule_system_line",
+    "faction_ecology_line",
+    "relationship_agency_line",
     "plan_richness_line",
 })
 _CONTEXT_TIER_2 = frozenset({
@@ -3313,6 +3318,8 @@ def build_scene_draft_prompts(
     progression_context_block: str | None = None,
     decision_policy_block: str | None = None,
     rule_system_context_block: str | None = None,
+    faction_ecology_context_block: str | None = None,
+    relationship_agency_context_block: str | None = None,
     # Opening diversity block: list of (chapter_number, opening_snippet) for recent chapters
     opening_diversity_block: str | None = None,
     # Stage A — conflict diversity (per-scene, all scenes)
@@ -3565,6 +3572,12 @@ def build_scene_draft_prompts(
     _rule_system_line = ""
     if rule_system_context_block:
         _rule_system_line = f"{rule_system_context_block}\n\n"
+    _faction_ecology_line = ""
+    if faction_ecology_context_block:
+        _faction_ecology_line = f"{faction_ecology_context_block}\n\n"
+    _relationship_agency_line = ""
+    if relationship_agency_context_block:
+        _relationship_agency_line = f"{relationship_agency_context_block}\n\n"
 
     # Stage A — conflict diversity (ALL scenes, not just scene 1)
     _conflict_diversity_line = ""
@@ -3737,6 +3750,8 @@ def build_scene_draft_prompts(
             "progression_context_line": _progression_context_line,
             "decision_policy_line": _decision_policy_line,
             "rule_system_line": _rule_system_line,
+            "faction_ecology_line": _faction_ecology_line,
+            "relationship_agency_line": _relationship_agency_line,
             "conflict_diversity_line": _conflict_diversity_line,
             "scene_purpose_line": _scene_purpose_line,
             "env_diversity_line": _env_diversity_line,
@@ -3792,6 +3807,8 @@ def build_scene_draft_prompts(
     _progression_context_line = _ctx["progression_context_line"]
     _decision_policy_line = _ctx["decision_policy_line"]
     _rule_system_line = _ctx["rule_system_line"]
+    _faction_ecology_line = _ctx["faction_ecology_line"]
+    _relationship_agency_line = _ctx["relationship_agency_line"]
     _conflict_diversity_line = _ctx["conflict_diversity_line"]
     _scene_purpose_line = _ctx["scene_purpose_line"]
     _env_diversity_line = _ctx["env_diversity_line"]
@@ -3848,6 +3865,8 @@ def build_scene_draft_prompts(
             f"{_progression_context_line}"
             f"{_decision_policy_line}"
             f"{_rule_system_line}"
+            f"{_faction_ecology_line}"
+            f"{_relationship_agency_line}"
             f"{_phrase_avoidance_line}"
             f"{_opening_diversity_line}"
             f"{_budget_diversity_line}"
@@ -3927,6 +3946,8 @@ def build_scene_draft_prompts(
             f"{_progression_context_line}"
             f"{_decision_policy_line}"
             f"{_rule_system_line}"
+            f"{_faction_ecology_line}"
+            f"{_relationship_agency_line}"
             f"{_phrase_avoidance_line}"
             f"{_opening_diversity_line}"
             f"{_budget_diversity_line}"
@@ -4441,6 +4462,20 @@ async def generate_scene_draft(
                 context_packet.rule_system_context_block = (
                     _premium_blocks.rule_system_context_block
                 )
+            if (
+                _premium_blocks.faction_ecology_context_block
+                and not context_packet.faction_ecology_context_block
+            ):
+                context_packet.faction_ecology_context_block = (
+                    _premium_blocks.faction_ecology_context_block
+                )
+            if (
+                _premium_blocks.relationship_agency_context_block
+                and not context_packet.relationship_agency_context_block
+            ):
+                context_packet.relationship_agency_context_block = (
+                    _premium_blocks.relationship_agency_context_block
+                )
             if _premium_blocks.warnings:
                 context_packet.contradiction_warnings.extend(
                     f"[精品类型引擎] {warning}" for warning in _premium_blocks.warnings
@@ -4563,6 +4598,12 @@ async def generate_scene_draft(
             ),
             rule_system_context_block=(
                 context_packet.rule_system_context_block if context_packet else None
+            ),
+            faction_ecology_context_block=(
+                context_packet.faction_ecology_context_block if context_packet else None
+            ),
+            relationship_agency_context_block=(
+                context_packet.relationship_agency_context_block if context_packet else None
             ),
             opening_diversity_block=(
                 context_packet.opening_diversity_block if context_packet else None

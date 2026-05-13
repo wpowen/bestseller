@@ -88,6 +88,29 @@ def test_repair_legacy_foundation_identity_locks_uses_hints() -> None:
     assert repaired["antagonist"]["gender"] == "male"
 
 
+def test_repair_legacy_foundation_identity_locks_uses_existing_pronouns_without_defaults() -> None:
+    repaired, count = repair_legacy_foundation_identity_locks(
+        {
+            "supporting_cast": [
+                {
+                    "name": "镜渊之主",
+                    "role": "antagonist",
+                    "gender": "unknown",
+                    "pronoun_set_zh": "它",
+                    "pronoun_set_en": "it",
+                },
+                {"name": "Unresolved Witness", "role": "supporting"},
+            ],
+        },
+        allow_unreliable_defaults=False,
+    )
+
+    assert count == 1
+    assert repaired is not None
+    assert repaired["supporting_cast"][0]["gender"] == "nonbinary"
+    assert repaired["supporting_cast"][1].get("gender") is None
+
+
 def test_repair_legacy_foundation_identity_locks_defaults_unknowns_to_nonbinary() -> None:
     repaired, _ = repair_legacy_foundation_identity_locks(
         {
@@ -101,6 +124,35 @@ def test_repair_legacy_foundation_identity_locks_defaults_unknowns_to_nonbinary(
     assert report.passed is True
     assert repaired["protagonist"]["gender"] == "nonbinary"
     assert repaired["protagonist"]["pronoun_set_en"] == "they/them"
+
+
+def test_repair_legacy_foundation_identity_locks_removes_alias_colliding_with_name() -> None:
+    repaired, count = repair_legacy_foundation_identity_locks(
+        {
+            "supporting_cast": [
+                {
+                    "name": "周建设",
+                    "role": "social_antagonist",
+                    "gender": "male",
+                    "pronoun_set_zh": "他",
+                    "pronoun_set_en": "he/him",
+                },
+                {
+                    "name": "周拆迁",
+                    "role": "obstacle_investigator",
+                    "gender": "male",
+                    "pronoun_set_zh": "他",
+                    "pronoun_set_en": "he/him",
+                    "name_variants": ["周建设", "拆迁办周主任"],
+                },
+            ]
+        }
+    )
+
+    assert count == 1
+    assert repaired is not None
+    assert repaired["supporting_cast"][1]["name_variants"] == ["拆迁办周主任"]
+    assert validate_foundation_identity_contract(repaired).passed is True
 
 
 def test_chapter_plan_contract_blocks_unknown_participant_and_missing_time() -> None:
@@ -180,6 +232,124 @@ def test_chapter_plan_contract_blocks_placeholder_planning_text() -> None:
         "PLAN_SCENE_TIME_GENERIC",
         "PLAN_SCENE_STORY_PURPOSE_GENERIC",
     }.issubset({violation.code for violation in report.violations})
+
+
+def test_chapter_plan_contract_blocks_functional_phase_title() -> None:
+    batch = ChapterOutlineBatchInput.model_validate(
+        {
+            "batch_name": "functional-title",
+            "chapters": [
+                {
+                    "chapter_number": 1,
+                    "title": "浮标初现",
+                    "chapter_goal": "苏砚读取铜镜残痕，确认旧案与青萝镇有关。",
+                    "main_conflict": "苏砚必须在镇民封宅前拿到铜镜里的火场残相。",
+                    "hook_description": "铜镜裂开后，碎片指向姜家祖坟。",
+                    "scenes": [
+                        {
+                            "scene_number": 1,
+                            "scene_type": "investigation",
+                            "time_label": "青萝镇旧宅黄昏",
+                            "participants": ["苏砚"],
+                            "purpose": {
+                                "story": "苏砚进入旧宅，以砚台引出铜镜血泪。",
+                                "emotion": "警觉与旧痛同时上升。",
+                            },
+                        }
+                    ],
+                }
+            ],
+        }
+    )
+
+    report = validate_chapter_plan_contract(
+        batch,
+        identity_manifest=[{"name": "苏砚", "aliases": []}],
+    )
+
+    assert report.blocks is True
+    assert "PLAN_CHAPTER_TITLE_FUNCTIONAL" in {violation.code for violation in report.violations}
+
+
+def test_chapter_plan_contract_blocks_meta_story_design_language() -> None:
+    batch = ChapterOutlineBatchInput.model_validate(
+        {
+            "batch_name": "meta-plan",
+            "chapters": [
+                {
+                    "chapter_number": 12,
+                    "title": "师徒",
+                    "chapter_goal": "建立沈夜寒的导师角色，完善九域镇物的世界观体系。",
+                    "main_conflict": "沈夜寒的信息有价值但目的不明，苏砚在信任与怀疑之间摇摆。",
+                    "hook_description": "第12章尾钩：围绕「沈夜寒的信息有价值但目的不明」出现新的证据、时限或代价，迫使苏砚下一章立刻行动。",
+                    "scenes": [
+                        {
+                            "scene_number": 1,
+                            "scene_type": "setup",
+                            "time_label": "青岚峰石屋夜间",
+                            "participants": ["苏砚", "沈夜寒"],
+                            "purpose": {
+                                "story": "通过沈夜寒讲述引入志怪监内部势力分裂的线索。",
+                                "emotion": "信任与怀疑并存。",
+                            },
+                        }
+                    ],
+                }
+            ],
+        }
+    )
+
+    report = validate_chapter_plan_contract(
+        batch,
+        identity_manifest=[{"name": "苏砚", "aliases": []}, {"name": "沈夜寒", "aliases": []}],
+    )
+    codes = {violation.code for violation in report.violations}
+
+    assert report.blocks is True
+    assert {
+        "PLAN_CHAPTER_GOAL_META",
+        "PLAN_CHAPTER_HOOK_GENERIC",
+        "PLAN_SCENE_STORY_PURPOSE_META",
+    }.issubset(codes)
+
+
+def test_chapter_plan_contract_blocks_fallback_instruction_leakage() -> None:
+    batch = ChapterOutlineBatchInput.model_validate(
+        {
+            "batch_name": "fallback-leak",
+            "chapters": [
+                {
+                    "chapter_number": 54,
+                    "title": "镜铺",
+                    "chapter_goal": "苏砚追到镜铺后门。章内必须落到这件可见事件：苏砚处理「镜匠失踪」，并获得可用结果或付出明确损失。",
+                    "main_conflict": "镜铺掌柜拒绝承认后门血迹属于失踪镜匠。",
+                    "hook_description": "苏砚撬开后门时，墙内传出镜匠还活着的敲击声。",
+                    "scenes": [
+                        {
+                            "scene_number": 1,
+                            "scene_type": "investigation",
+                            "time_label": "青萝镇镜铺后巷夜雨",
+                            "participants": ["苏砚"],
+                            "purpose": {
+                                "story": "第54章中段1围绕「镜匠失踪」制造新的代价或信息交换。（本章目标：苏砚追到镜铺后门。）",
+                                "emotion": "紧张感上升。",
+                            },
+                        }
+                    ],
+                }
+            ],
+        }
+    )
+
+    report = validate_chapter_plan_contract(
+        batch,
+        identity_manifest=[{"name": "苏砚", "aliases": []}],
+    )
+    codes = {violation.code for violation in report.violations}
+
+    assert report.blocks is True
+    assert "PLAN_CHAPTER_GOAL_META" in codes
+    assert "PLAN_SCENE_STORY_PURPOSE_META" in codes
 
 
 def test_chapter_plan_contract_blocks_purpose_character_missing_from_participants() -> None:
@@ -396,6 +566,100 @@ def test_repair_missing_scene_participants_prefers_resolved_identity_aliases() -
     assert report.passed is True
 
 
+def test_repair_missing_scene_participants_adds_named_purpose_character() -> None:
+    scene = SimpleNamespace(
+        scene_number=1,
+        participants=["林渊", "苏婉宁"],
+        time_label="第36章子夜",
+        purpose={"story": "围绕“三百年第一账”推进：三百年前林远山封镜的第一账露出轮廓。"},
+        entry_state={},
+        exit_state={},
+    )
+    registry = [
+        CharacterIdentity(
+            name="林渊",
+            gender="male",
+            pronoun_set_zh="他",
+            pronoun_set_en="he/him",
+        ),
+        CharacterIdentity(
+            name="苏婉宁",
+            gender="female",
+            pronoun_set_zh="她",
+            pronoun_set_en="she/her",
+        ),
+        CharacterIdentity(
+            name="林远山",
+            gender="male",
+            pronoun_set_zh="他",
+            pronoun_set_en="he/him",
+        ),
+    ]
+
+    repaired = repair_missing_scene_participants_pre_draft(
+        scene,
+        identity_registry=registry,
+    )
+    report = validate_scene_contract_pre_draft(
+        scene,
+        identity_registry=registry,
+        require_identity_registry=True,
+    )
+
+    assert repaired == 1
+    assert scene.participants == ["林渊", "苏婉宁", "林远山"]
+    assert report.passed is True
+
+
+def test_repair_missing_scene_participants_skips_excluded_offstage_character() -> None:
+    scene = SimpleNamespace(
+        scene_number=1,
+        participants=["林渊", "苏婉宁"],
+        time_label="第37章井口",
+        purpose={"story": "围绕“井口铜钱”推进：孙九斤在井口铜钱中找到钱家旧誓。"},
+        entry_state={},
+        exit_state={},
+    )
+    registry = [
+        CharacterIdentity(
+            name="林渊",
+            gender="male",
+            pronoun_set_zh="他",
+            pronoun_set_en="he/him",
+        ),
+        CharacterIdentity(
+            name="苏婉宁",
+            gender="female",
+            pronoun_set_zh="她",
+            pronoun_set_en="she/her",
+        ),
+        CharacterIdentity(
+            name="孙九斤",
+            gender="male",
+            pronoun_set_zh="他",
+            pronoun_set_en="he/him",
+        ),
+    ]
+
+    repaired = repair_missing_scene_participants_pre_draft(
+        scene,
+        identity_registry=registry,
+        excluded_names={"孙九斤"},
+    )
+    report = validate_scene_contract_pre_draft(
+        scene,
+        identity_registry=registry,
+        require_identity_registry=True,
+        excluded_names={"孙九斤"},
+    )
+
+    assert repaired == 0
+    assert scene.participants == ["林渊", "苏婉宁"]
+    assert "PREDRAFT_SCENE_PURPOSE_CHARACTER_NOT_IN_PARTICIPANTS" not in {
+        violation.code for violation in report.violations
+    }
+
+
 def test_pre_draft_scene_contract_allows_case_subjects_and_dead_references() -> None:
     scene = SimpleNamespace(
         scene_number=1,
@@ -504,6 +768,60 @@ def test_pre_draft_scene_contract_allows_historical_photo_reference() -> None:
             gender="male",
             pronoun_set_zh="他",
             pronoun_set_en="he/him",
+        ),
+        CharacterIdentity(
+            name="林正淳",
+            gender="male",
+            pronoun_set_zh="他",
+            pronoun_set_en="he/him",
+        ),
+    ]
+
+    report = validate_scene_contract_pre_draft(
+        scene,
+        identity_registry=registry,
+        require_identity_registry=True,
+    )
+
+    assert "PREDRAFT_SCENE_PURPOSE_CHARACTER_NOT_IN_PARTICIPANTS" not in {
+        violation.code for violation in report.violations
+    }
+
+
+def test_pre_draft_scene_contract_allows_storyline_reference() -> None:
+    scene = SimpleNamespace(
+        scene_number=1,
+        participants=["林渊", "苏婉宁", "孙九斤", "钱婆婆"],
+        time_label="第32章夜间",
+        purpose={
+            "story": "围绕“老宅来信”推进：林家老宅寄来迟到三年的信，林正淳线推进。",
+            "emotion": "保持悬疑压力。",
+        },
+    )
+    registry = [
+        CharacterIdentity(
+            name="林渊",
+            gender="male",
+            pronoun_set_zh="他",
+            pronoun_set_en="he/him",
+        ),
+        CharacterIdentity(
+            name="苏婉宁",
+            gender="female",
+            pronoun_set_zh="她",
+            pronoun_set_en="she/her",
+        ),
+        CharacterIdentity(
+            name="孙九斤",
+            gender="male",
+            pronoun_set_zh="他",
+            pronoun_set_en="he/him",
+        ),
+        CharacterIdentity(
+            name="钱婆婆",
+            gender="female",
+            pronoun_set_zh="她",
+            pronoun_set_en="she/her",
         ),
         CharacterIdentity(
             name="林正淳",

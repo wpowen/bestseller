@@ -59,6 +59,30 @@ def _text(entry: Mapping[str, object], *keys: str) -> str:
     return ""
 
 
+_NON_SUBSTANTIVE_TEXTS = {
+    "无",
+    "暂无",
+    "未知",
+    "未定",
+    "待定",
+    "不明",
+    "无直接代价",
+    "无直接选择",
+    "none",
+    "n/a",
+    "na",
+    "unknown",
+    "tbd",
+    "not yet",
+}
+
+
+def _substantive_text(entry: Mapping[str, object], *keys: str) -> str:
+    text = _text(entry, *keys)
+    normalized = text.strip().lower()
+    return "" if normalized in _NON_SUBSTANTIVE_TEXTS else text
+
+
 def _number(value: object) -> float | None:
     if isinstance(value, bool):
         return None
@@ -134,7 +158,7 @@ def _validate_rule_events(events: Sequence[object]) -> list[PremiumStateFinding]
             findings.append(
                 _finding("rule_visible_effect_missing", "Rule event needs a visible effect.", path)
             )
-        if not _text(entry, "cost", "backlash", "price") and not _text(
+        if not _substantive_text(entry, "cost", "backlash", "price") and not _substantive_text(
             entry,
             "exploit_used",
             "exploitation_potential",
@@ -231,7 +255,7 @@ def _validate_relationship_events(events: Sequence[object]) -> list[PremiumState
                     path,
                 )
             )
-        if not _text(entry, "active_choice", "choice"):
+        if not _substantive_text(entry, "active_choice", "choice"):
             findings.append(
                 _finding(
                     "relationship_active_choice_missing",

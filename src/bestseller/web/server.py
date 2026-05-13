@@ -31,7 +31,7 @@ from bestseller.services.inspection import (
     build_story_bible_overview,
 )
 from bestseller.services.narrative import build_narrative_overview
-from bestseller.services.pipelines import run_autowrite_pipeline
+from bestseller.services.pipelines import ProjectRepairPauseError, run_autowrite_pipeline
 from bestseller.services.projects import (
     delete_project_completely,
     get_project_by_slug,
@@ -48,10 +48,10 @@ from bestseller.settings import AppSettings, load_settings
 
 logger = logging.getLogger(__name__)
 
-_UI_HTML_PATH = Path(__file__).with_name("novel_studio.html")
 _READER_HTML_PATH = Path(__file__).with_name("novel_reader.html")
 _IF_READER_HTML_PATH = Path(__file__).with_name("novel_if_reader.html")
 _QUICKSTART_HTML_PATH = Path(__file__).with_name("novel_quickstart.html")
+_LIBRARY_HTML_PATH = Path(__file__).with_name("novel_library.html")
 # Bounded LRU cache for markdown artifact metadata.  Previous unbounded dict
 # grew without limit over long server runs.  512 entries is enough for a few
 # large projects while capping memory usage.
@@ -82,6 +82,18 @@ def _json_default(value: object) -> object:
 
 
 _SELF_HEAL_SCAN_DONE_KEY = "bestseller:self_heal:scan_done"
+_HEAL_KEY_PREFIXES: dict[str, tuple[str, ...]] = {
+    "autowrite": (
+        "arq:job:autowrite:heal:",
+        "arq:in-progress:autowrite:heal:",
+        "arq:retry:autowrite:heal:",
+    ),
+    "repair": (
+        "arq:job:repair:heal:",
+        "arq:in-progress:repair:heal:",
+        "arq:retry:repair:heal:",
+    ),
+}
 
 
 def _wait_for_self_heal_scan(
@@ -126,14 +138,16 @@ def _wait_for_self_heal_scan(
     return False
 
 
-def _fetch_heal_owned_slugs(redis_url: str) -> set[str]:
-    """Return the set of project slugs with an active worker self-heal job.
+def _fetch_heal_owned_slugs_by_kind(redis_url: str, heal_kind: str) -> set[str]:
+    """Return slugs with an active worker self-heal job for one task kind.
 
     Self-heal uses deterministic ARQ job ids of the form
-    ``autowrite:heal:<slug>`` (see ``worker/self_heal.py``). A queued,
-    in-progress, or retrying job leaves keys under those prefixes — any of
-    them means the worker owns the resume for that slug and the web
-    auto-resume path must stand down to avoid racing for row-locks.
+    ``autowrite:heal:<slug>`` or ``repair:heal:<slug>`` (see
+    ``worker/self_heal.py``). A queued, in-progress, or retrying job leaves
+    keys under those prefixes.
+
+    The kind split matters: a repair heal job must not make an autowrite task
+    for the same slug look owned, and vice versa.
 
     Returns an empty set on any Redis error. Callers MUST treat an empty
     result as "unknown" rather than "no heal jobs exist" — see
@@ -147,11 +161,9 @@ def _fetch_heal_owned_slugs(redis_url: str) -> set[str]:
         logger.warning("auto-resume: redis unreachable, skipping heal-owner check")
         return set()
 
-    prefixes = (
-        "arq:job:autowrite:heal:",
-        "arq:in-progress:autowrite:heal:",
-        "arq:retry:autowrite:heal:",
-    )
+    prefixes = _HEAL_KEY_PREFIXES.get(heal_kind)
+    if prefixes is None:
+        return set()
     slugs: set[str] = set()
     try:
         for prefix in prefixes:
@@ -163,6 +175,85 @@ def _fetch_heal_owned_slugs(redis_url: str) -> set[str]:
         logger.exception("auto-resume: redis scan failed — assuming no heal owners")
         return set()
     return slugs
+
+
+def _fetch_heal_owned_slugs(redis_url: str) -> set[str]:
+    """Return slugs with any active worker self-heal job."""
+    slugs: set[str] = set()
+    for heal_kind in _HEAL_KEY_PREFIXES:
+        slugs.update(_fetch_heal_owned_slugs_by_kind(redis_url, heal_kind))
+    return slugs
+
+
+def _arq_redis_settings_from_url(redis_url: str) -> Any:
+    from arq.connections import RedisSettings  # noqa: PLC0415
+
+    parsed = urlparse(redis_url)
+    return RedisSettings(
+        host=parsed.hostname or "localhost",
+        port=parsed.port or 6379,
+        database=int((parsed.path or "/0").lstrip("/") or "0"),
+        password=parsed.password,
+    )
+
+
+async def _enqueue_autowrite_heal_job_async(redis_url: str, slug: str) -> str | None:
+    """Push a web-recovered autowrite zombie into worker self-heal.
+
+    This intentionally reuses ``worker.self_heal._requeue_autowrite`` so the
+    web process does not maintain a second, subtly different ARQ job contract.
+    """
+    from arq.connections import create_pool  # noqa: PLC0415
+    from bestseller.worker.self_heal import (  # noqa: PLC0415
+        StuckProject,
+        _autowrite_heal_job_id,
+        _requeue_autowrite,
+    )
+
+    pool = await create_pool(_arq_redis_settings_from_url(redis_url))
+    try:
+        stuck = StuckProject(
+            project_id=None,
+            slug=slug,
+            reason="web_auto_resume_zombie",
+            stuck_at_chapter=None,
+            chapters_total=0,
+            chapters_with_draft=0,
+        )
+        job_id = await _requeue_autowrite(pool, stuck)
+        if job_id is None and slug in _fetch_heal_owned_slugs_by_kind(
+            redis_url,
+            "autowrite",
+        ):
+            return _autowrite_heal_job_id(slug)
+        return job_id
+    finally:
+        closer = getattr(pool, "aclose", None) or getattr(pool, "close", None)
+        if closer is not None:
+            result = closer()
+            if asyncio.iscoroutine(result):
+                await result
+
+
+def _enqueue_autowrite_heal_job(redis_url: str, slug: str) -> str | None:
+    """Synchronously enqueue a deterministic worker self-heal autowrite job."""
+    if not redis_url or not slug:
+        return None
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        pass
+    else:
+        logger.warning("auto-resume: cannot enqueue ARQ job from an active event loop")
+        return None
+    try:
+        return asyncio.run(_enqueue_autowrite_heal_job_async(redis_url, slug))
+    except Exception:
+        logger.exception(
+            "auto-resume: failed to enqueue worker self-heal job for slug=%s",
+            slug,
+        )
+        return None
 
 
 def _sanitize_preset_payload(item: dict[str, object]) -> dict[str, object]:
@@ -665,7 +756,7 @@ class WebTaskManager:
                 # loop is up; otherwise we have no way to continue, so mark
                 # it failed and let the user decide.
                 if task.status in ("running", "queued"):
-                    if task.payload and task.task_type == "autowrite":
+                    if task.payload and task.task_type in ("autowrite", "repair"):
                         task.status = "queued"
                         task.current_stage = "auto_resume_pending"
                         task.error = None
@@ -784,19 +875,29 @@ class WebTaskManager:
                         except OSError:
                             pass
 
-                is_incomplete = num_chapters < target_chapters
-                # ``incomplete`` is a dedicated status for recovered projects
-                # that have some chapters on disk but never reached their
-                # target — distinct from user-initiated ``cancelled``.
-                status = "incomplete" if is_incomplete else "completed"
-                current_stage = (
-                    "incomplete_recovered" if is_incomplete else "project_pipeline_completed"
-                )
-                error = (
-                    f"Recovered: {num_chapters}/{target_chapters} chapters on disk"
-                    if is_incomplete
+                block_payload = (
+                    _project_autowrite_block_payload(project)
+                    if project is not None
                     else None
                 )
+                is_incomplete = num_chapters < target_chapters
+                if block_payload:
+                    status = "cancelled"
+                    current_stage = "blocked_structural_repair"
+                    error = str(block_payload.get("error") or "")
+                else:
+                    # ``incomplete`` is a dedicated status for recovered projects
+                    # that have some chapters on disk but never reached their
+                    # target — distinct from user-initiated ``cancelled``.
+                    status = "incomplete" if is_incomplete else "completed"
+                    current_stage = (
+                        "incomplete_recovered" if is_incomplete else "project_pipeline_completed"
+                    )
+                    error = (
+                        f"Recovered: {num_chapters}/{target_chapters} chapters on disk"
+                        if is_incomplete
+                        else None
+                    )
 
                 # Directory mtime → timestamps
                 try:
@@ -827,6 +928,12 @@ class WebTaskManager:
                         "timestamp": ch_ts,
                         "stage": "chapter_pipeline_completed",
                         "payload": {"chapter_number": ch_num},
+                    })
+                if block_payload:
+                    events.append({
+                        "timestamp": dir_ts,
+                        "stage": "blocked_structural_repair",
+                        "payload": {"reason": block_payload.get("reason")},
                     })
 
                 # Rebuild a resumable payload when we can — this is the whole
@@ -987,6 +1094,7 @@ class WebTaskManager:
             project_slug=str(payload.get("project_slug") or ""),
             title=f"Repair {payload.get('project_slug') or ''}",
             current_stage="queued",
+            payload=json.loads(json.dumps(payload, default=_json_default)),
         )
         with self._lock:
             self._tasks[task_id] = task
@@ -1008,6 +1116,7 @@ class WebTaskManager:
         "chapter_pipeline_completed", "chapter_pipeline_started",
         "conception_complete", "story_architect_complete",
         "resume_requested", "cancel_requested",
+        "blocked_structural_repair",
         "periodic_consistency_check_started",
         "periodic_consistency_check_completed",
         "volume_complete",
@@ -1083,6 +1192,27 @@ class WebTaskManager:
             logger.error("Task %s failed: %s", task_id, error.splitlines()[-1] if error else "")
         except Exception:
             pass
+
+    def mark_task_blocked_by_structural_repair(self, task_id: str, error: str) -> None:
+        with self._lock:
+            task = self._tasks.get(task_id)
+            if task is None:
+                return
+            task.status = "cancelled"
+            task.updated_at = _utc_now()
+            task.current_stage = "blocked_structural_repair"
+            task.error = error
+            task.cancel_requested = False
+            task.progress_events.append(
+                {
+                    "timestamp": task.updated_at,
+                    "stage": "blocked_structural_repair",
+                    "payload": {"reason": error},
+                }
+            )
+            task.progress_events = task.progress_events[-300:]
+            self._save_to_disk()
+        logger.info("Task %s blocked by structural repair pause", task_id)
 
     def request_cancel(self, task_id: str) -> bool:
         """Mark a task for cancellation. Worker checks the flag at next progress event.
@@ -1319,27 +1449,20 @@ class WebTaskManager:
         Called once from ``serve_web`` after startup-recovery finishes.
         Idempotent — after the first call the pending list is cleared.
 
-        Autowrite zombies are **always delegated** to the worker's
-        self-heal path: worker owns the deterministic
-        ``autowrite:heal:<slug>`` job id, the row-lock coordination, and
-        the DB-authoritative ``find_stuck_projects`` scan. The old
-        web-side thread spawn competed with that path for row-locks on
-        ``characters`` / ``workflow_step_runs`` and crashed with
-        ``LockNotAvailableError`` whenever both fired at once — so the
-        thread path has been removed entirely. If a zombie slug is NOT
-        in the worker's heal-owned set, it means worker already decided
-        the project is terminal (completed / awaiting human / truly
-        active elsewhere); web still flips the task to a delegated
-        marker so the UI does not stall in ``queued``.
+        Autowrite zombies are handed to the worker self-heal path. If the
+        worker already owns the deterministic ``autowrite:heal:<slug>`` ARQ
+        job id, web only marks the task as delegated. If the startup scan did
+        not claim the slug, web enqueues that same deterministic job id itself
+        instead of starting an in-process writer thread. This preserves the
+        single worker owner for row-lock coordination while making restart
+        recovery automatic. Only when Redis/ARQ is unavailable does the task
+        become ``incomplete`` for manual recovery.
 
-        Non-autowrite task types (e.g. ``repair``) still get marked
-        failed as before — the worker has no generic resume path for
-        them.
+        Repair tasks are delegated to worker self-heal when a deterministic
+        ``repair:heal:<slug>`` job exists. That avoids web-side repair threads
+        racing the worker repair owner after a compose restart.
 
-        Returns the list of task IDs that were handed off (i.e. marked
-        as ``running`` with the delegation stage). The return name is
-        kept for backward compatibility with the old thread-spawn
-        contract even though no threads are spawned anymore.
+        Returns the list of task IDs that were handed off or re-dispatched.
         """
         with self._lock:
             pending = list(self._pending_auto_resume_ids)
@@ -1349,12 +1472,24 @@ class WebTaskManager:
         # the heal-owner set. Without this wait the marker would still be
         # missing on a fresh compose up — web races ahead and sees an
         # empty set → fail-open path would crash on collision.
+        scan_ready = False
         if redis_url:
-            _wait_for_self_heal_scan(redis_url)
-        heal_owned_slugs = _fetch_heal_owned_slugs(redis_url) if redis_url else set()
+            scan_ready = _wait_for_self_heal_scan(redis_url)
+        autowrite_heal_owned_slugs = (
+            _fetch_heal_owned_slugs_by_kind(redis_url, "autowrite")
+            if redis_url
+            else set()
+        )
+        repair_heal_owned_slugs = (
+            _fetch_heal_owned_slugs_by_kind(redis_url, "repair")
+            if redis_url
+            else set()
+        )
 
         delegated: list[str] = []
         for task_id in pending:
+            repair_payload: dict[str, object] | None = None
+            enqueue_autowrite_slug: str | None = None
             with self._lock:
                 task = self._tasks.get(task_id)
                 if task is None or not task.payload:
@@ -1364,29 +1499,138 @@ class WebTaskManager:
                     # startup and this call) — skip.
                     continue
                 slug = (task.project_slug or "").strip()
-                heal_owned = bool(slug and slug in heal_owned_slugs)
-                reason = (
-                    "ARQ heal job already active"
-                    if heal_owned
-                    else "worker self-heal owns resume; web will not spawn a competing thread"
+                if task.task_type == "repair":
+                    heal_owned = bool(slug and slug in repair_heal_owned_slugs)
+                else:
+                    heal_owned = bool(slug and slug in autowrite_heal_owned_slugs)
+                if task.task_type == "repair" and not heal_owned:
+                    task.current_stage = "queued"
+                    task.error = None
+                    task.cancel_requested = False
+                    task.progress_events.append({
+                        "timestamp": _utc_now(),
+                        "stage": "resume_requested",
+                        "payload": {"reason": "server restart"},
+                    })
+                    task.progress_events = task.progress_events[-300:]
+                    repair_payload = dict(task.payload)
+                    self._save_to_disk()
+                    delegated.append(task_id)
+                    logger.info("Resuming repair zombie task %s via web worker", task_id)
+                elif heal_owned:
+                    reason = (
+                        "ARQ heal job already active"
+                    )
+                    task.status = "running"
+                    task.current_stage = "delegated_to_worker_self_heal"
+                    task.error = None
+                    task.cancel_requested = False
+                    task.progress_events.append({
+                        "timestamp": _utc_now(),
+                        "stage": "delegated_to_worker_self_heal",
+                        "payload": {"reason": reason, "heal_owned": heal_owned},
+                    })
+                    task.progress_events = task.progress_events[-300:]
+                    self._save_to_disk()
+                    delegated.append(task_id)
+                    logger.info(
+                        "Delegated zombie task %s (slug=%s, heal_owned=%s) to "
+                        "worker self-heal",
+                        task_id, slug, heal_owned,
+                    )
+                elif task.task_type == "autowrite" and redis_url and slug:
+                    enqueue_autowrite_slug = slug
+                else:
+                    reason = (
+                        "worker self-heal scan completed but did not claim this task"
+                        if scan_ready
+                        else "worker self-heal ownership could not be confirmed"
+                    )
+                    task.status = "incomplete"
+                    task.current_stage = "auto_resume_not_claimed"
+                    task.error = (
+                        "Auto-resume was not claimed by worker self-heal; "
+                        "resume manually to continue."
+                    )
+                    task.cancel_requested = False
+                    task.progress_events.append({
+                        "timestamp": _utc_now(),
+                        "stage": "auto_resume_not_claimed",
+                        "payload": {"reason": reason, "heal_owned": False},
+                    })
+                    task.progress_events = task.progress_events[-300:]
+                    self._save_to_disk()
+                    logger.info(
+                        "Zombie task %s (slug=%s) was not claimed by worker "
+                        "self-heal; marked incomplete for manual resume",
+                        task_id, slug,
+                    )
+            if enqueue_autowrite_slug is not None and redis_url:
+                job_id = _enqueue_autowrite_heal_job(redis_url, enqueue_autowrite_slug)
+                with self._lock:
+                    task = self._tasks.get(task_id)
+                    if task is None or task.status != "queued":
+                        continue
+                    if job_id:
+                        now = _utc_now()
+                        task.status = "running"
+                        task.current_stage = "delegated_to_worker_self_heal"
+                        task.error = None
+                        task.cancel_requested = False
+                        task.progress_events.append({
+                            "timestamp": now,
+                            "stage": "delegated_to_worker_self_heal",
+                            "payload": {
+                                "reason": "web auto-resume enqueued worker self-heal job",
+                                "heal_owned": True,
+                                "enqueued_by_web": True,
+                                "job_id": job_id,
+                            },
+                        })
+                        task.progress_events = task.progress_events[-300:]
+                        self._save_to_disk()
+                        delegated.append(task_id)
+                        logger.info(
+                            "Auto-resume enqueued worker self-heal job %s for "
+                            "zombie task %s (slug=%s)",
+                            job_id, task_id, enqueue_autowrite_slug,
+                        )
+                    else:
+                        reason = (
+                            "worker self-heal scan completed but did not claim this task"
+                            if scan_ready
+                            else "worker self-heal ownership could not be confirmed"
+                        )
+                        task.status = "incomplete"
+                        task.current_stage = "auto_resume_not_claimed"
+                        task.error = (
+                            "Auto-resume could not enqueue a worker self-heal job; "
+                            "resume manually to continue."
+                        )
+                        task.cancel_requested = False
+                        task.progress_events.append({
+                            "timestamp": _utc_now(),
+                            "stage": "auto_resume_not_claimed",
+                            "payload": {
+                                "reason": reason,
+                                "heal_owned": False,
+                                "enqueue_failed": True,
+                            },
+                        })
+                        task.progress_events = task.progress_events[-300:]
+                        self._save_to_disk()
+                        logger.info(
+                            "Zombie task %s (slug=%s) could not be enqueued "
+                            "for worker self-heal; marked incomplete",
+                            task_id, enqueue_autowrite_slug,
+                        )
+            if repair_payload is not None:
+                thread = threading.Thread(
+                    target=self._run_with_slot,
+                    args=(task_id, self._run_repair_worker, repair_payload),
+                    daemon=True,
                 )
-                task.status = "running"
-                task.current_stage = "delegated_to_worker_self_heal"
-                task.error = None
-                task.cancel_requested = False
-                task.progress_events.append({
-                    "timestamp": _utc_now(),
-                    "stage": "delegated_to_worker_self_heal",
-                    "payload": {"reason": reason, "heal_owned": heal_owned},
-                })
-                task.progress_events = task.progress_events[-300:]
-                self._save_to_disk()
-                delegated.append(task_id)
-                logger.info(
-                    "Delegated zombie task %s (slug=%s, heal_owned=%s) to "
-                    "worker self-heal",
-                    task_id, slug, heal_owned,
-                )
+                thread.start()
 
         if delegated:
             logger.info(
@@ -1542,6 +1786,16 @@ class WebTaskManager:
                 task_id,
                 f"Pipeline exceeded timeout of {pipeline_timeout:.0f}s",
             )
+        except ProjectRepairPauseError as exc:
+            project_slug = str(payload.get("slug") or "")
+            self.mark_task_blocked_by_structural_repair(
+                task_id,
+                _format_project_repair_pause_error(
+                    project_slug,
+                    raw_detail=str(exc),
+                ),
+            )
+            logger.info("Autowrite task %s blocked by structural repair pause: %s", task_id, exc)
         except Exception:
             tb = traceback.format_exc()
             logger.exception("Autowrite task %s crashed", task_id)
@@ -1760,6 +2014,12 @@ class WebTaskManager:
                     requested_by="web-ui",
                     refresh_impacts=bool(payload.get("refresh_impacts", True)),
                     export_markdown=bool(payload.get("export_markdown", True)),
+                    include_pending_rewrite_tasks=bool(
+                        payload.get("include_pending_rewrite_tasks", False)
+                    ),
+                    scan_publication_gate_candidates=bool(
+                        payload.get("scan_publication_gate_candidates", False)
+                    ),
                     progress=progress,
                 )
             return json.loads(json.dumps(result.model_dump(mode="json"), default=_json_default))
@@ -1801,10 +2061,22 @@ class WebTaskManager:
         except Exception:
             return 0
 
-        # Snapshot task_id → (project_slug, known_event_ts_set) to avoid
+        def _worker_job_is_active(job_id: str) -> bool:
+            try:
+                if client.exists(
+                    f"arq:job:{job_id}",
+                    f"arq:in-progress:{job_id}",
+                    f"arq:retry:{job_id}",
+                ):
+                    return True
+                return client.zscore("arq:queue", job_id) is not None
+            except Exception:
+                return False
+
+        # Snapshot task_id → (project_slug, task_type, known_event_ts_set) to avoid
         # holding the manager lock across Redis I/O.
         with self._lock:
-            snapshot: list[tuple[str, str, set[float]]] = []
+            snapshot: list[tuple[str, str, str, set[float]]] = []
             for tid, task in self._tasks.items():
                 if task.status not in ("running", "queued"):
                     continue
@@ -1816,13 +2088,22 @@ class WebTaskManager:
                     ts = evt.get("timestamp") if isinstance(evt, dict) else None
                     if isinstance(ts, (int, float)):
                         known_ts.add(float(ts))
-                snapshot.append((tid, slug, known_ts))
+                snapshot.append((tid, slug, task.task_type, known_ts))
 
         updated = 0
-        for tid, slug, known_ts in snapshot:
-            # The arq worker task id follows ``autowrite:heal:<slug>``; see
-            # ``worker/self_heal.py``.
-            redis_key = f"task:autowrite:heal:{slug}:progress"
+        for tid, slug, task_type, known_ts in snapshot:
+            # The arq worker task id follows either ``autowrite:heal:<slug>``
+            # or ``repair:heal:<slug>``; direct web repair tasks do not write
+            # Redis progress, so never merge autowrite progress into a repair
+            # card with the same slug.
+            if task_type == "repair":
+                job_id = f"repair:heal:{slug}"
+                redis_key = f"task:repair:heal:{slug}:progress"
+            else:
+                job_id = f"autowrite:heal:{slug}"
+                redis_key = f"task:autowrite:heal:{slug}:progress"
+            if not _worker_job_is_active(job_id):
+                continue
             try:
                 # Last 100 events are plenty — earlier ones are already in
                 # task.progress_events (and we only keep the last 300 anyway).
@@ -1962,6 +2243,26 @@ async def _rebuild_payload_from_db(
         if project is None:
             return None
         return _payload_from_project_model(project)
+
+
+async def _load_project_autowrite_block_payload(
+    settings: AppSettings,
+    slug: str,
+) -> dict[str, object] | None:
+    """Return a user-facing block payload when normal writing is paused.
+
+    This keeps web entrypoints aligned with the pipeline-level
+    ``ProjectRepairPauseError`` guard: paused structural-repair projects
+    should not even launch a writing worker.
+    """
+    slug = (slug or "").strip()
+    if not slug:
+        return None
+    async with session_scope(settings) as session:
+        project = await get_project_by_slug(session, slug)
+        if project is None:
+            return None
+        return _project_autowrite_block_payload(project)
 
 
 async def _recover_projects_from_output(settings: AppSettings) -> list[dict[str, object]]:
@@ -2111,6 +2412,8 @@ async def _load_projects_payload(settings: AppSettings) -> list[dict[str, object
                 "title": row.title,
                 "genre": row.genre,
                 "status": row.status,
+                "created_at": row.created_at.isoformat() if row.created_at else None,
+                "updated_at": row.updated_at.isoformat() if row.updated_at else None,
                 "target_word_count": row.target_word_count,
                 "target_chapters": row.target_chapters,
                 "repair_status": _build_project_repair_status_payload(
@@ -2120,6 +2423,107 @@ async def _load_projects_payload(settings: AppSettings) -> list[dict[str, object
             }
             for row in rows
         ]
+
+
+async def _load_library_payload(settings: AppSettings) -> list[dict[str, object]]:
+    """Return a richer per-project payload for the library page.
+
+    Combines DB fields with filesystem chapter stats so the library can show
+    "all in-progress + completed books" with click-through to the reader.
+    """
+    output_base = Path(settings.output.base_dir)
+    async with session_scope(settings) as session:
+        rows = await list_projects(session)
+        repair_counts = await _load_project_chapter_state_counts(
+            session,
+            [row.id for row in rows],
+        )
+        results: list[dict[str, object]] = []
+        for row in rows:
+            slug = row.slug
+            slug_dir = output_base / slug if slug else None
+            chapter_files: list[Path] = []
+            project_md_exists = False
+            if slug_dir and slug_dir.exists():
+                chapter_files = sorted(slug_dir.glob("chapter-*.md"))
+                project_md_exists = (slug_dir / "project.md").exists()
+            chapters_on_disk = len(chapter_files)
+            words_on_disk = 0
+            for cf in chapter_files:
+                try:
+                    words_on_disk += len(cf.read_text(encoding="utf-8"))
+                except OSError:
+                    continue
+
+            # DB-level chapter counters
+            db_counters = repair_counts.get(row.id, [])
+            db_completed = sum(
+                int(c.get("count") or 0)
+                for c in db_counters
+                if str(c.get("status") or "").lower() in {"complete", "completed"}
+            )
+            db_total = sum(int(c.get("count") or 0) for c in db_counters)
+            completed_chapters = max(db_completed, chapters_on_disk)
+
+            # Last updated — prefer the most recent chapter file mtime
+            last_mtime = 0.0
+            for cf in chapter_files:
+                try:
+                    last_mtime = max(last_mtime, cf.stat().st_mtime)
+                except OSError:
+                    continue
+            last_updated_iso = (
+                datetime.fromtimestamp(last_mtime, tz=UTC).isoformat()
+                if last_mtime > 0
+                else None
+            )
+
+            # Surface tags / category from listing profile if it exists
+            listing_path = slug_dir / "listing_profile.json" if slug_dir else None
+            tags: list[str] = []
+            tagline = None
+            primary_category = None
+            if listing_path and listing_path.exists():
+                try:
+                    listing = json.loads(listing_path.read_text(encoding="utf-8"))
+                    raw_tags = listing.get("tags") or []
+                    if isinstance(raw_tags, list):
+                        tags = [str(t) for t in raw_tags[:10] if t]
+                    tagline = listing.get("logline") or listing.get("short_intro") or None
+                    primary_category = listing.get("primary_category")
+                except (OSError, ValueError):
+                    pass
+
+            results.append({
+                "id": str(row.id),
+                "slug": slug,
+                "title": row.title,
+                "genre": row.genre,
+                "primary_category": primary_category,
+                "status": row.status,
+                "target_chapters": row.target_chapters,
+                "target_word_count": row.target_word_count,
+                "completed_chapters": completed_chapters,
+                "chapters_on_disk": chapters_on_disk,
+                "db_chapter_total": db_total,
+                "words_on_disk": words_on_disk,
+                "last_updated": last_updated_iso,
+                "has_project_md": project_md_exists,
+                "tags": tags,
+                "tagline": tagline,
+                "repair_status": _build_project_repair_status_payload(
+                    row,
+                    db_counters,
+                ),
+            })
+        # Sort: in-progress first (most recently updated), then completed
+        results.sort(
+            key=lambda r: (
+                0 if str(r.get("status") or "").lower() in {"running", "in_progress", "queued", "draft"} else 1,
+                -1 * (datetime.fromisoformat(r["last_updated"]).timestamp() if r.get("last_updated") else 0),
+            )
+        )
+        return results
 
 
 async def _load_project_chapter_state_counts(
@@ -2164,6 +2568,55 @@ def _safe_int(value: object, default: int = 0) -> int:
         return int(value)
     except (TypeError, ValueError):
         return default
+
+
+_STRUCTURAL_REPAIR_BLOCK_FLAGS: frozenset[str] = frozenset({
+    "generation_resume_blocked_until_repair_audit",
+    "production_paused",
+    "structural_repair_required",
+})
+
+
+def _format_project_repair_pause_error(
+    project_slug: str,
+    reason: object | None = None,
+    *,
+    raw_detail: str | None = None,
+) -> str:
+    reason_text = str(reason or "structural repair is required")
+    message = (
+        f"项目 '{project_slug}' 当前处于结构修复暂停状态，不能继续自动写作。"
+        f"原因：{reason_text}。请先运行修复流程并通过修复审计；审计通过后系统会解除 "
+        "generation_resume_blocked_until_repair_audit 门控。"
+    )
+    if raw_detail:
+        message = f"{message} 原始错误：{raw_detail}"
+    return message
+
+
+def _project_autowrite_block_payload(project: Any) -> dict[str, object] | None:
+    metadata = getattr(project, "metadata_json", None) or {}
+    if not isinstance(metadata, dict):
+        metadata = {}
+    if not any(bool(metadata.get(flag)) for flag in _STRUCTURAL_REPAIR_BLOCK_FLAGS):
+        return None
+
+    slug = str(getattr(project, "slug", "") or "")
+    reason = (
+        metadata.get("production_pause_reason")
+        or metadata.get("repair_pause_reason")
+        or metadata.get("rescue_status")
+        or "structural_repair_required"
+    )
+    return {
+        "ok": False,
+        "blocked_structural_repair": True,
+        "project_slug": slug,
+        "current_stage": "blocked_structural_repair",
+        "reason": reason,
+        "error": _format_project_repair_pause_error(slug, reason),
+        "next_action": "run_repair_workflow_and_wait_for_repair_audit",
+    }
 
 
 def _build_project_repair_status_payload(
@@ -2520,6 +2973,307 @@ async def _load_workflow_payload(
     return overview.model_dump(mode="json")
 
 
+_LISTING_REGENERATE_MODULES: dict[str, dict[str, object]] = {
+    "logline": {
+        "label": "一句话钩子",
+        "kind": "text",
+        "max_chars": 80,
+        "system": (
+            "你是网文编辑，擅长写一句话钩子。给出一句不超过 60 字的中文钩子，"
+            "强调主角的反差、矛盾或代价感。只输出钩子本身，不要任何说明。"
+        ),
+    },
+    "short_intro": {
+        "label": "短简介",
+        "kind": "text",
+        "max_chars": 220,
+        "system": (
+            "你是网文上架编辑。请用 150-200 字写一段短简介，覆盖：主角身份、"
+            "金手指、初始冲突、读者钩子。只输出简介正文，不要标题或解释。"
+        ),
+    },
+    "shelf_intro": {
+        "label": "上架简介（500 字）",
+        "kind": "text",
+        "max_chars": 520,
+        "system": (
+            "你是网文上架编辑。请用 380-480 字写一段上架简介。要求：开头给冲突、"
+            "中段铺设定、结尾给追读钩子。语言克制不堆砌形容词。只输出简介正文。"
+        ),
+    },
+    "promo_copy": {
+        "label": "宣传文案 × 3",
+        "kind": "json_list",
+        "system": (
+            "你是网文广告文案。请输出三条宣传文案：① 钩子型（适合首发广告）"
+            "② 人物型（适合书友社区）③ 爽点型（适合短视频）。"
+            "返回 JSON 数组，每个元素是一条不超过 120 字的中文文案。例：[\"...\", \"...\", \"...\"]。"
+            "只输出 JSON，不要其他解释。"
+        ),
+    },
+    "tags": {
+        "label": "标签",
+        "kind": "json_list",
+        "system": (
+            "你是网文上架编辑。请输出 12-18 个适合的标签词（每个 2-6 字，"
+            "覆盖题材、人设、爽点、调性）。返回 JSON 数组，例：[\"末日\",\"重生\"]。"
+            "只输出 JSON，不要其他解释。"
+        ),
+    },
+    "title_candidates": {
+        "label": "候选书名",
+        "kind": "json_titles",
+        "system": (
+            "你是网文上架编辑。请生成 10 个候选书名。返回 JSON 数组，每个元素是 "
+            "{\"title\": \"...\", \"subtitle\": \"...\", \"angle\": \"切入角度\", \"recommendation\": \"主推/备选/广告测试\"}。"
+            "标题之间应有差异（一个直接型、一个文学型、一个爽点型、一个反差型 …）。只输出 JSON。"
+        ),
+    },
+    "reader_promise": {
+        "label": "读者承诺",
+        "kind": "json_list",
+        "system": (
+            "你是网文上架编辑。请输出 5 条读者承诺，每条说明一个核心爽点或定位。"
+            "返回 JSON 数组，每个元素是一句不超过 50 字的中文。只输出 JSON。"
+        ),
+    },
+    "recommended_subtitle": {
+        "label": "推荐副标题",
+        "kind": "text",
+        "max_chars": 40,
+        "system": (
+            "你是网文编辑。给出一个 8-22 字的副标题，强化主推卖点。只输出副标题本身。"
+        ),
+    },
+}
+
+
+def _build_listing_regenerate_user_prompt(
+    *,
+    module: str,
+    project: Any,
+    listing: dict[str, Any],
+) -> str:
+    title = listing.get("primary_title") or getattr(project, "title", None) or "未命名作品"
+    genre = listing.get("primary_category") or getattr(project, "genre", None) or "—"
+    sub_genre = listing.get("secondary_category") or getattr(project, "sub_genre", None) or ""
+    logline = listing.get("logline") or ""
+    short_intro = listing.get("short_intro") or ""
+    tags = listing.get("tags") or []
+    characters = listing.get("main_characters") or []
+    char_summary = "、".join(
+        f"{c.get('name', '')}（{c.get('role') or '主要角色'}）"
+        for c in characters[:4]
+        if isinstance(c, dict) and c.get("name")
+    ) or "—"
+    return (
+        f"书名：《{title}》\n"
+        f"题材：{genre}{(' / ' + sub_genre) if sub_genre else ''}\n"
+        f"现有钩子：{logline}\n"
+        f"现有简介摘要：{(short_intro or '—')[:240]}\n"
+        f"主要标签：{('、'.join(tags[:8])) if tags else '—'}\n"
+        f"主要角色：{char_summary}\n\n"
+        f"请基于以上信息，重新生成「{_LISTING_REGENERATE_MODULES[module]['label']}」。"
+    )
+
+
+async def _regenerate_listing_module(
+    settings: AppSettings,
+    project_slug: str,
+    module: str,
+) -> dict[str, object]:
+    """Regenerate a single listing module via LLM, persist as override.
+
+    Strategy:
+      1. Build the *current* listing profile (so the prompt has full context).
+      2. Call ``complete_text`` (logical_role='editor') with module-specific
+         system + user prompts.
+      3. Parse the response per ``kind`` (text / json_list / json_titles).
+      4. Merge into ``output/<slug>/listing/book-listing-metadata.json`` so the
+         next ``build_book_listing_profile`` call uses the new value as an
+         override.  If the user never clicks regenerate, this file isn't
+         touched and the original generated content keeps showing.
+    """
+    if module not in _LISTING_REGENERATE_MODULES:
+        raise ValueError(f"unknown listing module: {module}")
+    spec = _LISTING_REGENERATE_MODULES[module]
+
+    # Helper to import only when called (keeps import graph minimal).
+    from bestseller.services.llm import (  # noqa: PLC0415
+        LLMCompletionRequest,
+        complete_text,
+    )
+
+    async with session_scope(settings) as session:
+        project = await get_project_by_slug(session, project_slug)
+        if project is None:
+            raise ValueError(f"project '{project_slug}' not found")
+        style_guide = await session.get(StyleGuideModel, project.id)
+        writing_profile = get_project_writing_profile(project, style_guide).model_dump(mode="json")
+        story_bible = await build_story_bible_overview(session, project_slug)
+        listing_before = build_book_listing_profile(
+            project=project,
+            writing_profile=writing_profile,
+            story_bible=story_bible,
+            output_base_dir=settings.output.base_dir,
+        )
+
+        user_prompt = _build_listing_regenerate_user_prompt(
+            module=module,
+            project=project,
+            listing=listing_before,
+        )
+        request = LLMCompletionRequest(
+            logical_role="editor",
+            system_prompt=str(spec["system"]),
+            user_prompt=user_prompt,
+            fallback_response="REGEN_FAILED",
+            prompt_template=f"listing.regenerate.{module}",
+            prompt_version="v1",
+            project_id=project.id,
+            metadata={"listing_module": module, "project_slug": project_slug},
+            max_tokens_override=900,
+        )
+        result = await complete_text(session, settings, request)
+
+    raw = (result.content or "").strip()
+    if not raw or raw == "REGEN_FAILED":
+        raise RuntimeError("LLM returned empty content")
+
+    # ── Parse per module kind ───────────────────────────────────────────
+    kind = str(spec["kind"])
+    parsed_value: object
+    if kind == "text":
+        text = raw.strip().strip("\"'")
+        max_chars = int(spec.get("max_chars") or 0)
+        if max_chars and len(text) > max_chars:
+            text = text[: max_chars - 1] + "…"
+        parsed_value = text
+    elif kind == "json_list":
+        parsed_value = _parse_json_list_response(raw)
+    elif kind == "json_titles":
+        parsed_value = _parse_json_titles_response(raw)
+    else:
+        raise RuntimeError(f"unknown module kind: {kind}")
+
+    # ── Persist as file override ────────────────────────────────────────
+    listing_dir = (
+        Path(settings.output.base_dir).resolve() / project_slug / "listing"
+    )
+    listing_dir.mkdir(parents=True, exist_ok=True)
+    metadata_path = listing_dir / "book-listing-metadata.json"
+    existing: dict[str, Any] = {}
+    if metadata_path.exists():
+        try:
+            existing = json.loads(metadata_path.read_text(encoding="utf-8")) or {}
+        except (OSError, ValueError):
+            existing = {}
+    if not isinstance(existing, dict):
+        existing = {}
+    existing[module] = parsed_value
+    history = existing.setdefault("_regenerate_history", {})
+    if isinstance(history, dict):
+        history[module] = {
+            "regenerated_at": datetime.now(tz=UTC).isoformat(),
+            "model": result.model_name,
+            "input_tokens": result.input_tokens,
+            "output_tokens": result.output_tokens,
+        }
+    metadata_path.write_text(
+        json.dumps(existing, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+    # ── Return fresh listing for the UI to swap in ──────────────────────
+    async with session_scope(settings) as session:
+        project = await get_project_by_slug(session, project_slug)
+        if project is None:
+            raise ValueError(f"project '{project_slug}' not found after regen")
+        style_guide = await session.get(StyleGuideModel, project.id)
+        writing_profile = get_project_writing_profile(project, style_guide).model_dump(mode="json")
+        story_bible = await build_story_bible_overview(session, project_slug)
+    listing_after = build_book_listing_profile(
+        project=project,
+        writing_profile=writing_profile,
+        story_bible=story_bible,
+        output_base_dir=settings.output.base_dir,
+    )
+    return {
+        "module": module,
+        "label": spec["label"],
+        "value": parsed_value,
+        "model": result.model_name,
+        "input_tokens": result.input_tokens,
+        "output_tokens": result.output_tokens,
+        "listing_profile": listing_after,
+    }
+
+
+def _parse_json_list_response(raw: str) -> list[str]:
+    text = _strip_code_fences(raw)
+    try:
+        data = json.loads(text)
+    except ValueError:
+        # Fall back to line-split if model returned plain lines.
+        lines = [_strip_bullet(line).strip() for line in raw.splitlines()]
+        return [line for line in lines if line][:20]
+    if isinstance(data, list):
+        return [str(item).strip() for item in data if item]
+    if isinstance(data, dict):
+        for key in ("items", "values", "tags", "list"):
+            if isinstance(data.get(key), list):
+                return [str(item).strip() for item in data[key] if item]
+    return []
+
+
+def _parse_json_titles_response(raw: str) -> list[dict[str, str]]:
+    text = _strip_code_fences(raw)
+    try:
+        data = json.loads(text)
+    except ValueError:
+        return []
+    if not isinstance(data, list):
+        return []
+    out: list[dict[str, str]] = []
+    for index, item in enumerate(data, start=1):
+        if not isinstance(item, dict):
+            continue
+        title = str(item.get("title") or "").strip()
+        if not title:
+            continue
+        out.append(
+            {
+                "id": int(item.get("id") or index),
+                "title": title,
+                "subtitle": str(item.get("subtitle") or "").strip(),
+                "angle": str(item.get("angle") or "").strip(),
+                "recommendation": str(item.get("recommendation") or "").strip(),
+            }
+        )
+    return out[:20]
+
+
+def _strip_code_fences(text: str) -> str:
+    s = text.strip()
+    if s.startswith("```"):
+        # Drop opening fence (with optional language) and closing fence.
+        s = s.split("\n", 1)[1] if "\n" in s else s
+        if s.endswith("```"):
+            s = s[: -3]
+    return s.strip()
+
+
+def _strip_bullet(line: str) -> str:
+    s = line.strip()
+    for prefix in ("- ", "• ", "* "):
+        if s.startswith(prefix):
+            return s[len(prefix):]
+    # Drop "1. " / "①" / etc.
+    if len(s) > 2 and s[0].isdigit() and s[1] in {".", "、", ")", "."}:
+        return s[2:].strip()
+    return s
+
+
 _BOOK_SCHEDULE_CHANNEL = "bestseller:book_schedule:events"
 
 
@@ -2732,12 +3486,6 @@ def _cancel_book_generation_schedule(
     return outcome
 
 
-def _read_ui_html() -> str:
-    if _UI_HTML_PATH.exists():
-        return _UI_HTML_PATH.read_text(encoding="utf-8")
-    return "<!DOCTYPE html><html><body><h1>BestSeller UI asset missing.</h1></body></html>"
-
-
 def _read_reader_html() -> str:
     if _READER_HTML_PATH.exists():
         return _READER_HTML_PATH.read_text(encoding="utf-8")
@@ -2754,6 +3502,12 @@ def _read_quickstart_html() -> str:
     if _QUICKSTART_HTML_PATH.exists():
         return _QUICKSTART_HTML_PATH.read_text(encoding="utf-8")
     return "<!DOCTYPE html><html><body><h1>Quickstart page not found.</h1></body></html>"
+
+
+def _read_library_html() -> str:
+    if _LIBRARY_HTML_PATH.exists():
+        return _LIBRARY_HTML_PATH.read_text(encoding="utf-8")
+    return "<!DOCTYPE html><html><body><h1>Library page not found.</h1></body></html>"
 
 
 def _load_if_novels_payload(settings: AppSettings) -> list[dict[str, object]]:
@@ -2828,6 +3582,14 @@ def _build_chapter_toc(output_dir: Path) -> list[dict[str, object]]:
             }
         )
     return entries
+
+
+def _reader_chapter_availability(production_state: str | None, word_count: int) -> str:
+    if (production_state or "").lower() == "ok" and word_count > 0:
+        return "available"
+    if word_count > 0:
+        return "repair_in_progress"
+    return "planned"
 
 
 def _load_project_chapter_index(
@@ -2917,7 +3679,8 @@ def _load_project_chapter_index(
                     word_count = int(ch.current_word_count or 0)
                     if word_count <= 0:
                         word_count = draft_word_count_by_chapter_id.get(ch.id, 0)
-                    if ch.id not in draft_word_count_by_chapter_id and word_count <= 0:
+                    has_draft = ch.id in draft_word_count_by_chapter_id
+                    if not has_draft and word_count <= 0:
                         # Planned but not written yet — skip.  The user
                         # only wants readable chapters in the reader TOC.
                         continue
@@ -2929,6 +3692,21 @@ def _load_project_chapter_index(
                             "volume_title": vol.title,
                         }
                         volume_map[ch.chapter_number] = vol_summary
+
+                    chapter_status = str(ch.status or "").lower()
+                    production_state = str(ch.production_state or "").lower()
+                    revision_count = int(ch.revision_count or 0)
+
+                    # The reader intentionally exposes only two user-facing
+                    # states: production_state=ok means "正式版"; any other
+                    # readable draft is still "修复中".  A chapter can remain
+                    # status=revision after a repair pass, so production_state
+                    # is the authoritative gate result here.
+                    availability = _reader_chapter_availability(
+                        production_state,
+                        word_count,
+                    )
+
                     chapters_out.append(
                         {
                             "number": ch.chapter_number,
@@ -2939,6 +3717,11 @@ def _load_project_chapter_index(
                             ),
                             "volume_number": vol_summary["volume_number"] if vol_summary else None,
                             "volume_title": vol_summary["volume_title"] if vol_summary else None,
+                            "status": chapter_status,
+                            "production_state": production_state,
+                            "revision_count": revision_count,
+                            "has_draft": has_draft,
+                            "availability": availability,
                         }
                     )
 
@@ -2992,6 +3775,7 @@ def _load_task_chapter_word_stats(
                     project.slug: {
                         "source": "db",
                         "project_slug": project.slug,
+                        "project_title": project.title,
                         "target_chapters": int(project.target_chapters or 0),
                         "target_word_count": int(project.target_word_count or 0),
                         "completed_chapters": 0,
@@ -3075,7 +3859,17 @@ def _attach_task_chapter_word_stats(
     for task in tasks:
         slug = str(task.get("project_slug") or "")
         if slug in stats_by_slug:
-            task["chapter_word_stats"] = stats_by_slug[slug]
+            stats = stats_by_slug[slug]
+            task["chapter_word_stats"] = stats
+            project_title = str(stats.get("project_title") or "").strip()
+            task_title = str(task.get("title") or "").strip()
+            if project_title and (
+                task.get("task_type") == "repair"
+                or not task_title
+                or task_title.lower().startswith("repair ")
+            ):
+                task["title"] = project_title
+                task["project_title"] = project_title
     return tasks
 
 
@@ -3235,7 +4029,6 @@ def serve_web_app(
         name="worker-progress-sync",
     ).start()
 
-    ui_html = _read_ui_html()
     reader_html = _read_reader_html()
     if_reader_html = _read_if_reader_html()
 
@@ -3304,11 +4097,18 @@ def serve_web_app(
             path = unquote(parsed.path)
             query = parse_qs(parsed.query)
             try:
-                if path == "/":
-                    self._send_text(ui_html, content_type="text/html; charset=utf-8")
-                    return
-                if path == "/quickstart":
+                if path == "/" or path == "/quickstart":
+                    # Legacy `/` (novel_studio) was retired — quickstart is the
+                    # only first-party UI now. Serve quickstart at both paths
+                    # so existing bookmarks and reader "返回工作台" links keep
+                    # working without redirect chains.
                     self._send_text(_read_quickstart_html(), content_type="text/html; charset=utf-8")
+                    return
+                if path == "/library":
+                    self._send_text(_read_library_html(), content_type="text/html; charset=utf-8")
+                    return
+                if path == "/api/library":
+                    self._send_json(asyncio.run(_load_library_payload(settings)))
                     return
                 if path == "/api/status":
                     self._send_json(
@@ -3603,6 +4403,18 @@ def serve_web_app(
                                 int(ch.get("estimated_read_minutes") or 0)
                                 or int(fs_entry.get("estimated_read_minutes") or 0)
                             )
+                            availability = str(ch.get("availability") or "available")
+                            # If the file is missing on disk and the chapter
+                            # isn't already flagged as repair/draft, surface it
+                            # as 'unavailable' so the reader doesn't link to a
+                            # 404.
+                            exported = n in fs_by_number
+                            if (
+                                not exported
+                                and availability == "available"
+                                and not bool(ch.get("has_draft"))
+                            ):
+                                availability = "drafting"
                             merged_toc.append(
                                 {
                                     "number": n,
@@ -3612,7 +4424,12 @@ def serve_web_app(
                                     "estimated_read_minutes": estimated_read_minutes,
                                     "volume_number": ch.get("volume_number"),
                                     "volume_title": ch.get("volume_title"),
-                                    "exported": n in fs_by_number,
+                                    "exported": exported,
+                                    "status": ch.get("status"),
+                                    "production_state": ch.get("production_state"),
+                                    "revision_count": ch.get("revision_count"),
+                                    "has_draft": ch.get("has_draft"),
+                                    "availability": availability,
                                 }
                             )
                         toc = merged_toc
@@ -3723,6 +4540,12 @@ def serve_web_app(
                     if missing:
                         raise ValueError(f"Missing required fields: {', '.join(missing)}")
                     validate_longform_scope(int(payload["target_words"]), int(payload["target_chapters"]), language=payload.get("language"))
+                    block_payload = asyncio.run(
+                        _load_project_autowrite_block_payload(settings, str(payload.get("slug") or "")),
+                    )
+                    if block_payload:
+                        self._send_json(block_payload, status=HTTPStatus.CONFLICT)
+                        return
                     task = task_manager.create_autowrite_task(payload)
                     self._send_json(task, status=HTTPStatus.ACCEPTED)
                     return
@@ -3733,10 +4556,53 @@ def serve_web_app(
                     task = task_manager.create_repair_task(payload)
                     self._send_json(task, status=HTTPStatus.ACCEPTED)
                     return
+                if (
+                    path.startswith("/api/projects/")
+                    and path.endswith("/listing/regenerate")
+                ):
+                    slug = path.removeprefix("/api/projects/").removesuffix(
+                        "/listing/regenerate"
+                    ).strip("/")
+                    if not slug:
+                        raise ValueError("Project slug is required.")
+                    payload = self._read_json_body()
+                    module = str(payload.get("module") or "").strip()
+                    if module not in _LISTING_REGENERATE_MODULES:
+                        raise ValueError(
+                            f"Unknown module '{module}'. "
+                            f"Allowed: {', '.join(_LISTING_REGENERATE_MODULES)}"
+                        )
+                    try:
+                        result = asyncio.run(
+                            _regenerate_listing_module(settings, slug, module)
+                        )
+                    except ValueError as exc:
+                        self._send_json(
+                            {"ok": False, "error": str(exc)},
+                            status=HTTPStatus.NOT_FOUND,
+                        )
+                        return
+                    except Exception as exc:  # noqa: BLE001
+                        logger.exception("Listing regenerate failed for %s/%s", slug, module)
+                        self._send_json(
+                            {"ok": False, "error": f"重新生成失败: {exc}"},
+                            status=HTTPStatus.INTERNAL_SERVER_ERROR,
+                        )
+                        return
+                    self._send_json({"ok": True, **result})
+                    return
                 if path == "/api/tasks/quickstart":
                     payload = self._read_json_body()
                     if not payload.get("genre_key"):
                         raise ValueError("Field 'genre_key' is required.")
+                    resume_slug = str(payload.get("project_slug") or "")
+                    if resume_slug:
+                        block_payload = asyncio.run(
+                            _load_project_autowrite_block_payload(settings, resume_slug),
+                        )
+                        if block_payload:
+                            self._send_json(block_payload, status=HTTPStatus.CONFLICT)
+                            return
                     task = task_manager.create_quickstart_task(payload)
                     self._send_json(task, status=HTTPStatus.ACCEPTED)
                     return
@@ -3810,10 +4676,23 @@ def serve_web_app(
                     saved_payload = dict(saved_payload)
                     saved_payload["_run_conception"] = False
                     slug = str(saved_payload.get("slug") or old.get("project_slug") or "")
+                    block_payload = asyncio.run(
+                        _load_project_autowrite_block_payload(settings, slug),
+                    )
+                    if block_payload:
+                        task_manager.mark_task_blocked_by_structural_repair(
+                            task_id,
+                            str(block_payload.get("error") or ""),
+                        )
+                        self._send_json(block_payload, status=HTTPStatus.CONFLICT)
+                        return
                     heal_owned = bool(
                         slug
                         and settings.redis.url
-                        and slug in _fetch_heal_owned_slugs(settings.redis.url)
+                        and slug in _fetch_heal_owned_slugs_by_kind(
+                            settings.redis.url,
+                            "autowrite",
+                        )
                     )
                     resumed = task_manager.resume_autowrite_task(
                         task_id,

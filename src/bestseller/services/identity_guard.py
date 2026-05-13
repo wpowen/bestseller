@@ -49,6 +49,7 @@ class CharacterIdentity:
     physical_markers: tuple[str, ...] = ()
     power_baseline: str = ""
     is_alive: bool = True
+    death_chapter_number: int | None = None
     role: str = ""                    # protagonist / antagonist / supporting
 
 
@@ -90,6 +91,8 @@ async def load_identity_registry(
         cast_entry = meta.get("cast_entry", {})
         if isinstance(cast_entry, str):
             cast_entry = {}
+        if not _identity_row_should_enter_registry(char, meta, cast_entry):
+            continue
 
         gender = _extract_gender(char, cast_entry, meta)
         default_pronoun_zh, default_pronoun_en = _gender_to_pronouns(gender)
@@ -137,6 +140,9 @@ async def load_identity_registry(
                 physical_markers=tuple(physical_markers_raw),
                 power_baseline=str(power_baseline),
                 is_alive=_character_is_alive(char, meta),
+                death_chapter_number=_coerce_optional_int(
+                    getattr(char, "death_chapter_number", None)
+                ),
                 role=char.role or "",
             )
         )
@@ -156,6 +162,7 @@ async def load_identity_registry(
             gender = _normalize_gender_label(item.get("gender"))
             default_pronoun_zh, default_pronoun_en = _gender_to_pronouns(gender)
             alive_status = str(item.get("alive_status") or item.get("status") or "").lower()
+            death_chapter_number = _coerce_optional_int(item.get("death_chapter_number"))
             registry = _upsert_manifest_identity(
                 registry,
                 CharacterIdentity(
@@ -165,7 +172,8 @@ async def load_identity_registry(
                     pronoun_set_zh=str(item.get("pronoun_set_zh") or default_pronoun_zh),
                     pronoun_set_en=str(item.get("pronoun_set_en") or default_pronoun_en),
                     role=str(item.get("role") or ""),
-                    is_alive=alive_status not in {"dead", "deceased", "死亡", "已死亡"},
+                    is_alive=_manifest_identity_is_alive(alive_status, death_chapter_number),
+                    death_chapter_number=death_chapter_number,
                 )
             )
     return registry
@@ -224,6 +232,11 @@ def _upsert_manifest_identity(
         physical_markers=existing.physical_markers,
         power_baseline=existing.power_baseline,
         is_alive=manifest_identity.is_alive,
+        death_chapter_number=(
+            manifest_identity.death_chapter_number
+            if manifest_identity.death_chapter_number is not None
+            else existing.death_chapter_number
+        ),
         role=manifest_identity.role or existing.role,
     )
     return [*registry[:match_index], merged, *registry[match_index + 1:]]
@@ -318,10 +331,78 @@ def _normalize_gender_label(value: Any) -> str:
     return "unknown"
 
 
-def _character_is_alive(char: CharacterModel, metadata: dict[str, Any]) -> bool:
+def _identity_row_should_enter_registry(
+    char: Any,
+    metadata: dict[str, Any],
+    cast_entry: dict[str, Any],
+) -> bool:
+    name = str(getattr(char, "name", "") or "").strip()
+    if not name:
+        return False
+    if _identity_name_is_relational_placeholder(name):
+        return False
+    if not bool(metadata.get("placeholder")):
+        return True
+    has_locked_identity_data = any(
+        _flatten_identity_value(source.get(key))
+        for source in (metadata, cast_entry)
+        for key in ("gender", "pronoun_set_zh", "pronoun_set_en")
+    )
+    return has_locked_identity_data
+
+
+def _flatten_identity_value(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value.strip()
+    return str(value).strip()
+
+
+def _identity_name_is_relational_placeholder(name: str) -> bool:
+    lowered = re.sub(r"\s+", " ", name.strip().lower())
+    if lowered in {
+        "father",
+        "mother",
+        "his father",
+        "his mother",
+        "her father",
+        "her mother",
+        "their father",
+        "their mother",
+    }:
+        return True
+    return bool(
+        re.match(
+            r"^(?:his|her|their)\s+(?:father|mother|brother|sister|son|daughter)\b",
+            lowered,
+        )
+    )
+
+
+def _coerce_optional_int(value: Any) -> int | None:
+    if value is None:
+        return None
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        return None
+    return number if number > 0 else None
+
+
+def _manifest_identity_is_alive(
+    alive_status: str,
+    death_chapter_number: int | None,
+) -> bool:
+    if alive_status in {"dead", "deceased", "死亡", "已死亡"}:
+        return death_chapter_number is None
+    return True
+
+
+def _character_is_alive(char: Any, metadata: dict[str, Any]) -> bool:
     alive_status = str(getattr(char, "alive_status", "") or "").strip().lower()
     if alive_status in {"dead", "deceased", "死亡", "已死亡"}:
-        return False
+        return _coerce_optional_int(getattr(char, "death_chapter_number", None)) is None
     if alive_status in {"alive", "missing", "unknown"}:
         return True
     if isinstance(metadata, dict) and "is_alive" in metadata:
@@ -350,6 +431,7 @@ def _character_identity_text(
 ) -> str:
     parts: list[str] = []
     for value in (
+        getattr(char, "name", None),
         getattr(char, "role", None),
         getattr(char, "background", None),
         getattr(char, "goal", None),
@@ -387,6 +469,10 @@ def _infer_gender_from_text(text: str) -> str:
     if re.search(r"\b(she|her|woman|girl|female|daughter|sister|mother|wife|fiancee)\b", lowered):
         return "female"
     if re.search(r"\b(he|him|man|boy|male|son|brother|father|husband|fiance)\b", lowered):
+        return "male"
+    if re.search(r"\b(aisha|alice|elena|emily|maya|mira|nora|sophie|zoe)\b", lowered):
+        return "female"
+    if re.search(r"\b(cole|elias|garrett|kade|kane|marcus|silas|victor)\b", lowered):
         return "male"
     female_hits = ("女主", "女性", "少女", "女子", "姑娘", "师姐", "师妹", "姐姐", "妹妹", "母亲", "妻子", "未婚妻")
     male_hits = ("男主", "男性", "少年", "男子", "师兄", "师弟", "哥哥", "弟弟", "父亲", "丈夫", "未婚夫")
@@ -494,6 +580,7 @@ def validate_scene_text_identity(
     *,
     language: str = "zh-CN",
     participant_names: list[str] | None = None,
+    chapter_number: int | None = None,
 ) -> list[IdentityViolation]:
     """Check generated scene text for identity violations.
 
@@ -554,24 +641,37 @@ def validate_scene_text_identity(
                 )
 
         # Check dead character appearing alive
-        if not entry.is_alive:
+        if _identity_is_dead_for_validation(entry, chapter_number=chapter_number):
             for name in all_names:
-                if name in text:
-                    # Simple heuristic: if the character speaks or acts, they might be alive
-                    speaking_pattern = f"{name}[说道叫喊笑哭回答]|{name}\\s*[：:]"
-                    if re.search(speaking_pattern, text):
-                        violations.append(
-                            IdentityViolation(
-                                character_name=entry.name,
-                                violation_type="dead_alive",
-                                expected="dead",
-                                found="appears to speak or act as if alive",
-                                severity="critical",
-                                evidence=f"{name} found speaking/acting in text",
-                            )
+                evidence = _dead_alive_evidence(
+                    text,
+                    name,
+                    is_zh=is_zh,
+                    competing_names=other_names,
+                )
+                if evidence:
+                    violations.append(
+                        IdentityViolation(
+                            character_name=entry.name,
+                            violation_type="dead_alive",
+                            expected="dead",
+                            found="appears to speak or act as if alive",
+                            severity="critical",
+                            evidence=evidence,
                         )
+                    )
 
     return violations
+
+
+def _identity_is_dead_for_validation(
+    entry: CharacterIdentity,
+    *,
+    chapter_number: int | None,
+) -> bool:
+    if entry.death_chapter_number is not None and chapter_number is not None:
+        return int(entry.death_chapter_number) <= int(chapter_number)
+    return not entry.is_alive
 
 
 def _identity_names(entry: CharacterIdentity) -> list[str]:
@@ -625,6 +725,8 @@ def _check_zh_pronoun_consistency(
         end = min(len(text), match.end() + 60)
         context = text[start:end]
         right_context = text[match.end():end]
+        if right_context.lstrip().startswith(("：", ":")):
+            continue
 
         if entry.gender == "male":
             # Male character should not have 她/她的 nearby
@@ -645,6 +747,8 @@ def _check_zh_pronoun_consistency(
                 continue
             before_wrong = right_context[:wrong_pos]
             if any(other in before_wrong for other in competing_names):
+                continue
+            if _zh_wrong_pronoun_has_intervening_subject_anchor(before_wrong):
                 continue
             if _zh_context_already_shifted_to_gender(before_wrong, found_gender=found_gender):
                 continue
@@ -674,6 +778,23 @@ def _check_zh_pronoun_consistency(
 
 _ZH_QUOTED_DIALOGUE_RE = re.compile(r"[“\"「『][^”\"」』]{0,500}[”\"」』]")
 _ZH_STRONG_BOUNDARY_RE = re.compile(r"[。！？；\n]")
+_ZH_DEAD_ALIVE_SPEECH_VERBS = (
+    "说道",
+    "回答",
+    "说",
+    "道",
+    "叫",
+    "喊",
+    "笑",
+    "哭",
+)
+_ZH_DEAD_ALIVE_REFERENTIAL_SUFFIXES = (
+    "过",
+    "起",
+    "明",
+    "法",
+    "得",
+)
 _ZH_PRONOUN_OBJECT_PREFIXES = (
     "从",
     "向",
@@ -698,6 +819,11 @@ _ZH_PRONOUN_OBJECT_PREFIXES = (
     "塞给",
     "交给",
     "松开",
+    "挣开",
+    "挣脱",
+    "甩开",
+    "推开",
+    "拨开",
     "握住",
     "攥住",
     "碰到",
@@ -721,6 +847,10 @@ _ZH_PRONOUN_OBJECT_PREFIXES = (
     "知道",
     "以为",
     "认得",
+    "发现",
+    "看见",
+    "注意到",
+    "察觉到",
     "听见",
     "逼近",
     "压向",
@@ -822,6 +952,51 @@ def _strip_zh_quoted_dialogue(text: str) -> str:
     return _ZH_QUOTED_DIALOGUE_RE.sub(" ", text)
 
 
+def _dead_alive_evidence(
+    text: str,
+    name: str,
+    *,
+    is_zh: bool,
+    competing_names: list[str],
+) -> str:
+    """Return evidence when a deceased character is staged as present-tense.
+
+    The check is intentionally high precision. Chinese narrative often uses
+    memory forms such as "母亲说过：..." to quote a deceased character's prior
+    words; those references should not block the scene as a resurrection.
+    """
+
+    if not text or not name or name not in text:
+        return ""
+
+    if is_zh:
+        scan_text = _strip_zh_quoted_dialogue(text)
+        for match in re.finditer(re.escape(name), scan_text):
+            if _zh_name_match_embedded_in_longer_name(
+                scan_text,
+                name,
+                match.start(),
+                competing_names,
+            ):
+                continue
+            right = scan_text[match.end(): match.end() + 16].lstrip()
+            if right.startswith(("：", ":")):
+                return f"{name} used as a present-tense speaker label"
+            for verb in _ZH_DEAD_ALIVE_SPEECH_VERBS:
+                if not right.startswith(verb):
+                    continue
+                suffix = right[len(verb): len(verb) + 1]
+                if suffix in _ZH_DEAD_ALIVE_REFERENTIAL_SUFFIXES:
+                    continue
+                return f"{name}{verb} found in present-tense action context"
+        return ""
+
+    speaking_pattern = rf"{re.escape(name)}\s*(?:said|says|shouted|cried|laughed|answered|:)"
+    if re.search(speaking_pattern, text, flags=re.IGNORECASE):
+        return f"{name} found speaking/acting in text"
+    return ""
+
+
 def _find_zh_pronoun(text: str, pronoun: str) -> int:
     if pronoun in {"他", "她"}:
         match = re.search(re.escape(pronoun) + r"(?!们|的)", text)
@@ -854,6 +1029,14 @@ def _zh_name_mention_is_likely_object(left_context: str) -> bool:
 def _zh_context_already_shifted_to_gender(before_wrong: str, *, found_gender: str) -> bool:
     markers = _ZH_FEMALE_CONTEXT_MARKERS if found_gender == "female" else _ZH_MALE_CONTEXT_MARKERS
     return any(marker in before_wrong for marker in markers)
+
+
+def _zh_wrong_pronoun_has_intervening_subject_anchor(before_wrong: str) -> bool:
+    stripped = before_wrong.rstrip()
+    if stripped.endswith(("：", ":")):
+        return True
+    sentence_tail = re.split(r"[。！？；;\n]", stripped)[-1]
+    return "对方" in sentence_tail
 
 
 def _zh_wrong_pronoun_is_likely_subject(
@@ -929,15 +1112,33 @@ def _check_en_pronoun_consistency(
     # Find contexts after character name (window of 200 chars for English)
     for match in re.finditer(re.escape(name), text, re.IGNORECASE):
         start = match.start()
+        if _en_position_inside_dialogue(text, start):
+            continue
+        if _en_name_mention_is_likely_object(text[max(0, start - 80):start]):
+            continue
         end = min(len(text), match.end() + 200)
         context = text[start:end]
         right_context = text[match.end():end]
+        if _en_name_mention_is_vocative(right_context):
+            continue
+        if _en_name_mention_is_organization_modifier(right_context):
+            continue
 
         wrong_match = re.search(wrong_pattern, right_context, re.IGNORECASE)
         if wrong_match:
             wrong = wrong_match.group(0)
-            before_wrong = right_context[:wrong_match.start()].lower()
+            before_wrong_raw = right_context[:wrong_match.start()]
+            before_wrong = before_wrong_raw.lower()
             if any(other.lower() in before_wrong for other in competing_names):
+                continue
+            if _en_wrong_pronoun_has_intervening_gender_anchor(
+                before_wrong_raw,
+                found_gender=found_gender,
+            ):
+                continue
+            if _en_wrong_pronoun_has_intervening_proper_name(before_wrong_raw):
+                continue
+            if _en_wrong_pronoun_is_likely_object(before_wrong_raw, wrong):
                 continue
             if has_competing_found_gender and _en_wrong_pronoun_is_object_or_possessive(wrong):
                 continue
@@ -988,6 +1189,39 @@ def _en_name_mention_is_possessive_form(before_wrong: str) -> bool:
     return before_wrong.lstrip().startswith("'s")
 
 
+def _en_position_inside_dialogue(text: str, position: int) -> bool:
+    paragraph_start = max(text.rfind("\n", 0, position), 0)
+    prefix = text[paragraph_start:position]
+    return prefix.rfind("“") > prefix.rfind("”") or prefix.count('"') % 2 == 1
+
+
+def _en_name_mention_is_likely_object(left_context: str) -> bool:
+    prefix = left_context.rstrip().lower()
+    return re.search(
+        r"\b(?:at|toward|towards|to|for|from|with|beside|behind|near|past|around|"
+        r"against|onto|into|through|over|under|before|after|by)\s*$",
+        prefix,
+    ) is not None
+
+
+def _en_name_mention_is_vocative(right_context: str) -> bool:
+    return re.match(
+        r"^\s*(?:\*|,|—|-|:)?\s*(?:,|—|-|:)?\s*"
+        r"(?:she|he|they)\s+(?:said|asked|repeated|whispered|snapped|pressed|urged)\b",
+        right_context,
+        flags=re.IGNORECASE,
+    ) is not None
+
+
+def _en_name_mention_is_organization_modifier(right_context: str) -> bool:
+    return re.match(
+        r"^\s+(?:[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?\s+)?"
+        r"(?:Network|Protocol|Database|Archive|Foundation|Institute|Program|Project|"
+        r"Facility|Laboratory|Lab|System|Records?)\b",
+        right_context,
+    ) is not None
+
+
 def _en_wrong_pronoun_is_object_or_possessive(pronoun: str) -> bool:
     return pronoun.lower() in {"her", "hers", "herself", "him", "his", "himself"}
 
@@ -1016,6 +1250,75 @@ _EN_GENDERED_NOUNS = {
         "lord",
     ),
 }
+
+
+def _en_wrong_pronoun_has_intervening_gender_anchor(
+    before_wrong: str,
+    *,
+    found_gender: str,
+) -> bool:
+    """Skip when a later same-gender noun owns the wrong-gender pronoun.
+
+    Example: "Kade ... the woman beneath the colonnade ... her". The "her"
+    belongs to the woman, not to Kade.
+    """
+
+    nouns = _EN_GENDERED_NOUNS.get(found_gender, ())
+    if not nouns:
+        return False
+    noun_group = "|".join(re.escape(noun) for noun in nouns)
+    return re.search(
+        rf"\b(?:the|a|an|that|this|another|other|second|first|young|old|"
+        rf"older|younger|wounded|armed|silent|small|tall|short|thin)?\s*"
+        rf"(?:{noun_group})\b",
+        before_wrong,
+        flags=re.IGNORECASE,
+    ) is not None
+
+
+def _en_wrong_pronoun_has_intervening_proper_name(before_wrong: str) -> bool:
+    name_words = r"(?!The\b|A\b|An\b|And\b|But\b|Or\b|If\b|When\b|Then\b|There\b|This\b|That\b|Her\b|His\b|Their\b|It\b|I\b)[A-Z][a-z]+"
+    if re.search(rf"\b{name_words}\s+{name_words}\b", before_wrong):
+        return True
+    if re.search(rf"\b{name_words}'s\b", before_wrong):
+        return True
+    return re.search(
+        rf"\b{name_words}(?:\s+{name_words})?(?:'s)?\s+"
+        r"(?:said|asked|repeated|whispered|grabbed|stepped|stood|looked|turned|"
+        r"nodded|smiled|shook|shot|reached|started|stopped|pulled|took|kept|found|held|"
+        r"let|made|built|spent|was|had|did|could|would|should|can|will)\b",
+        before_wrong,
+    ) is not None
+
+
+def _en_wrong_pronoun_is_likely_object(before_wrong: str, pronoun: str) -> bool:
+    pronoun = pronoun.lower()
+    prefix = before_wrong.rstrip().lower()
+    if re.search(r"[\"”]\s*$", before_wrong.rstrip()):
+        return True
+    if pronoun in {"she", "he"} and not re.search(r"[.!?;\n]", before_wrong):
+        if re.search(
+            r"\b(?:the|a|an|this|that|his|her|their|its|my|your|our)\s+"
+            r"[a-z][a-z-]*(?:\s+[a-z][a-z-]*){0,3}\s*$",
+            prefix,
+        ):
+            return True
+        if re.search(r"\b(?:something|anything|nothing|everything|someone|anyone|everyone)\s*$", prefix):
+            return True
+    if pronoun in {"she", "he"} and re.search(
+        r"\b(?:until|as|while|when|that|because|before|after)\s*$",
+        prefix,
+    ):
+        return True
+    if pronoun not in {"her", "him", "herself", "himself"}:
+        return False
+    return re.search(
+        r"\b(?:at|toward|towards|to|for|from|with|beside|behind|near|past|around|"
+        r"against|onto|into|through|over|under|before|after|by|of|along|across|"
+        r"looked at|stared at|glanced at|turned to|reached for|pulled|grabbed|"
+        r"watched|saw|faced|helped|followed|stopped|protected)\s*$",
+        prefix,
+    ) is not None
 
 
 def _en_name_is_prepositional_modifier_for_gender(

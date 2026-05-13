@@ -1,0 +1,1051 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BestSeller 书稿库 · Imprint Library</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,500;0,8..60,600;0,8..60,700;0,8..60,800;1,8..60,400;1,8..60,500&family=Noto+Serif+SC:wght@300;400;500;600;700;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  * { margin: 0; padding: 0; }
+
+  :root {
+    --bg: #f3ede0;
+    --bg-2: #ebe3cf;
+    --paper: #faf6ec;
+    --surface: #faf6ec;
+    --surface-soft: #f7f1e2;
+    --surface-tint: #f5e3df;
+    --text: #2a2520;
+    --text-dim: #6f665a;
+    --text-faint: #9b8f7e;
+    --text-bright: #1a1612;
+    --border: #cdc3ad;
+    --border-strong: #a99c86;
+    --hair: #ddd4c0;
+    --blue: #8c2a1c;
+    --blue-dark: #5e1c12;
+    --blue-soft: #ead2cc;
+    --success: #3a6e3a;
+    --success-soft: #dde8d6;
+    --warning: #a06a14;
+    --warning-soft: #f3e6cb;
+    --danger: #8c2a1c;
+    --danger-soft: #f0d4cf;
+    --ink: #1a1612;
+    --display: "Source Serif 4", "Noto Serif SC", Georgia, serif;
+    --serif: "Source Serif 4", "Noto Serif SC", Georgia, serif;
+    --sans: "Source Serif 4", "Noto Serif SC", Georgia, "Times New Roman", serif;
+    --mono: "JetBrains Mono", "IBM Plex Mono", ui-monospace, Menlo, monospace;
+  }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    min-height: 100vh;
+    background:
+      linear-gradient(180deg, rgba(250,246,236,0.84), rgba(243,237,224,0.96)),
+      linear-gradient(90deg, rgba(42,37,32,0.035) 1px, transparent 1px),
+      linear-gradient(0deg, rgba(42,37,32,0.03) 1px, transparent 1px),
+      var(--bg);
+    background-size: auto, 34px 34px, 34px 34px, auto;
+    color: var(--text);
+    font-family: var(--sans);
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  a { color: inherit; text-decoration: none; }
+
+  /* ── Masthead — mirrors quickstart for visual consistency ── */
+  .header {
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    background: rgba(243, 237, 224, 0.96);
+    border-bottom: 1px solid var(--border);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+  }
+
+  .header-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 24px;
+    padding: 14px 40px 12px;
+  }
+
+  .header-brand {
+    display: flex;
+    align-items: baseline;
+    gap: 18px;
+    min-width: 0;
+  }
+
+  .header h1 {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    color: var(--text-bright);
+    font-family: var(--display);
+    font-size: 28px;
+    font-weight: 700;
+    line-height: 1;
+    letter-spacing: -0.5px;
+    white-space: nowrap;
+  }
+
+  .header h1 .dot { color: var(--blue); font-weight: 700; }
+
+  .header-eyebrow {
+    color: var(--text-dim);
+    font-family: var(--display);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+
+  .header-meta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--text-dim);
+    font-family: var(--mono);
+    font-size: 11px;
+    white-space: nowrap;
+  }
+
+  .header-meta .sep { color: var(--text-faint); }
+
+  .header-tools {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .header-search {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 240px;
+    padding: 6px 10px;
+    border: 1px solid var(--border);
+    background: var(--paper);
+    color: var(--text-dim);
+    font-family: var(--mono);
+    font-size: 11px;
+    cursor: text;
+  }
+
+  .header-search input {
+    flex: 1;
+    border: 0;
+    background: transparent;
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 11px;
+    outline: none;
+    min-width: 0;
+  }
+
+  .header-search input::placeholder { color: var(--text-faint); }
+
+  .kbd {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 16px;
+    padding: 2px 5px;
+    border: 1px solid var(--hair);
+    border-bottom-width: 2px;
+    border-radius: 3px;
+    background: var(--paper);
+    color: var(--text-dim);
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 600;
+    line-height: 1;
+  }
+
+  .header-cta {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 14px;
+    border: 1px solid var(--blue);
+    background: var(--blue);
+    color: var(--paper);
+    cursor: pointer;
+    font-family: var(--display);
+    font-size: 13px;
+    font-weight: 600;
+    text-decoration: none;
+  }
+
+  .header-cta:hover { background: var(--blue-dark); }
+
+  .header-divider {
+    width: 1px;
+    height: 22px;
+    background: var(--border);
+  }
+
+  .header-editor {
+    color: var(--text-dim);
+    font-family: var(--mono);
+    font-size: 11px;
+    white-space: nowrap;
+  }
+
+  .header-nav {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    padding: 0 40px;
+    border-top: 1px solid var(--hair);
+  }
+
+  .header-nav a {
+    min-height: 42px;
+    padding: 0 18px;
+    border: 0;
+    border-bottom: 2px solid transparent;
+    background: transparent;
+    color: var(--text-dim);
+    cursor: pointer;
+    font-family: var(--display);
+    font-size: 13px;
+    font-weight: 500;
+    line-height: 1;
+    letter-spacing: 0.01em;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    transition: color .14s ease;
+  }
+
+  .header-nav a:hover { color: var(--text-bright); }
+
+  .header-nav .active {
+    border-color: var(--blue);
+    color: var(--text-bright);
+    font-weight: 700;
+  }
+
+  .nav-count {
+    color: var(--text-faint);
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 600;
+  }
+
+  .header-nav .active .nav-count { color: var(--blue); }
+
+  /* ── Page layout ── */
+  .container {
+    width: min(1280px, calc(100% - 64px));
+    margin: 0 auto;
+    padding: 24px 0 96px;
+  }
+
+  .page-head {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 18px;
+    margin-bottom: 18px;
+  }
+
+  .page-head h2 {
+    font-family: var(--display);
+    font-size: 36px;
+    font-weight: 700;
+    line-height: 1.05;
+    letter-spacing: -0.8px;
+    color: var(--text-bright);
+  }
+
+  .page-head .kicker {
+    color: var(--text-dim);
+    font-family: var(--display);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+
+  .page-head p {
+    margin-top: 6px;
+    color: var(--text-dim);
+    font-family: var(--serif);
+    font-size: 14px;
+    font-style: italic;
+  }
+
+  .lib-stats {
+    display: flex;
+    gap: 22px;
+    align-items: flex-end;
+  }
+
+  .lib-stat {
+    text-align: right;
+  }
+
+  .lib-stat .label {
+    color: var(--text-dim);
+    font-family: var(--display);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+  }
+
+  .lib-stat .value {
+    color: var(--text-bright);
+    font-family: var(--display);
+    font-size: 26px;
+    font-weight: 700;
+    line-height: 1;
+    letter-spacing: -0.4px;
+    margin-top: 2px;
+  }
+
+  .lib-filterbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    margin: 0 0 18px;
+    padding: 0 0 10px;
+    border-bottom: 1px solid var(--border);
+    flex-wrap: wrap;
+  }
+
+  .lib-filter-tabs {
+    display: flex;
+    border: 1px solid var(--border);
+    background: var(--paper);
+  }
+
+  .lib-filter {
+    padding: 6px 14px;
+    border: 0;
+    border-right: 1px solid var(--border);
+    background: var(--paper);
+    color: var(--text-dim);
+    cursor: pointer;
+    font-family: var(--display);
+    font-size: 13px;
+    font-weight: 500;
+    line-height: 1;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 32px;
+  }
+
+  .lib-filter:last-child { border-right: 0; }
+
+  .lib-filter:hover { color: var(--text-bright); }
+
+  .lib-filter.active {
+    background: var(--ink);
+    color: var(--paper);
+    font-weight: 600;
+  }
+
+  .lib-filter .count {
+    color: var(--text-faint);
+    font-family: var(--mono);
+    font-size: 11px;
+  }
+
+  .lib-filter.active .count { color: var(--blue-soft); }
+
+  .lib-search {
+    flex: 1;
+    max-width: 320px;
+    position: relative;
+  }
+
+  .lib-search input {
+    width: 100%;
+    min-height: 36px;
+    padding: 8px 12px 8px 36px;
+    border: 1px solid var(--border);
+    background: var(--paper);
+    color: var(--text);
+    font-family: var(--serif);
+    font-size: 13px;
+    outline: none;
+    transition: border-color .14s ease;
+  }
+
+  .lib-search input:focus { border-color: var(--blue); }
+
+  .lib-search::before {
+    content: "⌕";
+    position: absolute;
+    left: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--text-faint);
+    font-size: 14px;
+  }
+
+  /* ── Library grid ── */
+  .lib-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+    gap: 14px;
+  }
+
+  .book-card {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    border: 1px solid var(--hair);
+    background: var(--paper);
+    transition: border-color .14s ease, box-shadow .14s ease, transform .14s ease;
+    overflow: hidden;
+    cursor: pointer;
+  }
+
+  .book-card:hover {
+    border-color: var(--blue);
+    box-shadow: 0 8px 24px rgba(47, 36, 24, 0.08);
+    transform: translateY(-2px);
+  }
+
+  .book-card.status-completed { border-left: 3px solid var(--success); }
+  .book-card.status-in_progress,
+  .book-card.status-running,
+  .book-card.status-queued { border-left: 3px solid var(--blue); }
+  .book-card.status-draft { border-left: 3px solid var(--text-faint); }
+  .book-card.status-failed { border-left: 3px solid var(--danger); }
+
+  .book-cover {
+    position: relative;
+    height: 92px;
+    background:
+      linear-gradient(135deg, var(--bg-2), var(--surface-tint));
+    border-bottom: 1px solid var(--hair);
+    overflow: hidden;
+  }
+
+  .book-cover::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background-image:
+      repeating-linear-gradient(
+        0deg,
+        transparent,
+        transparent 9px,
+        rgba(42, 37, 32, 0.05) 9px,
+        rgba(42, 37, 32, 0.05) 10px
+      );
+  }
+
+  .book-cover-mark {
+    position: absolute;
+    top: 14px;
+    left: 16px;
+    color: var(--blue);
+    font-family: var(--display);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+  }
+
+  .book-cover-title {
+    position: absolute;
+    bottom: 12px;
+    left: 16px;
+    right: 90px;
+    color: var(--text-bright);
+    font-family: var(--display);
+    font-size: 22px;
+    font-weight: 700;
+    line-height: 1.15;
+    letter-spacing: -0.4px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    word-break: break-word;
+  }
+
+  .book-cover-status {
+    position: absolute;
+    top: 12px;
+    right: 14px;
+  }
+
+  .status-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 3px 9px;
+    border: 1px solid currentColor;
+    font-family: var(--display);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+  }
+
+  .status-badge::before {
+    content: "";
+    width: 5px;
+    height: 5px;
+    border-radius: 3px;
+    background: currentColor;
+  }
+
+  .status-badge.completed { color: var(--success); background: var(--success-soft); }
+  .status-badge.in_progress,
+  .status-badge.running { color: var(--blue); background: var(--blue-soft); }
+  .status-badge.queued { color: var(--warning); background: var(--warning-soft); }
+  .status-badge.draft { color: var(--text-dim); background: var(--bg-2); }
+  .status-badge.failed { color: var(--danger); background: var(--danger-soft); }
+
+  .book-body {
+    padding: 14px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    flex: 1;
+  }
+
+  .book-tagline {
+    color: var(--text-dim);
+    font-family: var(--serif);
+    font-size: 12.5px;
+    font-style: italic;
+    line-height: 1.5;
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+  }
+
+  .book-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 12px;
+    color: var(--text-dim);
+    font-family: var(--mono);
+    font-size: 10.5px;
+  }
+
+  .book-meta strong {
+    color: var(--text-bright);
+    font-family: var(--display);
+    font-weight: 600;
+  }
+
+  .book-progress {
+    margin-top: 4px;
+  }
+
+  .book-progress-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 4px;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text-dim);
+  }
+
+  .book-progress-row .pct {
+    color: var(--blue-dark);
+    font-family: var(--display);
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: -0.3px;
+  }
+
+  .book-card.status-completed .book-progress-row .pct {
+    color: var(--success);
+  }
+
+  .book-progress-bar {
+    height: 4px;
+    background: var(--bg-2);
+    overflow: hidden;
+    position: relative;
+  }
+
+  .book-progress-bar .fill {
+    position: absolute;
+    inset: 0;
+    right: auto;
+    background: var(--blue);
+  }
+
+  .book-card.status-completed .book-progress-bar .fill { background: var(--success); }
+  .book-card.status-failed .book-progress-bar .fill { background: var(--danger); }
+
+  .book-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+
+  .book-tag {
+    padding: 2px 7px;
+    background: var(--surface-tint);
+    color: var(--blue-dark);
+    font-family: var(--serif);
+    font-size: 11px;
+  }
+
+  .book-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 10px 16px;
+    border-top: 1px solid var(--hair);
+    background: var(--surface-soft);
+  }
+
+  .book-action {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 5px 10px;
+    border: 1px solid var(--border);
+    background: var(--paper);
+    color: var(--text);
+    font-family: var(--display);
+    font-size: 12px;
+    font-weight: 500;
+    line-height: 1;
+    cursor: pointer;
+    text-decoration: none;
+    transition: border-color .14s ease, color .14s ease, background .14s ease;
+  }
+
+  .book-action:hover {
+    border-color: var(--blue);
+    color: var(--blue-dark);
+    background: var(--blue-soft);
+  }
+
+  .book-action.primary {
+    border-color: var(--blue);
+    background: var(--blue);
+    color: var(--paper);
+  }
+
+  .book-action.primary:hover {
+    background: var(--blue-dark);
+  }
+
+  .lib-empty {
+    grid-column: 1 / -1;
+    display: grid;
+    place-items: center;
+    min-height: 280px;
+    padding: 48px 24px;
+    border: 1px dashed var(--border-strong);
+    background: rgba(255, 255, 255, .72);
+    text-align: center;
+    color: var(--text-dim);
+  }
+
+  .lib-empty h3 {
+    margin-bottom: 8px;
+    color: var(--text-bright);
+    font-family: var(--display);
+    font-size: 22px;
+    font-weight: 700;
+  }
+
+  .lib-empty p {
+    margin-bottom: 18px;
+    font-family: var(--serif);
+    font-style: italic;
+  }
+
+  .lib-empty .cta {
+    display: inline-flex;
+    padding: 10px 20px;
+    border: 1px solid var(--blue);
+    background: var(--blue);
+    color: var(--paper);
+    font-family: var(--display);
+    font-weight: 600;
+    text-decoration: none;
+  }
+
+  /* ── Hotkey footer (visual continuity with /quickstart) ── */
+  .hotkey-footer {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 40;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 8px 32px;
+    border-top: 1px solid var(--border);
+    background: rgba(250, 246, 236, 0.96);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    color: var(--text-dim);
+    font-family: var(--mono);
+    font-size: 10.5px;
+  }
+
+  .hotkey-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 14px;
+    align-items: center;
+  }
+
+  .hotkey-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  @media (max-width: 900px) {
+    .container { width: min(100% - 28px, 1120px); }
+    .lib-grid { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ── Masthead ── -->
+<div class="header">
+  <div class="header-row">
+    <div class="header-brand">
+      <h1>BestSeller<span class="dot">·</span></h1>
+      <div class="header-eyebrow">书稿库 / Imprint Library</div>
+      <div class="header-meta">
+        <span id="hdrVolume">VOL. III</span>
+        <span class="sep">·</span>
+        <span id="hdrDate">2026.05.10</span>
+      </div>
+    </div>
+    <div class="header-tools">
+      <label class="header-search">
+        <span>⌕</span>
+        <input id="librarySearch" type="search" placeholder="搜索书名 / SLUG / 标签…">
+        <span class="kbd">⌘</span><span class="kbd">K</span>
+      </label>
+      <a class="header-cta" href="/quickstart">＋ 新建创作 <span class="kbd">N</span></a>
+      <span class="header-divider"></span>
+      <span class="header-editor">编辑 · 陈砚之</span>
+    </div>
+  </div>
+  <div class="header-nav">
+    <a href="/quickstart">新建创作</a>
+    <a href="/quickstart">任务指挥台</a>
+    <a href="/library" class="active">书稿库 <span class="nav-count" id="navLibraryCount">00</span></a>
+    <a href="/quickstart">上架资料</a>
+    <a href="/quickstart">工作室设置</a>
+  </div>
+</div>
+
+<div class="container">
+  <div class="page-head">
+    <div>
+      <div class="kicker">书稿库 · IMPRINT LIBRARY</div>
+      <h2>所有的书稿，按部就班归档。</h2>
+      <p>正在编写中的、已完成的、需要返工的——所有书都在这里。点击任意一本，进入逐章阅读。</p>
+    </div>
+    <div class="lib-stats">
+      <div class="lib-stat">
+        <div class="label">在编</div>
+        <div class="value" id="statRunning">0</div>
+      </div>
+      <div class="lib-stat">
+        <div class="label">已完成</div>
+        <div class="value" id="statDone">0</div>
+      </div>
+      <div class="lib-stat">
+        <div class="label">总章数</div>
+        <div class="value" id="statChapters">0</div>
+      </div>
+      <div class="lib-stat">
+        <div class="label">总字数</div>
+        <div class="value" id="statWords">0</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="lib-filterbar">
+    <div class="lib-filter-tabs" aria-label="书稿筛选">
+      <button class="lib-filter active" data-filter="all" onclick="setLibraryFilter('all')">全部 <span class="count" id="cntAll">00</span></button>
+      <button class="lib-filter" data-filter="in_progress" onclick="setLibraryFilter('in_progress')">编写中 <span class="count" id="cntRunning">00</span></button>
+      <button class="lib-filter" data-filter="completed" onclick="setLibraryFilter('completed')">已完成 <span class="count" id="cntDone">00</span></button>
+      <button class="lib-filter" data-filter="draft" onclick="setLibraryFilter('draft')">草稿 <span class="count" id="cntDraft">00</span></button>
+      <button class="lib-filter" data-filter="needs_attention" onclick="setLibraryFilter('needs_attention')">需处理 <span class="count" id="cntAttn">00</span></button>
+    </div>
+    <div class="lib-search">
+      <input id="librarySearchInline" type="search" placeholder="筛选当前列表…">
+    </div>
+  </div>
+
+  <div class="lib-grid" id="libraryGrid">
+    <div class="lib-empty">
+      <h3>正在加载…</h3>
+      <p>从数据库和 output/ 目录中收集书稿。</p>
+    </div>
+  </div>
+</div>
+
+<!-- ── Hotkey footer ── -->
+<div class="hotkey-footer">
+  <div class="hotkey-list">
+    <span class="hotkey-item"><span class="kbd">↵</span> 阅读</span>
+    <span class="hotkey-item"><span class="kbd">N</span> 新建</span>
+    <span class="hotkey-item"><span class="kbd">⌘</span><span class="kbd">K</span> 搜索</span>
+    <span class="hotkey-item"><span class="kbd">/</span> 聚焦搜索</span>
+  </div>
+  <span style="color:var(--text-faint);">v3.4.7 · build 20260510-091</span>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  const $ = (s) => document.querySelector(s);
+  const $$ = (s) => document.querySelectorAll(s);
+  const esc = (s) => { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; };
+
+  let allBooks = [];
+  let libraryFilter = 'all';
+  let libraryQuery = '';
+
+  function pad2(n) { return String(n).padStart(2, '0'); }
+
+  function fmtWords(n) {
+    const v = Number(n || 0);
+    if (v >= 10000) return (v / 10000).toFixed(1) + '万';
+    if (v >= 1000) return (v / 1000).toFixed(1) + 'K';
+    return String(v);
+  }
+
+  function fmtRelative(iso) {
+    if (!iso) return '—';
+    const ts = new Date(iso).getTime();
+    if (!Number.isFinite(ts)) return '—';
+    const diffSec = Math.max(0, Math.floor((Date.now() - ts) / 1000));
+    if (diffSec < 60) return '刚刚';
+    if (diffSec < 3600) return `${Math.floor(diffSec / 60)} 分钟前`;
+    if (diffSec < 86400) return `${Math.floor(diffSec / 3600)} 小时前`;
+    if (diffSec < 86400 * 30) return `${Math.floor(diffSec / 86400)} 天前`;
+    return new Date(iso).toLocaleDateString('zh-CN');
+  }
+
+  function statusKey(book) {
+    const raw = String(book.status || '').toLowerCase();
+    if (raw === 'completed' || raw === 'complete') return 'completed';
+    if (raw === 'running' || raw === 'in_progress' || raw === 'queued') return 'in_progress';
+    if (raw === 'failed') return 'failed';
+    if (raw === 'draft' || raw === '') return 'draft';
+    return raw;
+  }
+
+  function statusLabel(s) {
+    return ({ completed: '已完成', in_progress: '编写中', queued: '排队', failed: '失败', draft: '草稿', running: '编写中' })[s] || s;
+  }
+
+  function isAttention(book) {
+    if (statusKey(book) === 'failed') return true;
+    const target = Number(book.target_chapters || 0);
+    const done = Number(book.completed_chapters || 0);
+    if (statusKey(book) === 'completed' && target > 0 && done < target) return true;
+    if (book.repair_status?.is_repairing) return true;
+    return false;
+  }
+
+  function matchFilter(book) {
+    const sk = statusKey(book);
+    if (libraryFilter === 'all') return true;
+    if (libraryFilter === 'in_progress') return sk === 'in_progress';
+    if (libraryFilter === 'completed') return sk === 'completed' && !isAttention(book);
+    if (libraryFilter === 'draft') return sk === 'draft';
+    if (libraryFilter === 'needs_attention') return isAttention(book);
+    return true;
+  }
+
+  function matchQuery(book) {
+    if (!libraryQuery) return true;
+    const haystack = [book.title, book.slug, book.genre, book.primary_category, ...(book.tags || [])]
+      .filter(Boolean).join(' ').toLowerCase();
+    return haystack.includes(libraryQuery);
+  }
+
+  function renderBookCard(book) {
+    const sk = statusKey(book);
+    const target = Number(book.target_chapters || 0);
+    const done = Number(book.completed_chapters || 0);
+    const pct = target > 0 ? Math.min(100, Math.round((done / target) * 100)) : (sk === 'completed' ? 100 : 0);
+    const tagline = book.tagline ? esc(book.tagline) : '';
+    const slug = book.slug || '';
+    const tagsHtml = (book.tags || []).slice(0, 5)
+      .map(t => `<span class="book-tag">${esc(t)}</span>`).join('');
+    const lastUpd = fmtRelative(book.last_updated);
+    const wordsText = book.words_on_disk > 0 ? fmtWords(book.words_on_disk) + '字'
+      : (book.target_word_count ? '约 ' + fmtWords(book.target_word_count) + '字' : '—');
+    const cover = `Nº ${(book.id || '').slice(0, 4).toUpperCase() || '----'}`;
+    const readHref = slug ? `/read/${encodeURIComponent(slug)}` : '#';
+
+    return `
+      <div class="book-card status-${esc(sk)}" onclick="openBook('${esc(slug)}')">
+        <div class="book-cover">
+          <div class="book-cover-mark">${esc(cover)}</div>
+          <div class="book-cover-title">${esc(book.title || slug || '未命名')}</div>
+          <div class="book-cover-status">
+            <span class="status-badge ${esc(sk)}">${esc(statusLabel(sk))}</span>
+          </div>
+        </div>
+        <div class="book-body">
+          ${tagline ? `<div class="book-tagline">「${tagline}」</div>` : `<div class="book-tagline" style="color:var(--text-faint);font-style:normal;">SLUG · ${esc(slug)}</div>`}
+          <div class="book-meta">
+            <span>题材 · <strong>${esc(book.primary_category || book.genre || '—')}</strong></span>
+            <span>章节 · <strong>${done}${target ? '/' + target : ''}</strong></span>
+            <span>字数 · <strong>${wordsText}</strong></span>
+            <span>更新 · <strong>${esc(lastUpd)}</strong></span>
+          </div>
+          <div class="book-progress">
+            <div class="book-progress-row">
+              <span>${sk === 'completed' ? '完成' : '进度'} · ${done}/${target || '—'}</span>
+              <span class="pct">${pct}%</span>
+            </div>
+            <div class="book-progress-bar"><div class="fill" style="width:${pct}%"></div></div>
+          </div>
+          ${tagsHtml ? `<div class="book-tags">${tagsHtml}</div>` : ''}
+        </div>
+        <div class="book-actions" onclick="event.stopPropagation();">
+          <a class="book-action primary" href="${esc(readHref)}" target="_blank">📖 阅读章节</a>
+          <a class="book-action" href="/quickstart" title="返回任务指挥台">📡 查看任务</a>
+          <a class="book-action" href="${esc(readHref)}" target="_blank">📚 章节目录</a>
+        </div>
+      </div>
+    `;
+  }
+
+  function renderLibrary() {
+    const grid = $('#libraryGrid');
+    const filtered = allBooks.filter(b => matchFilter(b) && matchQuery(b));
+
+    // Stats
+    const running = allBooks.filter(b => statusKey(b) === 'in_progress').length;
+    const done = allBooks.filter(b => statusKey(b) === 'completed' && !isAttention(b)).length;
+    const draftCount = allBooks.filter(b => statusKey(b) === 'draft').length;
+    const attnCount = allBooks.filter(isAttention).length;
+    const totalChapters = allBooks.reduce((s, b) => s + Number(b.completed_chapters || 0), 0);
+    const totalWords = allBooks.reduce((s, b) => s + Number(b.words_on_disk || 0), 0);
+
+    $('#statRunning').textContent = running;
+    $('#statDone').textContent = done;
+    $('#statChapters').textContent = totalChapters.toLocaleString('en-US');
+    $('#statWords').textContent = totalWords > 0 ? fmtWords(totalWords) : '0';
+    $('#cntAll').textContent = pad2(allBooks.length);
+    $('#cntRunning').textContent = pad2(running);
+    $('#cntDone').textContent = pad2(done);
+    $('#cntDraft').textContent = pad2(draftCount);
+    $('#cntAttn').textContent = pad2(attnCount);
+    $('#navLibraryCount').textContent = pad2(allBooks.length);
+
+    $$('.lib-filter').forEach(b => b.classList.toggle('active', b.dataset.filter === libraryFilter));
+
+    if (!filtered.length) {
+      grid.innerHTML = `
+        <div class="lib-empty">
+          <h3>${allBooks.length ? '没有匹配的书稿' : '书稿库还是空的'}</h3>
+          <p>${allBooks.length ? '试着切换筛选条件，或清空搜索词。' : '从「新建创作」开始第一本书。'}</p>
+          ${allBooks.length ? '' : '<a class="cta" href="/quickstart">＋ 新建创作</a>'}
+        </div>`;
+      return;
+    }
+    grid.innerHTML = filtered.map(renderBookCard).join('');
+  }
+
+  window.setLibraryFilter = function(f) {
+    libraryFilter = f;
+    renderLibrary();
+  };
+
+  window.openBook = function(slug) {
+    if (!slug) return;
+    window.open(`/read/${encodeURIComponent(slug)}`, '_blank');
+  };
+
+  function setMastheadDate() {
+    const today = new Date();
+    const s = `${today.getFullYear()}.${String(today.getMonth() + 1).padStart(2, '0')}.${String(today.getDate()).padStart(2, '0')}`;
+    const dateEl = $('#hdrDate');
+    if (dateEl) dateEl.textContent = s;
+  }
+
+  async function loadLibrary() {
+    try {
+      const r = await fetch('/api/library');
+      if (r.ok) allBooks = await r.json();
+    } catch (err) {
+      console.warn('library load failed', err);
+      allBooks = [];
+    }
+    renderLibrary();
+  }
+
+  // ── Search wiring (header + inline) ──
+  function bindSearch(input) {
+    if (!input) return;
+    input.addEventListener('input', (e) => {
+      libraryQuery = (e.target.value || '').trim().toLowerCase();
+      renderLibrary();
+    });
+  }
+  bindSearch($('#librarySearch'));
+  bindSearch($('#librarySearchInline'));
+
+  // Keyboard shortcuts
+  document.addEventListener('keydown', (e) => {
+    const tag = (e.target?.tagName || '').toUpperCase();
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || e.target?.isContentEditable) return;
+    if (e.metaKey || e.ctrlKey) {
+      if (e.key === 'k' || e.key === 'K') {
+        e.preventDefault();
+        $('#librarySearch')?.focus();
+      }
+      return;
+    }
+    if (e.key === 'n' || e.key === 'N') { e.preventDefault(); window.location.href = '/quickstart'; }
+    else if (e.key === '/') { e.preventDefault(); $('#librarySearch')?.focus(); }
+  });
+
+  setMastheadDate();
+  loadLibrary();
+
+  // Refresh every 30s while page is visible
+  setInterval(() => {
+    if (document.visibilityState === 'visible') loadLibrary();
+  }, 30000);
+})();
+</script>
+</body>
+</html>

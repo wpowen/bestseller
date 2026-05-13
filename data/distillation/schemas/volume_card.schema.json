@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "DistillationVolumeCard",
+  "type": "object",
+  "required": [
+    "source_id",
+    "volume_no",
+    "chapter_range",
+    "arc_function",
+    "dominant_engine",
+    "state_progression",
+    "turning_points",
+    "reusable_mechanisms",
+    "failure_modes"
+  ],
+  "properties": {
+    "source_id": { "type": "string" },
+    "volume_no": { "type": "integer", "minimum": 1 },
+    "chapter_range": { "type": "string" },
+    "arc_function": { "type": "string" },
+    "dominant_engine": { "type": "string" },
+    "state_progression": { "type": "array", "items": { "type": "string" } },
+    "turning_points": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["abs_chapter_no", "function"],
+        "properties": {
+          "abs_chapter_no": { "type": "integer" },
+          "function": { "type": "string" }
+        },
+        "additionalProperties": false
+      }
+    },
+    "setup_payoff_rhythm": { "type": "string" },
+    "reusable_mechanisms": { "type": "array", "items": { "type": "string" } },
+    "failure_modes": { "type": "array", "items": { "type": "string" } }
+  },
+  "additionalProperties": true
+}

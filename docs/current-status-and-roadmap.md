@@ -143,6 +143,8 @@
 
 - premise -> planning 已可运行
 - 但多轮 planner 迭代、人工确认点、方案比较还没系统化
+- 剧情设计能力需要升级为新的核心主轴：详见 `docs/plans/2026-05-12-story-design-core-capability-integration.md`
+- 下一阶段的重点不是继续堆叠反重复审计，而是引入 `StoryDesignKernel`、题材剧情语法、书籍状态驱动的卷章规划、逆向大纲检查，让每本书先形成独特的剧情设计内核，再进入正文生产
 
 ### 4.3 retrieval 增强
 
@@ -161,11 +163,12 @@
 
 如果继续往“更强生产能力”推进，建议顺序如下：
 
-1. 提升 scene/chapter 的真实模型写作质量
-2. 增强 planner 的多轮确认和多方案比较
-3. 强化 retrieval 的召回与上下文裁剪
-4. 扩展 project repair，支持更多自动导出和更细的修订策略
-5. 增加更强的项目级连续性规则
+1. 建立 Story Design Core：`StoryDesignKernel`、题材剧情语法、书籍状态快照、逆向大纲门禁
+2. 增强 planner 的多轮确认、多方案比较和编辑确认点
+3. 提升 scene/chapter 的真实模型写作质量，让正文严格执行剧情设计内核
+4. 强化 retrieval 的召回与上下文裁剪，优先服务剧情状态、人物弧、伏笔和世界规则
+5. 扩展 project repair，支持基于剧情设计内核的未来卷章重规划
+6. 增加更强的项目级连续性规则和整书吸引力回归测试
 
 ## 6. 当前验收基线
 

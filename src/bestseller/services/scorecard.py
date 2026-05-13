@@ -21,13 +21,15 @@ feed synthetic inputs without touching the DB.
 
 from __future__ import annotations
 
+from collections import Counter
+from collections.abc import Iterable, Mapping, Sequence
+from dataclasses import dataclass
+from datetime import datetime
+from itertools import pairwise
 import logging
 import math
 import statistics
-from collections import Counter
-from dataclasses import dataclass, field
-from datetime import timedelta
-from typing import Any, Iterable, Mapping, Sequence
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import func, select
@@ -37,9 +39,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from bestseller.infra.db.models import (
     ChapterAuditFindingModel,
     ChapterDraftVersionModel,
-    ChaseDebtModel,
     ChapterModel,
     ChapterQualityReportModel,
+    ChaseDebtModel,
     DiversityBudgetModel,
     NovelScorecardModel,
     OverrideContractModel,
@@ -57,7 +59,6 @@ from bestseller.services.hype_engine import (
     HypeType,
     hype_scheme_from_dict,
 )
-
 
 logger = logging.getLogger(__name__)
 
@@ -211,7 +212,7 @@ def length_stats(
     headline metric (target ≤ 0.10).
     """
 
-    sample = [l for l in lengths if l > 0]
+    sample = [length for length in lengths if length > 0]
     if not sample:
         return 0.0, 0.0, 0.0
     mean = statistics.fmean(sample)
@@ -443,13 +444,36 @@ def _chapter_gap_count(
     ordered = sorted(chapter_numbers)
     # In-sequence gaps.
     gap = 0
-    for prev, nxt in zip(ordered, ordered[1:]):
+    for prev, nxt in pairwise(ordered):
         if nxt > prev + 1:
             gap += nxt - prev - 1
     # Shortfall vs expected_count.
     if expected_count is not None and expected_count > ordered[-1]:
         gap += expected_count - ordered[-1]
     return gap
+
+
+def _quality_report_is_fresh(
+    report_created_at: datetime | None,
+    current_draft_created_at: datetime | None,
+) -> bool:
+    """Return whether a quality report still applies to the current draft."""
+    if current_draft_created_at is None:
+        return True
+    if report_created_at is None:
+        return False
+    return report_created_at >= current_draft_created_at
+
+
+def _latest_audit_is_fresher(
+    latest_audit_at: datetime | None,
+    latest_quality_at: datetime | None,
+) -> bool:
+    if latest_audit_at is None:
+        return False
+    if latest_quality_at is None:
+        return True
+    return latest_audit_at >= latest_quality_at
 
 
 # ---------------------------------------------------------------------------
@@ -474,8 +498,10 @@ async def compute_scorecard(
     # 1. Chapter list + current draft lengths + hype assignment.
     chapters_stmt = (
         select(
+            ChapterModel.id,
             ChapterModel.chapter_number,
             ChapterDraftVersionModel.content_md,
+            ChapterDraftVersionModel.created_at,
             ChapterModel.hype_type,
             ChapterModel.hype_intensity,
         )
@@ -496,10 +522,19 @@ async def compute_scorecard(
     chapter_rows = (await session.execute(chapters_stmt)).all()
 
     chapter_numbers: list[int] = []
+    current_draft_created_at_by_chapter_id: dict[UUID, datetime | None] = {}
     lengths: list[int] = []
     hype_types_by_chapter: dict[int, str] = {}
     hype_intensities: list[float] = []
-    for ch_no, content_md, hype_type, hype_intensity in chapter_rows:
+    for (
+        chapter_id,
+        ch_no,
+        content_md,
+        current_draft_created_at,
+        hype_type,
+        hype_intensity,
+    ) in chapter_rows:
+        current_draft_created_at_by_chapter_id[chapter_id] = current_draft_created_at
         chapter_numbers.append(int(ch_no))
         if content_md:
             lengths.append(len(content_md))
@@ -517,14 +552,35 @@ async def compute_scorecard(
         ChapterQualityReportModel.blocks_write,
         ChapterQualityReportModel.report_json,
         ChapterQualityReportModel.chapter_id,
+        ChapterQualityReportModel.created_at,
     ).where(
         ChapterQualityReportModel.chapter_id.in_(
             select(ChapterModel.id).where(
                 ChapterModel.project_id == project_id
             )
         )
+    ).order_by(
+        ChapterQualityReportModel.chapter_id,
+        ChapterQualityReportModel.created_at.desc(),
     )
-    quality_rows = (await session.execute(quality_stmt)).all()
+    raw_quality_rows = (await session.execute(quality_stmt)).all()
+    quality_rows: list[tuple[bool, dict[str, Any], UUID]] = []
+    seen_quality_chapter_ids: set[UUID] = set()
+    latest_quality_at: datetime | None = None
+    for blocks_write, report_json, chapter_id, _created_at in raw_quality_rows:
+        if not _quality_report_is_fresh(
+            _created_at,
+            current_draft_created_at_by_chapter_id.get(chapter_id),
+        ):
+            continue
+        if chapter_id in seen_quality_chapter_ids:
+            continue
+        seen_quality_chapter_ids.add(chapter_id)
+        if _created_at is not None and (
+            latest_quality_at is None or _created_at > latest_quality_at
+        ):
+            latest_quality_at = _created_at
+        quality_rows.append((blocks_write, report_json, chapter_id))
 
     blocked_chapter_ids: set[UUID] = set()
     violation_counter: Counter[str] = Counter()
@@ -585,29 +641,33 @@ async def compute_scorecard(
     audit_pov_chapters: set[int] = set()
     audit_cjk_block_chapters: set[int] = set()
     audit_cjk_residue_chapters: set[int] = set()
+    audit_blocked_chapters: set[int] = set()
 
     if latest_at is not None:
-        # A `bestseller audit` run takes well under a minute; 5 is a safe
-        # window that groups all findings from the same invocation while
-        # still excluding older historical runs.
-        window_start = latest_at - timedelta(minutes=5)
+        # persist_audit_findings inserts all rows from one audit report in
+        # one flush, so rows from the same invocation share ``created_at``.
+        # Use the exact latest timestamp; a time window can accidentally mix
+        # several rapid repair/audit cycles and resurrect stale findings.
         latest_audit_stmt = (
             select(
                 ChapterAuditFindingModel.code,
                 ChapterAuditFindingModel.chapter_no,
+                ChapterAuditFindingModel.severity,
             )
             .where(
                 ChapterAuditFindingModel.project_id == project_id,
-                ChapterAuditFindingModel.created_at >= window_start,
+                ChapterAuditFindingModel.created_at == latest_at,
                 ChapterAuditFindingModel.chapter_no.is_not(None),
             )
             .distinct()
         )
-        for code, chapter_no in (
+        for code, chapter_no, severity in (
             await session.execute(latest_audit_stmt)
         ).all():
             if chapter_no is None:
                 continue
+            if severity == "critical":
+                audit_blocked_chapters.add(int(chapter_no))
             if code == "DIALOG_UNPAIRED":
                 audit_dialog_chapters.add(int(chapter_no))
             elif code == "POV_DRIFT":
@@ -677,17 +737,21 @@ async def compute_scorecard(
 
     # 5. Blend.
     #
-    # For dialog / POV / CJK we prefer the fresher of two signals:
+    # For blocking / dialog / POV / CJK we prefer the fresher of two signals:
     #  - ``quality_reports`` (written at generation time by L4/L5 gates)
     #  - latest-audit-window distinct chapter set (written by L7 CLI)
-    # Taking MAX avoids double-counting (quality reports and audit can
-    # flag the same chapter) while ensuring repairs that haven't been
-    # regenerated through the pipeline still bubble up as "fixed" when
-    # audits no longer see them.
-    chapters_blocked = len(blocked_chapter_ids)
-    cjk_leak_chapters = max(len(cjk_leak_chapter_ids), len(audit_cjk_block_chapters))
-    pov_drift_chapters = max(len(pov_drift_chapter_ids), len(audit_pov_chapters))
-    dialog_integrity_violations = max(dialog_count, len(audit_dialog_chapters))
+    # If a post-repair audit is newer, its absence of a finding is evidence
+    # that an older generation-time failure has been cleared.
+    if _latest_audit_is_fresher(latest_at, latest_quality_at):
+        chapters_blocked = len(audit_blocked_chapters)
+        cjk_leak_chapters = len(audit_cjk_block_chapters)
+        pov_drift_chapters = len(audit_pov_chapters)
+        dialog_integrity_violations = len(audit_dialog_chapters)
+    else:
+        chapters_blocked = len(blocked_chapter_ids)
+        cjk_leak_chapters = len(cjk_leak_chapter_ids)
+        pov_drift_chapters = len(pov_drift_chapter_ids)
+        dialog_integrity_violations = dialog_count
 
     # Projects without any hype assignments (legacy / Phase 0) get median
     # stand-ins so they don't crater the score. When the project has

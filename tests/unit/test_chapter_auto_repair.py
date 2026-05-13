@@ -184,6 +184,33 @@ async def test_stored_duplicate_block_triggers_repair_even_with_latest_report() 
 
 
 @pytest.mark.asyncio
+async def test_stored_pronoun_mismatch_block_triggers_rewrite_repair() -> None:
+    chapter = FakeChapter(
+        metadata_json={
+            "blocked_by_write_safety_gate": True,
+            "write_safety_block_code": "pronoun_mismatch",
+            "write_safety_hint": "叶长青: expected 他, found 她的",
+        },
+    )
+    scene = FakeScene(chapter_id=chapter.id, scene_number=4)
+    session = FakeSession(scalar_queue=[None], scalars_queue=[[scene]])
+
+    triggered, codes = await maybe_prepare_chapter_auto_repair(
+        session,
+        project=FakeProject(),
+        chapter=chapter,
+        repairable_codes=("pronoun_mismatch",),
+    )
+
+    assert triggered is True
+    assert codes == ("pronoun_mismatch",)
+    assert chapter.production_state == "pending"
+    assert scene.status == SceneStatus.NEEDS_REWRITE.value
+    assert "叶长青: expected 他, found 她的" in scene.metadata_json["auto_repair_hint"]
+    assert scene.metadata_json["auto_repair_block_codes"] == ["pronoun_mismatch"]
+
+
+@pytest.mark.asyncio
 async def test_non_repairable_code_returns_the_codes_but_not_triggered() -> None:
     """A deterministic block (e.g. naming) must surface the codes but
     *not* trigger auto-repair — user intervention is required."""
@@ -258,7 +285,7 @@ async def test_character_resurrection_removes_dead_participants_before_regen() -
     assert scenes[0].metadata_json["auto_repair_removed_state_refs"] == [
         "Sam Blake"
     ]
-    assert "移除已故角色：Sam Blake" in scenes[0].metadata_json["auto_repair_hint"]
+    assert "移除当下不可登场角色：Sam Blake" in scenes[0].metadata_json["auto_repair_hint"]
     assert scenes[1].participants == ["Rowan Ashford"]
     assert "auto_repair_removed_participants" not in scenes[1].metadata_json
     assert session.flush_calls == 1
@@ -311,6 +338,152 @@ async def test_character_resurrection_removes_dead_state_refs_even_after_partici
 
 
 @pytest.mark.asyncio
+async def test_dead_alive_block_uses_offstage_character_repair() -> None:
+    chapter = FakeChapter(
+        chapter_number=7,
+        metadata_json={
+            "blocked_by_write_safety_gate": True,
+            "write_safety_block_code": "dead_alive",
+            "write_safety_hint": "母亲 appears to speak or act as if alive.",
+        },
+    )
+    scenes = [
+        FakeScene(
+            chapter_id=chapter.id,
+            scene_number=2,
+            participants=["苏砚", "母亲"],
+            entry_state={
+                "苏砚": {"arc_state": "追查"},
+                "母亲": {"arc_state": "当下开口"},
+            },
+        )
+    ]
+    session = FakeSession(
+        scalar_queue=[None],
+        scalars_queue=[scenes, ["母亲"]],
+    )
+
+    triggered, codes = await maybe_prepare_chapter_auto_repair(
+        session,
+        project=FakeProject(id=chapter.project_id),
+        chapter=chapter,
+        repairable_codes=("dead_alive",),
+    )
+
+    assert triggered is True
+    assert codes == ("dead_alive",)
+    assert scenes[0].participants == ["苏砚"]
+    assert scenes[0].entry_state == {"苏砚": {"arc_state": "追查"}}
+    assert scenes[0].metadata_json["auto_repair_removed_participants"] == ["母亲"]
+    assert scenes[0].metadata_json["auto_repair_removed_state_refs"] == ["母亲"]
+    assert "当下不可登场角色：母亲" in scenes[0].metadata_json["auto_repair_hint"]
+
+
+@pytest.mark.asyncio
+async def test_character_missing_appearance_removes_offstage_participants_before_regen() -> None:
+    chapter = FakeChapter(
+        chapter_number=32,
+        metadata_json={
+            "blocked_by_write_safety_gate": True,
+            "write_safety_block_code": "character_missing_appearance",
+            "write_safety_hint": "孙九斤从第16章起失踪。",
+        },
+    )
+    scenes = [
+        FakeScene(
+            chapter_id=chapter.id,
+            scene_number=1,
+            participants=["林渊", "苏婉宁", "孙九斤", "钱婆婆"],
+            entry_state={
+                "林渊": {"arc_state": "追查来信"},
+                "孙九斤": {"arc_state": "当下协助"},
+            },
+        )
+    ]
+    session = FakeSession(
+        scalar_queue=[None],
+        scalars_queue=[scenes, ["孙九斤"]],
+    )
+
+    triggered, codes = await maybe_prepare_chapter_auto_repair(
+        session,
+        project=FakeProject(id=chapter.project_id),
+        chapter=chapter,
+        repairable_codes=("character_missing_appearance",),
+    )
+
+    assert triggered is True
+    assert codes == ("character_missing_appearance",)
+    assert scenes[0].participants == ["林渊", "苏婉宁", "钱婆婆"]
+    assert scenes[0].entry_state == {"林渊": {"arc_state": "追查来信"}}
+    assert scenes[0].metadata_json["auto_repair_removed_participants"] == ["孙九斤"]
+    assert scenes[0].metadata_json["auto_repair_removed_state_refs"] == ["孙九斤"]
+    assert "当下不可登场角色：孙九斤" in scenes[0].metadata_json["auto_repair_hint"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("block_code", "name", "hint"),
+    [
+        ("character_sealed_appearance", "陆沉", "陆沉被封印，不能当下行动。"),
+        ("character_sleeping_appearance", "沈眠", "沈眠处于沉睡，不能当下对话。"),
+        ("character_comatose_appearance", "秦妄", "秦妄处于昏迷，不能当下行动。"),
+    ],
+)
+async def test_non_death_offstage_blocks_remove_participants_before_regen(
+    block_code: str,
+    name: str,
+    hint: str,
+) -> None:
+    chapter = FakeChapter(
+        chapter_number=32,
+        metadata_json={
+            "blocked_by_write_safety_gate": True,
+            "write_safety_block_code": block_code,
+            "write_safety_hint": hint,
+        },
+    )
+    scenes = [
+        FakeScene(
+            chapter_id=chapter.id,
+            scene_number=1,
+            participants=["宁尘", name],
+            entry_state={
+                "宁尘": {"arc_state": "追查线索"},
+                name: {"arc_state": "当下行动"},
+            },
+            exit_state={
+                "宁尘": {"arc_state": "获得线索"},
+                name: {"arc_state": "当下回应"},
+            },
+        )
+    ]
+    session = FakeSession(
+        scalar_queue=[None],
+        scalars_queue=[scenes, [name]],
+    )
+
+    triggered, codes = await maybe_prepare_chapter_auto_repair(
+        session,
+        project=FakeProject(id=chapter.project_id),
+        chapter=chapter,
+        repairable_codes=(block_code,),
+    )
+
+    assert triggered is True
+    assert codes == (block_code,)
+    assert scenes[0].participants == ["宁尘"]
+    assert scenes[0].entry_state == {"宁尘": {"arc_state": "追查线索"}}
+    assert scenes[0].exit_state == {"宁尘": {"arc_state": "获得线索"}}
+    assert scenes[0].metadata_json["auto_repair_removed_participants"] == [name]
+    assert scenes[0].metadata_json["auto_repair_removed_state_refs"] == [name]
+    assert "当下不可登场角色" in scenes[0].metadata_json["auto_repair_hint"]
+    assert "遗体" not in scenes[0].metadata_json["auto_repair_hint"]
+    assert "悲悼" not in scenes[0].metadata_json["auto_repair_hint"]
+    assert "昏迷肉身/沉睡身体/封印体/失踪线索" in scenes[0].metadata_json["auto_repair_hint"]
+
+
+@pytest.mark.asyncio
 async def test_block_low_resets_scenes_and_injects_hint() -> None:
     chapter = FakeChapter()
     scenes = [
@@ -353,6 +526,41 @@ async def test_block_low_resets_scenes_and_injects_hint() -> None:
     # regen_attempts tick incremented on the underlying report row.
     assert report.regen_attempts == 1
     assert session.flush_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_repair_start_clears_stale_exhausted_marker() -> None:
+    chapter = FakeChapter(
+        metadata_json={
+            "auto_repair_exhausted": True,
+            "auto_repair_attempts": 3,
+            "auto_repair_in_progress": False,
+            "auto_accepted": True,
+        }
+    )
+    scenes = [FakeScene(chapter_id=chapter.id, scene_number=1, target_word_count=1000)]
+    report = FakeQualityReport(
+        report_json={
+            "blocking_codes": ["CHAPTER_LENGTH_BLOCK_LOW"],
+            "length_stability": {"word_count": 1200, "target_words": 2400},
+        },
+    )
+    session = FakeSession(scalar_queue=[report], scalars_queue=[scenes])
+
+    triggered, codes = await maybe_prepare_chapter_auto_repair(
+        session,
+        project=FakeProject(),
+        chapter=chapter,
+        repairable_codes=("BLOCK_LOW",),
+        attempt_number=2,
+    )
+
+    assert triggered is True
+    assert codes == ("CHAPTER_LENGTH_BLOCK_LOW",)
+    assert "auto_repair_exhausted" not in chapter.metadata_json
+    assert chapter.metadata_json["auto_repair_attempts"] == 2
+    assert chapter.metadata_json["auto_repair_in_progress"] is True
+    assert chapter.metadata_json["auto_accepted"] is False
 
 
 @pytest.mark.asyncio
@@ -422,6 +630,42 @@ async def test_block_low_after_overlong_trim_restores_publishable_scene_budgets(
         assert scene.target_word_count == 987
         assert scene.metadata_json["auto_repair_min_scene_target_floor"] == 917
         assert scene.metadata_json["auto_repair_adjusted_target_word_count"] == 987
+
+
+@pytest.mark.asyncio
+async def test_block_low_clamps_legacy_huge_scene_budget() -> None:
+    chapter = FakeChapter(chapter_number=347)
+    scenes = [
+        FakeScene(chapter_id=chapter.id, scene_number=i, target_word_count=1_528_400_259)
+        for i in range(1, 5)
+    ]
+    report = FakeQualityReport(
+        report_json={
+            "blocking_codes": ["CHAPTER_LENGTH_BLOCK_LOW"],
+            "length_stability": {
+                "word_count": 2753,
+                "target_words": 6400,
+                "min_words": 5000,
+                "max_words": 7500,
+            },
+        },
+    )
+    session = FakeSession(scalar_queue=[report], scalars_queue=[scenes])
+
+    triggered, codes = await maybe_prepare_chapter_auto_repair(
+        session,
+        project=FakeProject(),
+        chapter=chapter,
+        repairable_codes=("BLOCK_LOW",),
+        attempt_number=3,
+    )
+
+    assert triggered is True
+    assert codes == ("CHAPTER_LENGTH_BLOCK_LOW",)
+    for scene in scenes:
+        assert scene.target_word_count == 3200
+        assert scene.metadata_json["auto_repair_target_word_count_clamped"] is True
+        assert scene.metadata_json["auto_repair_scene_target_cap"] == 3200
 
 
 @pytest.mark.asyncio
@@ -500,7 +744,7 @@ async def test_canon_forbidden_term_triggers_canon_rewrite_hint() -> None:
 
 
 @pytest.mark.asyncio
-async def test_naming_out_of_pool_triggers_roster_rewrite_hint() -> None:
+async def test_naming_out_of_pool_is_not_auto_repaired_by_default() -> None:
     chapter = FakeChapter()
     scenes = [FakeScene(chapter_id=chapter.id, scene_number=1)]
     report = FakeQualityReport(
@@ -520,17 +764,14 @@ async def test_naming_out_of_pool_triggers_roster_rewrite_hint() -> None:
         session,
         project=FakeProject(),
         chapter=chapter,
-        repairable_codes=("NAMING_OUT_OF_POOL",),
+        repairable_codes=("BLOCK_LOW", "BLOCK_HIGH", "DIALOG_UNPAIRED"),
     )
 
-    assert triggered is True
+    assert triggered is False
     assert codes == ("NAMING_OUT_OF_POOL",)
-    assert chapter.production_state == "pending"
-    assert scenes[0].status == SceneStatus.NEEDS_REWRITE.value
-    hint = scenes[0].metadata_json["auto_repair_hint"]
-    assert "角色池外姓名" in hint
-    assert "严评委" in hint
-    assert "不要再创造新的中文或英文专名" in hint
+    assert chapter.production_state == "blocked"
+    assert scenes[0].status == SceneStatus.APPROVED.value
+    assert "auto_repair_hint" not in scenes[0].metadata_json
 
 
 @pytest.mark.asyncio

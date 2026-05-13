@@ -110,6 +110,8 @@ _EXTRACTION_SYSTEM_PROMPT = (
     "7. 对 kind=level 的事实（修为/等级/境界），值只能单调递增。如果你发现本章值比上一章低，"
     "在 notes 中标注 `regression=true` 并说明原因。\n"
     "8. 对 kind=countdown 的事实，值只能单调递减。如果倒计时重置了，在 notes 中标注 `reset=true`。\n"
+    "如果上一章存在倒计时，但本章正文没有明确出现新的倒计时数字，不得根据 chapter_time_span 推断多单位下降；"
+    "只能沿用上一章数值，或最多递减 1 个单位，并将 source_quote 置为 null，notes 标注本章未明确提及数字。\n"
     "9. 必须抽取一条 kind=elapsed_story_time 的事实，记录本章故事内经过的时间（如 \"3小时\"、\"1天\"、\"数分钟\"）。\n"
     "10. time_anchor 字段：本章开始时的故事内时间点，格式推荐 `末世第 N 天 清晨/上午/下午/傍晚/晚上` 或 `Day N dawn/morning/noon/afternoon/evening/night`。"
     "如果本章为回忆/倒叙/闪回，**必须**在 time_anchor 中包含关键字 `flashback` 或 `回忆`。\n"
@@ -256,6 +258,83 @@ def _facts_from_storage(raw: dict[str, Any] | None) -> list[HardFactContext]:
     return facts
 
 
+def _normalize_inferred_countdown_jumps(
+    facts: list[HardFactContext],
+    previous: ChapterStateSnapshotContext | None,
+) -> list[HardFactContext]:
+    """Clamp unsupported inferred countdown drops to a one-unit progression.
+
+    The extractor is allowed to carry forward a countdown when the chapter does
+    not print a fresh number. It is not allowed to infer a multi-unit hard-fact
+    jump from prose like "午后" or "过去几小时" without a source quote. This
+    normalizer makes that rule deterministic so a single hallucinated snapshot
+    cannot deadlock Phase D and the rewrite loop.
+    """
+
+    if previous is None or not previous.facts or not facts:
+        return facts
+
+    previous_countdowns = _index_facts_by_name(previous.facts, kind=_COUNTDOWN_KIND)
+    if not previous_countdowns:
+        return facts
+
+    normalized: list[HardFactContext] = []
+    changed = False
+    for fact in facts:
+        prev = previous_countdowns.get(fact.name)
+        if fact.kind != _COUNTDOWN_KIND or prev is None:
+            normalized.append(fact)
+            continue
+
+        if fact.source_quote:
+            normalized.append(fact)
+            continue
+
+        notes = (fact.notes or "").lower()
+        if "reset=true" in notes or "flashback=true" in notes:
+            normalized.append(fact)
+            continue
+
+        cur_num = _extract_numeric(fact.value)
+        prev_num = _extract_numeric(prev.value)
+        if cur_num is None or prev_num is None:
+            normalized.append(fact)
+            continue
+
+        delta = prev_num - cur_num
+        if delta <= 1:
+            normalized.append(fact)
+            continue
+
+        target_value = _replace_first_numeric_value(fact.value, max(prev_num - 1, 0))
+        normalized_note = (
+            "系统归一化：本章未提供倒计时原文数字，避免跨章多单位跳跃，"
+            "按上一章倒计时最多推进 1 个单位处理。"
+        )
+        notes_text = f"{fact.notes}；{normalized_note}" if fact.notes else normalized_note
+        normalized.append(
+            fact.model_copy(
+                update={
+                    "value": target_value,
+                    "notes": notes_text,
+                    "source_quote": None,
+                }
+            )
+        )
+        changed = True
+
+    return normalized if changed else facts
+
+
+def _replace_first_numeric_value(value: str, replacement: float) -> str:
+    """Replace the first numeric segment while preserving surrounding prose."""
+
+    replacement_text = f"{replacement:g}"
+    if re.search(r"[-+]?\d*\.?\d+", value):
+        return re.sub(r"[-+]?\d*\.?\d+", replacement_text, value, count=1)
+    return replacement_text
+
+
 async def load_previous_chapter_snapshot(
     session: AsyncSession,
     *,
@@ -339,6 +418,8 @@ async def extract_chapter_state_snapshot(
 
     raw = completion.content or ""
     facts, time_anchor, chapter_time_span, error = _parse_extraction_payload(raw)
+    if error is None:
+        facts = _normalize_inferred_countdown_jumps(facts, previous)
     # Defensive truncation: older deployments still have the VARCHAR(32)
     # column (migration 0015 widens it to TEXT). Cap at 120 chars so a long
     # composite error like ``failed:json_decode_error:Invalid control character at``

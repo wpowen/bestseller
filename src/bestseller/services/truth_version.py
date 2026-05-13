@@ -1,10 +1,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 import hashlib
 import json
-from typing import Any
 from uuid import UUID
 
 from sqlalchemy import select
@@ -25,6 +24,7 @@ CORE_TRUTH_ARTIFACT_TYPES: frozenset[str] = frozenset(
         ArtifactType.CAST_SPEC.value,
         ArtifactType.VOLUME_PLAN.value,
         ArtifactType.ACT_PLAN.value,
+        ArtifactType.STORY_DESIGN_KERNEL.value,
     }
 )
 
@@ -68,7 +68,7 @@ class TruthVersionStaleError(ValueError):
         self.stale_components = stale_components
 
 
-def initialize_truth_metadata(metadata: dict[str, Any] | None) -> dict[str, Any]:
+def initialize_truth_metadata(metadata: dict[str, object] | None) -> dict[str, object]:
     payload = dict(metadata or {})
     payload.setdefault("truth_version", 1)
     payload.setdefault("truth_updated_at", None)
@@ -100,7 +100,7 @@ def truth_state_from_project(project: ProjectModel) -> TruthVersionState:
     )
 
 
-def truth_metadata_for_workflow(project: ProjectModel) -> dict[str, Any]:
+def truth_metadata_for_workflow(project: ProjectModel) -> dict[str, object]:
     state = truth_state_from_project(project)
     return {
         "truth_version": state.version,
@@ -109,7 +109,7 @@ def truth_metadata_for_workflow(project: ProjectModel) -> dict[str, Any]:
     }
 
 
-def _artifact_fingerprint(content: Any) -> str:
+def _artifact_fingerprint(content: object) -> str:
     canonical = json.dumps(content, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
@@ -124,7 +124,7 @@ def maybe_bump_project_truth_version(
     project: ProjectModel,
     *,
     artifact_type: ArtifactType,
-    content: Any,
+    content: object,
     scope_ref_id: UUID | None = None,
 ) -> bool:
     metadata = initialize_truth_metadata(project.metadata_json)
@@ -155,7 +155,7 @@ def maybe_bump_project_truth_version(
         return False
 
     new_version = max(int(metadata.get("truth_version") or 1), 1) + 1
-    changed_at = datetime.now(timezone.utc).isoformat()
+    changed_at = datetime.now(UTC).isoformat()
     metadata["truth_version"] = new_version
     metadata["truth_updated_at"] = changed_at
     metadata["truth_last_changed_artifact_type"] = artifact_type.value
@@ -181,16 +181,16 @@ def _parse_iso8601(value: str | None) -> datetime | None:
     except ValueError:
         return None
     if parsed.tzinfo is None:
-        return parsed.replace(tzinfo=timezone.utc)
-    return parsed.astimezone(timezone.utc)
+        return parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
 
 
 def _normalize_run_timestamp(value: datetime | None) -> datetime | None:
     if value is None:
         return None
     if value.tzinfo is None:
-        return value.replace(tzinfo=timezone.utc)
-    return value.astimezone(timezone.utc)
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
 
 
 async def _latest_completed_workflow_run(

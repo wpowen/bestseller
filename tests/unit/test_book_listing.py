@@ -70,6 +70,12 @@ def test_build_book_listing_profile_uses_listing_files(tmp_path) -> None:
     assert len(profile["title_candidates"]) == 20
     assert profile["title_candidates"][0]["title"] == "标题1"
     assert profile["main_characters"][0]["name"] == "林渊"
+    script_durations = [
+        item["duration_seconds"]
+        for item in profile["marketing_assets"]["short_video_scripts"]
+    ]
+    assert script_durations == [15, 45, 90]
+    assert profile["ip_readiness"]["status"] in {"ready", "needs_attention"}
     assert profile["compliance"]["status"] == "ready"
 
 
@@ -111,4 +117,6 @@ def test_build_book_listing_profile_generates_required_fallbacks() -> None:
     assert len(profile["title_candidates"]) == 20
     assert len(profile["tags"]) >= 5
     assert profile["main_characters"][0]["role"] == "主角"
+    assert profile["marketing_assets"]["short_video_scripts"][0]["duration_seconds"] == 15
+    assert "ip_readiness" in profile
     assert profile["compliance"]["blocker_count"] == 0

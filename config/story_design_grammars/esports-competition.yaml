@@ -1,0 +1,39 @@
+key: esports-competition
+name: 电竞竞赛剧情语法
+applies_to_categories: [esports-competition]
+required_contracts:
+  - match_state_model
+  - skill_counterplay
+  - team_coordination
+  - public_reputation
+  - tournament_pressure
+state_variables:
+  - 比赛局势
+  - 技术短板
+  - 团队信任
+  - 对手情报
+  - 舆论压力
+chapter_change_vectors:
+  - 局势优势被建立或丢失
+  - 一个技术短板被暴露
+  - 团队协作方式变化
+  - 对手打法迫使反制
+  - 场外舆论影响场内选择
+reader_rewards:
+  - 清晰可视的胜负转折
+  - 技术博弈而非纯热血
+  - 队友分工带来配合爽感
+  - 训练反馈进入实战
+  - 比赛结果改变排名或名声
+hook_or_aftereffect_types:
+  - 对手藏招
+  - 队内分歧未解决
+  - 版本更新打乱准备
+  - 舆论误读扩大
+  - 伤病或状态波动
+forbidden_defaults:
+  - 天才主角凭手速无脑赢
+  - 每场比赛同一逆风翻盘
+  - 队友只负责喊加油
+  - 黑粉舆论没有现实后果
+  - 规则和版本不影响战术

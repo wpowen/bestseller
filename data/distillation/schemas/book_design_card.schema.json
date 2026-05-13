@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "DistillationBookDesignCard",
+  "type": "object",
+  "required": [
+    "book_id",
+    "source_ref",
+    "source_type",
+    "status",
+    "parsed_profile",
+    "genre_tags",
+    "reader_promise",
+    "core_engine",
+    "state_variables",
+    "reader_rewards",
+    "reusable_mechanisms",
+    "non_reusable_specifics",
+    "risk_patterns"
+  ],
+  "properties": {
+    "book_id": { "type": "string" },
+    "source_ref": { "type": "string" },
+    "source_type": { "type": "string" },
+    "status": { "type": "string" },
+    "parsed_profile": { "type": "object" },
+    "genre_tags": { "type": "array", "items": { "type": "string" } },
+    "reader_promise": { "type": "string" },
+    "core_engine": { "type": "string" },
+    "state_variables": { "type": "array", "items": { "type": "string" } },
+    "reader_rewards": { "type": "array", "items": { "type": "string" } },
+    "reusable_mechanisms": { "type": "array", "items": { "type": "string" } },
+    "non_reusable_specifics": { "type": "array", "items": { "type": "string" } },
+    "risk_patterns": { "type": "array", "items": { "type": "string" } }
+  },
+  "additionalProperties": true
+}

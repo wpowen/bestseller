@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 import logging
 import math
 import re
@@ -272,6 +273,38 @@ async def _load_offstage_character_names_before_chapter(
 # the broader semantics for free; the call sites have been updated to
 # use the new name.
 _load_dead_character_names_before_chapter = _load_offstage_character_names_before_chapter
+
+
+_CHARACTER_OFFSTAGE_REPAIR_CODES: frozenset[str] = frozenset(
+    {
+        "dead_alive",
+        "character_resurrection",
+        "character_missing_appearance",
+        "character_sealed_appearance",
+        "character_sleeping_appearance",
+        "character_comatose_appearance",
+    }
+)
+
+
+def _has_character_offstage_repair_code(codes: Iterable[str]) -> bool:
+    return any(_canonical_repair_code(code) in _CHARACTER_OFFSTAGE_REPAIR_CODES for code in codes)
+
+
+def _offstage_reference_guidance(codes: Iterable[str]) -> str:
+    canonical = {_canonical_repair_code(code) for code in codes}
+    death_like = bool(canonical & {"dead_alive", "character_resurrection"})
+    if death_like:
+        return (
+            "如需提及，仅可：旁人怀念/悲悼/提起；引用其先前的话或留下的文字；"
+            "以遗体/画像/坟前/灵堂/信物/远闻线索的形态被提及；"
+            "或在显式标注的回忆/闪回/祭奠/梦境/幻象场景中出现。"
+        )
+    return (
+        "如需提及，仅可：旁人担忧/寻找/提起；引用其先前的话或留下的文字；"
+        "以昏迷肉身/沉睡身体/封印体/失踪线索/旧物/远闻线索的形态被提及；"
+        "或在显式标注的回忆/闪回/梦境/幻象场景中出现。"
+    )
 
 
 def _scrub_offstage_scene_references(
@@ -4511,7 +4544,10 @@ async def generate_scene_draft(
     effective_settings = settings or load_settings()
     if getattr(effective_settings.pipeline, "require_pre_draft_scene_contract", True):
         from bestseller.services.identity_guard import load_identity_registry
-        from bestseller.services.narrative_contracts import validate_scene_contract_pre_draft
+        from bestseller.services.narrative_contracts import (
+            repair_missing_scene_participants_pre_draft,
+            validate_scene_contract_pre_draft,
+        )
 
         identity_registry = (
             getattr(context_packet, "identity_registry", None)
@@ -4520,10 +4556,35 @@ async def generate_scene_draft(
         )
         if identity_registry is None:
             identity_registry = await load_identity_registry(session, project.id)
+        offstage_names = await _load_offstage_character_names_before_chapter(
+            session,
+            project.id,
+            chapter_number,
+        )
+        removed_participants, removed_state_refs = _scrub_offstage_scene_references(
+            scene,
+            offstage_names,
+        )
+        participant_repair_count = repair_missing_scene_participants_pre_draft(
+            scene,
+            identity_registry=identity_registry,
+            excluded_names=offstage_names,
+        )
+        if removed_participants or removed_state_refs or participant_repair_count:
+            scene.metadata_json = {
+                **(getattr(scene, "metadata_json", None) or {}),
+                "pre_draft_participant_repair": {
+                    "removed_participants": removed_participants,
+                    "removed_state_refs": removed_state_refs,
+                    "added_count": participant_repair_count,
+                    "participants": list(scene.participants or []),
+                },
+            }
         contract = validate_scene_contract_pre_draft(
             scene,
             identity_registry=identity_registry,
             require_identity_registry=True,
+            excluded_names=offstage_names,
         )
         if contract.violations or contract.warnings:
             scene.metadata_json = {
@@ -5399,6 +5460,20 @@ async def maybe_prepare_chapter_auto_repair(
     if not repair_set:
         return False, ()
 
+    def _mark_repair_started(block_codes: tuple[str, ...]) -> None:
+        chapter_meta = dict(chapter.metadata_json or {})
+        chapter_meta.pop("blocked_by_write_safety_gate", None)
+        chapter_meta.pop("write_safety_block_code", None)
+        chapter_meta.pop("write_safety_hint", None)
+        chapter_meta.pop("post_assembly_duplicate_gate", None)
+        chapter_meta.pop("auto_repair_exhausted", None)
+        chapter_meta["auto_repair_last_block_codes"] = list(block_codes)
+        chapter_meta["auto_repair_attempts"] = max(1, int(attempt_number))
+        chapter_meta["auto_repair_in_progress"] = True
+        chapter_meta["auto_accepted"] = False
+        chapter.metadata_json = chapter_meta
+        chapter.production_state = "pending"
+
     # Load the most recent report row — there can be multiple if the chapter
     # has been re-drafted before; we only care about the latest verdict.
     try:
@@ -5455,7 +5530,7 @@ async def maybe_prepare_chapter_auto_repair(
                     project.id,
                     chapter.chapter_number,
                 )
-                if any("character_resurrection" in c for c in repairable_hit)
+                if _has_character_offstage_repair_code(repairable_hit)
                 else frozenset()
             )
             for sc in scenes:
@@ -5466,13 +5541,11 @@ async def maybe_prepare_chapter_auto_repair(
                     removed_text = "、".join(removed)
                     scene_hint = (
                         f"{scene_hint}\n"
-                        f"系统已从本场景参与者列表移除已故角色：{removed_text}。"
+                        f"系统已从本场景参与者列表移除当下不可登场角色：{removed_text}。"
                         "本次重写请围绕剩余存活角色推进当下情节——"
-                        "不得让已故角色「登场」（不可发出当下动作、不可说出新台词、"
+                        "不得让离场角色「登场」（不可发出当下动作、不可说出新台词、"
                         "不可作为活跃参与者）。\n"
-                        "如需提及，仅可：旁人怀念/悲悼/提起；引用其先前的话或留下的文字；"
-                        "以遗体/画像/坟前/灵堂/信物的形态被提及；"
-                        "或在显式标注的回忆/闪回/祭奠/梦境/幻象场景中出现。"
+                        f"{_offstage_reference_guidance(repairable_hit)}"
                     )
                 sc_meta = dict(sc.metadata_json or {})
                 existing = str(sc_meta.get("auto_repair_hint") or "").strip()
@@ -5480,13 +5553,7 @@ async def maybe_prepare_chapter_auto_repair(
                 sc_meta["auto_repair_hint"] = merged
                 sc_meta["auto_repair_block_codes"] = list(repairable_hit)
                 sc.metadata_json = sc_meta
-            chapter_meta.pop("blocked_by_write_safety_gate", None)
-            chapter_meta.pop("write_safety_block_code", None)
-            chapter_meta.pop("write_safety_hint", None)
-            chapter_meta.pop("post_assembly_duplicate_gate", None)
-            chapter_meta["auto_repair_last_block_codes"] = list(repairable_hit)
-            chapter.metadata_json = chapter_meta
-            chapter.production_state = "pending"
+            _mark_repair_started(repairable_hit)
             await session.flush()
             return True, repairable_hit
         # code stored but not repairable — fall through to normal path
@@ -5650,13 +5717,13 @@ async def maybe_prepare_chapter_auto_repair(
                 "请在最后一段加入一个悬念性的句子即可，即使不够强也将被接受。"
             )
 
-    if "character_resurrection" in canonical_hits:
+    if canonical_hits & _CHARACTER_OFFSTAGE_REPAIR_CODES:
         hint_fragments.append(
-            "场景中出现了已死亡角色的活动。请把他们从当前场景的当下动作中移除——"
+            "场景中出现了当下不可登场角色的活动。请把他们从当前场景的当下动作中移除——"
             "不可让其在本章「登场」（即不可发出当下动作、不可说出新台词、"
             "不可作为活跃参与者参与场景）。\n"
             "允许的处理：旁人怀念、悲悼、提起；引用其先前说过的话或留下的文字；"
-            "以遗体、画像、坟前、灵堂、信物等形态被提及；"
+            "以遗体、画像、坟前、灵堂、信物、远闻线索等形态被提及；"
             "或仅在显式标注的回忆／闪回／祭奠／梦境／幻象场景中出现。"
         )
     if "CANON_FORBIDDEN_TERM" in canonical_hits:
@@ -5743,6 +5810,14 @@ async def maybe_prepare_chapter_auto_repair(
         except Exception:
             low_scene_target_floor = 0
 
+    def _scene_target_cap(*, floor: int = 0) -> int:
+        """Keep auto-repair scene budgets within DB-safe, publishable bounds."""
+
+        cap = 12_000
+        if _length_target > 0:
+            cap = max(3_000, int(math.ceil((_length_target / scene_count) * 2.0)))
+        return max(250, min(12_000, max(cap, floor)))
+
     high_scale: float = 1.0
     if "BLOCK_HIGH" in canonical_hits:
         try:
@@ -5767,7 +5842,7 @@ async def maybe_prepare_chapter_auto_repair(
             project.id,
             chapter.chapter_number,
         )
-        if "character_resurrection" in canonical_hits
+        if canonical_hits & _CHARACTER_OFFSTAGE_REPAIR_CODES
         else frozenset()
     )
     reset_count = 0
@@ -5779,13 +5854,11 @@ async def maybe_prepare_chapter_auto_repair(
             removed_text = "、".join(removed)
             scene_hint = (
                 f"{repair_hint}\n"
-                f"系统已从本场景参与者列表移除已故角色：{removed_text}。"
+                f"系统已从本场景参与者列表移除当下不可登场角色：{removed_text}。"
                 "本次重写请围绕剩余存活角色推进当下情节——"
-                "不得让已故角色「登场」（不可发出当下动作、不可说出新台词、"
+                "不得让离场角色「登场」（不可发出当下动作、不可说出新台词、"
                 "不可作为活跃参与者）。\n"
-                "如需提及，仅可：旁人怀念/悲悼/提起；引用其先前的话或留下的文字；"
-                "以遗体/画像/坟前/灵堂/信物的形态被提及；"
-                "或在显式标注的回忆/闪回/祭奠/梦境/幻象场景中出现。"
+                f"{_offstage_reference_guidance(repairable_hit)}"
             )
         meta = dict(sc.metadata_json or {})
         existing_hint = str(meta.get("auto_repair_hint") or "").strip()
@@ -5799,11 +5872,14 @@ async def maybe_prepare_chapter_auto_repair(
             try:
                 original_target = int(sc.target_word_count or 0)
                 if original_target > 0:
-                    adjusted_target = max(
-                        original_target,
+                    cap = _scene_target_cap(floor=low_scene_target_floor)
+                    raw_adjusted_target = max(
                         int(round(original_target * low_scale)),
                         low_scene_target_floor,
                     )
+                    adjusted_target = min(raw_adjusted_target, cap)
+                    if original_target <= cap:
+                        adjusted_target = max(original_target, adjusted_target)
                     sc.target_word_count = adjusted_target
                     meta = dict(sc.metadata_json or {})
                     meta.setdefault(
@@ -5814,6 +5890,9 @@ async def maybe_prepare_chapter_auto_repair(
                         sc.target_word_count
                     )
                     meta["auto_repair_length_scale"] = round(low_scale, 4)
+                    if raw_adjusted_target > cap or original_target > cap:
+                        meta["auto_repair_target_word_count_clamped"] = True
+                        meta["auto_repair_scene_target_cap"] = cap
                     if low_scene_target_floor > 0:
                         meta["auto_repair_min_scene_target_floor"] = (
                             low_scene_target_floor
@@ -5837,6 +5916,7 @@ async def maybe_prepare_chapter_auto_repair(
                         int(round((_length_min / scene_count) * 0.5)),
                     )
                 if original_target > 0:
+                    cap = _scene_target_cap(floor=min_scene_target)
                     scaled_target = max(
                         min_scene_target,
                         int(round(original_target * high_scale)),
@@ -5847,7 +5927,7 @@ async def maybe_prepare_chapter_auto_repair(
                             int(round((_length_target / scene_count) * 0.95)),
                         )
                         scaled_target = min(scaled_target, per_scene_ceiling)
-                    sc.target_word_count = min(original_target, scaled_target)
+                    sc.target_word_count = min(original_target, scaled_target, cap)
                     meta = dict(sc.metadata_json or {})
                     meta.setdefault(
                         "auto_repair_original_target_word_count",
@@ -5857,6 +5937,9 @@ async def maybe_prepare_chapter_auto_repair(
                         sc.target_word_count
                     )
                     meta["auto_repair_length_scale"] = round(high_scale, 4)
+                    if original_target > cap or scaled_target > cap:
+                        meta["auto_repair_target_word_count_clamped"] = True
+                        meta["auto_repair_scene_target_cap"] = cap
                     sc.metadata_json = meta
             except Exception:
                 logger.debug(
@@ -5881,13 +5964,7 @@ async def maybe_prepare_chapter_auto_repair(
 
     # ONLY reset production_state after all scene mutations succeed.  The
     # column is NOT NULL, so use the normal "pending" state instead of None.
-    chapter_meta = dict(chapter.metadata_json or {})
-    chapter_meta.pop("blocked_by_write_safety_gate", None)
-    chapter_meta.pop("write_safety_block_code", None)
-    chapter_meta.pop("write_safety_hint", None)
-    chapter_meta["auto_repair_last_block_codes"] = list(repairable_hit)
-    chapter.metadata_json = chapter_meta
-    chapter.production_state = "pending"
+    _mark_repair_started(repairable_hit)
 
     # Flush everything in one shot after all state changes are internally
     # consistent.

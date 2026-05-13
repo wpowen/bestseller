@@ -89,6 +89,31 @@ def test_invalid_premium_state_ledger_reports_actionable_findings() -> None:
     assert "agency_debt_due_missing" in codes
 
 
+def test_placeholder_costs_and_choices_do_not_pass_premium_state_ledger() -> None:
+    report = validate_premium_state_ledger(
+        {
+            "rule_events": [
+                {"rule_code": "R-001", "visible_effect": "砚台发烫", "cost": "未知"},
+                {"rule_code": "R-002", "visible_effect": "铜铃失控", "exploit_used": "无"},
+            ],
+            "relationship_events": [
+                {
+                    "character_a": "苏砚",
+                    "character_b": "沈夜寒",
+                    "axis": "trust",
+                    "after": "暂时同行",
+                    "active_choice": "无",
+                }
+            ],
+        }
+    )
+
+    codes = [finding.code for finding in report.findings]
+    assert report.passed is False
+    assert codes.count("rule_cost_or_exploit_missing") == 2
+    assert "relationship_active_choice_missing" in codes
+
+
 def test_materialize_premium_state_snapshot_from_valid_ledger() -> None:
     snapshot = materialize_premium_state_snapshot(
         {

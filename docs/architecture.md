@@ -34,6 +34,12 @@
    - 支持导出到本地目录或对象存储。
    - 但导出文件和数据库不再并列为“双真值源”。
 
+8. **剧情设计内核是规划层的上游真值**
+   - 新增的 Story Design Core 负责在正文生产前锁定：一句话命题、人物价值冲突、世界规则如何制造冲突、宏观结构、情节树、章节节拍与当前书籍状态。
+   - `BookSpec / WorldSpec / CastSpec / VolumePlan / ChapterOutlineBatch` 不再只是串联生成，而应由 `StoryDesignKernel` 统一驱动。
+   - 跨项目同质化审计只作为结果验收；核心能力是让每本书从自身题材、承诺、人物、世界规则和当前状态出发，生成不同的剧情语法。
+   - 详细方案见 `docs/plans/2026-05-12-story-design-core-capability-integration.md`。
+
 ## 2. 为什么旧方案不成立
 
 旧方案最主要的问题不是某一个技术选型，而是边界不一致：
@@ -69,6 +75,11 @@ flowchart TD
     E --> E3["Canon and Timeline"]
     E --> E4["pgvector Retrieval Chunks"]
     E --> E5["Workflow and Review State"]
+    D --> H["Story Design Core"]
+    H --> H1["StoryDesignKernel"]
+    H --> H2["Genre Story Grammar"]
+    H --> H3["Story State Snapshot"]
+    H --> H4["Reverse Outline Gate"]
 ```
 
 ### 3.1 分层职责
@@ -506,4 +517,3 @@ IDEA
 ---
 
 这版架构的核心不是“更复杂”，而是**把数据真值、正文真值、检索真值和工作流真值统一到了一个主数据库上**。只有这样，长篇小说的稳定生成、全局改设定后的影响分析、局部重写和质量闭环才真正可实现。
-

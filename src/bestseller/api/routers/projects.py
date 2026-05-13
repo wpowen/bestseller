@@ -9,7 +9,7 @@ from bestseller.api.schemas.projects import (
     ProjectListResponse,
     ProjectResponse,
 )
-from bestseller.infra.db.models import ProjectModel, StyleGuideModel
+from bestseller.infra.db.models import NovelScorecardModel, ProjectModel, StyleGuideModel
 
 router = APIRouter(tags=["projects"])
 
@@ -93,7 +93,10 @@ async def get_project_listing(
         )
 
     style_guide = await session.get(StyleGuideModel, project.id)
-    writing_profile = get_project_writing_profile(project, style_guide).model_dump(mode="json")
+    writing_profile = get_project_writing_profile(
+        project,
+        style_guide,
+    ).model_dump(mode="json")
     story_bible = await build_story_bible_overview(session, slug)
     return build_book_listing_profile(
         project=project,
@@ -101,6 +104,53 @@ async def get_project_listing(
         story_bible=story_bible,
         output_base_dir=settings.output.base_dir,
     )
+
+
+@router.get("/projects/{slug}/ranking-readiness")
+async def get_project_ranking_readiness(
+    slug: str,
+    session: SessionDep,
+    settings: SettingsDep,
+    _key: ApiKeyDep,
+) -> dict:
+    from bestseller.services.book_listing import build_book_listing_profile
+    from bestseller.services.inspection import build_story_bible_overview
+    from bestseller.services.premium_book_gate import evaluate_premium_project_readiness
+    from bestseller.services.ranking_readiness import evaluate_project_ranking_readiness
+    from bestseller.services.writing_profile import get_project_writing_profile
+
+    result = await session.execute(select(ProjectModel).where(ProjectModel.slug == slug))
+    project = result.scalar_one_or_none()
+    if project is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Project '{slug}' not found",
+        )
+
+    style_guide = await session.get(StyleGuideModel, project.id)
+    writing_profile = get_project_writing_profile(project, style_guide).model_dump(mode="json")
+    story_bible = await build_story_bible_overview(session, slug)
+    listing_profile = build_book_listing_profile(
+        project=project,
+        writing_profile=writing_profile,
+        story_bible=story_bible,
+        output_base_dir=settings.output.base_dir,
+    )
+    scorecard = await session.get(NovelScorecardModel, project.id)
+    premium_report = evaluate_premium_project_readiness(project)
+    report = evaluate_project_ranking_readiness(
+        project,
+        writing_profile=writing_profile,
+        story_bible=story_bible,
+        listing_profile=listing_profile,
+        scorecard_quality_score=(
+            float(scorecard.quality_score)
+            if scorecard is not None and scorecard.quality_score is not None
+            else None
+        ),
+        premium_gate_score=premium_report.score,
+    )
+    return report.to_dict()
 
 
 @router.get("/projects/{slug}/structure")

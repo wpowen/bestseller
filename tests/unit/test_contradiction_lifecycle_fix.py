@@ -425,6 +425,93 @@ class TestOffstateStateAppearances:
         assert violations[0].check_type == "character_sleeping_appearance"
 
     @pytest.mark.asyncio
+    async def test_comatose_character_is_not_resurrection_but_blocks_action(self) -> None:
+        char = _Character(
+            name="陆沉",
+            alive_status="alive",
+            death_chapter_number=None,
+            metadata_json={
+                "lifecycle_status": {
+                    "kind": "comatose",
+                    "since_chapter": 4,
+                    "scheduled_exit_chapter": 5,
+                }
+            },
+        )
+        session = _make_session(project=_Project(), characters={"陆沉": char})
+
+        resurrection_violations, resurrection_warnings = await _check_resurrection(
+            session,
+            project_id=uuid.uuid4(),
+            chapter_number=4,
+            scene_participants=["陆沉"],
+        )
+        assert resurrection_violations == []
+        assert resurrection_warnings == []
+
+        offstage_violations, offstage_warnings = await _check_offstage_state_appearances(
+            session,
+            project_id=uuid.uuid4(),
+            chapter_number=4,
+            scene_participants=["陆沉"],
+        )
+        assert offstage_warnings == []
+        assert len(offstage_violations) == 1
+        assert offstage_violations[0].check_type == "character_comatose_appearance"
+        assert offstage_violations[0].severity == "error"
+        assert "复活" not in offstage_violations[0].message
+        assert "昏迷" in offstage_violations[0].message
+
+    @pytest.mark.asyncio
+    async def test_comatose_character_can_act_after_scheduled_recovery(self) -> None:
+        char = _Character(
+            name="陆沉",
+            alive_status="alive",
+            metadata_json={
+                "lifecycle_status": {
+                    "kind": "comatose",
+                    "since_chapter": 4,
+                    "scheduled_exit_chapter": 5,
+                }
+            },
+        )
+        session = _make_session(project=_Project(), characters={"陆沉": char})
+        violations, warnings = await _check_offstage_state_appearances(
+            session,
+            project_id=uuid.uuid4(),
+            chapter_number=5,
+            scene_participants=["陆沉"],
+        )
+        assert violations == []
+        assert warnings == []
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("alive_status", "expected_clear"),
+        [
+            ("injured", True),
+            ("dying", True),
+            ("comatose", False),
+        ],
+    )
+    async def test_legacy_alive_status_non_death_boundaries(
+        self,
+        alive_status: str,
+        expected_clear: bool,
+    ) -> None:
+        char = _Character(name="陆沉", alive_status=alive_status)
+        session = _make_session(project=_Project(), characters={"陆沉": char})
+        violations, _ = await _check_offstage_state_appearances(
+            session,
+            project_id=uuid.uuid4(),
+            chapter_number=50,
+            scene_participants=["陆沉"],
+        )
+        assert (violations == []) is expected_clear
+        if not expected_clear:
+            assert violations[0].check_type == "character_comatose_appearance"
+
+    @pytest.mark.asyncio
     async def test_alive_character_passes(self) -> None:
         char = _Character(name="陆沉")  # alive, no metadata
         session = _make_session(project=_Project(), characters={"陆沉": char})

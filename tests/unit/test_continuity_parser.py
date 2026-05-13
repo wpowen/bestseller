@@ -9,7 +9,11 @@ from __future__ import annotations
 
 import pytest
 
-from bestseller.services.continuity import _parse_extraction_payload
+from bestseller.domain.context import ChapterStateSnapshotContext, HardFactContext
+from bestseller.services.continuity import (
+    _normalize_inferred_countdown_jumps,
+    _parse_extraction_payload,
+)
 
 
 def test_accepts_well_formed_payload() -> None:
@@ -124,3 +128,60 @@ def test_time_anchor_null_is_accepted() -> None:
     assert err is None
     assert time_anchor is None
     assert chapter_time_span is None
+
+
+def test_normalizes_inferred_countdown_jump_without_source_quote() -> None:
+    previous = ChapterStateSnapshotContext(
+        chapter_number=15,
+        facts=[
+            HardFactContext(
+                name="末日倒计时",
+                value="约18",
+                unit="小时",
+                kind="countdown",
+            )
+        ],
+    )
+    facts = [
+        HardFactContext(
+            name="末日倒计时",
+            value="约15",
+            unit="小时",
+            kind="countdown",
+            notes="本章未明确提及具体数字",
+        )
+    ]
+
+    normalized = _normalize_inferred_countdown_jumps(facts, previous)
+
+    assert normalized[0].value == "约17"
+    assert normalized[0].source_quote is None
+    assert "最多推进 1 个单位" in (normalized[0].notes or "")
+
+
+def test_keeps_countdown_jump_when_source_quote_is_present() -> None:
+    previous = ChapterStateSnapshotContext(
+        chapter_number=15,
+        facts=[
+            HardFactContext(
+                name="末日倒计时",
+                value="约18",
+                unit="小时",
+                kind="countdown",
+            )
+        ],
+    )
+    facts = [
+        HardFactContext(
+            name="末日倒计时",
+            value="约15",
+            unit="小时",
+            kind="countdown",
+            source_quote="倒计时只剩十五小时",
+        )
+    ]
+
+    normalized = _normalize_inferred_countdown_jumps(facts, previous)
+
+    assert normalized[0].value == "约15"
+    assert normalized[0].source_quote == "倒计时只剩十五小时"

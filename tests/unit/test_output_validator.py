@@ -142,13 +142,13 @@ class TestLanguageSignatureCheck:
 class TestLengthEnvelopeCheck:
     def test_in_envelope_passes(self) -> None:
         check = LengthEnvelopeCheck()
-        text = "a" * 3000
+        text = "word " * 3000
         violations = list(check.run(text, _chapter_ctx(_en_invariants())))
         assert violations == []
 
     def test_too_short_is_blocked(self) -> None:
         check = LengthEnvelopeCheck()
-        text = "a" * 500
+        text = "word " * 500
         violations = list(check.run(text, _chapter_ctx(_en_invariants())))
         assert len(violations) == 1
         assert violations[0].code == "LENGTH_UNDER"
@@ -157,11 +157,17 @@ class TestLengthEnvelopeCheck:
 
     def test_too_long_is_blocked(self) -> None:
         check = LengthEnvelopeCheck()
-        text = "a" * 10000
+        text = "word " * 10000
         violations = list(check.run(text, _chapter_ctx(_en_invariants())))
         assert len(violations) == 1
         assert violations[0].code == "LENGTH_OVER"
         assert violations[0].severity == "block"
+
+    def test_chinese_punctuation_and_markdown_do_not_inflate_length(self) -> None:
+        check = LengthEnvelopeCheck()
+        text = "# 第3章：回声掀幕\n\n" + ("苏砚。 " * 900)
+        violations = list(check.run(text, _chapter_ctx(_zh_invariants())))
+        assert violations == []
 
     def test_scene_scope_is_exempt(self) -> None:
         # Scene drafts shouldn't be judged by the chapter envelope.
@@ -176,7 +182,7 @@ class TestLengthEnvelopeCheck:
         # "in envelope" should be based on non-whitespace; padding with newlines
         # must not inflate the count to pass.
         check = LengthEnvelopeCheck()
-        text = "\n".join(["a"] * 500)  # 500 chars + ~499 newlines
+        text = "\n".join(["word"] * 500)  # 500 words + ~499 newlines
         violations = list(check.run(text, _chapter_ctx(_en_invariants())))
         assert len(violations) == 1
         assert violations[0].code == "LENGTH_UNDER"
@@ -292,8 +298,64 @@ class TestNamingConsistencyCheck:
             "苏婉宁确认纸符齐备，供品也已经齐备。"
             "林渊把铜钱按在掌心，铜钱按在符纸边缘不动。"
             "朱砂又被雨水冲开，齐备的器物只剩半数。"
+            "林渊捏起康熙铜钱，康熙铜钱背面的锈色压住镜纹。"
         )
         violations = check.run(text, _ctx_with_allowed(inv))
+        assert violations == []
+
+    def test_zh_prose_tail_words_do_not_create_rogue_names(self) -> None:
+        check = NamingConsistencyCheck()
+        inv = _zh_invariants_with_pool(("林渊", "苏婉宁"))
+        text = (
+            "铜钱印记正在发烫，铜钱印记像烙铁一样贴住皮肤。"
+            "苏婉宁的瞳孔一缩，瞳孔收缩得很明显。"
+            "走廊尽头忽明忽暗，灯光忽明忽暗。"
+            "镜子里的影子张模糊开来，张模糊的轮廓贴着玻璃。"
+            "章旁边压着旧病历，章旁边还有一枚湿冷的指印。"
+            "旧印已经褪成暗褐色，褪成暗褐的边缘像干血。"
+            "于人类而言，那声音太尖；于人类而言，那不是哭声。"
+            "孙叔留下的纸条被雨打湿，孙叔这个称呼只是邻里叫法。"
+        )
+        violations = check.run(text, _ctx_with_allowed(inv))
+        assert violations == []
+
+    def test_zh_qiyouhun_prose_fragments_do_not_create_rogue_names(self) -> None:
+        check = NamingConsistencyCheck()
+        inv = _zh_invariants_with_pool(("苏砚", "沈青鸾"))
+        text = (
+            "地面平得像镜面，地面平得像被人反复擦过。"
+            "烟云托起铜镜，烟云托着一点冷光。"
+            "执念凝成执念，云忽然压低，云转过井口。"
+            "陈腐的药味很重，陈腐气息从井下涌出。"
+            "铜钱孔中渗出血丝，铜钱孔中有灰。"
+            "方鼎纹路浮起，方鼎不是人名。"
+            "方可定下章法，方可定住局面。"
+            "余八者皆沉默，余八者不是人名。"
+            "云没有散开，云没有压住井口。"
+            "姜氏禁令刻在碑上，姜氏禁声多年。"
+        )
+        violations = check.run(text, _ctx_with_allowed(inv))
+        assert violations == []
+
+    def test_zh_suspense_case_prose_does_not_create_rogue_names(self) -> None:
+        check = NamingConsistencyCheck()
+        inv = _zh_invariants_with_pool(("沈青崖", "周神算", "李德盛"))
+        text = (
+            "沈青崖撬开那张被河水泡得发白的嘴。"
+            "皮肉浮胀，口鼻有水沫，章已经盖好。"
+            "周神算让人抬来封尸木架，张验尸格被按在尸台旁。"
+            "鬼影终于挣出半口气，又在沈青崖眼前炸成一团灰雾。"
+            "沈青崖把验尸格撕成两半，周神算脸色发青。"
+            "卷宗盖过洋章、华章，和当年旧案一样被塞进档案室。"
+            "那张残纸被烧成干净的灰，说明这具尸体不能留。"
+            "李宅门外已经钉上封条，李宅后院的井也被人看住。"
+            "茅山外门和茅山正统不是人名，茅山来牒也只是公文。"
+            "火苗明灭不定，老者说着带口音的华语。"
+            "缺口和卷宗封皮严丝合缝，清远云游四方。"
+            "一张符纸压住铜钱剑，照片和玉佩都被收进袖中。"
+            "沈爷只是称呼，张留下的批注也不是新角色。"
+        )
+        violations = check.run(text * 2, _ctx_with_allowed(inv))
         assert violations == []
 
     def test_zh_compound_surname_in_pool_passes(self) -> None:
@@ -562,6 +624,45 @@ class TestEntityDensityCheck:
             "林奚走进庭院，回头看着赵无极。"
             "孙小明在远处喊了一声。林奚没有回应。"
         ) * 10
+        ctx = ValidationContext(
+            invariants=_zh_invariants(), chapter_no=1, scope="chapter"
+        )
+        violations = check.run(text, ctx)
+        assert violations == []
+
+    def test_zh_action_glue_does_not_inflate_opening_entities(self) -> None:
+        check = EntityDensityCheck(max_entities=5)
+        text = (
+            "苏砚赶到青萝镇时，镇口正要点火。"
+            "十几个人围成半圈，和母亲旧案有关的铜镜被按在柴堆上。"
+            "苏砚停在三步外，苏砚上前扣住镇丁手腕。"
+            "姜四郎脸色发白，姜婆护住铜镜。"
+            "人群于乱中后退，苏砚追出两步，又看见一张扭曲的脸。"
+        )
+        ctx = ValidationContext(
+            invariants=_zh_invariants(), chapter_no=1, scope="chapter"
+        )
+        violations = check.run(text, ctx)
+        assert violations == []
+
+    def test_zh_suspense_case_prose_does_not_inflate_opening_entities(self) -> None:
+        check = EntityDensityCheck(max_entities=5)
+        text = (
+            "验尸房的门被人从外面锁上时，沈青崖正把手伸进死者喉间。"
+            "周神算在门外催他交出验尸格，李德盛的嘴被河水泡得发白。"
+            "皮肉浮胀，口鼻有水沫，章已经盖好。"
+            "两个巡捕抬着封尸木架进门，一张验尸格被按在尸台旁。"
+            "鬼影终于挣出半口气，又在沈青崖眼前炸成一团灰雾。"
+            "沈青崖把验尸格撕成两半，周神算脸色发青。"
+            "卷宗盖过洋章、华章，和当年旧案一样被塞进档案室。"
+            "那张残纸被烧成干净的灰，说明这具尸体不能留。"
+            "李宅门外已经钉上封条，李宅后院的井也被人看住。"
+            "茅山外门和茅山正统不是人名，茅山来牒也只是公文。"
+            "火苗明灭不定，老者说着带口音的华语。"
+            "缺口和卷宗封皮严丝合缝，清远云游四方。"
+            "一张符纸压住铜钱剑，照片和玉佩都被收进袖中。"
+            "沈爷只是称呼，张留下的批注也不是新角色。"
+        )
         ctx = ValidationContext(
             invariants=_zh_invariants(), chapter_no=1, scope="chapter"
         )

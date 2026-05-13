@@ -226,6 +226,13 @@ class TestAppearanceRuleFor:
     def test_sleeping_cannot_act(self) -> None:
         assert appearance_rule_for("sleeping").can_act_in_present is False
 
+    def test_comatose_is_not_deceased_but_cannot_act(self) -> None:
+        rule = appearance_rule_for("comatose")
+        assert rule.can_act_in_present is False
+        assert rule.can_appear_as_body is True
+        assert rule.can_be_remembered is True
+        assert rule.can_return_without_resurrection_block is True
+
     def test_unknown_kind_falls_back_to_alive(self) -> None:
         rule = appearance_rule_for("nonsense")
         assert rule.kind == "alive"
@@ -315,6 +322,40 @@ class TestEffectiveLifecycleState:
         # Unknown kind ignored → falls back to alive_status / death.
         assert kind == "alive"
 
+    def test_comatose_metadata_resolves_as_non_death_offstage_state(self) -> None:
+        meta = {
+            "lifecycle_status": {
+                "kind": "comatose",
+                "since_chapter": 4,
+                "scheduled_exit_chapter": 5,
+            }
+        }
+        kind, payload = effective_lifecycle_state(
+            alive_status="alive",
+            death_chapter_number=None,
+            chapter_number=4,
+            character_metadata=meta,
+        )
+        assert kind == "comatose"
+        assert payload["scheduled_exit_chapter"] == 5
+
+    def test_comatose_metadata_expires_without_becoming_deceased(self) -> None:
+        meta = {
+            "lifecycle_status": {
+                "kind": "comatose",
+                "since_chapter": 4,
+                "scheduled_exit_chapter": 5,
+            }
+        }
+        kind, payload = effective_lifecycle_state(
+            alive_status="alive",
+            death_chapter_number=None,
+            chapter_number=5,
+            character_metadata=meta,
+        )
+        assert kind == "alive"
+        assert payload["source"] == "alive_status"
+
 
 class TestCharactersOffstageAtChapter:
     """Roster-level helper that picks every offstage character in one
@@ -338,6 +379,34 @@ class TestCharactersOffstageAtChapter:
         out = characters_offstage_at_chapter(rows, 50)
         kinds = {row.name: kind for row, kind, _ in out}
         assert kinds == {"陆沉": "missing", "苏瑶": "sealed"}
+
+    def test_picks_all_non_death_offstage_states(self) -> None:
+        rows = [
+            SimpleNamespace(
+                name="失踪者", alive_status="alive", death_chapter_number=None,
+                metadata_json={"lifecycle_status": {"kind": "missing", "since_chapter": 5}},
+            ),
+            SimpleNamespace(
+                name="封印者", alive_status="alive", death_chapter_number=None,
+                metadata_json={"lifecycle_status": {"kind": "sealed", "since_chapter": 5}},
+            ),
+            SimpleNamespace(
+                name="沉睡者", alive_status="alive", death_chapter_number=None,
+                metadata_json={"lifecycle_status": {"kind": "sleeping", "since_chapter": 5}},
+            ),
+            SimpleNamespace(
+                name="昏迷者", alive_status="alive", death_chapter_number=None,
+                metadata_json={"lifecycle_status": {"kind": "comatose", "since_chapter": 5}},
+            ),
+        ]
+        out = characters_offstage_at_chapter(rows, 50)
+        kinds = {row.name: kind for row, kind, _ in out}
+        assert kinds == {
+            "失踪者": "missing",
+            "封印者": "sealed",
+            "沉睡者": "sleeping",
+            "昏迷者": "comatose",
+        }
 
     def test_includes_deceased(self) -> None:
         rows = [

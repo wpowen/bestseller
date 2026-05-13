@@ -26,9 +26,15 @@ from bestseller.services.audit_loop import (
     build_phase1_audit,
     persist_audit_findings,
 )
+from bestseller.services.book_listing import build_book_listing_profile
 from bestseller.services.commercial_novel_gate import (
     commercial_gate_report_to_dict,
     evaluate_book_package,
+)
+from bestseller.services.commercial_planning_readiness import (
+    CommercialPlanningReadinessReport,
+    commercial_planning_readiness_report_to_dict,
+    evaluate_commercial_planning_readiness,
 )
 from bestseller.services.consistency import review_project_consistency
 from bestseller.services.context import build_chapter_writer_context, build_scene_writer_context
@@ -55,13 +61,13 @@ from bestseller.services.inspection import (
     get_planning_artifact_detail,
     list_planning_artifacts,
 )
+from bestseller.services.knowledge import list_canon_facts, list_timeline_events
 from bestseller.services.material_density import (
     audit_project_material_density,
     hydrate_story_bible_materials,
     material_density_report_to_dict,
     refresh_project_material_reference_block,
 )
-from bestseller.services.knowledge import list_canon_facts, list_timeline_events
 from bestseller.services.narrative import build_narrative_overview
 from bestseller.services.narrative_tree import (
     build_narrative_tree_overview,
@@ -75,12 +81,12 @@ from bestseller.services.pipelines import (
     run_scene_pipeline,
 )
 from bestseller.services.planner import generate_novel_plan
+from bestseller.services.premium_benchmark import run_premium_benchmark_cases
 from bestseller.services.premium_book_gate import (
     PremiumBookGateReport,
     evaluate_premium_project_readiness,
     premium_book_gate_report_to_dict,
 )
-from bestseller.services.premium_benchmark import run_premium_benchmark_cases
 from bestseller.services.project_health import build_project_health_report, repair_project_health
 from bestseller.services.projects import (
     create_chapter,
@@ -98,6 +104,7 @@ from bestseller.services.publishing.amazon_kdp import (
     show_amazon_kdp_profile,
     validate_amazon_kdp_project,
 )
+from bestseller.services.ranking_readiness import evaluate_project_ranking_readiness
 from bestseller.services.repair import run_project_repair
 from bestseller.services.retrieval import refresh_project_retrieval_index, search_project_retrieval
 from bestseller.services.reviews import (
@@ -129,6 +136,7 @@ from bestseller.services.writing_presets import (
     load_writing_preset_catalog,
     validate_longform_scope,
 )
+from bestseller.services.writing_profile import get_project_writing_profile
 from bestseller.settings import DEFAULT_CONFIG_PATH, load_settings, settings_to_dict
 from bestseller.web import serve_web_app
 
@@ -1548,6 +1556,273 @@ def commercial_gate_package(
         raise typer.Exit(1)
 
 
+@commercial_gate_app.command("planning")
+def commercial_gate_planning(
+    project_slug: Annotated[str, typer.Argument(help="Project slug to evaluate.")],
+    json_output: Annotated[
+        bool,
+        typer.Option(
+            "--json",
+            help="Print the full commercial planning readiness report as JSON.",
+        ),
+    ] = False,
+    fail: Annotated[
+        bool,
+        typer.Option(
+            "--fail/--no-fail",
+            help="Exit non-zero when the planning readiness gate does not pass.",
+        ),
+    ] = True,
+) -> None:
+    """Evaluate chapter/scene planning before commercial prose generation."""
+
+    async def _run() -> CommercialPlanningReadinessReport:
+        from sqlalchemy import select
+        from sqlalchemy.orm import selectinload
+
+        from bestseller.infra.db.models import ChapterModel
+
+        settings = load_settings()
+        async with session_scope(settings) as session:
+            project = await get_project_by_slug(session, project_slug)
+            if project is None:
+                raise ValueError(f"Project '{project_slug}' was not found.")
+            chapters = list(
+                await session.scalars(
+                    select(ChapterModel)
+                    .options(selectinload(ChapterModel.scenes))
+                    .where(ChapterModel.project_id == project.id)
+                    .order_by(ChapterModel.chapter_number.asc())
+                )
+            )
+            payloads = []
+            for chapter in chapters:
+                payloads.append(
+                    {
+                        "chapter_number": chapter.chapter_number,
+                        "title": chapter.title,
+                        "chapter_goal": chapter.chapter_goal,
+                        "opening_situation": chapter.opening_situation,
+                        "main_conflict": chapter.main_conflict,
+                        "hook_description": chapter.hook_description,
+                        "hype_type": chapter.hype_type,
+                        "hype_intensity": chapter.hype_intensity,
+                        "scenes": [
+                            {
+                                "scene_number": scene.scene_number,
+                                "scene_type": scene.scene_type,
+                                "title": scene.title,
+                                "participants": scene.participants,
+                                "purpose": scene.purpose,
+                                "entry_state": scene.entry_state,
+                                "exit_state": scene.exit_state,
+                                "hook_requirement": scene.hook_requirement,
+                            }
+                            for scene in sorted(
+                                chapter.scenes,
+                                key=lambda item: item.scene_number,
+                            )
+                        ],
+                    }
+                )
+            return evaluate_commercial_planning_readiness(
+                payloads,
+                target_chapters=project.target_chapters,
+                package_root=Path(settings.output.base_dir) / project.slug,
+                long_serial_min_chapters=getattr(
+                    settings.pipeline,
+                    "commercial_planning_min_target_chapters",
+                    50,
+                ),
+            )
+
+    report = asyncio.run(_run())
+    payload = commercial_planning_readiness_report_to_dict(report)
+    if json_output:
+        typer.echo(json.dumps(payload, ensure_ascii=False, indent=2))
+    else:
+        status = "PASS" if report.passed else "FAIL"
+        typer.echo(
+            f"{status} {project_slug} "
+            f"strong_hype={report.strong_golden_hype_chapters} "
+            f"hooked={report.golden_three_hooked_chapters} "
+            f"external_pressure={report.golden_three_external_pressure_chapters}"
+        )
+        for finding in report.findings:
+            typer.echo(
+                f"- [{finding.severity}] {finding.code} {finding.scope}: "
+                f"{finding.message}"
+            )
+            if finding.suggestion:
+                typer.echo(f"  fix: {finding.suggestion}")
+
+    if fail and not report.passed:
+        raise typer.Exit(1)
+
+
+@commercial_gate_app.command("project")
+def commercial_gate_project(
+    project_slug: Annotated[str, typer.Argument(help="Project slug to evaluate.")],
+    json_output: Annotated[
+        bool,
+        typer.Option(
+            "--json",
+            help="Print the full ranking-readiness report as JSON.",
+        ),
+    ] = False,
+    fail: Annotated[
+        bool,
+        typer.Option(
+            "--fail/--no-fail",
+            help="Exit non-zero when the project is below the vertical viability tier.",
+        ),
+    ] = True,
+) -> None:
+    """Evaluate project readiness against the ranking-grade novel framework."""
+
+    async def _run() -> Any:
+        from bestseller.infra.db.models import NovelScorecardModel, StyleGuideModel
+        from sqlalchemy import select
+        from sqlalchemy.orm import selectinload
+
+        from bestseller.infra.db.models import ChapterModel
+
+        settings = load_settings()
+        async with session_scope(settings) as session:
+            project = await get_project_by_slug(session, project_slug)
+            if project is None:
+                raise ValueError(f"Project '{project_slug}' was not found.")
+            style_guide = (
+                await session.get(StyleGuideModel, project.id)
+                if hasattr(session, "get")
+                else None
+            )
+            writing_profile = get_project_writing_profile(
+                project,
+                style_guide,
+            ).model_dump(mode="json")
+            try:
+                story_bible = await build_story_bible_overview(session, project_slug)
+            except Exception:
+                story_bible = None
+            listing_profile = build_book_listing_profile(
+                project=project,
+                writing_profile=writing_profile,
+                story_bible=story_bible,
+                output_base_dir=settings.output.base_dir,
+            )
+            scorecard = (
+                await session.get(NovelScorecardModel, project.id)
+                if hasattr(session, "get")
+                else None
+            )
+            gate_findings: list[dict[str, Any]] = []
+            chapters = list(
+                await session.scalars(
+                    select(ChapterModel)
+                    .options(selectinload(ChapterModel.scenes))
+                    .where(ChapterModel.project_id == project.id)
+                    .order_by(ChapterModel.chapter_number.asc())
+                )
+            )
+            planning_payloads = [
+                {
+                    "chapter_number": chapter.chapter_number,
+                    "title": chapter.title,
+                    "chapter_goal": chapter.chapter_goal,
+                    "opening_situation": chapter.opening_situation,
+                    "main_conflict": chapter.main_conflict,
+                    "hook_description": chapter.hook_description,
+                    "hype_type": chapter.hype_type,
+                    "hype_intensity": chapter.hype_intensity,
+                    "scenes": [
+                        {
+                            "scene_number": scene.scene_number,
+                            "scene_type": scene.scene_type,
+                            "title": scene.title,
+                            "participants": scene.participants,
+                            "purpose": scene.purpose,
+                            "entry_state": scene.entry_state,
+                            "exit_state": scene.exit_state,
+                            "hook_requirement": scene.hook_requirement,
+                        }
+                        for scene in sorted(
+                            chapter.scenes,
+                            key=lambda item: item.scene_number,
+                        )
+                    ],
+                }
+                for chapter in chapters
+            ]
+            planning_report = evaluate_commercial_planning_readiness(
+                planning_payloads,
+                target_chapters=project.target_chapters,
+                package_root=Path(settings.output.base_dir) / project.slug,
+                long_serial_min_chapters=getattr(
+                    settings.pipeline,
+                    "commercial_planning_min_target_chapters",
+                    50,
+                ),
+            )
+            gate_findings.extend(
+                commercial_planning_readiness_report_to_dict(planning_report)["findings"]
+            )
+            package_dir = Path(settings.output.base_dir) / project.slug
+            if package_dir.exists():
+                package_report = evaluate_book_package(package_dir)
+                gate_findings.extend(
+                    {
+                        "code": issue.code,
+                        "severity": issue.severity,
+                        "scope": (
+                            f"commercial_package.chapter.{issue.chapter_no}"
+                            if issue.chapter_no
+                            else "commercial_package"
+                        ),
+                        "message": issue.detail,
+                        "suggestion": issue.suggestion,
+                        "evidence": issue.evidence,
+                    }
+                    for issue in package_report.issues
+                )
+            premium_report = evaluate_premium_project_readiness(project)
+            return evaluate_project_ranking_readiness(
+                project,
+                writing_profile=writing_profile,
+                story_bible=story_bible,
+                listing_profile=listing_profile,
+                scorecard_quality_score=(
+                    float(scorecard.quality_score)
+                    if scorecard is not None and scorecard.quality_score is not None
+                    else None
+                ),
+                premium_gate_score=premium_report.score,
+                external_gate_findings=gate_findings,
+            )
+
+    report = asyncio.run(_run())
+    payload = report.to_dict()
+    if json_output:
+        typer.echo(json.dumps(payload, ensure_ascii=False, indent=2))
+    else:
+        status = "PASS" if report.passed else "FAIL"
+        typer.echo(
+            f"{status} {report.project_slug or project_slug} "
+            f"maturity_score={payload['maturity_score']} tier={report.tier}"
+        )
+        typer.echo(f"action: {report.action}")
+        for finding in report.findings:
+            if finding.severity in {"critical", "high", "medium"}:
+                typer.echo(
+                    f"- [{finding.severity}] {finding.code} {finding.scope}: "
+                    f"{finding.message}"
+                )
+                typer.echo(f"  fix: {finding.suggestion}")
+
+    if fail and not report.passed:
+        raise typer.Exit(1)
+
+
 @premium_gate_app.command("project")
 def premium_gate_project(
     project_slug: Annotated[str, typer.Argument(help="Project slug to evaluate.")],
@@ -1873,7 +2148,7 @@ def chapter_add(
     chapter_goal: str,
     title: str | None = None,
     volume_number: int = 1,
-    target_words: int = 5500,
+    target_words: int = 2200,
 ) -> None:
     """Create a chapter structure row."""
 
@@ -2021,7 +2296,7 @@ def scene_add(
     scene_number: int,
     scene_type: str,
     title: str | None = None,
-    target_words: int = 1000,
+    target_words: int = 700,
 ) -> None:
     """Create a scene card row."""
 

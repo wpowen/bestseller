@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from typing import Any
 
 from bestseller.infra.db.session import get_server_session
@@ -8,6 +9,21 @@ from bestseller.settings import get_settings
 from bestseller.worker.progress import RedisProgressReporter, make_sync_callback
 
 logger = logging.getLogger(__name__)
+
+
+async def run_self_heal_task(ctx: dict[str, Any]) -> dict[str, Any]:
+    """Periodic orphan reaper and stuck-project requeue."""
+    from bestseller.worker.self_heal import heal_stuck_projects  # noqa: PLC0415
+
+    settings = get_settings()
+    redis = ctx.get("redis")
+    worker_id = f"{os.uname().nodename}:{os.getpid()}:periodic"
+    dispatched = await heal_stuck_projects(
+        settings,
+        redis=redis,
+        worker_id=worker_id,
+    )
+    return {"dispatched": dispatched}
 
 
 async def run_autowrite_task(ctx: dict[str, Any], workflow_run_id: str, payload: dict[str, Any]) -> dict[str, Any]:
@@ -99,4 +115,36 @@ async def run_chapter_pipeline_task(ctx: dict[str, Any], workflow_run_id: str, p
         )
 
     await reporter.emit("completed", {"result": "chapter_pipeline_done"})
+    return result.model_dump(mode="json")
+
+
+async def run_project_repair_task(ctx: dict[str, Any], workflow_run_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+    """Project repair pipeline for self-heal and queued repair jobs."""
+    from bestseller.services.repair import run_project_repair  # noqa: PLC0415
+
+    settings = get_settings()
+    redis = ctx["redis"]
+    reporter = RedisProgressReporter(redis, workflow_run_id)
+
+    project_slug = payload["project_slug"]
+    await reporter.emit("project_repair_started", {"project_slug": project_slug})
+
+    async with get_server_session() as session:
+        result = await run_project_repair(
+            session=session,
+            settings=settings,
+            project_slug=project_slug,
+            requested_by=str(payload.get("requested_by") or "worker_self_heal"),
+            refresh_impacts=bool(payload.get("refresh_impacts", True)),
+            export_markdown=bool(payload.get("export_markdown", True)),
+            include_pending_rewrite_tasks=bool(
+                payload.get("include_pending_rewrite_tasks", False)
+            ),
+            scan_publication_gate_candidates=bool(
+                payload.get("scan_publication_gate_candidates", False)
+            ),
+            progress=make_sync_callback(reporter),
+        )
+
+    await reporter.emit("completed", {"result": "project_repair_done"})
     return result.model_dump(mode="json")

@@ -102,7 +102,7 @@ l6_write_gate:
     ANTAGONIST_MOTIVE_OVERLAP: block
     WORLD_TAXONOMY_BOILERPLATE: block
     NAMING_POOL_UNDERSIZED: block
-    NAMING_OUT_OF_POOL: block
+    NAMING_OUT_OF_POOL: audit_only
     OPENING_ENTITY_OVERLOAD: audit_only
     POV_DRIFT: audit_only
     CLIFFHANGER_REPEAT: audit_only

@@ -5,6 +5,11 @@ import json
 from pathlib import Path
 from typing import Any
 
+from bestseller.services.ranking_readiness import (
+    build_listing_ip_readiness,
+    build_listing_marketing_asset_pack,
+)
+
 LISTING_SCHEMA_VERSION = "1.1"
 REQUIRED_TITLE_CANDIDATE_COUNT = 20
 
@@ -453,6 +458,28 @@ def validate_book_listing_profile(profile: dict[str, Any]) -> dict[str, Any]:
                 else "建议明确列出读者能持续获得什么爽感和吸引力。"
             ),
         },
+        {
+            "code": "short_video_scripts",
+            "label": "Short Video Scripts / 短视频脚本" if is_en else "短视频脚本",
+            "severity": "warning",
+            "passed": (
+                len(
+                    (
+                        profile.get("marketing_assets")
+                        if isinstance(profile.get("marketing_assets"), dict)
+                        else {}
+                    ).get("short_video_scripts", [])
+                )
+                >= 3
+            ),
+            "message": (
+                "Prepare 15s / 45s / 90s scripts for discovery, character conflict, "
+                "and world hooks.\n"
+                "建议准备 15 秒概念钩子、45 秒角色关系冲突、90 秒世界观/议题亮点脚本。"
+                if is_en
+                else "建议准备 15 秒概念钩子、45 秒角色关系冲突、90 秒世界观/议题亮点脚本。"
+            ),
+        },
     ]
     blocker_count = sum(
         1 for item in checks if item["severity"] == "blocker" and not item["passed"]
@@ -674,5 +701,13 @@ def build_book_listing_profile(
         "character_names": "、".join(character_names),
         "shelf_intro": profile["shelf_intro"],
     }
+    profile["marketing_assets"] = build_listing_marketing_asset_pack(
+        profile,
+        story_bible=story_bible,
+    )
+    profile["ip_readiness"] = build_listing_ip_readiness(
+        profile,
+        story_bible=story_bible,
+    )
     profile["compliance"] = validate_book_listing_profile(profile)
     return profile

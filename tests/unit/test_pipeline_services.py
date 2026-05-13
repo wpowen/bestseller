@@ -933,6 +933,56 @@ async def test_export_project_markdown_writes_artifact(
     assert artifact.id is not None
     assert output_path.exists() is True
     assert output_path.read_text(encoding="utf-8").startswith("# My Story")
+    package_root = tmp_path / "output" / project.slug
+    assert (package_root / "chapter-001.md").exists() is True
+    assert (package_root / "story-bible" / "series-brief.md").exists() is True
+    assert (package_root / "story-bible" / "reader-desire-map.md").exists() is True
+    assert (package_root / "story-bible" / "series-bible.md").exists() is True
+    assert (package_root / "story-bible" / "continuity-ledger.md").exists() is True
+    assert (package_root / "story-bible" / "batch-queue.csv").exists() is True
+    assert (package_root / "story-bible" / "volume-plan.csv").exists() is True
+
+
+@pytest.mark.asyncio
+async def test_export_project_markdown_removes_stale_chapter_files(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    project = build_project()
+    chapter = build_chapter(project.id)
+    chapter.target_word_count = 120
+    chapter.status = "complete"
+    chapter.production_state = "ok"
+    chapter_draft = ChapterDraftVersionModel(
+        project_id=project.id,
+        chapter_id=chapter.id,
+        version_no=2,
+        content_md="# 第1章 新稿\n\n这一次是数据库当前稿。",
+        word_count=120,
+        assembled_from_scene_draft_ids=[str(uuid4())],
+        is_current=True,
+    )
+    chapter_draft.id = uuid4()
+
+    async def fake_get_project_by_slug(session, slug: str) -> ProjectModel:
+        return project
+
+    monkeypatch.setattr(export_services, "get_project_by_slug", fake_get_project_by_slug)
+    settings = build_settings()
+    settings.output.base_dir = str(tmp_path / "output")
+    package_root = tmp_path / "output" / project.slug
+    package_root.mkdir(parents=True)
+    stale = package_root / "chapter-002.md"
+    stale.write_text("# 第2章 旧稿\n\n这不再是当前稿。", encoding="utf-8")
+    session = FakeSession(
+        scalar_results=[chapter_draft],
+        scalars_results=[[chapter]],
+    )
+
+    await export_services.export_project_markdown(session, settings, "my-story")
+
+    assert stale.exists() is False
+    assert "数据库当前稿" in (package_root / "chapter-001.md").read_text(encoding="utf-8")
 
 
 @pytest.mark.asyncio
@@ -1079,8 +1129,30 @@ def test_publication_gate_blocks_unapproved_chapter_state() -> None:
 
     blockers = export_services.collect_publication_blockers(project, [(chapter, chapter_draft)])
 
-    assert any("不是 complete" in blocker for blocker in blockers)
+    assert any("不是可发布状态" in blocker for blocker in blockers)
     assert any("不是 ok" in blocker for blocker in blockers)
+
+
+def test_publication_gate_allows_repaired_revision_ok_chapter() -> None:
+    project = build_project()
+    project.language = "en"
+    chapter = build_chapter(project.id)
+    chapter.chapter_number = 30
+    chapter.status = "revision"
+    chapter.production_state = "ok"
+    chapter_draft = ChapterDraftVersionModel(
+        project_id=project.id,
+        chapter_id=chapter.id,
+        version_no=1,
+        content_md="# Chapter 30\n\n" + ("clean prose " * 1700),
+        word_count=3400,
+        assembled_from_scene_draft_ids=[str(uuid4())],
+        is_current=True,
+    )
+
+    blockers = export_services.collect_publication_blockers(project, [(chapter, chapter_draft)])
+
+    assert blockers == []
 
 
 def test_publication_gate_blocks_cross_chapter_repeated_paragraph() -> None:
@@ -2212,6 +2284,103 @@ async def test_run_chapter_pipeline_rewrites_until_review_passes(
 
 
 @pytest.mark.asyncio
+async def test_run_chapter_pipeline_blocks_failed_review_even_when_accept_on_stall(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = build_project()
+    chapter = build_chapter(project.id)
+    scene = build_scene(project.id, chapter.id)
+    chapter_draft = ChapterDraftVersionModel(
+        project_id=project.id,
+        chapter_id=chapter.id,
+        version_no=1,
+        content_md="# 第1章 失准星图\n\n章节仍不合格。",
+        word_count=900,
+        assembled_from_scene_draft_ids=[],
+        is_current=True,
+    )
+    chapter_draft.id = uuid4()
+    report = type("ChapterReportStub", (), {"id": uuid4(), "llm_run_id": uuid4()})()
+    quality = type("ChapterQualityStub", (), {"id": uuid4()})()
+    rewrite_task = type("ChapterRewriteTaskStub", (), {"id": uuid4(), "status": "pending"})()
+
+    async def fake_get_project_by_slug(session, slug: str) -> ProjectModel:
+        return project
+
+    async def fake_run_scene_pipeline(
+        session,
+        settings,
+        project_slug,
+        chapter_number,
+        scene_number,
+        **kwargs,
+    ):
+        return pipeline_services.ScenePipelineResult(
+            workflow_run_id=uuid4(),
+            project_id=project.id,
+            chapter_id=chapter.id,
+            scene_id=scene.id,
+            chapter_number=chapter.chapter_number,
+            scene_number=scene.scene_number,
+            current_draft_id=uuid4(),
+            current_draft_version_no=1,
+            final_verdict="pass",
+            review_report_id=uuid4(),
+            quality_score_id=uuid4(),
+            review_iterations=1,
+            rewrite_iterations=0,
+            requires_human_review=False,
+            llm_run_ids=[],
+        )
+
+    async def fake_assemble_chapter_draft(session, project_slug: str, chapter_number: int, *, settings=None):
+        return chapter_draft
+
+    async def fake_review_chapter_draft(
+        session,
+        settings,
+        project_slug,
+        chapter_number,
+        **kwargs,
+    ):
+        return (
+            type("ChapterReviewResultStub", (), {"verdict": "rewrite", "severity_max": "high"})(),
+            report,
+            quality,
+            rewrite_task,
+        )
+
+    monkeypatch.setattr(pipeline_services, "get_project_by_slug", fake_get_project_by_slug)
+    monkeypatch.setattr(pipeline_services, "run_scene_pipeline", fake_run_scene_pipeline)
+    monkeypatch.setattr(pipeline_services, "assemble_chapter_draft", fake_assemble_chapter_draft)
+    monkeypatch.setattr(pipeline_services, "review_chapter_draft", fake_review_chapter_draft)
+
+    settings = build_settings()
+    settings.pipeline.accept_on_stall = True
+    settings.pipeline.chapter_review_block_on_failure = True
+    settings.quality.max_chapter_revisions = 0
+    session = FakeSession(
+        scalar_results=[chapter],
+        scalars_results=[[scene]],
+    )
+    result = await pipeline_services.run_chapter_pipeline(
+        session,
+        settings,
+        "my-story",
+        1,
+        requested_by="tester",
+        export_markdown=False,
+    )
+
+    workflow_runs = [obj for obj in session.added if isinstance(obj, WorkflowRunModel)]
+
+    assert result.final_verdict == "rewrite"
+    assert result.requires_human_review is True
+    assert result.chapter_draft_id == chapter_draft.id
+    assert workflow_runs[0].status == "waiting_human"
+
+
+@pytest.mark.asyncio
 async def test_run_project_pipeline_exports_project_checkpoint_when_human_review_required(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -2318,6 +2487,118 @@ async def test_run_project_pipeline_exports_project_checkpoint_when_human_review
     assert result.requires_human_review is True
     assert result.export_artifact_id == export_artifact.id
     assert result.output_path is not None
+
+
+@pytest.mark.asyncio
+async def test_run_project_pipeline_stops_after_human_review_chapter(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    project = build_project()
+    chapter1 = build_chapter(project.id)
+    chapter2 = build_chapter(project.id)
+    chapter2.chapter_number = 2
+    calls: list[int] = []
+
+    export_artifact = ExportArtifactModel(
+        project_id=project.id,
+        export_type="markdown",
+        source_scope="project",
+        source_id=project.id,
+        storage_uri=str(tmp_path / "output" / "project.md"),
+        checksum="e" * 64,
+        version_label="project-current",
+    )
+    export_artifact.id = uuid4()
+
+    async def fake_get_project_by_slug(session, slug: str) -> ProjectModel:
+        return project
+
+    async def fake_load_project_chapters(session, project_id):
+        return [chapter1, chapter2]
+
+    async def fake_run_chapter_pipeline(
+        session,
+        settings,
+        project_slug,
+        chapter_number,
+        **kwargs,
+    ):
+        calls.append(chapter_number)
+        return pipeline_services.ChapterPipelineResult(
+            workflow_run_id=uuid4(),
+            project_id=project.id,
+            chapter_id=chapter1.id,
+            chapter_number=chapter_number,
+            scene_results=[],
+            chapter_draft_id=uuid4(),
+            chapter_draft_version_no=1,
+            export_artifact_id=uuid4(),
+            output_path=str(tmp_path / "output" / f"chapter-{chapter_number:03d}.md"),
+            requires_human_review=True,
+        )
+
+    async def fake_export_project_markdown(session, settings, project_slug: str, **kwargs):
+        output_path = tmp_path / "output" / "project.md"
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text("# My Story", encoding="utf-8")
+        return export_artifact, output_path
+
+    async def fake_review_project_consistency(
+        session,
+        settings,
+        project_slug: str,
+        **kwargs,
+    ):
+        return (
+            type("ProjectReviewResultStub", (), {"verdict": "attention"})(),
+            type("ProjectReviewReportStub", (), {"id": uuid4()})(),
+            type("ProjectReviewQualityStub", (), {"id": uuid4()})(),
+        )
+
+    monkeypatch.setattr(pipeline_services, "get_project_by_slug", fake_get_project_by_slug)
+    monkeypatch.setattr(pipeline_services, "_load_project_chapters", fake_load_project_chapters)
+    monkeypatch.setattr(pipeline_services, "run_chapter_pipeline", fake_run_chapter_pipeline)
+    monkeypatch.setattr(pipeline_services, "export_project_markdown", fake_export_project_markdown)
+    monkeypatch.setattr(
+        pipeline_services,
+        "review_project_consistency",
+        fake_review_project_consistency,
+    )
+    monkeypatch.setattr(
+        pipeline_services,
+        "materialize_latest_narrative_graph",
+        AsyncMock(
+            return_value=type(
+                "NarrativeGraphResultStub",
+                (),
+                {"workflow_run_id": uuid4(), "plot_arc_count": 3, "clue_count": 1},
+            )()
+        ),
+    )
+    monkeypatch.setattr(
+        pipeline_services,
+        "materialize_latest_narrative_tree",
+        AsyncMock(
+            return_value=type(
+                "NarrativeTreeResultStub",
+                (),
+                {"workflow_run_id": uuid4(), "node_count": 16},
+            )()
+        ),
+    )
+
+    result = await pipeline_services.run_project_pipeline(
+        FakeSession(),
+        build_settings(),
+        "my-story",
+        requested_by="tester",
+        export_markdown=True,
+    )
+
+    assert calls == [1]
+    assert [item.chapter_number for item in result.chapter_results] == [1]
+    assert result.requires_human_review is True
 
 
 @pytest.mark.asyncio
@@ -2458,6 +2739,115 @@ async def test_run_project_pipeline_materializes_and_exports(
 
 
 @pytest.mark.asyncio
+async def test_run_project_pipeline_blocks_project_consistency_failure_despite_accept_on_stall(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    project = build_project()
+    chapter = build_chapter(project.id)
+    chapter_result = pipeline_services.ChapterPipelineResult(
+        workflow_run_id=uuid4(),
+        project_id=project.id,
+        chapter_id=chapter.id,
+        chapter_number=1,
+        scene_results=[],
+        chapter_draft_id=uuid4(),
+        chapter_draft_version_no=1,
+        export_artifact_id=uuid4(),
+        output_path=str(tmp_path / "output" / "chapter-001.md"),
+        requires_human_review=False,
+    )
+    export_artifact = ExportArtifactModel(
+        project_id=project.id,
+        export_type="markdown",
+        source_scope="project",
+        source_id=project.id,
+        storage_uri=str(tmp_path / "output" / "project.md"),
+        checksum="c" * 64,
+        version_label="project-current",
+    )
+    export_artifact.id = uuid4()
+
+    async def fake_get_project_by_slug(session, slug: str) -> ProjectModel:
+        return project
+
+    async def fake_load_project_chapters(session, project_id):
+        return [chapter]
+
+    async def fake_run_chapter_pipeline(
+        session,
+        settings,
+        project_slug,
+        chapter_number,
+        **kwargs,
+    ):
+        return chapter_result
+
+    async def fake_export_project_markdown(session, settings, project_slug: str, **kwargs):
+        output_path = tmp_path / "output" / "project.md"
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text("# My Story", encoding="utf-8")
+        return export_artifact, output_path
+
+    async def fake_review_project_consistency(
+        session,
+        settings,
+        project_slug: str,
+        **kwargs,
+    ):
+        return (
+            type("ProjectReviewResultStub", (), {"verdict": "attention"})(),
+            type("ProjectReviewReportStub", (), {"id": uuid4()})(),
+            type("ProjectReviewQualityStub", (), {"id": uuid4()})(),
+        )
+
+    monkeypatch.setattr(pipeline_services, "get_project_by_slug", fake_get_project_by_slug)
+    monkeypatch.setattr(pipeline_services, "_load_project_chapters", fake_load_project_chapters)
+    monkeypatch.setattr(pipeline_services, "run_chapter_pipeline", fake_run_chapter_pipeline)
+    monkeypatch.setattr(pipeline_services, "export_project_markdown", fake_export_project_markdown)
+    monkeypatch.setattr(
+        pipeline_services,
+        "review_project_consistency",
+        fake_review_project_consistency,
+    )
+    monkeypatch.setattr(
+        pipeline_services,
+        "materialize_latest_narrative_graph",
+        AsyncMock(
+            return_value=type(
+                "NarrativeGraphResultStub",
+                (),
+                {"workflow_run_id": uuid4(), "plot_arc_count": 3, "clue_count": 1},
+            )()
+        ),
+    )
+    monkeypatch.setattr(
+        pipeline_services,
+        "materialize_latest_narrative_tree",
+        AsyncMock(
+            return_value=type(
+                "NarrativeTreeResultStub",
+                (),
+                {"workflow_run_id": uuid4(), "node_count": 16},
+            )()
+        ),
+    )
+
+    settings = build_settings()
+    settings.pipeline.accept_on_stall = True
+    result = await pipeline_services.run_project_pipeline(
+        FakeSession(),
+        settings,
+        "my-story",
+        requested_by="tester",
+        export_markdown=True,
+    )
+
+    assert result.requires_human_review is True
+    assert result.final_verdict == "attention"
+
+
+@pytest.mark.asyncio
 async def test_run_project_pipeline_blocks_qimao_without_planning_contract(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -2510,6 +2900,95 @@ async def test_run_project_pipeline_blocks_qimao_without_planning_contract(
     assert "qimao_planning_gate_failed" in progress_events
 
 
+def test_qimao_planning_gate_repairs_abstract_contract_from_outline() -> None:
+    project = build_project()
+    project.metadata_json = {
+        **(project.metadata_json or {}),
+        "qimao_opening_contract": {
+            "protagonist_name": "沈青崖",
+            "opening_incident": "开篇以灵异案件建立视觉锚点，展示主角差异化身份。",
+            "first_page_conflict": "围绕青帮的新一层压力开始成形。",
+            "protagonist_immediate_goal": (
+                "第一层驱动力是查明十五年前沈家灭门惨案真相，手刃仇敌。"
+                "第二层驱动力是了解自己的血脉真相。"
+            ),
+            "visible_loss_if_fail": "追查十五年前沈家灭门惨案真相，手刃仇敌。",
+            "protagonist_edge": "沈青崖能看见常人不可见的鬼魂和邪祟痕迹。",
+            "edge_limit": "重瞳只能看见第一层异常，不能直接锁定幕后主使。",
+            "chapter_1_small_turn": "沈青崖主动行动，完成一次局部反制或信息差建立。",
+            "chapter_2_reveal": "第二章放出会改变局势判断的新信息。",
+            "chapter_3_payoff": "第三章完成一个小回报并打开下一轮危险。",
+            "first_10000_loop": "主角行动 -> 得到短回报 -> 引来反压 -> 新钩子",
+            "forbidden_opening_modes": ["background_exposition", "normal_day"],
+        },
+    }
+    first = build_chapter(project.id)
+    first.title = "验尸房来客"
+    first.chapter_goal = "沈青崖在验尸房完成尸检，遭遇第一具尸体的鬼魂现身说法。"
+    first.main_conflict = "死者鬼魂声称被冤枉，真凶就在现场，但验尸房里只有活人。"
+    first.hook_description = "沈青崖发现死者脖颈处有肉眼不可见的掐痕。"
+    second = build_chapter(project.id)
+    second.chapter_number = 2
+    second.title = "李宅疑云"
+    second.main_conflict = "李德盛死前三天曾请道士驱邪，道士却被官府驱逐。"
+    third = build_chapter(project.id)
+    third.chapter_number = 3
+    third.title = "道士之死"
+    third.hook_description = "道士临死前用血在河堤上留下一个字：「归」。"
+
+    report = pipeline_services._record_qimao_planning_gate(
+        project,
+        chapters=[first, second, third],
+    )
+
+    assert report is not None
+    assert report["passed"] is True
+    repaired = project.metadata_json["qimao_opening_contract"]
+    assert "验尸房来客" in repaired["first_page_conflict"]
+    assert "当场" in repaired["protagonist_immediate_goal"]
+    assert project.metadata_json["qimao_opening_contract_status"] == "planned_gate_passed"
+
+
+def test_record_commercial_planning_readiness_gate_blocks_thin_long_serial(
+    tmp_path: Path,
+) -> None:
+    project = build_project()
+    project.target_chapters = 500
+    project.metadata_json = {
+        **(project.metadata_json or {}),
+        "qimao_opening_contract": {"opening_incident": "尸体喊冤，当场逼主角保住证据。"},
+    }
+    chapters: list[ChapterModel] = []
+    for number in (1, 2, 3):
+        chapter = build_chapter(project.id)
+        chapter.chapter_number = number
+        chapter.opening_situation = ""
+        chapter.main_conflict = ""
+        chapter.hook_description = ""
+        chapter.hype_type = "reversal" if number == 1 else None
+        chapter.hype_intensity = 0.1
+        scene = build_scene(project.id, chapter.id)
+        scene.participants = ["沈青崖"]
+        scene.purpose = {"story": "独自调查推进剧情"}
+        scene.hook_requirement = ""
+        chapter.scenes = [scene]
+        chapters.append(chapter)
+
+    report = pipeline_services._record_commercial_planning_readiness_gate(
+        project,
+        chapters=chapters,
+        package_root=tmp_path,
+    )
+
+    assert report is not None
+    assert report["passed"] is False
+    codes = {finding["code"] for finding in report["findings"]}
+    assert "long_serial_artifacts_missing" in codes
+    assert "golden_three_solo_scene_chain" in codes
+    assert "golden_three_hype_underpowered" in codes
+    assert project.metadata_json["commercial_planning_readiness_status"] == "planned_gate_failed"
+
+
 @pytest.mark.asyncio
 async def test_run_project_pipeline_creates_opening_quality_rewrite_task_for_general_project(
     monkeypatch: pytest.MonkeyPatch,
@@ -2521,7 +3000,7 @@ async def test_run_project_pipeline_creates_opening_quality_rewrite_task_for_gen
         "opening_quality_contract": {
             "platform_target": "商业网文签约口径",
             "protagonist_name": "沈姝",
-            "opening_incident": "第一章从被迫选择和直接损失切入。",
+            "opening_incident": "沈姝推门进账房时，族叔正按着账童抢账本，威胁不交就烧掉母亲旧案证据。",
             "first_page_conflict": "前600字内被逼交出账本，否则旧案证据被毁。",
             "protagonist_immediate_goal": "先保住账本并确认谁在灭口。",
             "visible_loss_if_fail": "失败会失去唯一翻案证据。",
@@ -2529,7 +3008,7 @@ async def test_run_project_pipeline_creates_opening_quality_rewrite_task_for_gen
             "edge_limit": "账本只能救第一轮，不能直接推翻主谋。",
             "chapter_1_small_turn": "主角当众反制逼迫者。",
             "chapter_2_reveal": "逼迫者背后另有主谋。",
-            "chapter_3_payoff": "拿到第一个筹码并打开下一轮钩子。",
+            "chapter_3_payoff": "沈姝拿到账房暗格里的第一份签押证据，确认灭口者与族叔相连。",
             "first_10000_loop": "触发冲突 -> 主角行动 -> 收益/代价 -> 新钩子",
             "forbidden_opening_modes": ["background_exposition", "normal_day", "scenery_first"],
         },
@@ -2595,6 +3074,106 @@ async def test_run_project_pipeline_creates_opening_quality_rewrite_task_for_gen
     assert project.metadata_json["opening_quality_gate_report"]["passed"] is False
     assert project.metadata_json["qimao_opening_gate_blocked"] is True
     assert project.metadata_json["qimao_opening_gate_report"]["passed"] is False
+
+
+@pytest.mark.asyncio
+async def test_run_project_pipeline_creates_whole_book_quality_rewrite_task(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = build_project()
+    project.metadata_json = {
+        **(project.metadata_json or {}),
+        "volume_plan": [
+            {"volume_number": 1, "arc_ranges": [[1, 4]], "chapter_count_target": 4}
+        ],
+    }
+    chapters: list[ChapterModel] = []
+    draft_by_id: dict[object, ChapterDraftVersionModel] = {}
+    result_by_number: dict[int, pipeline_services.ChapterPipelineResult] = {}
+
+    def good_chapter(number: int) -> str:
+        return (
+            f"沈姝在第{number}章刚进门就被新的证据逼到墙边, 对手夺走账页, 威胁她必须让步。"
+            "她抓住对方话里的漏洞反制, 抢回一枚关键印章。"
+            "这次小胜让她拿到筹码, 却也付出暴露身份的代价。"
+            "章末, 门外突然响起新的脚步声, 真正拿走账本的人是谁?"
+        )
+
+    for number in range(1, 5):
+        chapter = build_chapter(project.id)
+        chapter.chapter_number = number
+        chapter.title = f"第{number}章"
+        chapter.id = uuid4()
+        chapters.append(chapter)
+
+        draft = ChapterDraftVersionModel(
+            chapter_id=chapter.id,
+            version_no=1,
+            content_md=(
+                good_chapter(number)
+                if number < 4
+                else "沈姝回到房间, 整理了一天的想法。天色渐暗, 她觉得事情还没有结束。"
+            ),
+            word_count=200,
+            is_current=True,
+        )
+        draft.id = uuid4()
+        draft_by_id[(ChapterDraftVersionModel, draft.id)] = draft
+        result_by_number[number] = pipeline_services.ChapterPipelineResult(
+            workflow_run_id=uuid4(),
+            project_id=project.id,
+            chapter_id=chapter.id,
+            chapter_number=number,
+            scene_results=[],
+            chapter_draft_id=draft.id,
+            chapter_draft_version_no=1,
+            export_artifact_id=None,
+            output_path=None,
+            requires_human_review=False,
+        )
+
+    async def fake_get_project_by_slug(session, slug: str) -> ProjectModel:
+        return project
+
+    async def fake_load_project_chapters(session, project_id):
+        return chapters
+
+    async def fake_run_chapter_pipeline(
+        session,
+        settings,
+        project_slug,
+        chapter_number,
+        **kwargs,
+    ):
+        return result_by_number[chapter_number]
+
+    monkeypatch.setattr(pipeline_services, "get_project_by_slug", fake_get_project_by_slug)
+    monkeypatch.setattr(pipeline_services, "_load_project_chapters", fake_load_project_chapters)
+    monkeypatch.setattr(pipeline_services, "run_chapter_pipeline", fake_run_chapter_pipeline)
+
+    progress_events: list[str] = []
+    session = FakeSession(get_map=draft_by_id)
+    with pytest.raises(ValueError, match="Whole-book quality gate failed"):
+        await pipeline_services.run_project_pipeline(
+            session,
+            build_settings(),
+            "my-story",
+            requested_by="tester",
+            export_markdown=False,
+            materialize_narrative_graph=False,
+            materialize_narrative_tree=False,
+            progress=lambda event, payload: progress_events.append(event),
+        )
+
+    rewrite_tasks = [obj for obj in session.added if isinstance(obj, RewriteTaskModel)]
+    assert len(rewrite_tasks) == 1
+    assert rewrite_tasks[0].trigger_type == "whole_book_quality_gate"
+    assert rewrite_tasks[0].rewrite_strategy == "chapter_function_rewrite"
+    assert "全书质量门禁重写任务" in rewrite_tasks[0].instructions
+    assert project.metadata_json["whole_book_quality_gate_blocked"] is True
+    assert project.metadata_json["whole_book_quality_report"]["passed"] is False
+    assert len(project.metadata_json["whole_book_engagement_ledger"]) == 4
+    assert "whole_book_quality_gate_failed" in progress_events
 
 
 @pytest.mark.asyncio

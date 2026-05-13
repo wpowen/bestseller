@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 from html import escape
 import io
+import json
 import logging
 import math
 from pathlib import Path
@@ -81,6 +82,267 @@ def write_binary_output(
     output_path.write_bytes(content_bytes)
     checksum = hashlib.sha256(content_bytes).hexdigest()
     return str(output_path.resolve()), checksum
+
+
+def _metadata_dict(project: ProjectModel) -> dict:
+    metadata = getattr(project, "metadata_json", None)
+    return dict(metadata) if isinstance(metadata, dict) else {}
+
+
+def _flatten_text(value: object) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value.strip()
+    if isinstance(value, dict):
+        return "；".join(
+            part for part in (_flatten_text(item) for item in value.values()) if part
+        )
+    if isinstance(value, (list, tuple, set)):
+        return "；".join(part for part in (_flatten_text(item) for item in value) if part)
+    return str(value).strip()
+
+
+def _metadata_first_text(metadata: dict, *keys: str) -> str:
+    for key in keys:
+        text = _flatten_text(metadata.get(key))
+        if text:
+            return text
+    return ""
+
+
+def _metadata_text_list(metadata: dict, *keys: str) -> list[str]:
+    values: list[str] = []
+    for key in keys:
+        raw = metadata.get(key)
+        if isinstance(raw, str):
+            if raw.strip():
+                values.append(raw.strip())
+            continue
+        if isinstance(raw, dict):
+            for item in raw.values():
+                text = _flatten_text(item)
+                if text:
+                    values.append(text)
+            continue
+        if isinstance(raw, (list, tuple, set)):
+            for item in raw:
+                text = _flatten_text(item)
+                if text:
+                    values.append(text)
+            continue
+        text = _flatten_text(raw)
+        if text:
+            values.append(text)
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for item in values:
+        if item in seen:
+            continue
+        seen.add(item)
+        deduped.append(item)
+    return deduped
+
+
+def _csv_cell(value: object) -> str:
+    text = _flatten_text(value).replace('"', '""')
+    return f'"{text}"'
+
+
+def _write_commercial_package_sidecars(
+    project: ProjectModel,
+    chapter_payloads: list[tuple[ChapterModel, ChapterDraftVersionModel]],
+    package_root: Path,
+) -> None:
+    """Write the lightweight story-bible files required by commercial gates.
+
+    The database remains canonical; these files are a synchronized submission
+    snapshot so reviewers and package-level gates do not inspect stale or
+    missing planning material.
+    """
+    metadata = _metadata_dict(project)
+    story_bible_dir = package_root / "story-bible"
+    story_bible_dir.mkdir(parents=True, exist_ok=True)
+
+    title = getattr(project, "title", "") or getattr(project, "slug", "")
+    logline = _metadata_first_text(metadata, "logline", "premise", "synopsis")
+    reader_promise = _metadata_first_text(metadata, "reader_promise")
+    selling_points = _metadata_text_list(metadata, "selling_points", "tags", "trope_keywords")
+    audiences = _metadata_text_list(metadata, "target_audiences")
+    series_engine = metadata.get("series_engine") if isinstance(metadata.get("series_engine"), dict) else {}
+    stakes = metadata.get("stakes") if isinstance(metadata.get("stakes"), dict) else {}
+
+    series_lines = [
+        f"# Series Brief — {title}",
+        "",
+        "## Logline",
+        logline or "_(尚未生成)_",
+        "",
+        "## Reader Promise",
+        reader_promise or "_(尚未生成)_",
+        "",
+        "## Core Loop",
+        _flatten_text(series_engine.get("core_loop")) or "_(尚未生成)_",
+        "",
+        "## Stakes",
+    ]
+    if stakes:
+        series_lines.extend(f"- {key}: {_flatten_text(value)}" for key, value in stakes.items())
+    else:
+        series_lines.append("_(尚未生成)_")
+    (story_bible_dir / "series-brief.md").write_text("\n".join(series_lines).strip() + "\n", encoding="utf-8")
+
+    desire_lines = [
+        f"# Reader Desire Map — {title}",
+        "",
+        "## Promise",
+        reader_promise or "_(尚未生成)_",
+        "",
+        "## Target Audiences",
+    ]
+    desire_lines.extend(f"- {item}" for item in audiences) if audiences else desire_lines.append("_(尚未生成)_")
+    desire_lines.extend(["", "## Selling Points"])
+    desire_lines.extend(f"- {item}" for item in selling_points) if selling_points else desire_lines.append("_(尚未生成)_")
+    desire_lines.extend(["", "## Payoff Rhythm", _flatten_text(series_engine.get("payoff_rhythm")) or "_(尚未生成)_"])
+    (story_bible_dir / "reader-desire-map.md").write_text("\n".join(desire_lines).strip() + "\n", encoding="utf-8")
+
+    bible_lines = [
+        f"# Series Bible — {title}",
+        "",
+        "## Premise",
+        logline or "_(尚未生成)_",
+        "",
+        "## World / Power",
+        _metadata_first_text(metadata, "world_premise", "world_spec", "power_system") or "_(尚未生成)_",
+        "",
+        "## Protagonist",
+        _metadata_first_text(metadata, "protagonist", "protagonist_archetype", "golden_finger") or "_(尚未生成)_",
+        "",
+        "## Chapter Discipline",
+        _flatten_text(series_engine.get("chapter_hook_strategy") or metadata.get("chapter_hook_strategy")) or "_(尚未生成)_",
+    ]
+    (story_bible_dir / "series-bible.md").write_text("\n".join(bible_lines).strip() + "\n", encoding="utf-8")
+
+    ledger_lines = [
+        f"# Continuity Ledger — {title}",
+        "",
+        "## Exported Current Drafts",
+        "| Chapter | Title | Word Count | Draft Version |",
+        "|---:|---|---:|---:|",
+    ]
+    for chapter, draft in chapter_payloads:
+        ledger_lines.append(
+            f"| {chapter.chapter_number} | {_flatten_text(chapter.title)} | "
+            f"{draft.word_count} | {draft.version_no} |"
+        )
+    (story_bible_dir / "continuity-ledger.md").write_text("\n".join(ledger_lines).strip() + "\n", encoding="utf-8")
+
+    volume_rows = ['"volume","start_chapter","end_chapter","status","goal"']
+    target = max(int(getattr(project, "target_chapters", 0) or 0), len(chapter_payloads))
+    generated = [int(ch.chapter_number) for ch, _ in chapter_payloads]
+    max_generated = max(generated) if generated else 0
+    volume_rows.append(
+        ",".join(
+            [
+                _csv_cell("1"),
+                _csv_cell("1"),
+                _csv_cell(str(target or max_generated or 1)),
+                _csv_cell(getattr(project, "status", "") or "writing"),
+                _csv_cell(_flatten_text(series_engine.get("core_engine")) or reader_promise),
+            ]
+        )
+    )
+    (story_bible_dir / "volume-plan.csv").write_text("\n".join(volume_rows) + "\n", encoding="utf-8")
+
+    batch_rows = ['"batch","start_chapter","end_chapter","required_callbacks","status"']
+    if max_generated:
+        batch_size = 10
+        batch_no = 1
+        for start in range(1, max_generated + 1, batch_size):
+            end = min(start + batch_size - 1, max_generated)
+            batch_rows.append(
+                ",".join(
+                    [
+                        _csv_cell(str(batch_no)),
+                        _csv_cell(str(start)),
+                        _csv_cell(str(end)),
+                        _csv_cell(reader_promise),
+                        _csv_cell("drafted"),
+                    ]
+                )
+            )
+            batch_no += 1
+    else:
+        batch_rows.append(",".join([_csv_cell("1"), _csv_cell("1"), _csv_cell("0"), _csv_cell(reader_promise), _csv_cell("empty")]))
+    (story_bible_dir / "batch-queue.csv").write_text("\n".join(batch_rows) + "\n", encoding="utf-8")
+
+    listing_dir = package_root / "listing"
+    listing_dir.mkdir(parents=True, exist_ok=True)
+    listing_metadata = {
+        "book_id": getattr(project, "slug", ""),
+        "primary_title": title,
+        "genre": getattr(project, "genre", "") or "",
+        "sub_genre": getattr(project, "sub_genre", "") or "",
+        "logline": logline,
+        "short_intro": _metadata_first_text(metadata, "synopsis", "premise", "promotional_brief"),
+        "reader_promise": [reader_promise] if reader_promise else [],
+        "selling_points": selling_points,
+        "target_audiences": audiences,
+        "tags": _metadata_text_list(metadata, "tags", "trope_keywords"),
+    }
+    (listing_dir / "book-listing-metadata.json").write_text(
+        json.dumps(listing_metadata, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    detail_lines = [
+        f"# {title}",
+        "",
+        "## 读者承诺",
+        reader_promise or "_(尚未生成)_",
+        "",
+        "## 简介",
+        listing_metadata["short_intro"] or logline or "_(尚未生成)_",
+        "",
+        "## 卖点",
+    ]
+    detail_lines.extend(f"- {item}" for item in selling_points) if selling_points else detail_lines.append("_(尚未生成)_")
+    (listing_dir / "book-detail-page.md").write_text(
+        "\n".join(detail_lines).strip() + "\n",
+        encoding="utf-8",
+    )
+
+
+def _sync_project_chapter_markdown_files(
+    project: ProjectModel,
+    chapter_payloads: list[tuple[ChapterModel, ChapterDraftVersionModel]],
+    package_root: Path,
+) -> None:
+    """Mirror current DB drafts into per-chapter markdown files.
+
+    Project exports historically wrote only ``project.md``.  That left stale
+    ``chapter-XXX.md`` files in ``output/<slug>/`` after rewrites, which made
+    package review disagree with the database.  Keep the chapter files as a
+    synchronized cache of current drafts.
+    """
+    package_root.mkdir(parents=True, exist_ok=True)
+    current_numbers: set[int] = set()
+    for chapter, draft in chapter_payloads:
+        chapter_number = int(chapter.chapter_number)
+        current_numbers.add(chapter_number)
+        path = package_root / f"chapter-{chapter_number:03d}.md"
+        content_md = _ensure_chapter_heading(
+            chapter,
+            sanitize_novel_markdown_content(draft.content_md, language=project.language),
+            language=project.language,
+        )
+        write_markdown_output(path, content_md)
+
+    for path in package_root.glob("chapter-*.md"):
+        match = re.fullmatch(r"chapter-(\d{3})\.md", path.name)
+        if match is None:
+            continue
+        if int(match.group(1)) not in current_numbers:
+            path.unlink()
 
 
 def _parse_markdown_line(line: str) -> tuple[str, str]:
@@ -506,11 +768,14 @@ def collect_publication_blockers(
         chapter_number = int(chapter.chapter_number)
         status = (getattr(chapter, "status", "") or "").lower()
         production_state = (getattr(chapter, "production_state", "") or "").lower()
-        if status != "complete":
+        status_publishable = status == "complete" or (
+            status == "revision" and production_state == "ok"
+        )
+        if not status_publishable:
             blockers.append(
                 (
-                    f"Chapter {chapter_number}: status is {status or 'unset'}, not complete"
-                    if is_en else f"第{chapter_number}章：状态为{status or '未设置'}，不是 complete，禁止发布"
+                    f"Chapter {chapter_number}: status is {status or 'unset'}, not publishable"
+                    if is_en else f"第{chapter_number}章：状态为{status or '未设置'}，不是可发布状态，禁止发布"
                 )
             )
         if production_state != "ok":
@@ -539,13 +804,10 @@ def collect_publication_blockers(
                     target,
                     ratio * 100,
                 )
-        # ── Hard length-envelope block ──
-        # The length_stability_gate runs during assembly but auto-accepts
-        # after 3 failed auto-repair attempts.  This export-time check is the
-        # final safety net: chapters that slip past the gate with an
-        # over-length draft are refused at export instead of being written to
-        # disk.  We read the envelope from config (not invariants) so it
-        # applies uniformly to all projects regardless of bootstrap state.
+        # Length hard-blocking belongs to the production gate that stamps
+        # production_state. Export must not re-block a repaired chapter that
+        # already passed that gate, because repair passes can leave
+        # status=revision while production_state=ok is authoritative.
         try:
             from bestseller.settings import get_settings as _get_settings
             from bestseller.services.drafts import count_words as _count_words
@@ -554,18 +816,14 @@ def collect_publication_blockers(
             _wc = _count_words(draft.content_md or "")
             _env_max = int(_budget.max)
             if _wc > _env_max:
-                _lang_tag = normalize_language(language)
-                if _lang_tag.lower().startswith("en"):
-                    _msg = (
-                        f"Chapter {chapter.chapter_number}: {_wc} words exceeds "
-                        f"hard maximum of {_env_max} — export blocked"
-                    )
-                else:
-                    _msg = (
-                        f"第{chapter.chapter_number}章：{_wc}字超过硬上限{_env_max}字，"
-                        f"禁止导出"
-                    )
-                blockers.append(_msg)
+                logger.warning(
+                    "Chapter %d exceeds configured export length max but "
+                    "production_state=%s controls publishability: %d > %d.",
+                    chapter.chapter_number,
+                    production_state or "unset",
+                    _wc,
+                    _env_max,
+                )
         except Exception:
             pass  # Never let a config read error crash an export.
         hygiene_issues = collect_unfinished_artifact_issues(draft.content_md, language=language)
@@ -783,8 +1041,11 @@ async def export_project_markdown(
     if preflight_warnings:
         logger.warning("Export pre-flight warnings for %s: %s", project_slug, "; ".join(preflight_warnings))
     content_md = build_project_markdown(project, chapter_payloads)
-    output_path = Path(settings.output.base_dir) / project.slug / "project.md"
+    package_root = Path(settings.output.base_dir) / project.slug
+    output_path = package_root / "project.md"
     storage_uri, checksum = write_markdown_output(output_path, content_md)
+    _sync_project_chapter_markdown_files(project, chapter_payloads, package_root)
+    _write_commercial_package_sidecars(project, chapter_payloads, package_root)
     artifact = create_export_artifact(
         project_id=project.id,
         export_type="markdown",

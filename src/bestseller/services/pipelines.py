@@ -10,6 +10,7 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.exc import DBAPIError, PendingRollbackError
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from bestseller.domain.context import SceneWriterContextPacket
 from bestseller.domain.enums import ChapterStatus, ArtifactType, ProjectStatus, SceneStatus, WorkflowStatus
@@ -31,12 +32,19 @@ from bestseller.infra.db.models import (
     SceneCardModel,
     SceneDraftVersionModel,
     VolumeModel,
+    WorkflowRunModel,
 )
 from bestseller.services.audit_loop import (
     build_phase1_audit,
     run_and_persist_audit,
 )
 from bestseller.services.chase_debt_ledger import ChaseDebtLedger
+from bestseller.services.commercial_planning_readiness import (
+    ChapterPlanProbe,
+    ScenePlanProbe,
+    commercial_planning_readiness_report_to_dict,
+    evaluate_commercial_planning_readiness,
+)
 from bestseller.services.narrative_line_tracker import (
     classify_chapter as classify_chapter_lines,
     persist_history as persist_line_history,
@@ -90,6 +98,12 @@ from bestseller.services.reviews import (
     qimao_opening_rewrite_strategy_for_findings,
     rewrite_chapter_from_task,
     rewrite_scene_from_task,
+)
+from bestseller.services.whole_book_quality_gate import (
+    build_whole_book_quality_rewrite_instructions,
+    evaluate_whole_book_quality,
+    whole_book_quality_report_to_dict,
+    whole_book_quality_strategy_for_findings,
 )
 from bestseller.services.workflows import (
     WORKFLOW_TYPE_MATERIALIZE_CHAPTER_OUTLINE,
@@ -165,19 +179,130 @@ def _assert_project_not_blocked_for_structural_repair(
     )
 
 
-def _record_qimao_planning_gate(project: ProjectModel) -> dict[str, Any] | None:
+def _chapter_by_number(chapters: list[ChapterModel], number: int) -> ChapterModel | None:
+    for chapter in chapters:
+        if chapter.chapter_number == number:
+            return chapter
+    return None
+
+
+def _chapter_text(*values: Any, default: str = "") -> str:
+    for value in values:
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return default
+
+
+def _repair_qimao_opening_contract_from_outline(
+    contract: dict[str, Any],
+    chapters: list[ChapterModel],
+) -> dict[str, Any]:
+    """Turn abstract opening-contract slogans into chapter-1 executable beats."""
+
+    if not contract or not chapters:
+        return contract
+
+    first = _chapter_by_number(chapters, 1) or chapters[0]
+    second = _chapter_by_number(chapters, 2)
+    third = _chapter_by_number(chapters, 3)
+    protagonist_name = _chapter_text(contract.get("protagonist_name"), default="主角")
+    first_title = _chapter_text(first.title, default=f"第{first.chapter_number}章")
+    first_goal = _chapter_text(
+        first.chapter_goal,
+        first.main_conflict,
+        first.hook_description,
+        default=f"{protagonist_name}处理第{first.chapter_number}章现场危机",
+    )
+    first_conflict = _chapter_text(
+        first.main_conflict,
+        first.chapter_goal,
+        default=first_goal,
+    )
+    first_hook = _chapter_text(first.hook_description, first_conflict, default=first_conflict)
+
+    repaired = dict(contract)
+    repaired["opening_incident"] = (
+        f"《{first_title}》开场：{protagonist_name}当场处理「{first_goal}」，"
+        f"随即撞上「{first_conflict}」。"
+    )
+    repaired["first_page_conflict"] = (
+        f"{protagonist_name}在《{first_title}》当场面对「{first_conflict}」；"
+        "他必须保住现场证据并逼出谁在掩盖关键死因，否则案件会被错误结掉、真凶脱身。"
+    )
+    repaired["protagonist_immediate_goal"] = (
+        f"先在《{first_title}》现场保住证据，确认第一处异常，并当场决定下一步追问对象。"
+    )
+    repaired["visible_loss_if_fail"] = (
+        f"失败会让《{first_title}》里的证据被当场抹掉，案件按普通死亡结案，真凶脱身。"
+    )
+    repaired["chapter_1_small_turn"] = (
+        f"{protagonist_name}用自己的优势保住关键证据，反制误判，并把线索钩到「{first_hook}」。"
+    )
+
+    if second is not None:
+        second_title = _chapter_text(second.title, default=f"第{second.chapter_number}章")
+        second_reveal = _chapter_text(
+            second.main_conflict,
+            second.hook_description,
+            second.chapter_goal,
+            default="第二章放出改变局势判断的新信息。",
+        )
+        repaired["chapter_2_reveal"] = f"《{second_title}》揭示：{second_reveal}"
+
+    if third is not None:
+        third_title = _chapter_text(third.title, default=f"第{third.chapter_number}章")
+        third_payoff = _chapter_text(
+            third.hook_description,
+            third.main_conflict,
+            third.chapter_goal,
+            default="主角拿到第一份可验证证据。",
+        )
+        repaired["chapter_3_payoff"] = (
+            f"{protagonist_name}在《{third_title}》拿到可验证证据：{third_payoff}"
+        )
+
+    repaired["first_10000_loop"] = (
+        "尸体喊冤触发冲突 -> 主角当场取证并反制误判 -> "
+        "拿到第一条线索同时承受凶手反压 -> 章尾用新证据钩出更深谜题"
+    )
+    return repaired
+
+
+def _record_qimao_planning_gate(
+    project: ProjectModel,
+    *,
+    chapters: list[ChapterModel] | None = None,
+) -> dict[str, Any] | None:
     if not project_uses_signing_quality_gate(project):
         return None
     metadata = getattr(project, "metadata_json", None) or {}
     contract = metadata.get("opening_quality_contract") or metadata.get("qimao_opening_contract")
     payload_to_check = {"qimao_opening_contract": contract} if contract else metadata
     report = evaluate_qimao_planning_gate(payload_to_check)
+    if contract and not report.passed and chapters:
+        repaired_contract = _repair_qimao_opening_contract_from_outline(
+            dict(contract),
+            chapters,
+        )
+        repaired_report = evaluate_qimao_planning_gate(
+            {"qimao_opening_contract": repaired_contract}
+        )
+        if repaired_report.passed:
+            contract = repaired_contract
+            report = repaired_report
     payload = qimao_planning_gate_report_to_dict(report)
-    project.metadata_json = {
-        **(getattr(project, "metadata_json", None) or {}),
+    updated_metadata = {
+        **metadata,
         "opening_quality_planning_gate_report": payload,
         "qimao_planning_gate_report": payload,
     }
+    if contract:
+        updated_metadata["opening_quality_contract"] = contract
+        updated_metadata["qimao_opening_contract"] = contract
+        if report.passed:
+            updated_metadata["opening_quality_contract_status"] = "planned_gate_passed"
+            updated_metadata["qimao_opening_contract_status"] = "planned_gate_passed"
+    project.metadata_json = updated_metadata
     return payload
 
 
@@ -192,6 +317,88 @@ def _qimao_planning_gate_error_message(report_payload: dict[str, Any]) -> str:
         ]
     suffix = ", ".join(codes) if codes else "unknown"
     return f"Qimao planning gate failed: {suffix}"
+
+
+def _scene_probe_from_model(scene: SceneCardModel) -> ScenePlanProbe:
+    return ScenePlanProbe(
+        scene_number=int(getattr(scene, "scene_number", 0) or 0),
+        scene_type=str(getattr(scene, "scene_type", "") or ""),
+        title=str(getattr(scene, "title", "") or ""),
+        participants=tuple(
+            str(item).strip()
+            for item in (getattr(scene, "participants", None) or [])
+            if str(item).strip()
+        ),
+        purpose=str(getattr(scene, "purpose", None) or ""),
+        entry_state=str(getattr(scene, "entry_state", None) or ""),
+        exit_state=str(getattr(scene, "exit_state", None) or ""),
+        hook_requirement=str(getattr(scene, "hook_requirement", "") or ""),
+    )
+
+
+def _chapter_probe_from_model(chapter: ChapterModel) -> ChapterPlanProbe:
+    try:
+        raw_scenes = list(getattr(chapter, "scenes", []) or [])
+    except Exception:
+        raw_scenes = []
+    return ChapterPlanProbe(
+        chapter_number=int(getattr(chapter, "chapter_number", 0) or 0),
+        title=str(getattr(chapter, "title", "") or ""),
+        chapter_goal=str(getattr(chapter, "chapter_goal", "") or ""),
+        opening_situation=str(getattr(chapter, "opening_situation", "") or ""),
+        main_conflict=str(getattr(chapter, "main_conflict", "") or ""),
+        hook_description=str(getattr(chapter, "hook_description", "") or ""),
+        hype_type=str(getattr(chapter, "hype_type", "") or ""),
+        hype_intensity=(
+            float(getattr(chapter, "hype_intensity"))
+            if getattr(chapter, "hype_intensity", None) is not None
+            else None
+        ),
+        scenes=tuple(_scene_probe_from_model(scene) for scene in raw_scenes),
+    )
+
+
+def _record_commercial_planning_readiness_gate(
+    project: ProjectModel,
+    *,
+    chapters: list[ChapterModel],
+    package_root: Path | None = None,
+    long_serial_min_chapters: int = 50,
+) -> dict[str, Any] | None:
+    if not project_uses_signing_quality_gate(project):
+        return None
+    if int(getattr(project, "target_chapters", 0) or 0) < long_serial_min_chapters:
+        return None
+    report = evaluate_commercial_planning_readiness(
+        [_chapter_probe_from_model(chapter) for chapter in chapters],
+        target_chapters=int(getattr(project, "target_chapters", 0) or 0),
+        package_root=package_root,
+        long_serial_min_chapters=long_serial_min_chapters,
+    )
+    payload = commercial_planning_readiness_report_to_dict(report)
+    project.metadata_json = {
+        **(getattr(project, "metadata_json", None) or {}),
+        "commercial_planning_readiness_report": payload,
+        "commercial_planning_readiness_status": (
+            "planned_gate_passed" if report.passed else "planned_gate_failed"
+        ),
+    }
+    return payload
+
+
+def _commercial_planning_readiness_error_message(
+    report_payload: dict[str, Any],
+) -> str:
+    findings = report_payload.get("findings")
+    codes: list[str] = []
+    if isinstance(findings, list):
+        codes = [
+            str(item.get("code"))
+            for item in findings
+            if isinstance(item, dict) and item.get("severity") == "critical"
+        ]
+    suffix = ", ".join(codes) if codes else "unknown"
+    return f"Commercial planning readiness gate failed: {suffix}"
 
 
 async def _load_chapter_draft_for_pipeline_result(
@@ -223,6 +430,24 @@ def _qimao_opening_gate_error_message(report_payload: dict[str, Any]) -> str:
     return f"Qimao opening gate failed: {suffix}"
 
 
+def _project_uses_whole_book_quality_gate(project: ProjectModel) -> bool:
+    metadata = getattr(project, "metadata_json", None) or {}
+    return metadata.get("whole_book_quality_gate_disabled") is not True
+
+
+def _whole_book_quality_gate_error_message(report_payload: dict[str, Any]) -> str:
+    findings = report_payload.get("findings")
+    codes: list[str] = []
+    if isinstance(findings, list):
+        codes = [
+            str(item.get("code"))
+            for item in findings
+            if isinstance(item, dict) and item.get("severity") in {"critical", "high"}
+        ]
+    suffix = ", ".join(codes) if codes else "unknown"
+    return f"Whole-book quality gate failed: {suffix}"
+
+
 async def _enforce_qimao_opening_gate_after_chapter(
     session: AsyncSession,
     *,
@@ -230,7 +455,7 @@ async def _enforce_qimao_opening_gate_after_chapter(
     chapter: ChapterModel,
     chapter_result: ChapterPipelineResult,
     opening_texts: dict[int, str],
-    workflow_run,
+    workflow_run: WorkflowRunModel,
     progress: ProgressCallback | None,
 ) -> None:
     if not project_uses_signing_quality_gate(project):
@@ -238,7 +463,10 @@ async def _enforce_qimao_opening_gate_after_chapter(
     if chapter.chapter_number > 3:
         return
     metadata = getattr(project, "metadata_json", None) or {}
-    opening_contract = metadata.get("opening_quality_contract") or metadata.get("qimao_opening_contract")
+    opening_contract = (
+        metadata.get("opening_quality_contract")
+        or metadata.get("qimao_opening_contract")
+    )
     if not isinstance(opening_contract, dict) or not opening_contract:
         return
 
@@ -266,12 +494,16 @@ async def _enforce_qimao_opening_gate_after_chapter(
         **(getattr(project, "metadata_json", None) or {}),
         "opening_quality_gate_report": report_payload,
         "opening_quality_gate_reports": [
-            *((getattr(project, "metadata_json", None) or {}).get("opening_quality_gate_reports") or []),
+            *((getattr(project, "metadata_json", None) or {}).get(
+                "opening_quality_gate_reports"
+            ) or []),
             {"chapter_number": chapter.chapter_number, **report_payload},
         ],
         "qimao_opening_gate_report": report_payload,
         "qimao_opening_gate_reports": [
-            *((getattr(project, "metadata_json", None) or {}).get("qimao_opening_gate_reports") or []),
+            *((getattr(project, "metadata_json", None) or {}).get(
+                "qimao_opening_gate_reports"
+            ) or []),
             {"chapter_number": chapter.chapter_number, **report_payload},
         ],
     }
@@ -345,6 +577,109 @@ async def _enforce_qimao_opening_gate_after_chapter(
         },
     )
     raise ValueError(_qimao_opening_gate_error_message(report_payload))
+
+
+async def _enforce_whole_book_quality_gate_after_chapter(
+    session: AsyncSession,
+    *,
+    project: ProjectModel,
+    chapter: ChapterModel,
+    chapter_result: ChapterPipelineResult,
+    chapter_texts: dict[int, str],
+    workflow_run: WorkflowRunModel,
+    progress: ProgressCallback | None,
+) -> None:
+    if not _project_uses_whole_book_quality_gate(project):
+        return
+
+    chapter_draft = await _load_chapter_draft_for_pipeline_result(session, chapter_result)
+    if chapter_draft is None or not getattr(chapter_draft, "content_md", None):
+        return
+
+    chapter_texts[chapter.chapter_number] = chapter_draft.content_md or ""
+    metadata = getattr(project, "metadata_json", None) or {}
+    report = evaluate_whole_book_quality(
+        chapter_texts,
+        volume_plan=metadata.get("volume_plan"),
+    )
+    report_payload = whole_book_quality_report_to_dict(report)
+    project.metadata_json = {
+        **(getattr(project, "metadata_json", None) or {}),
+        "whole_book_quality_report": report_payload,
+        "whole_book_engagement_ledger": report_payload.get("ledger", []),
+    }
+    workflow_run.metadata_json = {
+        **(workflow_run.metadata_json or {}),
+        "whole_book_quality_report": report_payload,
+    }
+    if report.passed:
+        _emit_progress(
+            progress,
+            "whole_book_quality_gate_passed",
+            {"project_slug": project.slug, "chapter_number": chapter.chapter_number},
+        )
+        return
+
+    opening_contract = (
+        metadata.get("opening_quality_contract")
+        or metadata.get("qimao_opening_contract")
+    )
+    warn_only = metadata.get("whole_book_quality_gate_warn_only") is True
+    strategy = whole_book_quality_strategy_for_findings(report.findings)
+    rewrite_task = RewriteTaskModel(
+        project_id=project.id,
+        trigger_type="whole_book_quality_gate",
+        trigger_source_id=chapter.id,
+        rewrite_strategy=strategy,
+        priority=2,
+        status="pending",
+        instructions=build_whole_book_quality_rewrite_instructions(
+            report.findings,
+            chapter_number=chapter.chapter_number,
+            opening_quality_contract=(
+                opening_contract if isinstance(opening_contract, dict) else None
+            ),
+        ),
+        context_required=[
+            "whole_book_engagement_ledger",
+            "current_chapter_draft",
+            "whole_book_quality_findings",
+        ],
+        metadata_json={
+            "chapter_id": str(chapter.id),
+            "chapter_number": chapter.chapter_number,
+            "chapter_draft_id": str(chapter_draft.id),
+            "whole_book_quality_report": report_payload,
+            "whole_book_engagement_ledger": report_payload.get("ledger", []),
+        },
+    )
+    session.add(rewrite_task)
+    project_metadata = {**(project.metadata_json or {})}
+    workflow_metadata = {
+        **(workflow_run.metadata_json or {}),
+        "whole_book_quality_rewrite_strategy": strategy,
+    }
+    if warn_only:
+        project_metadata["whole_book_quality_gate_warning"] = True
+        workflow_metadata["whole_book_quality_gate_warning"] = True
+    else:
+        project_metadata["whole_book_quality_gate_blocked"] = True
+        workflow_metadata["whole_book_quality_gate_blocked"] = True
+    project.metadata_json = project_metadata
+    workflow_run.metadata_json = workflow_metadata
+    _emit_progress(
+        progress,
+        "whole_book_quality_gate_warning" if warn_only else "whole_book_quality_gate_failed",
+        {
+            "project_slug": project.slug,
+            "chapter_number": chapter.chapter_number,
+            "findings": report_payload.get("findings", []),
+            "rewrite_strategy": strategy,
+        },
+    )
+    if warn_only:
+        return
+    raise ValueError(_whole_book_quality_gate_error_message(report_payload))
 
 
 # Books above this chapter target require progressive planning: a single
@@ -1248,9 +1583,35 @@ async def run_scene_pipeline(
                     scene,
                     chapter_number=chapter_number,
                 )
+                _offstage_names = frozenset()
+                try:
+                    from bestseller.services.drafts import (
+                        _load_offstage_character_names_before_chapter,
+                        _scrub_offstage_scene_references,
+                    )
+
+                    _offstage_names = await _load_offstage_character_names_before_chapter(
+                        session,
+                        project.id,
+                        chapter_number,
+                    )
+                    _removed_participants, _removed_state_refs = _scrub_offstage_scene_references(
+                        scene,
+                        _offstage_names,
+                    )
+                    if _removed_participants or _removed_state_refs:
+                        _repair_count += len(_removed_participants) + len(_removed_state_refs)
+                except Exception:
+                    logger.debug(
+                        "Offstage scene participant scrub failed for ch%d sc%d (non-fatal)",
+                        chapter_number,
+                        scene_number,
+                        exc_info=True,
+                    )
                 _participant_repair_count = repair_missing_scene_participants_pre_draft(
                     scene,
                     identity_registry=_identity_registry,
+                    excluded_names=_offstage_names,
                 )
                 _repair_count += _participant_repair_count
                 if _repair_count:
@@ -1272,6 +1633,7 @@ async def run_scene_pipeline(
                     scene,
                     identity_registry=_identity_registry,
                     require_identity_registry=True,
+                    excluded_names=_offstage_names,
                 )
                 if _contract.violations or _contract.warnings:
                     _scene_meta = dict(getattr(scene, "metadata_json", {}) or {})
@@ -2025,6 +2387,7 @@ async def run_scene_pipeline(
                     _id_registry,
                     language=getattr(project, "language", None) or "zh-CN",
                     participant_names=list(scene.participants or []),
+                    chapter_number=chapter_number,
                 )
                 if _id_violations:
                     logger.warning(
@@ -3251,7 +3614,9 @@ async def run_chapter_pipeline(
                 chapter_rewrite_iterations >= settings.quality.max_chapter_revisions
             )
             accept_chapter_on_stall = (
-                at_chapter_rewrite_limit and settings.pipeline.accept_on_stall
+                at_chapter_rewrite_limit
+                and settings.pipeline.accept_on_stall
+                and not getattr(settings.pipeline, "chapter_review_block_on_failure", True)
             )
             if (
                 chapter_review_result.verdict == "pass"
@@ -3439,8 +3804,9 @@ async def run_chapter_pipeline(
                 break
 
             if at_chapter_rewrite_limit:
-                # accept_on_stall=True case was handled above.  Only reached
-                # when accept_on_stall=False → pause for human review.
+                # Either accept_on_stall is disabled or chapter review is
+                # configured as a hard quality gate. Do not mark a rejected
+                # chapter complete after exhausting rewrites.
                 reached_chapter_revision_limit = True
                 requires_human_review = True
                 workflow_run.status = WorkflowStatus.WAITING_HUMAN.value
@@ -3525,6 +3891,16 @@ async def run_chapter_pipeline(
             export_artifact_id, output_path = await _export_current_chapter_markdown()
         if getattr(chapter, "production_state", None) != "blocked":
             chapter.production_state = "ok"
+            chapter_meta = dict(chapter.metadata_json or {})
+            if (
+                chapter_meta.get("auto_repair_exhausted")
+                or chapter_meta.get("auto_repair_in_progress")
+            ):
+                chapter_meta.pop("auto_repair_exhausted", None)
+                chapter_meta.pop("auto_repair_in_progress", None)
+                if auto_repair_attempts > 0:
+                    chapter_meta["auto_repair_last_successful_attempts"] = auto_repair_attempts
+                chapter.metadata_json = chapter_meta
 
         workflow_run.status = WorkflowStatus.COMPLETED.value
         workflow_run.current_step = "completed"
@@ -3595,6 +3971,7 @@ async def _load_project_chapters(
     return list(
         await session.scalars(
             select(ChapterModel)
+            .options(selectinload(ChapterModel.scenes))
             .where(ChapterModel.project_id == project_id)
             .order_by(ChapterModel.chapter_number.asc())
         )
@@ -4052,7 +4429,7 @@ async def run_project_pipeline(
         )
         step_order += 1
 
-        qimao_gate_report = _record_qimao_planning_gate(project)
+        qimao_gate_report = _record_qimao_planning_gate(project, chapters=chapters)
         if qimao_gate_report is not None:
             current_step_name = "qimao_planning_gate"
             workflow_run.current_step = current_step_name
@@ -4085,8 +4462,67 @@ async def run_project_pipeline(
                 {"project_slug": project_slug},
             )
 
+        if getattr(settings.pipeline, "enable_commercial_planning_readiness_gate", True):
+            commercial_gate_report = _record_commercial_planning_readiness_gate(
+                project,
+                chapters=chapters,
+                package_root=(Path(settings.output.base_dir) / project.slug),
+                long_serial_min_chapters=int(
+                    getattr(
+                        settings.pipeline,
+                        "commercial_planning_min_target_chapters",
+                        50,
+                    )
+                    or 50
+                ),
+            )
+            if commercial_gate_report is not None:
+                current_step_name = "commercial_planning_readiness_gate"
+                workflow_run.current_step = current_step_name
+                workflow_run.metadata_json = {
+                    **(workflow_run.metadata_json or {}),
+                    "commercial_planning_readiness_report": commercial_gate_report,
+                }
+                should_block_commercial_gate = (
+                    not commercial_gate_report.get("passed", False)
+                    and getattr(
+                        settings.pipeline,
+                        "commercial_planning_readiness_block_on_failure",
+                        True,
+                    )
+                )
+                if should_block_commercial_gate:
+                    _emit_progress(
+                        progress,
+                        "commercial_planning_readiness_gate_failed",
+                        {
+                            "project_slug": project_slug,
+                            "findings": commercial_gate_report.get("findings", []),
+                        },
+                    )
+                    raise ValueError(
+                        _commercial_planning_readiness_error_message(
+                            commercial_gate_report
+                        )
+                    )
+                await create_workflow_step_run(
+                    session,
+                    workflow_run_id=workflow_run.id,
+                    step_name=current_step_name,
+                    step_order=step_order,
+                    status=WorkflowStatus.COMPLETED,
+                    output_ref=commercial_gate_report,
+                )
+                step_order += 1
+                _emit_progress(
+                    progress,
+                    "commercial_planning_readiness_gate_passed",
+                    {"project_slug": project_slug},
+                )
+
         # Child chapter pipelines can roll back the shared session. Persist
         # the project workflow shell before entering the chapter loop.
+        project.status = ProjectStatus.WRITING.value
         await _checkpoint_commit(session)
 
         requires_human_review = False
@@ -4117,6 +4553,7 @@ async def run_project_pipeline(
                             _global_arc_idx += 1
 
         qimao_opening_texts: dict[int, str] = {}
+        whole_book_quality_texts: dict[int, str] = {}
 
         for chapter in pending_chapters:
             local_done = len(chapter_results) + skipped_count + 1
@@ -4168,6 +4605,30 @@ async def run_project_pipeline(
                 },
             )
             step_order += 1
+            if chapter_result.requires_human_review:
+                requires_human_review = True
+                _emit_progress(
+                    progress,
+                    "chapter_pipeline_paused_for_human_review",
+                    {
+                        "project_slug": project_slug,
+                        "chapter_number": chapter.chapter_number,
+                        "workflow_run_id": str(chapter_result.workflow_run_id),
+                    },
+                )
+                project.status = ProjectStatus.REVISING.value
+                workflow_run.status = WorkflowStatus.WAITING_HUMAN.value
+                workflow_run.current_step = "waiting_human_review"
+                workflow_run.metadata_json = {
+                    **(workflow_run.metadata_json or {}),
+                    "requires_human_review": True,
+                    "paused_after_chapter_number": chapter.chapter_number,
+                    "blocked_chapter_workflow_run_id": str(chapter_result.workflow_run_id),
+                    "processed_chapter_count": len(chapter_results),
+                }
+                await sync_world_expansion_progress(session, project=project)
+                await _checkpoint_commit(session)
+                break
             if project_uses_signing_quality_gate(project) and chapter.chapter_number <= 3:
                 current_step_name = f"qimao_opening_gate_chapter_{chapter.chapter_number}"
                 workflow_run.current_step = current_step_name
@@ -4180,8 +4641,18 @@ async def run_project_pipeline(
                     workflow_run=workflow_run,
                     progress=progress,
                 )
-            if chapter_result.requires_human_review:
-                requires_human_review = True
+            if _project_uses_whole_book_quality_gate(project):
+                current_step_name = f"whole_book_quality_gate_chapter_{chapter.chapter_number}"
+                workflow_run.current_step = current_step_name
+                await _enforce_whole_book_quality_gate_after_chapter(
+                    session,
+                    project=project,
+                    chapter=chapter,
+                    chapter_result=chapter_result,
+                    chapter_texts=whole_book_quality_texts,
+                    workflow_run=workflow_run,
+                    progress=progress,
+                )
             _completed_local = len(chapter_results) + skipped_count
             _completed_global = global_chapter_offset + _completed_local
             _emit_progress(
@@ -4537,7 +5008,20 @@ async def run_project_pipeline(
         step_order += 1
         project_review_not_pass = review_result.verdict != "pass"
         if project_review_not_pass:
-            if settings.pipeline.accept_on_stall:
+            if getattr(settings.pipeline, "project_consistency_block_on_failure", True):
+                requires_human_review = True
+                workflow_run.metadata_json = {
+                    **(workflow_run.metadata_json or {}),
+                    "blocked_by_project_consistency": True,
+                    "project_consistency_verdict": review_result.verdict,
+                }
+                logger.warning(
+                    "Project %s consistency verdict=%s — blocking for review; "
+                    "accept_on_stall does not override whole-book consistency.",
+                    project_slug,
+                    review_result.verdict,
+                )
+            elif settings.pipeline.accept_on_stall:
                 logger.info(
                     "Project %s consistency verdict=%s — accepting per accept_on_stall; "
                     "skipping human-review pause.",
@@ -4558,9 +5042,13 @@ async def run_project_pipeline(
             },
         )
 
+        processed_chapter_number = max(
+            (item.chapter_number for item in chapter_results),
+            default=max(chapter.chapter_number for chapter in chapters),
+        )
         project.current_chapter_number = max(
             int(project.current_chapter_number or 0),
-            max(chapter.chapter_number for chapter in chapters),
+            processed_chapter_number,
         )
         await sync_world_expansion_progress(session, project=project)
         project.status = (
@@ -4623,6 +5111,8 @@ async def run_project_pipeline(
         # Dashboards read this; humans use ``bestseller scorecard`` to
         # triage.
         scorecard_quality_score: float | None = None
+        scorecard_quality_score_for_premium_gate: float | None = None
+        scorecard_quality_score_ignored_reason: str | None = None
         try:
             scorecard = await compute_scorecard(
                 session,
@@ -4631,6 +5121,10 @@ async def run_project_pipeline(
             )
             await save_scorecard(session, scorecard)
             scorecard_quality_score = scorecard.quality_score
+            if int(getattr(scorecard, "missing_chapters", 0) or 0) > 0:
+                scorecard_quality_score_ignored_reason = "project_in_progress_missing_chapters"
+            else:
+                scorecard_quality_score_for_premium_gate = scorecard.quality_score
             _emit_progress(
                 progress,
                 "scorecard_computed",
@@ -4667,7 +5161,7 @@ async def run_project_pipeline(
 
                 premium_report = evaluate_premium_project_readiness(
                     project,
-                    scorecard_quality_score=scorecard_quality_score,
+                    scorecard_quality_score=scorecard_quality_score_for_premium_gate,
                 )
                 premium_book_gate_payload = premium_book_gate_report_to_dict(
                     premium_report
@@ -4737,6 +5231,8 @@ async def run_project_pipeline(
             **workflow_run.metadata_json,
             "audit_finding_count": audit_finding_count,
             "scorecard_quality_score": scorecard_quality_score,
+            "scorecard_quality_score_for_premium_gate": scorecard_quality_score_for_premium_gate,
+            "scorecard_quality_score_ignored_reason": scorecard_quality_score_ignored_reason,
             "premium_book_gate_passed": premium_book_gate_passed,
             "premium_book_gate_report": premium_book_gate_payload,
         }
@@ -5203,13 +5699,12 @@ async def run_progressive_autowrite_pipeline(
     cast_spec_payload = cast_spec_art.content if cast_spec_art else {}
     volume_plan_payload = volume_plan_art.content if volume_plan_art else []
 
-    # Normalize volume plan
-    if isinstance(volume_plan_payload, dict):
-        volume_plan_list = volume_plan_payload.get("volumes", [])
-    elif isinstance(volume_plan_payload, list):
-        volume_plan_list = volume_plan_payload
-    else:
-        volume_plan_list = []
+    # Normalize volume plan. Some recovered/legacy plans store chapter_range
+    # but omit chapter_count_target; the planner can derive the count, so use
+    # its normalization here before the volume loop makes skip/replan decisions.
+    from bestseller.services.planner import _normalize_volume_plan_payload  # noqa: PLC0415
+
+    volume_plan_list = _normalize_volume_plan_payload(volume_plan_payload)
 
     prior_feedback_summary: str | None = None
     prior_world_snapshot: str | None = None

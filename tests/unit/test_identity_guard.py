@@ -4,6 +4,8 @@ import pytest
 
 from bestseller.services.identity_guard import (
     CharacterIdentity,
+    _character_is_alive,
+    _identity_row_should_enter_registry,
     _manifest_first_token_counts,
     _manifest_identity_aliases,
     _upsert_manifest_identity,
@@ -22,6 +24,64 @@ def test_character_identity_is_frozen() -> None:
     ci = CharacterIdentity(name="Alice", gender="female")
     with pytest.raises(AttributeError):
         ci.name = "Bob"  # type: ignore[misc]
+
+
+def test_character_alive_status_dead_without_death_chapter_is_not_treated_dead() -> None:
+    character = type(
+        "CharacterStub",
+        (),
+        {
+            "alive_status": "dead",
+            "death_chapter_number": None,
+        },
+    )()
+
+    assert _character_is_alive(character, {}) is True
+
+
+def test_character_alive_status_dead_with_death_chapter_is_treated_dead() -> None:
+    character = type(
+        "CharacterStub",
+        (),
+        {
+            "alive_status": "deceased",
+            "death_chapter_number": 19,
+        },
+    )()
+
+    assert _character_is_alive(character, {}) is False
+
+
+def test_identity_registry_skips_placeholder_relational_rows() -> None:
+    character = type(
+        "CharacterStub",
+        (),
+        {
+            "name": "His father",
+        },
+    )()
+
+    assert _identity_row_should_enter_registry(
+        character,
+        {"placeholder": True},
+        {},
+    ) is False
+
+
+def test_identity_registry_keeps_placeholder_with_locked_gender() -> None:
+    character = type(
+        "CharacterStub",
+        (),
+        {
+            "name": "Kade",
+        },
+    )()
+
+    assert _identity_row_should_enter_registry(
+        character,
+        {"placeholder": True, "gender": "male"},
+        {},
+    ) is True
 
 
 def test_manifest_identity_overlay_adds_unique_short_alias_to_existing_row() -> None:
@@ -287,6 +347,23 @@ def test_validate_zh_skips_name_mentioned_as_object() -> None:
     assert violations == []
 
 
+def test_validate_zh_skips_cross_gender_possessive_object_after_break_free_action() -> None:
+    registry = [
+        CharacterIdentity(name="宁尘", gender="male", pronoun_set_zh="他"),
+        CharacterIdentity(name="墨离", gender="nonbinary", pronoun_set_zh="ta"),
+    ]
+    text = "宁尘没有挣开她的手。他低头看着那枚玉简。墨离的脸色在风里发白。"
+
+    violations = validate_scene_text_identity(
+        text,
+        registry,
+        language="zh-CN",
+        participant_names=["宁尘"],
+    )
+
+    assert violations == []
+
+
 def test_validate_zh_skips_when_context_shifts_to_gendered_person() -> None:
     registry = [
         CharacterIdentity(name="叶长青", gender="male", pronoun_set_zh="他"),
@@ -301,6 +378,114 @@ def test_validate_zh_skips_when_context_shifts_to_gendered_person() -> None:
     )
 
     assert violations == []
+
+
+def test_validate_zh_allows_dead_character_quoted_memory() -> None:
+    registry = [
+        CharacterIdentity(
+            name="母亲",
+            gender="female",
+            pronoun_set_zh="她",
+            is_alive=False,
+        ),
+    ]
+    text = "母亲说过：“姜家的东西，碰不得。”苏砚将这句话按回心底。"
+
+    violations = validate_scene_text_identity(
+        text,
+        registry,
+        language="zh-CN",
+        participant_names=["苏砚"],
+    )
+
+    assert violations == []
+
+
+def test_validate_zh_skips_speaker_label_dialogue_pronoun() -> None:
+    registry = [
+        CharacterIdentity(
+            name="苏砚",
+            gender="male",
+            pronoun_set_zh="他",
+        ),
+    ]
+    text = "苏砚：她留下了后手。\n\n院外的死寂持续了数息。苏砚没动。"
+
+    violations = validate_scene_text_identity(
+        text,
+        registry,
+        language="zh-CN",
+        participant_names=["苏砚"],
+    )
+
+    assert violations == []
+
+
+def test_validate_zh_blocks_dead_character_present_speech() -> None:
+    registry = [
+        CharacterIdentity(
+            name="母亲",
+            gender="female",
+            pronoun_set_zh="她",
+            is_alive=False,
+        ),
+    ]
+    text = "火光里，母亲说道：“跟我走。”苏砚怔在原地。"
+
+    violations = validate_scene_text_identity(
+        text,
+        registry,
+        language="zh-CN",
+        participant_names=["苏砚"],
+    )
+
+    assert any(v.violation_type == "dead_alive" for v in violations)
+
+
+def test_validate_zh_allows_future_death_character_before_death_chapter() -> None:
+    registry = [
+        CharacterIdentity(
+            name="柳如是",
+            gender="female",
+            pronoun_set_zh="她",
+            is_alive=False,
+            death_chapter_number=30,
+        ),
+    ]
+    text = "火光里，柳如是说道：“我来找一样东西。”"
+
+    violations = validate_scene_text_identity(
+        text,
+        registry,
+        language="zh-CN",
+        participant_names=["柳如是"],
+        chapter_number=20,
+    )
+
+    assert violations == []
+
+
+def test_validate_zh_blocks_dead_character_after_death_chapter() -> None:
+    registry = [
+        CharacterIdentity(
+            name="柳如是",
+            gender="female",
+            pronoun_set_zh="她",
+            is_alive=False,
+            death_chapter_number=19,
+        ),
+    ]
+    text = "火光里，柳如是说道：“我来找一样东西。”"
+
+    violations = validate_scene_text_identity(
+        text,
+        registry,
+        language="zh-CN",
+        participant_names=["柳如是"],
+        chapter_number=20,
+    )
+
+    assert any(v.violation_type == "dead_alive" for v in violations)
 
 
 def test_validate_en_correct_pronouns_no_violations() -> None:
@@ -366,6 +551,63 @@ def test_validate_en_skips_later_paragraph_pronoun_with_competing_character() ->
     assert violations == []
 
 
+def test_validate_zh_skips_pronoun_after_recalled_scene_colon() -> None:
+    registry = [
+        CharacterIdentity(name="宁尘", gender="male", pronoun_set_zh="他"),
+    ]
+    text = (
+        "宁尘跟上，脑中却反复回放那一幕：她的目光里没有敌意，只有审视。"
+    )
+
+    violations = validate_scene_text_identity(
+        text,
+        registry,
+        language="zh-CN",
+        participant_names=["宁尘"],
+    )
+
+    assert violations == []
+
+
+def test_validate_zh_skips_pronoun_owned_by_duifang_anchor() -> None:
+    registry = [
+        CharacterIdentity(name="沈青崖", gender="male", pronoun_set_zh="他"),
+    ]
+    text = (
+        "沈青崖下意识后仰半寸，却发现对方的目光根本不在自己脸上——"
+        "她看着的是虚空。"
+    )
+
+    violations = validate_scene_text_identity(
+        text,
+        registry,
+        language="zh-CN",
+        participant_names=["沈青崖"],
+    )
+
+    assert violations == []
+
+
+def test_validate_zh_skips_possessive_object_after_discovery_verb() -> None:
+    registry = [
+        CharacterIdentity(name="沈青崖", gender="male", pronoun_set_zh="他"),
+        CharacterIdentity(name="白芷萱", gender="female", pronoun_set_zh="她"),
+    ]
+    text = (
+        "白芷萱抬手，纤细的指尖在沈青崖眼前划过一道弧线。"
+        "沈青崖下意识后仰，却发现她的目光根本不在自己脸上。"
+    )
+
+    violations = validate_scene_text_identity(
+        text,
+        registry,
+        language="zh-CN",
+        participant_names=["沈青崖", "白芷萱"],
+    )
+
+    assert violations == []
+
+
 def test_validate_en_skips_gendered_noun_behind_character_reference() -> None:
     registry = [
         CharacterIdentity(name="Kade Mercer", gender="male", pronoun_set_en="he/him"),
@@ -381,6 +623,270 @@ def test_validate_en_skips_gendered_noun_behind_character_reference() -> None:
         registry,
         language="en",
         participant_names=["Kade Mercer", "Zoe Chen"],
+    )
+
+    assert violations == []
+
+
+def test_validate_en_skips_name_inside_dialogue_before_speaker_pronoun() -> None:
+    registry = [
+        CharacterIdentity(name="Kade Mercer", gender="male", pronoun_set_en="he/him"),
+    ]
+    text = (
+        "“You could be Kade Mercer again. Clean. Pure. Human.” "
+        "Her voice hardened around the last word."
+    )
+
+    violations = validate_scene_text_identity(
+        text,
+        registry,
+        language="en",
+        participant_names=["Kade Mercer"],
+    )
+
+    assert violations == []
+
+
+def test_validate_en_skips_object_pronoun_after_male_subject() -> None:
+    registry = [
+        CharacterIdentity(name="Kade Mercer", aliases=("Kade",), gender="male", pronoun_set_en="he/him"),
+    ]
+    text = "Kade looked at her. Really looked, past the old grief."
+
+    violations = validate_scene_text_identity(
+        text,
+        registry,
+        language="en",
+        participant_names=["Kade Mercer"],
+    )
+
+    assert violations == []
+
+
+def test_validate_en_skips_later_proper_name_subject() -> None:
+    registry = [
+        CharacterIdentity(name="Kade Mercer", aliases=("Kade",), gender="male", pronoun_set_en="he/him"),
+    ]
+    text = "Kade finally turned. Zoe stood five feet back, her hands at her sides."
+
+    violations = validate_scene_text_identity(
+        text,
+        registry,
+        language="en",
+        participant_names=["Kade Mercer"],
+    )
+
+    assert violations == []
+
+
+def test_validate_en_skips_found_proper_name_subject() -> None:
+    registry = [
+        CharacterIdentity(name="Kade Mercer", aliases=("Kade",), gender="male", pronoun_set_en="he/him"),
+    ]
+    text = "Kade found Mira Vance in the operations room. She didn't look up."
+
+    violations = validate_scene_text_identity(
+        text,
+        registry,
+        language="en",
+        participant_names=["Kade Mercer"],
+    )
+
+    assert violations == []
+
+
+def test_validate_en_skips_possessive_proper_name_owner() -> None:
+    registry = [
+        CharacterIdentity(name="Kade Mercer", aliases=("Kade",), gender="male", pronoun_set_en="he/him"),
+    ]
+    text = "Kade didn't answer. His hand was still in Zoe's. Her crystal was fading."
+
+    violations = validate_scene_text_identity(
+        text,
+        registry,
+        language="en",
+        participant_names=["Kade Mercer"],
+    )
+
+    assert violations == []
+
+
+def test_validate_en_skips_subordinate_subject_after_watch_verb() -> None:
+    registry = [
+        CharacterIdentity(name="Kade Mercer", aliases=("Kade",), gender="male", pronoun_set_en="he/him"),
+    ]
+    text = "Kade watched until she disappeared around the corner."
+
+    violations = validate_scene_text_identity(
+        text,
+        registry,
+        language="en",
+        participant_names=["Kade Mercer"],
+    )
+
+    assert violations == []
+
+
+def test_validate_en_skips_possessive_after_across_preposition() -> None:
+    registry = [
+        CharacterIdentity(name="Kade Mercer", aliases=("Kade",), gender="male", pronoun_set_en="he/him"),
+    ]
+    text = "Kade stopped at the edge of the table. The screens cast light across her face."
+
+    violations = validate_scene_text_identity(
+        text,
+        registry,
+        language="en",
+        participant_names=["Kade Mercer"],
+    )
+
+    assert violations == []
+
+
+def test_validate_en_skips_single_name_shook_subject() -> None:
+    registry = [
+        CharacterIdentity(name="Kade Mercer", aliases=("Kade",), gender="male", pronoun_set_en="he/him"),
+    ]
+    text = "Kade said he understood. Zoe shook her head."
+
+    violations = validate_scene_text_identity(
+        text,
+        registry,
+        language="en",
+        participant_names=["Kade Mercer"],
+    )
+
+    assert violations == []
+
+
+def test_validate_en_skips_vocative_name_in_italic_dialogue() -> None:
+    registry = [
+        CharacterIdentity(name="Marcus Cole", aliases=("Marcus",), gender="male", pronoun_set_en="he/him"),
+    ]
+    text = "*Marcus*, she said. *The thing at the school. I remembered something.*"
+
+    violations = validate_scene_text_identity(
+        text,
+        registry,
+        language="en",
+        participant_names=["Marcus Cole"],
+    )
+
+    assert violations == []
+
+
+def test_validate_en_skips_name_used_as_organization_modifier() -> None:
+    registry = [
+        CharacterIdentity(name="Victor Kane", gender="male", pronoun_set_en="he/him"),
+    ]
+    text = "Sophie had been registered in the Victor Kane Network database since she was nine years old."
+
+    violations = validate_scene_text_identity(
+        text,
+        registry,
+        language="en",
+        participant_names=["Victor Kane"],
+    )
+
+    assert violations == []
+
+
+def test_validate_en_skips_relative_clause_after_object_noun() -> None:
+    registry = [
+        CharacterIdentity(name="Kade Mercer", aliases=("Kade",), gender="male", pronoun_set_en="he/him"),
+    ]
+    text = "Kade looked at the tablet she'd pushed back toward him."
+
+    violations = validate_scene_text_identity(
+        text,
+        registry,
+        language="en",
+        participant_names=["Kade Mercer"],
+    )
+
+    assert violations == []
+
+
+def test_validate_en_skips_indefinite_pronoun_relative_clause() -> None:
+    registry = [
+        CharacterIdentity(name="Mira Vance", aliases=("Mira",), gender="female", pronoun_set_en="she/her"),
+    ]
+    text = "Mira as villain, complicated by something he hadn't anticipated."
+
+    violations = validate_scene_text_identity(
+        text,
+        registry,
+        language="en",
+        participant_names=["Mira Vance"],
+    )
+
+    assert violations == []
+
+
+def test_validate_en_skips_speaker_pronoun_after_dialogue() -> None:
+    registry = [
+        CharacterIdentity(name="Kade Mercer", aliases=("Kade",), gender="male", pronoun_set_en="he/him"),
+    ]
+    text = "Kade didn't flinch. “I've got reason to be.” She gestured at the space between them."
+
+    violations = validate_scene_text_identity(
+        text,
+        registry,
+        language="en",
+        participant_names=["Kade Mercer"],
+    )
+
+    assert violations == []
+
+
+def test_validate_en_skips_name_as_prepositional_object() -> None:
+    registry = [
+        CharacterIdentity(name="Kade Mercer", aliases=("Kade",), gender="male", pronoun_set_en="he/him"),
+    ]
+    text = "Zoe looked at Kade, forty-four lights dancing behind her eyes."
+
+    violations = validate_scene_text_identity(
+        text,
+        registry,
+        language="en",
+        participant_names=["Kade Mercer"],
+    )
+
+    assert violations == []
+
+
+def test_validate_en_still_blocks_cross_sentence_gender_flip_without_owner() -> None:
+    registry = [
+        CharacterIdentity(name="Kade Mercer", aliases=("Kade",), gender="male", pronoun_set_en="he/him"),
+    ]
+    text = "Kade stopped in the doorway. She opened the file."
+
+    violations = validate_scene_text_identity(
+        text,
+        registry,
+        language="en",
+        participant_names=["Kade Mercer"],
+    )
+
+    assert any(v.violation_type == "pronoun_mismatch" for v in violations)
+
+
+def test_validate_en_skips_later_gendered_subject_after_character_reference() -> None:
+    registry = [
+        CharacterIdentity(name="Kade Mercer", gender="male", pronoun_set_en="he/him"),
+        CharacterIdentity(name="Mira Vance", gender="female", pronoun_set_en="she/her"),
+    ]
+    text = (
+        "That detail lodged in Kade Mercer's mind even as armed guards flanked "
+        "the courtyard entrance, and the woman beneath the colonnade gestured "
+        "toward the seat across from her."
+    )
+
+    violations = validate_scene_text_identity(
+        text,
+        registry,
+        language="en",
+        participant_names=["Kade Mercer", "Mira Vance"],
     )
 
     assert violations == []

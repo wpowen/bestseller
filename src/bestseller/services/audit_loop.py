@@ -10,10 +10,11 @@ phases absorb ``scripts/`` one auditor at a time.
 
 from __future__ import annotations
 
-import logging
+from collections.abc import Iterable
 from dataclasses import dataclass
+import logging
 from types import SimpleNamespace
-from typing import Iterable, Literal, Protocol
+from typing import Literal, Protocol
 from uuid import UUID
 
 from sqlalchemy import select
@@ -36,11 +37,6 @@ from bestseller.services.hype_engine import (
     HypeType,
     classify_hype,
 )
-from bestseller.services.setup_payoff_tracker import (
-    DEFAULT_HUMILIATION_KEYWORDS,
-    DEFAULT_PAYOFF_HYPE_TYPES,
-    analyze_setup_payoff,
-)
 from bestseller.services.invariants import (
     CliffhangerType,
     InvariantSeedError,
@@ -54,6 +50,11 @@ from bestseller.services.output_validator import (
     ValidationContext,
     build_full_audit_validator,
     build_phase1_validator,
+)
+from bestseller.services.setup_payoff_tracker import (
+    DEFAULT_HUMILIATION_KEYWORDS,
+    DEFAULT_PAYOFF_HYPE_TYPES,
+    analyze_setup_payoff,
 )
 
 logger = logging.getLogger(__name__)
@@ -289,10 +290,41 @@ class ContentAuditor:
         and ``NamingConsistencyCheck`` gracefully no-ops.
         """
 
-        rows = await session.scalars(
-            select(CharacterModel.name).where(CharacterModel.project_id == project_id)
+        characters = await session.scalars(
+            select(CharacterModel).where(CharacterModel.project_id == project_id)
         )
-        return frozenset(name.strip() for name in rows if name and name.strip())
+        names: set[str] = set()
+        for character in characters:
+            if isinstance(character, str):
+                if character.strip():
+                    names.add(character.strip())
+                continue
+            if character.name and character.name.strip():
+                names.add(character.name.strip())
+            metadata = character.metadata_json or {}
+            if not isinstance(metadata, dict):
+                continue
+            aliases = metadata.get("aliases")
+            if isinstance(aliases, str) and aliases.strip():
+                names.add(aliases.strip())
+            elif isinstance(aliases, list):
+                names.update(
+                    alias.strip()
+                    for alias in aliases
+                    if isinstance(alias, str) and alias.strip()
+                )
+            cast_entry = metadata.get("cast_entry")
+            if isinstance(cast_entry, dict):
+                cast_aliases = cast_entry.get("aliases")
+                if isinstance(cast_aliases, str) and cast_aliases.strip():
+                    names.add(cast_aliases.strip())
+                elif isinstance(cast_aliases, list):
+                    names.update(
+                        alias.strip()
+                        for alias in cast_aliases
+                        if isinstance(alias, str) and alias.strip()
+                    )
+        return frozenset(names)
 
     def _build_validator(self) -> OutputValidator:
         if self.validator_profile == "phase1":
@@ -347,7 +379,7 @@ class ContentAuditor:
                 continue
             chapter_no_int = int(chapter_no) if chapter_no is not None else 0
             recent = (
-                tuple(cliff_history[-cliff_window:]) if cliff_window else tuple()
+                tuple(cliff_history[-cliff_window:]) if cliff_window else ()
             )
             ctx = ValidationContext(
                 invariants=invariants,

@@ -134,6 +134,19 @@ def test_supported_packs_seed_valid_premium_capability_metadata(pack_id: str) ->
     assert snapshot["faction_pressure_queue"]
 
 
+def test_generic_premium_pack_accepts_project_protagonist_override() -> None:
+    pack_id = "category_eastern_aesthetic_zh"
+    policy = _decision_policy_for_pack(pack_id, protagonist_name="苏砚")
+    ledger = _initial_premium_state_ledger_for_pack(pack_id, protagonist_name="苏砚")
+
+    assert policy
+    assert policy["character_name"] == "苏砚"
+    assert ledger
+    assert ledger["progression_events"][0]["subject"] == "苏砚"
+    assert ledger["relationship_events"][0]["character_a"] == "苏砚"
+    assert validate_premium_state_ledger(ledger).passed
+
+
 def _assert_materials_meet_density(materials: list[object]) -> None:
     counts: dict[str, int] = {}
     for material in materials:

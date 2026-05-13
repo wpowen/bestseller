@@ -120,7 +120,19 @@ class _FakeSession:
 
         if target is WorkflowRunModel:
             active = {"pending", "queued", "running"}
-            pipeline_types = {"autowrite_pipeline", "project_pipeline"}
+            pipeline_types = {
+                "autowrite_pipeline",
+                "generate_novel_plan",
+                "generate_volume_plan",
+                "project_pipeline",
+                "chapter_pipeline",
+                "scene_pipeline",
+                "project_repair",
+                "materialize_story_bible",
+                "materialize_chapter_outline_batch",
+                "materialize_narrative_graph",
+                "materialize_narrative_tree",
+            }
             for r in self.runs:
                 if r.project_id != project_id:
                     continue
@@ -183,12 +195,26 @@ class _FakeSession:
         cutoff = self._filter_updated_before(stmt)
         created_cutoff = self._filter_created_before(stmt)
         statuses = {"pending", "queued", "running"}
+        reapable_types = {
+            "autowrite_pipeline",
+            "generate_novel_plan",
+            "generate_volume_plan",
+            "project_pipeline",
+            "chapter_pipeline",
+            "scene_pipeline",
+        }
+        if created_cutoff is not None:
+            reapable_types.add("project_repair")
         count = 0
         for r in self.runs:
             created_at = r.created_at or r.updated_at
             stale_by_heartbeat = r.updated_at < cutoff
             stale_by_startup = created_cutoff is not None and created_at < created_cutoff
-            if r.status in statuses and (stale_by_heartbeat or stale_by_startup):
+            if (
+                r.workflow_type in reapable_types
+                and r.status in statuses
+                and (stale_by_heartbeat or stale_by_startup)
+            ):
                 r.status = WorkflowStatus.FAILED.value
                 r.error_message = "reaped by self-heal (abandoned by prior worker)"
                 count += 1
@@ -435,6 +461,28 @@ async def test_find_stuck_projects_skips_projects_with_active_pipeline(
 
 
 @pytest.mark.asyncio
+async def test_find_stuck_projects_ignores_active_volume_planning(
+    now: _dt.datetime,
+) -> None:
+    """Volume planning is already an active autowrite child step."""
+    p = _FakeProject(id=uuid4(), slug="book-volume-active", target_chapters=100)
+    chapters = [_FakeChapter(id=uuid4(), project_id=p.id) for _ in range(50)]
+    drafts = [_FakeDraft(id=uuid4(), chapter_id=c.id, is_current=True) for c in chapters]
+    runs = [
+        _FakeWorkflowRun(
+            id=uuid4(),
+            project_id=p.id,
+            workflow_type="generate_volume_plan",
+            status="running",
+            updated_at=now,
+        )
+    ]
+    session = _FakeSession(projects=[p], runs=runs, chapters=chapters, drafts=drafts)
+
+    assert await find_stuck_projects(session) == []
+
+
+@pytest.mark.asyncio
 async def test_find_stuck_projects_ignores_complete_projects(now: _dt.datetime) -> None:
     """Every chapter has a current draft — nothing to heal."""
     p = _FakeProject(id=uuid4(), slug="book-4")
@@ -449,7 +497,7 @@ async def test_find_stuck_projects_ignores_complete_projects(now: _dt.datetime) 
 async def test_find_stuck_projects_detects_blocked_chapters(
     now: _dt.datetime,
 ) -> None:
-    """Blocked chapters with current drafts still need a worker heal run."""
+    """Blocked chapters with current drafts must enter repair, not autowrite."""
     p = _FakeProject(id=uuid4(), slug="book-blocked")
     chapters = [
         _FakeChapter(id=uuid4(), project_id=p.id, production_state="ok"),
@@ -463,6 +511,7 @@ async def test_find_stuck_projects_detects_blocked_chapters(
     assert len(stuck) == 1
     assert stuck[0].slug == "book-blocked"
     assert stuck[0].reason == "blocked_chapters"
+    assert stuck[0].heal_kind == "repair"
     assert stuck[0].chapters_total == 2
     assert stuck[0].chapters_with_draft == 2
 
@@ -651,6 +700,90 @@ async def test_reap_orphan_workflow_runs_by_heartbeat_timeout(
 
 
 @pytest.mark.asyncio
+async def test_reap_orphan_workflow_runs_reaps_volume_planning_rows(
+    now: _dt.datetime,
+) -> None:
+    """Per-volume planner rows are worker-owned and must not stay running forever."""
+    p = _FakeProject(id=uuid4(), slug="book-volume-plan")
+    runs = [
+        _FakeWorkflowRun(
+            id=uuid4(),
+            project_id=p.id,
+            workflow_type="generate_volume_plan",
+            status="running",
+            updated_at=now - _dt.timedelta(hours=5),
+        ),
+    ]
+    session = _FakeSession(projects=[p], runs=runs, chapters=[], drafts=[])
+
+    reaped = await reap_orphan_workflow_runs(session)
+
+    assert reaped == 1
+    assert runs[0].status == "failed"
+
+
+@pytest.mark.asyncio
+async def test_reap_orphan_workflow_runs_does_not_reap_project_repair_by_heartbeat(
+    now: _dt.datetime,
+) -> None:
+    """Project repair can spend a long time inside one chapter rewrite.
+
+    It must not be marked failed by the generic orphan reaper while the repair
+    thread is still alive; otherwise blocked chapters never clear.
+    """
+    p = _FakeProject(id=uuid4(), slug="book-repair")
+    runs = [
+        _FakeWorkflowRun(
+            id=uuid4(),
+            project_id=p.id,
+            workflow_type="project_repair",
+            status="running",
+            updated_at=now - _dt.timedelta(hours=5),
+        ),
+    ]
+    session = _FakeSession(projects=[p], runs=runs, chapters=[], drafts=[])
+
+    reaped = await reap_orphan_workflow_runs(session)
+
+    assert reaped == 0
+    assert runs[0].status == "running"
+
+
+@pytest.mark.asyncio
+async def test_reap_orphan_workflow_runs_reaps_project_repair_by_startup_cutoff(
+    now: _dt.datetime,
+) -> None:
+    """A repair row from a previous worker must not block startup self-heal."""
+    p = _FakeProject(id=uuid4(), slug="book-repair-startup")
+    startup_cutoff = now - _dt.timedelta(seconds=STARTUP_GRACE_SECONDS)
+    runs = [
+        _FakeWorkflowRun(
+            id=uuid4(),
+            project_id=p.id,
+            workflow_type="project_repair",
+            status="running",
+            created_at=startup_cutoff - _dt.timedelta(minutes=5),
+            updated_at=startup_cutoff - _dt.timedelta(minutes=1),
+        ),
+        _FakeWorkflowRun(
+            id=uuid4(),
+            project_id=p.id,
+            workflow_type="project_repair",
+            status="running",
+            created_at=now,
+            updated_at=now,
+        ),
+    ]
+    session = _FakeSession(projects=[p], runs=runs, chapters=[], drafts=[])
+
+    reaped = await reap_orphan_workflow_runs(session, startup_cutoff=startup_cutoff)
+
+    assert reaped == 1
+    assert runs[0].status == "failed"
+    assert runs[1].status == "running"
+
+
+@pytest.mark.asyncio
 async def test_reap_orphan_workflow_runs_reaps_child_when_parent_terminal(
     now: _dt.datetime,
 ) -> None:
@@ -785,9 +918,10 @@ async def test_try_acquire_heal_lock_falls_back_on_redis_error() -> None:
 
 
 def test_autowrite_heal_job_id_is_deterministic() -> None:
-    from bestseller.worker.self_heal import _autowrite_heal_job_id
+    from bestseller.worker.self_heal import _autowrite_heal_job_id, _repair_heal_job_id
 
     assert _autowrite_heal_job_id("slug-a") == "autowrite:heal:slug-a"
+    assert _repair_heal_job_id("slug-a") == "repair:heal:slug-a"
     # Identical across calls → ARQ dedup will reject a second enqueue.
     assert _autowrite_heal_job_id("slug-a") == _autowrite_heal_job_id("slug-a")
     # Different slugs → different ids
@@ -876,6 +1010,33 @@ async def test_requeue_autowrite_returns_job_id_on_success() -> None:
     assert pool.enqueued[0]["_job_id"] == "autowrite:heal:book-z"
     assert pool.enqueued[0]["payload"] == {"project_slug": "book-z", "premise": None}
     assert pool.enqueued[0]["_expires"].days >= 7
+
+
+@pytest.mark.asyncio
+async def test_requeue_repair_returns_job_id_on_success() -> None:
+    from bestseller.worker.self_heal import _requeue_repair
+
+    pool = _FakeArqPool()
+    stuck = StuckProject(
+        project_id="p1",
+        slug="book-repair",
+        reason="blocked_chapters",
+        stuck_at_chapter=None,
+        chapters_total=10,
+        chapters_with_draft=10,
+        heal_kind="repair",
+    )
+
+    job_id = await _requeue_repair(pool, stuck)  # type: ignore[arg-type]
+
+    assert job_id == "repair:heal:book-repair"
+    assert len(pool.enqueued) == 1
+    assert pool.enqueued[0]["function"] == "run_project_repair_task"
+    assert pool.enqueued[0]["_job_id"] == "repair:heal:book-repair"
+    assert pool.enqueued[0]["payload"] == {
+        "project_slug": "book-repair",
+        "requested_by": "worker_self_heal",
+    }
 
 
 @pytest.mark.asyncio

@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "DistillationChapterCard",
+  "type": "object",
+  "required": [
+    "source_id",
+    "abs_chapter_no",
+    "chapter_function",
+    "state_changes",
+    "reader_rewards",
+    "open_hooks",
+    "reusable_mechanisms",
+    "non_reusable_specifics",
+    "risk_flags",
+    "confidence"
+  ],
+  "properties": {
+    "source_id": { "type": "string" },
+    "abs_chapter_no": { "type": "integer", "minimum": 1 },
+    "volume_no": { "type": "integer", "minimum": 1 },
+    "chapter_function": { "type": "string", "minLength": 1 },
+    "scene_functions": { "type": "array", "items": { "type": "string" } },
+    "state_changes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["axis", "before", "after", "story_value"],
+        "properties": {
+          "axis": { "type": "string" },
+          "before": { "type": "string" },
+          "after": { "type": "string" },
+          "story_value": { "type": "string" }
+        },
+        "additionalProperties": false
+      }
+    },
+    "reader_rewards": { "type": "array", "items": { "type": "string" } },
+    "setups": { "type": "array", "items": { "type": "string" } },
+    "payoffs": { "type": "array", "items": { "type": "string" } },
+    "open_hooks": { "type": "array", "items": { "type": "string" } },
+    "reusable_mechanisms": { "type": "array", "items": { "type": "string" } },
+    "non_reusable_specifics": { "type": "array", "items": { "type": "string" } },
+    "risk_flags": { "type": "array", "items": { "type": "string" } },
+    "confidence": { "type": "number", "minimum": 0, "maximum": 1 }
+  },
+  "additionalProperties": true
+}

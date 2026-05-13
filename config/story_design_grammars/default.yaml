@@ -1,0 +1,39 @@
+key: default
+name: 通用剧情语法
+applies_to_categories: [default]
+required_contracts:
+  - premise_contract
+  - character_conflict_contract
+  - plot_tree
+  - beat_schedule
+  - reverse_outline
+state_variables:
+  - 主角目标
+  - 外部压力
+  - 选择代价
+  - 信息差
+  - 关系位置
+chapter_change_vectors:
+  - 目标推进或改写
+  - 压力升级或换源
+  - 代价显性化
+  - 关系立场变化
+  - 新信息改变判断
+reader_rewards:
+  - 短期问题得到部分解决
+  - 新问题自然冒出
+  - 角色做出有代价的选择
+  - 局势出现可感变化
+  - 情绪余波推动下一章
+hook_or_aftereffect_types:
+  - 未兑现承诺
+  - 新限制出现
+  - 选择后果延迟爆发
+  - 关系重新站队
+  - 规则显露漏洞
+forbidden_defaults:
+  - 父母失踪作为默认动机
+  - 神秘玉佩自动开挂
+  - 退婚羞辱作为万能开局
+  - 神秘老人无代价赠送能力
+  - 反派无因作恶推动剧情

@@ -1,0 +1,13 @@
+{
+  "aggregate_key": "otherworld-cross-system",
+  "source_ids": [
+    "source-0001"
+  ],
+  "source_count": 1,
+  "material_rows": 12,
+  "mechanism_rows": 15,
+  "anti_copy_blocked_combinations": 3,
+  "grammar_state_variables": 7,
+  "grammar_change_vectors": 6,
+  "warnings": []
+}

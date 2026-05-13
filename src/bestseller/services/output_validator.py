@@ -211,6 +211,7 @@ class Check(Protocol):
 
 _CJK_RE = re.compile(r"[\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF]")
 _LATIN_WORD_RE = re.compile(r"[A-Za-z]{3,}")
+_LATIN_LENGTH_WORD_RE = re.compile(r"[A-Za-z0-9]+(?:['\u2019._-][A-Za-z0-9]+)*")
 _WHITESPACE_RE = re.compile(r"\s+")
 
 
@@ -367,16 +368,36 @@ class LanguageSignatureCheck:
 
 
 def _count_effective_chars(text: str, language: str) -> int:
-    """Count chars contributing to perceived length.
+    """Count length units using the same semantics as stored draft word_count.
 
-    For Chinese we strip whitespace (each CJK char is meaningful); for
-    English we count non-whitespace characters which is a reasonable proxy
-    for word count × 5-ish.
+    The generation budget is named ``words_per_chapter`` and the chapter row
+    stores :func:`drafts.count_words` style units: CJK glyphs plus Latin word
+    tokens, after Markdown markers are stripped.  L4 must use that same unit;
+    counting punctuation and Markdown characters creates false ``LENGTH_OVER``
+    blocks for Chinese chapters that are otherwise inside the persisted
+    word-count envelope.
     """
 
     if not text:
         return 0
-    return len(_WHITESPACE_RE.sub("", text))
+    plain_lines: list[str] = []
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if stripped.startswith("# "):
+            plain_lines.append(stripped[2:].strip())
+        elif stripped.startswith("## "):
+            plain_lines.append(stripped[3:].strip())
+        elif stripped.startswith("> "):
+            plain_lines.append(stripped[2:].strip())
+        elif stripped.startswith("- "):
+            plain_lines.append(stripped[2:].strip())
+        else:
+            plain_lines.append(stripped)
+    plain = "\n".join(plain_lines).strip()
+    non_ws = _WHITESPACE_RE.sub("", plain)
+    return len(_CJK_RE.findall(non_ws)) + len(_LATIN_LENGTH_WORD_RE.findall(plain))
 
 
 class LengthEnvelopeCheck:
@@ -475,6 +496,84 @@ _ZH_NAME_RE: re.Pattern[str] = re.compile(
 )
 
 
+_ZH_ERA_NAME_PREFIXES: frozenset[str] = frozenset(
+    {
+        "康熙",
+        "雍正",
+        "乾隆",
+        "嘉庆",
+        "道光",
+        "咸丰",
+        "同治",
+        "光绪",
+        "宣统",
+    }
+)
+_ZH_ERA_ARTIFACT_TAIL_CHARS: frozenset[str] = frozenset("铜钱通宝币瓷窑年款")
+
+
+# Exact tail words that are common prose fragments, not given names, after a
+# surname-shaped first character. These come from live rescue audits where
+# normal narration like "瞳孔收缩" / "铜钱印记" was misread as a new person.
+_ZH_COMMON_NON_NAME_TAIL_WORDS: frozenset[str] = frozenset(
+    {
+        "印记",
+        "一缩",
+        "人类",
+        "忽暗",
+        "收缩",
+        "模糊",
+        "旁边",
+        "暗褐",
+        "叔",
+        "三个",
+        "半圈",
+        "扭曲",
+        "母亲",
+        "这老",
+        "可定",
+        "八者",
+        # Suspense / case-prose fragments from opening rescue audits.
+        # These spans look like surname+given-name to the regex, but are
+        # ordinary narration around corpses, documents, and action beats.
+        "泡得",
+        "肉",
+        "肉浮",
+        "沫",
+        "已经",
+        "验尸",
+        "被河",
+        "挣出",
+        "死人",
+        "一团",
+        "两半",
+        "封尸",
+        "章",
+        "当年",
+        "残纸",
+        "干净",
+        "把",
+        "这具",
+        "山外",
+        "山正",
+        "山来",
+        "茅山",
+        "明灭",
+        "严丝",
+        "灭",
+        "语",
+        "丝合",
+        "卷宗",
+        "游",
+        "游四",
+        "苍老",
+        "留下",
+        "符纸",
+        "玉佩",
+    }
+)
+
+
 # Second-character stoplist — when the second char of a surname-prefixed
 # candidate is one of these, the 2-char slice is overwhelmingly a common
 # word/adverb compound, not a name. E.g. "时候" (time/when), "方向"
@@ -530,6 +629,17 @@ _ZH_COMMON_WORD_2ND_CHARS: frozenset[str] = frozenset(
     # Material/readiness/action false positives:
     # 朱砂 -> cinnabar; 齐备 -> ready; 铜钱按在 -> 钱按.
     "砂备按"
+    # Opening-rescue audit false positives:
+    # 于乱/于慌 are prepositional fragments, not people.
+    "乱慌"
+    # Qiyouhun audit false positives: 平得像/云托/成执/云忽/云转/
+    # 陈腐/钱孔中/方鼎 are prose or artifact fragments, not cast names.
+    "得托执忽转腐孔鼎"
+    # More prose fragments: 云没有/姜氏禁.
+    "没氏"
+    # Suspense case prose: 沈副捕头 / 张被河水 / 成一团 / 成两半 /
+    # 李宅 is a case location, not a cast member.
+    "副被一两宅把爷剑符丝游语灭"
 )
 
 # Third-character stoplist — for 3-char candidates the regex greedily
@@ -544,6 +654,9 @@ _ZH_GRAMMATICAL_TAIL_CHARS: frozenset[str] = frozenset(
     # Name + action/body/object glue from Chinese prose: 孙乾剑/孙乾脸/
     # 赵峥走 are "孙乾 + 剑尖/脸色", not new three-character names.
     "开剑脸手动收走起眼身步声气符光路门影"
+    # Verb/adverb glue after a real 2-char name in action prose:
+    # 苏砚一脚/苏砚上前/苏砚赶到/苏砚追出 should count as 苏砚.
+    "一上停却已弯等耳能赶追"
 )
 
 
@@ -616,6 +729,14 @@ def _trim_zh_name_candidate(candidate: str) -> str | None:
     """
 
     if not candidate:
+        return None
+    if (
+        len(candidate) == 3
+        and candidate[:2] in _ZH_ERA_NAME_PREFIXES
+        and candidate[2] in _ZH_ERA_ARTIFACT_TAIL_CHARS
+    ):
+        return None
+    if len(candidate) >= 2 and candidate[1:] in _ZH_COMMON_NON_NAME_TAIL_WORDS:
         return None
     # Reject if second char is stoplisted — the 2-char prefix is a word.
     if len(candidate) >= 2 and candidate[1] in _ZH_COMMON_WORD_2ND_CHARS:

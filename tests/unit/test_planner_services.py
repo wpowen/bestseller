@@ -7,8 +7,10 @@ from uuid import uuid4
 import pytest
 
 from bestseller.domain.enums import ArtifactType
+from bestseller.domain.workflow import ChapterOutlineBatchInput
 from bestseller.infra.db.models import ProjectModel, WorkflowRunModel, WorkflowStepRunModel
 from bestseller.services import planner as planner_services
+from bestseller.services.plan_fingerprint import scan_batch_for_duplicates
 from bestseller.settings import load_settings
 
 
@@ -562,6 +564,249 @@ def test_fallback_chapter_outline_titles_are_concise_and_not_volume_goal_clips()
     assert all("需要在本卷内" not in title for title in titles)
     assert all("·" not in title for title in titles)
     assert all(len(title) <= 8 for title in titles)
+    banned_functional_tails = {
+        "初现", "入局", "投石", "试探", "铺火", "露锋", "破冰", "起手", "掀幕", "落子",
+        "追索", "摸底", "拆解", "寻隙", "探针", "回查", "溯源", "揭层", "织网", "破壁",
+    }
+    assert all(not any(title.endswith(tail) for tail in banned_functional_tails) for title in titles)
+    hooks = [ch["hook_description"] for ch in outline_batch["chapters"] if ch.get("hook_description")]
+    assert all("尾钩" not in hook for hook in hooks)
+    assert all("出现新的证据、时限或代价" not in hook for hook in hooks)
+    assert all("围绕" not in hook for hook in hooks)
+
+
+def test_chapter_outline_prefers_story_title_alias_over_functional_fallback() -> None:
+    batch = ChapterOutlineBatchInput.model_validate(
+        {
+            "batch_name": "opening",
+            "chapters": [
+                {
+                    "chapter_number": 1,
+                    "title": "浮标初现",
+                    "chapter_title": "镜泣",
+                    "goal": "苏砚确认铜镜异变与母亲旧案有关。",
+                    "main_conflict": "苏砚必须在宿老封宅前读取铜镜残痕。",
+                    "hook_description": "铜镜渗出血珠，映出大火夜的人影。",
+                    "scenes": [],
+                }
+            ],
+        }
+    )
+
+    assert batch.chapters[0].title == "镜泣"
+
+
+def test_volume_outline_length_mismatch_fails_closed_instead_of_padding() -> None:
+    with pytest.raises(planner_services.PlannerFallbackError, match="Refusing to pad or trim"):
+        planner_services._require_complete_volume_outline(
+            logical_name="volume_1_chapter_outline",
+            volume_number=1,
+            expected_count=3,
+            chapters=[{"chapter_number": 1}, {"chapter_number": 2}],
+        )
+
+
+def test_generated_outline_uses_title_alias_without_fallback_synthesis() -> None:
+    chapters = [{"chapter_number": 1, "chapter_title": "镜泣"}]
+
+    planner_services._normalize_generated_outline_titles_or_fail(
+        chapters,
+        logical_name="volume_1_chapter_outline",
+    )
+
+    assert chapters[0]["title"] == "镜泣"
+
+
+def test_generated_outline_missing_title_fails_without_fallback_synthesis() -> None:
+    with pytest.raises(planner_services.PlannerFallbackError, match="omitted concrete chapter titles"):
+        planner_services._normalize_generated_outline_titles_or_fail(
+            [{"chapter_number": 7, "goal": "苏砚追到镜铺后门。"}],
+            logical_name="volume_1_chapter_outline",
+        )
+
+
+def test_generated_volume_outline_repairs_scene_contract_fields_before_validation() -> None:
+    project = build_project()
+    project.slug = "exorcist-detective-1778428166"
+    cast_spec = {
+        "protagonist": {
+            "name": "沈青崖",
+            "role": "protagonist",
+            "gender": "male",
+            "pronoun_set_zh": "他",
+            "pronoun_set_en": "he/him",
+        },
+        "antagonist": {
+            "name": "秦无咎",
+            "role": "antagonist",
+            "gender": "male",
+            "pronoun_set_zh": "他",
+            "pronoun_set_en": "he/him",
+        },
+        "supporting_cast": [],
+    }
+    payload = {
+        "batch_name": "volume-1-outline",
+        "chapters": [
+            {
+                "title": "血雨前夜",
+                "goal": "沈青崖追查李宅血雨，必须在巡捕封锁前拿到第一条阴阳线索。",
+                "main_conflict": "李宅血雨把案发现场变成阴阳交界，沈青崖必须抢在巡捕房误判前锁定邪术痕迹。",
+                "hook_description": "沈青崖在封门前听见井底传来秦无咎的冷笑。",
+                "scenes": [
+                    {
+                        "scene_number": 1,
+                        "participants": ["沈青崖", "李夫人", "仵作"],
+                        "purpose": {},
+                    },
+                    {
+                        "scene_number": 2,
+                        "time_label": "章节开场",
+                        "participants": ["巡捕房巡捕"],
+                        "purpose": {"story": "秦无咎把账册藏进义庄，逼沈青崖立刻改道。"},
+                    },
+                ],
+            }
+        ],
+    }
+
+    repaired = planner_services._validate_generated_volume_outline_or_raise(
+        payload,
+        project=project,
+        logical_name="volume_1_chapter_outline",
+        volume_number=1,
+        expected_count=1,
+        chapter_number_offset=1,
+        cast_spec=cast_spec,
+    )
+
+    first_scene = repaired["chapters"][0]["scenes"][0]
+    second_scene = repaired["chapters"][0]["scenes"][1]
+    assert first_scene["participants"] == ["沈青崖"]
+    assert first_scene["time_label"].startswith("第1章")
+    assert first_scene["purpose"]["story"].startswith("第1章场景1让沈青崖")
+    assert second_scene["participants"] == ["沈青崖", "秦无咎"]
+    assert second_scene["time_label"].startswith("第1章")
+
+
+@pytest.mark.asyncio
+async def test_volume_outline_repair_loop_regenerates_with_contract_diagnostics(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = build_project()
+    premise = "一名被放逐的导航员发现帝国正在篡改边境航线记录。"
+    book_spec = planner_services._fallback_book_spec(project, premise)
+    world_spec = planner_services._fallback_world_spec(project, premise, book_spec)
+    cast_spec = planner_services._fallback_cast_spec(project, premise, book_spec, world_spec)
+    volume_plan = planner_services._fallback_volume_plan(project, book_spec, cast_spec, world_spec)
+    volume_entry = volume_plan[0]
+    fallback_payload = planner_services._fallback_chapter_outline_batch(
+        project,
+        book_spec,
+        cast_spec,
+        [volume_entry],
+    )
+    for chapter in fallback_payload["chapters"]:
+        chapter["main_conflict"] = "沈砚必须在封港命令生效前拿到航线记录，并避开港务官的封锁。"
+
+    prompts: list[str] = []
+
+    async def fake_generate_structured_artifact(
+        session: object,
+        settings: object,
+        **kwargs: object,
+    ):
+        prompts.append(str(kwargs["user_prompt"]))
+        payload = json.loads(json.dumps(kwargs["fallback_payload"], ensure_ascii=False))
+        if len(prompts) == 1:
+            payload["chapters"][0]["hook_description"] = "具体事件是「尾钩」。"
+        return payload, uuid4()
+
+    monkeypatch.setattr(
+        planner_services,
+        "_generate_structured_artifact",
+        fake_generate_structured_artifact,
+    )
+    settings = build_settings()
+    settings.pipeline.chapter_outline_repair_attempts = 2
+
+    payload, llm_run_id, history = await planner_services._generate_volume_outline_with_repair_loop(
+        FakeSession(),
+        settings,
+        project=project,
+        workflow_run_id=uuid4(),
+        logical_name="volume_1_chapter_outline",
+        book_spec=book_spec,
+        cast_spec=cast_spec,
+        volume_plan=volume_plan,
+        volume_entry=volume_entry,
+        fallback_payload=fallback_payload,
+        volume_number=1,
+        expected_count=len(fallback_payload["chapters"]),
+        chapter_number_offset=1,
+        revealed_ledger_block=None,
+        base_constraints=[],
+    )
+
+    assert llm_run_id is not None
+    assert payload["chapters"][0]["hook_description"] != "具体事件是「尾钩」。"
+    assert len(prompts) == 2
+    assert "PLAN_CHAPTER_HOOK_GENERIC" in prompts[1]
+    assert history[0]["status"] == "failed"
+    assert history[-1]["status"] == "passed"
+
+
+def test_fallback_chapter_outline_avoids_critical_plan_fingerprints_with_long_hook_strategy() -> None:
+    project = build_project()
+    project.slug = "eastern-aesthetic-fantasy-1778332094"
+    project.title = "器有魂"
+    project.genre = "东方志怪"
+    project.target_word_count = 220000
+    project.target_chapters = 100
+    project.metadata_json = {
+        "writing_profile": {
+            "market": {
+                "chapter_hook_strategy": (
+                    "【递进式悬念梯度】章末钩子按\"谜题深化→威胁升级→利益/情感诱因\"三层循环排布："
+                    "短回报钩子（次章解决）用于填充章节节奏；中回报钩子（3-5章）用于卷内悬念；"
+                    "长回报钩子（10+章）用于主线伏笔。每五章设置一次\"认知重塑\"级钩子。"
+                )
+            }
+        }
+    }
+    cast_spec = {
+        "protagonist": {"name": "苏砚"},
+        "antagonist": {"name": "厉青冥"},
+        "supporting_cast": [],
+        "antagonist_forces": [
+            {
+                "name": "铜镜器灵·残相",
+                "character_ref": "铜镜器灵·残相",
+                "role": "antagonist",
+                "active_volumes": [1],
+            }
+        ],
+    }
+    volume_plan = [
+        {
+            "volume_number": 1,
+            "chapter_count_target": 100,
+            "volume_goal": "苏砚调查古宅镜泣事件，追查铭纹鼎与母亲旧案。",
+            "conflict_phase": "survival",
+            "primary_force_name": "铜镜器灵·残相",
+        }
+    ]
+
+    outline_batch = planner_services._fallback_chapter_outline_batch(
+        project,
+        {"title": "器有魂"},
+        cast_spec,
+        volume_plan,
+    )
+    batch = ChapterOutlineBatchInput.model_validate(outline_batch)
+    report = scan_batch_for_duplicates(list(batch.chapters), [])
+
+    assert not report.critical_findings
 
 
 def test_merge_volume_cast_expansion_keeps_existing_role_when_role_change_is_descriptive() -> None:
@@ -791,6 +1036,62 @@ def test_planner_prompts_switch_to_english_for_english_projects() -> None:
     assert "长篇中文小说" not in system_prompt + user_prompt
 
 
+def test_next_volume_outline_prompt_builds_character_drama_from_current_cast() -> None:
+    project = build_project()
+    project.metadata_json = {}
+    book_spec = {"title": "长夜巡航", "reader_promise": "每卷都有选择代价。"}
+    cast_spec = {
+        "protagonist": {
+            "name": "沈砚",
+            "role": "protagonist",
+            "goal": "夺回被封存的航线记录",
+            "fear": "再次害队友暴露",
+            "flaw": "把所有风险都藏在自己手里",
+            "moral_framework": {
+                "core_values": ["守住同伴"],
+                "lines_never_crossed": ["不伪造同伴意愿"],
+            },
+            "ip_anchor": {"quirks": ["紧张时反复校准旧罗盘"]},
+        },
+        "antagonist": {
+            "name": "港务官",
+            "role": "antagonist",
+            "goal": "让篡改航线记录成为新秩序",
+            "villain_charisma": {
+                "philosophical_appeal": "牺牲少数边境船队，换取核心港区稳定",
+                "protagonist_mirror": "同样重视秩序，却把秩序当作消音工具",
+            },
+        },
+    }
+    volume_plan = [
+        {
+            "volume_number": 1,
+            "volume_title": "封港前夜",
+            "chapter_count_target": 3,
+            "volume_goal": "拿到第一份航线原始记录",
+        },
+        {
+            "volume_number": 2,
+            "volume_title": "暗航证词",
+            "chapter_count_target": 3,
+            "volume_goal": "逼证人公开港务官篡改航线的证据",
+        },
+    ]
+
+    _, user_prompt = planner_services._volume_outline_prompts(  # noqa: SLF001
+        project,
+        book_spec,
+        cast_spec,
+        volume_plan,
+        volume_plan[1],
+    )
+
+    assert "Character Drama Engine" in user_prompt
+    assert "夺回被封存的航线记录" in user_prompt
+    assert "不伪造同伴意愿" in user_prompt
+    assert "INTJ" not in user_prompt
+
+
 @pytest.mark.asyncio
 async def test_generate_character_names_prompt_does_not_embed_fixed_example_names(
     monkeypatch: pytest.MonkeyPatch,
@@ -875,6 +1176,49 @@ async def test_generate_structured_artifact_merges_partial_llm_payload_with_fall
 
 
 @pytest.mark.asyncio
+async def test_generate_structured_artifact_can_disable_fallback_merge(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = build_project()
+    fallback_payload = {
+        "batch_name": "volume-1-outline",
+        "chapters": [{"chapter_number": 1, "title": "fallback-title"}],
+    }
+
+    async def fake_complete_text(session: object, settings: object, request: object):
+        return type(
+            "CompletionStub",
+            (),
+            {
+                "content": json.dumps(
+                    {
+                        "batch_name": "volume-1-outline",
+                        "chapters": [{"chapter_number": 1}],
+                    },
+                    ensure_ascii=False,
+                ),
+                "llm_run_id": uuid4(),
+            },
+        )()
+
+    monkeypatch.setattr(planner_services, "complete_text", fake_complete_text)
+
+    payload, _ = await planner_services._generate_structured_artifact(
+        FakeSession(),
+        build_settings(),
+        project=project,
+        logical_name="volume_1_chapter_outline",
+        system_prompt="system",
+        user_prompt="user",
+        fallback_payload=fallback_payload,
+        workflow_run_id=uuid4(),
+        merge_fallback=False,
+    )
+
+    assert payload["chapters"] == [{"chapter_number": 1}]
+
+
+@pytest.mark.asyncio
 async def test_generate_structured_artifact_uses_fallback_when_validator_rejects(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -926,6 +1270,7 @@ async def test_generate_novel_plan_creates_all_artifacts_and_workflow_records(
         return project
 
     artifact_counter = 0
+    prompts_by_logical_name: dict[str, str] = {}
 
     async def fake_import_planning_artifact(session: object, project_slug: str, payload: object):
         nonlocal artifact_counter
@@ -954,6 +1299,14 @@ async def test_generate_novel_plan_creates_all_artifacts_and_workflow_records(
         validator=None,
         **kwargs: object,
     ):
+        prompts_by_logical_name[logical_name] = user_prompt
+        if logical_name.endswith("_chapter_outline") and isinstance(fallback_payload, dict):
+            payload = json.loads(json.dumps(fallback_payload, ensure_ascii=False))
+            for chapter in payload.get("chapters", []):
+                chapter["main_conflict"] = (
+                    "沈砚必须在封港命令生效前拿到航线记录，并避开港务官的封锁。"
+                )
+            return payload, uuid4()
         return fallback_payload, uuid4()
 
     monkeypatch.setattr(planner_services, "get_project_by_slug", fake_get_project_by_slug)
@@ -985,6 +1338,12 @@ async def test_generate_novel_plan_creates_all_artifacts_and_workflow_records(
         ArtifactType.WORLD_SPEC,
         ArtifactType.CAST_SPEC,
     ]
+    assert ArtifactType.STORY_DESIGN_KERNEL in artifact_types
+    assert (
+        artifact_types.index(ArtifactType.CAST_SPEC)
+        < artifact_types.index(ArtifactType.STORY_DESIGN_KERNEL)
+        < artifact_types.index(ArtifactType.VOLUME_PLAN)
+    )
     assert ArtifactType.VOLUME_PLAN in artifact_types
     assert ArtifactType.PLAN_VALIDATION in artifact_types
     assert artifact_types.index(ArtifactType.VOLUME_PLAN) < artifact_types.index(ArtifactType.PLAN_VALIDATION)
@@ -998,8 +1357,17 @@ async def test_generate_novel_plan_creates_all_artifacts_and_workflow_records(
     assert workflow_runs[0].status == "completed"
     assert len(workflow_steps) >= 7
     assert any(step.step_name == "prewrite_readiness_gate" for step in workflow_steps)
+    assert any(step.step_name == "reverse_outline_gate" for step in workflow_steps)
+    assert "story_design_kernel" in project.metadata_json
+    assert project.metadata_json["story_design_kernel"]["reverse_outline_status"] == "verified"
+    assert "character_drama_map" in project.metadata_json
     assert "planning_kernel" in project.metadata_json
+    assert project.metadata_json["reverse_outline_gate_report"]["passed"] is True
+    assert project.metadata_json["planning_kernel"]["story_design"]["valid"] is True
     assert "prewrite_readiness_report" in project.metadata_json
+    assert "Character Drama Engine" in prompts_by_logical_name["story_design_kernel"]
+    assert "Story Design Kernel" in prompts_by_logical_name["volume_plan"]
+    assert "Character Drama Engine" in prompts_by_logical_name["volume_plan"]
 
 
 @pytest.mark.asyncio

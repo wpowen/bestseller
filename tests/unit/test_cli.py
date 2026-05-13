@@ -159,6 +159,68 @@ def test_premium_gate_project_command_outputs_json(monkeypatch: pytest.MonkeyPat
     assert payload["project_slug"] == "xianxia-test"
 
 
+def test_commercial_gate_project_command_outputs_ranking_json(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    @asynccontextmanager
+    async def fake_session_scope(settings):
+        yield object()
+
+    async def fake_get_project_by_slug(session, slug: str):
+        return SimpleNamespace(
+            id=uuid4(),
+            slug=slug,
+            title="青囊不语问阴阳",
+            genre="悬疑",
+            sub_genre="民俗悬疑",
+            language="zh-CN",
+            audience="男频",
+            target_chapters=80,
+            status="planning",
+            metadata_json={
+                "premise": "落魄风水师接下凶宅委托，却被困进一面以否认为食的困魂镜。",
+                "reader_promise": ["规则破局", "镜债反制"],
+                "writing_profile": {
+                    "market": {
+                        "opening_contract": "子时入镜，否认者先入账。",
+                        "chapter_hook_strategy": "每章尾部保留镜债升级。",
+                    },
+                    "style": {"tone_keywords": ["民俗", "悬疑"]},
+                },
+                "listing_profile": {
+                    "promo_copy": [
+                        "子时之后，别照镜子。",
+                        "谁不认账，谁先入账。",
+                        "他见鬼先看方位。",
+                    ],
+                    "tags": ["悬疑", "民俗", "风水师", "规则怪谈", "凶宅"],
+                    "reader_promise": ["规则破局", "镜债反制"],
+                },
+            },
+            theme_statement="否认现实的人终会被现实入账。",
+            dramatic_question="林渊能否逼所有人认账？",
+        )
+
+    monkeypatch.setattr("bestseller.cli.main.session_scope", fake_session_scope)
+    monkeypatch.setattr(
+        "bestseller.cli.main.load_settings",
+        lambda: SimpleNamespace(output=SimpleNamespace(base_dir=str(tmp_path))),
+    )
+    monkeypatch.setattr("bestseller.cli.main.get_project_by_slug", fake_get_project_by_slug)
+
+    result = runner.invoke(
+        app,
+        ["commercial-gate", "project", "qingnang-test", "--json", "--no-fail"],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["project_slug"] == "qingnang-test"
+    assert "text_assessment" in payload
+    assert payload["marketing_assets"]["short_video_scripts"][0]["duration_seconds"] == 15
+
+
 def test_premium_gate_benchmark_command_outputs_json() -> None:
     result = runner.invoke(
         app,

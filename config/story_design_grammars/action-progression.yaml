@@ -1,0 +1,39 @@
+key: action-progression
+name: 动作升级剧情语法
+applies_to_categories: [action-progression]
+required_contracts:
+  - measurable_progression_system
+  - resource_accounting
+  - opponent_pressure
+  - cost_boundary
+  - payoff_ladder
+state_variables:
+  - 境界或能力层级
+  - 资源库存
+  - 技能熟练度
+  - 敌我战力差
+  - 升级代价
+chapter_change_vectors:
+  - 获得可计量资源
+  - 能力边界被验证
+  - 战力差被缩小或拉大
+  - 新代价限制下一步选择
+  - 对手策略迫使主角改变打法
+reader_rewards:
+  - 清晰升级反馈
+  - 以弱胜强的策略快感
+  - 能力限制下的聪明解法
+  - 资源投入带来阶段回报
+  - 新层级打开新问题
+hook_or_aftereffect_types:
+  - 升级副作用
+  - 更高层级威胁露面
+  - 资源债到期
+  - 能力暴露引来争夺
+  - 胜利改变势力判断
+forbidden_defaults:
+  - 废柴加父母失踪一键启动
+  - 神秘血脉无代价碾压
+  - 临场顿悟替代训练与代价
+  - 反派排队送经验
+  - 每章只涨数值不改变局势

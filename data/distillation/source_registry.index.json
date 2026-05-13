@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "hash_algorithm": "hmac-sha256",
+  "privacy": "title hash uses salt stored outside repository",
+  "entries": [
+    {
+      "title_key_hmac_sha256": "25f74cd199a91cab55f96cbd33b8df1c76083058399d1389d8e37c802cc91673",
+      "canonical_source_id": "source-0001",
+      "source_ids": [
+        "source-0001"
+      ],
+      "source_hashes_sha256": [
+        "819651d506bd6780d54144ad1ad67b64f6aaec7463c32f4c5f3110b66a76c1b5"
+      ],
+      "source_formats": [
+        "txt"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,39 @@
+key: strategy-worldbuilding
+name: 权谋世界剧情语法
+applies_to_categories: [strategy-worldbuilding]
+required_contracts:
+  - power_map
+  - faction_interest
+  - information_asymmetry
+  - strategic_tradeoff
+  - world_rule_consequence
+state_variables:
+  - 势力位置
+  - 资源筹码
+  - 情报差
+  - 同盟稳定度
+  - 制度规则
+chapter_change_vectors:
+  - 势力版图出现位移
+  - 一个筹码被消耗或增值
+  - 情报差改变决策质量
+  - 同盟关系因利益重估
+  - 制度规则产生意外后果
+reader_rewards:
+  - 看懂一步棋的收益和代价
+  - 多方利益互相牵制
+  - 世界规则不是背景而是压力
+  - 主角选择改变权力结构
+  - 反转来自信息与利益重组
+hook_or_aftereffect_types:
+  - 盟约暗含漏洞
+  - 暂时胜利损害长期筹码
+  - 第三方利用信息差入局
+  - 制度反噬主角计划
+  - 旧敌变成临时合作方
+forbidden_defaults:
+  - 反派降智方便主角赢
+  - 世界观设定只做百科展示
+  - 权谋只靠偷听和巧合
+  - 每次反转都无前置线索
+  - 主角决策没有机会成本

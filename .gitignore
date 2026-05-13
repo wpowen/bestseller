@@ -17,3 +17,4 @@ artifacts/
 output/
 logs/
 .audit-reports/backups/
+.distillation_private/

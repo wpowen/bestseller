@@ -352,14 +352,6 @@ async def hydrate_premium_capability_metadata(
 
     if not pack_id:
         return {"project_id": project_id, "present": False, "skipped": "unsupported_pack"}
-    policy = _decision_policy_for_pack(pack_id)
-    ledger = _initial_premium_state_ledger_for_pack(pack_id)
-    world_spec = _premium_world_spec_for_pack(pack_id)
-    cast_spec = _premium_cast_spec_for_pack(pack_id)
-    volume_plan = _premium_volume_plan_for_pack(pack_id)
-    if not policy or not ledger:
-        return {"project_id": project_id, "present": False, "skipped": "no_capability_pack"}
-
     project = await session.get(ProjectModel, _coerce_uuid(project_id))
     if project is None:
         return {"project_id": project_id, "present": False, "skipped": "project_missing"}
@@ -373,6 +365,18 @@ async def hydrate_premium_capability_metadata(
         }
 
     metadata = dict(project.metadata_json or {})
+    protagonist_name = _project_protagonist_override(project, metadata)
+    policy = _decision_policy_for_pack(pack_id, protagonist_name=protagonist_name)
+    ledger = _initial_premium_state_ledger_for_pack(
+        pack_id,
+        protagonist_name=protagonist_name,
+    )
+    world_spec = _premium_world_spec_for_pack(pack_id, protagonist_name=protagonist_name)
+    cast_spec = _premium_cast_spec_for_pack(pack_id, protagonist_name=protagonist_name)
+    volume_plan = _premium_volume_plan_for_pack(pack_id, protagonist_name=protagonist_name)
+    if not policy or not ledger:
+        return {"project_id": project_id, "present": False, "skipped": "no_capability_pack"}
+
     changed_fields: list[str] = []
     if not metadata.get("decision_policy"):
         metadata["decision_policy"] = policy
@@ -421,7 +425,37 @@ def _validated_decision_policy(raw: dict[str, Any]) -> dict[str, Any]:
     return DecisionPolicy.model_validate(raw).model_dump(mode="json")
 
 
-def _decision_policy_for_pack(pack_id: str) -> dict[str, Any] | None:
+def _metadata_text_at(metadata: dict[str, Any], path: tuple[str, ...]) -> str | None:
+    value: object = metadata
+    for key in path:
+        if not isinstance(value, dict):
+            return None
+        value = value.get(key)
+    return value.strip() if isinstance(value, str) and value.strip() else None
+
+
+def _project_protagonist_override(
+    project: ProjectModel,
+    metadata: dict[str, Any],
+) -> str | None:
+    for path in (
+        ("cast_spec", "protagonist", "name"),
+        ("book_spec", "cast_spec", "protagonist", "name"),
+        ("premium_cast_spec", "protagonist", "name"),
+        ("character", "name"),
+        ("protagonist_name",),
+    ):
+        value = _metadata_text_at(metadata, path)
+        if value:
+            return value
+    return None
+
+
+def _decision_policy_for_pack(
+    pack_id: str,
+    *,
+    protagonist_name: str | None = None,
+) -> dict[str, Any] | None:
     raw: dict[str, Any] | None = None
     if pack_id == "qingnang":
         raw = {
@@ -545,8 +579,15 @@ def _decision_policy_for_pack(pack_id: str) -> dict[str, Any] | None:
         }
     elif blueprint := _blueprint_for_pack(pack_id):
         is_en = _pack_is_english(pack_id)
+        protagonist = (
+            protagonist_name.strip()
+            if isinstance(protagonist_name, str) and protagonist_name.strip()
+            else blueprint.protagonist_en
+            if is_en
+            else blueprint.protagonist_zh
+        )
         raw = {
-            "character_name": blueprint.protagonist_en if is_en else blueprint.protagonist_zh,
+            "character_name": protagonist,
             "archetype": blueprint.archetype_key,
             "risk_tolerance": blueprint.risk_tolerance,
             "pressure_responses": ["observe", "prepare", "bargain", "protect", "retreat"],
@@ -612,6 +653,8 @@ def _decision_policy_for_pack(pack_id: str) -> dict[str, Any] | None:
 
 def _initial_premium_state_ledger_for_pack(
     pack_id: str,
+    *,
+    protagonist_name: str | None = None,
 ) -> dict[str, list[dict[str, Any]]] | None:
     if pack_id == "qingnang":
         return {
@@ -861,7 +904,13 @@ def _initial_premium_state_ledger_for_pack(
         }
     if blueprint := _blueprint_for_pack(pack_id):
         is_en = _pack_is_english(pack_id)
-        protagonist = blueprint.protagonist_en if is_en else blueprint.protagonist_zh
+        protagonist = (
+            protagonist_name.strip()
+            if isinstance(protagonist_name, str) and protagonist_name.strip()
+            else blueprint.protagonist_en
+            if is_en
+            else blueprint.protagonist_zh
+        )
         target = blueprint.relationship_target_en if is_en else blueprint.relationship_target_zh
         return {
             "progression_events": [
@@ -928,7 +977,11 @@ def _initial_premium_state_ledger_for_pack(
     return None
 
 
-def _premium_context_seed(pack_id: str) -> dict[str, Any] | None:
+def _premium_context_seed(
+    pack_id: str,
+    *,
+    protagonist_name: str | None = None,
+) -> dict[str, Any] | None:
     seeds: dict[str, dict[str, Any]] = {
         "qingnang": {
             "world_name": "十七栋镜债都市",
@@ -998,12 +1051,19 @@ def _premium_context_seed(pack_id: str) -> dict[str, Any] | None:
         return seeds[pack_id]
     if blueprint := _blueprint_for_pack(pack_id):
         is_en = _pack_is_english(pack_id)
+        protagonist = (
+            protagonist_name.strip()
+            if isinstance(protagonist_name, str) and protagonist_name.strip()
+            else blueprint.protagonist_en
+            if is_en
+            else blueprint.protagonist_zh
+        )
         return {
             "world_name": blueprint.world_en if is_en else blueprint.world_zh,
             "system": blueprint.system_en if is_en else blueprint.system_zh,
             "tiers": list(blueprint.tiers_en if is_en else blueprint.tiers_zh),
             "starting_tier": blueprint.start_tier_en if is_en else blueprint.start_tier_zh,
-            "protagonist": blueprint.protagonist_en if is_en else blueprint.protagonist_zh,
+            "protagonist": protagonist,
             "power_structure": (
                 blueprint.power_structure_en if is_en else blueprint.power_structure_zh
             ),
@@ -1016,8 +1076,12 @@ def _premium_context_seed(pack_id: str) -> dict[str, Any] | None:
     return None
 
 
-def _premium_world_spec_for_pack(pack_id: str) -> dict[str, Any] | None:
-    seed = _premium_context_seed(pack_id)
+def _premium_world_spec_for_pack(
+    pack_id: str,
+    *,
+    protagonist_name: str | None = None,
+) -> dict[str, Any] | None:
+    seed = _premium_context_seed(pack_id, protagonist_name=protagonist_name)
     if not seed:
         return None
     return {
@@ -1033,8 +1097,12 @@ def _premium_world_spec_for_pack(pack_id: str) -> dict[str, Any] | None:
     }
 
 
-def _premium_cast_spec_for_pack(pack_id: str) -> dict[str, Any] | None:
-    seed = _premium_context_seed(pack_id)
+def _premium_cast_spec_for_pack(
+    pack_id: str,
+    *,
+    protagonist_name: str | None = None,
+) -> dict[str, Any] | None:
+    seed = _premium_context_seed(pack_id, protagonist_name=protagonist_name)
     if not seed:
         return None
     return {
@@ -1046,8 +1114,12 @@ def _premium_cast_spec_for_pack(pack_id: str) -> dict[str, Any] | None:
     }
 
 
-def _premium_volume_plan_for_pack(pack_id: str) -> list[dict[str, Any]]:
-    seed = _premium_context_seed(pack_id)
+def _premium_volume_plan_for_pack(
+    pack_id: str,
+    *,
+    protagonist_name: str | None = None,
+) -> list[dict[str, Any]]:
+    seed = _premium_context_seed(pack_id, protagonist_name=protagonist_name)
     if not seed:
         return []
     tiers = list(seed["tiers"])

@@ -1,5 +1,11 @@
 # Self Memory
 
+Mistake: README 中写死「迁移数量 / services 模块数」易与仓库漂移。
+Wrong: 写死如「29 个迁移」「112 模块」而不核对 `migrations/versions` 与 `services/*.py` 计数。
+Correct: 使用「30+」「持续增长」或运行 `ls migrations/versions | wc -l` 后写入；徽章与正文保持一致。
+
+---
+
 Mistake: Missing mandatory memory files before task execution.
 Wrong: Assume `.remember/memory/self.md` and `.remember/memory/project.md` always exist and proceed without fallback initialization.
 Correct:

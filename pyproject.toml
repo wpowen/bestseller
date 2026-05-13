@@ -139,6 +139,19 @@ bestseller-scheduler = "bestseller.scheduler.main:main"
 # ---------------------------------------------------------------------------
 # Hatch build settings
 # ---------------------------------------------------------------------------
+[tool.hatch.build]
+exclude = [
+    "/.venv",
+    "/.venv-*",
+    "/.pytest_cache",
+    "/.ruff_cache",
+    "/.mypy_cache",
+    "/htmlcov",
+    "/output",
+    "/artifacts",
+    "/tmp",
+]
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/bestseller"]
 

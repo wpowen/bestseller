@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 from typing import Any
 
+from arq import cron
 from arq.connections import RedisSettings
 
 from bestseller.infra.db.session import init_db, shutdown_db
@@ -13,7 +14,9 @@ from bestseller.settings import get_settings
 from bestseller.worker.tasks import (
     run_autowrite_task,
     run_chapter_pipeline_task,
+    run_project_repair_task,
     run_project_pipeline_task,
+    run_self_heal_task,
 )
 
 logger = logging.getLogger(__name__)
@@ -119,12 +122,39 @@ def _redis_settings() -> RedisSettings:
     )
 
 
+def _self_heal_cron_jobs() -> list[Any]:
+    if os.getenv("WORKER_SELF_HEAL", "1") == "0":
+        return []
+    if os.getenv("WORKER_SELF_HEAL_CRON", "1") == "0":
+        return []
+    try:
+        interval_minutes = int(os.getenv("WORKER_SELF_HEAL_CRON_INTERVAL_MINUTES", "5"))
+    except ValueError:
+        interval_minutes = 5
+    interval_minutes = max(1, min(60, interval_minutes))
+    minutes = {0} if interval_minutes == 60 else set(range(0, 60, interval_minutes))
+    return [
+        cron(
+            run_self_heal_task,
+            name="run_self_heal_task",
+            minute=minutes,
+            second=30,
+            timeout=300,
+            max_tries=1,
+            unique=True,
+        )
+    ]
+
+
 class WorkerSettings:
     functions = [
+        run_self_heal_task,
         run_autowrite_task,
         run_project_pipeline_task,
         run_chapter_pipeline_task,
+        run_project_repair_task,
     ]
+    cron_jobs = _self_heal_cron_jobs()
     on_startup = startup
     on_shutdown = shutdown
     redis_settings = _redis_settings()

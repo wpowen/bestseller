@@ -1,0 +1,75 @@
+{
+  "book_id": "source-0001",
+  "source_ref": "local_user_supplied_text_001",
+  "source_type": "user_supplied_text",
+  "status": "draft_review",
+  "parsed_profile": {
+    "encoding": "GB18030",
+    "chapter_count": 256,
+    "volume_count": 12,
+    "average_chapter_chars": 2939
+  },
+  "genre_tags": [
+    "穿越",
+    "异界",
+    "魔幻大陆",
+    "旧世界专业体系",
+    "跨体系规则套利",
+    "爽文"
+  ],
+  "reader_promise": "主角携带旧世界专业体系进入魔幻异界，用当地人无法理解的规则框架破解强者秩序、收编资源并卷入更高层级势力。",
+  "core_engine": "异界规则出现 -> 主角用旧世界术法/专业知识解释或绕开 -> 当地人误判主角等级 -> 主角获得资源/关系/威慑 -> 更高势力注意主角。",
+  "state_variables": [
+    "cross_system_understanding",
+    "old_system_adaptation",
+    "local_power_misread",
+    "bound_assets",
+    "political_entanglement",
+    "identity_debt",
+    "source_world_mystery",
+    "higher_authority_attention"
+  ],
+  "reader_rewards": [
+    "weak_identity_strong_core",
+    "knowledge_arbitrage",
+    "power_misread_payoff",
+    "exotic_world_discovery",
+    "asset_conversion",
+    "authority_prank"
+  ],
+  "reusable_mechanisms": [
+    "cross_system_rule_arbitrage",
+    "weak_identity_strong_ability_misread",
+    "host_identity_debt",
+    "high_level_entity_to_asset",
+    "small_map_to_greater_power_escalation",
+    "dual_power_system_fusion"
+  ],
+  "non_reusable_specifics": [
+    "source title",
+    "source author",
+    "source character names",
+    "source family names",
+    "source continent/country names",
+    "source technique names",
+    "source artifact names",
+    "source mount/species combination",
+    "specific lightning/computer portal opening",
+    "specific brother-cliff-murder inheritance setup"
+  ],
+  "risk_patterns": [
+    "female_objectification_as_reward",
+    "effortless_asset_collection",
+    "overpowered_without_cost",
+    "too_many_named_factions_without_state_tracking",
+    "comedy_noise_overwhelming_mainline"
+  ],
+  "recommended_system_targets": [
+    "material_library.plot_patterns",
+    "material_library.scene_templates",
+    "material_library.power_systems",
+    "material_library.anti_cliche_patterns",
+    "story_design_grammars.otherworld-cross-system",
+    "story_design_kernel.prompt_block"
+  ]
+}

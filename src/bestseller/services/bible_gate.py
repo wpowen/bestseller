@@ -40,7 +40,7 @@ from itertools import combinations
 from typing import Iterable, Protocol
 from uuid import UUID
 
-from sqlalchemy import and_, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bestseller.domain.contradiction import (
@@ -446,8 +446,8 @@ class CharacterPersonhoodCheck:
                         f"主角 {char.name} 必须以真实的人来塑造。请补全以下字段：\n"
                         + "\n".join(f"  - {m}" for m in missing)
                         + "\n这些字段决定了 ta 在每一章中如何做选择、说什么话、对谁让步。"
-                        f"参考真实的 MBTI/九型/Big Five 数据集与生命经历，写出一个"
-                        f"具体的人，不要写抽象类型。"
+                        "参考真实的 MBTI/九型/Big Five 数据集与生命经历，写出一个"
+                        "具体的人，不要写抽象类型。"
                     ),
                 )
 
@@ -886,6 +886,7 @@ def build_draft_from_materialization_content(
 
 _STANCE_TURNING_BEAT_KINDS = {
     "turning_point",
+    "emotion_turn",
     "betrayal",
     "reveal",
     "reconciliation",
@@ -1004,13 +1005,13 @@ async def validate_chapter_against_bible(
             message = (
                 f"'{character.name}' stance flipped {prior_stance} → "
                 f"{snap.stance} in chapter {chapter_number}, but no "
-                "turning_point / betrayal / reveal ArcBeat is scoped here."
+                "relationship-turn ArcBeat is scoped here."
             )
         else:
             message = (
                 f"「{character.name}」在第{chapter_number}章立场由 "
                 f"{prior_stance} 翻为 {snap.stance}，"
-                "但本章未安排 turning_point / betrayal / reveal 类 ArcBeat。"
+                "但本章未安排关系转折类 ArcBeat。"
             )
 
         if audit_only:

@@ -227,6 +227,11 @@ pipeline:
   # Upstream narrative contracts fail closed before model generation.
   require_foundation_identity_lock: true
   require_chapter_plan_contract: true
+  # Chapter outlines must carry a flexible reader-visible causality contract:
+  # pressure -> choice/action/reaction -> resistance/cost/gain/state change ->
+  # next-reader-desire.  The gate checks axes, not a fixed prose formula.
+  enable_chapter_causality_gate: true
+  chapter_causality_gate_block_on_failure: true
   require_pre_draft_scene_contract: true
   # Critical scene-card richness failures should re-plan before prose drafting;
   # otherwise repeated/thin scene patterns only become prompt warnings.
@@ -234,6 +239,11 @@ pipeline:
   enable_golden_three_health: true
   golden_three_min_hype_chapters: 2
   golden_three_min_ending_hook_chapters: 2
+  # Long-form signing projects must pass a chapter/scene-level commercial
+  # readiness gate before prose generation starts.
+  enable_commercial_planning_readiness_gate: true
+  commercial_planning_readiness_block_on_failure: true
+  commercial_planning_min_target_chapters: 50
   # Chapter-length stability gate.  Reads min/target/max from
   # ``generation.words_per_chapter`` above and turns large drifts
   # (>±warn_margin beyond the hard window) into blocking findings.
@@ -252,12 +262,26 @@ pipeline:
     - BLOCK_HIGH
     - DIALOG_UNPAIRED
     - ENDING_SENTENCE_WEAK
+    - dead_alive
+    - pronoun_mismatch
     - character_resurrection
+    - character_missing_appearance
+    - character_sealed_appearance
+    - character_sleeping_appearance
+    - character_comatose_appearance
     - CANON_FORBIDDEN_TERM
     - CROSS_CHAPTER_REPETITION
     - INTRA_CHAPTER_REPETITION
-    - NAMING_OUT_OF_POOL
   # Records a project-level planning kernel before chapter production entry
   # points. Telemetry-only by default; flip block_on_failure for strict runs.
   enable_prewrite_readiness_gate: true
   prewrite_readiness_block_on_failure: false
+  # Story design kernel rollout.  Generates and injects a structured plot
+  # contract before downstream chapter planning.  Reverse-outline checks stay
+  # warn-only until canary projects prove the false-positive rate is acceptable.
+  enable_story_design_kernel: true
+  story_design_kernel_candidate_count: 3
+  enable_story_state_driven_planning: true
+  enable_reverse_outline_gate: true
+  reverse_outline_gate_block_on_failure: false
+  story_design_require_kernel_for_new_projects: false

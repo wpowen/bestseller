@@ -7,6 +7,7 @@ helpers so the blended quality_score is reproducible and auditable.
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
 import pytest
@@ -17,6 +18,8 @@ from bestseller.services.scorecard import (
     herfindahl_index,
     length_stats,
     normalized_entropy,
+    _latest_audit_is_fresher,
+    _quality_report_is_fresh,
 )
 
 pytestmark = pytest.mark.unit
@@ -95,6 +98,38 @@ class TestLengthStats:
     def test_unstable_lengths_high_cv(self) -> None:
         _, _, cv = length_stats([200, 8000, 3000, 12000, 500])
         assert cv > 0.50
+
+
+class TestQualityReportFreshness:
+    def test_report_after_current_draft_is_fresh(self) -> None:
+        draft_time = datetime(2026, 5, 11, tzinfo=timezone.utc)
+        report_time = draft_time + timedelta(seconds=1)
+
+        assert _quality_report_is_fresh(report_time, draft_time) is True
+
+    def test_report_before_current_draft_is_stale(self) -> None:
+        draft_time = datetime(2026, 5, 11, tzinfo=timezone.utc)
+        report_time = draft_time - timedelta(seconds=1)
+
+        assert _quality_report_is_fresh(report_time, draft_time) is False
+
+    def test_missing_current_draft_keeps_legacy_report(self) -> None:
+        report_time = datetime(2026, 5, 11, tzinfo=timezone.utc)
+
+        assert _quality_report_is_fresh(report_time, None) is True
+
+
+class TestLatestAuditFreshness:
+    def test_audit_after_quality_report_wins(self) -> None:
+        quality_time = datetime(2026, 5, 11, tzinfo=timezone.utc)
+        audit_time = quality_time + timedelta(seconds=1)
+
+        assert _latest_audit_is_fresher(audit_time, quality_time) is True
+
+    def test_missing_audit_does_not_win(self) -> None:
+        quality_time = datetime(2026, 5, 11, tzinfo=timezone.utc)
+
+        assert _latest_audit_is_fresher(None, quality_time) is False
 
 
 # ---------------------------------------------------------------------------

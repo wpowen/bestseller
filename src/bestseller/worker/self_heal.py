@@ -103,7 +103,29 @@ _ACTIVE_STATUSES = frozenset(
 )
 _ORPHAN_ERROR_MESSAGE = "reaped by self-heal (abandoned by prior worker)"
 
-_PIPELINE_WORKFLOW_TYPES = frozenset({"autowrite_pipeline", "project_pipeline"})
+_REAPABLE_WORKFLOW_TYPES = frozenset(
+    {
+        "autowrite_pipeline",
+        "generate_novel_plan",
+        "generate_volume_plan",
+        "project_pipeline",
+        "chapter_pipeline",
+        "scene_pipeline",
+    }
+)
+_STARTUP_ONLY_REAPABLE_WORKFLOW_TYPES = frozenset({"project_repair"})
+_SELF_HEAL_BLOCKING_WORKFLOW_TYPES = (
+    _REAPABLE_WORKFLOW_TYPES
+    | _STARTUP_ONLY_REAPABLE_WORKFLOW_TYPES
+    | frozenset(
+        {
+            "materialize_story_bible",
+            "materialize_chapter_outline_batch",
+            "materialize_narrative_graph",
+            "materialize_narrative_tree",
+        }
+    )
+)
 
 
 @dataclass(frozen=True)
@@ -114,6 +136,7 @@ class StuckProject:
     stuck_at_chapter: int | None
     chapters_total: int
     chapters_with_draft: int
+    heal_kind: str = "autowrite"
 
 
 async def reap_orphan_workflow_runs(
@@ -151,6 +174,7 @@ async def reap_orphan_workflow_runs(
     result = await session.execute(
         update(WorkflowRunModel)
         .where(
+            WorkflowRunModel.workflow_type.in_(_REAPABLE_WORKFLOW_TYPES),
             WorkflowRunModel.status.in_(_ACTIVE_STATUSES),
             or_(*stale_conditions),
         )
@@ -160,6 +184,26 @@ async def reap_orphan_workflow_runs(
         )
     )
     reaped = int(result.rowcount or 0)
+
+    if startup_cutoff is not None:
+        startup_result = await session.execute(
+            update(WorkflowRunModel)
+            .where(
+                WorkflowRunModel.workflow_type.in_(
+                    _STARTUP_ONLY_REAPABLE_WORKFLOW_TYPES
+                ),
+                WorkflowRunModel.status.in_(_ACTIVE_STATUSES),
+                or_(
+                    WorkflowRunModel.updated_at < startup_cutoff,
+                    WorkflowRunModel.created_at < startup_cutoff,
+                ),
+            )
+            .values(
+                status=WorkflowStatus.FAILED.value,
+                error_message=_ORPHAN_ERROR_MESSAGE,
+            )
+        )
+        reaped += int(startup_result.rowcount or 0)
 
     # Parent/child workflow rows can be left inconsistent during rolling
     # rebuilds: the parent chapter/project run is reaped first, while a child
@@ -210,11 +254,11 @@ async def find_stuck_projects(session: Any) -> list[StuckProject]:
     stuck: list[StuckProject] = []
 
     for project in projects:
-        if _project_resume_is_blocked(project):
-            continue
-
         # Skip projects with an active pipeline run.
         if await _has_active_pipeline_run(session, project.id):
+            continue
+
+        if _project_resume_is_blocked(project):
             continue
 
         meta = project.metadata_json or {}
@@ -252,6 +296,38 @@ async def find_stuck_projects(session: Any) -> list[StuckProject]:
             except (TypeError, ValueError):
                 explicit_stuck_chapter = None
 
+        blocked_chapters = (
+            await session.scalar(
+                select(func.count())
+                .select_from(ChapterModel)
+                .where(
+                    and_(
+                        ChapterModel.project_id == project.id,
+                        ChapterModel.production_state == "blocked",
+                    )
+                )
+            )
+        ) or 0
+        if blocked_chapters > 0:
+            if await _blocked_chapters_have_recent_waiting_repair(session, project.id):
+                logger.info(
+                    "self-heal: skipped slug=%s — blocked chapters already reached waiting_human repair",
+                    project.slug,
+                )
+                continue
+            stuck.append(
+                StuckProject(
+                    project_id=project.id,
+                    slug=project.slug,
+                    reason="blocked_chapters",
+                    stuck_at_chapter=None,
+                    chapters_total=int(chapters_total),
+                    chapters_with_draft=int(chapters_with_draft),
+                    heal_kind="repair",
+                )
+            )
+            continue
+
         if (
             explicit_stuck_chapter is not None
             and chapters_with_draft < explicit_stuck_chapter
@@ -275,31 +351,6 @@ async def find_stuck_projects(session: Any) -> list[StuckProject]:
                     slug=project.slug,
                     reason="missing_drafts",
                     stuck_at_chapter=int(chapters_with_draft) + 1,
-                    chapters_total=int(chapters_total),
-                    chapters_with_draft=int(chapters_with_draft),
-                )
-            )
-            continue
-
-        blocked_chapters = (
-            await session.scalar(
-                select(func.count())
-                .select_from(ChapterModel)
-                .where(
-                    and_(
-                        ChapterModel.project_id == project.id,
-                        ChapterModel.production_state == "blocked",
-                    )
-                )
-            )
-        ) or 0
-        if blocked_chapters > 0:
-            stuck.append(
-                StuckProject(
-                    project_id=project.id,
-                    slug=project.slug,
-                    reason="blocked_chapters",
-                    stuck_at_chapter=None,
                     chapters_total=int(chapters_total),
                     chapters_with_draft=int(chapters_with_draft),
                 )
@@ -337,12 +388,36 @@ async def _has_active_pipeline_run(session: Any, project_id: Any) -> bool:
         select(WorkflowRunModel.id)
         .where(
             WorkflowRunModel.project_id == project_id,
-            WorkflowRunModel.workflow_type.in_(_PIPELINE_WORKFLOW_TYPES),
+            WorkflowRunModel.workflow_type.in_(_SELF_HEAL_BLOCKING_WORKFLOW_TYPES),
             WorkflowRunModel.status.in_(_ACTIVE_STATUSES),
         )
         .limit(1)
     )
     return active is not None
+
+
+async def _blocked_chapters_have_recent_waiting_repair(
+    session: Any,
+    project_id: Any,
+) -> bool:
+    latest_blocked_update = await session.scalar(
+        select(func.max(ChapterModel.updated_at)).where(
+            ChapterModel.project_id == project_id,
+            ChapterModel.production_state == "blocked",
+        )
+    )
+    latest_waiting_repair_update = await session.scalar(
+        select(func.max(WorkflowRunModel.updated_at)).where(
+            WorkflowRunModel.project_id == project_id,
+            WorkflowRunModel.workflow_type == "project_repair",
+            WorkflowRunModel.status == WorkflowStatus.WAITING_HUMAN.value,
+        )
+    )
+    if latest_waiting_repair_update is None:
+        return False
+    if latest_blocked_update is None:
+        return True
+    return latest_waiting_repair_update >= latest_blocked_update
 
 
 def _project_resume_is_blocked(project: ProjectModel) -> bool:
@@ -380,6 +455,11 @@ def _autowrite_heal_job_id(slug: str) -> str:
     even if the Redis lock somehow lapses.
     """
     return f"autowrite:heal:{slug}"
+
+
+def _repair_heal_job_id(slug: str) -> str:
+    """Deterministic ARQ job id for project repair self-heal."""
+    return f"repair:heal:{slug}"
 
 
 async def _requeue_autowrite(
@@ -427,6 +507,58 @@ async def _requeue_autowrite(
         if job is None:
             return None
     return job_id
+
+
+async def _requeue_repair(
+    pool: "ArqRedis",
+    stuck: StuckProject,
+) -> str | None:
+    """Enqueue a project repair job for blocked production chapters."""
+    job_id = _repair_heal_job_id(stuck.slug)
+    job = await pool.enqueue_job(
+        "run_project_repair_task",
+        workflow_run_id=job_id,
+        payload={"project_slug": stuck.slug, "requested_by": "worker_self_heal"},
+        _job_id=job_id,
+        _expires=_dt.timedelta(days=SELF_HEAL_JOB_EXPIRES_DAYS),
+    )
+    if job is None:
+        job_key = f"arq:job:{job_id}"
+        in_progress_key = f"arq:in-progress:{job_id}"
+        result_key = f"arq:result:{job_id}"
+        retry_key = f"arq:retry:{job_id}"
+        if await _stale_in_progress_job(pool, job_id):
+            await pool.delete(
+                job_key,
+                in_progress_key,
+                result_key,
+                retry_key,
+            )
+            await _safe_zrem(pool, "arq:queue", job_id)
+        else:
+            in_flight = await pool.exists(job_key, in_progress_key)
+            if in_flight:
+                return None
+            await pool.delete(result_key, retry_key)
+        job = await pool.enqueue_job(
+            "run_project_repair_task",
+            workflow_run_id=job_id,
+            payload={"project_slug": stuck.slug, "requested_by": "worker_self_heal"},
+            _job_id=job_id,
+            _expires=_dt.timedelta(days=SELF_HEAL_JOB_EXPIRES_DAYS),
+        )
+        if job is None:
+            return None
+    return job_id
+
+
+async def _requeue_stuck_project(
+    pool: "ArqRedis",
+    stuck: StuckProject,
+) -> str | None:
+    if stuck.heal_kind == "repair":
+        return await _requeue_repair(pool, stuck)
+    return await _requeue_autowrite(pool, stuck)
 
 
 async def _stale_in_progress_job(pool: "ArqRedis", job_id: str) -> bool:
@@ -571,7 +703,7 @@ async def heal_stuck_projects(
                 )
                 continue
             try:
-                task_id = await _requeue_autowrite(pool, stuck)
+                task_id = await _requeue_stuck_project(pool, stuck)
             except Exception as exc:  # noqa: BLE001
                 logger.exception(
                     "self-heal: failed to enqueue slug=%s reason=%s: %s",
@@ -580,8 +712,9 @@ async def heal_stuck_projects(
                 continue
             if task_id is None:
                 logger.info(
-                    "self-heal: skipped slug=%s — autowrite job already queued",
+                    "self-heal: skipped slug=%s — %s job already queued",
                     stuck.slug,
+                    stuck.heal_kind,
                 )
                 continue
             dispatched.append(
@@ -589,14 +722,15 @@ async def heal_stuck_projects(
                     "slug": stuck.slug,
                     "task_id": task_id,
                     "reason": stuck.reason,
+                    "heal_kind": stuck.heal_kind,
                     "stuck_at_chapter": stuck.stuck_at_chapter,
                     "chapters_total": stuck.chapters_total,
                     "chapters_with_draft": stuck.chapters_with_draft,
                 }
             )
             logger.info(
-                "self-heal: re-queued slug=%s reason=%s stuck_at=%s task=%s",
-                stuck.slug, stuck.reason, stuck.stuck_at_chapter, task_id,
+                "self-heal: re-queued slug=%s kind=%s reason=%s stuck_at=%s task=%s",
+                stuck.slug, stuck.heal_kind, stuck.reason, stuck.stuck_at_chapter, task_id,
             )
     finally:
         if pool is not None:

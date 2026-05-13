@@ -13,6 +13,7 @@ from bestseller.domain.narrative_tree import NarrativeTreeMaterializationResult
 from bestseller.domain.project import ChapterCreate, SceneCardCreate, VolumeCreate
 from bestseller.domain.story_bible import StoryBibleMaterializationResult
 from bestseller.domain.workflow import (
+    ChapterOutlineInput,
     ChapterOutlineBatchInput,
     WorkflowMaterializationResult,
 )
@@ -29,11 +30,25 @@ from bestseller.services.bible_gate import (
     build_draft_from_materialization_content,
     validate_bible_completeness,
 )
+from bestseller.services.chapter_causality_gate import (
+    ChapterCausalityResult,
+    chapter_causality_report_to_dict,
+    evaluate_chapter_causality_contract,
+)
 from bestseller.services.invariants import invariants_from_dict
 from bestseller.services.projects import create_chapter, create_or_get_volume, create_scene_card, get_project_by_slug
 from bestseller.services.narrative import rebuild_narrative_graph
 from bestseller.services.narrative_tree import rebuild_narrative_tree
 from bestseller.services.narrative_contracts import (
+    GENERIC_CHAPTER_GOAL_MARKERS,
+    GENERIC_HOOK_MARKERS,
+    GENERIC_OPENING_SITUATION_MARKERS,
+    GENERIC_SCENE_PURPOSE_MARKERS,
+    _contains_marker,
+    _extract_purpose_character_names,
+    _identity_index_from_manifest,
+    _is_generic_time_label,
+    _normalize_identity_token,
     build_identity_manifest,
     repair_legacy_foundation_identity_locks,
     validate_chapter_plan_contract,
@@ -48,6 +63,10 @@ from bestseller.services.story_bible import (
     upsert_world_spec,
 )
 from bestseller.services.truth_version import truth_metadata_for_workflow
+from bestseller.services.word_targets import (
+    normalize_chapter_word_target,
+    scene_word_target_for_chapter,
+)
 from bestseller.services.world_expansion import refresh_world_expansion_boundaries
 from bestseller.settings import load_settings
 
@@ -251,6 +270,223 @@ def _identity_hints_from_characters(
     return hints
 
 
+def _repair_chapter_outline_contract_inputs(
+    batch: ChapterOutlineBatchInput,
+    *,
+    identity_manifest: list[dict[str, Any]],
+) -> int:
+    """Backfill deterministic scene contract fields before outline validation."""
+
+    protagonist_name = _outline_default_protagonist(identity_manifest)
+    identity_index = _identity_index_from_manifest(identity_manifest)
+    repaired = 0
+    for chapter in batch.chapters:
+        # Story-semantic fields are not repaired here. If chapter goals,
+        # openings, or hooks are missing/generic, the plan contract must fail
+        # closed so the planner regenerates concrete events instead of
+        # materializing synthetic story structure.
+        # Do not synthesize missing/generic hooks. A generic hook is a broken
+        # story promise, not a missing default; the plan contract must fail
+        # closed so the planner regenerates a reader-visible next event.
+        chapter_label = (
+            chapter.title
+            or chapter.chapter_goal
+            or chapter.main_conflict
+            or f"Chapter {chapter.chapter_number}"
+        )
+        for scene in chapter.scenes:
+            if not _text_value(scene.time_label) or _is_generic_time_label(scene.time_label):
+                scene.time_label = _outline_scene_time_repair(
+                    chapter,
+                    scene_number=scene.scene_number,
+                    chapter_label=chapter_label,
+                )
+                repaired += 1
+            if not scene.participants:
+                scene.participants = [protagonist_name]
+                repaired += 1
+            purpose = dict(scene.purpose or {})
+            if not _text_value(purpose.get("emotion")):
+                purpose["emotion"] = "保持本章压力递进，并把选择、代价或线索推到下一拍。"
+                repaired += 1
+            if purpose != scene.purpose:
+                scene.purpose = purpose
+            story_purpose = _text_value(purpose.get("story"))
+            if story_purpose and identity_index:
+                participant_tokens = {
+                    _normalize_identity_token(participant)
+                    for participant in scene.participants
+                    if _text_value(participant)
+                }
+                for referenced_name in _extract_purpose_character_names(
+                    story_purpose,
+                    identity_index,
+                ):
+                    token = _normalize_identity_token(referenced_name)
+                    if token and token not in participant_tokens:
+                        scene.participants.append(referenced_name)
+                        participant_tokens.add(token)
+                        repaired += 1
+    return repaired
+
+
+def _normalize_outline_chapter_numbers(
+    batch: ChapterOutlineBatchInput,
+) -> dict[str, Any] | None:
+    """Force a materialization batch onto a contiguous chapter-number range."""
+
+    if not batch.chapters:
+        return None
+    numbers = [chapter.chapter_number for chapter in batch.chapters]
+    if len(numbers) != len(set(numbers)):
+        return None
+    start = min(numbers)
+    expected = list(range(start, start + len(numbers)))
+    ordered_chapters = sorted(
+        enumerate(batch.chapters),
+        key=lambda item: (item[1].chapter_number, item[0]),
+    )
+    current_sorted = [chapter.chapter_number for _, chapter in ordered_chapters]
+    if current_sorted == expected:
+        return None
+
+    renumbered: list[dict[str, int]] = []
+    for new_number, (_, chapter) in zip(expected, ordered_chapters, strict=True):
+        old_number = chapter.chapter_number
+        if old_number == new_number:
+            continue
+        chapter.chapter_number = new_number
+        renumbered.append({"from": old_number, "to": new_number})
+
+    if not renumbered:
+        return None
+    return {
+        "start": start,
+        "end": expected[-1],
+        "renumbered": renumbered,
+    }
+
+
+def _outline_default_protagonist(identity_manifest: list[dict[str, Any]]) -> str:
+    for identity in identity_manifest:
+        role = str(identity.get("role") or "").lower()
+        name = _text_value(identity.get("name"))
+        if name and "protagonist" in role:
+            return name
+    for identity in identity_manifest:
+        name = _text_value(identity.get("name"))
+        if name:
+            return name
+    return "主角"
+
+
+def _outline_chapter_goal_repair(
+    chapter: ChapterOutlineInput,
+    *,
+    protagonist_name: str,
+) -> str:
+    base = (
+        chapter.main_conflict
+        or chapter.hook_description
+        or chapter.title
+        or f"第{chapter.chapter_number}章核心冲突"
+    )
+    return (
+        f"第{chapter.chapter_number}章围绕「{base}」，迫使{protagonist_name}"
+        "完成一次具体选择、付出可见代价，并把压力转入下一章。"
+    )
+
+
+def _outline_opening_situation_repair(
+    chapter: ChapterOutlineInput,
+    *,
+    protagonist_name: str,
+) -> str:
+    pressure = (
+        chapter.main_conflict
+        or chapter.hook_description
+        or chapter.chapter_goal
+        or f"第{chapter.chapter_number}章的新压力"
+    )
+    location = chapter.title or f"第{chapter.chapter_number}章开场"
+    return (
+        f"第{chapter.chapter_number}章开场落在「{location}」之后，"
+        f"{protagonist_name}必须立刻处理「{pressure}」。"
+    )
+
+
+def _outline_hook_description_repair(
+    chapter: ChapterOutlineInput,
+    *,
+    protagonist_name: str,
+) -> str:
+    pressure = (
+        chapter.main_conflict
+        or chapter.chapter_goal
+        or chapter.title
+        or f"第{chapter.chapter_number}章核心压力"
+    )
+    return (
+        f"第{chapter.chapter_number}章尾钩：围绕「{pressure}」出现新的证据、"
+        f"时限或代价，迫使{protagonist_name}下一章立刻行动。"
+    )
+
+
+def _outline_scene_time_repair(
+    chapter: ChapterOutlineInput,
+    *,
+    scene_number: int | float,
+    chapter_label: str,
+) -> str:
+    anchor = chapter.title or chapter.main_conflict or chapter_label
+    return f"第{chapter.chapter_number}章「{anchor}」场景{scene_number}"
+
+
+def _outline_scene_story_repair(
+    chapter: ChapterOutlineInput,
+    *,
+    scene_number: int | float,
+    participants: list[str],
+) -> str:
+    actors = "、".join(participants[:3]) if participants else "主角"
+    base = (
+        chapter.main_conflict
+        or chapter.hook_description
+        or chapter.chapter_goal
+        or chapter.title
+        or f"第{chapter.chapter_number}章核心目标"
+    )
+    return (
+        f"第{chapter.chapter_number}章场景{scene_number}让{actors}"
+        f"围绕「{base}」完成一次可见行动、信息交换或代价承担。"
+    )
+
+
+def _outline_scene_story_default(
+    chapter: ChapterOutlineInput,
+    *,
+    scene_number: int,
+) -> str:
+    base = (
+        chapter.chapter_goal
+        or chapter.main_conflict
+        or chapter.hook_description
+        or chapter.title
+        or f"第{chapter.chapter_number}章推进"
+    )
+    if scene_number == 1:
+        return f"承接开场局势，围绕「{base}」建立行动目标和即时压力。"
+    if scene_number == len(chapter.scenes):
+        return f"围绕「{base}」交付本章变化，并留下推动下一章的尾钩。"
+    return f"围绕「{base}」推进冲突升级，交付新的线索、代价或关系位移。"
+
+
+def _text_value(value: Any) -> str:
+    if value is None:
+        return ""
+    return str(value).strip()
+
+
 async def _sync_existing_chapter_from_outline(
     session: AsyncSession,
     *,
@@ -282,6 +518,22 @@ async def _sync_existing_chapter_from_outline(
     return True
 
 
+def _sync_chapter_causality_metadata(
+    chapter: Any,
+    chapter_outline: Any,
+    causality_result: ChapterCausalityResult | None = None,
+) -> None:
+    metadata = dict(getattr(chapter, "metadata_json", None) or {})
+    causal_contract = getattr(chapter_outline, "causal_contract", None)
+    if isinstance(causal_contract, dict) and causal_contract:
+        metadata["causal_contract"] = causal_contract
+    else:
+        metadata.pop("causal_contract", None)
+    if causality_result is not None:
+        metadata["chapter_causality_axes"] = causality_result.to_dict()
+    setattr(chapter, "metadata_json", metadata)
+
+
 def _sync_existing_scene_from_outline(scene: SceneCardModel, scene_outline: Any) -> bool:
     if scene.status not in _MATERIALIZATION_MUTABLE_SCENE_STATUSES:
         return False
@@ -294,6 +546,38 @@ def _sync_existing_scene_from_outline(scene: SceneCardModel, scene_outline: Any)
     scene.exit_state = scene_outline.exit_state
     scene.target_word_count = scene_outline.target_word_count
     return True
+
+
+def _normalize_outline_word_targets(
+    batch: ChapterOutlineBatchInput,
+    *,
+    project: ProjectModel,
+    settings: Any,
+) -> int:
+    """Normalize outline word targets before they enter persisted chapter rows."""
+
+    repaired = 0
+    for chapter in batch.chapters:
+        normalized_chapter_target = normalize_chapter_word_target(
+            chapter.target_word_count,
+            project,
+            settings,
+        )
+        if chapter.target_word_count != normalized_chapter_target:
+            chapter.target_word_count = normalized_chapter_target
+            repaired += 1
+        if not chapter.scenes:
+            continue
+        scene_target = scene_word_target_for_chapter(
+            chapter.target_word_count,
+            len(chapter.scenes),
+            settings,
+        )
+        for scene in chapter.scenes:
+            if scene.target_word_count != scene_target:
+                scene.target_word_count = scene_target
+                repaired += 1
+    return repaired
 
 
 async def create_workflow_run(
@@ -428,6 +712,7 @@ async def materialize_chapter_outline_batch(
     project = await get_project_by_slug(session, project_slug)
     if project is None:
         raise ValueError(f"Project '{project_slug}' was not found.")
+    settings = load_settings()
 
     workflow_run = await create_workflow_run(
         session,
@@ -454,6 +739,7 @@ async def materialize_chapter_outline_batch(
     chapters_pruned = 0
     scenes_pruned = 0
     current_step_name = "validate_outline_batch"
+    causality_results_by_chapter: dict[int, ChapterCausalityResult] = {}
 
     try:
         await create_workflow_step_run(
@@ -468,6 +754,12 @@ async def materialize_chapter_outline_batch(
             },
         )
         step_order += 1
+        _chapter_number_normalization = _normalize_outline_chapter_numbers(batch)
+        if _chapter_number_normalization:
+            workflow_run.metadata_json = {
+                **(workflow_run.metadata_json or {}),
+                "chapter_number_normalization": _chapter_number_normalization,
+            }
         outlined_chapter_numbers = {chapter.chapter_number for chapter in batch.chapters}
 
         # ── Plan fingerprint gate: detect near-duplicate chapters before DB write ──
@@ -490,6 +782,10 @@ async def materialize_chapter_outline_batch(
                 _existing_for_fp,
             )
             if _fp_report.findings:
+                _project_metadata = getattr(project, "metadata_json", None) or {}
+                _fingerprint_warn_only = (
+                    _project_metadata.get("plan_fingerprint_gate_warn_only") is True
+                )
                 _fp_summary = [
                     {
                         "chapter_a": f.chapter_a,
@@ -510,12 +806,21 @@ async def materialize_chapter_outline_batch(
                     **(workflow_run.metadata_json or {}),
                     "plan_fingerprint_findings": _fp_summary,
                     "plan_fingerprint_has_critical": _fp_report.has_critical,
+                    "plan_fingerprint_gate_warn_only": _fingerprint_warn_only,
                 }
                 if _fp_report.has_critical:
-                    raise ValueError(
-                        "Chapter outline batch blocked by plan fingerprint gate: "
-                        f"{len(_fp_report.findings)} duplicate chapter pair(s) found."
-                    )
+                    if _fingerprint_warn_only:
+                        logger.warning(
+                            "Plan fingerprint gate is warn-only for project '%s'; "
+                            "continuing despite %d duplicate chapter pair(s).",
+                            project_slug,
+                            len(_fp_report.findings),
+                        )
+                    else:
+                        raise ValueError(
+                            "Chapter outline batch blocked by plan fingerprint gate: "
+                            f"{len(_fp_report.findings)} duplicate chapter pair(s) found."
+                        )
         except ValueError:
             raise
         except Exception:
@@ -525,11 +830,22 @@ async def materialize_chapter_outline_batch(
                 exc_info=True,
             )
 
-        settings = load_settings()
         if getattr(settings.pipeline, "require_chapter_plan_contract", True):
+            identity_manifest = _project_identity_manifest(project)
+            repair_count = _repair_chapter_outline_contract_inputs(
+                batch,
+                identity_manifest=identity_manifest,
+            )
+            if repair_count:
+                workflow_run.metadata_json = {
+                    **(workflow_run.metadata_json or {}),
+                    "chapter_plan_contract_input_repair": {
+                        "field_updates": repair_count,
+                    },
+                }
             _plan_contract = validate_chapter_plan_contract(
                 batch,
-                identity_manifest=_project_identity_manifest(project),
+                identity_manifest=identity_manifest,
                 require_identity_registry=True,
             )
             if _plan_contract.violations or _plan_contract.warnings:
@@ -541,6 +857,43 @@ async def materialize_chapter_outline_batch(
                 project_slug=project_slug,
                 artifact="chapter_outline_batch",
             )
+
+        if getattr(settings.pipeline, "enable_chapter_causality_gate", True):
+            _causality_report = evaluate_chapter_causality_contract(batch)
+            causality_results_by_chapter = {
+                result.chapter_number: result
+                for result in _causality_report.chapter_results
+            }
+            _causality_payload = chapter_causality_report_to_dict(_causality_report)
+            if _causality_report.findings:
+                workflow_run.metadata_json = {
+                    **(workflow_run.metadata_json or {}),
+                    "chapter_causality_contract": _causality_payload,
+                }
+            if (
+                not _causality_report.passed
+                and getattr(settings.pipeline, "chapter_causality_gate_block_on_failure", True)
+            ):
+                raise ValueError(
+                    "Chapter outline batch blocked by chapter_causality_contract: "
+                    f"{len(_causality_report.blocking_findings)} blocking finding(s)."
+                )
+
+        _word_target_repairs = _normalize_outline_word_targets(
+            batch,
+            project=project,
+            settings=settings,
+        )
+        if _word_target_repairs:
+            workflow_run.metadata_json = {
+                **(workflow_run.metadata_json or {}),
+                "outline_word_target_normalization": {
+                    "field_updates": _word_target_repairs,
+                    "chapter_min": int(settings.generation.words_per_chapter.min),
+                    "chapter_target": int(settings.generation.words_per_chapter.target),
+                    "chapter_max": int(settings.generation.words_per_chapter.max),
+                },
+            }
 
         for chapter_outline in batch.chapters:
             current_step_name = f"create_chapter_{chapter_outline.chapter_number}"
@@ -581,6 +934,11 @@ async def materialize_chapter_outline_batch(
                     ),
                 )
                 chapters_created += 1
+            _sync_chapter_causality_metadata(
+                chapter,
+                chapter_outline,
+                causality_results_by_chapter.get(chapter_outline.chapter_number),
+            )
             await create_workflow_step_run(
                 session,
                 workflow_run_id=workflow_run.id,
@@ -662,28 +1020,21 @@ async def materialize_chapter_outline_batch(
                 )
                 step_order += 1
 
-            # ── Normalize chapter + scene target_word_count to config limits ──
-            # The planner LLM picks arbitrary per-scene word targets (1000,
-            # 1500, 956, …) that don't respect words_per_chapter.  Normalize
-            # them so the writer prompt receives a target that, when summed
-            # across all scenes, stays within the chapter length envelope.
+            # ── Normalize chapter + scene target_word_count to the shared budget ──
+            # Defensive pass for legacy call sites that may bypass the outline
+            # normalization above.
             _num_scenes = len(chapter_outline.scenes)
             if _num_scenes > 0:
-                # Hard limits from config — inline to avoid import dependency
-                _CHAPTER_WORD_MIN = 1800
-                _CHAPTER_WORD_MAX = 3000
-                _CHAPTER_WORD_TARGET = 2200
-                _SCENE_WORD_MIN = 500
-                _SCENE_WORD_MAX = 800
-
-                # 1. Normalize chapter target to config range
-                _raw_ch = int(chapter.target_word_count or 0)
-                if _raw_ch < _CHAPTER_WORD_MIN or _raw_ch > _CHAPTER_WORD_MAX:
-                    chapter.target_word_count = _CHAPTER_WORD_TARGET
-
-                # 2. Normalize per-scene targets so sum ≈ chapter target
-                _ch_target = max(1, int(chapter.target_word_count or _CHAPTER_WORD_TARGET))
-                _per_scene = max(_SCENE_WORD_MIN, min(_SCENE_WORD_MAX, _ch_target // _num_scenes))
+                chapter.target_word_count = normalize_chapter_word_target(
+                    chapter.target_word_count,
+                    project,
+                    settings,
+                )
+                _per_scene = scene_word_target_for_chapter(
+                    chapter.target_word_count,
+                    _num_scenes,
+                    settings,
+                )
 
                 for _sc in materialized_scenes_for_chapter:
                     _sc.target_word_count = _per_scene
@@ -897,6 +1248,23 @@ async def materialize_story_bible(
         cast_spec_content is not None
         and getattr(settings.pipeline, "require_foundation_identity_lock", True)
     ):
+        if "cast_spec" in artifact_ids:
+            characters = list(
+                await session.scalars(
+                    select(CharacterModel).where(CharacterModel.project_id == project.id)
+                )
+            )
+            existing_manifest = _project_identity_manifest(project)
+            repaired_content, repair_count = repair_legacy_foundation_identity_locks(
+                cast_spec_content,
+                identity_hints=[
+                    *existing_manifest,
+                    *_identity_hints_from_characters(characters),
+                ],
+                allow_unreliable_defaults=bool(existing_manifest),
+            )
+            if repair_count and repaired_content is not None:
+                cast_spec_content = repaired_content
         _identity_contract = validate_foundation_identity_contract(cast_spec_content)
         _identity_contract.raise_for_blocks(
             project_slug=project_slug,

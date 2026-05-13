@@ -135,6 +135,18 @@ def build_batch() -> ChapterOutlineBatchInput:
                     "goal": "Introduce the investigation.",
                     "main_conflict": "沈砚必须在封港命令生效前确认信号来源。",
                     "hook_description": "封港倒计时只剩一小时。",
+                    "causal_contract": {
+                        "chapter_function": "action",
+                        "pressure": "封港命令一小时后生效，沈砚必须立刻确认信号来源。",
+                        "protagonist_desire": "沈砚要在封港前拿到异常信号的来源。",
+                        "protagonist_choice": "沈砚选择接下调查任务并进入码头。",
+                        "visible_action_or_reaction": "沈砚接下港务官的任务，开始追查信号。",
+                        "resistance": "封港命令和倒计时压缩了他的调查窗口。",
+                        "cost_or_tradeoff": "如果判断失误，沈砚会失去封港前最后一次追查机会。",
+                        "gain_or_reveal": "沈砚获得异常信号来自码头深处的线索。",
+                        "state_change": "沈砚从旁观封港变成承担调查责任的人。",
+                        "next_reader_desire": "读者想知道一小时倒计时内他能否找到信号来源。",
+                    },
                     "scenes": [
                         {
                             "scene_number": 1,
@@ -152,6 +164,305 @@ def build_batch() -> ChapterOutlineBatchInput:
             ],
         }
     )
+
+
+def test_chapter_outline_aliases_and_contract_input_repair() -> None:
+    batch = ChapterOutlineBatchInput.model_validate(
+        {
+            "batch_name": "volume-1-outline",
+            "chapters": [
+                {
+                    "chapter_number": 1,
+                    "title": "镜中泣",
+                    "goal": "苏砚确认铜镜异变与母亲旧案有关。",
+                    "main_conflict": "苏砚必须在宿老封宅前读取铜镜残痕。",
+                    "hook_description": "铜镜渗出血珠，映出大火夜的人影。",
+                    "scenes": [
+                        {
+                            "scene_number": 1.1,
+                            "scene_setting": "青萝镇旧宅暮色",
+                            "story_emotion_task": "苏砚进入旧宅，发现铜镜渗出血珠。",
+                            "aesthetic_goal": "冷艳诡异的东方器物志怪氛围。",
+                            "philosophical_anchor": "器物承载执念，执念深重则生灵。",
+                        }
+                    ],
+                }
+            ],
+        }
+    )
+
+    repaired = workflow_services._repair_chapter_outline_contract_inputs(
+        batch,
+        identity_manifest=[
+            {
+                "name": "苏砚",
+                "role": "protagonist",
+                "gender": "male",
+                "pronoun_set_zh": "他",
+                "pronoun_set_en": "he/him",
+            }
+        ],
+    )
+    report = workflow_services.validate_chapter_plan_contract(
+        batch,
+        identity_manifest=[
+            {
+                "name": "苏砚",
+                "role": "protagonist",
+                "gender": "male",
+                "pronoun_set_zh": "他",
+                "pronoun_set_en": "he/him",
+            }
+        ],
+        require_identity_registry=True,
+    )
+
+    scene = batch.chapters[0].scenes[0]
+    assert repaired == 1
+    assert scene.scene_number == 1
+    assert scene.time_label == "青萝镇旧宅暮色"
+    assert scene.participants == ["苏砚"]
+    assert "铜镜渗出血珠" in scene.purpose["story"]
+    assert report.passed is True
+
+
+def test_outline_chapter_number_normalization_closes_materialization_gaps() -> None:
+    batch = ChapterOutlineBatchInput.model_validate(
+        {
+            "batch_name": "volume-10-outline",
+            "chapters": [
+                {
+                    "chapter_number": number,
+                    "title": f"第{number}章",
+                    "goal": f"推进第{number}章",
+                    "main_conflict": f"第{number}章冲突",
+                    "hook_description": f"第{number}章钩子",
+                    "scenes": [
+                        {
+                            "scene_number": 1,
+                            "scene_type": "setup",
+                            "title": "场景",
+                            "time_label": "夜间",
+                            "participants": ["林鸢"],
+                            "purpose": {
+                                "story": "林鸢必须推进计划。",
+                                "emotion": "压力上升。",
+                            },
+                        }
+                    ],
+                }
+                for number in [482, 483, 485, 486]
+            ],
+        }
+    )
+
+    normalization = workflow_services._normalize_outline_chapter_numbers(batch)
+
+    assert [chapter.chapter_number for chapter in batch.chapters] == [482, 483, 484, 485]
+    assert normalization == {
+        "start": 482,
+        "end": 485,
+        "renumbered": [{"from": 485, "to": 484}, {"from": 486, "to": 485}],
+    }
+
+
+def test_chapter_outline_accepts_chapter_level_llm_aliases() -> None:
+    batch = ChapterOutlineBatchInput.model_validate(
+        {
+            "batch_name": "volume-1-outline",
+            "chapters": [
+                {
+                    "chapter_number": 1,
+                    "chapter_title": "镜泣",
+                    "chapter_goal": "苏砚读取铜镜残相并确认大火线索。",
+                    "chapter_main_conflict": "铜镜器灵抗拒共感，苏砚必须在反噬前截取残相。",
+                    "chapter_hook_type": "信息揭示",
+                    "hook_description": "镜框灼痕指向母亲临终时的伤口。",
+                    "scenes": [
+                        {
+                            "scene_number": 1,
+                            "location": "青萝镇古宅",
+                            "participants": ["苏砚"],
+                            "story_task": "苏砚触碰铜镜，看到火海中的铭纹鼎。",
+                            "emotion_task": "震惊与追索欲同时上升。",
+                        }
+                    ],
+                }
+            ],
+        }
+    )
+
+    chapter = batch.chapters[0]
+    assert chapter.title == "镜泣"
+    assert chapter.main_conflict == "铜镜器灵抗拒共感，苏砚必须在反噬前截取残相。"
+    assert chapter.hook_type == "信息揭示"
+
+
+def test_chapter_outline_repair_adds_identity_names_from_scene_purpose() -> None:
+    batch = ChapterOutlineBatchInput.model_validate(
+        {
+            "batch_name": "volume-1-outline",
+            "chapters": [
+                {
+                    "chapter_number": 8,
+                    "title": "旧识",
+                    "goal": "引入沈夜寒并揭示志怪监线索。",
+                    "main_conflict": "师父的警告与苏砚追查真相的决心正面冲突。",
+                    "hook_description": "沈夜寒说出苏砚母亲曾是志怪监执律使。",
+                    "scenes": [
+                        {
+                            "scene_number": 8.1,
+                            "setting": "青萝镇口·黄昏",
+                            "participants": ["苏砚"],
+                            "story_task": "沈夜寒出现在苏砚面前，以师徒身份介入调查。",
+                            "emotion_task": "重逢的复杂情感。",
+                        }
+                    ],
+                }
+            ],
+        }
+    )
+    identity_manifest = [
+        {
+            "name": "苏砚",
+            "role": "protagonist",
+            "gender": "male",
+            "pronoun_set_zh": "他",
+            "pronoun_set_en": "he/him",
+        },
+        {
+            "name": "沈夜寒",
+            "role": "mentor",
+            "gender": "male",
+            "pronoun_set_zh": "他",
+            "pronoun_set_en": "he/him",
+        },
+    ]
+
+    repaired = workflow_services._repair_chapter_outline_contract_inputs(
+        batch,
+        identity_manifest=identity_manifest,
+    )
+    report = workflow_services.validate_chapter_plan_contract(
+        batch,
+        identity_manifest=identity_manifest,
+        require_identity_registry=True,
+    )
+
+    assert repaired == 1
+    assert batch.chapters[0].scenes[0].participants == ["苏砚", "沈夜寒"]
+    assert report.passed is True
+
+
+def test_chapter_outline_repair_does_not_synthesize_generic_story_fields() -> None:
+    batch = ChapterOutlineBatchInput.model_validate(
+        {
+            "batch_name": "volume-1-outline",
+            "chapters": [
+                {
+                    "chapter_number": 54,
+                    "title": "暗潮失衡",
+                    "goal": "一种环境或体系层面的威胁出现，无法用力量硬碰硬。",
+                    "opening_situation": "承接上一章尾钩，主角没有空档去长篇解释设定。",
+                    "main_conflict": "铜镜器灵·残相执念收紧包围圈，苏砚必须在有限时间内做出取舍。",
+                    "hook_description": "具体事件是「尾钩」。",
+                    "scenes": [
+                        {
+                            "scene_number": 54.1,
+                            "time_label": "章节开场",
+                            "participants": ["苏砚"],
+                            "purpose": {
+                                "story": "承接上章后果并明确本章行动目标（本章目标：一种环境或体系层面的威胁出现。）",
+                                "emotion": "压力上升。",
+                            },
+                        }
+                    ],
+                }
+            ],
+        }
+    )
+    identity_manifest = [
+        {
+            "name": "苏砚",
+            "role": "protagonist",
+            "gender": "male",
+            "pronoun_set_zh": "他",
+            "pronoun_set_en": "he/him",
+        }
+    ]
+
+    repaired = workflow_services._repair_chapter_outline_contract_inputs(
+        batch,
+        identity_manifest=identity_manifest,
+    )
+    report = workflow_services.validate_chapter_plan_contract(
+        batch,
+        identity_manifest=identity_manifest,
+        require_identity_registry=True,
+    )
+
+    assert repaired == 1
+    assert report.passed is False
+    codes = {violation.code for violation in report.violations}
+    assert "PLAN_CHAPTER_GOAL_GENERIC" in codes
+    assert "PLAN_CHAPTER_OPENING_GENERIC" in codes
+    assert "PLAN_CHAPTER_HOOK_GENERIC" in codes
+    assert "PLAN_SCENE_STORY_PURPOSE_GENERIC" in codes
+
+
+def test_outline_word_targets_are_normalized_to_shared_budget() -> None:
+    project = build_project()
+    batch = ChapterOutlineBatchInput.model_validate(
+        {
+            "batch_name": "stale-budget",
+            "chapters": [
+                {
+                    "chapter_number": 1,
+                    "title": "Stale Target",
+                    "goal": "推进调查",
+                    "main_conflict": "沈砚必须确认信号来源。",
+                    "hook_description": "新倒计时出现。",
+                    "target_word_count": 6400,
+                    "scenes": [
+                        {
+                            "scene_number": 1,
+                            "scene_type": "setup",
+                            "time_label": "第一日夜",
+                            "participants": ["沈砚"],
+                            "purpose": {"story": "建立压力", "emotion": "紧张"},
+                            "target_word_count": 1600,
+                        },
+                        {
+                            "scene_number": 2,
+                            "scene_type": "turn",
+                            "time_label": "第一日夜",
+                            "participants": ["沈砚"],
+                            "purpose": {"story": "揭示线索", "emotion": "疑虑"},
+                            "target_word_count": 1600,
+                        },
+                        {
+                            "scene_number": 3,
+                            "scene_type": "hook",
+                            "time_label": "第一日夜",
+                            "participants": ["沈砚"],
+                            "purpose": {"story": "留下尾钩", "emotion": "压迫"},
+                            "target_word_count": 1600,
+                        },
+                    ],
+                }
+            ],
+        }
+    )
+
+    repaired = workflow_services._normalize_outline_word_targets(
+        batch,
+        project=project,
+        settings=workflow_services.load_settings(env={}),
+    )
+
+    assert repaired == 4
+    assert batch.chapters[0].target_word_count == 2000
+    assert [scene.target_word_count for scene in batch.chapters[0].scenes] == [667, 667, 667]
 
 
 def build_planned_chapter(project: ProjectModel, number: int, *, status: str = ChapterStatus.PLANNED.value) -> ChapterModel:
@@ -422,6 +733,78 @@ async def test_materialize_chapter_outline_batch_blocks_critical_plan_fingerprin
 
 
 @pytest.mark.asyncio
+async def test_materialize_chapter_outline_batch_warns_on_critical_plan_fingerprint(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = build_project()
+    project.metadata_json = {
+        **(project.metadata_json or {}),
+        "plan_fingerprint_gate_warn_only": True,
+    }
+
+    async def fake_get_project_by_slug(session: object, slug: str) -> ProjectModel:
+        return project
+
+    async def fake_create_chapter(session: object, project_slug: str, payload: object) -> object:
+        return type(
+            "ChapterStub",
+            (),
+            {
+                "id": uuid4(),
+                "chapter_number": payload.chapter_number,
+                "target_word_count": payload.target_word_count,
+            },
+        )()
+
+    async def fake_create_scene_card(
+        session: object,
+        project_slug: str,
+        chapter_number: int,
+        payload: object,
+    ) -> object:
+        return type("SceneStub", (), {"id": uuid4(), "scene_number": payload.scene_number})()
+
+    class Finding:
+        chapter_a = 1
+        chapter_b = 2
+        similarity = 0.91
+        severity = "critical"
+        reason = "same conflict and hook"
+
+    class Report:
+        findings = (Finding(),)
+        has_critical = True
+
+    def fake_scan_batch_for_duplicates(batch_outlines: object, existing_db_chapters: object) -> Report:
+        return Report()
+
+    from bestseller.services import plan_fingerprint as plan_fingerprint_services
+
+    monkeypatch.setattr(workflow_services, "get_project_by_slug", fake_get_project_by_slug)
+    monkeypatch.setattr(workflow_services, "create_chapter", fake_create_chapter)
+    monkeypatch.setattr(workflow_services, "create_scene_card", fake_create_scene_card)
+    monkeypatch.setattr(
+        plan_fingerprint_services,
+        "scan_batch_for_duplicates",
+        fake_scan_batch_for_duplicates,
+    )
+
+    session = FakeSession(scalars_results=[[], []])
+    result = await workflow_services.materialize_chapter_outline_batch(
+        session,
+        "my-story",
+        build_batch(),
+        requested_by="tester",
+    )
+
+    workflow_runs = [obj for obj in session.added if isinstance(obj, WorkflowRunModel)]
+    assert result.chapters_created == 1
+    assert workflow_runs[0].status == "completed"
+    assert workflow_runs[0].metadata_json["plan_fingerprint_has_critical"] is True
+    assert workflow_runs[0].metadata_json["plan_fingerprint_gate_warn_only"] is True
+
+
+@pytest.mark.asyncio
 async def test_materialize_chapter_outline_batch_blocks_contract_violation(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -464,6 +847,57 @@ async def test_materialize_chapter_outline_batch_blocks_contract_violation(
     workflow_runs = [obj for obj in session.added if isinstance(obj, WorkflowRunModel)]
     assert workflow_runs[0].status == "failed"
     assert workflow_runs[0].metadata_json["chapter_plan_contract"]["passed"] is False
+
+
+@pytest.mark.asyncio
+async def test_materialize_chapter_outline_batch_blocks_weak_causality(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = build_project()
+    bad_batch = ChapterOutlineBatchInput.model_validate(
+        {
+            "batch_name": "weak-causality",
+            "chapters": [
+                {
+                    "chapter_number": 12,
+                    "title": "空潮",
+                    "goal": "沈砚继续处理港口局势。",
+                    "main_conflict": "港口压力继续存在。",
+                    "hook_description": "港口局势出现新的情况。",
+                    "scenes": [
+                        {
+                            "scene_number": 1,
+                            "scene_type": "transition",
+                            "time_label": "港口次日",
+                            "participants": ["沈砚"],
+                            "purpose": {
+                                "story": "沈砚思考港口局势。",
+                                "emotion": "情绪复杂。",
+                            },
+                        }
+                    ],
+                }
+            ],
+        }
+    )
+
+    async def fake_get_project_by_slug(session: object, slug: str) -> ProjectModel:
+        return project
+
+    monkeypatch.setattr(workflow_services, "get_project_by_slug", fake_get_project_by_slug)
+    session = FakeSession(scalars_results=[[]])
+
+    with pytest.raises(ValueError, match="chapter_causality_contract"):
+        await workflow_services.materialize_chapter_outline_batch(
+            session,
+            "my-story",
+            bad_batch,
+            requested_by="tester",
+        )
+
+    workflow_runs = [obj for obj in session.added if isinstance(obj, WorkflowRunModel)]
+    assert workflow_runs[0].status == "failed"
+    assert workflow_runs[0].metadata_json["chapter_causality_contract"]["passed"] is False
 
 
 @pytest.mark.asyncio

@@ -32,11 +32,42 @@ from bestseller.services.bible_gate import (
     WorldTaxonomyUniqueness,
     build_draft_from_materialization_content,
     default_validators,
+    validate_chapter_against_bible,
     validate_bible_completeness,
 )
 from bestseller.services.invariants import seed_invariants
 
 pytestmark = pytest.mark.unit
+
+
+class _AsyncScalarResult:
+    def __init__(self, items: list[object]) -> None:
+        self._items = items
+
+    def __iter__(self):
+        return iter(self._items)
+
+
+class _BibleGateSession:
+    def __init__(
+        self,
+        *,
+        scalars_results: list[list[object]],
+        scalar_results: list[object],
+        get_result: object,
+    ) -> None:
+        self.scalars_results = list(scalars_results)
+        self.scalar_results = list(scalar_results)
+        self.get_result = get_result
+
+    async def scalars(self, _stmt):
+        return _AsyncScalarResult(self.scalars_results.pop(0))
+
+    async def scalar(self, _stmt):
+        return self.scalar_results.pop(0)
+
+    async def get(self, _model, _id):
+        return self.get_result
 
 
 # ---------------------------------------------------------------------------
@@ -129,6 +160,34 @@ def _minimal_draft(
         theme_statement=theme_statement,
         dramatic_question=dramatic_question,
     )
+
+
+# ---------------------------------------------------------------------------
+# Runtime stance flip gate.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_runtime_stance_flip_accepts_emotion_turn_arcbeat() -> None:
+    character_id = uuid4()
+    character = SimpleNamespace(id=character_id, name="苏瑶")
+    current_snapshot = SimpleNamespace(character_id=character_id, stance="enemy")
+    prior_snapshot = SimpleNamespace(stance="ally")
+    emotion_turn_beat = SimpleNamespace(beat_kind="emotion_turn")
+    session = _BibleGateSession(
+        scalars_results=[[current_snapshot], [emotion_turn_beat]],
+        scalar_results=[prior_snapshot],
+        get_result=character,
+    )
+
+    result = await validate_chapter_against_bible(
+        session,  # type: ignore[arg-type]
+        project_id=uuid4(),
+        chapter_number=7,
+    )
+
+    assert result.violations == []
+    assert result.passed is True
 
 
 # ---------------------------------------------------------------------------

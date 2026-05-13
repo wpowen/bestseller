@@ -20,6 +20,7 @@ class ArtifactType(StrEnum):
     ACT_PLAN = "act_plan"
     PLAN_VALIDATION = "plan_validation"
     PREWRITE_READINESS = "prewrite_readiness"
+    STORY_DESIGN_KERNEL = "story_design_kernel"
     VOLUME_CHAPTER_OUTLINE = "volume_chapter_outline"
     VOLUME_CAST_EXPANSION = "volume_cast_expansion"
     VOLUME_WORLD_DISCLOSURE = "volume_world_disclosure"

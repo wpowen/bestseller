@@ -100,6 +100,31 @@ async def test_repair_is_non_destructive_in_phase1() -> None:
 
 
 @pytest.mark.asyncio
+async def test_content_auditor_allowed_names_include_character_aliases() -> None:
+    class _AliasSession:
+        async def scalars(self, _statement: Any) -> _FakeScalars:
+            character = type(
+                "FakeCharacter",
+                (),
+                {
+                    "name": "灰衣男子",
+                    "metadata_json": {
+                        "aliases": ["姜四郎"],
+                        "cast_entry": {"aliases": ["姜家守禁者"]},
+                    },
+                },
+            )()
+            return _FakeScalars([character])
+
+    names = await ContentAuditor()._load_allowed_names(  # type: ignore[arg-type]
+        _AliasSession(),
+        uuid4(),
+    )
+
+    assert {"灰衣男子", "姜四郎", "姜家守禁者"} <= names
+
+
+@pytest.mark.asyncio
 async def test_continuous_audit_aggregates_findings() -> None:
     session = _FakeAsyncSession([1, 3, 4])
     # Gate aggregation is tested with GapRepairer only; ContentAuditor needs

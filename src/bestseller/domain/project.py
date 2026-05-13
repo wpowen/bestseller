@@ -386,7 +386,7 @@ class ChapterCreate(BaseModel):
     main_conflict: str | None = None
     hook_type: str | None = None
     hook_description: str | None = None
-    target_word_count: int = Field(default=5500, gt=0)
+    target_word_count: int = Field(default=2200, gt=0)
     volume_number: int = Field(default=1, gt=0)
     status: ChapterStatus = ChapterStatus.PLANNED
 
@@ -400,7 +400,7 @@ class SceneCardCreate(BaseModel):
     purpose: dict[str, object] = Field(default_factory=dict)
     entry_state: dict[str, object] = Field(default_factory=dict)
     exit_state: dict[str, object] = Field(default_factory=dict)
-    target_word_count: int = Field(default=1000, gt=0)
+    target_word_count: int = Field(default=700, gt=0)
     status: SceneStatus = SceneStatus.PLANNED
 
 

@@ -1,0 +1,50 @@
+key: otherworld-cross-system
+name: 异界跨体系规则套利
+source_ids:
+- source-0001
+status: review
+applies_to_categories:
+- otherworld
+- transmigration
+- progression-fantasy
+required_contracts:
+- source_world_profession
+- target_world_dominant_rule_system
+- cross_system_mapping_limits
+- host_identity_debt
+- exposure_cost_model
+state_variables:
+- cross_system_understanding
+- old_system_adaptation
+- local_power_misread
+- bound_assets
+- political_entanglement
+- identity_debt
+- higher_authority_attention
+chapter_change_vectors:
+- learn_local_rule
+- exploit_rule_gap
+- convert_enemy_or_resource
+- pay_identity_debt
+- reveal_higher_authority
+- increase_exposure_cost
+reader_rewards:
+- weak_identity_strong_core
+- knowledge_arbitrage
+- power_misread_payoff
+- exotic_world_discovery
+- asset_conversion_with_cost
+- authority_prank_with_consequence
+hook_or_aftereffect_types:
+- misread_reassessment
+- asset_attracts_owner
+- source_world_trace
+- political_request
+- forbidden_rule_warning
+forbidden_defaults:
+- copy_source_title_or_names
+- copy_exact_arrival_chain
+- copy_exact_host_family_murder
+- copy_named_artifact_or_technique
+- effortless_asset_collection
+- objectification_as_core_reward

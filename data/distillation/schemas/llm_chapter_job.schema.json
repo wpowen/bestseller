@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "DistillationLLMChapterJob",
+  "type": "object",
+  "required": [
+    "job_id",
+    "source_id",
+    "abs_chapter_no",
+    "private_payload_ref",
+    "expected_output_schema",
+    "repo_output_target"
+  ],
+  "properties": {
+    "job_id": { "type": "string" },
+    "source_id": { "type": "string" },
+    "abs_chapter_no": { "type": "integer", "minimum": 1 },
+    "source_format": {
+      "type": "string",
+      "enum": ["txt", "md", "markdown", "html", "htm", "xhtml", "epub", "mobi", "azw3"]
+    },
+    "boundary_type": { "type": "string" },
+    "private_payload_ref": { "type": "string" },
+    "expected_output_schema": { "type": "string" },
+    "repo_output_target": { "type": "string" },
+    "status": { "type": "string" }
+  },
+  "additionalProperties": true
+}

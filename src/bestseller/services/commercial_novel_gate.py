@@ -265,11 +265,22 @@ def _infer_commercial_anchors(
         anchors.append(
             CommercialAnchor("long_mystery", ("三族", "张家", "钱家", "林正淳"), 8, 80, 4)
         )
-    if any(term in contract for term in ("风水", "罗盘", "阴阳眼")):
+    if any(term in contract for term in ("风水", "罗盘", "阴阳眼", "重瞳", "验尸", "符纸")):
         anchors.append(
             CommercialAnchor(
                 "profession_method",
-                ("风水", "罗盘", "阴阳眼", "铜钱", "方位"),
+                (
+                    "风水",
+                    "罗盘",
+                    "阴阳眼",
+                    "重瞳",
+                    "验尸",
+                    "符纸",
+                    "镇魂",
+                    "铜钱",
+                    "方位",
+                    "阴气",
+                ),
                 5,
                 80,
                 5,
@@ -483,11 +494,21 @@ _SERIAL_SUSPENSE_OPENING_TERMS = (
     "凶宅",
     "子时",
     "镜",
+    "尸体",
+    "验尸",
+    "焚尸",
+    "灭口",
+    "鬼魂",
+    "重瞳",
+    "符纸",
+    "井底",
+    "归字",
     "血字",
     "灰线",
     "规则",
     "青囊",
     "父亲",
+    "母亲",
     "死",
     "失踪",
     "否认",

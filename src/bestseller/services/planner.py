@@ -26,6 +26,11 @@ from bestseller.services.character_identity_resolver import (
     merge_character_with_aliases,
     resolve_character_match,
 )
+from bestseller.services.character_drama_engine import (
+    build_character_drama_map,
+    character_drama_map_to_dict,
+    render_character_drama_prompt_block,
+)
 from bestseller.services.llm import LLMCompletionRequest, complete_text
 from bestseller.services.planning_context import (
     summarize_book_spec,
@@ -46,6 +51,15 @@ from bestseller.services.prompt_packs import (
 )
 from bestseller.services.projects import get_project_by_slug, import_planning_artifact
 from bestseller.services.story_bible import parse_cast_spec_input, parse_volume_plan_input, parse_world_spec_input
+from bestseller.services.story_design_grammars import (
+    render_story_design_grammar_prompt_block,
+    resolve_story_design_grammar,
+)
+from bestseller.services.story_design_kernel import (
+    render_story_design_kernel_prompt_block,
+    story_design_kernel_from_dict,
+)
+from bestseller.services.story_shape_router import derive_story_shape
 from bestseller.services.writing_profile import (
     is_english_language,
     render_serial_fiction_guardrails,
@@ -585,6 +599,513 @@ def _first_non_empty_text(*values: Any, default: str = "") -> str:
     return default
 
 
+def _require_complete_volume_outline(
+    *,
+    logical_name: str,
+    volume_number: int,
+    expected_count: int,
+    chapters: list[dict[str, Any]],
+) -> None:
+    """Fail closed when a generated per-volume outline has the wrong length."""
+
+    if expected_count <= 0:
+        return
+    actual_count = len(chapters)
+    if actual_count == expected_count:
+        return
+    raise PlannerFallbackError(
+        f"Planner artifact '{logical_name}' returned {actual_count}/{expected_count} "
+        f"chapters for volume {volume_number}. Refusing to pad or trim with fallback "
+        "chapters because that would turn a broken story architecture into valid-looking "
+        "downstream input."
+    )
+
+
+def _normalize_generated_outline_titles_or_fail(
+    chapters: list[dict[str, Any]],
+    *,
+    logical_name: str,
+) -> None:
+    """Use story-title aliases, but never invent chapter titles from fallback."""
+
+    missing: list[Any] = []
+    for chapter in chapters:
+        alias_title = _first_non_empty_text(
+            chapter.get("chapter_title"),
+            chapter.get("subtitle"),
+        )
+        if alias_title and not _non_empty_string(chapter.get("title"), ""):
+            chapter["title"] = alias_title
+        if not _non_empty_string(chapter.get("title"), ""):
+            missing.append(chapter.get("chapter_number") or "?")
+    if missing:
+        sample = ", ".join(str(item) for item in missing[:10])
+        if len(missing) > 10:
+            sample += ", ..."
+        raise PlannerFallbackError(
+            f"Planner artifact '{logical_name}' omitted concrete chapter titles "
+            f"for chapters [{sample}]. Refusing fallback title synthesis."
+        )
+
+
+def _chapter_outline_identity_manifest(cast_spec: dict[str, Any]) -> list[dict[str, Any]]:
+    try:
+        from bestseller.services.narrative_contracts import build_identity_manifest
+
+        return build_identity_manifest(cast_spec)
+    except Exception:
+        logger.debug("Unable to build identity manifest for chapter-outline validation", exc_info=True)
+        return []
+
+
+def _outline_identity_token(value: Any) -> str:
+    return "".join(_non_empty_string(value, "").lower().split())
+
+
+def _outline_identity_index(
+    identity_manifest: list[dict[str, Any]],
+) -> dict[str, dict[str, Any]]:
+    index: dict[str, dict[str, Any]] = {}
+    for identity in identity_manifest:
+        if not isinstance(identity, dict):
+            continue
+        tokens = [_non_empty_string(identity.get("name"), ""), *_string_list(identity.get("aliases"))]
+        for token in tokens:
+            normalized = _outline_identity_token(token)
+            if normalized:
+                index[normalized] = identity
+    return index
+
+
+def _outline_default_protagonist(identity_manifest: list[dict[str, Any]]) -> str:
+    for identity in identity_manifest:
+        if not isinstance(identity, dict):
+            continue
+        role = _non_empty_string(identity.get("role"), "").lower()
+        name = _non_empty_string(identity.get("name"), "")
+        if name and "protagonist" in role:
+            return name
+    for identity in identity_manifest:
+        if isinstance(identity, dict):
+            name = _non_empty_string(identity.get("name"), "")
+            if name:
+                return name
+    return "主角"
+
+
+def _outline_scene_time_missing_or_generic(value: Any) -> bool:
+    label = _non_empty_string(value, "")
+    if not label:
+        return True
+    if label in {"章节开场", "章节中段", "章节结尾", "章节补充钩子"}:
+        return True
+    return label.startswith("章节场景")
+
+
+def _outline_chapter_label(chapter: Any) -> str:
+    return _first_non_empty_text(
+        getattr(chapter, "title", None),
+        getattr(chapter, "chapter_goal", None),
+        getattr(chapter, "main_conflict", None),
+        getattr(chapter, "hook_description", None),
+        default=f"第{getattr(chapter, 'chapter_number', '?')}章",
+    )
+
+
+def _outline_scene_time_repair(chapter: Any, scene: Any) -> str:
+    return (
+        f"第{getattr(chapter, 'chapter_number', '?')}章"
+        f"「{_outline_chapter_label(chapter)}」场景{getattr(scene, 'scene_number', '?')}"
+    )
+
+
+def _outline_scene_story_repair(chapter: Any, scene: Any) -> str:
+    participants = [
+        item
+        for item in getattr(scene, "participants", [])
+        if _non_empty_string(item, "")
+    ]
+    actors = "、".join(participants[:3]) if participants else "主角"
+    base = _first_non_empty_text(
+        getattr(chapter, "main_conflict", None),
+        getattr(chapter, "hook_description", None),
+        getattr(chapter, "chapter_goal", None),
+        getattr(chapter, "title", None),
+        default=f"第{getattr(chapter, 'chapter_number', '?')}章核心压力",
+    )
+    return (
+        f"第{getattr(chapter, 'chapter_number', '?')}章场景{getattr(scene, 'scene_number', '?')}"
+        f"让{actors}围绕「{base}」完成一次可见行动、信息交换或代价承担。"
+    )
+
+
+def _outline_purpose_character_names(
+    story_purpose: str,
+    identity_index: dict[str, dict[str, Any]],
+) -> tuple[str, ...]:
+    if not story_purpose or not identity_index:
+        return ()
+    try:
+        from bestseller.services.narrative_contracts import _extract_purpose_character_names
+
+        return _extract_purpose_character_names(story_purpose, identity_index)
+    except Exception:
+        logger.debug("Unable to extract purpose character names during outline repair", exc_info=True)
+        return ()
+
+
+def _repair_generated_volume_outline_contract_inputs(
+    batch: Any,
+    *,
+    identity_manifest: list[dict[str, Any]],
+) -> int:
+    """Repair deterministic scene-card fields before planner contract validation.
+
+    This keeps the identity manifest locked: unknown ad-hoc participants are
+    removed instead of being silently promoted into canonical cast.
+    """
+
+    protagonist_name = _outline_default_protagonist(identity_manifest)
+    identity_index = _outline_identity_index(identity_manifest)
+    repaired = 0
+
+    for chapter in getattr(batch, "chapters", []) or []:
+        for scene in getattr(chapter, "scenes", []) or []:
+            if _outline_scene_time_missing_or_generic(getattr(scene, "time_label", None)):
+                scene.time_label = _outline_scene_time_repair(chapter, scene)
+                repaired += 1
+
+            participant_tokens: set[str] = set()
+            repaired_participants: list[str] = []
+            for raw_participant in getattr(scene, "participants", []) or []:
+                token = _outline_identity_token(raw_participant)
+                if not token:
+                    continue
+                if identity_index:
+                    identity = identity_index.get(token)
+                    if identity is None:
+                        repaired += 1
+                        continue
+                    participant = _non_empty_string(identity.get("name"), str(raw_participant))
+                else:
+                    participant = _non_empty_string(raw_participant, "")
+                participant_token = _outline_identity_token(participant)
+                if participant and participant_token not in participant_tokens:
+                    participant_tokens.add(participant_token)
+                    repaired_participants.append(participant)
+
+            if not repaired_participants:
+                repaired_participants = [protagonist_name]
+                participant_tokens = {_outline_identity_token(protagonist_name)}
+                repaired += 1
+            if repaired_participants != list(getattr(scene, "participants", []) or []):
+                scene.participants = repaired_participants
+
+            purpose = dict(getattr(scene, "purpose", None) or {})
+            story_purpose = _non_empty_string(purpose.get("story"), "")
+            if story_purpose and identity_index:
+                for referenced_name in _outline_purpose_character_names(story_purpose, identity_index):
+                    token = _outline_identity_token(referenced_name)
+                    identity = identity_index.get(token)
+                    canonical = _non_empty_string(
+                        identity.get("name") if identity else referenced_name,
+                        referenced_name,
+                    )
+                    canonical_token = _outline_identity_token(canonical)
+                    if canonical and canonical_token not in participant_tokens:
+                        scene.participants.append(canonical)
+                        participant_tokens.add(canonical_token)
+                        repaired += 1
+            elif not story_purpose:
+                purpose["story"] = _outline_scene_story_repair(chapter, scene)
+                repaired += 1
+
+            if not _non_empty_string(purpose.get("emotion"), ""):
+                purpose["emotion"] = "保持本章压力递进，并把选择、代价或线索推到下一拍。"
+                repaired += 1
+            if purpose != getattr(scene, "purpose", None):
+                scene.purpose = purpose
+
+    return repaired
+
+
+def _validate_generated_volume_outline_or_raise(
+    payload: Any,
+    *,
+    project: ProjectModel,
+    logical_name: str,
+    volume_number: int,
+    expected_count: int,
+    chapter_number_offset: int,
+    cast_spec: dict[str, Any],
+) -> dict[str, Any]:
+    """Normalize and validate a generated volume outline before persistence."""
+
+    from bestseller.domain.workflow import ChapterOutlineBatchInput
+    from bestseller.services.narrative_contracts import validate_chapter_plan_contract
+
+    if not isinstance(payload, dict):
+        raise PlannerFallbackError(
+            f"Planner artifact '{logical_name}' returned {type(payload).__name__}, expected object."
+        )
+    vol_chapters = _mapping_list(payload.get("chapters"))
+    _require_complete_volume_outline(
+        logical_name=logical_name,
+        volume_number=volume_number,
+        expected_count=expected_count,
+        chapters=vol_chapters,
+    )
+    for idx, chapter in enumerate(vol_chapters):
+        chapter["volume_number"] = volume_number
+        chapter["chapter_number"] = chapter_number_offset + idx
+    _normalize_generated_outline_titles_or_fail(vol_chapters, logical_name=logical_name)
+
+    batch = ChapterOutlineBatchInput.model_validate(
+        {
+            "batch_name": payload.get("batch_name") or f"volume-{volume_number}-outline",
+            "chapters": vol_chapters,
+        }
+    )
+    identity_manifest = _chapter_outline_identity_manifest(cast_spec)
+    repair_count = _repair_generated_volume_outline_contract_inputs(
+        batch,
+        identity_manifest=identity_manifest,
+    )
+    if repair_count:
+        logger.info(
+            "Repaired %d deterministic scene field(s) before validating %s for project '%s'.",
+            repair_count,
+            logical_name,
+            project.slug,
+        )
+    report = validate_chapter_plan_contract(
+        batch,
+        identity_manifest=identity_manifest,
+        require_identity_registry=bool(identity_manifest),
+    )
+    if report.blocks:
+        raise PlannerFallbackError(
+            report.error_message(
+                project_slug=project.slug,
+                artifact=f"{logical_name}/chapter_plan_contract",
+            )
+        )
+    return batch.model_dump(mode="json", by_alias=True)
+
+
+def _outline_repair_directives_from_error(
+    error: Exception,
+    *,
+    language: str | None,
+    volume_number: int | None = None,
+    chapter_number_offset: int | None = None,
+    expected_count: int | None = None,
+) -> list[str]:
+    """Convert a failed outline attempt into concrete replanning directives."""
+
+    is_en = is_english_language(language)
+    message = str(error).strip()
+    if not message:
+        message = type(error).__name__
+    count_mismatch = re.search(r"returned\s+(\d+)\s*/\s*(\d+)\s+chapters", message, re.IGNORECASE)
+    chunks = [chunk.strip() for chunk in message.split(";") if chunk.strip()]
+    directives: list[str] = []
+    if count_mismatch:
+        actual_raw, expected_raw = count_mismatch.groups()
+        actual_count = int(actual_raw)
+        expected_from_error = int(expected_raw)
+        target_count = (
+            int(expected_count)
+            if isinstance(expected_count, int) and expected_count > 0
+            else expected_from_error
+        )
+        range_clause_en = ""
+        range_clause_zh = ""
+        if isinstance(chapter_number_offset, int) and chapter_number_offset > 0 and target_count > 0:
+            range_start = chapter_number_offset
+            range_end = chapter_number_offset + target_count - 1
+            next_chapter = range_end + 1
+            range_clause_en = (
+                f" Global chapter_number values must stay within {range_start}-{range_end}; "
+                f"do not extend into chapter {next_chapter} or later."
+            )
+            range_clause_zh = (
+                f"全局章节号必须限定在第{range_start}-{range_end}章，"
+                f"不得延伸到第{next_chapter}章及以后；"
+            )
+        volume_clause_en = (
+            f"Volume {volume_number} only; "
+            if isinstance(volume_number, int) and volume_number > 0
+            else ""
+        )
+        volume_clause_zh = (
+            f"只允许规划第{volume_number}卷；"
+            if isinstance(volume_number, int) and volume_number > 0
+            else ""
+        )
+        if actual_count > target_count:
+            if is_en:
+                directives.append(
+                    f"The previous outline over-generated {actual_count}/{target_count} chapters. "
+                    f"Regenerate the whole volume from scratch. {volume_clause_en}"
+                    f"The chapters array must contain exactly {target_count} items;{range_clause_en} "
+                    "Do not carry future-volume material into this volume, summarize, merge, omit, pad, or split chapters."
+                )
+            else:
+                directives.append(
+                    f"上一版多生成了 {actual_count}/{target_count} 章。本次必须从头重写整卷，"
+                    f"{volume_clause_zh}chapters 数组必须恰好包含 {target_count} 项；"
+                    f"{range_clause_zh}不得把后续卷内容提前，不得概括、合并、遗漏、补白或拆卷。"
+                )
+        elif actual_count < target_count:
+            if is_en:
+                directives.append(
+                    f"The previous outline emitted only {actual_count}/{target_count} chapters. "
+                    f"Regenerate the whole volume from scratch. {volume_clause_en}"
+                    f"The chapters array must contain exactly {target_count} items;{range_clause_en} "
+                    "Do not summarize, merge, omit, pad, or split chapters."
+                )
+            else:
+                directives.append(
+                    f"上一版只生成了 {actual_count}/{target_count} 章。本次必须从头重写整卷，"
+                    f"{volume_clause_zh}chapters 数组必须恰好包含 {target_count} 项；"
+                    f"{range_clause_zh}不得概括、合并、遗漏、补白或拆卷。"
+                )
+        else:
+            if is_en:
+                directives.append(
+                    f"The previous outline had an invalid chapter-count contract. "
+                    f"Regenerate the whole volume from scratch. {volume_clause_en}"
+                    f"The chapters array must contain exactly {target_count} items;{range_clause_en} "
+                    "Do not summarize, merge, omit, pad, or split chapters."
+                )
+            else:
+                directives.append(
+                    "上一版章数合同异常。本次必须从头重写整卷，"
+                    f"{volume_clause_zh}chapters 数组必须恰好包含 {target_count} 项；"
+                    f"{range_clause_zh}不得概括、合并、遗漏、补白或拆卷。"
+                )
+    for chunk in chunks[:10]:
+        if is_en:
+            directives.append(
+                "Repair the previous outline failure: "
+                f"{chunk}. Rewrite the affected chapters as reader-visible events with "
+                "specific action, obstacle, state change, cost, and next pressure."
+            )
+        else:
+            directives.append(
+                "修复上一版章纲失败项："
+                f"{chunk}。相关章节必须重写成读者可见的具体事件，写清行动、阻力、状态变化、代价和下一步压力。"
+            )
+    if not directives:
+        directives.append(
+            "Regenerate the affected volume outline from scratch with concrete events."
+            if is_en
+            else "从头重写受影响卷章纲，必须全部落到具体事件。"
+        )
+    return directives
+
+
+async def _generate_volume_outline_with_repair_loop(
+    session: AsyncSession,
+    settings: AppSettings,
+    *,
+    project: ProjectModel,
+    workflow_run_id: UUID,
+    logical_name: str,
+    book_spec: dict[str, Any],
+    cast_spec: dict[str, Any],
+    volume_plan: list[dict[str, Any]],
+    volume_entry: dict[str, Any],
+    fallback_payload: dict[str, Any],
+    volume_number: int,
+    expected_count: int,
+    chapter_number_offset: int,
+    revealed_ledger_block: str | None,
+    base_constraints: list[str],
+) -> tuple[dict[str, Any], UUID | None, list[dict[str, Any]]]:
+    """Generate a volume outline, then regenerate with diagnostics until valid."""
+
+    max_repair_attempts = max(
+        1,
+        int(getattr(settings.pipeline, "chapter_outline_repair_attempts", 3)),
+    )
+    repair_constraints = list(base_constraints)
+    repair_history: list[dict[str, Any]] = []
+    last_error: Exception | None = None
+    last_llm_run_id: UUID | None = None
+
+    for attempt in range(1, max_repair_attempts + 1):
+        vol_outline_system, vol_outline_user = _volume_outline_prompts(
+            project,
+            book_spec,
+            cast_spec,
+            volume_plan,
+            volume_entry,
+            revealed_ledger_block=revealed_ledger_block,
+            extra_constraints=repair_constraints or None,
+        )
+        try:
+            raw_payload, llm_run_id = await _generate_structured_artifact(
+                session,
+                settings,
+                project=project,
+                logical_name=logical_name,
+                system_prompt=vol_outline_system,
+                user_prompt=vol_outline_user,
+                fallback_payload=fallback_payload,
+                workflow_run_id=workflow_run_id,
+                abort_on_fallback=True,
+                merge_fallback=False,
+            )
+            last_llm_run_id = llm_run_id
+            payload = _validate_generated_volume_outline_or_raise(
+                raw_payload,
+                project=project,
+                logical_name=logical_name,
+                volume_number=volume_number,
+                expected_count=expected_count,
+                chapter_number_offset=chapter_number_offset,
+                cast_spec=cast_spec,
+            )
+            if repair_history:
+                repair_history.append({"attempt": attempt, "status": "passed"})
+            return payload, llm_run_id, repair_history
+        except Exception as exc:
+            last_error = exc
+            directives = _outline_repair_directives_from_error(
+                exc,
+                language=project.language,
+                volume_number=volume_number,
+                chapter_number_offset=chapter_number_offset,
+                expected_count=expected_count,
+            )
+            repair_history.append(
+                {
+                    "attempt": attempt,
+                    "status": "failed",
+                    "error": str(exc)[:2000],
+                    "next_directives": directives[:5],
+                }
+            )
+            if attempt >= max_repair_attempts:
+                break
+            logger.warning(
+                "Volume %d outline attempt %d/%d failed validation; regenerating with %d repair directives.",
+                volume_number,
+                attempt,
+                max_repair_attempts,
+                len(directives),
+            )
+            repair_constraints = [*base_constraints, *directives]
+
+    raise PlannerFallbackError(
+        f"Planner artifact '{logical_name}' failed chapter-outline repair loop after "
+        f"{max_repair_attempts} attempt(s). Last error: {last_error}. "
+        f"Last LLM run id: {last_llm_run_id}"
+    )
+
+
 def _text_mentions_qimao(value: Any) -> bool:
     if not isinstance(value, str):
         return False
@@ -635,10 +1156,84 @@ def _project_platform_label(project: ProjectModel, market: dict[str, Any]) -> st
     )
 
 
+def _int_or_none(value: Any) -> int | None:
+    if isinstance(value, bool):
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _chapter_count_from_range(value: Any) -> int | None:
+    if not isinstance(value, (list, tuple)) or len(value) < 2:
+        return None
+    start = _int_or_none(value[0])
+    end = _int_or_none(value[1])
+    if start is None or end is None or start <= 0 or end < start:
+        return None
+    return end - start + 1
+
+
+def _chapter_bounds_from_range(value: Any) -> tuple[int, int] | None:
+    if not isinstance(value, (list, tuple)) or len(value) < 2:
+        return None
+    start = _int_or_none(value[0])
+    end = _int_or_none(value[1])
+    if start is None or end is None or start <= 0 or end < start:
+        return None
+    return start, end
+
+
+def _derive_volume_chapter_bounds(entry: dict[str, Any]) -> tuple[int, int] | None:
+    direct = _chapter_bounds_from_range(entry.get("chapter_range"))
+    if direct is not None:
+        return direct
+
+    arc_ranges = entry.get("arc_ranges")
+    if not isinstance(arc_ranges, list):
+        return None
+    bounds: list[tuple[int, int]] = []
+    for arc_range in arc_ranges:
+        parsed = _chapter_bounds_from_range(arc_range)
+        if parsed is None:
+            return None
+        bounds.append(parsed)
+    if not bounds:
+        return None
+    return bounds[0][0], bounds[-1][1]
+
+
+def _derive_volume_chapter_count(entry: dict[str, Any]) -> dict[str, Any]:
+    existing = _int_or_none(entry.get("chapter_count_target"))
+    if existing is not None and existing > 0:
+        return entry
+
+    derived = _chapter_count_from_range(entry.get("chapter_range"))
+    if derived is None:
+        arc_ranges = entry.get("arc_ranges")
+        if isinstance(arc_ranges, list):
+            derived = 0
+            for arc_range in arc_ranges:
+                count = _chapter_count_from_range(arc_range)
+                if count is None:
+                    derived = 0
+                    break
+                derived += count
+            if derived <= 0:
+                derived = None
+
+    if derived is None:
+        return entry
+    return {**entry, "chapter_count_target": derived}
+
+
 def _normalize_volume_plan_payload(value: Any) -> list[dict[str, Any]]:
     if isinstance(value, dict):
-        return _mapping_list(value.get("volumes"))
-    return _mapping_list(value)
+        volumes = _mapping_list(value.get("volumes"))
+    else:
+        volumes = _mapping_list(value)
+    return [_derive_volume_chapter_count(volume) for volume in volumes]
 
 
 def build_qimao_opening_contract(
@@ -1378,8 +1973,7 @@ def _derive_genre_profile_from_category(cat: NovelCategoryResearch) -> dict[str,
     locations = [r.name_zh for r in rules[:3]] if rules else ["主城", "禁区", "旧档案馆"]
     factions = ["统治方", "挑战方"]  # Generic — LLM will override
 
-    # Derive tones from the reader promise keywords
-    promise = cat.reader_promise_zh or ""
+    # Derive tones from category signal keywords
     signal_kws = cat.signal_keywords.get("narrative_zh", [])
     tones = signal_kws[:3] if signal_kws else ["紧张", "克制", "推进感"]
 
@@ -1992,7 +2586,7 @@ def _synthesize_character_bible_fields(
                         }
                     ],
                     "education": "self-trained through pressure, investigation, and repeated loss",
-                    "defining_moments": [f"Chose the harder truth over the safer official story."],
+                    "defining_moments": ["Chose the harder truth over the safer official story."],
                     "regrets": [f"Did not question {basis} early enough."],
                 }
                 if is_en
@@ -4179,7 +4773,7 @@ def _fallback_cast_spec(
                 "background": (
                     "One of the protagonist's trusted companions who helped at a critical moment."
                     if is_en
-                    else f"主角信任的同伴之一，曾在关键时刻提供过帮助。"
+                    else "主角信任的同伴之一，曾在关键时刻提供过帮助。"
                 ),
                 "goal": (
                     "Ostensibly helps the protagonist while secretly advancing a hidden agenda."
@@ -4572,9 +5166,9 @@ def _fallback_volume_plan(project: ProjectModel, book_spec: dict[str, Any], cast
                     "protagonist_power_tier": protagonist_tier
                     if volume_number == 1
                     else (
-                        f"Changed by the previous stage"
+                        "Changed by the previous stage"
                         if is_en
-                        else f"经历上一阶段后的新状态"
+                        else "经历上一阶段后的新状态"
                     ),
                     "world_situation": (
                         f"A new layer of pressure forms around {force_name}."
@@ -4619,7 +5213,7 @@ def _fallback_volume_plan(project: ProjectModel, book_spec: dict[str, Any], cast
                     else []
                 ),
                 "foreshadowing_paid_off": (
-                    [(f"Pay off at least one earlier setup in a way that changes the next stage." if is_en else f"回收至少一条前序铺垫，并让它改变下一阶段。")]
+                    [("Pay off at least one earlier setup in a way that changes the next stage." if is_en else "回收至少一条前序铺垫，并让它改变下一阶段。")]
                     if volume_number > 1
                     else []
                 ),
@@ -4627,7 +5221,7 @@ def _fallback_volume_plan(project: ProjectModel, book_spec: dict[str, Any], cast
                     (
                         f"Milestone '{milestone_title}' lands, but the next commercial escalation is already visible."
                         if milestone_title and volume_number < volume_count
-                        else (f"The immediate pressure changes shape, but the story cannot settle yet." if volume_number < volume_count else "The story is ready for its final landing.")
+                        else ("The immediate pressure changes shape, but the story cannot settle yet." if volume_number < volume_count else "The story is ready for its final landing.")
                     )
                     if is_en
                     else (
@@ -5405,6 +5999,109 @@ def _pick_by_seed(options: list[str], slug: str, chapter: int, label: str) -> st
     return options[_h % len(options)]
 
 
+def _fallback_unique_chapter_beat(
+    *,
+    project_slug: str,
+    chapter_number: int,
+    phase: str,
+    protagonist: str,
+    force_name: str,
+    language: str | None = None,
+) -> str:
+    is_en = is_english_language(language)
+    if is_en:
+        beat_pool = [
+            "a hidden witness changes the direction of the investigation",
+            "a false clue is exposed as deliberate bait",
+            "an ally withholds one decisive detail",
+            "a hostile rule of the setting changes without warning",
+            "a private weakness becomes tactically relevant",
+            "a recovered object contradicts the accepted timeline",
+            "a minor debt comes due at the worst possible moment",
+            "a protective choice creates a new vulnerability",
+            "a familiar place reveals an impossible second layer",
+            "a promise made earlier becomes impossible to keep",
+            "a defeated opponent leaves behind a dangerous instruction",
+            "a supposed advantage proves to be a trap",
+        ]
+        beat = _pick_by_seed(beat_pool, project_slug, chapter_number, f"unique_beat:{phase}")
+        return f"chapter {chapter_number}: {protagonist} faces {beat} under pressure from {force_name}"
+
+    beat_pool_zh = [
+        "旧物显出一处前文未见的刻痕",
+        "证人的一句话推翻原先时间线",
+        "盟友隐瞒的半句真相终于露出破绽",
+        "熟悉地点出现不该存在的第二层空间",
+        "敌方故意留下的假线索反向暴露弱点",
+        "主角保护他人的选择制造新的软肋",
+        "一件小债在最坏时刻被迫偿还",
+        "已经解决的旧案突然牵出新受害者",
+        "被忽视的器物规则发生异常偏移",
+        "一次短暂胜利附带看不见的代价",
+        "败退者留下的指令指向更深陷阱",
+        "主角的私人执念被敌方精准利用",
+        "旁观者的记忆补上关键空白",
+        "看似安全的退路被提前封死",
+        "一次试探逼出敌方真正目的",
+        "卷内主线出现不可逆的阶段性损失",
+    ]
+    beat = _pick_by_seed(beat_pool_zh, project_slug, chapter_number, f"unique_beat:{phase}")
+    return beat
+
+
+def _fallback_hook_description(
+    *,
+    project_slug: str,
+    chapter_number: int,
+    phase: str,
+    unique_beat: str,
+    protagonist: str,
+    language: str | None = None,
+) -> str:
+    is_en = is_english_language(language)
+    if is_en:
+        pressure = _pick_by_seed(
+            [
+                "a new deadline",
+                "a personal cost",
+                "a reversed clue",
+                "a visible betrayal",
+                "a narrowing escape route",
+            ],
+            project_slug,
+            chapter_number,
+            f"hook_pressure:{phase}",
+        )
+        hook_event = _pick_by_seed(
+            [
+                "the only witness vanishes before naming the buyer",
+                "the sealed exit locks from the outside",
+                "the recovered object answers to someone else's blood",
+                "an ally's token appears in the enemy's hand",
+                "the deadline is cut in half by a public accusation",
+            ],
+            project_slug,
+            chapter_number,
+            f"hook_event:{phase}",
+        )
+        return f"{protagonist} resolves {unique_beat}, but {pressure} lands: {hook_event}."
+
+    hook_event = _pick_by_seed(
+        [
+            "唯一证人还没说出买主便被人带走",
+            "来时的退路从外面落了锁",
+            "刚取回的旧物忽然认了别人的血",
+            "盟友的信物出现在敌人手里",
+            "对方当众点名要他交出手中证据",
+            "原本安全的器物规则当场反噬",
+        ],
+        project_slug,
+        chapter_number,
+        f"hook_event:{phase}",
+    )
+    return f"{protagonist}刚处理完「{unique_beat}」，却发现{hook_event}。"
+
+
 # After high-tension phases, insert low-tension scene types to create rhythm.
 _SCENE_TYPE_AFTER_CLIMAX = [
     "aftermath", "introspection", "relationship_building",
@@ -5443,6 +6140,75 @@ _FALLBACK_TITLE_SUFFIXES_EN = {
     "climax": ["Rupture", "Burn", "Cutline", "Zero Hour", "Collapse", "Last Gate", "Reckoning", "Inferno", "Convergence", "Endgame"],
 }
 
+_FALLBACK_EVENT_TITLES_ZH = [
+    "旧物刻痕",
+    "证词裂线",
+    "半句真相",
+    "暗层石门",
+    "假线回刺",
+    "护人软肋",
+    "旧债逼命",
+    "旧案新尸",
+    "器规偏移",
+    "胜后暗价",
+    "败者遗令",
+    "私执反噬",
+    "旁观残忆",
+    "退路封死",
+    "试言露底",
+    "卷内失守",
+    "断函重开",
+    "旧盟变色",
+    "藏门见血",
+    "暗印换主",
+    "残账追魂",
+    "危桥断渡",
+    "密匣空声",
+    "夜令回身",
+    "失物认主",
+    "禁线回响",
+    "旧火新名",
+    "孤证翻供",
+    "暗渠分流",
+    "残灯照面",
+    "封泥裂字",
+    "错钥开门",
+]
+_FALLBACK_EVENT_TITLES_EN = [
+    "Old Scar",
+    "Split Testimony",
+    "Half Truth",
+    "Hidden Door",
+    "False Trace",
+    "Soft Target",
+    "Old Debt",
+    "New Body",
+    "Broken Rule",
+    "Cost of Victory",
+    "Last Order",
+    "Private Rot",
+    "Witness Memory",
+    "Sealed Exit",
+    "True Motive",
+    "Volume Loss",
+    "Reopened Letter",
+    "Changing Ally",
+    "Blood Door",
+    "Shifted Mark",
+    "Soul Ledger",
+    "Broken Crossing",
+    "Empty Box",
+    "Night Command",
+    "Claimed Relic",
+    "Forbidden Echo",
+    "New Name",
+    "Single Witness",
+    "Divided Channel",
+    "Lamp Reveal",
+    "Cracked Seal",
+    "Wrong Key",
+]
+
 
 def _chapter_fallback_subtitle(
     chapter_number: int,
@@ -5453,34 +6219,30 @@ def _chapter_fallback_subtitle(
     language: str | None = None,
     is_opening: bool,
     project_slug: str = "",
+    unique_beat: str | None = None,
+    chapter_goal: str | None = None,
+    main_conflict: str | None = None,
 ) -> str:
-    """Build a concise, genre-neutral fallback subtitle.
+    """Build a concise fallback subtitle from a story event, not a phase label.
 
-    Uses a project-slug-seeded shuffle so different novels get different title
-    sequences even when using the same genre preset. The expanded vocabulary
-    (24 prefixes x 10 suffixes per phase) minimizes visible repetition across
-    30+ chapters.
+    The fallback is only a last resort, but it still leaks into production
+    when an outline response omits ``title``. Do not expose internal chapter
+    functions such as "setup", "pressure", "起手", or "落子" as if they were
+    fiction titles; use concrete event hooks instead.
     """
     import hashlib  # noqa: PLC0415
     import random as _rng  # noqa: PLC0415
 
     is_en = is_english_language(language)
-    suffix_map = _FALLBACK_TITLE_SUFFIXES_EN if is_en else _FALLBACK_TITLE_SUFFIXES
-    phase_key = phase if phase in suffix_map else "investigation"
-    prefixes = list(_FALLBACK_TITLE_PREFIXES_EN if is_en else _FALLBACK_TITLE_PREFIXES)
-    suffixes = list(suffix_map[phase_key])
+    titles = list(_FALLBACK_EVENT_TITLES_EN if is_en else _FALLBACK_EVENT_TITLES_ZH)
 
     # Seed a deterministic shuffle from project_slug so each novel gets a
     # unique title sequence, but the same novel is reproducible.
     seed = int(hashlib.md5(project_slug.encode(), usedforsecurity=False).hexdigest()[:8], 16)
-    _rng.Random(seed).shuffle(prefixes)
-    _rng.Random(seed + 1).shuffle(suffixes)
+    _rng.Random(seed).shuffle(titles)
 
-    prefix_index = (chapter_number - 1) % len(prefixes)
-    suffix_index = (chapter_number - 1) % len(suffixes)
-    if is_en:
-        return f"{prefixes[prefix_index]} {suffixes[suffix_index]}".strip()
-    return f"{prefixes[prefix_index]}{suffixes[suffix_index]}"
+    title_index = (chapter_number - 1) % len(titles)
+    return titles[title_index]
 
 
 def _varied_scene_type(
@@ -5591,9 +6353,9 @@ def _render_chapter_conflict(
         f"Caught between {force_name}'s maneuvers and their own goals, {protagonist} fights to {label}.",
     ]
     _templates_generic_zh = [
-        f"{protagonist}必须在处理「{force_name}」带来的当前阻力时完成本章的「{label}」。",
-        f"面对「{force_name}」不断升级的施压，{protagonist}艰难推进——{label}。",
-        f"{protagonist}被「{force_name}」的布局和自身目标夹在中间，必须在夹缝中{label}。",
+        f"{protagonist}必须绕开「{force_name}」设置的阻碍，拿到能改变局势的证据或筹码。",
+        f"面对「{force_name}」不断升级的施压，{protagonist}必须用一次具体行动夺回主动权。",
+        f"{protagonist}被「{force_name}」的布局和自身目标夹在中间，只能用高风险选择换取突破口。",
     ]
     return _pick_by_seed(
         _templates_generic_en if is_en else _templates_generic_zh,
@@ -5752,10 +6514,9 @@ def _fallback_chapter_outline_batch(
     """Synthesize a best-effort chapter outline batch.
 
     ``chapter_number_offset`` is the first global chapter_number to assign
-    (default 1). Pass ``max(existing_written_chapter_number) + 1`` when
-    padding a volume replan so the fallback doesn't collide with already-
-    written chapters — this was the root cause of the 200-chapter gap on
-    xianxia-upgrade-1776137730.
+    (default 1). Pass the existing volume frontier when building the
+    fallback prompt payload for a replan so any explicit fail-fast diagnostics
+    report chapter numbers anchored to the DB layout.
     """
     writing_profile = _planner_writing_profile(project)
     cast_payload = _mapping(cast_spec)
@@ -5873,9 +6634,9 @@ def _fallback_chapter_outline_batch(
                     )
                 else:
                     chapter_goal = (
-                        f"Final alliances formed, last secrets revealed — all forces converge toward the climactic confrontation."
+                        "Final alliances formed, last secrets revealed — all forces converge toward the climactic confrontation."
                         if is_en
-                        else f"最终联盟结成、最后的秘密揭露——所有力量向高潮对决汇聚。"
+                        else "最终联盟结成、最后的秘密揭露——所有力量向高潮对决汇聚。"
                     )
             else:
                 # Expanded template pool (20+ variants) + position-aware seeding
@@ -5935,20 +6696,55 @@ def _fallback_chapter_outline_batch(
                     chapter_number,
                     f"chapter_goal:v{volume_number}:i{index_within_volume}:p{phase}",
                 )
+            chapter_unique_beat = _fallback_unique_chapter_beat(
+                project_slug=project.slug,
+                chapter_number=chapter_number,
+                phase=phase,
+                protagonist=protagonist_name,
+                force_name=volume_force_name,
+                language=project.language,
+            )
+            chapter_goal = (
+                f"{chapter_goal} {protagonist_name} must handle {chapter_unique_beat} and leave with a usable result or a clear loss."
+                if is_en
+                else f"{chapter_goal} {protagonist_name}必须处理「{chapter_unique_beat}」，并获得可用结果或付出明确损失。"
+            )
+            chapter_hook_description = _fallback_hook_description(
+                project_slug=project.slug,
+                chapter_number=chapter_number,
+                phase=phase,
+                unique_beat=chapter_unique_beat,
+                protagonist=protagonist_name,
+                language=project.language,
+            )
+            chapter_conflict = _render_chapter_conflict(
+                conflict_phase,
+                phase,
+                protagonist_name,
+                volume_force_name,
+                project_slug=project.slug,
+                chapter_number=chapter_number,
+            )
+            chapter_conflict = (
+                f"{chapter_conflict} Chapter-specific pressure: {chapter_unique_beat}."
+                if is_en
+                else f"{chapter_conflict} 本章独有压力：{chapter_unique_beat}。"
+            )
             num_scenes = _compute_scene_count(chapter_number, phase, prev_phase, chapters_from_end)
             # Build scenes dynamically: opening + N middle + closing hook
             scenes: list[dict[str, Any]] = []
 
-            # Scene 1: Opening — inject chapter_goal for per-chapter uniqueness
-            _ch_goal_tag = f" [chapter goal: {chapter_goal}]" if is_en else f"（本章目标：{chapter_goal}）"
+            # Scene 1: Opening. Keep fallback scene cards reader-visible; do
+            # not embed chapter numbers or author-note goal tags because those
+            # can leak into draft prose when a repair path inspects scene cards.
             opening_story = (
-                f"Establish the immediate state, the current direction, and the near-term pressure.{_ch_goal_tag}"
+                f"The opening turns on {chapter_unique_beat}; {protagonist_name} must choose an immediate direction under near-term pressure."
                 if is_en and is_opening_chapter
-                else f"Carry forward the previous result and restate the immediate action target.{_ch_goal_tag}"
+                else f"The prior consequence closes in through {chapter_unique_beat}; {protagonist_name} must act before the pressure traps them."
                 if is_en
-                else f"建立当前局面、行动方向与眼前压力{_ch_goal_tag}"
+                else f"开场以「{chapter_unique_beat}」切入，{protagonist_name}必须马上判断行动方向。"
                 if is_opening_chapter
-                else f"承接上章后果并明确本章行动目标{_ch_goal_tag}"
+                else f"上一章后果通过「{chapter_unique_beat}」压到{protagonist_name}面前，迫使他立刻应对。"
             )
             opening_emotion = (
                 "Give the reader a clear point of engagement, then increase instability."
@@ -5967,10 +6763,14 @@ def _fallback_chapter_outline_batch(
                     project_slug=project.slug,
                 ),
                 "title": "Opening Beat" if is_en else "开场",
-                "time_label": "章节开场",
+                "time_label": (
+                    f"Opening pressure: {chapter_unique_beat}"
+                    if is_en
+                    else f"开场压力：{chapter_unique_beat}"
+                ),
                 "participants": [protagonist_name, ally_name],
-                "purpose": {
-                    "story": opening_story,
+                    "purpose": {
+                        "story": opening_story,
                     "emotion": opening_emotion,
                 },
                 "entry_state": {
@@ -6024,19 +6824,23 @@ def _fallback_chapter_outline_batch(
                         project_slug=project.slug,
                     ),
                     "title": ("Primary Move" if mi == 0 else "Shift") if is_en else ("推进" if mi == 0 else "变化"),
-                    "time_label": "章节中段",
+                    "time_label": (
+                        f"Middle pressure {mi + 1}: {chapter_unique_beat}"
+                        if is_en
+                        else f"中段压力{mi + 1}：{chapter_unique_beat}"
+                    ),
                     "participants": [protagonist_name, volume_antag_participant]
                     if index_within_volume % 2 == 0
                     else [protagonist_name],
                     "purpose": {
                         "story": (
-                            f"Move the chapter forward and force a fresh cost or new information. [chapter goal: {chapter_goal}]"
+                            f"{chapter_unique_beat} produces a fresh cost or new information."
                             if mi == 0
-                            else f"Complicate the situation with a deeper cost, truth, or shift. [chapter goal: {chapter_goal}]"
+                            else f"{chapter_unique_beat} is complicated by a deeper cost, truth, or shift."
                         ) if is_en else (
-                            f"推动本章局势前进，并换来新的代价或信息。（本章目标：{chapter_goal}）"
+                            f"「{chapter_unique_beat}」制造新的代价或信息交换。"
                             if mi == 0
-                            else f"用更深一层的代价、真相或变化把局势再往前推。（本章目标：{chapter_goal}）"
+                            else f"「{chapter_unique_beat}」暴露更深一层的代价、真相或变化。"
                         ),
                         "emotion": "Raise friction without flattening the chapter rhythm." if is_en else "继续抬高摩擦感，但不把章节写成单一节奏。",
                     },
@@ -6073,15 +6877,16 @@ def _fallback_chapter_outline_batch(
                 "scene_number": len(scenes) + 1,
                 "scene_type": "hook",
                 "title": "Closing Hook" if is_en else "尾钩",
-                "time_label": "章节结尾",
+                "time_label": (
+                    f"Closing pressure: {chapter_unique_beat}"
+                    if is_en
+                    else f"尾声压力：{chapter_unique_beat}"
+                ),
                 "participants": [protagonist_name, ally_name]
                 if index_within_volume % 3 != 0
                 else [protagonist_name, volume_antag_participant],
                 "purpose": {
-                    "story": (
-                        f"{writing_profile.market.chapter_hook_strategy}"
-                        f"{' [chapter goal: ' + chapter_goal + ']' if is_en else '（本章目标：' + chapter_goal + '）'}"
-                    ),
+                    "story": chapter_hook_description,
                     "emotion": "Make the reader unable to stop — they MUST read the next chapter." if is_en else "让读者必须继续追下一章",
                 },
                 "entry_state": {
@@ -6106,9 +6911,45 @@ def _fallback_chapter_outline_batch(
             })
             # Compute arc-level info for this chapter
             arc_index, arc_phase = _compute_chapter_arc_info(chapter_number, normalized_volume_plan)
+            _high_tension = phase in {"pressure", "reversal", "climax", "confrontation"}
+            chapter_function = (
+                "payoff"
+                if chapters_from_end <= 2
+                else "reveal"
+                if phase in {"reversal", "climax"}
+                else "action"
+                if _high_tension
+                else "transition"
+            )
+            causal_contract = (
+                {
+                    "chapter_function": chapter_function,
+                    "pressure": f"{volume_force_name} uses {chapter_unique_beat} to force an immediate response from {protagonist_name}.",
+                    "protagonist_desire": f"{protagonist_name} wants to advance {volume_goal} through {chapter_unique_beat}.",
+                    "protagonist_choice": f"{protagonist_name} chooses a concrete response before the pressure closes the current option.",
+                    "visible_action_or_reaction": f"{protagonist_name} acts around {chapter_unique_beat} and changes the local balance.",
+                    "resistance": f"{volume_force_name} blocks the move through direct opposition, limited time, or a hidden rule.",
+                    "cost_or_tradeoff": f"The move creates exposure risk, resource loss, or a relationship cost for {protagonist_name}.",
+                    "gain_or_reveal": f"{protagonist_name} gains usable information, leverage, or a painful reveal from this chapter.",
+                    "state_change": f"{protagonist_name} moves from pressured uncertainty to a changed state with a usable result or a clear loss.",
+                    "next_reader_desire": chapter_hook_description,
+                }
+                if is_en
+                else {
+                    "chapter_function": chapter_function,
+                    "pressure": f"{volume_force_name}借「{chapter_unique_beat}」逼{protagonist_name}立刻应对。",
+                    "protagonist_desire": f"{protagonist_name}想通过「{chapter_unique_beat}」推进「{volume_goal}」。",
+                    "protagonist_choice": f"{protagonist_name}选择在当前机会关闭前做出具体应对。",
+                    "visible_action_or_reaction": f"{protagonist_name}围绕「{chapter_unique_beat}」行动，并改变局部力量平衡。",
+                    "resistance": f"{volume_force_name}通过正面阻拦、时限或隐藏规则压制这次行动。",
+                    "cost_or_tradeoff": f"这次行动让{protagonist_name}承担暴露风险、资源损失或关系代价。",
+                    "gain_or_reveal": f"{protagonist_name}获得可用信息、局势杠杆，或痛苦但有效的揭露。",
+                    "state_change": f"{protagonist_name}从承压不确定，变成握有可用结果或明确损失。",
+                    "next_reader_desire": chapter_hook_description,
+                }
+            )
 
             # ── Phase-3: assign Swain scene/sequel pattern ──
-            _high_tension = phase in {"pressure", "reversal", "climax", "confrontation"}
             for si, sc_dict in enumerate(scenes):
                 if _high_tension:
                     sc_dict["swain_pattern"] = "action"
@@ -6141,19 +6982,24 @@ def _fallback_chapter_outline_batch(
                         language=project.language,
                         is_opening=(chapter_number == 1),
                         project_slug=project.slug,
+                        unique_beat=chapter_unique_beat,
+                        chapter_goal=chapter_goal,
+                        main_conflict=chapter_conflict,
                     ),
                     "goal": chapter_goal,
                     "opening_situation": (
                         writing_profile.serialization.opening_mandate
                         if chapter_number == 1
-                        else "承接上一章尾钩，主角没有空档去长篇解释设定。"
+                        else (
+                            f"Chapter {chapter_number} opens after {chapter_unique_beat}; {protagonist_name} must respond before the pressure escalates."
+                            if is_en
+                            else f"第{chapter_number}章开场承接「{chapter_unique_beat}」，{protagonist_name}必须在压力升级前做出反应。"
+                        )
                     ),
-                    "main_conflict": _render_chapter_conflict(
-                        conflict_phase, phase, protagonist_name, volume_force_name,
-                        project_slug=project.slug, chapter_number=chapter_number,
-                    ),
+                    "main_conflict": chapter_conflict,
                     "hook_type": _hook_type(index_within_volume, total_in_volume, language=project.language),
-                    "hook_description": writing_profile.market.chapter_hook_strategy,
+                    "hook_description": chapter_hook_description,
+                    "causal_contract": causal_contract,
                     "volume_number": volume_number,
                     "arc_index": arc_index,
                     "arc_phase": arc_phase,
@@ -6736,6 +7582,8 @@ def _volume_plan_prompts(
     _pp_block = f"Prompt Pack：\n{render_prompt_pack_prompt_block(prompt_pack)}\n" if prompt_pack else ""
     _pp_volume_plan = _planner_fragment_or_ref(prompt_pack, project, "planner_volume_plan")
     _story_package_block = _story_package_prompt_block(project, language=language)
+    _story_design_block = _story_design_kernel_prompt_block(project)
+    _character_drama_block = _character_drama_prompt_block(project, cast_spec=cast_spec)
     user_prompt = (
         (
             f"Project title: {project.title}\n"
@@ -6748,8 +7596,12 @@ def _volume_plan_prompts(
             f"WorldSpec summary:\n{summarize_world_spec(world_spec, language='en')}\n"
             f"CastSpec summary:\n{summarize_cast_spec(cast_spec, language='en')}\n"
             f"{_story_package_block}\n"
+            f"{_story_design_block}\n"
+            f"{_character_drama_block}\n"
             f"{_pp_volume_plan}"
             "Generate a VolumePlan JSON array. Each entry must include volume_number, volume_title, volume_theme, chapter_count_target, volume_goal, volume_obstacle, volume_climax, volume_resolution, conflict_phase, and primary_force_name. "
+            "`volume_resolution` MUST be an object shaped like {protagonist_power_tier, goal_achieved, cost_paid, new_threat_introduced}; never emit it as a plain string. "
+            "Inside `volume_resolution`, `goal_achieved` MUST be a JSON boolean (`true` or `false`), not a prose summary; put prose in `cost_paid` or `new_threat_introduced`. "
             "CRITICAL: `volume_title` must be a concrete, evocative 2-6 word name (e.g. 'Ashes of the Old Court'). Placeholder names like 'Volume 3', 'Vol. 4', or empty strings are forbidden and will be rejected. "
             "CRITICAL: Each volume must face a DIFFERENT primary conflict force from the CastSpec's antagonist_forces. Don't repeat the same antagonist pressure — vary between survival, political intrigue, betrayal, faction warfare, existential threat, etc. "
             "Every volume needs a concrete payoff, escalation, key reveal, volume-end hook, and anticipation for the next volume.\n\n"
@@ -6773,11 +7625,15 @@ def _volume_plan_prompts(
             f"WorldSpec 摘要：\n{summarize_world_spec(world_spec, language='zh')}\n"
             f"CastSpec 摘要：\n{summarize_cast_spec(cast_spec, language='zh')}\n"
             f"{_story_package_block}\n"
+            f"{_story_design_block}\n"
+            f"{_character_drama_block}\n"
             f"{_pp_volume_plan}"
             "请生成 VolumePlan JSON 数组，每个元素包含 volume_number、volume_title、volume_theme、"
             "chapter_count_target、volume_goal、volume_obstacle、volume_climax、volume_resolution、"
             "conflict_phase（冲突类型：survival/political_intrigue/betrayal/faction_war/existential_threat/internal_reckoning）、"
             "primary_force_name（本卷主要冲突力量名称）。"
+            "volume_resolution 必须是对象，结构为 {protagonist_power_tier, goal_achieved, cost_paid, new_threat_introduced}，严禁输出成普通字符串。"
+            "其中 goal_achieved 必须是 JSON 布尔值 true/false，不能写成中文剧情总结；剧情文字放到 cost_paid 或 new_threat_introduced。"
             "【关键】volume_title 必须是 2-6 字的具体意象化卷名（例如『逆命入局』『灰楼开门』），"
             "严禁使用『第N卷』『Volume N』『未命名』等占位名或空字符串，否则会被拒绝。"
             "【关键】每卷必须面对不同的冲突力量和冲突类型——不要所有卷都是同一个反派在施压！"
@@ -6910,6 +7766,8 @@ def _outline_prompts(project: ProjectModel, book_spec: dict[str, Any], cast_spec
     _pp_outline = _planner_fragment_or_ref(prompt_pack, project, "planner_outline")
     _methodology_planner_block = render_methodology_block(prompt_pack, phase="planner")
     _methodology_line = f"\n{_methodology_planner_block}\n" if _methodology_planner_block else ""
+    _story_design_block = _story_design_kernel_prompt_block(project)
+    _character_drama_block = _character_drama_prompt_block(project, cast_spec=cast_spec)
     user_prompt = (
         (
             f"Project title: {project.title}\n"
@@ -6921,17 +7779,24 @@ def _outline_prompts(project: ProjectModel, book_spec: dict[str, Any], cast_spec
             f"BookSpec summary:\n{summarize_book_spec(book_spec, language='en')}\n"
             f"CastSpec summary:\n{summarize_cast_spec(cast_spec, language='en')}\n"
             f"VolumePlan summary:\n{summarize_volume_plan_context(volume_plan, current_volume=1, language='en')}\n"
+            f"{_story_design_block}\n"
+            f"{_character_drama_block}\n"
             f"{_pp_outline}"
             f"{_methodology_line}"
             "Generate a full ChapterOutlineBatch JSON with batch_name and chapters. Each chapter needs at least 3 scenes. "
             "The first 3 chapters must rapidly establish the protagonist edge, the core anomaly, the first gain/loss cycle, and a strong read-on hook. "
-            "Each chapter must define goal, main_conflict, and hook_description; each scene must define story and emotion tasks.\n\n"
+            "Each chapter must define title, goal, main_conflict, and hook_description; each scene must define story and emotion tasks. "
+            "The chapter title must be a concrete story image/event, not an internal phase label. "
+            "Never use titles like Wake, Threshold, Opening Move, Trace, Pressure, Countermove, Endgame. "
+            "Never use placeholder hooks such as 'new evidence, deadline, or cost appears'.\n\n"
             "[DIVERSITY CONSTRAINTS — CRITICAL]\n"
             "1. Each chapter's scene_type combination MUST differ from adjacent chapters — vary scene count, type arrangement, and participant mix.\n"
             "2. Each chapter's main_conflict must be a specific, concrete event — never use vague summaries like 'push the investigation' or 'advance the goal'.\n"
             "3. Character entry_state/exit_state must be tied to the chapter's specific events — never reuse the same arc_state or emotion across multiple chapters.\n"
             "4. Break the narrative rhythm: some chapters end in failure, some focus on quiet character moments, some open with a twist.\n"
-            "5. Chapter goals must be concrete, visualizable events — not abstract narrative functions."
+            "5. Chapter goals must be concrete, visualizable events — not abstract narrative functions.\n"
+            "6. Each chapter must advance at least two concrete state dimensions: plot, relationship, clue, power, resource, status, or exposure risk. "
+            "Write the visible change into goal/main_conflict/scenes; never write author notes like 'build worldbuilding', 'introduce a faction', or 'deepen theme'."
         )
         if is_en
         else (
@@ -6943,18 +7808,25 @@ def _outline_prompts(project: ProjectModel, book_spec: dict[str, Any], cast_spec
             f"BookSpec 摘要：\n{summarize_book_spec(book_spec, language='zh')}\n"
             f"CastSpec 摘要：\n{summarize_cast_spec(cast_spec, language='zh')}\n"
             f"VolumePlan 摘要：\n{summarize_volume_plan_context(volume_plan, current_volume=1, language='zh')}\n"
+            f"{_story_design_block}\n"
+            f"{_character_drama_block}\n"
             f"{_pp_outline}"
             f"{_methodology_line}"
             "请生成完整 ChapterOutlineBatch JSON，包含 batch_name 和 chapters。每章至少 3 个 scenes。"
             "要求：前 3 章必须快速完成主角卖点亮相、核心异常亮相、第一轮得失与追读钩子；"
-            "每章都要写明 goal、main_conflict、hook_description；每场都要有 story/emotion 任务。\n\n"
+            "每章都要写明 title、goal、main_conflict、hook_description；每场都要有 story/emotion 任务。"
+            "title 必须是 2-6 字的具体故事意象/事件名，优先使用器物、地点、人名、规则或异常现象；"
+            "严禁把内部功能词当标题，禁止使用「初现、入局、投石、试探、铺火、露锋、破冰、起手、掀幕、落子、追索、摸底、拆解、寻隙、探针、回查、溯源、揭层、织网、破壁」这类模板尾词。"
+            "hook_description 必须是具体下一步事件，禁止写「围绕某冲突出现新的证据、时限或代价」这类占位句。\n\n"
             "【多样性硬约束——极其重要】\n"
             "1. 每章的 scene_type 组合不得与前后两章雷同，必须有结构差异（场景数、类型排列、参与角色组合都要变化）。\n"
             "2. 每章的 main_conflict 必须是独立的、具体的事件描述，禁止使用「推进调查」「承压推进」等泛化概括。\n"
             "3. 角色的 entry_state/exit_state 必须紧扣本章具体事件，禁止多章复用相同的 arc_state 或 emotion。\n"
             "4. 避免所有章节都遵循相同的叙事模式（如每章都是「发现线索→遭遇阻碍→获得突破」），"
             "要主动打破节奏：有的章以失败结尾，有的章以安静的人物关系推进为主，有的章以反转开场。\n"
-            "5. chapter goal 必须是具体的、可视化的事件，不能是抽象的叙事功能描述。"
+            "5. chapter goal 必须是具体的、可视化的事件，不能是抽象的叙事功能描述。\n"
+            "6. 每章必须至少推进两个真实状态维度：剧情、关系、线索、能力、资源、身份/地位、暴露风险；"
+            "这种变化必须写进 goal/main_conflict/scenes，禁止写「建立世界观」「引入势力」「完善体系」「深化主题」这类作者笔记。"
         )
     )
     _genre_instruction = getattr(_genre_profile.planner_prompts, f"outline_instruction_{_lang_key}", "")
@@ -7071,6 +7943,20 @@ def _volume_outline_prompts(
     _genre_system = getattr(_genre_profile.planner_prompts, f"outline_system_{_lang_key}", "")
     volume_number = int(volume_entry.get("volume_number", 1))
     chapter_count = int(volume_entry.get("chapter_count_target", 10))
+    chapter_bounds = _derive_volume_chapter_bounds(_mapping(volume_entry))
+    if chapter_bounds is not None:
+        chapter_start, chapter_end = chapter_bounds
+        chapter_bounds_line_en = (
+            f"Use global chapter_number values {chapter_start}-{chapter_end} only; "
+            f"do not generate chapter {chapter_end + 1} or later. "
+        )
+        chapter_bounds_line_zh = (
+            f"全局章节号必须落在第{chapter_start}-{chapter_end}章；"
+            f"不能生成第{chapter_end + 1}章及以后的内容。"
+        )
+    else:
+        chapter_bounds_line_en = ""
+        chapter_bounds_line_zh = ""
     system_prompt = (
         "You are a chapter-outline planner for long-form commercial fiction. Output valid JSON only."
         if is_en
@@ -7083,6 +7969,8 @@ def _volume_outline_prompts(
     _methodology_planner_block = render_methodology_block(prompt_pack, phase="planner")
     _methodology_line = f"\n{_methodology_planner_block}\n" if _methodology_planner_block else ""
     _story_package_block = _story_package_prompt_block(project, language=language)
+    _story_design_block = _story_design_kernel_prompt_block(project)
+    _character_drama_block = _character_drama_prompt_block(project, cast_spec=cast_spec)
     _ledger_line = f"{revealed_ledger_block}\n\n" if revealed_ledger_block else ""
     _prior_vols_block = render_prior_volumes_summary_block(
         volume_plan, current_volume_number=volume_number, language=language,
@@ -7101,13 +7989,23 @@ def _volume_outline_prompts(
             f"CastSpec summary:\n{summarize_cast_spec(cast_spec, language='en', volume_number=volume_number)}\n"
             f"VolumePlan context:\n{vol_plan_summary}\n"
             f"{_story_package_block}\n"
+            f"{_story_design_block}\n"
+            f"{_character_drama_block}\n"
             f"{_prior_vols_line}"
             f"{_ledger_line}"
             f"{_pp_outline}"
             f"{_methodology_line}"
             f"Generate a ChapterOutlineBatch JSON for volume {volume_number} ONLY ({chapter_count} chapters). "
+            f"The chapters array must contain exactly {chapter_count} objects, one per chapter, with no summaries or grouped chapters. "
+            f"{chapter_bounds_line_en}"
             "Include batch_name and chapters. Each chapter needs at least 3 scenes. "
-            "Each chapter must define goal, main_conflict, and hook_description; each scene must define story and emotion tasks."
+            "Each chapter must define title, goal, main_conflict, and hook_description; each scene must define story and emotion tasks. "
+            "Each chapter must include causal_contract with flexible reader-visible axes: chapter_function, pressure, protagonist_desire, protagonist_choice, visible_action_or_reaction, resistance, cost_or_tradeoff, gain_or_reveal, state_change, next_reader_desire. "
+            "Do not force these axes into a fixed prose order; use them to prove the chapter has causal movement and a next-chapter desire. "
+            "The chapter title must be a concrete story image/event, not an internal phase label. "
+            "Never use placeholder hooks such as 'new evidence, deadline, or cost appears'. "
+            "Each chapter must advance at least two concrete state dimensions: plot, relationship, clue, power, resource, status, or exposure risk. "
+            "Write the visible change into goal/main_conflict/scenes; never write author notes like 'build worldbuilding', 'introduce a faction', or 'deepen theme'."
         )
         if is_en
         else (
@@ -7120,13 +8018,24 @@ def _volume_outline_prompts(
             f"CastSpec 摘要：\n{summarize_cast_spec(cast_spec, language='zh', volume_number=volume_number)}\n"
             f"VolumePlan 上下文：\n{vol_plan_summary}\n"
             f"{_story_package_block}\n"
+            f"{_story_design_block}\n"
+            f"{_character_drama_block}\n"
             f"{_prior_vols_line}"
             f"{_ledger_line}"
             f"{_pp_outline}"
             f"{_methodology_line}"
             f"请仅生成第{volume_number}卷的 ChapterOutlineBatch JSON（共{chapter_count}章），"
+            f"chapters 数组必须恰好包含 {chapter_count} 个章节对象，一章一个对象，不能概括、合并或分组，"
+            f"{chapter_bounds_line_zh}"
             "包含 batch_name 和 chapters。每章至少 3 个 scenes。"
-            "每章都要写明 goal、main_conflict、hook_description；每场都要有 story/emotion 任务。"
+            "每章都要写明 title、goal、main_conflict、hook_description；每场都要有 story/emotion 任务。"
+            "每章必须包含 causal_contract：chapter_function、pressure、protagonist_desire、protagonist_choice、visible_action_or_reaction、resistance、cost_or_tradeoff、gain_or_reveal、state_change、next_reader_desire。"
+            "这些是读者可见的因果轴，不是固定写作模板；不要把正文写成固定套路，只用它证明本章有压力、有选择/行动/反应、有阻力/代价/收益/状态变化，并制造下一章阅读欲望。"
+            "title 必须是 2-6 字的具体故事意象/事件名，优先使用器物、地点、人名、规则或异常现象；"
+            "严禁把内部功能词当标题，禁止使用「初现、入局、投石、试探、铺火、露锋、破冰、起手、掀幕、落子、追索、摸底、拆解、寻隙、探针、回查、溯源、揭层、织网、破壁」这类模板尾词。"
+            "hook_description 必须是具体下一步事件，禁止写「围绕某冲突出现新的证据、时限或代价」这类占位句。"
+            "每章必须至少推进两个真实状态维度：剧情、关系、线索、能力、资源、身份/地位、暴露风险；"
+            "这种变化必须写进 goal/main_conflict/scenes，禁止写「建立世界观」「引入势力」「完善体系」「深化主题」这类作者笔记。"
         )
     )
     _genre_instruction = getattr(_genre_profile.planner_prompts, f"outline_instruction_{_lang_key}", "")
@@ -7524,6 +8433,7 @@ async def _generate_structured_artifact(
     step_run_id: UUID | None = None,
     validator: Callable[[Any], Any] | None = None,
     abort_on_fallback: bool = False,
+    merge_fallback: bool = True,
 ) -> tuple[Any, UUID | None]:
     # Retry budget for planner artifacts.  Bumped to 4 on 2026-04-21 after
     # a production incident (romantasy-1776330993 volume_5_chapter_outline)
@@ -7566,7 +8476,11 @@ async def _generate_structured_artifact(
             )
         try:
             generated = _extract_json_payload(completion.content)
-            payload = _merge_planning_payload(fallback_payload, generated)
+            payload = (
+                _merge_planning_payload(fallback_payload, generated)
+                if merge_fallback
+                else copy.deepcopy(generated)
+            )
             if validator is not None:
                 validator(payload)
             return payload, last_llm_run_id
@@ -7607,6 +8521,404 @@ async def _generate_structured_artifact(
 
     # Should not reach here, but satisfy type checker
     return copy.deepcopy(fallback_payload), last_llm_run_id
+
+
+# ---------------------------------------------------------------------------
+# Story design kernel
+# ---------------------------------------------------------------------------
+
+
+def _validate_story_design_kernel_payload(payload: Any) -> None:
+    if not isinstance(payload, dict):
+        raise ValueError("StoryDesignKernel payload must be a JSON object.")
+    story_design_kernel_from_dict(payload)
+
+
+def _story_design_kernel_prompt_block(project: ProjectModel) -> str:
+    metadata = project.metadata_json if isinstance(project.metadata_json, dict) else {}
+    raw = _mapping(metadata.get("story_design_kernel"))
+    if not raw:
+        return ""
+    try:
+        return "\n\n" + render_story_design_kernel_prompt_block(raw)
+    except Exception:
+        logger.debug("Failed to render StoryDesignKernel prompt block", exc_info=True)
+        return ""
+
+
+def _character_drama_prompt_block(
+    project: ProjectModel,
+    *,
+    cast_spec: dict[str, Any] | None = None,
+) -> str:
+    metadata = project.metadata_json if isinstance(project.metadata_json, dict) else {}
+    raw = _mapping(metadata.get("character_drama_map"))
+    if raw:
+        try:
+            return "\n\n" + render_character_drama_prompt_block(raw)
+        except Exception:
+            logger.debug("Failed to render CharacterDramaMap prompt block", exc_info=True)
+    if cast_spec:
+        try:
+            drama_map = build_character_drama_map(cast_spec, language=_planner_language(project))
+            return "\n\n" + render_character_drama_prompt_block(drama_map)
+        except Exception:
+            logger.debug("Failed to build CharacterDramaMap prompt block", exc_info=True)
+    return ""
+
+
+def _persist_character_drama_map(project: ProjectModel, cast_spec: dict[str, Any]) -> None:
+    try:
+        character_drama_payload = character_drama_map_to_dict(
+            build_character_drama_map(cast_spec, language=_planner_language(project))
+        )
+    except Exception:
+        logger.debug("Failed to persist CharacterDramaMap metadata", exc_info=True)
+        return
+    project.metadata_json = {
+        **(project.metadata_json or {}),
+        "character_drama_map": character_drama_payload,
+    }
+
+
+def _fallback_story_design_kernel(
+    project: ProjectModel,
+    premise: str,
+    book_spec: dict[str, Any],
+    world_spec: dict[str, Any],
+    cast_spec: dict[str, Any],
+    *,
+    category_key: str | None = None,
+) -> dict[str, Any]:
+    metadata = project.metadata_json if isinstance(project.metadata_json, dict) else {}
+    shape = derive_story_shape(
+        project,
+        genre=project.genre,
+        sub_genre=project.sub_genre,
+        target_chapters=project.target_chapters,
+        target_word_count=project.target_word_count,
+        audience=project.audience,
+        metadata={**metadata, "category_key": category_key or ""},
+    )
+    grammar = resolve_story_design_grammar(
+        category_key=category_key,
+        genre=project.genre,
+        sub_genre=project.sub_genre,
+        metadata=metadata,
+    )
+    series_engine = _mapping(book_spec.get("series_engine"))
+    book_protagonist = _mapping(book_spec.get("protagonist"))
+    cast_protagonist = _mapping(cast_spec.get("protagonist"))
+    protagonist_name = _first_non_empty_text(
+        cast_protagonist.get("name"),
+        book_protagonist.get("name"),
+        default="主角" if not is_english_language(project.language) else "Protagonist",
+    )
+    protagonist_goal = _first_non_empty_text(
+        cast_protagonist.get("goal"),
+        book_protagonist.get("external_goal"),
+        book_protagonist.get("goal"),
+        default="完成核心目标" if not is_english_language(project.language) else "pursue the core goal",
+    )
+    world_rules = _mapping_list(world_spec.get("rules"))
+    first_rule = world_rules[0] if world_rules else {}
+    rule_name = _first_non_empty_text(
+        first_rule.get("rule_name"),
+        first_rule.get("name"),
+        first_rule.get("description"),
+        default="世界规则" if not is_english_language(project.language) else "world rule",
+    )
+    reader_promise = _first_non_empty_text(
+        series_engine.get("reader_promise"),
+        book_spec.get("reader_promise"),
+        ", ".join(grammar.reader_rewards[:3]),
+        default="每章都必须产生可见状态变化。",
+    )
+    unique_hook = _first_non_empty_text(
+        metadata.get("unique_hook"),
+        book_spec.get("unique_hook"),
+        book_spec.get("creative_hook"),
+        book_spec.get("logline"),
+        premise,
+        default=project.title,
+    )
+    commercial_pull = _first_non_empty_text(
+        series_engine.get("core_serial_engine"),
+        series_engine.get("core_engine"),
+        book_spec.get("commercial_pull"),
+        reader_promise,
+    )
+    change_vectors = (
+        list(grammar.chapter_change_vectors[:5])
+        or list(shape.primary_duties[:5])
+        or ["目标变化", "压力变化", "关系变化"]
+    )
+
+    return {
+        "version": 1,
+        "shape": shape.model_dump(mode="json"),
+        "reader_promise": reader_promise,
+        "premise_contract": {
+            "unique_hook": unique_hook,
+            "core_question": _first_non_empty_text(
+                book_spec.get("core_question"),
+                default=f"{protagonist_name}能否在代价升级中完成目标？",
+            ),
+            "commercial_pull": commercial_pull,
+            "forbidden_defaults": list(grammar.forbidden_defaults[:8]),
+        },
+        "character_conflict_contracts": [
+            {
+                "character_key": "protagonist",
+                "external_goal": protagonist_goal,
+                "internal_need": _first_non_empty_text(
+                    cast_protagonist.get("internal_need"),
+                    book_protagonist.get("internal_need"),
+                    default="在选择中改变自身局限。",
+                ),
+                "pressure_source": _first_non_empty_text(
+                    book_spec.get("central_conflict"),
+                    series_engine.get("core_engine"),
+                    default="外部目标和内部代价同时施压。",
+                ),
+                "choice_axis": _first_non_empty_text(
+                    cast_protagonist.get("choice_axis"),
+                    default="短期收益还是长期代价。",
+                ),
+                "change_vector": change_vectors[0],
+            }
+        ],
+        "world_conflict_contracts": [
+            {
+                "axis": rule_name,
+                "rule": _first_non_empty_text(
+                    first_rule.get("description"),
+                    first_rule.get("rule"),
+                    default=f"{rule_name}会改变角色选择的成本。",
+                ),
+                "visible_cost": _first_non_empty_text(
+                    first_rule.get("story_consequence"),
+                    first_rule.get("visible_cost"),
+                    default="违反或利用规则都会留下可见后果。",
+                ),
+                "escalation_path": "从局部问题扩大到全书主线压力。",
+            }
+        ],
+        "structure_strategy": {
+            "macro_strategy": _first_non_empty_text(
+                series_engine.get("macro_strategy"),
+                default="主线目标、角色选择和世界规则交替推进。",
+            ),
+            "chapter_engine": _first_non_empty_text(
+                series_engine.get("chapter_hook_strategy"),
+                default="每章推进至少两个状态维度。",
+            ),
+            "pacing_rule": _first_non_empty_text(
+                series_engine.get("payoff_rhythm"),
+                default="短兑现与长线债务交替。",
+            ),
+            "freshness_rule": "连续章节不得重复同一压力源、同一选择轴或同一回报类型。",
+        },
+        "plot_tree": [
+            {
+                "key": "mainline",
+                "line_type": "main",
+                "label": _first_non_empty_text(project.title, book_spec.get("title")),
+                "role": "驱动全书外部目标。",
+                "current_state": "主角尚未完成核心目标。",
+                "target_state": "主角完成阶段目标并暴露下一层代价。",
+                "failure_if_removed": "故事会失去主线推进和读者追读承诺。",
+            },
+            {
+                "key": "protagonist-change",
+                "line_type": "character",
+                "label": f"{protagonist_name}的选择变化",
+                "role": "把外部事件转化为人物状态变化。",
+                "current_state": "旧策略仍在主导选择。",
+                "target_state": "新选择模式开始形成。",
+                "dependency_on_mainline": "主角每次选择都必须改变主线目标的成本或路径。",
+                "failure_if_removed": "主线会退化为事件流水账。",
+            },
+        ],
+        "beat_schedule": [
+            {
+                "chapter_range": "1-3",
+                "duty": "建立读者承诺、主线目标和第一轮状态变化。",
+                "state_change": "主角从被动处境转入带代价的主动选择。",
+                "payoff": "读者看到本书独有机制第一次产生结果。",
+                "hook_or_aftereffect": "第一次选择留下未还清的代价或新压力源。",
+            }
+        ],
+        "change_vectors": change_vectors[:5],
+        "uniqueness_constraints": [
+            "不得把父母失踪、神秘玉佩、退婚羞辱作为默认驱动。",
+            "每章必须写出具体状态变化，而不是只推进作者笔记。",
+        ],
+        "reverse_outline_status": "not_started",
+    }
+
+
+def _story_design_kernel_prompts(
+    project: ProjectModel,
+    premise: str,
+    book_spec: dict[str, Any],
+    world_spec: dict[str, Any],
+    cast_spec: dict[str, Any],
+    fallback_payload: dict[str, Any],
+    *,
+    category_key: str | None = None,
+) -> tuple[str, str]:
+    language = _planner_language(project)
+    is_en = is_english_language(language)
+    grammar = resolve_story_design_grammar(
+        category_key=category_key,
+        genre=project.genre,
+        sub_genre=project.sub_genre,
+        metadata=project.metadata_json if isinstance(project.metadata_json, dict) else {},
+    )
+    grammar_block = render_story_design_grammar_prompt_block(grammar)
+    shape = derive_story_shape(project, metadata={"category_key": category_key or ""})
+    try:
+        character_drama_block = render_character_drama_prompt_block(
+            build_character_drama_map(cast_spec, language=language)
+        )
+    except Exception:
+        logger.debug("Failed to build CharacterDramaMap for story-design prompt", exc_info=True)
+        character_drama_block = ""
+    system_prompt = (
+        "You are a story architect. Output one valid JSON object only."
+        if is_en
+        else "你是长篇小说剧情架构师。只输出一个合法 JSON 对象，不要解释。"
+    )
+    user_prompt = (
+        (
+            f"Project title: {project.title}\n"
+            f"Premise:\n{premise}\n\n"
+            f"Story shape: {shape.model_dump(mode='json')}\n"
+            f"{grammar_block}\n\n"
+            f"BookSpec summary:\n{summarize_book_spec(book_spec, language='en')}\n"
+            f"WorldSpec summary:\n{summarize_world_spec(world_spec, language='en')}\n"
+            f"CastSpec summary:\n{summarize_cast_spec(cast_spec, language='en')}\n\n"
+            f"{character_drama_block}\n\n"
+            "Generate a StoryDesignKernel JSON object. It must contain reader_promise, "
+            "premise_contract, character_conflict_contracts, world_conflict_contracts, "
+            "structure_strategy, plot_tree, beat_schedule, change_vectors, and "
+            "uniqueness_constraints. Every non-main plot_tree node must depend on the mainline. "
+            "Do not use missing parents, magic objects, or generic revenge as default motivation.\n\n"
+            f"Use this schema-compatible fallback as the minimum structure:\n{_json_dumps(fallback_payload)}"
+        )
+        if is_en
+        else (
+            f"项目标题：{project.title}\n"
+            f"前提：\n{premise}\n\n"
+            f"故事形态：{shape.model_dump(mode='json')}\n"
+            f"{grammar_block}\n\n"
+            f"BookSpec 摘要：\n{summarize_book_spec(book_spec, language='zh')}\n"
+            f"WorldSpec 摘要：\n{summarize_world_spec(world_spec, language='zh')}\n"
+            f"CastSpec 摘要：\n{summarize_cast_spec(cast_spec, language='zh')}\n\n"
+            f"{character_drama_block}\n\n"
+            "请生成 StoryDesignKernel JSON 对象，必须包含 reader_promise、premise_contract、"
+            "character_conflict_contracts、world_conflict_contracts、structure_strategy、plot_tree、"
+            "beat_schedule、change_vectors、uniqueness_constraints。plot_tree 中每条非主线都必须说明"
+            " dependency_on_mainline；每条线都必须说明 failure_if_removed。"
+            "禁止把父母失踪、神秘玉佩、退婚羞辱、通用复仇当作默认驱动。\n\n"
+            f"以下 fallback 是最低结构要求，请在此基础上做出本书独有设计：\n{_json_dumps(fallback_payload)}"
+        )
+    )
+    return system_prompt, user_prompt
+
+
+async def _generate_story_design_kernel(
+    session: AsyncSession,
+    settings: AppSettings,
+    *,
+    project: ProjectModel,
+    project_slug: str,
+    premise: str,
+    book_spec_payload: dict[str, Any],
+    world_spec_payload: dict[str, Any],
+    cast_spec_payload: dict[str, Any],
+    category_key: str | None,
+    workflow_run_id: UUID,
+    step_order: int,
+    llm_run_ids: list[UUID],
+    artifact_records: list[PlanningArtifactRecord],
+) -> dict[str, Any]:
+    fallback = _fallback_story_design_kernel(
+        project,
+        premise,
+        book_spec_payload,
+        world_spec_payload,
+        cast_spec_payload,
+        category_key=category_key,
+    )
+    system_prompt, user_prompt = _story_design_kernel_prompts(
+        project,
+        premise,
+        book_spec_payload,
+        world_spec_payload,
+        cast_spec_payload,
+        fallback,
+        category_key=category_key,
+    )
+    payload, llm_run_id = await _generate_structured_artifact(
+        session,
+        settings,
+        project=project,
+        logical_name="story_design_kernel",
+        system_prompt=system_prompt,
+        user_prompt=user_prompt,
+        fallback_payload=fallback,
+        workflow_run_id=workflow_run_id,
+        validator=_validate_story_design_kernel_payload,
+    )
+    if llm_run_id is not None:
+        llm_run_ids.append(llm_run_id)
+    if not isinstance(payload, dict):
+        payload = fallback
+
+    story_design_kernel_from_dict(payload)
+    try:
+        character_drama_payload = character_drama_map_to_dict(
+            build_character_drama_map(cast_spec_payload, language=_planner_language(project))
+        )
+    except Exception:
+        logger.debug("Failed to build CharacterDramaMap metadata", exc_info=True)
+        character_drama_payload = {}
+    artifact = await import_planning_artifact(
+        session,
+        project_slug,
+        PlanningArtifactCreate(
+            artifact_type=ArtifactType.STORY_DESIGN_KERNEL,
+            content=payload,
+        ),
+    )
+    artifact_records.append(
+        PlanningArtifactRecord(
+            artifact_type=ArtifactType.STORY_DESIGN_KERNEL,
+            artifact_id=artifact.id,
+            version_no=artifact.version_no,
+        )
+    )
+    metadata = {
+        **(project.metadata_json or {}),
+        "story_design_kernel": payload,
+    }
+    if character_drama_payload:
+        metadata["character_drama_map"] = character_drama_payload
+    project.metadata_json = metadata
+    await create_workflow_step_run(
+        session,
+        workflow_run_id=workflow_run_id,
+        step_name="generate_story_design_kernel",
+        step_order=step_order,
+        status=WorkflowStatus.COMPLETED,
+        output_ref={
+            "artifact_id": str(artifact.id),
+            "llm_run_id": str(llm_run_id) if llm_run_id else None,
+        },
+    )
+    return payload
 
 
 # ---------------------------------------------------------------------------
@@ -7805,6 +9117,7 @@ async def _run_prewrite_readiness_gate(
     workflow_run_id: UUID,
     step_order: int,
     artifact_records: list[PlanningArtifactRecord],
+    story_design_kernel: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Persist the planning kernel and readiness report before drafting entry."""
 
@@ -7816,6 +9129,7 @@ async def _run_prewrite_readiness_gate(
         world_spec=world_spec_payload,
         cast_spec=cast_spec_payload,
         volume_plan=volume_plan_payload,
+        story_design_kernel=story_design_kernel,
         output_base_dir=settings.output.base_dir,
     )
     report = _mapping(payload.get("prewrite_readiness_report"))
@@ -7869,6 +9183,65 @@ async def _run_prewrite_readiness_gate(
             "Prewrite readiness gate failed: " + ", ".join(blocking_codes)
         )
     return payload
+
+
+async def _run_reverse_outline_gate(
+    session: AsyncSession,
+    settings: AppSettings,
+    *,
+    project: ProjectModel,
+    story_design_kernel: dict[str, Any] | None,
+    outline_payload: dict[str, Any],
+    workflow_run_id: UUID,
+    step_order: int,
+) -> dict[str, Any]:
+    """Verify generated chapter outlines against the StoryDesignKernel."""
+
+    from bestseller.services.reverse_outline_gate import (
+        evaluate_reverse_outline_gate,
+        reverse_outline_report_to_dict,
+    )
+
+    report = evaluate_reverse_outline_gate(story_design_kernel, outline_payload)
+    report_payload = reverse_outline_report_to_dict(report)
+    should_block = (
+        settings.pipeline.reverse_outline_gate_block_on_failure and not report.passed
+    )
+    metadata = dict(project.metadata_json or {})
+    kernel = _mapping(metadata.get("story_design_kernel"))
+    if kernel:
+        kernel["reverse_outline_status"] = "verified" if report.passed else "needs_repair"
+        metadata["story_design_kernel"] = kernel
+    metadata["reverse_outline_gate_report"] = report_payload
+    project.metadata_json = metadata
+
+    blocking_codes = [
+        str(item.get("code"))
+        for item in _mapping_list(report_payload.get("blocking_findings"))
+        if item.get("code")
+    ]
+    await create_workflow_step_run(
+        session,
+        workflow_run_id=workflow_run_id,
+        step_name="reverse_outline_gate",
+        step_order=step_order,
+        status=WorkflowStatus.FAILED if should_block else WorkflowStatus.COMPLETED,
+        output_ref={
+            "passed": report.passed,
+            "score": report.score,
+            "blocking_codes": blocking_codes,
+        },
+        error_message=(
+            "Reverse outline gate failed: " + ", ".join(blocking_codes)
+            if should_block
+            else None
+        ),
+    )
+    if should_block:
+        raise PlannerFallbackError(
+            "Reverse outline gate failed: " + ", ".join(blocking_codes)
+        )
+    return report_payload
 
 
 async def generate_novel_plan(
@@ -8288,6 +9661,27 @@ async def generate_novel_plan(
                     )
                 )
 
+        story_design_payload: dict[str, Any] | None = None
+        if settings.pipeline.enable_story_design_kernel:
+            current_step_name = "generate_story_design_kernel"
+            workflow_run.current_step = current_step_name
+            story_design_payload = await _generate_story_design_kernel(
+                session,
+                settings,
+                project=project,
+                project_slug=project_slug,
+                premise=premise,
+                book_spec_payload=book_spec_payload,
+                world_spec_payload=world_spec_payload,
+                cast_spec_payload=cast_spec_payload,
+                category_key=_category_key,
+                workflow_run_id=workflow_run.id,
+                step_order=step_order,
+                llm_run_ids=llm_run_ids,
+                artifact_records=artifact_records,
+            )
+            step_order += 1
+
         # ── Act Plan: macro narrative structure for long novels ──
         hierarchy = compute_linear_hierarchy(max(project.target_chapters, 1))
         act_plan_payload: list[dict[str, Any]] | None = None
@@ -8523,6 +9917,7 @@ async def generate_novel_plan(
                 world_spec_payload=world_spec_payload,
                 cast_spec_payload=cast_spec_payload,
                 volume_plan_payload=volume_plan_payload,
+                story_design_kernel=story_design_payload,
                 workflow_run_id=workflow_run.id,
                 step_order=step_order,
                 artifact_records=artifact_records,
@@ -8577,68 +9972,39 @@ async def generate_novel_plan(
                 *prewrite_repair_directives,
                 *_deceased_constraints,
             ]
-            vol_outline_system, vol_outline_user = _volume_outline_prompts(
-                project,
-                book_spec_payload,
-                cast_spec_payload,
-                normalized_vp,
-                vol_entry,
-                revealed_ledger_block=_ledger_block,
-                extra_constraints=_outline_constraints or None,
-            )
-            vol_outline_payload, llm_run_id = await _generate_structured_artifact(
+            vol_outline_payload, llm_run_id, outline_repair_history = await _generate_volume_outline_with_repair_loop(
                 session,
                 settings,
                 project=project,
-                logical_name=f"volume_{vol_num}_chapter_outline",
-                system_prompt=vol_outline_system,
-                user_prompt=vol_outline_user,
-                fallback_payload=vol_fallback,
                 workflow_run_id=workflow_run.id,
-                # Partial/missing volume outlines corrupt the global chapter
-                # sequence (observed 2026-04-17: "missing chapters [151..350]").
-                # Fail fast so the pipeline surfaces the real LLM failure
-                # rather than materialising a silent fallback.
-                abort_on_fallback=True,
+                logical_name=f"volume_{vol_num}_chapter_outline",
+                book_spec=book_spec_payload,
+                cast_spec=cast_spec_payload,
+                volume_plan=normalized_vp,
+                volume_entry=vol_entry,
+                fallback_payload=vol_fallback,
+                volume_number=vol_num,
+                expected_count=vol_ch_count,
+                chapter_number_offset=chapter_offset,
+                revealed_ledger_block=_ledger_block,
+                base_constraints=_outline_constraints,
             )
             if llm_run_id is not None:
                 llm_run_ids.append(llm_run_id)
+            if outline_repair_history:
+                workflow_run.metadata_json = {
+                    **(workflow_run.metadata_json or {}),
+                    "chapter_outline_repair_history": [
+                        *((workflow_run.metadata_json or {}).get("chapter_outline_repair_history") or []),
+                        {
+                            "volume_number": vol_num,
+                            "logical_name": f"volume_{vol_num}_chapter_outline",
+                            "attempts": outline_repair_history,
+                        },
+                    ],
+                }
 
-            # Normalize chapter numbers to global sequence.
-            # If the LLM response was truncated mid-array (MiniMax hitting
-            # max_tokens), _extract_json_payload will have salvaged the
-            # complete chapters but we might be short of vol_ch_count.
-            # Pad from the fallback outline so the global sequence has no
-            # gaps (otherwise pipelines.py detect_chapter_sequence_gaps
-            # aborts materialization downstream).
             vol_chapters = vol_outline_payload.get("chapters", []) if isinstance(vol_outline_payload, dict) else []
-            if len(vol_chapters) < vol_ch_count:
-                missing = vol_ch_count - len(vol_chapters)
-                logger.warning(
-                    "Volume %d outline returned %d/%d chapters — padding last %d from fallback.",
-                    vol_num,
-                    len(vol_chapters),
-                    vol_ch_count,
-                    missing,
-                )
-                pad = copy.deepcopy(vol_fallback_chapters[-missing:])
-                vol_chapters = list(vol_chapters) + pad
-                if isinstance(vol_outline_payload, dict):
-                    vol_outline_payload["chapters"] = vol_chapters
-            for idx, ch in enumerate(vol_chapters):
-                ch["volume_number"] = vol_num
-                ch["chapter_number"] = chapter_offset + idx
-            # Fill in any titles the LLM omitted, using the deterministic
-            # fallback so materialization never writes title=NULL.
-            _fallback_titles = {
-                fb["chapter_number"]: fb.get("title", "")
-                for fb in vol_fallback_chapters
-            }
-            for ch in vol_chapters:
-                if not ch.get("title"):
-                    fb_title = _fallback_titles.get(ch["chapter_number"])
-                    if fb_title:
-                        ch["title"] = fb_title
             all_outline_chapters.extend(vol_chapters)
 
             # Save per-volume artifact
@@ -8682,6 +10048,20 @@ async def generate_novel_plan(
                 version_no=outline_artifact.version_no,
             )
         )
+
+        if settings.pipeline.enable_reverse_outline_gate:
+            current_step_name = "reverse_outline_gate"
+            workflow_run.current_step = current_step_name
+            await _run_reverse_outline_gate(
+                session,
+                settings,
+                project=project,
+                story_design_kernel=story_design_payload,
+                outline_payload=outline_payload,
+                workflow_run_id=workflow_run.id,
+                step_order=step_order,
+            )
+            step_order += 1
 
         # ── Promotional brief: title refinement + tags + protagonist intro + blurb ──
         current_step_name = "generate_promotional_brief"
@@ -9143,9 +10523,11 @@ async def generate_volume_plan(
     _category = resolve_novel_category(project.genre, project.sub_genre)
     _category_key: str | None = _category.key if _category else None
 
+    volume_plan = _normalize_volume_plan_payload(volume_plan)
+
     # Find this volume's entry
     vol_entry: dict[str, Any] | None = None
-    for v in _mapping_list(volume_plan):
+    for v in volume_plan:
         if int(v.get("volume_number", 0)) == volume_number:
             vol_entry = v
             break
@@ -9277,6 +10659,8 @@ async def generate_volume_plan(
         await create_workflow_step_run(session, workflow_run_id=workflow_run.id, step_name=current_step_name, step_order=step_order, status=WorkflowStatus.COMPLETED, output_ref={"artifact_id": str(world_disc_artifact.id)})
         step_order += 1
 
+        _persist_character_drama_map(project, effective_cast_spec)
+
         if settings.pipeline.enable_prewrite_readiness_gate:
             current_step_name = "prewrite_readiness_gate"
             workflow_run.current_step = current_step_name
@@ -9336,54 +10720,39 @@ async def generate_volume_plan(
             effective_cast_spec, vol_entry, language=project.language or "zh-CN"
         )
         _all_constraints = (_all_constraints or []) + _deceased_constraints
-        vol_outline_system, vol_outline_user = _volume_outline_prompts(
-            project, book_spec, effective_cast_spec, _mapping_list(volume_plan), vol_entry,
-            revealed_ledger_block=_ledger_block,
-            extra_constraints=_all_constraints or None,
-        )
-        vol_outline_payload, llm_run_id = await _generate_structured_artifact(
-            session, settings, project=project,
+        vol_outline_payload, llm_run_id, outline_repair_history = await _generate_volume_outline_with_repair_loop(
+            session,
+            settings,
+            project=project,
+            workflow_run_id=workflow_run.id,
             logical_name=f"volume_{volume_number}_chapter_outline",
-            system_prompt=vol_outline_system, user_prompt=vol_outline_user,
-            fallback_payload=vol_fallback, workflow_run_id=workflow_run.id,
-            abort_on_fallback=True,
+            book_spec=book_spec,
+            cast_spec=effective_cast_spec,
+            volume_plan=_mapping_list(volume_plan),
+            volume_entry=vol_entry,
+            fallback_payload=vol_fallback,
+            volume_number=volume_number,
+            expected_count=int(vol_entry.get("chapter_count_target", len(vol_fallback_chapters) or 1)),
+            chapter_number_offset=chapter_number_offset,
+            revealed_ledger_block=_ledger_block,
+            base_constraints=_all_constraints or [],
         )
         if llm_run_id is not None:
             llm_run_ids.append(llm_run_id)
+        if outline_repair_history:
+            workflow_run.metadata_json = {
+                **(workflow_run.metadata_json or {}),
+                "chapter_outline_repair_history": [
+                    *((workflow_run.metadata_json or {}).get("chapter_outline_repair_history") or []),
+                    {
+                        "volume_number": volume_number,
+                        "logical_name": f"volume_{volume_number}_chapter_outline",
+                        "attempts": outline_repair_history,
+                    },
+                ],
+            }
 
         vol_chapters = vol_outline_payload.get("chapters", []) if isinstance(vol_outline_payload, dict) else []
-        # Pad from fallback if LLM truncation reduced the chapter count
-        # (see sibling loop at line ~4900 for rationale).
-        vol_ch_count = int(vol_entry.get("chapter_count_target", len(vol_chapters) or 1))
-        if len(vol_chapters) < vol_ch_count and vol_fallback_chapters:
-            missing = vol_ch_count - len(vol_chapters)
-            logger.warning(
-                "Volume %d outline returned %d/%d chapters — padding last %d from fallback.",
-                volume_number,
-                len(vol_chapters),
-                vol_ch_count,
-                missing,
-            )
-            pad = copy.deepcopy(vol_fallback_chapters[-missing:])
-            vol_chapters = list(vol_chapters) + pad
-            if isinstance(vol_outline_payload, dict):
-                vol_outline_payload["chapters"] = vol_chapters
-        # Force a contiguous, offset-safe chapter_number sequence. The LLM
-        # output cannot be trusted to stay above ``chapter_number_offset``,
-        # and fallback padding used to silently leak stale global numbers.
-        for idx, ch in enumerate(vol_chapters):
-            ch["volume_number"] = volume_number
-            ch["chapter_number"] = chapter_number_offset + idx
-        # Fill in any titles the LLM omitted from the fallback.
-        _fb_chapter_titles = {
-            fb["chapter_number"]: fb.get("title", "")
-            for fb in vol_fallback_chapters
-        }
-        for ch in vol_chapters:
-            if not ch.get("title"):
-                fb_title = _fb_chapter_titles.get(ch["chapter_number"])
-                if fb_title:
-                    ch["title"] = fb_title
 
         vol_outline_artifact = await import_planning_artifact(
             session, project_slug,

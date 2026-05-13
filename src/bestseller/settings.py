@@ -201,6 +201,9 @@ class PipelineSettings(BaseModel):
     rolling_summary_interval: int = 25  # Compress knowledge window every N chapters
     resume_enabled: bool = True  # Skip already-completed chapters on resume
     accept_on_stall: bool = True  # Accept best draft when rewrite is stalled (no score improvement)
+    project_consistency_block_on_failure: bool = True  # Whole-book consistency failures must pause, not accept_on_stall
+    chapter_review_block_on_failure: bool = True  # Chapter review failures must not be completed via accept_on_stall
+    chapter_outline_repair_attempts: int = 3  # Regenerate invalid chapter outlines before surfacing failure
     enable_chapter_feedback: bool = True  # Post-chapter feedback extraction
     enable_contradiction_checks: bool = True  # Pre-scene contradiction checks
     # Turn continuity/identity violations into hard write blocks.
@@ -214,6 +217,8 @@ class PipelineSettings(BaseModel):
     identity_block_severities: list[str] = Field(default_factory=lambda: ["critical", "major"])
     require_foundation_identity_lock: bool = True  # CastSpec must lock gender/pronouns before persistence
     require_chapter_plan_contract: bool = True  # Outline materialization must validate scene time/purpose/participants
+    enable_chapter_causality_gate: bool = True  # Outline materialization validates reader-visible causal axes
+    chapter_causality_gate_block_on_failure: bool = True  # Block flat chapter plans before prose drafting
     require_pre_draft_scene_contract: bool = True  # Scene pipeline validates persisted scene cards before drafting
     enable_scene_plan_richness_gate: bool = True  # Pre-draft scene card richness validation
     scene_richness_block_on_critical: bool = True  # Raise on critical richness failure instead of logging + injecting warnings
@@ -267,6 +272,12 @@ class PipelineSettings(BaseModel):
     enable_golden_three_health: bool = True
     golden_three_min_hype_chapters: int = 2
     golden_three_min_ending_hook_chapters: int = 2
+    # Commercial planning readiness gate. Long-form signing projects must
+    # prove that chapters 1-3 have concrete conflict, hooks, external pressure,
+    # and strong assigned hype before prose generation starts.
+    enable_commercial_planning_readiness_gate: bool = True
+    commercial_planning_readiness_block_on_failure: bool = True
+    commercial_planning_min_target_chapters: int = 50
     # Chapter-length stability gate.  Pulls the target window from
     # ``generation.words_per_chapter`` so historical projects without a
     # populated ``invariants.length_envelope`` still get hard feedback
@@ -295,10 +306,9 @@ class PipelineSettings(BaseModel):
     # be fixed by a schema change, not more rewriting).
     enable_chapter_auto_repair: bool = True
     # Hard cap on the number of (assemble → gate → rewrite → reassemble)
-    # cycles per chapter.  1 means at most one repair attempt in addition
-    # to the original generation; 0 disables auto-repair entirely even
-    # when ``enable_chapter_auto_repair`` is True.
-    chapter_auto_repair_max_attempts: int = 1
+    # cycles per chapter. 3 matches the staged repair prompts below: gentle,
+    # aggressive, then final intervention. 0 disables auto-repair entirely.
+    chapter_auto_repair_max_attempts: int = 3
     # Only these block codes trigger auto-repair. Length, dialogue,
     # ending-hook, lifecycle, and canon-term leaks are rewrite-fixable.
     # Deterministic schema blocks (POV_LOCK, NAMING, etc.) stay excluded.
@@ -308,11 +318,16 @@ class PipelineSettings(BaseModel):
             "BLOCK_HIGH",
             "DIALOG_UNPAIRED",
             "ENDING_SENTENCE_WEAK",
+            "dead_alive",
+            "pronoun_mismatch",
             "character_resurrection",
+            "character_missing_appearance",
+            "character_sealed_appearance",
+            "character_sleeping_appearance",
+            "character_comatose_appearance",
             "CANON_FORBIDDEN_TERM",
             "CROSS_CHAPTER_REPETITION",
             "INTRA_CHAPTER_REPETITION",
-            "NAMING_OUT_OF_POOL",
         ]
     )
     # Project-level premium-readiness gate. It is enabled as telemetry by
@@ -326,6 +341,16 @@ class PipelineSettings(BaseModel):
     # series engine, long-arc capacity, and genre-specific engines are present.
     enable_prewrite_readiness_gate: bool = True
     prewrite_readiness_block_on_failure: bool = False
+    # Story design kernel rollout.  This is the new project-level plot design
+    # contract: shape routing, category grammar, plot tree, beat schedule, and
+    # reverse-outline verification.  Enabled for telemetry/injection by default;
+    # strict blocking remains opt-in until canary books prove low false positives.
+    enable_story_design_kernel: bool = True
+    story_design_kernel_candidate_count: int = 3
+    enable_story_state_driven_planning: bool = True
+    enable_reverse_outline_gate: bool = True
+    reverse_outline_gate_block_on_failure: bool = False
+    story_design_require_kernel_for_new_projects: bool = False
     # Curator scheduling — overridable via env for admin triage.
     curator_weekly_cron_hour: int = 4  # 04:00 UTC Monday
     curator_weekly_cron_day_of_week: str = "mon"

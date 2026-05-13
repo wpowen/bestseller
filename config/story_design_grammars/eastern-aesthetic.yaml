@@ -1,0 +1,39 @@
+key: eastern-aesthetic
+name: 东方美学剧情语法
+applies_to_categories: [eastern-aesthetic]
+required_contracts:
+  - image_meaning_chain
+  - ritual_or_order_pressure
+  - poetic_object_function
+  - emotional_restraint
+  - atmosphere_turn
+state_variables:
+  - 意象含义
+  - 礼法秩序
+  - 人物心境
+  - 场景气韵
+  - 物件承载的秘密
+chapter_change_vectors:
+  - 一个意象从装饰转为行动线索
+  - 礼法压力改变人物选择
+  - 克制情绪出现细微裂缝
+  - 空间气氛揭示关系变化
+  - 诗性物件产生现实后果
+reader_rewards:
+  - 美学意象与剧情同频
+  - 含蓄情绪被读者读懂
+  - 场景审美服务人物选择
+  - 古典秩序制造现实压迫
+  - 余韵推动下一次相见
+hook_or_aftereffect_types:
+  - 物件含义反转
+  - 礼法后果延迟到来
+  - 未说出口的话被他人误读
+  - 场景细节暴露旧约
+  - 意象重复但意义升级
+forbidden_defaults:
+  - 只堆诗词不改剧情
+  - 水墨氛围替代人物行动
+  - 宿命感替代因果
+  - 高冷仙人无选择压力
+  - 美学标签套用同一故事骨架

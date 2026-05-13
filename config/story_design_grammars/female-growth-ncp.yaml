@@ -1,0 +1,39 @@
+key: female-growth-ncp
+name: 女性成长无CP剧情语法
+applies_to_categories: [female-growth-ncp]
+required_contracts:
+  - agency_growth
+  - social_constraint
+  - competence_path
+  - boundary_choice
+  - self_definition
+state_variables:
+  - 主体性
+  - 能力资本
+  - 社会位置
+  - 边界感
+  - 自我定义
+chapter_change_vectors:
+  - 主角争取一个实际决定权
+  - 能力资本获得验证
+  - 社会约束改变施压方式
+  - 边界被侵犯或重新划定
+  - 自我叙事从被定义转为自定义
+reader_rewards:
+  - 女性主体性增强
+  - 能力成长有现实反馈
+  - 群像支持或对照主线
+  - 选择代价被正面承担
+  - 旧评价体系被局部改写
+hook_or_aftereffect_types:
+  - 新权力带来新责任
+  - 旧关系无法适应新边界
+  - 能力成功引来制度反扑
+  - 自我选择产生孤独成本
+  - 群体期待发生偏移
+forbidden_defaults:
+  - 用恋爱奖励替代成长兑现
+  - 受害经历作为唯一人格来源
+  - 所有女性角色互害同质化
+  - 父权压迫只有口号没有机制
+  - 主角成功不付任何代价

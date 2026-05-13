@@ -205,6 +205,34 @@ class TestWorldSpecInputCoercion:
         assert spec.world_premise is not None
         assert "灵力" in spec.world_premise
 
+    def test_location_and_faction_name_aliases(self) -> None:
+        payload = {
+            "locations": [
+                {
+                    "locale_name": "青萝镇",
+                    "atmosphere": {"summary": "潮湿而古旧"},
+                    "key_rules": {"禁忌": "夜半不可近井"},
+                }
+            ],
+            "factions": [
+                {
+                    "faction_name": "守禁者联盟",
+                    "goal": {"summary": "维持器灵秩序"},
+                    "method": ["封禁", "巡查"],
+                }
+            ],
+        }
+
+        spec = WorldSpecInput.model_validate(payload)
+
+        assert spec.locations[0].name == "青萝镇"
+        assert spec.locations[0].atmosphere == "潮湿而古旧"
+        assert spec.locations[0].key_rules == ["夜半不可近井"]
+        assert spec.factions[0].name == "守禁者联盟"
+        assert spec.factions[0].goal == "维持器灵秩序"
+        assert spec.factions[0].method is not None
+        assert "封禁" in spec.factions[0].method
+
 
 class TestWorldRuleInputCoercion:
     def test_rule_name_alias(self) -> None:
@@ -268,6 +296,22 @@ class TestCharacterInputCoercion:
             }
         )
         assert len(character.role) <= 64
+
+    def test_character_text_fields_accept_nested_llm_payloads(self) -> None:
+        character = CharacterInput.model_validate(
+            {
+                "name": "布朗探长",
+                "role": "ally",
+                "background": {
+                    "origin": "大英帝国退役巡探",
+                    "connection": "对租界灵异势力早有觊觎之心",
+                },
+                "goal": {"public": "查明验尸房命案", "private": "保住巡捕房声誉"},
+            }
+        )
+
+        assert "大英帝国退役巡探" in (character.background or "")
+        assert "保住巡捕房声誉" in (character.goal or "")
 
     def test_social_network_family_accepts_relation_keyed_dict(self) -> None:
         character = CharacterInput.model_validate(
@@ -511,6 +555,34 @@ class TestVolumePlanEntryInputCoercion:
         )
         assert entry.volume_theme is not None
         assert "成长" in entry.volume_theme
+
+    def test_volume_resolution_string_coerces_to_resolution_object(self) -> None:
+        entry = VolumePlanEntryInput.model_validate(
+            {
+                "volume_number": 1,
+                "title": "V1",
+                "volume_resolution": "主角解开铜镜执念，但付出灵识受损的代价。",
+            }
+        )
+        assert entry.volume_resolution.goal_achieved is True
+        assert entry.volume_resolution.cost_paid is not None
+        assert "灵识受损" in entry.volume_resolution.cost_paid
+
+    def test_volume_resolution_goal_achieved_description_coerces_to_bool(self) -> None:
+        entry = VolumePlanEntryInput.model_validate(
+            {
+                "volume_number": 1,
+                "title": "墨痕寻迹",
+                "volume_resolution": {
+                    "protagonist_power_tier": "器灵共感·初触",
+                    "goal_achieved": "掌握器灵共感的基础能力，得知母亲临终前将铭纹鼎交给了某人",
+                    "cost_paid": "第一次借灵入器带来的反噬",
+                    "new_threat_introduced": "母亲遗物中暗藏器宫符号",
+                },
+            }
+        )
+        assert entry.volume_resolution.goal_achieved is True
+        assert entry.volume_resolution.cost_paid == "第一次借灵入器带来的反噬"
 
 
 class TestRealFailurePayloads:

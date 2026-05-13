@@ -442,6 +442,28 @@ class LocationInput(BaseModel):
     key_rules: list[str] = Field(default_factory=list)
     story_role: str | None = None
 
+    @model_validator(mode="before")
+    @classmethod
+    def _accept_location_name_aliases(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+        if "name" not in data:
+            for alias in ("locale_name", "location_name", "place_name", "title"):
+                if data.get(alias):
+                    data = {**data, "name": data.get(alias)}
+                    break
+        return data
+
+    @field_validator("atmosphere", "story_role", "location_type", mode="before")
+    @classmethod
+    def _coerce_text_fields(cls, v: Any) -> Any:
+        return coerce_to_narrative_string(v)
+
+    @field_validator("key_rules", mode="before")
+    @classmethod
+    def _coerce_key_rules(cls, v: Any) -> Any:
+        return coerce_to_string_list(v)
+
 
 class FactionInput(BaseModel):
     name: str = Field(min_length=1, max_length=4000)
@@ -449,6 +471,23 @@ class FactionInput(BaseModel):
     method: str | None = None
     relationship_to_protagonist: str | None = None
     internal_conflict: str | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _accept_faction_name_aliases(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+        if "name" not in data:
+            for alias in ("faction_name", "organization_name", "group_name", "title"):
+                if data.get(alias):
+                    data = {**data, "name": data.get(alias)}
+                    break
+        return data
+
+    @field_validator("goal", "method", "relationship_to_protagonist", "internal_conflict", mode="before")
+    @classmethod
+    def _coerce_text_fields(cls, v: Any) -> Any:
+        return coerce_to_narrative_string(v)
 
 
 class HistoryEventInput(BaseModel):
@@ -1044,6 +1083,23 @@ class CharacterInput(BaseModel):
     arc_state: str | None = None
     knowledge_state: CharacterKnowledgeStateInput = Field(default_factory=CharacterKnowledgeStateInput)
     power_tier: str | None = None
+
+    @field_validator(
+        "background",
+        "goal",
+        "fear",
+        "flaw",
+        "strength",
+        "secret",
+        "arc_trajectory",
+        "arc_state",
+        "power_tier",
+        mode="before",
+    )
+    @classmethod
+    def _coerce_character_text(cls, v: Any) -> Any:
+        return coerce_to_narrative_string(v)
+
     relationships: list[CharacterRelationshipInput] = Field(default_factory=list)
     voice_profile: CharacterVoiceProfileInput = Field(default_factory=CharacterVoiceProfileInput)
     moral_framework: CharacterMoralFramework = Field(default_factory=CharacterMoralFramework)
@@ -1345,6 +1401,30 @@ class VolumePlanResolutionInput(BaseModel):
     cost_paid: str | None = None
     new_threat_introduced: str | None = None
 
+    @field_validator("goal_achieved", mode="before")
+    @classmethod
+    def _coerce_goal_achieved(cls, v: Any) -> Any:
+        if v is None or isinstance(v, bool):
+            return v
+        if isinstance(v, str):
+            text = v.strip()
+            if not text:
+                return None
+            lowered = text.lower()
+            if lowered in {"true", "yes", "y", "1", "achieved", "complete", "completed"}:
+                return True
+            if lowered in {"false", "no", "n", "0", "not achieved", "incomplete", "failed"}:
+                return False
+            if any(marker in text for marker in ("未达成", "未完成", "失败", "没有达成")):
+                return False
+            return True
+        return v
+
+    @field_validator("protagonist_power_tier", "cost_paid", "new_threat_introduced", mode="before")
+    @classmethod
+    def _coerce_text_fields(cls, v: Any) -> Any:
+        return coerce_to_narrative_string(v)
+
 
 _WORD_COUNT_INT_PATTERN = re.compile(r"(\d[\d,]*)")
 
@@ -1416,6 +1496,18 @@ class VolumePlanEntryInput(BaseModel):
     @classmethod
     def _coerce_text_fields(cls, v: Any) -> Any:
         return coerce_to_narrative_string(v)
+
+    @field_validator("volume_resolution", mode="before")
+    @classmethod
+    def _coerce_volume_resolution(cls, v: Any) -> Any:
+        if v is None or isinstance(v, VolumePlanResolutionInput):
+            return v
+        if isinstance(v, str):
+            text = v.strip()
+            if not text:
+                return {}
+            return {"goal_achieved": True, "cost_paid": text}
+        return v
 
 
 class StoryBibleMaterializationResult(BaseModel):

@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "DistillationAntiCopyLedger",
+  "type": "object",
+  "required": ["source_id", "blocked_categories", "blocked_combinations", "replacement_policy"],
+  "properties": {
+    "source_id": { "type": "string" },
+    "blocked_categories": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["category", "policy"],
+        "properties": {
+          "category": { "type": "string" },
+          "policy": { "type": "string" },
+          "examples_redacted": { "type": "array", "items": { "type": "string" } }
+        },
+        "additionalProperties": false
+      }
+    },
+    "blocked_combinations": { "type": "array", "items": { "type": "string" } },
+    "replacement_policy": { "type": "array", "items": { "type": "string" } }
+  },
+  "additionalProperties": true
+}

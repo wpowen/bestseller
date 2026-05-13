@@ -1,0 +1,39 @@
+key: suspense-mystery
+name: 悬疑推理剧情语法
+applies_to_categories: [suspense-mystery]
+required_contracts:
+  - fair_play_clue_path
+  - suspect_state_map
+  - rule_or_case_boundary
+  - revelation_ladder
+  - dread_or_pressure_curve
+state_variables:
+  - 线索可信度
+  - 嫌疑人状态
+  - 规则边界
+  - 危险接近度
+  - 主角误判
+chapter_change_vectors:
+  - 线索从模糊变成可验证
+  - 嫌疑人排序发生变化
+  - 一条规则被证明或打破
+  - 危险距离主角更近
+  - 主角误判被局部纠正
+reader_rewards:
+  - 公平线索带来推理快感
+  - 恐惧来自可理解规则
+  - 每个揭示改变嫌疑结构
+  - 主角调查动作产生后果
+  - 结尾问题具体而非纯氛围
+hook_or_aftereffect_types:
+  - 新证据推翻旧解释
+  - 规则例外暴露更深规则
+  - 嫌疑人提供真话中的假方向
+  - 调查行为惊动危险源
+  - 安全地点变成新案发点
+forbidden_defaults:
+  - 父母失踪作为唯一谜团
+  - 氛围描写替代线索路径
+  - 结尾靠梦境或幻觉糊弄
+  - 凶手随机跳出没有公平提示
+  - 主角只被动遭遇怪事

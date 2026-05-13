@@ -1,0 +1,56 @@
+{
+  "source_ids": [
+    "source-0001"
+  ],
+  "blocked_categories": [
+    {
+      "category": "source_identity",
+      "policy": "Do not store or reuse source title, author, character names, family names, faction names, geography, technique names, or artifact names.",
+      "examples_redacted": [
+        "source_title",
+        "protagonist_name",
+        "host_family_name",
+        "named_artifact",
+        "named_technique"
+      ]
+    },
+    {
+      "category": "opening_chain",
+      "policy": "Do not reuse the exact chain of electronic accident, body takeover, noble heir, sibling murder, cliff/wildland landing, and first high-level creature asset.",
+      "examples_redacted": [
+        "specific_portal_accident",
+        "specific_inheritance_murder",
+        "specific_first_asset"
+      ]
+    },
+    {
+      "category": "power_expression",
+      "policy": "Reusable: cross-system rule arbitrage. Not reusable: named cultivation method, named symbol script, named artifact, and exact ability sequence.",
+      "examples_redacted": [
+        "named_method",
+        "named_script",
+        "named_storage_healing_artifact"
+      ]
+    },
+    {
+      "category": "relationship_reward",
+      "policy": "Do not promote objectification, coerced relationship rewards, or humiliation framed as sexualized comedy.",
+      "examples_redacted": [
+        "female_as_prize",
+        "coerced_servitude_as_reward",
+        "sexualized_public_humiliation"
+      ]
+    }
+  ],
+  "blocked_combinations": [
+    "old-world-esoteric-specialist + electronic-accident-portal + noble-heir-body + sibling-cliff-murder",
+    "weak-host-heir + exact-family-inheritance-debt + exact-first-monster-mount",
+    "named-storage-healing-artifact + named-forbidden-book + named-symbol-script"
+  ],
+  "replacement_policy": [
+    "Change source-world profession, arrival mechanism, host identity debt, first asset type, and first social map.",
+    "Keep the abstract state variables, not the event chain.",
+    "Each generated project must add a different cost model for cross-system arbitrage.",
+    "Replace outdated relationship rewards with agency, bargain, alliance, rivalry, or ethical conflict."
+  ]
+}

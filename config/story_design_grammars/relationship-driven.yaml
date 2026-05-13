@@ -1,0 +1,39 @@
+key: relationship-driven
+name: 关系驱动剧情语法
+applies_to_categories: [relationship-driven]
+required_contracts:
+  - relationship_state_model
+  - trust_debt
+  - boundary_pressure
+  - intimacy_payoff
+  - choice_cost
+state_variables:
+  - 信任度
+  - 误解或秘密
+  - 边界
+  - 情感债
+  - 公开关系位置
+chapter_change_vectors:
+  - 信任因行动上升或下降
+  - 误解被加深或局部澄清
+  - 边界被触碰后重新定义
+  - 情感债出现兑现窗口
+  - 外部压力迫使关系表态
+reader_rewards:
+  - 关系状态真实变化
+  - 亲密时刻带有代价
+  - 误解推动选择而非拖延
+  - 双方都展示能动性
+  - 情绪兑现后留下新问题
+hook_or_aftereffect_types:
+  - 未说出口的信息被第三方利用
+  - 一次靠近引出新的边界
+  - 债务到期要求选择
+  - 公开场合关系被迫表态
+  - 甜点后出现现实后果
+forbidden_defaults:
+  - 失踪父母制造唯一羁绊
+  - 强行误会拖完整卷
+  - 男强女弱单向拯救
+  - 亲密戏不改变关系状态
+  - 配角只为制造吃醋工具

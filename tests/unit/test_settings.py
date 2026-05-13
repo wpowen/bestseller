@@ -81,6 +81,24 @@ artifact_store:
     assert settings.generation.genre == "fantasy"
 
 
+def test_default_settings_treat_pronoun_mismatch_as_auto_repairable() -> None:
+    settings = load_settings(env={})
+
+    assert "pronoun_mismatch" in settings.pipeline.chapter_auto_repair_repairable_codes
+
+
+def test_default_settings_treat_non_death_offstage_states_as_auto_repairable() -> None:
+    settings = load_settings(env={})
+    repairable = set(settings.pipeline.chapter_auto_repair_repairable_codes)
+
+    assert {
+        "character_missing_appearance",
+        "character_sealed_appearance",
+        "character_sleeping_appearance",
+        "character_comatose_appearance",
+    } <= repairable
+
+
 def test_env_overrides_nested_values(tmp_path: Path) -> None:
     config_path = tmp_path / "default.yaml"
     config_path.write_text(

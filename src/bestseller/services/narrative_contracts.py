@@ -49,6 +49,101 @@ GENERIC_HOOK_MARKERS = (
     "每10章设置大钩子",
     "尾声把「尾钩」转化为下一章必须处理的新压力",
     "具体事件是「尾钩」",
+    "出现新的证据、时限或代价",
+    "出现新的证据、时限、代价",
+    "new evidence, deadline, or cost",
+)
+FUNCTIONAL_TITLE_PREFIXES_ZH = (
+    "暗潮",
+    "盲区",
+    "裂痕",
+    "回声",
+    "风眼",
+    "余烬",
+    "伏线",
+    "变局",
+    "断点",
+    "逆流",
+    "边界",
+    "悬灯",
+    "浮标",
+    "锈迹",
+    "夜隙",
+    "残局",
+    "沉渊",
+    "灰幕",
+    "雾锁",
+    "棱线",
+    "铁壁",
+    "荒火",
+    "冷锋",
+    "碎影",
+)
+FUNCTIONAL_TITLE_SUFFIXES_ZH = (
+    "初现",
+    "入局",
+    "投石",
+    "试探",
+    "铺火",
+    "露锋",
+    "破冰",
+    "起手",
+    "掀幕",
+    "落子",
+    "追索",
+    "摸底",
+    "拆解",
+    "寻隙",
+    "探针",
+    "回查",
+    "溯源",
+    "揭层",
+    "织网",
+    "破壁",
+    "加压",
+    "围拢",
+    "失衡",
+    "封锁",
+    "死线",
+    "逼近",
+    "绞杀",
+    "窒息",
+    "崩弦",
+    "缩网",
+    "反咬",
+    "逆转",
+    "偏航",
+    "脱钩",
+    "换轨",
+    "回火",
+    "翻盘",
+    "倒戈",
+    "破局",
+    "重铸",
+    "爆裂",
+    "截断",
+    "崩口",
+    "闯线",
+    "归零",
+    "掀牌",
+    "决堤",
+    "焚天",
+    "碎锁",
+    "终幕",
+)
+META_PLANNING_PATTERNS = (
+    r"(建立|引入|完善|补足|补全|增加|扩大|深化|完成).{0,14}(世界观|设定|体系|背景|势力线|角色线|关系线|哲学|主题|叙事|闭环|复杂性)",
+    r"(建立|引入|完善|补足|补全|增加|扩大|深化|完成).{0,14}(角色|势力|阵营|框架|结构)",
+    r"(揭示|确认).{0,14}(身份|世界观|设定|体系|背景|终极悬念)",
+    r"(读者|追读|爽点|尾钩|钩子|章节功能|叙事功能|本章功能|本章唯一推进点)",
+    r"第\d+章尾钩：围绕",
+    r"第\d+章(开场|中段\d*|尾声|结尾).{0,18}围绕",
+    r"(本章目标|chapter goal)[:：]",
+    r"(Chapter|chapter) \d+ (opening|middle beat|closing hook)",
+    r"章内必须落到这件可见事件",
+    r"visible chapter event must be",
+    r"围绕「[^」]+」出现新的证据",
+    r"迫使\S{0,8}下一章立刻行动",
 )
 GENERIC_SCENE_PURPOSE_MARKERS = (
     "推动本章剧情发展",
@@ -101,6 +196,8 @@ REFERENCE_ONLY_PURPOSE_MARKERS = (
     "留言",
     "遗言",
     "临死话",
+    "线推进",
+    "旧线",
     "当年",
     "曾经",
     "曾替",
@@ -309,6 +406,7 @@ def repair_legacy_foundation_identity_locks(
     cast_spec_content: dict[str, Any] | None,
     *,
     identity_hints: Iterable[dict[str, Any]] = (),
+    allow_unreliable_defaults: bool = True,
 ) -> tuple[dict[str, Any] | None, int]:
     """Backfill identity locks for historical CastSpec artifacts.
 
@@ -323,16 +421,24 @@ def repair_legacy_foundation_identity_locks(
     hint_index = _identity_index_from_manifest(identity_hints)
     patched = _deepcopy_json_mapping(cast_spec_content)
     repaired = 0
+    repaired += _remove_aliases_colliding_with_character_names(patched)
     for character in _iter_raw_cast_character_dicts(patched):
         name = _clean(character.get("name"))
         if not name or not _requires_identity_lock(character):
             continue
         hint = hint_index.get(_normalize_identity_token(name), {})
-        gender = _coerce_lock_gender(character.get("gender")) or _coerce_lock_gender(
-            hint.get("gender"),
+        gender = (
+            _coerce_lock_gender(character.get("gender"))
+            or _coerce_lock_gender(hint.get("gender"))
+            or _coerce_lock_gender_from_pronouns(character)
+            or _coerce_lock_gender_from_pronouns(hint)
         )
         if gender is None:
-            gender = _infer_legacy_gender(name, character) or "nonbinary"
+            gender = _infer_legacy_gender(name, character)
+        if gender is None:
+            if not allow_unreliable_defaults:
+                continue
+            gender = "nonbinary"
             character.setdefault("metadata", {})
             if isinstance(character["metadata"], dict):
                 character["metadata"].setdefault(
@@ -355,6 +461,48 @@ def repair_legacy_foundation_identity_locks(
             repaired += 1
 
     return patched, repaired
+
+
+def _remove_aliases_colliding_with_character_names(cast_spec_content: dict[str, Any]) -> int:
+    """Drop legacy alias/name_variant values that equal another cast member's name."""
+
+    characters = [item for item in _iter_raw_cast_character_dicts(cast_spec_content)]
+    name_tokens = {
+        _normalize_identity_token(_clean(character.get("name")))
+        for character in characters
+        if _normalize_identity_token(_clean(character.get("name")))
+    }
+    if not name_tokens:
+        return 0
+
+    repaired = 0
+    alias_keys = ("aliases", "alias", "also_known_as", "name_variants", "nicknames")
+    for character in characters:
+        own_token = _normalize_identity_token(_clean(character.get("name")))
+        if not own_token:
+            continue
+        conflicting_tokens = name_tokens - {own_token}
+        for key in alias_keys:
+            value = character.get(key)
+            if isinstance(value, str):
+                alias_token = _normalize_identity_token(value)
+                if alias_token in conflicting_tokens:
+                    character.pop(key, None)
+                    repaired += 1
+                continue
+            if isinstance(value, list):
+                filtered = [
+                    item
+                    for item in value
+                    if not (
+                        isinstance(item, str)
+                        and _normalize_identity_token(item) in conflicting_tokens
+                    )
+                ]
+                if len(filtered) != len(value):
+                    character[key] = filtered
+                    repaired += len(value) - len(filtered)
+    return repaired
 
 
 def repair_legacy_scene_contract_pre_draft(
@@ -411,12 +559,15 @@ def repair_missing_scene_participants_pre_draft(
     scene: Any,
     *,
     identity_registry: Iterable[CharacterIdentity] = (),
+    excluded_names: Iterable[str] = (),
 ) -> int:
-    """Fill empty legacy participant lists from deterministic scene context.
+    """Fill legacy participant omissions from deterministic scene context.
 
     This repair is conservative: it only adds characters already known in the
-    identity registry, only when the scene currently has no participants, and
-    never adds characters marked dead.
+    identity registry, only when they are alive and identity-resolved. Empty
+    participant lists can be seeded from entry/exit state plus purpose text;
+    non-empty lists are only augmented with characters explicitly named in the
+    concrete story purpose.
     """
 
     current = [
@@ -424,14 +575,22 @@ def repair_missing_scene_participants_pre_draft(
         for item in (getattr(scene, "participants", None) or [])
         if _clean(item)
     ]
-    if current:
-        return 0
 
     identity_index = _identity_index_from_registry(identity_registry)
     if not identity_index:
         return 0
+    excluded_tokens = {
+        _normalize_identity_token(name)
+        for name in excluded_names
+        if _normalize_identity_token(name)
+    }
 
-    candidates: list[str] = []
+    candidates: list[str] = list(dict.fromkeys(current))
+    seen_tokens = {
+        _normalize_identity_token(participant)
+        for participant in candidates
+        if _normalize_identity_token(participant)
+    }
 
     def _add_candidate(value: object) -> None:
         name = _clean(value)
@@ -440,14 +599,19 @@ def repair_missing_scene_participants_pre_draft(
         identity = identity_index.get(_normalize_identity_token(name))
         if identity is None or not identity.is_alive or not _identity_is_resolved(identity):
             return
-        if identity.name not in candidates:
+        identity_token = _normalize_identity_token(identity.name)
+        if identity_token in excluded_tokens:
+            return
+        if identity_token not in seen_tokens:
             candidates.append(identity.name)
+            seen_tokens.add(identity_token)
 
-    for state_name in ("entry_state", "exit_state"):
-        state = getattr(scene, state_name, None)
-        if isinstance(state, dict):
-            for key in state:
-                _add_candidate(key)
+    if not current:
+        for state_name in ("entry_state", "exit_state"):
+            state = getattr(scene, state_name, None)
+            if isinstance(state, dict):
+                for key in state:
+                    _add_candidate(key)
 
     purpose = getattr(scene, "purpose", None) or {}
     if isinstance(purpose, dict):
@@ -464,11 +628,12 @@ def repair_missing_scene_participants_pre_draft(
             ):
                 _add_candidate(referenced_name)
 
-    if not candidates:
+    added_count = len(candidates) - len(current)
+    if added_count <= 0:
         return 0
 
     setattr(scene, "participants", candidates)
-    return len(candidates)
+    return added_count
 
 
 def _extract_chapter_goal(text: str | None) -> str:
@@ -590,6 +755,18 @@ def validate_chapter_plan_contract(
     seen_scene_signatures: dict[tuple[Any, ...], str] = {}
     for chapter_index, chapter in enumerate(batch.chapters):
         chapter_location = f"chapter_outline_batch.chapters[{chapter_index}]"
+        if _is_functional_chapter_title(chapter.title):
+            violations.append(
+                NarrativeContractViolation(
+                    code="PLAN_CHAPTER_TITLE_FUNCTIONAL",
+                    location=f"{chapter_location}.title",
+                    message=(
+                        f"Chapter {chapter.chapter_number} title looks like an internal phase label; "
+                        "it must name a concrete story image, object, place, person, or event."
+                    ),
+                    metadata={"chapter_number": chapter.chapter_number, "title": chapter.title},
+                )
+            )
         if not _clean(chapter.main_conflict):
             violations.append(
                 NarrativeContractViolation(
@@ -610,6 +787,18 @@ def validate_chapter_plan_contract(
                     metadata={"chapter_number": chapter.chapter_number},
                 )
             )
+        elif _has_meta_planning_language(chapter.main_conflict):
+            violations.append(
+                NarrativeContractViolation(
+                    code="PLAN_CHAPTER_CONFLICT_META",
+                    location=f"{chapter_location}.main_conflict",
+                    message=(
+                        f"Chapter {chapter.chapter_number} conflict is written as a planning function; "
+                        "it must be a reader-visible obstacle or confrontation."
+                    ),
+                    metadata={"chapter_number": chapter.chapter_number},
+                )
+            )
         if _contains_marker(chapter.chapter_goal, GENERIC_CHAPTER_GOAL_MARKERS):
             violations.append(
                 NarrativeContractViolation(
@@ -618,6 +807,18 @@ def validate_chapter_plan_contract(
                     message=(
                         f"Chapter {chapter.chapter_number} goal is generic; it must name the unique "
                         "action, pressure, and state change for this chapter."
+                    ),
+                    metadata={"chapter_number": chapter.chapter_number},
+                )
+            )
+        elif _has_meta_planning_language(chapter.chapter_goal):
+            violations.append(
+                NarrativeContractViolation(
+                    code="PLAN_CHAPTER_GOAL_META",
+                    location=f"{chapter_location}.chapter_goal",
+                    message=(
+                        f"Chapter {chapter.chapter_number} goal is written as an author/planner note; "
+                        "it must say what the protagonist visibly tries to do and what changes."
                     ),
                     metadata={"chapter_number": chapter.chapter_number},
                 )
@@ -649,6 +850,18 @@ def validate_chapter_plan_contract(
                     message=(
                         f"Chapter {chapter.chapter_number} hook must be a concrete next-pressure event, "
                         "not a hook recipe or placeholder."
+                    ),
+                    metadata={"chapter_number": chapter.chapter_number},
+                )
+            )
+        elif _has_meta_planning_language(chapter.hook_description):
+            violations.append(
+                NarrativeContractViolation(
+                    code="PLAN_CHAPTER_HOOK_META",
+                    location=f"{chapter_location}.hook_description",
+                    message=(
+                        f"Chapter {chapter.chapter_number} hook is a recipe, not an event; "
+                        "it must name the concrete next pressure, choice, reveal, or loss."
                     ),
                     metadata={"chapter_number": chapter.chapter_number},
                 )
@@ -747,6 +960,21 @@ def validate_chapter_plan_contract(
                         },
                     )
                 )
+            elif _has_meta_planning_language(story_purpose):
+                violations.append(
+                    NarrativeContractViolation(
+                        code="PLAN_SCENE_STORY_PURPOSE_META",
+                        location=f"{scene_location}.purpose.story",
+                        message=(
+                            f"Chapter {chapter.chapter_number} scene {scene.scene_number} "
+                            "story purpose is written as planning commentary; use a visible action."
+                        ),
+                        metadata={
+                            "chapter_number": chapter.chapter_number,
+                            "scene_number": scene.scene_number,
+                        },
+                    )
+                )
             for referenced_name in _extract_purpose_character_names(
                 story_purpose,
                 identity_index,
@@ -817,6 +1045,7 @@ def validate_scene_contract_pre_draft(
     *,
     identity_registry: Iterable[CharacterIdentity] = (),
     require_identity_registry: bool = False,
+    excluded_names: Iterable[str] = (),
 ) -> NarrativeContractReport:
     """Validate a persisted scene card before drafting prose."""
 
@@ -831,6 +1060,11 @@ def validate_scene_contract_pre_draft(
 
     participants = [_clean(item) for item in (getattr(scene, "participants", None) or []) if _clean(item)]
     identity_index = _identity_index_from_registry(identity_registry)
+    excluded_tokens = {
+        _normalize_identity_token(name)
+        for name in excluded_names
+        if _normalize_identity_token(name)
+    }
 
     if not _clean(getattr(scene, "time_label", None)):
         violations.append(
@@ -932,6 +1166,8 @@ def validate_scene_contract_pre_draft(
             story_purpose,
             identity_index,
         ):
+            if _normalize_identity_token(referenced_name) in excluded_tokens:
+                continue
             if _normalize_identity_token(referenced_name) not in participant_tokens:
                 violations.append(
                     NarrativeContractViolation(
@@ -996,6 +1232,25 @@ def _coerce_lock_gender(value: Any) -> str | None:
     return None if gender == "unknown" else gender
 
 
+def _coerce_lock_gender_from_pronouns(character: dict[str, Any]) -> str | None:
+    pronoun_text = " ".join(
+        _clean(character.get(key)).lower()
+        for key in ("pronoun_set_en", "pronoun_set_zh", "pronouns")
+    )
+    if not pronoun_text:
+        return None
+    if any(marker in pronoun_text for marker in ("she/her", "she", "her", "她")):
+        return "female"
+    if any(marker in pronoun_text for marker in ("he/him", "he", "him", "他")):
+        return "male"
+    if any(
+        marker in pronoun_text
+        for marker in ("they/them", "they", "them", "it/its", "it", "its", "它", "ta")
+    ):
+        return "nonbinary"
+    return None
+
+
 def _pronouns_for_gender(gender: str) -> tuple[str, str]:
     if gender == "male":
         return ("他", "he/him")
@@ -1013,6 +1268,7 @@ _LEGACY_FEMALE_NAME_MARKERS = {
     "mira",
     "nora",
     "sophie",
+    "zoe",
 }
 _LEGACY_MALE_NAME_MARKERS = {
     "cole",
@@ -1261,6 +1517,22 @@ def _clean(value: Any) -> str:
 def _contains_marker(value: Any, markers: Iterable[str]) -> bool:
     text = _clean(value)
     return any(marker in text for marker in markers)
+
+
+def _is_functional_chapter_title(value: Any) -> bool:
+    title = _clean(value)
+    if not title or len(title) > 8:
+        return False
+    return any(title.startswith(prefix) for prefix in FUNCTIONAL_TITLE_PREFIXES_ZH) and any(
+        title.endswith(suffix) for suffix in FUNCTIONAL_TITLE_SUFFIXES_ZH
+    )
+
+
+def _has_meta_planning_language(value: Any) -> bool:
+    text = _clean(value)
+    if not text:
+        return False
+    return any(re.search(pattern, text, flags=re.IGNORECASE) for pattern in META_PLANNING_PATTERNS)
 
 
 def _is_generic_time_label(value: Any) -> bool:

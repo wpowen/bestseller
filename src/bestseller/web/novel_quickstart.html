@@ -3,52 +3,63 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>BestSeller 一键创作</title>
+<title>BestSeller 一键创作 · Imprint Workbench</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,500;0,8..60,600;0,8..60,700;0,8..60,800;1,8..60,400;1,8..60,500;1,8..60,600&family=Noto+Serif+SC:wght@300;400;500;600;700;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
   *, *::before, *::after { box-sizing: border-box; }
   * { margin: 0; padding: 0; }
 
   :root {
-    --bg: #f5f7fb;
-    --bg-2: #edf2f8;
-    --surface: #ffffff;
-    --surface-soft: #f8fafc;
-    --surface-tint: #eef4ff;
-    --text: #182230;
-    --text-dim: #667085;
-    --text-faint: #98a2b3;
-    --text-bright: #101828;
-    --border: #d8e0ea;
-    --border-strong: #bfc9d8;
-    --blue: #2563eb;
-    --blue-dark: #1d4ed8;
-    --blue-soft: #dbeafe;
-    --success: #12805c;
-    --success-soft: #ddf7ea;
-    --warning: #b76e00;
-    --warning-soft: #fff3d6;
-    --danger: #c24132;
-    --danger-soft: #ffe7e4;
-    --violet: #6d35d6;
-    --radius: 8px;
-    --radius-sm: 6px;
-    --shadow-sm: 0 1px 2px rgba(16, 24, 40, 0.06);
-    --shadow: 0 18px 50px rgba(29, 43, 68, 0.10);
-    --focus: 0 0 0 3px rgba(37, 99, 235, 0.18);
+    --bg: #f3ede0;
+    --bg-2: #ebe3cf;
+    --surface: #faf6ec;
+    --surface-soft: #f7f1e2;
+    --surface-tint: #f5e3df;
+    --surface-strong: #fffaf0;
+    --text: #2a2520;
+    --text-dim: #6f665a;
+    --text-faint: #9b8f7e;
+    --text-bright: #1a1612;
+    --border: #cdc3ad;
+    --border-strong: #a99c86;
+    --hair: #ddd4c0;
+    --blue: #8c2a1c;
+    --blue-dark: #5e1c12;
+    --blue-soft: #ead2cc;
+    --success: #3a6e3a;
+    --success-soft: #dde8d6;
+    --warning: #a06a14;
+    --warning-soft: #f3e6cb;
+    --danger: #8c2a1c;
+    --danger-soft: #f0d4cf;
+    --violet: #2c4a6e;
+    --ink: #1a1612;
+    --paper: #faf6ec;
+    --sans: "Source Serif 4", "Noto Serif SC", Georgia, "Times New Roman", "PingFang SC", "Hiragino Sans GB", serif;
+    --serif: "Source Serif 4", "Noto Serif SC", Georgia, "Times New Roman", "PingFang SC", "Hiragino Sans GB", serif;
+    --display: "Source Serif 4", "Noto Serif SC", Georgia, serif;
+    --mono: "JetBrains Mono", "IBM Plex Mono", "SFMono-Regular", "SF Mono", ui-monospace, Menlo, Monaco, Consolas, monospace;
+    --radius: 4px;
+    --radius-sm: 3px;
+    --shadow-sm: 0 1px 0 rgba(42, 37, 32, 0.06);
+    --shadow: 0 16px 34px rgba(47, 36, 24, 0.12);
+    --focus: 0 0 0 3px rgba(140, 42, 28, 0.16);
   }
 
   html { scroll-behavior: smooth; }
 
   body {
-    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
     min-height: 100vh;
     background:
-      linear-gradient(180deg, rgba(255,255,255,0.80), rgba(245,247,251,0.92)),
-      linear-gradient(90deg, rgba(37,99,235,0.06) 1px, transparent 1px),
-      linear-gradient(0deg, rgba(18,128,92,0.045) 1px, transparent 1px),
+      linear-gradient(180deg, rgba(250,246,236,0.84), rgba(243,237,224,0.96)),
+      linear-gradient(90deg, rgba(42,37,32,0.035) 1px, transparent 1px),
+      linear-gradient(0deg, rgba(42,37,32,0.03) 1px, transparent 1px),
       var(--bg);
-    background-size: auto, 44px 44px, 44px 44px, auto;
+    background-size: auto, 34px 34px, 34px 34px, auto;
     color: var(--text);
+    font-family: var(--sans);
     line-height: 1.55;
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
@@ -64,78 +75,302 @@
     position: sticky;
     top: 0;
     z-index: 50;
+    background: rgba(243, 237, 224, 0.96);
+    border-bottom: 1px solid var(--border);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+  }
+
+  .header-row {
     display: flex;
-    justify-content: space-between;
     align-items: center;
+    justify-content: space-between;
+    gap: 24px;
+    padding: 14px 40px 12px;
+  }
+
+  .header-brand {
+    display: flex;
+    align-items: baseline;
     gap: 18px;
-    min-height: 68px;
-    padding: 14px 28px;
-    background: rgba(255, 255, 255, 0.88);
-    border-bottom: 1px solid rgba(216, 224, 234, 0.82);
-    backdrop-filter: blur(18px);
-    -webkit-backdrop-filter: blur(18px);
+    min-width: 0;
   }
 
   .header h1 {
     display: flex;
     align-items: baseline;
     gap: 6px;
+    margin: 0;
     color: var(--text-bright);
-    font-size: 18px;
-    font-weight: 760;
-    line-height: 1.1;
-    letter-spacing: 0;
+    font-family: var(--display);
+    font-size: 28px;
+    font-weight: 700;
+    line-height: 1;
+    letter-spacing: -0.5px;
     white-space: nowrap;
   }
 
-  .header h1 span {
+  .header h1 .dot {
     color: var(--blue);
-    font-weight: 820;
+    font-weight: 700;
+  }
+
+  .header-eyebrow {
+    color: var(--text-dim);
+    font-family: var(--display);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+
+  .header-meta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--text-dim);
+    font-family: var(--mono);
+    font-size: 11px;
+    white-space: nowrap;
+  }
+
+  .header-meta .sep {
+    color: var(--text-faint);
+  }
+
+  .header-tools {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .header-search {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 240px;
+    padding: 6px 10px;
+    border: 1px solid var(--border);
+    background: var(--paper);
+    color: var(--text-dim);
+    font-family: var(--mono);
+    font-size: 11px;
+    cursor: pointer;
+    transition: border-color .16s ease, color .16s ease;
+  }
+
+  .header-search:hover {
+    border-color: var(--border-strong);
+    color: var(--text);
+  }
+
+  .header-search .glyph {
+    color: var(--text-faint);
+    font-size: 13px;
+  }
+
+  .header-search .placeholder {
+    flex: 1;
+    color: var(--text-faint);
+    font-family: var(--mono);
+  }
+
+  .header-search .kbd-hint {
+    display: inline-flex;
+    gap: 3px;
+  }
+
+  .kbd {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 16px;
+    padding: 2px 5px;
+    border: 1px solid var(--hair);
+    border-bottom-width: 2px;
+    border-radius: 3px;
+    background: var(--paper);
+    color: var(--text-dim);
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 600;
+    line-height: 1;
+  }
+
+  .kbd-strong {
+    border-color: var(--border);
+    color: var(--text);
+  }
+
+  .header-cta {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 14px;
+    border: 1px solid var(--blue);
+    background: var(--blue);
+    color: var(--paper);
+    cursor: pointer;
+    font-family: var(--display);
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    transition: background .16s ease;
+  }
+
+  .header-cta:hover {
+    background: var(--blue-dark);
+  }
+
+  .header-cta .kbd {
+    background: rgba(255,255,255,0.18);
+    border-color: rgba(255,255,255,0.28);
+    color: rgba(255,255,255,0.85);
+  }
+
+  .header-divider {
+    width: 1px;
+    height: 22px;
+    background: var(--border);
+  }
+
+  .header-editor {
+    color: var(--text-dim);
+    font-family: var(--mono);
+    font-size: 11px;
+    white-space: nowrap;
   }
 
   .header-nav {
     display: flex;
     align-items: center;
-    justify-content: flex-end;
-    gap: 8px;
+    justify-content: flex-start;
+    gap: 0;
     min-width: 0;
+    padding: 0 40px;
+    border-top: 1px solid var(--hair);
   }
 
   .header-nav a,
   .header-nav button {
-    min-height: 36px;
-    padding: 8px 14px;
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    background: var(--surface);
+    min-height: 42px;
+    padding: 0 18px;
+    border: 0;
+    border-bottom: 2px solid transparent;
+    border-radius: 0;
+    background: transparent;
     color: var(--text-dim);
-    box-shadow: var(--shadow-sm);
+    box-shadow: none;
     cursor: pointer;
+    font-family: var(--display);
     font-size: 13px;
-    font-weight: 650;
+    font-weight: 500;
     line-height: 1;
+    letter-spacing: 0.01em;
     text-decoration: none;
-    transition: background .18s ease, border-color .18s ease, color .18s ease, transform .18s ease, box-shadow .18s ease;
+    transition: border-color .18s ease, color .18s ease;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
   }
 
   .header-nav a:hover,
   .header-nav button:hover {
-    border-color: var(--border-strong);
     color: var(--text-bright);
-    transform: translateY(-1px);
   }
 
   .header-nav .active {
-    border-color: var(--blue-dark);
-    background: var(--blue);
-    color: #fff;
-    box-shadow: 0 8px 20px rgba(37, 99, 235, 0.22);
+    border-color: var(--blue);
+    background: transparent;
+    color: var(--text-bright);
+    font-weight: 700;
+  }
+
+  .nav-count {
+    color: var(--text-faint);
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0;
+  }
+
+  .header-nav .active .nav-count {
+    color: var(--blue);
+  }
+
+  .header-status {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-left: auto;
+    color: var(--text-dim);
+    font-family: var(--mono);
+    font-size: 11px;
+    padding-right: 4px;
+  }
+
+  .header-status .health-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 3px;
+    background: var(--success);
+    box-shadow: 0 0 0 3px rgba(58,110,58,0.18);
+  }
+
+  .header-status .ok-text {
+    color: var(--success);
+    font-weight: 600;
+  }
+
+  .header-status .sep {
+    width: 1px;
+    height: 12px;
+    background: var(--border);
   }
 
   .container {
-    width: min(1120px, calc(100% - 40px));
+    width: min(1280px, calc(100% - 64px));
     margin: 0 auto;
-    padding: 28px 0 64px;
+    padding: 24px 0 96px;
+  }
+
+  .hotkey-footer {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 40;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 8px 32px;
+    border-top: 1px solid var(--border);
+    background: rgba(250, 246, 236, 0.96);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    color: var(--text-dim);
+    font-family: var(--mono);
+    font-size: 10.5px;
+  }
+
+  .hotkey-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 14px;
+    align-items: center;
+  }
+
+  .hotkey-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .hotkey-build {
+    color: var(--text-faint);
   }
 
   .view {
@@ -161,42 +396,36 @@
   .dashboard-head h2,
   .wizard-head h2 {
     color: var(--text-bright);
-    font-size: 26px;
-    font-weight: 780;
-    line-height: 1.2;
-    letter-spacing: 0;
+    font-family: var(--display);
+    font-size: 36px;
+    font-weight: 700;
+    line-height: 1.05;
+    letter-spacing: -0.8px;
   }
 
   .dashboard-head p,
   .wizard-head p {
     margin-top: 6px;
     color: var(--text-dim);
+    font-family: var(--serif);
     font-size: 14px;
+    font-style: italic;
+    line-height: 1.5;
   }
 
   .dash-command {
     position: relative;
     overflow: hidden;
     display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(420px, .78fr);
-    gap: 22px;
-    margin-bottom: 18px;
-    padding: 24px;
-    border: 1px solid #172033;
-    border-radius: var(--radius);
-    background:
-      linear-gradient(135deg, rgba(37, 99, 235, .20), transparent 42%),
-      linear-gradient(160deg, #101828 0%, #182033 58%, #202018 100%);
-    color: #f8fafc;
-    box-shadow: 0 20px 60px rgba(16, 24, 40, .18);
-  }
-
-  .dash-command::after {
-    content: "";
-    position: absolute;
-    inset: auto 0 0;
-    height: 1px;
-    background: linear-gradient(90deg, transparent, rgba(255,255,255,.30), transparent);
+    grid-template-columns: minmax(0, 2fr) repeat(4, minmax(0, 1fr));
+    gap: 0;
+    margin-bottom: 16px;
+    padding: 0;
+    border: 1px solid var(--ink);
+    border-radius: 0;
+    background: var(--ink);
+    color: var(--paper);
+    box-shadow: var(--shadow);
   }
 
   .dash-command-main {
@@ -205,141 +434,291 @@
     display: flex;
     flex-direction: column;
     justify-content: space-between;
-    gap: 24px;
+    gap: 22px;
+    min-height: 200px;
+    padding: 22px 24px 20px;
+  }
+
+  .dash-command-main::before,
+  .wizard-head::before {
+    display: block;
+    margin-bottom: 6px;
+    color: #d9c3bd;
+    font-family: var(--display);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+  }
+
+  .dash-command-main::before {
+    content: "PRESS RUN · 编辑指挥台";
   }
 
   .dash-command h2 {
-    max-width: 560px;
+    max-width: 620px;
     color: #fff;
-    font-size: 30px;
-    font-weight: 800;
-    line-height: 1.12;
-    letter-spacing: 0;
+    font-family: var(--display);
+    font-size: 32px;
+    font-weight: 700;
+    line-height: 1;
+    letter-spacing: -0.6px;
+  }
+
+  .dash-command h2 span {
+    color: #ead2cc;
+    font-weight: 700;
   }
 
   .dash-command p {
-    max-width: 600px;
+    max-width: 620px;
     margin-top: 8px;
-    color: #cbd5e1;
-    font-size: 14px;
+    color: #c8c0b2;
+    font-family: var(--serif);
+    font-size: 13px;
+    line-height: 1.65;
+  }
+
+  .dash-command-bottomline {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    color: #a8a292;
+    font-family: var(--mono);
+    font-size: 10.5px;
+  }
+
+  .dash-command-bottomline .sep { color: #6b6457; }
+  .dash-command-bottomline strong {
+    color: #ead2cc;
+    font-family: var(--display);
+    font-weight: 700;
   }
 
   .dash-command-actions {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 8px;
     flex-wrap: wrap;
   }
 
   .dash-command-actions .btn-secondary {
-    border-color: rgba(255,255,255,.18);
-    background: rgba(255,255,255,.08);
-    color: #e2e8f0;
+    border-color: rgba(255,255,255,.20);
+    background: transparent;
+    color: #dfd5bd;
   }
 
   .dash-command-actions .btn-secondary:hover {
-    background: rgba(255,255,255,.14);
-    color: #fff;
-  }
-
-  .dash-overview {
-    position: relative;
-    z-index: 1;
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 10px;
+    background: rgba(250,246,236,.08);
+    color: var(--paper);
   }
 
   .dash-metric {
-    min-height: 104px;
-    padding: 14px;
-    border: 1px solid rgba(255,255,255,.14);
-    border-radius: var(--radius);
-    background: rgba(255,255,255,.075);
-    box-shadow: inset 0 1px 0 rgba(255,255,255,.08);
+    position: relative;
+    min-height: 200px;
+    padding: 22px 22px 20px;
+    border: 0;
+    border-left: 1px solid rgba(255,255,255,.14);
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    color: #ead2cc;
+  }
+
+  .dash-metric-kicker {
+    color: #9a9484;
+    font-family: var(--mono);
+    font-size: 9.5px;
+    font-weight: 700;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
   }
 
   .dash-metric-label {
-    color: #aab8cc;
-    font-size: 12px;
-    font-weight: 720;
+    margin-top: 2px;
+    color: #dcd4c2;
+    font-family: var(--display);
+    font-size: 14px;
+    font-weight: 500;
   }
 
   .dash-metric-value {
-    margin-top: 10px;
-    color: #fff;
-    font-size: 30px;
-    font-weight: 820;
-    line-height: 1;
+    margin-top: 14px;
+    color: #ead2cc;
+    font-family: var(--display);
+    font-size: 56px;
+    font-weight: 700;
+    line-height: .9;
+    letter-spacing: -2px;
   }
+
+  .dash-metric.tone-running .dash-metric-value { color: #ead2cc; }
+  .dash-metric.tone-finalizing .dash-metric-value { color: #e6c789; }
+  .dash-metric.tone-done .dash-metric-value { color: #b9d6b3; }
+  .dash-metric.tone-attention .dash-metric-value { color: #e8b6ad; }
 
   .dash-metric-note {
     margin-top: 8px;
-    color: #aab8cc;
-    font-size: 12px;
+    color: #a8a292;
+    font-family: var(--serif);
+    font-size: 11.5px;
+    font-style: italic;
     line-height: 1.35;
   }
 
-  .dash-viewbar {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(240px, 320px);
-    gap: 12px;
+  .dash-attention {
+    display: none;
     align-items: center;
-    margin-bottom: 12px;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 14px;
+    padding: 10px 16px;
+    border: 1px solid var(--blue);
+    background: var(--danger-soft);
+  }
+
+  .dash-attention.visible { display: flex; }
+
+  .dash-attention-icon {
+    flex-shrink: 0;
+    width: 22px;
+    height: 22px;
+    border-radius: 11px;
+    background: var(--blue);
+    color: var(--paper);
+    font-family: var(--mono);
+    font-size: 13px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .dash-attention-body {
+    flex: 1;
+  }
+
+  .dash-attention-title {
+    color: var(--blue-dark);
+    font-family: var(--display);
+    font-size: 13.5px;
+    font-weight: 600;
+  }
+
+  .dash-attention-detail {
+    margin-top: 1px;
+    color: var(--text);
+    font-family: var(--serif);
+    font-size: 12px;
+    line-height: 1.5;
+  }
+
+  .dash-attention-actions {
+    display: flex;
+    gap: 8px;
+    flex-shrink: 0;
+  }
+
+  .dash-viewbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    margin: 18px 0 0;
+    padding: 0 0 10px;
+    border-bottom: 1px solid var(--border);
+    flex-wrap: wrap;
   }
 
   .dash-filter-tabs {
     display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 4px;
+    align-items: stretch;
+    gap: 0;
+    padding: 0;
     border: 1px solid var(--border);
-    border-radius: var(--radius);
-    background: rgba(255, 255, 255, .76);
-    box-shadow: var(--shadow-sm);
-    overflow-x: auto;
+    border-radius: 0;
+    background: var(--paper);
+    box-shadow: none;
   }
 
   .dash-filter {
     flex: 0 0 auto;
     display: inline-flex;
     align-items: center;
-    gap: 7px;
-    min-height: 34px;
-    padding: 7px 11px;
+    gap: 6px;
+    min-height: 32px;
+    padding: 6px 14px;
     border: 0;
-    border-radius: var(--radius-sm);
-    background: transparent;
+    border-right: 1px solid var(--border);
+    border-radius: 0;
+    background: var(--paper);
     color: var(--text-dim);
     cursor: pointer;
+    font-family: var(--display);
     font-size: 13px;
-    font-weight: 720;
-    transition: background .16s ease, color .16s ease, box-shadow .16s ease;
+    font-weight: 500;
+    line-height: 1;
+    transition: background .14s ease, color .14s ease;
   }
+
+  .dash-filter:last-child { border-right: 0; }
 
   .dash-filter:hover {
     color: var(--text-bright);
   }
 
   .dash-filter.active {
-    background: var(--surface);
-    color: var(--blue-dark);
-    box-shadow: var(--shadow-sm);
+    background: var(--ink);
+    color: var(--paper);
+    font-weight: 600;
   }
 
   .dash-filter span {
     min-width: 20px;
-    padding: 2px 6px;
-    border-radius: 999px;
-    background: var(--surface-soft);
+    padding: 0;
+    border-radius: 0;
+    background: transparent;
     color: var(--text-faint);
+    font-family: var(--mono);
     font-size: 11px;
     text-align: center;
   }
 
   .dash-filter.active span {
-    background: var(--blue-soft);
-    color: var(--blue-dark);
+    color: #ead2cc;
+  }
+
+  .dash-controls {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    flex-wrap: wrap;
+  }
+
+  .dash-control {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--text-dim);
+    font-family: var(--mono);
+    font-size: 11px;
+  }
+
+  .dash-control strong {
+    color: var(--text-bright);
+    font-family: var(--display);
+    font-size: 12px;
+    font-weight: 600;
+  }
+
+  .dash-search {
+    position: relative;
+    min-width: 240px;
+    flex: 1;
+    max-width: 320px;
   }
 
   .dash-search {
@@ -351,11 +730,11 @@
     min-height: 44px;
     padding: 10px 13px 10px 38px;
     border: 1px solid var(--border);
-    border-radius: var(--radius);
-    background: rgba(255,255,255,.82);
+    border-radius: var(--radius-sm);
+    background: var(--paper);
     color: var(--text);
     outline: none;
-    box-shadow: var(--shadow-sm);
+    box-shadow: none;
   }
 
   .dash-search input:focus {
@@ -419,15 +798,15 @@
     display: none;
     margin: 0 0 14px !important;
     padding: 12px 14px !important;
-    border: 1px solid #b8d4ff !important;
-    border-radius: var(--radius) !important;
-    background: #eff6ff !important;
-    color: #1e3a8a !important;
+    border: 1px solid var(--blue) !important;
+    border-radius: var(--radius-sm) !important;
+    background: var(--danger-soft) !important;
+    color: var(--blue-dark) !important;
     font-size: 14px !important;
     box-shadow: var(--shadow-sm);
   }
 
-  #dashStatusBanner strong { color: #1d4ed8; }
+  #dashStatusBanner strong { color: var(--blue-dark); }
 
   #dashToolbar {
     display: flex !important;
@@ -437,9 +816,9 @@
     margin: 0 0 14px !important;
     padding: 10px 12px;
     border: 1px solid var(--border);
-    border-radius: var(--radius);
-    background: rgba(255, 255, 255, 0.76);
-    box-shadow: var(--shadow-sm);
+    border-radius: var(--radius-sm);
+    background: var(--paper);
+    box-shadow: none;
   }
 
   .dash-select-row,
@@ -464,6 +843,7 @@
 
   #dashSelectedCount {
     color: var(--blue-dark) !important;
+    font-family: var(--mono);
     font-size: 13px !important;
     font-weight: 700;
   }
@@ -500,123 +880,734 @@
   .task-card {
     position: relative;
     overflow: hidden;
-    border: 1px solid var(--border);
-    border-left: 4px solid var(--border-strong);
-    border-radius: var(--radius);
-    background: var(--surface);
-    box-shadow: var(--shadow-sm);
-    padding: 20px;
-    transition: transform .18s ease, border-color .18s ease, box-shadow .18s ease;
-  }
-
-  .task-card::before {
-    content: "";
-    position: absolute;
-    inset: 0 0 auto;
-    height: 3px;
-    background: linear-gradient(90deg, rgba(37,99,235,0.18), rgba(18,128,92,0.18), transparent);
-    opacity: 0;
-    transition: opacity .18s ease;
+    border: 1px solid var(--hair);
+    border-left: 1px solid var(--hair);
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+    padding: 14px 18px 14px 16px;
+    transition: border-color .14s ease, background .14s ease;
   }
 
   .task-card:hover {
     border-color: var(--border-strong);
-    box-shadow: var(--shadow);
-    transform: translateY(-2px);
+    background: var(--paper);
   }
 
-  .task-card:hover::before { opacity: 1; }
+  .task-card.focused {
+    border: 1px solid var(--blue);
+    border-left: 3px solid var(--blue);
+    background: var(--paper);
+  }
 
-  .task-card.status-running { border-left-color: var(--blue); }
-  .task-card.status-completed { border-left-color: var(--success); }
-  .task-card.status-failed { border-left-color: var(--danger); }
-  .task-card.status-cancelled { border-left-color: var(--text-faint); }
-  .task-card.status-incomplete,
-  .task-card.status-queued { border-left-color: var(--warning); }
+  .task-card.status-failed.focused,
+  .task-card.status-cancelled.focused,
+  .task-card.status-incomplete.focused {
+    border-color: var(--warning);
+    border-left-color: var(--warning);
+  }
 
-  .tc-header {
-    display: flex;
-    justify-content: space-between;
+  .tc-row1 {
+    display: grid;
+    grid-template-columns: 32px minmax(0, 1fr) auto;
+    gap: 14px;
     align-items: flex-start;
-    gap: 16px;
-    margin-bottom: 14px;
+  }
+
+  .tc-checkbox {
+    padding-top: 5px;
+  }
+
+  .tc-checkbox input {
+    width: 14px;
+    height: 14px;
+    accent-color: var(--blue);
+    cursor: pointer;
+  }
+
+  .tc-titleblock {
+    min-width: 0;
+  }
+
+  .tc-titlerow {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
   }
 
   .tc-title {
     color: var(--text-bright);
-    font-size: 17px;
-    font-weight: 760;
-    line-height: 1.35;
+    font-family: var(--display);
+    font-size: 22px;
+    font-weight: 700;
+    line-height: 1.2;
+    letter-spacing: -0.4px;
   }
 
-  .tc-subtitle {
-    margin-top: 3px;
-    color: var(--text-faint);
-    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  .tc-genre {
+    color: var(--text-dim);
+    font-family: var(--serif);
     font-size: 12px;
+    font-style: italic;
+  }
+
+  .tc-meta-line {
+    margin-top: 4px;
+    color: var(--text-faint);
+    font-family: var(--mono);
+    font-size: 10.5px;
+    line-height: 1.5;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .tc-meta-line .pipe {
+    margin: 0 6px;
+    color: var(--hair);
+  }
+
+  .tc-actionsrow {
+    display: flex;
+    flex-shrink: 0;
+    gap: 6px;
   }
 
   .tc-badge {
     display: inline-flex;
     align-items: center;
-    min-height: 26px;
-    padding: 5px 10px;
+    gap: 5px;
+    padding: 3px 9px;
     border: 1px solid transparent;
-    border-radius: var(--radius-sm);
+    border-radius: 0;
     white-space: nowrap;
-    font-size: 12px;
-    font-weight: 740;
-  }
-
-  .tc-badge.running { border-color: #bdd2ff; background: var(--blue-soft); color: #1e40af; }
-  .tc-badge.completed { border-color: #bdebcf; background: var(--success-soft); color: var(--success); }
-  .tc-badge.failed { border-color: #ffc1ba; background: var(--danger-soft); color: var(--danger); }
-  .tc-badge.queued,
-  .tc-badge.incomplete { border-color: #f7d58a; background: var(--warning-soft); color: var(--warning); }
-  .tc-badge.cancelled { border-color: var(--border); background: var(--surface-soft); color: var(--text-dim); }
-
-  .tc-headline {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(128px, 1fr));
-    gap: 12px 18px;
-    padding: 14px 0;
-    margin-bottom: 14px;
-    border-top: 1px solid var(--border);
-    border-bottom: 1px solid var(--border);
-  }
-
-  .tc-headline .hl-item {
-    min-width: 0;
-    padding-right: 14px;
-    border-right: 1px solid var(--border);
-  }
-
-  .tc-headline .hl-item:last-child { border-right: 0; }
-
-  .tc-headline .hl-label {
-    margin-bottom: 3px;
-    color: var(--text-faint);
+    font-family: var(--display);
     font-size: 11px;
-    font-weight: 720;
+    font-weight: 600;
+    letter-spacing: 0.04em;
   }
 
-  .tc-headline .hl-value {
-    color: var(--text-bright);
-    font-size: 17px;
-    font-weight: 780;
-    line-height: 1.25;
+  .tc-badge::before {
+    content: "";
+    width: 5px;
+    height: 5px;
+    border-radius: 3px;
+    background: currentColor;
+    opacity: .9;
   }
 
-  .tc-headline .hl-value.pulse { color: var(--blue); }
-  .tc-headline .hl-value .dim {
-    color: var(--text-dim);
-    font-size: 13px;
-    font-weight: 620;
+  .tc-badge.running { background: var(--blue); color: var(--paper); border-color: var(--blue); }
+  .tc-badge.finalizing { background: var(--warning); color: var(--paper); border-color: var(--warning); }
+  .tc-badge.completed { background: var(--success); color: var(--paper); border-color: var(--success); }
+  .tc-badge.failed { background: var(--danger); color: var(--paper); border-color: var(--danger); }
+  .tc-badge.queued { background: transparent; color: var(--text-dim); border-color: var(--border); }
+  .tc-badge.queued::before { background: var(--warning); }
+  .tc-badge.incomplete { background: var(--warning); color: var(--paper); border-color: var(--warning); }
+  .tc-badge.cancelled { background: var(--text-dim); color: var(--paper); border-color: var(--text-dim); }
+
+  .tc-badge.completed::before,
+  .tc-badge.cancelled::before { display: none; }
+
+  .tc-state-strip {
+    margin-top: 12px;
+    margin-left: 46px;
+    display: grid;
+    grid-template-columns: minmax(150px, .7fr) minmax(0, 1.4fr) minmax(160px, .8fr);
+    gap: 18px;
+    align-items: start;
+    padding: 10px 12px;
+    border-left: 3px solid var(--border-strong);
+    background: rgba(250, 246, 236, .66);
   }
-  .tc-headline .hl-sub {
-    margin-top: 3px;
+
+  .tc-state-strip.state-writing { border-left-color: var(--blue); }
+  .tc-state-strip.state-planning { border-left-color: var(--warning); }
+  .tc-state-strip.state-repairing { border-left-color: var(--violet); }
+  .tc-state-strip.state-review,
+  .tc-state-strip.state-attention,
+  .tc-state-strip.state-blocked { border-left-color: var(--danger); }
+  .tc-state-strip.state-paused,
+  .tc-state-strip.state-idle { border-left-color: var(--text-faint); }
+  .tc-state-strip.state-complete { border-left-color: var(--success); }
+
+  .tc-state-main {
+    min-width: 0;
+  }
+
+  .tc-state-kicker,
+  .tc-state-next-label {
     color: var(--text-faint);
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+  }
+
+  .tc-state-label {
+    margin-top: 2px;
+    color: var(--text-bright);
+    font-family: var(--display);
+    font-size: 18px;
+    font-weight: 700;
+    line-height: 1.15;
+  }
+
+  .tc-state-mode {
+    margin-top: 2px;
+    color: var(--text-dim);
+    font-family: var(--mono);
+    font-size: 10.5px;
+  }
+
+  .tc-state-detail,
+  .tc-state-next {
+    color: var(--text);
+    font-family: var(--serif);
+    font-size: 12.5px;
+    line-height: 1.45;
+  }
+
+  .tc-state-flags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    margin-top: 5px;
+  }
+
+  .tc-state-flag {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 7px;
+    border: 1px solid var(--hair);
+    color: var(--text-dim);
+    font-family: var(--mono);
+    font-size: 10px;
+    line-height: 1.3;
+  }
+
+  .tc-state-flag.warn {
+    border-color: var(--warning);
+    color: var(--warning);
+    background: var(--warning-soft);
+  }
+
+  .tc-state-flag.bad {
+    border-color: var(--danger);
+    color: var(--danger);
+    background: var(--danger-soft);
+  }
+
+  .tc-priority-tag {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 8px;
+    border: 1px solid var(--hair);
+    background: var(--bg-2);
+    color: var(--text-dim);
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+  }
+
+  .tc-densegrid {
+    margin-top: 12px;
+    margin-left: 46px;
+    display: grid;
+    grid-template-columns: 1.4fr 1.4fr 1.6fr 1fr;
+    gap: 28px;
+  }
+
+  .tc-densegrid .dg-cell {
+    min-width: 0;
+  }
+
+  .dg-eyebrow {
+    color: var(--text-dim);
+    font-family: var(--display);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+  }
+
+  .dg-eyebrow .live {
+    color: var(--blue);
+    font-weight: 700;
+  }
+
+  .dg-action-primary {
+    margin-top: 4px;
+    color: var(--text-bright);
+    font-family: var(--display);
+    font-size: 13.5px;
+    font-weight: 600;
+    line-height: 1.35;
+  }
+
+  .dg-action-secondary {
+    margin-top: 2px;
+    color: var(--text-dim);
+    font-family: var(--serif);
     font-size: 12px;
+    line-height: 1.4;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+  }
+
+  .dg-progress-row {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    margin-top: 2px;
+  }
+
+  .dg-progress-pct {
+    color: var(--blue-dark);
+    font-family: var(--display);
+    font-size: 24px;
+    font-weight: 700;
+    line-height: 1;
+    letter-spacing: -0.5px;
+  }
+
+  .dg-progress-pct .small {
+    font-size: 13px;
+  }
+
+  .dg-progress-pct.tone-running { color: var(--blue); }
+  .dg-progress-pct.tone-finalizing { color: var(--warning); }
+  .dg-progress-pct.tone-done { color: var(--success); }
+  .dg-progress-pct.tone-failed { color: var(--danger); }
+  .dg-progress-pct.tone-queued,
+  .dg-progress-pct.tone-cancelled { color: var(--text-dim); }
+
+  .dg-progress-frac {
+    color: var(--text-dim);
+    font-family: var(--mono);
+    font-size: 11px;
+  }
+
+  .dg-progress-bar {
+    position: relative;
+    height: 5px;
+    margin-top: 4px;
+    background: var(--bg-2);
+    overflow: hidden;
+  }
+
+  .dg-progress-bar .fill {
+    position: absolute;
+    inset: 0;
+    right: auto;
+    background: var(--blue);
+  }
+
+  .dg-progress-bar .fill.tone-running { background: var(--blue); }
+  .dg-progress-bar .fill.tone-finalizing { background: var(--warning); }
+  .dg-progress-bar .fill.tone-done { background: var(--success); }
+  .dg-progress-bar .fill.tone-failed { background: var(--danger); }
+  .dg-progress-bar .fill.tone-queued,
+  .dg-progress-bar .fill.tone-cancelled { background: var(--text-dim); }
+
+  .dg-progress-bar .tick {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 1px;
+    background: rgba(255,255,255,.4);
+  }
+
+  .dg-progress-note {
+    margin-top: 4px;
+    color: var(--text-faint);
+    font-family: var(--mono);
+    font-size: 10px;
+  }
+
+  .dg-log-line {
+    display: flex;
+    gap: 6px;
+    align-items: baseline;
+    margin-top: 3px;
+    font-family: var(--serif);
+    font-size: 12.5px;
+    color: var(--text);
+    line-height: 1.4;
+  }
+
+  .dg-log-time {
+    flex-shrink: 0;
+    color: var(--text-faint);
+    font-family: var(--mono);
+    font-size: 10px;
+  }
+
+  .dg-log-msg {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+  }
+
+  .dg-log-meta {
+    margin-top: 4px;
+    color: var(--text-dim);
+    font-family: var(--mono);
+    font-size: 10px;
+    display: flex;
+    gap: 10px;
+  }
+
+  .dg-log-meta a {
+    color: var(--blue);
+    text-decoration: none;
+    cursor: pointer;
+  }
+
+  .dg-time-primary {
+    margin-top: 3px;
+    color: var(--text-bright);
+    font-family: var(--mono);
+    font-size: 12.5px;
+    font-weight: 600;
+  }
+
+  .dg-time-secondary {
+    margin-top: 2px;
+    color: var(--text-dim);
+    font-family: var(--mono);
+    font-size: 11px;
+  }
+
+  /* Diagnostic signals strip — always visible */
+  .tc-signals {
+    margin-top: 10px;
+    margin-left: 46px;
+    padding: 10px 0 0;
+    border-top: 0.5px dotted var(--border);
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 14px 22px;
+  }
+
+  .tc-signal {
+    min-width: 0;
+  }
+
+  .tc-signal .sig-label {
+    color: var(--text-faint);
+    font-family: var(--mono);
+    font-size: 9.5px;
+    font-weight: 700;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+  }
+
+  .tc-signal .sig-value {
+    margin-top: 2px;
+    color: var(--text-bright);
+    font-family: var(--display);
+    font-size: 13.5px;
+    font-weight: 600;
+    line-height: 1.25;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .tc-signal .sig-sub {
+    margin-top: 2px;
+    color: var(--text-dim);
+    font-family: var(--serif);
+    font-size: 11px;
+    line-height: 1.3;
+  }
+
+  .tc-health {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 2px 7px;
+    border: 1px solid var(--success);
+    color: var(--success);
+    background: var(--success-soft);
+    font-family: var(--mono);
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+  }
+
+  .tc-health::before {
+    content: "";
+    width: 5px;
+    height: 5px;
+    border-radius: 3px;
+    background: currentColor;
+  }
+
+  .tc-health.warn {
+    border-color: var(--warning);
+    color: var(--warning);
+    background: var(--warning-soft);
+  }
+
+  .tc-health.bad {
+    border-color: var(--danger);
+    color: var(--danger);
+    background: var(--danger-soft);
+  }
+
+  /* Recent events list inside dense cell */
+  .dg-event-list {
+    margin-top: 4px;
+    display: grid;
+    gap: 3px;
+  }
+
+  .dg-event-row {
+    display: grid;
+    grid-template-columns: 38px 28px 1fr;
+    gap: 6px;
+    align-items: baseline;
+    font-family: var(--serif);
+    font-size: 11.5px;
+    line-height: 1.4;
+    color: var(--text);
+  }
+
+  .dg-event-row .ev-time {
+    color: var(--text-faint);
+    font-family: var(--mono);
+    font-size: 10px;
+  }
+
+  .dg-event-row .ev-tag {
+    font-family: var(--mono);
+    font-size: 9px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-dim);
+  }
+
+  .dg-event-row .ev-tag.ok { color: var(--success); }
+  .dg-event-row .ev-tag.warn { color: var(--warning); }
+  .dg-event-row .ev-tag.err { color: var(--danger); }
+
+  .dg-event-row .ev-msg {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* Repair progress panel — appears on repair tasks with chapter-level
+     event detail.  Distinguishes gate-passing chapters from processed
+     chapters that still require review. */
+  .tc-repair {
+    margin-top: 12px;
+    margin-left: 46px;
+    padding: 10px 12px;
+    border: 1px solid var(--warning);
+    border-left: 3px solid var(--warning);
+    background: var(--warning-soft);
+  }
+
+  .tc-repair-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 6px;
+  }
+
+  .tc-repair-title {
+    color: var(--warning);
+    font-family: var(--display);
+    font-size: 12.5px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+  }
+
+  .tc-repair-pct {
+    color: var(--warning);
+    font-family: var(--display);
+    font-size: 16px;
+    font-weight: 700;
+    letter-spacing: -0.3px;
+  }
+
+  .tc-repair-bar {
+    position: relative;
+    height: 4px;
+    margin-bottom: 8px;
+    background: rgba(160, 106, 20, 0.2);
+    overflow: hidden;
+  }
+
+  .tc-repair-bar .fill {
+    position: absolute;
+    inset: 0;
+    right: auto;
+    background: var(--warning);
+  }
+
+  .tc-repair-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 6px;
+    margin-top: 4px;
+  }
+
+  .tc-repair-pill {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 8px;
+    border: 0.5px solid currentColor;
+    font-family: var(--mono);
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    border-radius: 0;
+  }
+
+  .tc-repair-pill.done { color: var(--success); background: rgba(58, 110, 58, 0.1); }
+  .tc-repair-pill.review { color: var(--danger); background: rgba(158, 58, 43, 0.1); }
+  .tc-repair-pill.current {
+    color: var(--paper);
+    background: var(--warning);
+    animation: pp-blink 1.4s ease-in-out infinite;
+  }
+  .tc-repair-pill.pending { color: var(--text-dim); background: rgba(155, 143, 126, 0.1); }
+
+  .tc-repair-meta {
+    margin-top: 8px;
+    color: var(--text-dim);
+    font-family: var(--mono);
+    font-size: 10.5px;
+    line-height: 1.5;
+  }
+
+  @keyframes pp-blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.55; }
+  }
+
+  /* Operation toolbar — always visible at the bottom of every card */
+  .tc-ops {
+    margin-top: 12px;
+    margin-left: 46px;
+    padding: 10px 0 0;
+    border-top: 0.5px solid var(--border);
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .tc-ops-label {
+    margin-right: 4px;
+    color: var(--text-faint);
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+  }
+
+  .tc-op-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 5px 10px;
+    border: 1px solid var(--border);
+    background: var(--paper);
+    color: var(--text);
+    font-family: var(--display);
+    font-size: 12px;
+    font-weight: 500;
+    line-height: 1;
+    cursor: pointer;
+    text-decoration: none;
+    transition: border-color .14s ease, background .14s ease, color .14s ease;
+  }
+
+  .tc-op-btn:hover {
+    border-color: var(--blue);
+    color: var(--blue-dark);
+    background: var(--blue-soft);
+  }
+
+  .tc-op-btn .op-count {
+    color: var(--text-faint);
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 600;
+  }
+
+  .tc-op-btn:hover .op-count {
+    color: var(--blue);
+  }
+
+  .tc-op-btn.danger {
+    color: var(--danger);
+  }
+
+  .tc-op-btn.danger:hover {
+    background: var(--danger-soft);
+    border-color: var(--danger);
+  }
+
+  /* Legacy quick-jump (kept for back-compat) */
+  .tc-quickjump {
+    margin-top: 10px;
+    margin-left: 46px;
+    padding-top: 10px;
+    border-top: 0.5px dotted var(--border);
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 14px 16px;
+  }
+
+  .tc-quickjump-label {
+    color: var(--text-dim);
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+
+  .qj-link {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 4px;
+    color: var(--text);
+    cursor: pointer;
+    font-family: var(--serif);
+    font-size: 12px;
+    text-decoration: none;
+  }
+
+  .qj-link span.label {
+    border-bottom: 1px solid var(--text);
+  }
+
+  .qj-link span.count {
+    color: var(--text-dim);
+    font-family: var(--mono);
+    font-size: 10px;
+  }
+
+  .qj-link:hover span.label {
+    color: var(--blue);
+    border-bottom-color: var(--blue);
   }
 
   .tc-stage {
@@ -638,11 +1629,11 @@
   .tc-live,
   .pv-live {
     margin-bottom: 12px;
-    padding: 12px;
-    border: 1px solid #bdd2ff;
+    padding: 12px 14px;
+    border: 1px solid var(--blue);
     border-left: 3px solid var(--blue);
     border-radius: var(--radius-sm);
-    background: linear-gradient(180deg, #f7fbff, #ffffff);
+    background: var(--danger-soft);
   }
 
   .tc-live-row {
@@ -655,8 +1646,11 @@
   .tc-live-kicker {
     margin-bottom: 3px;
     color: var(--blue-dark);
+    font-family: var(--mono);
     font-size: 11px;
     font-weight: 820;
+    letter-spacing: 0;
+    text-transform: uppercase;
   }
 
   .tc-live-primary {
@@ -690,13 +1684,14 @@
     border-radius: var(--radius-sm);
     background: var(--surface);
     color: var(--text-dim);
+    font-family: var(--mono);
     font-size: 11px;
     font-weight: 720;
     white-space: nowrap;
   }
 
   .tc-live-chip.active {
-    border-color: #bdd2ff;
+    border-color: var(--blue);
     background: var(--blue-soft);
     color: var(--blue-dark);
   }
@@ -725,10 +1720,10 @@
   .tc-bar,
   .pv-bar {
     width: 100%;
-    height: 8px;
+    height: 7px;
     overflow: hidden;
-    border-radius: 999px;
-    background: #e7edf5;
+    border-radius: 0;
+    background: var(--bg-2);
   }
 
   .tc-bar-fill,
@@ -739,7 +1734,7 @@
   }
 
   .tc-bar-fill.running,
-  .pv-bar-fill.running { background: linear-gradient(90deg, var(--blue), var(--violet)); }
+  .pv-bar-fill.running { background: var(--blue); }
   .tc-bar-fill.completed,
   .pv-bar-fill.completed { background: linear-gradient(90deg, var(--success), #20b486); }
   .tc-bar-fill.failed,
@@ -792,7 +1787,7 @@
   }
 
   .ch-pill.writing {
-    border: 1px solid #bdd2ff;
+    border: 1px solid var(--blue);
     background: var(--blue-soft);
     color: var(--blue-dark);
     animation: pulse 1.8s ease-in-out infinite;
@@ -831,26 +1826,47 @@
   .tl-item .tl-text { color: var(--text); }
 
   #viewWizard {
-    padding: 22px;
+    padding: 0;
     border: 1px solid var(--border);
     border-radius: var(--radius);
-    background: rgba(255, 255, 255, 0.82);
-    box-shadow: var(--shadow-sm);
+    background: rgba(250, 246, 236, 0.86);
+    box-shadow: none;
+  }
+
+  .wizard-head {
+    display: block;
+    margin: 0;
+    padding: 28px 32px 16px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .wizard-head h2 {
+    font-size: 34px;
+    line-height: 1.08;
+  }
+
+  .wizard-head p {
+    max-width: 760px;
+    font-style: italic;
+  }
+
+  .wizard-head::before {
+    content: attr(data-kicker);
   }
 
   .stepper {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
-    gap: 10px;
-    padding: 0;
-    margin: 18px 0 8px;
+    gap: 36px;
+    padding: 22px 32px 0;
+    margin: 0;
   }
 
   .step-dot {
     position: relative;
-    height: 4px;
-    border-radius: 999px;
-    background: #dbe3ee;
+    height: 1px;
+    border-radius: 0;
+    background: var(--border);
     transition: background .22s ease;
   }
 
@@ -889,9 +1905,10 @@
   .step-labels {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
-    gap: 10px;
-    padding: 12px 0 22px;
+    gap: 36px;
+    padding: 14px 32px 24px;
     color: var(--text-dim);
+    font-family: var(--mono);
     font-size: 13px;
     font-weight: 650;
   }
@@ -902,23 +1919,25 @@
   .wpanel {
     display: none;
     animation: fadeIn .22s ease;
+    padding: 0 32px 28px;
   }
   .wpanel.active { display: block; }
 
   .lang-tabs {
     display: inline-flex;
-    gap: 4px;
+    gap: 0;
     margin-bottom: 14px;
-    padding: 4px;
+    padding: 0;
     border: 1px solid var(--border);
-    border-radius: var(--radius);
-    background: var(--surface-soft);
+    border-radius: var(--radius-sm);
+    background: var(--paper);
   }
 
   .lang-tab {
     min-height: 34px;
     padding: 7px 14px;
     border: 0;
+    border-right: 1px solid var(--hair);
     border-radius: var(--radius-sm);
     background: transparent;
     color: var(--text-dim);
@@ -930,9 +1949,9 @@
 
   .lang-tab:hover { color: var(--text-bright); }
   .lang-tab.active {
-    background: var(--surface);
-    color: var(--blue-dark);
-    box-shadow: var(--shadow-sm);
+    background: var(--ink);
+    color: var(--paper);
+    box-shadow: none;
   }
 
   .search-box {
@@ -969,7 +1988,7 @@
     min-height: 44px;
     padding: 11px 14px 11px 42px;
     border: 1px solid var(--border);
-    border-radius: var(--radius);
+    border-radius: var(--radius-sm);
     background: var(--surface);
     color: var(--text);
     outline: none;
@@ -989,40 +2008,77 @@
     font-size: 13px !important;
   }
 
+  .genre-category-strip {
+    display: flex;
+    gap: 18px;
+    overflow-x: auto;
+    margin: 2px 0 12px;
+    padding: 0 0 10px;
+    border-bottom: 1px solid var(--hair);
+    color: var(--text-dim);
+    font-size: 12px;
+    white-space: nowrap;
+  }
+
+  .genre-category-strip span:first-child {
+    color: var(--text-bright);
+    border-bottom: 1.5px solid var(--blue);
+    font-weight: 700;
+  }
+
   .genre-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-    gap: 12px;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0;
+    border: 1px solid var(--border);
+    background: var(--surface);
   }
 
   .genre-card {
     min-height: 150px;
-    padding: 16px;
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    background: var(--surface);
-    box-shadow: var(--shadow-sm);
+    padding: 20px 22px 22px;
+    border: 0;
+    border-right: 1px dashed var(--hair);
+    border-bottom: 1px dashed var(--hair);
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
     cursor: pointer;
     transition: transform .16s ease, border-color .16s ease, box-shadow .16s ease, background .16s ease;
   }
 
+  .genre-card:nth-child(3n) { border-right: 0; }
+
   .genre-card:hover {
-    border-color: var(--border-strong);
-    box-shadow: 0 10px 24px rgba(16, 24, 40, 0.08);
-    transform: translateY(-2px);
+    border-color: var(--hair);
+    box-shadow: none;
+    transform: none;
+    background: rgba(245, 227, 223, .36);
   }
 
   .genre-card.selected {
-    border-color: var(--blue);
     background: var(--surface-tint);
-    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.10);
+    box-shadow: inset 3px 0 0 var(--blue);
   }
 
   .genre-card .name {
     margin-bottom: 5px;
     color: var(--text-bright);
-    font-size: 16px;
-    font-weight: 760;
+    font-family: var(--display);
+    font-size: 22px;
+    font-weight: 700;
+    line-height: 1.18;
+    letter-spacing: -0.3px;
+  }
+
+  .genre-card-kicker {
+    margin-bottom: 8px;
+    color: var(--text-faint);
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0;
+    text-transform: uppercase;
   }
 
   .genre-card .genre-tag {
@@ -1050,17 +2106,20 @@
 
   .length-presets {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 12px;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 0;
     margin-bottom: 22px;
+    border: 1px solid var(--border);
+    background: var(--surface);
   }
 
   .length-btn {
-    min-height: 112px;
-    padding: 20px 14px;
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    background: var(--surface);
+    min-height: 170px;
+    padding: 24px 18px;
+    border: 0;
+    border-right: 1px solid var(--border);
+    border-radius: 0;
+    background: transparent;
     color: var(--text);
     cursor: pointer;
     text-align: center;
@@ -1068,26 +2127,33 @@
     transition: transform .16s ease, border-color .16s ease, box-shadow .16s ease, background .16s ease;
   }
 
+  .length-btn:last-child { border-right: 0; }
+
   .length-btn:hover {
-    border-color: var(--border-strong);
-    transform: translateY(-2px);
+    border-color: var(--border);
+    transform: none;
+    background: rgba(245, 227, 223, .3);
   }
 
   .length-btn.selected {
-    border-color: var(--blue);
+    border-top: 3px solid var(--blue);
     background: var(--surface-tint);
-    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.10);
+    box-shadow: none;
   }
 
   .length-btn .label {
-    margin-bottom: 4px;
+    margin-bottom: 12px;
     color: var(--text-bright);
-    font-size: 20px;
-    font-weight: 800;
+    font-family: var(--display);
+    font-size: 28px;
+    font-weight: 700;
+    letter-spacing: -0.4px;
+    line-height: 1;
   }
 
   .length-btn .chapters {
     color: var(--text-dim);
+    font-family: var(--mono);
     font-size: 13px;
   }
 
@@ -1129,9 +2195,9 @@
   .pv-timeline,
   .listing-section {
     border: 1px solid var(--border);
-    border-radius: var(--radius);
+    border-radius: var(--radius-sm);
     background: var(--surface);
-    box-shadow: var(--shadow-sm);
+    box-shadow: none;
   }
 
   .estimate-box {
@@ -1146,7 +2212,7 @@
   .estimate-box .cost {
     margin-top: 2px;
     color: var(--blue-dark);
-    font-size: 22px;
+    font-size: 28px;
     font-weight: 800;
   }
 
@@ -1231,9 +2297,9 @@
     margin-bottom: 18px;
     padding: 18px 20px;
     border: 1px solid var(--border);
-    border-radius: var(--radius);
+    border-radius: var(--radius-sm);
     background: var(--surface);
-    box-shadow: var(--shadow-sm);
+    box-shadow: none;
     text-align: left;
   }
 
@@ -1546,9 +2612,9 @@
     align-items: center;
     min-height: 24px;
     padding: 4px 8px;
-    border: 1px solid #bdd2ff;
+    border: 1px solid var(--border);
     border-radius: var(--radius-sm);
-    background: var(--blue-soft);
+    background: var(--surface-tint);
     color: var(--blue-dark);
     font-size: 12px;
     font-weight: 700;
@@ -1707,8 +2773,76 @@
     box-shadow: var(--shadow-sm);
   }
 
+  /* "Regenerate via LLM" button — sits next to copy buttons in listing
+     section heads.  When clicked, the backend re-runs the model for that
+     specific module only.  Other untouched modules stay on the original
+     auto-generated content. */
+  .regen-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    min-height: 28px;
+    padding: 5px 10px;
+    border: 1px solid var(--blue);
+    border-radius: var(--radius-sm);
+    background: var(--paper);
+    color: var(--blue-dark);
+    cursor: pointer;
+    font-family: var(--display);
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1;
+    white-space: nowrap;
+    transition: background .14s ease, color .14s ease;
+  }
+
+  .regen-btn:hover {
+    background: var(--blue);
+    color: var(--paper);
+  }
+
+  .regen-btn[disabled] {
+    cursor: progress;
+    opacity: 0.7;
+  }
+
+  .regen-btn .regen-spin {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border: 1.5px solid currentColor;
+    border-top-color: transparent;
+    border-radius: 50%;
+    animation: spin .65s linear infinite;
+  }
+
+  .regen-btn.ok {
+    border-color: var(--success);
+    color: var(--success);
+    background: var(--success-soft);
+  }
+
+  .regen-btn.err {
+    border-color: var(--danger);
+    color: var(--danger);
+    background: var(--danger-soft);
+  }
+
+  .regen-stamp {
+    margin-top: 4px;
+    color: var(--text-faint);
+    font-family: var(--mono);
+    font-size: 10.5px;
+  }
+
+  .regen-stamp strong {
+    color: var(--blue-dark);
+    font-family: var(--display);
+    font-weight: 600;
+  }
+
   .copy-btn:hover {
-    border-color: #9bbcff;
+    border-color: var(--blue);
     background: var(--blue-soft);
   }
 
@@ -1720,9 +2854,9 @@
 
   .shelf-intro-card {
     padding: 13px 14px;
-    border: 1px solid #bdd2ff;
+    border: 1px solid var(--blue);
     border-radius: var(--radius-sm);
-    background: linear-gradient(180deg, #f7fbff, #ffffff);
+    background: var(--surface-tint);
   }
 
   .shelf-intro-card .meta {
@@ -1845,7 +2979,7 @@
     min-height: 40px;
     padding: 10px 16px;
     border: 1px solid transparent;
-    border-radius: var(--radius);
+    border-radius: var(--radius-sm);
     cursor: pointer;
     font-size: 14px;
     font-weight: 720;
@@ -1876,8 +3010,8 @@
   .btn-primary {
     border-color: var(--blue);
     background: var(--blue);
-    color: #fff;
-    box-shadow: 0 8px 18px rgba(37, 99, 235, 0.18);
+    color: var(--paper);
+    box-shadow: none;
   }
 
   .btn-primary:hover { background: var(--blue-dark); }
@@ -1890,7 +3024,7 @@
 
   .btn-secondary {
     border-color: var(--border);
-    background: var(--surface);
+    background: transparent;
     color: var(--text-dim);
   }
 
@@ -1902,7 +3036,7 @@
   .btn-success {
     border-color: var(--success);
     background: var(--success);
-    color: #fff;
+    color: var(--paper);
   }
 
   .btn-success:hover { background: #0f6f50; }
@@ -1910,7 +3044,7 @@
   .btn-warning {
     border-color: var(--warning);
     background: var(--warning);
-    color: #fff;
+    color: var(--paper);
   }
 
   .btn-warning:hover { background: #965a00; }
@@ -1918,7 +3052,7 @@
   .btn-danger {
     border-color: var(--danger);
     background: var(--danger);
-    color: #fff;
+    color: var(--paper);
   }
 
   .btn-danger:hover { background: #a53a2d; }
@@ -1962,6 +3096,10 @@
     .dash-command {
       grid-template-columns: 1fr;
     }
+    .dash-overview {
+      border-left: 0;
+      border-top: 1px solid rgba(255,255,255,.16);
+    }
     .dash-viewbar {
       grid-template-columns: 1fr;
     }
@@ -1970,7 +3108,11 @@
       align-items: flex-start;
       flex-direction: column;
     }
+    .genre-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .genre-card:nth-child(3n) { border-right: 1px dashed var(--hair); }
+    .genre-card:nth-child(2n) { border-right: 0; }
     .length-presets { grid-template-columns: repeat(2, 1fr); }
+    .length-btn:nth-child(2n) { border-right: 0; }
     .pv-info-bar,
     .pv-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .listing-score-row,
@@ -1981,17 +3123,22 @@
   @media (max-width: 700px) {
     .header {
       align-items: flex-start;
-      flex-direction: column;
-      padding: 13px 16px;
+      grid-template-columns: 1fr;
+      padding: 13px 16px 0;
     }
 
-    .header h1 { font-size: 17px; }
+    .header h1 {
+      flex-wrap: wrap;
+      gap: 8px;
+      font-size: 24px;
+    }
 
     .header-nav {
       width: 100%;
       justify-content: flex-start;
       overflow-x: auto;
-      padding-bottom: 2px;
+      margin: 0 -16px;
+      padding: 0 16px 2px;
     }
 
     .header-nav a,
@@ -2038,7 +3185,18 @@
       flex-direction: column;
     }
 
-    .task-card { padding: 16px; }
+	    .task-card { padding: 16px; }
+	    .tc-state-strip,
+	    .tc-densegrid,
+	    .tc-signals,
+	    .tc-ops,
+	    .tc-repair {
+	      margin-left: 0;
+	    }
+	    .tc-state-strip {
+	      grid-template-columns: 1fr;
+	      gap: 8px;
+	    }
 
     .tc-header {
       align-items: flex-start;
@@ -2087,8 +3245,22 @@
     }
 
     #viewWizard { padding: 16px; }
+    .stepper,
+    .step-labels {
+      gap: 12px;
+      padding-left: 18px;
+      padding-right: 18px;
+    }
+    .step-labels {
+      font-size: 11px;
+      line-height: 1.45;
+    }
     .genre-grid { grid-template-columns: 1fr; }
+    .genre-card,
+    .genre-card:nth-child(2n),
+    .genre-card:nth-child(3n) { border-right: 0; }
     .length-presets { grid-template-columns: 1fr; }
+    .length-btn { border-right: 0; border-bottom: 1px solid var(--border); }
     .custom-row {
       align-items: flex-start;
       flex-direction: column;
@@ -2124,13 +3296,44 @@
 </head>
 <body>
 
-<!-- ── Header with nav tabs ── -->
+<!-- ── Masthead — VOL/date/editor + ⌘K + 新建创作 ── -->
 <div class="header">
-  <h1><span>BestSeller</span> 一键创作</h1>
+  <div class="header-row">
+    <div class="header-brand">
+      <h1>BestSeller<span class="dot">·</span></h1>
+      <div class="header-eyebrow">一键创作 / Imprint Workbench</div>
+      <div class="header-meta">
+        <span id="hdrVolume">VOL. III</span>
+        <span class="sep">·</span>
+        <span id="hdrDate">2026.05.10</span>
+        <span class="sep">·</span>
+        <span id="hdrIssue">编号 #07</span>
+      </div>
+    </div>
+    <div class="header-tools">
+      <button class="header-search" onclick="document.getElementById('dashSearch')?.focus()" title="搜索任务、书稿或章节">
+        <span class="glyph">⌕</span>
+        <span class="placeholder">搜索书名 / SLUG / 章节…</span>
+        <span class="kbd-hint"><span class="kbd">⌘</span><span class="kbd">K</span></span>
+      </button>
+      <button class="header-cta" onclick="startNewCreationFlow()">＋ 新建创作 <span class="kbd">N</span></button>
+      <span class="header-divider"></span>
+      <span class="header-editor">编辑 · 陈砚之</span>
+    </div>
+  </div>
   <div class="header-nav">
-    <button id="navDash" class="active" onclick="switchView('dashboard')">任务仪表板</button>
     <button id="navNew" onclick="startNewCreationFlow()">新建创作</button>
-    <a href="/">工作室</a>
+    <button id="navDash" class="active" onclick="switchView('dashboard')">任务指挥台 <span class="nav-count" id="navTaskCount">00</span></button>
+    <a href="/library">书稿库 <span class="nav-count" id="navLibraryCount">00</span></a>
+    <a href="/quickstart">上架资料</a>
+    <a href="/quickstart">工作室设置</a>
+    <div class="header-status" aria-label="服务状态">
+      <span class="health-dot"></span><span class="ok-text">服务正常</span>
+      <span class="sep"></span>
+      <span id="hdrApiPing">API 28ms</span>
+      <span class="sep"></span>
+      <span id="hdrQueue">队列 0 in / 0 wait</span>
+    </div>
   </div>
 </div>
 
@@ -2141,37 +3344,58 @@
     <section class="dash-command">
       <div class="dash-command-main">
         <div>
-          <h2>创作指挥台</h2>
-          <p>把生成队列、章节产出、断点续写和上架资料放在同一个操作面板里，先看状态，再处理任务。</p>
+          <h2>共 <span id="dashHeroTotal">0</span> 本在排.</h2>
+          <p>把生成队列、章节产出、断点续写和上架资料放在同一个操作面板里 — 先看状态，再处理任务。</p>
         </div>
-        <div class="dash-command-actions">
-          <button class="btn btn-primary" onclick="startNewCreationFlow()">新建创作</button>
-          <button class="btn btn-secondary" onclick="refreshDashboard()">同步任务</button>
+        <div class="dash-command-bottomline">
+          <span>本周新增 <strong id="dashStatNewWeek">0</strong></span>
+          <span class="sep">·</span>
+          <span>已上架 <strong id="dashStatPublished">0</strong></span>
+          <span class="sep">·</span>
+          <span>累计 <strong id="dashStatLifetimeBooks">0</strong> 本 / <strong id="dashStatLifetimeWords">0</strong> 字</span>
         </div>
       </div>
-      <div class="dash-overview" id="dashOverview">
-        <div class="dash-metric">
-          <div class="dash-metric-label">进行中 / 队列</div>
-          <div class="dash-metric-value" id="dashMetricActive">0</div>
-          <div class="dash-metric-note" id="dashMetricCapacity">等待服务状态</div>
+      <div class="dash-metric tone-running">
+        <div>
+          <div class="dash-metric-kicker">RUNNING</div>
+          <div class="dash-metric-label">运行中</div>
         </div>
-        <div class="dash-metric">
-          <div class="dash-metric-label">已完成作品</div>
-          <div class="dash-metric-value" id="dashMetricCompleted">0</div>
-          <div class="dash-metric-note">可直接进入阅读或上架资料</div>
+        <div class="dash-metric-value" id="dashMetricActive">00</div>
+      </div>
+      <div class="dash-metric tone-finalizing">
+        <div>
+          <div class="dash-metric-kicker">FINALIZING</div>
+          <div class="dash-metric-label">收尾中</div>
         </div>
-        <div class="dash-metric">
-          <div class="dash-metric-label">需要处理</div>
-          <div class="dash-metric-value" id="dashMetricAttention">0</div>
-          <div class="dash-metric-note">失败、停止或未完成任务</div>
+        <div class="dash-metric-value" id="dashMetricFinalizing">00</div>
+      </div>
+      <div class="dash-metric tone-done">
+        <div>
+          <div class="dash-metric-kicker">COMPLETE</div>
+          <div class="dash-metric-label">已完成</div>
         </div>
-        <div class="dash-metric">
-          <div class="dash-metric-label">任务总数</div>
-          <div class="dash-metric-value" id="dashMetricTotal">0</div>
-          <div class="dash-metric-note">当前工作区可见记录</div>
+        <div class="dash-metric-value" id="dashMetricCompleted">00</div>
+      </div>
+      <div class="dash-metric tone-attention">
+        <div>
+          <div class="dash-metric-kicker">NEEDS YOU</div>
+          <div class="dash-metric-label">需处理</div>
         </div>
+        <div class="dash-metric-value" id="dashMetricAttention">00</div>
       </div>
     </section>
+
+    <div class="dash-attention" id="dashAttention">
+      <div class="dash-attention-icon">!</div>
+      <div class="dash-attention-body">
+        <div class="dash-attention-title" id="dashAttentionTitle">0 项任务需要处理</div>
+        <div class="dash-attention-detail" id="dashAttentionDetail"></div>
+      </div>
+      <div class="dash-attention-actions">
+        <button class="btn btn-secondary btn-sm" onclick="setDashboardFilter('attention')">查看</button>
+        <button class="btn btn-primary btn-sm" id="dashAttentionRetry" onclick="retryAllAttention()">↻ 重试可恢复项</button>
+      </div>
+    </div>
     <div id="dashStatusBanner"></div>
     <div id="dashContent">
       <div class="dash-empty" id="dashEmpty">
@@ -2182,19 +3406,26 @@
     </div>
     <div class="dash-viewbar">
       <div class="dash-filter-tabs" aria-label="任务筛选">
-        <button class="dash-filter active" data-filter="all" onclick="setDashboardFilter('all')">全部 <span id="filterAllCount">0</span></button>
-        <button class="dash-filter" data-filter="active" onclick="setDashboardFilter('active')">进行中 <span id="filterActiveCount">0</span></button>
-        <button class="dash-filter" data-filter="completed" onclick="setDashboardFilter('completed')">已完成 <span id="filterCompletedCount">0</span></button>
-        <button class="dash-filter" data-filter="attention" onclick="setDashboardFilter('attention')">需处理 <span id="filterAttentionCount">0</span></button>
+        <button class="dash-filter active" data-filter="all" onclick="setDashboardFilter('all')">全部 <span id="filterAllCount">00</span></button>
+        <button class="dash-filter" data-filter="active" onclick="setDashboardFilter('active')">运行中 <span id="filterActiveCount">00</span></button>
+        <button class="dash-filter" data-filter="finalizing" onclick="setDashboardFilter('finalizing')">收尾 <span id="filterFinalizingCount">00</span></button>
+        <button class="dash-filter" data-filter="completed" onclick="setDashboardFilter('completed')">已完成 <span id="filterCompletedCount">00</span></button>
+        <button class="dash-filter" data-filter="attention" onclick="setDashboardFilter('attention')">需处理 <span id="filterAttentionCount">00</span></button>
       </div>
-      <div class="dash-search">
-        <input type="search" id="dashSearch" placeholder="搜索书名、slug、状态">
+      <div class="dash-controls">
+        <span class="dash-control">排序 <strong>更新时间 ↓</strong></span>
+        <span class="dash-control">密度 <strong>舒适</strong></span>
+        <span class="dash-control">视图 <strong>表格</strong></span>
+        <button class="btn btn-secondary btn-sm" onclick="refreshDashboard()">↻ 刷新</button>
       </div>
     </div>
     <div class="task-list-head">
       <div>
         <h3>作品队列</h3>
         <p id="dashResultSummary">正在加载任务。</p>
+      </div>
+      <div class="dash-search">
+        <input type="search" id="dashSearch" placeholder="搜索书名 / SLUG / 章节…">
       </div>
     </div>
     <div id="dashToolbar">
@@ -2207,7 +3438,6 @@
       <div class="dash-actions">
         <button class="btn btn-danger btn-sm" id="dashBatchDelete" onclick="batchDeleteProjects()" style="display:none;">删除选中（含文件）</button>
         <button class="btn btn-secondary btn-sm" onclick="cleanupTasks()">清理已结束任务</button>
-        <button class="btn btn-secondary btn-sm" onclick="refreshDashboard()">刷新</button>
       </div>
     </div>
     <div id="dashTasks"></div>
@@ -2215,10 +3445,10 @@
 
   <!-- ═══════════ WIZARD VIEW ═══════════ -->
   <div class="view" id="viewWizard">
-    <div class="wizard-head">
+    <div class="wizard-head" id="wizardHead" data-kicker="第一步 · CHOOSE YOUR MATTER">
       <div>
-        <h2>新建创作</h2>
-        <p>先定题材，再定篇幅，最后确认启动方式。</p>
+        <h2 id="wizardTitle">选题材</h2>
+        <p id="wizardSub">Pick a vein, set a tone, then we set the spine. 先定题材，再定篇幅，最后开印。</p>
       </div>
     </div>
     <div class="stepper" id="wizStepper">
@@ -2227,22 +3457,25 @@
       <div class="step-dot" data-step="3"></div>
     </div>
     <div class="step-labels" id="wizLabels">
-      <span class="active" data-step="1">选择题材</span>
-      <span data-step="2">选择长度</span>
-      <span data-step="3">开始创作</span>
+      <span class="active" data-step="1">选题材 / Pick a vein</span>
+      <span data-step="2">定篇幅 / Set the spine</span>
+      <span data-step="3">开印 / Send to press</span>
     </div>
 
     <!-- Step 1 -->
     <div class="wpanel active" id="ws1">
       <div class="lang-tabs">
-        <button class="lang-tab active" data-lang="zh" id="langTabZh">中文题材</button>
+        <button class="lang-tab active" data-lang="zh" id="langTabZh">中文</button>
         <button class="lang-tab" data-lang="en" id="langTabEn">英文题材</button>
       </div>
       <div class="search-box">
-        <input type="text" id="genreSearch" placeholder="搜索题材...">
+        <input type="text" id="genreSearch" placeholder="search...  ⌘K">
       </div>
       <div id="genreLangHint" style="display:none;margin:0 0 14px;font-size:13px;color:var(--text-dim);">
         题材名称保留英文，说明改为中文展示；实际生成仍输出英文小说。
+      </div>
+      <div class="genre-category-strip" aria-label="题材分类">
+        <span>全部</span><span>末日科幻</span><span>都市异能</span><span>玄幻仙侠</span><span>历史穿越</span><span>悬疑推理</span><span>女性题材</span><span>科幻</span><span>电竞</span><span>志怪</span>
       </div>
       <div class="genre-grid" id="genreGrid"></div>
       <div class="empty-state" id="emptyState" style="display:none;">没有找到匹配的题材</div>
@@ -2255,22 +3488,25 @@
     <!-- Step 2 -->
     <div class="wpanel" id="ws2">
       <div class="length-presets">
-        <button class="length-btn" data-chapters="10">
-          <div class="label">短篇</div><div class="chapters">10 章</div>
+        <button class="length-btn" data-chapters="20">
+          <div class="label">微短篇</div><div class="chapters">BOOK I · 20 章</div>
         </button>
-        <button class="length-btn" data-chapters="30">
-          <div class="label">中篇</div><div class="chapters">30 章</div>
-        </button>
-        <button class="length-btn selected" data-chapters="100">
-          <div class="label">长篇</div><div class="chapters">100 章</div>
+        <button class="length-btn" data-chapters="50">
+          <div class="label">短篇</div><div class="chapters">BOOK J · 50 章</div>
         </button>
         <button class="length-btn" data-chapters="200">
-          <div class="label">超长篇</div><div class="chapters">200 章</div>
+          <div class="label">中篇</div><div class="chapters">BOOK K · 200 章</div>
+        </button>
+        <button class="length-btn selected" data-chapters="500">
+          <div class="label">长篇</div><div class="chapters">BOOK L · 500 章</div>
+        </button>
+        <button class="length-btn" data-chapters="1000">
+          <div class="label">超长篇</div><div class="chapters">BOOK M · 1000 章</div>
         </button>
       </div>
       <div class="custom-row">
         <label>自定义：</label>
-        <input type="number" id="customChapters" min="1" max="2000" placeholder="100">
+        <input type="number" id="customChapters" min="1" max="2000" placeholder="500">
         <span style="font-size:14px;color:var(--text-dim);">章</span>
       </div>
       <div class="estimate-box">
@@ -2388,7 +3624,7 @@
       <div class="pv-done-actions">
         <a id="pvReaderLink" href="#" class="btn btn-success" target="_blank">阅读作品</a>
         <button class="btn btn-primary" onclick="startNewCreationFlow()">创作新作品</button>
-        <a href="/" class="btn btn-secondary">返回工作室</a>
+        <a href="/quickstart" class="btn btn-secondary">返回指挥台</a>
       </div>
     </div>
 
@@ -2402,7 +3638,10 @@
             <div class="listing-title" id="lsTitle">-</div>
             <div class="listing-subtitle" id="lsSubtitle"></div>
           </div>
-          <div class="listing-tags" id="lsTags"></div>
+          <div style="display:flex;flex-direction:column;align-items:flex-end;gap:8px;">
+            <div class="listing-tags" id="lsTags"></div>
+            <div class="listing-actions" id="lsTagsActions"></div>
+          </div>
         </div>
       </div>
 
@@ -2453,7 +3692,13 @@
       </div>
 
       <div class="listing-section">
-        <h4>标题/数据名候选</h4>
+        <div class="listing-section-head">
+          <div>
+            <h4>标题/数据名候选</h4>
+            <p>当前主推 1 条 + 9 条候选。点 ↻ 让大模型重新出 10 条候选。</p>
+          </div>
+          <div class="listing-actions" id="lsCandidatesActions"></div>
+        </div>
         <div id="lsCandidates" style="overflow-x:auto;">
           <div style="color:var(--text-dim);font-size:13px;">暂无标题候选。</div>
         </div>
@@ -2473,7 +3718,13 @@
           </div>
         </div>
         <div class="listing-section">
-          <h4>读者承诺与投放定位</h4>
+          <div class="listing-section-head">
+            <div>
+              <h4>读者承诺与投放定位</h4>
+              <p>5 条核心承诺，每条对应一个核心爽点。</p>
+            </div>
+            <div class="listing-actions" id="lsPromiseActions"></div>
+          </div>
           <div class="ls-promise-grid" id="lsPromises">
             <div style="color:var(--text-dim);font-size:13px;">暂无定位信息。</div>
           </div>
@@ -2482,6 +3733,23 @@
     </div>
   </div>
 
+</div>
+
+<!-- ── Hotkey footer — quick reference for keyboard ops ── -->
+<div class="hotkey-footer" aria-label="键盘快捷键">
+  <div class="hotkey-list">
+    <span class="hotkey-item"><span class="kbd">↵</span> 详情</span>
+    <span class="hotkey-item"><span class="kbd">P</span> 预览</span>
+    <span class="hotkey-item"><span class="kbd">L</span> 日志</span>
+    <span class="hotkey-item"><span class="kbd">S</span> 上架</span>
+    <span class="hotkey-item"><span class="kbd">.</span> 停止</span>
+    <span class="hotkey-item"><span class="kbd">R</span> 重试</span>
+    <span class="hotkey-item"><span class="kbd">N</span> 新建</span>
+    <span class="hotkey-item"><span class="kbd">J</span>/<span class="kbd">K</span> 上下移动</span>
+    <span class="hotkey-item"><span class="kbd">⌘</span><span class="kbd">K</span> 搜索</span>
+    <span class="hotkey-item"><span class="kbd">?</span> 全部快捷键</span>
+  </div>
+  <span class="hotkey-build" id="hotkeyBuild">v3.5.3 · build 20260511-097</span>
 </div>
 
 <script>
@@ -2494,9 +3762,14 @@
   let genres = [];
   let selectedGenreKey = null;
   let selectedLang = 'zh';
-  let chapterCount = 100;
+  let chapterCount = 500;
   let llmModel = '';
-  let allTasks = [];       // from /api/tasks
+  let allTasks = [];       // dashboard-visible rows, compacted by project
+  let rawTaskCount = 0;    // raw records returned by /api/tasks
+  let rawProjectCount = 0; // raw records returned by /api/projects
+  let hiddenRecordCount = 0;
+  let projectBySlug = new Map();
+  let projectTitleBySlug = new Map();
   let focusTaskId = null;  // currently viewing in progress view
   let pollTimer = null;
   let elapsedTimer = null;
@@ -2507,7 +3780,7 @@
   let dashboardQuery = '';
   let visibleDashboardTasks = [];
   const DEFAULT_LANG = 'zh';
-  const DEFAULT_CHAPTER_COUNT = 100;
+  const DEFAULT_CHAPTER_COUNT = 500;
   const ENGLISH_GENRE_DESCRIPTION_ZH = {
     'dark-romance': '道德灰度男主、权力失衡关系、囚禁式拉扯和高浓度情欲并存，卖点就是危险感包裹下的强烈欲望。',
     romantasy: '以爱情为核心的奇幻题材，常见精灵宫廷、天选之人、慢热拉扯和浓郁世界观，是近年最强势的流行类型之一。',
@@ -2535,13 +3808,19 @@
     'superhero-fiction': '能力觉醒、英雄与反派对抗、秘密身份和战力成长并重，适合连载化的现代超能故事。',
   };
 
-  const STAGE = {
-    queued: '排队中', running: '运行中', completed: '已完成', failed: '失败', cancelled: '已停止',
-    incomplete: '⏸️ 未完成', incomplete_recovered: '⏸️ 历史未完成',
-    cancel_requested: '🛑 停止请求',
-    auto_resume_pending: '🔄 重启后准备续写',
-    auto_resume_queued: '🔄 重启续写已排队',
-    delegated_to_worker_self_heal: '🩹 由后台自愈恢复中',
+	  const STAGE = {
+	    queued: '排队中', running: '运行中', project: '已建档', completed: '已完成', failed: '失败', cancelled: '已停止',
+	    incomplete: '⏸️ 未完成', incomplete_recovered: '⏸️ 历史未完成',
+	    cancel_requested: '🛑 停止请求',
+	    auto_resume_pending: '🔄 重启后准备续写',
+	    auto_resume_queued: '🔄 重启续写已排队',
+	    delegated_to_worker_self_heal: '🩹 由后台自愈恢复中',
+	    auto_resume_not_claimed: '⏸️ 重启续写未接管',
+	    project_registered: '项目已建档',
+	    project_planning: '规划中，暂无任务记录',
+	    project_paused: '项目已暂停，暂无任务记录',
+	    project_revising: '修订中，暂无任务记录',
+	    blocked_structural_repair: '结构修复门控',
     // AI Conception stages
     conception_market: '📊 市场策略构思', conception_character: '👤 角色体系构思',
     conception_world: '🌍 世界观构思', conception_review: '🔍 交叉审查',
@@ -2565,6 +3844,7 @@
     project_pipeline_started: '🎬 进入写作循环', resume_skipped_chapters: '跳过已完成章节（续传）',
     project_pipeline_completed: '写作流程完成',
     chapter_pipeline_started: '写作章节', chapter_pipeline_completed: '章节完成',
+    chapter_pipeline_paused_for_human_review: '等待人工复核',
     // Quality assurance stages
     periodic_consistency_check_started: '一致性检查', periodic_consistency_check_completed: '一致性检查完成',
     rolling_summary_started: '📝 知识压缩', rolling_summary_completed: '📝 知识压缩完成',
@@ -2574,6 +3854,8 @@
     project_consistency_review_completed: '全书审校完成',
     project_export_started: '导出文件', project_export_completed: '导出完成',
     auto_repair_started: '自动修复', auto_repair_completed: '修复完成',
+    project_repair_chapter_started: '章节修复中',
+    project_repair_chapter_completed: '章节修复已处理',
     completed: '创作完成', failed: '创作失败',
   };
 
@@ -2592,7 +3874,7 @@
   }
 
   function syncGenreLangUi() {
-    $('#genreSearch').placeholder = selectedLang === 'en' ? '搜索英文题材...' : '搜索题材...';
+    $('#genreSearch').placeholder = selectedLang === 'en' ? 'search English genres...  ⌘K' : 'search...  ⌘K';
     $('#genreLangHint').style.display = selectedLang === 'en' ? 'block' : 'none';
   }
 
@@ -2632,34 +3914,209 @@
   /* ═══════════════════════════════════════
      DASHBOARD
      ═══════════════════════════════════════ */
-  async function refreshDashboard() {
-    try {
-      const res = await fetch('/api/tasks');
-      if (res.ok) allTasks = await res.json();
-    } catch { /* ignore */ }
-    renderDashboard();
-  }
+	  async function refreshDashboard() {
+	    try {
+	      const [taskRes, projectRes] = await Promise.all([
+	        fetch('/api/tasks', { cache: 'no-store' }),
+	        fetch('/api/projects', { cache: 'no-store' }),
+	      ]);
+	      const rawTasks = taskRes.ok ? await taskRes.json() : [];
+	      const rawProjects = projectRes.ok ? await projectRes.json() : [];
+	      rawTaskCount = Array.isArray(rawTasks) ? rawTasks.length : 0;
+	      rawProjectCount = Array.isArray(rawProjects) ? rawProjects.length : 0;
+	      updateProjectMaps(rawProjects);
+	      const enrichedTasks = enrichDashboardTaskTitles(rawTasks);
+	      allTasks = normalizeDashboardTasks(mergeDashboardProjects(enrichedTasks, rawProjects));
+	    } catch { /* ignore */ }
+	    renderDashboard();
+	  }
 
   // Module-level selection state — persists across re-renders.
   const selectedSlugs = new Set();
 
-  function isActiveTask(task) {
-    return task?.status === 'running' || task?.status === 'queued';
-  }
+	  function isActiveTask(task) {
+	    return task?.status === 'running' || task?.status === 'queued';
+	  }
 
-  function isAttentionTask(task) {
-    const status = task?.status;
-    if (status === 'failed' || status === 'cancelled' || status === 'incomplete') return true;
+	  function taskNeedsProjectTitle(task) {
+	    const title = String(task?.title || '').trim();
+	    return task?.task_type === 'repair' || !title || /^Repair\s+/i.test(title);
+	  }
+
+	  function updateProjectMaps(projects) {
+	    const rows = Array.isArray(projects) ? projects : [];
+	    projectBySlug = new Map(
+	      rows
+	        .map(project => [String(project.slug || ''), project])
+	        .filter(([slug]) => slug)
+	    );
+	    projectTitleBySlug = new Map(
+	      rows
+	        .map(project => [String(project.slug || ''), String(project.title || '').trim()])
+	        .filter(([slug, title]) => slug && title)
+	    );
+	  }
+
+	  function enrichDashboardTaskTitles(tasks) {
+	    return (Array.isArray(tasks) ? tasks : []).map(task => {
+	      const slug = String(task?.project_slug || '').trim();
+	      const project = projectBySlug.get(slug);
+	      const projectTitle = projectTitleBySlug.get(slug);
+	      const merged = project ? {
+	        ...task,
+	        project_status: project.status || task.project_status || '',
+	        repair_status: project.repair_status || task.repair_status || null,
+	        project_title: project.title || task.project_title || task.title || '',
+	      } : { ...task };
+	      if (projectTitle && taskNeedsProjectTitle(task)) {
+	        merged.title = projectTitle;
+	        merged.project_title = projectTitle;
+	      }
+	      return merged;
+	    });
+	  }
+
+	  function dashboardProjectStatus(project) {
+	    const status = String(project?.status || '').toLowerCase();
+	    if (status === 'completed' || status === 'complete' || status === 'published') return 'completed';
+	    if (status === 'failed' || status === 'error') return 'failed';
+	    if (status === 'paused' || status === 'cancelled' || status === 'incomplete') return 'incomplete';
+	    return 'project';
+	  }
+
+	  function dashboardProjectStage(project) {
+	    const status = String(project?.status || '').toLowerCase();
+	    if (status === 'planning') return 'project_planning';
+	    if (status === 'paused') return 'project_paused';
+	    if (status === 'revising') return 'project_revising';
+	    return 'project_registered';
+	  }
+
+	  function projectToDashboardTask(project) {
+	    const slug = String(project?.slug || '').trim();
+	    const title = String(project?.title || slug || '未命名').trim();
+	    const targetChapters = Number(project?.target_chapters || 0);
+	    const targetWords = Number(project?.target_word_count || 0);
+	    return {
+	      task_id: `project:${slug}`,
+	      task_type: 'project',
+	      status: dashboardProjectStatus(project),
+	      project_status: project?.status || '',
+	      created_at: project?.created_at || project?.updated_at || '',
+	      updated_at: project?.updated_at || project?.created_at || '',
+	      project_slug: slug,
+	      title,
+	      project_title: title,
+		      current_stage: dashboardProjectStage(project),
+		      repair_status: project?.repair_status || null,
+		      progress_events: [],
+	      result: {
+	        project_slug: slug,
+	        target_chapters: targetChapters,
+	        target_words: targetWords,
+	      },
+	      payload: {
+	        slug,
+	        title,
+	        genre: project?.genre || '',
+	        target_chapters: targetChapters,
+	        target_words: targetWords,
+	      },
+	      synthetic_project: true,
+	    };
+	  }
+
+	  function mergeDashboardProjects(tasks, projects) {
+	    const rows = Array.isArray(tasks) ? [...tasks] : [];
+	    const taskSlugs = new Set(rows.map(task => String(task?.project_slug || '').trim()).filter(Boolean));
+	    for (const project of (Array.isArray(projects) ? projects : [])) {
+	      const slug = String(project?.slug || '').trim();
+	      if (!slug || taskSlugs.has(slug)) continue;
+	      rows.push(projectToDashboardTask(project));
+	    }
+	    return rows;
+	  }
+
+	  function taskTimestamp(task) {
+	    const value = task?.updated_at || task?.created_at || '';
+	    const ts = Date.parse(value);
+	    return Number.isFinite(ts) ? ts : 0;
+	  }
+
+	  function dashboardTaskPriority(task) {
+	    const status = task?.status || '';
+	    if (isActiveTask(task)) return 50;
+	    if (status === 'failed' || status === 'incomplete') return 40;
+	    if (status === 'cancelled') return 30;
+	    if (status === 'completed') return 20;
+	    return 10;
+	  }
+
+	  function normalizeDashboardTasks(tasks) {
+	    const compacted = new Map();
+	    (Array.isArray(tasks) ? tasks : []).forEach(task => {
+	      const key = task?.project_slug || task?.task_id;
+	      if (!key) return;
+	      const existing = compacted.get(key);
+	      if (!existing) {
+	        compacted.set(key, task);
+	        return;
+	      }
+	      const taskRank = dashboardTaskPriority(task);
+	      const existingRank = dashboardTaskPriority(existing);
+	      if (
+	        taskRank > existingRank ||
+	        (taskRank === existingRank && taskTimestamp(task) > taskTimestamp(existing))
+	      ) {
+	        compacted.set(key, task);
+	      }
+	    });
+	    return [...compacted.values()].sort((a, b) => taskTimestamp(b) - taskTimestamp(a));
+	  }
+
+  function isShortCompletedTask(task) {
+    if (task?.status !== 'completed') return false;
     const stats = getTaskChapterWordStats(task);
     const writtenCount = stats.hasStats
       ? stats.completedChapters
       : ((task.result && task.result.chapters_written) || 0);
     const targetCount = stats.targetChapters || (task.result && task.result.target_chapters) || 0;
-    return status === 'completed' && targetCount > 0 && writtenCount < targetCount;
+    return targetCount > 0 && writtenCount < targetCount;
+  }
+
+  function isRetryableAttentionTask(task) {
+    const status = task?.status;
+    return status === 'failed' || status === 'cancelled' || status === 'incomplete' || isShortCompletedTask(task);
+  }
+
+  function attentionReasonForTask(task) {
+    const status = task?.status;
+    const stage = String(task?.current_stage || '');
+    const repairPhase = repairPhaseOf(task);
+    if (repairPhase === 'repair_gate') return '修复门控 · 正在或等待修复';
+    if (repairPhase === 'needs_attention') return '章节门禁未过 · 后续需修复';
+    if (hasStagePrefix(stage, ['paused_for_human_review', 'human_review'])) return '等待人工复核';
+    if (hasStagePrefix(stage, ['blocked_structural_repair', 'structural_repair'])) return '结构修复门控';
+    if (status === 'failed') return `${task.error || '失败'} · 等待重试`;
+    if (status === 'cancelled') return '已停止 · 可恢复';
+    if (status === 'incomplete') return '未完成 · 可恢复';
+    if (isShortCompletedTask(task)) return '已完成但章节未补齐';
+    return '需要查看';
+  }
+
+  function isAttentionTask(task) {
+    const status = task?.status;
+    const stage = String(task?.current_stage || '');
+    const repairPhase = repairPhaseOf(task);
+    if (repairPhase === 'needs_attention' || repairPhase === 'repair_gate') return true;
+    if (hasStagePrefix(stage, ['paused_for_human_review', 'human_review', 'blocked_structural_repair', 'structural_repair'])) return true;
+    if (status === 'failed' || status === 'cancelled' || status === 'incomplete') return true;
+    return isShortCompletedTask(task);
   }
 
   function matchesDashboardFilter(task) {
-    if (dashboardFilter === 'active') return isActiveTask(task);
+    if (dashboardFilter === 'active') return isActiveTask(task) && !isFinalizingTask(task);
+    if (dashboardFilter === 'finalizing') return isFinalizingTask(task);
     if (dashboardFilter === 'completed') return task.status === 'completed' && !isAttentionTask(task);
     if (dashboardFilter === 'attention') return isAttentionTask(task);
     return true;
@@ -2678,34 +4135,111 @@
     return haystack.includes(dashboardQuery);
   }
 
+  function isFinalizingTask(task) {
+    if (!task) return false;
+    if (task.status !== 'running') return false;
+    const stage = task.current_stage || '';
+    if (stage.includes('export') || stage.includes('consistency_review') || stage.includes('rolling_summary')) return true;
+    // Heuristic: > 85% chapters done counts as finalizing
+    const stats = getTaskChapterWordStats(task) || {};
+    if (stats.targetChapters > 0 && stats.completedChapters / stats.targetChapters > 0.85) return true;
+    return false;
+  }
+
+  function pad2(n) { return String(n).padStart(2, '0'); }
+
   function updateDashboardMetrics() {
+    const running = allTasks.filter(t => isActiveTask(t) && !isFinalizingTask(t)).length;
+    const finalizing = allTasks.filter(isFinalizingTask).length;
     const active = allTasks.filter(isActiveTask).length;
-    const completed = allTasks.filter(t => t.status === 'completed' && !isAttentionTask(t)).length;
-    const attention = allTasks.filter(isAttentionTask).length;
-    const total = allTasks.length;
+	    const completed = allTasks.filter(t => t.status === 'completed' && !isAttentionTask(t)).length;
+	    const attention = allTasks.filter(isAttentionTask).length;
+	    const total = allTasks.length;
+	    hiddenRecordCount = Math.max(0, rawTaskCount - total);
     const free = Math.max(0, maxConcurrentTasks - active);
 
     const setText = (id, value) => {
       const el = $(id);
       if (el) el.textContent = value;
     };
-    setText('#dashMetricActive', active);
-    setText('#dashMetricCompleted', completed);
-    setText('#dashMetricAttention', attention);
-    setText('#dashMetricTotal', total);
-    setText('#dashMetricCapacity', active > 0
-      ? `${free > 0 ? `还可新建 ${free} 本` : '已达并发上限'} · 上限 ${maxConcurrentTasks}`
-      : `当前空闲 · 可同时新建 ${maxConcurrentTasks} 本`);
+    setText('#dashMetricActive', pad2(running));
+    setText('#dashMetricFinalizing', pad2(finalizing));
+    setText('#dashMetricCompleted', pad2(completed));
+    setText('#dashMetricAttention', pad2(attention));
+    setText('#navTaskCount', pad2(total));
+    setText('#dashHeroTotal', total);
 
-    setText('#filterAllCount', total);
-    setText('#filterActiveCount', active);
-    setText('#filterCompletedCount', completed);
-    setText('#filterAttentionCount', attention);
+    // Lifetime stats — derived from local task list (no extra API call).
+    const completedTasks = allTasks.filter(t => t.status === 'completed');
+    const completedWordsTotal = completedTasks.reduce((sum, t) => {
+      const stats = getTaskChapterWordStats(t);
+      return sum + (stats.wordTotal || 0);
+    }, 0);
+    const oneWeekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+    const newWeek = allTasks.filter(t => t.created_at && new Date(t.created_at).getTime() >= oneWeekAgo).length;
+    setText('#dashStatNewWeek', newWeek);
+    setText('#dashStatPublished', completedTasks.length);
+    setText('#dashStatLifetimeBooks', total);
+    setText('#dashStatLifetimeWords', completedWordsTotal > 0 ? completedWordsTotal.toLocaleString('en-US') : '0');
+
+    setText('#filterAllCount', pad2(total));
+    setText('#filterActiveCount', pad2(running));
+    setText('#filterFinalizingCount', pad2(finalizing));
+    setText('#filterCompletedCount', pad2(completed));
+    setText('#filterAttentionCount', pad2(attention));
 
     $$('.dash-filter').forEach(btn => {
       btn.classList.toggle('active', btn.dataset.filter === dashboardFilter);
     });
+
+    // Header status: queue / capacity readout (replaces old hero metric note).
+    const queueEl = document.getElementById('hdrQueue');
+    if (queueEl) queueEl.textContent = `队列 ${active} in / ${free} wait`;
+
+    // Attention banner.
+    const banner = document.getElementById('dashAttention');
+    if (banner) {
+      const items = allTasks.filter(isAttentionTask);
+      const retryableItems = items.filter(isRetryableAttentionTask);
+      if (!items.length) {
+        banner.classList.remove('visible');
+      } else {
+        banner.classList.add('visible');
+        const titleEl = document.getElementById('dashAttentionTitle');
+        const detailEl = document.getElementById('dashAttentionDetail');
+        const retryBtn = document.getElementById('dashAttentionRetry');
+        if (titleEl) titleEl.textContent = `${items.length} 本书存在门控或需处理`;
+        if (retryBtn) {
+          retryBtn.style.display = retryableItems.length ? '' : 'none';
+          retryBtn.textContent = `↻ 重试可恢复项 ${retryableItems.length ? pad2(retryableItems.length) : ''}`;
+        }
+        if (detailEl) {
+          const fragments = items.slice(0, 2).map(t => {
+            const reason = attentionReasonForTask(t);
+            return `《${t.title || t.project_slug}》${reason}`;
+          });
+          detailEl.textContent = fragments.join(' ｜ ');
+        }
+      }
+    }
+
+    // Pin first focused (for quick-jump rail).
+    const firstActive = allTasks.find(isActiveTask) || allTasks[0];
+    window.__firstFocusedTaskId = firstActive ? firstActive.task_id : null;
   }
+
+  window.retryAllAttention = async function() {
+    const items = allTasks.filter(isRetryableAttentionTask);
+    if (!items.length) return;
+    if (!confirm(`确认对 ${items.length} 项可恢复任务执行恢复/重试？`)) return;
+    for (const t of items) {
+      if (!t.project_slug) continue;
+      try {
+        await fetch(`/api/tasks/${t.task_id}/resume`, { method: 'POST' });
+      } catch { /* ignore individual errors; will surface on refresh */ }
+    }
+    refreshDashboard();
+  };
 
   window.setDashboardFilter = function(filter) {
     dashboardFilter = filter;
@@ -2796,8 +4330,10 @@
         completed: '已完成作品',
         attention: '需要处理的任务',
       }[dashboardFilter] || '任务';
-      summary.textContent = `${filterText} · 显示 ${visibleDashboardTasks.length} / ${allTasks.length} 项`;
-    }
+	      const compactNote = hiddenRecordCount > 0 ? ` · 合并 ${hiddenRecordCount} 条历史记录` : '';
+	      const projectNote = rawProjectCount > rawTaskCount ? ` · 含 ${rawProjectCount - rawTaskCount} 本无任务记录书籍` : '';
+	      summary.textContent = `${filterText} · 显示 ${visibleDashboardTasks.length} / ${allTasks.length} 项${compactNote}${projectNote}`;
+		    }
     container.innerHTML = visibleDashboardTasks.length
       ? visibleDashboardTasks.map(renderTaskCard).join('')
       : '<div class="dash-no-results">没有匹配的任务。可以调整筛选条件或清空搜索词。</div>';
@@ -2860,17 +4396,239 @@
     });
   }
 
-  function latestStageEvent(events, stage) {
-    if (!Array.isArray(events) || !events.length) return null;
-    if (stage) {
+	  function latestStageEvent(events, stage) {
+	    if (!Array.isArray(events) || !events.length) return null;
+	    if (stage) {
       for (const event of [...events].reverse()) {
         if (event.stage === stage) return event;
       }
     }
-    return events[events.length - 1] || null;
-  }
+	    return events[events.length - 1] || null;
+	  }
 
-  function describeStageEvent(stage, payload = {}, context = {}) {
+	  function hasStagePrefix(stage, prefixes) {
+	    const value = String(stage || '');
+	    return prefixes.some(prefix => value.startsWith(prefix) || value.includes(prefix));
+	  }
+
+	  function repairPhaseOf(task) {
+	    return String(task?.repair_status?.phase || '').trim();
+	  }
+
+	  function classifyBookState(task, context = {}) {
+	    const status = String(task?.status || '');
+	    const stage = String(task?.current_stage || '');
+	    const projectStatus = String(task?.project_status || '').toLowerCase();
+	    const repairPhase = repairPhaseOf(task);
+	    const repairDetail = String(task?.repair_status?.detail || '').trim();
+	    const isRepairTask = task?.task_type === 'repair' || stage.startsWith('project_repair');
+	    const isActive = isActiveTask(task);
+	    const flags = [];
+	    if (repairPhase === 'needs_attention') flags.push({ text: '有章节未过门禁', tone: 'warn' });
+	    if (repairPhase === 'repair_gate') flags.push({ text: '修复门控', tone: 'bad' });
+	    if (projectStatus === 'paused') flags.push({ text: '项目已暂停', tone: repairPhase === 'repair_gate' ? 'bad' : 'warn' });
+
+	    const base = {
+	      phase: 'idle',
+	      label: '未在写作',
+	      mode: '仅项目记录',
+	      detail: '项目存在，但当前没有可见写作任务。',
+	      next: '点击“续写 / 恢复任务”重新启动。',
+	      badgeCls: 'queued',
+	      flags,
+	    };
+
+	    if (status === 'failed') {
+	      return {
+	        ...base,
+	        phase: 'blocked',
+	        label: '已失败',
+	        mode: '任务失败',
+	        detail: task?.error ? String(task.error).split('\n').slice(-1)[0] : '任务执行失败。',
+	        next: '查看诊断后重试，或完全删除这本书。',
+	        badgeCls: 'failed',
+	      };
+	    }
+	    if (status === 'cancelled') {
+	      return {
+	        ...base,
+	        phase: 'paused',
+	        label: '已停止',
+	        mode: '可恢复',
+	        detail: '写作任务已停止，已有章节和项目数据仍保留。',
+	        next: '点击恢复继续，或点击完全删除。',
+	        badgeCls: 'cancelled',
+	      };
+	    }
+	    if (status === 'incomplete') {
+	      return {
+	        ...base,
+	        phase: 'paused',
+	        label: '未完成',
+	        mode: '可恢复',
+	        detail: '自动恢复未接管或章节尚未写满目标，已有章节和项目数据仍保留。',
+	        next: '点击恢复继续，或点击完全删除。',
+	        badgeCls: 'incomplete',
+	      };
+	    }
+	    if (status === 'completed') {
+	      return {
+	        ...base,
+	        phase: 'complete',
+	        label: '已完成',
+	        mode: '可阅读/整理',
+	        detail: `已完成 ${context.bookCompletedChapters || 0}/${context.total || 0} 章。`,
+	        next: '可进入阅读器或整理上架资料。',
+	        badgeCls: 'completed',
+	      };
+	    }
+	    if (isRepairTask) {
+	      return {
+	        ...base,
+	        phase: 'repairing',
+	        label: isActive ? '修复中' : '待修复',
+	        mode: '修复阻塞章节',
+	        detail: repairDetail || '正在修复未通过门禁或结构审计的章节，暂不属于正常续写。',
+	        next: isActive ? '等待修复任务推进；修复完成后再恢复正常续写。' : '点击恢复或重新启动修复。',
+	        badgeCls: 'incomplete',
+	      };
+	    }
+	    if (task?.synthetic_project) {
+	      if (projectStatus === 'planning') {
+	        return {
+	          ...base,
+	          phase: 'idle',
+	          label: '未在写作',
+	          mode: '已建档 / 无任务',
+	          detail: '这本书有项目记录，但没有运行中的任务，也没有章节产出。',
+	          next: '点击“续写 / 恢复任务”从规划阶段重新启动。',
+	          badgeCls: 'queued',
+	        };
+	      }
+	      if (projectStatus === 'paused') {
+	        return {
+	          ...base,
+	          phase: 'paused',
+	          label: '已暂停',
+	          mode: '无运行任务',
+	          detail: repairDetail || '项目已暂停，没有正在运行的写作任务。',
+	          next: '先处理修复门控，或完全删除。',
+	          badgeCls: 'cancelled',
+	        };
+	      }
+	      return base;
+	    }
+	    if (repairPhase === 'repair_gate' && !isActive) {
+	      return {
+	        ...base,
+	        phase: 'attention',
+	        label: '待修复',
+	        mode: '修复门控',
+	        detail: repairDetail || '项目被修复门控暂停，不能继续正常写作。',
+	        next: '启动修复任务，直到阻塞章节通过审计。',
+	        badgeCls: 'failed',
+	      };
+	    }
+	    if (isActive && hasStagePrefix(stage, ['paused_for_human_review', 'human_review'])) {
+	      return {
+	        ...base,
+	        phase: 'review',
+	        label: '待复核',
+	        mode: '章节写作暂停',
+	        detail: '当前章节流程暂停，等待人工复核或修复处理，暂时不是正常写作推进。',
+	        next: '打开详情查看阻塞原因，确认后恢复写作或转入修复。',
+	        badgeCls: 'incomplete',
+	      };
+	    }
+	    if (isActive && hasStagePrefix(stage, ['blocked_structural_repair', 'structural_repair'])) {
+	      return {
+	        ...base,
+	        phase: 'blocked',
+	        label: '待结构修复',
+	        mode: '结构修复门控',
+	        detail: repairDetail || '项目触发结构修复门控，不能继续正常写作。',
+	        next: '先完成结构修复和审计，再恢复写作。',
+	        badgeCls: 'failed',
+	      };
+	    }
+	    if (isActive && hasStagePrefix(stage, ['volume_planning', 'planning_', 'foundation_planning', 'story_bible', 'outline_materialization', 'narrative_graph', 'narrative_tree'])) {
+	      return {
+	        ...base,
+	        phase: 'planning',
+	        label: '规划中',
+	        mode: '生成大纲/前置资料',
+	        detail: context.currentVolume
+	          ? `正在规划第 ${context.currentVolume} 卷，尚未进入本轮正文写作。`
+	          : '正在生成故事资料或章节大纲，尚未进入正文写作。',
+	        next: repairPhase === 'needs_attention'
+	          ? '大纲通过后还需要处理未过门禁章节。'
+	          : '大纲通过后会进入章节写作。',
+	        badgeCls: 'queued',
+	      };
+	    }
+	    if (isActive && hasStagePrefix(stage, ['chapter_pipeline', 'volume_writing', 'project_pipeline_started'])) {
+	      return {
+	        ...base,
+	        phase: 'writing',
+	        label: '编写中',
+	        mode: '正文写作',
+	        detail: context.displayWritingCh
+	          ? `正在写第 ${context.displayWritingCh} 章。`
+	          : `已写 ${context.bookCompletedChapters || 0}/${context.total || 0} 章，后台正在推进章节流程。`,
+	        next: repairPhase === 'needs_attention'
+	          ? '写作同时存在未过门禁章节，后续需要修复。'
+	          : '等待章节完成并进入下一章。',
+	        badgeCls: 'running',
+	      };
+	    }
+	    if (isActive) {
+	      return {
+	        ...base,
+	        phase: 'planning',
+	        label: '运行中',
+	        mode: STAGE[stage] || stage || '后台任务',
+	        detail: '后台任务正在运行，但当前阶段不是正文写作。',
+	        next: '等待后台事件更新到规划、写作或修复阶段。',
+	        badgeCls: 'queued',
+	      };
+	    }
+	    if (repairPhase === 'needs_attention') {
+	      return {
+	        ...base,
+	        phase: 'attention',
+	        label: '需处理',
+	        mode: '章节门禁未过',
+	        detail: repairDetail || '有章节未通过生产门禁。',
+	        next: '启动修复或查看诊断。',
+	        badgeCls: 'incomplete',
+	      };
+	    }
+	    return base;
+	  }
+
+	  function renderBookStateStrip(bookState) {
+	    const flags = (bookState.flags || []).map(flag =>
+	      `<span class="tc-state-flag ${esc(flag.tone || '')}">${esc(flag.text || '')}</span>`
+	    ).join('');
+	    return `
+	      <div class="tc-state-strip state-${esc(bookState.phase || 'idle')}">
+	        <div class="tc-state-main">
+	          <div class="tc-state-kicker">当前状态</div>
+	          <div class="tc-state-label">${esc(bookState.label || '未知')}</div>
+	          <div class="tc-state-mode">${esc(bookState.mode || '')}</div>
+	        </div>
+	        <div>
+	          <div class="tc-state-detail">${esc(bookState.detail || '暂无状态说明。')}</div>
+	          ${flags ? `<div class="tc-state-flags">${flags}</div>` : ''}
+	        </div>
+	        <div>
+	          <div class="tc-state-next-label">下一步</div>
+	          <div class="tc-state-next">${esc(bookState.next || '等待后台更新。')}</div>
+	        </div>
+	      </div>`;
+	  }
+
+	  function describeStageEvent(stage, payload = {}, context = {}) {
     const label = STAGE[stage] || stage || '等待任务进展';
     const n = payload.chapter_number ?? payload.chapter ?? null;
     const progress = payload.progress || payload.global_progress || '';
@@ -2890,12 +4648,23 @@
         return n ? `正在准备第 ${n} 章写作${progress ? `（${progress}）` : ''}` : label;
       case 'chapter_pipeline_completed':
         return n ? `第 ${n} 章已完成${payload.word_count ? `，${fmtWords(payload.word_count)}` : ''}` : '章节已完成';
+      case 'project_repair_chapter_started':
+        return n ? `正在修复第 ${n} 章` : '正在修复章节';
+      case 'project_repair_chapter_completed': {
+        if (!n) return '章节修复处理完成';
+        const state = String(payload.production_state || '').toLowerCase();
+        if (state === 'ok') return `第 ${n} 章修复后门禁通过`;
+        if (payload.requires_human_review === true) return `第 ${n} 章已处理，仍需复核`;
+        return `第 ${n} 章修复处理完成`;
+      }
       case 'resume_skipped_chapters':
         return `续写扫描完成：跳过 ${Number(payload.skipped_count || 0)} 章，待写 ${Number(payload.pending_count || 0)} 章${chapterCount ? `，本轮共 ${chapterCount} 章` : ''}`;
       case 'delegated_to_worker_self_heal':
         return payload.heal_owned
           ? '后台恢复任务已接管，正在等待 worker 同步新的写作进展'
           : '后台自愈流程正在续写，页面不会重复启动同一个任务';
+      case 'auto_resume_not_claimed':
+        return '后台没有发现接管中的自愈任务，已改为未完成，可手动恢复';
       case 'auto_resume_queued':
         return '服务重启后已自动加入续写队列';
       case 'progressive_autowrite_started':
@@ -2948,6 +4717,7 @@
     if (task.status === 'completed') primary = '作品已完成，可阅读、预览章节或整理上架资料';
     if (task.status === 'failed') primary = `任务失败：${task.error || '请查看执行日志'}`;
     if (task.status === 'cancelled') primary = '任务已停止，已完成章节会保留';
+    if (task.current_stage === 'blocked_structural_repair') primary = task.error || '项目处于结构修复门控，需先完成修复审计';
     if (task.cancel_requested && task.status === 'running') primary = '正在停止任务，等待当前步骤安全退出';
 
     const secondary = [];
@@ -2986,11 +4756,12 @@
       </div>`;
   }
 
-  function renderTaskCard(task) {
-    const events = task.progress_events || [];
-    const status = task.status || 'queued';
-    const slug = task.project_slug || '';
-    const chapterWordStats = getTaskChapterWordStats(task);
+	  function renderTaskCard(task) {
+	    const events = task.progress_events || [];
+	    const status = task.status || 'queued';
+	    const slug = task.project_slug || '';
+	    const isSyntheticProject = !!task.synthetic_project;
+	    const chapterWordStats = getTaskChapterWordStats(task);
     const targetWords = Number(task.payload?.target_words || task.result?.target_words || chapterWordStats.targetWordCount || 0);
     const targetChapters = Number(task.payload?.target_chapters || task.result?.target_chapters || chapterWordStats.targetChapters || 0);
     const targetWordsPerChapter = targetWords > 0 && targetChapters > 0
@@ -3123,49 +4894,7 @@
       stageLabel = '🛑 正在停止…';
     }
 
-    // ── Headline stats (the at-a-glance row) ──
-    const headlineItems = [];
-    if (totalVolumes > 0) {
-      const volVal = currentVolume
-        ? `第 <span class="dim">${currentVolume}/${totalVolumes}</span> 卷`
-        : `共 <span class="dim">${totalVolumes}</span> 卷`;
-      headlineItems.push({ label: '卷', value: volVal, sub: '', pulse: status === 'running' });
-    }
-    if (total > 0) {
-      const chVal = bookCompletedChapters > 0 || displayWritingCh
-        ? `<span>${displayWritingCh || bookCompletedChapters}</span> <span class="dim">/ ${total}</span> 章`
-        : `共 <span class="dim">${total}</span> 章`;
-      const chSub = displayWritingCh && lastStarted?.payload?.global_progress && progressEventsSynced
-        ? `已完成 ${bookCompletedChapters} 章 · 全书 ${lastStarted.payload.global_progress}`
-        : (bookCompletedChapters > 0 ? `已完成 ${bookCompletedChapters} 章` : '待写');
-      headlineItems.push({ label: '章', value: chVal, sub: chSub, pulse: status === 'running' });
-    }
-    if (completedWordCount > 0 || projectedTotalWords > 0) {
-      const wordVal = completedWordCount > 0
-        ? `<span>${fmtWords(completedWordCount)}</span>${projectedTotalWords > 0 ? ` <span class="dim">/ 约 ${fmtWords(projectedTotalWords)}</span>` : ''}`
-        : `<span class="dim">约 ${fmtWords(projectedTotalWords)}</span>`;
-      const perChSub = chapterWordStats.hasStats
-        ? `${chapterWordStats.completedChapters} 章 · 数据库统计`
-        : (targetWordsPerChapter > 0 ? `约 ${fmtWords(targetWordsPerChapter)}/章` : '');
-      headlineItems.push({ label: '字数', value: wordVal, sub: perChSub, pulse: false });
-    }
-    if (etaText) {
-      headlineItems.push({ label: '进度', value: `${displayPct}%`, sub: etaText, pulse: false });
-    } else if (status !== 'running' && (displayPct > 0 || total > 0)) {
-      headlineItems.push({ label: '进度', value: `${displayPct}%`, sub: '', pulse: false });
-    }
-    const headlineHtml = headlineItems.length
-      ? `<div class="tc-headline">${headlineItems.map(it => `
-          <div class="hl-item">
-            <div class="hl-label">${esc(it.label)}</div>
-            <div class="hl-value${it.pulse ? ' pulse' : ''}">${it.value}</div>
-            ${it.sub ? `<div class="hl-sub">${esc(it.sub)}</div>` : ''}
-          </div>`).join('')}</div>`
-      : '';
-
-    // ── Stage strip (rich text, distinct from raw badge) ──
-    const stageClass = status === 'completed' ? 'completed' : status === 'failed' ? 'failed' : status === 'queued' ? 'queued' : '';
-    const stageStrip = `<div class="tc-stage ${stageClass}">${esc(stageLabel)}</div>`;
+    // ── Build progress insight (used for "current action" & log) ──
     const progressInsight = buildTaskProgressInsight(task, {
       total,
       totalVolumes,
@@ -3178,122 +4907,487 @@
       hasChapterStats: chapterWordStats.hasStats,
       progressEventsSynced,
     });
-    const progressInsightHtml = renderProgressInsightHtml(progressInsight);
 
-    // ── Chapter pills ──
-    const pillLimit = 20;
-    const chapterPillItems = chapterWordStats.hasStats
-      ? chapterWordStats.chapters
-      : completedChapterEvents.map((e) => ({
-          number: e.payload?.chapter_number,
-          word_count: e.payload?.word_count,
-          title: e.payload?.chapter_title,
-        }));
-    const pills = chapterPillItems.slice(0, pillLimit).map((item) => {
-      const n = item.number;
-      const wc = Number(item.word_count || 0);
-      const title = item.title || '';
-      const tip = [title ? `第${n}章：${title}` : `第${n}章`, wc > 0 ? fmtWords(wc) : '']
-        .filter(Boolean)
-        .join(' · ');
-      return `<a class="ch-pill done" href="/read/${esc(slug)}#${n}" target="_blank" title="${esc(tip)}">第${n}章${wc > 0 ? ` · ${esc(fmtWords(wc))}` : ''}</a>`;
-    }).join('');
-    const writingPill = displayWritingCh ? `<span class="ch-pill writing">第${displayWritingCh}章 写作中</span>` : '';
-    const morePills = bookCompletedChapters > pillLimit ? `<span class="ch-pill done" style="cursor:default;">+${bookCompletedChapters - Math.min(chapterPillItems.length, pillLimit)}章</span>` : '';
+    // ── Latest log line (last event) ──
+    const latestEvent = events[events.length - 1] || null;
+    const lastLogTime = latestEvent ? new Date(latestEvent.timestamp).toLocaleTimeString('zh-CN', { hour12: false }) : '';
+    const lastLogText = latestEvent
+      ? describeStageEvent(latestEvent.stage, latestEvent.payload || {}, {
+          total, totalVolumes, currentVolume, currentVolumeChapterCount,
+          bookCompletedChapters, volumeCompletedChapters, completedWordCount,
+          displayWritingCh, hasChapterStats: chapterWordStats.hasStats,
+          progressEventsSynced,
+        })
+      : '暂无事件';
+    const updatedText = formatEventClock(task.updated_at || latestEvent?.timestamp) || '—';
 
     // Detect "completed but actually unfinished" — recovered tasks may have
-    // status=completed while chapters on disk < target. Treat as resumable.
+    // status=completed while chapters on disk < target.
     const writtenCount = chapterWordStats.hasStats
       ? bookCompletedChapters
       : ((task.result && task.result.chapters_written) || bookCompletedChapters);
     const targetCount = chapterWordStats.targetChapters || (task.result && task.result.target_chapters) || total || 0;
     const isTrulyComplete = status === 'completed' && !(targetCount > 0 && writtenCount < targetCount);
 
-    // ── Compact metadata footer (created-at / slug) ──
-    const metaFooter = `
-      <div class="tc-meta">
-        <span>项目：<strong>${esc(slug || '-')}</strong></span>
-        <span>创建：<strong>${timeStr}</strong></span>
-        ${targetCount > 0 && totalVolumes > 1 ? `<span>规模：<strong>${totalVolumes} 卷 · ${targetCount} 章</strong></span>` : ''}
-      </div>`;
+    // ── Tone (color family) used by progress text/bar ──
+    const tone = status === 'completed'
+      ? 'done'
+      : status === 'failed'
+      ? 'failed'
+      : status === 'cancelled' || status === 'incomplete'
+      ? 'cancelled'
+	      : status === 'queued' || status === 'project'
+	      ? 'queued'
+      : (data => data)(displayWritingCh && bookCompletedChapters / Math.max(1, total) > 0.85 ? 'finalizing' : 'running');
 
-    // ── Actions ──
-    let actions = '';
-    if (status === 'running' || status === 'queued') {
-      actions += `<button class="btn btn-primary btn-sm" onclick="openProgress('${esc(task.task_id)}')">查看详情</button>`;
-      const stopLabel = task.cancel_requested ? '再次点击强制停止' : '停止任务';
-      actions += `<button class="btn btn-danger btn-sm" onclick="cancelTask('${esc(task.task_id)}')">${stopLabel}</button>`;
-    }
-    if (isTrulyComplete && slug) {
-      actions += `<a class="btn btn-success btn-sm" href="/read/${esc(slug)}" target="_blank">阅读全书</a>`;
-    }
-    const showResume = slug && (
-      status === 'failed' || status === 'cancelled' || status === 'incomplete'
-      || (status === 'completed' && targetCount > 0 && writtenCount < targetCount)
-    );
-    if (showResume) {
-      actions += `<button class="btn btn-warning btn-sm" onclick="resumeTaskById('${esc(task.task_id)}','${esc(slug)}')">继续任务</button>`;
-    }
-    if (slug) {
-      actions += `<a class="btn btn-secondary btn-sm" href="/read/${esc(slug)}" target="_blank">预览章节</a>`;
-      actions += `<button class="btn btn-secondary btn-sm" onclick="openProgress('${esc(task.task_id)}')">上架资料</button>`;
-    }
-    if (status === 'running') {
-      actions += `<button class="btn btn-secondary btn-sm" onclick="openProgress('${esc(task.task_id)}')">实时日志</button>`;
-    }
-    if (status !== 'running' && status !== 'queued') {
-      actions += `<button class="btn btn-secondary btn-sm" onclick="deleteTask('${esc(task.task_id)}')">删除</button>`;
-    }
+    // ── Priority tag (heuristic from chapter scale) ──
+    const priorityTag = total >= 500 ? 'P1' : total >= 200 ? 'P2' : total > 0 ? 'P3' : '';
 
+    // ── Genre / model from payload or quickstart_meta ──
+    const meta = task.quickstart_meta || task.payload || {};
+    const genreLabel = meta.genre_label || meta.genre || meta.genre_name || meta.genre_key || '';
+    const lengthLabel = total >= 1000 ? '超长篇'
+      : total >= 500 ? '长篇'
+      : total >= 200 ? '中篇'
+      : total >= 50 ? '短篇'
+      : total > 0 ? '微短篇' : '';
+	    const genreText = genreLabel
+	      ? `— ${esc(genreLabel)}${lengthLabel ? ` · ${lengthLabel}` : ''}`
+	      : (lengthLabel ? `— ${lengthLabel}` : '');
+
+	    const bookState = classifyBookState(task, {
+	      total,
+	      currentVolume,
+	      bookCompletedChapters,
+	      displayWritingCh,
+	    });
+	    const stateStripHtml = renderBookStateStrip(bookState);
+
+	    // ── State badge label ──
+	    const badgeMap = {
+	      running: { cls: 'running', label: '运行中' },
+	      queued: { cls: 'queued', label: '排队中' },
+	      project: { cls: 'queued', label: '已建档' },
+	      completed: { cls: 'completed', label: '已完成' },
+	      failed: { cls: 'failed', label: '失败' },
+	      cancelled: { cls: 'cancelled', label: '已停止' },
+	      incomplete: { cls: 'incomplete', label: '未完成' },
+	    };
+	    const badge = {
+	      ...(badgeMap[status] || { cls: 'queued', label: status || '—' }),
+	      cls: bookState.badgeCls || (badgeMap[status]?.cls || 'queued'),
+	      label: bookState.label || (badgeMap[status]?.label || status || '—'),
+	    };
+	    if (task.cancel_requested && status === 'running') {
+	      badge.label = '正在停止…';
+	    } else if (bookState.phase === 'writing' && status === 'running' && bookCompletedChapters / Math.max(1, total) > 0.85) {
+	      // soft-render running near-complete as "finalizing" to match the design
+	      badge.cls = 'finalizing'; badge.label = '收尾中';
+	    }
+
+	    // ── Actions (right-edge of row 1) ──
+	    let actions = '';
+	    if (isSyntheticProject) {
+	      actions += `<button class="btn btn-primary btn-sm" onclick="resumeProjectBySlug('${esc(slug)}')">▶ 续写</button>`;
+	      actions += `<button class="btn btn-secondary btn-sm" onclick="deleteProjectFull('${esc(slug)}','')">完全删除</button>`;
+	    } else if (status === 'running' || status === 'queued') {
+	      actions += `<button class="btn btn-primary btn-sm" onclick="openProgress('${esc(task.task_id)}')">→ 查看详情</button>`;
+	      const stopLabel = task.cancel_requested ? '强制停止' : '停止';
+	      actions += `<button class="btn btn-secondary btn-sm" onclick="cancelTask('${esc(task.task_id)}')">◾ ${stopLabel}</button>`;
+	      actions += `<button class="btn btn-secondary btn-sm" onclick="deleteProjectFull('${esc(slug)}','${esc(task.task_id)}')">停止后删除</button>`;
+	    } else if (isTrulyComplete && slug) {
+	      actions += `<a class="btn btn-primary btn-sm" href="/read/${esc(slug)}" target="_blank">📖 阅读</a>`;
+	      actions += `<button class="btn btn-secondary btn-sm" onclick="openProgress('${esc(task.task_id)}')">↗ 上架</button>`;
+	      actions += `<button class="btn btn-secondary btn-sm" onclick="deleteProjectFull('${esc(slug)}','${esc(task.task_id)}')">完全删除</button>`;
+	    } else if (status === 'failed') {
+	      actions += `<button class="btn btn-primary btn-sm" onclick="resumeTaskById('${esc(task.task_id)}','${esc(slug)}')">↻ 重试</button>`;
+	      actions += `<button class="btn btn-secondary btn-sm" onclick="openProgress('${esc(task.task_id)}')">诊断</button>`;
+	      actions += `<button class="btn btn-secondary btn-sm" onclick="deleteProjectFull('${esc(slug)}','${esc(task.task_id)}')">完全删除</button>`;
+	    } else if (status === 'cancelled' || status === 'incomplete') {
+	      actions += `<button class="btn btn-primary btn-sm" onclick="resumeTaskById('${esc(task.task_id)}','${esc(slug)}')">▶ 恢复</button>`;
+	      actions += `<button class="btn btn-secondary btn-sm" onclick="deleteTask('${esc(task.task_id)}')">归档</button>`;
+	      actions += `<button class="btn btn-secondary btn-sm" onclick="deleteProjectFull('${esc(slug)}','${esc(task.task_id)}')">完全删除</button>`;
+	    }
+	    if (!isSyntheticProject) {
+	      actions += `<button class="btn btn-secondary btn-sm" onclick="openProgress('${esc(task.task_id)}')">⋯</button>`;
+	    }
+
+    // ── Checkbox (visible & functional only on inactive tasks) ──
     const selectable = !!slug && status !== 'running' && status !== 'queued';
     const checked = selectedSlugs.has(slug) ? 'checked' : '';
     const checkboxHtml = selectable
-      ? `<input type="checkbox" class="task-select" data-slug="${esc(slug)}" ${checked} onchange="toggleTaskSelect('${esc(slug)}', this.checked)" style="margin-right:10px;width:18px;height:18px;cursor:pointer;">`
-      : '';
+      ? `<input type="checkbox" class="task-select" data-slug="${esc(slug)}" ${checked} onchange="toggleTaskSelect('${esc(slug)}', this.checked)">`
+      : `<input type="checkbox" disabled style="opacity:.3">`;
 
-    const highlightStyle = task.task_id === highlightTaskId
-      ? 'box-shadow:0 0 0 2px var(--accent-light, #4a9eff), 0 8px 24px rgba(74,158,255,0.25);transition:box-shadow .3s;'
-      : '';
+    // ── Quick-jump rail (only on focused / first-row task) ──
+    const focused = task.task_id === highlightTaskId
+      || (highlightTaskId === null && (window.__firstFocusedTaskId === task.task_id));
 
-    // ── Progress bars: overall book + current volume (multi-volume only) ──
-    const overallBarHtml = total > 0 ? `
-      <div class="tc-progress">
-        <div class="tc-prog-header">
-          <span class="label">全书进度</span>
-          <span class="pct">${displayPct}% · ${bookCompletedChapters}/${total}</span>
+    // Decide tone class for progress
+    const toneSuffix = status === 'completed' ? 'done'
+      : status === 'failed' ? 'failed'
+      : status === 'cancelled' || status === 'incomplete' ? 'cancelled'
+	      : status === 'queued' || status === 'project' ? 'queued'
+      : (badge.cls === 'finalizing' ? 'finalizing' : 'running');
+
+    // ── Recent 3 events ──
+    const eventTagClass = (e) => {
+      const stage = e.stage || '';
+      if (stage.endsWith('_failed') || stage === 'failed') return 'err';
+      if (stage.includes('warning') || stage === 'blocked_structural_repair') return 'warn';
+      if (stage.endsWith('_completed') || stage === 'completed') return 'ok';
+      return '';
+    };
+    const eventTagText = (e) => {
+      const stage = e.stage || '';
+      if (stage.endsWith('_failed')) return '失败';
+      if (stage === 'blocked_structural_repair') return '门控';
+      if (stage.endsWith('_completed')) return '完成';
+      if (stage.endsWith('_started')) return '开始';
+      return STAGE[stage] ? '事件' : '事件';
+    };
+    const recentEvents = events.slice(-3).reverse();
+    const eventsHtml = recentEvents.length
+      ? recentEvents.map((e) => {
+          const t = new Date(e.timestamp);
+          const tStr = isNaN(t.getTime()) ? '—' : t.toLocaleTimeString('zh-CN', { hour12: false });
+          const msg = describeStageEvent(e.stage, e.payload || {}, {
+            total, totalVolumes, currentVolume, currentVolumeChapterCount,
+            bookCompletedChapters, volumeCompletedChapters, completedWordCount,
+            displayWritingCh, hasChapterStats: chapterWordStats.hasStats, progressEventsSynced,
+          });
+          return `<div class="dg-event-row">
+            <span class="ev-time">${esc(tStr)}</span>
+            <span class="ev-tag ${eventTagClass(e)}">${esc(eventTagText(e))}</span>
+            <span class="ev-msg" title="${esc(msg)}">${esc(msg)}</span>
+          </div>`;
+        }).join('')
+      : `<div class="dg-event-row"><span class="ev-time">—</span><span class="ev-tag">—</span><span class="ev-msg">${esc(progressInsight.secondary || '暂无事件。')}</span></div>`;
+
+    // ── Diagnostic signals (computed from the same event stream) ──
+    const warnEvents = events.filter(e => {
+      const s = e.stage || '';
+      return s.includes('warning') || s === 'rolling_summary_failed' || s === 'voice_drift_check_failed';
+    });
+    const errEvents = events.filter(e => (e.stage || '').endsWith('_failed') || e.stage === 'failed');
+    const repairBlocked = task.current_stage === 'blocked_structural_repair'
+      || task.repair_status?.is_repairing
+      || task.repair_status?.phase === 'repair_gate';
+
+    const completedTimes = completedChapterEvents.map(e => new Date(e.timestamp).getTime()).filter(Number.isFinite);
+    let avgChapterMs = 0;
+    if (completedTimes.length >= 2) {
+      avgChapterMs = (completedTimes[completedTimes.length - 1] - completedTimes[0]) / (completedTimes.length - 1);
+    } else if (completedTimes.length === 1 && task.created_at) {
+      avgChapterMs = completedTimes[0] - new Date(task.created_at).getTime();
+    }
+    const chPerHour = avgChapterMs > 0 ? (3600000 / avgChapterMs) : 0;
+    const wordsPerHour = avgChapterMs > 0 && completedChapterEvents.length > 0
+      ? (3600000 / avgChapterMs) * (completedWordCount / Math.max(1, bookCompletedChapters))
+      : 0;
+    const avgWordsActual = bookCompletedChapters > 0 ? Math.round(completedWordCount / bookCompletedChapters) : 0;
+    const wordsTargetPerCh = targetWordsPerChapter || (chapterWordStats.targetWordCount && chapterWordStats.targetChapters
+      ? Math.round(chapterWordStats.targetWordCount / chapterWordStats.targetChapters)
+      : 0);
+    const wordsDriftPct = wordsTargetPerCh > 0 && avgWordsActual > 0
+      ? Math.round(((avgWordsActual - wordsTargetPerCh) / wordsTargetPerCh) * 100)
+      : null;
+
+    // Stage age (how long has the current stage been active?)
+    const stageEvent = latestStageEvent(events, task.current_stage);
+    let stageAgeText = '—';
+    if (stageEvent && stageEvent.timestamp) {
+      const ageSec = Math.max(0, Math.floor((Date.now() - new Date(stageEvent.timestamp).getTime()) / 1000));
+      stageAgeText = fmtShort(ageSec);
+    }
+    const stageStuck = status === 'running' && stageEvent
+      && (Date.now() - new Date(stageEvent.timestamp).getTime()) > 30 * 60 * 1000; // > 30 min
+
+    // Updated-at staleness — running task with no event for > 5min is suspicious
+    const lastEventTs = latestEvent ? new Date(latestEvent.timestamp).getTime() : 0;
+    const stale = status === 'running' && lastEventTs && (Date.now() - lastEventTs) > 5 * 60 * 1000;
+
+    // Health summary
+    let healthCls = 'ok';
+    let healthText = '良好';
+    const healthReasons = [];
+    if (status === 'failed') { healthCls = 'bad'; healthText = '异常'; healthReasons.push(task.error || '任务失败'); }
+    else if (repairBlocked) { healthCls = 'bad'; healthText = '门控'; healthReasons.push('结构修复门控'); }
+    else if (errEvents.length > 0) { healthCls = 'bad'; healthText = '有错误'; healthReasons.push(`${errEvents.length} 项错误事件`); }
+    else if (status === 'cancelled' || status === 'incomplete') { healthCls = 'warn'; healthText = '中止'; }
+    else if (stageStuck) { healthCls = 'warn'; healthText = '阶段过久'; healthReasons.push(`${stageAgeText} 未推进`); }
+    else if (stale) { healthCls = 'warn'; healthText = '更新滞后'; healthReasons.push(`>5min 无事件`); }
+    else if (warnEvents.length > 0) { healthCls = 'warn'; healthText = '有警告'; healthReasons.push(`${warnEvents.length} 项警告`); }
+    else if (status === 'queued') { healthCls = 'warn'; healthText = '排队'; }
+    else if (status === 'completed' && !isTrulyComplete) { healthCls = 'warn'; healthText = '章节缺失'; healthReasons.push(`${writtenCount}/${targetCount}`); }
+    const healthHtml = `<span class="tc-health ${healthCls}" title="${esc(healthReasons.join(' · ') || '运行正常')}">${esc(healthText)}</span>`;
+
+    // ── 4-column dense info (now with 3-event log) ──
+    const denseHtml = `
+      <div class="tc-densegrid">
+        <div class="dg-cell">
+          <div class="dg-eyebrow">当前动作</div>
+          <div class="dg-action-primary">${esc(progressInsight.primary || stageLabel || '等待任务进展')}</div>
+          <div class="dg-action-secondary">${esc(progressInsight.secondary || '暂无实时事件。')}</div>
         </div>
-        <div class="tc-bar"><div class="tc-bar-fill ${esc(status)}" style="width:${displayPct}%"></div></div>
-      </div>` : '';
-    const volumeBarHtml = (totalVolumes > 1 && currentVolumeChapterCount > 0 && status === 'running') ? `
-      <div class="tc-progress">
-        <div class="tc-prog-header volume">
-          <span class="label">第 ${currentVolume} 卷进度</span>
-          <span class="pct">${volumePct}% · ${volumeCompletedChapters}/${currentVolumeChapterCount}</span>
+        <div class="dg-cell">
+          <div class="dg-eyebrow">进度</div>
+          <div class="dg-progress-row">
+            <span class="dg-progress-pct tone-${toneSuffix}">${displayPct}<span class="small">%</span></span>
+            <span class="dg-progress-frac">${bookCompletedChapters} / ${total || '—'} 章</span>
+          </div>
+          <div class="dg-progress-bar">
+            <div class="fill tone-${toneSuffix}" style="width:${displayPct}%"></div>
+            ${[0.2,0.4,0.6,0.8].map(p => `<div class="tick" style="left:${p*100}%"></div>`).join('')}
+          </div>
+          <div class="dg-progress-note">已写 ${esc(fmtWords(completedWordCount))}${projectedTotalWords > 0 ? ` / 约 ${esc(fmtWords(projectedTotalWords))}` : ''}${totalVolumes > 1 ? ` · 卷 ${currentVolume || '-'}/${totalVolumes}` : ''}</div>
         </div>
-        <div class="tc-bar"><div class="tc-bar-fill volume" style="width:${volumePct}%"></div></div>
-      </div>` : '';
-
-    return `
-    <div class="task-card status-${esc(status)}" style="${highlightStyle}">
-      <div class="tc-header">
-        <div style="display:flex;align-items:center;">
-          ${checkboxHtml}
-          <div>
-            <div class="tc-title">${esc(task.title || slug || '未命名')}</div>
-            ${slug && task.title && task.title !== slug ? `<div class="tc-subtitle">${esc(slug)}</div>` : ''}
+        <div class="dg-cell">
+          <div class="dg-eyebrow">最近事件${status === 'running' ? ' <span class="live">· LIVE</span>' : ''} <span style="color:var(--text-faint);font-weight:400;">· ${events.length} 条</span></div>
+          <div class="dg-event-list">${eventsHtml}</div>
+          <div class="dg-log-meta">
+            <span>更新于 ${esc(updatedText)}</span>
+	            ${isSyntheticProject ? '<span>暂无任务日志</span>' : `<a onclick="openProgress('${esc(task.task_id)}')">查看全部 →</a>`}
           </div>
         </div>
-        <span class="tc-badge ${esc(status)}">${task.cancel_requested && status === 'running' ? '🛑 正在停止…' : esc(STAGE[status] || status)}</span>
-      </div>
-      ${headlineHtml}
-      ${stageStrip}
-      ${progressInsightHtml}
-      ${overallBarHtml}
-      ${volumeBarHtml}
-      ${metaFooter}
-      ${(bookCompletedChapters > 0 || displayWritingCh) ? `<div class="tc-chapters">${pills}${writingPill}${morePills}</div>` : ''}
-      <div class="tc-actions">${actions}</div>
+        <div class="dg-cell">
+          <div class="dg-eyebrow">时间</div>
+          <div class="dg-time-primary">已用 ${esc(elapsedSinceCreated(task))}</div>
+          <div class="dg-time-secondary">${etaText ? `预计 ${esc(etaText.replace('预计还需 ',''))}` : '预计 —'}</div>
+          <div class="dg-time-secondary" style="margin-top:2px;">阶段 ${esc(stageAgeText)}</div>
+        </div>
+      </div>`;
+
+    // ── Diagnostic signals row (5 cells) ──
+    const signalsHtml = `
+      <div class="tc-signals">
+        <div class="tc-signal">
+          <div class="sig-label">健康</div>
+          <div class="sig-value">${healthHtml}</div>
+          <div class="sig-sub">${esc(healthReasons.length ? healthReasons[0] : '所有信号正常')}</div>
+        </div>
+        <div class="tc-signal">
+          <div class="sig-label">速率</div>
+          <div class="sig-value">${chPerHour > 0 ? `${chPerHour.toFixed(1)}<span style="font-family:var(--mono);font-size:11px;color:var(--text-dim);"> 章/h</span>` : '—'}</div>
+          <div class="sig-sub">${wordsPerHour > 0 ? `${esc(fmtWords(Math.round(wordsPerHour)))}/h` : (status === 'running' ? '采样中' : '—')}</div>
+        </div>
+        <div class="tc-signal">
+          <div class="sig-label">章均字数</div>
+          <div class="sig-value">${avgWordsActual > 0 ? avgWordsActual.toLocaleString() : '—'}</div>
+          <div class="sig-sub">${wordsTargetPerCh > 0 ? `目标 ${wordsTargetPerCh.toLocaleString()}${wordsDriftPct !== null ? ` · 偏差 ${wordsDriftPct > 0 ? '+' : ''}${wordsDriftPct}%` : ''}` : '—'}</div>
+        </div>
+        <div class="tc-signal">
+          <div class="sig-label">事件计数</div>
+          <div class="sig-value">${events.length} <span style="font-family:var(--mono);font-size:11px;color:var(--text-dim);">条</span></div>
+          <div class="sig-sub">${warnEvents.length > 0 ? `<span style="color:var(--warning);font-weight:600;">⚠ ${warnEvents.length} 警告</span>` : '0 警告'} · ${errEvents.length > 0 ? `<span style="color:var(--danger);font-weight:600;">✗ ${errEvents.length} 错误</span>` : '0 错误'}</div>
+        </div>
+        <div class="tc-signal">
+          <div class="sig-label">同步</div>
+          <div class="sig-value">${chapterWordStats.hasStats ? `DB ${chapterWordStats.completedChapters}` : '事件流'}${displayWritingCh ? ` · 写中 ${displayWritingCh}` : ''}</div>
+          <div class="sig-sub">${progressEventsSynced ? '事件 ↔ 数据库一致' : '<span style="color:var(--warning);font-weight:600;">事件流滞后于 DB</span>'}</div>
+        </div>
+      </div>`;
+
+    // ── Operation toolbar (always visible) ──
+    const opChaptersCount = bookCompletedChapters > 0 || displayWritingCh
+      ? `${bookCompletedChapters}${total ? `/${total}` : ''}` : '—';
+    const opLogsCount = events.length;
+    const opListingCount = isTrulyComplete ? '100%' : (status === 'completed' ? `${writtenCount}/${targetCount}` : '生成中');
+	    const opsHtml = isSyntheticProject ? `
+	      <div class="tc-ops">
+	        <span class="tc-ops-label">操作</span>
+	        <button class="tc-op-btn" onclick="resumeProjectBySlug('${esc(slug)}')" title="为这个项目重新创建写作任务">▶ 续写 / 恢复任务 <span class="op-count">R</span></button>
+	        ${slug ? `<a class="tc-op-btn" href="/read/${esc(slug)}" target="_blank" title="如果已有章节，则在阅读器中打开">📖 阅读全文 <span class="op-count">→</span></a>` : ''}
+	        <button class="tc-op-btn danger" onclick="deleteProjectFull('${esc(slug)}','')" title="删除数据库记录、章节文件和任务记录">🗑 完全删除</button>
+	      </div>` : `
+	      <div class="tc-ops">
+	        <span class="tc-ops-label">操作</span>
+	        <button class="tc-op-btn" onclick="openProgress('${esc(task.task_id)}')" title="进入任务详情，查看章节、日志、上架资料"
+        >📑 章节列表 <span class="op-count">${opChaptersCount}</span></button>
+        <button class="tc-op-btn" onclick="openProgress('${esc(task.task_id)}')" title="实时日志"
+        >📡 实时日志 <span class="op-count">${opLogsCount}</span></button>
+        <button class="tc-op-btn" onclick="openProgress('${esc(task.task_id)}')" title="上架资料"
+        >📚 上架资料 <span class="op-count">${esc(opListingCount)}</span></button>
+        ${slug ? `<a class="tc-op-btn" href="/read/${esc(slug)}" target="_blank" title="在阅读器中打开">📖 阅读全文 <span class="op-count">→</span></a>` : ''}
+        <button class="tc-op-btn" onclick="openProgress('${esc(task.task_id)}')" title="查看角色、候选书名、读者承诺"
+        >👤 角色 / 资料</button>
+        ${status === 'running' || status === 'queued'
+          ? `<button class="tc-op-btn danger" onclick="cancelTask('${esc(task.task_id)}')" title="停止当前任务">◾ 停止 <span class="op-count">.</span></button>`
+          : ''}
+        ${status === 'failed' || status === 'cancelled' || status === 'incomplete' || (status === 'completed' && !isTrulyComplete)
+          ? `<button class="tc-op-btn" onclick="resumeTaskById('${esc(task.task_id)}','${esc(slug || '')}')" title="重试或继续任务">↻ 重试 / 续写 <span class="op-count">R</span></button>`
+          : ''}
+	        ${status !== 'running' && status !== 'queued'
+	          ? `<button class="tc-op-btn danger" onclick="deleteTask('${esc(task.task_id)}')" title="仅删除任务记录">🗑 删除任务</button>`
+	          : ''}
+	        ${slug ? `<button class="tc-op-btn danger" onclick="deleteProjectFull('${esc(slug)}','${esc(task.task_id)}')" title="删除数据库记录、章节文件和任务记录">${status === 'running' || status === 'queued' ? '停止后删除' : '完全删除'}</button>` : ''}
+	      </div>`;
+
+    const focusedClass = focused ? ' focused' : '';
+    const highlightStyle = task.task_id === highlightTaskId
+      ? 'box-shadow:0 0 0 2px var(--blue), 0 8px 24px rgba(140,42,28,0.16);transition:box-shadow .3s;'
+      : '';
+
+    // ── Chapter-repair panel (only for repair tasks or when repair events
+    //    have actually fired). Mines progress_events for which chapters have
+    //    started / completed repair so the user sees: "正在修复第 N 章".
+    const repairHtml = renderRepairPanel(task, events);
+
+    return `
+    <div class="task-card status-${esc(status)}${focusedClass}" style="${highlightStyle}">
+	      <div class="tc-row1">
+        <div class="tc-checkbox">${checkboxHtml}</div>
+        <div class="tc-titleblock">
+          <div class="tc-titlerow">
+            <div class="tc-title">《${esc(task.title || slug || '未命名')}》</div>
+            <span class="tc-badge ${esc(badge.cls)}">${esc(badge.label)}</span>
+            ${priorityTag ? `<span class="tc-priority-tag">${priorityTag}</span>` : ''}
+            ${healthHtml}
+            ${task.task_type === 'repair' ? `<span class="tc-priority-tag" style="color:var(--warning);border-color:var(--warning);background:var(--warning-soft);">🛠 修复</span>` : ''}
+            ${genreText ? `<span class="tc-genre">${genreText}</span>` : ''}
+          </div>
+          <div class="tc-meta-line">
+            ${slug ? `SLUG · ${esc(slug)}` : 'SLUG · —'}
+            <span class="pipe">|</span>
+            模型 · ${esc(llmModel || meta.writer_model || meta.model || '—')}
+            <span class="pipe">|</span>
+            创建 ${esc(timeStr)}
+            ${task.cancel_requested ? `<span class="pipe">|</span><span style="color:var(--warning);">⚠ 停止请求中</span>` : ''}
+            ${repairBlocked ? `<span class="pipe">|</span><span style="color:var(--danger);">🛡 修复门控</span>` : ''}
+          </div>
+        </div>
+	        <div class="tc-actionsrow">${actions}</div>
+	      </div>
+	      ${stateStripHtml}
+	      ${denseHtml}
+      ${repairHtml}
+      ${signalsHtml}
+      ${opsHtml}
     </div>`;
+  }
+
+  function renderRepairPanel(task, events) {
+    // Trigger conditions: task is a repair task OR any chapter-repair event
+    // exists in the progress stream (catches autowrite tasks that surface a
+    // repair sub-flow).
+    const repairEvents = (events || []).filter(e =>
+      e.stage === 'project_repair_chapter_started' ||
+      e.stage === 'project_repair_chapter_completed'
+    );
+    if (task.task_type !== 'repair' && repairEvents.length === 0) return '';
+
+    // Build per-chapter state from event order. "completed" means the
+    // repair attempt finished; it may still require review or remain blocked.
+    const states = new Map();  // chapter_number → 'started' | 'passed' | 'review'
+    const repairStatus = task.repair_status || {};
+    let scopeTotal = Number(
+      repairStatus.repair_scope_total ||
+      task.payload?.target_chapters ||
+      task.payload?.scope_size ||
+      0
+    ) || 0;
+    for (const e of repairEvents) {
+      const n = Number(e.payload?.chapter_number);
+      if (!Number.isFinite(n)) continue;
+      if (e.stage === 'project_repair_chapter_started') {
+        states.set(n, 'started');
+      } else if (e.stage === 'project_repair_chapter_completed') {
+        const productionState = String(e.payload?.production_state || '').toLowerCase();
+        const passed = productionState === 'ok' || e.payload?.requires_human_review === false;
+        states.set(n, passed ? 'passed' : 'review');
+      }
+    }
+
+    // Also consume scope hints from the worker (it emits a scope summary
+    // event with chapter list / total).
+    const scopeEvent = (events || []).find(e =>
+      e.payload && (Array.isArray(e.payload.repair_gate_chapter_numbers) || e.payload.scope_total)
+    );
+    if (scopeEvent) {
+      const list = scopeEvent.payload.repair_gate_chapter_numbers;
+      if (Array.isArray(list)) scopeTotal = Math.max(scopeTotal, list.length);
+      if (scopeEvent.payload.scope_total) scopeTotal = Math.max(scopeTotal, Number(scopeEvent.payload.scope_total));
+    }
+
+    const passedNs = [...states.entries()].filter(([, s]) => s === 'passed').map(([n]) => n).sort((a, b) => a - b);
+    const reviewNs = [...states.entries()].filter(([, s]) => s === 'review').map(([n]) => n).sort((a, b) => a - b);
+    const processedNs = [...passedNs, ...reviewNs].sort((a, b) => a - b);
+    const startedNs = [...states.entries()].filter(([, s]) => s === 'started').map(([n]) => n).sort((a, b) => a - b);
+    // Current = most recent started not yet completed.
+    let currentN = null;
+    for (let i = repairEvents.length - 1; i >= 0; i--) {
+      const e = repairEvents[i];
+      if (e.stage === 'project_repair_chapter_started') {
+        const n = Number(e.payload?.chapter_number);
+        if (Number.isFinite(n) && states.get(n) === 'started') { currentN = n; break; }
+      }
+    }
+    const totalKnown = scopeTotal || (processedNs.length + startedNs.length);
+    const eventPct = totalKnown > 0 ? Math.min(100, Math.round((processedNs.length / totalKnown) * 100)) : 0;
+    const hasGateProgress = repairStatus.progress_percent != null && repairStatus.progress_percent !== '';
+    const pct = hasGateProgress && Number.isFinite(Number(repairStatus.progress_percent))
+      ? Math.min(100, Math.max(0, Math.round(Number(repairStatus.progress_percent))))
+      : eventPct;
+    const gateCompleted = Number(repairStatus.repair_completed || 0);
+    const gateRemaining = Number(repairStatus.repair_remaining || repairStatus.blocked_chapters || 0);
+
+    const pillsDone = passedNs.slice(-8).map(n =>
+      `<span class="tc-repair-pill done">✓ ${n}</span>`
+    ).join('');
+    const pillsReview = reviewNs.slice(-8).map(n =>
+      `<span class="tc-repair-pill review">! ${n}</span>`
+    ).join('');
+    const pillCurrent = currentN != null
+      ? `<span class="tc-repair-pill current">▶ 第 ${currentN} 章</span>`
+      : '';
+    // Pending = startedNs minus current, displayed as "queued"
+    const pendingPills = startedNs
+      .filter(n => n !== currentN)
+      .slice(0, 8)
+      .map(n => `<span class="tc-repair-pill pending">第 ${n} 章</span>`)
+      .join('');
+
+    const summary = [];
+    if (scopeTotal > 0 && (gateCompleted > 0 || gateRemaining > 0)) {
+      summary.push(`门禁通过 <strong style="color:var(--success);">${gateCompleted}</strong>/<strong>${scopeTotal}</strong>`);
+      if (gateRemaining > 0) summary.push(`仍阻塞 <strong style="color:var(--danger);">${gateRemaining}</strong>`);
+    } else if (processedNs.length > 0) {
+      summary.push(`已处理 <strong>${processedNs.length}</strong>`);
+    }
+    if (passedNs.length > 0) summary.push(`本次通过 <strong style="color:var(--success);">${passedNs.length}</strong>`);
+    if (reviewNs.length > 0) summary.push(`仍需复核 <strong style="color:var(--danger);">${reviewNs.length}</strong>`);
+    if (currentN != null) summary.push(`正在修复 <strong style="color:var(--warning);">第 ${currentN} 章</strong>`);
+    if (totalKnown > 0) summary.push(`合计修复范围 <strong>${totalKnown}</strong> 章`);
+    if (!summary.length) summary.push('已排队，等待开始修复');
+
+    return `
+      <div class="tc-repair">
+        <div class="tc-repair-head">
+          <span class="tc-repair-title">🛠 章节修复进度</span>
+          <span class="tc-repair-pct">${pct}%</span>
+        </div>
+        <div class="tc-repair-bar"><div class="fill" style="width:${pct}%"></div></div>
+        <div class="tc-repair-row">
+          ${pillsDone}
+          ${pillsReview}
+          ${pillCurrent}
+          ${pendingPills}
+          ${passedNs.length > 8 ? `<span class="tc-repair-pill done">+${passedNs.length - 8} 通过</span>` : ''}
+          ${reviewNs.length > 8 ? `<span class="tc-repair-pill review">+${reviewNs.length - 8} 需复核</span>` : ''}
+        </div>
+        <div class="tc-repair-meta">${summary.join(' · ')}${task.task_type === 'repair' ? ` · 任务类型 <strong>repair</strong>` : ''}</div>
+      </div>
+    `;
+  }
+
+  function elapsedSinceCreated(task) {
+    const ts = task.created_at ? new Date(task.created_at).getTime() : 0;
+    if (!ts) return '—';
+    const end = task.completed_at ? new Date(task.completed_at).getTime()
+      : task.status === 'running' || task.status === 'queued' ? Date.now()
+      : (task.updated_at ? new Date(task.updated_at).getTime() : Date.now());
+    const sec = Math.max(0, Math.floor((end - ts) / 1000));
+    return fmtDur(sec);
   }
 
   /* Open single-task progress view */
@@ -3322,8 +5416,8 @@
   };
 
   /* Delete a task record (does NOT delete novel files) */
-  window.deleteTask = async function(taskId) {
-    if (!confirm('确认删除此任务记录？小说文件不会被删除。')) return;
+	  window.deleteTask = async function(taskId) {
+	    if (!confirm('确认删除此任务记录？小说文件不会被删除。')) return;
     try {
       const res = await fetch(`/api/tasks/${taskId}`, { method: 'DELETE' });
       if (!res.ok) {
@@ -3334,11 +5428,64 @@
       refreshDashboard();
     } catch (err) {
       alert('删除失败: ' + err.message);
-    }
-  };
+	    }
+	  };
 
-  /* Bulk delete selected projects — completely removes DB rows + disk files */
-  window.batchDeleteProjects = async function() {
+	  window.deleteProjectFull = async function(slug, taskId = '') {
+	    if (!slug) return;
+	    const task = allTasks.find(t => t.project_slug === slug);
+	    const title = task?.title || projectTitleBySlug.get(slug) || slug;
+	    const active = task && (task.status === 'running' || task.status === 'queued');
+	    if (active) {
+	      const stopFirst = confirm(
+	        `《${title}》当前仍在运行/排队。\n\n` +
+	        `为避免后台写入和删除同时发生，必须先停止任务。\n` +
+	        `现在先发送停止请求吗？任务停止后，再点击“完全删除”即可彻底删除。`
+	      );
+	      if (!stopFirst) return;
+	      if (taskId) {
+	        try {
+	          const res = await fetch(`/api/tasks/${taskId}/cancel`, { method: 'POST' });
+	          const data = await res.json().catch(() => ({}));
+	          if (!res.ok) alert(data.error || '停止请求失败');
+	        } catch (err) {
+	          alert('停止请求失败: ' + err.message);
+	        }
+	      }
+	      refreshDashboard();
+	      return;
+	    }
+
+	    const warn =
+	      `即将【彻底删除】《${title}》：\n\n` +
+	      `SLUG: ${slug}\n\n` +
+	      `将同时删除：\n` +
+	      `- 数据库中的项目、章节、人物、大纲、规划工件\n` +
+	      `- output/${slug}/ 下的章节文件和导出产物\n` +
+	      `- 相关历史任务记录\n\n` +
+	      `此操作不可恢复。确认继续？`;
+	    if (!confirm(warn)) return;
+
+	    try {
+	      const res = await fetch(`/api/projects/${encodeURIComponent(slug)}`, { method: 'DELETE' });
+	      const data = await res.json().catch(() => ({}));
+	      if (!res.ok || data.ok === false) {
+	        const detail = Array.isArray(data.errors) && data.errors.length
+	          ? data.errors.join('; ')
+	          : (data.error || '完全删除失败');
+	        alert(detail);
+	        refreshDashboard();
+	        return;
+	      }
+	      selectedSlugs.delete(slug);
+	      refreshDashboard();
+	    } catch (err) {
+	      alert('完全删除失败: ' + err.message);
+	    }
+	  };
+
+	  /* Bulk delete selected projects — completely removes DB rows + disk files */
+	  window.batchDeleteProjects = async function() {
     const slugs = [...selectedSlugs];
     if (!slugs.length) {
       alert('请先勾选要删除的小说');
@@ -3388,8 +5535,8 @@
     }
   };
 
-  /* Bulk cleanup finished/failed/incomplete task records */
-  window.cleanupTasks = async function() {
+	  /* Bulk cleanup finished/failed/incomplete task records */
+	  window.cleanupTasks = async function() {
     if (!confirm('清理所有「失败/已停止/未完成」的任务记录？小说文件不会被删除。')) return;
     try {
       const res = await fetch('/api/tasks/cleanup', {
@@ -3403,11 +5550,39 @@
       refreshDashboard();
     } catch (err) {
       alert('清理失败: ' + err.message);
-    }
-  };
+	    }
+	  };
 
-  /* Resume by task id — uses persisted payload or DB fallback on the server */
-  window.resumeTaskById = async function(taskId, slug) {
+	  window.resumeProjectBySlug = async function(slug) {
+	    if (!slug) return;
+	    const project = projectBySlug.get(slug) || {};
+	    const genreKey = slug.replace(/-\d+$/, '');
+	    const chapterCount = Number(project.target_chapters || project.payload?.target_chapters || 100);
+	    try {
+	      const res = await fetch('/api/tasks/quickstart', {
+	        method: 'POST',
+	        headers: { 'Content-Type': 'application/json' },
+	        body: JSON.stringify({
+	          genre_key: genreKey,
+	          project_slug: slug,
+	          chapter_count: chapterCount > 0 ? chapterCount : 100,
+	        }),
+	      });
+	      const data = await res.json().catch(() => ({}));
+	      if (!res.ok) {
+	        alert(data.error || '恢复任务失败');
+	        refreshDashboard();
+	        return;
+	      }
+	      openProgress(data.task_id);
+	      refreshDashboard();
+	    } catch (err) {
+	      alert('恢复任务失败: ' + err.message);
+	    }
+	  };
+
+	  /* Resume by task id — uses persisted payload or DB fallback on the server */
+	  window.resumeTaskById = async function(taskId, slug) {
     try {
       const res = await fetch(`/api/tasks/${taskId}/resume`, { method: 'POST' });
       if (res.ok) {
@@ -3417,8 +5592,14 @@
         return;
       }
       // Legacy fallback: reconstruct payload from genre-key regex
-      let reason = '';
-      try { reason = (await res.json()).error || ''; } catch {}
+      let payload = {};
+      try { payload = await res.json(); } catch {}
+      if (res.status === 409 || payload.blocked_structural_repair) {
+        alert(payload.error || '当前项目处于修复门控，需先完成结构修复审计。');
+        refreshDashboard();
+        return;
+      }
+      let reason = payload.error || '';
       console.warn('resume endpoint failed:', reason, '- falling back to legacy flow');
       return window.resumeTask(slug, taskId);
     } catch (err) {
@@ -3698,7 +5879,7 @@
     }
 
     // Error
-    if (status === 'failed') {
+    if (status === 'failed' || data.current_stage === 'blocked_structural_repair') {
       $('#pvError').style.display = '';
       $('#pvErrorDetail').textContent = data.error || '未知错误';
     } else {
@@ -3717,7 +5898,7 @@
       $('#pvDoneSummary').textContent = `共 ${bookDoneCount} 章已完成`;
       $('#pvReaderLink').href = `/read/${encodeURIComponent(slug)}`;
     }
-    if (status === 'failed') {
+    if (status === 'failed' || data.current_stage === 'blocked_structural_repair') {
       stopProgressPoll();
     }
   }
@@ -3726,6 +5907,28 @@
      WIZARD (create new)
      ═══════════════════════════════════════ */
   function wizGo(n) {
+    const wizardCopy = {
+      1: {
+        kicker: '第一步 · CHOOSE YOUR MATTER',
+        title: '选题材',
+        sub: 'Pick a vein, set a tone, then we set the spine. 先定题材，再定篇幅，最后开印。',
+      },
+      2: {
+        kicker: '第二步 · SET THE SPINE',
+        title: '定篇幅',
+        sub: '题材选定后将冻结目录骨架；篇幅决定章节密度、预算和生成时长。',
+      },
+      3: {
+        kicker: '第三步 · SEND TO PRESS',
+        title: '开印',
+        sub: '确认创作计划、模型和启动方式；提交后任务会回到编辑指挥台排队执行。',
+      },
+    }[n];
+    if (wizardCopy) {
+      $('#wizardHead')?.setAttribute('data-kicker', wizardCopy.kicker);
+      $('#wizardTitle').textContent = wizardCopy.title;
+      $('#wizardSub').textContent = wizardCopy.sub;
+    }
     $$('.wpanel').forEach(p => p.classList.remove('active'));
     $(`#ws${n}`).classList.add('active');
     $$('#wizStepper .step-dot').forEach(d => {
@@ -3754,10 +5957,10 @@
     grid.innerHTML = '';
     if (!list.length) { $('#emptyState').style.display = 'block'; return; }
     $('#emptyState').style.display = 'none';
-    list.forEach(g => {
+    list.forEach((g, idx) => {
       const card = document.createElement('div');
       card.className = 'genre-card' + (g.key === selectedGenreKey ? ' selected' : '');
-      card.innerHTML = `<div class="name">${esc(g.name)}</div><div class="genre-tag">${esc(g.genre)}${g.sub_genre ? ' / ' + esc(g.sub_genre) : ''}</div><div class="desc">${esc(getGenreDisplayDescription(g))}</div>`;
+      card.innerHTML = `<div class="genre-card-kicker">题 · ${String(idx + 1).padStart(2, '0')}</div><div class="name">${esc(g.name)}</div><div class="genre-tag">${esc(g.genre)}${g.sub_genre ? ' / ' + esc(g.sub_genre) : ''}</div><div class="desc">${esc(getGenreDisplayDescription(g))}</div>`;
       card.onclick = () => { selectedGenreKey = g.key; renderGenres(genres.filter(matchSearch)); $('#toStep2').disabled = false; };
       grid.appendChild(card);
     });
@@ -3927,6 +6130,73 @@
     return `<button type="button" class="copy-btn ${esc(className)}" onclick="copyListingText('${esc(key)}', this)">${esc(label)}</button>`;
   }
 
+  // Module → label map (mirrors backend _LISTING_REGENERATE_MODULES). When the
+  // user clicks "↻ 重新生成", the backend re-prompts the LLM only for that
+  // module and persists the new value as a file override. If the user never
+  // clicks, the original auto-generated content stays.
+  const REGEN_MODULES = {
+    logline: '一句话钩子',
+    short_intro: '短简介',
+    shelf_intro: '上架简介（500 字）',
+    promo_copy: '宣传文案 × 3',
+    tags: '标签',
+    title_candidates: '候选书名',
+    reader_promise: '读者承诺',
+    recommended_subtitle: '推荐副标题',
+  };
+
+  function regenButton(slug, module, label) {
+    if (!slug || !module || !REGEN_MODULES[module]) return '';
+    const visibleLabel = label || `↻ 重新生成${REGEN_MODULES[module]}`;
+    return `<button type="button" class="regen-btn"
+      data-slug="${esc(slug)}" data-module="${esc(module)}"
+      onclick="regenerateListingModule('${esc(slug)}','${esc(module)}', this)"
+      title="调用大模型重新生成此模块；其它模块保持不变">${esc(visibleLabel)}</button>`;
+  }
+
+  window.regenerateListingModule = async function(slug, module, btn) {
+    if (!slug || !module) return;
+    const label = REGEN_MODULES[module] || module;
+    if (!confirm(`确认重新生成「${label}」？\n这会调用大模型，可能需要几秒。其它模块的内容不会被覆盖。`)) return;
+    const original = btn ? btn.innerHTML : '';
+    if (btn) {
+      btn.disabled = true;
+      btn.classList.remove('ok', 'err');
+      btn.innerHTML = `<span class="regen-spin"></span> 生成中…`;
+    }
+    try {
+      const res = await fetch(`/api/projects/${encodeURIComponent(slug)}/listing/regenerate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ module }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.ok) {
+        throw new Error(data.error || `HTTP ${res.status}`);
+      }
+      // Re-render the listing panel with the fresh profile.
+      const project = (window.__lastListingProject) || { slug };
+      renderListingProfile(data.listing_profile, project);
+      if (btn) {
+        btn.classList.add('ok');
+        btn.innerHTML = `✓ 已更新「${esc(label)}」`;
+        setTimeout(() => {
+          btn.classList.remove('ok');
+          btn.disabled = false;
+          btn.innerHTML = original;
+        }, 2400);
+      }
+    } catch (err) {
+      console.error('regen failed:', err);
+      if (btn) {
+        btn.classList.add('err');
+        btn.innerHTML = `⚠ 失败 — 重试`;
+        btn.disabled = false;
+      }
+      alert(`重新生成「${label}」失败：${err.message || err}`);
+    }
+  };
+
   async function writeClipboardText(text) {
     if (!text) return false;
     if (navigator.clipboard && window.isSecureContext) {
@@ -4036,6 +6306,8 @@
     listingCopyCounter = 0;
     const compliance = listing.compliance || {};
     const proj = project || {};
+    window.__lastListingProject = proj;  // remembered for regen re-render
+    const slug = proj.slug || listing.book_id || '';
     const shelfIntro = buildShelfIntro(listing, proj);
     const shelfIntroKey = registerListingCopyText(shelfIntro);
     const tags = Array.isArray(listing.tags) && listing.tags.length ? listing.tags : (Array.isArray(proj.tags) ? proj.tags : []);
@@ -4054,6 +6326,8 @@
     $('#lsTags').innerHTML = tags.length
       ? tags.map(t => `<span class="listing-tag">${esc(t)}</span>`).join('')
       : '<span class="listing-tag">待补标签</span>';
+    const tagsActionsEl = $('#lsTagsActions');
+    if (tagsActionsEl) tagsActionsEl.innerHTML = regenButton(slug, 'tags', '↻ 重新生成标签');
 
     // Copy kit
     const copyPack = listing.copy_pack || {};
@@ -4072,7 +6346,7 @@
     const packKey = registerListingCopyText(packText);
     const titleKey = registerListingCopyText(title);
     const tagsKey = registerListingCopyText(tags.join('、'));
-    $('#lsCopyKitActions').innerHTML = copyButton('复制整包', packKey);
+    $('#lsCopyKitActions').innerHTML = `${copyButton('复制整包', packKey)} ${regenButton(slug, 'shelf_intro', '↻ 重新生成简介')}`;
     $('#lsCopyKit').innerHTML = `
       <div class="ls-copy-list">
         <div class="ls-copy-item">
@@ -4132,7 +6406,13 @@
     // Synopsis & promo
     const introBlocks = [];
     $('#lsIntroMeta').textContent = `可复制上架简介：${shelfIntro.length}/500 字`;
-    $('#lsIntroActions').innerHTML = copyButton('复制简介', shelfIntroKey);
+    $('#lsIntroActions').innerHTML = [
+      copyButton('复制简介', shelfIntroKey),
+      regenButton(slug, 'shelf_intro', '↻ 重新生成上架简介'),
+      regenButton(slug, 'short_intro', '↻ 重新生成短简介'),
+      regenButton(slug, 'logline', '↻ 重新生成钩子'),
+      regenButton(slug, 'promo_copy', '↻ 重新生成宣传文案'),
+    ].filter(Boolean).join(' ');
     introBlocks.push(`
       <div class="shelf-intro-card">
         <div class="meta"><span>500字内上架简介</span><span>${shelfIntro.length}/500</span></div>
@@ -4179,7 +6459,12 @@
     $('#lsCharacterActions').innerHTML = [
       characterNameText ? copyButton('复制角色名', characterNameKey) : '',
       characterCardsText ? copyButton('复制角色卡', characterCardsKey) : '',
-    ].filter(Boolean).join('');
+      regenButton(slug, 'recommended_subtitle', '↻ 重新生成副标题'),
+    ].filter(Boolean).join(' ');
+    const candidatesActionsEl = $('#lsCandidatesActions');
+    if (candidatesActionsEl) candidatesActionsEl.innerHTML = regenButton(slug, 'title_candidates');
+    const promiseActionsEl = $('#lsPromiseActions');
+    if (promiseActionsEl) promiseActionsEl.innerHTML = regenButton(slug, 'reader_promise');
     $('#lsCharacters').innerHTML = characters.length ? characters.slice(0, 12).map(c => `
       <div class="ls-char-card">
         <div class="ls-char-head">
@@ -4226,27 +6511,40 @@
   /* ═══════════════════════════════════════
      INIT
      ═══════════════════════════════════════ */
+  function formatTodayMasthead() {
+    const today = new Date();
+    const yyyy = today.getFullYear();
+    const mm = String(today.getMonth() + 1).padStart(2, '0');
+    const dd = String(today.getDate()).padStart(2, '0');
+    const dateEl = document.getElementById('hdrDate');
+    if (dateEl) dateEl.textContent = `${yyyy}.${mm}.${dd}`;
+  }
+
   async function init() {
+    formatTodayMasthead();
     // Load model info + concurrency limit
+    let pingStart = performance.now();
     try {
       const r = await fetch('/api/status');
+      const ping = Math.round(performance.now() - pingStart);
       const d = await r.json();
       llmModel = (d.writer_model || d.planner_model || '').replace('openai/', '');
       if (typeof d.max_concurrent_tasks === 'number' && d.max_concurrent_tasks > 0) {
         maxConcurrentTasks = d.max_concurrent_tasks;
       }
+      const pingEl = document.getElementById('hdrApiPing');
+      if (pingEl) pingEl.textContent = `API ${ping}ms`;
     } catch {}
 
     // Load genres in background
     loadGenres();
     resetWizardState();
 
-    // Load tasks & always stay on the dashboard.
-    // Previously this auto-hijacked the user into the progress view of any
-    // running task, which made it look like the system refused new creations.
-    try { const r = await fetch('/api/tasks'); if (r.ok) allTasks = await r.json(); } catch {}
-    renderDashboard();
-  }
+	    // Load tasks & always stay on the dashboard.
+	    // Previously this auto-hijacked the user into the progress view of any
+	    // running task, which made it look like the system refused new creations.
+	    await refreshDashboard();
+	  }
 
   init();
 
@@ -4254,6 +6552,25 @@
   setInterval(() => {
     if ($('#viewDashboard').classList.contains('active')) refreshDashboard();
   }, 8000);
+
+  // ── Keyboard shortcuts (avoid hijacking when typing) ──
+  document.addEventListener('keydown', (e) => {
+    const tag = (e.target?.tagName || '').toUpperCase();
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || e.target?.isContentEditable) return;
+    if (e.metaKey || e.ctrlKey) {
+      if (e.key === 'k' || e.key === 'K') {
+        e.preventDefault();
+        document.getElementById('dashSearch')?.focus();
+      }
+      return;
+    }
+    if (e.key === 'n' || e.key === 'N') { e.preventDefault(); startNewCreationFlow(); }
+    else if (e.key === '/') { e.preventDefault(); document.getElementById('dashSearch')?.focus(); }
+    else if (e.key === '?') {
+      e.preventDefault();
+      alert('键盘快捷键\n\n↵  查看任务详情\nP  预览章节\nL  实时日志\nS  上架资料\n.  停止任务\nR  重试 / 恢复\nN  新建创作\nJ / K  上下移动\n⌘K / /  聚焦搜索');
+    }
+  });
 
 })();
 </script>

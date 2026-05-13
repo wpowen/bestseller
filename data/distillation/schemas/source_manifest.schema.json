@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "DistillationSourceManifest",
+  "type": "object",
+  "required": [
+    "source_id",
+    "pipeline_version",
+    "source_hash_sha256",
+    "source_format",
+    "encoding",
+    "title_key_hmac_sha256",
+    "rights_status",
+    "redaction_policy",
+    "parse_profile"
+  ],
+  "properties": {
+    "source_id": { "type": "string", "pattern": "^source-[0-9]{4,}$" },
+    "pipeline_version": { "type": "string" },
+    "source_hash_sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "source_format": {
+      "type": "string",
+      "enum": ["txt", "md", "markdown", "html", "htm", "xhtml", "epub", "mobi", "azw3"]
+    },
+    "encoding": { "type": "string" },
+    "title_key_hmac_sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "title_signal_source": { "type": "string" },
+    "has_author_metadata": { "type": "boolean" },
+    "language": { "type": ["string", "null"] },
+    "rights_status": {
+      "type": "string",
+      "enum": ["unknown", "user_supplied_for_analysis", "licensed", "public_domain", "do_not_process"]
+    },
+    "redaction_policy": {
+      "type": "object",
+      "required": ["store_source_title_in_repo", "store_author_in_repo", "store_raw_text_in_repo"],
+      "properties": {
+        "store_source_title_in_repo": { "type": "boolean" },
+        "store_author_in_repo": { "type": "boolean" },
+        "store_raw_text_in_repo": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "parse_profile": {
+      "type": "object",
+      "required": ["chapter_count", "volume_count", "average_chapter_chars"],
+      "properties": {
+        "chapter_count": { "type": "integer", "minimum": 0 },
+        "volume_count": { "type": "integer", "minimum": 0 },
+        "average_chapter_chars": { "type": "integer", "minimum": 0 },
+        "boundary_types": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "parser_warnings": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      },
+      "additionalProperties": true
+    },
+    "dedupe": {
+      "type": "object",
+      "properties": {
+        "strategy": { "type": "string" },
+        "duplicate_of": { "type": ["string", "null"] }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}

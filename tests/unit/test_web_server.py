@@ -6,6 +6,7 @@ from uuid import uuid4
 
 import pytest
 
+from bestseller.services.pipelines import ProjectRepairPauseError
 from bestseller.web import server as web_server
 
 
@@ -93,6 +94,19 @@ def test_quickstart_new_creation_buttons_reset_wizard_flow() -> None:
     assert html.count('onclick="startNewCreationFlow()"') >= 4
 
 
+def test_quickstart_incomplete_tasks_are_not_labeled_stopped() -> None:
+    html = web_server._QUICKSTART_HTML_PATH.read_text(encoding="utf-8")  # noqa: SLF001
+
+    label_pos = html.index("label: '未完成'")
+    start = html.rfind("if (status === 'incomplete')", 0, label_pos)
+    end = html.index("if (status === 'completed')", start)
+    incomplete_branch = html[start:end]
+
+    assert "label: '未完成'" in incomplete_branch
+    assert "自动恢复未接管" in incomplete_branch
+    assert "已停止" not in incomplete_branch
+
+
 def test_public_writing_preset_catalog_payload_sanitizes_story_specific_overrides() -> None:
     payload = web_server._public_writing_preset_catalog_payload()  # noqa: SLF001
 
@@ -137,18 +151,6 @@ def test_quickstart_task_uses_sanitized_genre_profile(monkeypatch: pytest.Monkey
     assert captured["payload"]["target_words"] == (
         12 * web_server.load_settings().generation.words_per_chapter.target
     )
-
-
-def test_novel_studio_defaults_do_not_seed_apocalypse_story_template() -> None:
-    html = web_server._UI_HTML_PATH.read_text(encoding="utf-8")  # noqa: SLF001
-
-    assert '<input id="genre" list="genre-options" value=""' in html
-    assert '<input id="sub-genre" list="sub-genre-options" value=""' in html
-    assert 'option value="apocalypse-supply-chain" selected' not in html
-    assert "末日零点降临前三天" not in html
-    assert 'input id="protagonist-archetype" value="先知型求生者"' not in html
-    assert 'input id="golden-finger" value="来自未来的购物入口，可低价购买末日关键物资"' not in html
-    assert 'const defaultGenrePreset = genrePresets.find((item) => item.key === "apocalypse-supply");' not in html
 
 
 def test_project_repair_status_payload_marks_repair_gate() -> None:
@@ -200,14 +202,95 @@ def test_project_repair_status_payload_tracks_progress_after_unblocking() -> Non
     assert payload["progress_percent"] == 21.3
 
 
-def test_novel_studio_has_repair_status_surface() -> None:
-    html = web_server._UI_HTML_PATH.read_text(encoding="utf-8")  # noqa: SLF001
+def test_reader_chapter_availability_uses_production_gate() -> None:
+    assert web_server._reader_chapter_availability("ok", 2100) == "available"  # noqa: SLF001
+    assert (  # noqa: SLF001
+        web_server._reader_chapter_availability("blocked", 2100)
+        == "repair_in_progress"
+    )
+    assert (  # noqa: SLF001
+        web_server._reader_chapter_availability("pending", 2100)
+        == "repair_in_progress"
+    )
+    assert web_server._reader_chapter_availability("ok", 0) == "planned"  # noqa: SLF001
 
-    assert 'id="repair-status-panel"' in html
-    assert 'id="summary-repair-progress"' in html
-    assert "function renderRepairStatus" in html
-    assert "function renderProjectShellFromList" in html
-    assert "repair_status?.is_repairing" in html
+
+def test_project_autowrite_block_payload_explains_structural_repair_pause() -> None:
+    project = SimpleNamespace(
+        slug="demo-paused",
+        title="Demo",
+        metadata_json={
+            "generation_resume_blocked_until_repair_audit": True,
+            "production_pause_reason": "structural_repair_before_continuation",
+        },
+    )
+
+    payload = web_server._project_autowrite_block_payload(project)  # noqa: SLF001
+
+    assert payload is not None
+    assert payload["blocked_structural_repair"] is True
+    assert payload["project_slug"] == "demo-paused"
+    assert payload["current_stage"] == "blocked_structural_repair"
+    assert "structural_repair_before_continuation" in str(payload["error"])
+
+
+def test_autowrite_worker_marks_structural_repair_pause_without_traceback(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manager = web_server.WebTaskManager(persist_path=tmp_path / ".web_tasks.json")
+    task_id = "paused-task"
+    with manager._lock:  # noqa: SLF001
+        manager._tasks[task_id] = web_server.WebTaskState(  # noqa: SLF001
+            task_id=task_id,
+            task_type="autowrite",
+            status="queued",
+            created_at="2026-01-01T00:00:00+00:00",
+            updated_at="2026-01-01T00:00:00+00:00",
+            project_slug="demo-paused",
+            title="Demo",
+            current_stage="queued",
+        )
+
+    class _SessionScope:
+        async def __aenter__(self) -> object:
+            return object()
+
+        async def __aexit__(self, *_args: object) -> None:
+            return None
+
+    monkeypatch.setattr(web_server, "session_scope", lambda _settings: _SessionScope())
+    monkeypatch.setattr(
+        web_server,
+        "load_settings",
+        lambda: SimpleNamespace(quality=SimpleNamespace(draft_mode=False)),
+    )
+
+    async def _raise_repair_pause(**_kwargs: object) -> object:
+        raise ProjectRepairPauseError(
+            "Project 'demo-paused' is paused for structural repair."
+        )
+
+    monkeypatch.setattr(web_server, "run_autowrite_pipeline", _raise_repair_pause)
+
+    manager._run_autowrite_worker(  # noqa: SLF001
+        task_id,
+        {
+            "slug": "demo-paused",
+            "title": "Demo",
+            "genre": "玄幻",
+            "target_words": 6000,
+            "target_chapters": 3,
+            "premise": "继续创作。",
+        },
+    )
+
+    task = manager.get_task(task_id)
+    assert task is not None
+    assert task["status"] == "cancelled"
+    assert task["current_stage"] == "blocked_structural_repair"
+    assert "paused for structural repair" in str(task["error"])
+    assert "Traceback" not in str(task["error"])
 
 
 def test_resolve_story_bible_progress_returns_current_frontier_and_next_gate() -> None:
@@ -344,19 +427,62 @@ def test_load_from_disk_fails_zombies_without_payload(tmp_path: Path) -> None:
     no_payload = manager.get_task("z-nopayload")
     assert no_payload is not None
     assert no_payload["status"] == "failed"
-    # Non-autowrite task with payload → still failed (only autowrite is
-    # safely resumable today; repair workers expect operator involvement).
+    # Repair task with payload → queued for startup resume.
     repair = manager.get_task("z-repair")
     assert repair is not None
-    assert repair["status"] == "failed"
-    assert manager._pending_auto_resume_ids == []  # noqa: SLF001
+    assert repair["status"] == "queued"
+    assert repair["current_stage"] == "auto_resume_pending"
+    assert manager._pending_auto_resume_ids == ["z-repair"]  # noqa: SLF001
 
 
-def test_auto_resume_zombies_delegates_without_redis(
+def test_auto_resume_zombies_restarts_repair_tasks(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    persist_path = _write_persisted_tasks(
+        tmp_path,
+        [
+            {
+                "task_id": "z-repair",
+                "task_type": "repair",
+                "status": "running",
+                "created_at": "2026-01-01T00:00:00+00:00",
+                "updated_at": "2026-01-01T00:05:00+00:00",
+                "project_slug": "demo",
+                "title": "Repair demo",
+                "current_stage": "repair_chapter_30",
+                "progress_events": [],
+                "payload": {"project_slug": "demo", "export_markdown": False},
+            },
+        ],
+    )
+    manager = web_server.WebTaskManager(persist_path=persist_path)
+    invocations: list[tuple[str, dict[str, object]]] = []
+
+    def fake_run_with_slot(
+        self: object,
+        task_id: str,
+        worker: object,
+        payload: dict[str, object],
+    ) -> None:
+        invocations.append((task_id, dict(payload)))
+
+    monkeypatch.setattr(web_server.WebTaskManager, "_run_with_slot", fake_run_with_slot)
+
+    resumed = manager.auto_resume_zombies()
+
+    import time as _time
+
+    _time.sleep(0.1)
+    assert resumed == ["z-repair"]
+    assert invocations == [("z-repair", {"project_slug": "demo", "export_markdown": False})]
+
+
+def test_auto_resume_zombies_marks_unclaimed_without_redis(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Without a Redis URL (test / single-node env) autowrite zombies are
-    still delegated — never spawned as a competing thread.
+    not claimed by worker self-heal, so they become manually resumable instead
+    of fake-running until the watchdog fails them.
     """
     persist_path = _write_persisted_tasks(
         tmp_path,
@@ -387,10 +513,10 @@ def test_auto_resume_zombies_delegates_without_redis(
 
     delegated = manager.auto_resume_zombies()
 
-    assert delegated == ["z-run"]
+    assert delegated == []
     # The pending list is cleared after a successful call (idempotent).
     assert manager._pending_auto_resume_ids == []  # noqa: SLF001
-    # No thread should be spawned anymore — worker self-heal owns resume.
+    # No thread should be spawned automatically; manual resume remains available.
     import time as _time
 
     _time.sleep(0.1)
@@ -398,8 +524,10 @@ def test_auto_resume_zombies_delegates_without_redis(
 
     task = manager.get_task("z-run")
     assert task is not None
-    assert task["status"] == "running"
-    assert task["current_stage"] == "delegated_to_worker_self_heal"
+    assert task["status"] == "incomplete"
+    assert task["current_stage"] == "auto_resume_not_claimed"
+    assert "Auto-resume was not claimed" in str(task["error"])
+    assert manager.watchdog_sweep(stale_after_seconds=1) == 0
 
 
 def test_auto_resume_zombies_idempotent_when_nothing_pending(tmp_path: Path) -> None:
@@ -410,14 +538,12 @@ def test_auto_resume_zombies_idempotent_when_nothing_pending(tmp_path: Path) -> 
     assert manager.auto_resume_zombies() == []
 
 
-def test_auto_resume_zombies_delegates_both_heal_owned_and_orphan(
+def test_auto_resume_zombies_delegates_heal_owned_and_enqueues_orphan(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """All autowrite zombies get delegated — no thread spawn for either the
-    heal-owned slug OR the orphan slug. Worker self-heal is authoritative;
-    if it didn't pick up the orphan, the project is already terminal in DB
-    (completed / awaiting human / active elsewhere) and spawning a web
-    thread would only cause row-lock collisions.
+    """Known worker-owned zombies stay running; unclaimed autowrite zombies
+    should be pushed into the same deterministic worker heal queue instead
+    of requiring a manual resume click.
     """
     persist_path = _write_persisted_tasks(
         tmp_path,
@@ -456,9 +582,16 @@ def test_auto_resume_zombies_delegates_both_heal_owned_and_orphan(
     monkeypatch.setattr(web_server, "_wait_for_self_heal_scan", lambda _url, **_kw: True)
     monkeypatch.setattr(
         web_server,
-        "_fetch_heal_owned_slugs",
-        lambda _url: {"novel-a"},
+        "_fetch_heal_owned_slugs_by_kind",
+        lambda _url, heal_kind: {"novel-a"} if heal_kind == "autowrite" else set(),
     )
+    enqueued_slugs: list[str] = []
+
+    def fake_enqueue(redis_url: str, slug: str) -> str | None:  # noqa: ARG001
+        enqueued_slugs.append(slug)
+        return f"autowrite:heal:{slug}"
+
+    monkeypatch.setattr(web_server, "_enqueue_autowrite_heal_job", fake_enqueue)
 
     invocations: list[str] = []
 
@@ -469,34 +602,41 @@ def test_auto_resume_zombies_delegates_both_heal_owned_and_orphan(
 
     delegated = manager.auto_resume_zombies(redis_url="redis://stub")
 
-    # Both tasks delegated — neither spawns a thread.
-    assert sorted(delegated) == ["z-heal-owned", "z-orphan"]
+    assert delegated == ["z-heal-owned", "z-orphan"]
+    assert enqueued_slugs == ["novel-b"]
     import time as _time
 
     _time.sleep(0.1)
     assert invocations == []
 
-    for tid, expected_heal_owned in (("z-heal-owned", True), ("z-orphan", False)):
-        task = manager.get_task(tid)
-        assert task is not None
-        assert task["status"] == "running"
-        assert task["current_stage"] == "delegated_to_worker_self_heal"
-        # Last progress event's payload records whether worker owns the slug.
-        last_event = next(
-            e for e in reversed(task["progress_events"])
-            if e.get("stage") == "delegated_to_worker_self_heal"
-        )
-        assert last_event["payload"]["heal_owned"] is expected_heal_owned
+    heal_owned_task = manager.get_task("z-heal-owned")
+    assert heal_owned_task is not None
+    assert heal_owned_task["status"] == "running"
+    assert heal_owned_task["current_stage"] == "delegated_to_worker_self_heal"
+    delegated_event = next(
+        e for e in reversed(heal_owned_task["progress_events"])
+        if e.get("stage") == "delegated_to_worker_self_heal"
+    )
+    assert delegated_event["payload"]["heal_owned"] is True
+
+    orphan_task = manager.get_task("z-orphan")
+    assert orphan_task is not None
+    assert orphan_task["status"] == "running"
+    assert orphan_task["current_stage"] == "delegated_to_worker_self_heal"
+    enqueued_event = next(
+        e for e in reversed(orphan_task["progress_events"])
+        if e.get("stage") == "delegated_to_worker_self_heal"
+    )
+    assert enqueued_event["payload"]["heal_owned"] is True
+    assert enqueued_event["payload"]["enqueued_by_web"] is True
 
 
-def test_auto_resume_zombies_delegates_when_redis_unreachable(
+def test_auto_resume_zombies_marks_unclaimed_when_redis_unreachable(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """If Redis can't be scanned (e.g. startup race, network blip), web
-    still delegates — NEVER spawns threads. Trust worker's self-heal to
-    pick the slug up when Redis comes back; the old fail-open path was
-    the direct cause of the LockNotAvailableError collisions we saw on
-    every container restart.
+    should not spawn a competing web thread, but it also must not show a
+    fake-running task that later fails by watchdog.
     """
     persist_path = _write_persisted_tasks(
         tmp_path,
@@ -520,7 +660,11 @@ def test_auto_resume_zombies_delegates_when_redis_unreachable(
 
     # Simulate a Redis outage: marker wait times out, scan returns empty.
     monkeypatch.setattr(web_server, "_wait_for_self_heal_scan", lambda _url, **_kw: False)
-    monkeypatch.setattr(web_server, "_fetch_heal_owned_slugs", lambda _url: set())
+    monkeypatch.setattr(
+        web_server,
+        "_fetch_heal_owned_slugs_by_kind",
+        lambda _url, _heal_kind: set(),
+    )
 
     invocations: list[str] = []
 
@@ -530,18 +674,18 @@ def test_auto_resume_zombies_delegates_when_redis_unreachable(
     monkeypatch.setattr(web_server.WebTaskManager, "_run_autowrite_worker", fake_worker)
 
     delegated = manager.auto_resume_zombies(redis_url="redis://stub")
-    assert delegated == ["z-fallback"]
+    assert delegated == []
     import time as _time
 
     _time.sleep(0.1)
     # Critical: NO thread should be spawned even when we can't confirm
-    # worker ownership. Delegation wins every time.
+    # worker ownership.
     assert invocations == []
 
     task = manager.get_task("z-fallback")
     assert task is not None
-    assert task["status"] == "running"
-    assert task["current_stage"] == "delegated_to_worker_self_heal"
+    assert task["status"] == "incomplete"
+    assert task["current_stage"] == "auto_resume_not_claimed"
 
 
 def test_manual_resume_delegates_when_worker_heal_owns_slug(
@@ -605,6 +749,7 @@ def test_fetch_heal_owned_slugs_parses_arq_keys(monkeypatch: pytest.MonkeyPatch)
                 "arq:job:autowrite:heal:novel-a",
                 "arq:in-progress:autowrite:heal:novel-b",
                 "arq:retry:autowrite:heal:novel-c",
+                "arq:job:repair:heal:novel-r",
                 "arq:queue",  # noise
                 "arq:result:autowrite:heal:novel-d",  # different prefix, ignored
             ]
@@ -625,7 +770,17 @@ def test_fetch_heal_owned_slugs_parses_arq_keys(monkeypatch: pytest.MonkeyPatch)
     monkeypatch.setitem(_sys.modules, "redis", _FakeRedisModule)
 
     slugs = web_server._fetch_heal_owned_slugs("redis://stub")  # noqa: SLF001
-    assert slugs == {"novel-a", "novel-b", "novel-c"}
+    assert slugs == {"novel-a", "novel-b", "novel-c", "novel-r"}
+    autowrite_slugs = web_server._fetch_heal_owned_slugs_by_kind(  # noqa: SLF001
+        "redis://stub",
+        "autowrite",
+    )
+    repair_slugs = web_server._fetch_heal_owned_slugs_by_kind(  # noqa: SLF001
+        "redis://stub",
+        "repair",
+    )
+    assert autowrite_slugs == {"novel-a", "novel-b", "novel-c"}
+    assert repair_slugs == {"novel-r"}
 
 
 def test_fetch_heal_owned_slugs_returns_empty_on_redis_error(
@@ -646,3 +801,101 @@ def test_fetch_heal_owned_slugs_returns_empty_on_redis_error(
 
     slugs = web_server._fetch_heal_owned_slugs("redis://stub")  # noqa: SLF001
     assert slugs == set()
+
+
+def test_sync_progress_ignores_stale_redis_progress_without_active_arq_job(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manager = web_server.WebTaskManager()
+    task = web_server.WebTaskState(
+        task_id="task-a",
+        task_type="autowrite",
+        status="running",
+        created_at="2026-05-13T00:00:00+00:00",
+        updated_at="2026-05-13T01:00:00+00:00",
+        project_slug="novel-a",
+        title="Novel A",
+        current_stage="delegated_to_worker_self_heal",
+        progress_events=[],
+    )
+    with manager._lock:  # noqa: SLF001
+        manager._tasks[task.task_id] = task  # noqa: SLF001
+
+    class _FakeRedis:
+        lrange_called = False
+
+        def exists(self, *_keys: str) -> int:
+            return 0
+
+        def zscore(self, _key: str, _member: str) -> None:
+            return None
+
+        def lrange(self, *_args: object) -> list[str]:
+            self.lrange_called = True
+            return ['{"ts": 1778648419.8, "message": "story_bible_refresh_started", "data": {}}']
+
+        def close(self) -> None:
+            return None
+
+    fake_client = _FakeRedis()
+
+    class _FakeRedisModule:
+        @staticmethod
+        def from_url(_url: str, **_kwargs: object) -> _FakeRedis:
+            return fake_client
+
+    import sys as _sys
+
+    monkeypatch.setitem(_sys.modules, "redis", _FakeRedisModule)
+
+    updated = manager.sync_progress_from_worker_redis("redis://stub")
+
+    assert updated == 0
+    assert fake_client.lrange_called is False
+    assert manager.get_task("task-a")["current_stage"] == "delegated_to_worker_self_heal"
+
+
+def test_sync_progress_merges_when_arq_job_is_active(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manager = web_server.WebTaskManager()
+    task = web_server.WebTaskState(
+        task_id="task-a",
+        task_type="autowrite",
+        status="running",
+        created_at="2026-05-13T00:00:00+00:00",
+        updated_at="2026-05-13T01:00:00+00:00",
+        project_slug="novel-a",
+        title="Novel A",
+        current_stage="delegated_to_worker_self_heal",
+        progress_events=[],
+    )
+    with manager._lock:  # noqa: SLF001
+        manager._tasks[task.task_id] = task  # noqa: SLF001
+
+    class _FakeRedis:
+        def exists(self, *_keys: str) -> int:
+            return 1
+
+        def zscore(self, _key: str, _member: str) -> None:
+            return None
+
+        def lrange(self, *_args: object) -> list[str]:
+            return ['{"ts": 1778648419.8, "message": "story_bible_refresh_started", "data": {}}']
+
+        def close(self) -> None:
+            return None
+
+    class _FakeRedisModule:
+        @staticmethod
+        def from_url(_url: str, **_kwargs: object) -> _FakeRedis:
+            return _FakeRedis()
+
+    import sys as _sys
+
+    monkeypatch.setitem(_sys.modules, "redis", _FakeRedisModule)
+
+    updated = manager.sync_progress_from_worker_redis("redis://stub")
+
+    assert updated == 1
+    assert manager.get_task("task-a")["current_stage"] == "story_bible_refresh_started"

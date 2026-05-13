@@ -1,6 +1,7 @@
 # Project Memory
 
 ## User Preferences
+- README 应能单独读懂：架构分层思路、端到端数据流、核心不变量（LLM 网关、事务边界、门控）；与 `docs/architecture.md` 互补而非重复全文。
 - Reply in Chinese.
 - Prioritize complete, executable outputs over partial snippets.
 - Keep code modular, cohesive, and maintainable.

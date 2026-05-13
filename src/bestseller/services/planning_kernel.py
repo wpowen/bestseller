@@ -1,4 +1,4 @@
-# ruff: noqa: RUF001
+# ruff: noqa: RUF001, E501
 """Authoritative early-planning kernel and prewrite readiness gate.
 
 The writing pipeline already has many draft-time gates. This module focuses on
@@ -18,6 +18,7 @@ from typing import Any
 from bestseller.services.ranking_capability_profile import (
     load_ranking_capability_profile_text,
 )
+from bestseller.services.story_design_kernel import story_design_kernel_from_dict
 
 _KERNEL_VERSION = 1
 _BLOCKING_SEVERITIES = {"critical", "high"}
@@ -75,6 +76,9 @@ _REPAIR_ACTIONS = {
     "progression_engine_missing": "补齐可计量的升级体系、资源账、能力边界和代价。",
     "rule_engine_missing": "补齐规则系统：可见效果、破局路径、违反代价和反噬升级。",
     "relationship_engine_missing": "补齐关系代理：信任、债务、边界、选择和兑现窗口。",
+    "story_design_kernel_missing": "补齐 StoryDesignKernel：故事形态、读者承诺、剧情树、变化向量和节拍表。",
+    "story_design_contract_invalid": "修复 StoryDesignKernel 校验错误，确保主线、支线依赖、变化向量和节拍表完整。",
+    "story_design_contract_thin": "扩展 StoryDesignKernel 的剧情树、变化向量和节拍表，避免只剩概念口号。",
 }
 
 _DIRECTIVE_TEMPLATES_ZH = {
@@ -87,6 +91,8 @@ _DIRECTIVE_TEMPLATES_ZH = {
     "progression_engine_missing": "升级/成长类章节必须写清资源账、能力边界、代价和阶段性增益，禁止无因升级或只靠口号推进。",
     "rule_engine_missing": "规则/悬疑类章节必须写清可见规则、线索路径、违规代价和破局验证，禁止只用氛围替代可解谜题。",
     "relationship_engine_missing": "关系驱动章节必须写清信任、债务、边界、选择和兑现窗口，禁止关系只当情绪装饰。",
+    "story_design_contract_invalid": "当前剧情设计内核不可用，必须先修复主线、支线依赖、变化向量和节拍表，再进入章节规划。",
+    "story_design_contract_thin": "当前剧情设计内核过薄，必须增加至少两条相互依赖的剧情线和明确章节状态变化。",
 }
 
 _DIRECTIVE_TEMPLATES_EN = {
@@ -99,6 +105,8 @@ _DIRECTIVE_TEMPLATES_EN = {
     "progression_engine_missing": "Progression chapters must show resource accounting, ability limits, cost, and measurable stage gain.",
     "rule_engine_missing": "Rule/mystery chapters must show visible rules, clue path, violation cost, and verifiable solution logic.",
     "relationship_engine_missing": "Relationship-driven chapters must show trust, debt, boundary, choice, and payoff windows.",
+    "story_design_contract_invalid": "Repair the StoryDesignKernel before planning chapters: mainline, dependencies, change vectors, and beat schedule must validate.",
+    "story_design_contract_thin": "Expand the StoryDesignKernel with dependent plot lines and concrete chapter state changes.",
 }
 
 
@@ -357,6 +365,67 @@ def _series_engine_from(
     }
 
 
+def _story_design_kernel_from(
+    metadata: Mapping[str, object],
+    story_design_kernel: Mapping[str, object] | None,
+) -> dict[str, object]:
+    raw = _as_mapping(story_design_kernel) or _as_mapping(
+        metadata.get("story_design_kernel") or metadata.get("story_design")
+    )
+    if not raw:
+        return {
+            "present": False,
+            "valid": False,
+            "reader_promise": "",
+            "unique_hook": "",
+            "primary_duties": [],
+            "change_vectors": [],
+            "plot_line_count": 0,
+            "main_plot_line_count": 0,
+            "beat_count": 0,
+            "reverse_outline_status": "not_started",
+        }
+
+    try:
+        kernel = story_design_kernel_from_dict(dict(raw))
+    except Exception as exc:
+        plot_tree = _mapping_list(raw.get("plot_tree"))
+        beat_schedule = _mapping_list(raw.get("beat_schedule"))
+        premise = _as_mapping(raw.get("premise_contract"))
+        shape = _as_mapping(raw.get("shape"))
+        return {
+            "present": True,
+            "valid": False,
+            "validation_error": str(exc)[:500],
+            "reader_promise": _text(raw.get("reader_promise")),
+            "unique_hook": _text(premise.get("unique_hook")),
+            "primary_duties": _string_list(shape.get("primary_duties")),
+            "change_vectors": _string_list(raw.get("change_vectors")),
+            "plot_line_count": len(plot_tree),
+            "main_plot_line_count": len(
+                [node for node in plot_tree if _text(node.get("line_type")) == "main"]
+            ),
+            "beat_count": len(beat_schedule),
+            "reverse_outline_status": _text(raw.get("reverse_outline_status"))
+            or "not_started",
+        }
+
+    return {
+        "present": True,
+        "valid": True,
+        "reader_promise": kernel.reader_promise,
+        "unique_hook": kernel.premise_contract.unique_hook,
+        "primary_duties": list(kernel.shape.primary_duties),
+        "change_vectors": list(kernel.change_vectors),
+        "plot_line_count": len(kernel.plot_tree),
+        "main_plot_line_count": len(
+            [node for node in kernel.plot_tree if node.line_type == "main"]
+        ),
+        "beat_count": len(kernel.beat_schedule),
+        "reverse_outline_status": kernel.reverse_outline_status,
+    }
+
+
 def build_project_planning_kernel(
     project: object | None = None,
     *,
@@ -365,6 +434,7 @@ def build_project_planning_kernel(
     world_spec: Mapping[str, object] | None = None,
     cast_spec: Mapping[str, object] | None = None,
     volume_plan: object | None = None,
+    story_design_kernel: Mapping[str, object] | None = None,
     output_base_dir: str | Path | None = None,
 ) -> dict[str, object]:
     """Build a normalized planning contract from all available artifacts."""
@@ -400,6 +470,7 @@ def build_project_planning_kernel(
         commercial_brief,
         writing_profile,
     )
+    story_design = _story_design_kernel_from(metadata, story_design_kernel)
 
     return {
         "version": _KERNEL_VERSION,
@@ -455,6 +526,7 @@ def build_project_planning_kernel(
             "escalation_anchor_count": len([item for item in payoff_anchors if item]),
             "escalation_anchors": payoff_anchors[:20],
         },
+        "story_design": story_design,
     }
 
 
@@ -531,6 +603,7 @@ def evaluate_prewrite_readiness(
     positioning = _as_mapping(kernel.get("creative_positioning"))
     volume_strategy = _as_mapping(kernel.get("volume_strategy"))
     foundation = _as_mapping(kernel.get("foundation"))
+    story_design = _as_mapping(kernel.get("story_design"))
     target = int(target_chapters or kernel.get("target_chapters") or 0)
 
     if not (
@@ -647,6 +720,46 @@ def evaluate_prewrite_readiness(
             )
         )
 
+    if not story_design.get("present"):
+        findings.append(
+            _finding(
+                "story_design_kernel_missing",
+                "warning",
+                "Missing StoryDesignKernel; planning can proceed, but plot design is not state-driven.",
+                "story_design",
+            )
+        )
+    elif not story_design.get("valid"):
+        findings.append(
+            _finding(
+                "story_design_contract_invalid",
+                "high",
+                "StoryDesignKernel is present but fails validation.",
+                "story_design",
+                evidence={"validation_error": _text(story_design.get("validation_error"))},
+            )
+        )
+    elif (
+        int(story_design.get("plot_line_count") or 0) < 1
+        or int(story_design.get("beat_count") or 0) < 1
+        or len(_string_list(story_design.get("change_vectors"))) < 3
+    ):
+        findings.append(
+            _finding(
+                "story_design_contract_thin",
+                "warning",
+                "StoryDesignKernel lacks enough plot lines, beats, or change vectors.",
+                "story_design",
+                evidence={
+                    "plot_line_count": story_design.get("plot_line_count"),
+                    "beat_count": story_design.get("beat_count"),
+                    "change_vector_count": len(
+                        _string_list(story_design.get("change_vectors"))
+                    ),
+                },
+            )
+        )
+
     blocking = tuple(
         finding for finding in findings if finding.severity in _BLOCKING_SEVERITIES
     )
@@ -675,6 +788,14 @@ def evaluate_prewrite_readiness(
         "has_book_spec": bool(foundation.get("has_book_spec")),
         "has_world_spec": bool(foundation.get("has_world_spec")),
         "has_cast_spec": bool(foundation.get("has_cast_spec")),
+        "story_design_kernel": bool(story_design.get("valid")),
+        "story_state_driven_planning": bool(
+            story_design.get("valid")
+            and int(story_design.get("beat_count") or 0) > 0
+            and bool(_string_list(story_design.get("change_vectors")))
+        ),
+        "reverse_outline_ready": _text(story_design.get("reverse_outline_status"))
+        == "verified",
     }
     actions: list[str] = []
     for finding in findings:
@@ -699,6 +820,7 @@ def persist_project_planning_kernel(
     world_spec: Mapping[str, object] | None = None,
     cast_spec: Mapping[str, object] | None = None,
     volume_plan: object | None = None,
+    story_design_kernel: Mapping[str, object] | None = None,
     output_base_dir: str | Path | None = None,
 ) -> dict[str, object]:
     """Persist kernel + readiness report into ``project.metadata_json``."""
@@ -714,6 +836,7 @@ def persist_project_planning_kernel(
         world_spec=world_spec,
         cast_spec=cast_spec,
         volume_plan=volume_plan,
+        story_design_kernel=story_design_kernel,
         output_base_dir=output_base_dir,
     )
     report = evaluate_prewrite_readiness(
@@ -738,7 +861,7 @@ def persist_project_planning_kernel(
     }
     if profile_text and not _text(next_metadata.get("ranking_capability_profile_block")):
         next_metadata["ranking_capability_profile_block"] = profile_text
-    setattr(project, "metadata_json", next_metadata)
+    project.metadata_json = next_metadata
     return {
         "planning_kernel": kernel,
         "prewrite_readiness_report": prewrite_readiness_report_to_dict(report),

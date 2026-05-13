@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any, Mapping, Sequence
+from typing import Any
+
+from bestseller.services.output_validator import EntityDensityCheck
 
 
 @dataclass(frozen=True)
@@ -93,6 +96,46 @@ _CONFLICT_TERMS = (
     "exposed",
 )
 
+_DIRECT_PRESENT_PRESSURE_TERMS = (
+    "逼",
+    "押",
+    "绑",
+    "拦",
+    "夺",
+    "抢",
+    "追到",
+    "追上",
+    "追来",
+    "追杀",
+    "追捕",
+    "被追",
+    "逃",
+    "杀",
+    "砸",
+    "烧掉",
+    "点火",
+    "拖走",
+    "威胁",
+    "否则",
+    "必须",
+    "只剩",
+    "证据",
+    "签字",
+    "交出",
+    "滚",
+    "放人",
+    "救下",
+    "救人",
+    "救命",
+    "threat",
+    "forced",
+    "chased",
+    "escape",
+    "or else",
+    "evidence",
+    "must",
+)
+
 _ACTION_TERMS = (
     "抓",
     "按",
@@ -124,6 +167,34 @@ _ACTION_TERMS = (
     "block",
     "move",
     "act",
+)
+
+_LORE_DENSITY_TERMS = (
+    "器灵",
+    "共感",
+    "残痕",
+    "器魂",
+    "器气",
+    "寻迹者",
+    "铭纹",
+    "铭文",
+    "地支",
+    "方位",
+    "镇宅",
+    "邪祟",
+    "子时",
+    "十二枚",
+    "三十年前",
+    "十二年前",
+    "古人",
+    "血脉",
+    "封印",
+    "残相",
+    "worldbuilding",
+    "system",
+    "ancient order",
+    "bloodline",
+    "seal",
 )
 
 _EXPOSITION_TERMS = (
@@ -223,6 +294,20 @@ def _cjk_slice(text: str, limit: int) -> str:
     return "".join(chars)
 
 
+def _cjk_tail(text: str, limit: int) -> str:
+    if not any("\u3400" <= char <= "\u9fff" or "\uf900" <= char <= "\ufaff" for char in text):
+        return text[-limit * 6 :]
+    chars: list[str] = []
+    count = 0
+    for char in reversed(text):
+        chars.append(char)
+        if "\u3400" <= char <= "\u9fff" or "\uf900" <= char <= "\ufaff":
+            count += 1
+        if count >= limit:
+            break
+    return "".join(reversed(chars))
+
+
 def _contains_any(text: str, terms: Sequence[str]) -> bool:
     lowered = text.lower()
     return any(term.lower() in lowered for term in terms)
@@ -233,7 +318,25 @@ def _count_terms(text: str, terms: Sequence[str]) -> int:
     return sum(lowered.count(term.lower()) for term in terms)
 
 
-def _normalize_chapter_texts(chapter_texts: str | Sequence[str] | Mapping[int, str]) -> list[tuple[int, str]]:
+def _has_direct_present_pressure(text: str) -> bool:
+    """Return whether the opening gives a present-tense scene pressure.
+
+    The gate deliberately separates real scene pressure from atmospheric
+    memory fragments. A chapter can contain fire, blood, screams, and death
+    yet still fail commercially if all of that conflict is backstory and the
+    reader cannot answer "what is happening now?"
+    """
+
+    return (
+        "“" in text
+        or '"' in text
+        or _contains_any(text, _DIRECT_PRESENT_PRESSURE_TERMS)
+    )
+
+
+def _normalize_chapter_texts(
+    chapter_texts: str | Sequence[str] | Mapping[int, str],
+) -> list[tuple[int, str]]:
     if isinstance(chapter_texts, str):
         return [(1, chapter_texts)]
     if isinstance(chapter_texts, Mapping):
@@ -242,19 +345,19 @@ def _normalize_chapter_texts(chapter_texts: str | Sequence[str] | Mapping[int, s
 
 
 def _named_entity_candidates(text: str) -> set[str]:
-    import re
-
-    names: set[str] = set()
-    for match in re.finditer(r"([\u4e00-\u9fff]{2,4})(?:说|道|问|喊|骂|笑|盯|看|拦|推)", text):
-        names.add(match.group(1))
-    return names
+    if any("\u3400" <= char <= "\u9fff" for char in text):
+        return EntityDensityCheck._extract_zh(text)
+    return set()
 
 
 def _chapter_has_loop_markers(text: str) -> bool:
     has_conflict = _contains_any(text, _CONFLICT_TERMS)
     has_action = _contains_any(text, _ACTION_TERMS)
     has_payoff = _contains_any(text, _PAYOFF_TERMS)
-    has_hook = _contains_any(_cjk_slice(text, 400)[-260:], _HOOK_TERMS) or text.rstrip().endswith(("？", "?", "！", "!"))
+    has_hook = _contains_any(
+        _cjk_tail(text, 320),
+        _HOOK_TERMS,
+    ) or text.rstrip().endswith(("？", "?", "！", "!"))
     return has_conflict and has_action and (has_payoff or has_hook)
 
 
@@ -286,6 +389,7 @@ def evaluate_qimao_opening_gate(
     first_chapter_number, first_text = chapters[0]
     first_150 = _cjk_slice(first_text, 150)
     first_300 = _cjk_slice(first_text, 300)
+    first_500 = _cjk_slice(first_text, 500)
     first_800 = _cjk_slice(first_text, 800)
     first_1000 = _cjk_slice(first_text, 1000)
 
@@ -298,12 +402,8 @@ def evaluate_qimao_opening_gate(
             chapter_number=first_chapter_number,
         ))
 
-    has_conflict_or_pressure = (
-        _contains_any(first_300, _CONFLICT_TERMS)
-        or "“" in first_300
-        or "\"" in first_300
-        or "：" in first_300
-    )
+    has_present_pressure = _has_direct_present_pressure(first_500)
+    has_conflict_or_pressure = _contains_any(first_300, _CONFLICT_TERMS) or has_present_pressure
     if _contains_any(first_300, _ORDINARY_ENTRY_TERMS) and (
         not has_conflict_or_pressure or _count_terms(first_300, _ACTION_TERMS) < 2
     ):
@@ -320,6 +420,40 @@ def evaluate_qimao_opening_gate(
             severity="critical",
             message="前300字缺少可感冲突、动作或对话压力。",
             evidence=first_300,
+            chapter_number=first_chapter_number,
+        ))
+
+    if not has_present_pressure:
+        findings.append(QimaoOpeningFinding(
+            code="weak_present_conflict",
+            severity="critical",
+            message="前500字缺少读者能立刻复述的当场压力，容易变成氛围/回忆/设定切入。",
+            evidence=first_500,
+            chapter_number=first_chapter_number,
+        ))
+
+    if (
+        not has_present_pressure
+        and _contains_any(
+            first_500,
+            ("不是现在", "很久以前", "记忆", "残相", "backstory", "memory"),
+        )
+    ):
+        findings.append(QimaoOpeningFinding(
+            code="retrospective_fake_conflict",
+            severity="critical",
+            message="开篇冲突主要来自回忆或残影，不是当前场景的明确事件。",
+            evidence=first_500,
+            chapter_number=first_chapter_number,
+        ))
+
+    lore_count = _count_terms(first_800, _LORE_DENSITY_TERMS)
+    if lore_count >= 7 and _count_terms(first_800, _DIRECT_PRESENT_PRESSURE_TERMS) < 2:
+        findings.append(QimaoOpeningFinding(
+            code="opening_lore_overload",
+            severity="critical",
+            message="前800字专名、规则、历史和术语密度过高，读者难以先抓住故事。",
+            evidence=f"lore_term_hits={lore_count}; sample={first_800}",
             chapter_number=first_chapter_number,
         ))
 
@@ -344,8 +478,10 @@ def evaluate_qimao_opening_gate(
             chapter_number=first_chapter_number,
         ))
 
-    ending = _cjk_slice(first_text, 1200)[-320:]
-    if not _contains_any(ending, _HOOK_TERMS) and not first_text.rstrip().endswith(("？", "?", "！", "!")):
+    ending = _cjk_tail(first_text, 320)
+    if not _contains_any(ending, _HOOK_TERMS) and not first_text.rstrip().endswith(
+        ("？", "?", "！", "!")
+    ):
         findings.append(QimaoOpeningFinding(
             code="weak_hook",
             severity="critical",

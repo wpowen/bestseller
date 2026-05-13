@@ -1,0 +1,39 @@
+key: base-building
+name: 基建经营剧情语法
+applies_to_categories: [base-building]
+required_contracts:
+  - system_state_map
+  - production_bottleneck
+  - stakeholder_pressure
+  - visible_build_result
+  - sustainability_cost
+state_variables:
+  - 产能
+  - 人手
+  - 物资链
+  - 民心或信任
+  - 制度风险
+chapter_change_vectors:
+  - 一个瓶颈被定位或缓解
+  - 产出结构发生变化
+  - 利益相关者重新站队
+  - 新设施带来新约束
+  - 局部成功暴露系统短板
+reader_rewards:
+  - 看得见的建设成果
+  - 小问题被聪明组织解决
+  - 资源调度产生爽感
+  - 群体生活质量变化
+  - 发展后果推动更大目标
+hook_or_aftereffect_types:
+  - 新瓶颈出现
+  - 成功引来外部觊觎
+  - 旧制度无法承载新规模
+  - 关键人员提出条件
+  - 供应链节点断裂
+forbidden_defaults:
+  - 囤货清单替代剧情变化
+  - 万能空间解决所有物流
+  - 群像只做赞美合唱
+  - 基建成果没有社会代价
+  - 每章重复采购建造验收

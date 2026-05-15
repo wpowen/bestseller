@@ -20,3 +20,5 @@
 - When user requests novel writing via specific skill, deliver both planning artifacts and full chapter prose in project files (not only outlines).
 - For full-length novel generation requests, place final readable deliverables under `output/ai-generated/<novel-slug>/` with volume/chapter structure.
 - Keep `.audit-reports/backups/` out of version control; do not commit backup chapter files to GitHub.
+- **蒸馏数据不上 GitHub**：``data/distillation/source-*/``、``aggregates/``、``source_registry.index.json`` 已在 ``.gitignore``；仅保留 ``data/distillation/schemas/`` 等契约文件入仓。私有状态仍在 ``.distillation_private/``。
+- **实现计划文档不上 GitHub**：``docs/plans/`` 整目录忽略（如 ``2026-05-15-content-entry-optimization.md``）；对外文档用 ``docs/architecture.md`` 等已入仓文件。

@@ -1,0 +1,42 @@
+{
+  "book_id": "source-0065",
+  "source_ref": "distillation:45a92ef593032abc6b384b52",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "parsed_profile": {
+    "distillation_outcome": "complete_failure",
+    "data_availability": "zero",
+    "volumes_processed": 15,
+    "volumes_with_content": 0,
+    "chapters_total": 372,
+    "chapters_with_valid_content": 0,
+    "aggregate_confidence": 0.0,
+    "failure_domain": "llm_unavailable_across_entire_source",
+    "extraction_blocked": true,
+    "note": "All 15 volume cards (1-15) contain only LLM fallback stubs. No arc functions, state progressions, turning points, reusable mechanisms, craft observations, reader rewards, or open hooks were extractable. The source text failed to process through the LLM pipeline, leaving only structural metadata (chapter ranges, source IDs) without narrative content."
+  },
+  "genre_tags": [
+    "distillation-generic"
+  ],
+  "reader_promise": "LLM structured distillation fallback.",
+  "core_engine": "unknown",
+  "state_variables": [
+    "fallback_progress"
+  ],
+  "reader_rewards": [
+    "distillable_mechanism_reliability"
+  ],
+  "reusable_mechanisms": [
+    "fallback mechanism abstraction"
+  ],
+  "non_reusable_specifics": [],
+  "risk_patterns": [
+    "{'pattern_id': 'systematic_llm_fallback', 'scope': 'global', 'frequency': '100_percent', 'manifestation': 'Every chapter card (1-372) returned llm_fallback stub with confidence 0.0', 'impact': 'no_story_content_extracted', 'recovery_required': True, 'recommended_action': 'Rescan source text through LLM pipeline when availability restored; reprocess all 372 chapters'}",
+    "{'pattern_id': 'empty_aggregation_vectors', 'scope': 'volume_and_book_level', 'frequency': '15_of_15_volumes', 'manifestation': 'All aggregation arrays (state_progression, turning_points, reusable_mechanisms, reader_rewards, open_hooks) remain empty', 'impact': 'no_reusable_design_fingerprint_generated', 'recovery_required': True}",
+    "{'pattern_id': 'confidence_zero_batch', 'scope': 'batch_level', 'frequency': '15_of_15_batches', 'manifestation': 'Each batch of 25 chapters (except final batch of 22) carried aggregate confidence 0.0', 'impact': 'quality_gate_not_met_for_distillation', 'recovery_required': True}",
+    "{'pattern_id': 'arc_function_unavailable', 'scope': 'volume_level', 'frequency': '15_of_15_volumes', 'manifestation': 'Arc functions reported as unavailable, unknown, indeterminate, insufficient_data, or llm_unavailable across all volumes', 'impact': 'narrative_trajectory_undefined', 'recovery_required': True}",
+    "{'pattern_id': 'craft_profile_null_or_empty', 'scope': 'volume_level', 'frequency': '15_of_15_volumes', 'manifestation': 'Craft profiles contain only observations noting LLM unavailability or structural notes about data absence; no prose-craft patterns identified', 'impact': 'no_authorial_technique_analysis_possible', 'recovery_required': True}"
+  ],
+  "source_id": "source-0065",
+  "distillation_source_id": "source-0065"
+}

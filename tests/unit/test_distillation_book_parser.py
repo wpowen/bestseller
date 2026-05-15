@@ -151,16 +151,31 @@ def test_prepare_source_duplicate_title_can_error(tmp_path: Path) -> None:
         )
 
 
-def test_parse_mobi_without_calibre_reports_actionable_error(
+def test_parse_mobi_without_calibre_falls_back_or_reports_actionable_error(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(book_parser.shutil, "which", lambda name: None)
+    monkeypatch.setattr(book_parser, "resolve_calibre_executable", lambda *_args: None)
     source = tmp_path / "sample.mobi"
     source.write_bytes(b"not a real mobi file, but long enough " * 20)
 
-    with pytest.raises(BookParseError, match="ebook-convert"):
+    with pytest.raises(BookParseError) as excinfo:
         parse_source_book(source)
+    message = str(excinfo.value).lower()
+    assert "mobi" in message or "unpack" in message or "kindle" in message or "calibre" in message
+
+
+def test_dedupe_corpus_prefers_txt_over_epub(tmp_path: Path) -> None:
+    from bestseller.services.distillation_corpus import dedupe_corpus_paths_by_title
+
+    epub = tmp_path / "演示书.epub"
+    txt = tmp_path / "演示书.txt"
+    epub.write_bytes(b"x" * 10)
+    txt.write_bytes(b"y" * 10)
+    canonical, siblings = dedupe_corpus_paths_by_title([epub, txt])
+    assert len(canonical) == 1
+    assert canonical[0] == txt
+    assert len(siblings) == 1
 
 
 def test_normalize_title_key_removes_common_edition_noise() -> None:

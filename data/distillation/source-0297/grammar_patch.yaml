@@ -1,0 +1,143 @@
+key: distillation-generic
+name: 'Distillation Grammar Patch: Episodic Cautionary Tale with Frame Resolution'
+source_ids:
+- source-0297
+status: draft_review
+applies_to_categories:
+- episodic narrative collection
+- moral cautionary tale
+- seduction comedy
+- investigation mystery
+- underworld bureaucracy fantasy
+- trickster heist
+- frame narrative
+- dramatic appendix
+- classical Chinese literature
+- multi-story cycle
+required_contracts:
+- contract: desire_arc_contract
+  description: 'All desire arcs must follow 挨光 structure: initial attraction → prolonged
+    courtship with poetry/gifts → consummation → deus ex machina interruption → karmic
+    punishment for both participants'
+- contract: investigation_arc_contract
+  description: 'All investigation arcs must include: initial mystery/death → alcohol
+    confession breaking silence → expanding deception network → magistrate interrogation
+    exposing lies → guilty witness suicide as shame consequence'
+- contract: moral_fable_arc_contract
+  description: 'All moral fable arcs must include: underworld bureaucracy operating
+    through dreams → virtuous character reward → sibling contrast revealing corruption
+    → new vice seeded for future arcs'
+- contract: trickster_arc_contract
+  description: 'All trickster arcs must include: protagonist demonstrates exceptional
+    skills through unrelated adventures → moral code established through contrasting
+    cases → wager system tests character → false accusation resolution → peaceful
+    retirement through deliberate non-use of skills'
+- contract: frame_narrative_contract
+  description: 'Frame narrative must include: accusation driven by criminal''s knowledge
+    of real culprit → rival-turned-informant transformation → double payment asserting
+    dominance → moral elevation through unfavorable comparison to hypocritical officials'
+- contract: verse_bridge_contract
+  description: Separate narrative units must be connected through poetic epigraphs,
+    verse bridges, and narrator moral commentary
+- contract: comedic_reversal_contract
+  description: Near-success must collapse catastrophically with bed-hiding comic resolution
+    or husband's timely return
+state_variables:
+  desire_arc_state:
+    initial: protagonist_attracted_to_forbidden
+    courtship_progression: 挨光_structure_active
+    peak_reached: consummation_achieved
+    collapse_trigger: external_intervention_deus_ex_machina
+    resolution: adultery_exposed_both_punished
+  investigation_arc_state:
+    initial: mystery_requires_resolution
+    confession_progress: hidden_truth_revealed_through_酒后吐真言
+    interrogation_progress: lies_exposed_through_detail_questioning
+    resolution_state: innocent_exonerated_guilty_deceased
+  moral_fable_arc_state:
+    initial: underworld_bureaucracy_active
+    justice_delivery: virtuous_rewarded_vice_punished
+    complication: sibling_contrast_reveals_corruption
+    resolution: virtuous_transcendence_new_vice_seeded
+  trickster_arc_state:
+    initial: protagonist_skills_demonstrated
+    moral_framework: contrasting_cases_established
+    challenge_accepted: wager_stakes_active
+    resolution: false_accusation_vindicated_retirement_pending
+  frame_narrative_state:
+    accusation_active: false_accusation_driven_by_culprit_knowledge
+    transformation_complete: rival_becomes_informant
+    dominance_established: double_payment_occurs
+    elevation_achieved: moral_superiority_vs_officials
+chapter_change_vectors:
+- vector: suspense_loop_cascade
+  description: Chapter boundaries crossed through anticipation-release patterns; unresolved
+    threats carried forward
+- vector: narrative_unit_isolation
+  description: Each 3-5 story unit operates independently while sharing thematic concerns
+- vector: episode_escalation
+  description: Trickster demonstrations progress through increasingly complex challenges
+- vector: sibling_corruption_reveal
+  description: Moral fable arcs complicate through virtue-to-corruption transformation
+- vector: rival_transformation
+  description: Frame narrative resolves through rival becoming informant asset
+- vector: appendix_meta_closure
+  description: Final dramatic appendix provides closure beyond story resolution
+reader_rewards:
+- multiple_satisfying_closures_per_volume
+- comic_catharsis_from_reversal_scenes
+- moral_clarity_through_karmic_justice
+- admiration_for_clever_improvisation
+- intellectual_pleasure_from_deduction
+- meta_narrative_reflection_through_theatrical_framing
+- thematic_coherence_across_episodes
+- cultural_literacy_through_classical_allusions
+hook_or_aftereffect_types:
+- type: mid_scene_interruption
+  description: Ends mid-scene with unresolved threat creating immediate continuation
+    tension
+- type: disturbing_image_recontextualization
+  description: Each story segment ends on disturbing image recontextualizing preceding
+    events
+- type: suspense_loop_cascade
+  description: Suspense loops cascade across chapter boundaries forcing continued
+    reading
+- type: anticipation_release_pattern
+  description: Investigation solutions follow anticipation-release pattern building
+    then satisfying
+- type: theatrical_meta_closure
+  description: Dramatic appendix provides meta-narrative closure beyond individual
+    story resolution
+forbidden_defaults:
+- default: desire_without_punishment
+  forbidden: true
+  rationale: All desire arcs must deliver karmic justice; successful consummation
+    without collapse violates cautionary tale engine
+- default: investigation_without_confession
+  forbidden: true
+  rationale: Investigation arcs must resolve through 酒后吐真言 or interrogation exposure,
+    not external discovery
+- default: protagonist_solitary_success
+  forbidden: true
+  rationale: Trickster arcs must include moral elevation through unfavorable comparison;
+    individual skill without ethical framework incomplete
+- default: frame_narrative_without_transformation
+  forbidden: true
+  rationale: Rivals must transform into informants; unresolved antagonism violates
+    frame resolution contract
+- default: narrative_unit_without_connection
+  forbidden: true
+  rationale: Separate episodic units must connect through verse bridges, thematic
+    concerns, or narrator commentary
+- default: punishment_without_context
+  forbidden: true
+  rationale: All punishment must be delivered through established mechanisms (underworld,
+    interrogation, return timing) not arbitrary authorial decision
+- default: confession_without_consequence
+  forbidden: true
+  rationale: Truth revelation must produce consequences (investigation resolution,
+    suicide, exoneration)
+- default: appendix_without_meta_function
+  forbidden: true
+  rationale: Dramatic appendix must provide meta-narrative closure distinct from story
+    resolution

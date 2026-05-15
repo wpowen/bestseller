@@ -27,5 +27,7 @@
     ],
     "parser_warnings": []
   },
-  "genre_hint": "异界穿越"
+  "genre_hint": "异界穿越",
+  "distillation_genre_bucket": "otherworld-cross-system",
+  "distillation_genre_bucket_confidence": 0.87
 }

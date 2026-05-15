@@ -1,0 +1,42 @@
+{
+  "source_id": "source-0308",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "style_safety_policy": "Classical Chinese historical fiction register; formal elevated diction; moral-virtue signaling; divine providence framing; no contemporary colloquialisms; honorific language for hierarchy distinction",
+  "pov_and_distance": "Omniscient third-person narration maintaining comfortable external distance from any single consciousness; narrator tracks multiple geographic locations and character groups without inhabiting interiority; shifts occur through narrator statement rather than character focalization",
+  "sentence_rhythm": [
+    "Oscillating register: extended explanatory passages (complex sentences with multiple subordinate clauses) alternate with short urgent declaratives (simple subject-verb-object constructions); final paragraphs accelerate into clipped rhythm with fragmented sentences creating breathlessness"
+  ],
+  "paragraphing": [
+    "Long unbroken stretches of direct dialogue with minimal stage direction or action tags; paragraph breaks reserved as structural signals for major scene transitions or location shifts rather than conversational turns"
+  ],
+  "dialogue_system": [
+    "Direct quotation predominates; minimal reliance on attribution tags ('said', 'asked'); social hierarchy and speaker identity conveyed through honorific language, formal register shifts, and kinship terms within the speech itself; formal oratorical patterns for backstory exposition"
+  ],
+  "description_strategy": [
+    "Sparingly deployed; atmospheric effect achieved through dialogue context and formal speech patterns rather than sensory or environmental detail; characters described through what they say and how they speak rather than physical or behavioral observation"
+  ],
+  "exposition_strategy": [
+    "Backstory delivered through formal introduction speech when new characters meet; exposition arrives embedded in dialogue rather than narrator statement; questions from newly introduced characters prompt explanation of situations; information reveals sequentially rather than in flashback"
+  ],
+  "emotional_temperature": [
+    "Formal elegance with moral undertone; tension maintained through external threat rather than interior conflict; emotional peaks arrive through virtue-vindication moments and family-reunion anticipation; crisis emotional register differs sharply from quotidian register"
+  ],
+  "hooking_and_transitions": [
+    "Chapter openings establish mood through poetic epigraph or transitional phrase; location shifts signaled through formulaic transitional markers ('按下不提', '不言'); hooks arrive through external intrusion (urgent messengers, pursuers, alarming summons) rather than character decision or internal revelation; cliffhangers interrupt ongoing action"
+  ],
+  "adaptation_guidelines": [
+    "Suitable for multi-thread narratives requiring sequential handling of geographically separated plot lines; effective for disguise-and-survival plots where virtue is central; recommend using honorific language and formal speech to distinguish characters without explicit attribution; maintain sharp register shifts between exposition and urgency"
+  ],
+  "taboo_copy_signals": [
+    "Chapter-opening classical verse in original language",
+    "Specific naming conventions (字/号 structures)",
+    "Kinship terms or family name combinations",
+    "Historical proper nouns or dynasty references",
+    "Particular formal greeting or leave-taking phrases",
+    "Specific moral-characterization shorthand phrases",
+    "Genre-specific location names"
+  ],
+  "confidence": 0.88,
+  "distillation_source_id": "source-0308"
+}

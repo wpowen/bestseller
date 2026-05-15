@@ -1,0 +1,23 @@
+key: distillation-generic
+name: Generic Distillation Grammar Patch
+source_ids:
+- source-0069
+status: draft_review
+applies_to_categories:
+- distillation-generic
+required_contracts:
+- llm_fallback_enabled
+state_variables:
+- fallback_progress
+chapter_change_vectors: []
+reader_rewards:
+- distillable_mechanism_reliability
+hook_or_aftereffect_types: []
+forbidden_defaults:
+- llm_fallback_all_chapters
+- no_story_content_available
+- zero_confidence_across_entire_source
+- aggregation_impossible_without_substantive_data
+- volume_cards_contain_structural_metadata_only
+- book_design_card_generated_from_fallback_stubs
+- distillation_quality_insufficient_for_design_fingerprint

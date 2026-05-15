@@ -1,0 +1,25 @@
+key: distillation-generic
+name: Distillation Generic Grammar Patch
+source_ids:
+- source-0107
+status: active
+applies_to_categories:
+- distillation-generic
+required_contracts:
+- fallback_progress_state
+- distillable_mechanism_reliability_reward
+state_variables:
+- fallback_progress
+chapter_change_vectors:
+- LLM_FALLBACK_STUB
+reader_rewards:
+- distillable_mechanism_reliability
+hook_or_aftereffect_types:
+- llm_fallback_hook
+- no_story_mechanics_aftereffect
+forbidden_defaults:
+- chapter_function
+- reusable_mechanism
+- craft_observation
+- reader_reward
+- open_hook

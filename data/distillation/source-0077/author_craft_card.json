@@ -1,0 +1,36 @@
+{
+  "source_id": "source-0077",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "style_safety_policy": "{'status': 'no_content_extracted', 'note': 'Zero chapter cards contained extractable story content. All 625 chapters across 25 volumes returned identical LLM unavailable fallback stubs. No authorial voice, stylistic signature, or craft patterns could be identified. This card represents absence-of-content placeholder rather than abstracted narrative technique.'}",
+  "pov_and_distance": "{'status': 'unavailable', 'abstraction_level': 'zero', 'craft_controls_extracted': [], 'notes': \"No POV data, narrative distance markers, or perspective choices extractable. All chapter_function fields report 'LLM unavailable — distillation fallback stub.' No craft observations, character viewpoints, or point-of-view mechanics present in source.\"}",
+  "sentence_rhythm": [
+    "{'status': 'unavailable', 'abstraction_level': 'zero', 'rhythm_patterns': [], 'notes': 'No syntactic patterns, sentence length distributions, or rhythmic structures extractable from source. All chapter_cards contain empty craft_observations arrays with zero confidence. Rhythmic profiling impossible without actual prose content.'}"
+  ],
+  "paragraphing": [
+    "{'status': 'unavailable', 'abstraction_level': 'zero', 'structural_patterns': [], 'notes': 'No paragraph-level structural data present in any chapter_card. All reusable_mechanisms and non_reusable_specifics arrays are empty across all 625 chapters. Structural abstraction blocked by complete content absence.'}"
+  ],
+  "dialogue_system": [
+    "{'status': 'unavailable', 'abstraction_level': 'zero', 'methods_extracted': [], 'notes': 'No dialogue mechanics, attribution patterns, or conversational structures extractable. Chapter_cards contain no dialogue-related craft observations, reader_rewards, or open_hooks. Distillation pipeline must receive actual source prose before dialogue system profiling is viable.'}"
+  ],
+  "description_strategy": [
+    "{'status': 'unavailable', 'abstraction_level': 'zero', 'sensory_techniques': [], 'notes': 'No descriptive method, sensory prioritization, or world-building technique extractable. All chapter_cards are placeholder stubs with empty arrays for mechanisms and observations. No setting details, environmental description, or characterization-through-setting data available.'}"
+  ],
+  "exposition_strategy": [
+    "{'status': 'unavailable', 'abstraction_level': 'zero', 'delivery_methods': [], 'notes': 'No exposition placement, information delivery pattern, or backstory revelation technique extractable. All turning_points, setup_payoff_rhythm, and craft_observations fields contain empty arrays. arc_function remains undetermined across all 25 volumes.'}"
+  ],
+  "emotional_temperature": [
+    "{'status': 'unavailable', 'abstraction_level': 'zero', 'affective_patterns': [], 'notes': 'No emotional arc data, tone markers, or affective register information present in source cards. Reader_rewards arrays are empty for all 625 chapters. Emotional profiling requires actual prose content with scene-level craft observations.'}"
+  ],
+  "hooking_and_transitions": [
+    "{'status': 'unavailable', 'abstraction_level': 'zero', 'hook_types': [], 'transition_mechanisms': [], 'notes': 'No chapter hooks, cliffhanger structures, or scene-transition mechanics extractable. All open_hooks arrays contain zero entries across entire source. No reader reward delivery patterns, chapter-ending techniques, or narrative momentum builders documented.'}"
+  ],
+  "adaptation_guidelines": [
+    "{'status': 'failure_state', 'recommendation': 'Do not consume this artifact for adaptation purposes. No reusable story mechanics, design patterns, or craft strategies exist in this source. Regeneration of chapter-level extraction required before any adaptation guidance can be generated.', 'blocking_conditions': ['LLM unavailable across 100% of chapters (625/625)', 'Zero confidence scores for all volume_cards and chapter_cards', 'No arc_function determinable for any volume', 'No dominant_engine identifiable across 25 volumes', 'All story mechanics arrays empty (reusable_mechanisms, turning_points, state_progression, setup_payoff_rhythm, reader_rewards, open_hooks)', 'Volume metadata inconsistency detected (volume 23 chapter_cards report volume_no:1)', 'Missing chapters 395, 398 in volume 16 range']}"
+  ],
+  "taboo_copy_signals": [
+    "{'status': 'not_applicable', 'reason': 'No authorial voice, stylistic fingerprint, or craft signature present in source data. Taboo-copy analysis requires extractable content. This card documents complete extraction failure, not authorial style.', 'recommendation': 'Do not attempt style transfer or author mimicry based on this artifact. No valid craft controls exist to abstract or restrict.'}"
+  ],
+  "confidence": 0.0,
+  "distillation_source_id": "source-0077"
+}

@@ -152,6 +152,84 @@ def test_chapter_causality_gate_lets_explicit_contract_override_legacy_generic_f
     assert not report.findings
 
 
+def test_chapter_causality_gate_accepts_specific_zh_question_contract() -> None:
+    batch = ChapterOutlineBatchInput.model_validate(
+        {
+            "batch_name": "causal-zh-question",
+            "chapters": [
+                {
+                    "chapter_number": 51,
+                    "title": "城南旧事馆",
+                    "goal": "林渊接到古怪委托，前往城南旧事馆鉴定一面清代铜镜。",
+                    "main_conflict": "顾怀山的话语中暗藏试探，林渊需要在信任与警惕之间判断。",
+                    "hook_description": "顾怀山打开锦盒，铜镜映出父亲失踪前的画面。",
+                    "causal_contract": {
+                        "chapter_function": "reveal",
+                        "pressure": "镜中出现的父亲画面让林渊陷入震惊，需要判断这是陷阱还是真实线索。",
+                        "protagonist_desire": "林渊想查明父亲失踪真相。",
+                        "protagonist_choice": "林渊暂时信任顾怀山，同意帮他处理铜镜。",
+                        "visible_action_or_reaction": "林渊用阴阳眼观察铜镜，发现镜背刻着林家封印纹路。",
+                        "resistance": "顾怀山闪烁其词，几次试图岔开话题。",
+                        "cost_or_tradeoff": "接受委托意味着林渊可能被卷入新的镜债。",
+                        "gain_or_reveal": "林渊得知顾怀山与父亲三十年前经历过一次镜中局。",
+                        "state_change": "林渊与顾怀山建立临时合作关系。",
+                        "next_reader_desire": "这面铜镜为何会出现在这里？父亲三十年前经历了什么？",
+                    },
+                    "scenes": [
+                        {
+                            "scene_number": 1,
+                            "scene_type": "investigation",
+                            "participants": ["林渊", "顾怀山"],
+                            "purpose": {
+                                "story": "林渊观察铜镜并逼顾怀山说出父亲旧事。",
+                                "emotion": "震惊转为警惕。",
+                            },
+                        }
+                    ],
+                }
+            ],
+        }
+    )
+
+    report = evaluate_chapter_causality_contract(batch)
+
+    assert report.passed is True
+    assert not report.findings
+
+
+def test_chapter_causality_gate_accepts_short_specific_contract_values() -> None:
+    batch = ChapterOutlineBatchInput.model_validate(
+        {
+            "batch_name": "causal-short-zh",
+            "chapters": [
+                {
+                    "chapter_number": 77,
+                    "title": "镜奴契约",
+                    "goal": "林渊被周老板擒获，被迫观看师父受刑的画面。",
+                    "main_conflict": "周老板要求林渊签署镜奴契约，成为激活地下古镜的钥匙。",
+                    "hook_description": "周老板让林渊在契约和师父性命之间二选一。",
+                    "causal_contract": {
+                        "chapter_function": "dilemma",
+                        "pressure": "师父命悬一线",
+                        "protagonist_choice": "林渊选择假装签署契约。",
+                        "visible_action_or_reaction": "林渊用镜主权限干扰契约。",
+                        "resistance": "周老板早有防备",
+                        "cost_or_tradeoff": "师父受重伤",
+                        "gain_or_reveal": "苏婉宁带人赶到。",
+                        "state_change": "局势逆转",
+                        "next_reader_desire": "林渊能否救下师父？周老板会如何应对？",
+                    },
+                }
+            ],
+        }
+    )
+
+    report = evaluate_chapter_causality_contract(batch)
+
+    assert report.passed is True
+    assert not report.findings
+
+
 def test_chapter_causality_gate_blocks_flat_reader_desire_chain() -> None:
     batch = ChapterOutlineBatchInput.model_validate(
         {

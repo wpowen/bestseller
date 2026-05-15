@@ -1,0 +1,24 @@
+key: distillation-generic
+name: Distillation Generic Patch
+source_ids:
+- source-0078
+status: draft_review
+applies_to_categories:
+- distillation-generic
+- generic
+- fallback
+required_contracts:
+- fallback_mechanism_contract
+- distillable_mechanism_reliability_contract
+state_variables:
+- fallback_progress
+chapter_change_vectors: []
+reader_rewards:
+- distillable_mechanism_reliability
+hook_or_aftereffect_types:
+- hook_type_fallback
+- aftereffect_reliability
+forbidden_defaults:
+- no_source_data_default
+- zero_confidence_default
+- llm_fallback_systemic_default

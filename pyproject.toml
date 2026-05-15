@@ -75,6 +75,11 @@ embeddings = [
     "sentence-transformers>=5.3.0,<6.0",
 ]
 
+# Source distillation: MOBI/AZW3 without Calibre (Python Kindle unpack)
+distillation = [
+    "mobi>=0.4.1,<0.5",
+]
+
 # Cloud / remote LLM providers (install when not using local-only mode)
 cloud = [
     "anthropic>=0.52.0",            # Anthropic SDK (used transitively by litellm)
@@ -101,6 +106,7 @@ all = [
     "bestseller[embeddings]",
     "bestseller[cloud]",
     "bestseller[api]",
+    "bestseller[distillation]",
 ]
 
 # Development tools
@@ -185,6 +191,8 @@ markers = [
 filterwarnings = [
     "error",
     "ignore::DeprecationWarning:pydantic",
+    # PyPI ``mobi`` pulls ``standard-imghdr`` which emits DeprecationWarning on 3.13+.
+    "ignore:.*imghdr.*:DeprecationWarning",
 ]
 
 # ---------------------------------------------------------------------------

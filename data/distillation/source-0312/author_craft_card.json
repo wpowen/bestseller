@@ -1,0 +1,38 @@
+{
+  "source_id": "source-0312",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "style_safety_policy": "HIGH: This source operates as a historical documentary-novel hybrid with extensive real-world specificity. The forbidden copy signals are extensive and explicit. The craft profile is transferable but must be decoupled from WWII-specific content. The intelligence asymmetry engine, parallel military buildup structure, and contrastive analysis mechanisms are reusable across historical or speculative military fiction. The biographical-expositional hybrid and anthology chapter structures require significant adaptation for fictional sources with invented characters. Do not replicate the rhetorical patterns of 'historical irony' framing, the specific sentence cadences of declarative historical summaries, or the encyclopedia/biographical format without substantial fictional modification.",
+  "pov_and_distance": "Third-person omniscient historical narrator with scholarly authority establishes narrative distance across all expository content. Selective interiority access concentrates on leadership psychology while treating military strategy and foreign leaders as observable facts. Viewpoint clustering during simultaneous operations enables temporal compression across theaters. Occasional direct characterization through quoted thoughts provides intimacy in espionage and tradecraft sequences. Ironic framing positions the narrator as knowing observer of historical complexity, revealing strategic calculation beneath apparent failures. No sustained interiority for operational-level soldiers; psychological states externalized through environmental description (weather, darkness, cold) and physical symptoms.",
+  "sentence_rhythm": [
+    "Bipolar rhythm alternation creates dynamic pacing: staccato tactical descriptions during attack sequences employ short declarative sentences emphasizing key events and decisions. Extended compound analytical passages carry strategic context and causal reasoning through subordinate clauses and appositive constructions. Declarative historical summaries punctuate action with brief dramatic moments that arrest momentum. Information-dense exposition alternates with tension-building sequences. Short sentences signal importance and tactical urgency; long sentences process complexity, link causes to effects, and establish scholarly authority. The contrast between brevity and elaboration marks genre shifts between operational thriller and historical analysis."
+  ],
+  "paragraphing": [
+    "Long expository blocks subdivided by temporal markers and section headers establish context for action sequences. Compressed action beats replace normal paragraph rhythm during assault sequences, producing visual white space and reading acceleration. Thematic breaks separate different strategic threads; geographic pivots mark major topical shifts. Topic-based blocks maintain clear temporal markers with date advancement and campaign designations serving as narrative landmarks. Hard transitions between figures employ subheadings or blank line breaks. The paragraph architecture shifts between dense historical summation and sparse operational description depending on narrative function."
+  ],
+  "dialogue_system": [
+    "Strategic quotation prioritization favors documented speech over invented exchanges. Mix of archive-derived quotations and imagined private exchanges for dramatic scenes, with archive authenticity marking the former. Reported dialogue summarizes positions without reproducing speech; direct quotation reserved for historically attested moments. Biographical sections rely on archive reconstruction with minimal direct speech, treating figures as observable facts rather than characters with distinctive voices. No invented dialogue for exposition chapters; fictional sources require adaptation of this principle through indirect report and selective direct quotation tied to plot function rather than character voice."
+  ],
+  "description_strategy": [
+    "Technical specificity establishes credibility: quantitative specification (numbers"
+  ],
+  "function": "cold, darkness, weather patterns external",
+  "distillation_source_id": "source-0312",
+  "exposition_strategy": [
+    "place exposition after visible need or conflict pressure"
+  ],
+  "emotional_temperature": [
+    "surface emotion through choices, body action, and withheld admission"
+  ],
+  "hooking_and_transitions": [
+    "end units on changed state, unresolved question, or sharper constraint"
+  ],
+  "adaptation_guidelines": [
+    "translate craft controls into the new project's genre, cast, and premise",
+    "change imagery fields, sentence signatures, names, and scenario chains"
+  ],
+  "taboo_copy_signals": [
+    "source titles, author names, exact phrases, named entities, and distinctive sentence templates"
+  ],
+  "confidence": 0.0
+}

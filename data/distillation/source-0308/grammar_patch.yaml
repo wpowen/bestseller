@@ -1,0 +1,48 @@
+key: distillation-generic
+name: Distillation Generic Grammar Patch
+source_ids:
+- source-0308
+status: draft_review
+applies_to_categories:
+- classical_chinese_historical_fiction
+- family_drama
+- deception_conspiracy
+- adventure
+- found_family
+- moral_vindication
+required_contracts:
+- Disguise_as_social_superior_deception_succeeding_through_character_change
+- Found_family_through_adoption_in_crisis
+- Miraculous_divine_intervention_saving_virtuous_female
+- Multi_thread_sequential_handling_within_single_chapter
+- External_threat_introduction_through_urgent_messenger_pursuers
+- Chapter_ending_alarm_creating_external_pressure
+state_variables:
+- deception_thread: Active false identity with future exposure vulnerability
+- family_structure: Newly_formed_adoptive_family_with_unestablished_bonds
+- threat_level: External_authority_summons_creating_urgent_danger
+- missing_parent: Real_father_unfound_with_reunion_potential
+chapter_change_vectors:
+- Transitional_chapters_resolve_one_arc_while_launching_another
+- Geographic_transition_as_plot_thread_separator
+- Sequential_handling_of_physical_separation_within_single_chapter
+- Climactic_acceleration_into_clipped_threat_rhythm_final_paragraphs
+reader_rewards:
+- Survival_confirmation_for_characters_in_presumed_danger
+- Introduction_of_sympathetic_sister_figure_characters
+- Temporary_resolution_of_deception_threads
+- Character_chemistry_establishment_between_protagonist_and_new_family
+- Threat_setup_creating_anticipatory_tension
+hook_or_aftereffect_types:
+- External_threat_alarm
+- Urgent_messenger_arrival
+- Chapter_ending_pressure
+- Identity_mystery_setup
+- Family_reunion_potential_signaling
+- Deception_exposure_tension
+forbidden_defaults:
+- Generic_uncontextualized_threat_hooks_without_accusation_nature_specification
+- Divine_rescue_as_sole_resolution_mechanism_for_critical_peril
+- Female_character_agency_limited_exclusively_to_domestic_virtue_roles
+- Adoption_as_avoidance_rather_than_genuine_plot_resolution
+- Religious_intervention_framing_without_reader_sensitivity_cue

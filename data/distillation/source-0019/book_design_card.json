@@ -1,0 +1,55 @@
+{
+  "book_id": "source-0019",
+  "source_ref": "distillation:c198b7a428ce4ebf6d946836",
+  "source_type": "distillation_package",
+  "status": "unauthored_no_content",
+  "parsed_profile": {
+    "authorability": "failed",
+    "failure_modes": [
+      "llm_fallback_all_chapters",
+      "no_distillable_content",
+      "data_poverty_no_chapter_cards_processed",
+      "zero_confidence_across_all_volumes",
+      "all_25_sample_chapters_are_fallback_stubs",
+      "volume_number_inconsistency_detected"
+    ],
+    "volumes_attempted": 5,
+    "volumes_with_content": 0,
+    "chapters_in_batch": 146,
+    "chapters_with_extracted_content": 0,
+    "chapters_with_fallback_stubs": 146,
+    "confidence_mean": 0.0,
+    "confidence_distribution": {
+      "0.0": 146
+    }
+  },
+  "genre_tags": [
+    "distillation-generic"
+  ],
+  "reader_promise": "LLM structured distillation fallback.",
+  "core_engine": "unknown",
+  "state_variables": [
+    "fallback_progress"
+  ],
+  "reader_rewards": [
+    "distillable_mechanism_reliability"
+  ],
+  "reusable_mechanisms": [
+    "fallback mechanism abstraction"
+  ],
+  "non_reusable_specifics": [],
+  "risk_patterns": [
+    "llm_fallback",
+    "no_content_extracted",
+    "data_poverty",
+    "zero_extraction_confidence",
+    "requires_re_extraction"
+  ],
+  "craft_profile": {
+    "status": "no_content_extracted",
+    "reason": "All 146 chapters across 5 volumes returned LLM unavailable fallback stubs with zero confidence. No narrative mechanics, craft observations, reader rewards, or open hooks extractable.",
+    "recommendation": "Re-run extraction pipeline on source-0019 with corrected volume targeting to obtain actionable chapter_card data before generating a meaningful book_design_card."
+  },
+  "source_id": "source-0019",
+  "distillation_source_id": "source-0019"
+}

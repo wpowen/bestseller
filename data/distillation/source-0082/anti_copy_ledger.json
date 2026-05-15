@@ -1,0 +1,10 @@
+{
+  "source_id": "source-0082",
+  "blocked_categories": [
+    "none_extracted_due_to_fallback"
+  ],
+  "blocked_combinations": [
+    "no_source_text_available_for_pattern_identification"
+  ],
+  "replacement_policy": []
+}

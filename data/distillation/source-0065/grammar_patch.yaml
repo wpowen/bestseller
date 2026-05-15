@@ -1,0 +1,42 @@
+key: distillation-generic
+name: LLM Fallback Grammar Patch
+source_ids:
+- source-0065
+status: active
+applies_to_categories:
+- distillation-package
+- llm-dependent-extraction
+required_contracts:
+- llm_pipeline_availability_contract
+- zero_confidence_gate_contract
+- batch_completeness_contract
+- volume_content_validation_contract
+state_variables:
+- fallback_progress
+- extraction_confidence
+- llm_availability_flag
+- content_validation_status
+chapter_change_vectors:
+- stub_generation_vector
+- empty_state_vector
+- retry_attempt_vector
+- manual_intervention_vector
+reader_rewards:
+- distillable_mechanism_reliability
+- fallback_abstraction_pattern
+- recovery_path_clarity
+hook_or_aftereffect_types:
+- llm_restored_hook
+- reprocessing_triggered_hook
+- manual_review_required_aftereffect
+- confidence_recovery_aftereffect
+- pipeline_reset_aftereffect
+forbidden_defaults:
+- content_presence_assumption
+- confidence_zero_tolerance
+- empty_volume_passthrough
+- aggregation_without_validation
+- stub_as_content_replacement
+- arc_function_inference
+- craft_profile_generation_without_data
+- narrative_trajectory_extrapolation

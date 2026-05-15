@@ -53,7 +53,13 @@ GENERIC_PATTERNS: tuple[str, ...] = (
 
 PRESSURE_TOKENS: tuple[str, ...] = (
     "必须",
+    "需要",
+    "不得不",
+    "不能",
+    "无法",
+    "被迫",
     "逼",
+    "逼迫",
     "威胁",
     "封",
     "追杀",
@@ -66,6 +72,15 @@ PRESSURE_TOKENS: tuple[str, ...] = (
     "风险",
     "禁令",
     "生效前",
+    "危机",
+    "陷入",
+    "处死",
+    "格杀",
+    "囚禁",
+    "警告",
+    "怀疑",
+    "颠覆",
+    "两难",
     "deadline",
     "must",
     "threat",
@@ -76,6 +91,12 @@ PRESSURE_TOKENS: tuple[str, ...] = (
 ACTION_TOKENS: tuple[str, ...] = (
     "选择",
     "决定",
+    "试图",
+    "前往",
+    "接触",
+    "调查",
+    "追查",
+    "获取",
     "进入",
     "读取",
     "确认",
@@ -93,6 +114,12 @@ ACTION_TOKENS: tuple[str, ...] = (
     "违令",
     "出手",
     "行动",
+    "亮出",
+    "相信",
+    "触碰",
+    "打开",
+    "寻找",
+    "完成",
     "choose",
     "decide",
     "enter",
@@ -108,6 +135,11 @@ RESISTANCE_TOKENS: tuple[str, ...] = (
     "搜身",
     "追",
     "拦",
+    "岔开",
+    "警告",
+    "怀疑",
+    "不得",
+    "不许",
     "逼",
     "封",
     "禁",
@@ -133,6 +165,12 @@ COST_TOKENS: tuple[str, ...] = (
     "亏空",
     "记名",
     "风险",
+    "两难",
+    "欠下",
+    "失明",
+    "消耗",
+    "寿元",
+    "减半",
     "动摇",
     "关闭",
     "cost",
@@ -148,6 +186,11 @@ GAIN_TOKENS: tuple[str, ...] = (
     "确认",
     "证明",
     "发现",
+    "得知",
+    "看到",
+    "捕捉",
+    "知道",
+    "明白",
     "揭",
     "线索",
     "实证",
@@ -173,6 +216,21 @@ NEXT_DESIRE_TOKENS: tuple[str, ...] = (
     "祖坟",
     "第二",
     "是谁",
+    "谁",
+    "什么",
+    "为何",
+    "为什么",
+    "如何",
+    "哪",
+    "是否",
+    "吗",
+    "？",
+    "?",
+    "真相",
+    "目的",
+    "意味着",
+    "藏着",
+    "敌是友",
     "读者想",
     "下一章",
     "next",
@@ -351,25 +409,51 @@ def _evaluate_chapter(
     )
 
     present_axes = {
-        "pressure": any(_has_pressure(text) for text in pressure_candidates),
-        "choice_or_action": any(_has_choice_or_action(text) for text in choice_action_candidates),
-        "resistance": any(
+        "pressure": _has_contract_axis(chapter, "pressure", "chapter_pressure")
+        or any(_has_pressure(text) for text in pressure_candidates),
+        "choice_or_action": _has_contract_axis(
+            chapter,
+            "protagonist_choice",
+            "choice",
+            "visible_action_or_reaction",
+            "visible_action",
+            "reaction",
+        )
+        or any(_has_choice_or_action(text) for text in choice_action_candidates),
+        "resistance": _has_contract_axis(chapter, "resistance", "obstacle", "阻力")
+        or any(
             _has_axis_signal(text, RESISTANCE_TOKENS)
             for text in resistance_candidates
         ),
-        "cost_or_tradeoff": any(
+        "cost_or_tradeoff": _has_contract_axis(
+            chapter, "cost_or_tradeoff", "cost", "tradeoff", "代价"
+        )
+        or any(
             _has_axis_signal(text, COST_TOKENS)
             for text in cost_candidates
         ),
-        "gain_or_reveal": any(
+        "gain_or_reveal": _has_contract_axis(
+            chapter, "gain_or_reveal", "gain", "reveal", "收益", "揭露"
+        )
+        or any(
             _has_axis_signal(text, GAIN_TOKENS)
             for text in gain_candidates
         ),
-        "state_change": any(
+        "state_change": _has_contract_axis(
+            chapter, "state_change", "state_delta", "状态变化"
+        )
+        or any(
             _has_state_change(chapter, text)
             for text in state_change_candidates
         ),
-        "next_reader_desire": any(
+        "next_reader_desire": _has_contract_axis(
+            chapter,
+            "next_reader_desire",
+            "next_desire",
+            "next_chapter_desire",
+            "reader_question_after",
+        )
+        or any(
             _has_next_reader_desire(text)
             for text in next_desire_candidates
         ),
@@ -451,6 +535,15 @@ def _contract_text(chapter: ChapterOutlineInput, *keys: str) -> str:
     return "; ".join(parts)
 
 
+def _has_contract_axis(chapter: ChapterOutlineInput, *keys: str) -> bool:
+    contract = _contract(chapter)
+    for key in keys:
+        value = contract.get(key)
+        if isinstance(value, str) and _is_specific_contract_value(value):
+            return True
+    return False
+
+
 def _scene_story_texts(chapter: ChapterOutlineInput) -> list[str]:
     texts: list[str] = []
     for scene in chapter.scenes:
@@ -514,6 +607,15 @@ def _has_axis_signal(text: str, tokens: Iterable[str]) -> bool:
 def _is_specific(text: str) -> bool:
     value = _clean(text)
     if len(value) < 8:
+        return False
+    if _looks_generic(value):
+        return False
+    return True
+
+
+def _is_specific_contract_value(text: str) -> bool:
+    value = _clean(text)
+    if len(value) < 4:
         return False
     if _looks_generic(value):
         return False

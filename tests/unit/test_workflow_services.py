@@ -266,6 +266,79 @@ def test_outline_chapter_number_normalization_closes_materialization_gaps() -> N
     }
 
 
+def test_outline_fingerprint_scan_inputs_skip_existing_immutable_chapters() -> None:
+    project = build_project()
+    batch = ChapterOutlineBatchInput.model_validate(
+        {
+            "batch_name": "progressive-merged-outline",
+            "chapters": [
+                {
+                    "chapter_number": 1,
+                    "title": "旧章一",
+                    "goal": "旧章一目标",
+                    "main_conflict": "旧章一冲突",
+                    "hook_description": "旧章一钩子",
+                    "scenes": [],
+                },
+                {
+                    "chapter_number": 2,
+                    "title": "旧章二",
+                    "goal": "旧章二目标",
+                    "main_conflict": "旧章二冲突",
+                    "hook_description": "旧章二钩子",
+                    "scenes": [],
+                },
+                {
+                    "chapter_number": 3,
+                    "title": "新章三",
+                    "goal": "新章三目标",
+                    "main_conflict": "新章三冲突",
+                    "hook_description": "新章三钩子",
+                    "scenes": [],
+                },
+            ],
+        }
+    )
+    old_complete = build_planned_chapter(project, 1, status=ChapterStatus.COMPLETE.value)
+    old_review = build_planned_chapter(project, 2, status=ChapterStatus.REVIEW.value)
+
+    scan_outlines, scan_existing = workflow_services._outline_fingerprint_scan_inputs(
+        batch,
+        [old_complete, old_review],
+    )
+
+    assert [chapter.chapter_number for chapter in scan_outlines] == [3]
+    assert [chapter.chapter_number for chapter in scan_existing] == [1, 2]
+
+
+def test_outline_fingerprint_scan_inputs_keep_existing_mutable_chapters_in_batch() -> None:
+    project = build_project()
+    batch = ChapterOutlineBatchInput.model_validate(
+        {
+            "batch_name": "repair-outline",
+            "chapters": [
+                {
+                    "chapter_number": 1,
+                    "title": "待改章",
+                    "goal": "待改章目标",
+                    "main_conflict": "待改章冲突",
+                    "hook_description": "待改章钩子",
+                    "scenes": [],
+                }
+            ],
+        }
+    )
+    planned = build_planned_chapter(project, 1, status=ChapterStatus.PLANNED.value)
+
+    scan_outlines, scan_existing = workflow_services._outline_fingerprint_scan_inputs(
+        batch,
+        [planned],
+    )
+
+    assert [chapter.chapter_number for chapter in scan_outlines] == [1]
+    assert scan_existing == []
+
+
 def test_chapter_outline_accepts_chapter_level_llm_aliases() -> None:
     batch = ChapterOutlineBatchInput.model_validate(
         {
@@ -649,6 +722,9 @@ async def test_materialize_latest_chapter_outline_batch_updates_existing_planned
             # chapters (outside the new batch) to compare against.  Empty is
             # fine here — the scan only affects logging / metadata.
             [],
+            # Chapter-plan validation refreshes the identity manifest from
+            # persisted CharacterModel rows before checking participants.
+            [],
             [existing_scene],
             [existing_chapter, stale_chapter],
         ],
@@ -901,6 +977,186 @@ async def test_materialize_chapter_outline_batch_blocks_weak_causality(
 
 
 @pytest.mark.asyncio
+async def test_materialize_chapter_outline_batch_skips_immutable_chapters_for_causality(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = build_project()
+    existing_complete = build_planned_chapter(
+        project,
+        1,
+        status=ChapterStatus.COMPLETE.value,
+    )
+    existing_complete.metadata_json = {"causal_contract": {"keep": "unchanged"}}
+    batch = ChapterOutlineBatchInput.model_validate(
+        {
+            "batch_name": "resume-cumulative",
+            "chapters": [
+                {
+                    "chapter_number": 1,
+                    "title": "旧章",
+                    "goal": "继续处理局势。",
+                    "main_conflict": "局势继续。",
+                    "hook_description": "新的情况。",
+                },
+                {
+                    "chapter_number": 2,
+                    "title": "暗门",
+                    "goal": "沈砚在封港前确认信号来源。",
+                    "main_conflict": "封港命令一小时后生效，沈砚必须立刻确认信号来源。",
+                    "hook_description": "信号源指向港口暗门后的第二枚印记。",
+                    "causal_contract": {
+                        "chapter_function": "action",
+                        "pressure": "封港命令一小时后生效，沈砚必须立刻确认信号来源。",
+                        "protagonist_desire": "沈砚要在封港前拿到异常信号的来源。",
+                        "protagonist_choice": "沈砚选择接下调查任务并进入码头。",
+                        "visible_action_or_reaction": "沈砚接下港务官的任务，开始追查信号。",
+                        "resistance": "封港命令和倒计时压缩了他的调查窗口。",
+                        "cost_or_tradeoff": "如果判断失误，沈砚会失去封港前最后一次追查机会。",
+                        "gain_or_reveal": "沈砚获得异常信号来自码头深处的线索。",
+                        "state_change": "沈砚从旁观封港变成承担调查责任的人。",
+                        "next_reader_desire": "读者想知道一小时倒计时内他能否找到信号来源。",
+                    },
+                    "scenes": [
+                        {
+                            "scene_number": 1,
+                            "scene_type": "setup",
+                            "participants": ["沈砚", "港务官"],
+                            "purpose": {
+                                "story": "封港命令逼迫沈砚接下调查任务。",
+                                "emotion": "压迫感和抗拒同时上升。",
+                            },
+                        }
+                    ],
+                },
+            ],
+        }
+    )
+
+    async def fake_get_project_by_slug(session: object, slug: str) -> ProjectModel:
+        return project
+
+    async def fake_create_chapter(session: object, project_slug: str, payload: object) -> object:
+        return type(
+            "ChapterStub",
+            (),
+            {
+                "id": uuid4(),
+                "chapter_number": payload.chapter_number,
+                "target_word_count": payload.target_word_count,
+                "metadata_json": {},
+            },
+        )()
+
+    async def fake_create_scene_card(
+        session: object,
+        project_slug: str,
+        chapter_number: int,
+        payload: object,
+    ) -> object:
+        return type("SceneStub", (), {"id": uuid4(), "scene_number": payload.scene_number})()
+
+    monkeypatch.setattr(workflow_services, "get_project_by_slug", fake_get_project_by_slug)
+    monkeypatch.setattr(workflow_services, "create_chapter", fake_create_chapter)
+    monkeypatch.setattr(workflow_services, "create_scene_card", fake_create_scene_card)
+    session = FakeSession(
+        scalar_results=[existing_complete, None],
+        scalars_results=[
+            [existing_complete],
+            [],
+            [],
+            [],
+        ],
+    )
+
+    await workflow_services.materialize_chapter_outline_batch(
+        session,
+        "my-story",
+        batch,
+        requested_by="tester",
+    )
+
+    workflow_runs = [obj for obj in session.added if isinstance(obj, WorkflowRunModel)]
+    assert workflow_runs[0].status == "completed"
+    assert workflow_runs[0].metadata_json["chapter_contract_validation_scope"] == {
+        "batch_chapter_count": 2,
+        "validated_chapter_count": 1,
+        "skipped_existing_immutable_chapters": 1,
+    }
+    assert existing_complete.metadata_json == {"causal_contract": {"keep": "unchanged"}}
+
+
+@pytest.mark.asyncio
+async def test_materialize_chapter_outline_batch_does_not_touch_immutable_chapter_scenes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = build_project()
+    existing_complete = build_planned_chapter(
+        project,
+        1,
+        status=ChapterStatus.COMPLETE.value,
+    )
+    existing_complete.target_word_count = 1234
+    existing_scene = build_planned_scene(project, existing_complete, 1)
+    existing_scene.target_word_count = 123
+    existing_scene.purpose = {"story": "旧场景保持不变。"}
+    batch = ChapterOutlineBatchInput.model_validate(
+        {
+            "batch_name": "resume-cumulative",
+            "chapters": [
+                {
+                    "chapter_number": 1,
+                    "title": "旧章新纲",
+                    "goal": "承接旧章，但此累计 artifact 不能改写已完成章节。",
+                    "main_conflict": "旧章已经完成，刷新 truth metadata 时只能跳过。",
+                    "hook_description": "旧章尾钩已经在正文中兑现。",
+                    "target_word_count": 6400,
+                    "scenes": [
+                        {
+                            "scene_number": 1,
+                            "scene_type": "turn",
+                            "time_label": "新纲场景",
+                            "participants": ["沈砚"],
+                            "purpose": {
+                                "story": "新纲不应覆盖旧场景。",
+                                "emotion": "保持警惕。",
+                            },
+                            "target_word_count": 1600,
+                        }
+                    ],
+                }
+            ],
+        }
+    )
+
+    async def fake_get_project_by_slug(session: object, slug: str) -> ProjectModel:
+        return project
+
+    monkeypatch.setattr(workflow_services, "get_project_by_slug", fake_get_project_by_slug)
+    session = FakeSession(
+        scalar_results=[existing_complete],
+        scalars_results=[
+            [existing_complete],
+            [],
+            [existing_scene],
+        ],
+    )
+
+    await workflow_services.materialize_chapter_outline_batch(
+        session,
+        "my-story",
+        batch,
+        requested_by="tester",
+    )
+
+    workflow_runs = [obj for obj in session.added if isinstance(obj, WorkflowRunModel)]
+    assert workflow_runs[0].status == "completed"
+    assert workflow_runs[0].metadata_json["chapters_skipped_immutable"] == 1
+    assert existing_complete.target_word_count == 1234
+    assert existing_scene.target_word_count == 123
+    assert existing_scene.purpose == {"story": "旧场景保持不变。"}
+
+
+@pytest.mark.asyncio
 async def test_materialize_chapter_outline_batch_marks_workflow_failed_on_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1109,6 +1365,129 @@ async def test_ensure_project_identity_manifest_backfills_project_and_characters
     assert character.metadata_json["gender"] == "male"
     assert character.metadata_json["pronoun_set_zh"] == "他"
     assert character.metadata_json["cast_entry"]["pronoun_set_en"] == "he/him"
+
+
+@pytest.mark.asyncio
+async def test_ensure_project_identity_manifest_extends_locked_manifest_from_characters() -> None:
+    project = build_project()
+    project.metadata_json = {
+        "identity_manifest_status": "locked",
+        "identity_manifest": [
+            {
+                "name": "沈砚",
+                "role": "protagonist",
+                "gender": "male",
+                "pronoun_set_zh": "他",
+                "pronoun_set_en": "he/him",
+                "aliases": [],
+            }
+        ],
+    }
+    character = CharacterModel(
+        project_id=project.id,
+        name="孙九斤",
+        role="supporting",
+        metadata_json={
+            "gender": "male",
+            "pronoun_set_zh": "他",
+            "pronoun_set_en": "he/him",
+            "aliases": ["孙老板"],
+        },
+    )
+    character.id = uuid4()
+    session = FakeSession(scalars_results=[[character]])
+
+    manifest = await workflow_services.ensure_project_identity_manifest(
+        session,
+        project,
+        project_slug=project.slug,
+    )
+
+    names = {entry["name"] for entry in manifest}
+    assert "沈砚" in names
+    assert "孙九斤" in names
+    assert project.metadata_json["identity_manifest_status"] == "locked"
+    assert any(entry["aliases"] == ["孙老板"] for entry in manifest if entry["name"] == "孙九斤")
+    assert character.metadata_json["cast_entry"]["pronoun_set_zh"] == "他"
+
+
+@pytest.mark.asyncio
+async def test_materialize_story_bible_manifest_keeps_persisted_character_rows(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = build_project()
+    project.metadata_json = {
+        "identity_manifest_status": "locked",
+        "identity_manifest": [
+            {
+                "name": "沈砚",
+                "role": "protagonist",
+                "gender": "male",
+                "pronoun_set_zh": "他",
+                "pronoun_set_en": "he/him",
+                "aliases": [],
+            }
+        ],
+    }
+    persisted_character = CharacterModel(
+        project_id=project.id,
+        name="沈怀远",
+        role="family",
+        metadata_json={
+            "gender": "male",
+            "pronoun_set_zh": "他",
+            "pronoun_set_en": "he/him",
+        },
+    )
+    persisted_character.id = uuid4()
+
+    async def fake_get_project_by_slug(session: object, slug: str) -> ProjectModel:
+        return project
+
+    async def fake_upsert_cast_spec(session: object, project_obj: object, content: object) -> dict[str, int]:
+        return {"characters_upserted": 1}
+
+    async def fake_refresh_world_expansion_boundaries(session: object, *, project: object) -> dict[str, int]:
+        return {}
+
+    async def fake_refresh_story_bible_retrieval_index(session: object, settings: object, project_id) -> int:
+        return 0
+
+    def fake_audit_bible_completeness(**kwargs: object) -> None:
+        return None
+
+    monkeypatch.setattr(workflow_services, "get_project_by_slug", fake_get_project_by_slug)
+    monkeypatch.setattr(workflow_services, "upsert_cast_spec", fake_upsert_cast_spec)
+    monkeypatch.setattr(workflow_services, "_audit_bible_completeness", fake_audit_bible_completeness)
+    monkeypatch.setattr(
+        workflow_services,
+        "refresh_world_expansion_boundaries",
+        fake_refresh_world_expansion_boundaries,
+    )
+    monkeypatch.setattr(
+        workflow_services,
+        "refresh_story_bible_retrieval_index",
+        fake_refresh_story_bible_retrieval_index,
+    )
+
+    await workflow_services.materialize_story_bible(
+        FakeSession(scalars_results=[[persisted_character]]),
+        "my-story",
+        requested_by="tester",
+        cast_spec_content={
+            "protagonist": {
+                "name": "沈砚",
+                "role": "protagonist",
+                "gender": "male",
+                "pronoun_set_zh": "他",
+                "pronoun_set_en": "he/him",
+            }
+        },
+    )
+
+    names = {entry["name"] for entry in project.metadata_json["identity_manifest"]}
+    assert names == {"沈砚", "沈怀远"}
+    assert persisted_character.metadata_json["cast_entry"]["pronoun_set_en"] == "he/him"
 
 
 @pytest.mark.asyncio

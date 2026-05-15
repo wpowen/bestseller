@@ -1,0 +1,49 @@
+{
+  "book_id": "source-0046",
+  "source_ref": "distillation:a3d1ed1b00fa7b290c2c1be5",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "parsed_profile": {
+    "distillation_status": "complete_with_critical_data_gaps",
+    "total_volumes_processed": 35,
+    "volumes_with_content": 0,
+    "volumes_with_fallback_stubs": 35,
+    "total_chapters_attempted": 884,
+    "chapters_with_extractable_content": 0,
+    "confidence_aggregate": 0.0,
+    "data_integrity": "critical_failure",
+    "failure_root_cause": "all_chapters_returned_llm_fallback_stubs",
+    "note": "This book_design_card represents a distillation target with zero extractable narrative content. All 35 volume_cards aggregated from source-0046 contain exclusively LLM unavailable fallback stubs across the complete chapter range (1-884). No story mechanics, genre grammar patterns, reader rewards, or structural mechanisms were recoverable."
+  },
+  "genre_tags": [
+    "distillation-generic"
+  ],
+  "reader_promise": "LLM structured distillation fallback.",
+  "core_engine": "unknown",
+  "state_variables": [
+    "fallback_progress"
+  ],
+  "reader_rewards": [
+    "distillable_mechanism_reliability"
+  ],
+  "reusable_mechanisms": [
+    "fallback mechanism abstraction"
+  ],
+  "non_reusable_specifics": [],
+  "risk_patterns": [
+    "all_chapters_llm_fallback",
+    "zero_confidence_across_all_volumes",
+    "no_extractable_story_design_mechanics",
+    "distillation_dataset_entirely_synthetic_stubs",
+    "source_content_unavailable_for_abstraction",
+    "volume_card_aggregation_produced_empty_structural_markers",
+    "cannot_derive_genre_grammar_from_zero_signal_input",
+    "downstream_generative_use_blocked_by_confidence_zero",
+    "manual_content_population_required_before_re_distillation",
+    "risk_of_silent_data_loss_if_volume_cards_treated_as_implicit_content",
+    "chapter_numbering_anomalies_detected_in_multiple_volumes",
+    "missing_chapters_identified_in_several_batches"
+  ],
+  "source_id": "source-0046",
+  "distillation_source_id": "source-0046"
+}

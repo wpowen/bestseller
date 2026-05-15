@@ -1,0 +1,53 @@
+{
+  "source_id": "source-0019",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "style_safety_policy": "{'status': 'cannot_assess', 'reason': 'All 146 chapters across 5 volumes returned LLM unavailable fallback stubs with zero extraction confidence. No source text, narrative content, dialogue, or descriptive passages were accessible for style safety analysis.', 'guidance': 'Re-run extraction pipeline on source-0019 with corrected volume targeting to obtain actionable chapter_card data before assessing style safety policy.'}",
+  "pov_and_distance": "{'status': 'indeterminate', 'narrative_pov': None, 'pov_distance_controls': [], 'reason': 'No narrative content extracted from source. POV mechanics cannot be assessed from LLM fallback stubs.'}",
+  "sentence_rhythm": [
+    "{'status': 'indeterminate', 'dominant_rhythm': None, 'rhythm_patterns': [], 'reason': 'No sentence-level content available for rhythm analysis. All 146 chapter cards are placeholder stubs with zero confidence.'}"
+  ],
+  "paragraphing": [
+    "{'status': 'indeterminate', 'paragraph_structure': None, 'structure_signals': [], 'reason': 'Paragraph organization cannot be assessed from unavailable source content.'}"
+  ],
+  "dialogue_system": [
+    "{'status': 'indeterminate', 'dialogue_method': None, 'attribution_patterns': [], 'conversation_mechanics': [], 'reason': 'No dialogue passages were extracted. All chapter cards returned LLM unavailable stubs.'}"
+  ],
+  "description_strategy": [
+    "{'status': 'indeterminate', 'sensory_modality_focus': None, 'description_densities': [], 'reason': 'Descriptive passages not accessible for analysis. Source content entirely composed of fallback stubs.'}"
+  ],
+  "exposition_strategy": [
+    "{'status': 'indeterminate', 'exposition_placement': None, 'info_dispensation_methods': [], 'reason': 'No expository content extracted. Arc function, state progression, and turning points are all empty or unavailable across all 5 volumes.'}"
+  ],
+  "emotional_temperature": [
+    "{'status': 'indeterminate', 'dominant_emotional_register': None, 'temperature_controls': [], 'reason': 'Emotional temperature cannot be assessed from unavailable source material.'}"
+  ],
+  "hooking_and_transitions": [
+    "{'status': 'indeterminate', 'hook_types': [], 'transition_methods': [], 'reader_reward_delivery': [], 'reason': 'No open hooks, reader rewards, or transition signals present in source data. All entries are zero-confidence fallback stubs.'}"
+  ],
+  "adaptation_guidelines": [
+    "{'status': 'cannot_author', 'reason': 'Zero extractable craft data. This card cannot serve as a reliable craft blueprint for adaptation.', 'recommendation': 'Re-run extraction pipeline on source-0019 with corrected volume targeting to obtain actionable chapter_card data.'}"
+  ],
+  "taboo_copy_signals": [
+    "{'status': 'no_data', 'identified_taboos': [], 'copy_prevention_signals': [], 'reason': 'No content available for signal extraction.'}"
+  ],
+  "confidence": 0.0,
+  "data_integrity_note": "This author_craft_card represents a distillation of entirely unavailable content. All 146 chapters (1-146) across 5 volumes returned LLM unavailable fallback stubs with zero confidence. No craft observations, reusable mechanisms, reader rewards, or open hooks were extractable. Volume number inconsistency detected in volume 4 (chapters 103-127 incorrectly tagged as volume_no=1). Downstream consumers should treat this card as a placeholder requiring re-extraction from original source material.",
+  "failure_modes": [
+    "llm_fallback_all_chapters",
+    "no_distillable_content",
+    "data_poverty_no_chapter_cards_processed",
+    "zero_confidence_across_all_volumes",
+    "all_146_sample_chapters_are_fallback_stubs",
+    "volume_number_inconsistency_in_v4"
+  ],
+  "extraction_attempt_summary": {
+    "volumes_attempted": 5,
+    "volumes_with_content": 0,
+    "chapters_in_batch": 146,
+    "chapters_with_extracted_content": 0,
+    "chapters_with_fallback_stubs": 146
+  },
+  "recommendation": "Re-run extraction pipeline on source-0019 with corrected volume targeting to obtain actionable chapter_card data before generating a meaningful author_craft_card. Verify volume number mapping and ensure source material accessibility before subsequent distillation attempts.",
+  "distillation_source_id": "source-0019"
+}

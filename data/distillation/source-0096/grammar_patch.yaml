@@ -1,0 +1,25 @@
+key: distillation-generic
+name: 'Grammar Patch: All Chapters LLM Fallback'
+source_ids:
+- source-0096
+status: rejected
+applies_to_categories:
+- LLM_Fallback_AllChapters
+- DistillationGeneric
+required_contracts:
+- contract:has_non_stub_content
+- contract:minimum_confidence
+- contract:no_all_stub_chapters
+state_variables:
+- fallback_progress
+- stub_chapter_count
+chapter_change_vectors: []
+reader_rewards:
+- distillable_mechanism_reliability
+hook_or_aftereffect_types:
+- log_failure
+- alert_source_invalid
+- trigger_reprocess
+forbidden_defaults:
+- stub_behavior
+- unconditional_fallback

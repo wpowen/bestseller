@@ -1,0 +1,27 @@
+key: distillation-generic
+name: Distillation Generic Grammar Patch
+source_ids:
+- source-0019
+status: active
+applies_to_categories:
+- distillation-generic
+required_contracts:
+- LLM_fallback_contract
+- distillation_extraction_contract
+state_variables:
+- fallback_progress
+- fallback_chapters
+- fallback_volumes
+chapter_change_vectors:
+- zero_confidence
+- no_content
+- re_extraction_needed
+reader_rewards:
+- distillable_mechanism_reliability
+hook_or_aftereffect_types:
+- fallback_hook
+- aftereffect_re_extraction
+forbidden_defaults:
+- zero_confidence_default_content
+- generic_stub_text
+- LLM_unavailable_assumption

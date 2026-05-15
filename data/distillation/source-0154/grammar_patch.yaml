@@ -1,0 +1,30 @@
+key: distillation-generic
+name: Distillation Generic Fallback Grammar
+source_ids:
+- source-0154
+status: failed
+applies_to_categories:
+- distillation_package
+- llm_fallback
+required_contracts:
+- stub_content_marker
+- confidence_zero_flag
+- empty_aggregation_protocol
+state_variables:
+- fallback_progress
+- distillation_status
+- data_integrity
+- confidence_score
+chapter_change_vectors: []
+reader_rewards:
+- distillable_mechanism_reliability
+hook_or_aftereffect_types: []
+forbidden_defaults:
+- arc_function_extraction
+- craft_observation_assignment
+- reader_reward_mapping
+- open_hook_derivation
+- non_reusable_specific_identification
+- design_fingerprint_generation
+- volume_aggregation_fill
+- chapter_content_population

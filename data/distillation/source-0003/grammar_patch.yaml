@@ -1,0 +1,92 @@
+key: distillation-generic
+name: Xianxia Cultivation Grammar Patch
+source_ids:
+- source-0003
+status: draft_review
+applies_to_categories:
+- cultivation
+- xianxia
+- progression_fantasy
+- comedy
+- animal_companion
+required_contracts:
+- Crisis-survival-reward progression cycle must deliver tangible cultivation benefit
+  on resolution
+- Dormant protective power activation requires near-fatal threshold with escalating
+  danger
+- Creature taming requires will-dominance confrontation before acquisition
+- Protagonist must demonstrate preparation-based problem-solving rather than reckless
+  luck
+- Comedic relief must punctuate tension rather than dominate narrative
+state_variables:
+  protagonist:
+    position: early_cultivation
+    growth_vector: external_quest_driven
+    personality_markers:
+    - mischievous
+    - cunning
+    - defiant_of_warnings
+    support_system: loyal_bumbling_companion_duo
+  companions:
+    type: animal_acquisition_sequence
+    mechanism: defeat_then_tame
+    rivalry_element: multiple_creatures_competing_for_attention
+  protective_mechanisms:
+    type: ancestral_dormant_power
+    activation_trigger: near_fatal_damage
+    secondary_effect: cultivation_breakthrough
+  world_state:
+    setting_type: Taoist_cultivation_terrain
+    location_markers:
+    - abandoned_caves
+    - mountain_cultivation_sites
+    quest_objects: rare_creatures_as_cultivation_assets
+chapter_change_vectors:
+- vector: preparation_foreshadowing
+  description: Mechanisms and traps explained before complication deployment
+- vector: complication_escalation
+  description: Initial plan fails, danger escalates toward near-fatal threshold
+- vector: dormant_activation
+  description: Protective power triggers at mortality edge, delivering cultivation
+    bonus
+- vector: tension_release
+  description: Comedic companion banter or animal reaction after crisis resolution
+- vector: companion_rivalry_setup
+  description: Competing creatures establish dynamic for future acquisition sequence
+reader_rewards:
+- Cultivation world immersion with technical mechanics exposition
+- Satisfying near-death crisis resolution with tangible strength gains
+- Humorous character dynamics through companion interactions
+- Creature taming spectacle with dominance-based power fantasy
+- Mischievous protagonist outsmarting dangers through preparation
+hook_or_aftereffect_types:
+- type: artifact_quest_hook
+  trigger: discovery
+  aftereffect: failed_capture_pursuit_sequence
+- type: creature_rivalry_hook
+  trigger: attention_competition
+  aftereffect: dominance_confrontation_setup
+- type: warning_defiance_hook
+  trigger: protagonist_ignores_admonition
+  aftereffect: preparation_validation_through_survival
+- type: cultivation_breakthrough_hook
+  trigger: dormant_power_activation
+  aftereffect: new_ability_revelation_with_cost
+forbidden_defaults:
+- pattern: exposition_through_standalone_dialogue
+  description: Teaching moments must integrate with action rather than pause narrative
+- pattern: excessive_dormant_power_activation
+  description: Limit protective power triggers; each activation must feel earned and
+    dangerous
+- pattern: companion_dilution
+  description: Animal companions require distinct narrative functions; avoid quantity
+    over quality
+- pattern: artificial_cliffhanger
+  description: Pursuit hooks must have logical momentum; avoid pure danger-seeking
+    without motivation
+- pattern: intelligence_inconsistency
+  description: Protagonist cost-benefit reasoning for defying warnings must remain
+    consistent
+- pattern: resurrection_armor
+  description: Dormant power must carry meaningful cost or limitation, not pure plot
+    armor

@@ -1,0 +1,191 @@
+{
+  "book_id": "source-0026",
+  "source_ref": "distillation:ba7e540ba8c80cbb48651830",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "parsed_profile": {
+    "source_status": "complete_data_loss",
+    "chapter_count_total": 630,
+    "volume_count": 23,
+    "volume_structure": [
+      {
+        "volume": 1,
+        "chapter_range": "1-25",
+        "chapter_count": 25
+      },
+      {
+        "volume": 2,
+        "chapter_range": "26-50",
+        "chapter_count": 25
+      },
+      {
+        "volume": 3,
+        "chapter_range": "51-75",
+        "chapter_count": 25
+      },
+      {
+        "volume": 4,
+        "chapter_range": "76-100",
+        "chapter_count": 25
+      },
+      {
+        "volume": 5,
+        "chapter_range": "101-125",
+        "chapter_count": 25
+      },
+      {
+        "volume": 6,
+        "chapter_range": "126-168",
+        "chapter_count": 25,
+        "gaps": [
+          133,
+          135,
+          137,
+          139,
+          141,
+          143,
+          145,
+          147,
+          149,
+          151,
+          153,
+          155,
+          157,
+          159,
+          161,
+          163,
+          165,
+          167
+        ]
+      },
+      {
+        "volume": 7,
+        "chapter_range": "170-214",
+        "chapter_count": 25,
+        "gap": 169
+      },
+      {
+        "volume": 8,
+        "chapter_range": "216-263",
+        "chapter_count": 24
+      },
+      {
+        "volume": 9,
+        "chapter_range": "264-292",
+        "chapter_count": 26
+      },
+      {
+        "volume": 10,
+        "chapter_range": "293-318",
+        "chapter_count": 26
+      },
+      {
+        "volume": 11,
+        "chapter_range": "319-343",
+        "chapter_count": 25
+      },
+      {
+        "volume": 12,
+        "chapter_range": "344-368",
+        "chapter_count": 25,
+        "highest_segmentation": {
+          "chapter": 353,
+          "segments": 57,
+          "total_segments": 106
+        }
+      },
+      {
+        "volume": 13,
+        "chapter_range": "369-393",
+        "chapter_count": 25
+      },
+      {
+        "volume": 14,
+        "chapter_range": "394-418",
+        "chapter_count": 25
+      },
+      {
+        "volume": 15,
+        "chapter_range": "419-443",
+        "chapter_count": 25
+      },
+      {
+        "volume": 16,
+        "chapter_range": "444-468",
+        "chapter_count": 25
+      },
+      {
+        "volume": 17,
+        "chapter_range": "469-493",
+        "chapter_count": 25
+      },
+      {
+        "volume": 18,
+        "chapter_range": "494-518",
+        "chapter_count": 25
+      },
+      {
+        "volume": 19,
+        "chapter_range": "519-543",
+        "chapter_count": 25
+      },
+      {
+        "volume": 20,
+        "chapter_range": "544-568",
+        "chapter_count": 25
+      },
+      {
+        "volume": 21,
+        "chapter_range": "569-593",
+        "chapter_count": 25
+      },
+      {
+        "volume": 22,
+        "chapter_range": "594-618",
+        "chapter_count": 25
+      },
+      {
+        "volume": 23,
+        "chapter_range": "619-630",
+        "chapter_count": 12
+      }
+    ],
+    "volume_aggregation_result": "all_23_volumes_returned_llm_fallback_stubs",
+    "confidence_global": 0.0,
+    "data_integrity": "zero_extractable_content_across_entire_source",
+    "distillation_recommendation": "requires_reprocessing_through_functional_llm_pipeline_before_volume_aggregation"
+  },
+  "genre_tags": [
+    "distillation-generic"
+  ],
+  "reader_promise": "LLM structured distillation fallback.",
+  "core_engine": "unknown",
+  "state_variables": [
+    "fallback_progress"
+  ],
+  "reader_rewards": [
+    "distillable_mechanism_reliability"
+  ],
+  "reusable_mechanisms": [
+    "fallback mechanism abstraction"
+  ],
+  "non_reusable_specifics": [],
+  "risk_patterns": [
+    "complete_llm_fallback_all_volumes",
+    "zero_confidence_across_630_chapters",
+    "no_story_content_extractable",
+    "no_arc_function_determinable",
+    "no_dominant_engine_identifiable",
+    "no_state_progression_extractable",
+    "no_turning_points_extractable",
+    "no_craft_observations_extracted",
+    "no_reader_rewards_extracted",
+    "no_open_hooks_available",
+    "chapter_number_gaps_in_volume_6",
+    "chapter_511_high_segmentation_48_segments_without_content",
+    "chapter_353_extreme_segmentation_57_segments_without_content",
+    "volume_aggregation_blocked_by_source_data_unavailability"
+  ],
+  "source_id": "source-0026",
+  "distillation_source_id": "source-0026"
+}

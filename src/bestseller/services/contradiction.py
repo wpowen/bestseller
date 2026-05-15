@@ -122,6 +122,23 @@ _LATIN_STOPWORDS = frozenset(
         "you",
     }
 )
+_LOW_SIGNAL_KNOWLEDGE_KEYWORDS = frozenset(
+    {
+        "cost",
+        "costs",
+        "choice",
+        "choices",
+        "truth",
+        "secret",
+        "secrets",
+        "power",
+        "powers",
+        "believed",
+        "believes",
+        "meant",
+        "means",
+    }
+)
 
 
 def _extract_keywords(text: str | None) -> set[str]:
@@ -140,6 +157,10 @@ def _extract_keywords(text: str | None) -> set[str]:
         if word not in _LATIN_STOPWORDS:
             keywords.add(word)
     return keywords
+
+
+def _knowledge_overlap_is_actionable(overlap: set[str]) -> bool:
+    return bool(overlap - _LOW_SIGNAL_KNOWLEDGE_KEYWORDS)
 
 
 def _get_threshold(settings: AppSettings | None, attr: str, default: int) -> int:
@@ -201,7 +222,7 @@ async def _check_character_knowledge_leaks(
         for item in falsely_believes:
             item_keywords = _extract_keywords(item)
             overlap = (release_keywords & item_keywords) - participant_keywords
-            if overlap:
+            if overlap and _knowledge_overlap_is_actionable(overlap):
                 kw_str = ", ".join(sorted(overlap))
                 message = (
                     f"Character '{character.name}' currently falsely believes '{item}', "
@@ -224,7 +245,7 @@ async def _check_character_knowledge_leaks(
         for item in unaware_of:
             item_keywords = _extract_keywords(item)
             overlap = (release_keywords & item_keywords) - participant_keywords
-            if overlap:
+            if overlap and _knowledge_overlap_is_actionable(overlap):
                 kw_str = ", ".join(sorted(overlap))
                 message = (
                     f"Character '{character.name}' is currently unaware of '{item}', "

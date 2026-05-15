@@ -51,6 +51,60 @@ def _kernel_payload() -> dict[str, object]:
                 "escalation_path": "个人信任扩展到宗门制度",
             }
         ],
+        "worldview_kernel": {
+            "premise": "宗门世界的资源、权力和成长都由可量化的信任债驱动。",
+            "uniqueness_principle": "世界观必须让经营选择、关系选择和修炼选择共用同一套债务规则。",
+            "invariants": [
+                {
+                    "key": "trust_debt_accounting",
+                    "rule": "任何资源收益都会形成可追踪的信任债。",
+                    "violation_cost": "绕过信任债会导致灵田产出衰败或盟友关系破裂。",
+                    "narrative_use": "把升级爽点转化为后续关系和制度压力。",
+                }
+            ],
+            "systems": [
+                {
+                    "name": "信任债经营体系",
+                    "operating_logic": "资源产出取决于授权者与执行者之间的信任余额。",
+                    "resources_or_authority": "灵田、账册、授权令、盟友信用。",
+                    "limits": "短期压榨可以提速，但会透支后续产出。",
+                    "costs": "每次扩张都必须偿还一个关系或制度债务。",
+                    "failure_modes": ["信任挤兑", "账册被篡改"],
+                }
+            ],
+            "factions": [
+                {
+                    "name": "宗门长老会",
+                    "public_role": "管理宗门资源分配。",
+                    "hidden_agenda": "用短期收益证明主角路线不可持续。",
+                    "resources": "灵田批文、执法堂、账房。",
+                    "pressure_on_protagonist": "逼主角用控制替代信任。",
+                }
+            ],
+            "locations": [
+                {
+                    "name": "外门灵田",
+                    "surface_function": "低阶弟子生产资源的场所。",
+                    "hidden_function": "测试信任债规则是否成立的第一块实验田。",
+                    "conflict_sources": ["产出考核", "水源争夺"],
+                    "evidence_or_resource_types": ["灵田账册", "灌溉令牌"],
+                }
+            ],
+            "reveal_ladder": [
+                {
+                    "stage": "volume-1",
+                    "reveal": "信任债不是主角发明，而是宗门早已废弃的旧制度。",
+                    "earliest_chapter": 8,
+                    "unlock_condition": "第一处灵田经营失败或险胜后才能揭示。",
+                }
+            ],
+            "integration_contract": {
+                "chapter_rule": "每章至少让一个世界规则通过选择、证据或代价落地。",
+                "volume_rule": "每卷关闭一个局部规则冲突，并打开更高层级的制度冲突。",
+                "reveal_rule": "未到揭示点的世界真相只能通过物件或异常暗示。",
+                "continuity_rule": "所有新地点、势力和规则必须回写到世界观账本。",
+            },
+        },
         "structure_strategy": {
             "macro_strategy": "卷内经营闭环，卷间扩大制度风险",
             "chapter_engine": "每章推进一个资源账或关系账",
@@ -104,6 +158,8 @@ def test_story_design_kernel_round_trips_and_renders_prompt_block() -> None:
     assert "Story Design Kernel" in block
     assert "Reader promise" in block
     assert "Change vectors" in block
+    assert "Worldview kernel" in block
+    assert "trust_debt_accounting" in block
     assert "灵田经营权主线" in block
 
 
@@ -129,3 +185,96 @@ def test_kernel_requires_at_least_one_main_plot_line() -> None:
 
     with pytest.raises(ValidationError):
         story_design_kernel_from_dict(payload)
+
+
+def test_worldview_kernel_requires_operational_invariants() -> None:
+    payload = deepcopy(_kernel_payload())
+    worldview = payload["worldview_kernel"]
+    assert isinstance(worldview, dict)
+    worldview["invariants"] = []
+
+    with pytest.raises(ValidationError):
+        story_design_kernel_from_dict(payload)
+
+
+def test_worldview_kernel_accepts_distilled_operational_contracts() -> None:
+    payload = deepcopy(_kernel_payload())
+    worldview = payload["worldview_kernel"]
+    assert isinstance(worldview, dict)
+    worldview.update(
+        {
+            "distilled_mechanism_bindings": [
+                {
+                    "aggregate_key": "otherworld-cross-system",
+                    "mechanism_id": "cross-system-rule-arbitrage",
+                    "design_role": "world_pressure",
+                    "source_confidence": 0.86,
+                    "required_project_binding": "绑定到本书的信任债规则套利。",
+                    "state_variables": [
+                        "cross_system_understanding",
+                        "higher_authority_attention",
+                    ],
+                    "required_cost": "每次套利都会提高长老会关注度。",
+                    "anti_copy_boundaries": ["specific_family_inheritance_murder"],
+                }
+            ],
+            "state_variables": [
+                {
+                    "key": "higher_authority_attention",
+                    "variable_type": "counter",
+                    "current_value": "0",
+                    "desired_direction": "increase_with_visible_rule_breaks",
+                    "change_triggers": ["公开利用信任债规则套利"],
+                    "failure_mode": "套利只给收益不带来更高层压力。",
+                    "source_mechanism_ids": ["cross-system-rule-arbitrage"],
+                }
+            ],
+            "asset_ledger": [
+                {
+                    "key": "trust_debt_ledger",
+                    "asset_type": "world_rule_asset",
+                    "value": "证明资源收益和信任债可互相换算。",
+                    "cost": "每次使用都暴露主角掌握旧制度。",
+                    "exposure_risk": "长老会开始审计账册来源。",
+                    "attention_sources": ["宗门长老会"],
+                    "source_mechanism_ids": ["asset-value-attracts-risk"],
+                }
+            ],
+            "authority_claims": [
+                {
+                    "claimant": "宗门长老会",
+                    "target": "外门灵田规则解释权",
+                    "claim_basis": "宗门旧制和批文权。",
+                    "legitimacy": "公开合法但动机偏私。",
+                    "conflict_with": ["主角的信任债账本"],
+                    "escalation_path": "从账册审查升级为制度审判。",
+                }
+            ],
+            "scene_templates": [
+                {
+                    "key": "social-venue-world-display",
+                    "template_name": "社会场景展示规则",
+                    "use_case": "在灵田交割现场展示规则并制造关系压力。",
+                    "required_change": ["resource", "faction_pressure"],
+                    "source_mechanism_ids": ["social-venue-world-display"],
+                }
+            ],
+            "anti_copy_boundaries": ["specific_family_inheritance_murder"],
+        }
+    )
+
+    kernel = story_design_kernel_from_dict(payload)
+    serialized = story_design_kernel_to_dict(kernel)
+    serialized_worldview = serialized["worldview_kernel"]
+
+    assert serialized_worldview["state_variables"][0]["key"] == (
+        "higher_authority_attention"
+    )
+
+    block = render_story_design_kernel_prompt_block(kernel)
+
+    assert "higher_authority_attention" in block
+    assert "cross-system-rule-arbitrage" in block
+    assert "trust_debt_ledger" in block
+    assert "宗门长老会 -> 外门灵田规则解释权" in block
+    assert "specific_family_inheritance_murder" in block

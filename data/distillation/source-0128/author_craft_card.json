@@ -1,0 +1,62 @@
+{
+  "source_id": "source-0128",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "style_safety_policy": "UNAVAILABLE — no source content exists to characterize stylistic safety parameters. Authorial voice, vocabulary range, tonal boundaries, and content sensitivity markers cannot be determined from empty chapter cards.",
+  "pov_and_distance": "{'status': 'undetermined', 'reason': 'All 49 chapter cards returned identical LLM fallback stubs with zero extractable narrative content. Point-of-view selection, narrative distance calibration, and perspective stability patterns cannot be characterized.', 'dominant_pov': None, 'distance_modulation': None, 'reliability_variance': None}",
+  "sentence_rhythm": [
+    "{'status': 'undetermined', 'reason': 'No prose passages available for rhythm analysis. Sentence length distribution, syntactic variation, cadence patterns, and momentum profiles remain uncharacterizable.', 'rhythm_profile': None, 'clause_complexity': None, 'rhythm_as_tool': None}"
+  ],
+  "paragraphing": [
+    "{'status': 'undetermined', 'reason': 'Source content unavailable. Paragraph structure, white space usage, scene breaks, and information density distribution cannot be analyzed.', 'typical_para_length': None, 'scene_versus_summary_balance': None, 'pacing_via_white_space': None}"
+  ],
+  "dialogue_system": [
+    "{'status': 'undetermined', 'reason': 'Zero dialogue passages extracted. Speech-to-narration ratio, dialogue tags, subtext mechanics, and conversation pacing cannot be characterized.', 'dominant_dialogue_mode': None, 'tag_preferences': None, 'subtext_layering': None, 'conversation_pacing': None}"
+  ],
+  "description_strategy": [
+    "{'status': 'undetermined', 'reason': 'No descriptive passages available for analysis. Sensor prioritization, metaphor density, scenic anchoring, and environmental pacing cannot be characterized.', 'sensory_priorities': None, 'description_pacing': None, 'metaphor_frequency': None, 'filter_word_usage': None}"
+  ],
+  "exposition_strategy": [
+    "{'status': 'undetermined', 'reason': 'Source content unavailable. Backstory delivery, information timing, explanatory burden, and reveal sequencing cannot be analyzed.', 'exposition_loading': None, 'trust_placement': None, 'withholding_patterns': None}"
+  ],
+  "emotional_temperature": [
+    "{'status': 'undetermined', 'reason': 'No narrative content to assess emotional register, affect modulation, tension escalation patterns, or catharsis mechanisms.', 'baseline_temperature': None, 'modulation_range': None, 'catharsis_mechanisms': None}"
+  ],
+  "hooking_and_transitions": [
+    "{'status': 'undetermined', 'reason': 'Chapter cards lack narrative hooks, cliffhanger structures, or transition mechanics. Opening gambits, cliffhanger types, and scene-breaking techniques remain uncharacterizable.', 'opening_strategies': None, 'suspense_mechanisms': None, 'transition_pacing': None, 'closure_patterns': None}"
+  ],
+  "adaptation_guidelines": [
+    "{'status': 'unavailable', 'reason': 'No craft profile can be constructed from empty source data. Adaptation notes, visual-medium translation considerations, and medium-specific opportunities cannot be identified.'}"
+  ],
+  "taboo_copy_signals": [
+    "{'status': 'undetermined', 'reason': 'No source content exists to identify linguistic fingerprints, phrase patterns, or authorial signatures requiring avoidance. Taboo signals remain undefined pending actual source material.', 'structural_taboos': [], 'phrasal_taboos': [], 'narrative_taboos': []}"
+  ],
+  "confidence": 0.0,
+  "distillation_metadata": {
+    "source_id": "source-0128",
+    "volumes_processed": 2,
+    "chapters_processed": 49,
+    "successful_extractions": 0,
+    "failed_extractions": 49,
+    "confidence_ceiling": 0.0,
+    "aggregation_status": "blocked_by_empty_inputs",
+    "book_design_fingerprint_status": "cannot_construct",
+    "volume_card_aggregation_status": "blocked",
+    "craft_profile_status": "undetermined"
+  },
+  "failure_modes": [
+    "llm_fallback",
+    "no_source_content",
+    "zero_confidence_all_chapters",
+    "aggregation_blocked",
+    "design_fingerprint_construction_impossible",
+    "all_49_chapters_identical_fallback_stubs"
+  ],
+  "craft_profile_availability": "unavailable",
+  "narrative_mechanism_classification": "undetermined",
+  "reusable_mechanisms": [],
+  "reader_rewards_identified": [],
+  "volume_1_craft_profile_status": "unavailable",
+  "volume_2_craft_profile_status": "unavailable",
+  "distillation_source_id": "source-0128"
+}

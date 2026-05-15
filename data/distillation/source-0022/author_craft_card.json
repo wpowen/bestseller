@@ -1,0 +1,36 @@
+{
+  "source_id": "source-0022",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "style_safety_policy": "Data unavailable — all 339 chapters across 14 volumes returned llm_fallback stubs with zero confidence; no style safety signals could be extracted for policy derivation.",
+  "pov_and_distance": "No extractable POV data — entire source range (chapters 1–339, volumes 1–14) consists of llm_fallback placeholders; narrative distance controls indeterminate.",
+  "sentence_rhythm": [
+    "No craft observations derivable — all chapter cards marked llm_fallback with confidence 0.0; sentence-level rhythm mechanics unavailable."
+  ],
+  "paragraphing": [
+    "Data unavailable — paragraph structure, pacing intervals, and white-space rhythm signals could not be extracted from zero-confidence source material."
+  ],
+  "dialogue_system": [
+    "No extractable dialogue mechanics — all constituent chapter cards registered as llm_fallback stubs; dialogue method, attribution patterns, and speech-to-narration ratios indeterminate."
+  ],
+  "description_strategy": [
+    "No description patterns derivable — source material inaccessible across entire chapter range; sensory encoding, object-focus cadence, and scenic description density unavailable."
+  ],
+  "exposition_strategy": [
+    "No exposition placement data available — all 339 chapters are llm_fallback stubs; backstory injection points, info-dump avoidance patterns, and implicit exposition mechanics could not be extracted."
+  ],
+  "emotional_temperature": [
+    "No emotional temperature data extractable — chapter-level craft observations empty; affective register, tension calibration patterns, and emotional pacing unavailable for analysis."
+  ],
+  "hooking_and_transitions": [
+    "No hook or transition mechanics available — all volume cards report empty turning_point arrays and zero-confidence chapter cards; cliffhanger structures, chapter-ending hook types, and scene-transition patterns indeterminate."
+  ],
+  "adaptation_guidelines": [
+    "Insufficient data for adaptation guidance — zero extractable craft signals across 14 volumes; no dialogue density ratios, scenic structure ratios, or actionable scene-breakdown mechanics available for media adaptation planning."
+  ],
+  "taboo_copy_signals": [
+    "No source material accessible for signal derivation — complete distillation blackout; no reusable prose mechanics, named craft patterns, or distinctive stylistic signatures available for exclusion mapping."
+  ],
+  "confidence": 0.0,
+  "distillation_source_id": "source-0022"
+}

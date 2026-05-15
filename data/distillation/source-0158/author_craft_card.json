@@ -1,0 +1,36 @@
+{
+  "source_id": "source-0158",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "style_safety_policy": "generic",
+  "pov_and_distance": "unknown",
+  "sentence_rhythm": [
+    "unknown"
+  ],
+  "paragraphing": [
+    "unknown"
+  ],
+  "dialogue_system": [
+    "unknown"
+  ],
+  "description_strategy": [
+    "unknown"
+  ],
+  "exposition_strategy": [
+    "unknown"
+  ],
+  "emotional_temperature": [
+    "unknown"
+  ],
+  "hooking_and_transitions": [
+    "unknown"
+  ],
+  "adaptation_guidelines": [
+    "none"
+  ],
+  "taboo_copy_signals": [
+    "source titles, author names, exact phrases, named entities, and distinctive sentence templates"
+  ],
+  "confidence": 0.0,
+  "distillation_source_id": "source-0158"
+}

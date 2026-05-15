@@ -1,0 +1,41 @@
+{
+  "book_id": "source-0066",
+  "source_ref": "distillation:287f91ef83fabb21a3bfa63b",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "parsed_profile": {
+    "distillation_status": "complete_failure",
+    "data_quality": "zero_content_extracted",
+    "confidence_aggregate": 0.0,
+    "volume_coverage": "10_volumes",
+    "chapter_coverage": "228_chapters",
+    "failure_scope": "universal_llm_fallback",
+    "extraction_attempted": true,
+    "extraction_successful": false
+  },
+  "genre_tags": [
+    "distillation-generic"
+  ],
+  "reader_promise": "LLM structured distillation fallback.",
+  "core_engine": "unknown",
+  "state_variables": [
+    "fallback_progress"
+  ],
+  "reader_rewards": [
+    "distillable_mechanism_reliability"
+  ],
+  "reusable_mechanisms": [
+    "fallback mechanism abstraction"
+  ],
+  "non_reusable_specifics": [],
+  "risk_patterns": [
+    "source_content_inaccessible",
+    "llm_unavailable_across_all_volumes",
+    "zero_confidence_extraction",
+    "no_craft_analysis_possible",
+    "empty_arrays_across_all_chapters",
+    "metadata_propagation_errors_detected"
+  ],
+  "source_id": "source-0066",
+  "distillation_source_id": "source-0066"
+}

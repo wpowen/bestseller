@@ -1,0 +1,24 @@
+key: distillation-generic
+name: Generic Distillation Fallback Design Patch
+source_ids:
+- source-0029
+status: fallback_stub
+applies_to_categories:
+- distillation-generic
+required_contracts: []
+state_variables:
+- fallback_progress
+chapter_change_vectors: []
+reader_rewards:
+- distillable_mechanism_reliability
+hook_or_aftereffect_types:
+- stub_reliability_promise
+forbidden_defaults:
+- real_content_expectation
+- extractable_story_elements
+- actual_narrative_structure
+- genuine_reader_engagement_hooks
+- specific_craft_observations
+- open_chapter_hooks
+- chapter_aftereffects
+- reward_fulfillment_paths

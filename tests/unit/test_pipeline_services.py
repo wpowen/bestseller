@@ -6,6 +6,10 @@ from uuid import uuid4
 
 import pytest
 
+from bestseller.domain.context import SceneWriterContextPacket
+from bestseller.domain.contradiction import ContradictionCheckResult, ContradictionViolation
+from bestseller.domain.knowledge import SceneKnowledgeRefreshResult
+from bestseller.domain.pipeline import ProjectPipelineResult, ProjectRepairResult
 from bestseller.infra.db.models import (
     ChapterDraftVersionModel,
     ChapterModel,
@@ -19,10 +23,6 @@ from bestseller.infra.db.models import (
     WorkflowRunModel,
     WorkflowStepRunModel,
 )
-from bestseller.domain.context import SceneWriterContextPacket
-from bestseller.domain.contradiction import ContradictionCheckResult, ContradictionViolation
-from bestseller.domain.knowledge import SceneKnowledgeRefreshResult
-from bestseller.domain.pipeline import ProjectPipelineResult, ProjectRepairResult
 from bestseller.services import contradiction as contradiction_services
 from bestseller.services import drafts as draft_services
 from bestseller.services import exports as export_services
@@ -33,8 +33,29 @@ from bestseller.services.truth_version import TruthVersionStaleError
 from bestseller.services.write_safety_gate import WriteSafetyBlockError, WriteSafetyFinding
 from bestseller.settings import load_settings
 
-
 pytestmark = pytest.mark.unit
+
+
+def test_volume_outline_auto_repair_constraints_are_exact_count_directives() -> None:
+    constraints = pipeline_services._volume_outline_auto_repair_constraints(
+        language="zh-CN",
+        volume_number=2,
+        expected_count=50,
+        error_message="returned 40/50 chapters",
+    )
+
+    assert any("第2卷" in item for item in constraints)
+    assert any("50 个章节对象" in item for item in constraints)
+    assert any("不得" in item for item in constraints)
+
+
+def test_volume_outline_auto_repairable_requires_count_contract_failure() -> None:
+    assert pipeline_services._is_volume_outline_auto_repairable(
+        RuntimeError("failed chapter-outline repair loop: returned 40/50 chapters")
+    )
+    assert not pipeline_services._is_volume_outline_auto_repairable(
+        RuntimeError("Prewrite readiness gate failed")
+    )
 
 
 class FakeSession:
@@ -125,6 +146,66 @@ async def test_recover_session_after_nonfatal_error_rolls_back_dirty_session() -
 
     assert session.rollback_calls == 1
     assert session.is_active is True
+
+
+def test_outline_chapters_for_volume_filters_existing_cumulative_batch() -> None:
+    content = {
+        "batch_name": "progressive-merged-outline",
+        "chapters": [
+            {"chapter_number": 1, "volume_number": 1},
+            {"chapter_number": 51, "volume_number": 2},
+            {"chapter_number": 52, "volume_number": 2},
+            {"chapter_number": 101, "volume_number": 3},
+        ],
+    }
+
+    chapters = pipeline_services._outline_chapters_for_volume(content, 2)
+
+    assert [chapter["chapter_number"] for chapter in chapters] == [51, 52]
+
+
+@pytest.mark.asyncio
+async def test_resume_outline_chapters_for_volume_requires_expected_count(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    artifact = type(
+        "ArtifactStub",
+        (),
+        {
+            "content": {
+                "chapters": [
+                    {"chapter_number": 51, "volume_number": 2},
+                    {"chapter_number": 52, "volume_number": 2},
+                ]
+            }
+        },
+    )()
+
+    async def fake_get_latest_planning_artifact(session, *, project_id, artifact_type):
+        assert artifact_type == pipeline_services.ArtifactType.CHAPTER_OUTLINE_BATCH
+        return artifact
+
+    monkeypatch.setattr(
+        pipeline_services,
+        "get_latest_planning_artifact",
+        fake_get_latest_planning_artifact,
+    )
+
+    enough = await pipeline_services._resume_outline_chapters_for_volume(
+        FakeSession(),
+        project_id=uuid4(),
+        volume_number=2,
+        expected_count=2,
+    )
+    too_few = await pipeline_services._resume_outline_chapters_for_volume(
+        FakeSession(),
+        project_id=uuid4(),
+        volume_number=2,
+        expected_count=3,
+    )
+
+    assert len(enough) == 2
+    assert too_few == []
 
 
 def build_project() -> ProjectModel:
@@ -2381,6 +2462,108 @@ async def test_run_chapter_pipeline_blocks_failed_review_even_when_accept_on_sta
 
 
 @pytest.mark.asyncio
+async def test_run_chapter_pipeline_accepts_safe_draft_after_review_stall(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = build_project()
+    chapter = build_chapter(project.id)
+    scene = build_scene(project.id, chapter.id)
+    chapter_draft = ChapterDraftVersionModel(
+        project_id=project.id,
+        chapter_id=chapter.id,
+        version_no=1,
+        content_md="# 第1章 失准星图\n\n草稿通过确定性质量门禁，但评论仍建议继续打磨。",
+        word_count=2200,
+        assembled_from_scene_draft_ids=[],
+        is_current=True,
+    )
+    chapter_draft.id = uuid4()
+    report = type("ChapterReportStub", (), {"id": uuid4(), "llm_run_id": uuid4()})()
+    quality = type("ChapterQualityStub", (), {"id": uuid4()})()
+    rewrite_task = type("ChapterRewriteTaskStub", (), {"id": uuid4(), "status": "pending"})()
+
+    async def fake_get_project_by_slug(session, slug: str) -> ProjectModel:
+        return project
+
+    async def fake_run_scene_pipeline(
+        session,
+        settings,
+        project_slug,
+        chapter_number,
+        scene_number,
+        **kwargs,
+    ):
+        return pipeline_services.ScenePipelineResult(
+            workflow_run_id=uuid4(),
+            project_id=project.id,
+            chapter_id=chapter.id,
+            scene_id=scene.id,
+            chapter_number=chapter.chapter_number,
+            scene_number=scene.scene_number,
+            current_draft_id=uuid4(),
+            current_draft_version_no=1,
+            final_verdict="pass",
+            review_report_id=uuid4(),
+            quality_score_id=uuid4(),
+            review_iterations=1,
+            rewrite_iterations=0,
+            requires_human_review=False,
+            llm_run_ids=[],
+        )
+
+    async def fake_assemble_chapter_draft(session, project_slug: str, chapter_number: int, *, settings=None):
+        chapter.production_state = "ok"
+        chapter.current_word_count = chapter_draft.word_count
+        return chapter_draft
+
+    async def fake_review_chapter_draft(
+        session,
+        settings,
+        project_slug,
+        chapter_number,
+        **kwargs,
+    ):
+        return (
+            type("ChapterReviewResultStub", (), {"verdict": "rewrite", "severity_max": "high"})(),
+            report,
+            quality,
+            rewrite_task,
+        )
+
+    monkeypatch.setattr(pipeline_services, "get_project_by_slug", fake_get_project_by_slug)
+    monkeypatch.setattr(pipeline_services, "run_scene_pipeline", fake_run_scene_pipeline)
+    monkeypatch.setattr(pipeline_services, "assemble_chapter_draft", fake_assemble_chapter_draft)
+    monkeypatch.setattr(pipeline_services, "review_chapter_draft", fake_review_chapter_draft)
+
+    settings = build_settings()
+    settings.pipeline.accept_on_stall = True
+    settings.pipeline.chapter_review_block_on_failure = True
+    settings.quality.max_chapter_revisions = 0
+    session = FakeSession(
+        scalar_results=[chapter],
+        scalars_results=[[scene]],
+    )
+
+    result = await pipeline_services.run_chapter_pipeline(
+        session,
+        settings,
+        "my-story",
+        1,
+        requested_by="tester",
+        export_markdown=False,
+    )
+
+    workflow_runs = [obj for obj in session.added if isinstance(obj, WorkflowRunModel)]
+
+    assert result.final_verdict == "rewrite"
+    assert result.requires_human_review is False
+    assert result.chapter_draft_id == chapter_draft.id
+    assert chapter.status == "complete"
+    assert chapter.production_state == "ok"
+    assert workflow_runs[0].status == "completed"
+
+
+@pytest.mark.asyncio
 async def test_run_project_pipeline_exports_project_checkpoint_when_human_review_required(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -2848,6 +3031,104 @@ async def test_run_project_pipeline_blocks_project_consistency_failure_despite_a
 
 
 @pytest.mark.asyncio
+async def test_run_project_pipeline_warns_on_partial_project_consistency_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = build_project()
+    chapter = build_chapter(project.id)
+    chapter_result = pipeline_services.ChapterPipelineResult(
+        workflow_run_id=uuid4(),
+        project_id=project.id,
+        chapter_id=chapter.id,
+        chapter_number=1,
+        scene_results=[],
+        chapter_draft_id=uuid4(),
+        chapter_draft_version_no=1,
+        requires_human_review=False,
+    )
+
+    async def fake_get_project_by_slug(session, slug: str) -> ProjectModel:
+        return project
+
+    async def fake_load_project_chapters(session, project_id):
+        return [chapter]
+
+    async def fake_run_chapter_pipeline(
+        session,
+        settings,
+        project_slug,
+        chapter_number,
+        **kwargs,
+    ):
+        return chapter_result
+
+    async def fake_review_project_consistency(
+        session,
+        settings,
+        project_slug: str,
+        **kwargs,
+    ):
+        return (
+            type("ProjectReviewResultStub", (), {"verdict": "attention"})(),
+            type("ProjectReviewReportStub", (), {"id": uuid4()})(),
+            type("ProjectReviewQualityStub", (), {"id": uuid4()})(),
+        )
+
+    monkeypatch.setattr(pipeline_services, "get_project_by_slug", fake_get_project_by_slug)
+    monkeypatch.setattr(pipeline_services, "_load_project_chapters", fake_load_project_chapters)
+    monkeypatch.setattr(pipeline_services, "run_chapter_pipeline", fake_run_chapter_pipeline)
+    monkeypatch.setattr(
+        pipeline_services,
+        "review_project_consistency",
+        fake_review_project_consistency,
+    )
+    monkeypatch.setattr(
+        pipeline_services,
+        "materialize_latest_narrative_graph",
+        AsyncMock(
+            return_value=type(
+                "NarrativeGraphResultStub",
+                (),
+                {"workflow_run_id": uuid4(), "plot_arc_count": 3, "clue_count": 1},
+            )()
+        ),
+    )
+    monkeypatch.setattr(
+        pipeline_services,
+        "materialize_latest_narrative_tree",
+        AsyncMock(
+            return_value=type(
+                "NarrativeTreeResultStub",
+                (),
+                {"workflow_run_id": uuid4(), "node_count": 16},
+            )()
+        ),
+    )
+
+    settings = build_settings()
+    settings.pipeline.project_consistency_block_on_failure = True
+    session = FakeSession()
+    result = await pipeline_services.run_project_pipeline(
+        session,
+        settings,
+        "my-story",
+        requested_by="tester",
+        export_markdown=False,
+        current_volume_number=2,
+        total_volumes=3,
+        chapter_numbers={1},
+    )
+
+    workflow_runs = [obj for obj in session.added if isinstance(obj, WorkflowRunModel)]
+
+    assert result.requires_human_review is False
+    assert result.final_verdict == "attention"
+    assert workflow_runs[0].status == "completed"
+    assert workflow_runs[0].metadata_json["project_consistency_warn_only"] is True
+    assert workflow_runs[0].metadata_json["project_consistency_scope"] == "partial_volume"
+
+
+@pytest.mark.asyncio
 async def test_run_project_pipeline_blocks_qimao_without_planning_contract(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -3086,6 +3367,49 @@ async def test_run_project_pipeline_creates_whole_book_quality_rewrite_task(
         "volume_plan": [
             {"volume_number": 1, "arc_ranges": [[1, 4]], "chapter_count_target": 4}
         ],
+        "emotion_driven_kernel": {
+            "version": 1,
+            "reader_emotion_promise": "读者追看沈姝如何赢下一步并承担代价。",
+            "primary_reader_waiting": ["旧案何时爆开"],
+            "empathy_contracts": [
+                {
+                    "contract_id": "pipeline-empathy",
+                    "character_key": "沈姝",
+                    "chapter_range": "1-4",
+                    "situation": "旧案证据被夺走。",
+                    "current_desire": "夺回证据。",
+                    "fear_or_loss": "失败会失去救母亲的机会。",
+                    "flaw_pressure": "习惯独自承担。",
+                    "sensory_entry": "门外脚步声逼近。",
+                    "judgment_logic": "只能在证据残缺时判断。",
+                    "emotional_reaction": "恐惧后进入行动。",
+                    "reasonable_action": "先保住印章。",
+                    "consequence": "赢下一步但暴露身份的代价留下。",
+                }
+            ],
+            "bomb_contracts": [],
+            "antagonist_moral_contracts": [],
+            "ending_texture_contract": {
+                "ending_type": "HE",
+                "core_wish_fulfilled": "母亲冤屈被洗清。",
+                "relationship_settlement": "母女重新并肩。",
+                "irreversible_cost_retained": "旧身份不能复原。",
+                "theme_answer": "胜利是带着伤痕选择自由。",
+                "future_open": "未来仍然打开。",
+            },
+            "emotion_chain": [
+                {
+                    "chapter_range": "1-4",
+                    "target_reader_emotion": "焦虑到满足",
+                    "reader_waiting_for": "旧案证据兑现。",
+                    "reader_worry": "母亲藏身处暴露。",
+                    "pressure_source": "港务官压迫。",
+                    "payoff_or_aftereffect": "证据兑现但身份暴露。",
+                    "callback": "印章",
+                }
+            ],
+            "callback_motifs": ["印章"],
+        },
     }
     chapters: list[ChapterModel] = []
     draft_by_id: dict[object, ChapterDraftVersionModel] = {}
@@ -3172,6 +3496,12 @@ async def test_run_project_pipeline_creates_whole_book_quality_rewrite_task(
     assert "全书质量门禁重写任务" in rewrite_tasks[0].instructions
     assert project.metadata_json["whole_book_quality_gate_blocked"] is True
     assert project.metadata_json["whole_book_quality_report"]["passed"] is False
+    assert (
+        project.metadata_json["whole_book_quality_report"]["metrics"]["emotion_driven"][
+            "available"
+        ]
+        is True
+    )
     assert len(project.metadata_json["whole_book_engagement_ledger"]) == 4
     assert "whole_book_quality_gate_failed" in progress_events
 
@@ -3765,3 +4095,310 @@ async def test_progressive_autowrite_skips_bible_materialization_on_resume(
     assert "foundation_planning_skipped_resume" in progress_events
     assert "story_bible_materialization_skipped_resume" in progress_events
     assert "story_bible_materialization_started" not in progress_events
+
+
+@pytest.mark.asyncio
+async def test_progressive_autowrite_refreshes_truth_when_resuming_cached_outline(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = build_project()
+    settings = build_settings()
+    settings.pipeline.resume_enabled = True
+    settings.pipeline.require_foundation_identity_lock = False
+
+    completed_bible_run = WorkflowRunModel(
+        project_id=project.id,
+        workflow_type=pipeline_services.WORKFLOW_TYPE_MATERIALIZE_STORY_BIBLE,
+        status="completed",
+    )
+    completed_bible_run.id = uuid4()
+
+    volume_plan_artifact = type(
+        "PlanningArtifactStub",
+        (),
+        {
+            "source_run_id": uuid4(),
+            "content": [
+                {
+                    "volume_number": 2,
+                    "title": "Volume 2",
+                    "chapter_count_target": 2,
+                }
+            ],
+        },
+    )()
+
+    refresh_calls: list[str] = []
+    call_order: list[str] = []
+
+    async def fake_get_project_by_slug(session, slug: str):
+        return project
+
+    async def fake_get_latest_planning_artifact(session, *, project_id, artifact_type):
+        if artifact_type == pipeline_services.ArtifactType.VOLUME_PLAN:
+            return volume_plan_artifact
+        return type("ArtifactStub", (), {"content": {}})()
+
+    async def fake_get_latest_completed_workflow_run(session, *, project_id, workflow_type):
+        if workflow_type == pipeline_services.WORKFLOW_TYPE_MATERIALIZE_STORY_BIBLE:
+            return completed_bible_run
+        return None
+
+    async def fake_volume_fully_written(session, project_id, volume_number):
+        return False, 0, 0
+
+    async def fake_resume_outline_chapters_for_volume(
+        session,
+        *,
+        project_id,
+        volume_number,
+        expected_count,
+    ):
+        assert volume_number == 2
+        assert expected_count == 2
+        return [
+            {"chapter_number": 51, "volume_number": 2},
+            {"chapter_number": 52, "volume_number": 2},
+        ]
+
+    async def fake_generate_volume_plan(*args, **kwargs):
+        raise AssertionError("cached outline resume must not regenerate the volume plan")
+
+    async def fake_materialize_latest_chapter_outline_batch(*args, **kwargs):
+        return type("Result", (), {"workflow_run_id": uuid4(), "project_id": project.id})()
+
+    async def fake_materialize_latest_narrative_graph(*args, **kwargs):
+        return type("Result", (), {"workflow_run_id": uuid4(), "project_id": project.id})()
+
+    async def fake_materialize_latest_narrative_tree(*args, **kwargs):
+        return type("Result", (), {"workflow_run_id": uuid4(), "project_id": project.id})()
+
+    async def fake_refresh_truth(session, settings, project_arg, *, requested_by, progress=None):
+        refresh_calls.append(project_arg.slug)
+        call_order.append("refresh_truth")
+        return True
+
+    async def fake_run_project_pipeline(*args, **kwargs):
+        call_order.append("run_project_pipeline")
+        assert call_order == ["refresh_truth", "run_project_pipeline"]
+        return ProjectPipelineResult(
+            workflow_run_id=uuid4(),
+            project_id=project.id,
+            project_slug=project.slug,
+            chapter_results=[],
+        )
+
+    async def fake_checkpoint_commit(session) -> None:
+        return None
+
+    async def fake_collect_volume_writing_feedback(session, project_id, volume_number):
+        return {"character_states": [], "arc_summary": {"unresolved_threads": []}}
+
+    def fake_summarize_volume_feedback(feedback, *, language: str):
+        return ""
+
+    import bestseller.services.planning_context as planning_context
+
+    monkeypatch.setattr(pipeline_services, "get_project_by_slug", fake_get_project_by_slug)
+    monkeypatch.setattr(
+        pipeline_services, "get_latest_planning_artifact", fake_get_latest_planning_artifact
+    )
+    monkeypatch.setattr(
+        pipeline_services,
+        "get_latest_completed_workflow_run",
+        fake_get_latest_completed_workflow_run,
+    )
+    monkeypatch.setattr(pipeline_services, "_volume_fully_written", fake_volume_fully_written)
+    monkeypatch.setattr(
+        pipeline_services,
+        "_resume_outline_chapters_for_volume",
+        fake_resume_outline_chapters_for_volume,
+    )
+    monkeypatch.setattr(pipeline_services, "generate_volume_plan", fake_generate_volume_plan)
+    monkeypatch.setattr(
+        pipeline_services,
+        "materialize_latest_chapter_outline_batch",
+        fake_materialize_latest_chapter_outline_batch,
+    )
+    monkeypatch.setattr(
+        pipeline_services,
+        "materialize_latest_narrative_graph",
+        fake_materialize_latest_narrative_graph,
+    )
+    monkeypatch.setattr(
+        pipeline_services,
+        "materialize_latest_narrative_tree",
+        fake_materialize_latest_narrative_tree,
+    )
+    monkeypatch.setattr(
+        pipeline_services,
+        "_refresh_stale_truth_materializations_for_resume",
+        fake_refresh_truth,
+    )
+    monkeypatch.setattr(pipeline_services, "run_project_pipeline", fake_run_project_pipeline)
+    monkeypatch.setattr(pipeline_services, "_checkpoint_commit", fake_checkpoint_commit)
+    monkeypatch.setattr(
+        planning_context,
+        "collect_volume_writing_feedback",
+        fake_collect_volume_writing_feedback,
+    )
+    monkeypatch.setattr(
+        planning_context,
+        "summarize_volume_feedback",
+        fake_summarize_volume_feedback,
+    )
+
+    payload = pipeline_services.ProjectCreate(
+        slug=project.slug,
+        title=project.title,
+        genre=project.genre,
+        target_word_count=project.target_word_count,
+        target_chapters=project.target_chapters,
+    )
+
+    await pipeline_services.run_progressive_autowrite_pipeline(
+        FakeSession(),
+        settings,
+        project_payload=payload,
+        premise="...",
+        export_markdown=False,
+        auto_repair_on_attention=False,
+    )
+
+    assert refresh_calls == [project.slug]
+
+
+@pytest.mark.asyncio
+async def test_progressive_autowrite_stops_later_volume_planning_when_volume_blocks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = build_project()
+    settings = build_settings()
+    settings.pipeline.resume_enabled = True
+    settings.pipeline.require_foundation_identity_lock = False
+
+    completed_bible_run = WorkflowRunModel(
+        project_id=project.id,
+        workflow_type=pipeline_services.WORKFLOW_TYPE_MATERIALIZE_STORY_BIBLE,
+        status="completed",
+    )
+    completed_bible_run.id = uuid4()
+
+    volume_plan_artifact = type(
+        "PlanningArtifactStub",
+        (),
+        {
+            "source_run_id": uuid4(),
+            "content": [
+                {"volume_number": 1, "title": "Volume 1", "chapter_count_target": 2},
+                {"volume_number": 2, "title": "Volume 2", "chapter_count_target": 2},
+            ],
+        },
+    )()
+    checked_volumes: list[int] = []
+    run_volumes: list[int] = []
+    progress_events: list[str] = []
+
+    async def fake_get_project_by_slug(session, slug: str):
+        return project
+
+    async def fake_get_latest_planning_artifact(session, *, project_id, artifact_type):
+        if artifact_type == pipeline_services.ArtifactType.VOLUME_PLAN:
+            return volume_plan_artifact
+        return type("ArtifactStub", (), {"content": {}})()
+
+    async def fake_get_latest_completed_workflow_run(session, *, project_id, workflow_type):
+        if workflow_type == pipeline_services.WORKFLOW_TYPE_MATERIALIZE_STORY_BIBLE:
+            return completed_bible_run
+        return None
+
+    async def fake_volume_fully_written(session, project_id, volume_number):
+        checked_volumes.append(volume_number)
+        return False, 0, 2
+
+    async def fake_chapter_numbers_in_volume(session, project_id, volume_number):
+        assert volume_number == 1
+        return {1, 2}
+
+    async def fake_refresh_truth(*args, **kwargs):
+        return False
+
+    async def fake_run_project_pipeline(*args, **kwargs):
+        run_volumes.append(kwargs["current_volume_number"])
+        return ProjectPipelineResult(
+            workflow_run_id=uuid4(),
+            project_id=project.id,
+            project_slug=project.slug,
+            chapter_results=[
+                pipeline_services.ProjectPipelineChapterSummary(
+                    chapter_number=1,
+                    workflow_run_id=uuid4(),
+                    chapter_draft_version_no=1,
+                    requires_human_review=True,
+                )
+            ],
+            final_verdict="attention",
+            requires_human_review=True,
+        )
+
+    async def fake_collect_volume_writing_feedback(*args, **kwargs):
+        raise AssertionError("blocked volume must not collect feedback or advance")
+
+    async def fake_checkpoint_commit(session) -> None:
+        return None
+
+    def fake_progress(stage: str, payload: dict[str, object] | None = None) -> None:
+        progress_events.append(stage)
+
+    import bestseller.services.planning_context as planning_context
+
+    monkeypatch.setattr(pipeline_services, "get_project_by_slug", fake_get_project_by_slug)
+    monkeypatch.setattr(
+        pipeline_services, "get_latest_planning_artifact", fake_get_latest_planning_artifact
+    )
+    monkeypatch.setattr(
+        pipeline_services,
+        "get_latest_completed_workflow_run",
+        fake_get_latest_completed_workflow_run,
+    )
+    monkeypatch.setattr(pipeline_services, "_volume_fully_written", fake_volume_fully_written)
+    monkeypatch.setattr(
+        pipeline_services,
+        "_chapter_numbers_in_volume",
+        fake_chapter_numbers_in_volume,
+    )
+    monkeypatch.setattr(
+        pipeline_services,
+        "_refresh_stale_truth_materializations_for_resume",
+        fake_refresh_truth,
+    )
+    monkeypatch.setattr(pipeline_services, "run_project_pipeline", fake_run_project_pipeline)
+    monkeypatch.setattr(pipeline_services, "_checkpoint_commit", fake_checkpoint_commit)
+    monkeypatch.setattr(
+        planning_context,
+        "collect_volume_writing_feedback",
+        fake_collect_volume_writing_feedback,
+    )
+
+    payload = pipeline_services.ProjectCreate(
+        slug=project.slug,
+        title=project.title,
+        genre=project.genre,
+        target_word_count=project.target_word_count,
+        target_chapters=project.target_chapters,
+    )
+
+    result = await pipeline_services.run_progressive_autowrite_pipeline(
+        FakeSession(),
+        settings,
+        project_payload=payload,
+        premise="...",
+        export_markdown=False,
+        auto_repair_on_attention=False,
+        progress=fake_progress,
+    )
+
+    assert result.requires_human_review is True
+    assert checked_volumes == [1, 1]
+    assert run_volumes == [1]
+    assert "volume_writing_paused_for_human_review" in progress_events

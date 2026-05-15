@@ -1,0 +1,43 @@
+key: distillation-generic
+name: LLM Fallback Complete Failure Patch
+source_ids:
+- source-0122
+status: blocked_requires_redistillation
+applies_to_categories:
+- distillation-generic
+required_contracts:
+- contract: llm_enabled_processing
+  enforced: true
+  note: All 80 chapters returned fallback stubs - re-distillation requires LLM-enabled
+    pipeline
+- contract: no_zero_confidence_acceptance
+  enforced: true
+  note: Zero confidence score across entire batch is unacceptable for downstream consumption
+- contract: craft_observations_required
+  enforced: true
+  note: At least 3 craft observations per chapter must be captured before aggregation
+state_variables:
+- variable: chapter_extraction_status
+  value: all_failed
+  progression: []
+- variable: confidence_score
+  value: 0.0
+  progression: []
+- variable: processed_chapters
+  value: 0
+  progression: []
+- variable: failed_chapters
+  value: 80
+  progression: []
+chapter_change_vectors: []
+reader_rewards:
+- distillable_mechanism_reliability
+hook_or_aftereffect_types: []
+forbidden_defaults:
+- any_confidence_below_0.3
+- llm_unavailable_status
+- empty_craft_observations
+- undetermined_reader_promise
+- null_turning_points
+- generic_genre_only_tagging
+- stub_only_chapter_cards

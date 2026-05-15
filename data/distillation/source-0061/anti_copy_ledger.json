@@ -1,0 +1,28 @@
+{
+  "source_id": "source-0061",
+  "blocked_categories": [
+    "all_craft_patterns",
+    "all_story_mechanisms",
+    "narrative_structures",
+    "arc_functions",
+    "state_progressions",
+    "turning_point_patterns",
+    "reader_reward_systems",
+    "emotional_temperature_mapping",
+    "pov_distance_controls",
+    "dialogue_systems",
+    "description_strategies",
+    "exposition_methods",
+    "hook_and_transition_techniques",
+    "sentence_rhythm_patterns",
+    "paragraphing_structures",
+    "setup_payoff_rhythms"
+  ],
+  "blocked_combinations": [
+    "all_possible_mechanism_combinations_from_source",
+    "any_structural_pattern_extraction",
+    "any_craft_observation_derivation",
+    "any_style_fingerprint_mapping"
+  ],
+  "replacement_policy": []
+}

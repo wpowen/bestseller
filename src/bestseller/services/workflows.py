@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, Iterable
 from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from bestseller.domain.enums import ArtifactType, ChapterStatus, SceneStatus, WorkflowStatus
 from bestseller.domain.narrative import NarrativeGraphMaterializationResult
@@ -88,6 +89,58 @@ _MATERIALIZATION_MUTABLE_SCENE_STATUSES = {
 }
 
 
+def _outline_fingerprint_scan_inputs(
+    batch: ChapterOutlineBatchInput,
+    existing_chapters: list[ChapterModel],
+) -> tuple[list[ChapterOutlineInput], list[ChapterModel]]:
+    """Return chapter outlines that should participate in a blocking re-plan scan.
+
+    Progressive resume artifacts can contain already-written chapters plus the
+    newly planned range. Existing non-mutable chapters should remain available
+    for cross-chapter comparison, but they must not be compared against each
+    other as if the current materialization run had generated them.
+    """
+    existing_by_number = {
+        chapter.chapter_number: chapter
+        for chapter in existing_chapters
+    }
+    scan_outlines: list[ChapterOutlineInput] = []
+    scan_outline_numbers: set[int] = set()
+
+    for outline in batch.chapters:
+        existing = existing_by_number.get(outline.chapter_number)
+        if existing is None or (
+            (existing.status or "") in _MATERIALIZATION_MUTABLE_CHAPTER_STATUSES
+        ):
+            scan_outlines.append(outline)
+            scan_outline_numbers.add(outline.chapter_number)
+
+    scan_existing = [
+        chapter
+        for chapter in existing_chapters
+        if chapter.chapter_number not in scan_outline_numbers
+    ]
+    return scan_outlines, scan_existing
+
+
+def _outline_materialization_validation_batch(
+    batch: ChapterOutlineBatchInput,
+    existing_chapters: list[ChapterModel],
+) -> tuple[ChapterOutlineBatchInput, int]:
+    """Return the outline slice that this materialization run may still change."""
+    validation_chapters, _ = _outline_fingerprint_scan_inputs(batch, existing_chapters)
+    skipped_count = len(batch.chapters) - len(validation_chapters)
+    if skipped_count <= 0:
+        return batch, 0
+    return (
+        ChapterOutlineBatchInput(
+            batch_name=batch.batch_name,
+            chapters=validation_chapters,
+        ),
+        skipped_count,
+    )
+
+
 def _project_identity_manifest(project: ProjectModel) -> list[dict[str, Any]]:
     metadata = getattr(project, "metadata_json", None) or {}
     manifest = metadata.get("identity_manifest") if isinstance(metadata, dict) else None
@@ -100,6 +153,133 @@ def _identity_token(value: Any) -> str:
     if value is None:
         return ""
     return "".join(str(value).strip().lower().split())
+
+
+def _string_list(value: Any) -> list[str]:
+    if isinstance(value, str):
+        stripped = value.strip()
+        return [stripped] if stripped else []
+    if isinstance(value, (list, tuple)):
+        items: list[str] = []
+        for item in value:
+            if item is None:
+                continue
+            stripped = str(item).strip()
+            if stripped:
+                items.append(stripped)
+        return items
+    return []
+
+
+def _identity_entry_tokens(entry: dict[str, Any]) -> list[str]:
+    tokens: list[str] = []
+    for value in [entry.get("name"), *_string_list(entry.get("aliases"))]:
+        token = _identity_token(value)
+        if token and token not in tokens:
+            tokens.append(token)
+    return tokens
+
+
+def _normalized_identity_entry(entry: dict[str, Any]) -> dict[str, Any] | None:
+    name = str(entry.get("name") or "").strip()
+    if not name:
+        return None
+    aliases = [
+        alias
+        for alias in _string_list(entry.get("aliases"))
+        if _identity_token(alias) != _identity_token(name)
+    ]
+    return {
+        "name": name,
+        "role": str(entry.get("role") or "").strip(),
+        "gender": str(entry.get("gender") or "").strip() or "unknown",
+        "pronoun_set_zh": str(entry.get("pronoun_set_zh") or "").strip(),
+        "pronoun_set_en": str(entry.get("pronoun_set_en") or "").strip(),
+        "aliases": list(dict.fromkeys(aliases)),
+    }
+
+
+def _merge_identity_manifest_entries(
+    *sources: Iterable[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Merge cast-derived identities with persisted character-row identities."""
+
+    merged: list[dict[str, Any]] = []
+    index: dict[str, dict[str, Any]] = {}
+
+    for source in sources:
+        for raw_entry in source:
+            if not isinstance(raw_entry, dict):
+                continue
+            entry = _normalized_identity_entry(raw_entry)
+            if entry is None:
+                continue
+            tokens = _identity_entry_tokens(entry)
+            existing = next((index[token] for token in tokens if token in index), None)
+            if existing is None:
+                merged.append(entry)
+                for token in tokens:
+                    index[token] = entry
+                continue
+
+            for key in ("role", "pronoun_set_zh", "pronoun_set_en"):
+                if not existing.get(key) and entry.get(key):
+                    existing[key] = entry[key]
+            if (
+                (not existing.get("gender") or existing.get("gender") == "unknown")
+                and entry.get("gender")
+                and entry.get("gender") != "unknown"
+            ):
+                existing["gender"] = entry["gender"]
+            aliases = list(existing.get("aliases") or [])
+            for alias in [entry.get("name"), *(entry.get("aliases") or [])]:
+                alias_text = str(alias or "").strip()
+                if (
+                    alias_text
+                    and _identity_token(alias_text) != _identity_token(existing.get("name"))
+                    and alias_text not in aliases
+                ):
+                    aliases.append(alias_text)
+            existing["aliases"] = aliases
+            for token in _identity_entry_tokens(existing):
+                index[token] = existing
+
+    return merged
+
+
+def _apply_identity_manifest_to_characters(
+    characters: list[CharacterModel],
+    manifest: list[dict[str, Any]],
+) -> None:
+    manifest_by_token: dict[str, dict[str, Any]] = {}
+    for entry in manifest:
+        for token in _identity_entry_tokens(entry):
+            manifest_by_token[token] = entry
+
+    for character in characters:
+        entry = manifest_by_token.get(_identity_token(character.name))
+        if entry is None:
+            continue
+        char_meta = dict(getattr(character, "metadata_json", None) or {})
+        cast_entry = dict(char_meta.get("cast_entry") or {})
+        cast_entry.update(
+            {
+                "gender": entry.get("gender") or "unknown",
+                "pronoun_set_zh": entry.get("pronoun_set_zh") or "",
+                "pronoun_set_en": entry.get("pronoun_set_en") or "",
+                "aliases": entry.get("aliases") or [],
+            }
+        )
+        char_meta.update(
+            {
+                "gender": cast_entry["gender"],
+                "pronoun_set_zh": cast_entry["pronoun_set_zh"],
+                "pronoun_set_en": cast_entry["pronoun_set_en"],
+                "aliases": cast_entry["aliases"],
+                "cast_entry": cast_entry,
+            }
+        )
+        character.metadata_json = char_meta
 
 
 def _has_unsupported_identity_default(cast_spec_content: dict[str, Any] | None) -> bool:
@@ -146,11 +326,29 @@ async def ensure_project_identity_manifest(
 
     existing_manifest = _project_identity_manifest(project)
     metadata = getattr(project, "metadata_json", None) or {}
+    characters = list(
+        await session.scalars(
+            select(CharacterModel).where(CharacterModel.project_id == project.id)
+        )
+    )
     if (
         existing_manifest
         and isinstance(metadata, dict)
         and metadata.get("identity_manifest_status") == "locked"
     ):
+        merged_manifest = _merge_identity_manifest_entries(
+            existing_manifest,
+            _identity_hints_from_characters(characters),
+        )
+        if merged_manifest != existing_manifest:
+            project.metadata_json = {
+                **metadata,
+                "identity_manifest": merged_manifest,
+                "identity_manifest_status": "locked",
+            }
+            _apply_identity_manifest_to_characters(characters, merged_manifest)
+            await session.flush()
+            return merged_manifest
         return existing_manifest
 
     artifact = await get_latest_planning_artifact(
@@ -163,11 +361,6 @@ async def ensure_project_identity_manifest(
             f"Project '{project_slug}' is missing a locked identity manifest and has no CastSpec artifact."
         )
 
-    characters = list(
-        await session.scalars(
-            select(CharacterModel).where(CharacterModel.project_id == project.id)
-        )
-    )
     identity_hints = [*existing_manifest, *_identity_hints_from_characters(characters)]
     artifact_content = artifact.content
     repaired_content, repair_count = repair_legacy_foundation_identity_locks(
@@ -189,7 +382,10 @@ async def ensure_project_identity_manifest(
 
     report = validate_foundation_identity_contract(artifact_content)
     report.raise_for_blocks(project_slug=project_slug, artifact="cast_spec")
-    manifest = build_identity_manifest(artifact_content)
+    manifest = _merge_identity_manifest_entries(
+        build_identity_manifest(artifact_content),
+        _identity_hints_from_characters(characters),
+    )
     if not manifest:
         raise ValueError(
             f"Project '{project_slug}' CastSpec produced an empty identity manifest."
@@ -201,38 +397,7 @@ async def ensure_project_identity_manifest(
         "identity_manifest_status": "locked",
     }
 
-    manifest_by_token: dict[str, dict[str, Any]] = {}
-    for entry in manifest:
-        tokens = [entry.get("name"), *(entry.get("aliases") or [])]
-        for token in tokens:
-            key = _identity_token(token)
-            if key:
-                manifest_by_token[key] = entry
-
-    for character in characters:
-        entry = manifest_by_token.get(_identity_token(character.name))
-        if entry is None:
-            continue
-        char_meta = dict(getattr(character, "metadata_json", None) or {})
-        cast_entry = dict(char_meta.get("cast_entry") or {})
-        cast_entry.update(
-            {
-                "gender": entry.get("gender") or "unknown",
-                "pronoun_set_zh": entry.get("pronoun_set_zh") or "",
-                "pronoun_set_en": entry.get("pronoun_set_en") or "",
-                "aliases": entry.get("aliases") or [],
-            }
-        )
-        char_meta.update(
-            {
-                "gender": cast_entry["gender"],
-                "pronoun_set_zh": cast_entry["pronoun_set_zh"],
-                "pronoun_set_en": cast_entry["pronoun_set_en"],
-                "aliases": cast_entry["aliases"],
-                "cast_entry": cast_entry,
-            }
-        )
-        character.metadata_json = char_meta
+    _apply_identity_manifest_to_characters(characters, manifest)
 
     await session.flush()
     return manifest
@@ -255,6 +420,12 @@ def _identity_hints_from_characters(
         cast_entry = metadata.get("cast_entry") if isinstance(metadata, dict) else None
         if not isinstance(cast_entry, dict):
             cast_entry = {}
+        aliases: list[str] = []
+        for raw_aliases in (
+            metadata.get("aliases") if isinstance(metadata, dict) else None,
+            cast_entry.get("aliases"),
+        ):
+            aliases.extend(_string_list(raw_aliases))
         hint = {
             "name": character.name,
             "role": character.role,
@@ -263,7 +434,7 @@ def _identity_hints_from_characters(
             or cast_entry.get("pronoun_set_zh"),
             "pronoun_set_en": metadata.get("pronoun_set_en")
             or cast_entry.get("pronoun_set_en"),
-            "aliases": cast_entry.get("aliases") or [],
+            "aliases": list(dict.fromkeys(aliases)),
         }
         if hint["gender"] or hint["pronoun_set_zh"] or hint["pronoun_set_en"]:
             hints.append(hint)
@@ -738,6 +909,7 @@ async def materialize_chapter_outline_batch(
     scenes_updated = 0
     chapters_pruned = 0
     scenes_pruned = 0
+    chapters_skipped_immutable = 0
     current_step_name = "validate_outline_batch"
     causality_results_by_chapter: dict[int, ChapterCausalityResult] = {}
 
@@ -761,6 +933,24 @@ async def materialize_chapter_outline_batch(
                 "chapter_number_normalization": _chapter_number_normalization,
             }
         outlined_chapter_numbers = {chapter.chapter_number for chapter in batch.chapters}
+        _existing_project_chapters = list(
+            await session.scalars(
+                select(ChapterModel)
+                .where(ChapterModel.project_id == project.id)
+                .options(selectinload(ChapterModel.scenes))
+            )
+        )
+        _validation_batch, _validation_skipped_count = (
+            _outline_materialization_validation_batch(batch, _existing_project_chapters)
+        )
+        workflow_run.metadata_json = {
+            **(workflow_run.metadata_json or {}),
+            "chapter_contract_validation_scope": {
+                "batch_chapter_count": len(batch.chapters),
+                "validated_chapter_count": len(_validation_batch.chapters),
+                "skipped_existing_immutable_chapters": _validation_skipped_count,
+            },
+        }
 
         # ── Plan fingerprint gate: detect near-duplicate chapters before DB write ──
         # Compares each outline in the batch against the others AND against any
@@ -770,15 +960,22 @@ async def materialize_chapter_outline_batch(
         try:
             from bestseller.services.plan_fingerprint import scan_batch_for_duplicates
 
-            _existing_for_fp = list(
-                await session.scalars(
-                    select(ChapterModel)
-                    .where(ChapterModel.project_id == project.id)
-                    .where(ChapterModel.chapter_number.notin_(outlined_chapter_numbers))
-                )
+            _fp_batch_chapters, _existing_for_fp = _outline_fingerprint_scan_inputs(
+                batch,
+                _existing_project_chapters,
             )
+            workflow_run.metadata_json = {
+                **(workflow_run.metadata_json or {}),
+                "plan_fingerprint_scan_scope": {
+                    "batch_chapter_count": len(_fp_batch_chapters),
+                    "existing_chapter_count": len(_existing_for_fp),
+                    "skipped_existing_immutable_chapters": (
+                        len(batch.chapters) - len(_fp_batch_chapters)
+                    ),
+                },
+            }
             _fp_report = scan_batch_for_duplicates(
-                list(batch.chapters),
+                _fp_batch_chapters,
                 _existing_for_fp,
             )
             if _fp_report.findings:
@@ -830,10 +1027,17 @@ async def materialize_chapter_outline_batch(
                 exc_info=True,
             )
 
-        if getattr(settings.pipeline, "require_chapter_plan_contract", True):
-            identity_manifest = _project_identity_manifest(project)
+        if (
+            getattr(settings.pipeline, "require_chapter_plan_contract", True)
+            and _validation_batch.chapters
+        ):
+            identity_manifest = await ensure_project_identity_manifest(
+                session,
+                project,
+                project_slug=project_slug,
+            )
             repair_count = _repair_chapter_outline_contract_inputs(
-                batch,
+                _validation_batch,
                 identity_manifest=identity_manifest,
             )
             if repair_count:
@@ -844,7 +1048,7 @@ async def materialize_chapter_outline_batch(
                     },
                 }
             _plan_contract = validate_chapter_plan_contract(
-                batch,
+                _validation_batch,
                 identity_manifest=identity_manifest,
                 require_identity_registry=True,
             )
@@ -858,8 +1062,11 @@ async def materialize_chapter_outline_batch(
                 artifact="chapter_outline_batch",
             )
 
-        if getattr(settings.pipeline, "enable_chapter_causality_gate", True):
-            _causality_report = evaluate_chapter_causality_contract(batch)
+        if (
+            getattr(settings.pipeline, "enable_chapter_causality_gate", True)
+            and _validation_batch.chapters
+        ):
+            _causality_report = evaluate_chapter_causality_contract(_validation_batch)
             causality_results_by_chapter = {
                 result.chapter_number: result
                 for result in _causality_report.chapter_results
@@ -908,6 +1115,14 @@ async def materialize_chapter_outline_batch(
                     ChapterModel.chapter_number == chapter_outline.chapter_number,
                 )
             )
+            if (
+                existing_chapter is not None
+                and existing_chapter.status not in _MATERIALIZATION_MUTABLE_CHAPTER_STATUSES
+            ):
+                chapters_skipped_immutable += 1
+                continue
+
+            should_sync_causality_metadata = False
             if existing_chapter is not None:
                 chapter = existing_chapter
                 if await _sync_existing_chapter_from_outline(
@@ -917,6 +1132,7 @@ async def materialize_chapter_outline_batch(
                     chapter_outline=chapter_outline,
                 ):
                     chapters_updated += 1
+                    should_sync_causality_metadata = True
             else:
                 chapter = await create_chapter(
                     session,
@@ -934,11 +1150,13 @@ async def materialize_chapter_outline_batch(
                     ),
                 )
                 chapters_created += 1
-            _sync_chapter_causality_metadata(
-                chapter,
-                chapter_outline,
-                causality_results_by_chapter.get(chapter_outline.chapter_number),
-            )
+                should_sync_causality_metadata = True
+            if should_sync_causality_metadata:
+                _sync_chapter_causality_metadata(
+                    chapter,
+                    chapter_outline,
+                    causality_results_by_chapter.get(chapter_outline.chapter_number),
+                )
             await create_workflow_step_run(
                 session,
                 workflow_run_id=workflow_run.id,
@@ -1074,6 +1292,7 @@ async def materialize_chapter_outline_batch(
             "scenes_updated": scenes_updated,
             "chapters_pruned": chapters_pruned,
             "scenes_pruned": scenes_pruned,
+            "chapters_skipped_immutable": chapters_skipped_immutable,
         }
         await session.flush()
 
@@ -1372,13 +1591,23 @@ async def materialize_story_bible(
             current_step_name = "apply_cast_spec"
             workflow_run.current_step = current_step_name
             cast_counts = await upsert_cast_spec(session, project, cast_spec_content)
-            identity_manifest = build_identity_manifest(cast_spec_content)
+            characters = list(
+                await session.scalars(
+                    select(CharacterModel).where(CharacterModel.project_id == project.id)
+                )
+            )
+            identity_manifest = _merge_identity_manifest_entries(
+                _project_identity_manifest(project),
+                build_identity_manifest(cast_spec_content),
+                _identity_hints_from_characters(characters),
+            )
             if identity_manifest:
                 project.metadata_json = {
                     **(project.metadata_json or {}),
                     "identity_manifest": identity_manifest,
                     "identity_manifest_status": "locked",
                 }
+                _apply_identity_manifest_to_characters(characters, identity_manifest)
             for key, value in cast_counts.items():
                 counts[key] = counts.get(key, 0) + value
             await create_workflow_step_run(

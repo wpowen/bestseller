@@ -1,0 +1,23 @@
+{
+  "source_id": "source-0731",
+  "pipeline_version": "distillation-v1",
+  "source_format": "azw3",
+  "encoding": "mobi-lib+utf-8",
+  "chapter_count": 1,
+  "volume_count": 1,
+  "average_chapter_chars": 156997,
+  "chapters": [
+    {
+      "abs_chapter_no": 26,
+      "volume_no": 1,
+      "volume_label_redacted": "volume-01",
+      "chapter_label_redacted": "chapter-0026",
+      "boundary_type": "chinese_chapter_heading",
+      "title_hash_sha256": "24bd1a6c4ba07fff2cce8ce967f19c199c582f4567a6c481d43b471a5f266827",
+      "title_char_count": 24,
+      "char_count": 156997,
+      "line_count": 5408,
+      "private_chunk_ref": ".distillation_private/source-0731/chunks/chapter-0026.txt"
+    }
+  ]
+}

@@ -1,23 +1,23 @@
 from __future__ import annotations
 
 import asyncio
+from dataclasses import dataclass, field
+from datetime import UTC, datetime
 import html
+from http import HTTPStatus
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import logging
 import mimetypes
 import os
+from pathlib import Path
 import socketserver
 import threading
 import traceback
-import webbrowser
-from dataclasses import dataclass, field
-from datetime import UTC, datetime
-from http import HTTPStatus
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, unquote, urlparse
 from uuid import UUID, uuid4
+import webbrowser
 
 from bestseller.domain.project import InteractiveFictionConfig, ProjectCreate
 from bestseller.infra.db.models import StyleGuideModel
@@ -38,13 +38,12 @@ from bestseller.services.projects import (
     list_projects,
 )
 from bestseller.services.repair import run_project_repair
+from bestseller.services.writing_presets import load_writing_preset_catalog, validate_longform_scope
 from bestseller.services.writing_profile import (
     get_project_writing_profile,
     sanitize_genre_story_overrides,
 )
-from bestseller.services.writing_presets import load_writing_preset_catalog, validate_longform_scope
 from bestseller.settings import AppSettings, load_settings
-
 
 logger = logging.getLogger(__name__)
 
@@ -112,8 +111,9 @@ def _wait_for_self_heal_scan(
     the heal jobs worker is about to enqueue. Waiting lets us trust the
     heal-key scan.
     """
-    import time  # noqa: PLC0415
-    import redis as _redis  # noqa: PLC0415
+    import time
+
+    import redis as _redis
 
     try:
         client = _redis.from_url(redis_url, decode_responses=True, socket_timeout=2)
@@ -153,7 +153,7 @@ def _fetch_heal_owned_slugs_by_kind(redis_url: str, heal_kind: str) -> set[str]:
     result as "unknown" rather than "no heal jobs exist" — see
     ``_wait_for_self_heal_scan`` for the startup-race mitigation.
     """
-    import redis as _redis  # noqa: PLC0415 — lazy import, keep start-up light
+    import redis as _redis
 
     try:
         client = _redis.from_url(redis_url, decode_responses=True, socket_timeout=2)
@@ -168,7 +168,7 @@ def _fetch_heal_owned_slugs_by_kind(redis_url: str, heal_kind: str) -> set[str]:
     try:
         for prefix in prefixes:
             for key in client.scan_iter(match=prefix + "*", count=200):
-                slug = key[len(prefix):]
+                slug = key[len(prefix) :]
                 if slug:
                     slugs.add(slug)
     except Exception:
@@ -185,8 +185,44 @@ def _fetch_heal_owned_slugs(redis_url: str) -> set[str]:
     return slugs
 
 
+def _worker_heal_job_id(task_type: str, slug: str) -> str | None:
+    slug = (slug or "").strip()
+    if not slug:
+        return None
+    kind = "repair" if task_type == "repair" else "autowrite"
+    return f"{kind}:heal:{slug}"
+
+
+def _worker_heal_job_is_active(redis_url: str, job_id: str) -> bool:
+    """Return True when ARQ still owns a deterministic self-heal job."""
+    try:
+        import redis as _redis
+    except Exception:
+        return False
+
+    try:
+        client = _redis.from_url(redis_url, decode_responses=True, socket_timeout=2)
+    except Exception:
+        return False
+    try:
+        if client.exists(
+            f"arq:job:{job_id}",
+            f"arq:in-progress:{job_id}",
+            f"arq:retry:{job_id}",
+        ):
+            return True
+        return client.zscore("arq:queue", job_id) is not None
+    except Exception:
+        return False
+    finally:
+        try:
+            client.close()
+        except Exception:
+            pass
+
+
 def _arq_redis_settings_from_url(redis_url: str) -> Any:
-    from arq.connections import RedisSettings  # noqa: PLC0415
+    from arq.connections import RedisSettings
 
     parsed = urlparse(redis_url)
     return RedisSettings(
@@ -203,8 +239,9 @@ async def _enqueue_autowrite_heal_job_async(redis_url: str, slug: str) -> str | 
     This intentionally reuses ``worker.self_heal._requeue_autowrite`` so the
     web process does not maintain a second, subtly different ARQ job contract.
     """
-    from arq.connections import create_pool  # noqa: PLC0415
-    from bestseller.worker.self_heal import (  # noqa: PLC0415
+    from arq.connections import create_pool
+
+    from bestseller.worker.self_heal import (
         StuckProject,
         _autowrite_heal_job_id,
         _requeue_autowrite,
@@ -292,7 +329,7 @@ def _match_project_route(path: str, suffix: str) -> str | None:
     prefix = "/api/projects/"
     if not path.startswith(prefix) or not path.endswith(f"/{suffix}"):
         return None
-    middle = path[len(prefix):-len(f"/{suffix}")]
+    middle = path[len(prefix) : -len(f"/{suffix}")]
     if not middle or "/" in middle:
         return None
     return middle
@@ -300,7 +337,7 @@ def _match_project_route(path: str, suffix: str) -> str | None:
 
 def _delete_project_full(
     slug: str,
-    task_manager: "WebTaskManager",
+    task_manager: WebTaskManager,
     settings: AppSettings,
 ) -> dict[str, object]:
     """Delete task records + DB rows + disk artifacts for a single project slug.
@@ -323,7 +360,7 @@ def _delete_project_full(
     try:
         tasks_deleted = task_manager.delete_tasks_by_project(slug)
         out["tasks_deleted"] = tasks_deleted
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         out["errors"].append(f"task_cleanup_failed: {exc}")
 
     async def _run() -> dict[str, object]:
@@ -332,7 +369,7 @@ def _delete_project_full(
 
     try:
         svc_result = asyncio.run(_run())
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         out["errors"].append(f"service_error: {exc}")
         return out
 
@@ -408,28 +445,26 @@ def _try_load_chapter_draft_from_db(
     Matches filenames like ``chapter-001.md``.  Returns *None* if the file
     name doesn't look like a chapter export or no draft is found.
     """
-    import re  # noqa: PLC0415
+    import re
 
     m = re.match(r"chapter-(\d{3,4})\.md$", artifact_name)
     if m is None:
         return None
     chapter_number = int(m.group(1))
 
-    from bestseller.infra.db.models import (  # noqa: PLC0415
+    from sqlalchemy import select
+
+    from bestseller.infra.db.models import (
         ChapterDraftVersionModel,
         ChapterModel,
         ProjectModel,
     )
-    from bestseller.services.exports import format_chapter_heading  # noqa: PLC0415
-
-    from sqlalchemy import select  # noqa: PLC0415
+    from bestseller.services.exports import format_chapter_heading
 
     async def _fetch() -> str | None:
         async with session_scope(settings) as session:
             proj = (
-                await session.execute(
-                    select(ProjectModel).where(ProjectModel.slug == project_slug)
-                )
+                await session.execute(select(ProjectModel).where(ProjectModel.slug == project_slug))
             ).scalar_one_or_none()
             if proj is None:
                 return None
@@ -454,7 +489,9 @@ def _try_load_chapter_draft_from_db(
             if draft is None:
                 return None
             heading = format_chapter_heading(
-                chapter.chapter_number, chapter.title, language=proj.language,
+                chapter.chapter_number,
+                chapter.title,
+                language=proj.language,
             )
             return f"{heading}\n\n{draft.content_md}"
 
@@ -691,6 +728,81 @@ class WebTaskState:
         }
 
 
+_WATCHDOG_STALE_PREFIX = "Task watchdog: no progress for >"
+_HUMAN_REVIEW_STAGES = frozenset(
+    {
+        "chapter_pipeline_paused_for_human_review",
+        "scene_pipeline_paused_for_human_review",
+        "waiting_human",
+        "waiting_human_review",
+        "blocked_generation_gate",
+        "exported_requires_human_review",
+        "skipped_requires_human_review",
+    }
+)
+_ATTENTION_VERDICTS = frozenset(
+    {
+        "attention",
+        "needs_attention",
+        "waiting_human",
+        "waiting_human_review",
+        "requires_human_review",
+    }
+)
+_TERMINAL_ATTENTION_STAGES = frozenset(
+    {
+        "completed",
+        "done",
+        "finished",
+        "project_repair_completed",
+        "project_pipeline_completed",
+    }
+)
+
+
+def _task_has_human_review_gate(task: WebTaskState) -> bool:
+    for event in reversed(task.progress_events or []):
+        if not isinstance(event, dict):
+            continue
+        stage = str(event.get("stage") or "")
+        if stage in _HUMAN_REVIEW_STAGES or "human_review" in stage:
+            return True
+        payload = event.get("payload")
+        if not isinstance(payload, dict):
+            continue
+        if payload.get("requires_human_review") is True:
+            return True
+        verdict = (
+            str(
+                payload.get("final_verdict")
+                or payload.get("verdict")
+                or payload.get("status")
+                or ""
+            )
+            .strip()
+            .lower()
+        )
+        if verdict in _ATTENTION_VERDICTS:
+            return True
+    return False
+
+
+def _payload_requires_human_attention(payload: dict[str, Any]) -> bool:
+    if payload.get("requires_human_review") is True:
+        return True
+    verdict = (
+        str(
+            payload.get("final_verdict")
+            or payload.get("verdict")
+            or payload.get("status")
+            or ""
+        )
+        .strip()
+        .lower()
+    )
+    return verdict in _ATTENTION_VERDICTS
+
+
 class WebTaskManager:
     def __init__(self, persist_path: Path | None = None) -> None:
         self._lock = threading.Lock()
@@ -714,7 +826,7 @@ class WebTaskManager:
     def _run_with_slot(
         self,
         task_id: str,
-        worker: "callable[[str, dict[str, object]], None]",
+        worker: callable[[str, dict[str, object]], None],
         payload: dict[str, object],
     ) -> None:
         """Acquire a concurrency slot then run *worker*, always releasing."""
@@ -750,6 +862,26 @@ class WebTaskManager:
                     cancel_requested=bool(item.get("cancel_requested", False)),
                     payload=item.get("payload"),
                 )
+                if (
+                    task.status == "failed"
+                    and str(task.error or "").startswith(_WATCHDOG_STALE_PREFIX)
+                    and _task_has_human_review_gate(task)
+                ):
+                    task.status = "incomplete"
+                    task.current_stage = "waiting_human_review"
+                    task.error = (
+                        "Task reached a human-review or attention gate; "
+                        "normalized from an old stale-watchdog failure."
+                    )
+                    task.progress_events.append(
+                        {
+                            "timestamp": _utc_now(),
+                            "stage": "watchdog_failure_normalized",
+                            "payload": {"reason": "human_review_gate"},
+                        }
+                    )
+                    task.progress_events = task.progress_events[-300:]
+                    changed = True
                 # Running/queued tasks from a previous session need recovery.
                 # If the task has a rebuildable payload, move it to queued and
                 # stage it for auto-resume by ``serve_web`` once the event
@@ -761,19 +893,20 @@ class WebTaskManager:
                         task.current_stage = "auto_resume_pending"
                         task.error = None
                         task.cancel_requested = False
-                        task.progress_events.append({
-                            "timestamp": _utc_now(),
-                            "stage": "auto_resume_queued",
-                            "payload": {"reason": "server restart"},
-                        })
+                        task.progress_events.append(
+                            {
+                                "timestamp": _utc_now(),
+                                "stage": "auto_resume_queued",
+                                "payload": {"reason": "server restart"},
+                            }
+                        )
                         task.progress_events = task.progress_events[-300:]
                         self._pending_auto_resume_ids.append(task.task_id)
                     else:
                         task.status = "failed"
                         task.current_stage = "failed"
                         task.error = task.error or (
-                            "Server restarted while task was running "
-                            "(no payload to resume)"
+                            "Server restarted while task was running (no payload to resume)"
                         )
                     changed = True
                 self._tasks[task.task_id] = task
@@ -813,7 +946,7 @@ class WebTaskManager:
 
         Returns the number of recovered tasks.
         """
-        import re as _re  # noqa: PLC0415
+        import re as _re
 
         output_dir = Path(settings.output.base_dir)
         if not output_dir.exists():
@@ -876,9 +1009,7 @@ class WebTaskManager:
                             pass
 
                 block_payload = (
-                    _project_autowrite_block_payload(project)
-                    if project is not None
-                    else None
+                    _project_autowrite_block_payload(project) if project is not None else None
                 )
                 is_incomplete = num_chapters < target_chapters
                 if block_payload:
@@ -924,17 +1055,21 @@ class WebTaskManager:
                     except OSError:
                         ch_mtime = dir_mtime
                     ch_ts = datetime.fromtimestamp(ch_mtime, UTC).isoformat()
-                    events.append({
-                        "timestamp": ch_ts,
-                        "stage": "chapter_pipeline_completed",
-                        "payload": {"chapter_number": ch_num},
-                    })
+                    events.append(
+                        {
+                            "timestamp": ch_ts,
+                            "stage": "chapter_pipeline_completed",
+                            "payload": {"chapter_number": ch_num},
+                        }
+                    )
                 if block_payload:
-                    events.append({
-                        "timestamp": dir_ts,
-                        "stage": "blocked_structural_repair",
-                        "payload": {"reason": block_payload.get("reason")},
-                    })
+                    events.append(
+                        {
+                            "timestamp": dir_ts,
+                            "stage": "blocked_structural_repair",
+                            "payload": {"reason": block_payload.get("reason")},
+                        }
+                    )
 
                 # Rebuild a resumable payload when we can — this is the whole
                 # point of this pass: recovered tasks that the user wants to
@@ -1111,16 +1246,28 @@ class WebTaskManager:
     # milestones).  High-frequency progress events (scene_draft_completed
     # etc.) are kept in memory and flushed every _PROGRESS_FLUSH_INTERVAL
     # events to avoid thrashing the disk on large novels.
-    _PERSIST_STAGES: frozenset[str] = frozenset({
-        "running", "queued", "completed", "failed", "cancelled",
-        "chapter_pipeline_completed", "chapter_pipeline_started",
-        "conception_complete", "story_architect_complete",
-        "resume_requested", "cancel_requested",
-        "blocked_structural_repair",
-        "periodic_consistency_check_started",
-        "periodic_consistency_check_completed",
-        "volume_complete",
-    })
+    _PERSIST_STAGES: frozenset[str] = frozenset(
+        {
+            "running",
+            "queued",
+            "completed",
+            "failed",
+            "cancelled",
+            "chapter_pipeline_completed",
+            "chapter_pipeline_started",
+            "conception_complete",
+            "story_architect_complete",
+            "resume_requested",
+            "cancel_requested",
+            "blocked_structural_repair",
+            "blocked_generation_gate",
+            "waiting_human",
+            "waiting_human_review",
+            "periodic_consistency_check_started",
+            "periodic_consistency_check_completed",
+            "volume_complete",
+        }
+    )
     _PROGRESS_FLUSH_INTERVAL: int = 10
 
     def _push_progress(
@@ -1214,6 +1361,33 @@ class WebTaskManager:
             self._save_to_disk()
         logger.info("Task %s blocked by structural repair pause", task_id)
 
+    def mark_task_blocked_by_project_gate(
+        self,
+        task_id: str,
+        *,
+        stage: str,
+        error: str,
+    ) -> None:
+        with self._lock:
+            task = self._tasks.get(task_id)
+            if task is None:
+                return
+            task.status = "incomplete"
+            task.updated_at = _utc_now()
+            task.current_stage = stage
+            task.error = error
+            task.cancel_requested = False
+            task.progress_events.append(
+                {
+                    "timestamp": task.updated_at,
+                    "stage": stage,
+                    "payload": {"reason": error},
+                }
+            )
+            task.progress_events = task.progress_events[-300:]
+            self._save_to_disk()
+        logger.info("Task %s blocked by project gate %s", task_id, stage)
+
     def request_cancel(self, task_id: str) -> bool:
         """Mark a task for cancellation. Worker checks the flag at next progress event.
 
@@ -1228,11 +1402,13 @@ class WebTaskManager:
             force = bool(task.cancel_requested)
             task.cancel_requested = True
             task.updated_at = _utc_now()
-            task.progress_events.append({
-                "timestamp": task.updated_at,
-                "stage": "cancel_requested",
-                "payload": {"force": force},
-            })
+            task.progress_events.append(
+                {
+                    "timestamp": task.updated_at,
+                    "stage": "cancel_requested",
+                    "payload": {"force": force},
+                }
+            )
             task.progress_events = task.progress_events[-300:]
             self._save_to_disk()
         logger.info("Cancellation requested for task %s (force=%s)", task_id, force)
@@ -1394,6 +1570,12 @@ class WebTaskManager:
         for tid in stale_ids:
             if self._rescue_from_disk_heartbeat(tid, stale_after_seconds):
                 continue
+            if self._rescue_from_worker_heal_job(tid):
+                continue
+            if self._mark_unowned_delegated_task_incomplete(tid):
+                continue
+            if self._mark_human_review_gate_incomplete(tid):
+                continue
             self._mark_failed(
                 tid,
                 f"Task watchdog: no progress for >{stale_after_seconds}s, marking as failed",
@@ -1401,8 +1583,86 @@ class WebTaskManager:
             stale_count += 1
         return stale_count
 
+    def _mark_human_review_gate_incomplete(self, task_id: str) -> bool:
+        with self._lock:
+            task = self._tasks.get(task_id)
+            if task is None or not _task_has_human_review_gate(task):
+                return False
+            task.status = "incomplete"
+            task.current_stage = "waiting_human_review"
+            task.error = "Task is waiting for human review or attention-gate repair."
+            task.updated_at = _utc_now()
+            task.progress_events.append(
+                {
+                    "timestamp": task.updated_at,
+                    "stage": "waiting_human_review",
+                    "payload": {"reason": "watchdog_preserved_attention_gate"},
+                }
+            )
+            task.progress_events = task.progress_events[-300:]
+            self._save_to_disk()
+        logger.info("Task %s is waiting for human review; marked incomplete", task_id)
+        return True
+
+    def _rescue_from_worker_heal_job(self, task_id: str) -> bool:
+        """Refresh delegated tasks while their deterministic ARQ job is active."""
+        with self._lock:
+            task = self._tasks.get(task_id)
+            if task is None or task.status != "running":
+                return False
+            if task.current_stage != "delegated_to_worker_self_heal":
+                return False
+            job_id = _worker_heal_job_id(task.task_type, task.project_slug or "")
+            if job_id is None:
+                return False
+
+        try:
+            redis_url = load_settings().redis.url
+        except Exception:
+            return False
+        if not _worker_heal_job_is_active(redis_url, job_id):
+            return False
+
+        with self._lock:
+            task = self._tasks.get(task_id)
+            if task is not None and task.status == "running":
+                task.updated_at = _utc_now()
+                self._save_to_disk()
+        logger.info("Task %s rescued by active worker self-heal job %s", task_id, job_id)
+        return True
+
+    def _mark_unowned_delegated_task_incomplete(self, task_id: str) -> bool:
+        """Stop showing delegated tasks as running once worker ownership is gone."""
+        with self._lock:
+            task = self._tasks.get(task_id)
+            if task is None or task.status != "running":
+                return False
+            if task.current_stage != "delegated_to_worker_self_heal":
+                return False
+            now = _utc_now()
+            task.status = "incomplete"
+            task.updated_at = now
+            task.current_stage = "auto_resume_not_claimed"
+            task.error = (
+                "Worker self-heal no longer has an active job for this task; "
+                "resume manually after reviewing the latest gate or repair state."
+            )
+            task.progress_events.append(
+                {
+                    "timestamp": now,
+                    "stage": "auto_resume_not_claimed",
+                    "payload": {"reason": "worker self-heal job no longer active"},
+                }
+            )
+            task.progress_events = task.progress_events[-300:]
+            self._save_to_disk()
+        logger.info("Task %s no longer has a worker self-heal owner; marked incomplete", task_id)
+        return True
+
     def _rescue_from_disk_heartbeat(
-        self, task_id: str, stale_after_seconds: int,
+        self,
+        task_id: str,
+        stale_after_seconds: int,
     ) -> bool:
         """Refresh *task_id*'s ``updated_at`` if a chapter file was recently written.
 
@@ -1476,14 +1736,10 @@ class WebTaskManager:
         if redis_url:
             scan_ready = _wait_for_self_heal_scan(redis_url)
         autowrite_heal_owned_slugs = (
-            _fetch_heal_owned_slugs_by_kind(redis_url, "autowrite")
-            if redis_url
-            else set()
+            _fetch_heal_owned_slugs_by_kind(redis_url, "autowrite") if redis_url else set()
         )
         repair_heal_owned_slugs = (
-            _fetch_heal_owned_slugs_by_kind(redis_url, "repair")
-            if redis_url
-            else set()
+            _fetch_heal_owned_slugs_by_kind(redis_url, "repair") if redis_url else set()
         )
 
         delegated: list[str] = []
@@ -1502,41 +1758,50 @@ class WebTaskManager:
                 if task.task_type == "repair":
                     heal_owned = bool(slug and slug in repair_heal_owned_slugs)
                 else:
-                    heal_owned = bool(slug and slug in autowrite_heal_owned_slugs)
+                    heal_owned = bool(
+                        slug
+                        and (
+                            slug in autowrite_heal_owned_slugs
+                            or slug in repair_heal_owned_slugs
+                        )
+                    )
                 if task.task_type == "repair" and not heal_owned:
                     task.current_stage = "queued"
                     task.error = None
                     task.cancel_requested = False
-                    task.progress_events.append({
-                        "timestamp": _utc_now(),
-                        "stage": "resume_requested",
-                        "payload": {"reason": "server restart"},
-                    })
+                    task.progress_events.append(
+                        {
+                            "timestamp": _utc_now(),
+                            "stage": "resume_requested",
+                            "payload": {"reason": "server restart"},
+                        }
+                    )
                     task.progress_events = task.progress_events[-300:]
                     repair_payload = dict(task.payload)
                     self._save_to_disk()
                     delegated.append(task_id)
                     logger.info("Resuming repair zombie task %s via web worker", task_id)
                 elif heal_owned:
-                    reason = (
-                        "ARQ heal job already active"
-                    )
+                    reason = "ARQ heal job already active"
                     task.status = "running"
                     task.current_stage = "delegated_to_worker_self_heal"
                     task.error = None
                     task.cancel_requested = False
-                    task.progress_events.append({
-                        "timestamp": _utc_now(),
-                        "stage": "delegated_to_worker_self_heal",
-                        "payload": {"reason": reason, "heal_owned": heal_owned},
-                    })
+                    task.progress_events.append(
+                        {
+                            "timestamp": _utc_now(),
+                            "stage": "delegated_to_worker_self_heal",
+                            "payload": {"reason": reason, "heal_owned": heal_owned},
+                        }
+                    )
                     task.progress_events = task.progress_events[-300:]
                     self._save_to_disk()
                     delegated.append(task_id)
                     logger.info(
-                        "Delegated zombie task %s (slug=%s, heal_owned=%s) to "
-                        "worker self-heal",
-                        task_id, slug, heal_owned,
+                        "Delegated zombie task %s (slug=%s, heal_owned=%s) to worker self-heal",
+                        task_id,
+                        slug,
+                        heal_owned,
                     )
                 elif task.task_type == "autowrite" and redis_url and slug:
                     enqueue_autowrite_slug = slug
@@ -1553,17 +1818,20 @@ class WebTaskManager:
                         "resume manually to continue."
                     )
                     task.cancel_requested = False
-                    task.progress_events.append({
-                        "timestamp": _utc_now(),
-                        "stage": "auto_resume_not_claimed",
-                        "payload": {"reason": reason, "heal_owned": False},
-                    })
+                    task.progress_events.append(
+                        {
+                            "timestamp": _utc_now(),
+                            "stage": "auto_resume_not_claimed",
+                            "payload": {"reason": reason, "heal_owned": False},
+                        }
+                    )
                     task.progress_events = task.progress_events[-300:]
                     self._save_to_disk()
                     logger.info(
                         "Zombie task %s (slug=%s) was not claimed by worker "
                         "self-heal; marked incomplete for manual resume",
-                        task_id, slug,
+                        task_id,
+                        slug,
                     )
             if enqueue_autowrite_slug is not None and redis_url:
                 job_id = _enqueue_autowrite_heal_job(redis_url, enqueue_autowrite_slug)
@@ -1577,23 +1845,27 @@ class WebTaskManager:
                         task.current_stage = "delegated_to_worker_self_heal"
                         task.error = None
                         task.cancel_requested = False
-                        task.progress_events.append({
-                            "timestamp": now,
-                            "stage": "delegated_to_worker_self_heal",
-                            "payload": {
-                                "reason": "web auto-resume enqueued worker self-heal job",
-                                "heal_owned": True,
-                                "enqueued_by_web": True,
-                                "job_id": job_id,
-                            },
-                        })
+                        task.progress_events.append(
+                            {
+                                "timestamp": now,
+                                "stage": "delegated_to_worker_self_heal",
+                                "payload": {
+                                    "reason": "web auto-resume enqueued worker self-heal job",
+                                    "heal_owned": True,
+                                    "enqueued_by_web": True,
+                                    "job_id": job_id,
+                                },
+                            }
+                        )
                         task.progress_events = task.progress_events[-300:]
                         self._save_to_disk()
                         delegated.append(task_id)
                         logger.info(
                             "Auto-resume enqueued worker self-heal job %s for "
                             "zombie task %s (slug=%s)",
-                            job_id, task_id, enqueue_autowrite_slug,
+                            job_id,
+                            task_id,
+                            enqueue_autowrite_slug,
                         )
                     else:
                         reason = (
@@ -1608,21 +1880,24 @@ class WebTaskManager:
                             "resume manually to continue."
                         )
                         task.cancel_requested = False
-                        task.progress_events.append({
-                            "timestamp": _utc_now(),
-                            "stage": "auto_resume_not_claimed",
-                            "payload": {
-                                "reason": reason,
-                                "heal_owned": False,
-                                "enqueue_failed": True,
-                            },
-                        })
+                        task.progress_events.append(
+                            {
+                                "timestamp": _utc_now(),
+                                "stage": "auto_resume_not_claimed",
+                                "payload": {
+                                    "reason": reason,
+                                    "heal_owned": False,
+                                    "enqueue_failed": True,
+                                },
+                            }
+                        )
                         task.progress_events = task.progress_events[-300:]
                         self._save_to_disk()
                         logger.info(
                             "Zombie task %s (slug=%s) could not be enqueued "
                             "for worker self-heal; marked incomplete",
-                            task_id, enqueue_autowrite_slug,
+                            task_id,
+                            enqueue_autowrite_slug,
                         )
             if repair_payload is not None:
                 thread = threading.Thread(
@@ -1672,14 +1947,18 @@ class WebTaskManager:
             # to ensure transactional consistency.
             async with session_scope(settings) as session:
                 if run_conception:
-                    from bestseller.services.conception import run_conception_pipeline  # noqa: PLC0415
+                    from bestseller.services.conception import (
+                        run_conception_pipeline,
+                    )
 
                     genre_key = str(payload.get("_genre_key", ""))
                     if genre_key:
                         # ── Story Architect: generate StoryFacets before conception ──
                         story_facets_obj = None
                         try:
-                            from bestseller.services.story_architect import architect_story_facets  # noqa: PLC0415
+                            from bestseller.services.story_architect import (
+                                architect_story_facets,
+                            )
 
                             story_facets_obj = await architect_story_facets(
                                 session,
@@ -1688,15 +1967,20 @@ class WebTaskManager:
                                 language=str(payload.get("language", "zh-CN")),
                                 genre_key=genre_key,
                             )
-                            progress("story_architect_complete", {
-                                "tone": story_facets_obj.tone,
-                                "narrative_drive": story_facets_obj.narrative_drive,
-                                "trope_tags": list(story_facets_obj.trope_tags),
-                                "setting": story_facets_obj.setting,
-                                "source": story_facets_obj.generation_source,
-                            })
+                            progress(
+                                "story_architect_complete",
+                                {
+                                    "tone": story_facets_obj.tone,
+                                    "narrative_drive": story_facets_obj.narrative_drive,
+                                    "trope_tags": list(story_facets_obj.trope_tags),
+                                    "setting": story_facets_obj.setting,
+                                    "source": story_facets_obj.generation_source,
+                                },
+                            )
                         except Exception:
-                            logger.warning("Story Architect failed; proceeding without facets", exc_info=True)
+                            logger.warning(
+                                "Story Architect failed; proceeding without facets", exc_info=True
+                            )
 
                         conception_result = await run_conception_pipeline(
                             session,
@@ -1714,14 +1998,21 @@ class WebTaskManager:
                         conception_log = conception_result.conception_log
                         effective_synopsis = conception_result.synopsis
                         effective_tags = conception_result.tags
-                        progress("conception_complete", {
-                            "title": effective_title,
-                            "premise_preview": effective_premise[:200],
-                            "synopsis_preview": effective_synopsis[:200] if effective_synopsis else "",
-                            "tags": effective_tags,
-                            "profile_keys": list(conception_result.writing_profile.keys()),
-                            "commercial_brief_keys": list(conception_result.commercial_brief.keys()),
-                        })
+                        progress(
+                            "conception_complete",
+                            {
+                                "title": effective_title,
+                                "premise_preview": effective_premise[:200],
+                                "synopsis_preview": effective_synopsis[:200]
+                                if effective_synopsis
+                                else "",
+                                "tags": effective_tags,
+                                "profile_keys": list(conception_result.writing_profile.keys()),
+                                "commercial_brief_keys": list(
+                                    conception_result.commercial_brief.keys()
+                                ),
+                            },
+                        )
 
                 project_metadata: dict[str, object] = {"premise": effective_premise}
                 if run_conception:
@@ -1732,8 +2023,12 @@ class WebTaskManager:
                     project_metadata["story_facets"] = story_facets_obj.model_dump(mode="json")
                 if conception_brief:
                     project_metadata["commercial_brief"] = conception_brief
-                    project_metadata["benchmark_works"] = conception_brief.get("benchmark_works", [])
-                    project_metadata["target_audiences"] = conception_brief.get("target_audiences", [])
+                    project_metadata["benchmark_works"] = conception_brief.get(
+                        "benchmark_works", []
+                    )
+                    project_metadata["target_audiences"] = conception_brief.get(
+                        "target_audiences", []
+                    )
                 if conception_log:
                     project_metadata["conception_log"] = conception_log
                 if payload.get("draft_mode"):
@@ -1781,7 +2076,7 @@ class WebTaskManager:
         except TaskCancelledError as exc:
             self._mark_cancelled(task_id)
             logger.info("Task %s exited via cancellation: %s", task_id, exc)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             self._mark_failed(
                 task_id,
                 f"Pipeline exceeded timeout of {pipeline_timeout:.0f}s",
@@ -1807,7 +2102,7 @@ class WebTaskManager:
         Supports resume: pass ``project_slug`` to continue an existing project
         instead of creating a new one.
         """
-        from bestseller.services.writing_presets import (  # noqa: PLC0415
+        from bestseller.services.writing_presets import (
             list_genre_presets,
             list_length_presets,
         )
@@ -1816,7 +2111,9 @@ class WebTaskManager:
         genre_presets = {p.key: p for p in list_genre_presets()}
         genre_preset = genre_presets.get(genre_key)
         if genre_preset is None:
-            raise ValueError(f"Unknown genre_key: {genre_key}. Available: {list(genre_presets.keys())}")
+            raise ValueError(
+                f"Unknown genre_key: {genre_key}. Available: {list(genre_presets.keys())}"
+            )
 
         # Resolve chapter count
         chapter_count = int(payload.get("chapter_count") or 0)
@@ -1827,7 +2124,11 @@ class WebTaskManager:
             if lp:
                 chapter_count = lp.target_chapters
         if chapter_count <= 0:
-            chapter_count = genre_preset.target_chapter_options[0] if genre_preset.target_chapter_options else 30
+            chapter_count = (
+                genre_preset.target_chapter_options[0]
+                if genre_preset.target_chapter_options
+                else 30
+            )
 
         words_per_chapter = load_settings().generation.words_per_chapter.target
         target_words = chapter_count * words_per_chapter
@@ -1844,7 +2145,8 @@ class WebTaskManager:
             slug = resume_slug
             title = placeholder
         else:
-            import time  # noqa: PLC0415
+            import time
+
             slug = f"{genre_key}-{int(time.time())}"
             title = placeholder
 
@@ -1872,7 +2174,9 @@ class WebTaskManager:
             "auto_repair": True,
             "draft_mode": bool(payload.get("draft_mode", False)),
             "language": genre_preset.language,
-            "writing_profile": sanitize_genre_story_overrides(genre_preset.writing_profile_overrides),
+            "writing_profile": sanitize_genre_story_overrides(
+                genre_preset.writing_profile_overrides
+            ),
             # Enable AI conception for new projects (not resume)
             "_run_conception": is_new_project,
             "_genre_key": genre_key,
@@ -1935,12 +2239,15 @@ class WebTaskManager:
                 from bestseller.domain.enums import ProjectType
                 from bestseller.domain.project import WritingProfile
                 from bestseller.services.projects import create_project
+
                 async with session_scope(settings) as session:
                     existing = await get_project_by_slug(session, project_slug)
                     if existing is not None:
                         return existing
                     # Auto-create a minimal IF project from the payload
-                    if_cfg_for_profile = InteractiveFictionConfig.model_validate({**cfg_dict, "enabled": True})
+                    if_cfg_for_profile = InteractiveFictionConfig.model_validate(
+                        {**cfg_dict, "enabled": True}
+                    )
                     title = str(payload.get("title") or project_slug)
                     genre = cfg_dict.get("if_genre") or "修仙升级"
                     wp_override = WritingProfile(interactive_fiction=if_cfg_for_profile)
@@ -2054,31 +2361,35 @@ class WebTaskManager:
         No-ops when Redis is unreachable — the UI degrades to the stale
         in-memory view rather than crashing the whole server.
         """
-        import redis as _redis  # noqa: PLC0415 — lazy to keep import light
+        import redis as _redis
 
         try:
             client = _redis.from_url(redis_url, decode_responses=True, socket_timeout=2)
         except Exception:
             return 0
 
-        def _worker_job_is_active(job_id: str) -> bool:
+        def _worker_job_redis_state(job_id: str) -> str | None:
             try:
                 if client.exists(
                     f"arq:job:{job_id}",
                     f"arq:in-progress:{job_id}",
                     f"arq:retry:{job_id}",
                 ):
-                    return True
-                return client.zscore("arq:queue", job_id) is not None
+                    return "active"
+                if client.zscore("arq:queue", job_id) is not None:
+                    return "active"
+                if client.exists(f"arq:result:{job_id}"):
+                    return "result"
+                return None
             except Exception:
-                return False
+                return None
 
         # Snapshot task_id → (project_slug, task_type, known_event_ts_set) to avoid
         # holding the manager lock across Redis I/O.
         with self._lock:
             snapshot: list[tuple[str, str, str, set[float]]] = []
             for tid, task in self._tasks.items():
-                if task.status not in ("running", "queued"):
+                if task.status not in ("running", "queued", "failed", "incomplete"):
                     continue
                 slug = (task.project_slug or "").strip()
                 if not slug:
@@ -2093,28 +2404,66 @@ class WebTaskManager:
         updated = 0
         for tid, slug, task_type, known_ts in snapshot:
             # The arq worker task id follows either ``autowrite:heal:<slug>``
-            # or ``repair:heal:<slug>``; direct web repair tasks do not write
-            # Redis progress, so never merge autowrite progress into a repair
-            # card with the same slug.
+            # or ``repair:heal:<slug>``. A recovered project normally has one
+            # durable autowrite card in the UI; when self-heal chooses a repair
+            # job for that same project, surface that repair progress on the
+            # existing book card instead of leaving it frozen as incomplete.
             if task_type == "repair":
-                job_id = f"repair:heal:{slug}"
-                redis_key = f"task:repair:heal:{slug}:progress"
+                candidates = [
+                    (
+                        f"repair:heal:{slug}",
+                        f"task:repair:heal:{slug}:progress",
+                    )
+                ]
             else:
-                job_id = f"autowrite:heal:{slug}"
-                redis_key = f"task:autowrite:heal:{slug}:progress"
-            if not _worker_job_is_active(job_id):
-                continue
-            try:
-                # Last 100 events are plenty — earlier ones are already in
-                # task.progress_events (and we only keep the last 300 anyway).
-                raw_events = client.lrange(redis_key, -100, -1)
-            except Exception:
-                continue
-            if not raw_events:
+                candidates = [
+                    (
+                        f"autowrite:heal:{slug}",
+                        f"task:autowrite:heal:{slug}:progress",
+                    ),
+                    (
+                        f"repair:heal:{slug}",
+                        f"task:repair:heal:{slug}:progress",
+                    ),
+                ]
+            selected: tuple[str, str] | None = None
+            raw_events: list[str] = []
+            selected_latest_ts = -1.0
+            selected_state_rank = -1
+            for job_id, redis_key in candidates:
+                job_state = _worker_job_redis_state(job_id)
+                if job_state is None:
+                    continue
+                try:
+                    # Last 100 events are plenty — earlier ones are already in
+                    # task.progress_events (and we only keep the last 300 anyway).
+                    candidate_events = client.lrange(redis_key, -100, -1)
+                except Exception:
+                    continue
+                candidate_latest_ts = -1.0
+                for raw in candidate_events:
+                    try:
+                        evt = json.loads(raw)
+                    except Exception:
+                        continue
+                    ts = evt.get("ts")
+                    if isinstance(ts, (int, float)):
+                        candidate_latest_ts = max(candidate_latest_ts, float(ts))
+                state_rank = 1 if job_state == "active" else 0
+                if state_rank > selected_state_rank or (
+                    state_rank == selected_state_rank
+                    and candidate_latest_ts > selected_latest_ts
+                ):
+                    selected = (job_id, redis_key)
+                    raw_events = candidate_events
+                    selected_latest_ts = candidate_latest_ts
+                    selected_state_rank = state_rank
+            if selected is None or not raw_events:
                 continue
 
             fresh: list[dict[str, Any]] = []
             latest_stage: str | None = None
+            latest_payload: dict[str, Any] = {}
             latest_ts: float = 0.0
             for raw in raw_events:
                 try:
@@ -2131,13 +2480,16 @@ class WebTaskManager:
                 if ts_f > latest_ts:
                     latest_ts = ts_f
                     latest_stage = msg
+                    latest_payload = evt.get("data") if isinstance(evt.get("data"), dict) else {}
                 if ts_f in known_ts:
                     continue
-                fresh.append({
-                    "timestamp": ts_f,
-                    "stage": msg,
-                    "payload": evt.get("data") or {},
-                })
+                fresh.append(
+                    {
+                        "timestamp": ts_f,
+                        "stage": msg,
+                        "payload": evt.get("data") or {},
+                    }
+                )
 
             if not fresh and latest_stage is None:
                 continue
@@ -2149,8 +2501,66 @@ class WebTaskManager:
                 if fresh:
                     task.progress_events = (task.progress_events + fresh)[-300:]
                 if latest_stage is not None:
+                    normalized_stage = latest_stage.lower()
                     task.current_stage = latest_stage
+                    is_human_review_stage = (
+                        normalized_stage in _HUMAN_REVIEW_STAGES
+                        or "human_review" in normalized_stage
+                    )
+                    if is_human_review_stage or (
+                        normalized_stage in _TERMINAL_ATTENTION_STAGES
+                        and _payload_requires_human_attention(latest_payload)
+                    ):
+                        task.current_stage = (
+                            "waiting_human_review"
+                            if normalized_stage in _TERMINAL_ATTENTION_STAGES
+                            else latest_stage
+                        )
+                        task.status = "incomplete"
+                        error = latest_payload.get("error") or latest_payload.get("message")
+                        reason = latest_payload.get("reason")
+                        task.error = str(
+                            error
+                            or reason
+                            or "Task reached a human-review or attention gate."
+                        )
+                    elif normalized_stage in {"completed", "done", "finished"}:
+                        task.status = "completed"
+                        task.result = latest_payload or task.result
+                        task.error = None
+                    elif normalized_stage in {"failed", "error"}:
+                        task.status = "failed"
+                        error = latest_payload.get("error") or latest_payload.get("message")
+                        task.error = str(error or "Worker self-heal task failed")
+                    elif normalized_stage in {
+                        "waiting_human",
+                        "waiting_human_review",
+                        "blocked_generation_gate",
+                    }:
+                        task.status = "incomplete"
+                        error = latest_payload.get("error") or latest_payload.get("message")
+                        reason = latest_payload.get("reason")
+                        task.error = str(
+                            error
+                            or reason
+                            or "Task is waiting for planning-gate repair."
+                        )
+                        # When the worker emitted a structured sub-code (e.g.
+                        # ``write_safety_gate_failed:identity_pronoun_mismatch``),
+                        # tack the actionable suffix onto the stage so the UI
+                        # badge can surface the precise cause without the user
+                        # having to expand the error blob.
+                        if reason and ":" in str(reason):
+                            subcode = str(reason).split(":", 1)[1].strip()
+                            if subcode:
+                                task.current_stage = (
+                                    f"{normalized_stage}:{subcode}"
+                                )
+                    elif task.status in {"failed", "incomplete"}:
+                        task.status = "running"
+                        task.error = None
                 task.updated_at = _utc_now()
+                self._save_to_disk()
                 updated += 1
 
         try:
@@ -2166,7 +2576,7 @@ def _extract_target_chapters_from_project_md(project_md: Path) -> int | None:
 
     Returns ``None`` if the file cannot be read or no chapter heading is found.
     """
-    import re as _re  # noqa: PLC0415
+    import re as _re
 
     if not project_md.exists():
         return None
@@ -2191,7 +2601,7 @@ def _infer_genre_key_from_slug(slug: str) -> str:
     Strips a trailing numeric suffix and validates against the installed
     genre presets. Returns an empty string when no preset matches.
     """
-    from bestseller.services.writing_presets import list_genre_presets  # noqa: PLC0415
+    from bestseller.services.writing_presets import list_genre_presets
 
     candidate = slug.rsplit("-", 1)[0] if "-" in slug else slug
     valid_keys = {p.key for p in list_genre_presets()}
@@ -2209,8 +2619,7 @@ def _payload_from_project_model(project: Any) -> dict[str, object]:
     metadata = project.metadata_json or {}
     genre_key = str(metadata.get("genre_key") or _infer_genre_key_from_slug(project.slug))
     premise = str(
-        metadata.get("premise")
-        or f"\u7ee7\u7eed\u300a{project.title}\u300b\u7684\u521b\u4f5c"
+        metadata.get("premise") or f"\u7ee7\u7eed\u300a{project.title}\u300b\u7684\u521b\u4f5c"
     )
     return {
         "slug": project.slug,
@@ -2271,7 +2680,7 @@ async def _recover_projects_from_output(settings: AppSettings) -> list[dict[str,
 
     Returns a list of recovered project summaries.
     """
-    import re as _re  # noqa: PLC0415
+    import re as _re
 
     output_base = Path(settings.output.base_dir)
     if not output_base.exists():
@@ -2305,7 +2714,9 @@ async def _recover_projects_from_output(settings: AppSettings) -> list[dict[str,
                     title_match = _re.search(r"^#\s+(.+)$", first_lines, _re.MULTILINE)
                     if title_match:
                         title = title_match.group(1).strip()
-                    genre_match = _re.search(r">\s*\u7c7b\u578b\uff1a(.+)$", first_lines, _re.MULTILINE)
+                    genre_match = _re.search(
+                        r">\s*\u7c7b\u578b\uff1a(.+)$", first_lines, _re.MULTILINE
+                    )
                     if genre_match:
                         genre = genre_match.group(1).strip()
                 except OSError:
@@ -2331,12 +2742,10 @@ async def _recover_projects_from_output(settings: AppSettings) -> list[dict[str,
 
             # Store a validated genre_key so resume doesn't need regex guessing.
             genre_key = _infer_genre_key_from_slug(slug)
-            recovered_status = (
-                "completed" if chapter_count >= target_chapters else "in_progress"
-            )
+            recovered_status = "completed" if chapter_count >= target_chapters else "in_progress"
 
-            from bestseller.domain.enums import ChapterStatus  # noqa: PLC0415
-            from bestseller.infra.db.models import ChapterModel, ProjectModel  # noqa: PLC0415
+            from bestseller.domain.enums import ChapterStatus
+            from bestseller.infra.db.models import ChapterModel, ProjectModel
 
             project = ProjectModel(
                 slug=slug,
@@ -2374,26 +2783,30 @@ async def _recover_projects_from_output(settings: AppSettings) -> list[dict[str,
                 h1 = _re.search(r"^#\s+(.+)$", body[:500], _re.MULTILINE)
                 if h1:
                     ch_title = h1.group(1).strip()[:200]
-                session.add(ChapterModel(
-                    project_id=project.id,
-                    chapter_number=ch_num,
-                    title=ch_title,
-                    chapter_goal="(recovered from disk)",
-                    information_revealed=[],
-                    information_withheld=[],
-                    foreshadowing_actions={},
-                    current_word_count=len(body),
-                    target_word_count=2000,
-                    status=ChapterStatus.COMPLETE.value,
-                    metadata_json={"recovered": True, "source_file": ch_file.name},
-                ))
-            recovered.append({
-                "slug": slug,
-                "title": title,
-                "genre": genre,
-                "chapters_found": chapter_count,
-                "target_chapters": target_chapters,
-            })
+                session.add(
+                    ChapterModel(
+                        project_id=project.id,
+                        chapter_number=ch_num,
+                        title=ch_title,
+                        chapter_goal="(recovered from disk)",
+                        information_revealed=[],
+                        information_withheld=[],
+                        foreshadowing_actions={},
+                        current_word_count=len(body),
+                        target_word_count=2000,
+                        status=ChapterStatus.COMPLETE.value,
+                        metadata_json={"recovered": True, "source_file": ch_file.name},
+                    )
+                )
+            recovered.append(
+                {
+                    "slug": slug,
+                    "title": title,
+                    "genre": genre,
+                    "chapters_found": chapter_count,
+                    "target_chapters": target_chapters,
+                }
+            )
 
     return recovered
 
@@ -2473,9 +2886,7 @@ async def _load_library_payload(settings: AppSettings) -> list[dict[str, object]
                 except OSError:
                     continue
             last_updated_iso = (
-                datetime.fromtimestamp(last_mtime, tz=UTC).isoformat()
-                if last_mtime > 0
-                else None
+                datetime.fromtimestamp(last_mtime, tz=UTC).isoformat() if last_mtime > 0 else None
             )
 
             # Surface tags / category from listing profile if it exists
@@ -2494,33 +2905,43 @@ async def _load_library_payload(settings: AppSettings) -> list[dict[str, object]
                 except (OSError, ValueError):
                     pass
 
-            results.append({
-                "id": str(row.id),
-                "slug": slug,
-                "title": row.title,
-                "genre": row.genre,
-                "primary_category": primary_category,
-                "status": row.status,
-                "target_chapters": row.target_chapters,
-                "target_word_count": row.target_word_count,
-                "completed_chapters": completed_chapters,
-                "chapters_on_disk": chapters_on_disk,
-                "db_chapter_total": db_total,
-                "words_on_disk": words_on_disk,
-                "last_updated": last_updated_iso,
-                "has_project_md": project_md_exists,
-                "tags": tags,
-                "tagline": tagline,
-                "repair_status": _build_project_repair_status_payload(
-                    row,
-                    db_counters,
-                ),
-            })
+            results.append(
+                {
+                    "id": str(row.id),
+                    "slug": slug,
+                    "title": row.title,
+                    "genre": row.genre,
+                    "primary_category": primary_category,
+                    "status": row.status,
+                    "target_chapters": row.target_chapters,
+                    "target_word_count": row.target_word_count,
+                    "completed_chapters": completed_chapters,
+                    "chapters_on_disk": chapters_on_disk,
+                    "db_chapter_total": db_total,
+                    "words_on_disk": words_on_disk,
+                    "last_updated": last_updated_iso,
+                    "has_project_md": project_md_exists,
+                    "tags": tags,
+                    "tagline": tagline,
+                    "repair_status": _build_project_repair_status_payload(
+                        row,
+                        db_counters,
+                    ),
+                }
+            )
         # Sort: in-progress first (most recently updated), then completed
         results.sort(
             key=lambda r: (
-                0 if str(r.get("status") or "").lower() in {"running", "in_progress", "queued", "draft"} else 1,
-                -1 * (datetime.fromisoformat(r["last_updated"]).timestamp() if r.get("last_updated") else 0),
+                0
+                if str(r.get("status") or "").lower()
+                in {"running", "in_progress", "queued", "draft"}
+                else 1,
+                -1
+                * (
+                    datetime.fromisoformat(r["last_updated"]).timestamp()
+                    if r.get("last_updated")
+                    else 0
+                ),
             )
         )
         return results
@@ -2532,8 +2953,9 @@ async def _load_project_chapter_state_counts(
 ) -> dict[UUID, list[dict[str, object]]]:
     if not project_ids:
         return {}
-    from sqlalchemy import func, select  # noqa: PLC0415
-    from bestseller.infra.db.models import ChapterModel  # noqa: PLC0415
+    from sqlalchemy import func, select
+
+    from bestseller.infra.db.models import ChapterModel
 
     rows = await session.execute(
         select(
@@ -2570,11 +2992,19 @@ def _safe_int(value: object, default: int = 0) -> int:
         return default
 
 
-_STRUCTURAL_REPAIR_BLOCK_FLAGS: frozenset[str] = frozenset({
-    "generation_resume_blocked_until_repair_audit",
-    "production_paused",
-    "structural_repair_required",
-})
+_STRUCTURAL_REPAIR_BLOCK_FLAGS: frozenset[str] = frozenset(
+    {
+        "generation_resume_blocked_until_repair_audit",
+        "production_paused",
+        "structural_repair_required",
+    }
+)
+_GENERATION_GATE_BLOCK_FLAGS: frozenset[str] = frozenset(
+    {
+        "generation_resume_blocked_by_planning_gate",
+        "generation_auto_repair_exhausted",
+    }
+)
 
 
 def _format_project_repair_pause_error(
@@ -2594,11 +3024,32 @@ def _format_project_repair_pause_error(
     return message
 
 
+def _format_generation_gate_pause_error(
+    project_slug: str,
+    reason: object | None = None,
+    *,
+    raw_detail: str | None = None,
+) -> str:
+    reason_text = str(reason or "planning gate auto-repair exhausted")
+    message = (
+        f"项目 '{project_slug}' 当前被规划/世界观门禁暂停。"
+        f"原因：{reason_text}。系统已完成自动回炉尝试但仍未闭合，"
+        "后续恢复会携带该诊断重新进入自动修复链路。"
+    )
+    if raw_detail:
+        message = f"{message} 原始错误：{raw_detail}"
+    return message
+
+
 def _project_autowrite_block_payload(project: Any) -> dict[str, object] | None:
     metadata = getattr(project, "metadata_json", None) or {}
     if not isinstance(metadata, dict):
         metadata = {}
-    if not any(bool(metadata.get(flag)) for flag in _STRUCTURAL_REPAIR_BLOCK_FLAGS):
+    structural_blocked = any(bool(metadata.get(flag)) for flag in _STRUCTURAL_REPAIR_BLOCK_FLAGS)
+    generation_gate_blocked = any(
+        bool(metadata.get(flag)) for flag in _GENERATION_GATE_BLOCK_FLAGS
+    )
+    if not structural_blocked and not generation_gate_blocked:
         return None
 
     slug = str(getattr(project, "slug", "") or "")
@@ -2608,6 +3059,21 @@ def _project_autowrite_block_payload(project: Any) -> dict[str, object] | None:
         or metadata.get("rescue_status")
         or "structural_repair_required"
     )
+    if generation_gate_blocked:
+        detail = metadata.get("last_generation_gate_error")
+        return {
+            "ok": False,
+            "blocked_generation_gate": True,
+            "project_slug": slug,
+            "current_stage": "blocked_generation_gate",
+            "reason": reason,
+            "error": _format_generation_gate_pause_error(
+                slug,
+                reason,
+                raw_detail=detail if isinstance(detail, str) else None,
+            ),
+            "next_action": "resume_with_generation_gate_diagnostics",
+        }
     return {
         "ok": False,
         "blocked_structural_repair": True,
@@ -2658,23 +3124,26 @@ def _build_project_repair_status_payload(
     )
     repair_scope_total = initial_repair_scope if initial_repair_scope > 0 else blocked_chapters
     repair_remaining = (
-        min(blocked_chapters, repair_scope_total)
-        if repair_scope_total > 0
-        else blocked_chapters
+        min(blocked_chapters, repair_scope_total) if repair_scope_total > 0 else blocked_chapters
     )
     repair_completed = max(repair_scope_total - repair_remaining, 0)
     progress_percent = (
-        round((repair_completed / repair_scope_total) * 100, 1)
-        if repair_scope_total > 0
-        else None
+        round((repair_completed / repair_scope_total) * 100, 1) if repair_scope_total > 0 else None
     )
 
     production_paused = bool(metadata.get("production_paused"))
     resume_blocked = bool(metadata.get("generation_resume_blocked_until_repair_audit"))
+    generation_gate_blocked = any(
+        bool(metadata.get(flag)) for flag in _GENERATION_GATE_BLOCK_FLAGS
+    )
     structural_repair_required = bool(metadata.get("structural_repair_required"))
     project_status = str(getattr(project, "status", "") or "")
 
-    if production_paused or resume_blocked:
+    if generation_gate_blocked:
+        phase = "planning_gate"
+        label = "规划自动修复耗尽"
+        detail = "规划/世界观门禁未闭合，恢复时会携带诊断重新进入自动修复链路。"
+    elif production_paused or resume_blocked:
         phase = "repair_gate"
         label = "修复门控中"
         detail = "项目已暂停继续生产，需先完成阻塞章节修复并通过审计。"
@@ -2814,15 +3283,14 @@ async def _load_project_summary_payload(
         )
     outputs = collect_project_artifact_entries(settings, project_slug)
     markdown_entries = [item for item in outputs if str(item["suffix"]) == ".md"]
-    default_preview_entry = (
-        next((item for item in markdown_entries if item["name"] == "project.md"), None)
-        or (markdown_entries[0] if markdown_entries else None)
+    default_preview_entry = next(
+        (item for item in markdown_entries if item["name"] == "project.md"), None
+    ) or (markdown_entries[0] if markdown_entries else None)
+    project_markdown_entry = next(
+        (item for item in markdown_entries if item["name"] == "project.md"), None
     )
-    project_markdown_entry = next((item for item in markdown_entries if item["name"] == "project.md"), None)
     chapter_markdown_entries = [
-        item
-        for item in markdown_entries
-        if str(item["name"]).startswith("chapter-")
+        item for item in markdown_entries if str(item["name"]).startswith("chapter-")
     ]
     world_expansion = _resolve_story_bible_progress(
         story_bible,
@@ -2891,11 +3359,23 @@ async def _load_project_summary_payload(
         },
         "output_stats": {
             "markdown_output_count": len(markdown_entries),
-            "project_word_count": int(project_markdown_entry["word_count"]) if project_markdown_entry else 0,
-            "chapter_word_count_total": sum(int(item.get("word_count") or 0) for item in chapter_markdown_entries),
-            "default_preview_name": str(default_preview_entry["name"]) if default_preview_entry else None,
-            "default_preview_word_count": int(default_preview_entry["word_count"]) if default_preview_entry else 0,
-            "default_preview_estimated_read_minutes": int(default_preview_entry["estimated_read_minutes"]) if default_preview_entry else 0,
+            "project_word_count": int(project_markdown_entry["word_count"])
+            if project_markdown_entry
+            else 0,
+            "chapter_word_count_total": sum(
+                int(item.get("word_count") or 0) for item in chapter_markdown_entries
+            ),
+            "default_preview_name": str(default_preview_entry["name"])
+            if default_preview_entry
+            else None,
+            "default_preview_word_count": int(default_preview_entry["word_count"])
+            if default_preview_entry
+            else 0,
+            "default_preview_estimated_read_minutes": int(
+                default_preview_entry["estimated_read_minutes"]
+            )
+            if default_preview_entry
+            else 0,
         },
         "outputs": outputs,
         "default_preview_name": (
@@ -3007,7 +3487,7 @@ _LISTING_REGENERATE_MODULES: dict[str, dict[str, object]] = {
         "system": (
             "你是网文广告文案。请输出三条宣传文案：① 钩子型（适合首发广告）"
             "② 人物型（适合书友社区）③ 爽点型（适合短视频）。"
-            "返回 JSON 数组，每个元素是一条不超过 120 字的中文文案。例：[\"...\", \"...\", \"...\"]。"
+            '返回 JSON 数组，每个元素是一条不超过 120 字的中文文案。例：["...", "...", "..."]。'
             "只输出 JSON，不要其他解释。"
         ),
     },
@@ -3016,7 +3496,7 @@ _LISTING_REGENERATE_MODULES: dict[str, dict[str, object]] = {
         "kind": "json_list",
         "system": (
             "你是网文上架编辑。请输出 12-18 个适合的标签词（每个 2-6 字，"
-            "覆盖题材、人设、爽点、调性）。返回 JSON 数组，例：[\"末日\",\"重生\"]。"
+            '覆盖题材、人设、爽点、调性）。返回 JSON 数组，例：["末日","重生"]。'
             "只输出 JSON，不要其他解释。"
         ),
     },
@@ -3025,7 +3505,7 @@ _LISTING_REGENERATE_MODULES: dict[str, dict[str, object]] = {
         "kind": "json_titles",
         "system": (
             "你是网文上架编辑。请生成 10 个候选书名。返回 JSON 数组，每个元素是 "
-            "{\"title\": \"...\", \"subtitle\": \"...\", \"angle\": \"切入角度\", \"recommendation\": \"主推/备选/广告测试\"}。"
+            '{"title": "...", "subtitle": "...", "angle": "切入角度", "recommendation": "主推/备选/广告测试"}。'
             "标题之间应有差异（一个直接型、一个文学型、一个爽点型、一个反差型 …）。只输出 JSON。"
         ),
     },
@@ -3041,9 +3521,7 @@ _LISTING_REGENERATE_MODULES: dict[str, dict[str, object]] = {
         "label": "推荐副标题",
         "kind": "text",
         "max_chars": 40,
-        "system": (
-            "你是网文编辑。给出一个 8-22 字的副标题，强化主推卖点。只输出副标题本身。"
-        ),
+        "system": ("你是网文编辑。给出一个 8-22 字的副标题，强化主推卖点。只输出副标题本身。"),
     },
 }
 
@@ -3061,11 +3539,14 @@ def _build_listing_regenerate_user_prompt(
     short_intro = listing.get("short_intro") or ""
     tags = listing.get("tags") or []
     characters = listing.get("main_characters") or []
-    char_summary = "、".join(
-        f"{c.get('name', '')}（{c.get('role') or '主要角色'}）"
-        for c in characters[:4]
-        if isinstance(c, dict) and c.get("name")
-    ) or "—"
+    char_summary = (
+        "、".join(
+            f"{c.get('name', '')}（{c.get('role') or '主要角色'}）"
+            for c in characters[:4]
+            if isinstance(c, dict) and c.get("name")
+        )
+        or "—"
+    )
     return (
         f"书名：《{title}》\n"
         f"题材：{genre}{(' / ' + sub_genre) if sub_genre else ''}\n"
@@ -3099,7 +3580,7 @@ async def _regenerate_listing_module(
     spec = _LISTING_REGENERATE_MODULES[module]
 
     # Helper to import only when called (keeps import graph minimal).
-    from bestseller.services.llm import (  # noqa: PLC0415
+    from bestseller.services.llm import (
         LLMCompletionRequest,
         complete_text,
     )
@@ -3157,9 +3638,7 @@ async def _regenerate_listing_module(
         raise RuntimeError(f"unknown module kind: {kind}")
 
     # ── Persist as file override ────────────────────────────────────────
-    listing_dir = (
-        Path(settings.output.base_dir).resolve() / project_slug / "listing"
-    )
+    listing_dir = Path(settings.output.base_dir).resolve() / project_slug / "listing"
     listing_dir.mkdir(parents=True, exist_ok=True)
     metadata_path = listing_dir / "book-listing-metadata.json"
     existing: dict[str, Any] = {}
@@ -3259,7 +3738,7 @@ def _strip_code_fences(text: str) -> str:
         # Drop opening fence (with optional language) and closing fence.
         s = s.split("\n", 1)[1] if "\n" in s else s
         if s.endswith("```"):
-            s = s[: -3]
+            s = s[:-3]
     return s.strip()
 
 
@@ -3267,7 +3746,7 @@ def _strip_bullet(line: str) -> str:
     s = line.strip()
     for prefix in ("- ", "• ", "* "):
         if s.startswith(prefix):
-            return s[len(prefix):]
+            return s[len(prefix) :]
     # Drop "1. " / "①" / etc.
     if len(s) > 2 and s[0].isdigit() and s[1] in {".", "、", ")", "."}:
         return s[2:].strip()
@@ -3315,9 +3794,10 @@ def _parse_scheduled_at(raw: object, schedule_timezone: str) -> datetime:
         raise ValueError(f"scheduled_at is not a valid ISO 8601 datetime: {exc}") from exc
     if parsed.tzinfo is None:
         try:
-            from zoneinfo import ZoneInfo  # noqa: PLC0415
+            from zoneinfo import ZoneInfo
+
             tz = ZoneInfo(schedule_timezone)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             raise ValueError(f"Unknown timezone {schedule_timezone!r}: {exc}") from exc
         parsed = parsed.replace(tzinfo=tz)
     return parsed.astimezone(UTC)
@@ -3331,11 +3811,9 @@ def _publish_book_schedule_event(settings: AppSettings, event: dict[str, object]
     only delays job registration until the next poll.
     """
     try:
-        import redis as _redis  # noqa: PLC0415
+        import redis as _redis
 
-        client = _redis.from_url(
-            settings.redis.url, decode_responses=True, socket_timeout=2
-        )
+        client = _redis.from_url(settings.redis.url, decode_responses=True, socket_timeout=2)
         client.publish(_BOOK_SCHEDULE_CHANNEL, json.dumps(event))
     except Exception:
         logging.getLogger(__name__).warning(
@@ -3351,7 +3829,7 @@ def _create_book_generation_schedule(
     task_type: str,
     payload: dict[str, object],
 ) -> dict[str, object]:
-    from bestseller.services.book_generation_schedules import (  # noqa: PLC0415
+    from bestseller.services.book_generation_schedules import (
         create_schedule,
     )
 
@@ -3384,16 +3862,14 @@ def _create_book_generation_schedule(
         raise ValueError(f"Unsupported task_type {task_type!r}")
 
     project_slug = (
-        str(inner_payload.get("slug") or "") or None
-    ) if task_type == "autowrite" else None
+        (str(inner_payload.get("slug") or "") or None) if task_type == "autowrite" else None
+    )
     title = (
-        str(inner_payload.get("title") or "") or None
-    ) if task_type == "autowrite" else (
-        str(inner_payload.get("genre_key") or "") or None
+        (str(inner_payload.get("title") or "") or None)
+        if task_type == "autowrite"
+        else (str(inner_payload.get("genre_key") or "") or None)
     )
-    requested_by = (
-        str(payload.get("requested_by") or "").strip() or None
-    )
+    requested_by = str(payload.get("requested_by") or "").strip() or None
 
     async def _do_create() -> dict[str, object]:
         async with session_scope(settings) as session:
@@ -3422,7 +3898,7 @@ def _list_book_generation_schedules(
     *,
     status_filter: str | None = None,
 ) -> list[dict[str, object]]:
-    from bestseller.services.book_generation_schedules import (  # noqa: PLC0415
+    from bestseller.services.book_generation_schedules import (
         list_schedules,
     )
 
@@ -3437,7 +3913,7 @@ def _list_book_generation_schedules(
 def _get_book_generation_schedule(
     settings: AppSettings, schedule_id: str
 ) -> dict[str, object] | None:
-    from bestseller.services.book_generation_schedules import (  # noqa: PLC0415
+    from bestseller.services.book_generation_schedules import (
         get_schedule,
     )
 
@@ -3458,7 +3934,7 @@ def _cancel_book_generation_schedule(
     settings: AppSettings, schedule_id: str
 ) -> str | dict[str, object]:
     """Returns "not_found", "invalid_state: <msg>", or the serialized row."""
-    from bestseller.services.book_generation_schedules import (  # noqa: PLC0415
+    from bestseller.services.book_generation_schedules import (
         cancel_schedule,
     )
 
@@ -3526,18 +4002,20 @@ def _load_if_novels_payload(settings: AppSettings) -> list[dict[str, object]]:
             data = json.loads(package_path.read_text(encoding="utf-8"))
             book = data.get("book") or {}
             chapters = data.get("chapters") or []
-            results.append({
-                "slug": slug_dir.name,
-                "title": book.get("title") or slug_dir.name,
-                "genre": book.get("genre") or "",
-                "synopsis": book.get("synopsis") or "",
-                "total_chapters": book.get("total_chapters") or len(chapters),
-                "tags": book.get("tags") or [],
-                "package_path": str(package_path),
-                "modified_at": datetime.fromtimestamp(
-                    package_path.stat().st_mtime, UTC
-                ).isoformat(),
-            })
+            results.append(
+                {
+                    "slug": slug_dir.name,
+                    "title": book.get("title") or slug_dir.name,
+                    "genre": book.get("genre") or "",
+                    "synopsis": book.get("synopsis") or "",
+                    "total_chapters": book.get("total_chapters") or len(chapters),
+                    "tags": book.get("tags") or [],
+                    "package_path": str(package_path),
+                    "modified_at": datetime.fromtimestamp(
+                        package_path.stat().st_mtime, UTC
+                    ).isoformat(),
+                }
+            )
         except (OSError, json.JSONDecodeError):
             continue
     return results
@@ -3546,6 +4024,7 @@ def _load_if_novels_payload(settings: AppSettings) -> list[dict[str, object]]:
 def _build_chapter_toc(output_dir: Path) -> list[dict[str, object]]:
     """Scan chapter-NNN.md files and extract titles for TOC."""
     import re as _re
+
     entries: list[dict[str, object]] = []
     for p in sorted(output_dir.glob("chapter-*.md")):
         content_md = ""
@@ -3596,9 +4075,9 @@ def _load_project_chapter_index(
     settings: AppSettings,
     project_slug: str,
 ) -> tuple[
-    list[dict[str, object]],          # chapter rows from DB (authoritative list)
-    dict[int, dict[str, object]],     # chapter_number → volume summary
-    list[dict[str, object]],          # ordered volume list
+    list[dict[str, object]],  # chapter rows from DB (authoritative list)
+    dict[int, dict[str, object]],  # chapter_number → volume summary
+    list[dict[str, object]],  # ordered volume list
 ]:
     """Return the DB-authoritative chapter list plus volume metadata.
 
@@ -3620,7 +4099,7 @@ def _load_project_chapter_index(
     try:
         from sqlalchemy import select
 
-        from bestseller.infra.db.models import (  # noqa: PLC0415
+        from bestseller.infra.db.models import (
             ChapterDraftVersionModel,
             ChapterModel,
             VolumeModel,
@@ -3669,8 +4148,7 @@ def _load_project_chapter_index(
                     )
                 )
                 draft_word_count_by_chapter_id = {
-                    chapter_id: int(word_count or 0)
-                    for chapter_id, word_count in draft_rows
+                    chapter_id: int(word_count or 0) for chapter_id, word_count in draft_rows
                 }
 
                 chapters_out: list[dict[str, object]] = []
@@ -3753,7 +4231,7 @@ def _load_task_chapter_word_stats(
     try:
         from sqlalchemy import select
 
-        from bestseller.infra.db.models import (  # noqa: PLC0415
+        from bestseller.infra.db.models import (
             ChapterDraftVersionModel,
             ChapterModel,
             ProjectModel,
@@ -3762,9 +4240,7 @@ def _load_task_chapter_word_stats(
         async def _fetch() -> dict[str, dict[str, object]]:
             async with session_scope(settings) as sess:
                 project_rows = list(
-                    await sess.scalars(
-                        select(ProjectModel).where(ProjectModel.slug.in_(slugs))
-                    )
+                    await sess.scalars(select(ProjectModel).where(ProjectModel.slug.in_(slugs)))
                 )
                 if not project_rows:
                     return {}
@@ -3797,8 +4273,7 @@ def _load_task_chapter_word_stats(
                     )
                 )
                 draft_word_count_by_chapter_id = {
-                    chapter_id: int(word_count or 0)
-                    for chapter_id, word_count in draft_rows
+                    chapter_id: int(word_count or 0) for chapter_id, word_count in draft_rows
                 }
 
                 chapter_rows = list(
@@ -3894,7 +4369,7 @@ def serve_web_app(
         try:
             recovered = await _recover_projects_from_output(settings)
             if recovered:
-                print(  # noqa: T201
+                print(
                     f"Auto-recovered {len(recovered)} projects from output directory"
                 )
         except Exception:
@@ -3907,7 +4382,7 @@ def serve_web_app(
         try:
             recovered_tasks = await task_manager._recover_tasks_from_output(settings)
             if recovered_tasks:
-                print(  # noqa: T201
+                print(
                     f"Auto-recovered {recovered_tasks} task(s) from output directory"
                 )
         except Exception:
@@ -3933,7 +4408,7 @@ def serve_web_app(
                 redis_url=settings.redis.url,
             )
             if resumed_ids:
-                print(  # noqa: T201
+                print(
                     f"Auto-resumed {len(resumed_ids)} zombie task(s) after "
                     f"server restart: {', '.join(tid[:8] for tid in resumed_ids)}"
                 )
@@ -3950,8 +4425,9 @@ def serve_web_app(
     _TASK_RETENTION_SECONDS = int(os.environ.get("BESTSELLER_TASK_RETENTION_SECONDS", "86400"))
 
     def _watchdog_loop() -> None:
-        import gc as _gc  # noqa: PLC0415
-        import time as _time  # noqa: PLC0415
+        import gc as _gc
+        import time as _time
+
         sweep_count = 0
         while True:
             try:
@@ -3970,7 +4446,10 @@ def serve_web_app(
                 # Every 10 sweeps: clean up orphaned litellm httpx clients
                 if sweep_count % 10 == 0:
                     try:
-                        from bestseller.services.llm import _cleanup_stale_litellm_clients  # noqa: PLC0415
+                        from bestseller.services.llm import (
+                            _cleanup_stale_litellm_clients,
+                        )
+
                         _cleanup_stale_litellm_clients()
                     except Exception:
                         pass
@@ -3986,7 +4465,8 @@ def serve_web_app(
                 if sweep_count % 5 == 0:
                     try:
                         collected = _gc.collect()
-                        import ctypes as _ctypes  # noqa: PLC0415
+                        import ctypes as _ctypes
+
                         try:
                             _ctypes.CDLL("libc.so.6").malloc_trim(0)
                             logger.debug(
@@ -4009,12 +4489,11 @@ def serve_web_app(
     # frozen at whatever stage the web process last saw — most commonly
     # ``volume_planning_started``. Sync every few seconds so the dashboard
     # reflects real worker progress.
-    _progress_sync_interval = int(
-        os.environ.get("BESTSELLER_PROGRESS_SYNC_INTERVAL", "5")
-    )
+    _progress_sync_interval = int(os.environ.get("BESTSELLER_PROGRESS_SYNC_INTERVAL", "5"))
 
     def _progress_sync_loop() -> None:
-        import time as _time  # noqa: PLC0415
+        import time as _time
+
         redis_url = settings.redis.url
         while True:
             try:
@@ -4035,11 +4514,13 @@ def serve_web_app(
     class RequestHandler(BaseHTTPRequestHandler):
         server_version = "BestSellerWeb/0.1"
 
-        def log_message(self, format: str, *args: object) -> None:  # noqa: A003
+        def log_message(self, format: str, *args: object) -> None:
             return
 
         def _send_json(self, payload: object, status: HTTPStatus = HTTPStatus.OK) -> None:
-            body = json.dumps(payload, ensure_ascii=False, indent=2, default=_json_default).encode("utf-8")
+            body = json.dumps(payload, ensure_ascii=False, indent=2, default=_json_default).encode(
+                "utf-8"
+            )
             self.send_response(status.value)
             self.send_header("Content-Type", "application/json; charset=utf-8")
             self.send_header("Content-Length", str(len(body)))
@@ -4089,10 +4570,12 @@ def serve_web_app(
                 {
                     "error": error_msg,
                 },
-                status=HTTPStatus.BAD_REQUEST if isinstance(exc, ValueError) else HTTPStatus.INTERNAL_SERVER_ERROR,
+                status=HTTPStatus.BAD_REQUEST
+                if isinstance(exc, ValueError)
+                else HTTPStatus.INTERNAL_SERVER_ERROR,
             )
 
-        def do_GET(self) -> None:  # noqa: N802
+        def do_GET(self) -> None:
             parsed = urlparse(self.path)
             path = unquote(parsed.path)
             query = parse_qs(parsed.query)
@@ -4102,7 +4585,9 @@ def serve_web_app(
                     # only first-party UI now. Serve quickstart at both paths
                     # so existing bookmarks and reader "返回工作台" links keep
                     # working without redirect chains.
-                    self._send_text(_read_quickstart_html(), content_type="text/html; charset=utf-8")
+                    self._send_text(
+                        _read_quickstart_html(), content_type="text/html; charset=utf-8"
+                    )
                     return
                 if path == "/library":
                     self._send_text(_read_library_html(), content_type="text/html; charset=utf-8")
@@ -4130,12 +4615,14 @@ def serve_web_app(
                     self._send_json(_public_writing_preset_catalog_payload())
                     return
                 if path == "/api/prompt-packs":
-                    from bestseller.services.prompt_packs import list_prompt_packs  # noqa: PLC0415
+                    from bestseller.services.prompt_packs import list_prompt_packs
+
                     packs = list_prompt_packs()
                     self._send_json([p.model_dump(mode="json") for p in packs])
                     return
                 if path == "/api/budget/estimate":
-                    from bestseller.services.budget import estimate_project_cost  # noqa: PLC0415
+                    from bestseller.services.budget import estimate_project_cost
+
                     ch_count = int(query.get("chapters", ["30"])[0])
                     self._send_json(estimate_project_cost(ch_count, settings))
                     return
@@ -4172,7 +4659,9 @@ def serve_web_app(
                     return
                 project_slug = _match_project_route(path, "summary")
                 if project_slug is not None:
-                    self._send_json(asyncio.run(_load_project_summary_payload(settings, project_slug)))
+                    self._send_json(
+                        asyncio.run(_load_project_summary_payload(settings, project_slug))
+                    )
                     return
                 project_slug = _match_project_route(path, "listing")
                 if project_slug is not None:
@@ -4182,7 +4671,9 @@ def serve_web_app(
                     return
                 project_slug = _match_project_route(path, "structure")
                 if project_slug is not None:
-                    self._send_json(asyncio.run(_load_project_structure_payload(settings, project_slug)))
+                    self._send_json(
+                        asyncio.run(_load_project_structure_payload(settings, project_slug))
+                    )
                     return
                 project_slug = _match_project_route(path, "story-bible")
                 if project_slug is not None:
@@ -4199,7 +4690,9 @@ def serve_web_app(
                 project_slug = _match_project_route(path, "preview")
                 if project_slug is not None:
                     artifact_name = (query.get("name") or ["project.md"])[0]
-                    artifact_path = resolve_project_artifact_path(settings, project_slug, artifact_name)
+                    artifact_path = resolve_project_artifact_path(
+                        settings, project_slug, artifact_name
+                    )
                     content_md = artifact_path.read_text(encoding="utf-8")
                     self._send_text(
                         _render_preview_html(project_slug, artifact_path.name, content_md),
@@ -4209,14 +4702,18 @@ def serve_web_app(
                 project_slug = _match_project_route(path, "preview-data")
                 if project_slug is not None:
                     artifact_name = (query.get("name") or ["project.md"])[0]
-                    artifact_path = resolve_project_artifact_path(settings, project_slug, artifact_name)
+                    artifact_path = resolve_project_artifact_path(
+                        settings, project_slug, artifact_name
+                    )
                     content_md = artifact_path.read_text(encoding="utf-8")
                     payload = build_preview_payload(project_slug, artifact_path.name, content_md)
                     payload.update(
                         {
                             "path": str(artifact_path.resolve()),
                             "size_bytes": artifact_path.stat().st_size,
-                            "modified_at": datetime.fromtimestamp(artifact_path.stat().st_mtime, UTC).isoformat(),
+                            "modified_at": datetime.fromtimestamp(
+                                artifact_path.stat().st_mtime, UTC
+                            ).isoformat(),
                         }
                     )
                     self._send_json(payload)
@@ -4226,7 +4723,9 @@ def serve_web_app(
                     artifact_name = (query.get("name") or [None])[0]
                     if artifact_name is None:
                         raise ValueError("Query parameter 'name' is required.")
-                    artifact_path = resolve_project_artifact_path(settings, project_slug, artifact_name)
+                    artifact_path = resolve_project_artifact_path(
+                        settings, project_slug, artifact_name
+                    )
                     self._send_file(artifact_path)
                     return
                 if path.startswith("/api/projects/") and path.endswith("/if/status"):
@@ -4242,17 +4741,25 @@ def serve_web_app(
                     if chapters_dir.exists():
                         chapters_done = len(list(chapters_dir.glob("ch*.json")))
                     else:
-                        chapters_done = len(progress_data.get("chapters", []) or progress_data.get("chapters_mainline", []))
-                    compiled_files = sorted(f.name for f in build_dir.iterdir()) if build_dir.exists() else []
-                    self._send_json({
-                        "project_slug": project_slug,
-                        "has_progress": progress_path.exists(),
-                        "has_bible": "bible" in progress_data,
-                        "has_arc_plans": "arc_plans" in progress_data or "arc_plans_mainline" in progress_data,
-                        "chapters_done": chapters_done,
-                        "has_walkthrough": "walkthrough" in progress_data,
-                        "compiled_files": compiled_files,
-                    })
+                        chapters_done = len(
+                            progress_data.get("chapters", [])
+                            or progress_data.get("chapters_mainline", [])
+                        )
+                    compiled_files = (
+                        sorted(f.name for f in build_dir.iterdir()) if build_dir.exists() else []
+                    )
+                    self._send_json(
+                        {
+                            "project_slug": project_slug,
+                            "has_progress": progress_path.exists(),
+                            "has_bible": "bible" in progress_data,
+                            "has_arc_plans": "arc_plans" in progress_data
+                            or "arc_plans_mainline" in progress_data,
+                            "chapters_done": chapters_done,
+                            "has_walkthrough": "walkthrough" in progress_data,
+                            "compiled_files": compiled_files,
+                        }
+                    )
                     return
                 if path.startswith("/api/projects/") and "/if/download/" in path:
                     parts = path.split("/")
@@ -4290,7 +4797,13 @@ def serve_web_app(
                     if lang_param == "zh":
                         chapters_dir = Path(settings.output.base_dir) / slug / "if" / "chapters"
                     else:
-                        chapters_dir = Path(settings.output.base_dir) / slug / "translations" / lang_param / "chapters"
+                        chapters_dir = (
+                            Path(settings.output.base_dir)
+                            / slug
+                            / "translations"
+                            / lang_param
+                            / "chapters"
+                        )
                     # Load all individual chapter files (supersedes story_package chapters list)
                     if chapters_dir.exists():
                         chapter_files = sorted(chapters_dir.glob("ch*.json"))
@@ -4308,7 +4821,9 @@ def serve_web_app(
                     avail: list[str] = ["zh"]
                     trans_base = Path(settings.output.base_dir) / slug / "translations"
                     for lc in ("en", "ja", "ko"):
-                        if (trans_base / lc / "chapters").exists() and any((trans_base / lc / "chapters").glob("ch*.json")):
+                        if (trans_base / lc / "chapters").exists() and any(
+                            (trans_base / lc / "chapters").glob("ch*.json")
+                        ):
                             avail.append(lc)
                     pkg["available_langs"] = avail
                     self._send_json(pkg)
@@ -4328,12 +4843,21 @@ def serve_web_app(
                             )
                         else:
                             branch_dir = (
-                                Path(settings.output.base_dir) / slug / "translations" / lang_param / "branches" / route_id
+                                Path(settings.output.base_dir)
+                                / slug
+                                / "translations"
+                                / lang_param
+                                / "branches"
+                                / route_id
                             )
                             # Fall back to default Chinese branch if translated version missing
                             if not branch_dir.exists():
                                 branch_dir = (
-                                    Path(settings.output.base_dir) / slug / "if" / "branches" / route_id
+                                    Path(settings.output.base_dir)
+                                    / slug
+                                    / "if"
+                                    / "branches"
+                                    / route_id
                                 )
                         if not branch_dir.exists():
                             self._route_not_found()
@@ -4381,7 +4905,8 @@ def serve_web_app(
                     # previously saw "84 in task list, 50 in preview" because
                     # the filesystem scan only saw exported markdown files.
                     db_chapters, _vol_map, volumes = _load_project_chapter_index(
-                        settings, project_slug,
+                        settings,
+                        project_slug,
                     )
                     fs_toc = _build_chapter_toc(output_dir)
                     # Merge: DB list is authoritative for membership; fs
@@ -4399,10 +4924,9 @@ def serve_web_app(
                             db_word_count = int(ch.get("word_count") or 0)
                             fs_word_count = int(fs_entry.get("word_count") or 0)
                             word_count = db_word_count or fs_word_count
-                            estimated_read_minutes = (
-                                int(ch.get("estimated_read_minutes") or 0)
-                                or int(fs_entry.get("estimated_read_minutes") or 0)
-                            )
+                            estimated_read_minutes = int(
+                                ch.get("estimated_read_minutes") or 0
+                            ) or int(fs_entry.get("estimated_read_minutes") or 0)
                             availability = str(ch.get("availability") or "available")
                             # If the file is missing on disk and the chapter
                             # isn't already flagged as repair/draft, surface it
@@ -4440,10 +4964,12 @@ def serve_web_app(
                     # Resolve human-readable project title from DB.
                     project_title = project_slug
                     try:
+
                         async def _fetch_title() -> str:
                             async with session_scope(settings) as sess:
                                 proj = await get_project_by_slug(sess, project_slug)
                                 return proj.title if proj and proj.title else project_slug
+
                         project_title = asyncio.run(_fetch_title())
                     except Exception:
                         pass
@@ -4470,11 +4996,15 @@ def serve_web_app(
                         else:
                             # DB fallback: write chapter draft to disk on-the-fly
                             content = _try_load_chapter_draft_from_db(
-                                settings, project_slug, f"chapter-{chapter_n:03d}.md",
+                                settings,
+                                project_slug,
+                                f"chapter-{chapter_n:03d}.md",
                             )
                             if content is None and chapter_n >= 1000:
                                 content = _try_load_chapter_draft_from_db(
-                                    settings, project_slug, f"chapter-{chapter_n:04d}.md",
+                                    settings,
+                                    project_slug,
+                                    f"chapter-{chapter_n:04d}.md",
                                 )
                             if content is None:
                                 self._route_not_found()
@@ -4486,10 +5016,12 @@ def serve_web_app(
                     _reader_lang: str | None = (query.get("lang") or [None])[0]
                     if _reader_lang is None:
                         try:
+
                             async def _fetch_lang() -> str | None:
                                 async with session_scope(settings) as sess:
                                     proj = await get_project_by_slug(sess, project_slug)
                                     return getattr(proj, "language", None) if proj else None
+
                             _reader_lang = asyncio.run(_fetch_lang())
                         except Exception:
                             pass
@@ -4510,16 +5042,18 @@ def serve_web_app(
                             volume_title = vol_info.get("volume_title")  # type: ignore[assignment]
                     except Exception:
                         pass
-                    self._send_json({
-                        "number": chapter_n,
-                        "filename": chapter_file.name,
-                        "html": html_content,
-                        "word_count": stats["word_count"],
-                        "estimated_read_minutes": stats["estimated_read_minutes"],
-                        "volume_number": volume_number,
-                        "volume_title": volume_title,
-                        "chapter_title": chapter_title,
-                    })
+                    self._send_json(
+                        {
+                            "number": chapter_n,
+                            "filename": chapter_file.name,
+                            "html": html_content,
+                            "word_count": stats["word_count"],
+                            "estimated_read_minutes": stats["estimated_read_minutes"],
+                            "volume_number": volume_number,
+                            "volume_title": volume_title,
+                            "chapter_title": chapter_title,
+                        }
+                    )
                     return
                 self._route_not_found()
             except BrokenPipeError:
@@ -4529,19 +5063,32 @@ def serve_web_app(
             except Exception as exc:
                 self._route_error(exc)
 
-        def do_POST(self) -> None:  # noqa: N802
+        def do_POST(self) -> None:
             parsed = urlparse(self.path)
             path = unquote(parsed.path)
             try:
                 if path == "/api/tasks/autowrite":
                     payload = self._read_json_body()
-                    required = ["slug", "title", "genre", "target_words", "target_chapters", "premise"]
+                    required = [
+                        "slug",
+                        "title",
+                        "genre",
+                        "target_words",
+                        "target_chapters",
+                        "premise",
+                    ]
                     missing = [key for key in required if not payload.get(key)]
                     if missing:
                         raise ValueError(f"Missing required fields: {', '.join(missing)}")
-                    validate_longform_scope(int(payload["target_words"]), int(payload["target_chapters"]), language=payload.get("language"))
+                    validate_longform_scope(
+                        int(payload["target_words"]),
+                        int(payload["target_chapters"]),
+                        language=payload.get("language"),
+                    )
                     block_payload = asyncio.run(
-                        _load_project_autowrite_block_payload(settings, str(payload.get("slug") or "")),
+                        _load_project_autowrite_block_payload(
+                            settings, str(payload.get("slug") or "")
+                        ),
                     )
                     if block_payload:
                         self._send_json(block_payload, status=HTTPStatus.CONFLICT)
@@ -4556,13 +5103,12 @@ def serve_web_app(
                     task = task_manager.create_repair_task(payload)
                     self._send_json(task, status=HTTPStatus.ACCEPTED)
                     return
-                if (
-                    path.startswith("/api/projects/")
-                    and path.endswith("/listing/regenerate")
-                ):
-                    slug = path.removeprefix("/api/projects/").removesuffix(
-                        "/listing/regenerate"
-                    ).strip("/")
+                if path.startswith("/api/projects/") and path.endswith("/listing/regenerate"):
+                    slug = (
+                        path.removeprefix("/api/projects/")
+                        .removesuffix("/listing/regenerate")
+                        .strip("/")
+                    )
                     if not slug:
                         raise ValueError("Project slug is required.")
                     payload = self._read_json_body()
@@ -4573,16 +5119,14 @@ def serve_web_app(
                             f"Allowed: {', '.join(_LISTING_REGENERATE_MODULES)}"
                         )
                     try:
-                        result = asyncio.run(
-                            _regenerate_listing_module(settings, slug, module)
-                        )
+                        result = asyncio.run(_regenerate_listing_module(settings, slug, module))
                     except ValueError as exc:
                         self._send_json(
                             {"ok": False, "error": str(exc)},
                             status=HTTPStatus.NOT_FOUND,
                         )
                         return
-                    except Exception as exc:  # noqa: BLE001
+                    except Exception as exc:
                         logger.exception("Listing regenerate failed for %s/%s", slug, module)
                         self._send_json(
                             {"ok": False, "error": f"重新生成失败: {exc}"},
@@ -4680,16 +5224,26 @@ def serve_web_app(
                         _load_project_autowrite_block_payload(settings, slug),
                     )
                     if block_payload:
-                        task_manager.mark_task_blocked_by_structural_repair(
-                            task_id,
-                            str(block_payload.get("error") or ""),
-                        )
+                        stage = str(block_payload.get("current_stage") or "blocked_structural_repair")
+                        error = str(block_payload.get("error") or "")
+                        if block_payload.get("blocked_generation_gate"):
+                            task_manager.mark_task_blocked_by_project_gate(
+                                task_id,
+                                stage=stage,
+                                error=error,
+                            )
+                        else:
+                            task_manager.mark_task_blocked_by_structural_repair(
+                                task_id,
+                                error,
+                            )
                         self._send_json(block_payload, status=HTTPStatus.CONFLICT)
                         return
                     heal_owned = bool(
                         slug
                         and settings.redis.url
-                        and slug in _fetch_heal_owned_slugs_by_kind(
+                        and slug
+                        in _fetch_heal_owned_slugs_by_kind(
                             settings.redis.url,
                             "autowrite",
                         )
@@ -4730,9 +5284,7 @@ def serve_web_app(
                         if s and s not in seen:
                             seen.add(s)
                             slugs.append(s)
-                    results = [
-                        _delete_project_full(slug, task_manager, settings) for slug in slugs
-                    ]
+                    results = [_delete_project_full(slug, task_manager, settings) for slug in slugs]
                     summary = {
                         "total": len(results),
                         "success": sum(1 for r in results if r.get("ok")),
@@ -4751,16 +5303,18 @@ def serve_web_app(
                     return
                 if path == "/api/projects/recover":
                     recovered = asyncio.run(_recover_projects_from_output(settings))
-                    self._send_json({
-                        "recovered": len(recovered),
-                        "projects": recovered,
-                    })
+                    self._send_json(
+                        {
+                            "recovered": len(recovered),
+                            "projects": recovered,
+                        }
+                    )
                     return
                 self._route_not_found()
             except Exception as exc:
                 self._route_error(exc)
 
-        def do_DELETE(self) -> None:  # noqa: N802
+        def do_DELETE(self) -> None:
             parsed = urlparse(self.path)
             path = unquote(parsed.path)
             try:
@@ -4819,7 +5373,7 @@ def serve_web_app(
 
     httpd = _FastThreadingHTTPServer((host, port), RequestHandler)
     url = f"http://{host}:{port}"
-    print(f"BestSeller Web Studio running at {url}")  # noqa: T201
+    print(f"BestSeller Web Studio running at {url}")
     if open_browser:
         webbrowser.open(url)
     try:

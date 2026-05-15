@@ -1,0 +1,68 @@
+{
+  "book_id": "source-0150",
+  "source_ref": "distillation:ed0fd0413de71688a4d52b72",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "parsed_profile": {
+    "extraction_status": "complete_failure",
+    "total_volumes_attempted": 9,
+    "total_chapters_in_source": 211,
+    "chapters_extracted_successfully": 0,
+    "chapters_returned_llm_fallback_stubs": 211,
+    "confidence_band": "0.0 — no extractable story-design signal",
+    "coverage": "0_of_211_chapters_provided_usable_story_data",
+    "volume_results": {
+      "volume_1": "complete_failure",
+      "volume_2": "complete_failure",
+      "volume_3": "complete_failure",
+      "volume_4": "complete_failure",
+      "volume_5": "complete_failure",
+      "volume_6": "complete_failure",
+      "volume_7": "complete_failure",
+      "volume_8": "complete_failure",
+      "volume_9": "complete_failure"
+    },
+    "extraction_pipeline_status": "non_functioning",
+    "upstream_blockers": [
+      "llm_service_unavailable_for_all_chapters",
+      "data_pipeline_delivery_failure",
+      "source_content_inaccessible"
+    ],
+    "recommendation": "source_content_must_be_reanalyzed_with_functioning_llm_pipeline_before_book_design_card_distillation",
+    "retry_prerequisites": [
+      "健康的_LLM_实例_可用",
+      "source_content_delivery_pipeline_functional",
+      "chapter_card_extraction_pipeline_restored"
+    ]
+  },
+  "genre_tags": [
+    "distillation-generic"
+  ],
+  "reader_promise": "LLM structured distillation fallback.",
+  "core_engine": "unknown",
+  "state_variables": [
+    "fallback_progress"
+  ],
+  "reader_rewards": [
+    "distillable_mechanism_reliability"
+  ],
+  "reusable_mechanisms": [
+    "fallback mechanism abstraction"
+  ],
+  "non_reusable_specifics": [],
+  "risk_patterns": [
+    "llm_fallback_all_chapters",
+    "zero_confidence_across_entire_source",
+    "no_extractable_story_mechanics",
+    "complete_absence_of_actionable_chapter_metadata",
+    "distillation_blocked_by_data_quality",
+    "upstream_pipeline_failure_systematic",
+    "no_craft_observations_available",
+    "no_reader_rewards_extracted",
+    "no_narrative_hooks_identifiable",
+    "no_state_progression_derivable",
+    "no_turning_points_capturable"
+  ],
+  "source_id": "source-0150",
+  "distillation_source_id": "source-0150"
+}

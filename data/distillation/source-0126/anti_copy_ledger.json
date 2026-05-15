@@ -1,0 +1,14 @@
+{
+  "source_id": "source-0126",
+  "blocked_categories": [
+    "any named entity extraction (characters, places, titles absent)",
+    "voice pattern identification (no text available)",
+    "tonal signature documentation (empty stubs provide no register)",
+    "structural rhythm analysis (zero chapter content)"
+  ],
+  "blocked_combinations": [
+    "confident_mechanism + source-0126 (contradiction: confidence is 0.0)",
+    "specific_reuse + source-0126 (contradiction: no reusable specifics exist)"
+  ],
+  "replacement_policy": []
+}

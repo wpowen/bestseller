@@ -1,0 +1,31 @@
+{
+  "source_id": "source-0370",
+  "pipeline_version": "distillation-v1",
+  "source_hash_sha256": "323730fff60818dde2aaf9392cfef8c3c8781a515fd603ee45b81f4f845c603f",
+  "source_format": "epub",
+  "encoding": "utf-8",
+  "title_key_hmac_sha256": "1910d78ba454ab847f2b2b0c023226379c392ab0af7027b77eaf6b24278efdeb",
+  "title_signal_source": "epub_opf",
+  "has_author_metadata": true,
+  "language": "zh",
+  "rights_status": "user_supplied_for_analysis",
+  "redaction_policy": {
+    "store_source_title_in_repo": false,
+    "store_author_in_repo": false,
+    "store_raw_text_in_repo": false
+  },
+  "dedupe": {
+    "strategy": "private-title-key-hmac",
+    "duplicate_of": null
+  },
+  "parse_profile": {
+    "chapter_count": 16,
+    "volume_count": 1,
+    "average_chapter_chars": 44125,
+    "boundary_types": [
+      "chinese_chapter_heading"
+    ],
+    "parser_warnings": []
+  },
+  "genre_hint": "网文"
+}

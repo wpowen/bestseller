@@ -1,0 +1,89 @@
+{
+  "book_id": "source-0315",
+  "source_ref": "distillation:24764337d668bb4aff673024",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "parsed_profile": {
+    "arc_function": "Diplomatic breakdown analysis from analytical framework through August 1939 crisis to war declaration and phony war paradox, establishing contingency arguments through documentary evidence and multi-perspective witnessing",
+    "dominant_engine": "Documentary evidence accumulation with analytical counterfactual framework",
+    "pov_distance": "Scholarly third-person omniscient with direct reader address; shifts to first-person through embedded diary excerpts; occasional diary reveals private emotional states",
+    "sentence_rhythm": "Variable density mixing short declarative military orders with longer analytical sentences building atmospheric context",
+    "paragraphing": "Extended continuous prose with thematic breaks; dense information paragraphs punctuated by single-sentence dramatic emphasis",
+    "dialogue_method": "Reported speech reconstructed from historical records; occasional quoted phrases; minimal direct dialogue in favor of documented statements",
+    "description_method": "Concrete specificity over abstraction—named entities, exact times, individual fates rather than categorical descriptions; brief atmospheric sketches rather than extended scene-setting",
+    "exposition_method": "Thesis-statement-driven with scholarly context; information embedded in chronological narration rather than retrospective summary; citations serve as evidence trails",
+    "hook_delivery": "Documentary appendices precede analytical text; chapters end with personal details or unresolved tensions; supplementary material catalogs document references",
+    "transition_method": "Time stamps and location changes mark shifts between capitals and nations; bracket markers signal segment transitions from narrative to apparatus"
+  },
+  "genre_tags": [
+    "non-fiction",
+    "historical_analysis",
+    "diplomatic_history",
+    "documentary",
+    "academic",
+    "counterfactual_reasoning",
+    "multi-perspective"
+  ],
+  "reader_promise": "Rigorous examination of WWII's non-inevitability through documentary evidence, revealing how institutional weaknesses and individual choices created contingent outcomes across the 1939 diplomatic crisis and phony war period",
+  "core_engine": "Documentary evidence accumulation with analytical counterfactual framework establishing contingency thesis against historical determinism",
+  "state_variables": [
+    "Analytical framework established for non-inevitability argument",
+    "Diplomatic crisis reaches turning point as Anglo-Polish treaty forces cancellation",
+    "War declared with paradoxical calm and minimal military engagement",
+    "Phony war documented through multi-national diary polyphony and official contradictions",
+    "Scholarly apparatus and primary directives appended as evidentiary payoff"
+  ],
+  "reader_rewards": [
+    "Understanding of book's core argument against historical inevitability",
+    "Framework for analyzing decision-makers' choices in final pre-war days",
+    "Recognition that institutional weaknesses and individual choices created contingent outcomes",
+    "Evidentiary foundation from appended primary source documents",
+    "Multi-national emotional polyphony through diary integration",
+    "Understanding of paradox between declared war and actual inactivity"
+  ],
+  "reusable_mechanisms": [
+    "Counterfactual reasoning against determinism establishing contingency thesis",
+    "Thesis-first organization with evidence to follow pattern",
+    "Framing chapter via appended documents as evidentiary foundation",
+    "Decade-reflective temporal positioning establishing contemporary relevance",
+    "Sequential diplomatic arrivals creating cascading tension",
+    "Last-moment cancellation/rescinding of planned action at dramatic threshold",
+    "Divided alliance revealing partner self-interest over commitment",
+    "Treaty anatomy showing public terms versus secret protocols",
+    "Personal diary integration conveying private reactions and emotions",
+    "Contrast perspective displaying different moods across capitals simultaneously",
+    "Cascading information where each diplomatic message alters subsequent calculations",
+    "Multiple diary excerpts from different nations/classes creating emotional polyphony",
+    "Specific trivial detail grounding larger historical shifts",
+    "Contrast between official policy documents and private sentiment",
+    "Documentary evidence (telegrams, orders, directives) as narrative devices",
+    "Paradox construction: declared state with minimal actual engagement",
+    "Appended authentic primary documents as evidentiary payoff",
+    "Graduated response planning balancing multiple fronts"
+  ],
+  "non_reusable_specifics": [
+    "Richard Overy as author (2009)",
+    "World War II as subject matter",
+    "Specific thesis about institutional and participant dialogue in causation",
+    "First World War comparative framing",
+    "Code name White orders",
+    "Operation number one directive",
+    "Document title references (War Plan White, First Operational Order)",
+    "Chapter-specific events and historical figures"
+  ],
+  "risk_patterns": [
+    "Non-fiction content lacks narrative protagonist for reader identification",
+    "Analytical apparatus interrupts story flow if not clearly framed",
+    "Multiple named historical figures increase cognitive load",
+    "Documentary density may fatigue readers expecting narrative conventions",
+    "Absence of combat action may underwhelm readers expecting war narrative",
+    "Historical specificity limits creative flexibility",
+    "Scholarly citation may read as academic rather than engaging prose",
+    "Schema designed for narrative fiction extraction with limited applicability",
+    "Multiple chapter cards failed LLM parsing requiring fallback",
+    "Supplementary chapter is placeholder material with minimal content",
+    "Low confidence due to non-applicable source type and parsing failures"
+  ],
+  "source_id": "source-0315",
+  "distillation_source_id": "source-0315"
+}

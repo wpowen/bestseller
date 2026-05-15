@@ -1,0 +1,175 @@
+# =============================================================================
+# Information Choreography · 悬念工程
+# =============================================================================
+# 目的：
+#   解决"追读率不高" 的核心。让读者每一章都"欠你一个答案"。
+#   把全书的信息按"读者状态变化" 编排：每章读者新知道什么 /
+#   误以为什么 / 何时被打脸。
+#
+#   核心装置：belief_audit—— 所有"以为 X 实则 Y" 的反转都登记，
+#   保证伪信息必偿付，节奏可控。
+# =============================================================================
+
+version: 2026.05.14
+
+# =============================================================================
+# 数据结构
+# =============================================================================
+schema:
+
+  reader_belief_audit:
+    description: |
+      所有"读者以为 X 实则 Y" 的契约。
+      每条 belief 必须有明确的"种植章" + "偿付章" + 偿付方式。
+    fields:
+      belief_id: 唯一标识
+      planted_in_chapter: 种下错误认知的章节
+      reader_belief: 一句话，读者读完种植章后会以为什么
+      truth: 一句话，事实真相
+      payoff_chapter: 偿付章（揭穿）
+      payoff_method: 揭穿方式（角色证据 / 反派坦白 / 物件揭示 / 主角顿悟）
+      misdirection_type: 错向 / 半真半假 / 时间错位 / 角色错位 / 因果颠倒
+      max_distance: 最大允许的种植→偿付距离（默认 ≤ 5 章）
+
+  information_state_per_chapter:
+    description: 每章末记录读者认知状态变化
+    fields:
+      chapter_number: int
+      new_facts: 本章读者新知道的事实（≤ 3 条）
+      new_questions: 本章给读者留下的具体问题（≤ 3 条）
+      new_beliefs_planted: 本章种下的错误认知（belief_id 列表）
+      beliefs_paid_off: 本章偿付的错误认知（belief_id 列表）
+      open_questions_count: 当前所有未偿付的开放问题数
+
+  reader_curiosity_ledger:
+    description: 读者"想知道但还没知道" 的清单
+    fields:
+      question: 一句话
+      planted_chapter: 引出问题的章节
+      hint_chapters: 章节列表，每章必须给一点新线索
+      expected_payoff_chapter: 预计揭示
+      curiosity_level: 1-5（5=核心追读动力）
+
+# =============================================================================
+# 每章必跑的硬指标
+# =============================================================================
+per_chapter_hard_indicators:
+  new_curiosity_per_chapter:
+    rule: 每章必须新增至少 1 个 reader_curiosity_ledger 条目（除非是 climax / wrap-up）
+    rationale: 每章必须给读者新问题，否则追读契约断
+
+  curiosity_starvation_check:
+    rule: |
+      连续 3 章只增加 curiosity 不消解 → 读者会感觉"什么都没说"
+      连续 3 章只消解 curiosity 不新增 → 读者会感觉"没有下一章动力"
+    healthy_pattern: 每章新增 1-2 / 消解 0-1
+
+  belief_payoff_distance:
+    rule: 任何 belief 种植后必须在 5 章内开始给"半揭示"，10 章内完全偿付
+    rationale: 否则读者忘了或失去耐心
+
+  open_question_ceiling:
+    rule: 同时活跃的 open_questions 不超过 8 个
+    rationale: 多了读者认知超载
+
+# =============================================================================
+# 信息控制 4 种模式（每章混合使用）
+# =============================================================================
+information_modes:
+
+  reader_knows_character_doesnt:
+    display: 读者知道 / 角色不知道
+    effect: 紧张感 + 保护欲（"快看下毒")
+    usage: 章内 30-50% 篇幅
+
+  character_knows_reader_doesnt:
+    display: 角色知道 / 读者不知道
+    effect: 期待感 + 神秘感（"他凭什么这么淡定")
+    usage: 用于主角的底牌
+
+  both_know_villain_doesnt:
+    display: 双方知道 / 反派不知道
+    effect: 阅读爽感（主角碾压）
+    usage: 谨慎使用（一卷不超过 2 次）
+
+  neither_knows:
+    display: 双方都不知道
+    effect: 共同探索感
+    usage: 推理 / 悬疑场景
+
+# =============================================================================
+# 《青崖诡事》示例 belief_audit（前 3 章）
+# =============================================================================
+sample_belief_audit:
+  ch1_b1:
+    planted_in_chapter: 1
+    reader_belief: 第四人是周神算的同伙
+    truth: 第四人是归墟会"执令人"，周神算才是被胁迫的下层
+    payoff_chapter: 6  # 推迟到第 6 章揭穿
+    payoff_method: 通过周神算被灭口前的最后一句话
+    misdirection_type: 角色错位
+    curiosity_level: 5
+
+  ch1_b2:
+    planted_in_chapter: 1
+    reader_belief: 沈青崖只是要查李德盛溺死案
+    truth: 这是十五年前沈家旧案的连锁灭口
+    payoff_chapter: 3  # 在 ch3 信件里揭一半
+    payoff_method: 清尘信件
+    misdirection_type: 半真半假
+    curiosity_level: 5
+
+  ch2_b1:
+    planted_in_chapter: 2
+    reader_belief: 林氏是无辜遗孀
+    truth: 林氏可能知道李德盛欠归墟会"债"的真相（但不敢说）
+    payoff_chapter: 5
+    payoff_method: 林氏在被掳后泄密
+    misdirection_type: 半真半假
+    curiosity_level: 3
+
+  ch3_b1:
+    planted_in_chapter: 3
+    reader_belief: 沈夫人马氏 - 沈青崖的母亲还活着
+    truth: 马氏是归墟会"留下来" 的人质 + 内奸（双重身份）
+    payoff_chapter: 15  # 卷末
+    payoff_method: 沈青崖找到马氏，发现她在归墟会卧底但身份复杂
+    misdirection_type: 半真半假
+    curiosity_level: 5
+
+  ch3_b2:
+    planted_in_chapter: 3
+    reader_belief: 林九韶是反派
+    truth: 林九韶是被把柄拿住的"好人"（女儿在归墟会手里）
+    payoff_chapter: 7
+    payoff_method: 林九韶以命换主角情报
+    misdirection_type: 角色错位
+    curiosity_level: 4
+
+# =============================================================================
+# Writer 注入
+# =============================================================================
+writer_injection: |
+  写本章前先读：
+  1. reader_belief_audit 当前活跃 belief（本章需要"维持" 哪些误判？）
+  2. reader_curiosity_ledger（本章可消解 / 必须保留哪些 curiosity？）
+  3. open_questions_count（如果 ≥ 8，本章必须消解 ≥ 1 条）
+
+  写完后落档：
+  - new_facts: 本章读者新知道的（≤ 3）
+  - new_questions: 本章给读者的新问题（≤ 3）
+  - new_beliefs_planted / beliefs_paid_off
+
+# =============================================================================
+# Critic 检查
+# =============================================================================
+critic_checks:
+  new_curiosity_added:
+    rule: 每章新增 reader_curiosity ≥ 1
+    threshold: 1
+  belief_overdue_check:
+    rule: 是否有 belief 超过 max_distance 未偿付
+    threshold: 0
+  open_question_ceiling:
+    rule: open_questions_count ≤ 8
+    threshold: 8

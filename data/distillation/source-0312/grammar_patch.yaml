@@ -1,0 +1,92 @@
+key: distillation-generic
+name: Historical Intelligence Asymmetry Grammar Patch
+source_ids:
+- source-0312
+status: draft_review
+applies_to_categories:
+- historical_military_fiction
+- intelligence_espionage_fiction
+- strategic_history_hybrid
+- coalition_warfare_story
+required_contracts:
+- information_asymmetry_contract
+- coalition_faultline_contract
+- parallel_buildup_contract
+- command_quality_contract
+state_variables:
+- phase_name: pre_conflict_phase
+  description: Diplomatic theater masks military preparation; negotiations continue
+    while military preparations accelerate; parallel military buildup showing both
+    sides preparing for engagement
+- phase_name: initial_conflict_phase
+  description: Surprise attack execution creates temporary strategic advantage; intelligence
+    tradecraft enables operational planning; tactical decision-making tension between
+    mission completion and risk management
+- phase_name: coalition_formation_phase
+  description: Reluctant partnership transforms to unified alliance; mutual threat
+    escalation catalyzes coalition graduation from statements to material support;
+    cross-national coalition building with built-in fault lines
+- phase_name: strategic_momentum_phase
+  description: Command culture failures undermine numerically superior forces; strategic
+    momentum shifts through decisive operational engagements; strategic momentum expressed
+    through casualty exchange ratios
+- phase_name: momentum_reversal_phase
+  description: Defensive dominance established; initiative loss for aggressor; extended
+    campaign against initial planning assumptions; dual-theater transitions reveal
+    interconnected global conflict dynamics
+- phase_name: institutional_resolution_phase
+  description: Post-war political calculation regarding defeated leaders; institutional
+    decision chains connecting individual acts to system outcomes; protective political
+    calculation where occupying powers preserve defeated leaders for administrative
+    convenience
+chapter_change_vectors:
+- change_type: phase_transition
+  trigger: tactical_event_realization
+  description: Chapters shift between conflict phases triggered by operational outcomes
+    rather than arbitrary temporal markers
+- change_type: theater_pivot
+  trigger: geographic_completion
+  description: Geographic pivots between theaters preserve timeline continuity while
+    maintaining distinct operational narratives
+- change_type: viewpoint_cluster
+  trigger: temporal_compression_need
+  description: Viewpoints cluster during simultaneous operations enabling temporal
+    compression without losing emotional continuity
+- change_type: irony_inversion
+  trigger: intelligence_recognition
+  description: Apparent strategic failures reveal themselves as calculated decisions
+    through information asymmetry revelation
+reader_rewards:
+- Understanding of global warfare scope through interconnected theaters
+- Insight into how intelligence tradecraft and codebreaking capabilities shape strategic
+  outcomes
+- Appreciation for coalition warfare complexity and fault-line management
+- Comprehension of how small tactical factors cascade into operational and strategic
+  consequences
+- Exposure to counterintuitive historical revelations challenging assumed narratives
+- Engagement with moral ambiguity through institutional decision-case studies
+- Strategic context establishing cause-and-effect chains linking economic conditions
+  to political decisions to operational consequences
+- Grappling with command leadership psychology and moral complexity
+hook_or_aftereffect_types:
+- type: mid_narrative_opening
+  function: Immediate immersion bypassing exposition delay
+- type: policy_intention_revelation
+  function: Creates anticipation tension before outcome demonstration
+- type: progressive_numbered_subsections
+  function: Archaeological revelation structure building cumulative understanding
+- type: rhetorical_question_conclusion
+  function: Invites moral evaluation while maintaining scholarly authority over complexity
+- type: historical_puzzle_opening
+  function: Engages reader through mystery-thriller puzzle-solving mechanism
+forbidden_defaults:
+- Pure chronological historical chronicle without narrative tension
+- Single-protagonist interiority dominating multi-theater scope
+- Decisive narrative certainty eliminating moral ambiguity
+- Enumeration-heavy passages privileging statistics over operational specificity
+- Biographical encyclopedia format displacing fictional narrative momentum
+- Didactic leadership critique without grounding in specific tactical moments
+- Flashback without environmental trigger mechanism causing momentum delay
+- Direct authorial judgment replacing ironic historical framing
+- Factual exposition separated from operational narrative rather than embedded within
+- Historical certainty removing puzzle-solving tension from predetermined outcomes

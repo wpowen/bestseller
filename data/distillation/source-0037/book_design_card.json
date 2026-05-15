@@ -1,0 +1,65 @@
+{
+  "book_id": "source-0037",
+  "source_ref": "distillation:28879ac68c9424cfcb512dd3",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "parsed_profile": {
+    "distillation_status": "critical_failure",
+    "volume_count_attempted": 25,
+    "volume_count_successful": 0,
+    "chapter_count_per_volume": 25,
+    "total_chapters_in_batch": 625,
+    "chapters_with_extractable_content": 0,
+    "aggregate_confidence": 0.0,
+    "failure_cause": "All source chapters returned LLM unavailable fallback stubs across all 25 volume_card entries. No narrative content, story mechanics, character data, worldbuilding elements, or prose-craft observations were extractable. The volume_card aggregation layer received only empty stub containers from the chapter_card pipeline.",
+    "data_integrity_assessment": "Total extraction failure. No story-design fingerprint can be generated from placeholder data.",
+    "recommended_action": "Re-process source-0037 through the LLM-enabled chapter_card distillation pipeline. Volume-level aggregation is blocked until actual chapter content is accessible."
+  },
+  "genre_tags": [
+    "distillation-generic"
+  ],
+  "reader_promise": {
+    "promise_type": "undetermined",
+    "promise_note": "Reader promise cannot be inferred from empty fallback stubs. No narrative content, thematic direction, or genre-specific reader contract is extractable from this data.",
+    "tropes_delivered": []
+  },
+  "core_engine": {
+    "engine_type": "undetermined",
+    "engine_note": "Dominant story engine could not be identified. All volume_cards reported 'unavailable', 'indeterminate', or 'insufficient_data' for the arc_function field. No narrative drive mechanism is present in the available data."
+  },
+  "state_variables": [
+    "{'primary_states': [], 'state_progression_note': 'State progression arrays are uniformly empty across all 25 volumes. No character arc trajectories, plot state changes, or world-state transformations were captured.'}"
+  ],
+  "reader_rewards": [
+    "distillable_mechanism_reliability"
+  ],
+  "reusable_mechanisms": [
+    "fallback mechanism abstraction"
+  ],
+  "non_reusable_specifics": [],
+  "turning_points": [],
+  "open_hooks": [],
+  "risk_patterns": [
+    "llm_fallback_all_volumes",
+    "zero_confidence_across_complete_batch",
+    "no_content_extraction_achieved",
+    "chapter_batch_incomplete_missing_chapters_21_23_25_27_29_in_vol_1",
+    "volume_metadata_mismatch_vol_5_with_chapters_181_228",
+    "extraction_pipeline_blocked_requires_reprocessing"
+  ],
+  "failure_modes_observed": [
+    "entire_chapter_batch_llm_unavailable",
+    "all_25_volumes_returned_fallback_stubs",
+    "confidence_0.0_across_100%_of_entries",
+    "reusable_mechanisms_array_empty_across_all_volumes",
+    "no_craft_observations_extracted",
+    "no_reader_rewards_extracted",
+    "no_arc_structure_derivable"
+  ],
+  "craft_profile": {
+    "extraction_quality": "critical_failure",
+    "note": "This book_design_card represents a null-signal result. The distillation pipeline received no processable story content from source-0037. All volume_card entries and their constituent chapter_card stubs are identical placeholder structures containing no extractable design elements. Downstream consumers should treat this card as a structural shell with zero actionable story-design data. Design fingerprint generation requires re-analysis of source material through a functional LLM distillation pipeline."
+  },
+  "source_id": "source-0037",
+  "distillation_source_id": "source-0037"
+}

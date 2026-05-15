@@ -1,0 +1,36 @@
+{
+  "source_id": "source-0098",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "style_safety_policy": "{'imitation_prohibited': True, 'author_names_redacted': True, 'specific_phrases_redacted': True, 'named_entities_redacted': True, 'distinctive_templates_redacted': True, 'rationale': 'Source corpus returned zero extractable content. No authorial voice, phrasing patterns, or structural templates present in input data. Generating neutral craft abstraction only.'}",
+  "pov_and_distance": "{'pov_architecture': 'UNAVAILABLE — all 226 chapters returned LLM fallback stubs with zero confidence. No POV choices, narrator distance calibrations, or point-of-view shifts could be extracted from source data.', 'confidence': 0.0, 'abstraction_possible': False, 'note': 'Data poverty prevents any POV analysis. Requires source reprocessing with functioning LLM distillation pipeline.'}",
+  "sentence_rhythm": [
+    "{'rhythm_patterns': 'UNAVAILABLE — source chapters 1-226 contain no analyzable sentence-level data. No cadence profiles, clause density observations, or rhythmic variation patterns present in input.', 'confidence': 0.0, 'abstraction_possible': False}"
+  ],
+  "paragraphing": [
+    "{'paragraph_structure': 'UNAVAILABLE — no paragraph-level mechanics, white space rhythm, or structural segmentation data extractable from zero-confidence chapter stubs.', 'confidence': 0.0, 'abstraction_possible': False}"
+  ],
+  "dialogue_system": [
+    "{'dialogue_method': 'UNAVAILABLE — source corpus contains no dialogue tags, speech patterns, attribution styles, or conversation mechanics. All 226 chapter cards returned empty craft_observations fields.', 'confidence': 0.0, 'abstraction_possible': False}"
+  ],
+  "description_strategy": [
+    "{'description_approach': 'UNAVAILABLE — no descriptive anchoring, sensory detail distribution, or world-building observation patterns present in source data.', 'confidence': 0.0, 'abstraction_possible': False}"
+  ],
+  "exposition_strategy": [
+    "{'exposition_placement': 'UNAVAILABLE — no backstory injection patterns, information revelation timing, or expository rhythm data extractable from LLM fallback stubs.', 'confidence': 0.0, 'abstraction_possible': False}"
+  ],
+  "emotional_temperature": [
+    "{'emotional_calibration': 'UNAVAILABLE — zero reader_rewards or emotional impact observations across all 226 chapters. No tonal signatures, affect modulation, or catharsis architecture present in input.', 'confidence': 0.0, 'abstraction_possible': False}"
+  ],
+  "hooking_and_transitions": [
+    "{'hook_mechanisms': 'UNAVAILABLE — no open_hooks or transition data present in chapter stubs. No chapter-ending tension patterns, cliffhanger mechanics, or narrative bridge observations extractable.', 'confidence': 0.0, 'abstraction_possible': False}"
+  ],
+  "adaptation_guidelines": [
+    "{'transmedia_signals': 'UNAVAILABLE — no scene-level craft data present to assess adaptation potential. reusable_mechanisms array empty across all volumes.', 'confidence': 0.0, 'abstraction_possible': False}"
+  ],
+  "taboo_copy_signals": [
+    "{'red_flag_patterns': [], 'prohibited_patterns_detected': False, 'note': 'No source content available to scan for prohibited copy signals. Empty corpus prevents any signature analysis.'}"
+  ],
+  "confidence": 0.0,
+  "distillation_source_id": "source-0098"
+}

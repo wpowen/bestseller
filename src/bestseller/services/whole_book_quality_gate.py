@@ -2,9 +2,17 @@
 
 from __future__ import annotations
 
+import re
 from collections import Counter
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from typing import Any
+
+from bestseller.services.emotion_driven_kernel import (
+    EmotionDrivenKernel,
+    emotion_driven_kernel_from_dict,
+    evaluate_emotion_contracts,
+)
 
 
 @dataclass(frozen=True)
@@ -96,6 +104,13 @@ _STRATEGY_BY_CODE = {
     "rolling_repetition": "rolling_freshness_rewrite",
     "arc_payoff_missing": "arc_closure_rewrite",
     "volume_momentum_drop": "volume_momentum_rebuild",
+    "emotion_visible_desire_gap": "emotion_empathy_chain_rebuild",
+    "emotion_irreversible_cost_gap": "emotion_cost_reseed",
+    "emotion_bomb_payoff_stale": "emotion_bomb_payoff_reseed",
+    "emotion_flat_chain": "emotion_chain_reseed",
+    "emotion_cost_free_win": "emotion_cost_reseed",
+    "emotion_ending_texture_not_ready": "emotion_ending_texture_rewrite",
+    "emotion_kernel_invalid": "emotion_contract_rebuild",
 }
 _SIGNING_ZONE_END = 50
 _EXTENDED_ENTRY_ZONE_END = 100
@@ -107,6 +122,38 @@ _SIGNING_TURN_DENSITY_MIN = 0.6
 _EXTENDED_HOOK_DENSITY_MIN = 0.6
 _EXTENDED_PULL_DENSITY_MIN = 0.8
 _EXTENDED_TURN_DENSITY_MIN = 0.5
+_EMOTION_COVERAGE_MIN = 0.5
+_EMOTION_FLAT_STREAK_MIN = 3
+_EMOTION_COST_TERMS = (
+    *_COST_TERMS,
+    "不可逆",
+    "回不去",
+    "错过",
+    "破裂",
+    "债",
+    "伤痕",
+    "代价不能",
+    "不能复原",
+    "cannot be restored",
+    "irreversible",
+    "debt",
+)
+_EMOTION_WIN_TERMS = (
+    "赢",
+    "胜",
+    "成功",
+    "幸福",
+    "圆满",
+    "反杀",
+    "翻盘",
+    "拿回",
+    "得到",
+    "win",
+    "wins",
+    "victory",
+    "happy",
+    "fulfilled",
+)
 
 
 def _normalize_chapter_texts(
@@ -396,11 +443,302 @@ def _retention_metrics(ledger: Sequence[ChapterEngagementRecord]) -> dict[str, o
     }
 
 
+def _coerce_emotion_kernel(
+    payload: EmotionDrivenKernel | Mapping[str, Any] | None,
+) -> tuple[EmotionDrivenKernel | None, str | None]:
+    if payload is None:
+        return None, None
+    if isinstance(payload, EmotionDrivenKernel):
+        return payload, None
+    if isinstance(payload, Mapping):
+        try:
+            return emotion_driven_kernel_from_dict(dict(payload)), None
+        except Exception as exc:  # pragma: no cover - exact pydantic message is unstable
+            return None, str(exc)
+    return None, f"unsupported payload type: {type(payload).__name__}"
+
+
+def _chapter_range_bounds(chapter_range: str) -> tuple[int, int] | None:
+    numbers = [int(value) for value in re.findall(r"\d+", str(chapter_range or ""))]
+    if not numbers:
+        return None
+    if len(numbers) == 1:
+        return numbers[0], numbers[0]
+    start, end = numbers[0], numbers[1]
+    return min(start, end), max(start, end)
+
+
+def _chapters_for_range(chapter_range: str, chapter_numbers: Sequence[int]) -> set[int]:
+    if not chapter_numbers:
+        return set()
+    bounds = _chapter_range_bounds(chapter_range)
+    if bounds is None:
+        return set(chapter_numbers)
+    start, end = bounds
+    return {number for number in chapter_numbers if start <= number <= end}
+
+
+def _records_for_bounds(
+    ledger: Sequence[ChapterEngagementRecord],
+    bounds: tuple[int, int],
+) -> list[ChapterEngagementRecord]:
+    start, end = bounds
+    return [record for record in ledger if start <= record.chapter_number <= end]
+
+
+def _emotion_text_has_cost(*values: str) -> bool:
+    return _contains_any(" ".join(str(value or "") for value in values), _EMOTION_COST_TERMS)
+
+
+def _emotion_text_has_win(*values: str) -> bool:
+    return _contains_any(" ".join(str(value or "") for value in values), _EMOTION_WIN_TERMS)
+
+
+def _repeated_emotion_modes(kernel: EmotionDrivenKernel) -> list[dict[str, object]]:
+    streaks: list[dict[str, object]] = []
+    current_mode = ""
+    current_ranges: list[str] = []
+    current_count = 0
+
+    def flush() -> None:
+        if current_mode and current_count >= _EMOTION_FLAT_STREAK_MIN:
+            streaks.append(
+                {
+                    "emotion": current_mode,
+                    "streak": current_count,
+                    "chapter_ranges": list(current_ranges),
+                }
+            )
+
+    for beat in kernel.emotion_chain:
+        mode = " ".join(str(beat.target_reader_emotion or "").lower().split())
+        if not mode:
+            flush()
+            current_mode = ""
+            current_ranges = []
+            current_count = 0
+            continue
+        if mode == current_mode:
+            current_count += 1
+            current_ranges.append(beat.chapter_range)
+            continue
+        flush()
+        current_mode = mode
+        current_ranges = [beat.chapter_range]
+        current_count = 1
+    flush()
+    return streaks
+
+
+def _emotion_quality_metrics_and_findings(
+    emotion_driven_kernel: EmotionDrivenKernel | Mapping[str, Any] | None,
+    ledger: Sequence[ChapterEngagementRecord],
+) -> tuple[dict[str, object], list[WholeBookQualityFinding]]:
+    chapter_numbers = [record.chapter_number for record in ledger]
+    chapter_count = len(chapter_numbers)
+    metrics: dict[str, object] = {"available": emotion_driven_kernel is not None}
+    findings: list[WholeBookQualityFinding] = []
+
+    kernel, kernel_error = _coerce_emotion_kernel(emotion_driven_kernel)
+    if kernel is None:
+        if kernel_error:
+            metrics.update({"valid": False, "error": kernel_error})
+            findings.append(
+                WholeBookQualityFinding(
+                    code="emotion_kernel_invalid",
+                    severity="high",
+                    scope="emotion_driven_kernel",
+                    message="情绪驱动核心无法解析，全书门禁无法读取代入、炸弹和结局纹理合同。",
+                    evidence=kernel_error[:240],
+                )
+            )
+        return metrics, findings
+
+    contract_report = evaluate_emotion_contracts(kernel)
+    visible_desire_chapters: set[int] = set()
+    for item in kernel.empathy_contracts:
+        if item.current_desire.strip():
+            visible_desire_chapters.update(
+                _chapters_for_range(item.chapter_range, chapter_numbers)
+            )
+
+    cost_chapters: set[int] = set()
+    for item in kernel.empathy_contracts:
+        if _emotion_text_has_cost(item.fear_or_loss, item.flaw_pressure, item.consequence):
+            cost_chapters.update(_chapters_for_range(item.chapter_range, chapter_numbers))
+    for item in kernel.emotion_chain:
+        if _emotion_text_has_cost(
+            item.reader_worry,
+            item.pressure_source,
+            item.payoff_or_aftereffect,
+            item.callback,
+        ):
+            cost_chapters.update(_chapters_for_range(item.chapter_range, chapter_numbers))
+    for item in kernel.bomb_contracts:
+        if _emotion_text_has_cost(item.danger, item.consequence):
+            chapter_range = item.payoff_window or item.chapter_range
+            cost_chapters.update(_chapters_for_range(chapter_range, chapter_numbers))
+
+    bomb_distances: list[dict[str, object]] = []
+    stale_bomb_ids: list[str] = []
+    current_chapter = max(chapter_numbers) if chapter_numbers else 0
+    for index, item in enumerate(kernel.bomb_contracts, start=1):
+        bomb_id = item.bomb_id or f"bomb-{index}"
+        setup_bounds = _chapter_range_bounds(item.chapter_range)
+        payoff_bounds = _chapter_range_bounds(item.payoff_window)
+        if setup_bounds is not None and payoff_bounds is not None:
+            distance = max(0, payoff_bounds[0] - setup_bounds[1])
+            bomb_distances.append(
+                {
+                    "bomb_id": bomb_id,
+                    "setup_start": setup_bounds[0],
+                    "setup_end": setup_bounds[1],
+                    "payoff_start": payoff_bounds[0],
+                    "payoff_end": payoff_bounds[1],
+                    "distance": distance,
+                }
+            )
+            if current_chapter >= payoff_bounds[1]:
+                payoff_records = _records_for_bounds(ledger, payoff_bounds)
+                if not any(
+                    record.has_payoff or record.has_reveal or record.has_emotional_turn
+                    for record in payoff_records
+                ):
+                    stale_bomb_ids.append(bomb_id)
+
+    repeated_modes = _repeated_emotion_modes(kernel)
+    cost_free_sources: list[str] = []
+    for index, item in enumerate(kernel.emotion_chain, start=1):
+        if _emotion_text_has_win(item.payoff_or_aftereffect) and not _emotion_text_has_cost(
+            item.payoff_or_aftereffect,
+            item.callback,
+        ):
+            cost_free_sources.append(item.chapter_range or f"emotion_chain[{index}]")
+    ending = kernel.ending_texture_contract
+    if (
+        ending is not None
+        and ending.ending_type == "HE"
+        and ending.core_wish_fulfilled.strip()
+        and not ending.irreversible_cost_retained.strip()
+    ):
+        cost_free_sources.append("ending_texture_contract")
+
+    ending_issue_codes = [
+        issue.code
+        for issue in contract_report.issues
+        if issue.path.startswith("ending_texture_contract")
+    ]
+    ending_texture_ready = not ending_issue_codes
+    visible_coverage = (
+        len(visible_desire_chapters) / chapter_count if chapter_count else 0.0
+    )
+    cost_coverage = len(cost_chapters) / chapter_count if chapter_count else 0.0
+
+    metrics.update(
+        {
+            "valid": contract_report.passed,
+            "visible_desire_chapter_count": len(visible_desire_chapters),
+            "visible_desire_coverage": round(visible_coverage, 2),
+            "irreversible_cost_chapter_count": len(cost_chapters),
+            "irreversible_cost_coverage": round(cost_coverage, 2),
+            "bomb_count": len(kernel.bomb_contracts),
+            "bomb_setup_payoff_distances": bomb_distances,
+            "stale_bomb_ids": stale_bomb_ids,
+            "repeated_emotion_modes": repeated_modes,
+            "cost_free_win_sources": cost_free_sources,
+            "ending_texture_ready": ending_texture_ready,
+            "ending_issue_codes": ending_issue_codes,
+        }
+    )
+
+    if chapter_count >= 3 and visible_coverage < _EMOTION_COVERAGE_MIN:
+        findings.append(
+            WholeBookQualityFinding(
+                code="emotion_visible_desire_gap",
+                severity="high" if not visible_desire_chapters else "medium",
+                scope="emotion_chain",
+                message="全书情绪合同覆盖的可见人物欲望不足，读者难以持续知道该期待什么。",
+                evidence=(
+                    f"visible_desire_coverage={visible_coverage:.2f}, "
+                    f"chapters={chapter_count}"
+                ),
+            )
+        )
+    if (
+        chapter_count >= 3
+        and cost_coverage < _EMOTION_COVERAGE_MIN
+        and any(record.has_payoff for record in ledger)
+    ):
+        findings.append(
+            WholeBookQualityFinding(
+                code="emotion_irreversible_cost_gap",
+                severity="medium",
+                scope="emotion_chain",
+                message="收益或转折已有推进，但情绪合同里的不可逆代价覆盖不足。",
+                evidence=(
+                    f"irreversible_cost_coverage={cost_coverage:.2f}, "
+                    f"payoff_chapters={sum(1 for record in ledger if record.has_payoff)}"
+                ),
+            )
+        )
+    if stale_bomb_ids:
+        findings.append(
+            WholeBookQualityFinding(
+                code="emotion_bomb_payoff_stale",
+                severity="high",
+                scope="emotion_bomb",
+                message="桌下炸弹的承诺兑现窗口已过，但窗口内没有可识别收益、揭露或情绪转折。",
+                evidence=", ".join(stale_bomb_ids),
+            )
+        )
+    if (chapter_count >= 3 and not kernel.emotion_chain) or repeated_modes:
+        findings.append(
+            WholeBookQualityFinding(
+                code="emotion_flat_chain",
+                severity="high",
+                scope="emotion_chain",
+                message="情绪链缺失或连续重复同一种目标情绪，读者情绪推进会变平。",
+                evidence=str(repeated_modes[:3] or "emotion_chain_missing"),
+            )
+        )
+    if cost_free_sources:
+        findings.append(
+            WholeBookQualityFinding(
+                code="emotion_cost_free_win",
+                severity=(
+                    "high" if "ending_texture_contract" in cost_free_sources else "medium"
+                ),
+                scope="emotion_chain",
+                message="胜利、翻盘或幸福兑现缺少对应代价，容易变成一键清零。",
+                evidence=", ".join(cost_free_sources[:5]),
+            )
+        )
+    if not ending_texture_ready:
+        critical_ending = {
+            issue.code
+            for issue in contract_report.issues
+            if issue.path.startswith("ending_texture_contract")
+            and issue.severity == "critical"
+        }
+        findings.append(
+            WholeBookQualityFinding(
+                code="emotion_ending_texture_not_ready",
+                severity="high" if critical_ending else "medium",
+                scope="emotion_ending",
+                message="结局纹理合同尚未能同时回答幸福/悲剧、不可逆代价与主题回收。",
+                evidence=", ".join(ending_issue_codes),
+            )
+        )
+
+    return metrics, findings
+
+
 def evaluate_whole_book_quality(
     chapter_texts: Mapping[int, str] | Sequence[str],
     *,
     volume_plan: object = None,
     rolling_window: int = 10,
+    emotion_driven_kernel: EmotionDrivenKernel | Mapping[str, Any] | None = None,
 ) -> WholeBookQualityReport:
     chapters = _normalize_chapter_texts(chapter_texts)
     ledger = tuple(
@@ -528,6 +866,12 @@ def evaluate_whole_book_quality(
                 )
             )
 
+    emotion_metrics, emotion_findings = _emotion_quality_metrics_and_findings(
+        emotion_driven_kernel,
+        ledger,
+    )
+    findings.extend(emotion_findings)
+
     high_or_critical = any(finding.severity in {"critical", "high"} for finding in findings)
     metrics = {
         "chapter_count": len(ledger),
@@ -547,6 +891,7 @@ def evaluate_whole_book_quality(
             if ledger else 0.0
         ),
         "retention_zones": _retention_metrics(ledger),
+        "emotion_driven": emotion_metrics,
     }
     return WholeBookQualityReport(
         passed=not high_or_critical,
@@ -623,6 +968,9 @@ def build_whole_book_quality_rewrite_instructions(
         "这些章节必须保持更高的钩子密度和转折密度。",
         "- 但无论哪种功能，都必须给读者至少一种有效推进："
         "压力、选择、发现、代价、情绪转折或下一步牵引。",
+        "- 若失败项涉及 emotion_*，重写时必须回到情绪链："
+        "处境/欲望/感官/情绪/行动/后果，信息差/倒计时/严重后果/兑现，"
+        "以及幸福或胜利后的不可逆代价。",
         f"- 章节：第{chapter_number}章",
     ]
     if loop_contract:

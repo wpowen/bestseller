@@ -1,0 +1,36 @@
+{
+  "source_id": "source-0047",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "style_safety_policy": "{'policy_type': 'no_extraction', 'rationale': 'All 20 volumes and all sampled chapter cards consist entirely of LLM fallback stubs with zero confidence. No authorial voice, prose patterns, or craft signatures are present in the source data. No extraction or anonymization of style signals is possible.', 'compliance_status': 'passive — source contains no actionable author content'}",
+  "pov_and_distance": "close-third or project-selected POV with controlled narrative distance",
+  "sentence_rhythm": [
+    "vary short action beats with medium explanatory sentences"
+  ],
+  "paragraphing": [
+    "keep paragraphs functional: action, reaction, or information turn"
+  ],
+  "dialogue_system": [
+    "use role-specific intent, subtext, and conflict pressure"
+  ],
+  "description_strategy": [
+    "describe only details that change stakes, mood, or reader inference"
+  ],
+  "exposition_strategy": [
+    "place exposition after visible need or conflict pressure"
+  ],
+  "emotional_temperature": [
+    "surface emotion through choices, body action, and withheld admission"
+  ],
+  "hooking_and_transitions": [
+    "end units on changed state, unresolved question, or sharper constraint"
+  ],
+  "adaptation_guidelines": [
+    "{'available_guidance': False, 'reason': 'Volume aggregation across all 20 volumes (chapters 1–570) returned zero non-fallback chapter cards. No reusable story mechanics, craft observations, reader rewards, open hooks, POV patterns, dialogue systems, description strategies, exposition placement, emotional temperature, or hook-and-transition rhythms could be extracted.', 'required_for_reactivation': 'Full re-processing of source text through standard LLM distillation pipeline with functional chapter-level extraction. At minimum one non-fallback chapter_card must be present before volume-level aggregation can produce actionable author_craft_card content.'}"
+  ],
+  "taboo_copy_signals": [
+    "{'identifiable_author_signals': False, 'source_content_extracted': False, 'notes': 'No source author signals were captured or could be anonymized. The distillation dataset consists entirely of placeholder stubs with no extractable prose-craft content. Taboo copy signals list remains empty pending re-distillation.'}"
+  ],
+  "confidence": 0.0,
+  "distillation_source_id": "source-0047"
+}

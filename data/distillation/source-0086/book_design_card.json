@@ -1,0 +1,55 @@
+{
+  "book_id": "source-0086",
+  "source_ref": "distillation:3a6d265fda24b7ddd54b25a0",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "parsed_profile": {
+    "observation": "Complete distillation failure — all 99 chapters across 4 volumes returned as LLM unavailable stubs with 0.0 confidence. No narrative content, character actions, dialogue, or scene mechanics extractable. Volume cards degraded to metadata-only records. Book design card constructed entirely from failure metadata; no story mechanics, reader rewards, or craft patterns accessible.",
+    "distillation_integrity": "0% — source content completely inaccessible"
+  },
+  "genre_tags": [
+    "unknown — no content to classify"
+  ],
+  "reader_promise": "Indeterminable — source chapters unavailable for promise extraction",
+  "core_engine": "unknown — LLM unavailable across all volumes",
+  "state_variables": [
+    "fallback_progress"
+  ],
+  "reader_rewards": [
+    "distillable_mechanism_reliability"
+  ],
+  "reusable_mechanisms": [
+    "fallback mechanism abstraction"
+  ],
+  "non_reusable_specifics": [
+    "Volume 1 (chapters 1-25): LLM unavailable — distillation fallback stub",
+    "Volume 2 (chapters 26-50): LLM unavailable — distillation fallback stub",
+    "Volume 3 (chapters 51-75): LLM unavailable — distillation fallback stub",
+    "Volume 4 (chapters 76-99): LLM unavailable — distillation fallback stub"
+  ],
+  "risk_patterns": [
+    "llm_fallback_all_chapters",
+    "no_content_to_distill",
+    "chapter_cards_all_stubs",
+    "zero_confidence_input",
+    "data_unavailable_for_distillation",
+    "volume_card_quality_degraded_to_metadata_only",
+    "no_story_mechanics_extractable",
+    "complete_source_inaccessibility"
+  ],
+  "failure_summary": {
+    "total_chapters_targeted": 99,
+    "chapters_distillable": 0,
+    "chapters_llm_unavailable": 99,
+    "volumes_processed": 4,
+    "volumes_with_content": 0,
+    "confidence_scores": {
+      "chapter_level": 0.0,
+      "volume_level": 0.0,
+      "book_level": 0.0
+    },
+    "extraction_viable": false
+  },
+  "source_id": "source-0086",
+  "distillation_source_id": "source-0086"
+}

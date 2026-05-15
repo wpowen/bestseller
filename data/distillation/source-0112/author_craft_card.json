@@ -1,0 +1,45 @@
+{
+  "source_id": "source-0112",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "style_safety_policy": "{'status': 'unavailable', 'reason': 'No source content available for style analysis; all 274 chapters are LLM fallback stubs with zero confidence'}",
+  "pov_and_distance": "{'status': 'unavailable', 'reason': 'No chapter-level narrative content available to determine POV mechanics or narrative distance patterns'}",
+  "sentence_rhythm": [
+    "{'status': 'unavailable', 'reason': 'No readable prose content present in source data; cannot extract rhythmic patterns or cadence structures'}"
+  ],
+  "paragraphing": [
+    "{'status': 'unavailable', 'reason': 'All chapter cards contain placeholder stubs only; no structural prose patterns derivable'}"
+  ],
+  "dialogue_system": [
+    "{'status': 'unavailable', 'reason': 'Zero dialogue content accessible; all chapters returned LLM unavailable fallbacks'}"
+  ],
+  "description_strategy": [
+    "{'status': 'unavailable', 'reason': 'No scene-level descriptive content present in source; distillation blocked by absent chapter data'}"
+  ],
+  "exposition_strategy": [
+    "{'status': 'unavailable', 'reason': 'No exposition mechanics extractable from empty chapter_card batch'}"
+  ],
+  "emotional_temperature": [
+    "{'status': 'unavailable', 'reason': 'No tonal or emotional data available across any volume; confidence is 0.0 globally'}"
+  ],
+  "hooking_and_transitions": [
+    "{'status': 'unavailable', 'reason': 'No hook mechanisms, open threads, or transition patterns derivable from placeholder stubs'}"
+  ],
+  "adaptation_guidelines": [
+    "{'status': 'unavailable', 'reason': 'No craft data to inform adaptation; source requires full LLM processing before guidelines can be generated'}"
+  ],
+  "taboo_copy_signals": [
+    "{'status': 'unavailable', 'reason': 'Cannot identify distinctive signals to avoid when source content is entirely absent'}"
+  ],
+  "confidence": 0.0,
+  "distillation_status": "failed",
+  "failure_modes": [
+    "llm_fallback_all_chapters",
+    "zero_confidence_global",
+    "no_distillable_content",
+    "aggregation_blocked",
+    "volume_card_cannot_be_derived"
+  ],
+  "notes": "Author_craft_card constructed as hollow structure to avoid hallucination. All craft control fields set to unavailable. Source chapters 1-274 require full LLM reprocessing before any craft extraction can proceed.",
+  "distillation_source_id": "source-0112"
+}

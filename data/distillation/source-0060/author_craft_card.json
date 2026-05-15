@@ -1,0 +1,51 @@
+{
+  "source_id": "source-0060",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "style_safety_policy": "cannot_assess — all source chapters returned llm_unavailable fallback stubs with zero confidence; no narrative voice, tonal register, or stylistic content present for safety evaluation",
+  "pov_and_distance": "undetermined — source content unavailable; no extractable POV choices, narrative distance calibration, or perspective strategies present in any of 252 chapters across 11 volumes",
+  "sentence_rhythm": [
+    "unavailable — zero source content; no basis for evaluating prose cadence, clause complexity patterns, or rhythmic variation across chapters"
+  ],
+  "paragraphing": [
+    "not_distillable — all chapter cards contain empty arrays and 0.0 confidence; paragraph structure, scene breaks, and spatial organization cannot be assessed"
+  ],
+  "dialogue_system": [
+    "no_data — source chapters are llm_fallback stubs; no dialogue content, tag usage, beats, subtext strategies, or speech-pattern observations extractable"
+  ],
+  "description_strategy": [
+    "indeterminate — source unavailable; no sensory detail density, figurative language frequency, environmental description placement, or visual calibration observable"
+  ],
+  "exposition_strategy": [
+    "undetermined — no narrative exposition present in fallback stubs; no backstory injection methods, info-dump avoidance techniques, or explanation timing patterns distillable"
+  ],
+  "emotional_temperature": [
+    "not_assessable — zero-confidence stubs across entire source; no tonal shifts, affect calibration, tension management, or emotional register observations extractable"
+  ],
+  "hooking_and_transitions": [
+    "no_source_content — chapter endings, cliffhanger construction, scene transitions, and hook density cannot be evaluated from llm_unavailable material"
+  ],
+  "adaptation_guidelines": [
+    "cannot_derive — without extractable source content, no scene-level adaptation notes, visual-to-prose translation considerations, or medium-specific craft observations can be generated"
+  ],
+  "taboo_copy_signals": [
+    "{'note': 'No copy signals can be identified; entire source consists of identical llm_fallback stubs with no distinctive phrasing, vocabulary patterns, or structural fingerprints present for comparison or prohibition', 'forbidden_signals_detected': False, 'reason': 'No authorial voice or content to analyze'}"
+  ],
+  "confidence": 0.0,
+  "distillation_failure_manifest": {
+    "volumes_processed": 11,
+    "chapters_attempted": 252,
+    "chapters_with_content": 0,
+    "failure_mode": "complete_llm_unavailable_fallback — all source chapters returned identical stubs with empty arrays and 0.0 confidence across all 11 volumes",
+    "aggregated_failure_modes": [
+      "llm_fallback",
+      "no_source_content",
+      "all_chapters_llm_fallback",
+      "zero_confidence",
+      "no_distillable_content",
+      "complete_data_loss"
+    ],
+    "recommendation": "author_craft_card cannot be meaningfully generated until actual chapter_card content is produced by a functional LLM extraction pipeline; reprocessing of source material required before craft distillation"
+  },
+  "distillation_source_id": "source-0060"
+}

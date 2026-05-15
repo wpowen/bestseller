@@ -7,22 +7,24 @@ import pytest
 
 from bestseller.domain.story_bible import CastSpecInput
 from bestseller.infra.db.models import (
+    ChapterModel,
     CharacterModel,
     CharacterStateSnapshotModel,
-    ChapterModel,
     ExpansionGateModel,
     FactionModel,
     LocationModel,
     ProjectModel,
     RelationshipModel,
     StyleGuideModel,
-    VolumeModel,
     VolumeFrontierModel,
+    VolumeModel,
     WorldBackboneModel,
     WorldRuleModel,
 )
 from bestseller.services import story_bible as story_bible_services
-
+from bestseller.services.quality_levers.character_engine import (
+    synthesize_character_engine_profile,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -379,6 +381,68 @@ async def test_upsert_world_spec_creates_world_entities() -> None:
 
 
 @pytest.mark.asyncio
+async def test_upsert_world_spec_reuses_existing_rule_with_same_name() -> None:
+    project = build_project()
+    existing_rule = WorldRuleModel(
+        project_id=project.id,
+        rule_code="R002",
+        name="重瞳五重境界",
+        description="旧描述",
+        metadata_json={},
+    )
+    existing_rule.id = uuid4()
+    world_spec = build_world_spec()
+    world_spec["rules"] = [
+        {
+            "rule_id": "double_pupil_stages",
+            "name": "重瞳五重境界",
+            "description": "新描述",
+            "story_consequence": "突破失败会反噬。",
+        }
+    ]
+    session = FakeSession(scalar_results=[existing_rule, None])
+
+    counts = await story_bible_services.upsert_world_spec(session, project, world_spec)
+
+    assert counts["world_rules_upserted"] == 1
+    assert not any(isinstance(item, WorldRuleModel) for item in session.added)
+    assert existing_rule.rule_code == "double_pupil_stages"
+    assert existing_rule.description == "新描述"
+    assert existing_rule.story_consequence == "突破失败会反噬。"
+
+
+@pytest.mark.asyncio
+async def test_upsert_world_spec_reuses_existing_rule_with_same_code() -> None:
+    project = build_project()
+    existing_rule = WorldRuleModel(
+        project_id=project.id,
+        rule_code="R001",
+        name="青囊只记因果",
+        description="旧描述",
+        metadata_json={},
+    )
+    existing_rule.id = uuid4()
+    world_spec = build_world_spec()
+    world_spec["rules"] = [
+        {
+            "rule_id": "R001",
+            "name": "阴阳眼血脉觉醒",
+            "description": "林家嫡系血脉濒死后可能觉醒阴阳眼。",
+            "story_consequence": "夜间可视鬼物。",
+        }
+    ]
+    session = FakeSession(scalar_results=[None, existing_rule])
+
+    counts = await story_bible_services.upsert_world_spec(session, project, world_spec)
+
+    assert counts["world_rules_upserted"] == 1
+    assert not any(isinstance(item, WorldRuleModel) for item in session.added)
+    assert existing_rule.rule_code == "R001"
+    assert existing_rule.name == "阴阳眼血脉觉醒"
+    assert existing_rule.description == "林家嫡系血脉濒死后可能觉醒阴阳眼。"
+
+
+@pytest.mark.asyncio
 async def test_upsert_cast_spec_creates_characters_relationships_and_snapshots() -> None:
     project = build_project()
     session = FakeSession(scalar_results=[None, None, None])
@@ -426,12 +490,24 @@ async def test_upsert_cast_spec_backfills_active_volumes_from_forces() -> None:
         {"name": "寒鸦", "role": "antagonist", "goal": "切断补给"},
     ]
     cast["antagonist_forces"] = [
-        {"name": "初期围堵", "force_type": "character",
-         "character_ref": "苏瑶", "active_volumes": [1, 2, 3, 4, 5]},
-        {"name": "中期封锁", "force_type": "character",
-         "character_ref": "寒鸦", "active_volumes": [6, 7, 8, 9, 10]},
-        {"name": "终局对决", "force_type": "character",
-         "character_ref": "祁镇", "active_volumes": [11, 12]},
+        {
+            "name": "初期围堵",
+            "force_type": "character",
+            "character_ref": "苏瑶",
+            "active_volumes": [1, 2, 3, 4, 5],
+        },
+        {
+            "name": "中期封锁",
+            "force_type": "character",
+            "character_ref": "寒鸦",
+            "active_volumes": [6, 7, 8, 9, 10],
+        },
+        {
+            "name": "终局对决",
+            "force_type": "character",
+            "character_ref": "祁镇",
+            "active_volumes": [11, 12],
+        },
     ]
 
     await story_bible_services.upsert_cast_spec(session, project, cast)
@@ -481,6 +557,20 @@ async def test_upsert_cast_spec_counts_voice_profiles_and_moral_frameworks() -> 
 @pytest.mark.asyncio
 async def test_upsert_cast_spec_persists_ip_anchor_and_personhood_payloads() -> None:
     project = build_project()
+    project.metadata_json["character_strategy"] = {
+        "required_axes": ["agency", "identity_pressure"],
+        "reader_reward_contracts": ["身份选择必须产生可见代价"],
+        "agency_policy": {
+            "must_act_within_chapters": 3,
+            "default_problem_solving_modes": ["knowledge_application"],
+            "choice_with_cost_required": True,
+        },
+        "identity_pressure": {
+            "required_external_pressure": True,
+            "choice_axis": "predecessor_loyalty vs self_determination",
+            "debt_sources": ["宿主身份债"],
+        },
+    }
     session = FakeSession(scalar_results=[None, None, None])
 
     cast = build_cast_spec()
@@ -535,6 +625,26 @@ async def test_upsert_cast_spec_persists_ip_anchor_and_personhood_payloads() -> 
     assert protagonist.metadata_json["social_network"]["family"][0]["name"] == "沈晚"
     assert protagonist.metadata_json["beliefs"]["ideology"] == "真相高于秩序"
     assert protagonist.metadata_json["family_imprint"]["parenting_style"] == "父亲严苛"
+    assert protagonist.metadata_json["character_engine_profile"]["source"] == "cast_spec_fusion"
+    assert (
+        protagonist.metadata_json["character_engine_profile"]["want_vs_need"]["want"]
+        == cast["protagonist"]["goal"]
+    )
+    assert "voice_dna" in protagonist.metadata_json["character_engine_profile"]
+    assert (
+        protagonist.metadata_json["character_engine_profile"]["strategy_source"]
+        == "distillation_character_intelligence"
+    )
+    assert (
+        protagonist.metadata_json["character_engine_profile"]["agency_policy"][
+            "must_act_within_chapters"
+        ]
+        == 3
+    )
+    assert (
+        protagonist.metadata_json["character_engine_profile"]["identity_pressure"]["choice_axis"]
+        == "predecessor_loyalty vs self_determination"
+    )
     assert antagonist.metadata_json["villain_charisma"]["noble_motivation"] == "维护航道秩序"
 
 
@@ -622,9 +732,7 @@ def test_normalize_volume_plan_titles_replaces_placeholders() -> None:
         {"volume_number": 3, "volume_title": "", "conflict_phase": "power_system_test"},
         {"volume_number": 4, "volume_title": "Volume 4", "conflict_phase": "power_system_test"},
     ]
-    normalized, replaced = story_bible_services.normalize_volume_plan_titles(
-        volumes, is_en=False
-    )
+    normalized, replaced = story_bible_services.normalize_volume_plan_titles(volumes, is_en=False)
     titles = [e["volume_title"] for e in normalized]
     assert replaced == 3
     assert titles[0] == "逆命入局"  # real title kept
@@ -698,6 +806,16 @@ async def test_load_scene_story_bible_context_includes_roles_states_and_rules(
         metadata_json={
             "psych_profile": {"mbti": "INTJ"},
             "beliefs": {"ideology": "真相高于秩序"},
+            "character_engine_profile": synthesize_character_engine_profile(
+                {
+                    "name": "沈砚",
+                    "role": "protagonist",
+                    "goal": "找证据",
+                    "fear": "再次害死搭档",
+                    "voice_profile": {"verbal_tics": ["证据先说话"]},
+                    "ip_anchor": {"core_wound": "七岁目睹母亲被处决"},
+                }
+            ),
         },
     )
     gu = CharacterModel(
@@ -794,7 +912,9 @@ async def test_load_scene_story_bible_context_includes_roles_states_and_rules(
             beliefs=[],
         )
 
-    monkeypatch.setattr(story_bible_services, "get_latest_character_state", fake_latest_character_state)
+    monkeypatch.setattr(
+        story_bible_services, "get_latest_character_state", fake_latest_character_state
+    )
 
     context = await story_bible_services.load_scene_story_bible_context(
         session,
@@ -814,6 +934,11 @@ async def test_load_scene_story_bible_context_includes_roles_states_and_rules(
     assert context["participants"][0]["quirks"] == ["左手关节断裂"]
     assert context["participants"][0]["psych_profile"]["mbti"] == "INTJ"
     assert context["participants"][0]["beliefs"]["ideology"] == "真相高于秩序"
+    assert context["participants"][0]["character_engine_profile"]["source"] == "cast_spec_fusion"
+    assert (
+        context["participants"][0]["character_engine_profile"]["voice_dna"]["signature_words"][0]
+        == "证据先说话"
+    )
     assert context["relationships"][0]["relationship_type"] == "旧搭档"
 
 
@@ -878,8 +1003,15 @@ async def test_upsert_cast_spec_registers_novelty_fingerprints_when_enabled(
         return NoveltyVerdict(ok=True, reason="ok")
 
     async def _fake_register_fingerprint(
-        session, *, project_id, genre, dimension, entity_name, slug,
-        narrative_summary, source_material_id=None,
+        session,
+        *,
+        project_id,
+        genre,
+        dimension,
+        entity_name,
+        slug,
+        narrative_summary,
+        source_material_id=None,
     ):
         register_calls.append(
             {
@@ -892,24 +1024,18 @@ async def test_upsert_cast_spec_registers_novelty_fingerprints_when_enabled(
         )
 
     monkeypatch.setattr(novelty_mod, "check_novelty", _fake_check_novelty)
-    monkeypatch.setattr(
-        novelty_mod, "register_fingerprint", _fake_register_fingerprint
-    )
+    monkeypatch.setattr(novelty_mod, "register_fingerprint", _fake_register_fingerprint)
 
     # Stub out settings so the flag is forced on without touching YAML.
     import bestseller.settings as settings_mod
     from types import SimpleNamespace
 
-    fake_settings = SimpleNamespace(
-        pipeline=SimpleNamespace(enable_novelty_guard=True)
-    )
+    fake_settings = SimpleNamespace(pipeline=SimpleNamespace(enable_novelty_guard=True))
     _stub = lambda: fake_settings  # noqa: E731
     _stub.cache_clear = lambda: None  # type: ignore[attr-defined]
     monkeypatch.setattr(settings_mod, "get_settings", _stub)
 
-    counts = await story_bible_services.upsert_cast_spec(
-        session, project, build_cast_spec()
-    )
+    counts = await story_bible_services.upsert_cast_spec(session, project, build_cast_spec())
 
     # All three new characters must reach the critic.
     names_checked = {call["entity_name"] for call in check_calls}
@@ -943,9 +1069,7 @@ async def test_upsert_cast_spec_skips_novelty_when_flag_off(
         raise AssertionError("check_novelty must not be called when flag is off")
 
     async def _boom_register(*args, **kwargs):  # pragma: no cover
-        raise AssertionError(
-            "register_fingerprint must not be called when flag is off"
-        )
+        raise AssertionError("register_fingerprint must not be called when flag is off")
 
     monkeypatch.setattr(novelty_mod, "check_novelty", _boom_check)
     monkeypatch.setattr(novelty_mod, "register_fingerprint", _boom_register)
@@ -953,16 +1077,12 @@ async def test_upsert_cast_spec_skips_novelty_when_flag_off(
     import bestseller.settings as settings_mod
     from types import SimpleNamespace
 
-    fake_settings = SimpleNamespace(
-        pipeline=SimpleNamespace(enable_novelty_guard=False)
-    )
+    fake_settings = SimpleNamespace(pipeline=SimpleNamespace(enable_novelty_guard=False))
     _stub = lambda: fake_settings  # noqa: E731
     _stub.cache_clear = lambda: None  # type: ignore[attr-defined]
     monkeypatch.setattr(settings_mod, "get_settings", _stub)
 
-    counts = await story_bible_services.upsert_cast_spec(
-        session, project, build_cast_spec()
-    )
+    counts = await story_bible_services.upsert_cast_spec(session, project, build_cast_spec())
 
     assert counts["novelty_fingerprints_registered"] == 0
     # Regression: normal upsert counts remain unaffected.
@@ -990,16 +1110,12 @@ async def test_upsert_cast_spec_novelty_is_noop_when_project_has_no_genre(
     import bestseller.settings as settings_mod
     from types import SimpleNamespace
 
-    fake_settings = SimpleNamespace(
-        pipeline=SimpleNamespace(enable_novelty_guard=True)
-    )
+    fake_settings = SimpleNamespace(pipeline=SimpleNamespace(enable_novelty_guard=True))
     _stub = lambda: fake_settings  # noqa: E731
     _stub.cache_clear = lambda: None  # type: ignore[attr-defined]
     monkeypatch.setattr(settings_mod, "get_settings", _stub)
 
-    counts = await story_bible_services.upsert_cast_spec(
-        session, project, build_cast_spec()
-    )
+    counts = await story_bible_services.upsert_cast_spec(session, project, build_cast_spec())
     assert counts["novelty_fingerprints_registered"] == 0
 
 
@@ -1024,16 +1140,12 @@ async def test_upsert_cast_spec_novelty_errors_are_swallowed(
     import bestseller.settings as settings_mod
     from types import SimpleNamespace
 
-    fake_settings = SimpleNamespace(
-        pipeline=SimpleNamespace(enable_novelty_guard=True)
-    )
+    fake_settings = SimpleNamespace(pipeline=SimpleNamespace(enable_novelty_guard=True))
     _stub = lambda: fake_settings  # noqa: E731
     _stub.cache_clear = lambda: None  # type: ignore[attr-defined]
     monkeypatch.setattr(settings_mod, "get_settings", _stub)
 
-    counts = await story_bible_services.upsert_cast_spec(
-        session, project, build_cast_spec()
-    )
+    counts = await story_bible_services.upsert_cast_spec(session, project, build_cast_spec())
     assert counts["characters_upserted"] == 3
     # Every character's novelty call raised → nothing registered, but
     # the upsert kept running.

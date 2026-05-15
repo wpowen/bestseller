@@ -1,0 +1,33 @@
+key: distillation-generic
+name: Distillation Complete Failure Patch
+source_ids:
+- source-0093
+- distillation:3127fd639575d096cadbaa49
+status: blocked_requires_human_authored_source
+applies_to_categories:
+- distillation-generic
+required_contracts:
+- valid_chapter_level_distillation
+- functioning_llm_pipeline
+- zero_confidence_remediation
+- volume_boundary_verification
+- metadata_consistency_audit
+state_variables:
+- fallback_progress
+- confidence_mean
+- confidence_max
+- confidence_min
+chapter_change_vectors: []
+reader_rewards: []
+hook_or_aftereffect_types: []
+forbidden_defaults:
+- arc_function_derivation
+- dominant_engine_identification
+- setup_payoff_rhythm_analysis
+- volume_level_aggregation
+- book_level_abstraction
+- reusable_mechanism_extraction
+- craft_observation_synthesis
+- state_progression_mapping
+- turning_point_identification
+- reader_promise_derivation

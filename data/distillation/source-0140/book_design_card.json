@@ -1,0 +1,48 @@
+{
+  "book_id": "source-0140",
+  "source_ref": "distillation:0c045fb030aa738b401876d9",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "parsed_profile": {
+    "distillation_status": "failed_complete",
+    "volumes_processed": 14,
+    "volumes_with_data": 0,
+    "chapters_total_expected": 375,
+    "chapters_processed": 375,
+    "chapters_with_content": 0,
+    "confidence_aggregate": 0.0,
+    "primary_failure": "source chapters exclusively llm_fallback stubs — zero extractable content across entire corpus",
+    "secondary_failures": [
+      "no arc_function determinable across any volume",
+      "no state_progression extractable",
+      "no turning_points documented",
+      "no craft_observations recoverable",
+      "no reader_rewards identifiable",
+      "no open_hooks present",
+      "no reusable_mechanisms extractable",
+      "no specific narrative content available"
+    ],
+    "data_availability": "none",
+    "recommendation": "reprocess source-0140 through LLM-capable pipeline; current batch is unusable for design extraction"
+  },
+  "genre_tags": [
+    "distillation-generic"
+  ],
+  "reader_promise": "LLM structured distillation fallback.",
+  "core_engine": "unknown",
+  "state_variables": [
+    "fallback_progress"
+  ],
+  "reader_rewards": [
+    "distillable_mechanism_reliability"
+  ],
+  "reusable_mechanisms": [
+    "fallback mechanism abstraction"
+  ],
+  "non_reusable_specifics": [],
+  "risk_patterns": [
+    "{'pattern': 'systematic_llm_fallback', 'affected_scope': 'entire_source_0140', 'confidence_impact': 'total_zero', 'extraction_blocked': True, 'failure_modes': ['all_14_volume_cards llm_fallback', 'all_375_chapter_cards llm_fallback', 'zero_confidence_batch_wide', 'no_craft_metadata_extractable', 'aggregation_impossible_due_to_data_poverty'], 'recommendation': 'source content must be reprocessed through LLM analysis pipeline before book_design_card generation can succeed'}"
+  ],
+  "source_id": "source-0140",
+  "distillation_source_id": "source-0140"
+}

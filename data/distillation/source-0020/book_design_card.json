@@ -1,0 +1,77 @@
+{
+  "book_id": "source-0020",
+  "source_ref": "distillation:9267d7cc59e2cae87eaf2b07",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "parsed_profile": {
+    "distillation_status": "complete_with_critical_data_loss",
+    "volume_coverage": {
+      "total_volumes": 9,
+      "volume_ranges": [
+        "1-25",
+        "26-50",
+        "51-75",
+        "76-100",
+        "101-125",
+        "126-150",
+        "151-175",
+        "176-200",
+        "201-221"
+      ],
+      "chapter_range_span": "1-221"
+    },
+    "data_quality_summary": {
+      "volumes_with_llm_fallback": 9,
+      "volumes_with_valid_content": 0,
+      "chapter_cards_sampled": 3,
+      "chapter_cards_with_stub_content": 3,
+      "confidence_distribution": {
+        "mean": 0.0,
+        "max": 0.0,
+        "min": 0.0
+      }
+    },
+    "failure_modes_aggregated": [
+      "llm_fallback",
+      "zero_confidence_batch",
+      "no_distillable_content",
+      "no_reusable_content_extracted",
+      "all_chapters_llm_fallback",
+      "volume_data_unavailable",
+      "source data unavailable for extraction"
+    ],
+    "aggregation_failure_note": "All 9 volume cards and sampled chapter cards contain only placeholder LLM fallback stubs with zero confidence. No story-design mechanics, craft observations, reader rewards, narrative hooks, state progressions, or turning points are recoverable from source material."
+  },
+  "genre_tags": [
+    "distillation-generic"
+  ],
+  "reader_promise": "LLM structured distillation fallback.",
+  "core_engine": "unknown",
+  "state_variables": [
+    "fallback_progress"
+  ],
+  "reader_rewards": [
+    "distillable_mechanism_reliability"
+  ],
+  "reusable_mechanisms": [
+    "fallback mechanism abstraction"
+  ],
+  "non_reusable_specifics": [
+    "All volume cards (1-9) contain only LLM fallback stubs",
+    "All sampled chapter cards show 'LLM unavailable — distillation fallback stub'",
+    "No arc_function classifications available",
+    "No dominant_engine identified",
+    "No state_progression derivable from stub data",
+    "No turning_points captured",
+    "No setup_payoff_rhythm observable",
+    "No craft_observations present in any chapter card"
+  ],
+  "risk_patterns": [
+    "{'pattern_id': 'universal_llm_fallback', 'description': 'Every volume and chapter card returned LLM unavailable fallback stubs across entire source', 'affected_volumes': [1, 2, 3, 4, 5, 6, 7, 8, 9], 'impact': 'No story content available for distillation', 'mitigation_required': 'Source chapters require full LLM analysis before volume_card can reflect meaningful arc structure, state progression, or turning points'}",
+    "{'pattern_id': 'zero_confidence_batch', 'description': 'Confidence scores of 0.0 across all 9 volumes and sampled chapter cards', 'affected_volumes': [1, 2, 3, 4, 5, 6, 7, 8, 9], 'impact': 'Data integrity compromised — volume_card cannot be meaningfully distilled', 'mitigation_required': 'Re-process source material with functional LLM before attempting volume_card aggregation'}",
+    "{'pattern_id': 'no_distillable_content', 'description': 'Zero analyzable chapter content available across all 221 chapter positions', 'affected_chapter_range': '1-221', 'impact': 'book_design_card forced to produce empty aggregation with no reader rewards, open hooks, or craft observations', 'mitigation_required': 'Alternate source material required for meaningful distillation'}",
+    "{'pattern_id': 'stacked_segment_fallback', 'description': 'Chapter card 221 shows fragmented fallback stubs stacked across 226 segments', 'affected_chapters': [221], 'impact': 'Indicates potential downstream processing failure cascading to placeholder generation', 'mitigation_required': 'Investigate pipeline failure upstream of chapter card generation'}"
+  ],
+  "source_id": "source-0020",
+  "distillation_source_id": "source-0020"
+}

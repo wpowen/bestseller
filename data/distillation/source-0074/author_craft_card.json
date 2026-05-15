@@ -1,0 +1,37 @@
+{
+  "source_id": "source-0074",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "style_safety_policy": "No extractable authorial voice or stylistic signature present in source data. All chapter records returned LLM fallback stubs with zero confidence. No distinctive style markers, tonal signatures, or voice characteristics available for abstraction.",
+  "pov_and_distance": "Unavailable — no narrative content present in source chapters to determine point-of-view strategy, narrative distance calibration, or POV consistency patterns.",
+  "sentence_rhythm": [
+    "Indeterminate — source data contains no parseable sentence structures, rhythm signatures, or syntactic patterns. Volume aggregation across 7 volumes (164 chapters) yielded only placeholder stubs."
+  ],
+  "paragraphing": [
+    "Non-extractable — no paragraph-level structural data exists in source. Batch processing failed across all volume_card aggregations."
+  ],
+  "dialogue_system": [
+    "No dialogue content available. All chapter stubs returned empty mechanism arrays. No dialogue tags, speech patterns, or conversational rhythm observations can be derived."
+  ],
+  "description_strategy": [
+    "Cannot assess — no scene-building, environmental description, or sensory detail content present in fallback stubs. Reader-reward mechanisms remain unidentified."
+  ],
+  "exposition_strategy": [
+    "Unavailable — no exposition placement, backstory injection patterns, or information-reveal timing mechanics present in zero-confidence chapter records."
+  ],
+  "emotional_temperature": [
+    "Indeterminate — emotional arc, tonal calibration, and affective register data not present in source. No chapter-level emotional progressions available for aggregation."
+  ],
+  "hooking_and_transitions": [
+    "Non-extractable — open hooks, cliffhanger mechanisms, and transition strategies cannot be identified. All chapter cards returned empty open_hooks arrays."
+  ],
+  "adaptation_guidelines": [
+    "Source content unavailable for adaptation feasibility assessment. Recommend re-processing source chapters when actual narrative content becomes available. Current card represents baseline null aggregation with zero extractable craft mechanics."
+  ],
+  "taboo_copy_signals": [
+    "No distinctive sentence templates, named entities, specific phrasing patterns, or authorial signatures present in source. Prohibition on imitation cannot be calibrated without extractable style markers."
+  ],
+  "confidence": 0.0,
+  "notes": "Distillation blocked by systematic LLM fallback across all 164 chapters in 7 volumes. Author-craft card represents a null baseline — no POV distance, sentence rhythm, paragraphing, dialogue method, description strategy, exposition placement, emotional temperature, or hook transition mechanics can be abstracted. Volume-level aggregation failed. Re-processing recommended when source narrative content is accessible.",
+  "distillation_source_id": "source-0074"
+}

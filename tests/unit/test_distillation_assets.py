@@ -55,6 +55,26 @@ def _package(tmp_path: Path, source_id: str = "source-0001") -> Path:
     )
     _write_json(root / "book_design_card.json", {"book_id": source_id, "source_ref": "local"})
     _write_json(
+        root / "author_craft_card.json",
+        {
+            "source_id": source_id,
+            "source_type": "distillation_package",
+            "status": "draft_review",
+            "style_safety_policy": "abstract craft only; no author imitation",
+            "pov_and_distance": "close third",
+            "sentence_rhythm": ["short action beats"],
+            "paragraphing": ["single-purpose paragraphs"],
+            "dialogue_system": ["conflict-loaded dialogue"],
+            "description_strategy": ["stakes-relevant detail"],
+            "exposition_strategy": ["explain after need"],
+            "emotional_temperature": ["controlled pressure"],
+            "hooking_and_transitions": ["changed-state endings"],
+            "adaptation_guidelines": ["change imagery and scenario chains"],
+            "taboo_copy_signals": ["exact phrases"],
+            "confidence": 0.8,
+        },
+    )
+    _write_json(
         root / "anti_copy_ledger.json",
         {
             "source_id": source_id,
@@ -142,11 +162,65 @@ def test_aggregate_distillation_package_writes_system_assets(tmp_path: Path) -> 
 
     assert report.material_rows == 1
     assert report.mechanism_rows == 1
+    assert report.author_craft_rows == 1
+    assert report.book_design_rows == 1
+    assert report.volume_design_rows == 1
+    assert report.fallback_volume_rows == 0
+    assert report.maturity_score > 0
+    assert report.maturity_status in {"pilot", "review", "production"}
     material = (output / "material_entries.review.jsonl").read_text(encoding="utf-8")
     assert "distillation_source_ids" in material
+    craft = (output / "author_craft_registry.jsonl").read_text(encoding="utf-8")
+    assert "abstract craft only" in craft
+    book_design = (output / "book_design_registry.jsonl").read_text(encoding="utf-8")
+    assert "source-0001" in book_design
+    volume_paths = (output / "volume_design_paths.jsonl").read_text(encoding="utf-8")
+    assert '"volume_no": 1' in volume_paths
+    manifest = json.loads((output / "aggregate_manifest.json").read_text(encoding="utf-8"))
+    assert manifest["fallback_volume_rows"] == 0
+    assert manifest["maturity_score"] == report.maturity_score
     grammar = yaml.safe_load((output / "grammar_patch.yaml").read_text(encoding="utf-8"))
     assert grammar["key"] == "otherworld-cross-system"
     assert grammar["state_variables"] == ["cross_system_understanding"]
+
+
+def test_aggregate_distillation_package_quarantines_fallback_volume_rows(
+    tmp_path: Path,
+) -> None:
+    package = _package(tmp_path)
+    _write_jsonl(
+        package / "volume_cards.jsonl",
+        [
+            {
+                "source_id": "source-0001",
+                "volume_no": 1,
+                "arc_function": "Fallback aggregation due LLM structure issue.",
+                "dominant_engine": "unknown",
+                "distillation_fallback": True,
+            },
+            {
+                "source_id": "source-0001",
+                "volume_no": 2,
+                "arc_function": "Rules turn into political pressure.",
+                "dominant_engine": "world_pressure",
+            },
+        ],
+    )
+    output = tmp_path / "aggregate"
+
+    report = aggregate_distillation_packages(
+        [package],
+        output_dir=output,
+        aggregate_key="otherworld-cross-system",
+    )
+
+    assert report.fallback_volume_rows == 1
+    assert report.volume_design_rows == 1
+    volume_paths = (output / "volume_design_paths.jsonl").read_text(encoding="utf-8")
+    assert "Fallback aggregation" not in volume_paths
+    assert "world_pressure" in volume_paths
+    manifest = json.loads((output / "aggregate_manifest.json").read_text(encoding="utf-8"))
+    assert manifest["fallback_volume_rows"] == 1
 
 
 def test_install_story_design_grammar_patch_dry_run_and_apply(tmp_path: Path) -> None:

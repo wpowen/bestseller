@@ -1,0 +1,29 @@
+key: distillation-generic
+name: Generic Distillation Fallback Patch
+source_ids:
+- source-0063
+status: draft_review
+applies_to_categories:
+- distillation-generic
+- fallback
+required_contracts:
+- fallback_extraction_contract
+- zero_confidence_contract
+state_variables:
+- fallback_progress
+- patch_applied
+chapter_change_vectors:
+- vector_id: stub_to_fallback
+  affected_chapters: all
+  change_type: replace
+  fallback_content: generic_fallback_stub
+reader_rewards:
+- distillable_mechanism_reliability
+hook_or_aftereffect_types:
+- fallback_hook
+- reliability_boost
+forbidden_defaults:
+- llm_content
+- high_confidence_content
+- specific_narrative
+- non_fallback_content

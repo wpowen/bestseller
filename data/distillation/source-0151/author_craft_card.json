@@ -1,0 +1,46 @@
+{
+  "source_id": "source-0151",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "style_safety_policy": "{'policy': 'null_result_card', 'rationale': 'Source contains zero extractable craft data across all 9 volumes and 220 chapters. Every structural field contains llm_fallback stubs with 0.0 confidence. No authorial voice, prose signature, or stylistic fingerprint can be identified from available data.', 'applicability': 'This card cannot function as a style template. Any downstream use of this artifact must treat all craft fields as empty placeholders requiring source reprocessing.'}",
+  "pov_and_distance": "{'status': 'undistillable', 'value': None, 'evidence_base': 'No chapter content accessible. All 220 chapter_cards returned identical llm_unavailable responses. POV distance controls, narrative voice register, and perspective management cannot be extracted.', 'inference_guidance': None}",
+  "sentence_rhythm": [
+    "{'status': 'undistillable', 'value': None, 'evidence_base': 'Zero confidence across entire source. No sentence-level mechanics present in available data.', 'inference_guidance': None}"
+  ],
+  "paragraphing": [
+    "{'status': 'undistillable', 'value': None, 'evidence_base': 'No paragraph-level structural patterns extractable from LLM fallback stubs.', 'inference_guidance': None}"
+  ],
+  "dialogue_system": [
+    "{'status': 'undistillable', 'value': None, 'evidence_base': 'No dialogue content, attribution patterns, or conversation mechanics present in source data.', 'inference_guidance': None}"
+  ],
+  "description_strategy": [
+    "{'status': 'undistillable', 'value': None, 'evidence_base': 'No descriptive passages, scenic construction, or sensory-mechanism data accessible.', 'inference_guidance': None}"
+  ],
+  "exposition_strategy": [
+    "{'status': 'undistillable', 'value': None, 'evidence_base': 'No world-state information, backstory delivery mechanisms, or informational pacing extractable.', 'inference_guidance': None}"
+  ],
+  "emotional_temperature": [
+    "{'status': 'undistillable', 'value': None, 'evidence_base': 'No emotional arc data, beat-level intensity patterns, or affective progression observable in source.', 'inference_guidance': None}"
+  ],
+  "hooking_and_transitions": [
+    "{'status': 'undistillable', 'value': None, 'evidence_base': 'No chapter-ending mechanics, open-hook patterns, or transition strategies extractable.', 'inference_guidance': None}"
+  ],
+  "adaptation_guidelines": [
+    "{'primary_remediation': 'Source content must be reprocessed with LLM enabled to extract chapter-level narrative data. Current artifact is a complete null-result from distillation.', 'required_inputs': ['Raw source text for all 220 chapters', 'LLM processing pipeline enabled', 'Chapter-level parsing configured'], 'data_normalization_needed': 'Volume number mismatch detected in chapters 127-151 and 202-220. Source chapter cards reference incorrect volume numbers. Normalization required before re-distillation.', 'failure_patterns_addressed': ['universal_llm_fallback across all 9 volumes', 'no_extractable_story_architecture', 'aggregation_impossible without source content', 'volume_number_mismatch in two volume_card batches'], 'post_remediation_expectations': 'After source reprocessing, expect craft_profile extraction including: POV distance controls, sentence rhythm signatures, paragraph-level pacing, dialogue mechanics, description density, exposition placement patterns, emotional temperature calibration, and hook transition strategies.'}"
+  ],
+  "taboo_copy_signals": [
+    "{'status': 'empty', 'identified_patterns': [], 'rationale': 'No authorial prose signature exists in available data. Taboo-copy signals cannot be enumerated because no source voice is present to characterize.'}"
+  ],
+  "confidence": 0.0,
+  "distillation_failure_summary": {
+    "total_volumes": 9,
+    "total_chapters": 220,
+    "volumes_affected": 9,
+    "chapters_with_fallback_stubs": 220,
+    "confidence_distribution": "0.0 across 100% of source",
+    "extraction_success_rate": 0.0,
+    "root_cause": "LLM processing unavailable or disabled during initial distillation pass. All chapter_cards contain only placeholder text 'LLM unavailable — distillation fallback stub.' with no narrative content.",
+    "artifact_utility": "This card serves only as a structural placeholder documenting the failure state. It cannot function as a craft template, style guide, or design artifact until source material is reprocessed."
+  },
+  "distillation_source_id": "source-0151"
+}

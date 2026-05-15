@@ -1,0 +1,62 @@
+{
+  "book_id": "source-0308",
+  "source_ref": "distillation:512f5053d038a54963684e0c",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "parsed_profile": {
+    "narrative_structure": "Multi-threaded sequential plot handling with geographic and character group transitions; omnicient third-person narration maintaining comfortable distance from any single consciousness",
+    "pacing_mechanism": "Alternates extended explanatory passages with short urgent declaratives; final paragraphs accelerate into clipped threat rhythm",
+    "chapter_function_model": "Transitional chapters resolve one character arc while launching another; physical separation of plot threads handled sequentially within single chapters",
+    "hook_delivery_pattern": "External threat introduction through urgent messengers and pursuers rather than internal character conflict; chapter-ending alarm creates external pressure"
+  },
+  "genre_tags": [
+    "classical_chinese_historical_fiction",
+    "family_drama",
+    "deception_conspiracy",
+    "adventure",
+    "found_family",
+    "moral_vindication"
+  ],
+  "reader_promise": "A sweeping narrative where virtuous characters survive through cleverness and divine intervention; the reader anticipates resolution of identity mysteries, family reunions, and the eventual exposure or triumph of deception threads, all delivered through formal elegant prose that honors classical Chinese literary conventions",
+  "core_engine": "Disguise-and-survival mechanism driven by virtue signaling; multiple concurrent plot threads managed through geographic transition and sequential handling; found family formation through crisis adoption; divine rescue as moral vindication for female virtue",
+  "state_variables": [
+    "{'deception_thread': 'Active deception involving false noble identity, currently successful but vulnerable to future exposure', 'family_structure': 'Newly formed adoptive family unit replacing lost biological connections, bond not yet solidified', 'threat_level': 'External authority (implied Dang Gong summons) creating urgent danger, nature of accusation unknown', 'missing_parent': 'Real father of heroine still unfound, creating open reunion potential'}"
+  ],
+  "reader_rewards": [
+    "Survival confirmation for characters in presumed danger",
+    "Introduction of sympathetic sister-figure characters",
+    "Temporary resolution of deception threads",
+    "Character chemistry establishment between protagonist and new family",
+    "Threat setup creating anticipatory tension"
+  ],
+  "reusable_mechanisms": [
+    "Miraculous_divine_intervention_saving_virtuous_female",
+    "Disguise_as_social_superior_deception_succeeding_through_character_change",
+    "Found_family_through_adoption_in_crisis",
+    "Multi_thread_sequential_handling_within_single_chapter",
+    "Chapter_ending_external_alarm_through_urgent_messenger",
+    "Classical_poetry_as_mood_epigraph",
+    "Formal_speech_distinguishing_social_hierarchy",
+    "Backstory_exposition_through_new_character_questions",
+    "Transition_phrases_signaling_location_shifts"
+  ],
+  "non_reusable_specifics": [
+    "Specific_character_names_and_honorifics",
+    "Classical_verse_texts_as_chapter_openers",
+    "Naming_convention_systems_字_号",
+    "Specific_location_names",
+    "Family_surname_identities",
+    "Historical_proper_nouns"
+  ],
+  "risk_patterns": [
+    "{'pattern': 'multiple_distinct_plot_threads_in_single_chapter', 'severity': 'medium', 'mitigation': 'Clear transition signals and sequential handling reduce diffusion'}",
+    "{'pattern': 'divine_rescue_from_suicide', 'severity': 'medium', 'audience_note': 'May discomfort readers uncomfortable with religious intervention framing'}",
+    "{'pattern': 'adoption_solution_as_avoidance', 'severity': 'low', 'audience_note': 'Crisis resolution through new family may read as deferral rather than resolution'}",
+    "{'pattern': 'generic_threat_hook', 'severity': 'low', 'mitigation': 'Lacks specificity without knowing nature of Dang Gong accusation'}",
+    "{'pattern': 'female_characters_defined_by_domestic_virtue', 'severity': 'medium', 'audience_note': 'Character agency limited to family roles may feel restrictive to modern readers'}"
+  ],
+  "distillation_confidence": 0.88,
+  "distillation_notes": "Only one chapter card (abs_chapter_no 82) produced valid JSON; two chapter cards and both volume cards remain fallback due to LLM structure issues. Design patterns extracted from valid chapter card provide reasonable foundation but volume-level aggregation incomplete.",
+  "source_id": "source-0308",
+  "distillation_source_id": "source-0308"
+}

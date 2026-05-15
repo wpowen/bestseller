@@ -1,0 +1,125 @@
+{
+  "version": 1,
+  "language": "en",
+  "description": "English AI-flavor phrase rules. Block = remove sentence; warn cluster = drop excess repetitions. All phrases are matched case-insensitively.",
+  "case_insensitive": true,
+  "phrase_rules": [
+    {"id": "en.tier1.hollow.001", "phrase": "it's worth noting that", "severity": "block", "category": "hollow_summary", "suggestions": [], "remove_sentence_on_block": true, "why": "AI signpost phrase"},
+    {"id": "en.tier1.hollow.002", "phrase": "it is worth noting that", "severity": "block", "category": "hollow_summary", "suggestions": [], "remove_sentence_on_block": true, "why": "AI signpost phrase"},
+    {"id": "en.tier1.hollow.003", "phrase": "it's important to note", "severity": "block", "category": "hollow_summary", "suggestions": [], "remove_sentence_on_block": true, "why": "AI signpost phrase"},
+    {"id": "en.tier1.hollow.004", "phrase": "it bears mentioning", "severity": "block", "category": "hollow_summary", "suggestions": [], "remove_sentence_on_block": true, "why": "AI signpost phrase"},
+    {"id": "en.tier1.hollow.005", "phrase": "needless to say", "severity": "block", "category": "hollow_summary", "suggestions": [], "remove_sentence_on_block": true, "why": "hollow framing"},
+    {"id": "en.tier1.hollow.006", "phrase": "it goes without saying", "severity": "block", "category": "hollow_summary", "suggestions": [], "remove_sentence_on_block": true, "why": "hollow framing"},
+    {"id": "en.tier1.hollow.007", "phrase": "in conclusion", "severity": "block", "category": "hollow_summary", "suggestions": [], "remove_sentence_on_block": true, "why": "essay-style closer"},
+    {"id": "en.tier1.hollow.008", "phrase": "in summary", "severity": "block", "category": "hollow_summary", "suggestions": [], "remove_sentence_on_block": true, "why": "essay-style closer"},
+    {"id": "en.tier1.hollow.009", "phrase": "all things considered", "severity": "block", "category": "hollow_summary", "suggestions": [], "remove_sentence_on_block": true, "why": "essay-style closer"},
+    {"id": "en.tier1.hollow.010", "phrase": "as previously mentioned", "severity": "block", "category": "hollow_summary", "suggestions": [], "remove_sentence_on_block": true, "why": "essay-style callback"},
+
+    {"id": "en.tier1.metaphor.001", "phrase": "a testament to", "severity": "block", "category": "dead_metaphor", "suggestions": [], "remove_sentence_on_block": true, "why": "AI-era cliché"},
+    {"id": "en.tier1.metaphor.002", "phrase": "sends shivers down", "severity": "block", "category": "dead_metaphor", "suggestions": [], "remove_sentence_on_block": true, "why": "dead metaphor"},
+    {"id": "en.tier1.metaphor.003", "phrase": "a wave of emotion washed over", "severity": "block", "category": "dead_metaphor", "suggestions": [], "remove_sentence_on_block": true, "why": "dead metaphor"},
+    {"id": "en.tier1.metaphor.004", "phrase": "a symphony of", "severity": "block", "category": "dead_metaphor", "suggestions": [], "remove_sentence_on_block": true, "why": "ChatGPT-era cliché"},
+    {"id": "en.tier1.metaphor.005", "phrase": "a tapestry of", "severity": "block", "category": "dead_metaphor", "suggestions": [], "remove_sentence_on_block": true, "why": "ChatGPT-era cliché"},
+    {"id": "en.tier1.metaphor.006", "phrase": "a kaleidoscope of", "severity": "block", "category": "dead_metaphor", "suggestions": [], "remove_sentence_on_block": true, "why": "ChatGPT-era cliché"},
+    {"id": "en.tier1.metaphor.007", "phrase": "a dance of light and shadow", "severity": "block", "category": "dead_metaphor", "suggestions": [], "remove_sentence_on_block": true, "why": "ChatGPT-era cliché"},
+    {"id": "en.tier1.metaphor.008", "phrase": "a mosaic of", "severity": "block", "category": "dead_metaphor", "suggestions": [], "remove_sentence_on_block": true, "why": "ChatGPT-era cliché"},
+    {"id": "en.tier1.metaphor.009", "phrase": "the weight of the world", "severity": "block", "category": "dead_metaphor", "suggestions": [], "remove_sentence_on_block": true, "why": "dead metaphor"},
+    {"id": "en.tier1.metaphor.010", "phrase": "the air crackled with", "severity": "block", "category": "dead_metaphor", "suggestions": [], "remove_sentence_on_block": true, "why": "dead metaphor"},
+    {"id": "en.tier1.metaphor.011", "phrase": "the silence was deafening", "severity": "block", "category": "dead_metaphor", "suggestions": [], "remove_sentence_on_block": true, "why": "dead metaphor"},
+    {"id": "en.tier1.metaphor.012", "phrase": "a collective gasp", "severity": "block", "category": "dead_metaphor", "suggestions": [], "remove_sentence_on_block": true, "why": "dead metaphor"},
+    {"id": "en.tier1.metaphor.013", "phrase": "delve into", "severity": "block", "category": "dead_metaphor", "suggestions": ["explore", "examine", "look at"], "remove_sentence_on_block": false, "why": "Claude/GPT tell-word"},
+    {"id": "en.tier1.metaphor.014", "phrase": "in the realm of", "severity": "block", "category": "dead_metaphor", "suggestions": ["in", "within"], "remove_sentence_on_block": false, "why": "Claude/GPT tell-phrase"},
+    {"id": "en.tier1.metaphor.015", "phrase": "navigate the complexities", "severity": "block", "category": "dead_metaphor", "suggestions": [], "remove_sentence_on_block": true, "why": "AI tell-phrase"},
+
+    {"id": "en.tier1.tears.001", "phrase": "a single tear rolled down", "severity": "block", "category": "tear_cliche", "suggestions": [], "remove_sentence_on_block": true, "why": "tear cliché"},
+    {"id": "en.tier1.tears.002", "phrase": "tears streamed down", "severity": "block", "category": "tear_cliche", "suggestions": [], "remove_sentence_on_block": true, "why": "tear cliché"},
+
+    {"id": "en.tier1.transition.001", "phrase": "little did they know", "severity": "block", "category": "filler_transition", "suggestions": [], "remove_sentence_on_block": true, "why": "AI transition filler"},
+    {"id": "en.tier1.transition.002", "phrase": "unbeknownst to", "severity": "block", "category": "filler_transition", "suggestions": [], "remove_sentence_on_block": true, "why": "AI transition filler"},
+    {"id": "en.tier1.transition.003", "phrase": "as if on cue", "severity": "block", "category": "filler_transition", "suggestions": [], "remove_sentence_on_block": true, "why": "AI transition filler"},
+    {"id": "en.tier1.transition.004", "phrase": "in the blink of an eye", "severity": "block", "category": "filler_transition", "suggestions": [], "remove_sentence_on_block": true, "why": "AI transition filler"},
+    {"id": "en.tier1.transition.005", "phrase": "in that moment, everything changed", "severity": "block", "category": "filler_transition", "suggestions": [], "remove_sentence_on_block": true, "why": "AI transition filler"},
+    {"id": "en.tier1.transition.006", "phrase": "time seemed to stand still", "severity": "block", "category": "filler_transition", "suggestions": [], "remove_sentence_on_block": true, "why": "AI transition filler"},
+    {"id": "en.tier1.transition.007", "phrase": "time seemed to slow", "severity": "block", "category": "filler_transition", "suggestions": [], "remove_sentence_on_block": true, "why": "AI transition filler"}
+  ],
+
+  "cluster_rules": [
+    {
+      "id": "en.cluster.weak_adverb",
+      "category": "weak_adverb",
+      "threshold": 3,
+      "severity": "warn",
+      "why": "Weak-adverb cluster — 3+ in a chapter signals pattern lock",
+      "members": {
+        "couldn't help but": [""],
+        "involuntarily": [""],
+        "instinctively": [""],
+        "subconsciously": [""]
+      }
+    },
+    {
+      "id": "en.cluster.micro_expression",
+      "category": "micro_expression",
+      "threshold": 3,
+      "severity": "warn",
+      "why": "Template micro-expressions — 3+ flattens characters",
+      "members": {
+        "eyes widened": [""],
+        "brow furrowed": [""],
+        "jaw clenched": [""],
+        "lips quirked": [""],
+        "breath hitched": [""],
+        "heart hammered": [""],
+        "heart pounded": [""],
+        "stomach churned": [""],
+        "blood ran cold": [""],
+        "pulse quickened": [""]
+      }
+    },
+    {
+      "id": "en.cluster.inner_monologue",
+      "category": "inner_monologue",
+      "threshold": 3,
+      "severity": "warn",
+      "why": "Vague internal narration cluster",
+      "members": {
+        "a thought flickered": [""],
+        "something stirred": [""],
+        "a chill ran down": [""],
+        "a knot formed in": [""],
+        "a lump formed in": [""],
+        "the realization hit": [""],
+        "the realization dawned": [""]
+      }
+    },
+    {
+      "id": "en.cluster.dialogue_tag",
+      "category": "dialogue_tag",
+      "threshold": 3,
+      "severity": "warn",
+      "why": "Template dialogue tags overuse",
+      "members": {
+        "voice barely above a whisper": [""],
+        "voice dripping with": [""],
+        "he breathed": ["he said", "he murmured"],
+        "she breathed": ["she said", "she murmured"]
+      }
+    },
+    {
+      "id": "en.cluster.filler",
+      "category": "filler",
+      "threshold": 4,
+      "severity": "info",
+      "why": "Zero-information filler phrases",
+      "members": {
+        "in a sense": [""],
+        "to some extent": [""],
+        "to be fair": [""],
+        "truth be told": [""],
+        "in all honesty": [""],
+        "at the end of the day": [""],
+        "for what it was worth": [""]
+      }
+    }
+  ]
+}

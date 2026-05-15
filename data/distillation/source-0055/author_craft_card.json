@@ -1,0 +1,37 @@
+{
+  "source_id": "source-0055",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "style_safety_policy": "This card documents a terminal distillation failure. No author voice, narrative style, or craft signals were extractable. All 584 chapters across 22 volumes returned LLM-unavailable fallback stubs with zero confidence. No style safety concerns apply—style cannot be replicated from absent data.",
+  "pov_and_distance": "Unavailable — no chapter content existed for POV analysis. No narrative perspective, distance calibration, or point-of-view mechanics could be extracted from placeholder stubs.",
+  "sentence_rhythm": [
+    "Unavailable — sentence-level craft controls cannot be abstracted when zero chapters contain actual prose. No rhythm patterns, cadence variations, or syntactic signatures were available for analysis."
+  ],
+  "paragraphing": [
+    "Unavailable — structural pacing at the paragraph level is unprocessable without source narrative content. All 584 chapters returned empty structures; no paragraph rhythm or density patterns were extractable."
+  ],
+  "dialogue_system": [
+    "Unavailable — no dialogue appears in fallback stubs. No speech attribution patterns, tag usage, beat distribution, or conversation-to-narration ratios could be identified."
+  ],
+  "description_strategy": [
+    "Unavailable — no descriptive passages survived the pipeline failure. No sensory calibration, specificity-to-abstraction ratios, or scenic description techniques were present in the data."
+  ],
+  "exposition_strategy": [
+    "Unavailable — no exposition placement patterns were extractable. No backstory injection methods, info-dump avoidance techniques, or show-don't-tell calibrations could be identified."
+  ],
+  "emotional_temperature": [
+    "Unavailable — emotional calibration across scenes cannot be measured without narrative content. No affect curves, tension scaffolding, or catharsis delivery patterns were present."
+  ],
+  "hooking_and_transitions": [
+    "Unavailable — chapter hooks, cliffhanger mechanics, and transition types are unidentifiable from empty fallback structures. No reader engagement techniques were available for abstraction."
+  ],
+  "adaptation_guidelines": [
+    "No adaptation guidance can be issued. The source failed at the chapter-card extraction stage; no media-agnostic craft principles or story-engine mechanics survived to inform adaptation direction. Downstream repurposing is blocked until the upstream LLM pipeline is restored and content re-processed through functional extraction."
+  ],
+  "taboo_copy_signals": [
+    "No copyable signals detected — the source contains zero extractable content. No phrase patterns, syntactic habits, vocabulary preferences, or distinctive structural choices exist in the data. Any attempt to infer an authorial voice would constitute hallucination rather than distillation."
+  ],
+  "confidence": 0.0,
+  "distillation_integrity_note": "This author_craft_card reflects the complete absence of source content. All 22 volume_cards report identical failure modes: 100% LLM-unavailable chapters yielding empty reusable_mechanisms arrays, absent craft_profiles, and zero-confidence observations. Aggregation of 584 empty chapter_stubs produces an empty craft card. Recovery requires re-processing the original source text through a functional LLM pipeline before chapter_card generation can succeed.",
+  "distillation_source_id": "source-0055"
+}

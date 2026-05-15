@@ -1,0 +1,40 @@
+{
+  "book_id": "source-0159",
+  "source_ref": "distillation:c9ce6e48565b5bc87438439a",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "parsed_profile": {
+    "chapter_count": 0,
+    "volume_count": 0,
+    "encoding": ""
+  },
+  "genre_tags": [
+    "distillation-generic"
+  ],
+  "reader_promise": "LLM structured distillation fallback.",
+  "core_engine": "insufficient_data",
+  "state_variables": [
+    "fallback_progress"
+  ],
+  "reader_rewards": [
+    "distillable_mechanism_reliability"
+  ],
+  "reusable_mechanisms": [
+    "fallback mechanism abstraction"
+  ],
+  "non_reusable_specifics": [],
+  "risk_patterns": [
+    "Complete pipeline failure — all 23 chapters returned llm_fallback risk_flag with 0.0 confidence",
+    "No chapter_function strings extracted from source content",
+    "No reusable_mechanisms identified across chapter batch",
+    "No craft_observations populated from source text",
+    "No reader_rewards catalogued from narrative progression",
+    "No open_hooks available for downstream arc construction",
+    "Source content failed through distillation pipeline — raw text extraction or LLM inference unavailable",
+    "Volume-level narrative structure, character arcs, and thematic content could not be extracted",
+    "All chapter_card_batch entries contain empty reusable_mechanisms arrays",
+    "No genre grammar patterns or abstract mechanisms recoverable from source"
+  ],
+  "source_id": "source-0159",
+  "distillation_source_id": "source-0159"
+}

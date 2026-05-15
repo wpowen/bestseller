@@ -1,0 +1,56 @@
+{
+  "book_id": "source-0118",
+  "source_ref": "distillation:ae2b9832697156972f187150",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "parsed_profile": {
+    "distillation_outcome": "complete_failure",
+    "affected_volumes": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15
+    ],
+    "chapter_range_spanned": "1-373",
+    "total_chapters_affected": 373,
+    "confidence_aggregate": 0.0,
+    "failure_root_cause": "all_source_chapters_returned_llm_unavailable_fallback_stubs",
+    "data_integrity_assessment": "zero_extractable_content",
+    "aggregation_status": "impossible_without_source_material"
+  },
+  "genre_tags": [
+    "distillation-generic"
+  ],
+  "reader_promise": "LLM structured distillation fallback.",
+  "core_engine": "indeterminate",
+  "state_variables": [
+    "fallback_progress"
+  ],
+  "reader_rewards": [
+    "distillable_mechanism_reliability"
+  ],
+  "reusable_mechanisms": [
+    "fallback mechanism abstraction"
+  ],
+  "non_reusable_specifics": [],
+  "risk_patterns": [
+    "{'pattern': 'systematic_llm_unavailable_across_entire_source', 'affected_scope': 'all_15_volumes', 'chapter_coverage': '1-373', 'confidence_impact': 'zero_across_all_chapters', 'downstream_impact': 'no_design_fingerprint_generated', 'remediation_required': 'reprocess_source_material_with_functional_llm_pipeline'}",
+    "{'pattern': 'volume_level_aggregation_blocked', 'reason': 'no_valid_chapter_card_data_exists', 'volume_cards_affected': 15, 'distillation_results': 'all_returned_llm_fallback_stubs'}",
+    "{'pattern': 'reader_rewards_unavailable', 'reason': 'no_story_content_extracted'}",
+    "{'pattern': 'craft_observations_unavailable', 'reason': 'no_prose_mechanics_distilled'}",
+    "{'pattern': 'open_hooks_unavailable', 'reason': 'no_narrative_elements_captured'}"
+  ],
+  "source_id": "source-0118",
+  "distillation_source_id": "source-0118"
+}

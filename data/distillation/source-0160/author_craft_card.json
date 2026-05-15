@@ -1,0 +1,36 @@
+{
+  "source_id": "source-0160",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "style_safety_policy": "fallback_stub_only",
+  "pov_and_distance": "[Unable to determine — all constituent chapter cards are LLM-unavailable fallback stubs with zero confidence. No source content was accessible for POV analysis.]",
+  "sentence_rhythm": [
+    "[Unable to determine — extraction failed at upstream processing layer. No textual content available for rhythm analysis.]"
+  ],
+  "paragraphing": [
+    "[Unable to determine — no chapter content was extracted. Paragraph structure analysis is impossible.]"
+  ],
+  "dialogue_system": [
+    "[Unable to determine — LLM unavailable fallback stubs contain no dialogue content. No speaker attribution or dialogue patterns observable.]"
+  ],
+  "description_strategy": [
+    "[Unable to determine — zero chapters successfully processed. No descriptive language could be sampled.]"
+  ],
+  "exposition_strategy": [
+    "[Unable to determine — all 42 chapters returned as fallback stubs. No exposition delivery mechanisms observable.]"
+  ],
+  "emotional_temperature": [
+    "[Unable to determine — no emotional content was extracted from source. All cards are LLM-unavailable placeholders.]"
+  ],
+  "hooking_and_transitions": [
+    "[Unable to determine — no chapter content accessible for hook analysis or transition pattern identification.]"
+  ],
+  "adaptation_guidelines": [
+    "Do not attempt craft replication from this card. Upstream extraction failure means no authorial voice, rhythm, structure, or technique data exists. Any adaptation would require re-distillation with functional extraction engine."
+  ],
+  "taboo_copy_signals": [
+    "source titles, author names, exact phrases, named entities, and distinctive sentence templates"
+  ],
+  "confidence": 0.0,
+  "distillation_source_id": "source-0160"
+}

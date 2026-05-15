@@ -1,0 +1,39 @@
+key: distillation-generic
+name: Distillation Generic Fallback Mechanism Patch
+source_ids:
+- source-0059
+status: active
+applies_to_categories:
+- distillation-generic
+- blocked-distillation
+- fallback-chapter
+required_contracts:
+- chapter_content_contract
+- distillation_confidence_contract
+- volume_card_integrity_contract
+- llm_fallback_contract
+state_variables:
+- fallback_progress
+- content_availability
+- distillation_confidence
+- chapter_stub_count
+- volume_stub_count
+chapter_change_vectors: []
+reader_rewards:
+- distillable_mechanism_reliability
+- incomplete_source_gratitude
+- placeholder_appreciation
+- future_complete_version_hope
+- fallback_mechanism_awareness
+hook_or_aftereffect_types:
+- blocked_content_hook
+- fallback_mechanism_hook
+- resubmission_hook
+- confidence_zero_hook
+- no_content_aftereffect
+forbidden_defaults:
+- actual_chapter_content
+- real_distilled_text
+- verified_reader_rewards
+- confirmed_mechanism_reliability
+- valid_confidence_scores

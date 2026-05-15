@@ -1,0 +1,47 @@
+{
+  "book_id": "source-0008",
+  "source_ref": "distillation:b5c1cdbb9ddd60953caac8a0",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "parsed_profile": {
+    "distillation_status": "complete_failure",
+    "total_volumes_targeted": 5,
+    "total_chapters_expected": 119,
+    "total_chapters_processed": 118,
+    "chapters_with_stub_content": 118,
+    "chapters_with_valid_content": 0,
+    "overall_confidence": 0.0,
+    "primary_failure_cause": "llm_unavailable_across_all_chapters",
+    "secondary_failure_causes": [
+      "source_content_not_accessible",
+      "no_narrative_tokens_extracted",
+      "zero_reusable_mechanisms_identified"
+    ],
+    "data_quality_assessment": "no_distillable_content"
+  },
+  "genre_tags": [
+    "distillation-generic"
+  ],
+  "reader_promise": {
+    "status": "indeterminate",
+    "reason": "No source content available to extract reader promise"
+  },
+  "core_engine": "unknown",
+  "state_variables": [
+    "fallback_progress"
+  ],
+  "reader_rewards": [
+    "distillable_mechanism_reliability"
+  ],
+  "reusable_mechanisms": [
+    "fallback mechanism abstraction"
+  ],
+  "non_reusable_specifics": [],
+  "risk_patterns": [
+    "{'pattern_id': 'llm_unavailable_failure', 'frequency': 'universal', 'affected_volumes': [1, 2, 3, 4, 5], 'affected_chapters_count': 118, 'impact': 'complete_content_loss', 'mitigation_required': 're_source_content_extraction'}",
+    "{'pattern_id': 'missing_chapter', 'abs_chapter_no': 17, 'volume_no': 1, 'impact': 'structural_gap'}",
+    "{'pattern_id': 'volume_numbering_inconsistency', 'description': 'Source cards show volume_no 1 for abs_chapters 27-51, but target volume is volume_no 2', 'affected_chapters': '27-51', 'impact': 'metadata_mismatch'}"
+  ],
+  "source_id": "source-0008",
+  "distillation_source_id": "source-0008"
+}

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 import hashlib
 import hmac
@@ -10,7 +11,12 @@ from pathlib import Path
 import re
 import secrets
 import shutil
-from typing import Any, Literal
+from typing import Any, Iterator, Literal
+
+try:
+    import fcntl
+except ImportError:  # pragma: no cover - Windows
+    fcntl = None  # type: ignore[assignment]
 
 from bestseller.services.distillation_book_parser import (
     ChapterSlice,
@@ -51,6 +57,22 @@ class DuplicateSourceTitleError(ValueError):
     """Raised when a duplicate title is found and policy is ``error``."""
 
 
+@contextmanager
+def _distillation_registry_lock(repo_root: Path) -> Iterator[None]:
+    """Serialize repo registry + private registry mutations for concurrent ``prepare_source`` runs."""
+    lock_path = repo_root / "data" / "distillation" / ".prepare_source.lock"
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    if fcntl is None:
+        yield
+        return
+    with lock_path.open("a+b") as handle:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+
 def prepare_source(
     source_path: Path,
     source_id: str,
@@ -76,44 +98,62 @@ def prepare_source(
     parsed = parse_source_book(source_path)
     source_title = _private_title(parsed, source_path)
     title_key = normalize_title_key(source_title) or normalize_title_key(source_path.stem)
-    title_digest = _title_digest(title_key, private_root)
 
     registry_path = repo_root / REPO_REGISTRY_PATH
-    registry = _load_repo_registry(registry_path)
-    duplicate_entry = _find_duplicate_by_title(registry, title_digest, source_id)
-    if duplicate_entry is not None and dedupe_policy != "allow":
-        duplicate_of = str(duplicate_entry.get("canonical_source_id") or "")
-        _append_duplicate_log(
-            private_root,
+    duplicate_entry: dict[str, Any] | None
+    title_digest: str
+
+    with _distillation_registry_lock(repo_root):
+        title_digest = _title_digest(title_key, private_root)
+        registry = _load_repo_registry(registry_path)
+        duplicate_entry = _find_duplicate_by_title(registry, title_digest, source_id)
+        if duplicate_entry is not None and dedupe_policy != "allow":
+            duplicate_of = str(duplicate_entry.get("canonical_source_id") or "")
+            _append_duplicate_log(
+                private_root,
+                {
+                    "source_id": source_id,
+                    "duplicate_of": duplicate_of,
+                    "source_hash_sha256": raw_hash,
+                    "source_format": parsed.source_format,
+                    "title": source_title,
+                    "title_key": title_key,
+                    "title_key_hmac_sha256": title_digest,
+                    "action": dedupe_policy,
+                },
+            )
+            if dedupe_policy == "error":
+                raise DuplicateSourceTitleError(
+                    f"{source_id} duplicates title key already registered as {duplicate_of}"
+                )
+            return PrepareSourceResult(
+                source_id=source_id,
+                skipped=True,
+                duplicate_of=duplicate_of,
+                repo_dir=None,
+                private_dir=None,
+                source_format=parsed.source_format,
+                encoding=parsed.encoding,
+                chapter_count=len(parsed.chapters),
+                volume_count=len({chapter.volume_no for chapter in parsed.chapters}),
+                source_hash_sha256=raw_hash,
+                title_key_hmac_sha256=title_digest,
+                parser_warnings=parsed.parser_warnings,
+            )
+
+        _upsert_repo_registry(
+            registry,
             {
-                "source_id": source_id,
-                "duplicate_of": duplicate_of,
-                "source_hash_sha256": raw_hash,
-                "source_format": parsed.source_format,
-                "title": source_title,
-                "title_key": title_key,
                 "title_key_hmac_sha256": title_digest,
-                "action": dedupe_policy,
+                "canonical_source_id": str(duplicate_entry.get("canonical_source_id"))
+                if duplicate_entry
+                else source_id,
+                "source_ids": [source_id],
+                "source_hashes_sha256": [raw_hash],
+                "source_formats": [parsed.source_format],
             },
         )
-        if dedupe_policy == "error":
-            raise DuplicateSourceTitleError(
-                f"{source_id} duplicates title key already registered as {duplicate_of}"
-            )
-        return PrepareSourceResult(
-            source_id=source_id,
-            skipped=True,
-            duplicate_of=duplicate_of,
-            repo_dir=None,
-            private_dir=None,
-            source_format=parsed.source_format,
-            encoding=parsed.encoding,
-            chapter_count=len(parsed.chapters),
-            volume_count=len({chapter.volume_no for chapter in parsed.chapters}),
-            source_hash_sha256=raw_hash,
-            title_key_hmac_sha256=title_digest,
-            parser_warnings=parsed.parser_warnings,
-        )
+        _write_json(registry_path, registry)
 
     repo_dir = repo_root / "data" / "distillation" / source_id
     private_dir = private_root / source_id
@@ -138,33 +178,21 @@ def prepare_source(
         genre_hint=genre_hint,
     )
 
-    _upsert_repo_registry(
-        registry,
-        {
-            "title_key_hmac_sha256": title_digest,
-            "canonical_source_id": str(duplicate_entry.get("canonical_source_id"))
-            if duplicate_entry
-            else source_id,
-            "source_ids": [source_id],
-            "source_hashes_sha256": [raw_hash],
-            "source_formats": [parsed.source_format],
-        },
-    )
-    _write_json(registry_path, registry)
-    _upsert_private_registry(
-        private_root,
-        {
-            "source_id": source_id,
-            "title": source_title,
-            "title_key": title_key,
-            "author": parsed.metadata.author,
-            "language": parsed.metadata.language,
-            "metadata_source": parsed.metadata.metadata_source,
-            "title_key_hmac_sha256": title_digest,
-            "source_hash_sha256": raw_hash,
-            "source_format": parsed.source_format,
-        },
-    )
+    with _distillation_registry_lock(repo_root):
+        _upsert_private_registry(
+            private_root,
+            {
+                "source_id": source_id,
+                "title": source_title,
+                "title_key": title_key,
+                "author": parsed.metadata.author,
+                "language": parsed.metadata.language,
+                "metadata_source": parsed.metadata.metadata_source,
+                "title_key_hmac_sha256": title_digest,
+                "source_hash_sha256": raw_hash,
+                "source_format": parsed.source_format,
+            },
+        )
 
     return PrepareSourceResult(
         source_id=source_id,
@@ -431,9 +459,12 @@ def _chapter_prompt_payload(
         "system": (
             "You extract reusable story-design mechanics from a source novel chapter. "
             "Do not summarize prose. Do not preserve source-specific names. Do not imitate "
-            "style. Output exactly one JSON object matching the chapter_card schema. "
+            "the author. Output exactly one JSON object matching the chapter_card schema. "
             "All names, artifacts, places, organizations, techniques, and unique event chains "
-            "must be replaced with role labels."
+            "must be replaced with role labels. You may include craft_observations, but only as "
+            "anonymous, abstract controls: POV distance, sentence rhythm, paragraphing, dialogue "
+            "method, description/exposition placement, hook delivery, transitions, and do_not_copy "
+            "signals. Never quote distinctive phrases or describe a copyable author fingerprint."
         ),
         "schema_ref": "data/distillation/schemas/chapter_card.schema.json",
         "chapter_text": chapter.body,

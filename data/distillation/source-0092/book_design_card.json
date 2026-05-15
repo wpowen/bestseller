@@ -1,0 +1,77 @@
+{
+  "book_id": "source-0092",
+  "source_ref": "distillation:119e62dddf6c3cd9621bda02",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "parsed_profile": {
+    "aggregation_status": "blocked",
+    "data_completeness": "0%",
+    "volume_coverage": {
+      "volume_1": {
+        "chapter_range": "1-25",
+        "data_status": "llm_fallback",
+        "extracted_content": 0
+      },
+      "volume_2": {
+        "chapter_range": "26-50",
+        "data_status": "llm_fallback",
+        "extracted_content": 0
+      },
+      "volume_3": {
+        "chapter_range": "51-62",
+        "data_status": "llm_fallback",
+        "extracted_content": 0
+      }
+    },
+    "sampled_chapters": {
+      "abs_chapter_no_1": {
+        "status": "llm_fallback",
+        "confidence": 0.0
+      },
+      "abs_chapter_no_32": {
+        "status": "llm_fallback",
+        "confidence": 0.0
+      },
+      "abs_chapter_no_62": {
+        "status": "llm_fallback",
+        "confidence": 0.0,
+        "segments_corrupted": true
+      }
+    },
+    "extraction_summary": "Full distillation pipeline blocked — entire source corpus returned LLM unavailable fallback stubs across all 62 chapters spanning 3 volumes. No narrative arc data, craft observations, reader rewards, open hooks, or reusable mechanics extractable.",
+    "blocking_reason": "All constituent chapter_cards are llm_fallback stubs with confidence 0.0",
+    "recommendation": "Resupply source with properly extracted chapter_cards containing non-stub narrative content before volume_card or book_design_card distillation"
+  },
+  "genre_tags": [
+    "distillation-generic"
+  ],
+  "reader_promise": {
+    "status": "undetermined",
+    "reason": "No reader-facing content extractable from llm_fallback source"
+  },
+  "core_engine": {
+    "status": "unknown",
+    "confidence": 0.0,
+    "note": "Dominant narrative engine cannot be identified from unavailable source content"
+  },
+  "state_variables": [
+    "fallback_progress"
+  ],
+  "reader_rewards": [
+    "distillable_mechanism_reliability"
+  ],
+  "reusable_mechanisms": [
+    "fallback mechanism abstraction"
+  ],
+  "non_reusable_specifics": [],
+  "risk_patterns": [
+    "llm_fallback",
+    "source_content_missing",
+    "data_completeness_0_percent",
+    "aggregation_blocked",
+    "confidence_0_across_corpus",
+    "no_distillable_story_content"
+  ],
+  "source_id": "source-0092",
+  "distillation_source_id": "source-0092"
+}

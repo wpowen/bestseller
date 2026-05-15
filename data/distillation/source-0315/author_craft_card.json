@@ -1,0 +1,36 @@
+{
+  "source_id": "source-0315",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "style_safety_policy": "Standard scholarly content guidelines apply; no restrictive style constraints identified for non-fiction historical analysis.",
+  "pov_and_distance": "Scholarly third-person omniscient with occasional direct reader address for rhetorical effect; shifts to embedded first-person perspective through diary excerpts and personal documents. Distance controlled by alternating between institutional-level analytical distance and intimate private-voice windows that reveal emotional states beneath official positions.",
+  "sentence_rhythm": [
+    "Variable density layering: short declarative sentences deliver concrete information (military orders, diplomatic time-stamps, factual assertions) while longer analytical sentences build atmospheric and contextual complexity. Rhythm creates emphasis through compression—the weight of longer passages makes brief declarations land with force."
+  ],
+  "paragraphing": [
+    "Extended continuous prose with thematic breaks rather than scene-based segmentation. Dense information paragraphs carry evidentiary weight; single-sentence dramatic emphasis punctuates longer sequences. Paragraph boundaries signal thematic pivots or scale shifts rather than dialogue exchanges."
+  ],
+  "dialogue_system": [
+    "Reported speech reconstructed from historical records dominates; quoted phrases appear sparingly as rhetorical anchors. No invented dialogue. Documented statements (telegrams, orders, directives) function as narrative devices that advance plot-analogous tension without requiring scene-dramatization."
+  ],
+  "description_strategy": [
+    "Concrete specificity over abstraction—named entities, exact timestamps, individual fates rather than categorical generalizations. Brief atmospheric sketches rather than extended scene-setting. Trivial details ground larger historical shifts (a single cancelled train, an unopened letter). Sensory scene-building minimal; conceptual clarity prioritized."
+  ],
+  "exposition_strategy": [
+    "Thesis-first organization with promised evidence delivered through documentary accumulation. Scholarly context acknowledged upfront rather than buried. Information embedded in chronological narration, not retrospective summary. Citations and document references serve as evidentiary trails that build credibility incrementally toward analytical conclusions."
+  ],
+  "emotional_temperature": [
+    "Multi-national emotional polyphony created through diary integration from different nations and social classes. Official policy documents contrasted with private sentiment to reveal institutional-private dissonance. Paradox construction (declared war with minimal engagement, diplomatic urgency versus personal calm) generates emotional complexity without melodrama. Emotional register remains restrained—tension through contradiction rather than heightened affect."
+  ],
+  "hooking_and_transitions": [
+    "Documentary appendices placed before analytical text create evidentiary framing that promises payoff. Chapters end with personal details or unresolved tensions rather than thematic closure. Time stamps and location changes mark shifts between capitals and nations. Bracket markers signal transitions from narrative mode to scholarly apparatus. Supplementary material catalogs document references as evidentiary payoff."
+  ],
+  "adaptation_guidelines": [
+    "Designed for narrative fiction extraction; requires significant adaptation for non-fiction. Core mechanisms transferable: counterfactual reasoning framework, thesis-first architecture, evidence accumulation structure, multi-perspective emotional polyphony, paradox construction, documentary-as-narrative-device technique, specific-trivial-detail grounding, official-private contrast, graduated response documentation. Non-transferable: character-driven identification hooks, dialogue scene dramatization, scene-based pacing, plot-driven tension. Non-fiction adaptation requires emphasis on analytical curiosity and evidentiary anticipation rather than character identification as reader motivation."
+  ],
+  "taboo_copy_signals": [
+    "Never replicate specific historical arguments about WWII causation or institutional failure. Avoid paraphrasing documented diplomatic statements or policy language. Do not simulate dialogue from historical figures without documentary foundation. Primary source documents (War Plan White, Operational Orders, treaties) should not be paraphrased or restructured—either quote with attribution or reference generically."
+  ],
+  "confidence": 0.25,
+  "distillation_source_id": "source-0315"
+}

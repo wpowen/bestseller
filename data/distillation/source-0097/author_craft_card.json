@@ -1,0 +1,37 @@
+{
+  "source_id": "source-0097",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "style_safety_policy": "undetermined — no source content available for style analysis; no identifiable authorial voice extractable from llm_fallback stubs across all 554 chapters",
+  "pov_and_distance": "undetermined — no chapter_cards contain valid narrative content; pov strategy, narrative distance, and point-of-view choices unresolvable from empty source data",
+  "sentence_rhythm": [
+    "undetermined — no sentence-level craft elements extractable; rhythm patterns, cadence, and syntactic variety unavailable from 100% llm_fallback batch"
+  ],
+  "paragraphing": [
+    "undetermined — paragraph structure, pacing beats, and white-space rhythm unresolvable from source absence"
+  ],
+  "dialogue_system": [
+    "undetermined — no dialogue present in llm_fallback stubs; conversation mechanics, attribution patterns, subtext strategies, and exchange rhythms unavailable"
+  ],
+  "description_strategy": [
+    "undetermined — no descriptive content, sensory grounding, or worldbuilding mechanics extractable from empty chapter_cards"
+  ],
+  "exposition_strategy": [
+    "undetermined — no narrative information delivery patterns observable; backstory injection, world-building exposition, and information reveal mechanics absent from source"
+  ],
+  "emotional_temperature": [
+    "undetermined — no emotional registers, affective curves, or reader-feeling management extractable; authorial emotional stance unresolvable"
+  ],
+  "hooking_and_transitions": [
+    "undetermined — no chapter openings, hook constructions, cliffhanger mechanisms, or scene-transition patterns extractable; reader commitment strategies unavailable"
+  ],
+  "adaptation_guidelines": [
+    "cannot_generate — adaptation mechanics require craft profile data; source 554 chapters all returned llm_fallback stubs preventing adaptation-signal extraction"
+  ],
+  "taboo_copy_signals": [
+    "undetermined — no author-specific linguistic fingerprints, signature phrases, named entities, or distinctive templates extractable; anonymous craft-card mandate satisfied by absence rather than obfuscation"
+  ],
+  "confidence": 0.0,
+  "distillation_notes": "All 23 volume_cards contain only llm_fallback stubs with zero confidence. No reusable_mechanisms, craft_profiles, state_progression, arc_functions, or dominant_engine data present. author_craft_card represents documented absence of extractable story design rather than design analysis. Source chapters 1-554 require reprocessing through full LLM analysis pipeline to generate valid chapter_cards before craft distillation can proceed. Book-level and volume-level aggregation blocked by systematic data absence across entire corpus.",
+  "distillation_source_id": "source-0097"
+}

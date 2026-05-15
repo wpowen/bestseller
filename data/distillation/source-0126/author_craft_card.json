@@ -1,0 +1,36 @@
+{
+  "source_id": "source-0126",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "style_safety_policy": "Cannot assess — all 227 chapters returned llm_fallback stubs with zero confidence. No narrative content available to evaluate style safety boundaries, voice patterns, or tonal commitments.",
+  "pov_and_distance": "Undetermined — no chapter cards contain usable craft observations. POV technique, narrator distance calibration, and perspective management cannot be distilled from empty data.",
+  "sentence_rhythm": [
+    "Insufficient data — LLM-unavailable fallback across all chapters prevents extraction of sentence-length patterns, rhythm signatures, or cadence mechanics."
+  ],
+  "paragraphing": [
+    "Not extractable — all volume cards (1–9) contain empty craft_profile objects. Paragraph rhythm, white-space pacing, and structural grouping remain unobservable."
+  ],
+  "dialogue_system": [
+    "Unavailable — chapter cards uniformly returned as stubs with no dialogue tags, beats, or speech mechanics captured. Reusable dialogue patterns cannot be identified."
+  ],
+  "description_strategy": [
+    "Unassessable — zero confidence data across all 227 chapters prevents extraction of description density, sensory prioritization, or scenic framing techniques."
+  ],
+  "exposition_strategy": [
+    "No data — setup_payoff_rhythm fields are null across all volumes. Exposition placement, info-dumping risk management, and implicit vs. explicit telling ratios remain undetermined."
+  ],
+  "emotional_temperature": [
+    "Cannot evaluate — emotional arc tracking, tension calibration, and affective register are impossible to extract from empty chapter_card arrays."
+  ],
+  "hooking_and_transitions": [
+    "No extractable hooks or transitions — all open_hooks arrays empty, all confidence scores 0.0. Chapter-ending pull mechanics and scene-bridging techniques remain unobservable."
+  ],
+  "adaptation_guidelines": [
+    "Not determinable — without craft observation data, no adaptation pathway recommendations (serial-to-standalone, format shifts, or media translation considerations) can be generated."
+  ],
+  "taboo_copy_signals": [
+    "Not applicable — insufficient source content to identify patterns that should be avoided or flagged. All distinctive voice signatures, named entities, and proprietary templates are absent from empty chapter stubs."
+  ],
+  "confidence": 0.0,
+  "distillation_source_id": "source-0126"
+}

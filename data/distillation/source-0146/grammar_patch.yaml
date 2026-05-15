@@ -1,0 +1,30 @@
+key: distillation-generic
+name: Distillation Generic Grammar Patch
+source_ids:
+- source-0146
+status: draft_review
+applies_to_categories:
+- distillation-generic
+required_contracts:
+- llm_pipeline_operational
+- content_extraction_capable
+- volume_card_generation_possible
+state_variables:
+- fallback_progress
+- extraction_confidence
+- processing_attempt_count
+chapter_change_vectors:
+- no_vector_possible_without_source
+reader_rewards:
+- distillable_mechanism_reliability
+- distillation_failure_transparency
+hook_or_aftereffect_types:
+- llm_unavailable_hook
+- extraction_failure_aftereffect
+- global_blockage_notification
+forbidden_defaults:
+- generic_volume_card_generation
+- stub_content_extraction
+- zero_confidence_aggregation
+- pseudo_design_card_fingerprint
+- hollow_genre_grammar_inference

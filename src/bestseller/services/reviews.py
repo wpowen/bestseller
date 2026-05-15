@@ -47,6 +47,11 @@ from bestseller.services.drafts import (
     validate_and_clean_novel_content,
 )
 from bestseller.services.llm import LLMCompletionRequest, complete_text
+from bestseller.services.quality_levers import (
+    CriticLeverContext,
+    build_critic_quality_levers_block,
+    extract_quality_levers_meta,
+)
 from bestseller.services.methodology import (
     render_methodology_scene_rules,
     render_qimao_opening_contract_block,
@@ -861,6 +866,35 @@ def build_scene_review_prompts(
     _pp_scene_review = f"{render_prompt_pack_fragment(prompt_pack, 'scene_review')}\n" if prompt_pack else ""
     _methodology_review_block = render_methodology_block(prompt_pack, phase="review")
     _methodology_line = f"\n{_methodology_review_block}\n" if _methodology_review_block else ""
+    # Quality-levers critic block (scene review). Wrapped in try/except so a
+    # malformed meta.yaml never blocks the scene review path.
+    try:
+        _levers_meta = extract_quality_levers_meta(_project_metadata(project))
+        _critic_levers_block = build_critic_quality_levers_block(
+            CriticLeverContext(
+                chapter_number=chapter.chapter_number,
+                language=language or "zh-CN",
+                platform=(
+                    _levers_meta.target_platform
+                    or getattr(writing_profile.market, "platform_target", None)
+                ),
+                chapter_positions=_levers_meta.positions_for_chapter(
+                    chapter.chapter_number
+                ),
+                distilled_strategy_card=(
+                    _project_metadata(project).get("distilled_strategy_card")
+                    if isinstance(
+                        _project_metadata(project).get("distilled_strategy_card"),
+                        dict,
+                    )
+                    else None
+                ),
+            )
+        )
+    except Exception:
+        _critic_levers_block = ""
+    if _critic_levers_block:
+        _methodology_line += f"\n{_critic_levers_block}\n"
     user_prompt = (
         (
             f"Project: {project.title}\n"
@@ -1281,6 +1315,34 @@ def build_chapter_review_prompts(
     _pp_chapter_review = f"{render_prompt_pack_fragment(prompt_pack, 'chapter_review')}\n" if prompt_pack else ""
     _methodology_review_block = render_methodology_block(prompt_pack, phase="review")
     _methodology_line = f"\n{_methodology_review_block}\n" if _methodology_review_block else ""
+    # Quality-levers critic block (chapter review).
+    try:
+        _levers_meta = extract_quality_levers_meta(_project_metadata(project))
+        _critic_levers_block = build_critic_quality_levers_block(
+            CriticLeverContext(
+                chapter_number=chapter.chapter_number,
+                language=language or "zh-CN",
+                platform=(
+                    _levers_meta.target_platform
+                    or getattr(writing_profile.market, "platform_target", None)
+                ),
+                chapter_positions=_levers_meta.positions_for_chapter(
+                    chapter.chapter_number
+                ),
+                distilled_strategy_card=(
+                    _project_metadata(project).get("distilled_strategy_card")
+                    if isinstance(
+                        _project_metadata(project).get("distilled_strategy_card"),
+                        dict,
+                    )
+                    else None
+                ),
+            )
+        )
+    except Exception:
+        _critic_levers_block = ""
+    if _critic_levers_block:
+        _methodology_line += f"\n{_critic_levers_block}\n"
     user_prompt = (
         (
             f"Project: {project.title}\n"

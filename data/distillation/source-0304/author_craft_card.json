@@ -1,0 +1,36 @@
+{
+  "source_id": "source-0304",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "style_safety_policy": "unknown",
+  "pov_and_distance": "unknown",
+  "sentence_rhythm": [
+    "unknown"
+  ],
+  "paragraphing": [
+    "unknown"
+  ],
+  "dialogue_system": [
+    "unknown"
+  ],
+  "description_strategy": [
+    "unknown"
+  ],
+  "exposition_strategy": [
+    "unknown"
+  ],
+  "emotional_temperature": [
+    "unknown"
+  ],
+  "hooking_and_transitions": [
+    "unknown"
+  ],
+  "adaptation_guidelines": [
+    "Retry chapter extraction before volume aggregation. Both chapters returned parse failures with confidence 0.0; insufficient source data for any craft profile distillation. Recommend re-processing raw source material through chapter extraction pipeline."
+  ],
+  "taboo_copy_signals": [
+    "No author-specific craft signals captured; both chapters fell back to fallback mode. No distinctive POV distance, sentence templates, or voice markers available for abstraction."
+  ],
+  "confidence": 0.0,
+  "distillation_source_id": "source-0304"
+}

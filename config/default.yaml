@@ -270,6 +270,7 @@ pipeline:
     - character_sleeping_appearance
     - character_comatose_appearance
     - CANON_FORBIDDEN_TERM
+    - CANON_STATE_REGRESSION
     - CROSS_CHAPTER_REPETITION
     - INTRA_CHAPTER_REPETITION
   # Records a project-level planning kernel before chapter production entry

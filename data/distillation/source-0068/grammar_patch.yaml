@@ -1,0 +1,31 @@
+key: distillation-generic
+name: LLM Fallback Source Grammar Patch
+source_ids:
+- source-0068
+status: blocked
+applies_to_categories:
+- distillation-generic
+required_contracts:
+- legitimate_source_text_required
+- non_empty_mechanisms_fields
+- chapter_content_non_stub
+- volume_annotation_consistency
+state_variables:
+- fallback_progress
+chapter_change_vectors:
+- stub_only_no_extraction_possible
+reader_rewards:
+- available: false
+  reason: all_reader_rewards_arrays_empty_across_batch
+hook_or_aftereffect_types:
+- type: none
+  reason: no_open_hooks_accessible_across_batch
+forbidden_defaults:
+- confidence_uniform
+- reusable_mechanisms_extractable
+- reader_rewards_derivable
+- open_hooks_accessible
+- state_progression_reconstructable
+- turning_points_identifiable
+- arc_function_deterministic
+- volume_annotation_match

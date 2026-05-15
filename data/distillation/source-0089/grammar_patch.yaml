@@ -1,0 +1,34 @@
+key: distillation-generic
+name: Distillation Failure Grammar Patch
+source_ids:
+- source-0089
+- distillation:eff24e9fbe8dc13ef837f18d
+status: draft_review
+applies_to_categories:
+- distillation-generic
+required_contracts:
+- extraction_contract
+- fallback_contract
+- re_extraction_contract
+state_variables:
+- fallback_progress
+- extraction_confidence
+- chapter_stub_count
+- arc_completeness_score
+chapter_change_vectors:
+- stub_to_full_transition
+- confidence_restore
+- arc_reconstruction
+reader_rewards:
+- distillable_mechanism_reliability
+- fallback_grace
+- re_extraction_promise
+hook_or_aftereffect_types:
+- llm_fallback_hook
+- zero_confidence_aftereffect
+- pipeline_recovery_hook
+forbidden_defaults:
+- zero_confidence_acceptance
+- stub_data_promotion
+- arc_zero_legitimization
+- confidence_reset_without_extraction

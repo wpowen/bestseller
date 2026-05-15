@@ -1,0 +1,46 @@
+{
+  "book_id": "source-0031",
+  "source_ref": "distillation:71e437c0fbf529e89191cead",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "parsed_profile": {
+    "distillation_status": "complete_failure",
+    "volumes_processed": 14,
+    "chapters_attempted": 344,
+    "chapters_with_llm_fallback": 344,
+    "chapters_with_valid_content": 0,
+    "confidence_scores": {
+      "mean": 0.0,
+      "min": 0.0,
+      "max": 0.0
+    },
+    "extraction_blocked_reason": "all_source_chapters_returned_llm_fallback_stubs_no_actionable_story_design_content_available_for_aggregation"
+  },
+  "genre_tags": [
+    "distillation-generic"
+  ],
+  "reader_promise": "LLM structured distillation fallback.",
+  "core_engine": "unknown",
+  "state_variables": [
+    "fallback_progress"
+  ],
+  "reader_rewards": [
+    "distillable_mechanism_reliability"
+  ],
+  "reusable_mechanisms": [
+    "fallback mechanism abstraction"
+  ],
+  "non_reusable_specifics": [],
+  "risk_patterns": [
+    "llm_fallback_batch_total_loss",
+    "zero_confidence_data_across_all_volumes",
+    "no_story_mechanics_extractable",
+    "no_craft_observations_recorded",
+    "no_reader_rewards_available",
+    "no_open_hooks_defined",
+    "volume_aggregation_impossible_without_chapter_content",
+    "distillation_pipeline_failure_requires_retry_with_functional_llm_extraction"
+  ],
+  "source_id": "source-0031",
+  "distillation_source_id": "source-0031"
+}

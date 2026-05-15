@@ -1,0 +1,26 @@
+{
+  "source_id": "source-0017",
+  "blocked_categories": [
+    "narrative_content",
+    "character_voice",
+    "plot_mechanics",
+    "world_building",
+    "dialogue_patterns",
+    "description_density",
+    "emotional_arcs",
+    "pacing_signatures",
+    "reader_rewards",
+    "open_hooks",
+    "craft_observations",
+    "author_syntax_patterns"
+  ],
+  "blocked_combinations": [
+    "any_named_entity_to_content_mapping",
+    "any_author_voice_fingerprint",
+    "any_specific_dialogue_sample",
+    "any_character_perspective_sample",
+    "any_prose_rhythm_sample",
+    "any_descriptive_passage_sample"
+  ],
+  "replacement_policy": []
+}

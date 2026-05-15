@@ -1,0 +1,36 @@
+{
+  "source_id": "source-0137",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "style_safety_policy": "{'note': 'No extractable style data — all 44 chapters returned LLM fallback stubs with zero confidence. No author voice, named entities, distinctive templates, or source-specific phrasing could be identified.', 'named_entities': [], 'distinctive_phrase_signatures': [], 'template_signatures': [], 'safety_flags': []}",
+  "pov_and_distance": "{'pov_type': 'unknown', 'narrative_distance': 'unknown', 'narrative_distance_variance': 'unknown', 'note': 'No chapter-level prose content available for POV analysis. All 44 chapter_cards contain only distillation fallback stubs.', 'confidence': 0.0}",
+  "sentence_rhythm": [
+    "{'dominant_length_profile': 'unknown', 'rhythmic_pattern': 'unknown', 'rhythmic_variance': 'unknown', 'note': 'No extractable sentence-level prose available for rhythm analysis.', 'confidence': 0.0}"
+  ],
+  "paragraphing": [
+    "{'paragraph_length_tendency': 'unknown', 'structural_pattern': 'unknown', 'white_space_strategy': 'unknown', 'note': 'No extractable paragraph-level prose available for structural analysis.', 'confidence': 0.0}"
+  ],
+  "dialogue_system": [
+    "{'dialogue_frequency': 'unknown', 'dialogue_function_distribution': {}, 'tag_distribution': 'unknown', 'speaker_identification_strategy': 'unknown', 'note': 'No dialogue content extractable from LLM fallback stubs.', 'confidence': 0.0}"
+  ],
+  "description_strategy": [
+    "{'sensory_modality_preference': 'unknown', 'description_density': 'unknown', 'object_focus_pattern': 'unknown', 'note': 'No descriptive prose extractable from LLM fallback stubs.', 'confidence': 0.0}"
+  ],
+  "exposition_strategy": [
+    "{'exposition_density': 'unknown', 'exposition_placement': 'unknown', 'exposition_vehicle_preference': 'unknown', 'note': 'No expository content extractable from LLM fallback stubs.', 'confidence': 0.0}"
+  ],
+  "emotional_temperature": [
+    "{'dominant_affect': 'unknown', 'emotional_range': 'unknown', 'intensity_profile': 'unknown', 'note': 'No emotional content extractable from LLM fallback stubs.', 'confidence': 0.0}"
+  ],
+  "hooking_and_transitions": [
+    "{'chapter_opening_strategy': 'unknown', 'chapter_closing_strategy': 'unknown', 'transition_style': 'unknown', 'hook_density': 'unknown', 'note': 'No opening/closing prose or transition content extractable from LLM fallback stubs.', 'confidence': 0.0}"
+  ],
+  "adaptation_guidelines": [
+    "{'narrative_engine': 'unknown', 'dominant_structures': [], 'genre_conventions_deployed': [], 'genre_conventions_broken': [], 'reader_promise': 'unknown', 'note': 'No narrative engine or structural content extractable from LLM fallback stubs.', 'confidence': 0.0}"
+  ],
+  "taboo_copy_signals": [
+    "{'prohibited_patterns': [], 'warning_signals': [], 'note': 'No copyable signals extractable — all content is generic LLM fallback with zero confidence.'}"
+  ],
+  "confidence": 0.0,
+  "distillation_source_id": "source-0137"
+}

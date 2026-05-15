@@ -1,0 +1,38 @@
+{
+  "book_id": "source-0099",
+  "source_ref": "distillation:a82116b6dab4d0549916f23d",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "parsed_profile": {
+    "status": "indeterminate",
+    "confidence": 0.0,
+    "data_completeness": "zero",
+    "extraction_failures": [
+      "llm_unavailable_all_chapters",
+      "zero_confidence_batch",
+      "no_distillable_content"
+    ]
+  },
+  "genre_tags": [
+    "distillation-generic"
+  ],
+  "reader_promise": "LLM structured distillation fallback.",
+  "core_engine": "unknown",
+  "state_variables": [
+    "fallback_progress"
+  ],
+  "reader_rewards": [
+    "distillable_mechanism_reliability"
+  ],
+  "reusable_mechanisms": [
+    "fallback mechanism abstraction"
+  ],
+  "non_reusable_specifics": [],
+  "risk_patterns": [
+    "{'pattern': 'source_content_unavailable', 'affected_fields': ['reader_promise', 'core_engine', 'state_variables', 'reader_rewards', 'reusable_mechanisms'], 'severity': 'critical', 'description': 'All source chapters returned llm_fallback stubs; no narrative content available for pattern extraction or abstract mechanism identification'}",
+    "{'pattern': 'confidence_zero_across_volume', 'affected_fields': ['all'], 'severity': 'critical', 'description': 'Zero confidence for volume 1 (chapters 1-41) and volume 2 (chapters 26-41); volume-level pattern analysis impossible'}",
+    "{'pattern': 'insufficient_data', 'affected_fields': ['all'], 'severity': 'critical', 'description': 'Cannot construct meaningful design fingerprint without source narrative content; abstract genre grammar cannot be applied to void'}"
+  ],
+  "source_id": "source-0099",
+  "distillation_source_id": "source-0099"
+}

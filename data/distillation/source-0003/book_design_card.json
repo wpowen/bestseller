@@ -1,0 +1,72 @@
+{
+  "book_id": "source-0003",
+  "source_ref": "distillation:9b173dc59bdf0cb7eaa55f2b",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "parsed_profile": {
+    "volume_count": 11,
+    "total_chapters": 272,
+    "chapter_range": "1-272",
+    "volume_card_coverage": "100% (11/11 fallbacks)",
+    "chapter_card_coverage": "0.7% (2/272 valid samples)",
+    "data_quality": "low - primary source from chapter-level samples only"
+  },
+  "genre_tags": [
+    "cultivation",
+    "xianxia",
+    "progression_fantasy",
+    "comedy",
+    "animal_companion",
+    "quest_structure"
+  ],
+  "reader_promise": "A cunning protagonist navigates dangerous cultivation territory through wit, preparation, and timely activation of dormant protective powers, gaining strength from near-death experiences while accumulating loyal animal companions and pursuing artifact acquisition quests in a Taoist-inflected world.",
+  "core_engine": {
+    "primary_mechanism": "Crisis-survival-reward progression cycle",
+    "secondary_mechanism": "Dormant power activation at death's door delivering bonus cultivation benefits",
+    "tertiary_mechanism": "Creature taming through will-dominance combat resulting in loyal pet acquisition",
+    "structural_pattern": "Preparation-foreshadowing-execution with complications leading to climactic crisis resolution",
+    "narrative_tone": "Comedic relief through bumbling companion, animal rivalry dynamics, and tension-release banter"
+  },
+  "state_variables": [
+    "{'protagonist': {'position': 'early_cultivation', 'growth_vector': 'external_quest_driven', 'personality_markers': ['mischievous', 'cunning', 'defiant_of_warnings'], 'support_system': 'loyal_bumbling_companion_duo'}, 'companions': {'type': 'animal_acquisition_sequence', 'mechanism': 'defeat_then_tame', 'rivalry_element': 'multiple_creatures_competing_for_attention'}, 'protective_mechanisms': {'type': 'ancestral_dormant_power', 'activation_trigger': 'near_fatal_damage', 'secondary_effect': 'cultivation_breakthrough'}, 'world_state': {'setting_type': 'Taoist_cultivation_terrain', 'location_markers': ['abandoned_caves', 'mountain_cultivation_sites'], 'quest_objects': 'rare_creatures_as_cultivation_assets'}}"
+  ],
+  "reader_rewards": [
+    "Cultivation world immersion with technical mechanics exposition",
+    "Satisfying near-death crisis resolution with tangible strength gains",
+    "Humorous character dynamics through companion interactions",
+    "Creature taming spectacle with dominance-based power fantasy",
+    "Mischievous protagonist outsmarting dangers through preparation"
+  ],
+  "reusable_mechanisms": [
+    "Preparation-foreshadowing-execution pattern: traps/mechanisms explained before complication deployment",
+    "Dormant protective power activation at mortality threshold delivering cultivation bonus",
+    "Crisis-survival-reward pattern: near-death improves protagonist's abilities",
+    "Creature taming via direct will confrontation and dominance establishment",
+    "Dynamic duo pairing: cunning schemer with loyal bumbling companion",
+    "Group panic sequence: external observers fear death while protagonist undergoes internal transformation",
+    "Training exposition through teaching dialogue moments",
+    "Comedic tension release through animal reaction and banter",
+    "Artifact quest structure: discovery, identification, failed capture, pursuit",
+    "Animal companion rivalry through multiple creatures competing for protagonist attention"
+  ],
+  "non_reusable_specifics": [
+    "Taoist mountain location names",
+    "Specific abandoned haunted cave sites",
+    "Named artifact creatures (venomous invertebrates as cultivation assets)",
+    "Named cultivation array formations and protective talismans",
+    "Named human companions and animal pets with individual designations",
+    "Specific cultivation pills and elixirs",
+    "Mentor and family backstory elements",
+    "Specific cultivation plant names"
+  ],
+  "risk_patterns": [
+    "{'pattern': 'Exposition_through_dialogue', 'frequency': 'high', 'mitigation': 'Integrate teaching moments with action sequences rather than standalone exposition blocks'}",
+    "{'pattern': 'Resurrection_mechanism_plot_armor', 'frequency': 'medium', 'mitigation': 'Limit dormant power activations; ensure proper narrative setup and increasingly dangerous thresholds'}",
+    "{'pattern': 'Companion_dilution', 'frequency': 'medium', 'mitigation': \"Maintain focus on protagonist's cultivation journey; give animal companions distinct narrative functions\"}",
+    "{'pattern': 'Artificial_cliffhanger', 'frequency': 'medium', 'mitigation': 'Ensure pursuit hooks have logical momentum; avoid pure danger-seeking without character motivation'}",
+    "{'pattern': 'Protagonist_intelligence_inconsistency', 'frequency': 'low', 'mitigation': 'Establish clear cost-benefit reasoning for defying warnings rather than pure recklessness'}",
+    "{'pattern': 'Chapter_level_parse_failure', 'frequency': 'documented', 'mitigation': 'Manual content review required for volumes 1-11; current card based solely on 2 valid chapter samples'}"
+  ],
+  "source_id": "source-0003",
+  "distillation_source_id": "source-0003"
+}

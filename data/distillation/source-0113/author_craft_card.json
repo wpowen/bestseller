@@ -1,0 +1,36 @@
+{
+  "source_id": "source-0113",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "style_safety_policy": "indeterminate — source material consists entirely of LLM fallback stubs with zero confidence; no narrative content present to assess stylistic patterns, voice signatures, or copy signals; no named entities, distinctive phrasing, or author-specific constructions available for safety evaluation",
+  "pov_and_distance": "indeterminate — source chapters are LLM-unavailable placeholders with 0.0 confidence; no POV choices, narrative distance decisions, or point-of-view transitions extractable; requires actual chapter content before POV analysis can proceed",
+  "sentence_rhythm": [
+    "indeterminate — no narrative sentences present in source data; all chapter_cards returned as fallback stubs; sentence length patterns, clause structures, rhythm variations, and cadential effects cannot be assessed"
+  ],
+  "paragraphing": [
+    "indeterminate — source contains zero narrative paragraph structures; paragraph rhythm, white space usage, section breaks, and block-level pacing signals are absent from unavailable chapter content"
+  ],
+  "dialogue_system": [
+    "indeterminate — no dialogue content present in fallback-only source; no speech tags, character voice differentiation, subtext patterns, or conversational mechanics extractable; source requires direct content generation for dialogue analysis"
+  ],
+  "description_strategy": [
+    "indeterminate — source chapters returned no descriptive content; no sensory detail deployment, environmental framing, object-level description, or atmospheric construction patterns available for analysis"
+  ],
+  "exposition_strategy": [
+    "indeterminate — source contains no expository passages, backstory injection, world-building information, or explanation-through-narrative structures; all chapter cards are empty stubs blocking exposition analysis"
+  ],
+  "emotional_temperature": [
+    "indeterminate — no affective content present in source; no scene-level emotional registers, tonal shifts, or pathos deployment patterns extractable from 202 chapters of unavailable content"
+  ],
+  "hooking_and_transitions": [
+    "indeterminate — source lacks chapter openings, scene transitions, cliffhanger constructions, or hook mechanisms; no reader engagement patterns available for analysis due to complete LLM fallback across all volumes"
+  ],
+  "adaptation_guidelines": [
+    "do not synthesize craft recommendations from this card — the entire source consists of LLM-unavailable fallback stubs with 0.0 confidence; any author_craft_card derived from this package would reflect zero actual narrative content; reprocess source-0113 through functional LLM pipeline with actual chapter texts before volume_card aggregation or craft_distillation; treat all volume arc_functions, dominant_engines, state_progression arrays, turning_points, reusable_mechanisms, and craft_observations as empty; treat confidence 0.0 as blocking signal for downstream synthesis"
+  ],
+  "taboo_copy_signals": [
+    "none applicable — source material is entirely placeholder stubs; no named entities, author voice signatures, distinctive phrasing, or copy-sensitive patterns present to flag; safe to treat as structurally empty but do not infer author intent or stylistic default from absence of data"
+  ],
+  "confidence": 0.0,
+  "distillation_source_id": "source-0113"
+}

@@ -1,0 +1,293 @@
+# =============================================================================
+# Chapter Position Profiles · 章节位置差异化档案
+# =============================================================================
+# 目的：
+#   解决"所有章节用同一套 prompt + 同一套 critic"的根因。
+#   把"高敏感位置 (high-stake position)"章节单独建模，让 writer / critic
+#   能在生成与评分时知道"这一章是平台读者的高密度判定窗口"。
+#
+# 使用方式：
+#   - planner 在生成 ChapterOutline 时，按下方 detection_rules 自动给每章贴
+#     positions: [first_chapter, volume_opener, ...] 标签（可多标签）。
+#   - writer 读 chapter.positions，加载对应 profile 的 must_achieve /
+#     must_avoid / weighted_checks。
+#   - critic 读 chapter.positions，加载对应 profile 的 hard_gates，必须
+#     全部通过；任一项失败即 must_rewrite=true（不论 5+4 维分数）。
+# =============================================================================
+
+version: 2026.05.14
+
+# 全局：位置敏感反模式时窗
+# 这些反模式在普通章节是"扣分项"，在敏感时窗内是"红线"。
+sensitive_window_anti_patterns:
+  description: |
+    传统 anti_patterns 是全章通用。但实际平台规则是"时窗加权"——
+    同一种写法在第 1 章必死，第 100 章只是扣分。这里把时窗硬性化。
+  windows:
+    - window_id: opening_window
+      chapter_range: "1-3"
+      banned:
+        - id: psychological_dumping
+          name: 心理独白型信息倒斗
+          definition: 单段 > 150 字的内心戏，含 ≥ 2 条背景设定 / 阴谋分析 / 旧案回忆
+          why_banned: 读者还没和主角建立情感联结时，给一坨结论性背景=必弃读
+        - id: cold_protagonist
+          name: 冷面工具人主角
+          definition: 主角在 1500 字内既无 "急/怕/不甘/快/赌/咬牙" 等心率词，也无任何打断式情绪化对白
+          why_banned: 读者代入"心率"，不是代入逻辑
+        - id: terminology_overload
+          name: 私设术语堆叠
+          definition: 单章首次出现的私有专名 (不含通用现实词) ≥ 6
+          why_banned: 第一章心智带宽溢出 = 弃读
+        - id: no_payoff_in_ch1
+          name: 第一章无可感小爽点
+          definition: 主角在第 1 章未完成任意一次"打脸 / 救成功 / 拿到关键证据 / 反将一军 / 关系建立"
+          why_banned: 平台 qimao_regeneration_contract.weak_satisfaction 直接对应
+        - id: explanatory_dialogue
+          name: 解释性对白
+          definition: 角色用对白替读者总结"对方高明在哪 / 这意味着什么 / 推理结论"
+          why_banned: 读者要自己感觉，不是被告知
+    - window_id: golden_three_window
+      chapter_range: "1-3"
+      banned:
+        - id: subplot_intrusion
+          name: 副线抢戏
+          definition: 单章副线场景 > 1 个 OR 副线字数 > 1500
+          why_banned: 前 3 章只为一条主线服务（qimao first_10000_words 规则）
+        - id: villain_offscreen_only
+          name: 反派纯背景
+          definition: 反派在 1-3 章只通过"听说 / 想起 / 回忆"出现，无任何即时压迫
+          why_banned: 主角必须正面对抗一个有脸/有声/有动作的对手
+    - window_id: extended_opening_window
+      chapter_range: "1-10"
+      banned:
+        - id: protagonist_pure_loser
+          name: 主角连续失败
+          definition: 1-10 章主角无任何成长 / 收益 / 胜利节点
+          why_banned: 平台 weak_satisfaction
+        - id: mainline_drift
+          name: 主线漂移
+          definition: 1-10 章主角的"短期目标"被改写 > 2 次
+          why_banned: 读者追读契约破裂
+
+# 位置档案
+profiles:
+
+  # ===========================================================================
+  # 1. 第一章 · 签约样章窗口最关键的一章
+  # ===========================================================================
+  first_chapter:
+    description: |
+      全书最敏感位置。平台编辑判定签约/拒稿的"第一筛"。
+      读者在没有任何投资的前提下决定"要不要继续看"。
+    detection_rules:
+      - chapter_number == 1
+    inherits_windows: [opening_window, golden_three_window]
+
+    must_achieve:
+      - id: protagonist_spotlight_by_100w
+        rule: 前 100 字内主角必须出场并成为唯一聚光灯（第一个动作、第一个被聚焦）
+        validation: 规则可检测（首段是否出现主角名+主语动作）
+      - id: visible_conflict_by_200w
+        rule: 前 200 字内必须出现可感冲突（异常 / 危机 / 误会 / 侮辱 / 背叛 / 利益冲突 / 倒计时威胁）
+        validation: 规则可检测（关键词 + 角色对立动作）
+      - id: protagonist_emotional_pulse_by_500w
+        rule: 前 500 字内主角必须展示一次"心率"——具体可感的情绪动作（咬牙/手指收紧/呼吸停顿/眼神锐利等具象化外显），不允许"他感到 X"
+        validation: 规则可检测（心率词词表匹配）
+      - id: core_conflict_visible_by_600w
+        rule: 前 600 字内读者能用一句话讲出"主角被什么压住"
+        validation: critic 主观打分 + 用 1 句话复述本章核心矛盾的测试
+      - id: emotional_hook_by_2000w
+        rule: 前 2000 字内形成可述情绪钩子（读者带着具体情绪进入后半段：好奇 / 不甘 / 紧张 / 期待）
+        validation: critic 主观打分
+      - id: small_payoff_before_chapter_end
+        rule: 章末前主角必须完成一次"可感小回报"——任意一种正反馈：打脸 / 救成功 / 拿到关键证据 / 反将一军 / 揭穿伪装 / 关系建立 / 揭露真相一角
+        validation: critic 主观打分 + 列出本章爽点位置
+      - id: chapter_end_hook
+        rule: 章末最后 150 字内必须放下一章勾子（新威胁 / 新变量 / 颠覆瞬间 / 身体异动 / 未答之问）
+        validation: 规则可检测
+
+    must_avoid:
+      - 见 sensitive_window_anti_patterns.opening_window.banned 全部
+
+    hard_gates:
+      # 这些 gate 失败 → must_rewrite=true，不论其他维度分数
+      - protagonist_spotlight_by_100w
+      - visible_conflict_by_200w
+      - protagonist_emotional_pulse_by_500w
+      - small_payoff_before_chapter_end
+      - psychological_dumping_count == 0
+      - cold_protagonist == false
+      - terminology_overload_count <= 5
+      - no_payoff_in_ch1 == false
+
+    weighted_checks:
+      # 这些是加权扣分项（不是 hard gate，但影响 hook_strength 分数）
+      - id: opening_image_strength
+        weight: 0.30
+        rubric: 第一句话是否同时含动作 + 异常 + 紧迫感（满分）/ 只有动作（0.6）/ 纯环境（0）
+      - id: pov_immersion
+        weight: 0.20
+        rubric: 主角感官 / 内心抖动出现频率（每 300 字 ≥ 1 次=满分）
+      - id: dialogue_pulse
+        weight: 0.15
+        rubric: 是否有让读者"听见声音"的对白（具象语气 + 角色独特口吻）
+      - id: stakes_clarity
+        weight: 0.15
+        rubric: 主角会失去什么 在前 1500 字内是否清晰可述
+      - id: payoff_visibility
+        weight: 0.10
+        rubric: 小爽点的可感程度（被反派吃瘪 = 满分；只是说硬话 = 0.5；只在内心想赢 = 0）
+      - id: end_hook_strength
+        weight: 0.10
+        rubric: 章末勾子是否能用一句话讲出 我下一章想看到什么
+
+    rewrite_priority_order:
+      # 当 hard_gates 失败时，按此顺序整改（来自 qimao_regeneration_contract.regeneration_decision_order）
+      - step: 1
+        action: 重选开篇事件（如果当前开场不能在 200 字内出冲突 → 换事件）
+      - step: 2
+        action: 重设主角即时目标 + 即时损失（"如果不阻止，会立刻发生什么"）
+      - step: 3
+        action: 重排小爽点位置（章末前一定有一次正反馈）
+      - step: 4
+        action: 削心理独白（任何 > 150 字内心戏改成动作-停顿-动作）
+      - step: 5
+        action: 降术语密度（私设词首次出现 ≤ 5；其余下章再说）
+      - step: 6
+        action: 加心率词（每 300 字至少一次可感情绪外显）
+
+  # ===========================================================================
+  # 2. 卷首章 · 每卷第 1 章
+  # ===========================================================================
+  volume_opener:
+    description: |
+      新卷开篇。读者刚跨过卷末勾子，期待一次"状态升级"或"新威胁登场"。
+    detection_rules:
+      - is_first_chapter_of_volume == true
+      - volume_number > 1  # 卷 1 第 1 章用 first_chapter profile
+    must_achieve:
+      - id: status_change_visible_by_500w
+        rule: 前 500 字内必须显示主角与上一卷末相比的状态变化（境界升 / 关系变 / 地点变 / 身份变）
+      - id: new_volume_stake_by_1500w
+        rule: 前 1500 字内必须显示本卷的核心赌注（与上卷不同的新威胁/新目标）
+      - id: prev_volume_hook_payoff
+        rule: 本章必须偿付上一卷末勾子的至少一半（不能完全无视）
+    must_avoid:
+      - id: cold_restart
+        name: 冷启动
+        definition: 本章从一个与上卷末完全无关的场景开始
+        why_banned: 读者会觉得断章感强
+    hard_gates:
+      - status_change_visible_by_500w
+      - new_volume_stake_by_1500w
+
+  # ===========================================================================
+  # 3. 卷末章 · 每卷最后一章
+  # ===========================================================================
+  volume_climax:
+    description: |
+      卷末高潮章。本卷最大冲突的总爆发 + 主线推进 + 下卷勾子。
+    detection_rules:
+      - is_last_chapter_of_volume == true
+    must_achieve:
+      - id: volume_climax_lands
+        rule: 本卷预定的 volume_climax 事件必须在本章发生（落地，不能推迟）
+      - id: cost_paid
+        rule: 主角必须为本卷成果付出可感代价（伤 / 失 / 关系破 / 身份暴露 等）
+      - id: cross_volume_hook
+        rule: 章末必须留下卷的"必须看下去"勾子（新反派 / 新真相一角 / 主角身份巨变）
+    hard_gates:
+      - volume_climax_lands
+      - cost_paid
+      - cross_volume_hook
+
+  # ===========================================================================
+  # 4. 首次能力觉醒 / 首次金手指展示
+  # ===========================================================================
+  first_powerup_reveal:
+    description: |
+      主角第一次完整展示核心能力 / 金手指。读者建立"能力期待"的关键章。
+    detection_rules:
+      - chapter_contains_event == "first_full_powerup_display"
+    must_achieve:
+      - id: power_cost_account
+        rule: 必须同时写出能力的代价账（寿元 / 灵力 / 情感 / 关系 / 副作用 之一）
+      - id: power_external_signal
+        rule: 能力发动必须有可感外显（温度 / 光 / 声 / 味 / 体感 至少一项）
+      - id: reaction_amplification
+        rule: 必须有 ≥ 1 个旁观者的具体反应（震惊 / 不可置信 / 后悔 / 恐惧）
+    hard_gates:
+      - power_cost_account
+      - reaction_amplification
+
+  # ===========================================================================
+  # 5. 单元案件首章 (单元剧 / 探案 / 任务流)
+  # ===========================================================================
+  first_unit_case_chapter:
+    description: |
+      新单元案件 / 新任务 / 新副本的第一章。读者需要快速识别"这次要解决什么"。
+    detection_rules:
+      - chapter_phase == "setup"
+      - unit_case_number_first_chapter == true
+    must_achieve:
+      - id: case_premise_by_300w
+        rule: 前 300 字内读者能看出本案的诡异/异常点
+      - id: case_stakes_by_1000w
+        rule: 前 1000 字内必须说明主角为何被卷入（被指派 / 主动接 / 牵连）
+      - id: clue_dropped_in_chapter
+        rule: 本章必须埋下一条"读者可记忆"的线索（一个名字 / 一个物件 / 一个动作）
+    hard_gates:
+      - case_premise_by_300w
+      - case_stakes_by_1000w
+
+  # ===========================================================================
+  # 6. 首次反派登场
+  # ===========================================================================
+  first_villain_reveal:
+    description: |
+      主线反派第一次正面出场（不算背景提及）。
+    detection_rules:
+      - chapter_contains_event == "main_villain_first_face_to_face"
+    must_achieve:
+      - id: villain_pressure_visible
+        rule: 反派必须在场内对主角施加可感压迫（行动 / 言语 / 处境逼迫，至少一项）
+      - id: villain_specific_threat
+        rule: 反派必须展示一个具体的"我能伤到你"的具象点（不是"我很强"那种笼统）
+      - id: protagonist_meaningful_loss
+        rule: 主角必须在本章付出代价（让步 / 失物 / 伤 / 被看穿一角）
+    hard_gates:
+      - villain_pressure_visible
+      - protagonist_meaningful_loss
+
+  # ===========================================================================
+  # 7. 大反转章
+  # ===========================================================================
+  major_twist_chapter:
+    description: |
+      主线大反转章（身份揭穿 / 真相揭露 / 信任崩塌 / 阵营反转）。
+    detection_rules:
+      - chapter_role == "major_twist"
+    must_achieve:
+      - id: foreshadow_recall
+        rule: 反转必须能追溯到至少 2 条已埋的伏笔（不允许凭空反转）
+      - id: emotional_aftermath
+        rule: 反转后必须留 ≥ 200 字主角情绪余震（不能反转完立刻进入下一段情节）
+      - id: world_changed
+        rule: 反转后世界状态必须不可逆改变（不能反转完一切照旧）
+    hard_gates:
+      - foreshadow_recall
+      - emotional_aftermath
+      - world_changed
+
+# =============================================================================
+# 检测器（planner 使用）
+# =============================================================================
+detection_rules:
+  description: |
+    planner 在写 ChapterOutline 时按此为每章贴 positions 标签。
+    一章可同时贴多个标签（如 first_chapter + first_unit_case_chapter）。
+  implementation_note: |
+    在 ChapterOutline.scenes 里加 `positions: [first_chapter, ...]` 字段。
+    writer 读取该字段后从本 yaml 加载对应 profile。
+    critic 同步加载 hard_gates 做硬检。

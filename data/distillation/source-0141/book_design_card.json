@@ -1,0 +1,53 @@
+{
+  "book_id": "source-0141",
+  "source_ref": "distillation:aa3ac8a00a68fc1ef871326f",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "parsed_profile": {
+    "volume_count": 1,
+    "chapter_range": "1-15",
+    "arc_function": null,
+    "dominant_engine": null,
+    "state_progression": [],
+    "turning_points": [],
+    "setup_payoff_rhythm": null,
+    "data_integrity": "compromised",
+    "llm_unavailable_instances": 15,
+    "highest_segment_count": 31,
+    "segment_distribution_variance": "high",
+    "recommended_action": "Re-process source through functional LLM distillation pipeline before volume aggregation"
+  },
+  "genre_tags": [
+    "distillation-generic"
+  ],
+  "reader_promise": "LLM structured distillation fallback.",
+  "core_engine": "unknown",
+  "state_variables": [
+    "fallback_progress"
+  ],
+  "reader_rewards": [
+    "distillable_mechanism_reliability"
+  ],
+  "reusable_mechanisms": [
+    "fallback mechanism abstraction"
+  ],
+  "non_reusable_specifics": [],
+  "risk_patterns": [
+    "llm_fallback",
+    "insufficient_source_data",
+    "all_chapters_returned_stubs",
+    "confidence_zero"
+  ],
+  "distillation_failure_summary": {
+    "primary_cause": "llm_unavailable",
+    "affected_chapters": [
+      1,
+      8,
+      15
+    ],
+    "all_segments_returned_stubs": true,
+    "usable_content_extracted": false
+  },
+  "source_id": "source-0141",
+  "distillation_source_id": "source-0141"
+}

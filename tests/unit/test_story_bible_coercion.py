@@ -268,6 +268,60 @@ class TestCharacterInputCoercion:
         assert anchor.core_wound is not None
         assert "丧父" in anchor.core_wound
 
+    def test_character_relationships_accept_dict_form(self) -> None:
+        """LLM sometimes returns relationships as ``{toward_X: desc}`` rather than a list."""
+
+        character = CharacterInput.model_validate(
+            {
+                "name": "Marcus Chen",
+                "role": "ally",
+                "relationships": {
+                    "toward_marcus": "Hostile (full agenda is unclear)",
+                    "toward_ko": "Unknown",
+                    "Sarah": "ally",  # No 'toward_' prefix — still accepted
+                },
+            }
+        )
+        names = {rel.character for rel in character.relationships}
+        # ``toward_`` prefix stripped; other keys kept as-is
+        assert names == {"marcus", "ko", "Sarah"}
+        # Values used as the relationship type (free-form text)
+        for rel in character.relationships:
+            assert rel.type  # non-empty
+
+    def test_character_relationships_accept_nested_dict_form(self) -> None:
+        """Dict-of-dict form: ``{toward_X: {type: ..., tension: ...}}``."""
+
+        character = CharacterInput.model_validate(
+            {
+                "name": "Lee",
+                "role": "ally",
+                "relationships": {
+                    "toward_marcus": {"type": "mentor", "tension": "trust gap"},
+                },
+            }
+        )
+        assert len(character.relationships) == 1
+        rel = character.relationships[0]
+        assert rel.character == "marcus"
+        assert rel.type == "mentor"
+        assert rel.tension == "trust gap"
+
+    def test_character_relationships_passthrough_list_form(self) -> None:
+        """Existing list form must still be accepted unchanged."""
+
+        character = CharacterInput.model_validate(
+            {
+                "name": "Eva",
+                "role": "ally",
+                "relationships": [
+                    {"character": "Sam", "type": "co-worker"},
+                ],
+            }
+        )
+        assert character.relationships[0].character == "Sam"
+        assert character.relationships[0].type == "co-worker"
+
     def test_character_age_accepts_english_decade(self) -> None:
         character = CharacterInput.model_validate(
             {"name": "赵五", "role": "ally", "age": "late 40s"}
@@ -445,6 +499,48 @@ class TestCastSpecInputCoercion:
         )
         assert spec.protagonist is not None
         assert spec.protagonist.role == "protagonist"
+
+    def test_character_pronoun_dicts_normalize_to_schema_strings(self) -> None:
+        spec = CastSpecInput.model_validate(
+            {
+                "protagonist": {
+                    "name": "沈青崖",
+                    "gender": "male",
+                    "pronoun_set_zh": {
+                        "subjective": "他",
+                        "objective": "他",
+                        "possessive": "他的",
+                        "reflexive": "他自己",
+                    },
+                    "pronoun_set_en": {
+                        "subjective": "he",
+                        "objective": "him",
+                        "possessive": "his",
+                        "reflexive": "himself",
+                    },
+                },
+                "supporting_cast": [
+                    {
+                        "name": "周婉儿",
+                        "gender": "female",
+                        "pronoun_set_zh": {
+                            "subjective": "她",
+                            "objective": "她",
+                        },
+                        "pronoun_set_en": {
+                            "subjective": "she",
+                            "objective": "her",
+                        },
+                    }
+                ],
+            }
+        )
+
+        assert spec.protagonist is not None
+        assert spec.protagonist.pronoun_set_zh == "他"
+        assert spec.protagonist.pronoun_set_en == "he/him"
+        assert spec.supporting_cast[0].pronoun_set_zh == "她"
+        assert spec.supporting_cast[0].pronoun_set_en == "she/her"
 
     def test_character_beliefs_accept_legacy_string(self) -> None:
         spec = CastSpecInput.model_validate(

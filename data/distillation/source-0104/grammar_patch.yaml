@@ -1,0 +1,15 @@
+key: distillation-generic
+name: Distillation Generic Fallback Grammar
+source_ids:
+- source-0104
+status: draft_review
+applies_to_categories:
+- distillation-generic
+required_contracts: []
+state_variables:
+- fallback_progress
+chapter_change_vectors: []
+reader_rewards:
+- distillable_mechanism_reliability
+hook_or_aftereffect_types: []
+forbidden_defaults: []

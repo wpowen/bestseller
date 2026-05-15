@@ -1,0 +1,86 @@
+{
+  "book_id": "source-0064",
+  "source_ref": "distillation:f4db60f31cc6214b2f934ff6",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "parsed_profile": {
+    "distillation_status": "critical_failure",
+    "data_integrity": "zero_confidence_across_all_volumes",
+    "volume_coverage": {
+      "volume_1": {
+        "range": "1-25",
+        "confidence": 0.0,
+        "state": "llm_fallback"
+      },
+      "volume_2": {
+        "range": "26-50",
+        "confidence": 0.0,
+        "state": "llm_fallback"
+      },
+      "volume_3": {
+        "range": "51-75",
+        "confidence": 0.0,
+        "state": "llm_fallback"
+      },
+      "volume_4": {
+        "range": "76-100",
+        "confidence": 0.0,
+        "state": "llm_fallback"
+      },
+      "volume_5": {
+        "range": "101-125",
+        "confidence": 0.0,
+        "state": "llm_fallback"
+      },
+      "volume_6": {
+        "range": "126-129",
+        "confidence": 0.0,
+        "state": "llm_fallback"
+      }
+    },
+    "failure_cause": "all_source_chapters_returned_llm_fallback_stubs",
+    "narrative_content_available": false,
+    "craft_extraction_possible": false
+  },
+  "genre_tags": [
+    "distillation-generic"
+  ],
+  "reader_promise": {
+    "stated_promise": "indeterminate",
+    "reader_experience": "unavailable",
+    "narrative_hooks": []
+  },
+  "core_engine": {
+    "type": "none",
+    "dominant_mechanism": "no_data",
+    "operational_status": "non_functional"
+  },
+  "state_variables": [
+    "fallback_progress"
+  ],
+  "reader_rewards": [
+    "distillable_mechanism_reliability"
+  ],
+  "reusable_mechanisms": [
+    "fallback mechanism abstraction"
+  ],
+  "non_reusable_specifics": [
+    "all_129_chapters_returned_llm_fallback_stubs",
+    "zero_confidence_across_100%_of_source_material",
+    "no_narrative_content_available_for_extraction",
+    "no_chapter_level_craft_observations_present",
+    "no_story_design_patterns_determinable",
+    "source_requires_re_processing_with_functional_llm_pipeline"
+  ],
+  "risk_patterns": [
+    "llm_fallback_systemic_failure",
+    "insufficient_source_content",
+    "volume_analysis_blocked_by_data_quality",
+    "no_distillable_content_exists",
+    "reader_rewards_unavailable",
+    "open_hooks_unavailable",
+    "craft_profile_non_extractable"
+  ],
+  "source_id": "source-0064",
+  "distillation_source_id": "source-0064"
+}

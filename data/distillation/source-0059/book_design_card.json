@@ -1,0 +1,44 @@
+{
+  "book_id": "source-0059",
+  "source_ref": "distillation:b85fcb07f30ec180054b5b90",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "parsed_profile": {
+    "distillation_status": "blocked",
+    "confidence": 0.0,
+    "total_chapters_attempted": 252,
+    "total_chapters_with_content": 0,
+    "total_chapters_with_fallback": 252,
+    "volumes_processed": 11,
+    "volumes_with_content": 0,
+    "blocking_cause": "llm_fallback_all_chapters",
+    "recommendation": "Resubmit with actual chapter_card JSON populated from source text; current batch contains only placeholder stubs."
+  },
+  "genre_tags": [
+    "distillation-generic"
+  ],
+  "reader_promise": "LLM structured distillation fallback.",
+  "core_engine": "unknown",
+  "state_variables": [
+    "fallback_progress"
+  ],
+  "reader_rewards": [
+    "distillable_mechanism_reliability"
+  ],
+  "reusable_mechanisms": [
+    "fallback mechanism abstraction"
+  ],
+  "non_reusable_specifics": [],
+  "risk_patterns": [
+    "llm_fallback_all_chapters",
+    "zero_confidence_data",
+    "no_content_to_distill",
+    "volume_card_integrity_compromised",
+    "book_design_card_inference_blocked",
+    "source_chapters_all_unavailable",
+    "no_distillable_content",
+    "confidence_0_0_across_entire_source"
+  ],
+  "source_id": "source-0059",
+  "distillation_source_id": "source-0059"
+}

@@ -1,0 +1,44 @@
+{
+  "book_id": "source-0070",
+  "source_ref": "distillation:eb80fd87c5c869a61e212d2c",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "parsed_profile": {
+    "distillation_status": "complete_failure",
+    "volume_count": 14,
+    "chapters_attempted": 327,
+    "stub_ratio": 1.0,
+    "confidence_mean": 0.0,
+    "confidence_median": 0.0,
+    "data_quality_note": "All 14 volume cards and sampled chapter cards returned llm_fallback stubs; no story content, mechanics, craft observations, or narrative structures extractable."
+  },
+  "genre_tags": [
+    "distillation-generic"
+  ],
+  "reader_promise": "LLM structured distillation fallback.",
+  "core_engine": "unknown",
+  "state_variables": [
+    "fallback_progress"
+  ],
+  "reader_rewards": [
+    "distillable_mechanism_reliability"
+  ],
+  "reusable_mechanisms": [
+    "fallback mechanism abstraction"
+  ],
+  "non_reusable_specifics": [],
+  "risk_patterns": [
+    "llm_fallback_all_volumes",
+    "zero_confidence_across_batch",
+    "no_distillable_story_content",
+    "all_source_chapters_unavailable",
+    "incomplete_extraction_pipeline",
+    "no_reader_rewards_extracted",
+    "no_open_hooks_available",
+    "no_craft_observations_recorded",
+    "no_narrative_arc_classifiable",
+    "book_design_card_represents_data_absence_not_story_architecture"
+  ],
+  "source_id": "source-0070",
+  "distillation_source_id": "source-0070"
+}

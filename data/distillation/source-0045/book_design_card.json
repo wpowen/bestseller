@@ -1,0 +1,45 @@
+{
+  "book_id": "source-0045",
+  "source_ref": "distillation:716a5c2cf57a11959b208f9e",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "parsed_profile": {
+    "distillation_status": "complete_failure",
+    "volume_cards_processed": 31,
+    "volume_cards_with_content": 0,
+    "chapter_cards_processed": 789,
+    "chapter_cards_with_content": 0,
+    "aggregate_confidence": 0.0,
+    "failure_cause": "llm_fallback_mass_failure",
+    "data_integrity": "total_loss",
+    "extraction_note": "All 31 volume cards and 789 chapter cards consist exclusively of LLM unavailable fallback stubs with zero confidence. No narrative content, story mechanics, craft observations, reader rewards, or open hooks were extractable. This book_design_card represents a distillation failure record rather than a valid design abstraction."
+  },
+  "genre_tags": [
+    "distillation-generic"
+  ],
+  "reader_promise": "LLM structured distillation fallback.",
+  "core_engine": "none_extracted",
+  "state_variables": [
+    "fallback_progress"
+  ],
+  "reader_rewards": [
+    "distillable_mechanism_reliability"
+  ],
+  "reusable_mechanisms": [
+    "fallback mechanism abstraction"
+  ],
+  "non_reusable_specifics": [],
+  "risk_patterns": [
+    "llm_fallback_all_chapters",
+    "llm_fallback_all_volumes",
+    "zero_confidence_across_all_content",
+    "no_extractable_story_data",
+    "distillation_pipeline_failure",
+    "missing_source_content",
+    "no_distillable_craft_data",
+    "volume_card_aggregation_blocked",
+    "chapter_card_content_absent"
+  ],
+  "source_id": "source-0045",
+  "distillation_source_id": "source-0045"
+}

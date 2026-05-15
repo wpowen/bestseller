@@ -4,7 +4,7 @@
 
 ## Mode B（写作）红线
 
-- ❌ **每章不得低于 5 000 字**。低于即 `status: rework`；从场景 / 内心 / 对白扩写，不得以形容词灌水。
+- ❌ **每章字数不得低于本作品的 `platform_profile.pacing_preference.chapter_word_count` 下限**——七猫=2500，起点=3000，番茄=2000，未指定平台时默认 5000。低于即 `status: rework`；从场景 / 内心 / 对白扩写，不得以形容词灌水。
 - ❌ 小说正文**不得写入 `output/ai-generated/{slug}/` 以外的任何路径**。
 - ❌ 已有的 canon facts **不可修改**；只能用更高 `valid_from_chapter` 的 `supersedes` 条目覆盖。
 - ❌ 任何角色**不得知道**在后续章节才揭示的事（知识单调性）。
@@ -14,6 +14,26 @@
 - ❌ 主角**不得每卷全胜**；必须符合 [planning.md § Win/Loss Rhythm](planning.md)。
 - ❌ 不得跳过规划阶段直接写正文（即 story-bible 未建立时不写 ch-001）。
 - ❌ 不得以 "穿越 / 系统 / 金手指" 文本模式替代章节内容。
+
+## Mode B（高敏感位置）红线
+
+> 数据源：[config/chapter_position_profiles.yaml](../../../config/chapter_position_profiles.yaml)
+
+- ❌ **第一章 (first_chapter) 8 项 hard_gates 任一失败即 `status: rework`**——不论其他评分多高。具体：
+  - 主角必须在前 100 字进入聚光灯
+  - 前 200 字必须有可感冲突
+  - 前 500 字主角必须有"心率"外显（pulse_words 词表匹配）
+  - 章末前必须完成一次可感小爽点
+  - 不允许心理独白型信息倒斗（单段 > 150 字内心戏含多条背景）
+  - 不允许冷面工具人主角（pulse_words 频率 < 1/300 字）
+  - 不允许私设术语堆叠（首次出现 ≥ 6）
+  - 章末 150 字内必须有勾子
+- ❌ **前 3 章 (opening_window) 不得出现心理独白型信息倒斗**——单段 > 150 字内心戏 + 含 ≥ 2 条背景设定 / 阴谋分析 / 旧案回忆。
+- ❌ **前 3 章 (golden_three_window) 不得副线抢戏**——副线场景 > 1 个或副线字数 > 1500。
+- ❌ **前 10 章 (extended_opening_window) 主角不得连续失败**——必须有至少 1 次可感成长 / 收益 / 胜利节点。
+- ❌ **卷末章 (volume_climax) volume_climax 事件必须在本章落地**——不得推迟。
+- ❌ **首次能力觉醒章 (first_powerup_reveal) 必须配代价账 + 旁观反应**——缺一不可。
+- ❌ **拒稿整改时不得 LLM 现编 repair 策略**——必须按 [config/rejection_repair_playbook.yaml](../../../config/rejection_repair_playbook.yaml) 的 `repair_actions` 顺序执行。
 
 ## Mode B（结构）红线
 

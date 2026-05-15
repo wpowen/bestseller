@@ -1,0 +1,14 @@
+{
+  "aggregate_key": "distillation-generic",
+  "source_ids": [
+    "source-0016"
+  ],
+  "source_count": 1,
+  "material_rows": 0,
+  "mechanism_rows": 0,
+  "author_craft_rows": 1,
+  "anti_copy_blocked_combinations": 0,
+  "grammar_state_variables": 2,
+  "grammar_change_vectors": 2,
+  "warnings": []
+}

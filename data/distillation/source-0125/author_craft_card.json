@@ -1,0 +1,46 @@
+{
+  "source_id": "source-0125",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "style_safety_policy": "neutral",
+  "pov_and_distance": "close-third or project-selected POV with controlled narrative distance",
+  "sentence_rhythm": [
+    "vary short action beats with medium explanatory sentences"
+  ],
+  "paragraphing": [
+    "keep paragraphs functional: action, reaction, or information turn"
+  ],
+  "dialogue_system": [
+    "use role-specific intent, subtext, and conflict pressure"
+  ],
+  "description_strategy": [
+    "describe only details that change stakes, mood, or reader inference"
+  ],
+  "exposition_strategy": [
+    "place exposition after visible need or conflict pressure"
+  ],
+  "emotional_temperature": [
+    "surface emotion through choices, body action, and withheld admission"
+  ],
+  "hooking_and_transitions": [
+    "end units on changed state, unresolved question, or sharper constraint"
+  ],
+  "adaptation_guidelines": [
+    "translate craft controls into the new project's genre, cast, and premise",
+    "change imagery fields, sentence signatures, names, and scenario chains"
+  ],
+  "taboo_copy_signals": [
+    "source titles, author names, exact phrases, named entities, and distinctive sentence templates"
+  ],
+  "confidence": 0.0,
+  "distillation_failure_record": {
+    "failure_cause": "llm_unavailable_all_chapters",
+    "chapters_attempted": 61,
+    "chapters_with_valid_content": 0,
+    "volumes_affected": 3,
+    "aggregation_note": "All 61 chapter cards returned LLM fallback stubs. No reusable_mechanisms, craft_observations, reader_rewards, open_hooks, non_reusable_specifics, state_progression, or turning_points were extractable. Source data represents a complete distillation failure at chapter extraction layer. Reprocessing required before any craft profile can be generated."
+  },
+  "reprocess_required": true,
+  "reprocess_layer": "chapter_extraction",
+  "distillation_source_id": "source-0125"
+}

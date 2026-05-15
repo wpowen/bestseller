@@ -1,0 +1,38 @@
+key: distillation-generic
+name: Generic Distillation Fallback Grammar
+source_ids:
+- source-0299
+status: patch_applied
+applies_to_categories:
+- distillation-generic
+- untagged-extraction-failure
+required_contracts:
+- extraction_requires_minimum_confidence
+- no_fallback_content_in_production
+- re-extraction_gate_enabled
+state_variables:
+- tracked:
+  - chapter_count
+  - volume_index
+  - extraction_status
+  progression_pattern: linear_indeterminate
+  resolution_capacity: none_determined
+chapter_change_vectors:
+- vector_type: placeholder
+  pattern: no_chapter_data_extracted
+  fallback_behavior: block_chapter_specific_hooks
+reader_rewards:
+- catalogued: []
+  pattern: none_extracted
+  confidence: 0.0
+  enforce_empty: true
+hook_or_aftereffect_types:
+- type: extraction_failure_gate
+  behavior: prevent_activation
+  requires_manual_override: true
+forbidden_defaults:
+- assume_complete_arc
+- infer_reader_promise
+- auto_generate_turning_points
+- treat_confidence_zero_as_valid
+- propagate_uncertain_metadata

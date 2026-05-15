@@ -34,6 +34,11 @@ def main() -> None:
         print(f"sources={len(report.source_ids)}")
         print(f"material_rows={report.material_rows}")
         print(f"mechanism_rows={report.mechanism_rows}")
+        print(f"book_design_rows={report.book_design_rows}")
+        print(f"volume_design_rows={report.volume_design_rows}")
+        print(f"fallback_volume_rows={report.fallback_volume_rows}")
+        print(f"maturity_score={report.maturity_score}")
+        print(f"maturity_status={report.maturity_status}")
         print(f"anti_copy_blocked_combinations={report.anti_copy_blocked_combinations}")
         print(f"grammar_state_variables={report.grammar_state_variables}")
         print(f"grammar_change_vectors={report.grammar_change_vectors}")
@@ -44,4 +49,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

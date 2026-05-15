@@ -1,0 +1,135 @@
+{
+  "book_id": "source-0093",
+  "source_ref": "distillation:3127fd639575d096cadbaa49",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "parsed_profile": {
+    "distillation_status": "complete_failure",
+    "total_volumes_attempted": 16,
+    "total_chapters_attempted": 383,
+    "successful_distillations": 0,
+    "failed_distillations": 16,
+    "fallback_chapters": 383,
+    "valid_chapters": 0,
+    "confidence_mean": 0.0,
+    "confidence_max": 0.0,
+    "confidence_min": 0.0,
+    "volume_ranges_processed": [
+      {
+        "volume": 1,
+        "range": "1-25",
+        "status": "llm_fallback"
+      },
+      {
+        "volume": 2,
+        "range": "26-50",
+        "status": "llm_fallback"
+      },
+      {
+        "volume": 3,
+        "range": "51-75",
+        "status": "llm_fallback"
+      },
+      {
+        "volume": 4,
+        "range": "76-100",
+        "status": "llm_fallback"
+      },
+      {
+        "volume": 5,
+        "range": "101-125",
+        "status": "llm_fallback"
+      },
+      {
+        "volume": 6,
+        "range": "126-150",
+        "status": "llm_fallback"
+      },
+      {
+        "volume": 7,
+        "range": "151-175",
+        "status": "llm_fallback"
+      },
+      {
+        "volume": 8,
+        "range": "176-200",
+        "status": "llm_fallback"
+      },
+      {
+        "volume": 9,
+        "range": "201-225",
+        "status": "llm_fallback"
+      },
+      {
+        "volume": 10,
+        "range": "226-250",
+        "status": "llm_fallback"
+      },
+      {
+        "volume": 11,
+        "range": "251-275",
+        "status": "llm_fallback"
+      },
+      {
+        "volume": 12,
+        "range": "276-300",
+        "status": "llm_fallback"
+      },
+      {
+        "volume": 13,
+        "range": "301-325",
+        "status": "llm_fallback"
+      },
+      {
+        "volume": 14,
+        "range": "326-350",
+        "status": "llm_fallback"
+      },
+      {
+        "volume": 15,
+        "range": "351-375",
+        "status": "llm_fallback"
+      },
+      {
+        "volume": 16,
+        "range": "376-383",
+        "status": "llm_fallback"
+      }
+    ],
+    "failure_reasons": [
+      "llm_fallback_all_chapters",
+      "no_content_available",
+      "zero_confidence_across_range",
+      "no_extractable_story_mechanics",
+      "no_craft_observations_available",
+      "aggregation_not_possible"
+    ],
+    "data_integrity_issues": [
+      "metadata_mismatch_in_volume_9",
+      "inconsistent_volume_numbering_observed"
+    ],
+    "recommendation": "Human-authored source material required for book_design_card generation. All source chapters require reprocessing with functioning LLM before aggregation into volume-level and book-level analysis."
+  },
+  "genre_tags": [
+    "distillation-generic"
+  ],
+  "reader_promise": "LLM structured distillation fallback.",
+  "core_engine": "unknown",
+  "state_variables": [
+    "fallback_progress"
+  ],
+  "reader_rewards": [
+    "distillable_mechanism_reliability"
+  ],
+  "reusable_mechanisms": [
+    "fallback mechanism abstraction"
+  ],
+  "non_reusable_specifics": [],
+  "risk_patterns": [
+    "{'pattern_id': 'universal_llm_failure', 'severity': 'critical', 'affected_scope': 'entire_source', 'description': 'All 383 chapters across 16 volumes returned LLM unavailable fallback stubs with zero confidence. No story content, design mechanics, or craft observations extractable.', 'impact': 'book_design_card cannot be constructed from empty source data; all structural fields remain null or empty', 'mitigation_required': 'Source material must be reprocessed with functioning LLM distillation pipeline before book_design_card generation can succeed'}",
+    "{'pattern_id': 'data_integrity_compromised', 'severity': 'high', 'affected_scope': 'volume_9_metadata', 'description': 'Metadata mismatch detected: task specifies volume 9, but chapter_cards all show volume_no 1. Data integrity across entire dataset suspect.', 'impact': 'Volume range mapping unreliable; chapter-to-volume associations cannot be trusted', 'mitigation_required': 'Full source material audit required to verify chapter ordering and volume boundaries before reprocessing'}",
+    "{'pattern_id': 'aggregation_not_possible', 'severity': 'critical', 'affected_scope': 'book_level', 'description': 'Volume-level aggregation impossible without valid chapter content. All 16 volume_cards contain empty arrays for state_progression, turning_points, reusable_mechanisms, craft_observations, reader_rewards, and open_hooks.', 'impact': 'Cannot derive arc function, dominant engine, setup_payoff_rhythm, or any structural book-level abstractions', 'mitigation_required': 'Reprocess source at chapter level first; volume and book aggregation depend on valid chapter_card inputs'}"
+  ],
+  "source_id": "source-0093",
+  "distillation_source_id": "source-0093"
+}

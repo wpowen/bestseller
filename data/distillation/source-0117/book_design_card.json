@@ -1,0 +1,37 @@
+{
+  "book_id": "source-0117",
+  "source_ref": "distillation:23728f48fb482ea4b0960686",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "parsed_profile": {
+    "distillation_status": "failure",
+    "reason": "All source chapters returned LLM unavailable fallback stubs; no story content or mechanics could be extracted.",
+    "confidence": 0.0,
+    "affected_chapters": 25,
+    "recommendation": "Provide actual chapter content or source text for reliable distillation."
+  },
+  "genre_tags": [
+    "distillation-generic"
+  ],
+  "reader_promise": "unknown",
+  "core_engine": "unknown",
+  "state_variables": [
+    "fallback_progress"
+  ],
+  "reader_rewards": [
+    "distillable_mechanism_reliability"
+  ],
+  "reusable_mechanisms": [
+    "fallback mechanism abstraction"
+  ],
+  "non_reusable_specifics": [],
+  "risk_patterns": [
+    "llm_fallback",
+    "all_chapters_are_fallback_stubs",
+    "no_distillation_data_available",
+    "zero_confidence_across_range",
+    "undistillable_source_batch"
+  ],
+  "source_id": "source-0117",
+  "distillation_source_id": "source-0117"
+}

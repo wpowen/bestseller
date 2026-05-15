@@ -1,0 +1,53 @@
+{
+  "book_id": "source-0010",
+  "source_ref": "distillation:4fa15d4299d99ce3a06116b4",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "parsed_profile": {
+    "distillation_status": "complete_data_failure",
+    "confidence": 0.0,
+    "data_completeness": "0%",
+    "total_volumes_processed": 30,
+    "total_chapters_in_batch": 739,
+    "chapters_with_valid_content": 0,
+    "chapters_with_llm_fallback": 739,
+    "volume_range": [
+      1,
+      30
+    ],
+    "chapter_range": [
+      1,
+      739
+    ],
+    "failure_mode": "upstream_extraction_infrastructure_returned_empty_stubs_across_full_source_batch",
+    "recommended_action": "reprocess_source_artifact_with_functional_llm_extraction_pipeline_before_distillation_can_proceed"
+  },
+  "genre_tags": [
+    "distillation-generic"
+  ],
+  "reader_promise": "LLM structured distillation fallback.",
+  "core_engine": {
+    "dominant_engine": "none_available",
+    "arc_function": "indeterminate_due_to_data_unavailability",
+    "state_progression": [],
+    "turning_points": []
+  },
+  "state_variables": [
+    "{'aggregation_status': 'blocked', 'mechanism_extraction': 'blocked', 'craft_analysis': 'blocked', 'narrative_structure': 'not_determinable', 'reader_reward_pathway': 'not_determinable'}"
+  ],
+  "reader_rewards": [
+    "distillable_mechanism_reliability"
+  ],
+  "reusable_mechanisms": [
+    "fallback mechanism abstraction"
+  ],
+  "non_reusable_specifics": [],
+  "risk_patterns": [
+    "{'pattern_id': 'llm_fallback_batch_failure', 'scope': 'full_source_batch', 'manifestation': '100% of chapter cards returned identical placeholder stubs with zero confidence', 'consequence': 'No extractable story-design mechanics, craft observations, reader rewards, or open hooks available for aggregation', 'mitigation_required': 'Upstream LLM extraction infrastructure must be repaired and source material reprocessed'}",
+    "{'pattern_id': 'confidence_zero_across_all_volumes', 'scope': 'all_30_volumes', 'manifestation': 'Every volume_card shows confidence 0.0 with empty mechanism arrays', 'consequence': 'Volume-level structural analysis is impossible; aggregation produces only failure metadata'}",
+    "{'pattern_id': 'metadata_inconsistency', 'scope': 'volume_4_chapter_cards', 'manifestation': 'Chapter cards within volume 4 declare volume_no:1 despite belonging to volume_no:4 in task specification', 'consequence': 'Indicates upstream card generation or routing error in extraction pipeline'}",
+    "{'pattern_id': 'segmented_fallback_corruption', 'scope': 'chapter_736', 'manifestation': 'Segmented fallback corruption present in final chapter of volume 30', 'consequence': 'Partial data degradation suggests potential memory or buffer issues in extraction infrastructure'}"
+  ],
+  "source_id": "source-0010",
+  "distillation_source_id": "source-0010"
+}

@@ -16,8 +16,11 @@ from uuid import uuid4
 import pytest
 
 from bestseller.worker.self_heal import (
+    GENERATION_GATE_RESUME_COOLDOWN_SECONDS,
     STARTUP_GRACE_SECONDS,
+    WAITING_REPAIR_SUPPRESSION_SECONDS,
     StuckProject,
+    _clear_auto_resumable_generation_gate_pause,
     find_stuck_projects,
     reap_orphan_workflow_runs,
 )
@@ -56,6 +59,7 @@ class _FakeChapter:
     id: Any
     project_id: Any
     production_state: str = "ok"
+    updated_at: _dt.datetime = field(default_factory=lambda: _dt.datetime.now(_dt.UTC))
 
 
 @dataclass
@@ -119,6 +123,17 @@ class _FakeSession:
         project_id = self._filter_project_id(stmt)
 
         if target is WorkflowRunModel:
+            sql_text = str(stmt).lower()
+            if "max(" in sql_text:
+                matching = [
+                    r.updated_at
+                    for r in self.runs
+                    if r.project_id == project_id
+                    and r.workflow_type == "project_repair"
+                    and r.status == "waiting_human"
+                ]
+                return max(matching, default=None)
+
             active = {"pending", "queued", "running"}
             pipeline_types = {
                 "autowrite_pipeline",
@@ -144,7 +159,20 @@ class _FakeSession:
             return None
 
         if target is ChapterModel:
+            sql_text = str(stmt).lower()
             production_state = self._filter_production_state(stmt)
+            if "max(" in sql_text:
+                matching = [
+                    c.updated_at
+                    for c in self.chapters
+                    if c.project_id == project_id
+                    and (
+                        production_state is None
+                        or c.production_state == production_state
+                    )
+                ]
+                return max(matching, default=None)
+
             return sum(
                 1
                 for c in self.chapters
@@ -228,8 +256,18 @@ class _FakeSession:
     async def commit(self) -> None:
         self.committed = True
 
+    async def flush(self) -> None:
+        pass
+
     async def rollback(self) -> None:
         pass
+
+    async def get(self, model: type, pk: Any) -> Any:
+        from bestseller.infra.db.models import ProjectModel  # noqa: PLC0415
+
+        if model is ProjectModel:
+            return next((p for p in self.projects if p.id == pk), None)
+        raise NotImplementedError(f"get for {model}")
 
     # --- helpers ---------------------------------------------------------
     @staticmethod
@@ -416,6 +454,26 @@ async def test_find_stuck_projects_detects_explicit_stuck_marker(
 
 
 @pytest.mark.asyncio
+async def test_find_stuck_projects_detects_paused_explicit_stuck_marker(
+    now: _dt.datetime,
+) -> None:
+    """Paused projects with stuck_at_chapter are system-resumable, not user-paused."""
+    p = _FakeProject(
+        id=uuid4(),
+        slug="book-paused-stuck",
+        status="paused",
+        metadata_json={"stuck_at_chapter": 42, "last_error": "writer crashed"},
+    )
+    session = _FakeSession(projects=[p], runs=[], chapters=[], drafts=[])
+
+    stuck = await find_stuck_projects(session)
+
+    assert len(stuck) == 1
+    assert stuck[0].reason == "explicit_stuck_marker"
+    assert stuck[0].stuck_at_chapter == 42
+
+
+@pytest.mark.asyncio
 async def test_find_stuck_projects_ignores_stale_explicit_marker_when_draft_exists(
     now: _dt.datetime,
 ) -> None:
@@ -517,6 +575,72 @@ async def test_find_stuck_projects_detects_blocked_chapters(
 
 
 @pytest.mark.asyncio
+async def test_find_stuck_projects_temporarily_suppresses_recent_waiting_repair(
+    now: _dt.datetime,
+) -> None:
+    """Fresh waiting_human repair rows should not be duplicated immediately."""
+    p = _FakeProject(id=uuid4(), slug="book-recent-waiting-repair")
+    chapters = [
+        _FakeChapter(
+            id=uuid4(),
+            project_id=p.id,
+            production_state="blocked",
+            updated_at=now - _dt.timedelta(minutes=20),
+        ),
+    ]
+    drafts = [_FakeDraft(id=uuid4(), chapter_id=chapters[0].id, is_current=True)]
+    runs = [
+        _FakeWorkflowRun(
+            id=uuid4(),
+            project_id=p.id,
+            workflow_type="project_repair",
+            status="waiting_human",
+            updated_at=now - _dt.timedelta(minutes=5),
+        )
+    ]
+    session = _FakeSession(projects=[p], runs=runs, chapters=chapters, drafts=drafts)
+
+    assert await find_stuck_projects(session) == []
+
+
+@pytest.mark.asyncio
+async def test_find_stuck_projects_requeues_after_stale_waiting_repair(
+    now: _dt.datetime,
+) -> None:
+    """Old waiting_human rows are history, not a permanent self-heal stop."""
+    p = _FakeProject(id=uuid4(), slug="book-stale-waiting-repair")
+    stale_waiting_update = now - _dt.timedelta(
+        seconds=WAITING_REPAIR_SUPPRESSION_SECONDS + 60
+    )
+    chapters = [
+        _FakeChapter(
+            id=uuid4(),
+            project_id=p.id,
+            production_state="blocked",
+            updated_at=stale_waiting_update - _dt.timedelta(minutes=30),
+        ),
+    ]
+    drafts = [_FakeDraft(id=uuid4(), chapter_id=chapters[0].id, is_current=True)]
+    runs = [
+        _FakeWorkflowRun(
+            id=uuid4(),
+            project_id=p.id,
+            workflow_type="project_repair",
+            status="waiting_human",
+            updated_at=stale_waiting_update,
+        )
+    ]
+    session = _FakeSession(projects=[p], runs=runs, chapters=chapters, drafts=drafts)
+
+    stuck = await find_stuck_projects(session)
+
+    assert len(stuck) == 1
+    assert stuck[0].slug == "book-stale-waiting-repair"
+    assert stuck[0].reason == "blocked_chapters"
+    assert stuck[0].heal_kind == "repair"
+
+
+@pytest.mark.asyncio
 async def test_find_stuck_projects_skips_paused_structural_repair_project(
     now: _dt.datetime,
 ) -> None:
@@ -536,6 +660,101 @@ async def test_find_stuck_projects_skips_paused_structural_repair_project(
     session = _FakeSession(projects=[p], runs=[], chapters=chapters, drafts=drafts)
 
     assert await find_stuck_projects(session) == []
+
+
+@pytest.mark.asyncio
+async def test_find_stuck_projects_retries_stale_generation_gate_pause(
+    now: _dt.datetime,
+) -> None:
+    """Planning gate pauses should re-enter autowrite after the cooldown."""
+    p = _FakeProject(
+        id=uuid4(),
+        slug="book-stale-planning-gate",
+        status="paused",
+        target_chapters=500,
+        metadata_json={
+            "generation_resume_blocked_by_planning_gate": True,
+            "generation_auto_repair_exhausted": True,
+            "production_paused": True,
+            "production_pause_reason": "volume_outline_gate_failed:plan_chapter_opening_generic",
+            "last_generation_gate_blocked_at": (
+                now
+                - _dt.timedelta(seconds=GENERATION_GATE_RESUME_COOLDOWN_SECONDS + 60)
+            ).isoformat(),
+        },
+    )
+    chapters = [_FakeChapter(id=uuid4(), project_id=p.id) for _ in range(50)]
+    drafts = [_FakeDraft(id=uuid4(), chapter_id=c.id, is_current=True) for c in chapters]
+    session = _FakeSession(projects=[p], runs=[], chapters=chapters, drafts=drafts)
+
+    stuck = await find_stuck_projects(session)
+
+    assert len(stuck) == 1
+    assert stuck[0].slug == "book-stale-planning-gate"
+    assert stuck[0].reason == "under_target_chapters"
+    assert stuck[0].stuck_at_chapter == 51
+
+
+@pytest.mark.asyncio
+async def test_find_stuck_projects_keeps_fresh_generation_gate_pause_blocked(
+    now: _dt.datetime,
+) -> None:
+    p = _FakeProject(
+        id=uuid4(),
+        slug="book-fresh-planning-gate",
+        status="paused",
+        target_chapters=500,
+        metadata_json={
+            "generation_resume_blocked_by_planning_gate": True,
+            "generation_auto_repair_exhausted": True,
+            "production_paused": True,
+            "production_pause_reason": "story_bible_gate_failed",
+            "last_generation_gate_blocked_at": (
+                now - _dt.timedelta(minutes=5)
+            ).isoformat(),
+        },
+    )
+    chapters = [_FakeChapter(id=uuid4(), project_id=p.id) for _ in range(50)]
+    drafts = [_FakeDraft(id=uuid4(), chapter_id=c.id, is_current=True) for c in chapters]
+    session = _FakeSession(projects=[p], runs=[], chapters=chapters, drafts=drafts)
+
+    assert await find_stuck_projects(session) == []
+
+
+@pytest.mark.asyncio
+async def test_clear_auto_resumable_generation_gate_pause(
+    now: _dt.datetime,
+) -> None:
+    p = _FakeProject(
+        id=uuid4(),
+        slug="book-clear-planning-gate",
+        status="paused",
+        metadata_json={
+            "generation_resume_blocked_by_planning_gate": True,
+            "generation_auto_repair_exhausted": True,
+            "production_paused": True,
+            "production_pause_reason": "volume_outline_gate_failed:plan_chapter_opening_generic",
+            "last_generation_gate_blocked_at": (
+                now
+                - _dt.timedelta(seconds=GENERATION_GATE_RESUME_COOLDOWN_SECONDS + 60)
+            ).isoformat(),
+            "last_generation_gate_error": "old diagnostic",
+        },
+    )
+    session = _FakeSession(projects=[p], runs=[], chapters=[], drafts=[])
+
+    cleared = await _clear_auto_resumable_generation_gate_pause(session, p.id)
+
+    assert cleared is True
+    assert p.status == "revising"
+    assert "generation_resume_blocked_by_planning_gate" not in p.metadata_json
+    assert "generation_auto_repair_exhausted" not in p.metadata_json
+    assert "production_paused" not in p.metadata_json
+    assert "production_pause_reason" not in p.metadata_json
+    assert p.metadata_json["last_generation_gate_error"] == "old diagnostic"
+    assert p.metadata_json["last_generation_gate_auto_resumed_reason"] == (
+        "volume_outline_gate_failed:plan_chapter_opening_generic"
+    )
 
 
 @pytest.mark.asyncio

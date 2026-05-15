@@ -3821,6 +3821,9 @@
 	    project_paused: '项目已暂停，暂无任务记录',
 	    project_revising: '修订中，暂无任务记录',
 	    blocked_structural_repair: '结构修复门控',
+	    blocked_generation_gate: '规划自动修复耗尽',
+	    waiting_human: '修复待续跑',
+	    waiting_human_review: '等待复核',
     // AI Conception stages
     conception_market: '📊 市场策略构思', conception_character: '👤 角色体系构思',
     conception_world: '🌍 世界观构思', conception_review: '🔍 交叉审查',
@@ -3837,6 +3840,8 @@
     // Multi-volume stages
     progressive_autowrite_started: '🚀 开启多卷本创作',
     volume_planning_started: '📖 规划本卷大纲', volume_planning_completed: '📖 本卷大纲就绪',
+    volume_planning_auto_repair_started: '📖 卷大纲自动回炉',
+    volume_planning_auto_repair_completed: '📖 卷大纲回炉完成',
     volume_planning_skipped_resume: '📖 本卷已规划（续传）',
     volume_writing_started: '✍️ 开始写作本卷', volume_writing_completed: '✍️ 本卷写作完成',
     volume_feedback_collection_started: '🧠 收集卷末反馈', volume_feedback_collected: '🧠 卷末反馈已吸收',
@@ -4096,6 +4101,7 @@
     if (repairPhase === 'repair_gate') return '修复门控 · 正在或等待修复';
     if (repairPhase === 'needs_attention') return '章节门禁未过 · 后续需修复';
     if (hasStagePrefix(stage, ['paused_for_human_review', 'human_review'])) return '等待人工复核';
+    if (hasStagePrefix(stage, ['blocked_generation_gate', 'waiting_human'])) return '规划自动修复耗尽';
     if (hasStagePrefix(stage, ['blocked_structural_repair', 'structural_repair'])) return '结构修复门控';
     if (status === 'failed') return `${task.error || '失败'} · 等待重试`;
     if (status === 'cancelled') return '已停止 · 可恢复';
@@ -4109,7 +4115,7 @@
     const stage = String(task?.current_stage || '');
     const repairPhase = repairPhaseOf(task);
     if (repairPhase === 'needs_attention' || repairPhase === 'repair_gate') return true;
-    if (hasStagePrefix(stage, ['paused_for_human_review', 'human_review', 'blocked_structural_repair', 'structural_repair'])) return true;
+    if (hasStagePrefix(stage, ['paused_for_human_review', 'human_review', 'blocked_generation_gate', 'waiting_human', 'blocked_structural_repair', 'structural_repair'])) return true;
     if (status === 'failed' || status === 'cancelled' || status === 'incomplete') return true;
     return isShortCompletedTask(task);
   }
@@ -4529,6 +4535,17 @@
 	        badgeCls: 'failed',
 	      };
 	    }
+	    if (hasStagePrefix(stage, ['blocked_generation_gate', 'waiting_human'])) {
+	      return {
+	        ...base,
+	        phase: 'attention',
+	        label: '自动修复未闭合',
+	        mode: '规划/世界观门禁',
+	        detail: task?.error || '故事圣经或卷大纲未通过门禁，系统已完成自动回炉尝试。',
+	        next: '再次恢复会携带诊断重新进入自动修复链路。',
+	        badgeCls: 'incomplete',
+	      };
+	    }
 	    if (isActive && hasStagePrefix(stage, ['paused_for_human_review', 'human_review'])) {
 	      return {
 	        ...base,
@@ -4664,15 +4681,24 @@
           ? '后台恢复任务已接管，正在等待 worker 同步新的写作进展'
           : '后台自愈流程正在续写，页面不会重复启动同一个任务';
       case 'auto_resume_not_claimed':
-        return '后台没有发现接管中的自愈任务，已改为未完成，可手动恢复';
+        return '后台没有发现接管中的自愈任务，已改为未完成，可重新排队恢复';
       case 'auto_resume_queued':
         return '服务重启后已自动加入续写队列';
+      case 'blocked_generation_gate':
+      case 'waiting_human':
+        return payload.reason
+          ? `规划门禁自动修复耗尽：${payload.reason}`
+          : '规划门禁自动修复耗尽，等待携带诊断续跑';
       case 'progressive_autowrite_started':
         return `多卷本写作已启动${volumeCount ? `，共 ${volumeCount} 卷` : ''}${payload.project_chapter_count ? ` / ${payload.project_chapter_count} 章` : ''}`;
       case 'volume_planning_started':
         return `正在规划第 ${volume || '-'} 卷大纲${chapterCount ? `，预计 ${chapterCount} 章` : ''}`;
       case 'volume_planning_completed':
         return `第 ${volume || '-'} 卷大纲已完成${chapterCount ? `，共 ${chapterCount} 章` : ''}`;
+      case 'volume_planning_auto_repair_started':
+        return `第 ${volume || '-'} 卷大纲章数异常，正在携带诊断自动回炉`;
+      case 'volume_planning_auto_repair_completed':
+        return `第 ${volume || '-'} 卷大纲自动回炉完成${chapterCount ? `，共 ${chapterCount} 章` : ''}`;
       case 'volume_writing_started':
         return `开始写作第 ${volume || '-'} 卷${chapterCount ? `，本卷 ${chapterCount} 章` : ''}`;
       case 'volume_writing_completed':
@@ -4718,6 +4744,7 @@
     if (task.status === 'failed') primary = `任务失败：${task.error || '请查看执行日志'}`;
     if (task.status === 'cancelled') primary = '任务已停止，已完成章节会保留';
     if (task.current_stage === 'blocked_structural_repair') primary = task.error || '项目处于结构修复门控，需先完成修复审计';
+    if (task.current_stage === 'blocked_generation_gate') primary = task.error || '项目处于规划门禁，自动修复已耗尽；恢复时会携带诊断续跑';
     if (task.cancel_requested && task.status === 'running') primary = '正在停止任务，等待当前步骤安全退出';
 
     const secondary = [];
@@ -5034,14 +5061,14 @@
     const eventTagClass = (e) => {
       const stage = e.stage || '';
       if (stage.endsWith('_failed') || stage === 'failed') return 'err';
-      if (stage.includes('warning') || stage === 'blocked_structural_repair') return 'warn';
+      if (stage.includes('warning') || stage === 'blocked_structural_repair' || stage === 'blocked_generation_gate' || stage === 'waiting_human') return 'warn';
       if (stage.endsWith('_completed') || stage === 'completed') return 'ok';
       return '';
     };
     const eventTagText = (e) => {
       const stage = e.stage || '';
       if (stage.endsWith('_failed')) return '失败';
-      if (stage === 'blocked_structural_repair') return '门控';
+      if (stage === 'blocked_structural_repair' || stage === 'blocked_generation_gate' || stage === 'waiting_human') return '门控';
       if (stage.endsWith('_completed')) return '完成';
       if (stage.endsWith('_started')) return '开始';
       return STAGE[stage] ? '事件' : '事件';
@@ -5071,6 +5098,7 @@
     });
     const errEvents = events.filter(e => (e.stage || '').endsWith('_failed') || e.stage === 'failed');
     const repairBlocked = task.current_stage === 'blocked_structural_repair'
+      || task.current_stage === 'blocked_generation_gate'
       || task.repair_status?.is_repairing
       || task.repair_status?.phase === 'repair_gate';
 
@@ -5112,7 +5140,7 @@
     let healthText = '良好';
     const healthReasons = [];
     if (status === 'failed') { healthCls = 'bad'; healthText = '异常'; healthReasons.push(task.error || '任务失败'); }
-    else if (repairBlocked) { healthCls = 'bad'; healthText = '门控'; healthReasons.push('结构修复门控'); }
+    else if (repairBlocked) { healthCls = 'bad'; healthText = '门控'; healthReasons.push(task.current_stage === 'blocked_generation_gate' ? '规划自动修复耗尽' : '结构修复门控'); }
     else if (errEvents.length > 0) { healthCls = 'bad'; healthText = '有错误'; healthReasons.push(`${errEvents.length} 项错误事件`); }
     else if (status === 'cancelled' || status === 'incomplete') { healthCls = 'warn'; healthText = '中止'; }
     else if (stageStuck) { healthCls = 'warn'; healthText = '阶段过久'; healthReasons.push(`${stageAgeText} 未推进`); }
@@ -5594,8 +5622,8 @@
       // Legacy fallback: reconstruct payload from genre-key regex
       let payload = {};
       try { payload = await res.json(); } catch {}
-      if (res.status === 409 || payload.blocked_structural_repair) {
-        alert(payload.error || '当前项目处于修复门控，需先完成结构修复审计。');
+      if (res.status === 409 || payload.blocked_structural_repair || payload.blocked_generation_gate) {
+        alert(payload.error || '当前项目处于门控暂停，系统会在恢复时携带诊断续跑。');
         refreshDashboard();
         return;
       }
@@ -5671,8 +5699,8 @@
     taskStartTime = data.created_at;
 
     // Title
-    $('#pvTitle').textContent = status === 'completed' ? '创作完成!' : status === 'failed' ? '创作出错' : '正在创作中...';
-    $('#pvTitle').style.color = status === 'completed' ? 'var(--success)' : status === 'failed' ? 'var(--danger)' : 'var(--text-bright)';
+    $('#pvTitle').textContent = status === 'completed' ? '创作完成!' : status === 'failed' ? '创作出错' : status === 'incomplete' ? '等待处理' : '正在创作中...';
+    $('#pvTitle').style.color = status === 'completed' ? 'var(--success)' : status === 'failed' ? 'var(--danger)' : status === 'incomplete' ? 'var(--warning)' : 'var(--text-bright)';
     $('#pvSub').textContent = data.title || slug || '';
 
     // Total chapters — book-wide when multi-volume, falling back to the
@@ -5769,7 +5797,7 @@
     // Bar
     const fill = $('#pvBarFill');
     fill.style.width = pct + '%';
-    fill.className = 'pv-bar-fill ' + (status === 'completed' ? 'completed' : status === 'failed' ? 'failed' : 'running');
+    fill.className = 'pv-bar-fill ' + (status === 'completed' ? 'completed' : status === 'failed' ? 'failed' : status === 'incomplete' ? 'failed' : 'running');
     $('#pvPct').textContent = pct + '%';
 
     // Stage
@@ -5828,6 +5856,7 @@
     const pvs = $('#pvStatus');
     if (status === 'completed') { pvs.textContent = '已完成'; pvs.style.color = 'var(--success)'; }
     else if (status === 'failed') { pvs.textContent = '失败'; pvs.style.color = 'var(--danger)'; }
+    else if (status === 'incomplete') { pvs.textContent = '待处理'; pvs.style.color = 'var(--warning)'; }
     else if (bookDoneCount > 0) { pvs.textContent = '写作中'; pvs.style.color = 'var(--blue)'; }
     else { pvs.textContent = '准备中'; pvs.style.color = ''; }
 
@@ -5879,7 +5908,7 @@
     }
 
     // Error
-    if (status === 'failed' || data.current_stage === 'blocked_structural_repair') {
+    if (status === 'failed' || data.current_stage === 'blocked_structural_repair' || data.current_stage === 'blocked_generation_gate') {
       $('#pvError').style.display = '';
       $('#pvErrorDetail').textContent = data.error || '未知错误';
     } else {
@@ -5898,7 +5927,7 @@
       $('#pvDoneSummary').textContent = `共 ${bookDoneCount} 章已完成`;
       $('#pvReaderLink').href = `/read/${encodeURIComponent(slug)}`;
     }
-    if (status === 'failed' || data.current_stage === 'blocked_structural_repair') {
+    if (status === 'failed' || status === 'incomplete' || data.current_stage === 'blocked_structural_repair' || data.current_stage === 'blocked_generation_gate') {
       stopProgressPoll();
     }
   }

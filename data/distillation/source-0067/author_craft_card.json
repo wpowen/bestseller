@@ -1,0 +1,36 @@
+{
+  "source_id": "source-0067",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "style_safety_policy": "proceed_to_reprocess",
+  "pov_and_distance": "indeterminate — no source prose available for POV analysis; all 56 chapters returned empty LLM fallback stubs with confidence 0.0, preventing extraction of narrative distance controls, POV consistency markers, or perspective management techniques",
+  "sentence_rhythm": [
+    "indeterminate — no source text accessible; sentence-level cadence, syntactic variation, rhythm patterns, and clause-level pacing mechanics cannot be identified from empty chapter stubs"
+  ],
+  "paragraphing": [
+    "indeterminate — paragraph-level structure, white-space rhythm, scene-versus-summary segmentation, and pacing breaks unidentifiable due to complete content unavailability across all volumes"
+  ],
+  "dialogue_system": [
+    "indeterminate — dialogue mechanics including tag distribution, attribution patterns, subtext layering, and conversation-versus-narration balance unverifiable from unavailable source material"
+  ],
+  "description_strategy": [
+    "indeterminate — sensory detail density, world-building description placement, environmental versus character description ratios, and show-versus-tell calibration cannot be assessed"
+  ],
+  "exposition_strategy": [
+    "indeterminate — backstory injection methods, information revelation timing, context layering, and exposition-to-action balance unextractable from zero-confidence chapter stubs"
+  ],
+  "emotional_temperature": [
+    "indeterminate — tonal register, emotional arc progression, affective intensity calibration, and reader experience manipulation patterns unverifiable; source content required for emotional mapping"
+  ],
+  "hooking_and_transitions": [
+    "indeterminate — chapter-ending hooks, scene-break transitions, tension escalation patterns, and reader promise delivery mechanisms cannot be identified from empty distillation artifacts"
+  ],
+  "adaptation_guidelines": [
+    "No adaptation guidance extractable. Author_craft_card represents null distillation state. Re-source with functioning LLM extraction and accessible source text required to generate meaningful craft fingerprint. Current artifact provides no reusable mechanisms, no craft observations, and no transferable stylistic controls."
+  ],
+  "taboo_copy_signals": [
+    "No copy prohibition signals extractable — source content unavailable. Taboo signals (named entities, signature phrases, distinctive templates) cannot be identified from empty stubs. Proceed only after successful re-extraction with functional source access."
+  ],
+  "confidence": 0.0,
+  "distillation_source_id": "source-0067"
+}

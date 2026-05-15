@@ -1,0 +1,28 @@
+key: distillation-generic
+name: Distillation Generic Grammar Patch
+source_ids:
+- source-0031
+status: draft_review
+applies_to_categories:
+- distillation-generic
+required_contracts:
+- extraction_mechanism_functional
+- valid_story_content_extracted
+- confidence_score_above_threshold
+state_variables:
+- fallback_progress
+- extraction_retry_count
+- last_extraction_timestamp
+chapter_change_vectors:
+- disable_all_stub_generation
+- force_valid_content_requirement
+- require_confidence_threshold_enforcement
+reader_rewards:
+- distillable_mechanism_reliability
+hook_or_aftereffect_types:
+- pipeline_retry_trigger
+- confidence_recalibration
+forbidden_defaults:
+- empty_stub_generation
+- zero_confidence_acceptance
+- incomplete_extraction_tolerance

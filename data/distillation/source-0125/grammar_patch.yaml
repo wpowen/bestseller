@@ -1,0 +1,28 @@
+key: distillation-generic
+name: Distillation Generic Failure Patch
+source_ids:
+- source-0125
+status: failure_record
+applies_to_categories:
+- distillation-generic
+required_contracts:
+- 'reprocess_trigger: chapter_extraction_layer'
+- 'zero_content_lock: all craft arrays remain empty until reprocess'
+- 'confidence_lock: aggregate confidence remains 0.0'
+- 'no_synthetic_content: no derived mechanics permitted from empty source'
+- 'full_scope_failure: 61/61 chapters failed, 3/3 volumes blocked'
+state_variables: []
+chapter_change_vectors:
+- 'no_valid_chapters: 61/61 fallback_stubs'
+- no_state_progression_possible
+- no_turning_point_extraction
+- reprocess_required_for_any_vector
+reader_rewards: []
+hook_or_aftereffect_types: []
+forbidden_defaults:
+- no_default_reader_promise_inference
+- no_default_core_engine_assignment
+- no_fabricated_reusable_mechanisms
+- no_empty_array_fallback_patterns
+- no_confidence_imputation
+- no_synthetic_craft_extraction

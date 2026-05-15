@@ -1,0 +1,32 @@
+key: distillation-generic
+name: Distillation Generic Fallback Grammar
+source_ids:
+- source-0038
+status: failed
+applies_to_categories:
+- distillation-generic
+required_contracts:
+- unavailable_content_acknowledgment
+- minimal_viable_structure_extraction
+- failure_mode_transparency
+state_variables:
+- fallback_progress
+- confidence_floor
+- content_availability_flag
+chapter_change_vectors:
+- no_chapter_data_extracted
+- stub_only_volume_cards
+- zero_confidence_scores
+reader_rewards:
+- distillable_mechanism_reliability
+- transparent_failure_reporting
+- actionable_recommendation_delivery
+hook_or_aftereffect_types:
+- failed_distillation_hook
+- remediation_aftereffect
+forbidden_defaults:
+- assumed_narrative_content
+- fabricated_mechanism_details
+- default_confidence_scores
+- inferred_story_elements
+- pseudo_distillation_output

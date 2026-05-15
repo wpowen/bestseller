@@ -1,0 +1,36 @@
+{
+  "source_id": "source-0078",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "style_safety_policy": "insufficient_data — no source narrative available for policy extraction; all chapters resolved to LLM fallback stubs with zero confidence, preventing style characterization or safety signal identification",
+  "pov_and_distance": "insufficient_data — no chapter-level craft observations extracted; cannot characterize point-of-view distance, narrative voice, or perspective management patterns",
+  "sentence_rhythm": [
+    "insufficient_data — no prose rhythm data available; no chapter cards yielded craft observations for sentence cadence, length distribution, or syntactic variety analysis"
+  ],
+  "paragraphing": [
+    "insufficient_data — paragraph structure and pacing signals absent; all chapters marked llm_fallback with empty craft_observations arrays"
+  ],
+  "dialogue_system": [
+    "insufficient_data — no dialogue mechanics extracted; cannot characterize speaker attribution, tag usage, subtext deployment, or conversation pacing"
+  ],
+  "description_strategy": [
+    "insufficient_data — no description craft observations available; source chapters yielded zero extractable detail on sensory grounding, object description, or environmental rendering"
+  ],
+  "exposition_strategy": [
+    "insufficient_data — no exposition placement data extracted; cannot characterize information revelation timing, backstory injection methods, or explainer dialogue ratios"
+  ],
+  "emotional_temperature": [
+    "insufficient_data — no emotional arc or tonal craft observations available; chapter cards uniformly returned empty arrays with llm_fallback risk_flags"
+  ],
+  "hooking_and_transitions": [
+    "insufficient_data — no hook mechanisms or transition strategies extracted; all 7 volume cards reported failure_modes indicating source data exhaustion"
+  ],
+  "adaptation_guidelines": [
+    "insufficient_data — no reusable mechanisms identified; zero_confidence batch prevents mechanical pattern extraction for adaptation targeting"
+  ],
+  "taboo_copy_signals": [
+    "insufficient_data — no style fingerprints present in fallback stubs; cannot identify distinctive templates, named entities, or copy-risk phrases"
+  ],
+  "confidence": 0.0,
+  "distillation_source_id": "source-0078"
+}

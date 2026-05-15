@@ -1,0 +1,40 @@
+{
+  "book_id": "source-0154",
+  "source_ref": "distillation:d74d5c921ca6df95b853aee4",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "parsed_profile": {
+    "distillation_status": "failed",
+    "data_integrity": "zero",
+    "reason": "Source chapters 1-40 uniformly returned llm_fallback stubs with confidence 0.0 across all volumes. No story content, arc functions, craft observations, reader rewards, open hooks, or non-reusable specifics could be extracted. Volume aggregation produces empty containers only.",
+    "volumes_processed": 2,
+    "chapters_total": 40,
+    "chapters_successful": 0,
+    "chapters_failed": 40,
+    "failure_rate": 1.0,
+    "recommendation": "Reprocess source material through functional LLM pipeline before book_design_card distillation. Current data is non-actionable for design fingerprint generation."
+  },
+  "genre_tags": [
+    "distillation-generic"
+  ],
+  "reader_promise": "LLM structured distillation fallback.",
+  "core_engine": "unknown",
+  "state_variables": [
+    "fallback_progress"
+  ],
+  "reader_rewards": [
+    "distillable_mechanism_reliability"
+  ],
+  "reusable_mechanisms": [
+    "fallback mechanism abstraction"
+  ],
+  "non_reusable_specifics": [],
+  "risk_patterns": [
+    "{'pattern_id': 'complete_llm_fallback_batch', 'severity': 'critical', 'description': 'All chapters in batch returned llm_fallback stubs', 'affected_chapters': '1-40', 'impact': 'Zero actionable content for design fingerprint extraction'}",
+    "{'pattern_id': 'zero_confidence_all_chapters', 'severity': 'critical', 'description': 'Confidence score of 0.0 across all chapter distillations', 'affected_chapters': '1-40', 'impact': 'No reliable content mapping possible'}",
+    "{'pattern_id': 'no_source_content_for_distillation', 'severity': 'critical', 'description': 'Underlying source content unavailable to LLM pipeline', 'affected_chapters': '1-40', 'impact': 'Distillation task cannot proceed without functional source access'}",
+    "{'pattern_id': 'empty_aggregation', 'severity': 'critical', 'description': 'Volume card aggregation produces empty containers for all tracked fields', 'affected_volumes': [1, 2], 'impact': 'Book-level design fingerprint cannot be constructed from empty atomic elements'}"
+  ],
+  "source_id": "source-0154",
+  "distillation_source_id": "source-0154"
+}

@@ -1,0 +1,37 @@
+{
+  "source_id": "source-0095",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "style_safety_policy": "cannot_evaluate — source content unavailable across all 193 chapters. No narrative data exists to assess stylistic risk patterns, voice fingerprints, or copy-signal hazards.",
+  "pov_and_distance": "unavailable — all 193 chapters are LLM fallback stubs with no observable point-of-view mechanics, narrative distance calibration, or perspective-shift patterns to distill.",
+  "sentence_rhythm": [
+    "no_data — zero chapters contain valid sentence-level analysis. No rhythm profiles, cadence patterns, or syntactic variation markers extractable across 8 volumes."
+  ],
+  "paragraphing": [
+    "indeterminate — paragraph structure, scene compression, white-space pacing, and beat-level formatting cannot be assessed. All chapter_card entries contain empty arrays."
+  ],
+  "dialogue_system": [
+    "none — no dialogue mechanics present in source data. No speaker attribution patterns, tag usage, subtext layering, or conversation pacing observations available."
+  ],
+  "description_strategy": [
+    "unavailable — no descriptive craft observations extractable. Zero chapter-level data contains scene-setting, sensory detail, or environmental exposition analysis."
+  ],
+  "exposition_strategy": [
+    "no_content — no exposition delivery methods, info-dump alternatives, or backstory integration patterns observable across complete chapter range (1-193)."
+  ],
+  "emotional_temperature": [
+    "indeterminate — emotional register, tone calibration, and affective arc markers cannot be measured. All craft_observations objects are empty {}."
+  ],
+  "hooking_and_transitions": [
+    "missing — no chapter-end hooks, cliffhanger mechanisms, transition bridges, or narrative momentum techniques extractable. All open_hooks arrays are empty."
+  ],
+  "adaptation_guidelines": [
+    "blocked — author_craft_card distillation requires source content. Source-0095 produced zero viable chapter cards across 8 volumes. LLM analysis pipeline reprocessing required before adaptation guidance is possible."
+  ],
+  "taboo_copy_signals": [
+    "none_assessable — copy-signal detection requires original author voice patterns. No source voice exists in extractable form for this source_id."
+  ],
+  "confidence": 0.0,
+  "distillation_note": "Complete extraction failure across source-0095. All 193 chapters returned LLM fallback stubs. No reusable craft controls, POV mechanics, sentence-level patterns, paragraphing strategies, dialogue systems, descriptive approaches, exposition placements, emotional temperature markers, or hook transitions identified. Volume cards 1-8 confirm zero chapters_with_valid_content. Author_craft_card cannot be generated from source content. Recommended action: reprocess source-0095 through LLM analysis pipeline before volume_card aggregation is viable.",
+  "distillation_source_id": "source-0095"
+}

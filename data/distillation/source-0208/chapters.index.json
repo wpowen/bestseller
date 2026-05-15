@@ -1,0 +1,143 @@
+{
+  "source_id": "source-0208",
+  "pipeline_version": "distillation-v1",
+  "source_format": "txt",
+  "encoding": "utf-8",
+  "chapter_count": 11,
+  "volume_count": 1,
+  "average_chapter_chars": 5832,
+  "chapters": [
+    {
+      "abs_chapter_no": 1,
+      "volume_no": 1,
+      "volume_label_redacted": "volume-01",
+      "chapter_label_redacted": "chapter-0001",
+      "boundary_type": "fixed_size_fallback",
+      "title_hash_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "title_char_count": 0,
+      "char_count": 6785,
+      "line_count": 297,
+      "private_chunk_ref": ".distillation_private/source-0208/chunks/chapter-0001.txt"
+    },
+    {
+      "abs_chapter_no": 2,
+      "volume_no": 1,
+      "volume_label_redacted": "volume-01",
+      "chapter_label_redacted": "chapter-0002",
+      "boundary_type": "fixed_size_fallback",
+      "title_hash_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "title_char_count": 0,
+      "char_count": 6809,
+      "line_count": 371,
+      "private_chunk_ref": ".distillation_private/source-0208/chunks/chapter-0002.txt"
+    },
+    {
+      "abs_chapter_no": 3,
+      "volume_no": 1,
+      "volume_label_redacted": "volume-01",
+      "chapter_label_redacted": "chapter-0003",
+      "boundary_type": "fixed_size_fallback",
+      "title_hash_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "title_char_count": 0,
+      "char_count": 6761,
+      "line_count": 298,
+      "private_chunk_ref": ".distillation_private/source-0208/chunks/chapter-0003.txt"
+    },
+    {
+      "abs_chapter_no": 4,
+      "volume_no": 1,
+      "volume_label_redacted": "volume-01",
+      "chapter_label_redacted": "chapter-0004",
+      "boundary_type": "fixed_size_fallback",
+      "title_hash_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "title_char_count": 0,
+      "char_count": 6883,
+      "line_count": 387,
+      "private_chunk_ref": ".distillation_private/source-0208/chunks/chapter-0004.txt"
+    },
+    {
+      "abs_chapter_no": 5,
+      "volume_no": 1,
+      "volume_label_redacted": "volume-01",
+      "chapter_label_redacted": "chapter-0005",
+      "boundary_type": "fixed_size_fallback",
+      "title_hash_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "title_char_count": 0,
+      "char_count": 4214,
+      "line_count": 233,
+      "private_chunk_ref": ".distillation_private/source-0208/chunks/chapter-0005.txt"
+    },
+    {
+      "abs_chapter_no": 6,
+      "volume_no": 1,
+      "volume_label_redacted": "volume-01",
+      "chapter_label_redacted": "chapter-0006",
+      "boundary_type": "fixed_size_fallback",
+      "title_hash_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "title_char_count": 0,
+      "char_count": 6500,
+      "line_count": 164,
+      "private_chunk_ref": ".distillation_private/source-0208/chunks/chapter-0006.txt"
+    },
+    {
+      "abs_chapter_no": 7,
+      "volume_no": 1,
+      "volume_label_redacted": "volume-01",
+      "chapter_label_redacted": "chapter-0007",
+      "boundary_type": "fixed_size_fallback",
+      "title_hash_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "title_char_count": 0,
+      "char_count": 6500,
+      "line_count": 186,
+      "private_chunk_ref": ".distillation_private/source-0208/chunks/chapter-0007.txt"
+    },
+    {
+      "abs_chapter_no": 8,
+      "volume_no": 1,
+      "volume_label_redacted": "volume-01",
+      "chapter_label_redacted": "chapter-0008",
+      "boundary_type": "fixed_size_fallback",
+      "title_hash_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "title_char_count": 0,
+      "char_count": 6500,
+      "line_count": 176,
+      "private_chunk_ref": ".distillation_private/source-0208/chunks/chapter-0008.txt"
+    },
+    {
+      "abs_chapter_no": 9,
+      "volume_no": 1,
+      "volume_label_redacted": "volume-01",
+      "chapter_label_redacted": "chapter-0009",
+      "boundary_type": "fixed_size_fallback",
+      "title_hash_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "title_char_count": 0,
+      "char_count": 1514,
+      "line_count": 36,
+      "private_chunk_ref": ".distillation_private/source-0208/chunks/chapter-0009.txt"
+    },
+    {
+      "abs_chapter_no": 10,
+      "volume_no": 1,
+      "volume_label_redacted": "volume-01",
+      "chapter_label_redacted": "chapter-0010",
+      "boundary_type": "fixed_size_fallback",
+      "title_hash_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "title_char_count": 0,
+      "char_count": 6753,
+      "line_count": 278,
+      "private_chunk_ref": ".distillation_private/source-0208/chunks/chapter-0010.txt"
+    },
+    {
+      "abs_chapter_no": 11,
+      "volume_no": 1,
+      "volume_label_redacted": "volume-01",
+      "chapter_label_redacted": "chapter-0011",
+      "boundary_type": "fixed_size_fallback",
+      "title_hash_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "title_char_count": 0,
+      "char_count": 4936,
+      "line_count": 235,
+      "private_chunk_ref": ".distillation_private/source-0208/chunks/chapter-0011.txt"
+    }
+  ]
+}

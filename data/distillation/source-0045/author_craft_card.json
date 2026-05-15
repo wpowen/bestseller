@@ -1,0 +1,36 @@
+{
+  "source_id": "source-0045",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "style_safety_policy": "This card documents a complete distillation failure. All 31 volume cards and 789 chapter cards consist exclusively of LLM unavailable fallback stubs. No authorial voice, prose style, or craft signature is present in the extracted data. The extraction pipeline encountered a systemic failure where source content could not be processed, resulting in placeholder structures only. No style-related signals were captured; no safety filtering is applicable as no authentic prose data exists to evaluate.",
+  "pov_and_distance": "Extraction aborted. No point-of-view markers, narrative distance calibrations, or perspective choices were captured. The chapter cards contain only empty fallback stubs with zero confidence. No POV voice, persona, or distance modulation is distillable from this failure dataset.",
+  "sentence_rhythm": [
+    "No extractable data. All chapter cards returned empty craft_observations arrays. No sentence-length patterns, syntactic rhythms, cadence structures, or prose-music observations are present. The failure spans 789 chapters across 31 volumes with uniformly 0.0 confidence on all entries."
+  ],
+  "paragraphing": [
+    "Unavailable. No paragraph-level craft decisions were captured. The distillation pipeline produced only placeholder stubs with empty fields. No scene-break cadences, paragraph-density patterns, or structural pacing observations exist in this dataset."
+  ],
+  "dialogue_system": [
+    "No dialogue mechanics extracted. The LLM-unavailable fallback stubs contain zero dialogue tags, speech-relation patterns, attribution styles, subtext strategies, or conversation-mechanics observations. No reader-rewards or craft-signals are present for this dimension."
+  ],
+  "description_strategy": [
+    "Extraction failed. No description-density measurements, sensory-breadth observations, world-building disclosure patterns, or visual-pacing craft data exist in the source cards. All 789 chapter cards are empty stubs with risk_flag 'llm_fallback' and confidence 0.0."
+  ],
+  "exposition_strategy": [
+    "No exposition mechanics captured. The dataset contains no delivery-timing observations, backstory-drip patterns, information-reveal craft decisions, or tell-versus-show calibrations. All extraction fields are empty due to complete pipeline failure."
+  ],
+  "emotional_temperature": [
+    "Undistillable. No emotional-arc craft observations, tonal calibration signals, affect-modulation patterns, or reader-reward emotional structures exist in this data. The chapter cards uniformly contain empty arrays and zero confidence across all 789 entries."
+  ],
+  "hooking_and_transitions": [
+    "No hook mechanics or transition craft captured. The distillation output contains no chapter-ending tension structures, opening-hook strategies, bridge-passage techniques, or pacing-transition observations. All entries are empty LLM-unavailable stubs."
+  ],
+  "adaptation_guidelines": [
+    "Cannot generate adaptation guidance from empty stubs. This card reflects a distillation-pipeline failure rather than a valid author-craft abstraction. If the source material is reprocessed through a functional LLM pipeline, adaptation guidelines can be extracted from populated chapter cards and aggregated volume cards. Current guidance is limited to: re-process source-0045 through working pipeline before attempting volume-level or book-level craft distillation."
+  ],
+  "taboo_copy_signals": [
+    "This field is not applicable to this source_id. The distillation failure means no authentic prose was analyzed, so no copy-signature, voice-fingerprint, or distinctive-phrase signals exist to catalog. Attempting to extract taboo_copy_signals from empty stubs would produce false positives with no grounding in actual source prose."
+  ],
+  "confidence": 0.0,
+  "distillation_source_id": "source-0045"
+}

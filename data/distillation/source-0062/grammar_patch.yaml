@@ -1,0 +1,33 @@
+key: distillation-generic
+name: Distillation Fallback Grammar Patch for LLM Unavailable Source Packages
+source_ids:
+- source-0062
+status: draft_review
+applies_to_categories:
+- distillation-generic
+- unknown_source
+- fallback_required
+required_contracts:
+- llm_backend_access
+- chapter_content_extraction_capability
+- narrative_event_extraction
+- craft_observation_extraction
+state_variables:
+- fallback_progress
+- extraction_confidence
+- content_availability
+chapter_change_vectors: []
+reader_rewards:
+- distillable_mechanism_reliability
+hook_or_aftereffect_types: []
+forbidden_defaults:
+- narrative_content_assumption
+- genre_grammar_extraction
+- craft_profile_population
+- state_progression_extraction
+- turning_point_capture
+- reusable_mechanism_identification
+- reader_promise_definition
+- arc_function_determination
+- volume_aggregation_from_zero_content
+- confidence_based_on_narrative_quality

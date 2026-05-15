@@ -1,0 +1,37 @@
+{
+  "source_id": "source-0001",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "style_safety_policy": "Permissive: Genre-translatable mechanics, world-building structures, and craft patterns that do not constitute style copying. Avoid: specific cultural terminology, named magical techniques, faction names, geographic designations, or character identities that appear as non-reusable specifics in the source analysis.",
+  "pov_and_distance": "{'primary_mode': 'Close third-person with dominant protagonist internal monologue', 'perspective_discipline': \"Protagonist functions as revelation recipient through mental processing; external events filtered through character's interpretive lens rather than objective observation\", 'distance_calibration': \"Identity ambiguity moments use close proximity to protagonist confusion; conspiracy exposure shifts to moderate distance allowing reader to track multiple faction positions alongside protagonist's limited awareness\", 'peripheral_pov_tolerance': 'Brief switches to antagonist perspective during key confrontations create dramatic irony when reader knows more than protagonist; chapter-closing perspective shifts to antagonist reinforce threat without extended POV abandonment'}",
+  "sentence_rhythm": [
+    "{'base_tempo': 'Medium-length declarative sentences establishing scene and character state', 'revelation_acceleration': 'Multiple short sentences or fragments preceding major reveals create urgency; information arrives in concentrated bursts before interruption', 'action_beat_pattern': 'Short imperative sentences during combat and chase sequences; fragmentary descriptions of movement and sensation', 'exposition_elongation': 'Longer sentences with embedded clauses handle complex mechanic explanations; these typically appear in lower-stakes scenes or during travel sequences', 'cliffhanger_mechanics': 'Revelation sentence isolated as final paragraph sentence; resolution withheld to next chapter by either physical interruption or emotional deflection'}"
+  ],
+  "paragraphing": [
+    "{'scene_block_structure': 'Environmental establishment paragraph followed by character positioning, then dialogue exchange; internal monologue functions as connective tissue between external events', 'chapter_boundary_usage': 'Major revelations positioned mid-chapter with subsequent paragraphs handling immediate reaction; chapter end creates resolution micro-moment without full payoff', 'geographic_transition_markers': 'Blank lines signal major setting changes; shorter paragraph clusters indicate time passage within scene', 'tension_paragraph_anchoring': 'Emotional high points marked by single-sentence paragraphs; physical description minimal during these beats to maintain pace', 'dialogue_cluster_pattern': 'Extended dialogue exchanges with minimal intervening narration; action beats inserted only when physical movement essential to comprehension'}"
+  ],
+  "dialogue_system": [
+    "{'attribution_style': 'Character name followed by statement with minimal action tags; beats expressed through description rather than dialogue tags', 'reader_surrogate_mechanism': 'Peripheral characters assigned questions on behalf of reader to naturalize exposition delivery; these function as acknowledged info-seekers rather than plot devices', 'antagonist_exposition_weight': 'Revelation through antagonist speech carries higher stakes than friendly character explanation; antagonists reveal truth to demonstrate power or create confusion', 'exposition_vs_motivation_balance': 'Mechanical exposition delivered through characters explaining to others who should already know; this acknowledged informality reduces awkwardness', 'combat_dialogue_purpose': 'Fighter speech during conflict prioritizes character motivation and relationship dynamics over tactical information; battle serves emotional function', 'information_density_management': 'Heavy exposition passages broken by interruption or character reaction; no single dialogue exchange exceeds three revelations without physical break'}"
+  ],
+  "description_strategy": [
+    "{'environmental_focus': 'Architectural and cultural details emphasized during setting establishment; natural environment described through functional relationship to character movement and concealment', 'costume_as_characterization': 'Fabric types, adornment quality, and dress hierarchy communicate factional position and economic status without direct characterization', 'contrast_employment': 'Surface appearance versus hidden truth forms recurring descriptive pattern; beautiful exteriors mask corruption, humble appearances conceal power', 'action_description_minimalism': 'Combat and movement described through result-focused language rather than step-by-step choreography; reader understands outcome through condensed description', 'power_revelation_timing': 'Hidden strength described at moment of activation rather than anticipation; discovery occurs simultaneously for protagonist and reader'}"
+  ],
+  "exposition_strategy": [
+    "{'placement_preference': ''}"
+  ],
+  "distillation_source_id": "source-0001",
+  "emotional_temperature": [
+    "surface emotion through choices, body action, and withheld admission"
+  ],
+  "hooking_and_transitions": [
+    "end units on changed state, unresolved question, or sharper constraint"
+  ],
+  "adaptation_guidelines": [
+    "translate craft controls into the new project's genre, cast, and premise",
+    "change imagery fields, sentence signatures, names, and scenario chains"
+  ],
+  "taboo_copy_signals": [
+    "source titles, author names, exact phrases, named entities, and distinctive sentence templates"
+  ],
+  "confidence": 0.0
+}

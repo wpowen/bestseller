@@ -1,0 +1,36 @@
+{
+  "source_id": "source-0006",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "style_safety_policy": "no_data_available",
+  "pov_and_distance": "no_data_available",
+  "sentence_rhythm": [
+    "no_data_available"
+  ],
+  "paragraphing": [
+    "no_data_available"
+  ],
+  "dialogue_system": [
+    "no_data_available"
+  ],
+  "description_strategy": [
+    "no_data_available"
+  ],
+  "exposition_strategy": [
+    "no_data_available"
+  ],
+  "emotional_temperature": [
+    "no_data_available"
+  ],
+  "hooking_and_transitions": [
+    "no_data_available"
+  ],
+  "adaptation_guidelines": [
+    "no_data_available"
+  ],
+  "taboo_copy_signals": [
+    "no_data_available"
+  ],
+  "confidence": 0.0,
+  "distillation_source_id": "source-0006"
+}

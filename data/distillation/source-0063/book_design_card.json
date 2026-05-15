@@ -1,0 +1,38 @@
+{
+  "book_id": "source-0063",
+  "source_ref": "distillation:a1744aa3507145091e103d47",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "parsed_profile": {
+    "distillation_status": "no_content_extracted",
+    "note": "All 36 chapters returned LLM unavailable fallback stubs with confidence 0.0; no reusable story design mechanics could be derived.",
+    "extraction_failures": [
+      "llm_fallback_batch",
+      "zero_confidence_input_data",
+      "distillation_proceeded_on_empty_inputs"
+    ]
+  },
+  "genre_tags": [
+    "distillation-generic"
+  ],
+  "reader_promise": "Unable to define a reader promise due to absence of source narrative content.",
+  "core_engine": "undetermined",
+  "state_variables": [
+    "fallback_progress"
+  ],
+  "reader_rewards": [
+    "distillable_mechanism_reliability"
+  ],
+  "reusable_mechanisms": [
+    "fallback mechanism abstraction"
+  ],
+  "non_reusable_specifics": [],
+  "risk_patterns": [
+    "llm_fallback_batch",
+    "no_confidence_source_data",
+    "distillation_proceeded_on_empty_inputs",
+    "output_reflects_source_data_absence_not_story_content"
+  ],
+  "source_id": "source-0063",
+  "distillation_source_id": "source-0063"
+}

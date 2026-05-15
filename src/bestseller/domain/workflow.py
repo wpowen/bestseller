@@ -252,6 +252,17 @@ class ChapterOutlineInput(BaseModel):
             "reader_desire_chain",
         ),
     )
+    world_rule_refs: list[str] = Field(default_factory=list)
+    world_rule_landing: str | None = None
+    world_state_deltas: list[dict[str, str]] = Field(default_factory=list)
+    world_asset_refs: list[str] = Field(default_factory=list)
+    authority_claim_refs: list[str] = Field(default_factory=list)
+    world_scene_template_ref: str | None = None
+    reveal_weight: int = Field(default=0, ge=0, le=5)
+    anti_copy_boundary_notes: list[str] = Field(default_factory=list)
+    location_refs: list[str] = Field(default_factory=list)
+    faction_refs: list[str] = Field(default_factory=list)
+    key_reveals: list[str] = Field(default_factory=list)
     volume_number: int = Field(default=1, gt=0)
     target_word_count: int = Field(default=2200, gt=0)
     scenes: list[SceneOutlineInput] = Field(default_factory=list)

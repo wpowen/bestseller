@@ -1,0 +1,31 @@
+{
+  "book_id": "source-0044",
+  "source_ref": "distillation:5302e06282412644954739c0",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "parsed_profile": {
+    "status": "no_data",
+    "confidence": 0.0,
+    "notes": "All chapters returned LLM fallback stubs; no narrative mechanics, state progression, turning points, reader rewards, or open hooks could be extracted."
+  },
+  "genre_tags": [
+    "distillation-generic"
+  ],
+  "reader_promise": "No extractable reader promise due to unavailable source content.",
+  "core_engine": "unknown",
+  "state_variables": [
+    "fallback_progress"
+  ],
+  "reader_rewards": [
+    "distillable_mechanism_reliability"
+  ],
+  "reusable_mechanisms": [
+    "fallback mechanism abstraction"
+  ],
+  "non_reusable_specifics": [],
+  "risk_patterns": [
+    "low_confidence_fallback"
+  ],
+  "source_id": "source-0044",
+  "distillation_source_id": "source-0044"
+}

@@ -1,0 +1,27 @@
+key: distillation-generic
+name: Distillation-Generic Failure Patch
+source_ids:
+- source-0157
+status: failed
+applies_to_categories:
+- generic
+required_contracts:
+- llm_processing_availability
+- chapter_content_extraction
+- volume_card_aggregation
+state_variables:
+- fallback_progress
+- llm_available
+- content_confidence
+chapter_change_vectors: []
+reader_rewards: []
+hook_or_aftereffect_types: []
+forbidden_defaults:
+- any_story_mechanisms
+- character_dynamics
+- reader_promise_claims
+- craft_observations
+- arc_functions
+- state_progressions
+- turning_points
+- setup_payoff_rhythms

@@ -1,0 +1,37 @@
+{
+  "book_id": "source-0041",
+  "source_ref": "distillation:fddad491c79084eb67cd68ad",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "parsed_profile": {
+    "distillation_status": "complete_failure",
+    "volume_count": 7,
+    "volume_cards_generated": 7,
+    "chapter_range_total": "1-160",
+    "chapters_distilled": 0,
+    "chapters_fallback_stub": 160,
+    "confidence_aggregate": 0.0,
+    "notes": "All 7 volumes returned identical llm_fallback stubs across entire chapter ranges. No extractable narrative mechanics, state progressions, turning points, or craft observations. Volume-level aggregation yields empty arrays for all narrative-design fields. Re-distillation with working LLM required before book_design_card can be populated with design fingerprint data."
+  },
+  "genre_tags": [
+    "distillation-generic"
+  ],
+  "reader_promise": "LLM structured distillation fallback.",
+  "core_engine": "unknown",
+  "state_variables": [
+    "fallback_progress"
+  ],
+  "reader_rewards": [
+    "distillable_mechanism_reliability"
+  ],
+  "reusable_mechanisms": [
+    "fallback mechanism abstraction"
+  ],
+  "non_reusable_specifics": [],
+  "risk_patterns": [
+    "{'pattern': 'llm_fallback_all_chapters', 'affected_volumes': [1, 2, 3, 4, 5, 6, 7], 'affected_chapters': '1-160', 'confidence_scores': [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], 'impact': 'no_distillable_content', 'mitigation': 'Re-extract source-0041 with LLM enabled prior to volume-level and book-level distillation'}",
+    "{'pattern': 'zero_confidence_extraction', 'affected_chapters': '100%', 'root_cause': 'llm_unavailable', 'data_integrity': 'compromised'}"
+  ],
+  "source_id": "source-0041",
+  "distillation_source_id": "source-0041"
+}

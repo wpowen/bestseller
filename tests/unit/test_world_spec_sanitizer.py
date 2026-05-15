@@ -97,3 +97,21 @@ def test_reproduces_production_failure_payload() -> None:
     spec = parse_world_spec_input(payload)
     assert len(spec.rules) == 4
     assert all(rule.description for rule in spec.rules)
+
+
+def test_normalizes_overlong_rule_id_before_validation() -> None:
+    spec = parse_world_spec_input(
+        {
+            "rules": [
+                {
+                    "rule_id": "reputation_recovery_impossibility",
+                    "name": "Reputation Recovery",
+                    "description": "A public betrayal cannot be reversed by one apology.",
+                }
+            ]
+        }
+    )
+
+    assert spec.rules[0].rule_id is not None
+    assert len(spec.rules[0].rule_id) <= 32
+    assert spec.rules[0].rule_id.startswith("reputation_recovery_imp")

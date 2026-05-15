@@ -1,0 +1,36 @@
+{
+  "source_id": "source-0101",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "style_safety_policy": "no_craft_patterns_to_evaluate_source_content_wholly_unavailable",
+  "pov_and_distance": "close-third or project-selected POV with controlled narrative distance",
+  "sentence_rhythm": [
+    "vary short action beats with medium explanatory sentences"
+  ],
+  "paragraphing": [
+    "keep paragraphs functional: action, reaction, or information turn"
+  ],
+  "dialogue_system": [
+    "use role-specific intent, subtext, and conflict pressure"
+  ],
+  "description_strategy": [
+    "describe only details that change stakes, mood, or reader inference"
+  ],
+  "exposition_strategy": [
+    "place exposition after visible need or conflict pressure"
+  ],
+  "emotional_temperature": [
+    "surface emotion through choices, body action, and withheld admission"
+  ],
+  "hooking_and_transitions": [
+    "end units on changed state, unresolved question, or sharper constraint"
+  ],
+  "adaptation_guidelines": [
+    "source_requires_llm_recovery_before_craft_distillation_becomes_possible_all_197_chapters_returned_fallback_stubs_with_zero_confidence_across_8_volumes_no_actionable_story_mechanics_reader_rewards_or_craft_observations_extractable_reanalysis_with_functional_llm_access_required"
+  ],
+  "taboo_copy_signals": [
+    "source titles, author names, exact phrases, named entities, and distinctive sentence templates"
+  ],
+  "confidence": 0.0,
+  "distillation_source_id": "source-0101"
+}

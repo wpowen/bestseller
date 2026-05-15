@@ -1,0 +1,30 @@
+{
+  "source_id": "source-0966",
+  "pipeline_version": "distillation-v1",
+  "source_hash_sha256": "de9a4ff4c313af2cb8f4d8a3d446c99066453938954100a9f563f27f000427f0",
+  "source_format": "txt",
+  "encoding": "gb18030",
+  "title_key_hmac_sha256": "9ec3b89a226d19ebf54c3a57c177c8a7f61137067fec2b5705bf373b23e80085",
+  "title_signal_source": "file_stem",
+  "has_author_metadata": false,
+  "language": null,
+  "rights_status": "user_supplied_for_analysis",
+  "redaction_policy": {
+    "store_source_title_in_repo": false,
+    "store_author_in_repo": false,
+    "store_raw_text_in_repo": false
+  },
+  "dedupe": {
+    "strategy": "private-title-key-hmac",
+    "duplicate_of": null
+  },
+  "parse_profile": {
+    "chapter_count": 512,
+    "volume_count": 1,
+    "average_chapter_chars": 3579,
+    "boundary_types": [
+      "chinese_chapter_heading"
+    ],
+    "parser_warnings": []
+  }
+}

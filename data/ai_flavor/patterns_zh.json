@@ -1,0 +1,127 @@
+{
+  "version": 1,
+  "language": "zh",
+  "description": "Chinese AI-flavor phrase rules. Block = remove sentence; warn cluster = drop excess repetitions.",
+  "phrase_rules": [
+    {"id": "cn.tier1.hollow.001", "phrase": "显而易见", "severity": "block", "category": "hollow_summary", "suggestions": [], "remove_sentence_on_block": true, "why": "空洞总结词，AI 高频"},
+    {"id": "cn.tier1.hollow.002", "phrase": "毫无疑问", "severity": "block", "category": "hollow_summary", "suggestions": [], "remove_sentence_on_block": true, "why": "空洞断言"},
+    {"id": "cn.tier1.hollow.003", "phrase": "不言而喻", "severity": "block", "category": "hollow_summary", "suggestions": [], "remove_sentence_on_block": true, "why": "空洞总结"},
+    {"id": "cn.tier1.hollow.004", "phrase": "众所周知", "severity": "block", "category": "hollow_summary", "suggestions": [], "remove_sentence_on_block": true, "why": "百科式开场"},
+    {"id": "cn.tier1.hollow.005", "phrase": "毋庸置疑", "severity": "block", "category": "hollow_summary", "suggestions": [], "remove_sentence_on_block": true, "why": "空洞断言"},
+    {"id": "cn.tier1.hollow.006", "phrase": "值得注意的是", "severity": "block", "category": "hollow_summary", "suggestions": [], "remove_sentence_on_block": true, "why": "AI 路标式过渡"},
+    {"id": "cn.tier1.hollow.007", "phrase": "不可否认", "severity": "block", "category": "hollow_summary", "suggestions": [], "remove_sentence_on_block": true, "why": "空洞断言"},
+    {"id": "cn.tier1.hollow.008", "phrase": "总而言之", "severity": "block", "category": "hollow_summary", "suggestions": [], "remove_sentence_on_block": true, "why": "AI 公文式收束"},
+    {"id": "cn.tier1.hollow.009", "phrase": "综上所述", "severity": "block", "category": "hollow_summary", "suggestions": [], "remove_sentence_on_block": true, "why": "AI 公文式收束"},
+    {"id": "cn.tier1.hollow.010", "phrase": "由此可见", "severity": "block", "category": "hollow_summary", "suggestions": [], "remove_sentence_on_block": true, "why": "AI 推导式总结"},
+
+    {"id": "cn.tier1.metaphor.001", "phrase": "令人叹为观止", "severity": "block", "category": "dead_metaphor", "suggestions": [], "remove_sentence_on_block": true, "why": "陈腐比喻"},
+    {"id": "cn.tier1.metaphor.002", "phrase": "如同打翻了五味瓶", "severity": "block", "category": "dead_metaphor", "suggestions": [], "remove_sentence_on_block": true, "why": "陈腐比喻"},
+    {"id": "cn.tier1.metaphor.003", "phrase": "仿佛被一只无形的手", "severity": "block", "category": "dead_metaphor", "suggestions": [], "remove_sentence_on_block": true, "why": "陈腐比喻"},
+    {"id": "cn.tier1.metaphor.004", "phrase": "宛如一颗石子投入平静的湖面", "severity": "block", "category": "dead_metaphor", "suggestions": [], "remove_sentence_on_block": true, "why": "陈腐比喻"},
+    {"id": "cn.tier1.metaphor.005", "phrase": "宛如一把锋利的刀", "severity": "block", "category": "dead_metaphor", "suggestions": [], "remove_sentence_on_block": true, "why": "陈腐比喻"},
+    {"id": "cn.tier1.metaphor.006", "phrase": "如同一记重锤", "severity": "block", "category": "dead_metaphor", "suggestions": [], "remove_sentence_on_block": true, "why": "陈腐比喻"},
+    {"id": "cn.tier1.metaphor.007", "phrase": "心中五味杂陈", "severity": "block", "category": "dead_metaphor", "suggestions": [], "remove_sentence_on_block": true, "why": "陈腐情绪短语"},
+    {"id": "cn.tier1.metaphor.008", "phrase": "百感交集", "severity": "block", "category": "dead_metaphor", "suggestions": [], "remove_sentence_on_block": true, "why": "陈腐情绪短语"},
+    {"id": "cn.tier1.metaphor.009", "phrase": "思绪万千", "severity": "block", "category": "dead_metaphor", "suggestions": [], "remove_sentence_on_block": true, "why": "陈腐情绪短语"},
+    {"id": "cn.tier1.metaphor.010", "phrase": "感慨万千", "severity": "block", "category": "dead_metaphor", "suggestions": [], "remove_sentence_on_block": true, "why": "陈腐情绪短语"},
+
+    {"id": "cn.tier1.tears.001", "phrase": "泪水模糊了双眼", "severity": "block", "category": "tear_cliche", "suggestions": [], "remove_sentence_on_block": true, "why": "过度抒情套路"},
+    {"id": "cn.tier1.tears.002", "phrase": "泪水在眼眶中打转", "severity": "block", "category": "tear_cliche", "suggestions": [], "remove_sentence_on_block": true, "why": "过度抒情套路"},
+    {"id": "cn.tier1.tears.003", "phrase": "泪水夺眶而出", "severity": "block", "category": "tear_cliche", "suggestions": [], "remove_sentence_on_block": true, "why": "过度抒情套路"},
+    {"id": "cn.tier1.tears.004", "phrase": "心如刀割", "severity": "block", "category": "tear_cliche", "suggestions": [], "remove_sentence_on_block": true, "why": "过度抒情套路"},
+    {"id": "cn.tier1.tears.005", "phrase": "心如死灰", "severity": "block", "category": "tear_cliche", "suggestions": [], "remove_sentence_on_block": true, "why": "过度抒情套路"},
+    {"id": "cn.tier1.tears.006", "phrase": "万箭穿心", "severity": "block", "category": "tear_cliche", "suggestions": [], "remove_sentence_on_block": true, "why": "过度抒情套路"},
+    {"id": "cn.tier1.tears.007", "phrase": "如释重负地长舒一口气", "severity": "block", "category": "tear_cliche", "suggestions": [], "remove_sentence_on_block": true, "why": "过度抒情套路"},
+
+    {"id": "cn.tier1.transition.001", "phrase": "时间仿佛在这一刻静止", "severity": "block", "category": "filler_transition", "suggestions": [], "remove_sentence_on_block": true, "why": "万能过渡"},
+    {"id": "cn.tier1.transition.002", "phrase": "空气仿佛凝固了", "severity": "block", "category": "filler_transition", "suggestions": [], "remove_sentence_on_block": true, "why": "万能过渡"},
+    {"id": "cn.tier1.transition.003", "phrase": "世界仿佛安静了下来", "severity": "block", "category": "filler_transition", "suggestions": [], "remove_sentence_on_block": true, "why": "万能过渡"},
+    {"id": "cn.tier1.transition.004", "phrase": "时间仿佛停止了", "severity": "block", "category": "filler_transition", "suggestions": [], "remove_sentence_on_block": true, "why": "万能过渡"}
+  ],
+
+  "cluster_rules": [
+    {
+      "id": "cn.cluster.weak_adverb",
+      "category": "weak_adverb",
+      "threshold": 3,
+      "severity": "warn",
+      "why": "弱化副词聚集——同章三次以上视为模式锁死",
+      "members": {
+        "不禁": ["", "猛地"],
+        "忍不住": ["", "终于"],
+        "情不自禁": ["", "下意识"],
+        "缓缓": ["", "慢慢"],
+        "轻轻": ["", "悄悄"],
+        "深深": ["", "重重"],
+        "悠悠": [""],
+        "微微": [""],
+        "淡淡": [""],
+        "默默": ["", "悄悄"],
+        "静静": [""]
+      }
+    },
+    {
+      "id": "cn.cluster.micro_expression",
+      "category": "micro_expression",
+      "threshold": 3,
+      "severity": "warn",
+      "why": "模板化微表情——同章三次以上视为脸谱化",
+      "members": {
+        "眼眶微红": [""],
+        "嘴角微扬": [""],
+        "嘴角上扬": [""],
+        "嘴角勾起": [""],
+        "眉头微皱": [""],
+        "眉头紧锁": [""],
+        "瞳孔骤缩": [""],
+        "瞳孔微缩": [""]
+      }
+    },
+    {
+      "id": "cn.cluster.inner_monologue",
+      "category": "inner_monologue",
+      "threshold": 3,
+      "severity": "warn",
+      "why": "万能内心描写聚集",
+      "members": {
+        "心头一紧": [""],
+        "心头一震": [""],
+        "心中一沉": [""],
+        "心头涌起": [""],
+        "内心深处": [""],
+        "脑海中闪过": [""],
+        "脑海中浮现": [""]
+      }
+    },
+    {
+      "id": "cn.cluster.time_marker",
+      "category": "time_marker",
+      "threshold": 3,
+      "severity": "warn",
+      "why": "万能时间标记聚集",
+      "members": {
+        "在这一刻": [""],
+        "在那一瞬间": [""],
+        "就在这时": [""],
+        "下一秒": [""]
+      }
+    },
+    {
+      "id": "cn.cluster.filler",
+      "category": "filler",
+      "threshold": 4,
+      "severity": "info",
+      "why": "零信息量填充词——超阈值即应删",
+      "members": {
+        "某种意义上": [""],
+        "从某种程度上来说": [""],
+        "不得不说": [""],
+        "说实话": [""],
+        "坦白说": [""],
+        "事实上": [""],
+        "换句话说": [""],
+        "毕竟": [""]
+      }
+    }
+  ]
+}

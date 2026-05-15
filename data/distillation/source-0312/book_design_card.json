@@ -1,0 +1,90 @@
+{
+  "book_id": "source-0312",
+  "source_ref": "distillation:0e78660b7ce3fb8f4d02cd89",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "parsed_profile": {
+    "pov_distance_strategy": "Third-person omniscient historical narrator maintaining scholarly authority; selective interiority access focused on leadership psychology; clusters viewpoints during simultaneous operations enabling temporal compression; occasional direct characterization through quoted thoughts for intimacy in espionage sequences",
+    "sentence_rhythm_management": "Varied between staccato tactical descriptions during attack sequences and extended compound analytical passages for strategic context; short declarative sentences for key events contrasted with longer subordinate-clause reflections; declarative historical summaries punctuated by short dramatic moments",
+    "paragraph_architecture": "Long expository blocks subdivided by date and section headers establish context; compressed action beats during assault sequences; thematic breaks between different strategic threads; topic-based blocks with clear temporal markers; hard transitions between figures via subheadings or blank line breaks",
+    "dialogue_methodology": "Mix of documented speech quotation and imagined private exchanges for dramatic scenes; strategic quotes prioritized over character-defining speech; reported dialogue summarizing positions over direct quotation; minimal direct speech in biographical sections relying on archive reconstruction",
+    "description_priority": "Technical specificity for military operations with quantitative specification establishing credibility; environmental description serving psychological function (cold, darkness, weather as externalization of mental states); action-focused physical details over psychological interiority in operational sequences; operational specifics (passwords, timing, surveillance) favored",
+    "exposition_technique": "Causal chains linking economic conditions to political decisions to operational consequences; embedded within operational narrative rather than separated exposition blocks; strategic rationale explained through planning perspective; background delivered through narrative summary with evidence-inference structure and archive citation",
+    "hook_mechanism": "Each chapter opens mid-narrative or with stated policy intention before showing outcomes; numbered subsections create progressive revelation structure; rhetorical questions at conclusions invite moral evaluation; historical puzzle or intrigue at section openings",
+    "transition_architecture": "Geographic pivots between theaters with timeline continuity preserved; section headers mark major topical shifts; environmental triggers (dog barking, walking) return narrator to present from flashback; date markers and campaign designations as narrative landmarks; thematic keywords signal connections between sections",
+    "authorial_distance": "Maintains scholarly authority without character interiority in exposition; occasional direct attribution to secondary sources; ironic framing positions narrator as knowing observer of historical complexity; treats military strategy and foreign leaders as observable facts"
+  },
+  "genre_tags": [
+    "historical_military_fiction",
+    "world_war_narrative",
+    "intelligence_espionage_fiction",
+    "political_military_thriller",
+    "coalition_warfare_story",
+    "command_leadership_drama",
+    "strategic_history_hybrid",
+    "documentary_narrative"
+  ],
+  "reader_promise": "A comprehensive global warfare narrative revealing how intelligence advantages, coalition dynamics, and command decisions transform tactical moments into strategic turning points across interconnected theaters, delivering both operational excitement and analytical insight into the machinery of total war—rewarding readers who appreciate detailed military mechanics alongside human complexity in extreme circumstances",
+  "core_engine": "Intelligence Asymmetry Engine Combined with Parallel Military Buildup Structure: Information advantage and coalition cohesion determine campaign outcomes across simultaneous theaters; both sides possess critical intelligence they fail to act upon for different reasons; surprise offensive evolves against initial planning assumptions; identical conditions produce opposite outcomes based on leadership quality",
+  "state_variables": [
+    "{'pre_conflict_phase': {'description': 'Diplomatic theater masks military preparation; negotiations continue while military preparations accelerate; parallel military buildup showing both sides preparing for engagement'}, 'initial_conflict_phase': {'description': 'Surprise attack execution creates temporary strategic advantage; intelligence tradecraft enables operational planning; tactical decision-making tension between mission completion and risk management'}, 'coalition_formation_phase': {'description': 'Reluctant partnership transforms to unified alliance; mutual threat escalation catalyzes coalition graduation from statements to material support; cross-national coalition building with built-in fault lines'}, 'strategic_momentum_phase': {'description': 'Command culture failures undermine numerically superior forces; strategic momentum shifts through decisive operational engagements; strategic momentum expressed through casualty exchange ratios'}, 'momentum_reversal_phase': {'description': 'Defensive dominance established; initiative loss for aggressor; extended campaign against initial planning assumptions; dual-theater transitions reveal interconnected global conflict dynamics'}, 'institutional_resolution_phase': {'description': 'Post-war political calculation regarding defeated leaders; institutional decision chains connecting individual acts to system outcomes; protective political calculation where occupying powers preserve defeated leaders for administrative convenience'}}"
+  ],
+  "reader_rewards": [
+    "Understanding of global WWII scope through interconnected Pacific, Eastern Front, and North African theaters",
+    "Insight into how intelligence tradecraft and codebreaking capabilities shape strategic outcomes",
+    "Appreciation for coalition warfare complexity and fault-line management",
+    "Comprehension of how small tactical factors cascade into operational and strategic consequences",
+    "Exposure to counterintuitive historical revelations challenging assumed narratives",
+    "Engagement with moral ambiguity through institutional decision-case studies",
+    "Strategic context establishing cause-and-effect chains linking economic conditions to political decisions to operational consequences",
+    "Grappling with command leadership psychology and moral complexity"
+  ],
+  "reusable_mechanisms": [
+    "{'mechanism': 'Dual-track diplomatic cover where negotiations continue while military preparations accelerate', 'narrative_function': 'Creates dramatic irony and builds tension through visible preparation contradicting stated peace intentions'}",
+    "{'mechanism': 'Information asymmetry engine where both sides possess critical intelligence they fail to act upon for different reasons', 'narrative_function': 'Enables dramatic irony for audience while explaining real-world operational failures; engagement through puzzle-solving recognition'}",
+    "{'mechanism': 'Parallel military buildup showing both sides preparing for engagement', 'narrative_function': 'Establishes cause-and-effect inevitability while maintaining tension about timing and trigger events'}",
+    "{'mechanism': 'Intelligence tradecraft through civilian cover identity exploitation and isolated staging areas', 'narrative_function': 'Delivers operational thriller mechanics within historical framework; code security through memorized documentation'}",
+    "{'mechanism': 'Environmental concealment using weather patterns as tactical advantage', 'narrative_function': 'Externalizes psychological states through environmental description; creates operational specificity'}",
+    "{'mechanism': 'Balanced command pairing to compensate for specialist weaknesses', 'narrative_function': 'Characterizes through professional relationship dynamics; creates decision-making tension between risk and mission'}",
+    "{'mechanism': 'Misdirection through parallel diplomatic theater maintaining peace facade', 'narrative_function': 'Builds dramatic irony; audience-insert tension through juxtaposition of normalcy and imminent attack'}",
+    "{'mechanism': 'Flashback structure connecting present determination to past failure triggered by environmental cue', 'narrative_function': 'Deepens character psychology revealed through physical symptoms and environment; delays present-tense momentum purposefully'}",
+    "{'mechanism': 'Contrastive analysis showing how identical conditions produce opposite outcomes based on leadership quality', 'narrative_function': 'Transforms historical exposition into analytical narrative; theater pivot creates comparative structure'}",
+    "{'mechanism': 'Counterintuitive historical revelation: apparent failure masks strategic calculation', 'narrative_function': 'Engages reader through mystery-thriller puzzle-solving; challenges assumed narratives'}",
+    "{'mechanism': 'High-risk heist operation as climax demonstrating tradecraft', 'narrative_function': 'Delivers operational payoff; combines character psychology with technical specificity'}",
+    "{'mechanism': 'Protective political calculation where occupying powers preserve defeated leaders', 'narrative_function': 'Provides moral ambiguity closure; institutional decision chain connecting individual acts to system outcomes'}",
+    "{'mechanism': 'Theological-demotion mechanism stripping divine or authoritative status as governance tool', 'narrative_function': 'Reveals power structure transformation; symbolic demotion as political calculation'}",
+    "{'mechanism': 'Rhetorical question ending that frames moral ambiguity as irresolvable', 'narrative_function': 'Invites reader moral evaluation; maintains scholarly authority while acknowledging complexity'}",
+    "{'mechanism': 'Resource-based strategic analysis making abstract war aims concrete through supply dependencies', 'narrative_function': 'Theater-specific logistical constraints determining operational possibilities; connects economic to military'}"
+  ],
+  "non_reusable_specifics": [
+    "Specific historical names, dates, and geographic coordinates",
+    "Named historical figures including Hitler, Roosevelt, Churchill, Stalin, Hirohito, MacArthur",
+    "Military unit designations and precise casualty statistics",
+    "Washington Naval Treaty ratios and operational code numbers",
+    "Named figures as primary subjects with their documented quotations",
+    "Specific treaty text, diplomatic cables, and policy documents",
+    "Actual campaign names, battle locations, and tactical coordinates",
+    "Codebreaking system names and specific cryptographic details",
+    "Institutional body names and their documented decisions",
+    "Specific operational timing and staging area locations",
+    "The rhetorical pattern of 'historical irony' framing as used in source"
+  ],
+  "risk_patterns": [
+    "{'risk': 'Historical exposition lacks narrative tension for fiction readers seeking character-driven narrative', 'mitigation': 'Cluster viewpoints during simultaneous operations; embed exposition within operational narrative; use dramatic irony from information asymmetry to create tension'}",
+    "{'risk': 'Multiple parallel developments fragment reader focus across theaters', 'mitigation': 'Geographic pivots with timeline continuity; section headers mark major topical shifts; environmental triggers return narrator to present from flashback'}",
+    "{'risk': 'Dense factual content risks overwhelming character-driven pacing', 'mitigation': 'Vary sentence rhythm between staccato tactical and extended analytical; short declarative for key events; compressed action beats during assault sequences'}",
+    "{'risk': 'Dual-narrative structure may diffuse emotional investment without clear protagonist', 'mitigation': 'Selective interiority access focused on leadership psychology; cluster viewpoints to allow temporal compression while maintaining emotional continuity'}",
+    "{'risk': 'Logistics details may read as textbook material rather than story content', 'mitigation': 'Resource-based analysis grounded in tactical decision moments; causal chains linking economic to operational consequences'}",
+    "{'risk': 'Historical certainty removes narrative tension since outcomes are predetermined', 'mitigation': 'Information asymmetry engine creates dramatic irony; counterintuitively reveal strategic calculation beneath apparent failures'}",
+    "{'risk': 'Statistical enumeration slows narrative momentum', 'mitigation': 'Quantitative specification used for credibility establishment only; action-focused physical details preferred'}",
+    "{'risk': 'Leadership critique risks didacticism if not grounded in specific tactical moments', 'mitigation': 'Contrastive analysis grounded in identical conditions producing opposite outcomes; tactical doctrine emergence from battlefield observation'}",
+    "{'risk': 'Flashback structure delays present-tense momentum', 'mitigation': 'Environmental triggers as natural return mechanisms; purpose-linked flashbacks connecting determination to past failure'}",
+    "{'risk': 'Heavy exposition load with minimal dramatic scene progress in transition chapters', 'mitigation': 'Each chapter opens mid-narrative or with stated policy intention before showing outcomes; hook mechanism at section beginnings'}",
+    "{'risk': 'Encyclopedia/biographical format incompatible with fiction narrative expectations', 'mitigation': 'Popov double-agent introduction creates narrative hook within historical exposition; anthology chapters share thematic connections'}",
+    "{'risk': 'Composite anthology structure without connecting narrative diminishes momentum', 'mitigation': 'Parallel biography structure within themed chapters; micro-to-macro causation demonstrating how small factors affect large operations'}",
+    "{'risk': 'No character development within exposition chapters creates world without protagonist presence', 'mitigation': 'Occasional direct characterization through quoted thoughts for intimacy; metatextual character introduction linking fictional and real-world tradecraft'}",
+    "{'risk': 'Genre mismatch: non-fiction historical work vs required novel source', 'mitigation': 'Craft profile emphasizes fictional mechanisms; focus on reusable narrative patterns rather than factual content'}"
+  ],
+  "source_id": "source-0312",
+  "distillation_source_id": "source-0312"
+}

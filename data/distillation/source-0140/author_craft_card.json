@@ -1,0 +1,36 @@
+{
+  "source_id": "source-0140",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "style_safety_policy": "No style parameters derivable — source corpus consists entirely of llm_fallback stubs with zero content across all 14 volumes and 375 chapters. No authorial voice, distinctive phrasing patterns, or named stylistic tendencies present in source data. Prohibition on imitation-of-specific-authors applies universally since no specific authorial fingerprint exists in the dataset. All craft fields default to non-extractable status. Any reuse of this card's parameters requires first reprocessing source-0140 through an LLM-capable analysis pipeline to obtain actual prose content.",
+  "pov_and_distance": "Indeterminate — source chapters unavailable for POV analysis. No narrative perspective, narrator type, or intimacy-distance calibration extractable from llm_fallback stubs. Confidence 0.0 across entire corpus (375/375 chapters, 14/14 volumes). No point-of-view mechanics recoverable without source text reprocessing.",
+  "sentence_rhythm": [
+    "Indeterminate — source chapters unavailable for rhythm analysis. No sentence-length patterns, cadence variations, clause structures, or rhythmic signatures extractable from llm_fallback stubs. Confidence 0.0 batch-wide. Sentence rhythm mechanics unidentifiable without source text reprocessing."
+  ],
+  "paragraphing": [
+    "Indeterminate — source chapters unavailable for paragraph structure analysis. No paragraph-length distributions, scene-vs-summary patterns, white-space pacing, or structural segmentation tendencies extractable from llm_fallback stubs. Confidence 0.0 across all 14 volumes. Paragraphing mechanics unidentifiable without source text reprocessing."
+  ],
+  "dialogue_system": [
+    "Indeterminate — source chapters unavailable for dialogue analysis. No dialogue-to-narration ratios, attribution patterns, speech rhythms, subtext mechanics, or conversation architecture extractable from llm_fallback stubs. Confidence 0.0 across entire corpus. Dialogue system mechanics unidentifiable without source text reprocessing."
+  ],
+  "description_strategy": [
+    "Indeterminate — source chapters unavailable for description analysis. No sensory-detail densities, object-focus patterns, environment-rendering techniques, or descriptive-vs-narrative balances extractable from llm_fallback stubs. Confidence 0.0 batch-wide. Description mechanics unidentifiable without source text reprocessing."
+  ],
+  "exposition_strategy": [
+    "Indeterminate — source chapters unavailable for exposition analysis. No backstory-delivery mechanisms, info-dump avoidance patterns, explanation timing, or worldbuilding-integration techniques extractable from llm_fallback stubs. Confidence 0.0 across all volumes. Exposition mechanics unidentifiable without source text reprocessing."
+  ],
+  "emotional_temperature": [
+    "Indeterminate — source chapters unavailable for emotional register analysis. No affective-intensity distributions, sentiment-trajectory patterns, tension-and-release architectures, or emotional-pacing signatures extractable from llm_fallback stubs. Confidence 0.0 across entire corpus. Emotional-temperature mechanics unidentifiable without source text reprocessing."
+  ],
+  "hooking_and_transitions": [
+    "Indeterminate — source chapters unavailable for hook analysis. No chapter-opening techniques, cliffhanger implementations, transition styles, or reader-retention mechanisms extractable from llm_fallback stubs. Confidence 0.0 across all 14 volumes. Hooking-and-transitions mechanics unidentifiable without source text reprocessing."
+  ],
+  "adaptation_guidelines": [
+    "No adaptation parameters derivable from this source. The entire source-0140 corpus (14 volumes, 375 chapters) consists exclusively of llm_fallback stubs with zero extractable content. Adaptation work requires first obtaining actual prose content through reprocessing. Until then, no POV distance settings, no sentence-rhythm templates, no paragraphing guidelines, no dialogue-system specifications, no description-strategy directives, no exposition-placement rules, no emotional-temperature calibrations, and no hook-transition techniques are available. Treat this card as a placeholder indicating complete distillation failure requiring reprocessing."
+  ],
+  "taboo_copy_signals": [
+    "No prohibition signals derivable — source contains zero actual prose content. However, the universal prohibition applies: do not generate output resembling or imitating any specific author's voice based on this card. This card does not encode any authorial fingerprint; it encodes only a systematic failure state. Treat all craft fields as permanently null until source content becomes available. Any attempt to backfill craft parameters with inferred or invented content would violate the non-imitation constraint and introduce fabricated design elements."
+  ],
+  "confidence": 0.0,
+  "distillation_source_id": "source-0140"
+}

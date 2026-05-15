@@ -1,0 +1,33 @@
+{
+  "source_id": "source-0792",
+  "pipeline_version": "distillation-v1",
+  "source_hash_sha256": "81365e85a4b7049a6088140bb7f16c56862be5918574ab99c0dfc5b410b01549",
+  "source_format": "mobi",
+  "encoding": "mobi-lib+utf-8",
+  "title_key_hmac_sha256": "c23dfab8a8699a9a8d0a457eef15527a2053b584109f3be66c2374b2a4593a76",
+  "title_signal_source": "epub_opf",
+  "has_author_metadata": true,
+  "language": "zh",
+  "rights_status": "user_supplied_for_analysis",
+  "redaction_policy": {
+    "store_source_title_in_repo": false,
+    "store_author_in_repo": false,
+    "store_raw_text_in_repo": false
+  },
+  "dedupe": {
+    "strategy": "private-title-key-hmac",
+    "duplicate_of": null
+  },
+  "parse_profile": {
+    "chapter_count": 17,
+    "volume_count": 1,
+    "average_chapter_chars": 7323,
+    "boundary_types": [
+      "chinese_chapter_heading"
+    ],
+    "parser_warnings": [
+      "Decoded Kindle file with the Python `mobi` unpacker (KindleUnpack fork); Calibre was not used or failed."
+    ]
+  },
+  "genre_hint": "网文"
+}

@@ -1,0 +1,36 @@
+{
+  "source_id": "source-0117",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "style_safety_policy": "indeterminate — no source content available for safety assessment",
+  "pov_and_distance": "undetermined — all chapter cards returned llm_fallback stubs with no narrative content",
+  "sentence_rhythm": [
+    "undetermined — source chapters yielded no extractable prose samples"
+  ],
+  "paragraphing": [
+    "undetermined — no chapter content available for structural analysis"
+  ],
+  "dialogue_system": [
+    "undetermined — zero dialogue samples in fallback stubs"
+  ],
+  "description_strategy": [
+    "undetermined — no descriptive passages extracted"
+  ],
+  "exposition_strategy": [
+    "undetermined — no narrative exposition present in source"
+  ],
+  "emotional_temperature": [
+    "undetermined — emotional registers could not be assessed"
+  ],
+  "hooking_and_transitions": [
+    "undetermined — no hook mechanisms or transition patterns identifiable"
+  ],
+  "adaptation_guidelines": [
+    "No adaptation guidelines can be generated — distillation failed across all 25 chapters in every volume. All chapter cards contain only 'LLM unavailable — distillation fallback stub' content with confidence 0.0. Source requires re-distillation with functional LLM pipeline to extract author-craft mechanics."
+  ],
+  "taboo_copy_signals": [
+    "prohibitive_copy_signals: [] — cannot assess; source contains no extractable prose"
+  ],
+  "confidence": 0.0,
+  "distillation_source_id": "source-0117"
+}

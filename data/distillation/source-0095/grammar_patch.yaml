@@ -1,0 +1,20 @@
+key: distillation-generic
+name: Distillation Generic Grammar Patch
+source_ids:
+- source-0095
+status: critical_failure
+applies_to_categories:
+- distillation-generic
+required_contracts:
+- must_have_extractable_content
+- confidence_threshold_minimum_0.3
+state_variables:
+- fallback_progress
+chapter_change_vectors: []
+reader_rewards:
+- distillable_mechanism_reliability
+hook_or_aftereffect_types: []
+forbidden_defaults:
+- any_stub_generation_as_valid_content
+- zero_confidence_as_acceptable_data
+- llm_fallback_substituting_for_source_content

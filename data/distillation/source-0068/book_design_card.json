@@ -1,0 +1,51 @@
+{
+  "book_id": "source-0068",
+  "source_ref": "distillation:64947539e654e69fcf7f0ac9",
+  "source_type": "distillation_package",
+  "status": "undistillable",
+  "parsed_profile": {
+    "distillation_status": "complete_failure",
+    "volume_coverage": "0 of 7 volumes producible",
+    "chapter_coverage": "0 of 158 chapters extractable",
+    "data_integrity": "source_batch_composed_entirely_of_placeholder_stubs",
+    "aggregation_blocked": true,
+    "failure_manifest": [
+      "all_158_chapters_carry_llm_fallback_flag",
+      "confidence_uniformly_0.0_across_batch",
+      "no_reusable_mechanisms_extractable",
+      "no_craft_observations_recordable",
+      "no_reader_rewards_derivable",
+      "no_open_hooks_accessible",
+      "no_state_progression_reconstructable",
+      "no_turning_points_identifiable",
+      "arc_function_undeterministic_across_all_volumes",
+      "volume_annotation_mismatch_detected_in_volume_2_batch"
+    ],
+    "recommendation": "book_design_card_requires_legitimate_source_text"
+  },
+  "genre_tags": [
+    "distillation-generic"
+  ],
+  "reader_promise": "LLM structured distillation fallback.",
+  "core_engine": "unknown",
+  "state_variables": [
+    "fallback_progress"
+  ],
+  "reader_rewards": [
+    "{'available': False, 'reason': 'all_reader_rewards_arrays_empty_across_batch'}"
+  ],
+  "reusable_mechanisms": [
+    "{'available': False, 'reason': 'all_reusable_mechanisms_arrays_empty_across_batch'}"
+  ],
+  "non_reusable_specifics": [
+    "{'available': False, 'reason': 'all_non_reusable_specifics_arrays_empty_across_batch'}"
+  ],
+  "risk_patterns": [
+    "{'pattern': 'llm_unavailable_blocking', 'affected_scope': 'entire_source_batch', 'confidence_impact': 'zero_confidence_across_all_chapters', 'recovery_required': 'source_text_must_be_reprocessed_or_lim_capability_restored'}",
+    "{'pattern': 'aggregation_pipeline_halted', 'affected_scope': 'volume_card_construction', 'confidence_impact': 'no_volume_cards_producible_from_current_input', 'recovery_required': 'authoritative_chapter_content_must_replace_fallback_stubs'}",
+    "{'pattern': 'data_integrity_breach', 'affected_scope': 'volume_annotation_consistency', 'confidence_impact': 'volume_no_mismatch_detected_in_batch_26_50', 'recovery_required': 'verify_chapter_to_volume_mapping_before_aggregation'}",
+    "{'pattern': 'design_fingerprint_undeterminable', 'affected_scope': 'book_design_card_construction', 'confidence_impact': 'no_story_mechanics_craft_observations_or_reader_rewards_extractable', 'recovery_required': 'mechanical_distillation_requires_non_empty_mechanisms_fields'}"
+  ],
+  "source_id": "source-0068",
+  "distillation_source_id": "source-0068"
+}

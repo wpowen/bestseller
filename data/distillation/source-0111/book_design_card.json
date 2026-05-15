@@ -1,0 +1,31 @@
+{
+  "book_id": "source-0111",
+  "source_ref": "distillation:460a19f2e9ac4901e8e5826f",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "parsed_profile": {
+    "chapter_count": 0,
+    "volume_count": 0,
+    "encoding": ""
+  },
+  "genre_tags": [
+    "distillation-generic"
+  ],
+  "reader_promise": "Undetermined – source content unavailable for analysis",
+  "core_engine": "Unknown",
+  "state_variables": [
+    "fallback_progress"
+  ],
+  "reader_rewards": [
+    "distillable_mechanism_reliability"
+  ],
+  "reusable_mechanisms": [
+    "fallback mechanism abstraction"
+  ],
+  "non_reusable_specifics": [],
+  "risk_patterns": [
+    "llm_fallback"
+  ],
+  "source_id": "source-0111",
+  "distillation_source_id": "source-0111"
+}

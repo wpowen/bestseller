@@ -1,0 +1,23 @@
+{
+  "source_id": "source-0796",
+  "pipeline_version": "distillation-v1",
+  "source_format": "txt",
+  "encoding": "utf-8",
+  "chapter_count": 1,
+  "volume_count": 1,
+  "average_chapter_chars": 348981,
+  "chapters": [
+    {
+      "abs_chapter_no": 1,
+      "volume_no": 1,
+      "volume_label_redacted": "volume-01",
+      "chapter_label_redacted": "chapter-0001",
+      "boundary_type": "volume_chapter_heading",
+      "title_hash_sha256": "80127055fe34138bbf1f4af4509ccfeb6717875605a9af91d659131c66b26f1e",
+      "title_char_count": 6,
+      "char_count": 348981,
+      "line_count": 7615,
+      "private_chunk_ref": ".distillation_private/source-0796/chunks/chapter-0001.txt"
+    }
+  ]
+}

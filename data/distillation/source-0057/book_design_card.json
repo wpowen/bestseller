@@ -1,0 +1,37 @@
+{
+  "book_id": "source-0057",
+  "source_ref": "distillation:6639f66c68850303c293274c",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "parsed_profile": {
+    "distillation_status": "aborted",
+    "volumes_processed": 21,
+    "volumes_with_content": 0,
+    "chapters_processed_estimate": 508,
+    "chapters_with_confidence_above_zero": 0,
+    "confidence_override": "forced_zero_due_to_fallback",
+    "primary_failure_mode": "llm_fallback_all_chapters",
+    "note": "All 21 volume cards aggregated from source-0057 contain exclusively LLM fallback stubs with zero confidence. No narrative structure, mechanics, character arcs, plot beats, prose-craft observations, reader rewards, or open hooks were extractable. Volume-level distillation is impossible without functional chapter_card source data. Recommend re-processing source chapters through LLM pipeline before volume aggregation."
+  },
+  "genre_tags": [
+    "distillation-generic"
+  ],
+  "reader_promise": "LLM structured distillation fallback.",
+  "core_engine": "none",
+  "state_variables": [
+    "fallback_progress"
+  ],
+  "reader_rewards": [
+    "distillable_mechanism_reliability"
+  ],
+  "reusable_mechanisms": [
+    "fallback mechanism abstraction"
+  ],
+  "non_reusable_specifics": [],
+  "risk_patterns": [
+    "{'pattern': 'llm_fallback_systematic', 'description': 'All 508+ chapters across 21 volumes returned LLM unavailable fallback stubs; zero extractable story content', 'affected_fields': ['arc_function', 'dominant_engine', 'state_progression', 'turning_points', 'setup_payoff_rhythm', 'reusable_mechanisms', 'craft_observations', 'reader_rewards', 'open_hooks'], 'confidence_impact': '0.0 across entire source', 'recovery_recommendation': 'Re-process source chapters directly through LLM extraction pipeline before volume-level or book-level distillation'}",
+    "{'pattern': 'aggregation_aborted', 'description': 'Volume card aggregation blocked by upstream chapter_card stub batch; no narrative mechanics derivable', 'affected_fields': ['all narrative structure fields'], 'confidence_impact': '0.0 aggregate confidence', 'recovery_recommendation': 'Source content requires actual generation/processing through LLM pipeline'}"
+  ],
+  "source_id": "source-0057",
+  "distillation_source_id": "source-0057"
+}

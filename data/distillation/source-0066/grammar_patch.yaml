@@ -1,0 +1,37 @@
+key: distillation-generic
+name: Universal Distillation Failure Fallback Patch
+source_ids:
+- source-0066
+status: draft_review
+applies_to_categories:
+- distillation-generic
+- fallback_grammar
+required_contracts:
+- fallback_activation_contract
+- empty_state_contract
+- zero_extraction_contract
+state_variables:
+- fallback_progress
+- extraction_attempted
+- llm_availability_flag
+- volume_coverage_tracker
+- chapter_coverage_tracker
+chapter_change_vectors:
+- zero_to_partial_coverage_vector
+- empty_to_metadata_propagation_vector
+- failed_extraction_to_craft_analysis_vector
+reader_rewards:
+- distillable_mechanism_reliability
+- graceful_degradation_compensation
+- transparent_failure_documentation
+hook_or_aftereffect_types:
+- failure_isolation_hook
+- empty_array_fallback_hook
+- universal_fallback_activation_aftereffect
+- metadata_error_recovery_hook
+forbidden_defaults:
+- never_attempt_extraction_without_llm_availability_check
+- never_return_unstructured_content
+- never_expose_raw_zero_confidence_scores
+- never_skip_failure_scope_annotation
+- never_proceed_with_empty_chapter_arrays

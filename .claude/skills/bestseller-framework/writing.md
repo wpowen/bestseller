@@ -47,6 +47,76 @@
 
 **禁用**章末出现 "睡觉 / 第二天清晨" 类松弛尾。
 
+## 4.1 高敏感位置章节差异化（必读）
+
+> 数据源：[config/chapter_position_profiles.yaml](../../../config/chapter_position_profiles.yaml) +
+> [config/platform_profiles.yaml](../../../config/platform_profiles.yaml)
+
+**核心认知**：不是所有章节都是平等的。平台规则是"前 N 章决定生死"。
+框架对"高敏感位置 (high-stake position)"必须差异化处理。
+
+### 高敏感位置清单
+
+| 位置 ID | 触发条件 | 关键差异 |
+|---------|---------|---------|
+| `first_chapter` | chapter_number == 1 | **最严格**——签约样章首章，hard_gates 全部必须通过 |
+| `volume_opener` | 卷首章（卷数 > 1） | 必须显示状态变化 + 偿付上卷勾子 |
+| `volume_climax` | 卷末章 | 高潮必须落地 + 代价必须可感 + 跨卷勾子 |
+| `first_powerup_reveal` | 首次能力完整展示 | 必须有代价账 + 外显 + 旁观反应 |
+| `first_villain_reveal` | 反派首次正面登场 | 必须可感压迫 + 主角付代价 |
+| `first_unit_case_chapter` | 单元案件首章 | 前 300 字案件诡异点 + 前 1000 字主角卷入 |
+| `major_twist_chapter` | 主线大反转 | 必须能追溯 ≥ 2 条已埋伏笔 |
+
+### 第一章（first_chapter）的 8 项 hard gates
+
+| Gate | 规则 | 失败后果 |
+|------|------|---------|
+| `protagonist_spotlight_by_100w` | 前 100 字主角出场+主语动作 | must_rewrite |
+| `visible_conflict_by_200w` | 前 200 字出现可感冲突 | must_rewrite |
+| `protagonist_emotional_pulse_by_500w` | 前 500 字主角有一次"心率"外显 | must_rewrite |
+| `core_conflict_visible_by_600w` | 前 600 字读者能复述核心矛盾 | must_rewrite |
+| `emotional_hook_by_2000w` | 前 2000 字形成情绪钩子 | must_rewrite |
+| `small_payoff_before_chapter_end` | 章末前主角完成一次可感小回报 | must_rewrite |
+| `chapter_end_hook` | 章末 150 字内有勾子 | must_rewrite |
+| 无 `psychological_dumping` / 无 `cold_protagonist` / 私设术语 ≤ 5 | 反模式时窗硬约束 | must_rewrite |
+
+## 4.2 位置敏感反模式时窗
+
+> 同一种写法，在第 1 章是红线，在第 50 章只是扣分项。
+
+| 反模式 | opening_window (ch1-3) | golden_three_window (ch1-3) | extended_opening_window (ch1-10) | 正常章节 |
+|--------|------------------------|----------------------------|--------------------------------|---------|
+| 心理独白型信息倒斗（> 150 字内心戏 + 多条背景） | ❌ 红线 | — | ⚠ 扣分 | ⚠ 扣分 |
+| 冷面工具人主角（1500 字无心率） | ❌ 红线 | — | ⚠ 扣分 | OK |
+| 私设术语堆叠（首次出现 ≥ 6） | ❌ 红线 | — | ⚠ 扣分 | OK |
+| 第一章无可感小爽点 | ❌ 红线 | — | — | — |
+| 解释性对白（角色替读者总结） | ❌ 红线 | ❌ 红线 | ⚠ 扣分 | ⚠ 扣分 |
+| 副线抢戏（副线 > 1 场或 > 1500 字） | — | ❌ 红线 | ⚠ 扣分 | OK |
+| 反派纯背景（无即时压迫） | — | ❌ 红线 | ⚠ 扣分 | OK |
+| 主角连续失败（10 章无任何收益） | — | — | ❌ 红线 | OK |
+| 主线漂移（短期目标改写 > 2 次） | — | — | ❌ 红线 | ⚠ 扣分 |
+
+### 写作时的检查动作
+
+writer 在写每一章前，必须先确认：
+
+1. 读 chapter.positions 字段 → 知道本章贴了哪些位置标签
+2. 加载对应 profile 的 must_achieve / must_avoid
+3. 把 hard_gates 写进自查清单
+4. 写完后逐条对照 hard_gates
+
+## 4.3 平台档案注入
+
+> 数据源：[config/platform_profiles.yaml](../../../config/platform_profiles.yaml)
+
+writer 在写每一章前必读 `platform_profiles[meta.target_platform]`，注入：
+
+- `voice_preference`（句长 / 段长 / 对白比例 / 情绪表达风格 / taboo）
+- `pacing_preference`（章字数区间 / payoff 密度 / hook 密度 / cliffhanger 位置）
+- 第 1 章额外注入 `opening_signing_gate.hard_position_gates`
+
+**默认 platform = qimao**。其他平台需在 `meta.yaml` 显式声明。
+
 ## 5. Cultivation / Power-Up Scene Rules
 
 - 每次境界突破**必须**同时写出代价账（寿元 / 灵力 / 情感 / 关系）
@@ -125,8 +195,9 @@ contract: {main_plot_progress, subplot_progress, emotion_shift, hook}
 generated_at: ISO-8601
 ```
 
-## 11. 写完后三步
+## 11. 写完后四步（高敏感位置加一步）
 
 1. **自查字数** ≥ 5000。不足立即扩写。
 2. **自我 critic 打分**（参照 [quality.md](quality.md) 的 5+4 维）。任一维 < 0.70 触发 editor 重写。
-3. **追加 canon facts / timeline**（参照 [knowledge.md](knowledge.md)）。
+3. **如本章有 positions 标签** → 跑对应 profile 的 hard_gates 全检（参照 quality.md § Opening Signing Gate）。任一 gate 失败强制 rewrite，且按 [config/chapter_position_profiles.yaml](../../../config/chapter_position_profiles.yaml) 的 `rewrite_priority_order` 顺序整改。
+4. **追加 canon facts / timeline**（参照 [knowledge.md](knowledge.md)）。

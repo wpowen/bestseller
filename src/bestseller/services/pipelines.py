@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-import logging
-import traceback
 from collections.abc import Callable
+import logging
 from pathlib import Path
+import traceback
 from typing import Any
 from uuid import UUID
 
@@ -13,14 +13,21 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from bestseller.domain.context import SceneWriterContextPacket
-from bestseller.domain.enums import ChapterStatus, ArtifactType, ProjectStatus, SceneStatus, WorkflowStatus
-from bestseller.domain.pipeline import ProjectPipelineChapterSummary, ProjectPipelineResult
-from bestseller.domain.planning import AutowriteResult, PlanningArtifactCreate
+from bestseller.domain.enums import (
+    ArtifactType,
+    ChapterStatus,
+    ProjectStatus,
+    SceneStatus,
+    WorkflowStatus,
+)
 from bestseller.domain.pipeline import (
     ChapterPipelineResult,
     ChapterPipelineSceneSummary,
+    ProjectPipelineChapterSummary,
+    ProjectPipelineResult,
     ScenePipelineResult,
 )
+from bestseller.domain.planning import AutowriteResult, PlanningArtifactCreate
 from bestseller.domain.project import ProjectCreate
 from bestseller.domain.workflow import ChapterOutlineBatchInput
 from bestseller.infra.db.models import (
@@ -45,11 +52,11 @@ from bestseller.services.commercial_planning_readiness import (
     commercial_planning_readiness_report_to_dict,
     evaluate_commercial_planning_readiness,
 )
-from bestseller.services.narrative_line_tracker import (
-    classify_chapter as classify_chapter_lines,
-    persist_history as persist_line_history,
+from bestseller.services.consistency import (
+    contiguous_prefix_max,
+    detect_chapter_sequence_gaps,
+    review_project_consistency,
 )
-from bestseller.services.quality_gates_config import get_quality_gates_config
 from bestseller.services.context import build_scene_writer_context_from_models
 from bestseller.services.continuity import (
     check_countdown_arithmetic,
@@ -60,45 +67,60 @@ from bestseller.services.continuity import (
 )
 from bestseller.services.drafts import assemble_chapter_draft, count_words, generate_scene_draft
 from bestseller.services.exports import export_chapter_markdown, export_project_markdown
-from bestseller.services.scorecard import compute_scorecard, save_scorecard
+from bestseller.services.emotion_kernel_backfill import ensure_project_emotion_driven_kernel
 from bestseller.services.invariants import (
     InvariantSeedError,
     invariants_from_dict,
     invariants_to_dict,
     seed_invariants,
 )
-from bestseller.services.writing_presets import infer_genre_preset
-from bestseller.services.consistency import (
-    contiguous_prefix_max,
-    detect_chapter_sequence_gaps,
-    review_project_consistency,
-)
 from bestseller.services.knowledge import propagate_scene_discoveries, refresh_scene_knowledge
+from bestseller.services.narrative_line_tracker import (
+    classify_chapter as classify_chapter_lines,
+)
+from bestseller.services.narrative_line_tracker import (
+    persist_history as persist_line_history,
+)
 from bestseller.services.planner import (
+    PlannerFallbackError,
     generate_foundation_plan,
     generate_novel_plan,
     generate_volume_plan,
     project_uses_signing_quality_gate,
 )
 from bestseller.services.premium_genre_engine import build_premium_genre_engine_blocks
-from bestseller.services.projects import create_project, get_project_by_slug, import_planning_artifact, load_json_file
-from bestseller.services.qimao_planning_gate import (
-    evaluate_qimao_planning_gate,
-    qimao_planning_gate_report_to_dict,
+from bestseller.services.projects import (
+    create_project,
+    get_project_by_slug,
+    import_planning_artifact,
+    load_json_file,
 )
 from bestseller.services.qimao_opening_gate import (
     evaluate_qimao_opening_gate,
     qimao_opening_gate_report_to_dict,
 )
+from bestseller.services.qimao_planning_gate import (
+    evaluate_qimao_planning_gate,
+    qimao_planning_gate_report_to_dict,
+)
+from bestseller.services.quality_gates_config import get_quality_gates_config
 from bestseller.services.query_broker import run_scene_query_brief
 from bestseller.services.reviews import (
     build_qimao_opening_rewrite_instructions,
+    qimao_opening_rewrite_strategy_for_findings,
     review_chapter_draft,
     review_scene_draft,
-    qimao_opening_rewrite_strategy_for_findings,
     rewrite_chapter_from_task,
     rewrite_scene_from_task,
 )
+from bestseller.services.scorecard import compute_scorecard, save_scorecard
+from bestseller.services.summarization import compress_knowledge_window
+from bestseller.services.truth_version import (
+    TruthVersionStaleError,
+    assert_truth_materializations_fresh,
+    truth_metadata_for_workflow,
+)
+from bestseller.services.voice_drift import check_all_pov_voice_drift
 from bestseller.services.whole_book_quality_gate import (
     build_whole_book_quality_rewrite_instructions,
     evaluate_whole_book_quality,
@@ -120,13 +142,7 @@ from bestseller.services.workflows import (
     materialize_latest_narrative_tree,
     materialize_latest_story_bible,
 )
-from bestseller.services.summarization import compress_knowledge_window
-from bestseller.services.truth_version import (
-    TruthVersionStaleError,
-    assert_truth_materializations_fresh,
-    truth_metadata_for_workflow,
-)
-from bestseller.services.voice_drift import check_all_pov_voice_drift
+from bestseller.services.world_expansion import sync_world_expansion_progress
 from bestseller.services.write_safety_gate import (
     WriteSafetyBlockError,
     assert_no_write_safety_blocks,
@@ -134,15 +150,58 @@ from bestseller.services.write_safety_gate import (
     findings_from_identity_violations,
     serialize_write_safety_findings,
 )
+from bestseller.services.writing_presets import infer_genre_preset
 from bestseller.services.writing_profile import is_english_language
-from bestseller.services.world_expansion import sync_world_expansion_progress
 from bestseller.settings import AppSettings
-
 
 logger = logging.getLogger(__name__)
 
 
 WORKFLOW_TYPE_SCENE_PIPELINE = "scene_pipeline"
+
+
+def _is_volume_outline_auto_repairable(exc: Exception) -> bool:
+    message = str(exc)
+    return (
+        "failed chapter-outline repair loop" in message
+        and "returned" in message
+        and "chapters" in message
+    )
+
+
+def _volume_outline_auto_repair_constraints(
+    *,
+    language: str | None,
+    volume_number: int,
+    expected_count: int,
+    error_message: str,
+) -> list[str]:
+    is_en = is_english_language(language)
+    if expected_count <= 0:
+        expected_count = 1
+    excerpt = error_message[:1200]
+    if is_en:
+        return [
+            (
+                "Automatic volume-outline repair after a count-contract failure. "
+                f"Regenerate volume {volume_number} from scratch and return exactly "
+                f"{expected_count} chapter objects in chapters. Count the array "
+                "before final output; do not summarize, stop early, pad, trim, "
+                "merge, split, or move future-volume material."
+            ),
+            f"Previous failure diagnostic: {excerpt}",
+        ]
+    return [
+        (
+            "卷章纲自动修复：上一轮违反章数合同。"
+            f"请从头重写第{volume_number}卷，chapters 数组必须恰好包含 "
+            f"{expected_count} 个章节对象。输出前必须自检数组长度；不得概括、提前停止、"
+            "补白、裁剪、合并、拆分，也不得把后续卷内容挪入本卷。"
+        ),
+        f"上一轮失败诊断：{excerpt}",
+    ]
+
+
 WORKFLOW_TYPE_CHAPTER_PIPELINE = "chapter_pipeline"
 WORKFLOW_TYPE_PROJECT_PIPELINE = "project_pipeline"
 ProgressCallback = Callable[[str, dict[str, Any] | None], None]
@@ -159,6 +218,48 @@ def _project_blocked_for_structural_repair(project: ProjectModel) -> bool:
         or metadata.get("production_paused")
         or metadata.get("structural_repair_required")
     )
+
+
+async def _ensure_emotion_kernel_backfill_for_pipeline(
+    session: AsyncSession,
+    settings: AppSettings,
+    project: ProjectModel,
+    *,
+    requested_by: str,
+    progress: ProgressCallback | None = None,
+) -> None:
+    if not getattr(settings.pipeline, "enable_emotion_driven_kernel", True):
+        return
+    if not getattr(settings.pipeline, "enable_emotion_kernel_backfill", True):
+        return
+    try:
+        result = await ensure_project_emotion_driven_kernel(
+            session,
+            project,
+            requested_by=requested_by,
+            persist_artifact=False,
+        )
+    except Exception:
+        logger.warning(
+            "EmotionDrivenKernel legacy backfill failed for project %s; continuing without it",
+            project.slug,
+            exc_info=True,
+        )
+        project.metadata_json = {
+            **(getattr(project, "metadata_json", None) or {}),
+            "emotion_driven_kernel_backfill_failed": True,
+        }
+        return
+    if result.changed:
+        _emit_progress(
+            progress,
+            "emotion_kernel_backfilled",
+            {
+                "project_slug": project.slug,
+                "status": result.status,
+                "source": result.source,
+            },
+        )
 
 
 def _assert_project_not_blocked_for_structural_repair(
@@ -435,6 +536,38 @@ def _project_uses_whole_book_quality_gate(project: ProjectModel) -> bool:
     return metadata.get("whole_book_quality_gate_disabled") is not True
 
 
+_WHOLE_BOOK_QUALITY_GATE_AUTO_WARN_ONLY_CODES = frozenset(
+    {
+        "chapter_hook_missing",
+        "volume_momentum_drop",
+    }
+)
+
+
+def _whole_book_quality_gate_finding_codes(report_payload: dict[str, Any]) -> list[str]:
+    findings = report_payload.get("findings")
+    if not isinstance(findings, list):
+        return []
+    codes: list[str] = []
+    for finding in findings:
+        if not isinstance(finding, dict):
+            continue
+        severity = str(finding.get("severity") or "").lower()
+        if severity not in {"high", "critical"}:
+            continue
+        code = str(finding.get("code") or "").strip()
+        if code:
+            codes.append(code)
+    return sorted(set(codes))
+
+
+def _whole_book_quality_gate_can_warn_only(report_payload: dict[str, Any]) -> bool:
+    codes = _whole_book_quality_gate_finding_codes(report_payload)
+    if not codes:
+        return False
+    return all(code in _WHOLE_BOOK_QUALITY_GATE_AUTO_WARN_ONLY_CODES for code in codes)
+
+
 def _whole_book_quality_gate_error_message(report_payload: dict[str, Any]) -> str:
     findings = report_payload.get("findings")
     codes: list[str] = []
@@ -601,6 +734,7 @@ async def _enforce_whole_book_quality_gate_after_chapter(
     report = evaluate_whole_book_quality(
         chapter_texts,
         volume_plan=metadata.get("volume_plan"),
+        emotion_driven_kernel=metadata.get("emotion_driven_kernel"),
     )
     report_payload = whole_book_quality_report_to_dict(report)
     project.metadata_json = {
@@ -624,7 +758,11 @@ async def _enforce_whole_book_quality_gate_after_chapter(
         metadata.get("opening_quality_contract")
         or metadata.get("qimao_opening_contract")
     )
-    warn_only = metadata.get("whole_book_quality_gate_warn_only") is True
+    finding_codes = _whole_book_quality_gate_finding_codes(report_payload)
+    warn_only = (
+        metadata.get("whole_book_quality_gate_warn_only") is True
+        or _whole_book_quality_gate_can_warn_only(report_payload)
+    )
     strategy = whole_book_quality_strategy_for_findings(report.findings)
     rewrite_task = RewriteTaskModel(
         project_id=project.id,
@@ -655,14 +793,33 @@ async def _enforce_whole_book_quality_gate_after_chapter(
     )
     session.add(rewrite_task)
     project_metadata = {**(project.metadata_json or {})}
+    project_metadata["whole_book_quality_gate_codes"] = finding_codes
+    project_metadata["whole_book_quality_gate_strategy"] = strategy
     workflow_metadata = {
         **(workflow_run.metadata_json or {}),
         "whole_book_quality_rewrite_strategy": strategy,
+        "whole_book_quality_gate_codes": finding_codes,
     }
     if warn_only:
+        project_metadata["whole_book_quality_gate_warning_codes"] = finding_codes
+        project_metadata["whole_book_quality_gate_warning_count"] = (
+            int(project_metadata.get("whole_book_quality_gate_warning_count", 0)) + 1
+        )
+        project_metadata["whole_book_quality_gate_warning_scope"] = (
+            "auto_recoverable"
+            if (
+                metadata.get("whole_book_quality_gate_warn_only") is not True
+                and _whole_book_quality_gate_can_warn_only(report_payload)
+            )
+            else "manual"
+        )
         project_metadata["whole_book_quality_gate_warning"] = True
         workflow_metadata["whole_book_quality_gate_warning"] = True
     else:
+        project_metadata["whole_book_quality_gate_block_codes"] = finding_codes
+        project_metadata["whole_book_quality_gate_block_count"] = (
+            int(project_metadata.get("whole_book_quality_gate_block_count", 0)) + 1
+        )
         project_metadata["whole_book_quality_gate_blocked"] = True
         workflow_metadata["whole_book_quality_gate_blocked"] = True
     project.metadata_json = project_metadata
@@ -777,7 +934,7 @@ async def _apply_post_chapter_phase_b(
             classification.dominant_line,
             classification.line_intensity,
         )
-    except Exception:  # noqa: BLE001 — Phase B is advisory, never fail a chapter.
+    except Exception:
         logger.debug("Phase B classification failed (non-fatal)", exc_info=True)
 
 
@@ -805,7 +962,7 @@ async def _apply_post_chapter_phase_c(
                 touched,
                 chapter_number,
             )
-    except Exception:  # noqa: BLE001
+    except Exception:
         logger.debug("Phase C accrual failed (non-fatal)", exc_info=True)
 
 
@@ -852,7 +1009,7 @@ async def _collect_phase_d_reports(
         if cfg.phase_d.regression_check_enabled:
             reports.append(check_time_regression(cur_ctx, prev_ctx))
         return reports
-    except Exception:  # noqa: BLE001
+    except Exception:
         logger.debug("Phase D validators failed (non-fatal)", exc_info=True)
         return []
 
@@ -932,12 +1089,80 @@ def _merge_progressive_outline_batch(
     return [by_number[k] for k in sorted(by_number)]
 
 
+def _outline_content_chapters(content: Any) -> list[Any]:
+    if isinstance(content, dict):
+        chapters = content.get("chapters")
+        return chapters if isinstance(chapters, list) else []
+    if isinstance(content, list):
+        return content
+    return []
+
+
+def _outline_chapters_for_volume(content: Any, volume_number: int) -> list[dict[str, Any]]:
+    chapters: list[dict[str, Any]] = []
+    for chapter in _outline_content_chapters(content):
+        if not isinstance(chapter, dict):
+            continue
+        try:
+            chapter_volume = int(chapter.get("volume_number") or 0)
+        except (TypeError, ValueError):
+            chapter_volume = 0
+        if chapter_volume == volume_number:
+            chapters.append(chapter)
+    return chapters
+
+
+async def _resume_outline_chapters_for_volume(
+    session: AsyncSession,
+    *,
+    project_id: UUID,
+    volume_number: int,
+    expected_count: int,
+) -> list[dict[str, Any]]:
+    artifact = await get_latest_planning_artifact(
+        session,
+        project_id=project_id,
+        artifact_type=ArtifactType.CHAPTER_OUTLINE_BATCH,
+    )
+    if artifact is None:
+        return []
+    chapters = _outline_chapters_for_volume(artifact.content, volume_number)
+    if not chapters:
+        return []
+    if expected_count > 0 and len(chapters) < expected_count:
+        return []
+    return chapters
+
+
 _WRITTEN_CHAPTER_STATUSES: tuple[str, ...] = (
     ChapterStatus.DRAFTING.value,
     ChapterStatus.REVIEW.value,
     ChapterStatus.REVISION.value,
     ChapterStatus.COMPLETE.value,
 )
+
+
+def _chapter_has_safe_draft_for_review_stall(
+    chapter: ChapterModel,
+    chapter_draft: ChapterDraftVersionModel | None,
+) -> bool:
+    """Return True when review can accept the best draft without human review."""
+    if chapter_draft is None:
+        return False
+    return getattr(chapter, "production_state", None) == "ok"
+
+
+def _project_consistency_warn_only_scope(
+    *,
+    current_volume_number: int | None,
+    chapter_numbers: set[int] | None,
+) -> str | None:
+    """Project consistency is advisory while processing a partial write slice."""
+    if current_volume_number is not None:
+        return "partial_volume"
+    if chapter_numbers is not None:
+        return "chapter_slice"
+    return None
 
 
 async def maybe_persist_opening_archetype(
@@ -1345,6 +1570,12 @@ async def run_scene_pipeline(
         operation=f"scene pipeline {chapter_number}.{scene_number}",
         allow_structural_repair=allow_structural_repair,
     )
+    await _ensure_emotion_kernel_backfill_for_pipeline(
+        session,
+        settings,
+        project,
+        requested_by=requested_by,
+    )
     await _enforce_truth_version_guard(session, settings, project)
 
     # Resume: skip already-complete scenes to avoid re-drafting
@@ -1574,8 +1805,8 @@ async def run_scene_pipeline(
         ):
             try:
                 from bestseller.services.narrative_contracts import (
-                    repair_missing_scene_participants_pre_draft,
                     repair_legacy_scene_contract_pre_draft,
+                    repair_missing_scene_participants_pre_draft,
                     validate_scene_contract_pre_draft,
                 )
 
@@ -1662,8 +1893,8 @@ async def run_scene_pipeline(
                 logger.debug("Overused phrase injection failed (non-fatal)", exc_info=True)
             try:
                 from bestseller.services.genre_consistency import (
-                    get_genre_profile,
                     build_genre_constraint_block,
+                    get_genre_profile,
                 )
                 _genre = getattr(project, "genre", None) or settings.generation.genre
                 _sub_genre = (project.metadata_json or {}).get("sub_genre")
@@ -1769,6 +2000,18 @@ async def run_scene_pipeline(
                 if _engine_blocks.relationship_agency_context_block:
                     shared_context.relationship_agency_context_block = (
                         _engine_blocks.relationship_agency_context_block
+                    )
+                if _engine_blocks.entry_system_context_block:
+                    shared_context.entry_system_context_block = (
+                        _engine_blocks.entry_system_context_block
+                    )
+                if _engine_blocks.entry_registry_context_block:
+                    shared_context.entry_registry_context_block = (
+                        _engine_blocks.entry_registry_context_block
+                    )
+                if _engine_blocks.entry_state_ledger_block:
+                    shared_context.entry_state_ledger_block = (
+                        _engine_blocks.entry_state_ledger_block
                     )
                 if _engine_blocks.warnings:
                     shared_context.contradiction_warnings.extend(
@@ -1987,11 +2230,11 @@ async def run_scene_pipeline(
         # counter) that the L5 gate enforces. Cheap lookup — one row join.
         if shared_context is not None:
             try:
+                from bestseller.infra.db.models import SceneCardModel as _SCM_for_closer
                 from bestseller.services.diversity_budget import (
                     load_diversity_budget,
                     render_budget_diversity_block,
                 )
-                from bestseller.infra.db.models import SceneCardModel as _SCM_for_closer
 
                 _budget = await load_diversity_budget(session, project.id)
                 _max_scene_row = await session.execute(
@@ -2028,8 +2271,8 @@ async def run_scene_pipeline(
         if shared_context is not None:
             try:
                 from bestseller.services.hype_engine import (
-                    extract_ladder_from_growth_curve,
                     GoldenFingerLadder,
+                    extract_ladder_from_growth_curve,
                 )
                 from bestseller.services.prompt_constructor import (
                     build_chapter_hype_blocks,
@@ -2681,7 +2924,7 @@ async def run_scene_pipeline(
                     scene.scene_number,
                     knowledge_result,
                 )
-            except Exception:  # noqa: BLE001
+            except Exception:
                 logger.warning(
                     "Scene %d:%d discovery propagation failed (non-fatal)",
                     chapter.chapter_number,
@@ -2775,6 +3018,12 @@ async def run_chapter_pipeline(
         project_slug=project_slug,
         operation=f"chapter pipeline {chapter_number}",
         allow_structural_repair=allow_structural_repair,
+    )
+    await _ensure_emotion_kernel_backfill_for_pipeline(
+        session,
+        settings,
+        project,
+        requested_by=requested_by,
     )
     await _enforce_truth_version_guard(session, settings, project)
 
@@ -3259,6 +3508,81 @@ async def run_chapter_pipeline(
         )
         step_order += 1
 
+        # ── AI-flavor gate ─────────────────────────────────────────────
+        # Runs after bible_gate and before export/signing. Detects span-
+        # level AI "味" and applies *only* localized fixes at the marked
+        # positions. Surrounding prose is never rewritten. When the
+        # post-patch score is still above the block threshold the chapter
+        # is routed to human review — same escape hatch the rest of the
+        # gates use.
+        ai_flavor_outcome = None
+        try:
+            from bestseller.services.quality_gates_config import (
+                get_quality_gates_config,
+            )
+
+            _af_gates_cfg = get_quality_gates_config()
+            if (
+                _af_gates_cfg.ai_flavor.enabled
+                and chapter_draft is not None
+                and chapter_draft.content_md
+            ):
+                from bestseller.services.ai_flavor_gate import run_ai_flavor_gate
+
+                _af_lang = getattr(project, "language", None) or "zh-CN"
+                _af_output_dir = (
+                    Path(settings.output.base_dir) / project.slug
+                ).resolve()
+                ai_flavor_outcome = run_ai_flavor_gate(
+                    chapter_number=chapter_number,
+                    content_md=chapter_draft.content_md,
+                    language=_af_lang,
+                    config=_af_gates_cfg.ai_flavor,
+                    project_output_dir=_af_output_dir,
+                )
+                if ai_flavor_outcome.patched_text is not None:
+                    chapter_draft.content_md = ai_flavor_outcome.patched_text
+                if ai_flavor_outcome.decision == "block":
+                    logger.warning(
+                        "ai_flavor_gate ch%d: residual score %.1f >= threshold, "
+                        "routing to human review",
+                        chapter_number,
+                        ai_flavor_outcome.after_score,
+                    )
+                    chapter.status = ChapterStatus.REVISION.value
+                    chapter.production_state = "blocked"
+                    scene_requires_human_review = True
+                    workflow_run.metadata_json = {
+                        **workflow_run.metadata_json,
+                        "blocked_by_ai_flavor_gate": True,
+                        "ai_flavor_before_score": ai_flavor_outcome.before_score,
+                        "ai_flavor_after_score": ai_flavor_outcome.after_score,
+                    }
+                # Only record a workflow step when the gate actually
+                # detected something. Clean-pass no-ops would otherwise
+                # clutter the step log on every chapter and break
+                # downstream consumers that assume a fixed step count.
+                if (
+                    ai_flavor_outcome.before_score > 0
+                    or ai_flavor_outcome.decision != "pass"
+                ):
+                    await create_workflow_step_run(
+                        session,
+                        workflow_run_id=workflow_run.id,
+                        step_name="ai_flavor_gate",
+                        step_order=step_order,
+                        status=WorkflowStatus.COMPLETED,
+                        output_ref={
+                            "decision": ai_flavor_outcome.decision,
+                            "before_score": ai_flavor_outcome.before_score,
+                            "after_score": ai_flavor_outcome.after_score,
+                            "edits": len(ai_flavor_outcome.edits),
+                        },
+                    )
+                    step_order += 1
+        except Exception:
+            logger.debug("ai_flavor_gate failed (non-fatal)", exc_info=True)
+
         async def _export_current_chapter_markdown() -> tuple[UUID | None, str | None]:
             nonlocal current_step_name
             nonlocal step_order
@@ -3464,8 +3788,8 @@ async def run_chapter_pipeline(
                     # ── Book-level overused phrase tracking ──
                     try:
                         from bestseller.services.deduplication import (
-                            extract_frequent_phrases,
                             build_overused_phrase_avoidance_block,
+                            extract_frequent_phrases,
                         )
                         _all_scene_texts_q = await session.scalars(
                             select(SceneDraftVersionModel.content).join(
@@ -3507,7 +3831,7 @@ async def run_chapter_pipeline(
                         logger.info("Bible update ch%d: %s", chapter.chapter_number, _bible_counts)
                     except Exception:
                         logger.debug("Living bible update failed (non-fatal)", exc_info=True)
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 logger.warning(
                     "Chapter %d hard-fact extraction failed (non-fatal): %s",
                     chapter.chapter_number,
@@ -3613,10 +3937,17 @@ async def run_chapter_pipeline(
             at_chapter_rewrite_limit = (
                 chapter_rewrite_iterations >= settings.quality.max_chapter_revisions
             )
+            safe_draft_available = _chapter_has_safe_draft_for_review_stall(
+                chapter,
+                chapter_draft,
+            )
             accept_chapter_on_stall = (
                 at_chapter_rewrite_limit
                 and settings.pipeline.accept_on_stall
-                and not getattr(settings.pipeline, "chapter_review_block_on_failure", True)
+                and (
+                    not getattr(settings.pipeline, "chapter_review_block_on_failure", True)
+                    or safe_draft_available
+                )
             )
             if (
                 chapter_review_result.verdict == "pass"
@@ -3626,7 +3957,7 @@ async def run_chapter_pipeline(
                 if accept_chapter_on_stall:
                     reached_chapter_revision_limit = True
                     logger.info(
-                        "Chapter %d reached max revisions (%d) — accepting best draft",
+                        "Chapter %d reached max revisions (%d) — accepting best safe draft",
                         chapter_number,
                         chapter_rewrite_iterations,
                     )
@@ -3688,7 +4019,7 @@ async def run_chapter_pipeline(
                                         + [_checker_report_gate_payload(_pd_report)]
                                     ),
                                 }
-                except Exception as exc:  # noqa: BLE001
+                except Exception as exc:
                     logger.warning(
                         "Chapter %d hard-fact extraction failed (non-fatal): %s",
                         chapter.chapter_number,
@@ -3709,7 +4040,7 @@ async def run_chapter_pipeline(
                                 chapter_md=chapter_draft.content_md,
                                 workflow_run_id=workflow_run.id,
                             )
-                    except Exception as exc:  # noqa: BLE001
+                    except Exception as exc:
                         logger.warning(
                             "Chapter %d feedback extraction failed (non-fatal): %s",
                             chapter.chapter_number,
@@ -3728,7 +4059,7 @@ async def run_chapter_pipeline(
                             chapter_text=chapter_draft.content_md or "",
                             workflow_run_id=workflow_run.id,
                         )
-                except Exception as exc:  # noqa: BLE001
+                except Exception as exc:
                     logger.warning(
                         "Chapter %d bible update failed (non-fatal): %s",
                         chapter.chapter_number,
@@ -3768,7 +4099,7 @@ async def run_chapter_pipeline(
                                     chapter.chapter_number,
                                     _rewrites_created,
                                 )
-                except Exception:  # noqa: BLE001
+                except Exception:
                     logger.debug(
                         "Chapter %d L7 per-chapter audit failed (non-fatal)",
                         chapter.chapter_number,
@@ -3795,7 +4126,7 @@ async def run_chapter_pipeline(
                                 chapter_number=chapter.chapter_number,
                                 expected_chapter_count=project.target_chapters,
                             )
-                except Exception:  # noqa: BLE001
+                except Exception:
                     logger.debug(
                         "Chapter %d L8 per-chapter scorecard failed (non-fatal)",
                         chapter.chapter_number,
@@ -4064,6 +4395,9 @@ async def run_project_pipeline(
     project = await get_project_by_slug(session, project_slug)
     if project is None:
         raise ValueError(f"Project '{project_slug}' was not found.")
+    requested_chapter_numbers = (
+        set(chapter_numbers) if chapter_numbers is not None else None
+    )
     _assert_project_not_blocked_for_structural_repair(
         project,
         project_slug=project_slug,
@@ -4083,6 +4417,14 @@ async def run_project_pipeline(
             project_slug=project_slug,
         )
 
+    await _ensure_emotion_kernel_backfill_for_pipeline(
+        session,
+        settings,
+        project,
+        requested_by=requested_by,
+        progress=progress,
+    )
+
     # ── Batch 2: Material Forge ────────────────────────────────────────────
     # When ``enable_forge_pipeline`` is on, run all 5 Forges before the
     # Planner so that project_materials exist for reference-style prompting.
@@ -4091,9 +4433,10 @@ async def run_project_pipeline(
     # abort the pipeline — the old non-reference path is the safe fallback.
     if settings.pipeline.enable_forge_pipeline:
         try:
-            from bestseller.services.material_forge import forge_all_materials  # noqa: PLC0415
-            from bestseller.infra.db.models import ProjectMaterialModel  # noqa: PLC0415
-            from sqlalchemy import select, func  # noqa: PLC0415
+            from sqlalchemy import func, select
+
+            from bestseller.infra.db.models import ProjectMaterialModel
+            from bestseller.services.material_forge import forge_all_materials
 
             existing_count_result = await session.execute(
                 select(func.count()).where(
@@ -4212,8 +4555,11 @@ async def run_project_pipeline(
     if not chapters:
         raise ValueError(f"Project '{project_slug}' does not have any chapters to process.")
 
-    if chapter_numbers is not None:
-        chapters = [ch for ch in chapters if ch.chapter_number in chapter_numbers]
+    if requested_chapter_numbers is not None:
+        chapters = [
+            ch for ch in chapters
+            if ch.chapter_number in requested_chapter_numbers
+        ]
         if not chapters:
             raise ValueError(
                 f"Project '{project_slug}' does not have any chapters matching the requested outline slice."
@@ -4229,10 +4575,10 @@ async def run_project_pipeline(
     # prefix and defer the remainder — the completed prefix still lets
     # downstream passes (outline repair, narrative rebuild) run and
     # eventually close the gap.
-    chapter_numbers = sorted(ch.chapter_number for ch in chapters)
-    sequence_gaps = detect_chapter_sequence_gaps(chapter_numbers)
+    loaded_chapter_numbers = sorted(ch.chapter_number for ch in chapters)
+    sequence_gaps = detect_chapter_sequence_gaps(loaded_chapter_numbers)
     if sequence_gaps:
-        prefix_max = contiguous_prefix_max(chapter_numbers)
+        prefix_max = contiguous_prefix_max(loaded_chapter_numbers)
         if settings.pipeline.resume_enabled and prefix_max is not None:
             logger.warning(
                 "Chapter sequence has gaps for '%s': keeping contiguous 1..%d, "
@@ -4266,7 +4612,7 @@ async def run_project_pipeline(
     if should_materialize:
         resume_filter_enabled = False
     elif (
-        chapter_numbers is not None
+        requested_chapter_numbers is not None
         and current_volume_number is None
         and total_volumes is None
     ):
@@ -5007,8 +5353,26 @@ async def run_project_pipeline(
         )
         step_order += 1
         project_review_not_pass = review_result.verdict != "pass"
+        project_consistency_warn_only_scope = _project_consistency_warn_only_scope(
+            current_volume_number=current_volume_number,
+            chapter_numbers=requested_chapter_numbers,
+        )
         if project_review_not_pass:
-            if getattr(settings.pipeline, "project_consistency_block_on_failure", True):
+            if project_consistency_warn_only_scope is not None:
+                workflow_run.metadata_json = {
+                    **(workflow_run.metadata_json or {}),
+                    "project_consistency_warn_only": True,
+                    "project_consistency_scope": project_consistency_warn_only_scope,
+                    "project_consistency_verdict": review_result.verdict,
+                }
+                logger.warning(
+                    "Project %s consistency verdict=%s during %s — recorded as "
+                    "warning; partial write slices are not whole-book blockers.",
+                    project_slug,
+                    review_result.verdict,
+                    project_consistency_warn_only_scope,
+                )
+            elif getattr(settings.pipeline, "project_consistency_block_on_failure", True):
                 requires_human_review = True
                 workflow_run.metadata_json = {
                     **(workflow_run.metadata_json or {}),
@@ -5366,7 +5730,7 @@ async def run_autowrite_pipeline(
             {"project_slug": project.slug, "reason": "planning artifacts already exist"},
         )
         # Create a minimal planning result placeholder for downstream references
-        from bestseller.domain.planning import NovelPlanningResult  # noqa: PLC0415
+        from bestseller.domain.planning import NovelPlanningResult
 
         planning_result = NovelPlanningResult(
             workflow_run_id=existing_plan_artifact.source_run_id or UUID(int=0),
@@ -5613,7 +5977,7 @@ async def run_progressive_autowrite_pipeline(
     Characters and world evolve with the story — each volume's planning is
     informed by feedback from the previous volume's actual writing output.
     """
-    from bestseller.services.planning_context import (  # noqa: PLC0415
+    from bestseller.services.planning_context import (
         collect_volume_writing_feedback,
         summarize_volume_feedback,
     )
@@ -5636,7 +6000,7 @@ async def run_progressive_autowrite_pipeline(
     )
     if existing_volume_plan is not None and settings.pipeline.resume_enabled:
         _emit_progress(progress, "foundation_planning_skipped_resume", {"project_slug": project.slug})
-        from bestseller.domain.planning import NovelPlanningResult  # noqa: PLC0415
+        from bestseller.domain.planning import NovelPlanningResult
         planning_result = NovelPlanningResult(
             workflow_run_id=existing_volume_plan.source_run_id or UUID(int=0),
             project_id=project.id, premise=premise, volume_count=0, chapter_count=0,
@@ -5669,7 +6033,7 @@ async def run_progressive_autowrite_pipeline(
             "project_slug": project.slug,
             "workflow_run_id": str(existing_bible_run.id),
         })
-        from bestseller.domain.story_bible import StoryBibleMaterializationResult  # noqa: PLC0415
+        from bestseller.domain.story_bible import StoryBibleMaterializationResult
         story_bible_result = StoryBibleMaterializationResult(
             workflow_run_id=existing_bible_run.id,
             project_id=project.id,
@@ -5702,7 +6066,7 @@ async def run_progressive_autowrite_pipeline(
     # Normalize volume plan. Some recovered/legacy plans store chapter_range
     # but omit chapter_count_target; the planner can derive the count, so use
     # its normalization here before the volume loop makes skip/replan decisions.
-    from bestseller.services.planner import _normalize_volume_plan_payload  # noqa: PLC0415
+    from bestseller.services.planner import _normalize_volume_plan_payload
 
     volume_plan_list = _normalize_volume_plan_payload(volume_plan_payload)
 
@@ -5741,6 +6105,7 @@ async def run_progressive_autowrite_pipeline(
         vol_num = int(vol_entry.get("volume_number", 0)) or vol_idx
 
         resume_existing_chapter_numbers: set[int] | None = None
+        used_resume_outline_chapters = False
 
         # Skip replanning for any already-materialized volume during resume.
         # A partial volume means "write/repair existing rows", not "generate
@@ -5787,95 +6152,148 @@ async def run_progressive_autowrite_pipeline(
                     })
 
         if resume_existing_chapter_numbers is None:
-            _emit_progress(progress, "volume_planning_started", {
-                "project_slug": project.slug, "volume_number": vol_num, "total_volumes": total_volumes,
-            })
-
-            # Plan this volume (cast expansion + world disclosure + outline)
-            vol_plan_result = await generate_volume_plan(
-                session, settings, project.slug, vol_num,
-                book_spec=book_spec_payload,
-                world_spec=world_spec_payload,
-                cast_spec=cast_spec_payload,
-                volume_plan=volume_plan_list,
-                prior_feedback_summary=prior_feedback_summary,
-                prior_world_snapshot=prior_world_snapshot,
-                requested_by=requested_by,
-            )
-            await _checkpoint_commit(session)
-
-            _emit_progress(progress, "volume_planning_completed", {
-                "project_slug": project.slug, "volume_number": vol_num,
-                "chapter_count": vol_plan_result.chapter_count,
-                "new_characters": vol_plan_result.new_characters_introduced,
-            })
-
-            # Refresh canonical world/cast specs materialized by generate_volume_plan
-            # so this volume's writing and the next volume's planning both see the
-            # latest canon instead of the foundation snapshot.
-            _emit_progress(progress, "story_bible_refresh_started", {
-                "project_slug": project.slug, "volume_number": vol_num,
-            })
-            story_bible_result = await materialize_latest_story_bible(
-                session,
-                project.slug,
-                requested_by=requested_by,
-            )
-            await _checkpoint_commit(session)
-            _emit_progress(progress, "story_bible_refresh_completed", {
-                "project_slug": project.slug,
-                "volume_number": vol_num,
-                "workflow_run_id": str(story_bible_result.workflow_run_id),
-            })
-
-            latest_world_spec = await get_latest_planning_artifact(
-                session,
-                project_id=project.id,
-                artifact_type=ArtifactType.WORLD_SPEC,
-            )
-            latest_cast_spec = await get_latest_planning_artifact(
-                session,
-                project_id=project.id,
-                artifact_type=ArtifactType.CAST_SPEC,
-            )
-            if latest_world_spec and isinstance(latest_world_spec.content, dict):
-                world_spec_payload = latest_world_spec.content
-            if latest_cast_spec and isinstance(latest_cast_spec.content, dict):
-                cast_spec_payload = latest_cast_spec.content
-
-            # Materialize the per-volume outline into the combined CHAPTER_OUTLINE_BATCH
-            # so the existing chapter writing pipeline can pick it up
-            vol_outline_art = await get_latest_planning_artifact(
-                session, project_id=project.id, artifact_type=ArtifactType.VOLUME_CHAPTER_OUTLINE,
-            )
-            vol_chapters: list[Any] = []
-            if vol_outline_art and vol_outline_art.content:
-                # Merge volume outline into cumulative CHAPTER_OUTLINE_BATCH
-                existing_batch_art = await get_latest_planning_artifact(
-                    session, project_id=project.id, artifact_type=ArtifactType.CHAPTER_OUTLINE_BATCH,
+            # Plan this volume (cast expansion + world disclosure + outline).
+            expected_volume_chapters = int(vol_entry.get("chapter_count_target") or 0)
+            resume_outline_chapters: list[Any] = []
+            if settings.pipeline.resume_enabled:
+                resume_outline_chapters = await _resume_outline_chapters_for_volume(
+                    session,
+                    project_id=project.id,
+                    volume_number=vol_num,
+                    expected_count=expected_volume_chapters,
                 )
-                existing_chapters: list[Any] = []
-                if existing_batch_art and isinstance(existing_batch_art.content, dict):
-                    existing_chapters = existing_batch_art.content.get("chapters", [])
-                elif existing_batch_art and isinstance(existing_batch_art.content, list):
-                    existing_chapters = existing_batch_art.content
-                vol_chapters = (
-                    vol_outline_art.content.get("chapters", [])
-                    if isinstance(vol_outline_art.content, dict)
-                    else vol_outline_art.content if isinstance(vol_outline_art.content, list) else []
-                )
-                merged_chapters = _merge_progressive_outline_batch(
-                    existing_chapters,
-                    vol_chapters,
-                )
-                merged = {
-                    "batch_name": "progressive-merged-outline",
-                    "chapters": merged_chapters,
-                }
-                await import_planning_artifact(session, project.slug, PlanningArtifactCreate(
-                    artifact_type=ArtifactType.CHAPTER_OUTLINE_BATCH, content=merged,
-                ))
+                if resume_outline_chapters:
+                    _emit_progress(progress, "volume_planning_skipped_resume_existing_outline", {
+                        "project_slug": project.slug,
+                        "volume_number": vol_num,
+                        "chapter_count": len(resume_outline_chapters),
+                    })
+
+            if resume_outline_chapters:
+                vol_chapters = resume_outline_chapters
+                used_resume_outline_chapters = True
+            else:
+                _emit_progress(progress, "volume_planning_started", {
+                    "project_slug": project.slug, "volume_number": vol_num, "total_volumes": total_volumes,
+                })
+
+                try:
+                    vol_plan_result = await generate_volume_plan(
+                        session, settings, project.slug, vol_num,
+                        book_spec=book_spec_payload,
+                        world_spec=world_spec_payload,
+                        cast_spec=cast_spec_payload,
+                        volume_plan=volume_plan_list,
+                        prior_feedback_summary=prior_feedback_summary,
+                        prior_world_snapshot=prior_world_snapshot,
+                        requested_by=requested_by,
+                    )
+                except PlannerFallbackError as exc:
+                    if not _is_volume_outline_auto_repairable(exc):
+                        raise
+                    repair_constraints = _volume_outline_auto_repair_constraints(
+                        language=project.language,
+                        volume_number=vol_num,
+                        expected_count=expected_volume_chapters,
+                        error_message=str(exc),
+                    )
+                    _emit_progress(progress, "volume_planning_auto_repair_started", {
+                        "project_slug": project.slug,
+                        "volume_number": vol_num,
+                        "reason": "chapter_outline_count_contract",
+                        "expected_count": expected_volume_chapters,
+                    })
+                    logger.warning(
+                        "Volume %d planning failed chapter count contract for project '%s'; "
+                        "retrying once with auto-repair constraints.",
+                        vol_num,
+                        project.slug,
+                    )
+                    vol_plan_result = await generate_volume_plan(
+                        session, settings, project.slug, vol_num,
+                        book_spec=book_spec_payload,
+                        world_spec=world_spec_payload,
+                        cast_spec=cast_spec_payload,
+                        volume_plan=volume_plan_list,
+                        prior_feedback_summary=prior_feedback_summary,
+                        prior_world_snapshot=prior_world_snapshot,
+                        requested_by=requested_by,
+                        extra_constraints=repair_constraints,
+                    )
+                    _emit_progress(progress, "volume_planning_auto_repair_completed", {
+                        "project_slug": project.slug,
+                        "volume_number": vol_num,
+                        "reason": "chapter_outline_count_contract",
+                        "chapter_count": vol_plan_result.chapter_count,
+                    })
                 await _checkpoint_commit(session)
+
+                _emit_progress(progress, "volume_planning_completed", {
+                    "project_slug": project.slug, "volume_number": vol_num,
+                    "chapter_count": vol_plan_result.chapter_count,
+                    "new_characters": vol_plan_result.new_characters_introduced,
+                })
+
+                # Refresh canonical world/cast specs materialized by generate_volume_plan
+                # so this volume's writing and the next volume's planning both see the
+                # latest canon instead of the foundation snapshot.
+                _emit_progress(progress, "story_bible_refresh_started", {
+                    "project_slug": project.slug, "volume_number": vol_num,
+                })
+                story_bible_result = await materialize_latest_story_bible(
+                    session,
+                    project.slug,
+                    requested_by=requested_by,
+                )
+                await _checkpoint_commit(session)
+                _emit_progress(progress, "story_bible_refresh_completed", {
+                    "project_slug": project.slug,
+                    "volume_number": vol_num,
+                    "workflow_run_id": str(story_bible_result.workflow_run_id),
+                })
+
+                latest_world_spec = await get_latest_planning_artifact(
+                    session,
+                    project_id=project.id,
+                    artifact_type=ArtifactType.WORLD_SPEC,
+                )
+                latest_cast_spec = await get_latest_planning_artifact(
+                    session,
+                    project_id=project.id,
+                    artifact_type=ArtifactType.CAST_SPEC,
+                )
+                if latest_world_spec and isinstance(latest_world_spec.content, dict):
+                    world_spec_payload = latest_world_spec.content
+                if latest_cast_spec and isinstance(latest_cast_spec.content, dict):
+                    cast_spec_payload = latest_cast_spec.content
+
+                # Materialize the per-volume outline into the combined CHAPTER_OUTLINE_BATCH
+                # so the existing chapter writing pipeline can pick it up
+                vol_outline_art = await get_latest_planning_artifact(
+                    session, project_id=project.id, artifact_type=ArtifactType.VOLUME_CHAPTER_OUTLINE,
+                )
+                vol_chapters = []
+                if vol_outline_art and vol_outline_art.content:
+                    # Merge volume outline into cumulative CHAPTER_OUTLINE_BATCH
+                    existing_batch_art = await get_latest_planning_artifact(
+                        session, project_id=project.id, artifact_type=ArtifactType.CHAPTER_OUTLINE_BATCH,
+                    )
+                    existing_chapters = _outline_content_chapters(
+                        existing_batch_art.content if existing_batch_art else None
+                    )
+                    vol_chapters = _outline_content_chapters(vol_outline_art.content)
+                    merged_chapters = _merge_progressive_outline_batch(
+                        existing_chapters,
+                        vol_chapters,
+                    )
+                    merged = {
+                        "batch_name": "progressive-merged-outline",
+                        "chapters": merged_chapters,
+                    }
+                    await import_planning_artifact(session, project.slug, PlanningArtifactCreate(
+                        artifact_type=ArtifactType.CHAPTER_OUTLINE_BATCH, content=merged,
+                    ))
+                    await _checkpoint_commit(session)
 
             # Materialize outline + narrative structures for this volume's chapters
             _emit_progress(progress, "outline_materialization_started", {"project_slug": project.slug})
@@ -5913,7 +6331,7 @@ async def run_progressive_autowrite_pipeline(
             "project_slug": project.slug, "volume_number": vol_num,
             "total_volumes": total_volumes,
         })
-        if resume_existing_chapter_numbers is not None:
+        if resume_existing_chapter_numbers is not None or used_resume_outline_chapters:
             await _refresh_stale_truth_materializations_for_resume(
                 session,
                 settings,
@@ -5949,14 +6367,28 @@ async def run_progressive_autowrite_pipeline(
             if _vw_fully_written:
                 global_completed_chapter_offset += int(_vw_written_count or 0)
             else:
-                global_completed_chapter_offset += int(len(vol_project_result.chapter_results))
+                global_completed_chapter_offset += len(vol_project_result.chapter_results)
         else:
-            global_completed_chapter_offset += int(len(vol_project_result.chapter_results))
+            global_completed_chapter_offset += len(vol_project_result.chapter_results)
         all_chapter_results.extend(vol_project_result.chapter_results)
         _emit_progress(progress, "volume_writing_completed", {
             "project_slug": project.slug, "volume_number": vol_num,
             "chapters_written": len(vol_project_result.chapter_results),
         })
+        if vol_project_result.requires_human_review:
+            logger.warning(
+                "Volume %d writing for project %s paused for human review; "
+                "skipping later volume planning until the blocker is resolved.",
+                vol_num,
+                project.slug,
+            )
+            _emit_progress(progress, "volume_writing_paused_for_human_review", {
+                "project_slug": project.slug,
+                "volume_number": vol_num,
+                "chapters_written": len(vol_project_result.chapter_results),
+                "final_verdict": vol_project_result.final_verdict,
+            })
+            break
 
         # ── Collect feedback (反哺) for next volume ──
         _emit_progress(progress, "volume_feedback_collection_started", {
@@ -5976,7 +6408,7 @@ async def run_progressive_autowrite_pipeline(
 
         # ── Volume audit (质量反哺) — best-effort; never fails the pipeline ──
         try:
-            from bestseller.services.volume_audit import run_volume_audit  # noqa: PLC0415
+            from bestseller.services.volume_audit import run_volume_audit
             _audit_output_root = Path(settings.output.base_dir)
             audit_digest = await run_volume_audit(
                 session,

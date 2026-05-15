@@ -1,0 +1,36 @@
+{
+  "source_id": "source-0091",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "style_safety_policy": "{'assessed_policy': 'UNASSESSABLE', 'rationale': 'No source content accessible for style evaluation. All 95 constituent chapter_cards are LLM unavailable fallbacks at 0.0 confidence. No distinctive voice, phraseology, or authorial signature present in dataset for safety review.', 'requires_manual_review': True}",
+  "pov_and_distance": "{'technique': 'UNKNOWN', 'distance_calibration': 'UNAVAILABLE', 'note': 'Zero chapter_cards contained extractable POV data. Narrative perspective, point-of-view character consistency, and psychic distance calibration cannot be determined from unavailable source material.'}",
+  "sentence_rhythm": [
+    "{'observed_pattern': 'UNAVAILABLE', 'cadence_markers': [], 'note': 'No sentence-level content exists in dataset. Syntactic rhythm, clause density variation, and pacing mechanisms cannot be distilled without source text access.'}"
+  ],
+  "paragraphing": [
+    "{'structure_strategy': 'UNKNOWN', 'compression_ratio': 'UNAVAILABLE', 'note': 'Chapter_cards contain no paragraph-level narrative content. Block structure, white-space rhythm, and scene-versus-summary distribution cannot be characterized.'}"
+  ],
+  "dialogue_system": [
+    "{'attribution_method': 'UNAVAILABLE', 'tagging_conventions': [], 'direct_vs_indirect_ratio': 'UNKNOWN', 'note': 'No dialogue content accessible for system extraction. Quotation conventions, speaker attribution patterns, and dialogue pacing cannot be catalogued.'}"
+  ],
+  "description_strategy": [
+    "{'sensory_focus': 'UNAVAILABLE', 'filter_words_pattern': 'UNKNOWN', 'description_to_narration_ratio': 'UNKNOWN', 'note': 'No descriptive passages present in fallback chapter_cards. Sensory palette, observation filters, and detail density cannot be identified.'}"
+  ],
+  "exposition_strategy": [
+    "{'delivery_method': 'UNAVAILABLE', 'backstory_injection_points': [], 'info_dump_mitigation': 'UNKNOWN', 'note': 'No expository content available for technique extraction. Exposition placement, backstory revelation pacing, and explanation-to-scene ratio cannot be determined.'}"
+  ],
+  "emotional_temperature": [
+    "{'dominant_register': 'UNAVAILABLE', 'tension_calibration': 'UNKNOWN', 'affect_range': 'UNKNOWN', 'note': 'Emotional texture cannot be assessed from empty chapter stubs. Intensity curves, sentiment tracking, and cathartic release mechanisms are not distillable.'}"
+  ],
+  "hooking_and_transitions": [
+    "{'chapter_opening_techniques': [], 'closure_patterns': [], 'cliffhanger_frequency': 'UNKNOWN', 'note': 'No hook content present in dataset. Chapter-start momentum generation, ending blackout techniques, and scene-transition methods cannot be catalogued.'}"
+  ],
+  "adaptation_guidelines": [
+    "{'transferability_assessment': 'NOT_PERFORMED', 'narrative_reliance_level': 'UNASSESSABLE', 'note': 'Adaptation pathway cannot be evaluated without source content. Recommend re-extracting source material through functional LLM pipeline before adaptation guidelines generation.'}"
+  ],
+  "taboo_copy_signals": [
+    "{'identified_taboos': [], 'distinctive_markers': [], 'confidence_in_avoidance': 'N/A', 'note': 'No authorial voice content available for fingerprinting. Copy signals, phrase-level patterns, and style taboos cannot be identified from unavailable source.'}"
+  ],
+  "confidence": 0.0,
+  "distillation_source_id": "source-0091"
+}

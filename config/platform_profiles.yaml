@@ -1,0 +1,266 @@
+# =============================================================================
+# Platform Profiles · 平台档案
+# =============================================================================
+# 目的：
+#   把"平台运营规则"从 qimao 孤岛配置抽象为统一档案。
+#   不同平台的签约 gate / voice 偏好 / 节奏要求差异大；writer / critic
+#   读 platform_profile.{platform_id} 即可知道本作品的所有平台硬指标。
+#
+# 使用方式：
+#   - meta.yaml 加 `target_platform: qimao` 字段（默认 qimao）。
+#   - writer 读 platform_profiles[target_platform]，注入 voice_preference
+#     / pacing_preference / opening_signing_gate 到自己的 system prompt。
+#   - critic 读 same，按 opening_signing_gate 跑硬检。
+# =============================================================================
+
+version: 2026.05.14
+
+platforms:
+
+  # ===========================================================================
+  # 七猫 (Qimao) · 免费阅读 / 移动端无线风
+  # ===========================================================================
+  qimao:
+    display_name: 七猫中文网
+    audience_pattern: 移动端免费阅读 / 短时长碎片化追读 / 情绪外显偏好
+    reading_environment: 通勤、午休、睡前；屏幕小；中途易跳出
+    sample_books_research_required: true
+
+    voice_preference:
+      sentence_style: 短句为主；长句不超过 30 字
+      paragraph_length: 单段不超过 5 行（约 80-120 字）
+      dialogue_ratio: 0.30-0.50  # 比起点高
+      emotional_expression: 外显 + 具象化（手收紧 / 心一沉 / 眼神锐了）
+      pacing_unit: 每 300-500 字必须有一个"动作 / 信息 / 情绪"变化点
+      taboo:
+        - 长段景物描写
+        - 长段背景介绍
+        - 长段心理独白
+        - 文学化形容词堆叠
+        - 学院派书面语
+
+    pacing_preference:
+      chapter_word_count: 2500-4000  # 七猫日更基准
+      payoff_density: 每章 ≥ 1 个可感正反馈节点
+      hook_density: 每 1000 字 ≥ 1 个钩子（小问题 / 小威胁 / 小转折）
+      cliffhanger_position: 章末 100-200 字内必有勾子
+
+    opening_signing_gate:
+      # 这是从 writing_methodology.yaml.qimao_signing_gate 拷贝并扩展的
+      # 现在作为 platform_profile 的标准接口，critic 可直接读
+      sample_words: 10000
+      hard_position_gates:
+        - position: 100w
+          rule: 主角进入聚光灯（出场 + 主语动作）
+        - position: 200w
+          rule: 出现可感冲突（异常 / 危机 / 误会 / 侮辱 / 背叛 / 利益冲突）
+        - position: 600w
+          rule: 读者能用一句话说出主角被什么压住
+        - position: 2000w
+          rule: 形成可述情绪钩子
+        - position: 6000w
+          rule: 主线目标 / 障碍 / 行动方向清晰
+        - position: 10000w
+          rule: 证明核心循环可持续
+      first_three_chapters_must:
+        - chapter: 1
+          deliverable: 立冲突 + 勾情绪 + 主角被什么压住可感 + 一次可感小爽点
+        - chapter: 2
+          deliverable: 亮差异化优势 / 金手指 + 明确短期目标 + 反打方向
+        - chapter: 3
+          deliverable: 完成一次小爆点 + 留下一轮钩子
+      first_10000_words_must:
+        - 围绕一条主线推进，不允许副线抢戏
+        - 目标 / 障碍 / 行动 / 回报连续可见
+        - 至少证明一个可重复的核心循环
+
+    rejection_signals_to_cause_map:
+      # 平台原话 → 内部 cause id（用于触发 rejection_repair_playbook）
+      "开篇切入点比较普通": ordinary_entry
+      "缺乏足够吸引力": weak_attraction
+      "代入感较弱": weak_immersion
+      "故事叙述较为平淡": flat_narration
+      "文笔还有待提升": weak_prose
+      "主线不清": mainline_unclear
+      "爽点弱": weak_satisfaction
+      "拖沓 / 流水账": flat_plot
+      "人设没亮点": weak_character_hook
+      "AI 腔": ai_voice
+
+  # ===========================================================================
+  # 起点 (Qidian) · 付费精品 / 慢热可接受 / 设定可深
+  # ===========================================================================
+  qidian:
+    display_name: 起点中文网
+    audience_pattern: 付费精品阅读 / 长时间深入 / 设定派偏好
+    reading_environment: 桌面 / 移动均有；读者愿意为优质内容停留
+
+    voice_preference:
+      sentence_style: 长短句结合；可有学院腔
+      paragraph_length: 可长（150-200 字）
+      dialogue_ratio: 0.20-0.40
+      emotional_expression: 内敛 + 具象动作 / 通感
+      pacing_unit: 每 500-800 字一个变化点（比七猫慢）
+
+    pacing_preference:
+      chapter_word_count: 3000-4500
+      payoff_density: 每 2-3 章一次可感正反馈
+      hook_density: 每 1500 字 ≥ 1 个钩子
+      cliffhanger_position: 章末 200-400 字内
+
+    opening_signing_gate:
+      sample_words: 30000
+      hard_position_gates:
+        - position: 500w
+          rule: 主角出场（可接受第一场景非主角，但 500 字内必须切回）
+        - position: 1500w
+          rule: 出现可感冲突
+        - position: 3000w
+          rule: 核心矛盾清晰
+        - position: 10000w
+          rule: 主线方向清晰
+        - position: 30000w
+          rule: 核心循环可持续
+      first_three_chapters_must:
+        - chapter: 1
+          deliverable: 角色立起来 + 世界感建立 + 一个钩子
+        - chapter: 2
+          deliverable: 冲突升级 + 主线浮现
+        - chapter: 3
+          deliverable: 第一次明确目标 + 阶段爆点
+
+  # ===========================================================================
+  # 番茄 (Tomato) · 免费 / 高频爽点 / 视觉化强
+  # ===========================================================================
+  tomato:
+    display_name: 番茄小说
+    audience_pattern: 免费 / 算法推流 / 高频爽点 / 视觉化预期高
+    reading_environment: 移动端为主；前 3000 字决定推流权重
+
+    voice_preference:
+      sentence_style: 极短句 + 大量分行
+      paragraph_length: 单段不超过 3 行（约 50-80 字）
+      dialogue_ratio: 0.35-0.55
+      emotional_expression: 极外显 + 反应放大（旁观者反应必带）
+      pacing_unit: 每 200-300 字必有变化点
+
+    pacing_preference:
+      chapter_word_count: 2000-3000
+      payoff_density: 每章必须 ≥ 1 个明确爽点
+      hook_density: 每 500-800 字 ≥ 1 个钩子
+      cliffhanger_position: 章末 50-150 字内必有勾子
+
+    opening_signing_gate:
+      sample_words: 5000
+      hard_position_gates:
+        - position: 50w
+          rule: 主角进入聚光灯
+        - position: 100w
+          rule: 出现冲突（侮辱 / 嘲讽 / 危机 / 倒计时）
+        - position: 300w
+          rule: 主角第一次反击信号（不必胜，但要有姿态）
+        - position: 1000w
+          rule: 第一次小爆点
+        - position: 3000w
+          rule: 核心循环建立
+
+# =============================================================================
+# 平台无关的通用 hooks 库（writer 可在写开篇时 sample 选择）
+# =============================================================================
+opening_hook_bank:
+  description: |
+    开篇 hook 银行。writer 在写第 1 章时，必须从这里 sample 2-3 个候选
+    模板，组合产出 3 种开场，自选最强一个落笔。这避免"一笔到底"的
+    单点失败。
+  hook_types:
+    - id: countdown_threat
+      name: 倒计时威胁开场
+      pattern: |
+        外部已经下了一个明确的时限（X 时辰 / 天亮前 / 倒数 N 步），
+        过了这个时限主角会失去关键事物。主角第一个动作是"在时限
+        内做完一件不可能的事"。
+      example_first_line: |
+        "天亮前烧尸"——这是周神算锁上验尸房门时说的话，距离天亮还有两个时辰。
+      strength: 9
+    - id: humiliation_then_strike
+      name: 当众侮辱 + 主角即时反击
+      pattern: |
+        开篇主角在公开场合被羞辱 / 误会 / 嘲讽，主角不解释、
+        立刻用一个动作把局面反过来（不一定赢，但有姿态）。
+      strength: 8
+    - id: forbidden_witness
+      name: 撞见禁忌
+      pattern: |
+        主角偶然撞见一件"按规矩不该看见"的事（某权贵的秘密 / 某仪式 /
+        某尸体的异常）。撞见后立刻被发现，被迫做一个艰难选择。
+      strength: 8
+    - id: betrayed_first_paragraph
+      name: 首段被自己人背叛
+      pattern: |
+        开篇主角和"自己人"一起做事，第二段那个自己人就出卖了他。
+        主角第一句对白是发现背叛的反应。
+      strength: 9
+    - id: identity_crash
+      name: 身份崩塌起笔
+      pattern: |
+        开篇主角"以为自己是 A"，第一场结束时被告知"你其实是 B"。
+        必须配合一个具体证据（信物 / 旧物 / 旁人意外的称呼）。
+      strength: 7
+    - id: body_anomaly
+      name: 身体失控异象
+      pattern: |
+        主角醒来发现身体某处不对劲（眼能看见某物 / 手有印记 /
+        听见不该听的声音）。这个异象立刻给主角带来麻烦。
+      strength: 7
+    - id: deadline_meet_temptation
+      name: 利益爆冲
+      pattern: |
+        开篇主角面前出现一个"能立刻改变命运但代价不明"的机会。
+        他必须在场内决定接 / 不接。
+      strength: 8
+    - id: corpse_speaks
+      name: 死者求证
+      pattern: |
+        死者通过某种异常方式向主角传递信息（鬼魂 / 遗物 / 暗码 /
+        留在尸身上的痕迹）。主角必须在他人发现前完成解读。
+      strength: 8
+
+# =============================================================================
+# 心率词词表 (Pulse Words) · 用于检测主角"是否有心率"
+# =============================================================================
+pulse_words:
+  description: |
+    "冷面工具人主角"的反义。这些词出现频率高 = 主角心率可感。
+    critic 在签约门槛检测时用这个词表统计前 N 字的心率词密度。
+  body_signal:
+    - 心一沉
+    - 心头一紧
+    - 后背一凉
+    - 喉结动了一下
+    - 手指收紧
+    - 指节发白
+    - 呼吸一滞
+    - 呼吸一窒
+    - 眼神锐了
+    - 眼底沉下来
+    - 牙关咬紧
+    - 太阳穴跳动
+    - 血涌上来
+  internal_pulse:
+    - 一瞬
+    - 立刻
+    - 来不及
+    - 心知
+    - 不能
+    - 必须
+    - 不甘
+    - 险些
+    - 几乎
+    - 不顾
+    - 不容
+  active_decision:
+    - 当机立断
+    - 没有迟疑
+    - 已经先一步
+    - 抢在
+    - 赶在

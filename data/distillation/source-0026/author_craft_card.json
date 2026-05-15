@@ -1,0 +1,36 @@
+{
+  "source_id": "source-0026",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "style_safety_policy": "{'anonymization_required': False, 'style_mimicry_allowed': False, 'note': 'Source contains zero extractable story content; no style, voice, or craft patterns available for analysis or replication. Author identity cannot be anonymized because no author-specific characteristics were extractable.'}",
+  "pov_and_distance": "{'status': 'unavailable', 'reason': 'No chapter-level content available for POV analysis; all 630 chapters returned LLM fallback stubs with zero confidence. Narrative point of view, distance calibration, and perspective strategy cannot be determined.'}",
+  "sentence_rhythm": [
+    "{'status': 'unavailable', 'reason': 'No actual prose content exists in source data. Sentence length patterns, cadence, clause structure, and rhythmic variation cannot be analyzed or distilled.'}"
+  ],
+  "paragraphing": [
+    "{'status': 'unavailable', 'reason': 'Source chapters contain no extractable narrative content. Paragraph structure, scene breaks, white space usage, and unit-level organization cannot be determined.'}"
+  ],
+  "dialogue_system": [
+    "{'status': 'unavailable', 'reason': 'No dialogue content available for analysis. Speech patterns, attribution styles, dialect usage, subtext strategies, and conversation pacing cannot be distilled.'}"
+  ],
+  "description_strategy": [
+    "{'status': 'unavailable', 'reason': 'Zero extractable descriptive content. Sensory detail, environment rendering, and visual/literary texture cannot be analyzed.'}"
+  ],
+  "exposition_strategy": [
+    "{'status': 'unavailable', 'reason': 'No narrative exposition available for analysis. Exposition placement, information delivery timing, and backstory integration methods cannot be determined.'}"
+  ],
+  "emotional_temperature": [
+    "{'status': 'unavailable', 'reason': 'No emotional content or tonal data extractable from source. Affect calibration, mood consistency, and emotional arc structure cannot be distilled.'}"
+  ],
+  "hooking_and_transitions": [
+    "{'status': 'unavailable', 'reason': 'No chapter openings, closings, or transition sequences available for analysis. Hook construction, cliffhanger strategy, and scene continuity methods cannot be determined.'}"
+  ],
+  "adaptation_guidelines": [
+    "{'status': 'insufficient_data', 'extraction_complete': False, 'reprocess_required': True, 'note': 'This source cannot support adaptation or style transfer. All 23 volumes returned LLM unavailable fallback stubs. Volume aggregation produced only structural metadata (chapter ranges, segment counts, gap patterns) with zero narrative content. Requires functional LLM pipeline reprocessing before any craft card can be generated.'}"
+  ],
+  "taboo_copy_signals": [
+    "{'status': 'not_applicable', 'reason': 'No distinctive sentence templates, phrasing patterns, or voice signatures were extractable. Author cannot be identified or anonymized from this source; no copying risk exists because no source-specific style characteristics exist.'}"
+  ],
+  "confidence": 0.0,
+  "distillation_source_id": "source-0026"
+}

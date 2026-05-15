@@ -1,0 +1,76 @@
+{
+  "book_id": "source-0018",
+  "source_ref": "distillation:e8762a93a2374565111ab3c9",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "parsed_profile": {
+    "distillation_status": "complete_failure",
+    "volumes_processed": 20,
+    "volumes_with_content": 0,
+    "total_chapters_in_batch": 498,
+    "chapters_with_content": 0,
+    "chapters_with_fallback_stubs": 498,
+    "confidence_aggregate": 0.0,
+    "aggregation_blocked": true,
+    "data_quality_issue": "All source material consisted of LLM unavailable fallback stubs. No chapter-level content could be extracted across any volume. Volume_card aggregation for all 20 volumes (chapters 1-498) produced empty arrays for state_progression, turning_points, reusable_mechanisms, reader_rewards, and open_hooks. No identifiable narrative architecture, story mechanics, or craft observations present in batch.",
+    "pipeline_failure_chain": [
+      "chapters_001_to_025_lmm_fallback",
+      "chapters_026_to_050_lmm_fallback",
+      "chapters_051_to_075_lmm_fallback",
+      "chapters_076_to_100_lmm_fallback",
+      "chapters_101_to_125_lmm_fallback",
+      "chapters_126_to_150_lmm_fallback",
+      "chapters_151_to_175_lmm_fallback",
+      "chapters_176_to_200_lmm_fallback",
+      "chapters_201_to_225_lmm_fallback",
+      "chapters_226_to_250_lmm_fallback",
+      "chapters_251_to_275_lmm_fallback",
+      "chapters_276_to_300_lmm_fallback",
+      "chapters_301_to_325_lmm_fallback",
+      "chapters_326_to_350_lmm_fallback",
+      "chapters_351_to_375_lmm_fallback",
+      "chapters_376_to_400_lmm_fallback",
+      "chapters_401_to_425_lmm_fallback",
+      "chapters_426_to_450_lmm_fallback",
+      "chapters_451_to_475_lmm_fallback",
+      "chapters_476_to_498_lmm_fallback"
+    ],
+    "structural_issue_detected": "Volume_no field inconsistency: all chapters state volume_no:1 despite spanning ranges assigned to volumes 2-20. Indicates possible metadata corruption in chapter_card generation pipeline.",
+    "chunking_failure_flag": "ch341_received_66_segmented_fallback_requests_suggesting_chunking_collapse",
+    "recommended_action": "Abandon current distillation batch. Source content must be regenerated or recovered. Re-run LLM extraction pipeline with functional model access to obtain actual chapter content before volume-level aggregation can succeed."
+  },
+  "genre_tags": [
+    "distillation-generic"
+  ],
+  "reader_promise": "LLM structured distillation fallback.",
+  "core_engine": "unknown",
+  "state_variables": [
+    "fallback_progress"
+  ],
+  "reader_rewards": [
+    "distillable_mechanism_reliability"
+  ],
+  "reusable_mechanisms": [
+    "fallback mechanism abstraction"
+  ],
+  "non_reusable_specifics": [
+    "All narrative content unavailable due to LLM fallback across entire source batch",
+    "No extractable character arcs, plot progressions, or thematic elements",
+    "No identifiable reader reward delivery mechanisms",
+    "No story-specific worldbuilding or setting elements present",
+    "No extractable dialogue patterns or voice characteristics",
+    "No pacing or structural patterns observable from stub data"
+  ],
+  "risk_patterns": [
+    "llm_fallback_systemic",
+    "complete_data_unavailability",
+    "zero_confidence_batch",
+    "pipeline_collapse",
+    "chunking_failure",
+    "volume_metadata_corruption",
+    "no_distillable_content",
+    "aggregation_halted"
+  ],
+  "source_id": "source-0018",
+  "distillation_source_id": "source-0018"
+}

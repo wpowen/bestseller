@@ -12,18 +12,19 @@ This module keeps the aggregation logic importable and testable. CLI scripts in
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 import json
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 import yaml
-
 
 REQUIRED_PACKAGE_FILES: tuple[str, ...] = (
     "source_manifest.json",
     "chapters.index.json",
     "book_design_card.json",
+    "author_craft_card.json",
     "anti_copy_ledger.json",
     "volume_cards.jsonl",
     "mechanism_candidates.jsonl",
@@ -37,6 +38,8 @@ MATERIAL_REVIEW_FILENAMES: tuple[str, ...] = (
 SENSITIVE_PATTERNS: tuple[str, ...] = (
     "/Users/",
     "\\Users\\",
+    "http://",
+    "https://",
     ".pdf",
     ".epub",
     ".mobi",
@@ -64,9 +67,15 @@ class DistillationAggregateReport:
     source_ids: tuple[str, ...]
     material_rows: int
     mechanism_rows: int
+    author_craft_rows: int
     anti_copy_blocked_combinations: int
     grammar_state_variables: int
     grammar_change_vectors: int
+    book_design_rows: int = 0
+    volume_design_rows: int = 0
+    fallback_volume_rows: int = 0
+    maturity_score: float = 0.0
+    maturity_status: str = "unsafe"
     warnings: tuple[str, ...] = field(default_factory=tuple)
 
 
@@ -157,23 +166,28 @@ def validate_distillation_package(package_dir: Path) -> DistillationPackageRepor
             if redaction.get("store_author_in_repo") is not False:
                 errors.append("redaction_policy.store_author_in_repo must be false")
         errors.extend(_scan_sensitive_values(manifest, path="source_manifest"))
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         errors.append(f"source_manifest invalid: {exc}")
 
-    for filename in ("chapters.index.json", "book_design_card.json", "anti_copy_ledger.json"):
+    for filename in (
+        "chapters.index.json",
+        "book_design_card.json",
+        "author_craft_card.json",
+        "anti_copy_ledger.json",
+    ):
         try:
             errors.extend(_scan_sensitive_values(read_json(package_dir / filename), path=filename))
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             errors.append(f"{filename} invalid: {exc}")
 
     try:
         volume_rows = len(read_jsonl(package_dir / "volume_cards.jsonl"))
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         errors.append(f"volume_cards.jsonl invalid: {exc}")
 
     try:
         mechanism_rows = len(read_jsonl(package_dir / "mechanism_candidates.jsonl"))
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         errors.append(f"mechanism_candidates.jsonl invalid: {exc}")
 
     material_path = _first_existing(package_dir, MATERIAL_REVIEW_FILENAMES)
@@ -182,14 +196,14 @@ def validate_distillation_package(package_dir: Path) -> DistillationPackageRepor
     else:
         try:
             material_rows = len(read_jsonl(material_path))
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             errors.append(f"{material_path.name} invalid: {exc}")
 
     jobs_path = package_dir / "llm_jobs" / "chapter_jobs.index.jsonl"
     if jobs_path.exists():
         try:
             chapter_jobs = len(read_jsonl(jobs_path))
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             errors.append(f"llm_jobs/chapter_jobs.index.jsonl invalid: {exc}")
 
     return DistillationPackageReport(
@@ -259,10 +273,112 @@ def _aggregate_mechanisms(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
             item["source_ids"].append(source_id)
         item["evidence_count"] += 1
         try:
-            item["max_confidence"] = max(float(row.get("confidence") or 0.0), item["max_confidence"])
+            item["max_confidence"] = max(
+                float(row.get("confidence") or 0.0),
+                item["max_confidence"],
+            )
         except (TypeError, ValueError):
             pass
     return sorted(by_id.values(), key=lambda item: str(item["mechanism_id"]))
+
+
+def _author_craft_row_from_package(package_dir: Path, source_id: str) -> dict[str, Any] | None:
+    path = package_dir / "author_craft_card.json"
+    if not path.is_file():
+        return None
+    row = read_json(path)
+    row["source_id"] = source_id
+    row.setdefault("source_type", "distillation_package")
+    row.setdefault("status", "review")
+    return row
+
+
+def _book_design_row_from_package(package_dir: Path, source_id: str) -> dict[str, Any] | None:
+    path = package_dir / "book_design_card.json"
+    if not path.is_file():
+        return None
+    row = read_json(path)
+    row["source_id"] = source_id
+    row.setdefault("source_type", "distillation_package")
+    row.setdefault("status", "review")
+    return row
+
+
+def _volume_design_rows_from_package(package_dir: Path, source_id: str) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for row in read_jsonl(package_dir / "volume_cards.jsonl"):
+        item = dict(row)
+        item["source_id"] = str(item.get("source_id") or source_id)
+        item.setdefault("status", "review")
+        rows.append(item)
+    return rows
+
+
+def _is_fallback_volume_row(row: dict[str, Any]) -> bool:
+    if row.get("distillation_fallback") is True:
+        return True
+    text_parts = [
+        row.get("arc_function"),
+        row.get("dominant_engine"),
+        row.get("setup_payoff_rhythm"),
+        " ".join(str(item) for item in row.get("state_progression") or []),
+    ]
+    haystack = " ".join(str(part or "") for part in text_parts).lower()
+    return "fallback aggregation" in haystack or "llm output fallback" in haystack
+
+
+def _maturity_status(
+    *,
+    source_count: int,
+    anti_copy_blocked_combinations: int,
+    maturity_score: float,
+) -> str:
+    if source_count <= 0 or anti_copy_blocked_combinations <= 0:
+        return "unsafe"
+    if maturity_score >= 0.7 and source_count >= 3:
+        return "production"
+    if maturity_score >= 0.3:
+        return "review"
+    return "pilot"
+
+
+def calculate_aggregate_maturity_score(
+    *,
+    source_count: int,
+    mechanism_rows: int,
+    author_craft_rows: int,
+    anti_copy_blocked_combinations: int,
+    grammar_state_variables: int,
+    grammar_change_vectors: int,
+    book_design_rows: int,
+    volume_design_rows: int,
+    fallback_volume_rows: int,
+) -> float:
+    """Score whether an aggregate is strong enough to guide planning.
+
+    The score is intentionally conservative. A single-source pilot can still
+    produce useful references, but it should not look as authoritative as a
+    multi-book aggregate with clean volume paths and anti-copy coverage.
+    """
+
+    if source_count <= 0:
+        return 0.0
+
+    grammar_signal = grammar_state_variables + grammar_change_vectors
+    expected_volume_rows = max(source_count * 3, 1)
+    total_volume_rows = volume_design_rows + fallback_volume_rows
+    fallback_ratio = fallback_volume_rows / max(total_volume_rows, 1)
+    score = (
+        min(source_count / 5, 1.0) * 0.25
+        + min(mechanism_rows / 20, 1.0) * 0.20
+        + min(author_craft_rows / source_count, 1.0) * 0.05
+        + (0.15 if anti_copy_blocked_combinations > 0 else 0.0)
+        + min(grammar_signal / 12, 1.0) * 0.15
+        + min(book_design_rows / source_count, 1.0) * 0.10
+        + min(volume_design_rows / expected_volume_rows, 1.0) * 0.10
+    )
+    score -= min(fallback_ratio, 1.0) * 0.25
+    return round(max(0.0, min(score, 1.0)), 3)
 
 
 def _aggregate_anti_copy_ledgers(ledgers: list[dict[str, Any]]) -> dict[str, Any]:
@@ -318,7 +434,10 @@ def _aggregate_grammar_patches(
         _unique_extend(output["state_variables"], patch.get("state_variables") or [])
         _unique_extend(output["chapter_change_vectors"], patch.get("chapter_change_vectors") or [])
         _unique_extend(output["reader_rewards"], patch.get("reader_rewards") or [])
-        _unique_extend(output["hook_or_aftereffect_types"], patch.get("hook_or_aftereffect_types") or [])
+        _unique_extend(
+            output["hook_or_aftereffect_types"],
+            patch.get("hook_or_aftereffect_types") or [],
+        )
         _unique_extend(output["forbidden_defaults"], patch.get("forbidden_defaults") or [])
     return output
 
@@ -335,6 +454,10 @@ def aggregate_distillation_packages(
     source_ids: list[str] = []
     material_rows: list[dict[str, Any]] = []
     mechanism_rows: list[dict[str, Any]] = []
+    author_craft_rows: list[dict[str, Any]] = []
+    book_design_rows: list[dict[str, Any]] = []
+    volume_design_rows: list[dict[str, Any]] = []
+    fallback_volume_rows = 0
     ledgers: list[dict[str, Any]] = []
     grammar_patches: list[dict[str, Any]] = []
 
@@ -349,6 +472,17 @@ def aggregate_distillation_packages(
         source_ids.append(report.source_id)
         material_rows.extend(_material_rows_from_package(package_dir, report.source_id))
         mechanism_rows.extend(read_jsonl(package_dir / "mechanism_candidates.jsonl"))
+        craft_row = _author_craft_row_from_package(package_dir, report.source_id)
+        if craft_row is not None:
+            author_craft_rows.append(craft_row)
+        book_design_row = _book_design_row_from_package(package_dir, report.source_id)
+        if book_design_row is not None:
+            book_design_rows.append(book_design_row)
+        for volume_row in _volume_design_rows_from_package(package_dir, report.source_id):
+            if _is_fallback_volume_row(volume_row):
+                fallback_volume_rows += 1
+                continue
+            volume_design_rows.append(volume_row)
         ledgers.append(read_json(package_dir / "anti_copy_ledger.json"))
         grammar_path = package_dir / "grammar_patch.yaml"
         if grammar_path.exists():
@@ -362,10 +496,29 @@ def aggregate_distillation_packages(
 
     material_count = write_jsonl(output_dir / "material_entries.review.jsonl", material_rows)
     mechanism_count = write_jsonl(output_dir / "mechanism_registry.jsonl", mechanism_registry)
+    author_craft_count = write_jsonl(output_dir / "author_craft_registry.jsonl", author_craft_rows)
+    book_design_count = write_jsonl(output_dir / "book_design_registry.jsonl", book_design_rows)
+    volume_design_count = write_jsonl(output_dir / "volume_design_paths.jsonl", volume_design_rows)
     write_json(output_dir / "anti_copy_rules.json", anti_copy)
     (output_dir / "grammar_patch.yaml").write_text(
         yaml.safe_dump(grammar_patch, allow_unicode=True, sort_keys=False),
         encoding="utf-8",
+    )
+    maturity_score = calculate_aggregate_maturity_score(
+        source_count=len(source_ids),
+        mechanism_rows=mechanism_count,
+        author_craft_rows=author_craft_count,
+        anti_copy_blocked_combinations=len(anti_copy["blocked_combinations"]),
+        grammar_state_variables=len(grammar_patch["state_variables"]),
+        grammar_change_vectors=len(grammar_patch["chapter_change_vectors"]),
+        book_design_rows=book_design_count,
+        volume_design_rows=volume_design_count,
+        fallback_volume_rows=fallback_volume_rows,
+    )
+    maturity_status = _maturity_status(
+        source_count=len(source_ids),
+        anti_copy_blocked_combinations=len(anti_copy["blocked_combinations"]),
+        maturity_score=maturity_score,
     )
     manifest = {
         "aggregate_key": aggregate_key,
@@ -373,6 +526,12 @@ def aggregate_distillation_packages(
         "source_count": len(source_ids),
         "material_rows": material_count,
         "mechanism_rows": mechanism_count,
+        "author_craft_rows": author_craft_count,
+        "book_design_rows": book_design_count,
+        "volume_design_rows": volume_design_count,
+        "fallback_volume_rows": fallback_volume_rows,
+        "maturity_score": maturity_score,
+        "maturity_status": maturity_status,
         "anti_copy_blocked_combinations": len(anti_copy["blocked_combinations"]),
         "grammar_state_variables": len(grammar_patch["state_variables"]),
         "grammar_change_vectors": len(grammar_patch["chapter_change_vectors"]),
@@ -386,6 +545,12 @@ def aggregate_distillation_packages(
         source_ids=tuple(source_ids),
         material_rows=material_count,
         mechanism_rows=mechanism_count,
+        author_craft_rows=author_craft_count,
+        book_design_rows=book_design_count,
+        volume_design_rows=volume_design_count,
+        fallback_volume_rows=fallback_volume_rows,
+        maturity_score=maturity_score,
+        maturity_status=maturity_status,
         anti_copy_blocked_combinations=len(anti_copy["blocked_combinations"]),
         grammar_state_variables=len(grammar_patch["state_variables"]),
         grammar_change_vectors=len(grammar_patch["chapter_change_vectors"]),

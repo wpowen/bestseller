@@ -1,0 +1,47 @@
+{
+  "book_id": "source-0095",
+  "source_ref": "distillation:070ff269247d57c1b13cadf4",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "parsed_profile": {
+    "distillation_status": "complete_failure",
+    "confidence_score": 0.0,
+    "volumes_processed": 8,
+    "chapters_total": 193,
+    "chapters_with_valid_content": 0,
+    "chapters_with_fallback_stubs": 193,
+    "data_quality_issue": "source_content_unavailable_for_analysis",
+    "recommended_action": "reprocess source-0095 through LLM analysis pipeline before volume_card aggregation is viable",
+    "extraction_engine_status": "no_viable_source_data"
+  },
+  "genre_tags": [
+    "distillation-generic"
+  ],
+  "reader_promise": "LLM structured distillation fallback.",
+  "core_engine": "unknown",
+  "state_variables": [
+    "fallback_progress"
+  ],
+  "reader_rewards": [
+    "distillable_mechanism_reliability"
+  ],
+  "reusable_mechanisms": [
+    "fallback mechanism abstraction"
+  ],
+  "non_reusable_specifics": [
+    "all_193_chapters_returned_llm_fallback_stubs",
+    "no_extractable_story_mechanics_across_8_volumes",
+    "zero_confidence_across_complete_chapter_range",
+    "no_reader_rewards_identified",
+    "no_open_hooks_extracted",
+    "no_craft_observations_available"
+  ],
+  "risk_patterns": [
+    "{'pattern': 'llm_fallback_all_chapters', 'affected_range': 'chapters_1-193', 'severity': 'critical', 'impact': 'no_narrative_structure_extractable'}",
+    "{'pattern': 'zero_confidence_batch', 'affected_range': 'all_volumes', 'severity': 'critical', 'impact': 'no_trustworthy_chapter_function_data'}",
+    "{'pattern': 'no_extractable_story_mechanics', 'affected_range': 'complete_source', 'severity': 'critical', 'impact': 'book_design_card_cannot_be_generated_from_source'}",
+    "{'pattern': 'data_loss_risk', 'affected_range': 'all_volumes', 'severity': 'high', 'impact': 'aggregation_blocked_by_complete_absence_of_extractable_data'}"
+  ],
+  "source_id": "source-0095",
+  "distillation_source_id": "source-0095"
+}

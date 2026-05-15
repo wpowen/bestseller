@@ -1,0 +1,33 @@
+key: distillation-generic
+name: Generic Distillation Fallback Grammar
+source_ids:
+- source-0099
+status: draft_review
+applies_to_categories:
+- llm_fallback_stub
+- content_unavailable
+- zero_confidence_batch
+required_contracts:
+- fallback_progress_tracking
+- distillable_mechanism_reliability
+- no_narrative_content_required
+state_variables:
+- fallback_progress
+- extraction_status
+- confidence_score
+chapter_change_vectors:
+- no_vectors_possible_content_void
+reader_rewards:
+- distillable_mechanism_reliability
+hook_or_aftereffect_types:
+- fallback_triggered
+- stub_acknowledged
+- reliability_check
+forbidden_defaults:
+- source_content_availability
+- narrative_pattern_extraction
+- genre_grammar_application
+- chapter_level_analysis
+- volume_pattern_detection
+- mechanism_identification
+- design_fingerprint_construction

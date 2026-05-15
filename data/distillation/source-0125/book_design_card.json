@@ -1,0 +1,106 @@
+{
+  "book_id": "source-0125",
+  "source_ref": "distillation:787f81b0473d2f8e76118a01",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "parsed_profile": {
+    "distillation_status": "complete_failure",
+    "volumes_attempted": 3,
+    "volumes_blocked": 3,
+    "total_chapters_in_source": 61,
+    "chapters_with_fallback_stubs": 61,
+    "chapters_with_valid_content": 0,
+    "llm_fallback_rate": 1.0,
+    "confidence_distribution": {
+      "max": 0.0,
+      "min": 0.0,
+      "mean": 0.0
+    },
+    "aggregation_note": "Source data contains zero distillable narrative content. All volume cards and constituent chapter cards returned LLM unavailable stubs. No story mechanics, craft patterns, reader rewards, or arc functions could be extracted.",
+    "profile_type": "distillation_failure_record"
+  },
+  "genre_tags": [
+    "distillation-generic"
+  ],
+  "reader_promise": {
+    "stated": null,
+    "derived": null,
+    "confidence": 0.0,
+    "note": "Cannot derive reader promise — source content unavailable"
+  },
+  "core_engine": {
+    "identified": null,
+    "confidence": 0.0,
+    "note": "No engine identified — 100% llm_fallback rate across all chapters"
+  },
+  "state_variables": [
+    "{'extracted': [], 'count': 0, 'note': 'No state progression extractable from empty source data'}"
+  ],
+  "reader_rewards": [
+    "{'extracted': [], 'count': 0, 'note': 'No reader rewards captured — all chapter cards are placeholder stubs'}"
+  ],
+  "reusable_mechanisms": [
+    "{'extracted': [], 'count': 0, 'note': 'Zero reusable_mechanisms arrays populated across 61 chapters'}"
+  ],
+  "non_reusable_specifics": [
+    "{'extracted': [], 'count': 0, 'note': 'All non_reusable_specifics arrays empty — no setting, character, or plot specifics captured'}"
+  ],
+  "risk_patterns": [
+    "{'pattern': 'complete_llm_unavailable_failure', 'severity': 'critical', 'affected_volumes': [1, 2, 3], 'affected_chapters': '1-61', 'mitigation_required': 'Reprocess at chapter extraction layer with functional LLM', 'fallback_triggered': True}",
+    "{'pattern': 'zero_confidence_aggregation', 'severity': 'critical', 'consequence': 'No reliable story mechanics can be aggregated', 'requires': 'Source content reprocessing'}",
+    "{'pattern': 'empty_craft_arrays', 'severity': 'critical', 'fields_affected': ['reusable_mechanisms', 'craft_observations', 'reader_rewards', 'open_hooks', 'non_reusable_specifics', 'state_progression', 'turning_points'], 'note': 'All craft-profile arrays empty across entire source'}"
+  ],
+  "failure_modes": [
+    {
+      "mode": "llm_unavailable_fallback_all_chapters",
+      "frequency": "constant",
+      "scope": "universal",
+      "chapter_coverage": "61/61 chapters"
+    },
+    {
+      "mode": "distillation_layer_failure",
+      "stage": "chapter_extraction",
+      "consequence": "Volume-level aggregation blocked — no content to aggregate",
+      "upstream_action": "Requires chapter card reprocessing before volume aggregation"
+    },
+    {
+      "mode": "zero_confidence_prevents_aggregation",
+      "volume_cards_affected": 3,
+      "chapter_cards_affected": 61,
+      "aggregation_status": "blocked"
+    }
+  ],
+  "volume_summary": {
+    "volume_1": {
+      "chapters": "1-25",
+      "distillation_status": "failed",
+      "valid_content": 0,
+      "fallback_stubs": 25,
+      "confidence": 0.0
+    },
+    "volume_2": {
+      "chapters": "26-50",
+      "distillation_status": "failed",
+      "valid_content": 0,
+      "fallback_stubs": 25,
+      "confidence": 0.0
+    },
+    "volume_3": {
+      "chapters": "51-61",
+      "distillation_status": "failed",
+      "valid_content": 0,
+      "fallback_stubs": 11,
+      "confidence": 0.0
+    }
+  },
+  "design_card_type": "distillation_failure_record",
+  "creation_metadata": {
+    "source_id": "source-0125",
+    "distillation_source_id": "distillation:787f81b0473d2f8e76118a01",
+    "generation_type": "automated_failure_aggregation",
+    "reprocess_required": true,
+    "reprocess_layer": "chapter_extraction"
+  },
+  "source_id": "source-0125",
+  "distillation_source_id": "source-0125"
+}

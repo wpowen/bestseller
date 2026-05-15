@@ -1,0 +1,22 @@
+{
+  "source_id": "source-0021",
+  "blocked_categories": [
+    "author_voice_signatures",
+    "style_markers",
+    "narrative_tropes",
+    "pov_distance_controls",
+    "rhythm_patterns",
+    "dialogue_attribution_systems",
+    "description_strategies",
+    "exposition_placement_methods",
+    "emotional_temperature_controls",
+    "hook_types",
+    "transition_mechanisms"
+  ],
+  "blocked_combinations": [
+    "style_and_content_coupling",
+    "voice_and_structure_pairing",
+    "tone_and_mechanism_binding"
+  ],
+  "replacement_policy": []
+}

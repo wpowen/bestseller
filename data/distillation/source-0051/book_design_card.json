@@ -1,0 +1,49 @@
+{
+  "book_id": "source-0051",
+  "source_ref": "distillation:401ed1edbcb14248e6b70769",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "parsed_profile": {
+    "data_integrity": "critical_failure",
+    "extraction_status": "blocked_by_llm_fallback",
+    "confidence_band": "0.0_across_all_volumes",
+    "coverage": "0_of_273_chapters",
+    "data_completeness": "0%",
+    "mechanism_density": "null",
+    "volume_count": 11,
+    "chapter_count_total": 273,
+    "available_chapters": 0,
+    "unavailable_chapters": "1-273",
+    "note": "Source material entirely comprised of LLM unavailable fallback stubs. No narrative architecture, story mechanics, craft observations, reader rewards, or structural data extractable. Book design card reflects complete data absence rather than genuine story-design fingerprint."
+  },
+  "genre_tags": [
+    "distillation-generic"
+  ],
+  "reader_promise": {
+    "status": "indeterminate",
+    "note": "No reader-facing content available in source data to derive promise mechanics"
+  },
+  "core_engine": {
+    "status": "undetermined",
+    "dominance": "none_determinable",
+    "note": "All volume cards report unavailable or undetermined engine classification due to llm_fallback batch failure"
+  },
+  "state_variables": [
+    "fallback_progress"
+  ],
+  "reader_rewards": [
+    "distillable_mechanism_reliability"
+  ],
+  "reusable_mechanisms": [
+    "fallback mechanism abstraction"
+  ],
+  "non_reusable_specifics": [],
+  "risk_patterns": [
+    "{'pattern_id': 'complete_llm_fallback', 'scope': 'source-wide', 'affected_volumes': [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11], 'affected_chapters': '1-273', 'confidence_impact': 'zero_across_all_units', 'aggregation_impact': 'prevents_volume_card_synthesis', 'recommendation': 'Regenerate chapter cards from source material before re-running distillation pipeline'}",
+    "{'pattern_id': 'zero_confidence_input', 'scope': '100% of source units', 'confidence_values': '0.0 across all 273 chapter stubs', 'aggregation_impact': 'no variance to analyze; uniform null data', 'recommendation': 'Source material requires reprocessing through LLM pipeline'}",
+    "{'pattern_id': 'uniform_risk_flag', 'scope': 'source-wide', 'observation': 'Every chapter flagged identically as llm_fallback; no variance in failure mode to diagnose', 'recommendation': 'Audit LLM availability service and chapter card generation pipeline'}",
+    "{'pattern_id': 'data_aggregability_zero', 'scope': 'source-wide', 'observation': 'Attempting to aggregate empty or null arrays yields no actionable synthesis', 'recommendation': 'Populate chapter_cards with actual LLM-generated content before re-running distillation'}"
+  ],
+  "source_id": "source-0051",
+  "distillation_source_id": "source-0051"
+}

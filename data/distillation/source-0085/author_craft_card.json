@@ -1,0 +1,36 @@
+{
+  "source_id": "source-0085",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "style_safety_policy": "cannot_assess",
+  "pov_and_distance": "indeterminate",
+  "sentence_rhythm": [
+    "indeterminate"
+  ],
+  "paragraphing": [
+    "indeterminate"
+  ],
+  "dialogue_system": [
+    "indeterminate"
+  ],
+  "description_strategy": [
+    "indeterminate"
+  ],
+  "exposition_strategy": [
+    "indeterminate"
+  ],
+  "emotional_temperature": [
+    "indeterminate"
+  ],
+  "hooking_and_transitions": [
+    "indeterminate"
+  ],
+  "adaptation_guidelines": [
+    "source material is entirely LLM fallback stubs with zero confidence across all 95 chapters; no narrative content exists to derive craft fingerprints; manual chapter_card generation or source reprocessing required before author_craft_card construction is viable"
+  ],
+  "taboo_copy_signals": [
+    "source titles, author names, exact phrases, named entities, and distinctive sentence templates"
+  ],
+  "confidence": 0.0,
+  "distillation_source_id": "source-0085"
+}

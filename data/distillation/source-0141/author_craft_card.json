@@ -1,0 +1,36 @@
+{
+  "source_id": "source-0141",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "style_safety_policy": "INSUFFICIENT_DATA — All source chapters returned LLM fallback stubs. No authorial voice patterns present in dataset. No stylistic safety signals available for extraction.",
+  "pov_and_distance": "close-third or project-selected POV with controlled narrative distance",
+  "sentence_rhythm": [
+    "vary short action beats with medium explanatory sentences"
+  ],
+  "paragraphing": [
+    "keep paragraphs functional: action, reaction, or information turn"
+  ],
+  "dialogue_system": [
+    "use role-specific intent, subtext, and conflict pressure"
+  ],
+  "description_strategy": [
+    "describe only details that change stakes, mood, or reader inference"
+  ],
+  "exposition_strategy": [
+    "place exposition after visible need or conflict pressure"
+  ],
+  "emotional_temperature": [
+    "surface emotion through choices, body action, and withheld admission"
+  ],
+  "hooking_and_transitions": [
+    "end units on changed state, unresolved question, or sharper constraint"
+  ],
+  "adaptation_guidelines": [
+    "Cannot generate adaptation guidelines. Source data integrity compromised — all 15 chapters (1-15) returned LLM unavailable fallback stubs. Segment distribution variance: high (1 to 31 segments per chapter). Requires re-processing through functional LLM distillation pipeline before volume-level craft aggregation is possible."
+  ],
+  "taboo_copy_signals": [
+    "No copy signals available. Zero usable content extracted. All chapter cards show confidence: 0.0 with risk_flags: ['llm_fallback']."
+  ],
+  "confidence": 0.0,
+  "distillation_source_id": "source-0141"
+}

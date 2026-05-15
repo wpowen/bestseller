@@ -1,0 +1,33 @@
+{
+  "book_id": "source-0034",
+  "source_ref": "distillation:146fececf50821add56d32ac",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "parsed_profile": {
+    "extraction_status": "no_data",
+    "confidence": 0.0,
+    "note": "All source chapter cards are LLM fallback stubs; no arc function, dominant engine, state progression, turning points, or reusable mechanics can be derived."
+  },
+  "genre_tags": [
+    "distillation-generic"
+  ],
+  "reader_promise": "Indeterminate — insufficient source data to define promise.",
+  "core_engine": "Indeterminate",
+  "state_variables": [
+    "fallback_progress"
+  ],
+  "reader_rewards": [
+    "distillable_mechanism_reliability"
+  ],
+  "reusable_mechanisms": [
+    "fallback mechanism abstraction"
+  ],
+  "non_reusable_specifics": [],
+  "risk_patterns": [
+    "llm_fallback",
+    "zero_confidence",
+    "insufficient_source_data"
+  ],
+  "source_id": "source-0034",
+  "distillation_source_id": "source-0034"
+}

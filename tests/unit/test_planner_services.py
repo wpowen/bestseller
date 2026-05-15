@@ -9,12 +9,28 @@ import pytest
 from bestseller.domain.enums import ArtifactType
 from bestseller.domain.workflow import ChapterOutlineBatchInput
 from bestseller.infra.db.models import ProjectModel, WorkflowRunModel, WorkflowStepRunModel
+from bestseller.services.distilled_strategy_compiler import (
+    DistilledStrategyCard,
+    SelectedMechanism,
+)
 from bestseller.services import planner as planner_services
 from bestseller.services.plan_fingerprint import scan_batch_for_duplicates
 from bestseller.settings import load_settings
 
-
 pytestmark = pytest.mark.unit
+
+
+class _FakeExecuteResult:
+    """Minimal stand-in for SQLAlchemy ``Result`` returning no rows."""
+
+    def all(self) -> list:
+        return []
+
+    def scalars(self) -> "_FakeExecuteResult":
+        return self
+
+    def first(self):
+        return None
 
 
 class FakeSession:
@@ -33,6 +49,11 @@ class FakeSession:
     async def scalar(self, _stmt: object) -> None:
         # Fresh project — no written chapters to guard against.
         return None
+
+    async def execute(self, _stmt: object) -> _FakeExecuteResult:
+        # Fresh project — no rows. Used by helpers that query the
+        # `chapters` table (e.g. existing-title dedup fetch).
+        return _FakeExecuteResult()
 
 
 def build_settings():
@@ -58,7 +79,7 @@ def build_project() -> ProjectModel:
 
 
 def test_extract_json_payload_handles_wrapped_json() -> None:
-    payload = planner_services._extract_json_payload("```json\n{\"title\":\"长夜巡航\"}\n```")
+    payload = planner_services._extract_json_payload('```json\n{"title":"长夜巡航"}\n```')
     assert payload["title"] == "长夜巡航"
 
 
@@ -75,7 +96,7 @@ def test_extract_json_payload_handles_prose_prefix_and_suffix() -> None:
         "Here is the chapter outline:\n\n"
         '{"chapters": [{"number": 1, "title": "序曲"}]}\n\n'
         "Note: please revise the last scene if needed "
-        "(e.g. {\"scene\": \"incomplete example\"})."
+        '(e.g. {"scene": "incomplete example"}).'
     )
     payload = planner_services._extract_json_payload(raw)
     assert payload == {"chapters": [{"number": 1, "title": "序曲"}]}
@@ -83,7 +104,7 @@ def test_extract_json_payload_handles_prose_prefix_and_suffix() -> None:
 
 def test_extract_json_payload_handles_markdown_fence_without_lang_tag() -> None:
     """Accept bare ``` fences (no ``json`` tag) that MiniMax sometimes emits."""
-    raw = "```\n{\"title\": \"长夜巡航\", \"volume\": 5}\n```"
+    raw = '```\n{"title": "长夜巡航", "volume": 5}\n```'
     payload = planner_services._extract_json_payload(raw)
     assert payload["volume"] == 5
 
@@ -92,9 +113,9 @@ def test_extract_json_payload_handles_multiple_fenced_blocks() -> None:
     """When the LLM emits multiple fenced blocks, pick the first balanced one."""
     raw = (
         "First attempt:\n"
-        "```json\n{\"chapters\": [{\"number\": 1}]}\n```\n\n"
+        '```json\n{"chapters": [{"number": 1}]}\n```\n\n'
         "Alternative:\n"
-        "```json\n{\"chapters\": [{\"number\": 2}]}\n```\n"
+        '```json\n{"chapters": [{"number": 2}]}\n```\n'
     )
     payload = planner_services._extract_json_payload(raw)
     # Balanced extraction picks up the first JSON object.
@@ -103,12 +124,7 @@ def test_extract_json_payload_handles_multiple_fenced_blocks() -> None:
 
 def test_extract_json_payload_handles_nested_braces_in_strings() -> None:
     """Balanced extractor must respect string literals containing braces."""
-    raw = (
-        "```json\n"
-        '{"outline": "vol 5 chapter 1: the trap uses a glyph like {X}",'
-        '"count": 3}\n'
-        "```"
-    )
+    raw = '```json\n{"outline": "vol 5 chapter 1: the trap uses a glyph like {X}","count": 3}\n```'
     payload = planner_services._extract_json_payload(raw)
     assert payload["count"] == 3
     assert "{X}" in payload["outline"]
@@ -166,6 +182,7 @@ def test_extract_json_payload_repairs_minimax_duplicate_opener() -> None:
     # original had a malformed extra opener.
     scenes = payload["chapters"][0]["scenes"]
     assert len(scenes) >= 1
+
     # Walk down to find the actual scene_number regardless of whether
     # json-repair hoisted the inner object or preserved the outer wrapper.
     def _find_scene_number(node: object) -> int | None:
@@ -212,9 +229,7 @@ def test_planner_max_attempts_is_at_least_four() -> None:
 
     matches = re.findall(r"_max_attempts\s*=\s*(\d+)", src)
     assert matches, "_max_attempts default not found in _generate_structured_artifact"
-    assert all(int(m) >= 4 for m in matches), (
-        f"planner _max_attempts must be >=4, found {matches}"
-    )
+    assert all(int(m) >= 4 for m in matches), f"planner _max_attempts must be >=4, found {matches}"
 
 
 def test_fallback_generators_create_complete_chain() -> None:
@@ -320,18 +335,12 @@ def test_persist_qimao_opening_contract_applies_to_general_projects() -> None:
 
 
 def test_resolve_fallback_volume_title_cycles_phase_pool() -> None:
-    first = planner_services._resolve_fallback_volume_title(
-        "power_system_test", 0, 3, is_en=False
-    )
-    second = planner_services._resolve_fallback_volume_title(
-        "power_system_test", 1, 6, is_en=False
-    )
+    first = planner_services._resolve_fallback_volume_title("power_system_test", 0, 3, is_en=False)
+    second = planner_services._resolve_fallback_volume_title("power_system_test", 1, 6, is_en=False)
     assert first and second and first != second
     assert "第" not in first
 
-    fallback = planner_services._resolve_fallback_volume_title(
-        "unknown_phase", 0, 5, is_en=False
-    )
+    fallback = planner_services._resolve_fallback_volume_title("unknown_phase", 0, 5, is_en=False)
     assert fallback == "第5卷"
 
 
@@ -343,7 +352,9 @@ def test_fallback_volume_plan_produces_distinct_titles_without_milestones() -> N
 
     book_spec = planner_services._fallback_book_spec(project, "主角逆天改命。")
     world_spec = planner_services._fallback_world_spec(project, "主角逆天改命。", book_spec)
-    cast_spec = planner_services._fallback_cast_spec(project, "主角逆天改命。", book_spec, world_spec)
+    cast_spec = planner_services._fallback_cast_spec(
+        project, "主角逆天改命。", book_spec, world_spec
+    )
 
     volume_plan = planner_services._fallback_volume_plan(
         project, book_spec, cast_spec, world_spec, category_key="action-progression"
@@ -353,7 +364,7 @@ def test_fallback_volume_plan_produces_distinct_titles_without_milestones() -> N
     assert len(titles) > 5
     assert all(title for title in titles)
     # No generic "第N卷" placeholder should remain when phase pools exist.
-    assert not any(title == f"第{idx+1}卷" for idx, title in enumerate(titles))
+    assert not any(title == f"第{idx + 1}卷" for idx, title in enumerate(titles))
     # All titles should be unique across the plan.
     assert len(titles) == len(set(titles))
 
@@ -426,6 +437,386 @@ def test_story_package_seed_informs_fallback_specs(tmp_path: Path) -> None:
     assert any("地下仓链并未断绝" in item for item in volume_plan[0]["key_reveals"])
 
 
+def test_distilled_design_reference_blocks_enter_planner_prompts() -> None:
+    project = build_project()
+    project.metadata_json = {
+        "distilled_design_reference_blocks": {
+            "architecture": "ARCH_DISTILLED_REFERENCE",
+            "world": "WORLD_DISTILLED_REFERENCE",
+            "cast": "CAST_DISTILLED_REFERENCE",
+            "story_design": "KERNEL_DISTILLED_REFERENCE",
+            "volume_plan": "VOLUME_DISTILLED_REFERENCE",
+            "chapter_outline": "OUTLINE_DISTILLED_REFERENCE",
+        },
+        "distilled_strategy_blocks": {
+            "architecture": "ARCH_STRATEGY_CARD",
+            "world": "WORLD_STRATEGY_CARD",
+            "cast": "CAST_STRATEGY_CARD",
+            "story_design": "KERNEL_STRATEGY_CARD",
+            "volume_plan": "VOLUME_STRATEGY_CARD",
+            "chapter_outline": "OUTLINE_STRATEGY_CARD",
+        },
+    }
+    premise = "一名被放逐的导航员发现帝国正在篡改边境航线记录。"
+    book_spec = planner_services._fallback_book_spec(project, premise)
+    world_spec = planner_services._fallback_world_spec(project, premise, book_spec)
+    cast_spec = planner_services._fallback_cast_spec(project, premise, book_spec, world_spec)
+    volume_plan = planner_services._fallback_volume_plan(project, book_spec, cast_spec, world_spec)
+
+    _, book_prompt = planner_services._book_spec_prompts(project, premise, book_spec)
+    _, world_prompt = planner_services._world_spec_prompts(project, premise, book_spec)
+    _, cast_prompt = planner_services._cast_spec_prompts(project, book_spec, world_spec)
+    _, kernel_prompt = planner_services._story_design_kernel_prompts(
+        project,
+        premise,
+        book_spec,
+        world_spec,
+        cast_spec,
+        planner_services._fallback_story_design_kernel(
+            project,
+            premise,
+            book_spec,
+            world_spec,
+            cast_spec,
+        ),
+    )
+    _, volume_prompt = planner_services._volume_plan_prompts(
+        project,
+        book_spec,
+        world_spec,
+        cast_spec,
+    )
+    _, outline_prompt = planner_services._volume_outline_prompts(
+        project,
+        book_spec,
+        cast_spec,
+        volume_plan,
+        volume_plan[0],
+    )
+
+    assert "ARCH_DISTILLED_REFERENCE" in book_prompt
+    assert "ARCH_STRATEGY_CARD" in book_prompt
+    assert "WORLD_DISTILLED_REFERENCE" in world_prompt
+    assert "WORLD_STRATEGY_CARD" in world_prompt
+    assert "CAST_DISTILLED_REFERENCE" in cast_prompt
+    assert "CAST_STRATEGY_CARD" in cast_prompt
+    assert "KERNEL_DISTILLED_REFERENCE" in kernel_prompt
+    assert "KERNEL_STRATEGY_CARD" in kernel_prompt
+    assert "VOLUME_DISTILLED_REFERENCE" in volume_prompt
+    assert "VOLUME_STRATEGY_CARD" in volume_prompt
+    assert "OUTLINE_DISTILLED_REFERENCE" in outline_prompt
+    assert "OUTLINE_STRATEGY_CARD" in outline_prompt
+
+
+def test_story_design_kernel_fallback_consumes_distilled_world_bindings() -> None:
+    project = build_project()
+    project.metadata_json = {
+        "distilled_strategy_card": {
+            "aggregate_key": "test-aggregate",
+            "worldview_bindings": {
+                "distilled_mechanism_bindings": [
+                    {
+                        "aggregate_key": "test-aggregate",
+                        "mechanism_id": "dual-system-fusion-ladder",
+                        "design_role": "world",
+                        "source_confidence": 0.91,
+                        "required_project_binding": "把双体系冲突改写成本书的航线规则仲裁。",
+                        "state_variables": ["cross_system_understanding"],
+                        "required_cost": "每次仲裁都会暴露主角的旧航线知识。",
+                    }
+                ],
+                "state_variables": [
+                    {
+                        "key": "cross_system_understanding",
+                        "variable_type": "knowledge",
+                        "current_value": "主角只知道旧帝国航线规则。",
+                        "desired_direction": "逐步理解边境新秩序。",
+                        "change_triggers": ["破解航线记录", "公开解释规则冲突"],
+                        "failure_mode": "世界观退化为背景说明。",
+                        "source_mechanism_ids": ["dual-system-fusion-ladder"],
+                    }
+                ],
+                "asset_ledger": [
+                    {
+                        "key": "hidden_route_archive",
+                        "asset_type": "information",
+                        "value": "证明帝国篡改边境航线。",
+                        "cost": "使用档案会留下检索记录。",
+                        "exposure_risk": "边境审计官会追踪异常访问。",
+                        "attention_sources": ["帝国审计庭"],
+                    }
+                ],
+                "authority_claims": [
+                    {
+                        "claimant": "帝国审计庭",
+                        "target": "边境航线解释权",
+                        "claim_basis": "帝国法令",
+                        "legitimacy": "公开合法但隐瞒篡改。",
+                        "conflict_with": ["边境导航员"],
+                        "escalation_path": "从记录核查升级到航线封锁。",
+                    }
+                ],
+                "scene_templates": [
+                    {
+                        "key": "route-audit-hearing",
+                        "template_name": "航线审计听证",
+                        "use_case": "公开展示规则冲突和权力压力。",
+                        "required_change": ["cross_system_understanding"],
+                    }
+                ],
+                "anti_copy_boundaries": ["不能照搬双修体系或宗门长老会。"],
+            },
+        }
+    }
+    premise = "一名被放逐的导航员发现帝国正在篡改边境航线记录。"
+    book_spec = planner_services._fallback_book_spec(project, premise)
+    world_spec = planner_services._fallback_world_spec(project, premise, book_spec)
+    cast_spec = planner_services._fallback_cast_spec(project, premise, book_spec, world_spec)
+
+    story_design = planner_services._fallback_story_design_kernel(
+        project,
+        premise,
+        book_spec,
+        world_spec,
+        cast_spec,
+    )
+    _, kernel_prompt = planner_services._story_design_kernel_prompts(
+        project,
+        premise,
+        book_spec,
+        world_spec,
+        cast_spec,
+        story_design,
+    )
+
+    worldview = story_design["worldview_kernel"]
+    assert worldview["state_variables"][0]["key"] == "cross_system_understanding"
+    assert worldview["asset_ledger"][0]["key"] == "hidden_route_archive"
+    assert worldview["authority_claims"][0]["claimant"] == "帝国审计庭"
+    assert worldview["scene_templates"][0]["key"] == "route-audit-hearing"
+    assert worldview["anti_copy_boundaries"] == ["不能照搬双修体系或宗门长老会。"]
+    assert "state_variables" in kernel_prompt
+    assert "anti_copy_boundaries" in kernel_prompt
+
+
+def test_fallback_volume_plan_includes_worldview_progression_fields() -> None:
+    project = build_project()
+    project.metadata_json = {
+        "distilled_strategy_card": {
+            "aggregate_key": "test-aggregate",
+            "worldview_bindings": {
+                "state_variables": [
+                    {
+                        "key": "cross_system_understanding",
+                        "variable_type": "knowledge",
+                        "current_value": "只知道旧规则。",
+                        "desired_direction": "逐步理解新秩序。",
+                        "change_triggers": ["破解航线记录"],
+                        "failure_mode": "世界观退化为背景说明。",
+                    }
+                ],
+                "asset_ledger": [
+                    {
+                        "key": "hidden_route_archive",
+                        "asset_type": "information",
+                        "value": "证明航线被篡改。",
+                        "cost": "使用档案会留下检索记录。",
+                        "exposure_risk": "审计庭会追踪异常访问。",
+                    }
+                ],
+                "authority_claims": [
+                    {
+                        "claimant": "帝国审计庭",
+                        "target": "边境航线解释权",
+                        "claim_basis": "帝国审计法",
+                        "legitimacy": "公开合法但掩盖篡改。",
+                        "escalation_path": "从核查升级到封港。",
+                    }
+                ],
+                "scene_templates": [
+                    {
+                        "key": "route-audit-hearing",
+                        "template_name": "航线审计听证",
+                        "use_case": "公开展示规则冲突。",
+                        "required_change": ["cross_system_understanding"],
+                    }
+                ],
+            },
+        }
+    }
+    premise = "一名被放逐的导航员发现帝国正在篡改边境航线记录。"
+    book_spec = planner_services._fallback_book_spec(project, premise)
+    world_spec = planner_services._fallback_world_spec(project, premise, book_spec)
+    cast_spec = planner_services._fallback_cast_spec(project, premise, book_spec, world_spec)
+    story_design = planner_services._fallback_story_design_kernel(
+        project,
+        premise,
+        book_spec,
+        world_spec,
+        cast_spec,
+    )
+    project.metadata_json = {
+        **(project.metadata_json or {}),
+        "story_design_kernel": story_design,
+    }
+
+    volume_plan = planner_services._fallback_volume_plan(
+        project,
+        book_spec,
+        cast_spec,
+        world_spec,
+    )
+
+    first_volume = volume_plan[0]
+    assert first_volume["world_state_targets"] == ["cross_system_understanding +1"]
+    assert first_volume["active_authority_claims"] == ["边境航线解释权"]
+    assert "map_function" in first_volume
+    assert first_volume["world_asset_refs"] == ["hidden_route_archive"]
+    assert "asset_risk_escalation" in first_volume
+    assert first_volume["reveal_budget"] == 1
+
+
+def test_emotion_driven_kernel_fallback_validates_and_enters_planner_prompts() -> None:
+    project = build_project()
+    premise = "一名被放逐的导航员发现帝国正在篡改边境航线记录。"
+    book_spec = planner_services._fallback_book_spec(project, premise)
+    world_spec = planner_services._fallback_world_spec(project, premise, book_spec)
+    cast_spec = planner_services._fallback_cast_spec(project, premise, book_spec, world_spec)
+    volume_plan = planner_services._fallback_volume_plan(project, book_spec, cast_spec, world_spec)
+    story_design = planner_services._fallback_story_design_kernel(
+        project,
+        premise,
+        book_spec,
+        world_spec,
+        cast_spec,
+    )
+
+    emotion_kernel = planner_services._fallback_emotion_driven_kernel(
+        project,
+        premise,
+        book_spec,
+        world_spec,
+        cast_spec,
+        story_design_kernel=story_design,
+    )
+
+    planner_services._validate_emotion_driven_kernel_payload(emotion_kernel)
+    project.metadata_json = {
+        "story_design_kernel": story_design,
+        "emotion_driven_kernel": emotion_kernel,
+    }
+
+    _, volume_prompt = planner_services._volume_plan_prompts(
+        project,
+        book_spec,
+        world_spec,
+        cast_spec,
+    )
+    _, outline_prompt = planner_services._volume_outline_prompts(
+        project,
+        book_spec,
+        cast_spec,
+        volume_plan,
+        volume_plan[0],
+    )
+
+    assert "emotion_driven_core" in volume_prompt
+    assert "读者情绪合同" in volume_prompt
+    assert "emotion_driven_core" in outline_prompt
+    assert "读者情绪合同" in outline_prompt
+
+
+def test_stash_distilled_design_reference_blocks_populates_project_metadata(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = build_project()
+    settings = build_settings()
+
+    from bestseller.services import distilled_design_reference
+
+    def fake_render_blocks(**kwargs: object) -> dict[str, str]:
+        assert kwargs["genre"] == project.genre
+        return {
+            "architecture": "ARCH_BLOCK",
+            "world": "WORLD_BLOCK",
+        }
+
+    monkeypatch.setattr(
+        distilled_design_reference,
+        "render_all_distilled_design_reference_blocks",
+        fake_render_blocks,
+    )
+
+    planner_services._stash_distilled_design_reference_blocks(
+        project,
+        category_key="science-fantasy",
+        settings=settings,
+    )
+
+    assert project.metadata_json["distilled_design_reference_blocks"]["world"] == "WORLD_BLOCK"
+    assert project.metadata_json["distilled_design_reference_block"] == "ARCH_BLOCK"
+
+
+def test_stash_distilled_strategy_card_populates_project_metadata(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = build_project()
+    project.metadata_json = {
+        "story_facets": {"unique_hook": "失效航图修复异界法则"},
+        "premise": "导航员坠入异界。",
+    }
+    settings = build_settings()
+
+    from bestseller.services import distilled_strategy_compiler
+
+    def fake_compile(**kwargs: object) -> DistilledStrategyCard:
+        assert kwargs["genre"] == project.genre
+        assert kwargs["project_context"]["unique_hook"] == "失效航图修复异界法则"
+        return DistilledStrategyCard(
+            aggregate_key="otherworld-cross-system",
+            maturity_score=0.42,
+            maturity_status="review",
+            source_count=1,
+            selected_mechanisms=[
+                SelectedMechanism(
+                    mechanism_id="cross-system-rule-arbitrage",
+                    source_confidence=0.86,
+                    design_role="series_engine",
+                    adaptation_instruction="转化为本项目因果链。",
+                    required_project_specific_binding="绑定到失效航图。",
+                    failure_mode="未绑定项目元素。",
+                )
+            ],
+            required_state_variables=["cross_system_understanding"],
+            required_change_vectors=["exploit_rule_gap"],
+            anti_copy_boundaries=["exact-opening-chain"],
+            transformation_requirements=["cross-system-rule-arbitrage: 绑定到失效航图。"],
+            plan_consumption_checks=["Plan should track state variable."],
+        )
+
+    monkeypatch.setattr(
+        distilled_strategy_compiler,
+        "compile_distilled_strategy_card",
+        fake_compile,
+    )
+
+    planner_services._stash_distilled_strategy_card(
+        project,
+        category_key="otherworld-cross-system",
+        settings=settings,
+    )
+
+    assert project.metadata_json["distilled_strategy_card"]["aggregate_key"] == (
+        "otherworld-cross-system"
+    )
+    assert project.metadata_json["character_strategy"]["source"] == (
+        "distillation_character_intelligence"
+    )
+    assert "agency" in project.metadata_json["character_strategy"]["required_axes"]
+    assert "architecture" in project.metadata_json["distilled_strategy_blocks"]
+    assert "cross-system-rule-arbitrage" in project.metadata_json["distilled_strategy_block"]
+
+
 def test_fallback_world_spec_uses_neutral_rule_scaffold() -> None:
     project = build_project()
     project.genre = "仙侠"
@@ -457,7 +848,9 @@ def test_merge_planning_payload_preserves_fallback_nested_fields() -> None:
 
     assert merged["title"] == "长夜巡航"
     assert merged["protagonist"]["name"] == "沈砚"
-    assert merged["protagonist"]["external_goal"] == fallback_book_spec["protagonist"]["external_goal"]
+    assert (
+        merged["protagonist"]["external_goal"] == fallback_book_spec["protagonist"]["external_goal"]
+    )
     assert merged["stakes"]["personal"] == fallback_book_spec["stakes"]["personal"]
 
 
@@ -565,11 +958,33 @@ def test_fallback_chapter_outline_titles_are_concise_and_not_volume_goal_clips()
     assert all("·" not in title for title in titles)
     assert all(len(title) <= 8 for title in titles)
     banned_functional_tails = {
-        "初现", "入局", "投石", "试探", "铺火", "露锋", "破冰", "起手", "掀幕", "落子",
-        "追索", "摸底", "拆解", "寻隙", "探针", "回查", "溯源", "揭层", "织网", "破壁",
+        "初现",
+        "入局",
+        "投石",
+        "试探",
+        "铺火",
+        "露锋",
+        "破冰",
+        "起手",
+        "掀幕",
+        "落子",
+        "追索",
+        "摸底",
+        "拆解",
+        "寻隙",
+        "探针",
+        "回查",
+        "溯源",
+        "揭层",
+        "织网",
+        "破壁",
     }
-    assert all(not any(title.endswith(tail) for tail in banned_functional_tails) for title in titles)
-    hooks = [ch["hook_description"] for ch in outline_batch["chapters"] if ch.get("hook_description")]
+    assert all(
+        not any(title.endswith(tail) for tail in banned_functional_tails) for title in titles
+    )
+    hooks = [
+        ch["hook_description"] for ch in outline_batch["chapters"] if ch.get("hook_description")
+    ]
     assert all("尾钩" not in hook for hook in hooks)
     assert all("出现新的证据、时限或代价" not in hook for hook in hooks)
     assert all("围绕" not in hook for hook in hooks)
@@ -618,7 +1033,9 @@ def test_generated_outline_uses_title_alias_without_fallback_synthesis() -> None
 
 
 def test_generated_outline_missing_title_fails_without_fallback_synthesis() -> None:
-    with pytest.raises(planner_services.PlannerFallbackError, match="omitted concrete chapter titles"):
+    with pytest.raises(
+        planner_services.PlannerFallbackError, match="omitted concrete chapter titles"
+    ):
         planner_services._normalize_generated_outline_titles_or_fail(
             [{"chapter_number": 7, "goal": "苏砚追到镜铺后门。"}],
             logical_name="volume_1_chapter_outline",
@@ -643,7 +1060,14 @@ def test_generated_volume_outline_repairs_scene_contract_fields_before_validatio
             "pronoun_set_zh": "他",
             "pronoun_set_en": "he/him",
         },
-        "supporting_cast": [],
+        "supporting_cast": [
+            {
+                "name": "阿洛",
+                "role": "supporting",
+                "goal": "把走私账册送出港口",
+                "value_to_story": "提供港口黑市线索和临场行动压力",
+            }
+        ],
     }
     payload = {
         "batch_name": "volume-1-outline",
@@ -664,6 +1088,14 @@ def test_generated_volume_outline_repairs_scene_contract_fields_before_validatio
                         "time_label": "章节开场",
                         "participants": ["巡捕房巡捕"],
                         "purpose": {"story": "秦无咎把账册藏进义庄，逼沈青崖立刻改道。"},
+                    },
+                    {
+                        "scene_number": 3,
+                        "time_label": "李宅封门前",
+                        "participants": ["沈青崖"],
+                        "purpose": {
+                            "story": "本章功能是完善秦无咎的反派线，并扩大后续悬念。",
+                        },
                     },
                 ],
             }
@@ -687,6 +1119,60 @@ def test_generated_volume_outline_repairs_scene_contract_fields_before_validatio
     assert first_scene["purpose"]["story"].startswith("第1章场景1让沈青崖")
     assert second_scene["participants"] == ["沈青崖", "秦无咎"]
     assert second_scene["time_label"].startswith("第1章")
+    assert "本章功能" not in repaired["chapters"][0]["scenes"][2]["purpose"]["story"]
+
+
+def test_generated_volume_outline_accepts_raw_chapter_list_from_llm() -> None:
+    project = build_project()
+    cast_spec = {
+        "protagonist": {
+            "name": "沈青崖",
+            "role": "protagonist",
+            "gender": "male",
+            "pronoun_set_zh": "他",
+            "pronoun_set_en": "he/him",
+        },
+        "supporting_cast": [
+            {
+                "name": "阿洛",
+                "role": "supporting",
+                "goal": "把走私账册送出港口",
+                "value_to_story": "提供港口黑市线索和临场行动压力",
+            }
+        ],
+    }
+    payload = [
+        {
+            "title": "井底回声",
+            "goal": "沈青崖追查井底异响，必须在封门前找到血雨源头。",
+            "main_conflict": "巡捕房误封现场，沈青崖必须避开阻拦读取井底痕迹。",
+            "hook_description": "井底浮出一枚刻着沈家旧印的铜钱。",
+            "scenes": [
+                {
+                    "scene_number": 1,
+                    "time_label": "李宅封门前",
+                    "participants": ["沈青崖"],
+                    "purpose": {
+                        "story": "沈青崖撬开井盖，发现血雨源头并付出暴露行踪的代价。",
+                        "emotion": "压力上升。",
+                    },
+                },
+            ],
+        }
+    ]
+
+    repaired = planner_services._validate_generated_volume_outline_or_raise(
+        payload,
+        project=project,
+        logical_name="volume_1_chapter_outline",
+        volume_number=1,
+        expected_count=1,
+        chapter_number_offset=1,
+        cast_spec=cast_spec,
+    )
+
+    assert repaired["batch_name"] == "volume-1-outline"
+    assert repaired["chapters"][0]["chapter_number"] == 1
 
 
 @pytest.mark.asyncio
@@ -756,7 +1242,9 @@ async def test_volume_outline_repair_loop_regenerates_with_contract_diagnostics(
     assert history[-1]["status"] == "passed"
 
 
-def test_fallback_chapter_outline_avoids_critical_plan_fingerprints_with_long_hook_strategy() -> None:
+def test_fallback_chapter_outline_avoids_critical_plan_fingerprints_with_long_hook_strategy() -> (
+    None
+):
     project = build_project()
     project.slug = "eastern-aesthetic-fantasy-1778332094"
     project.title = "器有魂"
@@ -767,9 +1255,9 @@ def test_fallback_chapter_outline_avoids_critical_plan_fingerprints_with_long_ho
         "writing_profile": {
             "market": {
                 "chapter_hook_strategy": (
-                    "【递进式悬念梯度】章末钩子按\"谜题深化→威胁升级→利益/情感诱因\"三层循环排布："
+                    '【递进式悬念梯度】章末钩子按"谜题深化→威胁升级→利益/情感诱因"三层循环排布：'
                     "短回报钩子（次章解决）用于填充章节节奏；中回报钩子（3-5章）用于卷内悬念；"
-                    "长回报钩子（10+章）用于主线伏笔。每五章设置一次\"认知重塑\"级钩子。"
+                    '长回报钩子（10+章）用于主线伏笔。每五章设置一次"认知重塑"级钩子。'
                 )
             }
         }
@@ -846,7 +1334,10 @@ def test_merge_volume_cast_expansion_keeps_existing_role_when_role_change_is_des
     assert zoe["alliance_status"] == "Moves from tentative trust toward commitment."
     assert zoe["metadata"]["existing"] is True
     assert zoe["metadata"]["role_evolution"] == raw_role
-    assert zoe["metadata"]["role_evolution_normalized_label"] == "From information gatherer to active participant"
+    assert (
+        zoe["metadata"]["role_evolution_normalized_label"]
+        == "From information gatherer to active participant"
+    )
 
 
 def test_merge_volume_cast_expansion_normalizes_descriptive_role_for_new_character() -> None:
@@ -877,7 +1368,10 @@ def test_merge_volume_cast_expansion_normalizes_descriptive_role_for_new_charact
     assert denise["role"] == "supporting"
     assert denise["goal"] == "Keep the remaining descendants alive."
     assert denise["metadata"]["role_evolution"] == raw_role
-    assert denise["metadata"]["role_evolution_normalized_label"] == "From hidden observer to field coordinator"
+    assert (
+        denise["metadata"]["role_evolution_normalized_label"]
+        == "From hidden observer to field coordinator"
+    )
 
 
 def test_merge_volume_cast_expansion_normalizes_fuzzy_age_for_new_character() -> None:
@@ -1023,7 +1517,7 @@ def test_planner_prompts_switch_to_english_for_english_projects() -> None:
     )
     project.id = uuid4()
 
-    system_prompt, user_prompt = planner_services._book_spec_prompts(  # noqa: SLF001
+    system_prompt, user_prompt = planner_services._book_spec_prompts(
         project,
         "A royal archivist discovers the crown has been deleting its own bloodline.",
         {},
@@ -1078,7 +1572,7 @@ def test_next_volume_outline_prompt_builds_character_drama_from_current_cast() -
         },
     ]
 
-    _, user_prompt = planner_services._volume_outline_prompts(  # noqa: SLF001
+    _, user_prompt = planner_services._volume_outline_prompts(
         project,
         book_spec,
         cast_spec,
@@ -1172,7 +1666,10 @@ async def test_generate_structured_artifact_merges_partial_llm_payload_with_fall
     assert llm_run_id is not None
     assert payload["title"] == "Gemini Book"
     assert payload["protagonist"]["name"] == "沈砚"
-    assert payload["protagonist"]["external_goal"] == fallback_book_spec["protagonist"]["external_goal"]
+    assert (
+        payload["protagonist"]["external_goal"]
+        == fallback_book_spec["protagonist"]["external_goal"]
+    )
 
 
 @pytest.mark.asyncio
@@ -1342,32 +1839,62 @@ async def test_generate_novel_plan_creates_all_artifacts_and_workflow_records(
     assert (
         artifact_types.index(ArtifactType.CAST_SPEC)
         < artifact_types.index(ArtifactType.STORY_DESIGN_KERNEL)
+        < artifact_types.index(ArtifactType.EMOTION_DRIVEN_KERNEL)
         < artifact_types.index(ArtifactType.VOLUME_PLAN)
     )
+    assert ArtifactType.EMOTION_DRIVEN_KERNEL in artifact_types
     assert ArtifactType.VOLUME_PLAN in artifact_types
     assert ArtifactType.PLAN_VALIDATION in artifact_types
-    assert artifact_types.index(ArtifactType.VOLUME_PLAN) < artifact_types.index(ArtifactType.PLAN_VALIDATION)
+    assert artifact_types.index(ArtifactType.VOLUME_PLAN) < artifact_types.index(
+        ArtifactType.PLAN_VALIDATION
+    )
     assert ArtifactType.PREWRITE_READINESS in artifact_types
-    assert artifact_types.index(ArtifactType.PLAN_VALIDATION) < artifact_types.index(ArtifactType.PREWRITE_READINESS)
+    assert artifact_types.index(ArtifactType.PLAN_VALIDATION) < artifact_types.index(
+        ArtifactType.PREWRITE_READINESS
+    )
     assert ArtifactType.PROMOTIONAL_BRIEF in artifact_types
     assert ArtifactType.VOLUME_CHAPTER_OUTLINE in artifact_types
     assert ArtifactType.CHAPTER_OUTLINE_BATCH in artifact_types
-    assert len(result.llm_run_ids) >= 8
+    assert len(result.llm_run_ids) >= 9
     assert len(workflow_runs) == 1
     assert workflow_runs[0].status == "completed"
     assert len(workflow_steps) >= 7
     assert any(step.step_name == "prewrite_readiness_gate" for step in workflow_steps)
     assert any(step.step_name == "reverse_outline_gate" for step in workflow_steps)
+    assert any(step.step_name == "worldview_progression_gate" for step in workflow_steps)
+    assert any(step.step_name == "worldview_compliance_gate" for step in workflow_steps)
     assert "story_design_kernel" in project.metadata_json
     assert project.metadata_json["story_design_kernel"]["reverse_outline_status"] == "verified"
     assert "character_drama_map" in project.metadata_json
+    assert "emotion_driven_kernel" in project.metadata_json
     assert "planning_kernel" in project.metadata_json
     assert project.metadata_json["reverse_outline_gate_report"]["passed"] is True
+    assert "worldview_progression_gate_report" in project.metadata_json
+    assert "worldview_compliance_gate_report" in project.metadata_json
+    assert project.metadata_json["worldview_compliance_gate_report"]["passed"] is True
     assert project.metadata_json["planning_kernel"]["story_design"]["valid"] is True
+    assert project.metadata_json["planning_kernel"]["emotion_driven"]["valid"] is True
     assert "prewrite_readiness_report" in project.metadata_json
     assert "Character Drama Engine" in prompts_by_logical_name["story_design_kernel"]
+    assert "EmotionDrivenKernel" in prompts_by_logical_name["emotion_driven_kernel"]
     assert "Story Design Kernel" in prompts_by_logical_name["volume_plan"]
+    assert "emotion_driven_core" in prompts_by_logical_name["volume_plan"]
     assert "Character Drama Engine" in prompts_by_logical_name["volume_plan"]
+    assert "world_state_targets" in prompts_by_logical_name["volume_plan"]
+    assert "active_authority_claims" in prompts_by_logical_name["volume_plan"]
+    assert "map_function" in prompts_by_logical_name["volume_plan"]
+    assert "asset_risk_escalation" in prompts_by_logical_name["volume_plan"]
+    assert "reveal_budget" in prompts_by_logical_name["volume_plan"]
+    outline_prompt = next(
+        prompt
+        for logical_name, prompt in prompts_by_logical_name.items()
+        if logical_name.endswith("_chapter_outline")
+    )
+    assert "world_rule_refs" in outline_prompt
+    assert "world_rule_landing" in outline_prompt
+    assert "world_state_deltas" in outline_prompt
+    assert "world_asset_refs" in outline_prompt
+    assert "world_scene_template_ref" in outline_prompt
 
 
 @pytest.mark.asyncio
@@ -1443,9 +1970,7 @@ async def test_repair_cast_personhood_regenerates_incomplete_character_bible(
             "themes": ["真相"],
             "dramatic_question": "沈砚能否找回真相？",
         },
-        world_spec_payload={
-            "power_system": {"name": "导航印记", "tiers": ["学徒", "导航员"]}
-        },
+        world_spec_payload={"power_system": {"name": "导航印记", "tiers": ["学徒", "导航员"]}},
         cast_spec_payload=thin_cast,
         workflow_run_id=uuid4(),
     )
@@ -1516,7 +2041,10 @@ def test_ensure_book_spec_bible_fields_extends_thin_llm_payload() -> None:
     )
 
     assert normalized["theme_statement"].startswith("真正的力量")
-    assert normalized["dramatic_question"] == "沈砚能否在追查被篡改的航线记录的同时，仍然重新学会信任同伴？"
+    assert (
+        normalized["dramatic_question"]
+        == "沈砚能否在追查被篡改的航线记录的同时，仍然重新学会信任同伴？"
+    )
     assert len(normalized["naming_pool"]) == 8
     assert "沈砚" in normalized["naming_pool"]
 
@@ -1536,7 +2064,14 @@ def test_synthesize_missing_cast_bible_fields_closes_character_gate_fields() -> 
             "goal": "封锁所有底层日志",
             "secret": "当年参与删改航线",
         },
-        "supporting_cast": [],
+        "supporting_cast": [
+            {
+                "name": "阿洛",
+                "role": "supporting",
+                "goal": "把走私账册送出港口",
+                "value_to_story": "提供港口黑市线索和临场行动压力",
+            }
+        ],
     }
 
     repaired = planner_services._synthesize_missing_cast_bible_fields(
@@ -1555,6 +2090,113 @@ def test_synthesize_missing_cast_bible_fields_closes_character_gate_fields() -> 
     assert len(antagonist["ip_anchor"]["quirks"]) >= 2
     assert antagonist["villain_charisma"]["noble_motivation"]
     assert len(antagonist["villain_charisma"]["personal_code"]) >= 1
+    assert protagonist["background"]
+    assert antagonist["background"]
+
+    supporting = repaired["supporting_cast"][0]
+    assert supporting["ip_anchor"]["tag_memory"]
+    assert supporting["ip_anchor"]["independent_life"]
+
+
+def test_synthesize_missing_cast_bible_fields_separates_antagonist_motives() -> None:
+    project = build_project()
+    shared_motive = "复活上古邪神打破阴阳界限，借归墟会完成复仇。"
+    cast_spec = {
+        "protagonist": {
+            "name": "沈青崖",
+            "role": "protagonist",
+            "goal": "查明灭门案真相",
+            "fear": "血脉失控",
+        },
+        "antagonist": {
+            "name": "清尘",
+            "role": "antagonist",
+            "goal": shared_motive,
+            "background": shared_motive,
+            "secret": shared_motive,
+        },
+        "supporting_cast": [
+            {
+                "name": "魏德曼",
+                "role": "antagonist",
+                "goal": shared_motive,
+                "background": shared_motive,
+                "secret": shared_motive,
+            },
+            {
+                "name": "归墟会祭司",
+                "role": "antagonist",
+                "goal": shared_motive,
+                "background": shared_motive,
+                "secret": shared_motive,
+            },
+            {
+                "name": "赵鹤鸣",
+                "role": "antagonist",
+                "goal": shared_motive,
+                "background": shared_motive,
+                "secret": shared_motive,
+            },
+            {
+                "name": "沈天机",
+                "role": "antagonist",
+                "goal": shared_motive,
+                "background": shared_motive,
+                "secret": shared_motive,
+            },
+        ],
+    }
+
+    repaired = planner_services._synthesize_missing_cast_bible_fields(
+        project,
+        cast_spec,
+    )
+
+    goals = [
+        repaired["antagonist"]["goal"],
+        repaired["supporting_cast"][0]["goal"],
+        repaired["supporting_cast"][1]["goal"],
+        repaired["supporting_cast"][2]["goal"],
+        repaired["supporting_cast"][3]["goal"],
+    ]
+    assert len(set(goals)) == 5
+    assert repaired["antagonist"]["motive_axis"] != repaired["supporting_cast"][0]["motive_axis"]
+
+    from bestseller.services.bible_gate import (  # noqa: PLC0415
+        build_draft_from_materialization_content,
+        validate_bible_completeness,
+    )
+    from bestseller.services.invariants import seed_invariants  # noqa: PLC0415
+
+    draft = build_draft_from_materialization_content(
+        book_spec_content={
+            "title": "青崖诡事",
+            "theme_statement": "复仇必须被真相约束。",
+            "dramatic_question": "沈青崖能否查明真相而不被复仇吞没？",
+            "expected_character_count": 4,
+            "naming_pool": ["沈青崖", "清尘", "魏德曼", "归墟会祭司"] * 2,
+        },
+        world_spec_content={"power_system": {"name": "阴阳重瞳", "tiers": ["开眼", "照魂"]}},
+        cast_spec_content=repaired,
+    )
+    report = validate_bible_completeness(
+        draft,
+        seed_invariants(
+            project_id=project.id,
+            language=getattr(project, "language", None),
+            words_per_chapter=2200,
+        ),
+    )
+
+    assert "ANTAGONIST_MOTIVE_OVERLAP" not in {d.code for d in report.deficiencies}
+
+
+def test_cast_personhood_repair_codes_cover_l2_bible_character_gates() -> None:
+    assert {
+        "TAG_MEMORY_MISSING",
+        "INDEPENDENT_LIFE_MISSING",
+        "CHARACTER_CONTRAST_MISSING",
+    }.issubset(planner_services._CAST_PERSONHOOD_REPAIR_CODES)
 
 
 def test_fallback_volume_plan_carries_conflict_phase() -> None:
@@ -1571,8 +2213,12 @@ def test_fallback_volume_plan_carries_conflict_phase() -> None:
         assert "conflict_phase" in vol
         assert "primary_force_name" in vol
         assert vol["conflict_phase"] in (
-            "survival", "political_intrigue", "betrayal",
-            "faction_war", "existential_threat", "internal_reckoning",
+            "survival",
+            "political_intrigue",
+            "betrayal",
+            "faction_war",
+            "existential_threat",
+            "internal_reckoning",
         )
 
 
@@ -1585,7 +2231,9 @@ def test_fallback_chapter_outline_main_conflict_varies_across_volumes() -> None:
     world_spec = planner_services._fallback_world_spec(project, premise, book_spec)
     cast_spec = planner_services._fallback_cast_spec(project, premise, book_spec, world_spec)
     volume_plan = planner_services._fallback_volume_plan(project, book_spec, cast_spec, world_spec)
-    outline = planner_services._fallback_chapter_outline_batch(project, book_spec, cast_spec, volume_plan)
+    outline = planner_services._fallback_chapter_outline_batch(
+        project, book_spec, cast_spec, volume_plan
+    )
 
     chapters = outline["chapters"]
     # Group main_conflict by volume
@@ -1631,7 +2279,9 @@ def test_fallback_cast_spec_backward_compat_single_chapter() -> None:
     world_spec = planner_services._fallback_world_spec(project, premise, book_spec)
     cast_spec = planner_services._fallback_cast_spec(project, premise, book_spec, world_spec)
     volume_plan = planner_services._fallback_volume_plan(project, book_spec, cast_spec, world_spec)
-    outline = planner_services._fallback_chapter_outline_batch(project, book_spec, cast_spec, volume_plan)
+    outline = planner_services._fallback_chapter_outline_batch(
+        project, book_spec, cast_spec, volume_plan
+    )
 
     assert cast_spec["antagonist"] is not None
     assert len(cast_spec["antagonist_forces"]) >= 1
@@ -1642,7 +2292,11 @@ def test_fallback_cast_spec_backward_compat_single_chapter() -> None:
 def test_assign_conflict_phases_distributes_correctly() -> None:
     assert planner_services._assign_conflict_phases(1) == ["survival"]
     assert planner_services._assign_conflict_phases(2) == ["survival", "existential_threat"]
-    assert planner_services._assign_conflict_phases(3) == ["survival", "political_intrigue", "existential_threat"]
+    assert planner_services._assign_conflict_phases(3) == [
+        "survival",
+        "political_intrigue",
+        "existential_threat",
+    ]
     phases_5 = planner_services._assign_conflict_phases(5)
     assert len(phases_5) == 5
     assert phases_5[0] == "survival"
@@ -1696,14 +2350,19 @@ def test_assign_conflict_phases_unknown_category_falls_back() -> None:
 
 def test_assign_conflict_phases_none_category_preserves_legacy() -> None:
     """category_key=None should produce identical results to the old behavior."""
-    assert planner_services._assign_conflict_phases(2, category_key=None) == ["survival", "existential_threat"]
+    assert planner_services._assign_conflict_phases(2, category_key=None) == [
+        "survival",
+        "existential_threat",
+    ]
     assert planner_services._assign_conflict_phases(5, category_key=None)[0] == "survival"
 
 
 def test_resolve_phase_templates_from_category() -> None:
     """Category phase templates should contain formatted text."""
     tpl = planner_services._resolve_phase_templates(
-        "individual_survival", category_key="action-progression", is_en=False,
+        "individual_survival",
+        category_key="action-progression",
+        is_en=False,
     )
     assert tpl["goal"]  # non-empty
     assert "{protagonist}" in tpl["goal"]  # still has placeholder
@@ -1721,3 +2380,63 @@ def test_json_dump_helper_keeps_unicode() -> None:
     dumped = planner_services._json_dumps(payload)
     assert "长夜巡航" in dumped
     assert json.loads(dumped)["title"] == "长夜巡航"
+
+
+# ---------------------------------------------------------------------------
+# Fuzzy participant resolver — guards against LLM cast hallucinations
+# ---------------------------------------------------------------------------
+
+
+def _fixture_identity_index() -> dict[str, dict[str, object]]:
+    """Match the real-world failure on female-no-cp-1776303225."""
+
+    manifest = [
+        {"name": "林鸢", "role": "protagonist"},
+        {"name": "苏澄", "role": "ally"},
+        {"name": "秦骁", "role": "rival"},
+        {"name": "魏骁", "role": "antagonist"},
+        {"name": "霍沉", "role": "antagonist"},
+    ]
+    return planner_services._outline_identity_index(manifest)
+
+
+def test_fuzzy_resolve_aliases_unique_high_overlap_match() -> None:
+    """The repro: 姜澄 (LLM typo) should resolve to 苏澄 (only neighbour)."""
+
+    index = _fixture_identity_index()
+    resolved = planner_services._outline_fuzzy_resolve_participant("姜澄", index)
+    assert resolved is not None
+    assert resolved["name"] == "苏澄"
+
+
+def test_fuzzy_resolve_returns_none_when_ambiguous() -> None:
+    """陆骁 sits between 秦骁 and 魏骁 — refuse to guess."""
+
+    index = _fixture_identity_index()
+    assert planner_services._outline_fuzzy_resolve_participant("陆骁", index) is None
+
+
+def test_fuzzy_resolve_returns_none_for_genuinely_new_name() -> None:
+    index = _fixture_identity_index()
+    # 王五 shares no characters with any cast member.
+    assert planner_services._outline_fuzzy_resolve_participant("王五", index) is None
+
+
+def test_fuzzy_resolve_returns_none_on_length_mismatch() -> None:
+    """Different lengths are always rejected — a 3-char name is not a typo of a 2-char one."""
+
+    index = _fixture_identity_index()
+    assert planner_services._outline_fuzzy_resolve_participant("林鸢儿", index) is None
+
+
+def test_fuzzy_resolve_passes_exact_match_through() -> None:
+    index = _fixture_identity_index()
+    resolved = planner_services._outline_fuzzy_resolve_participant("林鸢", index)
+    assert resolved is not None
+    assert resolved["name"] == "林鸢"
+
+
+def test_fuzzy_resolve_handles_empty_inputs() -> None:
+    assert planner_services._outline_fuzzy_resolve_participant("", {}) is None
+    index = _fixture_identity_index()
+    assert planner_services._outline_fuzzy_resolve_participant("", index) is None

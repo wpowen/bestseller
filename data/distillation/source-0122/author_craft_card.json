@@ -1,0 +1,36 @@
+{
+  "source_id": "source-0122",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "style_safety_policy": "All chapters returned LLM-unavailable fallback stubs. No authorial voice, signature phrases, or distinctive stylistic elements could be extracted. Extreme caution required: do not treat this card as representative of any actual narrative craft.",
+  "pov_and_distance": "{'status': 'undetermined', 'pov_type': None, 'distance_calibration': None, 'note': 'No chapter content processed; no POV choices observable.'}",
+  "sentence_rhythm": [
+    "{'status': 'undetermined', 'dominant_pattern': None, 'variation_tendencies': None, 'note': 'No textual content available for rhythm analysis.'}"
+  ],
+  "paragraphing": [
+    "{'status': 'undetermined', 'block_structure': None, 'pacing_effects': None, 'note': 'Cannot assess paragraph architecture without source material.'}"
+  ],
+  "dialogue_system": [
+    "{'status': 'undetermined', 'attribution_method': None, 'subtext_layering': None, 'directness_calibration': None, 'note': 'No dialogue passages extracted.'}"
+  ],
+  "description_strategy": [
+    "{'status': 'undetermined', 'sensory_priority': None, 'filter_calibration': None, 'scene_building_rhythm': None, 'note': 'No descriptive passages available for analysis.'}"
+  ],
+  "exposition_strategy": [
+    "{'status': 'undetermined', 'placement_method': None, 'density_calibration': None, 'integrity_mechanisms': None, 'note': 'No exposition captured; cannot determine information delivery strategy.'}"
+  ],
+  "emotional_temperature": [
+    "{'status': 'undetermined', 'dominant_register': None, 'intensity_patterns': None, 'shifts_and_pacing': None, 'note': 'No emotional texture observable without source content.'}"
+  ],
+  "hooking_and_transitions": [
+    "{'status': 'undetermined', 'chapter_openers': None, 'transition_types': None, 'suspense_mechanisms': None, 'note': 'No hooks or transitions captured; all chapters are placeholder stubs.'}"
+  ],
+  "adaptation_guidelines": [
+    "{'status': 'undetermined', 'transferable_elements': [], 'medium_specific_constraints': None, 'note': 'Without extractable craft patterns, no adaptation pathway can be recommended. Re-distillation with LLM-enabled pipeline required before any transferable design guidance can be issued.'}"
+  ],
+  "taboo_copy_signals": [
+    "{'status': 'undetermined', 'identified_signatures': [], 'red_flags': [], 'note': 'Cannot identify author-specific phrases, named entities, or distinctive templates because no actual author voice was captured. All 80 chapters are system-generated fallback stubs.'}"
+  ],
+  "confidence": 0.0,
+  "distillation_source_id": "source-0122"
+}

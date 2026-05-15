@@ -1,0 +1,59 @@
+{
+  "source_id": "source-0015",
+  "pipeline_version": "distillation-v1",
+  "source_format": "txt",
+  "encoding": "gb18030",
+  "chapter_count": 4,
+  "volume_count": 1,
+  "average_chapter_chars": 225954,
+  "chapters": [
+    {
+      "abs_chapter_no": 1,
+      "volume_no": 1,
+      "volume_label_redacted": "volume-01",
+      "chapter_label_redacted": "chapter-0001",
+      "boundary_type": "chinese_chapter_heading",
+      "title_hash_sha256": "3e42e25e2c28a130b9eabc21a3a5c968889f8969a02c4a7100ffe504150c51d2",
+      "title_char_count": 2,
+      "char_count": 71706,
+      "line_count": 2881,
+      "private_chunk_ref": ".distillation_private/source-0015/chunks/chapter-0001.txt"
+    },
+    {
+      "abs_chapter_no": 2,
+      "volume_no": 1,
+      "volume_label_redacted": "volume-01",
+      "chapter_label_redacted": "chapter-0002",
+      "boundary_type": "chinese_chapter_heading",
+      "title_hash_sha256": "d45552f2c39c7316c481b457149975fb0fd2f77e3b03b836928a0414bd680e8e",
+      "title_char_count": 6,
+      "char_count": 72974,
+      "line_count": 3211,
+      "private_chunk_ref": ".distillation_private/source-0015/chunks/chapter-0002.txt"
+    },
+    {
+      "abs_chapter_no": 3,
+      "volume_no": 1,
+      "volume_label_redacted": "volume-01",
+      "chapter_label_redacted": "chapter-0003",
+      "boundary_type": "chinese_chapter_heading",
+      "title_hash_sha256": "61191b616cdbf6e3a6308facb9643801c9141c6227aac7d9aa445475bb5ae7f4",
+      "title_char_count": 2,
+      "char_count": 3579,
+      "line_count": 179,
+      "private_chunk_ref": ".distillation_private/source-0015/chunks/chapter-0003.txt"
+    },
+    {
+      "abs_chapter_no": 4,
+      "volume_no": 1,
+      "volume_label_redacted": "volume-01",
+      "chapter_label_redacted": "chapter-0004",
+      "boundary_type": "chinese_chapter_heading",
+      "title_hash_sha256": "3ec1eaf8c0c4ce545098f240eb210344e532f457ccc76da8b6918bc65462ddc0",
+      "title_char_count": 5,
+      "char_count": 755555,
+      "line_count": 30211,
+      "private_chunk_ref": ".distillation_private/source-0015/chunks/chapter-0004.txt"
+    }
+  ]
+}

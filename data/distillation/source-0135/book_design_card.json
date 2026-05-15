@@ -1,0 +1,72 @@
+{
+  "book_id": "source-0135",
+  "source_ref": "distillation:34c0099a0e9557f53d8328c8",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "parsed_profile": {
+    "distillation_status": "complete_failure",
+    "data_availability": "none",
+    "confidence_distribution": {
+      "volume_1": "all_zero",
+      "volume_2": "all_zero",
+      "volume_3": "all_zero",
+      "volume_4": "all_zero",
+      "volume_5": "all_zero",
+      "volume_6": "all_zero",
+      "volume_7": "all_zero"
+    },
+    "chapter_coverage": {
+      "total_chapters_attempted": 154,
+      "successful_extractions": 0,
+      "llm_fallback_stubs": 154,
+      "coverage_percentage": 0.0
+    },
+    "volume_cards_generated": 7,
+    "volume_cards_meaningful": 0,
+    "extraction_quality": "unusable",
+    "extraction_note": "All 154 chapter cards across 7 volumes returned LLM fallback stubs with confidence 0.0. No narrative content, craft observations, reusable mechanisms, or story-design mechanics could be extracted. Volume aggregation was attempted but blocked by source-data absence.",
+    "recommended_action": "Re-extract chapter_card JSON directly from source content when LLM access is available. Do not use this package for story-design analysis, arc construction, or craft pattern identification."
+  },
+  "genre_tags": [
+    "distillation-generic"
+  ],
+  "reader_promise": {
+    "status": "undetermined",
+    "note": "Cannot derive reader promise from unavailable source content"
+  },
+  "core_engine": {
+    "type": "unknown",
+    "status": "insufficient_data",
+    "rationale": "No chapter-level content available to identify dominant narrative engine. All 154 chapters returned empty stubs preventing engine classification."
+  },
+  "state_variables": [
+    "fallback_progress"
+  ],
+  "reader_rewards": [
+    "distillable_mechanism_reliability"
+  ],
+  "reusable_mechanisms": [
+    "fallback mechanism abstraction"
+  ],
+  "non_reusable_specifics": [
+    "All 154 chapters across volumes 1-7 received llm_fallback stubs",
+    "Zero confidence scores across entire chapter batch (abs_chapter_nos 1-154)",
+    "No chapter_function populated beyond placeholder text",
+    "No craft_observations extracted — all empty objects",
+    "No reader_rewards identified — all empty arrays",
+    "No open_hooks documented — all empty arrays",
+    "No state_progression derivable from empty source material",
+    "No turning_points identified — all empty arrays",
+    "No reusable_mechanisms captured — all empty arrays",
+    "Volume-level aggregation failed due to compromised chapter_card_batch_integrity"
+  ],
+  "risk_patterns": [
+    "{'pattern': 'llm_fallback', 'occurrences': 154, 'severity': 'critical', 'impact': 'Complete extraction failure — no distillable content available'}",
+    "{'pattern': 'zero_confidence', 'occurrences': 154, 'severity': 'critical', 'impact': 'No chapter card data usable for aggregation or analysis'}",
+    "{'pattern': 'volume_distillation_impossible', 'occurrences': 7, 'severity': 'critical', 'impact': 'All 7 volume cards contain only placeholder metadata; no arc-level functions discernible'}",
+    "{'pattern': 'no_narrative_content_extracted', 'occurrences': 154, 'severity': 'critical', 'impact': 'Source text entirely inaccessible for story-design fingerprinting'}",
+    "{'pattern': 'chapter_card_batch_integrity_compromised', 'occurrences': 7, 'severity': 'high', 'impact': 'Each volume batch contains only fallback stubs, preventing reliable aggregation'}"
+  ],
+  "source_id": "source-0135",
+  "distillation_source_id": "source-0135"
+}

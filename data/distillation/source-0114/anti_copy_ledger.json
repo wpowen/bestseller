@@ -1,0 +1,20 @@
+{
+  "source_id": "source-0114",
+  "blocked_categories": [
+    "character_identity",
+    "narrative_voice",
+    "plot_specifics",
+    "setting_details",
+    "dialogue_patterns",
+    "thematic_elements",
+    "structural_architecture"
+  ],
+  "blocked_combinations": [
+    "author_style_imitation",
+    "character_name_replication",
+    "dialogue_voice_copying",
+    "setting_recreation",
+    "plot_mechanic_derivation"
+  ],
+  "replacement_policy": []
+}

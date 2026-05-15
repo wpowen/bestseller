@@ -1,0 +1,21 @@
+key: distillation-generic
+name: Generic Distillation Fallback Grammar
+source_ids:
+- source-0129
+status: active
+applies_to_categories:
+- distillation-fallback
+- generic
+required_contracts:
+- llm_fallback_contract
+state_variables:
+- fallback_progress
+chapter_change_vectors:
+  default: zero_vector
+reader_rewards:
+- distillable_mechanism_reliability
+hook_or_aftereffect_types:
+- none
+forbidden_defaults:
+- uniform_zero_confidence
+- missing_craft_extraction

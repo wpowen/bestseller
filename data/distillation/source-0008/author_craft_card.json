@@ -1,0 +1,36 @@
+{
+  "source_id": "source-0008",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "style_safety_policy": "no_content_available_for_policy_derivation",
+  "pov_and_distance": "close-third or project-selected POV with controlled narrative distance",
+  "sentence_rhythm": [
+    "vary short action beats with medium explanatory sentences"
+  ],
+  "paragraphing": [
+    "keep paragraphs functional: action, reaction, or information turn"
+  ],
+  "dialogue_system": [
+    "use role-specific intent, subtext, and conflict pressure"
+  ],
+  "description_strategy": [
+    "describe only details that change stakes, mood, or reader inference"
+  ],
+  "exposition_strategy": [
+    "place exposition after visible need or conflict pressure"
+  ],
+  "emotional_temperature": [
+    "surface emotion through choices, body action, and withheld admission"
+  ],
+  "hooking_and_transitions": [
+    "end units on changed state, unresolved question, or sharper constraint"
+  ],
+  "adaptation_guidelines": [
+    "This craft_card represents a complete_distillation_failure. All 118 processed chapters returned LLM_unavailable stubs with confidence 0.0. No narrative tokens, craft observations, reusable mechanisms, or reader rewards were extractable. Re-derivation requires accessible source content. Target structure was 5 volumes, 119 chapters; 1 chapter (abs_chapter_no 17, volume 1) additionally missing from batch. Volume numbering metadata inconsistency detected for abs_chapters 27-51 (source shows volume_no 1; target specifies volume_no 2)."
+  ],
+  "taboo_copy_signals": [
+    "No source content available; no copy-safe signals derivable"
+  ],
+  "confidence": 0.0,
+  "distillation_source_id": "source-0008"
+}

@@ -18,3 +18,4 @@ output/
 logs/
 .audit-reports/backups/
 .distillation_private/
+data/distillation/.prepare_source.lock

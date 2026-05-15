@@ -1,0 +1,43 @@
+{
+  "book_id": "source-0162",
+  "source_ref": "distillation:0404a38a4fa92b8eaa1cad28",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "parsed_profile": {
+    "distillation_status": "failed",
+    "failure_cause": "complete_llm_fallback",
+    "chapters_total": 395,
+    "volumes_total": 15,
+    "chapters_processed": 395,
+    "chapters_with_content": 0,
+    "chapters_stub_only": 395,
+    "coverage_percentage": 0,
+    "confidence_aggregate": 0.0,
+    "data_integrity": "compromised",
+    "reprocessing_required": true,
+    "reprocessing_recommendation": "re-extract all source chapters through functional LLM pipeline before volume_card or book_design_card distillation"
+  },
+  "genre_tags": [
+    "distillation-generic"
+  ],
+  "reader_promise": "LLM structured distillation fallback.",
+  "core_engine": "unknown",
+  "state_variables": [
+    "fallback_progress"
+  ],
+  "reader_rewards": [
+    "distillable_mechanism_reliability"
+  ],
+  "reusable_mechanisms": [
+    "fallback mechanism abstraction"
+  ],
+  "non_reusable_specifics": [],
+  "risk_patterns": [
+    "{'pattern': 'complete_llm_unavailable', 'affected_scope': 'full_source', 'manifestation': 'All 395 chapters across 15 volumes returned LLM fallback stubs with zero confidence and empty mechanism arrays', 'mitigation': 'Source material must be re-processed through LLM extraction pipeline before design analysis can proceed'}",
+    "{'pattern': 'zero_content_aggregation', 'affected_scope': 'volume_cards_1_through_15', 'manifestation': 'No arc_function, dominant_engine, state_progression, turning_points, setup_payoff_rhythm, or reusable_mechanisms extractable from any volume', 'mitigation': 'Chapter-level extraction must precede volume-level and book-level aggregation'}",
+    "{'pattern': 'confidence_collapse', 'affected_scope': 'entire_distillation_batch', 'manifestation': 'All source chapter_cards report confidence 0.0; no quality signal available for downstream analysis', 'mitigation': 'Verify LLM service availability before initiating extraction; reprocess source-0162 with guaranteed extraction pipeline'}",
+    "{'pattern': 'design_card_generation_blocked', 'affected_scope': 'book_design_card', 'manifestation': 'Cannot construct abstract design fingerprint without extracted story mechanics; would constitute hallucination to infer genre grammar or narrative engines from void data', 'mitigation': 'Required fields will remain null until source re-extraction completes'}"
+  ],
+  "source_id": "source-0162",
+  "distillation_source_id": "source-0162"
+}

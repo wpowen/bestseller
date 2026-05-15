@@ -264,6 +264,12 @@ class PipelineSettings(BaseModel):
     # How many library entries the soft-reference block may surface per
     # call.  Kept small so the prompt budget stays predictable.
     library_soft_reference_top_k: int = 4
+    # Planner-time distilled design reference.  This is the bridge from
+    # anonymized mature-novel distillation aggregates into BookSpec,
+    # WorldSpec, CastSpec, VolumePlan, and chapter-outline prompts.  It is
+    # read-only and renders only abstract design mechanics plus anti-copy
+    # boundaries, never source prose or named entities.
+    enable_distilled_design_reference: bool = True
     # Write-time active query brief — lets the model ask targeted read-only
     # questions before scene drafting. Disabled by default to preserve the
     # historical pipeline cost/latency profile.
@@ -326,6 +332,7 @@ class PipelineSettings(BaseModel):
             "character_sleeping_appearance",
             "character_comatose_appearance",
             "CANON_FORBIDDEN_TERM",
+            "CANON_STATE_REGRESSION",
             "CROSS_CHAPTER_REPETITION",
             "INTRA_CHAPTER_REPETITION",
         ]
@@ -347,9 +354,15 @@ class PipelineSettings(BaseModel):
     # strict blocking remains opt-in until canary books prove low false positives.
     enable_story_design_kernel: bool = True
     story_design_kernel_candidate_count: int = 3
+    enable_emotion_driven_kernel: bool = True
+    enable_emotion_kernel_backfill: bool = True
     enable_story_state_driven_planning: bool = True
     enable_reverse_outline_gate: bool = True
     reverse_outline_gate_block_on_failure: bool = False
+    enable_worldview_compliance_gate: bool = True
+    worldview_compliance_gate_block_on_failure: bool = False
+    enable_worldview_progression_gate: bool = True
+    worldview_progression_gate_block_on_failure: bool = False
     story_design_require_kernel_for_new_projects: bool = False
     # Curator scheduling — overridable via env for admin triage.
     curator_weekly_cron_hour: int = 4  # 04:00 UTC Monday

@@ -1,0 +1,31 @@
+key: distillation-generic
+name: Distillation Generic Fallback Grammar
+source_ids:
+- source-0110
+status: draft_review
+applies_to_categories:
+- distillation-generic
+required_contracts:
+- no_fabricated_content
+- llm_unavailable_acknowledgment
+- fallback_content_placeholder
+- zero_extraction_compliance
+state_variables:
+- fallback_progress
+chapter_change_vectors:
+- llm_fallback_across_all_chapters
+- zero_confidence_data
+reader_rewards:
+- distillable_mechanism_reliability
+hook_or_aftereffect_types:
+- no_hooks_extracted
+- placeholder_aftereffect
+forbidden_defaults:
+- turning_points
+- arc_functions
+- craft_observations
+- open_hooks
+- reusable_mechanisms
+- specific_state_progressions
+- fabricated_prose_craft_data
+- confidence_values_above_zero

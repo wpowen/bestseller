@@ -1,0 +1,89 @@
+key: distillation-generic
+name: Distillation Generic Complete Failure Patch
+source_ids:
+- source-0127
+status: active
+applies_to_categories:
+- distillation-generic
+- llm-unavailable-systematic
+required_contracts:
+- System must not aggregate content with confidence 0.0
+- System must detect and reject LLM-fallback stub patterns before pipeline entry
+- System must require regeneration_trigger when all volumes return identical stub
+  patterns
+- No story design extraction permitted from empty state_variable arrays
+- No reader_rewards inference from zero-content sources
+- Systematic unavailability across entire corpus constitutes terminal failure requiring
+  source regeneration
+state_variables:
+- name: extraction_health
+  allowed_values:
+  - complete_failure
+  - partial_success
+  - complete_success
+  current: complete_failure
+  transition_rules:
+    complete_failure: BLOCK aggregation pipeline; require source regeneration
+    partial_success: PROCEED with confidence floor enforcement (min 0.3)
+    complete_success: PROCEED with standard aggregation
+- name: content_availability
+  allowed_values:
+  - zero_extractable
+  - mixed
+  - full_content
+  current: zero_extractable
+  transition_rules:
+    zero_extractable: TRIGGER regeneration_required flag; halt aggregation
+    mixed: EXCLUDE unavailable volumes; aggregate available
+    full_content: PROCEED without exclusion filters
+- name: volume_degradation
+  allowed_values:
+  - none
+  - partial
+  - systematic
+  current: systematic
+  transition_rules:
+    none: PROCEED normally
+    partial: APPLY degradation penalty to affected chapters
+    systematic: INVALIDATE entire source range (volumes 1-506)
+chapter_change_vectors:
+- pattern: continuous_degradation_all_506_chapters
+  vector: INVALIDATE
+  action: 'Regeneration required: no chapter-level extraction viable'
+- pattern: zero_chapters_analyzable
+  vector: BLOCK
+  action: Cannot construct change vectors from 0 analyzable chapters
+- pattern: all_volumes_identical_stub_response
+  vector: FLAG
+  action: Indicates upstream data pipeline failure rather than content absence
+reader_rewards:
+- type: unavailable
+  extracted: []
+  count: 0
+  reason: No narrative content available for reward extraction
+  patch_note: Forbidden to infer or default reader_rewards from stub content
+hook_or_aftereffect_types:
+- type: regeneration_trigger
+  trigger_condition: systematic_llm_unavailable_across_all_volumes
+  effect: HALT aggregation pipeline; require fresh source material
+- type: confidence_collapse
+  trigger_condition: confidence_0.0_across_corpus
+  effect: Prevent downstream components from receiving invalid zero-confidence data
+- type: data_integrity_violation
+  trigger_condition: compromised_data_integrity
+  effect: Escalate to data quality review before any story design operations
+forbidden_defaults:
+- Aggregating LLM-fallback stubs as valid story design content
+- Using placeholder or stub values for required_contracts
+- Inferring narrative_engine signature from zero-confidence data
+- Treating empty state_variable arrays as equivalent to populated ones
+- Defaulting reader_rewards from stub content when none extracted
+- Proceeding with pipeline when all 15 volumes return identical stub patterns
+- Creating reusable_mechanisms entries from non-extractable content
+- Assuming genre_tags validity when source returns indeterminate
+- Propagating zero-confidence aggregation downstream
+- Using distillation_status:complete_failure as valid pipeline input
+- Creating character_progression data from unavailable chapter content
+- Treating chapters_available:0 as equivalent to chapters_available:506
+- Inferring story_design grammar rules from systematic unavailability pattern
+- Defaulting chapter_change_vectors when chapters_analyzable equals 0

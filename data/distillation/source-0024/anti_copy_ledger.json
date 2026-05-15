@@ -1,0 +1,22 @@
+{
+  "source_id": "source-0024",
+  "blocked_categories": [
+    "dialogue_patterns",
+    "narrative_voice",
+    "characterization_methods",
+    "plot_structure",
+    "pov_distance",
+    "rhythm_patterns",
+    "description_strategy",
+    "emotional_temperature",
+    "hooking_techniques",
+    "transition_methods",
+    "genre_conventions",
+    "worldbuilding_elements",
+    "conflict_mechanisms",
+    "tension_building",
+    "pacing_signals"
+  ],
+  "blocked_combinations": [],
+  "replacement_policy": []
+}

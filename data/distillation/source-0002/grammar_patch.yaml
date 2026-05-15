@@ -1,0 +1,76 @@
+key: distillation-generic
+name: Strategic Reputation Reversal Engine
+source_ids:
+- source-0002
+status: draft_review
+applies_to_categories:
+- strategic warfare
+- historical military fiction
+- alliance dynamics
+- underdog tactical fantasy
+- court intrigue
+- deceptive competence
+required_contracts:
+- Protagonist must maintain consistent strategic transparency—reader always understands
+  the layered plan before final revelation
+- Staged defeat mechanism requires early proof-of-concept reversal to establish trust
+- Advisor council voices must remain distinct and philosophically consistent throughout
+- Alliance partner activation must feel organically timed, not artificially convenient
+- Historical parallels must function as universal strategic logic, not domain-specific
+  knowledge tests
+state_variables:
+- phase: siege_under_pressure
+  conditions: Alliance depleted, forces exhausted from prolonged campaign
+  tension: Advisor council fractures between cautious preservation and aggressive
+    action
+- phase: strategic_proposal
+  conditions: Protagonist offers seemingly foolish surrender pathway
+  tension: Antagonist recognizes apparent victory opportunity, overconfidence activated
+- phase: deceptive_commitment
+  conditions: Antagonist accepts staged defeat, commits resources to false victory
+    path
+  tension: Alliance partner positioned to exploit distraction
+- phase: second_front_activation
+  conditions: Partner opens simultaneous multi-front coordination
+  tension: Antagonist's attention divided, initial front under-resourced
+- phase: double_reversal_revelation
+  conditions: Apparent defeat exposed as victory disguised as surrender
+  tension: Antagonist trapped by own overconfidence in predictable target
+chapter_change_vectors:
+- vector: information_symmetry_shifts
+  description: Chapters progress by revealing strategic layers—early chapters show
+    surface plan, later chapters expose deeper orchestration through advisor debate
+    and consequence tracking
+- vector: tension_alternation
+  description: Rapid-fire council dialogue alternates with extended tactical exposition,
+    punctuated by staccato action beats—creates breathing room between high-stakes
+    decisions
+- vector: pov_distance_calibration
+  description: Third-person limited with strategic omniscience on protagonist's true
+    plans; comic distance on performative cowardice creates ironic tension for informed
+    readers
+reader_rewards:
+- 'Double-layered tactical reveal: staged defeat serves deeper strategic purpose'
+- Antagonist overconfidence arc payoff with subsequent failure
+- Character-driven strategy discussion with conflicting advisor viewpoints
+- Military campaign sustainability examination through exhaustion narrative
+- Alliance dynamics exploration via simultaneous multi-front action
+hook_or_aftereffect_types:
+- type: crisis_interruption_pattern
+  hook: Decision nearly reached, new information forces pivot to new tactical consideration
+  aftereffect: Reader anticipates pattern, creates satisfying rhythm of subverted
+    expectations
+- type: strategic_reputation_weapon
+  hook: Protagonist's predictable cowardice invites antagonist overconfidence
+  aftereffect: Reversal feels earned rather than lucky—reader recognizes seed planting
+- type: parallel_historical_example
+  hook: In-world historical parallel establishes strategic precedent
+  aftereffect: Provides analytical satisfaction and foreshadows outcome structure
+forbidden_defaults:
+- Protagonist strategic opacity without established information symmetry rules
+- Reversal mechanism deployed without prior proof-of-concept
+- Crisis timing following identical pattern—vary interruption sources and triggers
+- Modern anachronistic humor without integration as explicit character temporal displacement
+- Historical knowledge assumed without universal strategic grounding
+- Advisor council homogeneity—philosophical diversity required
+- Alliance partner timing feeling manufactured rather than organically motivated

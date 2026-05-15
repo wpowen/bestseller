@@ -1,0 +1,38 @@
+{
+  "book_id": "source-0120",
+  "source_ref": "distillation:0ec0e69fd3c0b8d5d6d2ebbf",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "parsed_profile": {
+    "distillation_status": "INSUFFICIENT_DATA",
+    "confidence": 0.0,
+    "failure_modes": [
+      "llm_fallback",
+      "no_extractable_content",
+      "confidence_zero"
+    ],
+    "notes": "All source chapters across all volumes are LLM fallback stubs with zero confidence; no narrative mechanics, state progression, turning points, reader rewards, or craft observations could be extracted."
+  },
+  "genre_tags": [
+    "distillation-generic"
+  ],
+  "reader_promise": "LLM structured distillation fallback.",
+  "core_engine": "unknown",
+  "state_variables": [
+    "fallback_progress"
+  ],
+  "reader_rewards": [
+    "distillable_mechanism_reliability"
+  ],
+  "reusable_mechanisms": [
+    "fallback mechanism abstraction"
+  ],
+  "non_reusable_specifics": [],
+  "risk_patterns": [
+    "llm_fallback",
+    "confidence_zero",
+    "insufficient_data"
+  ],
+  "source_id": "source-0120",
+  "distillation_source_id": "source-0120"
+}

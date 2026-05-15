@@ -1,0 +1,52 @@
+{
+  "book_id": "source-0079",
+  "source_ref": "distillation:e2168fc7b1badb9102770983",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "parsed_profile": {
+    "note": "Distillation failure — source-0079 contains no parseable chapter content. All 29 chapter cards across 2 volumes resolved to LLM fallback stubs with zero extractable story mechanics, craft observations, or design patterns.",
+    "aggregation_status": "incomplete",
+    "available_data": null,
+    "missing_data": [
+      "arc_function",
+      "state_progression",
+      "turning_points",
+      "setup_payoff_rhythm",
+      "reusable_mechanisms",
+      "craft_profile",
+      "genre_tags",
+      "reader_promise",
+      "core_engine",
+      "state_variables",
+      "reader_rewards"
+    ]
+  },
+  "genre_tags": [
+    "distillation-generic"
+  ],
+  "reader_promise": "LLM structured distillation fallback.",
+  "core_engine": "unknown",
+  "state_variables": [
+    "fallback_progress"
+  ],
+  "reader_rewards": [
+    "distillable_mechanism_reliability"
+  ],
+  "reusable_mechanisms": [
+    "fallback mechanism abstraction"
+  ],
+  "non_reusable_specifics": [],
+  "risk_patterns": [
+    "llm_fallback",
+    "zero_confidence_all_chapters",
+    "no_parseable_content",
+    "volume_distillation_incomplete",
+    "empty_reusable_mechanisms_array",
+    "empty_reader_rewards_array",
+    "empty_open_hooks_array",
+    "no_craft_analysis_available",
+    "incomplete_aggregation"
+  ],
+  "source_id": "source-0079",
+  "distillation_source_id": "source-0079"
+}

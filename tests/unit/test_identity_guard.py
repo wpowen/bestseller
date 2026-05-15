@@ -295,6 +295,23 @@ def test_validate_zh_skips_object_pronoun_in_mixed_gender_scene() -> None:
     assert violations == []
 
 
+def test_validate_zh_skips_object_pronoun_after_aspect_particle() -> None:
+    registry = [
+        CharacterIdentity(name="林渊", gender="male", pronoun_set_zh="他"),
+        CharacterIdentity(name="镜中女人", gender="female", pronoun_set_zh="她"),
+    ]
+    text = "林渊盯着铜镜，然后他看见了她。雾气中走出一个女人的轮廓。"
+
+    violations = validate_scene_text_identity(
+        text,
+        registry,
+        language="zh-CN",
+        participant_names=["林渊", "镜中女人"],
+    )
+
+    assert violations == []
+
+
 def test_validate_zh_skips_dialogue_pronoun_reference() -> None:
     registry = [
         CharacterIdentity(name="顾清衍", gender="male", pronoun_set_zh="他"),
@@ -603,6 +620,25 @@ def test_validate_zh_skips_possessive_object_after_discovery_verb() -> None:
         registry,
         language="zh-CN",
         participant_names=["沈青崖", "白芷萱"],
+    )
+
+    assert violations == []
+
+
+def test_validate_zh_skips_possessive_after_shunzhe_object_phrase() -> None:
+    registry = [
+        CharacterIdentity(name="林渊", gender="male", pronoun_set_zh="他"),
+    ]
+    text = (
+        "雾气中走出一个女人的轮廓。林渊感到一阵刺痛，"
+        "像有什么东西正顺着她的目光往他身体里钻。"
+    )
+
+    violations = validate_scene_text_identity(
+        text,
+        registry,
+        language="zh-CN",
+        participant_names=["林渊"],
     )
 
     assert violations == []

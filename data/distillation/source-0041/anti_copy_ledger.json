@@ -1,0 +1,27 @@
+{
+  "source_id": "source-0041",
+  "blocked_categories": [
+    "named_entities",
+    "scene_specifics",
+    "dialogue_content",
+    "plot_structure",
+    "character_arcs",
+    "world_building_details",
+    "emotional_sequences",
+    "pacing_patterns",
+    "genre_specific_markers",
+    "author_signature_phrases",
+    "opening_hooks",
+    "closing_payoffs",
+    "climactic_moments",
+    "foreshadowing_patterns",
+    "pov_distancing_choices",
+    "description_density_zones"
+  ],
+  "blocked_combinations": [
+    "any_scene_chaining_from_fallback_stub_content",
+    "genre_voice_patterns_from_zero_confidence_extraction",
+    "character_interaction_templates_from_failed_distillation"
+  ],
+  "replacement_policy": []
+}

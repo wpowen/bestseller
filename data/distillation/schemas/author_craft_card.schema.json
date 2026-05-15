@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "DistillationAuthorCraftCard",
+  "type": "object",
+  "required": [
+    "source_id",
+    "source_type",
+    "status",
+    "style_safety_policy",
+    "pov_and_distance",
+    "sentence_rhythm",
+    "paragraphing",
+    "dialogue_system",
+    "description_strategy",
+    "exposition_strategy",
+    "emotional_temperature",
+    "hooking_and_transitions",
+    "adaptation_guidelines",
+    "taboo_copy_signals",
+    "confidence"
+  ],
+  "properties": {
+    "source_id": { "type": "string" },
+    "source_type": { "type": "string" },
+    "status": { "type": "string" },
+    "style_safety_policy": { "type": "string" },
+    "pov_and_distance": { "type": "string" },
+    "sentence_rhythm": { "type": "array", "items": { "type": "string" } },
+    "paragraphing": { "type": "array", "items": { "type": "string" } },
+    "dialogue_system": { "type": "array", "items": { "type": "string" } },
+    "description_strategy": { "type": "array", "items": { "type": "string" } },
+    "exposition_strategy": { "type": "array", "items": { "type": "string" } },
+    "emotional_temperature": { "type": "array", "items": { "type": "string" } },
+    "hooking_and_transitions": { "type": "array", "items": { "type": "string" } },
+    "adaptation_guidelines": { "type": "array", "items": { "type": "string" } },
+    "taboo_copy_signals": { "type": "array", "items": { "type": "string" } },
+    "confidence": { "type": "number", "minimum": 0, "maximum": 1 }
+  },
+  "additionalProperties": true
+}

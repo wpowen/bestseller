@@ -284,6 +284,56 @@ def _validate_agency_debts(events: Sequence[object]) -> list[PremiumStateFinding
     return findings
 
 
+def _validate_entry_events(events: Sequence[object]) -> list[PremiumStateFinding]:
+    findings: list[PremiumStateFinding] = []
+    power_changing = {"acquired", "learned", "bonded", "used", "upgraded", "restored"}
+    cost_recommended = {"used", "upgraded", "restored"}
+    for index, raw in enumerate(events):
+        entry = _as_mapping(raw)
+        path = f"entry_events[{index}]"
+        event_type = _text(entry, "event_type", "type", "kind")
+        if not _text(entry, "entry_id", "id"):
+            findings.append(
+                _finding(
+                    "entry_event_entry_id_missing",
+                    "Entry event needs entry_id.",
+                    path,
+                )
+            )
+        if not event_type:
+            findings.append(
+                _finding(
+                    "entry_event_type_missing",
+                    "Entry event needs event_type.",
+                    path,
+                )
+            )
+        if event_type in power_changing and not _text(entry, "trigger", "cause", "reason"):
+            findings.append(
+                _finding(
+                    "entry_event_trigger_missing",
+                    "Power-changing entry event needs trigger.",
+                    path,
+                )
+            )
+        if event_type in cost_recommended and not _substantive_text(
+            entry,
+            "cost_paid",
+            "cost",
+            "price",
+            "backlash",
+        ):
+            findings.append(
+                _finding(
+                    "entry_event_cost_missing",
+                    "Power-changing entry event should name visible cost.",
+                    path,
+                    severity="warning",
+                )
+            )
+    return findings
+
+
 def validate_premium_state_ledger(ledger: Mapping[str, object] | None) -> PremiumStateLedgerReport:
     payload = _as_mapping(ledger)
     findings: list[PremiumStateFinding] = []
@@ -292,6 +342,7 @@ def validate_premium_state_ledger(ledger: Mapping[str, object] | None) -> Premiu
     findings.extend(_validate_faction_reactions(_as_sequence(payload.get("faction_reactions"))))
     findings.extend(_validate_relationship_events(_as_sequence(payload.get("relationship_events"))))
     findings.extend(_validate_agency_debts(_as_sequence(payload.get("agency_debts"))))
+    findings.extend(_validate_entry_events(_as_sequence(payload.get("entry_events"))))
     passed = not any(finding.severity == "critical" for finding in findings)
     return PremiumStateLedgerReport(passed=passed, findings=tuple(findings))
 

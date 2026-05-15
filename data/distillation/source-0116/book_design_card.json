@@ -1,0 +1,36 @@
+{
+  "book_id": "source-0116",
+  "source_ref": "distillation:207e324a282ba1dbe9eff93f",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "parsed_profile": {
+    "note": "All source chapter cards are LLM fallback stubs; no narrative content could be extracted.",
+    "confidence": 0.0,
+    "data_coverage": "0%"
+  },
+  "genre_tags": [
+    "distillation-generic"
+  ],
+  "reader_promise": "LLM structured distillation fallback.",
+  "core_engine": "unknown",
+  "state_variables": [
+    "fallback_progress"
+  ],
+  "reader_rewards": [
+    "distillable_mechanism_reliability"
+  ],
+  "reusable_mechanisms": [
+    "fallback mechanism abstraction"
+  ],
+  "non_reusable_specifics": [],
+  "risk_patterns": [
+    "llm_fallback_stub_data",
+    "no_content_extracted",
+    "confidence_zero_across_all_volumes",
+    "missing_source_chapters",
+    "indeterminate_arc_function",
+    "indeterminate_dominant_engine"
+  ],
+  "source_id": "source-0116",
+  "distillation_source_id": "source-0116"
+}

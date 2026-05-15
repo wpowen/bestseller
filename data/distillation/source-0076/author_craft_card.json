@@ -1,0 +1,47 @@
+{
+  "source_id": "source-0076",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "style_safety_policy": "{'note': 'style_safety_policy undefined — no source content available for extraction. All 17 volume cards (1-17) spanning chapters 1-402 returned llm_fallback stubs with 0.0 confidence. Cannot assess style safety signals without narrative content.', 'recommendation': 'reprocess source material through functioning LLM extraction pipeline to generate valid chapter-level content before evaluating style_safety_policy'}",
+  "pov_and_distance": "{'extracted': False, 'reason': 'No chapter content accessible for POV analysis. All 425 chapters across 17 volumes returned llm_fallback stubs. POV distance, narrative voice, and point-of-view craft observations require source text unavailable in current distillation batch.'}",
+  "sentence_rhythm": [
+    "{'extracted': False, 'reason': 'No source sentences available for rhythm analysis. Batch consists entirely of placeholder stubs with zero confidence. Sentence length variation, cadence patterns, and rhythmic structure cannot be distilled from empty chapter cards.'}"
+  ],
+  "paragraphing": [
+    "{'extracted': False, 'reason': 'Paragraph-level craft observations impossible — source content layer missing. All 425 chapter_cards contain no narrative text, scene breaks, or structural divisions for paragraphing analysis.'}"
+  ],
+  "dialogue_system": [
+    "{'extracted': False, 'reason': 'No dialogue content exists in distillation batch. All chapters returned llm_fallback stubs with empty dialogue_system fields. Conversation mechanics, tag usage, and speech rhythm observations unavailable.'}"
+  ],
+  "description_strategy": [
+    "{'extracted': False, 'reason': 'No descriptive content available for strategy extraction. Scene-setting, sensory detail, and environmental description craft observations require source text that current pipeline could not process.'}"
+  ],
+  "exposition_strategy": [
+    "{'extracted': False, 'reason': 'No expository content accessible. Information delivery methods, backstory integration, and exposition timing craft patterns cannot be identified when source material is entirely unavailable.'}"
+  ],
+  "emotional_temperature": [
+    "{'extracted': False, 'reason': 'Emotional register and affective tone cannot be assessed without narrative content. All volume cards show empty state_progression arrays and zero reader_rewards. Emotional craft observations require re-processing through functional pipeline.'}"
+  ],
+  "hooking_and_transitions": [
+    "{'extracted': False, 'reason': 'No chapter-end hooks or transitional mechanics available. All 17 volume cards report empty open_hooks arrays. Cliffhanger strategies, chapter transitions, and reader commitment devices require source content for analysis.'}"
+  ],
+  "adaptation_guidelines": [
+    "{'note': 'adaptation_guidelines cannot be generated — no craft mechanics extracted from source. Volume-level aggregation blocked by 100% llm_fallback chapter batch. Re-process source material with functioning LLM extraction to obtain valid chapter_cards before synthesizing adaptation_guidelines.'}"
+  ],
+  "taboo_copy_signals": [
+    "{'signals_identified': [], 'reason': 'No narrative content available for distinctive signal detection. Cannot identify author-specific patterns, named entities, or verbatim copy risks when all source chapters returned empty stubs.'}"
+  ],
+  "confidence": 0.0,
+  "distillation_failure_summary": {
+    "scope": "pan-source — 100% chapter cards returned llm_fallback status",
+    "volumes_affected": 17,
+    "chapter_range": "1-402",
+    "aggregation_result": "empty — cannot synthesize author_craft_card from entirely empty volume-level inputs",
+    "recommended_action": "Re-process original source material through functioning LLM extraction pipeline to generate valid chapter_card instances before re-attempting author_craft_card distillation",
+    "metadata_anomalies": [
+      "volume_no metadata inconsistency — chapters tagged volume:1 despite multi-volume targeting",
+      "chapter_range gaps unverified due to llm_fallback blocking content comparison"
+    ]
+  },
+  "distillation_source_id": "source-0076"
+}

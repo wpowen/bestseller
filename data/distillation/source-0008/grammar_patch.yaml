@@ -1,0 +1,46 @@
+key: distillation-generic
+name: Generic Distillation Fallback Design
+source_ids:
+- source-0008
+status: draft_review
+applies_to_categories:
+- distillation-generic
+- distillation-fallback
+required_contracts:
+- stub_content_bridging
+- progressive_content_loading
+- reader_patience_management
+state_variables:
+- fallback_progress
+- stub_content_depth
+- chapter_validity_flags
+chapter_change_vectors:
+- trigger: chapter_access_attempt
+  response: render_stub_with_progressive_disclosure
+  vector_type: progressive_reveal
+- trigger: content_availability_check
+  response: toggle_stub_validity_state
+  vector_type: binary_state_flip
+- trigger: volume_boundary_crossing
+  response: reset_stub_content_indicators
+  vector_type: state_reset
+reader_rewards:
+- distillable_mechanism_reliability
+- anticipation_building_through_gaps
+- completionist_completion_satisfaction
+hook_or_aftereffect_types:
+- type: stub_anticipation_hook
+  placement: chapter_opening
+  mechanism: strategic_content_gaps_generate_curiosity
+- type: reliability_promise_hook
+  placement: volume_opening
+  mechanism: implicit_contract_that_content_will_manifest
+- type: completion_aftereffect
+  placement: chapter_closing
+  mechanism: satisfaction_from_bridging_known_to_unknown
+forbidden_defaults:
+- full_content_rendering_when_stub_only
+- skip_chapter_on_missing_content
+- generic_filler_substitution
+- omission_of_stub_indicators
+- content_promise_without_delivery_mechanism

@@ -2,6 +2,14 @@ from __future__ import annotations
 
 import pytest
 
+from bestseller.services.entry_registry import (
+    build_entry_coverage_matrix,
+    build_fallback_entry_registry,
+)
+from bestseller.services.entry_system_kernel import (
+    build_fallback_entry_system_kernel,
+    entry_system_kernel_to_dict,
+)
 from bestseller.services.premium_genre_engine import build_premium_genre_engine_blocks
 
 pytestmark = pytest.mark.unit
@@ -471,3 +479,42 @@ def test_premium_state_snapshot_feeds_writer_blocks() -> None:
     assert "执法堂" in blocks.faction_ecology_context_block
     assert "沈砚 -> 港务官" in blocks.relationship_agency_context_block
     assert "补回筑基资源" in blocks.relationship_agency_context_block
+
+
+def test_entry_system_metadata_feeds_writer_blocks() -> None:
+    project_like = {
+        "genre": "玄幻",
+        "sub_genre": "修仙",
+        "target_chapters": 80,
+    }
+    kernel = build_fallback_entry_system_kernel(project_like)
+    registry = build_fallback_entry_registry(
+        kernel,
+        build_entry_coverage_matrix(kernel, target_chapters=80),
+    )
+    first = registry.entries[0]
+
+    blocks = build_premium_genre_engine_blocks(
+        project_metadata={
+            "entry_system_kernel": entry_system_kernel_to_dict(kernel),
+            "entry_registry": registry.model_dump(mode="json"),
+            "entry_state_ledger": {
+                "events": [
+                    {
+                        "chapter_number": 3,
+                        "entry_id": first.entry_id,
+                        "event_type": "acquired",
+                        "trigger": "试炼所得",
+                        "to_state": "owned",
+                    }
+                ]
+            },
+        },
+        story_bible_context={},
+        genre="玄幻",
+        sub_genre="修仙",
+    )
+
+    assert "【词条体系约束】" in blocks.entry_system_context_block
+    assert "【词条注册表】" in blocks.entry_registry_context_block
+    assert "【词条状态账本】" in blocks.entry_state_ledger_block

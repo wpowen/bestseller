@@ -1,0 +1,28 @@
+key: distillation-generic
+name: Distillation Package Fallback Grammar
+source_ids:
+- source-0100
+status: draft_review
+applies_to_categories:
+- distillation_package
+required_contracts:
+- distillation_must_have_extracted_chapters
+- distillation_requires_confidence_above_threshold
+state_variables:
+- fallback_progress
+- extraction_confidence
+- chapter_count
+chapter_change_vectors:
+- llm_unavailable_trigger
+reader_rewards:
+- distillable_mechanism_reliability
+hook_or_aftereffect_types:
+- confidence_warning
+- content_fallback_notification
+forbidden_defaults:
+- empty_chapter_cards
+- confidence_0.0
+- no_craft_observations
+- no_reader_promise
+- unverified_mechanism_claims
+- missing_genre_classification

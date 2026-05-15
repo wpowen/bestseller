@@ -1,0 +1,36 @@
+{
+  "source_id": "source-0145",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "style_safety_policy": "Craft analysis blocked — all 20 volume cards and 500 chapter cards returned llm_fallback stubs with zero confidence. No source content available for pattern extraction, style characterization, or authorial voice identification. All craft-related fields remain indeterminate.",
+  "pov_and_distance": "close-third or project-selected POV with controlled narrative distance",
+  "sentence_rhythm": [
+    "vary short action beats with medium explanatory sentences"
+  ],
+  "paragraphing": [
+    "keep paragraphs functional: action, reaction, or information turn"
+  ],
+  "dialogue_system": [
+    "use role-specific intent, subtext, and conflict pressure"
+  ],
+  "description_strategy": [
+    "describe only details that change stakes, mood, or reader inference"
+  ],
+  "exposition_strategy": [
+    "place exposition after visible need or conflict pressure"
+  ],
+  "emotional_temperature": [
+    "surface emotion through choices, body action, and withheld admission"
+  ],
+  "hooking_and_transitions": [
+    "end units on changed state, unresolved question, or sharper constraint"
+  ],
+  "adaptation_guidelines": [
+    "Cannot generate — critical failure: 100% llm_fallback coverage across all 500 chapter cards and 20 volume cards. No extractable craft observations, reusable mechanisms, reader rewards, state progression, or turning points exist in source data. Volume 4 chapters 76–100 exhibit data integrity issue (incorrectly tagged as volume_no:1). Recommend re-processing source material through functional LLM pipeline before attempting craft card distillation."
+  ],
+  "taboo_copy_signals": [
+    "source titles, author names, exact phrases, named entities, and distinctive sentence templates"
+  ],
+  "confidence": 0.0,
+  "distillation_source_id": "source-0145"
+}

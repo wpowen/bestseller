@@ -1,0 +1,34 @@
+key: distillation-generic
+name: Distillation Generic Fallback Grammar Patch
+source_ids:
+- source-0023
+status: active
+applies_to_categories:
+- distillation-generic
+- fallback
+required_contracts:
+- has_hook
+- has_state_change
+- has_reader_reward
+state_variables:
+- fallback_progress
+- stub_content_flag
+- reprocess_needed
+chapter_change_vectors:
+  fallback_progress:
+    increment: 1
+  stub_content_flag:
+    set: true
+  reprocess_needed:
+    set: true
+reader_rewards:
+- distillable_mechanism_reliability
+- fallback_content_awareness
+hook_or_aftereffect_types:
+- reprocess_trigger_hook
+- placeholder_hook
+- post_reprocess_aftereffect
+forbidden_defaults:
+- empty_chapter
+- no_state_change
+- no_reader_reward

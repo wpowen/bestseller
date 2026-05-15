@@ -1,0 +1,114 @@
+# =============================================================================
+# Emotion Choreography · 情绪编排
+# =============================================================================
+# 目的：
+#   解决"情绪虚浮"——LLM 默认用形容词承载情绪（"愤怒 / 悲伤 / 紧张"）。
+#   规则：情绪必须靠"身体 / 物件 / 行为 / 沉默" 承载，禁止形容词标签。
+# =============================================================================
+
+version: 2026.05.14
+
+# =============================================================================
+# 情绪类型（7 种基础情绪 × 5 种承载方式）
+# =============================================================================
+emotion_taxonomy:
+  basic_emotions:
+    - anger
+    - fear
+    - grief
+    - joy
+    - shame
+    - desire
+    - disgust
+
+  expression_layers:
+    physiological:
+      description: 生理反应（不需角色意识）
+      examples:
+        anger: 喉结动 / 太阳穴跳 / 牙关咬 / 拳头紧
+        fear: 后背一凉 / 手指发冷 / 心跳乱 / 呼吸停
+        grief: 喉头一紧 / 眼角发酸 / 胸腔发空
+        shame: 耳根发热 / 脸侧发烫 / 抬不起头
+
+    behavioral:
+      description: 自动化行为
+      examples:
+        anger: 把杯放重 / 转身 / 离开 / 咬唇
+        fear: 数物件 / 摸标志物（沈青崖摸旧疤）/ 找出口
+        shame: 不看对方 / 退半步
+
+    object_interaction:
+      description: 与物件的互动承载情绪
+      examples:
+        anger: 把茶杯握碎 / 把纸撕了 / 桌上的笔被掰断
+        fear: 银针在指间转 / 紫檀串捻得更快
+        grief: 信件按在胸口 / 看着旧物不放
+
+    silence_pause:
+      description: 沉默 + 停顿承载情绪
+      examples:
+        anger: "三息没说话"
+        grief: "他低头看着地，看了很久"
+
+    dialogue_minimal:
+      description: 极少的对白（≤ 5 字）+ 不解释
+      examples:
+        anger: 开门。 / 出去。
+        grief: 不必。
+
+# =============================================================================
+# 禁用：形容词标签
+# =============================================================================
+banned_emotion_labels:
+  description: 叙述中不允许出现的"形容词标签"
+  banned:
+    - 愤怒 / 怒火中烧 / 怒不可遏
+    - 悲伤 / 悲痛欲绝
+    - 紧张 / 心慌 / 慌张
+    - 高兴 / 喜悦 / 兴奋
+    - 害羞 / 羞愧 / 羞耻
+    - 害怕 / 恐惧 / 惊恐
+    - 厌恶 / 反感
+  enforcement: 叙述中出现 1 次 → critic.peer_author 扣 0.05
+  exception: 角色对白中可以说（角色可以骂"你他妈愤怒了吗？"）
+
+# =============================================================================
+# 章节情绪曲线
+# =============================================================================
+chapter_emotion_curve:
+  compress_phase:
+    description: 压抑积累（开头 - 中段）
+    visual: 情绪向内挤 / 节奏稳 / pulse 词点缀
+
+  release_phase:
+    description: 爆发 / 释放（中后段）
+    visual: 一个外部触发 → 情绪外显（动作 / 对白 / 沉默）
+
+  aftermath_phase:
+    description: 余震（章末）
+    visual: 一个静止画面 / 一个不寻常的细节让情绪沉下来
+
+  per_chapter_rule: 每章至少有一次完整的 compress → release → aftermath 弧
+
+# =============================================================================
+# Writer 注入
+# =============================================================================
+writer_injection: |
+  写本场 / 本章前先决定：
+  - 主导情绪是哪一种？（anger / fear / grief / joy / shame / desire / disgust）
+  - 用什么承载？（按 expression_layers 选 ≥ 2 种叠加）
+  - 禁止：banned_emotion_labels 出现
+
+# =============================================================================
+# Critic 检查
+# =============================================================================
+critic_checks:
+  emotion_label_violation:
+    rule: 叙述中 banned 词出现次数
+    threshold: 0
+  emotion_layer_diversity:
+    rule: 章内主要情绪是否用 ≥ 2 种 expression_layer 承载
+    threshold: 0.70
+  emotion_curve_health:
+    rule: 章内是否有 compress → release → aftermath 弧
+    threshold: 0.70

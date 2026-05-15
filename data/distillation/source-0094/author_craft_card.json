@@ -1,0 +1,36 @@
+{
+  "source_id": "source-0094",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "style_safety_policy": "no_content_to_assess",
+  "pov_and_distance": "{'value': None, 'evidence': [], 'notes': 'Distillation failed — no source content available for POV analysis'}",
+  "sentence_rhythm": [
+    "{'value': None, 'evidence': [], 'notes': 'Distillation failed — no source content available for rhythm analysis'}"
+  ],
+  "paragraphing": [
+    "{'value': None, 'evidence': [], 'notes': 'Distillation failed — no source content available for paragraphing analysis'}"
+  ],
+  "dialogue_system": [
+    "{'value': None, 'evidence': [], 'notes': 'Distillation failed — no source content available for dialogue analysis'}"
+  ],
+  "description_strategy": [
+    "{'value': None, 'evidence': [], 'notes': 'Distillation failed — no source content available for description analysis'}"
+  ],
+  "exposition_strategy": [
+    "{'value': None, 'evidence': [], 'notes': 'Distillation failed — no source content available for exposition analysis'}"
+  ],
+  "emotional_temperature": [
+    "{'value': None, 'evidence': [], 'notes': 'Distillation failed — no source content available for emotional temperature analysis'}"
+  ],
+  "hooking_and_transitions": [
+    "{'value': None, 'evidence': [], 'notes': 'Distillation failed — no source content available for hook/transition analysis'}"
+  ],
+  "adaptation_guidelines": [
+    "{'value': [], 'notes': 'No adaptation possible — source content unavailable due to LLM failure'}"
+  ],
+  "taboo_copy_signals": [
+    "{'value': [], 'notes': 'No source content to derive copy prohibition signals'}"
+  ],
+  "confidence": 0.0,
+  "distillation_source_id": "source-0094"
+}

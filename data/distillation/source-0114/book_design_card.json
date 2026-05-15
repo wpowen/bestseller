@@ -1,0 +1,37 @@
+{
+  "book_id": "source-0114",
+  "source_ref": "distillation:8f98b2f2c10c0644a42d1059",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "parsed_profile": {
+    "distillation_status": "blocked",
+    "llm_availability": "unavailable",
+    "segments_processed": 52,
+    "segments_with_content": 0,
+    "segments_with_stub": 52,
+    "confidence": 0.0,
+    "note": "All 52 segment fallbacks contain no distillable story mechanics, character dynamics, or structural elements. Volume_card cannot be meaningfully populated until source content is accessible."
+  },
+  "genre_tags": [
+    "distillation-generic"
+  ],
+  "reader_promise": "LLM structured distillation fallback.",
+  "core_engine": "unknown",
+  "state_variables": [
+    "fallback_progress"
+  ],
+  "reader_rewards": [
+    "distillable_mechanism_reliability"
+  ],
+  "reusable_mechanisms": [
+    "fallback mechanism abstraction"
+  ],
+  "non_reusable_specifics": [],
+  "risk_patterns": [
+    "no_extracted_content_all_segments_fell_back_to_stub",
+    "volume_card_derivation_blocked_by_source_unavailability",
+    "no_story_elements_present_to_categorize"
+  ],
+  "source_id": "source-0114",
+  "distillation_source_id": "source-0114"
+}

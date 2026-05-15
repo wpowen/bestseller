@@ -1,0 +1,109 @@
+# =============================================================================
+# Quality Trend Dashboard · 质量趋势监控
+# =============================================================================
+# 目的：
+#   解决"数据不闭环"——每章评分是孤立事件，没有趋势监控。
+#   长篇必备：每 10 章统计各维度均分趋势 + 反模式触发频率 +
+#   伏笔偿付率 + signature_type 多样性。
+#
+#   核心装置：滚动窗口 + 红色告警阈值，让"重复犯同一类错误" 自动浮现。
+# =============================================================================
+
+version: 2026.05.14
+
+# =============================================================================
+# 监控维度
+# =============================================================================
+metrics:
+
+  per_persona_score_trend:
+    description: 4 个 persona 的章节均分滚动趋势
+    window: 10 chapters
+    alert_rules:
+      - rule: 任一 persona 滚动均分连续 3 个窗口下降 ≥ 0.05
+        severity: red
+        action: 触发 root_cause_analysis
+      - rule: 任一 persona 滚动均分跌破 0.70
+        severity: red
+        action: 强制停止写作 + 复盘前 10 章
+
+  anti_pattern_frequency:
+    description: AI 腔 + 抽象感官词 + 心理倒斗 等反模式触发频率
+    window: 10 chapters
+    alert_rules:
+      - rule: 任一反模式连续 3 个窗口触发频率上升
+        severity: yellow
+        action: 加强 writer prompt 中的对应 banned_patterns 提醒
+
+  clue_payoff_ratio:
+    description: 已埋伏笔的偿付率
+    formula: paid_off_count / planted_count
+    window: cumulative
+    alert_rules:
+      - rule: 累计 > 30 章时偿付率 < 0.50
+        severity: red
+        action: 暂停新埋伏笔 + 进入"偿付批次"
+      - rule: 累计 belief_audit 中超 max_distance 未偿付的条目 ≥ 3
+        severity: red
+        action: 必须在下一卷集中偿付
+
+  signature_type_diversity:
+    description: signature_type 出现的多样性
+    window: 10 chapters
+    alert_rules:
+      - rule: 10 章内只出现 1-2 种 signature_type
+        severity: yellow
+        action: 下一章强制使用未出现过的 type
+
+  character_arc_consistency:
+    description: 主角性格 / 价值观 / voice_dna 跨章一致性
+    window: cumulative
+    measure: 当前章 voice_dna 命中率 与 ch1 的相似度
+    alert_rules:
+      - rule: 相似度 < 0.85
+        severity: red
+        action: pov_voice_drift 复盘
+
+  open_question_count:
+    description: 当前活跃 open_questions 数量
+    alert_rules:
+      - rule: "> 8"
+        severity: yellow
+        action: 下一章必须消解 ≥ 1
+
+  word_count_variance:
+    description: 章字数方差
+    window: 10 chapters
+    alert_rules:
+      - rule: 标准差 > 25% 的均值
+        severity: yellow
+        action: 节奏不稳，检查 outline
+
+  hook_type_diversity:
+    description: 章末 hook 类型分布
+    window: 10 chapters
+    alert_rules:
+      - rule: 单一类型出现 > 4 次
+        severity: yellow
+        action: 多样化章末勾子
+
+# =============================================================================
+# 报告格式
+# =============================================================================
+report_format:
+  storage_path: output/{slug}/dashboard/window-{N}-{M}.md
+  required_sections:
+    - 各 persona 滚动均分（含趋势箭头）
+    - 反模式频率表
+    - 伏笔偿付状态（planted / paid / overdue）
+    - signature_type 分布
+    - 红色告警清单
+    - 黄色告警清单
+    - 下一窗口的整改建议
+
+# =============================================================================
+# 触发频率
+# =============================================================================
+trigger_schedule:
+  rule: 每 10 章完成后跑一次
+  storage: dashboard/window-{N}-{M}.md

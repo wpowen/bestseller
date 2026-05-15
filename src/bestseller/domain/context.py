@@ -175,6 +175,9 @@ class SceneWriterContextPacket(BaseModel):
     rule_system_context_block: str | None = None
     faction_ecology_context_block: str | None = None
     relationship_agency_context_block: str | None = None
+    entry_system_context_block: str | None = None
+    entry_registry_context_block: str | None = None
+    entry_state_ledger_block: str | None = None
 
     # ── Opening diversity block: recent chapter openings to avoid repeating ──
     opening_diversity_block: str | None = None
@@ -315,3 +318,8 @@ class ChapterWriterContextPacket(BaseModel):
     assigned_hype_type: str | None = None
     assigned_hype_recipe_key: str | None = None
     assigned_hype_intensity: float | None = None
+
+    # ── Entry system blocks ──
+    entry_system_context_block: str | None = None
+    entry_registry_context_block: str | None = None
+    entry_state_ledger_block: str | None = None

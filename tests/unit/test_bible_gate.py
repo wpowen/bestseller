@@ -321,6 +321,34 @@ class TestAntagonistMotiveLedger:
         assert "赵烈" in deficiencies[0].location
         assert "萧寒" in deficiencies[0].location
 
+    def test_short_motive_bags_do_not_trip_false_positive(self) -> None:
+        """Two villains who share a single keyword like '复仇' must not be flagged.
+
+        Without the minimum-bag-size guard, ``{"复仇"} vs {"复仇"}`` yields
+        Jaccard = 1.0 and the gate would block the whole project.
+        """
+
+        v1 = _character("秦无咎", "antagonist", goal="复仇", background="", secret="")
+        v2 = _character("马家大长老", "antagonist", goal="复仇", background="", secret="")
+        deficiencies = list(
+            AntagonistMotiveLedger().check(
+                _minimal_draft(characters=[v1, v2]), _invariants()
+            )
+        )
+        assert deficiencies == []
+
+    def test_empty_motive_bags_do_not_trip(self) -> None:
+        """Placeholder antagonists with no goal / background / secret must not block."""
+
+        v1 = _character("断指者", "antagonist")
+        v2 = _character("干尸", "antagonist")
+        deficiencies = list(
+            AntagonistMotiveLedger().check(
+                _minimal_draft(characters=[v1, v2]), _invariants()
+            )
+        )
+        assert deficiencies == []
+
     def test_two_antagonists_with_distinct_motives_pass(self) -> None:
         v1 = _character(
             "赵烈",

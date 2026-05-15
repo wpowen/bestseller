@@ -1,0 +1,36 @@
+{
+  "source_id": "source-0118",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "style_safety_policy": "no_source_content_available",
+  "pov_and_distance": "unavailable — all 373 chapters returned llm_fallback stubs with 0.0 confidence; no point-of-view choices, narrative distance calibrations, or perspective strategies could be extracted",
+  "sentence_rhythm": [
+    "unavailable — no chapter_cards contain sentence-level craft observations; all source chapters are distillation placeholders with empty craft_observations objects"
+  ],
+  "paragraphing": [
+    "unavailable — zero extractable prose rhythm or structural pacing data across entire source (volumes 1-15, chapters 1-373)"
+  ],
+  "dialogue_system": [
+    "unavailable — no dialogue mechanics, speech patterns, or conversation architectures distillable from llm_fallback stubs across all 15 volumes"
+  ],
+  "description_strategy": [
+    "unavailable — no scene-setting techniques, sensory detail approaches, or world-building craft observations extractable from source material"
+  ],
+  "exposition_strategy": [
+    "unavailable — no backstory delivery mechanisms, information revelation pacing, or world-expansion techniques distillable from 373 unavailable chapters"
+  ],
+  "emotional_temperature": [
+    "unavailable — no emotional arc calibration, affective modulation patterns, or tonal management observations could be extracted from any chapter_card"
+  ],
+  "hooking_and_transitions": [
+    "unavailable — no chapter-ending hooks, scene-transition techniques, or narrative momentum builders distillable from zero-confidence source data"
+  ],
+  "adaptation_guidelines": [
+    "reprocess_required — entire source (15 volumes, 373 chapters) must be re-processed through functional LLM pipeline before any craft_card distillation can proceed; current author_craft_card reflects complete data vacuum with zero extractable author craft signatures"
+  ],
+  "taboo_copy_signals": [
+    "unavailable — no distinctive phrase patterns, named stylistic signatures, or extractable copy-level signals exist in source; all chapter_cards contain only placeholder stub text"
+  ],
+  "confidence": 0.0,
+  "distillation_source_id": "source-0118"
+}

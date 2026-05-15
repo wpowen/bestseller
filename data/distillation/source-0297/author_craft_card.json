@@ -1,0 +1,36 @@
+{
+  "source_id": "source-0297",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "style_safety_policy": "Moral framing must accompany all transgression content. Karmic punishment structure essential—vice collapsed into exposure. Gender-balanced accountability required. Didactic elements (verse moralizing) should be embedded within entertainment value, not foregrounded. Sexual content serves cautionary function only; frame within comic reversal structure. Violence should be described through action sequences, not process detail.",
+  "pov_and_distance": "Variable across narrative modes: close third-person during crisis moments where readers share protagonist's confusion and panic; external focalization in investigation sequences allowing multiple perspectives; selective omniscience in moral fables where readers perceive corruption before characters do. Shift distance to control reader emotional alignment with each arc type.",
+  "sentence_rhythm": [
+    "Mixed rhythm calibrated to narrative function: short exclamatory sentences create tension in crisis moments; longer descriptive passages build atmosphere; compressed action sequences balance against expanded reflective moral passages. Use brief declarative sentences during escapes, periodic sentences during revelation and reflection."
+  ],
+  "paragraphing": [
+    "Scene-based architecture with explicit breaks between functional units. Verse bridges (4-8 lines) connect separate narrative segments, providing tonal transition and thematic reinforcement. Narrator commentary serves as adhesive between plot segments. Each scene ends with forward momentum—either unresolved threat or disturbing recontextualization of preceding events."
+  ],
+  "dialogue_system": [
+    "Three distinct registers: naturalistic speech with period-appropriate markers for seduction and comedy scenes; poetry with historical allusion embedded within dialogue for romantic communication and cultural sophistication; interrogation Q&A format driving mystery resolution where incremental questions reveal incremental truth. Minimal direct dialogue in heist sequences, with explanation deferred to aftermath confession scenes."
+  ],
+  "description_strategy": [
+    "Priority hierarchy varies by arc type: physical comedy dominates failure scenes; moral characterization supersedes physical detail in fables; object and action focus in heist sequences prioritizes function over appearance. Death sequences described through action, not consequence. Physical evidence (funeral arrangements, object placement) used as characterization indicators rather than explicit statement."
+  ],
+  "exposition_strategy": [
+    "Deploy multiple channels to avoid heavy-handedness: character explanation delivers historical context; interrogation question-answer reveals truth incrementally; poetic epigraphs frame moral context before narrative units begin; protagonist's own statements establish character during introduction; dramatic action conveys plot in theatrical sections. Never use single exposition channel—layer context across dialogue, verse, and action."
+  ],
+  "emotional_temperature": [
+    "Cautionary tale warmth with comic catharsis. Primary emotional engine: desire→collapse arc delivering satisfaction when vice is punished. Secondary pleasure: clever improvisation in impossible escape scenarios. Invest reader in protagonist skill demonstration, then deliver karmic justice that validates both entertainment and moral structure. Maintain ambiguity about protagonist's ethical status by unfavorable comparison to hypocritical authorities."
+  ],
+  "hooking_and_transitions": [
+    "Suspense structure cascades across boundaries: end each scene-unit mid-threat with immediate danger unresolved; let disturbing images linger at segment conclusions; let suspense loops carry forward momentum between chapters. Use anticipation-release pattern in problem solutions. Transitions accomplished through verse bridges (thematic/tonal modulation), narrator commentary (causal connection), direct scene cuts with character movement, and chronological time markers. Bridge separate episodic units through shared thematic concerns rather than plot continuity."
+  ],
+  "adaptation_guidelines": [
+    "Episodic structure translates to episodic medium suitability—each unit provides closure while contributing to thematic whole. Frame narrative provides macro-arc even when micro-units are self-contained. Theatrical appendix signals meta-narrative awareness; consider whether dramatic counterpoint serves adaptation medium. Preserve three-layer structure: episodic demonstration, frame resolution, counterpoint element. Karmic justice engine essential to reader promise—subvert at character's peril. Handle transgression content (adultery, violence, corruption) through comic reversal structure that punishes vice, never through sympathetic transgression framing alone."
+  ],
+  "taboo_copy_signals": [
+    "Any named character or historical proper noun. Song Dynasty setting details. Specific classical text quotations or footnote citations. Dramatic verse patterns (meter, rhyme categories). Episode-specific moral lesson content. Go-between role should remain structurally functional but use fresh specific instantiation. Underworld bureaucracy operates as functional mechanism—its specific mythological instantiation is non-reusable. Sibling contrast pattern reusable; specific sibling identities and inheritance disputes are not."
+  ],
+  "confidence": 0.85,
+  "distillation_source_id": "source-0297"
+}

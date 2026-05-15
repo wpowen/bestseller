@@ -1,0 +1,36 @@
+key: distillation-generic
+name: Distillation Generic Grammar Patch
+source_ids:
+- source-0064
+status: draft_review
+applies_to_categories:
+- distillation_package
+required_contracts:
+- source_content_integrity_contract
+- narrative_content_availability_contract
+- llm_pipeline_functionality_contract
+- craft_extraction_possibility_contract
+state_variables:
+- fallback_progress
+- source_integrity_status
+- distillation_confidence_level
+chapter_change_vectors: []
+reader_rewards:
+- distillable_mechanism_reliability
+hook_or_aftereffect_types:
+- unavailable_hooks
+- failed_open_loops
+- no_craft_patterns_available
+- zero_narrative_content
+- systemic_llm_fallback_stub_state
+forbidden_defaults:
+- no_default_craft_extraction
+- no_default_narrative_hooks
+- no_default_story_design_patterns
+- no_default_volume_confidence
+- no_default_chapter_level_content
+- no_default_distillation_output
+- no_default_reader_experience
+- no_default_genre_specific_mechanisms
+- no_default_reusable_story_architecture
+- no_default_narrative_hooks_or_promises

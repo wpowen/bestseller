@@ -1,0 +1,49 @@
+key: distillation-generic
+name: Distillation Generic Grammar Patch
+source_ids:
+- source-0097
+status: active
+applies_to_categories:
+- distillation-generic
+- undetermined
+- placeholder
+required_contracts:
+- source_content_availability
+- llm_analysis_pipeline_access
+- chapter_card_generation
+- volume_card_aggregation
+- book_design_extraction
+state_variables:
+- fallback_progress
+- extraction_confidence
+- source_content_status
+- distillation_stage
+- retry_count
+chapter_change_vectors:
+- generation_stage
+- confidence_delta
+- mechanism_extraction
+- arc_identification
+- engine_classification
+reader_rewards:
+- distillable_mechanism_reliability
+- fallback_abstraction_value
+- pipeline_robustness
+- system_transparency
+hook_or_aftereffect_types:
+- retry_trigger
+- pipeline_health_check
+- confidence_boost
+- content_regeneration_request
+- manual_review_flag
+forbidden_defaults:
+- zero_confidence_accept
+- empty_source_validation
+- unverified_llm_output
+- missing_genre_mapping
+- absent_reader_promise
+- unclassified_engine
+- null_arc_function
+- novelty_rejection_on_insufficient_data
+- aggregate_without_source
+- volume_skip_on_incomplete

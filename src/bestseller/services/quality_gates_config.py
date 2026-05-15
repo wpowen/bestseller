@@ -16,6 +16,7 @@ from typing import Any
 
 import yaml
 
+from bestseller.services.ai_flavor_gate import AiFlavorGateConfig
 from bestseller.services.chapter_validator import (
     CanonForbiddenTermCheck,
     CanonStateRegressionCheck,
@@ -206,6 +207,7 @@ class QualityGatesConfig:
     phase_b: PhaseBLineTrackerConfig = field(default_factory=PhaseBLineTrackerConfig)
     phase_c: PhaseCOverridesConfig = field(default_factory=PhaseCOverridesConfig)
     phase_d: PhaseDTimeConfig = field(default_factory=PhaseDTimeConfig)
+    ai_flavor: AiFlavorGateConfig = field(default_factory=AiFlavorGateConfig)
 
 
 def _as_dict(payload: Any) -> dict[str, Any]:
@@ -352,6 +354,7 @@ def load_quality_gates_config(
         phase_b=_build_phase_b(_as_dict(raw.get("phase_b_line_tracker"))),
         phase_c=_build_phase_c(_as_dict(raw.get("phase_c_overrides"))),
         phase_d=_build_phase_d(_as_dict(raw.get("phase_d_time"))),
+        ai_flavor=_build_ai_flavor(_as_dict(raw.get("ai_flavor_gate"))),
     )
 
 
@@ -392,6 +395,42 @@ def _build_phase_d(raw: dict[str, Any]) -> PhaseDTimeConfig:
         countdown_arithmetic_enabled=bool(
             raw.get("countdown_arithmetic_enabled", True)
         ),
+    )
+
+
+def _safe_int(raw: Any, default: int) -> int:
+    try:
+        return int(raw) if raw is not None else default
+    except (TypeError, ValueError):
+        return default
+
+
+def _build_ai_flavor(raw: dict[str, Any]) -> AiFlavorGateConfig:
+    """Parse the ``ai_flavor_gate`` block, applying robust defaults.
+
+    Operators can omit any field; the gate ships safe defaults so a
+    missing block still produces a working configuration. The gate
+    itself fails open on missing data files, so even with defaults a
+    fresh checkout never crashes the pipeline.
+    """
+
+    block = _as_dict(raw.get("block_score"))
+    warn = _as_dict(raw.get("warn_score"))
+    llm = _as_dict(raw.get("llm_rewrite"))
+    audit = _as_dict(raw.get("audit"))
+    return AiFlavorGateConfig(
+        enabled=bool(raw.get("enabled", True)),
+        block_score_cn=_safe_int(block.get("cn"), 50),
+        block_score_en=_safe_int(block.get("en"), 55),
+        warn_score_cn=_safe_int(warn.get("cn"), 25),
+        warn_score_en=_safe_int(warn.get("en"), 30),
+        cluster_threshold=_safe_int(raw.get("cluster_threshold"), 3),
+        llm_rewrite_enabled=bool(llm.get("enabled", True)),
+        llm_budget_per_chapter=_safe_int(llm.get("max_spans_per_chapter"), 8),
+        write_audit_file=bool(audit.get("enabled", True)),
+        audit_dir_relative=str(audit.get("dir_relative") or "audits"),
+        data_dir=str(raw.get("data_dir") or "data/ai_flavor"),
+        block_on_residual=bool(raw.get("block_on_residual", True)),
     )
 
 

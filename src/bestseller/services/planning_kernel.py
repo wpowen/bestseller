@@ -15,6 +15,14 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from bestseller.services.distilled_strategy_gate import (
+    distilled_strategy_gate_snapshot,
+    evaluate_distilled_strategy_consumption,
+)
+from bestseller.services.emotion_driven_kernel import (
+    emotion_driven_kernel_from_dict,
+    evaluate_emotion_contracts,
+)
 from bestseller.services.ranking_capability_profile import (
     load_ranking_capability_profile_text,
 )
@@ -79,6 +87,17 @@ _REPAIR_ACTIONS = {
     "story_design_kernel_missing": "补齐 StoryDesignKernel：故事形态、读者承诺、剧情树、变化向量和节拍表。",
     "story_design_contract_invalid": "修复 StoryDesignKernel 校验错误，确保主线、支线依赖、变化向量和节拍表完整。",
     "story_design_contract_thin": "扩展 StoryDesignKernel 的剧情树、变化向量和节拍表，避免只剩概念口号。",
+    "distilled_strategy_missing": "先编译 DistilledStrategyCard，再进入最终规划。",
+    "distilled_strategy_low_maturity": "将低成熟度蒸馏结果作为方向参考，不要当作硬模板。",
+    "distilled_strategy_not_consumed": "把蒸馏机制绑定到本书独有世界规则、人物选择、资源代价或兑现窗口。",
+    "distilled_strategy_copy_risk": "重写规划，移除被反抄袭边界命中的组合、开局链或来源特征。",
+    "distilled_strategy_state_variables_missing": "把策略卡要求的状态变量写入 StoryDesignKernel、卷纲或章纲。",
+    "distilled_worldview_not_bound": "把蒸馏策略要求的世界状态变量、资产、权威声明写入 StoryDesignKernel.worldview_kernel。",
+    "emotion_driven_kernel_missing": "补齐 EmotionDrivenKernel：读者情绪承诺、代入链、炸弹合同、反派道德面具和结局纹理。",
+    "empathy_contract_missing": "补齐代入链：处境、欲望、感官入口、判断逻辑、合理行动和行动后果。",
+    "bomb_contract_not_consumed": "补齐桌下炸弹：读者已知、角色盲区、触发条件、倒计时、严重后果和兑现窗口。",
+    "antagonist_moral_contract_thin": "补齐反派的真实善行、隐秘欲望、裂缝、自我辩护和崩塌伤口。",
+    "ending_texture_missing": "补齐 HE/BE 结局纹理：核心兑现、不可逆代价、主题回答、未来打开或美感回收。",
 }
 
 _DIRECTIVE_TEMPLATES_ZH = {
@@ -93,6 +112,17 @@ _DIRECTIVE_TEMPLATES_ZH = {
     "relationship_engine_missing": "关系驱动章节必须写清信任、债务、边界、选择和兑现窗口，禁止关系只当情绪装饰。",
     "story_design_contract_invalid": "当前剧情设计内核不可用，必须先修复主线、支线依赖、变化向量和节拍表，再进入章节规划。",
     "story_design_contract_thin": "当前剧情设计内核过薄，必须增加至少两条相互依赖的剧情线和明确章节状态变化。",
+    "distilled_strategy_missing": "当前项目缺少蒸馏策略卡；规划只能使用泛化参考，必须先编译项目专属 DistilledStrategyCard。",
+    "distilled_strategy_low_maturity": "当前蒸馏聚合成熟度偏低；只能借用方向，禁止按来源路径硬套。",
+    "distilled_strategy_not_consumed": "当前规划没有真正消费蒸馏策略；必须把机制转化为本书独有的世界规则、人物选择、资源代价或兑现窗口。",
+    "distilled_strategy_copy_risk": "当前规划命中反抄袭边界；必须更换开局链、机制组合、专名、顺序或场景表达。",
+    "distilled_strategy_state_variables_missing": "当前规划缺少蒸馏策略要求的状态变量；后续卷章必须显性追踪这些变量的变化。",
+    "distilled_worldview_not_bound": "当前 StoryDesignKernel 未绑定蒸馏世界观状态变量、资产或权威声明；后续必须补齐 worldview_kernel 的结构化世界观账本。",
+    "emotion_driven_kernel_missing": "当前项目缺少情绪驱动内核；新规划至少要明确读者等待、主角代入链、桌下炸弹和结局纹理。",
+    "empathy_contract_missing": "当前情绪合同缺少代入链；章节必须写清人物处境、欲望、感官、判断、行动和后果。",
+    "bomb_contract_not_consumed": "当前情绪合同缺少可执行炸弹；章节必须写清信息差、触发条件、倒计时、严重后果和兑现窗口。",
+    "antagonist_moral_contract_thin": "反派道德面具过薄；必须写出真实善行、核心欲望、细小裂缝、自我辩护和崩塌伤口。",
+    "ending_texture_missing": "结局纹理不完整；必须提前锁定幸福/悲剧兑现方式、不可逆代价、主题回答和回收物。",
 }
 
 _DIRECTIVE_TEMPLATES_EN = {
@@ -107,6 +137,17 @@ _DIRECTIVE_TEMPLATES_EN = {
     "relationship_engine_missing": "Relationship-driven chapters must show trust, debt, boundary, choice, and payoff windows.",
     "story_design_contract_invalid": "Repair the StoryDesignKernel before planning chapters: mainline, dependencies, change vectors, and beat schedule must validate.",
     "story_design_contract_thin": "Expand the StoryDesignKernel with dependent plot lines and concrete chapter state changes.",
+    "distilled_strategy_missing": "Compile a project-specific DistilledStrategyCard before final planning.",
+    "distilled_strategy_low_maturity": "Use the low-maturity aggregate as directional guidance only, not as a hard template.",
+    "distilled_strategy_not_consumed": "Bind distilled mechanisms to project-specific world rules, character choices, resource costs, or payoff windows.",
+    "distilled_strategy_copy_risk": "Rewrite the plan to remove blocked source-like combinations, opening chains, names, or scenario order.",
+    "distilled_strategy_state_variables_missing": "Track the strategy card's required state variables in the kernel, volume plan, or chapter outlines.",
+    "distilled_worldview_not_bound": "Bind distilled worldview state variables, assets, and authority claims into StoryDesignKernel.worldview_kernel.",
+    "emotion_driven_kernel_missing": "Add an EmotionDrivenKernel with reader waiting, empathy chains, bomb contracts, antagonist moral masks, and ending texture.",
+    "empathy_contract_missing": "Add an empathy chain: situation, desire, sensory entry, judgment, action, and consequence.",
+    "bomb_contract_not_consumed": "Add an executable bomb: reader knowledge, character blindspot, trigger, countdown, consequence, and payoff window.",
+    "antagonist_moral_contract_thin": "Give the antagonist real good, hidden desire, cracks, rationalization, and collapse wound.",
+    "ending_texture_missing": "Lock the ending texture: fulfillment/tragedy mode, irreversible cost, theme answer, and callback/future image.",
 }
 
 
@@ -189,6 +230,10 @@ def build_prewrite_repair_directives(
     )
     directives: list[str] = []
     for code in _finding_codes_from_report(report):
+        if code == "emotion_driven_kernel_missing":
+            # Gradual rollout: missing emotion core is visible in readiness
+            # telemetry, but it should not force legacy projects into repair.
+            continue
         directive = templates.get(code)
         if directive and directive not in directives:
             directives.append(directive)
@@ -383,6 +428,10 @@ def _story_design_kernel_from(
             "plot_line_count": 0,
             "main_plot_line_count": 0,
             "beat_count": 0,
+            "worldview_state_variable_count": 0,
+            "worldview_asset_count": 0,
+            "worldview_authority_claim_count": 0,
+            "worldview_distilled_binding_count": 0,
             "reverse_outline_status": "not_started",
         }
 
@@ -393,6 +442,7 @@ def _story_design_kernel_from(
         beat_schedule = _mapping_list(raw.get("beat_schedule"))
         premise = _as_mapping(raw.get("premise_contract"))
         shape = _as_mapping(raw.get("shape"))
+        worldview = _as_mapping(raw.get("worldview_kernel"))
         return {
             "present": True,
             "valid": False,
@@ -406,10 +456,21 @@ def _story_design_kernel_from(
                 [node for node in plot_tree if _text(node.get("line_type")) == "main"]
             ),
             "beat_count": len(beat_schedule),
+            "worldview_state_variable_count": len(
+                _mapping_list(worldview.get("state_variables"))
+            ),
+            "worldview_asset_count": len(_mapping_list(worldview.get("asset_ledger"))),
+            "worldview_authority_claim_count": len(
+                _mapping_list(worldview.get("authority_claims"))
+            ),
+            "worldview_distilled_binding_count": len(
+                _mapping_list(worldview.get("distilled_mechanism_bindings"))
+            ),
             "reverse_outline_status": _text(raw.get("reverse_outline_status"))
             or "not_started",
         }
 
+    worldview = kernel.worldview_kernel
     return {
         "present": True,
         "valid": True,
@@ -422,7 +483,67 @@ def _story_design_kernel_from(
             [node for node in kernel.plot_tree if node.line_type == "main"]
         ),
         "beat_count": len(kernel.beat_schedule),
+        "worldview_state_variable_count": len(worldview.state_variables)
+        if worldview is not None
+        else 0,
+        "worldview_asset_count": len(worldview.asset_ledger)
+        if worldview is not None
+        else 0,
+        "worldview_authority_claim_count": len(worldview.authority_claims)
+        if worldview is not None
+        else 0,
+        "worldview_distilled_binding_count": len(worldview.distilled_mechanism_bindings)
+        if worldview is not None
+        else 0,
         "reverse_outline_status": kernel.reverse_outline_status,
+    }
+
+
+def _emotion_driven_kernel_from(
+    metadata: Mapping[str, object],
+    emotion_driven_kernel: Mapping[str, object] | None,
+) -> dict[str, object]:
+    raw = _as_mapping(emotion_driven_kernel) or _as_mapping(
+        metadata.get("emotion_driven_kernel")
+    )
+    if not raw:
+        return {
+            "present": False,
+            "valid": False,
+            "issue_codes": [],
+            "empathy_contract_count": 0,
+            "bomb_contract_count": 0,
+            "antagonist_moral_contract_count": 0,
+            "ending_texture_present": False,
+        }
+
+    try:
+        kernel = emotion_driven_kernel_from_dict(dict(raw))
+        report = evaluate_emotion_contracts(kernel)
+    except Exception as exc:
+        return {
+            "present": True,
+            "valid": False,
+            "validation_error": str(exc)[:500],
+            "issue_codes": ["EMOTION_KERNEL_INVALID"],
+            "empathy_contract_count": len(_mapping_list(raw.get("empathy_contracts"))),
+            "bomb_contract_count": len(_mapping_list(raw.get("bomb_contracts"))),
+            "antagonist_moral_contract_count": len(
+                _mapping_list(raw.get("antagonist_moral_contracts"))
+            ),
+            "ending_texture_present": bool(_as_mapping(raw.get("ending_texture_contract"))),
+        }
+
+    return {
+        "present": True,
+        "valid": report.passed,
+        "issue_codes": [issue.code for issue in report.issues],
+        "issue_count": len(report.issues),
+        "critical_count": report.critical_count,
+        "empathy_contract_count": len(kernel.empathy_contracts),
+        "bomb_contract_count": len(kernel.bomb_contracts),
+        "antagonist_moral_contract_count": len(kernel.antagonist_moral_contracts),
+        "ending_texture_present": kernel.ending_texture_contract is not None,
     }
 
 
@@ -435,6 +556,7 @@ def build_project_planning_kernel(
     cast_spec: Mapping[str, object] | None = None,
     volume_plan: object | None = None,
     story_design_kernel: Mapping[str, object] | None = None,
+    emotion_driven_kernel: Mapping[str, object] | None = None,
     output_base_dir: str | Path | None = None,
 ) -> dict[str, object]:
     """Build a normalized planning contract from all available artifacts."""
@@ -471,6 +593,37 @@ def build_project_planning_kernel(
         writing_profile,
     )
     story_design = _story_design_kernel_from(metadata, story_design_kernel)
+    emotion_driven = _emotion_driven_kernel_from(metadata, emotion_driven_kernel)
+    distilled_strategy_card = metadata.get("distilled_strategy_card")
+    distilled_strategy_expected = bool(
+        distilled_strategy_card
+        or metadata.get("distilled_strategy_expected")
+        or metadata.get("distilled_design_reference_blocks")
+    )
+    distilled_strategy: dict[str, object] = {"present": False}
+    if distilled_strategy_expected:
+        strategy_card_payload = (
+            _as_mapping(distilled_strategy_card)
+            if isinstance(distilled_strategy_card, Mapping)
+            else None
+        )
+        distilled_strategy_report = evaluate_distilled_strategy_consumption(
+            strategy_card_payload,
+            story_design_kernel=story_design_kernel or metadata.get("story_design_kernel"),
+            volume_plan=volumes,
+            chapter_outlines=(
+                metadata.get("chapter_outline_batch")
+                or metadata.get("chapter_outlines")
+                or metadata.get("chapter_outline")
+            ),
+        )
+        distilled_strategy = distilled_strategy_gate_snapshot(distilled_strategy_report)
+        if strategy_card_payload:
+            required_states = _string_list(
+                strategy_card_payload.get("required_state_variables")
+            )
+            distilled_strategy["required_state_variables"] = required_states
+            distilled_strategy["required_state_variable_count"] = len(required_states)
 
     return {
         "version": _KERNEL_VERSION,
@@ -527,6 +680,8 @@ def build_project_planning_kernel(
             "escalation_anchors": payoff_anchors[:20],
         },
         "story_design": story_design,
+        "emotion_driven": emotion_driven,
+        "distilled_strategy": distilled_strategy,
     }
 
 
@@ -604,6 +759,8 @@ def evaluate_prewrite_readiness(
     volume_strategy = _as_mapping(kernel.get("volume_strategy"))
     foundation = _as_mapping(kernel.get("foundation"))
     story_design = _as_mapping(kernel.get("story_design"))
+    emotion_driven = _as_mapping(kernel.get("emotion_driven"))
+    distilled_strategy = _as_mapping(kernel.get("distilled_strategy"))
     target = int(target_chapters or kernel.get("target_chapters") or 0)
 
     if not (
@@ -760,6 +917,188 @@ def evaluate_prewrite_readiness(
             )
         )
 
+    distilled_issue_codes = set(_string_list(distilled_strategy.get("issue_codes")))
+    if distilled_strategy.get("present") is False and distilled_issue_codes:
+        findings.append(
+            _finding(
+                "distilled_strategy_missing",
+                "warning",
+                "Distilled design references exist, but no project-specific strategy card was compiled.",
+                "distilled_strategy.card",
+            )
+        )
+    if "DISTILLED_STRATEGY_UNSAFE" in distilled_issue_codes:
+        findings.append(
+            _finding(
+                "distilled_strategy_low_maturity",
+                "high",
+                "Distilled strategy aggregate is unsafe for planning use.",
+                "distilled_strategy.maturity",
+                evidence={
+                    "maturity_score": distilled_strategy.get("maturity_score"),
+                    "maturity_status": distilled_strategy.get("maturity_status"),
+                },
+            )
+        )
+    elif "DISTILLED_STRATEGY_LOW_MATURITY" in distilled_issue_codes:
+        findings.append(
+            _finding(
+                "distilled_strategy_low_maturity",
+                "warning",
+                "Distilled strategy aggregate is low maturity and must stay directional.",
+                "distilled_strategy.maturity",
+                evidence={
+                    "maturity_score": distilled_strategy.get("maturity_score"),
+                    "maturity_status": distilled_strategy.get("maturity_status"),
+                },
+            )
+        )
+    if "DISTILLED_STRATEGY_COPY_RISK" in distilled_issue_codes:
+        findings.append(
+            _finding(
+                "distilled_strategy_copy_risk",
+                "critical",
+                "Planning artifacts hit anti-copy boundaries from the distilled strategy.",
+                "distilled_strategy.anti_copy_boundaries",
+            )
+        )
+    if "DISTILLED_STRATEGY_FALLBACK_LEAK" in distilled_issue_codes:
+        findings.append(
+            _finding(
+                "distilled_strategy_copy_risk",
+                "high",
+                "Fallback distillation placeholders leaked into planning artifacts.",
+                "distilled_strategy.volume_paths",
+            )
+        )
+    if "DISTILLED_STRATEGY_NOT_CONSUMED" in distilled_issue_codes:
+        findings.append(
+            _finding(
+                "distilled_strategy_not_consumed",
+                "high",
+                "Planning artifacts do not show transformed use of the selected distilled strategy.",
+                "distilled_strategy.consumption",
+            )
+        )
+    elif "DISTILLED_STRATEGY_STATE_VARIABLES_MISSING" in distilled_issue_codes:
+        findings.append(
+            _finding(
+                "distilled_strategy_state_variables_missing",
+                "warning",
+                "Planning artifacts do not track distilled strategy state variables.",
+                "distilled_strategy.state_variables",
+            )
+        )
+    enhanced_worldview_count = (
+        int(story_design.get("worldview_state_variable_count") or 0)
+        + int(story_design.get("worldview_asset_count") or 0)
+        + int(story_design.get("worldview_authority_claim_count") or 0)
+        + int(story_design.get("worldview_distilled_binding_count") or 0)
+    )
+    if (
+        int(distilled_strategy.get("required_state_variable_count") or 0) > 0
+        and bool(story_design.get("valid"))
+        and enhanced_worldview_count == 0
+    ):
+        findings.append(
+            _finding(
+                "distilled_worldview_not_bound",
+                "warning",
+                "Distilled strategy expects worldview state variables, but StoryDesignKernel.worldview_kernel has no enhanced bindings.",
+                "story_design.worldview_kernel",
+                evidence={
+                    "required_state_variables": _string_list(
+                        distilled_strategy.get("required_state_variables")
+                    ),
+                    "worldview_state_variable_count": story_design.get(
+                        "worldview_state_variable_count"
+                    ),
+                    "worldview_asset_count": story_design.get("worldview_asset_count"),
+                    "worldview_authority_claim_count": story_design.get(
+                        "worldview_authority_claim_count"
+                    ),
+                    "worldview_distilled_binding_count": story_design.get(
+                        "worldview_distilled_binding_count"
+                    ),
+                },
+            )
+        )
+
+    emotion_issue_codes = set(_string_list(emotion_driven.get("issue_codes")))
+    if not emotion_driven.get("present"):
+        findings.append(
+            _finding(
+                "emotion_driven_kernel_missing",
+                "warning",
+                "Missing EmotionDrivenKernel; planning can proceed, but reader emotion chains are not state-driven.",
+                "emotion_driven",
+            )
+        )
+    elif not emotion_driven.get("valid"):
+        if "EMOTION_KERNEL_INVALID" in emotion_issue_codes:
+            findings.append(
+                _finding(
+                    "emotion_driven_kernel_missing",
+                    "high",
+                    "EmotionDrivenKernel is present but fails validation.",
+                    "emotion_driven",
+                    evidence={"validation_error": _text(emotion_driven.get("validation_error"))},
+                )
+            )
+        if {
+            "EMPATHY_CONTRACT_MISSING",
+            "EMPATHY_CHAIN_MISSING",
+        } & emotion_issue_codes:
+            findings.append(
+                _finding(
+                    "empathy_contract_missing",
+                    "high",
+                    "EmotionDrivenKernel lacks a complete empathy chain.",
+                    "emotion_driven.empathy_contracts",
+                    evidence={"issue_codes": sorted(emotion_issue_codes)},
+                )
+            )
+        if {
+            "BOMB_TRIGGER_MISSING",
+            "BOMB_CONTRACT_INCOMPLETE",
+        } & emotion_issue_codes:
+            findings.append(
+                _finding(
+                    "bomb_contract_not_consumed",
+                    "high",
+                    "EmotionDrivenKernel lacks an executable bomb contract.",
+                    "emotion_driven.bomb_contracts",
+                    evidence={"issue_codes": sorted(emotion_issue_codes)},
+                )
+            )
+        if "ANTAGONIST_MASK_FLAT" in emotion_issue_codes:
+            findings.append(
+                _finding(
+                    "antagonist_moral_contract_thin",
+                    "warning",
+                    "Antagonist moral contract is too thin to produce betrayal/memory value.",
+                    "emotion_driven.antagonist_moral_contracts",
+                    evidence={"issue_codes": sorted(emotion_issue_codes)},
+                )
+            )
+        if {
+            "ENDING_TEXTURE_MISSING",
+            "ENDING_COST_ERASED",
+            "HE_TEXTURE_INCOMPLETE",
+            "TRAGEDY_CAUSALITY_WEAK",
+            "TRAGEDY_CHOICE_MISSING",
+            "ENDING_CALLBACK_MISSING",
+        } & emotion_issue_codes:
+            findings.append(
+                _finding(
+                    "ending_texture_missing",
+                    "high",
+                    "EmotionDrivenKernel lacks a complete HE/BE ending texture.",
+                    "emotion_driven.ending_texture_contract",
+                    evidence={"issue_codes": sorted(emotion_issue_codes)},
+                )
+            )
+
     blocking = tuple(
         finding for finding in findings if finding.severity in _BLOCKING_SEVERITIES
     )
@@ -794,11 +1133,40 @@ def evaluate_prewrite_readiness(
             and int(story_design.get("beat_count") or 0) > 0
             and bool(_string_list(story_design.get("change_vectors")))
         ),
+        "worldview_enhanced_contracts": {
+            "state_variables": int(story_design.get("worldview_state_variable_count") or 0),
+            "assets": int(story_design.get("worldview_asset_count") or 0),
+            "authority_claims": int(
+                story_design.get("worldview_authority_claim_count") or 0
+            ),
+            "distilled_bindings": int(
+                story_design.get("worldview_distilled_binding_count") or 0
+            ),
+        },
         "reverse_outline_ready": _text(story_design.get("reverse_outline_status"))
         == "verified",
+        "distilled_strategy_ready": bool(
+            distilled_strategy.get("present") and distilled_strategy.get("passed")
+        ),
+        "emotion_driven_core": bool(
+            emotion_driven.get("present") and emotion_driven.get("valid")
+        ),
+        "emotion_driven_contracts": {
+            "empathy": int(emotion_driven.get("empathy_contract_count") or 0),
+            "bomb": int(emotion_driven.get("bomb_contract_count") or 0),
+            "antagonist_moral": int(
+                emotion_driven.get("antagonist_moral_contract_count") or 0
+            ),
+            "ending_texture": bool(emotion_driven.get("ending_texture_present")),
+        },
     }
     actions: list[str] = []
     for finding in findings:
+        if (
+            finding.code == "emotion_driven_kernel_missing"
+            and finding.severity == "warning"
+        ):
+            continue
         if finding.repair_action not in actions:
             actions.append(finding.repair_action)
 
@@ -821,6 +1189,7 @@ def persist_project_planning_kernel(
     cast_spec: Mapping[str, object] | None = None,
     volume_plan: object | None = None,
     story_design_kernel: Mapping[str, object] | None = None,
+    emotion_driven_kernel: Mapping[str, object] | None = None,
     output_base_dir: str | Path | None = None,
 ) -> dict[str, object]:
     """Persist kernel + readiness report into ``project.metadata_json``."""
@@ -837,6 +1206,7 @@ def persist_project_planning_kernel(
         cast_spec=cast_spec,
         volume_plan=volume_plan,
         story_design_kernel=story_design_kernel,
+        emotion_driven_kernel=emotion_driven_kernel,
         output_base_dir=output_base_dir,
     )
     report = evaluate_prewrite_readiness(

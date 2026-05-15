@@ -1,0 +1,293 @@
+# =============================================================================
+# Prose Style Anchors · 风格锚点
+# =============================================================================
+# 目的：
+#   反 AI 腔。LLM 默认会写"AI 普通话"——平滑、模板、无棱角。
+#   每作选 3-5 个"风格锚点作家"（具体作家或具体网文 Top 作品），
+#   抽取他们的：句法 / 动词词库 / 比喻类型 / 视角切换习惯 / 节奏特征。
+#   writer 在写每段时参照这个锚点，把"无人称的 AI 腔" 替换为具体风格。
+#
+# 使用方式：
+#   1. 每本书在 meta.yaml 加 `style_anchors: [anchor_id, ...]`（≤ 3 个）
+#   2. writer 读 prose_style_anchors[anchor_id]，注入到 system prompt
+#   3. critic 跑 multi-persona 时，peer_author 用 ai_voice_detection
+#      + prose_freshness 检测是否符合锚点风格
+# =============================================================================
+
+version: 2026.05.14
+
+# 锚点选择原则
+selection_principles:
+  - 至少选 1 个"句法骨架" 锚点（如：海明威短句 / 王小波节奏 / 鲁迅冷峻）
+  - 至少选 1 个"题材氛围" 锚点（如：民国驱魔向：南派三叔 / 燕垒生 / 紫金陈）
+  - 可选 1 个"对白个性" 锚点（如：金庸对白 / 莎士比亚对白 / 大冰口语）
+  - 不要选 > 3 个，否则风格会冲突
+
+# =============================================================================
+# 锚点库（按风格类别索引）
+# =============================================================================
+anchors:
+
+  # ===========================================================================
+  # 句法骨架类
+  # ===========================================================================
+  hemingway_short:
+    display_name: 海明威短句体
+    category: sentence_skeleton
+    description: |
+      短句 + 名词 + 强动词。几乎无形容词。
+      情绪不直说，靠"事实并置" 让读者自己感觉。
+      段落短，分行多。"冰山原则"：写出来的是 1/8，剩 7/8 让读者想。
+    sentence_features:
+      avg_length: 8-15 字
+      max_length: 25 字
+      paragraph_lines: 1-3 行
+      coordinator_density: low（少用"而且 / 但是 / 然而"）
+      semicolon: 几乎不用
+      dash_em: 偶尔（强对比）
+    vocabulary:
+      prefer_verbs: 具体动作词（撬 / 挑 / 按 / 走 / 看 / 听 / 数）
+      avoid_adjectives:
+        - 几乎所有抽象形容词（美 / 丑 / 好 / 坏 / 阴森 / 紧张）
+        - 非常 / 极其 / 十分 / 颇为 类副词
+      prefer_nouns: 具体名物（油灯 / 银针 / 桐油 / 紫檀串）
+    metaphor_type: 物理对应（"墙上的影子往尸台缩了三寸"）
+    pov_treatment: 限知 + 不入心（极少进入心理直陈）
+    emotion_via: 动作 + 物件 + 沉默
+    example_passage: |
+      他打开门。门外有风。风里有米饭的味道。
+      他想起战场。他没有说。
+      他坐在桌边。桌上有面包。他没有吃。
+    when_to_use:
+      - 需要冷峻 / 克制 / 紧张氛围
+      - 主角是冷静专业型
+      - 想反 AI 腔的"平滑过渡"
+
+  wang_xiaobo_rhythm:
+    display_name: 王小波节奏体
+    category: sentence_skeleton
+    description: |
+      长短句交错。荒诞中带逻辑。
+      善用"插入语" 制造旁逸斜出感（"——这件事说起来，其实是 X，但 Y——")。
+      经常用反讽 + 自嘲建立独特调性。
+    sentence_features:
+      avg_length: 12-30 字（混合）
+      paragraph_lines: 3-6 行
+      insertion_density: 中（破折号插入语常用）
+      enumeration: 喜欢列举（"一是 X，二是 Y，三是 Z"）
+    vocabulary:
+      prefer_verbs: 中性动词 + 一两个意外动词的反差
+      prefer_metaphors: 跨域比喻（用工程类比情感、用动物类比社会）
+      humor_type: 自嘲 + 冷面反讽
+    pov_treatment: 第一人称居多，限知第三时带"作者灵魂感"
+    when_to_use:
+      - 都市文 / 喜剧文
+      - 主角是知识分子型 / 善于反讽
+      - 不适合本案（不选）
+
+  lu_xun_cold:
+    display_name: 鲁迅冷峻体
+    category: sentence_skeleton
+    description: |
+      文白夹杂。短句多，但比海明威更"硬"。
+      善用"重复" 制造压迫（"一个、又一个、又一个"）。
+      意象具体到刺骨（"血红的太阳 / 染血的馒头 / 铁屋")。
+      冷眼旁观但有"火"。
+    sentence_features:
+      avg_length: 10-20 字
+      paragraph_lines: 2-5 行
+      repetition_density: 高
+      文白比: 30% 古文 + 70% 现代汉语
+    vocabulary:
+      prefer_verbs: 强对比动词（吃 / 喊 / 看 / 杀）
+      prefer_nouns: 时代具象（茶馆 / 长衫 / 油灯 / 棺材）
+      avoid: 过度西化的句式
+    metaphor_type: 时代意象 + 黑色比喻
+    pov_treatment: 限知 + 偶尔"破壁"式短叹（"——可笑！"）
+    emotion_via: 重复 + 意象 + 沉默
+    when_to_use:
+      - 民国背景 + 社会黑暗题材
+      - 本案首选锚点之一（《青崖诡事》民国 + 灵异 + 阴谋）
+      - 反派塑造时
+
+  # ===========================================================================
+  # 题材氛围类
+  # ===========================================================================
+  nanpai_sanshu:
+    display_name: 南派三叔（盗笔体）
+    category: genre_atmosphere
+    description: |
+      第一人称 / 限知第三。氛围营造靠"信息差 + 物理细节 + 旁观者反应"。
+      场景描写注重"温度 / 湿度 / 气味 / 声音的回响"。
+      章末必定上勾，且勾子常常是"看见某物 + 该物不该在此"。
+    sentence_features:
+      avg_length: 12-20 字
+      paragraph_lines: 2-4 行
+      cliffhanger_pattern: 视觉异常 / 听觉异常 / 触觉异常
+    vocabulary:
+      prefer_verbs: 感官动词（湿 / 滑 / 冷 / 黏 / 响 / 落 / 渗）
+      prefer_nouns: 探险具象（绳 / 灯 / 棺 / 符 / 灰 / 壁画）
+      avoid: 学院腔
+    sensory_priority: 触 > 嗅 > 听 > 视 > 味
+    pov_treatment: 限知第一 / 第三（限知性极强，主角不知道的事读者也不知道）
+    emotion_via: 物理细节 + 主角的"我感觉哪里不对"
+    when_to_use:
+      - 灵异 / 探险 / 古墓 / 鬼怪题材
+      - 本案首选锚点之一
+
+  ziling_chen:
+    display_name: 紫金陈推理体
+    category: genre_atmosphere
+    description: |
+      节奏快 / 信息密度大 / 反转密集。
+      场景描写极少（基本是"功能性场景"，只描写推理所需的细节）。
+      对白功能化（每段对白都在推进信息 + 暴露角色 + 制造误导）。
+      章末勾子常常是"反派也是 X" 类信息反转。
+    sentence_features:
+      avg_length: 8-15 字
+      paragraph_lines: 1-3 行
+      info_density: 极高
+      misdirection: 高（章内不断给"错误线索" 让读者推错）
+    vocabulary:
+      prefer_verbs: 推理动作（看 / 查 / 问 / 比对 / 翻 / 找）
+      avoid: 抒情 / 写意
+    pov_treatment: 多 POV 切换（不同侦探 / 嫌疑人轮流为视角）
+    emotion_via: 几乎不写情绪，只写"推理动作"
+    when_to_use:
+      - 纯推理 / 探案题材
+      - 不完全适合本案（《青崖诡事》有灵异 + 情感线，不能纯紫金陈）
+
+  yan_leisheng:
+    display_name: 燕垒生民国诡异体
+    category: genre_atmosphere
+    description: |
+      民国 + 道术 + 推理。文白夹杂。
+      场景描写注重"物件的历史感"（一件物什能拉出 50 年）。
+      诡异点不是"鬼"，是"物件 / 习俗 / 仪式不符常理"。
+      章末勾子常常是"一个看似普通的细节被发现其实异常"。
+    sentence_features:
+      avg_length: 12-25 字
+      paragraph_lines: 3-5 行
+      文白比: 20-30% 文言风
+    vocabulary:
+      prefer_verbs: 民国动词（撬 / 启 / 闻 / 验 / 查 / 录）
+      prefer_nouns: 民国具象（验尸格 / 签押 / 镖局 / 同乡会）
+    sensory_priority: 嗅 > 视 > 听 > 触
+    pov_treatment: 限知第三 / 偶尔旁知"民国背景说明者"
+    emotion_via: 物件细节 + 时代气味
+    when_to_use:
+      - 民国 + 道术 / 灵异 / 验尸 / 推理类
+      - 本案首选锚点（最贴合）
+
+  # ===========================================================================
+  # 对白个性类
+  # ===========================================================================
+  jin_yong_dialogue:
+    display_name: 金庸对白体
+    category: dialogue_personality
+    description: |
+      角色对白个性化极强。每个角色有独特口吻 / 习惯用语 / 身份印记。
+      对白功能化（推进 / 暴露 / 冲突，少寒暄）。
+      喜用"反问 / 截语 / 半句话" 制造张力。
+    features:
+      individuation: 极高（换角色说必别扭）
+      function_per_line: 平均 2 项（信息 + 角色 / 信息 + 冲突 / 角色 + 冲突）
+      register: 角色身份决定（江湖人粗 / 文人雅 / 武林前辈古）
+    when_to_use:
+      - 武侠 / 江湖 / 多角色对峙场面
+      - 本案部分场景适用（沈青崖与周神算的对峙）
+
+  # ===========================================================================
+  # 反 AI 腔专项
+  # ===========================================================================
+  anti_ai_voice:
+    display_name: 反 AI 腔基线（默认必装）
+    category: foundational
+    description: |
+      不是风格，是底线。所有 writer 都必须遵守。
+      列出 AI 腔的具体模式 + 替换方式。
+    banned_patterns:
+      - id: parallel_action
+        pattern: "X 一边 Y 一边 Z"
+        replacement: 拆成两个动作短句
+        example_before: "他一边走路一边思考一边看着远方"
+        example_after: "他走着。他想着昨晚那件事。他看了一眼远方。"
+      - id: not_only_but_also
+        pattern: "不仅 X 还 Y"
+        replacement: 拆成两个事实
+        example_before: "他不仅是验尸员还是茅山弟子"
+        example_after: "他是验尸员。他也是茅山弟子。"
+      - id: looks_like_actually
+        pattern: "看似 X 实则 Y"
+        replacement: 让读者自己发现，不要由叙述者宣告
+        example_before: "他看似冷漠实则关心"
+        example_after: "他没有看她。可她每咳一声，他的指节就紧一下。"
+      - id: smooth_transition
+        pattern: 那不是最要命的。最要命的是 X / 更重要的是 / 更糟的是
+        replacement: 短句独段 + 视角转移 / 物理动作
+        example_before: "周神算袖口里养着东西。可那不是最要命的。最要命的是身后站着第四人。"
+        example_after: "周神算袖口里养着东西。可——沈青崖的视线越过周神算的肩。"
+      - id: emotion_label
+        pattern: 他感到 X / 他心想 X / 他意识到 X
+        replacement: 改成"动作 + 物件 + 停顿"
+        example_before: "沈青崖意识到事情不对"
+        example_after: "沈青崖的指尖在喉骨上停了一拍。"
+      - id: explanatory_dialogue
+        pattern: 角色用对白替读者总结"这意味着 X"
+        replacement: 让读者自己拼，不要由角色总结
+      - id: weak_verbs
+        pattern: 做 / 进行 / 完成 / 实施 / 实现
+        replacement: 具体动作动词
+      - id: cliched_metaphor
+        pattern: 像 X 一样 Y 套话型
+        replacement: 物理对应比喻（让人能"看见"）
+    enforcement: 任何上述模式出现一次 → critic.peer_author.ai_voice_detection 扣 0.05
+
+# =============================================================================
+# Compatibility Matrix · 锚点兼容性
+# =============================================================================
+compatibility:
+  - pair: [hemingway_short, yan_leisheng]
+    verdict: compatible
+    note: 短句 + 民国诡异，叠加
+  - pair: [hemingway_short, lu_xun_cold]
+    verdict: compatible
+    note: 都是冷峻
+  - pair: [lu_xun_cold, yan_leisheng]
+    verdict: highly_compatible
+    note: 民国黑暗 + 民国诡异
+  - pair: [nanpai_sanshu, yan_leisheng]
+    verdict: compatible
+    note: 都是探险灵异
+  - pair: [wang_xiaobo_rhythm, lu_xun_cold]
+    verdict: conflict
+    note: 一个荒诞一个冷峻
+  - pair: [jin_yong_dialogue, anchor_X]
+    verdict: stackable
+    note: 可叠加任意句法骨架（金庸是对白维度）
+
+# =============================================================================
+# Writer 注入模板
+# =============================================================================
+writer_injection_template: |
+  你正在用以下风格锚点写作（每段前先 review 这些锚点的具体特征）：
+
+  锚点 1: {anchor_1_id}
+    - 句法: {sentence_features 摘要}
+    - 词库偏好: {vocabulary 摘要}
+    - 情绪承载: {emotion_via}
+    - 典型用法场景: {when_to_use}
+
+  锚点 2: {anchor_2_id}
+    - ...
+
+  反 AI 腔基线（强制）:
+    禁用模式（出现一次扣分）:
+      - 不要写 "X 一边 Y 一边 Z"
+      - 不要写 "不仅 X 还 Y"
+      - 不要写 "看似 X 实则 Y"
+      - 不要写 "那不是最要命的。最要命的是"
+      - 不要写 "他感到 / 他心想 / 他意识到"
+      - 不要让角色用对白替读者总结
+      - 不要用弱动词（做 / 进行 / 完成）
+      - 不要用套话比喻（"像 X 一样 Y" 的平铺型）

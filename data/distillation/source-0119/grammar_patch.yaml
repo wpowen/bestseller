@@ -1,0 +1,24 @@
+key: distillation-generic
+name: Distillation Generic Fallback Patch
+source_ids:
+- source-0119
+status: fallback
+applies_to_categories:
+- distillation-generic
+required_contracts:
+- non_stub_content
+state_variables:
+- fallback_progress
+- distillation_confidence
+chapter_change_vectors:
+  ch1: stub
+  ch2: stub
+  ch3: stub
+  ch4: stub
+reader_rewards:
+- distillable_mechanism_reliability
+hook_or_aftereffect_types:
+- fallback_hook
+forbidden_defaults:
+- assumed_prose
+- standard_hook

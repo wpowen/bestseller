@@ -1,0 +1,47 @@
+{
+  "source_id": "source-0653",
+  "pipeline_version": "distillation-v1",
+  "source_format": "txt",
+  "encoding": "gb18030",
+  "chapter_count": 3,
+  "volume_count": 1,
+  "average_chapter_chars": 847391,
+  "chapters": [
+    {
+      "abs_chapter_no": 1,
+      "volume_no": 1,
+      "volume_label_redacted": "volume-01",
+      "chapter_label_redacted": "chapter-0001",
+      "boundary_type": "chinese_chapter_heading",
+      "title_hash_sha256": "c9f875c716901bc467f36c882a8e90b362d1eeaf61b1cf48b1d6e0215a5cea93",
+      "title_char_count": 12,
+      "char_count": 35226,
+      "line_count": 1549,
+      "private_chunk_ref": ".distillation_private/source-0653/chunks/chapter-0001.txt"
+    },
+    {
+      "abs_chapter_no": 2,
+      "volume_no": 1,
+      "volume_label_redacted": "volume-01",
+      "chapter_label_redacted": "chapter-0002",
+      "boundary_type": "chinese_chapter_heading",
+      "title_hash_sha256": "ccc063cb5f8b368f8c6e7d1ba9336fdeb1d0daad4caeace6f7aba45ddd69a6f8",
+      "title_char_count": 11,
+      "char_count": 8580,
+      "line_count": 395,
+      "private_chunk_ref": ".distillation_private/source-0653/chunks/chapter-0002.txt"
+    },
+    {
+      "abs_chapter_no": 3,
+      "volume_no": 1,
+      "volume_label_redacted": "volume-01",
+      "chapter_label_redacted": "chapter-0003",
+      "boundary_type": "chinese_chapter_heading",
+      "title_hash_sha256": "9e67d712710d5f5a243fe4f6116a5eff5026bc16231f1f2fd79741a67fdbac18",
+      "title_char_count": 8,
+      "char_count": 2498366,
+      "line_count": 165475,
+      "private_chunk_ref": ".distillation_private/source-0653/chunks/chapter-0003.txt"
+    }
+  ]
+}

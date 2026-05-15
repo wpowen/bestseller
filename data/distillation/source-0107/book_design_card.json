@@ -1,0 +1,38 @@
+{
+  "book_id": "source-0107",
+  "source_ref": "distillation:0c45af1a2e16fdde7ca346fc",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "parsed_profile": {
+    "confidence": 0.0,
+    "data_completeness": "zero",
+    "volumes_processed": 12,
+    "chapters_attempted": 281,
+    "llm_fallback_count": 281,
+    "extraction_failure_rate": 1.0,
+    "re_run_required": true,
+    "failure_cause": "All chapter-level distillation returned llm_fallback stubs; no extractable story mechanics, craft observations, reader rewards, open hooks, or narrative structure available for aggregation"
+  },
+  "genre_tags": [
+    "distillation-generic"
+  ],
+  "reader_promise": "LLM structured distillation fallback.",
+  "core_engine": "llm_fallback",
+  "state_variables": [
+    "fallback_progress"
+  ],
+  "reader_rewards": [
+    "distillable_mechanism_reliability"
+  ],
+  "reusable_mechanisms": [
+    "fallback mechanism abstraction"
+  ],
+  "non_reusable_specifics": [],
+  "risk_patterns": [
+    "{'pattern_id': 'systematic_llm_fallback', 'affected_scope': 'entire_source', 'manifestation': 'All 281 chapters across 12 volumes returned zero-confidence LLM fallback stubs', 'blockage': 'No chapter function, reusable mechanisms, craft observations, reader rewards, or open hooks extractable', 'volume_breakdown': {'v1_ch1_25': 'llm_fallback', 'v2_ch26_50': 'llm_fallback', 'v3_ch51_75': 'llm_fallback', 'v4_ch76_100': 'llm_fallback', 'v5_ch101_125': 'llm_fallback', 'v6_ch126_150': 'llm_fallback', 'v7_ch151_175': 'llm_fallback', 'v8_ch176_200': 'llm_fallback', 'v9_ch201_225': 'llm_fallback', 'v10_ch226_250': 'llm_fallback', 'v11_ch251_275': 'llm_fallback', 'v12_ch276_281': 'llm_fallback'}}",
+    "{'pattern_id': 'aggregation_failure', 'affected_scope': 'volume_card_level', 'manifestation': 'No volume arc_function determinable; no dominant_engine identifiable; no state_progression capturable; no turning_points extractable', 'blockage': 'Volume-level narrative grammar cannot be constructed from available data'}",
+    "{'pattern_id': 'design_card_collapse', 'affected_scope': 'book_design_card', 'manifestation': 'Abstract design fingerprint cannot be generated; all structural components empty or null', 'consequence': 'Reader promise undeterminable; genre grammar unclassifiable; narrative engine unidentifiable'}"
+  ],
+  "source_id": "source-0107",
+  "distillation_source_id": "source-0107"
+}

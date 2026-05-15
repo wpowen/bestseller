@@ -1,0 +1,26 @@
+{
+  "source_id": "source-0125",
+  "blocked_categories": [
+    "all_story_elements",
+    "character_architectures",
+    "plot_mechanisms",
+    "setting_specifics",
+    "narrative_arcs",
+    "reader_reward_patterns",
+    "craft_observations",
+    "turning_point_structures",
+    "state_progression_patterns",
+    "dialogue_systems",
+    "description_strategies",
+    "emotional_temperature_controls",
+    "hooking_mechanisms"
+  ],
+  "blocked_combinations": [
+    "Any mechanism extraction requires non-stub source content",
+    "No arc functions derivable from empty chapter cards",
+    "No state progression extractable from 0% confidence data",
+    "No reader rewards capturable from placeholder stubs",
+    "No craft patterns distillable from universal LLM fallback"
+  ],
+  "replacement_policy": []
+}

@@ -1,0 +1,45 @@
+{
+  "source_id": "source-0090",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "style_safety_policy": "{'policy_note': 'no extractable content — all source chapters returned LLM unavailable fallback stubs', 'identified_problematic_patterns': [], 'content_flags': []}",
+  "pov_and_distance": "{'available_observations': [], 'extraction_note': 'No POV or narrative distance mechanics extractable from 68-chapter fallback stub batch; confidence 0.0'}",
+  "sentence_rhythm": [
+    "{'available_observations': [], 'extraction_note': 'Sentence rhythm patterns not available — chapter content entirely absent from source extraction'}"
+  ],
+  "paragraphing": [
+    "{'available_observations': [], 'extraction_note': 'Paragraph structure and pacing observations not available from fallback stub content'}"
+  ],
+  "dialogue_system": [
+    "{'available_observations': [], 'extraction_note': 'No dialogue mechanics extractable — source chapters 1-68 all returned LLM unavailable stubs'}"
+  ],
+  "description_strategy": [
+    "{'available_observations': [], 'extraction_note': 'Description and world-building techniques not available from zero-content fallback data'}"
+  ],
+  "exposition_strategy": [
+    "{'available_observations': [], 'extraction_note': 'Information delivery and backstory integration patterns not extractable from source'}"
+  ],
+  "emotional_temperature": [
+    "{'available_observations': [], 'extraction_note': 'Emotional tone and affective register observations unavailable — complete source content gap'}"
+  ],
+  "hooking_and_transitions": [
+    "{'available_observations': [], 'extraction_note': 'Chapter openings, closings, and transition techniques not available from fallback stubs'}"
+  ],
+  "adaptation_guidelines": [
+    "{'available_observations': [], 'extraction_note': 'No medium-specific craft adaptations extractable from zero-content source'}"
+  ],
+  "taboo_copy_signals": [
+    "{'identified_signals': [], 'extraction_note': 'No stylistic fingerprints or copy-worthy patterns available for identification'}"
+  ],
+  "confidence": 0.0,
+  "distillation_health_check": {
+    "volume_1_status": "no_extractable_content",
+    "volume_2_status": "no_extractable_content",
+    "volume_3_status": "no_extractable_content",
+    "total_chapters_processed": 68,
+    "chapters_with_substantive_content": 0,
+    "failure_mode": "all_chapters_llm_fallback",
+    "recommendation": "Re-process source text with LLM availability restored to enable craft card distillation"
+  },
+  "distillation_source_id": "source-0090"
+}

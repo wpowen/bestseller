@@ -1,0 +1,29 @@
+key: distillation-generic
+name: Fallback Empty State Grammar
+source_ids:
+- source-0067
+status: failed_dependency_chain
+applies_to_categories:
+- empty_stub_chapters
+- no_content_available
+- confidence_zero
+required_contracts:
+- no_content_promise_enforcement
+- fallback_markers_required
+- empty_state_disclosure
+state_variables:
+- fallback_progress
+- confidence_zero
+- extraction_attempted
+chapter_change_vectors:
+- no_vectors_possible
+reader_rewards:
+- distillable_mechanism_reliability
+hook_or_aftereffect_types:
+- empty_state
+- meta_fallback_reward
+forbidden_defaults:
+- content_claims
+- story_mechanisms_assertion
+- mechanism_promises
+- reader_expectation_anchoring

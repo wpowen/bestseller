@@ -1,0 +1,36 @@
+{
+  "source_id": "source-0119",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "style_safety_policy": "No source text available; cannot extract stylistic controls. Do not use this card for imitation or generation.",
+  "pov_and_distance": "unavailable",
+  "sentence_rhythm": [
+    "unavailable"
+  ],
+  "paragraphing": [
+    "unavailable"
+  ],
+  "dialogue_system": [
+    "unavailable"
+  ],
+  "description_strategy": [
+    "unavailable"
+  ],
+  "exposition_strategy": [
+    "unavailable"
+  ],
+  "emotional_temperature": [
+    "unavailable"
+  ],
+  "hooking_and_transitions": [
+    "unavailable"
+  ],
+  "adaptation_guidelines": [
+    "Do not use this card to generate content; rerun the distillation pipeline against non‑stub source text before aggregating a volume card."
+  ],
+  "taboo_copy_signals": [
+    "unavailable"
+  ],
+  "confidence": 0.0,
+  "distillation_source_id": "source-0119"
+}

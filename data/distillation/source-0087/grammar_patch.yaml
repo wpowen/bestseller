@@ -1,0 +1,43 @@
+key: distillation-generic
+name: distillation-generic grammar patch for LLM-fallback source failure
+source_ids:
+- source-0087
+status: draft_review
+applies_to_categories:
+- distillation-generic
+required_contracts:
+- mechanism_extraction_contract
+- reader_reward_instantiation
+- hook_or_aftereffect_resolution
+- chapter_narrative_presence
+- craft_observation_population
+state_variables:
+- fallback_progress
+- extraction_confidence
+- content_validity_flag
+- volume_mapping_integrity
+chapter_change_vectors:
+- chapter_77_volume_mismatch_detected
+- all_chapters_stub_status_propagated
+- zero_confidence_uniform_across_volumes
+reader_rewards:
+- distillable_mechanism_reliability
+- extractable_craft_patterns
+- narrative_momentum_hooks
+- reader_completion_satisfaction
+- genre_promise_delivery
+hook_or_aftereffect_types:
+- open_hook
+- resolved_aftereffect
+- genre_specific_payoff
+- reader_reward_instantiation
+- mechanism_reliability_marker
+forbidden_defaults:
+- llm_unavailable_fallback_stub
+- zero_confidence_chapter_card
+- unpopulated_mechanism_array
+- missing_reader_rewards
+- empty_craft_observations
+- stub_hook_objects
+- volume_mismatch_chapter_assignment
+- aggregation_blocked_status

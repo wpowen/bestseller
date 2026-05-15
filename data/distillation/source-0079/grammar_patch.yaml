@@ -1,0 +1,70 @@
+key: distillation-generic
+name: Distillation Failure Grammar Patch - Fallback Abstraction
+source_ids:
+- source-0079
+status: draft_review
+applies_to_categories:
+- distillation_package
+- llm_fallback
+- incomplete_aggregation
+required_contracts:
+- chapter_content_extraction
+- arc_function_identification
+- state_progression_mapping
+- craft_analysis_generation
+- mechanism_extraction
+- genre_tag_assignment
+- reader_promise_definition
+- core_engine_identification
+- turning_point_detection
+- setup_payoff_rhythm_analysis
+- reusable_mechanism_cataloguing
+- state_variable_definition
+- reader_reward_definition
+state_variables:
+- aggregation_confidence
+- extraction_confidence
+- chapter_parse_count
+- volume_parse_count
+- missing_data_array
+- fallback_trigger_count
+- mechanism_extraction_count
+- craft_analysis_count
+chapter_change_vectors:
+- trigger: zero_chapter_parse
+  vector: enforce_minimum_extraction_threshold
+  threshold: 0.1
+- trigger: llm_fallback_stub_detection
+  vector: require_structured_extraction_attempt
+  min_fields: 5
+- trigger: incomplete_aggregation
+  vector: mark_aggregation_status_as_failed
+  not: incomplete
+- trigger: empty_mechanism_array
+  vector: enforce_mechanism_extraction_pipeline
+  fallback_forbidden: true
+- trigger: no_craft_analysis
+  vector: require_craft_pattern_detection
+  min_observations: 3
+reader_rewards:
+- distillable_mechanism_reliability
+- transparent_aggregation_status
+- extraction_confidence_indicator
+- missing_data_disclosure
+- fallback_detection_awareness
+hook_or_aftereffect_types:
+- aggregation_health_check
+- extraction_confidence_audit
+- fallback_trigger_notification
+- missing_data_warning
+- chapter_parse_completion_validator
+- mechanism_extraction_enforcer
+forbidden_defaults:
+- zero_confidence_all_chapters
+- empty_reusable_mechanisms_array
+- empty_reader_rewards_array
+- empty_open_hooks_array
+- no_craft_analysis_available
+- status_as_incomplete_without_intervention
+- llm_fallback_without_extraction_attempt
+- unknown_core_engine_without_investigation

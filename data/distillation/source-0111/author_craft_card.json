@@ -1,0 +1,36 @@
+{
+  "source_id": "source-0111",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "style_safety_policy": "FALLBACK_CARD — no source content was available for analysis. Craft attributes cannot be reliably extracted. Treat all fields as placeholder structures pending actual source material review. Do not generate content based on this card alone.",
+  "pov_and_distance": "UNEXTRACTED — source content unavailable. No POV choices, narrative distances, or perspective shifts could be catalogued from the absent source material.",
+  "sentence_rhythm": [
+    "UNEXTRACTED — source content unavailable. No cadence patterns, syntactic variations, or rhythmic signatures could be observed."
+  ],
+  "paragraphing": [
+    "UNEXTRACTED — source content unavailable. No paragraph rhythm, white space usage, or block structuring patterns could be identified."
+  ],
+  "dialogue_system": [
+    "UNEXTRACTED — source content unavailable. No dialogue mechanics, tag patterns, or speech-to-narration ratios could be catalogued."
+  ],
+  "description_strategy": [
+    "UNEXTRACTED — source content unavailable. No sensory density, detail hierarchies, or descriptive anchoring strategies could be observed."
+  ],
+  "exposition_strategy": [
+    "UNEXTRACTED — source content unavailable. No information delivery mechanisms, reveal timing, or backstory integration patterns could be identified."
+  ],
+  "emotional_temperature": [
+    "UNEXTRACTED — source content unavailable. No affective register, tonal range, or emotional calibration could be measured."
+  ],
+  "hooking_and_transitions": [
+    "UNEXTRACTED — source content unavailable. No chapter opening techniques, cliffhanger patterns, or scene break mechanics could be observed."
+  ],
+  "adaptation_guidelines": [
+    "Do not adapt or generate content from this card. Source content failed to load; LLM was operating on fallback stub data. Await replacement distillation package with actual source material before any craft extraction or content generation activities. The 'distillable_mechanism_reliability' reward is compromised by zero source access."
+  ],
+  "taboo_copy_signals": [
+    "source titles, author names, exact phrases, named entities, and distinctive sentence templates"
+  ],
+  "confidence": 0.0,
+  "distillation_source_id": "source-0111"
+}

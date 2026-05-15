@@ -1,0 +1,103 @@
+{
+  "book_id": "source-0005",
+  "source_ref": "distillation:21263533e62a6d72f6c9686a",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "parsed_profile": {
+    "arc_function": "Initialize protagonist-transmigration into game-mechanic world; establish sect-survival stakes; deliver system-tutorial payoff through quest-chain completion; plant cultivation-advantage seeds against overwhelming external threats",
+    "dominant_engine": "Sect-Building System (gamified leadership management with quest rewards, territory confirmation, blood-binding mechanics)",
+    "data_completeness": {
+      "volumes_processed": 18,
+      "volumes_with_content": 1,
+      "volume_1_confidence": 0.92,
+      "remaining_volumes_confidence": 0.0,
+      "data_availability_note": "Only Volume 1 (chapters 1-25) contains extractable story content. Volumes 2-18 returned LLM fallback stubs with zero confidence. Design card reflects known mechanics from Volume 1 only; future volumes undetermined."
+    }
+  },
+  "genre_tags": [
+    "cultivation_xianxia",
+    "game_world_transmigration",
+    "sect_building",
+    "system_interface",
+    "quest_chain",
+    "underdog_rise",
+    "survival_stakes",
+    "gamified_cultivation"
+  ],
+  "reader_promise": {
+    "core_promise": "Protagonist inherits doomed organization in hostile world; through game-breaking system advantage, achieves competence and survival against overwhelming odds",
+    "delivery_mechanism": "System tutorial payoff via multi-step quest completion; hidden cultivation advantage creates dramatic irony; underdog position invites investment in systematic competence gain",
+    "satisfaction_hooks": [
+      "newbie_package reward anticipation",
+      "quest completion checklist satisfaction",
+      "status panel transparency engagement",
+      "territory confirmation visualization payoff",
+      "system mystery activation in opening chapter",
+      "cultivation advantage concealment from antagonists"
+    ]
+  },
+  "core_engine": {
+    "engine_type": "Sect-Building System",
+    "mechanic_components": [
+      "system_interface_appears_upon_achieving_specific_status",
+      "multi-step_quest_chain (find_object → interact_landmark → blood_bind)",
+      "blood_binding_ritual_for_item_territory_ownership",
+      "territory_confirmation_visualization (energy spreading from landmark)",
+      "newbie_package_reward_delivery",
+      "quest_flash_warning_with_red_blinking_indicator",
+      "audio_notification_system_with_ping_sounds",
+      "character_status_display_panel (name/sect/position/cultivation/weapon)",
+      "pending_unestablished_slot_display (——标记 for uncreated elements)"
+    ],
+    "game_mechanic_exposition": "System mechanics delivered through transparent interface description rather than narrator exposition; status-panel visuals provide diegetic system explanation; quest chains use checklist framing to simulate game UI",
+    "dominant_satisfaction_mode": "gamified_completion_feedback"
+  },
+  "state_variables": [
+    "{'initial_state': {'protagonist_position': 'inheriting_leadership_of_failing_small_faction', 'organizational_status': 'insufficient_resources_for_stated_task', 'external_pressure': 'three_year_mandatory_demon_hunt_deadline', 'power_dynamic': 'protagonist_significantly_weaker_than_all_antagonists'}, 'key_state_transitions': ['protagonist_transmigrates_into_world_with_game_mechanics', 'external_rival_faction_publicly_humiliates_protagonist (establishes power imbalance)', 'successor_dialogue_during_funeral_cements_commitment_to_impossible_task', 'protagonist_gains_transmigration_system_interface_through_status_threshold_trigger', 'protagonist_completes_multi-step_quest_chain', 'territory_confirmation_visualized_through_energy_spreading', 'newbie_package_rewards_delivered_as_system_motivation_payoff', 'cultivation_advantage_remains_hidden_from_hostile_powers'], 'ongoing_constraints': ['multiple_external_powers_hostile', 'organization_cannot_afford_basic_tools', 'protagonist_cultivation_insufficient_for_stated_task', 'protagonist_lacks_combat_capability']}"
+  ],
+  "reader_rewards": [
+    "{'chapter_1_rewards': ['protagonist_hidden_game_system_activated', 'cultivation_world_system_revealed', 'sect_survival_stakes_established', 'antagonist_cruelty_experienced_directly', 'protagonist_underdog_position_confirmed'], 'chapter_2_rewards': ['system_tutorial_completion_payoff', 'blood_binding_ownership_mechanics_learned', 'territory_control_visualized', 'newbie_package_received'], 'ongoing_reward_architecture': ['quest_completion_checklist_satisfaction', 'status_panel_upgrade_anticipation', 'hidden_advantage_dramatic_irony', 'resource_constraint_resolution', 'competence_gap_narrowing_progress']}"
+  ],
+  "reusable_mechanisms": [
+    "system_interface_appears_upon_achieving_specific_status",
+    "protagonist_transmigrates_into_world_with_game_mechanics",
+    "inheriting_leadership_of_failing_organization_during_crisis",
+    "small_faction_must_survive_mandatory_event_with_insufficient_resources",
+    "antagonist_humiliates_protagonist_to_establish_power_imbalance",
+    "protagonist_absorbs_insults_to_protect_weak_allies",
+    "external_saboteur_provides_intelligence_to_rival_faction",
+    "successor_dialogue_during_funeral_establishes_commitment",
+    "character_status_display_panel_with_transparent_interface",
+    "multi-step_quest_chain_for_core_mechanics",
+    "blood_binding_ritual_for_item_territory_ownership",
+    "territory_confirmation_visualization_with_energy_spreading",
+    "audio_notification_system_for_system_events",
+    "quest_flash_warning_with_visual_indicator",
+    "newbie_package_reward_delivery_for_first_completion",
+    "pending_unestablished_slot_display_with_placeholder_markers"
+  ],
+  "non_reusable_specifics": [
+    "huashan_sect_and_its_location",
+    "jin_yan_sect_hierarchy",
+    "tianshan_sect_as_second_tier_organization",
+    "jade_crane_flying_artifact_and_its_specifications",
+    "protagonist_sect_master_killed_with_undisclosed_motive"
+  ],
+  "risk_patterns": [
+    "{'structural_risks': ['heavy_system_explanation_through_internal_monologue_may_slow_pacing', 'quest_completion_checklist_format_risks_feeling_like_mechanical_enumeration', 'protagonist_alone_receives_game_breaking_advantage_without_immediate_conflict_pressure', 'dependence_on_game_mechanic_satisfaction_for_reader_engagement'], 'competence_gap_risks': ['protagonist_significantly_weaker_than_every_antagonist (ongoing)', 'protagonist_cultivation_insufficient_for_stated_task', 'protagonist_lacks_combat_capability'], 'resource_risks': ['organization_cannot_afford_basic_tools', 'multiple_external_powers_hostile'], 'unknown_risks_note': 'Risk patterns derived from Volume 1 only. Volumes 2-18 content unavailable; additional risk patterns may emerge in unprocessed material.'}"
+  ],
+  "craft_profile": {
+    "prose_tendencies": "System mechanics delivered through transparent interface description rather than narrator exposition; status-panel visuals provide diegetic system explanation; quest chains use checklist framing to simulate game UI; blood-binding ritual employs sensory specificity (drip blood, spiritual connection) for tactile engagement",
+    "tension_strategy": "Power imbalance established through public humiliation scene; survival stakes defined by three-year deadline against insufficient resources; protagonist's hidden advantage creates dramatic irony while remaining concealed from antagonists",
+    "reader_investment_mechanics": "System activation mystery in chapter 1 pays off with interactive tutorial in chapter 2; underdog position invites reader to root for system-assisted competence gain; newbie_package creates immediate reward anticipation; unestablished slots create constructive anticipation for future content"
+  },
+  "design_metadata": {
+    "extraction_timestamp": "distillation_pipeline_run",
+    "chapter_range_analyzed": "1-430 (Volume 1 only with confidence)",
+    "volume_cards_generated": 18,
+    "volume_cards_with_content": 1,
+    "confidence_override": "book_design_card_generated_from_volume_1_data_only; remaining volumes flagged llm_fallback"
+  },
+  "source_id": "source-0005",
+  "distillation_source_id": "source-0005"
+}

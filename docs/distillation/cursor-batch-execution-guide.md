@@ -21,6 +21,19 @@ approved assets into BestSeller.
 
 ## Phase 1: Prepare Sources
 
+For many files under one corpus root, use the parallel driver (process pool + registry
+file lock inside ``prepare_source``):
+
+```bash
+python3 scripts/distillation/batch_prepare_corpus.py /path/to/corpus \\
+  --genre-hint <题材> \\
+  --workers 4 \\
+  --dedupe-policy skip
+```
+
+Incremental state defaults to ``.distillation_private/corpus_prepare_state.jsonl``
+(re-run skips finished fingerprints). Override with ``--state-file``.
+
 Given a directory of raw books:
 
 ```text
@@ -95,6 +108,32 @@ data/distillation/source-0002/chapter_cards.jsonl
 If the model returns invalid JSON, retry with the same payload plus the
 validation error.
 
+For unattended in-repo execution, use the full-auto driver. It processes source
+directories in ascending `source-NNNN` order and can be resumed:
+
+```bash
+.venv/bin/python scripts/distillation/run_full_auto_distillation.py \
+  --resume \
+  --refresh-missing-craft-observations \
+  --chapter-workers 4 \
+  --import-mode none
+```
+
+`--refresh-missing-craft-observations` is only needed when backfilling the
+anonymous author-craft layer for chapter cards created before this field existed.
+
+For large libraries, split deterministic ranges:
+
+```bash
+.venv/bin/python scripts/distillation/run_full_auto_distillation.py \
+  --resume \
+  --source-start source-0241 \
+  --source-end source-0480 \
+  --refresh-missing-craft-observations \
+  --chapter-workers 4 \
+  --import-mode none
+```
+
 ## Phase 3: Aggregation Per Source
 
 After all chapter cards exist, Cursor should generate or call an aggregation
@@ -103,6 +142,7 @@ step to produce:
 ```text
 data/distillation/source-0002/volume_cards.jsonl
 data/distillation/source-0002/book_design_card.json
+data/distillation/source-0002/author_craft_card.json
 data/distillation/source-0002/mechanism_candidates.jsonl
 data/distillation/source-0002/material_entries.review.jsonl
 data/distillation/source-0002/anti_copy_ledger.json
@@ -130,9 +170,17 @@ Expected aggregate outputs:
 data/distillation/aggregates/otherworld-cross-system/aggregate_manifest.json
 data/distillation/aggregates/otherworld-cross-system/material_entries.review.jsonl
 data/distillation/aggregates/otherworld-cross-system/mechanism_registry.jsonl
+data/distillation/aggregates/otherworld-cross-system/author_craft_registry.jsonl
+data/distillation/aggregates/otherworld-cross-system/book_design_registry.jsonl
+data/distillation/aggregates/otherworld-cross-system/volume_design_paths.jsonl
 data/distillation/aggregates/otherworld-cross-system/anti_copy_rules.json
 data/distillation/aggregates/otherworld-cross-system/grammar_patch.yaml
 ```
+
+`aggregate_manifest.json` must include `maturity_score`, `maturity_status`,
+`book_design_rows`, `volume_design_rows`, `author_craft_rows`, and
+`fallback_volume_rows`. Fallback volume rows are counted but quarantined out of
+`volume_design_paths.jsonl`.
 
 ## Phase 5: Promotion
 
@@ -209,6 +257,10 @@ Process the provided corpus directory. For each source file:
 6. Write chapter_cards.jsonl.
 7. Generate volume_cards.jsonl, book_design_card.json, mechanism_candidates.jsonl,
    material_entries.review.jsonl, anti_copy_ledger.json, and grammar_patch.yaml.
+   Also generate author_craft_card.json as an anonymized craft profile: POV
+   distance, sentence rhythm, paragraphing, dialogue method, exposition placement,
+   emotional temperature, and hook transitions. Do not imitate a named author,
+   quote distinctive phrases, or preserve copyable style fingerprints.
 8. Run validate_package again.
 
 Do not commit raw text, source names, author names, or original paths.

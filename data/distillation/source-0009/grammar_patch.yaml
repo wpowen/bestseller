@@ -1,0 +1,54 @@
+key: distillation-generic
+name: distillation generic
+source_ids:
+- source-0009
+status: review
+applies_to_categories:
+- transmigration
+- cultivation
+- isekai
+- business_empire
+- political_intrigue
+- dual_life
+- historical_foreknowledge
+- systematic_power_fantasy
+required_contracts:
+- exposure_cost_model
+- state_tracking
+- no_source_specific_names
+state_variables:
+- '{''protagonist_state'': {''public_presentation'': ''Emerging business magnate with
+  untapped potential'', ''concealed_capabilities'': ''Transmigrator with cultivation
+  foundation and historical foreknowledge'', ''core_constraint'': ''Must maintain
+  concealment while advancing competing objectives across dual domains'', ''motivational_core'':
+  ''Survival through strategic positioning, accumulated power for unknown future threats''},
+  ''world_state'': {''political_climate'': ''Unstable — major upheaval imminent (as
+  of Volume 1 close)'', ''cultivation_ecosystem'': ''Implied hierarchy with competitive
+  advancement channels'', ''economic_structure'': ''Business empire framework established
+  as power base'', ''faction_mapping'': ''Implied multiple factions with shifting
+  allegiances''}, ''narrative_stakes'': {''immediate'': "Political upheaval threatens
+  protagonist''s careful equilibrium", ''ongoing'': ''Concealment vs. advancement
+  tension across dual domains'', ''long_term'': ''Unknown threats requiring accumulated
+  power reserves''}}'
+chapter_change_vectors:
+- state_shift
+- reader_reward_payoff
+- hook_resolution_or_escalation
+reader_rewards:
+- '{''volume_1_delivered'': [''Protagonist competence demonstration across multiple
+  domains'', ''Systematic establishment of dual-life framework'', ''Cultivation and
+  business progression both introduced'', ''Political intrigue foundation laid'',
+  ''Dramatic irony through concealed transmigrator advantage'', ''Major cliffhanger
+  through political upheaval hook''], ''ongoing_pattern'': [''Strategic problem-solving
+  through foreknowledge exploitation'', ''Progressive power acquisition in concealed
+  domains'', ''Dramatic irony maintenance through identity concealment'', ''Political
+  complexity escalation'', ''Cultivation advancement reveals'', ''Business empire
+  growth and complications''], ''undistilled_potential'': ''Volumes 2-25 contain unextractable
+  content representing ~96% of narrative development''}'
+hook_or_aftereffect_types:
+- misread_reassessment
+- new_constraint
+forbidden_defaults:
+- copy_source_title_or_names
+- effortless_asset_collection
+- plot_summary_as_mechanism

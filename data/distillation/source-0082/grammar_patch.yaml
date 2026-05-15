@@ -1,0 +1,33 @@
+key: distillation-generic
+name: LLM Fallback Distillation Grammar Patch
+source_ids:
+- source-0082
+status: active
+applies_to_categories:
+- distillation
+required_contracts:
+- extraction_fallback_contract
+- no_structural_data_contract
+state_variables:
+- fallback_progress
+- extraction_confidence
+- retry_attempts
+chapter_change_vectors:
+- vector_id: zero_extraction_vector
+  chapter_delta: 0
+  content_generation_required: true
+  confidence_weight: 0.0
+reader_rewards:
+- distillable_mechanism_reliability
+hook_or_aftereffect_types:
+- type: detection_hook
+  triggers:
+  - llm_fallback_detection
+  - zero_confidence_extraction
+  severity: critical
+forbidden_defaults:
+- chapter_card_extraction
+- genre_specific_extraction
+- core_engine_binding
+- structural_parsing
+- confidence_threshold_met

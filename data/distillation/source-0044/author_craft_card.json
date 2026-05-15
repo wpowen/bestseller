@@ -1,0 +1,37 @@
+{
+  "source_id": "source-0044",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "style_safety_policy": "{'enforced_abstinence': True, 'rationale': 'All 296 chapters across 12 volumes returned identical LLM fallback stubs (confidence 0.0). No authored prose, dialogue, description, or narrative structure exists in source batch. Generating style signals from zero-content records would produce fabricated craft observations.'}",
+  "pov_and_distance": "{'pattern': 'unavailable', 'detail': 'No POV choices, narrative distance shifts, or perspective controls extractable from LLM fallback stubs. author_craft_card cannot model point-of-view technique without source prose.', 'confidence': 0.0}",
+  "sentence_rhythm": [
+    "{'pattern': 'unavailable', 'detail': 'No sentence-level rhythm, length variation, cadence patterns, or syntactic signatures present in empty chapter records. Sentence rhythm craft observations require actual prose.', 'confidence': 0.0}"
+  ],
+  "paragraphing": [
+    "{'pattern': 'unavailable', 'detail': 'No paragraph construction, block structure, white-space rhythm, or scene/beat division extractable from stub chapter cards. Paragraph-level craft decisions cannot be modeled from zero-content data.', 'confidence': 0.0}"
+  ],
+  "dialogue_system": [
+    "{'pattern': 'unavailable', 'detail': 'No dialogue exchanges, speech patterns, tag distributions, subtext mechanics, or conversation pacing present in LLM fallback stubs. Dialogue craft cannot be distilled without source content.', 'confidence': 0.0}"
+  ],
+  "description_strategy": [
+    "{'pattern': 'unavailable', 'detail': 'No sensory description, world-state rendering, object-level detail, or atmospheric prose extractable from empty chapter records. Description craft observations require authored content.', 'confidence': 0.0}"
+  ],
+  "exposition_strategy": [
+    "{'pattern': 'unavailable', 'detail': 'No backstory delivery, information placement, exposition-to-scene ratio, or worldbuilding mechanics extractable from LLM fallback stubs. Exposition technique cannot be modeled without source prose.', 'confidence': 0.0}"
+  ],
+  "emotional_temperature": [
+    "{'pattern': 'unavailable', 'detail': 'No tonal register, emotional arc shaping, affect calibration, or mood management extractable from chapter cards containing zero narrative content.', 'confidence': 0.0}"
+  ],
+  "hooking_and_transitions": [
+    "{'pattern': 'unavailable', 'detail': 'No chapter openings, closing hooks, cliffhanger mechanics, transition techniques, or narrative bridge construction present in empty chapter records. Hook craft cannot be distilled without authored content.', 'confidence': 0.0}"
+  ],
+  "adaptation_guidelines": [
+    "{'summary': 'No adaptation guidelines extractable from zero-content source batch. Recommendations for POV, rhythm, dialogue, description, or emotional calibration cannot be derived without access to actual narrative prose. Re-process source through functional LLM pipeline before generating adaptation guidance.', 'confidence': 0.0}"
+  ],
+  "taboo_copy_signals": [
+    "{'enforced_avoidances': ['Do not generate fabricated craft observations to fill empty schema fields', 'Do not impute narrative mechanics absent from source data', 'Do not construct reader_rewards, hooks, or story architecture from stub records', \"Do not apply pattern labels (e.g., 'tight first-person POV') to sources lacking prose content\", 'Do not derive reusable_mechanisms from chapters with zero extractable craft data'], 'rationale': 'Distillation protocol requires source content for craft extraction. Assigning pattern labels to empty chapter cards would corrupt the craft card with hallucinated design decisions.'}"
+  ],
+  "confidence": 0.0,
+  "distillation_integrity_note": "author_craft_card reflects data absence across all 296 chapters (12 volumes). All volume_cards inherited zero-confidence chapter_card batches. No prose, no craft decisions, no narrative mechanics, no reader rewards, no hooks, no character agency, no world-state data present in source. This card is a structural placeholder confirming extraction failure, not a characterization of authored work. Regenerate chapter_card batch with functional LLM pipeline before re-distilling.",
+  "distillation_source_id": "source-0044"
+}

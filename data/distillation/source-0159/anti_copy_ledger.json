@@ -1,0 +1,11 @@
+{
+  "source_id": "source-0159",
+  "blocked_categories": [
+    "no_source_content_available",
+    "zero_extraction_confidence",
+    "llm_fallback_failure_state",
+    "any_attributed_craft_patterns"
+  ],
+  "blocked_combinations": [],
+  "replacement_policy": []
+}

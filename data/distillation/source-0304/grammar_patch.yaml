@@ -1,0 +1,25 @@
+key: distillation-generic
+name: Generic Distillation Grammar Patch
+source_ids:
+- source-0304
+- distillation:f6e0bbdf3cd0a259c36fcd40
+status: patched
+applies_to_categories:
+- generic
+- fallback
+required_contracts:
+- story_design_contract_v1
+state_variables:
+- protagonist_need
+- antagonist_force
+- world_state
+chapter_change_vectors: []
+reader_rewards:
+- distillable_mechanism_reliability
+hook_or_aftereffect_types:
+- tension
+- curiosity
+- emotional_engagement
+forbidden_defaults:
+- llm_fallback
+- llm_output_parse_fail

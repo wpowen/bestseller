@@ -1,0 +1,61 @@
+{
+  "book_id": "source-0128",
+  "source_ref": "distillation:c1d4d2c054ea34b24555c864",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "parsed_profile": {
+    "status": "unavailable",
+    "reason": "All 49 chapters across 2 volumes returned identical LLM fallback stubs. Zero narrative content, craft observations, arc mechanisms, or structural elements could be extracted. Book-level design fingerprint cannot be constructed from empty source data.",
+    "volume_count": 2,
+    "chapter_count": 49,
+    "chapter_range": "1-49"
+  },
+  "genre_tags": [
+    "distillation-generic"
+  ],
+  "reader_promise": "LLM structured distillation fallback.",
+  "core_engine": "UNAVAILABLE — no chapter content available for engine classification. Dominant narrative mechanism undetermined.",
+  "state_variables": [
+    "fallback_progress"
+  ],
+  "turning_points": [],
+  "setup_payoff_rhythm": null,
+  "reader_rewards": [
+    "distillable_mechanism_reliability"
+  ],
+  "reusable_mechanisms": [
+    "fallback mechanism abstraction"
+  ],
+  "non_reusable_specifics": [],
+  "risk_patterns": [
+    "llm_fallback",
+    "no_source_content",
+    "zero_confidence_all_chapters",
+    "aggregation_blocked",
+    "design_fingerprint_construction_impossible"
+  ],
+  "failure_modes": [
+    "llm_fallback",
+    "no_extractable_chapter_content",
+    "confidence_zero_across_all_chapters",
+    "aggregation_yields_no_mechanisms",
+    "volume_card_aggregation_blocked"
+  ],
+  "craft_profile": {
+    "status": "unavailable",
+    "reason": "All chapter cards contain identical fallback stubs. No prose-craft observations, reader rewards, open hooks, or non-reusable specifics could be extracted.",
+    "available_chapters": 0,
+    "total_chapters": 49
+  },
+  "distillation_metadata": {
+    "source_id": "source-0128",
+    "volumes_processed": 2,
+    "chapters_processed": 49,
+    "successful_extractions": 0,
+    "failed_extractions": 49,
+    "confidence_ceiling": 0.0,
+    "aggregation_status": "blocked_by_empty_inputs"
+  },
+  "source_id": "source-0128",
+  "distillation_source_id": "source-0128"
+}

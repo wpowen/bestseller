@@ -1,0 +1,50 @@
+key: distillation-generic
+name: Distillation Generic Fallback Patch
+source_ids:
+- source-0102
+status: draft_review
+applies_to_categories:
+- distillation
+- grammar_patch
+- fallback
+required_contracts:
+- source_text_provision
+- chapter_card_validity
+- distillation_pipeline_integrity
+state_variables:
+- fallback_progress
+- stub_detection_threshold
+- retry_attempt_count
+chapter_change_vectors:
+- vector_id: cv_fallback_001
+  trigger: llm_fallback_detected
+  scope: all_chapters
+  action: flag_for_regeneration
+  rollback_eligible: true
+- vector_id: cv_fallback_002
+  trigger: zero_confidence_sampling
+  scope: sampled_chapters
+  action: halt_distillation
+  rollback_eligible: false
+reader_rewards:
+- distillable_mechanism_reliability
+- transparency_on_source_quality
+hook_or_aftereffect_types:
+- type: pre_distillation_hook
+  hook_id: hkd_source_validation
+  conditions:
+  - source_accessibility_check
+  - chapter_card_non_stub_verification
+- type: post_failure_aftereffect
+  hook_id: afd_retry_notification
+  conditions:
+  - distillation_failure_confirmed
+  - retry_recommended
+  effects:
+  - notify_source_provider
+  - queue_regeneration_task
+forbidden_defaults:
+- accept_llm_fallback_as_valid
+- proceed_with_zero_quality_source
+- skip_stub_detection
+- complete_distillation_without_source_validation

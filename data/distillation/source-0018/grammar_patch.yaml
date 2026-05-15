@@ -1,0 +1,40 @@
+key: distillation-generic
+name: Distillation Generic Complete Failure Patch
+source_ids:
+- source-0018
+status: patch
+applies_to_categories:
+- distillation-generic
+required_contracts:
+- no_content_contract
+- zero_confidence_contract
+- aggregation_halted_contract
+- fallback_stub_contract
+state_variables:
+- distillation_status
+- confidence_aggregate
+- volumes_processed
+- chapters_with_content
+- content_availability_flag
+- pipeline_collapse_detected
+chapter_change_vectors:
+- no_change_possible_no_source_content
+- change_vectors_empty_array
+reader_rewards: []
+hook_or_aftereffect_types:
+- no_hooks_available
+- no_aftereffects_extractable
+- stub_only_contract
+forbidden_defaults:
+- character_arc_extraction
+- plot_progression_extraction
+- thematic_element_extraction
+- dialogue_pattern_extraction
+- worldbuilding_extraction
+- pacing_pattern_extraction
+- reader_reward_delivery_extraction
+- voice_characteristic_extraction
+- state_progression_extraction
+- turning_point_extraction
+- reusable_mechanism_extraction
+- open_hook_extraction

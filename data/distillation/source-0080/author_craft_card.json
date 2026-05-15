@@ -1,0 +1,36 @@
+{
+  "source_id": "source-0080",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "style_safety_policy": "indeterminate — no extractable content to assess safety signals; source returned exclusively LLM fallback stubs across 300 chapters",
+  "pov_and_distance": "indeterminate — extraction failed; no narrative content available for POV analysis",
+  "sentence_rhythm": [
+    "indeterminate — extraction failed; no chapter content available for rhythm pattern analysis"
+  ],
+  "paragraphing": [
+    "indeterminate — extraction failed; no prose content available for paragraph structure observation"
+  ],
+  "dialogue_system": [
+    "indeterminate — extraction failed; no character speech or dialogue available for analysis"
+  ],
+  "description_strategy": [
+    "indeterminate — extraction failed; no descriptive passages available for strategy extraction"
+  ],
+  "exposition_strategy": [
+    "indeterminate — extraction failed; no explanatory or world-building content available for analysis"
+  ],
+  "emotional_temperature": [
+    "indeterminate — extraction failed; no narrative tone data available for temperature assessment"
+  ],
+  "hooking_and_transitions": [
+    "indeterminate — extraction failed; no chapter openings or transitions available for hook analysis"
+  ],
+  "adaptation_guidelines": [
+    "indeterminate — extraction failed; no reusable craft patterns available for adaptation guidance; recommend reprocessing source through live LLM pipeline when available"
+  ],
+  "taboo_copy_signals": [
+    "indeterminate — no extractable prose signals to evaluate; source extraction yielded zero confidence across all 300 chapters"
+  ],
+  "confidence": 0.0,
+  "distillation_source_id": "source-0080"
+}

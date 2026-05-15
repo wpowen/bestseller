@@ -1,0 +1,105 @@
+{
+  "book_id": "source-0060",
+  "source_ref": "distillation:e31eb75fbfcaa81bf9f01390",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "parsed_profile": {
+    "distillation_status": "failed",
+    "confidence": 0.0,
+    "data_availability": "none",
+    "volumes_processed": 11,
+    "chapters_attempted": 252,
+    "chapters_with_content": 0,
+    "failure_reason": "All source chapters across all volumes returned LLM unavailable fallback stubs with zero confidence; no narrative content, mechanics, state progression, turning points, or craft observations present for aggregation",
+    "aggregated_failure_modes": [
+      "llm_fallback",
+      "no_source_content",
+      "all_chapters_llm_fallback",
+      "zero_confidence",
+      "no_distillable_content",
+      "entire_chapter_batch_unavailable",
+      "complete_data_loss"
+    ],
+    "volume_ranges_affected": [
+      {
+        "volume": 1,
+        "range": "1-25",
+        "status": "llm_fallback"
+      },
+      {
+        "volume": 2,
+        "range": "26-50",
+        "status": "llm_fallback"
+      },
+      {
+        "volume": 3,
+        "range": "51-75",
+        "status": "llm_fallback"
+      },
+      {
+        "volume": 4,
+        "range": "76-100",
+        "status": "llm_fallback"
+      },
+      {
+        "volume": 5,
+        "range": "101-125",
+        "status": "llm_fallback"
+      },
+      {
+        "volume": 6,
+        "range": "126-150",
+        "status": "llm_fallback"
+      },
+      {
+        "volume": 7,
+        "range": "151-175",
+        "status": "llm_fallback"
+      },
+      {
+        "volume": 8,
+        "range": "176-200",
+        "status": "llm_fallback"
+      },
+      {
+        "volume": 9,
+        "range": "201-225",
+        "status": "llm_fallback"
+      },
+      {
+        "volume": 10,
+        "range": "226-250",
+        "status": "llm_fallback"
+      },
+      {
+        "volume": 11,
+        "range": "251-252",
+        "status": "llm_fallback"
+      }
+    ],
+    "recommendation": "Cannot generate book_design_card content until actual chapter_card content is produced by a functional LLM extraction pipeline; all source material consists of fallback stubs with empty arrays and 0.0 confidence",
+    "data_quality": "no_reliable_source_material"
+  },
+  "genre_tags": [
+    "distillation-generic"
+  ],
+  "reader_promise": "undetermined — insufficient source data for promise derivation",
+  "core_engine": "undetermined — no extractable engine data from source",
+  "state_variables": [
+    "fallback_progress"
+  ],
+  "reader_rewards": [
+    "distillable_mechanism_reliability"
+  ],
+  "reusable_mechanisms": [
+    "fallback mechanism abstraction"
+  ],
+  "non_reusable_specifics": [],
+  "risk_patterns": [
+    "{'pattern': 'systematic_llm_unavailability', 'scope': 'entire_source', 'impact': 'complete_distillation_failure', 'mitigation': 'requires_reprocessing_with_functional_llm_pipeline'}",
+    "{'pattern': 'zero_confidence_across_all_chapters', 'scope': 'all_volumes', 'impact': 'no_trustworthy_content_for_aggregation', 'mitigation': 'requires_source_reprocessing'}",
+    "{'pattern': 'empty_array_aggregation', 'scope': 'mechanisms_rewards_hooks_observations', 'impact': 'no_extractable_design_elements', 'mitigation': 'requires_valid_source_chapter_cards'}"
+  ],
+  "source_id": "source-0060",
+  "distillation_source_id": "source-0060"
+}

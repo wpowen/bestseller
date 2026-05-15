@@ -1,0 +1,29 @@
+key: distillation-generic
+name: Distillation Generic Failure State Grammar Patch
+source_ids:
+- source-0051
+status: failed_extraction
+applies_to_categories:
+- distillation-generic
+required_contracts:
+- source_content_availability
+- llm_pipeline_operational
+- chapter_card_generation_success
+state_variables:
+- fallback_progress
+chapter_change_vectors: []
+reader_rewards:
+- distillable_mechanism_reliability
+hook_or_aftereffect_types: []
+forbidden_defaults:
+- story mechanics
+- narrative architecture
+- craft observations
+- reader reward mechanisms
+- reader promises
+- core engine classification
+- chapter-level content
+- volume-level synthesis
+- any narrative structure
+- any character dynamics
+- any plot mechanics

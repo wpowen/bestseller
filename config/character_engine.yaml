@@ -1,0 +1,455 @@
+# =============================================================================
+# Character Engine · 角色立体引擎
+# =============================================================================
+# 目的：
+#   解决"主角对白通用化 + 反派脸谱化"——multi-persona 在《青崖诡事》
+#   3 章里 peer_author 反复扣分的根因。
+#
+#   传统 voice_profile 只解决"怎么说话"（speech_register / verbal_tics
+#   / sentence_style / emotional_expression），不解决"为什么是这个人"。
+#   character_engine 把每个主要角色做成 8 层立体档案：
+#     - want vs need（欲望 / 真实需要）
+#     - 三层动机（surface / hidden / suppressed）
+#     - 价值观红线 / 行为偏好 / 拒绝项
+#     - 独特反应三步链（在 X 类刺激下的"非通用"反应）
+#     - 关系记忆库
+#     - 标志性物 / 动作 / 短语
+#     - 弱点 / 死穴
+#     - voice_dna（语言层面的不可替代性）
+#
+# 使用方式：
+#   1. 每个主要角色（POV / 反派 / 核心配角）必填一份 profile
+#   2. writer 在每场写作前读 character_profile，注入到下笔约束
+#   3. critic 跑 multi-persona 时，peer_author 用 dialogue_individuation
+#      检测"换个角色说是否成立" + character_consistency 检测违和
+# =============================================================================
+
+version: 2026.05.14
+
+# 全局规则
+global_rules:
+  required_for:
+    - POV 主角（必填完整 profile）
+    - 主反派（必填完整 profile）
+    - 出场 ≥ 5 章的核心配角（填精简版）
+  optional_for:
+    - 出场 < 5 章的配角（只填 voice_dna + signature 即可）
+  storage_path: output/{slug}/story-bible/characters/{character_name}.yaml
+
+# =============================================================================
+# Profile 字段定义
+# =============================================================================
+schema:
+
+  want_vs_need:
+    description: |
+      角色的"明面欲望"（want）和"内在需要"（need）之间必须有张力。
+      want 是角色自己以为想要的；need 是角色真正缺的。
+      好故事的弧光 = need 替代 want 的过程。
+    required_fields:
+      want: 一句话，角色自己嘴上说的目标
+      need: 一句话，角色内心真正缺的（角色自己不承认）
+      tension: 一句话，want 与 need 冲突点
+    example_protagonist: |
+      want: 查清十五年前沈家灭门真相，杀掉幕后凶手
+      need: 接受自己"南茅北马混血"的身份，停止用"复仇" 当唯一存在意义
+      tension: 越接近真相，越被迫面对"母亲可能是凶手之一" 的可能
+
+  three_layer_motivation:
+    description: |
+      surface（公开动机）/ hidden（自己知道但不说）/ suppressed（连自己都不愿承认）
+    required_fields:
+      surface: 角色公开说出来的理由
+      hidden: 角色心里知道但不告人的理由
+      suppressed: 角色连对自己都压抑的理由（往往与童年创伤 / 羞耻 / 罪疚相关）
+
+  values_and_redlines:
+    description: |
+      角色的价值观、行为偏好、绝对拒绝项。
+      这些是"在两难时角色选什么"的判定准则。
+    required_fields:
+      core_value: 一句话，角色最看重的（用对白形式表达）
+      behavior_preference: 在压力下的偏好行动模式（≤ 3 条）
+      absolute_no: 绝对不会做的事（≥ 1 条）
+
+  unique_response_chain:
+    description: |
+      在 N 类典型刺激下，角色的"非通用三步反应链"。
+      这是 dialogue_individuation 的根基——独特反应让角色不可替换。
+    required_stimuli:
+      - threat_from_authority
+      - betrayal_by_close_one
+      - moral_dilemma
+      - confrontation_with_villain
+      - witness_to_injustice
+      - personal_pain_recall
+      - small_victory
+      - confronting_own_weakness
+    per_stimulus_schema:
+      step_1: 第一反应（生理 / 直觉）
+      step_2: 中间反应（思考 / 评估）
+      step_3: 决定动作（独特行为）
+
+  relationship_memory:
+    description: |
+      角色对每个有交集的角色的：好感分（-1 到 +1）/ 未结历史 / 当前态度。
+      这避免"主角对所有人态度一致"的扁平。
+    per_relation:
+      good_will: -1.0 ~ +1.0
+      unfinished_business: 与对方有未了的事
+      current_stance: 当前章节对他的态度
+      evolution_trajectory: 预定的关系演化（如：敌→不打不相识→并肩）
+
+  signature_assets:
+    description: |
+      角色的"识别符"——读者一看到就知道是他。
+    required_fields:
+      object: 标志性物（沈青崖的银针 / 周神算的紫檀串）
+      action: 标志性动作（沈青崖压力下数物 / 周神算捻紫檀）
+      phrase: 标志性短句（沈青崖"按程序" / "证据不能只剩在嘴上"）
+      tic: 微习惯（沈青崖摸旧疤 / 周神算每三颗捻一下）
+
+  weakness_and_killshot:
+    description: |
+      角色的弱点 / 死穴。这是反派能伤主角的地方，也是主角能伤反派的地方。
+    required_fields:
+      weakness_emotional: 情感弱点
+      weakness_physical: 生理 / 技术弱点
+      killshot: 击中即崩溃的死穴
+      visibility_to_self: 角色自己是否意识到（true/false）
+      visibility_to_others: 其他角色是否能看出（list）
+
+  voice_dna:
+    description: |
+      语言层面的不可替代性。让对白测试"换角色说是否成立"必失败。
+    required_fields:
+      sentence_length_preference: short | medium | long | mixed
+      vocabulary_register: formal | colloquial | technical | archaic | mixed
+      forbidden_words: 角色绝不会用的词 / 短语
+      signature_words: 角色高频独用的词 / 短语
+      response_pattern_to_question: 直答 | 反问 | 沉默后答 | 用动作代答
+      humor_type: 无 | 黑色 | 自嘲 | 反讽 | 冷面
+      anger_expression: 沉默 | 短促 | 反讽 | 动作 | 爆发
+      lie_pattern: 不说谎 | 含糊 | 说半句 | 用动作误导
+
+# =============================================================================
+# Sample Profile · 沈青崖（演示）
+# =============================================================================
+sample_profiles:
+  shen_qingya:
+    character_id: shen_qingya
+    display_name: 沈青崖
+    role: protagonist (POV)
+    age: 22
+    profession: 巡捕房副捕头 + 茅山外门弟子
+
+    want_vs_need:
+      want: 查清十五年前沈家灭门真相，找到那个"没有影子的人"
+      need: 接受自己南茅北马混血身份，承认"复仇" 不是唯一存在意义
+      tension: 越接近真相越发现自己和"凶手们" 同源；查到最后可能要审判自己的家族
+
+    three_layer_motivation:
+      surface: 我是巡捕，我查案——这是我的职责
+      hidden: 我要替沈家人讨债，让十五年前烧人的那群人偿命
+      suppressed: 我恨自己当年躲在井底没出声；我活下来是因为懦弱，不是因为聪明
+
+    values_and_redlines:
+      core_value: 证据不能只剩在嘴上
+      behavior_preference:
+        - 留证物（撕格 / 私章 / 死者藏物）
+        - 数东西（压力下数屋角 / 数脚步 / 数物件）
+        - 按程序（用规则反将对手）
+      absolute_no:
+        - 不让活人为他死（哪怕能换关键证据）
+        - 不在没有证据的情况下指认凶手
+
+    unique_response_chain:
+      threat_from_authority:
+        step_1: 沉默一拍（指节扣紧）
+        step_2: 数一遍屋里的东西 / 在场的人
+        step_3: 用对方的关键词反将（"按程序" → "按程序，我的章在……"）
+      betrayal_by_close_one:
+        step_1: 喉结动一下，不立刻看对方
+        step_2: 把刚才双方的话在心里复盘一遍
+        step_3: 不揭穿，但悄悄把证据藏到对方看不见的地方
+      moral_dilemma:
+        step_1: 摸食指外沿那道旧疤
+        step_2: 在心里数七岁那年井底听见的"烧干净" 三个字
+        step_3: 选择"留活人"——哪怕代价是失证据
+      confrontation_with_villain:
+        step_1: 眼神冷下来，但不退步
+        step_2: 找对方袖口 / 鞋跟 / 手腕的具体破绽
+        step_3: 用银针指破绽（不一定攻击，只用作"我看见了" 的暗号）
+      witness_to_injustice:
+        step_1: 太阳穴跳一下
+        step_2: 不立刻干预，先看现场布局
+        step_3: 先护活人 + 再夺证据
+      personal_pain_recall:
+        step_1: 旧疤发烫
+        step_2: 在内心数到七
+        step_3: 重新看眼前案件，把当前现场与十五年前重合
+      small_victory:
+        step_1: 不笑
+        step_2: 把证物再确认一遍位置
+        step_3: 用一句反问把胜利"再加一钉"（"你按哪一条程序烧？")
+      confronting_own_weakness:
+        step_1: 沉默较长
+        step_2: 摸旧疤
+        step_3: 不向人解释，独自做出补救动作
+
+    relationship_memory:
+      zhou_shensuan:
+        good_will: -0.8
+        unfinished_business: 验尸格被强行盖章 + 怀疑他被归墟会渗透
+        current_stance: 警惕但不撕破脸
+        evolution_trajectory: 暂时合作（必要时利用）→ 最终对决
+      lin_jiushao:
+        good_will: +0.2
+        unfinished_business: 老捕快有把柄被人攥住；他是"被胁迫的好人"
+        current_stance: 同情但不完全信任
+        evolution_trajectory: 揭穿胁迫者 → 林九韶以命换情报 → 主角失去一位老师
+      the_fourth_man:
+        good_will: -1.0
+        unfinished_business: 十五年前井底就是这个人
+        current_stance: 仇敌但不知其底
+        evolution_trajectory: 终局对决
+      mother_ma_shi:
+        good_will: +0.5（带条件）
+        unfinished_business: 以为她死了，可能她是凶手之一
+        current_stance: 想见 + 怕见
+        evolution_trajectory: 见面 → 真相 → 抉择
+      master_maoshan:
+        good_will: +0.6
+        unfinished_business: 师父给他刻私章的真实用意
+        current_stance: 信但有所保留
+        evolution_trajectory: 师父真实身份揭穿 → 立场撕裂
+
+    signature_assets:
+      object: 银针袋（贴身右袖，针尾绑细线）+ 自刻私章（左袖里衬）
+      action: 压力下数物（屋角 / 脚步 / 在场人数）
+      phrase: 按程序 / 证据不能只剩在嘴上 / 数到第 N 角 我……
+      tic: 摸食指外沿旧疤（疤每次见死者喉间有灰就发痒）
+
+    weakness_and_killshot:
+      weakness_emotional: 七岁井底活下来的羞耻；觉得自己"不够格" 替沈家讨债
+      weakness_physical: 重瞳开第二重时会喉间见血 + 耗心血；连续开 3 次会昏
+      killshot: 任何让他重新经历"井底听见烧干净" 的场面会让他短暂失能
+      visibility_to_self: true（自知）
+      visibility_to_others: [master_maoshan]
+
+    voice_dna:
+      sentence_length_preference: short
+      vocabulary_register: 验尸员职业腔 + 民国书面化 + 偶尔茅山术语
+      forbidden_words:
+        - "我感到"
+        - "我心想"
+        - "我意识到"
+        - "想必"
+        - "肯定"  # 验尸员只信"已查实"
+        - "应该是"
+      signature_words:
+        - 按程序
+        - 现场
+        - 章 / 印
+        - 证物
+        - 一拍
+        - 喉结
+        - 旧疤
+      response_pattern_to_question: 先停一拍 → 再用对方的关键词反问
+      humor_type: 冷面（几乎不出现，但偶有一句反讽）
+      anger_expression: 喉结动 + 牙关咬死，从不大声
+      lie_pattern: 不说谎，但会说半句（"在能让上头看见的人手里了" 而不说具体是谁）
+
+  zhou_shensuan:
+    character_id: zhou_shensuan
+    display_name: 周神算
+    role: antagonist_supporting (本卷主反派之一)
+    age: 47
+    profession: 巡捕房探长 / 暗中归墟会渗透者
+
+    want_vs_need:
+      want: 把"十五年前沈家旧案" 永远封死，保住自己在归墟会的位置
+      need: 摆脱归墟会对他家人的胁迫；可他不敢
+      tension: 越想立功越要灭口；越灭口越被归墟会拿捏更紧
+
+    three_layer_motivation:
+      surface: 我是巡捕房探长，我维护租界秩序
+      hidden: 我替归墟会做事，因为他们答应保我女儿
+      suppressed: 我女儿早就死在 5 年前；归墟会把我留下来当"还有家人" 的傀儡——我自己也不愿相信她死了
+
+    values_and_redlines:
+      core_value: 别让我女儿出事（其实是别让我意识到她已经出事）
+      behavior_preference:
+        - 用规则压人（盖章 / 公文 / 程序）
+        - 借刀杀人（让林九韶 / 管家 / 年轻巡捕动手）
+        - 永远站在阴影里下指令
+      absolute_no:
+        - 不亲手杀人（亲手杀过一次后再没动过手）
+        - 不见血
+
+    unique_response_chain:
+      threat_from_authority:
+        step_1: 笑得更慢
+        step_2: 捻紫檀串到下一颗
+        step_3: 用"上头" 二字压回去
+      betrayal_by_close_one:
+        step_1: 眼角抽一下
+        step_2: 立刻撇清（"那是他自己的事")
+        step_3: 把背叛者递给归墟会
+      confrontation_with_villain:
+        step_1: 沉默
+        step_2: 在心里数自己手上还有几张牌
+        step_3: 让出半步，但把对方的破绽记下
+      small_victory:
+        step_1: 笑得更慢
+        step_2: 把紫檀串多捻一颗
+        step_3: 用一句"程序" 落锤
+
+    relationship_memory:
+      shen_qingya:
+        good_will: -0.4（不是恨，是"麻烦")
+        unfinished_business: 十五年前沈家旧案，他经手过一份盖章文件
+        current_stance: 不杀只压
+      master_at_guishu_hui:
+        good_will: -0.9（恨却怕）
+        unfinished_business: 女儿的生死被这个上级拿捏
+        current_stance: 跪着仰望
+      his_daughter:
+        good_will: +1.0
+        unfinished_business: 她到底是不是真活着？
+        current_stance: 不敢问
+
+    signature_assets:
+      object: 紫檀十八子手串（每数三颗捻一下）
+      action: 捻串 / 笑得很慢 / 用"程序" 落锤
+      phrase: 上头的章已经盖了 / 按程序
+      tic: 听见"上头" 二字时眉头会跳一下
+
+    weakness_and_killshot:
+      weakness_emotional: 女儿生死的悬疑
+      killshot: 任何关于"你女儿其实早就死了" 的具体证据
+      visibility_to_self: false（自己骗自己）
+      visibility_to_others: [boss_at_guishu_hui]
+
+    voice_dna:
+      sentence_length_preference: medium
+      vocabulary_register: 官场化 + 公文体
+      forbidden_words:
+        - 死  # 他绝口不提
+        - 杀
+      signature_words:
+        - 上头
+        - 按程序
+        - 盖章
+        - 闹事
+        - 上头已经
+      response_pattern_to_question: 不正面答，绕到"上头" / "程序"
+      humor_type: 无
+      anger_expression: 笑得更慢
+      lie_pattern: 总是说半句 + 用"上头" 当挡箭牌
+
+  the_fourth_man:
+    character_id: the_fourth_man
+    display_name: 第四人（暂代号 "归"）
+    role: ultimate_antagonist_volume_1
+    age: 未知（看似中年，霜冻鬓角）
+    profession: 归墟会"执令人"
+
+    want_vs_need:
+      want: 完成"归" 字封印的最后一道——把十五年前未死的"还债者" 全部带回井底
+      need: （suppressed 层）他自己也是十五年前井底"还债者" 之一，他在用别人偿还自己的债
+      tension: 他越完成任务，越离"自己也该被带回井底" 近一步
+
+    three_layer_motivation:
+      surface: 完成上面交代的任务
+      hidden: 让自己永远不必再下井
+      suppressed: 他知道自己其实早就该死在井里
+
+    values_and_redlines:
+      core_value: 不留活口（活口=债务追溯到我）
+      absolute_no:
+        - 不在白天露脸
+        - 不让自己的影子被人看见
+
+    unique_response_chain:
+      confrontation_with_villain:
+        step_1: 慢慢抬袖口
+        step_2: 露出"归" 字
+        step_3: 借身边活人的声音说话（不亲口）
+      witness_to_injustice:
+        step_1: 沉默
+        step_2: 等动手的时机
+        step_3: 借第三者的手做（永远不直接）
+
+    signature_assets:
+      object: 暗金线绣"归" 字（袖口内侧）
+      action: 无影子 / 借他人声音说话
+      phrase: 副捕头…… + 借尸 / 借周神算的声音说
+      tic: 帽檐压低；露出霜冻鬓角；脚下从无影
+
+    weakness_and_killshot:
+      weakness_emotional: 害怕被人指出"你自己也是债务人"
+      killshot: 让他自己看见自己的影子（这需要某种灵异条件）
+      visibility_to_self: true（自知，但深埋）
+      visibility_to_others: []
+
+    voice_dna:
+      sentence_length_preference: short（残句）
+      vocabulary_register: 古旧 / 借他人声音
+      forbidden_words: 自指词（"我 / 自己 / 在下"）—— 他永远不用"我"
+      signature_words: 副捕头 / 沈家 / 还债 / 到期
+      response_pattern_to_question: 不答，反问 / 用借来的声音再说一遍问题
+      anger_expression: 帽檐再压低一寸
+      lie_pattern: 不说谎，只说半句
+
+# =============================================================================
+# Critic 检测项（peer_author dimension 子项）
+# =============================================================================
+critic_checks:
+  dialogue_individuation_test:
+    description: |
+      把章内主角的每句对白挑出来，假设替换给"任意冷面专业型男主"。
+      如果替换后仍然成立 → 失败。
+      理想状态：每句对白都含 ≥ 1 个 voice_dna.signature_words 或 unique
+      pattern；换其他角色立刻别扭。
+    score_formula: |
+      per_dialogue_score = 1 if 含 voice_dna 标记 else 0
+      dialogue_individuation_score = avg(per_dialogue_score)
+      threshold ≥ 0.60
+
+  signature_density:
+    description: 章内 signature_assets（object / action / phrase / tic）出现次数
+    rule: 每章 ≥ 2 次（任意 4 项中的任意 2 次）
+
+  consistency_with_unique_response_chain:
+    description: |
+      章内主角面对的"刺激类型" 是否触发了对应的 unique_response_chain。
+      如果主角面对 confrontation_with_villain 却没有触发"step_1 眼神冷下来
+      → step_2 找破绽 → step_3 用银针指破绽" 的链 → 失败。
+
+  antagonist_dimensionality_check:
+    description: |
+      章内反派是否表现出 ≥ 1 条 voice_dna / signature_assets / three_layer_motivation 的具象细节
+      （而不是脸谱化的"笑得很慢 + 脸色变" 反复轮替）。
+      threshold ≥ 0.60
+
+# =============================================================================
+# Writer 注入接口
+# =============================================================================
+writer_injection:
+  per_scene_packet_addition: |
+    在 SceneWriterContextPacket 中加入：
+
+    【参与者 character_engine】
+    （每个本场参与者注入精简版 profile：voice_dna + signature_assets +
+    适用本场刺激类型的 unique_response_chain）
+
+    示例：
+      shen_qingya:
+        voice_dna: short / 验尸员腔 / forbidden=["我感到","肯定"]
+                  / signature_words=["按程序","现场","章/印","一拍"]
+                  / response_to_question="先停一拍 → 用对方关键词反问"
+        signature_action_today: 压力下数物
+        signature_phrase_today: "按程序"
+        unique_response_for_this_scene: confrontation_with_villain →
+                                       step_1 眼神冷 / step_2 找破绽 / step_3 用银针指破绽

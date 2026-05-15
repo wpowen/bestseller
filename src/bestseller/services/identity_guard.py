@@ -842,6 +842,10 @@ _ZH_PRONOUN_OBJECT_PREFIXES = (
     "带着",
     "跟着",
     "等着",
+    "顺着",
+    "沿着",
+    "随着",
+    "循着",
     "找到",
     "想到",
     "知道",
@@ -1050,8 +1054,12 @@ def _zh_wrong_pronoun_is_likely_subject(
     before = right_context[:wrong_pos]
     after = right_context[wrong_pos + len(wrong):]
     prefix = before[-5:]
+    normalized_prefix = re.sub(r"[了着过]+$", "", prefix)
 
-    if any(prefix.endswith(marker) for marker in _ZH_PRONOUN_OBJECT_PREFIXES):
+    if any(
+        prefix.endswith(marker) or normalized_prefix.endswith(marker)
+        for marker in _ZH_PRONOUN_OBJECT_PREFIXES
+    ):
         return False
 
     # If the wrong-gender pronoun starts a fresh sentence and that gender has

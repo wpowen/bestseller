@@ -1,0 +1,36 @@
+{
+  "source_id": "source-0148",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "style_safety_policy": "No craft patterns available for extraction — all source content returned LLM fallback stubs with zero confidence; no author voice, narrative mechanics, or stylistic signals present in source data.",
+  "pov_and_distance": "close-third or project-selected POV with controlled narrative distance",
+  "sentence_rhythm": [
+    "vary short action beats with medium explanatory sentences"
+  ],
+  "paragraphing": [
+    "keep paragraphs functional: action, reaction, or information turn"
+  ],
+  "dialogue_system": [
+    "use role-specific intent, subtext, and conflict pressure"
+  ],
+  "description_strategy": [
+    "describe only details that change stakes, mood, or reader inference"
+  ],
+  "exposition_strategy": [
+    "place exposition after visible need or conflict pressure"
+  ],
+  "emotional_temperature": [
+    "surface emotion through choices, body action, and withheld admission"
+  ],
+  "hooking_and_transitions": [
+    "end units on changed state, unresolved question, or sharper constraint"
+  ],
+  "adaptation_guidelines": [
+    "{'notes': 'No extractable author craft controls; source contains only structural stubs across all 122 chapters in 5 volumes; recommend seeking alternative source with actual narrative content for meaningful craft distillation.', 'fallback_reason': 'llm_fallback_batch — every chapter returned confidence 0.0 with empty craft_observations, reusable_mechanisms, reader_rewards, and open_hooks arrays'}"
+  ],
+  "taboo_copy_signals": [
+    "source titles, author names, exact phrases, named entities, and distinctive sentence templates"
+  ],
+  "confidence": 0.0,
+  "distillation_source_id": "source-0148"
+}

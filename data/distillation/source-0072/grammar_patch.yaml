@@ -1,0 +1,32 @@
+key: distillation-generic
+name: Generic Distillation Fallback Grammar Patch
+source_ids:
+- source-0072
+status: active
+applies_to_categories:
+- distillation-generic
+- fallback
+required_contracts:
+- DistillationFallbackContract
+state_variables:
+- fallback_progress
+- distillation_attempt_count
+- chapter_id
+chapter_change_vectors:
+- chapter: 1
+  vector: setup_fallback_context
+  description: Introduce scenario where source distillation fails, prompting fallback
+    mode.
+- chapter: 2
+  vector: apply_generic_distillation
+  description: Use generic distilled content to advance narrative without source-specific
+    details.
+reader_rewards:
+- distillable_mechanism_reliability
+- exploration_reward
+hook_or_aftereffect_types:
+- fallback_hook
+- generic_aftereffect
+forbidden_defaults:
+- strict_source_content
+- no_fallback

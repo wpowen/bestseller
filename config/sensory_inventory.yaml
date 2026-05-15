@@ -1,0 +1,255 @@
+# =============================================================================
+# Sensory Inventory · 场景物理感清单
+# =============================================================================
+# 目的：
+#   解决"场景失重"——multi-persona 在 ch2 抓出的"鬼抬轿描写偏概念化"
+#   这类问题。LLM 默认写场景只用视觉 + 概念词（"阴森 / 神秘 / 紧张"），
+#   缺其他 5 感 + 物理细节。
+#
+#   sensory_inventory 提供：
+#     1. 7 感官清单（视 / 听 / 嗅 / 触 / 温 / 重 / 空间感 / 时间感）
+#     2. 每种 scene_type 的"必带 ≥ 3 项" 要求
+#     3. 每项的"具体性测试"（不允许抽象形容词）
+#
+# 使用方式：
+#   1. writer 在每场写作前选 ≥ 3 项感官填入"本场感官清单"
+#   2. 写作时确保每项都用具体名物 + 动作承载（不允许"阴森"类抽象词）
+#   3. critic 跑 multi-persona 时，peer_author 的 sensory_detail 维度
+#      用此 yaml 做硬检
+# =============================================================================
+
+version: 2026.05.14
+
+# =============================================================================
+# 7 大感官维度
+# =============================================================================
+sensory_axes:
+
+  visual:
+    display: 视觉
+    require_specific:
+      - 不允许抽象形容词（阴森 / 神秘 / 美丽 / 丑陋 / 诡异）
+      - 必须用具体名物 + 物理特征（颜色 / 形状 / 大小 / 数量 / 方向）
+    examples:
+      good:
+        - "油灯矮了一寸。墙上的影子往尸台缩了三寸。"
+        - "井口新糊的糯米灰浆还未干透，像一圈刚缝上的伤口。"
+      bad:
+        - "验尸房气氛阴森。"
+        - "井口看起来很诡异。"
+
+  auditory:
+    display: 听觉
+    require_specific:
+      - 不允许"很安静 / 很吵 / 嘈杂"
+      - 必须有具体声源 + 音色 / 节奏 / 距离
+    examples:
+      good:
+        - "门外街上原本还在的早市叫卖声，一时间一个字也听不见。"
+        - "钥匙转动的声音在锁芯里停了一拍。"
+        - "桐油泼在地上，火折子嗤的一声灭了。"
+      bad:
+        - "屋外一片寂静。"
+        - "传来奇怪的声音。"
+
+  olfactory:
+    display: 嗅觉
+    require_specific:
+      - 不允许"难闻 / 香 / 臭"等抽象
+      - 必须指向具体来源 + 让读者能调出记忆
+    examples:
+      good:
+        - "桐油味太重，重到盖住了后院潮井的腥气。"
+        - "纸钱烧到最后，混着人皮油脂的焦甜。"
+      bad:
+        - "屋里有一股难闻的味道。"
+    why_priority: 嗅觉是网文最常被忽略的感官，加 1 个嗅觉描写立刻拉开氛围密度
+
+  tactile:
+    display: 触觉
+    require_specific:
+      - 不允许"冷 / 热 / 软 / 硬"单字抽象
+      - 必须带质地（粗 / 滑 / 黏 / 干 / 涩）+ 接触部位 + 反应
+    examples:
+      good:
+        - "灰浆还潮。"
+        - "他指腹拂过灰浆。"
+        - "血珠落地，地上的白灰被烫得滋滋作响。"
+      bad:
+        - "他觉得冷。"
+
+  thermal:
+    display: 温度感
+    require_specific:
+      - 不允许"冷 / 热"单字
+      - 必须带具体温度参照（如：体温 / 死人 / 余烬）
+    examples:
+      good:
+        - "后院门被推开，阴冷的气息扑面而来。"
+        - "热浪掀起白灰。"
+
+  weight_and_density:
+    display: 重量与质感
+    require_specific: 给重要物件一次"重量 / 密度 / 厚薄" 暗示
+    examples:
+      good:
+        - "银针入木三寸。"
+        - "齐口撕成两半。纸声很轻，几乎被门外的风吞掉。"
+      use_when: 关键物件出场时（证物 / 武器 / 信物）
+
+  spatial:
+    display: 空间感（多人物场景必带）
+    require_specific:
+      - 谁在谁的前面 / 后面 / 左侧 / 右侧
+      - 距离感（一步 / 三步 / 跨过门槛）
+      - 视线方向（谁看着谁 / 看不见谁）
+    examples:
+      good:
+        - "周神算先一步迈进来，身后跟着两个巡捕"
+        - "沈青崖的视线越过周神算的肩"
+        - "他左手压着尸体胸口，右手摊开"
+      bad:
+        - 几个人在房间里（无走位）
+
+  temporal:
+    display: 时间感
+    require_specific:
+      - 一场戏持续多久（一拍 / 三息 / 半盏茶）
+      - 节奏锚点（停顿 / 加速 / 急停）
+    examples:
+      good:
+        - "他的指尖停在死者喉骨上，停了一拍。只一拍。"
+        - "周神算盯着那半张纸看了三息。"
+        - "钥匙转到第三下，门哐地推开。"
+
+# =============================================================================
+# Per-Scene-Type Required Sensory
+# =============================================================================
+scene_type_requirements:
+
+  investigation_scene:
+    required_min: 4
+    must_include: [visual, tactile, olfactory]
+    nice_to_have: [auditory, weight_and_density, temporal]
+    rationale: 推理 / 验尸场景，物理细节决定可信度。嗅觉是民国验尸场景的标志
+
+  confrontation_scene:
+    required_min: 4
+    must_include: [spatial, auditory, temporal]
+    nice_to_have: [thermal, tactile]
+    rationale: 多人物对峙，空间感 + 声音 + 节奏决定张力
+
+  supernatural_scene:
+    required_min: 5
+    must_include: [visual, thermal, olfactory, auditory]
+    nice_to_have: [tactile, temporal]
+    rationale: 灵异场景，多感官叠加才能让读者"背脊发凉"
+
+  action_scene:
+    required_min: 4
+    must_include: [spatial, temporal, tactile]
+    nice_to_have: [auditory, weight_and_density]
+    rationale: 动作场景，空间 + 时间 + 触感决定可读性
+
+  dialogue_scene:
+    required_min: 3
+    must_include: [spatial, auditory]
+    nice_to_have: [visual, temporal]
+    rationale: 多角色对白，至少要给读者"听见 + 看见"
+
+  internal_scene:
+    required_min: 3
+    must_include: [tactile, temporal]
+    nice_to_have: [visual, thermal]
+    rationale: 内心戏要靠身体感承载（手指紧 / 喉结动 / 呼吸停）
+
+  worldbuilding_scene:
+    required_min: 4
+    must_include: [visual, olfactory, auditory]
+    nice_to_have: [tactile, temporal]
+    rationale: 世界观建立需要多感官沉浸
+
+# =============================================================================
+# Writer 检查表
+# =============================================================================
+writer_checklist: |
+  写完一场后，逐项确认：
+
+  [ ] 本场感官 ≥ scene_type_requirements 要求的最小数量
+  [ ] 必带感官全部命中
+  [ ] 每项感官都用具体名物 / 动作承载，无抽象形容词
+  [ ] 嗅觉 / 触觉 / 温度感至少有 1 项（不要全是视觉）
+  [ ] 多人物场景：空间走位清楚（前后左右 + 距离 + 视线）
+  [ ] 关键物件：有 ≥ 1 次重量 / 密度 / 厚薄描写
+
+# =============================================================================
+# Critic 检测项（peer_author dimension 子项）
+# =============================================================================
+critic_checks:
+  sensory_count:
+    description: 章内被命中的感官类型数
+    rule: |
+      投影章内每个 scene → scene_type → required_sensory
+      合计章节级的感官覆盖率
+      threshold ≥ 0.70（命中数 / 应命中数）
+
+  abstraction_violation:
+    description: 抽象感官词的滥用
+    banned_words:
+      - 阴森（用具体物件 / 影子 / 光线代替）
+      - 神秘
+      - 诡异
+      - 美丽
+      - 难闻
+      - 刺鼻
+      - 寂静
+      - 嘈杂
+      - 一片漆黑（用"油灯灭了" 这种物理事件）
+      - 一片光明
+      - 暖洋洋
+      - 冷飕飕
+    rule: 每个抽象词出现一次 → 扣 0.05
+    exception: 在角色对白中可以出现（角色可以说"这里好阴森"，但叙述不能）
+
+  spatial_clarity_in_multi_character:
+    description: 多人物场景的空间走位
+    rule: |
+      章内任何场景 person_count ≥ 3 → 必须有 ≥ 1 次空间标记
+      （前 / 后 / 左 / 右 / 距离 / 视线方向）
+      threshold ≥ 0.80
+
+# =============================================================================
+# 命中样例（《青崖诡事》ch1 现状分析）
+# =============================================================================
+audit_sample:
+  ch1_r2_sensory_breakdown:
+    visual:
+      hits: 高（油灯矮一寸 / 影子缩三寸 / 紫檀串 / 霜冻鬓角 / 金线 / 灰浆）
+      score: 0.90
+    auditory:
+      hits: 中（铁闩咔哒 / 钥匙转动 / 门哐推开 / 油灯啪灭）
+      score: 0.80
+    olfactory:
+      hits: 低（只有"焦甜"——纸钱+人皮油脂—— 1 次）
+      score: 0.55
+    tactile:
+      hits: 中（指腹拂过灰浆 / 喉结动 / 太阳穴跳）
+      score: 0.75
+    thermal:
+      hits: 低（只有"阴冷的气息"——但太抽象）
+      score: 0.45
+    weight_and_density:
+      hits: 中（齐口撕成两半 / 银针入木三寸）
+      score: 0.75
+    spatial:
+      hits: 中（视线越过周神算的肩 / 第四人在身后 / 钥匙转动）
+      score: 0.75
+    temporal:
+      hits: 高（两个时辰 / 停了一拍 / 三息 / 第三下）
+      score: 0.85
+  weak_points:
+    - olfactory 偏弱（只 1 处）—— 验尸场景应该多嗅觉
+    - thermal 偏弱（"阴冷的气息" 太抽象，需具体）
+  refinement_suggestions:
+    - 加 1 处嗅觉（如：验尸时鼻间一直有"福尔马林 + 死人喉头干灰" 的味道）
+    - 把"阴冷的气息" 改为具体温度感（如："井底吹上来的风，比验尸房的油灯还低三分"）

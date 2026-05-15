@@ -1,0 +1,41 @@
+{
+  "book_id": "source-0029",
+  "source_ref": "distillation:c133d663976f2d68db5c1a73",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "parsed_profile": {
+    "distillation_status": "failed",
+    "failure_reason": "all_source_chapters_llm_fallback_stub",
+    "confidence": 0.0,
+    "volumes_processed": 11,
+    "volumes_with_content": 0,
+    "total_chapters_attempted": 257,
+    "chapters_with_data": 0,
+    "extraction_notes": "Zero extractable story content across entire source batch. All chapter_cards returned LLM unavailable fallback stubs with empty arrays. No reusable mechanisms, reader rewards, state progression, or craft observations could be derived. Book design card reflects data absence rather than narrative structure."
+  },
+  "genre_tags": [
+    "distillation-generic"
+  ],
+  "reader_promise": "LLM structured distillation fallback.",
+  "core_engine": "unknown",
+  "state_variables": [
+    "fallback_progress"
+  ],
+  "reader_rewards": [
+    "distillable_mechanism_reliability"
+  ],
+  "reusable_mechanisms": [
+    "fallback mechanism abstraction"
+  ],
+  "non_reusable_specifics": [],
+  "risk_patterns": [
+    "llm_fallback_all_chapters",
+    "zero_confidence_across_source_batch",
+    "no_extractable_content",
+    "aggregation_blocked_by_stub_input",
+    "distillation_impossible_without_source_content",
+    "no_reader_rewards_open_hooks_or_craft_observations_recorded"
+  ],
+  "source_id": "source-0029",
+  "distillation_source_id": "source-0029"
+}

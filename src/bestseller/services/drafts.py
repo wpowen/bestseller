@@ -10,58 +10,72 @@ from uuid import UUID
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from bestseller.domain.enums import ChapterStatus, SceneStatus
 from bestseller.domain.context import SceneWriterContextPacket
+from bestseller.domain.enums import ChapterStatus, SceneStatus
 from bestseller.infra.db.models import (
-    ChaseDebtModel,
     ChapterDraftVersionModel,
     ChapterModel,
     ChapterQualityReportModel,
     CharacterModel,
+    ChaseDebtModel,
     OverrideContractModel,
     ProjectModel,
     SceneCardModel,
     SceneDraftVersionModel,
     StyleGuideModel,
 )
-from bestseller.services.context import build_scene_writer_context_from_models
 from bestseller.services.canon_guardrails import load_canon_guardrails_for_project
+from bestseller.services.chapter_validator import classify_cliffhanger
+from bestseller.services.context import build_scene_writer_context_from_models
+from bestseller.services.character_intelligence.optimizer import (
+    optimize_project_character_profiles,
+)
+from bestseller.services.diversity_budget import (
+    load_diversity_budget,
+    save_diversity_budget,
+)
+from bestseller.services.invariants import InvariantSeedError, invariants_from_dict
 from bestseller.services.llm import LLMCompletionRequest, complete_text
 from bestseller.services.methodology import (
     render_methodology_scene_rules,
     render_qimao_opening_contract_block,
-)
-from bestseller.services.prompt_packs import (
-    render_methodology_block,
-    render_prompt_pack_fragment,
-    render_prompt_pack_prompt_block,
-    resolve_prompt_pack,
-)
-from bestseller.services.projects import get_project_by_slug
-from bestseller.services.invariants import InvariantSeedError, invariants_from_dict
-from bestseller.services.chapter_validator import classify_cliffhanger
-from bestseller.services.diversity_budget import (
-    load_diversity_budget,
-    save_diversity_budget,
 )
 from bestseller.services.output_validator import (
     OutputValidator,
     QualityReport,
     ValidationContext,
 )
+from bestseller.services.projects import get_project_by_slug
+from bestseller.services.prompt_packs import (
+    render_methodology_block,
+    render_prompt_pack_fragment,
+    render_prompt_pack_prompt_block,
+    resolve_prompt_pack,
+)
 from bestseller.services.quality_gates_config import (
     build_validator_from_config,
     get_quality_gates_config,
 )
+from bestseller.services.quality_levers import (
+    WriterLeverContext,
+    build_writer_quality_levers_block,
+    extract_quality_levers_meta,
+)
+from bestseller.services.quality_levers.character_engine import (
+    collect_forbidden_words_from_profiles,
+    collect_signature_words_from_profiles,
+    render_character_engine_profile_block,
+)
+from bestseller.services.quality_levers.detectors import audit_chapter
 from bestseller.services.regen_loop import (
     DEFAULT_BUDGET_PER_CHAPTER,
     GlobalBudget,
     RegenerationExhausted,
     regenerate_until_valid,
 )
+from bestseller.services.story_bible import load_scene_story_bible_context
 from bestseller.services.write_gate import filter_blocking
 from bestseller.services.write_safety_gate import WriteSafetyFinding
-from bestseller.services.story_bible import load_scene_story_bible_context
 from bestseller.services.writing_profile import (
     is_english_language,
     normalize_language,
@@ -70,7 +84,6 @@ from bestseller.services.writing_profile import (
     resolve_writing_profile,
 )
 from bestseller.settings import AppSettings, load_settings
-
 
 _REPAIR_CODE_ALIASES: dict[str, str] = {
     "CHAPTER_LENGTH_BLOCK_LOW": "BLOCK_LOW",
@@ -496,6 +509,107 @@ async def _auto_sign_override_contracts(
     return persisted
 
 
+def _iter_character_voice_aliases(character: CharacterModel) -> tuple[str, ...]:
+    names: list[str] = []
+
+    def add(value: object) -> None:
+        text = str(value).strip() if value is not None else ""
+        if text and len(text) >= 2 and text not in names:
+            names.append(text)
+
+    add(getattr(character, "name", None))
+    metadata = getattr(character, "metadata_json", None)
+    if not isinstance(metadata, dict):
+        return tuple(names)
+    cast_entry = metadata.get("cast_entry")
+    if isinstance(cast_entry, dict):
+        for alias in cast_entry.get("aliases") or ():
+            add(alias)
+    for alias in metadata.get("aliases") or ():
+        add(alias)
+    profile = metadata.get("character_engine_profile")
+    if isinstance(profile, dict):
+        add(profile.get("display_name"))
+        add(profile.get("character_id"))
+    return tuple(names)
+
+
+async def _load_active_character_engine_profiles(
+    session: AsyncSession,
+    *,
+    project_id: UUID,
+    content: str,
+) -> tuple[dict[str, Any], ...]:
+    rows = list(
+        await session.scalars(
+            select(CharacterModel).where(CharacterModel.project_id == project_id)
+        )
+    )
+    profiles: list[dict[str, Any]] = []
+    for character in rows:
+        aliases = _iter_character_voice_aliases(character)
+        if not any(alias and alias in content for alias in aliases):
+            continue
+        metadata = character.metadata_json if isinstance(character.metadata_json, dict) else {}
+        profile = metadata.get("character_engine_profile")
+        if isinstance(profile, dict):
+            profiles.append(dict(profile))
+    return tuple(profiles)
+
+
+def _character_voice_audit_payload(
+    content: str,
+    *,
+    platform: str | None,
+    profiles: tuple[dict[str, Any], ...],
+) -> dict[str, Any] | None:
+    if not profiles:
+        return None
+    signature_words = collect_signature_words_from_profiles(profiles)
+    forbidden_words = collect_forbidden_words_from_profiles(profiles)
+    if not signature_words and not forbidden_words:
+        return None
+    signature_threshold = max(1, min(6, len(profiles) * 2))
+    audit = audit_chapter(
+        content,
+        platform=platform,
+        signature_words=signature_words,
+        signature_threshold=signature_threshold,
+        forbidden_words=forbidden_words,
+    )
+    signature = audit.signature_density
+    forbidden = audit.forbidden_voice
+    return {
+        "active_characters": [
+            str(profile.get("display_name") or profile.get("character_id") or "").strip()
+            for profile in profiles
+            if str(profile.get("display_name") or profile.get("character_id") or "").strip()
+        ],
+        "signature_words": list(signature_words[:50]),
+        "forbidden_words": list(forbidden_words[:50]),
+        "signature_density": (
+            {
+                "total_hits": signature.total_hits,
+                "threshold": signature.threshold,
+                "passed": signature.passed,
+                "hits": list(signature.hits),
+            }
+            if signature is not None
+            else None
+        ),
+        "forbidden_voice": (
+            {
+                "total_hits": forbidden.total_hits,
+                "threshold": forbidden.threshold,
+                "passed": forbidden.passed,
+                "hits": list(forbidden.hits),
+            }
+            if forbidden is not None
+            else None
+        ),
+    }
+
+
 async def _evaluate_chapter_quality_gate(
     *,
     session: AsyncSession,
@@ -660,6 +774,31 @@ async def _evaluate_chapter_quality_gate(
         canon_guardrails=canon_guardrails,
     )
     report = validator.validate(content, ctx)
+    character_voice_payload: dict[str, Any] | None = None
+    try:
+        _voice_profiles = await _load_active_character_engine_profiles(
+            session,
+            project_id=project.id,
+            content=content,
+        )
+        _project_meta = project.metadata_json if isinstance(project.metadata_json, dict) else {}
+        _platform = (
+            str(_project_meta.get("target_platform") or "").strip()
+            or getattr(project, "platform_target", None)
+            or None
+        )
+        character_voice_payload = _character_voice_audit_payload(
+            content,
+            platform=_platform,
+            profiles=_voice_profiles,
+        )
+    except Exception:  # pragma: no cover - telemetry, never fails the gate
+        logger.debug(
+            "character voice audit failed for project %s chapter %d",
+            project.id,
+            chapter_number,
+            exc_info=True,
+        )
 
     blocking = filter_blocking(
         report, gates_cfg.l6_gate, chapter_no=chapter_number
@@ -814,6 +953,9 @@ async def _evaluate_chapter_quality_gate(
     _extra_payload: dict[str, Any] | None = None
     if length_report_payload is not None:
         _extra_payload = {"length_stability": length_report_payload}
+    if character_voice_payload is not None:
+        _extra_payload = dict(_extra_payload or {})
+        _extra_payload["character_voice"] = character_voice_payload
     await _persist_chapter_quality_report(
         session,
         project_id=project.id,
@@ -2483,6 +2625,18 @@ def _render_story_bible_section(
                 + "\n".join(depth_lines)
             )
 
+        character_engine_profiles = [
+            item.get("character_engine_profile")
+            for item in participants[:6]
+            if isinstance(item.get("character_engine_profile"), dict)
+        ]
+        character_engine_block = render_character_engine_profile_block(
+            character_engine_profiles,
+            max_profiles=4,
+        )
+        if character_engine_block:
+            lines.append(character_engine_block)
+
         voice_lines: list[str] = []
         for item in participants[:8]:
             vp = item.get("voice_profile") or {}
@@ -3460,6 +3614,9 @@ def build_scene_draft_prompts(
     rule_system_context_block: str | None = None,
     faction_ecology_context_block: str | None = None,
     relationship_agency_context_block: str | None = None,
+    entry_system_context_block: str | None = None,
+    entry_registry_context_block: str | None = None,
+    entry_state_ledger_block: str | None = None,
     # Opening diversity block: list of (chapter_number, opening_snippet) for recent chapters
     opening_diversity_block: str | None = None,
     # Stage A — conflict diversity (per-scene, all scenes)
@@ -3668,6 +3825,43 @@ def build_scene_draft_prompts(
             if _methodology_pack_block
             else f"{_methodology_rules}\n\n"
         )
+    # Quality-levers writer block (Steps A-D YAML-driven contracts).
+    # Pulls every applicable lever for the chapter into one prompt fragment;
+    # extract_quality_levers_meta tolerates missing / malformed keys so the
+    # writer prompt always degrades gracefully when meta.yaml is empty.
+    try:
+        _levers_meta = extract_quality_levers_meta(_project_meta)
+        _quality_levers_block = build_writer_quality_levers_block(
+            WriterLeverContext(
+                chapter_number=chapter.chapter_number,
+                language=language or "zh-CN",
+                platform=(
+                    _levers_meta.target_platform
+                    or getattr(writing_profile.market, "platform_target", None)
+                ),
+                style_anchors=_levers_meta.style_anchors,
+                chapter_positions=_levers_meta.positions_for_chapter(
+                    chapter.chapter_number
+                ),
+                participating_character_ids=_levers_meta.character_profile_ids,
+                participating_character_profiles=_levers_meta.character_profiles,
+                chapter_role="hook_chapter" if chapter.chapter_number <= 3 else "ordinary_chapter",
+                rejection_cause_ids=tuple(
+                    str(item) for item in (_rejection_reasons or ()) if str(item).strip()
+                ),
+                distilled_strategy_card=(
+                    _project_meta.get("distilled_strategy_card")
+                    if isinstance(_project_meta.get("distilled_strategy_card"), dict)
+                    else None
+                ),
+                emotion_driven_kernel=_levers_meta.emotion_driven_kernel,
+            )
+        )
+    except Exception:
+        # Quality levers must never break the existing draft path.
+        _quality_levers_block = ""
+    if _quality_levers_block:
+        _methodology_line += f"{_quality_levers_block}\n\n"
     _qimao_opening_contract_line = ""
     _qimao_opening_contract_block = render_qimao_opening_contract_block(
         _project_meta.get("opening_quality_contract") or _project_meta.get("qimao_opening_contract"),
@@ -3742,6 +3936,15 @@ def build_scene_draft_prompts(
     _relationship_agency_line = ""
     if relationship_agency_context_block:
         _relationship_agency_line = f"{relationship_agency_context_block}\n\n"
+    _entry_system_line = ""
+    if entry_system_context_block:
+        _entry_system_line = f"{entry_system_context_block}\n\n"
+    _entry_registry_line = ""
+    if entry_registry_context_block:
+        _entry_registry_line = f"{entry_registry_context_block}\n\n"
+    _entry_state_ledger_line = ""
+    if entry_state_ledger_block:
+        _entry_state_ledger_line = f"{entry_state_ledger_block}\n\n"
 
     # Stage A — conflict diversity (ALL scenes, not just scene 1)
     _conflict_diversity_line = ""
@@ -3939,6 +4142,9 @@ def build_scene_draft_prompts(
             "rule_system_line": _rule_system_line,
             "faction_ecology_line": _faction_ecology_line,
             "relationship_agency_line": _relationship_agency_line,
+            "entry_system_line": _entry_system_line,
+            "entry_registry_line": _entry_registry_line,
+            "entry_state_ledger_line": _entry_state_ledger_line,
             "conflict_diversity_line": _conflict_diversity_line,
             "scene_purpose_line": _scene_purpose_line,
             "env_diversity_line": _env_diversity_line,
@@ -3999,6 +4205,9 @@ def build_scene_draft_prompts(
     _rule_system_line = _ctx["rule_system_line"]
     _faction_ecology_line = _ctx["faction_ecology_line"]
     _relationship_agency_line = _ctx["relationship_agency_line"]
+    _entry_system_line = _ctx["entry_system_line"]
+    _entry_registry_line = _ctx["entry_registry_line"]
+    _entry_state_ledger_line = _ctx["entry_state_ledger_line"]
     _conflict_diversity_line = _ctx["conflict_diversity_line"]
     _scene_purpose_line = _ctx["scene_purpose_line"]
     _env_diversity_line = _ctx["env_diversity_line"]
@@ -4062,6 +4271,9 @@ def build_scene_draft_prompts(
             f"{_rule_system_line}"
             f"{_faction_ecology_line}"
             f"{_relationship_agency_line}"
+            f"{_entry_system_line}"
+            f"{_entry_registry_line}"
+            f"{_entry_state_ledger_line}"
             f"{_phrase_avoidance_line}"
             f"{_opening_diversity_line}"
             f"{_budget_diversity_line}"
@@ -4146,6 +4358,9 @@ def build_scene_draft_prompts(
             f"{_rule_system_line}"
             f"{_faction_ecology_line}"
             f"{_relationship_agency_line}"
+            f"{_entry_system_line}"
+            f"{_entry_registry_line}"
+            f"{_entry_state_ledger_line}"
             f"{_phrase_avoidance_line}"
             f"{_opening_diversity_line}"
             f"{_budget_diversity_line}"
@@ -4541,6 +4756,14 @@ async def generate_scene_draft(
             f"Scene {scene_number} was not found in chapter {chapter_number} for '{project_slug}'."
         )
 
+    try:
+        await optimize_project_character_profiles(session, project)
+    except Exception:
+        logger.debug(
+            "Character intelligence optimization failed before scene draft",
+            exc_info=True,
+        )
+
     effective_settings = settings or load_settings()
     if getattr(effective_settings.pipeline, "require_pre_draft_scene_contract", True):
         from bestseller.services.identity_guard import load_identity_registry
@@ -4723,6 +4946,27 @@ async def generate_scene_draft(
                 context_packet.relationship_agency_context_block = (
                     _premium_blocks.relationship_agency_context_block
                 )
+            if (
+                _premium_blocks.entry_system_context_block
+                and not context_packet.entry_system_context_block
+            ):
+                context_packet.entry_system_context_block = (
+                    _premium_blocks.entry_system_context_block
+                )
+            if (
+                _premium_blocks.entry_registry_context_block
+                and not context_packet.entry_registry_context_block
+            ):
+                context_packet.entry_registry_context_block = (
+                    _premium_blocks.entry_registry_context_block
+                )
+            if (
+                _premium_blocks.entry_state_ledger_block
+                and not context_packet.entry_state_ledger_block
+            ):
+                context_packet.entry_state_ledger_block = (
+                    _premium_blocks.entry_state_ledger_block
+                )
             if _premium_blocks.warnings:
                 context_packet.contradiction_warnings.extend(
                     f"[精品类型引擎] {warning}" for warning in _premium_blocks.warnings
@@ -4856,6 +5100,15 @@ async def generate_scene_draft(
             ),
             relationship_agency_context_block=(
                 context_packet.relationship_agency_context_block if context_packet else None
+            ),
+            entry_system_context_block=(
+                context_packet.entry_system_context_block if context_packet else None
+            ),
+            entry_registry_context_block=(
+                context_packet.entry_registry_context_block if context_packet else None
+            ),
+            entry_state_ledger_block=(
+                context_packet.entry_state_ledger_block if context_packet else None
             ),
             opening_diversity_block=(
                 context_packet.opening_diversity_block if context_packet else None
@@ -5622,6 +5875,7 @@ async def maybe_prepare_chapter_auto_repair(
             + "。"
         )
     _canon_violation_details: list[str] = []
+    _canon_state_regression_details: list[str] = []
     _naming_violation_details: list[str] = []
     for _violation in payload.get("violations") or ():
         if not isinstance(_violation, dict):
@@ -5630,6 +5884,8 @@ async def maybe_prepare_chapter_auto_repair(
         _code = str(_violation.get("code") or "")
         if _code == "CANON_FORBIDDEN_TERM" and _detail:
             _canon_violation_details.append(_detail)
+        if _code == "CANON_STATE_REGRESSION" and _detail:
+            _canon_state_regression_details.append(_detail)
         if _code == "NAMING_OUT_OF_POOL" and _detail:
             _naming_violation_details.append(_detail)
 
@@ -5737,6 +5993,19 @@ async def maybe_prepare_chapter_auto_repair(
             "本次重写必须删除这些词及其关联体系，"
             "改用当前项目设定中的正典称谓和规则；不要解释旧设定、不要把旧体系合理化，"
             "只保留当前章节需要的信息和冲突。"
+        )
+    if "CANON_STATE_REGRESSION" in canonical_hits:
+        _canon_state_detail_note = (
+            "具体命中：" + "；".join(_canon_state_regression_details) + "。"
+            if _canon_state_regression_details
+            else ""
+        )
+        hint_fragments.append(
+            f"上一版本把已经锁定的正典人物状态、亲属关系或事件顺序写回了旧版本。"
+            f"{_canon_state_detail_note}"
+            "本次重写必须按当前正典修正这些称谓和关系：不得把父亲写成爷爷/祖父，"
+            "不得把先祖、父亲、爷爷等身份混用；不要解释错误版本，直接用正确关系重写相关句子，"
+            "并保持本章核心冲突、信息揭示和结尾钩子继续推进。"
         )
     if "NAMING_OUT_OF_POOL" in canonical_hits:
         _naming_detail_note = (

@@ -1,0 +1,37 @@
+{
+  "source_id": "source-0004",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "style_safety_policy": "Medium-risk surface elements: protagonist's violent jealousy response and graphic supernatural content require reader expectation calibration. Cultural-historical setting (political upheaval backstory) demands contextual framing. Moral complexity of protagonist exploitation of unaware assets necessitates reader sympathy anchors through backstory revelation.",
+  "pov_and_distance": "Protagonist interiority dominates rivalry-confrontation sequences, granting reader access to jealousy trigger mechanics and deeper mission motivation. Distance contracts to near-physical sensation during confrontation escalation, then expands to theatrical observation when spectator presence transforms conflict into public performance. Ritual execution scenes employ selective omniscience to deliver system mechanics without protagonist perspective loss—rules revealed through what protagonist executes, not what protagonist knows. Backstory exposition operates at maximum distance (narrated past) with emotional temperature injection at reveal payoff moment.",
+  "sentence_rhythm": [
+    "Confrontation sequences deploy staccato architecture: short declarative sentences accumulate through physical action beats, then fragment into single-word or single-phrase paragraphs at escalation peaks. Ritual exposition breaks rhythm intentionally—longer, measured sentences with procedural subordination establish system authority and slow reader pulse before next confrontation spike. Love interest dialogue maintains controlled, slightly elevated register that reads as manipulation; rival's contrasting approach maps to different sentence music (longer, more elaborate constructions signaling foreign/charming contrast). Dramatic exit spectacle returns to fragmentation, with isolated single-sentence paragraphs signaling departure punctuation."
+  ],
+  "paragraphing": [
+    "Tension escalation achieved through progressive paragraph compression—each successive paragraph shorter than the last as confrontation approaches peak. Ritual scenes reverse pattern: paragraphs expand in procedural detail, accumulating technical specificity. Scene transitions marked by white space or horizontal rule (chapter break equivalence). Spectator entrance signaled by rapid alternation between protagonist internal paragraph and external witness paragraph, creating dual-tracking rhythm that mirrors spectacle pressure. Emotional resolution moments (dominance display completion, mercy pattern activation) use isolated single-sentence paragraphs for emphasis weight."
+  ],
+  "dialogue_system": [
+    "Dialogue operates as behavioral catalyst rather than characterization vehicle—speech reveals intent through action rather than interiority. Love interest speech patterns deploy strategic ambiguity and deliberate provocation, forcing protagonist (and reader) to interpret behavioral meaning rather than accept verbal statement. Rival's dialogue functions as challenge contrast, using different register (foreign/charming elaboration vs protagonist's traditional directness) to amplify approach differentiation. Spectator dialogue creates coercive pressure through collective voice accumulation—individual speakers merge into audience demand entity. Protagonist dialogue limited during confrontation escalation; emotion externalized through action tags and physical response rather than verbal articulation. Mercy pattern activation requires love interest dialogue to shift register unexpectedly (compassion emerging from established manipulation pattern), creating reader recalibration moment."
+  ],
+  "description_strategy": [
+    "Supernatural elements described through procedural demonstration rather than declarative exposition—ritual mechanics revealed through step-by-step execution with technical specificity (materials, positioning, sequence, verbal command structure). Emotional states conveyed through physical symptomology: jealousy as visible physiological response triggering action, not as introspective state requiring description. Contrasting approaches (dominance vs charming) mapped to visual/behavioral description rather than dialogue content. Spectacle elements described from external observer angle when witnesses present, forcing protagonist interiority into performance mode. Mercy pattern requires description of micro-behavior—love interest gesture toward defeated rival as physical pivot point creating relationship tension."
+  ],
+  "exposition_strategy": [
+    "Ghost cultivation system mechanics delivered through embedded ritual execution—the reader learns rules by watching protagonist apply them under real stakes. Backstory motivation functions as delayed exposition with high-yield payoff: protagonist behavior contextualized retroactively, transforming understanding of jealousy trigger. Hidden agenda operates as concurrent exposition thread, revealed incrementally through confrontation triggers rather than delivered in single exposition dump. System gaps deliberately maintained: time constraints, resource limitations, and access mechanics function as unanswered questions driving reader engagement. Spectator presence provides natural exposition vector—system rules explained when needed for audience comprehension, masking the exposition delivery mechanism."
+  ],
+  "emotional_temperature": [
+    "Dual-temperature architecture: rivalry-confrontation sequences operate at escalating heat (tension → jealousy → physical confrontation → dominance resolution), while supernatural mission elements maintain cooler precision (system logic, ritual procedure, underworld mechanics). Emotional payoff moments occur at intersection—backstory reveal during confrontation heat creates temperature spike. Love"
+  ],
+  "distillation_source_id": "source-0004",
+  "hooking_and_transitions": [
+    "end units on changed state, unresolved question, or sharper constraint"
+  ],
+  "adaptation_guidelines": [
+    "translate craft controls into the new project's genre, cast, and premise",
+    "change imagery fields, sentence signatures, names, and scenario chains"
+  ],
+  "taboo_copy_signals": [
+    "source titles, author names, exact phrases, named entities, and distinctive sentence templates"
+  ],
+  "confidence": 0.0
+}

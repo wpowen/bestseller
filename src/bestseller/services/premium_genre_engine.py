@@ -8,6 +8,15 @@ from bestseller.services.decision_policy import (
     build_decision_policy_block,
     cautious_survival_policy,
 )
+from bestseller.services.entry_registry import (
+    entry_registry_from_dict,
+    render_entry_registry_prompt_block,
+)
+from bestseller.services.entry_state_ledger import (
+    apply_entry_events,
+    render_entry_state_ledger_block,
+)
+from bestseller.services.entry_system_kernel import render_entry_system_kernel_prompt_block
 from bestseller.services.progression import (
     build_progression_context_block,
     materialize_progression_context,
@@ -24,6 +33,9 @@ class PremiumGenreEngineBlocks:
     rule_system_context_block: str = ""
     faction_ecology_context_block: str = ""
     relationship_agency_context_block: str = ""
+    entry_system_context_block: str = ""
+    entry_registry_context_block: str = ""
+    entry_state_ledger_block: str = ""
     warnings: tuple[str, ...] = ()
 
 
@@ -268,6 +280,69 @@ def _premium_state_ledger_report_warnings(
         if code:
             warnings.append(f"premium_state_ledger:{code}")
     return tuple(warnings)
+
+
+def _build_entry_system_context_blocks(
+    metadata: Mapping[str, object],
+    story_bible_context: Mapping[str, object],
+) -> tuple[str, str, str, tuple[str, ...]]:
+    warnings: list[str] = []
+    kernel_block = ""
+    registry_block = ""
+    ledger_block = ""
+    kernel_payload = _as_mapping(
+        metadata.get("entry_system_kernel") or story_bible_context.get("entry_system_kernel")
+    )
+    if kernel_payload:
+        try:
+            kernel_block = render_entry_system_kernel_prompt_block(kernel_payload)
+        except Exception as exc:
+            warnings.append(f"entry_system_kernel_invalid:{exc.__class__.__name__}")
+
+    registry_payload = _as_mapping(
+        metadata.get("entry_registry") or story_bible_context.get("entry_registry")
+    )
+    registry = None
+    if registry_payload:
+        try:
+            registry = entry_registry_from_dict(registry_payload)
+            registry_block = render_entry_registry_prompt_block(registry)
+        except Exception as exc:
+            warnings.append(f"entry_registry_invalid:{exc.__class__.__name__}")
+
+    snapshot_payload = _as_mapping(
+        metadata.get("entry_state_snapshot") or story_bible_context.get("entry_state_snapshot")
+    )
+    ledger_payload = _as_mapping(
+        metadata.get("entry_state_ledger") or story_bible_context.get("entry_state_ledger")
+    )
+    if snapshot_payload:
+        try:
+            ledger_block = render_entry_state_ledger_block(snapshot_payload)
+            if registry is not None:
+                registry_block = render_entry_registry_prompt_block(
+                    registry,
+                    current_state=snapshot_payload,
+                )
+        except Exception as exc:
+            warnings.append(f"entry_state_snapshot_invalid:{exc.__class__.__name__}")
+    elif registry is not None and ledger_payload:
+        events = (
+            ledger_payload.get("events")
+            or ledger_payload.get("entry_events")
+            or ledger_payload.get("state_events")
+        )
+        try:
+            snapshot = apply_entry_events(registry, _as_sequence(events))
+            ledger_block = render_entry_state_ledger_block(snapshot)
+            registry_block = render_entry_registry_prompt_block(
+                registry,
+                current_state=snapshot,
+            )
+        except Exception as exc:
+            warnings.append(f"entry_state_ledger_invalid:{exc.__class__.__name__}")
+
+    return kernel_block, registry_block, ledger_block, tuple(warnings)
 
 
 def _extract_world_spec(metadata: Mapping[str, object]) -> dict[str, object]:
@@ -1251,12 +1326,22 @@ def build_premium_genre_engine_blocks(
         language=language,
     )
     warnings.extend(relationship_warnings)
+    (
+        entry_system_block,
+        entry_registry_block,
+        entry_state_ledger_block,
+        entry_warnings,
+    ) = _build_entry_system_context_blocks(metadata, story_context)
+    warnings.extend(entry_warnings)
     return PremiumGenreEngineBlocks(
         progression_context_block=progression_block,
         decision_policy_block=decision_block,
         rule_system_context_block=rule_block,
         faction_ecology_context_block=faction_block,
         relationship_agency_context_block=relationship_block,
+        entry_system_context_block=entry_system_block,
+        entry_registry_context_block=entry_registry_block,
+        entry_state_ledger_block=entry_state_ledger_block,
         warnings=tuple(warnings),
     )
 

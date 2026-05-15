@@ -1,0 +1,35 @@
+key: distillation-generic
+name: Fallback Distillation Grammar Patch
+source_ids:
+- source-0124
+status: critical_fallback_patch
+applies_to_categories:
+- distillation-generic
+required_contracts:
+- fallback_content_guaranteed
+- mechanism_abstraction_valid
+- reader_reward_accessible_without_raw_content
+state_variables:
+- fallback_progress
+- extraction_failure_acknowledged
+- abstraction_depth_level
+chapter_change_vectors:
+- trigger: zero_extraction
+  vector: fallback_to_abstraction_layer
+- trigger: high_abstraction
+  vector: mechanism_reliability_focus
+reader_rewards:
+- distillable_mechanism_reliability
+- abstraction_understanding
+- transferable_insight
+hook_or_aftereffect_types:
+- type: hook
+  value: mechanism_discovery_hook
+- type: aftereffect
+  value: abstraction_competency_gain
+forbidden_defaults:
+- raw_content_expectation
+- specific_scene_promises
+- detailed_narrative_hooks
+- character_specific_rewards
+- volume_completion_guarantees

@@ -1,0 +1,36 @@
+{
+  "source_id": "source-0116",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "style_safety_policy": "No source content; safety analysis not applicable.",
+  "pov_and_distance": "No data – POV and narrative distance cannot be determined.",
+  "sentence_rhythm": [
+    "No data – sentence rhythm cannot be characterized."
+  ],
+  "paragraphing": [
+    "No data – paragraph structure cannot be characterized."
+  ],
+  "dialogue_system": [
+    "No data – dialogue mechanics cannot be characterized."
+  ],
+  "description_strategy": [
+    "No data – description strategy cannot be characterized."
+  ],
+  "exposition_strategy": [
+    "No data – exposition placement cannot be characterized."
+  ],
+  "emotional_temperature": [
+    "No data – emotional temperature cannot be characterized."
+  ],
+  "hooking_and_transitions": [
+    "No data – hook and transition patterns cannot be identified."
+  ],
+  "adaptation_guidelines": [
+    "Manual extraction of source material required to generate adaptation guidelines."
+  ],
+  "taboo_copy_signals": [
+    "No content; no taboo copy signals present."
+  ],
+  "confidence": 0.0,
+  "distillation_source_id": "source-0116"
+}

@@ -1,0 +1,21 @@
+key: distillation-generic
+name: Distillation Generic Fallback Design
+source_ids:
+- source-0043
+status: draft_review
+applies_to_categories:
+- distillation-generic
+required_contracts:
+- no_content_assertion
+- fallback_mechanism_compliance
+state_variables:
+- fallback_progress
+chapter_change_vectors: []
+reader_rewards:
+- distillable_mechanism_reliability
+hook_or_aftereffect_types: []
+forbidden_defaults:
+- narrative_content_assumption
+- craft_observation_extraction
+- story_mechanic_inference
+- chapter_specific_reward_assignment

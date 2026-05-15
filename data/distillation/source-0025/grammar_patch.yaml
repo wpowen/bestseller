@@ -1,0 +1,32 @@
+key: distillation-generic
+name: Distillation Failure Fallback Pattern
+source_ids:
+- source-0025
+status: invalid_failure
+applies_to_categories:
+- distillation-generic
+- fallback
+- zero-confidence
+required_contracts:
+- zero_extractable_content_contract
+- failure_metadata_contract
+state_variables:
+- fallback_progress
+- confidence_floor
+- extraction_attempt_count
+chapter_change_vectors: []
+reader_rewards:
+- distillable_mechanism_reliability
+hook_or_aftereffect_types:
+- failure_notification_hook
+- recovery_prompt_aftereffect
+forbidden_defaults:
+- chapter_cards
+- story_mechanics
+- craft_observations
+- narrative_hooks
+- state_progression
+- turning_points
+- reader_promise
+- genre_tags
+- core_engine

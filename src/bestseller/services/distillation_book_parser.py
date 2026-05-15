@@ -10,10 +10,12 @@ from __future__ import annotations
 from collections.abc import Iterable
 from dataclasses import dataclass
 from html.parser import HTMLParser
+import os
 from pathlib import Path, PurePosixPath
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 from typing import ClassVar
 import unicodedata
@@ -308,6 +310,46 @@ def _run_calibre_command(command: list[str], *, timeout: int) -> subprocess.Comp
     )
 
 
+def resolve_calibre_executable(binary: str) -> str | None:
+    """Resolve ``ebook-convert`` / ``ebook-meta`` without requiring PATH.
+
+    Order: explicit env override → :func:`shutil.which` → well-known install paths
+    (macOS ``/Applications/calibre.app/...``, Windows ``Calibre2``).
+    """
+    env_names = {
+        "ebook-convert": (
+            "BESTSELLER__DISTILLATION__EBOOK_CONVERT",
+            "EBOOK_CONVERT",
+        ),
+        "ebook-meta": (
+            "BESTSELLER__DISTILLATION__EBOOK_META",
+            "EBOOK_META",
+        ),
+    }
+    for env_key in env_names.get(binary, ()):
+        candidate = os.environ.get(env_key, "").strip()
+        if candidate and Path(candidate).is_file():
+            return candidate
+
+    which = shutil.which(binary)
+    if which:
+        return which
+
+    if sys.platform == "darwin":
+        bundle = Path("/Applications/calibre.app/Contents/MacOS") / binary
+        if bundle.is_file():
+            return str(bundle)
+    if sys.platform == "win32":
+        for base in (
+            Path(r"C:\Program Files\Calibre2"),
+            Path(r"C:\Program Files (x86)\Calibre2"),
+        ):
+            exe = base / f"{binary}.exe"
+            if exe.is_file():
+                return str(exe)
+    return None
+
+
 def _extract_text_payload(source_path: Path, source_format: str) -> _TextPayload:
     if source_format in TEXT_FORMATS:
         text, encoding = decode_text_bytes(source_path.read_bytes())
@@ -376,14 +418,9 @@ def _extract_epub_payload(source_path: Path) -> _TextPayload:
         raise BookParseError(f"{source_path.name}: invalid EPUB metadata XML") from exc
 
 
-def _extract_calibre_payload(source_path: Path, source_format: str) -> _TextPayload:
-    ebook_convert = shutil.which("ebook-convert")
-    if not ebook_convert:
-        raise BookParseError(
-            f".{source_format} parsing requires Calibre's ebook-convert in PATH. "
-            "Install Calibre or convert the file to EPUB/TXT before preparation."
-        )
-
+def _extract_with_ebook_convert(
+    source_path: Path, source_format: str, ebook_convert: str
+) -> _TextPayload:
     warnings: list[str] = []
     with tempfile.TemporaryDirectory(prefix="bestseller-ebook-") as tmp:
         output = Path(tmp) / "source.txt"
@@ -414,8 +451,78 @@ def _extract_calibre_payload(source_path: Path, source_format: str) -> _TextPayl
         )
 
 
+def _extract_calibre_via_mobi_library(source_path: Path, source_format: str) -> _TextPayload:
+    """Unpack MOBI/KF8 using the PyPI ``mobi`` package (KindleUnpack) when Calibre is absent."""
+    try:
+        import mobi  # type: ignore[import-untyped]
+    except ImportError as exc:
+        raise BookParseError(
+            f".{source_format}: Calibre `ebook-convert` not found and the `mobi` package is not "
+            "installed. Run `uv sync --extra distillation` or `uv pip install 'mobi>=0.4.1'`."
+        ) from exc
+
+    base_warn = (
+        "Decoded Kindle file with the Python `mobi` unpacker (KindleUnpack fork); "
+        "Calibre was not used or failed.",
+    )
+    try:
+        tempdir, extracted = mobi.extract(str(source_path))
+    except Exception as exc:  # noqa: BLE001 — third-party unpack surface
+        raise BookParseError(f"{source_path.name}: Kindle unpack failed: {exc}") from exc
+
+    try:
+        extracted_path = Path(extracted)
+        if extracted_path.suffix.lower() == ".epub":
+            inner = _extract_epub_payload(extracted_path)
+            return _TextPayload(
+                text=inner.text,
+                encoding=f"mobi-lib+{inner.encoding}",
+                metadata=inner.metadata,
+                warnings=base_warn + inner.warnings,
+            )
+        if extracted_path.suffix.lower() in {".html", ".htm"}:
+            raw = extracted_path.read_bytes()
+            html, encoding = decode_text_bytes(raw)
+            text = normalize_text(strip_html_to_text(html))
+            meta = BookMetadata(title=source_path.stem, metadata_source="file_stem")
+            return _TextPayload(
+                text=text,
+                encoding=f"mobi-lib-html:{encoding}",
+                metadata=meta,
+                warnings=base_warn,
+            )
+        if extracted_path.suffix.lower() == ".pdf":
+            raise BookParseError(
+                f"{source_path.name}: unpack produced PDF; install Calibre to convert this title."
+            )
+        raise BookParseError(
+            f"{source_path.name}: unpack produced unsupported artifact: {extracted_path.name}"
+        )
+    finally:
+        shutil.rmtree(tempdir, ignore_errors=True)
+
+
+def _extract_calibre_payload(source_path: Path, source_format: str) -> _TextPayload:
+    calibre_error: BookParseError | None = None
+    ebook_convert = resolve_calibre_executable("ebook-convert")
+    if ebook_convert:
+        try:
+            return _extract_with_ebook_convert(source_path, source_format, ebook_convert)
+        except BookParseError as exc:
+            calibre_error = exc
+    try:
+        return _extract_calibre_via_mobi_library(source_path, source_format)
+    except BookParseError as exc2:
+        if calibre_error is not None:
+            raise BookParseError(
+                f"{source_path.name}: Calibre failed ({calibre_error}); "
+                f"Python Kindle unpack failed ({exc2})."
+            ) from exc2
+        raise
+
+
 def _metadata_from_calibre(source_path: Path) -> BookMetadata | None:
-    ebook_meta = shutil.which("ebook-meta")
+    ebook_meta = resolve_calibre_executable("ebook-meta")
     if not ebook_meta:
         return None
     with tempfile.TemporaryDirectory(prefix="bestseller-meta-") as tmp:

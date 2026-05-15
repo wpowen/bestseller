@@ -1,0 +1,37 @@
+key: distillation-generic
+name: distillation-generic-failure-remediation-patch
+source_ids:
+- source-0151
+status: failure_remediation_required
+applies_to_categories:
+- distillation-generic
+required_contracts:
+- contract: source_content_recoverable
+  description: Source text must be accessible for distillation; current source returns
+    only LLM fallback stubs
+  remediation_action: Rescan source material with LLM enabled or provide alternative
+    source pathway
+- contract: volume_chapter_consistency
+  description: Chapter cards must reference correct volume numbers; volumes 6 and
+    9 show numbering mismatches
+  remediation_action: Normalize chapter-to-volume mapping before distillation
+- contract: extractable_narrative_content
+  description: Distillation requires story mechanics, character dynamics, world-state
+    progression, thematic patterns, or craft observations
+  remediation_action: Source must contain actual narrative content beyond placeholder
+    responses
+state_variables:
+- fallback_progress
+- zero_confidence_scope
+- rescan_required_flag
+- volume_mapping_normalized
+chapter_change_vectors: []
+reader_rewards:
+- distillable_mechanism_reliability
+hook_or_aftereffect_types: []
+forbidden_defaults:
+- llm_unavailable_as_valid_response
+- identical_responses_across_volumes_as_content
+- zero_confidence_as_acceptable_confidence_level
+- unavailable_narrative_content_as_valid_reader_promise
+- volume_number_mismatch_as_consistent_metadata

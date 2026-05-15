@@ -1,0 +1,37 @@
+{
+  "source_id": "source-0009",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "style_safety_policy": "distilled_from_incomplete_extraction_4pct_coverage",
+  "pov_and_distance": "{'dominant_pov': 'third_person_limited', 'information_control': 'strategic_withholding_through_concealed_capabilities', 'dramatic_irony_maintenance': 'core_structural_element—reader_access_to_protagonist_knowledge_exceeds_all_character_access', 'distance_calibration': 'close_enough_for_competence_perception, distant_enough_to_enable_plot_discovery', 'notes': 'POV discipline critical to maintaining concealment mechanics—protagonist knowledge (foreknowledge, hidden cultivation, transmigrator nature) must never accidentally surface in unfiltered character awareness without deliberate plot reason'}",
+  "sentence_rhythm": [
+    "{'baseline_pace': 'measured_and_calculated', 'competence_display_rhythm': 'punchy_short_sentences_sharpened_by_understatement', 'strategic_reasoning_rhythm': 'compound_complex_sentences_tracking_multiple_causal_chains', 'tension_release_rhythm': 'longer_periods_following_instant_of_advantage', 'political_complexity_rhythm': 'sentence_length_increases_proportional_to_faction_complexity', 'notes': 'Rhythm serves dual function: competence porn satisfaction (quick decisive beats) and suspense maintenance (deliberate pacing through political navigation sequences). Short sentences signal protagonist mastery; longer sentences track strategic planning depth'}"
+  ],
+  "paragraphing": [
+    "{'scene_structure': 'functional_paragraphs_driven_by_objective_not_description', 'action_paragraphs': 'short_and_decisive', 'strategic_sequencing_paragraphs': 'longer_compound_paragraphs_with_multiple_dependent_clauses', 'turning_point_paragraphs': 'isolated_short_paragraphs_as_dramatic_beat_markers', 'chapter_ending_paragraphs': 'suspense_punctuation_through_incomplete_resolution', 'notes': 'Paragraph breaks signal reader to re-engage—typically at competence displays, strategic revelations, or political complexity escalations. Political intrigue sequences demand denser paragraph construction than cultivation advancement sequences'}"
+  ],
+  "dialogue_system": [
+    "{'dialogue_purpose': 'strategic_positioning_and_information_asymmetry_exploitation', 'protagonist_dialogue': 'understated_delivery_of_advantageous_knowledge—appears_coincidental_not_calculated', 'opposition_dialogue': 'reveals_faction_intent_without_revealing_protagonist_capability_awareness', 'information_exchange': 'asymmetric_knowledge_creates_dramatic_irony_when_protagonist_responds_to_information_not_yet_revealed_to_reader_concerning_characters', 'concealment_dialogue': 'protagonist_exercises_careful_vagueness_on_cultivation_business_nexus', 'notes': 'Dialogue serves concealment mechanics—protagonist must never verbally confirm transmigrator_nature or true_cultivation_level. Every exchange that could reveal hidden capabilities must contain plausible alternative interpretation available to observers'}"
+  ],
+  "description_strategy": [
+    "{'competence_signal_focus': 'description_prioritizes_evidence_of_cultivation_and_business_advancement_over_sensory_detail', 'strategic_object_emphasis': 'resources_power_leverage_points_get_detailed_treatment', 'political_landscape_description': 'faction_capabilities_and_vulnerabilities_receive_analytical_treatment', 'cultivation_description': 'technique_application_and_power_demonstration_focused', 'business_description': 'wealth_generation_mechanisms_and_market_positioning_focused', 'notes': 'Description economy serves dual-life mechanics—every descriptive passage should advance reader understanding of either cultivation_domain or business_domain. Minimal description devoted to atmosphere unrelated to power acquisition or concealment strategy'}"
+  ],
+  "exposition_strategy": [
+    "{'foreknowledge_exposition': 'strategic_timing_plays_against_instant_of_utility—protagonist_knowledge_revealed_just_before_or_after_application', 'system_exposition': 'embedded_in_scene_not_separated_from_action', 'political_exposition': 'delivered_through_observation_and_consequence_analysis_not_direct_narration', 'cultivation_exposition': 'revealed_through_competence_display_and_comparison_not_dictionary_format', 'concealment_exposition': 'background_knowledge_assumed_not_explained—protagonist_familiarity_with_systems_not_exposition_to_reader', 'notes': 'Exposition placement critical to maintaining concealment—protagonist_for_knows_many_things_reader_does_not_until_plot_instant_requires_understanding. Foreknowledge_exposition_demand_delayed_revelation structure rather than upfront worldbuilding delivery'}"
+  ],
+  "emotional_temperature": [
+    "{'baseline_temperature': 'controlled_analytical_restraint', 'competence_display_temperature': 'satisfaction_through_understatement_not_celebration', 'threat_temperature': 'rising_tension_prior_to_concealed_capability_demonstration', 'political_intrigue_temperature': 'calculated_cold'}"
+  ],
+  "distillation_source_id": "source-0009",
+  "hooking_and_transitions": [
+    "end units on changed state, unresolved question, or sharper constraint"
+  ],
+  "adaptation_guidelines": [
+    "translate craft controls into the new project's genre, cast, and premise",
+    "change imagery fields, sentence signatures, names, and scenario chains"
+  ],
+  "taboo_copy_signals": [
+    "source titles, author names, exact phrases, named entities, and distinctive sentence templates"
+  ],
+  "confidence": 0.0
+}

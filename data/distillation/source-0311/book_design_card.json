@@ -1,0 +1,91 @@
+{
+  "book_id": "source-0311",
+  "source_ref": "distillation:66ea87103401fb54e3c2391c",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "parsed_profile": {
+    "pov_distance": "Third-person omniscient with documentary authority; scholarly register alternates with experiential testimony; investigative first person frames authorial discovery process",
+    "sentence_rhythm": "Citation-heavy declarative passages alternate with kinetic dialogue reconstruction; short testimonial statements contrasted with complex contextual subordinate clauses",
+    "paragraphing": "Discrete endnote entries function as paragraphs in scholarly sections; block dialogue with attribution tags in scene passages; character entries use compact single-paragraph format",
+    "dialogue_method": "Direct quotation from primary sources anchors historical claims; fictionalized exchanges labeled with documentary sources; no dialogue in front matter sections",
+    "description_method": "Sensory specificity deployed in testimony passages only; atmospheric detail subordinated to evidentiary purpose; character descriptions emphasize single distinguishing trait per entry",
+    "exposition_method": "Inline citations serve dual attribution and worldbuilding function; no separate information dumps; thesis delivered through direct assertion qualified by literary epigraph",
+    "hook_delivery": "Chapter titles provide thematic framing; quoted statements plunge into specific documented exchanges; personal discovery narrative and rhetorical questions create intrigue",
+    "transition_method": "Thematic parallels (scientific investigation/atrocity investigation) provide connective tissue; physical location shifts handled through returning residents; physical location shifts through chronological progression",
+    "do_not_copy": [
+      "Specific proper nouns including historical figures, locations, and archival references",
+      "Proprietary citation formats and bibliographic entries",
+      "Copyrighted image credits and Getty identifiers",
+      "Quote length and citation density in fictional reconstructions",
+      "Literary epigraph attribution patterns",
+      "Character entry format verbatim"
+    ]
+  },
+  "genre_tags": [
+    "historical nonfiction",
+    "documentary novel",
+    "testimonial narrative",
+    "scholarly apparatus fiction",
+    "WWII literature",
+    "microcosm chronicle",
+    "evidentiary narrative"
+  ],
+  "reader_promise": "An evidentiary historical exploration through intersecting biographical narratives of celebrity, political, and cultural figures, presented with documentary authority while maintaining interpretive openness; visual corroboration through photo documentation; moral complexity without prescriptive judgment on collaboration and resistance",
+  "core_engine": "Documentary-historical testimonial engine with scholarly citation apparatus as primary narrative structure; archival integration providing evidentiary closure while maintaining interpretive openness; intersecting biographical threads converging on single location function as closure mechanism",
+  "state_variables": [
+    "{'temporal_phase': 'Occupation timeline → Liberation phases → Post-war reckoning', 'documentary_layer': 'Primary source testimony → Secondary interpretation → Scholarly apparatus', 'biographical_alignment': 'Intersecting aristocratic, political, cultural, military, civilian spheres', 'evidentiary_mode': 'Vignette documentation → Investigation → Retrospective reinterpretation → Bibliographic closure', 'location_convergence': 'Hotel as microcosm stage for historical reckoning'}"
+  ],
+  "reader_rewards": [
+    "Hotel as narrative/structural device demonstrating social microcosm function",
+    "Understanding of collaboration-resistance as coexisting moral spectrum",
+    "Demonstration of how social capital overrides legal justice in extraordinary times",
+    "Visual corroboration through captioned photo documentation spanning liberation timeline",
+    "Evidentiary authenticity through endnote apparatus and source trail",
+    "Atmospheric establishment through sensory and social details",
+    "Epistemic distance calibration between documentary authority and experiential testimony"
+  ],
+  "reusable_mechanisms": [
+    "Testimonial frame—firsthand accounts quoted for experiential immediacy",
+    "Retrospective reinterpretation—earlier events recontextualized by new documentary evidence",
+    "Parallel structure—investigation mirroring investigation provides thematic counterpoint",
+    "Fictional intermediary—real historical figures processed through interpretive proxy scenes",
+    "Intersecting biographical threads converging on single location",
+    "Endnote cross-referencing system linking claims to sources",
+    "Photo caption as historical witness providing visual corroboration",
+    "Date-stamped visual anchors for temporal grounding",
+    "Juxtaposition across social spheres (military, civilian, cultural) in liberation documentation",
+    "Location-convergence finale for retrospective moral accounting",
+    "Bibliographic apparatus providing source trail and scholarly credibility",
+    "Anchoring narrative scope to single geographic location",
+    "Using hospitality spaces as stages for political/economic negotiation",
+    "Interweaving celebrity figures with historical events for reader accessibility",
+    "Character lists as chapter preview mechanism",
+    "Establishing authorial discovery process to frame historical investigation"
+  ],
+  "non_reusable_specifics": [
+    "Hotel name and Place Vendome location",
+    "All character names including Hemingway, Chanel, Goering, Dietrich",
+    "Specific WWII events, dates, and chapter ranges",
+    "Vichy government figures and policies",
+    "Copyrighted image credits and Getty identifiers",
+    "Proprietary citation formats and bibliographic entries",
+    "Literary epigraph attributions",
+    "Character entry format structure"
+  ],
+  "risk_patterns": [
+    "Nonfiction with fictionalized dialogue passages creates authenticity risk",
+    "Testimonial claims from memory present verification challenges",
+    "Rehabilitation narrative could normalize collaboration",
+    "Source material primarily bibliographic apparatus rather than narrative content",
+    "No character arcs or plot progression in documentary sections",
+    "Academic apparatus functions as closure but lacks emotional engagement mechanics",
+    "Citation-heavy format may impede reader momentum",
+    "Celebrity historical figures may overshadow documented historical events",
+    "Authorial first-person framing may introduce subjectivity bias",
+    "Historical nonfiction may contain verification gaps in character anecdotes",
+    "Collaborator sympathetic portrayal risks reader moral confusion",
+    "Character list format may create false expectations of novelistic treatment"
+  ],
+  "source_id": "source-0311",
+  "distillation_source_id": "source-0311"
+}

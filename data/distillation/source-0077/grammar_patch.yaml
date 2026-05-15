@@ -1,0 +1,27 @@
+key: distillation-generic
+name: grammar_patch
+source_ids:
+- source-0077
+status: failed
+applies_to_categories:
+- distillation-generic
+required_contracts:
+- llm_extraction_success
+- chapter_level_content_present
+- volume_aggregation_possible
+- confidence_above_threshold
+state_variables:
+- empty_state_map
+chapter_change_vectors:
+- no_vectors_extractable
+reader_rewards:
+- no_rewards_extracted
+hook_or_aftereffect_types:
+- none_documentable
+forbidden_defaults:
+- zero_confidence_weights
+- empty_stub_content
+- fallback_mechanism_abstraction
+- undetermined_engine_type
+- null_reader_promise
+- empty_mechanism_arrays

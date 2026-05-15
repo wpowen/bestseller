@@ -1,0 +1,36 @@
+{
+  "source_id": "source-0131",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "style_safety_policy": "complete_distillation_failure — no source narrative content accessible for craft card generation. All 237 chapters across 10 volumes returned LLM unavailable fallback stubs. Author craft analysis blocked at chapter_card level. Manual source review or LLM pipeline restoration required before any craft fingerprint extraction becomes feasible.",
+  "pov_and_distance": "close-third or project-selected POV with controlled narrative distance",
+  "sentence_rhythm": [
+    "vary short action beats with medium explanatory sentences"
+  ],
+  "paragraphing": [
+    "keep paragraphs functional: action, reaction, or information turn"
+  ],
+  "dialogue_system": [
+    "use role-specific intent, subtext, and conflict pressure"
+  ],
+  "description_strategy": [
+    "describe only details that change stakes, mood, or reader inference"
+  ],
+  "exposition_strategy": [
+    "place exposition after visible need or conflict pressure"
+  ],
+  "emotional_temperature": [
+    "surface emotion through choices, body action, and withheld admission"
+  ],
+  "hooking_and_transitions": [
+    "end units on changed state, unresolved question, or sharper constraint"
+  ],
+  "adaptation_guidelines": [
+    "No adaptation guidelines derivable — source content inaccessible due to 100% LLM fallback rate across all volumes. Reusable mechanisms array empty. Craft observations array empty. Reader rewards array empty. Open hooks array empty. Manual extraction from source manuscript or LLM pipeline restoration required before any craft-level adaptation guidance can be generated."
+  ],
+  "taboo_copy_signals": [
+    "source titles, author names, exact phrases, named entities, and distinctive sentence templates"
+  ],
+  "confidence": 0.0,
+  "distillation_source_id": "source-0131"
+}

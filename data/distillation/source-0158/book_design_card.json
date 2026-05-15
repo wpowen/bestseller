@@ -1,0 +1,41 @@
+{
+  "book_id": "source-0158",
+  "source_ref": "distillation:246de069c82f6b7c65a0e077",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "parsed_profile": {
+    "distillation_status": "aborted_no_source_data",
+    "total_volumes_attempted": 9,
+    "total_chapters_processed": 212,
+    "successful_extractions": 0,
+    "confidence_distribution": "all_zero",
+    "data_quality_note": "All constituent chapter cards across all volumes (1-9) are LLM unavailable fallback stubs carrying confidence 0.0. No narrative mechanics, craft observations, reader rewards, thematic developments, or design patterns are present in the source. Volume-card aggregation consistently returned empty state progressions, null turning points, and empty reusable_mechanisms arrays. Book-level distillation impossible from current source state."
+  },
+  "genre_tags": [
+    "distillation-generic"
+  ],
+  "reader_promise": "LLM structured distillation fallback.",
+  "core_engine": "unknown",
+  "state_variables": [
+    "fallback_progress"
+  ],
+  "reader_rewards": [
+    "distillable_mechanism_reliability"
+  ],
+  "reusable_mechanisms": [
+    "fallback mechanism abstraction"
+  ],
+  "non_reusable_specifics": [],
+  "risk_patterns": [
+    "llm_fallback_batch",
+    "zero_confidence_all_chapters",
+    "no_source_content_available",
+    "distillation_aborted",
+    "volume_metadata_inconsistency_chapters_report_volume_1_while_distilling_volumes_1-9",
+    "confidence_zero_across_212_chapters",
+    "no_craft_observations_extractable",
+    "no_narrative_hooks_available"
+  ],
+  "source_id": "source-0158",
+  "distillation_source_id": "source-0158"
+}

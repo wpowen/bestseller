@@ -1,0 +1,39 @@
+{
+  "book_id": "source-0022",
+  "source_ref": "distillation:a97b405ebd244d96f1208ad3",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "parsed_profile": {
+    "extraction_status": "complete_failure",
+    "data_availability": "zero",
+    "confidence_score": 0.0,
+    "volume_count": 14,
+    "chapter_range_total": "1-339",
+    "chapter_count_total": 339,
+    "chapters_with_valid_content": 0,
+    "chapters_with_llm_fallback": 339,
+    "failure_mode_summary": "All constituent chapter cards and volume cards returned llm_fallback stubs with zero confidence across entire source range. No extractable arc mechanics, state progressions, turning points, reusable mechanisms, craft observations, or reader rewards could be derived. Book-level design fingerprint cannot be generated from zero-signal source data."
+  },
+  "genre_tags": [
+    "distillation-generic"
+  ],
+  "reader_promise": "LLM structured distillation fallback.",
+  "core_engine": "unknown",
+  "state_variables": [
+    "fallback_progress"
+  ],
+  "reader_rewards": [
+    "distillable_mechanism_reliability"
+  ],
+  "reusable_mechanisms": [
+    "fallback mechanism abstraction"
+  ],
+  "non_reusable_specifics": [],
+  "risk_patterns": [
+    "{'pattern_id': 'llm_fallback_batch', 'severity': 'critical', 'affected_range': '1-339', 'description': 'All 339 chapters across 14 volumes registered as llm_fallback stubs with zero confidence, rendering distillation impossible without source re-extraction.', 'downstream_impact': 'No book_design_card can be generated; cross-volume analysis blocked; manual re-processing or source re-extraction required before any design fingerprint can be constructed.'}",
+    "{'pattern_id': 'confidence_zero_across_all_volumes', 'severity': 'critical', 'affected_range': 'volumes 1-14', 'description': 'Zero confidence score propagated from chapter-level through volume-level aggregation, resulting in hollower volume cards that cannot contribute to book-level design fingerprint.', 'downstream_impact': 'Book-level aggregation receives no valid signal; parsed_profile, core_engine, genre_tags, state_variables, and reader_rewards remain empty/null.'}",
+    "{'pattern_id': 'no_extractable_story_mechanics', 'severity': 'critical', 'affected_range': '1-339', 'description': 'No reusable story-design mechanics derivable from source material; arc_function indeterminate/unavailable across all volumes; state_progression arrays empty; turning_points arrays empty.', 'downstream_impact': 'Cannot generate abstract design fingerprint; book_design_card serves only as a data-blackout record.'}"
+  ],
+  "source_id": "source-0022",
+  "distillation_source_id": "source-0022"
+}

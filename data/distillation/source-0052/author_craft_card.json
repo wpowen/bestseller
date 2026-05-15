@@ -1,0 +1,36 @@
+{
+  "source_id": "source-0052",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "style_safety_policy": "UNDISTILLABLE — source content entirely unavailable. All 164 chapters across 7 volumes returned LLM fallback stubs with 0.0 confidence. No narrative content, character data, dialogue, description, pacing, or emotional texture present for extraction or abstraction. This craft card cannot serve as a writing template or style reference.",
+  "pov_and_distance": "NO_DATA_AVAILABLE — all chapters marked llm_fallback. POV technique, narrative distance, and perspective choices cannot be determined. No observations on first-person/third-person usage, close vs. distant narration, or POV consistency patterns extractable.",
+  "sentence_rhythm": [
+    "NO_DATA_AVAILABLE — no sentence-level text present for rhythm analysis. Cannot assess clause length variation, cadence patterns, syntactic complexity distribution, or rhythmic contrast between action/exposition/dialogue sequences."
+  ],
+  "paragraphing": [
+    "NO_DATA_AVAILABLE — no paragraph-level content available. Cannot determine paragraph length tendencies, white-space pacing, scene-setting paragraph structures, or transitional paragraph techniques."
+  ],
+  "dialogue_system": [
+    "NO_DATA_AVAILABLE — no dialogue content present in any chapter stub. Cannot assess dialogue-to-narration ratio, speaker attribution patterns, dialogue tag usage, subtext layering, or conversation pacing mechanics."
+  ],
+  "description_strategy": [
+    "NO_DATA_AVAILABLE — no descriptive passages available for extraction. Cannot assess sensory detail density, adjective/adverb usage, figurative language patterns, or environmental description-to-action ratios."
+  ],
+  "exposition_strategy": [
+    "NO_DATA_AVAILABLE — no exposition content present. Cannot determine information delivery mechanics, backstory reveal pacing, \"show don't tell\" vs. explicit exposition balance, or worldbuilding exposition techniques."
+  ],
+  "emotional_temperature": [
+    "NO_DATA_AVAILABLE — no affective content available across any chapter. Cannot assess tonal consistency, emotional escalation patterns, catharsis placement, or sentiment arc management."
+  ],
+  "hooking_and_transitions": [
+    "NO_DATA_AVAILABLE — no chapter openings or transitions present. Cannot assess hook techniques, cliffhanger usage, time-jump transitions, or scene-break mechanisms."
+  ],
+  "adaptation_guidelines": [
+    "NO_ADAPTATION_RECOMMENDATION — source material is entirely placeholder content. No identifiable narrative structure, character arcs, pacing beats, or story mechanics available to guide adaptation. Recommend reprocessing source at chapter level with valid input before generating adaptation guidance."
+  ],
+  "taboo_copy_signals": [
+    "NO_COPY_SIGNALS_AVAILABLE — no extractable content means no author-specific phrasing, named-entity patterns, or distinctive sentence templates present. This volume set does not represent any author's stylistic fingerprint. Distillation should not proceed until source material is replaced with actual narrative content."
+  ],
+  "confidence": 0.0,
+  "distillation_source_id": "source-0052"
+}

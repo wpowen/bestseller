@@ -1,0 +1,22 @@
+{
+  "source_id": "source-0006",
+  "blocked_categories": [
+    "narrative_mechanics",
+    "plot_structure",
+    "character_arcs",
+    "reader_rewards",
+    "pov_and_distance",
+    "sentence_rhythm",
+    "paragraphing",
+    "dialogue_system",
+    "description_strategy",
+    "exposition_strategy",
+    "emotional_temperature",
+    "hooking_and_transitions"
+  ],
+  "blocked_combinations": [
+    "any_craft_element + any_chapter — source data unavailable",
+    "any_mechanism + any_volume — all volumes fell back to stubs"
+  ],
+  "replacement_policy": []
+}

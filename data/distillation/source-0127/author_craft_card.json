@@ -1,0 +1,36 @@
+{
+  "source_id": "source-0127",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "style_safety_policy": "none_distillable",
+  "pov_and_distance": "{'available': False, 'extracted': [], 'confidence': 0.0, 'note': \"No POV data extractable from LLM-fallback-only source across 15 volumes (chapters 1-506). All chapter cards returned empty craft_observations with risk_flag 'llm_fallback'.\"}",
+  "sentence_rhythm": [
+    "{'available': False, 'extracted': [], 'confidence': 0.0, 'note': 'No sentence-level rhythm data available. Entire source corpus (506 chapters across 15 volumes) comprises unavailable fallback stubs with zero confidence.'}"
+  ],
+  "paragraphing": [
+    "{'available': False, 'extracted': [], 'confidence': 0.0, 'note': 'No paragraph-level structural patterns extractable from compromised source data. All volume cards report craft_profile as null or stub-only.'}"
+  ],
+  "dialogue_system": [
+    "{'available': False, 'extracted': [], 'confidence': 0.0, 'note': 'No dialogue mechanics present in LLM-fallback-only source material. All reusable_mechanisms arrays across all 15 volumes returned empty.'}"
+  ],
+  "description_strategy": [
+    "{'available': False, 'extracted': [], 'confidence': 0.0, 'note': \"No description or scene-building craft patterns extractable from zero-confidence source data. All 25 chapters sampled confirmed as 'LLM unavailable — distillation fallback stub.'\"}"
+  ],
+  "exposition_strategy": [
+    "{'available': False, 'extracted': [], 'confidence': 0.0, 'note': 'No exposition technique or information delivery mechanics extractable. Continuous degradation pattern across all 15 volumes with no analyzable chapter content.'}"
+  ],
+  "emotional_temperature": [
+    "{'available': False, 'extracted': [], 'confidence': 0.0, 'note': 'No emotional tone or affective register data present in source. All chapter cards contain empty reader_rewards and open_hooks arrays.'}"
+  ],
+  "hooking_and_transitions": [
+    "{'available': False, 'extracted': [], 'confidence': 0.0, 'note': 'No hook or transition mechanics extractable from source. All turning_points arrays across 15 volumes returned empty; setup_payoff_rhythm null in all volume cards reporting the field.'}"
+  ],
+  "adaptation_guidelines": [
+    "{'available': False, 'extracted': [], 'confidence': 0.0, 'note': 'No reusable story-design mechanics available for adaptation. All reusable_mechanisms and non_reusable_specifics arrays empty across entire source corpus. No state_progression data extractable.'}"
+  ],
+  "taboo_copy_signals": [
+    "{'available': False, 'extracted': [], 'confidence': 0.0, 'note': 'No author-specific linguistic fingerprints or style markers present in placeholder-only source data. Anonymous craft card cannot be populated without actual chapter content.'}"
+  ],
+  "confidence": 0.0,
+  "distillation_source_id": "source-0127"
+}

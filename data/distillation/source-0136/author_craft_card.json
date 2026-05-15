@@ -1,0 +1,36 @@
+{
+  "source_id": "source-0136",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "style_safety_policy": "indeterminate — no source narrative content accessible; style safety assessment cannot be performed without extractable text; recommend reprocessing through functional LLM pipeline before policy determination",
+  "pov_and_distance": "undetermined — all chapter_cards returned llm_fallback stubs with empty craft_observations; no point-of-view choices, narrative distance calibrations, or perspective strategies extractable from zero-confidence batch",
+  "sentence_rhythm": [
+    "unavailable — 634/634 chapters flagged llm_fallback; sentence-level rhythm patterns, cadence variations, and syntactic pacing cannot be identified without actionable chapter text"
+  ],
+  "paragraphing": [
+    "unassessable — batch composition entirely stubs; paragraph structure, block rhythm, white space usage, and scene-breaking conventions remain undetermined"
+  ],
+  "dialogue_system": [
+    "none_extractable — all 634 chapters returned fallback stubs; dialogue mechanics including attribution patterns, subtext deployment, speech-to-action ratios, and conversation pacing are unidentifiable from current data"
+  ],
+  "description_strategy": [
+    "no_data — zero chapters yielded description-type observations, sensory deployment patterns, or world-building density metrics; strategy cannot be characterized without source text access"
+  ],
+  "exposition_strategy": [
+    "indeterminate — all volume_cards report empty state_progression arrays; no backstory injection methods, information revelation timing, or explanatory passage placement observable"
+  ],
+  "emotional_temperature": [
+    "unavailable — emotional calibration, sentiment arc management, and affective register choices cannot be measured from stub-only dataset; confidence 0.0 across entire source"
+  ],
+  "hooking_and_transitions": [
+    "no_extracts — chapter ending mechanisms, cliffhanger deployment, and scene-transition methods not observable; open_hooks arrays empty across all 634 chapters"
+  ],
+  "adaptation_guidelines": [
+    "Craft attributes required for adaptation guidance cannot be determined — source-0136 requires complete reprocessing through functional LLM pipeline before narrative mechanics, scene architecture, or structural fingerprints become available for adaptation assessment"
+  ],
+  "taboo_copy_signals": [
+    "none_determinable — 0.0 confidence across entire chapter batch precludes identification of forbidden copy patterns; source material must be reprocessed before signal detection can proceed"
+  ],
+  "confidence": 0.0,
+  "distillation_source_id": "source-0136"
+}

@@ -1,0 +1,27 @@
+key: distillation-generic
+name: Distillation-Generic Zero-Confidence Fallback Grammar Patch
+source_ids:
+- source-0161
+status: fallback_patch
+applies_to_categories:
+- distillation-generic
+required_contracts:
+- zero_extraction_tolerance
+- no_synthetic_content_generation
+- confidence_threshold_enforcement
+state_variables:
+- fallback_progress
+- extraction_failure_depth
+- data_integrity_violation_count
+chapter_change_vectors: []
+reader_rewards: []
+hook_or_aftereffect_types: []
+forbidden_defaults:
+- assume_existing_story_mechanics
+- infer_reader_promise_from_empty_data
+- generate_craft_observations
+- populate_reusable_mechanisms
+- derive_genre_tags_from_stub_content
+- compute_arc_functions_from_zero_confidence
+- propagate_volume_mismatch_artifacts
+- synthesize_reader_rewards_from_failure_state

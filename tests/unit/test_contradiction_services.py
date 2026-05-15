@@ -105,6 +105,78 @@ async def test_character_knowledge_leak_ignores_stopwords_and_participant_names(
     assert warnings == []
 
 
+@pytest.mark.asyncio
+async def test_character_knowledge_leak_ignores_single_low_signal_overlap() -> None:
+    class _Result:
+        def scalars(self) -> "_Result":
+            return self
+
+        def all(self) -> list[SimpleNamespace]:
+            return [
+                SimpleNamespace(
+                    name="Rowan Ashford",
+                    knowledge_state_json={
+                        "falsely_believes": [
+                            "Believed the cost meant sacrifice/death for herself"
+                        ],
+                        "unaware_of": [],
+                    },
+                )
+            ]
+
+    class _Session:
+        async def execute(self, _stmt: object) -> _Result:
+            return _Result()
+
+    violations, warnings = await _check_character_knowledge_leaks(
+        _Session(),
+        uuid4(),
+        74,
+        ["Rowan Ashford"],
+        "Rowan sees that the ritual has a cost, but no one names the price yet.",
+        language="en",
+    )
+
+    assert violations == []
+    assert warnings == []
+
+
+@pytest.mark.asyncio
+async def test_character_knowledge_leak_still_blocks_specific_overlap() -> None:
+    class _Result:
+        def scalars(self) -> "_Result":
+            return self
+
+        def all(self) -> list[SimpleNamespace]:
+            return [
+                SimpleNamespace(
+                    name="Rowan Ashford",
+                    knowledge_state_json={
+                        "falsely_believes": [
+                            "Believed the cost meant sacrifice/death for herself"
+                        ],
+                        "unaware_of": [],
+                    },
+                )
+            ]
+
+    class _Session:
+        async def execute(self, _stmt: object) -> _Result:
+            return _Result()
+
+    violations, warnings = await _check_character_knowledge_leaks(
+        _Session(),
+        uuid4(),
+        74,
+        ["Rowan Ashford"],
+        "Rowan learns the old bargain requires sacrifice before the door opens.",
+        language="en",
+    )
+
+    assert len(violations) == 1
+    assert warnings == []
+
+
 # ── ContradictionCheckResult model ───────────────────────────────
 
 

@@ -1,0 +1,30 @@
+key: distillation-generic
+name: Distillation Generic Failure Recovery Patch
+source_ids:
+- source-0010
+status: draft_review
+applies_to_categories:
+- distillation-generic
+required_contracts:
+- functional_llm_extraction_pipeline
+- non_empty_content_validation
+- confidence_threshold_met
+state_variables:
+- aggregation_status: blocked
+- mechanism_extraction: blocked
+- craft_analysis: blocked
+- narrative_structure: not_determinable
+- reader_reward_pathway: not_determinable
+- retry_ready: awaiting_upstream_repair
+chapter_change_vectors: []
+reader_rewards:
+- distillable_mechanism_reliability
+hook_or_aftereffect_types:
+- retry_trigger
+- failure_notification
+- infrastructure_repair_callback
+forbidden_defaults:
+- confidence_zero_stub
+- identical_placeholder_content
+- empty_mechanism_array
+- volume_metadata_inconsistency

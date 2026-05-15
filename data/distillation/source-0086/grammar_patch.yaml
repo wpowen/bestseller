@@ -1,0 +1,47 @@
+key: distillation-generic
+name: Distillation Failure Fallback Grammar Patch
+source_ids:
+- source-0086
+status: active
+applies_to_categories:
+- distillation_failure
+- llm_unavailable
+- zero_content_extraction
+- complete_source_inaccessibility
+required_contracts:
+- fallback_content_generation
+- metadata_preservation
+- no_false_confidence_assignment
+- failure_mode_transparency
+state_variables:
+- fallback_progress
+- distillation_status
+- content_availability_flag
+- confidence_baseline
+chapter_change_vectors:
+- vector_type: failure_to_fallback
+  trigger_condition: llm_unavailable_all_chapters
+  fallback_action: populate_stub_records_with_failure_metadata
+  confidence_override: prevent_zero_confidence_publication
+  preserve_original_structure: true
+reader_rewards:
+- distillable_mechanism_reliability
+- transparent_failure_reporting
+- structural_integrity_maintenance
+hook_or_aftereffect_types:
+- type: failure_audit_hook
+  triggers_on: complete_source_inaccessibility
+  records:
+  - chapters_affected
+  - volumes_affected
+  - confidence_scores
+  - failure_patterns
+- type: retry_trigger_aftereffect
+  triggers_on: zero_content_extraction
+  initiates: redistillation_request
+forbidden_defaults:
+- empty_stub_publication
+- zero_confidence_chapter_cards
+- metadata_only_volume_cards_as_complete
+- no_narrative_content_assertion
+- false_positive_extraction_claims

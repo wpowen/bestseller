@@ -1,0 +1,36 @@
+{
+  "source_id": "source-0299",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "style_safety_policy": "{'value': 'indeterminate', 'extraction_failure_reason': 'all_chapters_llm_fallback', 'reusability_index': 0.0}",
+  "pov_and_distance": "{'value': 'indeterminate', 'extraction_failure_reason': 'zero_confidence_extraction', 'reusability_index': 0.0}",
+  "sentence_rhythm": [
+    "{'value': 'indeterminate', 'extraction_failure_reason': 'zero_confidence_extraction', 'reusability_index': 0.0}"
+  ],
+  "paragraphing": [
+    "{'value': 'indeterminate', 'extraction_failure_reason': 'zero_confidence_extraction', 'reusability_index': 0.0}"
+  ],
+  "dialogue_system": [
+    "{'value': 'indeterminate', 'extraction_failure_reason': 'zero_confidence_extraction', 'reusability_index': 0.0}"
+  ],
+  "description_strategy": [
+    "{'value': 'indeterminate', 'extraction_failure_reason': 'zero_confidence_extraction', 'reusability_index': 0.0}"
+  ],
+  "exposition_strategy": [
+    "{'value': 'indeterminate', 'extraction_failure_reason': 'zero_confidence_extraction', 'reusability_index': 0.0}"
+  ],
+  "emotional_temperature": [
+    "{'value': 'indeterminate', 'extraction_failure_reason': 'zero_confidence_extraction', 'reusability_index': 0.0}"
+  ],
+  "hooking_and_transitions": [
+    "{'value': 'indeterminate', 'extraction_failure_reason': 'zero_confidence_extraction', 'reusability_index': 0.0}"
+  ],
+  "adaptation_guidelines": [
+    "{'value': 'indeterminate', 'extraction_failure_reason': 'zero_confidence_extraction', 'reusability_index': 0.0}"
+  ],
+  "taboo_copy_signals": [
+    "{'value': 'indeterminate', 'extraction_failure_reason': 'zero_confidence_extraction', 'reusability_index': 0.0}"
+  ],
+  "confidence": 0.0,
+  "distillation_source_id": "source-0299"
+}

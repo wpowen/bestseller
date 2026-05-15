@@ -1,0 +1,45 @@
+{
+  "book_id": "source-0006",
+  "source_ref": "distillation:aa8608a9a4b17020d8c256dc",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "parsed_profile": {
+    "distillation_status": "complete_data_blackout",
+    "confidence": 0.0,
+    "total_volumes_attempted": 22,
+    "total_chapters_in_range": 546,
+    "valid_chapters_found": 0,
+    "llm_fallback_stubs": 546,
+    "data_quality": "zero_extractable_content",
+    "failure_reason": "All source material consists of LLM unavailable fallback stubs with empty arrays and zero confidence across entire chapter range (1-546)",
+    "metadata_integrity": "corrupted_or_unavailable",
+    "volume_consistency": "inconsistent (volume_no field shows '1' in volume_card for chapters 306-330 instead of expected value)"
+  },
+  "genre_tags": [
+    "distillation-generic"
+  ],
+  "reader_promise": "LLM structured distillation fallback.",
+  "core_engine": "unknown",
+  "state_variables": [
+    "fallback_progress"
+  ],
+  "reader_rewards": [
+    "distillable_mechanism_reliability"
+  ],
+  "reusable_mechanisms": [
+    "fallback mechanism abstraction"
+  ],
+  "non_reusable_specifics": [],
+  "risk_patterns": [
+    "llm_fallback_all_chapters",
+    "zero_confidence_across_entire_source",
+    "no_extractable_story_mechanics",
+    "no_craft_observations_present",
+    "no_distillable_content",
+    "data_poverty_for_analysis",
+    "source_material_inaccessible",
+    "volume_metadata_corruption"
+  ],
+  "source_id": "source-0006",
+  "distillation_source_id": "source-0006"
+}

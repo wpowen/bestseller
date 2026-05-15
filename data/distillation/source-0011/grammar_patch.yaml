@@ -1,0 +1,29 @@
+key: distillation-generic
+name: Distillation Generic Grammar Patch
+source_ids:
+- source-0011
+status: aborted
+applies_to_categories:
+- distillation-generic
+required_contracts:
+- valid_source_content
+- minimum_confidence_threshold
+- distillable_chapters_available
+state_variables:
+- fallback_progress
+- distillation_confidence
+- content_availability
+chapter_change_vectors: []
+reader_rewards:
+- distillable_mechanism_reliability
+- fallback_content_awareness
+hook_or_aftereffect_types:
+- distillation_blocked
+- no_content_extracted
+- upstream_generation_required
+forbidden_defaults:
+- generate_chapters_from_zero_confidence
+- aggregate_empty_volumes
+- assume_story_mechanics_present
+- create_arcs_from_fallback_stubs
+- extract_rewards_from_llm_fallbacks

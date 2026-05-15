@@ -1,0 +1,21 @@
+{
+  "source_id": "source-0083",
+  "blocked_categories": [
+    "named_entities",
+    "exact_prose_quotes",
+    "sentence_templates",
+    "structural_patterns",
+    "genre_identifier_signatures",
+    "pov_and_distance_signatures",
+    "rhythm_and_paragraphing_signatures",
+    "dialogue_system_patterns",
+    "description_and_exposition_signatures",
+    "emotional_temperature_signatures",
+    "hook_and_transition_signatures",
+    "named_mechanisms",
+    "specific_plot_elements",
+    "character_archetype_signatures"
+  ],
+  "blocked_combinations": [],
+  "replacement_policy": []
+}

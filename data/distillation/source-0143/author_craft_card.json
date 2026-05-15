@@ -1,0 +1,37 @@
+{
+  "source_id": "source-0143",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "style_safety_policy": "content_unavailable",
+  "pov_and_distance": "{'observation': 'unavailable', 'reason': 'All 14 volumes (345 chapters) contain only LLM unavailable fallback stubs with zero confidence. No point-of-view choices, narrative distance shifts, or perspective patterns could be extracted from source material.'}",
+  "sentence_rhythm": [
+    "{'observation': 'unavailable', 'reason': 'Source chapter_cards contain no sentence-level content. No rhythm, cadence, syntactic patterns, or length variation data exists for craft analysis.'}"
+  ],
+  "paragraphing": [
+    "{'observation': 'unavailable', 'reason': 'No paragraph structures, white space usage, or scene/beat divisions present in fallback stub data.'}"
+  ],
+  "dialogue_system": [
+    "{'observation': 'unavailable', 'reason': 'Zero dialogue content, character voice patterns, speech rhythms, or conversation mechanics available for extraction.'}"
+  ],
+  "description_strategy": [
+    "{'observation': 'unavailable', 'reason': 'No sensory detail, world-building language, environmental description, or visual rendering patterns present in source data.'}"
+  ],
+  "exposition_strategy": [
+    "{'observation': 'unavailable', 'reason': 'No backstory delivery, information revelation timing, or exposition-to-scene ratios extractable from empty chapter cards.'}"
+  ],
+  "emotional_temperature": [
+    "{'observation': 'unavailable', 'reason': 'No tonal mapping, emotional register shifts, or affective curve data present in fallback stub collection.'}"
+  ],
+  "hooking_and_transitions": [
+    "{'observation': 'unavailable', 'reason': 'All open_hooks arrays empty across all 345 chapters. No chapter-ending suspense techniques, cliffhanger patterns, or scene transition mechanics extractable.'}"
+  ],
+  "adaptation_guidelines": [
+    "{'general_recommendation': 'Do not attempt adaptation, style imitation, or craft replication based on this source_id. Source material requires complete regeneration through functioning LLM pipeline before any author_craft_card distillation becomes viable.', 'blocking_reason': 'Complete LLM fallback across 14 volumes (345 chapters) with confidence 0.0 for all entries. Zero actionable narrative mechanics, craft observations, reader rewards, or story-design elements present.', 'required_action': 'Re-process source material through functional LLM pipeline. Current source_id contains no extractable story content whatsoever.'}"
+  ],
+  "taboo_copy_signals": [
+    "{'prohibited_elements': [], 'reason': 'Cannot identify author-specific copy signals, distinctive phrase templates, or named-entity patterns because no actual source content exists to analyze. Treating absence of content as absence of identifiable signals.'}"
+  ],
+  "confidence": 0.0,
+  "distillation_fidelity_note": "This author_craft_card represents a complete data-availability failure rather than a genuine distillation. All fields reflect unavailable status because the source pipeline produced 345/345 LLM fallback stubs with empty reusable_mechanisms, craft_observations, reader_rewards, and open_hooks arrays. Downstream consumers should treat this card as a null result. No craft principles, style controls, or reusable mechanisms can be distilled from zero-content source material.",
+  "distillation_source_id": "source-0143"
+}

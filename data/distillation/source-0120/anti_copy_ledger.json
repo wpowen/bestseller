@@ -1,0 +1,17 @@
+{
+  "source_id": "source-0120",
+  "blocked_categories": [
+    "narrative_mechanics",
+    "craft_patterns",
+    "state_progression",
+    "reader_rewards",
+    "turning_points",
+    "arc_functions"
+  ],
+  "blocked_combinations": [
+    "any_pattern_extraction_from_fallback_content",
+    "confidence_based_aggregation",
+    "volume_level_aggregation"
+  ],
+  "replacement_policy": []
+}

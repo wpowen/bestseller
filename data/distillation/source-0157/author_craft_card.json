@@ -1,0 +1,67 @@
+{
+  "source_id": "source-0157",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "style_safety_policy": "no_craft_patterns_extracted — all_chapters_returned_llm_unavailable_fallback_stubs_across_11_volumes_307_chapters_zero_confidence",
+  "pov_and_distance": "indeterminate — no_narrative_content_available_for_pov_analysis",
+  "sentence_rhythm": [
+    "indeterminate — llm_fallback_batch_prevents_sentence_level_craft_extraction"
+  ],
+  "paragraphing": [
+    "indeterminate — zero_source_content_paragraph_structure_cannot_be_analyzed"
+  ],
+  "dialogue_system": [
+    "indeterminate — no_dialogue_data_extractable_from_fallback_stub_batch"
+  ],
+  "description_strategy": [
+    "indeterminate — all_chapters_1-307_fell_back_to_stubs_no_descriptive_patterns_recoverable"
+  ],
+  "exposition_strategy": [
+    "indeterminate — no_exposition_mechanics_extractable_from_empty_batch"
+  ],
+  "emotional_temperature": [
+    "indeterminate — zero_confidence_across_all_volumes_precludes_emotional_tone_analysis"
+  ],
+  "hooking_and_transitions": [
+    "indeterminate — no_hook_or_transition_mechanisms_extractable_from_fallback_stubs"
+  ],
+  "adaptation_guidelines": [
+    "cannot_provide_reusable_author_craft_guidelines_without_source_narrative_content"
+  ],
+  "taboo_copy_signals": [
+    "none_extracted — all_taboo_fields_blocked_due_to_complete_llm_fallback_batch"
+  ],
+  "confidence": 0.0,
+  "distillation_status_note": "critical_upstream_failure_all_307_chapters_returned_llm_unavailable_fallback_stubs_zero_confidence_aggregation_produces_empty_result_author_craft_card_cannot_be_generated_from_provided_data",
+  "quality_gate": "blocked_by_llm_fallback_batch",
+  "required_action": "re_process_source_chapters_through_primary_pipeline_with_llm_enabled_or_provide_alternative_source_material",
+  "risk_patterns": [
+    {
+      "pattern": "upstream_llm_processing_failure",
+      "severity": "critical",
+      "affected_volumes": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11
+      ],
+      "consequence": "author_craft_card contains no distillable craft content",
+      "mitigation": "re_process_source_material_through_primary_pipeline"
+    }
+  ],
+  "failure_modes": [
+    "all_source_chapters_llm_unavailable",
+    "zero_confidence_across_entire_batch",
+    "no_craft_observations_recorded",
+    "no_reusable_mechanisms_identified",
+    "aggregation_impossible_without_source_data"
+  ],
+  "distillation_source_id": "source-0157"
+}

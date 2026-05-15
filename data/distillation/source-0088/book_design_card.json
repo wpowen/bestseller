@@ -1,0 +1,37 @@
+{
+  "book_id": "source-0088",
+  "source_ref": "distillation:dd96ae04fbcbacf018dcdcd7",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "parsed_profile": {
+    "distillation_status": "complete_failure",
+    "total_chapters_attempted": 84,
+    "chapters_processed": 84,
+    "chapters_with_content": 0,
+    "volume_count": 4,
+    "volumes_with_content": 0,
+    "extraction_failure_mode": "all_chapters_returned_llm_fallback_stubs",
+    "confidence": 0.0
+  },
+  "genre_tags": [
+    "distillation-generic"
+  ],
+  "reader_promise": "LLM structured distillation fallback.",
+  "core_engine": "unknown",
+  "state_variables": [
+    "fallback_progress"
+  ],
+  "reader_rewards": [
+    "distillable_mechanism_reliability"
+  ],
+  "reusable_mechanisms": [
+    "fallback mechanism abstraction"
+  ],
+  "non_reusable_specifics": [],
+  "risk_patterns": [
+    "{'pattern_id': 'llm_fallback_batch_failure', 'affected_chapters': '1-84', 'affected_volumes': '1-4', 'failure_type': 'upstream_llm_unavailable', 'mitigation_needed': 'reprocess_with_alternative_distillation_pipeline', 'retry_recommended': True}",
+    "{'pattern_id': 'zero_confidence_across_all_chapters', 'description': 'Every chapter card returned confidence 0.0 with empty craft_observations, reusable_mechanisms, and reader_rewards arrays', 'impact': 'no_extractable_design_fingerprint', 'action': 'requires_manual_review_or_source_reingestion'}"
+  ],
+  "source_id": "source-0088",
+  "distillation_source_id": "source-0088"
+}

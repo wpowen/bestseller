@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import AsyncIterator
 import json
 import logging
-from typing import AsyncIterator
 
 from fastapi import APIRouter, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
@@ -45,6 +45,8 @@ async def get_task_status(
         task_status = "completed"
     elif event_type in ("failed", "error"):
         task_status = "failed"
+    elif event_type in ("waiting_human", "waiting_human_review", "blocked_generation_gate"):
+        task_status = "incomplete"
     elif event_type == "progress":
         task_status = "running"
     else:
@@ -99,7 +101,16 @@ async def stream_task_events(
                     parsed = json.loads(data)
                     event_type = parsed.get("event_type", "progress")
                     yield f"event: {event_type}\ndata: {data}\n\n"
-                    if event_type in ("completed", "done", "finished", "failed", "error"):
+                    if event_type in (
+                        "completed",
+                        "done",
+                        "finished",
+                        "failed",
+                        "error",
+                        "waiting_human",
+                        "waiting_human_review",
+                        "blocked_generation_gate",
+                    ):
                         yield 'event: stream_end\ndata: {"message": "stream_end", "event_type": "stream_end"}\n\n'
                         break
                     # Legacy fallback

@@ -43,7 +43,7 @@ from sqlalchemy import and_, func, or_, select, text, update
 if TYPE_CHECKING:  # pragma: no cover — import only for type hints
     from arq.connections import ArqRedis
 
-from bestseller.domain.enums import WorkflowStatus
+from bestseller.domain.enums import ProjectStatus, WorkflowStatus
 from bestseller.infra.db.models import (
     ChapterDraftVersionModel,
     ChapterModel,
@@ -53,7 +53,12 @@ from bestseller.infra.db.models import (
 from bestseller.infra.db.session import get_server_session
 from bestseller.settings import AppSettings
 
-ORPHAN_WORKFLOW_TIMEOUT_SECONDS = 30 * 60  # 30 minutes without heartbeat
+# Periodic self-heal must not reap legitimate long LLM calls.  A single
+# planner attempt can take 15 minutes and the outline repair loop can run
+# several attempts before emitting a new workflow-row update.  Startup still
+# reaps old rows immediately via ``startup_cutoff``; this longer periodic
+# timeout prevents active workers from being marked failed mid-call.
+ORPHAN_WORKFLOW_TIMEOUT_SECONDS = 3 * 60 * 60
 
 # Anything active + older than this at worker startup is, by definition,
 # a ghost from a prior container that died before updating its row. The
@@ -90,6 +95,45 @@ SELF_HEAL_JOB_EXPIRES_DAYS = 7
 # project and the queue score is already well in the past, the key set is a
 # ghost and must be cleared before deterministic requeue can succeed.
 STALE_ARQ_IN_PROGRESS_GRACE_SECONDS = 5 * 60
+
+# A project_repair run that has already reached WAITING_HUMAN should only
+# suppress self-heal briefly. Older waiting rows are historical evidence, not an
+# active handoff; leaving them indefinite made blocked projects stall forever.
+WAITING_REPAIR_SUPPRESSION_SECONDS = 60 * 60
+WRITE_SAFETY_REPAIR_RECOVERY_SECONDS = 15 * 60
+WRITE_SAFETY_REPAIR_MAX_RECOVERY_SECONDS = 45 * 60
+
+_AUTO_REPAIRABLE_WRITE_SAFETY_BLOCK_CODES = frozenset(
+    {
+        "block_low",
+        "block_high",
+        "dialog_unpaired",
+        "ending_sentence_weak",
+        "dead_alive",
+        "pronoun_mismatch",
+        "character_resurrection",
+        "character_missing_appearance",
+        "character_sealed_appearance",
+        "character_sleeping_appearance",
+        "character_comatose_appearance",
+        "canon_forbidden_term",
+        "canon_state_regression",
+        "cross_chapter_repetition",
+        "intra_chapter_repetition",
+    }
+)
+
+# These planning gates have deterministic repair paths in the planner. If an
+# older deployment paused a project after exhausting that path, startup self-heal
+# may retry once the pause is no longer fresh instead of treating it as a manual
+# structural stop forever.
+GENERATION_GATE_RESUME_COOLDOWN_SECONDS = 15 * 60
+_AUTO_RESUMABLE_GENERATION_GATE_REASONS = frozenset(
+    {
+        "story_bible_gate_failed",
+        "volume_outline_gate_failed",
+    }
+)
 
 logger = logging.getLogger(__name__)
 
@@ -189,9 +233,7 @@ async def reap_orphan_workflow_runs(
         startup_result = await session.execute(
             update(WorkflowRunModel)
             .where(
-                WorkflowRunModel.workflow_type.in_(
-                    _STARTUP_ONLY_REAPABLE_WORKFLOW_TYPES
-                ),
+                WorkflowRunModel.workflow_type.in_(_STARTUP_ONLY_REAPABLE_WORKFLOW_TYPES),
                 WorkflowRunModel.status.in_(_ACTIVE_STATUSES),
                 or_(
                     WorkflowRunModel.updated_at < startup_cutoff,
@@ -258,6 +300,9 @@ async def find_stuck_projects(session: Any) -> list[StuckProject]:
         if await _has_active_pipeline_run(session, project.id):
             continue
 
+        auto_resumable_generation_gate = _project_has_stale_auto_resumable_generation_gate(
+            project
+        )
         if _project_resume_is_blocked(project):
             continue
 
@@ -328,10 +373,7 @@ async def find_stuck_projects(session: Any) -> list[StuckProject]:
             )
             continue
 
-        if (
-            explicit_stuck_chapter is not None
-            and chapters_with_draft < explicit_stuck_chapter
-        ):
+        if explicit_stuck_chapter is not None and chapters_with_draft < explicit_stuck_chapter:
             stuck.append(
                 StuckProject(
                     project_id=project.id,
@@ -363,12 +405,14 @@ async def find_stuck_projects(session: Any) -> list[StuckProject]:
         # ``archived``) should not be auto-resumed.
         target_chapters = int(getattr(project, "target_chapters", 0) or 0)
         status = (getattr(project, "status", None) or "").lower()
-        under_target_status = status in {"writing", "planning", "revising", "drafting", ""}
-        if (
-            target_chapters > 0
-            and chapters_total < target_chapters
-            and under_target_status
-        ):
+        under_target_status = status in {
+            "writing",
+            "planning",
+            "revising",
+            "drafting",
+            "",
+        } or auto_resumable_generation_gate
+        if target_chapters > 0 and chapters_total < target_chapters and under_target_status:
             stuck.append(
                 StuckProject(
                     project_id=project.id,
@@ -400,12 +444,16 @@ async def _blocked_chapters_have_recent_waiting_repair(
     session: Any,
     project_id: Any,
 ) -> bool:
-    latest_blocked_update = await session.scalar(
-        select(func.max(ChapterModel.updated_at)).where(
+    latest_blocked_row = await session.scalar(
+        select(ChapterModel)
+        .where(
             ChapterModel.project_id == project_id,
             ChapterModel.production_state == "blocked",
         )
+        .order_by(ChapterModel.updated_at.desc())
+        .limit(1)
     )
+    latest_blocked_update = _ensure_utc(getattr(latest_blocked_row, "updated_at", None))
     latest_waiting_repair_update = await session.scalar(
         select(func.max(WorkflowRunModel.updated_at)).where(
             WorkflowRunModel.project_id == project_id,
@@ -413,24 +461,154 @@ async def _blocked_chapters_have_recent_waiting_repair(
             WorkflowRunModel.status == WorkflowStatus.WAITING_HUMAN.value,
         )
     )
+    latest_waiting_repair_update = _ensure_utc(latest_waiting_repair_update)
     if latest_waiting_repair_update is None:
         return False
+    if latest_waiting_repair_update < _dt.datetime.now(_dt.UTC) - _dt.timedelta(
+        seconds=WAITING_REPAIR_SUPPRESSION_SECONDS
+    ):
+        return False
     if latest_blocked_update is None:
-        return True
+        return False
+
+    if latest_waiting_repair_update < latest_blocked_update:
+        return False
+
+    if latest_blocked_row is not None:
+        blocked_meta = dict(getattr(latest_blocked_row, "metadata_json", None) or {})
+        blocked_code = str(blocked_meta.get("write_safety_block_code") or "")
+        if _is_auto_repairable_write_safety_block(blocked_code):
+            attempts = _metadata_int(blocked_meta, "auto_repair_attempts", 0)
+            recovery_wait_seconds = _write_safety_repair_wait_seconds(attempts)
+            if latest_waiting_repair_update >= _dt.datetime.now(_dt.UTC) - _dt.timedelta(
+                seconds=recovery_wait_seconds
+            ):
+                return True
+            return False
+
     return latest_waiting_repair_update >= latest_blocked_update
 
 
-def _project_resume_is_blocked(project: ProjectModel) -> bool:
-    status = (getattr(project, "status", None) or "").lower()
-    if status == "paused":
-        return True
+def _ensure_utc(value: _dt.datetime | None) -> _dt.datetime | None:
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=_dt.UTC)
+    return value.astimezone(_dt.UTC)
+
+
+def _metadata_datetime(metadata: dict[str, Any], *keys: str) -> _dt.datetime | None:
+    for key in keys:
+        value = metadata.get(key)
+        if isinstance(value, _dt.datetime):
+            parsed = value
+        elif isinstance(value, str) and value.strip():
+            try:
+                parsed = _dt.datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+            except ValueError:
+                continue
+        else:
+            continue
+        return _ensure_utc(parsed)
+    return None
+
+
+def _metadata_int(metadata: dict[str, Any], key: str, default: int = 0) -> int:
+    try:
+        return int(metadata.get(key, default))
+    except (TypeError, ValueError):
+        return default
+
+
+def _is_auto_repairable_write_safety_block(block_code: str | None) -> bool:
+    if not block_code:
+        return False
+    normalized = str(block_code).strip().lower()
+    if not normalized:
+        return False
+    return any(code in normalized for code in _AUTO_REPAIRABLE_WRITE_SAFETY_BLOCK_CODES)
+
+
+def _write_safety_repair_wait_seconds(auto_repair_attempts: int) -> int:
+    attempts = max(1, int(auto_repair_attempts))
+    return min(
+        WRITE_SAFETY_REPAIR_MAX_RECOVERY_SECONDS,
+        WRITE_SAFETY_REPAIR_RECOVERY_SECONDS * (2 ** (attempts - 1)),
+    )
+
+
+def _project_has_stale_auto_resumable_generation_gate(project: ProjectModel) -> bool:
     metadata = getattr(project, "metadata_json", None) or {}
     if not isinstance(metadata, dict):
         return False
+    reason = str(metadata.get("production_pause_reason") or "").strip()
+    base_reason = reason.split(":", 1)[0]
+    if base_reason not in _AUTO_RESUMABLE_GENERATION_GATE_REASONS:
+        return False
+    if not (
+        metadata.get("generation_resume_blocked_by_planning_gate")
+        or metadata.get("generation_auto_repair_exhausted")
+    ):
+        return False
+    blocked_at = _metadata_datetime(
+        metadata,
+        "last_generation_gate_blocked_at",
+        "paused_at",
+    )
+    if blocked_at is None:
+        return True
+    cooldown_cutoff = _dt.datetime.now(_dt.UTC) - _dt.timedelta(
+        seconds=GENERATION_GATE_RESUME_COOLDOWN_SECONDS
+    )
+    return blocked_at <= cooldown_cutoff
+
+
+async def _clear_auto_resumable_generation_gate_pause(
+    session: Any,
+    project_id: Any,
+) -> bool:
+    project = await session.get(ProjectModel, project_id)
+    if project is None or not _project_has_stale_auto_resumable_generation_gate(project):
+        return False
+
+    metadata = dict(getattr(project, "metadata_json", None) or {})
+    reason = str(metadata.get("production_pause_reason") or "")
+    metadata["last_generation_gate_auto_resumed_at"] = _dt.datetime.now(_dt.UTC).isoformat()
+    metadata["last_generation_gate_auto_resumed_reason"] = reason
+    for key in (
+        "generation_resume_blocked_by_planning_gate",
+        "generation_auto_repair_exhausted",
+        "production_paused",
+        "production_pause_reason",
+        "last_generation_gate_blocked_at",
+    ):
+        metadata.pop(key, None)
+    project.metadata_json = metadata
+    if (getattr(project, "status", None) or "").lower() == ProjectStatus.PAUSED.value:
+        project.status = ProjectStatus.REVISING.value
+    await session.flush()
+    logger.info(
+        "self-heal: cleared stale generation gate pause slug=%s reason=%s",
+        getattr(project, "slug", project_id),
+        reason,
+    )
+    return True
+
+
+def _project_resume_is_blocked(project: ProjectModel) -> bool:
+    metadata = getattr(project, "metadata_json", None) or {}
+    if not isinstance(metadata, dict):
+        metadata = {}
+    if _project_has_stale_auto_resumable_generation_gate(project):
+        return False
+    status = (getattr(project, "status", None) or "").lower()
+    if status == ProjectStatus.PAUSED.value and not metadata.get("stuck_at_chapter"):
+        return True
     return bool(
         metadata.get("generation_resume_blocked_until_repair_audit")
         or metadata.get("structural_repair_required")
         or metadata.get("production_pause_reason")
+        or metadata.get("production_paused")
     )
 
 
@@ -672,7 +850,8 @@ async def heal_stuck_projects(
 
         async with get_server_session() as session:
             reaped = await reap_orphan_workflow_runs(
-                session, startup_cutoff=startup_cutoff,
+                session,
+                startup_cutoff=startup_cutoff,
             )
             if reaped:
                 await session.commit()
@@ -696,6 +875,11 @@ async def heal_stuck_projects(
                             stuck.slug,
                         )
                         continue
+                    if await _clear_auto_resumable_generation_gate_pause(
+                        session,
+                        stuck.project_id,
+                    ):
+                        await session.commit()
             except Exception:  # noqa: BLE001
                 logger.exception(
                     "self-heal: failed to recheck active workflow for slug=%s",
@@ -707,7 +891,9 @@ async def heal_stuck_projects(
             except Exception as exc:  # noqa: BLE001
                 logger.exception(
                     "self-heal: failed to enqueue slug=%s reason=%s: %s",
-                    stuck.slug, stuck.reason, exc,
+                    stuck.slug,
+                    stuck.reason,
+                    exc,
                 )
                 continue
             if task_id is None:
@@ -730,7 +916,11 @@ async def heal_stuck_projects(
             )
             logger.info(
                 "self-heal: re-queued slug=%s kind=%s reason=%s stuck_at=%s task=%s",
-                stuck.slug, stuck.heal_kind, stuck.reason, stuck.stuck_at_chapter, task_id,
+                stuck.slug,
+                stuck.heal_kind,
+                stuck.reason,
+                stuck.stuck_at_chapter,
+                task_id,
             )
     finally:
         if pool is not None:

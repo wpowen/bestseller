@@ -1,0 +1,37 @@
+{
+  "source_id": "source-0084",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "style_safety_policy": "{'policy_scope': 'universal', 'applicability': 'indeterminate', 'enforcement_level': 'none', 'rationale': 'No source content available for safety policy extraction. Style safety markers cannot be identified when source chapters returned zero narrative content.'}",
+  "pov_and_distance": "{'dominant_pov': 'unknown', 'pov_distance_variation': 'no_data', 'distance_shifts': 'none_extracted', 'implication_for_adaptation': 'POV architecture remains undocumented. Adaptive implementations cannot calibrate narrative distance without source analysis.'}",
+  "sentence_rhythm": [
+    "{'dominant_rhythm': 'no_data', 'rhythm_patterns': [], 'variation_strategy': 'undetermined', 'implication_for_adaptation': 'Sentence-level cadence mechanics unavailable. No rhythm signature can inform prose-style calibration.'}"
+  ],
+  "paragraphing": [
+    "{'paragraph_density': 'no_data', 'scene_versus_summary_ratio': 'unknown', 'white_space_strategy': 'not_extracted', 'implication_for_adaptation': 'Pacing through paragraph structure cannot be reverse-engineered from empty chapter stubs.'}"
+  ],
+  "dialogue_system": [
+    "{'dialogue_frequency': 'no_data', 'tag_line_distribution': 'unknown', 'subtext_mechanism': 'none_extracted', 'direct_versus_reported_speech_balance': 'undetermined', 'implication_for_adaptation': 'Dialogue mechanics catalog empty. No conversational architecture available for style mapping.'}"
+  ],
+  "description_strategy": [
+    "{'sensory_focus': 'no_data', 'filter_word_density': 'unknown', 'show_versus_tell_balance': 'not_extracted', 'description_placement_patterns': [], 'implication_for_adaptation': 'Descriptive texture remains undocumented. Cannot extract sensory prioritization or detail economy signals.'}"
+  ],
+  "exposition_strategy": [
+    "{'exposition_dosage': 'no_data', 'info_dumping_frequency': 'unknown', 'backstory_reveal_mechanisms': [], 'world_building_integration': 'not_extracted', 'implication_for_adaptation': 'Information delivery architecture unavailable. No exposition rhythm or revelation timing patterns identified.'}"
+  ],
+  "emotional_temperature": [
+    "{'dominant_emotional_register': 'no_data', 'temperature_variation_range': 'unknown', 'intimacy_levels': 'not_extracted', 'affective_peaks_and_valleys': [], 'implication_for_adaptation': 'Emotional landscape undocumented. Affective signature cannot inform adaptation tone calibration.'}"
+  ],
+  "hooking_and_transitions": [
+    "{'chapter_hook_types': [], 'transition_mechanisms': [], 'suspense_delivery': 'no_data', 'pacing_between_chapters': 'unknown', 'implication_for_adaptation': 'Engagement mechanics unavailable. No hook architecture or transition strategy extractable.'}"
+  ],
+  "adaptation_guidelines": [
+    "{'binding_constraints': [], 'permissible_modifications': [], 'core_signature_elements': [], 'prohibited_elements': [], 'rationale': 'Without extractable craft observations, no adaptation guardrails or signature elements can be documented. All fields remain empty pending source re-analysis.'}"
+  ],
+  "taboo_copy_signals": [
+    "{'prohibited_patterns': [], 'distinctive_signatures_to_avoid': [], 'note': 'No source-specific writing signatures identified due to universal LLM unavailability across all 213 chapters.'}"
+  ],
+  "confidence": 0.0,
+  "distillation_summary": "author_craft_card generation blocked by upstream failure. All 213 chapters across 9 volumes returned LLM unavailable fallback stubs with zero confidence. No POV architecture, sentence rhythm, paragraphing strategy, dialogue mechanics, description techniques, exposition placement, emotional temperature, or hook/transition systems could be extracted. This artifact serves as a structural placeholder documenting complete data loss rather than a functional craft fingerprint. Re-processing through functional LLM pipeline required before author_craft_card can document extractable style mechanics.",
+  "distillation_source_id": "source-0084"
+}

@@ -1,0 +1,43 @@
+{
+  "book_id": "source-0126",
+  "source_ref": "distillation:ca93ca0c980869d104e3fbc7",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "parsed_profile": {
+    "distillation_status": "blocked",
+    "confidence": 0.0,
+    "data_completeness": "0_of_227_chapters_provided_usable_content",
+    "failure_modes": [
+      "llm_fallback_all_chapters",
+      "zero_confidence_data",
+      "no_extractable_story_design_mechanics",
+      "no_craft_observations",
+      "no_reader_rewards",
+      "no_open_hooks"
+    ],
+    "recommendation": "regenerate_chapter_cards_with_llm_enabled_before_volume_distillation"
+  },
+  "genre_tags": [
+    "undetermined",
+    "generic"
+  ],
+  "reader_promise": "A tale that remains undefined due to missing narrative content",
+  "core_engine": "undetermined",
+  "state_variables": [
+    "fallback_progress"
+  ],
+  "reader_rewards": [
+    "distillable_mechanism_reliability"
+  ],
+  "reusable_mechanisms": [
+    "fallback mechanism abstraction"
+  ],
+  "non_reusable_specifics": [],
+  "risk_patterns": [
+    "llm_fallback_all_chapters",
+    "zero_confidence_data",
+    "insufficient_data_for_distillation"
+  ],
+  "source_id": "source-0126",
+  "distillation_source_id": "source-0126"
+}

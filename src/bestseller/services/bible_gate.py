@@ -561,6 +561,14 @@ class AntagonistMotiveLedger:
 
     code = "ANTAGONIST_MOTIVE_OVERLAP"
     SIMILARITY_THRESHOLD = 0.4
+    # Below this many distinct keywords, the Jaccard signal is too noisy
+    # to distinguish a genuine template duplication from two villains who
+    # happen to share a single keyword like 复仇 / power. Empirically the
+    # production failure mode is "both villains have ≥ 3 motive keywords
+    # and ≥ 40% overlap"; treating 1-2 keyword bags as inconclusive lets
+    # the gate stay strict on real template defects while not blocking
+    # short / placeholder cast entries.
+    MIN_BAG_SIZE = 3
 
     def check(
         self, draft: BibleDraft, invariants: ProjectInvariants
@@ -575,6 +583,10 @@ class AntagonistMotiveLedger:
         bags = [(c, _keyword_bag(c.goal) | _keyword_bag(c.background) | _keyword_bag(c.secret)) for c in antagonists]
 
         for (a, bag_a), (b, bag_b) in combinations(bags, 2):
+            # Inconclusive when either side lacks enough keywords for a
+            # reliable similarity signal.
+            if len(bag_a) < self.MIN_BAG_SIZE or len(bag_b) < self.MIN_BAG_SIZE:
+                continue
             sim = _jaccard(bag_a, bag_b)
             if sim > self.SIMILARITY_THRESHOLD:
                 yield BibleDeficiency(

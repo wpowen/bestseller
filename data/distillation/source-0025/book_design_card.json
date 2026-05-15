@@ -1,0 +1,53 @@
+{
+  "book_id": "source-0025",
+  "source_ref": "distillation:c1244d3001a015d4aec9c2a7",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "parsed_profile": {
+    "distillation_status": "complete_failure",
+    "source_content_availability": "zero",
+    "chapters_attempted": 225,
+    "chapters_with_content": 0,
+    "chapters_fallback_stub": 225,
+    "aggregate_confidence": 0.0,
+    "volume_count": 9,
+    "volume_ranges_processed": [
+      "1-25",
+      "26-50",
+      "51-75",
+      "76-100",
+      "101-125",
+      "126-150",
+      "151-175",
+      "176-200",
+      "201-225"
+    ],
+    "distillation_failure_reason": "LLM unavailable across entire source; no chapter_card content accessible for aggregation; zero extractable story mechanics, craft observations, reader rewards, or narrative hooks",
+    "upstream_issue": "source_content_unavailable",
+    "fallback_triggered": true
+  },
+  "genre_tags": [
+    "distillation-generic"
+  ],
+  "reader_promise": "LLM structured distillation fallback.",
+  "core_engine": "unknown",
+  "state_variables": [
+    "fallback_progress"
+  ],
+  "reader_rewards": [
+    "distillable_mechanism_reliability"
+  ],
+  "reusable_mechanisms": [
+    "fallback mechanism abstraction"
+  ],
+  "non_reusable_specifics": [],
+  "risk_patterns": [
+    "{'pattern': 'llm_fallback_affects_all_chapters', 'severity': 'critical', 'impact': 'No story structure extractable; distillation produces empty design card', 'recovery_action': 'Provide valid source material with LLM-accessible chapter content or manual chapter analysis'}",
+    "{'pattern': 'zero_confidence_across_batch', 'severity': 'critical', 'impact': 'All confidence scores are 0.0; no quality signal for any extracted data', 'recovery_action': 'Re-process source with functioning LLM extraction pipeline'}",
+    "{'pattern': 'no_story_elements_detected', 'severity': 'critical', 'impact': 'Empty arrays for state_progression, turning_points, reusable_mechanisms, reader_rewards, open_hooks', 'recovery_action': 'Human-authored chapter analysis required to populate chapter cards before volume aggregation'}"
+  ],
+  "design_card_validity": "invalid",
+  "design_card_note": "This book_design_card represents distillation failure metadata, not an extractable design fingerprint. All content fields contain null or empty arrays due to upstream LLM unavailability. A valid design fingerprint requires non-zero confidence chapter_card batch with actual story content.",
+  "source_id": "source-0025",
+  "distillation_source_id": "source-0025"
+}

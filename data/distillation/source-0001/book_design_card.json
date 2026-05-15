@@ -1,75 +1,97 @@
 {
   "book_id": "source-0001",
-  "source_ref": "local_user_supplied_text_001",
-  "source_type": "user_supplied_text",
+  "source_ref": "distillation:819651d506bd6780d54144ad",
+  "source_type": "distillation_package",
   "status": "draft_review",
   "parsed_profile": {
-    "encoding": "GB18030",
-    "chapter_count": 256,
-    "volume_count": 12,
-    "average_chapter_chars": 2939
+    "structural_model": "Multi-volume identity arc with revelation clusters",
+    "volume_distribution": "11 volumes: early volumes establish identity foundations, middle volumes escalate factional conflicts and relationship mechanics, late volumes converge identity crisis with ritual transformation and forced alliances, final volume resolves through climactic convergence",
+    "narrative_velocity": "Alternating high-revelation chapters with action/interruption sequences to prevent exposition fatigue; identity mysteries cluster in concentrated chapters creating momentum bursts",
+    "dominant_tension_sources": [
+      "Identity ambiguity (transmigrator status, divine vessel prophecy, unknown parentage)",
+      "Factional competition for protagonist as valuable asset",
+      "Protective relationship paradox (antagonist declares protection for same figure they threaten)",
+      "Ritual stakes with death-failure conditions",
+      "Conspiracy exposure revealing multiple antagonist factions"
+    ],
+    "power_scaling": "Cultivation ranks with contract tiers, bloodline inheritance, divine-level techniques; escalation risk managed through factional complexity rather than individual power inflation"
   },
   "genre_tags": [
-    "穿越",
-    "异界",
-    "魔幻大陆",
-    "旧世界专业体系",
-    "跨体系规则套利",
-    "爽文"
+    "cultivation-fantasy",
+    "transmigration",
+    "political-intrigue",
+    "slow-burn-romance",
+    "multi-factional-conflict",
+    "identity-revelation",
+    "protective-relationship-dynamics",
+    "ritual-transformation",
+    "conspiracy-thriller"
   ],
-  "reader_promise": "主角携带旧世界专业体系进入魔幻异界，用当地人无法理解的规则框架破解强者秩序、收编资源并卷入更高层级势力。",
-  "core_engine": "异界规则出现 -> 主角用旧世界术法/专业知识解释或绕开 -> 当地人误判主角等级 -> 主角获得资源/关系/威慑 -> 更高势力注意主角。",
+  "reader_promise": {
+    "primary_attraction": "Identity mystery unfolds through layered revelations—protagonist discovers they are prophesied divine vessel claimed by multiple factions while navigating transmigrator identity crisis",
+    "emotional_hooks": [
+      "Will protagonist's transmigrator consciousness and original body consciousness achieve reconciliation or dominance?",
+      "Which protective figures can be trusted when multiple factions claim legitimate authority over protagonist's fate?",
+      "How will soul-bond and contract mechanics reshape power dynamics in established relationships?",
+      "Can protagonist maintain agency when curses, prophecies, and factional leverage remove independent action?"
+    ],
+    "satisfaction_delivery": "Revelation density creates momentum through mystery generation; climax convergence resolves multiple threads through specialized counter-kills and group formation commitment; emotional catharsis through sacrifice acknowledgment and relationship solidification"
+  },
+  "core_engine": {
+    "mechanistic_description": "Identity revelation cascade through orchestrated self-destruction, external factional confrontation, and cross-dimensional evidence examination—protagonist's transmigrator status and divine vessel destiny revealed through antagonist exposition, mentor interrogation, and prophecy confirmation",
+    "genre_grammar_instantiation": "Combines cultivation-fantasy power hierarchy establishment with transmigration identity ambiguity; factional competition mechanic creates multiple valid claims on protagonist's loyalty; protective bond mechanics (soul-link, contractual servitude, power hierarchy) drive both intimacy and conflict",
+    "engine_components": [
+      "Identity interrogation loop: allies repeatedly challenge protagonist identity, each confrontation revealing different aspect",
+      "Factional claiming pattern: five competing powers each possess legitimate authority claims on protagonist",
+      "Protective bond mechanics: soul-bonds require mutual vulnerability, contracts enforce power hierarchy, curses enable hostage leverage",
+      "Conspiracy exposure cascade: parallel investigations independently discover same threat, revealing antagonist internal divisions"
+    ]
+  },
   "state_variables": [
-    "cross_system_understanding",
-    "old_system_adaptation",
-    "local_power_misread",
-    "bound_assets",
-    "political_entanglement",
-    "identity_debt",
-    "source_world_mystery",
-    "higher_authority_attention"
+    "{'name': 'identity_resolution_level', 'type': 'spectrum', 'range': ['transmigrator_ambiguity', 'consciousness_conflict', 'identity_crisis', 'original_destruction', 'full_transmigrator_commitment'], 'current_estimate': 'full_transmigrator_commitment_achieved_vol7'}",
+    "{'name': 'factional_claim_count', 'type': 'counter', 'description': 'Number of distinct factions with legitimate authority claims on protagonist', 'tracked_volumes': [7, 8, 10]}",
+    "{'name': 'protective_bond_depth', 'type': 'tiered', 'tiers': ['contract_servitude', 'equal_soul_bond', 'mutual_vulnerability'], 'progression': 'vol7_introduction → vol8_ritual_completion'}",
+    "{'name': 'conspiracy_scope', 'type': 'scale', 'description': 'Breadth of revealed conspiracy involving biological weapons, world conquest, multiple factions', 'progression': ['corpse_worm_weapons', 'shadow_prince_organization', 'imperial_involvement', 'dragon_tribe_history', 'phoenix_clan_trauma']}",
+    "{'name': 'protagonist_agency_level', 'type': 'spectrum', 'range': ['independent_action', 'coerced_alliance', 'curse_leverage', 'forced_journey'], 'current_estimate': 'reduced_agency_vol10_due_curse_blackmail'}"
   ],
   "reader_rewards": [
-    "weak_identity_strong_core",
-    "knowledge_arbitrage",
-    "power_misread_payoff",
-    "exotic_world_discovery",
-    "asset_conversion",
-    "authority_prank"
+    "{'category': 'mystery_resolution', 'specific_payoffs': ['Divine bloodline confirmed with father unknown (identity twist payoff)', 'Biological weapons conspiracy and shadow organization exposed', 'Original consciousness destruction resolves transmigrator ambiguity', \"Fourth sister's survival and Seven Star formation goal disclosed\"]}",
+    "{'category': 'relationship_progression', 'specific_payoffs': ['Soul-bond ritual creates permanent life-force tether between protagonist and protector', \"Yi Shuihan's historical crimes revealed creating moral complexity\", \"Mentor figure reveals intimate knowledge of protagonist's origins\", 'Group formation commitment in final chapter']}",
+    "{'category': 'power_fantasy', 'specific_payoffs': ['Protagonist awakens with unexpected advantages in hostile environment', \"Crisis-triggered power awakening using enemy's attack as energy catalyst\", 'Captive becomes supreme controller in climactic resolution', 'Cultivation technique promises future power growth']}",
+    "{'category': 'revenge_justice', 'specific_payoffs': ['Family destruction avenged through hostile takeover reversal', 'Phoenix clan and betrayal revenge completed', 'Villain execution by specialized counter for each antagonist', 'Protagonist framed as murder suspect cleared through character-deductive reasoning']}"
   ],
   "reusable_mechanisms": [
-    "cross_system_rule_arbitrage",
-    "weak_identity_strong_ability_misread",
-    "host_identity_debt",
-    "high_level_entity_to_asset",
-    "small_map_to_greater_power_escalation",
-    "dual_power_system_fusion"
+    "{'mechanism': 'soul_bond_via_life_force_exchange', 'abstraction': 'Permanent life-force tether requiring mutual vulnerability creates both intimacy and narrative constraint; equal power exchange mirrors emotional equality themes', 'activation_conditions': [\"Ritual requiring both parties' conscious consent\", 'Life-death crisis requiring energy transfer', 'Trust-through-danger scenario'], 'genre_function': 'Converts external threat into relationship stakes; enables emotional vulnerability without breaking character consistency'}",
+    "{'mechanism': 'protective_declaration_paradox', 'abstraction': 'Antagonist declares protection for same person they suspect/compete with; creates moral tension unresolved through explanation', 'activation_conditions': ['Factional identity reveal', 'Historical crimes revelation', 'Public allegiance declaration'], 'genre_function': 'Complicates antagonist alignment; prevents simple villain/hero binary through competing legitimate claims'}",
+    "{'mechanism': 'curse_as_hostage_leverage', 'abstraction': 'Detectable curse placed during prior unguarded interaction, activated as leverage for coerced cooperation', 'activation_conditions': ['Prior physical contact allowing curse placement', 'Geographic weapon or body curse as additional leverage', \"Unknown purpose requiring protagonist's capability\"], 'genre_function': 'Removes protagonist agency for extended arc while maintaining antagonist threat; forces journey sequences'}",
+    "{'mechanism': 'identity_interrogation_loop', 'abstraction': 'Allies repeatedly challenge protagonist identity; each confrontation reveals different aspect without resolving underlying ambiguity', 'activation_conditions': ['Prophecy revelation', 'Parental exposition', 'Antagonist confession', 'Cross-dimensional evidence examination'], 'genre_function': 'Delays resolution while maintaining mystery tension; enables exposition through character motivation rather than narrative voice'}",
+    "{'mechanism': 'ritual_stakes_with_death_failure_condition', 'abstraction': 'Transformation takes fixed period with death on failure; parallel story threads show protagonist attending one crisis while companion departs for vulnerable ritual state', 'activation_conditions': ['Phoenix transformation or equivalent magical evolution', 'Companion departure mystery', 'Grief-induced catatonia resolved by caretaker rotation'], 'genre_function': 'Creates dual life-death stakes; separates protagonist from companion for independent character development'}",
+    "{'mechanism': 'three_way_confrontation_pattern', 'abstraction': 'Two fighters forced to unite against third threat; reversal through enemy collaboration creates breakthrough opportunity', 'activation_conditions': ['Multiple antagonist factions active simultaneously', 'Antagonist reveals internal divisions when confronted with moral choice', 'Enemy collaboration triggers protagonist escape/resolution'], 'genre_function': 'Manages antagonist multiplicity; prevents simple protagonist vs villain binary'}",
+    "{'mechanism': 'mutual_deception_loop', 'abstraction': 'Both parties believe they are deceiving the other; neither knows the other holds inverted knowledge of power dynamics', 'activation_conditions': ['Journey arc initiation', 'Dual investigation parallel', 'Contract tier establishment'], 'genre_function': 'Creates dramatic irony; enables misunderstanding-based comedy in high-stakes scenarios'}",
+    "{'mechanism': 'forced_transformation_reveal', 'abstraction': 'Character breaks magical binding by reverting to more powerful true form; character breaks binding reveals transformation cost', 'activation_conditions': ['Magical containment attempt', 'Transformation ritual dependency', 'Energy sacrifice acceptance'], 'genre_function': 'Creates power scaling flexibility; explains prior weakness through hidden true form'}",
+    "{'mechanism': 'antagonist_faction_multiplication', 'abstraction': 'Multiple antagonist factions independently discover same conspiracy; each faction has sympathetic treatment through historical trauma reveals', 'activation_conditions': ['Dragon tribe massacre reveal', 'Phoenix clan trauma', 'Imperial conspirators', 'Unknown third faction active'], 'genre_function': \"Prevents antagonist simplification; creates factional competition for protagonist's allegiance\"}",
+    "{'mechanism': 'crisis_triggered_power_awakening', 'abstraction': \"Captive uses enemy's attack as energy catalyst for transformation; voluntary sacrifice acceptance by companion shares protagonist's fate to spare others\", 'activation_conditions': ['Captive state with untapped potential', 'Enemy attack as external catalyst', 'Companion willingness to share fate'], 'genre_function': 'Delivers power fantasy satisfaction; explains sudden capability increase through external catalyst rather than training arc'}"
   ],
   "non_reusable_specifics": [
-    "source title",
-    "source author",
-    "source character names",
-    "source family names",
-    "source continent/country names",
-    "source technique names",
-    "source artifact names",
-    "source mount/species combination",
-    "specific lightning/computer portal opening",
-    "specific brother-cliff-murder inheritance setup"
+    "Proper nouns: Ximen family, Lan Luo Empire, Qingyu Continent, Cloud Desolate Continent, Roland Empire, Maya Empire",
+    "Character identities: Ximen Mingyue, Ximen Wuming, Yi Shuihan, 西门明月, 袁浅析, 无天, 龙娃, 小凤, 山莫莫, 第四姐",
+    "Power system terms: Yixing Jue cultivation technique, 御风弄影, 碎月千斩, elemental cultivation/magic dual paths, 风水术",
+    "Faction names: Dark organization, Phoenix clan, Dragon tribe, Shadow prince organization, Seven Stars Banners, 魔法工会",
+    "Geographic locations: Black Demon Forest, Roland City purple wisteria ancient tree cityscape, Taiji formation site, 天涯海阁 academy",
+    "Artifact names: Light Origin Stone, bronze mask",
+    "Architectural/cultural: Roland Empire ancient Chinese-style architecture, ice silk brocade fabric hierarchy, dragon horse five-tier demon beast",
+    "Chapter-specific resolutions: ghost servant refinement of 西门天华, academy promise payoff"
   ],
   "risk_patterns": [
-    "female_objectification_as_reward",
-    "effortless_asset_collection",
-    "overpowered_without_cost",
-    "too_many_named_factions_without_state_tracking",
-    "comedy_noise_overwhelming_mainline"
+    "{'pattern': 'concentrated_revelation_clustering', 'description': 'Multiple major mysteries resolved simultaneously in single chapter; identity reveals, conspiracy exposure, and relationship milestones all resolve within 3-4 chapter span', 'mitigation_strategy': 'Maintain open hooks from each volume to future volumes; use parallel investigation threads to distribute revelation across characters rather than protagonist alone', 'severity': 'medium'}",
+    "{'pattern': 'protagonist_agency_reduction', 'description': 'Extended narrative stretch where body curse, forced travel, and factional leverage remove independent action; protagonist becomes passive recipient of revelations and coerced actor', 'mitigation_strategy': 'Limit curse/forced travel arc duration; establish clear recovery conditions for agency restoration; ensure protagonist maintains internal voice and decision-making even when external options constrained', 'severity': 'high'}",
+    "{'pattern': 'exposition_heavy_dialogue', 'description': 'Faction mechanics, power systems, and backstory delivered through speech rather than action; campfires, eavesdropping, and interrogation scenes replace scene-based revelation', 'mitigation_strategy': 'Use peripheral characters (龙娃, 无天) to ask questions on behalf of reader; intersperse combat dialogue for character motivation rather than pure lore delivery', 'severity': 'medium'}",
+    "{'pattern': 'antagonist_faction_dilution', 'description': 'Multiplication of antagonist factions (dragon tribe, phoenix clan, imperial conspirators, unknown third faction) risks diluting narrative focus and straining power scaling', 'mitigation_strategy': 'Ensure each faction has distinct motivation and sympathetic historical context; use faction conflicts with each other rather than all opposing protagonist', 'severity': 'medium'}",
+    "{'pattern': 'trope_predictability', 'description': 'Father mastermind reveal, mentor threats, body possession identity crisis, surviving family as antagonist—common transmigration/cultivation tropes may feel predictable without subversion', 'mitigation_strategy': 'Complicate each trope through moral ambiguity and competing legitimate claims; delay explanation until late chapters to maintain mystery surface', 'severity': 'low'}",
+    "{'pattern': 'emotional_compression', 'description': 'Grief arc resolved quickly (2 days) may feel emotionally compressed; sacrificial redemption occurs off-screen limiting emotional payoff; parallel transformation rituals may diffuse focus', 'mitigation_strategy': 'Allow emotional beats space for internal processing; show sacrifice preparation rather than just outcome; use caretaker rotation to externalize grief resolution', 'severity': 'medium'}",
+    "{'pattern': 'tonal_shift_jarring', 'description': 'Transition from epic battle climax to slice-of-life academy setting in final chapter may feel jarring; group promise ending functions as sequel hook rather than satisfying conclusion', 'mitigation_strategy': 'Bridge tonal shift with transitional chapter showing character adjustment; ensure final hooks feel like expansion rather than incomplete resolution', 'severity': 'medium'}",
+    "{'pattern': 'near_miss_repetition', 'description': 'Protagonist repeated narrow escapes risk repetitive pattern; passive reception of revelations reduces agency perception', 'mitigation_strategy': 'Vary escape mechanisms; give protagonist active role in revelation discovery rather than pure recipient', 'severity': 'low'}"
   ],
-  "recommended_system_targets": [
-    "material_library.plot_patterns",
-    "material_library.scene_templates",
-    "material_library.power_systems",
-    "material_library.anti_cliche_patterns",
-    "story_design_grammars.otherworld-cross-system",
-    "story_design_kernel.prompt_block"
-  ]
+  "source_id": "source-0001",
+  "distillation_source_id": "source-0001"
 }

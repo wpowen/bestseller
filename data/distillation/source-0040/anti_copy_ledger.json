@@ -1,0 +1,11 @@
+{
+  "source_id": "source-0040",
+  "blocked_categories": [
+    "specific_author_voice_markers",
+    "named_entities",
+    "exact_phrases",
+    "distinctive_templates"
+  ],
+  "blocked_combinations": [],
+  "replacement_policy": []
+}

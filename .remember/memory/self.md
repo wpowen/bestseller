@@ -1,5 +1,17 @@
 # Self Memory
 
+Mistake: 仅依赖 Calibre 解析 MOBI/AZW3，在无 GUI 安装的服务器或 PATH 未配置时批量蒸馏大量失败。
+Wrong: ``_extract_calibre_payload`` 在找不到 ``ebook-convert`` 时直接 ``BookParseError``，把安装问题完全交给用户。
+Correct: 增加 PyPI ``mobi``（KindleUnpack）作为后备解压；``pyproject`` 增加 ``[distillation]`` extra；Calibre 仍优先；pytest 对 ``standard-imghdr`` 的 ``DeprecationWarning`` 需 ``filterwarnings`` 放行以免 ``error`` 配置下用例失败。
+
+---
+
+Mistake: 多进程并发调用 ``prepare_source`` 时仅依赖「后写注册表」无法保证 ``source_registry.index.json`` 一致；且仅用目录扫描分配 ``source-NNNN`` 会在「注册表已占号但未落盘目录」时复用编号。
+Wrong: 无锁并发写共享 JSON；``next_source_serial`` 只扫 ``data/distillation/source-*`` 目录。
+Correct: 对注册表/私有注册表关键段使用 ``fcntl.flock``（``data/distillation/.prepare_source.lock``）；先将 ``_upsert_repo_registry`` + 落盘放在持锁段、正文与 manifest 在锁外写入，最后再持锁写私有注册表；批量脚本分配新号时同时扫描注册表内 ``source_ids`` 的最大序号。
+
+---
+
 Mistake: README 中写死「迁移数量 / services 模块数」易与仓库漂移。
 Wrong: 写死如「29 个迁移」「112 模块」而不核对 `migrations/versions` 与 `services/*.py` 计数。
 Correct: 使用「30+」「持续增长」或运行 `ls migrations/versions | wc -l` 后写入；徽章与正文保持一致。
@@ -51,8 +63,26 @@ Correct:
 
 ---
 
+Mistake: 只跑少量单测文件时把 pytest 的 **exit code 1** 当成「用例失败」。
+Wrong: `pyproject.toml` 里默认 `addopts` 含 `--cov=...` 与 `--cov-fail-under=80`；单文件测试会通过用例但总覆盖率极低，pytest-cov 在收尾阶段报 `Coverage failure`。
+Correct: 本地验证子集时追加 `--no-cov`，或跑足够大的测试子集使总覆盖率达标；`PYTEST_ADDOPTS=''` 不会覆盖 `pyproject` 里的 `addopts`。
+
+---
+
+Mistake: ``package_book_phase_complete`` 只认 ``material_entries.review.jsonl``，与 ``validate_distillation_package``（允许 ``material_entries.sample.jsonl``）不一致，导致 pilot ``source-0001`` 被误判为未完成、无人值守脚本反复跑单书聚合。
+Wrong: 硬编码只检查 ``material_entries.review.jsonl``。
+Correct: 与 ``distillation_assets._first_existing(..., MATERIAL_REVIEW_FILENAMES)`` 对齐；跨书聚合仅包含本轮 ``sources_succeeded`` 的包，避免失败源仍进入 aggregate。
+
+---
+
 Mistake: Assume `output/天机录/amazon/quality_audit` persists after rebuilding books.
 Wrong: Run `build_amazon_book.py` and then read audit/progress files without re-generating them.
 Correct:
 - Re-run `scripts/scan_residuals.py` and `scripts/smart_audit.py` after EPUB build if `quality_audit` is missing.
 - Recreate/update `progress.json` under `quality_audit` before final reporting.
+
+---
+
+Mistake: 章节蒸馏把 ``max_chapter_chars`` 默认截断到 12k，导致长章无法按子块送进 LLM，与子块策略冲突。
+Wrong: ``run_full_auto_distillation`` 默认 ``--max-chapter-chars 12000`` 在切块之前截断全文。
+Correct: 默认 ``0`` 表示不预先截断；超长章由 ``distillation_chapter_llm.split_chapter_text_for_llm``（软 8k / 硬 12k）拆子块后再调用 ``complete_text``。

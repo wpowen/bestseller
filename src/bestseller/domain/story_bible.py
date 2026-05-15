@@ -1068,6 +1068,38 @@ class CharacterInput(BaseModel):
     pronoun_set_zh: str | None = None
     pronoun_set_en: str | None = None
 
+    @field_validator("pronoun_set_zh", mode="before")
+    @classmethod
+    def _coerce_zh_pronouns(cls, v: Any) -> Any:
+        if isinstance(v, dict):
+            for key in ("subjective", "subject", "nominative", "objective"):
+                text = str(v.get(key) or "").strip()
+                if text:
+                    return text
+        if isinstance(v, (list, tuple)):
+            parts = [str(item).strip() for item in v if str(item).strip()]
+            if parts:
+                return "/".join(parts)
+        return coerce_to_narrative_string(v)
+
+    @field_validator("pronoun_set_en", mode="before")
+    @classmethod
+    def _coerce_en_pronouns(cls, v: Any) -> Any:
+        if isinstance(v, dict):
+            subject = str(
+                v.get("subjective") or v.get("subject") or v.get("nominative") or ""
+            ).strip()
+            obj = str(v.get("objective") or v.get("object") or "").strip()
+            if subject and obj:
+                return f"{subject}/{obj}"
+            if subject:
+                return subject
+        if isinstance(v, (list, tuple)):
+            parts = [str(item).strip() for item in v if str(item).strip()]
+            if parts:
+                return "/".join(parts)
+        return coerce_to_narrative_string(v)
+
     @field_validator("gender", mode="before")
     @classmethod
     def _coerce_gender_to_identity_label(cls, v: Any) -> str:
@@ -1101,6 +1133,51 @@ class CharacterInput(BaseModel):
         return coerce_to_narrative_string(v)
 
     relationships: list[CharacterRelationshipInput] = Field(default_factory=list)
+
+    @field_validator("relationships", mode="before")
+    @classmethod
+    def _coerce_relationships_payload(cls, v: Any) -> Any:
+        """Accept both the structured list form and a flat ``{toward_X: desc}`` dict.
+
+        Older / drifting LLM completions sometimes emit relationships as
+        ``{"toward_marcus": "Hostile (full agenda unclear)", "toward_ko": "Unknown"}``
+        instead of the canonical
+        ``[{"character": "marcus", "type": "Hostile …"}, …]``. Reject-on-validation
+        used to dead-letter the whole CastSpec into ``waiting_human_review``;
+        we coerce here so a malformed shape never blocks the pipeline.
+        """
+
+        if v is None:
+            return []
+        if isinstance(v, dict):
+            coerced: list[dict[str, Any]] = []
+            for key, value in v.items():
+                key_str = str(key).strip()
+                if not key_str:
+                    continue
+                # Strip an optional ``toward_`` prefix that the LLM tends to add.
+                target = key_str
+                if target.lower().startswith("toward_"):
+                    target = target[len("toward_") :]
+                target = target.strip().strip(":")
+                if not target:
+                    continue
+                if isinstance(value, dict):
+                    rel_type = (
+                        str(value.get("type") or value.get("relationship") or "")
+                        .strip()
+                        or "unspecified"
+                    )
+                    tension = value.get("tension")
+                    coerced.append(
+                        {"character": target, "type": rel_type, "tension": tension}
+                    )
+                else:
+                    text = str(value).strip() or "unspecified"
+                    coerced.append({"character": target, "type": text})
+            return coerced
+        return v
+
     voice_profile: CharacterVoiceProfileInput = Field(default_factory=CharacterVoiceProfileInput)
     moral_framework: CharacterMoralFramework = Field(default_factory=CharacterMoralFramework)
     ip_anchor: CharacterIPAnchorInput = Field(default_factory=CharacterIPAnchorInput)

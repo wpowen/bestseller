@@ -25,6 +25,7 @@ CORE_TRUTH_ARTIFACT_TYPES: frozenset[str] = frozenset(
         ArtifactType.VOLUME_PLAN.value,
         ArtifactType.ACT_PLAN.value,
         ArtifactType.STORY_DESIGN_KERNEL.value,
+        ArtifactType.EMOTION_DRIVEN_KERNEL.value,
     }
 )
 

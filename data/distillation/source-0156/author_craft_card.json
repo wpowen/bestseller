@@ -1,0 +1,52 @@
+{
+  "source_id": "source-0156",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "style_safety_policy": "{'policy': 'strict_no_imitation', 'rationale': 'No source content available for stylistic analysis; all 106 chapters returned llm_fallback stubs. Prevents hallucinated craft patterns.', 'constraints': ['No author names, source titles, or named entities permitted', 'No distinctive sentence templates extractable', 'No genre-specific prose patterns derivable', 'No voice characteristics recoverable']}",
+  "pov_and_distance": "{'status': 'undeterminable', 'data_availability': 'none', 'note': 'Source chapters unavailable; no POV choices, narrative distance, or perspective shifts extractable across 106 chapters'}",
+  "sentence_rhythm": [
+    "{'status': 'undeterminable', 'data_availability': 'none', 'note': 'No chapter-level text present; cadence, length variation, and syntactic patterns cannot be analyzed'}"
+  ],
+  "paragraphing": [
+    "{'status': 'undeterminable', 'data_availability': 'none', 'note': 'No prose content available for paragraph structure, density, or white-space rhythm analysis'}"
+  ],
+  "dialogue_system": [
+    "{'status': 'undeterminable', 'data_availability': 'none', 'note': 'No dialogue content; attribution patterns, tag usage, and conversational mechanics not extractable'}"
+  ],
+  "description_strategy": [
+    "{'status': 'undeterminable', 'data_availability': 'none', 'note': 'No descriptive passages present; sensory detail, interiority, or world-rendering techniques absent'}"
+  ],
+  "exposition_strategy": [
+    "{'status': 'undeterminable', 'data_availability': 'none', 'note': 'No narrative content available; information delivery methods, backstory placement, and exposition timing not assessable'}"
+  ],
+  "emotional_temperature": [
+    "{'status': 'undeterminable', 'data_availability': 'none', 'note': 'No affective content present; tonal register, mood patterns, and emotional arc rendering not extractable'}"
+  ],
+  "hooking_and_transitions": [
+    "{'status': 'undeterminable', 'data_availability': 'none', 'note': 'No chapter openings, closings, or scene transitions available for hook or transition analysis'}"
+  ],
+  "adaptation_guidelines": [
+    "{'status': 'non_applicable', 'rationale': 'Cannot derive adaptation mechanics (medium-specific pacing, visual-to-prose translation, scene selection) without source content', 'constraints': ['Do not generate placeholder craft guidelines based on genre tags alone', 'Do not assume common patterns fill absent data', 'Reprocess source text at chapter level before deriving adaptation guidance']}"
+  ],
+  "taboo_copy_signals": [
+    "{'status': 'clear', 'rationale': 'No extractable content means no distinctive voice, phrase, or structural pattern that must be avoided or preserved', 'flags': []}"
+  ],
+  "confidence": 0.0,
+  "distillation_failure_report": {
+    "root_cause": "complete_llm_fallback",
+    "affected_chapters": 106,
+    "affected_volumes": 5,
+    "zero_confidence_chapters": 106,
+    "total_chapters": 106,
+    "failure_modes": [
+      "llm_fallback_all_chapters",
+      "no_extractable_story_content",
+      "zero_confidence_across_all_volumes",
+      "no_reusable_mechanisms",
+      "no_reader_rewards",
+      "no_craft_observations"
+    ],
+    "recommended_action": "Reprocess raw source text at chapter level with functional extraction pipeline before volume-level or book-level craft_card distillation"
+  },
+  "distillation_source_id": "source-0156"
+}

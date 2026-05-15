@@ -1,0 +1,44 @@
+{
+  "book_id": "source-0129",
+  "source_ref": "distillation:79c9b8a9c298481e9b3fd76a",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "parsed_profile": {
+    "distillation_status": "failed",
+    "note": "All 48 chapters (1‑48) across two volumes returned llm_fallback stubs; no story mechanics, themes, character arcs, or craft observations could be extracted.",
+    "confidence_distribution": "uniform 0.0 across all chapters",
+    "segmentation_patterns_encountered": [
+      "[分段1/2]",
+      "[分段2/2]",
+      "[分段1/3]",
+      "[分段2/3]",
+      "[分段3/3]",
+      "no-segmentation"
+    ]
+  },
+  "genre_tags": [
+    "distillation-generic"
+  ],
+  "reader_promise": "LLM structured distillation fallback.",
+  "core_engine": "unknown",
+  "state_variables": [
+    "fallback_progress"
+  ],
+  "reader_rewards": [
+    "distillable_mechanism_reliability"
+  ],
+  "reusable_mechanisms": [
+    "fallback mechanism abstraction"
+  ],
+  "non_reusable_specifics": [],
+  "risk_patterns": [
+    "llm_fallback — distillation incomplete for all chapters in range",
+    "zero confidence across entire chapter batch",
+    "no content extraction possible from source",
+    "llm_fallback_reported_across_all_chapters_26-48",
+    "zero_confidence_in_entire_batch",
+    "no_content_available_for_distillation"
+  ],
+  "source_id": "source-0129",
+  "distillation_source_id": "source-0129"
+}

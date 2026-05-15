@@ -1,0 +1,36 @@
+{
+  "source_id": "source-0005",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "style_safety_policy": "High-level craft abstraction only. No copying of specific phrases, named entities, or distinctive sentence structures. Designed for cross-genre adaptation of game-system narrative mechanics, not reproduction of source content.",
+  "pov_and_distance": "Third-person limited with diegetic interface integration. The narrative maintains close protagonist access while permitting system-level exposition through in-world mechanics. POV remains anchored to the protagonist's immediate perception; external events are filtered through their competence gap and resource scarcity. The system interface itself serves as a narrative device that justifies close-POV information delivery without breaking diegetic boundaries.",
+  "sentence_rhythm": [
+    "Variable rhythm calibrated to mechanic type. Tutorial sequences employ clipped, declarative constructions with visual-element breaks (line breaks, bracketed UI) to simulate interface cadence. Combat and tension scenes extend through participial chains and sensory escalation. Ritual mechanics use measured, procedural rhythm mimicking step-by-step validation feedback. The prose should feel responsive to system events—snappy during notifications, weighted during blood-binding or cultivation breakthroughs."
+  ],
+  "paragraphing": [
+    "Tight, scene-driven paragraphs anchored to immediate action or revelation. System notifications receive isolated paragraph treatment, sometimes single-line formatting, to create visual pop against narrative prose. Scene breaks mark major quest-stage transitions (find_object → interact_landmark → blood_bind). Exposition through system panels replaces traditional narrator explanation, permitting block-format information delivery without breaking immersion."
+  ],
+  "dialogue_system": [
+    "Dialogue functions as both characterization and exposition delivery. Protagonist speech patterns maintain understated competence—few words, absorbing insults strategically to protect allies. External characters deliver exposition through challenge, threat, or public humiliation rather than explanation. Succession-dialogue scenes (funeral, ritual transfer) employ formal register to establish weight of commitment. System-related speech is minimal and functional; the interface communicates more than characters do."
+  ],
+  "description_strategy": [
+    "Sensory specificity for ritual and mechanic engagement (drip blood, spiritual connection sensation, energy spreading). Abstract, efficient description for environmental context—enough to anchor scene without slowing pacing. Antagonist actions receive heightened sensory detail to maximize perceived threat; protagonist's hidden advantage remains sensory-neutral to maintain concealment. Territory confirmation employs visualization through system-rendered imagery rather than purely textual description."
+  ],
+  "exposition_strategy": [
+    "Diegetic system exposition replaces narrator-driven explanation. Character status panels, quest trackers, and notification flashes deliver mechanical information within story logic. World-building exposition arrives through antagonist interaction, historical reference in challenges, or system-provided context clues. Cultivation mechanics are demonstrated through action rather than explained through monologue. The protagonist's competence gap justifies why certain information must be earned rather than narrated directly."
+  ],
+  "emotional_temperature": [
+    "Cool underdog register with deferred emotional payoff. Surface temperature remains controlled—protagonist absorbs insults, maintains composure, does not bristle visibly. Heat builds through accumulated external pressure (three-year deadline, hostile powers, resource scarcity). Emotional release occurs in system-reward moments (quest completion, territory confirmation, newbie package delivery) rather than interpersonal conflict. Dramatic irony maintains tension: reader knows protagonist's hidden advantage while antagonists remain unaware."
+  ],
+  "hooking_and_transitions": [
+    "Chapter openings anchor to unresolved system notification, pending quest, or external threat escalation. Hooks leverage anticipation (reward delivery, competence gain, system mystery) rather than cliffhanger action. Transitions between quest stages use system-logic markers (stage completion flash, notification sound, energy spread visualization) rather than temporal or spatial description. Between-volume hooks should plant system mystery seeds that pay off within the subsequent arc rather than deferring payoff indefinitely."
+  ],
+  "adaptation_guidelines": [
+    "Core craft transferable to any genre employing hidden-advantage or system mechanics. Key adaptations: swap gamified mechanics for magic systems, cultivation for superpowers, sect for organization/team. Maintain the competence-gap → systematic-gain arc. Preserve the dramatic irony structure (reader knows advantage, antagonists do not). Diegetic exposition strategy adapts to any world where information delivery can be framed through in-world mechanics rather than narrator. Underdog positioning adapts across power-fantasy genres."
+  ],
+  "taboo_copy_signals": [
+    "Do not copy: specific interface terminology (quest names, status labels, notification phrasing), named organizations/sects, named characters, specific cultivation terms or power hierarchies, ritual step sequences verbatim, location names, artifact specifications, plot-specific humiliation scenes, succession-dialogue content, or system-mystery revelation structure. Generic signals to avoid: identical checklist formatting, same notification-sound descriptions, repeated energy-spread imagery cadence, fixed quest-stage terminology patterns. Any phrase appearing verbatim in source should be considered a taboo signal."
+  ],
+  "distillation_source_id": "source-0005",
+  "confidence": 0.0
+}

@@ -1,0 +1,40 @@
+key: distillation-generic
+name: Distillation Generic LLM Fallback Detection Patch
+source_ids:
+- source-0088
+status: draft_review
+applies_to_categories:
+- distillation-generic
+required_contracts:
+- no_chapters_with_empty_content
+- confidence_above_zero_threshold
+- minimum_reusable_mechanisms_per_chapter
+- llm_fallback_must_retry_with_alternative_pipeline
+state_variables:
+- fallback_progress
+- retry_state
+- confidence_tracker
+- batch_failure_detected
+- zero_confidence_count
+chapter_change_vectors:
+- chapter_range: 1-84
+  vector_type: reprocess_required
+  action: reingest_with_alternative_distillation_pipeline
+  priority: critical
+- volume_range: 1-4
+  vector_type: volume_recovery
+  action: apply_tiered_distillation_with_fallback_guardrails
+reader_rewards:
+- distillable_mechanism_reliability
+- zero_confidence_detection
+- batch_failure_awareness
+hook_or_aftereffect_types:
+- llm_fallback_detection_hook
+- zero_confidence_alert_hook
+- batch_reprocess_trigger_hook
+- source_reingestion_required_hook
+forbidden_defaults:
+- accept_empty_chapter_content
+- confidence_zero_as_valid
+- empty_reusable_mechanisms_as_complete
+- zero_reader_rewards_as_acceptable

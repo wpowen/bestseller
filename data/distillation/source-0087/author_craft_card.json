@@ -1,0 +1,36 @@
+{
+  "source_id": "source-0087",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "style_safety_policy": "Cannot establish style safety parameters — all 152 chapters returned LLM unavailable fallback stubs with zero extractable content. No authorial voice, language patterns, or stylistic fingerprints present in source data. Insufficient material to determine prohibited voice elements, trademarked phrasing, or named-entity dependencies.",
+  "pov_and_distance": "POV and narrative distance analysis blocked — chapter_cards contain only placeholder stubs. No point-of-view choices, narrator types, or distance calibration data available for extraction. Author craft fingerprint at POV level remains undeterminable pending functional LLM reprocessing.",
+  "sentence_rhythm": [
+    "Sentence rhythm unobservable — all chapter content fields are empty arrays. No syntactic patterns, clause variation, cadence profiles, or rhythmic signatures extractable. Volume-level and chapter-level craft analysis returns zero data across all 7 volumes."
+  ],
+  "paragraphing": [
+    "Paragraph-level structural analysis impossible — chapter_cards contain no narrative content, scene breakdowns, or paragraph-level organization data. No white space modulation, section segmentation, or structural rhythm identifiable in fallback stub objects."
+  ],
+  "dialogue_system": [
+    "Dialogue mechanics cannot be assessed — zero dialogue content present in any of 152 chapter stubs. No speaker attribution patterns, dialogue-to-narration ratios, conversation pacing, or direct/indirect speech distribution extractable."
+  ],
+  "description_strategy": [
+    "Description deployment unmeasurable — all description_observations fields contain empty arrays. No sensory weighting, detail density calibration, environmental layering, or characterization-via-description patterns extractable from placeholder stubs."
+  ],
+  "exposition_strategy": [
+    "Exposition handling undetectable — chapter_cards lack any plot information, backstory delivery methods, or explanatory passage structures. No exposition-to-scene ratios, revelation timing, or information withholding patterns extractable."
+  ],
+  "emotional_temperature": [
+    "Emotional register indeterminate — reader_rewards arrays empty across all chapters. No emotional arc data, tension calibration patterns, catharsis mechanisms, or tonal signatures extractable from LLM unavailable stubs."
+  ],
+  "hooking_and_transitions": [
+    "Hook and transition mechanisms catalog unavailable — open_hooks arrays empty on all 152 chapters. No chapter-ending tension strategies, transition types, or reader retention mechanisms extractable from placeholder content."
+  ],
+  "adaptation_guidelines": [
+    "Adaptation recommendations blocked — source-0087 contains zero extractable narrative content, dialogue, or descriptive material across 7 volumes. No medium-specific craft adaptations, visual translation considerations, or structural pacing advice producible without source reprocessing. All adaptation guidelines require functional LLM pipeline before generation."
+  ],
+  "taboo_copy_signals": [
+    "No copy signals detectable — absence of actual author content prevents identification of proprietary phrasing patterns, named-entity dependencies, or trademarked expressions. Stub objects provide no textual basis for taboo pattern recognition."
+  ],
+  "confidence": 0.0,
+  "distillation_source_id": "source-0087"
+}

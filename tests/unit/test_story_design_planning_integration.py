@@ -110,6 +110,11 @@ def test_story_design_kernel_is_core_planning_artifact() -> None:
     assert ArtifactType.STORY_DESIGN_KERNEL.value in CORE_TRUTH_ARTIFACT_TYPES
 
 
+def test_emotion_driven_kernel_is_core_planning_artifact() -> None:
+    assert ArtifactType.EMOTION_DRIVEN_KERNEL.value == "emotion_driven_kernel"
+    assert ArtifactType.EMOTION_DRIVEN_KERNEL.value in CORE_TRUTH_ARTIFACT_TYPES
+
+
 def test_prewrite_readiness_warns_when_story_design_kernel_missing() -> None:
     report = evaluate_prewrite_readiness(_readiness_ready_kernel())
     warning_codes = {finding.code for finding in report.warnings}

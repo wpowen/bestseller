@@ -1,0 +1,124 @@
+# =============================================================================
+# Chapter Signature Audit · 章节标志段审计
+# =============================================================================
+# 目的：
+#   解决"过得去就好"的中庸感。每章必须有 ≥ 1 个"截图段"——
+#   读者会想停下来截图分享的瞬间。
+#
+#   这是从"无错" 到"有记忆点" 的飞跃。多数 AI 写的章节都"过得去"，
+#   但读完没有任何让人记住的瞬间——这是网文从"签约" 到"爆款"
+#   的真正分水岭。
+# =============================================================================
+
+version: 2026.05.14
+
+# =============================================================================
+# 截图段类型（writer 写每章前选 ≥ 1 种）
+# =============================================================================
+signature_types:
+
+  golden_line:
+    display_name: 金句
+    description: 一句话，离开本章语境也成立。常含价值观 / 反讽 / 时代感悟
+    examples:
+      - 沈青崖："证据不能只剩在嘴上。"
+      - "死人的手最稳。死人不会被人锁起来烧。"
+      - "民国十七年。沈家旧宅烧成白地的那一夜，他七岁。"
+    test:
+      - 摘出来作为本书宣传文案可以用吗？
+      - 单句去掉前后文，读者仍能感受到张力？
+
+  surgical_description:
+    display_name: 神描写
+    description: 一段 30-80 字描写，物理感极强且新鲜。叙述视角发现别人写不出的细节
+    examples:
+      - "那串紫檀，他每数三颗就捻一下。像走表。"
+      - "门缝下还压着一截气——离地三寸，比验尸房的灯油还低三分。"
+    test:
+      - 同行作者会想模仿这段吗？
+      - 一段写完读者会停下来重读一遍吗？
+
+  scene_climax_moment:
+    display_name: 神场景
+    description: 一个完整 100-300 字小场景，集合多感官 / 多角色反应 / 物理细节，本身能"独立成段"
+    examples:
+      - ch1 周神算开门 + 主角亮残格 + 周神算脸色第一次变 + 巡捕木架撞门
+    test:
+      - 这段可以单独剪出来当宣传短视频吗？
+
+  twist_with_foreshadow_landing:
+    display_name: 神反转
+    description: 反转 + 至少 1 条已埋伏笔的瞬间偿付。反转必须能追溯到 ≥ 2 条已存在线索
+    examples:
+      - ch3 年轻巡捕嘴角咧开用清尘声音说话 + "左靴跟缺一角" 与清尘记忆里靴跟一致
+    test:
+      - 反转之后回看前文能找到至少 2 条暗示？
+
+  micro_detail_punch:
+    display_name: 神细节
+    description: 一个看似无关的小细节，后来成关键证据 / 关键认知
+    examples:
+      - 周神算袖口黑气与勒鬼黑线同源
+      - 林氏指甲在棺材角抠出"井"字缺一横
+      - 第四人帽檐下"霜冻过的鬓角"
+    test:
+      - 这个细节让本章在 50 章后仍被读者记住吗？
+
+  reaction_amplification_burst:
+    display_name: 反应放大瞬间
+    description: 主角动作触发多个旁观者的连锁反应，反应密度极高（≥ 3 个角色反应）
+    examples:
+      - ch1 主角亮残格 → 周神算眼角抽 → 巡捕互看一眼 → 木架撞门框
+    test:
+      - 同一动作让 ≥ 3 个角色有不同的可感反应？
+
+# =============================================================================
+# Per-Chapter Requirement
+# =============================================================================
+chapter_requirements:
+  minimum_per_chapter:
+    description: 每章至少 1 个 signature_type 命中
+    threshold: 1
+    enforcement: 没有任何命中 → critic.peer_author.must_rewrite=true
+
+  recommended_per_chapter:
+    description: 健康分布
+    recommendation:
+      ordinary_chapter: 1-2 个 signature
+      hook_chapter: 2-3 个 signature
+      climax_chapter: 3-4 个 signature
+      milestone_chapter: ≥ 3 个 signature
+
+  recommended_diversity:
+    description: 不要每章都用同一类型
+    rule: 连续 5 章不允许只用同一种 signature_type
+
+# =============================================================================
+# Writer 注入接口
+# =============================================================================
+writer_injection: |
+  写本章前，先决定本章要植入哪个 signature_type 作为"读者记忆锚点"：
+  - 类型：[golden_line | surgical_description | scene_climax_moment | twist_with_foreshadow_landing | micro_detail_punch | reaction_amplification_burst]
+  - 位置：通常在章节 60-80% 处（小爽点之后，章末勾子之前）
+  - 测试：写完后用 signature_type.test 自检
+
+  禁止：
+  - 每章塞 ≥ 5 个 signature（过度设计反而稀释）
+  - 截图段全章末（应该分散）
+  - 用形容词堆砌冒充神描写
+
+# =============================================================================
+# Critic 检测（peer_author 新增子维度）
+# =============================================================================
+critic_checks:
+  signature_count:
+    rule: 章内命中 signature_type 数量 ≥ 1
+    threshold: ≥ 1
+
+  signature_strength:
+    rule: 每个 signature 必须通过其 type.test 主观评估
+    threshold: 0.70
+
+  signature_diversity_5chap:
+    rule: 最近 5 章不全是同一 signature_type
+    threshold: 至少 3 种类型

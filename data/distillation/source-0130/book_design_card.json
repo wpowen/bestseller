@@ -1,0 +1,39 @@
+{
+  "book_id": "source-0130",
+  "source_ref": "distillation:8eb962791e15eeb34c6a914c",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "parsed_profile": {
+    "extraction_status": "failed",
+    "failure_reasons": [
+      "llm_fallback_active",
+      "zero_confidence_extraction",
+      "segment_content_missing"
+    ],
+    "confidence": 0.0,
+    "recommendation": "Re-extract source material with a functioning LLM pipeline before volume-level aggregation can proceed"
+  },
+  "genre_tags": [
+    "unknown"
+  ],
+  "reader_promise": "Insufficient data to determine a concrete promise; design fingerprint remains pending",
+  "core_engine": "unknown",
+  "state_variables": [
+    "fallback_progress"
+  ],
+  "reader_rewards": [
+    "distillable_mechanism_reliability"
+  ],
+  "reusable_mechanisms": [
+    "fallback mechanism abstraction"
+  ],
+  "non_reusable_specifics": [],
+  "risk_patterns": [
+    "llm_fallback",
+    "zero_confidence_extraction",
+    "segment_content_missing",
+    "no_distillable_content_in_chapters_1_through_5"
+  ],
+  "source_id": "source-0130",
+  "distillation_source_id": "source-0130"
+}

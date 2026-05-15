@@ -1,0 +1,56 @@
+{
+  "book_id": "source-0101",
+  "source_ref": "distillation:ef17915b58f4b264d1434544",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "parsed_profile": {
+    "volume_coverage": {
+      "total_volumes_processed": 8,
+      "total_chapters_processed": 197,
+      "volumes_with_content": 0,
+      "volumes_with_stub_only": 8
+    },
+    "confidence_summary": {
+      "average_confidence": 0.0,
+      "max_confidence": 0.0,
+      "min_confidence": 0.0,
+      "distribution": "uniform_zero"
+    },
+    "extraction_results": {
+      "arc_functions_extracted": 0,
+      "engines_identified": 0,
+      "state_progressions_mapped": 0,
+      "turning_points_located": 0,
+      "reusable_mechanisms_found": 0,
+      "craft_observations_extracted": 0
+    },
+    "data_quality": "zero_content_stubs_only",
+    "failure_mode_summary": "all_chapters_returned_llm_unavailable_fallback_stubs_across_all_volumes"
+  },
+  "genre_tags": [
+    "distillation-generic"
+  ],
+  "reader_promise": "LLM structured distillation fallback.",
+  "core_engine": "unknown",
+  "state_variables": [
+    "fallback_progress"
+  ],
+  "reader_rewards": [
+    "distillable_mechanism_reliability"
+  ],
+  "reusable_mechanisms": [
+    "fallback mechanism abstraction"
+  ],
+  "non_reusable_specifics": [],
+  "risk_patterns": [
+    "llm_unavailable_across_all_source_content",
+    "zero_confidence_uniform_distribution",
+    "no_story_mechanics_extractable",
+    "no_craft_patterns_observable",
+    "no_reader_rewards_derivable",
+    "no_arc_structure_determinable",
+    "no_engine_signature_identifiable"
+  ],
+  "source_id": "source-0101",
+  "distillation_source_id": "source-0101"
+}

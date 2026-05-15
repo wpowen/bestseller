@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+from collections import defaultdict
+from dataclasses import dataclass
+import hashlib
 import json
 import logging
 import re
-from collections import defaultdict
-from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 from uuid import UUID, uuid5
 
@@ -20,10 +21,10 @@ from bestseller.domain.story_bible import (
     WorldSpecInput,
 )
 from bestseller.infra.db.models import (
-    CharacterModel,
-    CharacterStateSnapshotModel,
     ChapterModel,
     ChapterStateSnapshotModel,
+    CharacterModel,
+    CharacterStateSnapshotModel,
     FactionModel,
     LocationModel,
     ProjectModel,
@@ -36,6 +37,12 @@ from bestseller.infra.db.models import (
 from bestseller.services.character_identity_resolver import (
     canonical_character_key,
     collect_entry_aliases,
+)
+from bestseller.services.character_intelligence.strategy import (
+    character_strategy_from_project_metadata,
+)
+from bestseller.services.quality_levers.character_engine import (
+    synthesize_character_engine_profile,
 )
 from bestseller.services.stage_seed import seed_character_inner_structure
 from bestseller.services.world_expansion import load_world_expansion_context
@@ -54,6 +61,64 @@ def stable_character_id(project_id: UUID, character_name: str) -> UUID:
 
 def stable_world_rule_id(project_id: UUID, rule_code: str) -> UUID:
     return uuid5(project_id, f"world-rule:{rule_code.strip()}")
+
+
+async def _get_world_rule_by_identity(
+    session: AsyncSession,
+    *,
+    project_id: UUID,
+    rule_id: UUID,
+    rule_code: str,
+    name: str,
+) -> WorldRuleModel | None:
+    by_id = await session.get(WorldRuleModel, rule_id)
+    normalized_name = _normalize_name(name)
+    by_name = None
+    if normalized_name:
+        by_name = await session.scalar(
+            select(WorldRuleModel).where(
+                WorldRuleModel.project_id == project_id,
+                WorldRuleModel.name == normalized_name,
+            )
+        )
+        if by_name is not None and (by_id is None or by_name.id != by_id.id):
+            return by_name
+    if by_id is not None:
+        return by_id
+    by_code = await session.scalar(
+        select(WorldRuleModel).where(
+            WorldRuleModel.project_id == project_id,
+            WorldRuleModel.rule_code == rule_code,
+        )
+    )
+    if by_code is not None:
+        return by_code
+    return by_name
+
+
+async def _assign_world_rule_code_if_available(
+    session: AsyncSession,
+    *,
+    project_id: UUID,
+    model: WorldRuleModel,
+    rule_code: str,
+) -> None:
+    if model.rule_code == rule_code:
+        return
+    code_owner = await session.scalar(
+        select(WorldRuleModel).where(
+            WorldRuleModel.project_id == project_id,
+            WorldRuleModel.rule_code == rule_code,
+            WorldRuleModel.id != model.id,
+        )
+    )
+    if code_owner is None:
+        model.rule_code = rule_code
+        return
+    aliases = list((model.metadata_json or {}).get("rule_code_aliases") or [])
+    if rule_code not in aliases:
+        aliases.append(rule_code)
+    model.metadata_json = {**(model.metadata_json or {}), "rule_code_aliases": aliases[-20:]}
 
 
 def stable_location_id(project_id: UUID, location_name: str) -> UUID:
@@ -227,7 +292,9 @@ def _base_role_strength(role_type: str) -> float:
         return -0.8
     if any(token in normalized for token in ("rival", "对手", "竞争")):
         return -0.3
-    if any(token in normalized for token in ("ally", "friend", "mentor", "爱", "恋", "搭档", "盟友")):
+    if any(
+        token in normalized for token in ("ally", "friend", "mentor", "爱", "恋", "搭档", "盟友")
+    ):
         return 0.6
     return 0.1
 
@@ -273,7 +340,9 @@ def _parse_volume_word_count(raw_value: float | int | str | None) -> int | None:
     return int(value)
 
 
-def _merge_metadata(existing: dict[str, Any] | None, incoming: dict[str, Any] | None) -> dict[str, Any]:
+def _merge_metadata(
+    existing: dict[str, Any] | None, incoming: dict[str, Any] | None
+) -> dict[str, Any]:
     merged = dict(existing or {})
     for key, value in (incoming or {}).items():
         if value is not None:
@@ -339,7 +408,9 @@ def _character_personhood_metadata(character_input: CharacterInput) -> dict[str,
     return payload
 
 
-def _character_beliefs(knowledge_state: CharacterKnowledgeStateInput, *, language: str | None = None) -> list[str]:
+def _character_beliefs(
+    knowledge_state: CharacterKnowledgeStateInput, *, language: str | None = None
+) -> list[str]:
     _is_en = (language or "").lower().startswith("en")
     beliefs = [str(item) for item in knowledge_state.knows]
     _false_prefix = "False belief: " if _is_en else "误判:"
@@ -367,6 +438,18 @@ _WORLD_RULE_DESCRIPTION_ALIASES: tuple[str, ...] = (
 )
 
 
+def _sanitize_world_rule_id(value: Any) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    if len(text) <= 32:
+        return text
+    digest = hashlib.sha1(text.encode("utf-8")).hexdigest()[:8]
+    return f"{text[:23]}_{digest}"
+
+
 def _sanitize_world_rule(rule: dict[str, Any]) -> dict[str, Any]:
     """Fill in ``description`` when the LLM omits it.
 
@@ -381,11 +464,21 @@ def _sanitize_world_rule(rule: dict[str, Any]) -> dict[str, Any]:
     """
     if not isinstance(rule, dict):
         return rule
+    sanitized = dict(rule)
+    if "rule_id" in sanitized:
+        original_rule_id = sanitized.get("rule_id")
+        normalized_rule_id = _sanitize_world_rule_id(original_rule_id)
+        if normalized_rule_id != original_rule_id:
+            sanitized["rule_id"] = normalized_rule_id
+            logger.warning(
+                "world-rule sanitizer: normalized overlong/invalid rule_id %r to %r",
+                original_rule_id,
+                normalized_rule_id,
+            )
     description = rule.get("description")
     if isinstance(description, str) and description.strip():
-        return rule
+        return sanitized
 
-    sanitized = dict(rule)
     for alias in _WORLD_RULE_DESCRIPTION_ALIASES:
         if alias == "description":
             continue
@@ -441,7 +534,9 @@ def parse_cast_spec_input(content: dict[str, Any]) -> CastSpecInput:
     return CastSpecInput.model_validate(content)
 
 
-def parse_volume_plan_input(content: dict[str, Any] | list[dict[str, Any]]) -> list[VolumePlanEntryInput]:
+def parse_volume_plan_input(
+    content: dict[str, Any] | list[dict[str, Any]],
+) -> list[VolumePlanEntryInput]:
     items: list[dict[str, Any]]
     if isinstance(content, list):
         items = content
@@ -589,7 +684,9 @@ async def apply_book_spec(
 
     project.title = str(content.get("title") or project.title)
     project.genre = str(content.get("genre") or project.genre)
-    project.audience = str(content.get("target_audience") or project.audience or "") or project.audience
+    project.audience = (
+        str(content.get("target_audience") or project.audience or "") or project.audience
+    )
     project.metadata_json = _merge_metadata(
         project.metadata_json,
         {
@@ -645,11 +742,29 @@ async def upsert_world_spec(
     for index, rule in enumerate(world_spec.rules, start=1):
         rule_code = rule.rule_id or f"R{index:03d}"
         rule_id = stable_world_rule_id(project.id, rule_code)
-        model = await session.get(WorldRuleModel, rule_id)
+        model = await _get_world_rule_by_identity(
+            session,
+            project_id=project.id,
+            rule_id=rule_id,
+            rule_code=rule_code,
+            name=rule.name,
+        )
         if model is None:
-            model = WorldRuleModel(id=rule_id, project_id=project.id, rule_code=rule_code, name=rule.name, description=rule.description)
+            model = WorldRuleModel(
+                id=rule_id,
+                project_id=project.id,
+                rule_code=rule_code,
+                name=rule.name,
+                description=rule.description,
+            )
             session.add(model)
-        model.rule_code = rule_code
+        else:
+            await _assign_world_rule_code_if_available(
+                session,
+                project_id=project.id,
+                model=model,
+                rule_code=rule_code,
+            )
         model.name = rule.name
         model.description = rule.description
         model.story_consequence = rule.story_consequence
@@ -665,7 +780,12 @@ async def upsert_world_spec(
         location_id = stable_location_id(project.id, location.name)
         model = await session.get(LocationModel, location_id)
         if model is None:
-            model = LocationModel(id=location_id, project_id=project.id, name=location.name, location_type=location.location_type)
+            model = LocationModel(
+                id=location_id,
+                project_id=project.id,
+                name=location.name,
+                location_type=location.location_type,
+            )
             session.add(model)
         model.name = location.name
         model.location_type = location.location_type
@@ -760,7 +880,10 @@ async def _ensure_initial_character_state_snapshot(
         physical_state=character.metadata_json.get("physical_state"),
         power_tier=character.power_tier,
         trust_map={},
-        beliefs=_character_beliefs(CharacterKnowledgeStateInput.model_validate(character.knowledge_state_json or {}), language=language),
+        beliefs=_character_beliefs(
+            CharacterKnowledgeStateInput.model_validate(character.knowledge_state_json or {}),
+            language=language,
+        ),
         notes="Initial story bible state.",
     )
     session.add(snapshot)
@@ -822,6 +945,7 @@ async def _run_character_novelty_check(
 
     try:
         from bestseller.settings import get_settings  # noqa: PLC0415
+
         settings = get_settings()
     except Exception:  # pragma: no cover — settings loading failure
         logger.debug("novelty_critic: settings unavailable, skipping character check")
@@ -910,6 +1034,7 @@ async def upsert_cast_spec(
 ) -> dict[str, int]:
     cast_spec = parse_cast_spec_input(content)
     project.metadata_json = _merge_metadata(project.metadata_json, {"cast_spec": content})
+    character_strategy = character_strategy_from_project_metadata(project.metadata_json)
 
     characters_upserted = 0
     voice_profiles_populated = 0
@@ -932,9 +1057,7 @@ async def upsert_cast_spec(
     # handles the cross-session case where earlier cast_spec writes wrote
     # ``王守真`` and a later one arrives with ``{"name":"三叔"}``.
     _existing_rows = list(
-        await session.scalars(
-            select(CharacterModel).where(CharacterModel.project_id == project.id)
-        )
+        await session.scalars(select(CharacterModel).where(CharacterModel.project_id == project.id))
     )
     _existing_by_alias: dict[str, CharacterModel] = {}
     for _row in _existing_rows:
@@ -1022,9 +1145,7 @@ async def upsert_cast_spec(
             session.add(character)
             # C7: fingerprint only net-new rows; alias-reuses (handled above)
             # don't need re-tracking.
-            _new_character_tracker.append(
-                (character, _character_novelty_summary(character_input))
-            )
+            _new_character_tracker.append((character, _character_novelty_summary(character_input)))
             # Register so subsequent inputs in this batch resolve to this row.
             _register_character_lookup(
                 _existing_by_alias,
@@ -1075,12 +1196,8 @@ async def upsert_cast_spec(
             moral_frameworks_populated += 1
         _ip_anchor_data = character_input.ip_anchor.model_dump(mode="json")
         character.quirks_json = list(_ip_anchor_data.get("quirks") or [])
-        character.sensory_signatures_json = list(
-            _ip_anchor_data.get("sensory_signatures") or []
-        )
-        character.signature_objects_json = list(
-            _ip_anchor_data.get("signature_objects") or []
-        )
+        character.sensory_signatures_json = list(_ip_anchor_data.get("sensory_signatures") or [])
+        character.signature_objects_json = list(_ip_anchor_data.get("signature_objects") or [])
         character.core_wound = _ip_anchor_data.get("core_wound") or None
         # ── Phase-4: generate lie_truth_arc from knowledge_state ──
         _ks = character_input.knowledge_state
@@ -1099,11 +1216,12 @@ async def upsert_cast_spec(
                 "lie_truth_arc": {
                     "core_lie": _core_lie,
                     "core_truth": (
-                        f"The truth that opposes \"{_core_lie}\""
-                        if _is_en else
-                        f"与「{_core_lie}」相反的真相"
+                        f'The truth that opposes "{_core_lie}"'
+                        if _is_en
+                        else f"与「{_core_lie}」相反的真相"
                     ),
-                    "transformation_cost": character_input.flaw or (
+                    "transformation_cost": character_input.flaw
+                    or (
                         "Must abandon old protective patterns" if _is_en else "必须放弃旧的保护方式"
                     ),
                     "arc_type": _arc_type,
@@ -1130,9 +1248,14 @@ async def upsert_cast_spec(
             _cast_entry_payload["pronoun_set_en"] = character_input.pronoun_set_en
         if _candidate_aliases and "aliases" not in _cast_entry_payload:
             _cast_entry_payload["aliases"] = list(_candidate_aliases)
+        _character_engine_profile = synthesize_character_engine_profile(
+            _cast_entry_payload,
+            character_strategy=character_strategy,
+        )
         _identity_extra: dict[str, Any] = {
             "gender": character_input.gender,
             "cast_entry": _cast_entry_payload,
+            "character_engine_profile": _character_engine_profile,
         }
         if character_input.pronoun_set_zh:
             _identity_extra["pronoun_set_zh"] = character_input.pronoun_set_zh
@@ -1184,7 +1307,9 @@ async def upsert_cast_spec(
         sorted_vols = sorted(active_vols)
         current_meta = character.metadata_json if isinstance(character.metadata_json, dict) else {}
         existing = current_meta.get("active_volumes") or []
-        merged_vols = sorted(set(existing) | set(sorted_vols)) if isinstance(existing, list) else sorted_vols
+        merged_vols = (
+            sorted(set(existing) | set(sorted_vols)) if isinstance(existing, list) else sorted_vols
+        )
         character.metadata_json = _merge_metadata(
             current_meta,
             {"active_volumes": merged_vols},
@@ -1210,13 +1335,17 @@ async def upsert_cast_spec(
     relationships_upserted = 0
     for owner in cast_spec.all_characters():
         for relation in owner.relationships:
-            owner_model = characters_by_name.get(owner.name) or await get_or_create_character_by_name(
+            owner_model = characters_by_name.get(
+                owner.name
+            ) or await get_or_create_character_by_name(
                 session,
                 project_id=project.id,
                 character_name=owner.name,
                 role=owner.role,
             )
-            other_model = characters_by_name.get(relation.character) or await get_or_create_character_by_name(
+            other_model = characters_by_name.get(
+                relation.character
+            ) or await get_or_create_character_by_name(
                 session,
                 project_id=project.id,
                 character_name=relation.character,
@@ -1248,12 +1377,16 @@ async def upsert_cast_spec(
 
     conflict_buckets: dict[tuple[UUID, UUID], list[dict[str, Any]]] = defaultdict(list)
     for conflict in cast_spec.conflict_map:
-        left_model = characters_by_name.get(conflict.character_a) or await get_or_create_character_by_name(
+        left_model = characters_by_name.get(
+            conflict.character_a
+        ) or await get_or_create_character_by_name(
             session,
             project_id=project.id,
             character_name=conflict.character_a,
         )
-        right_model = characters_by_name.get(conflict.character_b) or await get_or_create_character_by_name(
+        right_model = characters_by_name.get(
+            conflict.character_b
+        ) or await get_or_create_character_by_name(
             session,
             project_id=project.id,
             character_name=conflict.character_b,
@@ -1276,7 +1409,9 @@ async def upsert_cast_spec(
             )
             session.add(relationship)
             relationships_upserted += 1
-        relationship.tension_summary = relationship.tension_summary or conflicts[0].get("trigger_condition")
+        relationship.tension_summary = relationship.tension_summary or conflicts[0].get(
+            "trigger_condition"
+        )
         relationship.metadata_json = _merge_metadata(
             relationship.metadata_json,
             {"conflict_map": conflicts},
@@ -1549,9 +1684,7 @@ async def get_effective_character_state(
     )
     if before_chapter_number is not None:
         if before_scene_number is None:
-            stmt = stmt.where(
-                CharacterStateSnapshotModel.chapter_number <= before_chapter_number
-            )
+            stmt = stmt.where(CharacterStateSnapshotModel.chapter_number <= before_chapter_number)
         else:
             stmt = stmt.where(
                 or_(
@@ -1617,10 +1750,15 @@ async def get_effective_character_state(
     # Pick the most recent change-chapter across all axes — gives the
     # writer a single anchor "since chapter K" for the delta block.
     change_chapters = [
-        c for c in (
-            _arc_change_ch, _power_change_ch, _emo_change_ch,
-            _alive_change_ch, _stance_change_ch,
-        ) if isinstance(c, int)
+        c
+        for c in (
+            _arc_change_ch,
+            _power_change_ch,
+            _emo_change_ch,
+            _alive_change_ch,
+            _stance_change_ch,
+        )
+        if isinstance(c, int)
     ]
     prev_state_chapter = max(change_chapters) if change_chapters else None
 
@@ -1674,13 +1812,17 @@ async def load_scene_story_bible_context(
         .limit(8)
     )
     if visible_rule_codes:
-        world_rule_stmt = world_rule_stmt.where(WorldRuleModel.rule_code.in_(sorted(visible_rule_codes)))
+        world_rule_stmt = world_rule_stmt.where(
+            WorldRuleModel.rule_code.in_(sorted(visible_rule_codes))
+        )
     world_rules = list(await session.scalars(world_rule_stmt))
     characters = []
     participant_character_ids: list[UUID] = []
     relationships = []
     for participant_name in scene.participants:
-        character = await session.get(CharacterModel, stable_character_id(project.id, participant_name))
+        character = await session.get(
+            CharacterModel, stable_character_id(project.id, participant_name)
+        )
         if character is None:
             continue
         participant_character_ids.append(character.id)
@@ -1705,9 +1847,7 @@ async def load_scene_story_bible_context(
                     "sensory_signatures": (
                         getattr(character, "sensory_signatures_json", None) or []
                     ),
-                    "signature_objects": (
-                        getattr(character, "signature_objects_json", None) or []
-                    ),
+                    "signature_objects": (getattr(character, "signature_objects_json", None) or []),
                     "core_wound": getattr(character, "core_wound", None),
                 }
             )
@@ -1726,27 +1866,23 @@ async def load_scene_story_bible_context(
                 "moral_framework": character.moral_framework_json,
                 "ip_anchor": _ip_anchor if isinstance(_ip_anchor, dict) else None,
                 "quirks": getattr(character, "quirks_json", None) or [],
-                "sensory_signatures": (
-                    getattr(character, "sensory_signatures_json", None) or []
-                ),
-                "signature_objects": (
-                    getattr(character, "signature_objects_json", None) or []
-                ),
+                "sensory_signatures": (getattr(character, "sensory_signatures_json", None) or []),
+                "signature_objects": (getattr(character, "signature_objects_json", None) or []),
                 "core_wound": getattr(character, "core_wound", None),
                 "inner_structure": _meta.get("inner_structure")
-                if isinstance(_meta, dict) else None,
-                "psych_profile": _meta.get("psych_profile")
-                if isinstance(_meta, dict) else None,
-                "life_history": _meta.get("life_history")
-                if isinstance(_meta, dict) else None,
-                "social_network": _meta.get("social_network")
-                if isinstance(_meta, dict) else None,
-                "beliefs": _meta.get("beliefs")
-                if isinstance(_meta, dict) else None,
-                "family_imprint": _meta.get("family_imprint")
-                if isinstance(_meta, dict) else None,
+                if isinstance(_meta, dict)
+                else None,
+                "psych_profile": _meta.get("psych_profile") if isinstance(_meta, dict) else None,
+                "life_history": _meta.get("life_history") if isinstance(_meta, dict) else None,
+                "social_network": _meta.get("social_network") if isinstance(_meta, dict) else None,
+                "beliefs": _meta.get("beliefs") if isinstance(_meta, dict) else None,
+                "family_imprint": _meta.get("family_imprint") if isinstance(_meta, dict) else None,
                 "villain_charisma": _meta.get("villain_charisma")
-                if isinstance(_meta, dict) else None,
+                if isinstance(_meta, dict)
+                else None,
+                "character_engine_profile": _meta.get("character_engine_profile")
+                if isinstance(_meta, dict)
+                else None,
                 "latest_state": effective.notes,
                 "emotional_state": effective.emotional_state,
                 "physical_state": effective.physical_state,
@@ -1805,6 +1941,7 @@ async def load_scene_story_bible_context(
     from bestseller.services.character_lifecycle import (  # noqa: PLC0415
         is_character_dead_at_chapter,
     )
+
     deceased_characters = [
         {
             "name": dead.name,
@@ -1855,9 +1992,8 @@ async def load_scene_story_bible_context(
         appearance_rule_for,
         effective_lifecycle_state,
     )
-    all_chars_stmt = select(CharacterModel).where(
-        CharacterModel.project_id == project.id
-    )
+
+    all_chars_stmt = select(CharacterModel).where(CharacterModel.project_id == project.id)
     restricted_characters: list[dict[str, Any]] = []
     for char_row in await session.scalars(all_chars_stmt):
         kind, payload = effective_lifecycle_state(
@@ -1871,19 +2007,21 @@ async def load_scene_story_bible_context(
         if kind not in OFFSTAGE_KINDS:
             continue
         rule = appearance_rule_for(kind)
-        restricted_characters.append({
-            "name": char_row.name,
-            "kind": kind,
-            "since_chapter": payload.get("since_chapter"),
-            "scheduled_exit_chapter": payload.get("scheduled_exit_chapter"),
-            "exit_condition": payload.get("exit_condition"),
-            "role": char_row.role,
-            "appearance_notes_zh": rule.notes_zh,
-            "appearance_notes_en": rule.notes_en,
-            "can_appear_as_body": rule.can_appear_as_body,
-            "can_be_remembered": rule.can_be_remembered,
-            "can_appear_in_flashback": rule.can_appear_in_flashback,
-        })
+        restricted_characters.append(
+            {
+                "name": char_row.name,
+                "kind": kind,
+                "since_chapter": payload.get("since_chapter"),
+                "scheduled_exit_chapter": payload.get("scheduled_exit_chapter"),
+                "exit_condition": payload.get("exit_condition"),
+                "role": char_row.role,
+                "appearance_notes_zh": rule.notes_zh,
+                "appearance_notes_en": rule.notes_en,
+                "can_appear_as_body": rule.can_appear_as_body,
+                "can_be_remembered": rule.can_be_remembered,
+                "can_appear_in_flashback": rule.can_appear_in_flashback,
+            }
+        )
 
     # Interpersonal promise ledger — open promises / oaths / debts
     # between characters. Surfaces both fresh active rows and recently-
@@ -1894,6 +2032,7 @@ async def load_scene_story_bible_context(
         from bestseller.services.interpersonal_promises import (  # noqa: PLC0415
             active_promises_for_chapter,
         )
+
         promise_snaps = await active_promises_for_chapter(
             session,
             project_id=project.id,
@@ -1932,6 +2071,7 @@ async def load_scene_story_bible_context(
         from bestseller.services.memory_recall import (  # noqa: PLC0415
             compute_memory_recall_cues,
         )
+
         recall_cues = await compute_memory_recall_cues(
             session,
             project.id,
@@ -2275,11 +2415,15 @@ async def update_story_bible_from_chapter(
 
     system_prompt = _BIBLE_UPDATE_SYSTEM_PROMPT_ZH if is_zh else _BIBLE_UPDATE_SYSTEM_PROMPT_EN
     user_prompt = (
-        f"章节: 第{chapter.chapter_number}章 {chapter.title or ''}\n\n"
-        f"正文:\n{chapter_text[:12000]}"
-    ) if is_zh else (
-        f"Chapter: {chapter.chapter_number} — {chapter.title or ''}\n\n"
-        f"Text:\n{chapter_text[:12000]}"
+        (
+            f"章节: 第{chapter.chapter_number}章 {chapter.title or ''}\n\n"
+            f"正文:\n{chapter_text[:12000]}"
+        )
+        if is_zh
+        else (
+            f"Chapter: {chapter.chapter_number} — {chapter.title or ''}\n\n"
+            f"Text:\n{chapter_text[:12000]}"
+        )
     )
 
     result = await complete_text(
@@ -2333,7 +2477,9 @@ async def update_story_bible_from_chapter(
             continue
         try:
             char = await get_or_create_character_by_name(
-                session, project_id=project.id, character_name=name,
+                session,
+                project_id=project.id,
+                character_name=name,
             )
             ks = dict(char.knowledge_state_json or {})
             # Merge knowledge
@@ -2374,10 +2520,14 @@ async def update_story_bible_from_chapter(
             continue
         try:
             char_a = await get_or_create_character_by_name(
-                session, project_id=project.id, character_name=char_a_name,
+                session,
+                project_id=project.id,
+                character_name=char_a_name,
             )
             char_b = await get_or_create_character_by_name(
-                session, project_id=project.id, character_name=char_b_name,
+                session,
+                project_id=project.id,
+                character_name=char_b_name,
             )
             rel_id = _stable_relationship_id(project.id, char_a.id, char_b.id)
             rel = await session.get(RelationshipModel, rel_id)
@@ -2399,18 +2549,22 @@ async def update_story_bible_from_chapter(
             rel.label = ru.get("change", rel.label)
             # Track events
             events = list(rel.metadata_json.get("events", []) if rel.metadata_json else [])
-            events.append({
-                "chapter": chapter.chapter_number,
-                "change": ru.get("change", ""),
-                "direction": direction,
-            })
+            events.append(
+                {
+                    "chapter": chapter.chapter_number,
+                    "change": ru.get("change", ""),
+                    "direction": direction,
+                }
+            )
             rel.metadata_json = {**(rel.metadata_json or {}), "events": events[-20:]}
 
             counts["relationships_updated"] += 1
         except Exception:
             logger.debug(
                 "Failed to update relationship '%s'-'%s' (non-fatal)",
-                char_a_name, char_b_name, exc_info=True,
+                char_a_name,
+                char_b_name,
+                exc_info=True,
             )
 
     # Apply world updates
@@ -2421,7 +2575,13 @@ async def update_story_bible_from_chapter(
         try:
             rule_code = re.sub(r"[^a-z0-9_]", "_", rule_name.lower())[:50]
             rule_id = stable_world_rule_id(project.id, rule_code)
-            existing = await session.get(WorldRuleModel, rule_id)
+            existing = await _get_world_rule_by_identity(
+                session,
+                project_id=project.id,
+                rule_id=rule_id,
+                rule_code=rule_code,
+                name=rule_name,
+            )
             if existing is None:
                 rule = WorldRuleModel(
                     id=rule_id,
@@ -2437,8 +2597,16 @@ async def update_story_bible_from_chapter(
                 session.add(rule)
                 counts["world_rules_added"] += 1
             else:
+                await _assign_world_rule_code_if_available(
+                    session,
+                    project_id=project.id,
+                    model=existing,
+                    rule_code=rule_code,
+                )
                 # Update description if richer
-                if wu.get("description") and len(wu["description"]) > len(existing.description or ""):
+                if wu.get("description") and len(wu["description"]) > len(
+                    existing.description or ""
+                ):
                     existing.description = wu["description"]
         except Exception:
             logger.debug("Failed to add world rule '%s' (non-fatal)", rule_name, exc_info=True)
@@ -2510,9 +2678,7 @@ def render_volume_timeline_markdown(
         )
 
     if not body_lines:
-        body_lines.append(
-            "| — | — | — | — | — | — |"
-        )
+        body_lines.append("| — | — | — | — | — | — |")
 
     return "\n".join([title_line, "", header, *body_lines, ""])
 
@@ -2532,8 +2698,6 @@ def _format_day_delta(prev_day: int, prev_part: int, cur_day: int, cur_part: int
 
 def _extract_countdown_states(facts: list[HardFactContext]) -> tuple[str, ...]:
     """Collect countdown facts as ``name=value[unit]`` short strings."""
-
-    from bestseller.domain.context import HardFactContext as _HF  # local alias for clarity
 
     out: list[str] = []
     for fact in facts:

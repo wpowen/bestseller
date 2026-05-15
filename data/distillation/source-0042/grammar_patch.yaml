@@ -1,0 +1,18 @@
+key: distillation-generic
+name: Distillation Fallback Grammar Patch
+source_ids:
+- source-0042
+status: grammar_patch_generated_from_failed_distillation
+applies_to_categories:
+- distillation-generic
+required_contracts: []
+state_variables:
+- fallback_progress
+chapter_change_vectors: []
+reader_rewards:
+- distillable_mechanism_reliability
+hook_or_aftereffect_types: []
+forbidden_defaults:
+- llm_fallback_systemic
+- sampling_gap_systemic
+- metadata_inconsistency

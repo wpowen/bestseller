@@ -1,0 +1,23 @@
+{
+  "source_id": "source-0435",
+  "pipeline_version": "distillation-v1",
+  "source_format": "epub",
+  "encoding": "utf-8",
+  "chapter_count": 1,
+  "volume_count": 1,
+  "average_chapter_chars": 31196,
+  "chapters": [
+    {
+      "abs_chapter_no": 1,
+      "volume_no": 1,
+      "volume_label_redacted": "volume-01",
+      "chapter_label_redacted": "chapter-0001",
+      "boundary_type": "volume_chapter_heading",
+      "title_hash_sha256": "ad328447668a53e5eddfbccc1d44fa412ecc423c6b36c04cf9a4c16e797fb833",
+      "title_char_count": 37,
+      "char_count": 31196,
+      "line_count": 1280,
+      "private_chunk_ref": ".distillation_private/source-0435/chunks/chapter-0001.txt"
+    }
+  ]
+}

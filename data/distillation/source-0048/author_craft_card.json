@@ -1,0 +1,36 @@
+{
+  "source_id": "source-0048",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "style_safety_policy": "{'value': 'no_data', 'rationale': 'LLM unavailable across all 82 chapters — no source text content present to assess safety concerns or stylistic risk indicators'}",
+  "pov_and_distance": "{'value': 'undetermined', 'rationale': 'All chapter_cards returned llm_fallback stubs with empty craft_observations — no point-of-view markers, narrative distance indicators, or voice characteristics available for extraction'}",
+  "sentence_rhythm": [
+    "{'value': 'undetermined', 'rationale': 'No prose content accessible; sentence-level rhythm patterns cannot be analyzed from llm_fallback stubs'}"
+  ],
+  "paragraphing": [
+    "{'value': 'undetermined', 'rationale': 'Source text failed to reach LLM processing layer — structural paragraphing decisions untrackable'}"
+  ],
+  "dialogue_system": [
+    "{'value': 'undetermined', 'rationale': 'No character speech, dialogue tags, or conversation segments present in fallback stubs'}"
+  ],
+  "description_strategy": [
+    "{'value': 'undetermined', 'rationale': 'No descriptive passages, scene-setting language, or sensory detail available for analysis'}"
+  ],
+  "exposition_strategy": [
+    "{'value': 'undetermined', 'rationale': 'No narrative exposition or backstory delivery detected in llm_fallback content'}"
+  ],
+  "emotional_temperature": [
+    "{'value': 'undetermined', 'rationale': 'Emotional registers, tone shifts, and affective coloring cannot be measured when source text is unavailable'}"
+  ],
+  "hooking_and_transitions": [
+    "{'value': 'undetermined', 'rationale': 'Chapter openings, closing hooks, and transitional devices not extractable from zero-content stubs; open_hooks array remains empty across all chapters'}"
+  ],
+  "adaptation_guidelines": [
+    "{'value': 'none', 'rationale': 'Cannot generate adaptation guidance without craft pattern data; recommend re-processing source through LLM pipeline before extracting reusable mechanisms'}"
+  ],
+  "taboo_copy_signals": [
+    "{'value': 'no_data', 'rationale': 'No source content available to identify prohibited copy patterns or distinctive phrasing to avoid'}"
+  ],
+  "confidence": 0.0,
+  "distillation_source_id": "source-0048"
+}

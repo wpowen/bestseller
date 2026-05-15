@@ -1,0 +1,36 @@
+{
+  "source_id": "source-0052",
+  "blocked_categories": [
+    "all_narrative_content",
+    "author_style_patterns",
+    "dialogue_systems",
+    "pacing_techniques",
+    "description_strategies",
+    "emotional_architecture",
+    "character_voice_patterns",
+    "worldbuilding_mechanics",
+    "plot_structure",
+    "thematic_elements",
+    "scene_craft",
+    "hook_techniques",
+    "transition_methods",
+    "POV_techniques",
+    "rhythm_and_cadence",
+    "sentence_structure_patterns",
+    "paragraph_architecture",
+    "exposition_delivery",
+    "tension_mechanics",
+    "resolution_patterns"
+  ],
+  "blocked_combinations": [
+    "any_author_voice_imitation_from_this_source",
+    "any_style_template_derivation",
+    "any_dialogue_pattern_extraction",
+    "any_pacing_beat_mapping",
+    "any_character_arc_abstraction",
+    "any_worldbuilding_technique_isolation",
+    "any_emotional_arc_template",
+    "any_craft_mechanic_abstraction"
+  ],
+  "replacement_policy": []
+}

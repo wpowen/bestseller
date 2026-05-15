@@ -1,0 +1,69 @@
+{
+  "book_id": "source-0007",
+  "source_ref": "distillation:6ad7ed72f758c5b02b462fa0",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "parsed_profile": {
+    "pov_distance": "Close third-person through protagonist with frequent internal monologue",
+    "sentence_rhythm": "Short punchy sentences in dialogue contrasting with longer explanatory passages for exposition",
+    "paragraphing": "Scene breaks marked with chapter heading markers, ellipsis used for pacing pauses",
+    "dialogue_method": "AI and protagonist engage in challenge-rebuttal pattern for exposition delivery",
+    "description_method": "Minimal sensory description, focus on action consequences and character reactions",
+    "exposition_method": "AI provides theoretical frameworks to explain supernatural elements",
+    "hook_delivery": "Chapter concludes mid-action with threat approach as cliffhanger",
+    "transition_method": "Narrative interweaves multiple plot threads without clear scene breaks"
+  },
+  "genre_tags": [
+    "urban_fantasy",
+    "supernatural_threat",
+    "ai_companion",
+    "competence_pride_arc",
+    "myth_recontextualization"
+  ],
+  "reader_promise": {
+    "primary_thrill": "Intense supernatural creature pursuit combined with lore revelation",
+    "emotional_arc": "Wounded pride transformed into redemption-seeking through dangerous mission",
+    "knowledge_gradient": "Mythological legends revealed as literal historical events with modern implications"
+  },
+  "core_engine": {
+    "dominant_mechanism": "Supernatural creature pursuit synchronized with AI-exposition delivery system",
+    "supporting_mechanisms": [
+      "AI delivers exposition through challenge-rebuttal debate with protagonist",
+      "Humiliated character arc initiates through pride injury",
+      "Secondary antagonist threat seeded through exposition"
+    ],
+    "tension_building": "Interweaving multiple unresolved plot threads creates sustained reader uncertainty"
+  },
+  "state_variables": [
+    "{'protagonist_status': 'Under pursuit by supernatural creature after initial encounter', 'antagonist_threads': ['Primary: Active supernatural predator pursuit', 'Secondary: Technical destruction device threat introduced via exposition'], 'ally_status': \"Wounded-pride character joins protagonist's cause after being humbled\", 'narrative_position': 'Mid-action cliffhanger with creature approaching'}"
+  ],
+  "reader_rewards": [
+    "Revelation that energy manipulation may be species-wide ability rather than human-learned skill",
+    "Connection established between founding legend and supernatural creature encounter",
+    "New antagonist introduced as existential threat to entire population",
+    "Character arc development for pride-wounded ally whose assassination was manipulated"
+  ],
+  "reusable_mechanisms": [
+    "AI character delivers exposition through debate with protagonist",
+    "Mythological origin story recontextualized as literal historical event",
+    "Supernatural creature pursues protagonist after initial encounter",
+    "Wounded pride drives character to seek redemption through dangerous mission",
+    "Character with technical skills joins protagonist's cause after being humbled"
+  ],
+  "non_reusable_specifics": [
+    "Specific martial arts technique names and founding sect legends",
+    "Named immortal figures from founding mythology",
+    "Specific location names and geographical features",
+    "Named antagonist with specific device creation"
+  ],
+  "risk_patterns": [
+    "llm_fallback",
+    "llm_output_parse_fail",
+    "Too many plot threads introduced simultaneously without resolution",
+    "Excessive exposition delivered through AI dialogue dumps",
+    "Text contains garbled/missing characters affecting readability",
+    "Chapter ends mid-action without narrative resolution"
+  ],
+  "source_id": "source-0007",
+  "distillation_source_id": "source-0007"
+}

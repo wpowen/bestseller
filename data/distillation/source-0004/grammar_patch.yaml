@@ -1,0 +1,136 @@
+key: distillation-generic
+name: Rivalry-Confrontation Spectacle Engine with Underworld Descent Core
+source_ids:
+- source-0004
+status: draft_review
+applies_to_categories:
+- supernatural_cultivation
+- romantic_rivalry
+- spectacle_drama
+- underworld_descent
+- ghost_cultivation_system
+- dominance_display_narrative
+required_contracts:
+  core_payoffs:
+  - Protagonist physical dominance resolution to jealousy conflicts
+  - Supernatural system mechanics revealed through live ritual execution
+  - Backstory motivation reveal for supernatural rescue of trapped family soul
+  - Dramatic exit spectacle generating relationship tension with love interest
+  - Moral complexity introduced through love interest mercy toward defeated rival
+  engine_deliverables:
+  - Jealousy provocation sequence with rival suitor contrast
+  - Spectator witness coercion transforming personal conflict into public entertainment
+  - Physical confrontation resolved through protagonist capability demonstration
+  - Hidden supernatural agenda exploitation by protagonist
+  - Ritual system mechanics with bloodline selection, ghost type hierarchies, binding
+    ceremonies
+  tension_patterns:
+  - Love interest behavioral manipulation triggering protagonist jealousy
+  - Public spectacle pressure escalating resolution demands
+  - Mercy pattern creating relationship friction and moral complexity
+  - Dramatic departure preserving open romantic question
+state_variables:
+- variable_name: protagonist_jealousy_level
+  range: latent → triggered → escalated
+  triggers:
+  - rival_presence
+  - love_interest_provocation
+  - mission_urgency_activation
+- variable_name: spectacle_pressure
+  range: none → building → peak → resolution
+  drivers:
+  - spectator_witness_count
+  - public_demand_escalation
+- variable_name: supernatural_mission_progress
+  range: hidden_agenda → revelation → underworld_access_ready
+  blockers:
+  - knowledge_gap
+  - resource_limitations
+  - false_assumption_operating
+- variable_name: love_triangle_tension
+  range: stable → provoked → resolved_unhappily → open_question
+  resolution_patterns:
+  - mercy_toward_defeated_rival
+  - dramatic_departure
+  - relationship_strain
+- variable_name: spectator_entertainment_demand
+  range: passive → active → coercive
+  mechanism: audience_witness_transforms_personal_conflict_into_public_spectacle
+chapter_change_vectors:
+  emotional_architecture:
+  - Tension accumulation through love interest romantic threat introduction
+  - Jealousy trigger event activating protagonist deeper mission urgency
+  - Physical confrontation initiated under public spectacle pressure
+  - Dominance resolution achieved through protagonist capability demonstration
+  - Dramatic departure executed, creating romantic tension residue
+  arc_trajectory_flags:
+  - Volume 1 establishes supernatural system mechanics foundation
+  - Volume 2 provides single documented turning point (chapter 28) with disproportionate
+    arc weight
+  - Volumes 3-6 data unavailable - arc trajectory undeterminable
+  - Re-distillation required for complete story validation
+  pacing_constraints:
+  - Single documented turning point cannot carry full arc weight
+  - Rising action and climax phases undocumented
+  - Mechanism persistence across volumes unconfirmed
+reader_rewards:
+  guaranteed_rewards:
+  - reward_type: revelation_payoff
+    delivery_mechanism: Backstory motivation reveal for supernatural rescue mission
+      to retrieve trapped family soul from underworld
+    emotional_target: Reader understanding of protagonist's deeper purpose justifying
+      surface behavior
+  - reward_type: dominance_satisfaction
+    delivery_mechanism: Physical confrontation resolved through protagonist victory
+      under public spectacle pressure
+    emotional_target: Reader satisfaction of protagonist capability demonstration
+      and hierarchy establishment
+  - reward_type: system_mechanics_revelation
+    delivery_mechanism: Live ritual execution demonstrating ghost cultivation rules,
+      bloodline selection, type hierarchies, and binding ceremonies
+    emotional_target: Reader investment in supernatural system logic and rules
+  - reward_type: spectacle_entertainment
+    delivery_mechanism: Personal conflict transformed into public dramatic performance
+      under audience demand pressure
+    emotional_target: Reader engagement through entertainment escalation and spectacle
+      anticipation
+  conditional_rewards:
+  - reward_type: moral_complexity
+    condition: Love interest shows mercy toward defeated rival
+    emotional_target: Reader consideration of protagonist behavior implications and
+      relationship consequences
+  - reward_type: relationship_tension
+    condition: Dramatic exit creates strain with love interest
+    emotional_target: Reader investment in romantic resolution uncertainty and future
+      payoff anticipation
+hook_or_aftereffect_types:
+  narrative_hooks:
+  - Hidden supernatural rescue mission concealed beneath romantic rivalry surface
+  - Protagonist exploitation of unaware asset/resource holders for personal underworld
+    agenda
+  - Love interest deliberate romantic threat introduction triggering protagonist deeper
+    motivation
+  - Foreign/charming rival approach contrasting with protagonist traditional dominance
+  aftereffect_patterns:
+  - Relationship strain from dramatic exit preserving romantic tension
+  - Moral complexity residue from love interest mercy toward defeated rival
+  - Open question preservation regarding underworld descent success
+  - Protagonist capability established through dominance display, raising reader expectations
+    for future challenges
+forbidden_defaults:
+  behavioral_constraints:
+  - Protagonist jealousy response cannot be purely abusive without growth or reflection
+    context
+  - Jealousy confrontation conflict cannot be repetitive without engine variant diversification
+  - Dramatic exit cannot be cartoonish without meaningful relationship consequence
+  narrative_structure_constraints:
+  - Ghost cultivation rules cannot be delivered through tell-don't-show exposition
+    without scene integration
+  - Ritual scenes cannot lack tension, obstacles, or near-failure during supernatural
+    execution
+  - Love interest mercy toward rival cannot completely alienate reader from protagonist
+    success balance
+  data_quality_constraints:
+  - Cannot execute complete story arc validation with 91.5% LLM fallback data coverage
+  - Cannot determine arc trajectory with volumes 3-6 complete data loss
+  - Cannot assess mechanism persistence without re-distillation of chapters 26-138

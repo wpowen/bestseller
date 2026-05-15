@@ -1,0 +1,37 @@
+{
+  "source_id": "source-0021",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "style_safety_policy": "{'status': 'unanalyzable', 'note': 'No author voice, style markers, or safety-aligned craft signals could be extracted from LLM-unavailable source data spanning 8 volumes and 185 chapters'}",
+  "pov_and_distance": "{'status': 'unanalyzable', 'pov_distance_controls': [], 'note': 'Zero chapter cards contained extractable POV data; all 185 targeted chapters returned confidence 0.0 with LLM fallback stubs'}",
+  "sentence_rhythm": [
+    "{'status': 'unanalyzable', 'rhythm_patterns': [], 'note': 'No sentence-level craft observations could be extracted across all 8 volumes'}"
+  ],
+  "paragraphing": [
+    "{'status': 'unanalyzable', 'structural_patterns': [], 'note': 'All chapter cards returned empty arrays for paragraph-level structural data'}"
+  ],
+  "dialogue_system": [
+    "{'status': 'unanalyzable', 'dialogue_methods': [], 'note': 'No dialogue mechanics, attribution patterns, or speech rhythm data available from source'}"
+  ],
+  "description_strategy": [
+    "{'status': 'unanalyzable', 'description_techniques': [], 'note': 'No extractable description strategy could be distilled from zero-confidence chapter stubs'}"
+  ],
+  "exposition_strategy": [
+    "{'status': 'unanalyzable', 'exposition_placement_methods': [], 'note': 'No backstory delivery, world-building, or information-reveal craft patterns present in source data'}"
+  ],
+  "emotional_temperature": [
+    "{'status': 'unanalyzable', 'temperature_controls': [], 'note': 'No emotional arc mapping, tension calibration, or affective tone data extractable across volumes 1-8'}"
+  ],
+  "hooking_and_transitions": [
+    "{'status': 'unanalyzable', 'hook_types': [], 'transition_mechanisms': [], 'note': 'No chapter-ending hooks, opening gambits, or scene-transition techniques could be extracted'}"
+  ],
+  "adaptation_guidelines": [
+    "{'status': 'unanalyzable', 'media_adaptability_signals': [], 'note': 'No visual imagery density, dialogue-to-action ratios, or adaptation-relevant craft markers present'}"
+  ],
+  "taboo_copy_signals": [
+    "{'status': 'unanalyzable', 'forbidden_patterns': [], 'note': 'Source data too sparse to identify distinctive patterns that must be avoided during adaptation'}"
+  ],
+  "confidence": 0.0,
+  "aggregation_note": "CRITICAL DATA QUALITY FAILURE — All 8 volume cards (spanning chapters 1-185) consist entirely of LLM-unavailable fallback stubs with zero confidence. No arc functions, state progressions, turning points, reusable mechanisms, reader rewards, craft observations, or open hooks were extractable. Volume 1 also missing chapters 3-7 from batch. Source requires full reprocessing with LLM extraction enabled before author_craft_card can be meaningfully distilled.",
+  "distillation_source_id": "source-0021"
+}

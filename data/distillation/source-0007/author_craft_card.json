@@ -1,0 +1,36 @@
+{
+  "source_id": "source-0007",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "style_safety_policy": "Universal craft controls only; no author names, titles, exact phrases, named entities, or style-mimicking instructions. Distilled from surface-level craft patterns visible across the text, not deep stylistic analysis of any individual's voice.",
+  "pov_and_distance": "{'primary_pov': 'Close third-person limited through protagonist', 'internal_access': 'Frequent internal monologue with colloquial/profane interjections for tonal contrast', 'distance_calibration': \"Reader occupies protagonist's perceptual field during action sequences; granted wider awareness only when AI-exposition delivers mythological context\", 'omniscience_timing': 'Narrator retreats to protagonist-only focus during creature pursuit; expands scope briefly during lore delivery before contracting again'}",
+  "sentence_rhythm": [
+    "{'action_register': 'Short, punchy declarative sentences typically 3-8 words during chase/pursuit sequences', 'dialogue_register': 'Varied length mirroring natural speech patterns; protagonist responses brief, AI explanations longer', 'exposition_register': 'Extended explanatory passages 2-4 sentences using theoretical frameworks and cause-effect chains', 'rhythmic_pattern': 'Alternating short-long-short creates acceleration during tension; longer passages provide breathing room before next threat beat', 'pacing_technique': 'Ellipsis deployed before revelation moments to create micro-pause; em-dashes used for interrupted action'}"
+  ],
+  "paragraphing": [
+    "{'break_markers': 'Scene transitions marked with chapter heading markers rather than whitespace or symbols', 'action_paragraphs': 'Short paragraphs (1-3 sentences) for kinetic impact during pursuit', 'exposition_paragraphs': 'Longer unbroken passages during AI lore delivery, 4-7 sentences', 'pacing_breaks': 'Ellipsis (...) used mid-scene to indicate temporal compression or psychological pause', 'thread_interweaving': 'Multiple plot threads (creature pursuit, Schmidt threat, ally recruitment) layered without clear scene breaks or paragraph reset'}"
+  ],
+  "dialogue_system": [
+    "{'primary_method': 'Challenge-rebuttal debate pattern between protagonist and AI companion', 'protagonist_role': 'Questions, doubts, challenges; grounds exposition in immediate survival concern', 'ai_role': 'Delivers theoretical frameworks, mythological backstory, creature analysis through response to challenges', 'tension_function': 'Disagreement creates micro-delay before crucial information, building anticipation', 'information_hierarchy': \"Protagonist's immediate tactical needs drive question sequence; AI's responses expand outward to mythological/lore context\"}"
+  ],
+  "description_strategy": [
+    "{'sensory_focus': 'Minimal sensory description overall; primary attention to action consequences and character reactions', 'environmental_shading': \"Physical surroundings rendered only as they affect protagonist's movement or threat assessment\", 'creature_description': \"Conveyed through movement consequences and AI's analytical framing rather than direct sensory portrait\", 'reaction_priority': \"Protagonist's emotional/physical response to events takes precedence over objective scene description\", 'implication_over_literal': \"Reader infers threat level through protagonist's fear responses rather than explicit danger description\"}"
+  ],
+  "exposition_strategy": [
+    "{'delivery_vehicle': 'AI companion character provides all mythological/theoretical framework exposition', 'explanation_type': 'Theoretical frameworks (evolutionary instinct, species-wide energy manipulation) rather than direct narrative history', 'placement': 'Exposition delivered during action pauses or escape sequences; tied to immediate protagonist questions', 'myth_recontextualization': 'Founding legends revealed as literal historical events with modern threat implications', 'thread_seeding': 'Exposition introduces secondary antagonist threats (technical destruction device) alongside primary creature lore', 'volume_constraint': 'Single chapter introduces multiple unresolved plot threads (creature origin, Schmidt threat, ancestral legend) without immediate resolution'}"
+  ],
+  "emotional_temperature": [
+    "{'dominant_tone': 'Sustained tension during creature pursuit, punctuated by intellectual engagement during AI exposition', 'protagonist_emotion': 'Fear-driven self-preservation during chase; wounded pride surfacing during ally encounters', 'arc_emotional_trajectory': 'Humiliation → vindication-seeking → dangerous mission commitment', 'ally_emotional_state': 'Wounded pride from manipulated assassination revelation transforms into cause commitment', 'reader_emotional_contract': 'Constant threat awareness maintained while providing lore satisfaction; cliffhanger ends prevent resolution closure'}"
+  ],
+  "hooking_and_transitions": [
+    "{'chapter_hook': \"Mid-action cliffhanger with creature's approach as imminent threat; chapter ends without narrative resolution\", 'suspense_mechanism': 'Threat approaches during exposition delivery; reader uncertain whether protagonist survives long enough to receive information', 'thread_transitions': 'Multiple plot threads woven together without clear scene break demarcation', 'reader_uncertainty': 'Sustained through unresolved threads: creature pursuit outcome, Schmidt device threat, ancestral legend connection', 'attention_allocation': 'Alternates between visceral chase tension and intellectual lore satisfaction to prevent either from overwhelming'}"
+  ],
+  "adaptation_guidelines": [
+    "{'mechanism_extraction': 'AI-exposition-through-debate pattern adaptable to any protagonist-companion pairing requiring lore delivery', 'emotional_arc_template': 'Wounded-pride-to-redemption-through-mission arc requires: initial humiliation event, revelation of manipulation, commitment trigger, dangerous mission framing', 'pursuit_tension_calibration': 'Interweave exposition delivery with ongoing threat to prevent static lore-d'}"
+  ],
+  "distillation_source_id": "source-0007",
+  "taboo_copy_signals": [
+    "source titles, author names, exact phrases, named entities, and distinctive sentence templates"
+  ],
+  "confidence": 0.0
+}

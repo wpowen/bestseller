@@ -1,0 +1,43 @@
+{
+  "book_id": "source-0039",
+  "source_ref": "distillation:218cf63efadff2a33d84e490",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "parsed_profile": {
+    "confidence": 0.0,
+    "extraction_status": "complete_failure",
+    "failure_reason": "All 14 volumes (340 chapters) returned llm_fallback stubs with zero confidence. No chapter-level content extractable. Volume aggregation blocked by data integrity failure across entire source batch.",
+    "data_coverage": {
+      "volumes_processed": 14,
+      "chapters_total": 340,
+      "chapters_with_content": 0,
+      "llm_fallback_rate": 1.0
+    },
+    "aggregation_status": "blocked",
+    "recommendation": "Reprocess source material through functional LLM pipeline before volume_card aggregation and design_card distillation. Current dataset contains zero distillable story mechanics."
+  },
+  "genre_tags": [
+    "distillation-generic"
+  ],
+  "reader_promise": "LLM structured distillation fallback.",
+  "core_engine": "unknown",
+  "state_variables": [
+    "fallback_progress"
+  ],
+  "reader_rewards": [
+    "distillable_mechanism_reliability"
+  ],
+  "reusable_mechanisms": [
+    "fallback mechanism abstraction"
+  ],
+  "non_reusable_specifics": [],
+  "risk_patterns": [
+    "llm_fallback_all_volumes",
+    "zero_confidence_across_batch",
+    "no_extractable_craft_data",
+    "aggregation_blocked_by_upstream_failure",
+    "data_quality_insufficient_for_design_fingerprint"
+  ],
+  "source_id": "source-0039",
+  "distillation_source_id": "source-0039"
+}

@@ -4,11 +4,15 @@ import builtins
 import io
 from pathlib import Path
 from types import SimpleNamespace
+from uuid import uuid4
 from zipfile import ZipFile
 
 import pytest
 
+from bestseller.infra.db.models import CharacterModel
 from bestseller.services.drafts import (
+    _character_voice_audit_payload,
+    _load_active_character_engine_profiles,
     _render_story_bible_section,
     build_scene_draft_prompts,
     count_words,
@@ -35,8 +39,56 @@ from bestseller.services.exports import (
 pytestmark = pytest.mark.unit
 
 
+class FakeScalarsSession:
+    def __init__(self, rows: list[object]) -> None:
+        self.rows = rows
+
+    async def scalars(self, stmt: object) -> list[object]:
+        return self.rows
+
+
 def test_count_words_handles_mixed_chinese_and_english() -> None:
     assert count_words("你好 world chapter 1") == 5
+
+
+@pytest.mark.asyncio
+async def test_character_voice_audit_uses_active_fused_profiles() -> None:
+    project_id = uuid4()
+    character = CharacterModel(
+        id=uuid4(),
+        project_id=project_id,
+        name="林澈",
+        role="protagonist",
+        metadata_json={
+            "cast_entry": {"aliases": ["林账房"]},
+            "character_engine_profile": {
+                "character_id": "lin_che",
+                "display_name": "林澈",
+                "voice_dna": {
+                    "signature_words": ["先把账算清"],
+                    "forbidden_words": ["我觉得"],
+                },
+                "signature_assets": {"object": "裂纹账珠"},
+            },
+        },
+    )
+    profiles = await _load_active_character_engine_profiles(
+        FakeScalarsSession([character]),
+        project_id=project_id,
+        content="林账房低头摸过裂纹账珠，说：先把账算清。我觉得这笔账不对。",
+    )
+
+    payload = _character_voice_audit_payload(
+        "林澈摸过裂纹账珠，说：先把账算清。我觉得这笔账不对。",
+        platform="qimao",
+        profiles=profiles,
+    )
+
+    assert payload is not None
+    assert payload["active_characters"] == ["林澈"]
+    assert payload["signature_density"]["total_hits"] == 2
+    assert payload["forbidden_voice"]["passed"] is False
+    assert payload["forbidden_voice"]["hits"] == [("我觉得", 1)]
 
 
 def test_render_scene_draft_markdown_is_non_prose_placeholder() -> None:

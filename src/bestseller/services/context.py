@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from sqlalchemy import select
@@ -53,6 +54,9 @@ from bestseller.infra.db.models import (
     TimelineEventModel,
 )
 from bestseller.services.continuity import load_previous_chapter_snapshot
+from bestseller.services.character_intelligence.optimizer import (
+    optimize_project_character_profiles,
+)
 from bestseller.services.projects import get_project_by_slug
 from bestseller.services.narrative_tree import (
     antagonist_plan_path,
@@ -78,6 +82,8 @@ from bestseller.services.narrative_contracts import (
 from bestseller.services.retrieval import search_retrieval_for_project
 from bestseller.services.story_bible import load_scene_story_bible_context, stable_character_id
 from bestseller.settings import AppSettings
+
+logger = logging.getLogger(__name__)
 
 
 def _adaptive_lookback_window(
@@ -742,6 +748,13 @@ async def build_scene_writer_context_from_models(
     *,
     draft_mode: bool = False,
 ) -> SceneWriterContextPacket:
+    try:
+        await optimize_project_character_profiles(session, project)
+    except Exception:
+        logger.debug(
+            "Character intelligence optimization failed before context build",
+            exc_info=True,
+        )
 
     story_bible_context = await load_scene_story_bible_context(
         session,

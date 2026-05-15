@@ -1,0 +1,56 @@
+{
+  "book_id": "source-0056",
+  "source_ref": "distillation:e290a522d5d7080e1108b676",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "parsed_profile": {
+    "extraction_status": "failed",
+    "failure_reason": "all_source_chapters_returned_llm_fallback_stubs",
+    "confidence_score": 0.0,
+    "extractable_elements": {
+      "narrative_arc": 0,
+      "state_progression": 0,
+      "turning_points": 0,
+      "mechanisms": 0,
+      "reader_rewards": 0
+    },
+    " chapters_processed": 3,
+    "segments_analyzed": 66,
+    "note": "card represents_extraction_failure_state_not_story_mechanics"
+  },
+  "genre_tags": [
+    "distillation-generic"
+  ],
+  "reader_promise": {
+    "status": "unavailable",
+    "note": "no_audience_contract_extractable_from_failed_source"
+  },
+  "core_engine": {
+    "status": "unavailable",
+    "dominant_engine": "null",
+    "note": "no_narrative_engine_identifiable_from_llm_fallback_content"
+  },
+  "state_variables": [
+    "{'status': 'none_extracted', 'count': 0, 'list': []}"
+  ],
+  "reader_rewards": [
+    "distillable_mechanism_reliability"
+  ],
+  "reusable_mechanisms": [
+    "fallback mechanism abstraction"
+  ],
+  "non_reusable_specifics": [
+    "llm_unavailable_fallback_stub_all_chapters",
+    "no_source_content_accessible",
+    "zero_confidence_extraction_attempt"
+  ],
+  "risk_patterns": [
+    "source_content_unavailable",
+    "llm_fallback_all_chapters",
+    "confidence_zero",
+    "no_extractable_story_mechanics",
+    "extraction_failure_state"
+  ],
+  "source_id": "source-0056",
+  "distillation_source_id": "source-0056"
+}

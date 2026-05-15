@@ -1,0 +1,30 @@
+key: distillation-generic
+name: Distillation Generic Grammar Patch - Critical Failure State
+source_ids:
+- source-0046
+status: critical_failure_grammar_patch
+applies_to_categories:
+- distillation-fallback
+- no-extractable-content
+- zero-confidence
+required_contracts:
+- no_content_inference_allowed
+- prohibit_silent_data_treatment_as_valid
+- require_manual_population_before_redistillation
+- block_downstream_generative_use_when_confidence_zero
+state_variables:
+- fallback_progress
+- extraction_confidence_total
+- content_signal_detected
+- manual_intervention_required
+chapter_change_vectors: []
+reader_rewards: []
+hook_or_aftereffect_types:
+- data_integrity_violation_alert
+forbidden_defaults:
+- treat_fallback_stubs_as_implicit_narrative
+- infer_story_mechanics_from_zero_signal
+- generate_content_from_empty_volume_cards
+- propagate_llm_fallback_as_valid_grammar
+- use_chapter_numbers_from_failed_extraction
+- create_genre_grammar_from_synthetic_stub_sets

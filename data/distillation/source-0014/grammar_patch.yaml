@@ -1,0 +1,22 @@
+key: distillation-generic
+name: Distillation Generic Fallback Grammar Patch
+source_ids:
+- source-0014
+status: draft_review
+applies_to_categories:
+- distillation-generic
+required_contracts:
+- structured_distillation_contract
+- fallback_reliability_contract
+state_variables:
+- fallback_progress
+chapter_change_vectors:
+- distillation_fallback_vector
+reader_rewards:
+- distillable_mechanism_reliability
+hook_or_aftereffect_types:
+- fallback_hook
+- reliability_aftereffect
+forbidden_defaults:
+- generic_fallback
+- undefined_engine_state

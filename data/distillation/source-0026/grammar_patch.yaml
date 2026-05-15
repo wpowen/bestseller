@@ -1,0 +1,50 @@
+key: distillation-generic
+name: Distillation Generic Grammar Patch
+source_ids:
+- source-0026
+status: draft_review
+applies_to_categories:
+- distillation-generic
+required_contracts:
+- zero_content_extraction
+- complete_llm_fallback_required
+- no_story_content_guaranteed
+- volume_aggregation_blocked
+state_variables:
+- fallback_progress
+- data_integrity_checkpoint
+- confidence_score
+chapter_change_vectors: []
+reader_rewards:
+- distillable_mechanism_reliability
+- fallback_processing_acknowledgment
+hook_or_aftereffect_types:
+- no_open_hooks_available
+- no_extractable_narrative_hooks
+- no_story_promise_determinable
+forbidden_defaults:
+- assume_chapter_content
+- infer_arc_function
+- derive_turning_points
+- extract_craft_observations
+- generate_state_progression
+- identify_dominant_engine
+- apply_standard_story_grammar
+- leverage_volume_structure_for_content
+- use_chapter_gaps_as_narrative_tools
+- rely_on_segmentation_data_without_content
+- apply_generic_reader_rewards
+- assume_reader_promise_applicability
+- derive_open_hooks_from_missing_source
+- leverage_630_chapters_for_story_design
+- apply_23_volume_structure_to_grammar
+- infer_chapter_511_significance
+- derive_chapter_353_meaning
+- use_highest_segmentation_as_content_proxy
+- assume_distillation_reliability
+- apply_volume_aggregation_without_content
+- generate_story_design_from_zero_confidence_data
+- derive_narrative_from_complete_data_loss_source
+- apply_standard_hooks_without_source_material
+- leverage_reader_promise_without_content
+- infer_mechanisms_from_zero_extractable_content

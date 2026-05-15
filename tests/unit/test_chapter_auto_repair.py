@@ -744,6 +744,40 @@ async def test_canon_forbidden_term_triggers_canon_rewrite_hint() -> None:
 
 
 @pytest.mark.asyncio
+async def test_canon_state_regression_triggers_relationship_rewrite_hint() -> None:
+    chapter = FakeChapter()
+    scenes = [FakeScene(chapter_id=chapter.id, scene_number=1)]
+    report = FakeQualityReport(
+        report_json={
+            "blocking_codes": ["CANON_STATE_REGRESSION"],
+            "violations": [
+                {
+                    "code": "CANON_STATE_REGRESSION",
+                    "detail": "Canon state regression for 林正淳: matched pattern '林正淳.{0,20}(爷爷|祖父)'",
+                }
+            ],
+        },
+    )
+    session = FakeSession(scalar_queue=[report], scalars_queue=[scenes])
+
+    triggered, codes = await maybe_prepare_chapter_auto_repair(
+        session,
+        project=FakeProject(),
+        chapter=chapter,
+        repairable_codes=("CANON_STATE_REGRESSION",),
+    )
+
+    assert triggered is True
+    assert codes == ("CANON_STATE_REGRESSION",)
+    assert chapter.production_state == "pending"
+    assert scenes[0].status == SceneStatus.NEEDS_REWRITE.value
+    hint = scenes[0].metadata_json["auto_repair_hint"]
+    assert "正典人物状态" in hint
+    assert "林正淳" in hint
+    assert "不得把父亲写成爷爷" in hint
+
+
+@pytest.mark.asyncio
 async def test_naming_out_of_pool_is_not_auto_repaired_by_default() -> None:
     chapter = FakeChapter()
     scenes = [FakeScene(chapter_id=chapter.id, scene_number=1)]

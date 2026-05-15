@@ -1,0 +1,37 @@
+key: distillation-generic
+name: Distillation Generic Grammar Patch
+source_ids:
+- source-0133
+status: draft_review
+applies_to_categories:
+- distillation-package
+- structured-fallback
+- generic-distillation
+required_contracts:
+- fallback_abi
+- distillation_interface
+- reliable_output_contract
+state_variables:
+- fallback_progress
+- confidence_threshold
+- distillation_stage
+- mechanism_availability
+chapter_change_vectors:
+- abstraction_layer_addition
+- contract_inheritance
+- mechanism_standardization
+reader_rewards:
+- distillable_mechanism_reliability
+- structured_fallback_guarantee
+- generic_distillation_utility
+hook_or_aftereffect_types:
+- low_confidence_trigger
+- fallback_activation
+- mechanism_abstraction_hook
+- distillation_reliability_checkpoint
+forbidden_defaults:
+- hardcoded_response
+- non_structured_fallback
+- single_attempt_retry
+- unreliable_output
+- unverified_mechanism

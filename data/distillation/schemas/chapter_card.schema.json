@@ -39,6 +39,22 @@
     "payoffs": { "type": "array", "items": { "type": "string" } },
     "open_hooks": { "type": "array", "items": { "type": "string" } },
     "reusable_mechanisms": { "type": "array", "items": { "type": "string" } },
+    "craft_observations": {
+      "type": "object",
+      "description": "Anonymous, abstract prose-craft observations. Never include author names, source phrases, titles, or copyable sentence patterns.",
+      "properties": {
+        "pov_distance": { "type": "string" },
+        "sentence_rhythm": { "type": "string" },
+        "paragraphing": { "type": "string" },
+        "dialogue_method": { "type": "string" },
+        "description_method": { "type": "string" },
+        "exposition_method": { "type": "string" },
+        "hook_delivery": { "type": "string" },
+        "transition_method": { "type": "string" },
+        "do_not_copy": { "type": "array", "items": { "type": "string" } }
+      },
+      "additionalProperties": true
+    },
     "non_reusable_specifics": { "type": "array", "items": { "type": "string" } },
     "risk_flags": { "type": "array", "items": { "type": "string" } },
     "confidence": { "type": "number", "minimum": 0, "maximum": 1 }

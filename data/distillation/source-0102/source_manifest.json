@@ -1,0 +1,31 @@
+{
+  "source_id": "source-0102",
+  "pipeline_version": "distillation-v1",
+  "source_hash_sha256": "8bf5317c8527c300e8f57e1d0b5caa3357c0a31c2ceff4f6756c270411dce52a",
+  "source_format": "txt",
+  "encoding": "gb18030",
+  "title_key_hmac_sha256": "51951ad70a234641e51484f5187af4c5b3ee1508c50d7047073fffd85d72cb48",
+  "title_signal_source": "file_stem",
+  "has_author_metadata": false,
+  "language": null,
+  "rights_status": "user_supplied_for_analysis",
+  "redaction_policy": {
+    "store_source_title_in_repo": false,
+    "store_author_in_repo": false,
+    "store_raw_text_in_repo": false
+  },
+  "dedupe": {
+    "strategy": "private-title-key-hmac",
+    "duplicate_of": null
+  },
+  "parse_profile": {
+    "chapter_count": 45,
+    "volume_count": 1,
+    "average_chapter_chars": 19378,
+    "boundary_types": [
+      "chinese_chapter_heading"
+    ],
+    "parser_warnings": []
+  },
+  "genre_hint": "网文"
+}

@@ -1,0 +1,28 @@
+key: distillation-generic
+name: Distillation Generic Fallback Grammar
+source_ids:
+- source-0050
+status: draft_review
+applies_to_categories:
+- distillation-generic
+required_contracts:
+- grammar_patch_enforces_minimum_confidence_threshold
+- no_narrative_mechanics_extracted_below_0.1_confidence
+- fallback_state_variables_must_be_declared
+state_variables:
+- fallback_progress
+- integrity_score
+- extraction_confidence
+chapter_change_vectors:
+- zero_vector — all chapter_change_vectors undefined due to universal_llm_fallback
+reader_rewards:
+- distillable_mechanism_reliability
+hook_or_aftereffect_types:
+- empty_array — no hooks extractable from zero-integrity source
+forbidden_defaults:
+- generic_arc_function_assignment
+- placeholder_craft_profile_generation
+- invented_turning_point_specification
+- assumed_setup_payoff_rhythms
+- non_null_reusable_mechanisms_without_source_evidence
+- imputed_genre_engine_when_core_engine_unknown

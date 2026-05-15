@@ -165,3 +165,42 @@ phase_d_time:
   # CountdownArithmeticCheck is hard by design — flipping this to false
   # disables the validator; it never downgrades severity.
   countdown_arithmetic_enabled: true
+
+# ---------------------------------------------------------------------------
+# AI-flavor gate — span-level "AI 味" detection + localized fixes.
+# Runs after bible_gate, before signing_gate. Only patches the spans it
+# flags; never rewrites unrelated prose. See
+# src/bestseller/services/ai_flavor_gate.py for the full contract.
+# ---------------------------------------------------------------------------
+ai_flavor_gate:
+  enabled: true
+  # Below the warn score the gate is silent; between warn and block it
+  # records soft findings; at-or-above block it auto-patches, then if the
+  # post-patch score still >= block, routes the chapter to human review.
+  block_score:
+    cn: 50
+    en: 55
+  warn_score:
+    cn: 25
+    en: 30
+  # ≥ threshold occurrences of any single cluster (e.g. weak-adverb family)
+  # trigger excess-removal; first hit per phrase always survives.
+  cluster_threshold: 3
+  llm_rewrite:
+    # When enabled, severity=block spans without a static suggestion are
+    # handed to a single-sentence LLM rewrite (max max_spans_per_chapter
+    # calls). If the rewrite fails or is disabled, the gate falls back to
+    # deleting the whole sentence — the local prose stays intact either way.
+    enabled: true
+    max_spans_per_chapter: 8
+  audit:
+    enabled: true
+    # Audit md written to <project-output>/<dir_relative>/ai-flavor-ch{N}.md
+    dir_relative: "audits"
+  # Pattern + replacement JSON. Edit these files (not the gate code) to
+  # tune which phrases are flagged.
+  data_dir: "data/ai_flavor"
+  # When true (recommended), a chapter that can't be patched below the
+  # block threshold is routed to human review. Flip to false only when
+  # you want the gate to be advisory-only.
+  block_on_residual: true

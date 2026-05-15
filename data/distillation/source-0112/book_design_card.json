@@ -1,0 +1,44 @@
+{
+  "book_id": "source-0112",
+  "source_ref": "distillation:700829f2344ee4bdfeb23b9e",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "parsed_profile": {
+    "distillation_status": "failed",
+    "confidence": 0.0,
+    "data_availability": "zero",
+    "failure_modes": [
+      "llm_fallback",
+      "no_data",
+      "all_chapters_llm_fallback",
+      "insufficient_data",
+      "no_distillable_content",
+      "volume_card_cannot_be_derived"
+    ],
+    "notes": "All 274 chapters across ten volumes are LLM fallback stubs with zero confidence. No arc mechanics, state progression, turning points, reusable mechanisms, or craft observations can be extracted. The design card is a hollow structure with empty fields to avoid hallucination."
+  },
+  "genre_tags": [
+    "distillation-generic"
+  ],
+  "reader_promise": "unavailable",
+  "core_engine": "unavailable",
+  "state_variables": [
+    "fallback_progress"
+  ],
+  "reader_rewards": [
+    "distillable_mechanism_reliability"
+  ],
+  "reusable_mechanisms": [
+    "fallback mechanism abstraction"
+  ],
+  "non_reusable_specifics": [],
+  "risk_patterns": [
+    "{'pattern': 'llm_fallback_batch', 'severity': 'critical', 'description': 'Entire source chapters are placeholder stubs with no narrative content.'}",
+    "{'pattern': 'zero_confidence', 'severity': 'critical', 'description': 'Confidence is 0.0 across all chapters, preventing reliable design extraction.'}",
+    "{'pattern': 'no_distillable_content', 'severity': 'critical', 'description': 'Arc function, dominant engine, state progression, turning points, and reusable mechanisms cannot be derived.'}",
+    "{'pattern': 'aggregation_blocked', 'severity': 'high', 'description': 'Volume‑level aggregation cannot proceed without full chapter analysis.'}",
+    "{'pattern': 'downstream_dependency_risk', 'severity': 'high', 'description': 'Any downstream system consuming this card will receive inert data.'}"
+  ],
+  "source_id": "source-0112",
+  "distillation_source_id": "source-0112"
+}

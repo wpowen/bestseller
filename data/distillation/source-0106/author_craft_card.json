@@ -1,0 +1,37 @@
+{
+  "source_id": "source-0106",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "style_safety_policy": "{'flagged_patterns': [], 'restriction_level': 'none', 'note': 'No source content available for safety pattern extraction.'}",
+  "pov_and_distance": "{'pattern': None, 'variation_frequency': None, 'intimacy_levers': [], 'note': 'No POV data extractable — all chapters marked LLM unavailable fallback.'}",
+  "sentence_rhythm": [
+    "{'dominant_length': None, 'variation_pattern': None, 'cadence_markers': [], 'note': 'No sentence-level data available from stub content.'}"
+  ],
+  "paragraphing": [
+    "{'avg_paragraph_length': None, 'structure_preferences': [], 'white_space_usage': None, 'note': 'No paragraphing data extractable from placeholder text.'}"
+  ],
+  "dialogue_system": [
+    "{'tagging_preferences': [], 'attribution_patterns': [], 'internal_vs_external_balance': None, 'subtext_mechanisms': [], 'note': 'No dialogue content present in LLM unavailable stubs.'}"
+  ],
+  "description_strategy": [
+    "{'sensory_focus': [], 'filter_word_frequency': None, 'showing_vs_telling_bias': None, 'world_building_density': None, 'note': 'No descriptive passages available for analysis.'}"
+  ],
+  "exposition_strategy": [
+    "{'backstory_delivery_patterns': [], 'info_dumping_mitigation_techniques': [], 'explanation_to_scene_ratio': None, 'note': 'No exposition extractable from fallback content.'}"
+  ],
+  "emotional_temperature": [
+    "{'baseline_affect': None, 'affect_variance': None, 'tension_maintenance_patterns': [], 'catharsis_delivery': None, 'note': 'No emotional data available from stub source material.'}"
+  ],
+  "hooking_and_transitions": [
+    "{'chapter_opening_patterns': [], 'chapter_ending_patterns': [], 'scene_transition_methods': [], 'cliffhanger_frequency': None, 'note': 'No hook or transition data extractable from placeholder content.'}"
+  ],
+  "adaptation_guidelines": [
+    "{'scene_specificity_level': None, 'visualizable_elements': [], 'adaptability_rating': None, 'recommended_modality': None, 'note': 'Insufficient source content to assess adaptation potential.'}"
+  ],
+  "taboo_copy_signals": [
+    "{'identifiable_signatures': [], 'forbidden_elements': [], 'similarity_risk_indicators': [], 'note': 'Zero craft content prevents signature identification.'}"
+  ],
+  "confidence": 0.0,
+  "distillation_note": "All 29 chapters across 2 volumes consist entirely of LLM unavailable fallback stubs. No prose mechanics, craft observations, character dynamics, plot architecture, or narrative mechanisms can be extracted. Aggregate confidence in any craft profile element: 0.0. Recommend re-processing with actual source content before generating a viable author_craft_card.",
+  "distillation_source_id": "source-0106"
+}

@@ -1,0 +1,36 @@
+{
+  "source_id": "source-0086",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "style_safety_policy": "No content available for style safety assessment — all 99 chapters returned LLM unavailable stubs with 0.0 confidence. No narrative voice, linguistic patterns, or tonal signatures extractable from source data.",
+  "pov_and_distance": "close-third or project-selected POV with controlled narrative distance",
+  "sentence_rhythm": [
+    "vary short action beats with medium explanatory sentences"
+  ],
+  "paragraphing": [
+    "keep paragraphs functional: action, reaction, or information turn"
+  ],
+  "dialogue_system": [
+    "use role-specific intent, subtext, and conflict pressure"
+  ],
+  "description_strategy": [
+    "describe only details that change stakes, mood, or reader inference"
+  ],
+  "exposition_strategy": [
+    "place exposition after visible need or conflict pressure"
+  ],
+  "emotional_temperature": [
+    "surface emotion through choices, body action, and withheld admission"
+  ],
+  "hooking_and_transitions": [
+    "end units on changed state, unresolved question, or sharper constraint"
+  ],
+  "adaptation_guidelines": [
+    "No craft patterns available for adaptation — complete distillation failure across all 4 volumes (99 chapters). Source content entirely inaccessible. Any adaptation must await retrieval of actual source text. No reusable craft mechanisms extractable."
+  ],
+  "taboo_copy_signals": [
+    "Cannot be determined — no source content accessible to identify distinctive authorial fingerprints, signature phrases, or named-entity patterns requiring avoidance."
+  ],
+  "confidence": 0.0,
+  "distillation_source_id": "source-0086"
+}

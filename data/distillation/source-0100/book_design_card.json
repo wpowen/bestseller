@@ -1,0 +1,35 @@
+{
+  "book_id": "source-0100",
+  "source_ref": "distillation:d8fa19f94f68cbd559a79c47",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "parsed_profile": {
+    "status": "llm_fallback",
+    "confidence": 0.0,
+    "note": "All constituent chapter cards are LLM-unavailable fallback stubs; no narrative content, mechanics, or craft observations could be extracted."
+  },
+  "genre_tags": [
+    "distillation-generic"
+  ],
+  "reader_promise": "unknown",
+  "core_engine": "unknown",
+  "state_variables": [
+    "fallback_progress"
+  ],
+  "reader_rewards": [
+    "distillable_mechanism_reliability"
+  ],
+  "reusable_mechanisms": [
+    "fallback mechanism abstraction"
+  ],
+  "non_reusable_specifics": [],
+  "risk_patterns": [
+    "llm_fallback",
+    "confidence_0.0",
+    "empty_craft_observations",
+    "empty_reader_rewards",
+    "empty_open_hooks"
+  ],
+  "source_id": "source-0100",
+  "distillation_source_id": "source-0100"
+}

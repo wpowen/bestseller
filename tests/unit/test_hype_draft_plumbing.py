@@ -300,6 +300,9 @@ class TestSceneDraftPromptsHypeBlocks:
             "【关系张力与主角能动性约束】RELATIONSHIP_MARKER: "
             "关系戏必须改变信任/权力/误会/承诺。"
         )
+        entry_system_block = "【词条体系约束】ENTRY_SYSTEM_MARKER: 法宝升级必须支付代价。"
+        entry_registry_block = "【词条注册表】ENTRY_REGISTRY_MARKER: artifact-core 仍可用。"
+        entry_state_block = "【词条状态账本】ENTRY_STATE_MARKER: artifact-core state=owned。"
         _, user_prompt = build_scene_draft_prompts(
             _sample_project(),
             _sample_chapter(),
@@ -311,6 +314,9 @@ class TestSceneDraftPromptsHypeBlocks:
             rule_system_context_block=rule_block,
             faction_ecology_context_block=faction_block,
             relationship_agency_context_block=relationship_block,
+            entry_system_context_block=entry_system_block,
+            entry_registry_context_block=entry_registry_block,
+            entry_state_ledger_block=entry_state_block,
         )
         assert "【榜单级能力 Profile】" in user_prompt
         assert "固定入口、可解规则、单元案推动主线" in user_prompt
@@ -324,8 +330,14 @@ class TestSceneDraftPromptsHypeBlocks:
         assert "势力反应必须差异化" in user_prompt
         assert "【关系张力与主角能动性约束】" in user_prompt
         assert "关系戏必须改变信任/权力/误会/承诺" in user_prompt
+        assert "【词条体系约束】" in user_prompt
+        assert "【词条注册表】" in user_prompt
+        assert "【词条状态账本】" in user_prompt
         assert user_prompt.index("RANKING_MARKER") < user_prompt.index("PROGRESSION_MARKER")
         assert user_prompt.index("PROGRESSION_MARKER") < user_prompt.index("DECISION_MARKER")
         assert user_prompt.index("DECISION_MARKER") < user_prompt.index("RULE_MARKER")
         assert user_prompt.index("RULE_MARKER") < user_prompt.index("FACTION_MARKER")
         assert user_prompt.index("FACTION_MARKER") < user_prompt.index("RELATIONSHIP_MARKER")
+        assert user_prompt.index("RELATIONSHIP_MARKER") < user_prompt.index("ENTRY_SYSTEM_MARKER")
+        assert user_prompt.index("ENTRY_SYSTEM_MARKER") < user_prompt.index("ENTRY_REGISTRY_MARKER")
+        assert user_prompt.index("ENTRY_REGISTRY_MARKER") < user_prompt.index("ENTRY_STATE_MARKER")

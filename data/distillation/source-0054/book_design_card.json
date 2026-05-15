@@ -1,0 +1,47 @@
+{
+  "book_id": "source-0054",
+  "source_ref": "distillation:134479b11710402db90fbba8",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "parsed_profile": {
+    "distillation_status": "complete_failure",
+    "total_volumes": 11,
+    "volumes_processed": 11,
+    "volumes_with_content": 0,
+    "chapters_with_data": 0,
+    "aggregate_confidence": 0.0,
+    "failure_signature": "systematic_llm_unavailable_across_entire_source"
+  },
+  "genre_tags": [
+    "distillation-generic"
+  ],
+  "reader_promise": "LLM structured distillation fallback.",
+  "core_engine": "unknown",
+  "state_variables": [
+    "fallback_progress"
+  ],
+  "reader_rewards": [
+    "distillable_mechanism_reliability"
+  ],
+  "reusable_mechanisms": [
+    "fallback mechanism abstraction"
+  ],
+  "non_reusable_specifics": [],
+  "risk_patterns": [
+    "llm_unavailable",
+    "zero_confidence_batch",
+    "systematic_extraction_failure",
+    "no_story_content_extracted",
+    "all_chapters_fallback",
+    "no_arc_derivable",
+    "no_engine_identifiable",
+    "empty_state_progression",
+    "no_turning_points_recorded",
+    "no_setup_payoff_rhythm",
+    "missing_chapters_in_batch",
+    "metadata_inconsistency",
+    "distillation_depleted_source"
+  ],
+  "source_id": "source-0054",
+  "distillation_source_id": "source-0054"
+}

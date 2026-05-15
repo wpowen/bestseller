@@ -1,0 +1,36 @@
+{
+  "source_id": "source-0139",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "style_safety_policy": "NO_IMITATION_PERMISSIBLE — Source resolved entirely to LLM fallback stubs with zero narrative content. No authorial voice, stylistic signature, or craft patterns are extractable. Downstream consumers must not attempt style derivation, pattern matching, or craft abstraction from this card. Any adaptation attempt would be working from a structural shell, not authentic authorial intelligence.",
+  "pov_and_distance": "close-third or project-selected POV with controlled narrative distance",
+  "sentence_rhythm": [
+    "vary short action beats with medium explanatory sentences"
+  ],
+  "paragraphing": [
+    "keep paragraphs functional: action, reaction, or information turn"
+  ],
+  "dialogue_system": [
+    "use role-specific intent, subtext, and conflict pressure"
+  ],
+  "description_strategy": [
+    "describe only details that change stakes, mood, or reader inference"
+  ],
+  "exposition_strategy": [
+    "place exposition after visible need or conflict pressure"
+  ],
+  "emotional_temperature": [
+    "surface emotion through choices, body action, and withheld admission"
+  ],
+  "hooking_and_transitions": [
+    "end units on changed state, unresolved question, or sharper constraint"
+  ],
+  "adaptation_guidelines": [
+    "SUSPEND_ADAPTATION — This author_craft_card cannot support adaptation, style emulation, or craft learning. Source requires re-processing with accessible chapter content before any craft distillation becomes possible. All volume_cards contain only placeholder text; no reusable_mechanisms, craft_observations, reader_rewards, or non_reusable_specifics are retrievable. Regenerate from non-fallback chapter sources."
+  ],
+  "taboo_copy_signals": [
+    "IDENTIFICATION_IMPOSSIBLE — Without extractable narrative content, no distinctive sentence templates, phrasing patterns, POV choices, dialogue conventions, description strategies, or emotional registers can be identified. No taboo signals (overused constructions, cliché architectures, structural anti-patterns) are present because no signals exist whatsoever. Treating placeholder stubs as representative of authorial intent would constitute hallucination, not craft analysis."
+  ],
+  "confidence": 0.0,
+  "distillation_source_id": "source-0139"
+}

@@ -1,0 +1,36 @@
+{
+  "source_id": "source-0133",
+  "source_type": "distillation_package",
+  "status": "draft_review",
+  "style_safety_policy": "no_analysis_possible",
+  "pov_and_distance": "unavailable — all 190 chapters returned LLM fallback stubs with zero confidence; no narrative POV data extractable",
+  "sentence_rhythm": [
+    "unavailable — source chapter_cards contain no parseable sentence-level content"
+  ],
+  "paragraphing": [
+    "unavailable — no chapter content available for structural analysis"
+  ],
+  "dialogue_system": [
+    "unavailable — zero dialogue data in fallback stubs"
+  ],
+  "description_strategy": [
+    "unavailable — no descriptive passages extractable from failed chapter_cards"
+  ],
+  "exposition_strategy": [
+    "unavailable — no exposition or narrative information present in source"
+  ],
+  "emotional_temperature": [
+    "unavailable — no emotional content derivable from empty chapter stubs"
+  ],
+  "hooking_and_transitions": [
+    "unavailable — no hook or transition mechanisms present in 0% confidence data"
+  ],
+  "adaptation_guidelines": [
+    "distillation_pipeline_failure — all 190 chapters (8 volumes) returned llm_fallback stubs; do not use this card for style replication, adaptation, or craft guidance; regenerate source chapter_cards through functional LLM pipeline before attempting author_craft_card extraction"
+  ],
+  "taboo_copy_signals": [
+    "source titles, author names, exact phrases, named entities, and distinctive sentence templates"
+  ],
+  "confidence": 0.0,
+  "distillation_source_id": "source-0133"
+}

@@ -1,0 +1,13 @@
+key: distillation-generic
+name: Distillation Generic Placeholder
+source_ids:
+- source-0028
+status: extraction_failed
+applies_to_categories:
+- unknown
+required_contracts: []
+state_variables: []
+chapter_change_vectors: []
+reader_rewards: []
+hook_or_aftereffect_types: []
+forbidden_defaults: []

@@ -356,6 +356,8 @@ class PipelineSettings(BaseModel):
     story_design_kernel_candidate_count: int = 3
     enable_emotion_driven_kernel: bool = True
     enable_emotion_kernel_backfill: bool = True
+    enable_entry_system_kernel: bool = True
+    enable_entry_system_backfill: bool = True
     enable_story_state_driven_planning: bool = True
     enable_reverse_outline_gate: bool = True
     reverse_outline_gate_block_on_failure: bool = False

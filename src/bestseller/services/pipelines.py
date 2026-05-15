@@ -68,6 +68,7 @@ from bestseller.services.continuity import (
 from bestseller.services.drafts import assemble_chapter_draft, count_words, generate_scene_draft
 from bestseller.services.exports import export_chapter_markdown, export_project_markdown
 from bestseller.services.emotion_kernel_backfill import ensure_project_emotion_driven_kernel
+from bestseller.services.entry_system_backfill import ensure_project_entry_system_compat
 from bestseller.services.invariants import (
     InvariantSeedError,
     invariants_from_dict,
@@ -258,6 +259,49 @@ async def _ensure_emotion_kernel_backfill_for_pipeline(
                 "project_slug": project.slug,
                 "status": result.status,
                 "source": result.source,
+            },
+        )
+
+
+async def _ensure_entry_system_backfill_for_pipeline(
+    session: AsyncSession,
+    settings: AppSettings,
+    project: ProjectModel,
+    *,
+    requested_by: str,
+    progress: ProgressCallback | None = None,
+) -> None:
+    if not getattr(settings.pipeline, "enable_entry_system_kernel", True):
+        return
+    if not getattr(settings.pipeline, "enable_entry_system_backfill", True):
+        return
+    try:
+        result = await ensure_project_entry_system_compat(
+            session,
+            project,
+            requested_by=requested_by,
+            persist_artifact=False,
+        )
+    except Exception:
+        logger.warning(
+            "Entry system legacy backfill failed for project %s; continuing without it",
+            project.slug,
+            exc_info=True,
+        )
+        project.metadata_json = {
+            **(getattr(project, "metadata_json", None) or {}),
+            "entry_system_backfill_failed": True,
+        }
+        return
+    if result.changed:
+        _emit_progress(
+            progress,
+            "entry_system_backfilled",
+            {
+                "project_slug": project.slug,
+                "status": result.status,
+                "source": result.source,
+                "registry_entry_count": len((result.registry or {}).get("entries") or []),
             },
         )
 
@@ -1571,6 +1615,12 @@ async def run_scene_pipeline(
         allow_structural_repair=allow_structural_repair,
     )
     await _ensure_emotion_kernel_backfill_for_pipeline(
+        session,
+        settings,
+        project,
+        requested_by=requested_by,
+    )
+    await _ensure_entry_system_backfill_for_pipeline(
         session,
         settings,
         project,
@@ -3019,14 +3069,6 @@ async def run_chapter_pipeline(
         operation=f"chapter pipeline {chapter_number}",
         allow_structural_repair=allow_structural_repair,
     )
-    await _ensure_emotion_kernel_backfill_for_pipeline(
-        session,
-        settings,
-        project,
-        requested_by=requested_by,
-    )
-    await _enforce_truth_version_guard(session, settings, project)
-
     chapter = await session.scalar(
         select(ChapterModel).where(
             ChapterModel.project_id == project.id,
@@ -3045,6 +3087,20 @@ async def run_chapter_pipeline(
     )
     if not scenes:
         raise ValueError(f"Chapter {chapter_number} does not have any scene cards to process.")
+
+    await _ensure_emotion_kernel_backfill_for_pipeline(
+        session,
+        settings,
+        project,
+        requested_by=requested_by,
+    )
+    await _ensure_entry_system_backfill_for_pipeline(
+        session,
+        settings,
+        project,
+        requested_by=requested_by,
+    )
+    await _enforce_truth_version_guard(session, settings, project)
 
     workflow_run = await create_workflow_run(
         session,
@@ -4418,6 +4474,13 @@ async def run_project_pipeline(
         )
 
     await _ensure_emotion_kernel_backfill_for_pipeline(
+        session,
+        settings,
+        project,
+        requested_by=requested_by,
+        progress=progress,
+    )
+    await _ensure_entry_system_backfill_for_pipeline(
         session,
         settings,
         project,

@@ -282,6 +282,10 @@ pipeline:
   # warn-only until canary projects prove the false-positive rate is acceptable.
   enable_story_design_kernel: true
   story_design_kernel_candidate_count: 3
+  enable_emotion_driven_kernel: true
+  enable_emotion_kernel_backfill: true
+  enable_entry_system_kernel: true
+  enable_entry_system_backfill: true
   enable_story_state_driven_planning: true
   enable_reverse_outline_gate: true
   reverse_outline_gate_block_on_failure: false

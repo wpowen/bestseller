@@ -18,4 +18,12 @@ output/
 logs/
 .audit-reports/backups/
 .distillation_private/
+
+# Local implementation plans (agent/session working notes; not for public repo)
+docs/plans/
+
+# Distillation corpus & LLM outputs (local only; schemas stay in repo)
+data/distillation/source-*/
+data/distillation/aggregates/
+data/distillation/source_registry.index.json
 data/distillation/.prepare_source.lock

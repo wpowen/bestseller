@@ -21,6 +21,14 @@ def test_infer_aggregate_key_otherworld() -> None:
     assert infer_aggregate_key({"genre_hint": "异界穿越"}) == "otherworld-cross-system"
 
 
+def test_infer_aggregate_key_base_building() -> None:
+    assert infer_aggregate_key({"genre_hint": "基建经营"}) == "base-building"
+
+
+def test_infer_aggregate_key_eastern_aesthetic() -> None:
+    assert infer_aggregate_key({"genre_hint": "东方美学国风"}) == "eastern-aesthetic"
+
+
 def test_infer_aggregate_key_prefers_distillation_bucket() -> None:
     assert (
         infer_aggregate_key(

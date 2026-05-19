@@ -45,7 +45,9 @@ def _valid_xianxia_metadata() -> dict[str, object]:
         "premium_state_ledger_report": {"passed": True, "findings": []},
         "premium_state_snapshot": {
             "passed": True,
+            "power_tier_state": {"沈砚": "炼气圆满"},
             "resource_balances": {"沈砚": {"筑基丹": 1}},
+            "opportunity_map": [{"target": "外门筑基名额", "cost": "丹药与船票"}],
             "rule_state": {},
             "faction_pressure_queue": [
                 {
@@ -62,6 +64,17 @@ def _valid_xianxia_metadata() -> dict[str, object]:
             },
             "open_agency_debts": [],
         },
+        "category_hard_gates": {
+            "progression_causality_gate": {"status": "active"},
+            "resource_cost_gate": {"status": "active"},
+            "faction_reaction_gate": {"status": "active"},
+        },
+        "chapter_state_updates": {
+            "power_tier_delta": {"status": "required"},
+            "resource_delta": {"status": "required"},
+            "opportunity_delta": {"status": "required"},
+            "faction_reaction_delta": {"status": "required"},
+        },
     }
 
 
@@ -77,6 +90,7 @@ def test_premium_book_gate_accepts_complete_xianxia_engine() -> None:
     assert report.blocking_findings == ()
     assert report.capability_snapshot["progression_engine"] is True
     assert report.capability_snapshot["faction_ecology"] is True
+    assert report.capability_snapshot["category_hard_engine"]["passed"] is True
 
 
 def test_premium_book_gate_blocks_rule_heavy_project_without_rules() -> None:
@@ -152,3 +166,32 @@ def test_premium_book_gate_blocks_relationship_genre_without_relationship_agency
     assert report.passed is False
     assert payload["passed"] is False
     assert "relationship_agency_missing" in codes
+
+
+def test_premium_book_gate_blocks_otherworld_without_identity_and_exposure_engine() -> None:
+    metadata = {
+        "canonical_category": "otherworld-cross-system",
+        "cast_spec": {
+            "protagonist": {
+                "name": "林越",
+                "decision_policy": {"core_rule": "先验证本地规则，再使用旧知识。"},
+            }
+        },
+        "premium_state_ledger_report": {"passed": True, "findings": []},
+        "premium_state_snapshot": {
+            "passed": True,
+            "cross_system_mapping": [{"old": "现代知识", "local": "只能部分映射"}],
+        },
+    }
+
+    report = evaluate_premium_project_readiness(
+        metadata,
+        genre="异界穿越",
+        sub_genre="系统",
+    )
+    codes = {finding.code for finding in report.blocking_findings}
+
+    assert report.passed is False
+    assert "category_state_ledger_missing" in codes
+    assert "category_hard_gate_missing" in codes
+    assert "category_chapter_update_missing" in codes

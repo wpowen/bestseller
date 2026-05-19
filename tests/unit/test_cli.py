@@ -16,6 +16,9 @@ from bestseller.domain.evaluation import (
     BenchmarkSuiteCatalogEntry,
     BenchmarkSuiteRunResult,
     BenchmarkSuiteSpec,
+    ModelPilotCatalogEntry,
+    ModelPilotRunResult,
+    ModelPilotSpec,
 )
 from bestseller.domain.workflow import WorkflowMaterializationResult
 
@@ -52,6 +55,29 @@ def test_benchmark_list_command(monkeypatch: pytest.MonkeyPatch) -> None:
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
     assert payload[0]["suite_id"] == "sample-books"
+
+
+def test_model_pilot_list_command(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "bestseller.cli.main.list_model_pilots",
+        lambda: [
+            ModelPilotCatalogEntry(
+                pilot_id="short-complete-30",
+                title="30章完整故事模型试点",
+                description="MiniMax vs DeepSeek",
+                path="/tmp/short_complete_30.yaml",
+                enabled_variant_count=2,
+                variant_ids=["minimax-m27", "deepseek-official"],
+            )
+        ],
+    )
+
+    result = runner.invoke(app, ["model-pilot", "list"])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload[0]["pilot_id"] == "short-complete-30"
+    assert payload[0]["enabled_variant_count"] == 2
 
 
 def test_prompt_pack_list_command(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -268,6 +294,53 @@ def test_benchmark_run_command(monkeypatch: pytest.MonkeyPatch) -> None:
     payload = json.loads(result.stdout)
     assert payload["suite_id"] == "sample-books"
     assert payload["passed_case_count"] == 3
+
+
+def test_model_pilot_run_command(monkeypatch: pytest.MonkeyPatch) -> None:
+    @asynccontextmanager
+    async def fake_session_scope(settings):
+        yield object()
+
+    def fake_load_model_pilot(pilot_id: str, pilot_file=None):
+        assert pilot_id == "short-complete-30"
+        return ModelPilotSpec.model_validate(
+            {
+                "pilot_id": "short-complete-30",
+                "title": "30章完整故事模型试点",
+                "book": {
+                    "case_id": "short-complete-30",
+                    "title": "第七次日落档案",
+                    "genre": "suspense-mystery",
+                    "target_word_count": 60000,
+                    "target_chapters": 30,
+                    "premise": "30章内完结的规则悬疑。",
+                },
+                "variants": [],
+            }
+        )
+
+    async def fake_run_model_pilot(session, settings, **kwargs):
+        return ModelPilotRunResult(
+            pilot_id="short-complete-30",
+            title="30章完整故事模型试点",
+            started_at=datetime.now(UTC),
+            completed_at=datetime.now(UTC),
+            report_path="/tmp/model-pilot-report.json",
+            variant_results=[],
+            passed_variant_count=2,
+            failed_variant_count=0,
+        )
+
+    monkeypatch.setattr("bestseller.cli.main.session_scope", fake_session_scope)
+    monkeypatch.setattr("bestseller.cli.main.load_model_pilot", fake_load_model_pilot)
+    monkeypatch.setattr("bestseller.cli.main.run_model_pilot", fake_run_model_pilot)
+
+    result = runner.invoke(app, ["model-pilot", "run", "short-complete-30", "--no-progress"])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["pilot_id"] == "short-complete-30"
+    assert payload["passed_variant_count"] == 2
 
 
 def test_ui_serve_command(monkeypatch: pytest.MonkeyPatch) -> None:

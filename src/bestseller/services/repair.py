@@ -1,18 +1,20 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from collections.abc import Callable
-from typing import Any, Iterable
+from collections.abc import Callable, Iterable
+import logging
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import and_, func, select
+from sqlalchemy.exc import DBAPIError, PendingRollbackError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bestseller.domain.enums import ProjectStatus, WorkflowStatus
 from bestseller.domain.pipeline import ProjectRepairChapterSummary, ProjectRepairResult
 from bestseller.infra.db.models import (
-    ChapterModel,
     ChapterDraftVersionModel,
+    ChapterModel,
     ChapterQualityReportModel,
     ProjectModel,
     RewriteImpactModel,
@@ -33,9 +35,14 @@ from bestseller.services.workflows import create_workflow_run, create_workflow_s
 from bestseller.services.world_expansion import sync_world_expansion_progress
 from bestseller.settings import AppSettings
 
-
 WORKFLOW_TYPE_PROJECT_REPAIR = "project_repair"
 ProgressCallback = Callable[[str, dict[str, Any] | None], None]
+logger = logging.getLogger(__name__)
+_ORPHAN_REWRITE_TASK_ERRORS = (
+    "Rewrite task does not point to a source scene.",
+    "Source scene for rewrite task was not found.",
+    "Source chapter for rewrite task was not found.",
+)
 
 
 def _emit_progress(
@@ -149,7 +156,9 @@ async def _load_publication_blocked_chapter_numbers(
         detect_short_cluster_near_repeat,
     )
     from bestseller.services.drafts import count_words  # noqa: PLC0415
-    from bestseller.services.output_hygiene import collect_unfinished_artifact_issues  # noqa: PLC0415
+    from bestseller.services.output_hygiene import (
+        collect_unfinished_artifact_issues,  # noqa: PLC0415
+    )
 
     blocked: set[int] = set()
     language = getattr(project, "language", None)
@@ -168,7 +177,9 @@ async def _load_publication_blocked_chapter_numbers(
         explicitly_blocked = production_state == "blocked"
         if explicitly_blocked:
             if _chapter_has_identity_write_safety_block(chapter) and identity_registry is None:
-                from bestseller.services.identity_guard import load_identity_registry  # noqa: PLC0415
+                from bestseller.services.identity_guard import (
+                    load_identity_registry,  # noqa: PLC0415
+                )
 
                 identity_registry = await load_identity_registry(session, project.id)
             explicitly_blocked = await _heal_chapter_gate_state_before_repair(
@@ -766,16 +777,32 @@ async def _resolve_rewrite_task_chapter_numbers(
 
     if task.trigger_type == "scene_review":
         if refresh_impacts:
-            analysis = await refresh_rewrite_impacts(
-                session,
-                project_slug,
-                rewrite_task_id=task.id,
-            )
+            try:
+                analysis = await refresh_rewrite_impacts(
+                    session,
+                    project_slug,
+                    rewrite_task_id=task.id,
+                )
+            except ValueError as exc:
+                if str(exc) not in _ORPHAN_REWRITE_TASK_ERRORS:
+                    raise
+                logger.warning(
+                    "Skipping orphan rewrite task %s during project repair: %s",
+                    task.id,
+                    exc,
+                )
+                return chapter_numbers
             for impact in analysis.impacts:
                 if impact.impacted_type == "chapter":
-                    chapter_number = await _chapter_number_from_chapter_id(session, impact.impacted_id)
+                    chapter_number = await _chapter_number_from_chapter_id(
+                        session,
+                        impact.impacted_id,
+                    )
                 elif impact.impacted_type == "scene":
-                    chapter_number = await _chapter_number_from_scene_id(session, impact.impacted_id)
+                    chapter_number = await _chapter_number_from_scene_id(
+                        session,
+                        impact.impacted_id,
+                    )
                 else:
                     chapter_number = None
                 if chapter_number is not None:
@@ -846,6 +873,7 @@ async def run_project_repair(
             "scan_publication_gate_candidates": scan_publication_gate_candidates,
         },
     )
+    workflow_run_id = workflow_run.id
     await _checkpoint_repair_progress(session)
 
     step_order = 1
@@ -1043,7 +1071,9 @@ async def run_project_repair(
                 output_ref={
                     "chapter_number": chapter_number,
                     "chapter_workflow_run_id": str(chapter_result.workflow_run_id),
-                    "source_task_ids": [str(task_id) for task_id in chapter_task_ids[chapter_number]],
+                    "source_task_ids": [
+                        str(task_id) for task_id in chapter_task_ids[chapter_number]
+                    ],
                     "requires_human_review": chapter_result.requires_human_review,
                     "chapter_status": repaired_chapter_status,
                     "production_state": repaired_production_state,
@@ -1239,12 +1269,18 @@ async def run_project_repair(
             requires_human_review=requires_human_review,
         )
     except Exception as exc:
+        if (
+            isinstance(exc, (PendingRollbackError, DBAPIError))
+            or not getattr(session, "is_active", True)
+        ):
+            await session.rollback()
+            raise
         workflow_run.status = WorkflowStatus.FAILED.value
         workflow_run.current_step = current_step_name
         workflow_run.error_message = str(exc)
         await create_workflow_step_run(
             session,
-            workflow_run_id=workflow_run.id,
+            workflow_run_id=workflow_run_id,
             step_name=current_step_name,
             step_order=step_order,
             status=WorkflowStatus.FAILED,

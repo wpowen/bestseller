@@ -1716,7 +1716,7 @@ async def test_generate_structured_artifact_can_disable_fallback_merge(
 
 
 @pytest.mark.asyncio
-async def test_generate_structured_artifact_uses_fallback_when_validator_rejects(
+async def test_generate_structured_artifact_fails_closed_when_validator_rejects_critical_artifact(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     project = build_project()
@@ -1741,19 +1741,18 @@ async def test_generate_structured_artifact_uses_fallback_when_validator_rejects
 
     monkeypatch.setattr(planner_services, "complete_text", fake_complete_text)
 
-    payload, _ = await planner_services._generate_structured_artifact(
-        FakeSession(),
-        build_settings(),
-        project=project,
-        logical_name="book_spec",
-        system_prompt="system",
-        user_prompt="user",
-        fallback_payload=fallback_book_spec,
-        workflow_run_id=uuid4(),
-        validator=reject_non_mapping_protagonist,
-    )
-
-    assert payload == fallback_book_spec
+    with pytest.raises(planner_services.PlannerFallbackError):
+        await planner_services._generate_structured_artifact(
+            FakeSession(),
+            build_settings(),
+            project=project,
+            logical_name="book_spec",
+            system_prompt="system",
+            user_prompt="user",
+            fallback_payload=fallback_book_spec,
+            workflow_run_id=uuid4(),
+            validator=reject_non_mapping_protagonist,
+        )
 
 
 @pytest.mark.asyncio

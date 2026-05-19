@@ -23,6 +23,7 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bestseller.services.llm import LLMCompletionRequest, LLMRole, complete_text
+from bestseller.services.llm_closed_loop import build_repair_user_prompt, findings_from_exception
 from bestseller.services.methodology import render_qimao_regeneration_contract
 from bestseller.services.writing_profile import resolve_writing_profile, sanitize_genre_story_overrides
 from bestseller.services.writing_presets import list_genre_presets, list_platform_presets
@@ -73,12 +74,24 @@ def _extract_json(text: str) -> dict[str, Any]:
                 return json.loads(stripped[start : end + 1])
             except json.JSONDecodeError:
                 pass
+    try:
+        from json_repair import repair_json
+
+        repaired = repair_json(stripped, return_objects=True)
+        if isinstance(repaired, dict):
+            logger.warning(
+                "Conception JSON repaired via json-repair (orig_len=%d).",
+                len(text),
+            )
+            return repaired
+    except Exception:
+        pass
     logger.warning(
         "Failed to extract JSON from LLM output (len=%d): %.200s...",
         len(text),
         text,
     )
-    return {}
+    raise ValueError("Conception LLM output does not contain valid JSON.")
 
 
 def _safe_get(data: dict[str, Any], key: str, default: Any = None) -> Any:
@@ -174,6 +187,78 @@ async def _llm_call(
         ),
     )
     return result.content, result.llm_run_id
+
+
+async def _llm_call_json(
+    session: AsyncSession,
+    settings: AppSettings,
+    *,
+    role: LLMRole,
+    system_prompt: str,
+    user_prompt: str,
+    fallback: str,
+    template: str,
+    stage: str,
+    language: str | None = None,
+    project_id: UUID | None = None,
+    workflow_run_id: UUID | None = None,
+) -> tuple[dict[str, Any], list[UUID]]:
+    """Call a conception LLM stage and repair invalid JSON with diagnostics."""
+
+    llm_run_ids: list[UUID] = []
+    text, llm_id = await _llm_call(
+        session,
+        settings,
+        role=role,
+        system_prompt=system_prompt,
+        user_prompt=user_prompt,
+        fallback=fallback,
+        template=template,
+        project_id=project_id,
+        workflow_run_id=workflow_run_id,
+    )
+    if llm_id is not None:
+        llm_run_ids.append(llm_id)
+    try:
+        return _extract_json(text), llm_run_ids
+    except Exception as exc:
+        findings = findings_from_exception(exc, default_path=stage)
+        logger.warning(
+            "Conception stage %s produced invalid JSON; retrying with diagnostics: %s",
+            stage,
+            [finding.code for finding in findings],
+            exc_info=True,
+        )
+
+    repair_text, repair_llm_id = await _llm_call(
+        session,
+        settings,
+        role=role,
+        system_prompt=system_prompt,
+        user_prompt=build_repair_user_prompt(
+            original_user_prompt=user_prompt,
+            findings=findings,
+            language=language,
+        ),
+        fallback=fallback,
+        template=f"{template}_repair",
+        project_id=project_id,
+        workflow_run_id=workflow_run_id,
+    )
+    if repair_llm_id is not None:
+        llm_run_ids.append(repair_llm_id)
+    try:
+        return _extract_json(repair_text), llm_run_ids
+    except Exception:
+        logger.warning(
+            "Conception stage %s repair still produced invalid JSON; using fallback payload.",
+            stage,
+            exc_info=True,
+        )
+        try:
+            return _extract_json(fallback), llm_run_ids
+        except Exception:
+            return {}, llm_run_ids
 
 
 def _build_genre_context(
@@ -1109,7 +1194,7 @@ async def _creative_exploration(
     review: dict[str, Any],
     category: Any,  # NovelCategoryResearch
     is_en: bool,
-) -> tuple[str, UUID | None]:
+) -> tuple[dict[str, Any], list[UUID]]:
     """Generate 3 creative directions and choose the most differentiated one."""
     anti = render_category_anti_patterns(category, is_en=is_en)
     promise = render_category_reader_promise(category, is_en=is_en)
@@ -1149,13 +1234,15 @@ async def _creative_exploration(
             '"chosen_direction": {"premise_variation": "最终选择", "unique_hook": "差异化卖点", "reason": "选择理由"}}'
         )
 
-    return await _llm_call(
+    return await _llm_call_json(
         session, settings,
         role="planner",
         system_prompt=_CREATIVE_EXPLORATION_SYSTEM_EN if is_en else _CREATIVE_EXPLORATION_SYSTEM,
         user_prompt=user_prompt,
         fallback='{"directions": [], "chosen_direction": {}}',
         template="conception_creative_exploration",
+        stage="conception.creative_exploration",
+        language=str(ctx.get("language") or "zh-CN"),
     )
 
 
@@ -1216,13 +1303,9 @@ async def run_conception_pipeline(
         if progress is not None:
             progress(stage, data)
 
-    def _track_id(llm_id: UUID | None) -> None:
-        if llm_id is not None:
-            llm_run_ids.append(llm_id)
-
     # ── Round 0: Autonomous Commercial Positioning ───────────────────
     _emit("conception_commercial_positioning", {"round": 0, "agent": "commercial_commissioner"})
-    commercial_text, commercial_llm_id = await _llm_call(
+    commercial_brief, stage_llm_ids = await _llm_call_json(
         session,
         settings,
         role="planner",
@@ -1232,55 +1315,64 @@ async def run_conception_pipeline(
         )(ctx, _genre_profile),
         fallback=json.dumps(_build_commercial_fallback(ctx), ensure_ascii=False),
         template="conception_commercial_positioning",
+        stage="conception.commercial_brief",
+        language=str(ctx.get("language") or "zh-CN"),
     )
-    _track_id(commercial_llm_id)
-    commercial_brief = _extract_json(commercial_text) or _build_commercial_fallback(ctx)
+    llm_run_ids.extend(stage_llm_ids)
+    if not commercial_brief:
+        commercial_brief = _build_commercial_fallback(ctx)
     ctx["commercial_brief"] = commercial_brief
     conception_log.append({"round": 0, "agent": "commercial_commissioner", "brief": commercial_brief})
 
     # ── Round 1: Independent Proposals ──────────────────────────────
     _emit("conception_market", {"round": 1, "agent": "market_strategist"})
-    market_text, market_llm_id = await _llm_call(
+    market_proposal, stage_llm_ids = await _llm_call_json(
         session, settings,
         role="planner",
         system_prompt=_MARKET_SYSTEM_EN if is_en else _MARKET_SYSTEM,
         user_prompt=(_market_user_prompt_en if is_en else _market_user_prompt)(ctx, _genre_profile),
         fallback=json.dumps(ctx.get("existing_overrides", {}).get("market", {}), ensure_ascii=False),
         template="conception_market",
+        stage="conception.market",
+        language=str(ctx.get("language") or "zh-CN"),
     )
-    _track_id(market_llm_id)
-    market_proposal = _extract_json(market_text) or ctx.get("existing_overrides", {}).get("market", {})
+    llm_run_ids.extend(stage_llm_ids)
+    market_proposal = market_proposal or ctx.get("existing_overrides", {}).get("market", {})
     conception_log.append({"round": 1, "agent": "market_strategist", "proposal": market_proposal})
 
     _emit("conception_character", {"round": 1, "agent": "character_architect"})
-    character_text, character_llm_id = await _llm_call(
+    character_proposal, stage_llm_ids = await _llm_call_json(
         session, settings,
         role="planner",
         system_prompt=_CHARACTER_SYSTEM_EN if is_en else _CHARACTER_SYSTEM,
         user_prompt=(_character_user_prompt_en if is_en else _character_user_prompt)(ctx, _genre_profile),
         fallback=json.dumps(ctx.get("existing_overrides", {}).get("character", {}), ensure_ascii=False),
         template="conception_character",
+        stage="conception.character",
+        language=str(ctx.get("language") or "zh-CN"),
     )
-    _track_id(character_llm_id)
-    character_proposal = _extract_json(character_text) or ctx.get("existing_overrides", {}).get("character", {})
+    llm_run_ids.extend(stage_llm_ids)
+    character_proposal = character_proposal or ctx.get("existing_overrides", {}).get("character", {})
     conception_log.append({"round": 1, "agent": "character_architect", "proposal": character_proposal})
 
     _emit("conception_world", {"round": 1, "agent": "world_builder"})
-    world_text, world_llm_id = await _llm_call(
+    world_proposal, stage_llm_ids = await _llm_call_json(
         session, settings,
         role="planner",
         system_prompt=_WORLD_SYSTEM_EN if is_en else _WORLD_SYSTEM,
         user_prompt=(_world_user_prompt_en if is_en else _world_user_prompt)(ctx, _genre_profile),
         fallback=json.dumps(ctx.get("existing_overrides", {}).get("world", {}), ensure_ascii=False),
         template="conception_world",
+        stage="conception.world",
+        language=str(ctx.get("language") or "zh-CN"),
     )
-    _track_id(world_llm_id)
-    world_proposal = _extract_json(world_text) or ctx.get("existing_overrides", {}).get("world", {})
+    llm_run_ids.extend(stage_llm_ids)
+    world_proposal = world_proposal or ctx.get("existing_overrides", {}).get("world", {})
     conception_log.append({"round": 1, "agent": "world_builder", "proposal": world_proposal})
 
     # ── Round 2: Cross-Review ───────────────────────────────────────
     _emit("conception_review", {"round": 2, "agent": "chief_editor"})
-    review_text, review_llm_id = await _llm_call(
+    review_result, stage_llm_ids = await _llm_call_json(
         session, settings,
         role="critic",
         system_prompt=_REVIEW_SYSTEM_EN if is_en else _REVIEW_SYSTEM,
@@ -1289,16 +1381,17 @@ async def run_conception_pipeline(
                  '"market_suggestions": [], "character_suggestions": [], "world_suggestions": [], '
                  '"name_quality_issues": [], "premise_seeds": []}',
         template="conception_review",
+        stage="conception.review",
+        language=str(ctx.get("language") or "zh-CN"),
     )
-    _track_id(review_llm_id)
-    review_result = _extract_json(review_text)
+    llm_run_ids.extend(stage_llm_ids)
     conception_log.append({"round": 2, "agent": "chief_editor", "review": review_result})
 
     # ── Round 2.5: Creative Exploration (anti-cliché) ────────────────
     _cat = resolve_novel_category(ctx.get("genre", ""), ctx.get("sub_genre"))
     if _cat and _cat.quality_traps:
         _emit("conception_creative_exploration", {"round": 2.5, "agent": "creative_explorer"})
-        exploration_text, exploration_llm_id = await _creative_exploration(
+        exploration_result, stage_llm_ids = await _creative_exploration(
             session, settings,
             ctx=ctx,
             market=market_proposal,
@@ -1308,8 +1401,8 @@ async def run_conception_pipeline(
             category=_cat,
             is_en=is_en,
         )
-        _track_id(exploration_llm_id)
-        exploration_result = _extract_json(exploration_text) or {}
+        llm_run_ids.extend(stage_llm_ids)
+        exploration_result = exploration_result or {}
         conception_log.append({"round": 2.5, "agent": "creative_explorer", "exploration": exploration_result})
         # Merge the chosen creative direction into proposals for the finalizer
         chosen = exploration_result.get("chosen_direction", {})
@@ -1321,16 +1414,17 @@ async def run_conception_pipeline(
 
     # ── Round 3: Merge & Finalize ───────────────────────────────────
     _emit("conception_finalize", {"round": 3, "agent": "project_director"})
-    final_text, final_llm_id = await _llm_call(
+    final_result, stage_llm_ids = await _llm_call_json(
         session, settings,
         role="editor",
         system_prompt=_FINALIZE_SYSTEM_EN if is_en else _FINALIZE_SYSTEM,
         user_prompt=(_finalize_user_prompt_en if is_en else _finalize_user_prompt)(ctx, market_proposal, character_proposal, world_proposal, review_result, _genre_profile),
         fallback=_build_fallback_final(ctx, market_proposal, character_proposal, world_proposal),
         template="conception_finalize",
+        stage="conception.final",
+        language=str(ctx.get("language") or "zh-CN"),
     )
-    _track_id(final_llm_id)
-    final_result = _extract_json(final_text)
+    llm_run_ids.extend(stage_llm_ids)
     conception_log.append({"round": 3, "agent": "project_director", "final": final_result})
 
     # Extract final outputs with fallbacks

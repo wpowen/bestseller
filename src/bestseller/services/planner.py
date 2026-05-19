@@ -2135,49 +2135,76 @@ async def _generate_character_names(
             f"}}"
         )
 
-    result = await complete_text(
-        session,
-        settings,
-        LLMCompletionRequest(
-            logical_role="critic",
-            system_prompt=(
-                "You are a naming specialist for English-language commercial fiction. "
-                "Generate natural, memorable, genre-appropriate names. Output valid JSON only."
-                if is_en
-                else (
-                    "你是一位中文小说命名专家。你精通各种题材的命名风格，能生成自然、"
-                    "有记忆点、符合文化语境的角色名字。输出必须是合法 JSON，不要解释。"
-                )
-            ),
-            user_prompt=user_prompt,
-            fallback_response=json.dumps(
-                _genre_name_pool(
-                    genre,
-                    language=language,
-                    seed_text=_seed_material(
-                        genre,
-                        sub_genre,
-                        language or "",
-                        premise[:300],
-                        archetype,
-                        project_id or "",
-                        workflow_run_id or "",
-                    ),
-                ),
-                ensure_ascii=False,
-            ),
-            prompt_template="generate_character_names",
-            project_id=project_id,
-            workflow_run_id=workflow_run_id,
+    request = LLMCompletionRequest(
+        logical_role="critic",
+        system_prompt=(
+            "You are a naming specialist for English-language commercial fiction. "
+            "Generate natural, memorable, genre-appropriate names. Output valid JSON only."
+            if is_en
+            else (
+                "你是一位中文小说命名专家。你精通各种题材的命名风格，能生成自然、"
+                "有记忆点、符合文化语境的角色名字。输出必须是合法 JSON，不要解释。"
+            )
         ),
+        user_prompt=user_prompt,
+        fallback_response=json.dumps(
+            _genre_name_pool(
+                genre,
+                language=language,
+                seed_text=_seed_material(
+                    genre,
+                    sub_genre,
+                    language or "",
+                    premise[:300],
+                    archetype,
+                    project_id or "",
+                    workflow_run_id or "",
+                ),
+            ),
+            ensure_ascii=False,
+        ),
+        prompt_template="generate_character_names",
+        project_id=project_id,
+        workflow_run_id=workflow_run_id,
     )
+    result = await complete_text(session, settings, request)
 
     try:
         parsed = _extract_json_payload(result.content)
         if isinstance(parsed, dict) and parsed.get("protagonist", {}).get("name"):
             return parsed
-    except (ValueError, KeyError):
-        pass
+        raise ValueError("character_names_schema_invalid: missing protagonist.name")
+    except (ValueError, KeyError, TypeError) as exc:
+        from bestseller.services.llm_closed_loop import build_repair_user_prompt, findings_from_exception
+
+        findings = findings_from_exception(exc, default_path="character_names")
+        repair = await complete_text(
+            session,
+            settings,
+            request.model_copy(
+                update={
+                    "user_prompt": build_repair_user_prompt(
+                        original_user_prompt=user_prompt,
+                        findings=findings,
+                        language=language,
+                    ),
+                    "prompt_template": "generate_character_names_repair",
+                    "metadata": {
+                        "semantic_repair_of": str(result.llm_run_id) if result.llm_run_id else None,
+                        "repair_findings": [finding.to_dict() for finding in findings],
+                    },
+                }
+            ),
+        )
+        try:
+            parsed = _extract_json_payload(repair.content)
+            if isinstance(parsed, dict) and parsed.get("protagonist", {}).get("name"):
+                return parsed
+        except (ValueError, KeyError, TypeError):
+            logger.warning(
+                "Character name JSON repair failed; falling back to deterministic name pool.",
+                exc_info=True,
+            )
 
     return _genre_name_pool(
         genre,
@@ -2869,6 +2896,36 @@ async def _repair_cast_foundation_if_needed(
     except Exception:
         logger.warning("Cast foundation repair failed; keeping original cast spec.", exc_info=True)
         return cast_spec_payload, None
+
+
+def _repair_cast_identity_locks_for_planner(
+    project: ProjectModel,
+    cast_spec_payload: dict[str, Any],
+) -> dict[str, Any]:
+    """Ensure planner-produced CastSpec satisfies the foundation identity contract."""
+
+    if not getattr(get_settings().pipeline, "require_foundation_identity_lock", True):
+        return cast_spec_payload
+    from bestseller.services.narrative_contracts import (
+        repair_legacy_foundation_identity_locks,
+        validate_foundation_identity_contract,
+    )
+
+    repaired_payload, repair_count = repair_legacy_foundation_identity_locks(
+        cast_spec_payload,
+        allow_unreliable_defaults=True,
+    )
+    if not isinstance(repaired_payload, dict):
+        return cast_spec_payload
+    report = validate_foundation_identity_contract(repaired_payload)
+    report.raise_for_blocks(project_slug=project.slug, artifact="cast_spec")
+    if repair_count:
+        logger.warning(
+            "Planner CastSpec identity locks auto-repaired for project '%s' (%d field(s)).",
+            project.slug,
+            repair_count,
+        )
+    return parse_cast_spec_input(repaired_payload).model_dump(mode="json")
 
 
 _CAST_PERSONHOOD_REPAIR_CODES: frozenset[str] = frozenset(
@@ -7838,6 +7895,86 @@ def _compute_scene_count(
     return 3
 
 
+def _normalize_conflict_phase_key(conflict_phase: str) -> str:
+    """Normalize LLM/fallback conflict labels into the internal phase enum."""
+
+    raw = (conflict_phase or "").strip()
+    key = raw.lower()
+    direct = {
+        "survival": "survival",
+        "political_intrigue": "political_intrigue",
+        "betrayal": "betrayal",
+        "faction_war": "faction_war",
+        "existential_threat": "existential_threat",
+        "internal_reckoning": "internal_reckoning",
+    }
+    if key in direct:
+        return direct[key]
+    zh_aliases = (
+        ("生存", "survival"),
+        ("求生", "survival"),
+        ("权力", "political_intrigue"),
+        ("政治", "political_intrigue"),
+        ("背叛", "betrayal"),
+        ("信任", "betrayal"),
+        ("派系", "faction_war"),
+        ("阵营", "faction_war"),
+        ("多方", "faction_war"),
+        ("终局", "existential_threat"),
+        ("存在", "existential_threat"),
+        ("灭绝", "existential_threat"),
+        ("内心", "internal_reckoning"),
+        ("自我", "internal_reckoning"),
+        ("精神", "internal_reckoning"),
+    )
+    for marker, phase in zh_aliases:
+        if marker in raw:
+            return phase
+    return key or "survival"
+
+
+def _reader_visible_force_name(force_name: str, phase_key: str, *, is_en: bool) -> str:
+    """Replace structural force labels with concrete obstacle names for fallback outlines."""
+
+    value = (force_name or "").strip()
+    generic_markers = (
+        "生存压力",
+        "权力摩擦",
+        "信任危机",
+        "多方冲突",
+        "终局威胁",
+        "内在清算",
+        "代表的势力角力",
+        "Immediate Survival Pressure",
+        "Power Friction",
+        "Trust Collapse",
+        "Multi-Side Collision",
+        "Endgame Threat",
+        "Internal Reckoning",
+    )
+    if value and not any(marker in value for marker in generic_markers):
+        return value
+    if is_en:
+        fallback = {
+            "survival": "the checkpoint patrol",
+            "political_intrigue": "the permit bureau",
+            "betrayal": "the compromised ally",
+            "faction_war": "the rival blockade fleet",
+            "existential_threat": "the sealed command core",
+            "internal_reckoning": "the protagonist's buried guilt",
+        }
+        return fallback.get(phase_key, "the active opposition")
+    fallback = {
+        "survival": "封锁巡检队",
+        "political_intrigue": "通行许可局",
+        "betrayal": "被收买的盟友",
+            "faction_war": "对峙封锁舰队",
+        "existential_threat": "封存指挥核心",
+        "internal_reckoning": "主角埋藏的愧疚",
+    }
+    return fallback.get(phase_key, "眼前阻力")
+
+
 def _render_chapter_conflict(
     conflict_phase: str,
     chapter_phase: str,
@@ -7854,13 +7991,15 @@ def _render_chapter_conflict(
     when the conflict_phase or chapter_phase is unrecognized.
     """
     is_en = bool(re.search(r"[A-Za-z]", protagonist or force_name or ""))
+    phase_key = _normalize_conflict_phase_key(conflict_phase)
+    visible_force_name = _reader_visible_force_name(force_name, phase_key, is_en=is_en)
 
     # Try rich templates first (keyed by conflict_phase × chapter_phase)
     _templates = _CHAPTER_CONFLICT_TEMPLATES_EN if is_en else _CHAPTER_CONFLICT_TEMPLATES
-    phase_dict = _templates.get(conflict_phase, {})
+    phase_dict = _templates.get(phase_key, {})
     rich_template = phase_dict.get(chapter_phase)
     if rich_template:
-        return rich_template.format(protagonist=protagonist, force_name=force_name)
+        return rich_template.format(protagonist=protagonist, force_name=visible_force_name)
 
     # Fallback: varied generic descriptions
     phase_labels = {
@@ -7883,14 +8022,14 @@ def _render_chapter_conflict(
         else phase_labels.get(chapter_phase, "继续推进")
     )
     _templates_generic_en = [
-        f"{protagonist} must {label} while dealing with the active resistance around {force_name}.",
-        f"{protagonist} navigates escalating pressure from {force_name} as the situation demands they {label}.",
-        f"Caught between {force_name}'s maneuvers and their own goals, {protagonist} fights to {label}.",
+        f"{protagonist} must {label} while dealing with the active resistance around {visible_force_name}.",
+        f"{protagonist} navigates escalating pressure from {visible_force_name} as the situation demands they {label}.",
+        f"Caught between {visible_force_name}'s maneuvers and their own goals, {protagonist} fights to {label}.",
     ]
     _templates_generic_zh = [
-        f"{protagonist}必须绕开「{force_name}」设置的阻碍，拿到能改变局势的证据或筹码。",
-        f"面对「{force_name}」不断升级的施压，{protagonist}必须用一次具体行动夺回主动权。",
-        f"{protagonist}被「{force_name}」的布局和自身目标夹在中间，只能用高风险选择换取突破口。",
+        f"{protagonist}必须绕开「{visible_force_name}」设置的阻碍，拿到能改变局势的证据或筹码。",
+        f"面对「{visible_force_name}」不断升级的施压，{protagonist}必须用一次具体行动夺回主动权。",
+        f"{protagonist}被「{visible_force_name}」的布局和自身目标夹在中间，只能用高风险选择换取突破口。",
     ]
     return _pick_by_seed(
         _templates_generic_en if is_en else _templates_generic_zh,
@@ -8535,7 +8674,7 @@ def _fallback_chapter_outline_batch(
                         ),
                         "participants": [protagonist_name, volume_antag_participant]
                         if index_within_volume % 2 == 0
-                        else [protagonist_name],
+                        else [protagonist_name, ally_name],
                         "purpose": {
                             "story": (
                                 f"{chapter_unique_beat} produces a fresh cost or new information."
@@ -10173,6 +10312,35 @@ def _volume_outline_prompts(
     _genre_system = getattr(_genre_profile.planner_prompts, f"outline_system_{_lang_key}", "")
     volume_number = int(volume_entry.get("volume_number", 1))
     chapter_count = int(volume_entry.get("chapter_count_target", 10))
+    short_complete_outline_mode = project.target_chapters <= 60 and chapter_count >= 24
+    if short_complete_outline_mode:
+        scene_count_contract_en = (
+            "Each chapter needs 2 compact scenes by default; use 3 only for climax, reversal, "
+            "or finale chapters. Keep each scene purpose to one short sentence. "
+        )
+        scene_count_contract_zh = (
+            "每章默认只需 2 个紧凑 scenes；只有高潮、反转或终章可用 3 个。"
+            "每个 scene 的 purpose 控制在一句短句内。"
+        )
+        count_safety_en = (
+            "[COUNT SAFETY — NON-NEGOTIABLE]\n"
+            f"- Emit exactly {chapter_count} chapter objects in `chapters`.\n"
+            "- Include every required chapter_number for this volume; the last object must be the final chapter in the requested range.\n"
+            "- If the response is getting long, shorten strings and scene details; never reduce, merge, summarize, group, or omit chapters.\n"
+            "- Do not write overview sections instead of chapter objects.\n"
+        )
+        count_safety_zh = (
+            "【章节数量安全线 —— 不可让步】\n"
+            f"- `chapters` 必须恰好输出 {chapter_count} 个章节对象。\n"
+            "- 必须包含本卷要求范围内的每一个 chapter_number；最后一个对象必须是本卷范围内的最终章。\n"
+            "- 如果输出变长，只能压缩字段文字和 scene 细节，绝不能减少、合并、概括、分组或遗漏章节。\n"
+            "- 禁止用总览段落替代逐章对象。\n"
+        )
+    else:
+        scene_count_contract_en = "Each chapter needs at least 3 scenes. "
+        scene_count_contract_zh = "每章至少 3 个 scenes。"
+        count_safety_en = ""
+        count_safety_zh = ""
     chapter_bounds = _derive_volume_chapter_bounds(_mapping(volume_entry))
     if chapter_bounds is not None:
         chapter_start, chapter_end = chapter_bounds
@@ -10247,7 +10415,8 @@ def _volume_outline_prompts(
             f"Generate a ChapterOutlineBatch JSON for volume {volume_number} ONLY ({chapter_count} chapters). "
             f"The chapters array must contain exactly {chapter_count} objects, one per chapter, with no summaries or grouped chapters. "
             f"{chapter_bounds_line_en}"
-            "Include batch_name and chapters. Each chapter needs at least 3 scenes. "
+            f"{count_safety_en}"
+            f"Include batch_name and chapters. {scene_count_contract_en}"
             "Each chapter must define title, goal, main_conflict, and hook_description; each scene must define story and emotion tasks. "
             "Each chapter must include causal_contract with flexible reader-visible axes: chapter_function, pressure, protagonist_desire, protagonist_choice, visible_action_or_reaction, resistance, cost_or_tradeoff, gain_or_reveal, state_change, next_reader_desire. "
             "Each chapter must also include worldview compliance fields: `world_rule_refs` (WorldviewKernel invariant keys or system names used), "
@@ -10301,7 +10470,8 @@ def _volume_outline_prompts(
             f"请仅生成第{volume_number}卷的 ChapterOutlineBatch JSON（共{chapter_count}章），"
             f"chapters 数组必须恰好包含 {chapter_count} 个章节对象，一章一个对象，不能概括、合并或分组，"
             f"{chapter_bounds_line_zh}"
-            "包含 batch_name 和 chapters。每章至少 3 个 scenes。"
+            f"{count_safety_zh}"
+            f"包含 batch_name 和 chapters。{scene_count_contract_zh}"
             "每章都要写明 title、goal、main_conflict、hook_description；每场都要有 story/emotion 任务。"
             "每章必须包含 causal_contract：chapter_function、pressure、protagonist_desire、protagonist_choice、visible_action_or_reaction、resistance、cost_or_tradeoff、gain_or_reveal、state_change、next_reader_desire。"
             "每章还必须包含世界观合规字段：`world_rule_refs`（使用到的 WorldviewKernel invariant key 或 system name）、"
@@ -10745,8 +10915,24 @@ async def _generate_structured_artifact(
     # entire heal job.  Four attempts give non-deterministic LLM output a
     # reasonable chance to self-heal before the whole job bails.
     _max_attempts = 4
+    fail_closed_artifacts = {
+        "book_spec",
+        "world_spec",
+        "cast_spec",
+        "volume_plan",
+        "volume_plan_repair",
+        "story_design_kernel",
+        "emotion_driven_kernel",
+    }
+    effective_abort_on_fallback = bool(
+        abort_on_fallback
+        or logical_name in fail_closed_artifacts
+        or logical_name.endswith("_kernel")
+    )
 
     last_llm_run_id: UUID | None = None
+    effective_user_prompt = user_prompt
+    semantic_repair_history: list[dict[str, Any]] = []
     for attempt in range(_max_attempts):
         completion = await complete_text(
             session,
@@ -10754,7 +10940,7 @@ async def _generate_structured_artifact(
             LLMCompletionRequest(
                 logical_role="planner",
                 system_prompt=system_prompt,
-                user_prompt=user_prompt,
+                user_prompt=effective_user_prompt,
                 fallback_response=_json_dumps(fallback_payload),
                 prompt_template=f"planner_{logical_name}",
                 prompt_version="1.0",
@@ -10765,6 +10951,8 @@ async def _generate_structured_artifact(
                     "project_slug": project.slug,
                     "artifact": logical_name,
                     "attempt": attempt + 1,
+                    "fail_closed": effective_abort_on_fallback,
+                    "semantic_repair_history": semantic_repair_history[-3:],
                 },
             ),
         )
@@ -10773,10 +10961,10 @@ async def _generate_structured_artifact(
         # ``provider`` to "fallback".  For structural artifacts where the
         # fallback would silently corrupt downstream (e.g. per-volume
         # chapter outlines), abort immediately with a clear signal.
-        if abort_on_fallback and completion.provider == "fallback":
+        if effective_abort_on_fallback and getattr(completion, "provider", None) == "fallback":
             raise PlannerFallbackError(
                 f"Planner artifact '{logical_name}' had to fall back after LLM retries "
-                f"exhausted. Refusing to continue because downstream requires a real outline."
+                f"exhausted. Refusing to continue because downstream requires a real validated output."
             )
         try:
             generated = _extract_json_payload(completion.content)
@@ -10789,6 +10977,19 @@ async def _generate_structured_artifact(
                 validator(payload)
             return payload, last_llm_run_id
         except Exception as exc:
+            from bestseller.services.llm_closed_loop import (
+                build_repair_user_prompt,
+                findings_from_exception,
+            )
+
+            repair_findings = findings_from_exception(exc)
+            semantic_repair_history.append(
+                {
+                    "attempt": attempt + 1,
+                    "error_type": type(exc).__name__,
+                    "findings": [finding.to_dict() for finding in repair_findings[:12]],
+                }
+            )
             # Persist the raw LLM response to disk so we can root-cause
             # parse/validation failures offline. Critical because
             # ``response_payload_ref`` on LlmRunModel is currently unused
@@ -10801,15 +11002,21 @@ async def _generate_structured_artifact(
                 error=exc,
             )
             if attempt < _max_attempts - 1:
+                effective_user_prompt = build_repair_user_prompt(
+                    original_user_prompt=user_prompt,
+                    findings=repair_findings,
+                    language=getattr(project, "language", None),
+                )
                 logger.warning(
-                    "Planner artifact %s attempt %d failed parse/validation (%s: %s), retrying …",
+                    "Planner artifact %s attempt %d failed parse/validation (%s: %s), retrying with diagnostics=%s …",
                     logical_name,
                     attempt + 1,
                     type(exc).__name__,
                     exc,
+                    [finding.code for finding in repair_findings[:8]],
                 )
                 continue
-            if abort_on_fallback:
+            if effective_abort_on_fallback:
                 raise PlannerFallbackError(
                     f"Planner artifact '{logical_name}' failed parse/validation after "
                     f"{_max_attempts} attempts ({type(exc).__name__}: {exc})."
@@ -12920,6 +13127,7 @@ async def generate_novel_plan(
             workflow_run_id=workflow_run.id,
             validator=parse_cast_spec_input,
         )
+        cast_spec_payload = _repair_cast_identity_locks_for_planner(project, cast_spec_payload)
         if llm_run_id is not None:
             llm_run_ids.append(llm_run_id)
         cast_artifact = await import_planning_artifact(
@@ -12961,7 +13169,9 @@ async def generate_novel_plan(
         )
         if personhood_repair_llm_run_id is not None:
             llm_run_ids.append(personhood_repair_llm_run_id)
-            cast_spec_payload = repaired_cast_spec
+            cast_spec_payload = _repair_cast_identity_locks_for_planner(
+                project, repaired_cast_spec
+            )
             cast_artifact = await import_planning_artifact(
                 session,
                 project_slug,
@@ -13002,7 +13212,9 @@ async def generate_novel_plan(
             )
             if foundation_repair_llm_run_id is not None:
                 llm_run_ids.append(foundation_repair_llm_run_id)
-                cast_spec_payload = repaired_cast_spec
+                cast_spec_payload = _repair_cast_identity_locks_for_planner(
+                    project, repaired_cast_spec
+                )
                 # Persist repaired cast spec as a new artifact version so
                 # downstream readers (retrieval, plan judge, review stages)
                 # see the enriched roster.
@@ -13044,7 +13256,9 @@ async def generate_novel_plan(
             )
             if lifecycle_repair_llm_run_id is not None:
                 llm_run_ids.append(lifecycle_repair_llm_run_id)
-                cast_spec_payload = repaired_cast_spec
+                cast_spec_payload = _repair_cast_identity_locks_for_planner(
+                    project, repaired_cast_spec
+                )
                 cast_artifact = await import_planning_artifact(
                     session,
                     project_slug,
@@ -13084,7 +13298,9 @@ async def generate_novel_plan(
             )
             if relationship_repair_llm_run_id is not None:
                 llm_run_ids.append(relationship_repair_llm_run_id)
-                cast_spec_payload = repaired_cast_spec
+                cast_spec_payload = _repair_cast_identity_locks_for_planner(
+                    project, repaired_cast_spec
+                )
                 cast_artifact = await import_planning_artifact(
                     session,
                     project_slug,
@@ -13413,10 +13629,70 @@ async def generate_novel_plan(
                                 artifact_type=ArtifactType.VOLUME_PLAN, content=volume_plan_payload
                             ),
                         )
-                    except Exception:
-                        logger.warning(
-                            "Plan auto-repair failed; continuing with original plan", exc_info=True
+                        repaired_validation = _validate_plan(
+                            genre=project.genre,
+                            sub_genre=project.sub_genre,
+                            book_spec=book_spec_payload,
+                            world_spec=world_spec_payload,
+                            cast_spec=cast_spec_payload,
+                            volume_plan=(
+                                volume_plan_payload
+                                if isinstance(volume_plan_payload, list)
+                                else []
+                            ),
+                            language=project.language,
                         )
+                        repair_validation_artifact = await import_planning_artifact(
+                            session,
+                            project_slug,
+                            PlanningArtifactCreate(
+                                artifact_type=ArtifactType.PLAN_VALIDATION,
+                                content=repaired_validation.model_dump(mode="json"),
+                            ),
+                        )
+                        artifact_records.append(
+                            PlanningArtifactRecord(
+                                artifact_type=ArtifactType.PLAN_VALIDATION,
+                                artifact_id=repair_validation_artifact.id,
+                                version_no=repair_validation_artifact.version_no,
+                            )
+                        )
+                        workflow_run.metadata_json = {
+                            **(workflow_run.metadata_json or {}),
+                            "plan_judge_auto_repair": {
+                                "attempted": True,
+                                "llm_run_id": str(repair_llm_run_id)
+                                if repair_llm_run_id
+                                else None,
+                                "validation_artifact_id": str(repair_validation_artifact.id),
+                                "passed": repaired_validation.overall_pass,
+                                "remaining_findings": [
+                                    finding.model_dump(mode="json")
+                                    for finding in repaired_validation.findings[:12]
+                                ],
+                            },
+                        }
+                        if not repaired_validation.overall_pass:
+                            remaining = [
+                                f"{finding.category}: {finding.message}"
+                                for finding in repaired_validation.findings
+                                if finding.severity == "critical"
+                            ][:5]
+                            raise PlannerFallbackError(
+                                "Plan auto-repair failed validation after regeneration: "
+                                + ("; ".join(remaining) if remaining else "critical findings remain")
+                            )
+                        plan_validation = repaired_validation
+                    except PlannerFallbackError:
+                        raise
+                    except Exception as exc:
+                        logger.warning(
+                            "Plan auto-repair failed; refusing to continue with original plan",
+                            exc_info=True,
+                        )
+                        raise PlannerFallbackError(
+                            "Plan auto-repair failed; refusing to continue with an invalid plan."
+                        ) from exc
 
         qimao_opening_contract = persist_qimao_opening_contract(
             project,
@@ -13985,6 +14261,7 @@ async def generate_foundation_plan(
             workflow_run_id=workflow_run.id,
             validator=parse_cast_spec_input,
         )
+        cast_spec_payload = _repair_cast_identity_locks_for_planner(project, cast_spec_payload)
         if llm_run_id is not None:
             llm_run_ids.append(llm_run_id)
 
@@ -14002,7 +14279,9 @@ async def generate_foundation_plan(
         )
         if personhood_repair_llm_run_id is not None:
             llm_run_ids.append(personhood_repair_llm_run_id)
-            cast_spec_payload = repaired_cast_spec
+            cast_spec_payload = _repair_cast_identity_locks_for_planner(
+                project, repaired_cast_spec
+            )
 
         # ── Foundation richness gate (see long-form generator for rationale) ──
         _foundation_hierarchy = compute_linear_hierarchy(max(project.target_chapters, 1))
@@ -14023,7 +14302,9 @@ async def generate_foundation_plan(
             )
             if foundation_repair_llm_run_id is not None:
                 llm_run_ids.append(foundation_repair_llm_run_id)
-                cast_spec_payload = repaired_cast_spec
+                cast_spec_payload = _repair_cast_identity_locks_for_planner(
+                    project, repaired_cast_spec
+                )
 
             # ── Antagonist lifecycle gate ──
             (
@@ -14041,7 +14322,9 @@ async def generate_foundation_plan(
             )
             if lifecycle_repair_llm_run_id is not None:
                 llm_run_ids.append(lifecycle_repair_llm_run_id)
-                cast_spec_payload = repaired_cast_spec
+                cast_spec_payload = _repair_cast_identity_locks_for_planner(
+                    project, repaired_cast_spec
+                )
 
             # ── Relationship scaling gate ──
             (
@@ -14059,7 +14342,9 @@ async def generate_foundation_plan(
             )
             if relationship_repair_llm_run_id is not None:
                 llm_run_ids.append(relationship_repair_llm_run_id)
-                cast_spec_payload = repaired_cast_spec
+                cast_spec_payload = _repair_cast_identity_locks_for_planner(
+                    project, repaired_cast_spec
+                )
 
         cast_artifact = await import_planning_artifact(
             session,

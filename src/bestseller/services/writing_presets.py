@@ -3,10 +3,19 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 MINIMUM_NOVEL_WORD_COUNT: int = 1800
+
+
+def _dedupe_string_list(values: list[str]) -> list[str]:
+    deduped: list[str] = []
+    for value in values:
+        normalized = value.strip()
+        if normalized and normalized not in deduped:
+            deduped.append(normalized)
+    return deduped
 
 
 class ChapterWordPolicy(BaseModel):
@@ -49,7 +58,31 @@ class GenrePreset(BaseModel):
     trend_keywords: list[str] = Field(default_factory=list)
     trend_source_refs: list[str] = Field(default_factory=list)
     source_refs: list[str] = Field(default_factory=list)
+    market_regions: list[str] = Field(default_factory=list)
+    heat_domains: list[str] = Field(default_factory=list)
+    reader_rewards: list[str] = Field(default_factory=list)
+    narrative_drives: list[str] = Field(default_factory=list)
+    content_modes: list[str] = Field(default_factory=list)
+    commercial_signals: list[str] = Field(default_factory=list)
     writing_profile_overrides: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator(
+        "aliases",
+        "recommended_platforms",
+        "recommended_audiences",
+        "trend_keywords",
+        "trend_source_refs",
+        "source_refs",
+        "market_regions",
+        "heat_domains",
+        "reader_rewards",
+        "narrative_drives",
+        "content_modes",
+        "commercial_signals",
+    )
+    @classmethod
+    def normalize_string_lists(cls, values: list[str]) -> list[str]:
+        return _dedupe_string_list(values)
 
 
 class LengthPreset(BaseModel):
@@ -2024,6 +2057,280 @@ _GENRE_PRESETS: list[dict[str, Any]] = [
             "hype": _hype_block(_GENERIC_FALLBACK_HYPE_DECK),
         },
     },
+    {
+        "key": "cn-romantasy-court",
+        "name": "幻想言情王庭宿命流",
+        "genre": "幻想言情",
+        "sub_genre": "王庭宿命",
+        "description": "把高情绪关系、宿命羁绊、王庭权力和魔法/神话规则叠加，核心是关系回报与世界风险同步升级。",
+        "aliases": ["幻想言情", "romantasy", "王庭", "宿命", "命定", "魔法言情", "女性向奇幻"],
+        "recommended_platforms": ["晋江文学城", "番茄小说"],
+        "recommended_audiences": ["女性向读者", "幻想言情读者", "关系拉扯读者"],
+        "target_word_options": [24000, 80000, 180000, 320000],
+        "target_chapter_options": [4, 14, 32, 58],
+        "prompt_pack_key": "romance-tension-growth",
+        "trend_score": 91,
+        "trend_window": "2025-2026",
+        "trend_summary": "调研显示 romance/romantasy 是全球稳定高热方向，中文侧适合用王庭、宿命、权力和关系张力重新包装。",
+        "trend_keywords": ["幻想言情", "romantasy", "关系回报", "王庭", "宿命"],
+        "market_regions": ["中国大陆", "英美趋势本土化"],
+        "heat_domains": ["言情/女性向", "奇幻/玄幻/异世界"],
+        "reader_rewards": ["关系回报", "身份回报", "认知回报"],
+        "narrative_drives": ["情绪关系", "权力博弈", "世界规则揭示"],
+        "content_modes": ["中文网文长篇连载", "系列/IP化"],
+        "commercial_signals": ["社媒传播", "高评论密度", "女性向稳定盘"],
+        "writing_profile_overrides": {
+            "market": {
+                "reader_promise": "前三章必须同时建立危险关系、王庭规则压力和女主不可替代的命运位置。",
+                "selling_points": ["宿命羁绊", "王庭权谋", "高情绪拉扯", "魔法规则", "身份翻转"],
+                "trope_keywords": ["幻想言情", "宿命", "王庭", "命定关系", "权力拉扯"],
+                "hook_keywords": ["身份暴露", "誓约反噬", "王庭召见", "命定关系失控"],
+                "pacing_profile": "medium-fast",
+            },
+            "character": {
+                "protagonist_archetype": "被卷入权力核心的隐藏身份女主",
+                "protagonist_core_drive": "在危险关系与王庭秩序之间夺回选择权",
+                "romance_mode": "主线感情线",
+                "relationship_tension": "吸引、试探、误判、并肩和再次选择并行推进。",
+            },
+            "world": {
+                "worldbuilding_density": "medium",
+                "power_system_style": "血脉、契约、王权和禁忌魔法交织",
+                "mystery_density": "medium",
+                "setting_tags": ["王庭", "契约", "禁忌魔法", "身份秘密"],
+            },
+            "style": {
+                "tone_keywords": ["华丽", "危险", "拉扯", "宿命感"],
+                "dialogue_ratio": 0.46,
+            },
+            "hype": _hype_block(_GENERIC_FALLBACK_HYPE_DECK),
+        },
+    },
+    {
+        "key": "youth-campus-growth",
+        "name": "青春校园成长群像流",
+        "genre": "青春成长",
+        "sub_genre": "校园群像",
+        "description": "用自我投射、友情/初恋、家庭压力和成长仪式制造稳定情绪黏性，适合中短篇或系列化校园故事。",
+        "aliases": ["青春", "校园", "成长", "初恋", "群像", "家庭压力"],
+        "recommended_platforms": ["晋江文学城", "Wattpad", "番茄小说"],
+        "recommended_audiences": ["青春成长读者", "校园情感读者", "人物群像读者"],
+        "target_word_options": [22000, 60000, 120000, 220000],
+        "target_chapter_options": [4, 10, 22, 40],
+        "prompt_pack_key": "romance-tension-growth",
+        "trend_score": 82,
+        "trend_window": "2025-2026",
+        "trend_summary": "青春/成长容易与恋爱、校园、女性向重叠，优势在自我投射、书摘传播和短视频二创。",
+        "trend_keywords": ["青春成长", "校园", "初恋", "群像", "自我投射"],
+        "market_regions": ["中国大陆", "英美趋势本土化"],
+        "heat_domains": ["青春/成长", "言情/女性向"],
+        "reader_rewards": ["关系回报", "身份回报"],
+        "narrative_drives": ["情绪关系", "成长选择", "群像陪伴"],
+        "content_modes": ["中文网文中短篇", "社交传播"],
+        "commercial_signals": ["书摘传播", "社媒传播", "系列化"],
+        "writing_profile_overrides": {
+            "market": {
+                "reader_promise": "开篇要让读者立刻感到主角的青春困境、关系牵引和一个必须面对的成长选择。",
+                "selling_points": ["校园群像", "初恋拉扯", "家庭压力", "成长选择", "青春遗憾"],
+                "trope_keywords": ["校园", "青春", "群像", "初恋", "成长"],
+                "hook_keywords": ["分班/转学", "误会升级", "家庭秘密", "比赛或考试节点"],
+                "pacing_profile": "medium",
+            },
+            "character": {
+                "protagonist_archetype": "自我寻找型学生主角",
+                "protagonist_core_drive": "在关系、家庭和未来选择里找到自己的位置",
+                "romance_mode": "可强可弱，取决于创作方向",
+                "ensemble_mode": "同学、朋友、家人都要有可辨识欲望和成长压力。",
+            },
+            "style": {
+                "tone_keywords": ["明亮", "酸涩", "真诚", "有代入感"],
+                "dialogue_ratio": 0.50,
+            },
+            "hype": _hype_block(_GENERIC_FALLBACK_HYPE_DECK),
+        },
+    },
+    {
+        "key": "urban-realistic-family",
+        "name": "都市现实家庭职场流",
+        "genre": "都市现实",
+        "sub_genre": "家庭职场",
+        "description": "把家庭伦理、职场压力、亲密关系和现实翻盘结合起来，重点是生活痛点、选择代价和阶段性现实回报。",
+        "aliases": ["都市现实", "职场", "家庭", "现实向", "婚姻", "亲情", "女性现实"],
+        "recommended_platforms": ["番茄小说", "17K 小说网", "晋江文学城"],
+        "recommended_audiences": ["现实向读者", "都市情感读者", "女性成长读者"],
+        "target_word_options": [24000, 80000, 160000, 280000],
+        "target_chapter_options": [4, 14, 30, 50],
+        "trend_score": 80,
+        "trend_window": "2025-2026",
+        "trend_summary": "都市/现实/职场/家庭伦理在公开高热信号中占稳定份额，适合用强现实痛点和关系选择拉留存。",
+        "trend_keywords": ["都市现实", "职场", "家庭伦理", "女性成长", "现实翻盘"],
+        "market_regions": ["中国大陆"],
+        "heat_domains": ["都市/现实", "言情/女性向"],
+        "reader_rewards": ["关系回报", "身份回报"],
+        "narrative_drives": ["现实逆袭", "情绪关系", "成长选择"],
+        "content_modes": ["中文网文长篇连载", "短剧适配"],
+        "commercial_signals": ["强代入", "短剧适配", "移动端友好"],
+        "writing_profile_overrides": {
+            "market": {
+                "reader_promise": "第一章必须给出现实痛点、被迫选择和可期待的反击路径，不能平铺日常。",
+                "selling_points": ["家庭压力", "职场翻盘", "亲密关系选择", "现实痛点", "阶段性爽点"],
+                "trope_keywords": ["都市现实", "职场", "家庭", "婚姻", "翻盘"],
+                "hook_keywords": ["关系破裂", "职场背刺", "家庭账单", "关键选择", "证据出现"],
+                "pacing_profile": "medium-fast",
+            },
+            "character": {
+                "protagonist_archetype": "现实受压但不认命的成长主角",
+                "protagonist_core_drive": "从家庭、职场和关系结构里夺回主动权",
+                "relationship_tension": "亲密关系、家庭责任和自我边界持续冲突。",
+            },
+            "style": {
+                "tone_keywords": ["现实", "克制", "锋利", "情绪密度"],
+                "dialogue_ratio": 0.48,
+            },
+            "hype": _hype_block(_GENERIC_FALLBACK_HYPE_DECK),
+        },
+    },
+    {
+        "key": "bl-relationship-case",
+        "name": "双男主关系悬疑流",
+        "genre": "双男主",
+        "sub_genre": "关系悬疑",
+        "description": "以强关系驱动、相互拯救、案件/阴谋推进和社群讨论友好度为核心，兼顾情绪密度与真相推进。",
+        "aliases": ["双男主", "BL", "耽美", "强关系", "相互拯救", "关系悬疑"],
+        "recommended_platforms": ["晋江文学城"],
+        "recommended_audiences": ["关系驱动读者", "CP向读者", "悬疑情感读者"],
+        "target_word_options": [24000, 80000, 160000, 320000],
+        "target_chapter_options": [4, 14, 30, 58],
+        "prompt_pack_key": "romance-tension-growth",
+        "trend_score": 84,
+        "trend_window": "2025-2026",
+        "trend_summary": "BL/耽美统一量化较难，但社群黏性、同人友好度和关系讨论强度是明确优势。",
+        "trend_keywords": ["双男主", "强关系", "相互拯救", "悬疑", "社群黏性"],
+        "market_regions": ["中国大陆"],
+        "heat_domains": ["BL/关系社群", "悬疑/惊悚/犯罪"],
+        "reader_rewards": ["关系回报", "身份回报", "认知回报"],
+        "narrative_drives": ["情绪关系", "谜题真相", "相互拯救"],
+        "content_modes": ["中文网文长篇连载", "社群传播"],
+        "commercial_signals": ["高评论密度", "同人友好", "社媒传播"],
+        "writing_profile_overrides": {
+            "market": {
+                "reader_promise": "前三章必须让两位主角的关系张力、共同危险和案件/阴谋谜面同时成立。",
+                "selling_points": ["强关系", "相互拯救", "案件推进", "身份秘密", "CP讨论点"],
+                "trope_keywords": ["双男主", "强关系", "相互拯救", "悬疑", "秘密"],
+                "hook_keywords": ["共同危险", "身份破绽", "线索反转", "关系越界"],
+                "pacing_profile": "medium-fast",
+            },
+            "character": {
+                "protagonist_archetype": "互为弱点也互为解法的双主角",
+                "protagonist_core_drive": "在共同谜案和彼此秘密里建立信任并完成自救",
+                "romance_mode": "强关系线",
+                "relationship_tension": "互相试探、利益绑定、秘密保护和并肩选择交替推进。",
+            },
+            "world": {
+                "mystery_density": "high",
+                "setting_tags": ["案件", "身份秘密", "组织阴谋", "关系张力"],
+            },
+            "style": {
+                "tone_keywords": ["克制", "张力", "暗涌", "高情绪密度"],
+                "dialogue_ratio": 0.46,
+            },
+            "hype": _hype_block(_GENERIC_FALLBACK_HYPE_DECK),
+        },
+    },
+    {
+        "key": "high-concept-scifi",
+        "name": "高概念科幻谜题流",
+        "genre": "科幻",
+        "sub_genre": "高概念谜题",
+        "description": "用一个足够清晰的新奇设定驱动全书，兼顾认知挑战、情绪问题和阶段性真相揭示。",
+        "aliases": ["科幻", "高概念", "未来", "时间", "AI", "宇宙", "认知谜题"],
+        "recommended_platforms": ["起点中文网", "Kindle Unlimited"],
+        "recommended_audiences": ["科幻设定党", "认知挑战读者", "长尾口碑读者"],
+        "target_word_options": [30000, 90000, 160000, 300000],
+        "target_chapter_options": [5, 16, 30, 55],
+        "prompt_pack_key": "scifi-starwar",
+        "trend_score": 83,
+        "trend_window": "2025-2026",
+        "trend_summary": "科幻更强在精品化、品牌化和长尾口碑，高概念必须用问题驱动而不是百科设定堆砌。",
+        "trend_keywords": ["高概念科幻", "认知挑战", "未来焦虑", "谜题", "长尾口碑"],
+        "market_regions": ["中国大陆", "英美"],
+        "heat_domains": ["科幻", "悬疑/惊悚/犯罪"],
+        "reader_rewards": ["认知回报", "身份回报"],
+        "narrative_drives": ["谜题真相", "科技突破", "世界规则揭示"],
+        "content_modes": ["完结电子书/出版", "中文网文中短篇"],
+        "commercial_signals": ["长尾口碑", "IP改编潜力", "评分强度"],
+        "writing_profile_overrides": {
+            "market": {
+                "reader_promise": "第一章必须把核心科学/未来问题变成角色必须解决的生存或情感困境。",
+                "selling_points": ["高概念设定", "认知谜题", "未来焦虑", "真相递进", "情绪落点"],
+                "trope_keywords": ["高概念", "科幻", "谜题", "AI", "时间", "宇宙"],
+                "hook_keywords": ["规则异常", "实验失败", "时间错位", "AI谎言", "宇宙信号"],
+                "pacing_profile": "medium",
+            },
+            "character": {
+                "protagonist_archetype": "被高概念问题逼入行动的普通专业者",
+                "protagonist_core_drive": "理解规则、拯救重要之人或阻止未来灾难",
+            },
+            "world": {
+                "worldbuilding_density": "medium-high",
+                "power_system_style": "科学规则、技术边界和认知盲区共同构成限制",
+                "mystery_density": "high",
+                "setting_tags": ["未来城市", "实验室", "深空信号", "时间异常"],
+            },
+            "style": {
+                "tone_keywords": ["理性", "震撼", "孤独", "悬疑"],
+                "dialogue_ratio": 0.36,
+            },
+            "hype": _hype_block(_GENERIC_FALLBACK_HYPE_DECK),
+        },
+    },
+    {
+        "key": "palace-mystery-female",
+        "name": "宫廷女频悬疑翻案流",
+        "genre": "历史宫廷",
+        "sub_genre": "宫廷悬疑",
+        "description": "把宫廷/宅院权力结构、女性选择、旧案翻案和线索推理结合起来，用关系压力承载悬疑推进。",
+        "aliases": ["宫廷", "古言", "翻案", "女频悬疑", "宅院", "旧案"],
+        "recommended_platforms": ["晋江文学城", "番茄小说"],
+        "recommended_audiences": ["古言读者", "女频悬疑读者", "权谋关系读者"],
+        "target_word_options": [24000, 80000, 180000, 320000],
+        "target_chapter_options": [4, 14, 32, 58],
+        "prompt_pack_key": "female-palace",
+        "trend_score": 86,
+        "trend_window": "2025-2026",
+        "trend_summary": "历史/宫廷需要更强考据和氛围，和悬疑或女性向叠加后更容易形成辨识度。",
+        "trend_keywords": ["宫廷", "女频悬疑", "翻案", "权谋", "旧案"],
+        "market_regions": ["中国大陆"],
+        "heat_domains": ["历史/宫廷", "言情/女性向", "悬疑/惊悚/犯罪"],
+        "reader_rewards": ["关系回报", "认知回报", "身份回报"],
+        "narrative_drives": ["谜题真相", "权力博弈", "情绪关系"],
+        "content_modes": ["中文网文长篇连载", "IP改编潜力"],
+        "commercial_signals": ["女性向稳定盘", "强尾钩", "改编适配"],
+        "writing_profile_overrides": {
+            "market": {
+                "reader_promise": "前三章必须建立一个旧案谜面、一组高压关系和女主必须翻案的个人代价。",
+                "selling_points": ["旧案翻案", "宫廷权谋", "女性选择", "证据反转", "身份危局"],
+                "trope_keywords": ["宫廷", "旧案", "翻案", "女频悬疑", "权谋"],
+                "hook_keywords": ["证物出现", "口供翻转", "宠信失衡", "旧案牵出新死者"],
+                "pacing_profile": "medium-fast",
+            },
+            "character": {
+                "protagonist_archetype": "在权力夹缝里翻案的清醒女主",
+                "protagonist_core_drive": "查清旧案、保住重要之人，并夺回被制度剥夺的选择权",
+                "romance_mode": "可选感情线，与翻案和权力线互相施压",
+            },
+            "world": {
+                "worldbuilding_density": "medium",
+                "mystery_density": "high",
+                "setting_tags": ["宫廷", "旧案", "证物", "门第", "权力"],
+            },
+            "style": {
+                "tone_keywords": ["克制", "冷冽", "古雅", "悬疑"],
+                "dialogue_ratio": 0.42,
+            },
+            "hype": _hype_block(_GENERIC_FALLBACK_HYPE_DECK),
+        },
+    },
     # ── English Genre Presets ──────────────────────────────────────────
     {
         "key": "dark-romance",
@@ -2982,17 +3289,415 @@ def _normalize_text(value: str | None) -> str:
     return (value or "").strip().lower()
 
 
+_GENRE_DIMENSION_FIELDS: tuple[str, ...] = (
+    "market_regions",
+    "heat_domains",
+    "reader_rewards",
+    "narrative_drives",
+    "content_modes",
+    "commercial_signals",
+)
+
+_GENRE_DIMENSION_CATALOG: dict[str, dict[str, object]] = {
+    "market_regions": {
+        "label": "目标市场",
+        "description": "作品优先适配的读者市场或区域化包装方向。",
+        "options": ["中国大陆", "英美", "英语连载", "英美趋势本土化"],
+    },
+    "heat_domains": {
+        "label": "高热母题",
+        "description": "调研中稳定出现的畅销母题簇。",
+        "options": [
+            "奇幻/玄幻/异世界",
+            "言情/女性向",
+            "悬疑/惊悚/犯罪",
+            "都市/现实",
+            "历史/宫廷",
+            "科幻",
+            "青春/成长",
+            "电竞/游戏",
+            "BL/关系社群",
+        ],
+    },
+    "reader_rewards": {
+        "label": "读者奖赏",
+        "description": "读者继续阅读时期待被稳定兑现的心理回报。",
+        "options": ["能力回报", "关系回报", "认知回报", "身份回报"],
+    },
+    "narrative_drives": {
+        "label": "叙事驱动",
+        "description": "推动章节和卷级结构持续前进的主引擎。",
+        "options": [
+            "升级成长",
+            "情绪关系",
+            "谜题真相",
+            "权力博弈",
+            "势力经营",
+            "现实逆袭",
+            "生存压力",
+            "竞技对抗",
+            "科技突破",
+            "世界规则揭示",
+            "相互拯救",
+            "群像陪伴",
+        ],
+    },
+    "content_modes": {
+        "label": "产品形态",
+        "description": "更适合的连载、整本、社群或 IP 化产品路径。",
+        "options": [
+            "中文网文长篇连载",
+            "中文网文中短篇",
+            "英文整本/KU",
+            "英语社区连载",
+            "社交传播",
+            "社群传播",
+            "长连载",
+            "系列/IP化",
+            "IP改编潜力",
+        ],
+    },
+    "commercial_signals": {
+        "label": "商业信号",
+        "description": "从调研转化而来的留存、传播、付费或改编提示。",
+        "options": [
+            "高热趋势",
+            "强追读",
+            "强尾钩",
+            "长线陪伴",
+            "社媒传播",
+            "高评论密度",
+            "女性向稳定盘",
+            "系列化",
+            "IP改编潜力",
+            "长尾口碑",
+            "移动端友好",
+            "短剧适配",
+            "同人友好",
+            "评分强度",
+        ],
+    },
+}
+
+
+def _payload_text(payload: dict[str, Any]) -> str:
+    parts: list[str] = []
+    for key in (
+        "key",
+        "name",
+        "genre",
+        "sub_genre",
+        "description",
+        "trend_summary",
+    ):
+        value = payload.get(key)
+        if value:
+            parts.append(str(value))
+    for key in ("aliases", "recommended_platforms", "recommended_audiences", "trend_keywords"):
+        value = payload.get(key)
+        if isinstance(value, list):
+            parts.extend(str(item) for item in value if item)
+    return " ".join(parts).lower()
+
+
+def _contains_any(text: str, terms: tuple[str, ...]) -> bool:
+    return any(term.lower() in text for term in terms)
+
+
+def _genre_dimension_inference(payload: dict[str, Any]) -> dict[str, list[str]]:
+    text = _payload_text(payload)
+    platforms = [str(item) for item in payload.get("recommended_platforms") or []]
+    is_en = str(payload.get("language") or "zh-CN").lower().startswith("en")
+    max_chapters = max([int(v) for v in payload.get("target_chapter_options") or [0]])
+    trend_score = int(payload.get("trend_score") or 0)
+    overrides = payload.get("writing_profile_overrides")
+    market_overrides = overrides.get("market", {}) if isinstance(overrides, dict) else {}
+    pacing_profile = str(market_overrides.get("pacing_profile") or "").lower()
+
+    dims: dict[str, list[str]] = {field: [] for field in _GENRE_DIMENSION_FIELDS}
+
+    dims["market_regions"].append("英美" if is_en else "中国大陆")
+    if any(platform in {"Royal Road", "Wattpad"} for platform in platforms):
+        dims["market_regions"].append("英语连载")
+
+    if is_en:
+        if "Kindle Unlimited" in platforms:
+            dims["content_modes"].append("英文整本/KU")
+        if any(platform in {"Royal Road", "Wattpad"} for platform in platforms):
+            dims["content_modes"].append("英语社区连载")
+    else:
+        dims["content_modes"].append(
+            "中文网文长篇连载" if max_chapters >= 50 else "中文网文中短篇"
+        )
+    if max_chapters >= 90:
+        dims["content_modes"].append("长连载")
+
+    if _contains_any(
+        text,
+        (
+            "仙",
+            "玄幻",
+            "修真",
+            "修仙",
+            "御兽",
+            "奇幻",
+            "fantasy",
+            "litrpg",
+            "gamelit",
+            "isekai",
+            "cultivation",
+            "portal",
+            "monster",
+        ),
+    ):
+        dims["heat_domains"].append("奇幻/玄幻/异世界")
+    if _contains_any(
+        text,
+        (
+            "言情",
+            "romance",
+            "romantasy",
+            "女性",
+            "宫斗",
+            "女主",
+            "情感",
+            "relationship",
+            "harem",
+            "mafia",
+            "shifter",
+        ),
+    ):
+        dims["heat_domains"].append("言情/女性向")
+    if _contains_any(
+        text,
+        (
+            "悬疑",
+            "推理",
+            "惊悚",
+            "灵异",
+            "诡",
+            "怪谈",
+            "驱魔",
+            "mystery",
+            "thriller",
+            "detective",
+            "crime",
+            "horror",
+            "suspense",
+        ),
+    ):
+        dims["heat_domains"].append("悬疑/惊悚/犯罪")
+    if _contains_any(text, ("都市", "现实", "职场", "创业", "商业", "urban", "contemporary")):
+        dims["heat_domains"].append("都市/现实")
+    if _contains_any(text, ("历史", "宫廷", "古言", "穿越", "王朝", "palace", "historical")):
+        dims["heat_domains"].append("历史/宫廷")
+    if _contains_any(
+        text,
+        (
+            "科幻",
+            "星际",
+            "机甲",
+            "黑科技",
+            "科技",
+            "scifi",
+            "sci-fi",
+            "science fiction",
+            "space",
+            "military",
+            "superhero",
+        ),
+    ):
+        dims["heat_domains"].append("科幻")
+    if _contains_any(text, ("青春", "校园", "ya", "young adult", "coming of age", "teen")):
+        dims["heat_domains"].append("青春/成长")
+    if _contains_any(text, ("电竞", "游戏", "直播", "esports", "game")):
+        dims["heat_domains"].append("电竞/游戏")
+    if _contains_any(text, ("双男主", "耽美", "bl", "cp")):
+        dims["heat_domains"].append("BL/关系社群")
+
+    if _contains_any(
+        text,
+        (
+            "升级",
+            "修仙",
+            "玄幻",
+            "异能",
+            "御兽",
+            "机甲",
+            "progression",
+            "litrpg",
+            "level",
+            "power",
+            "cultivation",
+            "superhero",
+            "monster",
+        ),
+    ):
+        dims["reader_rewards"].append("能力回报")
+        dims["narrative_drives"].append("升级成长")
+    if _contains_any(
+        text,
+        (
+            "言情",
+            "女性",
+            "情感",
+            "青春",
+            "校园",
+            "双男主",
+            "耽美",
+            "relationship",
+            "romance",
+            "romantasy",
+            "harem",
+            "fated",
+            "cozy",
+        ),
+    ):
+        dims["reader_rewards"].append("关系回报")
+        dims["narrative_drives"].append("情绪关系")
+    if _contains_any(
+        text,
+        (
+            "悬疑",
+            "推理",
+            "规则",
+            "科幻",
+            "历史",
+            "怪谈",
+            "谜",
+            "mystery",
+            "thriller",
+            "suspense",
+            "procedural",
+            "conspiracy",
+            "scifi",
+            "sci-fi",
+        ),
+    ):
+        dims["reader_rewards"].append("认知回报")
+        dims["narrative_drives"].append("谜题真相")
+    if _contains_any(
+        text,
+        (
+            "身份",
+            "神豪",
+            "大女主",
+            "青春",
+            "事业",
+            "创业",
+            "权谋",
+            "争霸",
+            "宫廷",
+            "chosen",
+            "academy",
+            "royal",
+            "mafia",
+        ),
+    ):
+        dims["reader_rewards"].append("身份回报")
+
+    if _contains_any(text, ("权谋", "宫廷", "争霸", "王庭", "political", "court", "mafia")):
+        dims["narrative_drives"].append("权力博弈")
+    if _contains_any(text, ("基建", "经营", "基地", "势力", "创业", "公司", "business", "base")):
+        dims["narrative_drives"].append("势力经营")
+    if _contains_any(text, ("逆袭", "翻盘", "重生创业", "现实", "职场")):
+        dims["narrative_drives"].append("现实逆袭")
+    if _contains_any(text, ("末日", "生存", "survival", "apocalypse")):
+        dims["narrative_drives"].append("生存压力")
+    if _contains_any(text, ("电竞", "竞技", "赛事", "esports", "tournament")):
+        dims["narrative_drives"].append("竞技对抗")
+    if _contains_any(text, ("科技", "黑科技", "机甲", "science", "tech", "military scifi")):
+        dims["narrative_drives"].append("科技突破")
+    if _contains_any(text, ("规则", "世界观", "魔法", "system", "magic", "hidden world")):
+        dims["narrative_drives"].append("世界规则揭示")
+    if _contains_any(text, ("相互拯救", "双男主", "why choose", "found family")):
+        dims["narrative_drives"].append("相互拯救")
+    if _contains_any(text, ("群像", "found family", "crew", "squad", "pack")):
+        dims["narrative_drives"].append("群像陪伴")
+
+    if trend_score >= 90:
+        dims["commercial_signals"].append("高热趋势")
+    if "fast" in pacing_profile:
+        dims["commercial_signals"].append("强追读")
+    if _contains_any(text, ("悬疑", "惊悚", "怪谈", "thriller", "mystery", "hook")):
+        dims["commercial_signals"].append("强尾钩")
+    if max_chapters >= 90:
+        dims["commercial_signals"].append("长线陪伴")
+    if _contains_any(text, ("romance", "romantasy", "青春", "双男主", "耽美", "booktok", "社群")):
+        dims["commercial_signals"].append("社媒传播")
+    if _contains_any(text, ("女性", "女主", "言情", "romance")):
+        dims["commercial_signals"].append("女性向稳定盘")
+    if _contains_any(text, ("series", "系列", "cozy", "detective", "space opera")):
+        dims["commercial_signals"].append("系列化")
+    if _contains_any(text, ("科幻", "奇幻", "宫廷", "机甲", "星际", "fantasy", "space", "scifi")):
+        dims["commercial_signals"].append("IP改编潜力")
+    if _contains_any(text, ("科幻", "cozy", "procedural", "long tail", "长尾")):
+        dims["commercial_signals"].append("长尾口碑")
+    if _contains_any(text, ("番茄", "七猫", "移动端", "短平快")):
+        dims["commercial_signals"].append("移动端友好")
+    if _contains_any(text, ("家庭", "职场", "现实", "短剧")):
+        dims["commercial_signals"].append("短剧适配")
+    if _contains_any(text, ("双男主", "耽美", "bl", "cp")):
+        dims["commercial_signals"].append("高评论密度")
+        dims["commercial_signals"].append("同人友好")
+    if _contains_any(text, ("科幻", "thriller", "mystery", "评分", "review")):
+        dims["commercial_signals"].append("评分强度")
+
+    return {field: _dedupe_string_list(values) for field, values in dims.items()}
+
+
+def _enrich_genre_preset_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    enriched = dict(payload)
+    inferred = _genre_dimension_inference(enriched)
+    for field in _GENRE_DIMENSION_FIELDS:
+        explicit = enriched.get(field)
+        explicit_values = explicit if isinstance(explicit, list) else []
+        enriched[field] = _dedupe_string_list(
+            [*inferred.get(field, []), *[str(item) for item in explicit_values]]
+        )
+    return enriched
+
+
+def get_genre_preset_dimensions() -> dict[str, dict[str, object]]:
+    presets = list_genre_presets()
+    output: dict[str, dict[str, object]] = {}
+    for field, meta in _GENRE_DIMENSION_CATALOG.items():
+        counts: dict[str, int] = {}
+        for preset in presets:
+            for value in getattr(preset, field):
+                counts[value] = counts.get(value, 0) + 1
+        ordered = [
+            str(value)
+            for value in meta.get("options", [])
+            if isinstance(value, str) and counts.get(value)
+        ]
+        extras = sorted(value for value in counts if value not in ordered)
+        output[field] = {
+            "label": meta["label"],
+            "description": meta["description"],
+            "options": [
+                {"value": value, "count": counts[value]}
+                for value in [*ordered, *extras]
+            ],
+        }
+    return output
+
+
 @lru_cache(maxsize=1)
 def load_writing_preset_catalog() -> WritingPresetCatalog:
     return WritingPresetCatalog(
         chapter_word_policy=ChapterWordPolicy(min=1800, target=2200, max=3000),
         platform_presets=[PlatformPreset.model_validate(item) for item in _PLATFORM_PRESETS],
-        genre_presets=[GenrePreset.model_validate(item) for item in _GENRE_PRESETS],
+        genre_presets=[
+            GenrePreset.model_validate(_enrich_genre_preset_payload(item))
+            for item in _GENRE_PRESETS
+        ],
         length_presets=[LengthPreset.model_validate(item) for item in _LENGTH_PRESETS],
         source_notes=[
             "番茄作者专区关于开篇抓人、节奏与追读的公开文章",
             "起点中文网官方平台介绍中的题材分类与长篇生态",
             "2025 年底至 2026 年初的网文热点关键词与女频趋势公开报道",
+            "2023-2026 畅销小说调研中关于高热母题、读者奖赏曲线和平台适配的综合结论",
             "GitHub 上 NovelGenerator、Manuskript、Long-Novel-GPT 的配置/规划设计思路",
         ],
     )

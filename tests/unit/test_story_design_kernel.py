@@ -278,3 +278,190 @@ def test_worldview_kernel_accepts_distilled_operational_contracts() -> None:
     assert "trust_debt_ledger" in block
     assert "宗门长老会 -> 外门灵田规则解释权" in block
     assert "specific_family_inheritance_murder" in block
+
+
+def test_story_design_kernel_normalizes_common_llm_aliases() -> None:
+    payload = deepcopy(_kernel_payload())
+    payload["reader_promise"] = {
+        "core_promises": ["每章推进一条可验证线索", "终章关闭当前故事"],
+        "forbidden_violations": ["不得留核心谜题到书外解决"],
+    }
+    payload["character_conflict_contracts"] = [
+        {
+            "character_key": "protagonist",
+            "external_goal": "30章内关闭死亡倒计时。",
+            "internal_need": "学会把调查风险分给可信盟友。",
+            "pressure_trigger": "母亲失忆真相可能是自愿选择。",
+            "choice_axis": "独自保密还是共享线索。",
+            "payoff_mode": "付出记忆代价后仍选择信任盟友。",
+        }
+    ]
+    worldview = payload["worldview_kernel"]
+    assert isinstance(worldview, dict)
+    worldview.update(
+        {
+            "reveal_ladder": [
+                {
+                    "stage": "规则显形期",
+                    "chapter_range": "1-10",
+                    "reveals": ["死亡预言启动", "划名消失规则被验证"],
+                    "unlock_condition": "通过具体证据和代价揭示。",
+                    "reader_requirement": "读者能理解基本规则。",
+                }
+            ],
+            "asset_ledger": [
+                {
+                    "id": "asset_001",
+                    "name": "巡夜录",
+                    "strategic_value": "记录死亡倒计时与巡夜人真相。",
+                    "cost_to_obtain": "必须完成高风险修复任务。",
+                    "exposure": "被馆长发现会失去访问权。",
+                },
+                {
+                    "asset_key": "修复技术资格",
+                    "asset_type": "skill",
+                    "visible_cost": "每次修复都在喂养档案馆。",
+                    "exposure": "会被馆长监视。",
+                }
+            ],
+            "authority_claims": [
+                {
+                    "key": "claim_01",
+                    "entity": "顾砚",
+                    "claim": "修复师资格允许他接触普通档案。",
+                    "authority_type": "formal",
+                    "legitimacy_source": "修复师协会认证。",
+                    "scope": "普通档案修复。",
+                    "current_status": "暂时有效。",
+                    "challenge_condition": "协会可随时撤销资格。",
+                },
+                {
+                    "authority_key": "管理层授权",
+                    "claim_type": "formal_authority",
+                    "legitimacy_source": "馆长行政命令。",
+                    "scope": "档案馆公共区域访问。",
+                    "limits": "不包含深层区域。",
+                    "risk": "该授权可能被反派撤销。",
+                }
+            ],
+            "scene_templates": [
+                {
+                    "scene_id": "template_rule_activation",
+                    "purpose": "顾砚修复被烧毁档案时释放新规则。",
+                    "required_elements": ["修复动作", "规则显影"],
+                    "expected_outcome": "释放一条新规则。",
+                },
+                {
+                    "template_key": "规则验证场景",
+                    "trigger_condition": "主角发现疑似规则现象时",
+                    "scene_structure": ["观察现象", "收集证据", "评估风险"],
+                    "cost_requirement": "必须付出可见代价。",
+                },
+                {
+                    "template_key": "线索推进场景",
+                    "structure": "现有线索指向→新证据出现→线索指向改变",
+                    "variation": "线索可以通过修复档案或角色对话推进。",
+                    "obligation": "每2-3章必须推进一条完整线索。",
+                }
+            ],
+            "state_variables": [
+                {
+                    "key": "death_countdown",
+                    "variable_type": "counter",
+                    "current_value": 30,
+                    "desired_direction": "decrease",
+                    "change_triggers": "修复一页档案。",
+                    "failure_mode": "倒计时不产生压力。",
+                }
+            ],
+        }
+    )
+    structure_strategy = payload["structure_strategy"]
+    assert isinstance(structure_strategy, dict)
+    structure_strategy["chapter_engine"] = {
+        "hook_types": ["规则威胁钩"],
+        "rotation_rule": "连续章节不得重复同一压力源。",
+    }
+    structure_strategy["pacing_rule"] = {
+        "clue_frequency": "每2-3章一个新线索。",
+        "real_solution": "第25章后验证终局解法。",
+    }
+    payload["plot_tree"].append(
+        {
+            "key": "antagonist-pressure",
+            "line_type": "antagonist",
+            "label": "馆长续命线",
+            "role": "制造外部压迫",
+            "current_state": "隐藏真实动机",
+            "target_state": "被迫暴露续命计划",
+            "dependency_on_mainline": "死亡倒计时调查会逐步逼出馆长计划。",
+            "failure_if_removed": "主线缺少对抗压力。",
+        }
+    )
+    payload["plot_tree"].append(
+        {
+            "key": "mother-truth",
+            "line_type": "main_emotional",
+            "label": "母亲真相线",
+            "role": "提供情感核心",
+            "current_state": "失忆原因不明",
+            "target_state": "第20章完成真相揭露",
+            "failure_if_removed": "故事失去情感代价。",
+        }
+    )
+    payload["beat_schedule"] = [
+        {
+            "chapter_range": "1-3",
+            "duty": "启动死亡预言和规则验证。",
+            "state_changes": ["倒计时启动", "第一条规则被观察"],
+            "payoff": "读者看到规则第一次生效。",
+            "hook_or_aftereffect": "发现死亡预言与巡夜录关联。",
+        }
+    ]
+    payload["change_vectors"] = [
+        {"vector": "线索从死亡记录转向巡夜人真相"},
+        {"change_vector": "母子关系从保护变成共同承担"},
+    ]
+    payload["uniqueness_constraints"] = [
+        {"constraint": "不得把梦境作为谜题解法", "implementation": "所有真相来自证据链"},
+        "每章必须产生可见状态变化",
+    ]
+    payload.pop("shape")
+
+    kernel = story_design_kernel_from_dict(payload)
+    serialized = story_design_kernel_to_dict(kernel)
+    worldview_out = serialized["worldview_kernel"]
+
+    assert serialized["shape"]["length_class"] == "novella"
+    assert "每章推进一条可验证线索" in serialized["reader_promise"]
+    assert serialized["character_conflict_contracts"][0]["pressure_source"] == (
+        "母亲失忆真相可能是自愿选择。"
+    )
+    assert serialized["character_conflict_contracts"][0]["change_vector"] == (
+        "付出记忆代价后仍选择信任盟友。"
+    )
+    assert "划名消失规则被验证" in worldview_out["reveal_ladder"][0]["reveal"]
+    assert worldview_out["state_variables"][0]["current_value"] == "30"
+    assert worldview_out["state_variables"][0]["change_triggers"] == ["修复一页档案。"]
+    assert worldview_out["asset_ledger"][0]["key"] == "asset_001"
+    assert worldview_out["asset_ledger"][0]["asset_type"] == "巡夜录"
+    assert worldview_out["asset_ledger"][0]["value"] == "记录死亡倒计时与巡夜人真相。"
+    assert worldview_out["asset_ledger"][1]["value"] == "修复技术资格"
+    assert worldview_out["asset_ledger"][1]["cost"] == "每次修复都在喂养档案馆。"
+    assert worldview_out["authority_claims"][0]["claimant"] == "顾砚"
+    assert worldview_out["authority_claims"][1]["claimant"] == "管理层授权"
+    assert worldview_out["scene_templates"][0]["key"] == "template_rule_activation"
+    assert "观察现象" in worldview_out["scene_templates"][1]["required_change"][0]
+    assert worldview_out["scene_templates"][2]["use_case"].startswith("现有线索指向")
+    assert "规则威胁钩" in serialized["structure_strategy"]["chapter_engine"]
+    assert serialized["plot_tree"][-2]["line_type"] == "subplot"
+    assert serialized["plot_tree"][-1]["line_type"] == "main"
+    assert serialized["beat_schedule"][0]["state_change"] == "倒计时启动；第一条规则被观察"
+    assert serialized["change_vectors"] == [
+        "线索从死亡记录转向巡夜人真相",
+        "母子关系从保护变成共同承担",
+    ]
+    assert serialized["uniqueness_constraints"] == [
+        "不得把梦境作为谜题解法",
+        "每章必须产生可见状态变化",
+    ]

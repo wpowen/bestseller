@@ -418,6 +418,144 @@ class TestPromptPlanRender:
 
 
 # ---------------------------------------------------------------------------
+# System / User partition: cache-friendly split.
+# ---------------------------------------------------------------------------
+
+
+class TestPromptPlanSystemUserSplit:
+    """``render_system`` / ``render_user`` partition the plan into the two halves
+    that map to ``messages[0].role=='system'`` and ``messages[1].role=='user'``.
+
+    The system half is invariant across all chapters of a book (role charter,
+    invariants, methodology, anti-slop footer) and therefore safe for
+    Anthropic prompt caching. The user half changes per chapter.
+    """
+
+    def test_system_half_contains_only_stable_sections(self) -> None:
+        plan = PromptPlan(
+            system="ROLE",
+            invariants_section="INV",
+            methodology_inject="METHOD",
+            anti_slop_footer="FOOTER",
+            # ── user-half fields ───────────────────────────
+            bible_slice="BIBLE",
+            scene_spec="SCENE",
+            diversity_constraints="DIVERSITY",
+            prior_chapter_tail="TAIL",
+            feedback_block="FEEDBACK",
+        )
+        system_part = plan.render_system()
+        # Stable sections present.
+        assert "ROLE" in system_part
+        assert "INV" in system_part
+        assert "METHOD" in system_part
+        assert "FOOTER" in system_part
+        # Volatile sections absent from system half.
+        for volatile in ("BIBLE", "SCENE", "DIVERSITY", "TAIL", "FEEDBACK"):
+            assert volatile not in system_part
+
+    def test_user_half_contains_only_volatile_sections(self) -> None:
+        plan = PromptPlan(
+            system="ROLE",
+            invariants_section="INV",
+            methodology_inject="METHOD",
+            anti_slop_footer="FOOTER",
+            bible_slice="BIBLE",
+            scene_spec="SCENE",
+            diversity_constraints="DIVERSITY",
+            prior_chapter_tail="TAIL",
+            feedback_block="FEEDBACK",
+        )
+        user_part = plan.render_user()
+        for volatile in ("BIBLE", "SCENE", "DIVERSITY", "TAIL", "FEEDBACK"):
+            assert volatile in user_part
+        for stable in ("ROLE", "INV", "METHOD", "FOOTER"):
+            assert stable not in user_part
+
+    def test_partition_is_complete_coverage(self) -> None:
+        """Every field that ``render()`` emits should appear in exactly one half."""
+        plan = PromptPlan(
+            system="ROLE",
+            invariants_section="INV",
+            bible_slice="BIBLE",
+            ranking_capability_profile_section="RANK",
+            progression_constraints="PROGRESSION",
+            decision_policy_constraints="DECISION",
+            rule_system_constraints="RULESYS",
+            faction_ecology_constraints="FACTION",
+            relationship_agency_constraints="RELATION",
+            reader_contract_section="READER",
+            methodology_inject="METHOD",
+            hype_constraints="HYPE",
+            diversity_constraints="DIVERSITY",
+            prior_chapter_tail="TAIL",
+            scene_spec="SCENE",
+            anti_slop_footer="FOOTER",
+            feedback_block="FEEDBACK",
+        )
+        full = plan.render()
+        union = plan.render_system() + "\n\n" + plan.render_user()
+        # Every token in render() must appear somewhere in the union.
+        for marker in (
+            "ROLE", "INV", "BIBLE", "RANK", "PROGRESSION", "DECISION",
+            "RULESYS", "FACTION", "RELATION", "READER", "METHOD",
+            "HYPE", "DIVERSITY", "TAIL", "SCENE", "FOOTER", "FEEDBACK",
+        ):
+            assert marker in full, f"{marker} missing from render()"
+            assert marker in union, f"{marker} missing from system+user partition"
+
+    def test_render_system_skips_empty(self) -> None:
+        plan = PromptPlan(system="ROLE", anti_slop_footer="FOOTER")
+        assert plan.render_system() == "ROLE\n\nFOOTER"
+        assert plan.render_user() == ""
+
+    def test_render_user_skips_empty(self) -> None:
+        plan = PromptPlan(scene_spec="SCENE", bible_slice="BIBLE")
+        # Order preserved: bible_slice comes before scene_spec.
+        out = plan.render_user()
+        assert out.index("BIBLE") < out.index("SCENE")
+
+    def test_to_messages_empty_plan_returns_empty_list(self) -> None:
+        plan = PromptPlan()
+        assert plan.to_messages() == []
+
+    def test_to_messages_without_cache_returns_plain_strings(self) -> None:
+        plan = PromptPlan(system="ROLE", scene_spec="SCENE")
+        messages = plan.to_messages(enable_cache=False)
+        assert messages == [
+            {"role": "system", "content": "ROLE"},
+            {"role": "user", "content": "SCENE"},
+        ]
+
+    def test_to_messages_with_cache_uses_anthropic_block_marker(self) -> None:
+        plan = PromptPlan(
+            system="ROLE",
+            invariants_section="INV",
+            scene_spec="SCENE",
+        )
+        messages = plan.to_messages(enable_cache=True)
+        assert len(messages) == 2
+        assert messages[0]["role"] == "system"
+        assert isinstance(messages[0]["content"], list)
+        assert messages[0]["content"][0]["type"] == "text"
+        assert messages[0]["content"][0]["cache_control"] == {"type": "ephemeral"}
+        assert "ROLE" in messages[0]["content"][0]["text"]
+        assert "INV" in messages[0]["content"][0]["text"]
+        # User stays a plain string — only the cached prefix uses the block form.
+        assert messages[1] == {"role": "user", "content": "SCENE"}
+
+    def test_to_messages_system_only_skips_user_role(self) -> None:
+        plan = PromptPlan(system="ROLE", invariants_section="INV")
+        messages = plan.to_messages(enable_cache=False)
+        assert messages == [{"role": "system", "content": "ROLE\n\nINV"}]
+
+    def test_to_messages_user_only_skips_system_role(self) -> None:
+        plan = PromptPlan(scene_spec="SCENE")
+        messages = plan.to_messages(enable_cache=False)
+        assert messages == [{"role": "user", "content": "SCENE"}]
+
+
+# ---------------------------------------------------------------------------
 # Sanity: Default constant values.
 # ---------------------------------------------------------------------------
 

@@ -1,92 +1,157 @@
 key: distillation-generic
-name: Xianxia Cultivation Grammar Patch
+name: Competence Revelation Engine for Urban Cultivation Comedy
 source_ids:
 - source-0003
 status: draft_review
 applies_to_categories:
-- cultivation
-- xianxia
-- progression_fantasy
-- comedy
-- animal_companion
+- cultivation_fantasy
+- urban_supernatural
+- power_fantasy
+- romantic_comedy
+- fish_out_of_water
 required_contracts:
-- Crisis-survival-reward progression cycle must deliver tangible cultivation benefit
-  on resolution
-- Dormant protective power activation requires near-fatal threshold with escalating
-  danger
-- Creature taming requires will-dominance confrontation before acquisition
-- Protagonist must demonstrate preparation-based problem-solving rather than reckless
-  luck
-- Comedic relief must punctuate tension rather than dominate narrative
+  primary_attraction_contract: Protagonist demonstrates hidden abilities that invert
+    established hierarchies and earn reluctant respect through practical problem-solving
+  secondary_attraction_contract: Tonal balance maintained between high-stakes supernatural
+    confrontation and grounded domestic/emotional beats
+  emotional_core_contract: Family loyalty stakes grounded in financial survival rather
+    than abstract destiny; son saving father's destroyed business
+  satisfaction_contract: Each competence demonstration establishes new value; each
+    payoff creates new complication rather than clean resolution
+  competence_engine_contract: Protagonist exposes hidden abilities paired with economic
+    opportunism; uses mystical authentication/consultation to extract wealth while
+    antagonists attempt parallel exploitation
 state_variables:
-  protagonist:
-    position: early_cultivation
-    growth_vector: external_quest_driven
-    personality_markers:
-    - mischievous
-    - cunning
-    - defiant_of_warnings
-    support_system: loyal_bumbling_companion_duo
-  companions:
-    type: animal_acquisition_sequence
-    mechanism: defeat_then_tame
-    rivalry_element: multiple_creatures_competing_for_attention
-  protective_mechanisms:
-    type: ancestral_dormant_power
-    activation_trigger: near_fatal_damage
-    secondary_effect: cultivation_breakthrough
-  world_state:
-    setting_type: Taoist_cultivation_terrain
-    location_markers:
-    - abandoned_caves
-    - mountain_cultivation_sites
-    quest_objects: rare_creatures_as_cultivation_assets
+  protagonist_trajectory:
+  - Untrained youth with hidden potential → awakened ability user with mentor guidance
+    → independent practitioner carrying forbidden knowledge → financial-scheming opportunist
+    → determined agent acting outside legal boundaries → legitimate sect heir with
+    political implications → power fantasy exerciser through blackmail/leverage →
+    cultivator facing unprecedented threat level
+  antagonist_evolution:
+  - Absent/remote → wealthy visitor with killer bodyguards → corruption-linked underworld
+    figure → supernatural manipulator conspiracy network → multiple faction coalition
+    → international threats → revealed superior enemy power systems
+  stakes_expansion:
+  - Personal skill acquisition → fate/destiny prophecy → external threat to family
+    → financial survival deadline → moral compromise required → identity legitimacy
+    → political conspiracy → cultivation world survival → mentor sacrifice → apocalyptic
+    threat
+  ally_constellation:
+  - Dual protagonist partnership (contrasting physical types) → mentor family → scarred
+    stranger with violent past → journalist romantic lead → gang allies → political
+    connections → spiritual familiar companions
+  romance_architecture:
+  - Absent → meet-cute → curse diagnosis linking pair → mysterious connection with
+    hostile external factor → first kiss milestone → forced betrothal → established
+    bond → comedic resolution of polygamous complication
+  family_dynamics:
+  - Protected ward under strict mentor → departing with symbolic gifts → discovering
+    father's ruin → emotional reconciliation → desperate partnership → identity revelation
+    (illegitimate birth) → father-poisoning crisis → rescue and restoration
 chapter_change_vectors:
-- vector: preparation_foreshadowing
-  description: Mechanisms and traps explained before complication deployment
-- vector: complication_escalation
-  description: Initial plan fails, danger escalates toward near-fatal threshold
-- vector: dormant_activation
-  description: Protective power triggers at mortality edge, delivering cultivation
-    bonus
-- vector: tension_release
-  description: Comedic companion banter or animal reaction after crisis resolution
-- vector: companion_rivalry_setup
-  description: Competing creatures establish dynamic for future acquisition sequence
+  hook_types:
+  - ominous prophecy revelation
+  - mysterious figure appearance
+  - unresolved comedic crisis
+  - direct question from unknown character
+  - visual image as emotional punctuation
+  - mid-action cliffhanger
+  - deliberate positive-momentum reversal
+  transition_discipline: Geographic movement drives scene shifts; vertical movement
+    marks power structure shifts; explicit time markers for major transitions; scene
+    breaks marked by spatial movement and time markers rather than explicit headers;
+    sharp cuts between antagonist and protagonist camps maintaining parallel tension
+  pacing_vectors:
+  - Staccato dialogue exchanges punctuated by expansive cumulative sentences for exposition
+  - Action peaks deploy single-impact words and explosive onomatopoeia
+  - Tension-release cadence through paragraph-length variation
+  - Comic timing achieved through short punchlines following longer setups
 reader_rewards:
-- Cultivation world immersion with technical mechanics exposition
-- Satisfying near-death crisis resolution with tangible strength gains
-- Humorous character dynamics through companion interactions
-- Creature taming spectacle with dominance-based power fantasy
-- Mischievous protagonist outsmarting dangers through preparation
+  competence_beats:
+  - Supernatural sight abilities (face-reading, object authentication, qi detection)
+    solving practical problems
+  - Expertise demonstration converting skeptics and establishing credibility
+  - Hidden strength revelation during near-death crisis
+  - Combat reversal through improvised technique combining mismatched resources
+  - Authority inversion where intimidating antagonist becomes desperate supplicant
+  - Power fantasy exercised through blackmail and forced groveling
+  emotional_beats:
+  - Father-son tender moments grounding supernatural elements
+  - Romantic milestones (first kiss, confession, betrothal) amid escalating danger
+  - Brotherhood sacrifice establishing emotional stakes through companion loss
+  - Mentor sacrifice catalyzing protagonist responsibility transfer
+  - Recovery and catharsis through ally restoration
+  mystery_beats:
+  - Historical exposition revealing cultivation world catastrophes and conspiracy
+    scope
+  - Identity revelation transforming nobody into legitimate heir
+  - Family secret disclosure reframing protagonist's understanding
+  - Parallel-perspective dramatic irony where reader knows truths characters don't
+  - Tiered revelation structure where major secrets contain larger unknowns
+  comedy_beats:
+  - Physically mismatched companion pair creating comic relief through banter
+  - Comedic undercut of serious lore through crude language and modern interjections
+  - Embarrassment leverage manipulation forcing compliance
+  - Pet conflict between tamed creatures establishing comic subplot
+  - Contrasting partnership generating character depth through sparring
+  triumph_beats:
+  - Ironic miscalculation by both parties resolving in protagonist's favor
+  - Forced social challenge victory using opponent's arrogance against them
+  - Victory through reputation-based intimidation rather than direct combat
+  - Successful restoration of family business and sect status
 hook_or_aftereffect_types:
-- type: artifact_quest_hook
-  trigger: discovery
-  aftereffect: failed_capture_pursuit_sequence
-- type: creature_rivalry_hook
-  trigger: attention_competition
-  aftereffect: dominance_confrontation_setup
-- type: warning_defiance_hook
-  trigger: protagonist_ignores_admonition
-  aftereffect: preparation_validation_through_survival
-- type: cultivation_breakthrough_hook
-  trigger: dormant_power_activation
-  aftereffect: new_ability_revelation_with_cost
+- prophecy_revelation
+- mysterious_figure_entrance
+- comedic_crisis_unresolved
+- unknown_character_question
+- visual_emotional_punctuation
+- mid_action_cliffhanger
+- positive_momentum_reversal
+- dramatic_irony_establishment
+- tiered_mystery_introduction
+- genre_intrusion_horror
 forbidden_defaults:
-- pattern: exposition_through_standalone_dialogue
-  description: Teaching moments must integrate with action rather than pause narrative
-- pattern: excessive_dormant_power_activation
-  description: Limit protective power triggers; each activation must feel earned and
-    dangerous
-- pattern: companion_dilution
-  description: Animal companions require distinct narrative functions; avoid quantity
-    over quality
-- pattern: artificial_cliffhanger
-  description: Pursuit hooks must have logical momentum; avoid pure danger-seeking
-    without motivation
-- pattern: intelligence_inconsistency
-  description: Protagonist cost-benefit reasoning for defying warnings must remain
-    consistent
-- pattern: resurrection_armor
-  description: Dormant power must carry meaningful cost or limitation, not pure plot
-    armor
+  character_names: Do not use specific protagonist, mentor, romantic lead, antagonist,
+    companion, or faction names; these must be generated per-instance
+  location_names: Do not use specific mountain sanctuaries, urban centers, supernatural
+    landmarks, or landmark names
+  organization_names: Do not use specific cultivation sect, criminal gang, or government
+    faction names
+  technique_names: Do not use specific cultivation methods, supernatural abilities,
+    or formation system names
+  artifact_names: Do not use specific sword, talisman, spirit beast, or ritual object
+    names
+  cultural_references: Do not use specific Chinese historical figures, classical text
+    names, or Taoist terminology references
+  platform_conventions: Remove chapter-end voting calls, author notes, and direct
+    reader engagement appeals; adapt for chapter-length rather than daily serialization
+  explicit_cliffhanger_language: Avoid explicit cliffhanger language; rely on narrative
+    position and dramatic irony for continuation pull
+  repeated_hook_structure: Rotate between hook types; occasionally end chapters with
+    satisfying closure; do not use same hook types consecutively
+  deus_ex_machina_rescue: Establish all rescue-capable characters early; foreshadow
+    protective mechanisms; create costs for each rescue
+  extended_protagonist_incapacity: Limit unconscious or incapacitated periods; maintain
+    protagonist perspective through observer reactions; ensure recovery advances plot
+  info_density_spikes: Do not cluster multiple chapters of exposition front-loading
+    world-building; embed worldbuilding in character action and observation
+  competence_inflation_without_cost: Establish physical toll for ability use; delay
+    full capability demonstration; create costs that must be paid later; ensure each
+    victory generates new complication
+  female_character_reduction: Do not reduce romantic interests to manipulative tools
+    or passive objects; give female characters independent goals, expertise, and agency
+  author_intrusion: Do not break fourth-wall immersion with direct reader engagement
+    appeals; remove platform-specific conventions that break context transition
+  male_gaze_framing: Do not use male gaze framing in romantic/attraction scenes
+  body_horror_excess: Limit specific visceral damage details and body horror descriptions
+    to narrative necessity
+  stakes_escalation_burnout: Vary stakes intensity across volumes; allow breathing
+    room between major confrontations; ground escalating stakes in personal consequences
+    rather than abstract apocalyptic prophecy
+  antagonist_proliferation: Introduce antagonist hierarchy gradually; connect new
+    threats to established figures; avoid rapid multiple simultaneous antagonist faction
+    introduction
+  info_overload: Do not extend exposition chapters without action breaks; manage information
+    density through tiered revelation; resolve some mysteries before introducing new
+    ones

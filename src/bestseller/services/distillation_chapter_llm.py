@@ -37,7 +37,10 @@ def _coerce_chapter_card_payload(
     row = dict(obj)
     row["source_id"] = str(row.get("source_id") or source_id)
     row["abs_chapter_no"] = int(row.get("abs_chapter_no") or abs_no)
-    row["volume_no"] = int(row.get("volume_no") or volume_no)
+    try:
+        row["volume_no"] = int(row.get("volume_no") or volume_no)
+    except (TypeError, ValueError):
+        row["volume_no"] = int(volume_no)
 
     chapter_function = str(row.get("chapter_function") or "").strip()
     if not chapter_function:
@@ -69,9 +72,6 @@ def _coerce_chapter_card_payload(
         conf = 0.0
     row["confidence"] = conf
 
-    flags = row["risk_flags"]
-    if "llm_fallback" not in flags:
-        flags.append("llm_fallback")
     return row
 
 
@@ -363,8 +363,15 @@ def build_extraction_prompts(
         "Output exactly ONE JSON object matching the chapter_card schema.",
         "Do not wrap in markdown fences. Do not add commentary before or after the JSON.",
         f"Required top-level keys: {', '.join(chapter_card_required_keys(schema))}.",
-        "Optional craft_observations must be anonymous craft controls only, not author imitation.",
+        "Treat craft_observations as mandatory even if the schema marks it optional.",
+        "craft_observations must contain non-empty anonymous craft controls only, not author imitation.",
+        (
+            "Include at least four concrete craft keys when signal exists: pov_distance, "
+            "sentence_rhythm, paragraphing, dialogue_method, description_method, "
+            "exposition_method, hook_delivery, transition_method, do_not_copy."
+        ),
         "Do not quote source phrases, preserve distinctive word choices, or create a copyable style fingerprint.",
+        "Do not set risk_flags to llm_fallback unless the payload explicitly says the LLM was unavailable.",
         "",
         "=== schema (for reference) ===",
         schema_hint,
@@ -421,32 +428,96 @@ async def _complete_distillation_chapter_llm(
             max_tokens_override=6144,
         ),
     )
+    if result.provider == "fallback" or result.finish_reason == "fallback":
+        raise RuntimeError(
+            "distillation_chapter_card LLM call used fallback content; "
+            "not writing a synthetic chapter_card"
+        )
 
-    obj = _extract_json_payload(result.content)
-    if isinstance(obj, list):
-        if len(obj) == 1 and isinstance(obj[0], dict):
+    try:
+        if result.finish_reason == "length":
+            raise ValueError("LLM output was truncated by max_tokens")
+        obj = _extract_json_payload(result.content)
+        if isinstance(obj, list):
+            if len(obj) == 1 and isinstance(obj[0], dict):
+                obj = obj[0]
+        if not isinstance(obj, dict):
+            raise ValueError("LLM output was not a JSON object")
+        obj = _coerce_chapter_card_payload(
+            obj,
+            source_id=source_id,
+            abs_no=abs_no,
+            volume_no=volume_no,
+        )
+        if not _has_craft_observations(obj):
+            raise ValueError("chapter_card craft_observations is empty")
+        return obj
+    except Exception as exc:
+        from bestseller.services.llm_closed_loop import (
+            build_repair_user_prompt,
+            findings_from_exception,
+        )
+
+        repair = await complete_text(
+            session,
+            settings,
+            LLMCompletionRequest(
+                logical_role="summarizer",
+                system_prompt=system,
+                user_prompt=build_repair_user_prompt(
+                    original_user_prompt=user,
+                    findings=findings_from_exception(exc),
+                    language=None,
+                ),
+                fallback_response=json.dumps(
+                    {
+                        "source_id": source_id,
+                        "abs_chapter_no": abs_no,
+                        "volume_no": volume_no,
+                        "chapter_function": "LLM unavailable — distillation fallback stub.",
+                        "state_changes": [],
+                        "reader_rewards": [],
+                        "open_hooks": [],
+                        "reusable_mechanisms": [],
+                        "non_reusable_specifics": [],
+                        "risk_flags": ["llm_fallback"],
+                        "confidence": 0.0,
+                    },
+                    ensure_ascii=False,
+                ),
+                prompt_template="distillation_chapter_card_repair",
+                prompt_version="v1",
+                project_id=None,
+                workflow_run_id=None,
+                metadata={
+                    "distillation_job_id": job_id,
+                    "distillation_source_id": source_id,
+                    "abs_chapter_no": abs_no,
+                    "semantic_repair_of": str(result.llm_run_id)
+                    if result.llm_run_id
+                    else None,
+                },
+                max_tokens_override=6144,
+            ),
+        )
+        if repair.provider == "fallback" or repair.finish_reason == "fallback":
+            raise
+        if repair.finish_reason == "length":
+            raise ValueError("repaired LLM output was truncated by max_tokens") from exc
+        obj = _extract_json_payload(repair.content)
+        if isinstance(obj, list) and len(obj) == 1 and isinstance(obj[0], dict):
             obj = obj[0]
-    if not isinstance(obj, dict):
-        obj = {
-            "source_id": source_id,
-            "abs_chapter_no": abs_no,
-            "volume_no": volume_no,
-            "chapter_function": "LLM output was not a JSON object; fallback applied.",
-            "state_changes": [],
-            "reader_rewards": [],
-            "open_hooks": [],
-            "reusable_mechanisms": [],
-            "non_reusable_specifics": [],
-            "risk_flags": ["llm_fallback", "llm_output_parse_fail"],
-            "confidence": 0.0,
-        }
-    obj = _coerce_chapter_card_payload(
-        obj,
-        source_id=source_id,
-        abs_no=abs_no,
-        volume_no=volume_no,
-    )
-    return obj
+        if not isinstance(obj, dict):
+            raise ValueError("repaired LLM output was not a JSON object") from exc
+        obj = _coerce_chapter_card_payload(
+            obj,
+            source_id=source_id,
+            abs_no=abs_no,
+            volume_no=volume_no,
+        )
+        if not _has_craft_observations(obj):
+            raise ValueError("repaired chapter_card craft_observations is empty") from exc
+        return obj
 
 
 async def extract_chapter_card_for_job(

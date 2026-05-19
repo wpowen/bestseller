@@ -37,8 +37,17 @@ from bestseller.services.projects import (
     get_project_by_slug,
     list_projects,
 )
+from bestseller.services.genre_creativity import (
+    creative_direction_to_user_hints,
+    get_genre_creative_direction,
+    get_genre_creativity_catalog_payload,
+)
 from bestseller.services.repair import run_project_repair
-from bestseller.services.writing_presets import load_writing_preset_catalog, validate_longform_scope
+from bestseller.services.writing_presets import (
+    get_genre_preset_dimensions,
+    load_writing_preset_catalog,
+    validate_longform_scope,
+)
 from bestseller.services.writing_profile import (
     get_project_writing_profile,
     sanitize_genre_story_overrides,
@@ -306,6 +315,8 @@ def _sanitize_preset_payload(item: dict[str, object]) -> dict[str, object]:
 def _public_writing_preset_catalog_payload() -> dict[str, object]:
     """Return a web-safe preset catalog without story-specific seed content."""
     catalog = load_writing_preset_catalog().model_dump(mode="json")
+    catalog["genre_dimensions"] = get_genre_preset_dimensions()
+    catalog["genre_creativity"] = get_genre_creativity_catalog_payload()
     catalog["platform_presets"] = [
         _sanitize_preset_payload(item) if isinstance(item, dict) else item
         for item in (catalog.get("platform_presets") or [])
@@ -1939,6 +1950,11 @@ class WebTaskManager:
             effective_premise = str(payload["premise"])
             effective_title = str(payload["title"])
             effective_writing_profile = payload.get("writing_profile")
+            user_hints = (
+                payload.get("user_hints")
+                if isinstance(payload.get("user_hints"), dict)
+                else None
+            )
             conception_brief: dict[str, object] | None = None
             conception_log: list[dict[str, object]] | None = None
             story_facets_obj = None
@@ -1966,6 +1982,7 @@ class WebTaskManager:
                                 primary_genre=genre_key,
                                 language=str(payload.get("language", "zh-CN")),
                                 genre_key=genre_key,
+                                user_hints=user_hints,
                             )
                             progress(
                                 "story_architect_complete",
@@ -1987,6 +2004,7 @@ class WebTaskManager:
                             settings,
                             genre_key=genre_key,
                             chapter_count=int(payload["target_chapters"]),
+                            user_hints=user_hints,
                             story_facets=story_facets_obj,
                             progress=progress,
                         )
@@ -2031,6 +2049,9 @@ class WebTaskManager:
                     )
                 if conception_log:
                     project_metadata["conception_log"] = conception_log
+                creative_brief = payload.get("creative_brief")
+                if isinstance(creative_brief, dict) and creative_brief:
+                    project_metadata["creative_brief"] = creative_brief
                 if payload.get("draft_mode"):
                     settings.quality.draft_mode = True
                 target_chapters = int(payload["target_chapters"])
@@ -2153,6 +2174,12 @@ class WebTaskManager:
         # For new projects, use AI conception to generate premise + writing_profile.
         # For resume, use the stored premise from the existing project.
         is_new_project = not resume_slug
+        creative_direction = (
+            get_genre_creative_direction(genre_key, str(payload.get("creative_key") or ""))
+            if is_new_project
+            else None
+        )
+        creative_hints = creative_direction_to_user_hints(creative_direction)
         premise = (
             f"A {genre_preset.genre} ({genre_preset.sub_genre}) novel: {genre_preset.description}"
             if is_en
@@ -2177,6 +2204,11 @@ class WebTaskManager:
             "writing_profile": sanitize_genre_story_overrides(
                 genre_preset.writing_profile_overrides
             ),
+            "creative_key": creative_direction.key if creative_direction else "",
+            "creative_brief": (
+                creative_direction.model_dump(mode="json") if creative_direction else {}
+            ),
+            "user_hints": creative_hints,
             # Enable AI conception for new projects (not resume)
             "_run_conception": is_new_project,
             "_genre_key": genre_key,
@@ -2186,6 +2218,11 @@ class WebTaskManager:
         task["quickstart_meta"] = {
             "genre_key": genre_key,
             "genre_name": genre_preset.name,
+            "heat_domains": genre_preset.heat_domains,
+            "reader_rewards": genre_preset.reader_rewards,
+            "narrative_drives": genre_preset.narrative_drives,
+            "creative_key": creative_direction.key if creative_direction else "",
+            "creative_title": creative_direction.title if creative_direction else "",
             "chapter_count": chapter_count,
             "target_words": target_words,
         }
@@ -3623,19 +3660,54 @@ async def _regenerate_listing_module(
 
     # ── Parse per module kind ───────────────────────────────────────────
     kind = str(spec["kind"])
-    parsed_value: object
-    if kind == "text":
-        text = raw.strip().strip("\"'")
-        max_chars = int(spec.get("max_chars") or 0)
-        if max_chars and len(text) > max_chars:
-            text = text[: max_chars - 1] + "…"
-        parsed_value = text
-    elif kind == "json_list":
-        parsed_value = _parse_json_list_response(raw)
-    elif kind == "json_titles":
-        parsed_value = _parse_json_titles_response(raw)
-    else:
+
+    def _parse_listing_module(raw_value: str) -> object:
+        if kind == "text":
+            text = raw_value.strip().strip("\"'")
+            max_chars = int(spec.get("max_chars") or 0)
+            if max_chars and len(text) > max_chars:
+                text = text[: max_chars - 1] + "…"
+            return text
+        if kind == "json_list":
+            return _parse_json_list_response(raw_value)
+        if kind == "json_titles":
+            return _parse_json_titles_response(raw_value)
         raise RuntimeError(f"unknown module kind: {kind}")
+
+    try:
+        parsed_value = _parse_listing_module(raw)
+    except Exception as exc:
+        from bestseller.services.llm_closed_loop import build_repair_user_prompt, findings_from_exception
+
+        findings = findings_from_exception(exc, default_path=f"listing.{module}")
+        repair_request = request.model_copy(
+            update={
+                "user_prompt": build_repair_user_prompt(
+                    original_user_prompt=user_prompt,
+                    findings=findings,
+                    language=getattr(project, "language", None),
+                ),
+                "prompt_template": f"listing.regenerate.{module}.repair",
+                "metadata": {
+                    "listing_module": module,
+                    "project_slug": project_slug,
+                    "semantic_repair_of": str(result.llm_run_id) if result.llm_run_id else None,
+                    "repair_findings": [finding.to_dict() for finding in findings],
+                },
+            }
+        )
+        async with session_scope(settings) as repair_session:
+            repair_result = await complete_text(repair_session, settings, repair_request)
+        repair_raw = (repair_result.content or "").strip()
+        if not repair_raw or repair_raw == "REGEN_FAILED":
+            raise RuntimeError("LLM listing repair returned empty content") from exc
+        try:
+            parsed_value = _parse_listing_module(repair_raw)
+            raw = repair_raw
+        except Exception as repair_exc:
+            raise RuntimeError(
+                f"LLM listing repair failed validation for module '{module}'"
+            ) from repair_exc
 
     # ── Persist as file override ────────────────────────────────────────
     listing_dir = Path(settings.output.base_dir).resolve() / project_slug / "listing"

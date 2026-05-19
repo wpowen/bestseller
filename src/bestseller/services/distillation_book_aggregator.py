@@ -102,6 +102,10 @@ def infer_aggregate_key(manifest: dict[str, Any]) -> str:
         return "otherworld-cross-system"
     if re.search(r"都市|现实|现代|职场", hint):
         return "urban-contemporary"
+    if re.search(r"种田|基建|经营|领地|基地|base-building|settlement|management", hint, re.I):
+        return "base-building"
+    if re.search(r"东方美学|国风|水墨|志怪|eastern aesthetic", hint, re.I):
+        return "eastern-aesthetic"
     if re.search(r"玄幻|仙侠|修真|修仙|东方", hint):
         return "eastern-progression-fantasy"
     if re.search(r"科幻|星际|赛博", hint):
@@ -298,13 +302,35 @@ def _coerce_volume_card(
         "failure_modes": [],
     }
     row = _coerce_dict_payload(obj, source_id=source_id, stage="volume_card", defaults=default)
-    row["volume_no"] = int(row.get("volume_no") or volume_no)
+    try:
+        row["volume_no"] = int(row.get("volume_no") or volume_no)
+    except (TypeError, ValueError):
+        row["volume_no"] = int(volume_no)
     row["chapter_range"] = str(row.get("chapter_range") or chapter_range)
     row.setdefault("arc_function", default["arc_function"])
     row.setdefault("dominant_engine", default["dominant_engine"])
     row.setdefault("state_progression", default["state_progression"])
-    if not isinstance(row.get("turning_points"), list):
-        row["turning_points"] = []
+    raw_turning_points = row.get("turning_points")
+    normalised_turning_points: list[dict[str, Any]] = []
+    if isinstance(raw_turning_points, list):
+        for item in raw_turning_points:
+            if not isinstance(item, dict):
+                continue
+            fn = str(item.get("function") or item.get("role") or item.get("description") or "").strip()
+            if not fn:
+                continue
+            raw_no = item.get("abs_chapter_no") or item.get("chapter_no") or item.get("chapter")
+            try:
+                abs_no = int(raw_no)
+            except (TypeError, ValueError):
+                match = re.search(r"\d+", str(raw_no or ""))
+                if not match:
+                    continue
+                abs_no = int(match.group(0))
+            if abs_no < 1:
+                continue
+            normalised_turning_points.append({"abs_chapter_no": abs_no, "function": fn})
+    row["turning_points"] = normalised_turning_points
     if not isinstance(row.get("reusable_mechanisms"), list):
         row["reusable_mechanisms"] = []
     if not isinstance(row.get("failure_modes"), list):
@@ -641,6 +667,8 @@ async def complete_distillation_json(
     """Call ``complete_text`` and parse JSON with bounded retries on parse/validation."""
 
     last_exc: BaseException | None = None
+    effective_user_prompt = user_prompt
+    semantic_repair_history: list[dict[str, Any]] = []
     for attempt in range(max(1, retries)):
         try:
             result = await complete_text(
@@ -649,24 +677,47 @@ async def complete_distillation_json(
                 LLMCompletionRequest(
                     logical_role=logical_role,
                     system_prompt=system_prompt,
-                    user_prompt=user_prompt,
+                    user_prompt=effective_user_prompt,
                     fallback_response="{}",
                     prompt_template=prompt_template,
                     prompt_version="v1",
                     project_id=None,
                     workflow_run_id=None,
-                    metadata=metadata or {},
+                    metadata={
+                        **(metadata or {}),
+                        "attempt": attempt + 1,
+                        "semantic_repair_history": semantic_repair_history[-3:],
+                    },
                     max_tokens_override=max_tokens,
                 ),
             )
             return _extract_json_payload(result.content)
         except Exception as exc:  # noqa: BLE001
+            from bestseller.services.llm_closed_loop import (
+                build_repair_user_prompt,
+                findings_from_exception,
+            )
+
             last_exc = exc
+            findings = findings_from_exception(exc)
+            semantic_repair_history.append(
+                {
+                    "attempt": attempt + 1,
+                    "error_type": type(exc).__name__,
+                    "findings": [finding.to_dict() for finding in findings[:8]],
+                }
+            )
+            effective_user_prompt = build_repair_user_prompt(
+                original_user_prompt=user_prompt,
+                findings=findings,
+                language=None,
+            )
             logger.warning(
-                "distillation LLM parse/call failed (attempt %s/%s): %s",
+                "distillation LLM parse/call failed (attempt %s/%s): %s; diagnostics=%s",
                 attempt + 1,
                 retries,
                 exc,
+                [finding.code for finding in findings[:6]],
             )
             await asyncio.sleep(min(8.0, 1.5 * (2**attempt)))
     assert last_exc is not None
@@ -789,7 +840,10 @@ async def aggregate_source_package_async(
             chapter_range=f"{lo}-{hi}",
         )
         raw["source_id"] = source_id
-        raw["volume_no"] = int(raw.get("volume_no") or vol_idx)
+        try:
+            raw["volume_no"] = int(raw.get("volume_no") or vol_idx)
+        except (TypeError, ValueError):
+            raw["volume_no"] = int(vol_idx)
         raw["chapter_range"] = str(raw.get("chapter_range") or f"{lo}-{hi}")
         validate_volume_card(raw)
         volume_rows.append(raw)

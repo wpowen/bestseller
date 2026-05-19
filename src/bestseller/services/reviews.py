@@ -4288,6 +4288,138 @@ async def rewrite_chapter_from_task(
     )
     if duplicate_gate_findings:
         quality_gate_outcome = "blocked"
+    if (
+        quality_gate_outcome == "blocked"
+        and settings is not None
+        and chapter_context is not None
+    ):
+        try:
+            from bestseller.services.llm_closed_loop import (
+                LLMGateFinding,
+                build_repair_user_prompt,
+            )
+
+            repair_findings = [
+                LLMGateFinding(
+                    code="CHAPTER_REWRITE_QUALITY_GATE_BLOCKED",
+                    severity="critical",
+                    path="chapter_rewrite_candidate",
+                    message="The rewritten chapter candidate was rejected by the post-rewrite quality gate.",
+                    expected="A publishable chapter rewrite that passes quality, duplication, canon, and length gates.",
+                    actual=f"quality_gate_outcome={quality_gate_outcome}",
+                    repair_action=(
+                        "Rewrite the chapter candidate again. Preserve the requested rewrite intent, "
+                        "but fix the gate-blocking problems before returning final prose."
+                    ),
+                )
+            ]
+            for index, finding in enumerate(duplicate_gate_findings[:8], start=1):
+                repair_findings.append(
+                    LLMGateFinding(
+                        code="CHAPTER_REWRITE_DUPLICATE_GATE",
+                        severity="critical",
+                        path=f"duplicate_gate_findings[{index}]",
+                        message=str(finding),
+                        expected="No duplicate or near-duplicate paragraph blocks in the rewritten chapter.",
+                        actual=str(finding)[:240],
+                        repair_action=(
+                            "Remove repeated or near-repeated paragraphs. Replace repetition with fresh "
+                            "reader-visible action, consequence, or transition."
+                        ),
+                    )
+                )
+            repair_user_prompt = build_repair_user_prompt(
+                original_user_prompt=user_prompt,
+                findings=repair_findings,
+                language=getattr(project, "language", None),
+            )
+            repair_completion = await complete_text(
+                session,
+                settings,
+                LLMCompletionRequest(
+                    logical_role="editor",
+                    system_prompt=system_prompt,
+                    user_prompt=repair_user_prompt,
+                    fallback_response=fallback_content,
+                    prompt_template="chapter_rewrite_repair",
+                    prompt_version="1.0",
+                    project_id=project.id,
+                    workflow_run_id=workflow_run_id,
+                    step_run_id=step_run_id,
+                    max_tokens_override=prose_output_max_tokens_for_target(
+                        chapter.target_word_count,
+                        language=_project_language(project),
+                    ),
+                    metadata={
+                        "project_slug": project.slug,
+                        "chapter_number": chapter.chapter_number,
+                        "rewrite_task_id": str(rewrite_task.id),
+                        "semantic_repair_of": str(llm_run_id) if llm_run_id else None,
+                        "repair_findings": [
+                            item.to_dict() for item in repair_findings[:12]
+                        ],
+                    },
+                ),
+            )
+            repaired_content = (
+                sanitize_novel_markdown_content(repair_completion.content)
+                or fallback_content
+            )
+            repaired_content = strip_scaffolding_echoes(repaired_content)
+            if has_meta_leak(repaired_content):
+                repaired_content = await validate_and_clean_novel_content(
+                    session,
+                    settings,
+                    repaired_content,
+                    project_id=project.id,
+                    workflow_run_id=workflow_run_id,
+                    step_run_id=step_run_id,
+                )
+            try:
+                from bestseller.services.deduplication import (
+                    clean_meta_text_markers,
+                    detect_intra_chapter_repetition,
+                    remove_intra_chapter_duplicates_paraphrase,
+                )
+
+                repaired_content, _meta_removed = clean_meta_text_markers(repaired_content)
+                _dup_findings = detect_intra_chapter_repetition(repaired_content)
+                if _dup_findings:
+                    repaired_content, _removed = remove_intra_chapter_duplicates_paraphrase(
+                        repaired_content
+                    )
+            except Exception:
+                logger.debug("Post-rewrite repair dedup failed (non-fatal)", exc_info=True)
+            repaired_duplicate_findings = await _collect_post_assembly_duplicate_findings(
+                session,
+                project=project,
+                chapter=chapter,
+                content_md=repaired_content,
+            )
+            repaired_quality_outcome = await _evaluate_chapter_quality_gate(
+                session=session,
+                project=project,
+                chapter_number=chapter_number,
+                content=repaired_content,
+            )
+            if repaired_duplicate_findings:
+                repaired_quality_outcome = "blocked"
+            if repaired_quality_outcome != "blocked":
+                content_md = repaired_content
+                model_name = repair_completion.model_name
+                llm_run_id = repair_completion.llm_run_id
+                generation_mode = repair_completion.provider
+                duplicate_gate_findings = repaired_duplicate_findings
+                word_count = count_words(content_md)
+                quality_gate_outcome = repaired_quality_outcome
+            else:
+                duplicate_gate_findings = repaired_duplicate_findings or duplicate_gate_findings
+        except Exception:
+            logger.warning(
+                "rewrite_chapter %d: semantic repair pass failed; keeping blocked candidate",
+                chapter.chapter_number,
+                exc_info=True,
+            )
     quality_gate_rejected_current_promotion = quality_gate_outcome == "blocked"
     next_version = int(
         (

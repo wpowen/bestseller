@@ -174,12 +174,44 @@ async def generate_linear_arc_summary(
         payload = json.loads(completion.content)
         if not isinstance(payload, dict):
             payload = fallback
-    except Exception:
+    except Exception as exc:
+        try:
+            from bestseller.services.llm_closed_loop import (
+                build_repair_user_prompt,
+                findings_from_exception,
+            )
+
+            repair_completion = await complete_text(
+                session,
+                settings,
+                LLMCompletionRequest(
+                    logical_role="planner",
+                    system_prompt=system_prompt,
+                    user_prompt=build_repair_user_prompt(
+                        original_user_prompt=user_prompt,
+                        findings=findings_from_exception(exc),
+                        language=project.language,
+                    ),
+                    fallback_response=json.dumps(fallback, ensure_ascii=False),
+                    prompt_template="linear_arc_summary_repair",
+                    prompt_version="1.0",
+                    project_id=project.id,
+                    metadata={
+                        "arc_start": arc_chapter_start,
+                        "arc_end": arc_chapter_end,
+                        "semantic_repair": True,
+                    },
+                ),
+            )
+            payload = json.loads(repair_completion.content)
+            if not isinstance(payload, dict):
+                payload = fallback
+        except Exception:
+            payload = fallback
         logger.warning(
             "Arc summary LLM failed for chapters %d-%d; using fallback",
             arc_chapter_start, arc_chapter_end, exc_info=True,
         )
-        payload = fallback
 
     # ── Cumulative thread tracking ──────────────────────────────────────
     # Carry forward unresolved threads and open clues from the previous
@@ -447,12 +479,40 @@ async def generate_linear_world_snapshot(
         payload = json.loads(completion.content)
         if not isinstance(payload, dict):
             payload = fallback
-    except Exception:
+    except Exception as exc:
+        try:
+            from bestseller.services.llm_closed_loop import (
+                build_repair_user_prompt,
+                findings_from_exception,
+            )
+
+            repair_completion = await complete_text(
+                session,
+                settings,
+                LLMCompletionRequest(
+                    logical_role="planner",
+                    system_prompt=system_prompt,
+                    user_prompt=build_repair_user_prompt(
+                        original_user_prompt=user_prompt,
+                        findings=findings_from_exception(exc),
+                        language=project.language,
+                    ),
+                    fallback_response=json.dumps(fallback, ensure_ascii=False),
+                    prompt_template="linear_world_snapshot_repair",
+                    prompt_version="1.0",
+                    project_id=project.id,
+                    metadata={"chapter_number": chapter_number, "semantic_repair": True},
+                ),
+            )
+            payload = json.loads(repair_completion.content)
+            if not isinstance(payload, dict):
+                payload = fallback
+        except Exception:
+            payload = fallback
         logger.warning(
             "World snapshot LLM failed for chapter %d; using fallback",
             chapter_number, exc_info=True,
         )
-        payload = fallback
 
     return payload
 

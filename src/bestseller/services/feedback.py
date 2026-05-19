@@ -153,13 +153,65 @@ async def extract_chapter_feedback(
         return result
 
     # 3. Parse JSON response tolerantly
-    payload = _parse_feedback_payload(llm_result.content)
+    payload = _parse_feedback_payload(llm_result.content, empty_is_failure=True)
     if payload is None:
         logger.warning(
-            "Failed to parse feedback payload for chapter %d", chapter_number
+            "Failed to parse feedback payload for chapter %d; retrying with diagnostics",
+            chapter_number,
         )
-        result.extraction_status = "parse_error"
-        return result
+        try:
+            from bestseller.services.llm_closed_loop import (
+                LLMGateFinding,
+                build_repair_user_prompt,
+            )
+
+            retry_prompt = build_repair_user_prompt(
+                original_user_prompt=user_prompt,
+                findings=[
+                    LLMGateFinding(
+                        code="FEEDBACK_JSON_PARSE_ERROR",
+                        severity="major",
+                        path="$",
+                        message="Chapter feedback extraction did not return parseable JSON.",
+                        expected="A JSON object matching ChapterFeedbackPayload.",
+                        actual="Unparseable or non-object response.",
+                        repair_action=(
+                            "Return only JSON. Do not include prose, markdown fences, comments, "
+                            "or explanations."
+                        ),
+                    )
+                ],
+                language=language,
+            )
+            retry_request = LLMCompletionRequest(
+                logical_role="editor",
+                system_prompt=system_prompt,
+                user_prompt=retry_prompt,
+                fallback_response=fallback,
+                prompt_template="chapter_feedback_extraction_repair",
+                prompt_version="1.0",
+                project_id=project_id,
+                workflow_run_id=workflow_run_id,
+                metadata={
+                    "chapter_number": chapter_number,
+                    "semantic_repair_of": str(llm_result.llm_run_id)
+                    if llm_result.llm_run_id
+                    else None,
+                },
+            )
+            retry_result = await complete_text(session, settings, retry_request)
+            result.llm_run_id = retry_result.llm_run_id or result.llm_run_id
+            payload = _parse_feedback_payload(retry_result.content)
+        except Exception:
+            logger.warning(
+                "Feedback extraction repair failed for chapter %d",
+                chapter_number,
+                exc_info=True,
+            )
+            payload = None
+        if payload is None:
+            result.extraction_status = "parse_error"
+            return result
 
     total_items = (
         len(payload.character_states)
@@ -471,7 +523,11 @@ def _compact_knowledge_summary(knowledge_state: dict[str, Any] | None) -> str:
 # ---------------------------------------------------------------------------
 
 
-def _parse_feedback_payload(text: str) -> ChapterFeedbackPayload | None:
+def _parse_feedback_payload(
+    text: str,
+    *,
+    empty_is_failure: bool = False,
+) -> ChapterFeedbackPayload | None:
     """Tolerant parser that extracts a ChapterFeedbackPayload from LLM output.
 
     Tries multiple strategies:
@@ -481,6 +537,8 @@ def _parse_feedback_payload(text: str) -> ChapterFeedbackPayload | None:
     4. Return empty payload on total failure
     """
     stripped = text.strip()
+    if not stripped:
+        return None if empty_is_failure else ChapterFeedbackPayload()
 
     # Strategy 1: direct parse
     parsed = _try_json_loads(stripped)
@@ -502,9 +560,9 @@ def _parse_feedback_payload(text: str) -> ChapterFeedbackPayload | None:
         if parsed is not None:
             return _validate_payload(parsed)
 
-    # Strategy 4: empty fallback
-    logger.warning("All JSON parse strategies failed, returning empty payload")
-    return ChapterFeedbackPayload()
+    # Strategy 4: signal parse failure to caller so it can retry with diagnostics.
+    logger.warning("All JSON parse strategies failed")
+    return None
 
 
 def _try_json_loads(text: str) -> dict[str, Any] | None:

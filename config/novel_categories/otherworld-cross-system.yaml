@@ -1,0 +1,236 @@
+key: otherworld-cross-system
+name: "异界跨体系类"
+name_en: "Otherworld Cross-System"
+reader_promise_zh: >
+  主角进入陌生规则体系后，必须把原世界知识、系统约束或身份错位转化为生存资本。
+  读者买的是"看主角理解异界规则、利用规则差、承担暴露代价并逐步撬动世界"。
+reader_promise_en: >
+  The protagonist enters an unfamiliar rule system and must convert old-world knowledge,
+  system constraints, or identity displacement into survival capital. Readers come for
+  rule-gap exploitation, identity-risk pressure, and visible world reaction.
+
+challenge_evolution_pathway:
+  - phase_key: arrival_misread
+    phase_name_zh: "初入误读"
+    phase_name_en: "Arrival Misread"
+    description_zh: "主角被投放到陌生世界，旧经验暂时有用但也会制造危险误判。"
+    description_en: "The protagonist arrives in an unfamiliar world; old knowledge helps but also creates dangerous misreads."
+    typical_force_types: ["environment", "systemic"]
+    volume_goal_template_zh: "{protagonist}必须在{force_name}代表的异界规则下活下来，并确认旧经验哪些可用、哪些会害死自己。"
+    volume_goal_template_en: "{protagonist} must survive under the otherworld rules represented by {force_name}, identifying which old assumptions help and which can kill."
+    volume_climax_template_zh: "{protagonist}用一次小规模规则套利脱身，但因此暴露出与本地人不同的异常。"
+    volume_climax_template_en: "{protagonist} escapes through a small rule-gap exploit, but exposes an abnormal difference from locals."
+    volume_obstacle_template_zh: "{force_name}让本地常识与主角旧经验发生冲突，主角无法照搬原世界逻辑。"
+    volume_obstacle_template_en: "{force_name} makes local common sense conflict with the protagonist's old-world logic."
+    volume_resolution_template_zh: "主角建立第一份异界生存手册，同时背上一笔身份或规则债务。"
+    volume_resolution_template_en: "The protagonist builds a first survival manual while taking on an identity or rule debt."
+    chapter_conflict_templates:
+      setup_zh: "{protagonist}发现{force_name}的规则和旧经验不兼容，第一次误判已经带来代价。"
+      setup_en: "{protagonist} discovers {force_name}'s rules conflict with old assumptions, and the first misread has a cost."
+      investigation_zh: "{protagonist}用小风险测试本地规则边界，寻找可套利的缝隙。"
+      investigation_en: "{protagonist} tests local rule boundaries at small risk, looking for exploitable gaps."
+      pressure_zh: "本地势力开始注意到{protagonist}的异常，错误身份随时可能暴露。"
+      pressure_en: "Local forces notice {protagonist}'s abnormality; the false identity may be exposed."
+      reversal_zh: "{protagonist}把一次误读反向利用，暂时制造出本地人无法解释的优势。"
+      reversal_en: "{protagonist} weaponizes a misread, creating a temporary advantage locals cannot explain."
+      climax_zh: "{protagonist}必须在暴露身份和失去机会之间选择。"
+      climax_en: "{protagonist} must choose between identity exposure and losing the opportunity."
+
+  - phase_key: rule_arbitrage
+    phase_name_zh: "规则套利"
+    phase_name_en: "Rule Arbitrage"
+    description_zh: "主角开始主动理解两套规则的差异，把知识、系统任务或身份错位转为资源。"
+    description_en: "The protagonist actively maps rule differences and converts knowledge, system tasks, or identity displacement into resources."
+    typical_force_types: ["systemic", "faction"]
+    volume_goal_template_zh: "{protagonist}需要利用{force_name}的规则漏洞获取关键资源，同时避免套利行为被本地权力发现。"
+    volume_goal_template_en: "{protagonist} must exploit {force_name}'s rule gaps for key resources while hiding the arbitrage from local powers."
+    volume_climax_template_zh: "{protagonist}完成第一次成体系的规则套利，但套利收益引来真正拥有者或监管者。"
+    volume_climax_template_en: "{protagonist} completes a systematic exploit, but the profit attracts its rightful owner or regulator."
+    volume_obstacle_template_zh: "{force_name}限制了规则漏洞的使用次数、代价或可见度。"
+    volume_obstacle_template_en: "{force_name} limits how often, how cheaply, or how invisibly the gap can be used."
+    volume_resolution_template_zh: "主角获得可复制的异界收益模型，也确认每次套利都会增加暴露成本。"
+    volume_resolution_template_en: "The protagonist gains a repeatable profit model and learns every exploit raises exposure cost."
+    chapter_conflict_templates:
+      setup_zh: "{protagonist}确认一条可套利的规则差，但它的代价尚不清楚。"
+      setup_en: "{protagonist} confirms a rule gap, but its cost remains unclear."
+      investigation_zh: "{protagonist}拆解{force_name}的规则，寻找收益和暴露之间的平衡点。"
+      investigation_en: "{protagonist} dissects {force_name}'s rules to balance profit and exposure."
+      pressure_zh: "套利收益开始留下痕迹，{force_name}或本地势力逼近源头。"
+      pressure_en: "The exploit leaves traces; {force_name} or local powers close in on the source."
+      reversal_zh: "{protagonist}发现追查者也误读了规则，可以反向设局。"
+      reversal_en: "{protagonist} realizes the pursuer also misunderstands the rule and can be baited."
+      climax_zh: "{protagonist}用规则差完成反制，但必须支付隐藏代价。"
+      climax_en: "{protagonist} counters through the rule gap but pays a hidden cost."
+
+  - phase_key: identity_debt
+    phase_name_zh: "身份债务"
+    phase_name_en: "Identity Debt"
+    description_zh: "主角的宿主身份、系统身份或外来者身份开始反噬，迫使其偿还关系、阵营或命运债务。"
+    description_en: "The host/system/outsider identity starts biting back, forcing repayment of relational, factional, or fate debts."
+    typical_force_types: ["character", "faction", "internal"]
+    volume_goal_template_zh: "{protagonist}必须处理{force_name}牵出的身份债务，否则此前收益会反噬为致命暴露。"
+    volume_goal_template_en: "{protagonist} must handle the identity debt triggered by {force_name}, or prior gains will turn into fatal exposure."
+    volume_climax_template_zh: "{protagonist}公开承担一部分身份代价，换取继续行动的合法位置。"
+    volume_climax_template_en: "{protagonist} openly accepts part of the identity cost to gain a legitimate foothold."
+    volume_obstacle_template_zh: "{force_name}证明主角不能只拿身份便利，却不承担身份关系和历史后果。"
+    volume_obstacle_template_en: "{force_name} proves the protagonist cannot take identity benefits without historical and relational consequences."
+    volume_resolution_template_zh: "主角从伪装求生转为有限承认身份，获得新盟友也留下新把柄。"
+    volume_resolution_template_en: "The protagonist moves from disguise to limited identity acceptance, gaining allies and new vulnerabilities."
+    chapter_conflict_templates:
+      setup_zh: "旧身份的人情、仇怨或任务找上{protagonist}，伪装不再足够。"
+      setup_en: "Old identity obligations, grudges, or tasks find {protagonist}; disguise is no longer enough."
+      investigation_zh: "{protagonist}追查身份债务的来源，判断哪些必须偿还、哪些可以重写。"
+      investigation_en: "{protagonist} traces the debt's origin, deciding which debts must be paid and which can be rewritten."
+      pressure_zh: "{force_name}用身份债务逼迫{protagonist}站队或暴露。"
+      pressure_en: "{force_name} uses the identity debt to force allegiance or exposure."
+      reversal_zh: "{protagonist}把身份债务转化为新的合法性或盟约。"
+      reversal_en: "{protagonist} converts identity debt into legitimacy or alliance."
+      climax_zh: "{protagonist}必须承认一部分真相，才能阻止身份彻底崩塌。"
+      climax_en: "{protagonist} must admit part of the truth to stop the identity from collapsing."
+
+  - phase_key: authority_attention
+    phase_name_zh: "高阶注视"
+    phase_name_en: "Higher Authority Attention"
+    description_zh: "主角的跨体系行为引起世界高阶权力、系统源头或规则监管者注意。"
+    description_en: "The protagonist's cross-system behavior draws attention from higher authorities, system sources, or rule regulators."
+    typical_force_types: ["faction", "systemic", "environment"]
+    volume_goal_template_zh: "{protagonist}必须在{force_name}的高阶注视下继续行动，避免被定义为世界异常。"
+    volume_goal_template_en: "{protagonist} must keep moving under {force_name}'s higher attention without being classified as a world anomaly."
+    volume_climax_template_zh: "{protagonist}以可解释的本地身份遮蔽跨体系真相，暂时骗过或说服高阶权力。"
+    volume_climax_template_en: "{protagonist} masks the cross-system truth behind a local explanation, temporarily deceiving or persuading higher power."
+    volume_obstacle_template_zh: "{force_name}拥有审查规则异常的能力，主角不能再低成本套利。"
+    volume_obstacle_template_en: "{force_name} can audit rule anomalies; low-cost arbitrage is no longer possible."
+    volume_resolution_template_zh: "主角获得更大舞台的通行证，同时进入更严格的世界审计。"
+    volume_resolution_template_en: "The protagonist gains access to a larger stage while entering stricter world audit."
+    chapter_conflict_templates:
+      setup_zh: "{protagonist}发现自己的套利痕迹已经进入{force_name}的视野。"
+      setup_en: "{protagonist} realizes the exploit traces have reached {force_name}'s attention."
+      investigation_zh: "{protagonist}寻找能让异常合理化的本地解释或替罪机制。"
+      investigation_en: "{protagonist} looks for a local explanation or scapegoat mechanism to normalize the anomaly."
+      pressure_zh: "{force_name}收紧审查，主角每一步都可能暴露跨体系真相。"
+      pressure_en: "{force_name} tightens the audit; every move risks exposing the cross-system truth."
+      reversal_zh: "{protagonist}发现高阶权力内部也存在规则盲区。"
+      reversal_en: "{protagonist} discovers blind spots inside the higher authority's own rules."
+      climax_zh: "{protagonist}在高阶审查面前完成一次合法化表演。"
+      climax_en: "{protagonist} performs a convincing legitimization under higher audit."
+
+protagonist_archetypes:
+  - archetype_key: rule_gap_survivor
+    name_zh: "规则差求生者"
+    name_en: "Rule-Gap Survivor"
+    core_wound_zh: "被抛入不属于自己的世界，只能靠理解规则差活下来。"
+    core_wound_en: "Thrown into a world that is not theirs, surviving by understanding rule gaps."
+    external_goal_template_zh: "{name}必须把旧知识和本地规则差转化为可持续生存资本。"
+    external_goal_template_en: "{name} must convert old knowledge and local rule gaps into sustainable survival capital."
+    internal_need_template_zh: "{name}需要从只想逃避身份，转向承担身份带来的关系和代价。"
+    internal_need_template_en: "{name} must move from fleeing identity to accepting its relationships and costs."
+    arc_trajectory_zh: "从伪装求生到主动定义身份，从小套利到承担世界级后果。"
+    arc_trajectory_en: "From disguised survival to active identity definition; from small exploits to world-scale consequences."
+    flaw_zh: "过度依赖规则漏洞，低估本地人的情感、权力和历史。"
+    flaw_en: "Over-relies on rule loopholes and underestimates local emotions, power, and history."
+    strength_zh: "观察力强，能把两套体系的差异转化为行动方案。"
+    strength_en: "Strong observer who turns differences between systems into action plans."
+
+  - archetype_key: debt_bearing_outsider
+    name_zh: "背债外来者"
+    name_en: "Debt-Bearing Outsider"
+    core_wound_zh: "继承了不属于自己的身份，也继承了这份身份留下的债务。"
+    core_wound_en: "Inherited an identity that was not theirs, along with its debts."
+    external_goal_template_zh: "{name}必须在不暴露根本真相的情况下偿还或改写身份债务。"
+    external_goal_template_en: "{name} must repay or rewrite identity debts without exposing the root truth."
+    internal_need_template_zh: "{name}需要承认身份不是工具，而是会影响他人的承诺。"
+    internal_need_template_en: "{name} must accept identity as a promise affecting others, not a tool."
+    arc_trajectory_zh: "从借壳行动到承担身份后果，最终让新身份成为主动选择。"
+    arc_trajectory_en: "From borrowed-shell action to bearing identity consequences, finally choosing the new identity."
+    flaw_zh: "把人际债务当作可计算成本，容易伤害本地盟友。"
+    flaw_en: "Treats relational debts as calculable costs, easily hurting local allies."
+    strength_zh: "能在身份缝隙中寻找合法性，善于把被动债务转为盟约。"
+    strength_en: "Finds legitimacy in identity cracks and turns passive debts into alliances."
+
+world_rule_templates:
+  - rule_template_key: cross_system_mapping
+    name_zh: "跨体系映射规则"
+    name_en: "Cross-System Mapping Rule"
+    description_zh: "旧世界知识、系统面板或外来能力只能部分映射到本地规则，不能全量通用。"
+    description_en: "Old-world knowledge, system panels, or outsider abilities only partially map to local rules."
+    story_consequence_zh: "{protagonist}每次使用旧经验都必须先验证本地边界，否则会产生误判代价。"
+    story_consequence_en: "Every use of old assumptions requires local validation, or misread costs follow."
+    exploitation_potential_zh: "映射不完全的地方就是套利空间，也是暴露风险来源。"
+    exploitation_potential_en: "Incomplete mapping creates arbitrage opportunities and exposure risks."
+
+  - rule_template_key: exposure_cost
+    name_zh: "异常暴露代价"
+    name_en: "Exposure Cost"
+    description_zh: "跨体系行为会留下异常痕迹，收益越大，越容易被本地高阶权力发现。"
+    description_en: "Cross-system actions leave anomalous traces; the larger the profit, the easier higher powers detect it."
+    story_consequence_zh: "{protagonist}不能无限低成本套利，每次收益都要增加审查压力或身份风险。"
+    story_consequence_en: "{protagonist} cannot exploit endlessly at low cost; every gain raises audit pressure or identity risk."
+    exploitation_potential_zh: "暴露代价迫使主角设计掩护、替罪机制或合法化叙事。"
+    exploitation_potential_en: "Exposure cost forces cover stories, scapegoat mechanisms, or legitimization narratives."
+
+  - rule_template_key: identity_debt
+    name_zh: "身份债务规则"
+    name_en: "Identity Debt Rule"
+    description_zh: "宿主身份、系统身份或外来者身份会携带关系债、阵营债和历史债。"
+    description_en: "Host/system/outsider identity carries relational, factional, and historical debts."
+    story_consequence_zh: "{protagonist}不能只享受身份便利，必须处理身份留下的承诺、仇怨和义务。"
+    story_consequence_en: "{protagonist} cannot enjoy identity benefits without handling promises, grudges, and obligations."
+    exploitation_potential_zh: "身份债务既是危机，也是获得本地合法性和盟友的入口。"
+    exploitation_potential_en: "Identity debts are crises and entry points for local legitimacy and allies."
+
+quality_traps:
+  - trap_key: all_powerful_system
+    description_zh: "系统或旧知识万能：主角不需要理解本地规则就能解决问题。"
+    description_en: "All-powerful system or old knowledge: protagonist solves problems without understanding local rules."
+    severity: critical
+
+  - trap_key: otherworld_reskin
+    description_zh: "异界只换皮：世界规则、文化、权力结构不真正影响主角行动。"
+    description_en: "Otherworld as reskin: local rules, culture, and power structures do not affect actions."
+    severity: critical
+
+  - trap_key: costless_arbitrage
+    description_zh: "规则套利没有暴露代价，收益不断增加但世界没有审查或反噬。"
+    description_en: "Costless arbitrage: gains keep increasing with no exposure, audit, or backlash."
+    severity: critical
+
+  - trap_key: identity_debt_ignored
+    description_zh: "身份债务被忽略：主角借用身份却不承担关系、阵营和历史后果。"
+    description_en: "Ignored identity debt: protagonist borrows identity without relational, factional, or historical consequences."
+    severity: warning
+
+disqualifiers:
+  - rule_zh: "跨体系能力无边界、无代价、无本地解释——一票否决。"
+    rule_en: "Cross-system ability has no boundary, cost, or local explanation — automatic disqualification."
+    severity: fatal
+
+  - rule_zh: "异界规则不改变主角选择，连续三章只靠旧知识碾压。"
+    rule_en: "Otherworld rules do not change choices; protagonist steamrolls with old knowledge for three chapters."
+    severity: critical
+
+  - rule_zh: "身份暴露风险长期不推进，身份债只被提及不被兑现。"
+    rule_en: "Identity exposure risk stagnates; identity debts are mentioned but never paid off."
+    severity: critical
+
+tolerance_ranges:
+  exposition_density:
+    min: 0.45
+    max: 0.65
+    note_zh: "异界规则需要解释，但必须通过试错、交易、误判和代价推进。"
+    note_en: "Otherworld rules need explanation, but through testing, exchange, misread, and cost."
+  system_convenience:
+    min: 0.15
+    max: 0.45
+    note_zh: "系统可以给入口，不能替主角完成判断。"
+    note_en: "The system may provide entry points, not substitute protagonist judgment."
+  identity_pressure:
+    min: 0.6
+    max: 0.9
+    note_zh: "身份风险必须持续改变关系、行动空间和阵营压力。"
+    note_en: "Identity risk must keep changing relationships, action space, and faction pressure."
+
+signal_keywords:
+  conflict_terms_zh: ["误读", "暴露", "审查", "身份债", "规则差", "套利", "反噬", "宿主"]
+  conflict_terms_en: ["misread", "exposure", "audit", "identity debt", "rule gap", "arbitrage", "backlash", "host identity"]
+  hook_terms_zh: ["异常痕迹", "新规则", "系统任务", "身份债", "高阶注视", "本地解释"]
+  hook_terms_en: ["anomaly trace", "new rule", "system task", "identity debt", "higher attention", "local explanation"]

@@ -4,11 +4,12 @@ from pathlib import Path
 from uuid import uuid4
 
 import pytest
+from sqlalchemy.exc import PendingRollbackError
 
 from bestseller.domain.pipeline import ChapterPipelineResult
 from bestseller.infra.db.models import (
-    ChapterModel,
     ChapterDraftVersionModel,
+    ChapterModel,
     ExportArtifactModel,
     ProjectModel,
     RewriteTaskModel,
@@ -18,7 +19,6 @@ from bestseller.infra.db.models import (
 )
 from bestseller.services import repair as repair_services
 from bestseller.settings import load_settings
-
 
 pytestmark = pytest.mark.unit
 
@@ -37,6 +37,7 @@ class FakeSession:
         self.execute_results = list(execute_results or [])
         self.get_map = dict(get_map or {})
         self.added: list[object] = []
+        self.rollback_count = 0
 
     def add(self, obj: object) -> None:
         self.added.append(obj)
@@ -73,6 +74,9 @@ class FakeSession:
 
     async def get(self, model: object, key: object) -> object | None:
         return self.get_map.get((model, key))
+
+    async def rollback(self) -> None:
+        self.rollback_count += 1
 
 
 def build_settings():
@@ -203,7 +207,13 @@ async def test_run_project_repair_supersedes_tasks_and_reruns_affected_chapters(
             },
         )()
 
-    async def fake_run_chapter_pipeline(session, settings, project_slug: str, chapter_number: int, **kwargs):
+    async def fake_run_chapter_pipeline(
+        session,
+        settings,
+        project_slug: str,
+        chapter_number: int,
+        **kwargs,
+    ):
         chapter_id = {1: chapter1.id, 2: chapter2.id, 3: chapter3.id}[chapter_number]
         return ChapterPipelineResult(
             workflow_run_id=uuid4(),
@@ -272,6 +282,84 @@ async def test_run_project_repair_supersedes_tasks_and_reruns_affected_chapters(
     assert len(workflow_runs) == 1
     assert workflow_runs[0].status == "completed"
     assert len(workflow_steps) == 7
+
+
+@pytest.mark.asyncio
+async def test_run_project_repair_rolls_back_db_level_failure_without_failure_step(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = build_project()
+    chapter = build_chapter(project.id, 1)
+    task_chapter = RewriteTaskModel(
+        project_id=project.id,
+        trigger_type="chapter_review",
+        trigger_source_id=chapter.id,
+        rewrite_strategy="chapter_coherence_bridge_rewrite",
+        priority=4,
+        status="pending",
+        instructions="补强章节",
+        context_required=[],
+        metadata_json={"chapter_id": str(chapter.id)},
+    )
+    task_chapter.id = uuid4()
+
+    async def fake_get_project_by_slug(session, slug: str):
+        return project
+
+    async def fake_run_chapter_pipeline(session, settings, project_slug: str, chapter_number: int, **kwargs):
+        raise PendingRollbackError("simulated DB transaction failure")
+
+    monkeypatch.setattr(repair_services, "get_project_by_slug", fake_get_project_by_slug)
+    monkeypatch.setattr(repair_services, "run_chapter_pipeline", fake_run_chapter_pipeline)
+
+    session = FakeSession(
+        scalars_results=[[task_chapter]],
+        get_map={(ChapterModel, chapter.id): chapter},
+    )
+
+    with pytest.raises(PendingRollbackError):
+        await repair_services.run_project_repair(
+            session,
+            build_settings(),
+            "my-story",
+        )
+
+    workflow_steps = [obj for obj in session.added if isinstance(obj, WorkflowStepRunModel)]
+    assert session.rollback_count == 1
+    assert all(step.status != "failed" for step in workflow_steps)
+
+
+@pytest.mark.asyncio
+async def test_resolve_rewrite_task_skips_orphan_scene_review(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = build_project()
+    task = RewriteTaskModel(
+        project_id=project.id,
+        trigger_type="scene_review",
+        trigger_source_id=uuid4(),
+        rewrite_strategy="scene_dialogue_conflict_expansion",
+        priority=3,
+        status="pending",
+        instructions="补强场景",
+        context_required=[],
+        metadata_json={},
+    )
+    task.id = uuid4()
+
+    async def fake_refresh_rewrite_impacts(session, project_slug: str, **kwargs):
+        raise ValueError("Source scene for rewrite task was not found.")
+
+    monkeypatch.setattr(repair_services, "refresh_rewrite_impacts", fake_refresh_rewrite_impacts)
+
+    chapter_numbers = await repair_services._resolve_rewrite_task_chapter_numbers(
+        FakeSession(),
+        project_slug=project.slug,
+        task=task,
+        refresh_impacts=True,
+    )
+
+    assert chapter_numbers == set()
 
 
 @pytest.mark.asyncio

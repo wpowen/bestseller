@@ -693,23 +693,36 @@ def run_chapters_phase(
 
         for card in batch:
             chapter: dict[str, Any] | None = None
+            last_error_hint = ""
             for _attempt in range(5):
                 try:
                     # On later retries, add a small variation hint to avoid content filter
                     hint = f"\n(Attempt {_attempt + 1}: ensure the full JSON is complete and valid.)" if _attempt > 0 else ""
-                    prompt = chapter_prompt(bible, card, last_hook, book_id, cfg) + hint
+                    prompt = chapter_prompt(bible, card, last_hook, book_id, cfg) + hint + last_error_hint
                     raw = client.light(prompt, max_tokens=12000)
                     if not raw or raw.strip() in ("None", "null", ""):
                         raise json.JSONDecodeError("Empty response from LLM", "", 0)
                     chapter = _parse_json(raw)
+                    validation_errors = validate_chapter(chapter, book_id)
+                    if validation_errors:
+                        raise ValueError(
+                            "chapter_validation_failed: "
+                            + "; ".join(str(item) for item in validation_errors[:8])
+                        )
                     break
                 except (json.JSONDecodeError, Exception) as exc:
                     exc_name = type(exc).__name__
                     is_retryable = isinstance(exc, json.JSONDecodeError) or any(
                         k in exc_name for k in ("Timeout", "Connection", "APIError", "ServiceUnavailable")
-                    )
+                    ) or str(exc).startswith("chapter_validation_failed")
                     if _attempt == 4 or not is_retryable:
                         raise
+                    last_error_hint = (
+                        "\n\n[上一轮生成失败，请针对性修复]\n"
+                        f"- 错误类型：{type(exc).__name__}\n"
+                        f"- 错误内容：{str(exc)[:800]}\n"
+                        "- 下一轮必须修复上述具体问题，仍然只输出完整 JSON。\n"
+                    )
                     time.sleep(5 * (_attempt + 1))
             errs = validate_chapter(chapter, book_id)  # type: ignore[arg-type]
             last_hook = chapter.get("next_chapter_hook", "")
@@ -1468,6 +1481,7 @@ async def _generate_chapter_with_context(
 
     chapter: dict[str, Any] | None = None
     loop = asyncio.get_event_loop()
+    last_error_hint = ""
 
     for _attempt in range(5):
         try:
@@ -1479,6 +1493,7 @@ async def _generate_chapter_with_context(
             prompt = (
                 chapter_prompt(bible, card, batch_entry_hook, book_id, cfg, context_text=context_text)
                 + hint
+                + last_error_hint
             )
             # Run sync LLM call in thread pool to enable true parallelism
             raw = await loop.run_in_executor(
@@ -1487,14 +1502,26 @@ async def _generate_chapter_with_context(
             if not raw or raw.strip() in ("None", "null", ""):
                 raise json.JSONDecodeError("Empty response from LLM", "", 0)
             chapter = _parse_json(raw)
+            validation_errors = validate_chapter(chapter, book_id)
+            if validation_errors:
+                raise ValueError(
+                    "chapter_validation_failed: "
+                    + "; ".join(str(item) for item in validation_errors[:8])
+                )
             break
         except (json.JSONDecodeError, Exception) as exc:
             exc_name = type(exc).__name__
             is_retryable = isinstance(exc, json.JSONDecodeError) or any(
                 k in exc_name for k in ("Timeout", "Connection", "APIError", "ServiceUnavailable")
-            )
+            ) or str(exc).startswith("chapter_validation_failed")
             if _attempt == 4 or not is_retryable:
                 raise
+            last_error_hint = (
+                "\n\n[上一轮生成失败，请针对性修复]\n"
+                f"- 错误类型：{type(exc).__name__}\n"
+                f"- 错误内容：{str(exc)[:800]}\n"
+                "- 下一轮必须修复上述具体问题，仍然只输出完整 JSON。\n"
+            )
             await asyncio.sleep(5 * (_attempt + 1))
 
     return chapter  # type: ignore[return-value]

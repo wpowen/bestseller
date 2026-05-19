@@ -1,6 +1,25 @@
 {
   "source_id": "source-0005",
-  "blocked_categories": [],
-  "blocked_combinations": [],
+  "blocked_categories": [
+    "specific_character_names_and_verbal_tics",
+    "named_sect_identities_and_honorific_conventions_specific_to_source",
+    "geographic_location_identifiers_and_region_names",
+    "cultivation_rank_terminology_specific_to_source",
+    "named_cultivation_techniques_and_artifact_identities",
+    "system_notification_text_formatting_patterns",
+    "web_novel_url_and_author_timestamp_patterns",
+    "comedic_beats_involving_animal_harm",
+    "fixed_honorific_conventions_and_epithets",
+    "transparent_info_interface_text_specific_to_source"
+  ],
+  "blocked_combinations": [
+    "numeric percentages_for_formation_counts_specific_to_source",
+    "character_names_with_formal_honorific_patterns_as_authentic_to_source",
+    "system_panel_text_layout_with_source_specific_formatting",
+    "cultivation_realm_terminology_used_in_source_specific_context",
+    "technique_invocations_with_source_specific_visual_descriptions",
+    "chapter_ending_structures_with_source_specific_notification_patterns",
+    "faction_names_with_source_specific_cultural_connotations"
+  ],
   "replacement_policy": []
 }

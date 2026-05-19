@@ -8,8 +8,8 @@ offline-friendly.
 
 from __future__ import annotations
 
-import datetime as _dt
 from dataclasses import dataclass, field
+import datetime as _dt
 from typing import Any
 from uuid import uuid4
 
@@ -161,26 +161,22 @@ class _FakeSession:
         if target is ChapterModel:
             sql_text = str(stmt).lower()
             production_state = self._filter_production_state(stmt)
-            if "max(" in sql_text:
-                matching = [
-                    c.updated_at
-                    for c in self.chapters
-                    if c.project_id == project_id
-                    and (
-                        production_state is None
-                        or c.production_state == production_state
-                    )
-                ]
-                return max(matching, default=None)
-
-            return sum(
-                1
+            matching = [
+                c
                 for c in self.chapters
                 if c.project_id == project_id
                 and (
                     production_state is None
                     or c.production_state == production_state
                 )
+            ]
+            if "max(" in sql_text:
+                return max((c.updated_at for c in matching), default=None)
+
+            if "count(" not in sql_text:
+                return max(matching, key=lambda c: c.updated_at, default=None)
+            return sum(
+                1 for c in matching
             )
 
         if target is ChapterDraftVersionModel:

@@ -1,6 +1,22 @@
 {
   "source_id": "source-0008",
-  "blocked_categories": [],
-  "blocked_combinations": [],
+  "blocked_categories": [
+    "character_names_and_designations",
+    "specific_cultural_terminology",
+    "cultural_practices_and_beliefs",
+    "specific_horror_anatomy",
+    "historical_figure_biography",
+    "geographic_locations",
+    "internet_novel_conventions",
+    "author_commentary_formats"
+  ],
+  "blocked_combinations": [
+    "Chinese_geographic_setting_with_cultural_terminology",
+    "Specific_supernatural_rules_with_cultural_explanation",
+    "Melodramatic_romantic_patterns_with_cultural_flavor",
+    "Philosophical_openings_with_cultural_quotation",
+    "Horror_details_with_cultural_execution_method",
+    "Investigation_procedures_with_jurisdiction_specificity"
+  ],
   "replacement_policy": []
 }

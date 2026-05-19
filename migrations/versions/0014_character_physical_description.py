@@ -6,7 +6,6 @@ consistent physical trait references across chapters.
 """
 from __future__ import annotations
 
-import sqlalchemy as sa
 from alembic import op
 
 
@@ -17,11 +16,8 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.add_column(
-        "characters",
-        sa.Column("physical_description", sa.Text(), nullable=True),
-    )
+    op.execute("ALTER TABLE characters ADD COLUMN IF NOT EXISTS physical_description TEXT")
 
 
 def downgrade() -> None:
-    op.drop_column("characters", "physical_description")
+    op.execute("ALTER TABLE characters DROP COLUMN IF EXISTS physical_description")

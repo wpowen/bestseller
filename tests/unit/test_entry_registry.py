@@ -94,6 +94,25 @@ def test_entries_from_progression_metadata_maps_realm_and_assets() -> None:
     assert {"cultivation_method", "technique", "artifact", "resource"} <= types
 
 
+def test_entries_from_progression_metadata_clamps_long_legacy_names() -> None:
+    long_name = "双轨并行互补体系" * 40
+
+    entries = entries_from_progression_metadata(
+        {
+            "power_system": {
+                "name": long_name,
+                "techniques": [{"name": long_name}],
+            }
+        }
+    )
+
+    assert entries
+    assert all(len(entry.entry_id) <= 160 for entry in entries)
+    assert all(len(entry.name) <= 200 for entry in entries)
+    assert len(entries[0].entry_id) == 160
+    assert "-" in entries[0].entry_id[-11:]
+
+
 def test_merge_entry_registries_deduplicates_by_id() -> None:
     kernel = build_fallback_entry_system_kernel(_Project())
     matrix = build_entry_coverage_matrix(kernel, target_chapters=20)

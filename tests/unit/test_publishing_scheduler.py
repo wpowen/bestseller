@@ -136,5 +136,5 @@ async def test_publish_next_chapter_blocks_pending_chapter_before_adapter(
     assert adapter.called is False
     history = next(obj for obj in session.added if isinstance(obj, PublishingHistoryModel))
     assert history.status == "failed"
-    assert "不是 complete" in (history.error_message or "")
+    assert "不是可发布状态" in (history.error_message or "")
     assert "不是 ok" in (history.error_message or "")

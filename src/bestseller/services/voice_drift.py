@@ -150,10 +150,39 @@ async def check_voice_drift(
         drift_score = float(parsed.get("drift_score", 0.0))
         analysis = parsed.get("analysis", "")
         correction = parsed.get("correction_prompt")
-    except (json.JSONDecodeError, ValueError, TypeError):
-        drift_score = 0.0
-        analysis = response.content.strip()
-        correction = None
+    except (json.JSONDecodeError, ValueError, TypeError) as exc:
+        try:
+            from bestseller.services.llm_closed_loop import (
+                build_repair_user_prompt,
+                findings_from_exception,
+            )
+
+            repair = await complete_text(
+                session,
+                settings,
+                LLMCompletionRequest(
+                    logical_role="critic",
+                    system_prompt="You are a literary voice consistency analyst. Detect character voice drift by comparing recent text against established voice profiles.",
+                    user_prompt=build_repair_user_prompt(
+                        original_user_prompt=user_prompt,
+                        findings=findings_from_exception(exc),
+                        language=None,
+                    ),
+                    fallback_response='{"drift_score": 0.0, "analysis": "Voice drift analysis unavailable (fallback).", "correction_prompt": null}',
+                    prompt_template="voice_drift_check_repair",
+                    project_id=project_id,
+                    workflow_run_id=workflow_run_id,
+                    metadata={"semantic_repair": True},
+                ),
+            )
+            parsed = json.loads(repair.content.strip())
+            drift_score = float(parsed.get("drift_score", 0.0))
+            analysis = parsed.get("analysis", "")
+            correction = parsed.get("correction_prompt")
+        except (json.JSONDecodeError, ValueError, TypeError):
+            drift_score = 0.0
+            analysis = "Voice drift analysis unavailable (parse_error_degraded)."
+            correction = None
 
     drift_detected = drift_score > 0.3
 

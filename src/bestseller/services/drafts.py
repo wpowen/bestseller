@@ -1149,6 +1149,8 @@ async def _regenerate_scene_until_valid(
     step_run_id: UUID | None,
     model_tier: str,
     context_query: str,
+    protagonist_name: str | None,
+    supporting_name: str | None,
     global_budget: GlobalBudget | None,
 ) -> tuple[str, str | None, UUID | None, str, int]:
     """Validate ``initial_content`` and, if blocked, regen until it passes.
@@ -1195,6 +1197,8 @@ async def _regenerate_scene_until_valid(
                     "chapter_number": chapter_number,
                     "scene_number": scene_number,
                     "context_query": context_query,
+                    "protagonist_name": (protagonist_name or "").strip(),
+                    "supporting_name": (supporting_name or "").strip(),
                     "model_tier": model_tier,
                     "regen_feedback_codes": [
                         v.code for v in initial_report.violations
@@ -5207,6 +5211,12 @@ async def generate_scene_draft(
                     "chapter_number": chapter.chapter_number,
                     "scene_number": scene.scene_number,
                     "context_query": context_packet.query_text,
+                    "protagonist_name": str((scene.participants or [""])[0] or "").strip(),
+                    "supporting_name": str(
+                        (scene.participants or ["", ""])[1]
+                        if len(scene.participants or []) > 1
+                        else ""
+                    ).strip(),
                     "model_tier": _model_tier,
                 },
             ),
@@ -5269,6 +5279,12 @@ async def generate_scene_draft(
                 step_run_id=step_run_id,
                 model_tier=_model_tier,
                 context_query=context_packet.query_text,
+                protagonist_name=str((scene.participants or [""])[0] or "").strip(),
+                supporting_name=str(
+                    (scene.participants or ["", ""])[1]
+                    if len(scene.participants or []) > 1
+                    else ""
+                ).strip(),
                 global_budget=None,
             )
             if scene_regen_count > 0:

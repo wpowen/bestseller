@@ -4,41 +4,67 @@
   "source_type": "distillation_package",
   "status": "draft_review",
   "parsed_profile": {
-    "distillation_status": "complete_data_blackout",
-    "confidence": 0.0,
-    "total_volumes_attempted": 22,
-    "total_chapters_in_range": 546,
-    "valid_chapters_found": 0,
-    "llm_fallback_stubs": 546,
-    "data_quality": "zero_extractable_content",
-    "failure_reason": "All source material consists of LLM unavailable fallback stubs with empty arrays and zero confidence across entire chapter range (1-546)",
-    "metadata_integrity": "corrupted_or_unavailable",
-    "volume_consistency": "inconsistent (volume_no field shows '1' in volume_card for chapters 306-330 instead of expected value)"
+    "pov_distance": "Close third-person limited anchored exclusively to protagonist; privileged interior access to strategic calculations, desires, and self-justifications; other characters rendered through protagonist's evaluative observation with internal states accessible only through dialogue and observable tells; occasional strategic dips into female characters' psychology during intimate moments create asymmetric reader access",
+    "sentence_rhythm": "Deliberate alternation between staccato fragments for tension/action beats and extended flowing passages for exposition, strategic analysis, and sensory description; intimate scenes employ rhythmic phrasing mirroring physical cadence; dialogue exchanges use rapid short turns contrasted against contemplative internal monologue blocks",
+    "paragraphing": "Dense dialogue-heavy paragraphs without attribution during confrontations; single-line isolation for dramatic revelations and action beats; extended unbroken blocks for internal reasoning and intimate sequences; scene breaks marked by horizontal rules, spatial movement, and explicit temporal markers",
+    "dialogue_method": "Subtext-driven exchanges where surface meaning differs from subtext; formal court registers contrast with intimate registers marking relationship progression; characters speak around sensitive topics requiring reader inference; strategic deflection through professional topics when emotional conversation becomes uncomfortable",
+    "description_method": "Sensory-first: tactile and olfactory details prioritized over visual during intimate scenes; physiological reactions (blushing, trembling, averted gaze) externalize emotional states; environment described functionally for status signaling rather than atmospheric build; body language conveyed through action rather than direct statement",
+    "exposition_method": "Internal monologue primary vehicle delivering political reasoning, historical context, and character motivation; character-to-character recounting adds narrative removal layers; backstory triggered through present stimuli prompting reflection; information hierarchy moves from immediate stakes to historical context to political implications",
+    "hook_delivery": "Mid-conversation or mid-action chapter openings for immediate immersion; chapter endings use unresolved tension, imminent escalation, or loaded questions rather than satisfying conclusions; cliffhangers positioned at intimacy thresholds, political revelations, or interrupted decisions maximizing continuation imperative",
+    "transition_method": "Spatial movement through architectural spaces marks scene progression; geographic shifts coincide with psychological transitions; explicit temporal markers bridge scenes; physical action anchors continuity between tonal shifts; dash separators mark major scene divisions"
   },
   "genre_tags": [
-    "distillation-generic"
+    "historical-fantasy",
+    "transmigration",
+    "power-fantasy",
+    "romance-harem",
+    "political-intrigue",
+    "competence-demonstration",
+    "knowledge-asymmetry",
+    "court-intrigue"
   ],
-  "reader_promise": "LLM structured distillation fallback.",
-  "core_engine": "unknown",
+  "reader_promise": "A transmigrated protagonist leverages modern knowledge (medicine, strategy, poetry) against premodern opponents while navigating court politics and multiple romantic attachments. The narrative combines the satisfaction of gradual competence validation with escalating political stakes and intimate relationship development across extended chapter runs. Readers experience vicarious power fantasy through protagonist's superior foreknowledge, strategic manipulation, and romantic conquest of powerful women.",
+  "core_engine": "Knowledge-asymmetry exploitation combined with power-differential intimacy manipulation: protagonist's modern expertise converts social capital into political leverage while parallel romantic arcs establish control over subordinate female characters. The dominant tension derives from protagonist's concealment necessity versus exploitation opportunity, creating both plot advancement and character development friction. Dramatic irony emerges from reader awareness of protagonist's foreknowledge while characters operate with incomplete information.",
   "state_variables": [
-    "fallback_progress"
+    "{'protagonist_status': {'early_arc': 'transmigrated amnesiac with fragmented identity, dependent on rescue figures', 'mid_arc': 'established medical practitioner with political connections, managing multiple romantic interests', 'late_arc': 'indispensable court advisor with intelligence network, navigating succession crisis and rival elimination'}, 'knowledge_access': {'medical_expertise': 'demonstrated through stethoscope invention, penicillin development, diagnostic superiority', 'strategic_knowledge': 'applied through military counsel, campaign predictions, political maneuvering', 'cultural_knowledge': 'exploited through poetry recitation of future canonical works, historical event timing'}, 'romantic_matrix': {'primary_attachment': 'marriage-consecrated partner with genuine emotional connection', 'power_holder_attachment': 'supreme authority figure providing political protection through intimate access', 'secondary_attachments': 'servant characters, sibling pairs, and peripheral interests serving distinct narrative functions', 'forbidden_attachment': 'mother-in-law subplot creating taboo tension and complication escalation'}, 'political_position': {'early': 'peripheral observer dependent on mentorship', 'mid': 'integrated advisor with multiple factional allegiances', 'late': 'indispensable power broker with intelligence apparatus and succession leverage'}, 'threat_vectors': {'antagonist_faction': 'rival family with historical grudge, eventually defeated through imperial intervention', 'transmigrator_rival': 'newly introduced antagonist with identical knowledge asymmetry creating existential identity threat', 'exposure_risk': 'accumulating across intimate relationships, creating potential collapse vectors'}}"
   ],
   "reader_rewards": [
-    "distillable_mechanism_reliability"
+    "Competence validation through incremental expertise demonstration against skeptical authorities",
+    "Romantic tension payoff following sustained buildup through graduated escalation with interruption",
+    "Dramatic irony satisfaction from protagonist's foreknowledge enabling reader's superior strategic understanding",
+    "Protective dominance fulfillment through protagonist's rescue interventions and strategic shielding of vulnerable characters",
+    "Power fantasy satisfaction through protagonist's indispensable value recognition by supreme authorities",
+    "Intelligence network fulfillment through protagonist's predictive positioning and scheme success",
+    "Relationship milestone progression from forced proximity through emotional vulnerability to consummation",
+    "Antagonist humiliation payoff through public confrontation and decisive consequence delivery",
+    "Political maneuvering satisfaction through divide-and-conquer strategy execution",
+    "Mentor succession resolution through deathbed wisdom transfer and autonomous capability confirmation"
   ],
   "reusable_mechanisms": [
-    "fallback mechanism abstraction"
+    "{'name': 'knowledge_asymmetry_demonstration', 'structure': 'authority figure presents problem → protagonist identifies solution through anachronistic expertise → validation through superior outcome → status elevation', 'applications': ['medical diagnosis correction', 'poetry recitation victory', 'military strategy prediction', 'technological innovation presentation']}",
+    "{'name': 'graduated_intimacy_escalation_with_interruption', 'structure': 'physical proximity increases through service pretext → tension builds toward threshold → external intrusion prevents completion → tension deferred across chapters', 'applications': ['massage treatment pretext', 'medical examination context', 'guardian duty scenarios']}",
+    "{'name': 'power_reversal_through_vulnerability', 'structure': 'high-status character shown in private weakness (loneliness, aging fear, physical need) → protagonist responds with protective competence → psychological intimacy achieved → power dynamic subtly inverts', 'applications': ['sovereign health crisis', 'authority figure emotional confession', \"dominant character's submissive private reveal\"]}",
+    "{'name': 'foreknowledge_moral_conflict', 'structure': 'protagonist attracted to character whose historical fate is known → dramatic irony creates tension between desire and foreknowledge → protagonist must decide whether to intervene or accept fate', 'applications': ['historical figure romantic interests', 'characters destined for execution', 'dynastic tragedy anticipation']}",
+    "{'name': 'mentor_authority_reversal', 'structure': \"prestigious authority figure explicitly seeks protagonist's knowledge → traditional hierarchy inverted → protagonist elevated to teaching authority over masters\", 'applications': ['medical mentorship', 'strategic consultation', 'political counsel hierarchy']}",
+    "{'name': 'intimate_access_as_political_currency', 'structure': 'physical proximity to power holder enables information gathering and influence → relationship intimacy converted to political leverage → concessions extracted through desire control', 'applications': ['sovereign intimacy for policy persuasion', 'servant relationships for intelligence access', 'romantic leverage for protective promises']}",
+    "{'name': 'strategic_refusal_gambit', 'structure': 'logical opportunity offered → protagonist declines immediate reward → authority recognizes hidden ambition with respect → future leverage constructed', 'applications': ['imperial appointment refusal', 'material reward sacrifice', 'position elevation deferred']}",
+    "{'name': 'exposure_threat_accumulation', 'structure': 'identity risk events accumulate without immediate consequence → reader tension builds through deferred payoff → eventual confrontation forces protagonist into reactive position', 'applications': ['backstory inconsistencies', 'knowledge anachronisms', 'relationship secrets multiplying']}",
+    "{'name': 'divided_loyalty_tension', 'structure': 'protagonist maintains simultaneous allegiances to competing power centers → each relationship creates contradictory obligations → crisis forces explicit commitment choice', 'applications': ['sovereign versus successor factions', 'multiple patron attachments', 'romantic versus political priorities']}",
+    "{'name': 'forced_fait_accompli_negotiation', 'structure': 'situation created that shifts negotiating position → authority figure forced to accept previously rejected arrangement → initiative transfers from power-holder to protagonist', 'applications': ['pregnancy revelation', 'scandal exposure', 'pretext escalation']}"
   ],
-  "non_reusable_specifics": [],
+  "non_reusable_specifics": [
+    "{'temporal_setting': 'Tang Dynasty historical period with specific reign dates', 'geographic_names': \"Chang'an capital, specific palace locations, regional territories\", 'character_identities': 'all named historical and fictional characters, relationship titles, honorific systems', 'artifacts': 'specific inventions (stethoscope, penicillin), dynastic tokens, material objects with narrative significance', 'political_entities': 'specific faction names, official titles, governmental structures tied to historical accuracy', 'cultural_elements': 'period-specific customs, literary works, canonical poetry attributed to historical figures'}"
+  ],
   "risk_patterns": [
-    "llm_fallback_all_chapters",
-    "zero_confidence_across_entire_source",
-    "no_extractable_story_mechanics",
-    "no_craft_observations_present",
-    "no_distillable_content",
-    "data_poverty_for_analysis",
-    "source_material_inaccessible",
-    "volume_metadata_corruption"
+    "{'category': 'consent_ambiguity', 'severity': 'high', 'description': \"Power-imbalanced romantic relationships frequently involve consent dynamics complicated by dependency, obligation, and service pretext. Protagonist's strategic manipulation of desire for political gain blurs ethical boundaries without explicit narrative critique.\", 'mitigation_needed': 'Clearer consent signaling mechanisms; protagonist moral awareness rather than uncritical rationalization; consequences for manipulative behavior'}",
+    "{'category': 'explicit_content_accumulation', 'severity': 'medium', 'description': 'Extended intimate sequences with detailed physical description accumulate across volumes. Power differential framing (authority figure/subordinate, mentor/ward) combined with physical service pretexts creates content that may exceed platform tolerance.', 'mitigation_needed': 'Fade-to-black technique expansion; physical escalation conveyed through emotional beats rather than anatomical detail; chapter-level content balancing'}",
+    "{'category': 'forbidden_attachment_escalation', 'severity': 'high', 'description': 'Mother-in-law romantic subplot introduces incest-adjacent complexity. Pregnancy-as-leverage mechanics normalize coercive reproductive dynamics. Ward attraction following paternal framing creates uncomfortable consent gradients.', 'mitigation_needed': 'Boundary establishment with narrative consequences; clear protagonist refusal of inappropriate attachments; character agency restoration for female interests'}",
+    "{'category': 'voyeurism_normalization', 'severity': 'medium', 'description': 'Accidental observation progressing to complicit surveillance to weaponized knowledge creates escalating voyeurism that protagonist benefits from without significant moral examination.', 'mitigation_needed': 'Protagonist accountability for observation behavior; consequences for knowledge weaponization; female character awareness of surveillance'}",
+    "{'category': 'manipulation_glorification', 'severity': 'medium', 'description': 'Strategic deception, bribery, and information control presented as protagonist competence without sufficient narrative examination of ethical costs to manipulated parties.', 'mitigation_needed': 'Occasional scheme failure or unintended consequences; secondary character perspectives on receiving end of manipulation; protagonist moral conflict exploration'}",
+    "{'category': 'non_consensual_gateway_content', 'severity': 'critical', 'description': 'Chapter 338 depicts drug-facilitated assault content representing severe tonal violation from consensual conquest patterns. This represents narrative failure requiring explicit rejection.', 'mitigation_needed': 'Absolute exclusion of non-consensual scenarios; clear protagonist boundary establishment; narrative framing that explicitly condemns rather than enables such content'}",
+    "{'category': 'historical_figure_sensitivity', 'severity': 'medium', 'description': 'Explicit sexual content featuring real historical dynasty figures (Empress Wu) requires careful tonal management to avoid historical defamation concerns and cultural sensitivity issues.', 'mitigation_needed': 'Fictional framing emphasis; tonally appropriate treatment rather than gratuitous content; cultural context acknowledgment'}",
+    "{'category': 'protagonist_agency_deflation', 'severity': 'medium', 'description': 'Extended passive positioning through interest from powerful figures creates reactive rather than active protagonist. Strategic refusal gambits can read as humble-bragging rather than genuine constraint.', 'mitigation_needed': 'Protagonist-originated schemes with genuine obstacles; active problem-solving with meaningful failure possibilities; reduced dependency on authority figure summoning'}",
+    "{'category': 'information_asymmetry_collapse_risk', 'severity': 'low', 'description': 'Transmigrator knowledge functioning as unchecked advantage creates eventual deus ex machina risk. Rival transmigrator introduction creates symmetry that acknowledges the problem without fully resolving it.', 'mitigation_needed': 'Knowledge limitations and prediction failures; historical foreknowledge proving incomplete or misleading; costs associated with knowledge exploitation'}"
   ],
   "source_id": "source-0006",
   "distillation_source_id": "source-0006"

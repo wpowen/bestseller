@@ -1,136 +1,165 @@
 key: distillation-generic
-name: Rivalry-Confrontation Spectacle Engine with Underworld Descent Core
+name: 'Grammar Patch: Cultivation Supernatural with Institutional Politics'
 source_ids:
 - source-0004
-status: draft_review
+status: approved
 applies_to_categories:
-- supernatural_cultivation
-- romantic_rivalry
-- spectacle_drama
-- underworld_descent
-- ghost_cultivation_system
-- dominance_display_narrative
+- cultivation fantasy
+- urban fantasy
+- supernatural thriller
+- corpse cultivation
+- Chinese mythology
+- anti-hero protagonist
 required_contracts:
-  core_payoffs:
-  - Protagonist physical dominance resolution to jealousy conflicts
-  - Supernatural system mechanics revealed through live ritual execution
-  - Backstory motivation reveal for supernatural rescue of trapped family soul
-  - Dramatic exit spectacle generating relationship tension with love interest
-  - Moral complexity introduced through love interest mercy toward defeated rival
-  engine_deliverables:
-  - Jealousy provocation sequence with rival suitor contrast
-  - Spectator witness coercion transforming personal conflict into public entertainment
-  - Physical confrontation resolved through protagonist capability demonstration
-  - Hidden supernatural agenda exploitation by protagonist
-  - Ritual system mechanics with bloodline selection, ghost type hierarchies, binding
-    ceremonies
-  tension_patterns:
-  - Love interest behavioral manipulation triggering protagonist jealousy
-  - Public spectacle pressure escalating resolution demands
-  - Mercy pattern creating relationship friction and moral complexity
-  - Dramatic departure preserving open romantic question
+- contract: Power demonstration precedes explanation
+  enforcement: Combat and ritual sequences must showcase capabilities through action
+    before internal monologue details mechanics
+- contract: Moral ambiguity as premise not arc
+  enforcement: Protagonist's willingness to use corpse cultivation and violent methods
+    must be established in opening act; no moral conflict arc required
+- contract: Institutional integration requires bureaucratic cost
+  enforcement: Every political advantage gained through government department must
+    incur operational obligations and factional constraints
+- contract: Romantic consolidation over fragmentation
+  enforcement: Primary romantic arc must be established by 30% story progress; competing
+    interests subordinated to main trajectory
+- contract: Expositional delivery through ritual performance
+  enforcement: World rules emerge through character preparation and internal monologue
+    during technique execution; author voice absent from explanation
+- contract: Cumulative damage mechanics
+  enforcement: Power progression must demonstrate costs through exhaustion, cumulative
+    damage reduction, or capability limits; victories pyrrhic rather than clean
 state_variables:
-- variable_name: protagonist_jealousy_level
-  range: latent → triggered → escalated
-  triggers:
-  - rival_presence
-  - love_interest_provocation
-  - mission_urgency_activation
-- variable_name: spectacle_pressure
-  range: none → building → peak → resolution
-  drivers:
-  - spectator_witness_count
-  - public_demand_escalation
-- variable_name: supernatural_mission_progress
-  range: hidden_agenda → revelation → underworld_access_ready
-  blockers:
-  - knowledge_gap
-  - resource_limitations
-  - false_assumption_operating
-- variable_name: love_triangle_tension
-  range: stable → provoked → resolved_unhappily → open_question
-  resolution_patterns:
-  - mercy_toward_defeated_rival
-  - dramatic_departure
-  - relationship_strain
-- variable_name: spectator_entertainment_demand
-  range: passive → active → coercive
-  mechanism: audience_witness_transforms_personal_conflict_into_public_spectacle
+- variable: protagonist_power_cap
+  tracking: Current maximum combat capability with escalation ceiling and institutional
+    constraints
+  boundaries:
+  - Institutional authority limits application
+  - Exhaustion mechanics reduce effective power
+  - Artifact dependency creates vulnerability
+- variable: revenge_progress
+  tracking: Generational trauma resolution across multi-volume arc
+  checkpoints:
+  - Primary antagonist identification
+  - Underlying conspiracy reveal
+  - Full backstory delivery
+  - Emotional resolution
+- variable: romantic_stability
+  tracking: Primary relationship status with complication tolerance
+  parameters:
+  - Mutual backstory revelation achieved
+  - Cohabitation status maintained
+  - External threats create proximity
+  - Competing interests resolved rather than prolonged
+- variable: institutional_faction_balance
+  tracking: Political standing within government supernatural department
+  constraints:
+  - Mission parameters restrict independent action
+  - Subordinate relationships require leadership maintenance
+  - Factional obligations create conflicting priorities
+- variable: support_network_strength
+  tracking: Allied resources available for major operations
+  composition:
+  - Hybrid Buddhist-Taoist team members
+  - Artifact bargaining leverage
+  - Military operation subordinates
 chapter_change_vectors:
-  emotional_architecture:
-  - Tension accumulation through love interest romantic threat introduction
-  - Jealousy trigger event activating protagonist deeper mission urgency
-  - Physical confrontation initiated under public spectacle pressure
-  - Dominance resolution achieved through protagonist capability demonstration
-  - Dramatic departure executed, creating romantic tension residue
-  arc_trajectory_flags:
-  - Volume 1 establishes supernatural system mechanics foundation
-  - Volume 2 provides single documented turning point (chapter 28) with disproportionate
-    arc weight
-  - Volumes 3-6 data unavailable - arc trajectory undeterminable
-  - Re-distillation required for complete story validation
-  pacing_constraints:
-  - Single documented turning point cannot carry full arc weight
-  - Rising action and climax phases undocumented
-  - Mechanism persistence across volumes unconfirmed
+- location: Opening chapters
+  change: Eliminate exposition dumps by demonstrating cultivation mechanics through
+    ritual performance with protagonist internal monologue during technique execution
+- location: Chapters 33, 47, and similar density peaks
+  content: Separate ghost cultivation mechanics, historical context, and character
+    psychology into distinct beats; reduce information density by distributing across
+    multiple scenes
+- location: Chapter 7 and similar early reveals
+  change: Establish mystery through partial reveals and tactical withholding rather
+    than full plan exposition
+- location: Chapters 44, 61 antagonist monologue
+  change: Dramatize through hostile confrontation format; deliver backstory as intimidation
+    rather than narration
+- location: Volume 5-6 escalation spiral
+  change: Implement institutional constraints limiting power application; focus on
+    tactical solutions over raw capability increase
+- location: Early character introductions
+  change: Stagger introductions; differentiate through vocabulary register rather
+    than simultaneous presentation
+- location: Political exposition chapters
+  change: Deliver through character observation and direct confrontation rather than
+    narrator summary
+- location: Extended prison arc
+  change: Maintain engagement through regular supernatural advancement and political
+    rehabilitation subplot alongside imprisonment narrative
 reader_rewards:
-  guaranteed_rewards:
-  - reward_type: revelation_payoff
-    delivery_mechanism: Backstory motivation reveal for supernatural rescue mission
-      to retrieve trapped family soul from underworld
-    emotional_target: Reader understanding of protagonist's deeper purpose justifying
-      surface behavior
-  - reward_type: dominance_satisfaction
-    delivery_mechanism: Physical confrontation resolved through protagonist victory
-      under public spectacle pressure
-    emotional_target: Reader satisfaction of protagonist capability demonstration
-      and hierarchy establishment
-  - reward_type: system_mechanics_revelation
-    delivery_mechanism: Live ritual execution demonstrating ghost cultivation rules,
-      bloodline selection, type hierarchies, and binding ceremonies
-    emotional_target: Reader investment in supernatural system logic and rules
-  - reward_type: spectacle_entertainment
-    delivery_mechanism: Personal conflict transformed into public dramatic performance
-      under audience demand pressure
-    emotional_target: Reader engagement through entertainment escalation and spectacle
-      anticipation
-  conditional_rewards:
-  - reward_type: moral_complexity
-    condition: Love interest shows mercy toward defeated rival
-    emotional_target: Reader consideration of protagonist behavior implications and
-      relationship consequences
-  - reward_type: relationship_tension
-    condition: Dramatic exit creates strain with love interest
-    emotional_target: Reader investment in romantic resolution uncertainty and future
-      payoff anticipation
+- reward_type: immediate
+  delivery: First cultivation ritual displayed in full detail with concrete mechanics;
+    supernatural revenge against deserving villains; fish-out-of-water comedy from
+    archaic protagonist in modern society; power demonstration through ghost confrontation
+- reward_type: delayed
+  delivery: Thirty-year time-skip transformation; political backstory resolution;
+    cultivation philosophy reveal; Buddhist intervention establishing power ceiling;
+    investigation conspiracy connecting personal stakes to broader conflict
+- reward_type: accumulated
+  delivery: Multi-volume revenge thread reaching emotional resolution; romantic relationship
+    consummation with mutual vulnerability; power escalation through artifact acquisition;
+    institutional authority establishment transitioning protagonist to faction leader
 hook_or_aftereffect_types:
-  narrative_hooks:
-  - Hidden supernatural rescue mission concealed beneath romantic rivalry surface
-  - Protagonist exploitation of unaware asset/resource holders for personal underworld
-    agenda
-  - Love interest deliberate romantic threat introduction triggering protagonist deeper
-    motivation
-  - Foreign/charming rival approach contrasting with protagonist traditional dominance
-  aftereffect_patterns:
-  - Relationship strain from dramatic exit preserving romantic tension
-  - Moral complexity residue from love interest mercy toward defeated rival
-  - Open question preservation regarding underworld descent success
-  - Protagonist capability established through dominance display, raising reader expectations
-    for future challenges
+- type: mid_scene_opening
+  description: No recap openings; reader dropped directly into action or ritual in
+    progress
+- type: layered_cliffhanger
+  description: Action beats ending with consequence not summary; reverse-focus creates
+    ambush setup for next chapter
+- type: reverse_focus_ambush
+  description: Reader positioned with antagonist unaware of protagonist approach,
+    creating tactical surprise payoff
+- type: competence_reveal
+  description: Character demonstrates true power after removing concealing element
+    or through confrontation before explanation
+- type: authority_deception
+  description: Credentials reveal transforms authority perception 180 degrees enabling
+    access or compliance
+- type: comic_relief_bridge
+  description: Protagonist crude observations and rigid worldview applied to modern
+    situations create tonal bridge between horror and comedy
 forbidden_defaults:
-  behavioral_constraints:
-  - Protagonist jealousy response cannot be purely abusive without growth or reflection
-    context
-  - Jealousy confrontation conflict cannot be repetitive without engine variant diversification
-  - Dramatic exit cannot be cartoonish without meaningful relationship consequence
-  narrative_structure_constraints:
-  - Ghost cultivation rules cannot be delivered through tell-don't-show exposition
-    without scene integration
-  - Ritual scenes cannot lack tension, obstacles, or near-failure during supernatural
-    execution
-  - Love interest mercy toward rival cannot completely alienate reader from protagonist
-    success balance
-  data_quality_constraints:
-  - Cannot execute complete story arc validation with 91.5% LLM fallback data coverage
-  - Cannot determine arc trajectory with volumes 3-6 complete data loss
-  - Cannot assess mechanism persistence without re-distillation of chapters 26-138
+- default: Protagonist monologue dump explaining magic system rules without demonstration
+  replacement: Demonstrate rules through internal monologue during ritual practice
+    with visible step-by-step process
+- default: Multiple named characters introduced simultaneously
+  replacement: Stagger introductions across scenes; differentiate through vocabulary
+    register
+- default: Extended antagonist monologue delivering backstory in single block
+  replacement: Drastize through hostile confrontation format; distribute historical
+    information across multiple encounters
+- default: Power progression without cost or exhaustion consequences
+  replacement: Implement cumulative damage reducing effective power level while maintaining
+    fighting capability
+- default: Romantic fragmentation with prolonged love triangle
+  replacement: Establish primary romantic arc early; subordinate competing interests
+    to main trajectory
+- default: Protagonist abilities becoming too versatile without limitation
+  replacement: Establish combat capability limits through pyrrhic victories and institutional
+    constraints limiting power application
+- default: Formulaic cliffhanger at every chapter end
+  replacement: Alternate cliffhanger action with resolution leading to intimate scene;
+    vary cliffhanger types
+- default: Heavy exposition dump in opening paragraphs
+  replacement: World rules emerge organically through character preparation and ritual
+    performance
+- default: Prolonged antagonist history delivered in single block
+  replacement: Distribute historical information across multiple encounters and revelation
+    moments
+- default: Overreliance on female unconsciousness for plot access
+  replacement: Develop alternative access mechanisms through deception, authority,
+    or character agency
+- default: Institutional corruption bypassed through connections alone
+  replacement: Show institutional complexity with bureaucratic costs rather than simple
+    corruption narrative
+- default: Protagonist survival plan revealed too early
+  replacement: Establish mystery through partial reveals and tactical withholding
+- default: Tone inconsistency between comedy and horror without bridge
+  replacement: Use protagonist self-deprecation and crude observations as consistent
+    tonal bridge at tension peaks
+- default: Violent assault on service workers without moral context
+  replacement: Contextualize violence through accumulated backstory justification;
+    limit to antagonists with established threat

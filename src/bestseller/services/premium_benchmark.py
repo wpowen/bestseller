@@ -13,6 +13,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
+from bestseller.services.category_hard_engines import build_category_engine_fixture
 from bestseller.services.premium_book_gate import (
     PremiumBookGateReport,
     evaluate_premium_project_readiness,
@@ -102,8 +103,23 @@ def _valid_ledger_report() -> dict[str, object]:
     return {"passed": True, "findings": []}
 
 
+def _with_category_engine(
+    metadata: dict[str, object],
+    category_key: str,
+) -> dict[str, object]:
+    fixture = build_category_engine_fixture(category_key, good=True)
+    merged = dict(metadata)
+    merged["canonical_category"] = category_key
+    fixture_snapshot = dict(fixture.get("premium_state_snapshot") or {})
+    fixture_snapshot.update(dict(metadata.get("premium_state_snapshot") or {}))
+    merged["premium_state_snapshot"] = fixture_snapshot
+    merged["category_hard_gates"] = fixture["category_hard_gates"]
+    merged["chapter_state_updates"] = fixture["chapter_state_updates"]
+    return merged
+
+
 def _good_xianxia_metadata() -> dict[str, object]:
-    return {
+    metadata = {
         "world_spec": {
             "power_system": {
                 "name": "青炉修行体系",
@@ -140,6 +156,7 @@ def _good_xianxia_metadata() -> dict[str, object]:
             ],
         ),
     }
+    return _with_category_engine(metadata, "action-progression")
 
 
 def _bad_xianxia_metadata() -> dict[str, object]:
@@ -156,7 +173,7 @@ def _bad_xianxia_metadata() -> dict[str, object]:
 
 
 def _good_rule_mystery_metadata() -> dict[str, object]:
-    return {
+    metadata = {
         "world_rules": [
             {
                 "rule_code": "R-001",
@@ -183,6 +200,7 @@ def _good_rule_mystery_metadata() -> dict[str, object]:
             }
         ),
     }
+    return _with_category_engine(metadata, "suspense-mystery")
 
 
 def _bad_rule_mystery_metadata() -> dict[str, object]:
@@ -199,7 +217,7 @@ def _bad_rule_mystery_metadata() -> dict[str, object]:
 
 
 def _good_female_no_cp_metadata() -> dict[str, object]:
-    return {
+    metadata = {
         "cast_spec": {
             "protagonist": {
                 "name": "苏棠",
@@ -237,6 +255,7 @@ def _good_female_no_cp_metadata() -> dict[str, object]:
             ],
         ),
     }
+    return _with_category_engine(metadata, "female-growth-ncp")
 
 
 def _bad_female_no_cp_metadata() -> dict[str, object]:
@@ -272,6 +291,9 @@ def builtin_premium_benchmark_cases() -> tuple[PremiumBenchmarkCase, ...]:
             expected_blocking_codes=(
                 "progression_engine_missing",
                 "faction_ecology_missing",
+                "category_state_ledger_missing",
+                "category_hard_gate_missing",
+                "category_chapter_update_missing",
             ),
         ),
         PremiumBenchmarkCase(
@@ -289,7 +311,12 @@ def builtin_premium_benchmark_cases() -> tuple[PremiumBenchmarkCase, ...]:
             sub_genre="规则怪谈",
             metadata=_bad_rule_mystery_metadata(),
             expected_gate_passed=False,
-            expected_blocking_codes=("rule_system_missing",),
+            expected_blocking_codes=(
+                "rule_system_missing",
+                "category_state_ledger_missing",
+                "category_hard_gate_missing",
+                "category_chapter_update_missing",
+            ),
         ),
         PremiumBenchmarkCase(
             case_id="female-no-cp-good",
@@ -306,7 +333,12 @@ def builtin_premium_benchmark_cases() -> tuple[PremiumBenchmarkCase, ...]:
             sub_genre="女性成长无CP",
             metadata=_bad_female_no_cp_metadata(),
             expected_gate_passed=False,
-            expected_blocking_codes=("relationship_agency_missing",),
+            expected_blocking_codes=(
+                "relationship_agency_missing",
+                "category_state_ledger_missing",
+                "category_hard_gate_missing",
+                "category_chapter_update_missing",
+            ),
         ),
     )
 

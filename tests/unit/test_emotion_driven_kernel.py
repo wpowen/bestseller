@@ -99,6 +99,27 @@ def test_kernel_round_trip_and_prompt_block() -> None:
     assert "不可逆代价" in block
 
 
+def test_kernel_normalizes_common_llm_aliases() -> None:
+    payload = _valid_kernel_payload()
+    payload["ending_texture_contract"] = {
+        **payload["ending_texture_contract"],
+        "ending_type": "HE-with-cost",
+    }
+    payload["callback_motifs"] = [
+        {
+            "motif_id": "death-countdown-red-sun",
+            "symbol": "红色日落",
+            "meaning": "死亡倒计时与最终关闭规则。",
+        }
+    ]
+
+    kernel = emotion_driven_kernel_from_dict(payload)
+    dumped = emotion_driven_kernel_to_dict(kernel)
+
+    assert dumped["ending_texture_contract"]["ending_type"] == "HE"
+    assert dumped["callback_motifs"] == ["death-countdown-red-sun：红色日落：死亡倒计时与最终关闭规则。"]
+
+
 def test_extract_chapter_emotion_contract_filters_by_range() -> None:
     kernel = emotion_driven_kernel_from_dict(_valid_kernel_payload())
 

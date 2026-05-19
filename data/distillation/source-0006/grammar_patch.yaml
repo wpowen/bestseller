@@ -1,25 +1,146 @@
 key: distillation-generic
-name: Distillation Generic Grammar Patch
+name: Generic Transmigration Court Romance Grammar Patch
 source_ids:
 - source-0006
 status: draft_review
 applies_to_categories:
-- distillation-generic
+- historical-fantasy
+- transmigration
+- power-fantasy
+- romance-harem
+- political-intrigue
+- competence-demonstration
+- knowledge-asymmetry
+- court-intrigue
 required_contracts:
-- fallback_mechanism
+- protagonist maintains knowledge asymmetry advantage through modern expertise (medicine,
+  strategy, poetry) against premodern opponents
+- romantic attachments develop through graduated escalation with power-differential
+  intimacy, avoiding non-consensual thresholds
+- political positioning progresses from peripheral observer through integrated advisor
+  to indispensable power broker
+- reader vicarious power fantasy achieved through competence validation, foreknowledge
+  superiority, and strategic manipulation success
+- dramatic irony sustained through protagonist concealment necessity versus exploitation
+  opportunity tension
 state_variables:
-- fallback_progress
-chapter_change_vectors: []
+  protagonist_trajectory:
+    dependency_phase: rescue-dependent with fragmented identity requiring mentor scaffolding
+    establishment_phase: recognized practitioner with factional allegiances and multiple
+      romantic attachments
+    dominance_phase: indispensable intelligence broker with succession influence and
+      rival elimination capability
+  knowledge_inventory:
+    demonstrated_expertise:
+    - medical_diagnostics
+    - pharmaceutical_innovation
+    - strategic_forecasting
+    - cultural_canon_recitation
+    concealment_requirement: identity preservation through contextual adaptation avoiding
+      anachronism exposure
+    limitation_vector: historical foreknowledge proves incomplete or strategically
+      misleading
+  romantic_configuration:
+    primary_attachment: marriage-sanctioned partner with genuine emotional bond
+    protection_attachment: supreme authority figure providing political shelter through
+      intimate access
+    secondary_attachments: servant characters and peripheral interests serving distinct
+      narrative functions
+    prohibited_attachment: mother-in-law subplot creating taboo escalation is forbidden
+  political_standing:
+    early: mentor-dependent observer with no independent leverage
+    mid: advisor with divided factional loyalties and competing patron obligations
+    late: broker with independent intelligence apparatus and succession positioning
+  threat_accumulation:
+    antagonist_faction: rival power structure with historical grievance requiring
+      imperial intervention for resolution
+    symmetry_threat: rival transmigrator introduction creating identity existential
+      threat through equivalent knowledge advantage
+    exposure_vector: accumulating intimate relationship secrets creating potential
+      collapse risk
+chapter_change_vectors:
+  protagonist_development: state progression through dependency → establishment →
+    dominance phases with external validation milestones
+  knowledge_exploitation: cumulative expertise demonstrations building toward indispensable
+    status recognition
+  romantic_escalation: proximity increases through service pretexts → tension builds
+    toward threshold → external interruption defers completion → tension deferred
+    across chapters
+  political_integration: mentor attachment → factional entanglement → crisis forcing
+    explicit commitment choice between competing power centers
+  threat_accumulation: identity risk events and relationship secrets multiplying without
+    immediate consequence until forced confrontation
 reader_rewards:
-- distillable_mechanism_reliability
+- Competence validation through incremental expertise demonstration against skeptical
+  authorities
+- Romantic tension payoff following sustained buildup through graduated escalation
+  with interruption
+- Dramatic irony satisfaction from protagonist's foreknowledge enabling reader's superior
+  strategic understanding
+- Protective dominance fulfillment through protagonist's rescue interventions and
+  strategic shielding of vulnerable characters
+- Power fantasy satisfaction through protagonist's indispensable value recognition
+  by supreme authorities
+- Intelligence network fulfillment through protagonist's predictive positioning and
+  scheme success
+- Relationship milestone progression from forced proximity through emotional vulnerability
+  to consummation
+- Antagonist humiliation payoff through public confrontation and decisive consequence
+  delivery
+- Political maneuvering satisfaction through divide-and-conquer strategy execution
+- Mentor succession resolution through deathbed wisdom transfer and autonomous capability
+  confirmation
 hook_or_aftereffect_types:
-- fallback_hook
+  immersion_hooks:
+  - mid-conversation chapter openings creating immediate tension
+  - mid-action scene breaks generating continuation imperative
+  - unresolved confrontation escalation at chapter endings
+  - loaded questions posed rather than answered at cliffhanger positions
+  threshold_hooks:
+  - intimacy escalation interruptions at physical thresholds
+  - political revelation timing positioned before commitment moments
+  - interrupted decisions creating decision-deferral tension
+  - pregnancy, scandal, or fait_accompli_revelations shifting negotiating positions
+  continuation_promises:
+  - protagonist-originated schemes with meaningful obstacles requiring resolution
+  - accumulated threat vectors approaching narrative confrontation deadlines
+  - multiple romantic arcs at deferred escalation points
+  - factional loyalty contradictions approaching forced resolution
+  transition_patterns:
+  - spatial movement through architectural spaces marking scene progression
+  - geographic shifts coinciding with psychological transitions
+  - explicit temporal markers bridging scenes
+  - physical action anchoring continuity between tonal shifts
 forbidden_defaults:
-- llm_fallback_all_chapters
-- zero_confidence_across_entire_source
-- no_extractable_story_mechanics
-- no_craft_observations_present
-- no_distillable_content
-- data_poverty_for_analysis
-- source_material_inaccessible
-- volume_metadata_corruption
+  identity_elements:
+  - specific historical period settings (Tang Dynasty or other named dynasties)
+  - specific capital cities or palace locations by historical name
+  - all named historical or fictional character identities including relationship
+    titles and honorifics
+  - specific period artifacts including named inventions and material narrative objects
+  - named political entities including faction designations, official titles, governmental
+    structures
+  - canonical literary works or poetry attributed to historical figures
+  - real historical dynasty figures as romantic interests (Empress Wu or equivalent)
+  - specific reign dates or historically documented political events by named timeline
+  narrative_content:
+  - any non-consensual scenarios including drug-facilitated assault or coerced intimacy
+  - consent dynamics complicated by service pretexts without clear affirmative signaling
+  - voyeuristic observation without protagonist accountability or character awareness
+  - strategic deception glorification without consequence examination or occasional
+    scheme failure
+  - manipulation without unintended consequence exploration or secondary character
+    perspective acknowledgment
+  - pregnancy-as-leverage mechanics normalizing coercive reproductive dynamics
+  - ward attraction following paternal framing creating uncomfortable consent gradients
+  - mother-in-law romantic subplot or any incest-adjacent attachment
+  - extended intimate sequences with anatomical detail exceeding fade-to-black threshold
+  - gratuitous content featuring real cultural or historical figures
+  structural_patterns:
+  - extended passive protagonist positioning through authority figure summoning without
+    initiative counterbalance
+  - protagonist-originated failures with insufficient obstacle complexity
+  - unearned competence validation bypassing meaningful skepticism
+  - romantic payoff without graduated tension buildup
+  - antagonist defeat without proper confrontation and consequence delivery
+  - mentor deathbed wisdom without autonomous capability demonstration following transfer

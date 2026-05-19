@@ -24,6 +24,10 @@ from bestseller.services.autonomous_book_repair import (
     discover_output_book_slugs,
     load_latest_quality_gate_violations,
 )
+from bestseller.services.source_artifact_audit import (
+    SourceArtifactAuditReport,
+    SourceArtifactFinding,
+)
 
 
 pytestmark = pytest.mark.unit
@@ -551,6 +555,50 @@ async def test_create_quality_retrofit_rewrite_tasks_creates_db_tasks() -> None:
         == "draft_generation"
     )
     assert "premium_category_hard_engine" in task.context_required
+
+
+@pytest.mark.asyncio
+async def test_create_quality_retrofit_rewrite_tasks_blocks_on_source_audit() -> None:
+    project = _project()
+    chapter = _chapter(project, 7)
+    spec = QualityRepairTaskSpec(
+        slug=project.slug,
+        chapter_number=7,
+        priority="critical",
+        task_priority=1,
+        cause_ids=("flat_narration",),
+        audit_row={"chapter_number": "7", "priority": "critical"},
+    )
+    source_report = SourceArtifactAuditReport(
+        slug=project.slug,
+        passed=False,
+        artifact_count=1,
+        findings=(
+            SourceArtifactFinding(
+                code="SOURCE_FORBIDDEN_TERM",
+                severity="critical",
+                message="legacy term",
+                artifact_path="output/test-book/project.md",
+                evidence={"term_counts": {"无限流": 1}},
+            ),
+        ),
+    )
+    session = FakeSession(scalar_results=[chapter], execute_results=[[], []])
+
+    result = await create_quality_retrofit_rewrite_tasks(
+        session,
+        project,
+        [spec],
+        source_audit_report=source_report,
+    )
+
+    assert result.created == 0
+    assert result.source_blocked is True
+    assert result.blocked_chapters == (7,)
+    assert result.source_audit_report["blocking_findings"][0]["code"] == (
+        "SOURCE_FORBIDDEN_TERM"
+    )
+    assert session.added == []
 
 
 @pytest.mark.asyncio

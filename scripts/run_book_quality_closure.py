@@ -66,6 +66,7 @@ from bestseller.services.legacy_book_state_bootstrap import (  # noqa: E402
     bootstrap_legacy_project_state,
 )
 from bestseller.services.projects import get_project_by_slug  # noqa: E402
+from bestseller.services.source_artifact_audit import audit_source_artifacts  # noqa: E402
 from bestseller.settings import AppSettings, load_settings  # noqa: E402
 from bestseller.infra.db.models import RewriteTaskModel  # noqa: E402
 
@@ -125,6 +126,13 @@ def _load_existing_repair_plan(settings: AppSettings, slug: str) -> dict[str, An
         return _repair_plan_summary(json.loads(path.read_text(encoding="utf-8")))
     except (OSError, json.JSONDecodeError, TypeError, ValueError):
         return {"task_count": 0, "priority_counts": {}, "cause_counts": {}}
+
+
+def _source_audit_for_repair(settings: AppSettings, slug: str):
+    return audit_source_artifacts(
+        slug,
+        output_dir=Path(settings.output.base_dir),
+    )
 
 
 def _sort_slugs(slugs: list[str]) -> list[str]:
@@ -679,6 +687,7 @@ async def _sync_acceptance_gap_repair_tasks(
             project,
             specs,
             replace_existing=replace_existing,
+            source_audit_report=_source_audit_for_repair(settings, slug),
         )
         cause_counts: dict[str, int] = {}
         priority_counts: dict[str, int] = {}
@@ -834,6 +843,7 @@ async def _sync_blocking_quality_gate_tasks(
             project,
             specs,
             replace_existing=replace_existing,
+            source_audit_report=_source_audit_for_repair(settings, slug),
         )
         plan = {
             "task_count": len(specs),
@@ -1186,6 +1196,8 @@ async def _run_one_book(
             repair_plan = gap_repair_plan
     if isinstance(repair_result.get("repair_plan_path"), str):
         report_paths["autonomous_repair_plan"] = str(repair_result["repair_plan_path"])
+    if isinstance(repair_result.get("source_audit_path"), str):
+        report_paths["source_artifact_audit"] = str(repair_result["source_audit_path"])
 
     lifecycle_evidence, lifecycle_evidence_path = await _build_lifecycle_evidence(
         settings,

@@ -50,6 +50,7 @@ from bestseller.services.autonomous_book_repair import (  # noqa: E402
     load_patch_plan,
     load_quality_retrofit_rows,
 )
+from bestseller.services.source_artifact_audit import audit_source_artifacts  # noqa: E402
 from bestseller.services.drafts import (  # noqa: E402
     format_chapter_heading,
     sanitize_novel_markdown_content,
@@ -180,11 +181,40 @@ def _write_patch_plan(
     return out_path
 
 
+def _write_source_artifact_audit(
+    slug: str,
+    *,
+    language: str | None,
+    platform: str | None,
+) -> tuple[object, Path]:
+    report = audit_source_artifacts(
+        slug,
+        output_dir=_REPO_ROOT / "output",
+        expected_language=language,
+        expected_platform=platform if platform and platform != "framework" else None,
+    )
+    out_path = (
+        _REPO_ROOT
+        / "output"
+        / slug
+        / "audits"
+        / "source-artifacts"
+        / "report.json"
+    )
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(
+        json.dumps(report.to_dict(), ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    return report, out_path
+
+
 async def _sync_tasks(
     slug: str,
     specs: Sequence[QualityRepairTaskSpec],
     *,
     replace_existing: bool,
+    source_audit_report=None,
 ) -> dict[str, object]:
     settings = load_settings()
     async with session_scope(settings) as session:
@@ -203,6 +233,7 @@ async def _sync_tasks(
             project,
             specs,
             replace_existing=replace_existing,
+            source_audit_report=source_audit_report,
         )
         return {"db_project_found": True, **result.to_dict()}
 
@@ -334,6 +365,12 @@ async def _run_for_slug(
                 f"No existing quality-retrofit CSV found for {slug}; rerun without --no-audit."
             )
     audit_rows = load_quality_retrofit_rows(csv_path)
+    language = str(audit_rows[0].get("language") or "") if audit_rows else None
+    source_audit_report, source_audit_path = _write_source_artifact_audit(
+        slug,
+        language=language or None,
+        platform=platform,
+    )
     patch_path = _write_patch_plan(slug, audit_rows, priorities=priorities, limit=limit)
     patch_plan = load_patch_plan(patch_path)
     plan = build_quality_repair_plan(
@@ -356,6 +393,7 @@ async def _run_for_slug(
     result: dict[str, object] = {
         "slug": slug,
         "csv_path": str(csv_path),
+        "source_audit_path": str(source_audit_path),
         "patch_plan_path": str(patch_path),
         "repair_plan_path": str(plan_path),
         "repair_plan": {
@@ -366,7 +404,12 @@ async def _run_for_slug(
     }
     task_sync: dict[str, object] | None = None
     if create_tasks or execute:
-        task_sync = await _sync_tasks(slug, plan.specs, replace_existing=replace_existing)
+        task_sync = await _sync_tasks(
+            slug,
+            plan.specs,
+            replace_existing=replace_existing,
+            source_audit_report=source_audit_report,
+        )
         result["task_sync"] = task_sync
     if execute and task_sync:
         task_ids = [str(item) for item in task_sync.get("task_ids", [])]

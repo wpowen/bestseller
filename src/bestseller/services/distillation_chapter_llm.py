@@ -51,12 +51,12 @@ def _coerce_chapter_card_payload(
     volume_no: int,
 ) -> dict[str, Any]:
     row = dict(obj)
-    row["source_id"] = str(row.get("source_id") or source_id)
-    row["abs_chapter_no"] = int(row.get("abs_chapter_no") or abs_no)
-    try:
-        row["volume_no"] = int(row.get("volume_no") or volume_no)
-    except (TypeError, ValueError):
-        row["volume_no"] = int(volume_no)
+    # These identity fields come from the private job manifest, not the model.
+    # Providers can echo stale examples or nearby source ids; trusting that
+    # output corrupts resume keys and aggregate lineage.
+    row["source_id"] = source_id
+    row["abs_chapter_no"] = int(abs_no)
+    row["volume_no"] = int(volume_no)
 
     chapter_function = str(row.get("chapter_function") or "").strip()
     if not chapter_function:

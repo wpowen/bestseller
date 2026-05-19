@@ -5694,29 +5694,37 @@ def serve_web_app(
                     chapter_n = int(parts[5])
                     output_dir = _project_output_dir(settings, project_slug)
                     chapter_file = output_dir / f"chapter-{chapter_n:03d}.md"
-                    if not chapter_file.exists():
-                        # Try 4-digit format for chapters >= 1000
+                    # SSOT: always check DB first so the reader reflects the
+                    # current chapter_draft_versions.is_current row even when a
+                    # stale file is cached on disk. Falls through to file-only
+                    # behavior for Mode B projects that never touch the DB.
+                    fresh_content = _try_load_chapter_draft_from_db(
+                        settings,
+                        project_slug,
+                        f"chapter-{chapter_n:03d}.md",
+                    )
+                    if fresh_content is None and chapter_n >= 1000:
+                        fresh_content = _try_load_chapter_draft_from_db(
+                            settings,
+                            project_slug,
+                            f"chapter-{chapter_n:04d}.md",
+                        )
+                        if fresh_content is not None:
+                            chapter_file = output_dir / f"chapter-{chapter_n:04d}.md"
+                    if fresh_content is not None:
+                        output_dir.mkdir(parents=True, exist_ok=True)
+                        if (
+                            not chapter_file.exists()
+                            or chapter_file.read_text(encoding="utf-8") != fresh_content
+                        ):
+                            chapter_file.write_text(fresh_content, encoding="utf-8")
+                    elif not chapter_file.exists():
                         chapter_file_4d = output_dir / f"chapter-{chapter_n:04d}.md"
                         if chapter_file_4d.exists():
                             chapter_file = chapter_file_4d
                         else:
-                            # DB fallback: write chapter draft to disk on-the-fly
-                            content = _try_load_chapter_draft_from_db(
-                                settings,
-                                project_slug,
-                                f"chapter-{chapter_n:03d}.md",
-                            )
-                            if content is None and chapter_n >= 1000:
-                                content = _try_load_chapter_draft_from_db(
-                                    settings,
-                                    project_slug,
-                                    f"chapter-{chapter_n:04d}.md",
-                                )
-                            if content is None:
-                                self._route_not_found()
-                                return
-                            output_dir.mkdir(parents=True, exist_ok=True)
-                            chapter_file.write_text(content, encoding="utf-8")
+                            self._route_not_found()
+                            return
                     md = chapter_file.read_text(encoding="utf-8")
                     # Resolve project language for accurate sanitization
                     _reader_lang: str | None = (query.get("lang") or [None])[0]

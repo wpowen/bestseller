@@ -116,6 +116,13 @@ class ProjectInvariants:
     forced_methodology_fragments: tuple[str, ...] = ()
     antagonist_uniqueness: bool = True
     hype_scheme: HypeScheme = field(default_factory=HypeScheme)
+    # F10 — Locked protagonist name. When set, all generated chapters and
+    # planning artifacts must use exactly this name (no aliases like
+    # 渊儿/小渊 are tolerated in narration metadata, only in dialogue).
+    # The audit emits a critical finding if any chapter narration or
+    # project metadata text mentions a *different* name in the same
+    # surname family. None ⇒ check is skipped (Mode B / legacy projects).
+    protagonist_name: str | None = None
     # Phase C1 — violation codes the author may resolve via an Override
     # Contract (signed rationale + payback plan) instead of a hard regen.
     # Everything not listed here remains a hard invariant. Soft codes
@@ -172,6 +179,7 @@ def invariants_to_dict(inv: ProjectInvariants) -> dict[str, Any]:
         "antagonist_uniqueness": inv.antagonist_uniqueness,
         "hype_scheme": hype_scheme_to_dict(inv.hype_scheme),
         "soft_constraint_codes": sorted(inv.soft_constraint_codes),
+        "protagonist_name": inv.protagonist_name,
     }
 
 
@@ -239,6 +247,11 @@ def invariants_from_dict(data: Mapping[str, Any]) -> ProjectInvariants:
                 or ["LINE_GAP_OVER", "LINE_GAP_WARN", "TIME_ANCHOR_REGRESSION"]
             )
             if c
+        ),
+        protagonist_name=(
+            str(data["protagonist_name"]).strip() or None
+            if data.get("protagonist_name") is not None
+            else None
         ),
     )
 
@@ -401,5 +414,10 @@ def seed_invariants(
             else frozenset(
                 {"LINE_GAP_OVER", "LINE_GAP_WARN", "TIME_ANCHOR_REGRESSION"}
             )
+        ),
+        protagonist_name=(
+            str(overrides["protagonist_name"]).strip() or None
+            if overrides.get("protagonist_name")
+            else None
         ),
     )

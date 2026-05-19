@@ -732,6 +732,67 @@ def _recipe_from_dict(data: Mapping[str, Any] | None) -> HypeRecipe | None:
         return None
 
 
+_COMMERCIAL_PLATFORM_HINTS: tuple[str, ...] = (
+    "七猫", "qimao",
+    "起点", "qidian", "阅文",
+    "番茄", "tomato", "fanqie",
+    "纵横", "zongheng",
+    "晋江",
+    "刺猬猫",
+    "知乎",
+    "掌阅",
+)
+
+
+def _looks_like_commercial_market(market: Mapping[str, Any]) -> bool:
+    """Return True if the writing preset's market block targets a commercial
+    serial platform. Used to decide whether an otherwise-empty preset should
+    fall back to commercial-default hype defaults instead of staying no-op."""
+    if not isinstance(market, Mapping):
+        return False
+    for key in (
+        "platform_target",
+        "target_platform",
+        "content_mode",
+        "reader_promise",
+    ):
+        value = market.get(key)
+        if isinstance(value, str):
+            haystack = value.strip().lower()
+            for hint in _COMMERCIAL_PLATFORM_HINTS:
+                if hint.lower() in haystack:
+                    return True
+    return False
+
+
+def _commercial_default_hype_scheme(
+    market: Mapping[str, Any] | None,
+) -> HypeScheme:
+    """Default HypeScheme for commercial-platform projects whose preset omits
+    a ``hype`` namespace. Sane web-serial baseline so the engine never silently
+    no-ops on commercial work."""
+    market = market if isinstance(market, Mapping) else {}
+    reader_promise = str(market.get("reader_promise") or "")
+    selling_points = tuple(market.get("selling_points") or ())
+    if not reader_promise:
+        reader_promise = (
+            "每章 1 个可感钩子、1 次主角主动行动、1 次有代价的小回报。"
+        )
+    return HypeScheme(
+        recipe_deck=(),
+        comedic_beat_density_target=0.05,
+        payoff_window_chapters=5,
+        min_hype_per_chapter=1,
+        reader_promise=reader_promise,
+        selling_points=selling_points,
+        hook_keywords=tuple(market.get("hook_keywords") or ()),
+        chapter_hook_strategy=str(
+            market.get("chapter_hook_strategy")
+            or "章末必出现新变量/反转/未答之问。同一 hook 类型不连续使用 3 章。"
+        ),
+    )
+
+
 def hype_scheme_from_preset_overrides(
     overrides: Mapping[str, Any] | None,
 ) -> HypeScheme:
@@ -744,7 +805,10 @@ def hype_scheme_from_preset_overrides(
     ``hook_keywords``, ``chapter_hook_strategy``). Both namespaces feed the
     same ``HypeScheme`` so prompt construction sees one contract.
 
-    Missing or malformed input → empty ``HypeScheme`` (engine no-op).
+    When neither ``hype`` nor ``market`` namespace is populated, an empty
+    ``HypeScheme`` is returned (engine no-op) — except when the ``market``
+    namespace points to a known commercial serial platform, in which case a
+    minimal commercial baseline scheme is returned so the engine still runs.
     """
 
     if not isinstance(overrides, Mapping):
@@ -760,6 +824,18 @@ def hype_scheme_from_preset_overrides(
         recipe = _recipe_from_dict(row)
         if recipe is not None:
             recipes.append(recipe)
+
+    has_hype_config = bool(hype) and any(
+        hype.get(k) is not None
+        for k in (
+            "recipe_deck",
+            "comedic_beat_density_target",
+            "payoff_window_chapters",
+            "min_hype_per_chapter",
+        )
+    )
+    if not has_hype_config and _looks_like_commercial_market(market):
+        return _commercial_default_hype_scheme(market)
 
     return HypeScheme(
         recipe_deck=tuple(recipes),

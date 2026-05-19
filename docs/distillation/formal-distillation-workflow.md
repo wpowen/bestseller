@@ -339,6 +339,7 @@ scripts/distillation/run_full_auto_distill_nvidia_deepseek.sh \
 
 - `BESTSELLER_LLM_PROVIDER=nvidia`
 - `NVIDIA_LLM_MODEL=deepseek-ai/DeepSeek-V4-Pro`
+- `BESTSELLER__LLM__SUMMARIZER__MODEL=openai/deepseek-ai/deepseek-v4-pro`（脚本会自动归一化；这里的 `openai/` 是 LiteLLM 的 OpenAI-compatible 路由，不是 OpenAI 模型）
 - `BESTSELLER__LLM__SUMMARIZER__MAX_TOKENS=8192`（避免蒸馏 JSON 被截断）
 - `BESTSELLER__LLM__SUMMARIZER__API_KEY_ENV=NVIDIA_API_KEY`（如果使用 NIM API Key，设为 `NIM_API_KEY`）
 - `BESTSELLER__LLM__SUMMARIZER__API_BASE=https://integrate.api.nvidia.com/v1`

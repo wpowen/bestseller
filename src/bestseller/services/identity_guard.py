@@ -694,7 +694,9 @@ def _identity_is_dead_for_validation(
     chapter_number: int | None,
 ) -> bool:
     if entry.death_chapter_number is not None and chapter_number is not None:
-        return int(entry.death_chapter_number) <= int(chapter_number)
+        # A death chapter can legitimately stage the character alive before the
+        # death beat. Treat the death as hard-locked only from the next chapter.
+        return int(entry.death_chapter_number) < int(chapter_number)
     return not entry.is_alive
 
 

@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from bestseller.services.distillation_chapter_llm import (
+    _coerce_chapter_card_payload,
     chapter_card_keys_missing_craft,
     existing_chapter_card_keys,
     iter_pending_jobs,
@@ -89,6 +90,32 @@ def test_validate_chapter_card_rejects_missing_field() -> None:
     row = {"source_id": "x", "abs_chapter_no": 1}
     with pytest.raises(ValueError, match="missing"):
         validate_chapter_card(row, schema=schema)
+
+
+def test_coerce_chapter_card_payload_trusts_job_identity() -> None:
+    row = _coerce_chapter_card_payload(
+        {
+            "source_id": "source-stale",
+            "abs_chapter_no": 999,
+            "volume_no": 88,
+            "chapter_function": "test",
+            "state_changes": [],
+            "reader_rewards": [],
+            "open_hooks": [],
+            "reusable_mechanisms": [],
+            "non_reusable_specifics": [],
+            "risk_flags": [],
+            "craft_observations": {},
+            "confidence": 0.5,
+        },
+        source_id="source-5001",
+        abs_no=1,
+        volume_no=1,
+    )
+
+    assert row["source_id"] == "source-5001"
+    assert row["abs_chapter_no"] == 1
+    assert row["volume_no"] == 1
 
 
 def test_existing_chapter_card_keys(tmp_path: Path) -> None:

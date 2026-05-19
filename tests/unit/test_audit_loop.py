@@ -401,6 +401,9 @@ async def test_build_full_audit_includes_expected_auditors() -> None:
         "ContentAuditor",
         "PleasureDistributionAudit",
         "SetupPayoffTrackerAudit",
+        "OpeningTerminologyAudit",
+        "ProtagonistNameDriftAudit",
+        "ChapterSignatureAudit",
     }
     # The ContentAuditor in a full-audit registration should be configured
     # with the full profile; this guards against regressions to phase1.

@@ -25,6 +25,9 @@ from bestseller.services.distilled_strategy_compiler import (
 from bestseller.services.emotion_driven_kernel import (
     render_emotion_driven_kernel_prompt_block,
 )
+from bestseller.services.public_emotion_kernel import (
+    render_public_emotion_prompt_block,
+)
 from bestseller.services.quality_levers.chapter_position_profiles import (
     render_chapter_position_block,
 )
@@ -75,6 +78,7 @@ class WriterLeverContext:
     rejection_cause_ids: tuple[str, ...] = ()
     distilled_strategy_card: dict[str, Any] | None = None
     emotion_driven_kernel: dict[str, Any] | None = None
+    public_emotion_kernel: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True)
@@ -171,6 +175,13 @@ def build_writer_quality_levers_block(context: WriterLeverContext) -> str:
             render_emotion_driven_kernel_prompt_block(
                 context.emotion_driven_kernel,
                 chapter_number=context.chapter_number,
+                language=context.language,
+            )
+        )
+    if context.public_emotion_kernel:
+        blocks.append(
+            render_public_emotion_prompt_block(
+                context.public_emotion_kernel,
                 language=context.language,
             )
         )

@@ -145,6 +145,43 @@ wait_for_service() {
   return 1
 }
 
+refresh_images_from_local_base() {
+  local base_image="bestseller-local-base:docker-start-fallback"
+  local source_image=""
+  for candidate in bestseller-api:latest bestseller-worker:latest bestseller-web:latest; do
+    if docker image inspect "$candidate" >/dev/null 2>&1; then
+      source_image="$candidate"
+      break
+    fi
+  done
+  if [[ -z "$source_image" ]]; then
+    return 1
+  fi
+
+  warn "Docker registry metadata fetch failed; refreshing images from local base ${source_image}."
+  docker tag "$source_image" "$base_image"
+  docker build \
+    -t bestseller-api:latest \
+    -t bestseller-worker:latest \
+    -t bestseller-scheduler:latest \
+    -t bestseller-mcp:latest \
+    -t bestseller-web:latest \
+    -t bestseller-migrate:latest \
+    -f - . <<EOF
+FROM ${base_image}
+WORKDIR /app
+COPY pyproject.toml README.md ./
+COPY src/ ./src/
+COPY config/ ./config/
+COPY migrations/ ./migrations/
+COPY scripts/ ./scripts/
+COPY alembic.ini ./
+ENV PYTHONPATH=/app/src
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+EOF
+}
+
 # ── Main ─────────────────────────────────────────────────────────────────────
 main() {
   check_prerequisites
@@ -226,10 +263,20 @@ main() {
   # a few-second no-op; otherwise the affected images are rebuilt automatically.
   if [[ "$FORCE_BUILD" == "true" ]]; then
     log "Force-building Docker images (--no-cache) ..."
-    compose --profile migrate build --no-cache
+    if ! compose --profile migrate build --no-cache; then
+      refresh_images_from_local_base || {
+        err "Docker build failed and no local BestSeller image was available for fallback."
+        exit 1
+      }
+    fi
   else
     log "Building Docker images (incremental, layer-cache aware) ..."
-    compose --profile migrate build
+    if ! compose --profile migrate build; then
+      refresh_images_from_local_base || {
+        err "Docker build failed and no local BestSeller image was available for fallback."
+        exit 1
+      }
+    fi
   fi
 
   # ── Step 2: Start infrastructure (DB + Redis) ────────────────────────────

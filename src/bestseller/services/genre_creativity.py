@@ -8,6 +8,7 @@ directions are prompt hints, not plot locks.
 
 from __future__ import annotations
 
+import re
 from functools import lru_cache
 from typing import Any
 
@@ -62,6 +63,28 @@ def _dedupe(values: list[object], *, limit: int = 12) -> list[str]:
         if len(out) >= limit:
             break
     return out
+
+
+_FAMILY_TRAUMA_DISPLAY_RE = re.compile(
+    r"(父母|父亲|母亲|双亲|家人|亲人|亲属|失踪父母)"
+    r"[^。！？；;，,\n]{0,12}"
+    r"(失踪|消失|死亡|死去|被害|遇害|旧案|身世|真相|羁绊|动机)"
+    r"|"
+    r"(失踪|消失|死亡|死去|被害|遇害|旧案|身世|真相)"
+    r"[^。！？；;，,\n]{0,12}"
+    r"(父母|父亲|母亲|双亲|家人|亲人|亲属)",
+)
+
+_FAMILY_TRAUMA_DISPLAY_GUARDRAIL = "家庭创伤或身世旧案不得作为默认驱动"
+
+
+def _normalize_guardrail_text(value: object) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    if _FAMILY_TRAUMA_DISPLAY_RE.search(text):
+        return _FAMILY_TRAUMA_DISPLAY_GUARDRAIL
+    return text
 
 
 def _first(values: list[str], fallback: str) -> str:
@@ -213,7 +236,7 @@ def _anti_cliche_guardrails(
     if card:
         values.extend(card.anti_copy_boundaries[:5])
     values.extend(grammar_forbidden[:5])
-    return _dedupe(values, limit=6)
+    return _dedupe([_normalize_guardrail_text(item) for item in values], limit=6)
 
 
 def _direction(
@@ -244,7 +267,11 @@ def _direction(
         "novelty_pressure": novelty_pressure,
         "distilled_mechanisms": distilled_mechanisms,
         "anti_cliche_guardrails": anti_cliche_guardrails,
-        "usage_rule": "作为创意偏置使用，不得把题材标签写成固定套路；每个机制都要转化为本书专属规则、人物选择或代价。",
+        "usage_rule": (
+            "作为创意偏置使用，不得把题材标签写成固定套路；每个机制都要转化为本书专属规则、"
+            "人物选择或代价。不得套用家庭创伤、身世旧案、神秘信物等默认动机；"
+            "必须根据所选类型动态创造主角目标。"
+        ),
     }
     return GenreCreativeDirection(
         key=key,

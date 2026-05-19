@@ -28,7 +28,7 @@ def _story_design_kernel() -> dict[str, object]:
             "unique_hook": "灵田产出与信任债绑定",
             "core_question": "主角能否把个人信任扩展成宗门制度?",
             "commercial_pull": "经营成果、关系债和规则漏洞互相兑现。",
-            "forbidden_defaults": ["父母失踪", "神秘玉佩"],
+            "forbidden_defaults": ["家庭创伤或身世旧案默认驱动", "神秘玉佩"],
         },
         "character_conflict_contracts": [
             {

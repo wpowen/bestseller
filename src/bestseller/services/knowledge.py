@@ -251,7 +251,7 @@ async def _upsert_canon_fact(
             CanonFactModel.subject_id == subject_id,
             CanonFactModel.predicate == predicate,
             CanonFactModel.is_current.is_(True),
-        )
+        ).with_for_update()
     )
     if (
         existing is not None
@@ -265,6 +265,11 @@ async def _upsert_canon_fact(
     if existing is not None:
         existing.is_current = False
         existing.valid_to_chapter_no = valid_from_chapter_no
+        # PostgreSQL enforces the partial unique index
+        # ``uq_canon_current_fact`` immediately. Flush the supersede update
+        # before inserting the replacement current fact so repair/rewrite
+        # retries stay idempotent instead of failing on duplicate current facts.
+        await session.flush()
 
     fact = CanonFactModel(
         project_id=project_id,

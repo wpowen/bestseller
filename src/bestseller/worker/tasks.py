@@ -2,9 +2,12 @@ from __future__ import annotations
 
 import asyncio
 import datetime as _dt
+import importlib.util
 import logging
 import os
+from argparse import Namespace
 from contextlib import asynccontextmanager, suppress
+from pathlib import Path
 from typing import Any, AsyncIterator
 from uuid import UUID
 
@@ -42,6 +45,20 @@ _PROJECT_HEARTBEAT_WORKFLOW_TYPES = frozenset(
     }
 )
 _WORKFLOW_HEARTBEAT_SECONDS = int(os.getenv("BESTSELLER_WORKFLOW_HEARTBEAT_SECONDS", "60"))
+_ATTENTION_VERDICTS = frozenset(
+    {
+        "attention",
+        "needs_attention",
+        "waiting_human",
+        "waiting_human_review",
+        "requires_human_review",
+        "exported_requires_human_review",
+        "skipped_requires_human_review",
+    }
+)
+_AUTO_QUALITY_CLOSURE_ENV = "BESTSELLER_AUTO_QUALITY_CLOSURE"
+_DEFAULT_CLOSURE_MAX_ROUNDS = int(os.getenv("BESTSELLER_CLOSURE_MAX_ROUNDS", "8"))
+_DEFAULT_CLOSURE_ROUND_SIZE = int(os.getenv("BESTSELLER_CLOSURE_ROUND_SIZE", "10"))
 
 
 def _coerce_workflow_run_uuid(workflow_run_id: str) -> UUID | None:
@@ -174,6 +191,13 @@ def _generation_gate_block(exc: Exception) -> tuple[str, str] | None:
         return _with_subcode("prewrite_readiness_gate_failed")
     if "Reverse outline gate failed" in message:
         return _with_subcode("reverse_outline_gate_failed")
+    if "blocked by plan-richness gate" in message:
+        import re
+
+        match = re.search(r"['\"]([a-z_][a-z_0-9]+)['\"]", message)
+        if match:
+            return f"scene_plan_richness_gate_failed:{match.group(1)}", message
+        return "scene_plan_richness_gate_failed", message
     # write-safety gates (canon violations) surface here when the scene
     # pipeline gives up.
     if "blocked by write-safety gate" in message:
@@ -184,6 +208,126 @@ def _generation_gate_block(exc: Exception) -> tuple[str, str] | None:
             return f"write_safety_gate_failed:{match.group(1).replace(':', '_')}", message
         return "write_safety_gate_failed", message
     return None
+
+
+def _result_payload_requires_attention(payload: dict[str, Any]) -> bool:
+    if payload.get("requires_human_review") is True:
+        return True
+    verdict = (
+        str(
+            payload.get("final_verdict")
+            or payload.get("verdict")
+            or payload.get("status")
+            or payload.get("export_status")
+            or ""
+        )
+        .strip()
+        .lower()
+    )
+    return verdict in _ATTENTION_VERDICTS
+
+
+async def _emit_terminal_pipeline_event(
+    reporter: RedisProgressReporter,
+    payload: dict[str, Any],
+    *,
+    completed_result: str,
+    attention_reason: str,
+) -> None:
+    event_payload = {"result": completed_result, **payload}
+    if _result_payload_requires_attention(payload):
+        await reporter.emit(
+            "waiting_human",
+            {**event_payload, "reason": attention_reason},
+            event_type="waiting_human",
+        )
+        return
+    await reporter.emit("completed", event_payload, event_type="completed")
+
+
+def _quality_closure_job_id(slug: str) -> str:
+    return f"quality-closure:heal:{slug}"
+
+
+def _auto_quality_closure_enabled() -> bool:
+    return os.getenv(_AUTO_QUALITY_CLOSURE_ENV, "1").strip().lower() not in {
+        "0",
+        "false",
+        "no",
+        "off",
+    }
+
+
+def _result_payload_auto_closure_candidate(payload: dict[str, Any]) -> bool:
+    if not _auto_quality_closure_enabled():
+        return False
+    if not str(payload.get("project_slug") or "").strip():
+        return False
+    if not _result_payload_requires_attention(payload):
+        return False
+    status = str(payload.get("status") or "").strip().lower()
+    if status in {"blocked_generation_gate", "failed"}:
+        return False
+    return True
+
+
+async def _enqueue_quality_closure_if_needed(
+    redis: Any,
+    reporter: RedisProgressReporter,
+    payload: dict[str, Any],
+    *,
+    source: str,
+) -> bool:
+    if not _result_payload_auto_closure_candidate(payload):
+        return False
+    project_slug = str(payload.get("project_slug") or "").strip()
+    job_id = _quality_closure_job_id(project_slug)
+    closure_payload = {
+        "project_slug": project_slug,
+        "requested_by": source,
+        "round_size": _DEFAULT_CLOSURE_ROUND_SIZE,
+        "max_rounds": _DEFAULT_CLOSURE_MAX_ROUNDS,
+        "replace_existing": False,
+    }
+    try:
+        job = await redis.enqueue_job(
+            "run_book_quality_closure_task",
+            workflow_run_id=job_id,
+            payload=closure_payload,
+            _job_id=job_id,
+            _expires=_dt.timedelta(days=7),
+        )
+    except AttributeError:
+        return False
+    if job is None:
+        await reporter.emit(
+            "quality_closure_already_queued",
+            {"project_slug": project_slug, "job_id": job_id, "source": source},
+            event_type="quality_closure_already_queued",
+        )
+        return True
+    await reporter.emit(
+        "repairable_auto_continue",
+        {
+            "project_slug": project_slug,
+            "job_id": job_id,
+            "source": source,
+            "round_size": closure_payload["round_size"],
+            "max_rounds": closure_payload["max_rounds"],
+        },
+        event_type="repairable_auto_continue",
+    )
+    return True
+
+
+def _load_closure_runner_module() -> Any:
+    script_path = Path(__file__).resolve().parents[3] / "scripts" / "run_book_quality_closure.py"
+    spec = importlib.util.spec_from_file_location("bestseller_quality_closure_runner", script_path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"Unable to load quality closure runner at {script_path}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 async def _mark_project_generation_repair_exhausted(
@@ -267,6 +411,14 @@ async def run_autowrite_task(
     reporter = RedisProgressReporter(redis, workflow_run_id)
 
     project_slug = payload["project_slug"]
+    await reporter.emit(
+        "autowrite_started",
+        {
+            "project_slug": project_slug,
+            "workflow_run_id": workflow_run_id,
+            "status": "started",
+        },
+    )
 
     async with _workflow_db_heartbeat(workflow_run_id, project_slug=project_slug):
         try:
@@ -331,8 +483,21 @@ async def run_autowrite_task(
             await reporter.emit("failed", {"error": str(exc)}, event_type="failed")
             raise
 
-    await reporter.emit("completed", {"result": "autowrite_done"})
-    return result.model_dump(mode="json")
+    result_payload = result.model_dump(mode="json")
+    if await _enqueue_quality_closure_if_needed(
+        redis,
+        reporter,
+        result_payload,
+        source="autowrite",
+    ):
+        return result_payload
+    await _emit_terminal_pipeline_event(
+        reporter,
+        result_payload,
+        completed_result="autowrite_done",
+        attention_reason="autowrite_requires_attention",
+    )
+    return result_payload
 
 
 async def run_project_pipeline_task(
@@ -345,6 +510,14 @@ async def run_project_pipeline_task(
     redis = ctx["redis"]
     reporter = RedisProgressReporter(redis, workflow_run_id)
     project_slug = payload["project_slug"]
+    await reporter.emit(
+        "project_pipeline_started",
+        {
+            "project_slug": project_slug,
+            "workflow_run_id": workflow_run_id,
+            "status": "started",
+        },
+    )
 
     async with _workflow_db_heartbeat(workflow_run_id, project_slug=project_slug):
         try:
@@ -387,8 +560,21 @@ async def run_project_pipeline_task(
             await reporter.emit("failed", {"error": str(exc)}, event_type="failed")
             raise
 
-    await reporter.emit("completed", {"result": "project_pipeline_done"})
-    return result.model_dump(mode="json")
+    result_payload = result.model_dump(mode="json")
+    if await _enqueue_quality_closure_if_needed(
+        redis,
+        reporter,
+        result_payload,
+        source="project_pipeline",
+    ):
+        return result_payload
+    await _emit_terminal_pipeline_event(
+        reporter,
+        result_payload,
+        completed_result="project_pipeline_done",
+        attention_reason="project_pipeline_requires_attention",
+    )
+    return result_payload
 
 
 async def run_chapter_pipeline_task(
@@ -419,8 +605,14 @@ async def run_chapter_pipeline_task(
             await reporter.emit("failed", {"error": str(exc)}, event_type="failed")
             raise
 
-    await reporter.emit("completed", {"result": "chapter_pipeline_done"})
-    return result.model_dump(mode="json")
+    result_payload = result.model_dump(mode="json")
+    await _emit_terminal_pipeline_event(
+        reporter,
+        result_payload,
+        completed_result="chapter_pipeline_done",
+        attention_reason="chapter_pipeline_requires_attention",
+    )
+    return result_payload
 
 
 async def run_project_repair_task(
@@ -447,7 +639,12 @@ async def run_project_repair_task(
                     refresh_impacts=bool(payload.get("refresh_impacts", True)),
                     export_markdown=bool(payload.get("export_markdown", True)),
                     include_pending_rewrite_tasks=bool(
-                        payload.get("include_pending_rewrite_tasks", False)
+                        payload.get("include_pending_rewrite_tasks", True)
+                    ),
+                    pending_rewrite_task_limit=int(
+                        payload.get("pending_rewrite_task_limit")
+                        or payload.get("round_size")
+                        or 10
                     ),
                     scan_publication_gate_candidates=bool(
                         payload.get("scan_publication_gate_candidates", False)
@@ -499,3 +696,91 @@ async def run_project_repair_task(
     else:
         await reporter.emit("completed", {"result": "project_repair_done"})
     return result.model_dump(mode="json")
+
+
+async def run_book_quality_closure_task(
+    ctx: dict[str, Any], workflow_run_id: str, payload: dict[str, Any]
+) -> dict[str, Any]:
+    """Run whole-book acceptance closure after generation finishes repairable."""
+    settings = get_settings()
+    redis = ctx["redis"]
+    reporter = RedisProgressReporter(redis, workflow_run_id)
+    project_slug = str(payload["project_slug"])
+    round_size = max(int(payload.get("round_size") or _DEFAULT_CLOSURE_ROUND_SIZE), 1)
+    max_rounds = max(int(payload.get("max_rounds") or _DEFAULT_CLOSURE_MAX_ROUNDS), 1)
+
+    await reporter.emit(
+        "book_quality_closure_started",
+        {
+            "project_slug": project_slug,
+            "workflow_run_id": workflow_run_id,
+            "round_size": round_size,
+            "max_rounds": max_rounds,
+            "requested_by": str(payload.get("requested_by") or "worker"),
+        },
+        event_type="book_quality_closure_started",
+    )
+
+    async with _workflow_db_heartbeat(workflow_run_id, project_slug=project_slug):
+        try:
+            runner = _load_closure_runner_module()
+            result = await runner._run(
+                Namespace(
+                    slug=project_slug,
+                    all=False,
+                    platform=str(payload.get("platform") or "framework"),
+                    priority=str(payload.get("priority") or "critical,high"),
+                    round_size=round_size,
+                    continuation_size=int(payload.get("continuation_size") or 0),
+                    max_rounds=max_rounds,
+                    preflight_timeout=float(payload.get("preflight_timeout") or 45.0),
+                    repair_task_timeout=float(payload.get("repair_task_timeout") or 420.0),
+                    continuation_timeout=float(payload.get("continuation_timeout") or 600.0),
+                    max_books=0,
+                    include_verify=False,
+                    replace_existing=bool(payload.get("replace_existing", False)),
+                    execute=True,
+                    dry_run=False,
+                    json=True,
+                )
+            )
+        except Exception as exc:
+            await reporter.emit(
+                "book_quality_closure_failed",
+                {"project_slug": project_slug, "error": str(exc)},
+                event_type="failed",
+            )
+            raise
+
+    reports = list(result.get("reports") or []) if isinstance(result, dict) else []
+    report = reports[0] if reports and isinstance(reports[0], dict) else {}
+    status = str(report.get("status") or "")
+    next_action = str(report.get("next_action") or "")
+    loop = report.get("loop") if isinstance(report.get("loop"), dict) else {}
+    stop_reason = str(loop.get("stop_reason") or "")
+    event_payload = {
+        "project_slug": project_slug,
+        "status": status,
+        "next_action": next_action,
+        "stop_reason": stop_reason,
+        "fleet_report_path": result.get("fleet_report_path") if isinstance(result, dict) else None,
+        "report_path": (report.get("report_paths") or {}).get("book_quality_closure")
+        if isinstance(report.get("report_paths"), dict)
+        else None,
+    }
+    if status == "ready":
+        await reporter.emit(
+            "book_quality_closure_completed",
+            {**event_payload, "result": "book_quality_closure_done"},
+            event_type="completed",
+        )
+    else:
+        await reporter.emit(
+            "waiting_human",
+            {
+                **event_payload,
+                "reason": "book_quality_closure_requires_attention",
+            },
+            event_type="waiting_human",
+        )
+    return result

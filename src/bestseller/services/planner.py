@@ -45,6 +45,12 @@ from bestseller.services.emotion_driven_kernel import (
     evaluate_emotion_contracts,
     render_emotion_driven_kernel_prompt_block,
 )
+from bestseller.services.compliance_boundary_kernel import (
+    build_compliance_boundary_kernel_seed,
+    compliance_boundary_kernel_from_dict,
+    compliance_boundary_kernel_to_dict,
+    render_compliance_boundary_prompt_block,
+)
 from bestseller.services.entry_registry import (
     build_entry_coverage_matrix,
     build_fallback_entry_registry,
@@ -69,6 +75,12 @@ from bestseller.services.planning_context import (
     summarize_cast_spec,
     summarize_volume_plan_context,
     summarize_world_spec,
+)
+from bestseller.services.public_emotion_kernel import (
+    build_public_emotion_kernel_seed,
+    public_emotion_kernel_from_dict,
+    public_emotion_kernel_to_dict,
+    render_public_emotion_prompt_block,
 )
 from bestseller.services.projects import get_project_by_slug, import_planning_artifact
 from bestseller.services.prompt_packs import (
@@ -109,6 +121,7 @@ from bestseller.settings import AppSettings, get_settings
 logger = logging.getLogger(__name__)
 
 WORKFLOW_TYPE_GENERATE_NOVEL_PLAN = "generate_novel_plan"
+PlanningProgressCallback = Callable[[str, dict[str, Any] | None], None]
 
 
 class PlannerFallbackError(RuntimeError):
@@ -118,6 +131,28 @@ class PlannerFallbackError(RuntimeError):
     Prevents downstream corruption such as partial chapter outlines
     producing gaps like "missing chapters [151..350]".
     """
+
+
+def _emit_planner_progress(
+    progress: PlanningProgressCallback | None,
+    stage: str,
+    *,
+    project: ProjectModel,
+    workflow_run_id: UUID,
+    current_step: str,
+    **payload: Any,
+) -> None:
+    if progress is None:
+        return
+    progress(
+        stage,
+        {
+            "project_slug": project.slug,
+            "workflow_run_id": str(workflow_run_id),
+            "current_step": current_step,
+            **payload,
+        },
+    )
 
 
 @dataclass(frozen=True)
@@ -1454,6 +1489,7 @@ async def _generate_volume_outline_with_repair_loop(
     chapter_number_offset: int,
     revealed_ledger_block: str | None,
     base_constraints: list[str],
+    progress: PlanningProgressCallback | None = None,
 ) -> tuple[dict[str, Any], UUID | None, list[dict[str, Any]]]:
     """Generate a volume outline, then regenerate with diagnostics until valid."""
 
@@ -1477,6 +1513,19 @@ async def _generate_volume_outline_with_repair_loop(
     )
 
     for attempt in range(1, max_repair_attempts + 1):
+        _emit_planner_progress(
+            progress,
+            "planning_outline_attempt_started",
+            project=project,
+            workflow_run_id=workflow_run_id,
+            current_step=f"{logical_name}_attempt_{attempt}",
+            logical_name=logical_name,
+            volume_number=volume_number,
+            attempt=attempt,
+            max_attempts=max_repair_attempts,
+            expected_chapters=expected_count,
+            repair_directives_count=max(0, len(repair_constraints) - len(base_constraints)),
+        )
         vol_outline_system, vol_outline_user = _volume_outline_prompts(
             project,
             book_spec,
@@ -1513,6 +1562,20 @@ async def _generate_volume_outline_with_repair_loop(
             )
             if repair_history:
                 repair_history.append({"attempt": attempt, "status": "passed"})
+            _emit_planner_progress(
+                progress,
+                "planning_outline_attempt_completed",
+                project=project,
+                workflow_run_id=workflow_run_id,
+                current_step=f"{logical_name}_attempt_{attempt}",
+                logical_name=logical_name,
+                volume_number=volume_number,
+                attempt=attempt,
+                max_attempts=max_repair_attempts,
+                expected_chapters=expected_count,
+                generated_chapters=len(payload.get("chapters", [])),
+                llm_run_id=str(llm_run_id) if llm_run_id is not None else None,
+            )
             return payload, llm_run_id, repair_history
         except Exception as exc:
             last_error = exc
@@ -1530,6 +1593,20 @@ async def _generate_volume_outline_with_repair_loop(
                     "error": str(exc)[:2000],
                     "next_directives": directives[:5],
                 }
+            )
+            _emit_planner_progress(
+                progress,
+                "planning_outline_attempt_failed",
+                project=project,
+                workflow_run_id=workflow_run_id,
+                current_step=f"{logical_name}_attempt_{attempt}",
+                logical_name=logical_name,
+                volume_number=volume_number,
+                attempt=attempt,
+                max_attempts=max_repair_attempts,
+                expected_chapters=expected_count,
+                error=str(exc)[:1200],
+                next_directives=directives[:5],
             )
             if attempt >= max_repair_attempts:
                 break
@@ -8260,6 +8337,161 @@ async def _next_chapter_number_for_volume(
     return max(any_max + 1, 1)
 
 
+_EVENT_CYCLE_ROLE_SEQUENCE: tuple[str, ...] = (
+    "trigger",
+    "desire_lock",
+    "obstacle_escalation",
+    "method_search",
+    "execution_turn",
+    "payoff_feedback",
+)
+
+_INFORMATION_GAP_SEQUENCE: tuple[str, ...] = (
+    "reader_knows_equal",
+    "protagonist_knows_less",
+    "reader_knows_less",
+    "reader_knows_more",
+    "others_hide_truth",
+)
+
+
+def _fallback_event_cycle_role(
+    *,
+    chapter_function: str,
+    phase: str,
+    index_within_volume: int,
+    chapters_from_end: int,
+) -> str:
+    if chapters_from_end <= 2:
+        return "payoff_feedback"
+    if phase in {"reversal", "climax", "confrontation"}:
+        return "execution_turn"
+    if chapter_function == "reveal":
+        return "execution_turn"
+    if chapter_function == "action" and phase in {"pressure", "escalation"}:
+        return "obstacle_escalation"
+    return _EVENT_CYCLE_ROLE_SEQUENCE[(index_within_volume - 1) % len(_EVENT_CYCLE_ROLE_SEQUENCE)]
+
+
+def _fallback_information_gap_mode(
+    *,
+    project_slug: str,
+    chapter_number: int,
+    role: str,
+) -> str:
+    if role == "trigger":
+        return "reader_knows_equal"
+    if role in {"method_search", "execution_turn"}:
+        return "reader_knows_less"
+    if role == "payoff_feedback":
+        return "reader_knows_more"
+    return _pick_by_seed(
+        list(_INFORMATION_GAP_SEQUENCE),
+        project_slug,
+        chapter_number,
+        f"information_gap:{role}",
+    )
+
+
+def _fallback_event_cycle_contract(
+    *,
+    is_en: bool,
+    volume_number: int,
+    index_within_volume: int,
+    role: str,
+    protagonist_name: str,
+    force_name: str,
+    volume_goal: str,
+    chapter_unique_beat: str,
+    chapter_hook_description: str,
+    chapter_function: str,
+    information_gap_mode: str,
+) -> dict[str, Any]:
+    event_unit_id = f"v{volume_number}-event-{((index_within_volume - 1) // 6) + 1}"
+    common = (
+        {
+            "event_unit_id": event_unit_id,
+            "chapter_event_role": role,
+            "information_gap_mode": information_gap_mode,
+            "reader_desire": (
+                f"Readers want to see how {protagonist_name} turns "
+                f"{chapter_unique_beat} into movement on {volume_goal}."
+            ),
+            "event_pressure": (
+                f"{force_name} uses {chapter_unique_beat} to close the easy path."
+            ),
+            "step_focus": (
+                f"This chapter serves the `{role}` role inside the event unit, "
+                "not a full six-step event by itself."
+            ),
+            "expected_state_delta": (
+                f"The chapter must visibly change {chapter_function}, pressure, "
+                "relationship, resource, clue, status, or exposure state."
+            ),
+            "handoff_to_next": chapter_hook_description,
+        }
+        if is_en
+        else {
+            "event_unit_id": event_unit_id,
+            "chapter_event_role": role,
+            "information_gap_mode": information_gap_mode,
+            "reader_desire": f"读者想看到{protagonist_name}如何把「{chapter_unique_beat}」转化为「{volume_goal}」的推进。",
+            "event_pressure": f"{force_name}借「{chapter_unique_beat}」关闭轻松路径。",
+            "step_focus": f"本章只承担事件单元中的「{role}」职责，不在单章内复刻完整六步。",
+            "expected_state_delta": "本章必须让剧情、压力、关系、资源、线索、身份或暴露风险发生可见变化。",
+            "handoff_to_next": chapter_hook_description,
+        }
+    )
+    role_specific_en = {
+        "trigger": {
+            "emotion_event": f"{chapter_unique_beat} disrupts the current balance."
+        },
+        "desire_lock": {
+            "desire_goal": f"{protagonist_name} commits to advancing {volume_goal} despite the narrowing options."
+        },
+        "obstacle_escalation": {
+            "obstacle": f"{force_name} turns {chapter_unique_beat} into visible resistance or cost."
+        },
+        "method_search": {
+            "solution_method": f"{protagonist_name} searches for a concrete method that can answer {chapter_unique_beat}."
+        },
+        "execution_turn": {
+            "action_resolution": f"{protagonist_name} executes a turn around {chapter_unique_beat} and changes the local balance."
+        },
+        "payoff_feedback": {
+            "resolution_feedback": f"The chapter pays off one part of {chapter_unique_beat} while exposing the next consequence."
+        },
+        "reaction_reset": {
+            "next_reader_waiting": chapter_hook_description,
+        },
+        "bridge_hook": {
+            "next_reader_waiting": chapter_hook_description,
+        },
+    }
+    role_specific_zh = {
+        "trigger": {"emotion_event": f"「{chapter_unique_beat}」打破当前平衡。"},
+        "desire_lock": {
+            "desire_goal": f"{protagonist_name}决定在选择收窄前继续推进「{volume_goal}」。"
+        },
+        "obstacle_escalation": {
+            "obstacle": f"{force_name}把「{chapter_unique_beat}」转化为可见阻力或代价。"
+        },
+        "method_search": {
+            "solution_method": f"{protagonist_name}寻找能回应「{chapter_unique_beat}」的具体方法。"
+        },
+        "execution_turn": {
+            "action_resolution": f"{protagonist_name}围绕「{chapter_unique_beat}」执行转折行动并改变局部局势。"
+        },
+        "payoff_feedback": {
+            "resolution_feedback": f"本章兑现「{chapter_unique_beat}」的一部分，同时暴露下一层后果。"
+        },
+        "reaction_reset": {"next_reader_waiting": chapter_hook_description},
+        "bridge_hook": {"next_reader_waiting": chapter_hook_description},
+    }
+    common.update((role_specific_en if is_en else role_specific_zh).get(role, {}))
+    return common
+
+
 def _fallback_chapter_outline_batch(
     project: ProjectModel,
     book_spec: dict[str, Any],
@@ -8844,6 +9076,30 @@ def _fallback_chapter_outline_batch(
                 if _high_tension
                 else "transition"
             )
+            chapter_event_role = _fallback_event_cycle_role(
+                chapter_function=chapter_function,
+                phase=phase,
+                index_within_volume=index_within_volume,
+                chapters_from_end=chapters_from_end,
+            )
+            information_gap_mode = _fallback_information_gap_mode(
+                project_slug=project.slug,
+                chapter_number=chapter_number,
+                role=chapter_event_role,
+            )
+            event_cycle_contract = _fallback_event_cycle_contract(
+                is_en=is_en,
+                volume_number=volume_number,
+                index_within_volume=index_within_volume,
+                role=chapter_event_role,
+                protagonist_name=protagonist_name,
+                force_name=volume_force_name,
+                volume_goal=volume_goal,
+                chapter_unique_beat=chapter_unique_beat,
+                chapter_hook_description=chapter_hook_description,
+                chapter_function=chapter_function,
+                information_gap_mode=information_gap_mode,
+            )
             causal_contract = (
                 {
                     "chapter_function": chapter_function,
@@ -8940,6 +9196,9 @@ def _fallback_chapter_outline_batch(
                 ),
                 "hook_description": chapter_hook_description,
                 "causal_contract": causal_contract,
+                "event_cycle_contract": event_cycle_contract,
+                "chapter_event_role": chapter_event_role,
+                "information_gap_mode": information_gap_mode,
                 "volume_number": volume_number,
                 "arc_index": arc_index,
                 "arc_phase": arc_phase,
@@ -9845,6 +10104,8 @@ def _volume_plan_prompts(
     _story_package_block = _story_package_prompt_block(project, language=language)
     _story_design_block = _story_design_kernel_prompt_block(project)
     _emotion_driven_block = _emotion_driven_kernel_prompt_block(project)
+    _public_emotion_block = _public_emotion_kernel_prompt_block(project)
+    _compliance_boundary_block = _compliance_boundary_prompt_block(project)
     _entry_system_block = _entry_system_kernel_prompt_block(project)
     _entry_registry_block = _entry_registry_prompt_block(project)
     _character_drama_block = _character_drama_prompt_block(project, cast_spec=cast_spec)
@@ -9864,6 +10125,8 @@ def _volume_plan_prompts(
             f"{_distilled_volume_block}"
             f"{_story_design_block}\n"
             f"{_emotion_driven_block}\n"
+            f"{_public_emotion_block}\n"
+            f"{_compliance_boundary_block}\n"
             f"{_entry_system_block}\n"
             f"{_entry_registry_block}\n"
             f"{_character_drama_block}\n"
@@ -9899,6 +10162,8 @@ def _volume_plan_prompts(
             f"{_distilled_volume_block}"
             f"{_story_design_block}\n"
             f"{_emotion_driven_block}\n"
+            f"{_public_emotion_block}\n"
+            f"{_compliance_boundary_block}\n"
             f"{_entry_system_block}\n"
             f"{_entry_registry_block}\n"
             f"{_character_drama_block}\n"
@@ -10077,6 +10342,9 @@ def _outline_prompts(
             "Generate a full ChapterOutlineBatch JSON with batch_name and chapters. Each chapter needs at least 3 scenes. "
             "The first 3 chapters must rapidly establish the protagonist edge, the core anomaly, the first gain/loss cycle, and a strong read-on hook. "
             "Each chapter must define title, goal, main_conflict, and hook_description; each scene must define story and emotion tasks. "
+            "Each chapter should include `event_cycle_contract`, `chapter_event_role`, and `information_gap_mode`. "
+            "`chapter_event_role` is the chapter's role inside a larger event unit, not a requirement to repeat all six event steps per chapter. "
+            "Distribute roles such as trigger, desire_lock, obstacle_escalation, method_search, execution_turn, payoff_feedback, reaction_reset, and bridge_hook across the batch. "
             "Each chapter must include worldview compliance fields: `world_rule_refs` (WorldviewKernel invariant keys or system names used), "
             "`world_rule_landing` (the concrete choice, evidence, cost, or state change that lands the rule), `location_refs`, `faction_refs`, and `key_reveals`. "
             "When the WorldviewKernel includes enhanced contracts, every chapter must also include `world_state_deltas`, "
@@ -10116,6 +10384,9 @@ def _outline_prompts(
             "请生成完整 ChapterOutlineBatch JSON，包含 batch_name 和 chapters。每章至少 3 个 scenes。"
             "要求：前 3 章必须快速完成主角卖点亮相、核心异常亮相、第一轮得失与追读钩子；"
             "每章都要写明 title、goal、main_conflict、hook_description；每场都要有 story/emotion 任务。"
+            "每章建议包含 `event_cycle_contract`、`chapter_event_role`、`information_gap_mode`。"
+            "`chapter_event_role` 表示本章在更大事件单元中的职责，不是要求每章完整复刻六步。"
+            "请在批次中分配 trigger、desire_lock、obstacle_escalation、method_search、execution_turn、payoff_feedback、reaction_reset、bridge_hook 等角色。"
             "每章必须包含世界观合规字段：`world_rule_refs`（使用到的 WorldviewKernel invariant key 或 system name）、"
             "`world_rule_landing`（让规则落地的具体选择、证据、代价或状态变化）、`location_refs`、`faction_refs`、`key_reveals`。"
             "当 WorldviewKernel 含有增强契约时，每章还必须输出 `world_state_deltas`、`world_asset_refs`、"
@@ -10312,7 +10583,7 @@ def _volume_outline_prompts(
     _genre_system = getattr(_genre_profile.planner_prompts, f"outline_system_{_lang_key}", "")
     volume_number = int(volume_entry.get("volume_number", 1))
     chapter_count = int(volume_entry.get("chapter_count_target", 10))
-    short_complete_outline_mode = project.target_chapters <= 60 and chapter_count >= 24
+    short_complete_outline_mode = project.target_chapters <= 60 and chapter_count >= 12
     if short_complete_outline_mode:
         scene_count_contract_en = (
             "Each chapter needs 2 compact scenes by default; use 3 only for climax, reversal, "
@@ -10371,6 +10642,8 @@ def _volume_outline_prompts(
     _story_package_block = _story_package_prompt_block(project, language=language)
     _story_design_block = _story_design_kernel_prompt_block(project)
     _emotion_driven_block = _emotion_driven_kernel_prompt_block(project)
+    _public_emotion_block = _public_emotion_kernel_prompt_block(project)
+    _compliance_boundary_block = _compliance_boundary_prompt_block(project)
     _entry_system_block = _entry_system_kernel_prompt_block(project)
     _entry_registry_block = _entry_registry_prompt_block(project)
     _character_drama_block = _character_drama_prompt_block(project, cast_spec=cast_spec)
@@ -10404,6 +10677,8 @@ def _volume_outline_prompts(
             f"{_distilled_outline_block}"
             f"{_story_design_block}\n"
             f"{_emotion_driven_block}\n"
+            f"{_public_emotion_block}\n"
+            f"{_compliance_boundary_block}\n"
             f"{_entry_system_block}\n"
             f"{_entry_registry_block}\n"
             f"{_character_drama_block}\n"
@@ -10419,6 +10694,12 @@ def _volume_outline_prompts(
             f"Include batch_name and chapters. {scene_count_contract_en}"
             "Each chapter must define title, goal, main_conflict, and hook_description; each scene must define story and emotion tasks. "
             "Each chapter must include causal_contract with flexible reader-visible axes: chapter_function, pressure, protagonist_desire, protagonist_choice, visible_action_or_reaction, resistance, cost_or_tradeoff, gain_or_reveal, state_change, next_reader_desire. "
+            "Each chapter must include chapter-level `methodology_contract`: conflict_stakes, conflict_buffs, hooks_to_resolve, hooks_to_plant, relationship_debts, pacing_mode, emotion_phase, is_climax, loop_position. "
+            "Do not put scene camera/reveal/cut fields in chapter methodology_contract, and do not put story-level ability_origin_contract or recognition_anchors in chapters. "
+            "Each scene must include scene-level `methodology_contract`: conflict_stakes, conflict_buffs, hook_type, spotlight_character, information_control_mode, camera_distance, reveal_mode, signature_image, cut_point, action_sequence, relationship_debts. "
+            "Do not put chapter-level pacing/climax/loop fields or story-level ability/recognition fields in scene methodology_contract. "
+            "Each chapter should also include `event_cycle_contract`, `chapter_event_role`, and `information_gap_mode`; the role is this chapter's contribution to a larger event unit, not a full six-step template repeated in every chapter. "
+            "Across the volume, distribute roles such as trigger, desire_lock, obstacle_escalation, method_search, execution_turn, payoff_feedback, reaction_reset, and bridge_hook to prevent homogeneous chapters. "
             "Each chapter must also include worldview compliance fields: `world_rule_refs` (WorldviewKernel invariant keys or system names used), "
             "`world_rule_landing` (the concrete choice, evidence, cost, or state change that lands the rule), `location_refs`, `faction_refs`, and `key_reveals`. "
             "When the WorldviewKernel includes enhanced contracts, each chapter must also include `world_state_deltas`, "
@@ -10459,6 +10740,8 @@ def _volume_outline_prompts(
             f"{_distilled_outline_block}"
             f"{_story_design_block}\n"
             f"{_emotion_driven_block}\n"
+            f"{_public_emotion_block}\n"
+            f"{_compliance_boundary_block}\n"
             f"{_entry_system_block}\n"
             f"{_entry_registry_block}\n"
             f"{_character_drama_block}\n"
@@ -10474,6 +10757,12 @@ def _volume_outline_prompts(
             f"包含 batch_name 和 chapters。{scene_count_contract_zh}"
             "每章都要写明 title、goal、main_conflict、hook_description；每场都要有 story/emotion 任务。"
             "每章必须包含 causal_contract：chapter_function、pressure、protagonist_desire、protagonist_choice、visible_action_or_reaction、resistance、cost_or_tradeoff、gain_or_reveal、state_change、next_reader_desire。"
+            "每章必须包含章节级 `methodology_contract`：conflict_stakes、conflict_buffs、hooks_to_resolve、hooks_to_plant、relationship_debts、pacing_mode、emotion_phase、is_climax、loop_position。"
+            "章节级 methodology_contract 不得放镜头、揭示、断点等场景字段，也不得放 ability_origin_contract、recognition_anchors 等故事级字段。"
+            "每个 scene 必须包含场景级 `methodology_contract`：conflict_stakes、conflict_buffs、hook_type、spotlight_character、information_control_mode、camera_distance、reveal_mode、signature_image、cut_point、action_sequence、relationship_debts。"
+            "场景级 methodology_contract 不得放 pacing/climax/loop 等章节字段，也不得放能力来源/人物识别等故事级字段。"
+            "每章还建议包含 `event_cycle_contract`、`chapter_event_role`、`information_gap_mode`；角色表示本章在更大事件单元中的职责，不是把完整六步模板重复塞进每一章。"
+            "请在整卷中分配 trigger、desire_lock、obstacle_escalation、method_search、execution_turn、payoff_feedback、reaction_reset、bridge_hook 等角色，以避免章节同质化。"
             "每章还必须包含世界观合规字段：`world_rule_refs`（使用到的 WorldviewKernel invariant key 或 system name）、"
             "`world_rule_landing`（让规则落地的具体选择、证据、代价或状态变化）、`location_refs`、`faction_refs`、`key_reveals`。"
             "当 WorldviewKernel 含有增强契约时，每章还必须输出 `world_state_deltas`、`world_asset_refs`、"
@@ -11088,6 +11377,36 @@ def _emotion_driven_kernel_prompt_block(project: ProjectModel) -> str:
         return ""
 
 
+def _public_emotion_kernel_prompt_block(project: ProjectModel) -> str:
+    metadata = project.metadata_json if isinstance(project.metadata_json, dict) else {}
+    raw = _mapping(metadata.get("public_emotion_kernel"))
+    if not raw:
+        return ""
+    try:
+        return "\n\n" + render_public_emotion_prompt_block(
+            raw,
+            language=_planner_language(project),
+        )
+    except Exception:
+        logger.debug("Failed to render PublicEmotionKernel prompt block", exc_info=True)
+        return ""
+
+
+def _compliance_boundary_prompt_block(project: ProjectModel) -> str:
+    metadata = project.metadata_json if isinstance(project.metadata_json, dict) else {}
+    raw = _mapping(metadata.get("compliance_boundary_kernel"))
+    if not raw:
+        return ""
+    try:
+        return "\n\n" + render_compliance_boundary_prompt_block(
+            raw,
+            language=_planner_language(project),
+        )
+    except Exception:
+        logger.debug("Failed to render ComplianceBoundaryKernel prompt block", exc_info=True)
+        return ""
+
+
 def _entry_system_kernel_prompt_block(project: ProjectModel) -> str:
     metadata = project.metadata_json if isinstance(project.metadata_json, dict) else {}
     raw = _mapping(metadata.get("entry_system_kernel"))
@@ -11343,6 +11662,23 @@ def _fallback_story_design_kernel(
         or list(shape.primary_duties[:5])
         or ["目标变化", "压力变化", "关系变化"]
     )
+    macro_options = list(grammar.macro_structure_options)
+    macro_structure_type = (
+        "progressive_staircase"
+        if "progressive_staircase" in macro_options
+        else (macro_options[0] if macro_options else "progressive_staircase")
+    )
+    reader_desire_types = list(grammar.reader_desire_types[:3]) or [
+        "curiosity",
+        "respect_value",
+        "control",
+    ]
+    event_pattern_types = list(grammar.conflict_event_types[:4]) or [
+        "emotion_event",
+        "obstacle_escalation",
+        "method_search",
+        "payoff_feedback",
+    ]
 
     return {
         "version": 1,
@@ -11393,6 +11729,62 @@ def _fallback_story_design_kernel(
                 ),
                 "escalation_path": "从局部问题扩大到全书主线压力。",
             }
+        ],
+        "four_causes_contract": {
+            "purpose_result": _first_non_empty_text(
+                book_spec.get("theme"),
+                book_spec.get("theme_statement"),
+                book_spec.get("core_question"),
+                default="把本书主题目的转化为读者能感到的阶段结果。",
+            ),
+            "material_basis": [
+                unique_hook,
+                protagonist_goal,
+                rule_name,
+                power_system_name,
+            ],
+            "formal_pattern": macro_structure_type,
+            "driving_forces": [
+                reader_promise,
+                _first_non_empty_text(
+                    book_spec.get("central_conflict"),
+                    series_engine.get("core_engine"),
+                    default="外部压力和内部选择持续推动事件单元。",
+                ),
+            ],
+            "proof_criteria": [
+                "每个事件单元必须产生可见状态变化。",
+                "事件六步跨章节分布，不要求每章完整重复。",
+            ],
+        },
+        "macro_structure_contract": {
+            "structure_type": macro_structure_type,
+            "mainline_rule": "主线按事件单元递进，每个单元完成一次欲望、阻碍、行动和反馈的状态改变。",
+            "subline_rule": "副线必须依附主线选择的成本、资源、关系或信息变化。",
+            "rhythm_rule": "短兑现、阻碍升级、行动转折和余波交替出现。",
+            "anti_homogeneity_rule": "每章只承担事件单元中的一个主要角色，禁止把完整六步作为固定章模板。",
+        },
+        "reader_desire_matrix": [
+            {
+                "desire_type": desire_type,
+                "reader_expectation": f"读者期待看到{protagonist_name}通过{protagonist_goal}获得新的局势控制或情绪兑现。",
+                "payoff_mode": reward,
+                "risk_control": "连续章节不得复用同一种阻碍、同一种信息差或同一种尾钩。",
+            }
+            for desire_type, reward in zip(
+                reader_desire_types,
+                (list(grammar.reader_rewards[:3]) or ["短兑现", "新悬念", "状态变化"]),
+                strict=False,
+            )
+        ],
+        "event_pattern_inventory": [
+            {
+                "pattern_type": pattern_type,
+                "use_case": "作为跨章节事件单元的一环使用。",
+                "reader_effect": "制造期待、阻碍、解决欲或反馈余波。",
+                "anti_repetition_rule": "同一事件角色不能连续主导过多章节，必须变换压力来源和信息差。",
+            }
+            for pattern_type in event_pattern_types
         ],
         "worldview_kernel": {
             "premise": _first_non_empty_text(
@@ -11575,7 +11967,7 @@ def _fallback_story_design_kernel(
         ],
         "change_vectors": change_vectors[:5],
         "uniqueness_constraints": [
-            "不得把父母失踪、神秘玉佩、退婚羞辱作为默认驱动。",
+            "不得把亲属失踪/死亡、身世旧案、神秘信物、退婚羞辱作为默认驱动。",
             "每章必须写出具体状态变化，而不是只推进作者笔记。",
         ],
         "reverse_outline_status": "not_started",
@@ -11610,6 +12002,8 @@ def _story_design_kernel_prompts(
         logger.debug("Failed to build CharacterDramaMap for story-design prompt", exc_info=True)
         character_drama_block = ""
     distilled_story_design_block = _distilled_design_reference_block(project, "story_design")
+    public_emotion_block = _public_emotion_kernel_prompt_block(project)
+    compliance_boundary_block = _compliance_boundary_prompt_block(project)
     system_prompt = (
         "You are a story architect. Output one valid JSON object only."
         if is_en
@@ -11625,11 +12019,17 @@ def _story_design_kernel_prompts(
             f"WorldSpec summary:\n{summarize_world_spec(world_spec, language='en')}\n"
             f"CastSpec summary:\n{summarize_cast_spec(cast_spec, language='en')}\n\n"
             f"{distilled_story_design_block}"
+            f"{public_emotion_block}"
+            f"{compliance_boundary_block}"
             f"{character_drama_block}\n\n"
             "Generate a StoryDesignKernel JSON object. It must contain reader_promise, "
             "premise_contract, character_conflict_contracts, world_conflict_contracts, "
             "worldview_kernel, structure_strategy, plot_tree, beat_schedule, change_vectors, and "
-            "uniqueness_constraints. Every non-main plot_tree node must depend on the mainline. "
+            "uniqueness_constraints. It should also include the optional writing-principle fields "
+            "four_causes_contract, macro_structure_contract, reader_desire_matrix, and "
+            "event_pattern_inventory. Treat event patterns as multi-chapter event-unit roles; "
+            "do not require every chapter to carry all six event steps. Every non-main plot_tree "
+            "node must depend on the mainline. "
             "The worldview_kernel is the book-specific operating system: define invariants, "
             "systems, factions, locations, reveal_ladder, and integration_contract so volume "
             "and chapter planning must obey the world. Also preserve data-driven execution "
@@ -11637,7 +12037,7 @@ def _story_design_kernel_prompts(
             "authority_claims, scene_templates, and anti_copy_boundaries. State variables must "
             "be book-specific; assets must include visible cost/exposure; authority claims must "
             "explain legitimacy; anti-copy boundaries must remain. "
-            "Do not use missing parents, magic objects, or generic revenge as default motivation.\n\n"
+            "Do not use family disappearance/death, hidden lineage cases, magic objects, or generic revenge as default motivation.\n\n"
             f"Use this schema-compatible fallback as the minimum structure:\n{_json_dumps(fallback_payload)}"
         )
         if is_en
@@ -11650,18 +12050,23 @@ def _story_design_kernel_prompts(
             f"WorldSpec 摘要：\n{summarize_world_spec(world_spec, language='zh')}\n"
             f"CastSpec 摘要：\n{summarize_cast_spec(cast_spec, language='zh')}\n\n"
             f"{distilled_story_design_block}"
+            f"{public_emotion_block}"
+            f"{compliance_boundary_block}"
             f"{character_drama_block}\n\n"
             "请生成 StoryDesignKernel JSON 对象，必须包含 reader_promise、premise_contract、"
             "character_conflict_contracts、world_conflict_contracts、worldview_kernel、structure_strategy、plot_tree、"
             "beat_schedule、change_vectors、uniqueness_constraints。plot_tree 中每条非主线都必须说明"
             " dependency_on_mainline；每条线都必须说明 failure_if_removed。"
+            "同时建议包含写作原理扩展字段：four_causes_contract、macro_structure_contract、"
+            "reader_desire_matrix、event_pattern_inventory。事件模式是跨章节的事件单元角色，"
+            "不能要求每一章都完整承载六步，否则会造成章节同质化。"
             "worldview_kernel 是本书专属世界观操作系统，必须定义 invariants、systems、factions、"
             "locations、reveal_ladder、integration_contract，让卷纲和章纲必须遵循这个世界。"
             "同时必须保留可数据化执行字段：distilled_mechanism_bindings、state_variables、"
             "asset_ledger、authority_claims、scene_templates、anti_copy_boundaries。"
             "state_variables 必须是本书专属状态变量；asset 必须包含可见 cost/exposure；"
             "authority_claims 必须说明合法性；anti_copy_boundaries 必须保留并约束后续生成。"
-            "禁止把父母失踪、神秘玉佩、退婚羞辱、通用复仇当作默认驱动。\n\n"
+            "禁止把亲属失踪/死亡、身世旧案、神秘信物、退婚羞辱、通用复仇当作默认驱动。\n\n"
             f"以下 fallback 是最低结构要求，请在此基础上做出本书独有设计：\n{_json_dumps(fallback_payload)}"
         )
     )
@@ -12282,6 +12687,8 @@ def _emotion_driven_kernel_prompts(
                 "Failed to render StoryDesignKernel for emotion-driven prompt",
                 exc_info=True,
             )
+    public_emotion_block = _public_emotion_kernel_prompt_block(project)
+    compliance_boundary_block = _compliance_boundary_prompt_block(project)
 
     system_prompt = (
         "You are a fiction emotion-architecture designer. Output one valid JSON object only."
@@ -12296,6 +12703,8 @@ def _emotion_driven_kernel_prompts(
             f"WorldSpec summary:\n{summarize_world_spec(world_spec, language='en')}\n"
             f"CastSpec summary:\n{summarize_cast_spec(cast_spec, language='en')}\n"
             f"{story_design_block}\n\n"
+            f"{public_emotion_block}\n"
+            f"{compliance_boundary_block}\n"
             "Generate an EmotionDrivenKernel JSON object. It must turn plot into reader emotion contracts, not generic advice.\n"
             "Required top-level fields: version, reader_emotion_promise, primary_reader_waiting, empathy_contracts, bomb_contracts, antagonist_moral_contracts, ending_texture_contract, emotion_chain, callback_motifs.\n"
             "Empathy contracts must include situation, current_desire, fear_or_loss, sensory_entry, judgment_logic, reasonable_action, and consequence.\n"
@@ -12312,6 +12721,8 @@ def _emotion_driven_kernel_prompts(
             f"WorldSpec 摘要：\n{summarize_world_spec(world_spec, language='zh')}\n"
             f"CastSpec 摘要：\n{summarize_cast_spec(cast_spec, language='zh')}\n"
             f"{story_design_block}\n\n"
+            f"{public_emotion_block}\n"
+            f"{compliance_boundary_block}\n"
             "请生成 EmotionDrivenKernel JSON 对象。它要把剧情转成读者情绪合同，而不是泛泛写作建议。\n"
             "顶层必须包含：version、reader_emotion_promise、primary_reader_waiting、empathy_contracts、bomb_contracts、antagonist_moral_contracts、ending_texture_contract、emotion_chain、callback_motifs。\n"
             "代入合同必须包含 situation、current_desire、fear_or_loss、sensory_entry、judgment_logic、reasonable_action、consequence。\n"
@@ -12406,6 +12817,176 @@ async def _generate_emotion_driven_kernel(
             "artifact_id": str(artifact.id),
             "llm_run_id": str(llm_run_id) if llm_run_id else None,
         },
+    )
+    return payload
+
+
+def _project_target_audiences(
+    project: ProjectModel,
+    book_spec: Mapping[str, Any],
+    metadata: Mapping[str, Any],
+) -> list[str]:
+    audiences = _string_list(metadata.get("target_audiences"))
+    if audiences:
+        return audiences
+    audiences = _string_list(book_spec.get("target_audiences"))
+    if audiences:
+        return audiences
+    audience = _non_empty_string(getattr(project, "audience", ""), "")
+    return [audience] if audience else []
+
+
+def _project_target_platform(project: ProjectModel, metadata: Mapping[str, Any]) -> str:
+    writing_profile = _mapping(metadata.get("writing_profile"))
+    market = _mapping(writing_profile.get("market"))
+    return _first_non_empty_text(
+        metadata.get("target_platform"),
+        metadata.get("platform_target"),
+        market.get("platform_target"),
+        getattr(project, "platform_target", None),
+        default="general",
+    )
+
+
+def _project_commercial_brief(
+    project: ProjectModel,
+    *,
+    premise: str,
+    book_spec: Mapping[str, Any],
+    metadata: Mapping[str, Any],
+) -> dict[str, Any]:
+    commercial = dict(_mapping(metadata.get("commercial_brief")))
+    target_audiences = _project_target_audiences(project, book_spec, metadata)
+    if target_audiences and not commercial.get("target_audiences"):
+        commercial["target_audiences"] = target_audiences
+    for source_key, target_key in (
+        ("reader_promise", "reader_promise"),
+        ("logline", "reader_promise"),
+        ("unique_hook", "unique_hook"),
+    ):
+        if not commercial.get(target_key) and book_spec.get(source_key):
+            commercial[target_key] = book_spec.get(source_key)
+    if not commercial.get("premise"):
+        commercial["premise"] = premise
+    return commercial
+
+
+async def _generate_public_emotion_kernel_artifact(
+    session: AsyncSession,
+    *,
+    project: ProjectModel,
+    project_slug: str,
+    premise: str,
+    book_spec_payload: dict[str, Any],
+    workflow_run_id: UUID,
+    step_order: int,
+    artifact_records: list[PlanningArtifactRecord],
+) -> dict[str, Any]:
+    metadata = dict(project.metadata_json or {})
+    existing = _mapping(metadata.get("public_emotion_kernel"))
+    seed = build_public_emotion_kernel_seed(
+        book_spec={
+            **book_spec_payload,
+            "title": book_spec_payload.get("title") or project.title,
+            "genre": book_spec_payload.get("genre") or project.genre,
+            "premise": premise,
+        },
+        commercial_brief=_project_commercial_brief(
+            project,
+            premise=premise,
+            book_spec=book_spec_payload,
+            metadata=metadata,
+        ),
+        project_metadata=metadata,
+    )
+    raw_payload = existing or seed
+    try:
+        payload = public_emotion_kernel_to_dict(
+            public_emotion_kernel_from_dict(dict(raw_payload))
+        )
+    except Exception:
+        payload = public_emotion_kernel_to_dict(public_emotion_kernel_from_dict(seed))
+
+    artifact = await import_planning_artifact(
+        session,
+        project_slug,
+        PlanningArtifactCreate(
+            artifact_type=ArtifactType.PUBLIC_EMOTION_KERNEL,
+            content=payload,
+        ),
+    )
+    artifact_records.append(
+        PlanningArtifactRecord(
+            artifact_type=ArtifactType.PUBLIC_EMOTION_KERNEL,
+            artifact_id=artifact.id,
+            version_no=artifact.version_no,
+        )
+    )
+    project.metadata_json = {
+        **(project.metadata_json or {}),
+        "public_emotion_kernel": payload,
+    }
+    await create_workflow_step_run(
+        session,
+        workflow_run_id=workflow_run_id,
+        step_name="generate_public_emotion_kernel",
+        step_order=step_order,
+        status=WorkflowStatus.COMPLETED,
+        output_ref={"artifact_id": str(artifact.id)},
+    )
+    return payload
+
+
+async def _generate_compliance_boundary_kernel_artifact(
+    session: AsyncSession,
+    *,
+    project: ProjectModel,
+    project_slug: str,
+    workflow_run_id: UUID,
+    step_order: int,
+    artifact_records: list[PlanningArtifactRecord],
+) -> dict[str, Any]:
+    metadata = dict(project.metadata_json or {})
+    existing = _mapping(metadata.get("compliance_boundary_kernel"))
+    seed = build_compliance_boundary_kernel_seed(
+        platform=_project_target_platform(project, metadata)
+    )
+    raw_payload = existing or seed
+    try:
+        payload = compliance_boundary_kernel_to_dict(
+            compliance_boundary_kernel_from_dict(dict(raw_payload))
+        )
+    except Exception:
+        payload = compliance_boundary_kernel_to_dict(
+            compliance_boundary_kernel_from_dict(seed)
+        )
+
+    artifact = await import_planning_artifact(
+        session,
+        project_slug,
+        PlanningArtifactCreate(
+            artifact_type=ArtifactType.COMPLIANCE_BOUNDARY_KERNEL,
+            content=payload,
+        ),
+    )
+    artifact_records.append(
+        PlanningArtifactRecord(
+            artifact_type=ArtifactType.COMPLIANCE_BOUNDARY_KERNEL,
+            artifact_id=artifact.id,
+            version_no=artifact.version_no,
+        )
+    )
+    project.metadata_json = {
+        **(project.metadata_json or {}),
+        "compliance_boundary_kernel": payload,
+    }
+    await create_workflow_step_run(
+        session,
+        workflow_run_id=workflow_run_id,
+        step_name="generate_compliance_boundary_kernel",
+        step_order=step_order,
+        status=WorkflowStatus.COMPLETED,
+        output_ref={"artifact_id": str(artifact.id)},
     )
     return payload
 
@@ -12609,6 +13190,8 @@ async def _run_prewrite_readiness_gate(
     artifact_records: list[PlanningArtifactRecord],
     story_design_kernel: dict[str, Any] | None = None,
     emotion_driven_kernel: dict[str, Any] | None = None,
+    public_emotion_kernel: dict[str, Any] | None = None,
+    compliance_boundary_kernel: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Persist the planning kernel and readiness report before drafting entry."""
 
@@ -12622,6 +13205,8 @@ async def _run_prewrite_readiness_gate(
         volume_plan=volume_plan_payload,
         story_design_kernel=story_design_kernel,
         emotion_driven_kernel=emotion_driven_kernel,
+        public_emotion_kernel=public_emotion_kernel,
+        compliance_boundary_kernel=compliance_boundary_kernel,
         output_base_dir=settings.output.base_dir,
     )
     report = _mapping(payload.get("prewrite_readiness_report"))
@@ -12781,6 +13366,69 @@ async def _run_worldview_compliance_gate(
     return report_payload
 
 
+async def _run_story_principle_gate(
+    session: AsyncSession,
+    *,
+    project: ProjectModel,
+    outline_payload: dict[str, Any],
+    workflow_run_id: UUID,
+    step_order: int,
+) -> dict[str, Any]:
+    """Audit event-unit writing-principle coverage across chapter outlines."""
+
+    from bestseller.services.quality_gates_config import get_quality_gates_config
+    from bestseller.services.story_principle_gate import (
+        evaluate_story_principle_contract,
+        story_principle_report_to_dict,
+    )
+
+    gate_cfg = get_quality_gates_config().story_principle
+    if not gate_cfg.enabled:
+        return {}
+
+    report = evaluate_story_principle_contract(
+        outline_payload,
+        min_roles_per_batch=gate_cfg.min_event_cycle_roles_per_batch,
+        max_same_role_streak=gate_cfg.max_same_role_streak,
+    )
+    report_payload = story_principle_report_to_dict(report)
+    should_block = gate_cfg.block_on_failure and not report.passed
+
+    metadata = dict(project.metadata_json or {})
+    kernel = _mapping(metadata.get("story_design_kernel"))
+    if kernel:
+        kernel["story_principle_status"] = "verified" if report.passed else "needs_repair"
+        metadata["story_design_kernel"] = kernel
+    metadata["story_principle_gate_report"] = report_payload
+    project.metadata_json = metadata
+
+    finding_codes = [
+        str(item.get("code"))
+        for item in _mapping_list(report_payload.get("findings"))
+        if item.get("code")
+    ]
+    await create_workflow_step_run(
+        session,
+        workflow_run_id=workflow_run_id,
+        step_name="story_principle_gate",
+        step_order=step_order,
+        status=WorkflowStatus.FAILED if should_block else WorkflowStatus.COMPLETED,
+        output_ref={
+            "passed": report.passed,
+            "finding_codes": finding_codes,
+            "present_roles": sorted(report.present_roles),
+        },
+        error_message=(
+            "Story principle gate failed: " + ", ".join(finding_codes)
+            if should_block
+            else None
+        ),
+    )
+    if should_block:
+        raise PlannerFallbackError("Story principle gate failed: " + ", ".join(finding_codes))
+    return report_payload
+
+
 async def _run_worldview_progression_gate(
     session: AsyncSession,
     settings: AppSettings,
@@ -12853,6 +13501,7 @@ async def generate_novel_plan(
     premise: str,
     *,
     requested_by: str = "system",
+    progress: PlanningProgressCallback | None = None,
 ) -> NovelPlanningResult:
     project = await _assert_plan_writer_not_locked(session, project_slug)
 
@@ -12942,6 +13591,15 @@ async def generate_novel_plan(
         # names instead of regex-extracted fragments or generic pool defaults.
         # If the LLM call fails, _generate_character_names falls back to the
         # curated genre pool — never to regex on premise.
+        current_step_name = "generate_character_names"
+        workflow_run.current_step = current_step_name
+        _emit_planner_progress(
+            progress,
+            "planning_step_started",
+            project=project,
+            workflow_run_id=workflow_run.id,
+            current_step=current_step_name,
+        )
         character_name_pool = await _generate_character_names(
             session,
             settings,
@@ -12961,6 +13619,13 @@ async def generate_novel_plan(
                 seed_text=_project_name_seed(project, premise),
             )["protagonist"]["name"]
         )
+        _emit_planner_progress(
+            progress,
+            "planning_step_completed",
+            project=project,
+            workflow_run_id=workflow_run.id,
+            current_step=current_step_name,
+        )
 
         book_spec_fallback = _fallback_book_spec(project, premise, category_key=_category_key)
         # Override placeholder name with LLM-designed one so the LLM book_spec
@@ -12969,6 +13634,14 @@ async def generate_novel_plan(
             book_spec_fallback["protagonist"]["name"] = llm_protagonist_name
         current_step_name = "generate_book_spec"
         workflow_run.current_step = current_step_name
+        _emit_planner_progress(
+            progress,
+            "planning_step_started",
+            project=project,
+            workflow_run_id=workflow_run.id,
+            current_step=current_step_name,
+            artifact_type=ArtifactType.BOOK_SPEC.value,
+        )
         book_system, book_user = _book_spec_prompts(project, premise, book_spec_fallback)
         book_spec_payload, llm_run_id = await _generate_structured_artifact(
             session,
@@ -13035,6 +13708,16 @@ async def generate_novel_plan(
                 "llm_run_id": str(llm_run_id) if llm_run_id else None,
             },
         )
+        _emit_planner_progress(
+            progress,
+            "planning_step_completed",
+            project=project,
+            workflow_run_id=workflow_run.id,
+            current_step=current_step_name,
+            artifact_type=ArtifactType.BOOK_SPEC.value,
+            artifact_id=str(book_artifact.id),
+            llm_run_id=str(llm_run_id) if llm_run_id else None,
+        )
         step_order += 1
 
         world_spec_fallback = _fallback_world_spec(
@@ -13042,6 +13725,14 @@ async def generate_novel_plan(
         )
         current_step_name = "generate_world_spec"
         workflow_run.current_step = current_step_name
+        _emit_planner_progress(
+            progress,
+            "planning_step_started",
+            project=project,
+            workflow_run_id=workflow_run.id,
+            current_step=current_step_name,
+            artifact_type=ArtifactType.WORLD_SPEC.value,
+        )
         world_system, world_user = _world_spec_prompts(project, premise, book_spec_payload)
         world_spec_payload, llm_run_id = await _generate_structured_artifact(
             session,
@@ -13103,6 +13794,16 @@ async def generate_novel_plan(
                 "llm_run_id": str(llm_run_id) if llm_run_id else None,
             },
         )
+        _emit_planner_progress(
+            progress,
+            "planning_step_completed",
+            project=project,
+            workflow_run_id=workflow_run.id,
+            current_step=current_step_name,
+            artifact_type=ArtifactType.WORLD_SPEC.value,
+            artifact_id=str(world_artifact.id),
+            llm_run_id=str(llm_run_id) if llm_run_id else None,
+        )
         step_order += 1
 
         cast_spec_fallback = _fallback_cast_spec(
@@ -13115,6 +13816,14 @@ async def generate_novel_plan(
         )
         current_step_name = "generate_cast_spec"
         workflow_run.current_step = current_step_name
+        _emit_planner_progress(
+            progress,
+            "planning_step_started",
+            project=project,
+            workflow_run_id=workflow_run.id,
+            current_step=current_step_name,
+            artifact_type=ArtifactType.CAST_SPEC.value,
+        )
         cast_system, cast_user = _cast_spec_prompts(project, book_spec_payload, world_spec_payload)
         cast_spec_payload, llm_run_id = await _generate_structured_artifact(
             session,
@@ -13152,6 +13861,16 @@ async def generate_novel_plan(
                 "artifact_id": str(cast_artifact.id),
                 "llm_run_id": str(llm_run_id) if llm_run_id else None,
             },
+        )
+        _emit_planner_progress(
+            progress,
+            "planning_step_completed",
+            project=project,
+            workflow_run_id=workflow_run.id,
+            current_step=current_step_name,
+            artifact_type=ArtifactType.CAST_SPEC.value,
+            artifact_id=str(cast_artifact.id),
+            llm_run_id=str(llm_run_id) if llm_run_id else None,
         )
         step_order += 1
 
@@ -13317,10 +14036,76 @@ async def generate_novel_plan(
                     )
                 )
 
+        current_step_name = "generate_public_emotion_kernel"
+        workflow_run.current_step = current_step_name
+        _emit_planner_progress(
+            progress,
+            "planning_step_started",
+            project=project,
+            workflow_run_id=workflow_run.id,
+            current_step=current_step_name,
+            artifact_type=ArtifactType.PUBLIC_EMOTION_KERNEL.value,
+        )
+        public_emotion_payload = await _generate_public_emotion_kernel_artifact(
+            session,
+            project=project,
+            project_slug=project_slug,
+            premise=premise,
+            book_spec_payload=book_spec_payload,
+            workflow_run_id=workflow_run.id,
+            step_order=step_order,
+            artifact_records=artifact_records,
+        )
+        _emit_planner_progress(
+            progress,
+            "planning_step_completed",
+            project=project,
+            workflow_run_id=workflow_run.id,
+            current_step=current_step_name,
+            artifact_type=ArtifactType.PUBLIC_EMOTION_KERNEL.value,
+        )
+        step_order += 1
+
+        current_step_name = "generate_compliance_boundary_kernel"
+        workflow_run.current_step = current_step_name
+        _emit_planner_progress(
+            progress,
+            "planning_step_started",
+            project=project,
+            workflow_run_id=workflow_run.id,
+            current_step=current_step_name,
+            artifact_type=ArtifactType.COMPLIANCE_BOUNDARY_KERNEL.value,
+        )
+        compliance_boundary_payload = await _generate_compliance_boundary_kernel_artifact(
+            session,
+            project=project,
+            project_slug=project_slug,
+            workflow_run_id=workflow_run.id,
+            step_order=step_order,
+            artifact_records=artifact_records,
+        )
+        _emit_planner_progress(
+            progress,
+            "planning_step_completed",
+            project=project,
+            workflow_run_id=workflow_run.id,
+            current_step=current_step_name,
+            artifact_type=ArtifactType.COMPLIANCE_BOUNDARY_KERNEL.value,
+        )
+        step_order += 1
+
         story_design_payload: dict[str, Any] | None = None
         if settings.pipeline.enable_story_design_kernel:
             current_step_name = "generate_story_design_kernel"
             workflow_run.current_step = current_step_name
+            _emit_planner_progress(
+                progress,
+                "planning_step_started",
+                project=project,
+                workflow_run_id=workflow_run.id,
+                current_step=current_step_name,
+                artifact_type=ArtifactType.STORY_DESIGN_KERNEL.value,
+            )
             story_design_payload = await _generate_story_design_kernel(
                 session,
                 settings,
@@ -13336,10 +14121,26 @@ async def generate_novel_plan(
                 llm_run_ids=llm_run_ids,
                 artifact_records=artifact_records,
             )
+            _emit_planner_progress(
+                progress,
+                "planning_step_completed",
+                project=project,
+                workflow_run_id=workflow_run.id,
+                current_step=current_step_name,
+                artifact_type=ArtifactType.STORY_DESIGN_KERNEL.value,
+            )
             step_order += 1
 
         current_step_name = "generate_entry_system_kernel"
         workflow_run.current_step = current_step_name
+        _emit_planner_progress(
+            progress,
+            "planning_step_started",
+            project=project,
+            workflow_run_id=workflow_run.id,
+            current_step=current_step_name,
+            artifact_type=ArtifactType.ENTRY_SYSTEM_KERNEL.value,
+        )
         await _generate_entry_system_kernel_artifacts(
             session,
             project=project,
@@ -13349,12 +14150,28 @@ async def generate_novel_plan(
             step_order=step_order,
             artifact_records=artifact_records,
         )
+        _emit_planner_progress(
+            progress,
+            "planning_step_completed",
+            project=project,
+            workflow_run_id=workflow_run.id,
+            current_step=current_step_name,
+            artifact_type=ArtifactType.ENTRY_SYSTEM_KERNEL.value,
+        )
         step_order += 1
 
         emotion_driven_payload: dict[str, Any] | None = None
         if settings.pipeline.enable_emotion_driven_kernel:
             current_step_name = "generate_emotion_driven_kernel"
             workflow_run.current_step = current_step_name
+            _emit_planner_progress(
+                progress,
+                "planning_step_started",
+                project=project,
+                workflow_run_id=workflow_run.id,
+                current_step=current_step_name,
+                artifact_type=ArtifactType.EMOTION_DRIVEN_KERNEL.value,
+            )
             emotion_driven_payload = await _generate_emotion_driven_kernel(
                 session,
                 settings,
@@ -13371,6 +14188,14 @@ async def generate_novel_plan(
                 artifact_records=artifact_records,
                 story_design_kernel=story_design_payload,
             )
+            _emit_planner_progress(
+                progress,
+                "planning_step_completed",
+                project=project,
+                workflow_run_id=workflow_run.id,
+                current_step=current_step_name,
+                artifact_type=ArtifactType.EMOTION_DRIVEN_KERNEL.value,
+            )
             step_order += 1
 
         # ── Act Plan: macro narrative structure for long novels ──
@@ -13385,6 +14210,14 @@ async def generate_novel_plan(
             )
             current_step_name = "generate_act_plan"
             workflow_run.current_step = current_step_name
+            _emit_planner_progress(
+                progress,
+                "planning_step_started",
+                project=project,
+                workflow_run_id=workflow_run.id,
+                current_step=current_step_name,
+                artifact_type=ArtifactType.ACT_PLAN.value,
+            )
             act_system, act_user = _act_plan_prompts(
                 project, book_spec_payload, world_spec_payload, cast_spec_payload
             )
@@ -13438,6 +14271,16 @@ async def generate_novel_plan(
                     "llm_run_id": str(llm_run_id) if llm_run_id else None,
                 },
             )
+            _emit_planner_progress(
+                progress,
+                "planning_step_completed",
+                project=project,
+                workflow_run_id=workflow_run.id,
+                current_step=current_step_name,
+                artifact_type=ArtifactType.ACT_PLAN.value,
+                artifact_id=str(act_artifact.id),
+                llm_run_id=str(llm_run_id) if llm_run_id else None,
+            )
             step_order += 1
 
         volume_plan_fallback = _fallback_volume_plan(
@@ -13449,6 +14292,14 @@ async def generate_novel_plan(
         )
         current_step_name = "generate_volume_plan"
         workflow_run.current_step = current_step_name
+        _emit_planner_progress(
+            progress,
+            "planning_step_started",
+            project=project,
+            workflow_run_id=workflow_run.id,
+            current_step=current_step_name,
+            artifact_type=ArtifactType.VOLUME_PLAN.value,
+        )
         volume_system, volume_user = _volume_plan_prompts(
             project,
             book_spec_payload,
@@ -13538,11 +14389,28 @@ async def generate_novel_plan(
                 "llm_run_id": str(llm_run_id) if llm_run_id else None,
             },
         )
+        _emit_planner_progress(
+            progress,
+            "planning_step_completed",
+            project=project,
+            workflow_run_id=workflow_run.id,
+            current_step=current_step_name,
+            artifact_type=ArtifactType.VOLUME_PLAN.value,
+            artifact_id=str(volume_artifact.id),
+            llm_run_id=str(llm_run_id) if llm_run_id else None,
+        )
         step_order += 1
 
         if settings.pipeline.enable_worldview_progression_gate:
             current_step_name = "worldview_progression_gate"
             workflow_run.current_step = current_step_name
+            _emit_planner_progress(
+                progress,
+                "planning_step_started",
+                project=project,
+                workflow_run_id=workflow_run.id,
+                current_step=current_step_name,
+            )
             await _run_worldview_progression_gate(
                 session,
                 settings,
@@ -13551,6 +14419,13 @@ async def generate_novel_plan(
                 volume_plan_payload=volume_plan_payload,
                 workflow_run_id=workflow_run.id,
                 step_order=step_order,
+            )
+            _emit_planner_progress(
+                progress,
+                "planning_step_completed",
+                project=project,
+                workflow_run_id=workflow_run.id,
+                current_step=current_step_name,
             )
             step_order += 1
 
@@ -13712,6 +14587,14 @@ async def generate_novel_plan(
         if settings.pipeline.enable_prewrite_readiness_gate:
             current_step_name = "prewrite_readiness_gate"
             workflow_run.current_step = current_step_name
+            _emit_planner_progress(
+                progress,
+                "planning_step_started",
+                project=project,
+                workflow_run_id=workflow_run.id,
+                current_step=current_step_name,
+                artifact_type=ArtifactType.PREWRITE_READINESS.value,
+            )
             prewrite_payload = await _run_prewrite_readiness_gate(
                 session,
                 settings,
@@ -13723,12 +14606,22 @@ async def generate_novel_plan(
                 volume_plan_payload=volume_plan_payload,
                 story_design_kernel=story_design_payload,
                 emotion_driven_kernel=emotion_driven_payload,
+                public_emotion_kernel=public_emotion_payload,
+                compliance_boundary_kernel=compliance_boundary_payload,
                 workflow_run_id=workflow_run.id,
                 step_order=step_order,
                 artifact_records=artifact_records,
             )
             prewrite_repair_directives = _string_list(
                 prewrite_payload.get("prewrite_repair_directives")
+            )
+            _emit_planner_progress(
+                progress,
+                "planning_step_completed",
+                project=project,
+                workflow_run_id=workflow_run.id,
+                current_step=current_step_name,
+                artifact_type=ArtifactType.PREWRITE_READINESS.value,
             )
             step_order += 1
 
@@ -13761,6 +14654,16 @@ async def generate_novel_plan(
 
             current_step_name = f"generate_volume_{vol_num}_outline"
             workflow_run.current_step = current_step_name
+            _emit_planner_progress(
+                progress,
+                "planning_step_started",
+                project=project,
+                workflow_run_id=workflow_run.id,
+                current_step=current_step_name,
+                artifact_type=ArtifactType.VOLUME_CHAPTER_OUTLINE.value,
+                volume_number=vol_num,
+                expected_chapters=vol_ch_count,
+            )
 
             # Build the revealed-facts/beats ledger so the LLM sees what
             # has already been revealed across prior volumes and can avoid
@@ -13803,6 +14706,7 @@ async def generate_novel_plan(
                 chapter_number_offset=chapter_offset,
                 revealed_ledger_block=_ledger_block,
                 base_constraints=_outline_constraints,
+                progress=progress,
             )
             if llm_run_id is not None:
                 llm_run_ids.append(llm_run_id)
@@ -13856,6 +14760,18 @@ async def generate_novel_plan(
                     "llm_run_id": str(llm_run_id) if llm_run_id else None,
                 },
             )
+            _emit_planner_progress(
+                progress,
+                "planning_step_completed",
+                project=project,
+                workflow_run_id=workflow_run.id,
+                current_step=current_step_name,
+                artifact_type=ArtifactType.VOLUME_CHAPTER_OUTLINE.value,
+                volume_number=vol_num,
+                generated_chapters=len(vol_chapters),
+                artifact_id=str(vol_outline_artifact.id),
+                llm_run_id=str(llm_run_id) if llm_run_id else None,
+            )
             step_order += 1
             chapter_offset += vol_ch_count
 
@@ -13879,9 +14795,42 @@ async def generate_novel_plan(
             )
         )
 
+        if settings.pipeline.enable_story_principle_gate:
+            current_step_name = "story_principle_gate"
+            workflow_run.current_step = current_step_name
+            _emit_planner_progress(
+                progress,
+                "planning_step_started",
+                project=project,
+                workflow_run_id=workflow_run.id,
+                current_step=current_step_name,
+            )
+            await _run_story_principle_gate(
+                session,
+                project=project,
+                outline_payload=outline_payload,
+                workflow_run_id=workflow_run.id,
+                step_order=step_order,
+            )
+            _emit_planner_progress(
+                progress,
+                "planning_step_completed",
+                project=project,
+                workflow_run_id=workflow_run.id,
+                current_step=current_step_name,
+            )
+            step_order += 1
+
         if settings.pipeline.enable_reverse_outline_gate:
             current_step_name = "reverse_outline_gate"
             workflow_run.current_step = current_step_name
+            _emit_planner_progress(
+                progress,
+                "planning_step_started",
+                project=project,
+                workflow_run_id=workflow_run.id,
+                current_step=current_step_name,
+            )
             await _run_reverse_outline_gate(
                 session,
                 settings,
@@ -13891,11 +14840,25 @@ async def generate_novel_plan(
                 workflow_run_id=workflow_run.id,
                 step_order=step_order,
             )
+            _emit_planner_progress(
+                progress,
+                "planning_step_completed",
+                project=project,
+                workflow_run_id=workflow_run.id,
+                current_step=current_step_name,
+            )
             step_order += 1
 
         if settings.pipeline.enable_worldview_compliance_gate:
             current_step_name = "worldview_compliance_gate"
             workflow_run.current_step = current_step_name
+            _emit_planner_progress(
+                progress,
+                "planning_step_started",
+                project=project,
+                workflow_run_id=workflow_run.id,
+                current_step=current_step_name,
+            )
             await _run_worldview_compliance_gate(
                 session,
                 settings,
@@ -13905,11 +14868,25 @@ async def generate_novel_plan(
                 workflow_run_id=workflow_run.id,
                 step_order=step_order,
             )
+            _emit_planner_progress(
+                progress,
+                "planning_step_completed",
+                project=project,
+                workflow_run_id=workflow_run.id,
+                current_step=current_step_name,
+            )
             step_order += 1
 
         # ── Promotional brief: title refinement + tags + protagonist intro + blurb ──
         current_step_name = "generate_promotional_brief"
         workflow_run.current_step = current_step_name
+        _emit_planner_progress(
+            progress,
+            "planning_step_started",
+            project=project,
+            workflow_run_id=workflow_run.id,
+            current_step=current_step_name,
+        )
         step_order += 1
         _normalized_vp = (
             volume_plan_payload
@@ -13928,9 +14905,23 @@ async def generate_novel_plan(
             llm_run_ids=llm_run_ids,
             artifact_records=artifact_records,
         )
+        _emit_planner_progress(
+            progress,
+            "planning_step_completed",
+            project=project,
+            workflow_run_id=workflow_run.id,
+            current_step=current_step_name,
+        )
 
         workflow_run.current_step = "completed"
         workflow_run.status = WorkflowStatus.COMPLETED.value
+        _emit_planner_progress(
+            progress,
+            "planning_workflow_completed",
+            project=project,
+            workflow_run_id=workflow_run.id,
+            current_step="completed",
+        )
         workflow_run.metadata_json = {
             **workflow_run.metadata_json,
             "artifact_ids": {
@@ -13970,6 +14961,13 @@ async def generate_novel_plan(
             error_message=str(exc),
         )
         await session.flush()
+        try:
+            await session.commit()
+        except Exception:
+            logger.exception(
+                "Failed to persist failed workflow state for project '%s'",
+                project_slug,
+            )
         raise
 
 
@@ -14008,6 +15006,7 @@ async def generate_foundation_plan(
     premise: str,
     *,
     requested_by: str = "system",
+    progress: PlanningProgressCallback | None = None,
 ) -> NovelPlanningResult:
     """Phase A of progressive planning: generate BookSpec → WorldSpec → CastSpec → VolumePlan.
 
@@ -14368,6 +15367,32 @@ async def generate_foundation_plan(
         )
         step_order += 1
 
+        current_step_name = "generate_public_emotion_kernel"
+        workflow_run.current_step = current_step_name
+        public_emotion_payload = await _generate_public_emotion_kernel_artifact(
+            session,
+            project=project,
+            project_slug=project_slug,
+            premise=premise,
+            book_spec_payload=book_spec_payload,
+            workflow_run_id=workflow_run.id,
+            step_order=step_order,
+            artifact_records=artifact_records,
+        )
+        step_order += 1
+
+        current_step_name = "generate_compliance_boundary_kernel"
+        workflow_run.current_step = current_step_name
+        compliance_boundary_payload = await _generate_compliance_boundary_kernel_artifact(
+            session,
+            project=project,
+            project_slug=project_slug,
+            workflow_run_id=workflow_run.id,
+            step_order=step_order,
+            artifact_records=artifact_records,
+        )
+        step_order += 1
+
         emotion_driven_payload: dict[str, Any] | None = None
         if settings.pipeline.enable_emotion_driven_kernel:
             current_step_name = "generate_emotion_driven_kernel"
@@ -14499,6 +15524,8 @@ async def generate_foundation_plan(
                 cast_spec_payload=cast_spec_payload,
                 volume_plan_payload=volume_plan_payload,
                 emotion_driven_kernel=emotion_driven_payload,
+                public_emotion_kernel=public_emotion_payload,
+                compliance_boundary_kernel=compliance_boundary_payload,
                 workflow_run_id=workflow_run.id,
                 step_order=step_order,
                 artifact_records=artifact_records,
@@ -14564,6 +15591,13 @@ async def generate_foundation_plan(
             error_message=str(exc),
         )
         await session.flush()
+        try:
+            await session.commit()
+        except Exception:
+            logger.exception(
+                "Failed to persist failed foundation workflow state for project '%s'",
+                project_slug,
+            )
         raise
 
 
@@ -14581,6 +15615,7 @@ async def generate_volume_plan(
     prior_world_snapshot: str | None = None,
     extra_constraints: list[str] | None = None,
     requested_by: str = "system",
+    progress: PlanningProgressCallback | None = None,
 ) -> VolumePlanningResult:
     """Phase B of progressive planning: plan a single volume.
 
@@ -14910,6 +15945,7 @@ async def generate_volume_plan(
             chapter_number_offset=chapter_number_offset,
             revealed_ledger_block=_ledger_block,
             base_constraints=_all_constraints or [],
+            progress=progress,
         )
         if llm_run_id is not None:
             llm_run_ids.append(llm_run_id)
@@ -14988,4 +16024,11 @@ async def generate_volume_plan(
             error_message=str(exc),
         )
         await session.flush()
+        try:
+            await session.commit()
+        except Exception:
+            logger.exception(
+                "Failed to persist failed volume workflow state for project '%s'",
+                project_slug,
+            )
         raise

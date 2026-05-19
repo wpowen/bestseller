@@ -124,6 +124,34 @@ def test_extract_emotion_driven_kernel_when_mapping() -> None:
     assert meta.emotion_driven_kernel == payload
 
 
+def test_extract_public_emotion_kernel_when_mapping() -> None:
+    payload = {
+        "target_segments": [
+            {
+                "id": "segment-a",
+                "group_label": "被低估的读者",
+                "life_context": "虚构规则压住解释权。",
+                "public_emotion": "不甘。",
+                "unsaid_sentence": "凭什么你一句话定性？",
+                "desired_compensation": "用规则翻案。",
+            }
+        ],
+        "emotion_bridges": [
+            {
+                "bridge_id": "bridge-a",
+                "bridge_type": "value_bridge",
+                "public_anchor": "被低估",
+                "genre_translation": "虚构榜单规则。",
+                "story_hook": "主角用新规则翻案。",
+                "reader_payoff": "旧判断失效。",
+                "title_hook": "旧榜错判我，我用新规则翻案",
+            }
+        ],
+    }
+    meta = extract_quality_levers_meta({"public_emotion_kernel": payload})
+    assert meta.public_emotion_kernel == payload
+
+
 def test_extract_handles_corrupt_inputs() -> None:
     meta = extract_quality_levers_meta(
         {
@@ -140,3 +168,4 @@ def test_extract_handles_corrupt_inputs() -> None:
     assert meta.character_profiles == ()
     assert meta.rejection_history == ()
     assert meta.emotion_driven_kernel is None
+    assert meta.public_emotion_kernel is None

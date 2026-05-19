@@ -325,7 +325,7 @@ _DISTILLATION_BUCKETS_BY_CATEGORY: dict[str, tuple[str, ...]] = {
     "eastern-aesthetic": ("eastern-aesthetic",),
     "urban-contemporary": ("urban-contemporary",),
     "science-fiction-progression": ("science-fiction-progression",),
-    "wuxia-jianghu": (),
+    "wuxia-jianghu": ("wuxia-jianghu",),
 }
 
 _KNOWN_GAPS: dict[str, tuple[str, ...]] = {
@@ -440,6 +440,30 @@ _DIMENSION_STATIC_SUPPORT: dict[str, dict[str, str]] = {
         "repair_loop": "partial",
         "anti_copy_safety": "partial",
     },
+    "urban-contemporary": {
+        "state_engine": "partial",
+        "chapter_execution": "partial",
+        "whole_book_continuity": "partial",
+        "quality_gates": "partial",
+        "repair_loop": "partial",
+        "anti_copy_safety": "partial",
+    },
+    "science-fiction-progression": {
+        "state_engine": "partial",
+        "chapter_execution": "partial",
+        "whole_book_continuity": "partial",
+        "quality_gates": "partial",
+        "repair_loop": "partial",
+        "anti_copy_safety": "partial",
+    },
+    "wuxia-jianghu": {
+        "state_engine": "partial",
+        "chapter_execution": "partial",
+        "whole_book_continuity": "partial",
+        "quality_gates": "partial",
+        "repair_loop": "partial",
+        "anti_copy_safety": "partial",
+    },
 }
 
 _CATEGORY_BENCHMARK_FINDINGS: dict[str, dict[str, Any]] = {
@@ -505,6 +529,27 @@ _CATEGORY_BENCHMARK_FINDINGS: dict[str, dict[str, Any]] = {
         "state_variables": ["motifs", "folk_rules", "aesthetic_debts", "emotional_aftertaste"],
         "reward_cadence": "每个单元要交付新意象、新规则或一次情绪余韵兑现。",
         "risk_patterns": ["只有辞藻没有剧情功能", "志怪规则不稳定", "审美重复"],
+    },
+    "urban-contemporary": {
+        "reader_promise": "读者看到职业台阶、现实利益、关系网络和口碑压力如何改变主角处境。",
+        "core_engine": "职业机会 -> 组织博弈 -> 现实代价 -> 口碑/资源位置变化。",
+        "state_variables": ["career_stage", "organization_relations", "reputation", "money_contracts"],
+        "reward_cadence": "每个单元要交付一次职位、资源、口碑或现实关系的可见位移。",
+        "risk_patterns": ["职场像过家家", "金钱合同无后果", "舆论口碑不回流剧情"],
+    },
+    "science-fiction-progression": {
+        "reader_promise": "读者看到科技突破、能源约束、机甲/舰队状态和战场策略的连续进化。",
+        "core_engine": "科学约束 -> 研发验证 -> 能源/后勤成本 -> 战术应用与反制。",
+        "state_variables": ["tech_constraints", "energy_budget", "research_chain", "fleet_or_mecha_state"],
+        "reward_cadence": "每次技术收益必须带来新能力、新成本、新反制或更高层战场问题。",
+        "risk_patterns": ["黑科技万能", "能源后勤缺席", "战斗状态不可复盘"],
+    },
+    "wuxia-jianghu": {
+        "reader_promise": "读者看到门派声望、江湖规矩、侠义债务和武学代价如何塑造选择。",
+        "core_engine": "江湖规矩 -> 门派/个人选择 -> 侠义债或仇怨 -> 声望与武学代价回流。",
+        "state_variables": ["sect_reputation", "jianghu_rules", "martial_costs", "chivalry_debts"],
+        "reward_cadence": "每个单元要交付一次名声变化、规矩反噬、武学收益或侠义债兑现。",
+        "risk_patterns": ["武功无代价", "江湖规矩只做背景", "门派声望不影响行动"],
     },
 }
 

@@ -31,8 +31,49 @@ hook_or_aftereffect_types:
   - 选择后果延迟爆发
   - 关系重新站队
   - 规则显露漏洞
+macro_structure_options:
+  - lotus_mainline
+  - progressive_staircase
+  - parallel_unit
+  - hybrid
+reader_desire_types:
+  - survival_safety
+  - gain_greed
+  - belonging_love
+  - respect_value
+  - self_realization
+  - curiosity
+  - control
+conflict_event_types:
+  - emotion_event
+  - desire_lock
+  - obstacle_escalation
+  - method_search
+  - execution_turn
+  - payoff_feedback
+obstacle_types:
+  - resource_limit
+  - opponent_pressure
+  - rule_cost
+  - relationship_cost
+  - information_block
+information_gap_modes:
+  - reader_knows_less
+  - reader_knows_equal
+  - reader_knows_more
+  - protagonist_knows_less
+  - others_hide_truth
+event_cycle_roles:
+  - trigger
+  - desire_lock
+  - obstacle_escalation
+  - method_search
+  - execution_turn
+  - payoff_feedback
+  - reaction_reset
+  - bridge_hook
 forbidden_defaults:
-  - 父母失踪作为默认动机
+  - 家庭创伤或身世旧案作为默认动机
   - 神秘玉佩自动开挂
   - 退婚羞辱作为万能开局
   - 神秘老人无代价赠送能力

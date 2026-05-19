@@ -9,6 +9,7 @@ or forbidden default motivations.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
@@ -17,12 +18,21 @@ from bestseller.services.story_design_kernel import story_design_kernel_from_dic
 
 _BLOCKING_SEVERITIES = {"critical", "high"}
 _DEFAULT_FORBIDDEN_MOTIFS = (
-    "父母失踪",
-    "亲人失踪",
+    "家庭创伤或身世旧案默认驱动",
+    "亲属创伤默认驱动",
     "神秘玉佩",
     "退婚羞辱",
     "神秘老人",
     "天降外挂",
+)
+_FAMILY_LOSS_DEFAULT_RE = re.compile(
+    r"((父母|父亲|母亲|双亲|家人|亲人|亲属|兄长|哥哥|姐姐|妹妹|弟弟|妻子|丈夫|未婚妻|未婚夫)"
+    r"[^。！？；;，,\n]{0,16}"
+    r"(失踪|消失|死亡|死去|被害|遇害|惨死|离奇|旧案|真相|身世|血脉|秘密)"
+    r"|"
+    r"(失踪|消失|死亡|死去|被害|遇害|惨死|离奇|旧案|真相|身世|血脉|秘密)"
+    r"[^。！？；;，,\n]{0,16}"
+    r"(父母|父亲|母亲|双亲|家人|亲人|亲属))"
 )
 _GENERIC_PROGRESS_PHRASES = (
     "推进主线",
@@ -183,7 +193,7 @@ def evaluate_reverse_outline_gate(
     for index, chapter in enumerate(chapters, 1):
         number = int(chapter.get("chapter_number") or index)
         text = _chapter_text(chapter)
-        matched_forbidden = [motif for motif in forbidden if motif and motif in text]
+        matched_forbidden = _matched_forbidden_motifs(text, forbidden)
         if matched_forbidden:
             findings.append(
                 ReverseOutlineFinding(
@@ -287,6 +297,13 @@ def _forbidden_motifs(story_design_kernel: Mapping[str, Any] | None) -> list[str
     premise = _as_mapping(kernel.get("premise_contract"))
     motifs.extend(_string_list(premise.get("forbidden_defaults")))
     return _dedupe([motif for motif in motifs if motif])
+
+
+def _matched_forbidden_motifs(text: str, forbidden: list[str]) -> list[str]:
+    matched = [motif for motif in forbidden if motif and motif in text]
+    if _FAMILY_LOSS_DEFAULT_RE.search(text):
+        matched.append("家庭创伤或身世旧案默认驱动")
+    return _dedupe(matched)
 
 
 def _is_generic_progress(text: str) -> bool:

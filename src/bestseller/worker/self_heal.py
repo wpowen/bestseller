@@ -303,8 +303,6 @@ async def find_stuck_projects(session: Any) -> list[StuckProject]:
         auto_resumable_generation_gate = _project_has_stale_auto_resumable_generation_gate(
             project
         )
-        if _project_resume_is_blocked(project):
-            continue
 
         meta = project.metadata_json or {}
         explicit_stuck_ch = meta.get("stuck_at_chapter")
@@ -371,6 +369,14 @@ async def find_stuck_projects(session: Any) -> list[StuckProject]:
                     heal_kind="repair",
                 )
             )
+            continue
+
+        # A production pause such as ``structural_repair_before_continuation``
+        # should stop continuation/autowrite, not the repair loop itself.
+        # Check it only after blocked chapters have had a chance to dispatch a
+        # repair heal job; otherwise projects can sit paused forever with no
+        # visible repair progress.
+        if _project_resume_is_blocked(project):
             continue
 
         if explicit_stuck_chapter is not None and chapters_with_draft < explicit_stuck_chapter:
@@ -640,6 +646,40 @@ def _repair_heal_job_id(slug: str) -> str:
     return f"repair:heal:{slug}"
 
 
+async def _heal_job_exists(pool: "ArqRedis", job_id: str) -> bool:
+    job_key = f"arq:job:{job_id}"
+    in_progress_key = f"arq:in-progress:{job_id}"
+    retry_key = f"arq:retry:{job_id}"
+    try:
+        if await pool.exists(job_key, in_progress_key, retry_key):
+            return True
+        return await pool.zscore("arq:queue", job_id) is not None
+    except AttributeError:
+        return False
+
+
+async def _clear_stale_heal_job_if_needed(pool: "ArqRedis", job_id: str) -> bool:
+    """Clear a deterministic heal job only when ARQ left a ghost owner.
+
+    Callers use this after DB-level active workflow checks have already decided
+    the project is stuck. That context matters: a live long-running generation
+    can legitimately hold ``arq:in-progress:*`` for many minutes, so this helper
+    must not be used as a general liveness probe.
+    """
+
+    if not await _stale_in_progress_job(pool, job_id):
+        return False
+    await pool.delete(
+        f"arq:job:{job_id}",
+        f"arq:in-progress:{job_id}",
+        f"arq:result:{job_id}",
+        f"arq:retry:{job_id}",
+    )
+    await _safe_zrem(pool, "arq:queue", job_id)
+    logger.info("self-heal: cleared stale ARQ heal job %s", job_id)
+    return True
+
+
 async def _requeue_autowrite(
     pool: "ArqRedis",
     stuck: StuckProject,
@@ -649,6 +689,19 @@ async def _requeue_autowrite(
     Returns the job id on success, or ``None`` if ARQ already has a
     pending/running job for the same slug (deterministic dedup).
     """
+    repair_job_id = _repair_heal_job_id(stuck.slug)
+    if await _heal_job_exists(pool, repair_job_id):
+        if not await _clear_stale_heal_job_if_needed(pool, repair_job_id):
+            logger.info(
+                "self-heal: skipped autowrite slug=%s — repair job already owns project",
+                stuck.slug,
+            )
+            return None
+        logger.info(
+            "self-heal: cleared stale repair owner before autowrite slug=%s",
+            stuck.slug,
+        )
+
     job_id = _autowrite_heal_job_id(stuck.slug)
     job = await pool.enqueue_job(
         "run_autowrite_task",
@@ -662,15 +715,7 @@ async def _requeue_autowrite(
         in_progress_key = f"arq:in-progress:{job_id}"
         result_key = f"arq:result:{job_id}"
         retry_key = f"arq:retry:{job_id}"
-        if await _stale_in_progress_job(pool, job_id):
-            await pool.delete(
-                job_key,
-                in_progress_key,
-                result_key,
-                retry_key,
-            )
-            await _safe_zrem(pool, "arq:queue", job_id)
-        else:
+        if not await _clear_stale_heal_job_if_needed(pool, job_id):
             in_flight = await pool.exists(job_key, in_progress_key)
             if in_flight:
                 return None
@@ -692,11 +737,29 @@ async def _requeue_repair(
     stuck: StuckProject,
 ) -> str | None:
     """Enqueue a project repair job for blocked production chapters."""
+    autowrite_job_id = _autowrite_heal_job_id(stuck.slug)
+    if await _heal_job_exists(pool, autowrite_job_id):
+        if not await _clear_stale_heal_job_if_needed(pool, autowrite_job_id):
+            logger.info(
+                "self-heal: skipped repair slug=%s — autowrite job already owns project",
+                stuck.slug,
+            )
+            return None
+        logger.info(
+            "self-heal: cleared stale autowrite owner before repair slug=%s",
+            stuck.slug,
+        )
+
     job_id = _repair_heal_job_id(stuck.slug)
     job = await pool.enqueue_job(
         "run_project_repair_task",
         workflow_run_id=job_id,
-        payload={"project_slug": stuck.slug, "requested_by": "worker_self_heal"},
+        payload={
+            "project_slug": stuck.slug,
+            "requested_by": "worker_self_heal",
+            "include_pending_rewrite_tasks": True,
+            "pending_rewrite_task_limit": 10,
+        },
         _job_id=job_id,
         _expires=_dt.timedelta(days=SELF_HEAL_JOB_EXPIRES_DAYS),
     )
@@ -705,15 +768,7 @@ async def _requeue_repair(
         in_progress_key = f"arq:in-progress:{job_id}"
         result_key = f"arq:result:{job_id}"
         retry_key = f"arq:retry:{job_id}"
-        if await _stale_in_progress_job(pool, job_id):
-            await pool.delete(
-                job_key,
-                in_progress_key,
-                result_key,
-                retry_key,
-            )
-            await _safe_zrem(pool, "arq:queue", job_id)
-        else:
+        if not await _clear_stale_heal_job_if_needed(pool, job_id):
             in_flight = await pool.exists(job_key, in_progress_key)
             if in_flight:
                 return None
@@ -721,7 +776,12 @@ async def _requeue_repair(
         job = await pool.enqueue_job(
             "run_project_repair_task",
             workflow_run_id=job_id,
-            payload={"project_slug": stuck.slug, "requested_by": "worker_self_heal"},
+            payload={
+                "project_slug": stuck.slug,
+                "requested_by": "worker_self_heal",
+                "include_pending_rewrite_tasks": True,
+                "pending_rewrite_task_limit": 10,
+            },
             _job_id=job_id,
             _expires=_dt.timedelta(days=SELF_HEAL_JOB_EXPIRES_DAYS),
         )
@@ -737,6 +797,23 @@ async def _requeue_stuck_project(
     if stuck.heal_kind == "repair":
         return await _requeue_repair(pool, stuck)
     return await _requeue_autowrite(pool, stuck)
+
+
+def _coalesce_stuck_projects_for_enqueue(
+    stuck_list: list[StuckProject],
+) -> list[StuckProject]:
+    """Keep one self-heal owner per project, with repair taking precedence."""
+
+    chosen: dict[str, StuckProject] = {}
+    order: list[str] = []
+    for stuck in stuck_list:
+        if stuck.slug not in chosen:
+            chosen[stuck.slug] = stuck
+            order.append(stuck.slug)
+            continue
+        if chosen[stuck.slug].heal_kind != "repair" and stuck.heal_kind == "repair":
+            chosen[stuck.slug] = stuck
+    return [chosen[slug] for slug in order]
 
 
 async def _stale_in_progress_job(pool: "ArqRedis", job_id: str) -> bool:
@@ -864,6 +941,7 @@ async def heal_stuck_projects(
         if not stuck_list:
             logger.info("self-heal: no stuck projects found")
             return dispatched
+        stuck_list = _coalesce_stuck_projects_for_enqueue(stuck_list)
 
         pool = await create_pool(_arq_redis_settings(settings))
         for stuck in stuck_list:

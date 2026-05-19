@@ -570,6 +570,44 @@ _ZH_COMMON_NON_NAME_TAIL_WORDS: frozenset[str] = frozenset(
         "留下",
         "符纸",
         "玉佩",
+        # Live exorcist-detective rewrite false positives: ordinary objects
+        # and result phrases, not newly introduced characters.
+        "三截",
+        "磨石",
+        "业证",
+        "烫得",
+        "门",
+        "封",
+        "高",
+        "钞",
+        "催租",
+        "嘴无",
+        "植物",
+        "账记",
+        "压",
+        "早铺",
+        "淹",
+        "痕糊",
+        "铺",
+        "雾里",
+        "顺",
+        "掉",
+        "烂成",
+        "破",
+        "和油",
+        "袋往",
+        "板",
+        "生意",
+        "林师",
+        "板上",
+        "剧烈",
+        "囊",
+        "囊里",
+        "框",
+        "框穿",
+        "停住",
+        "压得",
+        "缘硌",
     }
 )
 
@@ -618,7 +656,7 @@ _ZH_COMMON_WORD_2ND_CHARS: frozenset[str] = frozenset(
     # Additional high-volume 2nd-char false positives from v4 audit:
     # 方传来/方案/方势/方法/方便, 成一个/成某种/成交, 水一样/水道,
     # 计算, 云层/云海, 于有, 贺礼, 汤药, 雷云, 金灰/金红/金黑.
-    "传案势法便某交样道算层海有礼药云灰红黑将"
+    "传案势法便某交样道算层海有礼药云灰红黑将高珠盘板剧囊"
     # Verb/adjective glue after measure-word/surname-looking characters:
     # 老张直起 -> regex sees 张直起, but 张 is a measure/name and 直起 is action.
     # 瞳孔骤然 -> regex sees 孔骤然, then would trim to false name 孔骤.
@@ -629,6 +667,9 @@ _ZH_COMMON_WORD_2ND_CHARS: frozenset[str] = frozenset(
     # Material/readiness/action false positives:
     # 朱砂 -> cinnabar; 齐备 -> ready; 铜钱按在 -> 钱按.
     "砂备按"
+    # Tool/action false positives:
+    # 毛笔写 / 毛笔画 are brush actions, not a "毛笔" character.
+    "笔"
     # Opening-rescue audit false positives:
     # 于乱/于慌 are prepositional fragments, not people.
     "乱慌"
@@ -670,7 +711,7 @@ _ZH_ROLE_SUFFIXES: tuple[str, ...] = (
     "师兄", "师姐", "师弟", "师妹", "师父", "师母", "师叔", "师伯",
     "管事", "长老", "前辈", "后辈", "道友", "道长", "真人", "真君",
     "公子", "小姐", "姑娘", "夫人", "娘子", "郎君", "少爷", "掌柜",
-    "执事",
+    "执事", "师傅", "老板", "先生",
     "城主", "宗主", "门主", "教主", "仙子", "仙君", "上仙",
     # Honorifics
     "大人", "老爷", "奶奶", "爷爷",
@@ -1120,7 +1161,11 @@ class EntityDensityCheck:
         if not head.strip():
             return []
 
-        entities = self._extract_entities(head, ctx.invariants.language)
+        entities = self._extract_entities(
+            head,
+            ctx.invariants.language,
+            allowed=NamingConsistencyCheck._collect_allowed(ctx),
+        )
         if len(entities) <= self.max_entities:
             return []
 
@@ -1149,13 +1194,22 @@ class EntityDensityCheck:
         ]
 
     @staticmethod
-    def _extract_entities(text: str, language: str) -> set[str]:
+    def _extract_entities(
+        text: str,
+        language: str,
+        *,
+        allowed: frozenset[str] = frozenset(),
+    ) -> set[str]:
         if language.lower().startswith("zh"):
-            return EntityDensityCheck._extract_zh(text)
+            return EntityDensityCheck._extract_zh(text, allowed=allowed)
         return EntityDensityCheck._extract_en(text)
 
     @staticmethod
-    def _extract_zh(text: str) -> set[str]:
+    def _extract_zh(
+        text: str,
+        *,
+        allowed: frozenset[str] = frozenset(),
+    ) -> set[str]:
         """Collect distinct Chinese name candidates (single + compound surnames).
 
         Same stopword + role-suffix filter as NamingConsistencyCheck so the
@@ -1174,7 +1228,9 @@ class EntityDensityCheck:
             ):
                 candidate = match.group(0)
                 stripped = _strip_role_suffix(candidate)
-                entities.add(stripped if stripped else candidate)
+                canonical = _canonicalize_zh_entity(stripped if stripped else candidate, allowed)
+                if canonical:
+                    entities.add(canonical)
         for match in _ZH_NAME_RE.finditer(text):
             # Skip positions inside a compound surname (see NamingConsistency).
             start = match.start()
@@ -1189,7 +1245,9 @@ class EntityDensityCheck:
             # Collapse role-referenced mentions into the surname root so
             # "苏师姐"/"苏师妹"/"苏" count as one entity, not three.
             stripped = _strip_role_suffix(cleaned)
-            entities.add(stripped if stripped else cleaned)
+            canonical = _canonicalize_zh_entity(stripped if stripped else cleaned, allowed)
+            if canonical:
+                entities.add(canonical)
         return entities
 
     @staticmethod
@@ -1234,6 +1292,32 @@ def _canonicalize_en_candidate(candidate: str) -> str:
             continue
         break
     return current
+
+
+def _canonicalize_zh_entity(
+    candidate: str,
+    allowed: frozenset[str],
+) -> str | None:
+    if not candidate:
+        return None
+    candidate = candidate.strip()
+    if not candidate:
+        return None
+    if _trim_zh_name_candidate(candidate) is None:
+        return None
+    if allowed:
+        for name in sorted((item for item in allowed if isinstance(item, str)), key=len, reverse=True):
+            if len(name) < 2:
+                continue
+            if candidate.startswith(name):
+                return name
+            if name.startswith(candidate) and len(candidate) >= 2:
+                return name
+        return None
+    cleaned = _trim_zh_name_candidate(candidate)
+    if cleaned is None:
+        return None
+    return cleaned
 
 
 # ---------------------------------------------------------------------------

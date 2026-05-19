@@ -1,0 +1,120 @@
+key: science-fiction-progression
+name: "科幻机甲进阶类"
+name_en: "Science Fiction Progression"
+reader_promise_zh: >
+  读者看到科技突破在清晰约束中发生：研发、能源、后勤、机甲/舰队状态和战场策略彼此牵引。
+reader_promise_en: >
+  Readers watch technological progress happen inside clear constraints:
+  research, energy, logistics, mecha/fleet state, and battlefield tactics pull one another forward.
+
+challenge_evolution_pathway:
+  - phase_key: constraint_discovery
+    phase_name_zh: "约束发现"
+    phase_name_en: "Constraint Discovery"
+    description_zh: "主角发现现有科技或战场存在硬约束，不能靠想象突破。"
+    description_en: "The protagonist discovers hard constraints in technology or battle."
+    typical_force_types: ["systemic", "environment"]
+    volume_goal_template_zh: "{protagonist}必须理解{force_name}背后的技术约束，找到可验证突破口。"
+    volume_goal_template_en: "{protagonist} must understand the technical constraint behind {force_name} and find a verifiable opening."
+    volume_climax_template_zh: "第一次验证成功，但暴露出能源、材料或控制上的新代价。"
+    volume_climax_template_en: "The first validation succeeds but exposes new cost in energy, material, or control."
+    volume_obstacle_template_zh: "{force_name}让所有简单方案都失效。"
+    volume_obstacle_template_en: "{force_name} makes every simple solution fail."
+    volume_resolution_template_zh: "主角拿到初步技术窗口，也被迫承担新限制。"
+    volume_resolution_template_en: "A technical window opens, with a new limitation attached."
+    chapter_conflict_templates:
+      setup_zh: "{protagonist}发现战术失败不是执行问题，而是技术约束。"
+      pressure_zh: "{force_name}压缩实验窗口，能源和时间都不够。"
+      reversal_zh: "一个失败数据揭示真正的突破方向。"
+      climax_zh: "验证结果改变机体或战场状态。"
+  - phase_key: prototype_escalation
+    phase_name_zh: "原型升级"
+    phase_name_en: "Prototype Escalation"
+    description_zh: "原型技术进入实战，敌方开始反制，后勤成本变成核心压力。"
+    description_en: "Prototype technology enters battle; enemies counter it and logistics become pressure."
+    typical_force_types: ["faction", "systemic"]
+    volume_goal_template_zh: "{protagonist}必须让原型在{force_name}的反制下完成实战验证。"
+    volume_goal_template_en: "{protagonist} must validate the prototype under {force_name}'s countermeasures."
+    volume_climax_template_zh: "原型赢得关键战术窗口，但暴露出规模化难题。"
+    volume_climax_template_en: "The prototype wins a tactical window but exposes scale-up problems."
+    volume_obstacle_template_zh: "敌方针对能源、控制或材料弱点实施反制。"
+    volume_obstacle_template_en: "The enemy counters energy, control, or material weaknesses."
+    volume_resolution_template_zh: "技术能用，但必须进入体系化改造。"
+    volume_resolution_template_en: "The technology works, but must be systematized."
+    chapter_conflict_templates:
+      setup_zh: "原型被部署到一场无法重来的战斗中。"
+      pressure_zh: "能源、散热或通讯问题让优势不稳定。"
+      reversal_zh: "{protagonist}把限制转成战术诱饵。"
+      climax_zh: "战场状态因一次技术应用发生重排。"
+  - phase_key: system_warfare
+    phase_name_zh: "体系战争"
+    phase_name_en: "System Warfare"
+    description_zh: "单点技术进入体系对抗，胜负取决于科研、工业、后勤和战术协同。"
+    description_en: "Single-point technology enters system warfare across research, industry, logistics, and tactics."
+    typical_force_types: ["faction", "systemic"]
+    volume_goal_template_zh: "{protagonist}必须在{force_name}引发的体系战争中证明技术路线可持续。"
+    volume_goal_template_en: "{protagonist} must prove the technology route sustainable in system warfare triggered by {force_name}."
+    volume_climax_template_zh: "技术路线经受体系级检验，战场格局被改写。"
+    volume_climax_template_en: "The technology route passes system-level validation and rewrites the theater."
+    volume_obstacle_template_zh: "工业、能源、人员和战场条件同时施压。"
+    volume_obstacle_template_en: "Industry, energy, personnel, and battlefield conditions apply pressure together."
+    volume_resolution_template_zh: "主角获得新技术时代的话语权，也打开更危险的战场。"
+    volume_resolution_template_en: "The protagonist gains voice in a new technological era and opens a more dangerous theater."
+    chapter_conflict_templates:
+      setup_zh: "技术路线必须接受体系级验证。"
+      pressure_zh: "{force_name}攻击科研、能源和指挥链的薄弱处。"
+      reversal_zh: "{protagonist}用系统协同弥补单点短板。"
+      climax_zh: "战役结果证明技术路线是否成立。"
+
+protagonist_archetypes:
+  - archetype_key: constraint_engineer
+    name_zh: "约束工程师"
+    name_en: "Constraint Engineer"
+    core_wound_zh: "曾因轻信完美技术导致严重失败。"
+    core_wound_en: "Once trusted perfect technology and caused a severe failure."
+    external_goal_template_zh: "{name}要证明一条在真实约束下可持续的技术路线。"
+    external_goal_template_en: "{name} must prove a sustainable technology route under real constraints."
+    internal_need_template_zh: "{name}需要接受技术不能替代人的选择和代价承担。"
+    internal_need_template_en: "{name} must accept that technology cannot replace human choice and cost."
+    arc_trajectory_zh: "从迷信突破到尊重系统约束。"
+    arc_trajectory_en: "From worshiping breakthrough to respecting system constraints."
+    flaw_zh: "过度相信数据，忽视人和组织的承受能力。"
+    flaw_en: "Overtrusts data and underestimates human and organizational limits."
+    strength_zh: "能从失败数据中找到真实边界。"
+    strength_en: "Can find real boundaries in failed data."
+
+world_rule_templates:
+  - rule_template_key: energy_conservation
+    name_zh: "能源守恒规则"
+    name_en: "Energy Conservation Rule"
+    description_zh: "任何高阶技术都必须支付能源、材料、控制或后勤成本。"
+    description_en: "Every advanced technology must pay energy, material, control, or logistics cost."
+    story_consequence_zh: "{protagonist}不能无成本开挂，技术收益会挤压别处。"
+    story_consequence_en: "{protagonist} cannot gain free power; technical advantage pressures another system."
+    exploitation_potential_zh: "把科技爽点变成后续战术和后勤压力。"
+    exploitation_potential_en: "Turns tech reward into later tactical and logistical pressure."
+
+quality_traps:
+  - trap_key: magic_technology
+    description_zh: "黑科技万能，没有物理、能源或组织约束。"
+    description_en: "Magic technology solves everything without physics, energy, or organizational constraints."
+    severity: critical
+  - trap_key: fake_jargon
+    description_zh: "术语堆砌替代验证链，读者看不到为什么可行。"
+    description_en: "Jargon replaces validation; readers cannot see why it works."
+    severity: critical
+  - trap_key: reset_battlefield
+    description_zh: "战斗状态每章重置，损伤、能源和敌方反制不延续。"
+    description_en: "Battlefield state resets each chapter; damage, energy, and enemy counters do not persist."
+    severity: warning
+
+disqualifiers:
+  - rule_zh: "核心科技突破没有任何可追踪约束或验证过程。"
+    rule_en: "Core technological breakthrough has no trackable constraint or validation process."
+    severity: fatal
+  - rule_zh: "能源、后勤和战场状态完全不影响行动。"
+    rule_en: "Energy, logistics, and battlefield state do not affect action."
+    severity: critical
+
+signal_keywords:
+  scifi_zh: ["科幻", "机甲", "星际", "舰队", "能源", "实验", "技术树", "战术"]

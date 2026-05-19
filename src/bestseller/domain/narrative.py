@@ -95,6 +95,7 @@ class ChapterContractRead(BaseModel):
     emotion_phase: str | None = Field(default=None, max_length=32)  # compress/release
     hooks_to_resolve: list[str] = Field(default_factory=list)  # 本章应消解的钩子
     hooks_to_plant: list[str] = Field(default_factory=list)  # 本章应植入的新钩子
+    relationship_debts: list[str] = Field(default_factory=list)  # 本章必须推进/偿还/加码的关系债
     is_climax: bool = False  # 是否为高潮章节
     loop_position: str | None = Field(default=None, max_length=32)  # trigger/action/reward/invest
 
@@ -128,6 +129,11 @@ class SceneContractRead(BaseModel):
     spotlight_character: str | None = None  # 群像焦点轮转：本场景高光角色
     information_control_mode: str | None = Field(default=None, max_length=64)  # reader_knows/character_knows/neither
     action_sequence: list[str] = Field(default_factory=list)  # 动作序列细纲（心流写作用）
+    camera_distance: str | None = Field(default=None, max_length=64)  # 俯瞰/远景/中景/近景/特写
+    reveal_mode: str | None = Field(default=None, max_length=64)  # 读者先知/角色先知/同步发现/误导反转
+    signature_image: str | None = None  # 本场必须留下的画面
+    cut_point: str | None = None  # 场景断点/章尾刀尖位置
+    relationship_debts: list[str] = Field(default_factory=list)  # 场景内必须兑现或加压的关系债
 
 
 class EmotionTrackRead(BaseModel):

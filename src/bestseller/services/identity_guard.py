@@ -573,6 +573,30 @@ def build_identity_constraint_block(
 _ZH_MALE_PRONOUNS = frozenset({"他", "他的", "他们"})
 _ZH_FEMALE_PRONOUNS = frozenset({"她", "她的", "她们"})
 
+_EN_NAME_GENDER_HINTS = {
+    "female": frozenset(
+        {
+            "alice",
+            "elena",
+            "maya",
+            "mira",
+            "rowan",
+            "sara",
+            "vera",
+            "zoe",
+        }
+    ),
+    "male": frozenset(
+        {
+            "dominic",
+            "kade",
+            "marcus",
+            "silas",
+            "victor",
+        }
+    ),
+}
+
 
 def validate_scene_text_identity(
     text: str,
@@ -682,6 +706,24 @@ def _identity_names(entry: CharacterIdentity) -> list[str]:
             if name and name not in names:
                 names.append(name)
     return names
+
+
+def _identity_matches_gender_hint(entry: CharacterIdentity, gender: str) -> bool:
+    if entry.gender == gender:
+        return True
+    pronouns = str(entry.pronoun_set_en or "").lower()
+    if gender == "female" and re.search(r"\b(?:she|her|hers)\b", pronouns):
+        return True
+    if gender == "male" and re.search(r"\b(?:he|him|his)\b", pronouns):
+        return True
+    hinted = _EN_NAME_GENDER_HINTS.get(gender, frozenset())
+    if not hinted:
+        return False
+    for name in _identity_names(entry):
+        first = re.split(r"[\s(\-]+", name.strip().lower(), maxsplit=1)[0]
+        if first in hinted:
+            return True
+    return False
 
 
 def _entry_matches_name_set(entry: CharacterIdentity, name_set: set[str]) -> bool:
@@ -794,6 +836,35 @@ _ZH_DEAD_ALIVE_REFERENTIAL_SUFFIXES = (
     "明",
     "法",
     "得",
+)
+_ZH_DEAD_ALIVE_MEMORY_MARKERS = (
+    "记忆",
+    "记得",
+    "想起",
+    "回想",
+    "回忆",
+    "当时",
+    "当年",
+    "年前",
+    "曾经",
+    "以前",
+    "旧事",
+    "死前最后一秒",
+    "看到的画面",
+    "画面",
+    "口型",
+)
+_ZH_DEAD_ALIVE_MANIFESTATION_MARKERS = (
+    "镜中",
+    "镜面",
+    "镜主",
+    "镜影",
+    "非活人",
+    "身体还没死透",
+    "这具身体",
+    "眼球是",
+    "镜片",
+    "声音从那张嘴",
 )
 _ZH_PRONOUN_OBJECT_PREFIXES = (
     "从",
@@ -974,6 +1045,8 @@ def _dead_alive_evidence(
         return ""
 
     if is_zh:
+        if _zh_dead_alive_text_has_manifestation_setup(text, name):
+            return ""
         scan_text = _strip_zh_quoted_dialogue(text)
         for match in re.finditer(re.escape(name), scan_text):
             if _zh_name_match_embedded_in_longer_name(
@@ -992,6 +1065,12 @@ def _dead_alive_evidence(
                 suffix = right[len(verb): len(verb) + 1]
                 if suffix in _ZH_DEAD_ALIVE_REFERENTIAL_SUFFIXES:
                     continue
+                if _zh_dead_alive_mention_is_memory_reference(
+                    scan_text,
+                    match_start=match.start(),
+                    match_end=match.end(),
+                ):
+                    continue
                 return f"{name}{verb} found in present-tense action context"
         return ""
 
@@ -999,6 +1078,47 @@ def _dead_alive_evidence(
     if re.search(speaking_pattern, text, flags=re.IGNORECASE):
         return f"{name} found speaking/acting in text"
     return ""
+
+
+def _zh_dead_alive_text_has_manifestation_setup(text: str, name: str) -> bool:
+    """Allow later speech after a scene establishes non-living manifestation.
+
+    Supernatural suspense projects often stage a deceased/sealed character as a
+    mirror image, recorded voice, ghostly remnant, or not-quite-dead body. Once
+    that mechanism is explicit in the same scene, later ``Name said`` beats are
+    not ordinary resurrection errors.
+    """
+
+    if not text or not name:
+        return False
+    for match in re.finditer(re.escape(name), text):
+        window = text[max(0, match.start() - 80):match.end() + 120]
+        if any(marker in window for marker in _ZH_DEAD_ALIVE_MANIFESTATION_MARKERS):
+            return True
+    return False
+
+
+def _zh_dead_alive_mention_is_memory_reference(
+    text: str,
+    *,
+    match_start: int,
+    match_end: int,
+) -> bool:
+    left = text[max(0, match_start - 60):match_start]
+    right = text[match_end:match_end + 40]
+    window = f"{left}{right}"
+    if any(marker in window for marker in _ZH_DEAD_ALIVE_MEMORY_MARKERS):
+        return True
+    if any(marker in window for marker in _ZH_DEAD_ALIVE_MANIFESTATION_MARKERS):
+        return True
+    sentence = re.split(r"[。！？；;\n]", left)[-1]
+    return any(
+        marker in sentence
+        for marker in (
+            *_ZH_DEAD_ALIVE_MEMORY_MARKERS,
+            *_ZH_DEAD_ALIVE_MANIFESTATION_MARKERS,
+        )
+    )
 
 
 def _find_zh_pronoun(text: str, pronoun: str) -> int:
@@ -1065,7 +1185,10 @@ def _zh_wrong_pronoun_is_likely_subject(
     # If the wrong-gender pronoun starts a fresh sentence and that gender has
     # another participant in the scene, it is ambiguous rather than a reliable
     # identity violation.
-    has_competing_found_gender = any(entry.gender == found_gender for entry in competing_entries)
+    has_competing_found_gender = any(
+        _identity_matches_gender_hint(entry, found_gender)
+        for entry in competing_entries
+    )
     if _ZH_STRONG_BOUNDARY_RE.search(before):
         return False
 
@@ -1115,11 +1238,16 @@ def _check_en_pronoun_consistency(
 
     competing_names = [item for item in (other_names or []) if item and item.lower() != name.lower()]
     competing_entries = list(other_entries or [])
-    has_competing_found_gender = any(other.gender == found_gender for other in competing_entries)
+    has_competing_found_gender = any(
+        _identity_matches_gender_hint(other, found_gender)
+        for other in competing_entries
+    )
 
     # Find contexts after character name (window of 200 chars for English)
     for match in re.finditer(re.escape(name), text, re.IGNORECASE):
         start = match.start()
+        if _en_name_match_is_prefix_of_full_identity(text, match, name, entry.name):
+            continue
         if _en_position_inside_dialogue(text, start):
             continue
         if _en_name_mention_is_likely_object(text[max(0, start - 80):start]):
@@ -1147,6 +1275,14 @@ def _check_en_pronoun_consistency(
             if _en_wrong_pronoun_has_intervening_proper_name(before_wrong_raw):
                 continue
             if _en_wrong_pronoun_is_likely_object(before_wrong_raw, wrong):
+                continue
+            if _en_wrong_pronoun_starts_embedded_clause(before_wrong_raw, wrong):
+                continue
+            if _en_wrong_pronoun_starts_relative_memory_clause(
+                before_wrong_raw,
+                right_context[wrong_match.end():],
+                wrong,
+            ):
                 continue
             if has_competing_found_gender and _en_wrong_pronoun_is_object_or_possessive(wrong):
                 continue
@@ -1207,9 +1343,27 @@ def _en_name_mention_is_likely_object(left_context: str) -> bool:
     prefix = left_context.rstrip().lower()
     return re.search(
         r"\b(?:at|toward|towards|to|for|from|with|beside|behind|near|past|around|"
-        r"against|onto|into|through|over|under|before|after|by)\s*$",
+        r"against|onto|into|through|over|under|before|after|by|watching|watched|"
+        r"watch|saw|seeing|observing|observed)\s*$",
         prefix,
     ) is not None
+
+
+def _en_name_match_is_prefix_of_full_identity(
+    text: str,
+    match: re.Match[str],
+    matched_name: str,
+    full_name: str,
+) -> bool:
+    matched = str(matched_name or "").strip().lower()
+    full = str(full_name or "").strip().lower()
+    if not matched or not full or matched == full:
+        return False
+    if not full.startswith(matched + " "):
+        return False
+    remaining = full[len(matched):]
+    right = text[match.end(): match.end() + len(remaining)]
+    return right.lower() == remaining
 
 
 def _en_name_mention_is_vocative(right_context: str) -> bool:
@@ -1329,6 +1483,52 @@ def _en_wrong_pronoun_is_likely_object(before_wrong: str, pronoun: str) -> bool:
     ) is not None
 
 
+def _en_wrong_pronoun_starts_embedded_clause(
+    before_wrong: str,
+    pronoun: str,
+) -> bool:
+    """Skip embedded clauses like "Victor knew she'd taken them".
+
+    The wrong-gender pronoun is the subject of the clause governed by a
+    cognition, perception, or speech verb. It is not referring back to the
+    named character.
+    """
+
+    if pronoun.lower() not in {"she", "he"}:
+        return False
+    before = before_wrong.strip().lower()
+    if not before or re.search(r"[.!?;\n]$", before):
+        return False
+    return re.search(
+        r"\b(?:already\s+)?(?:knew|knows|know|believed|believes|believe|"
+        r"thought|thinks|think|realized|realizes|realize|understood|"
+        r"understands|understand|suspected|suspects|suspect|feared|fears|"
+        r"fear|expected|expects|expect|heard|hears|hear|saw|sees|see|"
+        r"said|says|say|warned|warns|warn|told|tells|tell|noticed|notices|"
+        r"notice)(?:\s+that)?$",
+        before,
+    ) is not None
+
+
+def _en_wrong_pronoun_starts_relative_memory_clause(
+    before_wrong: str,
+    after_wrong: str,
+    pronoun: str,
+) -> bool:
+    """Skip noun-phrase relatives like "the Kade she remembered"."""
+
+    if pronoun.lower() not in {"she", "he"}:
+        return False
+    if before_wrong.strip():
+        return False
+    return re.match(
+        r"\s*(?:remembered|knew|met|trusted|loved|lost|followed|"
+        r"wanted|needed|had\s+known)\b",
+        after_wrong,
+        flags=re.IGNORECASE,
+    ) is not None
+
+
 def _en_name_is_prepositional_modifier_for_gender(
     left_context: str,
     *,
@@ -1365,7 +1565,7 @@ def _en_competing_gender_in_sentence_prefix(
     if not prefix.strip():
         return False
     for other in competing_entries:
-        if other.gender != found_gender:
+        if not _identity_matches_gender_hint(other, found_gender):
             continue
         for other_name in _identity_names(other):
             if other_name and other_name.lower() in prefix:

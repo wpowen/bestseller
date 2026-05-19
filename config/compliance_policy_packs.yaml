@@ -1,0 +1,75 @@
+version: "1.0"
+default_policy_pack: cn-mainland-general
+description: >
+  Configurable writing safety packs for public-emotion translation. These packs
+  support editorial risk detection and do not replace legal or platform review.
+
+policy_packs:
+  cn-mainland-general:
+    jurisdiction: CN-mainland
+    platform: general
+    default_allowed_translations:
+      - Translate real social pressure into fictional institutions, invented factions, invented laws, or genre rules.
+      - Keep reader compensation in evidence, strategy, growth, justice, relationship repair, or fictional rule reversal.
+      - Let antagonists represent story functions, not real protected groups or identifiable real people.
+      - Make illegal or harmful acts carry narrative cost instead of presenting them as usable guidance.
+    default_forbidden_translations:
+      - Do not incite real-world revenge, harassment, violence, self-harm, terrorism, gambling, fraud, or drug activity.
+      - Do not target real ethnic, regional, religious, gender, age, occupational, school, company, or official groups with hatred.
+      - Do not use identifiable real people, real institutions, or recent real incidents as disguised attack targets.
+      - Do not make sexualized minors, lowbrow sexual bait, or non-consensual content a selling point.
+      - Do not provide procedural instructions for crimes, evasion, cyber abuse, doxxing, or scams.
+    default_mitigation_rules:
+      - Move the pressure into fictional systems and invented names.
+      - Replace revenge framing with evidence, consequence, repair, justice, or self-mastery.
+      - Keep the story payoff on fictional rule reversal, not real group humiliation.
+      - Make dangerous behavior non-instructional and consequence-bearing.
+      - Rewrite reader-facing copy before publication if a title points at real groups or real institutions.
+    risk_terms:
+      real_world_revenge:
+        code: COMPLIANCE_REAL_WORLD_REVENGE
+        severity: high
+        terms:
+          - 报复现实
+          - 现实报复
+          - 让现实
+          - 人肉
+          - 开盒
+          - 网暴
+      identifiable_real_targets:
+        code: COMPLIANCE_IDENTIFIABLE_REAL_TARGET
+        severity: high
+        terms:
+          - 真实学校
+          - 真实公司
+          - 真实单位
+          - 真实姓名
+          - 真实地址
+          - 真实医院
+      hatred_or_discrimination:
+        code: COMPLIANCE_HATRED_OR_DISCRIMINATION
+        severity: critical
+        terms:
+          - 民族仇恨
+          - 宗教仇恨
+          - 地域黑
+          - 性别仇恨
+          - 歧视某地人
+      procedural_harm:
+        code: COMPLIANCE_PROCEDURAL_HARM
+        severity: critical
+        terms:
+          - 犯罪教程
+          - 诈骗教程
+          - 赌博教程
+          - 炸弹教程
+          - 自杀教程
+          - 教你逃避侦查
+      sexual_or_minor_risk:
+        code: COMPLIANCE_SEXUAL_OR_MINOR_RISK
+        severity: critical
+        terms:
+          - 未成年性
+          - 幼女
+          - 低俗擦边
+          - 强奸美化

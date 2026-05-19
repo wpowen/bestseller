@@ -24,8 +24,11 @@ def test_all_contracts_have_required_surfaces() -> None:
         "esports-competition",
         "otherworld-cross-system",
         "relationship-driven",
+        "science-fiction-progression",
         "strategy-worldbuilding",
         "suspense-mystery",
+        "urban-contemporary",
+        "wuxia-jianghu",
     }.issubset(contracts)
     for contract in contracts.values():
         assert contract.state_ledger_keys
@@ -95,6 +98,15 @@ def test_resolve_category_key_from_genre_text() -> None:
         resolve_category_hard_engine_key({}, genre="惊悚灵异", sub_genre="驱魔探案综合")
         == "suspense-mystery"
     )
+    assert (
+        resolve_category_hard_engine_key({}, genre="都市职场", sub_genre="娱乐圈")
+        == "urban-contemporary"
+    )
+    assert (
+        resolve_category_hard_engine_key({}, genre="科幻机甲", sub_genre="星际舰队")
+        == "science-fiction-progression"
+    )
+    assert resolve_category_hard_engine_key({}, genre="武侠江湖", sub_genre="门派侠义") == "wuxia-jianghu"
 
 
 def test_fixture_benchmark_covers_good_and_bad_cases() -> None:

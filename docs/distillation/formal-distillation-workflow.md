@@ -317,3 +317,28 @@ config/story_design_grammars/otherworld-cross-system.yaml
 
 The current resolver maps `异界` / `otherworld` / `cross-system` projects to
 this grammar.
+
+## 7. NVIDIA DeepSeek V4-Pro 执行示例（蒸馏专用）
+
+DeepSeek/V4 规模较大输出通常用于 distillation 的 chapter/card 聚合场景。可直接用以下入口运行两阶段 distillation：
+
+```bash
+export NVIDIA_API_KEY=<你的 NVIDIA API Key>   # 也可用 NIM_API_KEY
+export NVIDIA_LLM_MODEL=deepseek-ai/DeepSeek-V4-Pro   # 如你的 NIM 名称有差异请替换
+export SOURCE_START=0001
+export SOURCE_END=0200
+export CHAPTER_WORKERS=8
+
+scripts/distillation/run_full_auto_distill_nvidia_deepseek.sh \
+  --source-end 0200 \
+  --chapter-workers 8 \
+  --source-limit 200
+```
+
+关键环境变量：
+
+- `BESTSELLER_LLM_PROVIDER=nvidia`
+- `NVIDIA_LLM_MODEL=deepseek-ai/DeepSeek-V4-Pro`
+- `BESTSELLER__LLM__SUMMARIZER__MAX_TOKENS=8192`（避免蒸馏 JSON 被截断）
+- `BESTSELLER__LLM__SUMMARIZER__API_KEY_ENV=NVIDIA_API_KEY`（如果使用 NIM API Key，设为 `NIM_API_KEY`）
+- `BESTSELLER__LLM__SUMMARIZER__API_BASE=https://integrate.api.nvidia.com/v1`

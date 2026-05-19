@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
 from uuid import uuid4
@@ -150,6 +152,7 @@ def test_public_writing_preset_catalog_exposes_genre_creativity() -> None:
     payload = web_server._public_writing_preset_catalog_payload()
 
     creativity = payload["genre_creativity"]
+    creativity_json = json.dumps(creativity, ensure_ascii=False)
     pack = creativity["cn-romantasy-court"]
     direction = next(
         item for item in pack["directions"] if item["key"] == "distilled-mechanism-remix"
@@ -161,6 +164,10 @@ def test_public_writing_preset_catalog_exposes_genre_creativity() -> None:
     assert any(item.startswith("蒸馏库:") for item in direction["source_mix"])
     assert "premise_seed" in direction["prompt_hints"]
     assert direction["prompt_hints"]["usage_rule"]
+    assert "父母失踪" not in creativity_json
+    assert "父亲失踪" not in creativity_json
+    assert "母亲失踪" not in creativity_json
+    assert "必须根据所选类型动态创造主角目标" in creativity_json
 
 
 def test_quickstart_task_uses_sanitized_genre_profile(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -266,6 +273,215 @@ def test_project_repair_status_payload_tracks_progress_after_unblocking() -> Non
     assert payload["repair_remaining"] == 370
     assert payload["repair_completed"] == 100
     assert payload["progress_percent"] == 21.3
+
+
+def test_project_repair_status_payload_exposes_autonomous_repair_queue() -> None:
+    project = SimpleNamespace(status="revising", metadata_json={})
+
+    payload = web_server._build_project_repair_status_payload(
+        project,
+        [{"status": "complete", "production_state": "ok", "count": 57}],
+        {"pending": 246, "failed": 0, "completed": 12},
+    )
+
+    assert payload["phase"] == "repair_gate"
+    assert payload["pending_autonomous_repair_tasks"] == 246
+    assert payload["failed_autonomous_repair_tasks"] == 0
+    assert payload["autonomous_repair_tasks"]["total"] == 258
+
+
+def test_nonblocking_rejected_candidate_not_counted_as_failed_repair() -> None:
+    assert web_server._is_nonblocking_rejected_candidate(
+        error_log="chapter rewrite rejected by quality gate; current draft preserved",
+        metadata={"preserved_current_quality_gate_outcome": "ok"},
+        chapter_production_state="blocked",
+    )
+    assert web_server._is_nonblocking_rejected_candidate(
+        error_log="chapter rewrite rejected by quality gate; current draft preserved",
+        metadata={},
+        chapter_production_state="ok",
+    )
+    assert not web_server._is_nonblocking_rejected_candidate(
+        error_log="TimeoutError: rewrite task exceeded 30.0s",
+        metadata={"preserved_current_quality_gate_outcome": "ok"},
+        chapter_production_state="ok",
+    )
+
+
+def test_build_db_repair_task_summary_surfaces_project_queue() -> None:
+    project = SimpleNamespace(
+        slug="xianxia-upgrade-1776137730",
+        title="道种破虚",
+        target_chapters=1200,
+        created_at=datetime(2026, 5, 18, 1, 0, tzinfo=UTC),
+        updated_at=datetime(2026, 5, 18, 2, 0, tzinfo=UTC),
+    )
+    repair_status = {
+        "phase": "repair_gate",
+        "blocked_chapters": 7,
+        "autonomous_repair_tasks": {"pending": 246, "total": 246},
+    }
+
+    task = web_server._build_db_repair_task_summary(project, repair_status)
+
+    assert task is not None
+    assert task["task_id"] == "db-repair:xianxia-upgrade-1776137730"
+    assert task["task_type"] == "repair"
+    assert task["status"] == "incomplete"
+    assert task["title"] == "道种破虚"
+    assert task["result"]["pending_autonomous_repair_tasks"] == 246
+    assert task["synthetic_db_repair_task"] is True
+
+
+def test_worker_heal_progress_snapshot_reads_redis_progress(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _FakeRedis:
+        def exists(self, *keys: str) -> int:
+            return int("arq:in-progress:repair:heal:novel-a" in keys)
+
+        def zscore(self, _key: str, _member: str) -> None:
+            return None
+
+        def lrange(self, key: str, *_args: object) -> list[str]:
+            assert key == "task:repair:heal:novel-a:progress"
+            return [
+                '{"ts": 1779083333.4, "message": "project_repair_chapter_started", '
+                '"data": {"project_slug": "novel-a", "chapter_number": 22}}'
+            ]
+
+        def close(self) -> None:
+            return None
+
+    class _FakeRedisModule:
+        @staticmethod
+        def from_url(_url: str, **_kwargs: object) -> _FakeRedis:
+            return _FakeRedis()
+
+    import sys as _sys
+
+    monkeypatch.setitem(_sys.modules, "redis", _FakeRedisModule)
+
+    snapshot = web_server._load_worker_heal_progress_snapshot(
+        "redis://stub",
+        "repair:heal:novel-a",
+    )
+
+    assert snapshot is not None
+    assert snapshot["status"] == "running"
+    assert snapshot["current_stage"] == "project_repair_chapter_started"
+    assert snapshot["progress_events"] == [
+        {
+            "timestamp": 1779083333.4,
+            "stage": "project_repair_chapter_started",
+            "payload": {"project_slug": "novel-a", "chapter_number": 22},
+        }
+    ]
+
+
+def test_db_repair_summary_merges_worker_progress_details() -> None:
+    summary = {
+        "task_id": "db-repair:novel-a",
+        "task_type": "repair",
+        "status": "queued",
+        "updated_at": "2026-05-18T01:00:00+00:00",
+        "current_stage": "delegated_to_worker_self_heal",
+        "progress_events": [
+            {
+                "timestamp": "2026-05-18T01:00:00+00:00",
+                "stage": "legacy_quality_closure_repair_pending",
+                "payload": {"project_slug": "novel-a"},
+            }
+        ],
+        "error": "old error",
+    }
+    worker_progress = {
+        "status": "running",
+        "current_stage": "project_repair_chapter_started",
+        "progress_events": [
+            {
+                "timestamp": 1779083333.4,
+                "stage": "project_repair_chapter_started",
+                "payload": {"project_slug": "novel-a", "chapter_number": 22},
+            }
+        ],
+        "latest_payload": {"project_slug": "novel-a", "chapter_number": 22},
+    }
+
+    merged = web_server._merge_worker_progress_into_db_repair_summary(
+        summary,
+        worker_progress,
+    )
+
+    assert merged["status"] == "running"
+    assert merged["current_stage"] == "project_repair_chapter_started"
+    assert merged["error"] is None
+    assert merged["updated_at"] == "2026-05-18T05:48:53.400000+00:00"
+    assert len(merged["progress_events"]) == 2
+    assert merged["progress_events"][-1]["payload"]["chapter_number"] == 22
+
+
+def test_task_progress_payload_surfaces_latest_event_and_repair_status() -> None:
+    task = {
+        "task_id": "autowrite:heal:novel-a",
+        "task_type": "autowrite",
+        "status": "running",
+        "title": "长夜巡航",
+        "project_slug": "novel-a",
+        "current_stage": "project_repair_chapter_started",
+        "progress_events": [
+            {"stage": "legacy_quality_closure_started", "payload": {"chapter": 1}},
+            {"stage": "project_repair_chapter_started", "payload": {"chapter": 13}},
+            {
+                "stage": "delegated_to_worker_self_heal",
+                "payload": {"reason": "ARQ heal job already active"},
+            },
+        ],
+        "repair_status": {"phase": "repairing", "blocked_chapters": 0},
+    }
+
+    payload = web_server._task_progress_payload(task)
+
+    assert payload["task_id"] == "autowrite:heal:novel-a"
+    assert payload["status"] == "running"
+    assert payload["current_stage"] == "project_repair_chapter_started"
+    assert payload["latest_event"] == {
+        "stage": "project_repair_chapter_started",
+        "payload": {"chapter": 13},
+    }
+    assert payload["repair_status"] == {"phase": "repairing", "blocked_chapters": 0}
+
+
+def test_load_worker_task_summary_surfaces_redis_owned_autowrite_job(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        web_server,
+        "_load_worker_heal_progress_snapshot",
+        lambda redis_url, job_id: {
+            "status": "running",
+            "current_stage": "project_repair_chapter_started",
+            "progress_events": [
+                {
+                    "stage": "project_repair_chapter_started",
+                    "payload": {"chapter_number": 14},
+                }
+            ],
+            "latest_payload": {"chapter_number": 14},
+        },
+    )
+
+    summary = web_server._load_worker_task_summary(
+        SimpleNamespace(redis=SimpleNamespace(url="redis://stub")),
+        "autowrite:heal:novel-a",
+    )
+
+    assert summary is not None
+    assert summary["task_id"] == "autowrite:heal:novel-a"
+    assert summary["task_type"] == "autowrite"
+    assert summary["project_slug"] == "novel-a"
+    assert summary["current_stage"] == "project_repair_chapter_started"
+    assert summary["synthetic_worker_task"] is True
 
 
 def test_reader_chapter_availability_uses_production_gate() -> None:
@@ -1203,6 +1419,86 @@ def test_sync_progress_marks_repair_completed_with_attention_incomplete(
     assert synced["error"] == "Task reached a human-review or attention gate."
 
 
+def test_sync_progress_marks_autowrite_completed_with_attention_incomplete(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manager = web_server.WebTaskManager()
+    task = web_server.WebTaskState(
+        task_id="task-autowrite-attention",
+        task_type="autowrite",
+        status="running",
+        created_at="2026-05-13T00:00:00+00:00",
+        updated_at="2026-05-13T01:00:00+00:00",
+        project_slug="novel-attention",
+        title="Novel Attention",
+        current_stage="delegated_to_worker_self_heal",
+        progress_events=[],
+    )
+    with manager._lock:
+        manager._tasks[task.task_id] = task
+
+    class _FakeRedis:
+        def exists(self, *_keys: str) -> int:
+            return 1
+
+        def zscore(self, _key: str, _member: str) -> None:
+            return None
+
+        def lrange(self, *_args: object) -> list[str]:
+            return [
+                '{"ts": 1778648419.8, "message": "autowrite_completed", '
+                '"data": {"requires_human_review": true, "final_verdict": "attention"}}'
+            ]
+
+        def close(self) -> None:
+            return None
+
+    class _FakeRedisModule:
+        @staticmethod
+        def from_url(_url: str, **_kwargs: object) -> _FakeRedis:
+            return _FakeRedis()
+
+    import sys as _sys
+
+    monkeypatch.setitem(_sys.modules, "redis", _FakeRedisModule)
+
+    updated = manager.sync_progress_from_worker_redis("redis://stub")
+
+    synced = manager.get_task("task-autowrite-attention")
+    assert updated == 1
+    assert synced is not None
+    assert synced["status"] == "incomplete"
+    assert synced["current_stage"] == "waiting_human_review"
+    assert synced["error"] == "Task reached a human-review or attention gate."
+
+
+def test_mark_completed_keeps_attention_result_incomplete() -> None:
+    manager = web_server.WebTaskManager()
+    task = web_server.WebTaskState(
+        task_id="task-direct-attention",
+        task_type="autowrite",
+        status="running",
+        created_at="2026-05-13T00:00:00+00:00",
+        updated_at="2026-05-13T01:00:00+00:00",
+        project_slug="novel-attention",
+        title="Novel Attention",
+        current_stage="running",
+        progress_events=[],
+    )
+    with manager._lock:
+        manager._tasks[task.task_id] = task
+
+    manager._mark_completed(
+        "task-direct-attention",
+        {"requires_human_review": True, "final_verdict": "attention"},
+    )
+
+    synced = manager.get_task("task-direct-attention")
+    assert synced is not None
+    assert synced["status"] == "incomplete"
+    assert synced["current_stage"] == "waiting_human_review"
+
+
 def test_sync_progress_keeps_intermediate_attention_running(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1316,6 +1612,98 @@ def test_sync_progress_prefers_active_autowrite_over_finished_repair(
 
     synced = manager.get_task("task-active-autowrite")
     assert updated == 1
+    assert synced is not None
+    assert synced["status"] == "running"
+    assert synced["current_stage"] == "chapter_pipeline_started"
+    assert synced["error"] is None
+
+
+def test_sync_progress_ignores_stale_result_after_resume(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manager = web_server.WebTaskManager()
+    task = web_server.WebTaskState(
+        task_id="task-resumed",
+        task_type="autowrite",
+        status="running",
+        created_at="2026-05-18T09:00:00+00:00",
+        updated_at="2026-05-18T10:00:00+00:00",
+        project_slug="novel-resumed",
+        title="Novel Resumed",
+        current_stage="chapter_pipeline_started",
+        error=None,
+        progress_events=[
+            {
+                "timestamp": "2026-05-18T10:00:00+00:00",
+                "stage": "resume_requested",
+                "payload": {},
+            }
+        ],
+    )
+    with manager._lock:
+        manager._tasks[task.task_id] = task
+
+    class _FakeRedis:
+        def exists(self, *keys: str) -> int:
+            if "arq:result:repair:heal:novel-resumed" in keys:
+                return 1
+            return 0
+
+        def zscore(self, _key: str, _member: str) -> None:
+            return None
+
+        def lrange(self, *_args: object) -> list[str]:
+            return [
+                '{"ts": 1779097514.6, "message": "failed", '
+                '"data": {"error": "old repair failure"}}'
+            ]
+
+        def close(self) -> None:
+            return None
+
+    class _FakeRedisModule:
+        @staticmethod
+        def from_url(_url: str, **_kwargs: object) -> _FakeRedis:
+            return _FakeRedis()
+
+    import sys as _sys
+
+    monkeypatch.setitem(_sys.modules, "redis", _FakeRedisModule)
+
+    updated = manager.sync_progress_from_worker_redis("redis://stub")
+
+    synced = manager.get_task("task-resumed")
+    assert updated == 0
+    assert synced is not None
+    assert synced["status"] == "running"
+    assert synced["current_stage"] == "chapter_pipeline_started"
+    assert synced["error"] is None
+
+
+def test_push_progress_resurrects_failed_task_on_new_nonterminal_progress() -> None:
+    manager = web_server.WebTaskManager()
+    task = web_server.WebTaskState(
+        task_id="task-progress",
+        task_type="autowrite",
+        status="failed",
+        created_at="2026-05-18T09:00:00+00:00",
+        updated_at="2026-05-18T09:30:00+00:00",
+        project_slug="novel-progress",
+        title="Novel Progress",
+        current_stage="failed",
+        error="old failure",
+        progress_events=[],
+    )
+    with manager._lock:
+        manager._tasks[task.task_id] = task
+
+    manager._push_progress(
+        "task-progress",
+        "chapter_pipeline_started",
+        {"chapter_number": 2},
+    )
+
+    synced = manager.get_task("task-progress")
     assert synced is not None
     assert synced["status"] == "running"
     assert synced["current_stage"] == "chapter_pipeline_started"

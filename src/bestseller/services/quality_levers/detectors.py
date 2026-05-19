@@ -29,6 +29,7 @@ from bestseller.services.quality_levers.sensory_inventory import (
 )
 
 _CJK_RE = re.compile(r"[一-鿿]")
+_LATIN_WORD_RE = re.compile(r"[A-Za-z]+(?:['\u2019-][A-Za-z]+)?")
 _PARAGRAPH_SPLIT_RE = re.compile(r"\n\s*\n")
 _DEFAULT_DUMPING_MARKERS = (
     "十五年前",
@@ -38,6 +39,39 @@ _DEFAULT_DUMPING_MARKERS = (
     "其实",
     "回忆",
     "昨夜",
+)
+_FRAMEWORK_WORD_COUNT_PLATFORMS = {"framework", "project", "bestseller", "generation"}
+_ENGLISH_PULSE_WORDS = (
+    "attack",
+    "blood",
+    "break",
+    "burn",
+    "chase",
+    "crack",
+    "crash",
+    "danger",
+    "deadline",
+    "die",
+    "dying",
+    "explosion",
+    "fear",
+    "forced",
+    "grab",
+    "hit",
+    "kill",
+    "knife",
+    "locked",
+    "panic",
+    "pain",
+    "pressure",
+    "risk",
+    "run",
+    "scream",
+    "shock",
+    "threat",
+    "trapped",
+    "urgent",
+    "warning",
 )
 
 
@@ -50,6 +84,16 @@ def count_cjk_chars(text: str) -> int:
     """Count CJK (Chinese) characters in ``text``."""
 
     return len(_CJK_RE.findall(text or ""))
+
+
+def count_latin_words(text: str) -> int:
+    """Count Latin-script prose words in ``text``."""
+
+    return len(_LATIN_WORD_RE.findall(text or ""))
+
+
+def _is_english_language(language: str | None) -> bool:
+    return (language or "").strip().lower().startswith("en")
 
 
 def keyword_total(text: str, keywords: tuple[str, ...] | list[str]) -> int:
@@ -85,18 +129,41 @@ class PulseDensityResult:
     density_per_300_chars: float
     threshold: float
     passed: bool
+    unit: str = "cjk_chars"
+    applicable: bool = True
+    reason: str = "ok"
 
 
 def compute_pulse_density(
     text: str,
     *,
     threshold_per_300: float = 1.0,
+    language: str | None = None,
 ) -> PulseDensityResult:
     """Measure how often heart-rate / pulse words appear in ``text``.
 
-    Pulse vocabulary is loaded from ``platform_profiles.yaml``. The
-    threshold defaults to ``1 hit per 300 CJK chars``.
+    Chinese pulse vocabulary is loaded from ``platform_profiles.yaml``.
+    English projects use a small deterministic pressure-word pack so that
+    CJK-only counters do not turn every English chapter into a hard failure.
+    The threshold defaults to ``1 hit per 300 language-appropriate words``.
     """
+
+    if _is_english_language(language):
+        word_count = count_latin_words(text)
+        lowered = (text or "").lower()
+        pulse_count = sum(
+            len(re.findall(rf"\b{re.escape(word)}\b", lowered))
+            for word in _ENGLISH_PULSE_WORDS
+        )
+        density = pulse_count / (word_count / 300) if word_count else 0.0
+        return PulseDensityResult(
+            pulse_count=pulse_count,
+            cjk_chars=word_count,
+            density_per_300_chars=density,
+            threshold=threshold_per_300,
+            passed=density >= threshold_per_300,
+            unit="english_words",
+        )
 
     config = load_platform_profiles()
     pulse_words = config.pulse_words.all_words
@@ -150,6 +217,11 @@ _BANNED_PATTERN_REGEX: dict[str, str] = {
     "weak_verbs": r"做了一个|做出了|进行了一次|实施了|实现了",
     "cliched_metaphor": r"像[^\n，。；！？]{1,10}一样[^\n，。；！？]{0,15}",
 }
+_BANNED_PATTERN_ALLOWANCE: dict[str, int] = {
+    # A small number of concrete similes is normal prose. Treat this as an
+    # AI-flavor problem only when it clusters in one chapter.
+    "cliched_metaphor": 2,
+}
 
 
 def scan_banned_patterns(
@@ -175,7 +247,8 @@ def scan_banned_patterns(
         regex = _BANNED_PATTERN_REGEX.get(bp.pattern_id)
         if not regex:
             continue
-        count = len(re.findall(regex, text))
+        raw_count = len(re.findall(regex, text))
+        count = max(0, raw_count - _BANNED_PATTERN_ALLOWANCE.get(bp.pattern_id, 0))
         if count > 0:
             hits.append(BannedPatternHit(pattern_id=bp.pattern_id, count=count))
             total += count
@@ -453,19 +526,29 @@ class WordCountGateResult:
     max_chars: int
     passed: bool
     reason: str
+    unit: str = "cjk_chars"
 
 
 def evaluate_word_count(
     text: str,
     *,
     platform: str | None,
+    language: str | None = None,
 ) -> WordCountGateResult:
     """Evaluate ``text`` against the platform-specific chapter word range."""
 
-    chars = count_cjk_chars(text)
-    config = load_platform_profiles()
+    unit = "english_words" if _is_english_language(language) else "cjk_chars"
+    chars = (
+        count_latin_words(text)
+        if unit == "english_words"
+        else count_cjk_chars(text)
+    )
     profile = None
-    if platform:
+    platform_key = str(platform or "").strip().lower()
+    if platform_key in _FRAMEWORK_WORD_COUNT_PLATFORMS:
+        min_chars, max_chars = _framework_word_count_range()
+    else:
+        config = load_platform_profiles()
         from bestseller.services.quality_levers.platform_profiles import (
             resolve_platform_id,
         )
@@ -474,13 +557,13 @@ def evaluate_word_count(
         if platform_id is not None:
             profile = config.platforms.get(platform_id)
 
-    if profile is None or profile.pacing_preference.chapter_word_min == 0:
-        # Fall back to the legacy framework default.
-        min_chars = 5000
-        max_chars = 0
-    else:
-        min_chars = profile.pacing_preference.chapter_word_min
-        max_chars = profile.pacing_preference.chapter_word_max
+        if profile is None or profile.pacing_preference.chapter_word_min == 0:
+            # Fall back to the legacy quality-levers default.
+            min_chars = 5000
+            max_chars = 0
+        else:
+            min_chars = profile.pacing_preference.chapter_word_min
+            max_chars = profile.pacing_preference.chapter_word_max
 
     if chars < min_chars:
         return WordCountGateResult(
@@ -489,6 +572,7 @@ def evaluate_word_count(
             max_chars=max_chars,
             passed=False,
             reason=f"underflow: {chars} < {min_chars}",
+            unit=unit,
         )
     if max_chars and chars > max_chars:
         return WordCountGateResult(
@@ -497,6 +581,7 @@ def evaluate_word_count(
             max_chars=max_chars,
             passed=False,
             reason=f"overflow: {chars} > {max_chars}",
+            unit=unit,
         )
     return WordCountGateResult(
         chars=chars,
@@ -504,7 +589,22 @@ def evaluate_word_count(
         max_chars=max_chars,
         passed=True,
         reason="ok",
+        unit=unit,
     )
+
+
+def _framework_word_count_range() -> tuple[int, int]:
+    try:
+        from bestseller.settings import load_settings
+
+        budget = load_settings().generation.words_per_chapter
+        min_chars = int(getattr(budget, "min", 0) or 0)
+        max_chars = int(getattr(budget, "max", 0) or 0)
+    except Exception:
+        return 5000, 0
+    if min_chars <= 0:
+        return 5000, 0
+    return min_chars, max(0, max_chars)
 
 
 # ---------------------------------------------------------------------------
@@ -529,6 +629,7 @@ def audit_chapter(
     text: str,
     *,
     platform: str | None,
+    language: str | None = None,
     signature_words: tuple[str, ...] = (),
     signature_threshold: int = 10,
     forbidden_words: tuple[str, ...] = (),
@@ -555,8 +656,8 @@ def audit_chapter(
         else None
     )
     return QuantitativeChapterAudit(
-        word_count=evaluate_word_count(text, platform=platform),
-        pulse=compute_pulse_density(text),
+        word_count=evaluate_word_count(text, platform=platform, language=language),
+        pulse=compute_pulse_density(text, language=language),
         banned_patterns=scan_banned_patterns(text),
         abstract_sensory=scan_abstract_sensory_terms(text),
         dumping=detect_psychological_dumping(text),

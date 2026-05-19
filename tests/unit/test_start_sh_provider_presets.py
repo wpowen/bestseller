@@ -82,6 +82,19 @@ def test_start_sh_writes_custom_nvidia_nim_model_and_base(tmp_path: Path) -> Non
     assert "export BESTSELLER__LLM__PLANNER__API_KEY_ENV='NIM_API_KEY'" in output
 
 
+def test_start_sh_writes_nvidia_summarizer_max_tokens_when_set(tmp_path: Path) -> None:
+    output = _render_start_env(
+        tmp_path,
+        {
+            "BESTSELLER_LLM_PROVIDER": "nvidia",
+            "NVIDIA_API_KEY": "nvapi-test",
+            "NVIDIA_SUMMARIZER_MAX_TOKENS": "8192",
+        },
+    )
+
+    assert "export BESTSELLER__LLM__SUMMARIZER__MAX_TOKENS='8192'" in output
+
+
 def test_start_sh_writes_volcengine_coding_plan_preset(tmp_path: Path) -> None:
     output = _render_start_env(
         tmp_path,

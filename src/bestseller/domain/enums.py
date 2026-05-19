@@ -21,6 +21,8 @@ class ArtifactType(StrEnum):
     PLAN_VALIDATION = "plan_validation"
     PREWRITE_READINESS = "prewrite_readiness"
     STORY_DESIGN_KERNEL = "story_design_kernel"
+    PUBLIC_EMOTION_KERNEL = "public_emotion_kernel"
+    COMPLIANCE_BOUNDARY_KERNEL = "compliance_boundary_kernel"
     ENTRY_SYSTEM_KERNEL = "entry_system_kernel"
     EMOTION_DRIVEN_KERNEL = "emotion_driven_kernel"
     VOLUME_CHAPTER_OUTLINE = "volume_chapter_outline"

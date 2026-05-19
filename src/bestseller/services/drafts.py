@@ -40,6 +40,10 @@ from bestseller.services.methodology import (
     render_methodology_scene_rules,
     render_qimao_opening_contract_block,
 )
+from bestseller.services.methodology_overlay import (
+    render_overlay_prompt_block,
+    resolve_methodology_contract_mode,
+)
 from bestseller.services.output_validator import (
     OutputValidator,
     QualityReport,
@@ -84,6 +88,12 @@ from bestseller.services.writing_profile import (
     resolve_writing_profile,
 )
 from bestseller.settings import AppSettings, load_settings
+from bestseller.services.word_targets import (
+    model_output_token_ceiling,
+    model_reasoning_token_reserve,
+    resolve_llm_role_max_tokens,
+    resolve_llm_role_model,
+)
 
 _REPAIR_CODE_ALIASES: dict[str, str] = {
     "CHAPTER_LENGTH_BLOCK_LOW": "BLOCK_LOW",
@@ -142,6 +152,9 @@ def prose_output_max_tokens_for_target(
     target_word_count: int | None,
     *,
     language: str | None = None,
+    settings: AppSettings | None = None,
+    role: str = "writer",
+    model_max_tokens: int | None = None,
 ) -> int | None:
     """Return a conservative output-token cap for a prose target.
 
@@ -158,9 +171,27 @@ def prose_output_max_tokens_for_target(
         return None
     if target <= 0:
         return None
+    active_settings = settings or load_settings(env={})
+    model_name = resolve_llm_role_model(active_settings, role=role)
+    model_tokens = int(model_max_tokens) if model_max_tokens is not None else resolve_llm_role_max_tokens(
+        active_settings,
+        role=role,
+    )
     multiplier = 2.8 if is_english_language(language) else 3.2
     floor = 1024 if is_english_language(language) else 1536
-    return max(floor, int(round(target * multiplier)) + 512)
+    visible_cap = max(floor, int(round(target * multiplier)) + 512)
+    reserve = model_reasoning_token_reserve(model_name)
+    cap = visible_cap + reserve
+    if model_tokens is not None and model_tokens > 0:
+        token_ceiling = model_output_token_ceiling(model_name)
+        effective_model_tokens = int(model_tokens)
+        if reserve and token_ceiling:
+            effective_model_tokens = max(
+                effective_model_tokens,
+                min(int(token_ceiling), cap),
+            )
+        return min(cap, effective_model_tokens)
+    return cap
 
 
 async def _load_character_name_roster(
@@ -1151,6 +1182,7 @@ async def _regenerate_scene_until_valid(
     context_query: str,
     protagonist_name: str | None,
     supporting_name: str | None,
+    target_word_count: int | None,
     global_budget: GlobalBudget | None,
 ) -> tuple[str, str | None, UUID | None, str, int]:
     """Validate ``initial_content`` and, if blocked, regen until it passes.
@@ -1192,6 +1224,12 @@ async def _regenerate_scene_until_valid(
                 project_id=project.id,
                 workflow_run_id=workflow_run_id,
                 step_run_id=step_run_id,
+                max_tokens_override=prose_output_max_tokens_for_target(
+                    target_word_count,
+                    language=_project_language(project),
+                    settings=settings,
+                    role="writer",
+                ),
                 metadata={
                     "project_slug": project.slug,
                     "chapter_number": chapter_number,
@@ -1269,6 +1307,7 @@ def _estimate_tokens(text: str) -> int:
 # Tier 3: background & enrichment — only when ample room.
 _CONTEXT_TIER_1 = frozenset({
     "contract_section",
+    "story_principle_line",
     "methodology_line",
     "participant_fact_section",
     "contradiction_line",
@@ -2858,6 +2897,12 @@ def _render_contract_section(
             sections.append(f"- {'Chapter core conflict' if is_en else '章节核心冲突'}：{chapter_contract['core_conflict']}")
         if chapter_contract.get("closing_hook"):
             sections.append(f"- {'Chapter closing hook' if is_en else '章节尾钩'}：{chapter_contract['closing_hook']}")
+        overlay_block = render_overlay_prompt_block(
+            chapter_overlay=chapter_contract,
+            language=language,
+        )
+        if overlay_block:
+            sections.append(overlay_block)
     if scene_contract:
         sections.append(
             f"{'Scene contract' if is_en else '场景 contract'}："
@@ -2890,7 +2935,199 @@ def _render_contract_section(
                 f"- {'Subplots advanced' if is_en else '推进副线'}："
                 f"{(', ' if is_en else '、').join(scene_contract['subplot_codes'])}"
             )
+        overlay_block = render_overlay_prompt_block(
+            scene_overlay=scene_contract,
+            language=language,
+        )
+        if overlay_block:
+            sections.append(overlay_block)
     return "\n".join(sections)
+
+
+def _render_story_principle_execution_section(
+    chapter: Any,
+    scene: Any,
+    *,
+    language: str | None = None,
+) -> str:
+    """Render chapter event-unit guidance at the scene execution layer."""
+
+    chapter_meta = getattr(chapter, "metadata_json", None)
+    chapter_meta = chapter_meta if isinstance(chapter_meta, dict) else {}
+    event_contract = chapter_meta.get("event_cycle_contract")
+    event_contract = event_contract if isinstance(event_contract, dict) else {}
+    role = str(
+        chapter_meta.get("chapter_event_role")
+        or event_contract.get("chapter_event_role")
+        or event_contract.get("event_role")
+        or ""
+    ).strip()
+    info_gap = str(
+        chapter_meta.get("information_gap_mode")
+        or event_contract.get("information_gap_mode")
+        or ""
+    ).strip()
+    if not role and not event_contract and not info_gap:
+        return ""
+
+    is_en = is_english_language(language)
+    scene_number = int(getattr(scene, "scene_number", 1) or 1)
+    scene_type = str(getattr(scene, "scene_type", "") or "").strip().lower()
+    scene_focus = _story_principle_scene_focus(
+        role=role,
+        scene_number=scene_number,
+        scene_type=scene_type,
+        is_en=is_en,
+    )
+    keys = (
+        "reader_desire",
+        "event_pressure",
+        "emotion_event",
+        "desire_goal",
+        "obstacle",
+        "solution_method",
+        "action_resolution",
+        "resolution_feedback",
+        "expected_state_delta",
+        "handoff_to_next",
+        "next_reader_waiting",
+    )
+    detail_lines = [
+        f"- {key}: {value}"
+        for key in keys
+        if (value := str(event_contract.get(key) or "").strip())
+    ]
+    if is_en:
+        header = "=== Story-principle execution: event-unit contract ==="
+        lines = [
+            header,
+            "- Scope: this is a multi-chapter event-unit contract, not a per-scene or per-chapter six-step template.",
+            f"- Current chapter role: {role or 'unspecified'}",
+        ]
+        if info_gap:
+            lines.append(f"- Information gap mode: {info_gap}")
+        lines.append(f"- This scene's contribution: {scene_focus}")
+        lines.extend(detail_lines)
+        lines.append(
+            "- Execution rule: embody these constraints through action, choice, pressure, consequence, and handoff; never output the labels as prose."
+        )
+        return "\n".join(lines)
+
+    lines = [
+        "=== 写作原理执行约束：事件单元合同 ===",
+        "- 作用域：这是跨章节事件单元合同，不是每场/每章都复刻完整六步的模板。",
+        f"- 本章事件角色：{role or '未指定'}",
+    ]
+    if info_gap:
+        lines.append(f"- 信息差模式：{info_gap}")
+    lines.append(f"- 本场景贡献：{scene_focus}")
+    lines.extend(detail_lines)
+    lines.append(
+        "- 执行规则：把这些约束落到行动、选择、压力、后果和交接里；不要把字段名或策划标签写进正文。"
+    )
+    return "\n".join(lines)
+
+
+def _story_principle_scene_focus(
+    *,
+    role: str,
+    scene_number: int,
+    scene_type: str,
+    is_en: bool,
+) -> str:
+    closing_like = scene_type in {"hook", "tail", "closing_hook", "aftereffect"}
+    position = "opening" if scene_number <= 1 else ("handoff" if closing_like else "development")
+    focus_en = {
+        "trigger": {
+            "opening": "make the triggering emotional event concrete and immediate.",
+            "development": "show pressure spreading from the trigger into a concrete complication.",
+            "handoff": "turn the trigger into the next reader question.",
+        },
+        "desire_lock": {
+            "opening": "state the protagonist's wanted result through behavior, not explanation.",
+            "development": "force a visible choice that narrows the protagonist's options.",
+            "handoff": "leave the reader wanting to see whether the committed goal can survive pressure.",
+        },
+        "obstacle_escalation": {
+            "opening": "put the obstacle on page quickly.",
+            "development": "raise resistance, cost, or dilemma without solving it too easily.",
+            "handoff": "make the worsened obstacle become the next-scene pull.",
+        },
+        "method_search": {
+            "opening": "show why the old method cannot work.",
+            "development": "test or discover a concrete method with visible risk.",
+            "handoff": "carry the chosen method into action pressure.",
+        },
+        "execution_turn": {
+            "opening": "start from a concrete action already underway.",
+            "development": "execute the turn and make it change the local balance.",
+            "handoff": "expose the consequence of the turn.",
+        },
+        "payoff_feedback": {
+            "opening": "land the promised payoff or failure signal early.",
+            "development": "show feedback and aftereffect, including cost.",
+            "handoff": "convert feedback into the next desire or unresolved question.",
+        },
+        "reaction_reset": {
+            "opening": "let consequences register in behavior and relationship posture.",
+            "development": "process the changed state and reset priorities.",
+            "handoff": "open a fresh, specific waiting point.",
+        },
+        "bridge_hook": {
+            "opening": "connect prior aftereffect to the new event unit.",
+            "development": "transfer pressure without replaying the previous beat.",
+            "handoff": "plant a concrete next event, not a generic cliffhanger.",
+        },
+    }
+    focus_zh = {
+        "trigger": {
+            "opening": "把触发性的情绪事件迅速具象化。",
+            "development": "展示触发事件如何扩散成具体麻烦。",
+            "handoff": "把触发事件转化成下一步阅读问题。",
+        },
+        "desire_lock": {
+            "opening": "用行为亮出主角想要的结果，不要解释。",
+            "development": "逼出一个会收窄选项的可见选择。",
+            "handoff": "让读者想看这个已承诺目标能否扛住压力。",
+        },
+        "obstacle_escalation": {
+            "opening": "尽快让阻碍上页。",
+            "development": "升级阻力、代价或两难，不要轻易解决。",
+            "handoff": "把变严重的阻碍变成下一场拉力。",
+        },
+        "method_search": {
+            "opening": "先证明旧方法为什么失效。",
+            "development": "发现或测试一个有风险的具体方法。",
+            "handoff": "把选定方法推向行动压力。",
+        },
+        "execution_turn": {
+            "opening": "从已经发生的具体行动切入。",
+            "development": "执行转折，并让局部局势发生变化。",
+            "handoff": "暴露转折带来的后果。",
+        },
+        "payoff_feedback": {
+            "opening": "尽早落下承诺过的兑现或失败信号。",
+            "development": "展示反馈和余波，包括代价。",
+            "handoff": "把反馈转换成下一步欲望或未解问题。",
+        },
+        "reaction_reset": {
+            "opening": "让后果体现在行为和关系姿态里。",
+            "development": "消化变化后的状态，并重置优先级。",
+            "handoff": "打开一个新的、具体的等待点。",
+        },
+        "bridge_hook": {
+            "opening": "把上一轮余波接到新事件单元。",
+            "development": "转移压力，但不要重演上一拍。",
+            "handoff": "种下具体下一事件，不写泛化悬念。",
+        },
+    }
+    table = focus_en if is_en else focus_zh
+    default = (
+        "serve the chapter's event-unit role with a visible state change."
+        if is_en
+        else "服务本章事件角色，并造成可见状态变化。"
+    )
+    return table.get(role, {}).get(position, default)
 
 
 def _render_tree_section(
@@ -3778,6 +4015,13 @@ def build_scene_draft_prompts(
     emotion_track_section = _render_emotion_track_section(active_emotion_tracks, language=language)
     antagonist_plan_section = _render_antagonist_plan_section(active_antagonist_plans, language=language)
     contract_section = _render_contract_section(chapter_contract, scene_contract, language=language)
+    story_principle_line = _render_story_principle_execution_section(
+        chapter,
+        scene,
+        language=language,
+    )
+    if story_principle_line:
+        story_principle_line += "\n\n"
     tree_section = _render_tree_section(tree_context_nodes, language=language)
     hard_fact_section = _render_hard_fact_snapshot_section(hard_fact_snapshot, language=language)
     prompt_pack_section = render_prompt_pack_prompt_block(prompt_pack)
@@ -3859,6 +4103,7 @@ def build_scene_draft_prompts(
                     else None
                 ),
                 emotion_driven_kernel=_levers_meta.emotion_driven_kernel,
+                public_emotion_kernel=_levers_meta.public_emotion_kernel,
             )
         )
     except Exception:
@@ -4132,6 +4377,7 @@ def build_scene_draft_prompts(
     _ctx = _budget_context_sections(
         {
             "contract_section": contract_section,
+            "story_principle_line": story_principle_line,
             "methodology_line": _methodology_line,
             "participant_fact_section": participant_fact_section,
             "contradiction_line": _contradiction_line,
@@ -4195,6 +4441,7 @@ def build_scene_draft_prompts(
     )
     # Unpack budgeted sections back into local variables
     contract_section = _ctx["contract_section"]
+    story_principle_line = _ctx["story_principle_line"]
     _methodology_line = _ctx["methodology_line"]
     participant_fact_section = _ctx["participant_fact_section"]
     _contradiction_line = _ctx["contradiction_line"]
@@ -4301,6 +4548,7 @@ def build_scene_draft_prompts(
             f"{_relationship_line}"
             f"{_obligations_line}"
             f"{_foreshadow_line}"
+            f"{story_principle_line}"
             f"Project: {project.title}\n"
             f"Chapter {chapter.chapter_number}: {chapter.title or ''}\n"
             f"Chapter goal (for intent only, never quote it verbatim): {chapter.chapter_goal}\n"
@@ -4388,6 +4636,7 @@ def build_scene_draft_prompts(
             f"{_relationship_line}"
             f"{_obligations_line}"
             f"{_foreshadow_line}"
+            f"{story_principle_line}"
             f"项目：《{project.title}》\n"
             f"章节：第{chapter.chapter_number}章 {chapter.title or ''}\n"
             f"章节目标（仅供你理解意图，严禁出现在正文中）：{chapter.chapter_goal}\n"
@@ -4812,6 +5061,10 @@ async def generate_scene_draft(
             identity_registry=identity_registry,
             require_identity_registry=True,
             excluded_names=offstage_names,
+            methodology_contract_mode=resolve_methodology_contract_mode(
+                project,
+                settings=effective_settings,
+            ),
         )
         if contract.violations or contract.warnings:
             scene.metadata_json = {
@@ -5205,6 +5458,8 @@ async def generate_scene_draft(
                 max_tokens_override=prose_output_max_tokens_for_target(
                     scene.target_word_count,
                     language=_project_language(project),
+                    settings=settings,
+                    role="writer",
                 ),
                 metadata={
                     "project_slug": project.slug,
@@ -5285,6 +5540,7 @@ async def generate_scene_draft(
                     if len(scene.participants or []) > 1
                     else ""
                 ).strip(),
+                target_word_count=scene.target_word_count,
                 global_budget=None,
             )
             if scene_regen_count > 0:

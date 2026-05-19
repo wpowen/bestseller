@@ -1,0 +1,121 @@
+key: wuxia-jianghu
+name: "武侠江湖类"
+name_en: "Wuxia Jianghu"
+reader_promise_zh: >
+  读者看到江湖规矩、门派声望、侠义债务和武学代价如何塑造人物选择。
+  打斗不是孤立爽点，而会改变名声、恩怨和江湖格局。
+reader_promise_en: >
+  Readers watch jianghu rules, sect reputation, chivalry debts, and martial costs shape choices.
+  Fights are not isolated spectacle; they change reputation, grudges, and the jianghu landscape.
+
+challenge_evolution_pathway:
+  - phase_key: rule_entry
+    phase_name_zh: "入江湖"
+    phase_name_en: "Entering Jianghu"
+    description_zh: "主角进入江湖规矩，被迫理解名声、门派和侠义债的运作。"
+    description_en: "The protagonist enters jianghu rules and must understand reputation, sects, and debts."
+    typical_force_types: ["faction", "character"]
+    volume_goal_template_zh: "{protagonist}必须在{force_name}代表的江湖规矩中保住立身之名。"
+    volume_goal_template_en: "{protagonist} must preserve a name under the jianghu rules represented by {force_name}."
+    volume_climax_template_zh: "主角第一次以自己的规矩回应江湖。"
+    volume_climax_template_en: "The protagonist answers jianghu by their own rule for the first time."
+    volume_obstacle_template_zh: "{force_name}用门派、名声或旧债逼主角低头。"
+    volume_obstacle_template_en: "{force_name} uses sect, reputation, or old debts to force submission."
+    volume_resolution_template_zh: "主角立住一寸名声，也欠下新的江湖债。"
+    volume_resolution_template_en: "The protagonist gains a sliver of reputation and incurs a new jianghu debt."
+    chapter_conflict_templates:
+      setup_zh: "{protagonist}遇到一条不能简单违背的江湖规矩。"
+      pressure_zh: "{force_name}把名声、门派或旧债压到主角面前。"
+      reversal_zh: "{protagonist}找到规矩中的缝隙。"
+      climax_zh: "一次选择改变主角在江湖中的位置。"
+  - phase_key: sect_grudge
+    phase_name_zh: "门派恩怨"
+    phase_name_en: "Sect Grudges"
+    description_zh: "个人选择扩展为门派与江湖关系，旧怨和名声开始回流。"
+    description_en: "Personal choices expand into sect relations; old grudges and reputation feed back."
+    typical_force_types: ["faction", "systemic"]
+    volume_goal_template_zh: "{protagonist}必须在{force_name}引发的门派恩怨中保住底线。"
+    volume_goal_template_en: "{protagonist} must preserve their line amid sect grudges triggered by {force_name}."
+    volume_climax_template_zh: "门派立场重排，主角的侠义选择被江湖记住。"
+    volume_climax_template_en: "Sect positions reshuffle, and the protagonist's chivalric choice is remembered."
+    volume_obstacle_template_zh: "旧债、师门、仇怨和武学代价同时逼近。"
+    volume_obstacle_template_en: "Old debts, teachers, grudges, and martial costs close in together."
+    volume_resolution_template_zh: "恩怨暂结，但更大的江湖格局被撬动。"
+    volume_resolution_template_en: "The grudge pauses, but the broader jianghu shifts."
+    chapter_conflict_templates:
+      setup_zh: "一件小事牵动门派旧怨。"
+      pressure_zh: "{force_name}要求主角在侠义和门派利益间选边。"
+      reversal_zh: "主角发现旧怨背后另有规矩。"
+      climax_zh: "比武或公开选择改变门派声望。"
+  - phase_key: moral_legacy
+    phase_name_zh: "侠义传承"
+    phase_name_en: "Chivalric Legacy"
+    description_zh: "主角面对的是自己的武学、名声和侠义是否能留下可传承的答案。"
+    description_en: "The protagonist faces whether their martial path, reputation, and chivalry can leave a legacy."
+    typical_force_types: ["internal", "systemic"]
+    volume_goal_template_zh: "{protagonist}必须在{force_name}制造的终局压力中回答何为侠义。"
+    volume_goal_template_en: "{protagonist} must answer what chivalry means under {force_name}'s endgame pressure."
+    volume_climax_template_zh: "主角用最终选择定义自己的江湖名声。"
+    volume_climax_template_en: "The protagonist defines their jianghu name through a final choice."
+    volume_obstacle_template_zh: "最有效的胜利方式可能违背主角的侠义底线。"
+    volume_obstacle_template_en: "The most effective victory may violate the protagonist's chivalric line."
+    volume_resolution_template_zh: "江湖接受或拒绝主角留下的规矩。"
+    volume_resolution_template_en: "Jianghu accepts or rejects the rule the protagonist leaves behind."
+    chapter_conflict_templates:
+      setup_zh: "旧债和旧名声集中回到主角身上。"
+      pressure_zh: "{force_name}逼主角放弃侠义换取胜利。"
+      reversal_zh: "主角发现真正的代价不是输赢而是传承。"
+      climax_zh: "最终选择改变江湖对主角的称呼。"
+
+protagonist_archetypes:
+  - archetype_key: debt_bound_swordsman
+    name_zh: "负债剑客"
+    name_en: "Debt-Bound Swordsman"
+    core_wound_zh: "曾因一念退让欠下无法偿还的侠义债。"
+    core_wound_en: "Once yielded and incurred an unpayable chivalry debt."
+    external_goal_template_zh: "{name}要以自己的剑还清旧债并立住名声。"
+    external_goal_template_en: "{name} must repay old debt by the sword and establish a name."
+    internal_need_template_zh: "{name}需要明白侠义不是成全所有人，而是承担选择后果。"
+    internal_need_template_en: "{name} must learn chivalry is not pleasing all, but bearing the cost of choice."
+    arc_trajectory_zh: "从被旧债驱赶到主动定义江湖规矩。"
+    arc_trajectory_en: "From being driven by old debt to defining jianghu rules."
+    flaw_zh: "过度重情义，容易被旧债牵制。"
+    flaw_en: "Too bound by loyalty and old debts."
+    strength_zh: "守信、克制，能用行动赢得名声。"
+    strength_en: "Trustworthy, restrained, and earns reputation through action."
+
+world_rule_templates:
+  - rule_template_key: reputation_debt
+    name_zh: "名声债规则"
+    name_en: "Reputation Debt Rule"
+    description_zh: "江湖中的每次公开行动都会形成名声、恩怨或侠义债。"
+    description_en: "Every public action in jianghu creates reputation, grudge, or chivalry debt."
+    story_consequence_zh: "{protagonist}不能只赢一场打斗，还要承担江湖如何记住这件事。"
+    story_consequence_en: "{protagonist} cannot merely win a fight; jianghu remembers it."
+    exploitation_potential_zh: "让打斗结果回流为长期关系和格局变化。"
+    exploitation_potential_en: "Feeds fight outcomes back into long-term relations and landscape."
+
+quality_traps:
+  - trap_key: free_martial_power
+    description_zh: "武功提升没有伤势、时间、心性或门派代价。"
+    description_en: "Martial progress has no wound, time, temperament, or sect cost."
+    severity: critical
+  - trap_key: decorative_jianghu
+    description_zh: "江湖规矩只做背景，不影响选择和后果。"
+    description_en: "Jianghu rules are decorative and do not affect choices or consequences."
+    severity: critical
+  - trap_key: empty_chivalry
+    description_zh: "侠义只靠口号，没有具体牺牲和责任。"
+    description_en: "Chivalry is slogan only, without sacrifice or responsibility."
+    severity: warning
+
+disqualifiers:
+  - rule_zh: "所有打斗都不改变名声、伤势、债务或门派关系。"
+    rule_en: "Fights never change reputation, wounds, debts, or sect relations."
+    severity: fatal
+  - rule_zh: "江湖规矩与人物选择完全无关。"
+    rule_en: "Jianghu rules do not affect character choices."
+    severity: critical
+
+signal_keywords:
+  wuxia_zh: ["武侠", "江湖", "门派", "侠义", "名声", "旧债", "武学", "比武"]

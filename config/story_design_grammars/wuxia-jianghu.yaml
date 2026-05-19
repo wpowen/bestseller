@@ -1,0 +1,39 @@
+key: wuxia-jianghu
+name: 武侠江湖剧情语法
+applies_to_categories: [wuxia-jianghu]
+required_contracts:
+  - jianghu_rule_ledger
+  - sect_reputation_state
+  - martial_cost_model
+  - chivalry_debt
+  - grudge_feedback
+state_variables:
+  - 门派声望
+  - 江湖规矩
+  - 武学代价
+  - 侠义债与旧怨
+  - 对手门派压力
+chapter_change_vectors:
+  - 名声或门派立场发生变化
+  - 一条江湖规矩被触犯或利用
+  - 武学收益显化并产生代价
+  - 侠义债被偿还、加深或转移
+  - 旧怨引来新的江湖反应
+reader_rewards:
+  - 打斗带来名声和规矩后果
+  - 侠义选择有真实代价
+  - 武学进境可感但不免费
+  - 门派关系推动局势变化
+  - 江湖传闻变成行动压力
+hook_or_aftereffect_types:
+  - 战书或传闻改变名声排序
+  - 门派追责逼迫主角选择
+  - 武学反噬暴露短板
+  - 旧债牵出新恩怨
+  - 江湖规矩反过来保护敌人
+forbidden_defaults:
+  - 武功秘籍无代价提升
+  - 江湖规矩只做背景摆设
+  - 打斗没有伤势、名声或债务后果
+  - 门派都是单一脸谱
+  - 侠义只靠口号不靠选择

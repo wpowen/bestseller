@@ -35,17 +35,13 @@ from bestseller.services.chapter_causality_gate import (
     ChapterCausalityResult,
     chapter_causality_report_to_dict,
     evaluate_chapter_causality_contract,
+    is_methodology_causality_finding,
 )
 from bestseller.services.invariants import invariants_from_dict
 from bestseller.services.projects import create_chapter, create_or_get_volume, create_scene_card, get_project_by_slug
 from bestseller.services.narrative import rebuild_narrative_graph
 from bestseller.services.narrative_tree import rebuild_narrative_tree
 from bestseller.services.narrative_contracts import (
-    GENERIC_CHAPTER_GOAL_MARKERS,
-    GENERIC_HOOK_MARKERS,
-    GENERIC_OPENING_SITUATION_MARKERS,
-    GENERIC_SCENE_PURPOSE_MARKERS,
-    _contains_marker,
     _extract_purpose_character_names,
     _identity_index_from_manifest,
     _is_generic_time_label,
@@ -54,6 +50,13 @@ from bestseller.services.narrative_contracts import (
     repair_legacy_foundation_identity_locks,
     validate_chapter_plan_contract,
     validate_foundation_identity_contract,
+)
+from bestseller.services.methodology_overlay import (
+    methodology_contract_blocks,
+    methodology_contract_requires_checks,
+    normalize_chapter_overlay,
+    normalize_scene_overlay,
+    resolve_methodology_contract_mode,
 )
 from bestseller.services.quality_gates_config import get_quality_gates_config
 from bestseller.services.retrieval import refresh_story_bible_retrieval_index
@@ -700,8 +703,30 @@ def _sync_chapter_causality_metadata(
         metadata["causal_contract"] = causal_contract
     else:
         metadata.pop("causal_contract", None)
+    event_cycle_contract = getattr(chapter_outline, "event_cycle_contract", None)
+    if isinstance(event_cycle_contract, dict) and event_cycle_contract:
+        metadata["event_cycle_contract"] = event_cycle_contract
+    else:
+        metadata.pop("event_cycle_contract", None)
+    chapter_event_role = str(getattr(chapter_outline, "chapter_event_role", "") or "").strip()
+    if chapter_event_role:
+        metadata["chapter_event_role"] = chapter_event_role
+    else:
+        metadata.pop("chapter_event_role", None)
+    information_gap_mode = str(getattr(chapter_outline, "information_gap_mode", "") or "").strip()
+    if information_gap_mode:
+        metadata["information_gap_mode"] = information_gap_mode
+    else:
+        metadata.pop("information_gap_mode", None)
     if causality_result is not None:
         metadata["chapter_causality_axes"] = causality_result.to_dict()
+    methodology_contract = normalize_chapter_overlay(
+        getattr(chapter_outline, "methodology_contract", None)
+    )
+    if methodology_contract:
+        metadata["methodology_contract"] = methodology_contract
+    else:
+        metadata.pop("methodology_contract", None)
     setattr(chapter, "metadata_json", metadata)
 
 
@@ -716,7 +741,20 @@ def _sync_existing_scene_from_outline(scene: SceneCardModel, scene_outline: Any)
     scene.entry_state = scene_outline.entry_state
     scene.exit_state = scene_outline.exit_state
     scene.target_word_count = scene_outline.target_word_count
+    _sync_scene_methodology_metadata(scene, scene_outline)
     return True
+
+
+def _sync_scene_methodology_metadata(scene: SceneCardModel, scene_outline: Any) -> None:
+    metadata = dict(getattr(scene, "metadata_json", None) or {})
+    methodology_contract = normalize_scene_overlay(
+        getattr(scene_outline, "methodology_contract", None)
+    )
+    if methodology_contract:
+        metadata["methodology_contract"] = methodology_contract
+    else:
+        metadata.pop("methodology_contract", None)
+    setattr(scene, "metadata_json", metadata)
 
 
 def _normalize_outline_word_targets(
@@ -914,6 +952,10 @@ async def materialize_chapter_outline_batch(
     causality_results_by_chapter: dict[int, ChapterCausalityResult] = {}
 
     try:
+        methodology_contract_mode = resolve_methodology_contract_mode(
+            project,
+            settings=settings,
+        )
         await create_workflow_step_run(
             session,
             workflow_run_id=workflow_run.id,
@@ -945,6 +987,7 @@ async def materialize_chapter_outline_batch(
         )
         workflow_run.metadata_json = {
             **(workflow_run.metadata_json or {}),
+            "methodology_contract_mode": methodology_contract_mode,
             "chapter_contract_validation_scope": {
                 "batch_chapter_count": len(batch.chapters),
                 "validated_chapter_count": len(_validation_batch.chapters),
@@ -1066,7 +1109,12 @@ async def materialize_chapter_outline_batch(
             getattr(settings.pipeline, "enable_chapter_causality_gate", True)
             and _validation_batch.chapters
         ):
-            _causality_report = evaluate_chapter_causality_contract(_validation_batch)
+            _causality_report = evaluate_chapter_causality_contract(
+                _validation_batch,
+                require_methodology_overlay=methodology_contract_requires_checks(
+                    methodology_contract_mode
+                ),
+            )
             causality_results_by_chapter = {
                 result.chapter_number: result
                 for result in _causality_report.chapter_results
@@ -1077,13 +1125,49 @@ async def materialize_chapter_outline_batch(
                     **(workflow_run.metadata_json or {}),
                     "chapter_causality_contract": _causality_payload,
                 }
+            _blocking_findings = _causality_report.blocking_findings
+            if not methodology_contract_blocks(methodology_contract_mode):
+                _blocking_findings = tuple(
+                    finding
+                    for finding in _blocking_findings
+                    if not is_methodology_causality_finding(finding)
+                )
             if (
-                not _causality_report.passed
+                _blocking_findings
                 and getattr(settings.pipeline, "chapter_causality_gate_block_on_failure", True)
             ):
                 raise ValueError(
                     "Chapter outline batch blocked by chapter_causality_contract: "
-                    f"{len(_causality_report.blocking_findings)} blocking finding(s)."
+                    f"{len(_blocking_findings)} blocking finding(s)."
+                )
+
+        _story_principle_cfg = get_quality_gates_config().story_principle
+        if (
+            getattr(settings.pipeline, "enable_story_principle_gate", True)
+            and _story_principle_cfg.enabled
+            and _validation_batch.chapters
+        ):
+            from bestseller.services.story_principle_gate import (
+                evaluate_story_principle_contract,
+                story_principle_report_to_dict,
+            )
+
+            _story_principle_report = evaluate_story_principle_contract(
+                _validation_batch,
+                min_roles_per_batch=_story_principle_cfg.min_event_cycle_roles_per_batch,
+                max_same_role_streak=_story_principle_cfg.max_same_role_streak,
+            )
+            _story_principle_payload = story_principle_report_to_dict(
+                _story_principle_report
+            )
+            workflow_run.metadata_json = {
+                **(workflow_run.metadata_json or {}),
+                "story_principle_gate_report": _story_principle_payload,
+            }
+            if _story_principle_cfg.block_on_failure and not _story_principle_report.passed:
+                raise ValueError(
+                    "Chapter outline batch blocked by story_principle_gate: "
+                    f"{len(_story_principle_report.findings)} finding(s)."
                 )
 
         _word_target_repairs = _normalize_outline_word_targets(
@@ -1219,6 +1303,7 @@ async def materialize_chapter_outline_batch(
                             target_word_count=scene_outline.target_word_count,
                         ),
                     )
+                    _sync_scene_methodology_metadata(scene, scene_outline)
                     scenes_created += 1
                 materialized_scenes_for_chapter.append(scene)
                 await create_workflow_step_run(

@@ -1,0 +1,79 @@
+{
+  "slug": "human-nature-game-1779104696",
+  "status": "repairing",
+  "next_action": "execute_next_repair_round",
+  "model_preflight": {
+    "ready": true,
+    "provider": "deepseek",
+    "model_name": "deepseek-chat",
+    "finish_reason": null,
+    "llm_run_id": null,
+    "reason": null,
+    "error": null
+  },
+  "bootstrap_report": {},
+  "before_acceptance": {},
+  "repair_plan": {},
+  "task_sync": {
+    "task_count": 4
+  },
+  "execution": {
+    "reason": "no_pending_rewrite_tasks"
+  },
+  "rewrite_generation_audit": null,
+  "continuation_plan": {},
+  "continuation_execution": {},
+  "chapter_generation_audit": null,
+  "after_acceptance": {
+    "acceptance": {
+      "passed": false,
+      "metrics": {
+        "quality_score": 70.0,
+        "chapters_blocked": 0,
+        "repair_task_count": 0,
+        "current_chapters": 57,
+        "missing_chapters": 0,
+        "draftless_chapters": 0
+      }
+    },
+    "scorecard": {
+      "quality_score": 70.0,
+      "chapters_blocked": 0,
+      "repair_task_count": 4,
+      "current_chapters": 57,
+      "missing_chapters": 0,
+      "draftless_chapters": 0
+    },
+    "category": "suspense",
+    "target_chapters": 100
+  },
+  "fleet_row": null,
+  "lifecycle_evidence": {},
+  "lifecycle_quality": {},
+  "report_paths": {
+    "book_quality_closure": "tmp/book-quality-closure/report.json"
+  },
+  "errors": [],
+  "loop": {
+    "max_rounds": 4,
+    "stop_reason": "no_executable_repair_tasks",
+    "rounds": [
+      {
+        "slug": "human-nature-game-1779104696",
+        "round": 1,
+        "status": "repairing",
+        "next_action": "execute_next_repair_round",
+        "progress_signature": [
+          "repairing",
+          "execute_next_repair_round",
+          57,
+          0,
+          0,
+          0,
+          0,
+          70.0
+        ]
+      }
+    ]
+  }
+}

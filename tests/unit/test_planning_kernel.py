@@ -11,6 +11,7 @@ from bestseller.services.planning_kernel import (
     evaluate_prewrite_readiness,
     persist_project_planning_kernel,
 )
+from bestseller.services.compliance_boundary_kernel import build_compliance_boundary_kernel_seed
 
 pytestmark = pytest.mark.unit
 
@@ -146,6 +147,35 @@ def _emotion_driven_kernel() -> dict[str, object]:
             "theme_answer": "弱者不是靠怨气翻身，而是靠看清规则代价。",
             "future_open": "秘境打开下一层规则。",
         },
+    }
+
+
+def _public_emotion_kernel() -> dict[str, object]:
+    return {
+        "target_segments": [
+            {
+                "id": "segment-low-position",
+                "group_label": "被低位身份压住的升级读者",
+                "life_context": "主角在宗门资源体系里没有解释权。",
+                "public_emotion": "不甘、憋屈、想看旧判断被推翻。",
+                "unsaid_sentence": "凭什么低位身份就没有资格？",
+                "desired_compensation": "主角用本书道种规则拿回资源资格。",
+            }
+        ],
+        "emotion_bridges": [
+            {
+                "bridge_id": "bridge-resource-rule",
+                "source_segment_id": "segment-low-position",
+                "bridge_type": "value_bridge",
+                "public_anchor": "被身份和资源规则压住",
+                "genre_translation": "转译为宗门资源账与道种规则的资格冲突。",
+                "story_hook": "主角用道种规则证明旧资源判断失效。",
+                "reader_payoff": "当众拿回资格并留下更高层规则债。",
+                "title_hook": "旧账判我无资，我用道种翻案",
+            }
+        ],
+        "forbidden_misreads": ["不能写成现实群体仇恨。"],
+        "project_specificity_notes": "只绑定道种试炼项目。",
     }
 
 
@@ -585,3 +615,80 @@ def test_prewrite_readiness_warns_when_distilled_worldview_not_bound() -> None:
     warning_codes = {finding.code for finding in report.warnings}
 
     assert "distilled_worldview_not_bound" in warning_codes
+
+
+def test_planning_kernel_tracks_public_emotion_and_compliance() -> None:
+    project = _project(
+        story_facets={"setting": "外门杂役峰", "narrative_drive": "低位反制"},
+        benchmark_works=["凡人修仙传结构对标"],
+        public_emotion_kernel=_public_emotion_kernel(),
+        compliance_boundary_kernel=build_compliance_boundary_kernel_seed(platform="番茄小说"),
+    )
+
+    kernel = build_project_planning_kernel(
+        project,
+        book_spec=_book_spec(),
+        world_spec=_world_spec(),
+        cast_spec=_cast_spec(),
+        volume_plan=_volume_plan(),
+    )
+    report = evaluate_prewrite_readiness(kernel)
+
+    assert kernel["public_emotion"]["present"] is True
+    assert kernel["public_emotion"]["passed"] is True
+    assert kernel["compliance_boundary"]["present"] is True
+    assert kernel["compliance_boundary"]["passed"] is True
+    assert report.capability_snapshot["public_emotion_core"] is True
+    assert report.capability_snapshot["compliance_boundary"] is True
+
+
+def test_prewrite_readiness_blocks_high_risk_compliance_boundary() -> None:
+    risky_public_emotion = _public_emotion_kernel()
+    risky_public_emotion["emotion_bridges"][0]["title_hook"] = (
+        "被真实学校欺负后，我要报复现实所有人"
+    )
+    project = _project(
+        story_facets={"setting": "外门杂役峰", "narrative_drive": "低位反制"},
+        benchmark_works=["凡人修仙传结构对标"],
+        public_emotion_kernel=risky_public_emotion,
+        compliance_boundary_kernel=build_compliance_boundary_kernel_seed(platform="番茄小说"),
+    )
+
+    kernel = build_project_planning_kernel(
+        project,
+        book_spec=_book_spec(),
+        world_spec=_world_spec(),
+        cast_spec=_cast_spec(),
+        volume_plan=_volume_plan(),
+    )
+    report = evaluate_prewrite_readiness(kernel)
+    codes = {finding.code for finding in report.blocking_findings}
+
+    assert "compliance_boundary_high_risk" in codes
+    assert report.capability_snapshot["compliance_boundary"] is False
+
+
+def test_prewrite_readiness_scans_public_emotion_with_default_policy_pack() -> None:
+    risky_public_emotion = _public_emotion_kernel()
+    risky_public_emotion["emotion_bridges"][0]["title_hook"] = (
+        "被真实学校欺负后，我要报复现实所有人"
+    )
+    project = _project(
+        story_facets={"setting": "外门杂役峰", "narrative_drive": "低位反制"},
+        benchmark_works=["凡人修仙传结构对标"],
+        public_emotion_kernel=risky_public_emotion,
+    )
+
+    kernel = build_project_planning_kernel(
+        project,
+        book_spec=_book_spec(),
+        world_spec=_world_spec(),
+        cast_spec=_cast_spec(),
+        volume_plan=_volume_plan(),
+    )
+    report = evaluate_prewrite_readiness(kernel)
+    warning_codes = {finding.code for finding in report.warnings}
+    blocking_codes = {finding.code for finding in report.blocking_findings}
+
+    assert "compliance_boundary_kernel_missing" in warning_codes
+    assert "compliance_boundary_high_risk" in blocking_codes

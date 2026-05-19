@@ -3126,6 +3126,14 @@
   .ls-candidates-table td strong { color: var(--text-bright); }
   .ls-candidates-table tbody tr:hover { background: var(--surface-tint); }
 
+  .title-platform-tag {
+    display: inline-flex;
+    width: max-content;
+    max-width: 160px;
+    white-space: normal;
+    line-height: 1.35;
+  }
+
   .ls-char-card strong {
     color: var(--text-bright);
     font-size: 14px;
@@ -3913,7 +3921,7 @@
         <div class="listing-section-head">
           <div>
             <h4>标题/数据名候选</h4>
-            <p>当前主推 1 条 + 9 条候选。点 ↻ 让大模型重新出 10 条候选。</p>
+            <p>平台化书名工作流按平台分别生成候选，并标明平台或全平台。</p>
           </div>
           <div class="listing-actions" id="lsCandidatesActions"></div>
         </div>
@@ -6795,8 +6803,10 @@
     const title = listing.primary_title || proj.title || '-';
     const categoryText = [listing.primary_category, listing.secondary_category].filter(Boolean).join(' / ') || '未分类';
     const titleCount = Array.isArray(listing.title_candidates) ? listing.title_candidates.length : 0;
+    const titleWorkflow = listing.title_workflow || {};
+    const titlePlatform = titleWorkflow.platform_label || listing.target_platform || '全平台';
     $('#lsTitle').textContent = title;
-    $('#lsSubtitle').textContent = `${categoryText} · ${listing.length_type || '长篇连载'} · ${titleCount} 个标题候选`;
+    $('#lsSubtitle').textContent = `${categoryText} · ${listing.length_type || '长篇连载'} · ${titlePlatform} · ${titleCount} 个标题候选`;
 
     // Tags
     $('#lsTags').innerHTML = tags.length
@@ -6865,6 +6875,7 @@
       ['频道', listing.channel || proj.audience],
       ['连载状态', listing.serialization_status || proj.status],
       ['语言', listing.language || 'zh-CN'],
+      ['书名流程', `${titleWorkflow.candidate_source || 'platform_title_workflow'} / ${titleWorkflow.candidate_policy || 'single_platform'}`],
       ['主分类', listing.primary_category],
       ['二级分类', listing.secondary_category],
       ['细分类', Array.isArray(listing.tertiary_categories) ? listing.tertiary_categories.join('、') : ''],
@@ -6912,14 +6923,15 @@
       : '<p style="color:var(--text-dim);">暂无作品简介。</p>';
 
     // Title candidates
-    const candidates = Array.isArray(listing.title_candidates) ? listing.title_candidates.slice(0, 20) : [];
+    const candidates = Array.isArray(listing.title_candidates) ? listing.title_candidates : [];
     $('#lsCandidates').innerHTML = candidates.length ? `
       <table class="ls-candidates-table">
-        <thead><tr><th>#</th><th>标题/数据名</th><th>副标题</th><th>角度</th><th>建议</th></tr></thead>
+        <thead><tr><th>#</th><th>标题/数据名</th><th>平台/范围</th><th>副标题</th><th>角度</th><th>建议</th></tr></thead>
         <tbody>${candidates.map((item, i) => `
           <tr>
             <td>${Number(item.id || i + 1)}</td>
             <td><strong>${esc(item.title || '')}</strong></td>
+            <td><span class="listing-tag title-platform-tag">${esc(item.display_label || item.platform_label || item.scope_label || '全平台')}</span></td>
             <td>${esc(item.subtitle || '')}</td>
             <td>${esc(item.angle || '')}</td>
             <td>${esc(item.recommendation || '')}</td>

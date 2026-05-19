@@ -55,7 +55,7 @@ def _story_design_payload() -> dict[str, object]:
             "unique_hook": "灵田产出与信任债绑定",
             "core_question": "主角能否把个人信任扩展成宗门制度?",
             "commercial_pull": "经营成果、关系债和规则漏洞互相兑现。",
-            "forbidden_defaults": ["父母失踪", "神秘玉佩"],
+            "forbidden_defaults": ["家庭创伤或身世旧案默认驱动", "神秘玉佩"],
         },
         "character_conflict_contracts": [
             {
@@ -113,6 +113,13 @@ def test_story_design_kernel_is_core_planning_artifact() -> None:
 def test_emotion_driven_kernel_is_core_planning_artifact() -> None:
     assert ArtifactType.EMOTION_DRIVEN_KERNEL.value == "emotion_driven_kernel"
     assert ArtifactType.EMOTION_DRIVEN_KERNEL.value in CORE_TRUTH_ARTIFACT_TYPES
+
+
+def test_public_emotion_kernels_are_core_planning_artifacts() -> None:
+    assert ArtifactType.PUBLIC_EMOTION_KERNEL.value == "public_emotion_kernel"
+    assert ArtifactType.COMPLIANCE_BOUNDARY_KERNEL.value == "compliance_boundary_kernel"
+    assert ArtifactType.PUBLIC_EMOTION_KERNEL.value in CORE_TRUTH_ARTIFACT_TYPES
+    assert ArtifactType.COMPLIANCE_BOUNDARY_KERNEL.value in CORE_TRUTH_ARTIFACT_TYPES
 
 
 def test_prewrite_readiness_warns_when_story_design_kernel_missing() -> None:

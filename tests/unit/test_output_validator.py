@@ -18,6 +18,7 @@ from bestseller.services.invariants import (
 )
 from bestseller.services.output_validator import (
     EntityDensityCheck,
+    _canonicalize_zh_entity,
     LanguageSignatureCheck,
     LengthEnvelopeCheck,
     NamingConsistencyCheck,
@@ -358,6 +359,25 @@ class TestNamingConsistencyCheck:
         violations = check.run(text * 2, _ctx_with_allowed(inv))
         assert violations == []
 
+    def test_zh_exorcist_rewrite_false_positive_terms_do_not_create_rogue_names(self) -> None:
+        check = NamingConsistencyCheck()
+        inv = _zh_invariants_with_pool(("林渊", "苏婉宁", "钱婆婆"))
+        text = (
+            "林师傅只是街坊称呼，林师傅把门栓扣上。"
+            "米高的柜子压住纸包，米高不是人名。"
+            "木牌断成三截，断成三截后才露出灰。"
+            "水磨石地面反光，水磨石缝里卡着铜屑。"
+            "毕业证夹在档案里，毕业证背面有旧印。"
+            "铜钱烫得发红，铜钱烫得指腹起泡。"
+            "元门只是门楣残字，元门旁边没有活人。"
+            "钱封在纸包里，钱封外皮被雨泡开。"
+            "钱婆婆拿毛笔写了两遍，毛笔写出的不是新名字。"
+        )
+
+        violations = check.run(text, _ctx_with_allowed(inv))
+
+        assert violations == []
+
     def test_zh_compound_surname_in_pool_passes(self) -> None:
         check = NamingConsistencyCheck()
         inv = _zh_invariants_with_pool(("慕容雪",))
@@ -594,6 +614,13 @@ class TestNamingConsistencyCheck:
 
 
 class TestEntityDensityCheck:
+    def test_zh_allowed_pool_does_not_canonicalize_non_pool_noise(self) -> None:
+        # With an explicit naming pool, unknown surname-like fragments should
+        # not fallback to a cleaned spelling, otherwise chapter opening can be
+        # flooded by prose fragments and trip OPENING_ENTITY_OVERLOAD.
+        assert _canonicalize_zh_entity("和现实", frozenset({"林奚", "周算"})) is None
+        assert _canonicalize_zh_entity("方朝他", frozenset({"林奚", "周算", "方朝"})) == "方朝"
+
     def test_chapter_not_one_is_exempt(self) -> None:
         check = EntityDensityCheck()
         # 12 distinct names would overload, but only chapter 1 is policed.
@@ -615,6 +642,19 @@ class TestEntityDensityCheck:
             invariants=_zh_invariants(), chapter_no=1, scope="scene"
         )
         violations = check.run(text, ctx)
+        assert violations == []
+
+    def test_zh_allowed_name_action_tails_collapse_to_one_entity(self) -> None:
+        check = EntityDensityCheck(max_entities=2)
+        inv = _zh_invariants_with_pool(("林渊", "王建业"))
+        text = (
+            "林渊伸手按住铜钱。林渊低头看水珠。"
+            "林渊侧身避开。林渊问王建业。"
+            "王建业没有回答，林渊盯着罗盘针。"
+        )
+
+        violations = check.run(text, _ctx_with_allowed(inv, frozenset({"林渊", "王建业"})))
+
         assert violations == []
 
     def test_zh_below_threshold_passes(self) -> None:

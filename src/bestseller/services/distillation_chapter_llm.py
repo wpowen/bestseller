@@ -25,6 +25,22 @@ SCHEMA_REL = Path("data/distillation/schemas/chapter_card.schema.json")
 CHAPTER_TEXT_CHUNK_SOFT = 8000
 CHAPTER_TEXT_CHUNK_HARD = 12000
 DEFAULT_CHAPTER_JOB_TIMEOUT_SECONDS = 120.0
+DEFAULT_DISTILLATION_SUMMARIZER_MAX_TOKENS = 6144
+
+
+def _distillation_max_tokens(settings: AppSettings) -> int:
+    """Resolve distillation summary token budget.
+
+    This keeps compatibility with previous fixed 6144-token behavior but allows
+    a higher per-role limit (for example, NVIDIA DeepSeek distillation) to
+    flow through when configured.
+    """
+
+    try:
+        configured = int(settings.llm.summarizer.max_tokens)
+    except (TypeError, ValueError):
+        configured = DEFAULT_DISTILLATION_SUMMARIZER_MAX_TOKENS
+    return max(DEFAULT_DISTILLATION_SUMMARIZER_MAX_TOKENS, configured)
 
 
 def _coerce_chapter_card_payload(
@@ -393,6 +409,8 @@ async def _complete_distillation_chapter_llm(
     abs_no: int,
     volume_no: int,
 ) -> dict[str, Any]:
+    summarizer_max_tokens = _distillation_max_tokens(settings)
+
     result = await complete_text(
         session,
         settings,
@@ -425,7 +443,7 @@ async def _complete_distillation_chapter_llm(
                 "distillation_source_id": source_id,
                 "abs_chapter_no": abs_no,
             },
-            max_tokens_override=6144,
+            max_tokens_override=summarizer_max_tokens,
         ),
     )
     if result.provider == "fallback" or result.finish_reason == "fallback":
@@ -497,7 +515,7 @@ async def _complete_distillation_chapter_llm(
                     if result.llm_run_id
                     else None,
                 },
-                max_tokens_override=6144,
+                max_tokens_override=summarizer_max_tokens,
             ),
         )
         if repair.provider == "fallback" or repair.finish_reason == "fallback":

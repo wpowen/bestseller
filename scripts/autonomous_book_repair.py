@@ -16,10 +16,10 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+from collections.abc import Sequence
 import json
 from pathlib import Path
 import sys
-from collections.abc import Sequence
 from uuid import UUID
 
 from sqlalchemy import select
@@ -30,6 +30,14 @@ _SCRIPTS = _REPO_ROOT / "scripts"
 for item in (_SRC, _SCRIPTS):
     if str(item) not in sys.path:
         sys.path.insert(0, str(item))
+
+from quality_levers_retrofit_audit import (  # noqa: E402
+    audit_one_chapter,
+    discover_chapters,
+    write_csv,
+    write_summary,
+)
+from quality_levers_retrofit_patch import build_chapter_patch_plan  # noqa: E402
 
 from bestseller.infra.db.models import ChapterModel, RewriteTaskModel  # noqa: E402
 from bestseller.infra.db.session import session_scope  # noqa: E402
@@ -42,16 +50,48 @@ from bestseller.services.autonomous_book_repair import (  # noqa: E402
     load_patch_plan,
     load_quality_retrofit_rows,
 )
+from bestseller.services.drafts import (  # noqa: E402
+    format_chapter_heading,
+    sanitize_novel_markdown_content,
+)
+from bestseller.services.exports import write_markdown_output  # noqa: E402
 from bestseller.services.projects import get_project_by_slug  # noqa: E402
 from bestseller.services.reviews import rewrite_chapter_from_task  # noqa: E402
 from bestseller.settings import load_settings  # noqa: E402
-from quality_levers_retrofit_audit import (  # noqa: E402
-    audit_one_chapter,
-    discover_chapters,
-    write_csv,
-    write_summary,
-)
-from quality_levers_retrofit_patch import build_chapter_patch_plan  # noqa: E402
+
+DEFAULT_REPAIR_AUDIT_PLATFORM = "framework"
+
+
+def _chapter_markdown_has_heading(content_md: str, chapter_number: int) -> bool:
+    for line in content_md.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        return stripped.startswith(f"# 第{chapter_number}章") or stripped.startswith(
+            f"# Chapter {chapter_number}"
+        )
+    return False
+
+
+def _sync_executed_chapter_file(
+    *,
+    output_base_dir: Path,
+    slug: str,
+    chapter: ChapterModel,
+    content_md: str,
+    language: str | None,
+) -> Path:
+    clean = sanitize_novel_markdown_content(content_md, language=language)
+    if not _chapter_markdown_has_heading(clean, int(chapter.chapter_number)):
+        heading = format_chapter_heading(
+            int(chapter.chapter_number),
+            chapter.title,
+            language=language,
+        )
+        clean = f"{heading}\n\n{clean}"
+    output_path = output_base_dir / slug / f"chapter-{int(chapter.chapter_number):03d}.md"
+    write_markdown_output(output_path, clean)
+    return output_path
 
 
 def _parse_priorities(value: str) -> set[str]:
@@ -69,7 +109,15 @@ def _run_audit(slug: str, *, platform: str | None) -> Path:
     chapters = discover_chapters(slug)
     if not chapters:
         raise FileNotFoundError(f"No chapters found under output/{slug}/")
-    rows = [audit_one_chapter(slug, number, path, platform=platform) for number, path in chapters]
+    rows = [
+        audit_one_chapter(
+            slug,
+            number,
+            path,
+            platform=platform or DEFAULT_REPAIR_AUDIT_PLATFORM,
+        )
+        for number, path in chapters
+    ]
     base = _REPO_ROOT / "output" / slug / "audits" / "quality-retrofit"
     end = rows[-1].chapter_number if rows else 0
     csv_path = base / f"window-001-{end:03d}.csv"
@@ -164,15 +212,23 @@ async def _execute_tasks(
     task_ids: list[str],
     *,
     limit: int | None,
+    task_timeout_seconds: float | None = None,
 ) -> dict[str, object]:
     settings = load_settings()
     executed = 0
+    exported = 0
     failed: list[dict[str, str]] = []
+    export_failed: list[dict[str, str]] = []
+    gate_rejected: list[dict[str, str]] = []
     selected = task_ids[:limit] if limit is not None and limit > 0 else task_ids
     for task_id in selected:
         try:
+            task_uuid = UUID(task_id)
             async with session_scope(settings) as session:
-                task = await session.get(RewriteTaskModel, UUID(task_id))
+                project = await get_project_by_slug(session, slug)
+                if project is None:
+                    continue
+                task = await session.get(RewriteTaskModel, task_uuid)
                 if task is None or task.status not in {"pending", "queued"}:
                     continue
                 chapter = await session.scalar(
@@ -180,17 +236,82 @@ async def _execute_tasks(
                 )
                 if chapter is None:
                     continue
-                await rewrite_chapter_from_task(
+                rewrite_coro = rewrite_chapter_from_task(
                     session,
                     slug,
                     int(chapter.chapter_number),
-                    rewrite_task_id=UUID(task_id),
+                    rewrite_task_id=task_uuid,
                     settings=settings,
                 )
+                if task_timeout_seconds and task_timeout_seconds > 0:
+                    draft, _rewrite_task = await asyncio.wait_for(
+                        rewrite_coro,
+                        timeout=float(task_timeout_seconds),
+                    )
+                else:
+                    draft, _rewrite_task = await rewrite_coro
                 executed += 1
-        except Exception as exc:  # noqa: BLE001 - report and keep the batch moving.
+                if _rewrite_task.status != "completed":
+                    gate_rejected.append(
+                        {
+                            "task_id": task_id,
+                            "chapter_number": str(chapter.chapter_number),
+                            "status": str(_rewrite_task.status),
+                            "error": str(_rewrite_task.error_log or ""),
+                        }
+                    )
+                    continue
+                try:
+                    _sync_executed_chapter_file(
+                        output_base_dir=Path(settings.output.base_dir),
+                        slug=slug,
+                        chapter=chapter,
+                        content_md=draft.content_md,
+                        language=project.language,
+                    )
+                    exported += 1
+                except Exception as exc:
+                    export_failed.append(
+                        {"task_id": task_id, "error": f"{type(exc).__name__}: {exc}"}
+                    )
+        except TimeoutError:
+            error = (
+                "TimeoutError: rewrite task exceeded "
+                f"{float(task_timeout_seconds or 0):.1f}s"
+            )
+            failed.append({"task_id": task_id, "error": error})
+            try:
+                async with session_scope(settings) as session:
+                    task = await session.get(RewriteTaskModel, UUID(task_id))
+                    if task is not None and task.status in {"pending", "queued"}:
+                        task.status = "failed"
+                        task.error_log = error
+                        task.metadata_json = {
+                            **(task.metadata_json or {}),
+                            "closure_execution_timeout_seconds": float(
+                                task_timeout_seconds or 0
+                            ),
+                            "closure_execution_error": error,
+                        }
+            except Exception as mark_exc:
+                failed.append(
+                    {
+                        "task_id": task_id,
+                        "error": (
+                            "failed_to_mark_timeout: "
+                            f"{type(mark_exc).__name__}: {mark_exc}"
+                        ),
+                    }
+                )
+        except Exception as exc:
             failed.append({"task_id": task_id, "error": f"{type(exc).__name__}: {exc}"})
-    return {"executed": executed, "failed": failed}
+    return {
+        "executed": executed,
+        "exported": exported,
+        "gate_rejected": gate_rejected,
+        "failed": failed,
+        "export_failed": export_failed,
+    }
 
 
 async def _run_for_slug(
@@ -257,14 +378,41 @@ def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     target = parser.add_mutually_exclusive_group(required=True)
     target.add_argument("--slug", help="One output/<slug> book to repair-plan.")
-    target.add_argument("--all", action="store_true", help="Process every output directory with chapters.")
-    parser.add_argument("--platform", default=None, help="Platform id for quality_levers audit.")
-    parser.add_argument("--priority", default="critical,high", help="Comma list: critical,high,medium,ok.")
+    target.add_argument(
+        "--all",
+        action="store_true",
+        help="Process every output directory with chapters.",
+    )
+    parser.add_argument(
+        "--platform",
+        default=DEFAULT_REPAIR_AUDIT_PLATFORM,
+        help=(
+            "Platform id for quality_levers audit. Defaults to framework, "
+            "which uses config generation.words_per_chapter."
+        ),
+    )
+    parser.add_argument(
+        "--priority",
+        default="critical,high",
+        help="Comma list: critical,high,medium,ok.",
+    )
     parser.add_argument("--limit", type=int, default=0, help="Limit matching chapters per book.")
     parser.add_argument("--no-audit", action="store_true", help="Reuse latest audit CSV.")
-    parser.add_argument("--create-tasks", action="store_true", help="Write DB rewrite_tasks for DB-backed projects.")
-    parser.add_argument("--replace-existing", action="store_true", help="Supersede existing pending autonomous tasks.")
-    parser.add_argument("--execute", action="store_true", help="Create and execute DB rewrite_tasks via editor LLM.")
+    parser.add_argument(
+        "--create-tasks",
+        action="store_true",
+        help="Write DB rewrite_tasks for DB-backed projects.",
+    )
+    parser.add_argument(
+        "--replace-existing",
+        action="store_true",
+        help="Supersede existing pending autonomous tasks.",
+    )
+    parser.add_argument(
+        "--execute",
+        action="store_true",
+        help="Create and execute DB rewrite_tasks via editor LLM.",
+    )
     parser.add_argument("--json", action="store_true", help="Print full JSON result.")
     return parser.parse_args()
 
@@ -284,18 +432,26 @@ def main() -> int:
     async def _run_all() -> list[dict[str, object]]:
         results = []
         for slug in slugs:
-            results.append(
-                await _run_for_slug(
-                    slug,
-                    platform=args.platform,
-                    priorities=priorities,
-                    audit=not args.no_audit,
-                    limit=args.limit if args.limit > 0 else None,
-                    create_tasks=args.create_tasks,
-                    replace_existing=args.replace_existing,
-                    execute=args.execute,
+            try:
+                results.append(
+                    await _run_for_slug(
+                        slug,
+                        platform=args.platform,
+                        priorities=priorities,
+                        audit=not args.no_audit,
+                        limit=args.limit if args.limit > 0 else None,
+                        create_tasks=args.create_tasks,
+                        replace_existing=args.replace_existing,
+                        execute=args.execute,
+                    )
                 )
-            )
+            except Exception as exc:
+                results.append(
+                    {
+                        "slug": slug,
+                        "error": f"{type(exc).__name__}: {exc}",
+                    }
+                )
         return results
 
     results = asyncio.run(_run_all())
@@ -303,6 +459,9 @@ def main() -> int:
         print(json.dumps(results, ensure_ascii=False, indent=2))
     else:
         for result in results:
+            if "error" in result:
+                print(f"{result['slug']}: ERROR {result['error']}")
+                continue
             plan = result["repair_plan"]
             print(
                 "{slug}: tasks={tasks} priorities={priorities} causes={causes}".format(
@@ -317,7 +476,7 @@ def main() -> int:
                 print(f"  task_sync: {result['task_sync']}")
             if "execution" in result:
                 print(f"  execution: {result['execution']}")
-    return 0
+    return 1 if any("error" in result for result in results) else 0
 
 
 if __name__ == "__main__":

@@ -214,6 +214,41 @@ def test_build_writer_quality_levers_block_includes_emotion_driven_kernel() -> N
     assert "不可逆代价" in block
 
 
+def test_build_writer_quality_levers_block_includes_public_emotion_kernel() -> None:
+    block = build_writer_quality_levers_block(
+        WriterLeverContext(
+            chapter_number=2,
+            public_emotion_kernel={
+                "target_segments": [
+                    {
+                        "id": "segment-a",
+                        "group_label": "被低估的读者",
+                        "life_context": "虚构规则压住解释权。",
+                        "public_emotion": "不甘。",
+                        "unsaid_sentence": "凭什么你一句话定性？",
+                        "desired_compensation": "用规则翻案。",
+                    }
+                ],
+                "emotion_bridges": [
+                    {
+                        "bridge_id": "bridge-a",
+                        "bridge_type": "value_bridge",
+                        "public_anchor": "被低估",
+                        "genre_translation": "虚构榜单规则。",
+                        "story_hook": "主角用新规则翻案。",
+                        "reader_payoff": "旧判断失效。",
+                        "title_hook": "旧榜错判我，我用新规则翻案",
+                    }
+                ],
+            },
+        )
+    )
+
+    assert "public_emotion_core" in block
+    assert "本书专属公共情绪桥" in block
+    assert "旧榜错判我" in block
+
+
 # ---------------------------------------------------------------------------
 # integrator — critic side
 # ---------------------------------------------------------------------------

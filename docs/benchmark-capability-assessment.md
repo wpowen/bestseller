@@ -1,6 +1,6 @@
 # 精品样本对标与框架能力评估报告
 
-Generated at: `2026-05-16T16:23:44+00:00`
+Generated at: `2026-05-17T02:33:58+00:00`
 
 ## 样本概览
 
@@ -44,8 +44,11 @@ flowchart LR
 | female-growth-ncp | career_ladder, agency_debt_ledger, social_pressure_state, competence_growth_ledger | agency_preservation_gate, hidden_romance_drift_gate, career_progression_gate | career_delta, agency_debt_delta, social_pressure_delta | good-pass / bad-block |
 | otherworld-cross-system | cross_system_mapping, identity_debt_ledger, exposure_cost_ledger, local_rule_audit | cross_system_boundary_gate, identity_debt_gate, exposure_cost_gate | rule_mapping_delta, identity_debt_delta, exposure_cost_delta | good-pass / bad-block |
 | relationship-driven | relationship_state, intimacy_boundaries, misunderstanding_graph, promise_debt_ledger | relationship_distance_gate, agency_choice_gate, promise_payoff_gate | relationship_distance_delta, boundary_delta, promise_debt_delta | good-pass / bad-block |
+| science-fiction-progression | tech_constraint_ledger, energy_logistics_state, research_validation_chain, fleet_or_mecha_state, strategic_theater_map | science_constraint_gate, energy_logistics_gate, tactical_continuity_gate | tech_capability_delta, energy_cost_delta, research_validation_delta, battlefield_state_delta | good-pass / bad-block |
 | strategy-worldbuilding | faction_pressure_queue, institutional_agenda, logistics_ledger, treasury_state, battlefront_state | strategy_consequence_gate, institutional_pressure_gate, logistics_plausibility_gate | faction_move_delta, institutional_agenda_delta, resource_logistics_delta | good-pass / bad-block |
 | suspense-mystery | rule_lattice, clue_chain, evidence_ledger, suspect_timeline, red_herring_ledger | fair_clue_gate, evidence_legality_gate, timeline_consistency_gate | clue_delta, suspect_state_delta, rule_reveal_delta, misdirection_delta | good-pass / bad-block |
+| urban-contemporary | career_ladder_state, organization_politics_map, reputation_public_opinion, money_contract_ledger, social_network_pressure | career_progress_gate, workplace_plausibility_gate, reputation_consequence_gate | career_position_delta, organization_relation_delta, reputation_delta, money_contract_delta | good-pass / bad-block |
+| wuxia-jianghu | sect_reputation_state, jianghu_rule_ledger, martial_arts_cost_ledger, chivalry_debt_ledger, rival_school_pressure | jianghu_rule_consequence_gate, martial_cost_gate, reputation_payoff_gate | sect_reputation_delta, martial_cost_delta, chivalry_debt_delta, rival_school_delta | good-pass / bad-block |
 
 ## Sample Quality Parity Gate
 
@@ -65,11 +68,11 @@ flowchart LR
 | female-growth-ncp | 0 | partial | ready | partial | partial | partial | partial | partial | partial | partial |
 | otherworld-cross-system | 2 | partial | ready | partial | partial | partial | partial | partial | partial | partial |
 | relationship-driven | 2 | partial | ready | partial | partial | partial | partial | partial | partial | partial |
-| science-fiction-progression | 0 | unsupported | prompt-only | prompt-only | unsupported | unsupported | unsupported | unsupported | unsupported | unsupported |
+| science-fiction-progression | 0 | partial | ready | partial | partial | partial | partial | partial | partial | partial |
 | strategy-worldbuilding | 5 | partial | ready | partial | partial | partial | partial | partial | partial | partial |
 | suspense-mystery | 2 | partial | ready | partial | partial | partial | partial | partial | partial | partial |
-| urban-contemporary | 0 | unsupported | prompt-only | prompt-only | unsupported | unsupported | unsupported | unsupported | unsupported | unsupported |
-| wuxia-jianghu | 0 | unsupported | prompt-only | prompt-only | unsupported | unsupported | unsupported | unsupported | unsupported | unsupported |
+| urban-contemporary | 0 | partial | ready | partial | partial | partial | partial | partial | partial | partial |
+| wuxia-jianghu | 0 | partial | ready | partial | partial | partial | partial | partial | partial | partial |
 
 ## Gap Register
 
@@ -80,17 +83,11 @@ flowchart LR
 - `GAP-005` `P1` `female-growth-ncp` 已建立类别硬引擎契约, 仍需把事业阶梯、社会压力和 agency debt 接入长篇状态闭环。 验收: 新增对应结构化模型、写前 gate、章节后状态更新、好/坏 fixture 测试。
 - `GAP-006` `P1` `otherworld-cross-system` 已建立类别硬引擎契约, 仍需把跨体系映射、身份债务、异常暴露成本接入章节后状态更新。 验收: 新增对应结构化模型、写前 gate、章节后状态更新、好/坏 fixture 测试。
 - `GAP-007` `P1` `relationship-driven` 已建立类别硬引擎契约, 仍需把亲密边界、误会拓扑、情感兑现节奏接入章节级 gate。 验收: 新增对应结构化模型、写前 gate、章节后状态更新、好/坏 fixture 测试。
-- `GAP-008` `P2` `science-fiction-progression` science-fiction-progression 缺少一等 novel category YAML 验收: `config/novel_categories/science-fiction-progression.yaml` 存在，并被 resolver / tests 覆盖。
-- `GAP-009` `P2` `science-fiction-progression` science-fiction-progression 缺少 genre review profile 验收: `resolve_genre_review_profile` 能解析到 `science-fiction-progression`，并有类别权重与失败信息测试。
-- `GAP-010` `P2` `science-fiction-progression` science-fiction-progression 缺少 story design grammar 验收: `resolve_story_design_grammar(category_key='science-fiction-progression')` 返回专用 grammar。
-- `GAP-011` `P1` `strategy-worldbuilding` 已建立类别硬引擎契约, 仍需把制度压力、战役物流、财政与朝堂议程接入真实章节闭环。 验收: 新增对应结构化模型、写前 gate、章节后状态更新、好/坏 fixture 测试。
-- `GAP-012` `P1` `suspense-mystery` 已建立类别硬引擎契约, 仍需用 live 章节验证 rule lattice、证据合法性、嫌疑人/时间线公平性。 验收: 新增对应结构化模型、写前 gate、章节后状态更新、好/坏 fixture 测试。
-- `GAP-013` `P2` `urban-contemporary` urban-contemporary 缺少一等 novel category YAML 验收: `config/novel_categories/urban-contemporary.yaml` 存在，并被 resolver / tests 覆盖。
-- `GAP-014` `P2` `urban-contemporary` urban-contemporary 缺少 genre review profile 验收: `resolve_genre_review_profile` 能解析到 `urban-contemporary`，并有类别权重与失败信息测试。
-- `GAP-015` `P2` `urban-contemporary` urban-contemporary 缺少 story design grammar 验收: `resolve_story_design_grammar(category_key='urban-contemporary')` 返回专用 grammar。
-- `GAP-016` `P2` `wuxia-jianghu` wuxia-jianghu 缺少一等 novel category YAML 验收: `config/novel_categories/wuxia-jianghu.yaml` 存在，并被 resolver / tests 覆盖。
-- `GAP-017` `P2` `wuxia-jianghu` wuxia-jianghu 缺少 genre review profile 验收: `resolve_genre_review_profile` 能解析到 `wuxia-jianghu`，并有类别权重与失败信息测试。
-- `GAP-018` `P2` `wuxia-jianghu` wuxia-jianghu 缺少 story design grammar 验收: `resolve_story_design_grammar(category_key='wuxia-jianghu')` 返回专用 grammar。
+- `GAP-008` `P1` `science-fiction-progression` 科幻机甲缺少技术约束、能源物流、舰队/战术状态和科研合法性验证。 验收: 新增对应结构化模型、写前 gate、章节后状态更新、好/坏 fixture 测试。
+- `GAP-009` `P1` `strategy-worldbuilding` 已建立类别硬引擎契约, 仍需把制度压力、战役物流、财政与朝堂议程接入真实章节闭环。 验收: 新增对应结构化模型、写前 gate、章节后状态更新、好/坏 fixture 测试。
+- `GAP-010` `P1` `suspense-mystery` 已建立类别硬引擎契约, 仍需用 live 章节验证 rule lattice、证据合法性、嫌疑人/时间线公平性。 验收: 新增对应结构化模型、写前 gate、章节后状态更新、好/坏 fixture 测试。
+- `GAP-011` `P1` `urban-contemporary` 都市职业/现实题材缺少职业台阶、组织政治、口碑/资本/舆论状态模型。 验收: 新增对应结构化模型、写前 gate、章节后状态更新、好/坏 fixture 测试。
+- `GAP-012` `P1` `wuxia-jianghu` 武侠江湖缺少门派声望、江湖规矩、侠义债务、武学代价的一等类别引擎。 验收: 新增对应结构化模型、写前 gate、章节后状态更新、好/坏 fixture 测试。
 
 ## Optimization Roadmap
 

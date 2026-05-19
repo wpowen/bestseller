@@ -14,6 +14,10 @@ from dataclasses import dataclass, field
 import re
 
 from bestseller.domain.workflow import ChapterOutlineBatchInput, ChapterOutlineInput
+from bestseller.services.methodology_overlay import (
+    normalize_chapter_overlay,
+    validate_chapter_methodology_contract,
+)
 
 BLOCKING_SEVERITIES = {"critical", "major"}
 
@@ -319,8 +323,14 @@ def chapter_causality_report_to_dict(report: ChapterCausalityReport) -> dict[str
     }
 
 
+def is_methodology_causality_finding(finding: ChapterCausalityFinding) -> bool:
+    return finding.code.startswith(("CHAPTER_METHODOLOGY_", "CHAPTER_CLIMAX_"))
+
+
 def evaluate_chapter_causality_contract(
     batch: ChapterOutlineBatchInput,
+    *,
+    require_methodology_overlay: bool = False,
 ) -> ChapterCausalityReport:
     findings: list[ChapterCausalityFinding] = []
     chapter_results: list[ChapterCausalityResult] = []
@@ -329,7 +339,13 @@ def evaluate_chapter_causality_contract(
     for chapter in batch.chapters:
         result = _evaluate_chapter(chapter, previous_next_desire=previous_next_desire)
         chapter_results.append(result)
-        findings.extend(_findings_for_result(chapter, result))
+        findings.extend(
+            _findings_for_result(
+                chapter,
+                result,
+                require_methodology_overlay=require_methodology_overlay,
+            )
+        )
         previous_next_desire = _best_text(
             _contract_text(chapter, "next_reader_desire", "next_chapter_desire"),
             chapter.hook_description,
@@ -347,6 +363,9 @@ def _evaluate_chapter(
     previous_next_desire: str = "",
 ) -> ChapterCausalityResult:
     contract = _contract(chapter)
+    methodology_contract = normalize_chapter_overlay(
+        getattr(chapter, "methodology_contract", None)
+    )
     chapter_function = _clean(
         contract.get("chapter_function")
         or contract.get("function")
@@ -359,6 +378,8 @@ def _evaluate_chapter(
 
     pressure_candidates = (
         _contract_text(chapter, "pressure", "chapter_pressure"),
+        "; ".join(methodology_contract.get("conflict_buffs") or []),
+        methodology_contract.get("conflict_stakes"),
         chapter.main_conflict,
         chapter.opening_situation,
         previous_next_desire,
@@ -382,6 +403,8 @@ def _evaluate_chapter(
     )
     cost_candidates = (
         _contract_text(chapter, "cost_or_tradeoff", "cost", "tradeoff", "代价"),
+        methodology_contract.get("conflict_stakes"),
+        "; ".join(methodology_contract.get("relationship_debts") or []),
         chapter.chapter_goal,
         chapter.main_conflict,
         scene_story,
@@ -405,6 +428,8 @@ def _evaluate_chapter(
             "next_chapter_desire",
             "reader_question_after",
         ),
+        "; ".join(methodology_contract.get("hooks_to_plant") or []),
+        "; ".join(methodology_contract.get("relationship_debts") or []),
         chapter.hook_description,
     )
 
@@ -470,9 +495,15 @@ def _evaluate_chapter(
 def _findings_for_result(
     chapter: ChapterOutlineInput,
     result: ChapterCausalityResult,
+    *,
+    require_methodology_overlay: bool = False,
 ) -> list[ChapterCausalityFinding]:
     findings: list[ChapterCausalityFinding] = []
     present_count = sum(1 for present in result.present_axes.values() if present)
+    methodology_contract = normalize_chapter_overlay(
+        getattr(chapter, "methodology_contract", None)
+    )
+    pressure_buff_count = len(methodology_contract.get("conflict_buffs") or [])
     if not result.present_axes["pressure"]:
         findings.append(
             ChapterCausalityFinding(
@@ -517,12 +548,67 @@ def _findings_for_result(
                 },
             )
         )
+    if require_methodology_overlay and pressure_buff_count < 1:
+        findings.append(
+            ChapterCausalityFinding(
+                code="CHAPTER_METHODOLOGY_PRESSURE_STACK_MISSING",
+                chapter_number=chapter.chapter_number,
+                message="新规划章节缺少方法论压力叠加; 至少需要一个具体时限、暴露风险、资源不足、社会压力或两难。",
+                severity="major",
+                metadata={"pressure_buff_count": pressure_buff_count},
+            )
+        )
+    if (
+        require_methodology_overlay
+        and methodology_contract.get("is_climax")
+        and pressure_buff_count < 2
+    ):
+        findings.append(
+            ChapterCausalityFinding(
+                code="CHAPTER_CLIMAX_PRESSURE_STACK_THIN",
+                chapter_number=chapter.chapter_number,
+                message="高潮章节压力叠加不足; 至少需要两个具体 pressure buff。",
+                severity="major",
+                metadata={"pressure_buff_count": pressure_buff_count},
+            )
+        )
+    if require_methodology_overlay:
+        for overlay_finding in validate_chapter_methodology_contract(
+            getattr(chapter, "methodology_contract", None),
+            chapter_number=chapter.chapter_number,
+        ):
+            findings.append(
+                ChapterCausalityFinding(
+                    code=overlay_finding.code,
+                    chapter_number=chapter.chapter_number,
+                    message=overlay_finding.message,
+                    severity=overlay_finding.severity,
+                    metadata={"path": overlay_finding.path},
+                )
+            )
     return findings
 
 
 def _contract(chapter: ChapterOutlineInput) -> Mapping[str, object]:
     value = getattr(chapter, "causal_contract", None)
-    return value if isinstance(value, Mapping) else {}
+    base = dict(value) if isinstance(value, Mapping) else {}
+    methodology_contract = normalize_chapter_overlay(
+        getattr(chapter, "methodology_contract", None)
+    )
+    if methodology_contract:
+        if methodology_contract.get("conflict_stakes"):
+            base.setdefault("cost", methodology_contract["conflict_stakes"])
+        pressure = "; ".join(methodology_contract.get("conflict_buffs") or [])
+        if pressure:
+            base.setdefault("pressure", pressure)
+        hooks_to_plant = methodology_contract.get("hooks_to_plant") or []
+        if hooks_to_plant:
+            base.setdefault("next_reader_desire", "; ".join(hooks_to_plant))
+        relationship_debts = methodology_contract.get("relationship_debts") or []
+        if relationship_debts:
+            base.setdefault("cost", "; ".join(relationship_debts))
+            base.setdefault("next_reader_desire", "; ".join(relationship_debts))
+    return base
 
 
 def _contract_text(chapter: ChapterOutlineInput, *keys: str) -> str:

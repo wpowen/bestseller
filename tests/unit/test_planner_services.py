@@ -726,6 +726,38 @@ def test_emotion_driven_kernel_fallback_validates_and_enters_planner_prompts() -
     assert "读者情绪合同" in outline_prompt
 
 
+def test_short_complete_outline_prompt_uses_compact_scene_contract() -> None:
+    project = build_project()
+    project.genre = "悬疑推理"
+    project.sub_genre = "人性博弈"
+    project.target_chapters = 20
+    project.target_word_count = 44000
+    premise = "战术分析师被卷入一场以生命为筹码的封闭规则博弈。"
+    book_spec = planner_services._fallback_book_spec(project, premise)
+    world_spec = planner_services._fallback_world_spec(project, premise, book_spec)
+    cast_spec = planner_services._fallback_cast_spec(project, premise, book_spec, world_spec)
+    volume_entry = {
+        "volume_number": 1,
+        "volume_title": "深渊赛局",
+        "chapter_count_target": 20,
+        "start_chapter_number": 1,
+        "end_chapter_number": 20,
+        "volume_goal": "完成死亡游戏真相揭露并关闭当前故事。",
+    }
+
+    _, outline_prompt = planner_services._volume_outline_prompts(
+        project,
+        book_spec,
+        cast_spec,
+        [volume_entry],
+        volume_entry,
+    )
+
+    assert "`chapters` 必须恰好输出 20 个章节对象" in outline_prompt
+    assert "每章默认只需 2 个紧凑 scenes" in outline_prompt
+    assert "每章至少 3 个 scenes" not in outline_prompt
+
+
 def test_stash_distilled_design_reference_blocks_populates_project_metadata(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1215,6 +1247,7 @@ async def test_volume_outline_repair_loop_regenerates_with_contract_diagnostics(
     )
     settings = build_settings()
     settings.pipeline.chapter_outline_repair_attempts = 2
+    progress_events: list[tuple[str, dict[str, object]]] = []
 
     payload, llm_run_id, history = await planner_services._generate_volume_outline_with_repair_loop(
         FakeSession(),
@@ -1232,6 +1265,7 @@ async def test_volume_outline_repair_loop_regenerates_with_contract_diagnostics(
         chapter_number_offset=1,
         revealed_ledger_block=None,
         base_constraints=[],
+        progress=lambda stage, payload: progress_events.append((stage, payload)),
     )
 
     assert llm_run_id is not None
@@ -1240,6 +1274,12 @@ async def test_volume_outline_repair_loop_regenerates_with_contract_diagnostics(
     assert "PLAN_CHAPTER_HOOK_GENERIC" in prompts[1]
     assert history[0]["status"] == "failed"
     assert history[-1]["status"] == "passed"
+    assert [event[0] for event in progress_events] == [
+        "planning_outline_attempt_started",
+        "planning_outline_attempt_failed",
+        "planning_outline_attempt_started",
+        "planning_outline_attempt_completed",
+    ]
 
 
 def test_fallback_chapter_outline_avoids_critical_plan_fingerprints_with_long_hook_strategy() -> (
@@ -1837,10 +1877,14 @@ async def test_generate_novel_plan_creates_all_artifacts_and_workflow_records(
     assert ArtifactType.STORY_DESIGN_KERNEL in artifact_types
     assert (
         artifact_types.index(ArtifactType.CAST_SPEC)
+        < artifact_types.index(ArtifactType.PUBLIC_EMOTION_KERNEL)
+        < artifact_types.index(ArtifactType.COMPLIANCE_BOUNDARY_KERNEL)
         < artifact_types.index(ArtifactType.STORY_DESIGN_KERNEL)
         < artifact_types.index(ArtifactType.EMOTION_DRIVEN_KERNEL)
         < artifact_types.index(ArtifactType.VOLUME_PLAN)
     )
+    assert ArtifactType.PUBLIC_EMOTION_KERNEL in artifact_types
+    assert ArtifactType.COMPLIANCE_BOUNDARY_KERNEL in artifact_types
     assert ArtifactType.EMOTION_DRIVEN_KERNEL in artifact_types
     assert ArtifactType.VOLUME_PLAN in artifact_types
     assert ArtifactType.PLAN_VALIDATION in artifact_types
@@ -1866,6 +1910,8 @@ async def test_generate_novel_plan_creates_all_artifacts_and_workflow_records(
     assert project.metadata_json["story_design_kernel"]["reverse_outline_status"] == "verified"
     assert "character_drama_map" in project.metadata_json
     assert "emotion_driven_kernel" in project.metadata_json
+    assert "public_emotion_kernel" in project.metadata_json
+    assert "compliance_boundary_kernel" in project.metadata_json
     assert "planning_kernel" in project.metadata_json
     assert project.metadata_json["reverse_outline_gate_report"]["passed"] is True
     assert "worldview_progression_gate_report" in project.metadata_json
@@ -1875,9 +1921,13 @@ async def test_generate_novel_plan_creates_all_artifacts_and_workflow_records(
     assert project.metadata_json["planning_kernel"]["emotion_driven"]["valid"] is True
     assert "prewrite_readiness_report" in project.metadata_json
     assert "Character Drama Engine" in prompts_by_logical_name["story_design_kernel"]
+    assert "public_emotion_core" in prompts_by_logical_name["story_design_kernel"]
+    assert "compliance_boundary" in prompts_by_logical_name["story_design_kernel"]
     assert "EmotionDrivenKernel" in prompts_by_logical_name["emotion_driven_kernel"]
+    assert "public_emotion_core" in prompts_by_logical_name["emotion_driven_kernel"]
     assert "Story Design Kernel" in prompts_by_logical_name["volume_plan"]
     assert "emotion_driven_core" in prompts_by_logical_name["volume_plan"]
+    assert "public_emotion_core" in prompts_by_logical_name["volume_plan"]
     assert "Character Drama Engine" in prompts_by_logical_name["volume_plan"]
     assert "world_state_targets" in prompts_by_logical_name["volume_plan"]
     assert "active_authority_claims" in prompts_by_logical_name["volume_plan"]

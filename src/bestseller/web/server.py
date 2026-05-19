@@ -79,6 +79,17 @@ def _utc_now() -> str:
     return datetime.now(UTC).isoformat()
 
 
+def _timestamp_seconds(value: object) -> float | None:
+    if isinstance(value, (int, float)):
+        return float(value)
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00")).timestamp()
+    except ValueError:
+        return None
+
+
 def _json_default(value: object) -> object:
     if isinstance(value, UUID):
         return str(value)
@@ -230,6 +241,208 @@ def _worker_heal_job_is_active(redis_url: str, job_id: str) -> bool:
             pass
 
 
+def _worker_heal_job_state_from_redis_client(client: Any, job_id: str) -> str | None:
+    """Return the live ARQ ownership state for a deterministic heal job."""
+
+    if client.exists(f"arq:in-progress:{job_id}"):
+        return "running"
+    if client.exists(f"arq:job:{job_id}", f"arq:retry:{job_id}"):
+        return "queued"
+    if client.zscore("arq:queue", job_id) is not None:
+        return "queued"
+    if client.exists(f"arq:result:{job_id}"):
+        return "result"
+    return None
+
+
+def _normalise_worker_progress_events(
+    raw_events: list[str],
+) -> tuple[list[dict[str, object]], str | None, dict[str, object]]:
+    """Convert RedisProgressReporter JSON rows into WebTaskState events."""
+
+    events: list[dict[str, object]] = []
+    latest_stage: str | None = None
+    latest_payload: dict[str, object] = {}
+    for raw in raw_events:
+        try:
+            evt = json.loads(raw)
+        except Exception:
+            continue
+        ts = evt.get("ts", evt.get("timestamp"))
+        if not isinstance(ts, (int, float, str)):
+            continue
+        stage = evt.get("message") or evt.get("stage")
+        if not isinstance(stage, str) or not stage:
+            continue
+        payload = evt.get("data") if isinstance(evt.get("data"), dict) else evt.get("payload")
+        payload_dict = payload if isinstance(payload, dict) else {}
+        events.append(
+            {
+                "timestamp": ts,
+                "stage": stage,
+                "payload": payload_dict,
+            }
+        )
+        latest_stage = stage
+        latest_payload = payload_dict
+    return events, latest_stage, latest_payload
+
+
+def _load_worker_heal_progress_snapshot(
+    redis_url: str,
+    job_id: str,
+    *,
+    limit: int = 120,
+) -> dict[str, object] | None:
+    """Load current ARQ state plus recent RedisProgressReporter events."""
+
+    try:
+        import redis as _redis
+    except Exception:
+        return None
+
+    try:
+        client = _redis.from_url(redis_url, decode_responses=True, socket_timeout=2)
+    except Exception:
+        return None
+    try:
+        job_state = _worker_heal_job_state_from_redis_client(client, job_id)
+        if job_state is None:
+            return None
+        raw_events = client.lrange(f"task:{job_id}:progress", -limit, -1)
+    except Exception:
+        return None
+    finally:
+        try:
+            client.close()
+        except Exception:
+            pass
+
+    events, latest_stage, latest_payload = _normalise_worker_progress_events(raw_events or [])
+    if job_state == "running":
+        status = "running"
+    elif job_state == "queued":
+        status = "queued"
+    else:
+        status = "incomplete"
+    if latest_stage in {"failed", "error"}:
+        status = "failed"
+    elif latest_stage in {"waiting_human", "waiting_human_review", "blocked_generation_gate"}:
+        status = "incomplete"
+    elif latest_stage in {"completed", "done", "finished"} and job_state == "result":
+        status = "completed"
+    return {
+        "job_state": job_state,
+        "status": status,
+        "current_stage": latest_stage or "delegated_to_worker_self_heal",
+        "progress_events": events,
+        "latest_payload": latest_payload,
+    }
+
+
+def _merge_worker_progress_into_db_repair_summary(
+    summary: dict[str, object],
+    worker_progress: dict[str, object] | None,
+) -> dict[str, object]:
+    """Attach live worker progress to a synthetic db-repair task summary."""
+
+    if not worker_progress:
+        return summary
+    summary["status"] = worker_progress.get("status") or summary.get("status")
+    summary["current_stage"] = worker_progress.get("current_stage") or summary.get(
+        "current_stage"
+    )
+    worker_events = worker_progress.get("progress_events")
+    if isinstance(worker_events, list) and worker_events:
+        existing_events = summary.get("progress_events")
+        base_events = existing_events if isinstance(existing_events, list) else []
+        summary["progress_events"] = (base_events + worker_events)[-300:]
+        latest_event = worker_events[-1] if isinstance(worker_events[-1], dict) else {}
+        latest_ts = latest_event.get("timestamp")
+        if isinstance(latest_ts, (int, float)):
+            summary["updated_at"] = datetime.fromtimestamp(float(latest_ts), UTC).isoformat()
+        elif isinstance(latest_ts, str):
+            summary["updated_at"] = latest_ts
+    latest_payload = worker_progress.get("latest_payload")
+    if (
+        summary.get("status") == "failed"
+        and isinstance(latest_payload, dict)
+        and latest_payload.get("error")
+    ):
+        summary["error"] = str(latest_payload.get("error"))
+    elif summary.get("status") in {"running", "queued"}:
+        summary["error"] = None
+    return summary
+
+
+def _task_progress_payload(task: dict[str, object]) -> dict[str, object]:
+    events = task.get("progress_events")
+    if not isinstance(events, list):
+        events = []
+    current_stage = task.get("current_stage")
+    latest_event = next(
+        (
+            event
+            for event in reversed(events)
+            if isinstance(event, dict)
+            and current_stage
+            and event.get("stage") == current_stage
+        ),
+        events[-1] if events else None,
+    )
+    if not isinstance(latest_event, dict):
+        latest_event = None
+    return {
+        "task_id": task.get("task_id"),
+        "status": task.get("status"),
+        "task_type": task.get("task_type"),
+        "title": task.get("title"),
+        "project_slug": task.get("project_slug"),
+        "current_stage": task.get("current_stage"),
+        "current_stage_label": task.get("current_stage_label"),
+        "progress_events": events,
+        "latest_event": latest_event,
+        "repair_status": task.get("repair_status"),
+        "chapter_word_stats": task.get("chapter_word_stats"),
+        "error": task.get("error"),
+        "result": task.get("result"),
+    }
+
+
+def _load_worker_task_summary(
+    settings: AppSettings,
+    task_id: str,
+) -> dict[str, object] | None:
+    if task_id.startswith("autowrite:heal:"):
+        task_type = "autowrite"
+        slug = task_id.removeprefix("autowrite:heal:")
+    elif task_id.startswith("repair:heal:"):
+        task_type = "repair"
+        slug = task_id.removeprefix("repair:heal:")
+    else:
+        return None
+    if not slug:
+        return None
+    worker_progress = _load_worker_heal_progress_snapshot(settings.redis.url, task_id)
+    if not worker_progress:
+        return None
+    return {
+        "task_id": task_id,
+        "worker_job_id": task_id,
+        "task_type": task_type,
+        "status": worker_progress.get("status") or "running",
+        "title": slug,
+        "project_title": slug,
+        "project_slug": slug,
+        "current_stage": worker_progress.get("current_stage")
+        or "delegated_to_worker_self_heal",
+        "progress_events": worker_progress.get("progress_events") or [],
+        "result": worker_progress.get("latest_payload") or {},
+        "error": None,
+        "synthetic_worker_task": True,
+    }
+
+
 def _arq_redis_settings_from_url(redis_url: str) -> Any:
     from arq.connections import RedisSettings
 
@@ -297,6 +510,60 @@ def _enqueue_autowrite_heal_job(redis_url: str, slug: str) -> str | None:
     except Exception:
         logger.exception(
             "auto-resume: failed to enqueue worker self-heal job for slug=%s",
+            slug,
+        )
+        return None
+
+
+async def _enqueue_repair_heal_job_async(redis_url: str, slug: str) -> str | None:
+    """Push a DB-backed repair summary into the worker repair queue."""
+    from arq.connections import create_pool
+
+    from bestseller.worker.self_heal import (
+        StuckProject,
+        _repair_heal_job_id,
+        _requeue_repair,
+    )
+
+    pool = await create_pool(_arq_redis_settings_from_url(redis_url))
+    try:
+        stuck = StuckProject(
+            project_id=None,
+            slug=slug,
+            reason="web_db_repair_resume",
+            stuck_at_chapter=None,
+            chapters_total=0,
+            chapters_with_draft=0,
+            heal_kind="repair",
+        )
+        job_id = await _requeue_repair(pool, stuck)
+        if job_id is None and slug in _fetch_heal_owned_slugs_by_kind(redis_url, "repair"):
+            return _repair_heal_job_id(slug)
+        return job_id
+    finally:
+        closer = getattr(pool, "aclose", None) or getattr(pool, "close", None)
+        if closer is not None:
+            result = closer()
+            if asyncio.iscoroutine(result):
+                await result
+
+
+def _enqueue_repair_heal_job(redis_url: str, slug: str) -> str | None:
+    """Synchronously enqueue a deterministic worker repair self-heal job."""
+    if not redis_url or not slug:
+        return None
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        pass
+    else:
+        logger.warning("repair resume: cannot enqueue ARQ job from an active event loop")
+        return None
+    try:
+        return asyncio.run(_enqueue_repair_heal_job_async(redis_url, slug))
+    except Exception:
+        logger.exception(
+            "repair resume: failed to enqueue worker repair job for slug=%s",
             slug,
         )
         return None
@@ -758,10 +1025,13 @@ _ATTENTION_VERDICTS = frozenset(
         "waiting_human",
         "waiting_human_review",
         "requires_human_review",
+        "exported_requires_human_review",
+        "skipped_requires_human_review",
     }
 )
 _TERMINAL_ATTENTION_STAGES = frozenset(
     {
+        "autowrite_completed",
         "completed",
         "done",
         "finished",
@@ -788,6 +1058,7 @@ def _task_has_human_review_gate(task: WebTaskState) -> bool:
                 payload.get("final_verdict")
                 or payload.get("verdict")
                 or payload.get("status")
+                or payload.get("export_status")
                 or ""
             )
             .strip()
@@ -806,6 +1077,7 @@ def _payload_requires_human_attention(payload: dict[str, Any]) -> bool:
             payload.get("final_verdict")
             or payload.get("verdict")
             or payload.get("status")
+            or payload.get("export_status")
             or ""
         )
         .strip()
@@ -1291,6 +1563,21 @@ class WebTaskManager:
             task = self._tasks[task_id]
             task.updated_at = _utc_now()
             task.current_stage = stage
+            normalized_stage = stage.lower()
+            if (
+                task.status in {"failed", "incomplete", "queued"}
+                and normalized_stage
+                not in {
+                    "failed",
+                    "error",
+                    "cancelled",
+                    "waiting_human",
+                    "waiting_human_review",
+                    "blocked_generation_gate",
+                }
+            ):
+                task.status = "running"
+                task.error = None
             task.progress_events.append(
                 {
                     "timestamp": task.updated_at,
@@ -1327,15 +1614,27 @@ class WebTaskManager:
             task.status = "running"
             task.updated_at = _utc_now()
             task.current_stage = "running"
+            task.error = None
             self._save_to_disk()
 
     def _mark_completed(self, task_id: str, result: dict[str, object]) -> None:
         with self._lock:
             task = self._tasks[task_id]
-            task.status = "completed"
             task.updated_at = _utc_now()
-            task.current_stage = "completed"
             task.result = result
+            if _payload_requires_human_attention(result):
+                task.status = "incomplete"
+                task.current_stage = "waiting_human_review"
+                task.error = str(
+                    result.get("error")
+                    or result.get("message")
+                    or result.get("reason")
+                    or "Task reached a human-review or attention gate."
+                )
+            else:
+                task.status = "completed"
+                task.current_stage = "completed"
+                task.error = None
             self._save_to_disk()
 
     def _mark_failed(self, task_id: str, error: str) -> None:
@@ -2424,7 +2723,7 @@ class WebTaskManager:
         # Snapshot task_id → (project_slug, task_type, known_event_ts_set) to avoid
         # holding the manager lock across Redis I/O.
         with self._lock:
-            snapshot: list[tuple[str, str, str, set[float]]] = []
+            snapshot: list[tuple[str, str, str, set[float], float]] = []
             for tid, task in self._tasks.items():
                 if task.status not in ("running", "queued", "failed", "incomplete"):
                     continue
@@ -2436,10 +2735,18 @@ class WebTaskManager:
                     ts = evt.get("timestamp") if isinstance(evt, dict) else None
                     if isinstance(ts, (int, float)):
                         known_ts.add(float(ts))
-                snapshot.append((tid, slug, task.task_type, known_ts))
+                snapshot.append(
+                    (
+                        tid,
+                        slug,
+                        task.task_type,
+                        known_ts,
+                        _timestamp_seconds(task.updated_at) or 0.0,
+                    )
+                )
 
         updated = 0
-        for tid, slug, task_type, known_ts in snapshot:
+        for tid, slug, task_type, known_ts, task_updated_ts in snapshot:
             # The arq worker task id follows either ``autowrite:heal:<slug>``
             # or ``repair:heal:<slug>``. A recovered project normally has one
             # durable autowrite card in the UI; when self-heal chooses a repair
@@ -2487,6 +2794,12 @@ class WebTaskManager:
                     if isinstance(ts, (int, float)):
                         candidate_latest_ts = max(candidate_latest_ts, float(ts))
                 state_rank = 1 if job_state == "active" else 0
+                if (
+                    job_state == "result"
+                    and candidate_latest_ts > 0
+                    and candidate_latest_ts <= task_updated_ts
+                ):
+                    continue
                 if state_rank > selected_state_rank or (
                     state_rank == selected_state_rank
                     and candidate_latest_ts > selected_latest_ts
@@ -2855,6 +3168,10 @@ async def _load_projects_payload(settings: AppSettings) -> list[dict[str, object
             session,
             [row.id for row in rows],
         )
+        autonomous_repair_counts = await _load_project_autonomous_repair_task_counts(
+            session,
+            [row.id for row in rows],
+        )
         return [
             {
                 "id": str(row.id),
@@ -2869,6 +3186,7 @@ async def _load_projects_payload(settings: AppSettings) -> list[dict[str, object
                 "repair_status": _build_project_repair_status_payload(
                     row,
                     repair_counts.get(row.id, []),
+                    autonomous_repair_counts.get(row.id, {}),
                 ),
             }
             for row in rows
@@ -2885,6 +3203,10 @@ async def _load_library_payload(settings: AppSettings) -> list[dict[str, object]
     async with session_scope(settings) as session:
         rows = await list_projects(session)
         repair_counts = await _load_project_chapter_state_counts(
+            session,
+            [row.id for row in rows],
+        )
+        autonomous_repair_counts = await _load_project_autonomous_repair_task_counts(
             session,
             [row.id for row in rows],
         )
@@ -2963,6 +3285,7 @@ async def _load_library_payload(settings: AppSettings) -> list[dict[str, object]
                     "repair_status": _build_project_repair_status_payload(
                         row,
                         db_counters,
+                        autonomous_repair_counts.get(row.id, {}),
                     ),
                 }
             )
@@ -3018,6 +3341,221 @@ async def _load_project_chapter_state_counts(
             }
         )
     return grouped
+
+
+async def _load_project_autonomous_repair_task_counts(
+    session: Any,
+    project_ids: list[UUID],
+) -> dict[UUID, dict[str, int]]:
+    if not project_ids:
+        return {}
+    from sqlalchemy import func, select
+
+    from bestseller.infra.db.models import RewriteTaskModel
+    from bestseller.services.autonomous_book_repair import AUTONOMOUS_REPAIR_TRIGGER
+
+    from bestseller.infra.db.models import ChapterModel
+
+    result = await session.execute(
+        select(
+            RewriteTaskModel.project_id,
+            RewriteTaskModel.status,
+            RewriteTaskModel.error_log,
+            RewriteTaskModel.metadata_json,
+            ChapterModel.production_state,
+        )
+        .outerjoin(ChapterModel, ChapterModel.id == RewriteTaskModel.trigger_source_id)
+        .where(
+            RewriteTaskModel.project_id.in_(project_ids),
+            RewriteTaskModel.trigger_type == AUTONOMOUS_REPAIR_TRIGGER,
+        )
+    )
+    grouped: dict[UUID, dict[str, int]] = {}
+    for project_id, status, error_log, metadata, chapter_production_state in result.all():
+        bucket = grouped.setdefault(project_id, {})
+        status_key = str(status or "unknown")
+        if status_key == "failed" and _is_nonblocking_rejected_candidate(
+            error_log=error_log,
+            metadata=metadata,
+            chapter_production_state=chapter_production_state,
+        ):
+            status_key = "rejected_candidate"
+        bucket[status_key] = int(bucket.get(status_key, 0)) + 1
+    return grouped
+
+
+def _is_nonblocking_rejected_candidate(
+    *,
+    error_log: object,
+    metadata: object,
+    chapter_production_state: object,
+) -> bool:
+    """Classify protected rejected candidates separately from repair failures.
+
+    A failed autonomous rewrite task can be a healthy safety outcome: the LLM
+    produced a candidate, the quality gate rejected it, and the current draft
+    stayed publishable. Those records should remain inspectable, but they must
+    not make the whole book look terminally failed.
+    """
+
+    error_text = str(error_log or "")
+    if "chapter rewrite rejected by quality gate" not in error_text:
+        return False
+    metadata_dict = metadata if isinstance(metadata, dict) else {}
+    preserved = str(
+        metadata_dict.get("preserved_current_quality_gate_outcome") or ""
+    ).lower()
+    production_state = str(chapter_production_state or "").lower()
+    return preserved == "ok" or production_state == "ok"
+
+
+def _build_db_repair_task_summary(
+    project: Any,
+    repair_status: dict[str, object],
+) -> dict[str, object] | None:
+    counts = repair_status.get("autonomous_repair_tasks")
+    task_counts = counts if isinstance(counts, dict) else {}
+    pending = _safe_int(task_counts.get("pending"))
+    queued = _safe_int(task_counts.get("queued"))
+    failed = _safe_int(task_counts.get("failed"))
+    rejected = _safe_int(task_counts.get("rejected_candidate"))
+    active_total = pending + queued + failed
+    phase = str(repair_status.get("phase") or "")
+    if active_total <= 0 and phase == "normal":
+        return None
+
+    slug = str(getattr(project, "slug", "") or "")
+    if not slug:
+        return None
+    title = str(getattr(project, "title", "") or slug)
+    if queued > 0:
+        status = "queued"
+        stage = "legacy_quality_closure_repair_queued"
+        error = None
+    elif pending > 0:
+        status = "incomplete"
+        stage = "legacy_quality_closure_repair_pending"
+        error = None
+    elif failed > 0:
+        status = "failed"
+        stage = "legacy_quality_closure_repair_failed"
+        error = f"{failed} autonomous repair task(s) failed"
+    else:
+        status = "incomplete"
+        stage = f"legacy_quality_closure_{phase or 'repair'}"
+        error = str(repair_status.get("detail") or "") or None
+
+    updated_at = getattr(project, "updated_at", None)
+    created_at = getattr(project, "created_at", None) or updated_at
+    updated_text = updated_at.isoformat() if isinstance(updated_at, datetime) else _utc_now()
+    created_text = created_at.isoformat() if isinstance(created_at, datetime) else updated_text
+    return {
+        "task_id": f"db-repair:{slug}",
+        "task_type": "repair",
+        "status": status,
+        "created_at": created_text,
+        "updated_at": updated_text,
+        "project_slug": slug,
+        "title": title,
+        "project_title": title,
+        "current_stage": stage,
+        "progress_events": [
+            {
+                "timestamp": updated_text,
+                "stage": stage,
+                "payload": {
+                    "project_slug": slug,
+                    "pending_autonomous_repair_tasks": pending,
+                    "queued_autonomous_repair_tasks": queued,
+                    "failed_autonomous_repair_tasks": failed,
+                    "rejected_autonomous_repair_candidates": rejected,
+                    "blocked_chapters": repair_status.get("blocked_chapters"),
+                    "repair_phase": phase,
+                },
+            }
+        ],
+        "result": {
+            "project_slug": slug,
+            "target_chapters": _safe_int(getattr(project, "target_chapters", 0)),
+            "pending_autonomous_repair_tasks": pending,
+            "queued_autonomous_repair_tasks": queued,
+            "failed_autonomous_repair_tasks": failed,
+            "rejected_autonomous_repair_candidates": rejected,
+        },
+        "error": error,
+        "payload": {
+            "slug": slug,
+            "title": title,
+            "include_pending_rewrite_tasks": True,
+        },
+        "repair_status": repair_status,
+        "synthetic_db_repair_task": True,
+    }
+
+
+async def _load_db_repair_task_summaries(
+    settings: AppSettings,
+    existing_tasks: list[dict[str, object]],
+) -> list[dict[str, object]]:
+    active_slugs = {
+        str(task.get("project_slug") or "")
+        for task in existing_tasks
+        if str(task.get("project_slug") or "")
+        and str(task.get("status") or "") in {"running", "queued"}
+    }
+    async with session_scope(settings) as session:
+        rows = await list_projects(session)
+        project_ids = [row.id for row in rows]
+        repair_counts = await _load_project_chapter_state_counts(session, project_ids)
+        autonomous_repair_counts = await _load_project_autonomous_repair_task_counts(
+            session,
+            project_ids,
+        )
+        repair_heal_owned_slugs = _fetch_heal_owned_slugs_by_kind(
+            settings.redis.url,
+            "repair",
+        )
+        summaries: list[dict[str, object]] = []
+        for row in rows:
+            if row.slug in active_slugs:
+                continue
+            repair_status = _build_project_repair_status_payload(
+                row,
+                repair_counts.get(row.id, []),
+                autonomous_repair_counts.get(row.id, {}),
+            )
+            summary = _build_db_repair_task_summary(row, repair_status)
+            if summary is not None:
+                if row.slug in repair_heal_owned_slugs:
+                    job_id = f"repair:heal:{row.slug}"
+                    summary["worker_job_id"] = job_id
+                    worker_progress = _load_worker_heal_progress_snapshot(
+                        settings.redis.url,
+                        job_id,
+                    )
+                    if worker_progress:
+                        _merge_worker_progress_into_db_repair_summary(
+                            summary,
+                            worker_progress,
+                        )
+                    else:
+                        summary["status"] = "queued"
+                        summary["current_stage"] = "delegated_to_worker_self_heal"
+                summaries.append(summary)
+        return summaries
+
+
+async def _load_db_repair_task_summary(
+    settings: AppSettings,
+    task_id: str,
+) -> dict[str, object] | None:
+    if not task_id.startswith("db-repair:"):
+        return None
+    summaries = await _load_db_repair_task_summaries(settings, [])
+    for summary in summaries:
+        if summary.get("task_id") == task_id:
+            return summary
+    return None
 
 
 def _safe_int(value: object, default: int = 0) -> int:
@@ -3125,6 +3663,7 @@ def _project_autowrite_block_payload(project: Any) -> dict[str, object] | None:
 def _build_project_repair_status_payload(
     project: Any,
     chapter_state_counts: list[dict[str, object]],
+    autonomous_repair_task_counts: dict[str, int] | None = None,
 ) -> dict[str, object]:
     metadata = getattr(project, "metadata_json", None) or {}
     if not isinstance(metadata, dict):
@@ -3153,6 +3692,16 @@ def _build_project_repair_status_payload(
         if str(item.get("production_state") or "") == "pending"
         or str(item.get("status") or "") in {"drafting", "planned", "review"}
     )
+    task_counts = {
+        str(status): _safe_int(count)
+        for status, count in (autonomous_repair_task_counts or {}).items()
+    }
+    autonomous_total = sum(task_counts.values())
+    autonomous_pending = _safe_int(task_counts.get("pending")) + _safe_int(
+        task_counts.get("queued")
+    )
+    autonomous_failed = _safe_int(task_counts.get("failed"))
+    autonomous_rejected = _safe_int(task_counts.get("rejected_candidate"))
 
     initial_repair_scope = _safe_int(
         metadata.get("repair_audit_out_of_range_chapters")
@@ -3192,6 +3741,14 @@ def _build_project_repair_status_payload(
         phase = "needs_attention"
         label = "存在阻塞章节"
         detail = "仍有章节没有通过生产门禁。"
+    elif autonomous_pending > 0:
+        phase = "repair_gate"
+        label = "闭环修复待执行"
+        detail = "已有章节存在新闭环修复任务，需先执行修复并复评。"
+    elif autonomous_failed > 0:
+        phase = "needs_attention"
+        label = "闭环修复需复查"
+        detail = "部分闭环修复任务未通过，需要携带失败反馈进入下一轮修复。"
     else:
         phase = "normal"
         label = "正常"
@@ -3217,6 +3774,14 @@ def _build_project_repair_status_payload(
         "pending_chapters": pending_chapters,
         "initial_out_of_range_chapters": initial_repair_scope,
         "chapter_state_counts": chapter_state_counts,
+        "autonomous_repair_tasks": {
+            **task_counts,
+            "total": autonomous_total,
+            "pending_or_queued": autonomous_pending,
+        },
+        "pending_autonomous_repair_tasks": autonomous_pending,
+        "failed_autonomous_repair_tasks": autonomous_failed,
+        "rejected_autonomous_repair_candidates": autonomous_rejected,
     }
 
 
@@ -3314,9 +3879,14 @@ async def _load_project_summary_payload(
         style_guide = await session.get(StyleGuideModel, project.id)
         writing_profile = get_project_writing_profile(project, style_guide).model_dump(mode="json")
         repair_counts = await _load_project_chapter_state_counts(session, [project.id])
+        autonomous_repair_counts = await _load_project_autonomous_repair_task_counts(
+            session,
+            [project.id],
+        )
         repair_status = _build_project_repair_status_payload(
             project,
             repair_counts.get(project.id, []),
+            autonomous_repair_counts.get(project.id, {}),
         )
     outputs = collect_project_artifact_entries(settings, project_slug)
     markdown_entries = [item for item in outputs if str(item["suffix"]) == ".md"]
@@ -3541,9 +4111,8 @@ _LISTING_REGENERATE_MODULES: dict[str, dict[str, object]] = {
         "label": "候选书名",
         "kind": "json_titles",
         "system": (
-            "你是网文上架编辑。请生成 10 个候选书名。返回 JSON 数组，每个元素是 "
-            '{"title": "...", "subtitle": "...", "angle": "切入角度", "recommendation": "主推/备选/广告测试"}。'
-            "标题之间应有差异（一个直接型、一个文学型、一个爽点型、一个反差型 …）。只输出 JSON。"
+            "候选书名由平台化书名工作流确定性生成。"
+            "此模块不会调用大模型生成覆盖标题。"
         ),
     },
     "reader_promise": {
@@ -3615,6 +4184,36 @@ async def _regenerate_listing_module(
     if module not in _LISTING_REGENERATE_MODULES:
         raise ValueError(f"unknown listing module: {module}")
     spec = _LISTING_REGENERATE_MODULES[module]
+
+    if module == "title_candidates":
+        from bestseller.services.book_listing import write_platform_title_workflow_artifacts
+
+        async with session_scope(settings) as session:
+            project = await get_project_by_slug(session, project_slug)
+            if project is None:
+                raise ValueError(f"project '{project_slug}' not found")
+            style_guide = await session.get(StyleGuideModel, project.id)
+            writing_profile = get_project_writing_profile(project, style_guide).model_dump(
+                mode="json"
+            )
+            story_bible = await build_story_bible_overview(session, project_slug)
+            listing_profile = build_book_listing_profile(
+                project=project,
+                writing_profile=writing_profile,
+                story_bible=story_bible,
+                output_base_dir=settings.output.base_dir,
+            )
+        listing_dir = Path(settings.output.base_dir).resolve() / project_slug / "listing"
+        write_platform_title_workflow_artifacts(listing_profile, listing_dir)
+        return {
+            "module": module,
+            "label": spec["label"],
+            "value": listing_profile.get("title_candidates", []),
+            "model": "platform-title-workflow",
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "listing_profile": listing_profile,
+        }
 
     # Helper to import only when called (keeps import graph minimal).
     from bestseller.services.llm import (
@@ -4699,8 +5298,29 @@ def serve_web_app(
                     self._send_json(estimate_project_cost(ch_count, settings))
                     return
                 if path == "/api/tasks":
+                    tasks = task_manager.list_tasks()
+                    db_repair_tasks = asyncio.run(
+                        _load_db_repair_task_summaries(settings, tasks)
+                    )
+                    db_repair_slugs = {
+                        str(task.get("project_slug") or "")
+                        for task in db_repair_tasks
+                        if task.get("synthetic_db_repair_task")
+                    }
+                    if db_repair_slugs:
+                        tasks = [
+                            task
+                            for task in tasks
+                            if not (
+                                str(task.get("task_id") or "").startswith("recovered-")
+                                and str(task.get("project_slug") or "") in db_repair_slugs
+                                and str(task.get("status") or "")
+                                in {"failed", "incomplete"}
+                            )
+                        ]
+                    tasks.extend(db_repair_tasks)
                     self._send_json(
-                        _attach_task_chapter_word_stats(settings, task_manager.list_tasks())
+                        _attach_task_chapter_word_stats(settings, tasks)
                     )
                     return
                 if path == "/api/schedules":
@@ -4721,13 +5341,27 @@ def serve_web_app(
                     self._send_json(item)
                     return
                 if path.startswith("/api/tasks/"):
+                    progress_detail = path.endswith("/progress")
                     task_id = path.removeprefix("/api/tasks/")
+                    if progress_detail:
+                        task_id = task_id.removesuffix("/progress")
+                    task_id = task_id.strip("/")
                     task = task_manager.get_task(task_id)
+                    if task is None:
+                        task = _load_worker_task_summary(settings, task_id)
+                    if task is None:
+                        task = asyncio.run(
+                            _load_db_repair_task_summary(settings, task_id)
+                        )
                     if task is None:
                         self._route_not_found()
                         return
                     enriched_tasks = _attach_task_chapter_word_stats(settings, [task])
-                    self._send_json(enriched_tasks[0] if enriched_tasks else task)
+                    enriched_task = enriched_tasks[0] if enriched_tasks else task
+                    if progress_detail:
+                        self._send_json(_task_progress_payload(enriched_task))
+                    else:
+                        self._send_json(enriched_task)
                     return
                 project_slug = _match_project_route(path, "summary")
                 if project_slug is not None:
@@ -5262,6 +5896,30 @@ def serve_web_app(
                     task_id = path.removeprefix("/api/tasks/").removesuffix("/resume")
                     old = task_manager.get_task(task_id)
                     if old is None:
+                        if task_id.startswith("db-repair:"):
+                            slug = task_id.removeprefix("db-repair:").strip()
+                            job_id = _enqueue_repair_heal_job(settings.redis.url, slug)
+                            if job_id:
+                                self._send_json(
+                                    {
+                                        "ok": True,
+                                        "task_id": task_id,
+                                        "project_slug": slug,
+                                        "status": "queued",
+                                        "current_stage": "delegated_to_worker_self_heal",
+                                        "worker_job_id": job_id,
+                                    },
+                                    status=HTTPStatus.ACCEPTED,
+                                )
+                                return
+                            self._send_json(
+                                {
+                                    "ok": False,
+                                    "error": "Repair task was visible in DB but could not be enqueued",
+                                },
+                                status=HTTPStatus.CONFLICT,
+                            )
+                            return
                         self._send_json(
                             {"ok": False, "error": "Task not found"},
                             status=HTTPStatus.NOT_FOUND,

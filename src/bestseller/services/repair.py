@@ -2,7 +2,10 @@ from __future__ import annotations
 
 from collections import defaultdict
 from collections.abc import Callable, Iterable
+import json
 import logging
+from pathlib import Path
+import re
 from typing import Any
 from uuid import UUID
 
@@ -20,12 +23,21 @@ from bestseller.infra.db.models import (
     RewriteImpactModel,
     RewriteTaskModel,
     SceneCardModel,
+    SceneDraftVersionModel,
 )
 from bestseller.services.consistency import review_project_consistency
 from bestseller.services.exports import export_project_markdown
 from bestseller.services.pipelines import run_chapter_pipeline
 from bestseller.services.projects import get_project_by_slug
+from bestseller.services.quality_failure_events import (
+    QualityFailureEvent,
+    quality_failure_events_to_dicts,
+)
 from bestseller.services.rewrite_impacts import refresh_rewrite_impacts
+from bestseller.services.source_artifact_audit import (
+    SourceArtifactAuditReport,
+    audit_source_artifacts,
+)
 from bestseller.services.word_targets import (
     normalize_chapter_word_target,
     scene_word_target_for_chapter,
@@ -38,6 +50,69 @@ from bestseller.settings import AppSettings
 WORKFLOW_TYPE_PROJECT_REPAIR = "project_repair"
 ProgressCallback = Callable[[str, dict[str, Any] | None], None]
 logger = logging.getLogger(__name__)
+
+
+async def _chapter_has_incomplete_scene_drafts(
+    session: AsyncSession,
+    chapter: ChapterModel,
+    *,
+    language: str | None,
+) -> bool:
+    """Return True when current scene drafts suggest a chapter stopped mid-build."""
+
+    from bestseller.services.drafts import count_words  # noqa: PLC0415
+    from bestseller.services.output_hygiene import (  # noqa: PLC0415
+        collect_unfinished_artifact_issues,
+    )
+
+    rows = await session.execute(
+        select(SceneCardModel, SceneDraftVersionModel)
+        .outerjoin(
+            SceneDraftVersionModel,
+            and_(
+                SceneDraftVersionModel.scene_card_id == SceneCardModel.id,
+                SceneDraftVersionModel.is_current.is_(True),
+            ),
+        )
+        .where(SceneCardModel.chapter_id == chapter.id)
+        .order_by(SceneCardModel.scene_number.asc())
+    )
+    payloads = list(rows.all())
+    if not payloads:
+        return False
+
+    scene_numbers = [
+        int(scene.scene_number)
+        for scene, _draft in payloads
+        if getattr(scene, "scene_number", None) is not None
+    ]
+    last_scene_number = max(scene_numbers) if scene_numbers else 0
+
+    for scene, draft in payloads:
+        scene_number = int(getattr(scene, "scene_number", 0) or 0)
+        if draft is None:
+            return True
+        content = draft.content_md or ""
+        if collect_unfinished_artifact_issues(content, language=language):
+            return True
+
+        try:
+            target = int(getattr(scene, "target_word_count", 0) or 0)
+        except (TypeError, ValueError):
+            target = 0
+        if target < 300:
+            continue
+        try:
+            word_count = int(getattr(draft, "word_count", 0) or 0)
+        except (TypeError, ValueError):
+            word_count = 0
+        if word_count <= 0:
+            word_count = count_words(content)
+        floor_ratio = 0.70 if scene_number == last_scene_number else 0.55
+        floor_words = max(120, int(target * floor_ratio))
+        if word_count < floor_words:
+            return True
+    return False
 _ORPHAN_REWRITE_TASK_ERRORS = (
     "Rewrite task does not point to a source scene.",
     "Source scene for rewrite task was not found.",
@@ -67,6 +142,160 @@ async def _checkpoint_repair_progress(session: AsyncSession) -> None:
     commit = getattr(session, "commit", None)
     if callable(commit):
         await commit()
+
+
+def _project_repair_source_artifact_audit(
+    settings: AppSettings,
+    project: ProjectModel,
+) -> tuple[SourceArtifactAuditReport | None, str | None, str | None]:
+    """Audit source artifacts for project repair when an output package exists."""
+
+    output_dir = Path(settings.output.base_dir)
+    package_dir = output_dir / project.slug
+    if not package_dir.exists():
+        return None, None, "output_package_missing"
+
+    metadata = getattr(project, "metadata_json", None) or {}
+    report = audit_source_artifacts(
+        project.slug,
+        output_dir=output_dir,
+        expected_language=getattr(project, "language", None),
+        expected_platform=_source_audit_expected_platform(metadata),
+        expected_category=_source_audit_expected_category(project, metadata),
+    )
+    out_path = package_dir / "audits" / "source-artifacts" / "report.json"
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(
+        json.dumps(report.to_dict(), ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    return report, str(out_path), None
+
+
+def _source_audit_expected_platform(metadata: dict[str, Any]) -> str | None:
+    for key in (
+        "platform",
+        "target_platform",
+        "publishing_platform",
+        "canonical_platform",
+    ):
+        value = str(metadata.get(key) or "").strip()
+        if value and value != "framework":
+            return value
+    return None
+
+
+def _source_audit_expected_category(
+    project: ProjectModel,
+    metadata: dict[str, Any],
+) -> str | None:
+    for value in (
+        metadata.get("canonical_category"),
+        metadata.get("category_key"),
+        getattr(project, "genre", None),
+        getattr(project, "sub_genre", None),
+    ):
+        text = str(value or "").strip()
+        if text:
+            return text
+    return None
+
+
+def _source_audit_blocks_project_repair(
+    report: SourceArtifactAuditReport | None,
+) -> bool:
+    return bool(report and report.blocking_findings)
+
+
+def _source_audit_payload(
+    report: SourceArtifactAuditReport | None,
+) -> dict[str, Any]:
+    return report.to_dict() if report is not None else {}
+
+
+def _rewrite_task_failure_codes(task: RewriteTaskModel) -> list[str]:
+    metadata = task.metadata_json or {}
+    raw_codes = metadata.get("cause_ids") or metadata.get("blocking_codes")
+    if isinstance(raw_codes, str):
+        codes = [item.strip() for item in re.split(r"[;,]", raw_codes) if item.strip()]
+    elif isinstance(raw_codes, list):
+        codes = [str(item).strip() for item in raw_codes if str(item).strip()]
+    else:
+        codes = []
+    if not codes and metadata.get("write_safety_block_code"):
+        codes = [str(metadata["write_safety_block_code"])]
+    if not codes:
+        trigger = str(task.trigger_type or "rewrite_task").upper()
+        codes = [f"{trigger}_REPAIR_TASK"]
+    return codes[:8]
+
+
+def _rewrite_task_event_severity(task: RewriteTaskModel) -> str:
+    try:
+        priority = int(task.priority or 3)
+    except (TypeError, ValueError):
+        priority = 3
+    if priority <= 1:
+        return "critical"
+    if priority <= 2:
+        return "high"
+    if priority <= 4:
+        return "medium"
+    return "low"
+
+
+def _quality_failure_events_for_rewrite_task(
+    project: ProjectModel,
+    task: RewriteTaskModel,
+    chapter_numbers: Iterable[int],
+) -> list[dict[str, Any]]:
+    chapter_number = next(iter(_dedupe_sorted(chapter_numbers)), None)
+    severity = _rewrite_task_event_severity(task)
+    events = [
+        QualityFailureEvent(
+            slug=project.slug,
+            chapter_number=chapter_number,
+            stage="project_repair",
+            gate_id=str(task.trigger_type or "rewrite_task"),
+            code=code,
+            severity=severity,
+            language=getattr(project, "language", None),
+            platform=_source_audit_expected_platform(project.metadata_json or {}),
+            source_stage="draft",
+            preventable_stage="chapter_quality_gate",
+            remediation_class=str(task.rewrite_strategy or "repair_chapter"),
+            evidence_ref=str(task.id) if getattr(task, "id", None) else None,
+            repair_task_id=str(task.id) if getattr(task, "id", None) else None,
+            details={
+                "trigger_type": task.trigger_type,
+                "rewrite_strategy": task.rewrite_strategy,
+                "priority": task.priority,
+                "status": task.status,
+            },
+        )
+        for code in _rewrite_task_failure_codes(task)
+    ]
+    return quality_failure_events_to_dicts(events)
+
+
+def _stamp_project_repair_task_metadata(
+    project: ProjectModel,
+    task: RewriteTaskModel,
+    *,
+    chapter_numbers: Iterable[int],
+    source_audit_report: SourceArtifactAuditReport | None,
+) -> None:
+    metadata = dict(task.metadata_json or {})
+    metadata["project_repair_source_audit_checked"] = source_audit_report is not None
+    if source_audit_report is not None:
+        metadata["source_audit_report"] = _source_audit_payload(source_audit_report)
+    if not metadata.get("quality_failure_events"):
+        metadata["quality_failure_events"] = _quality_failure_events_for_rewrite_task(
+            project,
+            task,
+            chapter_numbers,
+        )
+    task.metadata_json = metadata
 
 
 async def _refresh_stale_truth_materializations_for_repair(
@@ -212,6 +441,12 @@ async def _load_publication_blocked_chapter_numbers(
         ):
             blocked.add(chapter_number)
         if collect_unfinished_artifact_issues(content, language=language):
+            blocked.add(chapter_number)
+        if await _chapter_has_incomplete_scene_drafts(
+            session,
+            chapter,
+            language=language,
+        ):
             blocked.add(chapter_number)
         if (
             detect_chapter_text_loop(content)
@@ -560,11 +795,27 @@ def _repair_audit_length_bounds(
     return min_words, max_words
 
 
-def _chapter_has_identity_write_safety_block(chapter: Any) -> bool:
+_IDENTITY_WRITE_SAFETY_BLOCK_CODES = frozenset(
+    {
+        "pronoun_mismatch",
+        "dead_alive",
+        "character_resurrection",
+    }
+)
+
+
+def _chapter_identity_write_safety_block_code(chapter: Any) -> str | None:
     metadata = getattr(chapter, "metadata_json", None) or {}
     if not isinstance(metadata, dict):
-        return False
-    return metadata.get("write_safety_block_code") == "pronoun_mismatch"
+        return None
+    code = str(metadata.get("write_safety_block_code") or "").strip()
+    if code in _IDENTITY_WRITE_SAFETY_BLOCK_CODES:
+        return code
+    return None
+
+
+def _chapter_has_identity_write_safety_block(chapter: Any) -> bool:
+    return _chapter_identity_write_safety_block_code(chapter) is not None
 
 
 def _release_resolved_identity_write_safety_block(
@@ -574,9 +825,10 @@ def _release_resolved_identity_write_safety_block(
     identity_registry: Iterable[Any],
     language: str,
 ) -> bool:
-    """Clear stale pronoun blocks when the current identity gate now passes."""
+    """Clear stale identity blocks when the current identity gate now passes."""
 
-    if not _chapter_has_identity_write_safety_block(chapter):
+    block_code = _chapter_identity_write_safety_block_code(chapter)
+    if block_code is None:
         return False
     content = str(getattr(draft, "content_md", "") or "") if draft is not None else ""
     if not content:
@@ -590,7 +842,7 @@ def _release_resolved_identity_write_safety_block(
         language=language or "zh-CN",
         chapter_number=getattr(chapter, "chapter_number", None),
     )
-    if any(violation.violation_type == "pronoun_mismatch" for violation in violations):
+    if any(violation.violation_type == block_code for violation in violations):
         return False
 
     metadata = dict(getattr(chapter, "metadata_json", None) or {})
@@ -605,7 +857,7 @@ def _release_resolved_identity_write_safety_block(
     ):
         metadata.pop(key, None)
     metadata["resolved_write_safety_block"] = {
-        "code": "pronoun_mismatch",
+        "code": block_code,
         "resolved_by": "identity_guard_revalidation",
         "previous_hint": previous_hint,
     }
@@ -889,6 +1141,90 @@ async def run_project_repair(
     current_step_name = "collect_pending_rewrite_tasks"
 
     try:
+        source_audit_report, source_audit_path, source_audit_skip_reason = (
+            _project_repair_source_artifact_audit(settings, project)
+        )
+        if source_audit_report is not None:
+            current_step_name = "source_artifact_audit"
+            workflow_run.current_step = current_step_name
+            source_audit_blocks = _source_audit_blocks_project_repair(source_audit_report)
+            source_audit_payload = _source_audit_payload(source_audit_report)
+            await create_workflow_step_run(
+                session,
+                workflow_run_id=workflow_run.id,
+                step_name=current_step_name,
+                step_order=step_order,
+                status=(
+                    WorkflowStatus.FAILED
+                    if source_audit_blocks
+                    else WorkflowStatus.COMPLETED
+                ),
+                output_ref={
+                    "project_slug": project_slug,
+                    "source_audit_path": source_audit_path,
+                    "source_blocked": source_audit_blocks,
+                    "source_audit_report": source_audit_payload,
+                },
+                error_message=(
+                    "Project repair blocked by source artifact audit"
+                    if source_audit_blocks
+                    else None
+                ),
+            )
+            step_order += 1
+            workflow_run.metadata_json = {
+                **workflow_run.metadata_json,
+                "source_artifact_audit_path": source_audit_path,
+                "source_artifact_audit": source_audit_payload,
+                "source_blocked": source_audit_blocks,
+            }
+            _emit_progress(
+                progress,
+                (
+                    "project_repair_source_artifact_blocked"
+                    if source_audit_blocks
+                    else "project_repair_source_artifact_audit_passed"
+                ),
+                {
+                    "project_slug": project_slug,
+                    "source_audit_path": source_audit_path,
+                    "source_blocked": source_audit_blocks,
+                    "blocking_findings": source_audit_payload.get(
+                        "blocking_findings",
+                        [],
+                    ),
+                },
+            )
+            await _checkpoint_repair_progress(session)
+            if source_audit_blocks:
+                workflow_run.status = WorkflowStatus.WAITING_HUMAN.value
+                workflow_run.current_step = "source_artifact_audit_blocked"
+                project.status = ProjectStatus.REVISING.value
+                await session.flush()
+                await _checkpoint_repair_progress(session)
+                return ProjectRepairResult(
+                    workflow_run_id=workflow_run.id,
+                    project_id=project.id,
+                    project_slug=project.slug,
+                    pending_rewrite_task_count=task_count,
+                    superseded_task_count=0,
+                    processed_chapters=[],
+                    review_report_id=None,
+                    quality_score_id=None,
+                    final_verdict="source_artifact_blocked",
+                    export_artifact_id=None,
+                    output_path=None,
+                    remaining_pending_rewrite_count=task_count,
+                    requires_human_review=True,
+                )
+            current_step_name = "collect_pending_rewrite_tasks"
+            workflow_run.current_step = current_step_name
+        else:
+            workflow_run.metadata_json = {
+                **workflow_run.metadata_json,
+                "source_artifact_audit_skipped": source_audit_skip_reason,
+            }
+
         truth_refreshed = await _refresh_stale_truth_materializations_for_repair(
             session,
             settings,
@@ -954,6 +1290,12 @@ async def run_project_repair(
                 project_slug=project_slug,
                 task=task,
                 refresh_impacts=refresh_impacts,
+            )
+            _stamp_project_repair_task_metadata(
+                project,
+                task,
+                chapter_numbers=chapter_numbers,
+                source_audit_report=source_audit_report,
             )
             for chapter_number in chapter_numbers:
                 chapter_task_ids[chapter_number].append(task.id)

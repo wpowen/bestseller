@@ -36,14 +36,103 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Iterable
+from typing import Any, Iterable, Mapping
 
 __all__ = [
     "LengthStabilityBand",
     "LengthStabilityReport",
     "LENGTH_STABILITY_ISSUE_SEVERITY",
+    "PLATFORM_CHAPTER_WORD_WINDOWS",
     "evaluate_chapter_length",
+    "resolve_chapter_word_window",
 ]
+
+
+# Platform-aware chapter-length windows. Source: ``config/platform_profiles.yaml``
+# under ``platform_profiles.<key>.pacing_preference.chapter_word_count``. These
+# values reflect the actual top-rank serial-fiction floors per platform; the
+# framework default (``config.generation.words_per_chapter``) is too lenient
+# for any commercial book targeting one of these platforms.
+PLATFORM_CHAPTER_WORD_WINDOWS: dict[str, dict[str, int]] = {
+    "qimao": {"min": 2500, "target": 3200, "max": 4000},
+    "qidian": {"min": 3000, "target": 3700, "max": 4500},
+    "tomato": {"min": 2000, "target": 2500, "max": 3000},
+}
+
+
+_PLATFORM_ALIASES: dict[str, tuple[str, ...]] = {
+    "qimao": ("七猫", "qimao"),
+    "qidian": ("起点", "qidian", "阅文"),
+    "tomato": ("番茄", "tomato", "fanqie"),
+}
+
+
+def _platform_key_from_text(text: Any) -> str | None:
+    if not isinstance(text, str):
+        return None
+    needle = text.strip().lower()
+    if not needle:
+        return None
+    for key, aliases in _PLATFORM_ALIASES.items():
+        if any(alias.lower() in needle for alias in aliases):
+            return key
+    return None
+
+
+def resolve_chapter_word_window(
+    project_metadata: Mapping[str, Any] | None,
+    *,
+    fallback_min: int,
+    fallback_target: int,
+    fallback_max: int,
+    audience: str | None = None,
+) -> tuple[int, int, int, str | None]:
+    """Resolve ``(min, target, max, platform_key_or_None)`` for a project.
+
+    Reads the same set of fields as ``project_targets_signing_platform``
+    in :mod:`bestseller.services.planner` so resolution stays consistent
+    across the framework.  When no commercial platform is detected, the
+    fallback values (typically ``config.generation.words_per_chapter``)
+    are returned untouched.
+    """
+    candidates: list[Any] = []
+    if isinstance(project_metadata, Mapping):
+        candidates.extend(
+            (
+                project_metadata.get("platform_target"),
+                project_metadata.get("target_platform"),
+                project_metadata.get("platform"),
+                project_metadata.get("content_mode"),
+            )
+        )
+        writing_profile = project_metadata.get("writing_profile")
+        if isinstance(writing_profile, Mapping):
+            market = writing_profile.get("market")
+            if isinstance(market, Mapping):
+                candidates.extend(
+                    (
+                        market.get("platform_target"),
+                        market.get("target_platform"),
+                        market.get("content_mode"),
+                        market.get("reader_promise"),
+                    )
+                )
+            serialization = writing_profile.get("serialization")
+            if isinstance(serialization, Mapping):
+                candidates.append(serialization.get("opening_mandate"))
+    if audience is not None:
+        candidates.append(audience)
+
+    for raw in candidates:
+        key = _platform_key_from_text(raw)
+        if key is None:
+            continue
+        window = PLATFORM_CHAPTER_WORD_WINDOWS.get(key)
+        if window is None:
+            continue
+        return window["min"], window["target"], window["max"], key
+
+    return fallback_min, fallback_target, fallback_max, None
 
 
 class LengthStabilityBand(str, Enum):

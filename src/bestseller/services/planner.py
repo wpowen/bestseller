@@ -1626,19 +1626,30 @@ async def _generate_volume_outline_with_repair_loop(
     )
 
 
-def _text_mentions_qimao(value: Any) -> bool:
+_SIGNING_PLATFORM_KEYWORDS: dict[str, tuple[str, ...]] = {
+    "qimao": ("七猫", "qimao"),
+    "qidian": ("起点", "qidian", "阅文"),
+    "tomato": ("番茄", "tomato", "fanqie"),
+}
+
+
+def _text_mentions_platform(value: Any, keywords: tuple[str, ...]) -> bool:
     if not isinstance(value, str):
         return False
     text = value.strip().lower()
-    return "七猫" in text or "qimao" in text
+    return any(keyword.lower() in text for keyword in keywords)
 
 
-def project_targets_qimao(project: ProjectModel) -> bool:
+def _text_mentions_qimao(value: Any) -> bool:
+    return _text_mentions_platform(value, _SIGNING_PLATFORM_KEYWORDS["qimao"])
+
+
+def _project_platform_candidates(project: ProjectModel) -> list[Any]:
     metadata = _mapping(project.metadata_json)
     profile = _mapping(metadata.get("writing_profile"))
     market = _mapping(profile.get("market"))
     serialization = _mapping(profile.get("serialization"))
-    candidates = [
+    return [
         metadata.get("platform_target"),
         metadata.get("target_platform"),
         metadata.get("platform"),
@@ -1650,7 +1661,19 @@ def project_targets_qimao(project: ProjectModel) -> bool:
         serialization.get("opening_mandate"),
         project.audience,
     ]
-    return any(_text_mentions_qimao(item) for item in candidates)
+
+
+def project_targets_signing_platform(project: ProjectModel) -> str | None:
+    """Return the matched signing-platform key (qimao / qidian / tomato), or None."""
+    candidates = _project_platform_candidates(project)
+    for platform_key, keywords in _SIGNING_PLATFORM_KEYWORDS.items():
+        if any(_text_mentions_platform(item, keywords) for item in candidates):
+            return platform_key
+    return None
+
+
+def project_targets_qimao(project: ProjectModel) -> bool:
+    return project_targets_signing_platform(project) == "qimao"
 
 
 def project_uses_signing_quality_gate(project: ProjectModel) -> bool:
@@ -1660,7 +1683,7 @@ def project_uses_signing_quality_gate(project: ProjectModel) -> bool:
     return bool(
         metadata.get("opening_quality_contract")
         or metadata.get("qimao_opening_contract")
-        or project_targets_qimao(project)
+        or project_targets_signing_platform(project)
     )
 
 

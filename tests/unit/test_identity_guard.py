@@ -581,6 +581,29 @@ def test_validate_zh_blocks_dead_character_after_death_chapter() -> None:
     assert any(v.violation_type == "dead_alive" for v in violations)
 
 
+def test_validate_zh_allows_dead_character_in_death_chapter() -> None:
+    registry = [
+        CharacterIdentity(
+            name="柳如是",
+            gender="female",
+            pronoun_set_zh="她",
+            is_alive=False,
+            death_chapter_number=20,
+        ),
+    ]
+    text = "柳如是在终章前说道：“我会守住这里。”"
+
+    violations = validate_scene_text_identity(
+        text,
+        registry,
+        language="zh-CN",
+        participant_names=["柳如是"],
+        chapter_number=20,
+    )
+
+    assert violations == []
+
+
 def test_validate_en_correct_pronouns_no_violations() -> None:
     registry = [
         CharacterIdentity(name="Alice", gender="female", pronoun_set_en="she/her"),

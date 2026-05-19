@@ -147,6 +147,31 @@ def build_scene(project_id, chapter_id, scene_number: int) -> SceneCardModel:
     return scene
 
 
+class FakeSourceAuditReport:
+    def __init__(self, *, blocking: bool) -> None:
+        self.blocking_findings = (
+            [
+                {
+                    "code": "SOURCE_FORBIDDEN_TERM",
+                    "severity": "critical",
+                    "message": "legacy framework term found",
+                    "artifact_path": "story-bible.md",
+                }
+            ]
+            if blocking
+            else []
+        )
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "slug": "my-story",
+            "passed": not self.blocking_findings,
+            "artifact_count": 1,
+            "findings": self.blocking_findings,
+            "blocking_findings": self.blocking_findings,
+        }
+
+
 @pytest.mark.asyncio
 async def test_run_project_repair_supersedes_tasks_and_reruns_affected_chapters(
     monkeypatch: pytest.MonkeyPatch,
@@ -282,6 +307,175 @@ async def test_run_project_repair_supersedes_tasks_and_reruns_affected_chapters(
     assert len(workflow_runs) == 1
     assert workflow_runs[0].status == "completed"
     assert len(workflow_steps) == 7
+
+
+@pytest.mark.asyncio
+async def test_run_project_repair_blocks_on_source_artifact_audit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = build_project()
+    task = RewriteTaskModel(
+        project_id=project.id,
+        trigger_type="chapter_review",
+        trigger_source_id=uuid4(),
+        rewrite_strategy="chapter_coherence_bridge_rewrite",
+        priority=1,
+        status="pending",
+        instructions="补强章节",
+        context_required=[],
+        metadata_json={},
+    )
+    task.id = uuid4()
+    progress_events: list[tuple[str, dict[str, object] | None]] = []
+
+    async def fake_get_project_by_slug(session, slug: str):
+        return project
+
+    async def fail_if_truth_refresh_runs(*args, **kwargs):
+        raise AssertionError("source audit should stop repair before truth refresh")
+
+    monkeypatch.setattr(repair_services, "get_project_by_slug", fake_get_project_by_slug)
+    monkeypatch.setattr(
+        repair_services,
+        "_project_repair_source_artifact_audit",
+        lambda settings, project: (
+            FakeSourceAuditReport(blocking=True),
+            "/tmp/my-story/audits/source-artifacts/report.json",
+            None,
+        ),
+    )
+    monkeypatch.setattr(
+        repair_services,
+        "_refresh_stale_truth_materializations_for_repair",
+        fail_if_truth_refresh_runs,
+    )
+
+    session = FakeSession(scalars_results=[[task]])
+    result = await repair_services.run_project_repair(
+        session,
+        build_settings(),
+        "my-story",
+        progress=lambda stage, payload: progress_events.append((stage, payload)),
+    )
+
+    workflow_runs = [obj for obj in session.added if isinstance(obj, WorkflowRunModel)]
+    workflow_steps = [obj for obj in session.added if isinstance(obj, WorkflowStepRunModel)]
+
+    assert result.final_verdict == "source_artifact_blocked"
+    assert result.requires_human_review is True
+    assert result.remaining_pending_rewrite_count == 1
+    assert project.status == "revising"
+    assert task.status == "pending"
+    assert workflow_runs[0].status == "waiting_human"
+    assert workflow_runs[0].current_step == "source_artifact_audit_blocked"
+    assert workflow_steps[0].step_name == "source_artifact_audit"
+    assert workflow_steps[0].status == "failed"
+    assert workflow_steps[0].output_ref["source_blocked"] is True
+    assert any(stage == "project_repair_source_artifact_blocked" for stage, _ in progress_events)
+
+
+@pytest.mark.asyncio
+async def test_run_project_repair_stamps_pending_tasks_with_failure_events(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = build_project()
+    chapter = build_chapter(project.id, 7)
+    task = RewriteTaskModel(
+        project_id=project.id,
+        trigger_type="chapter_review",
+        trigger_source_id=chapter.id,
+        rewrite_strategy="chapter_coherence_bridge_rewrite",
+        priority=2,
+        status="pending",
+        instructions="补强章节",
+        context_required=[],
+        metadata_json={"chapter_id": str(chapter.id), "cause_ids": ["LOOP", "LOW_PULSE"]},
+    )
+    task.id = uuid4()
+
+    async def fake_get_project_by_slug(session, slug: str):
+        return project
+
+    async def fake_refresh_truth(*args, **kwargs):
+        return False
+
+    async def fake_normalize_project_word_targets(session, *, project, settings):
+        return {"chapter_updates": 0, "scene_updates": 0}
+
+    async def fake_run_chapter_pipeline(session, settings, project_slug: str, chapter_number: int, **kwargs):
+        return ChapterPipelineResult(
+            workflow_run_id=uuid4(),
+            project_id=project.id,
+            chapter_id=chapter.id,
+            chapter_number=chapter_number,
+            scene_results=[],
+            chapter_draft_id=uuid4(),
+            chapter_draft_version_no=2,
+            final_verdict="pass",
+            requires_human_review=False,
+        )
+
+    async def fake_review_project_consistency(session, settings, project_slug: str, **kwargs):
+        return (
+            type("ReviewResultStub", (), {"verdict": "pass"})(),
+            type("ReportStub", (), {"id": uuid4()})(),
+            type("QualityStub", (), {"id": uuid4()})(),
+        )
+
+    monkeypatch.setattr(repair_services, "get_project_by_slug", fake_get_project_by_slug)
+    monkeypatch.setattr(
+        repair_services,
+        "_project_repair_source_artifact_audit",
+        lambda settings, project: (
+            FakeSourceAuditReport(blocking=False),
+            "/tmp/my-story/audits/source-artifacts/report.json",
+            None,
+        ),
+    )
+    monkeypatch.setattr(
+        repair_services,
+        "_refresh_stale_truth_materializations_for_repair",
+        fake_refresh_truth,
+    )
+    monkeypatch.setattr(
+        repair_services,
+        "_normalize_project_word_targets",
+        fake_normalize_project_word_targets,
+    )
+    monkeypatch.setattr(repair_services, "run_chapter_pipeline", fake_run_chapter_pipeline)
+    monkeypatch.setattr(
+        repair_services,
+        "review_project_consistency",
+        fake_review_project_consistency,
+    )
+
+    session = FakeSession(
+        scalar_results=[0],
+        scalars_results=[[task]],
+        execute_results=[[]],
+        get_map={(ChapterModel, chapter.id): chapter},
+    )
+    result = await repair_services.run_project_repair(
+        session,
+        build_settings(),
+        "my-story",
+        export_markdown=False,
+    )
+
+    workflow_steps = [obj for obj in session.added if isinstance(obj, WorkflowStepRunModel)]
+    metadata = task.metadata_json
+    events = metadata["quality_failure_events"]
+
+    assert result.final_verdict == "pass"
+    assert task.status == "cancelled"
+    assert metadata["project_repair_source_audit_checked"] is True
+    assert metadata["source_audit_report"]["passed"] is True
+    assert [event["code"] for event in events] == ["LOOP", "LOW_PULSE"]
+    assert {event["chapter_number"] for event in events} == {7}
+    assert all(event["repair_task_id"] == str(task.id) for event in events)
+    assert workflow_steps[0].step_name == "source_artifact_audit"
+    assert workflow_steps[0].status == "completed"
+    assert workflow_steps[0].output_ref["source_blocked"] is False
 
 
 @pytest.mark.asyncio

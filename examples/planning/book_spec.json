@@ -3,6 +3,18 @@
   "logline": "一名被放逐的星港导航员，为了阻止帝国篡改航道历史，被迫在谎言、旧爱与失控舰队之间做出选择。",
   "genre": "science-fantasy",
   "target_audience": "web-serial",
+  "expected_character_count": 4,
+  "dramatic_question": "沈砚能否在揭穿帝国航道篡改真相的同时，阻止下一次黑潮航线灾难？",
+  "naming_pool": [
+    "沈砚",
+    "祁镇",
+    "顾临",
+    "港务官",
+    "林澈",
+    "邵衡",
+    "白栀",
+    "闻遥"
+  ],
   "tone": [
     "紧张",
     "冷峻",

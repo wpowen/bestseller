@@ -130,6 +130,39 @@ def test_public_writing_preset_catalog_payload_sanitizes_story_specific_override
     assert genre_character == {}
 
 
+def test_public_writing_preset_catalog_exposes_genre_dimensions() -> None:
+    payload = web_server._public_writing_preset_catalog_payload()
+
+    dimensions = payload["genre_dimensions"]
+    presets = payload["genre_presets"]
+    romantasy = next(item for item in presets if item["key"] == "cn-romantasy-court")
+    reader_reward_options = [item["value"] for item in dimensions["reader_rewards"]["options"]]
+
+    assert "reader_rewards" in dimensions
+    assert "关系回报" in reader_reward_options
+    assert "幻想言情" == romantasy["genre"]
+    assert "言情/女性向" in romantasy["heat_domains"]
+    assert "关系回报" in romantasy["reader_rewards"]
+    assert "情绪关系" in romantasy["narrative_drives"]
+
+
+def test_public_writing_preset_catalog_exposes_genre_creativity() -> None:
+    payload = web_server._public_writing_preset_catalog_payload()
+
+    creativity = payload["genre_creativity"]
+    pack = creativity["cn-romantasy-court"]
+    direction = next(
+        item for item in pack["directions"] if item["key"] == "distilled-mechanism-remix"
+    )
+
+    assert pack["default_key"] == "genre-synthesis"
+    assert len(pack["directions"]) >= 4
+    assert "题材库" in direction["source_mix"]
+    assert any(item.startswith("蒸馏库:") for item in direction["source_mix"])
+    assert "premise_seed" in direction["prompt_hints"]
+    assert direction["prompt_hints"]["usage_rule"]
+
+
 def test_quickstart_task_uses_sanitized_genre_profile(monkeypatch: pytest.MonkeyPatch) -> None:
     manager = web_server.WebTaskManager()
     captured: dict[str, object] = {}
@@ -154,6 +187,36 @@ def test_quickstart_task_uses_sanitized_genre_profile(monkeypatch: pytest.Monkey
     assert captured["payload"]["target_words"] == (
         12 * web_server.load_settings().generation.words_per_chapter.target
     )
+
+
+def test_quickstart_task_passes_selected_creative_direction(monkeypatch: pytest.MonkeyPatch) -> None:
+    manager = web_server.WebTaskManager()
+    captured: dict[str, object] = {}
+
+    def fake_create_autowrite_task(self: object, payload: dict[str, object]) -> dict[str, object]:
+        captured["payload"] = payload
+        return {"task_id": "demo-task"}
+
+    monkeypatch.setattr(
+        web_server.WebTaskManager, "create_autowrite_task", fake_create_autowrite_task
+    )
+
+    task = manager.create_quickstart_task(
+        {
+            "genre_key": "cn-romantasy-court",
+            "creative_key": "cross-genre-friction",
+            "chapter_count": 12,
+        }
+    )
+
+    payload = captured["payload"]
+    hints = payload["user_hints"]
+    assert task["quickstart_meta"]["creative_key"] == "cross-genre-friction"
+    assert task["quickstart_meta"]["creative_title"] == "奇幻/玄幻/异世界 × 言情/女性向"
+    assert payload["creative_key"] == "cross-genre-friction"
+    assert payload["creative_brief"]["key"] == "cross-genre-friction"
+    assert hints["creative_direction"] == "奇幻/玄幻/异世界 × 言情/女性向"
+    assert "固定套路" in hints["usage_rule"]
 
 
 def test_project_repair_status_payload_marks_repair_gate() -> None:

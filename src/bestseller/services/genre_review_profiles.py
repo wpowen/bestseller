@@ -234,10 +234,10 @@ _GENRE_TO_CATEGORY_MAP: dict[str, str] = {
     "urban-xiuxian-2-0": "action-progression",
     "litrpg-progression": "action-progression",
     "urban-fantasy": "action-progression",
-    "gamelit-isekai": "action-progression",
+    "gamelit-isekai": "otherworld-cross-system",
     "apocalypse-survival": "action-progression",
     "ya-fantasy": "action-progression",
-    "portal-fantasy": "action-progression",
+    "portal-fantasy": "otherworld-cross-system",
     "cultivation-western": "action-progression",
     "monster-evolution": "action-progression",
     "superhero-fiction": "action-progression",
@@ -252,6 +252,11 @@ _GENRE_TO_CATEGORY_MAP: dict[str, str] = {
     "paranormal-romance": "relationship-driven",
     "cozy-fantasy": "relationship-driven",
     "slow-burn-romance": "relationship-driven",
+    "cn-romantasy-court": "relationship-driven",
+    "youth-campus-growth": "relationship-driven",
+    "urban-realistic-family": "relationship-driven",
+    "bl-relationship-case": "relationship-driven",
+    "palace-mystery-female": "relationship-driven",
     # suspense-mystery
     "suspense-detective": "suspense-mystery",
     "rule-horror": "suspense-mystery",
@@ -262,6 +267,7 @@ _GENRE_TO_CATEGORY_MAP: dict[str, str] = {
     "cozy-mystery": "suspense-mystery",
     "detective-procedural": "suspense-mystery",
     "thriller-conspiracy": "suspense-mystery",
+    "high-concept-scifi": "suspense-mystery",
     # strategy-worldbuilding
     "history-hegemony": "strategy-worldbuilding",
     "starsea-war": "strategy-worldbuilding",
@@ -283,7 +289,7 @@ _GENRE_TO_CATEGORY_MAP: dict[str, str] = {
 
 
 # ---------------------------------------------------------------------------
-# Raw profile data for all 9 categories (including "default")
+# Raw profile data for all 10 categories (including "default")
 # ---------------------------------------------------------------------------
 
 _GENRE_REVIEW_PROFILES: dict[str, dict[str, Any]] = {
@@ -689,6 +695,255 @@ _GENRE_REVIEW_PROFILES: dict[str, dict[str, Any]] = {
                 "2. Fix scene-transition gaps (add causal links or pressure transfer)\n"
                 "3. Strengthen the chapter-end hook (readers must anticipate the next chapter's threat or upgrade)\n"
                 "4. If combat density is low, add small-scale skirmishes or probing fights in preparation scenes."
+            ),
+        },
+    },
+    # ------------------------------------------------------------------
+    # OTHERWORLD-CROSS-SYSTEM
+    # ------------------------------------------------------------------
+    "otherworld-cross-system": {
+        "name": "异界跨体系 / Otherworld Cross-System",
+        "description": (
+            "以异界规则、穿越身份、系统约束或跨体系知识差为核心引擎的类型。"
+            "重点不是万能外挂，而是主角如何理解陌生规则、利用规则差、承担暴露代价和身份债务。"
+        ),
+        "scene_weights": {
+            "conflict_clarity": 1.35,
+            "payoff_density": 1.25,
+            "contract_alignment": 1.25,
+            "hook_strength": 1.2,
+            "pacing_alignment": 1.1,
+            "emotion": 0.9,
+        },
+        "chapter_weights": {
+            "continuity": 1.25,
+            "main_plot_progression": 1.2,
+            "ending_hook_effectiveness": 1.2,
+            "volume_mission_alignment": 1.15,
+            "contract_alignment": 1.2,
+        },
+        "signal_keywords": {
+            "conflict_terms_zh": [
+                "误读", "暴露", "审查", "身份债", "规则差",
+                "套利", "反噬", "宿主", "本地规则", "异常",
+            ],
+            "conflict_terms_en": [
+                "misread", "exposure", "audit", "identity debt", "rule gap",
+                "arbitrage", "backlash", "host identity", "local rule", "anomaly",
+            ],
+            "emotion_terms_zh": [
+                "陌生", "戒备", "心虚", "孤立", "试探",
+                "压迫", "亏欠", "被盯上", "不属于这里",
+            ],
+            "emotion_terms_en": [
+                "alienation", "guarded", "guilty", "isolated", "testing",
+                "pressure", "debt", "watched", "does not belong",
+            ],
+            "hook_terms_zh": [
+                "异常痕迹", "新规则", "系统任务", "身份债",
+                "高阶注视", "本地解释", "规则漏洞",
+            ],
+            "hook_terms_en": [
+                "anomaly trace", "new rule", "system task", "identity debt",
+                "higher attention", "local explanation", "rule loophole",
+            ],
+            "info_terms_zh": [
+                "旧知识", "系统面板", "本地常识", "规则边界", "宿主关系", "合法身份",
+            ],
+            "info_terms_en": [
+                "old knowledge", "system panel", "local common sense",
+                "rule boundary", "host relationship", "legitimate identity",
+            ],
+        },
+        "finding_messages": {
+            "conflict_low_zh": (
+                "跨体系冲突还不够具体。需要让旧经验、本地规则、系统限制或身份债务在场景内正面碰撞。"
+            ),
+            "conflict_low_en": (
+                "Cross-system conflict is not concrete enough. Old assumptions, local rules, "
+                "system limits, or identity debt need to collide inside the scene."
+            ),
+            "conflict_clarity_low_zh": (
+                "读者还看不清主角正在利用哪条规则差、暴露风险是什么、失败会付出什么代价。"
+            ),
+            "conflict_clarity_low_en": (
+                "Readers cannot yet see which rule gap is being exploited, what exposure risk exists, "
+                "or what failure would cost."
+            ),
+            "payoff_low_zh": (
+                "规则套利的收益不够可感知。需要明确主角获得了什么资源、身份空间或新规则理解。"
+            ),
+            "payoff_low_en": (
+                "The rule-arbitrage payoff is not tangible enough. Clarify the resource, identity room, "
+                "or rule insight gained."
+            ),
+            "hook_low_zh": (
+                "尾钩没有把异常痕迹、身份债务或更高阶审查推到下一章，追读牵引不足。"
+            ),
+            "hook_low_en": (
+                "The ending hook does not push anomaly traces, identity debt, or higher audit into the next chapter."
+            ),
+            "contract_low_zh": (
+                "当前场景没有兑现跨体系 scene contract：规则差、暴露代价和身份压力至少要落地一项。"
+            ),
+            "contract_low_en": (
+                "The scene has not delivered the cross-system contract: at least one of rule gap, "
+                "exposure cost, or identity pressure must land."
+            ),
+        },
+        "plan_rubric": {
+            "required_checks": [
+                "cross_system_mapping",
+                "identity_debt_tracking",
+                "exposure_cost_model",
+            ],
+            "min_antagonist_forces": 2,
+            "require_power_system_tiers": False,
+            "require_relationship_milestones": False,
+            "require_clue_chain": False,
+            "require_theme_per_volume": True,
+            "min_key_reveals_per_volume": 2,
+            "require_foreshadowing": True,
+            "llm_evaluation_prompt_zh": (
+                "请检查规划是否定义了跨体系映射规则、身份债务账本和异常暴露代价。"
+                "如果主角的旧知识或系统能力可以无边界解决问题, 判为不合格并给出修复建议。"
+            ),
+            "llm_evaluation_prompt_en": (
+                "Check whether the plan defines cross-system mapping rules, identity-debt tracking, "
+                "and exposure cost. If old knowledge or system ability solves problems without boundary, "
+                "mark it as failing and suggest repairs."
+            ),
+        },
+        "planner_prompts": {
+            "book_spec_system_zh": (
+                "你是一位专精异界跨体系小说的策划总监。核心职责是把穿越、系统或旧知识优势约束成有边界、有代价、有反噬的长篇引擎。"
+            ),
+            "book_spec_system_en": (
+                "You are a senior editor for otherworld cross-system fiction. Turn transmigration, system, "
+                "or old-knowledge advantages into bounded engines with cost and backlash."
+            ),
+            "book_spec_instruction_zh": (
+                "书籍规格必须定义: 1. 旧世界知识/系统能力与本地规则的映射边界; "
+                "2. 主角借用身份带来的关系债、阵营债或历史债; 3. 每次套利后的暴露成本; "
+                "4. 至少两组会追查异常的本地力量。"
+            ),
+            "book_spec_instruction_en": (
+                "The book spec must define: mapping boundaries between old-world/system knowledge and local rules; "
+                "identity debts carried by the borrowed role; exposure cost after each exploit; "
+                "and at least two local forces that investigate anomalies."
+            ),
+            "world_spec_system_zh": (
+                "你负责设计异界规则。世界不是换皮背景, 它必须通过常识、制度、文化和超凡规则改变主角选择。"
+            ),
+            "world_spec_system_en": (
+                "Design the otherworld rules. The world is not a reskin; common sense, institutions, culture, "
+                "and supernatural rules must change protagonist choices."
+            ),
+            "world_spec_instruction_zh": (
+                "世界设定必须列出本地规则、主角旧经验会误判的地方、规则漏洞、审查机制和合法化解释。"
+            ),
+            "world_spec_instruction_en": (
+                "List local rules, places where old assumptions mislead, exploitable gaps, audit mechanisms, "
+                "and plausible local explanations."
+            ),
+            "cast_spec_system_zh": (
+                "你负责角色和身份债务。每个关键本地人都要证明主角不能只拿身份便利, 也必须承担身份后果。"
+            ),
+            "cast_spec_system_en": (
+                "Own cast and identity debt. Key locals must prove the protagonist cannot take identity benefits "
+                "without bearing consequences."
+            ),
+            "cast_spec_instruction_zh": (
+                "角色表必须标注: 谁识别异常, 谁提供本地解释, 谁握有宿主旧账, 谁会因身份真相受伤。"
+            ),
+            "cast_spec_instruction_en": (
+                "Tag who notices anomalies, who provides local explanations, who holds old debts, "
+                "and who would be hurt by the identity truth."
+            ),
+            "volume_plan_system_zh": (
+                "你是异界跨体系卷级规划师。每卷必须围绕一条规则差或身份债务展开, 并在卷末提高审查强度。"
+            ),
+            "volume_plan_system_en": (
+                "You are a volume planner for otherworld cross-system fiction. Each volume centers on a rule gap "
+                "or identity debt and raises audit pressure by the end."
+            ),
+            "volume_plan_instruction_zh": (
+                "每卷规划必须明确本卷规则套利目标、身份债务兑现、暴露成本升级和下一卷更高阶注视。"
+            ),
+            "volume_plan_instruction_en": (
+                "Each volume must define the rule-arbitrage goal, identity-debt payoff, exposure-cost escalation, "
+                "and the higher attention that points to the next volume."
+            ),
+            "outline_system_zh": (
+                "你是异界跨体系章节大纲师。每章至少推进规则理解、身份压力、暴露风险或套利回报中的一项。"
+            ),
+            "outline_system_en": (
+                "You are a chapter outliner for otherworld cross-system fiction. Each chapter must move at least "
+                "one of rule understanding, identity pressure, exposure risk, or arbitrage payoff."
+            ),
+            "outline_instruction_zh": (
+                "章节大纲要避免连续解释设定。用试错、交易、误判、追查和代价来展示异界规则。"
+            ),
+            "outline_instruction_en": (
+                "Avoid consecutive exposition. Reveal otherworld rules through testing, trade, misread, pursuit, and cost."
+            ),
+        },
+        "judge_prompts": {
+            "scene_review_system_zh": (
+                "你是异界跨体系小说的场景审稿专家。重点审查规则差是否具体、系统/旧知识是否有边界、身份和暴露代价是否推进。"
+            ),
+            "scene_review_system_en": (
+                "You are a scene reviewer for otherworld cross-system fiction. Focus on concrete rule gaps, "
+                "bounded system/old knowledge, and movement in identity or exposure cost."
+            ),
+            "scene_review_instruction_zh": (
+                "评估场景时请关注: 主角是否验证了本地规则? 套利是否有代价? 身份债是否被推进? 尾钩是否暴露新的异常痕迹?"
+            ),
+            "scene_review_instruction_en": (
+                "Evaluate: did the protagonist test local rules? did the exploit cost something? "
+                "did identity debt advance? does the hook expose a new anomaly trace?"
+            ),
+            "chapter_review_system_zh": (
+                "你是异界跨体系小说的章节审稿专家。章节必须形成规则发现、错误代价、收益兑现和风险升级的闭环。"
+            ),
+            "chapter_review_system_en": (
+                "You are a chapter reviewer for otherworld cross-system fiction. A chapter should close a loop of "
+                "rule discovery, error cost, payoff, and risk escalation."
+            ),
+            "chapter_review_instruction_zh": (
+                "检查本章是否有明确的跨体系状态更新: 规则映射、身份债、暴露痕迹、系统限制或本地权力反应。"
+            ),
+            "chapter_review_instruction_en": (
+                "Check for a clear cross-system state update: rule mapping, identity debt, anomaly trace, "
+                "system constraint, or local-power reaction."
+            ),
+            "scene_rewrite_system_zh": (
+                "你是异界跨体系小说的场景重写专家。重写时优先补规则边界、暴露代价和身份债务, 不要强化万能外挂。"
+            ),
+            "scene_rewrite_system_en": (
+                "You are a scene rewrite specialist for otherworld cross-system fiction. Prioritize rule boundaries, "
+                "exposure cost, and identity debt; do not strengthen all-powerful cheats."
+            ),
+            "scene_rewrite_instruction_zh": (
+                "重写时把抽象设定改成具体试错, 给每次系统/旧知识收益加上痕迹、代价或本地解释压力。"
+            ),
+            "scene_rewrite_instruction_en": (
+                "Rewrite abstract setting into concrete tests, and attach a trace, cost, or local-explanation pressure "
+                "to each system/old-knowledge payoff."
+            ),
+            "chapter_rewrite_system_zh": (
+                "你是异界跨体系小说的章节重写专家。确保章节结束时跨体系状态发生可记录变化。"
+            ),
+            "chapter_rewrite_system_en": (
+                "You are a chapter rewrite specialist for otherworld cross-system fiction. Ensure the chapter ends "
+                "with a recordable cross-system state change."
+            ),
+            "chapter_rewrite_instruction_zh": (
+                "补强章节闭环: 规则误读或验证 -> 规则差使用 -> 付出暴露/身份代价 -> 留下更高阶审查钩子。"
+            ),
+            "chapter_rewrite_instruction_en": (
+                "Strengthen the chapter loop: rule misread or test -> rule-gap use -> exposure or identity cost -> "
+                "higher-audit hook."
             ),
         },
     },
@@ -2946,6 +3201,20 @@ _GENRE_REVIEW_PROFILES: dict[str, dict[str, Any]] = {
 # ---------------------------------------------------------------------------
 
 _GENRE_NAME_KEYWORD_MAP: dict[str, str] = {
+    # otherworld-cross-system
+    "异界": "otherworld-cross-system",
+    "异世": "otherworld-cross-system",
+    "穿越": "otherworld-cross-system",
+    "系统": "otherworld-cross-system",
+    "主神": "otherworld-cross-system",
+    "诸天": "otherworld-cross-system",
+    "位面": "otherworld-cross-system",
+    "快穿": "otherworld-cross-system",
+    "otherworld": "otherworld-cross-system",
+    "cross-system": "otherworld-cross-system",
+    "isekai": "otherworld-cross-system",
+    "transmigration": "otherworld-cross-system",
+    "portal fantasy": "otherworld-cross-system",
     # action-progression
     "仙": "action-progression",
     "修仙": "action-progression",
@@ -3004,6 +3273,33 @@ _GENRE_NAME_KEYWORD_MAP: dict[str, str] = {
     "仙侠美学": "eastern-aesthetic",
     "eastern aesthetic": "eastern-aesthetic",
 }
+
+
+_PRIORITY_KEYWORD_MAP: tuple[tuple[str, tuple[str, ...]], ...] = (
+    (
+        "otherworld-cross-system",
+        (
+            "异界",
+            "异世",
+            "otherworld",
+            "cross-system",
+            "isekai",
+            "transmigration",
+            "portal fantasy",
+        ),
+    ),
+)
+
+
+def _resolve_priority_keyword_category(
+    genre: str,
+    sub_genre: str | None,
+) -> str | None:
+    haystack = " ".join(part for part in [genre, sub_genre] if part).lower()
+    for category_key, keywords in _PRIORITY_KEYWORD_MAP:
+        if any(keyword in haystack for keyword in keywords):
+            return category_key
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -3088,6 +3384,13 @@ def resolve_genre_review_profile(
         category = _GENRE_TO_CATEGORY_MAP.get(genre_preset_key)
         if category and category in profiles:
             return profiles[category]
+
+    # --- strategy 1.5: high-confidence canonical keyword override ---
+    # ``infer_genre_preset`` can map "异界穿越/系统" to generic progression.
+    # Explicit cross-system signals should stay on the dedicated profile.
+    priority_category = _resolve_priority_keyword_category(genre, sub_genre)
+    if priority_category and priority_category in profiles:
+        return profiles[priority_category]
 
     # --- strategy 2: infer via writing_presets ---
     try:

@@ -2450,14 +2450,61 @@ async def update_story_bible_from_chapter(
             raw = re.sub(r"^```(?:json)?\s*", "", raw)
             raw = re.sub(r"\s*```$", "", raw)
         updates = json.loads(raw)
-    except (json.JSONDecodeError, ValueError):
-        logger.warning("Failed to parse bible update JSON for ch%d", chapter.chapter_number)
-        return {
-            "characters_updated": 0,
-            "relationships_updated": 0,
-            "world_rules_added": 0,
-            "premium_state_events_recorded": 0,
-        }
+    except (json.JSONDecodeError, ValueError) as exc:
+        logger.warning(
+            "Failed to parse bible update JSON for ch%d; retrying with diagnostics",
+            chapter.chapter_number,
+        )
+        try:
+            from bestseller.services.llm_closed_loop import (
+                build_repair_user_prompt,
+                findings_from_exception,
+            )
+
+            retry_prompt = build_repair_user_prompt(
+                original_user_prompt=user_prompt,
+                findings=findings_from_exception(exc),
+                language=getattr(project, "language", None),
+            )
+            retry = await complete_text(
+                session,
+                settings,
+                LLMCompletionRequest(
+                    logical_role="editor",
+                    system_prompt=system_prompt,
+                    user_prompt=retry_prompt,
+                    fallback_response='{"character_updates":[],"relationship_updates":[],"world_updates":[]}',
+                    prompt_template="bible_update_v1_repair",
+                    prompt_version="1.0",
+                    project_id=project.id,
+                    workflow_run_id=workflow_run_id,
+                    metadata={
+                        "chapter_number": chapter.chapter_number,
+                        "semantic_repair_of": str(result.llm_run_id)
+                        if result.llm_run_id
+                        else None,
+                    },
+                ),
+            )
+            raw = retry.content.strip()
+            if raw.startswith("```"):
+                raw = re.sub(r"^```(?:json)?\s*", "", raw)
+                raw = re.sub(r"\s*```$", "", raw)
+            updates = json.loads(raw)
+        except Exception:
+            logger.warning(
+                "Failed to parse repaired bible update JSON for ch%d",
+                chapter.chapter_number,
+                exc_info=True,
+            )
+            return {
+                "characters_updated": 0,
+                "relationships_updated": 0,
+                "world_rules_added": 0,
+                "premium_state_events_recorded": 0,
+                "degraded": True,
+                "degraded_reason": "bible_update_json_parse_failed",
+            }
 
     counts = {
         "characters_updated": 0,

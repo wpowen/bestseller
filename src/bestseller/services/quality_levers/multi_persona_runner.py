@@ -120,12 +120,63 @@ async def _invoke_persona(
 
     parsed = decode_runner_result(result.content)
     if not parsed:
-        return PersonaInvocation(
-            persona_id=persona_id,
-            raw_response=None,
-            result=None,
-            error="json_parse_failed",
-        )
+        try:
+            from bestseller.services.llm_closed_loop import (
+                LLMGateFinding,
+                build_repair_user_prompt,
+            )
+
+            repair = await complete_text(
+                LLMCompletionRequest(
+                    logical_role="critic",
+                    model_tier="standard",
+                    system_prompt=system_prompt,
+                    user_prompt=build_repair_user_prompt(
+                        original_user_prompt=user_prompt,
+                        findings=[
+                            LLMGateFinding(
+                                code="PERSONA_CRITIQUE_JSON_PARSE_FAILED",
+                                severity="major",
+                                path="$",
+                                message="Persona critique did not return parseable JSON.",
+                                expected=(
+                                    "JSON with overall_score, must_rewrite, verdict, "
+                                    "top_3_issues, and one_line_takeaway."
+                                ),
+                                actual=(result.content or "")[:240],
+                                repair_action="Return only valid JSON matching the requested persona critique schema.",
+                            )
+                        ],
+                        language=None,
+                    ),
+                    fallback_response=_FALLBACK_RESPONSE,
+                    prompt_template=f"{call_context.prompt_template}_repair",
+                    prompt_version=call_context.prompt_version,
+                    project_id=call_context.project_id,
+                    workflow_run_id=call_context.workflow_run_id,
+                    step_run_id=call_context.step_run_id,
+                    metadata={
+                        "persona_id": persona_id,
+                        "semantic_repair": True,
+                    },
+                )
+            )
+            parsed = decode_runner_result(repair.content)
+            if not parsed:
+                return PersonaInvocation(
+                    persona_id=persona_id,
+                    raw_response=result.content,
+                    result=None,
+                    error="json_parse_failed",
+                )
+            result = repair
+        except Exception as exc:  # noqa: BLE001
+            return PersonaInvocation(
+                persona_id=persona_id,
+                raw_response=result.content,
+                result=None,
+                error=f"json_parse_repair_failed: {exc!r}",
+            )
     return PersonaInvocation(
         persona_id=persona_id,
         raw_response=parsed,

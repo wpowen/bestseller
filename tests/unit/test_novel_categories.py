@@ -22,10 +22,11 @@ pytestmark = pytest.mark.unit
 # ---------------------------------------------------------------------------
 
 
-def test_load_novel_category_registry_returns_all_nine() -> None:
+def test_load_novel_category_registry_returns_all_ten() -> None:
     registry = load_novel_category_registry()
     expected_keys = {
         "action-progression",
+        "otherworld-cross-system",
         "relationship-driven",
         "suspense-mystery",
         "strategy-worldbuilding",
@@ -68,6 +69,7 @@ def test_get_novel_category_unknown_key() -> None:
     "key",
     [
         "action-progression",
+        "otherworld-cross-system",
         "relationship-driven",
         "suspense-mystery",
         "strategy-worldbuilding",
@@ -115,6 +117,7 @@ def test_default_category_phases_order() -> None:
     "key",
     [
         "action-progression",
+        "otherworld-cross-system",
         "relationship-driven",
         "suspense-mystery",
         "strategy-worldbuilding",
@@ -149,6 +152,7 @@ def test_action_progression_has_power_seeker_archetype() -> None:
     "key",
     [
         "action-progression",
+        "otherworld-cross-system",
         "relationship-driven",
         "suspense-mystery",
         "strategy-worldbuilding",
@@ -206,6 +210,11 @@ def test_action_progression_has_fatal_disqualifier() -> None:
 def test_resolve_with_keyword_xianxia() -> None:
     cat = resolve_novel_category("仙侠", "修仙升级")
     assert cat.key == "action-progression"
+
+
+def test_resolve_with_keyword_otherworld_cross_system() -> None:
+    cat = resolve_novel_category("异界穿越", "系统规则")
+    assert cat.key == "otherworld-cross-system"
 
 
 def test_resolve_with_keyword_romance() -> None:

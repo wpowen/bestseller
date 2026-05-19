@@ -1,46 +1,107 @@
 key: distillation-generic
-name: Generic Distillation Fallback Design
+name: Rationalist Investigation Supernatural Hybrid
 source_ids:
 - source-0008
 status: draft_review
 applies_to_categories:
-- distillation-generic
-- distillation-fallback
+- supernatural_horror
+- investigation_thriller
+- mystery
+- urban_fantasy
+- psychological_horror
 required_contracts:
-- stub_content_bridging
-- progressive_content_loading
-- reader_patience_management
+  reader_promise: Evidence chain revelation delivers earned deductive payoffs; rationalist
+    protagonist separates supernatural truth from corrupted folklore; investigation
+    structure follows folklore prompt to physical evidence to witness testimony to
+    confrontation; romance operates as emotional anchor and misdirection; sensory-first
+    horror grounds supernatural threats in visceral bodily response; mysteries compound
+    rather than fully resolve; genre pivots between investigation rationalism and
+    visceral horror create tonal variety
+  core_mechanism: Investigation-driven supernatural revelation through forensic deduction,
+    memory analysis, and statistical anomaly detection with payoff delayed across
+    chapters
+  tone_contract: Genre pivot mid-chapter from rationalism to horror; tonal shatter
+    achieves maximum impact during emotional vulnerability; prose register change
+    signals transition rather than explicit breaks
+  mystery_contract: Evidence chain revelation with compound accumulation before deductive
+    leap; information withholding between characters; reluctant confession mechanics
+    gate backstory delivery
 state_variables:
-- fallback_progress
-- stub_content_depth
-- chapter_validity_flags
+  arc_progression:
+  - reluctant_resistance
+  - social_pressure_induction
+  - analytical_methodology_development
+  - primary_investigator_role
+  - betrayal_mortality_stakes
+  - geographic_reset_continuity
+  - arc_convergence_compounding_mysteries
+  - cosmological_framework_expansion
+  mood_oscillation:
+  - investigation_rationalism
+  - supernatural_acceptance_crisis
+  - romantic_vulnerability
+  - visceral_horror
+  - comedic_relief
+  - emotional_intimacy
+  - genre_pivot_shock
+  genre_mode:
+  - analytical_sequence
+  - emotional_anchor
+  - horror_climax
+  - mystery_deepening
 chapter_change_vectors:
-- trigger: chapter_access_attempt
-  response: render_stub_with_progressive_disclosure
-  vector_type: progressive_reveal
-- trigger: content_availability_check
-  response: toggle_stub_validity_state
-  vector_type: binary_state_flip
-- trigger: volume_boundary_crossing
-  response: reset_stub_content_indicators
-  vector_type: state_reset
+  rationalism_to_horror: Protagonist maintains investigation rationalism until deliberate
+    tone shatter during emotional vulnerability peak; horror reintroduced through
+    sensory disruption preceding explicit threat
+  intimacy_to_visceral: Emotional climax achieved through vulnerability; grief or
+    breakdown serves as narrative peak replacing physical confrontation; romantic
+    tension builds expectations subverted by identity revelation
+  mystery_to_resolution: 'Two-part payoff: physical discovery followed by emotional
+    or supernatural response; arc convergence brings multiple mystery threads into
+    intersection before partial resolution'
 reader_rewards:
-- distillable_mechanism_reliability
-- anticipation_building_through_gaps
-- completionist_completion_satisfaction
+  intellectual: Evidence chain revelation delivering earned deductive payoffs; statistical
+    anomaly patterns suggesting impossible supernatural selection; forensic observation
+    establishing protagonist competence
+  emotional: Romantic tension with unreliable subplot structures; terminal diagnosis
+    motivation transforming death sentence into active mission; relationship development
+    through supernatural pressure
+  mystery: Mystery deepening that compounds rather than resolves creating perpetual
+    forward tension; identity revelation recontextualizing previous scenes; layered
+    deception maintaining ally/enemy uncertainty
+  visceral: Sensory-first horror grounded in bodily response (cold, dread, tactile
+    wrongness); supernatural manifestation through ordinary object defamiliarization;
+    body horror through biological corruption
+  atmospheric: Environmental anomaly discovery creating supernatural tension; legend
+    corruption separating folklore from truth; buildup through absence rather than
+    presence
 hook_or_aftereffect_types:
-- type: stub_anticipation_hook
-  placement: chapter_opening
-  mechanism: strategic_content_gaps_generate_curiosity
-- type: reliability_promise_hook
-  placement: volume_opening
-  mechanism: implicit_contract_that_content_will_manifest
-- type: completion_aftereffect
-  placement: chapter_closing
-  mechanism: satisfaction_from_bridging_known_to_unknown
-forbidden_defaults:
-- full_content_rendering_when_stub_only
-- skip_chapter_on_missing_content
-- generic_filler_substitution
-- omission_of_stub_indicators
-- content_promise_without_delivery_mechanism
+  prophecy_hooks: Cryptic partial message delivered through supernatural medium creating
+    resolution/new mystery duality
+  terminal_urgency: Time-locked commitment with specific temporal marker requiring
+    action by deadline
+  reputation_subversion: Established character reputation (timid/helpful) revealed
+    as hidden competence under pressure maximizing twist impact through misdirection
+  romance_subversion: Intimate scenes building reader expectations that identity-twist
+    subverts; romantic investment recontextualized as manipulation
+  protective_subversion: Malevolent reputation masking self-sacrificing protection;
+    apparent threat concealing benevolent intent
+  forbidden_defaults:
+    character_tropes: Generic Western urban fantasy naming conventions; protagonist
+      intellectual hubris without visible vulnerability balance; ensemble exceeding
+      5-7 active characters per arc
+    narrative_pacing: Front-loaded exposition before primary narrative; abrupt tonal
+      transition without register signaling; chapter endings over-relying on unanswered
+      questions without 2-3 chapter delivery
+    mystery_design: Mysteries accumulating faster than resolution; insufficient rule
+      establishment creating plot convenience; major identity reveals exceeding one
+      per arc
+    genre_balance: Investigation rationalism undermined by unreliable narrator destroying
+      evidence; pure romantic subplot displacing mystery investigation as primary
+      driver
+    horror_ mechanics: Supernatural threats introduced without sensory accumulation;
+      comedic relief disrupting horror atmosphere without transition scaffolding;
+      body horror without visceral grounding in bodily response
+    world_building: Cultural terminology requiring deep context without explanation;
+      real historical figure specific details without anthropological framing; supernatural
+      rule mechanics requiring technical exposition

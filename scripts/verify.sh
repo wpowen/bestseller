@@ -44,7 +44,7 @@ cleanup() {
 trap cleanup EXIT
 
 echo "Running unit tests..."
-"$PYTHON_BIN" -m pytest tests/unit -q
+"$PYTHON_BIN" -m pytest tests/unit -q --no-cov
 
 echo "Initializing database..."
 "$RUN_BIN" db init >/dev/null

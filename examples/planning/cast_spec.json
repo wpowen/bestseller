@@ -3,12 +3,43 @@
     "name": "沈砚",
     "age": 29,
     "role": "protagonist",
+    "gender": "male",
+    "pronoun_set_zh": "他",
+    "pronoun_set_en": "he/him",
     "background": "曾是帝国边境最年轻的持证导航员，因黑潮失航事故被放逐到碎潮星港。",
     "goal": "找到航图被篡改的铁证并阻止帝国再次误导整条边境航道。",
     "fear": "再次因为自己的判断失误害死整船人。",
     "flaw": "过度控制、很难信任别人。",
     "strength": "对异常航标有近乎偏执的敏锐直觉。",
     "secret": "他一直怀疑当年的事故并不是单纯判断失误。",
+    "ip_anchor": {
+      "quirks": ["思考时反复摩挲旧校准钥匙", "听到警报会先看航标偏移值", "说谎前会把手套扣紧"],
+      "tag_memory": "紧张时拇指摩挲旧校准钥匙边缘",
+      "core_wound": "七年前他亲手输入的最后一次航线修正被认定为舰队覆灭的直接原因。"
+    },
+    "psych_profile": {
+      "mbti": "INTJ",
+      "enneagram": "5w6",
+      "big_five": {"openness": 72, "conscientiousness": 91, "extraversion": 24, "agreeableness": 38, "neuroticism": 67}
+    },
+    "life_history": {
+      "formative_events": [
+        {"age": 17, "title": "第一次独立校准", "summary": "在边境风暴中救回一艘补给船。", "impact": "相信精确判断可以压过恐惧。"},
+        {"age": 22, "title": "黑潮失航事故", "summary": "他的签名出现在错误航线记录上。", "impact": "把所有失控都归咎于自己。"}
+      ],
+      "education": "帝国导航学院边境航道专业",
+      "career_history": "从最年轻持证导航员变成碎潮星港被放逐的临时校准工"
+    },
+    "family_imprint": {
+      "parenting_style": "父亲用军纪式沉默要求他永远不要解释失败。",
+      "sibling_dynamics": "独子，习惯独自承担所有责任。",
+      "inherited_values": "真相必须能被记录证明，口头辩解没有价值。"
+    },
+    "beliefs": {
+      "religion": "无宗教",
+      "philosophical_stance": "证据高于秩序",
+      "ideology": "任何权力都不能修改底层记录后要求幸存者沉默。"
+    },
     "arc_trajectory": "从只相信个人控制到学会带队协作并承担公开对抗体制的责任。",
     "arc_state": "开场时仍在逃避当年的真相",
     "knowledge_state": {
@@ -33,12 +64,29 @@
   "antagonist": {
     "name": "祁镇",
     "role": "antagonist",
+    "gender": "male",
+    "pronoun_set_zh": "他",
+    "pronoun_set_en": "he/him",
     "background": "帝国航道署边境校准总监。",
     "goal": "在黑潮真相曝光前彻底重写边境航图并清除所有旧记录。",
     "fear": "底层日志被外界读取后，帝国高层会把责任推到自己身上。",
     "flaw": "相信秩序比真实更重要，因此低估人会为了真相铤而走险。",
     "strength": "掌握档案权限和军令调度能力。",
     "secret": "当年的事故中，他亲自批准过一份非法校准。",
+    "ip_anchor": {
+      "quirks": ["每次下令前都会擦拭银色袖扣", "说到秩序时会把文件边角压平", "从不在公开频道提高音量"],
+      "tag_memory": "擦平文件边角后才签署命令",
+      "core_wound": "年轻时亲眼见过边境航道因无序争抢而害死一整座移民站。"
+    },
+    "villain_charisma": {
+      "noble_motivation": "他真心相信边境航道一旦失去统一秩序，普通居民会先被混乱吞没。",
+      "pain_origin": "少年时期所在移民站因私营船队抢道失控，祁镇失去了妹妹。",
+      "redeeming_qualities": ["会优先撤离无关平民，即使这会拖慢清除证据的速度。"],
+      "philosophical_appeal": "真相如果立刻摧毁秩序，弱者可能连活到真相公开那天的机会都没有。",
+      "personal_code": ["不主动牺牲儿童和医疗船。"],
+      "tragic_irony": "他为了守住航道秩序，亲手制造了更大规模的航道谎言。",
+      "protagonist_mirror": "他和沈砚都把一次灾难当成终身责任，只是一个选择公开真相，一个选择控制真相。"
+    },
     "arc_trajectory": "从幕后操盘到被迫亲自下场追杀沈砚。",
     "arc_state": "仍处于可控局面",
     "knowledge_state": {
@@ -64,12 +112,19 @@
     {
       "name": "顾临",
       "role": "ally",
+      "gender": "male",
+      "pronoun_set_zh": "他",
+      "pronoun_set_en": "he/him",
       "background": "沈砚的旧搭档，现任巡逻舰副官。",
       "goal": "确认当年事故真相并保护仍留在边境航线上的幸存者。",
       "fear": "再次在关键时刻站错队。",
       "flaw": "喜欢把真实情绪压到任务之后。",
       "strength": "判断快，执行力强，擅长在军方体系里周旋。",
       "secret": "当年他并不是离开，而是被迫去送一份未完成的求救包。",
+      "ip_anchor": {
+        "tag_memory": "回答问题前会先按住右耳通讯器三秒",
+        "independent_life": "他每周给边境伤兵院寄一箱无署名的旧航图教材。"
+      },
       "arc_trajectory": "从沉默自保到重新和沈砚并肩作战。",
       "arc_state": "表面冷静，内心仍有愧疚",
       "knowledge_state": {
@@ -91,8 +146,15 @@
     {
       "name": "港务官",
       "role": "wildcard",
+      "gender": "nonbinary",
+      "pronoun_set_zh": "ta",
+      "pronoun_set_en": "they/them",
       "background": "碎潮星港的执行官，只认命令不认人。",
       "goal": "保住自己的位置并确保碎潮星港不因调查遭到清洗。",
+      "ip_anchor": {
+        "tag_memory": "每次放行前都会用指节敲三下封港章",
+        "independent_life": "下班后会去给患病伴侣排队领取星港配给药。"
+      },
       "arc_state": "谨慎观望"
     }
   ],

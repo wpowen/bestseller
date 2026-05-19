@@ -1,0 +1,382 @@
+{
+  "version": 1,
+  "generated_at": "2026-05-16T16:23:44+00:00",
+  "privacy_policy": {
+    "repo_visible": "anonymous source_id, category, status, format, parse counts only",
+    "private_only": "source paths, normalized title keys, parser errors"
+  },
+  "target_count": 40,
+  "actual_count": 40,
+  "category_counts": {
+    "action-progression": 20,
+    "base-building": 4,
+    "eastern-aesthetic": 2,
+    "esports-competition": 3,
+    "otherworld-cross-system": 2,
+    "relationship-driven": 2,
+    "strategy-worldbuilding": 5,
+    "suspense-mystery": 2
+  },
+  "samples": [
+    {
+      "source_id": "benchmark-source-0001",
+      "canonical_category": "action-progression",
+      "sample_reason": "high_score_seed",
+      "processing_status": "parse_ready",
+      "file_format": "txt",
+      "chapter_count": 258,
+      "parser_warning_count": 0
+    },
+    {
+      "source_id": "benchmark-source-0002",
+      "canonical_category": "base-building",
+      "sample_reason": "high_score_seed",
+      "processing_status": "parse_ready",
+      "file_format": "txt",
+      "chapter_count": 865,
+      "parser_warning_count": 0
+    },
+    {
+      "source_id": "benchmark-source-0003",
+      "canonical_category": "action-progression",
+      "sample_reason": "high_score_seed",
+      "processing_status": "parse_ready",
+      "file_format": "txt",
+      "chapter_count": 353,
+      "parser_warning_count": 0
+    },
+    {
+      "source_id": "benchmark-source-0004",
+      "canonical_category": "strategy-worldbuilding",
+      "sample_reason": "high_score_seed",
+      "processing_status": "parse_ready",
+      "file_format": "txt",
+      "chapter_count": 5,
+      "parser_warning_count": 0
+    },
+    {
+      "source_id": "benchmark-source-0005",
+      "canonical_category": "action-progression",
+      "sample_reason": "high_score_seed",
+      "processing_status": "parse_ready",
+      "file_format": "txt",
+      "chapter_count": 851,
+      "parser_warning_count": 0
+    },
+    {
+      "source_id": "benchmark-source-0006",
+      "canonical_category": "strategy-worldbuilding",
+      "sample_reason": "high_score_seed",
+      "processing_status": "parse_ready",
+      "file_format": "txt",
+      "chapter_count": 1125,
+      "parser_warning_count": 0
+    },
+    {
+      "source_id": "benchmark-source-0007",
+      "canonical_category": "action-progression",
+      "sample_reason": "high_score_seed",
+      "processing_status": "parse_ready",
+      "file_format": "txt",
+      "chapter_count": 1331,
+      "parser_warning_count": 0
+    },
+    {
+      "source_id": "benchmark-source-0008",
+      "canonical_category": "action-progression",
+      "sample_reason": "high_score_seed",
+      "processing_status": "parse_ready",
+      "file_format": "txt",
+      "chapter_count": 740,
+      "parser_warning_count": 0
+    },
+    {
+      "source_id": "benchmark-source-0009",
+      "canonical_category": "action-progression",
+      "sample_reason": "high_score_seed",
+      "processing_status": "parse_ready",
+      "file_format": "txt",
+      "chapter_count": 1044,
+      "parser_warning_count": 0
+    },
+    {
+      "source_id": "benchmark-source-0010",
+      "canonical_category": "base-building",
+      "sample_reason": "high_score_seed",
+      "processing_status": "parse_ready",
+      "file_format": "txt",
+      "chapter_count": 1,
+      "parser_warning_count": 0
+    },
+    {
+      "source_id": "benchmark-source-0011",
+      "canonical_category": "action-progression",
+      "sample_reason": "high_score_seed",
+      "processing_status": "parse_ready",
+      "file_format": "txt",
+      "chapter_count": 920,
+      "parser_warning_count": 0
+    },
+    {
+      "source_id": "benchmark-source-0012",
+      "canonical_category": "action-progression",
+      "sample_reason": "high_score_seed",
+      "processing_status": "parse_ready",
+      "file_format": "txt",
+      "chapter_count": 1423,
+      "parser_warning_count": 0
+    },
+    {
+      "source_id": "benchmark-source-0013",
+      "canonical_category": "strategy-worldbuilding",
+      "sample_reason": "high_score_seed",
+      "processing_status": "parse_ready",
+      "file_format": "txt",
+      "chapter_count": 1222,
+      "parser_warning_count": 0
+    },
+    {
+      "source_id": "benchmark-source-0014",
+      "canonical_category": "action-progression",
+      "sample_reason": "high_score_seed",
+      "processing_status": "parse_ready",
+      "file_format": "txt",
+      "chapter_count": 1020,
+      "parser_warning_count": 0
+    },
+    {
+      "source_id": "benchmark-source-0015",
+      "canonical_category": "action-progression",
+      "sample_reason": "high_score_seed",
+      "processing_status": "parse_ready",
+      "file_format": "txt",
+      "chapter_count": 1031,
+      "parser_warning_count": 0
+    },
+    {
+      "source_id": "benchmark-source-0016",
+      "canonical_category": "esports-competition",
+      "sample_reason": "high_score_seed",
+      "processing_status": "parse_ready",
+      "file_format": "txt",
+      "chapter_count": 1,
+      "parser_warning_count": 0
+    },
+    {
+      "source_id": "benchmark-source-0017",
+      "canonical_category": "action-progression",
+      "sample_reason": "high_score_seed",
+      "processing_status": "parse_ready",
+      "file_format": "txt",
+      "chapter_count": 1741,
+      "parser_warning_count": 0
+    },
+    {
+      "source_id": "benchmark-source-0018",
+      "canonical_category": "action-progression",
+      "sample_reason": "high_score_seed",
+      "processing_status": "parse_ready",
+      "file_format": "txt",
+      "chapter_count": 3484,
+      "parser_warning_count": 0
+    },
+    {
+      "source_id": "benchmark-source-0019",
+      "canonical_category": "action-progression",
+      "sample_reason": "high_score_seed",
+      "processing_status": "parse_ready",
+      "file_format": "txt",
+      "chapter_count": 1261,
+      "parser_warning_count": 0
+    },
+    {
+      "source_id": "benchmark-source-0020",
+      "canonical_category": "action-progression",
+      "sample_reason": "high_score_seed",
+      "processing_status": "parse_ready",
+      "file_format": "txt",
+      "chapter_count": 1590,
+      "parser_warning_count": 0
+    },
+    {
+      "source_id": "benchmark-source-0021",
+      "canonical_category": "action-progression",
+      "sample_reason": "high_score_seed",
+      "processing_status": "parse_ready",
+      "file_format": "txt",
+      "chapter_count": 973,
+      "parser_warning_count": 0
+    },
+    {
+      "source_id": "benchmark-source-0022",
+      "canonical_category": "action-progression",
+      "sample_reason": "high_score_seed",
+      "processing_status": "parse_ready",
+      "file_format": "txt",
+      "chapter_count": 952,
+      "parser_warning_count": 0
+    },
+    {
+      "source_id": "benchmark-source-0023",
+      "canonical_category": "action-progression",
+      "sample_reason": "high_score_seed",
+      "processing_status": "parse_ready",
+      "file_format": "txt",
+      "chapter_count": 1,
+      "parser_warning_count": 0
+    },
+    {
+      "source_id": "benchmark-source-0024",
+      "canonical_category": "action-progression",
+      "sample_reason": "category_fill:action-progression",
+      "processing_status": "parse_ready",
+      "file_format": "txt",
+      "chapter_count": 272,
+      "parser_warning_count": 0
+    },
+    {
+      "source_id": "benchmark-source-0025",
+      "canonical_category": "strategy-worldbuilding",
+      "sample_reason": "category_fill:strategy-worldbuilding",
+      "processing_status": "parse_ready",
+      "file_format": "txt",
+      "chapter_count": 1,
+      "parser_warning_count": 0
+    },
+    {
+      "source_id": "benchmark-source-0026",
+      "canonical_category": "suspense-mystery",
+      "sample_reason": "category_fill:suspense-mystery",
+      "processing_status": "parse_ready",
+      "file_format": "txt",
+      "chapter_count": 128,
+      "parser_warning_count": 0
+    },
+    {
+      "source_id": "benchmark-source-0027",
+      "canonical_category": "otherworld-cross-system",
+      "sample_reason": "category_fill:otherworld-cross-system",
+      "processing_status": "parse_ready",
+      "file_format": "txt",
+      "chapter_count": 1441,
+      "parser_warning_count": 0
+    },
+    {
+      "source_id": "benchmark-source-0028",
+      "canonical_category": "base-building",
+      "sample_reason": "category_fill:base-building",
+      "processing_status": "parse_ready",
+      "file_format": "txt",
+      "chapter_count": 1003,
+      "parser_warning_count": 0
+    },
+    {
+      "source_id": "benchmark-source-0029",
+      "canonical_category": "relationship-driven",
+      "sample_reason": "category_fill:relationship-driven",
+      "processing_status": "parse_ready",
+      "file_format": "txt",
+      "chapter_count": 608,
+      "parser_warning_count": 0
+    },
+    {
+      "source_id": "benchmark-source-0030",
+      "canonical_category": "esports-competition",
+      "sample_reason": "category_fill:esports-competition",
+      "processing_status": "parse_ready",
+      "file_format": "txt",
+      "chapter_count": 791,
+      "parser_warning_count": 0
+    },
+    {
+      "source_id": "benchmark-source-0031",
+      "canonical_category": "eastern-aesthetic",
+      "sample_reason": "category_fill:eastern-aesthetic",
+      "processing_status": "parse_ready",
+      "file_format": "txt",
+      "chapter_count": 514,
+      "parser_warning_count": 0
+    },
+    {
+      "source_id": "benchmark-source-0032",
+      "canonical_category": "action-progression",
+      "sample_reason": "category_fill:action-progression",
+      "processing_status": "parse_ready",
+      "file_format": "txt",
+      "chapter_count": 541,
+      "parser_warning_count": 0
+    },
+    {
+      "source_id": "benchmark-source-0033",
+      "canonical_category": "strategy-worldbuilding",
+      "sample_reason": "category_fill:strategy-worldbuilding",
+      "processing_status": "parse_ready",
+      "file_format": "txt",
+      "chapter_count": 142,
+      "parser_warning_count": 0
+    },
+    {
+      "source_id": "benchmark-source-0034",
+      "canonical_category": "suspense-mystery",
+      "sample_reason": "category_fill:suspense-mystery",
+      "processing_status": "parse_ready",
+      "file_format": "txt",
+      "chapter_count": 118,
+      "parser_warning_count": 0
+    },
+    {
+      "source_id": "benchmark-source-0035",
+      "canonical_category": "otherworld-cross-system",
+      "sample_reason": "category_fill:otherworld-cross-system",
+      "processing_status": "parse_ready",
+      "file_format": "txt",
+      "chapter_count": 4,
+      "parser_warning_count": 0
+    },
+    {
+      "source_id": "benchmark-source-0036",
+      "canonical_category": "base-building",
+      "sample_reason": "category_fill:base-building",
+      "processing_status": "parse_ready",
+      "file_format": "txt",
+      "chapter_count": 439,
+      "parser_warning_count": 0
+    },
+    {
+      "source_id": "benchmark-source-0037",
+      "canonical_category": "relationship-driven",
+      "sample_reason": "category_fill:relationship-driven",
+      "processing_status": "parse_ready",
+      "file_format": "txt",
+      "chapter_count": 4,
+      "parser_warning_count": 0
+    },
+    {
+      "source_id": "benchmark-source-0038",
+      "canonical_category": "esports-competition",
+      "sample_reason": "category_fill:esports-competition",
+      "processing_status": "parse_ready",
+      "file_format": "txt",
+      "chapter_count": 232,
+      "parser_warning_count": 1
+    },
+    {
+      "source_id": "benchmark-source-0039",
+      "canonical_category": "eastern-aesthetic",
+      "sample_reason": "category_fill:eastern-aesthetic",
+      "processing_status": "parse_ready",
+      "file_format": "txt",
+      "chapter_count": 590,
+      "parser_warning_count": 0
+    },
+    {
+      "source_id": "benchmark-source-0040",
+      "canonical_category": "action-progression",
+      "sample_reason": "category_fill:action-progression",
+      "processing_status": "parse_ready",
+      "file_format": "txt",
+      "chapter_count": 739,
+      "parser_warning_count": 0
+    }
+  ]
+}

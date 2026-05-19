@@ -294,6 +294,11 @@ class ChapterOutlineInput(BaseModel):
                         frac = round((sn - int(sn)) * 10)
                         if frac < 1:
                             scene["scene_number"] = idx + 1
+        reveal_weight = data.get("reveal_weight")
+        if isinstance(reveal_weight, (int, float)):
+            data["reveal_weight"] = max(0, min(5, int(reveal_weight)))
+        elif isinstance(reveal_weight, str) and reveal_weight.strip().isdigit():
+            data["reveal_weight"] = max(0, min(5, int(reveal_weight.strip())))
         return data
 
 

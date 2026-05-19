@@ -60,3 +60,28 @@ def test_chapter_outline_preserves_worldview_compliance_fields() -> None:
     assert chapter["location_refs"] == ["外门灵田"]
     assert chapter["faction_refs"] == ["宗门长老会"]
     assert chapter["key_reveals"] == ["信任债会改变灵田产出。"]
+
+
+def test_chapter_outline_clamps_reveal_weight() -> None:
+    batch = ChapterOutlineBatchInput.model_validate(
+        {
+            "batch_name": "volume-1-outline",
+            "chapters": [
+                {
+                    "chapter_number": 1,
+                    "goal": "主角验证第一条规则。",
+                    "reveal_weight": 8,
+                },
+                {
+                    "chapter_number": 2,
+                    "goal": "主角隐藏第二条线索。",
+                    "reveal_weight": "7",
+                },
+            ],
+        }
+    )
+
+    payload = batch.model_dump(mode="json", by_alias=True)
+
+    assert payload["chapters"][0]["reveal_weight"] == 5
+    assert payload["chapters"][1]["reveal_weight"] == 5

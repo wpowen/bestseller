@@ -98,6 +98,24 @@ def test_resolve_by_genre_string_fuzzy() -> None:
     )
 
 
+def test_resolve_otherworld_cross_system_by_keyword() -> None:
+    """Chinese genre strings with otherworld/system signals resolve to a dedicated profile."""
+    profile = resolve_genre_review_profile("异界穿越", "系统规则")
+    assert profile.category_key == "otherworld-cross-system"
+    assert profile.scene_weights.contract_alignment > 1.0
+
+
+def test_resolve_otherworld_cross_system_by_preset() -> None:
+    """Portal/Isekai presets should no longer borrow the action-progression profile."""
+    profile = resolve_genre_review_profile(
+        "portal fantasy",
+        None,
+        genre_preset_key="portal-fantasy",
+    )
+    assert profile.category_key == "otherworld-cross-system"
+    assert "identity_debt_tracking" in profile.plan_rubric.required_checks
+
+
 def test_resolve_by_genre_string_romance() -> None:
     """Chinese genre string '女性成长' resolves to relationship-driven."""
     profile = resolve_genre_review_profile("女性成长", None)
@@ -118,6 +136,7 @@ def test_signal_keywords_not_empty_for_core_categories() -> None:
     """Core category profiles must have non-empty conflict_terms_zh."""
     genre_to_category = [
         ("末日科幻", "action-progression"),
+        ("异界系统", "otherworld-cross-system"),
         ("女性成长", "relationship-driven"),
         ("悬疑推理", "suspense-mystery"),
     ]

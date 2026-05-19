@@ -68,6 +68,11 @@ from bestseller.services.material_density import (
     material_density_report_to_dict,
     refresh_project_material_reference_block,
 )
+from bestseller.services.model_pilot import (
+    list_model_pilots,
+    load_model_pilot,
+    run_model_pilot,
+)
 from bestseller.services.narrative import build_narrative_overview
 from bestseller.services.narrative_tree import (
     build_narrative_tree_overview,
@@ -129,6 +134,7 @@ from bestseller.services.workflows import (
 )
 from bestseller.services.writing_presets import (
     get_genre_preset,
+    get_genre_preset_dimensions,
     list_genre_presets,
     list_hot_genre_presets,
     list_length_presets,
@@ -158,6 +164,7 @@ retrieval_app = typer.Typer(help="Retrieval operations.")
 story_bible_app = typer.Typer(help="Story bible inspection operations.")
 narrative_app = typer.Typer(help="Narrative graph inspection operations.")
 benchmark_app = typer.Typer(help="Benchmark and evaluation operations.")
+model_pilot_app = typer.Typer(help="Multi-model novel pilot operations.")
 commercial_gate_app = typer.Typer(help="Commercial novel package gate operations.")
 premium_gate_app = typer.Typer(help="Premium novel readiness gate operations.")
 material_app = typer.Typer(help="Material library density and project material operations.")
@@ -182,6 +189,7 @@ app.add_typer(retrieval_app, name="retrieval")
 app.add_typer(story_bible_app, name="story-bible")
 app.add_typer(narrative_app, name="narrative")
 app.add_typer(benchmark_app, name="benchmark")
+app.add_typer(model_pilot_app, name="model-pilot")
 app.add_typer(commercial_gate_app, name="commercial-gate")
 app.add_typer(premium_gate_app, name="premium-gate")
 app.add_typer(material_app, name="material")
@@ -292,6 +300,19 @@ def _benchmark_progress_printer(stage: str, payload: dict[str, Any] | None = Non
         f"[benchmark] {labels.get(stage, stage)}{_format_progress_details(payload)}",
         err=True,
         fg=typer.colors.GREEN,
+    )
+
+
+def _model_pilot_progress_printer(stage: str, payload: dict[str, Any] | None = None) -> None:
+    labels = {
+        "model_pilot_variant_started": "开始模型试点变体",
+        "model_pilot_variant_completed": "模型试点变体完成",
+        "model_pilot_completed": "模型试点完成",
+    }
+    typer.secho(
+        f"[model-pilot] {labels.get(stage, stage)}{_format_progress_details(payload)}",
+        err=True,
+        fg=typer.colors.MAGENTA,
     )
 
 
@@ -588,6 +609,7 @@ def writing_preset_list() -> None:
         json.dumps(
             {
                 "chapter_word_policy": catalog.chapter_word_policy.model_dump(mode="json"),
+                "genre_dimensions": get_genre_preset_dimensions(),
                 "platform_presets": [
                     {
                         "key": preset.key,
@@ -604,6 +626,10 @@ def writing_preset_list() -> None:
                         "genre": preset.genre,
                         "sub_genre": preset.sub_genre,
                         "recommended_platforms": preset.recommended_platforms,
+                        "heat_domains": preset.heat_domains,
+                        "reader_rewards": preset.reader_rewards,
+                        "narrative_drives": preset.narrative_drives,
+                        "content_modes": preset.content_modes,
                         "target_word_options": preset.target_word_options,
                         "target_chapter_options": preset.target_chapter_options,
                     }
@@ -660,6 +686,9 @@ def writing_preset_hot(
                     "trend_window": preset.trend_window,
                     "trend_summary": preset.trend_summary,
                     "trend_keywords": preset.trend_keywords,
+                    "heat_domains": preset.heat_domains,
+                    "reader_rewards": preset.reader_rewards,
+                    "narrative_drives": preset.narrative_drives,
                     "recommended_platforms": preset.recommended_platforms,
                 }
                 for preset in list_hot_genre_presets(limit=limit)
@@ -1501,6 +1530,70 @@ def benchmark_run(
     asyncio.run(_run())
 
 
+@model_pilot_app.command("list")
+def model_pilot_list() -> None:
+    """List bundled multi-model novel pilots."""
+    payload = [item.model_dump(mode="json") for item in list_model_pilots()]
+    typer.echo(json.dumps(payload, ensure_ascii=False, indent=2))
+
+
+@model_pilot_app.command("run")
+def model_pilot_run(
+    pilot_id: str = typer.Argument("short-complete-30"),
+    pilot_file: Path | None = typer.Option(
+        None,
+        "--pilot-file",
+        exists=True,
+        file_okay=True,
+        dir_okay=False,
+    ),
+    variant: list[str] | None = typer.Option(
+        None,
+        "--variant",
+        help="Only run selected variant ids. Explicit selections may include disabled variants.",
+    ),
+    include_disabled: bool = typer.Option(
+        False,
+        "--include-disabled",
+        help="Run disabled variants too when --variant is not provided.",
+    ),
+    slug_prefix: str = typer.Option("pilot30", "--slug-prefix"),
+    export_markdown: bool = typer.Option(
+        True,
+        "--export-markdown/--no-export-markdown",
+        help="Whether to export chapter and project markdown artifacts.",
+    ),
+    auto_repair: bool = typer.Option(
+        True,
+        "--auto-repair/--no-auto-repair",
+        help="Automatically run one project repair pass when a variant needs attention.",
+    ),
+    show_progress: bool = typer.Option(True, "--progress/--no-progress"),
+) -> None:
+    """Run one complete-story pilot across configured LLM variants."""
+
+    async def _run() -> None:
+        settings = load_settings()
+        pilot = load_model_pilot(pilot_id, pilot_file=pilot_file)
+        async with session_scope(settings) as session:
+            result = await run_model_pilot(
+                session,
+                settings,
+                spec=pilot,
+                variant_ids=list(variant or []),
+                include_disabled=include_disabled,
+                slug_prefix=slug_prefix,
+                export_markdown=export_markdown,
+                auto_repair_on_attention=auto_repair,
+                progress=_model_pilot_progress_printer if show_progress else None,
+            )
+            typer.echo(
+                json.dumps(result.model_dump(mode="json"), ensure_ascii=False, indent=2)
+            )
+
+    asyncio.run(_run())
+
+
 @commercial_gate_app.command("package")
 def commercial_gate_package(
     package_dir: Annotated[
@@ -1587,14 +1680,16 @@ def commercial_gate_planning(
             project = await get_project_by_slug(session, project_slug)
             if project is None:
                 raise ValueError(f"Project '{project_slug}' was not found.")
-            chapters = list(
-                await session.scalars(
-                    select(ChapterModel)
-                    .options(selectinload(ChapterModel.scenes))
-                    .where(ChapterModel.project_id == project.id)
-                    .order_by(ChapterModel.chapter_number.asc())
+            chapters = []
+            if hasattr(session, "scalars"):
+                chapters = list(
+                    await session.scalars(
+                        select(ChapterModel)
+                        .options(selectinload(ChapterModel.scenes))
+                        .where(ChapterModel.project_id == project.id)
+                        .order_by(ChapterModel.chapter_number.asc())
+                    )
                 )
-            )
             payloads = []
             for chapter in chapters:
                 payloads.append(
@@ -1681,11 +1776,10 @@ def commercial_gate_project(
     """Evaluate project readiness against the ranking-grade novel framework."""
 
     async def _run() -> Any:
-        from bestseller.infra.db.models import NovelScorecardModel, StyleGuideModel
         from sqlalchemy import select
         from sqlalchemy.orm import selectinload
 
-        from bestseller.infra.db.models import ChapterModel
+        from bestseller.infra.db.models import ChapterModel, NovelScorecardModel, StyleGuideModel
 
         settings = load_settings()
         async with session_scope(settings) as session:
@@ -1717,14 +1811,16 @@ def commercial_gate_project(
                 else None
             )
             gate_findings: list[dict[str, Any]] = []
-            chapters = list(
-                await session.scalars(
-                    select(ChapterModel)
-                    .options(selectinload(ChapterModel.scenes))
-                    .where(ChapterModel.project_id == project.id)
-                    .order_by(ChapterModel.chapter_number.asc())
+            chapters = []
+            if hasattr(session, "scalars"):
+                chapters = list(
+                    await session.scalars(
+                        select(ChapterModel)
+                        .options(selectinload(ChapterModel.scenes))
+                        .where(ChapterModel.project_id == project.id)
+                        .order_by(ChapterModel.chapter_number.asc())
+                    )
                 )
-            )
             planning_payloads = [
                 {
                     "chapter_number": chapter.chapter_number,
@@ -1759,7 +1855,7 @@ def commercial_gate_project(
                 target_chapters=project.target_chapters,
                 package_root=Path(settings.output.base_dir) / project.slug,
                 long_serial_min_chapters=getattr(
-                    settings.pipeline,
+                    getattr(settings, "pipeline", None),
                     "commercial_planning_min_target_chapters",
                     50,
                 ),

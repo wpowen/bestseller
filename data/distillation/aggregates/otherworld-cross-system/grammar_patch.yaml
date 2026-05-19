@@ -1,50 +1,112 @@
 key: otherworld-cross-system
-name: 异界跨体系规则套利
+name: Cross-System Transmigration Grammar
 source_ids:
 - source-0001
 status: review
 applies_to_categories:
-- otherworld
-- transmigration
-- progression-fantasy
+- cultivation_fantasy
+- transmigration_rebirth
+- political_intrigue
+- power_system_hybrid
 required_contracts:
-- source_world_profession
-- target_world_dominant_rule_system
-- cross_system_mapping_limits
-- host_identity_debt
-- exposure_cost_model
+- Protagonist must demonstrate active agency through knowledge application or crisis
+  response within first three chapters
+- Power system exposition must occur through active scene application, obstacle confrontation,
+  or antagonist discovery—not internal monologue
+- Power revelation sequences must create visible antagonist reaction and measurable
+  world-state disruption
+- At least one major antagonist consequence must occur through protagonist-mediated
+  action with on-screen presence
+- Identity crisis beats require external pressure forcing visible choice between predecessor
+  loyalty and self-determination
+- Seal mechanics unlock only through earned crisis catalyst, not passive timeline
+  progression
+- Group formation must include reciprocal commitment moment with named cost or promise
+  from protagonist
+- Climactic battle resolution must allocate distinct finishing beats to different
+  characters rather than single protagonist sweep
 state_variables:
-- cross_system_understanding
-- old_system_adaptation
-- local_power_misread
-- bound_assets
-- political_entanglement
-- identity_debt
-- higher_authority_attention
+- '{''var_id'': ''knowledge_asymmetry'', ''description'': "Protagonist''s informational
+  advantage in medical/magical/political domains over naive opponents", ''tracking'':
+  ''accumulates through scene exposure and problem-solving application, resets relative
+  advantage when entering new domain''}'
+- '{''var_id'': ''identity_integration'', ''description'': ''Balance between predecessor
+  identity acceptance and protagonist autonomy'', ''tracking'': ''shifts through confrontation
+  forcing choice, tracked as percentage or binary state change at decision points''}'
+- '{''var_id'': ''seal_depth'', ''description'': ''Soul-possession karma limiting
+  accessible power—measured in accessibility percentage or threshold levels'', ''tracking'':
+  ''decreases through crisis-catalyst events, each unlock requires narrative justification
+  scene''}'
+- '{''var_id'': ''faction_standing'', ''description'': ''Protagonist positioning credibility
+  with light/dark magical factions'', ''tracking'': ''increases through demonstrated
+  capability, decreases through perceived threat or alliance with rival faction''}'
+- '{''var_id'': ''antagonist_reckoning'', ''description'': ''Accumulated consequences
+  owed to major villains—tracks which villains face resolution and by what method'',
+  ''tracking'': ''each major antagonist assigned resolution type (execution, imprisonment,
+  redemption, escape) with chapter assignment''}'
+- '{''var_id'': ''group_commitment'', ''description'': ''Formation stage of disparate
+  individuals into committed collective'', ''tracking'': ''from initial contact through
+  crisis-tested loyalty to formal commitment with reciprocal promise''}'
 chapter_change_vectors:
-- learn_local_rule
-- exploit_rule_gap
-- convert_enemy_or_resource
-- pay_identity_debt
-- reveal_higher_authority
-- increase_exposure_cost
+- '{''phase'': ''exile_to_underworld'', ''required'': [''Protagonist must exit political
+  exile through own initiative not granted permission'', ''Underworld traversal reveals
+  first sealed power hint through environmental interaction'', ''Knowledge asymmetry
+  creates first antagonist underestimation opportunity with visible consequence'']}'
+- '{''phase'': ''underworld_traversal'', ''required'': [''Seal partially responds
+  to crisis—first partial unlock demonstrating mechanism'', ''Predecessor identity
+  surfaces through environmental trigger or encounter forcing response'', ''Faction
+  interest in protagonist established through observation or recruitment attempt'']}'
+- '{''phase'': ''faction_confrontation'', ''required'': [''Antagonist assumptions
+  disrupted by revealed capability—minimum one major miscalculation shown'', ''Faction
+  alignment choice made visible with cost or consequence established'', ''Information
+  advantage applied across at least two distinct domains (medical, magical, political)'']}'
+- '{''phase'': ''power_structure_establishment'', ''required'': [''Seal fully releases
+  or transforms through earned catalyst not arbitrary trigger'', ''Multiple antagonists
+  resolved through differentiated methods showing protagonist tactical planning'',
+  ''Group commitment formalized with reciprocal promise from protagonist creating
+  future obligation'']}'
 reader_rewards:
-- weak_identity_strong_core
-- knowledge_arbitrage
-- power_misread_payoff
-- exotic_world_discovery
-- asset_conversion_with_cost
-- authority_prank_with_consequence
+- Power fantasy through unexpected advantages awakening with visible antagonist shock
+  and recalculation
+- Mystery resolution with transmigration origin revealed through earned discovery
+  not exposition dump
+- Strategic satisfaction from protagonist information advantage systematically defeating
+  naive opponents
+- Cathartic revenge with specific consequence delivery through protagonist-mediated
+  action on-screen
+- Emotional payoff from identity integration with visible cost or sacrifice acknowledged
+- Group bond formation through reciprocal commitment moment with named promise and
+  cost
+- Foreshadowing payoff from hidden abilities manifesting at crisis moment with context
+  connection
+- Spectacle satisfaction from villain-specific counter execution with power type negation
+  demonstrated
 hook_or_aftereffect_types:
-- misread_reassessment
-- asset_attracts_owner
-- source_world_trace
-- political_request
-- forbidden_rule_warning
+- '{''type'': ''information_hook'', ''trigger'': ''New domain introduced where protagonist
+  lacks current advantage'', ''promise'': ''Future scene where protagonist acquires
+  knowledge and applies asymmetric understanding''}'
+- '{''type'': ''identity_hook'', ''trigger'': ''Character from predecessor past creates
+  loyalty/autonomy conflict'', ''promise'': ''Future confrontation forcing visible
+  choice with emotional stakes''}'
+- '{''type'': ''power_hook'', ''trigger'': ''Unknown technique or sealed ability referenced
+  by enemy or ally'', ''promise'': ''Future crisis requiring mastery with stakes tied
+  to the unknown element''}'
+- '{''type'': ''relationship_hook'', ''trigger'': ''Faction member or ally with ambiguous
+  loyalty established'', ''promise'': ''Future trust test with betrayal potential
+  and redemption path''}'
+- '{''type'': ''aftereffect_sequel_setup'', ''trigger'': ''External threat beyond
+  immediate scope mentioned by victorious character'', ''promise'': ''Future story
+  where protagonist faces consequence of present-day decisions''}'
 forbidden_defaults:
-- copy_source_title_or_names
-- copy_exact_arrival_chain
-- copy_exact_host_family_murder
-- copy_named_artifact_or_technique
-- effortless_asset_collection
-- objectification_as_core_reward
+- Protagonist receiving information or power through passive reception without active
+  response
+- Power system explanation through extended internal monologue exceeding two paragraphs
+- Seal unlocking through arbitrary trigger or time passage without earned catalyst
+- Antagonist consequences delivered off-screen or through unrelated third party
+- Group formation through unilateral declaration without reciprocal commitment moment
+- Multiple major villain deaths in single chapter without distinct resolution beats
+  for each
+- Identity crisis resolved through internal reflection without external pressure forcing
+  choice
+- Tonal shift from high-stakes action to slice-of-life without transitional chapter
+  providing justification

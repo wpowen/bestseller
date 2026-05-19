@@ -1,6 +1,40 @@
 {
   "source_id": "source-0004",
-  "blocked_categories": [],
-  "blocked_combinations": [],
+  "blocked_categories": [
+    "Named geographic locations (villages, towns, specific China-based settings)",
+    "Named character identities (protagonist, antagonist, romantic interests, supporting cast, historical figures)",
+    "Specific cultivation technique names and their precise mechanics as written",
+    "Named artifacts, manuals, ritual objects, and their specific acquisition methods",
+    "Specific honorifics, official titles, and institutional designations in Chinese",
+    "Named sect organizations and their internal structures",
+    "Historical dynasty references and period-specific terminology",
+    "Cultural Revolution political context and persecution details",
+    "Specific ghost types with unique origin stories and named characteristics",
+    "Corpse-based cultivation system with its specific material requirements and ritual steps",
+    "Hungry ghost refinement as multi-step ritual process with specific timelines",
+    "Government supernatural department as institutional framework with specific roles",
+    "Fish-out-of-water comedy scenarios involving Cultural Revolution or modern China specifically",
+    "Time-skip release reintegration pattern with thirty-year imprisonment specifically",
+    "Romantic subplot involving wealthy patron's granddaughter as character type",
+    "Multi-volume revenge thread with specific generational trauma motivation",
+    "Temple tournament combat structure with formal surrender mechanisms",
+    "Triple manifestation combat climax structure",
+    "Blood pearl fusion as cultivation breakthrough mechanism",
+    "Buddhist deity summoning as specific power ceiling establishment",
+    "Specific power scaling ceiling limits and tiered mastery levels",
+    "Zombie sect as antagonist faction",
+    "Japanese monks as antagonist faction with specific cultural markers",
+    "Dinosaur guardian in ancient tomb setting"
+  ],
+  "blocked_combinations": [
+    "Corpse cultivation + Buddhist supernatural hierarchy",
+    "Anti-hero protagonist + thirty-year time displacement + modern urban setting",
+    "Government supernatural department + cultivation world + temple hierarchy integration",
+    "Ghost refinement ritual + hungry ghost + blood sacrifice combination",
+    "Fish-out-of-water comedy + Cultural Revolution backstory + corpse-based cultivation",
+    "Multi-factional relic competition + Buddhist/daoist mythology + institutional authority",
+    "Romance + cultivation philosophy of emotional detachment conflict",
+    "Revenge motivation + generational trauma + institutional recognition arc"
+  ],
   "replacement_policy": []
 }

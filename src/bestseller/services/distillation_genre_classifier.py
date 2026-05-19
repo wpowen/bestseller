@@ -22,6 +22,8 @@ ALLOWED_DISTILLATION_GENRE_BUCKETS: frozenset[str] = frozenset(
     {
         "otherworld-cross-system",
         "urban-contemporary",
+        "base-building",
+        "eastern-aesthetic",
         "eastern-progression-fantasy",
         "science-fiction-progression",
         "suspense-mystery",
@@ -132,6 +134,57 @@ async def classify_genre_bucket_for_package(
         ),
     )
     obj = _extract_json_payload(result.content)
+    if not isinstance(obj, dict) or str(obj.get("genre_bucket") or "").strip() not in ALLOWED_DISTILLATION_GENRE_BUCKETS:
+        try:
+            from bestseller.services.llm_closed_loop import (
+                LLMGateFinding,
+                build_repair_user_prompt,
+            )
+
+            repair = await complete_text(
+                session,
+                settings,
+                LLMCompletionRequest(
+                    logical_role="summarizer",
+                    system_prompt=system,
+                    user_prompt=build_repair_user_prompt(
+                        original_user_prompt=user,
+                        findings=[
+                            LLMGateFinding(
+                                code="DISTILLATION_GENRE_CLASSIFICATION_INVALID",
+                                severity="major",
+                                path="genre_bucket",
+                                message="The genre classifier output was not a valid classification JSON object.",
+                                expected=(
+                                    "genre_bucket must be one of: "
+                                    + ", ".join(sorted(ALLOWED_DISTILLATION_GENRE_BUCKETS))
+                                ),
+                                actual=str(obj)[:240],
+                                repair_action="Return only JSON with a valid genre_bucket and numeric confidence.",
+                            )
+                        ],
+                        language=None,
+                    ),
+                    fallback_response=json.dumps(
+                        {"genre_bucket": "distillation-genre-unclassified", "confidence": 0.0},
+                        ensure_ascii=False,
+                    ),
+                    prompt_template="distillation_genre_bucket_repair",
+                    prompt_version="v1",
+                    project_id=None,
+                    workflow_run_id=None,
+                    metadata={
+                        "distillation_package": package_dir.name,
+                        "semantic_repair_of": str(result.llm_run_id)
+                        if result.llm_run_id
+                        else None,
+                    },
+                    max_tokens_override=512,
+                ),
+            )
+            obj = _extract_json_payload(repair.content)
+        except Exception:
+            obj = {}
     if not isinstance(obj, dict):
         bucket = "distillation-genre-unclassified"
         conf = 0.0

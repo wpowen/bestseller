@@ -1,0 +1,223 @@
+{
+  "version": 1,
+  "generated_at": "2026-05-16T16:23:44+00:00",
+  "rows": [
+    {
+      "canonical_category": "action-progression",
+      "display_name": "升级流 / Action Progression",
+      "novel_category_key": "action-progression",
+      "review_profile_key": "action-progression",
+      "story_design_grammar_key": "action-progression",
+      "distillation_buckets": [
+        "action-progression",
+        "eastern-progression-fantasy"
+      ],
+      "prompt_pack_keys": [
+        "xianxia-upgrade-core",
+        "litrpg-progression",
+        "urban-cultivation-2.0",
+        "urban-power-reversal",
+        "system-apocalypse-healer",
+        "cozy-litrpg"
+      ],
+      "bridge_status": "aligned",
+      "gaps": []
+    },
+    {
+      "canonical_category": "base-building",
+      "display_name": "基建经营 / Base Building",
+      "novel_category_key": "base-building",
+      "review_profile_key": "base-building",
+      "story_design_grammar_key": "base-building",
+      "distillation_buckets": [
+        "base-building"
+      ],
+      "prompt_pack_keys": [
+        "apocalypse-supply-chain",
+        "cozy-fantasy",
+        "shezhu-bailan-comedy"
+      ],
+      "bridge_status": "aligned",
+      "gaps": []
+    },
+    {
+      "canonical_category": "eastern-aesthetic",
+      "display_name": "东方美学 / Eastern Aesthetic",
+      "novel_category_key": "eastern-aesthetic",
+      "review_profile_key": "eastern-aesthetic",
+      "story_design_grammar_key": "eastern-aesthetic",
+      "distillation_buckets": [
+        "eastern-aesthetic"
+      ],
+      "prompt_pack_keys": [
+        "eastern-aesthetic"
+      ],
+      "bridge_status": "aligned",
+      "gaps": []
+    },
+    {
+      "canonical_category": "esports-competition",
+      "display_name": "电竞游戏 / Esports Competition",
+      "novel_category_key": "esports-competition",
+      "review_profile_key": "esports-competition",
+      "story_design_grammar_key": "esports-competition",
+      "distillation_buckets": [
+        "game-esports"
+      ],
+      "prompt_pack_keys": [
+        "game-esport"
+      ],
+      "bridge_status": "aligned",
+      "gaps": []
+    },
+    {
+      "canonical_category": "female-growth-ncp",
+      "display_name": "女性成长无CP / Female Growth NCP",
+      "novel_category_key": "female-growth-ncp",
+      "review_profile_key": "female-growth-ncp",
+      "story_design_grammar_key": "female-growth-ncp",
+      "distillation_buckets": [
+        "female-growth-ncp"
+      ],
+      "prompt_pack_keys": [
+        "female-palace",
+        "villainess-reincarnation"
+      ],
+      "bridge_status": "aligned",
+      "gaps": []
+    },
+    {
+      "canonical_category": "otherworld-cross-system",
+      "display_name": "异界穿越系统 / Otherworld Cross-System",
+      "novel_category_key": "otherworld-cross-system",
+      "review_profile_key": "otherworld-cross-system",
+      "story_design_grammar_key": "otherworld-cross-system",
+      "distillation_buckets": [
+        "otherworld-cross-system"
+      ],
+      "prompt_pack_keys": [
+        "villainess-reincarnation",
+        "cozy-litrpg",
+        "system-apocalypse-healer",
+        "game-esport"
+      ],
+      "bridge_status": "aligned",
+      "gaps": []
+    },
+    {
+      "canonical_category": "relationship-driven",
+      "display_name": "关系驱动 / Relationship Driven",
+      "novel_category_key": "relationship-driven",
+      "review_profile_key": "relationship-driven",
+      "story_design_grammar_key": "relationship-driven",
+      "distillation_buckets": [
+        "romance-relationship"
+      ],
+      "prompt_pack_keys": [
+        "romance-tension-growth",
+        "romantasy",
+        "dark-romance",
+        "mafia-romance",
+        "reverse-harem",
+        "entertainment-sweet"
+      ],
+      "bridge_status": "aligned",
+      "gaps": []
+    },
+    {
+      "canonical_category": "science-fiction-progression",
+      "display_name": "科幻机甲进阶 / Science Fiction Progression",
+      "novel_category_key": null,
+      "review_profile_key": null,
+      "story_design_grammar_key": null,
+      "distillation_buckets": [
+        "science-fiction-progression"
+      ],
+      "prompt_pack_keys": [
+        "scifi-starwar",
+        "space-opera"
+      ],
+      "bridge_status": "fragmented",
+      "gaps": [
+        "science-fiction-progression 缺少一等 novel category YAML",
+        "science-fiction-progression 缺少 genre review profile",
+        "science-fiction-progression 缺少 story design grammar"
+      ]
+    },
+    {
+      "canonical_category": "strategy-worldbuilding",
+      "display_name": "权谋历史与世界构建 / Strategy Worldbuilding",
+      "novel_category_key": "strategy-worldbuilding",
+      "review_profile_key": "strategy-worldbuilding",
+      "story_design_grammar_key": "strategy-worldbuilding",
+      "distillation_buckets": [
+        "strategy-worldbuilding",
+        "historical-fiction"
+      ],
+      "prompt_pack_keys": [
+        "history-strategy",
+        "epic-fantasy",
+        "space-opera",
+        "scifi-starwar"
+      ],
+      "bridge_status": "aligned",
+      "gaps": []
+    },
+    {
+      "canonical_category": "suspense-mystery",
+      "display_name": "悬疑规则 / Suspense Mystery",
+      "novel_category_key": "suspense-mystery",
+      "review_profile_key": "suspense-mystery",
+      "story_design_grammar_key": "suspense-mystery",
+      "distillation_buckets": [
+        "suspense-mystery"
+      ],
+      "prompt_pack_keys": [
+        "suspense-mystery",
+        "psychological-thriller"
+      ],
+      "bridge_status": "aligned",
+      "gaps": []
+    },
+    {
+      "canonical_category": "urban-contemporary",
+      "display_name": "都市职业现实 / Urban Contemporary",
+      "novel_category_key": null,
+      "review_profile_key": null,
+      "story_design_grammar_key": null,
+      "distillation_buckets": [
+        "urban-contemporary"
+      ],
+      "prompt_pack_keys": [
+        "entertainment-sweet",
+        "shezhu-bailan-comedy",
+        "urban-power-reversal"
+      ],
+      "bridge_status": "fragmented",
+      "gaps": [
+        "urban-contemporary 缺少一等 novel category YAML",
+        "urban-contemporary 缺少 genre review profile",
+        "urban-contemporary 缺少 story design grammar"
+      ]
+    },
+    {
+      "canonical_category": "wuxia-jianghu",
+      "display_name": "武侠江湖 / Wuxia Jianghu",
+      "novel_category_key": null,
+      "review_profile_key": null,
+      "story_design_grammar_key": null,
+      "distillation_buckets": [],
+      "prompt_pack_keys": [
+        "history-strategy",
+        "eastern-aesthetic"
+      ],
+      "bridge_status": "fragmented",
+      "gaps": [
+        "wuxia-jianghu 缺少一等 novel category YAML",
+        "wuxia-jianghu 缺少 genre review profile",
+        "wuxia-jianghu 缺少 story design grammar",
+        "wuxia-jianghu 缺少对齐的 distillation bucket"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,113 @@
+pilot_id: short-complete-30
+title: 30章完整故事模型试点
+description: >
+  用同一本 30 章完结型中文网文样书，对比不同大模型在全书规划、章节生成、审校通过率、
+  完结收束度和 LLM fallback 污染上的表现。
+book:
+  case_id: short-complete-30
+  title: 第七次日落档案
+  genre: suspense-mystery
+  sub_genre: rule-mystery-complete
+  audience: web-novel
+  target_word_count: 60000
+  target_chapters: 30
+  premise: >
+    旧城档案馆的夜班修复师顾砚，在一卷被烧毁的民国巡夜录里发现自己的死亡记录：
+    三十天后的第七次红色日落，他会在档案馆顶楼坠亡。每修复一页，现实就会多出一条
+    只有他能看见的“档案规则”：被划掉姓名的人会从所有照片里消失，说出真相的人会被
+    档案馆借走一段记忆，替别人改命必须交出自己最想保留的一件事。顾砚必须在 30 章内
+    查清当年巡夜人集体失踪、母亲失忆、馆长隐瞒身份之间的因果，识破真正想借档案馆
+    续命的幕后人，并在终章关闭红色日落规则。故事必须从第 1 章启动死亡倒计时，
+    第 10 章完成第一轮规则反杀，第 20 章揭出母亲与巡夜录的真相，第 30 章回收主线、
+    情感线和核心规则，不留续集式悬而未决。
+  expectations:
+    min_overall_score: 0.7
+    require_export: true
+    require_project_markdown: true
+    min_chapter_count: 30
+    allowed_final_verdicts: [pass, attention]
+quality:
+  require_no_fallback: true
+  min_resolution_completeness: 0.85
+  require_sample_quality_parity: true
+  sample_quality_min_chapter_count: 30
+  sample_quality_min_review_score: 0.82
+  sample_quality_min_scorecard_quality: 80.0
+  sample_quality_min_reference_distance: 0.72
+variants:
+  - variant_id: minimax-m27
+    label: MiniMax M2.7 Highspeed
+    enabled: true
+    notes: 当前主用模型；试点中关闭跨模型 rate-limit fallback，避免对比污染。
+    roles:
+      planner:
+        model: openai/MiniMax-M2.7-highspeed
+        api_base: https://api.minimaxi.com/v1
+        api_key_env: MINIMAX_API_KEY
+        timeout_seconds: 900
+        max_tokens: 32768
+        n_candidates: 1
+      writer:
+        model: openai/MiniMax-M2.7-highspeed
+        model_override: openai/MiniMax-M2.7-highspeed
+        api_base: https://api.minimaxi.com/v1
+        api_key_env: MINIMAX_API_KEY
+        timeout_seconds: 360
+        max_tokens: 12288
+        stream: false
+      critic:
+        model: openai/MiniMax-M2.7-highspeed
+        api_base: https://api.minimaxi.com/v1
+        api_key_env: MINIMAX_API_KEY
+        timeout_seconds: 180
+        max_tokens: 2048
+      summarizer:
+        model: openai/MiniMax-M2.7-highspeed
+        api_base: https://api.minimaxi.com/v1
+        api_key_env: MINIMAX_API_KEY
+        timeout_seconds: 120
+        max_tokens: 1536
+      editor:
+        model: openai/MiniMax-M2.7-highspeed
+        api_base: https://api.minimaxi.com/v1
+        api_key_env: MINIMAX_API_KEY
+        timeout_seconds: 360
+        max_tokens: 8192
+  - variant_id: deepseek-official
+    label: DeepSeek Official
+    enabled: true
+    notes: 官方 DeepSeek 接口（非 NVIDIA NIM），默认模型 deepseek-reasoner。
+    roles:
+      planner:
+        model: deepseek/deepseek-reasoner
+        api_base: https://api.deepseek.com/v1
+        api_key_env: DEEPSEEK_API_KEY
+        timeout_seconds: 900
+        max_tokens: 32768
+        n_candidates: 1
+      writer:
+        model: deepseek/deepseek-reasoner
+        model_override: deepseek/deepseek-reasoner
+        api_base: https://api.deepseek.com/v1
+        api_key_env: DEEPSEEK_API_KEY
+        timeout_seconds: 360
+        max_tokens: 12288
+        stream: false
+      critic:
+        model: deepseek/deepseek-reasoner
+        api_base: https://api.deepseek.com/v1
+        api_key_env: DEEPSEEK_API_KEY
+        timeout_seconds: 180
+        max_tokens: 2048
+      summarizer:
+        model: deepseek/deepseek-reasoner
+        api_base: https://api.deepseek.com/v1
+        api_key_env: DEEPSEEK_API_KEY
+        timeout_seconds: 120
+        max_tokens: 1536
+      editor:
+        model: deepseek/deepseek-reasoner
+        api_base: https://api.deepseek.com/v1
+        api_key_env: DEEPSEEK_API_KEY
+        timeout_seconds: 360
+        max_tokens: 8192

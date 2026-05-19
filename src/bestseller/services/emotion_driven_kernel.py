@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 import re
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 EndingType = Literal["HE", "BE", "open"]
 
@@ -87,6 +87,22 @@ class EndingTextureContract(BaseModel, frozen=True):
     active_value_choice: str = ""
     aesthetic_callback: str = ""
 
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_llm_aliases(cls, value: Any) -> Any:
+        if not isinstance(value, dict):
+            return value
+        data = dict(value)
+        raw = str(data.get("ending_type") or "").strip()
+        upper = raw.upper()
+        if upper.startswith("HE"):
+            data["ending_type"] = "HE"
+        elif upper.startswith("BE"):
+            data["ending_type"] = "BE"
+        elif raw:
+            data["ending_type"] = "open"
+        return data
+
 
 class EmotionChainBeat(BaseModel, frozen=True):
     """Chapter-range emotion movement plan."""
@@ -116,6 +132,29 @@ class EmotionDrivenKernel(BaseModel, frozen=True):
     ending_texture_contract: EndingTextureContract | None = None
     emotion_chain: list[EmotionChainBeat] = Field(default_factory=list)
     callback_motifs: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_llm_aliases(cls, value: Any) -> Any:
+        if not isinstance(value, dict):
+            return value
+        data = dict(value)
+        motifs = data.get("callback_motifs")
+        if isinstance(motifs, list):
+            normalized: list[str] = []
+            for motif in motifs:
+                if isinstance(motif, str) and motif.strip():
+                    normalized.append(motif.strip())
+                elif isinstance(motif, dict):
+                    parts = [
+                        str(motif.get(key) or "").strip()
+                        for key in ("motif_id", "label", "symbol", "meaning", "callback", "payoff")
+                        if str(motif.get(key) or "").strip()
+                    ]
+                    if parts:
+                        normalized.append("：".join(parts[:3]))
+            data["callback_motifs"] = normalized
+        return data
 
 
 @dataclass(frozen=True)

@@ -180,20 +180,27 @@ class ToolLoopResult:
 # ── The loop ───────────────────────────────────────────────────────────
 
 
-def _parse_tool_arguments(raw: Any) -> dict[str, Any]:
+def _parse_tool_arguments(raw: Any) -> tuple[dict[str, Any], str | None]:
     """Turn the provider's ``arguments`` blob into a dict, defensively."""
     if isinstance(raw, dict):
-        return raw
+        return raw, None
     if not isinstance(raw, str) or not raw.strip():
-        return {}
+        return {}, None
     try:
         parsed = json.loads(raw)
     except json.JSONDecodeError as exc:
         logger.warning("Tool arguments JSON decode failed: %s; raw=%r", exc, raw[:200])
-        return {}
+        return (
+            {},
+            (
+                "invalid_tool_arguments_json: "
+                f"{exc.msg} at line {exc.lineno}, column {exc.colno}. "
+                "Regenerate this tool call with arguments as one valid JSON object."
+            ),
+        )
     if not isinstance(parsed, dict):
-        return {}
-    return parsed
+        return {}, "invalid_tool_arguments_type: tool arguments must decode to a JSON object."
+    return parsed, None
 
 
 async def _dispatch_single_call(
@@ -205,8 +212,32 @@ async def _dispatch_single_call(
     fn = call.get("function") or {}
     name = fn.get("name", "")
     arguments_raw = fn.get("arguments", "")
-    arguments = _parse_tool_arguments(arguments_raw)
+    arguments, argument_error = _parse_tool_arguments(arguments_raw)
     call_id = call.get("id") or ""
+
+    if argument_error:
+        error_payload = {
+            "error": argument_error,
+            "repair_action": (
+                "Call the same tool again with syntactically valid JSON arguments. "
+                "Do not provide prose, markdown, arrays, or partial objects in the arguments field."
+            ),
+            "raw_arguments_excerpt": str(arguments_raw)[:500],
+        }
+        record = ToolCallRecord(
+            round_index=round_index,
+            tool_name=name,
+            arguments=arguments,
+            result=error_payload,
+            error=argument_error,
+        )
+        message = {
+            "role": "tool",
+            "tool_call_id": call_id,
+            "name": name,
+            "content": json.dumps(error_payload, ensure_ascii=False),
+        }
+        return message, record
 
     spec = registry.get(name)
     if spec is None:

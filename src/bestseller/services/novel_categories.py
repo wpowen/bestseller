@@ -201,6 +201,13 @@ def resolve_novel_category(
         if category_key and category_key in registry:
             return registry[category_key]
 
+    # Strategy 1.5: high-confidence canonical keyword override.
+    # ``infer_genre_preset`` can classify "异界穿越/系统" as generic progression;
+    # keep explicit cross-system signals on the dedicated category.
+    priority_category_key = _resolve_priority_keyword_category(genre, sub_genre)
+    if priority_category_key and priority_category_key in registry:
+        return registry[priority_category_key]
+
     # Strategy 2: infer via writing_presets
     try:
         from bestseller.services.writing_presets import infer_genre_preset
@@ -225,6 +232,20 @@ def resolve_novel_category(
 
 # Keyword fallback map (mirrors genre_review_profiles)
 _GENRE_NAME_KEYWORD_MAP: dict[str, str] = {
+    # otherworld-cross-system
+    "异界": "otherworld-cross-system",
+    "异世": "otherworld-cross-system",
+    "穿越": "otherworld-cross-system",
+    "系统": "otherworld-cross-system",
+    "主神": "otherworld-cross-system",
+    "诸天": "otherworld-cross-system",
+    "位面": "otherworld-cross-system",
+    "快穿": "otherworld-cross-system",
+    "otherworld": "otherworld-cross-system",
+    "cross-system": "otherworld-cross-system",
+    "isekai": "otherworld-cross-system",
+    "transmigration": "otherworld-cross-system",
+    "portal fantasy": "otherworld-cross-system",
     # action-progression
     "仙": "action-progression",
     "修仙": "action-progression",
@@ -240,6 +261,14 @@ _GENRE_NAME_KEYWORD_MAP: dict[str, str] = {
     "言情": "relationship-driven",
     "浪漫": "relationship-driven",
     "宫斗": "relationship-driven",
+    "幻想言情": "relationship-driven",
+    "青春": "relationship-driven",
+    "校园": "relationship-driven",
+    "双男主": "relationship-driven",
+    "耽美": "relationship-driven",
+    "bl": "relationship-driven",
+    "现实": "relationship-driven",
+    "职场": "relationship-driven",
     "romance": "relationship-driven",
     "romantasy": "relationship-driven",
     # suspense-mystery
@@ -252,6 +281,8 @@ _GENRE_NAME_KEYWORD_MAP: dict[str, str] = {
     "权谋": "strategy-worldbuilding",
     "历史": "strategy-worldbuilding",
     "争霸": "strategy-worldbuilding",
+    "科幻": "strategy-worldbuilding",
+    "高概念": "strategy-worldbuilding",
     "strategy": "strategy-worldbuilding",
     # esports-competition
     "电竞": "esports-competition",
@@ -269,6 +300,33 @@ _GENRE_NAME_KEYWORD_MAP: dict[str, str] = {
     "国风": "eastern-aesthetic",
     "水墨": "eastern-aesthetic",
 }
+
+
+_PRIORITY_KEYWORD_MAP: tuple[tuple[str, tuple[str, ...]], ...] = (
+    (
+        "otherworld-cross-system",
+        (
+            "异界",
+            "异世",
+            "otherworld",
+            "cross-system",
+            "isekai",
+            "transmigration",
+            "portal fantasy",
+        ),
+    ),
+)
+
+
+def _resolve_priority_keyword_category(
+    genre: str,
+    sub_genre: str | None,
+) -> str | None:
+    haystack = " ".join(part for part in [genre, sub_genre] if part).lower()
+    for category_key, keywords in _PRIORITY_KEYWORD_MAP:
+        if any(keyword in haystack for keyword in keywords):
+            return category_key
+    return None
 
 
 def _empty_default() -> NovelCategoryResearch:

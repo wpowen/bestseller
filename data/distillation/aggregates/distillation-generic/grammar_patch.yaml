@@ -1,28 +1,338 @@
 key: distillation-generic
-name: Distillation Generic Grammar Patch
+name: Strategic Reputation Reversal Engine
 source_ids:
-- source-0016
+- source-0002
+- source-0003
+- source-0004
+- source-0005
+- source-0006
+- source-0007
+- source-0008
+- source-0009
+- source-0010
 status: review
 applies_to_categories:
+- strategic warfare
+- historical military fiction
+- alliance dynamics
+- underdog tactical fantasy
+- court intrigue
+- deceptive competence
+- cultivation
+- xianxia
+- progression_fantasy
+- comedy
+- animal_companion
+- supernatural_cultivation
+- romantic_rivalry
+- spectacle_drama
+- underworld_descent
+- ghost_cultivation_system
+- dominance_display_narrative
+- cultivation_xianxia
+- game_world_transmigration
+- sect_building
+- system_interface
+- quest_chain
+- underdog_rise
+- survival_stakes
+- gamified_cultivation
 - distillation-generic
-- fallback
+- urban_fantasy
+- supernatural_threat
+- ai_companion
+- competence_pride_arc
+- myth_recontextualization
+- distillation-fallback
+- transmigration
+- isekai
+- business_empire
+- political_intrigue
+- dual_life
+- historical_foreknowledge
+- systematic_power_fantasy
 required_contracts:
-- distillable_content_required
-- no_batch_fallback
-- source_data_available
+- Protagonist must maintain consistent strategic transparency—reader always understands
+  the layered plan before final revelation
+- Staged defeat mechanism requires early proof-of-concept reversal to establish trust
+- Advisor council voices must remain distinct and philosophically consistent throughout
+- Alliance partner activation must feel organically timed, not artificially convenient
+- Historical parallels must function as universal strategic logic, not domain-specific
+  knowledge tests
+- Crisis-survival-reward progression cycle must deliver tangible cultivation benefit
+  on resolution
+- Dormant protective power activation requires near-fatal threshold with escalating
+  danger
+- Creature taming requires will-dominance confrontation before acquisition
+- Protagonist must demonstrate preparation-based problem-solving rather than reckless
+  luck
+- Comedic relief must punctuate tension rather than dominate narrative
+- core_payoffs
+- engine_deliverables
+- tension_patterns
+- protagonist_inherits_failing_organization
+- system_interface_activates_at_status_threshold
+- multi_step_quest_chain_delivers_mechanic_payoff
+- blood_binding_establishes_ownership
+- territory_confirmation_visualized_through_energy_spread
+- newbie_package_delivers_immediate_reward
+- antagonist_humiliation_confirms_power_imbalance
+- hidden_advantage_remains_concealed_from_hostile_powers
+- three_year_deadline_establishes_survival_stakes
+- quest_completion_provides_checklist_satisfaction
+- status_panel_displays_transparent_game_mechanics
+- fallback_mechanism
+- exposure_cost_model
+- state_tracking
+- no_source_specific_names
+- stub_content_bridging
+- progressive_content_loading
+- reader_patience_management
+- functional_llm_extraction_pipeline
+- non_empty_content_validation
+- confidence_threshold_met
 state_variables:
+- '{''phase'': ''siege_under_pressure'', ''conditions'': ''Alliance depleted, forces
+  exhausted from prolonged campaign'', ''tension'': ''Advisor council fractures between
+  cautious preservation and aggressive action''}'
+- '{''phase'': ''strategic_proposal'', ''conditions'': ''Protagonist offers seemingly
+  foolish surrender pathway'', ''tension'': ''Antagonist recognizes apparent victory
+  opportunity, overconfidence activated''}'
+- '{''phase'': ''deceptive_commitment'', ''conditions'': ''Antagonist accepts staged
+  defeat, commits resources to false victory path'', ''tension'': ''Alliance partner
+  positioned to exploit distraction''}'
+- '{''phase'': ''second_front_activation'', ''conditions'': ''Partner opens simultaneous
+  multi-front coordination'', ''tension'': "Antagonist''s attention divided, initial
+  front under-resourced"}'
+- '{''phase'': ''double_reversal_revelation'', ''conditions'': ''Apparent defeat exposed
+  as victory disguised as surrender'', ''tension'': ''Antagonist trapped by own overconfidence
+  in predictable target''}'
+- protagonist
+- companions
+- protective_mechanisms
+- world_state
+- '{''variable_name'': ''protagonist_jealousy_level'', ''range'': ''latent → triggered
+  → escalated'', ''triggers'': [''rival_presence'', ''love_interest_provocation'',
+  ''mission_urgency_activation'']}'
+- '{''variable_name'': ''spectacle_pressure'', ''range'': ''none → building → peak
+  → resolution'', ''drivers'': [''spectator_witness_count'', ''public_demand_escalation'']}'
+- '{''variable_name'': ''supernatural_mission_progress'', ''range'': ''hidden_agenda
+  → revelation → underworld_access_ready'', ''blockers'': [''knowledge_gap'', ''resource_limitations'',
+  ''false_assumption_operating'']}'
+- '{''variable_name'': ''love_triangle_tension'', ''range'': ''stable → provoked →
+  resolved_unhappily → open_question'', ''resolution_patterns'': [''mercy_toward_defeated_rival'',
+  ''dramatic_departure'', ''relationship_strain'']}'
+- '{''variable_name'': ''spectator_entertainment_demand'', ''range'': ''passive →
+  active → coercive'', ''mechanism'': ''audience_witness_transforms_personal_conflict_into_public_spectacle''}'
+- protagonist_transmigrates_into_game_mechanic_world
+- protagonist_inherits_leadership_of_failing_small_faction
+- organizational_resources_insufficient_for_stated_task
+- external_pressure_enforced_through_mandatory_deadline
+- power_dynamic_shows_protagonist_weaker_than_all_antagonists
+- system_interface_activates_upon_status_threshold_achievement
+- quest_chain_progresses_through_find_interact_bind_sequence
+- territory_confirmed_through_energy_spreading_visualization
+- newbie_package_delivered_as_first_completion_reward
+- cultivation_advantage_planted_but_concealed
+- unestablished_slots_display_placeholder_markers
 - fallback_progress
-- distill_confidence
+- '{''protagonist_status'': ''Under pursuit by supernatural creature after initial
+  encounter'', ''antagonist_threads'': [''Primary: Active supernatural predator pursuit'',
+  ''Secondary: Technical destruction device threat introduced via exposition''], ''ally_status'':
+  "Wounded-pride character joins protagonist''s cause after being humbled", ''narrative_position'':
+  ''Mid-action cliffhanger with creature approaching''}'
+- stub_content_depth
+- chapter_validity_flags
+- '{''protagonist_state'': {''public_presentation'': ''Emerging business magnate with
+  untapped potential'', ''concealed_capabilities'': ''Transmigrator with cultivation
+  foundation and historical foreknowledge'', ''core_constraint'': ''Must maintain
+  concealment while advancing competing objectives across dual domains'', ''motivational_core'':
+  ''Survival through strategic positioning, accumulated power for unknown future threats''},
+  ''world_state'': {''political_climate'': ''Unstable — major upheaval imminent (as
+  of Volume 1 close)'', ''cultivation_ecosystem'': ''Implied hierarchy with competitive
+  advancement channels'', ''economic_structure'': ''Business empire framework established
+  as power base'', ''faction_mapping'': ''Implied multiple factions with shifting
+  allegiances''}, ''narrative_stakes'': {''immediate'': "Political upheaval threatens
+  protagonist''s careful equilibrium", ''ongoing'': ''Concealment vs. advancement
+  tension across dual domains'', ''long_term'': ''Unknown threats requiring accumulated
+  power reserves''}}'
+- '{''aggregation_status'': ''blocked''}'
+- '{''mechanism_extraction'': ''blocked''}'
+- '{''craft_analysis'': ''blocked''}'
+- '{''narrative_structure'': ''not_determinable''}'
+- '{''reader_reward_pathway'': ''not_determinable''}'
+- '{''retry_ready'': ''awaiting_upstream_repair''}'
 chapter_change_vectors:
-- optimize_for_distillation
-- allow_chapter_growth
+- '{''vector'': ''information_symmetry_shifts'', ''description'': ''Chapters progress
+  by revealing strategic layers—early chapters show surface plan, later chapters expose
+  deeper orchestration through advisor debate and consequence tracking''}'
+- '{''vector'': ''tension_alternation'', ''description'': ''Rapid-fire council dialogue
+  alternates with extended tactical exposition, punctuated by staccato action beats—creates
+  breathing room between high-stakes decisions''}'
+- '{''vector'': ''pov_distance_calibration'', ''description'': "Third-person limited
+  with strategic omniscience on protagonist''s true plans; comic distance on performative
+  cowardice creates ironic tension for informed readers"}'
+- '{''vector'': ''preparation_foreshadowing'', ''description'': ''Mechanisms and traps
+  explained before complication deployment''}'
+- '{''vector'': ''complication_escalation'', ''description'': ''Initial plan fails,
+  danger escalates toward near-fatal threshold''}'
+- '{''vector'': ''dormant_activation'', ''description'': ''Protective power triggers
+  at mortality edge, delivering cultivation bonus''}'
+- '{''vector'': ''tension_release'', ''description'': ''Comedic companion banter or
+  animal reaction after crisis resolution''}'
+- '{''vector'': ''companion_rivalry_setup'', ''description'': ''Competing creatures
+  establish dynamic for future acquisition sequence''}'
+- emotional_architecture
+- arc_trajectory_flags
+- pacing_constraints
+- protagonist_enters_world_with_hidden_game_system
+- external_rival_faction_humiliates_protagonist_publicly
+- successor_dialogue_during_crisis_cements_commitment
+- system_interface_appears_at_status_threshold
+- multi_step_quest_chain_completed_for_tutorial_payoff
+- blood_binding_ritual_establishes_ownership_mechanics
+- territory_confirmation_visualized_with_energy_spreading
+- newbie_package_rewards_delivered_as_motivation_payoff
+- cultivation_advantage_seed_planted_against_hostile_powers
+- state_shift
+- reader_reward_payoff
+- hook_resolution_or_escalation
+- '{''trigger'': ''chapter_access_attempt'', ''response'': ''render_stub_with_progressive_disclosure'',
+  ''vector_type'': ''progressive_reveal''}'
+- '{''trigger'': ''content_availability_check'', ''response'': ''toggle_stub_validity_state'',
+  ''vector_type'': ''binary_state_flip''}'
+- '{''trigger'': ''volume_boundary_crossing'', ''response'': ''reset_stub_content_indicators'',
+  ''vector_type'': ''state_reset''}'
 reader_rewards:
+- 'Double-layered tactical reveal: staged defeat serves deeper strategic purpose'
+- Antagonist overconfidence arc payoff with subsequent failure
+- Character-driven strategy discussion with conflicting advisor viewpoints
+- Military campaign sustainability examination through exhaustion narrative
+- Alliance dynamics exploration via simultaneous multi-front action
+- Cultivation world immersion with technical mechanics exposition
+- Satisfying near-death crisis resolution with tangible strength gains
+- Humorous character dynamics through companion interactions
+- Creature taming spectacle with dominance-based power fantasy
+- Mischievous protagonist outsmarting dangers through preparation
+- guaranteed_rewards
+- conditional_rewards
+- system_activation_mystery_paid_off_in_tutorial
+- quest_completion_checklist_satisfaction
+- status_panel_upgrade_anticipation
+- territory_control_visualization_payoff
+- newbie_package_reward_anticipation
+- hidden_advantage_dramatic_irony
+- resource_constraint_resolution
+- competence_gap_narrowing_progress
+- blood_binding_mechanic_learned_through_diegetic_experience
 - distillable_mechanism_reliability
+- Revelation that energy manipulation may be species-wide ability rather than human-learned
+  skill
+- Connection established between founding legend and supernatural creature encounter
+- New antagonist introduced as existential threat to entire population
+- Character arc development for pride-wounded ally whose assassination was manipulated
+- anticipation_building_through_gaps
+- completionist_completion_satisfaction
+- '{''volume_1_delivered'': [''Protagonist competence demonstration across multiple
+  domains'', ''Systematic establishment of dual-life framework'', ''Cultivation and
+  business progression both introduced'', ''Political intrigue foundation laid'',
+  ''Dramatic irony through concealed transmigrator advantage'', ''Major cliffhanger
+  through political upheaval hook''], ''ongoing_pattern'': [''Strategic problem-solving
+  through foreknowledge exploitation'', ''Progressive power acquisition in concealed
+  domains'', ''Dramatic irony maintenance through identity concealment'', ''Political
+  complexity escalation'', ''Cultivation advancement reveals'', ''Business empire
+  growth and complications''], ''undistilled_potential'': ''Volumes 2-25 contain unextractable
+  content representing ~96% of narrative development''}'
 hook_or_aftereffect_types:
+- '{''type'': ''crisis_interruption_pattern'', ''hook'': ''Decision nearly reached,
+  new information forces pivot to new tactical consideration'', ''aftereffect'': ''Reader
+  anticipates pattern, creates satisfying rhythm of subverted expectations''}'
+- '{''type'': ''strategic_reputation_weapon'', ''hook'': "Protagonist''s predictable
+  cowardice invites antagonist overconfidence", ''aftereffect'': ''Reversal feels
+  earned rather than lucky—reader recognizes seed planting''}'
+- '{''type'': ''parallel_historical_example'', ''hook'': ''In-world historical parallel
+  establishes strategic precedent'', ''aftereffect'': ''Provides analytical satisfaction
+  and foreshadows outcome structure''}'
+- '{''type'': ''artifact_quest_hook'', ''trigger'': ''discovery'', ''aftereffect'':
+  ''failed_capture_pursuit_sequence''}'
+- '{''type'': ''creature_rivalry_hook'', ''trigger'': ''attention_competition'', ''aftereffect'':
+  ''dominance_confrontation_setup''}'
+- '{''type'': ''warning_defiance_hook'', ''trigger'': ''protagonist_ignores_admonition'',
+  ''aftereffect'': ''preparation_validation_through_survival''}'
+- '{''type'': ''cultivation_breakthrough_hook'', ''trigger'': ''dormant_power_activation'',
+  ''aftereffect'': ''new_ability_revelation_with_cost''}'
+- narrative_hooks
+- aftereffect_patterns
+- system_mystery_activation_hook
+- quest_chain_completion_hook
+- territory_confirmation_visualization_hook
+- status_panel_upgrade_hook
+- hidden_advantage_dramatic_irony_hook
+- underdog_rise_progress_hook
+- resource_resolution_aftereffect
+- competence_gain_aftereffect
 - fallback_hook
-- post_distillation_aftereffect
+- misread_reassessment
+- new_constraint
+- '{''type'': ''stub_anticipation_hook'', ''placement'': ''chapter_opening'', ''mechanism'':
+  ''strategic_content_gaps_generate_curiosity''}'
+- '{''type'': ''reliability_promise_hook'', ''placement'': ''volume_opening'', ''mechanism'':
+  ''implicit_contract_that_content_will_manifest''}'
+- '{''type'': ''completion_aftereffect'', ''placement'': ''chapter_closing'', ''mechanism'':
+  ''satisfaction_from_bridging_known_to_unknown''}'
+- retry_trigger
+- failure_notification
+- infrastructure_repair_callback
 forbidden_defaults:
-- llm_fallback_batch
-- zero_confidence_batch
+- Protagonist strategic opacity without established information symmetry rules
+- Reversal mechanism deployed without prior proof-of-concept
+- Crisis timing following identical pattern—vary interruption sources and triggers
+- Modern anachronistic humor without integration as explicit character temporal displacement
+- Historical knowledge assumed without universal strategic grounding
+- Advisor council homogeneity—philosophical diversity required
+- Alliance partner timing feeling manufactured rather than organically motivated
+- '{''pattern'': ''exposition_through_standalone_dialogue'', ''description'': ''Teaching
+  moments must integrate with action rather than pause narrative''}'
+- '{''pattern'': ''excessive_dormant_power_activation'', ''description'': ''Limit
+  protective power triggers; each activation must feel earned and dangerous''}'
+- '{''pattern'': ''companion_dilution'', ''description'': ''Animal companions require
+  distinct narrative functions; avoid quantity over quality''}'
+- '{''pattern'': ''artificial_cliffhanger'', ''description'': ''Pursuit hooks must
+  have logical momentum; avoid pure danger-seeking without motivation''}'
+- '{''pattern'': ''intelligence_inconsistency'', ''description'': ''Protagonist cost-benefit
+  reasoning for defying warnings must remain consistent''}'
+- '{''pattern'': ''resurrection_armor'', ''description'': ''Dormant power must carry
+  meaningful cost or limitation, not pure plot armor''}'
+- behavioral_constraints
+- narrative_structure_constraints
+- data_quality_constraints
+- protagonist_receives_system_without_status_threshold
+- quest_chain_skips_find_interact_bind_sequence
+- blood_binding_without_sensory_specificity
+- territory_confirmation_without_energy_spreading
+- newbie_package_without_quest_completion_trigger
+- antagonist_power_level_below_protagonist
+- deadline_absent_from_setup
+- system_exposition_through_nonnarrator_monologue
+- unestablished_slots_without_placeholder_markers
+- hidden_advantage_revealed_early
+- llm_fallback_all_chapters
+- zero_confidence_across_entire_source
+- no_extractable_story_mechanics
+- no_craft_observations_present
 - no_distillable_content
-- source_data_fully_unavailable
+- data_poverty_for_analysis
+- source_material_inaccessible
+- volume_metadata_corruption
+- copy_source_title_or_names
+- effortless_asset_collection
+- plot_summary_as_mechanism
+- full_content_rendering_when_stub_only
+- skip_chapter_on_missing_content
+- generic_filler_substitution
+- omission_of_stub_indicators
+- content_promise_without_delivery_mechanism
+- confidence_zero_stub
+- identical_placeholder_content
+- empty_mechanism_array
+- volume_metadata_inconsistency

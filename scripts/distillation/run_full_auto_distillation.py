@@ -297,6 +297,28 @@ async def _run_one_pass(
             )
             report.chapter_cards_generated += processed
             report.chapter_job_failures += failures
+            if refresh_craft:
+                for _retry_round in range(max(0, int(getattr(args, "chapter_retry_rounds", 0)))):
+                    missing_craft_now = chapter_card_keys_missing_craft(pkg / "chapter_cards.jsonl")
+                    if not missing_craft_now:
+                        break
+                    retry_processed, retry_failures = await run_pending_chapter_jobs_parallel(
+                        package_dir=pkg,
+                        repo_root=repo_root,
+                        private_root=private_root,
+                        settings=settings,
+                        schema=schema,
+                        max_concurrency=max(1, int(args.chapter_workers)),
+                        limit=chapter_limit,
+                        max_chapter_chars=max_chapter_chars_arg,
+                        private_errors_dir=errors_dir,
+                        job_timeout_seconds=float(getattr(args, "chapter_job_timeout_seconds", 120.0)),
+                        refresh_missing_craft_observations=True,
+                    )
+                    report.chapter_cards_generated += retry_processed
+                    report.chapter_job_failures += retry_failures
+                    if retry_processed == 0 and retry_failures == 0:
+                        break
         except Exception as exc:  # noqa: BLE001
             report.sources_failed[sid] = f"chapter_phase:{type(exc).__name__}:{exc}"
             _atomic_write_json(
@@ -770,6 +792,15 @@ def main() -> None:
         type=int,
         default=None,
         help="Max pending chapter LLM jobs per source (default: all pending).",
+    )
+    parser.add_argument(
+        "--chapter-retry-rounds",
+        type=int,
+        default=2,
+        help=(
+            "Extra per-source retry rounds for failed chapter/craft jobs before "
+            "moving to the next source (default: 2)."
+        ),
     )
     parser.add_argument(
         "--import-mode",

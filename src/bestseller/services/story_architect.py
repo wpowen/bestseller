@@ -30,6 +30,11 @@ from bestseller.services.llm import (
     LLMCompletionResult,
     complete_text,
 )
+from bestseller.services.llm_closed_loop import (
+    LLMGateFinding,
+    build_repair_user_prompt,
+    findings_from_exception,
+)
 from bestseller.settings import AppSettings
 
 logger = logging.getLogger(__name__)
@@ -74,6 +79,7 @@ async def architect_story_facets(
 
     trend_data = get_trend_data_for_genre(genre_key or primary_genre)
     dimensions_summary = get_dimensions_summary_for_ai(language)
+    repair_findings: list[LLMGateFinding] = []
 
     # 2. Build prompt and call LLM
     for attempt in range(_MAX_RETRIES + 1):
@@ -87,6 +93,7 @@ async def architect_story_facets(
                 existing_facets=existing_facets,
                 trend_data=trend_data,
                 dimensions_summary=dimensions_summary,
+                repair_findings=repair_findings,
             )
 
             # 3. Anti-repetition check
@@ -101,6 +108,23 @@ async def architect_story_facets(
                         max_sim, attempt + 1, _MAX_RETRIES + 1,
                     )
                     if attempt < _MAX_RETRIES:
+                        repair_findings = [
+                            LLMGateFinding(
+                                code="STORY_FACETS_TOO_SIMILAR",
+                                severity="major",
+                                path="story_facets",
+                                message="Generated facets are too similar to an existing project.",
+                                expected=(
+                                    "Use clearly differentiated sub_genres, setting, narrative_drive, "
+                                    "emotional_register, and trope_tags."
+                                ),
+                                actual=f"max_similarity={max_sim:.2f}",
+                                repair_action=(
+                                    "Regenerate the full JSON with a more distinctive story genome. "
+                                    "Do not keep the same core combination."
+                                ),
+                            )
+                        ]
                         continue
                     # On final attempt, accept it anyway
                     logger.warning("Accepting similar facets after max retries")
@@ -109,10 +133,24 @@ async def architect_story_facets(
             warnings = validate_story_facets(facets)
             if warnings:
                 logger.info("StoryFacets validation warnings: %s", warnings)
+                if attempt < _MAX_RETRIES:
+                    repair_findings = [
+                        LLMGateFinding(
+                            code="STORY_FACETS_VALIDATION_WARNING",
+                            severity="major",
+                            path="story_facets",
+                            message="Story facets validation emitted warnings.",
+                            expected="All story facet dimensions should be concrete, valid, and market-specific.",
+                            actual="; ".join(str(warning) for warning in warnings[:8]),
+                            repair_action="Regenerate the full JSON and fix the listed facet validation warnings.",
+                        )
+                    ]
+                    continue
 
             return facets
 
-        except Exception:
+        except Exception as exc:
+            repair_findings = findings_from_exception(exc, default_path="story_facets")
             logger.warning(
                 "Story Architect LLM call failed (attempt %d/%d)",
                 attempt + 1, _MAX_RETRIES + 1,
@@ -139,6 +177,7 @@ async def _call_architect_llm(
     existing_facets: list[StoryFacets],
     trend_data: dict[str, Any],
     dimensions_summary: str,
+    repair_findings: list[LLMGateFinding] | None = None,
 ) -> StoryFacets:
     """Build prompt and call LLM to generate StoryFacets."""
 
@@ -151,6 +190,12 @@ async def _call_architect_llm(
         trend_data=trend_data,
         dimensions_summary=dimensions_summary,
     )
+    if repair_findings:
+        user_prompt = build_repair_user_prompt(
+            original_user_prompt=user_prompt,
+            findings=repair_findings,
+            language=language,
+        )
 
     # Use the "planner" role (lighter model, suitable for structured generation)
     request = LLMCompletionRequest(
@@ -158,9 +203,15 @@ async def _call_architect_llm(
         system_prompt=system_prompt,
         user_prompt=user_prompt,
         fallback_response="{}",
-        prompt_template="story_architect_v1",
+        prompt_template="story_architect_v1_repair" if repair_findings else "story_architect_v1",
         prompt_version="1.0",
-        metadata={"agent": "story_architect", "genre": primary_genre},
+        metadata={
+            "agent": "story_architect",
+            "genre": primary_genre,
+            "semantic_repair_findings": [
+                finding.to_dict() for finding in (repair_findings or [])
+            ],
+        },
     )
 
     result: LLMCompletionResult = await complete_text(session, settings, request)

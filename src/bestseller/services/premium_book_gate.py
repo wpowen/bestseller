@@ -13,6 +13,11 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
+from bestseller.services.category_hard_engines import (
+    evaluate_category_hard_engine,
+    resolve_category_hard_engine_key,
+)
+
 _BLOCKING_SEVERITIES = {"critical", "high"}
 _MIN_PASS_SCORE = 70
 
@@ -108,6 +113,9 @@ _REPAIR_ACTIONS = {
     "setup_payoff_debt": "处理 setup/payoff 债务，避免长线承诺只种不收。",
     "repetitive_loop_risk": "调整重复钩子、重复话术或重复章节结构，打散循环感。",
     "scorecard_below_premium_bar": "先修复总分卡低分项，再进入精品书准入。",
+    "category_state_ledger_missing": "补齐该类别的权威状态账本，再允许长篇继续扩展。",
+    "category_hard_gate_missing": "补齐该类别的写前/章后硬门禁，并用好/坏 fixture 验证。",
+    "category_chapter_update_missing": "补齐章节后状态更新通道，让每章变化可折叠进权威快照。",
 }
 
 
@@ -558,13 +566,28 @@ def _capability_snapshot(
     faction_required = _matches(haystack, _FACTION_MARKERS)
     relationship_required = _matches(haystack, _RELATIONSHIP_MARKERS)
     snapshot = _state_snapshot(metadata)
+    category_key = resolve_category_hard_engine_key(
+        metadata,
+        genre=genre,
+        sub_genre=sub_genre,
+    )
+    category_engine_report = (
+        evaluate_category_hard_engine(metadata, category_key=category_key)
+        if category_key
+        else None
+    )
     return {
         "genre_haystack": haystack,
+        "category_hard_engine_key": category_key,
+        "category_hard_engine": (
+            category_engine_report.to_dict() if category_engine_report else None
+        ),
         "required": {
             "progression_engine": progression_required,
             "rule_system": rule_required,
             "faction_ecology": faction_required,
             "relationship_agency": relationship_required,
+            "category_hard_engine": category_key is not None,
         },
         "progression_engine": _has_progression_engine(metadata),
         "rule_system": _has_rule_system(metadata),
@@ -615,6 +638,35 @@ def _capability_findings(
                 "metadata.relationships",
             )
         )
+    category_engine = _as_mapping(capability.get("category_hard_engine"))
+    if required.get("category_hard_engine") and category_engine.get("passed") is False:
+        for raw in _as_sequence(category_engine.get("findings")):
+            finding = _as_mapping(raw)
+            code = _text(finding.get("code"))
+            if code not in {
+                "category_state_ledger_missing",
+                "category_hard_gate_missing",
+                "category_chapter_update_missing",
+            }:
+                continue
+            missing_keys = [
+                _text(item)
+                for item in _as_sequence(finding.get("missing_keys"))
+                if _text(item)
+            ]
+            findings.append(
+                _finding(
+                    code,
+                    _text(finding.get("message"))
+                    or "Category hard-engine contract is incomplete.",
+                    _text(finding.get("path")) or "category_hard_engine",
+                    severity=_text(finding.get("severity")) or "high",
+                    evidence={
+                        "category_key": category_engine.get("category_key"),
+                        "missing_keys": missing_keys,
+                    },
+                )
+            )
     if not capability.get("decision_policy"):
         findings.append(
             _finding(

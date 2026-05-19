@@ -418,6 +418,74 @@ async def extract_chapter_state_snapshot(
 
     raw = completion.content or ""
     facts, time_anchor, chapter_time_span, error = _parse_extraction_payload(raw)
+    if error is not None:
+        try:
+            from bestseller.services.llm_closed_loop import (
+                LLMGateFinding,
+                build_repair_user_prompt,
+            )
+
+            repair_completion = await complete_text(
+                session,
+                settings,
+                LLMCompletionRequest(
+                    logical_role="editor",
+                    system_prompt=system_prompt,
+                    user_prompt=build_repair_user_prompt(
+                        original_user_prompt=user_prompt,
+                        findings=[
+                            LLMGateFinding(
+                                code="CONTINUITY_EXTRACTION_PARSE_ERROR",
+                                severity="major",
+                                path="$",
+                                message=error,
+                                expected="A JSON object with a facts array and optional time fields.",
+                                actual=raw[:240],
+                                repair_action=(
+                                    "Return only valid JSON. Keep extracted facts concrete, "
+                                    "chapter-local, and canon-safe."
+                                ),
+                            )
+                        ],
+                        language=getattr(chapter, "language", None),
+                    ),
+                    fallback_response=fallback_payload,
+                    prompt_template="chapter_state_snapshot_repair",
+                    prompt_version="1.0",
+                    project_id=project_id,
+                    workflow_run_id=workflow_run_id,
+                    step_run_id=step_run_id,
+                    metadata={
+                        "chapter_number": chapter.chapter_number,
+                        "task": "continuity_hard_fact_extraction_repair",
+                        "semantic_repair_of": str(completion.llm_run_id)
+                        if completion.llm_run_id
+                        else None,
+                        "previous_error": error,
+                    },
+                ),
+            )
+            repair_raw = repair_completion.content or ""
+            (
+                repair_facts,
+                repair_time_anchor,
+                repair_chapter_time_span,
+                repair_error,
+            ) = _parse_extraction_payload(repair_raw)
+            if repair_error is None:
+                completion = repair_completion
+                raw = repair_raw
+                facts = repair_facts
+                time_anchor = repair_time_anchor
+                chapter_time_span = repair_chapter_time_span
+                error = None
+        except Exception:
+            logger.warning(
+                "Hard-fact extraction repair failed for project=%s chapter=%d",
+                project_id,
+                chapter.chapter_number,
+                exc_info=True,
+            )
     if error is None:
         facts = _normalize_inferred_countdown_jumps(facts, previous)
     # Defensive truncation: older deployments still have the VARCHAR(32)

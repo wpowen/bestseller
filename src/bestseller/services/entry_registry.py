@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+import hashlib
 import re
 
 from bestseller.domain.entry_system import (
@@ -11,6 +12,8 @@ from bestseller.domain.entry_system import (
 )
 
 _INACTIVE_STATES = {"lost", "spent", "deprecated", "paid_off", "sealed"}
+_ENTRY_ID_MAX_LENGTH = 160
+_ENTRY_NAME_MAX_LENGTH = 200
 
 
 def _as_mapping(value: object) -> dict[str, object]:
@@ -48,6 +51,29 @@ def _slug(text: object, *, fallback: str) -> str:
     raw = _text(text) or fallback
     asciiish = re.sub(r"[^a-zA-Z0-9_\-\u4e00-\u9fff]+", "-", raw).strip("-").lower()
     return asciiish or fallback
+
+
+def _clamp_text(value: object, *, max_length: int) -> str:
+    text = _text(value)
+    if len(text) <= max_length:
+        return text
+    return text[: max_length - 3].rstrip() + "..."
+
+
+def _entry_id(type_key: str, raw_name: object, *, fallback: str) -> str:
+    slug = _slug(raw_name, fallback=fallback)
+    raw = f"{type_key}-{slug}"
+    return _limit_entry_id(raw, fallback=f"{type_key}-{fallback}")
+
+
+def _limit_entry_id(raw: object, *, fallback: str) -> str:
+    raw = _text(raw) or fallback
+    if len(raw) <= _ENTRY_ID_MAX_LENGTH:
+        return raw
+    digest = hashlib.sha1(raw.encode("utf-8")).hexdigest()[:10]
+    prefix_length = _ENTRY_ID_MAX_LENGTH - len(digest) - 1
+    prefix = raw[:prefix_length].rstrip("-") or fallback[:prefix_length]
+    return f"{prefix}-{digest}"
 
 
 def _target_chapters_from_kernel(
@@ -210,12 +236,12 @@ def _named_entries(
         name = _text(data.get("name") or raw)
         if not name:
             continue
-        entry_id = f"{type_key}-{_slug(name, fallback=str(index))}"
+        entry_id = _entry_id(type_key, name, fallback=str(index))
         entries.append(
             EntryDefinition(
                 entry_id=entry_id,
                 type=type_key,
-                name=name,
+                name=_clamp_text(name, max_length=_ENTRY_NAME_MAX_LENGTH),
                 tier=tier,
                 taxonomy_ref=taxonomy_ref,
                 visibility="planned",
@@ -247,9 +273,9 @@ def entries_from_progression_metadata(
     system_name = _text(power_system.get("name") or power_system.get("title") or "核心修行体系")
     entries.append(
         EntryDefinition(
-            entry_id=f"cultivation_method-{_slug(system_name, fallback='core')}",
+            entry_id=_entry_id("cultivation_method", system_name, fallback="core"),
             type="cultivation_method",
-            name=system_name,
+            name=_clamp_text(system_name, max_length=_ENTRY_NAME_MAX_LENGTH),
             tier="pillar",
             taxonomy_ref="cultivation_method",
             visibility="planned",
@@ -308,12 +334,17 @@ def entries_from_project_materials(
         name = _text(material.get("name") or content.get("name"))
         if not name:
             continue
-        entry_id = _text(material.get("slug")) or f"{type_key}-{_slug(name, fallback=str(index))}"
+        entry_id = _text(material.get("slug")) or _entry_id(
+            type_key,
+            name,
+            fallback=str(index),
+        )
+        entry_id = _limit_entry_id(entry_id, fallback=f"{type_key}-{index}")
         entries.append(
             EntryDefinition(
                 entry_id=entry_id,
                 type=type_key,
-                name=name,
+                name=_clamp_text(name, max_length=_ENTRY_NAME_MAX_LENGTH),
                 tier=_text(content.get("tier")) or "supporting",
                 taxonomy_ref=type_key,
                 grade_ladder_ref=_ladder_for_type(kernel, type_key),

@@ -2,35 +2,50 @@
   "source_id": "source-0008",
   "source_type": "distillation_package",
   "status": "draft_review",
-  "style_safety_policy": "no_content_available_for_policy_derivation",
-  "pov_and_distance": "close-third or project-selected POV with controlled narrative distance",
+  "style_safety_policy": "Medium intensity - investigation-thriller structure with visceral horror elements, supernatural threat manifestation, and romantic subplot misdirection. Body horror through biological corruption (roots replacing bones, blood flowing uphill, plant growth consuming flesh) described through sensory-first approach prioritizing tactile and temperature wrongness over visual inventory. Violence contained within investigation-horror genre contract; death stakes serve plot function rather than gratuitous. Romance operates as emotional anchor and manipulation mechanism; identity-twist subversions recontextualize intimate scenes as traps. Protagonist moral ambiguity (evidence manipulation, illegal investigation methods) requires competence establishment before unreliability introduction.",
+  "pov_and_distance": "Dual-layer first-person intimate for emotional and supernatural scenes: retrospective narrator voice creates temporal distance between experiencing self and reflecting self, enabling future-regret framing and dramatic irony when predictions prove incorrect. Close third-person limited for analytical investigation sequences, reducing meta-fictional framing while maintaining protagonist interiority access. Occasional unmarked POV expansion during antagonist confession scenes—protagonist remains restrained or absent during extended backstory delivery, establishing power dynamics through helplessness. Reader occupies protagonist's analytical lens completely, perceiving information with identical blind spots; objective reality never provided directly. Witness testimony sequences employ frame-narrator receiving testimony, creating dual-layer first-person.",
   "sentence_rhythm": [
-    "vary short action beats with medium explanatory sentences"
+    "Alternating register creates genre modulation: long cumulative sentences with multiple subordinate clauses build atmosphere and investigation tension, while short declarative fragments deliver shock impact and horror beats. Investigation sequences employ compound sentences simulating methodical thinking with logical connectors. Horror climax compresses into staccato fragments mimicking panicked breath response. Emotional scenes expand into flowing compound sentences allowing psychological time. Genre transitions marked through rhythm shift—rationalism maintained until deliberate sentence compression shatters tone. Action sequences use variable length creating breath-like pulse: short bursts of urgency followed by contemplative expansion."
   ],
   "paragraphing": [
-    "keep paragraphs functional: action, reaction, or information turn"
+    "Initial chapters risk excessively long worldbuilding paragraphs; shifts to shorter scene-driven paragraphs once action initiates. Single-sentence paragraphs isolate dramatic beats, horror revelations, and emotional punches. Extended multi-sentence blocks carry exposition and internal reasoning. Dialogue-heavy exchanges use minimal attribution tags for pacing acceleration. White space functions as emotional pause marker and structural signal between POV shifts. Horror sequences employ sparse functional description versus dense sensory paragraphs during crisis. Scene breaks unmarked aside from whitespace and hard cuts between tonal registers."
   ],
   "dialogue_system": [
-    "use role-specific intent, subtext, and conflict pressure"
+    "Character voice differentiated through content priority and syntax register rather than physical description. Protagonist uses measured analytical tone with self-deprecating deflection; allies employ emotional reasoning and casual expression; antagonists deliver exposition through lecturing tone establishing power hierarchy. Investigation sequences use Socratic question-answer patterns where protagonist asks leading questions and witnesses provide reluctant reveals. Competitive dialogue where characters argue while simultaneously revealing information. Confession sequences employ sustained monologue uninterrupted by protagonist. Information exchanges disguised as banter or confrontation rather than volunteered explanation. Tag dialogue with action beats rather than pure attribution."
   ],
   "description_strategy": [
-    "describe only details that change stakes, mood, or reader inference"
+    "Sensory-first prioritization during horror: touch, temperature, and sound precede visual confirmation. Atmospheric buildup through absence rather than presence—missing sounds, missing light, missing life. Physical sensations (trembling, cold crawl, throat constriction, goosebumps) externalize psychological states. Environmental details selected for supernatural implication rather than comprehensive setting inventory. Supernatural elements described through effects rather than direct explanation. Ordinary object defamiliarization introduces threat (apple, mirror, clock, cat becoming focal horror element). Single striking feature per character creates memorable specificity. Visual horror deferred through physiological response description first."
   ],
   "exposition_strategy": [
-    "place exposition after visible need or conflict pressure"
+    "Worldbuilding delivered through character knowledge and behavior rather than omniscient summary. Information gated by character willingness creating dramatic access control; reluctant confessor mechanics justify extended backstory delivery. Protagonist thinks through logic aloud allowing necessary information to emerge naturally without obvious infodump. Companion surrogate asks obvious questions prompting explanation. Evidence chain revelation delays payoff across chapters; physical discovery followed by emotional/supernatural response creates two-part payoff. Embedded documents (letters, fictional works) advance backstory while creating dramatic irony. Backstory delivered through antagonist perspective with selective revelation under interrogation pressure."
   ],
   "emotional_temperature": [
-    "surface emotion through choices, body action, and withheld admission"
+    "Escalating tension maintained through perpetual mystery accumulation exceeding resolution bandwidth. Emotional vulnerability peak serves as horror introduction trigger—genre pivot occurs during character openness maximizing impact. Romance operates as emotional anchor and misdirection device; intimate scenes build expectations that identity-twist subverts. Grief-weaponized climax: emotional breakdown replaces physical confrontation as narrative peak. Terminal diagnosis converts death sentence into active mission framework adding urgency to emotional stakes. Comedic relief strategically placed before major revelations for tonal breathing room. Tonal dissonance (comedy following horror) creates cognitive variety maintaining reader engagement across extended narrative."
   ],
   "hooking_and_transitions": [
-    "end units on changed state, unresolved question, or sharper constraint"
+    "Chapter endings employ multiple mechanisms: unanswered questions in ellipsis format, escalating threats, or physical danger cliffhangers. Revelation hooks use isolated single-sentence paragraphs for emphasis. Supernatural hooks accumulate sensory anomalies before explicit threat statement. Cryptic prophecy delivered through supernatural medium creates resolution/new-mystery duality. Environmental shifts (silence, temperature drop, light change) signal supernatural threshold crossings. Time markers explicit but brief anchor timeline during investigation sequences. Genre transitions signaled through prose register change rather than explicit breaks. Hard cuts between emotional beats matching genre convention. Geographic/spatial displacement functions as temporal marker."
   ],
   "adaptation_guidelines": [
-    "This craft_card represents a complete_distillation_failure. All 118 processed chapters returned LLM_unavailable stubs with confidence 0.0. No narrative tokens, craft observations, reusable mechanisms, or reader rewards were extractable. Re-derivation requires accessible source content. Target structure was 5 volumes, 119 chapters; 1 chapter (abs_chapter_no 17, volume 1) additionally missing from batch. Volume numbering metadata inconsistency detected for abs_chapters 27-51 (source shows volume_no 1; target specifies volume_no 2)."
+    "Investigation-horror hybrid requires careful tonal calibration between rational deduction and visceral threat. Protagonist competence must be established before introducing moral ambiguity to maintain reader investment. Information withholding through reluctant confessor mechanics creates tension but requires visible protagonist urgency rather than authorial delay. Mystery compounds technique keeps multiple crimes at different payoff stages creating perpetual forward momentum. Genre pivot structure uses investigation rationalism as scaffolding for deliberate tone shattering. Romance subplot should drive emotional stakes without fragmenting central mystery focus. Terminal ticking-clock converts passive death sentence into active agent framework. Protective haunting subversion reveals benevolent intent behind malevolent reputation. Witness coordination pairs complementary investigation roles for simultaneous information revelation."
   ],
   "taboo_copy_signals": [
-    "No source content available; no copy-safe signals derivable"
+    "Character names and relationship designations (protagonist, allies, antagonists)",
+    "Chinese cultural terminology requiring native context (feng shui concepts, tea ceremony specifics, funeral practices)",
+    "Specific horror details involving execution methods, anatomical descriptions, body modification",
+    "Verbal tics and informal expressions ('噗哧' laughter, '嘿嘿' interjections)",
+    "Philosophical essay openings using cultural quotations as thematic framing",
+    "Internet novel website signatures and meta-commentary conventions",
+    "Melodramatic romantic confession dialogue patterns",
+    "Graphic violence description without narrative purpose beyond shock",
+    "First-person lyrical exclamation patterns at chapter opening mechanically repeated",
+    "Philosophical death meditation opening format as structural template",
+    "Single-clause sentence fragments for shock effect used as mechanical pattern rather than organic rhythm",
+    "Percentage statistics as pseudo-scientific foundation for supernatural claims",
+    "Authorial self-insertion through appended notes within narrative text",
+    "Repeated kiss-interruption pattern with identical mechanics",
+    "Footnote reliance as sole section marker",
+    "Proportion statistics as exposition scaffolding"
   ],
-  "confidence": 0.0,
+  "confidence": 0.87,
   "distillation_source_id": "source-0008"
 }

@@ -36,6 +36,9 @@ from bestseller.services.story_shape_router import derive_story_shape
 _DEFAULT_FORBIDDEN_MOTIFS = (
     "家庭创伤或身世旧案默认驱动",
     "亲属创伤默认驱动",
+    "身世旧案",
+    "失踪旧案",
+    "查清身世",
     "神秘玉佩",
     "退婚羞辱",
     "神秘老人",

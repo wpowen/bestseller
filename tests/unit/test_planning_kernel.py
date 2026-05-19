@@ -8,6 +8,7 @@ import pytest
 from bestseller.services.planning_kernel import (
     build_prewrite_repair_directives,
     build_project_planning_kernel,
+    decide_prewrite_readiness_gate,
     evaluate_prewrite_readiness,
     persist_project_planning_kernel,
 )
@@ -354,6 +355,70 @@ def test_prewrite_readiness_blocks_thin_generic_planning() -> None:
     assert "benchmark_alignment_missing" in codes
     assert "unique_hook_missing" in codes
     assert "series_engine_missing" in codes
+
+
+def test_prewrite_readiness_gate_warn_mode_records_without_blocking() -> None:
+    kernel = build_project_planning_kernel(
+        _project(),
+        book_spec={},
+        world_spec={},
+        cast_spec={},
+        volume_plan=[],
+    )
+    report = evaluate_prewrite_readiness(kernel)
+
+    decision = decide_prewrite_readiness_gate(report, mode="warn")
+
+    assert decision.should_block is False
+    assert decision.reason == "warn_only"
+    assert "series_engine_missing" in decision.critical_codes
+    assert decision.to_dict()["mode"] == "warn"
+
+
+def test_prewrite_readiness_gate_blocks_only_critical_in_staged_mode() -> None:
+    high_only_report = {
+        "passed": False,
+        "score": 88,
+        "blocking_findings": [
+            {
+                "code": "unique_hook_missing",
+                "severity": "high",
+            }
+        ],
+        "warnings": [],
+    }
+
+    high_only_decision = decide_prewrite_readiness_gate(
+        high_only_report,
+        mode="critical_only",
+    )
+    strict_decision = decide_prewrite_readiness_gate(
+        high_only_report,
+        mode="warn",
+        block_on_failure=True,
+    )
+
+    assert high_only_decision.should_block is False
+    assert high_only_decision.reason == "non_critical_findings_warned"
+    assert strict_decision.should_block is True
+    assert strict_decision.mode == "block"
+
+
+def test_prewrite_readiness_gate_blocks_critical_findings_in_staged_mode() -> None:
+    kernel = build_project_planning_kernel(
+        _project(),
+        book_spec={},
+        world_spec={},
+        cast_spec={},
+        volume_plan=[],
+    )
+    report = evaluate_prewrite_readiness(kernel)
+
+    decision = decide_prewrite_readiness_gate(report, mode="block_on_critical")
+
+    assert decision.should_block is True
+    assert decision.reason == "critical_findings"
+    assert "series_engine_missing" in decision.blocking_codes
 
 
 def test_prewrite_readiness_blocks_repeated_volume_pressure() -> None:

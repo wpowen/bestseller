@@ -110,10 +110,29 @@ def _canonical_repair_code(code: str) -> str:
 
 DUPLICATE_CONTENT_BLOCK_CODE = "CROSS_CHAPTER_REPETITION"
 INTRA_CHAPTER_DUPLICATE_BLOCK_CODE = "INTRA_CHAPTER_REPETITION"
+UNFINISHED_ARTIFACT_BLOCK_CODE = "UNFINISHED_ARTIFACT"
+LLM_OUTPUT_TRUNCATED_BLOCK_CODE = "LLM_OUTPUT_TRUNCATED"
+SCENE_COMPLETION_BLOCK_CODE = "SCENE_COMPLETION_INCOMPLETE"
+
+_TRUNCATED_FINISH_REASONS = frozenset(
+    {
+        "length",
+        "max_tokens",
+        "max_token",
+        "token_limit",
+        "output_limit",
+        "content_length",
+    }
+)
 
 
 _CJK_CHAR_PATTERN = re.compile(r"[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]")
 _LATIN_WORD_PATTERN = re.compile(r"[A-Za-z0-9]+(?:['\u2019._-][A-Za-z0-9]+)*")
+
+
+def _finish_reason_indicates_truncation(finish_reason: object) -> bool:
+    text = str(finish_reason or "").strip().lower()
+    return text in _TRUNCATED_FINISH_REASONS
 
 
 def _strip_markdown_plain(text: str) -> str:
@@ -647,6 +666,8 @@ async def _evaluate_chapter_quality_gate(
     project: ProjectModel,
     chapter_number: int,
     content: str,
+    extra_blocking_codes: tuple[str, ...] = (),
+    extra_report_payload: dict[str, Any] | None = None,
 ) -> str | None:
     """Run L4 + L5 validators + L6 gate resolution on an assembled chapter draft.
 
@@ -953,11 +974,38 @@ async def _evaluate_chapter_quality_gate(
             exc_info=True,
         )
 
+    unfinished_issues: list[str] = []
+    try:
+        from bestseller.services.output_hygiene import collect_unfinished_artifact_issues
+
+        unfinished_issues = collect_unfinished_artifact_issues(
+            content,
+            language=getattr(project, "language", None),
+        )
+        if unfinished_issues:
+            logger.warning(
+                "chapter %d: unfinished-artifact block — %s",
+                chapter_number,
+                "; ".join(unfinished_issues[:3]),
+            )
+    except Exception:
+        logger.debug(
+            "unfinished-artifact gate errored for chapter %d (non-fatal)",
+            chapter_number,
+            exc_info=True,
+        )
+
+    additional_blocking_codes = tuple(str(c) for c in extra_blocking_codes if c)
+    unfinished_block_code = UNFINISHED_ARTIFACT_BLOCK_CODE if unfinished_issues else None
+
     outcome: str
-    if blocking or length_block_code:
+    if blocking or length_block_code or unfinished_block_code or additional_blocking_codes:
         reasons = [v.code for v in blocking]
         if length_block_code:
             reasons.append(length_block_code)
+        if unfinished_block_code:
+            reasons.append(unfinished_block_code)
+        reasons.extend(additional_blocking_codes)
         logger.warning(
             "chapter %d: blocked by quality gate — %s",
             chapter_number,
@@ -981,9 +1029,21 @@ async def _evaluate_chapter_quality_gate(
     _persisted_blocking_codes: tuple[str, ...] = tuple(v.code for v in blocking)
     if length_block_code:
         _persisted_blocking_codes = _persisted_blocking_codes + (length_block_code,)
+    if unfinished_block_code:
+        _persisted_blocking_codes = _persisted_blocking_codes + (unfinished_block_code,)
+    if additional_blocking_codes:
+        _persisted_blocking_codes = _persisted_blocking_codes + additional_blocking_codes
     _extra_payload: dict[str, Any] | None = None
+    if extra_report_payload is not None:
+        _extra_payload = dict(extra_report_payload)
     if length_report_payload is not None:
-        _extra_payload = {"length_stability": length_report_payload}
+        _extra_payload = dict(_extra_payload or {})
+        _extra_payload["length_stability"] = length_report_payload
+    if unfinished_issues:
+        _extra_payload = dict(_extra_payload or {})
+        _extra_payload["unfinished_artifact"] = {
+            "issues": list(unfinished_issues),
+        }
     if character_voice_payload is not None:
         _extra_payload = dict(_extra_payload or {})
         _extra_payload["character_voice"] = character_voice_payload
@@ -5257,6 +5317,8 @@ async def generate_scene_draft(
     llm_run_id: UUID | None = None
     generation_mode = "template-fallback"
     content_md = fallback_content
+    completion_finish_reason: str | None = None
+    llm_output_truncated = False
     if settings is not None:
         system_prompt, user_prompt = build_scene_draft_prompts(
             project,
@@ -5488,6 +5550,16 @@ async def generate_scene_draft(
                 completion.model_name,
                 completion.finish_reason,
             )
+        completion_finish_reason = completion.finish_reason
+        llm_output_truncated = _finish_reason_indicates_truncation(completion_finish_reason)
+        if llm_output_truncated:
+            logger.warning(
+                "Scene %d.%d LLM writer stopped by output token limit "
+                "(finish_reason=%s); draft will be blocked for repair if assembled.",
+                chapter_number,
+                scene_number,
+                completion_finish_reason,
+            )
         content_md = sanitize_novel_markdown_content(completion.content, language=_project_language(project)) or fallback_content
         content_md = strip_scaffolding_echoes(content_md)
         # LLM-based cleanup if regex sanitizer missed meta-commentary
@@ -5610,6 +5682,8 @@ async def generate_scene_draft(
             "query_brief_used": bool(getattr(context_packet, "query_brief", None)),
             "query_tool_call_count": len(getattr(context_packet, "query_trace", []) or []),
             "regen_count": int(scene_regen_count),
+            "finish_reason": completion_finish_reason,
+            "llm_output_truncated": bool(llm_output_truncated),
             # Hype assignment — read by assemble_chapter_draft to stamp the
             # chapter row + register the moment on DiversityBudget.
             "assigned_hype_type": (
@@ -5678,6 +5752,64 @@ async def assemble_chapter_draft(
         missing = ", ".join(str(scene_number) for scene_number in missing_scenes)
         raise ValueError(
             f"Chapter {chapter_number} cannot be assembled because current drafts are missing for scenes: {missing}."
+        )
+
+    scene_number_by_id = {scene.id: int(scene.scene_number) for scene in scenes}
+    scene_by_id = {scene.id: scene for scene in scenes}
+    truncated_scene_numbers = sorted(
+        scene_number_by_id.get(scene_draft.scene_card_id, 0)
+        for scene_draft in scene_drafts
+        if (
+            bool((scene_draft.generation_params or {}).get("llm_output_truncated"))
+            or _finish_reason_indicates_truncation(
+                (scene_draft.generation_params or {}).get("finish_reason")
+            )
+        )
+    )
+    truncated_scene_numbers = [n for n in truncated_scene_numbers if n > 0]
+    scene_completion_issues: list[dict[str, Any]] = []
+    last_scene_number = max(scene_number_by_id.values()) if scene_number_by_id else 0
+    try:
+        from bestseller.services.output_hygiene import collect_unfinished_artifact_issues
+
+        for scene_draft in scene_drafts:
+            scene = scene_by_id.get(scene_draft.scene_card_id)
+            scene_number = scene_number_by_id.get(scene_draft.scene_card_id, 0)
+            if scene is None or scene_number <= 0:
+                continue
+            scene_content = scene_draft.content_md or ""
+            scene_word_count = int(scene_draft.word_count or count_words(scene_content))
+            scene_target = int(getattr(scene, "target_word_count", 0) or 0)
+            if scene_target >= 300:
+                floor_ratio = 0.70 if scene_number == last_scene_number else 0.55
+                floor_words = max(120, int(scene_target * floor_ratio))
+                if scene_word_count < floor_words:
+                    scene_completion_issues.append(
+                        {
+                            "scene_number": scene_number,
+                            "code": "scene_under_target",
+                            "word_count": scene_word_count,
+                            "target_word_count": scene_target,
+                            "floor_words": floor_words,
+                        }
+                    )
+            tail_issues = collect_unfinished_artifact_issues(
+                scene_content,
+                language=getattr(project, "language", None),
+            )
+            for issue in tail_issues[:3]:
+                scene_completion_issues.append(
+                    {
+                        "scene_number": scene_number,
+                        "code": "scene_tail_incomplete",
+                        "issue": issue,
+                    }
+                )
+    except Exception:
+        logger.debug(
+            "Chapter %d: scene completion scan failed (non-fatal)",
+            chapter_number,
+            exc_info=True,
         )
 
     content_md = render_chapter_draft_markdown(chapter, scene_drafts, language=project.language)
@@ -5776,6 +5908,34 @@ async def assemble_chapter_draft(
         project=project,
         chapter_number=chapter_number,
         content=content_md,
+        extra_blocking_codes=(
+            ((LLM_OUTPUT_TRUNCATED_BLOCK_CODE,) if truncated_scene_numbers else ())
+            + ((SCENE_COMPLETION_BLOCK_CODE,) if scene_completion_issues else ())
+        ),
+        extra_report_payload=(
+            {
+                **(
+                    {
+                        "llm_output_truncation": {
+                            "scene_numbers": truncated_scene_numbers,
+                        }
+                    }
+                    if truncated_scene_numbers
+                    else {}
+                ),
+                **(
+                    {
+                        "scene_completion": {
+                            "issues": scene_completion_issues,
+                        }
+                    }
+                    if scene_completion_issues
+                    else {}
+                ),
+            }
+            if truncated_scene_numbers or scene_completion_issues
+            else None
+        ),
     )
     if duplicate_gate_findings:
         quality_gate_outcome = "blocked"
@@ -6244,6 +6404,19 @@ async def maybe_prepare_chapter_auto_repair(
                 "【最终修复尝试】章节结尾钩子问题持续存在。本次为最后一次重写——"
                 "请在最后一段加入一个悬念性的句子即可，即使不够强也将被接受。"
             )
+
+    if (
+        "UNFINISHED_ARTIFACT" in canonical_hits
+        or "LLM_OUTPUT_TRUNCATED" in canonical_hits
+        or "SCENE_COMPLETION_INCOMPLETE" in canonical_hits
+    ):
+        hint_fragments.append(
+            "上一版本疑似被模型输出上限截断或留下未完成正文。"
+            "本次重写必须补完整个场景/章节的最后动作、对白、因果承接和情节拍结果；"
+            "最后一个正文段落必须是完整句子，以句号、问号、叹号或省略号结束，"
+            "并在完整句子内留下下一章点击理由。禁止只写“抬头/转身/沉默/刚要开口”"
+            "这类动作准备句，也禁止以逗号、冒号、半句对白或裸汉字结尾。"
+        )
 
     if canonical_hits & _CHARACTER_OFFSTAGE_REPAIR_CODES:
         hint_fragments.append(

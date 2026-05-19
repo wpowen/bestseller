@@ -20,6 +20,7 @@ from bestseller.infra.db.models import (
     RewriteImpactModel,
     RewriteTaskModel,
     SceneCardModel,
+    SceneDraftVersionModel,
 )
 from bestseller.services.consistency import review_project_consistency
 from bestseller.services.exports import export_project_markdown
@@ -38,6 +39,74 @@ from bestseller.settings import AppSettings
 WORKFLOW_TYPE_PROJECT_REPAIR = "project_repair"
 ProgressCallback = Callable[[str, dict[str, Any] | None], None]
 logger = logging.getLogger(__name__)
+
+
+async def _chapter_has_incomplete_scene_drafts(
+    session: AsyncSession,
+    chapter: ChapterModel,
+    *,
+    language: str | None,
+) -> bool:
+    """Return True when current scene drafts suggest a chapter stopped mid-build.
+
+    This catches historical chapters whose assembled markdown may end with a
+    syntactically complete sentence but whose final scene or an interior scene
+    is plainly under-produced compared with its own target.
+    """
+
+    from bestseller.services.drafts import count_words  # noqa: PLC0415
+    from bestseller.services.output_hygiene import (  # noqa: PLC0415
+        collect_unfinished_artifact_issues,
+    )
+
+    rows = await session.execute(
+        select(SceneCardModel, SceneDraftVersionModel)
+        .outerjoin(
+            SceneDraftVersionModel,
+            and_(
+                SceneDraftVersionModel.scene_card_id == SceneCardModel.id,
+                SceneDraftVersionModel.is_current.is_(True),
+            ),
+        )
+        .where(SceneCardModel.chapter_id == chapter.id)
+        .order_by(SceneCardModel.scene_number.asc())
+    )
+    payloads = list(rows.all())
+    if not payloads:
+        return False
+
+    scene_numbers = [
+        int(scene.scene_number)
+        for scene, _draft in payloads
+        if getattr(scene, "scene_number", None) is not None
+    ]
+    last_scene_number = max(scene_numbers) if scene_numbers else 0
+
+    for scene, draft in payloads:
+        scene_number = int(getattr(scene, "scene_number", 0) or 0)
+        if draft is None:
+            return True
+        content = draft.content_md or ""
+        if collect_unfinished_artifact_issues(content, language=language):
+            return True
+
+        try:
+            target = int(getattr(scene, "target_word_count", 0) or 0)
+        except (TypeError, ValueError):
+            target = 0
+        if target < 300:
+            continue
+        try:
+            word_count = int(getattr(draft, "word_count", 0) or 0)
+        except (TypeError, ValueError):
+            word_count = 0
+        if word_count <= 0:
+            word_count = count_words(content)
+        floor_ratio = 0.70 if scene_number == last_scene_number else 0.55
+        floor_words = max(120, int(target * floor_ratio))
+        if word_count < floor_words:
+            return True
+    return False
 _ORPHAN_REWRITE_TASK_ERRORS = (
     "Rewrite task does not point to a source scene.",
     "Source scene for rewrite task was not found.",
@@ -212,6 +281,12 @@ async def _load_publication_blocked_chapter_numbers(
         ):
             blocked.add(chapter_number)
         if collect_unfinished_artifact_issues(content, language=language):
+            blocked.add(chapter_number)
+        if await _chapter_has_incomplete_scene_drafts(
+            session,
+            chapter,
+            language=language,
+        ):
             blocked.add(chapter_number)
         if (
             detect_chapter_text_loop(content)

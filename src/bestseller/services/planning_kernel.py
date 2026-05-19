@@ -202,6 +202,30 @@ class PrewriteReadinessReport:
         return prewrite_readiness_report_to_dict(self)
 
 
+@dataclass(frozen=True, slots=True)
+class PrewriteReadinessGateDecision:
+    mode: str
+    should_block: bool
+    passed: bool
+    score: int | None
+    blocking_codes: tuple[str, ...]
+    critical_codes: tuple[str, ...]
+    warning_codes: tuple[str, ...]
+    reason: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "mode": self.mode,
+            "should_block": self.should_block,
+            "passed": self.passed,
+            "score": self.score,
+            "blocking_codes": list(self.blocking_codes),
+            "critical_codes": list(self.critical_codes),
+            "warning_codes": list(self.warning_codes),
+            "reason": self.reason,
+        }
+
+
 def prewrite_readiness_report_to_dict(
     report: PrewriteReadinessReport,
 ) -> dict[str, Any]:
@@ -215,6 +239,67 @@ def prewrite_readiness_report_to_dict(
         "recommended_repair_actions": list(report.recommended_repair_actions),
         "capability_snapshot": dict(report.capability_snapshot),
     }
+
+
+def decide_prewrite_readiness_gate(
+    report: object,
+    *,
+    mode: str = "warn",
+    block_on_failure: bool = False,
+) -> PrewriteReadinessGateDecision:
+    """Decide whether prewrite readiness should stop drafting.
+
+    ``block_on_failure`` preserves the old boolean strict mode.  The string
+    ``mode`` supports staged rollout: off/warn, block_on_critical, or block.
+    """
+
+    data = (
+        prewrite_readiness_report_to_dict(report)
+        if isinstance(report, PrewriteReadinessReport)
+        else _as_mapping(report)
+    )
+    passed = data.get("passed") is True
+    score = _optional_int(data.get("score"))
+    blocking_findings = _mapping_list(data.get("blocking_findings"))
+    warning_findings = _mapping_list(data.get("warnings"))
+    blocking_codes = tuple(
+        str(item.get("code")) for item in blocking_findings if item.get("code")
+    )
+    critical_codes = tuple(
+        str(item.get("code"))
+        for item in blocking_findings
+        if item.get("code") and str(item.get("severity") or "").lower() == "critical"
+    )
+    warning_codes = tuple(
+        str(item.get("code")) for item in warning_findings if item.get("code")
+    )
+    normalized_mode = _normalize_prewrite_gate_mode(mode)
+    if block_on_failure:
+        normalized_mode = "block"
+
+    if passed:
+        should_block = False
+        reason = "passed"
+    elif normalized_mode in {"off", "warn"}:
+        should_block = False
+        reason = "warn_only"
+    elif normalized_mode == "block_on_critical":
+        should_block = bool(critical_codes)
+        reason = "critical_findings" if should_block else "non_critical_findings_warned"
+    else:
+        should_block = bool(blocking_codes) or not passed
+        reason = "readiness_failed" if should_block else "passed"
+
+    return PrewriteReadinessGateDecision(
+        mode=normalized_mode,
+        should_block=should_block,
+        passed=passed,
+        score=score,
+        blocking_codes=blocking_codes,
+        critical_codes=critical_codes,
+        warning_codes=warning_codes,
+        reason=reason,
+    )
 
 
 def _is_en_language(language: str | None) -> bool:
@@ -286,6 +371,30 @@ def _string_list(value: object) -> list[str]:
 
 def _mapping_list(value: object) -> list[dict[str, object]]:
     return [_as_mapping(item) for item in _as_sequence(value) if _as_mapping(item)]
+
+
+def _optional_int(value: object) -> int | None:
+    try:
+        return int(value) if value is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _normalize_prewrite_gate_mode(mode: object) -> str:
+    raw = _text(mode).lower().replace("-", "_")
+    aliases = {
+        "": "warn",
+        "telemetry": "warn",
+        "monitor": "warn",
+        "strict": "block",
+        "blocking": "block",
+        "critical": "block_on_critical",
+        "critical_only": "block_on_critical",
+    }
+    normalized = aliases.get(raw, raw)
+    if normalized in {"off", "warn", "block_on_critical", "block"}:
+        return normalized
+    return "warn"
 
 
 def _project_metadata(project_or_metadata: object) -> dict[str, object]:
@@ -1418,9 +1527,11 @@ def persist_project_planning_kernel(
 
 __all__ = [
     "PrewriteReadinessFinding",
+    "PrewriteReadinessGateDecision",
     "PrewriteReadinessReport",
     "build_prewrite_repair_directives",
     "build_project_planning_kernel",
+    "decide_prewrite_readiness_gate",
     "evaluate_prewrite_readiness",
     "persist_project_planning_kernel",
     "prewrite_readiness_report_to_dict",

@@ -13195,7 +13195,10 @@ async def _run_prewrite_readiness_gate(
 ) -> dict[str, Any]:
     """Persist the planning kernel and readiness report before drafting entry."""
 
-    from bestseller.services.planning_kernel import persist_project_planning_kernel
+    from bestseller.services.planning_kernel import (
+        decide_prewrite_readiness_gate,
+        persist_project_planning_kernel,
+    )
 
     payload = persist_project_planning_kernel(
         project,
@@ -13228,13 +13231,12 @@ async def _run_prewrite_readiness_gate(
             version_no=readiness_artifact.version_no,
         )
     )
-    blocking_codes = [
-        str(item.get("code"))
-        for item in _mapping_list(report.get("blocking_findings"))
-        if item.get("code")
-    ]
-    passed = bool(report.get("passed"))
-    should_block = settings.pipeline.prewrite_readiness_block_on_failure and not passed
+    decision = decide_prewrite_readiness_gate(
+        report,
+        mode=settings.pipeline.prewrite_readiness_gate_mode,
+        block_on_failure=settings.pipeline.prewrite_readiness_block_on_failure,
+    )
+    should_block = decision.should_block
     await create_workflow_step_run(
         session,
         workflow_run_id=workflow_run_id,
@@ -13243,16 +13245,23 @@ async def _run_prewrite_readiness_gate(
         status=WorkflowStatus.FAILED if should_block else WorkflowStatus.COMPLETED,
         output_ref={
             "artifact_id": str(readiness_artifact.id),
-            "passed": passed,
-            "score": report.get("score"),
-            "blocking_codes": blocking_codes,
+            "passed": decision.passed,
+            "score": decision.score,
+            "blocking_codes": list(decision.blocking_codes),
+            "critical_codes": list(decision.critical_codes),
+            "warning_codes": list(decision.warning_codes),
+            "gate_decision": decision.to_dict(),
         },
         error_message=(
-            "Prewrite readiness gate failed: " + ", ".join(blocking_codes) if should_block else None
+            "Prewrite readiness gate failed: " + ", ".join(decision.blocking_codes)
+            if should_block
+            else None
         ),
     )
     if should_block:
-        raise PlannerFallbackError("Prewrite readiness gate failed: " + ", ".join(blocking_codes))
+        raise PlannerFallbackError(
+            "Prewrite readiness gate failed: " + ", ".join(decision.blocking_codes)
+        )
     return payload
 
 

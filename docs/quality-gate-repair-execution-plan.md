@@ -199,15 +199,52 @@ uv run python scripts/autonomous_book_repair.py --slug romantasy-1776330993 --pl
 
 ### P1-C. Prewrite Readiness staged block
 
+状态：第一批 Done。已完成分级阻断决策，并接入 planner 的 `prewrite_readiness_gate` workflow step。
+
 目标：新项目默认 block，存量高风险项目 block_on_critical，老项目允许 migration override。
 
 配置策略：
 
-- new project：`prewrite_readiness_block_on_failure=true`
-- legacy high-risk：`block_on_critical`
-- legacy override：写入 `legacy_risk_accepted`
+- new/canary project：`prewrite_readiness_gate_mode=block` 或 `prewrite_readiness_block_on_failure=true`
+- legacy high-risk：`prewrite_readiness_gate_mode=block_on_critical`
+- legacy default：`prewrite_readiness_gate_mode=warn`
 
 预期收益：避免弱规划进入写作后再由章节门禁反复拦截。
+
+已完成：
+
+- 新增 `PrewriteReadinessGateDecision` 与 `decide_prewrite_readiness_gate(...)`。
+- 支持 `off`、`warn`、`block_on_critical`、`block` 四档模式。
+- 保留 `prewrite_readiness_block_on_failure=true` 的旧严格阻断语义，避免生产配置回退。
+- `planner._run_prewrite_readiness_gate(...)` 的 workflow step 现在写入 `gate_decision`、`critical_codes`、`warning_codes`。
+- 当 gate 决策为阻断时，step 标记为 `FAILED` 并在章节生成前抛出 `PlannerFallbackError`。
+
+新增验证：
+
+```bash
+uv run pytest tests/unit/test_planning_kernel.py tests/unit/test_story_design_settings.py -q --no-cov
+```
+
+结果：`17 passed`
+
+```bash
+uv run ruff check --select F,E9 src/bestseller/services/planning_kernel.py src/bestseller/services/planner.py src/bestseller/settings.py tests/unit/test_planning_kernel.py tests/unit/test_story_design_settings.py
+```
+
+结果：`All checks passed`
+
+最终闭环验证：
+
+```bash
+uv run pytest tests/unit -q --no-cov
+```
+
+结果：`4213 passed`
+
+真实项目抽样保持闭环：
+
+- `exorcist-detective-1778051012`：`SOURCE_FORBIDDEN_TERM` critical，`source_blocked=true`，`created=0`。
+- `romantasy-1776330993`：source audit `passed=true`，仅 `SOURCE_PLATFORM_MISSING` medium warning，无 blocking findings。
 
 ## 5. 需要单独处理的存量数据
 

@@ -81,10 +81,129 @@ _NON_ENGLISH_CONTAMINATION_MARKERS = (
     "prompt:",
 )
 
+_MARKDOWN_HEADING_RE = re.compile(r"^\s{0,3}#{1,6}\s+")
+_HTML_COMMENT_RE = re.compile(r"<!--.*?-->", flags=re.DOTALL)
+_FENCED_BLOCK_RE = re.compile(r"```.*?```", flags=re.DOTALL)
+_CLOSING_PUNCTUATION = frozenset('"' + "'" + "”’）)]】》」』")
+_ZH_SENTENCE_TERMINATORS = frozenset("。！？!?…")
+_EN_SENTENCE_TERMINATORS = frozenset(".!?…")
+_BAD_TRAILING_PUNCTUATION = frozenset("，,、；;：:—–-")
+_UNFINISHED_TAIL_MAX_PREVIEW = 80
+
+_ZH_ABRUPT_ACTION_TAIL_RE = re.compile(
+    r"(?:"
+    r"(?:刚要|正要|准备|才要|还没来得及|还未来得及).{0,18}(?:开口|说话|回答|出手|推门|转身|迈步|抬头|低头|看去|望去)"
+    r"|(?:就在这时|下一刻|那一瞬|忽然|突然|刹那间)"
+    r"|(?:他|她|它|他们|她们|众人|所有人|[一-龥]{1,6})"
+    r"(?:只是|终于|忽然|突然)?"
+    r"(?:抬头|低头|回头|转身|停下|站住|沉默|皱眉|吸气|吐气|深吸一口气|握紧|攥紧|迈步|走近|看去|望去|看向|望向|伸手|开口|没有回答|没有说话)"
+    r")"
+    r"[。！？!?…]*$"
+)
+_EN_ABRUPT_ACTION_TAIL_RE = re.compile(
+    r"\b(?:"
+    r"(?:he|she|they|everyone)\s+(?:looked up|turned|paused|stopped|said nothing|opened (?:his|her|their) mouth|reached out|took a breath)"
+    r"|(?:before (?:he|she|they) could|just as (?:he|she|they)|then|suddenly)"
+    r")\s*[.!?…]*$",
+    re.IGNORECASE,
+)
+
 
 def _summarize_hits(hits: set[str]) -> str:
     ordered = sorted(hit.strip() for hit in hits if hit and hit.strip())
     return ", ".join(ordered[:5])
+
+
+def _tail_preview(text: str) -> str:
+    compact = re.sub(r"\s+", " ", text.strip())
+    if len(compact) <= _UNFINISHED_TAIL_MAX_PREVIEW:
+        return compact
+    return "..." + compact[-_UNFINISHED_TAIL_MAX_PREVIEW:]
+
+
+def _last_prose_line(content: str) -> str:
+    text = _HTML_COMMENT_RE.sub("", content or "")
+    text = _FENCED_BLOCK_RE.sub("", text)
+    lines: list[str] = []
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        if _MARKDOWN_HEADING_RE.match(line):
+            continue
+        if re.fullmatch(r"[-*_]{3,}", line):
+            continue
+        lines.append(line)
+    return lines[-1] if lines else ""
+
+
+def _last_semantic_char(line: str) -> str:
+    for char in reversed(line.strip()):
+        if char.isspace() or char in _CLOSING_PUNCTUATION:
+            continue
+        return char
+    return ""
+
+
+def _tail_has_unclosed_quote(line: str, *, is_en: bool) -> bool:
+    tail = line[-800:]
+    quote_pairs = (("“", "”"), ("「", "」"), ("『", "』"))
+    if not is_en:
+        for opener, closer in quote_pairs:
+            if tail.rfind(opener) > tail.rfind(closer):
+                return True
+        return False
+    return tail.rfind("“") > tail.rfind("”")
+
+
+def _collect_truncated_tail_issues(content: str, *, is_en: bool) -> list[str]:
+    line = _last_prose_line(content)
+    if not line:
+        return []
+
+    issues: list[str] = []
+    if _tail_has_unclosed_quote(line, is_en=is_en):
+        issues.append(
+            "Detected likely truncated draft tail: final prose line has an unclosed quote."
+            if is_en
+            else "疑似正文被截断：最后一个正文段落存在未闭合引号。"
+        )
+
+    semantic = _last_semantic_char(line)
+    if not semantic:
+        return issues
+
+    terminators = _EN_SENTENCE_TERMINATORS if is_en else _ZH_SENTENCE_TERMINATORS
+    if semantic in terminators:
+        return issues
+
+    if semantic in _BAD_TRAILING_PUNCTUATION or semantic.isalnum() or _CJK_PATTERN.match(semantic):
+        preview = _tail_preview(line)
+        issues.append(
+            (
+                "Detected likely truncated draft tail: final prose line does not end "
+                f"with sentence punctuation ({preview})."
+            )
+            if is_en
+            else f"疑似正文被截断：最后一个正文段落没有以句末标点结束（{preview}）。"
+        )
+
+    cjk_count = len(_CJK_PATTERN.findall(line))
+    latin_count = len(_LATIN_WORD_PATTERN.findall(line))
+    if (
+        (is_en and latin_count <= 18 and _EN_ABRUPT_ACTION_TAIL_RE.search(line))
+        or (not is_en and cjk_count <= 45 and _ZH_ABRUPT_ACTION_TAIL_RE.search(line))
+    ):
+        preview = _tail_preview(line)
+        issues.append(
+            (
+                "Detected likely incomplete scene ending: final line stops on a "
+                f"preparatory action/reaction rather than a completed beat ({preview})."
+            )
+            if is_en
+            else f"疑似场景未完成：最后一句停在动作准备或人物反应中段，而不是完成的情节拍（{preview}）。"
+        )
+    return issues
 
 
 def collect_unfinished_artifact_issues(
@@ -130,6 +249,8 @@ def collect_unfinished_artifact_issues(
 
     if is_en and cjk_count >= 60:
         issues.append("Detected substantial non-English text leakage inside an English draft.")
+
+    issues.extend(_collect_truncated_tail_issues(text, is_en=is_en))
 
     return issues
 

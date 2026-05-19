@@ -977,6 +977,39 @@ async def test_materialize_chapter_outline_batch_blocks_weak_causality(
 
 
 @pytest.mark.asyncio
+async def test_materialize_chapter_outline_batch_blocks_methodology_in_strict_mode(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = build_project()
+    project.metadata_json = {
+        **(project.metadata_json or {}),
+        "methodology_contract_mode": "strict",
+    }
+
+    async def fake_get_project_by_slug(session: object, slug: str) -> ProjectModel:
+        return project
+
+    monkeypatch.setattr(workflow_services, "get_project_by_slug", fake_get_project_by_slug)
+    session = FakeSession()
+
+    with pytest.raises(ValueError, match="chapter_causality_contract"):
+        await workflow_services.materialize_chapter_outline_batch(
+            session,
+            "my-story",
+            build_batch(),
+            requested_by="tester",
+        )
+
+    workflow_runs = [obj for obj in session.added if isinstance(obj, WorkflowRunModel)]
+    findings = workflow_runs[0].metadata_json["chapter_causality_contract"]["findings"]
+    assert workflow_runs[0].metadata_json["methodology_contract_mode"] == "strict"
+    assert any(
+        finding["code"] == "CHAPTER_METHODOLOGY_CONTRACT_MISSING"
+        for finding in findings
+    )
+
+
+@pytest.mark.asyncio
 async def test_materialize_chapter_outline_batch_skips_immutable_chapters_for_causality(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

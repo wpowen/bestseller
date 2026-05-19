@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from dataclasses import dataclass, field
 from typing import Any
 from uuid import UUID
@@ -25,7 +26,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from bestseller.services.llm import LLMCompletionRequest, LLMRole, complete_text
 from bestseller.services.llm_closed_loop import build_repair_user_prompt, findings_from_exception
 from bestseller.services.methodology import render_qimao_regeneration_contract
-from bestseller.services.writing_profile import resolve_writing_profile, sanitize_genre_story_overrides
+from bestseller.services.platform_title_workflow import select_primary_platform_title
+from bestseller.services.writing_profile import (
+    resolve_writing_profile,
+    sanitize_genre_story_overrides,
+)
 from bestseller.services.writing_presets import list_genre_presets, list_platform_presets
 from bestseller.settings import AppSettings
 
@@ -107,6 +112,75 @@ def _deep_merge_dict(base: dict[str, Any], override: dict[str, Any]) -> dict[str
         else:
             merged[key] = value
     return merged
+
+
+_ZH_DEFAULT_MOTIF_RE = re.compile(
+    r"((父母|父亲|母亲|双亲|家人|亲人|亲属|兄长|哥哥|姐姐|妹妹|弟弟|妻子|丈夫|未婚妻|未婚夫)"
+    r"[^。！？；;，,\n]{0,12}"
+    r"(失踪|消失|死亡|死去|被害|遇害|惨死|离奇|旧案|真相|身世|血脉|秘密)"
+    r"|"
+    r"(失踪|消失|死亡|死去|被害|遇害|惨死|离奇|旧案|真相|身世|血脉|秘密)"
+    r"[^。！？；;，,\n]{0,12}"
+    r"(父母|父亲|母亲|双亲|家人|亲人|亲属))"
+)
+
+_EN_DEFAULT_MOTIF_RE = re.compile(
+    r"\b("
+    r"(missing|dead|death|murdered|killed|disappeared|lost|vanished|orphaned|family secret|bloodline)"
+    r"[\w\s-]{0,40}"
+    r"(parents?|father|mother|family|relatives?|siblings?)"
+    r"|"
+    r"(parents?|father|mother|family|relatives?|siblings?)"
+    r"[\w\s-]{0,40}"
+    r"(missing|dead|death|murdered|killed|disappeared|lost|vanished|secret|bloodline)"
+    r")\b",
+    re.IGNORECASE,
+)
+
+_ZH_DEFAULT_MOTIF_REPLACEMENT = "由本书题材核心机制触发的具体危机与选择代价"
+_EN_DEFAULT_MOTIF_REPLACEMENT = "a genre-specific initiating crisis with visible choice costs"
+
+
+def _default_motif_guardrail(ctx: dict[str, Any] | None = None, *, is_en: bool | None = None) -> str:
+    """Prompt block that bans fixed family-trauma defaults for new-book conception."""
+
+    if is_en is None:
+        is_en = str((ctx or {}).get("language") or "").startswith("en")
+    if is_en:
+        return (
+            "\n\n[Default-motivation ban]\n"
+            "Do not use family disappearance/death, hidden bloodline cases, magic heirlooms, "
+            "humiliation engagements, or generic revenge as default motivation. Build the protagonist "
+            "drive from the selected genre, platform promise, profession/system/world rules, and the "
+            "opening event. Unless explicitly supplied by the user, do not make the story about finding "
+            "relatives, investigating family cases, or inheriting family secrets."
+        )
+    return (
+        "\n\n【默认动机禁用】\n"
+        "不要把亲属失踪/死亡、身世旧案、神秘信物、退婚羞辱、通用复仇当作默认驱动。"
+        "主角目标必须从题材类型、平台读者承诺、职业/制度/世界规则、当前开局事件中动态生成。"
+        "除非用户明确提供，不得写成寻找亲属、调查家族旧案或继承家族秘密。"
+    )
+
+
+def _sanitize_forbidden_default_motifs(value: Any, *, is_en: bool) -> Any:
+    """Remove family-trauma default motifs from LLM/fallback conception payloads."""
+
+    if isinstance(value, str):
+        replacement = _EN_DEFAULT_MOTIF_REPLACEMENT if is_en else _ZH_DEFAULT_MOTIF_REPLACEMENT
+        pattern = _EN_DEFAULT_MOTIF_RE if is_en else _ZH_DEFAULT_MOTIF_RE
+        sanitized = pattern.sub(replacement, value)
+        return sanitized.strip()
+    if isinstance(value, list):
+        return [_sanitize_forbidden_default_motifs(item, is_en=is_en) for item in value]
+    if isinstance(value, tuple):
+        return tuple(_sanitize_forbidden_default_motifs(item, is_en=is_en) for item in value)
+    if isinstance(value, dict):
+        return {
+            key: _sanitize_forbidden_default_motifs(item, is_en=is_en)
+            for key, item in value.items()
+        }
+    return value
 
 
 def _is_qimao_text(value: Any) -> bool:
@@ -205,6 +279,7 @@ async def _llm_call_json(
 ) -> tuple[dict[str, Any], list[UUID]]:
     """Call a conception LLM stage and repair invalid JSON with diagnostics."""
 
+    is_en = str(language or "").startswith("en")
     llm_run_ids: list[UUID] = []
     text, llm_id = await _llm_call(
         session,
@@ -220,7 +295,7 @@ async def _llm_call_json(
     if llm_id is not None:
         llm_run_ids.append(llm_id)
     try:
-        return _extract_json(text), llm_run_ids
+        return _sanitize_forbidden_default_motifs(_extract_json(text), is_en=is_en), llm_run_ids
     except Exception as exc:
         findings = findings_from_exception(exc, default_path=stage)
         logger.warning(
@@ -248,7 +323,7 @@ async def _llm_call_json(
     if repair_llm_id is not None:
         llm_run_ids.append(repair_llm_id)
     try:
-        return _extract_json(repair_text), llm_run_ids
+        return _sanitize_forbidden_default_motifs(_extract_json(repair_text), is_en=is_en), llm_run_ids
     except Exception:
         logger.warning(
             "Conception stage %s repair still produced invalid JSON; using fallback payload.",
@@ -256,7 +331,7 @@ async def _llm_call_json(
             exc_info=True,
         )
         try:
-            return _extract_json(fallback), llm_run_ids
+            return _sanitize_forbidden_default_motifs(_extract_json(fallback), is_en=is_en), llm_run_ids
         except Exception:
             return {}, llm_run_ids
 
@@ -536,6 +611,7 @@ def _commercial_positioning_user_prompt(
         instruction = genre_profile.planner_prompts.book_spec_instruction_zh
         if instruction:
             prompt += f"\n\n【品类商业定位要求】\n{instruction}"
+    prompt += _default_motif_guardrail(ctx, is_en=False)
     prompt += _qimao_regeneration_prompt_block(ctx)
     return prompt
 
@@ -578,6 +654,7 @@ def _commercial_positioning_user_prompt_en(
         instruction = genre_profile.planner_prompts.book_spec_instruction_en
         if instruction:
             prompt += f"\n\n[Genre commercial requirements]\n{instruction}"
+    prompt += _default_motif_guardrail(ctx, is_en=True)
     prompt += _qimao_regeneration_prompt_block(ctx)
     return prompt
 
@@ -633,6 +710,7 @@ def _market_user_prompt(ctx: dict[str, Any], genre_profile: GenreReviewProfile |
         instruction = genre_profile.planner_prompts.book_spec_instruction_zh
         if instruction:
             prompt += f"\n\n【品类市场策略要求】\n{instruction}"
+    prompt += _default_motif_guardrail(ctx, is_en=False)
     return prompt
 
 
@@ -685,6 +763,7 @@ def _character_user_prompt(ctx: dict[str, Any], genre_profile: GenreReviewProfil
         instruction = genre_profile.planner_prompts.cast_spec_instruction_zh
         if instruction:
             prompt += f"\n\n【品类角色设计要求】\n{instruction}"
+    prompt += _default_motif_guardrail(ctx, is_en=False)
     return prompt
 
 
@@ -709,6 +788,7 @@ def _world_user_prompt(ctx: dict[str, Any], genre_profile: GenreReviewProfile | 
         instruction = genre_profile.planner_prompts.world_spec_instruction_zh
         if instruction:
             prompt += f"\n\n【品类世界构建要求】\n{instruction}"
+    prompt += _default_motif_guardrail(ctx, is_en=False)
     return prompt
 
 
@@ -765,6 +845,7 @@ def _market_user_prompt_en(ctx: dict[str, Any], genre_profile: GenreReviewProfil
         instruction = genre_profile.planner_prompts.book_spec_instruction_en
         if instruction:
             prompt += f"\n\n[Genre market strategy requirements]\n{instruction}"
+    prompt += _default_motif_guardrail(ctx, is_en=True)
     return prompt
 
 
@@ -816,6 +897,7 @@ def _character_user_prompt_en(ctx: dict[str, Any], genre_profile: GenreReviewPro
         instruction = genre_profile.planner_prompts.cast_spec_instruction_en
         if instruction:
             prompt += f"\n\n[Genre character design requirements]\n{instruction}"
+    prompt += _default_motif_guardrail(ctx, is_en=True)
     return prompt
 
 
@@ -840,6 +922,7 @@ def _world_user_prompt_en(ctx: dict[str, Any], genre_profile: GenreReviewProfile
         instruction = genre_profile.planner_prompts.world_spec_instruction_en
         if instruction:
             prompt += f"\n\n[Genre world-building requirements]\n{instruction}"
+    prompt += _default_motif_guardrail(ctx, is_en=True)
     return prompt
 
 
@@ -930,6 +1013,7 @@ def _review_user_prompt(
         review_instruction = genre_profile.judge_prompts.scene_review_instruction_zh
         if review_instruction:
             prompt += f"\n\n【品类审查重点】\n{review_instruction}"
+    prompt += _default_motif_guardrail(ctx, is_en=False)
     return prompt
 
 
@@ -974,6 +1058,7 @@ def _review_user_prompt_en(
         review_instruction = genre_profile.judge_prompts.scene_review_instruction_en
         if review_instruction:
             prompt += f"\n\n[Genre review focus]\n{review_instruction}"
+    prompt += _default_motif_guardrail(ctx, is_en=True)
     return prompt
 
 
@@ -1006,12 +1091,10 @@ def _finalize_user_prompt(
         f"\n## 审查意见\n{json.dumps(review, ensure_ascii=False, indent=2)}\n"
         f"\n请根据以上讨论成果，生成最终方案 JSON：\n"
         f'{{\n'
-        f'  "title": "小说书名（必须2-8个汉字。要求有设计感，让读者看到书名就想点进去。'
-        f'好的书名应该：①暗示核心冲突或世界观（如「遮天」暗示逆天改命）；'
-        f'②制造悬念或反差（如「我师兄实在太稳健了」）；'
-        f'③有画面感或意象（如「雪中悍刀行」）；'
-        f'④避免直白描述题材（如「都市修仙记」这种流水线书名）。'
-        f'禁止使用描述性长句，禁止直接用题材名当书名）",\n'
+        f'  "title": "书名种子。必须匹配 writing_profile.market.platform_target：'
+        f'番茄/飞卢可用开局、身份反差、金手指和强钩子；起点要有短 IP 感、'
+        f'职业/制度/世界观质感；七猫强调身份逆袭、强职业、低位起势；'
+        f'晋江强调关系张力、情绪钩子和标签筛选。禁止只写抽象意象或题材名。",\n'
         f'  "premise": "小说前提/核心设定（100-200字，包含主角、核心冲突、金手指和悬念）",\n'
         f'  "synopsis": "作品宣传简介（200-500字，面向读者的营销文案。要求：'
         f'①开头一句话勾住读者好奇心；②介绍主角身份和核心困境；'
@@ -1068,6 +1151,7 @@ def _finalize_user_prompt(
         base += f"\n\n{promise}"
     if anti:
         base += f"\n\n{anti}"
+    base += _default_motif_guardrail(ctx, is_en=False)
     return base
 
 
@@ -1096,13 +1180,10 @@ def _finalize_user_prompt_en(
         f"\n## Review Feedback\n{json.dumps(review, ensure_ascii=False, indent=2)}\n"
         f"\nBased on the above discussion, generate the final plan JSON:\n"
         f'{{\n'
-        f'  "title": "Novel title (2-6 words ONLY. Must feel designed and evocative — '
-        f'a title readers WANT to click. Great titles: ①hint at the core conflict or world '
-        f'(e.g. The Name of the Wind, A Court of Thorns and Roses); '
-        f'②create intrigue or contrast (e.g. The Girl with the Dragon Tattoo); '
-        f'③have vivid imagery (e.g. Blood Meridian, The Shadow of the Wind). '
-        f'Avoid generic genre labels like The Fantasy Quest or Urban Cultivation Story. '
-        f'Must NOT be a sentence or description)",\n'
+        f'  "title": "Title seed matched to writing_profile.market.platform_target. '
+        f'It must signal genre, hook, audience, and shelf fit. Royal Road/KU/Wattpad-style '
+        f'titles may be longer and more direct; literary or premium platforms may be shorter '
+        f'and more IP-like. Avoid generic genre labels.",\n'
         f'  "premise": "Novel premise (50-150 words: protagonist, core conflict, unique hook, and central mystery)",\n'
         f'  "synopsis": "Promotional book blurb (100-300 words, reader-facing marketing copy. '
         f'Requirements: ①Open with a hook sentence that sparks curiosity; '
@@ -1161,6 +1242,7 @@ def _finalize_user_prompt_en(
         base += f"\n\n{promise}"
     if anti:
         base += f"\n\n{anti}"
+    base += _default_motif_guardrail(ctx, is_en=True)
     return base
 
 
@@ -1209,6 +1291,7 @@ async def _creative_exploration(
             f"World: {json.dumps(world, ensure_ascii=False)[:500]}\n"
             f"Review feedback: {json.dumps(review, ensure_ascii=False)[:500]}\n\n"
             f"{promise}\n\n{anti}\n\n"
+            f"{_default_motif_guardrail(ctx, is_en=True)}\n\n"
             "Generate 3 creative directions JSON:\n"
             '{"directions": [\n'
             '  {"premise_variation": "...", "unique_hook": "...", "avoids_traps": ["trap_key_1"]},\n'
@@ -1226,6 +1309,7 @@ async def _creative_exploration(
             f"世界观：{json.dumps(world, ensure_ascii=False)[:500]}\n"
             f"审查意见：{json.dumps(review, ensure_ascii=False)[:500]}\n\n"
             f"{promise}\n\n{anti}\n\n"
+            f"{_default_motif_guardrail(ctx, is_en=False)}\n\n"
             "请生成3个差异化创意方向 JSON：\n"
             '{"directions": [\n'
             '  {"premise_variation": "前提变体描述", "unique_hook": "独特卖点", "avoids_traps": ["trap_key"]},\n'
@@ -1279,6 +1363,7 @@ async def run_conception_pipeline(
         _apply_qimao_hints_to_context(ctx)
 
     is_en = ctx.get("language", "zh-CN").startswith("en")
+    ctx = _sanitize_forbidden_default_motifs(ctx, is_en=is_en)
 
     # Resolve genre-specific review profile for prompt injection.
     _genre_profile: GenreReviewProfile | None = None
@@ -1447,20 +1532,17 @@ async def run_conception_pipeline(
             )
         )
 
-    # Validate title: must be a concise book name, not a description or premise.
-    # Chinese titles should be 2-10 characters; English 2-8 words.
+    # Validate the seed title before the platform title workflow rewrites it.
     title = (title or "").strip()
     _is_valid_title = bool(title) and (
-        (not is_en and 2 <= len(title) <= 10)
-        or (is_en and 2 <= len(title.split()) <= 8 and len(title) <= 60)
+        (not is_en and 2 <= len(title) <= 30)
+        or (is_en and 2 <= len(title.split()) <= 12 and len(title) <= 90)
     )
     if not _is_valid_title:
-        # Try to extract a short title from a longer generated one (LLM sometimes
-        # returns a description instead of a concise title).
+        # Try to extract a usable seed from a longer generated one.
         if title and not is_en and len(title) > 10:
-            # Take up to the first punctuation or 8 chars, whichever is shorter
             import re as _re_title  # noqa: PLC0415
-            m = _re_title.match(r"[\u4e00-\u9fff]{2,8}", title)
+            m = _re_title.match(r"[\u4e00-\u9fff]{2,18}", title)
             if m:
                 title = m.group(0)
                 _is_valid_title = True
@@ -1479,6 +1561,62 @@ async def run_conception_pipeline(
         synopsis = synopsis[:497] + "..."
     raw_tags = final_result.get("tags", [])
     tags = [str(t).strip() for t in raw_tags if isinstance(t, str) and t.strip()][:10]
+    writing_profile = _sanitize_forbidden_default_motifs(writing_profile, is_en=is_en)
+    premise = str(_sanitize_forbidden_default_motifs(premise, is_en=is_en))
+    synopsis = str(_sanitize_forbidden_default_motifs(synopsis, is_en=is_en))
+    title = str(_sanitize_forbidden_default_motifs(title, is_en=is_en))
+    tags = [
+        str(item).strip()
+        for item in _sanitize_forbidden_default_motifs(tags, is_en=is_en)
+        if str(item).strip()
+    ][:10]
+
+    title_profile = {
+        "language": str(ctx.get("language") or "zh-CN"),
+        "primary_title": title,
+        "primary_category": str(ctx.get("genre") or ""),
+        "secondary_category": str(ctx.get("sub_genre") or ""),
+        "tags": tags,
+        "logline": premise,
+        "short_intro": synopsis,
+        "reader_promise": (
+            writing_profile.get("market", {}).get("reader_promise")
+            if isinstance(writing_profile.get("market"), dict)
+            else ""
+        ),
+        "main_characters": [
+            {
+                "name": "主角" if not is_en else "Protagonist",
+                "role": "主角" if not is_en else "Protagonist",
+                "identity": (
+                    writing_profile.get("character", {}).get("protagonist_archetype")
+                    if isinstance(writing_profile.get("character"), dict)
+                    else ""
+                ),
+            }
+        ],
+    }
+    target_platform = (
+        writing_profile.get("market", {}).get("platform_target")
+        if isinstance(writing_profile.get("market"), dict)
+        else ""
+    )
+    try:
+        primary_title_candidate = select_primary_platform_title(
+            title_profile,
+            target_platform=str(target_platform or ""),
+        )
+        workflow_title = str(primary_title_candidate.get("title") or "").strip()
+        if workflow_title:
+            title = workflow_title
+            writing_profile.setdefault("market", {})["title_workflow_primary"] = {
+                "title": workflow_title,
+                "platform_label": primary_title_candidate.get("platform_label"),
+                "scope_label": primary_title_candidate.get("scope_label"),
+                "pattern": primary_title_candidate.get("pattern"),
+            }
+    except Exception:
+        logger.warning("Platform title workflow failed during conception", exc_info=True)
 
     logger.info(
         "Conception pipeline completed for genre=%s: title=%s, premise_len=%d, synopsis_len=%d, tags=%s, profile_keys=%s",

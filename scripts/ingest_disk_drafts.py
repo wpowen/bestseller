@@ -76,17 +76,28 @@ async def _ingest_one_chapter(
     ).first()
 
     if row is None:
-        db_version_no = 0
+        current_version_no = 0
         db_content = ""
     else:
-        db_version_no = row.version_no
+        current_version_no = row.version_no
         db_content = row.content_md or ""
+
+    max_version_no = (
+        await session.execute(
+            text(
+                "SELECT COALESCE(MAX(version_no), 0) AS max_version_no "
+                "FROM chapter_draft_versions WHERE chapter_id = :cid"
+            ),
+            {"cid": chapter_id},
+        )
+    ).scalar_one()
+    db_version_no = max(int(max_version_no or 0), int(current_version_no or 0))
 
     if disk_content == db_content:
         return {
             "chapter_number": chapter_number,
             "action": "noop_identical",
-            "version_no": db_version_no,
+            "version_no": current_version_no,
         }
 
     new_version_no = db_version_no + 1

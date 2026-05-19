@@ -15,6 +15,12 @@ from typing import Any, Iterable
 from bestseller.domain.story_bible import CastSpecInput, normalize_character_gender
 from bestseller.domain.workflow import ChapterOutlineBatchInput
 from bestseller.services.identity_guard import CharacterIdentity
+from bestseller.services.methodology_overlay import (
+    methodology_contract_blocks,
+    methodology_contract_requires_checks,
+    normalize_methodology_contract_mode,
+    validate_scene_methodology_contract,
+)
 
 
 BLOCKING_SEVERITIES = {"critical", "major"}
@@ -565,9 +571,10 @@ def repair_missing_scene_participants_pre_draft(
 
     This repair is conservative: it only adds characters already known in the
     identity registry, only when they are alive and identity-resolved. Empty
-    participant lists can be seeded from entry/exit state plus purpose text;
-    non-empty lists are only augmented with characters explicitly named in the
-    concrete story purpose.
+    participant lists can be seeded from entry/exit state plus purpose text.
+    Interactive legacy scenes that already have one participant may also be
+    augmented from entry/exit state, because old continuation plans often named
+    the interlocutor only in the state delta.
     """
 
     current = [
@@ -627,6 +634,19 @@ def repair_missing_scene_participants_pre_draft(
                 identity_index,
             ):
                 _add_candidate(referenced_name)
+
+    scene_type = _clean(getattr(scene, "scene_type", None)).lower()
+    interactive_types = {"dialogue", "confrontation", "conflict", "对话", "冲突", "对峙"}
+    if len(candidates) < 2 and scene_type in interactive_types:
+        for state_name in ("entry_state", "exit_state"):
+            state = getattr(scene, state_name, None)
+            if isinstance(state, dict):
+                for key in state:
+                    _add_candidate(key)
+                    if len(candidates) >= 2:
+                        break
+            if len(candidates) >= 2:
+                break
 
     added_count = len(candidates) - len(current)
     if added_count <= 0:
@@ -1046,6 +1066,7 @@ def validate_scene_contract_pre_draft(
     identity_registry: Iterable[CharacterIdentity] = (),
     require_identity_registry: bool = False,
     excluded_names: Iterable[str] = (),
+    methodology_contract_mode: str = "off",
 ) -> NarrativeContractReport:
     """Validate a persisted scene card before drafting prose."""
 
@@ -1183,6 +1204,33 @@ def validate_scene_contract_pre_draft(
                         },
                     )
                 )
+
+    methodology_mode = normalize_methodology_contract_mode(methodology_contract_mode)
+    if methodology_contract_requires_checks(methodology_mode):
+        metadata = getattr(scene, "metadata_json", None) or {}
+        overlay = metadata.get("methodology_contract") if isinstance(metadata, dict) else {}
+        overlay_findings = validate_scene_methodology_contract(
+            overlay,
+            chapter_number=chapter_number,
+            scene_number=scene_number if isinstance(scene_number, int) else None,
+            scene_type=getattr(scene, "scene_type", None),
+            participant_count=len(participants),
+        )
+        target = violations if methodology_contract_blocks(methodology_mode) else warnings
+        for finding in overlay_findings:
+            target.append(
+                NarrativeContractViolation(
+                    code=finding.code,
+                    location=finding.path,
+                    message=finding.message,
+                    severity=(
+                        finding.severity
+                        if methodology_contract_blocks(methodology_mode)
+                        else "warning"
+                    ),
+                    metadata={"methodology_contract_mode": methodology_mode},
+                )
+            )
 
     return NarrativeContractReport(
         gate_name="pre_draft_scene_contract",

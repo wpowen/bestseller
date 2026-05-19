@@ -360,6 +360,67 @@ def test_complete_text_collects_streaming_chunks(monkeypatch: pytest.MonkeyPatch
     asyncio.run(_run())
 
 
+def test_complete_text_allows_minimax_output_override_above_role_cap(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured_kwargs: dict[str, object] = {}
+
+    class FakeUsage:
+        prompt_tokens = 10
+        completion_tokens = 20
+
+    class FakeMessage:
+        content = "full chapter output"
+
+    class FakeChoice:
+        message = FakeMessage()
+        finish_reason = "stop"
+
+    class FakeResponse:
+        choices = [FakeChoice()]
+        usage = FakeUsage()
+
+    class FakeLiteLLMModule:
+        @staticmethod
+        async def acompletion(**kwargs):
+            captured_kwargs.update(kwargs)
+            return FakeResponse()
+
+    async def _run() -> None:
+        session = FakeSession()
+        settings = load_settings(
+            env={
+                "BESTSELLER__LLM__MOCK": "false",
+                "BESTSELLER__LLM__WRITER__MODEL": "openai/MiniMax-M2.7-highspeed",
+                "BESTSELLER__LLM__WRITER__MAX_TOKENS": "8192",
+                "BESTSELLER__LLM__WRITER__STREAM": "false",
+            }
+        )
+        result = await complete_text(
+            session,
+            settings,
+            LLMCompletionRequest(
+                logical_role="writer",
+                system_prompt="system",
+                user_prompt="user",
+                fallback_response="fallback output",
+                max_tokens_override=12000,
+            ),
+        )
+
+        assert result.content == "full chapter output"
+        assert captured_kwargs["max_tokens"] == 12000
+
+    monkeypatch.setattr(
+        "bestseller.services.llm._get_litellm",
+        lambda: FakeLiteLLMModule(),
+    )
+
+    import asyncio
+
+    asyncio.run(_run())
+
+
 def test_complete_text_fails_over_to_rate_limit_fallback_model(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

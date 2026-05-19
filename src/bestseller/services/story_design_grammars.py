@@ -17,6 +17,54 @@ import yaml
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_MACRO_STRUCTURE_OPTIONS = [
+    "lotus_mainline",
+    "progressive_staircase",
+    "parallel_unit",
+    "hybrid",
+]
+DEFAULT_READER_DESIRE_TYPES = [
+    "survival_safety",
+    "gain_greed",
+    "belonging_love",
+    "respect_value",
+    "self_realization",
+    "curiosity",
+    "control",
+]
+DEFAULT_CONFLICT_EVENT_TYPES = [
+    "emotion_event",
+    "desire_lock",
+    "obstacle_escalation",
+    "method_search",
+    "execution_turn",
+    "payoff_feedback",
+]
+DEFAULT_OBSTACLE_TYPES = [
+    "resource_limit",
+    "opponent_pressure",
+    "rule_cost",
+    "relationship_cost",
+    "information_block",
+]
+DEFAULT_INFORMATION_GAP_MODES = [
+    "reader_knows_less",
+    "reader_knows_equal",
+    "reader_knows_more",
+    "protagonist_knows_less",
+    "others_hide_truth",
+]
+DEFAULT_EVENT_CYCLE_ROLES = [
+    "trigger",
+    "desire_lock",
+    "obstacle_escalation",
+    "method_search",
+    "execution_turn",
+    "payoff_feedback",
+    "reaction_reset",
+    "bridge_hook",
+]
+
 
 class StoryDesignGrammar(BaseModel, frozen=True):
     """A category-specific plot grammar with prompt-ready constraints."""
@@ -31,6 +79,20 @@ class StoryDesignGrammar(BaseModel, frozen=True):
     chapter_change_vectors: list[str] = Field(default_factory=list)
     reader_rewards: list[str] = Field(default_factory=list)
     hook_or_aftereffect_types: list[str] = Field(default_factory=list)
+    macro_structure_options: list[str] = Field(
+        default_factory=lambda: list(DEFAULT_MACRO_STRUCTURE_OPTIONS)
+    )
+    reader_desire_types: list[str] = Field(
+        default_factory=lambda: list(DEFAULT_READER_DESIRE_TYPES)
+    )
+    conflict_event_types: list[str] = Field(
+        default_factory=lambda: list(DEFAULT_CONFLICT_EVENT_TYPES)
+    )
+    obstacle_types: list[str] = Field(default_factory=lambda: list(DEFAULT_OBSTACLE_TYPES))
+    information_gap_modes: list[str] = Field(
+        default_factory=lambda: list(DEFAULT_INFORMATION_GAP_MODES)
+    )
+    event_cycle_roles: list[str] = Field(default_factory=lambda: list(DEFAULT_EVENT_CYCLE_ROLES))
     forbidden_defaults: list[str] = Field(default_factory=list)
 
 
@@ -109,6 +171,12 @@ def render_story_design_grammar_prompt_block(grammar: StoryDesignGrammar | None)
         f"- Chapter change vectors: {', '.join(grammar.chapter_change_vectors)}",
         f"- Reader rewards: {', '.join(grammar.reader_rewards)}",
         f"- Hook/aftereffect types: {', '.join(grammar.hook_or_aftereffect_types)}",
+        f"- Macro structure options: {', '.join(grammar.macro_structure_options)}",
+        f"- Reader desire types: {', '.join(grammar.reader_desire_types)}",
+        f"- Conflict event types: {', '.join(grammar.conflict_event_types)}",
+        f"- Obstacle types: {', '.join(grammar.obstacle_types)}",
+        f"- Information gap modes: {', '.join(grammar.information_gap_modes)}",
+        f"- Event cycle roles: {', '.join(grammar.event_cycle_roles)}",
         f"- Forbidden defaults: {', '.join(grammar.forbidden_defaults)}",
     ]
     return "\n".join(line for line in lines if not line.endswith(": "))
@@ -140,7 +208,48 @@ def _empty_default() -> StoryDesignGrammar:
         state_variables=["目标", "压力", "代价", "选择", "结果"],
         chapter_change_vectors=["目标推进", "压力升级", "代价显化", "关系变化", "信息变化"],
         reader_rewards=["短兑现", "新悬念", "角色选择", "局势变化", "情绪余波"],
-        forbidden_defaults=["父母失踪", "天降外挂", "退婚开局", "神秘老人", "反派无因作恶"],
+        macro_structure_options=[
+            "lotus_mainline",
+            "progressive_staircase",
+            "parallel_unit",
+            "hybrid",
+        ],
+        reader_desire_types=[
+            "survival_safety",
+            "gain_greed",
+            "belonging_love",
+            "respect_value",
+            "self_realization",
+            "curiosity",
+            "control",
+        ],
+        conflict_event_types=[
+            "emotion_event",
+            "desire_lock",
+            "obstacle_escalation",
+            "method_search",
+            "execution_turn",
+            "payoff_feedback",
+        ],
+        obstacle_types=["resource_limit", "opponent_pressure", "rule_cost", "relationship_cost"],
+        information_gap_modes=[
+            "reader_knows_less",
+            "reader_knows_equal",
+            "reader_knows_more",
+            "protagonist_knows_less",
+            "others_hide_truth",
+        ],
+        event_cycle_roles=[
+            "trigger",
+            "desire_lock",
+            "obstacle_escalation",
+            "method_search",
+            "execution_turn",
+            "payoff_feedback",
+            "reaction_reset",
+            "bridge_hook",
+        ],
+        forbidden_defaults=["家庭创伤或身世旧案作为默认动机", "天降外挂", "退婚开局", "神秘老人", "反派无因作恶"],
     )
 
 
@@ -199,4 +308,23 @@ _GENRE_NAME_KEYWORD_MAP: dict[str, str] = {
     "历史": "strategy-worldbuilding",
     "争霸": "strategy-worldbuilding",
     "strategy": "strategy-worldbuilding",
+    "都市": "urban-contemporary",
+    "职场": "urban-contemporary",
+    "娱乐圈": "urban-contemporary",
+    "现实题材": "urban-contemporary",
+    "urban": "urban-contemporary",
+    "workplace": "urban-contemporary",
+    "科幻": "science-fiction-progression",
+    "机甲": "science-fiction-progression",
+    "星际": "science-fiction-progression",
+    "黑科技": "science-fiction-progression",
+    "scifi": "science-fiction-progression",
+    "sci-fi": "science-fiction-progression",
+    "mecha": "science-fiction-progression",
+    "武侠": "wuxia-jianghu",
+    "江湖": "wuxia-jianghu",
+    "门派": "wuxia-jianghu",
+    "侠义": "wuxia-jianghu",
+    "wuxia": "wuxia-jianghu",
+    "jianghu": "wuxia-jianghu",
 }

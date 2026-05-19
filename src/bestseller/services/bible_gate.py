@@ -51,6 +51,10 @@ from bestseller.domain.contradiction import (
 from bestseller.domain.story_bible import CharacterInput
 from bestseller.services.checker_schema import CheckerIssue, CheckerReport
 from bestseller.services.invariants import ProjectInvariants
+from bestseller.services.methodology_overlay import (
+    validate_ability_origin_contract,
+    validate_recognition_anchors,
+)
 from bestseller.services.writing_profile import is_english_language
 
 
@@ -151,6 +155,7 @@ class BibleDraft:
     expected_character_count: int = 0
     theme_statement: str | None = None
     dramatic_question: str | None = None
+    genre_text: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -376,6 +381,73 @@ class CharacterContrastCheck:
                         f"角色 {char.name} 需要至少1项隐藏维度（secret/fear/flaw）"
                         f"——读者意想不到的、与表面特征形成反差的另一面。"
                         f"不能写成通用模板（如'表面冷酷内心温柔'），必须具体。"
+                    ),
+                )
+
+
+class CharacterRecognitionAnchorCheck:
+    """Major characters need concrete reader-facing recognition anchors."""
+
+    code = "CHARACTER_RECOGNITION_ANCHORS_MISSING"
+
+    def check(
+        self, draft: BibleDraft, invariants: ProjectInvariants
+    ) -> Iterable[BibleDeficiency]:
+        for char in draft.characters:
+            overlay = {}
+            if isinstance(char.metadata, dict):
+                overlay = char.metadata.get("methodology_overlay") or {}
+            if not overlay and isinstance(char.model_extra, dict):
+                overlay = char.model_extra.get("methodology_overlay") or {}
+            findings = validate_recognition_anchors(
+                character_name=char.name,
+                role=char.role or "",
+                ip_anchor=char.ip_anchor,
+                overlay=overlay,
+                model_extra=char.model_extra or {},
+            )
+            for finding in findings:
+                yield BibleDeficiency(
+                    code=finding.code,
+                    location=finding.path,
+                    detail=finding.message,
+                    prompt_feedback=(
+                        f"为角色 {char.name} 补齐读者可识别锚点：身体/物件/声音/动作/"
+                        "情绪外显至少三类。每类必须是可反复出现在正文中的具体动作、"
+                        "物件、口癖、体貌或生理反应。"
+                    ),
+                )
+
+
+class AbilityOriginContractCheck:
+    """Power/progression protagonists need origin, limit, cost, and plot use."""
+
+    code = "ABILITY_ORIGIN_CONTRACT_MISSING"
+
+    def check(
+        self, draft: BibleDraft, invariants: ProjectInvariants
+    ) -> Iterable[BibleDeficiency]:
+        for char in draft.characters:
+            overlay = {}
+            if isinstance(char.metadata, dict):
+                overlay = char.metadata.get("methodology_overlay") or {}
+            if not overlay and isinstance(char.model_extra, dict):
+                overlay = char.model_extra.get("methodology_overlay") or {}
+            findings = validate_ability_origin_contract(
+                character_name=char.name,
+                role=char.role or "",
+                overlay=overlay,
+                project_genre_text=draft.genre_text,
+            )
+            for finding in findings:
+                yield BibleDeficiency(
+                    code=finding.code,
+                    location=finding.path,
+                    detail=finding.message,
+                    prompt_feedback=(
+                        f"为主角 {char.name} 补齐 ability_origin_contract：source、"
+                        "visible_signature、limit、cost、growth_trigger、plot_use。"
+                        "能力必须制造冲突和代价，不能只负责解决问题。"
                     ),
                 )
 
@@ -752,6 +824,8 @@ def default_validators() -> list[BibleValidator]:
         SupportingCharacterTagCheck(),
         IndependentLifeCheck(),
         CharacterContrastCheck(),
+        CharacterRecognitionAnchorCheck(),
+        AbilityOriginContractCheck(),
         AntagonistMotiveLedger(),
         WorldTaxonomyUniqueness(),
         NamingPoolSize(),
@@ -881,6 +955,17 @@ def build_draft_from_materialization_content(
         expected_character_count=expected_character_count,
         theme_statement=theme_statement,
         dramatic_question=dramatic_question,
+        genre_text=" ".join(
+            str(item)
+            for item in (
+                book_spec.get("genre"),
+                book_spec.get("category"),
+                book_spec.get("subgenre"),
+                world_spec.get("world_premise"),
+                power_system_name,
+            )
+            if item
+        ),
     )
 
 

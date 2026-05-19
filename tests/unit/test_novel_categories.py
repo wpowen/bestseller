@@ -22,21 +22,26 @@ pytestmark = pytest.mark.unit
 # ---------------------------------------------------------------------------
 
 
-def test_load_novel_category_registry_returns_all_ten() -> None:
+CORE_CATEGORY_KEYS = {
+    "action-progression",
+    "otherworld-cross-system",
+    "relationship-driven",
+    "suspense-mystery",
+    "strategy-worldbuilding",
+    "esports-competition",
+    "female-growth-ncp",
+    "base-building",
+    "eastern-aesthetic",
+    "urban-contemporary",
+    "science-fiction-progression",
+    "wuxia-jianghu",
+    "default",
+}
+
+
+def test_load_novel_category_registry_returns_all_core_categories() -> None:
     registry = load_novel_category_registry()
-    expected_keys = {
-        "action-progression",
-        "otherworld-cross-system",
-        "relationship-driven",
-        "suspense-mystery",
-        "strategy-worldbuilding",
-        "esports-competition",
-        "female-growth-ncp",
-        "base-building",
-        "eastern-aesthetic",
-        "default",
-    }
-    assert expected_keys == set(registry.keys())
+    assert CORE_CATEGORY_KEYS == set(registry.keys())
 
 
 def test_list_novel_categories_matches_registry_count() -> None:
@@ -68,16 +73,7 @@ def test_get_novel_category_unknown_key() -> None:
 @pytest.mark.parametrize(
     "key",
     [
-        "action-progression",
-        "otherworld-cross-system",
-        "relationship-driven",
-        "suspense-mystery",
-        "strategy-worldbuilding",
-        "esports-competition",
-        "female-growth-ncp",
-        "base-building",
-        "eastern-aesthetic",
-        "default",
+        *sorted(CORE_CATEGORY_KEYS),
     ],
 )
 def test_every_category_has_at_least_three_phases(key: str) -> None:
@@ -116,16 +112,7 @@ def test_default_category_phases_order() -> None:
 @pytest.mark.parametrize(
     "key",
     [
-        "action-progression",
-        "otherworld-cross-system",
-        "relationship-driven",
-        "suspense-mystery",
-        "strategy-worldbuilding",
-        "esports-competition",
-        "female-growth-ncp",
-        "base-building",
-        "eastern-aesthetic",
-        "default",
+        *sorted(CORE_CATEGORY_KEYS),
     ],
 )
 def test_every_category_has_at_least_one_archetype(key: str) -> None:
@@ -151,16 +138,7 @@ def test_action_progression_has_power_seeker_archetype() -> None:
 @pytest.mark.parametrize(
     "key",
     [
-        "action-progression",
-        "otherworld-cross-system",
-        "relationship-driven",
-        "suspense-mystery",
-        "strategy-worldbuilding",
-        "esports-competition",
-        "female-growth-ncp",
-        "base-building",
-        "eastern-aesthetic",
-        "default",
+        *sorted(CORE_CATEGORY_KEYS),
     ],
 )
 def test_every_category_has_world_rule_templates(key: str) -> None:
@@ -247,6 +225,21 @@ def test_resolve_with_keyword_base_building() -> None:
 def test_resolve_with_keyword_eastern_aesthetic() -> None:
     cat = resolve_novel_category("东方美学", "国风奇谭")
     assert cat.key == "eastern-aesthetic"
+
+
+def test_resolve_with_keyword_urban_contemporary() -> None:
+    cat = resolve_novel_category("都市职场", "娱乐圈项目")
+    assert cat.key == "urban-contemporary"
+
+
+def test_resolve_with_keyword_science_fiction_progression() -> None:
+    cat = resolve_novel_category("科幻机甲", "星际舰队")
+    assert cat.key == "science-fiction-progression"
+
+
+def test_resolve_with_keyword_wuxia_jianghu() -> None:
+    cat = resolve_novel_category("武侠江湖", "门派侠义")
+    assert cat.key == "wuxia-jianghu"
 
 
 def test_resolve_unknown_genre_returns_default() -> None:

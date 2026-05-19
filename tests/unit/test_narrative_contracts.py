@@ -456,6 +456,80 @@ def test_pre_draft_scene_contract_blocks_purpose_character_missing_from_particip
     }
 
 
+def test_pre_draft_scene_contract_warns_on_methodology_gaps_in_warn_mode() -> None:
+    scene = SimpleNamespace(
+        scene_number=2,
+        scene_type="confrontation",
+        participants=["沈砚", "顾临"],
+        time_label="第一日夜",
+        purpose={"story": "沈砚逼顾临交出黑匣子缺页。"},
+        metadata_json={},
+    )
+    registry = [
+        CharacterIdentity(
+            name="沈砚",
+            gender="male",
+            pronoun_set_zh="他",
+            pronoun_set_en="he/him",
+        ),
+        CharacterIdentity(
+            name="顾临",
+            gender="male",
+            pronoun_set_zh="他",
+            pronoun_set_en="he/him",
+        ),
+    ]
+
+    report = validate_scene_contract_pre_draft(
+        scene,
+        identity_registry=registry,
+        require_identity_registry=True,
+        methodology_contract_mode="warn",
+    )
+
+    assert report.blocks is False
+    assert "SCENE_METHODOLOGY_CONTRACT_MISSING" in {
+        warning.code for warning in report.warnings
+    }
+
+
+def test_pre_draft_scene_contract_blocks_methodology_gaps_in_strict_mode() -> None:
+    scene = SimpleNamespace(
+        scene_number=2,
+        scene_type="confrontation",
+        participants=["沈砚", "顾临"],
+        time_label="第一日夜",
+        purpose={"story": "沈砚逼顾临交出黑匣子缺页。"},
+        metadata_json={},
+    )
+    registry = [
+        CharacterIdentity(
+            name="沈砚",
+            gender="male",
+            pronoun_set_zh="他",
+            pronoun_set_en="he/him",
+        ),
+        CharacterIdentity(
+            name="顾临",
+            gender="male",
+            pronoun_set_zh="他",
+            pronoun_set_en="he/him",
+        ),
+    ]
+
+    report = validate_scene_contract_pre_draft(
+        scene,
+        identity_registry=registry,
+        require_identity_registry=True,
+        methodology_contract_mode="strict",
+    )
+
+    assert report.blocks is True
+    assert "SCENE_METHODOLOGY_CONTRACT_MISSING" in {
+        violation.code for violation in report.violations
+    }
+
+
 def test_repair_missing_scene_participants_pre_draft_uses_identity_context() -> None:
     scene = SimpleNamespace(
         scene_number=4,
@@ -608,6 +682,51 @@ def test_repair_missing_scene_participants_adds_named_purpose_character() -> Non
 
     assert repaired == 1
     assert scene.participants == ["林渊", "苏婉宁", "林远山"]
+    assert report.passed is True
+
+
+def test_repair_interactive_scene_adds_state_delta_character() -> None:
+    scene = SimpleNamespace(
+        scene_number=2,
+        scene_type="confrontation",
+        participants=["林鸢"],
+        time_label="第508章中段",
+        purpose={
+            "story": "一位被信任的盟友做出林鸢一时难以理解的举动，引发新的代价。"
+        },
+        entry_state={"林鸢": {"emotion": "隐忍"}},
+        exit_state={
+            "林鸢": {"emotion": "震惊"},
+            "霍沉": {"emotion": "愤怒", "arc_state": "示弱引诱"},
+        },
+    )
+    registry = [
+        CharacterIdentity(
+            name="林鸢",
+            gender="female",
+            pronoun_set_zh="她",
+            pronoun_set_en="she/her",
+        ),
+        CharacterIdentity(
+            name="霍沉",
+            gender="male",
+            pronoun_set_zh="他",
+            pronoun_set_en="he/him",
+        ),
+    ]
+
+    repaired = repair_missing_scene_participants_pre_draft(
+        scene,
+        identity_registry=registry,
+    )
+    report = validate_scene_contract_pre_draft(
+        scene,
+        identity_registry=registry,
+        require_identity_registry=True,
+    )
+
+    assert repaired == 1
+    assert scene.participants == ["林鸢", "霍沉"]
     assert report.passed is True
 
 

@@ -1,0 +1,42 @@
+{
+  "model_execution_ready": true,
+  "model_preflight": {
+    "ready": true,
+    "provider": "deepseek",
+    "model_name": "deepseek-chat",
+    "finish_reason": null,
+    "llm_run_id": null,
+    "reason": null,
+    "error": null
+  },
+  "book_count": 0,
+  "max_rounds": 4,
+  "rows": [],
+  "lifecycle_rows": [
+    {
+      "slug": "human-nature-game-1779104696",
+      "passed": false,
+      "readiness_level": null,
+      "finding_count": 0,
+      "report_path": null
+    }
+  ],
+  "rounds": [
+    {
+      "slug": "human-nature-game-1779104696",
+      "round": 1,
+      "status": "repairing",
+      "next_action": "execute_next_repair_round",
+      "progress_signature": [
+        "repairing",
+        "execute_next_repair_round",
+        57,
+        0,
+        0,
+        0,
+        0,
+        70.0
+      ]
+    }
+  ]
+}

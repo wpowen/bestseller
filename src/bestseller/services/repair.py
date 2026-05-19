@@ -102,20 +102,22 @@ async def _load_pending_rewrite_tasks(
     session: AsyncSession,
     *,
     project_id: UUID,
+    limit: int | None = None,
 ) -> list[RewriteTaskModel]:
-    return list(
-        await session.scalars(
-            select(RewriteTaskModel)
-            .where(
-                RewriteTaskModel.project_id == project_id,
-                RewriteTaskModel.status.in_(["pending", "queued"]),
-            )
-            .order_by(
-                RewriteTaskModel.priority.asc(),
-                RewriteTaskModel.created_at.asc(),
-            )
+    query = (
+        select(RewriteTaskModel)
+        .where(
+            RewriteTaskModel.project_id == project_id,
+            RewriteTaskModel.status.in_(["pending", "queued"]),
+        )
+        .order_by(
+            RewriteTaskModel.priority.asc(),
+            RewriteTaskModel.created_at.asc(),
         )
     )
+    if limit is not None and int(limit) > 0:
+        query = query.limit(int(limit))
+    return list(await session.scalars(query))
 
 
 async def _load_publication_blocked_chapter_numbers(
@@ -831,6 +833,7 @@ async def run_project_repair(
     refresh_impacts: bool = True,
     export_markdown: bool = True,
     include_pending_rewrite_tasks: bool = True,
+    pending_rewrite_task_limit: int | None = None,
     scan_publication_gate_candidates: bool = False,
     progress: ProgressCallback | None = None,
 ) -> ProjectRepairResult:
@@ -839,7 +842,11 @@ async def run_project_repair(
         raise ValueError(f"Project '{project_slug}' was not found.")
 
     pending_tasks = (
-        await _load_pending_rewrite_tasks(session, project_id=project.id)
+        await _load_pending_rewrite_tasks(
+            session,
+            project_id=project.id,
+            limit=pending_rewrite_task_limit,
+        )
         if include_pending_rewrite_tasks
         else []
     )
@@ -851,6 +858,7 @@ async def run_project_repair(
             "project_slug": project_slug,
             "pending_rewrite_task_count": task_count,
             "include_pending_rewrite_tasks": include_pending_rewrite_tasks,
+            "pending_rewrite_task_limit": pending_rewrite_task_limit,
             "scan_publication_gate_candidates": scan_publication_gate_candidates,
         },
     )
@@ -870,6 +878,7 @@ async def run_project_repair(
             "refresh_impacts": refresh_impacts,
             "export_markdown": export_markdown,
             "include_pending_rewrite_tasks": include_pending_rewrite_tasks,
+            "pending_rewrite_task_limit": pending_rewrite_task_limit,
             "scan_publication_gate_candidates": scan_publication_gate_candidates,
         },
     )
@@ -978,6 +987,7 @@ async def run_project_repair(
                 "project_slug": project_slug,
                 "pending_rewrite_task_count": task_count,
                 "include_pending_rewrite_tasks": include_pending_rewrite_tasks,
+                "pending_rewrite_task_limit": pending_rewrite_task_limit,
                 "scan_publication_gate_candidates": scan_publication_gate_candidates,
                 "target_chapter_numbers": _dedupe_sorted(chapter_task_ids.keys()),
                 "repair_gate_chapter_numbers": _dedupe_sorted(repair_gate_chapter_numbers),

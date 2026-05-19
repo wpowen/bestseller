@@ -1,0 +1,1784 @@
+{
+  "version": 1,
+  "generated_at": "2026-05-17T02:33:43+00:00",
+  "overall_status": "repairable",
+  "summary": {
+    "category_count": 12,
+    "status_counts": {
+      "repairable": 12
+    },
+    "distillation_status_counts": {
+      "generic_fallback": 11,
+      "category_specific": 1
+    }
+  },
+  "category_cards": [
+    {
+      "category_key": "action-progression",
+      "status": "repairable",
+      "taxonomy_status": "aligned",
+      "distillation_status": "generic_fallback",
+      "aggregate_key": "distillation-generic",
+      "maturity_status": "production",
+      "maturity_score": 0.971,
+      "capabilities": {
+        "taxonomy_bridge": "ready",
+        "book_level_distillation": "fallback",
+        "distilled_strategy_consumption": "ready",
+        "category_state_engine": "ready",
+        "premium_quality_gate": "ready",
+        "autonomous_repair_loop": "ready",
+        "sample_parity_acceptance": "ready"
+      },
+      "distillation_supplement": {
+        "source": "generic_book_distillation_plus_category_contract",
+        "aggregate_key": "distillation-generic",
+        "strategy_signal_counts": {
+          "required_state_variables": 8,
+          "required_change_vectors": 10,
+          "reader_reward_mix": 10,
+          "selected_mechanisms": 6
+        },
+        "planner_must_bind": [
+          "境界或能力层级",
+          "资源库存",
+          "技能熟练度",
+          "敌我战力差",
+          "升级代价",
+          "获得可计量资源",
+          "能力边界被验证",
+          "战力差被缩小或拉大",
+          "新代价限制下一步选择",
+          "对手策略迫使主角改变打法",
+          "清晰升级反馈",
+          "以弱胜强的策略快感",
+          "能力限制下的聪明解法",
+          "资源投入带来阶段回报",
+          "新层级打开新问题",
+          "power_tier_state",
+          "resource_balances",
+          "opportunity_map",
+          "faction_pressure_queue"
+        ],
+        "category_state_ledgers": [
+          "power_tier_state",
+          "resource_balances",
+          "opportunity_map",
+          "faction_pressure_queue"
+        ],
+        "category_hard_gates": [
+          "progression_causality_gate",
+          "resource_cost_gate",
+          "faction_reaction_gate"
+        ],
+        "chapter_update_channels": [
+          "power_tier_delta",
+          "resource_delta",
+          "opportunity_delta",
+          "faction_reaction_delta"
+        ],
+        "selected_mechanism_bindings": [
+          {
+            "mechanism_id": "mech_pending_slot_anticipation",
+            "design_role": "series_engine",
+            "binding": "绑定到本项目的独特设定、人物选择、世界规则或资源代价，禁止直接套用来源样本。"
+          },
+          {
+            "mechanism_id": "mech_competence_gap_systematic_gain",
+            "design_role": "world_pressure",
+            "binding": "绑定到本项目的独特设定、人物选择、世界规则或资源代价，禁止直接套用来源样本。"
+          },
+          {
+            "mechanism_id": "cunning_schemer_bumbling_companion_duo",
+            "design_role": "character_pressure",
+            "binding": "绑定到本项目的独特设定、人物选择、世界规则或资源代价，禁止直接套用来源样本。"
+          },
+          {
+            "mechanism_id": "artifact_quest_discovery_failedcapture_pursuit",
+            "design_role": "chapter_rhythm",
+            "binding": "绑定到本项目的独特设定、人物选择、世界规则或资源代价，禁止直接套用来源样本。"
+          },
+          {
+            "mechanism_id": "mech_ritual_sensory_integration",
+            "design_role": "craft_control",
+            "binding": "绑定到本项目的独特设定、人物选择、世界规则或资源代价，禁止直接套用来源样本。"
+          },
+          {
+            "mechanism_id": "mech_diegetic_interface_exposition",
+            "design_role": "world_pressure",
+            "binding": "绑定到本项目的独特设定、人物选择、世界规则或资源代价，禁止直接套用来源样本。"
+          }
+        ],
+        "repair_loop_inputs": [
+          "progression_causality_gate",
+          "resource_cost_gate",
+          "faction_reaction_gate",
+          "power_tier_delta",
+          "resource_delta",
+          "opportunity_delta",
+          "faction_reaction_delta",
+          "whole_book_quality_gate",
+          "premium_book_gate",
+          "sample_quality_parity_gate",
+          "quality_retrofit_chapter_rewrite"
+        ],
+        "missing_category_distillation_assets": [
+          "category_specific_aggregate_manifest",
+          "category_specific_mechanism_registry",
+          "category_specific_book_design_registry",
+          "category_specific_anti_copy_rules"
+        ],
+        "acceptance_checks": [
+          "planning artifacts include planner_must_bind items as project-specific state, not copied terms",
+          "premium_state_snapshot contains category_state_ledgers before long-form continuation",
+          "chapter_state_updates emit chapter_update_channels after each generated or repaired chapter",
+          "category hard gates pass before sample parity can pass",
+          "anti-copy boundaries from the strategy card are enforced during planning and repair"
+        ]
+      },
+      "findings": [
+        {
+          "code": "category_specific_distillation_missing",
+          "severity": "medium",
+          "message": "action-progression currently consumes `distillation-generic` instead of a category-specific distilled aggregate.",
+          "action": "Run safe anonymous distillation for this category and aggregate to `data/distillation/aggregates/action-progression`; then rerun framework self-closure audit.",
+          "owner_role": "结构蒸馏负责人",
+          "evidence": {
+            "fallback_aggregate": "distillation-generic"
+          }
+        }
+      ]
+    },
+    {
+      "category_key": "strategy-worldbuilding",
+      "status": "repairable",
+      "taxonomy_status": "aligned",
+      "distillation_status": "generic_fallback",
+      "aggregate_key": "distillation-generic",
+      "maturity_status": "production",
+      "maturity_score": 0.971,
+      "capabilities": {
+        "taxonomy_bridge": "ready",
+        "book_level_distillation": "fallback",
+        "distilled_strategy_consumption": "ready",
+        "category_state_engine": "ready",
+        "premium_quality_gate": "ready",
+        "autonomous_repair_loop": "ready",
+        "sample_parity_acceptance": "ready"
+      },
+      "distillation_supplement": {
+        "source": "generic_book_distillation_plus_category_contract",
+        "aggregate_key": "distillation-generic",
+        "strategy_signal_counts": {
+          "required_state_variables": 8,
+          "required_change_vectors": 10,
+          "reader_reward_mix": 10,
+          "selected_mechanisms": 6
+        },
+        "planner_must_bind": [
+          "势力位置",
+          "资源筹码",
+          "情报差",
+          "同盟稳定度",
+          "制度规则",
+          "势力版图出现位移",
+          "一个筹码被消耗或增值",
+          "情报差改变决策质量",
+          "同盟关系因利益重估",
+          "制度规则产生意外后果",
+          "看懂一步棋的收益和代价",
+          "多方利益互相牵制",
+          "世界规则不是背景而是压力",
+          "主角选择改变权力结构",
+          "反转来自信息与利益重组",
+          "faction_pressure_queue",
+          "institutional_agenda",
+          "logistics_ledger",
+          "treasury_state",
+          "battlefront_state"
+        ],
+        "category_state_ledgers": [
+          "faction_pressure_queue",
+          "institutional_agenda",
+          "logistics_ledger",
+          "treasury_state",
+          "battlefront_state"
+        ],
+        "category_hard_gates": [
+          "strategy_consequence_gate",
+          "institutional_pressure_gate",
+          "logistics_plausibility_gate"
+        ],
+        "chapter_update_channels": [
+          "faction_move_delta",
+          "institutional_agenda_delta",
+          "resource_logistics_delta"
+        ],
+        "selected_mechanism_bindings": [
+          {
+            "mechanism_id": "mech_pending_slot_anticipation",
+            "design_role": "series_engine",
+            "binding": "绑定到本项目的独特设定、人物选择、世界规则或资源代价，禁止直接套用来源样本。"
+          },
+          {
+            "mechanism_id": "mech_competence_gap_systematic_gain",
+            "design_role": "world_pressure",
+            "binding": "绑定到本项目的独特设定、人物选择、世界规则或资源代价，禁止直接套用来源样本。"
+          },
+          {
+            "mechanism_id": "cunning_schemer_bumbling_companion_duo",
+            "design_role": "character_pressure",
+            "binding": "绑定到本项目的独特设定、人物选择、世界规则或资源代价，禁止直接套用来源样本。"
+          },
+          {
+            "mechanism_id": "artifact_quest_discovery_failedcapture_pursuit",
+            "design_role": "chapter_rhythm",
+            "binding": "绑定到本项目的独特设定、人物选择、世界规则或资源代价，禁止直接套用来源样本。"
+          },
+          {
+            "mechanism_id": "mech_ritual_sensory_integration",
+            "design_role": "craft_control",
+            "binding": "绑定到本项目的独特设定、人物选择、世界规则或资源代价，禁止直接套用来源样本。"
+          },
+          {
+            "mechanism_id": "mech_diegetic_interface_exposition",
+            "design_role": "world_pressure",
+            "binding": "绑定到本项目的独特设定、人物选择、世界规则或资源代价，禁止直接套用来源样本。"
+          }
+        ],
+        "repair_loop_inputs": [
+          "strategy_consequence_gate",
+          "institutional_pressure_gate",
+          "logistics_plausibility_gate",
+          "faction_move_delta",
+          "institutional_agenda_delta",
+          "resource_logistics_delta",
+          "whole_book_quality_gate",
+          "premium_book_gate",
+          "sample_quality_parity_gate",
+          "quality_retrofit_chapter_rewrite"
+        ],
+        "missing_category_distillation_assets": [
+          "category_specific_aggregate_manifest",
+          "category_specific_mechanism_registry",
+          "category_specific_book_design_registry",
+          "category_specific_anti_copy_rules"
+        ],
+        "acceptance_checks": [
+          "planning artifacts include planner_must_bind items as project-specific state, not copied terms",
+          "premium_state_snapshot contains category_state_ledgers before long-form continuation",
+          "chapter_state_updates emit chapter_update_channels after each generated or repaired chapter",
+          "category hard gates pass before sample parity can pass",
+          "anti-copy boundaries from the strategy card are enforced during planning and repair"
+        ]
+      },
+      "findings": [
+        {
+          "code": "category_specific_distillation_missing",
+          "severity": "medium",
+          "message": "strategy-worldbuilding currently consumes `distillation-generic` instead of a category-specific distilled aggregate.",
+          "action": "Run safe anonymous distillation for this category and aggregate to `data/distillation/aggregates/strategy-worldbuilding`; then rerun framework self-closure audit.",
+          "owner_role": "结构蒸馏负责人",
+          "evidence": {
+            "fallback_aggregate": "distillation-generic"
+          }
+        }
+      ]
+    },
+    {
+      "category_key": "suspense-mystery",
+      "status": "repairable",
+      "taxonomy_status": "aligned",
+      "distillation_status": "generic_fallback",
+      "aggregate_key": "distillation-generic",
+      "maturity_status": "production",
+      "maturity_score": 0.971,
+      "capabilities": {
+        "taxonomy_bridge": "ready",
+        "book_level_distillation": "fallback",
+        "distilled_strategy_consumption": "ready",
+        "category_state_engine": "ready",
+        "premium_quality_gate": "ready",
+        "autonomous_repair_loop": "ready",
+        "sample_parity_acceptance": "ready"
+      },
+      "distillation_supplement": {
+        "source": "generic_book_distillation_plus_category_contract",
+        "aggregate_key": "distillation-generic",
+        "strategy_signal_counts": {
+          "required_state_variables": 8,
+          "required_change_vectors": 10,
+          "reader_reward_mix": 10,
+          "selected_mechanisms": 6
+        },
+        "planner_must_bind": [
+          "线索可信度",
+          "嫌疑人状态",
+          "规则边界",
+          "危险接近度",
+          "主角误判",
+          "线索从模糊变成可验证",
+          "嫌疑人排序发生变化",
+          "一条规则被证明或打破",
+          "危险距离主角更近",
+          "主角误判被局部纠正",
+          "公平线索带来推理快感",
+          "恐惧来自可理解规则",
+          "每个揭示改变嫌疑结构",
+          "主角调查动作产生后果",
+          "结尾问题具体而非纯氛围",
+          "rule_lattice",
+          "clue_chain",
+          "evidence_ledger",
+          "suspect_timeline",
+          "red_herring_ledger"
+        ],
+        "category_state_ledgers": [
+          "rule_lattice",
+          "clue_chain",
+          "evidence_ledger",
+          "suspect_timeline",
+          "red_herring_ledger"
+        ],
+        "category_hard_gates": [
+          "fair_clue_gate",
+          "evidence_legality_gate",
+          "timeline_consistency_gate"
+        ],
+        "chapter_update_channels": [
+          "clue_delta",
+          "suspect_state_delta",
+          "rule_reveal_delta",
+          "misdirection_delta"
+        ],
+        "selected_mechanism_bindings": [
+          {
+            "mechanism_id": "mech_pending_slot_anticipation",
+            "design_role": "series_engine",
+            "binding": "绑定到本项目的独特设定、人物选择、世界规则或资源代价，禁止直接套用来源样本。"
+          },
+          {
+            "mechanism_id": "mech_competence_gap_systematic_gain",
+            "design_role": "world_pressure",
+            "binding": "绑定到本项目的独特设定、人物选择、世界规则或资源代价，禁止直接套用来源样本。"
+          },
+          {
+            "mechanism_id": "cunning_schemer_bumbling_companion_duo",
+            "design_role": "character_pressure",
+            "binding": "绑定到本项目的独特设定、人物选择、世界规则或资源代价，禁止直接套用来源样本。"
+          },
+          {
+            "mechanism_id": "artifact_quest_discovery_failedcapture_pursuit",
+            "design_role": "chapter_rhythm",
+            "binding": "绑定到本项目的独特设定、人物选择、世界规则或资源代价，禁止直接套用来源样本。"
+          },
+          {
+            "mechanism_id": "mech_ritual_sensory_integration",
+            "design_role": "craft_control",
+            "binding": "绑定到本项目的独特设定、人物选择、世界规则或资源代价，禁止直接套用来源样本。"
+          },
+          {
+            "mechanism_id": "mech_diegetic_interface_exposition",
+            "design_role": "world_pressure",
+            "binding": "绑定到本项目的独特设定、人物选择、世界规则或资源代价，禁止直接套用来源样本。"
+          }
+        ],
+        "repair_loop_inputs": [
+          "fair_clue_gate",
+          "evidence_legality_gate",
+          "timeline_consistency_gate",
+          "clue_delta",
+          "suspect_state_delta",
+          "rule_reveal_delta",
+          "misdirection_delta",
+          "whole_book_quality_gate",
+          "premium_book_gate",
+          "sample_quality_parity_gate",
+          "quality_retrofit_chapter_rewrite"
+        ],
+        "missing_category_distillation_assets": [
+          "category_specific_aggregate_manifest",
+          "category_specific_mechanism_registry",
+          "category_specific_book_design_registry",
+          "category_specific_anti_copy_rules"
+        ],
+        "acceptance_checks": [
+          "planning artifacts include planner_must_bind items as project-specific state, not copied terms",
+          "premium_state_snapshot contains category_state_ledgers before long-form continuation",
+          "chapter_state_updates emit chapter_update_channels after each generated or repaired chapter",
+          "category hard gates pass before sample parity can pass",
+          "anti-copy boundaries from the strategy card are enforced during planning and repair"
+        ]
+      },
+      "findings": [
+        {
+          "code": "category_specific_distillation_missing",
+          "severity": "medium",
+          "message": "suspense-mystery currently consumes `distillation-generic` instead of a category-specific distilled aggregate.",
+          "action": "Run safe anonymous distillation for this category and aggregate to `data/distillation/aggregates/suspense-mystery`; then rerun framework self-closure audit.",
+          "owner_role": "结构蒸馏负责人",
+          "evidence": {
+            "fallback_aggregate": "distillation-generic"
+          }
+        }
+      ]
+    },
+    {
+      "category_key": "otherworld-cross-system",
+      "status": "repairable",
+      "taxonomy_status": "aligned",
+      "distillation_status": "category_specific",
+      "aggregate_key": "otherworld-cross-system",
+      "maturity_status": "unsafe",
+      "maturity_score": 0.273,
+      "capabilities": {
+        "taxonomy_bridge": "ready",
+        "book_level_distillation": "ready",
+        "distilled_strategy_consumption": "ready",
+        "category_state_engine": "ready",
+        "premium_quality_gate": "ready",
+        "autonomous_repair_loop": "ready",
+        "sample_parity_acceptance": "ready"
+      },
+      "distillation_supplement": {
+        "source": "category_specific_distillation",
+        "aggregate_key": "otherworld-cross-system",
+        "strategy_signal_counts": {
+          "required_state_variables": 10,
+          "required_change_vectors": 4,
+          "reader_reward_mix": 8,
+          "selected_mechanisms": 3
+        },
+        "planner_must_bind": [
+          "cross_system_understanding",
+          "old_system_adaptation",
+          "local_power_misread",
+          "bound_assets",
+          "political_entanglement",
+          "identity_debt",
+          "higher_authority_attention",
+          "learn_local_rule",
+          "exploit_rule_gap",
+          "convert_enemy_or_resource",
+          "pay_identity_debt",
+          "reveal_higher_authority",
+          "increase_exposure_cost",
+          "weak_identity_strong_core",
+          "knowledge_arbitrage",
+          "power_misread_payoff",
+          "exotic_world_discovery",
+          "asset_conversion_with_cost",
+          "authority_prank_with_consequence",
+          "cross_system_mapping",
+          "identity_debt_ledger",
+          "exposure_cost_ledger",
+          "local_rule_audit"
+        ],
+        "category_state_ledgers": [
+          "cross_system_mapping",
+          "identity_debt_ledger",
+          "exposure_cost_ledger",
+          "local_rule_audit"
+        ],
+        "category_hard_gates": [
+          "cross_system_boundary_gate",
+          "identity_debt_gate",
+          "exposure_cost_gate"
+        ],
+        "chapter_update_channels": [
+          "rule_mapping_delta",
+          "identity_debt_delta",
+          "exposure_cost_delta"
+        ],
+        "selected_mechanism_bindings": [
+          {
+            "mechanism_id": "mech_identity_interrogation_loop",
+            "design_role": "series_engine",
+            "binding": "绑定到本项目的独特设定、人物选择、世界规则或资源代价，禁止直接套用来源样本。"
+          },
+          {
+            "mechanism_id": "mech_soulbond_mutual_vulnerability",
+            "design_role": "character_pressure",
+            "binding": "绑定到本项目的独特设定、人物选择、世界规则或资源代价，禁止直接套用来源样本。"
+          },
+          {
+            "mechanism_id": "mech_protective_paradox",
+            "design_role": "series_engine",
+            "binding": "绑定到本项目的独特设定、人物选择、世界规则或资源代价，禁止直接套用来源样本。"
+          }
+        ],
+        "repair_loop_inputs": [
+          "cross_system_boundary_gate",
+          "identity_debt_gate",
+          "exposure_cost_gate",
+          "rule_mapping_delta",
+          "identity_debt_delta",
+          "exposure_cost_delta",
+          "whole_book_quality_gate",
+          "premium_book_gate",
+          "sample_quality_parity_gate",
+          "quality_retrofit_chapter_rewrite"
+        ],
+        "missing_category_distillation_assets": [],
+        "acceptance_checks": [
+          "planning artifacts include planner_must_bind items as project-specific state, not copied terms",
+          "premium_state_snapshot contains category_state_ledgers before long-form continuation",
+          "chapter_state_updates emit chapter_update_channels after each generated or repaired chapter",
+          "category hard gates pass before sample parity can pass",
+          "anti-copy boundaries from the strategy card are enforced during planning and repair"
+        ]
+      },
+      "findings": [
+        {
+          "code": "distillation_maturity_low",
+          "severity": "medium",
+          "message": "otherworld-cross-system distilled strategy maturity is low.",
+          "action": "Run safe anonymous distillation for this category and aggregate to `data/distillation/aggregates/otherworld-cross-system`; then rerun framework self-closure audit.",
+          "owner_role": "结构蒸馏负责人",
+          "evidence": {
+            "maturity_score": 0.273,
+            "maturity_status": "unsafe"
+          }
+        }
+      ]
+    },
+    {
+      "category_key": "base-building",
+      "status": "repairable",
+      "taxonomy_status": "aligned",
+      "distillation_status": "generic_fallback",
+      "aggregate_key": "distillation-generic",
+      "maturity_status": "production",
+      "maturity_score": 0.971,
+      "capabilities": {
+        "taxonomy_bridge": "ready",
+        "book_level_distillation": "fallback",
+        "distilled_strategy_consumption": "ready",
+        "category_state_engine": "ready",
+        "premium_quality_gate": "ready",
+        "autonomous_repair_loop": "ready",
+        "sample_parity_acceptance": "ready"
+      },
+      "distillation_supplement": {
+        "source": "generic_book_distillation_plus_category_contract",
+        "aggregate_key": "distillation-generic",
+        "strategy_signal_counts": {
+          "required_state_variables": 8,
+          "required_change_vectors": 10,
+          "reader_reward_mix": 10,
+          "selected_mechanisms": 6
+        },
+        "planner_must_bind": [
+          "产能",
+          "人手",
+          "物资链",
+          "民心或信任",
+          "制度风险",
+          "一个瓶颈被定位或缓解",
+          "产出结构发生变化",
+          "利益相关者重新站队",
+          "新设施带来新约束",
+          "局部成功暴露系统短板",
+          "看得见的建设成果",
+          "小问题被聪明组织解决",
+          "资源调度产生爽感",
+          "群体生活质量变化",
+          "发展后果推动更大目标",
+          "settlement_inventory",
+          "logistics_ledger",
+          "population_state",
+          "build_queue",
+          "external_demand_pressure"
+        ],
+        "category_state_ledgers": [
+          "settlement_inventory",
+          "logistics_ledger",
+          "population_state",
+          "build_queue",
+          "external_demand_pressure"
+        ],
+        "category_hard_gates": [
+          "resource_conservation_gate",
+          "build_queue_gate",
+          "stakeholder_pressure_gate"
+        ],
+        "chapter_update_channels": [
+          "inventory_delta",
+          "build_queue_delta",
+          "population_delta",
+          "demand_pressure_delta"
+        ],
+        "selected_mechanism_bindings": [
+          {
+            "mechanism_id": "mech_pending_slot_anticipation",
+            "design_role": "series_engine",
+            "binding": "绑定到本项目的独特设定、人物选择、世界规则或资源代价，禁止直接套用来源样本。"
+          },
+          {
+            "mechanism_id": "mech_competence_gap_systematic_gain",
+            "design_role": "world_pressure",
+            "binding": "绑定到本项目的独特设定、人物选择、世界规则或资源代价，禁止直接套用来源样本。"
+          },
+          {
+            "mechanism_id": "cunning_schemer_bumbling_companion_duo",
+            "design_role": "character_pressure",
+            "binding": "绑定到本项目的独特设定、人物选择、世界规则或资源代价，禁止直接套用来源样本。"
+          },
+          {
+            "mechanism_id": "artifact_quest_discovery_failedcapture_pursuit",
+            "design_role": "chapter_rhythm",
+            "binding": "绑定到本项目的独特设定、人物选择、世界规则或资源代价，禁止直接套用来源样本。"
+          },
+          {
+            "mechanism_id": "mech_ritual_sensory_integration",
+            "design_role": "craft_control",
+            "binding": "绑定到本项目的独特设定、人物选择、世界规则或资源代价，禁止直接套用来源样本。"
+          },
+          {
+            "mechanism_id": "mech_diegetic_interface_exposition",
+            "design_role": "world_pressure",
+            "binding": "绑定到本项目的独特设定、人物选择、世界规则或资源代价，禁止直接套用来源样本。"
+          }
+        ],
+        "repair_loop_inputs": [
+          "resource_conservation_gate",
+          "build_queue_gate",
+          "stakeholder_pressure_gate",
+          "inventory_delta",
+          "build_queue_delta",
+          "population_delta",
+          "demand_pressure_delta",
+          "whole_book_quality_gate",
+          "premium_book_gate",
+          "sample_quality_parity_gate",
+          "quality_retrofit_chapter_rewrite"
+        ],
+        "missing_category_distillation_assets": [
+          "category_specific_aggregate_manifest",
+          "category_specific_mechanism_registry",
+          "category_specific_book_design_registry",
+          "category_specific_anti_copy_rules"
+        ],
+        "acceptance_checks": [
+          "planning artifacts include planner_must_bind items as project-specific state, not copied terms",
+          "premium_state_snapshot contains category_state_ledgers before long-form continuation",
+          "chapter_state_updates emit chapter_update_channels after each generated or repaired chapter",
+          "category hard gates pass before sample parity can pass",
+          "anti-copy boundaries from the strategy card are enforced during planning and repair"
+        ]
+      },
+      "findings": [
+        {
+          "code": "category_specific_distillation_missing",
+          "severity": "medium",
+          "message": "base-building currently consumes `distillation-generic` instead of a category-specific distilled aggregate.",
+          "action": "Run safe anonymous distillation for this category and aggregate to `data/distillation/aggregates/base-building`; then rerun framework self-closure audit.",
+          "owner_role": "结构蒸馏负责人",
+          "evidence": {
+            "fallback_aggregate": "distillation-generic"
+          }
+        }
+      ]
+    },
+    {
+      "category_key": "relationship-driven",
+      "status": "repairable",
+      "taxonomy_status": "aligned",
+      "distillation_status": "generic_fallback",
+      "aggregate_key": "distillation-generic",
+      "maturity_status": "production",
+      "maturity_score": 0.971,
+      "capabilities": {
+        "taxonomy_bridge": "ready",
+        "book_level_distillation": "fallback",
+        "distilled_strategy_consumption": "ready",
+        "category_state_engine": "ready",
+        "premium_quality_gate": "ready",
+        "autonomous_repair_loop": "ready",
+        "sample_parity_acceptance": "ready"
+      },
+      "distillation_supplement": {
+        "source": "generic_book_distillation_plus_category_contract",
+        "aggregate_key": "distillation-generic",
+        "strategy_signal_counts": {
+          "required_state_variables": 8,
+          "required_change_vectors": 10,
+          "reader_reward_mix": 10,
+          "selected_mechanisms": 6
+        },
+        "planner_must_bind": [
+          "信任度",
+          "误解或秘密",
+          "边界",
+          "情感债",
+          "公开关系位置",
+          "信任因行动上升或下降",
+          "误解被加深或局部澄清",
+          "边界被触碰后重新定义",
+          "情感债出现兑现窗口",
+          "外部压力迫使关系表态",
+          "关系状态真实变化",
+          "亲密时刻带有代价",
+          "误解推动选择而非拖延",
+          "双方都展示能动性",
+          "情绪兑现后留下新问题",
+          "relationship_state",
+          "intimacy_boundaries",
+          "misunderstanding_graph",
+          "promise_debt_ledger"
+        ],
+        "category_state_ledgers": [
+          "relationship_state",
+          "intimacy_boundaries",
+          "misunderstanding_graph",
+          "promise_debt_ledger"
+        ],
+        "category_hard_gates": [
+          "relationship_distance_gate",
+          "agency_choice_gate",
+          "promise_payoff_gate"
+        ],
+        "chapter_update_channels": [
+          "relationship_distance_delta",
+          "boundary_delta",
+          "promise_debt_delta"
+        ],
+        "selected_mechanism_bindings": [
+          {
+            "mechanism_id": "mech_pending_slot_anticipation",
+            "design_role": "series_engine",
+            "binding": "绑定到本项目的独特设定、人物选择、世界规则或资源代价，禁止直接套用来源样本。"
+          },
+          {
+            "mechanism_id": "mech_competence_gap_systematic_gain",
+            "design_role": "world_pressure",
+            "binding": "绑定到本项目的独特设定、人物选择、世界规则或资源代价，禁止直接套用来源样本。"
+          },
+          {
+            "mechanism_id": "cunning_schemer_bumbling_companion_duo",
+            "design_role": "character_pressure",
+            "binding": "绑定到本项目的独特设定、人物选择、世界规则或资源代价，禁止直接套用来源样本。"
+          },
+          {
+            "mechanism_id": "artifact_quest_discovery_failedcapture_pursuit",
+            "design_role": "chapter_rhythm",
+            "binding": "绑定到本项目的独特设定、人物选择、世界规则或资源代价，禁止直接套用来源样本。"
+          },
+          {
+            "mechanism_id": "mech_ritual_sensory_integration",
+            "design_role": "craft_control",
+            "binding": "绑定到本项目的独特设定、人物选择、世界规则或资源代价，禁止直接套用来源样本。"
+          },
+          {
+            "mechanism_id": "mech_diegetic_interface_exposition",
+            "design_role": "world_pressure",
+            "binding": "绑定到本项目的独特设定、人物选择、世界规则或资源代价，禁止直接套用来源样本。"
+          }
+        ],
+        "repair_loop_inputs": [
+          "relationship_distance_gate",
+          "agency_choice_gate",
+          "promise_payoff_gate",
+          "relationship_distance_delta",
+          "boundary_delta",
+          "promise_debt_delta",
+          "whole_book_quality_gate",
+          "premium_book_gate",
+          "sample_quality_parity_gate",
+          "quality_retrofit_chapter_rewrite"
+        ],
+        "missing_category_distillation_assets": [
+          "category_specific_aggregate_manifest",
+          "category_specific_mechanism_registry",
+          "category_specific_book_design_registry",
+          "category_specific_anti_copy_rules"
+        ],
+        "acceptance_checks": [
+          "planning artifacts include planner_must_bind items as project-specific state, not copied terms",
+          "premium_state_snapshot contains category_state_ledgers before long-form continuation",
+          "chapter_state_updates emit chapter_update_channels after each generated or repaired chapter",
+          "category hard gates pass before sample parity can pass",
+          "anti-copy boundaries from the strategy card are enforced during planning and repair"
+        ]
+      },
+      "findings": [
+        {
+          "code": "category_specific_distillation_missing",
+          "severity": "medium",
+          "message": "relationship-driven currently consumes `distillation-generic` instead of a category-specific distilled aggregate.",
+          "action": "Run safe anonymous distillation for this category and aggregate to `data/distillation/aggregates/relationship-driven`; then rerun framework self-closure audit.",
+          "owner_role": "结构蒸馏负责人",
+          "evidence": {
+            "fallback_aggregate": "distillation-generic"
+          }
+        }
+      ]
+    },
+    {
+      "category_key": "esports-competition",
+      "status": "repairable",
+      "taxonomy_status": "aligned",
+      "distillation_status": "generic_fallback",
+      "aggregate_key": "distillation-generic",
+      "maturity_status": "production",
+      "maturity_score": 0.971,
+      "capabilities": {
+        "taxonomy_bridge": "ready",
+        "book_level_distillation": "fallback",
+        "distilled_strategy_consumption": "ready",
+        "category_state_engine": "ready",
+        "premium_quality_gate": "ready",
+        "autonomous_repair_loop": "ready",
+        "sample_parity_acceptance": "ready"
+      },
+      "distillation_supplement": {
+        "source": "generic_book_distillation_plus_category_contract",
+        "aggregate_key": "distillation-generic",
+        "strategy_signal_counts": {
+          "required_state_variables": 8,
+          "required_change_vectors": 10,
+          "reader_reward_mix": 10,
+          "selected_mechanisms": 6
+        },
+        "planner_must_bind": [
+          "比赛局势",
+          "技术短板",
+          "团队信任",
+          "对手情报",
+          "舆论压力",
+          "局势优势被建立或丢失",
+          "一个技术短板被暴露",
+          "团队协作方式变化",
+          "对手打法迫使反制",
+          "场外舆论影响场内选择",
+          "清晰可视的胜负转折",
+          "技术博弈而非纯热血",
+          "队友分工带来配合爽感",
+          "训练反馈进入实战",
+          "比赛结果改变排名或名声",
+          "match_state",
+          "draft_bp_state",
+          "patch_meta",
+          "team_tactics",
+          "tournament_pressure"
+        ],
+        "category_state_ledgers": [
+          "match_state",
+          "draft_bp_state",
+          "patch_meta",
+          "team_tactics",
+          "tournament_pressure"
+        ],
+        "category_hard_gates": [
+          "match_state_gate",
+          "bp_logic_gate",
+          "tactical_payoff_gate"
+        ],
+        "chapter_update_channels": [
+          "match_state_delta",
+          "team_tactic_delta",
+          "opponent_adaptation_delta"
+        ],
+        "selected_mechanism_bindings": [
+          {
+            "mechanism_id": "mech_pending_slot_anticipation",
+            "design_role": "series_engine",
+            "binding": "绑定到本项目的独特设定、人物选择、世界规则或资源代价，禁止直接套用来源样本。"
+          },
+          {
+            "mechanism_id": "mech_competence_gap_systematic_gain",
+            "design_role": "world_pressure",
+            "binding": "绑定到本项目的独特设定、人物选择、世界规则或资源代价，禁止直接套用来源样本。"
+          },
+          {
+            "mechanism_id": "cunning_schemer_bumbling_companion_duo",
+            "design_role": "character_pressure",
+            "binding": "绑定到本项目的独特设定、人物选择、世界规则或资源代价，禁止直接套用来源样本。"
+          },
+          {
+            "mechanism_id": "artifact_quest_discovery_failedcapture_pursuit",
+            "design_role": "chapter_rhythm",
+            "binding": "绑定到本项目的独特设定、人物选择、世界规则或资源代价，禁止直接套用来源样本。"
+          },
+          {
+            "mechanism_id": "mech_ritual_sensory_integration",
+            "design_role": "craft_control",
+            "binding": "绑定到本项目的独特设定、人物选择、世界规则或资源代价，禁止直接套用来源样本。"
+          },
+          {
+            "mechanism_id": "mech_diegetic_interface_exposition",
+            "design_role": "world_pressure",
+            "binding": "绑定到本项目的独特设定、人物选择、世界规则或资源代价，禁止直接套用来源样本。"
+          }
+        ],
+        "repair_loop_inputs": [
+          "match_state_gate",
+          "bp_logic_gate",
+          "tactical_payoff_gate",
+          "match_state_delta",
+          "team_tactic_delta",
+          "opponent_adaptation_delta",
+          "whole_book_quality_gate",
+          "premium_book_gate",
+          "sample_quality_parity_gate",
+          "quality_retrofit_chapter_rewrite"
+        ],
+        "missing_category_distillation_assets": [
+          "category_specific_aggregate_manifest",
+          "category_specific_mechanism_registry",
+          "category_specific_book_design_registry",
+          "category_specific_anti_copy_rules"
+        ],
+        "acceptance_checks": [
+          "planning artifacts include planner_must_bind items as project-specific state, not copied terms",
+          "premium_state_snapshot contains category_state_ledgers before long-form continuation",
+          "chapter_state_updates emit chapter_update_channels after each generated or repaired chapter",
+          "category hard gates pass before sample parity can pass",
+          "anti-copy boundaries from the strategy card are enforced during planning and repair"
+        ]
+      },
+      "findings": [
+        {
+          "code": "category_specific_distillation_missing",
+          "severity": "medium",
+          "message": "esports-competition currently consumes `distillation-generic` instead of a category-specific distilled aggregate.",
+          "action": "Run safe anonymous distillation for this category and aggregate to `data/distillation/aggregates/esports-competition`; then rerun framework self-closure audit.",
+          "owner_role": "结构蒸馏负责人",
+          "evidence": {
+            "fallback_aggregate": "distillation-generic"
+          }
+        }
+      ]
+    },
+    {
+      "category_key": "female-growth-ncp",
+      "status": "repairable",
+      "taxonomy_status": "aligned",
+      "distillation_status": "generic_fallback",
+      "aggregate_key": "distillation-generic",
+      "maturity_status": "production",
+      "maturity_score": 0.971,
+      "capabilities": {
+        "taxonomy_bridge": "ready",
+        "book_level_distillation": "fallback",
+        "distilled_strategy_consumption": "ready",
+        "category_state_engine": "ready",
+        "premium_quality_gate": "ready",
+        "autonomous_repair_loop": "ready",
+        "sample_parity_acceptance": "ready"
+      },
+      "distillation_supplement": {
+        "source": "generic_book_distillation_plus_category_contract",
+        "aggregate_key": "distillation-generic",
+        "strategy_signal_counts": {
+          "required_state_variables": 8,
+          "required_change_vectors": 10,
+          "reader_reward_mix": 10,
+          "selected_mechanisms": 6
+        },
+        "planner_must_bind": [
+          "主体性",
+          "能力资本",
+          "社会位置",
+          "边界感",
+          "自我定义",
+          "主角争取一个实际决定权",
+          "能力资本获得验证",
+          "社会约束改变施压方式",
+          "边界被侵犯或重新划定",
+          "自我叙事从被定义转为自定义",
+          "女性主体性增强",
+          "能力成长有现实反馈",
+          "群像支持或对照主线",
+          "选择代价被正面承担",
+          "旧评价体系被局部改写",
+          "career_ladder",
+          "agency_debt_ledger",
+          "social_pressure_state",
+          "competence_growth_ledger"
+        ],
+        "category_state_ledgers": [
+          "career_ladder",
+          "agency_debt_ledger",
+          "social_pressure_state",
+          "competence_growth_ledger"
+        ],
+        "category_hard_gates": [
+          "agency_preservation_gate",
+          "hidden_romance_drift_gate",
+          "career_progression_gate"
+        ],
+        "chapter_update_channels": [
+          "career_delta",
+          "agency_debt_delta",
+          "social_pressure_delta"
+        ],
+        "selected_mechanism_bindings": [
+          {
+            "mechanism_id": "mech_pending_slot_anticipation",
+            "design_role": "series_engine",
+            "binding": "绑定到本项目的独特设定、人物选择、世界规则或资源代价，禁止直接套用来源样本。"
+          },
+          {
+            "mechanism_id": "mech_competence_gap_systematic_gain",
+            "design_role": "world_pressure",
+            "binding": "绑定到本项目的独特设定、人物选择、世界规则或资源代价，禁止直接套用来源样本。"
+          },
+          {
+            "mechanism_id": "cunning_schemer_bumbling_companion_duo",
+            "design_role": "character_pressure",
+            "binding": "绑定到本项目的独特设定、人物选择、世界规则或资源代价，禁止直接套用来源样本。"
+          },
+          {
+            "mechanism_id": "artifact_quest_discovery_failedcapture_pursuit",
+            "design_role": "chapter_rhythm",
+            "binding": "绑定到本项目的独特设定、人物选择、世界规则或资源代价，禁止直接套用来源样本。"
+          },
+          {
+            "mechanism_id": "mech_ritual_sensory_integration",
+            "design_role": "craft_control",
+            "binding": "绑定到本项目的独特设定、人物选择、世界规则或资源代价，禁止直接套用来源样本。"
+          },
+          {
+            "mechanism_id": "mech_diegetic_interface_exposition",
+            "design_role": "world_pressure",
+            "binding": "绑定到本项目的独特设定、人物选择、世界规则或资源代价，禁止直接套用来源样本。"
+          }
+        ],
+        "repair_loop_inputs": [
+          "agency_preservation_gate",
+          "hidden_romance_drift_gate",
+          "career_progression_gate",
+          "career_delta",
+          "agency_debt_delta",
+          "social_pressure_delta",
+          "whole_book_quality_gate",
+          "premium_book_gate",
+          "sample_quality_parity_gate",
+          "quality_retrofit_chapter_rewrite"
+        ],
+        "missing_category_distillation_assets": [
+          "category_specific_aggregate_manifest",
+          "category_specific_mechanism_registry",
+          "category_specific_book_design_registry",
+          "category_specific_anti_copy_rules"
+        ],
+        "acceptance_checks": [
+          "planning artifacts include planner_must_bind items as project-specific state, not copied terms",
+          "premium_state_snapshot contains category_state_ledgers before long-form continuation",
+          "chapter_state_updates emit chapter_update_channels after each generated or repaired chapter",
+          "category hard gates pass before sample parity can pass",
+          "anti-copy boundaries from the strategy card are enforced during planning and repair"
+        ]
+      },
+      "findings": [
+        {
+          "code": "category_specific_distillation_missing",
+          "severity": "medium",
+          "message": "female-growth-ncp currently consumes `distillation-generic` instead of a category-specific distilled aggregate.",
+          "action": "Run safe anonymous distillation for this category and aggregate to `data/distillation/aggregates/female-growth-ncp`; then rerun framework self-closure audit.",
+          "owner_role": "结构蒸馏负责人",
+          "evidence": {
+            "fallback_aggregate": "distillation-generic"
+          }
+        }
+      ]
+    },
+    {
+      "category_key": "eastern-aesthetic",
+      "status": "repairable",
+      "taxonomy_status": "aligned",
+      "distillation_status": "generic_fallback",
+      "aggregate_key": "distillation-generic",
+      "maturity_status": "production",
+      "maturity_score": 0.971,
+      "capabilities": {
+        "taxonomy_bridge": "ready",
+        "book_level_distillation": "fallback",
+        "distilled_strategy_consumption": "ready",
+        "category_state_engine": "ready",
+        "premium_quality_gate": "ready",
+        "autonomous_repair_loop": "ready",
+        "sample_parity_acceptance": "ready"
+      },
+      "distillation_supplement": {
+        "source": "generic_book_distillation_plus_category_contract",
+        "aggregate_key": "distillation-generic",
+        "strategy_signal_counts": {
+          "required_state_variables": 8,
+          "required_change_vectors": 10,
+          "reader_reward_mix": 10,
+          "selected_mechanisms": 6
+        },
+        "planner_must_bind": [
+          "意象含义",
+          "礼法秩序",
+          "人物心境",
+          "场景气韵",
+          "物件承载的秘密",
+          "一个意象从装饰转为行动线索",
+          "礼法压力改变人物选择",
+          "克制情绪出现细微裂缝",
+          "空间气氛揭示关系变化",
+          "诗性物件产生现实后果",
+          "美学意象与剧情同频",
+          "含蓄情绪被读者读懂",
+          "场景审美服务人物选择",
+          "古典秩序制造现实压迫",
+          "余韵推动下一次相见",
+          "image_meaning_chain",
+          "ritual_order_pressure",
+          "poetic_object_ledger",
+          "atmosphere_turn_ledger"
+        ],
+        "category_state_ledgers": [
+          "image_meaning_chain",
+          "ritual_order_pressure",
+          "poetic_object_ledger",
+          "atmosphere_turn_ledger"
+        ],
+        "category_hard_gates": [
+          "image_plot_function_gate",
+          "ritual_pressure_gate",
+          "poetic_payoff_gate"
+        ],
+        "chapter_update_channels": [
+          "image_meaning_delta",
+          "ritual_pressure_delta",
+          "poetic_object_delta"
+        ],
+        "selected_mechanism_bindings": [
+          {
+            "mechanism_id": "mech_pending_slot_anticipation",
+            "design_role": "series_engine",
+            "binding": "绑定到本项目的独特设定、人物选择、世界规则或资源代价，禁止直接套用来源样本。"
+          },
+          {
+            "mechanism_id": "mech_competence_gap_systematic_gain",
+            "design_role": "world_pressure",
+            "binding": "绑定到本项目的独特设定、人物选择、世界规则或资源代价，禁止直接套用来源样本。"
+          },
+          {
+            "mechanism_id": "cunning_schemer_bumbling_companion_duo",
+            "design_role": "character_pressure",
+            "binding": "绑定到本项目的独特设定、人物选择、世界规则或资源代价，禁止直接套用来源样本。"
+          },
+          {
+            "mechanism_id": "artifact_quest_discovery_failedcapture_pursuit",
+            "design_role": "chapter_rhythm",
+            "binding": "绑定到本项目的独特设定、人物选择、世界规则或资源代价，禁止直接套用来源样本。"
+          },
+          {
+            "mechanism_id": "mech_ritual_sensory_integration",
+            "design_role": "craft_control",
+            "binding": "绑定到本项目的独特设定、人物选择、世界规则或资源代价，禁止直接套用来源样本。"
+          },
+          {
+            "mechanism_id": "mech_diegetic_interface_exposition",
+            "design_role": "world_pressure",
+            "binding": "绑定到本项目的独特设定、人物选择、世界规则或资源代价，禁止直接套用来源样本。"
+          }
+        ],
+        "repair_loop_inputs": [
+          "image_plot_function_gate",
+          "ritual_pressure_gate",
+          "poetic_payoff_gate",
+          "image_meaning_delta",
+          "ritual_pressure_delta",
+          "poetic_object_delta",
+          "whole_book_quality_gate",
+          "premium_book_gate",
+          "sample_quality_parity_gate",
+          "quality_retrofit_chapter_rewrite"
+        ],
+        "missing_category_distillation_assets": [
+          "category_specific_aggregate_manifest",
+          "category_specific_mechanism_registry",
+          "category_specific_book_design_registry",
+          "category_specific_anti_copy_rules"
+        ],
+        "acceptance_checks": [
+          "planning artifacts include planner_must_bind items as project-specific state, not copied terms",
+          "premium_state_snapshot contains category_state_ledgers before long-form continuation",
+          "chapter_state_updates emit chapter_update_channels after each generated or repaired chapter",
+          "category hard gates pass before sample parity can pass",
+          "anti-copy boundaries from the strategy card are enforced during planning and repair"
+        ]
+      },
+      "findings": [
+        {
+          "code": "category_specific_distillation_missing",
+          "severity": "medium",
+          "message": "eastern-aesthetic currently consumes `distillation-generic` instead of a category-specific distilled aggregate.",
+          "action": "Run safe anonymous distillation for this category and aggregate to `data/distillation/aggregates/eastern-aesthetic`; then rerun framework self-closure audit.",
+          "owner_role": "结构蒸馏负责人",
+          "evidence": {
+            "fallback_aggregate": "distillation-generic"
+          }
+        }
+      ]
+    },
+    {
+      "category_key": "urban-contemporary",
+      "status": "repairable",
+      "taxonomy_status": "aligned",
+      "distillation_status": "generic_fallback",
+      "aggregate_key": "distillation-generic",
+      "maturity_status": "production",
+      "maturity_score": 0.971,
+      "capabilities": {
+        "taxonomy_bridge": "ready",
+        "book_level_distillation": "fallback",
+        "distilled_strategy_consumption": "ready",
+        "category_state_engine": "ready",
+        "premium_quality_gate": "ready",
+        "autonomous_repair_loop": "ready",
+        "sample_parity_acceptance": "ready"
+      },
+      "distillation_supplement": {
+        "source": "generic_book_distillation_plus_category_contract",
+        "aggregate_key": "distillation-generic",
+        "strategy_signal_counts": {
+          "required_state_variables": 8,
+          "required_change_vectors": 10,
+          "reader_reward_mix": 10,
+          "selected_mechanisms": 6
+        },
+        "planner_must_bind": [
+          "职业位置",
+          "组织关系",
+          "现金流或合同风险",
+          "公众口碑",
+          "人情债与资源入口",
+          "职位或项目权限发生变化",
+          "组织内某一方重新站队",
+          "合同、金钱或资源条件改变",
+          "口碑舆论产生正负回流",
+          "人情债被偿还、延期或加深",
+          "现实问题被聪明解决",
+          "职业台阶可见上移",
+          "口碑或资源出现反转",
+          "工作场景有专业细节",
+          "人情往来影响真实利益",
+          "career_ladder_state",
+          "organization_politics_map",
+          "reputation_public_opinion",
+          "money_contract_ledger",
+          "social_network_pressure"
+        ],
+        "category_state_ledgers": [
+          "career_ladder_state",
+          "organization_politics_map",
+          "reputation_public_opinion",
+          "money_contract_ledger",
+          "social_network_pressure"
+        ],
+        "category_hard_gates": [
+          "career_progress_gate",
+          "workplace_plausibility_gate",
+          "reputation_consequence_gate"
+        ],
+        "chapter_update_channels": [
+          "career_position_delta",
+          "organization_relation_delta",
+          "reputation_delta",
+          "money_contract_delta"
+        ],
+        "selected_mechanism_bindings": [
+          {
+            "mechanism_id": "mech_pending_slot_anticipation",
+            "design_role": "series_engine",
+            "binding": "绑定到本项目的独特设定、人物选择、世界规则或资源代价，禁止直接套用来源样本。"
+          },
+          {
+            "mechanism_id": "mech_competence_gap_systematic_gain",
+            "design_role": "world_pressure",
+            "binding": "绑定到本项目的独特设定、人物选择、世界规则或资源代价，禁止直接套用来源样本。"
+          },
+          {
+            "mechanism_id": "cunning_schemer_bumbling_companion_duo",
+            "design_role": "character_pressure",
+            "binding": "绑定到本项目的独特设定、人物选择、世界规则或资源代价，禁止直接套用来源样本。"
+          },
+          {
+            "mechanism_id": "artifact_quest_discovery_failedcapture_pursuit",
+            "design_role": "chapter_rhythm",
+            "binding": "绑定到本项目的独特设定、人物选择、世界规则或资源代价，禁止直接套用来源样本。"
+          },
+          {
+            "mechanism_id": "mech_ritual_sensory_integration",
+            "design_role": "craft_control",
+            "binding": "绑定到本项目的独特设定、人物选择、世界规则或资源代价，禁止直接套用来源样本。"
+          },
+          {
+            "mechanism_id": "mech_diegetic_interface_exposition",
+            "design_role": "world_pressure",
+            "binding": "绑定到本项目的独特设定、人物选择、世界规则或资源代价，禁止直接套用来源样本。"
+          }
+        ],
+        "repair_loop_inputs": [
+          "career_progress_gate",
+          "workplace_plausibility_gate",
+          "reputation_consequence_gate",
+          "career_position_delta",
+          "organization_relation_delta",
+          "reputation_delta",
+          "money_contract_delta",
+          "whole_book_quality_gate",
+          "premium_book_gate",
+          "sample_quality_parity_gate",
+          "quality_retrofit_chapter_rewrite"
+        ],
+        "missing_category_distillation_assets": [
+          "category_specific_aggregate_manifest",
+          "category_specific_mechanism_registry",
+          "category_specific_book_design_registry",
+          "category_specific_anti_copy_rules"
+        ],
+        "acceptance_checks": [
+          "planning artifacts include planner_must_bind items as project-specific state, not copied terms",
+          "premium_state_snapshot contains category_state_ledgers before long-form continuation",
+          "chapter_state_updates emit chapter_update_channels after each generated or repaired chapter",
+          "category hard gates pass before sample parity can pass",
+          "anti-copy boundaries from the strategy card are enforced during planning and repair"
+        ]
+      },
+      "findings": [
+        {
+          "code": "category_specific_distillation_missing",
+          "severity": "medium",
+          "message": "urban-contemporary currently consumes `distillation-generic` instead of a category-specific distilled aggregate.",
+          "action": "Run safe anonymous distillation for this category and aggregate to `data/distillation/aggregates/urban-contemporary`; then rerun framework self-closure audit.",
+          "owner_role": "结构蒸馏负责人",
+          "evidence": {
+            "fallback_aggregate": "distillation-generic"
+          }
+        }
+      ]
+    },
+    {
+      "category_key": "science-fiction-progression",
+      "status": "repairable",
+      "taxonomy_status": "aligned",
+      "distillation_status": "generic_fallback",
+      "aggregate_key": "distillation-generic",
+      "maturity_status": "production",
+      "maturity_score": 0.971,
+      "capabilities": {
+        "taxonomy_bridge": "ready",
+        "book_level_distillation": "fallback",
+        "distilled_strategy_consumption": "ready",
+        "category_state_engine": "ready",
+        "premium_quality_gate": "ready",
+        "autonomous_repair_loop": "ready",
+        "sample_parity_acceptance": "ready"
+      },
+      "distillation_supplement": {
+        "source": "generic_book_distillation_plus_category_contract",
+        "aggregate_key": "distillation-generic",
+        "strategy_signal_counts": {
+          "required_state_variables": 8,
+          "required_change_vectors": 10,
+          "reader_reward_mix": 10,
+          "selected_mechanisms": 6
+        },
+        "planner_must_bind": [
+          "技术约束",
+          "能源与后勤",
+          "研发验证阶段",
+          "机甲或舰队状态",
+          "战场态势与敌方反制",
+          "技术能力被验证或证伪",
+          "能源/后勤成本发生变化",
+          "机体、舰队或装备状态改变",
+          "敌方反制揭示新限制",
+          "战场目标或轨道窗口重排",
+          "科技突破有可见边界",
+          "机甲/舰队状态可复盘",
+          "战术胜利来自前置验证",
+          "能源和后勤制造紧迫感",
+          "敌方反制推动更高层问题",
+          "tech_constraint_ledger",
+          "energy_logistics_state",
+          "research_validation_chain",
+          "fleet_or_mecha_state",
+          "strategic_theater_map"
+        ],
+        "category_state_ledgers": [
+          "tech_constraint_ledger",
+          "energy_logistics_state",
+          "research_validation_chain",
+          "fleet_or_mecha_state",
+          "strategic_theater_map"
+        ],
+        "category_hard_gates": [
+          "science_constraint_gate",
+          "energy_logistics_gate",
+          "tactical_continuity_gate"
+        ],
+        "chapter_update_channels": [
+          "tech_capability_delta",
+          "energy_cost_delta",
+          "research_validation_delta",
+          "battlefield_state_delta"
+        ],
+        "selected_mechanism_bindings": [
+          {
+            "mechanism_id": "mech_pending_slot_anticipation",
+            "design_role": "series_engine",
+            "binding": "绑定到本项目的独特设定、人物选择、世界规则或资源代价，禁止直接套用来源样本。"
+          },
+          {
+            "mechanism_id": "mech_competence_gap_systematic_gain",
+            "design_role": "world_pressure",
+            "binding": "绑定到本项目的独特设定、人物选择、世界规则或资源代价，禁止直接套用来源样本。"
+          },
+          {
+            "mechanism_id": "cunning_schemer_bumbling_companion_duo",
+            "design_role": "character_pressure",
+            "binding": "绑定到本项目的独特设定、人物选择、世界规则或资源代价，禁止直接套用来源样本。"
+          },
+          {
+            "mechanism_id": "artifact_quest_discovery_failedcapture_pursuit",
+            "design_role": "chapter_rhythm",
+            "binding": "绑定到本项目的独特设定、人物选择、世界规则或资源代价，禁止直接套用来源样本。"
+          },
+          {
+            "mechanism_id": "mech_ritual_sensory_integration",
+            "design_role": "craft_control",
+            "binding": "绑定到本项目的独特设定、人物选择、世界规则或资源代价，禁止直接套用来源样本。"
+          },
+          {
+            "mechanism_id": "mech_diegetic_interface_exposition",
+            "design_role": "world_pressure",
+            "binding": "绑定到本项目的独特设定、人物选择、世界规则或资源代价，禁止直接套用来源样本。"
+          }
+        ],
+        "repair_loop_inputs": [
+          "science_constraint_gate",
+          "energy_logistics_gate",
+          "tactical_continuity_gate",
+          "tech_capability_delta",
+          "energy_cost_delta",
+          "research_validation_delta",
+          "battlefield_state_delta",
+          "whole_book_quality_gate",
+          "premium_book_gate",
+          "sample_quality_parity_gate",
+          "quality_retrofit_chapter_rewrite"
+        ],
+        "missing_category_distillation_assets": [
+          "category_specific_aggregate_manifest",
+          "category_specific_mechanism_registry",
+          "category_specific_book_design_registry",
+          "category_specific_anti_copy_rules"
+        ],
+        "acceptance_checks": [
+          "planning artifacts include planner_must_bind items as project-specific state, not copied terms",
+          "premium_state_snapshot contains category_state_ledgers before long-form continuation",
+          "chapter_state_updates emit chapter_update_channels after each generated or repaired chapter",
+          "category hard gates pass before sample parity can pass",
+          "anti-copy boundaries from the strategy card are enforced during planning and repair"
+        ]
+      },
+      "findings": [
+        {
+          "code": "category_specific_distillation_missing",
+          "severity": "medium",
+          "message": "science-fiction-progression currently consumes `distillation-generic` instead of a category-specific distilled aggregate.",
+          "action": "Run safe anonymous distillation for this category and aggregate to `data/distillation/aggregates/science-fiction-progression`; then rerun framework self-closure audit.",
+          "owner_role": "结构蒸馏负责人",
+          "evidence": {
+            "fallback_aggregate": "distillation-generic"
+          }
+        }
+      ]
+    },
+    {
+      "category_key": "wuxia-jianghu",
+      "status": "repairable",
+      "taxonomy_status": "aligned",
+      "distillation_status": "generic_fallback",
+      "aggregate_key": "distillation-generic",
+      "maturity_status": "production",
+      "maturity_score": 0.971,
+      "capabilities": {
+        "taxonomy_bridge": "ready",
+        "book_level_distillation": "fallback",
+        "distilled_strategy_consumption": "ready",
+        "category_state_engine": "ready",
+        "premium_quality_gate": "ready",
+        "autonomous_repair_loop": "ready",
+        "sample_parity_acceptance": "ready"
+      },
+      "distillation_supplement": {
+        "source": "generic_book_distillation_plus_category_contract",
+        "aggregate_key": "distillation-generic",
+        "strategy_signal_counts": {
+          "required_state_variables": 8,
+          "required_change_vectors": 10,
+          "reader_reward_mix": 10,
+          "selected_mechanisms": 6
+        },
+        "planner_must_bind": [
+          "门派声望",
+          "江湖规矩",
+          "武学代价",
+          "侠义债与旧怨",
+          "对手门派压力",
+          "名声或门派立场发生变化",
+          "一条江湖规矩被触犯或利用",
+          "武学收益显化并产生代价",
+          "侠义债被偿还、加深或转移",
+          "旧怨引来新的江湖反应",
+          "打斗带来名声和规矩后果",
+          "侠义选择有真实代价",
+          "武学进境可感但不免费",
+          "门派关系推动局势变化",
+          "江湖传闻变成行动压力",
+          "sect_reputation_state",
+          "jianghu_rule_ledger",
+          "martial_arts_cost_ledger",
+          "chivalry_debt_ledger",
+          "rival_school_pressure"
+        ],
+        "category_state_ledgers": [
+          "sect_reputation_state",
+          "jianghu_rule_ledger",
+          "martial_arts_cost_ledger",
+          "chivalry_debt_ledger",
+          "rival_school_pressure"
+        ],
+        "category_hard_gates": [
+          "jianghu_rule_consequence_gate",
+          "martial_cost_gate",
+          "reputation_payoff_gate"
+        ],
+        "chapter_update_channels": [
+          "sect_reputation_delta",
+          "martial_cost_delta",
+          "chivalry_debt_delta",
+          "rival_school_delta"
+        ],
+        "selected_mechanism_bindings": [
+          {
+            "mechanism_id": "mech_pending_slot_anticipation",
+            "design_role": "series_engine",
+            "binding": "绑定到本项目的独特设定、人物选择、世界规则或资源代价，禁止直接套用来源样本。"
+          },
+          {
+            "mechanism_id": "mech_competence_gap_systematic_gain",
+            "design_role": "world_pressure",
+            "binding": "绑定到本项目的独特设定、人物选择、世界规则或资源代价，禁止直接套用来源样本。"
+          },
+          {
+            "mechanism_id": "cunning_schemer_bumbling_companion_duo",
+            "design_role": "character_pressure",
+            "binding": "绑定到本项目的独特设定、人物选择、世界规则或资源代价，禁止直接套用来源样本。"
+          },
+          {
+            "mechanism_id": "artifact_quest_discovery_failedcapture_pursuit",
+            "design_role": "chapter_rhythm",
+            "binding": "绑定到本项目的独特设定、人物选择、世界规则或资源代价，禁止直接套用来源样本。"
+          },
+          {
+            "mechanism_id": "mech_ritual_sensory_integration",
+            "design_role": "craft_control",
+            "binding": "绑定到本项目的独特设定、人物选择、世界规则或资源代价，禁止直接套用来源样本。"
+          },
+          {
+            "mechanism_id": "mech_diegetic_interface_exposition",
+            "design_role": "world_pressure",
+            "binding": "绑定到本项目的独特设定、人物选择、世界规则或资源代价，禁止直接套用来源样本。"
+          }
+        ],
+        "repair_loop_inputs": [
+          "jianghu_rule_consequence_gate",
+          "martial_cost_gate",
+          "reputation_payoff_gate",
+          "sect_reputation_delta",
+          "martial_cost_delta",
+          "chivalry_debt_delta",
+          "rival_school_delta",
+          "whole_book_quality_gate",
+          "premium_book_gate",
+          "sample_quality_parity_gate",
+          "quality_retrofit_chapter_rewrite"
+        ],
+        "missing_category_distillation_assets": [
+          "category_specific_aggregate_manifest",
+          "category_specific_mechanism_registry",
+          "category_specific_book_design_registry",
+          "category_specific_anti_copy_rules"
+        ],
+        "acceptance_checks": [
+          "planning artifacts include planner_must_bind items as project-specific state, not copied terms",
+          "premium_state_snapshot contains category_state_ledgers before long-form continuation",
+          "chapter_state_updates emit chapter_update_channels after each generated or repaired chapter",
+          "category hard gates pass before sample parity can pass",
+          "anti-copy boundaries from the strategy card are enforced during planning and repair"
+        ]
+      },
+      "findings": [
+        {
+          "code": "category_specific_distillation_missing",
+          "severity": "medium",
+          "message": "wuxia-jianghu currently consumes `distillation-generic` instead of a category-specific distilled aggregate.",
+          "action": "Run safe anonymous distillation for this category and aggregate to `data/distillation/aggregates/wuxia-jianghu`; then rerun framework self-closure audit.",
+          "owner_role": "结构蒸馏负责人",
+          "evidence": {
+            "fallback_aggregate": "distillation-generic"
+          }
+        }
+      ]
+    }
+  ],
+  "backlog": [
+    {
+      "id": "SELF-CLOSURE-001",
+      "priority": "P2",
+      "category_key": "action-progression",
+      "code": "category_specific_distillation_missing",
+      "owner_role": "结构蒸馏负责人",
+      "action": "Run safe anonymous distillation for this category and aggregate to `data/distillation/aggregates/action-progression`; then rerun framework self-closure audit.",
+      "acceptance": "`compile_distilled_strategy_card(category_key='action-progression')` resolves aggregate_key `action-progression` with anti-copy boundaries and state variables."
+    },
+    {
+      "id": "SELF-CLOSURE-005",
+      "priority": "P2",
+      "category_key": "base-building",
+      "code": "category_specific_distillation_missing",
+      "owner_role": "结构蒸馏负责人",
+      "action": "Run safe anonymous distillation for this category and aggregate to `data/distillation/aggregates/base-building`; then rerun framework self-closure audit.",
+      "acceptance": "`compile_distilled_strategy_card(category_key='base-building')` resolves aggregate_key `base-building` with anti-copy boundaries and state variables."
+    },
+    {
+      "id": "SELF-CLOSURE-009",
+      "priority": "P2",
+      "category_key": "eastern-aesthetic",
+      "code": "category_specific_distillation_missing",
+      "owner_role": "结构蒸馏负责人",
+      "action": "Run safe anonymous distillation for this category and aggregate to `data/distillation/aggregates/eastern-aesthetic`; then rerun framework self-closure audit.",
+      "acceptance": "`compile_distilled_strategy_card(category_key='eastern-aesthetic')` resolves aggregate_key `eastern-aesthetic` with anti-copy boundaries and state variables."
+    },
+    {
+      "id": "SELF-CLOSURE-007",
+      "priority": "P2",
+      "category_key": "esports-competition",
+      "code": "category_specific_distillation_missing",
+      "owner_role": "结构蒸馏负责人",
+      "action": "Run safe anonymous distillation for this category and aggregate to `data/distillation/aggregates/esports-competition`; then rerun framework self-closure audit.",
+      "acceptance": "`compile_distilled_strategy_card(category_key='esports-competition')` resolves aggregate_key `esports-competition` with anti-copy boundaries and state variables."
+    },
+    {
+      "id": "SELF-CLOSURE-008",
+      "priority": "P2",
+      "category_key": "female-growth-ncp",
+      "code": "category_specific_distillation_missing",
+      "owner_role": "结构蒸馏负责人",
+      "action": "Run safe anonymous distillation for this category and aggregate to `data/distillation/aggregates/female-growth-ncp`; then rerun framework self-closure audit.",
+      "acceptance": "`compile_distilled_strategy_card(category_key='female-growth-ncp')` resolves aggregate_key `female-growth-ncp` with anti-copy boundaries and state variables."
+    },
+    {
+      "id": "SELF-CLOSURE-004",
+      "priority": "P2",
+      "category_key": "otherworld-cross-system",
+      "code": "distillation_maturity_low",
+      "owner_role": "结构蒸馏负责人",
+      "action": "Run safe anonymous distillation for this category and aggregate to `data/distillation/aggregates/otherworld-cross-system`; then rerun framework self-closure audit.",
+      "acceptance": "Maturity score is >= 0.30 and no fallback placeholders leak into planning artifacts."
+    },
+    {
+      "id": "SELF-CLOSURE-006",
+      "priority": "P2",
+      "category_key": "relationship-driven",
+      "code": "category_specific_distillation_missing",
+      "owner_role": "结构蒸馏负责人",
+      "action": "Run safe anonymous distillation for this category and aggregate to `data/distillation/aggregates/relationship-driven`; then rerun framework self-closure audit.",
+      "acceptance": "`compile_distilled_strategy_card(category_key='relationship-driven')` resolves aggregate_key `relationship-driven` with anti-copy boundaries and state variables."
+    },
+    {
+      "id": "SELF-CLOSURE-011",
+      "priority": "P2",
+      "category_key": "science-fiction-progression",
+      "code": "category_specific_distillation_missing",
+      "owner_role": "结构蒸馏负责人",
+      "action": "Run safe anonymous distillation for this category and aggregate to `data/distillation/aggregates/science-fiction-progression`; then rerun framework self-closure audit.",
+      "acceptance": "`compile_distilled_strategy_card(category_key='science-fiction-progression')` resolves aggregate_key `science-fiction-progression` with anti-copy boundaries and state variables."
+    },
+    {
+      "id": "SELF-CLOSURE-002",
+      "priority": "P2",
+      "category_key": "strategy-worldbuilding",
+      "code": "category_specific_distillation_missing",
+      "owner_role": "结构蒸馏负责人",
+      "action": "Run safe anonymous distillation for this category and aggregate to `data/distillation/aggregates/strategy-worldbuilding`; then rerun framework self-closure audit.",
+      "acceptance": "`compile_distilled_strategy_card(category_key='strategy-worldbuilding')` resolves aggregate_key `strategy-worldbuilding` with anti-copy boundaries and state variables."
+    },
+    {
+      "id": "SELF-CLOSURE-003",
+      "priority": "P2",
+      "category_key": "suspense-mystery",
+      "code": "category_specific_distillation_missing",
+      "owner_role": "结构蒸馏负责人",
+      "action": "Run safe anonymous distillation for this category and aggregate to `data/distillation/aggregates/suspense-mystery`; then rerun framework self-closure audit.",
+      "acceptance": "`compile_distilled_strategy_card(category_key='suspense-mystery')` resolves aggregate_key `suspense-mystery` with anti-copy boundaries and state variables."
+    },
+    {
+      "id": "SELF-CLOSURE-010",
+      "priority": "P2",
+      "category_key": "urban-contemporary",
+      "code": "category_specific_distillation_missing",
+      "owner_role": "结构蒸馏负责人",
+      "action": "Run safe anonymous distillation for this category and aggregate to `data/distillation/aggregates/urban-contemporary`; then rerun framework self-closure audit.",
+      "acceptance": "`compile_distilled_strategy_card(category_key='urban-contemporary')` resolves aggregate_key `urban-contemporary` with anti-copy boundaries and state variables."
+    },
+    {
+      "id": "SELF-CLOSURE-012",
+      "priority": "P2",
+      "category_key": "wuxia-jianghu",
+      "code": "category_specific_distillation_missing",
+      "owner_role": "结构蒸馏负责人",
+      "action": "Run safe anonymous distillation for this category and aggregate to `data/distillation/aggregates/wuxia-jianghu`; then rerun framework self-closure audit.",
+      "acceptance": "`compile_distilled_strategy_card(category_key='wuxia-jianghu')` resolves aggregate_key `wuxia-jianghu` with anti-copy boundaries and state variables."
+    }
+  ],
+  "acceptance_gates": {
+    "ready_claim_requires": [
+      "taxonomy bridge aligned",
+      "category hard-engine good fixture passes and bad fixture blocks",
+      "category-specific or explicitly approved generic distilled strategy card",
+      "premium book gate category hard engine passed",
+      "whole-book quality gate passed",
+      "sample quality parity gate passed",
+      "autonomous repair loop has no critical/high repair tasks remaining"
+    ],
+    "sample_quality_parity_gate": {
+      "required_for_ready": true,
+      "status": "defined_not_run",
+      "thresholds": {
+        "min_chapter_count": 30,
+        "min_review_overall_score": 0.82,
+        "min_scorecard_quality_score": 80.0,
+        "min_reference_distance": 0.72,
+        "require_final_verdict_pass": true,
+        "require_no_llm_fallback": true,
+        "require_export": true,
+        "require_whole_book_gate_passed": true,
+        "require_category_hard_engine_passed": true
+      },
+      "required_inputs": [
+        "30-chapter completed pilot",
+        "project review final_verdict=pass",
+        "whole_book_quality_report.passed=True",
+        "scorecard.quality_score >= threshold",
+        "premium_book_gate category_hard_engine.passed=True",
+        "reference_distance_score >= threshold",
+        "fallback_count=0",
+        "exported project markdown"
+      ],
+      "claim_rule": "未通过 sample_quality_parity_gate 的类别不得标记为 ready, 只能标记为 partial/prompt-only/unsupported。"
+    },
+    "repair_strategy": "quality_retrofit_chapter_rewrite"
+  }
+}

@@ -31,7 +31,7 @@ def _kernel_payload() -> dict[str, object]:
             "unique_hook": "修仙宗门的资源账由情感债驱动。",
             "core_question": "主角能否在不牺牲信任的前提下完成宗门扩张？",
             "commercial_pull": "升级、关系债、宗门经营三条线互相兑现。",
-            "forbidden_defaults": ["父母失踪", "神秘玉佩自动开挂"],
+            "forbidden_defaults": ["家庭创伤或身世旧案作为默认动机", "神秘玉佩自动开挂"],
         },
         "character_conflict_contracts": [
             {
@@ -161,6 +161,58 @@ def test_story_design_kernel_round_trips_and_renders_prompt_block() -> None:
     assert "Worldview kernel" in block
     assert "trust_debt_accounting" in block
     assert "灵田经营权主线" in block
+
+
+def test_story_design_kernel_accepts_story_principle_contracts() -> None:
+    payload = deepcopy(_kernel_payload())
+    payload.update(
+        {
+            "four_causes_contract": {
+                "purpose_result": "让读者看到信任债从情感承诺变成经营结果。",
+                "material_basis": ["灵田", "账册", "盟友旧债"],
+                "formal_pattern": "莲花式主线下嵌套递进阶梯。",
+                "driving_forces": ["读者期待兑现", "长老会压力", "盟友信任波动"],
+                "proof_criteria": ["每个事件单元都改变一项资源或关系状态"],
+            },
+            "macro_structure_contract": {
+                "structure_type": "progressive_staircase",
+                "mainline_rule": "每个事件单元完成一次资源账到关系账的递进。",
+                "subline_rule": "盟友信任线只在主线选择产生代价时推进。",
+                "anti_homogeneity_rule": "事件六步跨章节分布，不要求每章完整重复。",
+            },
+            "reader_desire_matrix": [
+                {
+                    "desire_type": "respect_value",
+                    "reader_expectation": "期待主角用可信任的经营方式赢过短期压榨。",
+                    "payoff_mode": "阶段性资源兑现后暴露更高层代价。",
+                    "risk_control": "避免每章都用同一种阻碍和同一种尾钩。",
+                }
+            ],
+            "event_pattern_inventory": [
+                {
+                    "pattern_type": "obstacle_escalation",
+                    "use_case": "在事件单元中段提高外部压力。",
+                    "reader_effect": "制造解决欲而不是重复开局刺激。",
+                    "anti_repetition_rule": "连续事件单元不得复用同一阻碍来源。",
+                }
+            ],
+        }
+    )
+
+    kernel = story_design_kernel_from_dict(payload)
+    dumped = story_design_kernel_to_dict(kernel)
+    block = render_story_design_kernel_prompt_block(kernel)
+
+    assert (
+        dumped["four_causes_contract"]["purpose_result"]
+        == "让读者看到信任债从情感承诺变成经营结果。"
+    )
+    assert dumped["macro_structure_contract"]["structure_type"] == "progressive_staircase"
+    assert dumped["reader_desire_matrix"][0]["desire_type"] == "respect_value"
+    assert "Four causes contract" in block
+    assert "progressive_staircase" in block
+    assert "respect_value" in block
+    assert "事件六步跨章节分布" in block
 
 
 def test_subplots_must_depend_on_mainline() -> None:
@@ -465,3 +517,68 @@ def test_story_design_kernel_normalizes_common_llm_aliases() -> None:
         "不得把梦境作为谜题解法",
         "每章必须产生可见状态变化",
     ]
+
+
+def test_story_design_kernel_normalizes_live_planner_schema_drift() -> None:
+    payload = deepcopy(_kernel_payload())
+    worldview = payload["worldview_kernel"]
+    assert isinstance(worldview, dict)
+    worldview["distilled_mechanism_bindings"] = [
+        {
+            "mechanism_key": "行为语义分析",
+            "binding_type": "protagonist_capability",
+            "description": "通过微表情、肢体语言和决策模式推导真实意图。",
+            "binding_detail": "每次使用能力都必须暴露主角的推理边界和对手反制空间。",
+            "source_confidence": "高——设定明确，逻辑自洽。",
+        }
+    ]
+    worldview["state_variables"] = [
+        {
+            "key": "truth_visibility",
+            "current_value": "观众只能看到表层证据",
+            "change_triggers": [],
+        },
+        {
+            "name": "risk_exposure",
+            "description": "主角分析方式被对手学习的风险",
+        },
+    ]
+    worldview["anti_copy_boundaries"] = [
+        {
+            "boundary_key": "禁止复用样本书专名链路",
+            "rule": "本书只能使用原创角色、规则和线索表达。",
+        }
+    ]
+    plot_tree = payload["plot_tree"]
+    assert isinstance(plot_tree, list)
+    plot_tree.append(
+        {
+            "key": "case-origin",
+            "line_type": "backstory",
+            "label": "旧案真相线",
+            "role": "解释死亡游戏的规则来源",
+            "current_state": "只露出异常痕迹",
+            "target_state": "终章形成可验证真相",
+            "dependency_on_mainline": "旧案真相必须通过当前死亡游戏的证据链推进。",
+            "failure_if_removed": "谜题会只剩规则展示，缺少终局解释。",
+        }
+    )
+
+    kernel = story_design_kernel_from_dict(payload)
+    serialized = story_design_kernel_to_dict(kernel)
+    serialized_worldview = serialized["worldview_kernel"]
+
+    assert serialized["plot_tree"][-1]["line_type"] == "mystery"
+    binding = serialized_worldview["distilled_mechanism_bindings"][0]
+    assert binding["aggregate_key"] == "行为语义分析"
+    assert binding["mechanism_id"] == "行为语义分析"
+    assert binding["source_confidence"] == 0.7
+    assert binding["design_role"] == "protagonist_capability"
+    assert "反制空间" in binding["required_project_binding"]
+    variables = serialized_worldview["state_variables"]
+    assert variables[0]["variable_type"] == "information"
+    assert variables[0]["change_triggers"]
+    assert variables[0]["failure_mode"]
+    assert variables[1]["key"] == "risk_exposure"
+    assert variables[1]["variable_type"] == "risk"
+    assert "禁止复用样本书专名链路" in serialized_worldview["anti_copy_boundaries"][0]

@@ -79,6 +79,10 @@ from bestseller.services.narrative_tree import (
 from bestseller.services.narrative_contracts import (
     repair_legacy_scene_contract_model_pre_draft,
 )
+from bestseller.services.methodology_overlay import (
+    normalize_chapter_overlay,
+    normalize_scene_overlay,
+)
 from bestseller.services.retrieval import search_retrieval_for_project
 from bestseller.services.story_bible import load_scene_story_bible_context, stable_character_id
 from bestseller.settings import AppSettings
@@ -538,6 +542,9 @@ def _antagonist_plan_read(item: AntagonistPlanModel) -> AntagonistPlanRead:
 
 
 def _chapter_contract_read(item: ChapterContractModel) -> ChapterContractRead:
+    methodology_contract = normalize_chapter_overlay(
+        (item.metadata_json or {}).get("methodology_contract")
+    )
     return ChapterContractRead(
         id=item.id,
         chapter_id=item.chapter_id,
@@ -553,6 +560,15 @@ def _chapter_contract_read(item: ChapterContractModel) -> ChapterContractRead:
         active_arc_beat_ids=[str(beat_id) for beat_id in item.active_arc_beat_ids],
         planted_clue_codes=list(item.planted_clue_codes),
         due_payoff_codes=list(item.due_payoff_codes),
+        conflict_stakes=methodology_contract.get("conflict_stakes"),
+        conflict_buffs=list(methodology_contract.get("conflict_buffs") or []),
+        pacing_mode=methodology_contract.get("pacing_mode"),
+        emotion_phase=methodology_contract.get("emotion_phase"),
+        hooks_to_resolve=list(methodology_contract.get("hooks_to_resolve") or []),
+        hooks_to_plant=list(methodology_contract.get("hooks_to_plant") or []),
+        relationship_debts=list(methodology_contract.get("relationship_debts") or []),
+        is_climax=bool(methodology_contract.get("is_climax")),
+        loop_position=methodology_contract.get("loop_position"),
     )
 
 
@@ -561,6 +577,9 @@ def _scene_contract_read(item: SceneContractModel) -> SceneContractRead:
         item,
         chapter_number=item.chapter_number,
         scene_number=item.scene_number,
+    )
+    methodology_contract = normalize_scene_overlay(
+        (item.metadata_json or {}).get("methodology_contract")
     )
     return SceneContractRead(
         id=item.id,
@@ -583,6 +602,17 @@ def _scene_contract_read(item: SceneContractModel) -> SceneContractRead:
         dramatic_irony_intent=item.dramatic_irony_intent,
         transition_type=item.transition_type,
         subplot_codes=list(item.subplot_codes) if item.subplot_codes else [],
+        conflict_stakes=methodology_contract.get("conflict_stakes"),
+        conflict_buffs=list(methodology_contract.get("conflict_buffs") or []),
+        hook_type=methodology_contract.get("hook_type"),
+        spotlight_character=methodology_contract.get("spotlight_character"),
+        information_control_mode=methodology_contract.get("information_control_mode"),
+        action_sequence=list(methodology_contract.get("action_sequence") or []),
+        camera_distance=methodology_contract.get("camera_distance"),
+        reveal_mode=methodology_contract.get("reveal_mode"),
+        signature_image=methodology_contract.get("signature_image"),
+        cut_point=methodology_contract.get("cut_point"),
+        relationship_debts=list(methodology_contract.get("relationship_debts") or []),
     )
 
 

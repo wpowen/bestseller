@@ -102,6 +102,18 @@ def test_generation_gate_block_classifies_write_safety_identity_violation() -> N
     assert result[0] == "write_safety_gate_failed:identity_dead_alive"
 
 
+def test_generation_gate_block_classifies_plan_richness_gate() -> None:
+    result = worker_tasks._generation_gate_block(
+        ValueError(
+            "Scene 508.2 blocked by plan-richness gate: "
+            "['interactive_needs_two']. Re-plan required (card too thin)."
+        )
+    )
+
+    assert result is not None
+    assert result[0] == "scene_plan_richness_gate_failed:interactive_needs_two"
+
+
 def test_generation_gate_block_ignores_transient_errors() -> None:
     assert worker_tasks._generation_gate_block(ConnectionError("redis timeout")) is None
 
@@ -132,7 +144,10 @@ async def test_run_project_repair_task_emits_waiting_human_when_repair_not_close
     async def fake_session_scope():
         yield object()
 
+    captured_kwargs: dict[str, object] = {}
+
     async def fake_run_project_repair(*_args, **_kwargs):
+        captured_kwargs.update(_kwargs)
         return _FakeResult()
 
     import bestseller.services.repair as repair_services
@@ -153,9 +168,151 @@ async def test_run_project_repair_task_emits_waiting_human_when_repair_not_close
     )
 
     assert result == {"requires_human_review": True}
+    assert captured_kwargs["include_pending_rewrite_tasks"] is True
+    assert captured_kwargs["pending_rewrite_task_limit"] == 10
     assert events[-1][0] == "waiting_human"
     assert events[-1][2] == "waiting_human"
     assert events[-1][1]["reason"] == "project_repair_requires_attention"
+
+
+@pytest.mark.asyncio
+async def test_run_project_pipeline_task_emits_waiting_human_when_not_closed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    events: list[tuple[str, dict, str | None]] = []
+
+    class _FakeReporter:
+        async def emit(
+            self,
+            message: str,
+            data: dict,
+            event_type: str | None = None,
+        ) -> None:
+            events.append((message, data, event_type))
+
+    class _FakeResult:
+        requires_human_review = True
+        workflow_run_id = uuid4()
+        final_verdict = "attention"
+
+        def model_dump(self, *, mode: str) -> dict:
+            return {
+                "requires_human_review": self.requires_human_review,
+                "final_verdict": self.final_verdict,
+            }
+
+    @asynccontextmanager
+    async def fake_session_scope():
+        yield object()
+
+    async def fake_run_project_pipeline(*_args, **_kwargs):
+        return _FakeResult()
+
+    import bestseller.services.pipelines as pipeline_services
+
+    monkeypatch.setattr(
+        worker_tasks,
+        "RedisProgressReporter",
+        lambda *_args, **_kwargs: _FakeReporter(),
+    )
+    monkeypatch.setattr(worker_tasks, "make_sync_callback", lambda _reporter: None)
+    monkeypatch.setattr(worker_tasks, "get_server_session", fake_session_scope)
+    monkeypatch.setattr(
+        pipeline_services,
+        "run_project_pipeline",
+        fake_run_project_pipeline,
+    )
+
+    result = await worker_tasks.run_project_pipeline_task(
+        {"redis": object()},
+        "project:heal:novel",
+        {"project_slug": "novel"},
+    )
+
+    assert result == {"requires_human_review": True, "final_verdict": "attention"}
+    assert events[-1][0] == "waiting_human"
+    assert events[-1][2] == "waiting_human"
+    assert events[-1][1]["reason"] == "project_pipeline_requires_attention"
+
+
+@pytest.mark.asyncio
+async def test_run_autowrite_task_emits_waiting_human_when_not_closed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    events: list[tuple[str, dict, str | None]] = []
+
+    class _FakeReporter:
+        async def emit(
+            self,
+            message: str,
+            data: dict,
+            event_type: str | None = None,
+        ) -> None:
+            events.append((message, data, event_type))
+
+    class _FakeResult:
+        requires_human_review = True
+        workflow_run_id = uuid4()
+        final_verdict = "attention"
+
+        def model_dump(self, *, mode: str) -> dict:
+            return {
+                "requires_human_review": self.requires_human_review,
+                "final_verdict": self.final_verdict,
+                "chapter_count": 2,
+            }
+
+    @asynccontextmanager
+    async def fake_session_scope():
+        yield object()
+
+    async def fake_get_project_by_slug(*_args, **_kwargs):
+        return types.SimpleNamespace(
+            slug="novel",
+            title="Novel",
+            genre="sci-fi",
+            sub_genre=None,
+            audience=None,
+            target_word_count=12000,
+            target_chapters=4,
+            project_type="linear",
+            metadata_json={"premise": "demo"},
+        )
+
+    async def fake_run_autowrite_pipeline(*_args, **_kwargs):
+        return _FakeResult()
+
+    import bestseller.services.pipelines as pipeline_services
+    import bestseller.services.projects as project_services
+
+    monkeypatch.setattr(
+        worker_tasks,
+        "RedisProgressReporter",
+        lambda *_args, **_kwargs: _FakeReporter(),
+    )
+    monkeypatch.setattr(worker_tasks, "make_sync_callback", lambda _reporter: None)
+    monkeypatch.setattr(worker_tasks, "get_server_session", fake_session_scope)
+    monkeypatch.setattr(project_services, "get_project_by_slug", fake_get_project_by_slug)
+    monkeypatch.setattr(
+        pipeline_services,
+        "run_autowrite_pipeline",
+        fake_run_autowrite_pipeline,
+    )
+
+    result = await worker_tasks.run_autowrite_task(
+        {"redis": object()},
+        "autowrite:heal:novel",
+        {"project_slug": "novel"},
+    )
+
+    assert result == {
+        "requires_human_review": True,
+        "final_verdict": "attention",
+        "chapter_count": 2,
+    }
+    assert events[-1][0] == "waiting_human"
+    assert events[-1][2] == "waiting_human"
+    assert events[-1][1]["reason"] == "autowrite_requires_attention"
 
 
 @pytest.mark.asyncio

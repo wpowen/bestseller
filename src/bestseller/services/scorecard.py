@@ -465,6 +465,31 @@ def _quality_report_is_fresh(
     return report_created_at >= current_draft_created_at
 
 
+def _quality_report_applies_to_current_state(
+    *,
+    report_created_at: datetime | None,
+    current_draft_created_at: datetime | None,
+    production_state: str | None,
+    blocks_write: bool,
+) -> bool:
+    """Return whether a quality report should score the current chapter state.
+
+    Autonomous repair may evaluate a candidate rewrite, reject it, and keep the
+    previous current draft. Those rejected-candidate reports are newer than the
+    current draft, so timestamp freshness alone can resurrect stale blockers in
+    the scorecard. When the chapter's durable production state is already OK, a
+    newer blocking report is treated as belonging to a rejected candidate and is
+    skipped so the driver can fall back to the latest applicable current-draft
+    report.
+    """
+
+    if not _quality_report_is_fresh(report_created_at, current_draft_created_at):
+        return False
+    if blocks_write and (production_state or "").strip().lower() == "ok":
+        return False
+    return True
+
+
 def _latest_audit_is_fresher(
     latest_audit_at: datetime | None,
     latest_quality_at: datetime | None,
@@ -504,6 +529,7 @@ async def compute_scorecard(
             ChapterDraftVersionModel.created_at,
             ChapterModel.hype_type,
             ChapterModel.hype_intensity,
+            ChapterModel.production_state,
         )
         .join(
             ChapterDraftVersionModel,
@@ -523,7 +549,9 @@ async def compute_scorecard(
 
     chapter_numbers: list[int] = []
     current_draft_created_at_by_chapter_id: dict[UUID, datetime | None] = {}
+    production_state_by_chapter_id: dict[UUID, str] = {}
     lengths: list[int] = []
+    hype_chapter_count = 0
     hype_types_by_chapter: dict[int, str] = {}
     hype_intensities: list[float] = []
     for (
@@ -533,15 +561,20 @@ async def compute_scorecard(
         current_draft_created_at,
         hype_type,
         hype_intensity,
+        production_state,
     ) in chapter_rows:
         current_draft_created_at_by_chapter_id[chapter_id] = current_draft_created_at
+        production_state_by_chapter_id[chapter_id] = (
+            str(production_state) if production_state is not None else ""
+        )
         chapter_numbers.append(int(ch_no))
         if content_md:
             lengths.append(len(content_md))
-        if hype_type:
-            hype_types_by_chapter[int(ch_no)] = str(hype_type)
-        if hype_intensity is not None:
-            hype_intensities.append(float(hype_intensity))
+            hype_chapter_count += 1
+            if hype_type:
+                hype_types_by_chapter[int(ch_no)] = str(hype_type)
+            if hype_intensity is not None:
+                hype_intensities.append(float(hype_intensity))
 
     total_chapters = len(set(chapter_numbers))
     missing_chapters = _chapter_gap_count(chapter_numbers, expected_chapter_count)
@@ -568,9 +601,13 @@ async def compute_scorecard(
     seen_quality_chapter_ids: set[UUID] = set()
     latest_quality_at: datetime | None = None
     for blocks_write, report_json, chapter_id, _created_at in raw_quality_rows:
-        if not _quality_report_is_fresh(
-            _created_at,
-            current_draft_created_at_by_chapter_id.get(chapter_id),
+        if not _quality_report_applies_to_current_state(
+            report_created_at=_created_at,
+            current_draft_created_at=current_draft_created_at_by_chapter_id.get(
+                chapter_id
+            ),
+            production_state=production_state_by_chapter_id.get(chapter_id),
+            blocks_write=bool(blocks_write),
         ):
             continue
         if chapter_id in seen_quality_chapter_ids:
@@ -729,7 +766,7 @@ async def compute_scorecard(
         hype_missing,
         hype_scored,  # chapters with at least one hype assignment
     ) = _aggregate_hype_metrics(
-        total_chapters=total_chapters,
+        total_chapters=hype_chapter_count or total_chapters,
         hype_types_by_chapter=hype_types_by_chapter,
         hype_intensities=hype_intensities,
         scheme=scheme,

@@ -9,6 +9,7 @@ from bestseller.services.quality_levers.detectors import (
     compute_pulse_density,
     compute_sensory_coverage,
     count_cjk_chars,
+    count_latin_words,
     detect_psychological_dumping,
     evaluate_word_count,
     measure_signature_density,
@@ -16,6 +17,7 @@ from bestseller.services.quality_levers.detectors import (
     scan_banned_patterns,
     scan_forbidden_voice_words,
 )
+from bestseller.services.quality_levers.rhythm_engineering import audit_rhythm
 
 pytestmark = pytest.mark.unit
 
@@ -25,6 +27,12 @@ def test_count_cjk_chars_basic() -> None:
     assert count_cjk_chars("") == 0
     # 8 CJK chars; Chinese full-stop U+3002 is outside [一-鿿]
     assert count_cjk_chars("沈青崖的指节绷紧。") == 8
+
+
+def test_count_latin_words_basic() -> None:
+    assert count_latin_words("Kade couldn't stop the attack.") == 5
+    assert count_latin_words("Hello 世界") == 1
+    assert count_latin_words("") == 0
 
 
 def test_compute_pulse_density_passes_with_dense_pulse_words() -> None:
@@ -40,11 +48,33 @@ def test_compute_pulse_density_passes_with_dense_pulse_words() -> None:
     assert result.passed is True
 
 
+def test_compute_pulse_density_counts_suspense_pressure_actions() -> None:
+    text = (
+        "门闩猛地扣住。"
+        "墙上的裂纹逼近符纸边缘。"
+        "他攥紧铜钱，退路被黑影堵住。"
+    )
+    result = compute_pulse_density(text)
+
+    assert result.pulse_count >= 5
+    assert result.passed is True
+
+
 def test_compute_pulse_density_fails_on_cold_text() -> None:
     text = "这是" * 100  # 200 字符无任何心率词
     result = compute_pulse_density(text)
     assert result.pulse_count == 0
     assert result.passed is False
+
+
+def test_compute_pulse_density_english_uses_latin_words() -> None:
+    text = "danger moved fast. " * 700
+    result = compute_pulse_density(text, language="en-US")
+
+    assert result.cjk_chars == 2100
+    assert result.unit == "english_words"
+    assert result.pulse_count == 700
+    assert result.passed is True
 
 
 def test_scan_banned_patterns_detects_smooth_transition() -> None:
@@ -67,6 +97,25 @@ def test_scan_banned_patterns_passes_clean_text() -> None:
     result = scan_banned_patterns(text)
     assert result.total_hits == 0
     assert result.passed is True
+
+
+def test_scan_banned_patterns_allows_occasional_concrete_similes() -> None:
+    text = "铜钱像火星一样亮了一下。门缝像刀口一样窄。"
+    result = scan_banned_patterns(text)
+    assert "cliched_metaphor" not in {hit.pattern_id for hit in result.hits}
+    assert result.passed is True
+
+
+def test_scan_banned_patterns_flags_clustered_cliched_metaphors() -> None:
+    text = (
+        "铜钱像火星一样亮了一下。"
+        "门缝像刀口一样窄。"
+        "影子像潮水一样涌过来。"
+    )
+    result = scan_banned_patterns(text)
+    hits = {hit.pattern_id: hit.count for hit in result.hits}
+    assert hits["cliched_metaphor"] == 1
+    assert result.passed is False
 
 
 def test_scan_abstract_sensory_terms_detects_narration_only() -> None:
@@ -165,6 +214,45 @@ def test_evaluate_word_count_falls_back_to_default_5000() -> None:
     result = evaluate_word_count(text, platform=None)
     assert result.min_chars == 5000
     assert result.passed is False  # 3000 < 5000 default
+
+
+def test_evaluate_word_count_framework_uses_generation_budget() -> None:
+    text = "啊" * 2200
+    result = evaluate_word_count(text, platform="framework")
+
+    assert result.min_chars == 1800
+    assert result.max_chars == 3000
+    assert result.passed is True
+
+
+def test_evaluate_word_count_english_uses_latin_words() -> None:
+    text = "danger moved fast. " * 700
+    result = evaluate_word_count(text, platform="tomato", language="en-US")
+
+    assert result.chars == 2100
+    assert result.unit == "english_words"
+    assert result.min_chars == 2000
+    assert result.max_chars == 3000
+    assert result.passed is True
+
+
+def test_audit_chapter_english_does_not_underflow_to_zero() -> None:
+    text = "danger moved fast. " * 700
+    audit = audit_chapter(text, platform="tomato", language="en-US")
+
+    assert audit.word_count.chars == 2100
+    assert audit.word_count.unit == "english_words"
+    assert audit.word_count.passed is True
+    assert audit.pulse.unit == "english_words"
+    assert audit.pulse.passed is True
+
+
+def test_audit_rhythm_english_skips_cjk_contract() -> None:
+    result = audit_rhythm("Danger moved fast.\n\nKade ran.", language="en-US")
+
+    assert result.applicable is False
+    assert result.passed is True
+    assert result.reason == "skipped: cjk_rhythm_detector_not_applicable"
 
 
 def test_compute_sensory_coverage_investigation_scene() -> None:

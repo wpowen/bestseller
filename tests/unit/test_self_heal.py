@@ -637,9 +637,10 @@ async def test_find_stuck_projects_requeues_after_stale_waiting_repair(
 
 
 @pytest.mark.asyncio
-async def test_find_stuck_projects_skips_paused_structural_repair_project(
+async def test_find_stuck_projects_repairs_paused_structural_repair_project(
     now: _dt.datetime,
 ) -> None:
+    """Structural-repair pauses stop continuation, not blocked-chapter repair."""
     p = _FakeProject(
         id=uuid4(),
         slug="book-paused",
@@ -655,7 +656,12 @@ async def test_find_stuck_projects_skips_paused_structural_repair_project(
     drafts = [_FakeDraft(id=uuid4(), chapter_id=chapters[0].id, is_current=True)]
     session = _FakeSession(projects=[p], runs=[], chapters=chapters, drafts=drafts)
 
-    assert await find_stuck_projects(session) == []
+    stuck = await find_stuck_projects(session)
+
+    assert len(stuck) == 1
+    assert stuck[0].slug == "book-paused"
+    assert stuck[0].reason == "blocked_chapters"
+    assert stuck[0].heal_kind == "repair"
 
 
 @pytest.mark.asyncio
@@ -1143,6 +1149,38 @@ def test_autowrite_heal_job_id_is_deterministic() -> None:
     assert _autowrite_heal_job_id("slug-a") != _autowrite_heal_job_id("slug-b")
 
 
+def test_coalesce_stuck_projects_prefers_repair_for_same_slug() -> None:
+    from bestseller.worker.self_heal import _coalesce_stuck_projects_for_enqueue
+
+    project_id = uuid4()
+    stuck = [
+        StuckProject(
+            project_id=project_id,
+            slug="book-a",
+            reason="missing_drafts",
+            stuck_at_chapter=10,
+            chapters_total=20,
+            chapters_with_draft=9,
+            heal_kind="autowrite",
+        ),
+        StuckProject(
+            project_id=project_id,
+            slug="book-a",
+            reason="blocked_chapters",
+            stuck_at_chapter=None,
+            chapters_total=20,
+            chapters_with_draft=20,
+            heal_kind="repair",
+        ),
+    ]
+
+    coalesced = _coalesce_stuck_projects_for_enqueue(stuck)
+
+    assert len(coalesced) == 1
+    assert coalesced[0].slug == "book-a"
+    assert coalesced[0].heal_kind == "repair"
+
+
 class _FakeArqPool:
     def __init__(
         self,
@@ -1251,7 +1289,50 @@ async def test_requeue_repair_returns_job_id_on_success() -> None:
     assert pool.enqueued[0]["payload"] == {
         "project_slug": "book-repair",
         "requested_by": "worker_self_heal",
+        "include_pending_rewrite_tasks": True,
+        "pending_rewrite_task_limit": 10,
     }
+
+
+@pytest.mark.asyncio
+async def test_requeue_autowrite_skips_when_repair_job_owns_project() -> None:
+    from bestseller.worker.self_heal import _requeue_autowrite
+
+    pool = _FakeArqPool(existing_keys={"arq:in-progress:repair:heal:book-owned"})
+    stuck = StuckProject(
+        project_id="p1",
+        slug="book-owned",
+        reason="missing_drafts",
+        stuck_at_chapter=3,
+        chapters_total=10,
+        chapters_with_draft=2,
+    )
+
+    job_id = await _requeue_autowrite(pool, stuck)  # type: ignore[arg-type]
+
+    assert job_id is None
+    assert pool.enqueued == []
+
+
+@pytest.mark.asyncio
+async def test_requeue_repair_skips_when_autowrite_job_owns_project() -> None:
+    from bestseller.worker.self_heal import _requeue_repair
+
+    pool = _FakeArqPool(existing_keys={"arq:in-progress:autowrite:heal:book-owned"})
+    stuck = StuckProject(
+        project_id="p1",
+        slug="book-owned",
+        reason="blocked_chapters",
+        stuck_at_chapter=None,
+        chapters_total=10,
+        chapters_with_draft=10,
+        heal_kind="repair",
+    )
+
+    job_id = await _requeue_repair(pool, stuck)  # type: ignore[arg-type]
+
+    assert job_id is None
+    assert pool.enqueued == []
 
 
 @pytest.mark.asyncio
@@ -1334,3 +1415,64 @@ async def test_requeue_autowrite_clears_stale_in_progress_before_retry() -> None
     assert f"arq:in-progress:{job_id}" in pool.deleted
     assert f"arq:retry:{job_id}" in pool.deleted
     assert ("arq:queue", job_id) in pool.zremoved
+
+
+@pytest.mark.asyncio
+async def test_requeue_autowrite_clears_stale_repair_owner() -> None:
+    """A stale repair owner must not suppress autowrite recovery forever."""
+    from bestseller.worker.self_heal import _requeue_autowrite
+
+    repair_job_id = "repair:heal:book-cross-stale"
+    pool = _FakeArqPool(
+        existing_keys={
+            f"arq:job:{repair_job_id}",
+            f"arq:in-progress:{repair_job_id}",
+            f"arq:retry:{repair_job_id}",
+        },
+        queue_scores={f"arq:queue:{repair_job_id}": 0.0},
+    )
+    stuck = StuckProject(
+        project_id="p5",
+        slug="book-cross-stale",
+        reason="missing_drafts",
+        stuck_at_chapter=1,
+        chapters_total=5,
+        chapters_with_draft=0,
+    )
+
+    job_id = await _requeue_autowrite(pool, stuck)  # type: ignore[arg-type]
+
+    assert job_id == "autowrite:heal:book-cross-stale"
+    assert f"arq:in-progress:{repair_job_id}" in pool.deleted
+    assert ("arq:queue", repair_job_id) in pool.zremoved
+
+
+@pytest.mark.asyncio
+async def test_requeue_repair_clears_stale_autowrite_owner() -> None:
+    """A stale autowrite owner must not suppress repair recovery forever."""
+    from bestseller.worker.self_heal import _requeue_repair
+
+    autowrite_job_id = "autowrite:heal:book-cross-stale"
+    pool = _FakeArqPool(
+        existing_keys={
+            f"arq:job:{autowrite_job_id}",
+            f"arq:in-progress:{autowrite_job_id}",
+            f"arq:retry:{autowrite_job_id}",
+        },
+        queue_scores={f"arq:queue:{autowrite_job_id}": 0.0},
+    )
+    stuck = StuckProject(
+        project_id="p6",
+        slug="book-cross-stale",
+        reason="blocked_chapters",
+        stuck_at_chapter=None,
+        chapters_total=5,
+        chapters_with_draft=5,
+        heal_kind="repair",
+    )
+
+    job_id = await _requeue_repair(pool, stuck)  # type: ignore[arg-type]
+
+    assert job_id == "repair:heal:book-cross-stale"
+    assert f"arq:in-progress:{autowrite_job_id}" in pool.deleted
+    assert ("arq:queue", autowrite_job_id) in pool.zremoved

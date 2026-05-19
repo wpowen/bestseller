@@ -63,6 +63,125 @@ def test_chapter_causality_gate_accepts_flexible_action_contract() -> None:
     assert payload["chapter_results"][0]["present_axes"]["next_reader_desire"] is True
 
 
+def test_chapter_causality_gate_uses_methodology_pressure_stack_when_required() -> None:
+    batch = ChapterOutlineBatchInput.model_validate(
+        {
+            "batch_name": "methodology-good",
+            "chapters": [
+                {
+                    "chapter_number": 2,
+                    "title": "镜债",
+                    "goal": "林渊选择接下铜镜委托，换取父亲失踪前的第一条线索。",
+                    "main_conflict": "周老板要他立刻签下镜债契约，林渊必须判断这是线索还是陷阱。",
+                    "hook_description": "契约落款处浮出父亲的旧名。",
+                    "methodology_overlay": {
+                        "stakes": "失败会失去父亲失踪案的唯一入口。",
+                        "pressure_stack": {
+                            "deadline": "子时前镜门关闭。",
+                            "exposure_risk": "阴阳眼会被周老板看穿。",
+                        },
+                        "pacing_mode": "accelerate",
+                        "emotion_phase": "compress",
+                        "loop_position": "action",
+                        "hooks_to_plant": ["父亲为何用旧名签过镜债？"],
+                    },
+                    "causal_contract": {
+                        "protagonist_choice": "林渊选择假意签约。",
+                        "visible_action_or_reaction": "他用铜钱压住契约裂纹。",
+                        "resistance": "周老板不断逼他当场按血印。",
+                        "gain_or_reveal": "契约浮出父亲旧名。",
+                        "state_change": "林渊从被动接委托变成握有旧名线索。",
+                    },
+                }
+            ],
+        }
+    )
+
+    report = evaluate_chapter_causality_contract(
+        batch,
+        require_methodology_overlay=True,
+    )
+
+    assert report.passed is True
+    assert not report.findings
+
+
+def test_chapter_causality_gate_blocks_missing_methodology_stack_when_required() -> None:
+    batch = ChapterOutlineBatchInput.model_validate(
+        {
+            "batch_name": "methodology-missing",
+            "chapters": [
+                {
+                    "chapter_number": 3,
+                    "title": "空镜",
+                    "goal": "林渊选择调查铜镜。",
+                    "main_conflict": "林渊必须判断铜镜是否危险。",
+                    "hook_description": "铜镜里出现父亲背影。",
+                    "causal_contract": {
+                        "pressure": "周老板要求他立刻交出铜镜。",
+                        "protagonist_choice": "林渊选择藏起铜镜。",
+                        "visible_action_or_reaction": "林渊打开暗格。",
+                        "resistance": "周老板派人搜屋。",
+                        "cost_or_tradeoff": "林渊暴露藏身处。",
+                        "gain_or_reveal": "铜镜出现父亲背影。",
+                        "state_change": "林渊获得父亲线索。",
+                        "next_reader_desire": "父亲背影为何会出现？",
+                    },
+                }
+            ],
+        }
+    )
+
+    report = evaluate_chapter_causality_contract(
+        batch,
+        require_methodology_overlay=True,
+    )
+    codes = {finding.code for finding in report.findings}
+
+    assert report.passed is False
+    assert "CHAPTER_METHODOLOGY_PRESSURE_STACK_MISSING" in codes
+
+
+def test_chapter_causality_gate_blocks_incomplete_methodology_contract_when_required() -> None:
+    batch = ChapterOutlineBatchInput.model_validate(
+        {
+            "batch_name": "methodology-incomplete",
+            "chapters": [
+                {
+                    "chapter_number": 4,
+                    "title": "旧名",
+                    "goal": "林渊确认父亲旧名和镜债有关。",
+                    "main_conflict": "周老板逼他当场交出铜镜，否则会烧掉账本。",
+                    "hook_description": "账本最后一页写着父亲旧名。",
+                    "methodology_contract": {
+                        "pressure_stack": {"deadline": "账本一刻后被烧毁。"},
+                        "hooks_to_plant": ["父亲为何签过镜债？"],
+                    },
+                    "causal_contract": {
+                        "pressure": "周老板逼他当场交出铜镜，否则会烧掉账本。",
+                        "protagonist_choice": "林渊选择假意交镜拖延。",
+                        "visible_action_or_reaction": "他把铜镜扣在账本上。",
+                        "resistance": "周老板派人按住他的手腕。",
+                        "cost_or_tradeoff": "林渊暴露自己看得见镜痕。",
+                        "gain_or_reveal": "账本浮出父亲旧名。",
+                        "state_change": "林渊从接委托变成追查父亲镜债。",
+                        "next_reader_desire": "父亲为何签过镜债？",
+                    },
+                }
+            ],
+        }
+    )
+
+    report = evaluate_chapter_causality_contract(
+        batch,
+        require_methodology_overlay=True,
+    )
+    codes = {finding.code for finding in report.findings}
+
+    assert report.passed is False
+    assert "CHAPTER_METHODOLOGY_FIELD_MISSING" in codes
+
+
 def test_chapter_causality_gate_accepts_reveal_chapter_without_fixed_beat_order() -> None:
     batch = ChapterOutlineBatchInput.model_validate(
         {

@@ -25,7 +25,9 @@ from bestseller.domain.story_bible import (
 )
 from bestseller.services.bible_gate import (
     AntagonistMotiveLedger,
+    AbilityOriginContractCheck,
     BibleDraft,
+    CharacterRecognitionAnchorCheck,
     CharacterIPAnchorCheck,
     NamingPoolSize,
     ThemeSignatureCheck,
@@ -91,6 +93,9 @@ def _character(
     core_wound: str | None = None,
     tag_memory: str | None = None,
     independent_life: str | None = None,
+    sensory_signatures: list[str] | None = None,
+    signature_objects: list[str] | None = None,
+    metadata: dict | None = None,
     goal: str | None = None,
     background: str | None = None,
     secret: str | None = None,
@@ -133,10 +138,13 @@ def _character(
         strength=strength,
         ip_anchor=CharacterIPAnchorInput(
             quirks=quirks or [],
+            sensory_signatures=sensory_signatures or [],
+            signature_objects=signature_objects or [],
             core_wound=core_wound,
             tag_memory=tag_memory,
             independent_life=independent_life,
         ),
+        metadata=metadata or {},
         **extras,
     )
 
@@ -150,6 +158,7 @@ def _minimal_draft(
     expected_character_count: int = 0,
     theme_statement: str | None = "真正的力量来自承认脆弱",
     dramatic_question: str | None = "林奚能否在救妹与守家之间两全？",
+    genre_text: str = "",
 ) -> BibleDraft:
     return BibleDraft(
         characters=tuple(characters or []),
@@ -159,6 +168,7 @@ def _minimal_draft(
         expected_character_count=expected_character_count,
         theme_statement=theme_statement,
         dramatic_question=dramatic_question,
+        genre_text=genre_text,
     )
 
 
@@ -490,6 +500,8 @@ class TestValidateBibleCompleteness:
             quirks=["q1", "q2", "q3"],
             core_wound="mother executed",
             tag_memory="思考时拇指摩挲剑柄",
+            signature_objects=["缺口铜钱"],
+            sensory_signatures=["紧张时指节发白"],
             background="流浪剑客出身，曾为将军府侍卫",
             goal="找到杀母仇人",
             strength="剑术过人，能在百人之中取敌首",
@@ -547,6 +559,8 @@ class TestValidateBibleCompleteness:
             quirks=["q1", "q2", "q3"],
             core_wound="wound",
             tag_memory="思考时摩挲剑柄",
+            signature_objects=["旧剑"],
+            sensory_signatures=["心口发冷时按住剑鞘"],
             background="流浪剑客",
             goal="复仇",
             strength="以一敌百",
@@ -563,11 +577,75 @@ class TestValidateBibleCompleteness:
         report = validate_bible_completeness(draft, _invariants())
         assert report.feedback_for_regen() == ""
 
-    def test_default_validators_has_ten_checks(self) -> None:
+    def test_default_validators_has_twelve_checks(self) -> None:
         # 5 original + CharacterPersonhoodCheck + VillainCharismaCheck
         # + SupportingCharacterTagCheck + IndependentLifeCheck
-        # + CharacterContrastCheck.
-        assert len(default_validators()) == 10
+        # + CharacterContrastCheck + methodology overlay checks.
+        assert len(default_validators()) == 12
+
+
+class TestMethodologyOverlayBibleChecks:
+    def test_major_character_without_recognition_anchors_fails(self) -> None:
+        hero = _character(
+            "林奚",
+            "protagonist",
+            quirks=["只写抽象标签"],
+            core_wound="七岁目睹母亲被处决",
+            with_personhood=True,
+        )
+        draft = _minimal_draft(characters=[hero])
+
+        deficiencies = list(CharacterRecognitionAnchorCheck().check(draft, _invariants()))
+
+        assert deficiencies
+        assert deficiencies[0].code == "CHARACTER_RECOGNITION_ANCHORS_MISSING"
+
+    def test_progression_hero_without_ability_origin_contract_fails(self) -> None:
+        hero = _character(
+            "林奚",
+            "protagonist",
+            quirks=["q1", "q2", "q3"],
+            core_wound="七岁目睹母亲被处决",
+            tag_memory="思考时摩挲剑柄",
+            signature_objects=["旧剑"],
+            sensory_signatures=["心口发冷时按住剑鞘"],
+            with_personhood=True,
+        )
+        draft = _minimal_draft(characters=[hero], genre_text="xianxia progression")
+
+        deficiencies = list(AbilityOriginContractCheck().check(draft, _invariants()))
+
+        assert deficiencies
+        assert deficiencies[0].code == "ABILITY_ORIGIN_CONTRACT_MISSING"
+
+    def test_progression_hero_with_ability_origin_contract_passes(self) -> None:
+        hero = _character(
+            "林奚",
+            "protagonist",
+            quirks=["q1", "q2", "q3"],
+            core_wound="七岁目睹母亲被处决",
+            tag_memory="思考时摩挲剑柄",
+            signature_objects=["旧剑"],
+            sensory_signatures=["心口发冷时按住剑鞘"],
+            metadata={
+                "methodology_overlay": {
+                    "ability_origin_contract": {
+                        "source": "母亲留下的残脉",
+                        "visible_signature": "出手时剑柄渗出青光",
+                        "limit": "只能在血契范围内使用",
+                        "cost": "每次使用都会消耗记忆",
+                        "growth_trigger": "回收一段家族真相",
+                        "plot_use": "能力暴露会引来宗门追捕",
+                    }
+                }
+            },
+            with_personhood=True,
+        )
+        draft = _minimal_draft(characters=[hero], genre_text="xianxia progression")
+
+        deficiencies = list(AbilityOriginContractCheck().check(draft, _invariants()))
+
+        assert deficiencies == []
 
 
 class TestBuildDraftFromMaterializationContent:

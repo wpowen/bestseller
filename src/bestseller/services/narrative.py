@@ -52,6 +52,10 @@ from bestseller.infra.db.models import (
 from bestseller.domain.structure_templates import StructureTemplate, resolve_structure_template
 from bestseller.services.projects import get_project_by_slug
 from bestseller.services.story_bible import parse_volume_plan_input
+from bestseller.services.methodology_overlay import (
+    normalize_chapter_overlay,
+    normalize_scene_overlay,
+)
 from bestseller.services.writing_profile import is_english_language
 
 
@@ -1704,6 +1708,9 @@ async def rebuild_narrative_graph(
             for payoff in payoffs_by_code.values()
             if payoff.target_chapter_number == chapter.chapter_number
         ]
+        chapter_methodology_contract = normalize_chapter_overlay(
+            (chapter.metadata_json or {}).get("methodology_contract")
+        )
         contract = ChapterContractModel(
             project_id=project.id,
             chapter_id=chapter.id,
@@ -1722,7 +1729,11 @@ async def rebuild_narrative_graph(
             active_arc_beat_ids=[str(beat.id) for beat in chapter_beats if beat.scope_level == "chapter"],
             planted_clue_codes=planted_clue_codes,
             due_payoff_codes=due_payoff_codes,
-            metadata_json={},
+            metadata_json=(
+                {"methodology_contract": chapter_methodology_contract}
+                if chapter_methodology_contract
+                else {}
+            ),
         )
         session.add(contract)
 
@@ -1748,6 +1759,9 @@ async def rebuild_narrative_graph(
                     or (payoff.target_scene_number is None and scene.scene_number == last_scene_number)
                 )
             ]
+            scene_methodology_contract = normalize_scene_overlay(
+                (scene.metadata_json or {}).get("methodology_contract")
+            )
             session.add(
                 SceneContractModel(
                     project_id=project.id,
@@ -1803,7 +1817,11 @@ async def rebuild_narrative_graph(
                         for beat in scene_beats
                         if str(beat.metadata_json.get("arc_code")) not in (set(primary_arc_codes[:1]) | {"main_plot"})
                     ])[:5],
-                    metadata_json={},
+                    metadata_json=(
+                        {"methodology_contract": scene_methodology_contract}
+                        if scene_methodology_contract
+                        else {}
+                    ),
                 )
         )
 

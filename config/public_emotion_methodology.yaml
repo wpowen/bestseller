@@ -1,0 +1,47 @@
+version: "1.0"
+name: public-emotion-methodology
+description: >
+  Framework-level method for translating audience-wide emotions into
+  project-local genre material. This file must not contain single-book settings,
+  fixed worldbuilding, fixed protagonist powers, or reusable plot promises.
+
+bridge_types:
+  emotional_bridge:
+    label: 情感桥
+    use: Connect fear, shame, anger, injustice, abandonment, longing, or dignity pressure to a fictional conflict.
+    required_outputs:
+      - target reader segment
+      - public emotion
+      - unsaid sentence
+      - genre translation
+      - reader compensation
+  time_bridge:
+    label: 时间桥
+    use: Connect regret, missed chances, youth, delay, aging, or if-I-could-restart desire to a fictional premise.
+    required_outputs:
+      - lost time or regret anchor
+      - fictional second-chance or delayed-payoff container
+      - irreversible cost
+      - reader compensation
+  value_bridge:
+    label: 价值桥
+    use: Connect money, class mobility, resource scarcity, status, fairness, opportunity cost, or recognition pressure to a fictional system.
+    required_outputs:
+      - value pressure
+      - fictional resource/rule/status container
+      - visible unfairness
+      - visible compensation
+
+kernel_rules:
+  - Every bridge must be project-local and tied to the current book's own genre material.
+  - Do not store a successful book's title hook, power logic, or world rule as a global default.
+  - The framework may define bridge types and required fields, but not one-size-fits-all story settings.
+  - Public emotion must be translated into fictional conflict before title, synopsis, or chapter planning consume it.
+  - Compliance boundary checks must run before public emotion becomes reader-facing copy.
+
+quality_questions:
+  - Which group can see itself in this book without needing lore knowledge first?
+  - What sentence does the book say on behalf of that group?
+  - What fictional rule, relationship, institution, resource, or deadline safely carries that emotion?
+  - What compensation will readers wait for, comment on, and return for?
+  - What misread must be blocked so the emotion does not become real-world hostility or illegal instruction?

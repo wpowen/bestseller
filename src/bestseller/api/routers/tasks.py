@@ -15,12 +15,40 @@ from bestseller.worker.progress import _PROGRESS_CHANNEL, _PROGRESS_LIST_KEY
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["tasks"])
+_ATTENTION_VERDICTS = {
+    "attention",
+    "needs_attention",
+    "waiting_human",
+    "waiting_human_review",
+    "requires_human_review",
+    "exported_requires_human_review",
+    "skipped_requires_human_review",
+}
 
 
 class TaskStatusResponse(BaseModel):
     task_id: str
     status: str
     progress: list[dict] = []
+
+
+def _event_payload_requires_attention(event: dict) -> bool:
+    data = event.get("data")
+    payload = data if isinstance(data, dict) else {}
+    if payload.get("requires_human_review") is True:
+        return True
+    verdict = (
+        str(
+            payload.get("final_verdict")
+            or payload.get("verdict")
+            or payload.get("status")
+            or payload.get("export_status")
+            or ""
+        )
+        .strip()
+        .lower()
+    )
+    return verdict in _ATTENTION_VERDICTS
 
 
 @router.get("/tasks/{task_id}", response_model=TaskStatusResponse)
@@ -41,7 +69,9 @@ async def get_task_status(
     task_status = "running"
     last = events[-1] if events else {}
     event_type = last.get("event_type", "")
-    if event_type in ("completed", "done", "finished"):
+    if _event_payload_requires_attention(last):
+        task_status = "incomplete"
+    elif event_type in ("completed", "done", "finished"):
         task_status = "completed"
     elif event_type in ("failed", "error"):
         task_status = "failed"
@@ -52,7 +82,9 @@ async def get_task_status(
     else:
         # Legacy fallback: match against message text
         msg = last.get("message", "")
-        if any(k in msg.lower() for k in ("completed", "done", "finished")):
+        if _event_payload_requires_attention(last):
+            task_status = "incomplete"
+        elif any(k in msg.lower() for k in ("completed", "done", "finished")):
             task_status = "completed"
         elif any(k in msg.lower() for k in ("failed", "error")):
             task_status = "failed"

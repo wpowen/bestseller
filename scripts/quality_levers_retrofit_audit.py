@@ -52,6 +52,10 @@ from bestseller.services.quality_levers import (  # noqa: E402
     audit_emotion_labels,
     audit_rhythm,
 )
+from bestseller.services.quality_levers.detectors import (  # noqa: E402
+    count_cjk_chars,
+    count_latin_words,
+)
 
 
 _CHAPTER_FILE_RE = re.compile(r"chapter-(\d+)\.md$")
@@ -63,10 +67,16 @@ class ChapterAuditRow:
 
     slug: str
     chapter_number: int
+    platform: str
+    language: str
+    audit_validity: str
     char_count: int
+    count_unit: str
     word_count_passed: bool
     word_count_reason: str
+    pulse_count: int
     pulse_density: float
+    pulse_threshold: float
     pulse_passed: bool
     banned_pattern_hits: int
     banned_patterns_passed: bool
@@ -76,8 +86,16 @@ class ChapterAuditRow:
     abstract_sensory_words: str
     dumping_hits: int
     dumping_passed: bool
+    rhythm_hard_stops: int
+    rhythm_acceleration: int
+    rhythm_delay: int
+    rhythm_external_interrupts: int
     rhythm_total_anchors: int
+    rhythm_types_covered: int
+    rhythm_expected_min_count: int
+    rhythm_expected_min_types: int
     rhythm_passed: bool
+    rhythm_applicable: bool
     emotion_label_hits: int
     emotion_label_passed: bool
     failure_count: int
@@ -88,10 +106,16 @@ class ChapterAuditRow:
         return {
             "slug": self.slug,
             "chapter_number": self.chapter_number,
+            "platform": self.platform,
+            "language": self.language,
+            "audit_validity": self.audit_validity,
             "char_count": self.char_count,
+            "count_unit": self.count_unit,
             "word_count_passed": self.word_count_passed,
             "word_count_reason": self.word_count_reason,
+            "pulse_count": self.pulse_count,
             "pulse_density": round(self.pulse_density, 2),
+            "pulse_threshold": self.pulse_threshold,
             "pulse_passed": self.pulse_passed,
             "banned_pattern_hits": self.banned_pattern_hits,
             "banned_patterns_passed": self.banned_patterns_passed,
@@ -101,8 +125,16 @@ class ChapterAuditRow:
             "abstract_sensory_words": self.abstract_sensory_words,
             "dumping_hits": self.dumping_hits,
             "dumping_passed": self.dumping_passed,
+            "rhythm_hard_stops": self.rhythm_hard_stops,
+            "rhythm_acceleration": self.rhythm_acceleration,
+            "rhythm_delay": self.rhythm_delay,
+            "rhythm_external_interrupts": self.rhythm_external_interrupts,
             "rhythm_total_anchors": self.rhythm_total_anchors,
+            "rhythm_types_covered": self.rhythm_types_covered,
+            "rhythm_expected_min_count": self.rhythm_expected_min_count,
+            "rhythm_expected_min_types": self.rhythm_expected_min_types,
             "rhythm_passed": self.rhythm_passed,
+            "rhythm_applicable": self.rhythm_applicable,
             "emotion_label_hits": self.emotion_label_hits,
             "emotion_label_passed": self.emotion_label_passed,
             "failure_count": self.failure_count,
@@ -126,12 +158,42 @@ def discover_chapters(slug: str) -> list[tuple[int, Path]]:
     return rows
 
 
-def audit_one_chapter(slug: str, chapter_number: int, path: Path, *, platform: str | None) -> ChapterAuditRow:
+def infer_language_from_text(text: str) -> str:
+    """Infer the broad language family for legacy chapters without metadata."""
+
+    cjk_chars = count_cjk_chars(text)
+    latin_words = count_latin_words(text)
+    if latin_words >= 80 and latin_words > cjk_chars * 2:
+        return "en-US"
+    return "zh-CN"
+
+
+def infer_language_for_chapters(chapters: list[tuple[int, Path]]) -> str:
+    """Infer language from the first few chapter files."""
+
+    samples: list[str] = []
+    for _, path in chapters[:3]:
+        try:
+            samples.append(path.read_text(encoding="utf-8")[:8000])
+        except OSError:
+            continue
+    return infer_language_from_text("\n".join(samples))
+
+
+def audit_one_chapter(
+    slug: str,
+    chapter_number: int,
+    path: Path,
+    *,
+    platform: str | None,
+    language: str | None = None,
+) -> ChapterAuditRow:
     """Score one chapter against every deterministic detector."""
 
     text = path.read_text(encoding="utf-8")
-    bundle = audit_chapter(text, platform=platform)
-    rhythm = audit_rhythm(text)
+    effective_language = language or infer_language_from_text(text)
+    bundle = audit_chapter(text, platform=platform, language=effective_language)
+    rhythm = audit_rhythm(text, language=effective_language)
     emotion = audit_emotion_labels(text)
 
     banned_breakdown = ";".join(
@@ -174,10 +236,16 @@ def audit_one_chapter(slug: str, chapter_number: int, path: Path, *, platform: s
     return ChapterAuditRow(
         slug=slug,
         chapter_number=chapter_number,
+        platform=str(platform or ""),
+        language=effective_language,
+        audit_validity="language_aware",
         char_count=bundle.word_count.chars,
+        count_unit=bundle.word_count.unit,
         word_count_passed=bundle.word_count.passed,
         word_count_reason=bundle.word_count.reason,
+        pulse_count=bundle.pulse.pulse_count,
         pulse_density=bundle.pulse.density_per_300_chars,
+        pulse_threshold=bundle.pulse.threshold,
         pulse_passed=bundle.pulse.passed,
         banned_pattern_hits=bundle.banned_patterns.total_hits,
         banned_patterns_passed=bundle.banned_patterns.passed,
@@ -187,8 +255,16 @@ def audit_one_chapter(slug: str, chapter_number: int, path: Path, *, platform: s
         abstract_sensory_words=abstract_words,
         dumping_hits=bundle.dumping.total_hits,
         dumping_passed=bundle.dumping.passed,
+        rhythm_hard_stops=rhythm.hard_stop_count,
+        rhythm_acceleration=rhythm.acceleration_count,
+        rhythm_delay=rhythm.delay_count,
+        rhythm_external_interrupts=rhythm.external_interrupt_count,
         rhythm_total_anchors=rhythm.total_anchors,
+        rhythm_types_covered=rhythm.types_covered,
+        rhythm_expected_min_count=rhythm.expected_min_count,
+        rhythm_expected_min_types=rhythm.expected_min_types,
         rhythm_passed=rhythm.passed,
+        rhythm_applicable=rhythm.applicable,
         emotion_label_hits=emotion.total_hits,
         emotion_label_passed=emotion.passed,
         failure_count=len(failures),
@@ -206,9 +282,20 @@ def _failure_priority(bundle, *, dumping_hits: int) -> str:
         return "critical"
     if not bundle.word_count.passed:
         return "high"
-    if not bundle.banned_patterns.passed or dumping_hits >= 1:
+    if dumping_hits >= 1:
         return "high"
-    if not bundle.pulse.passed or not bundle.abstract_sensory.passed:
+    if not bundle.banned_patterns.passed and bundle.banned_patterns.total_hits >= 2:
+        return "high"
+    if (
+        not bundle.pulse.passed
+        and bundle.pulse.density_per_300_chars < bundle.pulse.threshold * 0.5
+    ):
+        return "high"
+    if (
+        not bundle.pulse.passed
+        or not bundle.banned_patterns.passed
+        or not bundle.abstract_sensory.passed
+    ):
         return "medium"
     return "ok"
 
@@ -247,9 +334,18 @@ def write_summary(rows: list[ChapterAuditRow], target: Path) -> None:
         for row in critical_chapters[:30]
     )
     total = max(1, len(rows))
+    language_counts: dict[str, int] = {}
+    for row in rows:
+        language_counts[row.language] = language_counts.get(row.language, 0) + 1
+    language_lines = "\n".join(
+        f"- `{language}` × {count}"
+        for language, count in sorted(language_counts.items())
+    )
     md = (
         f"# Quality Levers Retrofit Audit · summary\n\n"
         f"Total chapters scanned: **{len(rows)}**\n\n"
+        f"## Language\n\n"
+        f"{language_lines or '_unknown_'}\n\n"
         f"## Priority distribution\n\n"
         f"| priority | chapters | share |\n"
         f"|----------|---------:|------:|\n"
@@ -284,6 +380,14 @@ def _parse_args() -> argparse.Namespace:
         help=(
             "Platform id (qimao / qidian / tomato). When omitted the word-count "
             "gate uses the framework default (≥5000)."
+        ),
+    )
+    parser.add_argument(
+        "--language",
+        default=None,
+        help=(
+            "Language tag for language-aware detectors (for example zh-CN or en-US). "
+            "When omitted, the script infers a broad language family from chapter text."
         ),
     )
     parser.add_argument(
@@ -324,6 +428,7 @@ def main() -> int:
         return 1
     if args.limit and args.limit > 0:
         chapters = chapters[: args.limit]
+    language = args.language or infer_language_for_chapters(chapters)
 
     rows: list[ChapterAuditRow] = []
     for chapter_number, path in chapters:
@@ -334,6 +439,7 @@ def main() -> int:
                     chapter_number,
                     path,
                     platform=args.platform,
+                    language=language,
                 )
             )
         except Exception as exc:  # noqa: BLE001 — surface in the row log

@@ -69,6 +69,7 @@ from bestseller.services.drafts import assemble_chapter_draft, count_words, gene
 from bestseller.services.exports import export_chapter_markdown, export_project_markdown
 from bestseller.services.emotion_kernel_backfill import ensure_project_emotion_driven_kernel
 from bestseller.services.entry_system_backfill import ensure_project_entry_system_compat
+from bestseller.services.public_emotion_backfill import ensure_project_public_emotion_kernels
 from bestseller.services.invariants import (
     InvariantSeedError,
     invariants_from_dict,
@@ -255,6 +256,46 @@ async def _ensure_emotion_kernel_backfill_for_pipeline(
         _emit_progress(
             progress,
             "emotion_kernel_backfilled",
+            {
+                "project_slug": project.slug,
+                "status": result.status,
+                "source": result.source,
+            },
+        )
+
+
+async def _ensure_public_emotion_kernel_backfill_for_pipeline(
+    session: AsyncSession,
+    settings: AppSettings,
+    project: ProjectModel,
+    *,
+    requested_by: str,
+    progress: ProgressCallback | None = None,
+) -> None:
+    if not getattr(settings.pipeline, "enable_public_emotion_kernel_backfill", True):
+        return
+    try:
+        result = await ensure_project_public_emotion_kernels(
+            session,
+            project,
+            requested_by=requested_by,
+            persist_artifact=False,
+        )
+    except Exception:
+        logger.warning(
+            "PublicEmotionKernel legacy backfill failed for project %s; continuing without it",
+            project.slug,
+            exc_info=True,
+        )
+        project.metadata_json = {
+            **(getattr(project, "metadata_json", None) or {}),
+            "public_emotion_kernel_backfill_failed": True,
+        }
+        return
+    if result.changed:
+        _emit_progress(
+            progress,
+            "public_emotion_kernel_backfilled",
             {
                 "project_slug": project.slug,
                 "status": result.status,
@@ -1620,6 +1661,12 @@ async def run_scene_pipeline(
         project,
         requested_by=requested_by,
     )
+    await _ensure_public_emotion_kernel_backfill_for_pipeline(
+        session,
+        settings,
+        project,
+        requested_by=requested_by,
+    )
     await _ensure_entry_system_backfill_for_pipeline(
         session,
         settings,
@@ -1859,6 +1906,9 @@ async def run_scene_pipeline(
                     repair_missing_scene_participants_pre_draft,
                     validate_scene_contract_pre_draft,
                 )
+                from bestseller.services.methodology_overlay import (
+                    resolve_methodology_contract_mode,
+                )
 
                 _repair_count = repair_legacy_scene_contract_pre_draft(
                     scene,
@@ -1915,6 +1965,10 @@ async def run_scene_pipeline(
                     identity_registry=_identity_registry,
                     require_identity_registry=True,
                     excluded_names=_offstage_names,
+                    methodology_contract_mode=resolve_methodology_contract_mode(
+                        project,
+                        settings=settings,
+                    ),
                 )
                 if _contract.violations or _contract.warnings:
                     _scene_meta = dict(getattr(scene, "metadata_json", {}) or {})
@@ -3059,6 +3113,7 @@ async def run_chapter_pipeline(
     requested_by: str = "system",
     export_markdown: bool = False,
     allow_structural_repair: bool = False,
+    progress: ProgressCallback | None = None,
 ) -> ChapterPipelineResult:
     project = await get_project_by_slug(session, project_slug)
     if project is None:
@@ -3094,6 +3149,12 @@ async def run_chapter_pipeline(
         project,
         requested_by=requested_by,
     )
+    await _ensure_public_emotion_kernel_backfill_for_pipeline(
+        session,
+        settings,
+        project,
+        requested_by=requested_by,
+    )
     await _ensure_entry_system_backfill_for_pipeline(
         session,
         settings,
@@ -3124,6 +3185,16 @@ async def run_chapter_pipeline(
     scene_results: list[ChapterPipelineSceneSummary] = []
 
     try:
+        _emit_progress(
+            progress,
+            "chapter_step_started",
+            {
+                "project_slug": project_slug,
+                "chapter_number": chapter_number,
+                "step": current_step_name,
+                "scene_count": len(scenes),
+            },
+        )
         await create_workflow_step_run(
             session,
             workflow_run_id=workflow_run.id,
@@ -3136,6 +3207,16 @@ async def run_chapter_pipeline(
             },
         )
         step_order += 1
+        _emit_progress(
+            progress,
+            "chapter_step_completed",
+            {
+                "project_slug": project_slug,
+                "chapter_number": chapter_number,
+                "step": current_step_name,
+                "workflow_run_id": str(workflow_run.id),
+            },
+        )
         # Child scene pipelines can roll back the shared session on hard DB
         # errors. Persist the chapter workflow shell before descending.
         await _checkpoint_commit(session)
@@ -3152,10 +3233,32 @@ async def run_chapter_pipeline(
                 "Chapter %d resume: skipping %d completed scenes, %d pending",
                 chapter_number, skipped_scene_count, len(pending_scenes),
             )
+            _emit_progress(
+                progress,
+                "chapter_resume_skipped_scenes",
+                {
+                    "project_slug": project_slug,
+                    "chapter_number": chapter_number,
+                    "skipped_scene_count": skipped_scene_count,
+                    "pending_scene_count": len(pending_scenes),
+                    "scene_count": len(scenes),
+                },
+            )
         _scene_loop_blocked = False
-        for scene in pending_scenes:
+        for scene_index, scene in enumerate(pending_scenes, start=1):
             current_step_name = f"scene_pipeline_{scene.scene_number}"
             workflow_run.current_step = current_step_name
+            _emit_progress(
+                progress,
+                "chapter_scene_pipeline_started",
+                {
+                    "project_slug": project_slug,
+                    "chapter_number": chapter_number,
+                    "scene_number": scene.scene_number,
+                    "scene_progress": f"{scene_index}/{len(pending_scenes)}",
+                    "chapter_workflow_run_id": str(workflow_run.id),
+                },
+            )
             try:
                 scene_result = await run_scene_pipeline(
                     session,
@@ -3212,6 +3315,20 @@ async def run_chapter_pipeline(
                 },
             )
             step_order += 1
+            _emit_progress(
+                progress,
+                "chapter_scene_pipeline_completed",
+                {
+                    "project_slug": project_slug,
+                    "chapter_number": chapter_number,
+                    "scene_number": scene.scene_number,
+                    "scene_progress": f"{scene_index}/{len(pending_scenes)}",
+                    "scene_workflow_run_id": str(scene_result.workflow_run_id),
+                    "final_verdict": scene_result.final_verdict,
+                    "rewrite_iterations": scene_result.rewrite_iterations,
+                    "requires_human_review": scene_result.requires_human_review,
+                },
+            )
 
             if scene_result.requires_human_review:
                 scene_requires_human_review = True
@@ -3221,6 +3338,15 @@ async def run_chapter_pipeline(
         # than creating a redundant new version with identical content.
         current_step_name = "assemble_chapter_draft"
         workflow_run.current_step = current_step_name
+        _emit_progress(
+            progress,
+            "chapter_step_started",
+            {
+                "project_slug": project_slug,
+                "chapter_number": chapter_number,
+                "step": current_step_name,
+            },
+        )
         chapter_draft = None
         _existing_chapter_draft: ChapterDraftVersionModel | None = None
         if (
@@ -3272,6 +3398,19 @@ async def run_chapter_pipeline(
                 )
         if chapter_draft is None and not _scene_loop_blocked:
             chapter_draft = await assemble_chapter_draft(session, project_slug, chapter_number, settings=settings)
+        if chapter_draft is not None:
+            _emit_progress(
+                progress,
+                "chapter_step_completed",
+                {
+                    "project_slug": project_slug,
+                    "chapter_number": chapter_number,
+                    "step": current_step_name,
+                    "chapter_draft_id": str(chapter_draft.id),
+                    "chapter_draft_version_no": chapter_draft.version_no,
+                    "word_count": int(getattr(chapter_draft, "word_count", 0) or 0),
+                },
+            )
 
         # ── Chapter auto-repair loop (C6) ──
         # When the assembled chapter trips a repairable block code (default:
@@ -3357,6 +3496,17 @@ async def run_chapter_pipeline(
                 auto_repair_cap,
                 list(block_codes) if block_codes else [],
             )
+            _emit_progress(
+                progress,
+                "chapter_auto_repair_started",
+                {
+                    "project_slug": project_slug,
+                    "chapter_number": chapter_number,
+                    "attempt": auto_repair_attempts,
+                    "max_attempts": auto_repair_cap,
+                    "block_codes": list(block_codes) if block_codes else [],
+                },
+            )
 
             # Re-run scene pipelines — every scene was reset to NEEDS_REWRITE
             # by ``maybe_prepare_chapter_auto_repair``.  Iterate ALL scenes
@@ -3432,6 +3582,17 @@ async def run_chapter_pipeline(
             workflow_run.current_step = current_step_name
             chapter_draft = await assemble_chapter_draft(
                 session, project_slug, chapter_number, settings=settings
+            )
+            _emit_progress(
+                progress,
+                "chapter_auto_repair_completed",
+                {
+                    "project_slug": project_slug,
+                    "chapter_number": chapter_number,
+                    "attempt": auto_repair_attempts,
+                    "chapter_draft_id": str(chapter_draft.id),
+                    "chapter_draft_version_no": chapter_draft.version_no,
+                },
             )
             await create_workflow_step_run(
                 session,
@@ -3646,6 +3807,14 @@ async def run_chapter_pipeline(
                 return None, None
             current_step_name = "export_chapter_markdown"
             workflow_run.current_step = current_step_name
+            _emit_progress(
+                progress,
+                "chapter_export_started",
+                {
+                    "project_slug": project_slug,
+                    "chapter_number": chapter_number,
+                },
+            )
             try:
                 artifact, artifact_path = await export_chapter_markdown(
                     session,
@@ -3673,6 +3842,15 @@ async def run_chapter_pipeline(
                     output_ref={"export_blocked": str(exc)},
                 )
                 step_order += 1
+                _emit_progress(
+                    progress,
+                    "chapter_export_blocked",
+                    {
+                        "project_slug": project_slug,
+                        "chapter_number": chapter_number,
+                        "reason": str(exc),
+                    },
+                )
                 return None, None
             artifact_id = artifact.id
             artifact_output_path = str(artifact_path.resolve())
@@ -3688,6 +3866,16 @@ async def run_chapter_pipeline(
                 },
             )
             step_order += 1
+            _emit_progress(
+                progress,
+                "chapter_export_completed",
+                {
+                    "project_slug": project_slug,
+                    "chapter_number": chapter_number,
+                    "export_artifact_id": str(artifact_id),
+                    "output_path": artifact_output_path,
+                },
+            )
             return artifact_id, artifact_output_path
 
         if scene_requires_human_review:
@@ -3961,6 +4149,15 @@ async def run_chapter_pipeline(
             chapter_review_iterations += 1
             current_step_name = f"review_chapter_v{chapter_review_iterations}"
             workflow_run.current_step = current_step_name
+            _emit_progress(
+                progress,
+                "chapter_review_started",
+                {
+                    "project_slug": project_slug,
+                    "chapter_number": chapter_number,
+                    "iteration": chapter_review_iterations,
+                },
+            )
             (
                 chapter_review_result,
                 chapter_report,
@@ -3989,6 +4186,24 @@ async def run_chapter_pipeline(
                 },
             )
             step_order += 1
+            _emit_progress(
+                progress,
+                "chapter_review_completed",
+                {
+                    "project_slug": project_slug,
+                    "chapter_number": chapter_number,
+                    "iteration": chapter_review_iterations,
+                    "verdict": chapter_review_result.verdict,
+                    "rewrite_task_id": (
+                        str(chapter_rewrite_task.id) if chapter_rewrite_task is not None else None
+                    ),
+                    "quality_score": (
+                        float(chapter_quality.score_overall)
+                        if getattr(chapter_quality, "score_overall", None) is not None
+                        else None
+                    ),
+                },
+            )
 
             at_chapter_rewrite_limit = (
                 chapter_rewrite_iterations >= settings.quality.max_chapter_revisions
@@ -4000,10 +4215,8 @@ async def run_chapter_pipeline(
             accept_chapter_on_stall = (
                 at_chapter_rewrite_limit
                 and settings.pipeline.accept_on_stall
-                and (
-                    not getattr(settings.pipeline, "chapter_review_block_on_failure", True)
-                    or safe_draft_available
-                )
+                and not getattr(settings.pipeline, "chapter_review_block_on_failure", True)
+                and safe_draft_available
             )
             if (
                 chapter_review_result.verdict == "pass"
@@ -4203,6 +4416,16 @@ async def run_chapter_pipeline(
             chapter_rewrite_iterations += 1
             current_step_name = f"rewrite_chapter_v{chapter_rewrite_iterations}"
             workflow_run.current_step = current_step_name
+            _emit_progress(
+                progress,
+                "chapter_rewrite_started",
+                {
+                    "project_slug": project_slug,
+                    "chapter_number": chapter_number,
+                    "iteration": chapter_rewrite_iterations,
+                    "rewrite_task_id": str(chapter_rewrite_task.id),
+                },
+            )
             chapter_draft, chapter_rewrite_task = await rewrite_chapter_from_task(
                 session,
                 project_slug,
@@ -4224,6 +4447,19 @@ async def run_chapter_pipeline(
                 },
             )
             step_order += 1
+            _emit_progress(
+                progress,
+                "chapter_rewrite_completed",
+                {
+                    "project_slug": project_slug,
+                    "chapter_number": chapter_number,
+                    "iteration": chapter_rewrite_iterations,
+                    "rewrite_task_id": str(chapter_rewrite_task.id),
+                    "chapter_draft_id": str(chapter_draft.id),
+                    "chapter_draft_version_no": chapter_draft.version_no,
+                    "word_count": int(getattr(chapter_draft, "word_count", 0) or 0),
+                },
+            )
 
         if getattr(chapter, "production_state", None) == "blocked":
             requires_human_review = True
@@ -4474,6 +4710,13 @@ async def run_project_pipeline(
         )
 
     await _ensure_emotion_kernel_backfill_for_pipeline(
+        session,
+        settings,
+        project,
+        requested_by=requested_by,
+        progress=progress,
+    )
+    await _ensure_public_emotion_kernel_backfill_for_pipeline(
         session,
         settings,
         project,
@@ -4989,6 +5232,7 @@ async def run_project_pipeline(
                 requested_by=requested_by,
                 export_markdown=export_markdown,
                 allow_structural_repair=allow_structural_repair,
+                progress=progress,
             )
             chapter_results.append(
                 ProjectPipelineChapterSummary(
@@ -5814,6 +6058,7 @@ async def run_autowrite_pipeline(
             project.slug,
             premise,
             requested_by=requested_by,
+            progress=progress,
         )
         await _checkpoint_commit(session)
         _emit_progress(
@@ -6071,7 +6316,7 @@ async def run_progressive_autowrite_pipeline(
     else:
         _emit_progress(progress, "foundation_planning_started", {"project_slug": project.slug})
         planning_result = await generate_foundation_plan(
-            session, settings, project.slug, premise, requested_by=requested_by,
+            session, settings, project.slug, premise, requested_by=requested_by, progress=progress,
         )
         await _checkpoint_commit(session)
         _emit_progress(progress, "foundation_planning_completed", {
@@ -6250,6 +6495,7 @@ async def run_progressive_autowrite_pipeline(
                         prior_feedback_summary=prior_feedback_summary,
                         prior_world_snapshot=prior_world_snapshot,
                         requested_by=requested_by,
+                        progress=progress,
                     )
                 except PlannerFallbackError as exc:
                     if not _is_volume_outline_auto_repairable(exc):
@@ -6282,6 +6528,7 @@ async def run_progressive_autowrite_pipeline(
                         prior_world_snapshot=prior_world_snapshot,
                         requested_by=requested_by,
                         extra_constraints=repair_constraints,
+                        progress=progress,
                     )
                     _emit_progress(progress, "volume_planning_auto_repair_completed", {
                         "project_slug": project.slug,

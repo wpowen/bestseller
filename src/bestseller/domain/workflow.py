@@ -117,6 +117,15 @@ class SceneOutlineInput(BaseModel):
     time_label: str | None = None
     participants: list[str] = Field(default_factory=list)
     purpose: dict[str, Any] = Field(default_factory=dict)
+    methodology_contract: dict[str, Any] = Field(
+        default_factory=dict,
+        validation_alias=AliasChoices(
+            "methodology_contract",
+            "methodology_overlay",
+            "execution_overlay",
+            "scene_methodology_contract",
+        ),
+    )
     entry_state: dict[str, Any] = Field(default_factory=dict)
     exit_state: dict[str, Any] = Field(default_factory=dict)
     target_word_count: int = Field(default=700, gt=0)
@@ -250,6 +259,41 @@ class ChapterOutlineInput(BaseModel):
             "chapter_causal_skeleton",
             "causal_skeleton",
             "reader_desire_chain",
+        ),
+    )
+    event_cycle_contract: dict[str, Any] = Field(
+        default_factory=dict,
+        validation_alias=AliasChoices(
+            "event_cycle_contract",
+            "event_unit_contract",
+            "chapter_event_contract",
+            "event_six_step",
+        ),
+    )
+    chapter_event_role: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "chapter_event_role",
+            "event_cycle_role",
+            "event_unit_role",
+            "event_role",
+        ),
+    )
+    information_gap_mode: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "information_gap_mode",
+            "info_gap_mode",
+            "reader_information_mode",
+        ),
+    )
+    methodology_contract: dict[str, Any] = Field(
+        default_factory=dict,
+        validation_alias=AliasChoices(
+            "methodology_contract",
+            "methodology_overlay",
+            "execution_overlay",
+            "chapter_methodology_contract",
         ),
     )
     world_rule_refs: list[str] = Field(default_factory=list)

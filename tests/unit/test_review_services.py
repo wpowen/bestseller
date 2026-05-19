@@ -124,6 +124,39 @@ async def _empty_async_tuple(*args: object, **kwargs: object) -> tuple:
     return ()
 
 
+def _micro_trim_fixture() -> str:
+    return (
+        "# 第1章 旧案\n\n"
+        "## 场景 1：雨夜旧账\n\n"
+        "林夜把铜钱压在账册边缘，线索和证据都不能在这里丢。\n\n"
+        "他只是站在灯下停了片刻，空气似乎又沉了下去。"
+        "窗纸上的影子慢慢晃着，风声像是从很远的地方绕回来。"
+        "他已经把同一句判断在心里转了三遍，却仍然没有立刻开口。\n\n"
+        "桌边的光线微微发暗，回声仿佛贴着地面爬过来。"
+        "他只是抬眼看了一下，又把指节压在桌沿。"
+        "那片刻的沉默让屋里显得更冷。\n\n"
+        "“这枚铜钱不能交出去。”林夜说。\n\n"
+        "门外脚步停住，真正的危险才刚刚贴近。"
+    )
+
+
+def test_micro_trim_overlength_chapter_text_removes_safe_filler_only() -> None:
+    content = _micro_trim_fixture()
+    before = review_services.count_words(content)
+    trimmed, metadata = review_services._micro_trim_overlength_chapter_text(
+        content,
+        max_words=before - 45,
+        safety_margin=20,
+    )
+
+    assert metadata["applied"] is True
+    assert review_services.count_words(trimmed) <= before - 45
+    assert "铜钱压在账册边缘" in trimmed
+    assert "“这枚铜钱不能交出去。”林夜说。" in trimmed
+    assert "门外脚步停住" in trimmed
+    assert metadata["removed_sentence_count"] >= 1
+
+
 def test_evaluate_scene_draft_marks_short_template_for_rewrite() -> None:
     scene = SimpleNamespace(
         target_word_count=1000,
@@ -197,6 +230,108 @@ def test_chapter_rewrite_prompt_includes_qimao_opening_contract() -> None:
     assert "【opening_quality_contract｜商业签约开篇合同】" in user_prompt
     assert "黄金三章任务" in user_prompt
     assert "先保住账本并确认谁在灭口" in user_prompt
+    assert "只输出一遍完整章节正文" in user_prompt
+
+
+def test_quality_retrofit_rewrite_uses_tighter_output_cap(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = load_settings(
+        env={
+            "BESTSELLER__LLM__WRITER__MODEL": "openai/gemini-2.5-flash",
+            "BESTSELLER__LLM__EDITOR__MODEL": "openai/gemini-2.5-flash",
+            "BESTSELLER__LLM__EDITOR__MAX_TOKENS": "8192",
+        }
+    )
+    monkeypatch.setattr(review_services, "get_settings", lambda: settings)
+    project = ProjectModel(
+        slug="my-story",
+        title="长夜巡航",
+        genre="science-fantasy",
+        target_word_count=80000,
+        target_chapters=12,
+        metadata_json={},
+    )
+    chapter = ChapterModel(
+        project_id=uuid4(),
+        chapter_number=8,
+        title="镜门",
+        target_word_count=2200,
+    )
+    task = RewriteTaskModel(
+        project_id=uuid4(),
+        trigger_type="autonomous_quality_retrofit",
+        trigger_source_id=uuid4(),
+        rewrite_strategy="quality_retrofit_chapter_rewrite",
+        instructions="提升吸引力并删除 AI 句式。",
+        metadata_json={"source": "quality_levers_retrofit_audit"},
+    )
+
+    base = review_services.prose_output_max_tokens_for_target(
+        chapter.target_word_count,
+        language=project.language,
+        settings=settings,
+        role="editor",
+    )
+    cap = review_services._rewrite_output_max_tokens_override(
+        chapter,
+        project,
+        task,
+    )
+
+    assert cap is not None
+    assert base is not None
+    assert cap < base
+    assert 4096 <= cap <= 5600
+
+
+def test_quality_retrofit_rewrite_reserves_minimax_reasoning_tokens(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = load_settings(
+        env={
+            "BESTSELLER__LLM__EDITOR__MODEL": "openai/MiniMax-M2.7-highspeed",
+            "BESTSELLER__LLM__EDITOR__MAX_TOKENS": "8192",
+        }
+    )
+    monkeypatch.setattr(review_services, "get_settings", lambda: settings)
+    project = ProjectModel(
+        slug="my-story",
+        title="长夜巡航",
+        genre="science-fantasy",
+        target_word_count=80000,
+        target_chapters=12,
+        metadata_json={},
+    )
+    chapter = ChapterModel(
+        project_id=uuid4(),
+        chapter_number=8,
+        title="镜门",
+        target_word_count=2200,
+    )
+    task = RewriteTaskModel(
+        project_id=uuid4(),
+        trigger_type="autonomous_quality_retrofit",
+        trigger_source_id=uuid4(),
+        rewrite_strategy="quality_retrofit_chapter_rewrite",
+        instructions="提升吸引力并删除 AI 句式。",
+        metadata_json={"source": "quality_levers_retrofit_audit"},
+    )
+
+    base = review_services.prose_output_max_tokens_for_target(
+        chapter.target_word_count,
+        language=project.language,
+        settings=settings,
+        role="editor",
+    )
+    cap = review_services._rewrite_output_max_tokens_override(
+        chapter,
+        project,
+        task,
+    )
+
+    assert base == 13552
+    assert cap == 18896
 
 
 def test_build_qimao_opening_rewrite_instructions_maps_findings() -> None:
@@ -271,6 +406,54 @@ def test_evaluate_scene_draft_flags_contract_deviation() -> None:
     assert result.scores.payoff_density < 0.8
     assert any(finding.category == "contract_alignment" for finding in result.findings)
     assert "contract_missing_labels" in result.evidence_summary
+
+
+def test_evaluate_scene_draft_flags_unfulfilled_methodology_contract_fields() -> None:
+    scene = SimpleNamespace(
+        target_word_count=500,
+        scene_type="confrontation",
+        participants=["沈砚", "顾临"],
+        purpose={"story": "沈砚逼问黑匣子缺页。", "emotion": "警觉转冷怒"},
+        scene_number=3,
+    )
+    chapter = SimpleNamespace(chapter_number=1, chapter_goal="逼近黑匣子真相")
+    draft = SimpleNamespace(
+        content_md=(
+            "沈砚和顾临在舱室里对峙。顾临承认黑匣子少了几页，"
+            "但两人只围绕谁先泄密争执，最后以沉默收场。"
+        ),
+        word_count=520,
+    )
+    scene_contract = SimpleNamespace(
+        contract_summary="本场逼出黑匣子缺页真相。",
+        core_conflict="沈砚要求顾临交出缺失页，顾临坚持先确认谁在泄密。",
+        emotional_shift="从试探配合转向冷硬对峙。",
+        information_release="黑匣子被人为拆走了记录禁航航线的几页。",
+        tail_hook="门外突然传来第三个人的脚步声。",
+        conflict_stakes="沈砚若逼问失败，会失去追查内鬼的唯一入口。",
+        conflict_buffs=["时限: 封港前只剩一刻钟"],
+        hook_type="third-party-arrival",
+        spotlight_character="沈砚",
+        information_control_mode="读者与角色同步发现",
+        camera_distance="从中景压到手部特写",
+        reveal_mode="同步发现",
+        signature_image="铜镜裂纹映出第二张脸。",
+        cut_point="第三个人的脚步停在门外。",
+        action_sequence=["沈砚锁门", "顾临推开黑匣子", "门外脚步逼近"],
+        relationship_debts=["顾临欠沈砚一次救命真相。"],
+    )
+
+    result = evaluate_scene_draft(
+        scene=scene,
+        chapter=chapter,
+        draft=draft,
+        settings=build_settings(),
+        scene_contract=scene_contract,
+    )
+    missing = set(result.evidence_summary["contract_missing_labels"])
+
+    assert result.verdict == "rewrite"
+    assert {"signature_image", "cut_point", "action_sequence", "relationship_debts"} & missing
 
 
 def test_evaluate_scene_draft_recognizes_narrative_contract_delivery() -> None:
@@ -1391,7 +1574,7 @@ async def test_rewrite_chapter_from_task_creates_new_version(
     monkeypatch.setattr(review_services, "complete_text", fake_complete_text)
 
     session = FakeSession(
-        scalar_results=[chapter, current_draft, rewrite_task, 1],
+        scalar_results=[chapter, current_draft, rewrite_task, None, 1],
         scalars_results=[scenes],
     )
 
@@ -1494,8 +1677,12 @@ async def test_rewrite_chapter_from_task_preserves_current_when_gate_blocks(
             provider="mock",
         )
 
+    quality_gate_calls = 0
+
     async def fake_quality_gate(**kwargs):
-        return "blocked"
+        nonlocal quality_gate_calls
+        quality_gate_calls += 1
+        return "ok" if quality_gate_calls >= 3 else "blocked"
 
     monkeypatch.setattr(review_services, "get_project_by_slug", fake_get_project_by_slug)
     monkeypatch.setattr(
@@ -1512,7 +1699,7 @@ async def test_rewrite_chapter_from_task_preserves_current_when_gate_blocks(
     )
 
     session = FakeSession(
-        scalar_results=[chapter, current_draft, rewrite_task, 1],
+        scalar_results=[chapter, current_draft, rewrite_task, None, 1],
         scalars_results=[scenes],
     )
 
@@ -1535,8 +1722,280 @@ async def test_rewrite_chapter_from_task_preserves_current_when_gate_blocks(
     assert completed_task.status == "failed"
     assert completed_task.metadata_json["quality_gate_rejected_current_promotion"] is True
     assert completed_task.metadata_json["preserved_current_chapter_draft_id"] == str(current_draft.id)
-    assert chapter.current_word_count is None
+    assert completed_task.metadata_json["preserved_current_quality_gate_outcome"] == "ok"
+    assert chapter.current_word_count == review_services.count_words(current_draft.content_md)
     assert chapter.production_state == "ok"
+
+
+@pytest.mark.asyncio
+async def test_rewrite_chapter_from_task_micro_trims_minor_current_overflow(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = ProjectModel(
+        slug="my-story",
+        title="长夜巡航",
+        genre="science-fantasy",
+        target_word_count=80000,
+        target_chapters=12,
+        metadata_json={},
+    )
+    project.id = uuid4()
+    chapter = ChapterModel(
+        project_id=project.id,
+        chapter_number=1,
+        title="旧案",
+        chapter_goal="推进调查",
+        information_revealed=[],
+        information_withheld=[],
+        foreshadowing_actions={},
+        metadata_json={},
+        target_word_count=2400,
+        production_state="blocked",
+    )
+    chapter.id = uuid4()
+    scene = SceneCardModel(
+        project_id=project.id,
+        chapter_id=chapter.id,
+        scene_number=1,
+        scene_type="setup",
+        title="雨夜旧账",
+        participants=["林夜"],
+        purpose={"story": "推进调查", "emotion": "警觉"},
+        entry_state={},
+        exit_state={},
+        metadata_json={},
+        target_word_count=1000,
+    )
+    scene.id = uuid4()
+    current_content = _micro_trim_fixture()
+    current_word_count = review_services.count_words(current_content)
+    max_words = current_word_count - 45
+    current_draft = ChapterDraftVersionModel(
+        project_id=project.id,
+        chapter_id=chapter.id,
+        version_no=1,
+        content_md=current_content,
+        word_count=current_word_count,
+        assembled_from_scene_draft_ids=[],
+        is_current=True,
+    )
+    current_draft.id = uuid4()
+    rewrite_task = RewriteTaskModel(
+        project_id=project.id,
+        trigger_type="chapter_review",
+        trigger_source_id=chapter.id,
+        rewrite_strategy="chapter_length_compression",
+        priority=1,
+        status="pending",
+        instructions="当前章节偏长，压缩型修复。",
+        context_required=[],
+        metadata_json={},
+    )
+    rewrite_task.id = uuid4()
+    rewrite_task.attempts = 0
+
+    async def fake_get_project_by_slug(session, slug: str):
+        return project
+
+    async def fake_build_chapter_writer_context(session, settings, project_slug, chapter_number):
+        return SimpleNamespace(
+            previous_scene_summaries=[],
+            recent_timeline_events=[],
+            chapter_scenes=[],
+            retrieval_chunks=[],
+        )
+
+    async def fake_complete_text(session, settings, request):
+        return SimpleNamespace(
+            content="# 第1章 旧案\n\n" + ("过长候选稿。" * 500),
+            model_name="deepseek-chat",
+            llm_run_id=uuid4(),
+            provider="deepseek",
+        )
+
+    quality_gate_calls = 0
+
+    async def fake_quality_gate(**kwargs):
+        nonlocal quality_gate_calls
+        quality_gate_calls += 1
+        if quality_gate_calls <= 3:
+            return "blocked"
+        return "ok" if review_services.count_words(kwargs["content"]) <= max_words else "blocked"
+
+    report = SimpleNamespace(
+        report_json={
+            "violations": [
+                {"code": "LENGTH_OVER", "detail": f"{current_word_count} chars > max {max_words}"}
+            ]
+        }
+    )
+
+    monkeypatch.setattr(review_services, "get_project_by_slug", fake_get_project_by_slug)
+    monkeypatch.setattr(
+        review_services,
+        "build_chapter_writer_context",
+        fake_build_chapter_writer_context,
+    )
+    monkeypatch.setattr(review_services, "complete_text", fake_complete_text)
+    monkeypatch.setattr(review_services, "_evaluate_chapter_quality_gate", fake_quality_gate)
+    monkeypatch.setattr(
+        review_services,
+        "_collect_post_assembly_duplicate_findings",
+        lambda *args, **kwargs: _empty_async_tuple(),
+    )
+
+    session = FakeSession(
+        scalar_results=[chapter, current_draft, rewrite_task, report, report, report, 1],
+        scalars_results=[[scene]],
+    )
+
+    new_draft, completed_task = await review_services.rewrite_chapter_from_task(
+        session,
+        "my-story",
+        1,
+        settings=build_settings(),
+    )
+
+    assert new_draft is not current_draft
+    assert new_draft.is_current is True
+    assert review_services.count_words(new_draft.content_md) <= max_words
+    assert completed_task.status == "completed"
+    assert completed_task.metadata_json["generation_mode"] == "deepseek"
+    assert completed_task.metadata_json["llm_candidate_quality_gate_outcome"] == "blocked"
+    assert completed_task.metadata_json["micro_length_trim"]["applied"] is True
+    assert completed_task.metadata_json["micro_length_trim"]["source_chapter_draft_id"] == str(current_draft.id)
+    assert session.executed
+
+
+@pytest.mark.asyncio
+async def test_rewrite_chapter_from_task_rejects_unfixed_quality_retrofit_candidate(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = ProjectModel(
+        slug="my-story",
+        title="长夜巡航",
+        genre="science-fantasy",
+        target_word_count=80000,
+        target_chapters=12,
+        metadata_json={},
+    )
+    project.id = uuid4()
+    chapter = ChapterModel(
+        project_id=project.id,
+        chapter_number=5,
+        title="镜门",
+        chapter_goal="推进调查",
+        information_revealed=[],
+        information_withheld=[],
+        foreshadowing_actions={},
+        metadata_json={},
+        target_word_count=2400,
+        production_state="ok",
+    )
+    chapter.id = uuid4()
+    scene = SceneCardModel(
+        project_id=project.id,
+        chapter_id=chapter.id,
+        scene_number=1,
+        scene_type="setup",
+        title="镜门",
+        participants=["林夜"],
+        purpose={"story": "推进调查", "emotion": "警觉"},
+        entry_state={},
+        exit_state={},
+        metadata_json={},
+        target_word_count=1000,
+    )
+    scene.id = uuid4()
+    current_draft = ChapterDraftVersionModel(
+        project_id=project.id,
+        chapter_id=chapter.id,
+        version_no=1,
+        content_md="# 第5章 镜门\n\n林夜立刻停住，铜钱压住纸角。",
+        word_count=28,
+        assembled_from_scene_draft_ids=[],
+        is_current=True,
+    )
+    current_draft.id = uuid4()
+    rewrite_task = RewriteTaskModel(
+        project_id=project.id,
+        trigger_type="autonomous_quality_retrofit",
+        trigger_source_id=chapter.id,
+        rewrite_strategy="quality_retrofit_chapter_rewrite",
+        priority=2,
+        status="pending",
+        instructions="删除 AI 句式。",
+        context_required=[],
+        metadata_json={
+            "source": "quality_levers_retrofit_audit",
+            "cause_ids": ["ai_voice"],
+        },
+    )
+    rewrite_task.id = uuid4()
+    rewrite_task.attempts = 0
+
+    async def fake_get_project_by_slug(session, slug: str):
+        return project
+
+    async def fake_build_chapter_writer_context(session, settings, project_slug, chapter_number):
+        return SimpleNamespace(
+            previous_scene_summaries=[],
+            recent_timeline_events=[],
+            chapter_scenes=[],
+            retrieval_chunks=[],
+        )
+
+    async def fake_complete_text(session, settings, request):
+        bad_body = "林夜像铁一样冷地站着，像冰一样沉默。" * 90
+        return SimpleNamespace(
+            content="# 第5章 镜门\n\n" + bad_body,
+            model_name="deepseek-chat",
+            llm_run_id=uuid4(),
+            provider="deepseek",
+        )
+
+    async def fake_quality_gate(**kwargs):
+        return "ok"
+
+    monkeypatch.setattr(review_services, "get_project_by_slug", fake_get_project_by_slug)
+    monkeypatch.setattr(
+        review_services,
+        "build_chapter_writer_context",
+        fake_build_chapter_writer_context,
+    )
+    monkeypatch.setattr(review_services, "complete_text", fake_complete_text)
+    monkeypatch.setattr(review_services, "_evaluate_chapter_quality_gate", fake_quality_gate)
+    monkeypatch.setattr(
+        review_services,
+        "_collect_post_assembly_duplicate_findings",
+        lambda *args, **kwargs: _empty_async_tuple(),
+    )
+
+    session = FakeSession(
+        scalar_results=[chapter, current_draft, rewrite_task, 1],
+        scalars_results=[[scene]],
+    )
+
+    returned_draft, completed_task = await review_services.rewrite_chapter_from_task(
+        session,
+        "my-story",
+        5,
+        settings=build_settings(),
+    )
+
+    rejected = [
+        obj for obj in session.added
+        if isinstance(obj, ChapterDraftVersionModel) and obj is not current_draft
+    ]
+    assert returned_draft is current_draft
+    assert len(rejected) == 1
+    assert rejected[0].is_current is False
+    assert completed_task.status == "failed"
+    assert completed_task.metadata_json["candidate_generation_mode"] == "deepseek"
+    assert completed_task.metadata_json["candidate_model_name"] == "deepseek-chat"
+    assert completed_task.metadata_json["quality_retrofit_rejected_current_promotion"] is True
+    assert completed_task.metadata_json["candidate_quality_retrofit_findings"][0]["cause_id"] == "ai_voice"
+    assert session.executed == []
 
 
 @pytest.mark.asyncio

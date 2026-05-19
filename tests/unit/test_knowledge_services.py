@@ -23,11 +23,13 @@ class FakeSession:
         self.get_map = dict(get_map or {})
         self.added: list[object] = []
         self.executed: list[object] = []
+        self.flush_count = 0
 
     def add(self, obj: object) -> None:
         self.added.append(obj)
 
     async def flush(self) -> None:
+        self.flush_count += 1
         for obj in self.added:
             table = getattr(obj, "__table__", None)
             if table is None or "id" not in table.c:
@@ -228,6 +230,49 @@ async def test_refresh_scene_knowledge_creates_canon_and_timeline(
     assert result.summary_text
     assert len(canon_facts) == 6
     assert len(timeline_events) == 1
+
+
+@pytest.mark.asyncio
+async def test_upsert_canon_fact_flushes_superseded_current_fact_before_insert() -> None:
+    project_id = uuid4()
+    subject_id = uuid4()
+    existing = CanonFactModel(
+        project_id=project_id,
+        subject_type="project",
+        subject_id=subject_id,
+        subject_label="Story",
+        predicate="latest_story_turn",
+        fact_type="plot_progression",
+        value_json={"summary": "old"},
+        source_scene_id=uuid4(),
+        source_chapter_id=uuid4(),
+        valid_from_chapter_no=1,
+        is_current=True,
+        tags=["chapter:1"],
+    )
+    existing.id = uuid4()
+    session = FakeSession(scalar_results=[existing])
+
+    fact, reused = await knowledge_services._upsert_canon_fact(
+        session,
+        project_id=project_id,
+        subject_type="project",
+        subject_id=subject_id,
+        subject_label="Story",
+        predicate="latest_story_turn",
+        fact_type="plot_progression",
+        value_json={"summary": "new"},
+        source_scene_id=uuid4(),
+        source_chapter_id=uuid4(),
+        valid_from_chapter_no=2,
+        tags=["chapter:2"],
+    )
+
+    assert reused is False
+    assert existing.is_current is False
+    assert existing.valid_to_chapter_no == 2
+    assert fact.is_current is True
+    assert session.flush_count == 2
 
 
 @pytest.mark.asyncio

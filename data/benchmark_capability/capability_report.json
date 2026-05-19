@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "generated_at": "2026-05-16T16:23:44+00:00",
+  "generated_at": "2026-05-17T02:33:58+00:00",
   "team": [
     {
       "role": "CEO / 决策负责人",
@@ -457,6 +457,43 @@
       ]
     },
     {
+      "category_key": "science-fiction-progression",
+      "display_name": "科幻机甲进阶 / Science Fiction Progression",
+      "state_ledger_keys": [
+        "tech_constraint_ledger",
+        "energy_logistics_state",
+        "research_validation_chain",
+        "fleet_or_mecha_state",
+        "strategic_theater_map"
+      ],
+      "hard_gate_keys": [
+        "science_constraint_gate",
+        "energy_logistics_gate",
+        "tactical_continuity_gate"
+      ],
+      "chapter_update_keys": [
+        "tech_capability_delta",
+        "energy_cost_delta",
+        "research_validation_delta",
+        "battlefield_state_delta"
+      ],
+      "benchmark_focus": [
+        "科技突破有约束",
+        "能源/后勤不凭空",
+        "战术状态连续可复盘"
+      ],
+      "keyword_signals": [
+        "科幻",
+        "机甲",
+        "星际",
+        "舰队",
+        "银河",
+        "黑科技",
+        "scifi",
+        "mecha"
+      ]
+    },
+    {
       "category_key": "strategy-worldbuilding",
       "display_name": "权谋历史与世界构建 / Strategy Worldbuilding",
       "state_ledger_keys": [
@@ -519,8 +556,86 @@
         "悬疑",
         "推理",
         "怪谈",
+        "灵异",
+        "驱魔",
+        "探案",
+        "民俗",
+        "阴阳",
         "mystery",
         "thriller"
+      ]
+    },
+    {
+      "category_key": "urban-contemporary",
+      "display_name": "都市职业现实 / Urban Contemporary",
+      "state_ledger_keys": [
+        "career_ladder_state",
+        "organization_politics_map",
+        "reputation_public_opinion",
+        "money_contract_ledger",
+        "social_network_pressure"
+      ],
+      "hard_gate_keys": [
+        "career_progress_gate",
+        "workplace_plausibility_gate",
+        "reputation_consequence_gate"
+      ],
+      "chapter_update_keys": [
+        "career_position_delta",
+        "organization_relation_delta",
+        "reputation_delta",
+        "money_contract_delta"
+      ],
+      "benchmark_focus": [
+        "职业台阶真实变化",
+        "组织利益有反应",
+        "口碑/舆论/金钱后果可追踪"
+      ],
+      "keyword_signals": [
+        "都市",
+        "职场",
+        "娱乐圈",
+        "公司",
+        "医院",
+        "现实",
+        "urban",
+        "workplace"
+      ]
+    },
+    {
+      "category_key": "wuxia-jianghu",
+      "display_name": "武侠江湖 / Wuxia Jianghu",
+      "state_ledger_keys": [
+        "sect_reputation_state",
+        "jianghu_rule_ledger",
+        "martial_arts_cost_ledger",
+        "chivalry_debt_ledger",
+        "rival_school_pressure"
+      ],
+      "hard_gate_keys": [
+        "jianghu_rule_consequence_gate",
+        "martial_cost_gate",
+        "reputation_payoff_gate"
+      ],
+      "chapter_update_keys": [
+        "sect_reputation_delta",
+        "martial_cost_delta",
+        "chivalry_debt_delta",
+        "rival_school_delta"
+      ],
+      "benchmark_focus": [
+        "江湖规矩会反噬",
+        "武学提升有代价",
+        "侠义债与门派声望持续变化"
+      ],
+      "keyword_signals": [
+        "武侠",
+        "江湖",
+        "门派",
+        "侠义",
+        "剑客",
+        "wuxia",
+        "jianghu"
       ]
     }
   ],
@@ -596,6 +711,16 @@
       ]
     },
     {
+      "category_key": "science-fiction-progression",
+      "good_fixture_passed": true,
+      "bad_fixture_blocked": true,
+      "bad_fixture_codes": [
+        "category_state_ledger_missing",
+        "category_hard_gate_missing",
+        "category_chapter_update_missing"
+      ]
+    },
+    {
       "category_key": "strategy-worldbuilding",
       "good_fixture_passed": true,
       "bad_fixture_blocked": true,
@@ -607,6 +732,26 @@
     },
     {
       "category_key": "suspense-mystery",
+      "good_fixture_passed": true,
+      "bad_fixture_blocked": true,
+      "bad_fixture_codes": [
+        "category_state_ledger_missing",
+        "category_hard_gate_missing",
+        "category_chapter_update_missing"
+      ]
+    },
+    {
+      "category_key": "urban-contemporary",
+      "good_fixture_passed": true,
+      "bad_fixture_blocked": true,
+      "bad_fixture_codes": [
+        "category_state_ledger_missing",
+        "category_hard_gate_missing",
+        "category_chapter_update_missing"
+      ]
+    },
+    {
+      "category_key": "wuxia-jianghu",
       "good_fixture_passed": true,
       "bad_fixture_blocked": true,
       "bad_fixture_codes": [
@@ -768,9 +913,9 @@
     {
       "canonical_category": "science-fiction-progression",
       "display_name": "科幻机甲进阶 / Science Fiction Progression",
-      "novel_category_key": null,
-      "review_profile_key": null,
-      "story_design_grammar_key": null,
+      "novel_category_key": "science-fiction-progression",
+      "review_profile_key": "science-fiction-progression",
+      "story_design_grammar_key": "science-fiction-progression",
       "distillation_buckets": [
         "science-fiction-progression"
       ],
@@ -778,12 +923,8 @@
         "scifi-starwar",
         "space-opera"
       ],
-      "bridge_status": "fragmented",
-      "gaps": [
-        "science-fiction-progression 缺少一等 novel category YAML",
-        "science-fiction-progression 缺少 genre review profile",
-        "science-fiction-progression 缺少 story design grammar"
-      ]
+      "bridge_status": "aligned",
+      "gaps": []
     },
     {
       "canonical_category": "strategy-worldbuilding",
@@ -823,9 +964,9 @@
     {
       "canonical_category": "urban-contemporary",
       "display_name": "都市职业现实 / Urban Contemporary",
-      "novel_category_key": null,
-      "review_profile_key": null,
-      "story_design_grammar_key": null,
+      "novel_category_key": "urban-contemporary",
+      "review_profile_key": "urban-contemporary",
+      "story_design_grammar_key": "urban-contemporary",
       "distillation_buckets": [
         "urban-contemporary"
       ],
@@ -834,31 +975,24 @@
         "shezhu-bailan-comedy",
         "urban-power-reversal"
       ],
-      "bridge_status": "fragmented",
-      "gaps": [
-        "urban-contemporary 缺少一等 novel category YAML",
-        "urban-contemporary 缺少 genre review profile",
-        "urban-contemporary 缺少 story design grammar"
-      ]
+      "bridge_status": "aligned",
+      "gaps": []
     },
     {
       "canonical_category": "wuxia-jianghu",
       "display_name": "武侠江湖 / Wuxia Jianghu",
-      "novel_category_key": null,
-      "review_profile_key": null,
-      "story_design_grammar_key": null,
-      "distillation_buckets": [],
+      "novel_category_key": "wuxia-jianghu",
+      "review_profile_key": "wuxia-jianghu",
+      "story_design_grammar_key": "wuxia-jianghu",
+      "distillation_buckets": [
+        "wuxia-jianghu"
+      ],
       "prompt_pack_keys": [
         "history-strategy",
         "eastern-aesthetic"
       ],
-      "bridge_status": "fragmented",
-      "gaps": [
-        "wuxia-jianghu 缺少一等 novel category YAML",
-        "wuxia-jianghu 缺少 genre review profile",
-        "wuxia-jianghu 缺少 story design grammar",
-        "wuxia-jianghu 缺少对齐的 distillation bucket"
-      ]
+      "bridge_status": "aligned",
+      "gaps": []
     }
   ],
   "capability_matrix": [
@@ -1054,26 +1188,27 @@
     {
       "canonical_category": "science-fiction-progression",
       "sample_count": 0,
-      "overall_support": "unsupported",
+      "overall_support": "partial",
       "dimension_support": {
-        "category_coverage": "prompt-only",
-        "planning_capability": "prompt-only",
-        "state_engine": "unsupported",
-        "chapter_execution": "unsupported",
-        "whole_book_continuity": "unsupported",
-        "quality_gates": "unsupported",
-        "repair_loop": "unsupported",
-        "anti_copy_safety": "unsupported"
+        "category_coverage": "ready",
+        "planning_capability": "partial",
+        "state_engine": "partial",
+        "chapter_execution": "partial",
+        "whole_book_continuity": "partial",
+        "quality_gates": "partial",
+        "repair_loop": "partial",
+        "anti_copy_safety": "partial"
       },
       "evidence": [
+        "novel category: science-fiction-progression",
+        "review profile: science-fiction-progression",
+        "story grammar: science-fiction-progression",
         "distillation buckets: science-fiction-progression",
         "prompt packs: scifi-starwar, space-opera",
+        "category hard engine contract: science-fiction-progression",
         "global gates: premium_book_gate, whole_book_quality_gate, scorecard"
       ],
       "gaps": [
-        "science-fiction-progression 缺少一等 novel category YAML",
-        "science-fiction-progression 缺少 genre review profile",
-        "science-fiction-progression 缺少 story design grammar",
         "科幻机甲缺少技术约束、能源物流、舰队/战术状态和科研合法性验证。"
       ]
     },
@@ -1134,52 +1269,54 @@
     {
       "canonical_category": "urban-contemporary",
       "sample_count": 0,
-      "overall_support": "unsupported",
+      "overall_support": "partial",
       "dimension_support": {
-        "category_coverage": "prompt-only",
-        "planning_capability": "prompt-only",
-        "state_engine": "unsupported",
-        "chapter_execution": "unsupported",
-        "whole_book_continuity": "unsupported",
-        "quality_gates": "unsupported",
-        "repair_loop": "unsupported",
-        "anti_copy_safety": "unsupported"
+        "category_coverage": "ready",
+        "planning_capability": "partial",
+        "state_engine": "partial",
+        "chapter_execution": "partial",
+        "whole_book_continuity": "partial",
+        "quality_gates": "partial",
+        "repair_loop": "partial",
+        "anti_copy_safety": "partial"
       },
       "evidence": [
+        "novel category: urban-contemporary",
+        "review profile: urban-contemporary",
+        "story grammar: urban-contemporary",
         "distillation buckets: urban-contemporary",
         "prompt packs: entertainment-sweet, shezhu-bailan-comedy, urban-power-reversal",
+        "category hard engine contract: urban-contemporary",
         "global gates: premium_book_gate, whole_book_quality_gate, scorecard"
       ],
       "gaps": [
-        "urban-contemporary 缺少一等 novel category YAML",
-        "urban-contemporary 缺少 genre review profile",
-        "urban-contemporary 缺少 story design grammar",
         "都市职业/现实题材缺少职业台阶、组织政治、口碑/资本/舆论状态模型。"
       ]
     },
     {
       "canonical_category": "wuxia-jianghu",
       "sample_count": 0,
-      "overall_support": "unsupported",
+      "overall_support": "partial",
       "dimension_support": {
-        "category_coverage": "prompt-only",
-        "planning_capability": "prompt-only",
-        "state_engine": "unsupported",
-        "chapter_execution": "unsupported",
-        "whole_book_continuity": "unsupported",
-        "quality_gates": "unsupported",
-        "repair_loop": "unsupported",
-        "anti_copy_safety": "unsupported"
+        "category_coverage": "ready",
+        "planning_capability": "partial",
+        "state_engine": "partial",
+        "chapter_execution": "partial",
+        "whole_book_continuity": "partial",
+        "quality_gates": "partial",
+        "repair_loop": "partial",
+        "anti_copy_safety": "partial"
       },
       "evidence": [
+        "novel category: wuxia-jianghu",
+        "review profile: wuxia-jianghu",
+        "story grammar: wuxia-jianghu",
+        "distillation buckets: wuxia-jianghu",
         "prompt packs: history-strategy, eastern-aesthetic",
+        "category hard engine contract: wuxia-jianghu",
         "global gates: premium_book_gate, whole_book_quality_gate, scorecard"
       ],
       "gaps": [
-        "wuxia-jianghu 缺少一等 novel category YAML",
-        "wuxia-jianghu 缺少 genre review profile",
-        "wuxia-jianghu 缺少 story design grammar",
-        "wuxia-jianghu 缺少对齐的 distillation bucket",
         "武侠江湖缺少门派声望、江湖规矩、侠义债务、武学代价的一等类别引擎。"
       ]
     }
@@ -1250,33 +1387,15 @@
     },
     {
       "gap_id": "GAP-008",
-      "priority": "P2",
-      "owner_role": "类型体系负责人",
+      "priority": "P1",
+      "owner_role": "框架架构负责人",
       "canonical_category": "science-fiction-progression",
-      "impact": "框架无法可靠承接该样本类别，只能作为后续研发方向。",
-      "recommended_action": "science-fiction-progression 缺少一等 novel category YAML",
-      "acceptance_criteria": "`config/novel_categories/science-fiction-progression.yaml` 存在，并被 resolver / tests 覆盖。"
+      "impact": "已有基础能力，但与精品样本的机制稳定度仍有差距。",
+      "recommended_action": "科幻机甲缺少技术约束、能源物流、舰队/战术状态和科研合法性验证。",
+      "acceptance_criteria": "新增对应结构化模型、写前 gate、章节后状态更新、好/坏 fixture 测试。"
     },
     {
       "gap_id": "GAP-009",
-      "priority": "P2",
-      "owner_role": "类型体系负责人",
-      "canonical_category": "science-fiction-progression",
-      "impact": "框架无法可靠承接该样本类别，只能作为后续研发方向。",
-      "recommended_action": "science-fiction-progression 缺少 genre review profile",
-      "acceptance_criteria": "`resolve_genre_review_profile` 能解析到 `science-fiction-progression`，并有类别权重与失败信息测试。"
-    },
-    {
-      "gap_id": "GAP-010",
-      "priority": "P2",
-      "owner_role": "类型体系负责人",
-      "canonical_category": "science-fiction-progression",
-      "impact": "框架无法可靠承接该样本类别，只能作为后续研发方向。",
-      "recommended_action": "science-fiction-progression 缺少 story design grammar",
-      "acceptance_criteria": "`resolve_story_design_grammar(category_key='science-fiction-progression')` 返回专用 grammar。"
-    },
-    {
-      "gap_id": "GAP-011",
       "priority": "P1",
       "owner_role": "评测与质量负责人",
       "canonical_category": "strategy-worldbuilding",
@@ -1285,7 +1404,7 @@
       "acceptance_criteria": "新增对应结构化模型、写前 gate、章节后状态更新、好/坏 fixture 测试。"
     },
     {
-      "gap_id": "GAP-012",
+      "gap_id": "GAP-010",
       "priority": "P1",
       "owner_role": "评测与质量负责人",
       "canonical_category": "suspense-mystery",
@@ -1294,58 +1413,22 @@
       "acceptance_criteria": "新增对应结构化模型、写前 gate、章节后状态更新、好/坏 fixture 测试。"
     },
     {
-      "gap_id": "GAP-013",
-      "priority": "P2",
-      "owner_role": "类型体系负责人",
+      "gap_id": "GAP-011",
+      "priority": "P1",
+      "owner_role": "框架架构负责人",
       "canonical_category": "urban-contemporary",
-      "impact": "框架无法可靠承接该样本类别，只能作为后续研发方向。",
-      "recommended_action": "urban-contemporary 缺少一等 novel category YAML",
-      "acceptance_criteria": "`config/novel_categories/urban-contemporary.yaml` 存在，并被 resolver / tests 覆盖。"
+      "impact": "已有基础能力，但与精品样本的机制稳定度仍有差距。",
+      "recommended_action": "都市职业/现实题材缺少职业台阶、组织政治、口碑/资本/舆论状态模型。",
+      "acceptance_criteria": "新增对应结构化模型、写前 gate、章节后状态更新、好/坏 fixture 测试。"
     },
     {
-      "gap_id": "GAP-014",
-      "priority": "P2",
-      "owner_role": "类型体系负责人",
-      "canonical_category": "urban-contemporary",
-      "impact": "框架无法可靠承接该样本类别，只能作为后续研发方向。",
-      "recommended_action": "urban-contemporary 缺少 genre review profile",
-      "acceptance_criteria": "`resolve_genre_review_profile` 能解析到 `urban-contemporary`，并有类别权重与失败信息测试。"
-    },
-    {
-      "gap_id": "GAP-015",
-      "priority": "P2",
-      "owner_role": "类型体系负责人",
-      "canonical_category": "urban-contemporary",
-      "impact": "框架无法可靠承接该样本类别，只能作为后续研发方向。",
-      "recommended_action": "urban-contemporary 缺少 story design grammar",
-      "acceptance_criteria": "`resolve_story_design_grammar(category_key='urban-contemporary')` 返回专用 grammar。"
-    },
-    {
-      "gap_id": "GAP-016",
-      "priority": "P2",
-      "owner_role": "类型体系负责人",
+      "gap_id": "GAP-012",
+      "priority": "P1",
+      "owner_role": "评测与质量负责人",
       "canonical_category": "wuxia-jianghu",
-      "impact": "框架无法可靠承接该样本类别，只能作为后续研发方向。",
-      "recommended_action": "wuxia-jianghu 缺少一等 novel category YAML",
-      "acceptance_criteria": "`config/novel_categories/wuxia-jianghu.yaml` 存在，并被 resolver / tests 覆盖。"
-    },
-    {
-      "gap_id": "GAP-017",
-      "priority": "P2",
-      "owner_role": "类型体系负责人",
-      "canonical_category": "wuxia-jianghu",
-      "impact": "框架无法可靠承接该样本类别，只能作为后续研发方向。",
-      "recommended_action": "wuxia-jianghu 缺少 genre review profile",
-      "acceptance_criteria": "`resolve_genre_review_profile` 能解析到 `wuxia-jianghu`，并有类别权重与失败信息测试。"
-    },
-    {
-      "gap_id": "GAP-018",
-      "priority": "P2",
-      "owner_role": "类型体系负责人",
-      "canonical_category": "wuxia-jianghu",
-      "impact": "框架无法可靠承接该样本类别，只能作为后续研发方向。",
-      "recommended_action": "wuxia-jianghu 缺少 story design grammar",
-      "acceptance_criteria": "`resolve_story_design_grammar(category_key='wuxia-jianghu')` 返回专用 grammar。"
+      "impact": "已有基础能力，但与精品样本的机制稳定度仍有差距。",
+      "recommended_action": "武侠江湖缺少门派声望、江湖规矩、侠义债务、武学代价的一等类别引擎。",
+      "acceptance_criteria": "新增对应结构化模型、写前 gate、章节后状态更新、好/坏 fixture 测试。"
     }
   ],
   "optimization_roadmap": [
@@ -1367,11 +1450,7 @@
         "为规则悬疑、异界系统、基建经营、电竞、都市职业、武侠江湖补状态模型和 gates。",
         "把精品样本蒸馏结果转为好/坏 fixture benchmark。"
       ],
-      "categories": [
-        "science-fiction-progression",
-        "urban-contemporary",
-        "wuxia-jianghu"
-      ],
+      "categories": [],
       "acceptance": "每个 P1 类别至少有一个 good fixture、一个 bad fixture、一个硬门禁测试。"
     },
     {
@@ -1391,7 +1470,7 @@
         "female-growth-ncp",
         "otherworld-cross-system",
         "relationship-driven",
-        "strategy-worldbuilding"
+        "science-fiction-progression"
       ],
       "acceptance": "每个重点类别都有 30 章 pilot 报告、sample-quality parity passed、repairable findings 和无隐私泄漏证明。"
     }

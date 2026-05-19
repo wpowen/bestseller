@@ -8,7 +8,6 @@ from functools import lru_cache
 
 from bestseller.services.quality_levers._loader import (
     as_dict,
-    as_int,
     as_str,
     as_str_tuple,
     load_yaml,
@@ -67,13 +66,13 @@ def load_rhythm_engineering() -> RhythmEngineeringConfig:
             continue
         anchors[canonical] = _parse_anchor(canonical, anchor_raw)
 
-    minimum = as_dict(raw.get("per_chapter_minimum"))
-    # Extract the integer thresholds embedded in the rule string.
-    rule_text = as_str(minimum.get("rule"))
-    nums = [int(n) for n in re.findall(r"\d+", rule_text)]
-    # rule reads: "每 1500 字至少包含 4 种锚点中的 3 种"
-    per_count = nums[1] if len(nums) > 1 else 4
-    per_types = nums[2] if len(nums) > 2 else 3
+    critic_checks = as_dict(raw.get("critic_checks"))
+    rhythm_check = as_dict(critic_checks.get("rhythm_anchor_count"))
+    rule_text = as_str(rhythm_check.get("rule"))
+    count_match = re.search(r"每\s*1500\s*字\s*[≥>=]+\s*(\d+)", rule_text)
+    types_match = re.search(r"覆盖\s*[≥>=]+\s*(\d+)", rule_text)
+    per_count = int(count_match.group(1)) if count_match else 4
+    per_types = int(types_match.group(1)) if types_match else 3
 
     return RhythmEngineeringConfig(
         version=as_str(raw.get("version")),
@@ -106,6 +105,12 @@ class RhythmAuditResult:
     expected_min_count: int
     expected_min_types: int
     passed: bool
+    applicable: bool = True
+    reason: str = "ok"
+
+
+def _is_english_language(language: str | None) -> bool:
+    return (language or "").strip().lower().startswith("en")
 
 
 def _count_hard_stops(paragraphs: list[str]) -> int:
@@ -146,10 +151,19 @@ def _count_external_interrupts(text: str) -> int:
     return sum(text.count(keyword) for keyword in _EXTERNAL_INTERRUPT_KEYWORDS)
 
 
-def audit_rhythm(text: str) -> RhythmAuditResult:
+def audit_rhythm(text: str, *, language: str | None = None) -> RhythmAuditResult:
     """Run the four anchor detectors on ``text``."""
 
     config = load_rhythm_engineering()
+    if _is_english_language(language):
+        return RhythmAuditResult(
+            0, 0, 0, 0, 0, 0,
+            expected_min_count=0,
+            expected_min_types=0,
+            passed=True,
+            applicable=False,
+            reason="skipped: cjk_rhythm_detector_not_applicable",
+        )
     if not text:
         return RhythmAuditResult(
             0, 0, 0, 0, 0, 0,

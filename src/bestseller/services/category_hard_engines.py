@@ -290,6 +290,78 @@ _CONTRACTS: dict[str, CategoryHardEngineContract] = {
         benchmark_focus=("意象改变剧情", "礼法秩序制造选择压力", "审美余韵有状态变化"),
         keyword_signals=("东方美学", "国风", "水墨", "志怪", "eastern aesthetic"),
     ),
+    "urban-contemporary": CategoryHardEngineContract(
+        category_key="urban-contemporary",
+        display_name="都市职业现实 / Urban Contemporary",
+        state_ledger_keys=(
+            "career_ladder_state",
+            "organization_politics_map",
+            "reputation_public_opinion",
+            "money_contract_ledger",
+            "social_network_pressure",
+        ),
+        hard_gate_keys=(
+            "career_progress_gate",
+            "workplace_plausibility_gate",
+            "reputation_consequence_gate",
+        ),
+        chapter_update_keys=(
+            "career_position_delta",
+            "organization_relation_delta",
+            "reputation_delta",
+            "money_contract_delta",
+        ),
+        benchmark_focus=("职业台阶真实变化", "组织利益有反应", "口碑/舆论/金钱后果可追踪"),
+        keyword_signals=("都市", "职场", "娱乐圈", "公司", "医院", "现实", "urban", "workplace"),
+    ),
+    "science-fiction-progression": CategoryHardEngineContract(
+        category_key="science-fiction-progression",
+        display_name="科幻机甲进阶 / Science Fiction Progression",
+        state_ledger_keys=(
+            "tech_constraint_ledger",
+            "energy_logistics_state",
+            "research_validation_chain",
+            "fleet_or_mecha_state",
+            "strategic_theater_map",
+        ),
+        hard_gate_keys=(
+            "science_constraint_gate",
+            "energy_logistics_gate",
+            "tactical_continuity_gate",
+        ),
+        chapter_update_keys=(
+            "tech_capability_delta",
+            "energy_cost_delta",
+            "research_validation_delta",
+            "battlefield_state_delta",
+        ),
+        benchmark_focus=("科技突破有约束", "能源/后勤不凭空", "战术状态连续可复盘"),
+        keyword_signals=("科幻", "机甲", "星际", "舰队", "银河", "黑科技", "scifi", "mecha"),
+    ),
+    "wuxia-jianghu": CategoryHardEngineContract(
+        category_key="wuxia-jianghu",
+        display_name="武侠江湖 / Wuxia Jianghu",
+        state_ledger_keys=(
+            "sect_reputation_state",
+            "jianghu_rule_ledger",
+            "martial_arts_cost_ledger",
+            "chivalry_debt_ledger",
+            "rival_school_pressure",
+        ),
+        hard_gate_keys=(
+            "jianghu_rule_consequence_gate",
+            "martial_cost_gate",
+            "reputation_payoff_gate",
+        ),
+        chapter_update_keys=(
+            "sect_reputation_delta",
+            "martial_cost_delta",
+            "chivalry_debt_delta",
+            "rival_school_delta",
+        ),
+        benchmark_focus=("江湖规矩会反噬", "武学提升有代价", "侠义债与门派声望持续变化"),
+        keyword_signals=("武侠", "江湖", "门派", "侠义", "剑客", "wuxia", "jianghu"),
+    ),
 }
 
 

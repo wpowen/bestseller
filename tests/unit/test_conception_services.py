@@ -153,3 +153,47 @@ def test_qimao_conception_prompt_includes_regeneration_contract() -> None:
     assert "七猫再生成合同" in prompt
     assert "这不是润色任务" in prompt
     assert "weak_immersion" in prompt
+
+
+def test_conception_sanitizes_family_loss_default_motifs() -> None:
+    payload = {
+        "premise": "主角因为父亲失踪踏上修行路。",
+        "writing_profile": {
+            "character": {
+                "protagonist_core_drive": "查清父母失踪真相并继承秘密。",
+            },
+            "market": {
+                "hook_keywords": ["父亲失踪", "升级"],
+            },
+        },
+    }
+
+    sanitized = conception_services._sanitize_forbidden_default_motifs(payload, is_en=False)
+    text = json.dumps(sanitized, ensure_ascii=False)
+
+    assert "父亲失踪" not in text
+    assert "父母失踪" not in text
+    assert "由本书题材核心机制触发的具体危机与选择代价" in text
+
+
+def test_conception_prompts_ban_fixed_family_loss_motivation() -> None:
+    ctx = {
+        "genre": "悬疑",
+        "sub_genre": "规则悬疑",
+        "description": "主角被卷入一座有规则的医院。",
+        "language": "zh-CN",
+        "chapter_count": 120,
+        "recommended_platforms": ["番茄小说"],
+        "recommended_audiences": ["移动端追读读者"],
+        "trend_keywords": ["规则", "反转"],
+        "trend_score": 85,
+        "trend_summary": "强规则与强钩子。",
+        "default_platform": "番茄小说",
+        "existing_overrides": {},
+    }
+
+    prompt = conception_services._character_user_prompt(ctx)
+
+    assert "默认动机禁用" in prompt
+    assert "动态生成" in prompt
+    assert "父母失踪" not in prompt

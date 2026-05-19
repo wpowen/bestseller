@@ -12,6 +12,7 @@ from bestseller.infra.db.session import init_db, shutdown_db
 from bestseller.infra.redis import get_redis_client, init_redis, shutdown_redis
 from bestseller.settings import get_settings
 from bestseller.worker.tasks import (
+    run_book_quality_closure_task,
     run_autowrite_task,
     run_chapter_pipeline_task,
     run_project_repair_task,
@@ -150,6 +151,7 @@ class WorkerSettings:
     functions = [
         run_self_heal_task,
         run_autowrite_task,
+        run_book_quality_closure_task,
         run_project_pipeline_task,
         run_chapter_pipeline_task,
         run_project_repair_task,

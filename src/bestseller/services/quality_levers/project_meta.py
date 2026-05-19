@@ -10,6 +10,7 @@ specific keys living there:
 * ``chapter_positions`` — ``{chapter_number: [position_id, …]}``
 * ``character_profiles`` — project-specific overrides keyed by character_id
 * ``rejection_history`` — list of past platform rejections with mapped causes
+* ``public_emotion_kernel`` — project-local audience emotion bridge
 
 This module gives the integration layer a typed view over those
 fields *without* requiring a database migration: the values live in
@@ -45,6 +46,7 @@ class QualityLeversProjectMeta:
     character_profiles: tuple[dict[str, Any], ...]
     rejection_history: tuple[RejectionHistoryEntry, ...]
     emotion_driven_kernel: dict[str, Any] | None = None
+    public_emotion_kernel: dict[str, Any] | None = None
 
     def positions_for_chapter(self, chapter_number: int) -> tuple[str, ...]:
         """Lookup positions for a chapter by integer or string key."""
@@ -182,4 +184,5 @@ def extract_quality_levers_meta(
         character_profiles=_coerce_character_profiles(data.get("character_profiles")),
         rejection_history=_coerce_rejection_history(data.get("rejection_history")),
         emotion_driven_kernel=_coerce_mapping(data.get("emotion_driven_kernel")),
+        public_emotion_kernel=_coerce_mapping(data.get("public_emotion_kernel")),
     )

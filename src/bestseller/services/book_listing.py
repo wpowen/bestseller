@@ -5,13 +5,18 @@ import json
 from pathlib import Path
 from typing import Any
 
+from bestseller.services.platform_title_workflow import (
+    DEFAULT_TITLE_CANDIDATE_COUNT,
+    build_platform_title_workflow,
+    resolve_title_style,
+)
 from bestseller.services.ranking_readiness import (
     build_listing_ip_readiness,
     build_listing_marketing_asset_pack,
 )
 
-LISTING_SCHEMA_VERSION = "1.1"
-REQUIRED_TITLE_CANDIDATE_COUNT = 20
+LISTING_SCHEMA_VERSION = "1.2"
+REQUIRED_TITLE_CANDIDATE_COUNT = DEFAULT_TITLE_CANDIDATE_COUNT
 
 
 def _is_english(language: str) -> bool:
@@ -229,7 +234,41 @@ def _category_suggestions(
     return {"general": general, "target_platform": target}
 
 
+def _title_label_fields(platform: str) -> dict[str, str]:
+    style = resolve_title_style(platform)
+    if style.key == "general":
+        return {
+            "platform": style.key,
+            "platform_label": style.label,
+            "platform_scope": "all_platform",
+            "scope_label": "全平台",
+            "platform_tag": "全平台",
+            "display_label": "全平台",
+        }
+    return {
+        "platform": style.key,
+        "platform_label": style.label,
+        "platform_scope": "target_platform",
+        "scope_label": "目标平台",
+        "platform_tag": style.label,
+        "display_label": f"{style.label} · 目标平台",
+    }
+
+
 def _fallback_title_candidates(profile: dict[str, Any]) -> list[dict[str, Any]]:
+    try:
+        workflow = build_platform_title_workflow(
+            profile,
+            target_platform=_clean_text(profile.get("target_platform")),
+            candidate_count=REQUIRED_TITLE_CANDIDATE_COUNT,
+        )
+        candidates = workflow.get("candidates")
+        if isinstance(candidates, list) and len(candidates) >= REQUIRED_TITLE_CANDIDATE_COUNT:
+            return candidates[:REQUIRED_TITLE_CANDIDATE_COUNT]
+    except Exception:
+        # Keep the older generic fallback as a last-resort safety net.
+        candidates = []
+
     language = _clean_text(profile.get("language"))
     is_en = _is_english(language)
 
@@ -292,6 +331,7 @@ def _fallback_title_candidates(profile: dict[str, Any]) -> list[dict[str, Any]]:
 
     seen: set[str] = set()
     rows: list[dict[str, Any]] = []
+    label_fields = _title_label_fields(_clean_text(profile.get("target_platform")))
     for candidate_title, candidate_subtitle, angle, recommendation in specs:
         normalized = _clean_text(candidate_title)
         if not normalized or normalized in seen:
@@ -304,6 +344,7 @@ def _fallback_title_candidates(profile: dict[str, Any]) -> list[dict[str, Any]]:
                 "subtitle": _clean_text(candidate_subtitle),
                 "angle": angle,
                 "recommendation": recommendation,
+                **label_fields,
             }
         )
 
@@ -318,9 +359,92 @@ def _fallback_title_candidates(profile: dict[str, Any]) -> list[dict[str, Any]]:
                 "subtitle": short_promise,
                 "angle": filler_label,
                 "recommendation": filler_rec,
+                **label_fields,
             }
         )
     return rows[:REQUIRED_TITLE_CANDIDATE_COUNT]
+
+
+def _normalize_legacy_title_candidates(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+    rows: list[dict[str, Any]] = []
+    for index, item in enumerate(value, start=1):
+        if not isinstance(item, dict):
+            continue
+        title = _clean_text(item.get("title"))
+        if not title:
+            continue
+        rows.append(
+            {
+                "id": int(item.get("id") or index),
+                "title": title,
+                "subtitle": _clean_text(item.get("subtitle")),
+                "angle": _clean_text(item.get("angle")),
+                "recommendation": _clean_text(item.get("recommendation")),
+            }
+        )
+    return rows[:REQUIRED_TITLE_CANDIDATE_COUNT]
+
+
+def _title_candidate_csv_cell(value: object) -> str:
+    text = _compact_text(value).replace('"', '""')
+    return f'"{text}"'
+
+
+def write_platform_title_workflow_artifacts(
+    profile: dict[str, Any],
+    listing_dir: str | Path,
+) -> dict[str, Path]:
+    target_dir = Path(listing_dir)
+    target_dir.mkdir(parents=True, exist_ok=True)
+    workflow_path = target_dir / "title-workflow.json"
+    candidates_path = target_dir / "title-candidates.csv"
+    workflow = (
+        profile.get("title_workflow")
+        if isinstance(profile.get("title_workflow"), dict)
+        else {}
+    )
+    candidates = (
+        profile.get("title_candidates")
+        if isinstance(profile.get("title_candidates"), list)
+        else []
+    )
+    workflow_path.write_text(
+        json.dumps(workflow, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    headers = [
+        "id",
+        "title",
+        "subtitle",
+        "platform_label",
+        "scope_label",
+        "display_label",
+        "pattern",
+        "score",
+        "angle",
+        "recommendation",
+    ]
+    rows = [",".join(_title_candidate_csv_cell(item) for item in headers)]
+    for index, candidate in enumerate(candidates, start=1):
+        if not isinstance(candidate, dict):
+            continue
+        values = [
+            candidate.get("id") or index,
+            candidate.get("title"),
+            candidate.get("subtitle"),
+            candidate.get("platform_label"),
+            candidate.get("scope_label"),
+            candidate.get("display_label"),
+            candidate.get("pattern"),
+            candidate.get("score"),
+            candidate.get("angle"),
+            candidate.get("recommendation"),
+        ]
+        rows.append(",".join(_title_candidate_csv_cell(item) for item in values))
+    candidates_path.write_text("\n".join(rows) + "\n", encoding="utf-8")
+    return {"workflow": workflow_path, "candidates": candidates_path}
 
 
 def _derive_characters(
@@ -623,6 +747,7 @@ def build_book_listing_profile(
         "book_id": (
             _clean_text(overrides.get("book_id")) or _clean_text(_get_value(project, "slug"))
         ),
+        "target_platform": platform,
         "primary_title": _clean_text(overrides.get("primary_title")) or project_title,
         "recommended_subtitle": _clean_text(overrides.get("recommended_subtitle")),
         "logline": logline,
@@ -652,34 +777,53 @@ def build_book_listing_profile(
             else _derive_characters(story_bible, writing_profile, language=project_language)
         ),
         "reader_promise": reader_promise,
+        "public_emotion_kernel": (
+            dict(overrides.get("public_emotion_kernel"))
+            if isinstance(overrides.get("public_emotion_kernel"), dict)
+            else (
+                dict(metadata.get("public_emotion_kernel"))
+                if isinstance(metadata.get("public_emotion_kernel"), dict)
+                else {}
+            )
+        ),
+        "compliance_boundary_kernel": (
+            dict(overrides.get("compliance_boundary_kernel"))
+            if isinstance(overrides.get("compliance_boundary_kernel"), dict)
+            else (
+                dict(metadata.get("compliance_boundary_kernel"))
+                if isinstance(metadata.get("compliance_boundary_kernel"), dict)
+                else {}
+            )
+        ),
         "not_recommended_categories": _string_list(overrides.get("not_recommended_categories")),
-        "title_candidates": (
+        "title_candidates": [],
+        "legacy_title_candidates": _normalize_legacy_title_candidates(
             overrides.get("title_candidates")
-            if isinstance(overrides.get("title_candidates"), list)
-            else []
         ),
         "source_files": _string_list(file_overrides.get("source_files")),
         "load_warnings": _string_list(file_overrides.get("load_warnings")),
     }
 
-    if not profile["title_candidates"]:
-        profile["title_candidates"] = _fallback_title_candidates(profile)
-    else:
-        profile["title_candidates"] = [
-            {
-                "id": int(item.get("id") or index),
-                "title": _clean_text(item.get("title")),
-                "subtitle": _clean_text(item.get("subtitle")),
-                "angle": _clean_text(item.get("angle")),
-                "recommendation": _clean_text(item.get("recommendation")),
-            }
-            for index, item in enumerate(profile["title_candidates"], start=1)
-            if isinstance(item, dict) and _clean_text(item.get("title"))
-        ][:REQUIRED_TITLE_CANDIDATE_COUNT]
+    title_workflow = build_platform_title_workflow(
+        profile,
+        target_platform=platform,
+        candidate_count=REQUIRED_TITLE_CANDIDATE_COUNT,
+    )
+    profile["title_candidates"] = title_workflow["candidates"]
+    title_candidate_source = "platform_title_workflow"
     if len(profile["title_candidates"]) < REQUIRED_TITLE_CANDIDATE_COUNT:
         profile["title_candidates"] = (
             profile["title_candidates"] + _fallback_title_candidates(profile)
         )[:REQUIRED_TITLE_CANDIDATE_COUNT]
+        title_candidate_source = f"{title_candidate_source}+fallback"
+
+    profile["title_workflow"] = {
+        **title_workflow,
+        "candidate_source": title_candidate_source,
+        "legacy_candidate_count": len(profile.get("legacy_title_candidates") or []),
+        "candidates": profile["title_candidates"],
+        "candidate_count": len(profile["title_candidates"]),
+    }
 
     profile["shelf_intro"] = _build_shelf_intro(profile, max_chars=500)
     character_names = _dedupe_strings(

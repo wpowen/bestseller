@@ -281,8 +281,13 @@ _GENRE_NAME_KEYWORD_MAP: dict[str, str] = {
     "权谋": "strategy-worldbuilding",
     "历史": "strategy-worldbuilding",
     "争霸": "strategy-worldbuilding",
-    "科幻": "strategy-worldbuilding",
-    "高概念": "strategy-worldbuilding",
+    "科幻": "science-fiction-progression",
+    "机甲": "science-fiction-progression",
+    "星际": "science-fiction-progression",
+    "高概念": "science-fiction-progression",
+    "sci-fi": "science-fiction-progression",
+    "scifi": "science-fiction-progression",
+    "mecha": "science-fiction-progression",
     "strategy": "strategy-worldbuilding",
     # esports-competition
     "电竞": "esports-competition",
@@ -299,10 +304,58 @@ _GENRE_NAME_KEYWORD_MAP: dict[str, str] = {
     "东方美学": "eastern-aesthetic",
     "国风": "eastern-aesthetic",
     "水墨": "eastern-aesthetic",
+    # urban-contemporary
+    "都市": "urban-contemporary",
+    "职场": "urban-contemporary",
+    "娱乐圈": "urban-contemporary",
+    "现实题材": "urban-contemporary",
+    "urban": "urban-contemporary",
+    "workplace": "urban-contemporary",
+    # wuxia-jianghu
+    "武侠": "wuxia-jianghu",
+    "江湖": "wuxia-jianghu",
+    "门派": "wuxia-jianghu",
+    "侠义": "wuxia-jianghu",
+    "wuxia": "wuxia-jianghu",
+    "jianghu": "wuxia-jianghu",
 }
 
 
 _PRIORITY_KEYWORD_MAP: tuple[tuple[str, tuple[str, ...]], ...] = (
+    (
+        "urban-contemporary",
+        (
+            "都市",
+            "职场",
+            "娱乐圈",
+            "现实题材",
+            "urban",
+            "workplace",
+        ),
+    ),
+    (
+        "science-fiction-progression",
+        (
+            "科幻",
+            "机甲",
+            "星际",
+            "黑科技",
+            "scifi",
+            "sci-fi",
+            "mecha",
+        ),
+    ),
+    (
+        "wuxia-jianghu",
+        (
+            "武侠",
+            "江湖",
+            "门派",
+            "侠义",
+            "wuxia",
+            "jianghu",
+        ),
+    ),
     (
         "otherworld-cross-system",
         (

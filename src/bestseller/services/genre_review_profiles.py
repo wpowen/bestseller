@@ -285,6 +285,16 @@ _GENRE_TO_CATEGORY_MAP: dict[str, str] = {
     "rebirth-business": "base-building",
     # eastern-aesthetic
     "eastern-aesthetic-fantasy": "eastern-aesthetic",
+    # urban-contemporary
+    "urban-career": "urban-contemporary",
+    "entertainment-industry": "urban-contemporary",
+    "workplace-realistic": "urban-contemporary",
+    # science-fiction-progression
+    "mecha-progression": "science-fiction-progression",
+    "hard-scifi-progression": "science-fiction-progression",
+    # wuxia-jianghu
+    "wuxia-jianghu": "wuxia-jianghu",
+    "martial-arts-sect": "wuxia-jianghu",
 }
 
 
@@ -3196,6 +3206,193 @@ _GENRE_REVIEW_PROFILES: dict[str, dict[str, Any]] = {
 }
 
 
+_GENRE_REVIEW_PROFILE_EXTENSIONS: dict[str, dict[str, Any]] = {
+    "urban-contemporary": {
+        "name": "都市职业现实 / Urban Contemporary",
+        "description": (
+            "以职业台阶、现实利益、组织政治、舆论口碑和金钱合同为核心驱动力的都市题材。"
+        ),
+        "scene_weights": {
+            "conflict_clarity": 1.2,
+            "dialogue": 1.2,
+            "voice_consistency": 1.1,
+            "contract_alignment": 1.2,
+        },
+        "chapter_weights": {
+            "main_plot_progression": 1.2,
+            "character_voice_distinction": 1.1,
+            "volume_mission_alignment": 1.1,
+        },
+        "signal_keywords": {
+            "conflict_terms_zh": ["职级", "项目", "合同", "舆论", "资源", "派系", "客户", "指标"],
+            "conflict_terms_en": ["career", "project", "contract", "public opinion", "resource", "client"],
+            "emotion_terms_zh": ["压力", "体面", "焦虑", "野心", "委屈", "清醒", "不甘"],
+            "emotion_terms_en": ["pressure", "dignity", "anxiety", "ambition", "frustration"],
+            "hook_terms_zh": ["新项目", "竞聘", "爆料", "合同变更", "资源截胡", "舆论反转"],
+            "hook_terms_en": ["new project", "promotion contest", "leak", "contract shift"],
+            "info_terms_zh": ["职位", "组织", "资源", "现金流", "关系网", "口碑"],
+            "info_terms_en": ["position", "organization", "resource", "cashflow", "network", "reputation"],
+        },
+        "finding_messages": {
+            "conflict_low_zh": "都市职业冲突缺少真实利益压力，职位、合同、口碑或组织资源没有形成选择代价。",
+            "conflict_low_en": "Urban-career conflict lacks concrete stakes in position, contract, reputation, or organizational resources.",
+            "contract_low_zh": "场景没有兑现职业台阶、现实利益或口碑压力的变化。",
+            "contract_low_en": "The scene does not deliver a career, material, or reputation-state change.",
+            "voice_low_zh": "叙事声音缺少都市现实质感，工作、钱、关系和舆论的细节不够落地。",
+            "voice_low_en": "The voice lacks grounded urban realism around work, money, networks, and public opinion.",
+        },
+        "plan_rubric": {
+            "required_checks": [
+                "career_ladder_exists",
+                "organization_politics_map",
+                "reputation_consequence_loop",
+            ],
+            "min_antagonist_forces": 2,
+            "require_theme_per_volume": True,
+            "min_key_reveals_per_volume": 1,
+            "require_foreshadowing": True,
+            "llm_evaluation_prompt_zh": (
+                "检查规划是否有清晰职业台阶、组织利益网络、金钱/合同约束和舆论口碑回流。"
+            ),
+            "llm_evaluation_prompt_en": (
+                "Check for career ladder, organizational interest map, money/contract constraints, and reputation feedback."
+            ),
+        },
+        "planner_prompts": {
+            "book_spec_instruction_zh": "书籍规格必须定义职业台阶、组织派系、关键合同/金钱压力和口碑舆论机制。",
+            "world_spec_instruction_zh": "世界设定必须明确行业规则、职位结构、资源分配方式、舆论场和现实约束。",
+            "outline_instruction_zh": "每章至少改变一个职业位置、组织关系、资源归属、合同风险或口碑状态。",
+        },
+        "judge_prompts": {
+            "chapter_review_instruction_zh": "评估本章是否推进职业台阶、组织博弈、现实利益或口碑后果。",
+            "chapter_rewrite_instruction_zh": "重写时补强职业动作、现实约束、组织反应和口碑/金钱后果。",
+        },
+    },
+    "science-fiction-progression": {
+        "name": "科幻机甲进阶 / Science Fiction Progression",
+        "description": (
+            "以科技约束、研发验证、能源后勤、机甲/舰队状态和战场策略为核心的科幻进阶题材。"
+        ),
+        "scene_weights": {
+            "conflict_clarity": 1.2,
+            "payoff_density": 1.2,
+            "contract_alignment": 1.2,
+            "pacing_alignment": 1.1,
+        },
+        "chapter_weights": {
+            "main_plot_progression": 1.2,
+            "setup_payoff_integrity": 1.2,
+            "pacing_rhythm": 1.1,
+        },
+        "signal_keywords": {
+            "conflict_terms_zh": ["能源", "机甲", "舰队", "实验", "算力", "战术", "轨道", "反制"],
+            "conflict_terms_en": ["energy", "mecha", "fleet", "experiment", "compute", "tactics", "orbit"],
+            "emotion_terms_zh": ["冷静", "压迫", "敬畏", "失控", "振奋", "恐惧"],
+            "emotion_terms_en": ["composure", "pressure", "awe", "runaway", "excitement", "fear"],
+            "hook_terms_zh": ["实验失败", "能源告急", "敌方反制", "新型机体", "轨道窗口"],
+            "hook_terms_en": ["failed test", "energy shortage", "countermeasure", "new frame", "orbital window"],
+            "info_terms_zh": ["约束", "验证", "参数", "后勤", "战场", "技术树"],
+            "info_terms_en": ["constraint", "validation", "parameter", "logistics", "battlefield", "tech tree"],
+        },
+        "finding_messages": {
+            "conflict_low_zh": "科幻冲突缺少科技约束或能源/后勤压力，突破过于轻易。",
+            "conflict_low_en": "Sci-fi conflict lacks technology constraints or energy/logistics pressure.",
+            "contract_low_zh": "场景没有兑现研发验证、技术代价或战场状态变化。",
+            "contract_low_en": "The scene does not deliver research validation, technology cost, or battlefield-state change.",
+            "payoff_low_zh": "技术收益不够可感，读者看不到能力、成本、反制或战术位移。",
+            "payoff_low_en": "Technology payoff is not tangible in capability, cost, countermeasure, or tactical shift.",
+        },
+        "plan_rubric": {
+            "required_checks": [
+                "science_constraint_model",
+                "energy_logistics_loop",
+                "research_validation_chain",
+            ],
+            "min_antagonist_forces": 2,
+            "require_theme_per_volume": True,
+            "min_key_reveals_per_volume": 1,
+            "require_foreshadowing": True,
+            "llm_evaluation_prompt_zh": (
+                "检查规划是否有科技约束、研发验证链、能源后勤账和可复盘的机甲/舰队战术状态。"
+            ),
+            "llm_evaluation_prompt_en": (
+                "Check for science constraints, validation chain, energy logistics, and replayable mecha/fleet tactical states."
+            ),
+        },
+        "planner_prompts": {
+            "book_spec_instruction_zh": "书籍规格必须定义技术约束、能源代价、研发路径、机甲/舰队状态和敌方反制路线。",
+            "world_spec_instruction_zh": "世界设定必须让科技突破受物理、资源、组织和战场条件共同约束。",
+            "outline_instruction_zh": "每章至少改变一个技术能力、能源成本、验证结果或战场状态。",
+        },
+        "judge_prompts": {
+            "chapter_review_instruction_zh": "评估本章是否推进科技验证、能源后勤、机甲/舰队状态或敌方反制。",
+            "chapter_rewrite_instruction_zh": "重写时补强技术限制、实验结果、能源成本和战场状态连续性。",
+        },
+    },
+    "wuxia-jianghu": {
+        "name": "武侠江湖 / Wuxia Jianghu",
+        "description": (
+            "以门派声望、江湖规矩、侠义债务、武学代价和恩怨回流为核心的武侠题材。"
+        ),
+        "scene_weights": {
+            "conflict": 1.2,
+            "style": 1.1,
+            "voice_consistency": 1.2,
+            "payoff_density": 1.1,
+        },
+        "chapter_weights": {
+            "main_plot_progression": 1.2,
+            "character_voice_distinction": 1.1,
+            "thematic_resonance": 1.2,
+        },
+        "signal_keywords": {
+            "conflict_terms_zh": ["门派", "规矩", "名声", "仇怨", "侠义", "武学", "比武", "盟约"],
+            "conflict_terms_en": ["sect", "rule", "reputation", "grudge", "chivalry", "martial art", "duel"],
+            "emotion_terms_zh": ["义气", "羞辱", "克制", "悲凉", "豪气", "愧疚"],
+            "emotion_terms_en": ["loyalty", "humiliation", "restraint", "melancholy", "gallantry", "guilt"],
+            "hook_terms_zh": ["战书", "旧债", "门派追责", "武学反噬", "江湖传闻"],
+            "hook_terms_en": ["challenge letter", "old debt", "sect sanction", "martial backlash", "rumor"],
+            "info_terms_zh": ["江湖规矩", "门派谱系", "武功代价", "侠义债", "声望"],
+            "info_terms_en": ["jianghu rule", "sect lineage", "martial cost", "chivalry debt", "reputation"],
+        },
+        "finding_messages": {
+            "conflict_low_zh": "江湖冲突缺少规矩、名声或侠义债的压力，打斗没有社会后果。",
+            "conflict_low_en": "Jianghu conflict lacks rule, reputation, or chivalry-debt pressure.",
+            "contract_low_zh": "场景没有兑现门派声望、江湖规矩、武学代价或旧债变化。",
+            "contract_low_en": "The scene does not deliver sect reputation, jianghu rule, martial cost, or old-debt change.",
+            "voice_low_zh": "叙事声音缺少武侠的克制、义气和江湖质感。",
+            "voice_low_en": "The voice lacks wuxia restraint, loyalty, and jianghu texture.",
+        },
+        "plan_rubric": {
+            "required_checks": [
+                "jianghu_rule_ledger",
+                "sect_reputation_loop",
+                "martial_cost_model",
+            ],
+            "min_antagonist_forces": 2,
+            "require_theme_per_volume": True,
+            "min_key_reveals_per_volume": 1,
+            "require_foreshadowing": True,
+            "llm_evaluation_prompt_zh": (
+                "检查规划是否有江湖规矩、门派声望、武学代价、侠义债和恩怨回流。"
+            ),
+            "llm_evaluation_prompt_en": (
+                "Check for jianghu rules, sect reputation, martial cost, chivalry debt, and grudge feedback."
+            ),
+        },
+        "planner_prompts": {
+            "book_spec_instruction_zh": "书籍规格必须定义江湖规矩、门派声望系统、武学代价和侠义债主线。",
+            "world_spec_instruction_zh": "世界设定必须明确门派谱系、江湖禁忌、声望传播和武学限制。",
+            "outline_instruction_zh": "每章至少改变一个门派立场、声望状态、侠义债务或武学代价。",
+        },
+        "judge_prompts": {
+            "chapter_review_instruction_zh": "评估本章是否推进江湖规矩、门派声望、武学代价或侠义债。",
+            "chapter_rewrite_instruction_zh": "重写时补强江湖规矩的反噬、打斗的代价和门派/名声后果。",
+        },
+    },
+}
+
+
 # ---------------------------------------------------------------------------
 # Fuzzy keyword map for genre name -> category fallback
 # ---------------------------------------------------------------------------
@@ -3250,7 +3447,6 @@ _GENRE_NAME_KEYWORD_MAP: dict[str, str] = {
     "争霸": "strategy-worldbuilding",
     "战争": "strategy-worldbuilding",
     "历史": "strategy-worldbuilding",
-    "科技": "strategy-worldbuilding",
     "strategy": "strategy-worldbuilding",
     "epic fantasy": "strategy-worldbuilding",
     "space opera": "strategy-worldbuilding",
@@ -3272,10 +3468,67 @@ _GENRE_NAME_KEYWORD_MAP: dict[str, str] = {
     "古风": "eastern-aesthetic",
     "仙侠美学": "eastern-aesthetic",
     "eastern aesthetic": "eastern-aesthetic",
+    # urban-contemporary
+    "都市": "urban-contemporary",
+    "职场": "urban-contemporary",
+    "娱乐圈": "urban-contemporary",
+    "现实题材": "urban-contemporary",
+    "urban": "urban-contemporary",
+    "workplace": "urban-contemporary",
+    # science-fiction-progression
+    "科幻": "science-fiction-progression",
+    "科技": "science-fiction-progression",
+    "机甲": "science-fiction-progression",
+    "星际": "science-fiction-progression",
+    "黑科技": "science-fiction-progression",
+    "scifi": "science-fiction-progression",
+    "sci-fi": "science-fiction-progression",
+    "mecha": "science-fiction-progression",
+    # wuxia-jianghu
+    "武侠": "wuxia-jianghu",
+    "江湖": "wuxia-jianghu",
+    "门派": "wuxia-jianghu",
+    "侠义": "wuxia-jianghu",
+    "wuxia": "wuxia-jianghu",
+    "jianghu": "wuxia-jianghu",
 }
 
 
 _PRIORITY_KEYWORD_MAP: tuple[tuple[str, tuple[str, ...]], ...] = (
+    (
+        "urban-contemporary",
+        (
+            "都市",
+            "职场",
+            "娱乐圈",
+            "现实题材",
+            "urban",
+            "workplace",
+        ),
+    ),
+    (
+        "science-fiction-progression",
+        (
+            "科幻",
+            "机甲",
+            "星际",
+            "黑科技",
+            "scifi",
+            "sci-fi",
+            "mecha",
+        ),
+    ),
+    (
+        "wuxia-jianghu",
+        (
+            "武侠",
+            "江湖",
+            "门派",
+            "侠义",
+            "wuxia",
+            "jianghu",
+        ),
+    ),
     (
         "otherworld-cross-system",
         (
@@ -3314,7 +3567,10 @@ def load_genre_review_profiles() -> dict[str, GenreReviewProfile]:
     Returns a mapping of ``category_key`` -> ``GenreReviewProfile``.
     """
     profiles: dict[str, GenreReviewProfile] = {}
-    for category_key, raw in _GENRE_REVIEW_PROFILES.items():
+    for category_key, raw in {
+        **_GENRE_REVIEW_PROFILES,
+        **_GENRE_REVIEW_PROFILE_EXTENSIONS,
+    }.items():
         profiles[category_key] = GenreReviewProfile(
             category_key=category_key,
             name=raw.get("name", category_key),

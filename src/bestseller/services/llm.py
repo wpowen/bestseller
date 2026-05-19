@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bestseller.infra.db.models import LlmRunModel
+from bestseller.services.word_targets import model_output_token_ceiling
 from bestseller.settings import AppSettings, LLMRoleSettings, RetrySettings, get_runtime_env_value
 
 
@@ -417,6 +418,22 @@ def _estimate_tokens(text: str) -> int:
 
 def _get_role_settings(settings: AppSettings, logical_role: LLMRole) -> LLMRoleSettings:
     return cast(LLMRoleSettings, getattr(settings.llm, logical_role))
+
+
+def _effective_request_max_tokens(
+    role_settings: LLMRoleSettings,
+    request: LLMCompletionRequest,
+) -> int:
+    role_cap = int(role_settings.max_tokens)
+    if request.max_tokens_override is None:
+        return role_cap
+    requested = max(1, int(request.max_tokens_override))
+    if requested <= role_cap:
+        return requested
+    model_ceiling = model_output_token_ceiling(role_settings.model)
+    if model_ceiling is None:
+        return role_cap
+    return min(requested, int(model_ceiling))
 
 
 def _rate_limit_fallback_key(logical_role: LLMRole, role_settings: LLMRoleSettings) -> str:
@@ -975,9 +992,7 @@ async def _call_litellm(
             {"role": "user", "content": request.user_prompt},
         ]
 
-    max_tokens = role_settings.max_tokens
-    if request.max_tokens_override is not None:
-        max_tokens = min(max_tokens, int(request.max_tokens_override))
+    max_tokens = _effective_request_max_tokens(role_settings, request)
 
     completion_kwargs: dict[str, Any] = {
         "model": role_settings.model,

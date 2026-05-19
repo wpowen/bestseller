@@ -2537,7 +2537,7 @@ async def test_run_chapter_pipeline_accepts_safe_draft_after_review_stall(
 
     settings = build_settings()
     settings.pipeline.accept_on_stall = True
-    settings.pipeline.chapter_review_block_on_failure = True
+    settings.pipeline.chapter_review_block_on_failure = False
     settings.quality.max_chapter_revisions = 0
     session = FakeSession(
         scalar_results=[chapter],
@@ -2599,6 +2599,8 @@ async def test_run_project_pipeline_exports_project_checkpoint_when_human_review
     async def fake_load_project_chapters(session, project_id):
         return [chapter]
 
+    child_progress_callbacks: list[object] = []
+
     async def fake_run_chapter_pipeline(
         session,
         settings,
@@ -2606,6 +2608,7 @@ async def test_run_project_pipeline_exports_project_checkpoint_when_human_review
         chapter_number,
         **kwargs,
     ):
+        child_progress_callbacks.append(kwargs.get("progress"))
         return chapter_result
 
     async def fake_export_project_markdown(session, settings, project_slug: str, **kwargs):
@@ -2659,17 +2662,21 @@ async def test_run_project_pipeline_exports_project_checkpoint_when_human_review
     )
 
     session = FakeSession()
+    progress_events: list[tuple[str, dict[str, object]]] = []
     result = await pipeline_services.run_project_pipeline(
         session,
         build_settings(),
         "my-story",
         requested_by="tester",
         export_markdown=True,
+        progress=lambda stage, payload: progress_events.append((stage, payload)),
     )
 
     assert result.requires_human_review is True
     assert result.export_artifact_id == export_artifact.id
     assert result.output_path is not None
+    assert child_progress_callbacks and callable(child_progress_callbacks[0])
+    assert any(stage == "chapter_pipeline_started" for stage, _ in progress_events)
 
 
 @pytest.mark.asyncio
@@ -3787,7 +3794,10 @@ async def test_run_autowrite_pipeline_runs_auto_repair_and_reports_outputs(
     async def fake_create_project(session, payload, settings):
         return project
 
+    planning_kwargs: dict[str, object] = {}
+
     async def fake_generate_novel_plan(session, settings, project_slug: str, premise: str, **kwargs):
+        planning_kwargs.update(kwargs)
         return type(
             "PlanningResultStub",
             (),
@@ -3904,6 +3914,7 @@ async def test_run_autowrite_pipeline_runs_auto_repair_and_reports_outputs(
     assert "auto_repair_started" in progress_events
     assert "auto_repair_completed" in progress_events
     assert progress_events[-1] == "autowrite_completed"
+    assert planning_kwargs.get("progress") is fake_progress
 
 
 def test_should_use_progressive_pipeline_routes_large_target_chapters() -> None:

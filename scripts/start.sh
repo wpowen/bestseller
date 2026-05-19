@@ -377,6 +377,7 @@ EOF
     local nvidia_critic_model="${NVIDIA_CRITIC_MODEL:-$nvidia_model}"
     local nvidia_summarizer_model="${NVIDIA_SUMMARIZER_MODEL:-$nvidia_model}"
     local nvidia_editor_model="${NVIDIA_EDITOR_MODEL:-$nvidia_model}"
+    local nvidia_summarizer_max_tokens="${NVIDIA_SUMMARIZER_MAX_TOKENS:-}"
     cat >>"$ENV_FILE" <<EOF
 export BESTSELLER__LLM__PLANNER__MODEL='openai/${nvidia_planner_model}'
 export BESTSELLER__LLM__PLANNER__API_BASE='${nvidia_api_base}'
@@ -396,6 +397,11 @@ export BESTSELLER__LLM__EDITOR__MODEL='openai/${nvidia_editor_model}'
 export BESTSELLER__LLM__EDITOR__API_BASE='${nvidia_api_base}'
 export BESTSELLER__LLM__EDITOR__API_KEY_ENV='${NVIDIA_KEY_ENV_NAME}'
 EOF
+    if [[ -n "$nvidia_summarizer_max_tokens" ]]; then
+      cat >>"$ENV_FILE" <<EOF
+export BESTSELLER__LLM__SUMMARIZER__MAX_TOKENS='${nvidia_summarizer_max_tokens}'
+EOF
+    fi
   fi
 
   if [[ "$LLM_PROVIDER" == "volcengine-coding" ]]; then

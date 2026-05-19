@@ -418,6 +418,53 @@ def test_validate_zh_allows_dead_character_quoted_memory() -> None:
     assert violations == []
 
 
+def test_validate_zh_allows_dead_character_memory_scene_speech() -> None:
+    registry = [
+        CharacterIdentity(
+            name="林正淳",
+            gender="male",
+            pronoun_set_zh="他",
+            is_alive=False,
+        ),
+    ]
+    text = (
+        "林渊看到的是任守明死前最后一秒的记忆画面。"
+        "他当时还笑他爸，说这扇子废了。林正淳说，墨渍在扇面上反而是镇邪的。"
+    )
+
+    violations = validate_scene_text_identity(
+        text,
+        registry,
+        language="zh-CN",
+        participant_names=["林渊"],
+        chapter_number=59,
+    )
+
+    assert violations == []
+
+
+def test_validate_zh_allows_dead_character_years_ago_recollection() -> None:
+    registry = [
+        CharacterIdentity(
+            name="林正淳",
+            gender="male",
+            pronoun_set_zh="他",
+            is_alive=False,
+        ),
+    ]
+    text = "十三年前他见过最后一面，在父亲书房。林正淳说那是太爷爷留下的东西。"
+
+    violations = validate_scene_text_identity(
+        text,
+        registry,
+        language="zh-CN",
+        participant_names=["林渊"],
+        chapter_number=59,
+    )
+
+    assert violations == []
+
+
 def test_validate_zh_skips_speaker_label_dialogue_pronoun() -> None:
     registry = [
         CharacterIdentity(
@@ -457,6 +504,35 @@ def test_validate_zh_blocks_dead_character_present_speech() -> None:
     )
 
     assert any(v.violation_type == "dead_alive" for v in violations)
+
+
+def test_validate_zh_allows_dead_character_mirror_manifestation() -> None:
+    registry = [
+        CharacterIdentity(
+            name="林正淳",
+            gender="male",
+            pronoun_set_zh="他",
+            is_alive=False,
+            death_chapter_number=52,
+        ),
+    ]
+    text = (
+        "林正淳的眼球是两块打磨过的镜片，映出林渊苍白的脸。"
+        "“别怕。”林正淳的头动了一下，像是想摇头，"
+        "“这具身体还没死透。眼睛换了，嗓子还能用几天。”"
+        "镜子里的倒影又笑了一次。林渊后退半步。"
+        "林正淳说：“别信他。”"
+    )
+
+    violations = validate_scene_text_identity(
+        text,
+        registry,
+        language="zh-CN",
+        participant_names=["林渊"],
+        chapter_number=64,
+    )
+
+    assert violations == []
 
 
 def test_validate_zh_allows_future_death_character_before_death_chapter() -> None:
@@ -886,6 +962,64 @@ def test_validate_en_skips_name_as_prepositional_object() -> None:
         registry,
         language="en",
         participant_names=["Kade Mercer"],
+    )
+
+    assert violations == []
+
+
+def test_validate_en_skips_competing_unspecified_gender_name_hint() -> None:
+    registry = [
+        CharacterIdentity(name="Kade Mercer", aliases=("Kade",), gender="male", pronoun_set_en="he/him"),
+        CharacterIdentity(name="Zoe Chen", gender="unknown"),
+    ]
+    text = (
+        "Zoe stood at the cracked window, watching Kade pace three steps left. "
+        "She'd counted every pass. Kade's pacing didn't break stride. "
+        "He dropped his voice on the last word, just like she remembered."
+    )
+
+    violations = validate_scene_text_identity(
+        text,
+        registry,
+        language="en",
+        participant_names=["Kade Mercer", "Zoe Chen"],
+    )
+
+    assert violations == []
+
+
+def test_validate_en_skips_relative_memory_clause_after_name() -> None:
+    registry = [
+        CharacterIdentity(name="Kade Mercer", aliases=("Kade",), gender="male", pronoun_set_en="he/him"),
+        CharacterIdentity(name="Zoe Chen", gender="unknown"),
+    ]
+    text = (
+        "The Kade she remembered would have strategized, calculated, and found "
+        "the angle that minimized visible panic."
+    )
+
+    violations = validate_scene_text_identity(
+        text,
+        registry,
+        language="en",
+        participant_names=["Kade Mercer", "Zoe Chen"],
+    )
+
+    assert violations == []
+
+
+def test_validate_en_skips_embedded_clause_after_cognition_verb() -> None:
+    registry = [
+        CharacterIdentity(name="Victor Hale", aliases=("Victor",), gender="male", pronoun_set_en="he/him"),
+        CharacterIdentity(name="Rowan Ashford", gender="female", pronoun_set_en="she/her"),
+    ]
+    text = "The documents were useless if Victor Hale already knew she'd taken them."
+
+    violations = validate_scene_text_identity(
+        text,
+        registry,
+        language="en",
+        participant_names=["Victor Hale", "Rowan Ashford"],
     )
 
     assert violations == []

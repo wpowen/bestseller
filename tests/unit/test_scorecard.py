@@ -19,8 +19,11 @@ from bestseller.services.scorecard import (
     length_stats,
     normalized_entropy,
     _latest_audit_is_fresher,
+    _aggregate_hype_metrics,
+    _quality_report_applies_to_current_state,
     _quality_report_is_fresh,
 )
+from bestseller.services.hype_engine import HypeScheme, HypeType
 
 pytestmark = pytest.mark.unit
 
@@ -118,6 +121,48 @@ class TestQualityReportFreshness:
 
         assert _quality_report_is_fresh(report_time, None) is True
 
+    def test_rejected_candidate_report_does_not_override_ok_current(self) -> None:
+        draft_time = datetime(2026, 5, 11, tzinfo=timezone.utc)
+        report_time = draft_time + timedelta(seconds=5)
+
+        assert (
+            _quality_report_applies_to_current_state(
+                report_created_at=report_time,
+                current_draft_created_at=draft_time,
+                production_state="ok",
+                blocks_write=True,
+            )
+            is False
+        )
+
+    def test_nonblocking_report_still_scores_ok_current(self) -> None:
+        draft_time = datetime(2026, 5, 11, tzinfo=timezone.utc)
+        report_time = draft_time + timedelta(seconds=5)
+
+        assert (
+            _quality_report_applies_to_current_state(
+                report_created_at=report_time,
+                current_draft_created_at=draft_time,
+                production_state="ok",
+                blocks_write=False,
+            )
+            is True
+        )
+
+    def test_blocking_report_still_scores_pending_current(self) -> None:
+        draft_time = datetime(2026, 5, 11, tzinfo=timezone.utc)
+        report_time = draft_time + timedelta(seconds=5)
+
+        assert (
+            _quality_report_applies_to_current_state(
+                report_created_at=report_time,
+                current_draft_created_at=draft_time,
+                production_state="pending",
+                blocks_write=True,
+            )
+            is True
+        )
+
 
 class TestLatestAuditFreshness:
     def test_audit_after_quality_report_wins(self) -> None:
@@ -130,6 +175,22 @@ class TestLatestAuditFreshness:
         quality_time = datetime(2026, 5, 11, tzinfo=timezone.utc)
 
         assert _latest_audit_is_fresher(None, quality_time) is False
+
+
+class TestHypeAggregation:
+    def test_missing_hype_uses_supplied_current_chapter_denominator(self) -> None:
+        _, _, _, _, _, missing, scored = _aggregate_hype_metrics(
+            total_chapters=57,
+            hype_types_by_chapter={
+                1: HypeType.REVERSAL.value,
+                2: HypeType.COUNTERATTACK.value,
+            },
+            hype_intensities=[7.0, 8.0],
+            scheme=HypeScheme(),
+        )
+
+        assert scored == 2
+        assert missing == 55
 
 
 # ---------------------------------------------------------------------------

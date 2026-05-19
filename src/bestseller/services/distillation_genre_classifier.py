@@ -26,6 +26,7 @@ ALLOWED_DISTILLATION_GENRE_BUCKETS: frozenset[str] = frozenset(
         "eastern-aesthetic",
         "eastern-progression-fantasy",
         "science-fiction-progression",
+        "wuxia-jianghu",
         "suspense-mystery",
         "historical-fiction",
         "romance-relationship",

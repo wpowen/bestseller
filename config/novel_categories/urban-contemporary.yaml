@@ -1,0 +1,122 @@
+key: urban-contemporary
+name: "都市职业现实类"
+name_en: "Urban Contemporary"
+reader_promise_zh: >
+  读者看到主角在真实行业、组织关系、金钱合同和舆论口碑中一步步改变处境。
+  爽点来自专业动作、现实取舍和口碑/资源位置的可见上升。
+reader_promise_en: >
+  Readers watch the protagonist change their position through real work,
+  organizations, contracts, money, and reputation. The reward comes from
+  professional action, grounded trade-offs, and visible movement in resources.
+
+challenge_evolution_pathway:
+  - phase_key: entry_position
+    phase_name_zh: "入局"
+    phase_name_en: "Entry"
+    description_zh: "主角进入行业或组织，拿到一个有限但可撬动的机会。"
+    description_en: "The protagonist enters an industry or organization with a limited but usable opportunity."
+    typical_force_types: ["organization", "character"]
+    volume_goal_template_zh: "{protagonist}必须在{force_name}控制的行业规则中拿到第一块立足点。"
+    volume_goal_template_en: "{protagonist} must gain a foothold inside the industry rules controlled by {force_name}."
+    volume_climax_template_zh: "{protagonist}完成第一个专业动作，证明自己不是局外人。"
+    volume_climax_template_en: "{protagonist} completes the first professional move, proving they belong."
+    volume_obstacle_template_zh: "{force_name}用职位、合同或口碑限制主角的行动空间。"
+    volume_obstacle_template_en: "{force_name} limits the protagonist through position, contract, or reputation."
+    volume_resolution_template_zh: "主角获得立足点，但新的责任和竞争也随之到来。"
+    volume_resolution_template_en: "A foothold is won, but new duties and competition arrive."
+    chapter_conflict_templates:
+      setup_zh: "{protagonist}发现一个现实机会，但资源和规则都不站在自己这边。"
+      pressure_zh: "{force_name}把压力落到职位、合同或口碑上，逼主角做取舍。"
+      reversal_zh: "{protagonist}用专业动作打开一个小缺口。"
+      climax_zh: "{protagonist}在公开场合证明选择的现实价值。"
+  - phase_key: organization_game
+    phase_name_zh: "组织博弈"
+    phase_name_en: "Organization Game"
+    description_zh: "主角进入组织利益网络，必须处理派系、客户、指标和人情债。"
+    description_en: "The protagonist enters an interest network of factions, clients, metrics, and social debts."
+    typical_force_types: ["faction", "systemic"]
+    volume_goal_template_zh: "{protagonist}必须在{force_name}造成的组织压力中保住项目并扩大资源入口。"
+    volume_goal_template_en: "{protagonist} must protect the project and expand resource access under {force_name}'s pressure."
+    volume_climax_template_zh: "项目或职位发生关键跃迁，组织内的站队被重新洗牌。"
+    volume_climax_template_en: "A key project or position shifts, reshuffling organizational alignment."
+    volume_obstacle_template_zh: "竞争者截胡资源，舆论和合同风险同时逼近。"
+    volume_obstacle_template_en: "A rival intercepts resources while reputation and contract risk close in."
+    volume_resolution_template_zh: "主角赢得一段资源窗口，但也欠下新的组织债务。"
+    volume_resolution_template_en: "The protagonist wins a resource window but incurs a new organizational debt."
+    chapter_conflict_templates:
+      setup_zh: "{protagonist}接手一个能改变位置的项目。"
+      pressure_zh: "{force_name}从指标、客户或舆论处制造阻力。"
+      reversal_zh: "{protagonist}找到资源分配中的漏洞或交换点。"
+      climax_zh: "项目结果改变组织内的利益排序。"
+  - phase_key: public_reputation
+    phase_name_zh: "口碑回流"
+    phase_name_en: "Reputation Feedback"
+    description_zh: "主角的选择外溢到公众、行业或资本层面，口碑开始反过来改变资源。"
+    description_en: "Choices spill into public, industry, or capital perception, and reputation changes resources."
+    typical_force_types: ["public", "systemic"]
+    volume_goal_template_zh: "{protagonist}必须处理{force_name}引发的口碑危机，把舆论反噬转成资源重排。"
+    volume_goal_template_en: "{protagonist} must handle a reputation crisis caused by {force_name} and turn backlash into resource realignment."
+    volume_climax_template_zh: "口碑战或行业判断出现反转，主角的位置被重新定义。"
+    volume_climax_template_en: "A reputation battle or industry judgment reverses, redefining the protagonist's position."
+    volume_obstacle_template_zh: "旧选择的后果被公众放大，组织内部也开始追责。"
+    volume_obstacle_template_en: "Past choices are amplified publicly, and the organization starts assigning blame."
+    volume_resolution_template_zh: "主角获得更高层资源入口，同时进入更严苛的审视。"
+    volume_resolution_template_en: "The protagonist gains higher-level resource access and harsher scrutiny."
+    chapter_conflict_templates:
+      setup_zh: "一个旧决定在舆论或行业内重新发酵。"
+      pressure_zh: "{force_name}试图把责任推给主角。"
+      reversal_zh: "{protagonist}用事实链和专业结果改变判断。"
+      climax_zh: "公众评价或行业资源发生可见反转。"
+
+protagonist_archetypes:
+  - archetype_key: professional_climber
+    name_zh: "清醒职业攀登者"
+    name_en: "Clear-Eyed Professional Climber"
+    core_wound_zh: "曾因缺少资源和话语权被迫接受不公平结果。"
+    core_wound_en: "Once had to accept unfair outcomes due to lacking resources and voice."
+    external_goal_template_zh: "{name}要在现实规则中拿到足以改变命运的位置。"
+    external_goal_template_en: "{name} seeks a position strong enough to change fate inside real-world rules."
+    internal_need_template_zh: "{name}需要学会把人情、专业和底线同时纳入决策。"
+    internal_need_template_en: "{name} must integrate relationships, expertise, and boundaries into decisions."
+    arc_trajectory_zh: "从被规则分配位置到主动制定交换条件。"
+    arc_trajectory_en: "From being assigned a place by rules to setting terms of exchange."
+    flaw_zh: "容易把所有关系都当成资源，忽视情感与信任的维护。"
+    flaw_en: "Treats relationships as resources and neglects trust."
+    strength_zh: "专业判断强，能看见现实规则中的交换点。"
+    strength_en: "Strong professional judgment and sensitivity to exchange points."
+
+world_rule_templates:
+  - rule_template_key: reputation_feedback
+    name_zh: "口碑回流规则"
+    name_en: "Reputation Feedback Rule"
+    description_zh: "职业动作会改变口碑，口碑再改变资源、机会和风险。"
+    description_en: "Professional actions alter reputation, which then changes resources, opportunity, and risk."
+    story_consequence_zh: "{protagonist}不能只赢眼前项目，还要承担口碑后果。"
+    story_consequence_en: "{protagonist} cannot only win the immediate project; reputation consequences follow."
+    exploitation_potential_zh: "让每次短期胜利产生长期现实回流。"
+    exploitation_potential_en: "Turns short-term wins into long-term realistic feedback."
+
+quality_traps:
+  - trap_key: floating_workplace
+    description_zh: "职场悬浮：没有行业规则、职位结构、合同和真实资源压力。"
+    description_en: "Floating workplace with no industry rules, position structure, contracts, or resource pressure."
+    severity: critical
+  - trap_key: effortless_patron
+    description_zh: "贵人无代价解决所有问题，主角专业动作失效。"
+    description_en: "A patron solves every issue for free, erasing professional agency."
+    severity: critical
+  - trap_key: no_reputation_feedback
+    description_zh: "舆论和口碑出现后不改变后续资源。"
+    description_en: "Public opinion and reputation do not change later resources."
+    severity: warning
+
+disqualifiers:
+  - rule_zh: "职业台阶、金钱合同和组织关系都没有可追踪变化。"
+    rule_en: "Career ladder, contracts, and organizational relations have no trackable change."
+    severity: fatal
+  - rule_zh: "现实题材主要依赖天降贵人或无成本打脸。"
+    rule_en: "The urban-realistic story relies on free patron rescue or costless face-slapping."
+    severity: critical
+
+signal_keywords:
+  career_zh: ["职场", "项目", "合同", "客户", "舆论", "资源", "公司", "行业"]

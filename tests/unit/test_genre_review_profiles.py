@@ -116,6 +116,19 @@ def test_resolve_otherworld_cross_system_by_preset() -> None:
     assert "identity_debt_tracking" in profile.plan_rubric.required_checks
 
 
+def test_resolve_new_self_closure_categories() -> None:
+    urban = resolve_genre_review_profile("都市职场", "娱乐圈项目")
+    scifi = resolve_genre_review_profile("科幻机甲", "星际舰队")
+    wuxia = resolve_genre_review_profile("武侠江湖", "门派侠义")
+
+    assert urban.category_key == "urban-contemporary"
+    assert "career_ladder_exists" in urban.plan_rubric.required_checks
+    assert scifi.category_key == "science-fiction-progression"
+    assert "science_constraint_model" in scifi.plan_rubric.required_checks
+    assert wuxia.category_key == "wuxia-jianghu"
+    assert "jianghu_rule_ledger" in wuxia.plan_rubric.required_checks
+
+
 def test_resolve_by_genre_string_romance() -> None:
     """Chinese genre string '女性成长' resolves to relationship-driven."""
     profile = resolve_genre_review_profile("女性成长", None)
@@ -135,7 +148,7 @@ def test_resolve_unknown_genre_returns_default() -> None:
 def test_signal_keywords_not_empty_for_core_categories() -> None:
     """Core category profiles must have non-empty conflict_terms_zh."""
     genre_to_category = [
-        ("末日科幻", "action-progression"),
+        ("末日异能升级", "action-progression"),
         ("异界系统", "otherworld-cross-system"),
         ("女性成长", "relationship-driven"),
         ("悬疑推理", "suspense-mystery"),

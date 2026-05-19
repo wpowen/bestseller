@@ -144,6 +144,17 @@ class L8Config:
     enabled: bool = False
 
 
+@dataclass(frozen=True)
+class StoryPrincipleGateConfig:
+    """Audit knobs for event-unit writing-principle coverage."""
+
+    enabled: bool = True
+    default: str = "audit_only"
+    block_on_failure: bool = False
+    min_event_cycle_roles_per_batch: int = 3
+    max_same_role_streak: int = 3
+
+
 # ---------------------------------------------------------------------------
 # Phase B/C/D — webnovel-writer adoption flags (plan: shimmying-soaring-gadget).
 # ---------------------------------------------------------------------------
@@ -202,6 +213,9 @@ class QualityGatesConfig:
     l5: L5Config = field(default_factory=L5Config)
     l6_enabled: bool = True
     l6_gate: GateConfig = DEFAULT_GATE_CONFIG
+    story_principle: StoryPrincipleGateConfig = field(
+        default_factory=StoryPrincipleGateConfig
+    )
     l7: L7Config = field(default_factory=L7Config)
     l8: L8Config = field(default_factory=L8Config)
     phase_b: PhaseBLineTrackerConfig = field(default_factory=PhaseBLineTrackerConfig)
@@ -270,6 +284,7 @@ def load_quality_gates_config(
     l5_repeated_beat = _as_dict(l5_checks.get("repeated_beat"))
     l5_canon_guardrails = _as_dict(l5_checks.get("canon_guardrails"))
     l6 = _as_dict(raw.get("l6_write_gate"))
+    story_principle = _as_dict(raw.get("story_principle_gate"))
     l7 = _as_dict(raw.get("l7_continuous_audit"))
     l8 = _as_dict(raw.get("l8_scorecard"))
     l2_stance = _as_dict(l2_checks.get("stance_flip_justification"))
@@ -343,6 +358,15 @@ def load_quality_gates_config(
         ),
         l6_enabled=bool(l6.get("enabled", True)),
         l6_gate=_build_gate_config(l6),
+        story_principle=StoryPrincipleGateConfig(
+            enabled=bool(story_principle.get("enabled", True)),
+            default=str(story_principle.get("default", "audit_only")),
+            block_on_failure=bool(story_principle.get("block_on_failure", False)),
+            min_event_cycle_roles_per_batch=int(
+                story_principle.get("min_event_cycle_roles_per_batch", 3)
+            ),
+            max_same_role_streak=int(story_principle.get("max_same_role_streak", 3)),
+        ),
         l7=L7Config(
             enabled=bool(l7.get("enabled", True)),
             auto_repair=bool(l7.get("auto_repair", False)),

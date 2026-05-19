@@ -219,6 +219,7 @@ class PipelineSettings(BaseModel):
     require_chapter_plan_contract: bool = True  # Outline materialization must validate scene time/purpose/participants
     enable_chapter_causality_gate: bool = True  # Outline materialization validates reader-visible causal axes
     chapter_causality_gate_block_on_failure: bool = True  # Block flat chapter plans before prose drafting
+    methodology_contract_mode: str = "warn"  # off/warn/strict for methodology overlay scope and execution gates
     require_pre_draft_scene_contract: bool = True  # Scene pipeline validates persisted scene cards before drafting
     enable_scene_plan_richness_gate: bool = True  # Pre-draft scene card richness validation
     scene_richness_block_on_critical: bool = True  # Raise on critical richness failure instead of logging + injecting warnings
@@ -356,6 +357,7 @@ class PipelineSettings(BaseModel):
     story_design_kernel_candidate_count: int = 3
     enable_emotion_driven_kernel: bool = True
     enable_emotion_kernel_backfill: bool = True
+    enable_public_emotion_kernel_backfill: bool = True
     enable_entry_system_kernel: bool = True
     enable_entry_system_backfill: bool = True
     enable_story_state_driven_planning: bool = True
@@ -363,6 +365,7 @@ class PipelineSettings(BaseModel):
     reverse_outline_gate_block_on_failure: bool = False
     enable_worldview_compliance_gate: bool = True
     worldview_compliance_gate_block_on_failure: bool = False
+    enable_story_principle_gate: bool = True
     enable_worldview_progression_gate: bool = True
     worldview_progression_gate_block_on_failure: bool = False
     story_design_require_kernel_for_new_projects: bool = False

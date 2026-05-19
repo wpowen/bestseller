@@ -23,6 +23,12 @@ from bestseller.services.emotion_driven_kernel import (
     emotion_driven_kernel_from_dict,
     evaluate_emotion_contracts,
 )
+from bestseller.services.compliance_boundary_kernel import (
+    evaluate_compliance_boundary_kernel,
+)
+from bestseller.services.public_emotion_kernel import (
+    evaluate_public_emotion_kernel,
+)
 from bestseller.services.ranking_capability_profile import (
     load_ranking_capability_profile_text,
 )
@@ -94,6 +100,10 @@ _REPAIR_ACTIONS = {
     "distilled_strategy_state_variables_missing": "把策略卡要求的状态变量写入 StoryDesignKernel、卷纲或章纲。",
     "distilled_worldview_not_bound": "把蒸馏策略要求的世界状态变量、资产、权威声明写入 StoryDesignKernel.worldview_kernel。",
     "emotion_driven_kernel_missing": "补齐 EmotionDrivenKernel：读者情绪承诺、代入链、炸弹合同、反派道德面具和结局纹理。",
+    "public_emotion_kernel_missing": "补齐 PublicEmotionKernel：目标群体、公共情绪、未说出口的话、类型转译和读者补偿。",
+    "public_emotion_bridge_missing": "补齐公共情绪桥：把群体情绪安全转译为本书专属设定、标题钩子和追读补偿。",
+    "compliance_boundary_kernel_missing": "补齐 ComplianceBoundaryKernel：平台/地区策略包、禁止触达区、允许转译和降风险写法。",
+    "compliance_boundary_high_risk": "修复公共情绪合规风险：移除真实群体攻击、现实违法攻略、低俗擦边或可识别现实目标。",
     "empathy_contract_missing": "补齐代入链：处境、欲望、感官入口、判断逻辑、合理行动和行动后果。",
     "bomb_contract_not_consumed": "补齐桌下炸弹：读者已知、角色盲区、触发条件、倒计时、严重后果和兑现窗口。",
     "antagonist_moral_contract_thin": "补齐反派的真实善行、隐秘欲望、裂缝、自我辩护和崩塌伤口。",
@@ -119,6 +129,10 @@ _DIRECTIVE_TEMPLATES_ZH = {
     "distilled_strategy_state_variables_missing": "当前规划缺少蒸馏策略要求的状态变量；后续卷章必须显性追踪这些变量的变化。",
     "distilled_worldview_not_bound": "当前 StoryDesignKernel 未绑定蒸馏世界观状态变量、资产或权威声明；后续必须补齐 worldview_kernel 的结构化世界观账本。",
     "emotion_driven_kernel_missing": "当前项目缺少情绪驱动内核；新规划至少要明确读者等待、主角代入链、桌下炸弹和结局纹理。",
+    "public_emotion_kernel_missing": "当前项目缺少公共情绪内核；新规划至少要明确目标群体、公共情绪、类型转译和读者补偿。",
+    "public_emotion_bridge_missing": "当前项目缺少可执行公共情绪桥；必须把公共情绪转译为本书专属的设定、标题钩子和追读补偿。",
+    "compliance_boundary_kernel_missing": "当前项目缺少合规边界内核；公共情绪进入标题、简介和章纲前必须有安全转译边界。",
+    "compliance_boundary_high_risk": "当前公共情绪或标题候选命中高风险合规边界；必须先改写为虚构系统表达。",
     "empathy_contract_missing": "当前情绪合同缺少代入链；章节必须写清人物处境、欲望、感官、判断、行动和后果。",
     "bomb_contract_not_consumed": "当前情绪合同缺少可执行炸弹；章节必须写清信息差、触发条件、倒计时、严重后果和兑现窗口。",
     "antagonist_moral_contract_thin": "反派道德面具过薄；必须写出真实善行、核心欲望、细小裂缝、自我辩护和崩塌伤口。",
@@ -144,6 +158,10 @@ _DIRECTIVE_TEMPLATES_EN = {
     "distilled_strategy_state_variables_missing": "Track the strategy card's required state variables in the kernel, volume plan, or chapter outlines.",
     "distilled_worldview_not_bound": "Bind distilled worldview state variables, assets, and authority claims into StoryDesignKernel.worldview_kernel.",
     "emotion_driven_kernel_missing": "Add an EmotionDrivenKernel with reader waiting, empathy chains, bomb contracts, antagonist moral masks, and ending texture.",
+    "public_emotion_kernel_missing": "Add a PublicEmotionKernel with audience segment, public emotion, genre translation, and reader compensation.",
+    "public_emotion_bridge_missing": "Add an executable public-emotion bridge with project-local title hook and payoff.",
+    "compliance_boundary_kernel_missing": "Add a ComplianceBoundaryKernel before public emotion enters copy or chapter planning.",
+    "compliance_boundary_high_risk": "Rewrite the public-emotion translation to remove real-world target, illegal-instruction, hate, or lowbrow-risk framing.",
     "empathy_contract_missing": "Add an empathy chain: situation, desire, sensory entry, judgment, action, and consequence.",
     "bomb_contract_not_consumed": "Add an executable bomb: reader knowledge, character blindspot, trigger, countdown, consequence, and payoff window.",
     "antagonist_moral_contract_thin": "Give the antagonist real good, hidden desire, cracks, rationalization, and collapse wound.",
@@ -230,9 +248,13 @@ def build_prewrite_repair_directives(
     )
     directives: list[str] = []
     for code in _finding_codes_from_report(report):
-        if code == "emotion_driven_kernel_missing":
-            # Gradual rollout: missing emotion core is visible in readiness
-            # telemetry, but it should not force legacy projects into repair.
+        if code in {
+            "emotion_driven_kernel_missing",
+            "public_emotion_kernel_missing",
+            "compliance_boundary_kernel_missing",
+        }:
+            # Gradual rollout: missing optional planning kernels are visible
+            # in telemetry, but should not force legacy projects into repair.
             continue
         directive = templates.get(code)
         if directive and directive not in directives:
@@ -547,6 +569,36 @@ def _emotion_driven_kernel_from(
     }
 
 
+def _public_emotion_kernel_from(metadata: Mapping[str, object]) -> dict[str, object]:
+    raw = _as_mapping(metadata.get("public_emotion_kernel"))
+    report = evaluate_public_emotion_kernel(raw or None)
+    payload = report.to_dict()
+    if raw and payload.get("valid"):
+        bridges = _mapping_list(raw.get("emotion_bridges"))
+        payload["bridge_types"] = _string_list([bridge.get("bridge_type") for bridge in bridges])
+        payload["title_hooks"] = _string_list([bridge.get("title_hook") for bridge in bridges])
+    return payload
+
+
+def _compliance_boundary_kernel_from(metadata: Mapping[str, object]) -> dict[str, object]:
+    raw = _as_mapping(metadata.get("compliance_boundary_kernel"))
+    public_emotion = _as_mapping(metadata.get("public_emotion_kernel"))
+    candidate_texts: list[str] = []
+    for bridge in _mapping_list(public_emotion.get("emotion_bridges")):
+        candidate_texts.extend(
+            [
+                _text(bridge.get("title_hook")),
+                _text(bridge.get("story_hook")),
+                _text(bridge.get("genre_translation")),
+            ]
+        )
+    report = evaluate_compliance_boundary_kernel(
+        raw or None,
+        candidate_texts=[text for text in candidate_texts if text],
+    )
+    return report.to_dict()
+
+
 def build_project_planning_kernel(
     project: object | None = None,
     *,
@@ -557,6 +609,8 @@ def build_project_planning_kernel(
     volume_plan: object | None = None,
     story_design_kernel: Mapping[str, object] | None = None,
     emotion_driven_kernel: Mapping[str, object] | None = None,
+    public_emotion_kernel: Mapping[str, object] | None = None,
+    compliance_boundary_kernel: Mapping[str, object] | None = None,
     output_base_dir: str | Path | None = None,
 ) -> dict[str, object]:
     """Build a normalized planning contract from all available artifacts."""
@@ -565,6 +619,10 @@ def build_project_planning_kernel(
         **_project_metadata(project),
         **_as_mapping(project_metadata),
     }
+    if public_emotion_kernel:
+        metadata["public_emotion_kernel"] = dict(public_emotion_kernel)
+    if compliance_boundary_kernel:
+        metadata["compliance_boundary_kernel"] = dict(compliance_boundary_kernel)
     book = _as_mapping(book_spec) or _as_mapping(metadata.get("book_spec"))
     world = _as_mapping(world_spec) or _as_mapping(metadata.get("world_spec"))
     cast = _as_mapping(cast_spec) or _as_mapping(metadata.get("cast_spec"))
@@ -594,6 +652,8 @@ def build_project_planning_kernel(
     )
     story_design = _story_design_kernel_from(metadata, story_design_kernel)
     emotion_driven = _emotion_driven_kernel_from(metadata, emotion_driven_kernel)
+    public_emotion = _public_emotion_kernel_from(metadata)
+    compliance_boundary = _compliance_boundary_kernel_from(metadata)
     distilled_strategy_card = metadata.get("distilled_strategy_card")
     distilled_strategy_expected = bool(
         distilled_strategy_card
@@ -681,6 +741,8 @@ def build_project_planning_kernel(
         },
         "story_design": story_design,
         "emotion_driven": emotion_driven,
+        "public_emotion": public_emotion,
+        "compliance_boundary": compliance_boundary,
         "distilled_strategy": distilled_strategy,
     }
 
@@ -760,6 +822,8 @@ def evaluate_prewrite_readiness(
     foundation = _as_mapping(kernel.get("foundation"))
     story_design = _as_mapping(kernel.get("story_design"))
     emotion_driven = _as_mapping(kernel.get("emotion_driven"))
+    public_emotion = _as_mapping(kernel.get("public_emotion"))
+    compliance_boundary = _as_mapping(kernel.get("compliance_boundary"))
     distilled_strategy = _as_mapping(kernel.get("distilled_strategy"))
     target = int(target_chapters or kernel.get("target_chapters") or 0)
 
@@ -914,6 +978,92 @@ def evaluate_prewrite_readiness(
                         _string_list(story_design.get("change_vectors"))
                     ),
                 },
+            )
+        )
+
+    public_emotion_codes = set(_string_list(public_emotion.get("issue_codes")))
+    if not public_emotion.get("present"):
+        findings.append(
+            _finding(
+                "public_emotion_kernel_missing",
+                "warning",
+                "Missing PublicEmotionKernel; planning can proceed, but public emotion is not project-scoped.",
+                "public_emotion",
+            )
+        )
+    elif "PUBLIC_EMOTION_KERNEL_INVALID" in public_emotion_codes:
+        findings.append(
+            _finding(
+                "public_emotion_kernel_missing",
+                "high",
+                "PublicEmotionKernel is present but fails validation.",
+                "public_emotion",
+                evidence={"issue_codes": sorted(public_emotion_codes)},
+            )
+        )
+    elif {
+        "PUBLIC_EMOTION_BRIDGE_MISSING",
+        "PUBLIC_EMOTION_TARGET_MISSING",
+    } & public_emotion_codes:
+        severity = (
+            "high"
+            if "PUBLIC_EMOTION_BRIDGE_MISSING" in public_emotion_codes
+            else "warning"
+        )
+        findings.append(
+            _finding(
+                "public_emotion_bridge_missing",
+                severity,
+                "PublicEmotionKernel lacks a complete target segment or emotion bridge.",
+                "public_emotion.emotion_bridges",
+                evidence={"issue_codes": sorted(public_emotion_codes)},
+            )
+        )
+
+    compliance_codes = set(_string_list(compliance_boundary.get("issue_codes")))
+    if not compliance_boundary.get("present"):
+        findings.append(
+            _finding(
+                "compliance_boundary_kernel_missing",
+                "warning",
+                "Missing ComplianceBoundaryKernel; public emotion has no explicit safety translation boundary.",
+                "compliance_boundary",
+            )
+        )
+    high_risk_compliance = any(
+        code
+        in compliance_codes
+        for code in (
+            "COMPLIANCE_BOUNDARY_KERNEL_INVALID",
+            "COMPLIANCE_BOUNDARY_HIGH_RISK",
+            "COMPLIANCE_REAL_WORLD_REVENGE",
+            "COMPLIANCE_IDENTIFIABLE_REAL_TARGET",
+            "COMPLIANCE_HATRED_OR_DISCRIMINATION",
+            "COMPLIANCE_PROCEDURAL_HARM",
+            "COMPLIANCE_SEXUAL_OR_MINOR_RISK",
+        )
+    )
+    if high_risk_compliance:
+        severity = (
+            "critical"
+            if any(
+                code
+                in compliance_codes
+                for code in (
+                    "COMPLIANCE_HATRED_OR_DISCRIMINATION",
+                    "COMPLIANCE_PROCEDURAL_HARM",
+                    "COMPLIANCE_SEXUAL_OR_MINOR_RISK",
+                )
+            )
+            else "high"
+        )
+        findings.append(
+            _finding(
+                "compliance_boundary_high_risk",
+                severity,
+                "Compliance boundary detected high-risk public-emotion translation.",
+                "compliance_boundary",
+                evidence={"issue_codes": sorted(compliance_codes)},
             )
         )
 
@@ -1151,6 +1301,20 @@ def evaluate_prewrite_readiness(
         "emotion_driven_core": bool(
             emotion_driven.get("present") and emotion_driven.get("valid")
         ),
+        "public_emotion_core": bool(
+            public_emotion.get("present") and public_emotion.get("passed")
+        ),
+        "public_emotion_contracts": {
+            "target_segments": int(public_emotion.get("target_segment_count") or 0),
+            "emotion_bridges": int(public_emotion.get("emotion_bridge_count") or 0),
+        },
+        "compliance_boundary": bool(
+            compliance_boundary.get("present") and compliance_boundary.get("passed")
+        ),
+        "compliance_boundary_policy": {
+            "policy_pack_key": _text(compliance_boundary.get("policy_pack_key")),
+            "risk_level": _text(compliance_boundary.get("risk_level")),
+        },
         "emotion_driven_contracts": {
             "empathy": int(emotion_driven.get("empathy_contract_count") or 0),
             "bomb": int(emotion_driven.get("bomb_contract_count") or 0),
@@ -1163,7 +1327,12 @@ def evaluate_prewrite_readiness(
     actions: list[str] = []
     for finding in findings:
         if (
-            finding.code == "emotion_driven_kernel_missing"
+            finding.code
+            in {
+                "emotion_driven_kernel_missing",
+                "public_emotion_kernel_missing",
+                "compliance_boundary_kernel_missing",
+            }
             and finding.severity == "warning"
         ):
             continue
@@ -1190,6 +1359,8 @@ def persist_project_planning_kernel(
     volume_plan: object | None = None,
     story_design_kernel: Mapping[str, object] | None = None,
     emotion_driven_kernel: Mapping[str, object] | None = None,
+    public_emotion_kernel: Mapping[str, object] | None = None,
+    compliance_boundary_kernel: Mapping[str, object] | None = None,
     output_base_dir: str | Path | None = None,
 ) -> dict[str, object]:
     """Persist kernel + readiness report into ``project.metadata_json``."""
@@ -1198,6 +1369,10 @@ def persist_project_planning_kernel(
         **_project_metadata(project),
         **_as_mapping(project_metadata),
     }
+    if public_emotion_kernel:
+        metadata["public_emotion_kernel"] = dict(public_emotion_kernel)
+    if compliance_boundary_kernel:
+        metadata["compliance_boundary_kernel"] = dict(compliance_boundary_kernel)
     kernel = build_project_planning_kernel(
         project,
         project_metadata=metadata,
@@ -1207,6 +1382,8 @@ def persist_project_planning_kernel(
         volume_plan=volume_plan,
         story_design_kernel=story_design_kernel,
         emotion_driven_kernel=emotion_driven_kernel,
+        public_emotion_kernel=public_emotion_kernel,
+        compliance_boundary_kernel=compliance_boundary_kernel,
         output_base_dir=output_base_dir,
     )
     report = evaluate_prewrite_readiness(

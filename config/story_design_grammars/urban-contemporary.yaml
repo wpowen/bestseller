@@ -1,0 +1,39 @@
+key: urban-contemporary
+name: 都市职业现实剧情语法
+applies_to_categories: [urban-contemporary]
+required_contracts:
+  - career_ladder
+  - organization_politics
+  - reputation_feedback
+  - money_contract_pressure
+  - social_network_consequence
+state_variables:
+  - 职业位置
+  - 组织关系
+  - 现金流或合同风险
+  - 公众口碑
+  - 人情债与资源入口
+chapter_change_vectors:
+  - 职位或项目权限发生变化
+  - 组织内某一方重新站队
+  - 合同、金钱或资源条件改变
+  - 口碑舆论产生正负回流
+  - 人情债被偿还、延期或加深
+reader_rewards:
+  - 现实问题被聪明解决
+  - 职业台阶可见上移
+  - 口碑或资源出现反转
+  - 工作场景有专业细节
+  - 人情往来影响真实利益
+hook_or_aftereffect_types:
+  - 新项目带来隐性条件
+  - 竞争者截胡关键资源
+  - 合同条款突然变动
+  - 舆论反噬旧选择
+  - 上级或客户提出新交换
+forbidden_defaults:
+  - 总裁或贵人无代价解决问题
+  - 职场只靠打脸不靠专业动作
+  - 钱、合同、舆论没有后续后果
+  - 所有同事只负责衬托主角
+  - 现实题材写成悬浮爽文

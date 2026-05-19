@@ -158,7 +158,11 @@ def test_premium_gate_project_command_outputs_json(monkeypatch: pytest.MonkeyPat
                 },
                 "premium_state_snapshot": {
                     "passed": True,
+                    "power_tier_state": {"沈砚": "炼气圆满"},
                     "resource_balances": {"沈砚": {"筑基丹": 1}},
+                    "opportunity_map": [
+                        {"target": "外门筑基名额", "cost": "丹药与船票"}
+                    ],
                     "faction_pressure_queue": [
                         {
                             "faction": "青炉宗",
@@ -166,6 +170,17 @@ def test_premium_gate_project_command_outputs_json(monkeypatch: pytest.MonkeyPat
                             "reaction": "派外门执事压价收购",
                         }
                     ],
+                },
+                "category_hard_gates": {
+                    "progression_causality_gate": {"status": "active"},
+                    "resource_cost_gate": {"status": "active"},
+                    "faction_reaction_gate": {"status": "active"},
+                },
+                "chapter_state_updates": {
+                    "power_tier_delta": {"status": "required"},
+                    "resource_delta": {"status": "required"},
+                    "opportunity_delta": {"status": "required"},
+                    "faction_reaction_delta": {"status": "required"},
                 },
             },
         )

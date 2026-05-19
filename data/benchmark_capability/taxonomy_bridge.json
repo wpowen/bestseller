@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "generated_at": "2026-05-16T16:23:44+00:00",
+  "generated_at": "2026-05-17T02:33:58+00:00",
   "rows": [
     {
       "canonical_category": "action-progression",
@@ -127,9 +127,9 @@
     {
       "canonical_category": "science-fiction-progression",
       "display_name": "科幻机甲进阶 / Science Fiction Progression",
-      "novel_category_key": null,
-      "review_profile_key": null,
-      "story_design_grammar_key": null,
+      "novel_category_key": "science-fiction-progression",
+      "review_profile_key": "science-fiction-progression",
+      "story_design_grammar_key": "science-fiction-progression",
       "distillation_buckets": [
         "science-fiction-progression"
       ],
@@ -137,12 +137,8 @@
         "scifi-starwar",
         "space-opera"
       ],
-      "bridge_status": "fragmented",
-      "gaps": [
-        "science-fiction-progression 缺少一等 novel category YAML",
-        "science-fiction-progression 缺少 genre review profile",
-        "science-fiction-progression 缺少 story design grammar"
-      ]
+      "bridge_status": "aligned",
+      "gaps": []
     },
     {
       "canonical_category": "strategy-worldbuilding",
@@ -182,9 +178,9 @@
     {
       "canonical_category": "urban-contemporary",
       "display_name": "都市职业现实 / Urban Contemporary",
-      "novel_category_key": null,
-      "review_profile_key": null,
-      "story_design_grammar_key": null,
+      "novel_category_key": "urban-contemporary",
+      "review_profile_key": "urban-contemporary",
+      "story_design_grammar_key": "urban-contemporary",
       "distillation_buckets": [
         "urban-contemporary"
       ],
@@ -193,31 +189,24 @@
         "shezhu-bailan-comedy",
         "urban-power-reversal"
       ],
-      "bridge_status": "fragmented",
-      "gaps": [
-        "urban-contemporary 缺少一等 novel category YAML",
-        "urban-contemporary 缺少 genre review profile",
-        "urban-contemporary 缺少 story design grammar"
-      ]
+      "bridge_status": "aligned",
+      "gaps": []
     },
     {
       "canonical_category": "wuxia-jianghu",
       "display_name": "武侠江湖 / Wuxia Jianghu",
-      "novel_category_key": null,
-      "review_profile_key": null,
-      "story_design_grammar_key": null,
-      "distillation_buckets": [],
+      "novel_category_key": "wuxia-jianghu",
+      "review_profile_key": "wuxia-jianghu",
+      "story_design_grammar_key": "wuxia-jianghu",
+      "distillation_buckets": [
+        "wuxia-jianghu"
+      ],
       "prompt_pack_keys": [
         "history-strategy",
         "eastern-aesthetic"
       ],
-      "bridge_status": "fragmented",
-      "gaps": [
-        "wuxia-jianghu 缺少一等 novel category YAML",
-        "wuxia-jianghu 缺少 genre review profile",
-        "wuxia-jianghu 缺少 story design grammar",
-        "wuxia-jianghu 缺少对齐的 distillation bucket"
-      ]
+      "bridge_status": "aligned",
+      "gaps": []
     }
   ]
 }

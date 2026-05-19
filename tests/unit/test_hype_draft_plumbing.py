@@ -232,6 +232,34 @@ class TestSceneDraftPromptsHypeBlocks:
         assert "第一章从被迫选择和直接损失切入" in user_prompt
         assert "文笔还有待提升" in user_prompt
 
+    def test_story_principle_event_unit_contract_lands_in_scene_prompt_zh(self) -> None:
+        chapter = _sample_chapter()
+        chapter.metadata_json = {
+            "chapter_event_role": "method_search",
+            "information_gap_mode": "reader_knows_less",
+            "event_cycle_contract": {
+                "event_unit_id": "v1-event-2",
+                "reader_desire": "读者想看主角如何不牺牲盟友也修复账册。",
+                "event_pressure": "长老会限时公开审计。",
+                "solution_method": "把私下解释改成公开信任债测试。",
+                "handoff_to_next": "测试需要盟友公开担保。",
+            },
+        }
+
+        _, user_prompt = build_scene_draft_prompts(
+            _sample_project(),
+            chapter,
+            _sample_scene(),
+            _sample_style_guide(),
+        )
+
+        assert "写作原理执行约束：事件单元合同" in user_prompt
+        assert "不是每场/每章都复刻完整六步" in user_prompt
+        assert "本章事件角色：method_search" in user_prompt
+        assert "信息差模式：reader_knows_less" in user_prompt
+        assert "solution_method: 把私下解释改成公开信任债测试。" in user_prompt
+        assert "本场景贡献：先证明旧方法为什么失效。" in user_prompt
+
     def test_populated_blocks_land_in_user_prompt_en(self) -> None:
         reader_block = (
             "[READER CONTRACT] selling points: ghost wealth, supernatural capitalism\n"

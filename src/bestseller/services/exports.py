@@ -8,6 +8,7 @@ import logging
 import math
 from pathlib import Path
 import re
+from types import SimpleNamespace
 from uuid import UUID
 from zipfile import ZIP_DEFLATED, ZIP_STORED, ZipFile
 
@@ -22,6 +23,10 @@ from bestseller.infra.db.models import (
     ProjectModel,
 )
 from bestseller.services.drafts import count_words, format_chapter_heading, sanitize_novel_markdown_content
+from bestseller.services.book_listing import (
+    build_book_listing_profile,
+    write_platform_title_workflow_artifacts,
+)
 from bestseller.services.output_hygiene import collect_unfinished_artifact_issues
 from bestseller.services.projects import get_project_by_slug
 from bestseller.services.writing_profile import normalize_language
@@ -294,6 +299,25 @@ def _write_commercial_package_sidecars(
         json.dumps(listing_metadata, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
     )
+    listing_profile = build_book_listing_profile(
+        project=SimpleNamespace(
+            slug=getattr(project, "slug", ""),
+            title=title,
+            genre=getattr(project, "genre", "") or "",
+            sub_genre=getattr(project, "sub_genre", "") or "",
+            audience=getattr(project, "audience", "") or "",
+            status=getattr(project, "status", "") or "writing",
+            language=getattr(project, "language", "") or "zh-CN",
+            metadata_json=listing_metadata,
+        ),
+        writing_profile=(
+            metadata.get("writing_profile")
+            if isinstance(metadata.get("writing_profile"), dict)
+            else {}
+        ),
+        story_bible=None,
+    )
+    write_platform_title_workflow_artifacts(listing_profile, listing_dir)
     detail_lines = [
         f"# {title}",
         "",

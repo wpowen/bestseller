@@ -76,6 +76,13 @@ def _text_list(value: Any) -> list[str]:
     return [text] if text else []
 
 
+def _float_or_default(value: Any, default: float) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
 class PremiseContract(BaseModel, frozen=True):
     """The project-level promise that prevents generic plot fallback."""
 
@@ -221,6 +228,87 @@ class DistilledWorldMechanismBinding(BaseModel, frozen=True):
     required_cost: str = ""
     anti_copy_boundaries: list[str] = Field(default_factory=list)
 
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_llm_aliases(cls, value: Any) -> Any:
+        data = _mapping(value)
+        if not data:
+            return value
+        data.setdefault(
+            "aggregate_key",
+            _first_text(
+                data,
+                "aggregate",
+                "source_aggregate",
+                "bucket",
+                "category",
+                "mechanism_key",
+                "binding_key",
+                "key",
+            )
+            or "project-specific",
+        )
+        data.setdefault(
+            "mechanism_id",
+            _first_text(
+                data,
+                "mechanism",
+                "mechanism_key",
+                "binding_key",
+                "key",
+                "name",
+                "id",
+            )
+            or data["aggregate_key"],
+        )
+        data.setdefault(
+            "design_role",
+            _first_text(
+                data,
+                "role",
+                "story_role",
+                "narrative_role",
+                "binding_type",
+                "purpose",
+                "narrative_function",
+                "example_scene",
+                "adaptation",
+                "constraint",
+                "description",
+            )
+            or "world_pressure",
+        )
+        data["source_confidence"] = _float_or_default(
+            data.get("source_confidence", data.get("confidence")),
+            0.7,
+        )
+        data.setdefault(
+            "required_project_binding",
+            _first_text(
+                data,
+                "project_binding",
+                "required_binding",
+                "binding",
+                "constraint",
+                "adaptation",
+                "binding_detail",
+                "application",
+                "chapter_binding",
+                "execution_rule",
+                "rule",
+                "description",
+            )
+            or "该机制必须绑定到本书的具体规则、状态变量或章节代价。",
+        )
+        data["state_variables"] = _text_list(
+            data.get("state_variables") or data.get("states") or data.get("variables")
+        )
+        data["anti_copy_boundaries"] = _text_list(data.get("anti_copy_boundaries"))
+        data["required_cost"] = _text(
+            data.get("required_cost") or data.get("cost") or data.get("visible_cost")
+        )
+        return data
+
 
 class WorldStateVariable(BaseModel, frozen=True):
     """A measurable world variable that should change through planning."""
@@ -239,9 +327,59 @@ class WorldStateVariable(BaseModel, frozen=True):
         data = _mapping(value)
         if not data:
             return value
+        data.setdefault("key", _first_text(data, "variable_key", "id", "name"))
+        key_text = _text(data.get("key"))
+        if not _text(data.get("variable_type")):
+            haystack = f"{key_text} {_text(data.get('name'))} {_text(data.get('description'))}"
+            if any(token in haystack for token in ("信任", "关系", "同盟", "trust", "ally")):
+                variable_type = "relationship"
+            elif any(token in haystack for token in ("线索", "真相", "证据", "clue", "truth")):
+                variable_type = "information"
+            elif any(token in haystack for token in ("风险", "压力", "暴露", "risk", "pressure")):
+                variable_type = "risk"
+            elif any(token in haystack for token in ("分数", "积分", "资源", "score", "resource")):
+                variable_type = "resource"
+            else:
+                variable_type = "state"
+            data["variable_type"] = variable_type
         if "current_value" in data:
             data["current_value"] = _text(data.get("current_value"))
-        data["change_triggers"] = _text_list(data.get("change_triggers"))
+        if not _text(data.get("desired_direction")):
+            data["desired_direction"] = (
+                _first_text(
+                    data,
+                    "direction",
+                    "target_direction",
+                    "trajectory",
+                    "target_state",
+                    "desired_state",
+                    "change_vector",
+                )
+                or "随剧情推进发生可验证变化。"
+            )
+        triggers = _text_list(
+            data.get("change_triggers")
+            or data.get("triggers")
+            or data.get("trigger")
+            or data.get("update_events")
+            or data.get("change_events")
+        )
+        data["change_triggers"] = triggers or [
+            "章节关键选择、线索验证或规则代价触发变化。"
+        ]
+        if not _text(data.get("failure_mode")):
+            data["failure_mode"] = (
+                _first_text(
+                    data,
+                    "failure",
+                    "risk_if_static",
+                    "failure_if_static",
+                    "risk",
+                    "anti_pattern",
+                )
+                or "状态变量停滞会导致章节只推进事件而不改变故事状态。"
+            )
+        data["source_mechanism_ids"] = _text_list(data.get("source_mechanism_ids"))
         return data
 
 
@@ -457,6 +595,15 @@ class WorldviewKernel(BaseModel, frozen=True):
     scene_templates: list[WorldSceneTemplateBinding] = Field(default_factory=list)
     anti_copy_boundaries: list[str] = Field(default_factory=list)
 
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_llm_aliases(cls, value: Any) -> Any:
+        data = _mapping(value)
+        if not data:
+            return value
+        data["anti_copy_boundaries"] = _text_list(data.get("anti_copy_boundaries"))
+        return data
+
 
 class StructureStrategy(BaseModel, frozen=True):
     """How the book converts its premise into repeated chapter movement."""
@@ -501,6 +648,18 @@ class PlotTreeNode(BaseModel, frozen=True):
             data["line_type"] = "subplot"
         elif line_type in {"romance", "emotion", "emotional"}:
             data["line_type"] = "relationship"
+        elif line_type in {
+            "backstory",
+            "back_story",
+            "history",
+            "origin",
+            "case_backstory",
+            "past_case",
+            "truth_backstory",
+        }:
+            data["line_type"] = "mystery"
+        elif line_type in {"power", "leveling", "upgrade", "growth"}:
+            data["line_type"] = "progression"
         elif line_type.startswith("main_") or line_type in {"mainline", "main-line"}:
             data["line_type"] = "main"
         return data
@@ -558,6 +717,171 @@ class BeatScheduleItem(BaseModel, frozen=True):
         return data
 
 
+class FourCausesContract(BaseModel, frozen=True):
+    """Book-level purpose/material/form/force contract from writing-principle analysis."""
+
+    purpose_result: str = Field(min_length=1)
+    material_basis: list[str] = Field(min_length=1)
+    formal_pattern: str = Field(min_length=1)
+    driving_forces: list[str] = Field(min_length=1)
+    proof_criteria: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_llm_aliases(cls, value: Any) -> Any:
+        data = _mapping(value)
+        if not data:
+            return value
+        if not _text(data.get("purpose_result")):
+            data["purpose_result"] = _first_text(
+                data,
+                "purpose",
+                "theme_result",
+                "desired_result",
+                "target_result",
+                "目的结果",
+            )
+        data["material_basis"] = _text_list(
+            data.get("material_basis") or data.get("materials") or data.get("material")
+        )
+        if not _text(data.get("formal_pattern")):
+            data["formal_pattern"] = _first_text(
+                data,
+                "form",
+                "structure_form",
+                "pattern",
+                "formal_strategy",
+            )
+        data["driving_forces"] = _text_list(
+            data.get("driving_forces")
+            or data.get("forces")
+            or data.get("force")
+            or data.get("动力")
+        )
+        data["proof_criteria"] = _text_list(
+            data.get("proof_criteria") or data.get("success_criteria") or data.get("proof")
+        )
+        return data
+
+
+class MacroStructureContract(BaseModel, frozen=True):
+    """How large-scale plot movement should distribute rhythm and repetition."""
+
+    structure_type: str = Field(min_length=1)
+    mainline_rule: str = Field(min_length=1)
+    subline_rule: str = ""
+    rhythm_rule: str = ""
+    anti_homogeneity_rule: str = ""
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_llm_aliases(cls, value: Any) -> Any:
+        data = _mapping(value)
+        if not data:
+            return value
+        if not _text(data.get("structure_type")):
+            data["structure_type"] = _first_text(
+                data,
+                "type",
+                "macro_type",
+                "macro_structure",
+                "structure",
+            )
+        if not _text(data.get("mainline_rule")):
+            data["mainline_rule"] = _first_text(
+                data,
+                "main_rule",
+                "mainline",
+                "primary_rule",
+                "progression_rule",
+            )
+        if "subline_rule" in data:
+            data["subline_rule"] = _text(data.get("subline_rule"))
+        if not _text(data.get("rhythm_rule")):
+            data["rhythm_rule"] = _first_text(data, "rhythm", "pacing_rule", "line_rhythm")
+        if not _text(data.get("anti_homogeneity_rule")):
+            data["anti_homogeneity_rule"] = _first_text(
+                data,
+                "anti_repeat_rule",
+                "freshness_rule",
+                "anti_template_rule",
+            )
+        return data
+
+
+class ReaderDesireContract(BaseModel, frozen=True):
+    """Reader desire type plus payoff and risk-control strategy."""
+
+    desire_type: str = Field(min_length=1)
+    reader_expectation: str = Field(min_length=1)
+    payoff_mode: str = Field(min_length=1)
+    risk_control: str = ""
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_llm_aliases(cls, value: Any) -> Any:
+        data = _mapping(value)
+        if not data:
+            return value
+        if not _text(data.get("desire_type")):
+            data["desire_type"] = _first_text(data, "type", "reader_desire", "need_type")
+        if not _text(data.get("reader_expectation")):
+            data["reader_expectation"] = _first_text(
+                data,
+                "expectation",
+                "reader_waiting",
+                "reader_want",
+                "expected_emotion",
+            )
+        if not _text(data.get("payoff_mode")):
+            data["payoff_mode"] = _first_text(
+                data,
+                "payoff",
+                "reward",
+                "satisfaction_mode",
+                "closure_mode",
+            )
+        if "risk_control" in data:
+            data["risk_control"] = _text(data.get("risk_control"))
+        return data
+
+
+class EventPatternContract(BaseModel, frozen=True):
+    """Reusable event-unit pattern, not a per-chapter six-step mandate."""
+
+    pattern_type: str = Field(min_length=1)
+    use_case: str = Field(min_length=1)
+    reader_effect: str = Field(min_length=1)
+    anti_repetition_rule: str = ""
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_llm_aliases(cls, value: Any) -> Any:
+        data = _mapping(value)
+        if not data:
+            return value
+        if not _text(data.get("pattern_type")):
+            data["pattern_type"] = _first_text(data, "type", "event_type", "role")
+        if not _text(data.get("use_case")):
+            data["use_case"] = _first_text(data, "when_to_use", "use", "scenario")
+        if not _text(data.get("reader_effect")):
+            data["reader_effect"] = _first_text(
+                data,
+                "effect",
+                "reader_reward",
+                "reader_impact",
+                "emotion_effect",
+            )
+        if not _text(data.get("anti_repetition_rule")):
+            data["anti_repetition_rule"] = _first_text(
+                data,
+                "anti_repeat_rule",
+                "freshness_rule",
+                "risk_control",
+            )
+        return data
+
+
 class StoryDesignKernel(BaseModel, frozen=True):
     """Validated story design contract for planning and gates."""
 
@@ -570,6 +894,10 @@ class StoryDesignKernel(BaseModel, frozen=True):
     character_conflict_contracts: list[CharacterConflictContract] = Field(min_length=1)
     world_conflict_contracts: list[WorldConflictContract] = Field(default_factory=list)
     worldview_kernel: WorldviewKernel | None = None
+    four_causes_contract: FourCausesContract | None = None
+    macro_structure_contract: MacroStructureContract | None = None
+    reader_desire_matrix: list[ReaderDesireContract] = Field(default_factory=list)
+    event_pattern_inventory: list[EventPatternContract] = Field(default_factory=list)
     structure_strategy: StructureStrategy
     plot_tree: list[PlotTreeNode] = Field(min_length=1)
     beat_schedule: list[BeatScheduleItem] = Field(min_length=1)
@@ -653,6 +981,54 @@ def render_story_design_kernel_prompt_block(
         lines.append(
             f"- Forbidden defaults: {', '.join(kernel.premise_contract.forbidden_defaults)}"
         )
+    if kernel.four_causes_contract is not None:
+        contract = kernel.four_causes_contract
+        lines.extend(
+            [
+                "### Four causes contract",
+                f"- Purpose/result: {contract.purpose_result}",
+                f"- Material basis: {', '.join(contract.material_basis)}",
+                f"- Formal pattern: {contract.formal_pattern}",
+                f"- Driving forces: {', '.join(contract.driving_forces)}",
+            ]
+        )
+        if contract.proof_criteria:
+            lines.append(f"- Proof criteria: {', '.join(contract.proof_criteria)}")
+    if kernel.macro_structure_contract is not None:
+        contract = kernel.macro_structure_contract
+        lines.extend(
+            [
+                "### Macro structure contract",
+                f"- Structure type: {contract.structure_type}",
+                f"- Mainline rule: {contract.mainline_rule}",
+            ]
+        )
+        if contract.subline_rule:
+            lines.append(f"- Subline rule: {contract.subline_rule}")
+        if contract.rhythm_rule:
+            lines.append(f"- Rhythm rule: {contract.rhythm_rule}")
+        if contract.anti_homogeneity_rule:
+            lines.append(f"- Anti-homogeneity rule: {contract.anti_homogeneity_rule}")
+    if kernel.reader_desire_matrix:
+        lines.append("### Reader desire matrix")
+        for item in kernel.reader_desire_matrix[:6]:
+            risk = f"; risk={item.risk_control}" if item.risk_control else ""
+            lines.append(
+                f"- {item.desire_type}: expectation={item.reader_expectation}; "
+                f"payoff={item.payoff_mode}{risk}"
+            )
+    if kernel.event_pattern_inventory:
+        lines.append("### Event pattern inventory")
+        for item in kernel.event_pattern_inventory[:8]:
+            anti = (
+                f"; anti-repeat={item.anti_repetition_rule}"
+                if item.anti_repetition_rule
+                else ""
+            )
+            lines.append(
+                f"- {item.pattern_type}: use={item.use_case}; "
+                f"reader_effect={item.reader_effect}{anti}"
+            )
     if kernel.worldview_kernel is not None:
         worldview = kernel.worldview_kernel
         lines.extend(

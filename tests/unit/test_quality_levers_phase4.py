@@ -158,6 +158,8 @@ def test_load_rhythm_engineering_loads_four_anchor_types() -> None:
         "external_interrupt",
     } <= set(config.rhythm_anchors.keys())
     assert config.per_1500_min_count >= 1
+    assert config.per_1500_min_count == 4
+    assert config.per_1500_min_types == 3
 
 
 def test_audit_rhythm_detects_anchors() -> None:

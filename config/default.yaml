@@ -33,7 +33,11 @@ llm:
   critic:
     model: "anthropic/claude-haiku-4-5"
     temperature: 0.25
-    max_tokens: 2048
+    # Chapter/scene review prompts now include commercial-quality gates,
+    # continuity checks, and rewrite instructions.  2048 tokens caused live
+    # MiniMax critic responses to truncate mid-report, which can misroute the
+    # repair loop. Keep enough room for a complete verdict plus evidence.
+    max_tokens: 4096
     timeout_seconds: 60
 
   summarizer:
@@ -232,6 +236,9 @@ pipeline:
   # next-reader-desire.  The gate checks axes, not a fixed prose formula.
   enable_chapter_causality_gate: true
   chapter_causality_gate_block_on_failure: true
+  # off = ignore methodology overlay, warn = record gaps without blocking legacy
+  # projects, strict = block new production plans/scenes that miss the overlay.
+  methodology_contract_mode: warn
   require_pre_draft_scene_contract: true
   # Critical scene-card richness failures should re-plan before prose drafting;
   # otherwise repeated/thin scene patterns only become prompt warnings.

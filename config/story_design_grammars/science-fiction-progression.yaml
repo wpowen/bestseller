@@ -1,0 +1,39 @@
+key: science-fiction-progression
+name: 科幻机甲进阶剧情语法
+applies_to_categories: [science-fiction-progression]
+required_contracts:
+  - science_constraint_model
+  - research_validation_chain
+  - energy_logistics
+  - mecha_or_fleet_state
+  - tactical_countermeasure_loop
+state_variables:
+  - 技术约束
+  - 能源与后勤
+  - 研发验证阶段
+  - 机甲或舰队状态
+  - 战场态势与敌方反制
+chapter_change_vectors:
+  - 技术能力被验证或证伪
+  - 能源/后勤成本发生变化
+  - 机体、舰队或装备状态改变
+  - 敌方反制揭示新限制
+  - 战场目标或轨道窗口重排
+reader_rewards:
+  - 科技突破有可见边界
+  - 机甲/舰队状态可复盘
+  - 战术胜利来自前置验证
+  - 能源和后勤制造紧迫感
+  - 敌方反制推动更高层问题
+hook_or_aftereffect_types:
+  - 实验结果暴露致命副作用
+  - 能源告急压缩行动窗口
+  - 敌方完成针对性反制
+  - 新型机体开启新战术
+  - 战场坐标或轨道窗口改变
+forbidden_defaults:
+  - 黑科技无代价万能解决
+  - 科学名词堆砌替代因果
+  - 能源后勤从不制约行动
+  - 战斗状态每章重置
+  - 敌方只等主角试验成功

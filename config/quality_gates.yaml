@@ -127,6 +127,16 @@ l6_write_gate:
     NUMERICAL_CONTRADICTION: block
     STATE_TRANSITION_UNEXPLAINED: block
 
+story_principle_gate:
+  enabled: true
+  default: audit_only
+  block_on_failure: false
+  # Event six-step is evaluated across an event unit or outline batch, not
+  # required in every chapter. These thresholds catch homogeneous chapter
+  # roles while keeping the gate advisory.
+  min_event_cycle_roles_per_batch: 3
+  max_same_role_streak: 3
+
 l7_continuous_audit:
   enabled: true
   auto_repair: false

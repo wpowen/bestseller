@@ -14,6 +14,7 @@ from bestseller.services.distilled_strategy_compiler import (
     SelectedMechanism,
 )
 from bestseller.services import planner as planner_services
+from bestseller.services.methodology_overlay import validate_ability_origin_contract
 from bestseller.services.plan_fingerprint import scan_batch_for_duplicates
 from bestseller.settings import load_settings
 
@@ -861,6 +862,30 @@ def test_fallback_world_spec_uses_neutral_rule_scaffold() -> None:
     assert "记录优先规则" not in rule_names
     assert "宗门谱牒规则" not in rule_names
     assert rule_names == {"核心秩序规则", "门槛通行规则", "禁区隔绝规则"}
+
+
+def test_fallback_world_spec_tolerates_category_with_single_world_rule() -> None:
+    project = build_project()
+    project.genre = "都市"
+    premise = "女主在直播间被全网误解后，靠证据和专业反击。"
+    book_spec = planner_services._fallback_book_spec(
+        project,
+        premise,
+        category_key="urban-contemporary",
+    )
+
+    world_spec = planner_services._fallback_world_spec(
+        project,
+        premise,
+        book_spec,
+        category_key="urban-contemporary",
+    )
+
+    rule_ids = {rule["rule_id"] for rule in world_spec["rules"]}
+    assert len(world_spec["locations"]) >= 3
+    assert len(world_spec["rules"]) >= 3
+    assert world_spec["locations"][0]["name"] == "口碑回流规则"
+    assert {"R001", "R002", "R003"}.issubset(rule_ids)
 
 
 def test_merge_planning_payload_preserves_fallback_nested_fields() -> None:
@@ -2245,7 +2270,50 @@ def test_cast_personhood_repair_codes_cover_l2_bible_character_gates() -> None:
         "TAG_MEMORY_MISSING",
         "INDEPENDENT_LIFE_MISSING",
         "CHARACTER_CONTRAST_MISSING",
+        "ABILITY_ORIGIN_CONTRACT_MISSING",
     }.issubset(planner_services._CAST_PERSONHOOD_REPAIR_CODES)
+
+
+def test_cast_repair_adds_ability_origin_contract_for_power_protagonist() -> None:
+    project = build_project()
+    project.genre = "都市异能"
+    project.sub_genre = "系统流"
+    cast_spec = {
+        "protagonist": {
+            "name": "陆寻",
+            "role": "protagonist",
+            "gender": "male",
+            "goal": "查清天盛集团如何利用底层人的愤怒牟利。",
+            "fear": "害怕自己的反击会把无辜者也拖进代价里。",
+            "flaw": "一旦被羞辱就容易用更激烈的方式回击。",
+            "strength": "情绪能量吸收系统(吸收转化率60%)",
+            "golden_finger": "情绪能量吸收系统,在受压迫或愤怒时积累能量并升级异能。",
+            "differentiated_advantage": "受压迫越强,吸收速度越快。",
+            "metadata": {},
+        },
+        "supporting_cast": [],
+        "antagonist_forces": [],
+        "conflict_map": [],
+    }
+
+    repaired = planner_services._synthesize_missing_cast_bible_fields(project, cast_spec)
+
+    contract = (
+        repaired["protagonist"]["metadata"]["methodology_overlay"]["ability_origin_contract"]
+    )
+    assert set(planner_services._ABILITY_ORIGIN_CONTRACT_FIELDS).issubset(contract)
+    assert all(
+        str(contract[field]).strip()
+        for field in planner_services._ABILITY_ORIGIN_CONTRACT_FIELDS
+    )
+
+    findings = validate_ability_origin_contract(
+        character_name="陆寻",
+        role="protagonist",
+        overlay=repaired["protagonist"]["metadata"]["methodology_overlay"],
+        project_genre_text="都市异能 系统流",
+    )
+    assert findings == []
 
 
 def test_fallback_volume_plan_carries_conflict_phase() -> None:

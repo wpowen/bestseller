@@ -23,12 +23,16 @@ class FakeSession:
         self.get_map = dict(get_map or {})
         self.added: list[object] = []
         self.executed: list[object] = []
+        self.execute_params: list[object | None] = []
+        self.calls: list[str] = []
         self.flush_count = 0
 
     def add(self, obj: object) -> None:
+        self.calls.append("add")
         self.added.append(obj)
 
     async def flush(self) -> None:
+        self.calls.append("flush")
         self.flush_count += 1
         for obj in self.added:
             table = getattr(obj, "__table__", None)
@@ -38,18 +42,23 @@ class FakeSession:
                 setattr(obj, "id", uuid4())
 
     async def scalar(self, stmt: object) -> object | None:
+        self.calls.append("scalar")
         if not self.scalar_results:
             return None
         return self.scalar_results.pop(0)
 
     async def scalars(self, stmt: object) -> list[object]:
+        self.calls.append("scalars")
         return []
 
     async def get(self, model: object, key: object) -> object | None:
+        self.calls.append("get")
         return self.get_map.get((model, key))
 
-    async def execute(self, stmt: object) -> None:
+    async def execute(self, stmt: object, params: object | None = None) -> None:
+        self.calls.append("execute")
         self.executed.append(stmt)
+        self.execute_params.append(params)
 
 
 def build_settings():
@@ -273,6 +282,35 @@ async def test_upsert_canon_fact_flushes_superseded_current_fact_before_insert()
     assert existing.valid_to_chapter_no == 2
     assert fact.is_current is True
     assert session.flush_count == 2
+
+
+@pytest.mark.asyncio
+async def test_upsert_canon_fact_locks_current_unique_key_before_lookup() -> None:
+    project_id = uuid4()
+    subject_id = uuid4()
+    session = FakeSession(scalar_results=[None])
+
+    fact, reused = await knowledge_services._upsert_canon_fact(
+        session,
+        project_id=project_id,
+        subject_type="project",
+        subject_id=subject_id,
+        subject_label="Story",
+        predicate="latest_story_turn",
+        fact_type="plot_progression",
+        value_json={"summary": "new"},
+        source_scene_id=uuid4(),
+        source_chapter_id=uuid4(),
+        valid_from_chapter_no=2,
+        tags=["chapter:2"],
+    )
+
+    assert reused is False
+    assert fact.is_current is True
+    assert session.calls[:2] == ["execute", "scalar"]
+    assert "pg_advisory_xact_lock" in str(session.executed[0])
+    assert isinstance(session.execute_params[0], dict)
+    assert isinstance(session.execute_params[0]["lock_key"], int)
 
 
 @pytest.mark.asyncio

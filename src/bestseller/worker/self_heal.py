@@ -96,9 +96,12 @@ SELF_HEAL_JOB_EXPIRES_DAYS = 7
 # ghost and must be cleared before deterministic requeue can succeed.
 STALE_ARQ_IN_PROGRESS_GRACE_SECONDS = 5 * 60
 
-# A project_repair run that has already reached WAITING_HUMAN should only
-# suppress self-heal briefly. Older waiting rows are historical evidence, not an
-# active handoff; leaving them indefinite made blocked projects stall forever.
+# Project repair writes a DB heartbeat through worker.tasks while it is alive,
+# so a stale running repair row can be safely reaped by the periodic orphan
+# scanner. A project_repair run that has already reached WAITING_HUMAN should
+# only suppress self-heal briefly. Older waiting rows are historical evidence,
+# not an active handoff; leaving them indefinite made blocked projects stall
+# forever.
 WAITING_REPAIR_SUPPRESSION_SECONDS = 60 * 60
 WRITE_SAFETY_REPAIR_RECOVERY_SECONDS = 15 * 60
 WRITE_SAFETY_REPAIR_MAX_RECOVERY_SECONDS = 45 * 60
@@ -155,9 +158,10 @@ _REAPABLE_WORKFLOW_TYPES = frozenset(
         "project_pipeline",
         "chapter_pipeline",
         "scene_pipeline",
+        "project_repair",
     }
 )
-_STARTUP_ONLY_REAPABLE_WORKFLOW_TYPES = frozenset({"project_repair"})
+_STARTUP_ONLY_REAPABLE_WORKFLOW_TYPES = frozenset()
 _SELF_HEAL_BLOCKING_WORKFLOW_TYPES = (
     _REAPABLE_WORKFLOW_TYPES
     | _STARTUP_ONLY_REAPABLE_WORKFLOW_TYPES

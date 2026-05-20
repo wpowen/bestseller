@@ -5989,6 +5989,21 @@ async def run_autowrite_pipeline(
     auto_repair_on_attention: bool = True,
     progress: ProgressCallback | None = None,
 ) -> AutowriteResult:
+    from bestseller.domain.enums import ProjectType
+
+    if project_payload.project_type == ProjectType.FANQIE_SHORT:
+        from bestseller.services.fanqie_short_pipeline import run_fanqie_short_pipeline
+
+        return await run_fanqie_short_pipeline(
+            session,
+            settings,
+            project_payload=project_payload,
+            premise=premise,
+            requested_by=requested_by,
+            export_markdown=export_markdown,
+            progress=progress,
+        )
+
     # ── Route to progressive pipeline if enabled or target warrants it ──
     if _should_use_progressive_pipeline(settings, project_payload):
         return await run_progressive_autowrite_pipeline(

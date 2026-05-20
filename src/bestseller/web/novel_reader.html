@@ -759,6 +759,7 @@
     const readerState = readerStateFor(ch);
     const isRepair = readerState === "repair";
     const isPlanned = avail === "planned";
+    const isSinglePiece = Boolean(ch.single_piece || ch.content_mode === "fanqie_short_story");
     const cls = [
       "toc-item",
       ch.number === currentChapter ? "active" : "",
@@ -766,13 +767,14 @@
       isRepair ? "repair-flagged" : "",
       isPlanned ? "unavailable" : "",
     ].filter(Boolean).join(" ");
-    const title = escapeHtml(ch.title || `第${ch.number}章`);
+    const title = escapeHtml(ch.title || (isSinglePiece ? "全文" : `第${ch.number}章`));
+    const numLabel = isSinglePiece ? "全文" : ch.number;
     const tagText = READER_STATE_LABEL[readerState];
     const onclick = isPlanned ? "" : `onclick="loadChapter(${ch.number})"`;
     return `
       <button class="${cls}" data-n="${ch.number}" ${onclick} title="${escapeHtml(tagText || '可阅读')}${ch.revision_count ? ` · 已修订 ${ch.revision_count} 次` : ''}">
         <span class="avail-dot ${readerState}"></span>
-        <span class="toc-num">${ch.number}</span>${title}
+        <span class="toc-num">${escapeHtml(numLabel)}</span>${title}
         <span class="avail-tag ${readerState}">${tagText}</span>
       </button>`;
   }
@@ -781,16 +783,23 @@
   async function loadChapter(n) {
     currentChapter = n;
     const area = document.getElementById("reading-area");
+    const pendingChapter = toc.find(c => c.number === n);
+    const pendingSinglePiece = Boolean(
+      pendingChapter?.single_piece || pendingChapter?.content_mode === "fanqie_short_story"
+    );
     area.innerHTML = `
       <div class="state-center" style="height:300px;">
-        <div class="spinner"></div><span>正在加载第 ${n} 章...</span>
+        <div class="spinner"></div><span>${pendingSinglePiece ? "正在加载全文..." : `正在加载第 ${n} 章...`}</span>
       </div>`;
     renderToc();
     window.scrollTo && document.getElementById("main-area").scrollTo(0, 0);
     try {
       const data = await get(`/api/reader/${slug}/chapter/${n}`);
       const ch = toc.find(c => c.number === n);
-      const title = ch ? ch.title : `第 ${n} 章`;
+      const isSinglePiece = Boolean(
+        data.single_piece || ch?.single_piece || ch?.content_mode === "fanqie_short_story"
+      );
+      const title = ch ? ch.title : (isSinglePiece ? "全文" : `第 ${n} 章`);
       const readerState = readerStateFor(ch || { availability: "available" });
       const readerStateLabel = READER_STATE_LABEL[readerState];
       // Prefer volume info from the chapter endpoint; fall back to TOC.
@@ -801,15 +810,15 @@
         : "";
       const infoParts = [];
       if (volLabel) infoParts.push(volLabel);
-      infoParts.push(`第 ${n} 章 / 共 ${toc.length} 章`);
+      infoParts.push(isSinglePiece ? "单篇全文" : `第 ${n} 章 / 共 ${toc.length} 章`);
       infoParts.push(readerStateLabel);
       document.getElementById("chapter-info").textContent = infoParts.join(" · ");
       document.getElementById("book-title").textContent = bookTitle;
       document.title = volLabel
         ? `${volLabel} · ${title} — ${bookTitle}`
         : `${title} — ${bookTitle}`;
-      const prevDisabled = n <= 1 ? "disabled" : "";
-      const nextDisabled = n >= toc.length ? "disabled" : "";
+      const prevDisabled = (isSinglePiece || n <= 1) ? "disabled" : "";
+      const nextDisabled = (isSinglePiece || n >= toc.length) ? "disabled" : "";
       let banner = "";
       if (readerState === "repair") {
         const revText = ch?.revision_count ? ` · 已修订 ${ch.revision_count} 次` : "";
@@ -847,8 +856,16 @@
             <button class="tb-btn" data-theme="dark" onclick="setReaderTheme('dark')" title="暗夜">夜</button>
           </div>
           <div class="tb-spacer"></div>
-          <button class="tb-btn" id="prev-tb-btn" ${prevDisabled} onclick="loadChapter(${n - 1})" title="上一章 ←">← 上一章</button>
-          <button class="tb-btn" id="next-tb-btn" ${nextDisabled} onclick="loadChapter(${n + 1})" title="下一章 →">下一章 →</button>
+          ${isSinglePiece
+            ? `<button class="tb-btn" id="single-piece-tb-btn" disabled title="单篇全文">单篇全文</button>`
+            : `<button class="tb-btn" id="prev-tb-btn" ${prevDisabled} onclick="loadChapter(${n - 1})" title="上一章 ←">← 上一章</button>
+               <button class="tb-btn" id="next-tb-btn" ${nextDisabled} onclick="loadChapter(${n + 1})" title="下一章 →">下一章 →</button>`}
+        </div>`;
+      const navHtml = isSinglePiece ? "" : `
+        <div class="nav-bar">
+          <button class="nav-btn" ${prevDisabled} onclick="loadChapter(${n - 1})">&#8592; 上一章</button>
+          <span class="nav-pos">${n} / ${toc.length}</span>
+          <button class="nav-btn primary" ${nextDisabled} onclick="loadChapter(${n + 1})">下一章 &#8594;</button>
         </div>`;
       area.innerHTML = `
         ${toolbarHtml}
@@ -858,7 +875,7 @@
             <h1>${escapeHtml(title)}</h1>
           </div>
           <div class="chapter-meta">
-            <span>第 ${n} 章 / 共 ${toc.length} 章</span>
+            <span>${isSinglePiece ? "单篇全文" : `第 ${n} 章 / 共 ${toc.length} 章`}</span>
             <span class="dot"></span>
             <span class="reader-status-pill ${readerState}">${readerStateLabel}</span>
             <span class="dot"></span>
@@ -869,11 +886,7 @@
         </div>
         ${banner}
         <div class="chapter-body">${data.html}</div>
-        <div class="nav-bar">
-          <button class="nav-btn" ${prevDisabled} onclick="loadChapter(${n - 1})">&#8592; 上一章</button>
-          <span class="nav-pos">${n} / ${toc.length}</span>
-          <button class="nav-btn primary" ${nextDisabled} onclick="loadChapter(${n + 1})">下一章 &#8594;</button>
-        </div>`;
+        ${navHtml}`;
       // Reflect persisted reader prefs on the freshly-rendered toolbar.
       reflectReaderPrefs();
     } catch (err) {

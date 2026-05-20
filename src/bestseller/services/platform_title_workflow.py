@@ -956,6 +956,12 @@ def _build_chinese_candidates(
         if len(rows) >= candidate_count:
             return rows[:candidate_count]
 
+    if style.key == "fanqie" and _is_fanqie_short_profile(profile):
+        for title, pattern, recommendation in _fanqie_short_template_specs(profile, signals):
+            _append_candidate(rows, seen, title, pattern, recommendation, style, signals)
+            if len(rows) >= candidate_count:
+                return rows[:candidate_count]
+
     for title, pattern, recommendation in template_specs:
         _append_candidate(rows, seen, title, pattern, recommendation, style, signals)
         if len(rows) >= candidate_count:
@@ -1003,6 +1009,122 @@ def _append_candidate(
             "fit_notes": _fit_notes(title, style, signals),
         }
     )
+
+
+def _is_fanqie_short_profile(profile: Mapping[str, Any]) -> bool:
+    haystack = " ".join(
+        [
+            _clean_text(profile.get("target_platform")),
+            _clean_text(profile.get("length_type")),
+            _clean_text(profile.get("channel")),
+            _clean_text(profile.get("primary_category")),
+            _clean_text(profile.get("secondary_category")),
+            " ".join(_string_list(profile.get("tags"))),
+        ]
+    )
+    return any(token in haystack for token in ("短故事", "单篇完结", "fanqie_short", "tomato_short"))
+
+
+def _fanqie_short_template_specs(
+    profile: Mapping[str, Any],
+    s: Mapping[str, str],
+) -> list[tuple[str, str, str]]:
+    text = " ".join(
+        [
+            _clean_text(profile.get("primary_title")),
+            _clean_text(profile.get("logline")),
+            _clean_text(profile.get("short_intro")),
+            " ".join(_string_list(profile.get("promo_copy"))),
+            " ".join(_string_list(profile.get("reader_promise"))),
+            " ".join(_string_list(profile.get("tags"))),
+        ]
+    )
+    crisis = _first_match(
+        text,
+        ("全员群", "离职当天", "发布会", "婚礼现场", "病房门口", "公司群", "直播间"),
+        fallback="开局",
+    )
+    charge = _first_match(
+        text,
+        ("贪污犯", "背锅人", "小三", "替罪羊", "骗子", "嫌疑人", "罪名"),
+        fallback=s["hook"],
+    )
+    villain = _first_match(
+        text,
+        ("老板", "上司", "前夫", "婆婆", "反派", "裴总", "周总", "幕后老板"),
+        fallback="反派",
+    )
+    payoff = _first_match(
+        text,
+        ("自爆", "认罪", "撤回公告", "公开道歉", "直播翻车", "当众露馅"),
+        fallback="当众自爆",
+    )
+    power = _first_match(
+        text,
+        ("情绪爆改器", "金手指", "系统", "黑屏提示", "能力", "读心术", "重生"),
+        fallback=s["object"],
+    )
+    cost = _first_match(
+        text,
+        ("记忆代价", "亲情记忆", "温暖记忆", "反噬", "冷却"),
+        fallback="代价",
+    )
+    amount = _first_match(text, ("四十七万", "五十万", "一百万", "三千万"), fallback="")
+    accusation_title = (
+        f"被栽赃{amount}后，我点开了{power}"
+        if amount
+        else f"被公司栽赃后，我点开了{power}"
+    )
+    public_arena = _first_match(
+        text,
+        ("发布会", "直播间", "婚礼现场", "病房门口"),
+        fallback="全公司" if crisis in {"全员群", "公司群"} else crisis,
+    )
+
+    return [
+        (
+            f"{crisis}把我挂成{charge}后，我让{villain}当众自爆",
+            "短故事强冲突长标题",
+            "主推",
+        ),
+        (
+            accusation_title,
+            "罪名+金手指入口",
+            "广告测试",
+        ),
+        (
+            f"他们逼我背锅，我让{public_arena}变成自爆现场",
+            "压迫转公开打脸",
+            "广告测试",
+        ),
+        (
+            f"我被挂上{crisis}那天，{villain}开始替我说真话",
+            "开局羞辱+反派自证",
+            "A/B测试",
+        ),
+        (
+            f"每次打脸都要付出{cost}",
+            "爽点代价钩子",
+            "备选",
+        ),
+        (
+            f"{power}一开，{villain}自己{payoff}",
+            "金手指即时生效",
+            "备选",
+        ),
+        (
+            f"离职当天，我把背锅局改成公开审判",
+            "现实职场打脸",
+            "备选",
+        ),
+    ]
+
+
+def _first_match(text: str, choices: Sequence[str], *, fallback: str = "") -> str:
+    for choice in choices:
+        if choice and choice in text:
+            return choice
+    return fallback
 
 
 def _normalize_title(value: str) -> str:

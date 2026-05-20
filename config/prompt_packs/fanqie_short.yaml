@@ -1,0 +1,71 @@
+key: fanqie_short
+name: 番茄短故事
+version: '1.0'
+description: 番茄小说短故事单篇完结：第一人称、5k-30k 字、前30%解锁段须完成冲突与第一次小爆点，禁止连载式章末钩。
+genres:
+- 都市
+- 悬疑
+- 言情
+- 玄幻
+- 科幻
+tags:
+- 短故事
+- 单篇完结
+- 第一人称
+- 番茄
+source_notes:
+- https://fanqienovel.com/writer/zone/article/7409917439607062553
+- https://fanqienovel.com/writer/zone/article/7408122066639011902
+anti_patterns:
+- 分章连载式章末悬念
+- 开篇大段背景说明
+- 多主线并行
+- 第三人称全知铺陈
+- 融梗与段落重复
+- 与故事无关的求过审内容
+writing_profile_overrides:
+  market:
+    prompt_pack_key: fanqie_short
+    platform_target: 番茄小说·短故事
+    content_mode: 番茄短故事单篇完结
+    reader_promise: 单篇读完有完整情绪弧线；前30%必须让读者看见冲突、反击与第一次爽点。
+    hook_deadline_words: 300
+    payoff_rhythm: 高密度短回报；30%前完成核心循环亮相
+  style:
+    pov_type: first-person
+    sentence_style: short-punchy
+    prose_style: fanqie-short-story
+    info_density: lean
+    dialogue_ratio: 0.48
+  serialization:
+    opening_mandate: 50字内主角行动；100字内冲突；禁止长篇设定铺垫。
+    chapter_ending_rule: 段末可悬停情绪，禁止「且听下回」式连载钩。
+    free_chapter_strategy: 前30%为免费解锁段，须含冲突、反击信号、第一次小爆点。
+fragments:
+  global_rules: |
+    这是番茄「短故事」：单篇完结上传，不是长篇连载。
+    默认第一人称「我」。全文一条主线，段与段之间因果清晰。
+    题名优先使用“开局事件/公开羞辱 + 我让反派当众自爆/翻车/认罪”的信息流强冲突结构；
+    禁止只用抽象功能名当主标题，除非副标题补足冲突、身份和爽点结果。
+    若故事有金手指/异能，开篇 50 字左右必须可见，前 200 字必须完成一次小反馈。
+    禁止在段末使用连载式悬念；全文末段必须收束主线。
+  planner_beat_sheet: |
+    输出 8-12 个 beat，映射到 N 个写作段（segment）。
+    每个 beat 含：beat_role（hook/rising/climax/resolution）、purpose、payoff。
+    标明 unlock_milestone_segment：前 30% 对应段必须完成冲突+反击+第一次小爆点。
+    第 1 个 beat 必须写清：前 50 字压迫现场、前 100 字污名/威胁、前 200 字第一次小爽点、
+    前 300 字能力或反击结果、金手指代价。
+  segment_writer: |
+    你在写短故事的一个「段」（不是连载章节）。
+    第一人称、短句、高对话与动作比。段内完成本段 purpose，段末不要留连载钩。
+    若当前段处于前 30% 免费区，必须兑现冲突、反击信号或爽点之一；
+    不得连续 300 字只解释设定/调查背景，每 150-250 字必须有新的压力、动作或结果。
+  whole_piece_review: |
+    按全文检查：主线是否单线清晰、前30%是否过 opening gate、末段是否收束。
+    检查是否有融梗重复、乱码、无关求过审内容。
+    评分维度：标题点击感、开篇50/100/200/300字钩子、30%解锁点、爽点密度、金手指代价、
+    现实可信度和结尾余味；hook_strength、payoff_density 权重高于长篇默认。
+  holistic_rewrite: |
+    === reference only ===
+    仅在不破坏已成立事实的前提下，提升开篇吸引力与前30%节奏。
+    禁止扩写为长篇结构或多卷伏笔。

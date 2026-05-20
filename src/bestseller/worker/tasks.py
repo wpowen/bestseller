@@ -444,13 +444,26 @@ async def run_autowrite_task(
 
                 premise = payload.get("premise") or str(meta.get("premise") or project.title)
 
-                result = await run_autowrite_pipeline(
-                    session=session,
-                    settings=settings,
-                    project_payload=project_payload,
-                    premise=premise,
-                    progress=make_sync_callback(reporter),
-                )
+                if project_payload.project_type == ProjectType.FANQIE_SHORT:
+                    from bestseller.services.fanqie_short_pipeline import (
+                        run_fanqie_short_pipeline,
+                    )
+
+                    result = await run_fanqie_short_pipeline(
+                        session=session,
+                        settings=settings,
+                        project_payload=project_payload,
+                        premise=premise,
+                        progress=make_sync_callback(reporter),
+                    )
+                else:
+                    result = await run_autowrite_pipeline(
+                        session=session,
+                        settings=settings,
+                        project_payload=project_payload,
+                        premise=premise,
+                        progress=make_sync_callback(reporter),
+                    )
         except Exception as exc:
             gate_block = _generation_gate_block(exc)
             if gate_block is not None:

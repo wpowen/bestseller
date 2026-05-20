@@ -37,12 +37,23 @@ def test_resolve_project_artifact_path_blocks_path_escape(tmp_path: Path) -> Non
     output_dir.mkdir(parents=True)
     (output_dir / "project.md").write_text("# Demo", encoding="utf-8")
 
+    with pytest.raises(ValueError):
+        web_server.resolve_project_artifact_path(
+            _settings(tmp_path), "demo-story", "../project.md"
+        )
+
+
+def test_resolve_project_artifact_path_allows_safe_nested_exports(tmp_path: Path) -> None:
+    export_dir = tmp_path / "demo-story" / "exports"
+    export_dir.mkdir(parents=True)
+    export_file = export_dir / "fanqie-short.md"
+    export_file.write_text("# Demo\n\n正文", encoding="utf-8")
+
     path = web_server.resolve_project_artifact_path(
-        _settings(tmp_path), "demo-story", "../project.md"
+        _settings(tmp_path), "demo-story", "exports/fanqie-short.md"
     )
 
-    assert path.name == "project.md"
-    assert path.parent == output_dir.resolve()
+    assert path == export_file.resolve()
 
 
 def test_render_preview_html_wraps_markdown_content() -> None:
@@ -88,6 +99,356 @@ def test_build_chapter_toc_includes_reading_stats() -> None:
     assert entries[0]["word_count"] >= 10
 
 
+def test_fanqie_short_toc_entry_uses_single_story_export(tmp_path: Path) -> None:
+    output_dir = tmp_path / "fanqie-short"
+    export_dir = output_dir / "exports"
+    export_dir.mkdir(parents=True)
+    (export_dir / "fanqie-short.md").write_text(
+        "# 情绪爆改器\n\n第一段正文。\n\n---\n"
+        "<!-- UNLOCK_LINE: 30% · 番茄短故事免费段截止 -->\n"
+        "---\n\n第二段正文。",
+        encoding="utf-8",
+    )
+
+    entry = web_server._fanqie_short_toc_entry(output_dir)
+
+    assert entry is not None
+    assert entry["number"] == 1
+    assert entry["title"] == "全文"
+    assert entry["filename"] == "exports/fanqie-short.md"
+    assert entry["single_piece"] is True
+    assert entry["content_mode"] == "fanqie_short_story"
+    assert entry["word_count"] >= 6
+
+
+def test_fanqie_short_reader_markers_are_hidden() -> None:
+    content = (
+        "# 标题\n\n> 类型：都市异能 · 番茄短故事 · 单篇完结\n\n开篇。\n\n---\n"
+        "<!-- UNLOCK_LINE: 30% · 番茄短故事免费段截止 -->\n"
+        "---\n\n后文。"
+    )
+
+    cleaned = web_server._strip_fanqie_short_reader_markers(content)
+
+    assert "标题" not in cleaned
+    assert "类型" not in cleaned
+    assert "番茄短故事" not in cleaned
+    assert "单篇完结" not in cleaned
+    assert "UNLOCK_LINE" not in cleaned
+    assert "---" not in cleaned
+    assert "开篇" in cleaned
+    assert "后文" in cleaned
+
+
+def test_fanqie_short_export_task_stats_uses_current_full_export(tmp_path: Path) -> None:
+    output_dir = tmp_path / "urban-power-reversal-1779201033" / "exports"
+    output_dir.mkdir(parents=True)
+    (output_dir / "fanqie-short.md").write_text(
+        "# 情绪爆改器\n\n> 类型：都市异能 · 番茄短故事 · 单篇完结\n\n"
+        "陆渊点下名字，群里造谣的人当场改口。\n\n第二段正文继续推进。",
+        encoding="utf-8",
+    )
+    project = SimpleNamespace(
+        slug="urban-power-reversal-1779201033",
+        title="情绪爆改器",
+        project_type="fanqie_short",
+        target_word_count=15000,
+        metadata_json={
+            "content_mode": "fanqie_short_story",
+            "length_key": "fanqie-short-15k",
+            "platform_key": "fanqie_short",
+        },
+    )
+
+    stats = web_server._build_fanqie_short_export_task_stats(
+        _settings(tmp_path),
+        project,
+        include_chapters=True,
+    )
+
+    assert stats is not None
+    assert stats["source"] == "fanqie_short_export"
+    assert stats["project_title"] == "情绪爆改器"
+    assert stats["unit_kind"] == "single_story"
+    assert stats["unit_label"] == "全文"
+    assert stats["target_segments"] == 1
+    assert stats["completed_segments"] == 1
+    assert stats["word_count_total"] >= 20
+    assert stats["current_export_filename"] == "exports/fanqie-short.md"
+    assert stats["chapters"] == [
+        {
+            "number": 1,
+            "title": "全文",
+            "unit_kind": "single_story",
+            "unit_label": "全文",
+            "filename": "exports/fanqie-short.md",
+            "word_count": stats["word_count_total"],
+            "estimated_read_minutes": stats["estimated_read_minutes"],
+            "target_word_count": 15000,
+            "status": "complete",
+            "single_piece": True,
+        }
+    ]
+
+
+def test_dashboard_task_filter_keeps_only_executing_tasks() -> None:
+    tasks = [
+        {"task_id": "queued", "status": "queued"},
+        {"task_id": "running", "status": "running"},
+        {"task_id": "completed", "status": "completed"},
+        {"task_id": "failed", "status": "failed"},
+        {"task_id": "incomplete", "status": "incomplete"},
+    ]
+
+    visible = web_server._filter_dashboard_visible_tasks(tasks)
+
+    assert [task["task_id"] for task in visible] == ["queued", "running"]
+
+
+def test_library_book_state_marks_finished_content_as_closed() -> None:
+    state = web_server._library_book_state(
+        status="revising",
+        completed_units=1,
+        target_units=1,
+        has_content=True,
+    )
+
+    assert state == "closed_complete"
+    assert web_server._library_book_state_label(state) == "已闭环"
+
+
+def test_library_book_state_archive_overrides_shelf_state() -> None:
+    state = web_server._library_book_state(
+        status="completed",
+        completed_units=1,
+        target_units=1,
+        has_content=True,
+        archived=True,
+    )
+
+    assert state == "archived"
+    assert web_server._library_book_state_label(state) == "已归档"
+    assert web_server._project_library_archived({"library_archived": True}) is True
+
+
+def test_project_row_to_dashboard_task_preserves_closed_book_details() -> None:
+    task = web_server._project_row_to_dashboard_task(
+        {
+            "slug": "urban-power-reversal-1779201033",
+            "title": "全员群把我挂成贪污犯后，我让老板当众自爆",
+            "book_state": "closed_complete",
+            "book_state_label": "已闭环",
+            "project_type": "fanqie_short",
+            "content_mode": "fanqie_short_story",
+            "unit_kind": "single_story",
+            "unit_label": "全文",
+            "completed_chapters": 1,
+            "target_chapters": 1,
+            "target_word_count": 8000,
+            "words_on_disk": 6027,
+            "last_updated": "2026-05-20T00:00:00+00:00",
+        }
+    )
+
+    assert task["task_id"] == "project:urban-power-reversal-1779201033"
+    assert task["status"] == "completed"
+    assert task["title"] == "全员群把我挂成贪污犯后，我让老板当众自爆"
+    assert task["synthetic_project"] is True
+    assert task["chapter_word_stats"]["unit_label"] == "全文"
+    assert task["chapter_word_stats"]["completed_chapters"] == 1
+    assert task["chapter_word_stats"]["target_chapters"] == 1
+
+
+def test_payload_from_project_model_preserves_fanqie_short_contract() -> None:
+    project = SimpleNamespace(
+        slug="urban-power-reversal-1779201033",
+        title="全员群把我挂成贪污犯后，我让老板当众自爆",
+        genre="都市异能",
+        sub_genre="职场打脸",
+        target_word_count=8000,
+        target_chapters=4,
+        project_type="fanqie_short",
+        metadata_json={
+            "content_mode": "fanqie_short_story",
+            "platform_key": "tomato_short",
+            "length_key": "fanqie-short-8k",
+            "pov": "first_person",
+            "premise": "继续修订这个番茄短故事。",
+            "writing_profile": {"market": {"platform_target": "番茄小说·短故事"}},
+        },
+    )
+
+    payload = web_server._payload_from_project_model(project)
+
+    assert payload["project_type"] == "fanqie_short"
+    assert payload["creation_mode"] == "fanqie_short"
+    assert payload["metadata"]["content_mode"] == "fanqie_short_story"
+    assert payload["length_key"] == "fanqie-short-8k"
+    assert payload["pov"] == "first_person"
+    assert payload["_run_conception"] is False
+
+
+def test_attach_task_stats_maps_fanqie_export_to_current_project_title(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    def fake_stats(
+        settings: object,
+        project_slugs: list[str],
+        *,
+        summary_only: bool = False,
+    ) -> dict[str, dict[str, object]]:
+        return {
+            "urban-power-reversal-1779201033": {
+                "source": "fanqie_short_export",
+                "project_title": "情绪爆改器",
+                "project_type": "fanqie_short",
+                "content_mode": "fanqie_short_story",
+                "length_key": "fanqie-short-15k",
+                "unit_kind": "single_story",
+                "unit_label": "全文",
+                "target_segments": 1,
+                "completed_segments": 1,
+                "word_count_total": 5460,
+                "current_export_filename": "exports/fanqie-short.md",
+            }
+        }
+
+    monkeypatch.setattr(web_server, "_load_task_chapter_word_stats", fake_stats)
+    tasks = [
+        {
+            "project_slug": "urban-power-reversal-1779201033",
+            "title": "开局现实逆袭，我用系统流证道",
+            "task_type": "autowrite",
+        }
+    ]
+
+    enriched = web_server._attach_task_chapter_word_stats(_settings(tmp_path), tasks)
+
+    assert enriched[0]["title"] == "情绪爆改器"
+    assert enriched[0]["project_title"] == "情绪爆改器"
+    assert enriched[0]["project_type"] == "fanqie_short"
+    assert enriched[0]["content_mode"] == "fanqie_short_story"
+    assert enriched[0]["current_export_filename"] == "exports/fanqie-short.md"
+    assert enriched[0]["chapter_word_stats"]["unit_kind"] == "single_story"
+
+
+def test_fanqie_short_listing_profile_maps_to_current_export(tmp_path: Path) -> None:
+    output_dir = tmp_path / "urban-power-reversal-1779201033" / "exports"
+    output_dir.mkdir(parents=True)
+    (output_dir / "fanqie-short.md").write_text(
+        "# 情绪爆改器\n\n"
+        "全员群刚把陆渊挂成贪污犯，手机就黑了：【目标曹敏，恐惧可放大十秒。】\n\n"
+        "周庭轩把《离职交接确认书》推来，逼他承认四十七万是他挪的。\n\n"
+        "陆渊点下名字，曹敏当场撤回公告。代价是丢失一段温暖记忆。\n\n"
+        "周庭轩冲上来抢手机，曹敏退到摄像头下。\n\n"
+        "裴铮想用父亲手术押金逼他闭嘴，陆渊把发布会变成公开审判。\n\n"
+        "裴铮终于承认，真正怕的不是陆渊，而是公开记录。",
+        encoding="utf-8",
+    )
+    project = SimpleNamespace(
+        slug="urban-power-reversal-1779201033",
+        title="旧标题",
+        genre="都市异能",
+        sub_genre="身份反转",
+        audience="番茄短故事读者",
+        status="revising",
+        language="zh-CN",
+        metadata_json={
+            "author_display_name": "测试作者",
+            "tags": ["旧系统流"],
+            "synopsis": "陆寻被催债围堵，女警苏棠追查，赤蛇帮追杀。",
+            "book_spec": {"protagonist": {"name": "陆渊"}},
+        },
+    )
+
+    profile = web_server._build_fanqie_short_current_listing_profile(
+        _settings(tmp_path),
+        project,
+    )
+
+    assert profile is not None
+    serialized = json.dumps(profile, ensure_ascii=False)
+    assert profile["source"] == "fanqie_short_export"
+    assert profile["primary_title"] == "情绪爆改器"
+    assert profile["author_display_name"] == "测试作者"
+    assert profile["length_type"] == "番茄短故事 · 单篇完结"
+    assert profile["copy_pack"]["author"] == "测试作者"
+    assert len(profile["title_candidates"]) >= 40
+    assert "陆渊" in profile["character_names"]
+    assert "周庭轩" in profile["character_names"]
+    assert "裴铮" in profile["character_names"]
+    assert not any(str(name).startswith("解") for name in profile["character_names"])
+    assert "陆寻" not in serialized
+    assert "苏棠" not in serialized
+    assert "赤蛇帮" not in serialized
+
+
+def test_project_identity_payload_overrides_fanqie_short_stale_chapter_fields(
+    tmp_path: Path,
+) -> None:
+    output_dir = tmp_path / "urban-power-reversal-1779201033" / "exports"
+    output_dir.mkdir(parents=True)
+    (output_dir / "fanqie-short.md").write_text(
+        "# 全员群把我挂成贪污犯后，我让老板当众自爆\n\n"
+        "全员群刚把陆渊挂成贪污犯，手机就黑了：【目标曹敏，恐惧可放大十秒。】\n\n"
+        "陆渊点下名字，曹敏当场撤回公告。代价是丢失一段温暖记忆。",
+        encoding="utf-8",
+    )
+    project = SimpleNamespace(
+        slug="urban-power-reversal-1779201033",
+        title="情绪爆改器",
+        genre="都市异能",
+        sub_genre="身份反转",
+        audience="番茄短故事读者",
+        status="revising",
+        target_word_count=15000,
+        target_chapters=6,
+        current_volume_number=1,
+        current_chapter_number=0,
+        project_type="fanqie_short",
+        language="zh-CN",
+        metadata_json={
+            "book_state": "closed_complete",
+            "content_mode": "fanqie_short_story",
+            "tags": ["旧系统流"],
+            "synopsis": "陆寻被催债围堵，女警苏棠追查，赤蛇帮追杀。",
+            "premise": "旧长篇简介",
+        },
+    )
+    profile = web_server._build_fanqie_short_current_listing_profile(
+        _settings(tmp_path),
+        project,
+    )
+    stats = web_server._build_fanqie_short_export_task_stats(
+        _settings(tmp_path),
+        project,
+        include_chapters=True,
+    )
+
+    payload = web_server._build_project_identity_payload(
+        project,
+        profile or {},
+        fanqie_stats=stats,
+    )
+
+    assert payload["title"] == "全员群把我挂成贪污犯后，我让老板当众自爆"
+    assert payload["status"] == "completed"
+    assert payload["target_chapters"] == 1
+    assert payload["unit_label"] == "全文"
+    assert payload["book_state"] == "closed_complete"
+    assert "陆寻" not in str(payload["synopsis"])
+    assert "旧系统流" not in payload["tags"]
+
+
+def test_reader_html_supports_fanqie_single_story_mode() -> None:
+    html = web_server._READER_HTML_PATH.read_text(encoding="utf-8")
+
+    assert "content_mode === \"fanqie_short_story\"" in html
+    assert "正在加载全文" in html
+    assert "单篇全文" in html
+
+
 def test_quickstart_new_creation_buttons_reset_wizard_flow() -> None:
     html = web_server._QUICKSTART_HTML_PATH.read_text(encoding="utf-8")
 
@@ -95,6 +456,43 @@ def test_quickstart_new_creation_buttons_reset_wizard_flow() -> None:
     assert "function resetWizardState()" in html
     assert "onclick=\"switchView('wizard')\"" not in html
     assert html.count('onclick="startNewCreationFlow()"') >= 4
+
+
+def test_quickstart_wizard_view_stays_hidden_until_new_creation() -> None:
+    html = web_server._QUICKSTART_HTML_PATH.read_text(encoding="utf-8")
+
+    wizard_base_block = html.split("  #viewWizard {", 1)[1].split("}", 1)[0]
+
+    assert "display:" not in wizard_base_block
+    assert "#viewWizard.view.active { display: flex; }" in html
+
+
+def test_quickstart_fanqie_length_default_matches_selected_button() -> None:
+    html = web_server._QUICKSTART_HTML_PATH.read_text(encoding="utf-8")
+
+    assert "const DEFAULT_FANQIE_LENGTH_KEY = 'fanqie-short-15k';" in html
+    assert "let fanqieLengthKey = DEFAULT_FANQIE_LENGTH_KEY;" in html
+    assert (
+        'class="length-btn fanqie-len-btn selected" data-length-key="fanqie-short-15k"'
+        in html
+    )
+    assert (
+        'class="length-btn fanqie-len-btn selected" data-length-key="fanqie-short-8k"'
+        not in html
+    )
+
+
+def test_quickstart_fanqie_task_progress_uses_single_story_language() -> None:
+    html = web_server._QUICKSTART_HTML_PATH.read_text(encoding="utf-8")
+
+    assert "function isFanqieShortTask(task)" in html
+    assert "const isFanqieShort = isFanqieShortTask(data);" in html
+    assert "const isFanqieShortTask = isFanqieShortTask(data);" not in html
+    assert "短故事单篇已完成" in html
+    assert "全文进度" in html
+    assert "全文统计" in html
+    assert "unitKind: 'single_story'" in html
+    assert "作者" in html
 
 
 def test_quickstart_incomplete_tasks_are_not_labeled_stopped() -> None:
@@ -1867,3 +2265,20 @@ def test_watchdog_preserves_human_review_gate_as_incomplete(tmp_path: Path) -> N
     assert incomplete["status"] == "incomplete"
     assert incomplete["current_stage"] == "waiting_human_review"
     assert incomplete["progress_events"][-1]["stage"] == "waiting_human_review"
+
+def test_query_bool_parses_truthy_values() -> None:
+    assert web_server._query_bool("1") is True
+    assert web_server._query_bool("true") is True
+    assert web_server._query_bool("yes") is True
+    assert web_server._query_bool("0") is False
+    assert web_server._query_bool(None) is False
+
+
+def test_compact_task_for_dashboard_trims_progress_events() -> None:
+    events = [{"stage": f"stage-{index}", "payload": {}} for index in range(120)]
+    task = {"task_id": "t1", "progress_events": events}
+    compacted = web_server._compact_task_for_dashboard(task)
+    assert len(compacted["progress_events"]) <= web_server._DASHBOARD_PROGRESS_EVENT_LIMIT
+    assert compacted.get("progress_events_truncated") is True
+    assert compacted["progress_events"][0]["stage"] == "stage-0"
+    assert compacted["progress_events"][-1]["stage"] == "stage-119"

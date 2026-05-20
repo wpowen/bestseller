@@ -2533,6 +2533,24 @@ def _genre_profile(
     }
 
 
+def _profile_seed_list(
+    value: Any,
+    defaults: list[str],
+    *,
+    min_items: int,
+) -> list[str]:
+    values = list(dict.fromkeys(_string_list(value)))
+    for default in defaults:
+        if default and default not in values:
+            values.append(default)
+        if len(values) >= min_items:
+            break
+    while len(values) < min_items:
+        stem = defaults[-1] if defaults else "场域"
+        values.append(f"{stem}{len(values) + 1}")
+    return values
+
+
 def _derive_genre_profile_from_category(cat: NovelCategoryResearch) -> dict[str, Any]:
     """Derive a genre profile dict from category research data.
 
@@ -2555,7 +2573,11 @@ def _derive_genre_profile_from_category(cat: NovelCategoryResearch) -> dict[str,
     world_name = rules[0].name_zh if rules else "未命名世界"
     world_premise = rules[0].description_zh if rules else "世界运行规则尚未确定。"
     power_system_name = rules[1].name_zh if len(rules) > 1 else "核心体系"
-    locations = [r.name_zh for r in rules[:3]] if rules else ["主城", "禁区", "旧档案馆"]
+    locations = _profile_seed_list(
+        [r.name_zh for r in rules[:3]],
+        ["主城", "禁区", "旧档案馆"],
+        min_items=3,
+    )
     factions = ["统治方", "挑战方"]  # Generic — LLM will override
 
     # Derive tones from category signal keywords
@@ -2570,6 +2592,60 @@ def _derive_genre_profile_from_category(cat: NovelCategoryResearch) -> dict[str,
         "power_system_name": power_system_name,
         "locations": locations,
         "factions": factions,
+    }
+
+
+def _supplemental_world_rule(
+    rule_index: int,
+    *,
+    is_en: bool,
+    protagonist_name: str,
+) -> dict[str, Any]:
+    if is_en:
+        templates = {
+            2: {
+                "name": "Access Threshold Rule",
+                "description": "Important spaces, people, and resources sit behind permissions, status, or gatekeepers.",
+                "story_consequence": "The protagonist must cross a visible threshold before any real progress becomes possible.",
+                "exploitation_potential": "Thresholds create bottlenecks, and bottlenecks create routines that can be studied or broken.",
+            },
+            3: {
+                "name": "Isolation Zone Rule",
+                "description": "Once the story moves into the key danger zone, outside support becomes unreliable.",
+                "story_consequence": "Breakthroughs and reversals have to happen under pressure, without guaranteed rescue.",
+                "exploitation_potential": "The same isolation that traps the protagonist also weakens the opponent's direct control.",
+            },
+        }
+        fallback = {
+            "name": f"Constraint Rule {rule_index}",
+            "description": "A visible constraint shapes access, risk, and consequence.",
+            "story_consequence": f"{protagonist_name} must turn the constraint into leverage instead of ignoring it.",
+            "exploitation_potential": "Every constraint creates a repeatable pressure point.",
+        }
+    else:
+        templates = {
+            2: {
+                "name": "门槛通行规则",
+                "description": "关键地点、关键人物与关键资源，都被权限、身份或中间人把守。",
+                "story_consequence": "主角必须跨过一个明确门槛，主线才可能真正推进。",
+                "exploitation_potential": "门槛会形成固定流程，而固定流程就是最容易被观察和撬开的地方。",
+            },
+            3: {
+                "name": "禁区隔绝规则",
+                "description": "一旦进入关键危险区域，外部支援会变得不可靠。",
+                "story_consequence": "突破和反转必须在压力下完成，不能依赖稳定救援。",
+                "exploitation_potential": "隔绝既困住主角，也削弱对手的直接控制。",
+            },
+        }
+        fallback = {
+            "name": f"约束规则{rule_index}",
+            "description": "一条明确约束持续改变进入、风险与后果。",
+            "story_consequence": f"{protagonist_name}必须把约束转化为筹码，而不是绕开它。",
+            "exploitation_potential": "约束越稳定，越容易形成可反向利用的压力点。",
+        }
+    return {
+        "rule_id": f"R{rule_index:03d}",
+        **templates.get(rule_index, fallback),
     }
 
 
@@ -2605,6 +2681,14 @@ def _world_template(
                             else wrt.exploitation_potential_zh
                         ),
                     }
+                )
+            while len(rules) < 3:
+                rules.append(
+                    _supplemental_world_rule(
+                        len(rules) + 1,
+                        is_en=is_en,
+                        protagonist_name=protagonist_name,
+                    )
                 )
             return {
                 "rules": rules,
@@ -3038,7 +3122,43 @@ _CAST_PERSONHOOD_REPAIR_CODES: frozenset[str] = frozenset(
         "CHARACTER_PERSONHOOD_INCOMPLETE",
         "VILLAIN_CHARISMA_MISSING",
         "ANTAGONIST_MOTIVE_OVERLAP",
+        "ABILITY_ORIGIN_CONTRACT_MISSING",
     }
+)
+
+
+_ABILITY_ORIGIN_CONTRACT_FIELDS: tuple[str, ...] = (
+    "source",
+    "visible_signature",
+    "limit",
+    "cost",
+    "growth_trigger",
+    "plot_use",
+)
+
+_POWER_PROGRESSION_TOKENS: tuple[str, ...] = (
+    "xianxia",
+    "cultivation",
+    "progression",
+    "litrpg",
+    "system",
+    "power",
+    "ability",
+    "skill",
+    "level",
+    "upgrade",
+    "玄幻",
+    "修仙",
+    "仙侠",
+    "升级",
+    "异能",
+    "系统",
+    "金手指",
+    "修炼",
+    "技能",
+    "境界",
+    "灵气",
+    "血脉",
 )
 
 
@@ -3124,6 +3244,149 @@ def _synthesized_independent_life(name: str, basis: str, *, is_en: bool) -> str:
             f"that still interrupts them whenever {basis} escalates."
         )
     return f"被卷入主线前，{name}还有一桩自己的日常牵挂；每当「{basis}」升级，这件事都会打断ta。"
+
+
+def _project_and_character_power_text(
+    project: ProjectModel | None,
+    character: dict[str, Any],
+) -> str:
+    parts: list[str] = []
+    if project is not None:
+        for attr in ("genre", "sub_genre", "audience", "title"):
+            value = getattr(project, attr, None)
+            if isinstance(value, str) and value.strip():
+                parts.append(value.strip())
+        metadata = getattr(project, "metadata_json", None)
+        if isinstance(metadata, dict):
+            for key in (
+                "category_key",
+                "content_mode",
+                "platform_key",
+                "genre",
+                "sub_genre",
+                "trope",
+                "writing_preset",
+            ):
+                value = metadata.get(key)
+                if isinstance(value, str) and value.strip():
+                    parts.append(value.strip())
+    for key in (
+        "golden_finger",
+        "strength",
+        "power_tier",
+        "differentiated_advantage",
+        "arc_trajectory",
+        "background",
+        "goal",
+    ):
+        value = character.get(key)
+        if isinstance(value, str) and value.strip():
+            parts.append(value.strip())
+    return " ".join(parts)
+
+
+def _requires_ability_origin_contract(
+    project: ProjectModel | None,
+    character: dict[str, Any],
+) -> bool:
+    text = _project_and_character_power_text(project, character).lower()
+    return any(token in text for token in _POWER_PROGRESSION_TOKENS)
+
+
+def _synthesize_ability_origin_contract(
+    character: dict[str, Any],
+    *,
+    is_en: bool,
+) -> dict[str, str]:
+    name = _non_empty_string(character.get("name"), "the protagonist" if is_en else "主角")
+    ability = _first_non_empty_text(
+        character.get("golden_finger"),
+        character.get("strength"),
+        character.get("power_tier"),
+        character.get("differentiated_advantage"),
+        default="pressure-conversion ability" if is_en else "压力转化型能力",
+    )
+    if is_en:
+        return {
+            "source": (
+                f"{ability} awakens when {name} is forced through sustained public "
+                "pressure; "
+                "it converts real emotional impact into limited usable leverage."
+            ),
+            "visible_signature": (
+                f"When the ability activates, {name} goes still, touches an old "
+                "personal mark, "
+                "and reads the room's anger and fear as a low physical vibration."
+            ),
+            "limit": (
+                "It cannot create power from nothing; it needs present, genuine "
+                "emotional pressure, "
+                "weakens against calm or isolated opponents, and becomes unstable under overload."
+            ),
+            "cost": (
+                "Every use feeds other people's pain back into the protagonist, drains stamina, "
+                "and tempts them to solve problems by provoking more suffering."
+            ),
+            "growth_trigger": (
+                "Growth only unlocks when the protagonist fights back under real consequence "
+                "while keeping a chosen moral line intact."
+            ),
+            "plot_use": (
+                "The ability enables reversals but leaves a traceable emotional signature, "
+                "drawing enemies closer and forcing choices between power, exposure, and restraint."
+            ),
+        }
+    return {
+        "source": (
+            f"{ability}在{name}遭遇持续现实压迫时觉醒,"
+            "把现场真实情绪冲击转化为有限的异能燃料。"
+        ),
+        "visible_signature": (
+            f"能力启动时,{name}会瞬间安静下来,下意识触碰旧伤或随身旧物,"
+            "并把周围愤怒与恐惧感知成低频震动。"
+        ),
+        "limit": (
+            "它不能凭空制造力量,只能吸收现场真实且强烈的情绪;"
+            "面对冷静、麻木或被隔离的人群效率大幅下降,连续过载会失控。"
+        ),
+        "cost": (
+            f"吸收越多,{name}越会被他人的痛苦反噬,体力迅速消耗,"
+            "愤怒和攻击性被放大,并不断侵蚀\"不伤无辜\"的底线。"
+        ),
+        "growth_trigger": (
+            f"只有当{name}在现实压迫中主动反击、承担代价并守住底线时,"
+            "能力才会解锁新用法或提高转化率。"
+        ),
+        "plot_use": (
+            f"能力既让{name}完成打脸反击,也会留下可追踪的情绪波纹,"
+            "引来权势方、警方或地下势力追查,迫使他在变强与暴露之间选择。"
+        ),
+    }
+
+
+def _ensure_character_ability_origin_contract(
+    repaired: dict[str, Any],
+    *,
+    project: ProjectModel | None,
+    is_en: bool,
+) -> None:
+    if not _requires_ability_origin_contract(project, repaired):
+        return
+
+    metadata = copy.deepcopy(_mapping(repaired.get("metadata")))
+    top_overlay = copy.deepcopy(_mapping(repaired.get("methodology_overlay")))
+    metadata_overlay = copy.deepcopy(_mapping(metadata.get("methodology_overlay")))
+    overlay = {**top_overlay, **metadata_overlay}
+    top_ability = _mapping(top_overlay.get("ability_origin_contract"))
+    metadata_ability = _mapping(metadata_overlay.get("ability_origin_contract"))
+    ability = {**top_ability, **metadata_ability}
+    synthesized = _synthesize_ability_origin_contract(repaired, is_en=is_en)
+    for field in _ABILITY_ORIGIN_CONTRACT_FIELDS:
+        if not _truthy_values(ability.get(field)):
+            ability[field] = synthesized[field]
+    overlay["ability_origin_contract"] = ability
+    metadata["methodology_overlay"] = overlay
+    repaired["metadata"] = metadata
 
 
 _MOTIVE_STOPWORDS_ZH_EN = {
@@ -3389,6 +3652,7 @@ def _synthesize_character_bible_fields(
     character: dict[str, Any],
     *,
     is_en: bool,
+    project: ProjectModel | None = None,
 ) -> dict[str, Any]:
     repaired = copy.deepcopy(character)
     name = _non_empty_string(repaired.get("name"), "the character" if is_en else "角色")
@@ -3459,6 +3723,12 @@ def _synthesize_character_bible_fields(
         )
 
     if "protagonist" in role_lower:
+        _ensure_character_ability_origin_contract(
+            repaired,
+            project=project,
+            is_en=is_en,
+        )
+
         psych = copy.deepcopy(_mapping(repaired.get("psych_profile")))
         if not _truthy_values(psych):
             psych = (
@@ -3633,14 +3903,16 @@ def _synthesize_missing_cast_bible_fields(
         repaired["protagonist"] = _synthesize_character_bible_fields(
             normalized["protagonist"],
             is_en=is_en,
+            project=project,
         )
     if normalized.get("antagonist"):
         repaired["antagonist"] = _synthesize_character_bible_fields(
             normalized["antagonist"],
             is_en=is_en,
+            project=project,
         )
     repaired["supporting_cast"] = [
-        _synthesize_character_bible_fields(character, is_en=is_en)
+        _synthesize_character_bible_fields(character, is_en=is_en, project=project)
         for character in _mapping_list(normalized.get("supporting_cast"))
     ]
     repaired["antagonist_forces"] = normalized.get("antagonist_forces") or []
@@ -3728,13 +4000,14 @@ async def _repair_cast_personhood_if_needed(
         repair_user += (
             "\nRegenerate the ENTIRE CastSpec JSON. Preserve the core premise, names, "
             "relationships, antagonist_forces, and conflict_map when possible, but "
-            "fill every missing IP anchor, personhood layer, and villain charisma field; "
+            "fill every missing IP anchor, ability origin contract, personhood layer, "
+            "and villain charisma field; "
             "also separate any overlapping antagonist motives. "
             "Do not return a partial patch."
             if is_en
             else "\n请重新生成整份 CastSpec JSON。尽量保留核心设定、角色姓名、关系、"
             "antagonist_forces 和 conflict_map，但必须补齐所有缺失的 IP 锚点、"
-            "人格底层和反派魅力字段，并拆分任何过度重合的反派动机。不要输出局部补丁。"
+            "能力来源合同、人格底层和反派魅力字段，并拆分任何过度重合的反派动机。不要输出局部补丁。"
         )
 
         repaired_payload, repair_llm_run_id = await _generate_structured_artifact(
@@ -5119,6 +5392,20 @@ def _fallback_world_spec(
         category_key=category_key,
     )
     _is_en = is_english_language(project.language)
+    location_names = _profile_seed_list(
+        profile.get("locations"),
+        ["Central City", "Restricted Zone", "Old Archive"]
+        if _is_en
+        else ["主城", "禁区", "旧档案馆"],
+        min_items=3,
+    )
+    faction_names = _profile_seed_list(
+        profile.get("factions"),
+        ["Governing Authority", "Underground Alliance"]
+        if _is_en
+        else ["统治机关", "地下同盟"],
+        min_items=2,
+    )
     return {
         "world_name": profile["world_name"],
         "world_premise": profile["world_premise"],
@@ -5138,7 +5425,7 @@ def _fallback_world_spec(
         },
         "locations": [
             {
-                "name": profile["locations"][0],
+                "name": location_names[0],
                 "type": "Core Stronghold" if _is_en else "核心据点",
                 "atmosphere": "High-pressure, regimented, conflict can erupt at any moment"
                 if _is_en
@@ -5149,7 +5436,7 @@ def _fallback_world_spec(
                 else "开局主舞台与秩序压迫的来源",
             },
             {
-                "name": profile["locations"][1],
+                "name": location_names[1],
                 "type": "Danger Zone" if _is_en else "危险区域",
                 "atmosphere": "Distorted, oppressive, forces characters into hard choices"
                 if _is_en
@@ -5160,7 +5447,7 @@ def _fallback_world_spec(
                 else "调查推进和高潮冲突发生地",
             },
             {
-                "name": profile["locations"][2],
+                "name": location_names[2],
                 "type": "Ultimate Destination" if _is_en else "终极目标地",
                 "atmosphere": "Mysterious, sealed, comes at a great cost"
                 if _is_en
@@ -5173,7 +5460,7 @@ def _fallback_world_spec(
         ],
         "factions": [
             {
-                "name": profile["factions"][0],
+                "name": faction_names[0],
                 "goal": "Maintain the existing order and control."
                 if _is_en
                 else "维持既有秩序与控制力。",
@@ -5186,7 +5473,7 @@ def _fallback_world_spec(
                 else "内部有人知道真相，但不敢公开站队。",
             },
             {
-                "name": profile["factions"][1],
+                "name": faction_names[1],
                 "goal": "Hold on to survival space and win greater autonomy."
                 if _is_en
                 else "在夹缝中保住生存空间并获取更多自主权。",
@@ -5372,8 +5659,18 @@ def _fallback_cast_spec(
     locations = _mapping_list(_mapping(world_spec).get("locations"))
     factions = _mapping_list(_mapping(world_spec).get("factions"))
     power_system = _mapping(_mapping(world_spec).get("power_system"))
-    home_location = _named_item(locations, 0, profile["locations"][0])
-    ruling_faction = _named_item(factions, 0, profile["factions"][0])
+    profile_locations = _profile_seed_list(
+        profile.get("locations"),
+        ["Central City"] if is_en else ["主城"],
+        min_items=1,
+    )
+    profile_factions = _profile_seed_list(
+        profile.get("factions"),
+        ["Governing Authority"] if is_en else ["统治机关"],
+        min_items=1,
+    )
+    home_location = _named_item(locations, 0, profile_locations[0])
+    ruling_faction = _named_item(factions, 0, profile_factions[0])
     protagonist_tier = _non_empty_string(
         power_system.get("protagonist_starting_tier"),
         "low" if is_en else "低阶",

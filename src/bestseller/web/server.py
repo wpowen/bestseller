@@ -14,15 +14,19 @@ from pathlib import Path
 import socketserver
 import threading
 import traceback
-from typing import Any
+from typing import Any, Mapping
 from urllib.parse import parse_qs, unquote, urlparse
 from uuid import UUID, uuid4
 import webbrowser
 
+from bestseller.domain.fanqie_short import is_fanqie_short_project
 from bestseller.domain.project import InteractiveFictionConfig, ProjectCreate
 from bestseller.infra.db.models import StyleGuideModel
 from bestseller.infra.db.session import session_scope
-from bestseller.services.book_listing import build_book_listing_profile
+from bestseller.services.book_listing import (
+    build_book_listing_profile,
+    validate_book_listing_profile,
+)
 from bestseller.services.exports import build_markdown_reading_stats, markdown_to_html
 from bestseller.services.if_generation import run_if_pipeline_integrated
 from bestseller.services.inspection import (
@@ -694,14 +698,16 @@ def resolve_project_artifact_path(
     project_slug: str,
     artifact_name: str,
 ) -> Path:
-    safe_name = Path(artifact_name).name
-    artifact_path = (_project_output_dir(settings, project_slug) / safe_name).resolve()
     output_dir = _project_output_dir(settings, project_slug)
+    requested = Path(str(artifact_name or "").strip())
+    if requested.is_absolute() or any(part in {"", ".", ".."} for part in requested.parts):
+        raise ValueError("Artifact path escapes the project output directory.")
+    artifact_path = (output_dir / requested).resolve()
     if output_dir not in artifact_path.parents:
         raise ValueError("Artifact path escapes the project output directory.")
     # For chapter markdown files, always sync from DB so edits (dedup fixes,
     # quality rewrites) are reflected immediately without a full export run.
-    fresh_content = _try_load_chapter_draft_from_db(settings, project_slug, safe_name)
+    fresh_content = _try_load_chapter_draft_from_db(settings, project_slug, requested.name)
     if fresh_content is not None:
         output_dir.mkdir(parents=True, exist_ok=True)
         # Only write if content changed to avoid unnecessary disk writes
@@ -774,7 +780,17 @@ def _try_load_chapter_draft_from_db(
             return f"{heading}\n\n{draft.content_md}"
 
     try:
-        return asyncio.run(_fetch())
+        summary = asyncio.run(_fetch())
+        if summary.get("is_fanqie_short"):
+            output_dir = _project_output_dir(settings, project_slug)
+            export_path = _fanqie_short_export_file(output_dir)
+            if export_path is not None:
+                raw_md = export_path.read_text(encoding="utf-8")
+                summary["title"] = _fanqie_short_export_title(
+                    raw_md,
+                    str(summary.get("title") or project_slug),
+                )
+        return summary
     except Exception:
         logger.warning(
             "Failed to load chapter %d draft from DB for %s",
@@ -1400,6 +1416,21 @@ class WebTaskManager:
                 reverse=True,
             )
             return [task.to_dict() for task in tasks]
+
+    def find_active_task_by_project_slug(self, slug: str) -> dict[str, object] | None:
+        slug = str(slug or "").strip()
+        if not slug:
+            return None
+        with self._lock:
+            matches = [
+                task
+                for task in self._tasks.values()
+                if task.project_slug == slug and task.status in {"queued", "running"}
+            ]
+            if not matches:
+                return None
+            matches.sort(key=lambda item: item.updated_at or item.created_at, reverse=True)
+            return matches[0].to_dict()
 
     def get_task(self, task_id: str) -> dict[str, object] | None:
         with self._lock:
@@ -2351,9 +2382,21 @@ class WebTaskManager:
                 creative_brief = payload.get("creative_brief")
                 if isinstance(creative_brief, dict) and creative_brief:
                     project_metadata["creative_brief"] = creative_brief
+                extra_meta = payload.get("metadata")
+                if isinstance(extra_meta, dict):
+                    project_metadata.update(extra_meta)
                 if payload.get("draft_mode"):
                     settings.quality.draft_mode = True
                 target_chapters = int(payload["target_chapters"])
+                from bestseller.domain.enums import ProjectType as DomainProjectType
+
+                project_type_raw = str(
+                    payload.get("project_type") or DomainProjectType.LINEAR.value
+                )
+                try:
+                    resolved_project_type = DomainProjectType(project_type_raw)
+                except ValueError:
+                    resolved_project_type = DomainProjectType.LINEAR
                 project_create = ProjectCreate(
                     slug=str(payload["slug"]),
                     title=effective_title,
@@ -2363,6 +2406,7 @@ class WebTaskManager:
                     language=str(payload.get("language") or "zh-CN"),
                     target_word_count=int(payload["target_words"]),
                     target_chapters=target_chapters,
+                    project_type=resolved_project_type,
                     metadata=project_metadata,
                     writing_profile=effective_writing_profile,
                 )
@@ -2427,12 +2471,23 @@ class WebTaskManager:
             list_length_presets,
         )
 
+        creation_mode = str(payload.get("creation_mode") or "long_serial")
+        is_fanqie_short = creation_mode == "fanqie_short"
+
         genre_key = str(payload["genre_key"])
         genre_presets = {p.key: p for p in list_genre_presets()}
         genre_preset = genre_presets.get(genre_key)
         if genre_preset is None:
             raise ValueError(
                 f"Unknown genre_key: {genre_key}. Available: {list(genre_presets.keys())}"
+            )
+
+        if is_fanqie_short and not genre_preset.suitable_for_short_story:
+            from bestseller.domain.fanqie_short import ensure_fanqie_short_genre_compatible
+
+            ensure_fanqie_short_genre_compatible(
+                genre_key,
+                suitable=genre_preset.suitable_for_short_story,
             )
 
         # Resolve chapter count
@@ -2452,6 +2507,31 @@ class WebTaskManager:
 
         words_per_chapter = load_settings().generation.words_per_chapter.target
         target_words = chapter_count * words_per_chapter
+        fanqie_meta: dict[str, object] | None = None
+        fanqie_pov = "first_person"
+        fanqie_length_key = ""
+        project_type_value = "linear"
+        if is_fanqie_short:
+            from bestseller.domain.enums import ProjectType
+            from bestseller.domain.fanqie_short import (
+                DEFAULT_LENGTH_KEY,
+                apply_fanqie_short_writing_profile,
+                build_fanqie_short_metadata,
+                resolve_length_preset,
+            )
+
+            fanqie_length_key = str(payload.get("length_key") or DEFAULT_LENGTH_KEY)
+            spec = resolve_length_preset(fanqie_length_key)
+            chapter_count = int(spec["segment_count"])
+            target_words = int(spec["target_words"])
+            fanqie_pov = str(payload.get("pov") or "first_person")
+            fanqie_meta = build_fanqie_short_metadata(
+                length_key=fanqie_length_key,
+                pov=fanqie_pov,
+                segment_count=chapter_count,
+                target_words=target_words,
+            )
+            project_type_value = ProjectType.FANQIE_SHORT.value
 
         # Resume: reuse existing project slug if provided
         resume_slug = str(payload.get("project_slug") or "")
@@ -2488,6 +2568,17 @@ class WebTaskManager:
             )
         )
 
+        writing_profile = sanitize_genre_story_overrides(
+            genre_preset.writing_profile_overrides
+        )
+        if is_fanqie_short:
+            from bestseller.domain.fanqie_short import apply_fanqie_short_writing_profile
+
+            writing_profile = apply_fanqie_short_writing_profile(
+                writing_profile if isinstance(writing_profile, dict) else {},
+                pov=fanqie_pov,
+            )
+
         autowrite_payload: dict[str, object] = {
             "slug": slug,
             "title": title,
@@ -2495,14 +2586,13 @@ class WebTaskManager:
             "sub_genre": genre_preset.sub_genre,
             "target_words": target_words,
             "target_chapters": chapter_count,
+            "project_type": project_type_value,
             "premise": premise,
             "export_markdown": True,
             "auto_repair": True,
             "draft_mode": bool(payload.get("draft_mode", False)),
             "language": genre_preset.language,
-            "writing_profile": sanitize_genre_story_overrides(
-                genre_preset.writing_profile_overrides
-            ),
+            "writing_profile": writing_profile,
             "creative_key": creative_direction.key if creative_direction else "",
             "creative_brief": (
                 creative_direction.model_dump(mode="json") if creative_direction else {}
@@ -2512,9 +2602,15 @@ class WebTaskManager:
             "_run_conception": is_new_project,
             "_genre_key": genre_key,
         }
+        if fanqie_meta is not None:
+            autowrite_payload["metadata"] = fanqie_meta
+            autowrite_payload["creation_mode"] = "fanqie_short"
+            autowrite_payload["length_key"] = fanqie_length_key
+            autowrite_payload["pov"] = fanqie_pov
         task = self.create_autowrite_task(autowrite_payload)
         # Enrich response with quickstart metadata
         task["quickstart_meta"] = {
+            "creation_mode": creation_mode,
             "genre_key": genre_key,
             "genre_name": genre_preset.name,
             "heat_domains": genre_preset.heat_domains,
@@ -2524,6 +2620,8 @@ class WebTaskManager:
             "creative_title": creative_direction.title if creative_direction else "",
             "chapter_count": chapter_count,
             "target_words": target_words,
+            "length_key": fanqie_length_key if is_fanqie_short else length_key,
+            "pov": fanqie_pov if is_fanqie_short else None,
         }
         return task
 
@@ -2971,20 +3069,27 @@ def _payload_from_project_model(project: Any) -> dict[str, object]:
     premise = str(
         metadata.get("premise") or f"\u7ee7\u7eed\u300a{project.title}\u300b\u7684\u521b\u4f5c"
     )
-    return {
+    payload: dict[str, object] = {
         "slug": project.slug,
         "title": project.title,
         "genre": project.genre,
         "sub_genre": project.sub_genre,
         "target_words": project.target_word_count,
         "target_chapters": project.target_chapters,
+        "project_type": getattr(project, "project_type", None),
         "premise": premise,
         "export_markdown": True,
         "auto_repair": True,
+        "metadata": metadata,
         "writing_profile": metadata.get("writing_profile"),
         "_run_conception": False,
         "_genre_key": genre_key,
     }
+    if is_fanqie_short_project(project):
+        payload["creation_mode"] = "fanqie_short"
+        payload["length_key"] = metadata.get("length_key")
+        payload["pov"] = metadata.get("pov")
+    return payload
 
 
 async def _rebuild_payload_from_db(
@@ -3161,9 +3266,46 @@ async def _recover_projects_from_output(settings: AppSettings) -> list[dict[str,
     return recovered
 
 
-async def _load_projects_payload(settings: AppSettings) -> list[dict[str, object]]:
+async def _load_projects_payload(
+    settings: AppSettings,
+    *,
+    light: bool = False,
+) -> list[dict[str, object]]:
     async with session_scope(settings) as session:
         rows = await list_projects(session)
+        if light:
+            payload_rows: list[dict[str, object]] = []
+            for row in rows:
+                meta = row.metadata_json if isinstance(row.metadata_json, dict) else {}
+                is_short = is_fanqie_short_project(row)
+                book_state = _library_book_state(
+                    status=row.status,
+                    completed_units=0,
+                    target_units=int(row.target_chapters or 0),
+                    has_content=False,
+                    archived=_project_library_archived(meta),
+                )
+                payload_rows.append(
+                    {
+                        "id": str(row.id),
+                        "slug": row.slug,
+                        "title": row.title,
+                        "genre": row.genre,
+                        "status": row.status,
+                        "book_state": book_state,
+                        "book_state_label": _library_book_state_label(book_state),
+                        "project_type": row.project_type,
+                        "content_mode": meta.get("content_mode"),
+                        "length_key": meta.get("length_key"),
+                        "unit_kind": "single_story" if is_short else "chapter",
+                        "target_word_count": row.target_word_count,
+                        "target_chapters": row.target_chapters,
+                        "segment_count": row.target_chapters if is_short else None,
+                        "created_at": row.created_at.isoformat() if row.created_at else None,
+                        "updated_at": row.updated_at.isoformat() if row.updated_at else None,
+                    }
+                )
+            return payload_rows
         repair_counts = await _load_project_chapter_state_counts(
             session,
             [row.id for row in rows],
@@ -3172,25 +3314,45 @@ async def _load_projects_payload(settings: AppSettings) -> list[dict[str, object
             session,
             [row.id for row in rows],
         )
-        return [
-            {
-                "id": str(row.id),
-                "slug": row.slug,
-                "title": row.title,
-                "genre": row.genre,
-                "status": row.status,
-                "created_at": row.created_at.isoformat() if row.created_at else None,
-                "updated_at": row.updated_at.isoformat() if row.updated_at else None,
-                "target_word_count": row.target_word_count,
-                "target_chapters": row.target_chapters,
-                "repair_status": _build_project_repair_status_payload(
-                    row,
-                    repair_counts.get(row.id, []),
-                    autonomous_repair_counts.get(row.id, {}),
-                ),
-            }
-            for row in rows
-        ]
+        payload_rows: list[dict[str, object]] = []
+        for row in rows:
+            meta = row.metadata_json if isinstance(row.metadata_json, dict) else {}
+            is_short = is_fanqie_short_project(row)
+            repair_status = _build_project_repair_status_payload(
+                row,
+                repair_counts.get(row.id, []),
+                autonomous_repair_counts.get(row.id, {}),
+            )
+            book_state = _library_book_state(
+                status=row.status,
+                completed_units=0,
+                target_units=int(row.target_chapters or 0),
+                has_content=False,
+                archived=_project_library_archived(meta),
+                repair_status=repair_status,
+            )
+            payload_rows.append(
+                {
+                    "id": str(row.id),
+                    "slug": row.slug,
+                    "title": row.title,
+                    "genre": row.genre,
+                    "status": row.status,
+                    "book_state": book_state,
+                    "book_state_label": _library_book_state_label(book_state),
+                    "project_type": row.project_type,
+                    "content_mode": meta.get("content_mode"),
+                    "length_key": meta.get("length_key"),
+                    "unit_kind": "single_story" if is_short else "chapter",
+                    "target_word_count": row.target_word_count,
+                    "target_chapters": row.target_chapters,
+                    "segment_count": row.target_chapters if is_short else None,
+                    "created_at": row.created_at.isoformat() if row.created_at else None,
+                    "updated_at": row.updated_at.isoformat() if row.updated_at else None,
+                    "repair_status": repair_status,
+                }
+            )
+        return payload_rows
 
 
 async def _load_library_payload(settings: AppSettings) -> list[dict[str, object]]:
@@ -3213,6 +3375,7 @@ async def _load_library_payload(settings: AppSettings) -> list[dict[str, object]
         results: list[dict[str, object]] = []
         for row in rows:
             slug = row.slug
+            is_short = is_fanqie_short_project(row)
             slug_dir = output_base / slug if slug else None
             chapter_files: list[Path] = []
             project_md_exists = False
@@ -3248,6 +3411,32 @@ async def _load_library_payload(settings: AppSettings) -> list[dict[str, object]
                 datetime.fromtimestamp(last_mtime, tz=UTC).isoformat() if last_mtime > 0 else None
             )
 
+            target_chapters = int(row.target_chapters or 0)
+            display_title = row.title
+            unit_kind = "single_story" if is_short else "chapter"
+            unit_label = "全文" if is_short else "章节"
+            current_export_filename = None
+            current_export_modified_at = None
+            if is_short:
+                fanqie_stats = _build_fanqie_short_export_task_stats(
+                    settings,
+                    row,
+                    include_chapters=False,
+                )
+                if fanqie_stats:
+                    display_title = str(fanqie_stats.get("project_title") or display_title)
+                    target_chapters = int(fanqie_stats.get("target_segments") or 1)
+                    completed_chapters = int(fanqie_stats.get("completed_segments") or 0)
+                    chapters_on_disk = completed_chapters
+                    words_on_disk = int(fanqie_stats.get("word_count_total") or 0)
+                    last_updated_iso = str(
+                        fanqie_stats.get("current_export_modified_at") or last_updated_iso or ""
+                    ) or None
+                    current_export_filename = fanqie_stats.get("current_export_filename")
+                    current_export_modified_at = fanqie_stats.get(
+                        "current_export_modified_at"
+                    )
+
             # Surface tags / category from listing profile if it exists
             listing_path = slug_dir / "listing_profile.json" if slug_dir else None
             tags: list[str] = []
@@ -3264,37 +3453,67 @@ async def _load_library_payload(settings: AppSettings) -> list[dict[str, object]
                 except (OSError, ValueError):
                     pass
 
+            repair_status = _build_project_repair_status_payload(
+                row,
+                db_counters,
+                autonomous_repair_counts.get(row.id, {}),
+            )
+            book_state = _library_book_state(
+                status=row.status,
+                completed_units=completed_chapters,
+                target_units=target_chapters,
+                has_content=words_on_disk > 0 or project_md_exists,
+                archived=_project_library_archived(row.metadata_json),
+                repair_status=repair_status,
+            )
+            is_archived = _project_library_archived(row.metadata_json)
             results.append(
                 {
                     "id": str(row.id),
                     "slug": slug,
-                    "title": row.title,
+                    "title": display_title,
                     "genre": row.genre,
                     "primary_category": primary_category,
                     "status": row.status,
-                    "target_chapters": row.target_chapters,
+                    "book_state": book_state,
+                    "book_state_label": _library_book_state_label(book_state),
+                    "library_archived": is_archived,
+                    "archived_at": (
+                        (row.metadata_json or {}).get("library_archived_at")
+                        if isinstance(row.metadata_json, dict)
+                        else None
+                    ),
+                    "task_visibility": "library_archive" if is_archived else "library",
+                    "can_trigger_revision": bool(slug),
+                    "project_type": row.project_type,
+                    "content_mode": (
+                        (row.metadata_json or {}).get("content_mode")
+                        if isinstance(row.metadata_json, dict)
+                        else None
+                    ),
+                    "unit_kind": unit_kind,
+                    "unit_label": unit_label,
+                    "target_chapters": target_chapters,
                     "target_word_count": row.target_word_count,
                     "completed_chapters": completed_chapters,
                     "chapters_on_disk": chapters_on_disk,
                     "db_chapter_total": db_total,
                     "words_on_disk": words_on_disk,
                     "last_updated": last_updated_iso,
+                    "current_export_filename": current_export_filename,
+                    "current_export_modified_at": current_export_modified_at,
                     "has_project_md": project_md_exists,
                     "tags": tags,
                     "tagline": tagline,
-                    "repair_status": _build_project_repair_status_payload(
-                        row,
-                        db_counters,
-                        autonomous_repair_counts.get(row.id, {}),
-                    ),
+                    "repair_status": repair_status,
                 }
             )
-        # Sort: in-progress first (most recently updated), then completed
+        # Sort: active / attention states first, then closed books by freshness.
         results.sort(
             key=lambda r: (
                 0
-                if str(r.get("status") or "").lower()
-                in {"running", "in_progress", "queued", "draft"}
+                if str(r.get("book_state") or "").lower()
+                in {"in_progress", "needs_attention", "draft"}
                 else 1,
                 -1
                 * (
@@ -3305,6 +3524,133 @@ async def _load_library_payload(settings: AppSettings) -> list[dict[str, object]
             )
         )
         return results
+
+
+async def _set_project_library_archived(
+    settings: AppSettings,
+    slug: str,
+    *,
+    archived: bool,
+) -> dict[str, object] | None:
+    from sqlalchemy import select
+
+    from bestseller.infra.db.models import ProjectModel
+
+    slug = str(slug or "").strip()
+    if not slug:
+        return None
+    async with session_scope(settings) as session:
+        project = (
+            await session.execute(select(ProjectModel).where(ProjectModel.slug == slug))
+        ).scalar_one_or_none()
+        if project is None:
+            return None
+        meta = dict(project.metadata_json or {})
+        if archived:
+            meta["library_archived"] = True
+            meta["library_archived_at"] = _utc_now()
+        else:
+            meta.pop("library_archived", None)
+            meta.pop("library_archived_at", None)
+        project.metadata_json = meta
+        return {
+            "ok": True,
+            "project_slug": slug,
+            "library_archived": archived,
+            "archived_at": meta.get("library_archived_at"),
+        }
+
+
+def _project_row_to_dashboard_task(row: dict[str, object]) -> dict[str, object]:
+    slug = str(row.get("slug") or "").strip()
+    title = str(row.get("title") or slug or "未命名").strip()
+    book_state = str(row.get("book_state") or "").lower()
+    status = "completed" if book_state == "closed_complete" else (
+        "archived" if book_state == "archived" else "project"
+    )
+    updated_at = row.get("last_updated") or row.get("updated_at") or row.get("created_at") or _utc_now()
+    target_units = int(row.get("target_chapters") or 0)
+    completed_units = int(row.get("completed_chapters") or 0)
+    word_count = int(row.get("words_on_disk") or 0)
+    unit_kind = str(row.get("unit_kind") or "chapter")
+    unit_label = str(row.get("unit_label") or ("全文" if unit_kind == "single_story" else "章节"))
+    return {
+        "task_id": f"project:{slug}",
+        "task_type": "project",
+        "status": status,
+        "created_at": row.get("created_at") or updated_at,
+        "updated_at": updated_at,
+        "project_slug": slug,
+        "title": title,
+        "project_title": title,
+        "project_status": row.get("status") or "",
+        "book_state": book_state,
+        "book_state_label": row.get("book_state_label") or "",
+        "project_type": row.get("project_type") or "",
+        "content_mode": row.get("content_mode") or "",
+        "current_stage": "project_closed" if status == "completed" else "project_registered",
+        "progress_events": [
+            {
+                "timestamp": updated_at,
+                "stage": "project_pipeline_completed" if status == "completed" else "project_registered",
+                "payload": {
+                    "project_slug": slug,
+                    "book_state": book_state,
+                    "unit_kind": unit_kind,
+                },
+            }
+        ],
+        "result": {
+            "project_slug": slug,
+            "project_type": row.get("project_type") or "",
+            "content_mode": row.get("content_mode") or "",
+            "chapters_written": completed_units,
+            "target_chapters": target_units,
+            "target_words": row.get("target_word_count") or 0,
+        },
+        "payload": {
+            "slug": slug,
+            "title": title,
+            "genre": row.get("genre") or "",
+            "project_type": row.get("project_type") or "",
+            "content_mode": row.get("content_mode") or "",
+            "target_chapters": target_units,
+            "target_words": row.get("target_word_count") or 0,
+        },
+        "chapter_word_stats": {
+            "source": "library_project",
+            "project_slug": slug,
+            "project_title": title,
+            "project_type": row.get("project_type") or "",
+            "content_mode": row.get("content_mode") or "",
+            "unit_kind": unit_kind,
+            "unit_label": unit_label,
+            "target_chapters": target_units,
+            "target_segments": target_units if unit_kind == "single_story" else 0,
+            "completed_chapters": completed_units,
+            "completed_segments": completed_units if unit_kind == "single_story" else 0,
+            "target_word_count": int(row.get("target_word_count") or 0),
+            "word_count_total": word_count,
+            "current_export_filename": row.get("current_export_filename"),
+            "current_export_modified_at": row.get("current_export_modified_at"),
+        },
+        "synthetic_project": True,
+        "library_archived": bool(row.get("library_archived")),
+    }
+
+
+async def _load_project_dashboard_task_payload(
+    settings: AppSettings,
+    slug: str,
+) -> dict[str, object] | None:
+    slug = str(slug or "").strip()
+    if not slug:
+        return None
+    rows = await _load_library_payload(settings)
+    for row in rows:
+        if str(row.get("slug") or "") == slug:
+            return _project_row_to_dashboard_task(row)
+    return None
 
 
 async def _load_project_chapter_state_counts(
@@ -3864,6 +4210,107 @@ def _resolve_story_bible_progress(
     }
 
 
+def _is_fanqie_short_export_listing(listing_profile: Mapping[str, object] | None) -> bool:
+    return bool(listing_profile) and str(listing_profile.get("source") or "") == "fanqie_short_export"
+
+
+def _build_project_identity_payload(
+    project: object,
+    listing_profile: Mapping[str, object],
+    *,
+    fanqie_stats: Mapping[str, object] | None = None,
+    include_id: bool = False,
+) -> dict[str, object]:
+    meta = (
+        getattr(project, "metadata_json", {})
+        if isinstance(getattr(project, "metadata_json", {}), dict)
+        else {}
+    )
+    display_title = str(
+        listing_profile.get("primary_title")
+        or listing_profile.get("current_content_title")
+        or getattr(project, "title", None)
+        or getattr(project, "slug", "")
+        or "未命名作品"
+    )
+    payload: dict[str, object] = {
+        "slug": getattr(project, "slug", ""),
+        "title": display_title,
+        "stored_title": getattr(project, "title", ""),
+        "genre": getattr(project, "genre", None),
+        "sub_genre": getattr(project, "sub_genre", None),
+        "audience": getattr(project, "audience", None),
+        "status": getattr(project, "status", None),
+        "target_word_count": getattr(project, "target_word_count", 0),
+        "target_chapters": getattr(project, "target_chapters", 0),
+        "author_display_name": _project_author_display_name(project),
+        "current_volume_number": getattr(project, "current_volume_number", None),
+        "current_chapter_number": getattr(project, "current_chapter_number", None),
+        "synopsis": meta.get("synopsis", ""),
+        "tags": meta.get("tags", []),
+        "premise": meta.get("premise", ""),
+    }
+    if include_id:
+        project_id = getattr(project, "id", None)
+        payload["id"] = str(project_id) if project_id is not None else None
+
+    if _is_fanqie_short_export_listing(listing_profile):
+        stats = fanqie_stats or {}
+        current_export = listing_profile.get("current_export")
+        current_export = current_export if isinstance(current_export, Mapping) else {}
+        book_state = str(meta.get("book_state") or "").strip()
+        serialization_status = str(listing_profile.get("serialization_status") or "").strip()
+        payload.update(
+            {
+                "status": "completed"
+                if book_state in {"closed_complete", "archived"} or serialization_status == "completed"
+                else getattr(project, "status", None),
+                "book_state": book_state or None,
+                "library_archived": _project_library_archived(meta),
+                "project_type": getattr(project, "project_type", None),
+                "content_mode": meta.get("content_mode") or "fanqie_short_story",
+                "unit_kind": stats.get("unit_kind") or "single_story",
+                "unit_label": stats.get("unit_label") or "全文",
+                "target_chapters": int(stats.get("target_chapters") or 1),
+                "target_segments": int(stats.get("target_segments") or 1),
+                "completed_chapters": int(stats.get("completed_chapters") or 0),
+                "completed_segments": int(stats.get("completed_segments") or 0),
+                "current_chapter_number": int(stats.get("completed_chapters") or 0),
+                "words_on_disk": int(
+                    stats.get("word_count_total") or current_export.get("word_count") or 0
+                ),
+                "synopsis": listing_profile.get("short_intro")
+                or listing_profile.get("shelf_intro")
+                or meta.get("synopsis", ""),
+                "tags": listing_profile.get("tags") or meta.get("tags", []),
+                "premise": listing_profile.get("logline") or meta.get("premise", ""),
+            }
+        )
+    return payload
+
+
+def _fanqie_short_export_artifact_entry(
+    settings: AppSettings,
+    project_slug: str,
+) -> dict[str, object] | None:
+    output_dir = _project_output_dir(settings, project_slug)
+    export_path = _fanqie_short_export_file(output_dir)
+    if export_path is None:
+        return None
+    stat = export_path.stat()
+    entry: dict[str, object] = {
+        "name": str(_FANQIE_SHORT_EXPORT_RELATIVE_PATH),
+        "path": str(export_path.resolve()),
+        "size_bytes": stat.st_size,
+        "suffix": export_path.suffix.lower(),
+        "modified_at": datetime.fromtimestamp(stat.st_mtime, UTC).isoformat(),
+        "is_previewable": export_path.suffix.lower() == ".md",
+    }
+    if export_path.suffix.lower() == ".md":
+        entry.update(_read_markdown_artifact_metadata(export_path))
+    return entry
+
+
 async def _load_project_summary_payload(
     settings: AppSettings,
     project_slug: str,
@@ -3904,37 +4351,84 @@ async def _load_project_summary_payload(
         current_chapter_number=int(project.current_chapter_number or 0),
     )
     project_meta = project.metadata_json or {}
-    listing_profile = build_book_listing_profile(
+    listing_profile = _build_fanqie_short_current_listing_profile(settings, project) or build_book_listing_profile(
         project=project,
         writing_profile=writing_profile,
         story_bible=story_bible,
         output_base_dir=settings.output.base_dir,
     )
+    display_title = str(
+        listing_profile.get("primary_title")
+        or listing_profile.get("current_content_title")
+        or project.title
+        or project_slug
+    )
+    fanqie_stats = (
+        _build_fanqie_short_export_task_stats(settings, project, include_chapters=True)
+        if _is_fanqie_short_export_listing(listing_profile)
+        else None
+    )
+    project_payload = _build_project_identity_payload(
+        project,
+        listing_profile,
+        fanqie_stats=fanqie_stats,
+        include_id=True,
+    )
+    output_stats = {
+        "markdown_output_count": len(markdown_entries),
+        "project_word_count": int(project_markdown_entry["word_count"])
+        if project_markdown_entry
+        else 0,
+        "chapter_word_count_total": sum(
+            int(item.get("word_count") or 0) for item in chapter_markdown_entries
+        ),
+        "default_preview_name": str(default_preview_entry["name"])
+        if default_preview_entry
+        else None,
+        "default_preview_word_count": int(default_preview_entry["word_count"])
+        if default_preview_entry
+        else 0,
+        "default_preview_estimated_read_minutes": int(
+            default_preview_entry["estimated_read_minutes"]
+        )
+        if default_preview_entry
+        else 0,
+    }
+    if fanqie_stats is not None:
+        export_entry = _fanqie_short_export_artifact_entry(settings, project_slug)
+        if export_entry is not None:
+            outputs = [export_entry]
+        default_preview_entry = export_entry
+        output_stats = {
+            "markdown_output_count": 1 if export_entry is not None else 0,
+            "project_word_count": 0,
+            "chapter_word_count_total": int(fanqie_stats.get("word_count_total") or 0),
+            "default_preview_name": str(fanqie_stats.get("current_export_filename") or ""),
+            "default_preview_word_count": int(fanqie_stats.get("word_count_total") or 0),
+            "default_preview_estimated_read_minutes": int(
+                fanqie_stats.get("estimated_read_minutes") or 0
+            ),
+        }
+    structure_summary = {
+        "total_chapters": structure.total_chapters,
+        "total_scenes": structure.total_scenes,
+        "volume_count": len(structure.volumes),
+    }
+    if fanqie_stats is not None:
+        structure_summary.update(
+            {
+                "total_chapters": int(fanqie_stats.get("target_chapters") or 1),
+                "total_scenes": 1,
+                "volume_count": 1,
+            }
+        )
     return {
-        "project": {
-            "id": str(project.id),
-            "slug": project.slug,
-            "title": project.title,
-            "genre": project.genre,
-            "sub_genre": project.sub_genre,
-            "audience": project.audience,
-            "status": project.status,
-            "target_word_count": project.target_word_count,
-            "target_chapters": project.target_chapters,
-            "current_volume_number": project.current_volume_number,
-            "current_chapter_number": project.current_chapter_number,
-            "synopsis": project_meta.get("synopsis", ""),
-            "tags": project_meta.get("tags", []),
-            "premise": project_meta.get("premise", ""),
-        },
+        "title": display_title,
+        "project": project_payload,
         "listing_profile": listing_profile,
         "repair_status": repair_status,
         "writing_profile": writing_profile,
-        "structure_summary": {
-            "total_chapters": structure.total_chapters,
-            "total_scenes": structure.total_scenes,
-            "volume_count": len(structure.volumes),
-        },
+        "structure_summary": structure_summary,
         "story_bible_counts": {
             "has_world_backbone": bool(world_expansion["has_backbone"]),
             "world_rule_count": len(story_bible.world_rules),
@@ -3964,26 +4458,7 @@ async def _load_project_summary_payload(
             "latest_run_id": str(workflow.latest_run_id) if workflow.latest_run_id else None,
             "latest_run_status": workflow.latest_run_status,
         },
-        "output_stats": {
-            "markdown_output_count": len(markdown_entries),
-            "project_word_count": int(project_markdown_entry["word_count"])
-            if project_markdown_entry
-            else 0,
-            "chapter_word_count_total": sum(
-                int(item.get("word_count") or 0) for item in chapter_markdown_entries
-            ),
-            "default_preview_name": str(default_preview_entry["name"])
-            if default_preview_entry
-            else None,
-            "default_preview_word_count": int(default_preview_entry["word_count"])
-            if default_preview_entry
-            else 0,
-            "default_preview_estimated_read_minutes": int(
-                default_preview_entry["estimated_read_minutes"]
-            )
-            if default_preview_entry
-            else 0,
-        },
+        "output_stats": output_stats,
         "outputs": outputs,
         "default_preview_name": (
             str(default_preview_entry["name"]) if default_preview_entry else None
@@ -4011,25 +4486,25 @@ async def _load_project_listing_payload(
         style_guide = await session.get(StyleGuideModel, project.id)
         writing_profile = get_project_writing_profile(project, style_guide).model_dump(mode="json")
         story_bible = await build_story_bible_overview(session, project_slug)
-    listing = build_book_listing_profile(
+    listing = _build_fanqie_short_current_listing_profile(settings, project) or build_book_listing_profile(
         project=project,
         writing_profile=writing_profile,
         story_bible=story_bible,
         output_base_dir=settings.output.base_dir,
     )
+    fanqie_stats = (
+        _build_fanqie_short_export_task_stats(settings, project, include_chapters=False)
+        if _is_fanqie_short_export_listing(listing)
+        else None
+    )
     return {
         "listing_profile": listing,
-        "project": {
-            "slug": project.slug,
-            "title": project.title,
-            "genre": project.genre,
-            "sub_genre": project.sub_genre,
-            "audience": project.audience,
-            "status": project.status,
-            "target_word_count": project.target_word_count,
-            "target_chapters": project.target_chapters,
-            "tags": (project.metadata_json or {}).get("tags", []),
-        },
+        "project": _build_project_identity_payload(
+            project,
+            listing,
+            fanqie_stats=fanqie_stats,
+            include_id=False,
+        ),
     }
 
 
@@ -4734,6 +5209,683 @@ def _build_chapter_toc(output_dir: Path) -> list[dict[str, object]]:
     return entries
 
 
+_FANQIE_SHORT_EXPORT_RELATIVE_PATH = Path("exports") / "fanqie-short.md"
+
+
+def _fanqie_short_export_file(output_dir: Path) -> Path | None:
+    export_path = output_dir / _FANQIE_SHORT_EXPORT_RELATIVE_PATH
+    if export_path.exists() and export_path.is_file():
+        return export_path
+    return None
+
+
+def _strip_fanqie_short_reader_markers(content_md: str) -> str:
+    """Remove export-only scaffolding from the reader full-text view."""
+    import re as _re
+
+    cleaned = _re.sub(
+        r"\n{0,2}---\s*\n<!--\s*UNLOCK_LINE:.*?-->\s*\n---\n{0,2}",
+        "\n\n",
+        content_md,
+        flags=_re.DOTALL,
+    )
+    cleaned = _re.sub(r"(?m)^\s*---+\s*$\n?", "\n", cleaned)
+    cleaned = _re.sub(r"\n{3,}", "\n\n", cleaned).strip()
+
+    lines = cleaned.splitlines()
+    while lines:
+        first = lines[0].strip()
+        if not first:
+            lines.pop(0)
+            continue
+        if first.startswith("#"):
+            lines.pop(0)
+            continue
+        unquoted = first.lstrip("> ").strip()
+        if (
+            "番茄短故事" in unquoted
+            or "单篇完结" in unquoted
+            or _re.match(r"^(类型|Genre)\s*[:：]", unquoted)
+        ):
+            lines.pop(0)
+            continue
+        break
+    return _re.sub(r"\n{3,}", "\n\n", "\n".join(lines)).strip()
+
+
+def _fanqie_short_toc_entry_from_markdown(content_md: str) -> dict[str, object]:
+    stats = build_markdown_reading_stats(content_md)
+    return {
+        "number": 1,
+        "title": "全文",
+        "filename": str(_FANQIE_SHORT_EXPORT_RELATIVE_PATH),
+        "word_count": stats["word_count"],
+        "estimated_read_minutes": stats["estimated_read_minutes"],
+        "volume_number": None,
+        "volume_title": None,
+        "exported": True,
+        "status": "complete",
+        "production_state": "ok",
+        "revision_count": 0,
+        "has_draft": True,
+        "availability": "available",
+        "single_piece": True,
+        "content_mode": "fanqie_short_story",
+    }
+
+
+def _fanqie_short_toc_entry(output_dir: Path) -> dict[str, object] | None:
+    export_path = _fanqie_short_export_file(output_dir)
+    if export_path is None:
+        return None
+    raw_md = export_path.read_text(encoding="utf-8")
+    content_md = _strip_fanqie_short_reader_markers(raw_md)
+    return _fanqie_short_toc_entry_from_markdown(content_md)
+
+
+def _remove_leading_markdown_heading(content_md: str) -> str:
+    lines = content_md.strip().splitlines()
+    if lines and lines[0].lstrip().startswith("#"):
+        return "\n".join(lines[1:]).strip()
+    return content_md.strip()
+
+
+def _load_fanqie_short_draft_text_from_db(
+    settings: AppSettings,
+    project_slug: str,
+) -> str | None:
+    """Assemble current short-story segment drafts into one reader body."""
+    try:
+        from sqlalchemy import select
+
+        from bestseller.infra.db.models import ChapterDraftVersionModel, ChapterModel
+        from bestseller.services.drafts import sanitize_novel_markdown_content
+
+        async def _fetch() -> str | None:
+            async with session_scope(settings) as sess:
+                proj = await get_project_by_slug(sess, project_slug)
+                if proj is None or not is_fanqie_short_project(proj):
+                    return None
+                rows = list(
+                    await sess.execute(
+                        select(
+                            ChapterModel.chapter_number,
+                            ChapterDraftVersionModel.content_md,
+                        )
+                        .join(
+                            ChapterDraftVersionModel,
+                            ChapterDraftVersionModel.chapter_id == ChapterModel.id,
+                        )
+                        .where(
+                            ChapterModel.project_id == proj.id,
+                            ChapterDraftVersionModel.is_current.is_(True),
+                        )
+                        .order_by(ChapterModel.chapter_number.asc())
+                    )
+                )
+                parts: list[str] = []
+                for _chapter_number, content_md in rows:
+                    body = sanitize_novel_markdown_content(content_md or "")
+                    body = _remove_leading_markdown_heading(body)
+                    if body:
+                        parts.append(body)
+                return "\n\n".join(parts).strip() or None
+
+        return asyncio.run(_fetch())
+    except Exception:
+        return None
+
+
+def _load_reader_project_summary(
+    settings: AppSettings,
+    project_slug: str,
+) -> dict[str, object]:
+    try:
+
+        async def _fetch() -> dict[str, object]:
+            async with session_scope(settings) as sess:
+                proj = await get_project_by_slug(sess, project_slug)
+                if proj is None:
+                    return {
+                        "title": project_slug,
+                        "genre": "",
+                        "language": None,
+                        "is_fanqie_short": False,
+                    }
+                return {
+                    "title": proj.title or project_slug,
+                    "genre": getattr(proj, "genre", "") or "",
+                    "language": getattr(proj, "language", None),
+                    "is_fanqie_short": is_fanqie_short_project(proj),
+                }
+
+        return asyncio.run(_fetch())
+    except Exception:
+        return {
+            "title": project_slug,
+            "genre": "",
+            "language": None,
+            "is_fanqie_short": False,
+        }
+
+
+def _load_fanqie_short_reader_markdown(
+    settings: AppSettings,
+    project_slug: str,
+    output_dir: Path,
+    *,
+    title: str,
+    genre: str,
+) -> str | None:
+    export_path = _fanqie_short_export_file(output_dir)
+    if export_path is not None:
+        return _strip_fanqie_short_reader_markers(export_path.read_text(encoding="utf-8"))
+
+    draft_text = _load_fanqie_short_draft_text_from_db(settings, project_slug)
+    if not draft_text:
+        return None
+    return draft_text.strip()
+
+
+def _fanqie_short_export_title(raw_md: str, fallback: str) -> str:
+    for line in raw_md.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("#"):
+            title = stripped.lstrip("#").strip()
+            if title:
+                return title
+        if stripped:
+            break
+    return fallback
+
+
+def _plain_text_from_markdown(content_md: str) -> str:
+    import re as _re
+
+    text = _re.sub(r"<!--.*?-->", "", content_md, flags=_re.DOTALL)
+    text = _re.sub(r"(?m)^\s{0,3}#{1,6}\s*", "", text)
+    text = _re.sub(r"[*_`>#\[\]]", "", text)
+    text = _re.sub(r"\s+", " ", text)
+    return text.strip()
+
+
+def _limit_text_chars(text: str, limit: int) -> str:
+    value = " ".join(str(text or "").split()).strip()
+    if len(value) <= limit:
+        return value
+    return value[: max(0, limit - 1)].rstrip("，。；、 ") + "…"
+
+
+def _first_sentence_text(text: str, limit: int) -> str:
+    import re as _re
+
+    value = " ".join(str(text or "").split()).strip()
+    close_bracket = value.find("】")
+    if 0 <= close_bracket <= limit + 20:
+        return _limit_text_chars(value[: close_bracket + 1], limit)
+    match = _re.search(r"[。！？】]", value)
+    if match:
+        value = value[: match.end()]
+    return _limit_text_chars(value, limit)
+
+
+def _nested_text(data: dict[str, object], *path: str) -> str:
+    cur: object = data
+    for key in path:
+        if not isinstance(cur, dict):
+            return ""
+        cur = cur.get(key)
+    return str(cur or "").strip()
+
+
+def _project_author_display_name(project: object) -> str:
+    meta = (
+        getattr(project, "metadata_json", {})
+        if isinstance(getattr(project, "metadata_json", {}), dict)
+        else {}
+    )
+    for path in (
+        ("author_display_name",),
+        ("author_name",),
+        ("author",),
+        ("pen_name",),
+        ("publishing", "amazon_kdp", "author_display_name"),
+        ("amazon_kdp", "author_display_name"),
+        ("publication", "author_display_name"),
+        ("listing_profile", "author_display_name"),
+    ):
+        value = _nested_text(meta, *path)
+        if value:
+            return value
+    return "未填写"
+
+
+def _extract_fanqie_short_character_names(
+    plain_text: str,
+    project: object,
+    *,
+    limit: int = 8,
+) -> list[str]:
+    import re as _re
+
+    meta = (
+        getattr(project, "metadata_json", {})
+        if isinstance(getattr(project, "metadata_json", {}), dict)
+        else {}
+    )
+    protagonist = _nested_text(meta, "book_spec", "protagonist", "name")
+    surnames = (
+        "赵钱孙李周吴郑王冯陈褚卫蒋沈韩杨朱秦尤许何吕施张孔曹严华金魏陶姜"
+        "谢邹喻柏窦章云苏潘葛范彭鲁韦马苗方俞任袁柳史唐薛雷贺倪汤滕"
+        "罗毕郝安常乐于傅齐康伍余顾孟黄穆萧尹姚邵汪毛米贝明臧成戴"
+        "宋庞熊纪舒屈项祝董梁杜阮蓝席季麻强贾路江童颜郭梅盛林钟"
+        "徐邱骆高夏蔡田胡霍万卢莫房裘解宗丁宣邓杭洪左石崔龚程邢"
+        "裴陆荣翁荀羊惠曲封靳松段侯全秋伊宫宁仇甘厉祖武刘景龙叶"
+        "谭劳姬申冉雍桑桂牛边燕尚温庄晏柴阎慕连习艾鱼向古易廖"
+    )
+    action_suffix = (
+        "说|问|看|把|在|是|的|站|笑|脸|拿|冲|发|走|点|握|盯|闭|睁|递|往|推|"
+        "打开|没有|已经|终于|猛|坐|扶|赶|转身|忽然|正|要|刚|还|就|又|却|给|"
+        "靠|伸|低|抬|接|听|签|扣|追|等|想|当|：|，|。|、|“|”|\\s"
+    )
+    pattern = _re.compile(rf"([{surnames}][\u4e00-\u9fff]{{1,2}})(?=(?:{action_suffix}))")
+    blocked_suffixes = ("公司", "集团", "项目", "系统", "模型", "医院", "公告", "手机", "群")
+    blocked_names = {
+        "解释",
+        "全员群",
+        "流程",
+        "项目款",
+        "发布会",
+        "手术",
+        "记忆",
+        "温暖",
+        "恐惧",
+        "得意",
+        "控制欲",
+    }
+    verb_suffixes = "站坐看拿说问走笑想把在给让推递握盯闭睁扶赶签扣追正"
+    counts: dict[str, int] = {}
+    first_pos: dict[str, int] = {}
+    if protagonist and protagonist in plain_text:
+        counts[protagonist] = plain_text.count(protagonist) + 1000
+        first_pos[protagonist] = plain_text.find(protagonist)
+    for match in pattern.finditer(plain_text):
+        name = match.group(1)
+        if len(name) == 3 and name[-1] in verb_suffixes:
+            name = name[:2]
+        if len(name) < 2 or len(name) > 3:
+            continue
+        if name in blocked_names or name.startswith(("解", "于")) or name.endswith("总"):
+            continue
+        if any(name.endswith(item) for item in blocked_suffixes):
+            continue
+        counts[name] = counts.get(name, 0) + 1
+        first_pos.setdefault(name, match.start())
+    ordered = [
+        item
+        for item in sorted(counts, key=lambda item: (-counts[item], first_pos.get(item, 10**9), item))
+        if counts[item] >= 2 or item == protagonist
+    ]
+    return ordered[:limit]
+
+
+def _fanqie_short_tags_from_text(project: object, plain_text: str) -> list[str]:
+    meta = (
+        getattr(project, "metadata_json", {})
+        if isinstance(getattr(project, "metadata_json", {}), dict)
+        else {}
+    )
+    tags: list[str] = []
+    for item in (getattr(project, "genre", None), getattr(project, "sub_genre", None)):
+        value = str(item or "").strip()
+        if value and value not in tags:
+            tags.append(value)
+    for item in meta.get("tags") if isinstance(meta.get("tags"), list) else []:
+        value = str(item or "").strip()
+        if value and value in plain_text and value not in tags:
+            tags.append(value)
+    detectors = [
+        ("公司", "职场反击"),
+        ("离职", "职场反击"),
+        ("公告", "舆论反转"),
+        ("全员群", "群聊审判"),
+        ("情绪", "情绪操控"),
+        ("恐惧", "情绪操控"),
+        ("得意", "情绪操控"),
+        ("代价", "能力代价"),
+        ("记忆", "记忆代价"),
+        ("父亲", "亲情牵引"),
+        ("医院", "亲情牵引"),
+        ("发布会", "发布会翻盘"),
+        ("项目款", "公司黑账"),
+        ("录音", "证据反杀"),
+    ]
+    for needle, tag in detectors:
+        if needle in plain_text and tag not in tags:
+            tags.append(tag)
+    for tag in ("番茄短故事", "单篇完结", "快节奏", "打脸", "爽文"):
+        if tag not in tags:
+            tags.append(tag)
+    return tags[:16]
+
+
+def _build_fanqie_short_title_candidates(
+    *,
+    title: str,
+    protagonist: str,
+    tags: list[str],
+) -> list[dict[str, object]]:
+    hooks = [
+        "十秒情绪",
+        "记忆代价",
+        "上司自爆",
+        "公司群审判",
+        "公开录音",
+        "离职反击",
+        "发布会翻盘",
+        "黑账自证",
+        "父亲手术",
+        "情绪爆改",
+    ]
+    raw_titles = [
+        title,
+        "全员群把我挂成贪污犯后，我让老板当众自爆",
+        "他们逼我背锅，我让整场发布会变成自爆现场",
+        "离职当天，全公司听见老板亲口认罪",
+        "我被挂上全员群那天，反派开始替我说真话",
+        f"{protagonist}的情绪爆改局",
+        "十秒情绪爆改，我让上司当场自爆",
+        "被挂贪污犯后，我点开了情绪爆改器",
+        "公司群审判我，我让反派自己开口",
+        "每次打脸，都要忘掉一段亲情",
+        "离职当天，我放大了老板的得意",
+        "我用十秒恐惧撤回全员公告",
+        "发布会前，我让幕后老板自证黑账",
+        "父亲手术被卡后，我把公司送上审判台",
+    ]
+    patterns = [
+        "{p}用{h}翻盘",
+        "开局被栽赃，我靠{h}反杀",
+        "{h}一开，上司自己认账",
+        "我把{h}用在公司群",
+        "{h}之后，全公司沉默了",
+    ]
+    for hook in hooks:
+        for pattern in patterns:
+            raw_titles.append(pattern.format(p=protagonist, h=hook))
+    seen: set[str] = set()
+    candidates: list[dict[str, object]] = []
+    subtitle = "开局即反击，金手指有代价，职场黑账当场反转。"
+    for value in raw_titles:
+        clean = _limit_text_chars(value, 28)
+        if not clean or clean in seen:
+            continue
+        seen.add(clean)
+        idx = len(candidates) + 1
+        candidates.append(
+            {
+                "id": idx,
+                "title": clean,
+                "subtitle": subtitle,
+                "angle": "番茄短故事｜当前全文映射",
+                "recommendation": "主推" if idx == 1 else ("广告测试" if idx <= 6 else "备选"),
+                "platform": "fanqie_short",
+                "platform_label": "番茄短故事",
+                "platform_scope": "target_platform",
+                "scope_label": "平台专项",
+                "platform_tag": "番茄短故事",
+                "display_label": "番茄短故事",
+                "pattern": "当前正文提取",
+                "score": max(72, 98 - idx),
+                "fit_notes": [
+                    "基于当前导出全文生成。",
+                    f"核心标签：{'、'.join(tags[:3])}" if tags else "核心标签来自当前正文。",
+                ],
+                "risk_flags": [],
+                "risk_blocked": False,
+            }
+        )
+        if len(candidates) >= 40:
+            break
+    return candidates
+
+
+def _build_fanqie_short_current_listing_profile(
+    settings: AppSettings,
+    project: object,
+) -> dict[str, object] | None:
+    output_dir = _project_output_dir(settings, str(getattr(project, "slug", "") or ""))
+    export_path = _fanqie_short_export_file(output_dir)
+    if export_path is None:
+        return None
+
+    raw_md = export_path.read_text(encoding="utf-8")
+    title = _fanqie_short_export_title(
+        raw_md,
+        str(getattr(project, "title", "") or "未命名作品"),
+    )
+    content_md = _strip_fanqie_short_reader_markers(raw_md)
+    plain = _plain_text_from_markdown(content_md)
+    reading_stats = build_markdown_reading_stats(content_md)
+    names = _extract_fanqie_short_character_names(plain, project)
+    protagonist = names[0] if names else "主角"
+    other_names = [name for name in names[1:5] if name != protagonist]
+    opponents = "、".join(other_names[:3]) or "对手"
+    genre = str(getattr(project, "genre", "") or "都市异能").strip()
+    sub_genre = str(getattr(project, "sub_genre", "") or "番茄短故事").strip()
+    tags = _fanqie_short_tags_from_text(project, plain)
+    author = _project_author_display_name(project)
+    opening = _first_sentence_text(plain, 86)
+    logline = _limit_text_chars(
+        f"{protagonist}被公开栽赃后，获得能点选目标并放大情绪的金手指；"
+        "每一次让反派自爆，都要付出一段温暖记忆。",
+        120,
+    )
+    shelf_intro = _limit_text_chars(
+        f"{protagonist}开局就被推上公开处刑台：{opening} "
+        "他获得的金手指不是无代价外挂，而是点选目标、放大情绪，让对方在十几秒内露出破绽；"
+        "代价是被抹去一段温暖记忆。"
+        f"从公司公告、大堂录音到发布会现场，{protagonist}一边守住父亲手术，一边逼{opponents}在恐惧、得意和控制欲里自证。"
+        f"《{title}》主打{genre}短故事的快打脸、连环反转和有代价爽感，爽点来得快，代价也扎得疼。",
+        500,
+    )
+    characters: list[dict[str, object]] = []
+    for idx, name in enumerate(names[:8]):
+        if idx == 0:
+            characters.append(
+                {
+                    "name": name,
+                    "role": "主角",
+                    "identity": "被公司公开栽赃的前员工",
+                    "appeal": "用有代价的情绪放大能力，把现实羞辱变成公开反击。",
+                    "goal": "洗清栽赃、守住父亲手术、逼公司黑账曝光。",
+                    "arc_state": "从被动背锅转为主动设局。",
+                    "is_pov_character": True,
+                }
+            )
+        else:
+            role = "关键对手" if name[0] in "周裴" else "关键角色"
+            characters.append(
+                {
+                    "name": name,
+                    "role": role,
+                    "identity": "",
+                    "appeal": "推动主角反击链条和公开反转。",
+                    "goal": "",
+                    "arc_state": "当前全文角色",
+                    "is_pov_character": False,
+                }
+            )
+
+    title_candidates = _build_fanqie_short_title_candidates(
+        title=title,
+        protagonist=protagonist,
+        tags=tags,
+    )
+    profile: dict[str, object] = {
+        "schema_version": "fanqie-short-current-1.0",
+        "source": "fanqie_short_export",
+        "source_files": [str(_FANQIE_SHORT_EXPORT_RELATIVE_PATH)],
+        "book_id": str(getattr(project, "slug", "") or ""),
+        "target_platform": "番茄短故事",
+        "primary_title": title,
+        "recommended_subtitle": "十秒情绪爆改，反派当场自证。",
+        "author_display_name": author,
+        "logline": logline,
+        "channel": str(getattr(project, "audience", "") or "番茄短故事读者"),
+        "length_type": "番茄短故事 · 单篇完结",
+        "serialization_status": str(getattr(project, "status", "") or "draft"),
+        "language": str(getattr(project, "language", "") or "zh-CN"),
+        "primary_category": genre,
+        "secondary_category": sub_genre,
+        "tertiary_categories": tags[:6],
+        "platform_category_suggestions": {
+            "target_platform": [f"番茄短故事/{genre}", f"番茄短故事/{sub_genre}"],
+            "general": tags[:8],
+        },
+        "tags": tags,
+        "short_intro": shelf_intro,
+        "long_intro": "",
+        "shelf_intro": shelf_intro,
+        "promo_copy": [
+            "开篇50字金手指生效，十秒情绪放大让反派当场露馅。",
+            "每一次打脸都要支付记忆代价，爽感快，疼感也真。",
+            "公司公告、大堂录音、发布会现场一路翻盘，现实压迫直接变公开审判。",
+        ],
+        "main_characters": characters,
+        "character_names": [item["name"] for item in characters],
+        "reader_promise": [
+            "开局即冲突，前200字内完成第一次能力反击。",
+            "金手指每次使用都有记忆代价，冲突不会变成无脑平推。",
+            "职场栽赃、医院压力、发布会翻盘连续推进，爽点密度高。",
+            "反派不是被作者按头认输，而是在被放大的情绪里自己露出破绽。",
+            "单篇完结，主线收束，不拆成连载章节阅读。",
+        ],
+        "not_recommended_categories": [],
+        "title_candidates": title_candidates,
+        "title_workflow": {
+            "candidate_source": "fanqie_short_current_export",
+            "candidate_policy": "current_story_only",
+            "candidate_count": len(title_candidates),
+            "platform_label": "番茄短故事",
+            "candidates": title_candidates,
+        },
+        "copy_pack": {
+            "title": title,
+            "subtitle": "十秒情绪爆改，反派当场自证。",
+            "author": author,
+            "book_id": str(getattr(project, "slug", "") or ""),
+            "category": " / ".join(item for item in [genre, sub_genre] if item),
+            "tags": "、".join(tags),
+            "character_names": "、".join(item["name"] for item in characters),
+            "shelf_intro": shelf_intro,
+        },
+        "marketing_assets": {
+            "short_video_scripts": [
+                {
+                    "duration_seconds": 15,
+                    "angle": "goldfinger_hook",
+                    "script": f"{protagonist}被挂成贪污犯，手机弹出情绪爆改器：点一下，反派十秒内自己露馅。",
+                },
+                {
+                    "duration_seconds": 45,
+                    "angle": "cost_and_payoff",
+                    "script": "他能放大恐惧、得意和控制欲，但每次反击都会丢掉一段温暖记忆。爽点越狠，代价越疼。",
+                },
+                {
+                    "duration_seconds": 90,
+                    "angle": "conflict_chain",
+                    "script": f"从全员群公告到发布会现场，{protagonist}把职场栽赃、医院押金和公司黑账连成反击链。",
+                },
+            ],
+            "material_slots": ["开篇反击", "大堂录音", "记忆代价", "发布会翻盘", "结尾收束"],
+            "recommended_cadence": "single-story launch",
+        },
+        "ip_readiness": {
+            "score": 100,
+            "status": "ready",
+            "checks": [],
+            "visual_motifs": ["黑屏提示", "全员群公告", "录音红点", "发布会大屏", "被抹掉的温暖记忆"],
+            "character_tags": characters[:5],
+        },
+        "current_export": {
+            "filename": str(_FANQIE_SHORT_EXPORT_RELATIVE_PATH),
+            "word_count": int(reading_stats["word_count"] or 0),
+            "estimated_read_minutes": int(reading_stats["estimated_read_minutes"] or 0),
+            "modified_at": datetime.fromtimestamp(export_path.stat().st_mtime, UTC).isoformat(),
+        },
+    }
+    profile["compliance"] = validate_book_listing_profile(profile)  # type: ignore[arg-type]
+    return profile
+
+
+def _build_fanqie_short_export_task_stats(
+    settings: AppSettings,
+    project: object,
+    *,
+    include_chapters: bool,
+) -> dict[str, object] | None:
+    project_slug = str(getattr(project, "slug", "") or "").strip()
+    if not project_slug:
+        return None
+
+    output_dir = _project_output_dir(settings, project_slug)
+    export_path = _fanqie_short_export_file(output_dir)
+    if export_path is None:
+        return None
+
+    raw_md = export_path.read_text(encoding="utf-8")
+    export_title = _fanqie_short_export_title(
+        raw_md,
+        str(getattr(project, "title", "") or project_slug),
+    )
+    content_md = _strip_fanqie_short_reader_markers(raw_md)
+    reading_stats = build_markdown_reading_stats(content_md)
+    word_count = int(reading_stats["word_count"] or 0)
+    completed = 1 if word_count > 0 else 0
+    meta = (
+        getattr(project, "metadata_json", {})
+        if isinstance(getattr(project, "metadata_json", {}), dict)
+        else {}
+    )
+    stat = export_path.stat()
+    entry = {
+        "number": 1,
+        "title": "全文",
+        "unit_kind": "single_story",
+        "unit_label": "全文",
+        "filename": str(_FANQIE_SHORT_EXPORT_RELATIVE_PATH),
+        "word_count": word_count,
+        "estimated_read_minutes": int(reading_stats["estimated_read_minutes"] or 0),
+        "target_word_count": int(getattr(project, "target_word_count", 0) or 0),
+        "status": "complete" if word_count > 0 else "empty",
+        "single_piece": True,
+    }
+    return {
+        "source": "fanqie_short_export",
+        "project_slug": project_slug,
+        "project_title": export_title,
+        "current_content_title": export_title,
+        "author_display_name": _project_author_display_name(project),
+        "project_type": getattr(project, "project_type", None),
+        "content_mode": meta.get("content_mode") or "fanqie_short_story",
+        "platform_key": meta.get("platform_key"),
+        "length_key": meta.get("length_key"),
+        "unit_kind": "single_story",
+        "unit_label": "全文",
+        "target_chapters": 1,
+        "target_segments": 1,
+        "target_word_count": int(getattr(project, "target_word_count", 0) or 0),
+        "completed_chapters": completed,
+        "completed_segments": completed,
+        "word_count_total": word_count,
+        "estimated_read_minutes": int(reading_stats["estimated_read_minutes"] or 0),
+        "current_export_filename": str(_FANQIE_SHORT_EXPORT_RELATIVE_PATH),
+        "current_export_modified_at": datetime.fromtimestamp(stat.st_mtime, UTC).isoformat(),
+        "chapters": [entry] if include_chapters else [],
+    }
+
+
 def _reader_chapter_availability(production_state: str | None, word_count: int) -> str:
     if (production_state or "").lower() == "ok" and word_count > 0:
         return "available"
@@ -4890,11 +6042,193 @@ def _load_project_chapter_index(
         return [], {}, []
 
 
-def _load_task_chapter_word_stats(
+_DASHBOARD_PROGRESS_EVENT_LIMIT = 48
+_DASHBOARD_VISIBLE_TASK_STATUSES = {"queued", "running"}
+_BOOK_RUNNING_STATUSES = {"queued", "running", "in_progress", "planning", "revising"}
+_BOOK_CLOSED_STATUSES = {"completed", "complete", "published", "closed", "closed_complete"}
+_BOOK_ATTENTION_STATUSES = {"failed", "error", "cancelled", "incomplete", "paused"}
+
+
+def _query_bool(value: object) -> bool:
+    return str(value or "").lower() in {"1", "true", "yes", "on"}
+
+
+def _is_dashboard_visible_task(task: dict[str, object]) -> bool:
+    return str(task.get("status") or "").lower() in _DASHBOARD_VISIBLE_TASK_STATUSES
+
+
+def _filter_dashboard_visible_tasks(
+    tasks: list[dict[str, object]],
+) -> list[dict[str, object]]:
+    return [task for task in tasks if _is_dashboard_visible_task(task)]
+
+
+def _project_library_archived(metadata: object) -> bool:
+    return isinstance(metadata, dict) and bool(metadata.get("library_archived"))
+
+
+def _compact_task_for_dashboard(task: dict[str, object]) -> dict[str, object]:
+    """Trim heavy task payloads for dashboard list responses."""
+    compacted = dict(task)
+    events = task.get("progress_events")
+    if not isinstance(events, list) or len(events) <= _DASHBOARD_PROGRESS_EVENT_LIMIT:
+        return compacted
+    head = events[:8]
+    tail = events[-(_DASHBOARD_PROGRESS_EVENT_LIMIT - len(head)) :]
+    compacted["progress_events"] = head + tail
+    compacted["progress_events_truncated"] = True
+    return compacted
+
+
+def _library_book_state(
+    *,
+    status: object,
+    completed_units: int,
+    target_units: int,
+    has_content: bool,
+    archived: bool = False,
+    repair_status: dict[str, object] | None = None,
+) -> str:
+    if archived:
+        return "archived"
+    normalized = str(status or "").lower()
+    if repair_status and repair_status.get("is_repairing"):
+        return "needs_attention"
+    if normalized in _BOOK_ATTENTION_STATUSES:
+        return "needs_attention"
+    if normalized in _BOOK_CLOSED_STATUSES:
+        return "closed_complete"
+    if target_units > 0 and completed_units >= target_units and has_content:
+        return "closed_complete"
+    if normalized in _BOOK_RUNNING_STATUSES:
+        return "in_progress"
+    if has_content:
+        return "in_progress"
+    return "draft"
+
+
+def _library_book_state_label(state: str) -> str:
+    return {
+        "archived": "已归档",
+        "closed_complete": "已闭环",
+        "in_progress": "编写中",
+        "needs_attention": "需处理",
+        "draft": "草稿",
+    }.get(state, state)
+
+
+def _load_task_chapter_word_stats_summary(
     settings: AppSettings,
     project_slugs: list[str],
 ) -> dict[str, dict[str, object]]:
+    """Aggregate-only chapter stats for dashboard (no per-chapter list)."""
+    slugs = sorted({slug for slug in project_slugs if slug})
+    if not slugs:
+        return {}
+
+    try:
+        from sqlalchemy import and_, func, select
+
+        from bestseller.infra.db.models import (
+            ChapterDraftVersionModel,
+            ChapterModel,
+            ProjectModel,
+        )
+
+        async def _fetch() -> dict[str, dict[str, object]]:
+            async with session_scope(settings) as sess:
+                project_rows = list(
+                    await sess.scalars(select(ProjectModel).where(ProjectModel.slug.in_(slugs)))
+                )
+                if not project_rows:
+                    return {}
+
+                project_by_id = {project.id: project for project in project_rows}
+                project_ids = list(project_by_id)
+                stats_by_slug: dict[str, dict[str, object]] = {}
+                for project in project_rows:
+                    meta = project.metadata_json if isinstance(project.metadata_json, dict) else {}
+                    is_short = is_fanqie_short_project(project)
+                    if is_short:
+                        export_stats = _build_fanqie_short_export_task_stats(
+                            settings,
+                            project,
+                            include_chapters=False,
+                        )
+                        if export_stats is not None:
+                            stats_by_slug[project.slug] = export_stats
+                            continue
+                    stats_by_slug[project.slug] = {
+                        "source": "db",
+                        "project_slug": project.slug,
+                        "project_title": project.title,
+                        "project_type": project.project_type,
+                        "content_mode": meta.get("content_mode"),
+                        "length_key": meta.get("length_key"),
+                        "unit_kind": "segment" if is_short else "chapter",
+                        "unit_label": "段" if is_short else "章",
+                        "target_chapters": int(project.target_chapters or 0),
+                        "target_segments": int(project.target_chapters or 0) if is_short else 0,
+                        "target_word_count": int(project.target_word_count or 0),
+                        "completed_chapters": 0,
+                        "completed_segments": 0,
+                        "word_count_total": 0,
+                        "chapters": [],
+                    }
+
+                word_expr = func.coalesce(
+                    func.nullif(ChapterModel.current_word_count, 0),
+                    ChapterDraftVersionModel.word_count,
+                    0,
+                )
+                agg_rows = await sess.execute(
+                    select(
+                        ChapterModel.project_id,
+                        func.count(ChapterModel.id),
+                        func.coalesce(func.sum(word_expr), 0),
+                    )
+                    .outerjoin(
+                        ChapterDraftVersionModel,
+                        and_(
+                            ChapterDraftVersionModel.chapter_id == ChapterModel.id,
+                            ChapterDraftVersionModel.is_current.is_(True),
+                        ),
+                    )
+                    .where(
+                        ChapterModel.project_id.in_(project_ids),
+                        word_expr > 0,
+                    )
+                    .group_by(ChapterModel.project_id)
+                )
+                for project_id, completed_chapters, word_total in agg_rows:
+                    project = project_by_id.get(project_id)
+                    if project is None:
+                        continue
+                    stats = stats_by_slug[project.slug]
+                    if stats.get("source") == "fanqie_short_export":
+                        continue
+                    stats["completed_chapters"] = int(completed_chapters or 0)
+                    if stats.get("unit_kind") == "segment":
+                        stats["completed_segments"] = int(completed_chapters or 0)
+                    stats["word_count_total"] = int(word_total or 0)
+
+                return stats_by_slug
+
+        return asyncio.run(_fetch())
+    except Exception:
+        logger.warning("Failed to load dashboard chapter word stats", exc_info=True)
+        return {}
+
+
+def _load_task_chapter_word_stats(
+    settings: AppSettings,
+    project_slugs: list[str],
+    *,
+    summary_only: bool = False,
+) -> dict[str, dict[str, object]]:
     """Return DB-authoritative chapter counts for quickstart task cards."""
+    if summary_only:
+        return _load_task_chapter_word_stats_summary(settings, project_slugs)
     slugs = sorted({slug for slug in project_slugs if slug})
     if not slugs:
         return {}
@@ -4918,19 +6252,36 @@ def _load_task_chapter_word_stats(
 
                 project_by_id = {project.id: project for project in project_rows}
                 project_ids = list(project_by_id)
-                stats_by_slug: dict[str, dict[str, object]] = {
-                    project.slug: {
+                stats_by_slug: dict[str, dict[str, object]] = {}
+                for project in project_rows:
+                    meta = project.metadata_json if isinstance(project.metadata_json, dict) else {}
+                    is_short = is_fanqie_short_project(project)
+                    if is_short:
+                        export_stats = _build_fanqie_short_export_task_stats(
+                            settings,
+                            project,
+                            include_chapters=True,
+                        )
+                        if export_stats is not None:
+                            stats_by_slug[project.slug] = export_stats
+                            continue
+                    stats_by_slug[project.slug] = {
                         "source": "db",
                         "project_slug": project.slug,
                         "project_title": project.title,
+                        "project_type": project.project_type,
+                        "content_mode": meta.get("content_mode"),
+                        "length_key": meta.get("length_key"),
+                        "unit_kind": "segment" if is_short else "chapter",
+                        "unit_label": "段" if is_short else "章",
                         "target_chapters": int(project.target_chapters or 0),
+                        "target_segments": int(project.target_chapters or 0) if is_short else 0,
                         "target_word_count": int(project.target_word_count or 0),
                         "completed_chapters": 0,
+                        "completed_segments": 0,
                         "word_count_total": 0,
                         "chapters": [],
                     }
-                    for project in project_rows
-                }
 
                 draft_rows = list(
                     await sess.execute(
@@ -4958,16 +6309,22 @@ def _load_task_chapter_word_stats(
                     project = project_by_id.get(chapter.project_id)
                     if project is None:
                         continue
+                    stats = stats_by_slug[project.slug]
+                    if stats.get("source") == "fanqie_short_export":
+                        continue
                     word_count = int(chapter.current_word_count or 0)
                     if word_count <= 0:
                         word_count = draft_word_count_by_chapter_id.get(chapter.id, 0)
                     if chapter.id not in draft_word_count_by_chapter_id and word_count <= 0:
                         continue
 
-                    stats = stats_by_slug[project.slug]
+                    is_short = stats.get("unit_kind") == "segment"
+                    unit_label = str(stats.get("unit_label") or ("段" if is_short else "章"))
                     chapter_payload = {
                         "number": int(chapter.chapter_number),
-                        "title": chapter.title or f"第{chapter.chapter_number}章",
+                        "title": chapter.title or f"第{chapter.chapter_number}{unit_label}",
+                        "unit_kind": "segment" if is_short else "chapter",
+                        "unit_label": unit_label,
                         "word_count": word_count,
                         "estimated_read_minutes": (
                             (word_count + 499) // 500 if word_count > 0 else 0
@@ -4979,10 +6336,14 @@ def _load_task_chapter_word_stats(
                     stats["word_count_total"] = int(stats["word_count_total"]) + word_count
 
                 for stats in stats_by_slug.values():
+                    if stats.get("source") == "fanqie_short_export":
+                        continue
                     chapters = list(stats["chapters"])  # type: ignore[arg-type]
                     chapters.sort(key=lambda item: int(item.get("number") or 0))
                     stats["chapters"] = chapters
                     stats["completed_chapters"] = len(chapters)
+                    if stats.get("unit_kind") == "segment":
+                        stats["completed_segments"] = len(chapters)
 
                 return stats_by_slug
 
@@ -4995,10 +6356,13 @@ def _load_task_chapter_word_stats(
 def _attach_task_chapter_word_stats(
     settings: AppSettings,
     tasks: list[dict[str, object]],
+    *,
+    summary_only: bool = False,
 ) -> list[dict[str, object]]:
     stats_by_slug = _load_task_chapter_word_stats(
         settings,
         [str(task.get("project_slug") or "") for task in tasks],
+        summary_only=summary_only,
     )
     if not stats_by_slug:
         return tasks
@@ -5009,13 +6373,31 @@ def _attach_task_chapter_word_stats(
             task["chapter_word_stats"] = stats
             project_title = str(stats.get("project_title") or "").strip()
             task_title = str(task.get("title") or "").strip()
+            is_current_fanqie_export = (
+                stats.get("source") == "fanqie_short_export"
+                or stats.get("unit_kind") == "single_story"
+            )
             if project_title and (
-                task.get("task_type") == "repair"
+                is_current_fanqie_export
+                or task.get("task_type") == "repair"
                 or not task_title
                 or task_title.lower().startswith("repair ")
             ):
                 task["title"] = project_title
+            if project_title:
                 task["project_title"] = project_title
+            for key in (
+                "project_type",
+                "content_mode",
+                "platform_key",
+                "length_key",
+                "author_display_name",
+                "current_content_title",
+                "current_export_filename",
+                "current_export_modified_at",
+            ):
+                if stats.get(key):
+                    task[key] = stats[key]
     return tasks
 
 
@@ -5280,7 +6662,13 @@ def serve_web_app(
                     )
                     return
                 if path == "/api/projects":
-                    self._send_json(asyncio.run(_load_projects_payload(settings)))
+                    light_mode = _query_bool((query.get("light") or ["0"])[0])
+                    if light_mode:
+                        self._send_json(asyncio.run(_load_library_payload(settings)))
+                        return
+                    self._send_json(
+                        asyncio.run(_load_projects_payload(settings, light=False))
+                    )
                     return
                 if path == "/api/writing-presets":
                     self._send_json(_public_writing_preset_catalog_payload())
@@ -5298,7 +6686,15 @@ def serve_web_app(
                     self._send_json(estimate_project_cost(ch_count, settings))
                     return
                 if path == "/api/tasks":
+                    summary_mode = _query_bool((query.get("summary") or ["0"])[0])
+                    include_inactive = _query_bool(
+                        (query.get("include_inactive") or ["0"])[0]
+                    )
                     tasks = task_manager.list_tasks()
+                    if not include_inactive:
+                        tasks = _filter_dashboard_visible_tasks(tasks)
+                    if summary_mode:
+                        tasks = [_compact_task_for_dashboard(task) for task in tasks]
                     db_repair_tasks = asyncio.run(
                         _load_db_repair_task_summaries(settings, tasks)
                     )
@@ -5319,8 +6715,14 @@ def serve_web_app(
                             )
                         ]
                     tasks.extend(db_repair_tasks)
+                    if not include_inactive:
+                        tasks = _filter_dashboard_visible_tasks(tasks)
                     self._send_json(
-                        _attach_task_chapter_word_stats(settings, tasks)
+                        _attach_task_chapter_word_stats(
+                            settings,
+                            tasks,
+                            summary_only=summary_mode,
+                        )
                     )
                     return
                 if path == "/api/schedules":
@@ -5352,6 +6754,13 @@ def serve_web_app(
                     if task is None:
                         task = asyncio.run(
                             _load_db_repair_task_summary(settings, task_id)
+                        )
+                    if task is None and task_id.startswith("project:"):
+                        task = asyncio.run(
+                            _load_project_dashboard_task_payload(
+                                settings,
+                                task_id.removeprefix("project:"),
+                            )
                         )
                     if task is None:
                         self._route_not_found()
@@ -5606,6 +7015,35 @@ def serve_web_app(
                 if path.startswith("/api/reader/") and path.endswith("/toc"):
                     project_slug = path.split("/")[3]
                     output_dir = _project_output_dir(settings, project_slug)
+                    project_summary = _load_reader_project_summary(settings, project_slug)
+                    project_title = str(project_summary.get("title") or project_slug)
+                    is_fanqie_short = bool(project_summary.get("is_fanqie_short")) or (
+                        _fanqie_short_export_file(output_dir) is not None
+                    )
+                    if is_fanqie_short:
+                        short_md = _load_fanqie_short_reader_markdown(
+                            settings,
+                            project_slug,
+                            output_dir,
+                            title=project_title,
+                            genre=str(project_summary.get("genre") or ""),
+                        )
+                        toc = (
+                            [_fanqie_short_toc_entry_from_markdown(short_md)]
+                            if short_md
+                            else []
+                        )
+                        self._send_json(
+                            {
+                                "project_slug": project_slug,
+                                "title": project_title,
+                                "chapters": toc,
+                                "volumes": [],
+                                "single_piece": True,
+                                "content_mode": "fanqie_short_story",
+                            }
+                        )
+                        return
                     # DB-authoritative chapter list with volume info.  This
                     # stays in sync with ``assemble_chapter_draft`` — user
                     # previously saw "84 in task list, 50 in preview" because
@@ -5667,18 +7105,6 @@ def serve_web_app(
                         # DB path failed (or project is filesystem-only);
                         # degrade to the legacy filesystem TOC.
                         toc = fs_toc
-                    # Resolve human-readable project title from DB.
-                    project_title = project_slug
-                    try:
-
-                        async def _fetch_title() -> str:
-                            async with session_scope(settings) as sess:
-                                proj = await get_project_by_slug(sess, project_slug)
-                                return proj.title if proj and proj.title else project_slug
-
-                        project_title = asyncio.run(_fetch_title())
-                    except Exception:
-                        pass
                     self._send_json(
                         {
                             "project_slug": project_slug,
@@ -5693,6 +7119,43 @@ def serve_web_app(
                     project_slug = parts[3]
                     chapter_n = int(parts[5])
                     output_dir = _project_output_dir(settings, project_slug)
+                    project_summary = _load_reader_project_summary(settings, project_slug)
+                    project_title = str(project_summary.get("title") or project_slug)
+                    is_fanqie_short = bool(project_summary.get("is_fanqie_short")) or (
+                        _fanqie_short_export_file(output_dir) is not None
+                    )
+                    if is_fanqie_short:
+                        if chapter_n != 1:
+                            self._route_not_found()
+                            return
+                        short_md = _load_fanqie_short_reader_markdown(
+                            settings,
+                            project_slug,
+                            output_dir,
+                            title=project_title,
+                            genre=str(project_summary.get("genre") or ""),
+                        )
+                        if not short_md:
+                            self._route_not_found()
+                            return
+                        _reader_lang = str(project_summary.get("language") or "") or None
+                        html_content = markdown_to_html(short_md, language=_reader_lang)
+                        stats = build_markdown_reading_stats(short_md)
+                        self._send_json(
+                            {
+                                "number": 1,
+                                "filename": str(_FANQIE_SHORT_EXPORT_RELATIVE_PATH),
+                                "html": html_content,
+                                "word_count": stats["word_count"],
+                                "estimated_read_minutes": stats["estimated_read_minutes"],
+                                "volume_number": None,
+                                "volume_title": None,
+                                "chapter_title": "全文",
+                                "single_piece": True,
+                                "content_mode": "fanqie_short_story",
+                            }
+                        )
+                        return
                     chapter_file = output_dir / f"chapter-{chapter_n:03d}.md"
                     # SSOT: always check DB first so the reader reflects the
                     # current chapter_draft_versions.is_current row even when a
@@ -5848,6 +7311,72 @@ def serve_web_app(
                         )
                         return
                     self._send_json({"ok": True, **result})
+                    return
+                archive_slug = _match_project_route(path, "archive")
+                if archive_slug is not None:
+                    result = asyncio.run(
+                        _set_project_library_archived(
+                            settings,
+                            archive_slug,
+                            archived=True,
+                        )
+                    )
+                    if result is None:
+                        self._send_json(
+                            {"ok": False, "error": "Project not found"},
+                            status=HTTPStatus.NOT_FOUND,
+                        )
+                        return
+                    self._send_json(result)
+                    return
+                unarchive_slug = _match_project_route(path, "unarchive")
+                if unarchive_slug is not None:
+                    result = asyncio.run(
+                        _set_project_library_archived(
+                            settings,
+                            unarchive_slug,
+                            archived=False,
+                        )
+                    )
+                    if result is None:
+                        self._send_json(
+                            {"ok": False, "error": "Project not found"},
+                            status=HTTPStatus.NOT_FOUND,
+                        )
+                        return
+                    self._send_json(result)
+                    return
+                revision_slug = _match_project_route(path, "revision-task")
+                if revision_slug is not None:
+                    active = task_manager.find_active_task_by_project_slug(revision_slug)
+                    if active is not None:
+                        self._send_json(
+                            {
+                                "ok": True,
+                                "already_running": True,
+                                **active,
+                            },
+                            status=HTTPStatus.ACCEPTED,
+                        )
+                        return
+                    payload = asyncio.run(_rebuild_payload_from_db(settings, revision_slug))
+                    if not payload:
+                        self._send_json(
+                            {"ok": False, "error": "Project not found or cannot be rebuilt"},
+                            status=HTTPStatus.NOT_FOUND,
+                        )
+                        return
+                    block_payload = asyncio.run(
+                        _load_project_autowrite_block_payload(settings, revision_slug),
+                    )
+                    if block_payload:
+                        self._send_json(block_payload, status=HTTPStatus.CONFLICT)
+                        return
+                    payload = dict(payload)
+                    payload["_run_conception"] = False
+                    payload["revision_mode"] = True
+                    task = task_manager.create_autowrite_task(payload)
+                    self._send_json({"ok": True, **task}, status=HTTPStatus.ACCEPTED)
                     return
                 if path == "/api/tasks/quickstart":
                     payload = self._read_json_body()

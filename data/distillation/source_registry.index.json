@@ -30851,6 +30851,19 @@
       "source_formats": [
         "epub"
       ]
+    },
+    {
+      "title_key_hmac_sha256": "91bdc3579faa413a1cd05c81c6fc5b881fd7c8ea4cc87773a587e30920bd686a",
+      "canonical_source_id": "source-5003",
+      "source_ids": [
+        "source-5003"
+      ],
+      "source_hashes_sha256": [
+        "19b28b3f89b3886e6c0ea6d8de4d85abf097a7c367e8a6a74bee07878f75af53"
+      ],
+      "source_formats": [
+        "mobi"
+      ]
     }
   ]
 }

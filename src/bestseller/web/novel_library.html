@@ -427,7 +427,9 @@
     transform: translateY(-2px);
   }
 
-  .book-card.status-completed { border-left: 3px solid var(--success); }
+  .book-card.status-completed,
+  .book-card.status-closed { border-left: 3px solid var(--success); }
+  .book-card.status-archived { border-left: 3px solid var(--text-faint); opacity: .82; }
   .book-card.status-in_progress,
   .book-card.status-running,
   .book-card.status-queued { border-left: 3px solid var(--blue); }
@@ -514,7 +516,9 @@
     background: currentColor;
   }
 
-  .status-badge.completed { color: var(--success); background: var(--success-soft); }
+  .status-badge.completed,
+  .status-badge.closed { color: var(--success); background: var(--success-soft); }
+  .status-badge.archived { color: var(--text-dim); background: var(--bg-2); }
   .status-badge.in_progress,
   .status-badge.running { color: var(--blue); background: var(--blue-soft); }
   .status-badge.queued { color: var(--warning); background: var(--warning-soft); }
@@ -578,7 +582,8 @@
     letter-spacing: -0.3px;
   }
 
-  .book-card.status-completed .book-progress-row .pct {
+  .book-card.status-completed .book-progress-row .pct,
+  .book-card.status-closed .book-progress-row .pct {
     color: var(--success);
   }
 
@@ -596,7 +601,8 @@
     background: var(--blue);
   }
 
-  .book-card.status-completed .book-progress-bar .fill { background: var(--success); }
+  .book-card.status-completed .book-progress-bar .fill,
+  .book-card.status-closed .book-progress-bar .fill { background: var(--success); }
   .book-card.status-failed .book-progress-bar .fill { background: var(--danger); }
 
   .book-tags {
@@ -623,6 +629,7 @@
   }
 
   .book-action {
+    appearance: none;
     display: inline-flex;
     align-items: center;
     gap: 5px;
@@ -779,7 +786,7 @@
         <div class="value" id="statRunning">0</div>
       </div>
       <div class="lib-stat">
-        <div class="label">已完成</div>
+        <div class="label">已闭环</div>
         <div class="value" id="statDone">0</div>
       </div>
       <div class="lib-stat">
@@ -797,9 +804,10 @@
     <div class="lib-filter-tabs" aria-label="书稿筛选">
       <button class="lib-filter active" data-filter="all" onclick="setLibraryFilter('all')">全部 <span class="count" id="cntAll">00</span></button>
       <button class="lib-filter" data-filter="in_progress" onclick="setLibraryFilter('in_progress')">编写中 <span class="count" id="cntRunning">00</span></button>
-      <button class="lib-filter" data-filter="completed" onclick="setLibraryFilter('completed')">已完成 <span class="count" id="cntDone">00</span></button>
+      <button class="lib-filter" data-filter="completed" onclick="setLibraryFilter('completed')">已闭环 <span class="count" id="cntDone">00</span></button>
       <button class="lib-filter" data-filter="draft" onclick="setLibraryFilter('draft')">草稿 <span class="count" id="cntDraft">00</span></button>
       <button class="lib-filter" data-filter="needs_attention" onclick="setLibraryFilter('needs_attention')">需处理 <span class="count" id="cntAttn">00</span></button>
+      <button class="lib-filter" data-filter="archived" onclick="setLibraryFilter('archived')">已归档 <span class="count" id="cntArchived">00</span></button>
     </div>
     <div class="lib-search">
       <input id="librarySearchInline" type="search" placeholder="筛选当前列表…">
@@ -859,8 +867,13 @@
   }
 
   function statusKey(book) {
+    const state = String(book.book_state || '').toLowerCase();
+    if (state === 'archived') return 'archived';
+    if (state === 'closed_complete' || state === 'closed') return 'closed';
+    if (state === 'needs_attention') return 'needs_attention';
+    if (state === 'in_progress') return 'in_progress';
     const raw = String(book.status || '').toLowerCase();
-    if (raw === 'completed' || raw === 'complete') return 'completed';
+    if (raw === 'completed' || raw === 'complete') return 'closed';
     if (raw === 'running' || raw === 'in_progress' || raw === 'queued') return 'in_progress';
     if (raw === 'failed') return 'failed';
     if (raw === 'draft' || raw === '') return 'draft';
@@ -868,25 +881,28 @@
   }
 
   function statusLabel(s) {
-    return ({ completed: '已完成', in_progress: '编写中', queued: '排队', failed: '失败', draft: '草稿', running: '编写中' })[s] || s;
+    return ({ archived: '已归档', closed: '已闭环', completed: '已完成', needs_attention: '需处理', in_progress: '编写中', queued: '排队', failed: '失败', draft: '草稿', running: '编写中' })[s] || s;
   }
 
   function isAttention(book) {
+    if (statusKey(book) === 'archived') return false;
+    if (statusKey(book) === 'needs_attention') return true;
     if (statusKey(book) === 'failed') return true;
     const target = Number(book.target_chapters || 0);
     const done = Number(book.completed_chapters || 0);
-    if (statusKey(book) === 'completed' && target > 0 && done < target) return true;
+    if (statusKey(book) === 'closed' && target > 0 && done < target) return true;
     if (book.repair_status?.is_repairing) return true;
     return false;
   }
 
   function matchFilter(book) {
     const sk = statusKey(book);
-    if (libraryFilter === 'all') return true;
+    if (libraryFilter === 'all') return sk !== 'archived';
     if (libraryFilter === 'in_progress') return sk === 'in_progress';
-    if (libraryFilter === 'completed') return sk === 'completed' && !isAttention(book);
+    if (libraryFilter === 'completed') return (sk === 'closed' || sk === 'completed') && !isAttention(book);
     if (libraryFilter === 'draft') return sk === 'draft';
     if (libraryFilter === 'needs_attention') return isAttention(book);
+    if (libraryFilter === 'archived') return sk === 'archived';
     return true;
   }
 
@@ -901,9 +917,12 @@
     const sk = statusKey(book);
     const target = Number(book.target_chapters || 0);
     const done = Number(book.completed_chapters || 0);
-    const pct = target > 0 ? Math.min(100, Math.round((done / target) * 100)) : (sk === 'completed' ? 100 : 0);
+    const isClosed = sk === 'closed' || sk === 'completed';
+    const isArchived = sk === 'archived';
+    const pct = target > 0 ? Math.min(100, Math.round((done / target) * 100)) : (isClosed ? 100 : 0);
     const tagline = book.tagline ? esc(book.tagline) : '';
     const slug = book.slug || '';
+    const unitLabel = book.unit_label || (book.unit_kind === 'single_story' ? '全文' : '章节');
     const tagsHtml = (book.tags || []).slice(0, 5)
       .map(t => `<span class="book-tag">${esc(t)}</span>`).join('');
     const lastUpd = fmtRelative(book.last_updated);
@@ -925,13 +944,13 @@
           ${tagline ? `<div class="book-tagline">「${tagline}」</div>` : `<div class="book-tagline" style="color:var(--text-faint);font-style:normal;">SLUG · ${esc(slug)}</div>`}
           <div class="book-meta">
             <span>题材 · <strong>${esc(book.primary_category || book.genre || '—')}</strong></span>
-            <span>章节 · <strong>${done}${target ? '/' + target : ''}</strong></span>
+            <span>${esc(unitLabel)} · <strong>${done}${target ? '/' + target : ''}</strong></span>
             <span>字数 · <strong>${wordsText}</strong></span>
             <span>更新 · <strong>${esc(lastUpd)}</strong></span>
           </div>
           <div class="book-progress">
             <div class="book-progress-row">
-              <span>${sk === 'completed' ? '完成' : '进度'} · ${done}/${target || '—'}</span>
+              <span>${isClosed ? '闭环' : '进度'} · ${done}/${target || '—'}</span>
               <span class="pct">${pct}%</span>
             </div>
             <div class="book-progress-bar"><div class="fill" style="width:${pct}%"></div></div>
@@ -939,9 +958,11 @@
           ${tagsHtml ? `<div class="book-tags">${tagsHtml}</div>` : ''}
         </div>
         <div class="book-actions" onclick="event.stopPropagation();">
-          <a class="book-action primary" href="${esc(readHref)}" target="_blank">📖 阅读章节</a>
-          <a class="book-action" href="/quickstart" title="返回任务指挥台">📡 查看任务</a>
-          <a class="book-action" href="${esc(readHref)}" target="_blank">📚 章节目录</a>
+          <a class="book-action primary" href="${esc(readHref)}" target="_blank">${book.unit_kind === 'single_story' ? '阅读全文' : '阅读章节'}</a>
+          ${isArchived ? `<button class="book-action" onclick="archiveBook('${esc(slug)}', false)" title="把作品恢复到书稿库默认列表">取消归档</button>` : ''}
+          ${!isArchived ? `<button class="book-action" onclick="reviseBook('${esc(slug)}')" title="为这本书创建新的修改任务">再修改</button>` : ''}
+          ${isClosed ? `<button class="book-action" onclick="archiveBook('${esc(slug)}', true)" title="把已闭环作品移入归档列表">归档</button>` : ''}
+          <a class="book-action" href="/quickstart" title="查看当前执行中的任务">任务台</a>
         </div>
       </div>
     `;
@@ -953,9 +974,11 @@
 
     // Stats
     const running = allBooks.filter(b => statusKey(b) === 'in_progress').length;
-    const done = allBooks.filter(b => statusKey(b) === 'completed' && !isAttention(b)).length;
+    const done = allBooks.filter(b => (statusKey(b) === 'closed' || statusKey(b) === 'completed') && !isAttention(b)).length;
     const draftCount = allBooks.filter(b => statusKey(b) === 'draft').length;
     const attnCount = allBooks.filter(isAttention).length;
+    const archivedCount = allBooks.filter(b => statusKey(b) === 'archived').length;
+    const activeShelfCount = allBooks.filter(b => statusKey(b) !== 'archived').length;
     const totalChapters = allBooks.reduce((s, b) => s + Number(b.completed_chapters || 0), 0);
     const totalWords = allBooks.reduce((s, b) => s + Number(b.words_on_disk || 0), 0);
 
@@ -963,12 +986,13 @@
     $('#statDone').textContent = done;
     $('#statChapters').textContent = totalChapters.toLocaleString('en-US');
     $('#statWords').textContent = totalWords > 0 ? fmtWords(totalWords) : '0';
-    $('#cntAll').textContent = pad2(allBooks.length);
+    $('#cntAll').textContent = pad2(activeShelfCount);
     $('#cntRunning').textContent = pad2(running);
     $('#cntDone').textContent = pad2(done);
     $('#cntDraft').textContent = pad2(draftCount);
     $('#cntAttn').textContent = pad2(attnCount);
-    $('#navLibraryCount').textContent = pad2(allBooks.length);
+    $('#cntArchived').textContent = pad2(archivedCount);
+    $('#navLibraryCount').textContent = pad2(activeShelfCount);
 
     $$('.lib-filter').forEach(b => b.classList.toggle('active', b.dataset.filter === libraryFilter));
 
@@ -992,6 +1016,48 @@
   window.openBook = function(slug) {
     if (!slug) return;
     window.open(`/read/${encodeURIComponent(slug)}`, '_blank');
+  };
+
+  window.reviseBook = async function(slug) {
+    if (!slug) return;
+    if (!confirm('为这本书创建新的修改任务？任务会出现在任务台，原书稿继续保留。')) return;
+    try {
+      const r = await fetch(`/api/projects/${encodeURIComponent(slug)}/revision-task`, {
+        method: 'POST',
+      });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        alert(data.error || '创建修改任务失败');
+        return;
+      }
+      const taskId = data.task_id ? `?highlight_task=${encodeURIComponent(data.task_id)}` : '';
+      window.location.href = `/quickstart${taskId}`;
+    } catch (err) {
+      alert('创建修改任务失败: ' + err.message);
+    }
+  };
+
+  window.archiveBook = async function(slug, archived) {
+    if (!slug) return;
+    const action = archived ? '归档' : '取消归档';
+    const message = archived
+      ? '确认归档这本已闭环作品？归档后会进入「已归档」筛选，正文仍可阅读。'
+      : '确认取消归档？作品会回到书稿库默认列表。';
+    if (!confirm(message)) return;
+    try {
+      const endpoint = archived ? 'archive' : 'unarchive';
+      const r = await fetch(`/api/projects/${encodeURIComponent(slug)}/${endpoint}`, {
+        method: 'POST',
+      });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        alert(data.error || `${action}失败`);
+        return;
+      }
+      await loadLibrary();
+    } catch (err) {
+      alert(`${action}失败: ` + err.message);
+    }
   };
 
   function setMastheadDate() {

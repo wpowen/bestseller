@@ -178,6 +178,43 @@ def test_fallback_title_candidates_follow_fanqie_workflow() -> None:
     assert not any("候选" in title for title in titles)
 
 
+def test_fanqie_short_title_workflow_uses_high_conflict_story_titles() -> None:
+    workflow = build_platform_title_workflow(
+        {
+            "primary_title": "情绪爆改器",
+            "target_platform": "番茄短故事",
+            "length_type": "番茄短故事 · 单篇完结",
+            "primary_category": "都市异能",
+            "secondary_category": "番茄短故事",
+            "tags": ["职场背锅", "全员群", "贪污犯", "情绪爆改器", "记忆代价"],
+            "logline": (
+                "全员群把陆渊挂成贪污犯后，他点开情绪爆改器，"
+                "让老板在发布会当众自爆。"
+            ),
+            "main_characters": [
+                {"name": "陆渊", "identity": "被公司公开栽赃的前员工"}
+            ],
+            "reader_promise": [
+                "开篇50字金手指生效，前200字完成第一次公开打脸。",
+                "每次打脸都要付出记忆代价。",
+            ],
+        },
+        target_platform="番茄短故事",
+    )
+
+    fanqie_group = next(
+        group
+        for group in workflow["platform_groups"]
+        if group["platform_key"] == "fanqie"
+    )
+    fanqie_titles = [item["title"] for item in fanqie_group["candidates"]]
+
+    assert fanqie_titles[0] == "全员群把我挂成贪污犯后，我让老板当众自爆"
+    assert any("情绪爆改器" in title for title in fanqie_titles)
+    assert any("记忆代价" in title for title in fanqie_titles)
+    assert all(len(title) <= 30 for title in fanqie_titles)
+
+
 def test_fallback_title_candidates_follow_jinjiang_workflow() -> None:
     project = SimpleNamespace(
         slug="book-d",

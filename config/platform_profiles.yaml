@@ -164,6 +164,81 @@ platforms:
         - position: 3000w
           rule: 核心循环建立
 
+  # ===========================================================================
+  # 番茄短故事 (Tomato Short) · 单篇完结 / 5k-30k / 30% 解锁线
+  # ===========================================================================
+  tomato_short:
+    display_name: 番茄小说·短故事
+    audience_pattern: 单篇完结 / 移动端碎片化 / 第一人称情绪代入
+    reading_environment: 一次性读完全文；前 30% 决定解锁与签约评估
+
+    content_shape:
+      delivery: single_piece_complete
+      total_word_range: [5000, 30000]
+      recommended_word_range: [8000, 25000]
+      unlock_line_ratio: 0.30
+      pov_default: first_person
+      no_serial_chapter_hooks: true
+
+    voice_preference:
+      sentence_style: 极短句 + 大量分行；第一人称口吻
+      paragraph_length: 单段不超过 3 行（约 50-80 字）
+      dialogue_ratio: 0.40-0.55
+      emotional_expression: 极外显 + 内心独白与外在动作对位
+      pacing_unit: 每 150-250 字必有变化点
+      taboo:
+        - 章末连载式「下章揭晓」
+        - 长篇背景说明开场
+        - 多线并行抢戏
+        - 求过审等与故事无关内容
+
+    pacing_preference:
+      segment_word_count: 1800-3500
+      payoff_density: 每段必须 ≥ 1 个可感正反馈或情绪转折
+      hook_density: 每 400-600 字 ≥ 1 个张力点
+      unlock_zone_mandate: 前 30% 须完成冲突亮相、反击信号、第一次小爆点
+      no_dead_exposition: 禁止连续 300 字只做设定解释、调查说明或背景复盘
+
+    title_strategy:
+      primary_pattern: 公开羞辱/开局危机 + 我让反派当众自爆/翻车/认罪
+      preferred_examples:
+        - 全员群把我挂成贪污犯后，我让老板当众自爆
+        - 被公司栽赃四十七万后，我点开了情绪爆改器
+        - 他们逼我背锅，我让整场发布会变成自爆现场
+      avoid:
+        - 只用抽象功能名或设定名当标题
+        - 标题只写情绪/命运/系统但不交代开局冲突和爽点结果
+
+    opening_signing_gate:
+      sample_words: 4500
+      hard_position_gates:
+        - position: 50w
+          rule: 主角进入聚光灯（第一人称「我」有明确动作）；若有金手指，必须可见
+        - position: 100w
+          rule: 出现可感冲突（侮辱 / 危机 / 误会 / 背叛）
+        - position: 200w
+          rule: 完成第一次可见反馈（撤回 / 露馅 / 证据 / 小打脸 / 能力生效）
+        - position: 300w
+          rule: 主角第一次反击信号和小爽点结果（不必大胜，但要有反馈）
+        - position: 1000w
+          rule: 第一次小爆点
+        - position: 4500w
+          rule: 核心循环与主线目标清晰（约全文 30% 处）
+      quality_notes:
+        - 节奏、人物设定、开篇吸引力、主线清晰度为签约关键
+        - 融梗、重复、乱码、违规题材为一票否决
+
+    signing_readiness:
+      min_unlock_count: 1000
+      export_checklist:
+        - 全文字数在 5000-30000
+        - 解锁线位于全文 30% 附近
+        - 前 30% 通过 opening_signing_gate
+        - 末段主线收束，无连载悬念
+      source_refs:
+        - https://fanqienovel.com/writer/zone/article/7409917439607062553
+        - https://fanqienovel.com/writer/zone/article/7408122066639011902
+
 # =============================================================================
 # 平台无关的通用 hooks 库（writer 可在写开篇时 sample 选择）
 # =============================================================================

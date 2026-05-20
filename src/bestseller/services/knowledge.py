@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import hashlib
 from typing import Any
-from uuid import UUID, uuid5
+from uuid import UUID
 
-from sqlalchemy import delete, or_, select
+from sqlalchemy import delete, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bestseller.domain.knowledge import SceneKnowledgeRefreshResult
@@ -21,9 +22,35 @@ from bestseller.infra.db.models import (
 from bestseller.services.llm import LLMCompletionRequest, complete_text
 from bestseller.services.projects import get_project_by_slug
 from bestseller.services.retrieval import index_scene_retrieval_context
-from bestseller.services.story_bible import get_or_create_character_by_name, stable_character_id
+from bestseller.services.story_bible import get_or_create_character_by_name
 from bestseller.services.writing_profile import is_english_language
 from bestseller.settings import AppSettings
+
+
+def _canon_fact_current_lock_key(
+    project_id: UUID,
+    subject_type: str,
+    subject_id: UUID,
+    predicate: str,
+) -> int:
+    lock_input = f"{project_id}:{subject_type}:{subject_id}:{predicate}".encode()
+    digest = hashlib.blake2b(lock_input, digest_size=8).digest()
+    return int.from_bytes(digest, byteorder="big", signed=True)
+
+
+async def _lock_canon_fact_current_key(
+    session: AsyncSession,
+    *,
+    project_id: UUID,
+    subject_type: str,
+    subject_id: UUID,
+    predicate: str,
+) -> None:
+    lock_key = _canon_fact_current_lock_key(project_id, subject_type, subject_id, predicate)
+    await session.execute(
+        text("SELECT pg_advisory_xact_lock(:lock_key)"),
+        {"lock_key": lock_key},
+    )
 
 
 def render_scene_summary_fallback(
@@ -244,6 +271,13 @@ async def _upsert_canon_fact(
     tags: list[str],
     notes: str | None = None,
 ) -> tuple[CanonFactModel, bool]:
+    await _lock_canon_fact_current_key(
+        session,
+        project_id=project_id,
+        subject_type=subject_type,
+        subject_id=subject_id,
+        predicate=predicate,
+    )
     existing = await session.scalar(
         select(CanonFactModel).where(
             CanonFactModel.project_id == project_id,
@@ -653,7 +687,6 @@ async def propagate_scene_discoveries(
     Zero LLM cost — purely DB reads + writes.
     """
     from bestseller.infra.db.models import RelationshipModel  # noqa: PLC0415
-    from bestseller.services.story_bible import stable_character_id  # noqa: PLC0415
 
     characters_updated = 0
     relationships_updated = 0

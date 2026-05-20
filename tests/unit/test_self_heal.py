@@ -226,9 +226,8 @@ class _FakeSession:
             "project_pipeline",
             "chapter_pipeline",
             "scene_pipeline",
+            "project_repair",
         }
-        if created_cutoff is not None:
-            reapable_types.add("project_repair")
         count = 0
         for r in self.runs:
             created_at = r.created_at or r.updated_at
@@ -944,14 +943,10 @@ async def test_reap_orphan_workflow_runs_reaps_volume_planning_rows(
 
 
 @pytest.mark.asyncio
-async def test_reap_orphan_workflow_runs_does_not_reap_project_repair_by_heartbeat(
+async def test_reap_orphan_workflow_runs_reaps_project_repair_by_heartbeat(
     now: _dt.datetime,
 ) -> None:
-    """Project repair can spend a long time inside one chapter rewrite.
-
-    It must not be marked failed by the generic orphan reaper while the repair
-    thread is still alive; otherwise blocked chapters never clear.
-    """
+    """Project repair rows have a worker DB heartbeat and should not stall forever."""
     p = _FakeProject(id=uuid4(), slug="book-repair")
     runs = [
         _FakeWorkflowRun(
@@ -966,8 +961,8 @@ async def test_reap_orphan_workflow_runs_does_not_reap_project_repair_by_heartbe
 
     reaped = await reap_orphan_workflow_runs(session)
 
-    assert reaped == 0
-    assert runs[0].status == "running"
+    assert reaped == 1
+    assert runs[0].status == "failed"
 
 
 @pytest.mark.asyncio

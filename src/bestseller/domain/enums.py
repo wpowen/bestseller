@@ -31,11 +31,13 @@ class ArtifactType(StrEnum):
     VOLUME_WRITING_FEEDBACK = "volume_writing_feedback"
     CREATIVE_EXPLORATION = "creative_exploration"
     PROMOTIONAL_BRIEF = "promotional_brief"
+    FANQIE_BEAT_SHEET = "fanqie_beat_sheet"
 
 
 class ProjectType(StrEnum):
     LINEAR = "linear"
     INTERACTIVE = "interactive"
+    FANQIE_SHORT = "fanqie_short"
 
 
 class IFGenerationPhase(StrEnum):

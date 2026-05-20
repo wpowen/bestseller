@@ -64,6 +64,7 @@ class GenrePreset(BaseModel):
     narrative_drives: list[str] = Field(default_factory=list)
     content_modes: list[str] = Field(default_factory=list)
     commercial_signals: list[str] = Field(default_factory=list)
+    suitable_for_short_story: bool = Field(default=False)
     writing_profile_overrides: dict[str, Any] = Field(default_factory=dict)
 
     @field_validator(
@@ -3211,6 +3212,30 @@ _GENRE_PRESETS: list[dict[str, Any]] = [
 
 _LENGTH_PRESETS: list[dict[str, Any]] = [
     {
+        "key": "fanqie-short-8k",
+        "name": "番茄短故事·极速验稿（约8千字）",
+        "target_words": 8000,
+        "target_chapters": 4,
+        "description": "单篇完结，4 段内部写作，适合快速验证题材与开篇。",
+        "phase_goal": "验证前 30% 免费段是否够抓人、主线是否清晰。",
+    },
+    {
+        "key": "fanqie-short-15k",
+        "name": "番茄短故事·标准（约1.5万字）",
+        "target_words": 15000,
+        "target_chapters": 6,
+        "description": "推荐档位：6 段、单篇完结，平衡质量与迭代速度。",
+        "phase_goal": "完成可投稿番茄短故事的完整单篇样本。",
+    },
+    {
+        "key": "fanqie-short-25k",
+        "name": "番茄短故事·加长（约2.5万字）",
+        "target_words": 25000,
+        "target_chapters": 8,
+        "description": "接近平台上限，8 段，适合情绪流与悬疑反转。",
+        "phase_goal": "在更高字数下验证全文收束与解锁线前节奏。",
+    },
+    {
         "key": "trial-4",
         "name": "4 章样书试写",
         "target_words": 22000,
@@ -3647,6 +3672,8 @@ def _genre_dimension_inference(payload: dict[str, Any]) -> dict[str, list[str]]:
 
 
 def _enrich_genre_preset_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    from bestseller.domain.fanqie_short import evaluate_genre_suitable_for_short_story
+
     enriched = dict(payload)
     inferred = _genre_dimension_inference(enriched)
     for field in _GENRE_DIMENSION_FIELDS:
@@ -3654,6 +3681,11 @@ def _enrich_genre_preset_payload(payload: dict[str, Any]) -> dict[str, Any]:
         explicit_values = explicit if isinstance(explicit, list) else []
         enriched[field] = _dedupe_string_list(
             [*inferred.get(field, []), *[str(item) for item in explicit_values]]
+        )
+    enriched["suitable_for_short_story"] = evaluate_genre_suitable_for_short_story(enriched)
+    if enriched["suitable_for_short_story"]:
+        enriched["content_modes"] = _dedupe_string_list(
+            [*enriched.get("content_modes", []), "适合短篇"]
         )
     return enriched
 

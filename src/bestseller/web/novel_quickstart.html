@@ -1827,11 +1827,14 @@
 
   #viewWizard {
     padding: 0;
+    flex-direction: column;
     border: 1px solid var(--border);
     border-radius: var(--radius);
     background: rgba(250, 246, 236, 0.86);
     box-shadow: none;
   }
+
+  #viewWizard.view.active { display: flex; }
 
   .wizard-head {
     display: block;
@@ -1853,6 +1856,15 @@
   .wizard-head::before {
     content: attr(data-kicker);
   }
+
+  #viewWizard > .wizard-head { flex-shrink: 0; }
+  #viewWizard > .wpanel { flex: 1 1 auto; min-height: 280px; }
+  .wizard-steps-footer { flex-shrink: 0; border-top: 1px solid var(--border); }
+  .wizard-steps-footer .stepper { padding-top: 18px; }
+  .wizard-steps-footer .step-labels { padding-bottom: 18px; }
+  .fanqie-length-presets { grid-template-columns: repeat(3, 1fr); }
+  #longSerialLengthBlock[hidden],
+  #fanqieLengthBlock[hidden] { display: none !important; }
 
   .stepper {
     display: grid;
@@ -2150,6 +2162,23 @@
     border-color: rgba(40, 104, 150, .28);
     background: rgba(40, 104, 150, .08);
     color: var(--blue-dark);
+  }
+
+  .genre-meta-chip.short-story-fit {
+    border-color: rgba(230, 81, 0, .35);
+    background: rgba(255, 87, 34, .12);
+    color: #c2410c;
+  }
+
+  .short-story-genre-hint {
+    display: none;
+    margin: 0 0 12px;
+    padding: 10px 12px;
+    border: 1px solid rgba(255, 87, 34, .28);
+    background: rgba(255, 87, 34, .08);
+    color: #9a3412;
+    font-size: 13px;
+    line-height: 1.45;
   }
 
   .creative-lab {
@@ -3560,15 +3589,15 @@
     <section class="dash-command">
       <div class="dash-command-main">
         <div>
-          <h2>共 <span id="dashHeroTotal">0</span> 本在排.</h2>
-          <p>把生成队列、章节产出、断点续写和上架资料放在同一个操作面板里 — 先看状态，再处理任务。</p>
+          <h2>共 <span id="dashHeroTotal">0</span> 项在任务台.</h2>
+          <p>任务台显示正在运行的任务和未归档的已闭环作品；点击归档后，作品会移入书稿库归档区。</p>
         </div>
         <div class="dash-command-bottomline">
           <span>本周新增 <strong id="dashStatNewWeek">0</strong></span>
           <span class="sep">·</span>
-          <span>已上架 <strong id="dashStatPublished">0</strong></span>
+          <span>书稿库 <strong id="dashStatPublished">0</strong> 本</span>
           <span class="sep">·</span>
-          <span>累计 <strong id="dashStatLifetimeBooks">0</strong> 本 / <strong id="dashStatLifetimeWords">0</strong> 字</span>
+          <span>活跃 <strong id="dashStatLifetimeBooks">0</strong> 项 / 闭环 <strong id="dashStatLifetimeWords">0</strong> 本</span>
         </div>
       </div>
       <div class="dash-metric tone-running">
@@ -3587,15 +3616,15 @@
       </div>
       <div class="dash-metric tone-done">
         <div>
-          <div class="dash-metric-kicker">COMPLETE</div>
-          <div class="dash-metric-label">已完成</div>
+          <div class="dash-metric-kicker">LIBRARY</div>
+          <div class="dash-metric-label">闭环作品</div>
         </div>
         <div class="dash-metric-value" id="dashMetricCompleted">00</div>
       </div>
       <div class="dash-metric tone-attention">
         <div>
-          <div class="dash-metric-kicker">NEEDS YOU</div>
-          <div class="dash-metric-label">需处理</div>
+          <div class="dash-metric-kicker">BOOKS</div>
+          <div class="dash-metric-label">书稿总数</div>
         </div>
         <div class="dash-metric-value" id="dashMetricAttention">00</div>
       </div>
@@ -3615,9 +3644,10 @@
     <div id="dashStatusBanner"></div>
     <div id="dashContent">
       <div class="dash-empty" id="dashEmpty">
-        <h2>还没有创作任务</h2>
-        <p>点击「新建创作」开始你的第一本小说</p>
+        <h2>当前没有执行中的任务</h2>
+        <p>已完成作品在书稿库查看；需要新书时从「新建创作」开始。</p>
         <button class="btn btn-primary" onclick="startNewCreationFlow()">新建创作</button>
+        <button class="btn btn-secondary" onclick="location.href='/library'">打开书稿库</button>
       </div>
     </div>
     <div class="dash-viewbar">
@@ -3625,8 +3655,8 @@
         <button class="dash-filter active" data-filter="all" onclick="setDashboardFilter('all')">全部 <span id="filterAllCount">00</span></button>
         <button class="dash-filter" data-filter="active" onclick="setDashboardFilter('active')">运行中 <span id="filterActiveCount">00</span></button>
         <button class="dash-filter" data-filter="finalizing" onclick="setDashboardFilter('finalizing')">收尾 <span id="filterFinalizingCount">00</span></button>
-        <button class="dash-filter" data-filter="completed" onclick="setDashboardFilter('completed')">已完成 <span id="filterCompletedCount">00</span></button>
-        <button class="dash-filter" data-filter="attention" onclick="setDashboardFilter('attention')">需处理 <span id="filterAttentionCount">00</span></button>
+        <button class="dash-filter" data-filter="completed" onclick="setDashboardFilter('completed')">已闭环 <span id="filterCompletedCount">00</span></button>
+        <button class="dash-filter" onclick="location.href='/library'">书稿库 <span id="filterLibraryCount">00</span></button>
       </div>
       <div class="dash-controls">
         <span class="dash-control">排序 <strong>更新时间 ↓</strong></span>
@@ -3667,19 +3697,28 @@
         <p id="wizardSub">Pick a vein, set a tone, then we set the spine. 先定题材，再定篇幅，最后开印。</p>
       </div>
     </div>
-    <div class="stepper" id="wizStepper">
-      <div class="step-dot active" data-step="1"></div>
-      <div class="step-dot" data-step="2"></div>
-      <div class="step-dot" data-step="3"></div>
-    </div>
-    <div class="step-labels" id="wizLabels">
-      <span class="active" data-step="1">选题材 / Pick a vein</span>
-      <span data-step="2">定篇幅 / Set the spine</span>
-      <span data-step="3">开印 / Send to press</span>
-    </div>
-
     <!-- Step 1 -->
     <div class="wpanel active" id="ws1">
+      <div class="creation-mode-row" style="display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap;">
+        <button type="button" class="length-btn creation-mode-btn selected" data-creation-mode="long_serial" style="flex:1;min-width:140px;">
+          <div class="label">长篇连载</div>
+          <div class="chapters">分章日更 · 20章起</div>
+        </button>
+        <button type="button" class="length-btn creation-mode-btn" data-creation-mode="fanqie_short" style="flex:1;min-width:140px;">
+          <div class="label">番茄短故事</div>
+          <div class="chapters">单篇完结 · 5k-30k</div>
+        </button>
+      </div>
+      <div id="shortStoryGenreHint" class="short-story-genre-hint">
+        已选择<strong>番茄短故事</strong>：仅展示带「适合短篇」标签的题材；请优先选择单线、强情绪、强开篇的类型。
+      </div>
+      <div id="shortStoryGenreFilterRow" class="genre-dimension-row" style="margin-bottom:10px;">
+        <div class="genre-dimension-label">篇幅</div>
+        <div class="genre-dimension-options">
+          <button type="button" class="genre-filter-chip" id="shortStoryFilterAll">全部题材</button>
+          <button type="button" class="genre-filter-chip active" id="shortStoryFilterOnly">适合短篇</button>
+        </div>
+      </div>
       <div class="lang-tabs">
         <button class="lang-tab active" data-lang="zh" id="langTabZh">中文</button>
         <button class="lang-tab" data-lang="en" id="langTabEn">英文题材</button>
@@ -3711,27 +3750,51 @@
 
     <!-- Step 2 -->
     <div class="wpanel" id="ws2">
-      <div class="length-presets">
-        <button class="length-btn" data-chapters="20">
-          <div class="label">微短篇</div><div class="chapters">BOOK I · 20 章</div>
-        </button>
-        <button class="length-btn" data-chapters="50">
-          <div class="label">短篇</div><div class="chapters">BOOK J · 50 章</div>
-        </button>
-        <button class="length-btn" data-chapters="200">
-          <div class="label">中篇</div><div class="chapters">BOOK K · 200 章</div>
-        </button>
-        <button class="length-btn selected" data-chapters="500">
-          <div class="label">长篇</div><div class="chapters">BOOK L · 500 章</div>
-        </button>
-        <button class="length-btn" data-chapters="1000">
-          <div class="label">超长篇</div><div class="chapters">BOOK M · 1000 章</div>
-        </button>
+      <div id="longSerialLengthBlock">
+        <div class="length-presets">
+          <button type="button" class="length-btn" data-chapters="20">
+            <div class="label">微短篇</div><div class="chapters">BOOK I · 20 章</div>
+          </button>
+          <button type="button" class="length-btn" data-chapters="50">
+            <div class="label">短篇</div><div class="chapters">BOOK J · 50 章</div>
+          </button>
+          <button type="button" class="length-btn" data-chapters="200">
+            <div class="label">中篇</div>
+            <div class="chapters">BOOK K · 200 章</div>
+          </button>
+          <button type="button" class="length-btn selected" data-chapters="500">
+            <div class="label">长篇</div><div class="chapters">BOOK L · 500 章</div>
+          </button>
+          <button type="button" class="length-btn" data-chapters="1000">
+            <div class="label">超长篇</div><div class="chapters">BOOK M · 1000 章</div>
+          </button>
+        </div>
+        <div class="custom-row">
+          <label>自定义：</label>
+          <input type="number" id="customChapters" min="1" max="2000" placeholder="500">
+          <span style="font-size:14px;color:var(--text-dim);">章</span>
+        </div>
       </div>
-      <div class="custom-row">
-        <label>自定义：</label>
-        <input type="number" id="customChapters" min="1" max="2000" placeholder="500">
-        <span style="font-size:14px;color:var(--text-dim);">章</span>
+
+      <div id="fanqieLengthBlock" hidden>
+        <div class="length-presets fanqie-length-presets">
+          <button type="button" class="length-btn fanqie-len-btn" data-length-key="fanqie-short-8k">
+            <div class="label">极速验稿</div><div class="chapters">约 8 千字 · 单篇</div>
+          </button>
+          <button type="button" class="length-btn fanqie-len-btn selected" data-length-key="fanqie-short-15k">
+            <div class="label">标准推荐</div><div class="chapters">约 1.5 万字 · 单篇</div>
+          </button>
+          <button type="button" class="length-btn fanqie-len-btn" data-length-key="fanqie-short-25k">
+            <div class="label">加长版</div><div class="chapters">约 2.5 万字 · 单篇</div>
+          </button>
+        </div>
+        <div class="custom-row" style="margin-top:12px;">
+          <label>叙事视角：</label>
+          <select id="fanqiePov" style="min-width:160px;">
+            <option value="first_person" selected>第一人称（推荐）</option>
+            <option value="third_limited">第三人称有限</option>
+          </select>
+        </div>
       </div>
       <div class="estimate-box">
         <div style="font-size:14px;color:var(--text-dim);">预计费用</div>
@@ -3751,7 +3814,7 @@
         <div class="summary-row"><span class="lbl">子类型</span><span class="val" id="sumSub">-</span></div>
         <div class="summary-row"><span class="lbl">创作维度</span><span class="val" id="sumDims">-</span></div>
         <div class="summary-row"><span class="lbl">创意方向</span><span class="val" id="sumCreative">-</span></div>
-        <div class="summary-row"><span class="lbl">章节数</span><span class="val" id="sumCh">-</span></div>
+        <div class="summary-row"><span class="lbl" id="sumChLabel">章节数</span><span class="val" id="sumCh">-</span></div>
         <div class="summary-row"><span class="lbl">写作模型</span><span class="val" id="sumModel">-</span></div>
         <div class="summary-row summary-option">
           <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
@@ -3772,6 +3835,18 @@
         </div>
         <button class="btn btn-secondary" onclick="wizGo(2)" style="align-self:flex-start;">上一步</button>
       </div>
+    </div>
+    <div class="wizard-steps-footer">
+    <div class="stepper" id="wizStepper">
+      <div class="step-dot active" data-step="1"></div>
+      <div class="step-dot" data-step="2"></div>
+      <div class="step-dot" data-step="3"></div>
+    </div>
+    <div class="step-labels" id="wizLabels">
+      <span class="active" data-step="1">选题材 / Pick a vein</span>
+      <span data-step="2">定篇幅 / Set the spine</span>
+      <span data-step="3">开印 / Send to press</span>
+    </div>
     </div>
   </div>
 
@@ -3825,9 +3900,9 @@
     </div>
 
     <div class="pv-stats">
-      <div class="pv-stat"><div class="v" id="pvDone">0</div><div class="l">已完成</div></div>
-      <div class="pv-stat"><div class="v" id="pvTotal">0</div><div class="l">总章节</div></div>
-      <div class="pv-stat"><div class="v" id="pvAvg">-</div><div class="l">平均每章</div></div>
+      <div class="pv-stat"><div class="v" id="pvDone">0</div><div class="l" id="pvDoneLabel">已完成</div></div>
+      <div class="pv-stat"><div class="v" id="pvTotal">0</div><div class="l" id="pvTotalLabel">总章节</div></div>
+      <div class="pv-stat"><div class="v" id="pvAvg">-</div><div class="l" id="pvAvgLabel">平均每章</div></div>
       <div class="pv-stat"><div class="v" id="pvStatus">准备中</div><div class="l">状态</div></div>
     </div>
 
@@ -3992,11 +4067,23 @@
   let selectedGenreKey = null;
   let selectedCreativeKey = null;
   let selectedLang = 'zh';
+  let creationMode = 'long_serial';
+  let shortStoryGenreFilterOnly = false;
+  const DEFAULT_FANQIE_LENGTH_KEY = 'fanqie-short-15k';
+  let fanqieLengthKey = DEFAULT_FANQIE_LENGTH_KEY;
+  let fanqiePov = 'first_person';
+  const FANQIE_LENGTH_OPTIONS = {
+    'fanqie-short-8k': { label: '极速验稿', words: '约 8 千字', targetWords: 8000, segments: 4 },
+    'fanqie-short-15k': { label: '标准推荐', words: '约 1.5 万字', targetWords: 15000, segments: 6 },
+    'fanqie-short-25k': { label: '加长版', words: '约 2.5 万字', targetWords: 25000, segments: 8 },
+  };
   let chapterCount = 500;
   let llmModel = '';
   let allTasks = [];       // dashboard-visible rows, compacted by project
   let rawTaskCount = 0;    // raw records returned by /api/tasks
   let rawProjectCount = 0; // raw records returned by /api/projects
+  let rawClosedBookCount = 0;
+  let rawDashboardProjectCount = 0;
   let hiddenRecordCount = 0;
   let projectBySlug = new Map();
   let projectTitleBySlug = new Map();
@@ -4060,6 +4147,19 @@
     conception_finalize: '✨ 构思定稿', conception_complete: '🎯 构思完成',
     // Planning stages
     project_creation_started: '创建项目', project_creation_completed: '项目已创建',
+    fanqie_short_pipeline_started: '🍅 番茄短故事启动',
+    fanqie_foundation_plan_started: '🍅 短故事基石',
+    fanqie_foundation_plan_completed: '🍅 短故事基石完成',
+    fanqie_beat_sheet_started: '🍅 BeatSheet 规划',
+    fanqie_beat_sheet_completed: '🍅 BeatSheet 完成',
+    fanqie_materialization_started: '🍅 大纲落地',
+    fanqie_materialization_completed: '🍅 大纲落地完成',
+    fanqie_segment_writing_started: '🍅 写作进度',
+    fanqie_segment_writing_completed: '🍅 写作进度完成',
+    fanqie_whole_review_started: '🍅 全文审校',
+    fanqie_whole_review_completed: '🍅 全文审校完成',
+    fanqie_export_completed: '🍅 单篇导出',
+    fanqie_short_pipeline_completed: '🍅 短故事完成',
     planning_started: '生成企划', planning_skipped_resume: '企划已存在（续传）', planning_completed: '企划完成',
     foundation_planning_started: '📐 构建故事基石', foundation_planning_completed: '📐 故事基石完成',
     story_bible_materialization_started: '构建世界观', story_bible_materialization_completed: '世界观完成',
@@ -4136,7 +4236,12 @@
     $('#toStep2').disabled = true;
     $('#draftModeToggle').checked = false;
     $('#customChapters').value = DEFAULT_CHAPTER_COUNT;
+    fanqieLengthKey = DEFAULT_FANQIE_LENGTH_KEY;
+    syncFanqieLengthSelectionUi();
     selectLen(DEFAULT_CHAPTER_COUNT);
+    creationMode = 'long_serial';
+    shortStoryGenreFilterOnly = false;
+    syncCreationModeUi();
     syncGenreLangUi();
     renderGenreFilters();
     renderGenres(genres.filter(matchSearch));
@@ -4153,21 +4258,33 @@
   /* ═══════════════════════════════════════
      DASHBOARD
      ═══════════════════════════════════════ */
+	  let dashboardRefreshInFlight = null;
 	  async function refreshDashboard() {
+	    if (dashboardRefreshInFlight) return dashboardRefreshInFlight;
+	    dashboardRefreshInFlight = (async () => {
 	    try {
 	      const [taskRes, projectRes] = await Promise.all([
-	        fetch('/api/tasks', { cache: 'no-store' }),
-	        fetch('/api/projects', { cache: 'no-store' }),
+	        fetch('/api/tasks?summary=1', { cache: 'no-store' }),
+	        fetch('/api/projects?light=1', { cache: 'no-store' }),
 	      ]);
 	      const rawTasks = taskRes.ok ? await taskRes.json() : [];
 	      const rawProjects = projectRes.ok ? await projectRes.json() : [];
 	      rawTaskCount = Array.isArray(rawTasks) ? rawTasks.length : 0;
 	      rawProjectCount = Array.isArray(rawProjects) ? rawProjects.length : 0;
+	      const projectRows = Array.isArray(rawProjects) ? rawProjects : [];
+	      rawClosedBookCount = projectRows.filter(project => isProjectClosedBook(project) && !isProjectArchivedBook(project)).length;
+	      rawDashboardProjectCount = projectRows.filter(shouldProjectAppearOnDashboard).length;
 	      updateProjectMaps(rawProjects);
 	      const enrichedTasks = enrichDashboardTaskTitles(rawTasks);
 	      allTasks = normalizeDashboardTasks(mergeDashboardProjects(enrichedTasks, rawProjects));
 	    } catch { /* ignore */ }
 	    renderDashboard();
+	    })();
+	    try {
+	      await dashboardRefreshInFlight;
+	    } finally {
+	      dashboardRefreshInFlight = null;
+	    }
 	  }
 
   // Module-level selection state — persists across re-renders.
@@ -4175,6 +4292,34 @@
 
 	  function isActiveTask(task) {
 	    return task?.status === 'running' || task?.status === 'queued';
+	  }
+
+	  function isProjectClosedBook(project) {
+	    const state = String(project?.book_state || '').toLowerCase();
+	    const status = String(project?.status || '').toLowerCase();
+	    return state === 'closed_complete'
+	      || state === 'closed'
+	      || status === 'completed'
+	      || status === 'complete'
+	      || status === 'published';
+	  }
+
+	  function isProjectArchivedBook(project) {
+	    const state = String(project?.book_state || '').toLowerCase();
+	    return state === 'archived' || project?.library_archived === true;
+	  }
+
+	  function shouldProjectAppearOnDashboard(project) {
+	    if (isProjectArchivedBook(project)) return false;
+	    const state = String(project?.book_state || '').toLowerCase();
+	    const status = String(project?.status || '').toLowerCase();
+	    const repairPhase = String(project?.repair_status?.phase || '').toLowerCase();
+	    if (isProjectClosedBook(project)) return true;
+	    if (state === 'in_progress' || state === 'needs_attention' || state === 'draft') return true;
+	    if (['queued', 'running', 'in_progress', 'planning', 'revising', 'paused', 'failed', 'incomplete', 'cancelled'].includes(status)) return true;
+	    if (project?.repair_status?.is_repairing) return true;
+	    if (repairPhase && repairPhase !== 'normal') return true;
+	    return false;
 	  }
 
 	  function taskNeedsProjectTitle(task) {
@@ -4204,6 +4349,8 @@
 	      const merged = project ? {
 	        ...task,
 	        project_status: project.status || task.project_status || '',
+        project_type: project.project_type || task.project_type || '',
+        content_mode: project.content_mode || task.content_mode || '',
 	        repair_status: project.repair_status || task.repair_status || null,
 	        project_title: project.title || task.project_title || task.title || '',
 	      } : { ...task };
@@ -4216,18 +4363,36 @@
 	  }
 
 	  function dashboardProjectStatus(project) {
+	    const state = String(project?.book_state || '').toLowerCase();
 	    const status = String(project?.status || '').toLowerCase();
+	    const repairPhase = String(project?.repair_status?.phase || '').toLowerCase();
+	    if (state === 'closed_complete' || state === 'closed') return 'completed';
+	    if (state === 'archived') return 'archived';
+	    if (state === 'needs_attention') return 'incomplete';
+	    if (repairPhase && repairPhase !== 'normal') return 'incomplete';
+	    if (project?.repair_status?.is_repairing && status === 'paused') return 'incomplete';
+	    if (state === 'in_progress') return 'running';
 	    if (status === 'completed' || status === 'complete' || status === 'published') return 'completed';
 	    if (status === 'failed' || status === 'error') return 'failed';
 	    if (status === 'paused' || status === 'cancelled' || status === 'incomplete') return 'incomplete';
+	    if (status === 'queued') return 'queued';
+	    if (status === 'running' || status === 'in_progress' || status === 'planning' || status === 'revising') return 'running';
 	    return 'project';
 	  }
 
 	  function dashboardProjectStage(project) {
+	    const state = String(project?.book_state || '').toLowerCase();
+	    const repairPhase = String(project?.repair_status?.phase || '').toLowerCase();
+	    if (state === 'closed_complete' || state === 'closed') return 'project_closed';
+	    if (state === 'archived') return 'project_archived';
+	    if (repairPhase === 'repair_gate') return 'repair_gate';
+	    if (repairPhase === 'planning_gate') return 'blocked_generation_gate';
+	    if (repairPhase === 'needs_attention') return 'blocked_generation_gate';
 	    const status = String(project?.status || '').toLowerCase();
 	    if (status === 'planning') return 'project_planning';
 	    if (status === 'paused') return 'project_paused';
 	    if (status === 'revising') return 'project_revising';
+	    if (status === 'in_progress' || status === 'running') return 'project_pipeline_started';
 	    return 'project_registered';
 	  }
 
@@ -4236,6 +4401,10 @@
 	    const title = String(project?.title || slug || '未命名').trim();
 	    const targetChapters = Number(project?.target_chapters || 0);
 	    const targetWords = Number(project?.target_word_count || 0);
+	    const unitKind = String(project?.unit_kind || '');
+	    const unitLabel = String(project?.unit_label || (unitKind === 'single_story' ? '全文' : '章节'));
+	    const completedUnits = Number(project?.completed_chapters || project?.completed_segments || 0);
+	    const wordTotal = Number(project?.words_on_disk || 0);
 	    return {
 	      task_id: `project:${slug}`,
 	      task_type: 'project',
@@ -4246,31 +4415,68 @@
 	      project_slug: slug,
 	      title,
 	      project_title: title,
+      project_type: project?.project_type || '',
+      content_mode: project?.content_mode || '',
 		      current_stage: dashboardProjectStage(project),
 		      repair_status: project?.repair_status || null,
 		      progress_events: [],
 	      result: {
 	        project_slug: slug,
+        project_type: project?.project_type || '',
+        content_mode: project?.content_mode || '',
 	        target_chapters: targetChapters,
 	        target_words: targetWords,
+	      },
+	      chapter_word_stats: {
+	        source: 'library_project',
+	        project_slug: slug,
+	        project_title: title,
+	        project_type: project?.project_type || '',
+	        content_mode: project?.content_mode || '',
+	        unit_kind: unitKind,
+	        unit_label: unitLabel,
+	        target_chapters: targetChapters,
+	        target_segments: unitKind === 'single_story' ? targetChapters : 0,
+	        completed_chapters: completedUnits,
+	        completed_segments: unitKind === 'single_story' ? completedUnits : 0,
+	        target_word_count: targetWords,
+	        word_count_total: wordTotal,
+	        current_export_filename: project?.current_export_filename || '',
+	        current_export_modified_at: project?.current_export_modified_at || '',
 	      },
 	      payload: {
 	        slug,
 	        title,
 	        genre: project?.genre || '',
+        project_type: project?.project_type || '',
+        content_mode: project?.content_mode || '',
+        length_key: project?.length_key || '',
 	        target_chapters: targetChapters,
 	        target_words: targetWords,
 	      },
 	      synthetic_project: true,
+	      book_state: project?.book_state || '',
+	      library_archived: project?.library_archived === true,
 	    };
 	  }
 
 	  function mergeDashboardProjects(tasks, projects) {
-	    const rows = Array.isArray(tasks) ? [...tasks] : [];
+	    const projectRows = Array.isArray(projects) ? projects : [];
+	    const archivedSlugs = new Set(
+	      projectRows
+	        .filter(isProjectArchivedBook)
+	        .map(project => String(project?.slug || '').trim())
+	        .filter(Boolean)
+	    );
+	    const rows = (Array.isArray(tasks) ? tasks : []).filter(task => {
+	      const slug = String(task?.project_slug || '').trim();
+	      return !slug || !archivedSlugs.has(slug) || isActiveTask(task);
+	    });
 	    const taskSlugs = new Set(rows.map(task => String(task?.project_slug || '').trim()).filter(Boolean));
-	    for (const project of (Array.isArray(projects) ? projects : [])) {
+	    for (const project of projectRows) {
 	      const slug = String(project?.slug || '').trim();
 	      if (!slug || taskSlugs.has(slug)) continue;
+	      if (!shouldProjectAppearOnDashboard(project)) continue;
 	      rows.push(projectToDashboardTask(project));
 	    }
 	    return rows;
@@ -4316,10 +4522,12 @@
   function isShortCompletedTask(task) {
     if (task?.status !== 'completed') return false;
     const stats = getTaskChapterWordStats(task);
+    const isFanqie = isFanqieShortTask(task);
     const writtenCount = stats.hasStats
-      ? stats.completedChapters
+      ? (isFanqie ? stats.completedSegments : stats.completedChapters)
       : ((task.result && task.result.chapters_written) || 0);
-    const targetCount = stats.targetChapters || (task.result && task.result.target_chapters) || 0;
+    const targetCount = (isFanqie ? stats.targetSegments : stats.targetChapters)
+      || (task.result && task.result.target_chapters) || 0;
     return targetCount > 0 && writtenCount < targetCount;
   }
 
@@ -4333,14 +4541,14 @@
     const stage = String(task?.current_stage || '');
     const repairPhase = repairPhaseOf(task);
     if (repairPhase === 'repair_gate') return '修复门控 · 正在或等待修复';
-    if (repairPhase === 'needs_attention') return '章节门禁未过 · 后续需修复';
+    if (repairPhase === 'needs_attention') return isFanqieShortTask(task) ? '全文门禁未过 · 后续需修复' : '章节门禁未过 · 后续需修复';
     if (hasStagePrefix(stage, ['paused_for_human_review', 'human_review'])) return '等待人工复核';
     if (hasStagePrefix(stage, ['blocked_generation_gate', 'waiting_human'])) return '规划自动修复耗尽';
     if (hasStagePrefix(stage, ['blocked_structural_repair', 'structural_repair'])) return '结构修复门控';
     if (status === 'failed') return `${task.error || '失败'} · 等待重试`;
     if (status === 'cancelled') return '已停止 · 可恢复';
     if (status === 'incomplete') return '未完成 · 可恢复';
-    if (isShortCompletedTask(task)) return '已完成但章节未补齐';
+    if (isShortCompletedTask(task)) return isFanqieShortTask(task) ? '已完成但全文未同步' : '已完成但章节未补齐';
     return '需要查看';
   }
 
@@ -4392,10 +4600,10 @@
     const running = allTasks.filter(t => isActiveTask(t) && !isFinalizingTask(t)).length;
     const finalizing = allTasks.filter(isFinalizingTask).length;
     const active = allTasks.filter(isActiveTask).length;
-	    const completed = allTasks.filter(t => t.status === 'completed' && !isAttentionTask(t)).length;
-	    const attention = allTasks.filter(isAttentionTask).length;
 	    const total = allTasks.length;
 	    hiddenRecordCount = Math.max(0, rawTaskCount - total);
+	    const completed = allTasks.filter(task => task.status === 'completed' && !isAttentionTask(task)).length;
+	    const attention = allTasks.filter(isAttentionTask).length;
     const free = Math.max(0, maxConcurrentTasks - active);
 
     const setText = (id, value) => {
@@ -4409,23 +4617,19 @@
     setText('#navTaskCount', pad2(total));
     setText('#dashHeroTotal', total);
 
-    // Lifetime stats — derived from local task list (no extra API call).
-    const completedTasks = allTasks.filter(t => t.status === 'completed');
-    const completedWordsTotal = completedTasks.reduce((sum, t) => {
-      const stats = getTaskChapterWordStats(t);
-      return sum + (stats.wordTotal || 0);
-    }, 0);
+    const closedBooks = rawClosedBookCount;
     const oneWeekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
     const newWeek = allTasks.filter(t => t.created_at && new Date(t.created_at).getTime() >= oneWeekAgo).length;
     setText('#dashStatNewWeek', newWeek);
-    setText('#dashStatPublished', completedTasks.length);
-    setText('#dashStatLifetimeBooks', total);
-    setText('#dashStatLifetimeWords', completedWordsTotal > 0 ? completedWordsTotal.toLocaleString('en-US') : '0');
+    setText('#dashStatPublished', rawProjectCount);
+    setText('#dashStatLifetimeBooks', active);
+    setText('#dashStatLifetimeWords', closedBooks);
 
     setText('#filterAllCount', pad2(total));
     setText('#filterActiveCount', pad2(running));
     setText('#filterFinalizingCount', pad2(finalizing));
     setText('#filterCompletedCount', pad2(completed));
+    setText('#filterLibraryCount', pad2(rawProjectCount));
     setText('#filterAttentionCount', pad2(attention));
 
     $$('.dash-filter').forEach(btn => {
@@ -4548,7 +4752,11 @@
       container.innerHTML = '';
       visibleDashboardTasks = [];
       const summary = $('#dashResultSummary');
-      if (summary) summary.textContent = '暂无任务。';
+      if (summary) {
+        summary.textContent = rawProjectCount > 0
+          ? `当前没有执行中的任务。书稿库有 ${rawProjectCount} 本作品。`
+          : '当前没有执行中的任务。';
+      }
       selectedSlugs.clear();
       updateSelectionUI();
       updateStatusBanner();
@@ -4570,9 +4778,9 @@
         completed: '已完成作品',
         attention: '需要处理的任务',
       }[dashboardFilter] || '任务';
-	      const compactNote = hiddenRecordCount > 0 ? ` · 合并 ${hiddenRecordCount} 条历史记录` : '';
-	      const projectNote = rawProjectCount > rawTaskCount ? ` · 含 ${rawProjectCount - rawTaskCount} 本无任务记录书籍` : '';
-	      summary.textContent = `${filterText} · 显示 ${visibleDashboardTasks.length} / ${allTasks.length} 项${compactNote}${projectNote}`;
+	      const compactNote = hiddenRecordCount > 0 ? ` · ${hiddenRecordCount} 条非执行任务记录已隐藏` : '';
+	      const libraryNote = rawProjectCount > 0 ? ` · 书稿库 ${rawProjectCount} 本` : '';
+	      summary.textContent = `${filterText} · 显示 ${visibleDashboardTasks.length} / ${allTasks.length} 项${compactNote}${libraryNote}`;
 		    }
     container.innerHTML = visibleDashboardTasks.length
       ? visibleDashboardTasks.map(renderTaskCard).join('')
@@ -4619,6 +4827,10 @@
       completedChapters,
       wordTotal,
       targetChapters: Number(stats.target_chapters || 0),
+      targetSegments: Number(stats.target_segments || stats.target_chapters || 0),
+      completedSegments: Number(stats.completed_segments || stats.completed_chapters || 0),
+      unitKind: String(stats.unit_kind || ''),
+      unitLabel: String(stats.unit_label || ''),
       targetWordCount: Number(stats.target_word_count || 0),
     };
   }
@@ -4655,6 +4867,62 @@
 	    return String(task?.repair_status?.phase || '').trim();
 	  }
 
+  function isFanqieShortTask(task) {
+    const quick = task?.quickstart_meta || {};
+    const payload = task?.payload || {};
+    const result = task?.result || {};
+    const stats = task?.chapter_word_stats || {};
+    const values = [
+      quick.creation_mode,
+      payload.creation_mode,
+      task?.project_type,
+      payload.project_type,
+      result.project_type,
+      stats.project_type,
+      task?.content_mode,
+      payload.content_mode,
+      result.content_mode,
+      stats.content_mode,
+      payload.platform_key,
+      result.platform_key,
+      stats.platform_key,
+      payload.length_key,
+      quick.length_key,
+      stats.length_key,
+    ].map(v => String(v || '').toLowerCase());
+    return values.some(v =>
+      v === 'fanqie_short' ||
+      v === 'fanqie-short' ||
+      v === 'fanqie_short_story' ||
+      v === 'tomato_short' ||
+      v.startsWith('fanqie-short')
+    ) || ['segment', 'single_story'].includes(String(stats.unit_kind || '').toLowerCase());
+  }
+
+  function taskUnitLabels(task) {
+    return isFanqieShortTask(task)
+      ? {
+          unit: '篇',
+          unitKind: 'single_story',
+          work: '短故事',
+          whole: '单篇',
+          completedMissing: '全文未生成',
+          listAction: '全文进度',
+          statsChip: '全文统计',
+          completedContent: '已完成全文',
+        }
+      : {
+          unit: '章',
+          unitKind: 'chapter',
+          work: '作品',
+          whole: '全书',
+          completedMissing: '章节未补齐',
+          listAction: '章节列表',
+          statsChip: 'DB 统计',
+          completedContent: '已完成章节',
+        };
+  }
+
 	  function classifyBookState(task, context = {}) {
 	    const status = String(task?.status || '');
 	    const stage = String(task?.current_stage || '');
@@ -4663,8 +4931,10 @@
 	    const repairDetail = String(task?.repair_status?.detail || '').trim();
 	    const isRepairTask = task?.task_type === 'repair' || stage.startsWith('project_repair');
 	    const isActive = isActiveTask(task);
+    const isFanqie = !!context.isFanqieShort;
+    const unit = context.unitLabel || (isFanqie ? '篇' : '章');
 	    const flags = [];
-	    if (repairPhase === 'needs_attention') flags.push({ text: '有章节未过门禁', tone: 'warn' });
+	    if (repairPhase === 'needs_attention') flags.push({ text: `有${unit}未过门禁`, tone: 'warn' });
 	    if (repairPhase === 'repair_gate') flags.push({ text: '修复门控', tone: 'bad' });
 	    if (projectStatus === 'paused') flags.push({ text: '项目已暂停', tone: repairPhase === 'repair_gate' ? 'bad' : 'warn' });
 
@@ -4695,7 +4965,7 @@
 	        phase: 'paused',
 	        label: '已停止',
 	        mode: '可恢复',
-	        detail: '写作任务已停止，已有章节和项目数据仍保留。',
+	        detail: isFanqie ? '写作任务已停止，已有短故事内容和项目数据仍保留。' : '写作任务已停止，已有章节和项目数据仍保留。',
 	        next: '点击恢复继续，或点击完全删除。',
 	        badgeCls: 'cancelled',
 	      };
@@ -4706,7 +4976,7 @@
 	        phase: 'paused',
 	        label: '未完成',
 	        mode: '可恢复',
-	        detail: '自动恢复未接管或章节尚未写满目标，已有章节和项目数据仍保留。',
+	        detail: isFanqie ? '自动恢复未接管或短故事全文尚未写满目标，已有内容和项目数据仍保留。' : '自动恢复未接管或章节尚未写满目标，已有章节和项目数据仍保留。',
 	        next: '点击恢复继续，或点击完全删除。',
 	        badgeCls: 'incomplete',
 	      };
@@ -4717,7 +4987,7 @@
 	        phase: 'complete',
 	        label: '已完成',
 	        mode: '可阅读/整理',
-	        detail: `已完成 ${context.bookCompletedChapters || 0}/${context.total || 0} 章。`,
+	        detail: `已完成 ${context.bookCompletedChapters || 0}/${context.total || 0} ${unit}。`,
 	        next: '可进入阅读器或整理上架资料。',
 	        badgeCls: 'completed',
 	      };
@@ -4727,8 +4997,8 @@
 	        ...base,
 	        phase: 'repairing',
 	        label: isActive ? '修复中' : '待修复',
-	        mode: '修复阻塞章节',
-	        detail: repairDetail || '正在修复未通过门禁或结构审计的章节，暂不属于正常续写。',
+	        mode: `修复阻塞${unit}`,
+	        detail: repairDetail || `正在修复未通过门禁或结构审计的${unit}，暂不属于正常续写。`,
 	        next: isActive ? '等待修复任务推进；修复完成后再恢复正常续写。' : '点击恢复或重新启动修复。',
 	        badgeCls: 'incomplete',
 	      };
@@ -4740,7 +5010,7 @@
 	          phase: 'idle',
 	          label: '未在写作',
 	          mode: '已建档 / 无任务',
-	          detail: '这本书有项目记录，但没有运行中的任务，也没有章节产出。',
+	          detail: isFanqie ? '这个短故事有项目记录，但没有运行中的任务，也没有正文产出。' : '这本书有项目记录，但没有运行中的任务，也没有章节产出。',
 	          next: '点击“续写 / 恢复任务”从规划阶段重新启动。',
 	          badgeCls: 'queued',
 	        };
@@ -4765,7 +5035,7 @@
 	        label: '待修复',
 	        mode: '修复门控',
 	        detail: repairDetail || '项目被修复门控暂停，不能继续正常写作。',
-	        next: '启动修复任务，直到阻塞章节通过审计。',
+	        next: `启动修复任务，直到阻塞${unit}通过审计。`,
 	        badgeCls: 'failed',
 	      };
 	    }
@@ -4785,8 +5055,8 @@
 	        ...base,
 	        phase: 'review',
 	        label: '待复核',
-	        mode: '章节写作暂停',
-	        detail: '当前章节流程暂停，等待人工复核或修复处理，暂时不是正常写作推进。',
+	        mode: `${unit}写作暂停`,
+	        detail: `当前${unit}写作流程暂停，等待人工复核或修复处理，暂时不是正常写作推进。`,
 	        next: '打开详情查看阻塞原因，确认后恢复写作或转入修复。',
 	        badgeCls: 'incomplete',
 	      };
@@ -4810,10 +5080,10 @@
 	        mode: '生成大纲/前置资料',
 	        detail: context.currentVolume
 	          ? `正在规划第 ${context.currentVolume} 卷，尚未进入本轮正文写作。`
-	          : '正在生成故事资料或章节大纲，尚未进入正文写作。',
+	          : (isFanqie ? '正在生成短故事基石和全文节拍，尚未进入正文写作。' : '正在生成故事资料或章节大纲，尚未进入正文写作。'),
 	        next: repairPhase === 'needs_attention'
-	          ? '大纲通过后还需要处理未过门禁章节。'
-	          : '大纲通过后会进入章节写作。',
+	          ? `大纲通过后还需要处理未过门禁${unit}。`
+	          : (isFanqie ? '节拍通过后会进入单篇正文写作。' : '大纲通过后会进入章节写作。'),
 	        badgeCls: 'queued',
 	      };
 	    }
@@ -4824,11 +5094,11 @@
 	        label: '编写中',
 	        mode: '正文写作',
 	        detail: context.displayWritingCh
-	          ? `正在写第 ${context.displayWritingCh} 章。`
-	          : `已写 ${context.bookCompletedChapters || 0}/${context.total || 0} 章，后台正在推进章节流程。`,
+	          ? `正在写第 ${context.displayWritingCh} ${unit}。`
+	          : `已写 ${context.bookCompletedChapters || 0}/${context.total || 0} ${unit}，后台正在推进${isFanqie ? '短故事' : '章节'}流程。`,
 	        next: repairPhase === 'needs_attention'
-	          ? '写作同时存在未过门禁章节，后续需要修复。'
-	          : '等待章节完成并进入下一章。',
+	          ? `写作同时存在未过门禁${unit}，后续需要修复。`
+	          : (isFanqie ? '等待当前正文片段完成并同步为单篇全文。' : '等待章节完成并进入下一章。'),
 	        badgeCls: 'running',
 	      };
 	    }
@@ -4848,8 +5118,8 @@
 	        ...base,
 	        phase: 'attention',
 	        label: '需处理',
-	        mode: '章节门禁未过',
-	        detail: repairDetail || '有章节未通过生产门禁。',
+	        mode: `${unit}门禁未过`,
+	        detail: repairDetail || `有${unit}未通过生产门禁。`,
 	        next: '启动修复或查看诊断。',
 	        badgeCls: 'incomplete',
 	      };
@@ -4888,28 +5158,55 @@
     const volumeCount = payload.volume_count || context.totalVolumes;
     const chapterCount = payload.chapter_count || payload.total_count || 0;
     const projectSlug = payload.project_slug || '';
+    const unit = context.unitLabel || (context.isFanqieShort ? '篇' : '章');
     switch (stage) {
+      case 'fanqie_short_pipeline_started':
+        return '番茄短故事任务已启动，按单篇短故事流程推进';
+      case 'fanqie_foundation_plan_started':
+        return '正在生成短故事基石、人物和世界规则';
+      case 'fanqie_foundation_plan_completed':
+        return '短故事基石已完成，准备生成全文节拍';
+      case 'fanqie_beat_sheet_started':
+        return '正在规划单篇短故事全文节拍';
+      case 'fanqie_beat_sheet_completed':
+        return `全文节拍已完成${payload.segment_count ? `，共 ${payload.segment_count} 个节拍` : ''}`;
+      case 'fanqie_materialization_started':
+        return '正在把短故事节拍落地为全文写作计划';
+      case 'fanqie_materialization_completed':
+        return `全文写作计划已落地${payload.segments_created ? `，共 ${payload.segments_created} 个节拍` : ''}`;
+      case 'fanqie_segment_writing_started':
+        return `正在写第 ${payload.segment_number || '-'} 段${payload.segment_total ? ` / ${payload.segment_total}` : ''}`;
+      case 'fanqie_segment_writing_completed':
+        return `第 ${payload.segment_number || '-'} 段已写完`;
+      case 'fanqie_whole_review_started':
+        return '正在进行短故事全文审校';
+      case 'fanqie_whole_review_completed':
+        return payload.passed === false ? '短故事全文审校未通过，等待修复' : '短故事全文审校完成';
+      case 'fanqie_export_completed':
+        return `短故事单篇已导出${payload.total_words ? `，全文 ${fmtWords(payload.total_words)}` : ''}`;
+      case 'fanqie_short_pipeline_completed':
+        return '短故事单篇已完成';
       case 'chapter_pipeline_started':
         if (context.displayWritingCh) {
-          return `正在写第 ${context.displayWritingCh} 章${progress ? `（${progress}）` : ''}${target > 0 ? `，目标约 ${fmtWords(target)}` : ''}`;
+          return `正在写第 ${context.displayWritingCh} ${unit}${progress ? `（${progress}）` : ''}${target > 0 ? `，目标约 ${fmtWords(target)}` : ''}`;
         }
         if (context.hasChapterStats && n && Number(n) <= Number(context.bookCompletedChapters || 0)) {
-          return `数据库已记录 ${context.bookCompletedChapters} 章，后台写作事件正在同步`;
+          return `数据库已记录 ${context.bookCompletedChapters} ${unit}，后台写作事件正在同步`;
         }
-        return n ? `正在准备第 ${n} 章写作${progress ? `（${progress}）` : ''}` : label;
+        return n ? `正在准备第 ${n} ${unit}写作${progress ? `（${progress}）` : ''}` : label;
       case 'chapter_pipeline_completed':
-        return n ? `第 ${n} 章已完成${payload.word_count ? `，${fmtWords(payload.word_count)}` : ''}` : '章节已完成';
+        return n ? `第 ${n} ${unit}已完成${payload.word_count ? `，${fmtWords(payload.word_count)}` : ''}` : `${unit}已完成`;
       case 'project_repair_chapter_started':
-        return n ? `正在修复第 ${n} 章` : '正在修复章节';
+        return n ? `正在修复第 ${n} ${unit}` : `正在修复${unit}`;
       case 'project_repair_chapter_completed': {
-        if (!n) return '章节修复处理完成';
+        if (!n) return `${unit}修复处理完成`;
         const state = String(payload.production_state || '').toLowerCase();
-        if (state === 'ok') return `第 ${n} 章修复后门禁通过`;
-        if (payload.requires_human_review === true) return `第 ${n} 章已处理，仍需复核`;
-        return `第 ${n} 章修复处理完成`;
+        if (state === 'ok') return `第 ${n} ${unit}修复后门禁通过`;
+        if (payload.requires_human_review === true) return `第 ${n} ${unit}已处理，仍需复核`;
+        return `第 ${n} ${unit}修复处理完成`;
       }
       case 'resume_skipped_chapters':
-        return `续写扫描完成：跳过 ${Number(payload.skipped_count || 0)} 章，待写 ${Number(payload.pending_count || 0)} 章${chapterCount ? `，本轮共 ${chapterCount} 章` : ''}`;
+        return `续写扫描完成：跳过 ${Number(payload.skipped_count || 0)} ${unit}，待写 ${Number(payload.pending_count || 0)} ${unit}${chapterCount ? `，本轮共 ${chapterCount} ${unit}` : ''}`;
       case 'delegated_to_worker_self_heal':
         return payload.heal_owned
           ? '后台恢复任务已接管，正在等待 worker 同步新的写作进展'
@@ -4940,7 +5237,9 @@
       case 'material_forge_completed':
         return `素材整理完成${Number(payload.total_forged || 0) > 0 ? `，新增 ${payload.total_forged} 条` : ''}`;
       case 'project_pipeline_started':
-        return `进入章节写作循环${chapterCount ? `，本轮 ${chapterCount} 章` : ''}${payload.global_chapter_offset ? `，从全书第 ${payload.global_chapter_offset + 1} 章附近继续` : ''}`;
+        return context.isFanqieShort
+          ? `进入短故事全文写作${chapterCount ? `，共 ${chapterCount} 个节拍` : ''}`
+          : `进入章节写作循环${chapterCount ? `，本轮 ${chapterCount} 章` : ''}${payload.global_chapter_offset ? `，从全书第 ${payload.global_chapter_offset + 1} 章附近继续` : ''}`;
       case 'planning_started':
       case 'foundation_planning_started':
       case 'story_bible_materialization_started':
@@ -4951,7 +5250,7 @@
       case 'periodic_consistency_check_started':
         return '正在做一致性检查，避免设定和剧情前后冲突';
       case 'rolling_summary_started':
-        return '正在压缩近期剧情记忆，供后续章节继续使用';
+        return context.isFanqieShort ? '正在压缩短故事上下文，供后续全文续写使用' : '正在压缩近期剧情记忆，供后续章节继续使用';
       case 'project_export_started':
         return '正在导出阅读文件和项目产物';
       case 'project_pipeline_completed':
@@ -4969,22 +5268,24 @@
     const events = task.progress_events || [];
     const stageEvent = latestStageEvent(events, task.current_stage);
     const latestEvent = events[events.length - 1] || stageEvent;
+    const unit = context.unitLabel || (context.isFanqieShort ? '段' : '章');
+    const whole = context.isFanqieShort ? '单篇' : '全书';
     let primary = describeStageEvent(
       task.status === 'queued' ? 'queued' : task.current_stage,
       stageEvent?.payload || {},
       context
     );
-    if (task.status === 'completed') primary = '作品已完成，可阅读、预览章节或整理上架资料';
+    if (task.status === 'completed') primary = context.isFanqieShort ? '短故事单篇已完成，可阅读或整理上架资料' : '作品已完成，可阅读、预览章节或整理上架资料';
     if (task.status === 'failed') primary = `任务失败：${task.error || '请查看执行日志'}`;
-    if (task.status === 'cancelled') primary = '任务已停止，已完成章节会保留';
+    if (task.status === 'cancelled') primary = context.isFanqieShort ? '任务已停止，已完成内容会保留' : '任务已停止，已完成章节会保留';
     if (task.current_stage === 'blocked_structural_repair') primary = task.error || '项目处于结构修复门控，需先完成修复审计';
     if (task.current_stage === 'blocked_generation_gate') primary = task.error || '项目处于规划门禁，自动修复已耗尽；恢复时会携带诊断续跑';
     if (task.cancel_requested && task.status === 'running') primary = '正在停止任务，等待当前步骤安全退出';
 
     const secondary = [];
-    if (context.total > 0) secondary.push(`全书 ${context.bookCompletedChapters || 0}/${context.total} 章`);
-    if (context.totalVolumes > 1 && context.currentVolume) secondary.push(`第 ${context.currentVolume}/${context.totalVolumes} 卷`);
-    if (context.currentVolumeChapterCount > 0) secondary.push(`本卷 ${context.volumeCompletedChapters || 0}/${context.currentVolumeChapterCount} 章`);
+    if (context.total > 0) secondary.push(`${whole} ${context.bookCompletedChapters || 0}/${context.total} ${unit}`);
+    if (!context.isFanqieShort && context.totalVolumes > 1 && context.currentVolume) secondary.push(`第 ${context.currentVolume}/${context.totalVolumes} 卷`);
+    if (!context.isFanqieShort && context.currentVolumeChapterCount > 0) secondary.push(`本卷 ${context.volumeCompletedChapters || 0}/${context.currentVolumeChapterCount} 章`);
     if (context.completedWordCount > 0) secondary.push(`累计 ${fmtWords(context.completedWordCount)}`);
     const updatedText = formatEventClock(task.updated_at || latestEvent?.timestamp);
     if (updatedText) secondary.push(`最近更新 ${updatedText}`);
@@ -4995,7 +5296,7 @@
     const chips = [];
     chips.push({ text: STAGE[task.status] || task.status || '未知状态', tone: task.status === 'running' ? 'active' : '' });
     if (task.current_stage) chips.push({ text: STAGE[task.current_stage] || task.current_stage, tone: 'active' });
-    if (context.hasChapterStats) chips.push({ text: 'DB 统计', tone: '' });
+    if (context.hasChapterStats) chips.push({ text: context.isFanqieShort ? '全文统计' : 'DB 统计', tone: '' });
     if (context.progressEventsSynced === false) chips.push({ text: '事件同步滞后', tone: 'warn' });
     return { primary, secondary: secondary.join(' · '), chips };
   }
@@ -5022,6 +5323,9 @@
 	    const status = task.status || 'queued';
 	    const slug = task.project_slug || '';
 	    const isSyntheticProject = !!task.synthetic_project;
+    const isFanqie = isFanqieShortTask(task);
+    const unitLabels = taskUnitLabels(task);
+    const unitLabel = unitLabels.unit;
 	    const chapterWordStats = getTaskChapterWordStats(task);
     const targetWords = Number(task.payload?.target_words || task.result?.target_words || chapterWordStats.targetWordCount || 0);
     const targetChapters = Number(task.payload?.target_chapters || task.result?.target_chapters || chapterWordStats.targetChapters || 0);
@@ -5043,6 +5347,11 @@
     const completedGlobal = latestProgressFraction(events, 'chapter_pipeline_completed', 'global_progress');
     const startedGlobal = latestProgressFraction(events, 'chapter_pipeline_started', 'global_progress');
     const completedLocal = latestProgressFraction(events, 'chapter_pipeline_completed', 'progress');
+    const fanqieCompletedSegments = new Set(
+      events
+        .filter(e => e.stage === 'fanqie_segment_writing_completed' && Number.isFinite(e.payload?.segment_number))
+        .map(e => Number(e.payload.segment_number))
+    ).size;
 
     // ── Book-wide totals (same priority chain as the detail view) ──
     const autowriteEvt = events.find(e => e.stage === 'progressive_autowrite_started');
@@ -5050,18 +5359,30 @@
     const latestPipelineEvt = pipeEvts[pipeEvts.length - 1];
     const firstPipelineEvt = pipeEvts[0];
     const planDoneEvt = events.find(e => e.stage === 'planning_completed' || e.stage === 'foundation_planning_completed');
-    const total =
-      autowriteEvt?.payload?.project_chapter_count ||
-      latestPipelineEvt?.payload?.project_chapter_count ||
-      startedGlobal?.total ||
-      completedGlobal?.total ||
-      firstPipelineEvt?.payload?.chapter_count ||
-      planDoneEvt?.payload?.chapter_count ||
-      chapterWordStats.targetChapters ||
-      0;
-    const eventCompletedChapters = completedGlobal?.done ?? completedChs.length;
+    const total = isFanqie
+      ? (
+          chapterWordStats.targetSegments ||
+          chapterWordStats.targetChapters ||
+          Number(task.payload?.target_chapters || task.result?.target_chapters || 0) ||
+          startedGlobal?.total ||
+          completedGlobal?.total ||
+          0
+        )
+      : (
+          autowriteEvt?.payload?.project_chapter_count ||
+          latestPipelineEvt?.payload?.project_chapter_count ||
+          startedGlobal?.total ||
+          completedGlobal?.total ||
+          firstPipelineEvt?.payload?.chapter_count ||
+          planDoneEvt?.payload?.chapter_count ||
+          chapterWordStats.targetChapters ||
+          0
+        );
+    const eventCompletedChapters = isFanqie && fanqieCompletedSegments > 0
+      ? fanqieCompletedSegments
+      : (completedGlobal?.done ?? completedChs.length);
     const bookCompletedChapters = chapterWordStats.hasStats
-      ? chapterWordStats.completedChapters
+      ? (isFanqie ? chapterWordStats.completedSegments : chapterWordStats.completedChapters)
       : eventCompletedChapters;
     const progressEventsSynced = !chapterWordStats.hasStats
       || (eventCompletedChapters > 0 && Math.abs(eventCompletedChapters - bookCompletedChapters) <= 1);
@@ -5106,7 +5427,7 @@
 
     // ── Progress metrics ──
     const pct = total > 0 ? Math.min(99, 5 + Math.round((bookCompletedChapters / total) * 95)) : (status === 'completed' ? 100 : 0);
-    const displayPct = status === 'completed' ? 100 : pct;
+    let displayPct = status === 'completed' ? 100 : pct;
     const volumePct = currentVolumeChapterCount > 0
       ? Math.min(100, Math.round((volumeCompletedChapters / currentVolumeChapterCount) * 100))
       : 0;
@@ -5118,6 +5439,9 @@
       : targetWordsPerChapter > 0 && total > 0
       ? targetWordsPerChapter * total
       : targetWords;
+    if (isFanqie && projectedTotalWords > 0 && completedWordCount > 0) {
+      displayPct = Math.min(status === 'completed' ? 100 : 99, Math.round((completedWordCount / projectedTotalWords) * 100));
+    }
 
     // ── ETA (based on completed chapter timestamps) ──
     const chTimes = completedChapterEvents.map(e => new Date(e.timestamp));
@@ -5147,7 +5471,7 @@
       const targetText = Number(lastStarted.payload.target_word_count || 0) > 0
         ? ` · 目标约 ${fmtWords(lastStarted.payload.target_word_count)}`
         : '';
-      stageLabel = `${volPrefix}正在写作第 ${chNum} 章${prog ? ` (${prog})` : ''}${targetText}`;
+      stageLabel = `${isFanqie ? '' : volPrefix}正在写作第 ${chNum} ${unitLabel}${prog ? ` (${prog})` : ''}${targetText}`;
     } else if (volPrefix) {
       stageLabel = `${volPrefix}${stageLabel}`;
     }
@@ -5167,6 +5491,8 @@
       displayWritingCh,
       hasChapterStats: chapterWordStats.hasStats,
       progressEventsSynced,
+      isFanqieShort: isFanqie,
+      unitLabel,
     });
 
     // ── Latest log line (last event) ──
@@ -5178,6 +5504,8 @@
           bookCompletedChapters, volumeCompletedChapters, completedWordCount,
           displayWritingCh, hasChapterStats: chapterWordStats.hasStats,
           progressEventsSynced,
+          isFanqieShort: isFanqie,
+          unitLabel,
         })
       : '暂无事件';
     const updatedText = formatEventClock(task.updated_at || latestEvent?.timestamp) || '—';
@@ -5187,7 +5515,8 @@
     const writtenCount = chapterWordStats.hasStats
       ? bookCompletedChapters
       : ((task.result && task.result.chapters_written) || bookCompletedChapters);
-    const targetCount = chapterWordStats.targetChapters || (task.result && task.result.target_chapters) || total || 0;
+    const targetCount = (isFanqie ? chapterWordStats.targetSegments : chapterWordStats.targetChapters)
+      || (task.result && task.result.target_chapters) || total || 0;
     const isTrulyComplete = status === 'completed' && !(targetCount > 0 && writtenCount < targetCount);
 
     // ── Tone (color family) used by progress text/bar ──
@@ -5202,12 +5531,13 @@
       : (data => data)(displayWritingCh && bookCompletedChapters / Math.max(1, total) > 0.85 ? 'finalizing' : 'running');
 
     // ── Priority tag (heuristic from chapter scale) ──
-    const priorityTag = total >= 500 ? 'P1' : total >= 200 ? 'P2' : total > 0 ? 'P3' : '';
+    const priorityTag = isFanqie ? '短故事' : total >= 500 ? 'P1' : total >= 200 ? 'P2' : total > 0 ? 'P3' : '';
 
     // ── Genre / model from payload or quickstart_meta ──
     const meta = task.quickstart_meta || task.payload || {};
     const genreLabel = meta.genre_label || meta.genre || meta.genre_name || meta.genre_key || '';
-    const lengthLabel = total >= 1000 ? '超长篇'
+    const lengthLabel = isFanqie ? '番茄短故事'
+      : total >= 1000 ? '超长篇'
       : total >= 500 ? '长篇'
       : total >= 200 ? '中篇'
       : total >= 50 ? '短篇'
@@ -5221,6 +5551,8 @@
 	      currentVolume,
 	      bookCompletedChapters,
 	      displayWritingCh,
+      isFanqieShort: isFanqie,
+      unitLabel,
 	    });
 	    const stateStripHtml = renderBookStateStrip(bookState);
 
@@ -5249,7 +5581,13 @@
 	    // ── Actions (right-edge of row 1) ──
 	    let actions = '';
 	    if (isSyntheticProject) {
-	      actions += `<button class="btn btn-primary btn-sm" onclick="resumeProjectBySlug('${esc(slug)}')">▶ 续写</button>`;
+	      if (status === 'completed' && slug) {
+	        actions += `<a class="btn btn-primary btn-sm" href="/read/${esc(slug)}" target="_blank">📖 阅读</a>`;
+	        actions += `<button class="btn btn-secondary btn-sm" onclick="openProgress('${esc(task.task_id)}')">📚 详情 / 资料</button>`;
+	        actions += `<button class="btn btn-secondary btn-sm" onclick="archiveProjectFromDashboard('${esc(slug)}')">归档</button>`;
+	      } else {
+	        actions += `<button class="btn btn-primary btn-sm" onclick="resumeProjectBySlug('${esc(slug)}')">▶ 续写</button>`;
+	      }
 	      actions += `<button class="btn btn-secondary btn-sm" onclick="deleteProjectFull('${esc(slug)}','')">完全删除</button>`;
 	    } else if (status === 'running' || status === 'queued') {
 	      actions += `<button class="btn btn-primary btn-sm" onclick="openProgress('${esc(task.task_id)}')">→ 查看详情</button>`;
@@ -5259,6 +5597,7 @@
 	    } else if (isTrulyComplete && slug) {
 	      actions += `<a class="btn btn-primary btn-sm" href="/read/${esc(slug)}" target="_blank">📖 阅读</a>`;
 	      actions += `<button class="btn btn-secondary btn-sm" onclick="openProgress('${esc(task.task_id)}')">↗ 上架</button>`;
+	      actions += `<button class="btn btn-secondary btn-sm" onclick="archiveProjectFromDashboard('${esc(slug)}')">归档</button>`;
 	      actions += `<button class="btn btn-secondary btn-sm" onclick="deleteProjectFull('${esc(slug)}','${esc(task.task_id)}')">完全删除</button>`;
 	    } else if (status === 'failed') {
 	      actions += `<button class="btn btn-primary btn-sm" onclick="resumeTaskById('${esc(task.task_id)}','${esc(slug)}')">↻ 重试</button>`;
@@ -5266,7 +5605,7 @@
 	      actions += `<button class="btn btn-secondary btn-sm" onclick="deleteProjectFull('${esc(slug)}','${esc(task.task_id)}')">完全删除</button>`;
 	    } else if (status === 'cancelled' || status === 'incomplete') {
 	      actions += `<button class="btn btn-primary btn-sm" onclick="resumeTaskById('${esc(task.task_id)}','${esc(slug)}')">▶ 恢复</button>`;
-	      actions += `<button class="btn btn-secondary btn-sm" onclick="deleteTask('${esc(task.task_id)}')">归档</button>`;
+	      actions += `<button class="btn btn-secondary btn-sm" onclick="deleteTask('${esc(task.task_id)}')">删除任务记录</button>`;
 	      actions += `<button class="btn btn-secondary btn-sm" onclick="deleteProjectFull('${esc(slug)}','${esc(task.task_id)}')">完全删除</button>`;
 	    }
 	    if (!isSyntheticProject) {
@@ -5316,6 +5655,7 @@
             total, totalVolumes, currentVolume, currentVolumeChapterCount,
             bookCompletedChapters, volumeCompletedChapters, completedWordCount,
             displayWritingCh, hasChapterStats: chapterWordStats.hasStats, progressEventsSynced,
+            isFanqieShort: isFanqie, unitLabel,
           });
           return `<div class="dg-event-row">
             <span class="ev-time">${esc(tStr)}</span>
@@ -5381,7 +5721,7 @@
     else if (stale) { healthCls = 'warn'; healthText = '更新滞后'; healthReasons.push(`>5min 无事件`); }
     else if (warnEvents.length > 0) { healthCls = 'warn'; healthText = '有警告'; healthReasons.push(`${warnEvents.length} 项警告`); }
     else if (status === 'queued') { healthCls = 'warn'; healthText = '排队'; }
-    else if (status === 'completed' && !isTrulyComplete) { healthCls = 'warn'; healthText = '章节缺失'; healthReasons.push(`${writtenCount}/${targetCount}`); }
+    else if (status === 'completed' && !isTrulyComplete) { healthCls = 'warn'; healthText = isFanqie ? '全文缺失' : '章节缺失'; healthReasons.push(`${writtenCount}/${targetCount}`); }
     const healthHtml = `<span class="tc-health ${healthCls}" title="${esc(healthReasons.join(' · ') || '运行正常')}">${esc(healthText)}</span>`;
 
     // ── 4-column dense info (now with 3-event log) ──
@@ -5396,13 +5736,13 @@
           <div class="dg-eyebrow">进度</div>
           <div class="dg-progress-row">
             <span class="dg-progress-pct tone-${toneSuffix}">${displayPct}<span class="small">%</span></span>
-            <span class="dg-progress-frac">${bookCompletedChapters} / ${total || '—'} 章</span>
+            <span class="dg-progress-frac">${bookCompletedChapters} / ${total || '—'} ${unitLabel}</span>
           </div>
           <div class="dg-progress-bar">
             <div class="fill tone-${toneSuffix}" style="width:${displayPct}%"></div>
             ${[0.2,0.4,0.6,0.8].map(p => `<div class="tick" style="left:${p*100}%"></div>`).join('')}
           </div>
-          <div class="dg-progress-note">已写 ${esc(fmtWords(completedWordCount))}${projectedTotalWords > 0 ? ` / 约 ${esc(fmtWords(projectedTotalWords))}` : ''}${totalVolumes > 1 ? ` · 卷 ${currentVolume || '-'}/${totalVolumes}` : ''}</div>
+          <div class="dg-progress-note">已写 ${esc(fmtWords(completedWordCount))}${projectedTotalWords > 0 ? ` / 约 ${esc(fmtWords(projectedTotalWords))}` : ''}${!isFanqie && totalVolumes > 1 ? ` · 卷 ${currentVolume || '-'}/${totalVolumes}` : ''}</div>
         </div>
         <div class="dg-cell">
           <div class="dg-eyebrow">最近事件${status === 'running' ? ' <span class="live">· LIVE</span>' : ''} <span style="color:var(--text-faint);font-weight:400;">· ${events.length} 条</span></div>
@@ -5430,11 +5770,11 @@
         </div>
         <div class="tc-signal">
           <div class="sig-label">速率</div>
-          <div class="sig-value">${chPerHour > 0 ? `${chPerHour.toFixed(1)}<span style="font-family:var(--mono);font-size:11px;color:var(--text-dim);"> 章/h</span>` : '—'}</div>
+          <div class="sig-value">${chPerHour > 0 ? `${chPerHour.toFixed(1)}<span style="font-family:var(--mono);font-size:11px;color:var(--text-dim);"> ${unitLabel}/h</span>` : '—'}</div>
           <div class="sig-sub">${wordsPerHour > 0 ? `${esc(fmtWords(Math.round(wordsPerHour)))}/h` : (status === 'running' ? '采样中' : '—')}</div>
         </div>
         <div class="tc-signal">
-          <div class="sig-label">章均字数</div>
+          <div class="sig-label">${isFanqie ? '段均字数' : '章均字数'}</div>
           <div class="sig-value">${avgWordsActual > 0 ? avgWordsActual.toLocaleString() : '—'}</div>
           <div class="sig-sub">${wordsTargetPerCh > 0 ? `目标 ${wordsTargetPerCh.toLocaleString()}${wordsDriftPct !== null ? ` · 偏差 ${wordsDriftPct > 0 ? '+' : ''}${wordsDriftPct}%` : ''}` : '—'}</div>
         </div>
@@ -5445,7 +5785,7 @@
         </div>
         <div class="tc-signal">
           <div class="sig-label">同步</div>
-          <div class="sig-value">${chapterWordStats.hasStats ? `DB ${chapterWordStats.completedChapters}` : '事件流'}${displayWritingCh ? ` · 写中 ${displayWritingCh}` : ''}</div>
+          <div class="sig-value">${chapterWordStats.hasStats ? `DB ${isFanqie ? chapterWordStats.completedSegments : chapterWordStats.completedChapters}` : '事件流'}${displayWritingCh ? ` · 写中 ${displayWritingCh}` : ''}</div>
           <div class="sig-sub">${progressEventsSynced ? '事件 ↔ 数据库一致' : '<span style="color:var(--warning);font-weight:600;">事件流滞后于 DB</span>'}</div>
         </div>
       </div>`;
@@ -5453,19 +5793,25 @@
     // ── Operation toolbar (always visible) ──
     const opChaptersCount = bookCompletedChapters > 0 || displayWritingCh
       ? `${bookCompletedChapters}${total ? `/${total}` : ''}` : '—';
+    const opProgressTitle = isFanqie ? '进入任务详情，查看短故事全文进度、日志、上架资料' : '进入任务详情，查看章节、日志、上架资料';
+    const opProgressLabel = unitLabels.listAction;
     const opLogsCount = events.length;
     const opListingCount = isTrulyComplete ? '100%' : (status === 'completed' ? `${writtenCount}/${targetCount}` : '生成中');
 	    const opsHtml = isSyntheticProject ? `
 	      <div class="tc-ops">
 	        <span class="tc-ops-label">操作</span>
-	        <button class="tc-op-btn" onclick="resumeProjectBySlug('${esc(slug)}')" title="为这个项目重新创建写作任务">▶ 续写 / 恢复任务 <span class="op-count">R</span></button>
-	        ${slug ? `<a class="tc-op-btn" href="/read/${esc(slug)}" target="_blank" title="如果已有章节，则在阅读器中打开">📖 阅读全文 <span class="op-count">→</span></a>` : ''}
-	        <button class="tc-op-btn danger" onclick="deleteProjectFull('${esc(slug)}','')" title="删除数据库记录、章节文件和任务记录">🗑 完全删除</button>
+	        ${status === 'completed' && slug
+            ? `<button class="tc-op-btn" onclick="openProgress('${esc(task.task_id)}')" title="查看详情、上架资料、候选书名">📚 详情 / 上架资料 <span class="op-count">${esc(opListingCount)}</span></button>`
+            : `<button class="tc-op-btn" onclick="resumeProjectBySlug('${esc(slug)}')" title="为这个项目重新创建写作任务">▶ 续写 / 恢复任务 <span class="op-count">R</span></button>`}
+	        ${slug ? `<a class="tc-op-btn" href="/read/${esc(slug)}" target="_blank" title="如果已有正文，则在阅读器中打开">📖 阅读全文 <span class="op-count">→</span></a>` : ''}
+	        ${status === 'completed' && slug ? `<button class="tc-op-btn" onclick="archiveProjectFromDashboard('${esc(slug)}')" title="从任务台移入书稿库归档区">归档 <span class="op-count">A</span></button>` : ''}
+	        ${status === 'completed' && slug ? `<button class="tc-op-btn" onclick="reviseProjectFromDashboard('${esc(slug)}')" title="为这本书创建新的修改任务">再修改 <span class="op-count">R</span></button>` : ''}
+	        <button class="tc-op-btn danger" onclick="deleteProjectFull('${esc(slug)}','')" title="删除数据库记录、正文文件和任务记录">🗑 完全删除</button>
 	      </div>` : `
 	      <div class="tc-ops">
 	        <span class="tc-ops-label">操作</span>
-	        <button class="tc-op-btn" onclick="openProgress('${esc(task.task_id)}')" title="进入任务详情，查看章节、日志、上架资料"
-        >📑 章节列表 <span class="op-count">${opChaptersCount}</span></button>
+	        <button class="tc-op-btn" onclick="openProgress('${esc(task.task_id)}')" title="${esc(opProgressTitle)}"
+        >📑 ${esc(opProgressLabel)} <span class="op-count">${opChaptersCount}</span></button>
         <button class="tc-op-btn" onclick="openProgress('${esc(task.task_id)}')" title="实时日志"
         >📡 实时日志 <span class="op-count">${opLogsCount}</span></button>
         <button class="tc-op-btn" onclick="openProgress('${esc(task.task_id)}')" title="上架资料"
@@ -5479,10 +5825,13 @@
         ${status === 'failed' || status === 'cancelled' || status === 'incomplete' || (status === 'completed' && !isTrulyComplete)
           ? `<button class="tc-op-btn" onclick="resumeTaskById('${esc(task.task_id)}','${esc(slug || '')}')" title="重试或继续任务">↻ 重试 / 续写 <span class="op-count">R</span></button>`
           : ''}
+        ${status === 'completed' && isTrulyComplete && slug
+          ? `<button class="tc-op-btn" onclick="archiveProjectFromDashboard('${esc(slug)}')" title="从任务台移入书稿库归档区">归档 <span class="op-count">A</span></button>`
+          : ''}
 	        ${status !== 'running' && status !== 'queued'
 	          ? `<button class="tc-op-btn danger" onclick="deleteTask('${esc(task.task_id)}')" title="仅删除任务记录">🗑 删除任务</button>`
 	          : ''}
-	        ${slug ? `<button class="tc-op-btn danger" onclick="deleteProjectFull('${esc(slug)}','${esc(task.task_id)}')" title="删除数据库记录、章节文件和任务记录">${status === 'running' || status === 'queued' ? '停止后删除' : '完全删除'}</button>` : ''}
+	        ${slug ? `<button class="tc-op-btn danger" onclick="deleteProjectFull('${esc(slug)}','${esc(task.task_id)}')" title="删除数据库记录、正文文件和任务记录">${status === 'running' || status === 'queued' ? '停止后删除' : '完全删除'}</button>` : ''}
 	      </div>`;
 
     const focusedClass = focused ? ' focused' : '';
@@ -5663,7 +6012,7 @@
 
   /* Cancel a running/queued task */
   window.cancelTask = async function(taskId) {
-    if (!confirm('确认停止该任务吗？已完成的章节会保留。')) return;
+    if (!confirm('确认停止该任务吗？已完成内容会保留。')) return;
     try {
       const res = await fetch(`/api/tasks/${taskId}/cancel`, { method: 'POST' });
       if (!res.ok) {
@@ -5679,7 +6028,7 @@
 
   /* Delete a task record (does NOT delete novel files) */
 	  window.deleteTask = async function(taskId) {
-	    if (!confirm('确认删除此任务记录？小说文件不会被删除。')) return;
+	    if (!confirm('确认删除这条任务记录？小说文件和书籍项目不会被删除。')) return;
     try {
       const res = await fetch(`/api/tasks/${taskId}`, { method: 'DELETE' });
       if (!res.ok) {
@@ -5722,8 +6071,8 @@
 	      `即将【彻底删除】《${title}》：\n\n` +
 	      `SLUG: ${slug}\n\n` +
 	      `将同时删除：\n` +
-	      `- 数据库中的项目、章节、人物、大纲、规划工件\n` +
-	      `- output/${slug}/ 下的章节文件和导出产物\n` +
+	      `- 数据库中的项目、正文段落/章节、人物、大纲、规划工件\n` +
+	      `- output/${slug}/ 下的正文文件和导出产物\n` +
 	      `- 相关历史任务记录\n\n` +
 	      `此操作不可恢复。确认继续？`;
 	    if (!confirm(warn)) return;
@@ -5746,6 +6095,49 @@
 	    }
 	  };
 
+	  window.archiveProjectFromDashboard = async function(slug) {
+	    if (!slug) return;
+	    if (!confirm('确认归档这本已闭环作品？归档后会从任务台移除，并进入书稿库「已归档」。')) return;
+	    try {
+	      const res = await fetch(`/api/projects/${encodeURIComponent(slug)}/archive`, {
+	        method: 'POST',
+	      });
+	      const data = await res.json().catch(() => ({}));
+	      if (!res.ok) {
+	        alert(data.error || '归档失败');
+	        return;
+	      }
+	      selectedSlugs.delete(slug);
+	      refreshDashboard();
+	    } catch (err) {
+	      alert('归档失败: ' + err.message);
+	    }
+	  };
+
+	  window.reviseProjectFromDashboard = async function(slug) {
+	    if (!slug) return;
+	    if (!confirm('为这本书创建新的修改任务？任务会出现在任务台，原书稿继续保留。')) return;
+	    try {
+	      const res = await fetch(`/api/projects/${encodeURIComponent(slug)}/revision-task`, {
+	        method: 'POST',
+	      });
+	      const data = await res.json().catch(() => ({}));
+	      if (!res.ok) {
+	        alert(data.error || '创建修改任务失败');
+	        return;
+	      }
+	      if (data.task_id) {
+	        highlightTaskId = data.task_id;
+	        await refreshDashboard();
+	        setTimeout(() => { highlightTaskId = null; renderDashboard(); }, 4000);
+	      } else {
+	        refreshDashboard();
+	      }
+	    } catch (err) {
+	      alert('创建修改任务失败: ' + err.message);
+	    }
+	  };
+
 	  /* Bulk delete selected projects — completely removes DB rows + disk files */
 	  window.batchDeleteProjects = async function() {
     const slugs = [...selectedSlugs];
@@ -5762,8 +6154,8 @@
     const warn =
       `即将【彻底删除】以下 ${slugs.length} 本小说：\n\n${previewLines}\n\n` +
       `⚠️  将同时删除：\n` +
-      `  • 数据库中的所有项目记录、章节、人物、大纲、规划工件\n` +
-      `  • 磁盘上 output/<slug>/ 目录下的全部章节文件\n` +
+      `  • 数据库中的所有项目记录、正文段落/章节、人物、大纲、规划工件\n` +
+      `  • 磁盘上 output/<slug>/ 目录下的全部正文文件\n` +
       `  • 相关的历史任务记录\n\n` +
       `此操作不可恢复。确认继续？`;
     if (!confirm(warn)) return;
@@ -5926,6 +6318,10 @@
     const events = data.progress_events || [];
     const status = data.status;
     const slug = data.project_slug || '';
+    const qsMeta = data.quickstart_meta || {};
+    const isFanqieShort = isFanqieShortTask(data);
+    const unitLabels = taskUnitLabels(data);
+    const unitLabel = unitLabels.unit;
     const chapterWordStats = getTaskChapterWordStats(data);
     const completedGlobal = latestProgressFraction(events, 'chapter_pipeline_completed', 'global_progress');
     const startedGlobal = latestProgressFraction(events, 'chapter_pipeline_started', 'global_progress');
@@ -5950,15 +6346,25 @@
     const latestPipeEvt = pipeEvts[pipeEvts.length - 1];
     const firstPipeEvt = pipeEvts[0];
     const planDoneEvt = events.find(e => e.stage === 'planning_completed' || e.stage === 'foundation_planning_completed');
-    const total =
-      autowriteEvt?.payload?.project_chapter_count ||
-      latestPipeEvt?.payload?.project_chapter_count ||
-      startedGlobal?.total ||
-      completedGlobal?.total ||
-      firstPipeEvt?.payload?.chapter_count ||
-      planDoneEvt?.payload?.chapter_count ||
-      chapterWordStats.targetChapters ||
-      0;
+    const total = isFanqieShort
+      ? (
+          chapterWordStats.targetSegments ||
+          chapterWordStats.targetChapters ||
+          Number(data.payload?.target_chapters || data.result?.target_chapters || 0) ||
+          startedGlobal?.total ||
+          completedGlobal?.total ||
+          0
+        )
+      : (
+          autowriteEvt?.payload?.project_chapter_count ||
+          latestPipeEvt?.payload?.project_chapter_count ||
+          startedGlobal?.total ||
+          completedGlobal?.total ||
+          firstPipeEvt?.payload?.chapter_count ||
+          planDoneEvt?.payload?.chapter_count ||
+          chapterWordStats.targetChapters ||
+          0
+        );
 
     // Multi-volume context (optional).
     const totalVolumes =
@@ -5981,9 +6387,16 @@
       .sort((a, b) => a.payload.chapter_number - b.payload.chapter_number);
     const doneChs = _dedupedDone.map(e => e.payload.chapter_number);
     const chTimes = _dedupedDone.map(e => new Date(e.timestamp));
-    const eventDoneCount = completedGlobal?.done ?? doneChs.length;
+    const fanqieCompletedSegments = new Set(
+      events
+        .filter(e => e.stage === 'fanqie_segment_writing_completed' && Number.isFinite(e.payload?.segment_number))
+        .map(e => Number(e.payload.segment_number))
+    ).size;
+    const eventDoneCount = isFanqieShort && fanqieCompletedSegments > 0
+      ? fanqieCompletedSegments
+      : (completedGlobal?.done ?? doneChs.length);
     const bookDoneCount = chapterWordStats.hasStats
-      ? chapterWordStats.completedChapters
+      ? (isFanqieShort ? chapterWordStats.completedSegments : chapterWordStats.completedChapters)
       : eventDoneCount;
     const progressEventsSynced = !chapterWordStats.hasStats
       || (eventDoneCount > 0 && Math.abs(eventDoneCount - bookDoneCount) <= 1);
@@ -6006,6 +6419,7 @@
     const completedWordCount = chapterWordStats.wordTotal > 0
       ? chapterWordStats.wordTotal
       : _dedupedDone.reduce((sum, e) => sum + Number(e.payload?.word_count || 0), 0);
+    const fanqieTargetWords = Number(qsMeta.target_words || data.payload?.target_words || data.result?.target_words || chapterWordStats.targetWordCount || 0);
     const progressInsight = buildTaskProgressInsight(data, {
       total,
       totalVolumes,
@@ -6017,11 +6431,14 @@
       displayWritingCh,
       hasChapterStats: chapterWordStats.hasStats,
       progressEventsSynced,
+      isFanqieShort,
+      unitLabel,
     });
 
     // Pct
     let pct = 0;
     if (status === 'completed') pct = 100;
+    else if (isFanqieShort && fanqieTargetWords > 0 && completedWordCount > 0) pct = Math.min(99, Math.round((completedWordCount / fanqieTargetWords) * 100));
     else if (total > 0 && bookDoneCount > 0) pct = Math.min(99, 5 + Math.round((bookDoneCount / total) * 95));
     else if (data.current_stage?.includes('materialization') || data.current_stage?.includes('pipeline_started')) pct = 5;
     else if (data.current_stage?.includes('planning')) pct = 2;
@@ -6049,7 +6466,7 @@
       const volPrefix = (currentVolume && totalVolumes > 1)
         ? `第 ${currentVolume}/${totalVolumes} 卷 · `
         : '';
-      stageTxt = `${volPrefix}正在写作第 ${chNum} 章${prog ? ` (${prog})` : ''}${targetText}`;
+      stageTxt = `${isFanqieShort ? '' : volPrefix}正在写作第 ${chNum} ${unitLabel}${prog ? ` (${prog})` : ''}${targetText}`;
     }
     if (data.cancel_requested && status === 'running') {
       stageTxt = '🛑 正在停止…';
@@ -6063,25 +6480,48 @@
 
     // Stats — chapter count is book-wide; append volume progress when the
     // project has more than one volume so users see 12/1200 章 · 1/24 卷.
-    $('#pvDone').textContent = bookDoneCount;
-    $('#pvTotal').textContent = total
-      ? (totalVolumes > 1 && currentVolume
-          ? `${total}（卷 ${currentVolume}/${totalVolumes}）`
-          : String(total))
-      : '-';
+    const pvDoneLabel = $('#pvDoneLabel');
+    const pvTotalLabel = $('#pvTotalLabel');
+    const pvAvgLabel = $('#pvAvgLabel');
+    if (isFanqieShort) {
+      if (pvDoneLabel) pvDoneLabel.textContent = '当前字数';
+      if (pvTotalLabel) pvTotalLabel.textContent = '目标字数';
+      if (pvAvgLabel) pvAvgLabel.textContent = '完成度';
+      $('#pvDone').textContent = completedWordCount > 0 ? fmtWords(completedWordCount) : '0';
+      $('#pvTotal').textContent = fanqieTargetWords > 0 ? fmtWords(fanqieTargetWords) : '-';
+      const segTotal = Number(qsMeta.chapter_count || data.payload?.target_chapters || chapterWordStats.targetSegments || total || 0);
+      const segDone = fanqieCompletedSegments || bookDoneCount;
+      const wordPct = fanqieTargetWords > 0 && completedWordCount > 0
+        ? Math.min(100, Math.round((completedWordCount / fanqieTargetWords) * 100))
+        : null;
+      $('#pvAvg').textContent = wordPct !== null
+        ? `${wordPct}%`
+        : (segTotal > 0 ? `${Math.min(100, Math.round((segDone / segTotal) * 100))}%` : '-');
+      $('#pvEta').textContent = status === 'running' ? '按全文进度计算中...' : '-';
+    } else {
+      if (pvDoneLabel) pvDoneLabel.textContent = '已完成';
+      if (pvTotalLabel) pvTotalLabel.textContent = '总章节';
+      if (pvAvgLabel) pvAvgLabel.textContent = '平均每章';
+      $('#pvDone').textContent = bookDoneCount;
+      $('#pvTotal').textContent = total
+        ? (totalVolumes > 1 && currentVolume
+            ? `${total}（卷 ${currentVolume}/${totalVolumes}）`
+            : String(total))
+        : '-';
+    }
 
-    // Avg time & ETA
-    if (progressEventsSynced && chTimes.length >= 2) {
+    // Avg time & ETA (long serial only)
+    if (!isFanqieShort && progressEventsSynced && chTimes.length >= 2) {
       const avgMs = (chTimes[chTimes.length - 1] - chTimes[0]) / (chTimes.length - 1);
       $('#pvAvg').textContent = fmtShort(Math.round(avgMs / 1000));
       const rem = total - bookDoneCount;
       $('#pvEta').textContent = rem > 0 ? fmtShort(Math.round(avgMs * rem / 1000)) : '-';
-    } else if (progressEventsSynced && chTimes.length === 1 && firstPipeEvt) {
+    } else if (!isFanqieShort && progressEventsSynced && chTimes.length === 1 && firstPipeEvt) {
       const ms = chTimes[0] - new Date(firstPipeEvt.timestamp);
       $('#pvAvg').textContent = fmtShort(Math.round(ms / 1000));
       const rem = total - bookDoneCount;
       $('#pvEta').textContent = rem > 0 ? fmtShort(Math.round(ms * rem / 1000)) : '-';
-    } else {
+    } else if (!isFanqieShort) {
       $('#pvAvg').textContent = '-';
       $('#pvEta').textContent = '计算中...';
     }
@@ -6108,26 +6548,54 @@
         const targetText = Number(e.payload.target_word_count || 0) > 0
           ? ` · 目标约 ${fmtWords(e.payload.target_word_count)}`
           : '';
-        detail = ` — 第${cn}章${pg ? ` (${pg})` : ''}${targetText}`;
+        detail = ` — 第${cn}${unitLabel}${pg ? ` (${pg})` : ''}${targetText}`;
+      }
+      else if (e.stage === 'fanqie_segment_writing_completed' && e.payload) {
+        const seg = e.payload.segment_number ?? '-';
+        const segTotal = e.payload.segment_total ?? '';
+        detail = segTotal ? ` — 写作进度 ${seg}/${segTotal}` : ` — 写作进度 ${seg}`;
       }
       else if (e.stage === 'chapter_pipeline_completed' && e.payload) {
+        if (isFanqieShort) {
+          const wordCount = Number(e.payload.word_count || 0);
+          detail = wordCount > 0 ? ` — 第${e.payload.chapter_number ?? '-'}${unitLabel}已写入 ${fmtWords(wordCount)}` : '';
+        } else {
         const chapterTitle = e.payload.chapter_title ? `《${e.payload.chapter_title}》` : '';
         const chapterNumber = Number(e.payload.chapter_number || 0);
         const dbChapter = chapterWordStats.byNumber.get(chapterNumber);
         const wordCount = dbChapter ? dbChapter.word_count : Number(e.payload.word_count || 0);
         const wordText = Number(wordCount || 0) > 0 ? ` · ${fmtWords(wordCount)}` : '';
         detail = ` — 第${e.payload.chapter_number ?? '-'}章${chapterTitle}${wordText}`;
+        }
       }
-      else if (e.stage === 'planning_completed' && e.payload) detail = ` — ${e.payload.volume_count ?? '-'}卷 ${e.payload.chapter_count ?? '-'}章`;
-      else if (e.stage === 'resume_skipped_chapters' && e.payload) detail = ` — 跳过${e.payload.skipped_count ?? '-'}章`;
+      else if (e.stage === 'planning_completed' && e.payload) detail = isFanqieShort ? ` — ${e.payload.chapter_count ?? '-'}段` : ` — ${e.payload.volume_count ?? '-'}卷 ${e.payload.chapter_count ?? '-'}章`;
+      else if (e.stage === 'resume_skipped_chapters' && e.payload) detail = ` — 跳过${e.payload.skipped_count ?? '-'}${unitLabel}`;
       const dot = (i === 0 && status === 'running') ? 'active' : 'done';
       const time = new Date(e.timestamp).toLocaleTimeString('zh-CN', { hour12: false });
       return `<div class="pv-tl-item"><div class="pv-tl-dot ${dot}"></div><span class="pv-tl-time">${time}</span><span class="pv-tl-text">${esc(label)}${esc(detail)}</span></div>`;
     }).join('');
 
-    // Chapters
-    if (bookDoneCount > 0 && slug) {
+    // Chapters / single-piece reader entry.
+    if (isFanqieShort && slug) {
       $('#pvChSec').style.display = '';
+      const chHeader = $('#pvChSec h4 span');
+      if (chHeader) chHeader.innerHTML = '短故事全文 <span style="font-weight:400;color:var(--text-dim);">（单篇阅读）</span>';
+      $('#pvReadAll').textContent = '阅读作品';
+      $('#pvReadAll').href = `/read/${encodeURIComponent(slug)}`;
+      const wordText = completedWordCount > 0
+        ? `${fmtWords(completedWordCount)} · 单篇完结`
+        : '单篇导出';
+      $('#pvChGrid').innerHTML = `
+        <a class="pv-ch-link" href="/read/${esc(slug)}" target="_blank">
+          <span class="n">全文</span>
+          <span class="t">${esc(data.title || data.project_title || slug)}</span>
+          <span class="m">${esc(wordText)} · 点击打开阅读器</span>
+        </a>`;
+    } else if (bookDoneCount > 0 && slug) {
+      $('#pvChSec').style.display = '';
+      const chHeader = $('#pvChSec h4 span');
+      if (chHeader) chHeader.innerHTML = '已完成章节 <span style="font-weight:400;color:var(--text-dim);">（点击预览）</span>';
+      $('#pvReadAll').textContent = '阅读全部';
       $('#pvReadAll').href = `/read/${encodeURIComponent(slug)}`;
       try {
         const tocRes = await fetch(`/api/reader/${encodeURIComponent(slug)}/toc`);
@@ -6158,7 +6626,9 @@
     if (status === 'completed') {
       stopProgressPoll();
       $('#pvDoneBanner').style.display = '';
-      $('#pvDoneSummary').textContent = `共 ${bookDoneCount} 章已完成`;
+      $('#pvDoneSummary').textContent = isFanqieShort
+        ? `番茄短故事单篇已完成 · 全文约 ${fmtWords(completedWordCount || qsMeta.target_words || data.payload?.target_words || 0)}（见 exports/fanqie-short.md）`
+        : `共 ${bookDoneCount} 章已完成`;
       $('#pvReaderLink').href = `/read/${encodeURIComponent(slug)}`;
     }
     if (status === 'failed' || status === 'incomplete' || data.current_stage === 'blocked_structural_repair' || data.current_stage === 'blocked_generation_gate') {
@@ -6194,6 +6664,11 @@
     }
     $$('.wpanel').forEach(p => p.classList.remove('active'));
     $(`#ws${n}`).classList.add('active');
+    syncWizardHeadForStep(n);
+    if (n === 2) {
+      syncCreationModeUi();
+      if (creationMode === 'long_serial') fetchEstimate(chapterCount);
+    }
     $$('#wizStepper .step-dot').forEach(d => {
       const s = +d.dataset.step;
       d.classList.remove('active', 'done');
@@ -6215,6 +6690,7 @@
       const r = await fetch('/api/writing-presets');
       const d = await r.json();
       genres = d.genre_presets || [];
+      syncCreationModeUi();
       genreDimensions = d.genre_dimensions || {};
       genreCreativity = d.genre_creativity || {};
     } catch {
@@ -6405,7 +6881,8 @@
     list.forEach((g, idx) => {
       const card = document.createElement('div');
       card.className = 'genre-card' + (g.key === selectedGenreKey ? ' selected' : '');
-      const chips = genreCardChips(g).map((value, chipIdx) => `<span class="genre-meta-chip${chipIdx < 2 ? ' strong' : ''}">${esc(value)}</span>`).join('');
+      const shortTag = g.suitable_for_short_story ? '<span class="genre-meta-chip short-story-fit">适合短篇</span>' : '';
+      const chips = [shortTag, ...genreCardChips(g).map((value, chipIdx) => `<span class="genre-meta-chip${chipIdx < 2 ? ' strong' : ''}">${esc(value)}</span>`)].filter(Boolean).join('');
       card.innerHTML = `<div class="genre-card-kicker">题 · ${String(idx + 1).padStart(2, '0')}</div><div class="name">${esc(g.name)}</div><div class="genre-tag">${esc(g.genre)}${g.sub_genre ? ' / ' + esc(g.sub_genre) : ''}</div><div class="desc">${esc(getGenreDisplayDescription(g))}</div>${chips ? `<div class="genre-card-meta">${chips}</div>` : ''}`;
       card.onclick = () => {
         selectedGenreKey = g.key;
@@ -6421,6 +6898,7 @@
 
   function matchSearch(g) {
     if (genreLang(g) !== selectedLang) return false;
+    if (shortStoryGenreFilterOnly && !g.suitable_for_short_story) return false;
     for (const [field, value] of Object.entries(selectedGenreFilters)) {
       if (value && !dimensionValues(g, field).includes(value)) return false;
     }
@@ -6456,15 +6934,123 @@
   $('#langTabZh').addEventListener('click', () => switchLangTab('zh'));
   $('#langTabEn').addEventListener('click', () => switchLangTab('en'));
 
+
+  function syncShortStoryGenreFilterUi() {
+    const hint = $('#shortStoryGenreHint');
+    const row = $('#shortStoryGenreFilterRow');
+    const isFanqie = creationMode === 'fanqie_short';
+    if (hint) hint.style.display = isFanqie ? 'block' : 'none';
+    if (row) row.style.display = '';
+    shortStoryGenreFilterOnly = isFanqie || $('#shortStoryFilterOnly')?.classList.contains('active');
+    const allBtn = $('#shortStoryFilterAll');
+    const onlyBtn = $('#shortStoryFilterOnly');
+    if (allBtn && onlyBtn) {
+      if (isFanqie) {
+        shortStoryGenreFilterOnly = true;
+        allBtn.classList.remove('active');
+        onlyBtn.classList.add('active');
+        allBtn.disabled = true;
+      } else {
+        allBtn.disabled = false;
+        allBtn.classList.toggle('active', !shortStoryGenreFilterOnly);
+        onlyBtn.classList.toggle('active', shortStoryGenreFilterOnly);
+      }
+    }
+    const g = selectedGenre();
+    if (isFanqie && g && !g.suitable_for_short_story) {
+      selectedGenreKey = null;
+      selectedCreativeKey = null;
+      $('#toStep2').disabled = true;
+    }
+    renderGenres(genres.filter(matchSearch));
+    renderCreativeLab();
+  }
+
+  function fanqieLengthOption(key) {
+    return FANQIE_LENGTH_OPTIONS[key] || FANQIE_LENGTH_OPTIONS['fanqie-short-15k'];
+  }
+
+  function syncFanqieLengthSelectionUi() {
+    $$('.fanqie-len-btn').forEach(b => {
+      b.classList.toggle('selected', b.dataset.lengthKey === fanqieLengthKey);
+    });
+  }
+
+  function syncWizardHeadForStep(step) {
+    const isFanqie = creationMode === 'fanqie_short';
+    if (step !== 2) return;
+    const sub = $('#wizardSub');
+    if (!sub) return;
+    sub.textContent = isFanqie
+      ? '选择番茄短故事全文字数档位。产出为单篇连续正文，不设连载章节。'
+      : '题材选定后将冻结目录骨架；篇幅决定章节密度、预算和生成时长。';
+    const title = $('#wizardTitle');
+    if (title) title.textContent = isFanqie ? '定全文字数' : '定篇幅';
+  }
+
+  function syncCreationModeUi() {
+    const isFanqie = creationMode === 'fanqie_short';
+    const longBlock = $('#longSerialLengthBlock');
+    const fanqieBlock = $('#fanqieLengthBlock');
+    if (longBlock) {
+      longBlock.hidden = isFanqie;
+      longBlock.style.removeProperty('display');
+    }
+    if (fanqieBlock) {
+      fanqieBlock.hidden = !isFanqie;
+      fanqieBlock.style.removeProperty('display');
+    }
+    $$('.creation-mode-btn').forEach(b => {
+      b.classList.toggle('selected', b.dataset.creationMode === creationMode);
+    });
+    if (isFanqie) {
+      syncFanqieLengthSelectionUi();
+      const opt = fanqieLengthOption(fanqieLengthKey);
+      chapterCount = opt.segments;
+      const costEl = $('#estimateCost');
+      if (costEl) costEl.textContent = `${opt.words} · 单篇完结`;
+    }
+    syncShortStoryGenreFilterUi();
+    const activePanel = $('.wpanel.active');
+    if (activePanel?.id === 'ws2') syncWizardHeadForStep(2);
+  }
+
+  $$('.creation-mode-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      creationMode = btn.dataset.creationMode || 'long_serial';
+      syncCreationModeUi();
+      if (creationMode === 'long_serial') fetchEstimate(chapterCount);
+    });
+  });
+
+  $('#shortStoryFilterAll')?.addEventListener('click', () => {
+    if (creationMode === 'fanqie_short') return;
+    shortStoryGenreFilterOnly = false;
+    syncShortStoryGenreFilterUi();
+  });
+  $('#shortStoryFilterOnly')?.addEventListener('click', () => {
+    shortStoryGenreFilterOnly = true;
+    syncShortStoryGenreFilterUi();
+  });
+
+  $$('.fanqie-len-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      fanqieLengthKey = btn.dataset.lengthKey || DEFAULT_FANQIE_LENGTH_KEY;
+      syncFanqieLengthSelectionUi();
+      syncCreationModeUi();
+    });
+  });
+  $('#fanqiePov')?.addEventListener('change', (e) => { fanqiePov = e.target.value || 'first_person'; });
+
   // Length selection
   function selectLen(n) {
     chapterCount = n;
-    $$('.length-btn').forEach(b => b.classList.toggle('selected', +b.dataset.chapters === n));
+    $$('.length-btn[data-chapters]').forEach(b => b.classList.toggle('selected', +b.dataset.chapters === n));
     $('#customChapters').value = n;
     fetchEstimate(n);
   }
-  $$('.length-btn').forEach(b => b.addEventListener('click', () => selectLen(+b.dataset.chapters)));
-  $('#customChapters').addEventListener('input', () => { const v = +$('#customChapters').value; if (v > 0) { chapterCount = v; $$('.length-btn').forEach(b => b.classList.toggle('selected', +b.dataset.chapters === v)); fetchEstimate(v); } });
+  $$('.length-btn[data-chapters]').forEach(b => b.addEventListener('click', () => selectLen(+b.dataset.chapters)));
+  $('#customChapters').addEventListener('input', () => { const v = +$('#customChapters').value; if (v > 0) { chapterCount = v; $$('.length-btn[data-chapters]').forEach(b => b.classList.toggle('selected', +b.dataset.chapters === v)); fetchEstimate(v); } });
 
   let estTimer = null;
   function fetchEstimate(n) {
@@ -6491,12 +7077,28 @@
         ])].join(' · ')
       : '-';
     $('#sumCreative').textContent = creative ? creative.title : '-';
-    $('#sumCh').textContent = `${chapterCount} 章`;
+    const sumLbl = $('#sumChLabel');
+    if (creationMode === 'fanqie_short') {
+      const opt = fanqieLengthOption(fanqieLengthKey);
+      if (sumLbl) sumLbl.textContent = '全文字数';
+      $('#sumCh').textContent = `${opt.words} · 单篇完结`;
+    } else {
+      if (sumLbl) sumLbl.textContent = '章节数';
+      $('#sumCh').textContent = `${chapterCount} 章`;
+    }
     $('#sumModel').textContent = llmModel || '-';
   }
 
   // Start
   async function startCreation() {
+    if (creationMode === 'fanqie_short') {
+      const g = selectedGenre();
+      if (!g || !g.suitable_for_short_story) {
+        alert('番茄短故事请选择带「适合短篇」标签的题材');
+        wizGo(1);
+        return;
+      }
+    }
     const btn = $('#startBtn');
     btn.disabled = true;
     btn.innerHTML = '<span class="loading-spinner"></span> 提交中...';
@@ -6505,9 +7107,12 @@
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          creation_mode: creationMode,
           genre_key: selectedGenreKey,
           creative_key: selectedCreativeKey,
-          chapter_count: chapterCount,
+          chapter_count: creationMode === 'fanqie_short' ? chapterCount : chapterCount,
+          length_key: creationMode === 'fanqie_short' ? fanqieLengthKey : undefined,
+          pov: creationMode === 'fanqie_short' ? fanqiePov : undefined,
           draft_mode: !!$('#draftModeToggle').checked,
         }),
       });
@@ -6553,9 +7158,12 @@
       const isoWithTz = _localIsoWithOffset(raw);
       if (!isoWithTz) throw new Error('请先选择一个有效的启动时间');
       const body = {
+        creation_mode: creationMode,
         genre_key: selectedGenreKey,
         creative_key: selectedCreativeKey,
         chapter_count: chapterCount,
+        length_key: creationMode === 'fanqie_short' ? fanqieLengthKey : undefined,
+        pov: creationMode === 'fanqie_short' ? fanqiePov : undefined,
         draft_mode: !!$('#draftModeToggle').checked,
         scheduled_at: isoWithTz,
       };
@@ -6577,8 +7185,31 @@
   }
 
   // Nav wiring
-  $('#toStep2').addEventListener('click', () => { wizGo(2); fetchEstimate(chapterCount); });
-  $('#toStep3').addEventListener('click', () => { updateSummary(); wizGo(3); });
+  $('#toStep2').addEventListener('click', () => {
+    if (creationMode === 'fanqie_short') {
+      const g = selectedGenre();
+      if (!g || !g.suitable_for_short_story) {
+        alert('番茄短故事请选择带「适合短篇」标签的题材');
+        return;
+      }
+    }
+    syncCreationModeUi();
+    wizGo(2);
+    if (creationMode === 'long_serial') fetchEstimate(chapterCount);
+  });
+  $('#toStep3').addEventListener('click', () => {
+    if (creationMode === 'fanqie_short') {
+      const g = selectedGenre();
+      if (!g || !g.suitable_for_short_story) {
+        alert('番茄短故事请选择带「适合短篇」标签的题材');
+        wizGo(1);
+        return;
+      }
+    }
+    syncCreationModeUi();
+    updateSummary();
+    wizGo(3);
+  });
   $('#startBtn').addEventListener('click', startCreation);
   $('#scheduleBtn')?.addEventListener('click', scheduleQuickstart);
   $('#dashSearch')?.addEventListener('input', (event) => {
@@ -6792,12 +7423,15 @@
     const proj = project || {};
     window.__lastListingProject = proj;  // remembered for regen re-render
     const slug = proj.slug || listing.book_id || '';
+    const copyPack = listing.copy_pack || {};
     const shelfIntro = buildShelfIntro(listing, proj);
     const shelfIntroKey = registerListingCopyText(shelfIntro);
     const tags = Array.isArray(listing.tags) && listing.tags.length ? listing.tags : (Array.isArray(proj.tags) ? proj.tags : []);
     const characterNames = buildCharacterNames(listing);
     const characterNameText = characterNames.join('、');
     const characterNameKey = registerListingCopyText(characterNameText);
+    const authorName = compactListingText(listing.author_display_name || listing.author || copyPack.author || proj.author_display_name || '');
+    const authorKey = registerListingCopyText(authorName);
 
     // Header
     const title = listing.primary_title || proj.title || '-';
@@ -6816,10 +7450,10 @@
     if (tagsActionsEl) tagsActionsEl.innerHTML = regenButton(slug, 'tags', '↻ 重新生成标签');
 
     // Copy kit
-    const copyPack = listing.copy_pack || {};
     const packText = [
       ['书名', title],
       ['副标题', copyPack.subtitle || listing.recommended_subtitle],
+      ['作者', authorName],
       ['书籍 ID', copyPack.book_id || listing.book_id || proj.slug],
       ['分类', copyPack.category || categoryText],
       ['标签', copyPack.tags || tags.join('、')],
@@ -6838,6 +7472,10 @@
         <div class="ls-copy-item">
           <div class="row"><strong>书名</strong>${copyButton('复制', titleKey)}</div>
           <span>${esc(title)}</span>
+        </div>
+        <div class="ls-copy-item">
+          <div class="row"><strong>作者</strong>${authorName ? copyButton('复制', authorKey) : ''}</div>
+          <span>${esc(authorName || '未填写')}</span>
         </div>
         <div class="ls-copy-item">
           <div class="row"><strong>标签</strong>${copyButton('复制', tagsKey)}</div>
@@ -6871,6 +7509,7 @@
       .filter(Boolean).slice(0, 8).join('、');
     const basicItems = [
       ['书籍 ID', listing.book_id || proj.slug],
+      ['作者', authorName],
       ['推荐副标题', listing.recommended_subtitle],
       ['频道', listing.channel || proj.audience],
       ['连载状态', listing.serialization_status || proj.status],
@@ -7010,6 +7649,12 @@
 
   async function init() {
     formatTodayMasthead();
+    const bootParams = new URLSearchParams(window.location.search);
+    const bootHighlightTaskId = bootParams.get('highlight_task');
+    if (bootHighlightTaskId) {
+      highlightTaskId = bootHighlightTaskId;
+      window.history.replaceState({}, '', '/quickstart');
+    }
     // Load model info + concurrency limit
     let pingStart = performance.now();
     try {
@@ -7032,6 +7677,9 @@
 	    // Previously this auto-hijacked the user into the progress view of any
 	    // running task, which made it look like the system refused new creations.
 	    await refreshDashboard();
+    if (bootHighlightTaskId) {
+      setTimeout(() => { highlightTaskId = null; renderDashboard(); }, 4000);
+    }
 	  }
 
   init();
@@ -7039,7 +7687,7 @@
   // Refresh dashboard periodically when visible
   setInterval(() => {
     if ($('#viewDashboard').classList.contains('active')) refreshDashboard();
-  }, 8000);
+  }, 15000);
 
   // ── Keyboard shortcuts (avoid hijacking when typing) ──
   document.addEventListener('keydown', (e) => {

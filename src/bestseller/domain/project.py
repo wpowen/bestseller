@@ -12,6 +12,7 @@ from bestseller.domain.enums import (
     SceneStatus,
     VolumeStatus,
 )
+from bestseller.domain.fanqie_short import validate_fanqie_short_project
 
 
 def _dedupe_string_list(values: list[str]) -> list[str]:
@@ -351,6 +352,11 @@ class ProjectCreate(BaseModel):
         if not normalized or any(char not in allowed for char in normalized):
             raise ValueError("slug may only contain lowercase letters, numbers, '-' and '_'.")
         return normalized
+
+    @model_validator(mode="after")
+    def validate_fanqie_short_contract(self) -> ProjectCreate:
+        validate_fanqie_short_project(self)
+        return self
 
 
 class ProjectRead(BaseModel):

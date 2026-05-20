@@ -13,6 +13,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
+from bestseller.domain.fanqie_short import is_fanqie_short_metadata
+
 LengthClass = Literal["short", "novella", "long", "very_long", "series"]
 PublicationMode = Literal["web_serial", "commercial_book", "literary", "ip_development"]
 OutlineDepth = Literal["scene", "chapter", "volume_chapter_scene"]
@@ -53,14 +55,21 @@ def derive_story_shape(
         or _int_or_none(_get(project, "target_total_words"))
     )
 
+    fanqie_short = is_fanqie_short_metadata(merged_metadata)
     length_class = _derive_length_class(chapters, words)
+    if fanqie_short:
+        length_class = "short"
     publication_mode = _derive_publication_mode(
         genre=resolved_genre,
         sub_genre=resolved_sub_genre,
         audience=resolved_audience,
         metadata=merged_metadata,
     )
+    if fanqie_short:
+        publication_mode = "commercial_book"
     outline_depth = _derive_outline_depth(length_class, publication_mode)
+    if fanqie_short:
+        outline_depth = "scene"
     duties = _derive_primary_duties(
         genre=resolved_genre,
         sub_genre=resolved_sub_genre,
@@ -131,6 +140,9 @@ def _derive_publication_mode(
     )
     if explicit:
         return explicit
+
+    if is_fanqie_short_metadata(metadata):
+        return "commercial_book"
 
     haystack = _haystack(genre, sub_genre, audience, metadata)
     if _contains_any(haystack, ("literary", "文学", "严肃", "纯文学")):

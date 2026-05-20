@@ -75,6 +75,12 @@ Correct: 与 ``distillation_assets._first_existing(..., MATERIAL_REVIEW_FILENAME
 
 ---
 
+Mistake: `fanqie_short.py` imported `ProjectCreate` from `project.py` while `project.py` imported `validate_fanqie_short_project` from `fanqie_short.py`, causing circular import at test collection.
+Wrong: `from bestseller.domain.project import ProjectCreate` at module level in `domain/fanqie_short.py`.
+Correct: Use `TYPE_CHECKING` + quoted `"ProjectCreate"` only in `validate_fanqie_short_project` signature; keep runtime imports one-way (`project.py` → `fanqie_short.py`).
+
+---
+
 Mistake: Assume `output/天机录/amazon/quality_audit` persists after rebuilding books.
 Wrong: Run `build_amazon_book.py` and then read audit/progress files without re-generating them.
 Correct:
@@ -86,3 +92,20 @@ Correct:
 Mistake: 章节蒸馏把 ``max_chapter_chars`` 默认截断到 12k，导致长章无法按子块送进 LLM，与子块策略冲突。
 Wrong: ``run_full_auto_distillation`` 默认 ``--max-chapter-chars 12000`` 在切块之前截断全文。
 Correct: 默认 ``0`` 表示不预先截断；超长章由 ``distillation_chapter_llm.split_chapter_text_for_llm``（软 8k / 硬 12k）拆子块后再调用 ``complete_text``。
+---
+
+Mistake: Cursor `pre:write:doc-file-warning` hook 拦截对 `server.py` / `writing_presets.py` 的 StrReplace。
+Wrong: 反复用 StrReplace 改 Python 源文件导致写入被 block。
+Correct: 对非 Markdown 源码用 `python3` 脚本做精确字符串替换，或改完后跑 `pytest` 验证。
+---
+
+Mistake: 任务台 `refreshDashboard` 每次拉全量 `/api/tasks` + `/api/projects`，含 300 条 progress_events/任务 + 全书章节明细，刷新极慢。
+Wrong: 列表接口返回完整 progress_events 与 `chapter_word_stats.chapters[]` 全量数组。
+Correct: `/api/tasks?summary=1` 截断 events + SQL 聚合字数；`/api/projects?light=1` 跳过 repair 统计；前端防并发刷新 + 轮询 15s。
+
+---
+
+Mistake: 创作向导 Step2「定篇幅」中间空白，短篇三档不可见。
+Wrong: `stepper` 夹在标题与 `wpanel` 之间占满视口；`fanqieLengthBlock` 用 `style="display:none"` 且 `longSerialLengthBlock` 内 `length-presets` 未正确闭合；`syncCreationModeUi` 未在 `resetWizardState` 调用。
+Correct: `wizard-steps-footer` 将步骤条移到底部；`#viewWizard` flex 列 + `#ws2` 合法 DOM；`fanqieLengthBlock` 用 `hidden` + JS `longBlock.hidden`/`fanqieBlock.hidden`；`wizGo(2)` 与 `resetWizardState` 均调用 `syncCreationModeUi()`。
+

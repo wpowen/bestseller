@@ -57,6 +57,7 @@ PLATFORM_CHAPTER_WORD_WINDOWS: dict[str, dict[str, int]] = {
     "qimao": {"min": 2500, "target": 3200, "max": 4000},
     "qidian": {"min": 3000, "target": 3700, "max": 4500},
     "tomato": {"min": 2000, "target": 2500, "max": 3000},
+    "tomato_short": {"min": 1800, "target": 2500, "max": 3500},
 }
 
 
@@ -64,6 +65,13 @@ _PLATFORM_ALIASES: dict[str, tuple[str, ...]] = {
     "qimao": ("七猫", "qimao"),
     "qidian": ("起点", "qidian", "阅文"),
     "tomato": ("番茄", "tomato", "fanqie"),
+    "tomato_short": (
+        "番茄短故事",
+        "短故事",
+        "fanqie_short",
+        "tomato_short",
+        "fanqie_short_story",
+    ),
 }
 
 

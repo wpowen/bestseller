@@ -1,29 +1,4967 @@
 key: distillation-generic
-name: Distillation Generic Grammar Patch
+name: Strategic Reputation Reversal Engine
 source_ids:
+- source-0002
+- source-0003
+- source-0004
+- source-0005
+- source-0006
+- source-0007
+- source-0008
+- source-0009
+- source-0010
 - source-0011
+- source-0012
+- source-0013
+- source-0014
+- source-0015
+- source-0016
+- source-0017
+- source-0018
+- source-0019
+- source-0020
+- source-0021
+- source-0022
+- source-0023
+- source-0024
+- source-0025
+- source-0026
+- source-0027
+- source-0028
+- source-0029
+- source-0031
+- source-0032
+- source-0033
+- source-0034
+- source-0035
+- source-0036
+- source-0037
+- source-0038
+- source-0039
+- source-0040
+- source-0041
+- source-0042
+- source-0043
+- source-0044
+- source-0045
+- source-0046
+- source-0047
+- source-0048
+- source-0049
+- source-0050
+- source-0051
+- source-0052
+- source-0053
+- source-0054
+- source-0055
+- source-0056
+- source-0057
+- source-0058
+- source-0059
+- source-0060
+- source-0061
+- source-0062
+- source-0063
+- source-0064
+- source-0065
+- source-0066
+- source-0067
+- source-0068
+- source-0069
+- source-0070
+- source-0071
+- source-0072
+- source-0073
+- source-0074
+- source-0075
+- source-0076
+- source-0077
+- source-0078
+- source-0079
+- source-0080
+- source-0081
+- source-0082
+- source-0083
+- source-0084
+- source-0085
+- source-0086
+- source-0087
+- source-0088
+- source-0089
+- distillation:eff24e9fbe8dc13ef837f18d
+- source-0090
+- source-0091
+- source-0092
+- source-0093
+- distillation:3127fd639575d096cadbaa49
+- source-0094
+- source-0095
+- source-0096
+- source-0097
+- source-0098
+- source-0099
+- source-0100
+- source-0101
+- source-0102
+- source-0103
+- source-0104
+- source-0105
+- source-0106
+- source-0107
+- source-0108
+- source-0109
+- source-0110
+- source-0111
+- source-0112
+- source-0113
+- source-0114
+- source-0115
+- source-0116
+- source-0117
+- source-0118
+- source-0119
+- source-0120
+- source-0121
+- source-0122
+- source-0123
+- source-0124
+- source-0125
+- source-0126
+- source-0127
+- source-0128
+- source-0129
+- source-0130
+- source-0131
+- source-0132
+- source-0133
+- source-0134
+- distillation:1ce97094809f5df7909e4884
+- source-0135
+- source-0136
+- source-0137
+- source-0138
+- source-0139
+- source-0140
+- source-0141
+- source-0142
+- source-0143
+- source-0144
+- source-0145
+- source-0146
+- source-0147
+- source-0148
+- source-0149
+- source-0150
+- source-0151
+- source-0152
+- source-0153
+- source-0154
+- source-0155
+- source-0156
+- distillation:2a5df79362476a62ae4dc2f6
+- source-0157
+- source-0158
+- source-0159
+- source-0160
+- source-0161
+- source-0162
+- source-0163
+- source-0164
+- source-0165
+- source-0166
+- source-0167
+- source-0168
+- source-0169
+- source-0170
+- source-0171
+- source-0172
+- source-0173
+- source-0174
+- source-0175
+- source-0176
+- source-0177
+- source-0178
+- source-0179
+- source-0180
+- source-0181
+- source-0182
+- source-0183
+- source-0184
+- source-0185
+- source-0186
+- source-0187
+- source-0188
+- source-0189
+- source-0190
+- source-0191
+- source-0192
+- source-0193
+- source-0194
+- source-0195
+- source-0196
+- source-0197
+- source-0198
+- source-0199
+- source-0200
+- source-0201
+- source-0202
+- source-0203
+- source-0204
+- source-0205
+- source-0206
+- source-0207
+- source-0208
+- source-0209
+- source-0210
+- source-0211
+- source-0215
+- source-0219
+- source-0224
+- source-0228
+- source-0230
+- source-0232
+- source-0234
+- source-0237
+- source-0239
+- source-0240
+- source-0242
+- source-0246
+- source-0249
+- source-0251
+- source-0256
+- source-0260
+- source-0262
+- source-0272
+- source-0275
+- source-0278
+- source-0280
+- source-0283
+- source-0287
+- source-0292
+- source-0296
+- source-0297
+- source-0299
+- source-0304
+- distillation:f6e0bbdf3cd0a259c36fcd40
+- source-0308
+- source-0311
+- source-0312
+- source-0315
+- source-0320
+- source-0322
+- source-0326
+- source-0330
+- source-0331
+- source-0333
+- source-0338
+- source-0340
+- source-0342
+- source-0346
+- source-0349
+- source-0352
+- source-0356
+- source-0360
+- source-0362
+- source-0364
+- source-0367
+- source-0370
+- source-0373
+- source-0376
+- source-0380
+- source-0383
+- source-0386
+- source-0389
+- source-0395
+- source-0397
+- source-0403
+- source-0407
+- source-0411
+- source-0421
+- source-0425
+- source-0432
+- source-0435
+- source-0438
+- source-0439
+- source-0440
+- source-0441
+- source-0442
+- source-0443
+- source-0444
+- source-0445
+- source-0446
+- source-0447
+- source-0448
+- source-0449
+- source-0450
+- source-0451
+- source-0452
+- source-0453
+- source-0454
+- source-0455
+- source-0456
+- source-0457
+- source-0458
+- source-0459
+- source-0460
+- source-0461
+- source-0462
+- source-0463
+- source-0464
+- source-0465
+- source-0466
+- source-0467
+- source-0468
+- source-0469
+- source-0470
+- source-0471
+- source-0472
+- source-0473
+- source-0542
+- source-0543
+- source-0544
+- source-0546
+- source-0550
+- source-0552
+- source-0554
+- source-0555
+- source-0556
+- source-0557
+- source-0558
+- source-0559
+- source-0634
+- source-0636
+- source-0637
+- source-0638
+- source-0639
+- source-0640
+- source-0641
+- source-0642
+- source-0643
+- source-0644
+- source-0645
+- source-0646
+- source-0647
+- source-0648
+- source-0649
+- source-0650
+- source-0651
+- source-0652
+- source-0653
+- source-0654
+- source-0655
+- source-0656
+- source-0657
+- source-0658
+- source-0659
+- source-0660
+- source-0661
+- source-0662
+- source-0663
+- source-0664
+- source-0665
+- source-0666
+- source-0667
+- source-0668
+- source-0669
+- source-0670
+- source-0671
+- source-0672
+- source-0673
+- source-0674
+- source-0675
+- source-0677
+- source-0678
+- source-0679
+- source-0681
+- source-0683
+- source-0684
+- source-0685
+- source-0686
+- source-0687
+- source-0688
+- source-0689
+- source-0690
+- source-0691
+- source-0692
+- source-0693
+- source-0694
+- source-0695
+- source-0696
+- source-0697
+- source-0698
+- source-0699
+- source-0700
+- source-0701
+- source-0702
+- source-0704
+- source-0706
+- source-0707
+- source-0708
+- source-0710
+- source-0711
+- source-0712
+- source-0713
+- source-0714
+- source-0715
+- source-0716
+- source-0717
+- source-0718
+- source-0720
+- source-0721
+- source-0722
+- source-0723
+- source-0724
+- source-0725
+- source-0726
+- source-0727
+- source-0728
+- source-0729
+- source-0730
+- source-0731
+- source-0732
+- source-0733
+- source-0734
+- source-0735
+- source-0736
+- source-0737
+- source-0738
+- source-0739
+- source-0740
+- source-0741
+- source-0742
+- source-0743
+- source-0744
+- source-0745
+- source-0746
+- source-0747
+- source-0748
+- source-0749
+- source-0750
+- source-0752
+- source-0753
+- source-0754
+- source-0755
+- source-0756
+- source-0757
+- source-0758
+- source-0759
+- source-0760
+- source-0761
+- source-0762
+- source-0763
+- source-0764
+- source-0765
+- source-0766
+- source-0767
+- source-0769
+- source-0770
+- source-0771
+- source-0772
+- source-0773
+- source-0774
+- source-0775
+- source-0776
+- source-0777
+- source-0778
+- source-0779
+- source-0780
+- source-0781
+- source-0782
+- source-0783
+- source-0784
+- source-0785
+- source-0786
+- source-0787
+- source-0788
+- source-0789
+- source-0790
+- source-0791
+- source-0792
+- source-0793
+- source-0794
+- source-0795
+- source-0796
+- source-0797
+- source-0798
+- source-0799
+- source-0800
+- source-0801
+- source-0802
+- source-0803
+- source-0804
+- source-0805
+- source-0806
+- source-0807
+- source-0808
+- source-0809
+- source-0810
+- source-0811
+- source-0812
+- source-0813
+- source-0814
+- source-0815
+- source-0816
+- source-0817
+- source-0818
+- source-0819
+- source-0820
+- source-0821
+- source-0822
+- source-0823
+- source-0824
+- source-0825
+- source-0826
+- source-0827
+- source-0828
+- source-0829
+- source-0830
+- source-0831
+- source-0832
+- source-0833
+- source-0834
+- source-0835
+- source-0836
+- source-0837
+- source-0838
+- source-0839
+- source-0840
+- source-0841
+- source-0842
+- source-0843
+- source-0844
+- source-0845
+- source-0846
+- source-0847
+- source-0848
+- source-0849
+- source-0850
+- source-0851
+- source-0852
+- source-0853
+- source-0854
+- source-0855
+- source-0856
+- source-0857
+- source-0858
+- source-0859
+- source-0860
+- source-0861
+- source-0862
+- source-0863
+- source-0864
+- source-0865
+- source-0866
+- source-0867
+- source-0868
+- source-0869
+- source-0870
+- source-0871
+- source-0872
+- source-0873
+- source-0874
+- source-0875
+- source-0876
+- source-0877
+- source-0878
+- source-0879
+- source-0880
+- source-0881
+- source-0882
+- source-0883
+- source-0884
+- source-0885
+- source-0886
+- source-0887
+- source-0888
+- source-0889
+- source-0890
+- source-0891
+- source-0892
+- source-0893
+- source-0894
+- source-0895
+- source-0896
+- source-0897
+- source-0898
+- source-0899
+- source-0900
+- source-0901
+- source-0902
+- source-0903
+- source-0904
+- source-0905
+- source-0906
+- source-0907
+- source-0908
+- source-0909
+- source-0910
+- source-0911
+- source-0912
+- source-0913
+- source-0914
+- source-0915
+- source-0916
+- source-0917
+- source-0918
+- source-0919
+- source-0920
+- source-0921
+- source-0922
+- source-0923
+- source-0924
+- source-0925
+- source-0926
+- source-0927
+- source-0928
+- source-0929
+- source-0930
+- source-0931
+- source-0932
+- source-0933
+- source-0934
+- source-0935
+- source-0936
+- source-0937
+- source-0938
+- source-0939
+- source-0940
+- source-0941
+- source-0942
+- source-0943
+- source-0944
+- source-0945
+- source-0946
+- source-0947
+- source-0948
+- source-0949
+- source-0950
+- source-0951
+- source-0952
+- source-0953
+- source-0954
+- source-0955
+- source-0956
+- source-0957
+- source-0958
+- source-0959
+- source-0960
+- source-0961
+- source-0962
+- source-0963
+- source-0964
+- source-0965
+- source-0966
+- source-0967
+- source-0968
+- source-0969
+- source-0970
+- source-0971
+- source-0972
+- source-0973
+- source-0974
+- source-0975
+- source-0976
+- source-0977
+- source-0978
+- source-0979
+- source-0980
+- source-0981
+- source-0982
+- source-0983
+- source-0984
+- source-0985
+- source-0986
+- source-0987
+- source-0988
+- source-0989
+- source-0990
+- source-0991
+- source-0992
+- source-0993
+- source-0994
+- source-0995
+- source-0996
+- source-0997
+- source-0998
+- source-0999
+- source-1000
+- source-1001
+- source-1002
+- source-1003
+- source-1004
+- source-1005
+- source-1006
+- source-1007
+- source-1008
+- source-1009
+- source-1010
+- source-1011
+- source-1012
+- source-1013
+- source-1014
+- source-1015
+- source-1016
+- source-1017
+- source-1018
+- source-1019
+- source-1020
+- source-1021
+- source-1022
+- source-1023
+- source-1024
+- source-1025
+- source-1026
+- source-1027
+- source-1028
+- source-1029
+- source-1030
+- source-1031
+- source-1032
+- source-1033
+- source-1034
+- source-1035
+- source-1036
+- source-1037
+- source-1038
+- source-1039
+- source-1040
+- source-1041
+- source-1042
+- source-1043
+- source-1044
+- source-1045
+- source-1046
+- source-1047
+- source-1048
+- source-1049
+- source-1050
+- source-1051
+- source-1052
+- source-1053
+- source-1054
+- source-1055
+- source-1056
+- source-1057
+- source-1058
+- source-1059
+- source-1060
+- source-1061
+- source-1062
+- source-1063
+- source-1064
+- source-1065
+- source-1066
+- source-1067
+- source-1068
+- source-1069
+- source-1070
+- source-1071
+- source-1072
+- source-1073
+- source-1074
+- source-1075
+- source-1076
+- source-1077
+- source-1078
+- source-1079
+- source-1080
+- source-1081
+- source-1082
+- source-1083
+- source-1084
+- source-1085
+- source-1086
+- source-1087
+- source-1088
+- source-1089
+- source-1090
+- source-1091
+- source-1092
+- source-1093
+- source-1094
+- source-1095
+- source-1096
+- source-1097
+- source-1098
+- source-1099
+- source-1100
+- source-1101
+- source-1102
+- source-1103
+- source-1104
+- source-1105
+- source-1106
+- source-1107
+- source-1108
+- source-1109
+- source-1110
+- source-1111
+- source-1112
+- source-1113
+- source-1114
+- source-1115
+- source-1116
+- source-1117
+- source-1118
+- source-1119
+- source-1120
+- source-1121
+- source-1122
+- source-1123
+- source-1124
+- source-1125
+- source-1126
+- source-1127
+- source-1128
+- source-1129
+- source-1130
+- source-1131
+- source-1132
+- source-1133
+- source-1134
+- source-1135
+- source-1136
+- source-1137
+- source-1138
+- source-1139
+- source-1140
+- source-1141
+- source-1142
+- source-1143
+- source-1144
+- source-1145
+- source-1146
+- source-1147
+- source-1148
+- source-1149
+- source-1150
+- source-1151
+- source-1152
+- source-1153
+- source-1154
+- source-1155
+- source-1156
+- source-1157
+- source-1158
+- source-1159
+- source-1160
+- source-1161
+- source-1162
+- source-1163
+- source-1164
+- source-1165
+- source-1166
+- source-1167
+- source-1168
+- source-1169
+- source-1170
+- source-1171
+- source-1172
+- source-1173
+- source-1174
+- source-1175
+- source-1176
+- source-1177
+- source-1178
+- source-1179
+- source-1180
+- source-1181
+- source-1182
+- source-1183
+- source-1184
+- source-1185
+- source-1186
+- source-1187
+- source-1188
+- source-1189
+- source-1190
+- source-1191
+- source-1192
+- source-1193
+- source-1194
+- source-1195
+- source-1196
+- source-1197
+- source-1198
+- source-1199
+- source-1200
+- source-1201
+- source-1202
+- source-1203
+- source-1204
+- source-1205
+- source-1206
+- source-1207
+- source-1208
+- source-1209
+- source-1210
+- source-1211
+- source-1212
+- source-1213
+- source-1214
+- source-1215
+- source-1216
+- source-1217
+- source-1218
+- source-1219
+- source-1220
+- source-1221
+- source-1222
+- source-1223
+- source-1224
+- source-1225
+- source-1226
+- source-1227
+- source-1228
+- source-1229
+- source-1230
+- source-1231
+- source-1232
+- source-1233
+- source-1234
+- source-1235
+- source-1236
+- source-1237
+- source-1238
+- source-1239
+- source-1240
+- source-1241
+- source-1242
+- source-1243
+- source-1244
+- source-1245
+- source-1246
+- source-1247
+- source-1248
+- source-1249
+- source-1250
+- source-1251
+- source-1252
+- source-1253
+- source-1254
+- source-1255
+- source-1256
+- source-1257
+- source-1258
+- source-1259
+- source-1260
+- source-1261
+- source-1262
+- source-1263
+- source-1264
+- source-1265
+- source-1266
+- source-1267
+- source-1268
+- source-1269
+- source-1270
+- source-1271
+- source-1272
+- source-1273
+- source-1274
+- source-1275
+- source-1276
+- source-1277
+- source-1278
+- source-1279
+- source-1280
+- source-1281
+- source-1282
+- source-1283
+- source-1284
+- source-1285
+- source-1286
+- source-1287
+- source-1288
+- source-1289
+- source-1290
+- source-1291
+- source-1292
+- source-1293
+- source-1294
+- source-1295
+- source-1296
+- source-1297
+- source-1298
+- source-1299
+- source-1300
+- source-1301
+- source-1302
+- source-1303
+- source-1304
+- source-1305
+- source-1306
+- source-1307
+- source-1308
+- source-1309
+- source-1310
+- source-1311
+- source-1312
+- source-1313
+- source-1314
+- source-1315
+- source-1316
+- source-1317
+- source-1318
+- source-1319
+- source-1320
+- source-1321
+- source-1322
+- source-1323
+- source-1324
+- source-1325
+- source-1326
+- source-1327
+- source-1328
+- source-1329
+- source-1330
+- source-1331
+- source-1332
+- source-1333
+- source-1334
+- source-1335
+- source-1336
+- source-1337
+- source-1338
+- source-1339
+- source-1340
+- source-1341
+- source-1342
+- source-1343
+- source-1344
+- source-1345
+- source-1346
+- source-1347
+- source-1348
+- source-1349
+- source-1350
+- source-1351
+- source-1352
+- source-1353
+- source-1354
+- source-1355
+- source-1356
+- source-1357
+- source-1358
+- source-1359
+- source-1360
+- source-1361
+- source-1362
+- source-1363
+- source-1364
+- source-1365
+- source-1366
+- source-1367
+- source-1368
+- source-1369
+- source-1370
+- source-1371
+- source-1372
+- source-1373
+- source-1374
+- source-1375
+- source-1376
+- source-1377
+- source-1378
+- source-1379
+- source-1380
+- source-1381
+- source-1382
+- source-1383
+- source-1384
+- source-1385
+- source-1386
+- source-1387
+- source-1388
+- source-1389
+- source-1390
+- source-1391
+- source-1392
+- source-1393
+- source-1394
+- source-1395
+- source-1396
+- source-1397
+- source-1398
+- source-1399
+- source-1400
+- source-1401
+- source-1402
+- source-1403
+- source-1404
+- source-1405
+- source-1406
+- source-1407
+- source-1408
+- source-1409
+- source-1410
+- source-1411
+- source-1412
+- source-1413
+- source-1414
+- source-1415
+- source-1416
+- source-1417
+- source-1418
+- source-1419
+- source-1420
+- source-1421
+- source-1422
+- source-1423
+- source-1424
+- source-1425
+- source-1426
+- source-1427
+- source-1428
+- source-1429
+- source-1430
+- source-1431
+- source-1432
+- source-1433
+- source-1434
+- source-1435
+- source-1436
+- source-1437
+- source-1438
+- source-1439
+- source-1440
+- source-1441
+- source-1442
+- source-1443
+- source-1444
+- source-1445
+- source-1446
+- source-1447
+- source-1448
+- source-1449
+- source-1450
+- source-1451
+- source-1452
+- source-1453
+- source-1454
+- source-1455
+- source-1456
+- source-1457
+- source-1458
+- source-1459
+- source-1460
+- source-1461
+- source-1462
+- source-1463
+- source-1464
+- source-1465
+- source-1466
+- source-1467
+- source-1468
+- source-1469
+- source-1470
+- source-1471
+- source-1472
+- source-1473
+- source-1474
+- source-1475
+- source-1476
+- source-1477
+- source-1478
+- source-1479
+- source-1480
+- source-1481
+- source-1482
+- source-1483
+- source-1484
+- source-1485
+- source-1486
+- source-1487
+- source-1488
+- source-1489
+- source-1490
+- source-1491
+- source-1492
+- source-1493
+- source-1494
+- source-1495
+- source-1496
+- source-1497
+- source-1498
+- source-1499
+- source-1500
+- source-1501
+- source-1502
+- source-1503
+- source-1504
+- source-1505
+- source-1506
+- source-1507
+- source-1508
+- source-1509
+- source-1510
+- source-1511
+- source-1512
+- source-1513
+- source-1514
+- source-1515
+- source-1516
+- source-1517
+- source-1518
+- source-1519
+- source-1520
+- source-1521
+- source-1522
+- source-1523
+- source-1524
+- source-1525
+- source-1526
+- source-1527
+- source-1528
+- source-1529
+- source-1530
+- source-1531
+- source-1532
+- source-1533
+- source-1534
+- source-1535
+- source-1536
+- source-1537
+- source-1538
+- source-1539
+- source-1540
+- source-1541
+- source-1542
+- source-1543
+- source-1544
+- source-1545
+- source-1546
+- source-1547
+- source-1548
+- source-1549
+- source-1550
+- source-1551
+- source-1552
+- source-1553
+- source-1554
+- source-1555
+- source-1556
+- source-1557
+- source-1558
+- source-1559
+- source-1560
+- source-1561
+- source-1562
+- source-1563
+- source-1564
+- source-1565
+- source-1566
+- source-1567
+- source-1568
+- source-1569
+- source-1570
+- source-1571
+- source-1572
+- source-1573
+- source-1574
+- source-1575
+- source-1576
+- source-1577
+- source-1578
+- source-1579
+- source-1580
+- source-1581
+- source-1582
+- source-1583
+- source-1584
+- source-1585
+- source-1586
+- source-1587
+- source-1588
+- source-1589
+- source-1590
+- source-1591
+- source-1592
+- source-1593
+- source-1594
+- source-1595
+- source-1596
+- source-1597
+- source-1598
+- source-1599
+- source-1600
+- source-1601
+- source-1602
+- source-1603
+- source-1604
+- source-1605
+- source-1606
+- source-1607
+- source-1608
+- source-1609
+- source-1610
+- source-1611
+- source-1612
+- source-1613
+- source-1614
+- source-1615
+- source-1616
+- source-1617
+- source-1618
+- source-1619
+- source-1620
+- source-1621
+- source-1622
+- source-1623
+- source-1624
+- source-1625
+- source-1626
+- source-1627
+- source-1628
+- source-1629
+- source-1630
+- source-1631
+- source-1632
+- source-1633
+- source-1634
+- source-1635
+- source-1636
+- source-1637
+- source-1638
+- source-1639
+- source-1640
+- source-1641
+- source-1642
+- source-1643
+- source-1644
+- source-1645
+- source-1646
+- source-1647
+- source-1648
+- source-1649
+- source-1650
+- source-1651
+- source-1652
+- source-1653
+- source-1654
+- source-1655
+- source-1656
+- source-1657
+- source-1658
+- source-1659
+- source-1660
+- source-1661
+- source-1662
+- source-1663
+- source-1664
+- source-1665
+- source-1666
+- source-1667
+- source-1668
+- source-1669
+- source-1670
+- source-1671
+- source-1672
+- source-1673
+- source-1674
+- source-1675
+- source-1676
+- source-1677
+- source-1678
+- source-1679
+- source-1680
+- source-1681
+- source-1682
+- source-1683
+- source-1684
+- source-1685
+- source-1686
+- source-1687
+- source-1688
+- source-1689
+- source-1690
+- source-1691
+- source-1692
+- source-1693
+- source-1694
+- source-1695
+- source-1696
+- source-1697
+- source-1698
+- source-1699
+- source-1700
+- source-1701
+- source-1702
+- source-1703
+- source-1704
+- source-1705
+- source-1706
+- source-1707
+- source-1708
+- source-1709
+- source-1710
+- source-1711
+- source-1712
+- source-1713
+- source-1714
+- source-1715
+- source-1716
+- source-1717
+- source-1718
+- source-1719
+- source-1720
+- source-1721
+- source-1722
+- source-1723
+- source-1724
+- source-1725
+- source-1726
+- source-1727
+- source-1730
+- source-1731
+- source-1732
+- source-1733
+- source-1734
+- source-1735
+- source-1736
+- source-1737
+- source-1738
+- source-1739
+- source-1740
+- source-1741
+- source-1742
+- source-1743
+- source-1744
+- source-1745
+- source-1746
+- source-1747
+- source-1748
+- source-1749
+- source-1750
+- source-1751
+- source-1752
+- source-1753
+- source-1754
+- source-1755
+- source-1756
+- source-1757
+- source-1758
+- source-1759
+- source-1760
+- source-1761
+- source-1762
+- source-1763
+- source-1764
+- source-1766
+- source-1767
+- source-1768
+- source-1769
+- source-1770
+- source-1771
+- source-1772
+- source-1773
+- source-1774
+- source-1775
+- source-1776
+- source-1777
+- source-1778
+- source-1779
+- source-1780
+- source-1781
+- source-1782
+- source-1783
+- source-1784
+- source-1785
+- source-1786
+- source-1787
+- source-1788
+- source-1789
+- source-1791
+- source-1792
+- source-1793
+- source-1794
+- source-1795
+- source-1796
+- source-1797
+- source-1798
+- source-1799
+- source-1800
+- source-1801
+- source-1802
+- source-1803
+- source-1804
+- source-1805
+- source-1806
+- source-1807
+- source-1808
+- source-1809
+- source-1810
+- source-1812
+- source-1813
+- source-1814
+- source-1815
+- source-1817
+- source-1818
+- source-1819
+- source-1820
+- source-1821
+- source-1822
+- source-1823
+- source-1824
+- source-1826
+- source-1827
+- source-1828
+- source-1829
+- source-1830
+- source-1831
+- source-1832
+- source-1833
+- source-1834
+- source-1835
+- source-1836
+- source-1837
+- source-1838
+- source-1840
+- source-1841
+- source-1842
+- source-1843
+- source-1845
+- source-1846
+- source-1847
+- source-1848
+- source-1849
+- source-1850
+- source-1851
+- source-1852
+- source-1853
+- source-1854
+- source-1855
+- source-1856
+- source-1857
+- source-1858
+- source-1859
+- source-1860
+- source-1861
+- source-1862
+- source-1863
+- source-1864
+- source-1865
+- source-1866
+- source-1867
+- source-1868
+- source-1869
+- source-1870
+- source-1871
+- source-1872
+- source-1873
+- source-1874
+- source-1875
+- source-1876
+- source-1877
+- source-1878
+- source-1879
+- source-1880
+- source-1881
+- source-1882
+- source-1883
+- source-1884
+- source-1885
+- source-1886
+- source-1887
+- source-1888
+- source-1889
+- source-1890
+- source-1891
+- source-1892
+- source-1893
+- source-1894
+- source-1895
+- source-1896
+- source-1897
+- source-1898
+- source-1899
+- source-1900
+- source-1901
+- source-1903
+- source-1904
+- source-1905
+- source-1906
+- source-1907
+- source-1908
+- source-1909
+- source-1910
+- source-1911
+- source-1912
+- source-1913
+- source-1914
+- source-1915
+- source-1916
+- source-1917
+- source-1918
+- source-1919
+- source-1920
+- source-1921
+- source-1922
+- source-1923
+- source-1924
+- source-1925
+- source-1926
+- source-1927
+- source-1928
+- source-1929
+- source-1930
+- source-1931
+- source-1932
+- source-1933
+- source-1934
+- source-1935
+- source-1936
+- source-1937
+- source-1939
+- source-1940
+- source-1941
+- source-1943
+- source-1945
+- source-1946
+- source-1947
+- source-1948
+- source-1949
+- source-1950
+- source-1951
+- source-1952
+- source-1954
+- source-1955
+- source-1956
+- source-1957
+- source-1958
+- source-1959
+- source-1960
+- source-1961
+- source-1962
+- source-1964
+- source-1965
+- source-1966
+- source-1967
+- source-1968
+- source-1969
+- source-1970
+- source-1971
+- source-1972
+- source-1973
+- source-1974
+- source-1975
+- source-1976
+- source-1977
+- source-1978
+- source-1979
+- source-1980
+- source-1981
+- source-1983
+- source-1984
+- source-1985
+- source-1986
+- source-1987
+- source-1988
+- source-1989
+- source-1990
+- source-1991
+- source-1992
+- source-1993
+- source-1994
+- source-1995
+- source-1996
+- source-1997
+- source-1998
+- source-1999
+- source-2001
+- source-2002
+- source-2003
+- source-2004
+- source-2005
+- source-2006
+- source-2007
+- source-2008
+- source-2009
+- source-2010
+- source-2011
+- source-2012
+- source-2013
+- source-2014
+- source-2015
+- source-2016
+- source-2017
+- source-2018
+- source-2019
+- source-2021
+- source-2022
+- source-2023
+- source-2025
+- source-2026
+- source-2027
+- source-2028
+- source-2029
+- source-2030
+- source-2031
+- source-2032
+- source-2033
+- source-2034
+- source-2035
+- source-2036
+- source-2037
+- source-2038
+- source-2039
+- source-2040
+- source-2041
+- source-2042
+- source-2043
+- source-2044
+- source-2045
+- source-2047
+- source-2048
+- source-2049
+- source-2050
+- source-2051
+- source-2052
+- source-2053
+- source-2054
+- source-2055
+- source-2056
+- source-2057
+- source-2058
+- source-2059
+- source-2060
+- source-2061
+- source-2062
+- source-2063
+- source-2064
+- source-2065
+- source-2066
+- source-2067
+- source-2068
+- source-2069
+- source-2070
+- source-2071
+- source-2072
+- source-2073
+- source-2074
+- source-2075
+- source-2076
+- source-2077
+- source-2078
+- source-2079
+- source-2080
+- source-2081
+- source-2082
+- source-2084
+- source-2085
+- source-2086
+- source-2087
+- source-2088
+- source-2089
+- source-2090
+- source-2091
+- source-2092
+- source-2093
+- source-2094
+- source-2095
+- source-2096
+- source-2097
+- source-2100
+- source-2101
+- source-2102
+- source-2103
+- source-2105
+- source-2106
+- source-2107
+- source-2108
+- source-2109
+- source-2110
+- source-2111
+- source-2112
+- source-2113
+- source-2114
+- source-2115
+- source-2117
+- source-2118
+- source-2119
+- source-2120
+- source-2121
+- source-2122
+- source-2123
+- source-2124
+- source-2125
+- source-2126
+- source-2127
+- source-2128
+- source-2129
+- source-2130
+- source-2131
+- source-2132
+- source-2133
+- source-2134
+- source-2135
+- source-2136
+- source-2137
+- source-2138
+- source-2139
+- source-2140
+- source-2141
+- source-2143
+- source-2144
+- source-2145
+- source-2146
+- source-2147
+- source-2148
+- source-2149
+- source-2150
+- source-2151
+- source-2152
+- source-2153
+- source-2154
+- source-2155
+- source-2156
+- source-2157
+- source-2158
+- source-2159
+- source-2160
+- source-2162
+- source-2163
+- source-2164
+- source-2165
+- source-2166
+- source-2167
+- source-2168
+- source-2169
+- source-2170
+- source-2172
+- source-2173
+- source-2176
+- source-2181
+- source-2183
+- source-2187
+- source-2188
+- source-2193
+- source-2196
+- source-2197
+- source-2198
+- source-2200
+- source-2203
+- source-2205
+- source-2207
+- source-2212
+- source-2214
+- source-2215
+- source-2216
+- source-2218
+- source-2219
+- source-2220
+- source-2221
+- source-2223
+- source-2225
+- source-2226
+- source-2227
+- source-2230
+- source-2231
+- source-2232
+- source-2233
+- source-2234
+- source-2235
+- source-2236
+- source-2237
+- source-2241
+- source-2242
+- source-2243
+- source-2244
+- source-2245
+- source-2247
+- source-2249
+- source-2250
+- source-2251
+- source-2252
+- source-2253
+- source-2254
+- source-2257
+- source-2258
+- source-2259
+- source-2261
+- source-2262
+- source-2263
+- source-2265
+- source-2266
+- source-2267
+- source-2268
+- source-2269
+- source-2270
+- source-2273
+- source-2274
+- source-2276
+- source-2277
+- source-2278
+- source-2279
+- source-2280
+- source-2281
+- source-2282
+- source-2283
+- source-2284
+- source-2285
+- source-2286
+- source-2287
+- source-2289
+- source-2290
+- source-2291
+- source-2292
+- source-2293
+- source-2294
+- source-2295
+- source-2296
+- source-2297
+- source-2299
+- source-2301
+- source-2303
+- source-2304
+- source-2305
+- source-2308
+- source-2309
+- source-2312
+- source-2313
+- source-2314
+- source-2315
+- source-2316
+- source-2318
+- source-2320
+- source-2321
+- source-2324
+- source-2328
+- source-2329
+- source-2333
+- source-2337
+- source-2339
+- source-2340
+- source-2341
+- source-2343
+- source-2345
+- source-2347
+- source-2348
+- source-2349
+- source-2350
+- source-2351
+- source-2352
+- source-2353
+- source-2354
+- source-2355
+- source-2357
+- source-2358
+- source-2360
+- source-2364
+- source-2367
+- source-2368
+- source-2369
+- source-2370
+- source-2372
+- source-2373
+- source-2375
+- source-2376
+- source-2378
+- source-2379
+- source-2380
+- source-2381
+- source-2382
+- source-2383
+- source-2385
+- source-2387
+- source-2388
+- source-2389
+- source-2390
+- source-2391
+- source-2392
+- source-2395
+- source-2397
+- source-2398
+- source-2400
+- source-2403
+- source-2404
+- source-2406
+- source-2407
+- source-2408
+- source-2411
+- source-2412
+- source-2413
+- source-2414
+- source-2415
+- source-2416
+- source-2417
+- source-2418
+- source-2423
+- source-2424
+- source-2425
+- source-2426
+- source-2427
+- source-2428
+- source-2429
+- source-2431
+- source-2432
+- source-2433
+- source-2434
+- source-2435
+- source-2436
+- source-2437
+- source-2438
+- source-2439
+- source-2440
+- source-2441
+- source-2442
+- source-2443
+- source-2445
+- source-2446
+- source-2447
+- source-2448
+- source-2449
+- source-2450
+- source-2451
+- source-2455
+- source-2456
+- source-2457
+- source-2458
+- source-2459
+- source-2460
+- source-2461
+- source-2463
+- source-2464
+- source-2465
+- source-2468
+- source-2471
+- source-2473
+- source-2474
+- source-2477
+- source-2480
+- source-2481
+- source-2484
+- source-2485
+- source-2486
+- source-2487
+- source-2488
+- source-2489
+- source-2490
+- source-2491
+- source-2492
+- source-2493
+- source-2494
+- source-2495
+- source-2497
+- source-2498
+- source-2499
+- source-2500
+- source-2502
+- source-2503
+- source-2504
+- source-2506
+- source-2507
+- source-2508
+- source-2510
+- source-2511
+- source-2512
+- source-2513
+- source-2514
+- source-2516
+- source-2517
+- source-2518
+- source-2519
+- source-2520
+- source-2523
+- source-2524
+- source-2525
+- source-2526
+- source-2527
+- source-2533
+- source-2534
+- source-2535
+- source-2536
+- source-2537
+- source-2539
+- source-2540
+- source-2542
+- source-2543
+- source-2546
+- source-2548
+- source-2549
+- source-2550
+- source-2552
+- source-2553
+- source-2554
+- source-2556
+- source-2560
+- source-2561
+- source-2562
+- source-2563
+- source-2564
+- source-2565
+- source-2566
+- source-2567
+- source-2568
+- source-2569
+- source-2570
+- source-2571
+- source-2572
+- source-2573
+- source-2574
+- source-2575
+- source-2576
+- source-2577
+- source-2578
+- source-2579
+- source-2580
+- source-2581
+- source-2582
+- source-2583
+- source-2585
+- source-2588
+- source-2589
+- source-2590
+- source-2592
+- source-2593
+- source-2594
+- source-2596
+- source-2598
+- source-2599
+- source-2600
+- source-2602
+- source-2603
+- source-2610
+- source-2611
+- source-2612
+- source-2614
+- source-2620
+- source-2621
+- source-2622
+- source-2623
+- source-2624
+- source-2625
+- source-2626
+- source-2627
+- source-2628
+- source-2629
+- source-2631
+- source-2632
+- source-2633
+- source-2636
+- source-2638
+- source-2640
+- source-2642
+- source-2645
+- source-2646
+- source-2647
+- source-2648
+- source-2649
+- source-2650
+- source-2653
+- source-2654
+- source-2656
+- source-2657
+- source-2658
+- source-2659
+- source-2660
+- source-2662
+- source-2664
+- source-2666
+- source-2668
+- source-2669
+- source-2671
+- source-2673
+- source-2674
+- source-2675
+- source-2676
+- source-2677
+- source-2678
+- source-2679
+- source-2680
+- source-2681
+- source-2682
+- source-2683
+- source-2684
+- source-2685
+- source-2686
+- source-2687
+- source-2688
+- source-2689
+- source-2691
+- source-2692
+- source-2693
+- source-2695
+- source-2697
+- source-2698
+- source-2700
+- source-2701
+- source-2702
+- source-2703
+- source-2704
+- source-2706
+- source-2708
+- source-2709
+- source-2711
+- source-2713
+- source-2714
+- source-2716
+- source-2718
+- source-2721
+- source-2722
+- source-2723
+- source-2724
+- source-2725
+- source-2727
+- source-2728
+- source-2729
+- source-2730
+- source-2731
+- source-2732
+- source-2733
+- source-2734
+- source-2735
+- source-2736
+- source-2737
+- source-2739
+- source-2740
+- source-2741
+- source-2743
+- source-2745
+- source-2747
+- source-2748
+- source-2749
+- source-2750
+- source-2751
+- source-2752
+- source-2753
+- source-2754
+- source-2755
+- source-2756
+- source-2758
+- source-2760
+- source-2762
+- source-2767
+- source-2768
+- source-2769
+- source-2770
+- source-2771
+- source-2776
+- source-2780
+- source-2785
+- source-2787
+- source-2788
+- source-2790
+- source-2791
+- source-2792
+- source-2793
+- source-2794
+- source-2797
+- source-2798
+- source-2799
+- source-2800
 status: review
 applies_to_categories:
+- strategic warfare
+- historical military fiction
+- alliance dynamics
+- underdog tactical fantasy
+- court intrigue
+- deceptive competence
+- cultivation_fantasy
+- urban_supernatural
+- power_fantasy
+- romantic_comedy
+- fish_out_of_water
+- cultivation fantasy
+- urban fantasy
+- supernatural thriller
+- corpse cultivation
+- Chinese mythology
+- anti-hero protagonist
+- cultivation_xianxia
+- game_system_integration
+- progression_fantasy
+- transmigration
+- sect_building
+- historical-fantasy
+- power-fantasy
+- romance-harem
+- political-intrigue
+- competence-demonstration
+- knowledge-asymmetry
+- court-intrigue
+- urban_fantasy
+- supernatural_threat
+- ai_companion
+- competence_pride_arc
+- myth_recontextualization
+- supernatural_horror
+- investigation_thriller
+- mystery
+- psychological_horror
+- cultivation
+- isekai
+- business_empire
+- political_intrigue
+- dual_life
+- historical_foreknowledge
+- systematic_power_fantasy
 - distillation-generic
+- fallback
+- unparsed
+- llm_fallback
+- stub
+- generic
+- llm_failure
+- llm-generated
+- zero-confidence
+- distillation
+- generic_fallback
+- abstraction_layer
+- unknown
+- generic-distillation
+- distillation_fallback
+- llm_unavailable
+- zero_content
+- llm-fallback
+- stub-content
+- zero-extraction
+- distillation-failure
+- distillation_package
+- distillation-fallback
+- no-extractable-content
+- complete_failure
+- llm_unavailable_all_source_chapters
+- upstream-llm-unavailable
+- extraction-failure-state
+- blocked-distillation
+- fallback-chapter
+- unknown_source
+- fallback_required
+- distillation-package
+- llm-dependent-extraction
+- fallback_grammar
+- empty_stub_chapters
+- no_content_available
+- confidence_zero
+- distillation_failure
+- complete_llm_fallback
+- zero_confidence
+- generic_distillation
+- fallback_distillation
+- llm_stub_content
+- llm_fallback_all_chapters
+- data_pipeline_failure
+- incomplete_aggregation
+- indeterminate
+- fallback_stub
+- serialized_long_form
+- multi-volume_arc
+- extensive_length
+- zero_content_extraction
+- complete_source_inaccessibility
+- LLM_Fallback_AllChapters
+- DistillationGeneric
+- undetermined
+- placeholder
+- llm_fallback_stub
+- content_unavailable
+- zero_confidence_batch
+- llm-unavailable
+- grammar_patch
+- distillation_generic_fallback
+- unknown_engine
+- fallback_stub_batch
+- llm_unavailable_blocked
+- llm-unavailable-systematic
+- distillation_generic
+- audit-entry
+- fallback-state
+- structured-fallback
+- failure-scenario
+- empty_source_batch
+- universal_llm_fallback
+- no_chapter_content_extracted
+- zero_confidence_all_chapters
+- no_distillable_text
+- episodic narrative collection
+- moral cautionary tale
+- seduction comedy
+- investigation mystery
+- underworld bureaucracy fantasy
+- trickster heist
+- frame narrative
+- dramatic appendix
+- classical Chinese literature
+- multi-story cycle
+- untagged-extraction-failure
+- classical_chinese_historical_fiction
+- family_drama
+- deception_conspiracy
+- adventure
+- found_family
+- moral_vindication
+- historical nonfiction
+- documentary novel
+- testimonial narrative
+- evidentiary narrative
+- historical_military_fiction
+- intelligence_espionage_fiction
+- strategic_history_hybrid
+- coalition_warfare_story
+- distillation_source
+- non-fiction
+- historical_analysis
 required_contracts:
+- Protagonist must maintain consistent strategic transparency—reader always understands
+  the layered plan before final revelation
+- Staged defeat mechanism requires early proof-of-concept reversal to establish trust
+- Advisor council voices must remain distinct and philosophically consistent throughout
+- Alliance partner activation must feel organically timed, not artificially convenient
+- Historical parallels must function as universal strategic logic, not domain-specific
+  knowledge tests
+- primary_attraction_contract
+- secondary_attraction_contract
+- emotional_core_contract
+- satisfaction_contract
+- competence_engine_contract
+- '{''contract'': ''Power demonstration precedes explanation'', ''enforcement'': ''Combat
+  and ritual sequences must showcase capabilities through action before internal monologue
+  details mechanics''}'
+- '{''contract'': ''Moral ambiguity as premise not arc'', ''enforcement'': "Protagonist''s
+  willingness to use corpse cultivation and violent methods must be established in
+  opening act; no moral conflict arc required"}'
+- '{''contract'': ''Institutional integration requires bureaucratic cost'', ''enforcement'':
+  ''Every political advantage gained through government department must incur operational
+  obligations and factional constraints''}'
+- '{''contract'': ''Romantic consolidation over fragmentation'', ''enforcement'':
+  ''Primary romantic arc must be established by 30% story progress; competing interests
+  subordinated to main trajectory''}'
+- '{''contract'': ''Expositional delivery through ritual performance'', ''enforcement'':
+  ''World rules emerge through character preparation and internal monologue during
+  technique execution; author voice absent from explanation''}'
+- '{''contract'': ''Cumulative damage mechanics'', ''enforcement'': ''Power progression
+  must demonstrate costs through exhaustion, cumulative damage reduction, or capability
+  limits; victories pyrrhic rather than clean''}'
+- system_interface_must_serve_diegetic_function_rather_than_exposition_shortcut
+- numerical_feedback_must_contrast_with_physical_cost_not_replace_it
+- quest_rewards_must_require_narrative_cost_beyond_mechanical_completion
+- tier_breakthroughs_must_invoke_internal_struggle_not_automatic_success
+- observer_witnessing_must_create_ambient_pressure_not_merely_validation
+- countdown_deadlines_must_have_flexible_interpretation_space
+- comedic_relief_must_anchor_to_character_not_reduce_tension
+- antagonist_competence_must_scale_with_protagonist_growth
+- protagonist maintains knowledge asymmetry advantage through modern expertise (medicine,
+  strategy, poetry) against premodern opponents
+- romantic attachments develop through graduated escalation with power-differential
+  intimacy, avoiding non-consensual thresholds
+- political positioning progresses from peripheral observer through integrated advisor
+  to indispensable power broker
+- reader vicarious power fantasy achieved through competence validation, foreknowledge
+  superiority, and strategic manipulation success
+- dramatic irony sustained through protagonist concealment necessity versus exploitation
+  opportunity tension
+- exposure_cost_model
+- state_tracking
+- no_source_specific_names
+- reader_promise
+- core_mechanism
+- tone_contract
+- mystery_contract
+- functional_llm_extraction_pipeline
+- non_empty_content_validation
+- confidence_threshold_met
 - valid_source_content
 - minimum_confidence_threshold
 - distillable_chapters_available
+- distillation_placeholder_contract
+- no_fallback_stub
+- source_content_extracted
+- structured_distillation_contract
+- fallback_reliability_contract
+- fallback_mechanism
+- distillable_mechanism_reliability
+- distillable_content_required
+- no_batch_fallback
+- source_data_available
+- upstream_llm_unavailable
+- source_content_quality_zero
+- confidence_ceiling_zero
+- no_content_contract
+- zero_confidence_contract
+- aggregation_halted_contract
+- fallback_stub_contract
+- LLM_fallback_contract
+- distillation_extraction_contract
+- llm_extraction_must_succeed
+- no_fallback_stubs_allowed
+- confidence_threshold_minimum_0.7
+- extraction_coverage_minimum_80_percent
+- confidence_minimum
+- mechanisms_extraction
+- arc_function_present
+- state_progression_defined
+- turning_points_defined
+- has_hook
+- has_state_change
+- has_reader_reward
+- structured_distillation
+- fallback_progress_tracking
+- mechanism_reliability_verification
+- zero_extractable_content_contract
+- failure_metadata_contract
+- zero_content_extraction
+- complete_llm_fallback_required
+- no_story_content_guaranteed
+- volume_aggregation_blocked
+- mechanism_abstraction_contract
+- fallback_contracts
+- distillable_reliability_contract
+- extraction_mechanism_functional
+- valid_story_content_extracted
+- confidence_score_above_threshold
+- fallback_mechanism_abstraction
+- zero_confidence_propagation
+- compromised_source_flagging
+- fallback_contract
+- data_integrity_contract
+- llm_distillation_available
+- stub_metadata_present
+- chapter_range_specified
+- reader_promise_acknowledged
+- unavailable_content_acknowledgment
+- minimal_viable_structure_extraction
+- failure_mode_transparency
+- llm_extraction_functional
+- content_authenticity_verified
+- narrative_mechanics_extracted
+- no_content_assertion
+- fallback_mechanism_compliance
+- content_availability_contract
+- extraction_confidence_threshold
+- no_content_inference_allowed
+- prohibit_silent_data_treatment_as_valid
+- require_manual_population_before_redistillation
+- block_downstream_generative_use_when_confidence_zero
+- fallback_mechanism_enforced
+- no_claimed_extraction
+- must_use_fallback_stub_narrative
+- must_not_include_specific_story_content
+- must_generate_generic_arc_structure
+- must_increment_fallback_progress_per_chapter
+- fallback mechanism abstraction contract
+- distillable mechanism reliability contract
+- grammar_patch_enforces_minimum_confidence_threshold
+- no_narrative_mechanics_extracted_below_0.1_confidence
+- fallback_state_variables_must_be_declared
+- source_content_availability
+- llm_pipeline_operational
+- chapter_card_generation_success
+- distillation_contract
+- fallback_mechanism_contract
+- fallback_content_generation_contract
+- fallback_progress_tracking_contract
+- distillable_mechanism_reliability_contract
+- zero_confidence_skip_contract
+- DistillationFallbackContract
+- no_content_extraction_attempted
+- zero_confidence_enforced
+- no_chapter_vectors_generated
+- no_arc_functions_derived
+- no_story_mechanics_extracted
+- failure_mode_documented
+- aggregation_blocked
+- no_reader_rewards_from_empty_chapters
+- no_hooks_extracted_from_stub_responses
+- narrative_structure_extraction
+- mechanic_isolation_capability
+- reader_reward_identification
+- open_hook_extraction
+- DistillationAvailabilityContract
+- FallbackMechanismContract
+- chapter_content_contract
+- distillation_confidence_contract
+- volume_card_integrity_contract
+- llm_fallback_contract
+- must_include_fallback_state
+- must_support_llm_unavailable_fallback
+- no_extractable_story_mechanics
+- requires_reprocessing
+- llm_backend_access
+- chapter_content_extraction_capability
+- narrative_event_extraction
+- craft_observation_extraction
+- fallback_extraction_contract
+- source_content_integrity_contract
+- narrative_content_availability_contract
+- llm_pipeline_functionality_contract
+- craft_extraction_possibility_contract
+- llm_pipeline_availability_contract
+- zero_confidence_gate_contract
+- batch_completeness_contract
+- volume_content_validation_contract
+- fallback_activation_contract
+- empty_state_contract
+- zero_extraction_contract
+- no_content_promise_enforcement
+- fallback_markers_required
+- empty_state_disclosure
+- legitimate_source_text_required
+- non_empty_mechanisms_fields
+- chapter_content_non_stub
+- volume_annotation_consistency
+- llm_fallback_enabled
+- chapter_card_extraction_required
+- llm_processing_availability
+- no_narrative_inference_permitted
+- empty_arrays_returned_not_fabricated
+- abstain_from_story_mechanics_generation
+- upstream_processing_required_before_retry
+- zero_confidence_placeholder
+- no_content_marker
+- content_presence_contract
+- confidence_threshold_contract
+- pipeline_functioning
+- source_content_available
+- chapter_card_extraction_success
+- llm_extraction_success
+- chapter_level_content_present
+- volume_aggregation_possible
+- confidence_above_threshold
+- chapter_content_extraction
+- arc_function_identification
+- state_progression_mapping
+- craft_analysis_generation
+- mechanism_extraction
+- genre_tag_assignment
+- reader_promise_definition
+- core_engine_identification
+- turning_point_detection
+- setup_payoff_rhythm_analysis
+- reusable_mechanism_cataloguing
+- state_variable_definition
+- reader_reward_definition
+- extraction_fallback_contract
+- no_structural_data_contract
+- '{''contract_id'': ''distillation_content_integrity'', ''fulfillment_status'': ''failed'',
+  ''note'': ''Zero chapters with content; complete LLM fallback failure across 913
+  chapters''}'
+- '{''contract_id'': ''story_mechanics_extraction'', ''fulfillment_status'': ''failed'',
+  ''note'': ''No engine, mechanisms, or state variables extractable''}'
+- '{''contract_id'': ''reader_reward_identification'', ''fulfillment_status'': ''failed'',
+  ''note'': ''No reward catalog possible from null content data''}'
+- '{''contract_id'': ''grammar_classification'', ''fulfillment_status'': ''partial'',
+  ''note'': ''Structure preserved (37 volumes, 913 chapters) but genre and mechanism
+  unknown''}'
+- '{''contract'': ''llm_extraction_viable'', ''current_state'': ''violated'', ''remediation'':
+  ''Restore functional LLM endpoint before chapter card extraction can proceed''}'
+- '{''contract'': ''chapter_content_nonempty'', ''current_state'': ''violated'', ''remediation'':
+  ''All 213 chapters returned zero content; regenerate through extraction pipeline''}'
+- '{''contract'': ''volume_aggregation_possible'', ''current_state'': ''blocked'',
+  ''remediation'': ''Volume cards 1-9 empty; downstream book_design_card cannot inherit
+  content''}'
+- fallback_content_availability
+- llm_distillation_compatibility
+- no_source_content_assumption
+- zero_confidence_override
+- fallback_content_generation
+- metadata_preservation
+- no_false_confidence_assignment
+- mechanism_extraction_contract
+- reader_reward_instantiation
+- hook_or_aftereffect_resolution
+- chapter_narrative_presence
+- craft_observation_population
+- no_chapters_with_empty_content
+- confidence_above_zero_threshold
+- minimum_reusable_mechanisms_per_chapter
+- llm_fallback_must_retry_with_alternative_pipeline
+- extraction_contract
+- re_extraction_contract
+- valid_chapter_level_distillation
+- functioning_llm_pipeline
+- zero_confidence_remediation
+- volume_boundary_verification
+- metadata_consistency_audit
+- must_have_extractable_content
+- confidence_threshold_minimum_0.3
+- contract:has_non_stub_content
+- contract:minimum_confidence
+- contract:no_all_stub_chapters
+- llm_analysis_pipeline_access
+- chapter_card_generation
+- volume_card_aggregation
+- book_design_extraction
+- zero_confidence
+- all_llm_fallback
+- no_extractable_content
+- no_narrative_content_required
+- distillation_must_have_extracted_chapters
+- distillation_requires_confidence_above_threshold
+- fallback_content_validity
+- zero_extraction_acknowledged
+- source_text_provision
+- chapter_card_validity
+- distillation_pipeline_integrity
+- distillable_mechanism_abstraction
+- FallbackMechanismAbstractionContract
+- no_content_extraction_required
+- graceful_fallback_enforced
+- zero_confidence_handling
+- fallback_progress_state
+- distillable_mechanism_reliability_reward
+- source_text_reprocessing_required
+- manual_chapter_card_creation_required
+- fallback_mechanism_abstraction_available
+- distillable_mechanism_reliability_delivered
+- no_fabricated_content
+- llm_unavailable_acknowledgment
+- fallback_content_placeholder
+- zero_extraction_compliance
+- no_hallucination_contract
+- zero_confidence_detection_contract
+- llm_fallback_acknowledgment_contract
+- fallback_progress_state_variable
+- fallback_abstraction_contract
+- llm_unavailable_fallback_contract
+- contract:zero_content_aggregation_blocked
+- contract:no_chapter_cards_generated
+- contract:downstream_failure_prevention_required
+- non_stub_content
+- llm_fallback_allowed
+- no_confidence_requirement
+- LLMFallbackContract
+- '{''contract'': ''llm_enabled_processing'', ''enforced'': True, ''note'': ''All
+  80 chapters returned fallback stubs - re-distillation requires LLM-enabled pipeline''}'
+- '{''contract'': ''no_zero_confidence_acceptance'', ''enforced'': True, ''note'':
+  ''Zero confidence score across entire batch is unacceptable for downstream consumption''}'
+- '{''contract'': ''craft_observations_required'', ''enforced'': True, ''note'': ''At
+  least 3 craft observations per chapter must be captured before aggregation''}'
+- must_use_fallback_state
+- no_craft_data_extraction
+- fallback_content_guaranteed
+- mechanism_abstraction_valid
+- reader_reward_accessible_without_raw_content
+- 'reprocess_trigger: chapter_extraction_layer'
+- 'zero_content_lock: all craft arrays remain empty until reprocess'
+- 'confidence_lock: aggregate confidence remains 0.0'
+- 'no_synthetic_content: no derived mechanics permitted from empty source'
+- 'full_scope_failure: 61/61 chapters failed, 3/3 volumes blocked'
+- distillation_fallback_contract
+- zero_confidence_fallback_contract
+- System must not aggregate content with confidence 0.0
+- System must detect and reject LLM-fallback stub patterns before pipeline entry
+- System must require regeneration_trigger when all volumes return identical stub
+  patterns
+- No story design extraction permitted from empty state_variable arrays
+- No reader_rewards inference from zero-content sources
+- Systematic unavailability across entire corpus constitutes terminal failure requiring
+  source regeneration
+- confidence_ceiling_enforcement
+- aggregation_blocking_protocol
+- llm_fallback_active
+- zero_confidence_extraction
+- segment_content_missing
+- must_provide_fallback_extraction_mechanism
+- llm_availability
+- extractable_narrative
+- identifiable_arcs
+- discernible_craft_observations
+- recordable_reader_rewards
+- observable_open_hooks
+- fallback_abi
+- distillation_interface
+- reliable_output_contract
+- arc_function_contract
+- state_variables_contract
+- reader_rewards_contract
+- reusable_mechanisms_contract
+- chapter_cards_contract
+- extraction_quality_not_unusable
+- llm_pipeline_restored
+- valid_chapter_content_available
+- zero_confidence_stub_placeholder
+- no_extractable_content_contract
+- zero_confidence_batch_contract
+- fallback_stub_only_contract
+- no_zero_confidence_aggregation
+- llm_fallback_stub_is_not_content
+- reprocess_required_before_design_generation
+- llm_processing_functionality
+- extractable_chapter_content_existence
+- narrative_mechanics_present
+- story_design_elements_identifiable
+- pipeline_completion_capability
+- fallback_narrative_extraction
+- llm_unavailable_provenance
+- empty_source_content_validation
+- batch_fallback_attestation
+- content_extraction_capable
+- volume_card_generation_possible
+- llm_service_available
+- source_content_delivery_functional
+- chapter_card_extraction_pipeline_functional
+- '{''contract'': ''source_content_recoverable'', ''description'': ''Source text must
+  be accessible for distillation; current source returns only LLM fallback stubs'',
+  ''remediation_action'': ''Rescan source material with LLM enabled or provide alternative
+  source pathway''}'
+- '{''contract'': ''volume_chapter_consistency'', ''description'': ''Chapter cards
+  must reference correct volume numbers; volumes 6 and 9 show numbering mismatches'',
+  ''remediation_action'': ''Normalize chapter-to-volume mapping before distillation''}'
+- '{''contract'': ''extractable_narrative_content'', ''description'': ''Distillation
+  requires story mechanics, character dynamics, world-state progression, thematic
+  patterns, or craft observations'', ''remediation_action'': ''Source must contain
+  actual narrative content beyond placeholder responses''}'
+- llm_fallback_activation
+- zero_extraction_acknowledgment
+- recoverable_pipeline_state
+- no_narrative_mechanisms_extracted
+- zero_confidence_all_chapters
+- volume_data_completeness_zero
+- universal_distillation_failure_detected
+- stub_content_marker
+- confidence_zero_flag
+- empty_aggregation_protocol
+- fallback_progress_contract
+- story_design_grammar_contract
+- zero_extraction_tolerance
+- no_synthetic_content_generation
+- confidence_threshold_enforcement
+- llm_extraction_complete
+- content_confidence_above_threshold
+- chapter_level_extraction_precedes_aggregation
+- no_confidence_zero_filter
+- no_fallback_as_content
+- transparent_unavailable_state
+- extractable_source_required
+- reader_promise_cannot_be_generated_without_source
+- volume_aggregation_blocked_until_source_available
+- '{''contract'': ''desire_arc_contract'', ''description'': ''All desire arcs must
+  follow 挨光 structure: initial attraction → prolonged courtship with poetry/gifts
+  → consummation → deus ex machina interruption → karmic punishment for both participants''}'
+- '{''contract'': ''investigation_arc_contract'', ''description'': ''All investigation
+  arcs must include: initial mystery/death → alcohol confession breaking silence →
+  expanding deception network → magistrate interrogation exposing lies → guilty witness
+  suicide as shame consequence''}'
+- '{''contract'': ''moral_fable_arc_contract'', ''description'': ''All moral fable
+  arcs must include: underworld bureaucracy operating through dreams → virtuous character
+  reward → sibling contrast revealing corruption → new vice seeded for future arcs''}'
+- '{''contract'': ''trickster_arc_contract'', ''description'': ''All trickster arcs
+  must include: protagonist demonstrates exceptional skills through unrelated adventures
+  → moral code established through contrasting cases → wager system tests character
+  → false accusation resolution → peaceful retirement through deliberate non-use of
+  skills''}'
+- '{''contract'': ''frame_narrative_contract'', ''description'': "Frame narrative
+  must include: accusation driven by criminal''s knowledge of real culprit → rival-turned-informant
+  transformation → double payment asserting dominance → moral elevation through unfavorable
+  comparison to hypocritical officials"}'
+- '{''contract'': ''verse_bridge_contract'', ''description'': ''Separate narrative
+  units must be connected through poetic epigraphs, verse bridges, and narrator moral
+  commentary''}'
+- '{''contract'': ''comedic_reversal_contract'', ''description'': "Near-success must
+  collapse catastrophically with bed-hiding comic resolution or husband''s timely
+  return"}'
+- extraction_requires_minimum_confidence
+- no_fallback_content_in_production
+- re-extraction_gate_enabled
+- story_design_contract_v1
+- Disguise_as_social_superior_deception_succeeding_through_character_change
+- Found_family_through_adoption_in_crisis
+- Miraculous_divine_intervention_saving_virtuous_female
+- Multi_thread_sequential_handling_within_single_chapter
+- External_threat_introduction_through_urgent_messenger_pursuers
+- Chapter_ending_alarm_creating_external_pressure
+- Dual-register prose (scholarly/experiential) must alternate without tonal whiplash
+- Primary source quotation must anchor all factual claims
+- Testimony passages require sensory specificity; scholarly passages subordinated
+  to evidentiary purpose
+- Investigative first-person frame provides authorial discovery process
+- Location-convergence mechanism anchors intersecting biographical threads
+- Photo caption and endnote apparatus must function as narrative closure, not appendix
+- information_asymmetry_contract
+- coalition_faultline_contract
+- parallel_buildup_contract
+- command_quality_contract
+- Documentary_evidence_accumulation
+- Counterfactual_framework
+- Thesis_argument_delivery
+- Diary_polyphony
+- Scholarly_apparatus_integration
 state_variables:
+- '{''phase'': ''siege_under_pressure'', ''conditions'': ''Alliance depleted, forces
+  exhausted from prolonged campaign'', ''tension'': ''Advisor council fractures between
+  cautious preservation and aggressive action''}'
+- '{''phase'': ''strategic_proposal'', ''conditions'': ''Protagonist offers seemingly
+  foolish surrender pathway'', ''tension'': ''Antagonist recognizes apparent victory
+  opportunity, overconfidence activated''}'
+- '{''phase'': ''deceptive_commitment'', ''conditions'': ''Antagonist accepts staged
+  defeat, commits resources to false victory path'', ''tension'': ''Alliance partner
+  positioned to exploit distraction''}'
+- '{''phase'': ''second_front_activation'', ''conditions'': ''Partner opens simultaneous
+  multi-front coordination'', ''tension'': "Antagonist''s attention divided, initial
+  front under-resourced"}'
+- '{''phase'': ''double_reversal_revelation'', ''conditions'': ''Apparent defeat exposed
+  as victory disguised as surrender'', ''tension'': ''Antagonist trapped by own overconfidence
+  in predictable target''}'
+- protagonist_trajectory
+- antagonist_evolution
+- stakes_expansion
+- ally_constellation
+- romance_architecture
+- family_dynamics
+- '{''variable'': ''protagonist_power_cap'', ''tracking'': ''Current maximum combat
+  capability with escalation ceiling and institutional constraints'', ''boundaries'':
+  [''Institutional authority limits application'', ''Exhaustion mechanics reduce effective
+  power'', ''Artifact dependency creates vulnerability'']}'
+- '{''variable'': ''revenge_progress'', ''tracking'': ''Generational trauma resolution
+  across multi-volume arc'', ''checkpoints'': [''Primary antagonist identification'',
+  ''Underlying conspiracy reveal'', ''Full backstory delivery'', ''Emotional resolution'']}'
+- '{''variable'': ''romantic_stability'', ''tracking'': ''Primary relationship status
+  with complication tolerance'', ''parameters'': [''Mutual backstory revelation achieved'',
+  ''Cohabitation status maintained'', ''External threats create proximity'', ''Competing
+  interests resolved rather than prolonged'']}'
+- '{''variable'': ''institutional_faction_balance'', ''tracking'': ''Political standing
+  within government supernatural department'', ''constraints'': [''Mission parameters
+  restrict independent action'', ''Subordinate relationships require leadership maintenance'',
+  ''Factional obligations create conflicting priorities'']}'
+- '{''variable'': ''support_network_strength'', ''tracking'': ''Allied resources available
+  for major operations'', ''composition'': [''Hybrid Buddhist-Taoist team members'',
+  ''Artifact bargaining leverage'', ''Military operation subordinates'']}'
+- protagonist_cultivation_tier
+- sect_power_rating
+- resource_inventory_level
+- disciple_roster_size
+- factional_reputation
+- infrastructure_upgrade_level
+- active_quest_queue
+- antagonist_threat_tier
+- allied_faction_strength
+- system_interface_capability_level
+- breakthrough_readiness_state
+- external_war_escalation_level
+- knowledge_inventory
+- romantic_configuration
+- political_standing
+- threat_accumulation
+- '{''protagonist_status'': ''Under pursuit by supernatural creature after initial
+  encounter'', ''antagonist_threads'': [''Primary: Active supernatural predator pursuit'',
+  ''Secondary: Technical destruction device threat introduced via exposition''], ''ally_status'':
+  "Wounded-pride character joins protagonist''s cause after being humbled", ''narrative_position'':
+  ''Mid-action cliffhanger with creature approaching''}'
+- arc_progression
+- mood_oscillation
+- genre_mode
+- '{''protagonist_state'': {''public_presentation'': ''Emerging business magnate with
+  untapped potential'', ''concealed_capabilities'': ''Transmigrator with cultivation
+  foundation and historical foreknowledge'', ''core_constraint'': ''Must maintain
+  concealment while advancing competing objectives across dual domains'', ''motivational_core'':
+  ''Survival through strategic positioning, accumulated power for unknown future threats''},
+  ''world_state'': {''political_climate'': ''Unstable — major upheaval imminent (as
+  of Volume 1 close)'', ''cultivation_ecosystem'': ''Implied hierarchy with competitive
+  advancement channels'', ''economic_structure'': ''Business empire framework established
+  as power base'', ''faction_mapping'': ''Implied multiple factions with shifting
+  allegiances''}, ''narrative_stakes'': {''immediate'': "Political upheaval threatens
+  protagonist''s careful equilibrium", ''ongoing'': ''Concealment vs. advancement
+  tension across dual domains'', ''long_term'': ''Unknown threats requiring accumulated
+  power reserves''}}'
+- '{''aggregation_status'': ''blocked''}'
+- '{''mechanism_extraction'': ''blocked''}'
+- '{''craft_analysis'': ''blocked''}'
+- '{''narrative_structure'': ''not_determinable''}'
+- '{''reader_reward_pathway'': ''not_determinable''}'
+- '{''retry_ready'': ''awaiting_upstream_repair''}'
 - fallback_progress
 - distillation_confidence
 - content_availability
-chapter_change_vectors: []
+- distillation_validity_flag
+- extraction_confidence
+- distill_confidence
+- retry_count
+- use_fallback_flag
+- distillation_status
+- confidence_aggregate
+- volumes_processed
+- chapters_with_content
+- content_availability_flag
+- pipeline_collapse_detected
+- fallback_chapters
+- fallback_volumes
+- confidence_score
+- extraction_status
+- chapter_validity_flag
+- stub_content_flag
+- reprocess_needed
+- distillation_quality_threshold
+- confidence_floor
+- extraction_attempt_count
+- data_integrity_checkpoint
+- distillation_depth
+- reliability_score
+- extraction_retry_count
+- last_extraction_timestamp
+- compromise_scope
+- regeneration_required
+- fallback_status
+- recoverability_score
+- source_content_available
+- chapter_distillation_count
+- extraction_confidence_total
+- content_signal_detected
+- manual_intervention_required
+- integrity_score
+- llm_availability_status
+- confidence_global
+- chapter_processing_attempted
+- volume_aggregation_complete
+- extraction_signal_strength
+- pipeline_health
+- source_data_integrity
+- '{''name'': ''extraction_confidence'', ''type'': ''numeric'', ''default'': 0.0,
+  ''range'': [0.0, 1.0], ''locked'': True}'
+- '{''name'': ''source_content_status'', ''type'': ''enum'', ''default'': ''unavailable'',
+  ''values'': [''unavailable'', ''llm_fallback_stub'', ''partial'', ''complete'']}'
+- '{''name'': ''mechanisms_extracted'', ''type'': ''boolean'', ''default'': False}'
+- chapter_stub_count
+- volume_stub_count
+- patch_applied
+- source_integrity_status
+- distillation_confidence_level
+- llm_availability_flag
+- content_validation_status
+- extraction_attempted
+- volume_coverage_tracker
+- chapter_coverage_tracker
+- confidence_zero
+- '{''name'': ''extraction_status'', ''type'': ''categorical'', ''values'': [''pending'',
+  ''in_progress'', ''completed'', ''failed''], ''current'': ''failed''}'
+- '{''name'': ''confidence_score'', ''type'': ''continuous'', ''range'': [0.0, 1.0],
+  ''current'': 0.0, ''threshold'': 0.5}'
+- '{''name'': ''chapters_extracted'', ''type'': ''count'', ''current'': 0, ''target'':
+  44}'
+- '{''name'': ''valid_chapters'', ''type'': ''count'', ''current'': 0}'
+- '{''name'': ''failure_reasons'', ''type'': ''list'', ''items'': [''llm_unavailable'',
+  ''zero_confidence_scores'', ''all_chapters_fallback'']}'
+- distillation_attempt_count
+- chapter_id
+- extraction_attempts
+- empty_state_map
+- aggregation_confidence
+- chapter_parse_count
+- volume_parse_count
+- missing_data_array
+- fallback_trigger_count
+- mechanism_extraction_count
+- craft_analysis_count
+- retry_attempts
+- '{''defined_states'': [], ''state_count'': 0, ''initial_state'': None, ''terminal_state'':
+  None, ''note'': ''No state progression data available due to zero-content source
+  chapters''}'
+- chapter_count
+- failed_volumes
+- confidence_baseline
+- content_validity_flag
+- volume_mapping_integrity
+- retry_state
+- confidence_tracker
+- batch_failure_detected
+- zero_confidence_count
+- arc_completeness_score
+- distillable_mechanism_reliability
+- confidence_mean
+- confidence_max
+- confidence_min
+- distillation_attempt
+- distillation_state
+- stub_chapter_count
+- source_content_status
+- distillation_stage
+- distillation_generic_patch_active
+- stub_content_quality
+- stub_detection_threshold
+- retry_attempt_count
+- llm_unavailable_flag
+- aggregation_status
+- confidence_threshold
+- retry_status
+- source_content_availability
+- '{''state_progression'': [], ''turning_points'': [], ''arc_structure'': ''UNABLE_TO_DETERMINE'',
+  ''undetermined'': True, ''reason'': ''All state progression arrays empty — zero
+  valid chapter_card data''}'
+- llm_fallback_count
+- '{''variable'': ''source_corpus'', ''tracked_values'': [{''value'': ''source-0115'',
+  ''chapter_range'': ''1-285''}], ''confidence'': 0.0}'
+- '{''variable'': ''extraction_status'', ''tracked_values'': [{''value'': ''complete_data_failure'',
+  ''occurrences'': 12}], ''confidence'': 0.0}'
+- fallback_content_quality
+- aggregation_blocked_flag
+- '{''variable'': ''chapter_extraction_status'', ''value'': ''all_failed'', ''progression'':
+  []}'
+- '{''variable'': ''confidence_score'', ''value'': 0.0, ''progression'': []}'
+- '{''variable'': ''processed_chapters'', ''value'': 0, ''progression'': []}'
+- '{''variable'': ''failed_chapters'', ''value'': 80, ''progression'': []}'
+- extraction_failure_acknowledged
+- abstraction_depth_level
+- zero_confidence_mode
+- '{''name'': ''extraction_health'', ''allowed_values'': [''complete_failure'', ''partial_success'',
+  ''complete_success''], ''current'': ''complete_failure'', ''transition_rules'':
+  {''complete_failure'': ''BLOCK aggregation pipeline; require source regeneration'',
+  ''partial_success'': ''PROCEED with confidence floor enforcement (min 0.3)'', ''complete_success'':
+  ''PROCEED with standard aggregation''}}'
+- '{''name'': ''content_availability'', ''allowed_values'': [''zero_extractable'',
+  ''mixed'', ''full_content''], ''current'': ''zero_extractable'', ''transition_rules'':
+  {''zero_extractable'': ''TRIGGER regeneration_required flag; halt aggregation'',
+  ''mixed'': ''EXCLUDE unavailable volumes; aggregate available'', ''full_content'':
+  ''PROCEED without exclusion filters''}}'
+- '{''name'': ''volume_degradation'', ''allowed_values'': [''none'', ''partial'',
+  ''systematic''], ''current'': ''systematic'', ''transition_rules'': {''none'': ''PROCEED
+  normally'', ''partial'': ''APPLY degradation penalty to affected chapters'', ''systematic'':
+  ''INVALIDATE entire source range (volumes 1-506)''}}'
+- failure_scope
+- batch_integrity_score
+- llm_fallback_active
+- content_extraction_status
+- volume_metadata_validity
+- mechanism_availability
+- extraction_failure_detected
+- zero_confidence_batch
+- pipeline_status
+- content_extraction_attempt_count
+- extraction_blocked
+- content_extraction_rate
+- volume_processing_status
+- chapter_batch_integrity
+- mechanism_count
+- chapter_extraction_status
+- processing_attempt_count
+- zero_confidence_scope
+- rescan_required_flag
+- volume_mapping_normalized
+- confidence_ceiling
+- mechanism_inventory_empty
+- data_integrity
+- llm_available
+- content_confidence
+- extraction_failure_depth
+- data_integrity_violation_count
+- reprocessing_status
+- source_content_valid
+- design_card_blocked
+- extraction_confidence_mean
+- extraction_confidence_median
+- desire_arc_state
+- investigation_arc_state
+- moral_fable_arc_state
+- trickster_arc_state
+- frame_narrative_state
+- '{''tracked'': [''chapter_count'', ''volume_index'', ''extraction_status''], ''progression_pattern'':
+  ''linear_indeterminate'', ''resolution_capacity'': ''none_determined''}'
+- protagonist_need
+- antagonist_force
+- world_state
+- '{''deception_thread'': ''Active false identity with future exposure vulnerability''}'
+- '{''family_structure'': ''Newly_formed_adoptive_family_with_unestablished_bonds''}'
+- '{''threat_level'': ''External_authority_summons_creating_urgent_danger''}'
+- '{''missing_parent'': ''Real_father_unfound_with_reunion_potential''}'
+- '{''temporal_phase'': ''from crisis/timeline → through convergence/intersection
+  → toward retrospective reckoning/closure''}'
+- '{''documentary_layer'': ''from primary source testimony → through investigation/interpretation
+  → toward bibliographic apparatus closure''}'
+- '{''biographical_alignment'': ''from intersecting aristocratic/political/cultural
+  spheres → through convergence on single location → toward moral accounting''}'
+- '{''evidentiary_mode'': ''from vignette documentation → through investigation →
+  toward retrospective reinterpretation → toward bibliographic closure''}'
+- '{''location_convergence'': ''from hospitality/microcosm stage → through social
+  stratification exposed → toward historical reckoning''}'
+- '{''phase_name'': ''pre_conflict_phase'', ''description'': ''Diplomatic theater
+  masks military preparation; negotiations continue while military preparations accelerate;
+  parallel military buildup showing both sides preparing for engagement''}'
+- '{''phase_name'': ''initial_conflict_phase'', ''description'': ''Surprise attack
+  execution creates temporary strategic advantage; intelligence tradecraft enables
+  operational planning; tactical decision-making tension between mission completion
+  and risk management''}'
+- '{''phase_name'': ''coalition_formation_phase'', ''description'': ''Reluctant partnership
+  transforms to unified alliance; mutual threat escalation catalyzes coalition graduation
+  from statements to material support; cross-national coalition building with built-in
+  fault lines''}'
+- '{''phase_name'': ''strategic_momentum_phase'', ''description'': ''Command culture
+  failures undermine numerically superior forces; strategic momentum shifts through
+  decisive operational engagements; strategic momentum expressed through casualty
+  exchange ratios''}'
+- '{''phase_name'': ''momentum_reversal_phase'', ''description'': ''Defensive dominance
+  established; initiative loss for aggressor; extended campaign against initial planning
+  assumptions; dual-theater transitions reveal interconnected global conflict dynamics''}'
+- '{''phase_name'': ''institutional_resolution_phase'', ''description'': ''Post-war
+  political calculation regarding defeated leaders; institutional decision chains
+  connecting individual acts to system outcomes; protective political calculation
+  where occupying powers preserve defeated leaders for administrative convenience''}'
+- Analytical framework established for non-inevitability argument
+- Diplomatic crisis reaches turning point as Anglo-Polish treaty forces cancellation
+- War declared with paradoxical calm and minimal military engagement
+- Phony war documented through multi-national diary polyphony and official contradictions
+- Scholarly apparatus and primary directives appended as evidentiary payoff
+chapter_change_vectors:
+- '{''vector'': ''information_symmetry_shifts'', ''description'': ''Chapters progress
+  by revealing strategic layers—early chapters show surface plan, later chapters expose
+  deeper orchestration through advisor debate and consequence tracking''}'
+- '{''vector'': ''tension_alternation'', ''description'': ''Rapid-fire council dialogue
+  alternates with extended tactical exposition, punctuated by staccato action beats—creates
+  breathing room between high-stakes decisions''}'
+- '{''vector'': ''pov_distance_calibration'', ''description'': "Third-person limited
+  with strategic omniscience on protagonist''s true plans; comic distance on performative
+  cowardice creates ironic tension for informed readers"}'
+- hook_types
+- transition_discipline
+- pacing_vectors
+- '{''location'': ''Opening chapters'', ''change'': ''Eliminate exposition dumps by
+  demonstrating cultivation mechanics through ritual performance with protagonist
+  internal monologue during technique execution''}'
+- '{''location'': ''Chapters 33, 47, and similar density peaks'', ''content'': ''Separate
+  ghost cultivation mechanics, historical context, and character psychology into distinct
+  beats; reduce information density by distributing across multiple scenes''}'
+- '{''location'': ''Chapter 7 and similar early reveals'', ''change'': ''Establish
+  mystery through partial reveals and tactical withholding rather than full plan exposition''}'
+- '{''location'': ''Chapters 44, 61 antagonist monologue'', ''change'': ''Dramatize
+  through hostile confrontation format; deliver backstory as intimidation rather than
+  narration''}'
+- '{''location'': ''Volume 5-6 escalation spiral'', ''change'': ''Implement institutional
+  constraints limiting power application; focus on tactical solutions over raw capability
+  increase''}'
+- '{''location'': ''Early character introductions'', ''change'': ''Stagger introductions;
+  differentiate through vocabulary register rather than simultaneous presentation''}'
+- '{''location'': ''Political exposition chapters'', ''change'': ''Deliver through
+  character observation and direct confrontation rather than narrator summary''}'
+- '{''location'': ''Extended prison arc'', ''change'': ''Maintain engagement through
+  regular supernatural advancement and political rehabilitation subplot alongside
+  imprisonment narrative''}'
+- system_notification_sound_effects_triggering_transition
+- mid_action_interruption_for_plot_delivery
+- countdown_ultimatum_creating_temporal_acceleration
+- incomplete_system_prompt_as_continuation_hook
+- ellipsis_geographic_jump_between_parallel_scenes
+- physical_environment_shift_signaling_scene_break
+- periodic_progress_marker_compressing_temporal_distance
+- protagonist_development
+- knowledge_exploitation
+- romantic_escalation
+- political_integration
+- threat_accumulation
+- state_shift
+- reader_reward_payoff
+- hook_resolution_or_escalation
+- rationalism_to_horror
+- intimacy_to_visceral
+- mystery_to_resolution
+- generic_progression_vector
+- no_structured_extraction
+- reprocess_all_chapters
+- distillation_fallback_vector
+- add_fallback_progress_tracking
+- introduce_distillable_mechanism_reliability_reward
+- increase_extraction_confidence
+- enable_chapter_validation
+- optimize_for_distillation
+- allow_chapter_growth
+- '{''vector_id'': ''stub_vector'', ''description'': ''Chapters remain as llm_fallback
+  stubs with no narrative content changes.''}'
+- no_change_possible_no_source_content
+- change_vectors_empty_array
+- zero_confidence
+- no_content
+- re_extraction_needed
+- '{''range'': ''1-339'', ''change_type'': ''zero_signal'', ''confidence'': 0.0, ''status'':
+  ''llm_fallback''}'
+- fallback_progress
+- stub_content_flag
+- reprocess_needed
+- '{''trigger'': ''zero_confidence_detection'', ''vector'': ''inject_structured_extraction'',
+  ''priority'': ''high''}'
+- '{''trigger'': ''no_extractable_content'', ''vector'': ''activate_abstraction_layer'',
+  ''priority'': ''high''}'
+- '{''trigger'': ''llm_fallback_triggered'', ''vector'': ''normalize_to_template'',
+  ''priority'': ''medium''}'
+- mechanism_extraction
+- abstraction_generalization
+- fallback_vector_refinement
+- reliability_calibration
+- disable_all_stub_generation
+- force_valid_content_requirement
+- require_confidence_threshold_enforcement
+- no_valid_chapters
+- generic_progression
+- '{''chapter_range'': ''1-19'', ''vector_type'': ''stub_to_fallback'', ''triggered_by'':
+  ''all_chapters_llm_fallback'', ''confidence'': ''zero'', ''distillation_method'':
+  ''llm_generation'', ''quality_indicator'': ''unknown'', ''marker'': ''chapter_range_1-19_all_stubs''}'
+- no_chapter_data_extracted
+- stub_only_volume_cards
+- zero_confidence_scores
+- '{''vector_type'': ''increment_fallback_progress'', ''description'': ''Tracks fallback
+  usage across chapters''}'
+- '{''chapter'': ''any'', ''vector'': ''stub'', ''trigger'': ''LLM_fallback_stub'',
+  ''action'': ''maintain_placeholder_state''}'
+- '{''pattern'': ''per_chapter'', ''action'': ''increment_fallback_progress'', ''amount'':
+  1}'
+- mechanism_reliability_progression
+- fallback_depth_escalation
+- abstraction_layer_expansion
+- reliability_threshold_crossing
+- zero_vector — all chapter_change_vectors undefined due to universal_llm_fallback
+- fallback_content_injection
+- zero_confidence_skip_chapter
+- insufficient_data_skip_chapter
+- '{''vector_id'': ''stub_to_fallback'', ''affected_chapters'': ''all'', ''change_type'':
+  ''replace'', ''fallback_content'': ''generic_fallback_stub''}'
+- stub_generation_vector
+- empty_state_vector
+- retry_attempt_vector
+- manual_intervention_vector
+- zero_to_partial_coverage_vector
+- empty_to_metadata_propagation_vector
+- failed_extraction_to_craft_analysis_vector
+- no_vectors_possible
+- stub_only_no_extraction_possible
+- '{''vector_id'': ''extraction_success'', ''preconditions'': {''confidence_score'':
+  {''gte'': 0.5}}, ''effects'': [{''variable'': ''extraction_status'', ''to'': ''completed''},
+  {''variable'': ''valid_chapters'', ''increment'': 1}], ''target_state'': ''ready_for_aggregation''}'
+- '{''vector_id'': ''extraction_failure_critical'', ''preconditions'': {''confidence_score'':
+  {''eq'': 0.0}, ''valid_chapters'': {''eq'': 0}}, ''effects'': [{''variable'': ''extraction_status'',
+  ''to'': ''failed''}], ''target_state'': ''requires_reprocessing'', ''blocking'':
+  True}'
+- '{''vector_id'': ''reprocessing_triggered'', ''preconditions'': {''extraction_status'':
+  ''failed''}, ''effects'': [{''variable'': ''extraction_status'', ''to'': ''pending''},
+  {''variable'': ''confidence_score'', ''to'': None}, {''variable'': ''valid_chapters'',
+  ''to'': 0}], ''target_state'': ''awaiting_retry''}'
+- '{''chapter'': 1, ''vector'': ''setup_fallback_context'', ''description'': ''Introduce
+  scenario where source distillation fails, prompting fallback mode.''}'
+- '{''chapter'': 2, ''vector'': ''apply_generic_distillation'', ''description'': ''Use
+  generic distilled content to advance narrative without source-specific details.''}'
+- '{''type'': ''none'', ''confidence'': 0.0}'
+- '{''range'': ''1-675'', ''vector_type'': ''uniform_null'', ''volume_scope'': ''all_27'',
+  ''confidence_impact'': -1.0}'
+- no_vectors_extractable
+- '{''trigger'': ''zero_chapter_parse'', ''vector'': ''enforce_minimum_extraction_threshold'',
+  ''threshold'': 0.1}'
+- '{''trigger'': ''llm_fallback_stub_detection'', ''vector'': ''require_structured_extraction_attempt'',
+  ''min_fields'': 5}'
+- '{''trigger'': ''incomplete_aggregation'', ''vector'': ''mark_aggregation_status_as_failed'',
+  ''not'': ''incomplete''}'
+- '{''trigger'': ''empty_mechanism_array'', ''vector'': ''enforce_mechanism_extraction_pipeline'',
+  ''fallback_forbidden'': True}'
+- '{''trigger'': ''no_craft_analysis'', ''vector'': ''require_craft_pattern_detection'',
+  ''min_observations'': 3}'
+- '{''vector_id'': ''zero_extraction_vector'', ''chapter_delta'': 0, ''content_generation_required'':
+  True, ''confidence_weight'': 0.0}'
+- '{''change_type'': ''content_loss'', ''affected_volumes'': ''all_37'', ''affected_chapters'':
+  913, ''change_magnitude'': ''complete'', ''recovery_required'': True, ''recovery_path'':
+  ''manual_chapter_content_input_or_pipeline_regeneration''}'
+- '{''vector'': ''zero_to_nonzero_confidence'', ''trigger'': ''LLM endpoint restoration'',
+  ''required_action'': ''Re-extract all 213 chapters''}'
+- '{''vector'': ''empty_to_populated_volume_cards'', ''trigger'': ''Chapter extraction
+  success'', ''required_action'': ''Aggregate non-empty chapter cards into volume
+  cards 1-9''}'
+- '{''vector'': ''placeholder_to_actual_book_design'', ''trigger'': ''Volume aggregation
+  success'', ''required_action'': ''Generate functional book_design_card from populated
+  volume cards''}'
+- all_chapters_requiring_llm_fallback
+- wholesale_llm_generation_vector
+- complete_reprocessing_indicator
+- '{''vector_type'': ''failure_to_fallback'', ''trigger_condition'': ''llm_unavailable_all_chapters'',
+  ''fallback_action'': ''populate_stub_records_with_failure_metadata'', ''confidence_override'':
+  ''prevent_zero_confidence_publication'', ''preserve_original_structure'': True}'
+- chapter_77_volume_mismatch_detected
+- all_chapters_stub_status_propagated
+- zero_confidence_uniform_across_volumes
+- '{''chapter_range'': ''1-84'', ''vector_type'': ''reprocess_required'', ''action'':
+  ''reingest_with_alternative_distillation_pipeline'', ''priority'': ''critical''}'
+- '{''volume_range'': ''1-4'', ''vector_type'': ''volume_recovery'', ''action'': ''apply_tiered_distillation_with_fallback_guardrails''}'
+- stub_to_full_transition
+- confidence_restore
+- arc_reconstruction
+- '1'
+- '2'
+- '3'
+- '4'
+- generation_stage
+- confidence_delta
+- arc_identification
+- engine_classification
+- '{''vector'': ''LLM_FALLBACK'', ''description'': ''All chapters marked as LLM fallback'',
+  ''action'': ''generate_placeholder_chapter_cards''}'
+- no_vectors_possible_content_void
+- llm_unavailable_trigger
+- '{''vector_id'': ''stub_to_enhanced'', ''description'': ''Enhance stub content through
+  meta-distillation'', ''trigger'': ''user_feedback_provided'', ''direction'': ''progressive_improvement''}'
+- '{''vector_id'': ''cv_fallback_001'', ''trigger'': ''llm_fallback_detected'', ''scope'':
+  ''all_chapters'', ''action'': ''flag_for_regeneration'', ''rollback_eligible'':
+  True}'
+- '{''vector_id'': ''cv_fallback_002'', ''trigger'': ''zero_confidence_sampling'',
+  ''scope'': ''sampled_chapters'', ''action'': ''halt_distillation'', ''rollback_eligible'':
+  False}'
+- stub_template_inheritance
+- fallback_content_generation
+- placeholder_markup
+- LLM_FALLBACK_STUB
+- '{''change_vectors'': [], ''undetermined'': True, ''reason'': ''No chapter-level
+  mechanics data available for change vector calculation''}'
+- '{''chapter_type'': ''any'', ''change_vector'': ''increment_fallback_progress'',
+  ''vector_weight'': 0.15}'
+- '{''chapter_type'': ''any'', ''change_vector'': ''maintain_llm_fallback_count'',
+  ''vector_weight'': 1.0}'
+- llm_fallback_across_all_chapters
+- zero_confidence_data
+- none_identifiable
+- '{''vector_id'': ''stub_to_content_migration'', ''from_state'': ''fallback_stub'',
+  ''to_state'': ''actual_content'', ''trigger'': ''source_content_provision''}'
+- '{''vector_id'': ''confidence_recovery'', ''from_state'': ''zero_confidence'', ''to_state'':
+  ''measurable_confidence'', ''trigger'': ''distillation_success''}'
+- '{''vector_id'': ''cv-failure-island'', ''affected_chapters'': ''1-373'', ''vector_type'':
+  ''complete_failure'', ''inherited_confidence'': 0.0, ''patch_action'': ''block_aggregation_island_formation''}'
+- '{''vector_id'': ''cv-volume-block'', ''affected_volumes'': [1, 2, 3, 4, 5, 6, 7,
+  8, 9, 10, 11, 12, 13, 14, 15], ''vector_type'': ''systematic_unavailable'', ''patch_action'':
+  ''mark_all_volumes_inaccessible''}'
+- '{''vector_id'': ''cv-zero-extract'', ''affected_scope'': ''all_chapters'', ''extraction_status'':
+  ''zero_extractable_content'', ''patch_action'': ''invalidate_all_design_card_generation''}'
+- ch1
+- ch2
+- ch3
+- ch4
+- '{''chapters'': ''1-25'', ''vector'': ''placeholder_generation''}'
+- '{''trigger'': ''zero_extraction'', ''vector'': ''fallback_to_abstraction_layer''}'
+- '{''trigger'': ''high_abstraction'', ''vector'': ''mechanism_reliability_focus''}'
+- 'no_valid_chapters: 61/61 fallback_stubs'
+- no_state_progression_possible
+- no_turning_point_extraction
+- reprocess_required_for_any_vector
+- '{''pattern'': ''continuous_degradation_all_506_chapters'', ''vector'': ''INVALIDATE'',
+  ''action'': ''Regeneration required: no chapter-level extraction viable''}'
+- '{''pattern'': ''zero_chapters_analyzable'', ''vector'': ''BLOCK'', ''action'':
+  ''Cannot construct change vectors from 0 analyzable chapters''}'
+- '{''pattern'': ''all_volumes_identical_stub_response'', ''vector'': ''FLAG'', ''action'':
+  ''Indicates upstream data pipeline failure rather than content absence''}'
+- default
+- '5'
+- abstraction_layer_addition
+- contract_inheritance
+- mechanism_standardization
+- unknown_vector
+- '{''vector_id'': ''zero_confidence_all_chapters'', ''operation'': ''set_failed'',
+  ''attributes'': {''extraction_status'': ''failed'', ''confidence'': 0, ''stub_type'':
+  ''llm_fallback''}, ''applies_to'': ''all_chapters'', ''chapter_range'': [1, 154]}'
+- '{''vector'': ''llm_fallback_to_extraction'', ''description'': ''Transition from
+  LLM fallback stubs to actual extracted content'', ''conditions'': [''source_content_available'',
+  ''confidence_above_threshold''], ''target_state'': ''extracted''}'
+- '{''vector'': ''stub_maintenance'', ''description'': ''Maintain stub state when
+  extraction fails'', ''conditions'': [''confidence_zero'', ''no_source_content''],
+  ''target_state'': ''fallback_persistent''}'
+- '{''chapter_id'': ''*'', ''change_type'': ''replace_with_structured_fallback'',
+  ''description'': ''Replace any narrative content with LLM fallback stub structured
+  content to satisfy distillation requirements.''}'
+- '8'
+- '15'
+- '{''chapter'': 1, ''vector'': {''content_fidelity'': 0, ''style_adjustment'': 0,
+  ''metadata_update'': 0}}'
+- '{''chapter'': 2, ''vector'': {''content_fidelity'': 0, ''style_adjustment'': 0,
+  ''metadata_update'': 0}}'
+- '{''chapter'': 3, ''vector'': {''content_fidelity'': 0, ''style_adjustment'': 0,
+  ''metadata_update'': 0}}'
+- '{''chapter'': 4, ''vector'': {''content_fidelity'': 0, ''style_adjustment'': 0,
+  ''metadata_update'': 0}}'
+- '{''chapter'': 5, ''vector'': {''content_fidelity'': 0, ''style_adjustment'': 0,
+  ''metadata_update'': 0}}'
+- '{''chapter'': 6, ''vector'': {''content_fidelity'': 0, ''style_adjustment'': 0,
+  ''metadata_update'': 0}}'
+- '{''chapter'': 7, ''vector'': {''content_fidelity'': 0, ''style_adjustment'': 0,
+  ''metadata_update'': 0}}'
+- '{''chapter'': 8, ''vector'': {''content_fidelity'': 0, ''style_adjustment'': 0,
+  ''metadata_update'': 0}}'
+- '{''chapter'': 9, ''vector'': {''content_fidelity'': 0, ''style_adjustment'': 0,
+  ''metadata_update'': 0}}'
+- '{''chapter'': 10, ''vector'': {''content_fidelity'': 0, ''style_adjustment'': 0,
+  ''metadata_update'': 0}}'
+- '{''chapter'': 11, ''vector'': {''content_fidelity'': 0, ''style_adjustment'': 0,
+  ''metadata_update'': 0}}'
+- '{''chapter'': 12, ''vector'': {''content_fidelity'': 0, ''style_adjustment'': 0,
+  ''metadata_update'': 0}}'
+- '{''chapter'': 13, ''vector'': {''content_fidelity'': 0, ''style_adjustment'': 0,
+  ''metadata_update'': 0}}'
+- '{''chapter'': 14, ''vector'': {''content_fidelity'': 0, ''style_adjustment'': 0,
+  ''metadata_update'': 0}}'
+- '{''chapter'': 15, ''vector'': {''content_fidelity'': 0, ''style_adjustment'': 0,
+  ''metadata_update'': 0}}'
+- '{''chapter'': 16, ''vector'': {''content_fidelity'': 0, ''style_adjustment'': 0,
+  ''metadata_update'': 0}}'
+- '{''chapter'': 17, ''vector'': {''content_fidelity'': 0, ''style_adjustment'': 0,
+  ''metadata_update'': 0}}'
+- '{''chapter'': 18, ''vector'': {''content_fidelity'': 0, ''style_adjustment'': 0,
+  ''metadata_update'': 0}}'
+- '{''chapter'': 19, ''vector'': {''content_fidelity'': 0, ''style_adjustment'': 0,
+  ''metadata_update'': 0}}'
+- '{''chapter'': 20, ''vector'': {''content_fidelity'': 0, ''style_adjustment'': 0,
+  ''metadata_update'': 0}}'
+- '{''vector_type'': ''add_fallback_stub'', ''trigger'': ''zero_extractable_content'',
+  ''confidence'': 0.0, ''mark_as'': ''llm_fallback_stub''}'
+- '{''vector_type'': ''set_unavailable_flags'', ''trigger'': ''llm_unavailable'',
+  ''flags'': [''no_narrative_content'', ''no_state_progression'', ''no_turning_points'',
+  ''arc_indeterminate'', ''engine_unknown'']}'
+- no_vector_possible_without_source
+- '{''chapter_range'': ''1-23'', ''vector_type'': ''placeholder_generation'', ''confidence_weight'':
+  0.0}'
+- no_chapter_level_changes_possible
+- source_content_unavailable
+- structural_data_zero
+- reader_rewards_undefined_from_source
+- stubify_all
+- stub_to_extracted
+- '{''chapters_affected'': ''1-58'', ''vector_type'': ''no_extraction'', ''resolution'':
+  ''stub_only''}'
+- '{''vector'': ''suspense_loop_cascade'', ''description'': ''Chapter boundaries crossed
+  through anticipation-release patterns; unresolved threats carried forward''}'
+- '{''vector'': ''narrative_unit_isolation'', ''description'': ''Each 3-5 story unit
+  operates independently while sharing thematic concerns''}'
+- '{''vector'': ''episode_escalation'', ''description'': ''Trickster demonstrations
+  progress through increasingly complex challenges''}'
+- '{''vector'': ''sibling_corruption_reveal'', ''description'': ''Moral fable arcs
+  complicate through virtue-to-corruption transformation''}'
+- '{''vector'': ''rival_transformation'', ''description'': ''Frame narrative resolves
+  through rival becoming informant asset''}'
+- '{''vector'': ''appendix_meta_closure'', ''description'': ''Final dramatic appendix
+  provides closure beyond story resolution''}'
+- '{''vector_type'': ''placeholder'', ''pattern'': ''no_chapter_data_extracted'',
+  ''fallback_behavior'': ''block_chapter_specific_hooks''}'
+- Transitional_chapters_resolve_one_arc_while_launching_another
+- Geographic_transition_as_plot_thread_separator
+- Sequential_handling_of_physical_separation_within_single_chapter
+- Climactic_acceleration_into_clipped_threat_rhythm_final_paragraphs
+- '{''vector'': ''temporal_progression'', ''description'': ''Chronological advancement
+  through historical phases with date-stamped visual anchors'', ''mechanism'': ''Physical
+  location shifts handled through returning residents; chapter titles provide thematic
+  framing''}'
+- '{''vector'': ''biographical_interweaving'', ''description'': ''Character lists
+  as preview mechanism; intersecting threads converge on location'', ''mechanism'':
+  ''Fictional intermediary scenes bridge real historical figures with interpretive
+  proxy''}'
+- '{''vector'': ''evidentiary_accumulation'', ''description'': ''Endnote cross-referencing
+  builds toward closure'', ''mechanism'': ''Earlier events recontextualized by new
+  documentary evidence arriving later''}'
+- '{''change_type'': ''phase_transition'', ''trigger'': ''tactical_event_realization'',
+  ''description'': ''Chapters shift between conflict phases triggered by operational
+  outcomes rather than arbitrary temporal markers''}'
+- '{''change_type'': ''theater_pivot'', ''trigger'': ''geographic_completion'', ''description'':
+  ''Geographic pivots between theaters preserve timeline continuity while maintaining
+  distinct operational narratives''}'
+- '{''change_type'': ''viewpoint_cluster'', ''trigger'': ''temporal_compression_need'',
+  ''description'': ''Viewpoints cluster during simultaneous operations enabling temporal
+  compression without losing emotional continuity''}'
+- '{''change_type'': ''irony_inversion'', ''trigger'': ''intelligence_recognition'',
+  ''description'': ''Apparent strategic failures reveal themselves as calculated decisions
+  through information asymmetry revelation''}'
+- Frame thesis-first then accumulate documentary evidence
+- Integrate diary excerpts as emotional counterpoint to official narrative
+- Juxtapose private sentiment against public policy documents
+- Build tension through sequential diplomatic arrivals and cancellations
+- End chapters with unresolved tensions or personal details
+- Use appended documents as evidentiary foundation preceding analysis
 reader_rewards:
+- 'Double-layered tactical reveal: staged defeat serves deeper strategic purpose'
+- Antagonist overconfidence arc payoff with subsequent failure
+- Character-driven strategy discussion with conflicting advisor viewpoints
+- Military campaign sustainability examination through exhaustion narrative
+- Alliance dynamics exploration via simultaneous multi-front action
+- competence_beats
+- emotional_beats
+- mystery_beats
+- comedy_beats
+- triumph_beats
+- '{''reward_type'': ''immediate'', ''delivery'': ''First cultivation ritual displayed
+  in full detail with concrete mechanics; supernatural revenge against deserving villains;
+  fish-out-of-water comedy from archaic protagonist in modern society; power demonstration
+  through ghost confrontation''}'
+- '{''reward_type'': ''delayed'', ''delivery'': ''Thirty-year time-skip transformation;
+  political backstory resolution; cultivation philosophy reveal; Buddhist intervention
+  establishing power ceiling; investigation conspiracy connecting personal stakes
+  to broader conflict''}'
+- '{''reward_type'': ''accumulated'', ''delivery'': ''Multi-volume revenge thread
+  reaching emotional resolution; romantic relationship consummation with mutual vulnerability;
+  power escalation through artifact acquisition; institutional authority establishment
+  transitioning protagonist to faction leader''}'
+- discovery_satisfaction_through_system_discovery
+- power_fantasy_delivered_via_visible_numerical_feedback
+- tactical_satisfaction_through_combat_depth
+- systematic_progress_through_merit_karmic_economy
+- external_consistency_via_exact_percentage_stakes
+- witnessed_validation_through_observer_reactions
+- anticipation_building_toward_countdown_milestones
+- ensemble_investment_via_parallel_character_growth
+- romantic_advancement_through_crisis_forced_intimacy
+- Competence validation through incremental expertise demonstration against skeptical
+  authorities
+- Romantic tension payoff following sustained buildup through graduated escalation
+  with interruption
+- Dramatic irony satisfaction from protagonist's foreknowledge enabling reader's superior
+  strategic understanding
+- Protective dominance fulfillment through protagonist's rescue interventions and
+  strategic shielding of vulnerable characters
+- Power fantasy satisfaction through protagonist's indispensable value recognition
+  by supreme authorities
+- Intelligence network fulfillment through protagonist's predictive positioning and
+  scheme success
+- Relationship milestone progression from forced proximity through emotional vulnerability
+  to consummation
+- Antagonist humiliation payoff through public confrontation and decisive consequence
+  delivery
+- Political maneuvering satisfaction through divide-and-conquer strategy execution
+- Mentor succession resolution through deathbed wisdom transfer and autonomous capability
+  confirmation
+- Revelation that energy manipulation may be species-wide ability rather than human-learned
+  skill
+- Connection established between founding legend and supernatural creature encounter
+- New antagonist introduced as existential threat to entire population
+- Character arc development for pride-wounded ally whose assassination was manipulated
+- intellectual
+- emotional
+- mystery
+- visceral
+- atmospheric
+- '{''volume_1_delivered'': [''Protagonist competence demonstration across multiple
+  domains'', ''Systematic establishment of dual-life framework'', ''Cultivation and
+  business progression both introduced'', ''Political intrigue foundation laid'',
+  ''Dramatic irony through concealed transmigrator advantage'', ''Major cliffhanger
+  through political upheaval hook''], ''ongoing_pattern'': [''Strategic problem-solving
+  through foreknowledge exploitation'', ''Progressive power acquisition in concealed
+  domains'', ''Dramatic irony maintenance through identity concealment'', ''Political
+  complexity escalation'', ''Cultivation advancement reveals'', ''Business empire
+  growth and complications''], ''undistilled_potential'': ''Volumes 2-25 contain unextractable
+  content representing ~96% of narrative development''}'
 - distillable_mechanism_reliability
 - fallback_content_awareness
+- minimal_engagement_retention
+- structured_knowledge_artifact
+- cognitive_efficiency_gain
+- fallback_processing_acknowledgment
+- distillation_fidelity
+- abstraction_transferability
+- transparent_fallback_communication
+- transparent_failure_reporting
+- actionable_recommendation_delivery
+- fallback_structure_awareness
+- abstraction_mastery
+- fallback_strategy_insight
+- incomplete_source_gratitude
+- placeholder_appreciation
+- future_complete_version_hope
+- fallback_mechanism_awareness
+- fallback_abstraction_pattern
+- recovery_path_clarity
+- graceful_degradation_compensation
+- transparent_failure_documentation
+- '{''available'': False, ''reason'': ''all_reader_rewards_arrays_empty_across_batch''}'
+- '{''status'': ''blocked'', ''blocking_reason'': ''No narrative content available'',
+  ''requires_state'': ''extraction_completed'', ''min_confidence'': 0.6}'
+- exploration_reward
+- no_rewards_extracted
+- transparent_aggregation_status
+- extraction_confidence_indicator
+- missing_data_disclosure
+- fallback_detection_awareness
+- '{''catalogued_rewards'': [], ''reward_density'': 0.0, ''reward_types'': [], ''note'':
+  ''No reader reward patterns extractable from placeholder data''}'
+- structural_integrity_maintenance
+- extractable_craft_patterns
+- narrative_momentum_hooks
+- reader_completion_satisfaction
+- genre_promise_delivery
+- zero_confidence_detection
+- batch_failure_awareness
+- fallback_grace
+- re_extraction_promise
+- fallback_abstraction_value
+- pipeline_robustness
+- system_transparency
+- generic_distillation_completion
+- fallback_content_availability
+- transparency_about_source_quality
+- transparency_on_source_quality
+- graceful_degradation_assurance
+- '{''documented_rewards'': [], ''undetermined'': True, ''reason'': ''No reader rewards
+  extractable from failed distillation''}'
+- structural_grounding
+- predictable_fallback_pattern
+- transparent_fallback_acknowledgment
+- failure_state_detection
+- graceful_degradation_path
+- abstraction_understanding
+- transferable_insight
+- '{''type'': ''unavailable'', ''extracted'': [], ''count'': 0, ''reason'': ''No narrative
+  content available for reward extraction'', ''patch_note'': ''Forbidden to infer
+  or default reader_rewards from stub content''}'
+- structured_fallback_guarantee
+- generic_distillation_utility
+- extraction_transparency
+- craft_observation_placeholder
+- aggregation_readiness
+- distillation_failure_transparency
+- graceful_fallback_presentation
+- transparency_about_source_limitations
+- transparent_system_state
+- multiple_satisfying_closures_per_volume
+- comic_catharsis_from_reversal_scenes
+- moral_clarity_through_karmic_justice
+- admiration_for_clever_improvisation
+- intellectual_pleasure_from_deduction
+- meta_narrative_reflection_through_theatrical_framing
+- thematic_coherence_across_episodes
+- cultural_literacy_through_classical_allusions
+- '{''catalogued'': [], ''pattern'': ''none_extracted'', ''confidence'': 0.0, ''enforce_empty'':
+  True}'
+- Survival_confirmation_for_characters_in_presumed_danger
+- Introduction_of_sympathetic_sister_figure_characters
+- Temporary_resolution_of_deception_threads
+- Character_chemistry_establishment_between_protagonist_and_new_family
+- Threat_setup_creating_anticipatory_tension
+- Location-as-microcosm demonstrating social stratification function
+- Moral complexity without prescriptive judgment through documentary authority
+- Visual corroboration through captioned photo documentation with temporal grounding
+- Evidentiary authenticity through endnote apparatus and source trail
+- Epistemic distance calibration between documentary authority and experiential testimony
+- Understanding of collaboration-resistance as coexisting spectrum
+- Scholarly apparatus providing source trail and interpretive credibility
+- Understanding of global warfare scope through interconnected theaters
+- Insight into how intelligence tradecraft and codebreaking capabilities shape strategic
+  outcomes
+- Appreciation for coalition warfare complexity and fault-line management
+- Comprehension of how small tactical factors cascade into operational and strategic
+  consequences
+- Exposure to counterintuitive historical revelations challenging assumed narratives
+- Engagement with moral ambiguity through institutional decision-case studies
+- Strategic context establishing cause-and-effect chains linking economic conditions
+  to political decisions to operational consequences
+- Grappling with command leadership psychology and moral complexity
+- Understanding of book's core argument against historical inevitability
+- Framework for analyzing decision-makers' choices in final pre-war days
+- Recognition that institutional weaknesses and individual choices created contingent
+  outcomes
+- Evidentiary foundation from appended primary source documents
+- Multi-national emotional polyphony through diary integration
+- Understanding of paradox between declared war and actual inactivity
 hook_or_aftereffect_types:
+- '{''type'': ''crisis_interruption_pattern'', ''hook'': ''Decision nearly reached,
+  new information forces pivot to new tactical consideration'', ''aftereffect'': ''Reader
+  anticipates pattern, creates satisfying rhythm of subverted expectations''}'
+- '{''type'': ''strategic_reputation_weapon'', ''hook'': "Protagonist''s predictable
+  cowardice invites antagonist overconfidence", ''aftereffect'': ''Reversal feels
+  earned rather than lucky—reader recognizes seed planting''}'
+- '{''type'': ''parallel_historical_example'', ''hook'': ''In-world historical parallel
+  establishes strategic precedent'', ''aftereffect'': ''Provides analytical satisfaction
+  and foreshadows outcome structure''}'
+- prophecy_revelation
+- mysterious_figure_entrance
+- comedic_crisis_unresolved
+- unknown_character_question
+- visual_emotional_punctuation
+- mid_action_cliffhanger
+- positive_momentum_reversal
+- dramatic_irony_establishment
+- tiered_mystery_introduction
+- genre_intrusion_horror
+- '{''type'': ''mid_scene_opening'', ''description'': ''No recap openings; reader
+  dropped directly into action or ritual in progress''}'
+- '{''type'': ''layered_cliffhanger'', ''description'': ''Action beats ending with
+  consequence not summary; reverse-focus creates ambush setup for next chapter''}'
+- '{''type'': ''reverse_focus_ambush'', ''description'': ''Reader positioned with
+  antagonist unaware of protagonist approach, creating tactical surprise payoff''}'
+- '{''type'': ''competence_reveal'', ''description'': ''Character demonstrates true
+  power after removing concealing element or through confrontation before explanation''}'
+- '{''type'': ''authority_deception'', ''description'': ''Credentials reveal transforms
+  authority perception 180 degrees enabling access or compliance''}'
+- '{''type'': ''comic_relief_bridge'', ''description'': ''Protagonist crude observations
+  and rigid worldview applied to modern situations create tonal bridge between horror
+  and comedy''}'
+- incomplete_system_prompt_cutoff
+- countdown_expiration_approaching
+- simultaneous_crisis_diverging_attention
+- hidden_capability_unmentioned_until_crisis
+- near_destruction_activating_dormant_power
+- authority_rescue_at_maximum_desperation
+- interrogation_extraction_revealing_plot
+- quest_chain_unlocking_new_requirement
+- forced_loyalty_compromising_ally
+- observer_reassessment_changing_strategy
+- immersion_hooks
+- threshold_hooks
+- continuation_promises
+- transition_patterns
+- misread_reassessment
+- new_constraint
+- prophecy_hooks
+- terminal_urgency
+- reputation_subversion
+- romance_subversion
+- protective_subversion
+- forbidden_defaults
+- retry_trigger
+- failure_notification
+- infrastructure_repair_callback
 - distillation_blocked
 - no_content_extracted
 - upstream_generation_required
+- fallback_transition
+- placeholder_continuation
+- fallback_hook
+- reliability_aftereffect
+- post_distillation_aftereffect
+- retry_alert
+- no_hooks_available
+- no_aftereffects_extractable
+- stub_only_contract
+- aftereffect_re_extraction
+- none_recoverable
+- hook_type:unavailable
+- aftereffect_type:unavailable
+- patch_type:full_reprocessing_required
+- fallback_detected:true
+- llm_unavailable_rate:100_percent
+- fallback_detection_hook
+- reprocess_trigger_hook
+- placeholder_hook
+- post_reprocess_aftereffect
+- mechanism_reliability_hook
+- distillation_completion_aftereffect
+- quality_threshold_aftereffect
+- failure_notification_hook
+- recovery_prompt_aftereffect
+- no_open_hooks_available
+- no_extractable_narrative_hooks
+- no_story_promise_determinable
+- fallback_trigger_hook
+- abstraction_hook
+- distillation_checkpoint_aftereffect
+- reliability_marker_hook
+- stub_reliability_promise
+- pipeline_retry_trigger
+- confidence_recalibration
+- regeneration_trigger
+- post_fallback_aftereffect
+- hook
+- regeneration_request
+- source_recovery
+- fallback_triggered_hook
+- distillation_complete_aftereffect
+- stub_marker_hook
+- reader_promise_acknowledged_hook
+- failed_distillation_hook
+- remediation_aftereffect
+- llm_fallback_all_volumes
+- distillable_mechanism_hook
+- fallback_mechanism_reliability_hook
+- fallback_abstraction
+- none
+- data_integrity_violation_alert
+- '{''type'': ''hook'', ''id'': ''fallback_hook'', ''description'': ''Hook that leverages
+  the reliability of the distillation mechanism to engage readers despite missing
+  narrative content.''}'
+- '{''type'': ''aftereffect'', ''id'': ''reliability_aftereffect'', ''description'':
+  ''Aftereffect that reinforces reader trust in the distillation process.''}'
+- mechanism_abstraction_hook
+- reliability_focus_aftereffect
+- fallback_sophistication_hook
+- empty_array — no hooks extractable from zero-integrity source
+- post_fallback_reliability_hook
+- error_hook
+- blocked_content_hook
+- fallback_mechanism_hook
+- resubmission_hook
+- confidence_zero_hook
+- no_content_aftereffect
+- reliability_boost
+- unavailable_hooks
+- failed_open_loops
+- no_craft_patterns_available
+- zero_narrative_content
+- systemic_llm_fallback_stub_state
+- llm_restored_hook
+- reprocessing_triggered_hook
+- manual_review_required_aftereffect
+- confidence_recovery_aftereffect
+- pipeline_reset_aftereffect
+- failure_isolation_hook
+- empty_array_fallback_hook
+- universal_fallback_activation_aftereffect
+- metadata_error_recovery_hook
+- empty_state
+- meta_fallback_reward
+- '{''type'': ''none'', ''reason'': ''no_open_hooks_accessible_across_batch''}'
+- llm_fallback_stub
+- no_content_hook
+- '{''type'': ''failure_recovery'', ''trigger'': ''extraction_status = failed'', ''aftereffect'':
+  ''queue_source_for_alternative_extraction''}'
+- '{''type'': ''aggregation_blocked'', ''trigger'': ''valid_chapters = 0'', ''aftereffect'':
+  ''halt_volume_aggregation''}'
+- '{''type'': ''quality_assurance_gate'', ''trigger'': ''any_chapter.confidence <
+  0.5'', ''aftereffect'': ''require_manual_review''}'
+- generic_aftereffect
+- upstream_reprocessing_trigger
+- manual_review_recommendation
+- confidence_reset_pending
+- fallback_abstraction_hook
+- stub_generation_aftereffect
+- pipeline_recovery_needed
+- reprocess_required
+- none_documentable
+- hook_type_fallback
+- aftereffect_reliability
+- aggregation_health_check
+- extraction_confidence_audit
+- fallback_trigger_notification
+- missing_data_warning
+- chapter_parse_completion_validator
+- mechanism_extraction_enforcer
+- fallback_trigger
+- retry_mechanism
+- fallback mechanism abstraction
+- '{''type'': ''detection_hook'', ''triggers'': [''llm_fallback_detection'', ''zero_confidence_extraction''],
+  ''severity'': ''critical''}'
+- '{''type'': ''none'', ''catalogued'': [], ''note'': ''No open hooks present in source
+  data''}'
+- distillation_reliability_hook
+- fallback_content_hook
+- reprocessing_trigger_hook
+- '{''type'': ''failure_audit_hook'', ''triggers_on'': ''complete_source_inaccessibility'',
+  ''records'': [''chapters_affected'', ''volumes_affected'', ''confidence_scores'',
+  ''failure_patterns'']}'
+- '{''type'': ''retry_trigger_aftereffect'', ''triggers_on'': ''zero_content_extraction'',
+  ''initiates'': ''redistillation_request''}'
+- open_hook
+- resolved_aftereffect
+- genre_specific_payoff
+- reader_reward_instantiation
+- mechanism_reliability_marker
+- llm_fallback_detection_hook
+- zero_confidence_alert_hook
+- batch_reprocess_trigger_hook
+- source_reingestion_required_hook
+- llm_fallback_hook
+- zero_confidence_aftereffect
+- pipeline_recovery_hook
+- post_distillation_hook
+- log_failure
+- alert_source_invalid
+- trigger_reprocess
+- pipeline_health_check
+- confidence_boost
+- content_regeneration_request
+- manual_review_flag
+- post_fallback_hook
+- aggregation_attempted_hook
+- fallback_triggered
+- stub_acknowledged
+- reliability_check
+- confidence_warning
+- content_fallback_notification
+- '{''type'': ''transparency_hook'', ''description'': ''Inform reader about distillation
+  fallback status''}'
+- '{''type'': ''improvement_invitation'', ''description'': ''Invite user to provide
+  source material for enhancement''}'
+- '{''type'': ''pre_distillation_hook'', ''hook_id'': ''hkd_source_validation'', ''conditions'':
+  [''source_accessibility_check'', ''chapter_card_non_stub_verification'']}'
+- '{''type'': ''post_failure_aftereffect'', ''hook_id'': ''afd_retry_notification'',
+  ''conditions'': [''distillation_failure_confirmed'', ''retry_recommended''], ''effects'':
+  [''notify_source_provider'', ''queue_regeneration_task'']}'
+- aftereffect_fallback_recovery
+- hook_content_availability_check
+- reprocess_recommendation
+- no_story_mechanics_aftereffect
+- '{''hooks'': [], ''aftereffects'': [], ''undetermined'': True, ''reason'': ''No
+  narrative engagement patterns extractable from 100% LLM fallback data''}'
+- '{''type'': ''hook'', ''subtype'': ''reliability_anchor'', ''trigger'': ''chapter_boundary'',
+  ''description'': ''Reliable structural pattern despite missing source specifics''}'
+- '{''type'': ''aftereffect'', ''subtype'': ''distillation_expectation'', ''trigger'':
+  ''chapter_completion'', ''description'': ''Reader learns to trust distillable mechanism
+  abstraction''}'
+- no_hooks_extracted
+- placeholder_aftereffect
+- failure_acknowledgment_hook
+- data_zero_aftereffect
+- '{''type'': ''unavailable_content_hook'', ''effect'': ''sets_expectation_for_future_content''}'
+- '{''type'': ''distillation_retry_aftereffect'', ''effect'': ''motivates_source_content_submission''}'
+- '{''type'': ''failure_isolation_hook'', ''trigger'': ''any_aggregation_attempt'',
+  ''aftereffect'': ''immediate_block_with_diagnostic''}'
+- '{''type'': ''placeholder_generation_aftereffect'', ''trigger'': ''downstream_content_request'',
+  ''aftereffect'': ''structured_fallback_stub_return''}'
+- '{''type'': ''hook'', ''value'': ''mechanism_discovery_hook''}'
+- '{''type'': ''aftereffect'', ''value'': ''abstraction_competency_gain''}'
+- '{''type'': ''regeneration_trigger'', ''trigger_condition'': ''systematic_llm_unavailable_across_all_volumes'',
+  ''effect'': ''HALT aggregation pipeline; require fresh source material''}'
+- '{''type'': ''confidence_collapse'', ''trigger_condition'': ''confidence_0.0_across_corpus'',
+  ''effect'': ''Prevent downstream components from receiving invalid zero-confidence
+  data''}'
+- '{''type'': ''data_integrity_violation'', ''trigger_condition'': ''compromised_data_integrity'',
+  ''effect'': ''Escalate to data quality review before any story design operations''}'
+- low_confidence_trigger
+- fallback_activation
+- distillation_reliability_checkpoint
+- distillation_hook
+- extraction_failure_hook
+- retry_trigger_aftereffect
+- pipeline_restoration_trigger
+- llm_fallback
+- hook_type:fallback_trigger
+- aftereffect_type:fallback_resolution
+- '{''type'': ''hook'', ''name'': ''exposition_fallback'', ''description'': ''Provides
+  a generic exposition when source content is unavailable.''}'
+- '{''type'': ''aftereffect'', ''name'': ''generic_resolution'', ''description'':
+  ''Ensures closure for the fallback narrative.''}'
+- '{''type'': ''on_fallback_source_processed'', ''action'': ''tag_source_as_unusable_for_analysis''}'
+- '{''type'': ''on_confidence_zero_batch'', ''action'': ''flag_for_manual_review''}'
+- '{''type'': ''on_empty_reusable_mechanisms'', ''action'': ''suspend_engine_identification''}'
+- llm_unavailable_hook
+- extraction_failure_aftereffect
+- global_blockage_notification
+- llm_fallback_trigger
+- pipeline_recovery_prompt
+- extraction_retry_marker
+- empty_source_awareness
+- confidence_zero_communication
+- distillation_limit_disclosure
+- fallback_aftereffect
+- reprocessing_trigger
+- re_extract_trigger
+- pipeline_restart_hook
+- downstream_blocking_aftereffect
+- '{''type'': ''mid_scene_interruption'', ''description'': ''Ends mid-scene with unresolved
+  threat creating immediate continuation tension''}'
+- '{''type'': ''disturbing_image_recontextualization'', ''description'': ''Each story
+  segment ends on disturbing image recontextualizing preceding events''}'
+- '{''type'': ''suspense_loop_cascade'', ''description'': ''Suspense loops cascade
+  across chapter boundaries forcing continued reading''}'
+- '{''type'': ''anticipation_release_pattern'', ''description'': ''Investigation solutions
+  follow anticipation-release pattern building then satisfying''}'
+- '{''type'': ''theatrical_meta_closure'', ''description'': ''Dramatic appendix provides
+  meta-narrative closure beyond individual story resolution''}'
+- '{''type'': ''extraction_failure_gate'', ''behavior'': ''prevent_activation'', ''requires_manual_override'':
+  True}'
+- tension
+- curiosity
+- emotional_engagement
+- External_threat_alarm
+- Urgent_messenger_arrival
+- Chapter_ending_pressure
+- Identity_mystery_setup
+- Family_reunion_potential_signaling
+- Deception_exposure_tension
+- '{''type'': ''thematic_hook'', ''description'': ''Chapter titles providing thematic
+  framing and investigative questions''}'
+- '{''type'': ''quotation_plunge'', ''description'': ''Specific documented exchanges
+  plunge reader into evidentiary immediacy''}'
+- '{''type'': ''discovery_framing'', ''description'': ''Personal authorial discovery
+  process creates narrative momentum''}'
+- '{''type'': ''aftereffect_moral_accounting'', ''description'': ''Location-convergence
+  finale enables retrospective moral reckoning through accumulated evidence''}'
+- '{''type'': ''mid_narrative_opening'', ''function'': ''Immediate immersion bypassing
+  exposition delay''}'
+- '{''type'': ''policy_intention_revelation'', ''function'': ''Creates anticipation
+  tension before outcome demonstration''}'
+- '{''type'': ''progressive_numbered_subsections'', ''function'': ''Archaeological
+  revelation structure building cumulative understanding''}'
+- '{''type'': ''rhetorical_question_conclusion'', ''function'': ''Invites moral evaluation
+  while maintaining scholarly authority over complexity''}'
+- '{''type'': ''historical_puzzle_opening'', ''function'': ''Engages reader through
+  mystery-thriller puzzle-solving mechanism''}'
+- Documentary appendices preceding analytical text
+- Single-sentence dramatic emphasis punctuating dense paragraphs
+- Specific trivial details grounding larger historical shifts
+- Personal diary reveals conveying private emotional states
+- Unresolved tensions at chapter endings
 forbidden_defaults:
+- Protagonist strategic opacity without established information symmetry rules
+- Reversal mechanism deployed without prior proof-of-concept
+- Crisis timing following identical pattern—vary interruption sources and triggers
+- Modern anachronistic humor without integration as explicit character temporal displacement
+- Historical knowledge assumed without universal strategic grounding
+- Advisor council homogeneity—philosophical diversity required
+- Alliance partner timing feeling manufactured rather than organically motivated
+- character_names
+- location_names
+- organization_names
+- technique_names
+- artifact_names
+- cultural_references
+- platform_conventions
+- explicit_cliffhanger_language
+- repeated_hook_structure
+- deus_ex_machina_rescue
+- extended_protagonist_incapacity
+- info_density_spikes
+- competence_inflation_without_cost
+- female_character_reduction
+- author_intrusion
+- male_gaze_framing
+- body_horror_excess
+- stakes_escalation_burnout
+- antagonist_proliferation
+- info_overload
+- '{''default'': ''Protagonist monologue dump explaining magic system rules without
+  demonstration'', ''replacement'': ''Demonstrate rules through internal monologue
+  during ritual practice with visible step-by-step process''}'
+- '{''default'': ''Multiple named characters introduced simultaneously'', ''replacement'':
+  ''Stagger introductions across scenes; differentiate through vocabulary register''}'
+- '{''default'': ''Extended antagonist monologue delivering backstory in single block'',
+  ''replacement'': ''Drastize through hostile confrontation format; distribute historical
+  information across multiple encounters''}'
+- '{''default'': ''Power progression without cost or exhaustion consequences'', ''replacement'':
+  ''Implement cumulative damage reducing effective power level while maintaining fighting
+  capability''}'
+- '{''default'': ''Romantic fragmentation with prolonged love triangle'', ''replacement'':
+  ''Establish primary romantic arc early; subordinate competing interests to main
+  trajectory''}'
+- '{''default'': ''Protagonist abilities becoming too versatile without limitation'',
+  ''replacement'': ''Establish combat capability limits through pyrrhic victories
+  and institutional constraints limiting power application''}'
+- '{''default'': ''Formulaic cliffhanger at every chapter end'', ''replacement'':
+  ''Alternate cliffhanger action with resolution leading to intimate scene; vary cliffhanger
+  types''}'
+- '{''default'': ''Heavy exposition dump in opening paragraphs'', ''replacement'':
+  ''World rules emerge organically through character preparation and ritual performance''}'
+- '{''default'': ''Prolonged antagonist history delivered in single block'', ''replacement'':
+  ''Distribute historical information across multiple encounters and revelation moments''}'
+- '{''default'': ''Overreliance on female unconsciousness for plot access'', ''replacement'':
+  ''Develop alternative access mechanisms through deception, authority, or character
+  agency''}'
+- '{''default'': ''Institutional corruption bypassed through connections alone'',
+  ''replacement'': ''Show institutional complexity with bureaucratic costs rather
+  than simple corruption narrative''}'
+- '{''default'': ''Protagonist survival plan revealed too early'', ''replacement'':
+  ''Establish mystery through partial reveals and tactical withholding''}'
+- '{''default'': ''Tone inconsistency between comedy and horror without bridge'',
+  ''replacement'': ''Use protagonist self-deprecation and crude observations as consistent
+  tonal bridge at tension peaks''}'
+- '{''default'': ''Violent assault on service workers without moral context'', ''replacement'':
+  ''Contextualize violence through accumulated backstory justification; limit to antagonists
+  with established threat''}'
+- system_as_exposition_dump_mechanism
+- numerical_stakes_replacing_emotional_weight
+- quest_completion_without_narrative_cost
+- breakthrough_without_internal_struggle
+- observer_witnessing_as_pure_validation
+- mechanical_reward_delivery_without_character_moment
+- three_year_deadline_as_sole_urgency_driver
+- healing_spectacle_as_repetitive_recovery_beat
+- extended_combat_without_progressive_resolution
+- late_antagonist_introduction_without_tension_build
+- multiple_simultaneous_new_elements_overwhelming
+- antagonist_dialogue_as_info_dump_vehicle
+- near_death_without_recovery_fatiguing
+- early_overpowered_protagonist_eliminating_future_stakes
+- observer_mechanic_becoming_repetitive_setup
+- rapid_regime_change_straining_plausibility
+- dual_climax_without_careful_timing
+- sacrifice_mechanics_creating_reader_fatigue
+- high_body_count_alienating_without_purpose
+- cliffhanger_overuse_creating_predictability
+- system_notification_as_reliable_cliffhanger
+- extended_protagonist_absence_frustrating
+- training_arc_without_tension_balance
+- dual_location_absence_feeling_like_stall
+- cultivation_speed_undermining_stakes
+- explicit_milestone_eliminating_uncertainty
+- antagonist_contempt_reducing_stakes
+- quick_character_introduction_spreading_attention
+- convenience_system_granting_abilities_on_demand
+- meta_knowledge_reducing_tension
+- systematic_mechanics_flattening_character_depth
+- identity_elements
+- narrative_content
+- structural_patterns
+- copy_source_title_or_names
+- effortless_asset_collection
+- plot_summary_as_mechanism
+- confidence_zero_stub
+- identical_placeholder_content
+- empty_mechanism_array
+- volume_metadata_inconsistency
 - generate_chapters_from_zero_confidence
 - aggregate_empty_volumes
 - assume_story_mechanics_present
 - create_arcs_from_fallback_stubs
 - extract_rewards_from_llm_fallbacks
+- custom_mechanism_inheritance
+- narrative_structure_derivation
+- genre_specific_promise_formation
+- llm_fallback_complete_batch
+- zero_confidence_across_all_content
+- no_extractable_story_design_mechanics
+- empty_aggregation
+- generic_fallback
+- undefined_engine_state
+- no_data_extracted
+- zero_confidence
+- stub_only
+- llm_fallback_batch
+- zero_confidence_batch
+- no_distillable_content
+- source_data_fully_unavailable
+- content_extraction_default
+- narrative_hook_default
+- story_mechanics_default
+- confidence_assumption_nonzero
+- character_arc_extraction
+- plot_progression_extraction
+- thematic_element_extraction
+- dialogue_pattern_extraction
+- worldbuilding_extraction
+- pacing_pattern_extraction
+- reader_reward_delivery_extraction
+- voice_characteristic_extraction
+- state_progression_extraction
+- turning_point_extraction
+- reusable_mechanism_extraction
+- open_hook_extraction
+- zero_confidence_default_content
+- generic_stub_text
+- LLM_unavailable_assumption
+- reader_promise_delivery
+- arc_structure
+- state_progression
+- turning_points
+- setup_payoff_rhythm
+- craft_observations
+- open_hooks
+- reusable_mechanisms_specific
+- genre_specific_rewards
+- chapter_card_content
+- volume_card_content
+- story_design_mechanics
+- narrative_hooks
+- distillable_content
+- forbidden_default:empty_arrays_as_valid_data
+- forbidden_default:confidence_0.0_as_extraction_success
+- forbidden_default:stub_content_as_story_design_evidence
+- forbidden_default:100_percent_llm_fallback_rate_acceptable
+- forbidden_default:zero_extractable_content_as_complete
+- llm_fallback_stub
+- confidence_zero
+- empty_mechanisms
+- zero_chapters_valid
+- empty_chapter
+- no_state_change
+- no_reader_reward
+- unstructured_text_dump
+- zero_context_retention
+- bare_model_output_without_abstraction
+- unverified_fallback_content
+- chapter_cards
+- story_mechanics
+- reader_promise
+- genre_tags
+- core_engine
+- assume_chapter_content
+- infer_arc_function
+- derive_turning_points
+- extract_craft_observations
+- generate_state_progression
+- identify_dominant_engine
+- apply_standard_story_grammar
+- leverage_volume_structure_for_content
+- use_chapter_gaps_as_narrative_tools
+- rely_on_segmentation_data_without_content
+- apply_generic_reader_rewards
+- assume_reader_promise_applicability
+- derive_open_hooks_from_missing_source
+- leverage_630_chapters_for_story_design
+- apply_23_volume_structure_to_grammar
+- infer_chapter_511_significance
+- derive_chapter_353_meaning
+- use_highest_segmentation_as_content_proxy
+- assume_distillation_reliability
+- apply_volume_aggregation_without_content
+- generate_story_design_from_zero_confidence_data
+- derive_narrative_from_complete_data_loss_source
+- apply_standard_hooks_without_source_material
+- leverage_reader_promise_without_content
+- infer_mechanisms_from_zero_extractable_content
+- strict_llm_dependency
+- hardcoded_fallback
+- non_abstraction_fallback
+- zero_distillation_depth
+- unreliable_fallback_defaults
+- real_content_expectation
+- extractable_story_elements
+- actual_narrative_structure
+- genuine_reader_engagement_hooks
+- specific_craft_observations
+- open_chapter_hooks
+- chapter_aftereffects
+- reward_fulfillment_paths
+- empty_stub_generation
+- zero_confidence_acceptance
+- incomplete_extraction_tolerance
+- confidence_assignment
+- content_extrapolation
+- chapter_completion_attempt
+- volume_reconstruction
+- complete_data_blackout_across_all_volumes
+- llm_unavailable_across_all_chapters
+- zero_confidence_across_entire_source
+- no_arc_functions_derivable
+- no_dominant_engine_identifiable
+- no_state_progression_extractable
+- no_turning_points_available
+- no_craft_observations_recoverable
+- volume_card_aggregation_blocked
+- chapter_card_batch_generation_failed
+- source_requires_reprocessing_with_live_pipeline
+- distillation_pipeline_failure
+- llm_fallback
+- insufficient_source_data
+- real_extracted_content
+- complete_narrative_content
+- high_confidence_extraction
+- manual_content_substitution
+- confirmation_of_missing_content_as_real
+- assumed_narrative_content
+- fabricated_mechanism_details
+- default_confidence_scores
+- inferred_story_elements
+- pseudo_distillation_output
+- llm_fallback_all_volumes
+- zero_confidence_across_batch
+- no_extractable_craft_data
+- default_llm_fallback
+- hardcoded_mechanism
+- filled_narrative_design
+- actual_turning_points
+- realized_state_progression
+- extractable_reader_promise_elements
+- llm_fallback_systemic
+- sampling_gap_systemic
+- metadata_inconsistency
+- narrative_content_assumption
+- craft_observation_extraction
+- story_mechanic_inference
+- chapter_specific_reward_assignment
+- narrative_mechanics
+- reader_rewards
+- specific_character_arcs
+- detailed_world_building
+- any_story_content
+- positive_confidence
+- extracted_chapters
+- treat_fallback_stubs_as_implicit_narrative
+- infer_story_mechanics_from_zero_signal
+- generate_content_from_empty_volume_cards
+- propagate_llm_fallback_as_valid_grammar
+- use_chapter_numbers_from_failed_extraction
+- create_genre_grammar_from_synthetic_stub_sets
+- extracted_story_content
+- llm_generated_confidence
+- no_character_names
+- no_plot_specifics
+- no_direct_narrative_content
+- no_reliance_on_missing_story_elements
+- generic_distillation
+- empty_mechanism
+- baseline_fallback_only
+- non_distillable_content
+- unreliable_core_engine
+- generic_arc_function_assignment
+- placeholder_craft_profile_generation
+- invented_turning_point_specification
+- assumed_setup_payoff_rhythms
+- non_null_reusable_mechanisms_without_source_evidence
+- imputed_genre_engine_when_core_engine_unknown
+- story mechanics
+- narrative architecture
+- craft observations
+- reader reward mechanisms
+- reader promises
+- core engine classification
+- chapter-level content
+- volume-level synthesis
+- any narrative structure
+- any character dynamics
+- any plot mechanics
+- low_confidence_fallback
+- empty_source_content_default
+- zero_confidence_fallback_default
+- assume_content
+- skip_fallback
+- zero_confidence_assumption
+- chapter_cards_content
+- volume_aggregated_arcs
+- book_level_reader_promise
+- extracted_genre_tags
+- derived_story_mechanics
+- narrative_tropes
+- character_archetype_patterns
+- world_building_elements
+- plot_structure_vectors
+- reader_emotional_journeys
+- thematic_resonances
+- pacing_profiles
+- dialogue_density_metrics
+- scene_type_distributions
+- conflict_resolution_patterns
+- subplot_interweaving_vectors
+- climax_positioning_data
+- resolution_type_classification
+- setting_genre_mappings
+- protagonist_motivation_structures
+- narrative_arc_extraction
+- state_progression_derivation
+- turning_points_identification
+- reader_promise_definition
+- core_engine_identification
+- arc_function
+- dominant_engine
+- reusable_mechanisms
+- character_arcs
+- plot_beats
+- prose_craft_observations
+- LLM_unavailable_fallback_as_canonical_content
+- actual_chapter_content
+- real_distilled_text
+- verified_reader_rewards
+- confirmed_mechanism_reliability
+- valid_confidence_scores
+- fallback_stub_default
+- empty_content_default
+- generic_arc
+- placeholder_characters
+- genre_grammar_extraction
+- craft_profile_population
+- turning_point_capture
+- reusable_mechanism_identification
+- arc_function_determination
+- volume_aggregation_from_zero_content
+- confidence_based_on_narrative_quality
+- llm_content
+- high_confidence_content
+- specific_narrative
+- non_fallback_content
+- no_default_craft_extraction
+- no_default_narrative_hooks
+- no_default_story_design_patterns
+- no_default_volume_confidence
+- no_default_chapter_level_content
+- no_default_distillation_output
+- no_default_reader_experience
+- no_default_genre_specific_mechanisms
+- no_default_reusable_story_architecture
+- no_default_narrative_hooks_or_promises
+- content_presence_assumption
+- confidence_zero_tolerance
+- empty_volume_passthrough
+- aggregation_without_validation
+- stub_as_content_replacement
+- arc_function_inference
+- craft_profile_generation_without_data
+- narrative_trajectory_extrapolation
+- never_attempt_extraction_without_llm_availability_check
+- never_return_unstructured_content
+- never_expose_raw_zero_confidence_scores
+- never_skip_failure_scope_annotation
+- never_proceed_with_empty_chapter_arrays
+- content_claims
+- story_mechanisms_assertion
+- mechanism_promises
+- reader_expectation_anchoring
+- confidence_uniform
+- reusable_mechanisms_extractable
+- reader_rewards_derivable
+- open_hooks_accessible
+- state_progression_reconstructable
+- turning_points_identifiable
+- arc_function_deterministic
+- volume_annotation_match
+- llm_fallback_all_chapters
+- no_story_content_available
+- aggregation_impossible_without_substantive_data
+- volume_cards_contain_structural_metadata_only
+- book_design_card_generated_from_fallback_stubs
+- distillation_quality_insufficient_for_design_fingerprint
+- no_distillable_story_content
+- all_source_chapters_unavailable
+- incomplete_extraction_pipeline
+- no_reader_rewards_extracted
+- no_open_hooks_available
+- no_craft_observations_recorded
+- no_narrative_arc_classifiable
+- proceed_with_empty_chapters
+- use_fallback_stubs_permanently
+- aggregate_without_valid_data
+- report_success_on_zero_confidence
+- skip_reprocessing_after_critical_failure
+- strict_source_content
+- no_fallback
+- any_story_design_mechanics_inference
+- fabricated_character_arcs
+- synthetic_turning_points
+- generated_world_building_elements
+- invented_reader_rewards
+- placeholder_narrative_content
+- no_content
+- content_distillation_without_source
+- confidence_assignment_below_threshold
+- volume_normalization_on_invalid_data
+- non_empty_chapter_cards
+- positive_confidence_scores
+- extractable_narrative_content
+- valid_arc_functions
+- realized_state_progressions
+- zero_confidence_weights
+- empty_stub_content
+- fallback_mechanism_abstraction
+- undetermined_engine_type
+- null_reader_promise
+- empty_mechanism_arrays
+- no_source_data_default
+- zero_confidence_default
+- llm_fallback_systemic_default
+- zero_confidence_all_chapters
+- empty_reusable_mechanisms_array
+- empty_reader_rewards_array
+- empty_open_hooks_array
+- no_craft_analysis_available
+- status_as_incomplete_without_intervention
+- llm_fallback_without_extraction_attempt
+- unknown_core_engine_without_investigation
+- story_content_extraction
+- zero_confidence_across_volume
+- no_structural_data_for_analysis
+- volume_aggregation_impossible
+- chapter_content_batch_all_fallback
+- no_distillation_data
+- insufficient_chapter_data
+- chapter_card_extraction
+- genre_specific_extraction
+- core_engine_binding
+- structural_parsing
+- confidence_threshold_met
+- '{''pattern'': ''any_genre_assumption'', ''reason'': ''primary genre undetermined;
+  cannot default to common genres''}'
+- '{''pattern'': ''mechanism_inference_from_structure'', ''reason'': ''volume count
+  alone insufficient to infer story engine''}'
+- '{''pattern'': ''reader_promise_extraction'', ''reason'': ''No extractable content
+  to determine reader-facing promise''}'
+- '{''pattern'': ''state_progression_generation'', ''reason'': ''Cannot generate state
+  variables without chapter content''}'
+- '{''pattern'': ''reward_density_estimation'', ''reason'': ''Zero content basis for
+  any reward cataloguing''}'
+- '{''forbidden'': ''zero_confidence_across_all_chapters'', ''reason'': ''Indicates
+  complete upstream failure; no story mechanics extractable''}'
+- '{''forbidden'': ''identical_fallback_stubs_across_volumes'', ''reason'': ''Indicates
+  system-wide LLM unavailability rather than narrative content''}'
+- '{''forbidden'': ''empty_chapter_arrays_propagating_upward'', ''reason'': ''Aggregation
+  degradation blocks all downstream design extraction''}'
+- '{''forbidden'': ''confidence_0.0_as_stable_state'', ''reason'': ''Should be temporary
+  failure indicator, not permanent artifact state''}'
+- '{''forbidden'': ''placeholder_design_card_without_remediation_path'', ''reason'':
+  ''Design artifacts must include recovery mechanism when source extraction fails''}'
+- source_content_existence
+- extractable_story_mechanics
+- chapter_card_availability
+- real_source_data
+- content_confidence_values
+- determinable_core_engine
+- empty_stub_publication
+- zero_confidence_chapter_cards
+- metadata_only_volume_cards_as_complete
+- no_narrative_content_assertion
+- false_positive_extraction_claims
+- llm_unavailable_fallback_stub
+- zero_confidence_chapter_card
+- unpopulated_mechanism_array
+- missing_reader_rewards
+- empty_craft_observations
+- stub_hook_objects
+- volume_mismatch_chapter_assignment
+- aggregation_blocked_status
+- accept_empty_chapter_content
+- confidence_zero_as_valid
+- empty_reusable_mechanisms_as_complete
+- zero_reader_rewards_as_acceptable
+- stub_data_promotion
+- arc_zero_legitimization
+- confidence_reset_without_extraction
+- default_character
+- default_arc
+- default_conflict
+- default_resolution
+- default_world
+- reader_promise_inference
+- core_engine_assignment
+- arc_extraction
+- state_progression_mapping
+- turning_point_identification
+- confidence_0
+- arc_function_derivation
+- dominant_engine_identification
+- setup_payoff_rhythm_analysis
+- volume_level_aggregation
+- book_level_abstraction
+- craft_observation_synthesis
+- reader_promise_derivation
+- distillation_failure
+- insufficient_source_content
+- any_stub_generation_as_valid_content
+- zero_confidence_as_acceptable_data
+- llm_fallback_substituting_for_source_content
+- stub_behavior
+- unconditional_fallback
+- zero_confidence_accept
+- empty_source_validation
+- unverified_llm_output
+- missing_genre_mapping
+- absent_reader_promise
+- unclassified_engine
+- null_arc_function
+- novelty_rejection_on_insufficient_data
+- aggregate_without_source
+- volume_skip_on_incomplete
+- no_extractable_content
+- no_chapter_cards_generated
+- no_confidence_below_zero
+- source_content_availability
+- narrative_pattern_extraction
+- genre_grammar_application
+- chapter_level_analysis
+- volume_pattern_detection
+- mechanism_identification
+- design_fingerprint_construction
+- empty_chapter_cards
+- confidence_0.0
+- no_craft_observations
+- no_reader_promise
+- unverified_mechanism_claims
+- missing_genre_classification
+- assume_full_content_extraction
+- claim_arc_functions_identified
+- assert_engine_signature_valid
+- present_zero_confidence_as_reliable
+- derive_craft_patterns_from_empty_data
+- accept_llm_fallback_as_valid
+- proceed_with_zero_quality_source
+- skip_stub_detection
+- complete_distillation_without_source_validation
+- actual_narrative_content
+- genre_specific_elements
+- core_engine_activation
+- generic_llm_fallback
+- actual_story_generation
+- confidence_imputation
+- synthetic_content_injection
+- placeholder_as_real_content
+- non_fallback_narrative_engine
+- chapter_function
+- reusable_mechanism
+- craft_observation
+- reader_reward
+- open_hook
+- use_extracted_chapter_data
+- propagate_llm_fallback_as_valid
+- apply_generic_story_patterns
+- assume_standard_arc_structure
+- use_empty_reward_arrays_as_intentional
+- treat_zero_confidence_as_zero
+- allow_publication_without_reprocessing
+- merge_with_valid_book_design_cards
+- arc_specific_turning_points
+- genre_based_state_progression
+- craft_observation_injection
+- reader_reward_precision
+- open_hook_availability
+- arc_functions
+- specific_state_progressions
+- fabricated_prose_craft_data
+- confidence_values_above_zero
+- generic_llm_response
+- undetermined_content_fallback
+- any_arc_mechanics
+- turning_point_assignment
+- reusable_mechanism_derivation
+- craft_observation_inference
+- content_fill_in_attempt
+- extracted_narrative_content
+- real_chapter_arcs
+- specific_turning_points
+- named_character_development
+- genre_specific_craft_observations
+- any_non_fallback_content
+- assumed_reader_promises
+- fabricated_craft_observations
+- invented_state_progression
+- synthetic_rewards
+- hallucinated_mechanisms
+- missing_source_chapters
+- complete_story_content_claim
+- mechanic_extraction_from_stubs
+- high_confidence_assessment
+- distillation_success_state
+- default_confidence_assignment
+- default_chapter_card_generation
+- default_reader_reward_claims
+- default_narrative_element_extraction
+- default_craft_observation_derivation
+- any_positive_confidence_aggregation
+- any_contentful_design_fingerprint_generation
+- assumed_prose
+- standard_hook
+- no_narrative_mechanics
+- no_unparsed_content
+- no_unverified_llm_calls
+- any_confidence_below_0.3
+- llm_unavailable_status
+- undetermined_reader_promise
+- null_turning_points
+- generic_genre_only_tagging
+- stub_only_chapter_cards
+- non_fallback_mechanism
+- custom_mechanic
+- specific_rewards
+- specific_hooks
+- raw_content_expectation
+- specific_scene_promises
+- detailed_narrative_hooks
+- character_specific_rewards
+- volume_completion_guarantees
+- no_default_reader_promise_inference
+- no_default_core_engine_assignment
+- no_fabricated_reusable_mechanisms
+- no_empty_array_fallback_patterns
+- no_confidence_imputation
+- no_synthetic_craft_extraction
+- default_reader_promise
+- default_genre_tags
+- default_core_engine
+- default_state_variables
+- Aggregating LLM-fallback stubs as valid story design content
+- Using placeholder or stub values for required_contracts
+- Inferring narrative_engine signature from zero-confidence data
+- Treating empty state_variable arrays as equivalent to populated ones
+- Defaulting reader_rewards from stub content when none extracted
+- Proceeding with pipeline when all 15 volumes return identical stub patterns
+- Creating reusable_mechanisms entries from non-extractable content
+- Assuming genre_tags validity when source returns indeterminate
+- Propagating zero-confidence aggregation downstream
+- Using distillation_status:complete_failure as valid pipeline input
+- Creating character_progression data from unavailable chapter content
+- Treating chapters_available:0 as equivalent to chapters_available:506
+- Inferring story_design grammar rules from systematic unavailability pattern
+- Defaulting chapter_change_vectors when chapters_analyzable equals 0
+- no_source_content
+- aggregation_blocked
+- design_fingerprint_construction_impossible
+- uniform_zero_confidence
+- missing_craft_extraction
+- zero_confidence_extraction
+- segment_content_missing
+- narrative_arc
+- volume_card_aggregation
+- fabricated_narrative_content
+- invented_story_mechanics
+- assumed_arc_structures
+- hypothesized_tropes
+- speculative_character_arcs
+- imagined_world_details
+- manufactured_reader_rewards
+- constructed_open_hooks
+- placeholder_craft_observations
+- synthetic_chapter_vectors
+- hardcoded_response
+- non_structured_fallback
+- single_attempt_retry
+- unreliable_output
+- unverified_mechanism
+- zero_confidence_across_all_chapters
+- zero_confidence_across_all_volumes
+- complete_data_void
+- no_story_mechanics_extractable
+- no_craft_signal_present
+- no_reader_facing_content_available
+- aggregation_halts_at_stub_layer
+- source_content_unavailable
+- empty_chapter_card
+- unusable_extraction
+- narrative_content_extraction
+- plot_mechanics
+- character_dynamics
+- world_state_progression
+- narrative_mechanisms
+- prose_content
+- specific_chapter_hooks
+- real_mechanism_details
+- confidence_positive
+- craft_observations_populated
+- narrative_content_assignment
+- mechanism_reuse_patterns
+- reader_reward_assignment
+- open_hook_generation
+- book_level_aggregation
+- chapter_content_inference
+- design_fingerprint_derivation
+- empty_narrative
+- llm_fallback_stub_unstructured
+- content_inference_from_stubs
+- aggregation_from_zero_confidence_batch
+- design_extraction_from_empty_chapters
+- mechanism_extraction_without_source_content
+- reward_assignment_without_parsed_story_data
+- all_chapters_returned_stubs
+- confidence_zero_all_chapters
+- confidence_scoring
+- narrative_engine_assignment
+- chapter_content_parsing
+- genre_tag_population
+- state_variable_initialization
+- aggregation_completion
+- design_fingerprint_generation
+- story_mechanics_cataloging
+- open_hook_identification
+- chapter_batch_derivation
+- derived_arc_functions
+- inferred_turning_points
+- extrapolated_craft_observations
+- phantom_open_hooks
+- speculative_state_progression
+- fabricated_reusable_mechanisms
+- generic_volume_card_generation
+- stub_content_extraction
+- zero_confidence_aggregation
+- pseudo_design_card_fingerprint
+- hollow_genre_grammar_inference
+- no_content_extracted
+- zero_confidence_all_cards
+- batch_quality_insufficient_for_aggregation
+- no_extractable_story_content
+- data_availability_gap
+- upstream_processing_error
+- llm_unavailable_stubs
+- fallback_stub
+- no_extractable_story_mechanics
+- complete_absence_of_actionable_chapter_metadata
+- distillation_blocked_by_data_quality
+- upstream_pipeline_failure_systematic
+- no_craft_observations_available
+- no_narrative_hooks_identifiable
+- no_state_progression_derivable
+- no_turning_points_capturable
+- llm_unavailable_as_valid_response
+- identical_responses_across_volumes_as_content
+- zero_confidence_as_acceptable_confidence_level
+- unavailable_narrative_content_as_valid_reader_promise
+- volume_number_mismatch_as_consistent_metadata
+- reusable_content
+- specific_mechanism_binding
+- curated_content_assertion
+- narrative_mechanisms_assigned
+- reader_rewards_inherited
+- chapter_content_generated
+- craft_observations_inserted
+- structural_data_constructed
+- confidence_scores_elevated
+- source_references_confirmed
+- volume_coverage_inflated
+- quality_flags_dismissed
+- mechanism_abstraction_promoted_without_contract
+- arc_function_extraction
+- craft_observation_assignment
+- reader_reward_mapping
+- open_hook_derivation
+- non_reusable_specific_identification
+- volume_aggregation_fill
+- chapter_content_population
+- llm_fallback_stub_no_distillable_content
+- no_reusable_mechanisms
+- any_story_mechanisms
+- reader_promise_claims
+- state_progressions
+- setup_payoff_rhythms
+- no_source_content_available
+- distillation_aborted
+- volume_metadata_inconsistency_chapters_report_volume_1_while_distilling_volumes_1-9
+- confidence_zero_across_212_chapters
+- no_craft_observations_extractable
+- no_narrative_hooks_available
+- complete_pipeline_failure
+- zero_confidence_output
+- empty_reusable_mechanisms
+- no_narrative_structure_extraction
+- missing_chapter
+- default_stub
+- assume_existing_story_mechanics
+- infer_reader_promise_from_empty_data
+- generate_craft_observations
+- populate_reusable_mechanisms
+- derive_genre_tags_from_stub_content
+- compute_arc_functions_from_zero_confidence
+- propagate_volume_mismatch_artifacts
+- synthesize_reader_rewards_from_failure_state
+- design_card_generation_from_zero_confidence
+- abstract_design_fingerprint_inference_from_void
+- volume_aggregation_without_chapter_extraction
+- hallucinated_genre_grammar_from_empty_source
+- narrative_engine_inference_without_content
+- false_positive_confidence_propagation
+- reader_promise_generation
+- narrative_content_substitution
+- craft_profile_inference
+- mechanism_abstraction_without_source
+- volume_arc_assignment
+- chapter_turning_point_assignment
+- open_hook_propagation
+- treat_fallback_stub_as_valid_content
+- '{''default'': ''desire_without_punishment'', ''forbidden'': True, ''rationale'':
+  ''All desire arcs must deliver karmic justice; successful consummation without collapse
+  violates cautionary tale engine''}'
+- '{''default'': ''investigation_without_confession'', ''forbidden'': True, ''rationale'':
+  ''Investigation arcs must resolve through 酒后吐真言 or interrogation exposure, not external
+  discovery''}'
+- '{''default'': ''protagonist_solitary_success'', ''forbidden'': True, ''rationale'':
+  ''Trickster arcs must include moral elevation through unfavorable comparison; individual
+  skill without ethical framework incomplete''}'
+- '{''default'': ''frame_narrative_without_transformation'', ''forbidden'': True,
+  ''rationale'': ''Rivals must transform into informants; unresolved antagonism violates
+  frame resolution contract''}'
+- '{''default'': ''narrative_unit_without_connection'', ''forbidden'': True, ''rationale'':
+  ''Separate episodic units must connect through verse bridges, thematic concerns,
+  or narrator commentary''}'
+- '{''default'': ''punishment_without_context'', ''forbidden'': True, ''rationale'':
+  ''All punishment must be delivered through established mechanisms (underworld, interrogation,
+  return timing) not arbitrary authorial decision''}'
+- '{''default'': ''confession_without_consequence'', ''forbidden'': True, ''rationale'':
+  ''Truth revelation must produce consequences (investigation resolution, suicide,
+  exoneration)''}'
+- '{''default'': ''appendix_without_meta_function'', ''forbidden'': True, ''rationale'':
+  ''Dramatic appendix must provide meta-narrative closure distinct from story resolution''}'
+- assume_complete_arc
+- infer_reader_promise
+- auto_generate_turning_points
+- treat_confidence_zero_as_valid
+- propagate_uncertain_metadata
+- llm_output_parse_fail
+- Generic_uncontextualized_threat_hooks_without_accusation_nature_specification
+- Divine_rescue_as_sole_resolution_mechanism_for_critical_peril
+- Female_character_agency_limited_exclusively_to_domestic_virtue_roles
+- Adoption_as_avoidance_rather_than_genuine_plot_resolution
+- Religious_intervention_framing_without_reader_sensitivity_cue
+- Do not use specific proper nouns, historical figure names, or location identifiers
+- Do not replicate proprietary citation formats or bibliographic entry structures
+- Do not include copyrighted image credits or Getty identifiers
+- Do not replicate quote length and citation density patterns verbatim from source
+- Do not use the literary epigraph attribution patterns or character entry formats
+- Do not include specific WWII events, dates, or chapter ranges
+- Do not use Vichy government figures or policy specifics
+- Avoid citation-heavy format that impedes reader momentum without compensatory narrative
+  drive
+- Avoid character list format that creates false expectations of novelistic treatment
+  without character arc delivery
+- Avoid rehabilitation narrative that normalizes collaboration without moral complexity
+- Do not introduce subjective bias through authorial first-person framing without
+  evidentiary grounding
+- Do not deploy atmospheric detail except in testimony passages where sensory specificity
+  serves authenticity
+- Pure chronological historical chronicle without narrative tension
+- Single-protagonist interiority dominating multi-theater scope
+- Decisive narrative certainty eliminating moral ambiguity
+- Enumeration-heavy passages privileging statistics over operational specificity
+- Biographical encyclopedia format displacing fictional narrative momentum
+- Didactic leadership critique without grounding in specific tactical moments
+- Flashback without environmental trigger mechanism causing momentum delay
+- Direct authorial judgment replacing ironic historical framing
+- Factual exposition separated from operational narrative rather than embedded within
+- Historical certainty removing puzzle-solving tension from predetermined outcomes
+- Protagonist-centered narrative (use analytical framework instead)
+- Extended scene-setting description (use concrete specificity instead)
+- Direct dialogue reconstruction (use reported speech from records instead)
+- Abstract categorical descriptions (use named entities and individual fates instead)
+- Retrospective summary exposition (embed information in chronological narration instead)
+- Linear cause-effect determinism (enforce contingency thesis instead)

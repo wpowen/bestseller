@@ -1,0 +1,151 @@
+profile_id: plova_structured_writing_v1
+title: "Plova structured writing methodology"
+source_set_id: plova_douyin_2026_05_21
+card_deck: data/methodology_sources/plova/cards.yaml
+default_mode: warn
+max_prompt_cards: 6
+pending_sources: ["plova.36", "plova.37", "plova.38"]
+cards:
+  plova.opening.anti_pitfall:
+    enabled: true
+    gate_mode: audit_only
+    priority: 10
+    strict_when: ["chapter_number <= 3"]
+  plova.opening.three_chapter_function:
+    enabled: true
+    gate_mode: audit_only
+    priority: 5
+    strict_when: ["chapter_number <= 3"]
+  plova.opening.reader_desire_over_noise:
+    enabled: true
+    gate_mode: audit_only
+    priority: 15
+    strict_when: ["chapter_number <= 3"]
+  plova.action_scene.structure:
+    enabled: true
+    gate_mode: audit_only
+    priority: 10
+  plova.action_scene.visual_not_empty:
+    enabled: true
+    gate_mode: audit_only
+    priority: 20
+  plova.action_scene.emotion_driver:
+    enabled: true
+    gate_mode: audit_only
+    priority: 15
+  plova.action_scene.goal_risk_cost:
+    enabled: true
+    gate_mode: audit_only
+    priority: 12
+  plova.chekhov.not_equal_foreshadowing:
+    enabled: true
+    gate_mode: audit_only
+    priority: 25
+  plova.chekhov.emphasized_item_must_function:
+    enabled: true
+    gate_mode: audit_only
+    priority: 10
+  plova.foreshadowing.payoff_management:
+    enabled: true
+    gate_mode: warn
+    priority: 18
+  plova.mainline.stage_goal_obstacle_result:
+    enabled: true
+    gate_mode: warn
+    priority: 20
+  plova.mainline.state_chain_advanced:
+    enabled: true
+    gate_mode: warn
+    priority: 22
+  plova.mainline.absorb_subplots:
+    enabled: true
+    gate_mode: warn
+    priority: 26
+  plova.longform.external_memory_system:
+    enabled: true
+    gate_mode: advisory
+    priority: 45
+  plova.longform.control_loss:
+    enabled: true
+    gate_mode: advisory
+    priority: 35
+  plova.longform.midbook_triage:
+    enabled: true
+    gate_mode: advisory
+    priority: 30
+  plova.longform.after_100k_chaos:
+    enabled: true
+    gate_mode: advisory
+    priority: 25
+  plova.longform.story_control_system:
+    enabled: true
+    gate_mode: advisory
+    priority: 32
+  plova.longform.five_tables:
+    enabled: true
+    gate_mode: advisory
+    priority: 40
+  plova.longform.four_line_management:
+    enabled: true
+    gate_mode: warn
+    priority: 18
+  plova.longform.idea_scalability:
+    enabled: true
+    gate_mode: advisory
+    priority: 42
+  plova.timeline.longform_control:
+    enabled: true
+    gate_mode: warn
+    priority: 24
+  plova.worldview.power_archive:
+    enabled: true
+    gate_mode: advisory
+    priority: 45
+  plova.worldview.faction_pressure:
+    enabled: true
+    gate_mode: advisory
+    priority: 34
+  plova.worldview.four_layers:
+    enabled: true
+    gate_mode: advisory
+    priority: 44
+  plova.worldview.mainline_first:
+    enabled: true
+    gate_mode: advisory
+    priority: 28
+  plova.worldview.setting_load_control:
+    enabled: true
+    gate_mode: advisory
+    priority: 26
+  plova.power.character_binding:
+    enabled: true
+    gate_mode: advisory
+    priority: 34
+  plova.power.system_five_questions:
+    enabled: true
+    gate_mode: advisory
+    priority: 38
+  plova.progression.level_up_state_delta:
+    enabled: true
+    gate_mode: advisory
+    priority: 30
+  plova.character.functional_role_card:
+    enabled: true
+    gate_mode: advisory
+    priority: 30
+  plova.character.ensemble_focus_control:
+    enabled: true
+    gate_mode: advisory
+    priority: 24
+  plova.outline.executability:
+    enabled: true
+    gate_mode: advisory
+    priority: 20
+  plova.outline.calibration:
+    enabled: true
+    gate_mode: advisory
+    priority: 26
+  plova.iceberg.surface_subtext:
+    enabled: true
+    gate_mode: advisory
+    priority: 30

@@ -1553,7 +1553,7 @@ def _chapter_has_safe_draft_for_review_stall(
     chapter: ChapterModel,
     chapter_draft: ChapterDraftVersionModel | None,
 ) -> bool:
-    """Return True when review can accept the best draft without human review."""
+    """Return True when review can accept the best draft without machine repair."""
     if chapter_draft is None:
         return False
     return getattr(chapter, "production_state", None) == "ok"
@@ -3247,8 +3247,8 @@ async def run_scene_pipeline(
                         )
                     else:
                         requires_human_review = True
-                        workflow_run.status = WorkflowStatus.WAITING_HUMAN.value
-                        workflow_run.current_step = "waiting_human_review"
+                        workflow_run.status = WorkflowStatus.MACHINE_BLOCKED.value
+                        workflow_run.current_step = "machine_repair_required"
                     break
 
             if rewrite_iterations >= settings.quality.max_scene_revisions:
@@ -3260,8 +3260,8 @@ async def run_scene_pipeline(
                     )
                 else:
                     requires_human_review = True
-                    workflow_run.status = WorkflowStatus.WAITING_HUMAN.value
-                    workflow_run.current_step = "waiting_human_review"
+                    workflow_run.status = WorkflowStatus.MACHINE_BLOCKED.value
+                    workflow_run.current_step = "machine_repair_required"
                 break
 
             previous_scene_score = current_scene_score
@@ -3934,12 +3934,12 @@ async def run_chapter_pipeline(
         if chapter_draft is None:
             logger.warning(
                 "Chapter %d: scene pipeline produced no assemblable draft — "
-                "blocking chapter for human review",
+                "blocking chapter for machine repair",
                 chapter_number,
             )
             chapter.status = ChapterStatus.REVISION.value
             chapter.production_state = "blocked"
-            workflow_run.status = WorkflowStatus.WAITING_HUMAN.value
+            workflow_run.status = WorkflowStatus.MACHINE_BLOCKED.value
             workflow_run.current_step = "blocked_no_assemblable_draft"
             workflow_run.metadata_json = {
                 **workflow_run.metadata_json,
@@ -3967,7 +3967,7 @@ async def run_chapter_pipeline(
         if auto_repair_attempts > 0 and getattr(chapter, "production_state", None) == "blocked":
             logger.warning(
                 "Chapter %d: auto-repair exhausted %d attempt(s), still blocked — "
-                "routing best available draft to human review",
+                "routing best available draft to machine repair",
                 chapter_number,
                 auto_repair_attempts,
             )
@@ -4089,7 +4089,7 @@ async def run_chapter_pipeline(
         # level AI "味" and applies *only* localized fixes at the marked
         # positions. Surrounding prose is never rewritten. When the
         # post-patch score is still above the block threshold the chapter
-        # is routed to human review — same escape hatch the rest of the
+        # is routed to machine repair — same escape hatch the rest of the
         # gates use.
         ai_flavor_outcome = None
         try:
@@ -4121,7 +4121,7 @@ async def run_chapter_pipeline(
                 if ai_flavor_outcome.decision == "block":
                     logger.warning(
                         "ai_flavor_gate ch%d: residual score %.1f >= threshold, "
-                        "routing to human review",
+                        "routing to machine repair",
                         chapter_number,
                         ai_flavor_outcome.after_score,
                     )
@@ -4240,8 +4240,8 @@ async def run_chapter_pipeline(
         if scene_requires_human_review:
             chapter.status = ChapterStatus.REVISION.value
             export_artifact_id, output_path = await _export_current_chapter_markdown()
-            workflow_run.status = WorkflowStatus.WAITING_HUMAN.value
-            workflow_run.current_step = "waiting_human_review"
+            workflow_run.status = WorkflowStatus.MACHINE_BLOCKED.value
+            workflow_run.current_step = "machine_repair_required"
             workflow_run.metadata_json = {
                 **workflow_run.metadata_json,
                 "requires_human_review": True,
@@ -4444,8 +4444,8 @@ async def run_chapter_pipeline(
                 chapter.status = ChapterStatus.REVISION.value
                 chapter.production_state = "blocked"
                 export_artifact_id, output_path = await _export_current_chapter_markdown()
-                workflow_run.status = WorkflowStatus.WAITING_HUMAN.value
-                workflow_run.current_step = "waiting_human_review"
+                workflow_run.status = WorkflowStatus.MACHINE_BLOCKED.value
+                workflow_run.current_step = "machine_repair_required"
                 workflow_run.metadata_json = {
                     **workflow_run.metadata_json,
                     "draft_mode": True,
@@ -4637,8 +4637,8 @@ async def run_chapter_pipeline(
                                 requires_human_review = True
                                 chapter.status = ChapterStatus.REVISION.value
                                 chapter.production_state = "blocked"
-                                workflow_run.status = WorkflowStatus.WAITING_HUMAN.value
-                                workflow_run.current_step = "waiting_human_review"
+                                workflow_run.status = WorkflowStatus.MACHINE_BLOCKED.value
+                                workflow_run.current_step = "machine_repair_required"
                                 workflow_run.metadata_json = {
                                     **workflow_run.metadata_json,
                                     "blocked_by_phase_d_time_gate": True,
@@ -4768,8 +4768,8 @@ async def run_chapter_pipeline(
                 # chapter complete after exhausting rewrites.
                 reached_chapter_revision_limit = True
                 requires_human_review = True
-                workflow_run.status = WorkflowStatus.WAITING_HUMAN.value
-                workflow_run.current_step = "waiting_human_review"
+                workflow_run.status = WorkflowStatus.MACHINE_BLOCKED.value
+                workflow_run.current_step = "machine_repair_required"
                 break
 
             chapter_rewrite_iterations += 1
@@ -4823,8 +4823,8 @@ async def run_chapter_pipeline(
         if getattr(chapter, "production_state", None) == "blocked":
             requires_human_review = True
             chapter.status = ChapterStatus.REVISION.value
-            workflow_run.status = WorkflowStatus.WAITING_HUMAN.value
-            workflow_run.current_step = "waiting_human_review"
+            workflow_run.status = WorkflowStatus.MACHINE_BLOCKED.value
+            workflow_run.current_step = "machine_repair_required"
             workflow_run.metadata_json = {
                 **workflow_run.metadata_json,
                 "requires_human_review": True,
@@ -5621,7 +5621,7 @@ async def run_project_pipeline(
                 requires_human_review = True
                 _emit_progress(
                     progress,
-                    "chapter_pipeline_paused_for_human_review",
+                    "chapter_pipeline_machine_repair_required",
                     {
                         "project_slug": project_slug,
                         "chapter_number": chapter.chapter_number,
@@ -5629,8 +5629,8 @@ async def run_project_pipeline(
                     },
                 )
                 project.status = ProjectStatus.REVISING.value
-                workflow_run.status = WorkflowStatus.WAITING_HUMAN.value
-                workflow_run.current_step = "waiting_human_review"
+                workflow_run.status = WorkflowStatus.MACHINE_BLOCKED.value
+                workflow_run.current_step = "machine_repair_required"
                 workflow_run.metadata_json = {
                     **(workflow_run.metadata_json or {}),
                     "requires_human_review": True,
@@ -6054,7 +6054,7 @@ async def run_project_pipeline(
             elif settings.pipeline.accept_on_stall:
                 logger.info(
                     "Project %s consistency verdict=%s — accepting per accept_on_stall; "
-                    "skipping human-review pause.",
+                    "skipping machine-repair pause.",
                     project_slug,
                     review_result.verdict,
                 )
@@ -6088,12 +6088,12 @@ async def run_project_pipeline(
         )
 
         workflow_run.status = (
-            WorkflowStatus.WAITING_HUMAN.value
+            WorkflowStatus.MACHINE_BLOCKED.value
             if requires_human_review
             else WorkflowStatus.COMPLETED.value
         )
         workflow_run.current_step = (
-            "waiting_human_review" if requires_human_review else "completed"
+            "machine_repair_required" if requires_human_review else "completed"
         )
         workflow_run.metadata_json = {
             **workflow_run.metadata_json,
@@ -6227,8 +6227,8 @@ async def run_project_pipeline(
                 ):
                     requires_human_review = True
                     project.status = ProjectStatus.REVISING.value
-                    workflow_run.status = WorkflowStatus.WAITING_HUMAN.value
-                    workflow_run.current_step = "waiting_human_review"
+                    workflow_run.status = WorkflowStatus.MACHINE_BLOCKED.value
+                    workflow_run.current_step = "machine_repair_required"
                 _emit_progress(
                     progress,
                     "premium_book_gate_completed",
@@ -6250,12 +6250,12 @@ async def run_project_pipeline(
             ProjectStatus.REVISING.value if requires_human_review else ProjectStatus.WRITING.value
         )
         workflow_run.status = (
-            WorkflowStatus.WAITING_HUMAN.value
+            WorkflowStatus.MACHINE_BLOCKED.value
             if requires_human_review
             else WorkflowStatus.COMPLETED.value
         )
         workflow_run.current_step = (
-            "waiting_human_review" if requires_human_review else "completed"
+            "machine_repair_required" if requires_human_review else "completed"
         )
         workflow_run.metadata_json = {
             **workflow_run.metadata_json,
@@ -7061,12 +7061,12 @@ async def run_progressive_autowrite_pipeline(
         })
         if vol_project_result.requires_human_review:
             logger.warning(
-                "Volume %d writing for project %s paused for human review; "
+                "Volume %d writing for project %s machine-blocked for repair; "
                 "skipping later volume planning until the blocker is resolved.",
                 vol_num,
                 project.slug,
             )
-            _emit_progress(progress, "volume_writing_paused_for_human_review", {
+            _emit_progress(progress, "volume_writing_machine_repair_required", {
                 "project_slug": project.slug,
                 "volume_number": vol_num,
                 "chapters_written": len(vol_project_result.chapter_results),

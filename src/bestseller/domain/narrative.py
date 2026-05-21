@@ -129,6 +129,14 @@ class SceneContractRead(BaseModel):
     spotlight_character: str | None = None  # 群像焦点轮转：本场景高光角色
     information_control_mode: str | None = Field(default=None, max_length=64)  # reader_knows/character_knows/neither
     action_sequence: list[str] = Field(default_factory=list)  # 动作序列细纲（心流写作用）
+    fight_objective: str | None = None  # 打斗/动作场景目标
+    failure_cost: str | None = None  # 动作失败的明确代价
+    opponent_advantage: str | None = None  # 对手优势或环境压制
+    tactic_shift: str | None = None  # 过程中发生的策略变化
+    emotion_driver: str | None = None  # 动作场景的情绪驱动
+    turning_point: str | None = None  # 胜负/局面转折点
+    exit_state_delta: str | None = None  # 打完后局面如何改变
+    next_aftereffect: str | None = None  # 下一场/下一章承接的后效
     camera_distance: str | None = Field(default=None, max_length=64)  # 俯瞰/远景/中景/近景/特写
     reveal_mode: str | None = Field(default=None, max_length=64)  # 读者先知/角色先知/同步发现/误导反转
     signature_image: str | None = None  # 本场必须留下的画面

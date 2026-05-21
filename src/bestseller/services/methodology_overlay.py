@@ -92,6 +92,15 @@ _SCENE_SCOPE_ONLY_KEYS = {
     "ending_cut",
     "action_sequence",
     "action_beats",
+    "fight_objective",
+    "combat_objective",
+    "failure_cost",
+    "opponent_advantage",
+    "tactic_shift",
+    "emotion_driver",
+    "turning_point",
+    "exit_state_delta",
+    "next_aftereffect",
 }
 
 _STORY_SCOPE_ONLY_KEYS = {
@@ -294,6 +303,35 @@ def normalize_scene_overlay(value: Any) -> dict[str, Any]:
             "reader_knowledge_mode",
         ),
         "action_sequence": text_list(data.get("action_sequence") or data.get("action_beats")),
+        "fight_objective": first_text(
+            data,
+            "fight_objective",
+            "combat_objective",
+            "action_objective",
+            "objective",
+        ),
+        "failure_cost": first_text(data, "failure_cost", "what_is_lost", "loss_cost"),
+        "opponent_advantage": first_text(
+            data,
+            "opponent_advantage",
+            "enemy_advantage",
+            "opposition_advantage",
+        ),
+        "tactic_shift": first_text(data, "tactic_shift", "strategy_shift", "turning_tactic"),
+        "emotion_driver": first_text(data, "emotion_driver", "emotional_driver", "fight_emotion"),
+        "turning_point": first_text(data, "turning_point", "fight_turn", "reversal"),
+        "exit_state_delta": first_text(
+            data,
+            "exit_state_delta",
+            "state_delta",
+            "after_state_change",
+        ),
+        "next_aftereffect": first_text(
+            data,
+            "next_aftereffect",
+            "aftereffect",
+            "consequence",
+        ),
         "camera_distance": first_text(data, "camera_distance", "camera", "shot"),
         "reveal_mode": first_text(data, "reveal_mode", "information_reveal_mode"),
         "signature_image": first_text(data, "signature_image", "memorable_image"),
@@ -382,6 +420,18 @@ def render_overlay_prompt_block(
         _append_line(lines, "signature image" if is_en else "标志画面", scene.get("signature_image"))
         _append_line(lines, "cut point" if is_en else "断点", scene.get("cut_point"))
         _append_list(lines, "action beats" if is_en else "动作序列", scene.get("action_sequence"))
+        _append_line(lines, "fight objective" if is_en else "打斗目标", scene.get("fight_objective"))
+        _append_line(lines, "failure cost" if is_en else "失败代价", scene.get("failure_cost"))
+        _append_line(
+            lines,
+            "opponent advantage" if is_en else "对手优势",
+            scene.get("opponent_advantage"),
+        )
+        _append_line(lines, "tactic shift" if is_en else "策略变化", scene.get("tactic_shift"))
+        _append_line(lines, "emotion driver" if is_en else "情绪驱动", scene.get("emotion_driver"))
+        _append_line(lines, "turning point" if is_en else "转折点", scene.get("turning_point"))
+        _append_line(lines, "exit state delta" if is_en else "退出状态变化", scene.get("exit_state_delta"))
+        _append_line(lines, "aftereffect" if is_en else "后效", scene.get("next_aftereffect"))
         _append_list(lines, "relationship debts" if is_en else "关系债务", scene.get("relationship_debts"))
     return "\n".join(lines)
 
@@ -626,7 +676,16 @@ def validate_scene_methodology_contract(
             )
         )
 
-    action_scene_types = {"action", "confrontation", "climax", "reveal", "battle", "chase"}
+    action_scene_types = {
+        "action",
+        "battle",
+        "chase",
+        "climax",
+        "combat",
+        "confrontation",
+        "fight",
+        "reveal",
+    }
     if str(scene_type or "").strip().lower() in action_scene_types and not data.get("action_sequence"):
         findings.append(
             OverlayFinding(
@@ -635,6 +694,46 @@ def validate_scene_methodology_contract(
                 message="动作/对峙/揭示类场景需要 action_sequence，避免正文只写静态说明。",
             )
         )
+    is_action_scene = str(scene_type or "").strip().lower() in action_scene_types or any(
+        data.get(key)
+        for key in (
+            "action_sequence",
+            "fight_objective",
+            "opponent_advantage",
+            "tactic_shift",
+            "emotion_driver",
+            "turning_point",
+            "exit_state_delta",
+        )
+    )
+    if is_action_scene:
+        action_required = {
+            "fight_objective": "打斗目标",
+            "failure_cost": "失败代价",
+            "opponent_advantage": "对手优势",
+            "tactic_shift": "策略变化",
+            "emotion_driver": "情绪驱动",
+            "turning_point": "转折点",
+            "exit_state_delta": "退出状态变化",
+        }
+        for key, label in action_required.items():
+            value = data.get(key)
+            if not text(value):
+                findings.append(
+                    OverlayFinding(
+                        code="SCENE_METHODOLOGY_ACTION_FIELD_MISSING",
+                        path=f"{path}.{key}",
+                        message=f"动作场景 methodology_contract 缺少{label}。",
+                    )
+                )
+            elif _is_low_signal_contract_value(value):
+                findings.append(
+                    OverlayFinding(
+                        code="SCENE_METHODOLOGY_FIELD_GENERIC",
+                        path=f"{path}.{key}",
+                        message=f"动作场景 methodology_contract 的{label}过于抽象，必须改成具体可写的场面变化。",
+                    )
+                )
 
     if participant_count >= 2 and not data.get("relationship_debts"):
         findings.append(

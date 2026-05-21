@@ -35,6 +35,18 @@
 - ❌ **首次能力觉醒章 (first_powerup_reveal) 必须配代价账 + 旁观反应**——缺一不可。
 - ❌ **拒稿整改时不得 LLM 现编 repair 策略**——必须按 [config/rejection_repair_playbook.yaml](../../../config/rejection_repair_playbook.yaml) 的 `repair_actions` 顺序执行。
 
+## Mode B（连续性）红线
+
+> 数据源：[chapter_seam](../../../src/bestseller/services/chapter_seam.py) ·
+>        [deduplication.detect_intra_chapter_stitched_drafts](../../../src/bestseller/services/deduplication.py) ·
+>        [character_alias_canon](../../../src/bestseller/services/character_alias_canon.py) ·
+>        [stance_continuity_docs](../../../src/bestseller/services/stance_continuity_docs.py)
+
+- ❌ **章节断点连贯性**（第 2 章起）：前一章末尾的 open thread（location / participant / immediate_threat / body_state / unanswered_question）必须在本章开篇 300 字内得到承接、明示时间跳跃、明示空间转场，或被屏幕上解决。silent_drop = `status: rework`。修复：调 [chapter_seam.build_seam_bridge_repair_prompt](../../../src/bestseller/services/chapter_seam.py) 让 editor 插入 100-300 字 bridge 段落。
+- ❌ **同章拼接稿检测**：同一章内若出现 ≥ 1 对事件签名相似度 ≥ 0.62 且共享 ≥ 2 命名参与者 + 1 关键道具的段落，视为双稿拼接。**禁止合并**（合并会留下道具/动作矛盾），必须**二选一删另一段**。修复：调 [deduplication.build_stitched_draft_repair_prompt](../../../src/bestseller/services/deduplication.py)。
+- ❌ **角色名 Canon**：项目级 `story-bible/character-aliases.yaml` 是人名单一事实源。文本中出现的 2-3 字 Han 名变体必须在 canon 中登记为某 `canonical` 或 `aliases`；落入 `forbidden_collisions` 集合的名字（如 周元 ↔ 周元青）必须替换或显式拆分。
+- ❌ **角色立场逆转必须有触发事件**：连续两次 character_snapshot 中若任一关系从 hostile → friendly 或反向（trust_map 从 ≤ -0.3 跳到 ≥ +0.3），过渡区间内的 `knowledge/timeline.md` 必须登记一条 reconciliation / betrayal / coercion / rescue / debt_event 事件。否则 `severity=violation`，必须补事件或回退立场。
+
 ## Mode B（结构）红线
 
 - ✅ `meta.yaml` 与磁盘状态**始终同步**（`current_chapter` 指向最近一章已落盘且评分通过的编号）。

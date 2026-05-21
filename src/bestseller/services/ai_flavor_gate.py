@@ -8,7 +8,7 @@ signing/export step. Its job:
    of unrelated prose).
 3. Re-detect once; if blocking spans remain, return a hard
    ``CheckerReport`` so the pipeline can route the chapter to the
-   ``requires_human_review`` queue.
+   machine-repair state.
 
 The gate is intentionally surgical — it never re-rolls the whole
 chapter and never edits content outside the spans the detector pinned.
@@ -73,7 +73,7 @@ class AiFlavorGateConfig:
     audit_dir_relative: str = "audits"
     data_dir: str = "data/ai_flavor"
     # When the gate cannot bring the score below the block threshold,
-    # the pipeline marks the chapter for human review (recommended)
+    # the pipeline marks the chapter for machine repair (recommended)
     # rather than letting it slip through with a warning.
     block_on_residual: bool = True
 
@@ -95,7 +95,7 @@ class AiFlavorGateOutcome:
     #   "pass"            — no spans worth patching; original text stands.
     #   "patched"         — fixes applied, residual score below threshold.
     #   "block"           — fixes applied but score still above threshold;
-    #                       pipeline must mark requires_human_review.
+    #                       pipeline must mark machine repair required.
     decision: str = "pass"
     metrics: dict[str, Any] = field(default_factory=dict)
 
@@ -164,7 +164,7 @@ def _build_report(
         )
     if decision == "block":
         summary_bits.append(
-            f"residual ≥ block threshold ({block_score}); requires human review"
+            f"residual ≥ block threshold ({block_score}); requires machine repair"
         )
 
     return CheckerReport(

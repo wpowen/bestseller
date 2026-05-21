@@ -5,8 +5,20 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from bestseller.infra.db.models import ChapterDraftVersionModel, ChapterModel, ClueModel
+from bestseller.infra.db.models import (
+    ChapterDraftVersionModel,
+    ChapterModel,
+    ClueModel,
+    QualityScoreModel,
+    ReviewReportModel,
+)
+from bestseller.services.checker_schema import CheckerReport
 from bestseller.services.hype_engine import HypeType
+from bestseller.services.methodology_health import (
+    build_configured_methodology_health_report,
+    methodology_repair_actions,
+)
+from bestseller.services.methodology_runtime import checker_reports_from_review_payload
 from bestseller.services.projects import get_project_by_slug
 from bestseller.services.reader_power import analyze_golden_three, serialize_golden_three_report
 from bestseller.services.revealed_ledger import build_revealed_ledger
@@ -68,6 +80,46 @@ async def _load_setup_payoff_inputs(
             hype_enum = None
         chapter_hype.append((int(chapter_number), hype_enum))
     return chapter_texts, chapter_hype
+
+
+async def _load_methodology_checker_reports(
+    session: AsyncSession,
+    *,
+    project_id: Any,
+) -> tuple[CheckerReport, ...]:
+    """Load current review-embedded methodology reports for health aggregation."""
+
+    if not hasattr(session, "execute"):
+        return ()
+    try:
+        result = await session.execute(
+            select(ReviewReportModel.structured_output)
+            .join(
+                QualityScoreModel,
+                QualityScoreModel.review_report_id == ReviewReportModel.id,
+            )
+            .where(
+                ReviewReportModel.project_id == project_id,
+                QualityScoreModel.is_current.is_(True),
+            )
+            .order_by(ReviewReportModel.created_at.desc())
+            .limit(300)
+        )
+    except Exception:
+        return ()
+
+    reports: list[CheckerReport] = []
+    rows = list(result) if result is not None else []
+    for row in rows:
+        payload = row
+        if not isinstance(payload, dict):
+            try:
+                payload = row[0]
+            except (TypeError, KeyError, IndexError):
+                payload = None
+        if isinstance(payload, dict):
+            reports.extend(checker_reports_from_review_payload(payload))
+    return tuple(reports)
 
 
 async def build_project_health_report(
@@ -164,6 +216,20 @@ async def build_project_health_report(
         )
     else:
         golden_three_report = {"enabled": False}
+    methodology_checker_reports = await _load_methodology_checker_reports(
+        session,
+        project_id=project.id,
+    )
+    methodology_report = build_configured_methodology_health_report(
+        checker_reports=methodology_checker_reports,
+        latest_chapter_number=latest_chapter_number,
+        longform_inputs={
+            "overdue_clue_count": len(overdue_clue_rows),
+            "setup_payoff_debt_count": len(setup_payoff_debts),
+            "stale_truth_count": len(stale_truth),
+            "overused_hook_count": len(overused_hooks),
+        },
+    )
 
     return {
         "project_id": str(project.id),
@@ -187,6 +253,7 @@ async def build_project_health_report(
         "overused_hooks": overused_hooks,
         "setup_payoff_debts": setup_payoff_debts,
         "golden_three": golden_three_report,
+        "methodology": methodology_report,
         "query_broker": {
             "active_query_enabled": bool(
                 getattr(settings.pipeline, "enable_story_query_brief", False)
@@ -322,6 +389,9 @@ async def repair_project_health(
                 "issue_codes": list(golden_three.get("issue_codes") or []),
             }
         )
+    methodology = before.get("methodology")
+    if isinstance(methodology, dict):
+        actions.extend(methodology_repair_actions(methodology))
 
     after = (
         before

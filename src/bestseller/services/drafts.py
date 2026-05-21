@@ -1,13 +1,13 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
+from datetime import UTC, datetime
 import json
 import logging
 import math
 import os
-import re
-from collections.abc import Iterable
-from datetime import UTC, datetime
 from pathlib import Path
+import re
 from typing import Any
 from uuid import UUID
 
@@ -30,10 +30,10 @@ from bestseller.infra.db.models import (
     StyleGuideModel,
 )
 from bestseller.services.canon_guardrails import load_canon_guardrails_for_project
+from bestseller.services.chapter_validator import classify_cliffhanger
 from bestseller.services.character_intelligence.optimizer import (
     optimize_project_character_profiles,
 )
-from bestseller.services.chapter_validator import classify_cliffhanger
 from bestseller.services.context import build_scene_writer_context_from_models
 from bestseller.services.diversity_budget import (
     load_diversity_budget,
@@ -49,6 +49,7 @@ from bestseller.services.methodology_overlay import (
     render_overlay_prompt_block,
     resolve_methodology_contract_mode,
 )
+from bestseller.services.methodology_profile import render_configured_methodology_profile_block
 from bestseller.services.output_validator import (
     OutputValidator,
     QualityReport,
@@ -84,6 +85,12 @@ from bestseller.services.regen_loop import (
     regenerate_until_valid,
 )
 from bestseller.services.story_bible import load_scene_story_bible_context
+from bestseller.services.word_targets import (
+    model_output_token_ceiling,
+    model_reasoning_token_reserve,
+    resolve_llm_role_max_tokens,
+    resolve_llm_role_model,
+)
 from bestseller.services.write_gate import filter_blocking
 from bestseller.services.write_safety_gate import WriteSafetyFinding
 from bestseller.services.writing_profile import (
@@ -92,12 +99,6 @@ from bestseller.services.writing_profile import (
     render_serial_fiction_guardrails,
     render_writing_profile_prompt_block,
     resolve_writing_profile,
-)
-from bestseller.services.word_targets import (
-    model_output_token_ceiling,
-    model_reasoning_token_reserve,
-    resolve_llm_role_max_tokens,
-    resolve_llm_role_model,
 )
 from bestseller.settings import AppSettings, load_settings
 
@@ -960,6 +961,8 @@ async def _evaluate_chapter_quality_gate(
         try:
             from bestseller.services.narrative_line_tracker import (
                 load_history as _load_line_history,
+            )
+            from bestseller.services.narrative_line_tracker import (
                 report_gaps as _report_line_gaps,
             )
 
@@ -1076,10 +1079,10 @@ async def _evaluate_chapter_quality_gate(
     length_block_code: str | None = None
     length_report_payload: dict[str, Any] | None = None
     try:
-        from bestseller.settings import get_settings
         from bestseller.services.length_stability_gate import (
             evaluate_chapter_length,
         )
+        from bestseller.settings import get_settings
 
         _settings = get_settings()
         _pipeline_cfg = _settings.pipeline
@@ -2452,11 +2455,12 @@ def _render_story_bible_section(
     interpersonal_promises = story_bible_context.get("interpersonal_promises") or []
     if interpersonal_promises:
         try:
+            from uuid import UUID as _UUID  # noqa: PLC0415
+
             from bestseller.services.interpersonal_promises import (  # noqa: PLC0415
                 PromiseSnapshot,
                 render_promises_block,
             )
-            from uuid import UUID as _UUID  # noqa: PLC0415
 
             snap_objs: list[PromiseSnapshot] = []
             for p in interpersonal_promises:
@@ -3094,6 +3098,13 @@ def _render_contract_section(
         )
         if overlay_block:
             sections.append(overlay_block)
+        profile_block = render_configured_methodology_profile_block(
+            stage="drafting",
+            scope="chapter",
+            language=language,
+        )
+        if profile_block:
+            sections.append(profile_block)
     if scene_contract:
         sections.append(
             f"{'Scene contract' if is_en else '场景 contract'}："
@@ -3132,6 +3143,13 @@ def _render_contract_section(
         )
         if overlay_block:
             sections.append(overlay_block)
+        profile_block = render_configured_methodology_profile_block(
+            stage="drafting",
+            scope="scene",
+            language=language,
+        )
+        if profile_block:
+            sections.append(profile_block)
     return "\n".join(sections)
 
 
@@ -6079,6 +6097,8 @@ async def assemble_chapter_draft(
             try:
                 from bestseller.services.hype_engine import (  # noqa: PLC0415
                     HypeType as _HypeTypeEnum,
+                )
+                from bestseller.services.hype_engine import (
                     classify_hype,
                 )
 

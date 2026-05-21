@@ -192,7 +192,65 @@ async def test_run_project_repair_task_auto_continues_quality_closure_when_not_c
 
 
 @pytest.mark.asyncio
-async def test_run_project_pipeline_task_emits_waiting_human_when_not_closed(
+async def test_run_project_repair_task_skips_archived_project(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    events: list[tuple[str, dict, str | None]] = []
+    called = False
+
+    class _FakeReporter:
+        async def emit(
+            self,
+            message: str,
+            data: dict,
+            event_type: str | None = None,
+        ) -> None:
+            events.append((message, data, event_type))
+
+    async def fake_archived(_project_slug: str) -> bool:
+        return True
+
+    async def fake_run_project_repair(*_args, **_kwargs):
+        nonlocal called
+        called = True
+
+    import bestseller.services.repair as repair_services
+
+    monkeypatch.setattr(
+        worker_tasks,
+        "RedisProgressReporter",
+        lambda *_args, **_kwargs: _FakeReporter(),
+    )
+    monkeypatch.setattr(worker_tasks, "_project_slug_is_archived", fake_archived)
+    monkeypatch.setattr(repair_services, "run_project_repair", fake_run_project_repair)
+
+    result = await worker_tasks.run_project_repair_task(
+        {"redis": object()},
+        "repair:heal:archived",
+        {"project_slug": "archived"},
+    )
+
+    assert result == {
+        "status": "skipped_archived",
+        "project_slug": "archived",
+        "reason": "library_archived",
+    }
+    assert called is False
+    assert events == [
+        (
+            "skipped_archived",
+            {
+                "status": "skipped_archived",
+                "project_slug": "archived",
+                "reason": "library_archived",
+            },
+            "skipped_archived",
+        )
+    ]
+
+
+@pytest.mark.asyncio
+async def test_run_project_pipeline_task_emits_machine_blocked_when_not_closed(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     events: list[tuple[str, dict, str | None]] = []
@@ -246,8 +304,8 @@ async def test_run_project_pipeline_task_emits_waiting_human_when_not_closed(
     )
 
     assert result == {"requires_human_review": True, "final_verdict": "attention"}
-    assert events[-1][0] == "waiting_human"
-    assert events[-1][2] == "waiting_human"
+    assert events[-1][0] == "machine_blocked"
+    assert events[-1][2] == "machine_blocked"
     assert events[-1][1]["reason"] == "project_pipeline_requires_attention"
 
 
@@ -345,7 +403,7 @@ async def test_run_project_pipeline_task_refreshes_stale_truth_once(
 
 
 @pytest.mark.asyncio
-async def test_run_autowrite_task_emits_waiting_human_when_not_closed(
+async def test_run_autowrite_task_emits_machine_blocked_when_not_closed(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     events: list[tuple[str, dict, str | None]] = []
@@ -419,8 +477,8 @@ async def test_run_autowrite_task_emits_waiting_human_when_not_closed(
         "final_verdict": "attention",
         "chapter_count": 2,
     }
-    assert events[-1][0] == "waiting_human"
-    assert events[-1][2] == "waiting_human"
+    assert events[-1][0] == "machine_blocked"
+    assert events[-1][2] == "machine_blocked"
     assert events[-1][1]["reason"] == "autowrite_requires_attention"
 
 

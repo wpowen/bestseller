@@ -6,8 +6,8 @@ from bestseller.domain.workflow import ChapterOutlineBatchInput
 from bestseller.services.methodology_overlay import (
     normalize_chapter_overlay,
     normalize_scene_overlay,
-    resolve_methodology_contract_mode,
     render_overlay_prompt_block,
+    resolve_methodology_contract_mode,
     validate_chapter_methodology_contract,
     validate_scene_methodology_contract,
 )
@@ -71,6 +71,55 @@ def test_render_overlay_prompt_block_includes_scene_execution_terms() -> None:
     assert "近景到特写" in block
     assert "铜镜裂纹映出第二张脸" in block
     assert "不能让师父知道自己动用了禁术" in block
+
+
+def test_normalize_scene_overlay_accepts_action_scene_fields() -> None:
+    overlay = normalize_scene_overlay(
+        {
+            "fight_objective": "夺回铜镜。",
+            "failure_cost": "失败会暴露阴阳眼。",
+            "enemy_advantage": "周老板占据祠堂机关。",
+            "strategy_shift": "从正面硬闯改为诱敌离开香案。",
+            "fight_emotion": "林渊不想再让妹妹替自己受罚。",
+            "fight_turn": "铜镜裂纹映出第二个周老板。",
+            "after_state_change": "林渊拿到线索但被全镇通缉。",
+            "aftereffect": "下一场必须先藏身药铺。",
+        }
+    )
+
+    assert overlay["fight_objective"] == "夺回铜镜。"
+    assert overlay["failure_cost"] == "失败会暴露阴阳眼。"
+    assert overlay["opponent_advantage"] == "周老板占据祠堂机关。"
+    assert overlay["tactic_shift"] == "从正面硬闯改为诱敌离开香案。"
+    assert overlay["emotion_driver"] == "林渊不想再让妹妹替自己受罚。"
+    assert overlay["turning_point"] == "铜镜裂纹映出第二个周老板。"
+    assert overlay["exit_state_delta"] == "林渊拿到线索但被全镇通缉。"
+    assert overlay["next_aftereffect"] == "下一场必须先藏身药铺。"
+
+
+def test_action_scene_methodology_validator_requires_action_contract_fields() -> None:
+    findings = validate_scene_methodology_contract(
+        {
+            "stakes": "失败会暴露阴阳眼。",
+            "pressure_stack": {"deadline": "香灭前必须离开祠堂。"},
+            "hook_type": "threat",
+            "spotlight_character": "林渊",
+            "information_control_mode": "reader_knows_less",
+            "camera": "近景",
+            "reveal_mode": "同步发现",
+            "signature_image": "铜镜裂纹映出第二张脸。",
+            "ending_cut": "周老板拔出铜镜里的影子。",
+            "action_sequence": ["林渊格挡铜镜黑线。"],
+        },
+        chapter_number=2,
+        scene_number=1,
+        scene_type="fight",
+        participant_count=1,
+    )
+
+    codes = {finding.code for finding in findings}
+
+    assert "SCENE_METHODOLOGY_ACTION_FIELD_MISSING" in codes
 
 
 def test_outline_schema_accepts_scene_methodology_alias() -> None:

@@ -39,6 +39,7 @@ from bestseller.services.pipelines import ProjectRepairPauseError, run_autowrite
 from bestseller.services.projects import (
     delete_project_completely,
     get_project_by_slug,
+    is_project_delete_tombstoned,
     list_projects,
 )
 from bestseller.services.genre_creativity import (
@@ -331,7 +332,7 @@ def _load_worker_heal_progress_snapshot(
         status = "incomplete"
     if latest_stage in {"failed", "error"}:
         status = "failed"
-    elif latest_stage in {"waiting_human", "waiting_human_review", "blocked_generation_gate"}:
+    elif latest_stage in {"machine_blocked", "machine_repair_required", "blocked_generation_gate"}:
         status = "incomplete"
     elif latest_stage in {"completed", "done", "finished"} and job_state == "result":
         status = "completed"
@@ -1023,13 +1024,15 @@ class WebTaskState:
 
 
 _WATCHDOG_STALE_PREFIX = "Task watchdog: no progress for >"
-_HUMAN_REVIEW_STAGES = frozenset(
+_MACHINE_REPAIR_STAGES = frozenset(
     {
-        "chapter_pipeline_paused_for_human_review",
-        "scene_pipeline_paused_for_human_review",
-        "waiting_human",
-        "waiting_human_review",
+        "chapter_pipeline_machine_repair_required",
+        "scene_pipeline_machine_repair_required",
+        "machine_blocked",
+        "machine_repair_required",
         "blocked_generation_gate",
+        "exported_requires_machine_repair",
+        "skipped_requires_machine_repair",
         "exported_requires_human_review",
         "skipped_requires_human_review",
     }
@@ -1038,9 +1041,13 @@ _ATTENTION_VERDICTS = frozenset(
     {
         "attention",
         "needs_attention",
-        "waiting_human",
-        "waiting_human_review",
+        "machine_blocked",
+        "machine_repair_required",
+        "requires_machine_repair",
+        "machine_repair_required",
         "requires_human_review",
+        "exported_requires_machine_repair",
+        "skipped_requires_machine_repair",
         "exported_requires_human_review",
         "skipped_requires_human_review",
     }
@@ -1057,17 +1064,17 @@ _TERMINAL_ATTENTION_STAGES = frozenset(
 )
 
 
-def _task_has_human_review_gate(task: WebTaskState) -> bool:
+def _task_has_machine_repair_gate(task: WebTaskState) -> bool:
     for event in reversed(task.progress_events or []):
         if not isinstance(event, dict):
             continue
         stage = str(event.get("stage") or "")
-        if stage in _HUMAN_REVIEW_STAGES or "human_review" in stage:
+        if stage in _MACHINE_REPAIR_STAGES or "machine_repair" in stage:
             return True
         payload = event.get("payload")
         if not isinstance(payload, dict):
             continue
-        if payload.get("requires_human_review") is True:
+        if payload.get("requires_machine_repair") is True or payload.get("requires_human_review") is True:
             return True
         verdict = (
             str(
@@ -1085,8 +1092,8 @@ def _task_has_human_review_gate(task: WebTaskState) -> bool:
     return False
 
 
-def _payload_requires_human_attention(payload: dict[str, Any]) -> bool:
-    if payload.get("requires_human_review") is True:
+def _payload_requires_machine_attention(payload: dict[str, Any]) -> bool:
+    if payload.get("requires_machine_repair") is True or payload.get("requires_human_review") is True:
         return True
     verdict = (
         str(
@@ -1164,19 +1171,19 @@ class WebTaskManager:
                 if (
                     task.status == "failed"
                     and str(task.error or "").startswith(_WATCHDOG_STALE_PREFIX)
-                    and _task_has_human_review_gate(task)
+                    and _task_has_machine_repair_gate(task)
                 ):
                     task.status = "incomplete"
-                    task.current_stage = "waiting_human_review"
+                    task.current_stage = "machine_repair_required"
                     task.error = (
-                        "Task reached a human-review or attention gate; "
+                        "Task reached a machine-repair or attention gate; "
                         "normalized from an old stale-watchdog failure."
                     )
                     task.progress_events.append(
                         {
                             "timestamp": _utc_now(),
                             "stage": "watchdog_failure_normalized",
-                            "payload": {"reason": "human_review_gate"},
+                            "payload": {"reason": "machine_repair_gate"},
                         }
                     )
                     task.progress_events = task.progress_events[-300:]
@@ -1265,6 +1272,8 @@ class WebTaskManager:
                 continue
             if slug_dir.name in existing_slugs:
                 continue
+            if is_project_delete_tombstoned(settings, slug_dir.name):
+                continue
             chapter_files = sorted(slug_dir.glob("chapter-*.md"))
             if not chapter_files:
                 continue
@@ -1282,6 +1291,8 @@ class WebTaskManager:
 
                 # Look up the authoritative project record.
                 project = await get_project_by_slug(session, slug)
+                if project is not None and _project_library_archived(project.metadata_json):
+                    continue
 
                 # Derive target_chapters: prefer DB, then outline, then disk count.
                 if project is not None:
@@ -1533,6 +1544,8 @@ class WebTaskManager:
         return task_snapshot
 
     def create_repair_task(self, payload: dict[str, object]) -> dict[str, object]:
+        payload = dict(payload)
+        payload.setdefault("include_pending_rewrite_tasks", True)
         task_id = str(uuid4())
         task = WebTaskState(
             task_id=task_id,
@@ -1575,8 +1588,8 @@ class WebTaskManager:
             "cancel_requested",
             "blocked_structural_repair",
             "blocked_generation_gate",
-            "waiting_human",
-            "waiting_human_review",
+            "machine_blocked",
+            "machine_repair_required",
             "periodic_consistency_check_started",
             "periodic_consistency_check_completed",
             "volume_complete",
@@ -1602,8 +1615,8 @@ class WebTaskManager:
                     "failed",
                     "error",
                     "cancelled",
-                    "waiting_human",
-                    "waiting_human_review",
+                    "machine_blocked",
+                    "machine_repair_required",
                     "blocked_generation_gate",
                 }
             ):
@@ -1653,14 +1666,14 @@ class WebTaskManager:
             task = self._tasks[task_id]
             task.updated_at = _utc_now()
             task.result = result
-            if _payload_requires_human_attention(result):
+            if _payload_requires_machine_attention(result):
                 task.status = "incomplete"
-                task.current_stage = "waiting_human_review"
+                task.current_stage = "machine_repair_required"
                 task.error = str(
                     result.get("error")
                     or result.get("message")
                     or result.get("reason")
-                    or "Task reached a human-review or attention gate."
+                    or "Task reached a machine-repair or attention gate."
                 )
             else:
                 task.status = "completed"
@@ -1788,11 +1801,19 @@ class WebTaskManager:
         logger.info("Deleted task %s", task_id)
         return "deleted"
 
-    def delete_tasks_by_project(self, project_slug: str) -> int:
+    def delete_tasks_by_project(
+        self,
+        project_slug: str,
+        *,
+        include_active: bool = False,
+    ) -> int:
         """Delete all task records associated with *project_slug*.
 
-        Running / queued tasks are kept — the caller is expected to verify
-        that no active tasks exist for the project before invoking this.
+        Running / queued tasks are kept by default — the caller is expected to
+        verify that no active tasks exist for the project before invoking this.
+        Set ``include_active`` only when the project is being archived or
+        deleted and the task card should disappear regardless of its last
+        recovered status.
         Returns the number of task records removed.
         """
         if not project_slug:
@@ -1801,7 +1822,9 @@ class WebTaskManager:
         with self._lock:
             survivors: dict[str, WebTaskState] = {}
             for tid, t in self._tasks.items():
-                if t.project_slug == project_slug and t.status not in ("running", "queued"):
+                if t.project_slug == project_slug and (
+                    include_active or t.status not in ("running", "queued")
+                ):
                     removed += 1
                     continue
                 survivors[tid] = t
@@ -1810,6 +1833,17 @@ class WebTaskManager:
                 self._save_to_disk()
         if removed:
             logger.info("Deleted %d task record(s) for project %s", removed, project_slug)
+        return removed
+
+    def delete_tasks_by_projects(
+        self,
+        project_slugs: set[str],
+        *,
+        include_active: bool = False,
+    ) -> int:
+        removed = 0
+        for slug in sorted(project_slugs):
+            removed += self.delete_tasks_by_project(slug, include_active=include_active)
         return removed
 
     def has_active_task_for_project(self, project_slug: str) -> bool:
@@ -1915,7 +1949,7 @@ class WebTaskManager:
                 continue
             if self._mark_unowned_delegated_task_incomplete(tid):
                 continue
-            if self._mark_human_review_gate_incomplete(tid):
+            if self._mark_machine_repair_gate_incomplete(tid):
                 continue
             self._mark_failed(
                 tid,
@@ -1924,25 +1958,25 @@ class WebTaskManager:
             stale_count += 1
         return stale_count
 
-    def _mark_human_review_gate_incomplete(self, task_id: str) -> bool:
+    def _mark_machine_repair_gate_incomplete(self, task_id: str) -> bool:
         with self._lock:
             task = self._tasks.get(task_id)
-            if task is None or not _task_has_human_review_gate(task):
+            if task is None or not _task_has_machine_repair_gate(task):
                 return False
             task.status = "incomplete"
-            task.current_stage = "waiting_human_review"
-            task.error = "Task is waiting for human review or attention-gate repair."
+            task.current_stage = "machine_repair_required"
+            task.error = "Task is waiting for machine repair or attention-gate repair."
             task.updated_at = _utc_now()
             task.progress_events.append(
                 {
                     "timestamp": task.updated_at,
-                    "stage": "waiting_human_review",
+                    "stage": "machine_repair_required",
                     "payload": {"reason": "watchdog_preserved_attention_gate"},
                 }
             )
             task.progress_events = task.progress_events[-300:]
             self._save_to_disk()
-        logger.info("Task %s is waiting for human review; marked incomplete", task_id)
+        logger.info("Task %s is waiting for machine repair; marked incomplete", task_id)
         return True
 
     def _rescue_from_worker_heal_job(self, task_id: str) -> bool:
@@ -2756,7 +2790,7 @@ class WebTaskManager:
                     refresh_impacts=bool(payload.get("refresh_impacts", True)),
                     export_markdown=bool(payload.get("export_markdown", True)),
                     include_pending_rewrite_tasks=bool(
-                        payload.get("include_pending_rewrite_tasks", False)
+                        payload.get("include_pending_rewrite_tasks", True)
                     ),
                     scan_publication_gate_candidates=bool(
                         payload.get("scan_publication_gate_candidates", False)
@@ -2951,16 +2985,16 @@ class WebTaskManager:
                 if latest_stage is not None:
                     normalized_stage = latest_stage.lower()
                     task.current_stage = latest_stage
-                    is_human_review_stage = (
-                        normalized_stage in _HUMAN_REVIEW_STAGES
-                        or "human_review" in normalized_stage
+                    is_machine_repair_stage = (
+                        normalized_stage in _MACHINE_REPAIR_STAGES
+                        or "machine_repair" in normalized_stage
                     )
-                    if is_human_review_stage or (
+                    if is_machine_repair_stage or (
                         normalized_stage in _TERMINAL_ATTENTION_STAGES
-                        and _payload_requires_human_attention(latest_payload)
+                        and _payload_requires_machine_attention(latest_payload)
                     ):
                         task.current_stage = (
-                            "waiting_human_review"
+                            "machine_repair_required"
                             if normalized_stage in _TERMINAL_ATTENTION_STAGES
                             else latest_stage
                         )
@@ -2970,7 +3004,7 @@ class WebTaskManager:
                         task.error = str(
                             error
                             or reason
-                            or "Task reached a human-review or attention gate."
+                            or "Task reached a machine-repair or attention gate."
                         )
                     elif normalized_stage in {"completed", "done", "finished"}:
                         task.status = "completed"
@@ -2981,8 +3015,8 @@ class WebTaskManager:
                         error = latest_payload.get("error") or latest_payload.get("message")
                         task.error = str(error or "Worker self-heal task failed")
                     elif normalized_stage in {
-                        "waiting_human",
-                        "waiting_human_review",
+                        "machine_blocked",
+                        "machine_repair_required",
                         "blocked_generation_gate",
                     }:
                         task.status = "incomplete"
@@ -3153,6 +3187,8 @@ async def _recover_projects_from_output(settings: AppSettings) -> list[dict[str,
             slug = slug_dir.name
             if slug in existing_slugs:
                 continue
+            if is_project_delete_tombstoned(settings, slug):
+                continue
 
             # Check for chapter files (chapter-001.md, etc.) or project.md
             chapter_files = sorted(slug_dir.glob("chapter-*.md"))
@@ -3264,6 +3300,17 @@ async def _recover_projects_from_output(settings: AppSettings) -> list[dict[str,
             )
 
     return recovered
+
+
+async def _load_library_archived_project_slugs(settings: AppSettings) -> set[str]:
+    async with session_scope(settings) as session:
+        projects = await list_projects(session)
+    archived: set[str] = set()
+    for project in projects:
+        slug = str(getattr(project, "slug", "") or "").strip()
+        if slug and _project_library_archived(getattr(project, "metadata_json", None)):
+            archived.add(slug)
+    return archived
 
 
 async def _load_projects_payload(
@@ -3683,9 +3730,9 @@ async def _set_project_library_archived(
     *,
     archived: bool,
 ) -> dict[str, object] | None:
-    from sqlalchemy import select
+    from sqlalchemy import select, update
 
-    from bestseller.infra.db.models import ProjectModel
+    from bestseller.infra.db.models import ProjectModel, WorkflowRunModel
 
     slug = str(slug or "").strip()
     if not slug:
@@ -3704,11 +3751,31 @@ async def _set_project_library_archived(
             meta.pop("library_archived", None)
             meta.pop("library_archived_at", None)
         project.metadata_json = meta
+        cancelled_workflows = 0
+        if archived:
+            cancel_result = await session.execute(
+                update(WorkflowRunModel)
+                .where(
+                    WorkflowRunModel.project_id == project.id,
+                    WorkflowRunModel.status.in_(
+                        ("pending", "queued", "running", "machine_blocked")
+                    ),
+                )
+                .values(
+                    status="cancelled",
+                    current_step="skipped_archived",
+                    error_message="skipped because project is library_archived",
+                    updated_at=datetime.now(UTC),
+                )
+                .execution_options(synchronize_session=False)
+            )
+            cancelled_workflows = int(cancel_result.rowcount or 0)
         return {
             "ok": True,
             "project_slug": slug,
             "library_archived": archived,
             "archived_at": meta.get("library_archived_at"),
+            "cancelled_workflows": cancelled_workflows,
         }
 
 
@@ -3918,7 +3985,7 @@ def _build_db_repair_task_summary(
     rejected = _safe_int(task_counts.get("rejected_candidate"))
     active_total = pending + queued + failed
     phase = str(repair_status.get("phase") or "")
-    if active_total <= 0 and phase == "normal":
+    if active_total <= 0 and phase in {"normal", "archived"}:
         return None
 
     slug = str(getattr(project, "slug", "") or "")
@@ -4221,8 +4288,13 @@ def _build_project_repair_status_payload(
     )
     structural_repair_required = bool(metadata.get("structural_repair_required"))
     project_status = str(getattr(project, "status", "") or "")
+    library_archived = bool(metadata.get("library_archived")) or project_status == "archived"
 
-    if generation_gate_blocked:
+    if library_archived:
+        phase = "archived"
+        label = "已归档"
+        detail = "项目已归档，不会进入自动写作或自动修复。"
+    elif generation_gate_blocked:
         phase = "planning_gate"
         label = "规划自动修复耗尽"
         detail = "规划/世界观门禁未闭合，恢复时会携带诊断重新进入自动修复链路。"
@@ -4251,7 +4323,11 @@ def _build_project_repair_status_payload(
         label = "正常"
         detail = "当前没有检测到修复门控。"
 
-    is_repairing = phase != "normal" or project_status == "paused"
+    is_repairing = (
+        False
+        if library_archived
+        else (phase != "normal" or project_status == "paused")
+    )
     return {
         "phase": phase,
         "label": label,
@@ -6595,6 +6671,20 @@ def serve_web_app(
         except Exception:
             logger.exception("Task recovery from output directory failed")
 
+        try:
+            archived_slugs = await _load_library_archived_project_slugs(settings)
+            removed = task_manager.delete_tasks_by_projects(
+                archived_slugs,
+                include_active=True,
+            )
+            if removed:
+                logger.info(
+                    "Removed %d web task record(s) for archived projects during startup",
+                    removed,
+                )
+        except Exception:
+            logger.exception("Archived task cleanup failed")
+
     try:
         asyncio.run(_run_startup_recovery())
     except Exception:
@@ -7481,6 +7571,10 @@ def serve_web_app(
                             status=HTTPStatus.NOT_FOUND,
                         )
                         return
+                    result["tasks_deleted"] = task_manager.delete_tasks_by_project(
+                        archive_slug,
+                        include_active=True,
+                    )
                     self._send_json(result)
                     return
                 unarchive_slug = _match_project_route(path, "unarchive")

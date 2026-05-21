@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import logging
 import shutil
 from pathlib import Path
@@ -8,6 +9,7 @@ from typing import Any
 from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from bestseller.domain.enums import ProjectType
 from bestseller.domain.planning import PlanningArtifactCreate
 from bestseller.domain.project import ChapterCreate, ProjectCreate, SceneCardCreate, VolumeCreate
 from bestseller.infra.db.models import (
@@ -27,10 +29,89 @@ from bestseller.settings import AppSettings
 
 
 logger = logging.getLogger(__name__)
+_DELETED_PROJECTS_REGISTRY = ".deleted-projects.json"
+
+
+def _deleted_projects_registry_path(settings: AppSettings) -> Path:
+    return Path(settings.output.base_dir).resolve() / _DELETED_PROJECTS_REGISTRY
+
+
+def _load_deleted_project_registry(settings: AppSettings) -> dict[str, Any]:
+    path = _deleted_projects_registry_path(settings)
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return raw if isinstance(raw, dict) else {}
+
+
+def _write_deleted_project_registry(settings: AppSettings, payload: dict[str, Any]) -> None:
+    path = _deleted_projects_registry_path(settings)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
+
+
+def mark_project_delete_tombstone(settings: AppSettings, slug: str) -> None:
+    registry = _load_deleted_project_registry(settings)
+    deleted = registry.get("deleted")
+    if not isinstance(deleted, dict):
+        deleted = {}
+    deleted[slug] = True
+    registry["deleted"] = deleted
+    _write_deleted_project_registry(settings, registry)
+
+
+def clear_project_delete_tombstone(settings: AppSettings, slug: str) -> None:
+    registry = _load_deleted_project_registry(settings)
+    deleted = registry.get("deleted")
+    if not isinstance(deleted, dict) or slug not in deleted:
+        return
+    deleted.pop(slug, None)
+    registry["deleted"] = deleted
+    _write_deleted_project_registry(settings, registry)
+
+
+def is_project_delete_tombstoned(settings: AppSettings, slug: str) -> bool:
+    deleted = _load_deleted_project_registry(settings).get("deleted")
+    return isinstance(deleted, dict) and bool(deleted.get(slug))
 
 
 async def get_project_by_slug(session: AsyncSession, slug: str) -> ProjectModel | None:
     return await session.scalar(select(ProjectModel).where(ProjectModel.slug == slug))
+
+
+def _normalize_project_title(value: object) -> str:
+    return " ".join(str(value or "").strip().casefold().split())
+
+
+async def _find_duplicate_fanqie_short_project(
+    session: AsyncSession,
+    payload: ProjectCreate,
+) -> ProjectModel | None:
+    metadata = payload.metadata if isinstance(payload.metadata, dict) else {}
+    if bool(metadata.get("allow_duplicate_project")):
+        return None
+    if payload.project_type != ProjectType.FANQIE_SHORT:
+        return None
+
+    normalized_title = _normalize_project_title(payload.title)
+    if not normalized_title:
+        return None
+
+    return await session.scalar(
+        select(ProjectModel)
+        .where(
+            ProjectModel.project_type == ProjectType.FANQIE_SHORT.value,
+            ProjectModel.genre == payload.genre,
+            ProjectModel.target_chapters == payload.target_chapters,
+            func.lower(func.trim(ProjectModel.title)) == normalized_title,
+        )
+        .order_by(ProjectModel.updated_at.desc())
+        .limit(1)
+    )
 
 
 async def initialize_project_genre_capabilities(
@@ -124,6 +205,12 @@ async def delete_project_completely(
         # Nothing on disk — treat as success (idempotent)
         result["fs_deleted"] = True
 
+    try:
+        mark_project_delete_tombstone(settings, slug)
+    except OSError as exc:
+        result["errors"].append(f"delete_tombstone_failed: {exc}")
+        logger.exception("Failed to write delete tombstone for project %s", slug)
+
     return result
 
 
@@ -135,6 +222,18 @@ async def create_project(
     existing = await get_project_by_slug(session, payload.slug)
     if existing is not None:
         raise ValueError(f"Project slug '{payload.slug}' already exists.")
+    duplicate = await _find_duplicate_fanqie_short_project(session, payload)
+    if duplicate is not None:
+        archived = ""
+        duplicate_meta = getattr(duplicate, "metadata_json", None) or {}
+        if isinstance(duplicate_meta, dict) and duplicate_meta.get("library_archived"):
+            archived = " (archived)"
+        raise ValueError(
+            "Duplicate fanqie_short project title "
+            f"'{payload.title}' for genre '{payload.genre}' already exists as "
+            f"'{duplicate.slug}'{archived}."
+        )
+    clear_project_delete_tombstone(settings, payload.slug)
 
     writing_profile = resolve_project_create_writing_profile(payload)
     project = ProjectModel(

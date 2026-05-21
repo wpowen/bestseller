@@ -62,6 +62,44 @@ def test_audit_source_artifacts_ignores_plain_copy_meaning(tmp_path: Path) -> No
     assert report.findings == ()
 
 
+def test_audit_source_artifacts_ignores_plain_copy_flow_and_host_nerves(
+    tmp_path: Path,
+) -> None:
+    book = _book_dir(tmp_path)
+    (book / "project.md").write_text(
+        "# Project\n\n"
+        "有一份副本流了出来，主角追查它的下落。\n"
+        "代价核继续压榨宿主神经系统。\n",
+        encoding="utf-8",
+    )
+
+    report = audit_source_artifacts("book-a", output_dir=tmp_path)
+
+    assert report.passed is True
+    assert report.findings == ()
+
+
+def test_discover_source_artifacts_skips_project_manuscript_export(
+    tmp_path: Path,
+) -> None:
+    book = _book_dir(tmp_path)
+    (book / "project.md").write_text(
+        "# Book\n\n"
+        "# 第1章：开局\n正文里可以出现【系统面板】。\n"
+        "# 第2章：推进\n正文。\n"
+        "# 第3章：转折\n正文。\n",
+        encoding="utf-8",
+    )
+    (book / "story-bible.md").write_text("# Bible\n\nclean source", encoding="utf-8")
+
+    artifacts = discover_source_artifacts("book-a", output_dir=tmp_path)
+    report = audit_source_artifacts("book-a", output_dir=tmp_path)
+
+    assert artifacts == (book / "story-bible.md",)
+    assert report.passed is True
+    assert report.artifact_count == 1
+
+
 def test_audit_source_artifacts_flags_language_mismatch(tmp_path: Path) -> None:
     book = _book_dir(tmp_path)
     (book / "project.md").write_text(

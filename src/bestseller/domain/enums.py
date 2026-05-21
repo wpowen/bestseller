@@ -99,7 +99,7 @@ class WorkflowStatus(StrEnum):
     PENDING = "pending"
     QUEUED = "queued"
     RUNNING = "running"
-    WAITING_HUMAN = "waiting_human"
+    MACHINE_BLOCKED = "machine_blocked"
     FAILED = "failed"
     COMPLETED = "completed"
     CANCELLED = "cancelled"

@@ -49,8 +49,8 @@ _ATTENTION_VERDICTS = frozenset(
     {
         "attention",
         "needs_attention",
-        "waiting_human",
-        "waiting_human_review",
+        "machine_blocked",
+        "machine_repair_required",
         "requires_human_review",
         "exported_requires_human_review",
         "skipped_requires_human_review",
@@ -102,6 +102,47 @@ async def _touch_workflow_run_heartbeat(
             )
 
         await session.commit()
+
+
+def _project_is_archived(project: ProjectModel | None) -> bool:
+    if project is None:
+        return False
+    metadata = getattr(project, "metadata_json", None) or {}
+    if not isinstance(metadata, dict):
+        metadata = {}
+    status = (getattr(project, "status", None) or "").lower()
+    return status == ProjectStatus.ARCHIVED.value or bool(metadata.get("library_archived"))
+
+
+async def _project_slug_is_archived(project_slug: str) -> bool:
+    try:
+        async with get_server_session() as session:
+            project = await session.scalar(
+                select(ProjectModel).where(ProjectModel.slug == project_slug)
+            )
+            return _project_is_archived(project)
+    except Exception:
+        logger.debug(
+            "Could not check archived state for project %s",
+            project_slug,
+            exc_info=True,
+        )
+        return False
+
+
+async def _skip_archived_project_if_needed(
+    reporter: RedisProgressReporter,
+    project_slug: str,
+) -> dict[str, Any] | None:
+    if not await _project_slug_is_archived(project_slug):
+        return None
+    payload = {
+        "status": "skipped_archived",
+        "project_slug": project_slug,
+        "reason": "library_archived",
+    }
+    await reporter.emit("skipped_archived", payload, event_type="skipped_archived")
+    return payload
 
 
 async def _workflow_heartbeat_loop(
@@ -211,7 +252,7 @@ def _generation_gate_block(exc: Exception) -> tuple[str, str] | None:
 
 
 def _result_payload_requires_attention(payload: dict[str, Any]) -> bool:
-    if payload.get("requires_human_review") is True:
+    if payload.get("requires_machine_repair") is True or payload.get("requires_human_review") is True:
         return True
     verdict = (
         str(
@@ -237,9 +278,9 @@ async def _emit_terminal_pipeline_event(
     event_payload = {"result": completed_result, **payload}
     if _result_payload_requires_attention(payload):
         await reporter.emit(
-            "waiting_human",
+            "machine_blocked",
             {**event_payload, "reason": attention_reason},
-            event_type="waiting_human",
+            event_type="machine_blocked",
         )
         return
     await reporter.emit("completed", event_payload, event_type="completed")
@@ -368,7 +409,7 @@ async def _mark_project_generation_repair_exhausted(
             )
         )
         for run in active_runs:
-            run.status = WorkflowStatus.WAITING_HUMAN.value
+            run.status = WorkflowStatus.MACHINE_BLOCKED.value
             run.error_message = error_message[:4000]
             run.metadata_json = {
                 **(run.metadata_json or {}),
@@ -411,6 +452,10 @@ async def run_autowrite_task(
     reporter = RedisProgressReporter(redis, workflow_run_id)
 
     project_slug = payload["project_slug"]
+    archived = await _skip_archived_project_if_needed(reporter, project_slug)
+    if archived is not None:
+        return archived
+
     await reporter.emit(
         "autowrite_started",
         {
@@ -525,6 +570,10 @@ async def run_project_pipeline_task(
     redis = ctx["redis"]
     reporter = RedisProgressReporter(redis, workflow_run_id)
     project_slug = payload["project_slug"]
+    archived = await _skip_archived_project_if_needed(reporter, project_slug)
+    if archived is not None:
+        return archived
+
     await reporter.emit(
         "project_pipeline_started",
         {
@@ -619,19 +668,24 @@ async def run_chapter_pipeline_task(
     settings = get_settings()
     redis = ctx["redis"]
     reporter = RedisProgressReporter(redis, workflow_run_id)
+    project_slug = payload["project_slug"]
+
+    archived = await _skip_archived_project_if_needed(reporter, project_slug)
+    if archived is not None:
+        return archived
 
     await reporter.emit("started", {"chapter_number": payload["chapter_number"]})
 
     async with _workflow_db_heartbeat(
         workflow_run_id,
-        project_slug=payload["project_slug"],
+        project_slug=project_slug,
     ):
         try:
             async with get_server_session() as session:
                 result = await run_chapter_pipeline(
                     session=session,
                     settings=settings,
-                    project_slug=payload["project_slug"],
+                    project_slug=project_slug,
                     chapter_number=payload["chapter_number"],
                 )
         except Exception as exc:
@@ -659,6 +713,10 @@ async def run_project_repair_task(
     reporter = RedisProgressReporter(redis, workflow_run_id)
 
     project_slug = payload["project_slug"]
+    archived = await _skip_archived_project_if_needed(reporter, project_slug)
+    if archived is not None:
+        return archived
+
     await reporter.emit("project_repair_started", {"project_slug": project_slug})
 
     async with _workflow_db_heartbeat(workflow_run_id, project_slug=project_slug):
@@ -728,13 +786,13 @@ async def run_project_repair_task(
 
     if result.requires_human_review:
         await reporter.emit(
-            "waiting_human",
+            "machine_blocked",
             {
                 "project_slug": project_slug,
                 "reason": "project_repair_requires_attention",
                 "workflow_run_id": str(result.workflow_run_id),
             },
-            event_type="waiting_human",
+            event_type="machine_blocked",
         )
     else:
         await reporter.emit("completed", {"result": "project_repair_done"})
@@ -819,11 +877,11 @@ async def run_book_quality_closure_task(
         )
     else:
         await reporter.emit(
-            "waiting_human",
+            "machine_blocked",
             {
                 **event_payload,
                 "reason": "book_quality_closure_requires_attention",
             },
-            event_type="waiting_human",
+            event_type="machine_blocked",
         )
     return result

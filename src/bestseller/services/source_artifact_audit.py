@@ -107,6 +107,8 @@ def discover_source_artifacts(
         if name.startswith("chapter-"):
             continue
         if name in allowed or any(token in name for token in ("bible", "listing")):
+            if _looks_like_manuscript_export(path):
+                continue
             files.append(path)
     return tuple(sorted(files))
 
@@ -223,7 +225,7 @@ def _forbidden_term_findings(
 
 
 _DUNGEON_COPY_CONTEXT_RE = re.compile(
-    r"(副本(?:机制|系统|流|制|化|任务|奖励|关卡|规则)|"
+    r"(副本(?:机制|系统|制|化|任务|奖励|关卡|规则)|"
     r"(?:游戏|无限流|主神|玩家|任务|闯关|通关|加载|规则|死亡游戏).{0,8}副本|"
     r"副本.{0,8}(?:游戏|无限流|主神|玩家|任务|闯关|通关|加载|规则))"
 )
@@ -237,6 +239,10 @@ def _count_forbidden_term(text: str, term: str) -> int:
         # evidence or a game/infinite-flow dungeon. Source audits should block
         # the latter planning pollution, not normal story prose like “证词副本”.
         return len(_DUNGEON_COPY_CONTEXT_RE.findall(text))
+    if term == "主神":
+        # Avoid false positives such as “宿主神经”, which is normal body/
+        # sci-fi prose and not the infinite-flow "main god" trope.
+        return len(re.findall(r"(?<!宿)主神(?!经)", text))
     return text.count(term)
 
 
@@ -259,3 +265,17 @@ def _read_text(path: Path) -> str:
         return path.read_text(encoding="utf-8")
     except OSError:
         return ""
+
+
+_CHAPTER_HEADING_RE = re.compile(r"(?m)^#{1,3}\s*第[0-9一二三四五六七八九十百千]+章")
+
+
+def _looks_like_manuscript_export(path: Path) -> bool:
+    if path.name.lower().startswith("chapter-"):
+        return True
+    if path.name.lower() != "project.md":
+        return False
+    text = _read_text(path)
+    if not text:
+        return False
+    return len(_CHAPTER_HEADING_RE.findall(text[:200_000])) >= 3

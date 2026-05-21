@@ -137,6 +137,27 @@ story_principle_gate:
   min_event_cycle_roles_per_batch: 3
   max_same_role_streak: 3
 
+methodology_framework:
+  enabled: true
+  profile_id: plova_structured_writing_v1
+  cards:
+    enabled: true
+    data_dir: data/methodology_sources/plova
+  opening_three_function:
+    enabled: true
+    default: audit_only
+    block_until_chapter: 3
+  action_scene_structure:
+    enabled: true
+    default: audit_only
+  chekhov_emphasis:
+    enabled: true
+    default: audit_only
+    overdue_window_default: 8
+  longform_chaos:
+    enabled: true
+    start_after_chapter: 30
+
 l7_continuous_audit:
   enabled: true
   auto_repair: false

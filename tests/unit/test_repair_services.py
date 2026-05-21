@@ -366,7 +366,7 @@ async def test_run_project_repair_blocks_on_source_artifact_audit(
     assert result.remaining_pending_rewrite_count == 1
     assert project.status == "revising"
     assert task.status == "pending"
-    assert workflow_runs[0].status == "waiting_human"
+    assert workflow_runs[0].status == "machine_blocked"
     assert workflow_runs[0].current_step == "source_artifact_audit_blocked"
     assert workflow_steps[0].step_name == "source_artifact_audit"
     assert workflow_steps[0].status == "failed"

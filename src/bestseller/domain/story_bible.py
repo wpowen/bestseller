@@ -1143,7 +1143,7 @@ class CharacterInput(BaseModel):
         ``{"toward_marcus": "Hostile (full agenda unclear)", "toward_ko": "Unknown"}``
         instead of the canonical
         ``[{"character": "marcus", "type": "Hostile …"}, …]``. Reject-on-validation
-        used to dead-letter the whole CastSpec into ``waiting_human_review``;
+        used to dead-letter the whole CastSpec into ``machine_repair_required``;
         we coerce here so a malformed shape never blocks the pipeline.
         """
 

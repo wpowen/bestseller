@@ -15,7 +15,6 @@ from bestseller.domain.context import (
     SceneWriterContextPacket,
     TimelineEventContext,
 )
-from bestseller.domain.narrative_tree import NarrativeTreeNodeRead
 from bestseller.domain.narrative import (
     AntagonistPlanRead,
     ArcBeatRead,
@@ -31,13 +30,14 @@ from bestseller.domain.narrative import (
     SceneContractRead,
     SubplotScheduleEntryRead,
 )
+from bestseller.domain.narrative_tree import NarrativeTreeNodeRead
 from bestseller.infra.db.models import (
     AntagonistPlanModel,
     ArcBeatModel,
     CanonFactModel,
-    CharacterModel,
     ChapterContractModel,
     ChapterModel,
+    CharacterModel,
     ClueModel,
     EmotionTrackModel,
     EndingContractModel,
@@ -53,11 +53,17 @@ from bestseller.infra.db.models import (
     SubplotScheduleModel,
     TimelineEventModel,
 )
-from bestseller.services.continuity import load_previous_chapter_snapshot
 from bestseller.services.character_intelligence.optimizer import (
     optimize_project_character_profiles,
 )
-from bestseller.services.projects import get_project_by_slug
+from bestseller.services.continuity import load_previous_chapter_snapshot
+from bestseller.services.methodology_overlay import (
+    normalize_chapter_overlay,
+    normalize_scene_overlay,
+)
+from bestseller.services.narrative_contracts import (
+    repair_legacy_scene_contract_model_pre_draft,
+)
 from bestseller.services.narrative_tree import (
     antagonist_plan_path,
     arc_path,
@@ -65,24 +71,18 @@ from bestseller.services.narrative_tree import (
     chapter_path,
     character_path,
     clue_path,
-    expansion_gate_path,
     emotion_track_path,
+    expansion_gate_path,
     payoff_path,
     resolve_narrative_tree_paths_for_project,
     scene_contract_path,
     scene_path,
     search_narrative_tree_for_project,
-    volume_path,
     volume_frontier_path,
+    volume_path,
     world_backbone_path,
 )
-from bestseller.services.narrative_contracts import (
-    repair_legacy_scene_contract_model_pre_draft,
-)
-from bestseller.services.methodology_overlay import (
-    normalize_chapter_overlay,
-    normalize_scene_overlay,
-)
+from bestseller.services.projects import get_project_by_slug
 from bestseller.services.retrieval import search_retrieval_for_project
 from bestseller.services.story_bible import load_scene_story_bible_context, stable_character_id
 from bestseller.settings import AppSettings
@@ -608,6 +608,14 @@ def _scene_contract_read(item: SceneContractModel) -> SceneContractRead:
         spotlight_character=methodology_contract.get("spotlight_character"),
         information_control_mode=methodology_contract.get("information_control_mode"),
         action_sequence=list(methodology_contract.get("action_sequence") or []),
+        fight_objective=methodology_contract.get("fight_objective"),
+        failure_cost=methodology_contract.get("failure_cost"),
+        opponent_advantage=methodology_contract.get("opponent_advantage"),
+        tactic_shift=methodology_contract.get("tactic_shift"),
+        emotion_driver=methodology_contract.get("emotion_driver"),
+        turning_point=methodology_contract.get("turning_point"),
+        exit_state_delta=methodology_contract.get("exit_state_delta"),
+        next_aftereffect=methodology_contract.get("next_aftereffect"),
         camera_distance=methodology_contract.get("camera_distance"),
         reveal_mode=methodology_contract.get("reveal_mode"),
         signature_image=methodology_contract.get("signature_image"),
@@ -1286,7 +1294,10 @@ async def build_scene_writer_context_from_models(
                 _knowledge_states.append(_ks_entry)
 
     # Load arc summaries (warm context) and world snapshot (cold context)
-    from bestseller.services.linear_arc_summary import load_recent_arc_summaries, load_latest_world_snapshot
+    from bestseller.services.linear_arc_summary import (
+        load_latest_world_snapshot,
+        load_recent_arc_summaries,
+    )
 
     # Scale warm context with novel length: 3 for ≤50 chapters, up to 8 for
     # very long novels.  This keeps recent + mid-range arc memory visible.

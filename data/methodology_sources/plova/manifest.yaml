@@ -1,0 +1,358 @@
+source_set_id: plova_douyin_2026_05_21
+author: Plova
+douyin_id: "80820846567"
+homepage: "https://www.douyin.com/user/MS4wLjABAAAAqfuu6Fnu3wH7KpvEvbxpu6EV_szC8NwX-2hV_x5Nq3R32kIxEw1wq-9EFVljIVX0"
+source_markdown: douyin_plova/plova_douyin_ocr.md
+captured_at: "2026-05-21T17:48:10+08:00"
+total_items: 38
+ocr_items: 35
+pending_items: 3
+total_images: 208
+ocr_images: 200
+failed_images: 8
+items:
+  - source_id: plova.01
+    aweme_id: "7642246827189800207"
+    title: "结构化创作：经典原则03——冰山理论"
+    anchor: "#01-7642246827189800207"
+    image_count: 5
+    ocr_image_count: 5
+    ocr_status: ok
+    category: surface_subtext
+    topics: ["iceberg", "surface_subtext", "implicit_emotion", "expression_layers"]
+  - source_id: plova.02
+    aweme_id: "7641389941712276736"
+    title: "结构化创作：经典原则02—契诃夫之枪不等于伏笔"
+    anchor: "#02-7641389941712276736"
+    image_count: 5
+    ocr_image_count: 5
+    ocr_status: ok
+    category: foreshadowing
+    topics: ["chekhov", "emphasis", "function", "foreshadowing_boundary"]
+  - source_id: plova.03
+    aweme_id: "7641066789723442474"
+    title: "结构化创作：经典原则01——契诃夫之枪"
+    anchor: "#03-7641066789723442474"
+    image_count: 5
+    ocr_image_count: 5
+    ocr_status: ok
+    category: foreshadowing
+    topics: ["chekhov", "emphasized_item", "payoff", "reader_expectation"]
+  - source_id: plova.04
+    aweme_id: "7639269753357438223"
+    title: "长篇作者最缺的不是灵感而是外部记忆系统"
+    anchor: "#04-7639269753357438223"
+    image_count: 5
+    ocr_image_count: 5
+    ocr_status: ok
+    category: longform_control
+    topics: ["external_memory", "continuity", "source_of_truth", "longform_control"]
+  - source_id: plova.05
+    aweme_id: "7638529526439480576"
+    title: "将剧情串成主线03"
+    anchor: "#05-7638529526439480576"
+    image_count: 6
+    ocr_image_count: 6
+    ocr_status: ok
+    category: mainline
+    topics: ["mainline", "state_chain", "advanced_progression", "causality"]
+  - source_id: plova.06
+    aweme_id: "7637397787260374272"
+    title: "将剧情串成主线02"
+    anchor: "#06-7637397787260374272"
+    image_count: 5
+    ocr_image_count: 5
+    ocr_status: ok
+    category: mainline
+    topics: ["mainline", "goal_obstacle_result", "chapter_chain", "causality"]
+  - source_id: plova.07
+    aweme_id: "7637079773402926376"
+    title: "将剧情串成主线01"
+    anchor: "#07-7637079773402926376"
+    image_count: 4
+    ocr_image_count: 4
+    ocr_status: ok
+    category: mainline
+    topics: ["mainline", "subplot_absorption", "reader_direction", "causality"]
+  - source_id: plova.08
+    aweme_id: "7636596237139004672"
+    title: "小说开头翻车避坑指南"
+    anchor: "#08-7636596237139004672"
+    image_count: 4
+    ocr_image_count: 4
+    ocr_status: ok
+    category: opening
+    topics: ["opening", "anti_pitfall", "reader_desire", "first_chapter"]
+  - source_id: plova.09
+    aweme_id: "7634485994447818018"
+    title: "小说的前三章到底该怎么分工？"
+    anchor: "#09-7634485994447818018"
+    image_count: 5
+    ocr_image_count: 5
+    ocr_status: ok
+    category: opening
+    topics: ["opening", "golden_three", "chapter_function", "reader_desire"]
+  - source_id: plova.10
+    aweme_id: "7634407729569844495"
+    title: "热闹的开头为什么留不住人？"
+    anchor: "#10-7634407729569844495"
+    image_count: 4
+    ocr_image_count: 4
+    ocr_status: ok
+    category: opening
+    topics: ["opening", "stimulus", "reader_question", "retention"]
+  - source_id: plova.11
+    aweme_id: "7633720063274552628"
+    title: "小说打斗情节怎么搭结构？"
+    anchor: "#11-7633720063274552628"
+    image_count: 7
+    ocr_image_count: 7
+    ocr_status: ok
+    category: action_scene
+    topics: ["fight_structure", "objective", "risk", "turning_point"]
+  - source_id: plova.12
+    aweme_id: "7633260531054333199"
+    title: "华丽又不空的打斗怎么写？"
+    anchor: "#12-7633260531054333199"
+    image_count: 8
+    ocr_image_count: 8
+    ocr_status: ok
+    category: action_scene
+    topics: ["fight_visual", "information", "state_change", "empty_action"]
+  - source_id: plova.13
+    aweme_id: "7632235186226302208"
+    title: "怎么把打斗写出情绪？"
+    anchor: "#13-7632235186226302208"
+    image_count: 6
+    ocr_image_count: 6
+    ocr_status: ok
+    category: action_scene
+    topics: ["fight_emotion", "emotion_driver", "relationship", "stakes"]
+  - source_id: plova.14
+    aweme_id: "7631767453629959439"
+    title: "打斗场面为什么总写不燃？"
+    anchor: "#14-7631767453629959439"
+    image_count: 6
+    ocr_image_count: 6
+    ocr_status: ok
+    category: action_scene
+    topics: ["fight_energy", "cost", "tactic_shift", "result"]
+  - source_id: plova.15
+    aweme_id: "7631153531524893967"
+    title: "真正拖垮长篇的往往不是文笔，而是失控"
+    anchor: "#15-7631153531524893967"
+    image_count: 5
+    ocr_image_count: 5
+    ocr_status: ok
+    category: longform_control
+    topics: ["longform_control", "loss_of_control", "scope_drift", "health"]
+  - source_id: plova.16
+    aweme_id: "7630667088742436148"
+    title: "小说世界观和力量体系到底该怎么建档？"
+    anchor: "#16-7630667088742436148"
+    image_count: 7
+    ocr_image_count: 6
+    ocr_status: ok
+    category: worldview
+    topics: ["worldview", "power_system", "archive", "setting_registry"]
+  - source_id: plova.17
+    aweme_id: "7629647634566892815"
+    title: "能力怎么和人物绑定？"
+    anchor: "#17-7629647634566892815"
+    image_count: 6
+    ocr_image_count: 6
+    ocr_status: ok
+    category: power
+    topics: ["power_system", "character_binding", "cost", "choice"]
+  - source_id: plova.18
+    aweme_id: "7629296895264967988"
+    title: "升级为什么会越写越平"
+    anchor: "#18-7629296895264967988"
+    image_count: 6
+    ocr_image_count: 6
+    ocr_status: ok
+    category: progression
+    topics: ["progression", "level_up", "state_delta", "flat_upgrade"]
+  - source_id: plova.19
+    aweme_id: "7628811352148053300"
+    title: "力量体系不止分等级，先聚焦这5个问题"
+    anchor: "#19-7628811352148053300"
+    image_count: 7
+    ocr_image_count: 6
+    ocr_status: ok
+    category: power
+    topics: ["power_system", "limits", "cost", "five_questions"]
+  - source_id: plova.20
+    aweme_id: "7628556619726540084"
+    title: "势力怎么设计才不空"
+    anchor: "#20-7628556619726540084"
+    image_count: 7
+    ocr_image_count: 7
+    ocr_status: ok
+    category: worldview
+    topics: ["faction", "pressure", "interests", "worldview"]
+  - source_id: plova.21
+    aweme_id: "7627454096269659444"
+    title: "世界观先搭哪几层？"
+    anchor: "#21-7627454096269659444"
+    image_count: 6
+    ocr_image_count: 6
+    ocr_status: ok
+    category: worldview
+    topics: ["worldview", "layers", "rules", "order"]
+  - source_id: plova.22
+    aweme_id: "7626954084007808256"
+    title: "世界观该从哪里开始搭？"
+    anchor: "#22-7626954084007808256"
+    image_count: 6
+    ocr_image_count: 6
+    ocr_status: ok
+    category: worldview
+    topics: ["worldview", "mainline_first", "setting_scope", "story_need"]
+  - source_id: plova.23
+    aweme_id: "7626663044285795636"
+    title: "伏笔为什么总是埋得下却收不回来"
+    anchor: "#23-7626663044285795636"
+    image_count: 8
+    ocr_image_count: 7
+    ocr_status: ok
+    category: foreshadowing
+    topics: ["foreshadowing", "payoff", "debt", "recovery"]
+  - source_id: plova.24
+    aweme_id: "7625964195753839924"
+    title: "写到中期卡文，先检查这三件事"
+    anchor: "#24-7625964195753839924"
+    image_count: 5
+    ocr_image_count: 4
+    ocr_status: ok
+    category: longform_control
+    topics: ["midbook", "stuck", "triage", "control"]
+  - source_id: plova.25
+    aweme_id: "7624474703532428584"
+    title: "很多书，崩在时间线上"
+    anchor: "#25-7624474703532428584"
+    image_count: 5
+    ocr_image_count: 5
+    ocr_status: ok
+    category: timeline
+    topics: ["timeline", "causality", "sequence", "longform_control"]
+  - source_id: plova.26
+    aweme_id: "7623593598243622196"
+    title: "不是所有脑洞都能写长篇"
+    anchor: "#26-7623593598243622196"
+    image_count: 6
+    ocr_image_count: 5
+    ocr_status: ok
+    category: longform_control
+    topics: ["idea_scale", "longform_viability", "premise", "sustainability"]
+  - source_id: plova.27
+    aweme_id: "7623358884446489891"
+    title: "真正有用的角色卡应该长什么样"
+    anchor: "#27-7623358884446489891"
+    image_count: 6
+    ocr_image_count: 6
+    ocr_status: ok
+    category: character
+    topics: ["character_card", "function", "desire", "arc"]
+  - source_id: plova.28
+    aweme_id: "7622862910313778466"
+    title: "设定太多会压垮剧情"
+    anchor: "#28-7622862910313778466"
+    image_count: 4
+    ocr_image_count: 4
+    ocr_status: ok
+    category: worldview
+    topics: ["setting_load", "plot_pressure", "worldview", "information_control"]
+  - source_id: plova.29
+    aweme_id: "7621743284850789647"
+    title: "你不是不会写长篇，而是没管住故事"
+    anchor: "#29-7621743284850789647"
+    image_count: 7
+    ocr_image_count: 7
+    ocr_status: ok
+    category: longform_control
+    topics: ["story_management", "longform_control", "tracking", "system"]
+  - source_id: plova.30
+    aweme_id: "7621361981349596416"
+    title: "长篇小说为何到10万字后更容易混乱？"
+    anchor: "#30-7621361981349596416"
+    image_count: 6
+    ocr_image_count: 6
+    ocr_status: ok
+    category: longform_control
+    topics: ["after_100k", "chaos", "drift", "longform_health"]
+  - source_id: plova.31
+    aweme_id: "7620606927256571151"
+    title: "写长篇前最该先列的5张表"
+    anchor: "#31-7620606927256571151"
+    image_count: 9
+    ocr_image_count: 9
+    ocr_status: ok
+    category: longform_control
+    topics: ["five_tables", "planning", "source_of_truth", "longform_control"]
+  - source_id: plova.32
+    aweme_id: "7619299068090551587"
+    title: "为什么大纲写了很多，正文还是写不出来？"
+    anchor: "#32-7619299068090551587"
+    image_count: 5
+    ocr_image_count: 5
+    ocr_status: ok
+    category: outline
+    topics: ["outline", "executability", "process", "draftability"]
+  - source_id: plova.33
+    aweme_id: "7618604381356838153"
+    title: "长篇小说，其实是在同时管理这4条线"
+    anchor: "#33-7618604381356838153"
+    image_count: 4
+    ocr_image_count: 4
+    ocr_status: ok
+    category: longform_control
+    topics: ["four_lines", "mainline", "character_line", "world_line", "foreshadowing_line"]
+  - source_id: plova.34
+    aweme_id: "7618164956315405603"
+    title: "为什么角色一多，剧情就开始散了？"
+    anchor: "#34-7618164956315405603"
+    image_count: 8
+    ocr_image_count: 7
+    ocr_status: ok
+    category: character
+    topics: ["ensemble", "character_focus", "role_function", "plot_scatter"]
+  - source_id: plova.35
+    aweme_id: "7616266016121320134"
+    title: "那些被大纲困住的长篇，都忘了它的初衷"
+    anchor: "#35-7616266016121320134"
+    image_count: 10
+    ocr_image_count: 8
+    ocr_status: ok
+    category: outline
+    topics: ["outline", "calibration", "original_intent", "adjustment"]
+  - source_id: plova.36
+    aweme_id: "7615583461797491557"
+    title: "#小说创作 #写作技巧 #网文干货 #网文写手 #长篇小说创作"
+    anchor: "#36-7615583461797491557"
+    image_count: 0
+    ocr_image_count: 0
+    ocr_status: pending
+    category: pending
+    topics: []
+    notes: "No images were available in the captured OCR source."
+  - source_id: plova.37
+    aweme_id: "7614776019581905265"
+    title: "#网文小说 #小说写作 #写作技巧 #叙事意图 #长篇小说"
+    anchor: "#37-7614776019581905265"
+    image_count: 0
+    ocr_image_count: 0
+    ocr_status: pending
+    category: pending
+    topics: []
+    notes: "No images were available in the captured OCR source."
+  - source_id: plova.38
+    aweme_id: "7614448905224507121"
+    title: "#写作技巧 #小说创作 #网文写作 #伏笔管理 #长篇小说"
+    anchor: "#38-7614448905224507121"
+    image_count: 0
+    ocr_image_count: 0
+    ocr_status: pending
+    category: pending
+    topics: []
+    notes: "No images were available in the captured OCR source."

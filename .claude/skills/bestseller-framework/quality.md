@@ -137,6 +137,63 @@ if word_count > threshold.max:
       - 压缩过渡场景
 ```
 
+## 4.5 章节断点四联检（每章必跑）
+
+> 数据源：
+> - [chapter_seam](../../../src/bestseller/services/chapter_seam.py)
+> - [deduplication.detect_intra_chapter_stitched_drafts](../../../src/bestseller/services/deduplication.py)
+> - [character_alias_canon](../../../src/bestseller/services/character_alias_canon.py)
+> - [stance_continuity_docs](../../../src/bestseller/services/stance_continuity_docs.py)
+
+针对最大单章流失（章 1 → 章 2 流失 60%+ 的常见症状），critic 在通用维度之外**必须**跑以下四组硬检：
+
+### A. Chapter Seam Gate（第 2 章起）
+
+```python
+from bestseller.services.chapter_seam import validate_chapter_seam
+report = validate_chapter_seam(prev_chapter_tail, current_chapter_text)
+if not report.passed:  # silent_drops 非空
+    must_rewrite = True
+    repair_prompt = build_seam_bridge_repair_prompt(report)
+```
+
+读前一章末 600-1000 字，抽 ≤ 5 条 open threads（location / participant / immediate_threat / body_state / unanswered_question）。本章开篇 300 字内每条必须命中四种 resolution 之一：`continuation` / `skip` / `relocation` / `on_screen`。`silent_drop` 即不合格。
+
+### B. Stitched-Draft Detection（每章）
+
+```python
+from bestseller.services.deduplication import detect_intra_chapter_stitched_drafts
+findings = detect_intra_chapter_stitched_drafts(chapter_text)
+if findings:
+    must_rewrite = True  # editor 任务：二选一保留，禁合并
+```
+
+事件签名 = 参与者集合 + 关键道具集合。同章内两段相似度 ≥ 0.62 且共享 ≥ 2 命名参与者 + 1 关键道具 → 标 `stitched_draft`。
+
+### C. Name Canon Validation（每章）
+
+```python
+from bestseller.services.character_alias_canon import (
+    load_character_canon, validate_chapter_name_canon,
+)
+canon = load_character_canon(project_root / "story-bible/character-aliases.yaml")
+violations = validate_chapter_name_canon(chapter_text, canon)
+if violations:
+    must_rewrite = True
+```
+
+检测两类违规：`forbidden_collision`（用了显式禁碰撞集合里的名字）+ `unknown_name`（出现 ≥ 3 次但未登记的 2-3 字 Han 名）。
+
+### D. Stance Reversal Gate（每 snapshot 周期跑一次）
+
+```python
+from bestseller.services.stance_continuity_docs import detect_stance_reversals
+findings = detect_stance_reversals(project_root)
+violations = [f for f in findings if f.severity == "violation"]
+```
+
+扫所有 `knowledge/character-snapshots/after-ch-NNN.md`，对比相邻 snapshot 的 trust_map / stance_toward_X。敌↔友翻转必须在过渡区间的 `timeline.md` 找到 reconciliation / betrayal / coercion / rescue / debt_event 事件，否则 `severity=violation`。
+
 ## 5. Project Consistency Audit（每 20 章）
 
 | 审查项 | 规则 |

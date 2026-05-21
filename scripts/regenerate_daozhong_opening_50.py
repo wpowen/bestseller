@@ -124,7 +124,7 @@ async def run(args: argparse.Namespace) -> int:
 
     elapsed = time.monotonic() - started_at
     print(f"\nTotal elapsed: {elapsed:.0f}s ({elapsed/60:.1f}m)")
-    print(f"Requires human review: {result.requires_human_review}")
+    print(f"Requires machine repair: {result.requires_human_review}")
     print(f"Chapters processed: {len(result.chapter_results)}")
 
     ok_count = sum(

@@ -84,8 +84,8 @@ from bestseller.services.scorecard import (  # noqa: E402
 from bestseller.settings import load_settings  # noqa: E402
 
 
-# Plan Phase 3 acceptance threshold — a project with |Δ| > 5 points is
-# flagged for human review. < 10% of the fleet should exceed this.
+# Plan Phase 3 acceptance threshold: a project with |Δ| > 5 points is
+# flagged for machine repair. < 10% of the fleet should exceed this.
 _FLAG_DELTA: float = 5.0
 
 

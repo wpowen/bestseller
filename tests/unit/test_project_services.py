@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
 from sqlalchemy.dialects import postgresql
 
-from bestseller.domain.enums import ArtifactType
+from bestseller.domain.enums import ArtifactType, ProjectType
 from bestseller.domain.planning import PlanningArtifactCreate
 from bestseller.domain.project import (
     AmazonKdpPublicationProfile,
@@ -18,6 +19,7 @@ from bestseller.domain.project import (
     StylePreferenceConfig,
     WritingProfile,
 )
+from bestseller.domain.fanqie_short import FANQIE_SHORT_CONTENT_MODE
 from bestseller.infra.db.models import ProjectModel, StyleGuideModel
 from bestseller.services import projects as project_services
 from bestseller.settings import load_settings
@@ -57,6 +59,38 @@ def build_settings() -> object:
     )
 
 
+def test_project_delete_tombstone_round_trip(tmp_path: Path) -> None:
+    settings = SimpleNamespace(output=SimpleNamespace(base_dir=str(tmp_path)))
+
+    assert project_services.is_project_delete_tombstoned(settings, "book-a") is False
+
+    project_services.mark_project_delete_tombstone(settings, "book-a")
+
+    assert project_services.is_project_delete_tombstoned(settings, "book-a") is True
+    assert project_services.is_project_delete_tombstoned(settings, "book-b") is False
+
+    project_services.clear_project_delete_tombstone(settings, "book-a")
+
+    assert project_services.is_project_delete_tombstoned(settings, "book-a") is False
+
+
+@pytest.mark.asyncio
+async def test_delete_missing_project_writes_tombstone(tmp_path: Path) -> None:
+    settings = SimpleNamespace(output=SimpleNamespace(base_dir=str(tmp_path)))
+    session = FakeSession(scalar_results=[None])
+
+    result = await project_services.delete_project_completely(
+        session,
+        settings,
+        "already-gone",
+    )
+
+    assert result["db_deleted"] is False
+    assert result["fs_deleted"] is True
+    assert result["errors"] == ["project_not_found_in_db"]
+    assert project_services.is_project_delete_tombstoned(settings, "already-gone") is True
+
+
 @pytest.mark.asyncio
 async def test_create_project_creates_default_style_guide(monkeypatch: pytest.MonkeyPatch) -> None:
     async def fake_get_project_by_slug(session: object, slug: str) -> None:
@@ -85,6 +119,43 @@ async def test_create_project_creates_default_style_guide(monkeypatch: pytest.Mo
     assert len(style_guides) == 1
     assert style_guides[0].project_id == project.id
     assert "fantasy" in style_guides[0].tone_keywords
+
+
+@pytest.mark.asyncio
+async def test_create_project_rejects_duplicate_fanqie_short_title(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def fake_get_project_by_slug(session: object, slug: str) -> None:
+        return None
+
+    duplicate = ProjectModel(
+        slug="existing-short",
+        title="器语者",
+        genre="东方美学幻想",
+        target_word_count=10000,
+        target_chapters=6,
+        project_type=ProjectType.FANQIE_SHORT.value,
+        metadata_json={"library_archived": True},
+    )
+    monkeypatch.setattr(project_services, "get_project_by_slug", fake_get_project_by_slug)
+    session = FakeSession(scalar_results=[duplicate])
+
+    with pytest.raises(ValueError, match="existing-short"):
+        await project_services.create_project(
+            session,
+            ProjectCreate(
+                slug="new-short",
+                title="器语者",
+                genre="东方美学幻想",
+                target_word_count=10000,
+                target_chapters=6,
+                project_type=ProjectType.FANQIE_SHORT,
+                metadata={"content_mode": FANQIE_SHORT_CONTENT_MODE},
+            ),
+            build_settings(),
+        )
+
+    assert session.added == []
 
 
 @pytest.mark.asyncio

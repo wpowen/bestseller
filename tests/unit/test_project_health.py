@@ -7,7 +7,9 @@ import pytest
 
 from bestseller.infra.db.models import ClueModel, ProjectModel
 from bestseller.services import project_health
+from bestseller.services.checker_schema import CheckerIssue, CheckerReport
 from bestseller.services.hype_engine import HypeType
+from bestseller.services.methodology_runtime import METHODOLOGY_REPORTS_EVIDENCE_KEY
 from bestseller.services.setup_payoff_tracker import SetupPayoffDebt, SetupPayoffReport
 from bestseller.settings import load_settings
 
@@ -56,6 +58,25 @@ def build_project() -> ProjectModel:
     )
     project.id = uuid4()
     return project
+
+
+def _checker_report(issue_id: str) -> CheckerReport:
+    issue = CheckerIssue(
+        id=issue_id,
+        type="methodology",
+        severity="high",
+        location="chapter 1",
+        description="risk",
+        suggestion="repair",
+        can_override=True,
+    )
+    return CheckerReport(
+        agent="test",
+        chapter=1,
+        overall_score=80,
+        passed=False,
+        issues=(issue,),
+    )
 
 
 @pytest.mark.asyncio
@@ -156,6 +177,39 @@ async def test_build_project_health_report_aggregates_story_risks(
     assert report["overused_hooks"][0]["hook_type"] == "mystery"
     assert report["setup_payoff_debts"][0]["setup_chapter"] == 5
     assert report["golden_three"]["strong_hype_chapters"] >= 2
+    assert report["methodology"]["enabled"] is True
+    assert report["methodology"]["coverage"]["verified_sources"] == 35
+
+
+@pytest.mark.asyncio
+async def test_load_methodology_checker_reports_from_current_review_scores() -> None:
+    report = _checker_report("ACTION_SCENE_OBJECTIVE_MISSING")
+
+    class FakeResult:
+        def __iter__(self):
+            return iter(
+                [
+                    (
+                        {
+                            "evidence_summary": {
+                                METHODOLOGY_REPORTS_EVIDENCE_KEY: [report.to_dict()]
+                            }
+                        },
+                    )
+                ]
+            )
+
+    class ExecuteSession:
+        async def execute(self, stmt: object) -> FakeResult:
+            return FakeResult()
+
+    reports = await project_health._load_methodology_checker_reports(
+        ExecuteSession(),  # type: ignore[arg-type]
+        project_id=uuid4(),
+    )
+
+    assert len(reports) == 1
+    assert reports[0].issues[0].id == "ACTION_SCENE_OBJECTIVE_MISSING"
 
 
 @pytest.mark.asyncio
@@ -171,6 +225,16 @@ async def test_repair_project_health_dry_run_plans_safe_materializations(
         "overdue_clues": [{"clue_code": "blood-lotus"}],
         "setup_payoff_debts": [],
         "golden_three": {"issue_codes": ["GOLDEN_THREE_LOW_HYPE"]},
+        "methodology": {
+            "enabled": True,
+            "pending_sources": ["plova.36"],
+            "top_methodology_issues": [
+                {"code": "OPENING_CH1_PRESSURE_MISSING", "count": 1},
+                {"code": "ACTION_SCENE_OBJECTIVE_MISSING", "count": 1},
+                {"code": "CHEKHOV_USE_OVERDUE", "count": 1},
+            ],
+            "longform_chaos": {"risk_level": "high"},
+        },
     }
 
     async def fake_build_report(_session, _settings, project_slug):
@@ -192,6 +256,12 @@ async def test_repair_project_health_dry_run_plans_safe_materializations(
     assert result["actions"][1]["component"] == "narrative_graph"
     assert result["actions"][2]["action"] == "review_overdue_clues"
     assert result["actions"][3]["action"] == "strengthen_golden_three"
+    action_names = [action["action"] for action in result["actions"]]
+    assert "review_methodology_pending_sources" in action_names
+    assert "repair_opening_three_function" in action_names
+    assert "review_action_scene_structure" in action_names
+    assert "review_chekhov_overdue" in action_names
+    assert "repair_longform_chaos" in action_names
 
 
 @pytest.mark.asyncio

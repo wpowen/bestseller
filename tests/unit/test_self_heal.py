@@ -17,6 +17,7 @@ import pytest
 
 from bestseller.worker.self_heal import (
     GENERATION_GATE_RESUME_COOLDOWN_SECONDS,
+    SELF_HEAL_PENDING_REWRITE_TASK_LIMIT,
     STARTUP_GRACE_SECONDS,
     WAITING_REPAIR_SUPPRESSION_SECONDS,
     StuckProject,
@@ -70,6 +71,13 @@ class _FakeDraft:
     content_md: str = "body"
 
 
+@dataclass
+class _FakeRewriteTask:
+    id: Any
+    project_id: Any
+    status: str = "pending"
+
+
 class _FakeResult:
     def __init__(self, rows: list[Any]) -> None:
         self._rows = rows
@@ -96,11 +104,13 @@ class _FakeSession:
         runs: list[_FakeWorkflowRun],
         chapters: list[_FakeChapter],
         drafts: list[_FakeDraft],
+        rewrite_tasks: list[_FakeRewriteTask] | None = None,
     ) -> None:
         self.projects = projects
         self.runs = runs
         self.chapters = chapters
         self.drafts = drafts
+        self.rewrite_tasks = rewrite_tasks or []
         self.committed = False
 
     # --- scalars ---------------------------------------------------------
@@ -117,6 +127,7 @@ class _FakeSession:
             ChapterDraftVersionModel,
             ChapterModel,
             WorkflowRunModel,
+            RewriteTaskModel,
         )
 
         target = self._target_model(stmt)
@@ -130,7 +141,7 @@ class _FakeSession:
                     for r in self.runs
                     if r.project_id == project_id
                     and r.workflow_type == "project_repair"
-                    and r.status == "waiting_human"
+                    and r.status == "machine_blocked"
                 ]
                 return max(matching, default=None)
 
@@ -185,6 +196,13 @@ class _FakeSession:
                 1
                 for d in self.drafts
                 if d.chapter_id in chapter_ids and d.is_current
+            )
+
+        if target is RewriteTaskModel:
+            return sum(
+                1
+                for task in self.rewrite_tasks
+                if task.project_id == project_id and task.status in {"pending", "queued"}
             )
 
         raise NotImplementedError(f"scalar for {target}")
@@ -271,6 +289,7 @@ class _FakeSession:
             ChapterDraftVersionModel,
             ChapterModel,
             ProjectModel,
+            RewriteTaskModel,
             WorkflowRunModel,
         )
 
@@ -289,6 +308,7 @@ class _FakeSession:
         sql_text = str(stmt)
         for model in (
             ChapterDraftVersionModel,
+            RewriteTaskModel,
             WorkflowRunModel,
             ChapterModel,
             ProjectModel,
@@ -574,7 +594,7 @@ async def test_find_stuck_projects_detects_blocked_chapters(
 async def test_find_stuck_projects_temporarily_suppresses_recent_waiting_repair(
     now: _dt.datetime,
 ) -> None:
-    """Fresh waiting_human repair rows should not be duplicated immediately."""
+    """Fresh machine_blocked repair rows should not be duplicated immediately."""
     p = _FakeProject(id=uuid4(), slug="book-recent-waiting-repair")
     chapters = [
         _FakeChapter(
@@ -590,7 +610,7 @@ async def test_find_stuck_projects_temporarily_suppresses_recent_waiting_repair(
             id=uuid4(),
             project_id=p.id,
             workflow_type="project_repair",
-            status="waiting_human",
+            status="machine_blocked",
             updated_at=now - _dt.timedelta(seconds=10),
         )
     ]
@@ -603,7 +623,7 @@ async def test_find_stuck_projects_temporarily_suppresses_recent_waiting_repair(
 async def test_find_stuck_projects_requeues_after_stale_waiting_repair(
     now: _dt.datetime,
 ) -> None:
-    """Old waiting_human rows are history, not a permanent self-heal stop."""
+    """Old machine_blocked rows are history, not a permanent self-heal stop."""
     p = _FakeProject(id=uuid4(), slug="book-stale-waiting-repair")
     stale_waiting_update = now - _dt.timedelta(
         seconds=WAITING_REPAIR_SUPPRESSION_SECONDS + 60
@@ -622,7 +642,7 @@ async def test_find_stuck_projects_requeues_after_stale_waiting_repair(
             id=uuid4(),
             project_id=p.id,
             workflow_type="project_repair",
-            status="waiting_human",
+            status="machine_blocked",
             updated_at=stale_waiting_update,
         )
     ]
@@ -662,6 +682,70 @@ async def test_find_stuck_projects_repairs_paused_structural_repair_project(
     assert stuck[0].slug == "book-paused"
     assert stuck[0].reason == "blocked_chapters"
     assert stuck[0].heal_kind == "repair"
+
+
+@pytest.mark.asyncio
+async def test_find_stuck_projects_repairs_pending_rewrite_tasks_behind_gate(
+    now: _dt.datetime,
+) -> None:
+    """Repair-gated projects with queued rewrite work must keep self-healing."""
+    p = _FakeProject(
+        id=uuid4(),
+        slug="book-pending-repairs",
+        status="revising",
+        target_chapters=100,
+        metadata_json={
+            "generation_resume_blocked_until_repair_audit": True,
+            "last_generation_gate_error": "Scene 12.3 blocked by plan-richness gate",
+        },
+    )
+    chapters = [_FakeChapter(id=uuid4(), project_id=p.id) for _ in range(50)]
+    drafts = [_FakeDraft(id=uuid4(), chapter_id=c.id, is_current=True) for c in chapters]
+    rewrite_tasks = [
+        _FakeRewriteTask(id=uuid4(), project_id=p.id, status="pending"),
+        _FakeRewriteTask(id=uuid4(), project_id=p.id, status="queued"),
+    ]
+    session = _FakeSession(
+        projects=[p],
+        runs=[],
+        chapters=chapters,
+        drafts=drafts,
+        rewrite_tasks=rewrite_tasks,
+    )
+
+    stuck = await find_stuck_projects(session)
+
+    assert len(stuck) == 1
+    assert stuck[0].slug == "book-pending-repairs"
+    assert stuck[0].reason == "pending_rewrite_tasks"
+    assert stuck[0].heal_kind == "repair"
+
+
+@pytest.mark.asyncio
+async def test_find_stuck_projects_skips_library_archived_projects(
+    now: _dt.datetime,
+) -> None:
+    p = _FakeProject(
+        id=uuid4(),
+        slug="book-archived",
+        status="revising",
+        target_chapters=100,
+        metadata_json={"library_archived": True},
+    )
+    chapters = [
+        _FakeChapter(id=uuid4(), project_id=p.id, production_state="blocked"),
+    ]
+    drafts = [_FakeDraft(id=uuid4(), chapter_id=chapters[0].id, is_current=True)]
+    rewrite_tasks = [_FakeRewriteTask(id=uuid4(), project_id=p.id, status="pending")]
+    session = _FakeSession(
+        projects=[p],
+        runs=[],
+        chapters=chapters,
+        drafts=drafts,
+        rewrite_tasks=rewrite_tasks,
+    )
+
+    assert await find_stuck_projects(session) == []
 
 
 @pytest.mark.asyncio
@@ -1325,7 +1409,7 @@ async def test_requeue_repair_returns_job_id_on_success() -> None:
         "project_slug": "book-repair",
         "requested_by": "worker_self_heal",
         "include_pending_rewrite_tasks": True,
-        "pending_rewrite_task_limit": 10,
+        "pending_rewrite_task_limit": SELF_HEAL_PENDING_REWRITE_TASK_LIMIT,
     }
 
 

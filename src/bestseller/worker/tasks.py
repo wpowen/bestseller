@@ -517,7 +517,9 @@ async def run_project_pipeline_task(
     ctx: dict[str, Any], workflow_run_id: str, payload: dict[str, Any]
 ) -> dict[str, Any]:
     """Project-level pipeline (draft all chapters)."""
-    from bestseller.services.pipelines import run_project_pipeline
+    from bestseller.services import pipelines as pipeline_services
+    from bestseller.services.projects import get_project_by_slug
+    from bestseller.services.truth_version import TruthVersionStaleError
 
     settings = get_settings()
     redis = ctx["redis"]
@@ -535,7 +537,25 @@ async def run_project_pipeline_task(
     async with _workflow_db_heartbeat(workflow_run_id, project_slug=project_slug):
         try:
             async with get_server_session() as session:
-                result = await run_project_pipeline(
+                result = await pipeline_services.run_project_pipeline(
+                    session=session,
+                    settings=settings,
+                    project_slug=project_slug,
+                    progress=make_sync_callback(reporter),
+                )
+        except TruthVersionStaleError:
+            async with get_server_session() as session:
+                project = await get_project_by_slug(session, project_slug)
+                if project is None:
+                    raise ValueError(f"Project '{project_slug}' was not found.")
+                await pipeline_services._refresh_stale_truth_materializations_for_resume(
+                    session,
+                    settings,
+                    project,
+                    requested_by="worker_truth_refresh",
+                    progress=make_sync_callback(reporter),
+                )
+                result = await pipeline_services.run_project_pipeline(
                     session=session,
                     settings=settings,
                     project_slug=project_slug,
@@ -696,6 +716,16 @@ async def run_project_repair_task(
             await reporter.emit("failed", {"error": str(exc)}, event_type="failed")
             raise
 
+    result_payload = result.model_dump(mode="json")
+    result_payload.setdefault("project_slug", project_slug)
+    if await _enqueue_quality_closure_if_needed(
+        redis,
+        reporter,
+        result_payload,
+        source="project_repair",
+    ):
+        return result_payload
+
     if result.requires_human_review:
         await reporter.emit(
             "waiting_human",
@@ -708,7 +738,7 @@ async def run_project_repair_task(
         )
     else:
         await reporter.emit("completed", {"result": "project_repair_done"})
-    return result.model_dump(mode="json")
+    return result_payload
 
 
 async def run_book_quality_closure_task(

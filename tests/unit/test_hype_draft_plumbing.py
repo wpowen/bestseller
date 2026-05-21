@@ -18,13 +18,15 @@ tests).
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
 from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
 
 from bestseller.domain.context import SceneWriterContextPacket
-from bestseller.services.drafts import build_scene_draft_prompts
+from bestseller.services.drafts import _maybe_write_scene_prompt_trace, build_scene_draft_prompts
 
 
 def _minimal_packet_kwargs() -> dict:
@@ -44,23 +46,34 @@ pytestmark = pytest.mark.unit
 
 def _sample_project(*, language: str = "zh-CN") -> SimpleNamespace:
     return SimpleNamespace(
+        id=uuid4(),
         title="诡豪试炼",
         slug="gui-hao-trial",
         language=language,
+        genre="玄幻",
+        sub_genre=None,
+        status="drafting",
         metadata_json={},
     )
 
 
 def _sample_chapter() -> SimpleNamespace:
     return SimpleNamespace(
+        id=uuid4(),
         chapter_number=1,
         chapter_goal="亮出冥符翻盘",
         title="第一章·冥符出世",
+        status="drafting",
+        production_state="pending",
+        target_word_count=2200,
+        current_word_count=0,
+        metadata_json={},
     )
 
 
 def _sample_scene() -> SimpleNamespace:
     return SimpleNamespace(
+        id=uuid4(),
         scene_number=1,
         title="当众羞辱",
         participants=["主角", "仇家"],
@@ -70,6 +83,8 @@ def _sample_scene() -> SimpleNamespace:
         exit_state={"status": "冥符显形"},
         scene_type="hook",
         target_word_count=1200,
+        status="planned",
+        metadata_json={},
     )
 
 
@@ -125,7 +140,10 @@ class TestSceneContextPacketHypeDefaults:
             faction_ecology_context_block="【阵营生态与反应压力约束】势力必须反应。",
             relationship_agency_context_block="【关系张力与主角能动性约束】关系戏必须推进。",
         )
-        assert packet.ranking_capability_profile_block == "【榜单级能力 Profile】固定入口和可解规则。"
+        assert (
+            packet.ranking_capability_profile_block
+            == "【榜单级能力 Profile】固定入口和可解规则。"
+        )
         assert packet.progression_context_block == "【进阶体系约束】不得无因升级。"
         assert packet.decision_policy_block == "【主角决策策略】不得为虚荣冒险。"
         assert packet.rule_system_context_block == "【规则系统约束】规则必须有代价。"
@@ -134,6 +152,105 @@ class TestSceneContextPacketHypeDefaults:
             packet.relationship_agency_context_block
             == "【关系张力与主角能动性约束】关系戏必须推进。"
         )
+
+
+class TestScenePromptTrace:
+    def test_scene_prompt_trace_is_disabled_by_default(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        monkeypatch.delenv("BESTSELLER_TRACE_SCENE_PROMPTS", raising=False)
+        settings = SimpleNamespace(
+            output=SimpleNamespace(base_dir=str(tmp_path)),
+            generation=SimpleNamespace(context_budget_tokens=6000),
+        )
+        packet = SceneWriterContextPacket(**_minimal_packet_kwargs())
+
+        path = _maybe_write_scene_prompt_trace(
+            settings,
+            _sample_project(),
+            _sample_chapter(),
+            _sample_scene(),
+            packet,
+            system_prompt="system",
+            user_prompt="user",
+            workflow_run_id=None,
+            step_run_id=None,
+            model_tier="standard",
+        )
+
+        assert path is None
+        assert not list(tmp_path.rglob("*.json"))
+
+    def test_scene_prompt_trace_records_blocks_and_prompts(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        monkeypatch.setenv("BESTSELLER_TRACE_SCENE_PROMPTS", "full")
+        settings = SimpleNamespace(
+            output=SimpleNamespace(base_dir=str(tmp_path)),
+            generation=SimpleNamespace(context_budget_tokens=6000),
+        )
+        ranking_block = "【榜单级能力 Profile】必须把能力落实为行动。"
+        packet = SceneWriterContextPacket(
+            **_minimal_packet_kwargs(),
+            ranking_capability_profile_block=ranking_block,
+        )
+
+        path = _maybe_write_scene_prompt_trace(
+            settings,
+            _sample_project(),
+            _sample_chapter(),
+            _sample_scene(),
+            packet,
+            system_prompt="system prompt",
+            user_prompt=f"before\n{ranking_block}\nafter",
+            workflow_run_id=None,
+            step_run_id=None,
+            model_tier="standard",
+        )
+
+        assert path is not None
+        payload = json.loads(Path(path).read_text(encoding="utf-8"))
+        assert payload["mode"] == "full"
+        assert payload["project"]["slug"] == "gui-hao-trial"
+        block = payload["context_blocks"]["ranking_capability_profile_block"]
+        assert block["present"] is True
+        assert block["included_in_user_prompt"] is True
+        assert payload["prompts"]["user"].endswith("after")
+
+    def test_scene_prompt_trace_can_use_rewrite_prefix(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        monkeypatch.setenv("BESTSELLER_TRACE_SCENE_PROMPTS", "summary")
+        settings = SimpleNamespace(
+            output=SimpleNamespace(base_dir=str(tmp_path)),
+            generation=SimpleNamespace(context_budget_tokens=6000),
+        )
+        packet = SceneWriterContextPacket(**_minimal_packet_kwargs())
+
+        path = _maybe_write_scene_prompt_trace(
+            settings,
+            _sample_project(),
+            _sample_chapter(),
+            _sample_scene(),
+            packet,
+            system_prompt="system prompt",
+            user_prompt="user prompt",
+            workflow_run_id=None,
+            step_run_id=None,
+            model_tier="editor",
+            trace_kind="rewrite",
+        )
+
+        assert path is not None
+        assert Path(path).name.startswith("rewrite-prompt-")
+        payload = json.loads(Path(path).read_text(encoding="utf-8"))
+        assert payload["trace_kind"] == "rewrite"
 
 
 # ---------------------------------------------------------------------------
@@ -195,6 +312,34 @@ class TestSceneDraftPromptsHypeBlocks:
         assert "face_slap" in user_prompt
         assert "冥符拍脸-当众羞辱反转" in user_prompt
         assert "爽点 ≠ 章末悬念" in user_prompt
+
+    def test_fanqie_market_craft_profile_from_project_meta_lands_in_prompt(self) -> None:
+        project = _sample_project()
+        project.metadata_json = {
+            "fanqie_craft_profile": {
+                "category": "都市脑洞",
+                "confidence": "medium",
+                "allowed_style_principles": ["高压开场", "短句推进"],
+                "disallowed_copy_targets": ["禁止复刻具体作者文风"],
+                "hook_rules": ["开篇先给可见危机"],
+                "pacing_rules": ["每章保留一个行动反馈"],
+                "structure_rules": ["压迫-行动-回报-升级"],
+                "sentence_style": "短句优先，少解释。",
+            },
+        }
+
+        _, user_prompt = build_scene_draft_prompts(
+            project,
+            _sample_chapter(),
+            _sample_scene(),
+            _sample_style_guide(),
+        )
+
+        assert "番茄榜单匿名工艺卡" in user_prompt
+        assert "都市脑洞" in user_prompt
+        assert "禁止复刻具体作者文风" in user_prompt
+        assert "开篇先给可见危机" in user_prompt
+        assert "压迫-行动-回报-升级" in user_prompt
 
     def test_qimao_opening_contract_lands_in_opening_prompt_zh(self) -> None:
         project = _sample_project()

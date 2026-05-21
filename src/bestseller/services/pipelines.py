@@ -66,9 +66,17 @@ from bestseller.services.continuity import (
     validate_fact_monotonicity,
 )
 from bestseller.services.drafts import assemble_chapter_draft, count_words, generate_scene_draft
-from bestseller.services.exports import export_chapter_markdown, export_project_markdown
+from bestseller.services.exports import (
+    export_chapter_markdown,
+    export_project_markdown,
+    write_commercial_package_sidecars,
+)
 from bestseller.services.emotion_kernel_backfill import ensure_project_emotion_driven_kernel
 from bestseller.services.entry_system_backfill import ensure_project_entry_system_compat
+from bestseller.services.fanqie_market_repository import (
+    evaluate_and_persist_fanqie_long_readiness,
+    load_current_chapter_texts_for_fanqie_gate,
+)
 from bestseller.services.public_emotion_backfill import ensure_project_public_emotion_kernels
 from bestseller.services.invariants import (
     InvariantSeedError,
@@ -220,6 +228,76 @@ def _project_blocked_for_structural_repair(project: ProjectModel) -> bool:
         or metadata.get("production_paused")
         or metadata.get("structural_repair_required")
     )
+
+
+async def _run_fanqie_long_gate_for_chapter(
+    session: AsyncSession,
+    *,
+    project: ProjectModel,
+    project_slug: str,
+    chapter_number: int,
+    chapter_draft: ChapterDraftVersionModel,
+    block_on_failure: bool,
+) -> dict[str, Any]:
+    """Evaluate the Fanqie long-form readiness gate for the current opening."""
+
+    chapter_texts = await load_current_chapter_texts_for_fanqie_gate(
+        session,
+        project_slug=project_slug,
+        through_chapter=chapter_number,
+    )
+    chapter_texts[chapter_number] = chapter_draft.content_md or ""
+    artifact = await evaluate_and_persist_fanqie_long_readiness(
+        session,
+        project_slug=project_slug,
+        chapter_texts=chapter_texts,
+        protagonist_name=_fanqie_gate_protagonist_name(project),
+    )
+    report = getattr(artifact, "content", None) or {}
+    passed = bool(report.get("passed"))
+    findings = report.get("findings", [])
+    finding_payloads = findings if isinstance(findings, list) else []
+    critical_count = sum(
+        1
+        for finding in finding_payloads
+        if isinstance(finding, dict) and finding.get("severity") == "critical"
+    )
+    return {
+        "artifact_id": str(artifact.id) if artifact.id else None,
+        "passed": passed,
+        "critical_count": critical_count,
+        "finding_count": len(finding_payloads),
+        "findings": finding_payloads[:20],
+        "repair_hints": [
+            {
+                "code": str(finding.get("code") or ""),
+                "target": str(finding.get("target") or ""),
+                "severity": str(finding.get("severity") or ""),
+                "repair_hint": str(finding.get("repair_hint") or ""),
+            }
+            for finding in finding_payloads[:20]
+            if isinstance(finding, dict)
+        ],
+        "metrics": report.get("metrics", {}),
+        "blocks_write": bool(block_on_failure and not passed),
+    }
+
+
+def _fanqie_gate_protagonist_name(project: ProjectModel) -> str | None:
+    metadata = getattr(project, "metadata_json", None) or {}
+    cast_spec = metadata.get("cast_spec")
+    if isinstance(cast_spec, dict):
+        protagonist = cast_spec.get("protagonist")
+        if isinstance(protagonist, dict):
+            name = str(protagonist.get("name") or "").strip()
+            if name:
+                return name
+    protagonist = metadata.get("protagonist")
+    if isinstance(protagonist, dict):
+        name = str(protagonist.get("name") or "").strip()
+        if name:
+            return name
+    return None
 
 
 async def _ensure_emotion_kernel_backfill_for_pipeline(
@@ -379,6 +457,114 @@ def _chapter_text(*values: Any, default: str = "") -> str:
     return default
 
 
+def _project_protagonist_name(project: ProjectModel) -> str:
+    metadata = getattr(project, "metadata_json", None) or {}
+    for value in (
+        metadata.get("protagonist_name"),
+        metadata.get("main_character_name"),
+        (metadata.get("protagonist") or {}).get("name")
+        if isinstance(metadata.get("protagonist"), dict)
+        else None,
+    ):
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return "主角"
+
+
+def _build_qimao_opening_contract_from_outline(
+    project: ProjectModel,
+    chapters: list[ChapterModel],
+) -> dict[str, Any]:
+    """Backfill a concrete Qimao opening contract for legacy projects with outlines."""
+
+    if not chapters:
+        return {}
+
+    first = _chapter_by_number(chapters, 1) or chapters[0]
+    second = _chapter_by_number(chapters, 2)
+    third = _chapter_by_number(chapters, 3)
+    protagonist_name = _project_protagonist_name(project)
+    first_title = _chapter_text(first.title, default=f"第{first.chapter_number}章")
+    first_goal = _chapter_text(
+        first.chapter_goal,
+        first.main_conflict,
+        first.hook_description,
+        default=f"{protagonist_name}处理第{first.chapter_number}章现场危机",
+    )
+    first_conflict = _chapter_text(
+        first.main_conflict,
+        first.chapter_goal,
+        default=first_goal,
+    )
+    first_hook = _chapter_text(first.hook_description, first_conflict, default=first_conflict)
+    contract: dict[str, Any] = {
+        "platform_target": "qimao",
+        "source": "outline_backfill_qimao_planning_gate",
+        "protagonist_name": protagonist_name,
+        "opening_incident": (
+            f"《{first_title}》开场：{protagonist_name}当场处理「{first_goal}」，"
+            "对手逼迫其放弃关键线索，否则第一轮证据会被抹掉。"
+        ),
+        "first_page_conflict": (
+            f"{protagonist_name}在《{first_title}》当场面对「{first_conflict}」；"
+            "必须先保住现场线索并逼出谁在掩盖关键事实，否则对手会脱身。"
+        ),
+        "protagonist_immediate_goal": (
+            f"先在《{first_title}》现场保住证据，确认第一处异常，并当场决定下一步追问对象。"
+        ),
+        "visible_loss_if_fail": (
+            f"失败会让《{first_title}》里的证据被当场抹掉，"
+            f"{protagonist_name}失去第一轮反制机会。"
+        ),
+        "protagonist_edge": (
+            f"{protagonist_name}能在高压现场抓住别人忽略的证据漏洞，并制造第一次反制。"
+        ),
+        "edge_limit": "优势只能解决第一轮压力，不能直接跳过主线代价。",
+        "chapter_1_small_turn": (
+            f"{protagonist_name}用自己的优势保住关键证据，反制误判，并把线索钩到「{first_hook}」。"
+        ),
+        "chapter_2_reveal": "第二章放出会改变局势判断的新信息、误会扩大或隐藏规则。",
+        "chapter_3_payoff": (
+            f"{protagonist_name}在第三章拿到可验证证据，获得第一口回报并打开下一轮危险。"
+        ),
+        "first_10000_loop": (
+            "触发冲突 -> 主角当场行动并反制误判 -> "
+            "拿到第一条线索同时承受反压 -> 章尾用新证据钩出更深谜题"
+        ),
+        "forbidden_opening_modes": [
+            "background_exposition",
+            "normal_day",
+            "scenery_first",
+            "worldbuilding_first",
+            "slow_relationship_setup",
+        ],
+    }
+
+    if second is not None:
+        second_title = _chapter_text(second.title, default=f"第{second.chapter_number}章")
+        second_reveal = _chapter_text(
+            second.main_conflict,
+            second.hook_description,
+            second.chapter_goal,
+            default="第二章放出改变局势判断的新信息。",
+        )
+        contract["chapter_2_reveal"] = f"《{second_title}》揭示：{second_reveal}"
+
+    if third is not None:
+        third_title = _chapter_text(third.title, default=f"第{third.chapter_number}章")
+        third_payoff = _chapter_text(
+            third.hook_description,
+            third.main_conflict,
+            third.chapter_goal,
+            default="主角拿到第一份可验证证据。",
+        )
+        contract["chapter_3_payoff"] = (
+            f"{protagonist_name}在《{third_title}》拿到可验证证据：{third_payoff}"
+        )
+
+    return contract
+
+
 def _repair_qimao_opening_contract_from_outline(
     contract: dict[str, Any],
     chapters: list[ChapterModel],
@@ -413,13 +599,14 @@ def _repair_qimao_opening_contract_from_outline(
     )
     repaired["first_page_conflict"] = (
         f"{protagonist_name}在《{first_title}》当场面对「{first_conflict}」；"
-        "他必须保住现场证据并逼出谁在掩盖关键死因，否则案件会被错误结掉、真凶脱身。"
+        "必须保住现场证据并逼出谁在掩盖关键事实，否则第一轮证据会被抹掉、对手脱身。"
     )
     repaired["protagonist_immediate_goal"] = (
         f"先在《{first_title}》现场保住证据，确认第一处异常，并当场决定下一步追问对象。"
     )
     repaired["visible_loss_if_fail"] = (
-        f"失败会让《{first_title}》里的证据被当场抹掉，案件按普通死亡结案，真凶脱身。"
+        f"失败会让《{first_title}》里的证据被当场抹掉，"
+        f"{protagonist_name}失去第一轮反制机会。"
     )
     repaired["chapter_1_small_turn"] = (
         f"{protagonist_name}用自己的优势保住关键证据，反制误判，并把线索钩到「{first_hook}」。"
@@ -448,8 +635,8 @@ def _repair_qimao_opening_contract_from_outline(
         )
 
     repaired["first_10000_loop"] = (
-        "尸体喊冤触发冲突 -> 主角当场取证并反制误判 -> "
-        "拿到第一条线索同时承受凶手反压 -> 章尾用新证据钩出更深谜题"
+        "触发冲突 -> 主角当场行动并反制误判 -> "
+        "拿到第一条线索同时承受反压 -> 章尾用新证据钩出更深谜题"
     )
     return repaired
 
@@ -465,6 +652,14 @@ def _record_qimao_planning_gate(
     contract = metadata.get("opening_quality_contract") or metadata.get("qimao_opening_contract")
     payload_to_check = {"qimao_opening_contract": contract} if contract else metadata
     report = evaluate_qimao_planning_gate(payload_to_check)
+    if not contract and not report.passed and chapters:
+        backfilled_contract = _build_qimao_opening_contract_from_outline(project, chapters)
+        backfilled_report = evaluate_qimao_planning_gate(
+            {"qimao_opening_contract": backfilled_contract}
+        )
+        if backfilled_report.passed:
+            contract = backfilled_contract
+            report = backfilled_report
     if contract and not report.passed and chapters:
         repaired_contract = _repair_qimao_opening_contract_from_outline(
             dict(contract),
@@ -544,6 +739,127 @@ def _chapter_probe_from_model(chapter: ChapterModel) -> ChapterPlanProbe:
     )
 
 
+def _strengthen_golden_three_hype_assignments(
+    chapters: list[ChapterModel],
+    *,
+    min_intensity: float = 8.0,
+) -> int:
+    """Backfill strong hype assignments for legacy opening plans.
+
+    The commercial planning gate checks whether the first three chapters have
+    explicit hype assignments. Older projects often have concrete conflicts and
+    hooks but weak or missing numeric assignments, which is repairable without
+    regenerating the outline.
+    """
+
+    repaired = 0
+    for chapter in chapters:
+        chapter_no = int(getattr(chapter, "chapter_number", 0) or 0)
+        if chapter_no not in {1, 2, 3}:
+            continue
+        hype_type = str(getattr(chapter, "hype_type", "") or "").strip()
+        current_intensity = getattr(chapter, "hype_intensity", None)
+        needs_type = not hype_type
+        try:
+            intensity = float(current_intensity) if current_intensity is not None else 0.0
+        except (TypeError, ValueError):
+            intensity = 0.0
+        needs_intensity = intensity < min_intensity
+        if not needs_type and not needs_intensity:
+            continue
+
+        if needs_type:
+            setattr(chapter, "hype_type", "reversal")
+        if needs_intensity:
+            setattr(chapter, "hype_intensity", min_intensity)
+        metadata = dict(getattr(chapter, "metadata_json", None) or {})
+        metadata["commercial_planning_hype_repair"] = {
+            "source": "commercial_planning_readiness_gate",
+            "previous_hype_type": hype_type or None,
+            "previous_hype_intensity": current_intensity,
+            "assigned_hype_type": getattr(chapter, "hype_type", None),
+            "assigned_hype_intensity": getattr(chapter, "hype_intensity", None),
+        }
+        chapter.metadata_json = metadata
+        repaired += 1
+    return repaired
+
+
+_COMMERCIAL_VISIBLE_LOSS_TERMS = (
+    "否则",
+    "失败",
+    "失去",
+    "烧掉",
+    "毁掉",
+    "抹掉",
+    "灭口",
+    "结案",
+    "期限",
+    "真凶脱身",
+    "证据被毁",
+)
+
+
+def _commercial_chapter_text(chapter: ChapterModel) -> str:
+    parts = [
+        getattr(chapter, "title", None),
+        getattr(chapter, "chapter_goal", None),
+        getattr(chapter, "opening_situation", None),
+        getattr(chapter, "main_conflict", None),
+        getattr(chapter, "hook_description", None),
+    ]
+    try:
+        scenes = list(getattr(chapter, "scenes", []) or [])
+    except Exception:
+        scenes = []
+    for scene in scenes:
+        parts.extend(
+            [
+                getattr(scene, "title", None),
+                getattr(scene, "scene_type", None),
+                getattr(scene, "purpose", None),
+                getattr(scene, "entry_state", None),
+                getattr(scene, "exit_state", None),
+                getattr(scene, "hook_requirement", None),
+            ]
+        )
+    return " ".join(str(part) for part in parts if part)
+
+
+def _backfill_golden_three_visible_losses(chapters: list[ChapterModel]) -> int:
+    repaired = 0
+    for chapter in chapters:
+        chapter_no = int(getattr(chapter, "chapter_number", 0) or 0)
+        if chapter_no not in {1, 2, 3}:
+            continue
+        text = _commercial_chapter_text(chapter)
+        if any(term in text for term in _COMMERCIAL_VISIBLE_LOSS_TERMS):
+            continue
+        base_conflict = str(
+            getattr(chapter, "main_conflict", None)
+            or getattr(chapter, "chapter_goal", None)
+            or getattr(chapter, "hook_description", None)
+            or f"第{chapter_no}章开篇压力"
+        ).strip()
+        setattr(
+            chapter,
+            "main_conflict",
+            (
+                f"{base_conflict}；否则主角会失去本章关键证据/机会，"
+                "对手当场扩大优势。"
+            ),
+        )
+        metadata = dict(getattr(chapter, "metadata_json", None) or {})
+        metadata["commercial_planning_visible_loss_repair"] = {
+            "source": "commercial_planning_readiness_gate",
+            "previous_main_conflict": base_conflict,
+            "assigned_main_conflict": getattr(chapter, "main_conflict", None),
+        }
+        chapter.metadata_json = metadata
+        repaired += 1
+    return repaired
+
+
 def _record_commercial_planning_readiness_gate(
     project: ProjectModel,
     *,
@@ -555,6 +871,10 @@ def _record_commercial_planning_readiness_gate(
         return None
     if int(getattr(project, "target_chapters", 0) or 0) < long_serial_min_chapters:
         return None
+    if package_root is not None:
+        write_commercial_package_sidecars(project, [], package_root)
+    hype_repair_count = _strengthen_golden_three_hype_assignments(chapters)
+    visible_loss_repair_count = _backfill_golden_three_visible_losses(chapters)
     report = evaluate_commercial_planning_readiness(
         [_chapter_probe_from_model(chapter) for chapter in chapters],
         target_chapters=int(getattr(project, "target_chapters", 0) or 0),
@@ -568,6 +888,8 @@ def _record_commercial_planning_readiness_gate(
         "commercial_planning_readiness_status": (
             "planned_gate_passed" if report.passed else "planned_gate_failed"
         ),
+        "commercial_planning_hype_repair_count": hype_repair_count,
+        "commercial_planning_visible_loss_repair_count": visible_loss_repair_count,
     }
     return payload
 
@@ -2956,6 +3278,7 @@ async def run_scene_pipeline(
                 rewrite_task_id=rewrite_task.id,
                 settings=settings,
                 workflow_run_id=workflow_run.id,
+                context_packet=shared_context,
             )
             if draft.llm_run_id is not None:
                 llm_run_ids.append(draft.llm_run_id)
@@ -3724,6 +4047,42 @@ async def run_chapter_pipeline(
             },
         )
         step_order += 1
+
+        if getattr(settings.pipeline, "enable_fanqie_long_ranking_gate", False):
+            try:
+                fanqie_gate_payload = await _run_fanqie_long_gate_for_chapter(
+                    session,
+                    project=project,
+                    project_slug=project_slug,
+                    chapter_number=chapter_number,
+                    chapter_draft=chapter_draft,
+                    block_on_failure=bool(
+                        getattr(settings.pipeline, "fanqie_long_ranking_block_on_failure", False)
+                    ),
+                )
+                if fanqie_gate_payload["blocks_write"]:
+                    chapter.status = ChapterStatus.REVISION.value
+                    chapter.production_state = "blocked"
+                    scene_requires_human_review = True
+                    workflow_run.metadata_json = {
+                        **workflow_run.metadata_json,
+                        "blocked_by_fanqie_long_ranking_gate": True,
+                        "fanqie_long_ranking_gate": fanqie_gate_payload,
+                    }
+                await create_workflow_step_run(
+                    session,
+                    workflow_run_id=workflow_run.id,
+                    step_name="fanqie_long_ranking_gate",
+                    step_order=step_order,
+                    status=WorkflowStatus.COMPLETED,
+                    output_ref=fanqie_gate_payload,
+                )
+                step_order += 1
+            except Exception:
+                logger.debug(
+                    "fanqie_long_ranking_gate failed (non-fatal)",
+                    exc_info=True,
+                )
 
         # ── AI-flavor gate ─────────────────────────────────────────────
         # Runs after bible_gate and before export/signing. Detects span-

@@ -196,6 +196,7 @@ services:
     command: python -m bestseller.worker.main
     environment:
       <<: [*env-common, *env-llm, *env-py-malloc]
+      BESTSELLER_TRACE_SCENE_PROMPTS: ${BESTSELLER_TRACE_SCENE_PROMPTS:-full}
     env_file:
       - .env
     volumes: *app-volumes

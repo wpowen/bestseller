@@ -1,0 +1,34 @@
+profile_key: urban-brain
+category: 都市脑洞
+reader_promise:
+  - 高概念机制在书名和首章可见
+  - 主角被现实压力逼入选择
+  - 每章用机制产出小回报或新危机
+entry_pressure_patterns:
+  - 职场羞辱
+  - 家庭资金危机
+  - 公开质疑
+  - 限时消费或限时任务
+advantage_patterns:
+  - 系统面板
+  - 资源到账
+  - 职业信息差
+  - 规则漏洞
+chapter_loop:
+  - 压迫出现
+  - 主角使用机制或优势行动
+  - 对手/公众即时反应
+  - 获得资源、证据或地位变化
+  - 更大场域打开
+style_controls:
+  - 短句推进
+  - 少背景解释
+  - 对话承担压力和筹码交换
+anti_patterns:
+  - 只炫设定不落行动
+  - 连续解释系统规则
+  - 爽点没有旁观反应
+copy_boundaries:
+  - 禁止复刻在榜书名
+  - 禁止复用角色名和专属系统名
+  - 禁止模仿具体作者文风

@@ -56,6 +56,7 @@ Premise → Plan → Draft → Review → Rewrite → Override/Debt → Knowledg
 - [技术栈](#技术栈)
 - [项目结构](#项目结构)
 - [文档索引](#文档索引)
+  - [番茄榜单市场情报](docs/fanqie-market-intelligence.md)
 
 ---
 

@@ -317,6 +317,56 @@ class TestBuildChapterPrompt:
         # Diversity section included.
         assert "开篇" in rendered and "危机" in rendered
 
+    def test_fanqie_market_craft_profile_renders_in_ranking_section(self) -> None:
+        budget = DiversityBudget(project_id=uuid4())
+        inv = _invariants("zh-CN")
+        plan = build_chapter_prompt(
+            inv,
+            budget,
+            chapter_no=1,
+            system="你是畅销小说作家。",
+            fanqie_market_craft_profile={
+                "category": "都市脑洞",
+                "allowed_style_principles": ["短段推进"],
+                "disallowed_copy_targets": ["禁止复刻具体作者文风"],
+                "hook_rules": ["开篇先给可见危机"],
+                "pacing_rules": ["每章有反馈"],
+                "structure_rules": ["机制产生冲突、代价和反馈"],
+                "sentence_style": "短句, 少铺陈",
+                "confidence": 0.8,
+            },
+            scene_spec="【本章任务】主角进入危机。",
+            preassigned_opening=OpeningArchetype.CRISIS,
+        )
+
+        rendered = plan.render()
+
+        assert "番茄榜单匿名工艺卡" in rendered
+        assert "番茄榜单匿名工艺卡" in plan.market_profile_section
+        assert "番茄榜单匿名工艺卡" not in plan.ranking_capability_profile_section
+        assert "都市脑洞" in rendered
+        assert "禁止复刻具体作者文风" in rendered
+        assert "开篇先给可见危机" in rendered
+
+    def test_explicit_market_profile_section_is_separate_from_ranking_profile(self) -> None:
+        budget = DiversityBudget(project_id=uuid4())
+        inv = _invariants("zh-CN")
+        plan = build_chapter_prompt(
+            inv,
+            budget,
+            chapter_no=1,
+            ranking_capability_profile_block="【榜单级能力 Profile】固定入口。",
+            market_profile_section="【番茄榜单市场画像】都市脑洞需要高压入口。",
+            scene_spec="【本章任务】主角进入危机。",
+            preassigned_opening=OpeningArchetype.CRISIS,
+        )
+
+        rendered = plan.render()
+
+        assert "【榜单级能力 Profile】" in plan.ranking_capability_profile_section
+        assert "【番茄榜单市场画像】" in plan.market_profile_section
+        assert rendered.index("【榜单级能力 Profile】") < rendered.index("【番茄榜单市场画像】")
+
     def test_empty_sections_skipped_in_render(self) -> None:
         budget = DiversityBudget(project_id=uuid4())
         inv = _invariants("en")
@@ -479,6 +529,7 @@ class TestPromptPlanSystemUserSplit:
             invariants_section="INV",
             bible_slice="BIBLE",
             ranking_capability_profile_section="RANK",
+            market_profile_section="MARKET",
             progression_constraints="PROGRESSION",
             decision_policy_constraints="DECISION",
             rule_system_constraints="RULESYS",
@@ -498,7 +549,7 @@ class TestPromptPlanSystemUserSplit:
         # Every token in render() must appear somewhere in the union.
         for marker in (
             "ROLE", "INV", "BIBLE", "RANK", "PROGRESSION", "DECISION",
-            "RULESYS", "FACTION", "RELATION", "READER", "METHOD",
+            "MARKET", "RULESYS", "FACTION", "RELATION", "READER", "METHOD",
             "HYPE", "DIVERSITY", "TAIL", "SCENE", "FOOTER", "FEEDBACK",
         ):
             assert marker in full, f"{marker} missing from render()"

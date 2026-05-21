@@ -2,7 +2,12 @@ from __future__ import annotations
 
 import pytest
 
-from bestseller.services.prompt_packs import get_prompt_pack, list_prompt_packs, resolve_prompt_pack
+from bestseller.services.prompt_packs import (
+    get_prompt_pack,
+    list_prompt_packs,
+    render_prompt_pack_fragment,
+    resolve_prompt_pack,
+)
 
 
 pytestmark = pytest.mark.unit
@@ -37,3 +42,10 @@ def test_get_prompt_pack_returns_fragments() -> None:
     )
     # A-class scene writing fragment is retained.
     assert "资源" in (pack.fragments.scene_writer or "")
+
+
+def test_fanqie_short_segment_writer_fragment_is_retained() -> None:
+    pack = get_prompt_pack("fanqie_short")
+
+    assert pack is not None
+    assert "前 30% 免费区" in render_prompt_pack_fragment(pack, "segment_writer")

@@ -1,0 +1,34 @@
+profile_key: suspense-brain
+category: 悬疑脑洞
+reader_promise:
+  - 首章出现异常事件或案件压力
+  - 主角拥有可验证但有限制的破局优势
+  - 每章给线索、误导或真相推进
+entry_pressure_patterns:
+  - 现场危机
+  - 被诬陷
+  - 失踪或死亡倒计时
+  - 规则怪谈触发
+advantage_patterns:
+  - 破案系统
+  - 专业知识
+  - 异常感知
+  - 现场信息差
+chapter_loop:
+  - 异常压力
+  - 调查行动
+  - 线索反馈
+  - 新嫌疑/新规则
+  - 更危险的真相
+style_controls:
+  - 证据推动而非旁白解释
+  - 对话暴露漏洞
+  - 章尾给新问题
+anti_patterns:
+  - 无证据的纯心理分析
+  - 连续铺背景不推进案情
+  - 反转只靠巧合
+copy_boundaries:
+  - 禁止复刻具体案件结构
+  - 禁止使用源作品专属规则
+  - 禁止模仿名作者文风

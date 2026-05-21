@@ -17,6 +17,7 @@ from bestseller.infra.db.models import (
 from bestseller.services import reviews as review_services
 from bestseller.services.qimao_opening_gate import QimaoOpeningFinding
 from bestseller.services.reviews import (
+    _missing_required_rewrite_context_blocks,
     build_qimao_opening_rewrite_instructions,
     build_chapter_review_prompts,
     build_chapter_rewrite_prompts,
@@ -212,6 +213,45 @@ def test_scene_rewrite_prompt_includes_qimao_opening_contract() -> None:
     assert "本章不是自由发挥" in user_prompt
     assert "第一章从被迫选择和直接损失切入" in user_prompt
     assert "文笔还有待提升" in user_prompt
+
+
+def test_scene_rewrite_prompt_includes_required_context_blocks() -> None:
+    scene = SimpleNamespace(
+        scene_number=1,
+        title="逼交账本",
+        purpose={"story": "逼出账本冲突", "emotion": "压迫感"},
+        target_word_count=1200,
+    )
+    current_draft = SimpleNamespace(content_md="旧稿开篇太平。", word_count=900)
+    style_guide = SimpleNamespace(pov_type="third-limited", tone_keywords=["紧张"])
+    packet = SimpleNamespace(
+        contradiction_warnings=[],
+        identity_constraint_block="IDENTITY_SENTINEL",
+        ranking_capability_profile_block="RANKING_SENTINEL",
+        progression_context_block="PROGRESSION_SENTINEL",
+        rule_system_context_block="RULE_SENTINEL",
+        relationship_agency_context_block="RELATIONSHIP_SENTINEL",
+        entry_system_context_block="ENTRY_SENTINEL",
+        hype_constraints_block="HYPE_SENTINEL",
+        l3_prompt_block="L3_SENTINEL",
+    )
+
+    _, user_prompt = build_scene_rewrite_prompts(
+        _qimao_project(),
+        _qimao_chapter(),
+        scene,
+        current_draft,
+        _qimao_rewrite_task(),
+        style_guide,
+        context_packet=packet,
+        context_budget_tokens=100,
+    )
+
+    assert _missing_required_rewrite_context_blocks(packet, user_prompt) == []
+    assert "IDENTITY_SENTINEL" in user_prompt
+    assert "RANKING_SENTINEL" in user_prompt
+    assert "RELATIONSHIP_SENTINEL" in user_prompt
+    assert "L3_SENTINEL" in user_prompt
 
 
 def test_chapter_rewrite_prompt_includes_qimao_opening_contract() -> None:

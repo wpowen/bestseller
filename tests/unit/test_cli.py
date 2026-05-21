@@ -714,6 +714,44 @@ def test_project_repair_command(monkeypatch: pytest.MonkeyPatch, tmp_path: Path)
     assert "repair 流程结束" in result.stderr
 
 
+def test_project_repair_stuck_drafts_command(monkeypatch: pytest.MonkeyPatch) -> None:
+    @asynccontextmanager
+    async def fake_session_scope(settings):
+        yield object()
+
+    async def fake_clear_stale_write_safety_scene_drafts(session, **kwargs):
+        assert kwargs["project_slug"] == "my-story"
+        assert kwargs["apply"] is True
+        assert kwargs["limit"] == 5
+        return {
+            "project_slug": "my-story",
+            "dry_run": False,
+            "stale_scene_count": 2,
+            "cleared_current_draft_count": 2,
+            "block_code_counts": {"pronoun_mismatch": 2},
+            "chapters": [{"chapter_number": 31, "stale_scene_count": 2}],
+            "scenes": [],
+        }
+
+    monkeypatch.setattr("bestseller.cli.main.session_scope", fake_session_scope)
+    monkeypatch.setattr(
+        "bestseller.cli.main.clear_stale_write_safety_scene_drafts",
+        fake_clear_stale_write_safety_scene_drafts,
+    )
+
+    result = runner.invoke(
+        app,
+        ["project", "repair-stuck-drafts", "my-story", "--apply", "--limit", "5"],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["dry_run"] is False
+    assert payload["cleared_current_draft_count"] == 2
+    assert payload["block_code_counts"] == {"pronoun_mismatch": 2}
+    assert "scenes" not in payload
+
+
 def test_project_health_repair_command(monkeypatch: pytest.MonkeyPatch) -> None:
     @asynccontextmanager
     async def fake_session_scope(settings):
@@ -933,6 +971,135 @@ def test_planning_show_command(monkeypatch: pytest.MonkeyPatch) -> None:
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
     assert payload["content"]["title"] == "长夜巡航"
+
+
+def test_fanqie_market_analyze_file_command(tmp_path: Path) -> None:
+    payload_path = tmp_path / "fanqie.json"
+    payload_path.write_text(
+        json.dumps(
+            {
+                "data_date": "2026-05-20",
+                "category": "都市脑洞",
+                "data": [
+                    {
+                        "rank": 1,
+                        "book_id": "b1",
+                        "title": "每天六千万, 只能在县城花?",
+                        "author": "凤失凰",
+                        "tags": ["系统", "都市"],
+                        "readers": "92万",
+                        "intro": "主角每天到账巨额资金, 必须在县城完成消费和反击循环。",
+                    }
+                ],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(app, ["fanqie-market", "analyze-file", str(payload_path)])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["category"] == "都市脑洞"
+    assert payload["sample_size"] == 1
+    assert "每天六千万, 只能在县城花?" in payload["top_titles"]
+
+
+def test_fanqie_market_import_file_command(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    payload_path = tmp_path / "fanqie.json"
+    payload_path.write_text(
+        json.dumps({"data_date": "2026-05-20", "category": "都市脑洞", "data": []}),
+        encoding="utf-8",
+    )
+
+    @asynccontextmanager
+    async def fake_session_scope(settings):
+        yield object()
+
+    async def fake_import(session, payload, **kwargs):
+        assert kwargs["category"] == ""
+        assert kwargs["persist_artifacts"] is False
+        return SimpleNamespace(
+            to_dict=lambda: {
+                "snapshot_id": "snapshot-1",
+                "category_profile_id": "category-1",
+                "competitor_profile_ids": [],
+                "artifact_ids": [],
+                "summary": {"category": "都市脑洞"},
+            }
+        )
+
+    monkeypatch.setattr("bestseller.cli.main.session_scope", fake_session_scope)
+    monkeypatch.setattr("bestseller.cli.main.import_fanqie_market_payload", fake_import)
+
+    result = runner.invoke(app, ["fanqie-market", "import-file", str(payload_path)])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["snapshot_id"] == "snapshot-1"
+    assert payload["summary"]["category"] == "都市脑洞"
+
+
+def test_fanqie_market_apply_command(monkeypatch: pytest.MonkeyPatch) -> None:
+    @asynccontextmanager
+    async def fake_session_scope(settings):
+        yield object()
+
+    async def fake_apply(session, *, project_slug: str, profile_key: str):
+        assert project_slug == "my-story"
+        assert profile_key == "urban-brain"
+        return {
+            "project_slug": project_slug,
+            "profile_key": profile_key,
+            "category": "都市脑洞",
+            "artifact_ids": ["a1"],
+        }
+
+    monkeypatch.setattr("bestseller.cli.main.session_scope", fake_session_scope)
+    monkeypatch.setattr("bestseller.cli.main.apply_fanqie_seed_profile", fake_apply)
+
+    result = runner.invoke(
+        app,
+        ["fanqie-market", "apply", "my-story", "--profile-key", "urban-brain"],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["profile_key"] == "urban-brain"
+    assert payload["artifact_ids"] == ["a1"]
+
+
+def test_fanqie_market_inspect_command(monkeypatch: pytest.MonkeyPatch) -> None:
+    @asynccontextmanager
+    async def fake_session_scope(settings):
+        yield object()
+
+    async def fake_inspect(session, *, project_slug: str):
+        assert project_slug == "my-story"
+        return {
+            "project_slug": project_slug,
+            "fanqie_seed_profile_key": "urban-brain",
+            "artifacts": {"fanqie_market_profile": {"version_no": 1}},
+        }
+
+    monkeypatch.setattr("bestseller.cli.main.session_scope", fake_session_scope)
+    monkeypatch.setattr("bestseller.cli.main.inspect_fanqie_market_project", fake_inspect)
+
+    result = runner.invoke(app, ["fanqie-market", "inspect", "my-story"])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["fanqie_seed_profile_key"] == "urban-brain"
+    assert payload["artifacts"]["fanqie_market_profile"]["version_no"] == 1
+
+
+def test_fanqie_market_seed_list_command() -> None:
+    result = runner.invoke(app, ["fanqie-market", "seed-list"])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert "urban-brain" in payload
 
 
 def test_retrieval_search_command(monkeypatch: pytest.MonkeyPatch) -> None:

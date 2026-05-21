@@ -32,6 +32,12 @@ class ArtifactType(StrEnum):
     CREATIVE_EXPLORATION = "creative_exploration"
     PROMOTIONAL_BRIEF = "promotional_brief"
     FANQIE_BEAT_SHEET = "fanqie_beat_sheet"
+    FANQIE_MARKET_SNAPSHOT = "fanqie_market_snapshot"
+    FANQIE_MARKET_PROFILE = "fanqie_market_profile"
+    FANQIE_CATEGORY_PROFILE = "fanqie_category_profile"
+    FANQIE_CRAFT_PROFILE = "fanqie_craft_profile"
+    FANQIE_ENTRY_CONTRACT = "fanqie_entry_contract"
+    FANQIE_LONG_RANKING_READINESS = "fanqie_long_ranking_readiness"
 
 
 class ProjectType(StrEnum):

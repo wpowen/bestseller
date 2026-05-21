@@ -9,11 +9,11 @@ import re
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import and_, func, select
+from sqlalchemy import and_, func, select, update
 from sqlalchemy.exc import DBAPIError, PendingRollbackError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from bestseller.domain.enums import ProjectStatus, WorkflowStatus
+from bestseller.domain.enums import ProjectStatus, SceneStatus, WorkflowStatus
 from bestseller.domain.pipeline import ProjectRepairChapterSummary, ProjectRepairResult
 from bestseller.infra.db.models import (
     ChapterDraftVersionModel,
@@ -142,6 +142,134 @@ async def _checkpoint_repair_progress(session: AsyncSession) -> None:
     commit = getattr(session, "commit", None)
     if callable(commit):
         await commit()
+
+
+async def clear_stale_write_safety_scene_drafts(
+    session: AsyncSession,
+    *,
+    project_slug: str | None = None,
+    apply: bool = False,
+    limit: int | None = None,
+) -> dict[str, Any]:
+    """Clear legacy current scene drafts that block write-safety regeneration.
+
+    Older deployments could mark scenes as ``needs_rewrite`` after a
+    write-safety block but leave their stale ``is_current`` scene drafts in
+    place. The chapter pipeline then treated the old violating draft as active
+    and re-entered the same repair loop. This helper is intentionally narrow:
+    it only targets scenes that are already marked ``needs_rewrite`` on
+    chapters carrying ``metadata.write_safety_block_code``.
+    """
+
+    row_query = (
+        select(ProjectModel, ChapterModel, SceneCardModel, SceneDraftVersionModel)
+        .join(ChapterModel, ChapterModel.project_id == ProjectModel.id)
+        .join(SceneCardModel, SceneCardModel.chapter_id == ChapterModel.id)
+        .join(
+            SceneDraftVersionModel,
+            and_(
+                SceneDraftVersionModel.scene_card_id == SceneCardModel.id,
+                SceneDraftVersionModel.is_current.is_(True),
+            ),
+        )
+        .where(SceneCardModel.status == SceneStatus.NEEDS_REWRITE.value)
+        .order_by(
+            ProjectModel.slug.asc(),
+            ChapterModel.chapter_number.asc(),
+            SceneCardModel.scene_number.asc(),
+        )
+    )
+    if project_slug:
+        row_query = row_query.where(ProjectModel.slug == project_slug)
+
+    rows = list((await session.execute(row_query)).all())
+    findings: list[dict[str, Any]] = []
+    scene_ids: list[Any] = []
+    draft_ids: list[Any] = []
+    chapter_scene_counts: dict[Any, int] = defaultdict(int)
+    chapter_payloads: dict[Any, dict[str, Any]] = {}
+    block_code_counts: dict[str, int] = defaultdict(int)
+    max_findings = int(limit) if limit is not None and int(limit) > 0 else None
+
+    for project, chapter, scene, draft in rows:
+        chapter_meta = dict(getattr(chapter, "metadata_json", None) or {})
+        block_code = str(chapter_meta.get("write_safety_block_code") or "").strip()
+        if not block_code:
+            continue
+        finding = {
+            "project_slug": project.slug,
+            "chapter_id": str(chapter.id),
+            "chapter_number": int(chapter.chapter_number),
+            "scene_id": str(scene.id),
+            "scene_number": int(scene.scene_number),
+            "draft_id": str(draft.id),
+            "draft_version_no": int(draft.version_no),
+            "block_code": block_code,
+        }
+        findings.append(finding)
+        scene_ids.append(scene.id)
+        draft_ids.append(draft.id)
+        chapter_scene_counts[chapter.id] += 1
+        block_code_counts[block_code] += 1
+        chapter_payloads[chapter.id] = {
+            "project_slug": project.slug,
+            "chapter_id": str(chapter.id),
+            "chapter_number": int(chapter.chapter_number),
+            "block_code": block_code,
+        }
+        if max_findings is not None and len(findings) >= max_findings:
+            break
+
+    cleared_drafts = 0
+    if apply and draft_ids:
+        result = await session.execute(
+            update(SceneDraftVersionModel)
+            .where(
+                SceneDraftVersionModel.id.in_(draft_ids),
+                SceneDraftVersionModel.is_current.is_(True),
+            )
+            .values(is_current=False)
+        )
+        try:
+            cleared_drafts = int(result.rowcount or 0)
+        except Exception:
+            cleared_drafts = len(draft_ids)
+
+        for project, chapter, scene, draft in rows:
+            if scene.id not in scene_ids:
+                continue
+            scene_meta = dict(getattr(scene, "metadata_json", None) or {})
+            scene_meta["stale_write_safety_current_draft_cleared"] = True
+            scene_meta["stale_write_safety_cleared_draft_id"] = str(draft.id)
+            scene.metadata_json = scene_meta
+
+            chapter_meta = dict(getattr(chapter, "metadata_json", None) or {})
+            chapter_meta["stale_write_safety_current_drafts_cleared"] = (
+                chapter_scene_counts.get(chapter.id, 0)
+            )
+            chapter.metadata_json = chapter_meta
+        await session.flush()
+
+    chapters = [
+        {
+            **payload,
+            "stale_scene_count": chapter_scene_counts[chapter_id],
+        }
+        for chapter_id, payload in sorted(
+            chapter_payloads.items(),
+            key=lambda item: (item[1]["project_slug"], item[1]["chapter_number"]),
+        )
+    ]
+    return {
+        "project_slug": project_slug,
+        "dry_run": not apply,
+        "scanned_current_needs_rewrite_rows": len(rows),
+        "stale_scene_count": len(findings),
+        "cleared_current_draft_count": cleared_drafts,
+        "block_code_counts": dict(sorted(block_code_counts.items())),
+        "chapters": chapters,
+        "scenes": findings,
+    }
 
 
 def _project_repair_source_artifact_audit(

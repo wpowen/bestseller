@@ -1,0 +1,34 @@
+profile_key: urban-high-martial
+category: 都市高武
+reader_promise:
+  - 都市现实压力与战力等级同时可见
+  - 主角在危险中证明天赋或异常
+  - 升级反馈快速服务当前冲突
+entry_pressure_patterns:
+  - 测试失利
+  - 校园或机构排名压迫
+  - 异兽/邪神突袭
+  - 家人安全被威胁
+advantage_patterns:
+  - 异能觉醒
+  - 战斗面板
+  - 精神力异常
+  - 官方体系漏洞
+chapter_loop:
+  - 现实压迫
+  - 战斗或测试行动
+  - 能力反馈
+  - 代价/暴露
+  - 新等级或新敌人出现
+style_controls:
+  - 动作优先
+  - 等级信息只在冲突中释放
+  - 每章保留一个战力或身份变化
+anti_patterns:
+  - 长篇训练说明无反馈
+  - 等级堆叠不改变选择
+  - 能力无代价
+copy_boundaries:
+  - 禁止搬运具体战力体系命名
+  - 禁止复刻源作品名场面
+  - 只抽象使用升级节奏

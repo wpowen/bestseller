@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import AsyncMock
 from uuid import uuid4
 
@@ -56,6 +57,20 @@ def test_volume_outline_auto_repairable_requires_count_contract_failure() -> Non
     assert not pipeline_services._is_volume_outline_auto_repairable(
         RuntimeError("Prewrite readiness gate failed")
     )
+
+
+def test_fanqie_short_project_forces_fanqie_prompt_pack() -> None:
+    project = build_project()
+    project.project_type = "fanqie_short"
+    project.genre = "科幻"
+    writing_profile = SimpleNamespace(
+        market=SimpleNamespace(prompt_pack_key="scifi-starwar")
+    )
+
+    pack = draft_services._resolve_project_prompt_pack(project, writing_profile)
+
+    assert pack is not None
+    assert pack.key == "fanqie_short"
 
 
 class FakeSession:
@@ -1961,6 +1976,136 @@ async def test_run_chapter_pipeline_assembles_and_exports(
 
 
 @pytest.mark.asyncio
+async def test_run_chapter_pipeline_runs_fanqie_long_gate_when_enabled(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    project = build_project()
+    chapter = build_chapter(project.id)
+    scene = build_scene(project.id, chapter.id)
+    chapter_draft = ChapterDraftVersionModel(
+        project_id=project.id,
+        chapter_id=chapter.id,
+        version_no=1,
+        content_md="# 第1章 限时反击",
+        word_count=1200,
+        assembled_from_scene_draft_ids=[],
+        is_current=True,
+    )
+    chapter_draft.id = uuid4()
+    export_artifact = ExportArtifactModel(
+        project_id=project.id,
+        export_type="markdown",
+        source_scope="chapter",
+        source_id=chapter.id,
+        storage_uri=str(tmp_path / "output" / "chapter-001.md"),
+        checksum="b" * 64,
+        version_label="chapter-001-v1",
+    )
+    export_artifact.id = uuid4()
+    gate_calls: list[int] = []
+
+    async def fake_get_project_by_slug(session, slug: str) -> ProjectModel:
+        return project
+
+    async def fake_run_scene_pipeline(
+        session,
+        settings,
+        project_slug,
+        chapter_number,
+        scene_number,
+        **kwargs,
+    ):
+        return pipeline_services.ScenePipelineResult(
+            workflow_run_id=uuid4(),
+            project_id=project.id,
+            chapter_id=chapter.id,
+            scene_id=scene.id,
+            chapter_number=chapter.chapter_number,
+            scene_number=scene.scene_number,
+            current_draft_id=uuid4(),
+            current_draft_version_no=2,
+            final_verdict="pass",
+            review_report_id=uuid4(),
+            quality_score_id=uuid4(),
+            review_iterations=1,
+            rewrite_iterations=0,
+            requires_human_review=False,
+            llm_run_ids=[],
+        )
+
+    async def fake_assemble_chapter_draft(session, project_slug: str, chapter_number: int, *, settings=None):
+        return chapter_draft
+
+    async def fake_export_chapter_markdown(
+        session,
+        settings,
+        project_slug: str,
+        chapter_number: int,
+        **kwargs,
+    ):
+        output_path = tmp_path / "output" / "chapter-001.md"
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(chapter_draft.content_md, encoding="utf-8")
+        return export_artifact, output_path
+
+    async def fake_review_chapter_draft(
+        session,
+        settings,
+        project_slug,
+        chapter_number,
+        **kwargs,
+    ):
+        return (
+            type("ChapterReviewResultStub", (), {"verdict": "pass", "severity_max": "low"})(),
+            type("ChapterReportStub", (), {"id": uuid4(), "llm_run_id": uuid4()})(),
+            type("ChapterQualityStub", (), {"id": uuid4()})(),
+            None,
+        )
+
+    async def fake_fanqie_gate(session, **kwargs):
+        gate_calls.append(kwargs["chapter_number"])
+        return {
+            "artifact_id": "fanqie-gate-1",
+            "passed": True,
+            "critical_count": 0,
+            "finding_count": 0,
+            "metrics": {"chapter_count": 1},
+            "blocks_write": False,
+        }
+
+    monkeypatch.setattr(pipeline_services, "get_project_by_slug", fake_get_project_by_slug)
+    monkeypatch.setattr(pipeline_services, "run_scene_pipeline", fake_run_scene_pipeline)
+    monkeypatch.setattr(pipeline_services, "assemble_chapter_draft", fake_assemble_chapter_draft)
+    monkeypatch.setattr(pipeline_services, "export_chapter_markdown", fake_export_chapter_markdown)
+    monkeypatch.setattr(pipeline_services, "review_chapter_draft", fake_review_chapter_draft)
+    monkeypatch.setattr(pipeline_services, "_run_fanqie_long_gate_for_chapter", fake_fanqie_gate)
+
+    settings = build_settings()
+    settings.pipeline.enable_fanqie_long_ranking_gate = True
+    session = FakeSession(
+        scalar_results=[chapter],
+        scalars_results=[[scene]],
+    )
+    result = await pipeline_services.run_chapter_pipeline(
+        session,
+        settings,
+        "my-story",
+        1,
+        requested_by="tester",
+        export_markdown=True,
+    )
+
+    steps = [obj for obj in session.added if isinstance(obj, WorkflowStepRunModel)]
+    fanqie_steps = [step for step in steps if step.step_name == "fanqie_long_ranking_gate"]
+
+    assert result.requires_human_review is False
+    assert gate_calls == [1]
+    assert fanqie_steps
+    assert fanqie_steps[0].output_ref["passed"] is True
+
+
+@pytest.mark.asyncio
 async def test_run_chapter_pipeline_exports_checkpoint_when_scene_needs_human_review(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -3136,7 +3281,7 @@ async def test_run_project_pipeline_warns_on_partial_project_consistency_failure
 
 
 @pytest.mark.asyncio
-async def test_run_project_pipeline_blocks_qimao_without_planning_contract(
+async def test_run_project_pipeline_backfills_qimao_planning_contract_from_outline(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     project = build_project()
@@ -3157,35 +3302,56 @@ async def test_run_project_pipeline_blocks_qimao_without_planning_contract(
     async def fake_run_chapter_pipeline(*args, **kwargs):
         nonlocal child_called
         child_called = True
-        raise AssertionError("chapter pipeline should not run when Qimao planning gate fails")
+        return pipeline_services.ChapterPipelineResult(
+            workflow_run_id=uuid4(),
+            project_id=project.id,
+            chapter_id=chapter.id,
+            chapter_number=chapter.chapter_number,
+            scene_results=[],
+            chapter_draft_id=uuid4(),
+            chapter_draft_version_no=1,
+            export_artifact_id=uuid4(),
+            output_path=None,
+            requires_human_review=True,
+        )
+
+    async def fake_review_project_consistency(*args, **kwargs):
+        return (
+            type("ProjectReviewResultStub", (), {"verdict": "attention"})(),
+            type("ProjectReviewReportStub", (), {"id": uuid4()})(),
+            type("ProjectReviewQualityStub", (), {"id": uuid4()})(),
+        )
 
     monkeypatch.setattr(pipeline_services, "get_project_by_slug", fake_get_project_by_slug)
     monkeypatch.setattr(pipeline_services, "_load_project_chapters", fake_load_project_chapters)
     monkeypatch.setattr(pipeline_services, "run_chapter_pipeline", fake_run_chapter_pipeline)
+    monkeypatch.setattr(
+        pipeline_services,
+        "review_project_consistency",
+        fake_review_project_consistency,
+    )
 
     session = FakeSession()
-    with pytest.raises(ValueError, match="Qimao planning gate failed"):
-        await pipeline_services.run_project_pipeline(
-            session,
-            build_settings(),
-            "my-story",
-            requested_by="tester",
-            export_markdown=False,
-            materialize_narrative_graph=False,
-            materialize_narrative_tree=False,
-            progress=lambda event, payload: progress_events.append(event),
-        )
+    result = await pipeline_services.run_project_pipeline(
+        session,
+        build_settings(),
+        "my-story",
+        requested_by="tester",
+        export_markdown=False,
+        materialize_narrative_graph=False,
+        materialize_narrative_tree=False,
+        progress=lambda event, payload: progress_events.append(event),
+    )
 
     workflow_runs = [obj for obj in session.added if isinstance(obj, WorkflowRunModel)]
-    assert child_called is False
-    assert project.metadata_json["qimao_planning_gate_report"]["passed"] is False
-    assert (
-        project.metadata_json["qimao_planning_gate_report"]["findings"][0]["code"]
-        == "missing_opening_quality_contract"
+    assert child_called is True
+    assert result.requires_human_review is True
+    assert project.metadata_json["qimao_planning_gate_report"]["passed"] is True
+    assert project.metadata_json["qimao_opening_contract"]["source"] == (
+        "outline_backfill_qimao_planning_gate"
     )
-    assert workflow_runs[0].status == "failed"
-    assert workflow_runs[0].metadata_json["qimao_planning_gate_report"]["passed"] is False
-    assert "qimao_planning_gate_failed" in progress_events
+    assert workflow_runs[0].metadata_json["qimao_planning_gate_report"]["passed"] is True
+    assert "qimao_planning_gate_passed" in progress_events
 
 
 def test_qimao_planning_gate_repairs_abstract_contract_from_outline() -> None:
@@ -3237,6 +3403,41 @@ def test_qimao_planning_gate_repairs_abstract_contract_from_outline() -> None:
     assert project.metadata_json["qimao_opening_contract_status"] == "planned_gate_passed"
 
 
+def test_qimao_planning_gate_backfills_missing_contract_from_outline() -> None:
+    project = build_project()
+    project.metadata_json = {
+        **(project.metadata_json or {}),
+        "platform_target": "七猫小说",
+        "protagonist_name": "林照",
+    }
+    first = build_chapter(project.id)
+    first.title = "账房火光"
+    first.chapter_goal = "林照在账房门口保住旧账本，阻止族叔烧掉母亲旧案证据。"
+    first.main_conflict = "族叔按着账童抢账本，逼林照交出钥匙，否则当场点火。"
+    first.hook_description = "林照发现账页夹层里有一枚带血的私印。"
+    second = build_chapter(project.id)
+    second.chapter_number = 2
+    second.title = "私印主人"
+    second.main_conflict = "私印主人否认到过账房，却被账页墨迹反证。"
+    third = build_chapter(project.id)
+    third.chapter_number = 3
+    third.title = "夹层证词"
+    third.hook_description = "夹层证词指向一个还活着的灭口人。"
+
+    report = pipeline_services._record_qimao_planning_gate(
+        project,
+        chapters=[first, second, third],
+    )
+
+    assert report is not None
+    assert report["passed"] is True
+    backfilled = project.metadata_json["qimao_opening_contract"]
+    assert backfilled["source"] == "outline_backfill_qimao_planning_gate"
+    assert "账房火光" in backfilled["opening_incident"]
+    assert "林照" in backfilled["protagonist_edge"]
+    assert project.metadata_json["qimao_opening_contract_status"] == "planned_gate_passed"
+
+
 def test_record_commercial_planning_readiness_gate_blocks_thin_long_serial(
     tmp_path: Path,
 ) -> None:
@@ -3271,10 +3472,102 @@ def test_record_commercial_planning_readiness_gate_blocks_thin_long_serial(
     assert report is not None
     assert report["passed"] is False
     codes = {finding["code"] for finding in report["findings"]}
-    assert "long_serial_artifacts_missing" in codes
+    assert "long_serial_artifacts_missing" not in codes
     assert "golden_three_solo_scene_chain" in codes
-    assert "golden_three_hype_underpowered" in codes
+    assert "golden_three_hype_underpowered" not in codes
+    assert project.metadata_json["commercial_planning_hype_repair_count"] == 3
+    assert all(chapter.hype_intensity == 8.0 for chapter in chapters)
+    assert (tmp_path / "story-bible" / "series-brief.md").exists()
+    assert (tmp_path / "story-bible" / "volume-plan.csv").exists()
     assert project.metadata_json["commercial_planning_readiness_status"] == "planned_gate_failed"
+
+
+def test_record_commercial_planning_readiness_repairs_only_weak_hype_assignment(
+    tmp_path: Path,
+) -> None:
+    project = build_project()
+    project.target_chapters = 500
+    project.metadata_json = {
+        **(project.metadata_json or {}),
+        "qimao_opening_contract": {"opening_incident": "尸体喊冤，当场逼主角保住证据。"},
+    }
+    chapters: list[ChapterModel] = []
+    for number in (1, 2, 3):
+        chapter = build_chapter(project.id)
+        chapter.chapter_number = number
+        chapter.opening_situation = "尸体刚喊冤，官府就要当场结案并封锁验尸房。"
+        chapter.main_conflict = "沈青崖必须在官府夺走证据前证明尸体被灭口，否则唯一线索会被烧掉。"
+        chapter.hook_description = "章尾留下谁在尸体掌心写下归字的悬念。"
+        chapter.hype_type = "reveal" if number == 1 else None
+        chapter.hype_intensity = 8.0 if number == 1 else 0.1
+        scene = build_scene(project.id, chapter.id)
+        scene.scene_type = "confrontation"
+        scene.participants = ["沈青崖", "周捕头"]
+        scene.purpose = {"story": "周捕头逼他交出证据，沈青崖当场反制。"}
+        scene.entry_state = {"evidence": "尸体喊冤"}
+        scene.exit_state = {"evidence": "保住第一条线索"}
+        scene.hook_requirement = "尸体掌心露出归字，指向下一章追查。"
+        chapter.scenes = [scene]
+        chapters.append(chapter)
+
+    report = pipeline_services._record_commercial_planning_readiness_gate(
+        project,
+        chapters=chapters,
+        package_root=tmp_path,
+    )
+
+    assert report is not None
+    assert report["passed"] is True
+    assert project.metadata_json["commercial_planning_hype_repair_count"] == 2
+    assert [chapter.hype_intensity for chapter in chapters] == [8.0, 8.0, 8.0]
+    assert chapters[1].metadata_json["commercial_planning_hype_repair"]["source"] == (
+        "commercial_planning_readiness_gate"
+    )
+    assert project.metadata_json["commercial_planning_readiness_status"] == (
+        "planned_gate_passed"
+    )
+
+
+def test_record_commercial_planning_readiness_repairs_missing_visible_loss(
+    tmp_path: Path,
+) -> None:
+    project = build_project()
+    project.target_chapters = 500
+    project.metadata_json = {
+        **(project.metadata_json or {}),
+        "qimao_opening_contract": {"opening_incident": "主角当场被迫保住证据。"},
+    }
+    chapters: list[ChapterModel] = []
+    for number in (1, 2, 3):
+        chapter = build_chapter(project.id)
+        chapter.chapter_number = number
+        chapter.chapter_goal = "主角主动选择承受异变代价，证明自身判断。"
+        chapter.opening_situation = "官府封锁验尸房，周捕头要求沈青崖交出尸检记录。"
+        chapter.main_conflict = "周捕头逼沈青崖交出证据。"
+        chapter.hook_description = "章尾留下谁在尸体掌心写下归字的悬念。"
+        chapter.hype_type = "reversal"
+        chapter.hype_intensity = 8.0
+        scene = build_scene(project.id, chapter.id)
+        scene.scene_type = "confrontation"
+        scene.participants = ["沈青崖", "周捕头"]
+        scene.purpose = {"story": "周捕头逼他交出证据，沈青崖当场反制。"}
+        scene.hook_requirement = "尸体掌心露出归字，指向下一章追查。"
+        chapter.scenes = [scene]
+        chapters.append(chapter)
+
+    report = pipeline_services._record_commercial_planning_readiness_gate(
+        project,
+        chapters=chapters,
+        package_root=tmp_path,
+    )
+
+    assert report is not None
+    assert report["passed"] is True
+    assert project.metadata_json["commercial_planning_visible_loss_repair_count"] == 3
+    assert all("否则主角会失去" in str(chapter.main_conflict) for chapter in chapters)
+    assert chapters[0].metadata_json["commercial_planning_visible_loss_repair"][
+        "source"
+    ] == "commercial_planning_readiness_gate"
 
 
 @pytest.mark.asyncio

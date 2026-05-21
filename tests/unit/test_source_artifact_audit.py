@@ -47,6 +47,21 @@ def test_audit_source_artifacts_flags_forbidden_legacy_terms(tmp_path: Path) -> 
     assert report.blocking_findings[0].evidence["term_counts"]["副本"] == 1
 
 
+def test_audit_source_artifacts_ignores_plain_copy_meaning(tmp_path: Path) -> None:
+    book = _book_dir(tmp_path)
+    (book / "project.md").write_text(
+        "# Project\n\n"
+        "父亲留下的证词被销毁了, 主角手上仍有一份副本。\n"
+        "三叔把名单的副本交给了可信的人。\n",
+        encoding="utf-8",
+    )
+
+    report = audit_source_artifacts("book-a", output_dir=tmp_path)
+
+    assert report.passed is True
+    assert report.findings == ()
+
+
 def test_audit_source_artifacts_flags_language_mismatch(tmp_path: Path) -> None:
     book = _book_dir(tmp_path)
     (book / "project.md").write_text(

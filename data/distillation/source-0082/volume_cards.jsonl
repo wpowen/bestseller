@@ -1,1 +1,0 @@
-{"source_id": "source-0082", "volume_no": 1, "chapter_range": "1-2", "arc_function": "unknown", "dominant_engine": "unknown", "state_progression": [], "turning_points": [], "reusable_mechanisms": [], "failure_modes": ["llm_fallback"], "craft_profile": {"note": "Data extraction unavailable due to LLM fallback."}, "distillation_source_id": "source-0082"}

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any
 from uuid import UUID
 
@@ -9,6 +9,7 @@ from sqlalchemy import (
     BigInteger,
     Boolean,
     CheckConstraint,
+    Date,
     DateTime,
     Float,
     ForeignKey,
@@ -119,6 +120,101 @@ class PlanningArtifactVersionModel(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
     source_run_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True))
     notes: Mapped[str | None] = mapped_column(Text)
     created_by: Mapped[str] = mapped_column(String(64), nullable=False, server_default=text("'system'"))
+
+
+class FanqieRankingSnapshotModel(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
+    __tablename__ = "fanqie_ranking_snapshots"
+    __table_args__ = (
+        UniqueConstraint(
+            "source",
+            "board_type",
+            "category",
+            "channel",
+            "data_date",
+            name="uq_fanqie_ranking_snapshot_identity",
+        ),
+        Index("idx_fanqie_ranking_snapshots_category_date", "category", "data_date"),
+    )
+
+    source: Mapped[str] = mapped_column(String(64), nullable=False, server_default=text("'fanqiehub'"))
+    source_url: Mapped[str | None] = mapped_column(Text)
+    board_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    category: Mapped[str] = mapped_column(Text, nullable=False)
+    channel: Mapped[str] = mapped_column(String(64), nullable=False, server_default=text("'fanqie'"))
+    data_date: Mapped[date] = mapped_column(Date, nullable=False)
+    fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    payload_json: Mapped[JSON_DICT] = mapped_column(JSONB, nullable=False, default=dict)
+    normalized_books_json: Mapped[JSON_LIST] = mapped_column(JSONB, nullable=False, default=list)
+    sample_size: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+
+    competitor_profiles: Mapped[list["FanqieCompetitorProfileModel"]] = relationship(
+        back_populates="snapshot",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+    category_profiles: Mapped[list["FanqieCategoryProfileModel"]] = relationship(
+        back_populates="snapshot",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+
+
+class FanqieCompetitorProfileModel(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
+    __tablename__ = "fanqie_competitor_profiles"
+    __table_args__ = (
+        UniqueConstraint(
+            "snapshot_id",
+            "source_book_id",
+            name="uq_fanqie_competitor_snapshot_book",
+        ),
+        Index("idx_fanqie_competitor_profiles_category_rank", "category", "rank"),
+    )
+
+    snapshot_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("fanqie_ranking_snapshots.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    source_book_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    author: Mapped[str | None] = mapped_column(Text)
+    category: Mapped[str] = mapped_column(Text, nullable=False)
+    board_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    rank: Mapped[int] = mapped_column(Integer, nullable=False)
+    reader_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+    profile_json: Mapped[JSON_DICT] = mapped_column(JSONB, nullable=False, default=dict)
+    evidence_json: Mapped[JSON_LIST] = mapped_column(JSONB, nullable=False, default=list)
+    confidence: Mapped[float] = mapped_column(Float, nullable=False, server_default=text("0.5"))
+
+    snapshot: Mapped[FanqieRankingSnapshotModel] = relationship(back_populates="competitor_profiles")
+
+
+class FanqieCategoryProfileModel(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
+    __tablename__ = "fanqie_category_profiles"
+    __table_args__ = (
+        UniqueConstraint(
+            "snapshot_id",
+            "category",
+            "board_type",
+            name="uq_fanqie_category_profile_snapshot",
+        ),
+        Index("idx_fanqie_category_profiles_category_date", "category", "data_date"),
+    )
+
+    snapshot_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("fanqie_ranking_snapshots.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    category: Mapped[str] = mapped_column(Text, nullable=False)
+    board_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    channel: Mapped[str] = mapped_column(String(64), nullable=False, server_default=text("'fanqie'"))
+    data_date: Mapped[date] = mapped_column(Date, nullable=False)
+    sample_size: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+    profile_json: Mapped[JSON_DICT] = mapped_column(JSONB, nullable=False, default=dict)
+    confidence: Mapped[float] = mapped_column(Float, nullable=False, server_default=text("0.5"))
+
+    snapshot: Mapped[FanqieRankingSnapshotModel] = relationship(back_populates="category_profiles")
 
 
 class WorldRuleModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):

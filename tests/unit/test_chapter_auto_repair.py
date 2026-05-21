@@ -70,8 +70,9 @@ class FakeProject:
 class FakeResult:
     """Mimic a SQLAlchemy scalars() ``ScalarResult`` with ``list()``."""
 
-    def __init__(self, items: list[Any]) -> None:
+    def __init__(self, items: list[Any], *, rowcount: int | None = None) -> None:
         self._items = list(items)
+        self.rowcount = rowcount
 
     def __iter__(self):
         return iter(self._items)
@@ -94,6 +95,7 @@ class FakeSession:
         self.scalar_queue = list(scalar_queue or [])
         self.scalars_queue = list(scalars_queue or [])
         self.flush_calls = 0
+        self.execute_calls: list[Any] = []
 
     async def scalar(self, _stmt: Any) -> Any:
         if not self.scalar_queue:
@@ -103,6 +105,10 @@ class FakeSession:
     async def scalars(self, _stmt: Any) -> FakeResult:
         items = self.scalars_queue.pop(0) if self.scalars_queue else []
         return FakeResult(items)
+
+    async def execute(self, stmt: Any) -> FakeResult:
+        self.execute_calls.append(stmt)
+        return FakeResult([], rowcount=1)
 
     async def flush(self) -> None:
         self.flush_calls += 1
@@ -181,6 +187,7 @@ async def test_stored_duplicate_block_triggers_repair_even_with_latest_report() 
     assert scene.status == SceneStatus.NEEDS_REWRITE.value
     assert "第30章复用了第29章段落" in scene.metadata_json["auto_repair_hint"]
     assert "post_assembly_duplicate_gate" not in chapter.metadata_json
+    assert len(session.execute_calls) == 1
 
 
 @pytest.mark.asyncio
@@ -208,6 +215,7 @@ async def test_stored_pronoun_mismatch_block_triggers_rewrite_repair() -> None:
     assert scene.status == SceneStatus.NEEDS_REWRITE.value
     assert "叶长青: expected 他, found 她的" in scene.metadata_json["auto_repair_hint"]
     assert scene.metadata_json["auto_repair_block_codes"] == ["pronoun_mismatch"]
+    assert len(session.execute_calls) == 1
 
 
 @pytest.mark.asyncio
@@ -377,6 +385,7 @@ async def test_dead_alive_block_uses_offstage_character_repair() -> None:
     assert scenes[0].metadata_json["auto_repair_removed_participants"] == ["母亲"]
     assert scenes[0].metadata_json["auto_repair_removed_state_refs"] == ["母亲"]
     assert "当下不可登场角色：母亲" in scenes[0].metadata_json["auto_repair_hint"]
+    assert len(session.execute_calls) == 1
 
 
 @pytest.mark.asyncio
@@ -877,6 +886,38 @@ async def test_existing_auto_repair_hint_is_preserved_across_cycles() -> None:
     merged = scenes[0].metadata_json["auto_repair_hint"]
     assert merged.startswith("first-cycle hint\n")
     assert "大幅扩写" in merged
+
+
+@pytest.mark.asyncio
+async def test_auto_repair_clears_current_scene_drafts_for_regeneration() -> None:
+    """Resetting scene status is not enough; the next scene pipeline only
+    regenerates when there is no current draft."""
+    chapter = FakeChapter()
+    scenes = [
+        FakeScene(chapter_id=chapter.id, scene_number=1),
+        FakeScene(chapter_id=chapter.id, scene_number=2),
+    ]
+    report = FakeQualityReport(
+        report_json={
+            "blocking_codes": ["BLOCK_LOW"],
+            "length_stability": {"word_count": 3000, "target_words": 4800},
+        },
+    )
+    session = FakeSession(scalar_queue=[report], scalars_queue=[scenes])
+
+    triggered, _ = await maybe_prepare_chapter_auto_repair(
+        session,
+        project=FakeProject(),
+        chapter=chapter,
+        repairable_codes=("BLOCK_LOW",),
+    )
+
+    assert triggered is True
+    assert [scene.status for scene in scenes] == [
+        SceneStatus.NEEDS_REWRITE.value,
+        SceneStatus.NEEDS_REWRITE.value,
+    ]
+    assert len(session.execute_calls) == len(scenes)
 
 
 @pytest.mark.asyncio

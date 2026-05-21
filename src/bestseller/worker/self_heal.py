@@ -48,6 +48,7 @@ from bestseller.infra.db.models import (
     ChapterDraftVersionModel,
     ChapterModel,
     ProjectModel,
+    RewriteTaskModel,
     WorkflowRunModel,
 )
 from bestseller.infra.db.session import get_server_session
@@ -98,16 +99,17 @@ STALE_ARQ_IN_PROGRESS_GRACE_SECONDS = 5 * 60
 
 # Project repair writes a DB heartbeat through worker.tasks while it is alive,
 # so a stale running repair row can be safely reaped by the periodic orphan
-# scanner. A project_repair run that has already reached WAITING_HUMAN should
-# only suppress self-heal briefly. Older waiting rows are historical evidence,
+# scanner. A project_repair run that has already reached MACHINE_BLOCKED should
+# only suppress self-heal briefly. Older blocked rows are historical evidence,
 # not an active handoff; leaving them indefinite made blocked projects stall
 # forever.
 # Only suppress duplicate repair dispatches long enough for the just-finished
-# worker state to settle. A waiting_human repair row is historical evidence,
+# worker state to settle. A machine_blocked repair row is historical evidence,
 # not an acceptable long-lived stop state for autonomous recovery.
 WAITING_REPAIR_SUPPRESSION_SECONDS = 60
 WRITE_SAFETY_REPAIR_RECOVERY_SECONDS = 15 * 60
 WRITE_SAFETY_REPAIR_MAX_RECOVERY_SECONDS = 45 * 60
+SELF_HEAL_PENDING_REWRITE_TASK_LIMIT = 25
 
 _AUTO_REPAIRABLE_WRITE_SAFETY_BLOCK_CODES = frozenset(
     {
@@ -304,6 +306,9 @@ async def find_stuck_projects(session: Any) -> list[StuckProject]:
     stuck: list[StuckProject] = []
 
     for project in projects:
+        if _project_is_archived(project):
+            continue
+
         # Skip projects with an active pipeline run.
         if await _has_active_pipeline_run(session, project.id):
             continue
@@ -362,7 +367,7 @@ async def find_stuck_projects(session: Any) -> list[StuckProject]:
         if blocked_chapters > 0:
             if await _blocked_chapters_have_recent_waiting_repair(session, project.id):
                 logger.info(
-                    "self-heal: skipped slug=%s — blocked chapters already reached waiting_human repair",
+                    "self-heal: skipped slug=%s — blocked chapters already reached machine_blocked repair",
                     project.slug,
                 )
                 continue
@@ -379,11 +384,27 @@ async def find_stuck_projects(session: Any) -> list[StuckProject]:
             )
             continue
 
+        pending_rewrite_tasks = await _pending_rewrite_task_count(session, project.id)
+        if pending_rewrite_tasks > 0:
+            stuck.append(
+                StuckProject(
+                    project_id=project.id,
+                    slug=project.slug,
+                    reason="pending_rewrite_tasks",
+                    stuck_at_chapter=None,
+                    chapters_total=int(chapters_total),
+                    chapters_with_draft=int(chapters_with_draft),
+                    heal_kind="repair",
+                )
+            )
+            continue
+
         # A production pause such as ``structural_repair_before_continuation``
         # should stop continuation/autowrite, not the repair loop itself.
         # Check it only after blocked chapters have had a chance to dispatch a
-        # repair heal job; otherwise projects can sit paused forever with no
-        # visible repair progress.
+        # repair heal job. Pending rewrite tasks are also repair work, not a
+        # continuation blocker; check them above so repair-gated projects do not
+        # sit indefinitely with queued repairs that no worker consumes.
         if _project_resume_is_blocked(project):
             continue
 
@@ -442,6 +463,14 @@ async def find_stuck_projects(session: Any) -> list[StuckProject]:
     return stuck
 
 
+def _project_is_archived(project: ProjectModel) -> bool:
+    metadata = getattr(project, "metadata_json", None) or {}
+    if not isinstance(metadata, dict):
+        metadata = {}
+    status = (getattr(project, "status", None) or "").lower()
+    return status == ProjectStatus.ARCHIVED.value or bool(metadata.get("library_archived"))
+
+
 async def _has_active_pipeline_run(session: Any, project_id: Any) -> bool:
     active = await session.scalar(
         select(WorkflowRunModel.id)
@@ -473,7 +502,7 @@ async def _blocked_chapters_have_recent_waiting_repair(
         select(func.max(WorkflowRunModel.updated_at)).where(
             WorkflowRunModel.project_id == project_id,
             WorkflowRunModel.workflow_type == "project_repair",
-            WorkflowRunModel.status == WorkflowStatus.WAITING_HUMAN.value,
+            WorkflowRunModel.status == WorkflowStatus.MACHINE_BLOCKED.value,
         )
     )
     latest_waiting_repair_update = _ensure_utc(latest_waiting_repair_update)
@@ -502,6 +531,18 @@ async def _blocked_chapters_have_recent_waiting_repair(
             return False
 
     return latest_waiting_repair_update >= latest_blocked_update
+
+
+async def _pending_rewrite_task_count(session: Any, project_id: Any) -> int:
+    count = await session.scalar(
+        select(func.count())
+        .select_from(RewriteTaskModel)
+        .where(
+            RewriteTaskModel.project_id == project_id,
+            RewriteTaskModel.status.in_(["pending", "queued"]),
+        )
+    )
+    return int(count or 0)
 
 
 def _ensure_utc(value: _dt.datetime | None) -> _dt.datetime | None:
@@ -772,7 +813,7 @@ async def _requeue_repair(
             "project_slug": stuck.slug,
             "requested_by": "worker_self_heal",
             "include_pending_rewrite_tasks": True,
-            "pending_rewrite_task_limit": 10,
+            "pending_rewrite_task_limit": SELF_HEAL_PENDING_REWRITE_TASK_LIMIT,
         },
         _job_id=job_id,
         _expires=_dt.timedelta(days=SELF_HEAL_JOB_EXPIRES_DAYS),
@@ -794,7 +835,7 @@ async def _requeue_repair(
                 "project_slug": stuck.slug,
                 "requested_by": "worker_self_heal",
                 "include_pending_rewrite_tasks": True,
-                "pending_rewrite_task_limit": 10,
+                "pending_rewrite_task_limit": SELF_HEAL_PENDING_REWRITE_TASK_LIMIT,
             },
             _job_id=job_id,
             _expires=_dt.timedelta(days=SELF_HEAL_JOB_EXPIRES_DAYS),

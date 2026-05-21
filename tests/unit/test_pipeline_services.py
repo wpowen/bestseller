@@ -1848,7 +1848,7 @@ async def test_run_scene_pipeline_stops_after_stalled_rewrite(
     assert result.rewrite_iterations == 1
     assert result.requires_human_review is True
     assert getattr(fake_rewrite_scene_from_task, "calls", 0) == 1
-    assert workflow_runs[0].status == "waiting_human"
+    assert workflow_runs[0].status == "machine_blocked"
     assert workflow_runs[0].metadata_json["stalled_rewrite"] is True
 
 
@@ -2106,7 +2106,7 @@ async def test_run_chapter_pipeline_runs_fanqie_long_gate_when_enabled(
 
 
 @pytest.mark.asyncio
-async def test_run_chapter_pipeline_exports_checkpoint_when_scene_needs_human_review(
+async def test_run_chapter_pipeline_exports_checkpoint_when_scene_needs_machine_repair(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -2117,7 +2117,7 @@ async def test_run_chapter_pipeline_exports_checkpoint_when_scene_needs_human_re
         project_id=project.id,
         chapter_id=chapter.id,
         version_no=1,
-        content_md="# 第1章 失准星图\n\n场景草稿待人工复核。",
+        content_md="# 第1章 失准星图\n\n场景草稿待机器修复。",
         word_count=900,
         assembled_from_scene_draft_ids=[],
         is_current=True,
@@ -2603,7 +2603,7 @@ async def test_run_chapter_pipeline_blocks_failed_review_even_when_accept_on_sta
     assert result.final_verdict == "rewrite"
     assert result.requires_human_review is True
     assert result.chapter_draft_id == chapter_draft.id
-    assert workflow_runs[0].status == "waiting_human"
+    assert workflow_runs[0].status == "machine_blocked"
 
 
 @pytest.mark.asyncio
@@ -2709,7 +2709,7 @@ async def test_run_chapter_pipeline_accepts_safe_draft_after_review_stall(
 
 
 @pytest.mark.asyncio
-async def test_run_project_pipeline_exports_project_checkpoint_when_human_review_required(
+async def test_run_project_pipeline_exports_project_checkpoint_when_machine_repair_required(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -2825,7 +2825,7 @@ async def test_run_project_pipeline_exports_project_checkpoint_when_human_review
 
 
 @pytest.mark.asyncio
-async def test_run_project_pipeline_stops_after_human_review_chapter(
+async def test_run_project_pipeline_stops_after_machine_repair_chapter(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -4705,4 +4705,4 @@ async def test_progressive_autowrite_stops_later_volume_planning_when_volume_blo
     assert result.requires_human_review is True
     assert checked_volumes == [1, 1]
     assert run_volumes == [1]
-    assert "volume_writing_paused_for_human_review" in progress_events
+    assert "volume_writing_machine_repair_required" in progress_events

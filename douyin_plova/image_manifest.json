@@ -1,0 +1,1879 @@
+{
+  "total": 208,
+  "ok": 200,
+  "fail": 8,
+  "manifest": [
+    {
+      "index": 1,
+      "aweme_id": "7642246827189800207",
+      "image_index": 1,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/7c6caf99b6b54e128fbb8b1dbb782f0e~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=8yBdEgRqhbbGTeIXMbFxh4Gwu4Y%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173920712F24597CC94FB43A5E",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/01_7642246827189800207/01.jpg",
+      "ok": true,
+      "bytes": 135738
+    },
+    {
+      "index": 1,
+      "aweme_id": "7642246827189800207",
+      "image_index": 2,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/d1da5e186ead4d618a491e2e2b061cff~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=RbZ%2BGcUY8Dz%2FqTDMvurECU2rWfY%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173920712F24597CC94FB43A5E",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/01_7642246827189800207/02.jpg",
+      "ok": true,
+      "bytes": 302363
+    },
+    {
+      "index": 1,
+      "aweme_id": "7642246827189800207",
+      "image_index": 3,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/02aa08a09f254f39ba91c3a4047da7bb~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=QJZtFD%2FcrkRaj3t%2FggswBypN4zE%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173920712F24597CC94FB43A5E",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/01_7642246827189800207/03.jpg",
+      "ok": true,
+      "bytes": 307920
+    },
+    {
+      "index": 1,
+      "aweme_id": "7642246827189800207",
+      "image_index": 4,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/9e548b7d1cac44cd8b769f22a0918cee~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=40T54BXQQSFxyeRE3qLspLe9TFI%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173920712F24597CC94FB43A5E",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/01_7642246827189800207/04.jpg",
+      "ok": true,
+      "bytes": 332973
+    },
+    {
+      "index": 1,
+      "aweme_id": "7642246827189800207",
+      "image_index": 5,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/47936d63178545fba1ac5f1047492904~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=43%2BbdyIsisX%2FXzzB4Mu3z4IhGos%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173920712F24597CC94FB43A5E",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/01_7642246827189800207/05.jpg",
+      "ok": true,
+      "bytes": 217850
+    },
+    {
+      "index": 2,
+      "aweme_id": "7641389941712276736",
+      "image_index": 1,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/fb9069f900e041cdbecc91437f02aab4~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=j1yS1Wa3fWHnP3nZOp9EkJe0rp0%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173920712F24597CC94FB43A5E",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/02_7641389941712276736/01.jpg",
+      "ok": true,
+      "bytes": 148531
+    },
+    {
+      "index": 2,
+      "aweme_id": "7641389941712276736",
+      "image_index": 2,
+      "url": "https://p9-pc-sign.douyinpic.com/tos-cn-i-dy/ffb908d2cb284f3f8a35b2c344447777~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=CryKr1rot7Njncz%2F0dCKAJUC5tc%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173920712F24597CC94FB43A5E",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/02_7641389941712276736/02.jpg",
+      "ok": true,
+      "bytes": 295719
+    },
+    {
+      "index": 2,
+      "aweme_id": "7641389941712276736",
+      "image_index": 3,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/d0ab8ab00c654ad19c33e0bb985e8964~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=Egj7c0375wWLHxz0quj9scdA0Po%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173920712F24597CC94FB43A5E",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/02_7641389941712276736/03.jpg",
+      "ok": true,
+      "bytes": 267289
+    },
+    {
+      "index": 2,
+      "aweme_id": "7641389941712276736",
+      "image_index": 4,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/6b819de7defc407e83614c739bc21c1b~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=qT0i5W1MPb%2FlcUrrfqAACL2j3GA%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173920712F24597CC94FB43A5E",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/02_7641389941712276736/04.jpg",
+      "ok": true,
+      "bytes": 292049
+    },
+    {
+      "index": 2,
+      "aweme_id": "7641389941712276736",
+      "image_index": 5,
+      "url": "https://p9-pc-sign.douyinpic.com/tos-cn-i-dy/1efe060c8f224548a94cd3ad889cc632~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=BiykyIxtKwygsM%2BQ5PMhwkolXbQ%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173920712F24597CC94FB43A5E",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/02_7641389941712276736/05.jpg",
+      "ok": true,
+      "bytes": 203902
+    },
+    {
+      "index": 3,
+      "aweme_id": "7641066789723442474",
+      "image_index": 1,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/6f96db32866047b397eeb8569f5a3a7e~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=eYaaZy67fEyq2mNUSvaESEqsszQ%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173920712F24597CC94FB43A5E",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/03_7641066789723442474/01.jpg",
+      "ok": true,
+      "bytes": 155525
+    },
+    {
+      "index": 3,
+      "aweme_id": "7641066789723442474",
+      "image_index": 2,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/faf4de3c921349a5888776ff6c8e0132~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=6imIndRuFU0jbi4mfezqJqOkrB8%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173920712F24597CC94FB43A5E",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/03_7641066789723442474/02.jpg",
+      "ok": true,
+      "bytes": 288907
+    },
+    {
+      "index": 3,
+      "aweme_id": "7641066789723442474",
+      "image_index": 3,
+      "url": "https://p9-pc-sign.douyinpic.com/tos-cn-i-dy/9839b7f2be8541baba96d39313e872b7~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=ghESs%2BAF8ocQoC0hGSy%2FtLEVJDU%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173920712F24597CC94FB43A5E",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/03_7641066789723442474/03.jpg",
+      "ok": true,
+      "bytes": 286045
+    },
+    {
+      "index": 3,
+      "aweme_id": "7641066789723442474",
+      "image_index": 4,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/5656a78060eb4e6d912a9bb4b68123ee~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=DfdQM9hOw0Y7yC3M3eMQ44%2BO9P8%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173920712F24597CC94FB43A5E",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/03_7641066789723442474/04.jpg",
+      "ok": true,
+      "bytes": 264247
+    },
+    {
+      "index": 3,
+      "aweme_id": "7641066789723442474",
+      "image_index": 5,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/7bbc6aa20e6743428bd165946f260331~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=icbNBg4ClYzSpoxxC7scRqMnpBQ%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173920712F24597CC94FB43A5E",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/03_7641066789723442474/05.jpg",
+      "ok": true,
+      "bytes": 188769
+    },
+    {
+      "index": 4,
+      "aweme_id": "7639269753357438223",
+      "image_index": 1,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/abef3d102f2449458772afd49cb529a6~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=DifVc8spcKvKsYCJjOUM7DQ5ahQ%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173920712F24597CC94FB43A5E",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/04_7639269753357438223/01.jpg",
+      "ok": true,
+      "bytes": 367131
+    },
+    {
+      "index": 4,
+      "aweme_id": "7639269753357438223",
+      "image_index": 2,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/fa18eee4a1614c04962411c3633d31e0~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=BRn%2BoelVeVqaD10jNa7dFQLzowo%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173920712F24597CC94FB43A5E",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/04_7639269753357438223/02.jpg",
+      "ok": true,
+      "bytes": 705723
+    },
+    {
+      "index": 4,
+      "aweme_id": "7639269753357438223",
+      "image_index": 3,
+      "url": "https://p9-pc-sign.douyinpic.com/tos-cn-i-dy/f68bdd1696f44fdb88bd361f766a05b7~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=W1XM0VAl2vai%2FoQ9y4Ig2ijsDdA%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173920712F24597CC94FB43A5E",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/04_7639269753357438223/03.jpg",
+      "ok": true,
+      "bytes": 735719
+    },
+    {
+      "index": 4,
+      "aweme_id": "7639269753357438223",
+      "image_index": 4,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/679ffc3aa6b84c6685704f320f6d3b69~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=aeH3RWC8NVw%2F9X5hzSsTF%2F7gXVQ%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173920712F24597CC94FB43A5E",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/04_7639269753357438223/04.jpg",
+      "ok": true,
+      "bytes": 691133
+    },
+    {
+      "index": 4,
+      "aweme_id": "7639269753357438223",
+      "image_index": 5,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/a030fbc3a05a46d392459f7a6e4fc555~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=NwzjSdPsCfAFD381Mo18FkgoehQ%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173920712F24597CC94FB43A5E",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/04_7639269753357438223/05.jpg",
+      "ok": true,
+      "bytes": 679755
+    },
+    {
+      "index": 5,
+      "aweme_id": "7638529526439480576",
+      "image_index": 1,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/61180f1a639742749392925d4f9a279b~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=QmfprJ7FpYwNfDmHflfSQ915In0%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173920712F24597CC94FB43A5E",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/05_7638529526439480576/01.jpg",
+      "ok": true,
+      "bytes": 143579
+    },
+    {
+      "index": 5,
+      "aweme_id": "7638529526439480576",
+      "image_index": 2,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/240b9903a7614d0e9d58fac9f717d0f8~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=8UFMDb89ocMTvpLYQwe8Fv%2FJ%2BBg%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173920712F24597CC94FB43A5E",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/05_7638529526439480576/02.jpg",
+      "ok": true,
+      "bytes": 269860
+    },
+    {
+      "index": 5,
+      "aweme_id": "7638529526439480576",
+      "image_index": 3,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/739a59950dd94fe9bdd13f7e65a13da9~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=ubz6hP3eQyRXrDtrUReEpRlRizU%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173920712F24597CC94FB43A5E",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/05_7638529526439480576/03.jpg",
+      "ok": true,
+      "bytes": 213271
+    },
+    {
+      "index": 5,
+      "aweme_id": "7638529526439480576",
+      "image_index": 4,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/175ecbfad43e442dbdd469191fa0b7ac~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=lR1O8Jg9esS01dqqzWTOIW9lxOI%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173920712F24597CC94FB43A5E",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/05_7638529526439480576/04.jpg",
+      "ok": true,
+      "bytes": 211853
+    },
+    {
+      "index": 5,
+      "aweme_id": "7638529526439480576",
+      "image_index": 5,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/cd4757dab57f42c59ce758bc1bbd7c6d~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=n8aTzfRTDYnC2qMXB32uUdmzzKM%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173920712F24597CC94FB43A5E",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/05_7638529526439480576/05.jpg",
+      "ok": true,
+      "bytes": 262883
+    },
+    {
+      "index": 5,
+      "aweme_id": "7638529526439480576",
+      "image_index": 6,
+      "url": "https://p9-pc-sign.douyinpic.com/tos-cn-i-dy/a5997eb36bd54ca3b17dcf9dfdb55827~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=hpovZ93o93EZJjYBqlkNXNSdLY8%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173920712F24597CC94FB43A5E",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/05_7638529526439480576/06.jpg",
+      "ok": true,
+      "bytes": 178838
+    },
+    {
+      "index": 6,
+      "aweme_id": "7637397787260374272",
+      "image_index": 1,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/e966a5b5077a42b9a4016348ec4bf6fa~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=ryjUwMGcK1oZ8MJ6nKI8saynnbM%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173920712F24597CC94FB43A5E",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/06_7637397787260374272/01.jpg",
+      "ok": true,
+      "bytes": 137917
+    },
+    {
+      "index": 6,
+      "aweme_id": "7637397787260374272",
+      "image_index": 2,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/3a397639310d47c7acad848dcce3389c~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=IHeHpeQTfFVSbMGT3HO3EKkF%2FJA%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173920712F24597CC94FB43A5E",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/06_7637397787260374272/02.jpg",
+      "ok": true,
+      "bytes": 305203
+    },
+    {
+      "index": 6,
+      "aweme_id": "7637397787260374272",
+      "image_index": 3,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/f64cefe38076462a839f39ad86366dd6~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=WaQiT3n6OG8J%2BQZbBLL8c5srGZo%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173920712F24597CC94FB43A5E",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/06_7637397787260374272/03.jpg",
+      "ok": true,
+      "bytes": 284481
+    },
+    {
+      "index": 6,
+      "aweme_id": "7637397787260374272",
+      "image_index": 4,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/92044024870f4011a9e0dfb3f0c767bf~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=SHVha%2FP1Jkf41KZ%2F25REmsVBATM%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173920712F24597CC94FB43A5E",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/06_7637397787260374272/04.jpg",
+      "ok": true,
+      "bytes": 294005
+    },
+    {
+      "index": 6,
+      "aweme_id": "7637397787260374272",
+      "image_index": 5,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/2f08eaa65fc44d968261463c26c289be~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=Gry1%2FSxC6fhcmpLBSDi5mZCjOKU%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173920712F24597CC94FB43A5E",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/06_7637397787260374272/05.jpg",
+      "ok": true,
+      "bytes": 215160
+    },
+    {
+      "index": 7,
+      "aweme_id": "7637079773402926376",
+      "image_index": 1,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/1bdf1e95aa2143c1b88c3333601100e7~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=wRzjW3fJdy8eHZcN0VN8hkzecYY%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173920712F24597CC94FB43A5E",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/07_7637079773402926376/01.jpg",
+      "ok": true,
+      "bytes": 131826
+    },
+    {
+      "index": 7,
+      "aweme_id": "7637079773402926376",
+      "image_index": 2,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/9c9f71345841429aa69f157b974b6d6a~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=PbYqEOxmMzoF0QbJIeMKub5KcqQ%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173920712F24597CC94FB43A5E",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/07_7637079773402926376/02.jpg",
+      "ok": true,
+      "bytes": 287121
+    },
+    {
+      "index": 7,
+      "aweme_id": "7637079773402926376",
+      "image_index": 3,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/339a3938694e47ff82d71290c9b63f33~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=Ev3JJi%2F7vglO6YkovbtJv%2FrEODQ%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173920712F24597CC94FB43A5E",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/07_7637079773402926376/03.jpg",
+      "ok": true,
+      "bytes": 220647
+    },
+    {
+      "index": 7,
+      "aweme_id": "7637079773402926376",
+      "image_index": 4,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/ba7f5b68db4f47c581c58e2572ff4801~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=Td%2Bczw%2FSqPKcnqa6erqrDMZKNi8%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173920712F24597CC94FB43A5E",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/07_7637079773402926376/04.jpg",
+      "ok": true,
+      "bytes": 282960
+    },
+    {
+      "index": 8,
+      "aweme_id": "7636596237139004672",
+      "image_index": 1,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/f8ba230c6d9146c19c0980fbaecb0a6d~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=3JL%2FVdzdrKMovIOK5UXdFldPyNs%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173920712F24597CC94FB43A5E",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/08_7636596237139004672/01.jpg",
+      "ok": true,
+      "bytes": 390286
+    },
+    {
+      "index": 8,
+      "aweme_id": "7636596237139004672",
+      "image_index": 2,
+      "url": "https://p9-pc-sign.douyinpic.com/tos-cn-i-dy/64cd758d95cc49e693c645d3744cdd95~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=OO%2BDl57XasFz%2BmWmGLqAhv2Yvj4%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173920712F24597CC94FB43A5E",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/08_7636596237139004672/02.jpg",
+      "ok": true,
+      "bytes": 827788
+    },
+    {
+      "index": 8,
+      "aweme_id": "7636596237139004672",
+      "image_index": 3,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/b47f82b99c8a418ebc592c28abf0fe98~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=1m16eGPZrPaogQW8qaQps2zNhSE%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173920712F24597CC94FB43A5E",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/08_7636596237139004672/03.jpg",
+      "ok": true,
+      "bytes": 698951
+    },
+    {
+      "index": 8,
+      "aweme_id": "7636596237139004672",
+      "image_index": 4,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/da9782d5c54a49cc8c24a8f6eeca754f~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=WgNa7FcpK1sWj8suE90%2B9e2dwjc%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173920712F24597CC94FB43A5E",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/08_7636596237139004672/04.jpg",
+      "ok": true,
+      "bytes": 785399
+    },
+    {
+      "index": 9,
+      "aweme_id": "7634485994447818018",
+      "image_index": 1,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/76838e7e95074dfe85d325dbfbf35d0d~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=QvLwGO%2BXKQNXJ7ugM7Vf1qoEC3c%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173920712F24597CC94FB43A5E",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/09_7634485994447818018/01.jpg",
+      "ok": true,
+      "bytes": 371085
+    },
+    {
+      "index": 9,
+      "aweme_id": "7634485994447818018",
+      "image_index": 2,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/447559b0d4e14802b6e527631dd8c776~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=WMpgkdhijaAb3Ub8spVmGoR5%2FL8%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173920712F24597CC94FB43A5E",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/09_7634485994447818018/02.jpg",
+      "ok": true,
+      "bytes": 702850
+    },
+    {
+      "index": 9,
+      "aweme_id": "7634485994447818018",
+      "image_index": 3,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/846b68ede4c74d388d67b81ecfefc3cb~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=rArj0PcYDUnQsbZB1CQGX9D2%2BQ0%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173920712F24597CC94FB43A5E",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/09_7634485994447818018/03.jpg",
+      "ok": true,
+      "bytes": 752916
+    },
+    {
+      "index": 9,
+      "aweme_id": "7634485994447818018",
+      "image_index": 4,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/6798923fced24f6594ca33dfa77eb380~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=WvaKjFX5JhTyoIrCfoDEptykeWI%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173920712F24597CC94FB43A5E",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/09_7634485994447818018/04.jpg",
+      "ok": true,
+      "bytes": 758863
+    },
+    {
+      "index": 9,
+      "aweme_id": "7634485994447818018",
+      "image_index": 5,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/aa6e03f9c396405f92731605908a2b9c~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=NnFQzGl7pC9sv4Nw2sUb50ofxF4%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173920712F24597CC94FB43A5E",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/09_7634485994447818018/05.jpg",
+      "ok": true,
+      "bytes": 402477
+    },
+    {
+      "index": 10,
+      "aweme_id": "7634407729569844495",
+      "image_index": 1,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/6bfcb84bbeca42d7b873b9207dee3948~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=Wl26Idg84s8hHLCgitD8M2hbQtc%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173920712F24597CC94FB43A5E",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/10_7634407729569844495/01.jpg",
+      "ok": true,
+      "bytes": 355714
+    },
+    {
+      "index": 10,
+      "aweme_id": "7634407729569844495",
+      "image_index": 2,
+      "url": "https://p9-pc-sign.douyinpic.com/tos-cn-i-dy/91026480842f445fb7872b55addf07b3~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=hC3xcZXd9muTo2hp0iWGepMlWWg%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173920712F24597CC94FB43A5E",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/10_7634407729569844495/02.jpg",
+      "ok": true,
+      "bytes": 791850
+    },
+    {
+      "index": 10,
+      "aweme_id": "7634407729569844495",
+      "image_index": 3,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/10fc4e47a2ca4a8884d6a2b7c78ba0ef~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=Ne26Nh9smJtXBFGP%2FQU%2BgiUPtMk%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173920712F24597CC94FB43A5E",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/10_7634407729569844495/03.jpg",
+      "ok": true,
+      "bytes": 764654
+    },
+    {
+      "index": 10,
+      "aweme_id": "7634407729569844495",
+      "image_index": 4,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/48c1bf8b8fc845ee94a0333116c0e3fe~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=D%2BUP3dr7brvAe7zysKjw%2BNHcITo%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173920712F24597CC94FB43A5E",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/10_7634407729569844495/04.jpg",
+      "ok": true,
+      "bytes": 686163
+    },
+    {
+      "index": 11,
+      "aweme_id": "7633720063274552628",
+      "image_index": 1,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/5ca8a121de92414b8bac304401056f34~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=DmnOcixa3r2b6GkKn4IWCKbOY34%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173920712F24597CC94FB43A5E",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/11_7633720063274552628/01.jpg",
+      "ok": true,
+      "bytes": 294258
+    },
+    {
+      "index": 11,
+      "aweme_id": "7633720063274552628",
+      "image_index": 2,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/3ae7d9dc10e94f98ae6bb2a976326be6~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=41UZRqHfVu0PnB3vZjnS3M1%2F4Ao%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173920712F24597CC94FB43A5E",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/11_7633720063274552628/02.jpg",
+      "ok": true,
+      "bytes": 802366
+    },
+    {
+      "index": 11,
+      "aweme_id": "7633720063274552628",
+      "image_index": 3,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/d71907693f904583880b573faf6f3bf1~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=5SJV5SaZLQicJuakd7hrEMRxrR8%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173920712F24597CC94FB43A5E",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/11_7633720063274552628/03.jpg",
+      "ok": true,
+      "bytes": 627147
+    },
+    {
+      "index": 11,
+      "aweme_id": "7633720063274552628",
+      "image_index": 4,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/a4f400d157d043a3bebbaf9ef4b6eca6~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=1tsAWwfi5hr7qlXmZOSq1AvNDmw%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173920712F24597CC94FB43A5E",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/11_7633720063274552628/04.jpg",
+      "ok": true,
+      "bytes": 609102
+    },
+    {
+      "index": 11,
+      "aweme_id": "7633720063274552628",
+      "image_index": 5,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/3245172bb8394a54bad6ea2f931da947~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=z%2BgNIQIYxjkfka%2BFqpNaCQpY3F8%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173920712F24597CC94FB43A5E",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/11_7633720063274552628/05.jpg",
+      "ok": true,
+      "bytes": 636930
+    },
+    {
+      "index": 11,
+      "aweme_id": "7633720063274552628",
+      "image_index": 6,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/6373ed2e8bdc48d1a427c92fd02e85ce~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=39j2XoFq%2BKaMvoEpfd3%2BQ%2BO2Y4s%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173920712F24597CC94FB43A5E",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/11_7633720063274552628/06.jpg",
+      "ok": true,
+      "bytes": 726459
+    },
+    {
+      "index": 11,
+      "aweme_id": "7633720063274552628",
+      "image_index": 7,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/d779f427bff64b98a11a7a3d6e27953f~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=UCmCwbjZQcD9I4aZVLzGO9hm7s4%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173920712F24597CC94FB43A5E",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/11_7633720063274552628/07.jpg",
+      "ok": true,
+      "bytes": 501180
+    },
+    {
+      "index": 12,
+      "aweme_id": "7633260531054333199",
+      "image_index": 1,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/68d4e0b528b4442f935279571d6c7a0d~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=Yb%2B5h1cES7EqNkT12XUb6TDV2Gs%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173920712F24597CC94FB43A5E",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/12_7633260531054333199/01.jpg",
+      "ok": true,
+      "bytes": 312583
+    },
+    {
+      "index": 12,
+      "aweme_id": "7633260531054333199",
+      "image_index": 2,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/88ae23442ed74fc6a62cab1ac6b1467d~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=WmuHQmSjBI70j75ftpZVCwYrLU8%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173920712F24597CC94FB43A5E",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/12_7633260531054333199/02.jpg",
+      "ok": true,
+      "bytes": 703075
+    },
+    {
+      "index": 12,
+      "aweme_id": "7633260531054333199",
+      "image_index": 3,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/c48f9726eda44ae499624f177260570b~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=DIdTFCXOIEE9cDv5EFEZJxGcWKA%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173920712F24597CC94FB43A5E",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/12_7633260531054333199/03.jpg",
+      "ok": true,
+      "bytes": 675314
+    },
+    {
+      "index": 12,
+      "aweme_id": "7633260531054333199",
+      "image_index": 4,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/91116f8a53d4422d952e75da87f15476~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=gJxZEf0UaKJHxCpf23ahvEEbVY0%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173920712F24597CC94FB43A5E",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/12_7633260531054333199/04.jpg",
+      "ok": true,
+      "bytes": 715966
+    },
+    {
+      "index": 12,
+      "aweme_id": "7633260531054333199",
+      "image_index": 5,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/522bd801fd4d4f4bbe095f4cbd3f9212~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=D%2Fgo8UvdiAp9aWYlENATAkW8B0A%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173920712F24597CC94FB43A5E",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/12_7633260531054333199/05.jpg",
+      "ok": true,
+      "bytes": 615652
+    },
+    {
+      "index": 12,
+      "aweme_id": "7633260531054333199",
+      "image_index": 6,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/4cf3c48fb1194376a537f30f0f7c229b~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=z8VKHVGpja5iTyHg0%2BmCzMBiU2s%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173920712F24597CC94FB43A5E",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/12_7633260531054333199/06.jpg",
+      "ok": true,
+      "bytes": 702001
+    },
+    {
+      "index": 12,
+      "aweme_id": "7633260531054333199",
+      "image_index": 7,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/0d89d33aa0ee4e4b806fb7f042367db5~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=tNKWW%2Buoc0Qxd6yZ4zIJiowtrko%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173920712F24597CC94FB43A5E",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/12_7633260531054333199/07.jpg",
+      "ok": true,
+      "bytes": 676945
+    },
+    {
+      "index": 12,
+      "aweme_id": "7633260531054333199",
+      "image_index": 8,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/edccf55f51234c4695a432c00cc18331~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=FA64C5jFOqIEpByW28zTOeeoHoA%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173920712F24597CC94FB43A5E",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/12_7633260531054333199/08.jpg",
+      "ok": true,
+      "bytes": 251815
+    },
+    {
+      "index": 13,
+      "aweme_id": "7632235186226302208",
+      "image_index": 1,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/0e4fe0c2337d4f1cab830fc4dcac66a3~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=6UHnEQ4R3hhlexuhcMX9NzJsi0c%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173920712F24597CC94FB43A5E",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/13_7632235186226302208/01.jpg",
+      "ok": true,
+      "bytes": 325257
+    },
+    {
+      "index": 13,
+      "aweme_id": "7632235186226302208",
+      "image_index": 2,
+      "url": "https://p9-pc-sign.douyinpic.com/tos-cn-i-dy/c2c8369bf5854a2bbb8d3d4cd23473f9~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=kcDpWqDHDzK504iJ1z48X%2BGeWjU%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173920712F24597CC94FB43A5E",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/13_7632235186226302208/02.jpg",
+      "ok": true,
+      "bytes": 611561
+    },
+    {
+      "index": 13,
+      "aweme_id": "7632235186226302208",
+      "image_index": 3,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/7843515a2edd473db36f624dabe14d3d~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=sTYG5Rz3uimqlSdZmmX84rnb45A%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173920712F24597CC94FB43A5E",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/13_7632235186226302208/03.jpg",
+      "ok": true,
+      "bytes": 787022
+    },
+    {
+      "index": 13,
+      "aweme_id": "7632235186226302208",
+      "image_index": 4,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/e8812100c0c5479b82266c4c5aa09d77~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=q%2Fug2s12j6siqUluHXz5SZ2Wuy4%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173920712F24597CC94FB43A5E",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/13_7632235186226302208/04.jpg",
+      "ok": true,
+      "bytes": 793285
+    },
+    {
+      "index": 13,
+      "aweme_id": "7632235186226302208",
+      "image_index": 5,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/4d3d6e1857e341b58765446315dc0901~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=RpXRpfIdJpCyY41x4zTuhRnU%2B7s%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173920712F24597CC94FB43A5E",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/13_7632235186226302208/05.jpg",
+      "ok": true,
+      "bytes": 825677
+    },
+    {
+      "index": 13,
+      "aweme_id": "7632235186226302208",
+      "image_index": 6,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/8bcc997e10784618a8ee5cde0d0cc6b7~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=PtHQ1Z496OUo3WUZuzcF%2FDtNoSU%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173920712F24597CC94FB43A5E",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/13_7632235186226302208/06.jpg",
+      "ok": true,
+      "bytes": 762515
+    },
+    {
+      "index": 14,
+      "aweme_id": "7631767453629959439",
+      "image_index": 1,
+      "url": "https://p9-pc-sign.douyinpic.com/tos-cn-i-dy/bf774a8477064e4ebe6c35a38b7be3a1~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=xYRaUVuXSGoy%2F9VqnWpwJDJ3LUU%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173920712F24597CC94FB43A5E",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/14_7631767453629959439/01.jpg",
+      "ok": true,
+      "bytes": 310126
+    },
+    {
+      "index": 14,
+      "aweme_id": "7631767453629959439",
+      "image_index": 2,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/e50fe0b6160f44169126ba1c6b7a4bad~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=9v8I%2BKsTgOOgYZ%2B5CPwBN6xF0L0%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173920712F24597CC94FB43A5E",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/14_7631767453629959439/02.jpg",
+      "ok": true,
+      "bytes": 674987
+    },
+    {
+      "index": 14,
+      "aweme_id": "7631767453629959439",
+      "image_index": 3,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/fd1ea94465c446689ca81fe9977a8534~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=ZWyqV2X9dCU9zniRsgqF9bQMdSc%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173920712F24597CC94FB43A5E",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/14_7631767453629959439/03.jpg",
+      "ok": true,
+      "bytes": 699053
+    },
+    {
+      "index": 14,
+      "aweme_id": "7631767453629959439",
+      "image_index": 4,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/381e34ee814943d7b88e480e0e16097e~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=oDH0dIVxvc8sbI9J09PKdHb0Cog%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173920712F24597CC94FB43A5E",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/14_7631767453629959439/04.jpg",
+      "ok": true,
+      "bytes": 814243
+    },
+    {
+      "index": 14,
+      "aweme_id": "7631767453629959439",
+      "image_index": 5,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/61d070fef6224957867d488d0c333d80~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=ld9MAQTZsJh8xhPZM4fy8U3KevM%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173920712F24597CC94FB43A5E",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/14_7631767453629959439/05.jpg",
+      "ok": true,
+      "bytes": 833762
+    },
+    {
+      "index": 14,
+      "aweme_id": "7631767453629959439",
+      "image_index": 6,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/a783d1f976634743b3e423ecb02e1b31~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=Va7Ro249YWjYVrw9atk53nQTXOo%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173920712F24597CC94FB43A5E",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/14_7631767453629959439/06.jpg",
+      "ok": true,
+      "bytes": 355453
+    },
+    {
+      "index": 15,
+      "aweme_id": "7631153531524893967",
+      "image_index": 1,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/819a280dcd0d452687307ad3b2b5a239~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=ORuRc7wF3xXJvUMV0jfDuthjBJE%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173920712F24597CC94FB43A5E",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/15_7631153531524893967/01.jpg",
+      "ok": true,
+      "bytes": 334554
+    },
+    {
+      "index": 15,
+      "aweme_id": "7631153531524893967",
+      "image_index": 2,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/c74afa1ce3ba4ce8bd81bb3a1826a81d~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=ISC2ZcVUomaigazxv8L%2BN03b4lo%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173920712F24597CC94FB43A5E",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/15_7631153531524893967/02.jpg",
+      "ok": true,
+      "bytes": 684722
+    },
+    {
+      "index": 15,
+      "aweme_id": "7631153531524893967",
+      "image_index": 3,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/bed10574b08b4e209829b3b7afd69c04~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=jVPQjthN0hEXE%2BReWpEHbBS%2BJ5k%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173920712F24597CC94FB43A5E",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/15_7631153531524893967/03.jpg",
+      "ok": true,
+      "bytes": 739039
+    },
+    {
+      "index": 15,
+      "aweme_id": "7631153531524893967",
+      "image_index": 4,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/c95fd9eb03974bb982030cc83124eff8~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=93npnAOCLyPC%2FIt68aXdtOL0CNo%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173920712F24597CC94FB43A5E",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/15_7631153531524893967/04.jpg",
+      "ok": true,
+      "bytes": 719214
+    },
+    {
+      "index": 15,
+      "aweme_id": "7631153531524893967",
+      "image_index": 5,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/01436186952a4850b9ad67ce237d785d~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=EK7mcfEtOK59nhIHF7ytNBkDezM%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173920712F24597CC94FB43A5E",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/15_7631153531524893967/05.jpg",
+      "ok": true,
+      "bytes": 632619
+    },
+    {
+      "index": 16,
+      "aweme_id": "7630667088742436148",
+      "image_index": 1,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/728065d6ea6f4f2bba58b58c44fa2381~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=fzy6rpFcZyb%2B2lpZiiy0%2FBVx6Z4%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173920712F24597CC94FB43A5E",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/16_7630667088742436148/01.jpg",
+      "ok": true,
+      "bytes": 327878
+    },
+    {
+      "index": 16,
+      "aweme_id": "7630667088742436148",
+      "image_index": 2,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/c4a2f14ca61b430d8fdd649592dc0fa5~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=TFa%2FWQ7qbSjZjMQX03uVWKLjQ1E%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173920712F24597CC94FB43A5E",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/16_7630667088742436148/02.jpg",
+      "ok": true,
+      "bytes": 722737
+    },
+    {
+      "index": 16,
+      "aweme_id": "7630667088742436148",
+      "image_index": 3,
+      "url": "https://p9-pc-sign.douyinpic.com/tos-cn-i-dy/adacef77125c4736afc92cc90dd4d26d~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=81Pxjfquij%2FxGXGFGdoqQuBu%2Bvg%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173920712F24597CC94FB43A5E",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/16_7630667088742436148/03.jpg",
+      "ok": false,
+      "bytes": 0
+    },
+    {
+      "index": 16,
+      "aweme_id": "7630667088742436148",
+      "image_index": 4,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/1e459bcc15924bdd9c06ee70ac83da44~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=1nGP81FWeSz7Caj3FxIyKSFWDRE%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173920712F24597CC94FB43A5E",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/16_7630667088742436148/04.jpg",
+      "ok": true,
+      "bytes": 585334
+    },
+    {
+      "index": 16,
+      "aweme_id": "7630667088742436148",
+      "image_index": 5,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/0792c9b5bf874362bdc2621c84eff732~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=6qHF5CDhO8aItp%2Fs7PVaO44AE6c%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173920712F24597CC94FB43A5E",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/16_7630667088742436148/05.jpg",
+      "ok": true,
+      "bytes": 627824
+    },
+    {
+      "index": 16,
+      "aweme_id": "7630667088742436148",
+      "image_index": 6,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/e99bed0acf4f4815b48f6fe73c7b1866~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=rlaHvpyd%2F8sHzkFsOx79BfT1Smo%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173920712F24597CC94FB43A5E",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/16_7630667088742436148/06.jpg",
+      "ok": true,
+      "bytes": 514384
+    },
+    {
+      "index": 16,
+      "aweme_id": "7630667088742436148",
+      "image_index": 7,
+      "url": "https://p9-pc-sign.douyinpic.com/tos-cn-i-dy/a363c196ff7b41e78e718fe8e12c3fbb~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=07S5DQqt9XNBWPC12qdE4MpKvOU%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173920712F24597CC94FB43A5E",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/16_7630667088742436148/07.jpg",
+      "ok": true,
+      "bytes": 756736
+    },
+    {
+      "index": 17,
+      "aweme_id": "7629647634566892815",
+      "image_index": 1,
+      "url": "https://p9-pc-sign.douyinpic.com/tos-cn-i-dy/1f45d760cabd4c0ba5f4b0bcde680934~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=XJlbrQpQKUmlmE%2FVuItXXZUlQX0%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173920712F24597CC94FB43A5E",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/17_7629647634566892815/01.jpg",
+      "ok": true,
+      "bytes": 318172
+    },
+    {
+      "index": 17,
+      "aweme_id": "7629647634566892815",
+      "image_index": 2,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/0c403f16bb0c4e81a33caeb8de1cf234~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=iDd0xg43PSlTH5AOReAQtRvWNnw%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173920712F24597CC94FB43A5E",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/17_7629647634566892815/02.jpg",
+      "ok": true,
+      "bytes": 709848
+    },
+    {
+      "index": 17,
+      "aweme_id": "7629647634566892815",
+      "image_index": 3,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/3f2d3eb847dc4176a2a5a4da91fc2a74~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=vPmAcjJFy3r4WAShILNz77dB%2F10%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173920712F24597CC94FB43A5E",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/17_7629647634566892815/03.jpg",
+      "ok": true,
+      "bytes": 779129
+    },
+    {
+      "index": 17,
+      "aweme_id": "7629647634566892815",
+      "image_index": 4,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/05a1d10f4551476ca4a07309119b844c~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=6yFe2nQfAYWHs43NlOWse%2Fbvt0E%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173920712F24597CC94FB43A5E",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/17_7629647634566892815/04.jpg",
+      "ok": true,
+      "bytes": 753697
+    },
+    {
+      "index": 17,
+      "aweme_id": "7629647634566892815",
+      "image_index": 5,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/33ff6f74c147497fb28de722bd8a73d8~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=QpjTkDrn1zkPABDueTgI0vP2w8o%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173920712F24597CC94FB43A5E",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/17_7629647634566892815/05.jpg",
+      "ok": true,
+      "bytes": 787117
+    },
+    {
+      "index": 17,
+      "aweme_id": "7629647634566892815",
+      "image_index": 6,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/8f2ef47391e6445fb02f51153018ff4d~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=P%2FDJ5LPZ7arp6mHpX4SNFjst8oQ%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173920712F24597CC94FB43A5E",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/17_7629647634566892815/06.jpg",
+      "ok": true,
+      "bytes": 593925
+    },
+    {
+      "index": 18,
+      "aweme_id": "7629296895264967988",
+      "image_index": 1,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/e6f845cb063a4738b3fe591dfe9346cb~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=z3%2FXTjfhoxPPMEqhVoyVG7ycYJk%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173920712F24597CC94FB43A5E",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/18_7629296895264967988/01.jpg",
+      "ok": true,
+      "bytes": 342827
+    },
+    {
+      "index": 18,
+      "aweme_id": "7629296895264967988",
+      "image_index": 2,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/1cacd4ef32dc485e89a80d427f66a39d~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=m9v%2FLipHRB9jYFGNiZt5ug47ENw%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173920712F24597CC94FB43A5E",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/18_7629296895264967988/02.jpg",
+      "ok": true,
+      "bytes": 748026
+    },
+    {
+      "index": 18,
+      "aweme_id": "7629296895264967988",
+      "image_index": 3,
+      "url": "https://p9-pc-sign.douyinpic.com/tos-cn-i-dy/1493ecbdd5c74405b5fd687d0f961ded~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=Sd4NuF4twX0qWCZfxW5rORHkmEo%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173920712F24597CC94FB43A5E",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/18_7629296895264967988/03.jpg",
+      "ok": true,
+      "bytes": 653752
+    },
+    {
+      "index": 18,
+      "aweme_id": "7629296895264967988",
+      "image_index": 4,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/1bb78802ee3a4022b22f34fd240eb305~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=WWD6%2FO1EARayhOpI5Wi%2FwD1gs6A%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173920712F24597CC94FB43A5E",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/18_7629296895264967988/04.jpg",
+      "ok": true,
+      "bytes": 733205
+    },
+    {
+      "index": 18,
+      "aweme_id": "7629296895264967988",
+      "image_index": 5,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/54c2768491374fc5b9f19f958279d6b4~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=k26m0JPc81HCIrhI3NWDZLHKZn0%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173920712F24597CC94FB43A5E",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/18_7629296895264967988/05.jpg",
+      "ok": true,
+      "bytes": 777013
+    },
+    {
+      "index": 18,
+      "aweme_id": "7629296895264967988",
+      "image_index": 6,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/3785b76d25614a2fb6de68e0f9e59f1d~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=koplJw2FkbrxEZnmAWazc%2BIAdaA%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173920712F24597CC94FB43A5E",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/18_7629296895264967988/06.jpg",
+      "ok": true,
+      "bytes": 427258
+    },
+    {
+      "index": 19,
+      "aweme_id": "7628811352148053300",
+      "image_index": 1,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/8ca9aa6c190c49efb84a22ea8490e219~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=pvFquQ0QNQNN24C1VnZZMHAtzfA%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173926AE17F08767DBA426FF1C",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/19_7628811352148053300/01.jpg",
+      "ok": true,
+      "bytes": 291440
+    },
+    {
+      "index": 19,
+      "aweme_id": "7628811352148053300",
+      "image_index": 2,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/e88f2eec773d4174a8d33d8afe8ab8b4~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=E1KNdT5E9qfb4z3%2BdoNfX5mGLNg%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173926AE17F08767DBA426FF1C",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/19_7628811352148053300/02.jpg",
+      "ok": true,
+      "bytes": 501175
+    },
+    {
+      "index": 19,
+      "aweme_id": "7628811352148053300",
+      "image_index": 3,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/775091e797b54ec9a33de89bd945f3e6~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=KhnQT81908rbjCMKTRQUszP2TD8%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173926AE17F08767DBA426FF1C",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/19_7628811352148053300/03.jpg",
+      "ok": true,
+      "bytes": 635483
+    },
+    {
+      "index": 19,
+      "aweme_id": "7628811352148053300",
+      "image_index": 4,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/e5e16be967a74727a9494fb9857381ec~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=rVd3bOs3eJwU3LXkdTufB%2BqrTLM%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173926AE17F08767DBA426FF1C",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/19_7628811352148053300/04.jpg",
+      "ok": true,
+      "bytes": 705821
+    },
+    {
+      "index": 19,
+      "aweme_id": "7628811352148053300",
+      "image_index": 5,
+      "url": "https://p9-pc-sign.douyinpic.com/tos-cn-i-dy/017e169590644536bed4d9c8146b6544~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=Cs0wGMfUcwAY5KRxBbNc39G%2BF28%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173926AE17F08767DBA426FF1C",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/19_7628811352148053300/05.jpg",
+      "ok": false,
+      "bytes": 0
+    },
+    {
+      "index": 19,
+      "aweme_id": "7628811352148053300",
+      "image_index": 6,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/7189fd691f964ce482406f13d58cae24~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=7zEmBPFdJvnIA3mXU1XEckdupwk%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173926AE17F08767DBA426FF1C",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/19_7628811352148053300/06.jpg",
+      "ok": true,
+      "bytes": 651885
+    },
+    {
+      "index": 19,
+      "aweme_id": "7628811352148053300",
+      "image_index": 7,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/866917f720d54b9685fcd4b7466d8428~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=%2FT16B1blGE5ahdfRvxnjefqMXaY%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173926AE17F08767DBA426FF1C",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/19_7628811352148053300/07.jpg",
+      "ok": true,
+      "bytes": 644477
+    },
+    {
+      "index": 20,
+      "aweme_id": "7628556619726540084",
+      "image_index": 1,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/f59a7ba920444c7e92ea3a13f31047ac~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=ZzQxj%2FyBqa0LH3z4c9Fj%2FBEVXUs%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173926AE17F08767DBA426FF1C",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/20_7628556619726540084/01.jpg",
+      "ok": true,
+      "bytes": 302523
+    },
+    {
+      "index": 20,
+      "aweme_id": "7628556619726540084",
+      "image_index": 2,
+      "url": "https://p9-pc-sign.douyinpic.com/tos-cn-i-dy/5cd81090bef441f1ba7f7b53e52d4771~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=Gk1e9pbBzTu4Ws8tyhMecNhQeUQ%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173926AE17F08767DBA426FF1C",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/20_7628556619726540084/02.jpg",
+      "ok": true,
+      "bytes": 664887
+    },
+    {
+      "index": 20,
+      "aweme_id": "7628556619726540084",
+      "image_index": 3,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/2d4d716b548549db87e0afc71e964389~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=exHsz5Y72VlpSd17OytYT1AMp04%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173926AE17F08767DBA426FF1C",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/20_7628556619726540084/03.jpg",
+      "ok": true,
+      "bytes": 602010
+    },
+    {
+      "index": 20,
+      "aweme_id": "7628556619726540084",
+      "image_index": 4,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/4e643a5d20ab442488d86bbe6d5e8869~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=NPWPtQPgfCB19or4hqt1IvMRImc%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173926AE17F08767DBA426FF1C",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/20_7628556619726540084/04.jpg",
+      "ok": true,
+      "bytes": 665378
+    },
+    {
+      "index": 20,
+      "aweme_id": "7628556619726540084",
+      "image_index": 5,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/9d8b378e7f554bbab7dd246bf79c7d53~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=Q5E9VjyWHDFu%2FMF%2FITc7vCELJm8%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173926AE17F08767DBA426FF1C",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/20_7628556619726540084/05.jpg",
+      "ok": true,
+      "bytes": 697106
+    },
+    {
+      "index": 20,
+      "aweme_id": "7628556619726540084",
+      "image_index": 6,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/225c7bb570e5457f9f8612b6ec1f1345~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=hzqXI0LH9giUT3WG1v384Ir4MLM%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173926AE17F08767DBA426FF1C",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/20_7628556619726540084/06.jpg",
+      "ok": true,
+      "bytes": 739941
+    },
+    {
+      "index": 20,
+      "aweme_id": "7628556619726540084",
+      "image_index": 7,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/7f91e2f235454975a4bfaa204054676c~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=WTXcJaNvS8jX3FfezJ82yX47HVk%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173926AE17F08767DBA426FF1C",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/20_7628556619726540084/07.jpg",
+      "ok": true,
+      "bytes": 469233
+    },
+    {
+      "index": 21,
+      "aweme_id": "7627454096269659444",
+      "image_index": 1,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/4c3ad0e26ec14c7c8e6731b70bb5cce8~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=9cHjYIC8bnq4H7CQ6vvhuY09chI%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173926AE17F08767DBA426FF1C",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/21_7627454096269659444/01.jpg",
+      "ok": true,
+      "bytes": 274092
+    },
+    {
+      "index": 21,
+      "aweme_id": "7627454096269659444",
+      "image_index": 2,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/64f413c212504d1286c2079b04e5614b~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=D3w3ifBctE5%2B5VjnJP04Vyt7e4M%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173926AE17F08767DBA426FF1C",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/21_7627454096269659444/02.jpg",
+      "ok": true,
+      "bytes": 764318
+    },
+    {
+      "index": 21,
+      "aweme_id": "7627454096269659444",
+      "image_index": 3,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/bce07ebd5f6445c48d5afaace8f39658~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=2jD3XMv6yTHuLyF7kyHnSJoceww%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173926AE17F08767DBA426FF1C",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/21_7627454096269659444/03.jpg",
+      "ok": true,
+      "bytes": 664902
+    },
+    {
+      "index": 21,
+      "aweme_id": "7627454096269659444",
+      "image_index": 4,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/acea72db6d2946ce908acd00d62caf69~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=PTdrnN%2F%2B8%2BnYhUFJ%2BYL6ZZK0lxM%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173926AE17F08767DBA426FF1C",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/21_7627454096269659444/04.jpg",
+      "ok": true,
+      "bytes": 685229
+    },
+    {
+      "index": 21,
+      "aweme_id": "7627454096269659444",
+      "image_index": 5,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/86ef2d0ae816447aba734273c9ac6b6c~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=Da%2FuEA5z4JMaNBo5d3VtfgvZnQY%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173926AE17F08767DBA426FF1C",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/21_7627454096269659444/05.jpg",
+      "ok": true,
+      "bytes": 723711
+    },
+    {
+      "index": 21,
+      "aweme_id": "7627454096269659444",
+      "image_index": 6,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/bbee3dc172624dda9f35583512821350~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=J96HcX8NSEbl6%2FPg86kXlQBhUvw%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173926AE17F08767DBA426FF1C",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/21_7627454096269659444/06.jpg",
+      "ok": true,
+      "bytes": 434555
+    },
+    {
+      "index": 22,
+      "aweme_id": "7626954084007808256",
+      "image_index": 1,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/81bca8baa57b4f63afd07543ae2870a2~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=dS4wcwaOTEAMHeqKPQElHXzWZUM%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173926AE17F08767DBA426FF1C",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/22_7626954084007808256/01.jpg",
+      "ok": true,
+      "bytes": 286678
+    },
+    {
+      "index": 22,
+      "aweme_id": "7626954084007808256",
+      "image_index": 2,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/fff45d4bc02f4e29b68b8dab43565f6d~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=JhrDDJ3ZUDOuxcylukiHHGpJA3U%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173926AE17F08767DBA426FF1C",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/22_7626954084007808256/02.jpg",
+      "ok": true,
+      "bytes": 813113
+    },
+    {
+      "index": 22,
+      "aweme_id": "7626954084007808256",
+      "image_index": 3,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/e6ad815e402c4635a6a728e91dade306~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=rbAZvy4uSraxhBllSv%2FGx1IVAyY%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173926AE17F08767DBA426FF1C",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/22_7626954084007808256/03.jpg",
+      "ok": true,
+      "bytes": 787832
+    },
+    {
+      "index": 22,
+      "aweme_id": "7626954084007808256",
+      "image_index": 4,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/c59da905937249beadab0ab5c3943a12~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=h4bSQOp1Hx5PoTp0nwDmqd6wqf8%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173926AE17F08767DBA426FF1C",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/22_7626954084007808256/04.jpg",
+      "ok": true,
+      "bytes": 639553
+    },
+    {
+      "index": 22,
+      "aweme_id": "7626954084007808256",
+      "image_index": 5,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/e589ac0204d541f2aa5f300f986c6ffe~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=Hh%2Fr06Em4sJSLqC%2BSHPH1GW7klE%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173926AE17F08767DBA426FF1C",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/22_7626954084007808256/05.jpg",
+      "ok": true,
+      "bytes": 809800
+    },
+    {
+      "index": 22,
+      "aweme_id": "7626954084007808256",
+      "image_index": 6,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/aab26f3cd0e24eb6bfd8d25c7d11d2a3~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=%2FxuQ0UYvP6Fed52gK7KZzgTCLlc%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173926AE17F08767DBA426FF1C",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/22_7626954084007808256/06.jpg",
+      "ok": true,
+      "bytes": 354191
+    },
+    {
+      "index": 23,
+      "aweme_id": "7626663044285795636",
+      "image_index": 1,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/fd1ccd4b8c324982930dec5de8dd31ce~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=z4UG2ZdjGOqs%2B5xc0GlwRBhJ%2BMQ%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173926AE17F08767DBA426FF1C",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/23_7626663044285795636/01.jpg",
+      "ok": true,
+      "bytes": 329990
+    },
+    {
+      "index": 23,
+      "aweme_id": "7626663044285795636",
+      "image_index": 2,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/294b062dd2ff441498420a2a05610716~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=35c%2BL1RI1QRYKJ0f19ozl5HTIXA%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173926AE17F08767DBA426FF1C",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/23_7626663044285795636/02.jpg",
+      "ok": true,
+      "bytes": 695738
+    },
+    {
+      "index": 23,
+      "aweme_id": "7626663044285795636",
+      "image_index": 3,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/a9308e96218f46cfa1cffcf9b04b26cc~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=rtwEq8INZes700mISYU32rgsMjg%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173926AE17F08767DBA426FF1C",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/23_7626663044285795636/03.jpg",
+      "ok": true,
+      "bytes": 708847
+    },
+    {
+      "index": 23,
+      "aweme_id": "7626663044285795636",
+      "image_index": 4,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/7528edd3af7b480b916af6476e2db0e3~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=WFE3cGOjUCzvQAp5Zagcq3PipZA%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173926AE17F08767DBA426FF1C",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/23_7626663044285795636/04.jpg",
+      "ok": true,
+      "bytes": 698392
+    },
+    {
+      "index": 23,
+      "aweme_id": "7626663044285795636",
+      "image_index": 5,
+      "url": "https://p9-pc-sign.douyinpic.com/tos-cn-i-dy/2fe1a825ff964cb78c7ab549a0e46a49~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=ptYKEW%2BNBe71E1c%2FSrPdYKTXJTM%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173926AE17F08767DBA426FF1C",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/23_7626663044285795636/05.jpg",
+      "ok": false,
+      "bytes": 0
+    },
+    {
+      "index": 23,
+      "aweme_id": "7626663044285795636",
+      "image_index": 6,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/c15435a5f6c64ad38ec4724c6904c02b~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=wl9%2By2LQrzNpDKFDUTR%2BsAh%2F4rU%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173926AE17F08767DBA426FF1C",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/23_7626663044285795636/06.jpg",
+      "ok": true,
+      "bytes": 676632
+    },
+    {
+      "index": 23,
+      "aweme_id": "7626663044285795636",
+      "image_index": 7,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/a99a9801ac11435eaf777338de33fa83~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=tBokCqNMWiBFuJCG%2BMcpqblCXhU%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173926AE17F08767DBA426FF1C",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/23_7626663044285795636/07.jpg",
+      "ok": true,
+      "bytes": 698963
+    },
+    {
+      "index": 23,
+      "aweme_id": "7626663044285795636",
+      "image_index": 8,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/aeecbaefdd5a4763af200b63573b2aa9~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=N%2F3laDoG%2FHv4lz381fOxFP2xjXU%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173926AE17F08767DBA426FF1C",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/23_7626663044285795636/08.jpg",
+      "ok": true,
+      "bytes": 409860
+    },
+    {
+      "index": 24,
+      "aweme_id": "7625964195753839924",
+      "image_index": 1,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/0b32be09f3904190831c47a7a0d0f5e7~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=Ih4rnAWC2IfCTyCzKZe8cwyVG1Q%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173926AE17F08767DBA426FF1C",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/24_7625964195753839924/01.jpg",
+      "ok": true,
+      "bytes": 316293
+    },
+    {
+      "index": 24,
+      "aweme_id": "7625964195753839924",
+      "image_index": 2,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/833a05c449af45a2aebb3c05d0269433~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=4LVXPu3GY62FCbO1iwByQ%2FK24Ys%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173926AE17F08767DBA426FF1C",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/24_7625964195753839924/02.jpg",
+      "ok": true,
+      "bytes": 732019
+    },
+    {
+      "index": 24,
+      "aweme_id": "7625964195753839924",
+      "image_index": 3,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/76a0fd3daee64fe3aae50ea5ee35afd6~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=QMrJ2Xs2ydmsdmcMOjEaukc4PlI%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173926AE17F08767DBA426FF1C",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/24_7625964195753839924/03.jpg",
+      "ok": true,
+      "bytes": 652616
+    },
+    {
+      "index": 24,
+      "aweme_id": "7625964195753839924",
+      "image_index": 4,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/f35e5a5586e94b838440e85a259333fe~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=f2LtjvbcvXRsR9IMEZCPuWriyvQ%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173926AE17F08767DBA426FF1C",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/24_7625964195753839924/04.jpg",
+      "ok": true,
+      "bytes": 726209
+    },
+    {
+      "index": 24,
+      "aweme_id": "7625964195753839924",
+      "image_index": 5,
+      "url": "https://p9-pc-sign.douyinpic.com/tos-cn-i-dy/ec1cd898955244e0a9e53d0403b9757e~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=sQnCkNj%2Fdg%2BLuyRpA%2Bz9e5XlhnI%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173926AE17F08767DBA426FF1C",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/24_7625964195753839924/05.jpg",
+      "ok": false,
+      "bytes": 0
+    },
+    {
+      "index": 25,
+      "aweme_id": "7624474703532428584",
+      "image_index": 1,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/a8e0290231b9426f9b45f3d1ba122f79~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=iCN3fGm3liqM8YEuGUFiykJBNK0%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173926AE17F08767DBA426FF1C",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/25_7624474703532428584/01.jpg",
+      "ok": true,
+      "bytes": 324319
+    },
+    {
+      "index": 25,
+      "aweme_id": "7624474703532428584",
+      "image_index": 2,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/997f7495d60641208b76f84ac23339ad~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=nd84w3Q%2B4C8lDRMhBjGHrjNVH9c%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173926AE17F08767DBA426FF1C",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/25_7624474703532428584/02.jpg",
+      "ok": true,
+      "bytes": 733696
+    },
+    {
+      "index": 25,
+      "aweme_id": "7624474703532428584",
+      "image_index": 3,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/13eeb6a4eee6455aba52ec7c67cb4356~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=8MYd31f9JNiE5X%2FENyavlIQXgDk%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173926AE17F08767DBA426FF1C",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/25_7624474703532428584/03.jpg",
+      "ok": true,
+      "bytes": 538238
+    },
+    {
+      "index": 25,
+      "aweme_id": "7624474703532428584",
+      "image_index": 4,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/129798300cf04bafa07f994c0355d72e~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=OdBgdfHinn4XDTFQ%2BtV7uooXuGA%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173926AE17F08767DBA426FF1C",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/25_7624474703532428584/04.jpg",
+      "ok": true,
+      "bytes": 625404
+    },
+    {
+      "index": 25,
+      "aweme_id": "7624474703532428584",
+      "image_index": 5,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/4a2d5be20f77415b932212699c5e04aa~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=8Z7rcrWqkEbyn3SW49Ae%2Fjs48ng%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173926AE17F08767DBA426FF1C",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/25_7624474703532428584/05.jpg",
+      "ok": true,
+      "bytes": 261624
+    },
+    {
+      "index": 26,
+      "aweme_id": "7623593598243622196",
+      "image_index": 1,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/1cf1eb97fba6486d933c7b251c86d0e6~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=XHUUJf0%2BjJ5uPt5%2B%2Bj7O1lISJI0%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173926AE17F08767DBA426FF1C",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/26_7623593598243622196/01.jpg",
+      "ok": true,
+      "bytes": 320173
+    },
+    {
+      "index": 26,
+      "aweme_id": "7623593598243622196",
+      "image_index": 2,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/a686be6d068b4c7da260a22570f30849~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=WkxWbqxK1ERBQlb8WoQkY9nYm%2FQ%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173926AE17F08767DBA426FF1C",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/26_7623593598243622196/02.jpg",
+      "ok": true,
+      "bytes": 673090
+    },
+    {
+      "index": 26,
+      "aweme_id": "7623593598243622196",
+      "image_index": 3,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/697971ca24224d9891972e300d50ae85~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=SSUuC%2BQqsbNPbifysIR7avoPQtg%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173926AE17F08767DBA426FF1C",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/26_7623593598243622196/03.jpg",
+      "ok": true,
+      "bytes": 580258
+    },
+    {
+      "index": 26,
+      "aweme_id": "7623593598243622196",
+      "image_index": 4,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/fe4c797c5994466cb022e3448cb60a96~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=0wM40YHV3eyWhzDok9sEqoZGWXI%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173926AE17F08767DBA426FF1C",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/26_7623593598243622196/04.jpg",
+      "ok": true,
+      "bytes": 851883
+    },
+    {
+      "index": 26,
+      "aweme_id": "7623593598243622196",
+      "image_index": 5,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/ce50a6a3078245168750d42c5b3de491~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=eIpsU6LOEZCMdSQ4Oy1cw7flLvI%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173926AE17F08767DBA426FF1C",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/26_7623593598243622196/05.jpg",
+      "ok": true,
+      "bytes": 680638
+    },
+    {
+      "index": 26,
+      "aweme_id": "7623593598243622196",
+      "image_index": 6,
+      "url": "https://p9-pc-sign.douyinpic.com/tos-cn-i-dy/8d69ce7db27f4c4da66f68b2860a616a~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=bt0zHgUxOIcluhHBN2Xv%2Fi2K8bM%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173926AE17F08767DBA426FF1C",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/26_7623593598243622196/06.jpg",
+      "ok": false,
+      "bytes": 0
+    },
+    {
+      "index": 27,
+      "aweme_id": "7623358884446489891",
+      "image_index": 1,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/2e4054b9bcd74c5d8fbc82f9da3b7330~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=M5CL%2BaajMic2bb1jh%2BT2J3gipR8%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173926AE17F08767DBA426FF1C",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/27_7623358884446489891/01.jpg",
+      "ok": true,
+      "bytes": 332190
+    },
+    {
+      "index": 27,
+      "aweme_id": "7623358884446489891",
+      "image_index": 2,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/271eefbba766482ba06d26fa34634d10~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=Jdu1lavLt6J8Xka%2BegycXv6Wod8%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173926AE17F08767DBA426FF1C",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/27_7623358884446489891/02.jpg",
+      "ok": true,
+      "bytes": 744231
+    },
+    {
+      "index": 27,
+      "aweme_id": "7623358884446489891",
+      "image_index": 3,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/781a4d0ee5df41398e848670fc01d0c7~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=hhmbCjzsjwqSbYaZ16mDY4PReSI%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173926AE17F08767DBA426FF1C",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/27_7623358884446489891/03.jpg",
+      "ok": true,
+      "bytes": 662109
+    },
+    {
+      "index": 27,
+      "aweme_id": "7623358884446489891",
+      "image_index": 4,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/18ecb935893c4fdc9d7d6953a68b7adc~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=bWcIXEzVVI5Lkm8lRb563BFXr3M%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173926AE17F08767DBA426FF1C",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/27_7623358884446489891/04.jpg",
+      "ok": true,
+      "bytes": 592989
+    },
+    {
+      "index": 27,
+      "aweme_id": "7623358884446489891",
+      "image_index": 5,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/b47daf72190a44f093f047cbf92d6602~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=OlapTkUncjB01wvDBxgicsYC%2B8Y%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173926AE17F08767DBA426FF1C",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/27_7623358884446489891/05.jpg",
+      "ok": true,
+      "bytes": 599699
+    },
+    {
+      "index": 27,
+      "aweme_id": "7623358884446489891",
+      "image_index": 6,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/7fe77a390eb24719bac91cecadfa1510~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=ioWyZROVWn39hepEMD1j0sN2upc%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173926AE17F08767DBA426FF1C",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/27_7623358884446489891/06.jpg",
+      "ok": true,
+      "bytes": 365281
+    },
+    {
+      "index": 28,
+      "aweme_id": "7622862910313778466",
+      "image_index": 1,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/a21f9e41b21d4d3bbe73f7e588ad6d1e~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=yuTZbeLDSZkeoCo0vnCd5Ngu3Kg%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173926AE17F08767DBA426FF1C",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/28_7622862910313778466/01.jpg",
+      "ok": true,
+      "bytes": 257086
+    },
+    {
+      "index": 28,
+      "aweme_id": "7622862910313778466",
+      "image_index": 2,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/979b32883f8d43678628ec8abfe203f5~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=ITxhU3h8FXABJospjw807i1P%2FHU%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173926AE17F08767DBA426FF1C",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/28_7622862910313778466/02.jpg",
+      "ok": true,
+      "bytes": 796906
+    },
+    {
+      "index": 28,
+      "aweme_id": "7622862910313778466",
+      "image_index": 3,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/99d14e5bdf07425d8a16e9143de9a6a7~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=DkW5hFz63%2FNGyEGY7aOIGrPLY4s%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173926AE17F08767DBA426FF1C",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/28_7622862910313778466/03.jpg",
+      "ok": true,
+      "bytes": 738132
+    },
+    {
+      "index": 28,
+      "aweme_id": "7622862910313778466",
+      "image_index": 4,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/d910e3f12d974b3080dc88105cf45dd9~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=L7P4G%2BDOa1X3Tw8q3Mh4%2F6A5V68%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173926AE17F08767DBA426FF1C",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/28_7622862910313778466/04.jpg",
+      "ok": true,
+      "bytes": 655906
+    },
+    {
+      "index": 29,
+      "aweme_id": "7621743284850789647",
+      "image_index": 1,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/a18d5e5085f649faaae89c4fe04fcdb9~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=u41Lh%2BLbKtwFtpUyjpy9h7Vag08%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173926AE17F08767DBA426FF1C",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/29_7621743284850789647/01.jpg",
+      "ok": true,
+      "bytes": 344023
+    },
+    {
+      "index": 29,
+      "aweme_id": "7621743284850789647",
+      "image_index": 2,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/06d338488a5349a1a9f2c89ff50fa979~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=S%2FOIeC2BPsnsra3S5ffP5zE3HOM%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173926AE17F08767DBA426FF1C",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/29_7621743284850789647/02.jpg",
+      "ok": true,
+      "bytes": 727765
+    },
+    {
+      "index": 29,
+      "aweme_id": "7621743284850789647",
+      "image_index": 3,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/da0e9d7e01e94a17b008efbcd5eb511b~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=W%2BO2Liu9FIocenAxQSgUNvXXTWE%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173926AE17F08767DBA426FF1C",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/29_7621743284850789647/03.jpg",
+      "ok": true,
+      "bytes": 831994
+    },
+    {
+      "index": 29,
+      "aweme_id": "7621743284850789647",
+      "image_index": 4,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/8fbfd40ce9e340a9932ccad2d736f691~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=0%2Fbnhc7xHNaJlZimWsIEWRgjAvY%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173926AE17F08767DBA426FF1C",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/29_7621743284850789647/04.jpg",
+      "ok": true,
+      "bytes": 742814
+    },
+    {
+      "index": 29,
+      "aweme_id": "7621743284850789647",
+      "image_index": 5,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/98f48d20d3554093b3f10e3e66a65999~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=PR0TmFnNUnEB0e%2FruhI3PpAenz8%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173926AE17F08767DBA426FF1C",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/29_7621743284850789647/05.jpg",
+      "ok": true,
+      "bytes": 522097
+    },
+    {
+      "index": 29,
+      "aweme_id": "7621743284850789647",
+      "image_index": 6,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/1f91f6afc104454f84cb845d60990bb8~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=83qu7Rj%2Fo0z8rzb4AB5qtxF7q%2FA%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173926AE17F08767DBA426FF1C",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/29_7621743284850789647/06.jpg",
+      "ok": true,
+      "bytes": 734847
+    },
+    {
+      "index": 29,
+      "aweme_id": "7621743284850789647",
+      "image_index": 7,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/234968696ef44ee184e9f9abffa493e1~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=miOxKyUHI9uSdxXPAnpI2t3Aw%2FE%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173926AE17F08767DBA426FF1C",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/29_7621743284850789647/07.jpg",
+      "ok": true,
+      "bytes": 372060
+    },
+    {
+      "index": 30,
+      "aweme_id": "7621361981349596416",
+      "image_index": 1,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/cc0a392a35904d7290ff7c80de7af18c~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=zWbWHPC0bGDsarmxl%2Fs63ktT9UY%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173926AE17F08767DBA426FF1C",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/30_7621361981349596416/01.jpg",
+      "ok": true,
+      "bytes": 353175
+    },
+    {
+      "index": 30,
+      "aweme_id": "7621361981349596416",
+      "image_index": 2,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/c50b219b3be94bc6ad1cdf367d4f248c~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=sBATrx94KCwLRqtAYsLsibYrDIw%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173926AE17F08767DBA426FF1C",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/30_7621361981349596416/02.jpg",
+      "ok": true,
+      "bytes": 704384
+    },
+    {
+      "index": 30,
+      "aweme_id": "7621361981349596416",
+      "image_index": 3,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/b9deae0857994d06a27b5dd0907e40d7~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=uULcoseGqcL43lojBGhQ%2B6lv3Fg%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173926AE17F08767DBA426FF1C",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/30_7621361981349596416/03.jpg",
+      "ok": true,
+      "bytes": 675240
+    },
+    {
+      "index": 30,
+      "aweme_id": "7621361981349596416",
+      "image_index": 4,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/42466929e87b4b7897b4fdeb86597f3c~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=EEUUp2wPZ1zvSFdbQ8eLiKQPHQs%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173926AE17F08767DBA426FF1C",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/30_7621361981349596416/04.jpg",
+      "ok": true,
+      "bytes": 638202
+    },
+    {
+      "index": 30,
+      "aweme_id": "7621361981349596416",
+      "image_index": 5,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/1bb42fa1be5e4dc4ab5dc3a937e048d9~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=Vgj8PBk0DKhpxkoT%2FUof4Vk7mss%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173926AE17F08767DBA426FF1C",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/30_7621361981349596416/05.jpg",
+      "ok": true,
+      "bytes": 618652
+    },
+    {
+      "index": 30,
+      "aweme_id": "7621361981349596416",
+      "image_index": 6,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/31aa29d8426442609821b3717bba170a~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=WWx%2B2WQTOT1ETE5JZWZBmVAEsFI%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173926AE17F08767DBA426FF1C",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/30_7621361981349596416/06.jpg",
+      "ok": true,
+      "bytes": 275241
+    },
+    {
+      "index": 31,
+      "aweme_id": "7620606927256571151",
+      "image_index": 1,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/bf33bf83847a4aa8a8d4aa0041b4d4b5~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=HEP2Pao8OtZ9oLn%2BJEw4tKPfEGU%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173926AE17F08767DBA426FF1C",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/31_7620606927256571151/01.jpg",
+      "ok": true,
+      "bytes": 309077
+    },
+    {
+      "index": 31,
+      "aweme_id": "7620606927256571151",
+      "image_index": 2,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/6a75cc3c65ed4f43994a45928e08e083~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=4yor%2BQuL1OM74haKo98BPfFZzTQ%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173926AE17F08767DBA426FF1C",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/31_7620606927256571151/02.jpg",
+      "ok": true,
+      "bytes": 618971
+    },
+    {
+      "index": 31,
+      "aweme_id": "7620606927256571151",
+      "image_index": 3,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/15c36e5e868446cc9404f44b2e6b533a~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=sMDSnXRPqMb%2BFwqtcebunITVzgQ%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173926AE17F08767DBA426FF1C",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/31_7620606927256571151/03.jpg",
+      "ok": true,
+      "bytes": 676829
+    },
+    {
+      "index": 31,
+      "aweme_id": "7620606927256571151",
+      "image_index": 4,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/4a7112cbec244f878b02890d992229d4~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=VcXyNo6iS72LgvUnzix9Za1YY8E%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173926AE17F08767DBA426FF1C",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/31_7620606927256571151/04.jpg",
+      "ok": true,
+      "bytes": 498601
+    },
+    {
+      "index": 31,
+      "aweme_id": "7620606927256571151",
+      "image_index": 5,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/34fa01c915d64df4a895fee1a7e03211~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=AdQ9y4zhZtoytO5jxvE2xajeYus%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173926AE17F08767DBA426FF1C",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/31_7620606927256571151/05.jpg",
+      "ok": true,
+      "bytes": 700412
+    },
+    {
+      "index": 31,
+      "aweme_id": "7620606927256571151",
+      "image_index": 6,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/046ce06b16124ef6873aa9c0b5f2edcc~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=afojdPCyx%2B3bRtmDV7m6IzWY894%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173926AE17F08767DBA426FF1C",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/31_7620606927256571151/06.jpg",
+      "ok": true,
+      "bytes": 543659
+    },
+    {
+      "index": 31,
+      "aweme_id": "7620606927256571151",
+      "image_index": 7,
+      "url": "https://p9-pc-sign.douyinpic.com/tos-cn-i-dy/2825e15790624be78f528248d75b710d~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=lw7H%2FzhTf5oeMAoiQ1EbOeM67uU%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173926AE17F08767DBA426FF1C",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/31_7620606927256571151/07.jpg",
+      "ok": true,
+      "bytes": 577786
+    },
+    {
+      "index": 31,
+      "aweme_id": "7620606927256571151",
+      "image_index": 8,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/19f7b0050f0a44f2913a17d7b6daf204~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=90cAEW132gsh4i%2BoE1L0WxCEIGw%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173926AE17F08767DBA426FF1C",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/31_7620606927256571151/08.jpg",
+      "ok": true,
+      "bytes": 645663
+    },
+    {
+      "index": 31,
+      "aweme_id": "7620606927256571151",
+      "image_index": 9,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/7e87b82bcb1d48d694b4a4a260150715~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=TFtg1Tq7n5ppUVHSYs9698Q%2Bn6A%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173926AE17F08767DBA426FF1C",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/31_7620606927256571151/09.jpg",
+      "ok": true,
+      "bytes": 660064
+    },
+    {
+      "index": 32,
+      "aweme_id": "7619299068090551587",
+      "image_index": 1,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/3fdf7c8a8b3d480e9abe96d6f9959b00~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=SflxDxZejJLH%2FaDfsMzxNLTStps%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173926AE17F08767DBA426FF1C",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/32_7619299068090551587/01.jpg",
+      "ok": true,
+      "bytes": 331185
+    },
+    {
+      "index": 32,
+      "aweme_id": "7619299068090551587",
+      "image_index": 2,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/f8675cd401344754a993651922c89935~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=l6wLFACccZuActiec43F7V9Q5UQ%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173926AE17F08767DBA426FF1C",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/32_7619299068090551587/02.jpg",
+      "ok": true,
+      "bytes": 718968
+    },
+    {
+      "index": 32,
+      "aweme_id": "7619299068090551587",
+      "image_index": 3,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/895dd6c0ee754d9e83721b00ee20b57a~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=JMjvGTmAr515Y69YdAPlUkbuBvg%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173926AE17F08767DBA426FF1C",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/32_7619299068090551587/03.jpg",
+      "ok": true,
+      "bytes": 672100
+    },
+    {
+      "index": 32,
+      "aweme_id": "7619299068090551587",
+      "image_index": 4,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/84c1dda9eead447d8b75993e5c8044fc~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=tUhszt9ADL7ZR0WwKWsX1fz3fa8%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173926AE17F08767DBA426FF1C",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/32_7619299068090551587/04.jpg",
+      "ok": true,
+      "bytes": 640422
+    },
+    {
+      "index": 32,
+      "aweme_id": "7619299068090551587",
+      "image_index": 5,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/63150a068d0c4393a6e92e4c0fb79afe~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=v4i2VGL2kabBgy1y4scAUWRdChI%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173926AE17F08767DBA426FF1C",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/32_7619299068090551587/05.jpg",
+      "ok": true,
+      "bytes": 238530
+    },
+    {
+      "index": 33,
+      "aweme_id": "7618604381356838153",
+      "image_index": 1,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/f39371c7870d4bddb40ae34f416c5c55~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=kjoV8GDZUJ00ylN80hdDn5uoNEc%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173926AE17F08767DBA426FF1C",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/33_7618604381356838153/01.jpg",
+      "ok": true,
+      "bytes": 354412
+    },
+    {
+      "index": 33,
+      "aweme_id": "7618604381356838153",
+      "image_index": 2,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/92f5fba3ce284e348b2dafd96c19fab5~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=AWcbO6ggSLD39IJLeUGWiFrZwYI%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173926AE17F08767DBA426FF1C",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/33_7618604381356838153/02.jpg",
+      "ok": true,
+      "bytes": 714375
+    },
+    {
+      "index": 33,
+      "aweme_id": "7618604381356838153",
+      "image_index": 3,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/1891aef1dde84c3b9675f31b6f0ea9ec~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=YqByQYNGSa9s7OQrqIXoZv6eJDc%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173926AE17F08767DBA426FF1C",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/33_7618604381356838153/03.jpg",
+      "ok": true,
+      "bytes": 693169
+    },
+    {
+      "index": 33,
+      "aweme_id": "7618604381356838153",
+      "image_index": 4,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/8255004292124371a78267e5b80ea929~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=QTUW69aCdRUG%2FmWXKvu5V2igeOs%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173926AE17F08767DBA426FF1C",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/33_7618604381356838153/04.jpg",
+      "ok": true,
+      "bytes": 357684
+    },
+    {
+      "index": 34,
+      "aweme_id": "7618164956315405603",
+      "image_index": 1,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/def4cbd8471444e4b77ff52f2e0fa354~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=eRGfjrk3jRI3zkG49rkwpeBdxQs%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173926AE17F08767DBA426FF1C",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/34_7618164956315405603/01.jpg",
+      "ok": true,
+      "bytes": 331968
+    },
+    {
+      "index": 34,
+      "aweme_id": "7618164956315405603",
+      "image_index": 2,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/ee57621a020e4cf1bac7b2efe2312f86~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=4pkKIgby9Xw9sbzNdFbNwYarSYA%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173926AE17F08767DBA426FF1C",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/34_7618164956315405603/02.jpg",
+      "ok": true,
+      "bytes": 682554
+    },
+    {
+      "index": 34,
+      "aweme_id": "7618164956315405603",
+      "image_index": 3,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/84e6a1d9c4334439bddcd305fb684a39~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=gs%2FzbrhmgV4k6MGCn5gzIbpxNQs%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173926AE17F08767DBA426FF1C",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/34_7618164956315405603/03.jpg",
+      "ok": true,
+      "bytes": 743319
+    },
+    {
+      "index": 34,
+      "aweme_id": "7618164956315405603",
+      "image_index": 4,
+      "url": "https://p9-pc-sign.douyinpic.com/tos-cn-i-dy/e7aae61f521f4a09b4cce466871b1a69~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=fNtdGY3COsYvd06ofxWnRDTTp%2Fg%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173926AE17F08767DBA426FF1C",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/34_7618164956315405603/04.jpg",
+      "ok": false,
+      "bytes": 0
+    },
+    {
+      "index": 34,
+      "aweme_id": "7618164956315405603",
+      "image_index": 5,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/70eb19bb2b5e454fbea2ba9fe511f41f~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=7xgVwETZayAZAIzx%2FKPUUQhSrsk%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173926AE17F08767DBA426FF1C",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/34_7618164956315405603/05.jpg",
+      "ok": true,
+      "bytes": 713287
+    },
+    {
+      "index": 34,
+      "aweme_id": "7618164956315405603",
+      "image_index": 6,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/5874f52e3da749bcb4ab87d24c6a4aa8~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=ALi4647tLTUz6XoIdtCxRDtlsg0%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173926AE17F08767DBA426FF1C",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/34_7618164956315405603/06.jpg",
+      "ok": true,
+      "bytes": 736370
+    },
+    {
+      "index": 34,
+      "aweme_id": "7618164956315405603",
+      "image_index": 7,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/1b6bff27f4804ec6a8eed55fb7a68c21~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=huhdH%2FLcx8wIhNlePNYONbP%2B3kQ%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173926AE17F08767DBA426FF1C",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/34_7618164956315405603/07.jpg",
+      "ok": true,
+      "bytes": 619030
+    },
+    {
+      "index": 34,
+      "aweme_id": "7618164956315405603",
+      "image_index": 8,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-dy/28f90be257d94b65a67c836e2b857cce~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=xhv3ZB7yDlKcLczc2H5VTAJjmgA%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173926AE17F08767DBA426FF1C",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/34_7618164956315405603/08.jpg",
+      "ok": true,
+      "bytes": 619976
+    },
+    {
+      "index": 35,
+      "aweme_id": "7616266016121320134",
+      "image_index": 1,
+      "url": "https://p9-pc-sign.douyinpic.com/tos-cn-i-0813c001/oYA8EiZKObIbAaBwpgQayKPAAQ3JClOkAIiPZ~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=NUcJZ%2BiUxCScsiPGR8%2FV%2BcPaqAM%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173926AE17F08767DBA426FF1C",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/35_7616266016121320134/01.jpg",
+      "ok": false,
+      "bytes": 0
+    },
+    {
+      "index": 35,
+      "aweme_id": "7616266016121320134",
+      "image_index": 2,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-0813c001/osZKPOlkpBPwSAA8hbAyPlEAiAbiaIalgIJCZ~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=MeDngR2S%2FjBeO1h4wcw8fJBlQDU%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173926AE17F08767DBA426FF1C",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/35_7616266016121320134/02.jpg",
+      "ok": true,
+      "bytes": 74961
+    },
+    {
+      "index": 35,
+      "aweme_id": "7616266016121320134",
+      "image_index": 3,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-0813/o4msDf4UAEfDQy0IUApgFCykIA9mAAdgFAlA2X~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=lF09Y6jVESq2tzU6%2BjBd9RL05fY%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173926AE17F08767DBA426FF1C",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/35_7616266016121320134/03.jpg",
+      "ok": true,
+      "bytes": 81323
+    },
+    {
+      "index": 35,
+      "aweme_id": "7616266016121320134",
+      "image_index": 4,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-0813c001/osdQgCsIU2A0AXpiyFmUAeEAkD4yflAI9ACmFD~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=LjNriwSdKB1skucVnA0qaRFYWRU%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173926AE17F08767DBA426FF1C",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/35_7616266016121320134/04.jpg",
+      "ok": true,
+      "bytes": 82404
+    },
+    {
+      "index": 35,
+      "aweme_id": "7616266016121320134",
+      "image_index": 5,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-0813/ooIAkpdAdCmARg9y42QAFFEAm0DfIsAmUfkUyD~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=Zf3aYo2MI9tvKMfF2yLg2%2BLYWKU%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173926AE17F08767DBA426FF1C",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/35_7616266016121320134/05.jpg",
+      "ok": true,
+      "bytes": 81718
+    },
+    {
+      "index": 35,
+      "aweme_id": "7616266016121320134",
+      "image_index": 6,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-0813/okSKOaZIPJTbiA6ivAB8pwIlZAgAyCaGPbAkE~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=TtcNglvElbWAB5R6vYfVDEEqFnA%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173926AE17F08767DBA426FF1C",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/35_7616266016121320134/06.jpg",
+      "ok": true,
+      "bytes": 95299
+    },
+    {
+      "index": 35,
+      "aweme_id": "7616266016121320134",
+      "image_index": 7,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-0813/ocwbpUbykKAABIQOZTPAaaAwPiICZiAETgJl8~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=qAh%2BTCWJ%2FAlRGl4y%2F2ky6CktM4M%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173926AE17F08767DBA426FF1C",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/35_7616266016121320134/07.jpg",
+      "ok": true,
+      "bytes": 85427
+    },
+    {
+      "index": 35,
+      "aweme_id": "7616266016121320134",
+      "image_index": 8,
+      "url": "https://p9-pc-sign.douyinpic.com/tos-cn-i-0813c001/oMQKOaZIPJVbiAQivAB8pwIlZAgAyCajPbAkE~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=s9vD%2BXjePHHbw%2F%2BGw1WnmEGkL1Q%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173926AE17F08767DBA426FF1C",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/35_7616266016121320134/08.jpg",
+      "ok": false,
+      "bytes": 0
+    },
+    {
+      "index": 35,
+      "aweme_id": "7616266016121320134",
+      "image_index": 9,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-0813c001/oUAybAPbIOwEpZAJACygEI8WARPakliZK8Bia~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=eVHpV5u4kMxVzNFJqpQpladjq9c%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173926AE17F08767DBA426FF1C",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/35_7616266016121320134/09.jpg",
+      "ok": true,
+      "bytes": 84812
+    },
+    {
+      "index": 35,
+      "aweme_id": "7616266016121320134",
+      "image_index": 10,
+      "url": "https://p3-pc-sign.douyinpic.com/tos-cn-i-0813/oMIk9muepIDAAAA40CsFVFmEQ2DAUgAdUgf6yy~tplv-dy-aweme-images:q75.jpeg?lk3s=138a59ce&x-expires=1781946000&x-signature=Bgjeq3twFJOzUvF5kDIyeqbv6s8%3D&from=327834062&s=PackSourceEnum_PUBLISH&se=false&sc=image&biz_tag=aweme_images&l=20260521173926AE17F08767DBA426FF1C",
+      "file": "/Users/owen/Documents/workspace/bestseller/douyin_plova/images/35_7616266016121320134/10.jpg",
+      "ok": true,
+      "bytes": 40281
+    }
+  ]
+}

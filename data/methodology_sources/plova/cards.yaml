@@ -1,0 +1,491 @@
+cards:
+  - id: plova.iceberg.surface_subtext
+    source_ids: ["plova.01"]
+    title: "冰山理论：台面信息与水下信息必须同时成立"
+    category: surface_subtext
+    scope: ["scene", "chapter"]
+    stage: ["planning", "drafting", "review"]
+    core_claim: "重要情绪、关系、历史和动机可以不直说，但作者必须知道水下内容，并让读者从动作、对话和反应中感到它存在。"
+    anti_patterns: ["把留白写成信息不足", "把水下内容写成猜谜", "把目标、动作、因果也压到水下"]
+    required_contract_fields: ["surface_action", "subtext_emotion", "relationship_tension", "withheld_information"]
+    framework_bindings: ["scene_contracts.metadata.subtext", "methodology_overlay.scene_notes", "review.focus.surface_subtext"]
+    gate_bindings:
+      - gate: iceberg_surface_subtext
+        default_mode: advisory
+    maturity: verified
+  - id: plova.chekhov.not_equal_foreshadowing
+    source_ids: ["plova.02"]
+    title: "契诃夫之枪不等于伏笔：强调元素先承担功能压力"
+    category: foreshadowing
+    scope: ["scene", "chapter", "asset"]
+    stage: ["planning", "review", "repair"]
+    core_claim: "契诃夫之枪关注被文本强调的元素是否有后续功能，伏笔关注信息如何提前埋设和回收，两者不能混用。"
+    anti_patterns: ["把所有伏笔都当成契诃夫之枪", "被特写的物件没有功能承诺", "为了像伏笔而过度强调小信息"]
+    required_contract_fields: ["emphasized_item", "prominence", "expected_function", "foreshadowing_role"]
+    framework_bindings: ["chapter_contracts.metadata.emphasized_items", "clues.metadata.dual_type", "foreshadowing.payoff_plan"]
+    gate_bindings:
+      - gate: chekhov_emphasis
+        default_mode: audit_only
+    maturity: verified
+  - id: plova.chekhov.emphasized_item_must_function
+    source_ids: ["plova.03"]
+    title: "契诃夫之枪：被强调的元素必须有功能性兑现"
+    category: foreshadowing
+    scope: ["scene", "chapter", "asset"]
+    stage: ["planning", "review", "repair"]
+    core_claim: "被明显强调的物、规则、能力、台词或异常细节，会自动制造读者期待，后文必须承担功能。"
+    anti_patterns: ["重点描写后再无作用", "兑现窗口缺失", "只靠解释补救没有行动用途"]
+    required_contract_fields: ["emphasized_item", "expected_function", "expected_use_by_chapter", "payoff_status"]
+    framework_bindings: ["chapter_contracts.metadata.emphasized_items", "scene_contracts.metadata.chekhov", "scorecard.issue_codes"]
+    gate_bindings:
+      - gate: chekhov_emphasis
+        default_mode: audit_only
+    maturity: verified
+  - id: plova.longform.external_memory_system
+    source_ids: ["plova.04"]
+    title: "长篇外部记忆系统：灵感必须沉淀为可查资产"
+    category: longform_control
+    scope: ["book", "asset", "project_health"]
+    stage: ["planning", "drafting", "health"]
+    core_claim: "长篇失控常来自作者只靠脑内记忆，应把人物、设定、时间线、伏笔和变更记录落成外部系统。"
+    anti_patterns: ["只靠临场记忆续写", "设定变更无记录", "伏笔和角色状态散落在正文里"]
+    required_contract_fields: ["source_of_truth", "change_log", "character_state", "foreshadowing_ledger"]
+    framework_bindings: ["project_state.memory", "source_artifact_audit", "project_health.continuity"]
+    gate_bindings:
+      - gate: longform_memory
+        default_mode: advisory
+    maturity: verified
+  - id: plova.mainline.state_chain_advanced
+    source_ids: ["plova.05"]
+    title: "主线串联03：主线必须呈现状态连续变化"
+    category: mainline
+    scope: ["book", "chapter"]
+    stage: ["planning", "review", "health"]
+    core_claim: "主线不是事件串，而是主角处境、目标、资源、关系和风险的连续状态变化。"
+    anti_patterns: ["事件热闹但状态不变", "支线推进后没有回到主线", "章节结果无法改变下一章压力"]
+    required_contract_fields: ["previous_state", "state_change", "next_pressure", "mainline_delta"]
+    framework_bindings: ["chapter_causality_gate.state_change", "narrative_lines.mainline", "project_health.mainline"]
+    gate_bindings:
+      - gate: mainline_continuity
+        default_mode: warn
+    maturity: verified
+  - id: plova.mainline.stage_goal_obstacle_result
+    source_ids: ["plova.06"]
+    title: "主线串联02：阶段目标、阻碍、结果构成章节链"
+    category: mainline
+    scope: ["chapter", "book"]
+    stage: ["planning", "drafting", "review"]
+    core_claim: "每个阶段都要有目标、阻碍、行动、代价和结果，结果继续制造下一阶段目标。"
+    anti_patterns: ["有事件无目标", "阻碍只停留在外部打断", "结果不能引出下一章"]
+    required_contract_fields: ["goal", "obstacle", "action", "cost", "result", "next_desire"]
+    framework_bindings: ["chapter_causality_gate.contract", "chapter_outline.requirements", "methodology_overlay.chapter_notes"]
+    gate_bindings:
+      - gate: chapter_causality
+        default_mode: warn
+    maturity: verified
+  - id: plova.mainline.absorb_subplots
+    source_ids: ["plova.07"]
+    title: "主线串联01：支线必须被主线吸收"
+    category: mainline
+    scope: ["book", "chapter"]
+    stage: ["planning", "review", "repair"]
+    core_claim: "支线可以扩展信息和关系，但必须改变主线判断、资源、风险或欲望，不能独立漂浮。"
+    anti_patterns: ["支线结束后主线无变化", "角色小剧场替代主线推进", "世界观插入没有反压主线"]
+    required_contract_fields: ["subplot_purpose", "mainline_effect", "return_point", "reader_direction"]
+    framework_bindings: ["narrative_lines.mainline", "narrative_lines.subplot_links", "project_health.drift"]
+    gate_bindings:
+      - gate: mainline_continuity
+        default_mode: warn
+    maturity: verified
+  - id: plova.opening.anti_pitfall
+    source_ids: ["plova.08"]
+    title: "开头避坑：第一章先建立处境、压力和追问"
+    category: opening
+    scope: ["chapter", "book"]
+    stage: ["planning", "drafting", "review"]
+    core_claim: "开头不能只靠热闹或设定堆叠，应先让读者理解主角处境、异常压力和继续读的追问。"
+    anti_patterns: ["先堆世界观", "强刺激但主角处境不清", "第一章没有读者追问"]
+    required_contract_fields: ["protagonist_situation", "abnormal_pressure", "first_question", "reader_desire"]
+    framework_bindings: ["reader_power.golden_three", "opening_three_function.chapter_1", "chapter_contracts.opening"]
+    gate_bindings:
+      - gate: opening_three_function
+        default_mode: audit_only
+    maturity: verified
+  - id: plova.opening.three_chapter_function
+    source_ids: ["plova.09"]
+    title: "前三章分工：三章分别承担压力、代价和长线欲望"
+    category: opening
+    scope: ["book", "chapter"]
+    stage: ["planning", "review", "health"]
+    core_claim: "前三章应形成职责分工：第一章立处境和追问，第二章证明代价，第三章把短刺激转成长线欲望。"
+    anti_patterns: ["三章重复同一种刺激", "第二章不证明代价", "第三章没有打开后续问题"]
+    required_contract_fields: ["chapter_1_question", "chapter_2_cost_proof", "chapter_3_long_desire", "next_problem"]
+    framework_bindings: ["reader_power.golden_three", "project_health.opening", "scorecard.opening_issues"]
+    gate_bindings:
+      - gate: opening_three_function
+        default_mode: audit_only
+    maturity: verified
+  - id: plova.opening.reader_desire_over_noise
+    source_ids: ["plova.10"]
+    title: "热闹开头留不住人：读者欲望比刺激密度更重要"
+    category: opening
+    scope: ["chapter"]
+    stage: ["planning", "drafting", "review"]
+    core_claim: "开头的动作、冲突和信息只有转化成读者问题和主角下一步欲望，才会形成留存。"
+    anti_patterns: ["只堆冲突不建立问题", "开局强刺激但没有下一步", "爽点和主角欲望脱节"]
+    required_contract_fields: ["stimulus", "reader_question", "protagonist_desire", "next_step"]
+    framework_bindings: ["reader_power.hook", "hype_engine.hype_type", "opening_three_function.retention"]
+    gate_bindings:
+      - gate: opening_three_function
+        default_mode: audit_only
+    maturity: verified
+  - id: plova.action_scene.structure
+    source_ids: ["plova.11"]
+    title: "打斗结构：目标、阻力、转折、结果缺一不可"
+    category: action_scene
+    scope: ["scene", "chapter"]
+    stage: ["planning", "drafting", "review"]
+    core_claim: "打斗不是动作描写堆叠，而是带目标、失败代价、对手优势、策略变化、转折和退出状态的场景。"
+    anti_patterns: ["只有招式没有目标", "胜负不改变局面", "打斗过程没有策略变化"]
+    required_contract_fields: ["fight_objective", "failure_cost", "opponent_advantage", "tactic_shift", "turning_point", "exit_state_delta"]
+    framework_bindings: ["methodology_overlay.action_sequence", "chapter_causality_gate.action", "scene_contracts.fight"]
+    gate_bindings:
+      - gate: action_scene_structure
+        default_mode: audit_only
+    maturity: verified
+  - id: plova.action_scene.visual_not_empty
+    source_ids: ["plova.12"]
+    title: "华丽不空：动作画面必须携带信息和局面变化"
+    category: action_scene
+    scope: ["scene"]
+    stage: ["drafting", "review", "repair"]
+    core_claim: "华丽动作要服务距离、资源、判断、伤害、位置和心理变化，否则视觉越多越空。"
+    anti_patterns: ["连续形容招式但信息不变", "动作漂亮但角色判断缺席", "打完回到原点"]
+    required_contract_fields: ["visual_beat", "information_delta", "resource_change", "position_change", "exit_state_delta"]
+    framework_bindings: ["methodology_overlay.scene_beats", "scene_plan_richness", "review.focus.action_visual"]
+    gate_bindings:
+      - gate: action_scene_structure
+        default_mode: audit_only
+    maturity: verified
+  - id: plova.action_scene.emotion_driver
+    source_ids: ["plova.13"]
+    title: "打斗情绪：动作必须被情绪、关系或信念驱动"
+    category: action_scene
+    scope: ["scene", "chapter"]
+    stage: ["planning", "drafting", "review"]
+    core_claim: "读者记住的不是动作数量，而是角色为什么必须打、害怕失去什么、这一战如何改变关系。"
+    anti_patterns: ["战斗动机只剩赢", "情绪停留在口号", "动作和关系变化脱节"]
+    required_contract_fields: ["emotion_driver", "relationship_stake", "belief_pressure", "aftereffect"]
+    framework_bindings: ["methodology_overlay.emotion_driver", "hype_engine.emotional_payoff", "scene_contracts.relationship_delta"]
+    gate_bindings:
+      - gate: action_scene_structure
+        default_mode: audit_only
+    maturity: verified
+  - id: plova.action_scene.goal_risk_cost
+    source_ids: ["plova.14"]
+    title: "打斗燃点：目标、风险和代价先于招式"
+    category: action_scene
+    scope: ["scene"]
+    stage: ["planning", "review", "repair"]
+    core_claim: "打斗不燃通常不是招式不够，而是目标不清、失败代价不痛、策略不变、结果不影响下一步。"
+    anti_patterns: ["招式升级替代风险升级", "角色不会为战斗付成本", "战斗没有后效"]
+    required_contract_fields: ["fight_objective", "failure_cost", "cost_paid", "tactic_shift", "next_aftereffect"]
+    framework_bindings: ["methodology_overlay.action_contract", "chapter_causality_gate.cost", "scorecard.action_scene_issues"]
+    gate_bindings:
+      - gate: action_scene_structure
+        default_mode: audit_only
+    maturity: verified
+  - id: plova.longform.control_loss
+    source_ids: ["plova.15"]
+    title: "长篇失控：问题在控制系统，不只在文笔"
+    category: longform_control
+    scope: ["book", "project_health"]
+    stage: ["health", "review", "repair"]
+    core_claim: "长篇拖垮通常来自目标线、角色线、设定线、伏笔线和节奏线失去同步，需要用健康指标定位。"
+    anti_patterns: ["只改句子不查结构", "靠新支线掩盖主线漂移", "越卡越加设定"]
+    required_contract_fields: ["mainline_status", "character_status", "worldview_status", "foreshadowing_status", "timeline_status"]
+    framework_bindings: ["project_health.methodology", "scorecard.top_issue_codes", "narrative_lines.health"]
+    gate_bindings:
+      - gate: longform_chaos
+        default_mode: advisory
+    maturity: verified
+  - id: plova.worldview.power_archive
+    source_ids: ["plova.16"]
+    title: "世界观与力量体系建档：规则要能被持续查询"
+    category: worldview
+    scope: ["asset", "book"]
+    stage: ["planning", "drafting", "health"]
+    core_claim: "世界观和力量体系需要记录等级、限制、代价、稀缺性、社会影响和角色绑定，避免后文临时改规则。"
+    anti_patterns: ["只列酷设定不列限制", "能力规则随剧情需要漂移", "设定和人物选择无关"]
+    required_contract_fields: ["rule", "limit", "cost", "rarity", "social_effect", "owner_binding"]
+    framework_bindings: ["worldview_registry.power_system", "source_artifact_audit.setting", "project_health.worldview"]
+    gate_bindings:
+      - gate: worldview_registry
+        default_mode: advisory
+    maturity: verified
+  - id: plova.power.character_binding
+    source_ids: ["plova.17"]
+    title: "能力绑定人物：能力必须反映选择、代价和角色弧"
+    category: power
+    scope: ["asset", "scene", "chapter"]
+    stage: ["planning", "drafting", "review"]
+    core_claim: "能力不是独立数值，应与人物欲望、短板、选择、代价和成长方向绑定。"
+    anti_patterns: ["能力只为赢而存在", "升级不改变人物选择", "代价和角色弱点无关"]
+    required_contract_fields: ["ability", "character_desire", "limitation", "cost", "choice_pressure"]
+    framework_bindings: ["character_profile.abilities", "story_design_kernel.character_arc", "progression.contract"]
+    gate_bindings:
+      - gate: power_character_binding
+        default_mode: advisory
+    maturity: verified
+  - id: plova.progression.level_up_state_delta
+    source_ids: ["plova.18"]
+    title: "升级不变平：升级必须改变局面和问题结构"
+    category: progression
+    scope: ["chapter", "book"]
+    stage: ["planning", "drafting", "review"]
+    core_claim: "升级的价值不是数字变大，而是带来新权限、新代价、新敌人和新问题。"
+    anti_patterns: ["升级只涨数值", "升级后冲突类型不变", "奖励没有带出新压力"]
+    required_contract_fields: ["level_delta", "new_capability", "new_cost", "new_problem", "state_change"]
+    framework_bindings: ["progression_ledger", "chapter_causality_gate.gain", "hype_engine.reward"]
+    gate_bindings:
+      - gate: progression_state_delta
+        default_mode: advisory
+    maturity: verified
+  - id: plova.power.system_five_questions
+    source_ids: ["plova.19"]
+    title: "力量体系五问：等级之外先定义获得、限制、代价、差异和后果"
+    category: power
+    scope: ["asset", "book"]
+    stage: ["planning", "review", "health"]
+    core_claim: "力量体系不能只分等级，还要回答怎么获得、如何限制、使用代价、个体差异和社会后果。"
+    anti_patterns: ["只有等级表", "强弱随剧情临时变化", "能力没有代价或社会约束"]
+    required_contract_fields: ["acquisition", "limit", "cost", "difference", "social_consequence"]
+    framework_bindings: ["worldview_registry.power_system", "story_design_kernel.rules", "project_health.worldview"]
+    gate_bindings:
+      - gate: power_system_contract
+        default_mode: advisory
+    maturity: verified
+  - id: plova.worldview.faction_pressure
+    source_ids: ["plova.20"]
+    title: "势力不空：势力要有利益、压力、行动和边界"
+    category: worldview
+    scope: ["asset", "chapter", "book"]
+    stage: ["planning", "drafting", "review"]
+    core_claim: "势力不是名字和标签，必须有利益诉求、资源边界、行动逻辑、内部压力和对主线的影响。"
+    anti_patterns: ["势力只有设定介绍", "组织不主动行动", "势力冲突不改变主角局面"]
+    required_contract_fields: ["faction_goal", "resource", "boundary", "pressure", "mainline_effect"]
+    framework_bindings: ["worldview_registry.factions", "narrative_lines.world_line", "chapter_contracts.faction_pressure"]
+    gate_bindings:
+      - gate: faction_pressure
+        default_mode: advisory
+    maturity: verified
+  - id: plova.worldview.four_layers
+    source_ids: ["plova.21"]
+    title: "世界观四层：规则、资源、秩序和日常共同支撑剧情"
+    category: worldview
+    scope: ["asset", "book"]
+    stage: ["planning", "review", "health"]
+    core_claim: "世界观要分层搭建，先保证规则、资源、秩序和角色日常能解释当前剧情压力。"
+    anti_patterns: ["先堆历史名词", "规则和日常脱节", "设定层级无法服务冲突"]
+    required_contract_fields: ["rules_layer", "resource_layer", "order_layer", "daily_life_layer", "story_pressure"]
+    framework_bindings: ["story_design_kernel.worldview", "worldview_registry.layers", "project_health.setting_load"]
+    gate_bindings:
+      - gate: worldview_registry
+        default_mode: advisory
+    maturity: verified
+  - id: plova.worldview.mainline_first
+    source_ids: ["plova.22"]
+    title: "世界观从主线开始：先搭当前故事需要的设定"
+    category: worldview
+    scope: ["book", "asset", "chapter"]
+    stage: ["planning", "drafting", "review"]
+    core_claim: "世界观应从主线冲突和角色选择需要出发，先搭会被剧情使用的部分，再扩展远景。"
+    anti_patterns: ["开篇先搭百科", "设定没有进入选择和冲突", "远景设定挤压当前剧情"]
+    required_contract_fields: ["mainline_need", "used_setting", "conflict_function", "expansion_boundary"]
+    framework_bindings: ["story_design_kernel.worldview", "methodology_overlay.setting_notes", "chapter_contracts.used_setting"]
+    gate_bindings:
+      - gate: setting_load_control
+        default_mode: advisory
+    maturity: verified
+  - id: plova.foreshadowing.payoff_management
+    source_ids: ["plova.23"]
+    title: "伏笔回收：埋设时就要记录兑现方式和窗口"
+    category: foreshadowing
+    scope: ["asset", "chapter", "book"]
+    stage: ["planning", "review", "repair"]
+    core_claim: "伏笔埋得下收不回来，往往是因为没有记录功能、兑现窗口、关联问题和当前状态。"
+    anti_patterns: ["只记录伏笔文本不记录用途", "兑现窗口无限后移", "用新解释强行补旧伏笔"]
+    required_contract_fields: ["clue", "payoff_function", "payoff_window", "status", "linked_question"]
+    framework_bindings: ["foreshadowing.ledger", "scorecard.foreshadowing_debt", "project_health.foreshadowing"]
+    gate_bindings:
+      - gate: foreshadowing_payoff
+        default_mode: warn
+    maturity: verified
+  - id: plova.longform.midbook_triage
+    source_ids: ["plova.24"]
+    title: "中期卡文三检：目标、压力和资产状态先复盘"
+    category: longform_control
+    scope: ["book", "project_health", "chapter"]
+    stage: ["health", "review", "repair"]
+    core_claim: "中期卡文先检查主线目标是否清楚、外部压力是否升级、已有资产是否能继续制造选择。"
+    anti_patterns: ["卡文就加新角色", "用新地图逃避旧问题", "不查资产状态直接重写"]
+    required_contract_fields: ["current_goal", "external_pressure", "usable_assets", "blocked_line"]
+    framework_bindings: ["project_health.midbook", "narrative_lines.health", "repair_tasks.triage"]
+    gate_bindings:
+      - gate: longform_chaos
+        default_mode: advisory
+    maturity: verified
+  - id: plova.timeline.longform_control
+    source_ids: ["plova.25"]
+    title: "时间线控制：事件顺序、因果和角色可达性必须一致"
+    category: timeline
+    scope: ["book", "chapter", "asset"]
+    stage: ["planning", "review", "repair"]
+    core_claim: "长篇时间线崩坏会破坏因果、角色状态和信息传递，应持续记录事件顺序、跨度和可达性。"
+    anti_patterns: ["事件顺序服务方便但不合因果", "角色移动和信息获得不可信", "回忆与当前状态冲突"]
+    required_contract_fields: ["event_time", "duration", "location", "known_by", "causal_order"]
+    framework_bindings: ["timeline_registry", "chapter_causality_gate.sequence", "project_health.timeline"]
+    gate_bindings:
+      - gate: timeline_consistency
+        default_mode: warn
+    maturity: verified
+  - id: plova.longform.idea_scalability
+    source_ids: ["plova.26"]
+    title: "脑洞长篇可写性：概念必须能持续生产冲突和变化"
+    category: longform_control
+    scope: ["book"]
+    stage: ["planning", "review"]
+    core_claim: "并非所有脑洞都能支撑长篇，核心设定要能持续生成目标、阻碍、代价、升级和关系变化。"
+    anti_patterns: ["只有一个高概念没有长期冲突", "设定用完后只能换地图", "主角成长空间过早耗尽"]
+    required_contract_fields: ["premise", "repeatable_conflict_engine", "growth_space", "escalation_path"]
+    framework_bindings: ["story_design_kernel.premise", "book_plan.conflict_engine", "project_health.longform_viability"]
+    gate_bindings:
+      - gate: longform_viability
+        default_mode: advisory
+    maturity: verified
+  - id: plova.character.functional_role_card
+    source_ids: ["plova.27"]
+    title: "有用角色卡：角色卡要服务剧情功能和选择压力"
+    category: character
+    scope: ["asset", "scene", "chapter"]
+    stage: ["planning", "drafting", "review"]
+    core_claim: "角色卡不应只写外貌和经历，而要写欲望、恐惧、关系、功能、可制造的问题和变化路径。"
+    anti_patterns: ["角色卡像资料表", "角色没有剧情功能", "出场后不制造选择压力"]
+    required_contract_fields: ["desire", "fear", "relationship_pressure", "story_function", "change_path"]
+    framework_bindings: ["character_registry", "story_design_kernel.character_arc", "narrative_lines.character_line"]
+    gate_bindings:
+      - gate: character_role_card
+        default_mode: advisory
+    maturity: verified
+  - id: plova.worldview.setting_load_control
+    source_ids: ["plova.28"]
+    title: "设定负载控制：只让当前剧情需要的设定上场"
+    category: worldview
+    scope: ["chapter", "scene", "asset"]
+    stage: ["drafting", "review", "repair"]
+    core_claim: "设定过多会压垮剧情，设定信息要被当前目标、冲突、选择或后果使用。"
+    anti_patterns: ["剧情停下解释设定", "一次抛出多个未使用名词", "设定介绍不改变选择"]
+    required_contract_fields: ["setting_item", "story_function", "current_use", "defer_reason"]
+    framework_bindings: ["methodology_overlay.setting_notes", "reader_power.info_load", "project_health.setting_load"]
+    gate_bindings:
+      - gate: setting_load_control
+        default_mode: advisory
+    maturity: verified
+  - id: plova.longform.story_control_system
+    source_ids: ["plova.29"]
+    title: "故事管理系统：长篇要被目标线、资产线和问题线管住"
+    category: longform_control
+    scope: ["book", "project_health", "asset"]
+    stage: ["planning", "health", "repair"]
+    core_claim: "长篇不是靠一次大纲管住，而是靠持续记录目标、角色、设定、伏笔、时间线和问题状态。"
+    anti_patterns: ["大纲写完就不更新", "正文变化不回写资产", "问题线无人追踪"]
+    required_contract_fields: ["goal_ledger", "asset_registry", "issue_ledger", "status_review_cadence"]
+    framework_bindings: ["project_health.methodology", "source_artifact_audit", "scorecard.issue_trends"]
+    gate_bindings:
+      - gate: longform_memory
+        default_mode: advisory
+    maturity: verified
+  - id: plova.longform.after_100k_chaos
+    source_ids: ["plova.30"]
+    title: "十万字后混乱：主线、人物、设定和伏笔债务开始叠加"
+    category: longform_control
+    scope: ["book", "project_health"]
+    stage: ["health", "review", "repair"]
+    core_claim: "十万字后混乱通常是多条债务叠加，必须用健康报告识别主线漂移、角色失焦、设定膨胀和伏笔逾期。"
+    anti_patterns: ["只凭体感判断崩没崩", "用新爽点掩盖旧债", "逾期伏笔没有清单"]
+    required_contract_fields: ["word_count", "mainline_drift", "character_focus", "setting_load", "foreshadowing_debt"]
+    framework_bindings: ["project_health.longform_chaos", "scorecard.top_issue_codes", "repair_tasks.priority"]
+    gate_bindings:
+      - gate: longform_chaos
+        default_mode: advisory
+    maturity: verified
+  - id: plova.longform.five_tables
+    source_ids: ["plova.31"]
+    title: "长篇五张表：开写前先建立核心管理表"
+    category: longform_control
+    scope: ["book", "asset"]
+    stage: ["planning", "health"]
+    core_claim: "开写前至少准备主线表、角色表、设定表、伏笔表和时间线表，后续随正文持续更新。"
+    anti_patterns: ["只有大纲没有资产表", "表格和正文不同步", "缺少伏笔或时间线追踪"]
+    required_contract_fields: ["mainline_table", "character_table", "setting_table", "foreshadowing_table", "timeline_table"]
+    framework_bindings: ["story_design_kernel.assets", "source_artifact_audit", "project_health.coverage"]
+    gate_bindings:
+      - gate: longform_memory
+        default_mode: advisory
+    maturity: verified
+  - id: plova.outline.executability
+    source_ids: ["plova.32"]
+    title: "大纲可写性：有结果不等于有过程"
+    category: outline
+    scope: ["chapter", "book"]
+    stage: ["planning", "review", "repair"]
+    core_claim: "大纲要能指导正文，需要写清目标、过程、阻碍、选择和转折，不能只写结果摘要。"
+    anti_patterns: ["大纲只有事件结果", "缺少过程动作", "正文卡住才发现没有选择路径"]
+    required_contract_fields: ["goal", "process", "obstacle", "choice", "turn", "result"]
+    framework_bindings: ["chapter_outline.steps", "chapter_causality_gate.contract", "planner.review"]
+    gate_bindings:
+      - gate: outline_executability
+        default_mode: advisory
+    maturity: verified
+  - id: plova.longform.four_line_management
+    source_ids: ["plova.33"]
+    title: "四线管理：主线稳不代表整本书稳"
+    category: longform_control
+    scope: ["book", "project_health"]
+    stage: ["planning", "health", "repair"]
+    core_claim: "长篇要同时管理主线、角色线、世界线和伏笔线，任何一条断裂都会在后续形成结构风险。"
+    anti_patterns: ["只看主线事件", "角色线和世界线无人维护", "伏笔线长期没有状态更新"]
+    required_contract_fields: ["mainline_status", "character_line_status", "world_line_status", "foreshadowing_line_status"]
+    framework_bindings: ["narrative_lines", "project_health.narrative_lines", "scorecard.line_issues"]
+    gate_bindings:
+      - gate: narrative_line_health
+        default_mode: warn
+    maturity: verified
+  - id: plova.character.ensemble_focus_control
+    source_ids: ["plova.34"]
+    title: "群像不散：角色越多越需要功能分层和焦点控制"
+    category: character
+    scope: ["book", "chapter", "scene"]
+    stage: ["planning", "drafting", "review"]
+    core_claim: "角色增多后要明确核心角色、功能角色和临时角色，控制每章焦点和每个人对主线的贡献。"
+    anti_patterns: ["每个角色都抢戏", "角色出场但不改变局面", "群像对话稀释主线压力"]
+    required_contract_fields: ["focus_character", "role_tier", "scene_function", "mainline_contribution"]
+    framework_bindings: ["character_registry.role_tier", "narrative_lines.character_line", "chapter_contracts.focus"]
+    gate_bindings:
+      - gate: character_focus_control
+        default_mode: advisory
+    maturity: verified
+  - id: plova.outline.calibration
+    source_ids: ["plova.35"]
+    title: "大纲校准：大纲的初衷是帮助变化，而不是困住正文"
+    category: outline
+    scope: ["book", "chapter", "project_health"]
+    stage: ["planning", "drafting", "review", "repair"]
+    core_claim: "大纲要持续校准故事初衷、当前压力和正文变化，不能因为维护旧计划而牺牲可读性。"
+    anti_patterns: ["正文已偏移但大纲不更新", "为了完成旧节点牺牲角色选择", "大纲变成束缚而不是判断工具"]
+    required_contract_fields: ["original_intent", "current_pressure", "draft_delta", "calibration_decision"]
+    framework_bindings: ["chapter_outline.revision", "project_health.plan_drift", "repair_tasks.calibration"]
+    gate_bindings:
+      - gate: outline_calibration
+        default_mode: advisory
+    maturity: verified

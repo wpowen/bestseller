@@ -18,9 +18,12 @@ router = APIRouter(tags=["tasks"])
 _ATTENTION_VERDICTS = {
     "attention",
     "needs_attention",
-    "waiting_human",
-    "waiting_human_review",
+    "machine_blocked",
+    "machine_repair_required",
+    "requires_machine_repair",
     "requires_human_review",
+    "exported_requires_machine_repair",
+    "skipped_requires_machine_repair",
     "exported_requires_human_review",
     "skipped_requires_human_review",
 }
@@ -35,7 +38,7 @@ class TaskStatusResponse(BaseModel):
 def _event_payload_requires_attention(event: dict) -> bool:
     data = event.get("data")
     payload = data if isinstance(data, dict) else {}
-    if payload.get("requires_human_review") is True:
+    if payload.get("requires_machine_repair") is True or payload.get("requires_human_review") is True:
         return True
     verdict = (
         str(
@@ -75,7 +78,7 @@ async def get_task_status(
         task_status = "completed"
     elif event_type in ("failed", "error"):
         task_status = "failed"
-    elif event_type in ("waiting_human", "waiting_human_review", "blocked_generation_gate"):
+    elif event_type in ("machine_blocked", "machine_repair_required", "blocked_generation_gate"):
         task_status = "incomplete"
     elif event_type == "progress":
         task_status = "running"
@@ -139,8 +142,8 @@ async def stream_task_events(
                         "finished",
                         "failed",
                         "error",
-                        "waiting_human",
-                        "waiting_human_review",
+                        "machine_blocked",
+                        "machine_repair_required",
                         "blocked_generation_gate",
                     ):
                         yield 'event: stream_end\ndata: {"message": "stream_end", "event_type": "stream_end"}\n\n'

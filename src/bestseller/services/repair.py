@@ -1325,7 +1325,7 @@ async def run_project_repair(
             )
             await _checkpoint_repair_progress(session)
             if source_audit_blocks:
-                workflow_run.status = WorkflowStatus.WAITING_HUMAN.value
+                workflow_run.status = WorkflowStatus.MACHINE_BLOCKED.value
                 workflow_run.current_step = "source_artifact_audit_blocked"
                 project.status = ProjectStatus.REVISING.value
                 await session.flush()
@@ -1700,12 +1700,12 @@ async def run_project_repair(
         )
 
         workflow_run.status = (
-            WorkflowStatus.WAITING_HUMAN.value
+            WorkflowStatus.MACHINE_BLOCKED.value
             if requires_human_review
             else WorkflowStatus.COMPLETED.value
         )
         workflow_run.current_step = (
-            "waiting_human_review" if requires_human_review else "completed"
+            "machine_repair_required" if requires_human_review else "completed"
         )
         workflow_run.metadata_json = {
             **workflow_run.metadata_json,

@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated, Any, cast
 from uuid import UUID
 
 import typer
@@ -147,6 +147,12 @@ from bestseller.services.workflows import (
     materialize_narrative_tree,
     materialize_story_bible,
 )
+from bestseller.services.writing_contest import (
+    ContestTrack,
+    build_writing_contest_brief,
+    list_writing_contest_themes,
+    review_writing_contest_entry,
+)
 from bestseller.services.writing_presets import (
     get_genre_preset,
     get_genre_preset_dimensions,
@@ -187,6 +193,7 @@ fanqie_market_app = typer.Typer(help="Fanqie ranking market intelligence operati
 ui_app = typer.Typer(help="Web UI operations.")
 prompt_pack_app = typer.Typer(help="Prompt pack operations.")
 writing_preset_app = typer.Typer(help="Writing preset operations.")
+writing_contest_app = typer.Typer(help="Public writing contest craft operations.")
 if_app = typer.Typer(help="Interactive fiction (LifeScript) operations.")
 publish_profile_app = typer.Typer(help="Publication profile operations.")
 
@@ -213,6 +220,7 @@ app.add_typer(fanqie_market_app, name="fanqie-market")
 app.add_typer(ui_app, name="ui")
 app.add_typer(prompt_pack_app, name="prompt-pack")
 app.add_typer(writing_preset_app, name="writing-preset")
+app.add_typer(writing_contest_app, name="writing-contest")
 app.add_typer(if_app, name="if")
 export_app.add_typer(export_amazon_kdp_app, name="amazon-kdp")
 
@@ -714,6 +722,128 @@ def writing_preset_hot(
             indent=2,
         )
     )
+
+
+def _normalize_contest_track(track: str) -> ContestTrack:
+    return cast(ContestTrack, track.strip())
+
+
+@writing_contest_app.command("themes")
+def writing_contest_themes() -> None:
+    """List built-in public writing contest themes."""
+    typer.echo(
+        json.dumps(
+            [theme.to_dict() for theme in list_writing_contest_themes()],
+            ensure_ascii=False,
+            indent=2,
+        )
+    )
+
+
+@writing_contest_app.command("brief")
+def writing_contest_brief(
+    theme: Annotated[
+        str,
+        typer.Option(
+            "--theme",
+            help="Theme key or public prompt, e.g. belated-love or 后知后觉的爱.",
+        ),
+    ] = "belated-love",
+    track: Annotated[
+        str,
+        typer.Option(
+            "--track",
+            help="original_graphic, original_video, or ai_literary_video.",
+        ),
+    ] = "original_graphic",
+    protagonist: Annotated[
+        str | None,
+        typer.Option("--protagonist", help="First-person narrator focus."),
+    ] = None,
+    material_seed: Annotated[
+        str | None,
+        typer.Option("--material-seed", help="Concrete lived material to shape the brief."),
+    ] = None,
+    json_output: Annotated[
+        bool,
+        typer.Option("--json", help="Print the full brief as JSON."),
+    ] = False,
+) -> None:
+    """Build a high-quality public writing contest prompt and revision contract."""
+    brief = build_writing_contest_brief(
+        theme=theme,
+        track=_normalize_contest_track(track),
+        protagonist=protagonist,
+        material_seed=material_seed,
+    )
+    payload = brief.to_dict()
+    if json_output:
+        typer.echo(json.dumps(payload, ensure_ascii=False, indent=2))
+        return
+    typer.echo(f"theme: {payload['theme']['prompt']}")
+    typer.echo(f"track: {payload['track_label']}")
+    typer.echo("")
+    typer.echo(payload["prompt"])
+
+
+@writing_contest_app.command("review")
+def writing_contest_review(
+    entry_file: Annotated[Path, typer.Argument(help="Text file containing the entry.")],
+    theme: Annotated[
+        str,
+        typer.Option(
+            "--theme",
+            help="Theme key or public prompt, e.g. belated-love or 后知后觉的爱.",
+        ),
+    ] = "belated-love",
+    track: Annotated[
+        str,
+        typer.Option(
+            "--track",
+            help="original_graphic, original_video, or ai_literary_video.",
+        ),
+    ] = "original_graphic",
+    ai_disclosed: Annotated[
+        bool,
+        typer.Option(
+            "--ai-disclosed/--ai-not-disclosed",
+            help="Mark AI literary video entries as disclosed.",
+        ),
+    ] = False,
+    json_output: Annotated[
+        bool,
+        typer.Option("--json", help="Print the full review as JSON."),
+    ] = False,
+    fail: Annotated[
+        bool,
+        typer.Option("--fail/--no-fail", help="Exit non-zero when the entry does not pass."),
+    ] = True,
+) -> None:
+    """Review a public writing contest entry against the premium craft bar."""
+    report = review_writing_contest_entry(
+        entry_file.read_text(encoding="utf-8"),
+        theme=theme,
+        track=_normalize_contest_track(track),
+        ai_disclosed=ai_disclosed,
+    )
+    payload = report.to_dict()
+    if json_output:
+        typer.echo(json.dumps(payload, ensure_ascii=False, indent=2))
+    else:
+        status = "PASS" if report.passed else "FAIL"
+        typer.echo(
+            f"{status} {report.theme} score={report.score} "
+            f"tier={report.tier} chars={report.cjk_chars}"
+        )
+        for finding in report.findings:
+            typer.echo(f"- [{finding.severity}] {finding.code}: {finding.message}")
+            typer.echo(f"  fix: {finding.repair_action}")
+        if report.strengths:
+            typer.echo("strengths:")
+            for strength in report.strengths:
+                typer.echo(f"- {strength}")
+    if fail and not report.passed:
+        raise typer.Exit(1)
 
 
 @ui_app.command("serve")

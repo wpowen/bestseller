@@ -664,6 +664,22 @@ def test_project_repair_status_payload_marks_repair_gate() -> None:
     assert payload["complete_ok_chapters"] == 27
 
 
+def test_project_repair_status_payload_archived_is_not_repairing() -> None:
+    project = SimpleNamespace(
+        status="revising",
+        metadata_json={"library_archived": True},
+    )
+    payload = web_server._build_project_repair_status_payload(
+        project,
+        [{"status": "revision", "production_state": "blocked", "count": 1}],
+    )
+
+    assert payload["phase"] == "archived"
+    assert payload["label"] == "已归档"
+    assert payload["is_repairing"] is False
+    assert web_server._build_db_repair_task_summary(project, payload) is None
+
+
 def test_library_book_state_active_workflow_overrides_repair_attention() -> None:
     state = web_server._library_book_state(
         status="revising",
@@ -1137,7 +1153,67 @@ def test_load_from_disk_fails_zombies_without_payload(tmp_path: Path) -> None:
     assert manager._pending_auto_resume_ids == ["z-repair"]
 
 
-def test_load_from_disk_normalizes_watchdog_failed_human_review_task(
+def test_delete_tasks_by_project_can_include_active_archived_records(
+    tmp_path: Path,
+) -> None:
+    persist_path = _write_persisted_tasks(
+        tmp_path,
+        [
+            {
+                "task_id": "archived-running",
+                "task_type": "autowrite",
+                "status": "running",
+                "created_at": "2026-01-01T00:00:00+00:00",
+                "updated_at": "2026-01-01T00:05:00+00:00",
+                "project_slug": "archived-book",
+                "payload": {"slug": "archived-book"},
+            },
+            {
+                "task_id": "archived-incomplete",
+                "task_type": "autowrite",
+                "status": "incomplete",
+                "created_at": "2026-01-01T00:00:00+00:00",
+                "updated_at": "2026-01-01T00:05:00+00:00",
+                "project_slug": "archived-book",
+            },
+            {
+                "task_id": "active-other",
+                "task_type": "autowrite",
+                "status": "running",
+                "created_at": "2026-01-01T00:00:00+00:00",
+                "updated_at": "2026-01-01T00:05:00+00:00",
+                "project_slug": "live-book",
+                "payload": {"slug": "live-book"},
+            },
+        ],
+    )
+    manager = web_server.WebTaskManager(persist_path=persist_path)
+
+    removed = manager.delete_tasks_by_project(
+        "archived-book",
+        include_active=True,
+    )
+
+    assert removed == 2
+    assert manager.get_task("archived-running") is None
+    assert manager.get_task("archived-incomplete") is None
+    assert manager.get_task("active-other") is not None
+
+
+def test_create_repair_task_defaults_to_pending_rewrite_takeover(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    persist_path = _write_persisted_tasks(tmp_path, [])
+    monkeypatch.setattr(web_server.WebTaskManager, "_run_with_slot", lambda *args: None)
+    manager = web_server.WebTaskManager(persist_path=persist_path)
+
+    task = manager.create_repair_task({"project_slug": "needs-repair"})
+
+    assert task["payload"]["include_pending_rewrite_tasks"] is True
+
+
+def test_load_from_disk_normalizes_watchdog_failed_machine_repair_task(
     tmp_path: Path,
 ) -> None:
     persist_path = _write_persisted_tasks(
@@ -1156,7 +1232,7 @@ def test_load_from_disk_normalizes_watchdog_failed_human_review_task(
                 "progress_events": [
                     {
                         "timestamp": 1778662128.667118,
-                        "stage": "chapter_pipeline_paused_for_human_review",
+                        "stage": "chapter_pipeline_machine_repair_required",
                         "payload": {"chapter_number": 491},
                     },
                     {
@@ -1175,7 +1251,7 @@ def test_load_from_disk_normalizes_watchdog_failed_human_review_task(
     task = manager.get_task("waiting-review")
     assert task is not None
     assert task["status"] == "incomplete"
-    assert task["current_stage"] == "waiting_human_review"
+    assert task["current_stage"] == "machine_repair_required"
     assert "stale-watchdog" in str(task["error"])
     assert task["progress_events"][-1]["stage"] == "watchdog_failure_normalized"
 
@@ -1328,7 +1404,7 @@ def test_auto_resume_zombies_delegates_heal_owned_and_enqueues_orphan(
                 "updated_at": "2026-01-01T00:05:00+00:00",
                 "project_slug": "novel-r",
                 "title": "R",
-                "current_stage": "chapter_pipeline_paused_for_human_review",
+                "current_stage": "chapter_pipeline_machine_repair_required",
                 "progress_events": [],
                 "payload": {"slug": "novel-r", "title": "R"},
             },
@@ -1689,7 +1765,7 @@ def test_sync_progress_merges_repair_heal_into_autowrite_card(
         updated_at="2026-05-13T01:00:00+00:00",
         project_slug="novel-repair",
         title="Novel Repair",
-        current_stage="waiting_human_review",
+        current_stage="machine_repair_required",
         error="old gate",
         progress_events=[],
     )
@@ -1839,8 +1915,8 @@ def test_sync_progress_marks_repair_completed_with_attention_incomplete(
     assert updated == 1
     assert synced is not None
     assert synced["status"] == "incomplete"
-    assert synced["current_stage"] == "waiting_human_review"
-    assert synced["error"] == "Task reached a human-review or attention gate."
+    assert synced["current_stage"] == "machine_repair_required"
+    assert synced["error"] == "Task reached a machine-repair or attention gate."
 
 
 def test_sync_progress_marks_autowrite_completed_with_attention_incomplete(
@@ -1892,8 +1968,8 @@ def test_sync_progress_marks_autowrite_completed_with_attention_incomplete(
     assert updated == 1
     assert synced is not None
     assert synced["status"] == "incomplete"
-    assert synced["current_stage"] == "waiting_human_review"
-    assert synced["error"] == "Task reached a human-review or attention gate."
+    assert synced["current_stage"] == "machine_repair_required"
+    assert synced["error"] == "Task reached a machine-repair or attention gate."
 
 
 def test_mark_completed_keeps_attention_result_incomplete() -> None:
@@ -1920,7 +1996,7 @@ def test_mark_completed_keeps_attention_result_incomplete() -> None:
     synced = manager.get_task("task-direct-attention")
     assert synced is not None
     assert synced["status"] == "incomplete"
-    assert synced["current_stage"] == "waiting_human_review"
+    assert synced["current_stage"] == "machine_repair_required"
 
 
 def test_sync_progress_keeps_intermediate_attention_running(
@@ -1935,7 +2011,7 @@ def test_sync_progress_keeps_intermediate_attention_running(
         updated_at="2026-05-13T01:00:00+00:00",
         project_slug="novel-repair-running",
         title="Novel Repair Running",
-        current_stage="waiting_human_review",
+        current_stage="machine_repair_required",
         error="old gate",
         progress_events=[],
     )
@@ -1989,7 +2065,7 @@ def test_sync_progress_prefers_active_autowrite_over_finished_repair(
         updated_at="2026-05-13T01:00:00+00:00",
         project_slug="novel-active",
         title="Novel Active",
-        current_stage="waiting_human_review",
+        current_stage="machine_repair_required",
         error="old repair result",
         progress_events=[],
     )
@@ -2015,7 +2091,7 @@ def test_sync_progress_prefers_active_autowrite_over_finished_repair(
                 ]
             if key == "task:repair:heal:novel-active:progress":
                 return [
-                    '{"ts": 1778648433.5, "message": "waiting_human", '
+                    '{"ts": 1778648433.5, "message": "machine_blocked", '
                     '"data": {"reason": "old repair result"}}'
                 ]
             return []
@@ -2263,10 +2339,10 @@ def test_watchdog_marks_unowned_delegated_task_incomplete(tmp_path: Path) -> Non
     assert incomplete["current_stage"] == "auto_resume_not_claimed"
 
 
-def test_watchdog_preserves_human_review_gate_as_incomplete(tmp_path: Path) -> None:
+def test_watchdog_preserves_machine_repair_gate_as_incomplete(tmp_path: Path) -> None:
     manager = web_server.WebTaskManager(persist_path=tmp_path / ".web_tasks.json")
     task = web_server.WebTaskState(
-        task_id="task-human-review",
+        task_id="task-machine-repair",
         task_type="autowrite",
         status="running",
         created_at="2026-05-13T00:00:00+00:00",
@@ -2277,7 +2353,7 @@ def test_watchdog_preserves_human_review_gate_as_incomplete(tmp_path: Path) -> N
         progress_events=[
             {
                 "timestamp": 1778662128.667118,
-                "stage": "chapter_pipeline_paused_for_human_review",
+                "stage": "chapter_pipeline_machine_repair_required",
                 "payload": {"chapter_number": 491},
             },
         ],
@@ -2286,11 +2362,11 @@ def test_watchdog_preserves_human_review_gate_as_incomplete(tmp_path: Path) -> N
         manager._tasks[task.task_id] = task
 
     assert manager.watchdog_sweep(stale_after_seconds=1) == 0
-    incomplete = manager.get_task("task-human-review")
+    incomplete = manager.get_task("task-machine-repair")
     assert incomplete is not None
     assert incomplete["status"] == "incomplete"
-    assert incomplete["current_stage"] == "waiting_human_review"
-    assert incomplete["progress_events"][-1]["stage"] == "waiting_human_review"
+    assert incomplete["current_stage"] == "machine_repair_required"
+    assert incomplete["progress_events"][-1]["stage"] == "machine_repair_required"
 
 def test_query_bool_parses_truthy_values() -> None:
     assert web_server._query_bool("1") is True

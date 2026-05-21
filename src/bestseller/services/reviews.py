@@ -7,7 +7,7 @@ from uuid import UUID
 
 logger = logging.getLogger(__name__)
 
-from sqlalchemy import func, select, update
+from sqlalchemy import and_, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bestseller.domain.context import SceneWriterContextPacket
@@ -24,6 +24,7 @@ from bestseller.infra.db.models import (
     ChapterDraftVersionModel,
     ChapterModel,
     ChapterQualityReportModel,
+    ClueModel,
     ProjectModel,
     QualityScoreModel,
     ReviewReportModel,
@@ -32,6 +33,9 @@ from bestseller.infra.db.models import (
     SceneDraftVersionModel,
     StyleGuideModel,
 )
+from bestseller.services.action_scene_structure_gate import evaluate_action_scene_structure
+from bestseller.services.checker_schema import CheckerReport
+from bestseller.services.chekhov_emphasis_gate import evaluate_chekhov_emphasis
 from bestseller.services.context import build_chapter_writer_context, build_scene_writer_context
 from bestseller.services.drafts import (
     _NOVEL_OUTPUT_PROHIBITION,
@@ -49,6 +53,27 @@ from bestseller.services.drafts import (
     validate_and_clean_novel_content,
 )
 from bestseller.services.llm import LLMCompletionRequest, complete_text
+from bestseller.services.methodology import (
+    render_methodology_scene_rules,
+    render_qimao_opening_contract_block,
+)
+from bestseller.services.methodology_overlay import render_overlay_prompt_block
+from bestseller.services.methodology_profile import render_configured_methodology_profile_block
+from bestseller.services.methodology_runtime import (
+    merge_methodology_reports_into_chapter_review,
+    merge_methodology_reports_into_scene_review,
+)
+from bestseller.services.opening_three_function_gate import evaluate_opening_three_function
+from bestseller.services.output_hygiene import collect_unfinished_artifact_issues
+from bestseller.services.projects import get_project_by_slug
+from bestseller.services.prompt_packs import (
+    render_methodology_block,
+    render_prompt_pack_fragment,
+    render_prompt_pack_prompt_block,
+    resolve_prompt_pack,
+)
+from bestseller.services.qimao_opening_gate import QimaoOpeningFinding
+from bestseller.services.quality_gates_config import get_quality_gates_config
 from bestseller.services.quality_levers import (
     CriticLeverContext,
     audit_chapter,
@@ -57,20 +82,6 @@ from bestseller.services.quality_levers import (
     build_critic_quality_levers_block,
     extract_quality_levers_meta,
 )
-from bestseller.services.methodology import (
-    render_methodology_scene_rules,
-    render_qimao_opening_contract_block,
-)
-from bestseller.services.methodology_overlay import render_overlay_prompt_block
-from bestseller.services.output_hygiene import collect_unfinished_artifact_issues
-from bestseller.services.prompt_packs import (
-    render_methodology_block,
-    render_prompt_pack_fragment,
-    render_prompt_pack_prompt_block,
-    resolve_prompt_pack,
-)
-from bestseller.services.projects import get_project_by_slug
-from bestseller.services.qimao_opening_gate import QimaoOpeningFinding
 from bestseller.services.rewrite_impacts import analyze_rewrite_impacts_for_scene_task
 from bestseller.services.word_targets import (
     chapter_rewrite_length_band,
@@ -86,7 +97,6 @@ from bestseller.services.writing_profile import (
     resolve_writing_profile,
 )
 from bestseller.settings import AppSettings, get_settings
-
 
 # Absolute rule appended to rewrite system prompts. The writer occasionally
 # paraphrases ``rewrite_strategy`` back at us as if it were the chapter opener
@@ -1407,6 +1417,13 @@ def _render_chapter_context_section(packet, *, language: str | None = None) -> s
         )
         if overlay_block:
             lines.append(overlay_block)
+        profile_block = render_configured_methodology_profile_block(
+            stage="review",
+            scope="chapter",
+            language=language,
+        )
+        if profile_block:
+            lines.append(profile_block)
     if getattr(packet, "tree_context_nodes", None):
         lines.append("Narrative tree context:" if is_en else "叙事树上下文：")
         lines.extend(
@@ -3356,6 +3373,314 @@ async def _compute_scene_duplication_signal(
     return duplication_score, findings
 
 
+def _methodology_framework_config():
+    try:
+        cfg = get_quality_gates_config().methodology_framework
+    except Exception:
+        logger.debug("methodology framework config load failed", exc_info=True)
+        return None
+    if not getattr(cfg, "enabled", False):
+        return None
+    return cfg
+
+
+async def _compute_scene_methodology_reports(
+    *,
+    chapter: ChapterModel,
+    scene: SceneCardModel,
+    draft: SceneDraftVersionModel,
+    scene_context: SceneWriterContextPacket | None,
+) -> tuple[CheckerReport, ...]:
+    cfg = _methodology_framework_config()
+    if cfg is None or not getattr(cfg, "action_scene_structure_enabled", True):
+        return ()
+
+    try:
+        report = evaluate_action_scene_structure(
+            scene_text=draft.content_md or "",
+            scene_contract=_json_dict_from_object(
+                getattr(scene_context, "scene_contract", None)
+            ),
+            scene_type=scene.scene_type,
+            chapter=chapter.chapter_number,
+            scene_number=scene.scene_number,
+            mode=getattr(cfg, "action_scene_structure_default", "audit_only"),
+        )
+    except Exception:
+        logger.debug(
+            "action scene methodology gate failed for ch=%s scene=%s",
+            chapter.chapter_number,
+            scene.scene_number,
+            exc_info=True,
+        )
+        return ()
+
+    if report.issues or bool(report.metrics.get("is_action_scene")):
+        return (report,)
+    return ()
+
+
+async def _load_opening_three_inputs(
+    session: AsyncSession,
+    *,
+    project: ProjectModel,
+    current_chapter: ChapterModel,
+    current_draft: ChapterDraftVersionModel,
+) -> tuple[
+    tuple[tuple[int, str], ...],
+    tuple[dict[str, Any], ...],
+    tuple[tuple[int, str | None], ...],
+]:
+    texts: dict[int, str] = {}
+    outlines: dict[int, dict[str, Any]] = {}
+    hype: dict[int, str | None] = {}
+
+    if hasattr(session, "execute"):
+        try:
+            result = await session.execute(
+                select(
+                    ChapterModel.chapter_number,
+                    ChapterDraftVersionModel.content_md,
+                    ChapterModel.hype_type,
+                    ChapterModel.title,
+                    ChapterModel.chapter_goal,
+                    ChapterModel.main_conflict,
+                    ChapterModel.hook_description,
+                    ChapterModel.metadata_json,
+                )
+                .join(
+                    ChapterDraftVersionModel,
+                    and_(
+                        ChapterDraftVersionModel.chapter_id == ChapterModel.id,
+                        ChapterDraftVersionModel.is_current.is_(True),
+                    ),
+                    isouter=True,
+                )
+                .where(
+                    ChapterModel.project_id == project.id,
+                    ChapterModel.chapter_number <= 3,
+                )
+                .order_by(ChapterModel.chapter_number.asc())
+            )
+            rows = list(result) if result is not None else []
+        except Exception:
+            logger.debug("opening-three methodology input load failed", exc_info=True)
+            rows = []
+        for row in rows:
+            (
+                chapter_number,
+                content_md,
+                hype_type,
+                title,
+                chapter_goal,
+                main_conflict,
+                hook_description,
+                metadata_json,
+            ) = row
+            number = int(chapter_number)
+            if content_md:
+                texts[number] = str(content_md)
+            hype[number] = str(hype_type) if hype_type else None
+            outlines[number] = _chapter_methodology_outline(
+                chapter_number=number,
+                title=title,
+                chapter_goal=chapter_goal,
+                main_conflict=main_conflict,
+                hook_description=hook_description,
+                metadata_json=metadata_json,
+            )
+
+    current_number = int(current_chapter.chapter_number)
+    texts[current_number] = str(current_draft.content_md or "")
+    hype[current_number] = (
+        str(current_chapter.hype_type) if current_chapter.hype_type else None
+    )
+    outlines[current_number] = _chapter_methodology_outline(
+        chapter_number=current_number,
+        title=current_chapter.title,
+        chapter_goal=current_chapter.chapter_goal,
+        main_conflict=current_chapter.main_conflict,
+        hook_description=current_chapter.hook_description,
+        metadata_json=current_chapter.metadata_json,
+    )
+
+    return (
+        tuple(sorted(texts.items())),
+        tuple(outlines[number] for number in sorted(outlines)),
+        tuple(sorted(hype.items())),
+    )
+
+
+def _chapter_methodology_outline(
+    *,
+    chapter_number: int,
+    title: str | None,
+    chapter_goal: str | None,
+    main_conflict: str | None,
+    hook_description: str | None,
+    metadata_json: Any,
+) -> dict[str, Any]:
+    metadata = metadata_json if isinstance(metadata_json, dict) else {}
+    methodology_contract = metadata.get("methodology_contract")
+    return {
+        "chapter_number": chapter_number,
+        "title": title,
+        "goal": chapter_goal,
+        "core_conflict": main_conflict,
+        "closing_hook": hook_description,
+        "methodology_contract": methodology_contract
+        if isinstance(methodology_contract, dict)
+        else "",
+    }
+
+
+def _chapter_contract_payload(
+    chapter: ChapterModel,
+    chapter_context: Any | None,
+) -> dict[str, Any]:
+    payload = _json_dict_from_object(getattr(chapter_context, "chapter_contract", None))
+    metadata = chapter.metadata_json if isinstance(chapter.metadata_json, dict) else {}
+    methodology_contract = metadata.get("methodology_contract")
+    if isinstance(methodology_contract, dict):
+        for key, value in methodology_contract.items():
+            payload.setdefault(str(key), value)
+        payload.setdefault("metadata", methodology_contract)
+    if "metadata" not in payload:
+        payload["metadata"] = {}
+    return payload
+
+
+def _emphasized_items_from_chapter_metadata(chapter: ChapterModel) -> list[dict[str, Any]]:
+    metadata = chapter.metadata_json if isinstance(chapter.metadata_json, dict) else {}
+    methodology_contract = metadata.get("methodology_contract")
+    candidates = None
+    if isinstance(methodology_contract, dict):
+        candidates = methodology_contract.get("emphasized_items") or methodology_contract.get(
+            "chekhov_items"
+        )
+    candidates = candidates or metadata.get("emphasized_items") or metadata.get("chekhov_items")
+    if not isinstance(candidates, list):
+        return []
+    return [dict(item) for item in candidates if isinstance(item, dict)]
+
+
+async def _load_chekhov_ledger_items(
+    session: AsyncSession,
+    *,
+    project: ProjectModel,
+    current_chapter: int,
+) -> list[dict[str, Any]]:
+    if not hasattr(session, "execute"):
+        return []
+    try:
+        result = await session.execute(
+            select(ClueModel)
+            .where(
+                ClueModel.project_id == project.id,
+                ClueModel.status.in_(("planted", "active")),
+                ClueModel.expected_payoff_by_chapter_number.is_not(None),
+                ClueModel.expected_payoff_by_chapter_number <= current_chapter,
+            )
+            .order_by(
+                ClueModel.expected_payoff_by_chapter_number.asc(),
+                ClueModel.planted_in_chapter_number.asc().nullsfirst(),
+            )
+            .limit(20)
+        )
+    except Exception:
+        logger.debug("chekhov ledger input load failed", exc_info=True)
+        return []
+
+    rows = list(result.scalars()) if result is not None and hasattr(result, "scalars") else []
+    items: list[dict[str, Any]] = []
+    for clue in rows:
+        metadata = clue.metadata_json if isinstance(clue.metadata_json, dict) else {}
+        items.append(
+            {
+                "label": clue.label,
+                "name": clue.label,
+                "clue_code": clue.clue_code,
+                "clue_type": clue.clue_type,
+                "expected_function": clue.description,
+                "expected_payoff_by_chapter": clue.expected_payoff_by_chapter_number,
+                "status": clue.status,
+                "prominence": metadata.get("prominence")
+                or metadata.get("chekhov_prominence")
+                or "high",
+                "dual_type": True,
+            }
+        )
+    return items
+
+
+async def _compute_chapter_methodology_reports(
+    *,
+    session: AsyncSession,
+    project: ProjectModel,
+    chapter: ChapterModel,
+    draft: ChapterDraftVersionModel,
+    chapter_context: Any | None,
+) -> tuple[CheckerReport, ...]:
+    cfg = _methodology_framework_config()
+    if cfg is None:
+        return ()
+
+    reports: list[CheckerReport] = []
+    if (
+        getattr(cfg, "opening_three_function_enabled", True)
+        and chapter.chapter_number
+        <= getattr(cfg, "opening_three_function_block_until_chapter", 3)
+    ):
+        try:
+            chapter_texts, chapter_outlines, chapter_hype = await _load_opening_three_inputs(
+                session,
+                project=project,
+                current_chapter=chapter,
+                current_draft=draft,
+            )
+            report = evaluate_opening_three_function(
+                chapter_texts=chapter_texts,
+                chapter_outlines=chapter_outlines,
+                chapter_hype=chapter_hype,
+                mode=getattr(cfg, "opening_three_function_default", "audit_only"),
+            )
+            if report.issues or report.metrics.get("checked_chapters"):
+                reports.append(report)
+        except Exception:
+            logger.debug(
+                "opening-three methodology gate failed for ch=%s",
+                chapter.chapter_number,
+                exc_info=True,
+            )
+
+    if getattr(cfg, "chekhov_emphasis_enabled", True):
+        try:
+            emphasized_items = _emphasized_items_from_chapter_metadata(chapter)
+            emphasized_items.extend(
+                await _load_chekhov_ledger_items(
+                    session,
+                    project=project,
+                    current_chapter=chapter.chapter_number,
+                )
+            )
+            report = evaluate_chekhov_emphasis(
+                emphasized_items=tuple(emphasized_items),
+                chapter_contract=_chapter_contract_payload(chapter, chapter_context),
+                current_chapter=chapter.chapter_number,
+                mode=getattr(cfg, "chekhov_emphasis_default", "audit_only"),
+            )
+            if report.issues or report.metrics.get("emphasized_item_count"):
+                reports.append(report)
+        except Exception:
+            logger.debug(
+                "chekhov methodology gate failed for ch=%s",
+                chapter.chapter_number,
+                exc_info=True,
+            )
+
+    return tuple(reports)
+
+
 async def review_scene_draft(
     session: AsyncSession,
     settings: AppSettings,
@@ -3421,6 +3746,18 @@ async def review_scene_draft(
         duplication_score=duplication_score,
         duplication_findings=duplication_findings,
     )
+    methodology_reports = await _compute_scene_methodology_reports(
+        chapter=chapter,
+        scene=scene,
+        draft=draft,
+        scene_context=scene_context,
+    )
+    if methodology_reports:
+        review_result = merge_methodology_reports_into_scene_review(
+            review_result,
+            methodology_reports,
+            language=getattr(project, "language", None),
+        )
 
     critic_response = render_scene_review_summary(
         review_result,
@@ -3749,6 +4086,7 @@ async def _compute_chapter_antagonist_scope_signal(
 
     try:
         from sqlalchemy import select as _select
+
         from bestseller.infra.db.models import (
             AntagonistPlanModel,
             VolumeModel,
@@ -4024,6 +4362,463 @@ def _merge_premature_death_into_review(
     )
 
 
+# ---------------------------------------------------------------------------
+# Continuity gates (Chapter Seam / Stitched Drafts / Name Canon)
+#
+# These were originally external helpers in
+# :mod:`bestseller.services.chapter_seam`,
+# :mod:`bestseller.services.deduplication`, and
+# :mod:`bestseller.services.character_alias_canon`. The compute / merge pair
+# below wires them into ``review_chapter_draft`` so each gate failure folds
+# into the chapter review verdict the same way antagonist-scope and
+# premature-death do.
+#
+# Stance reversal is intentionally NOT wired here -- it depends on character
+# snapshots that are only refreshed every ``snapshot_policy`` chapters, so
+# it belongs in ``MILESTONE_CHECK`` rather than per-chapter review.
+# ---------------------------------------------------------------------------
+
+
+async def _compute_chapter_seam_signal(
+    *,
+    session: AsyncSession,
+    project: ProjectModel,
+    chapter: ChapterModel,
+    draft: ChapterDraftVersionModel | None,
+    tail_chars: int = 800,
+    opening_window_chars: int = 300,
+) -> tuple[list["ChapterReviewFinding"], dict[str, Any]]:
+    """Validate the seam between this chapter's opening and the prior
+    chapter's tail. Silent drops of cliffhanger threads (immediate threats,
+    locations, key participants, body states, unanswered questions) trigger
+    critical findings.
+
+    Skipped when chapter_number == 1 (no prior chapter to seam against).
+    """
+
+    if chapter.chapter_number <= 1 or not (draft and draft.content_md):
+        return [], {}
+
+    try:
+        from bestseller.services.chapter_seam import (
+            ThreadKind,
+            build_seam_bridge_repair_prompt,
+            validate_chapter_seam,
+        )
+    except Exception:
+        logger.debug("chapter_seam import failed", exc_info=True)
+        return [], {}
+
+    prev_chapter = await session.scalar(
+        select(ChapterModel).where(
+            ChapterModel.project_id == project.id,
+            ChapterModel.chapter_number == chapter.chapter_number - 1,
+        )
+    )
+    if prev_chapter is None:
+        return [], {}
+
+    prev_draft = await session.scalar(
+        select(ChapterDraftVersionModel).where(
+            ChapterDraftVersionModel.chapter_id == prev_chapter.id,
+            ChapterDraftVersionModel.is_current.is_(True),
+        )
+    )
+    prev_text = (prev_draft.content_md or "") if prev_draft else ""
+    if not prev_text:
+        return [], {}
+
+    try:
+        report = validate_chapter_seam(
+            prev_text[-tail_chars:],
+            draft.content_md,
+            opening_window_chars=opening_window_chars,
+        )
+    except Exception:
+        logger.debug(
+            "chapter_seam scan failed for ch=%s — non-fatal",
+            chapter.chapter_number,
+            exc_info=True,
+        )
+        return [], {}
+
+    if report.passed:
+        return [], {}
+
+    findings: list[ChapterReviewFinding] = []
+    for drop in report.silent_drops:
+        kind = drop.thread.kind
+        sev = "critical" if kind == ThreadKind.IMMEDIATE_THREAT else "major"
+        findings.append(
+            ChapterReviewFinding(
+                severity=sev,
+                category="chapter_seam",
+                message=(
+                    f"前章{kind.value} open thread「{drop.thread.marker}」"
+                    "在本章开篇 300 字内未被承接、转场或解决。"
+                ),
+            )
+        )
+
+    evidence_summary = {
+        "chapter_seam_open_threads": [
+            {"kind": t.kind.value, "marker": t.marker} for t in report.open_threads
+        ],
+        "chapter_seam_silent_drops": [
+            {"kind": d.thread.kind.value, "marker": d.thread.marker}
+            for d in report.silent_drops
+        ],
+        "chapter_seam_score": report.score,
+        "chapter_seam_repair_prompt": build_seam_bridge_repair_prompt(report),
+    }
+    return findings, evidence_summary
+
+
+def _merge_chapter_seam_into_review(
+    review_result: "ChapterReviewResult",
+    findings: list["ChapterReviewFinding"],
+    evidence: dict[str, Any],
+    *,
+    language: str | None = None,
+) -> "ChapterReviewResult":
+    if not findings:
+        return review_result
+
+    has_critical = any(f.severity == "critical" for f in findings)
+    merged_findings = list(review_result.findings) + findings
+    merged_evidence = dict(review_result.evidence_summary)
+    merged_evidence.update(evidence)
+
+    severity_rank = {"info": 0, "major": 1, "warning": 1, "critical": 2}
+    new_severity_max = review_result.severity_max
+    for f in findings:
+        if severity_rank.get(f.severity, 0) > severity_rank.get(new_severity_max, 0):
+            new_severity_max = f.severity
+
+    new_verdict = review_result.verdict
+    rewrite_prefix: str | None = None
+    if has_critical:
+        new_verdict = "rewrite"
+        is_en = bool(language and str(language).lower().startswith("en"))
+        repair_prompt = evidence.get("chapter_seam_repair_prompt") or ""
+        if is_en:
+            rewrite_prefix = (
+                "[chapter seam] The chapter opening silently dropped a "
+                "cliffhanger thread from the previous chapter. Insert a "
+                "100-300 char bridge paragraph that resolves, continues, or "
+                "explicitly skips over each open thread before entering the "
+                "new scene.\n\n" + repair_prompt
+            )
+        else:
+            rewrite_prefix = (
+                "【章节断点】本章开篇遗漏了前一章末尾的悬念线索。请在进入新场景之前，"
+                "插入 100-300 字的过渡段，对每条 open thread 做承接 / 时间跳跃 / 空间转场 / 屏上解决之一。\n\n"
+                + repair_prompt
+            )
+
+    merged_instructions = review_result.rewrite_instructions
+    if rewrite_prefix:
+        merged_instructions = (
+            f"{rewrite_prefix}\n\n{merged_instructions}"
+            if merged_instructions
+            else rewrite_prefix
+        )
+
+    return ChapterReviewResult(
+        verdict=new_verdict,
+        severity_max=new_severity_max,
+        scores=review_result.scores,
+        findings=merged_findings,
+        evidence_summary=merged_evidence,
+        rewrite_instructions=merged_instructions,
+    )
+
+
+def _load_character_canon_for_project(project: ProjectModel) -> Any:
+    """Load ``character-aliases.yaml`` for a project, looking under the
+    Mode B output dir. Returns empty canon if file missing.
+    """
+    from pathlib import Path
+
+    from bestseller.services.character_alias_canon import (
+        CharacterCanon,
+        load_character_canon,
+    )
+
+    # Mode B convention: output/ai-generated/{slug}/story-bible/character-aliases.yaml
+    # Mode A convention: output/{slug}/story-bible/character-aliases.yaml
+    candidates = [
+        Path("output/ai-generated") / project.slug / "story-bible" / "character-aliases.yaml",
+        Path("output") / project.slug / "story-bible" / "character-aliases.yaml",
+    ]
+    for path in candidates:
+        if path.exists():
+            return load_character_canon(path)
+    return CharacterCanon.empty()
+
+
+async def _compute_stitched_draft_signal(
+    *,
+    session: AsyncSession,
+    project: ProjectModel,
+    chapter: ChapterModel,
+    draft: ChapterDraftVersionModel | None,
+) -> tuple[list["ChapterReviewFinding"], dict[str, Any]]:
+    """Detect intra-chapter stitched drafts. Uses the project's character
+    canon as participant pool when available -- this kills the prose-token
+    pollution that drags Jaccard similarities below the threshold."""
+
+    if not (draft and draft.content_md):
+        return [], {}
+
+    try:
+        from bestseller.services.deduplication import (
+            build_stitched_draft_repair_prompt,
+            detect_intra_chapter_stitched_drafts,
+        )
+    except Exception:
+        logger.debug("deduplication import failed", exc_info=True)
+        return [], {}
+
+    canon = _load_character_canon_for_project(project)
+    name_pool = (
+        frozenset(canon.spelling_to_canonical.keys())
+        if canon and canon.entries
+        else None
+    )
+
+    try:
+        results = detect_intra_chapter_stitched_drafts(
+            draft.content_md, name_pool=name_pool,
+        )
+    except Exception:
+        logger.debug(
+            "stitched-draft scan failed for ch=%s — non-fatal",
+            chapter.chapter_number,
+            exc_info=True,
+        )
+        return [], {}
+
+    if not results:
+        return [], {}
+
+    findings: list[ChapterReviewFinding] = []
+    for finding in results:
+        shared = sorted(
+            finding.block_a.participants & finding.block_b.participants
+        )
+        findings.append(
+            ChapterReviewFinding(
+                severity="critical",
+                category="stitched_draft",
+                message=(
+                    f"检测到拼接稿（事件签名相似度 {finding.similarity}）："
+                    f"段落 #{finding.block_a.block_index} 与 #{finding.block_b.block_index} "
+                    f"共享 {shared}，疑似同一事件的两版草稿被同时保留。"
+                ),
+            )
+        )
+
+    evidence_summary = {
+        "stitched_draft_pairs": [
+            {
+                "a_idx": f.block_a.block_index,
+                "b_idx": f.block_b.block_index,
+                "similarity": f.similarity,
+                "shared": sorted(f.block_a.participants & f.block_b.participants),
+                "conflicts": list(f.conflicts),
+            }
+            for f in results
+        ],
+        "stitched_draft_repair_prompt": build_stitched_draft_repair_prompt(results),
+    }
+    return findings, evidence_summary
+
+
+def _merge_stitched_draft_into_review(
+    review_result: "ChapterReviewResult",
+    findings: list["ChapterReviewFinding"],
+    evidence: dict[str, Any],
+    *,
+    language: str | None = None,
+) -> "ChapterReviewResult":
+    if not findings:
+        return review_result
+
+    merged_findings = list(review_result.findings) + findings
+    merged_evidence = dict(review_result.evidence_summary)
+    merged_evidence.update(evidence)
+
+    severity_rank = {"info": 0, "major": 1, "warning": 1, "critical": 2}
+    new_severity_max = review_result.severity_max
+    for f in findings:
+        if severity_rank.get(f.severity, 0) > severity_rank.get(new_severity_max, 0):
+            new_severity_max = f.severity
+
+    new_verdict = "rewrite"  # stitched drafts are always must_rewrite
+    is_en = bool(language and str(language).lower().startswith("en"))
+    repair_prompt = evidence.get("stitched_draft_repair_prompt") or ""
+    if is_en:
+        rewrite_prefix = (
+            "[stitched draft] One or more pairs of paragraphs appear to be "
+            "alternative drafts of the same plot beat (same participants + "
+            "same key prop, paraphrased prose). Keep ONE version and DELETE "
+            "the other -- do NOT merge (merging keeps contradictory props "
+            "from both drafts).\n\n" + repair_prompt
+        )
+    else:
+        rewrite_prefix = (
+            "【拼接稿】检测到本章有疑似同事件的两版草稿被同时保留。"
+            "请二选一保留，删除另一段；禁止合并（合并会保留两版的道具/动作矛盾）。\n\n"
+            + repair_prompt
+        )
+
+    merged_instructions = (
+        f"{rewrite_prefix}\n\n{review_result.rewrite_instructions}"
+        if review_result.rewrite_instructions
+        else rewrite_prefix
+    )
+
+    return ChapterReviewResult(
+        verdict=new_verdict,
+        severity_max=new_severity_max,
+        scores=review_result.scores,
+        findings=merged_findings,
+        evidence_summary=merged_evidence,
+        rewrite_instructions=merged_instructions,
+    )
+
+
+async def _compute_name_canon_signal(
+    *,
+    session: AsyncSession,
+    project: ProjectModel,
+    chapter: ChapterModel,
+    draft: ChapterDraftVersionModel | None,
+) -> tuple[list["ChapterReviewFinding"], dict[str, Any]]:
+    """Validate character names in the chapter against the project's
+    character-aliases.yaml canon. Skips silently when no canon exists --
+    the gate is opt-in via the presence of the YAML file.
+    """
+
+    if not (draft and draft.content_md):
+        return [], {}
+
+    try:
+        from bestseller.services.character_alias_canon import (
+            build_name_canon_repair_prompt,
+            validate_chapter_name_canon,
+        )
+    except Exception:
+        logger.debug("character_alias_canon import failed", exc_info=True)
+        return [], {}
+
+    canon = _load_character_canon_for_project(project)
+    if not canon.entries:
+        return [], {}
+
+    try:
+        violations = validate_chapter_name_canon(draft.content_md, canon)
+    except Exception:
+        logger.debug(
+            "name-canon scan failed for ch=%s — non-fatal",
+            chapter.chapter_number,
+            exc_info=True,
+        )
+        return [], {}
+
+    if not violations:
+        return [], {}
+
+    findings: list[ChapterReviewFinding] = []
+    for v in violations:
+        sev = "critical" if v.kind == "forbidden_collision" else "major"
+        findings.append(
+            ChapterReviewFinding(
+                severity=sev,
+                category="name_canon",
+                message=(
+                    f"L{v.line_no} [{v.kind}] 「{v.spelling}」 — {v.suggestion}"
+                ),
+            )
+        )
+
+    evidence_summary = {
+        "name_canon_violations": [
+            {
+                "spelling": v.spelling,
+                "line_no": v.line_no,
+                "kind": v.kind,
+                "excerpt": v.excerpt,
+                "suggestion": v.suggestion,
+            }
+            for v in violations
+        ],
+        "name_canon_repair_prompt": build_name_canon_repair_prompt(violations),
+    }
+    return findings, evidence_summary
+
+
+def _merge_name_canon_into_review(
+    review_result: "ChapterReviewResult",
+    findings: list["ChapterReviewFinding"],
+    evidence: dict[str, Any],
+    *,
+    language: str | None = None,
+) -> "ChapterReviewResult":
+    if not findings:
+        return review_result
+
+    has_critical = any(f.severity == "critical" for f in findings)
+    merged_findings = list(review_result.findings) + findings
+    merged_evidence = dict(review_result.evidence_summary)
+    merged_evidence.update(evidence)
+
+    severity_rank = {"info": 0, "major": 1, "warning": 1, "critical": 2}
+    new_severity_max = review_result.severity_max
+    for f in findings:
+        if severity_rank.get(f.severity, 0) > severity_rank.get(new_severity_max, 0):
+            new_severity_max = f.severity
+
+    new_verdict = review_result.verdict
+    rewrite_prefix: str | None = None
+    if has_critical:
+        new_verdict = "rewrite"
+        is_en = bool(language and str(language).lower().startswith("en"))
+        repair_prompt = evidence.get("name_canon_repair_prompt") or ""
+        if is_en:
+            rewrite_prefix = (
+                "[name canon] One or more character-name spellings collide "
+                "with another character per the project's character-aliases.yaml. "
+                "Replace each collision with the canonical form, OR if it is "
+                "genuinely a new character, register it in the canon first.\n\n"
+                + repair_prompt
+            )
+        else:
+            rewrite_prefix = (
+                "【人名 Canon】本章使用了与其他角色易混的人名拼写（character-aliases.yaml 标记的 forbidden_collisions）。"
+                "请改为 canonical 形式；若确为新角色，先在 yaml 中追加条目。\n\n"
+                + repair_prompt
+            )
+
+    merged_instructions = review_result.rewrite_instructions
+    if rewrite_prefix:
+        merged_instructions = (
+            f"{rewrite_prefix}\n\n{merged_instructions}"
+            if merged_instructions
+            else rewrite_prefix
+        )
+
+    return ChapterReviewResult(
+        verdict=new_verdict,
+        severity_max=new_severity_max,
+        scores=review_result.scores,
+        findings=merged_findings,
+        evidence_summary=merged_evidence,
+        rewrite_instructions=merged_instructions,
+    )
+
+
 def _merge_antagonist_scope_into_review(
     review_result: ChapterReviewResult,
     antagonist_findings: list[ChapterReviewFinding],
@@ -4140,6 +4935,19 @@ async def review_chapter_draft(
         duplication_score=ch_duplication_score,
         duplication_findings=ch_duplication_findings,
     )
+    methodology_reports = await _compute_chapter_methodology_reports(
+        session=session,
+        project=project,
+        chapter=chapter,
+        draft=draft,
+        chapter_context=chapter_context,
+    )
+    if methodology_reports:
+        review_result = merge_methodology_reports_into_chapter_review(
+            review_result,
+            methodology_reports,
+            language=getattr(project, "language", None),
+        )
 
     # Antagonist-scope gate (B10d): after the rule-based evaluator, fold
     # in the per-chapter antagonist audit so chapters that carry a
@@ -4179,6 +4987,35 @@ async def review_chapter_draft(
             review_result,
             pdeath_findings,
             pdeath_evidence,
+            language=getattr(project, "language", None),
+        )
+
+    # Continuity gates -- chapter seam (vs prior chapter tail), intra-chapter
+    # stitched drafts, and project-canon name validation. See quality.md § 4.5.
+    seam_findings, seam_evidence = await _compute_chapter_seam_signal(
+        session=session, project=project, chapter=chapter, draft=draft,
+    )
+    if seam_findings:
+        review_result = _merge_chapter_seam_into_review(
+            review_result, seam_findings, seam_evidence,
+            language=getattr(project, "language", None),
+        )
+
+    stitched_findings, stitched_evidence = await _compute_stitched_draft_signal(
+        session=session, project=project, chapter=chapter, draft=draft,
+    )
+    if stitched_findings:
+        review_result = _merge_stitched_draft_into_review(
+            review_result, stitched_findings, stitched_evidence,
+            language=getattr(project, "language", None),
+        )
+
+    name_canon_findings, name_canon_evidence = await _compute_name_canon_signal(
+        session=session, project=project, chapter=chapter, draft=draft,
+    )
+    if name_canon_findings:
+        review_result = _merge_name_canon_into_review(
+            review_result, name_canon_findings, name_canon_evidence,
             language=getattr(project, "language", None),
         )
 

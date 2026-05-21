@@ -155,6 +155,30 @@ class StoryPrincipleGateConfig:
     max_same_role_streak: int = 3
 
 
+@dataclass(frozen=True)
+class MethodologyFrameworkConfig:
+    """External writing-methodology profile and gate wiring.
+
+    Missing config defaults to disabled so historical projects do not get
+    prompt or health changes until the block is explicitly opted in.
+    """
+
+    enabled: bool = False
+    profile_id: str = "plova_structured_writing_v1"
+    cards_enabled: bool = True
+    data_dir: str = "data/methodology_sources/plova"
+    opening_three_function_enabled: bool = True
+    opening_three_function_default: str = "audit_only"
+    opening_three_function_block_until_chapter: int = 3
+    action_scene_structure_enabled: bool = True
+    action_scene_structure_default: str = "audit_only"
+    chekhov_emphasis_enabled: bool = True
+    chekhov_emphasis_default: str = "audit_only"
+    chekhov_overdue_window_default: int = 8
+    longform_chaos_enabled: bool = False
+    longform_chaos_start_after_chapter: int = 30
+
+
 # ---------------------------------------------------------------------------
 # Phase B/C/D — webnovel-writer adoption flags (plan: shimmying-soaring-gadget).
 # ---------------------------------------------------------------------------
@@ -222,6 +246,9 @@ class QualityGatesConfig:
     phase_c: PhaseCOverridesConfig = field(default_factory=PhaseCOverridesConfig)
     phase_d: PhaseDTimeConfig = field(default_factory=PhaseDTimeConfig)
     ai_flavor: AiFlavorGateConfig = field(default_factory=AiFlavorGateConfig)
+    methodology_framework: MethodologyFrameworkConfig = field(
+        default_factory=MethodologyFrameworkConfig
+    )
 
 
 def _as_dict(payload: Any) -> dict[str, Any]:
@@ -285,6 +312,7 @@ def load_quality_gates_config(
     l5_canon_guardrails = _as_dict(l5_checks.get("canon_guardrails"))
     l6 = _as_dict(raw.get("l6_write_gate"))
     story_principle = _as_dict(raw.get("story_principle_gate"))
+    methodology_framework = _as_dict(raw.get("methodology_framework"))
     l7 = _as_dict(raw.get("l7_continuous_audit"))
     l8 = _as_dict(raw.get("l8_scorecard"))
     l2_stance = _as_dict(l2_checks.get("stance_flip_justification"))
@@ -379,6 +407,7 @@ def load_quality_gates_config(
         phase_c=_build_phase_c(_as_dict(raw.get("phase_c_overrides"))),
         phase_d=_build_phase_d(_as_dict(raw.get("phase_d_time"))),
         ai_flavor=_build_ai_flavor(_as_dict(raw.get("ai_flavor_gate"))),
+        methodology_framework=_build_methodology_framework(methodology_framework),
     )
 
 
@@ -418,6 +447,42 @@ def _build_phase_d(raw: dict[str, Any]) -> PhaseDTimeConfig:
         regression_check_enabled=bool(raw.get("regression_check_enabled", True)),
         countdown_arithmetic_enabled=bool(
             raw.get("countdown_arithmetic_enabled", True)
+        ),
+    )
+
+
+def _safe_bool(raw: Any, default: bool) -> bool:
+    if raw is None:
+        return default
+    return bool(raw)
+
+
+def _build_methodology_framework(raw: dict[str, Any]) -> MethodologyFrameworkConfig:
+    cards = _as_dict(raw.get("cards"))
+    opening = _as_dict(raw.get("opening_three_function"))
+    action = _as_dict(raw.get("action_scene_structure"))
+    chekhov = _as_dict(raw.get("chekhov_emphasis"))
+    chaos = _as_dict(raw.get("longform_chaos"))
+    return MethodologyFrameworkConfig(
+        enabled=bool(raw.get("enabled", False)),
+        profile_id=str(raw.get("profile_id") or "plova_structured_writing_v1"),
+        cards_enabled=_safe_bool(cards.get("enabled"), True),
+        data_dir=str(cards.get("data_dir") or "data/methodology_sources/plova"),
+        opening_three_function_enabled=_safe_bool(opening.get("enabled"), True),
+        opening_three_function_default=str(opening.get("default") or "audit_only"),
+        opening_three_function_block_until_chapter=max(
+            0, _safe_int(opening.get("block_until_chapter"), 3)
+        ),
+        action_scene_structure_enabled=_safe_bool(action.get("enabled"), True),
+        action_scene_structure_default=str(action.get("default") or "audit_only"),
+        chekhov_emphasis_enabled=_safe_bool(chekhov.get("enabled"), True),
+        chekhov_emphasis_default=str(chekhov.get("default") or "audit_only"),
+        chekhov_overdue_window_default=max(
+            1, _safe_int(chekhov.get("overdue_window_default"), 8)
+        ),
+        longform_chaos_enabled=_safe_bool(chaos.get("enabled"), False),
+        longform_chaos_start_after_chapter=max(
+            1, _safe_int(chaos.get("start_after_chapter"), 30)
         ),
     )
 

@@ -27,3 +27,6 @@ data/distillation/**
 !data/distillation/schemas/
 !data/distillation/schemas/**
 data/distillation/.prepare_source.lock
+
+# Douyin OCR pipeline: local downloaded frames only
+douyin_plova/images/

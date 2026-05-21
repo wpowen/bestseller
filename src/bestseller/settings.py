@@ -312,7 +312,7 @@ class PipelineSettings(BaseModel):
     # When ``enable_length_stability_gate`` (or other L4/L5 gates) flags a
     # chapter as ``production_state="blocked"``, the chapter pipeline can
     # auto-trigger a scene-level rewrite cycle instead of leaving the
-    # workflow stranded in FAILED / WAITING_HUMAN.  Only a narrow set of
+    # workflow stranded in FAILED / MACHINE_BLOCKED.  Only a narrow set of
     # block codes are considered "repairable" to avoid infinite loops on
     # deterministic violations (e.g. character-name roster issues can only
     # be fixed by a schema change, not more rewriting).

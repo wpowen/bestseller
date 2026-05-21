@@ -17,6 +17,7 @@ import hashlib
 import logging
 import re
 from collections import Counter
+from dataclasses import dataclass
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -1609,3 +1610,410 @@ def build_location_ledger_block(
                 )
 
     return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# Intra-chapter stitched-draft detection
+#
+# ``detect_chapter_text_loop`` catches verbatim paragraph repeats (a writer
+# bug). ``detect_intra_chapter_stitched_drafts`` catches a much subtler issue:
+# the same plot event re-told twice in the same chapter with DIFFERENT prose
+# (a *merge* bug, typical when two LLM candidates were both concatenated into
+# the final draft). Detection is event-signature based, not text-similarity
+# based.
+# ---------------------------------------------------------------------------
+
+# Action verbs that strongly mark "plot events" (Chinese-first)
+_EVENT_ACTION_VERBS = (
+    "撬", "开", "掏", "塞", "拿", "拾", "取", "夺", "递", "抛", "藏",
+    "推门", "踏入", "闯入", "潜入", "翻窗",
+    "打飞", "震飞", "击退", "炸开", "斩", "刺", "刺出", "拍出", "掌出",
+    "围", "围住", "拦", "截", "扑", "袭", "突袭",
+    "撞见", "现身", "现身", "出现", "落地", "落下",
+    "封", "封死", "封住", "锁", "缚",
+    "晕", "倒", "跪", "瘫", "退",
+    "看见", "看清", "认出", "察觉",
+)
+
+# Strong "physical object" props characteristic to the genre; reusing one in
+# two distinct prose blocks within a single chapter is a stitched-draft tell.
+_EVENT_PROP_WORDS = (
+    "暗格", "玉简", "册子", "残篇", "令牌", "符纸", "符文", "丹炉", "锦盒",
+    "灵镜", "镜面", "剑", "斧", "刀", "鞭", "锤", "弓", "盾",
+    "丹药", "灵草", "灵石", "禁制", "封印",
+    "灯", "烛", "镜", "符",
+)
+
+
+@dataclass(frozen=True)
+class EventSignature:
+    """A coarse fingerprint of an in-chapter prose block.
+
+    Two blocks with overlapping signatures (same participants + same prop
+    word + same action verb cluster) are very likely two drafts of the same
+    plot beat. We do *not* fingerprint by text similarity, since the
+    distinguishing failure mode here is paraphrased re-runs.
+    """
+
+    block_index: int
+    char_offset: int
+    participants: frozenset[str]
+    props: frozenset[str]
+    verbs: frozenset[str]
+    excerpt: str  # first 80 chars for evidence
+
+
+@dataclass(frozen=True)
+class StitchedDraftFinding:
+    """A pair of blocks that look like alternative drafts of the same beat."""
+
+    block_a: EventSignature
+    block_b: EventSignature
+    similarity: float
+    conflicts: tuple[str, ...]  # short prose descriptions of contradictions
+
+
+def _split_into_event_blocks(chapter_text: str) -> list[tuple[int, str]]:
+    """Split a chapter into "event blocks" (scenes).
+
+    Strategy:
+    1. Strip YAML frontmatter if present.
+    2. Strip H1/H2 headings (chapter title lines).
+    3. Prefer ``---`` scene separators -- the canonical scene boundary in
+       this codebase's chapter markdown. Each block between ``---`` lines
+       is one event scene.
+    4. Fall back to double-newline paragraph splitting when no ``---``
+       separators exist in the body.
+
+    Returns ``[(char_offset, text)]``. Skips blocks shorter than 90 non-newline
+    chars, since they cannot host a full event beat (typical false-positive
+    sources: one-line dialogue, scene-setting lines).
+    """
+    if not chapter_text:
+        return []
+
+    # Drop YAML frontmatter if present
+    text = chapter_text
+    if text.startswith("---"):
+        end = text.find("---", 3)
+        if end > 0:
+            text = text[end + 3 :]
+
+    # Drop H1/H2 chapter title lines
+    text = re.sub(r"^#{1,6}\s.*$", "", text, flags=re.MULTILINE)
+
+    # Strategy: split on ``---`` scene separators when present. Each segment
+    # then has whatever paragraphing it had internally; we concatenate it as
+    # one block of "narrative material" for the same scene.
+    has_scene_sep = bool(re.search(r"\n\s*---\s*\n", text))
+
+    blocks: list[tuple[int, str]] = []
+    if has_scene_sep:
+        cursor = 0
+        for segment in re.split(r"\n\s*---\s*\n", text):
+            seg = segment.strip()
+            char_offset = text.find(segment, cursor)
+            cursor = char_offset + len(segment) if char_offset >= 0 else cursor
+            if not seg:
+                continue
+            if len(seg.replace("\n", "")) < 90:
+                continue
+            blocks.append((char_offset, seg))
+        return blocks
+
+    # Fall back to paragraph-level split with an accumulator so chapters that
+    # use many short paragraphs (typical for fast-paced action) still surface
+    # event blocks of meaningful length.
+    cursor = 0
+    pending: list[str] = []
+    pending_offset: int = -1
+    pending_chars: int = 0
+    BLOCK_TARGET_CHARS = 220     # commit when accumulator >= this
+    MIN_BLOCK_CHARS = 90         # ignore final scraps below this
+
+    def _commit() -> None:
+        nonlocal pending, pending_offset, pending_chars
+        if pending_chars >= MIN_BLOCK_CHARS and pending_offset >= 0:
+            blocks.append((pending_offset, "\n\n".join(pending).strip()))
+        pending = []
+        pending_offset = -1
+        pending_chars = 0
+
+    for paragraph in re.split(r"\n\s*\n", text):
+        para = paragraph.strip()
+        char_offset = text.find(paragraph, cursor)
+        cursor = char_offset + len(paragraph) if char_offset >= 0 else cursor
+        if not para or para.startswith("#") or para.startswith("---"):
+            continue
+        plen = len(para.replace("\n", ""))
+        if pending_offset < 0:
+            pending_offset = char_offset
+        pending.append(para)
+        pending_chars += plen
+        if pending_chars >= BLOCK_TARGET_CHARS:
+            _commit()
+    _commit()
+    return blocks
+
+
+# Common 2-3 char prose tokens that LOOK like names but aren't. Critical
+# denylist -- without it, location words and adverbs are pooled as "names" and
+# wreck the participant signature.
+_NAME_STOPWORDS = frozenset({
+    # Pronouns / collective references
+    "他们", "她们", "你们", "我们", "自己", "别人", "众人", "众弟", "那人", "这人",
+    "有人", "无人",
+    # Location words that can appear standalone
+    "门口", "门外", "屋内", "屋外", "丹房", "藏经", "演武", "宿舍", "院子", "山门",
+    # Adverbs / connectors
+    "庄严", "突然", "忽然", "刚才", "片刻", "片晌", "瞬间", "果然", "终于", "原来",
+    "其实", "其中", "另一", "其他", "其余", "那个", "这个", "什么", "怎么", "怎样",
+    "为什么", "怎么办", "没料", "没想", "想到", "似乎", "仿佛", "宛如", "好像",
+    "还是", "不是", "不能", "不行", "不要", "不知", "已经", "现在", "依然", "依旧",
+    "果真", "还有", "再次", "再来", "一道", "一片", "一阵", "一种", "一道",
+    "像是", "像一", "像被", "像有", "像在", "如同", "犹如", "如是", "如此",
+    "可以", "可能", "应该", "或许", "也许", "大概", "也是", "便是",
+    # Time / lighting
+    "月光", "晨光", "夜色", "黄昏", "傍晚", "深夜", "黎明",
+    # Body / location prepositionals
+    "掌中", "袖中", "胸中", "心中", "手中", "怀中", "眼中", "嘴中", "口中",
+    "头顶", "身前", "身后", "身上", "身侧", "脚下", "面前", "眼前", "面上",
+    "腰间", "肩头", "肩上", "膝上",
+    # Body parts that often start sentences (POV anchors, not names)
+    "丹田", "掌心", "指尖", "指节", "胸口", "嘴角", "目光", "眉头", "眉宇", "肩膀",
+    "脸色", "脖颈", "喉咙", "心脏", "心头",
+    # Cultivation / setting jargon ubiquitous in xianxia — would otherwise
+    # dominate the pool. NOTE: real character names like 道君 / 道祖 are
+    # whitelisted via the project's character-aliases.yaml when present.
+    "道种", "道典", "灵压", "灵气", "灵力", "灵根", "筑基", "炼气", "金丹", "元婴",
+    "封面", "封印", "封禁", "符文", "阴阳", "按律", "照出", "宗门", "禁地",
+})
+
+# Chars that mark the *left* boundary of a name in vernacular CJK prose.
+_NAME_BOUNDARY_CHARS = set("\n\t 　，。：；！？、「」『』\"\"''（）()【】…·—-")
+
+
+def _extract_chapter_name_pool(chapter_text: str, min_occurrences: int = 2) -> set[str]:
+    """Surface 2-3 char tokens that look like character names in this chapter.
+
+    Algorithm:
+    1. Walk the text char by char.
+    2. At each position preceded by a boundary character (punctuation /
+       whitespace / start-of-text), try to grab the next 2-3 contiguous Han
+       chars as a candidate name.
+    3. Pool tokens that appear ≥ ``min_occurrences`` times and aren't in
+       the stopword set.
+
+    This is intentionally simpler than a regex lookbehind/lookahead because
+    Chinese names can be followed by *any* verb -- there is no compact right-
+    boundary character class. The chapter-wide frequency filter handles the
+    false-positive problem (one-off prose tokens get dropped).
+    """
+    if not chapter_text:
+        return set()
+
+    counts: dict[str, int] = {}
+    text = chapter_text
+    n = len(text)
+    for i in range(n):
+        if i > 0 and text[i - 1] not in _NAME_BOUNDARY_CHARS:
+            continue
+        # Pool both 2- and 3-char candidates so we can keep canonically
+        # 3-char names like 周元青 alongside 2-char names like 宁尘.
+        for length in (2, 3):
+            end = i + length
+            if end > n:
+                continue
+            candidate = text[i:end]
+            if not all("一" <= c <= "鿿" for c in candidate):
+                continue
+            if candidate in _NAME_STOPWORDS:
+                continue
+            counts[candidate] = counts.get(candidate, 0) + 1
+
+    # Suppress 3-char candidates that are just a 2-char name + 1-char verb
+    # particle. Heuristic: if "宁尘被" appears with count C3 and "宁尘"
+    # appears with count C2 >= C3, the 3-char form is almost certainly
+    # spurious. We keep "周元青" because 周元 is typically a different
+    # character (or doesn't appear) -- so the 3-char dominates.
+    dropped: set[str] = set()
+    for token in list(counts):
+        if len(token) != 3:
+            continue
+        prefix = token[:2]
+        if prefix in _NAME_STOPWORDS:
+            dropped.add(token)
+        elif prefix in counts and counts[prefix] >= counts[token]:
+            dropped.add(token)
+    for t in dropped:
+        del counts[t]
+
+    return {t for t, c in counts.items() if c >= min_occurrences}
+
+
+def _signature_of(
+    block_idx: int,
+    char_offset: int,
+    text: str,
+    chapter_name_pool: frozenset[str],
+) -> EventSignature:
+    # Participants = chapter-wide name pool ∩ names appearing in this block.
+    participants: set[str] = set()
+    for name in chapter_name_pool:
+        if name in text:
+            participants.add(name)
+
+    props = {w for w in _EVENT_PROP_WORDS if w in text}
+    verbs = {v for v in _EVENT_ACTION_VERBS if v in text}
+
+    excerpt = text.replace("\n", " ")[:80].strip()
+    return EventSignature(
+        block_index=block_idx,
+        char_offset=char_offset,
+        participants=frozenset(participants),
+        props=frozenset(props),
+        verbs=frozenset(verbs),
+        excerpt=excerpt,
+    )
+
+
+def _jaccard(a: frozenset[str], b: frozenset[str]) -> float:
+    if not a and not b:
+        return 0.0
+    union = a | b
+    if not union:
+        return 0.0
+    return len(a & b) / len(union)
+
+
+def _event_similarity(a: EventSignature, b: EventSignature) -> float:
+    """Weighted similarity: participants 0.55 + props 0.45.
+
+    Verbs were dropped from the original formula -- the candidate verb set
+    in deduplication.py is open-ended enough that two drafts of the *same*
+    event often share only a couple of verbs (different prose word choices),
+    making verbs a noisy signal. The participant + prop signature carries
+    almost all the discriminative information for stitched drafts.
+    """
+    return (
+        _jaccard(a.participants, b.participants) * 0.55
+        + _jaccard(a.props, b.props) * 0.45
+    )
+
+
+def _list_conflicts(a: EventSignature, b: EventSignature) -> tuple[str, ...]:
+    """Surface human-readable conflicts to aid editor's deletion decision."""
+    conflicts: list[str] = []
+    only_a_props = a.props - b.props
+    only_b_props = b.props - a.props
+    if only_a_props or only_b_props:
+        conflicts.append(
+            f"道具差异：A 用了 {sorted(only_a_props) or '∅'}，B 用了 {sorted(only_b_props) or '∅'}"
+        )
+    only_a_verbs = a.verbs - b.verbs
+    only_b_verbs = b.verbs - a.verbs
+    if only_a_verbs or only_b_verbs:
+        conflicts.append(
+            f"动作差异：A 含 {sorted(only_a_verbs) or '∅'}，B 含 {sorted(only_b_verbs) or '∅'}"
+        )
+    return tuple(conflicts)
+
+
+def detect_intra_chapter_stitched_drafts(
+    chapter_text: str,
+    *,
+    similarity_threshold: float = 0.62,
+    min_participants_overlap: int = 2,
+    min_props_overlap: int = 1,
+    name_pool: frozenset[str] | None = None,
+    length_ratio_range: tuple[float, float] = (0.6, 1.7),
+) -> list[StitchedDraftFinding]:
+    """Detect "two drafts stitched together" inside one chapter.
+
+    Args:
+        chapter_text: full chapter markdown.
+        similarity_threshold: weighted-jaccard cutoff above which two blocks
+            are considered the same event re-told.
+        min_participants_overlap: minimum shared named characters required
+            for a candidate pair (filters out coincidence).
+        min_props_overlap: minimum shared characteristic prop required
+            (e.g. both blocks mention "暗格" or "玉简").
+        name_pool: optional explicit set of canonical character names. When
+            provided (typically from
+            :func:`character_alias_canon.load_character_canon`), this is used
+            verbatim as the participant pool, bypassing the frequency-based
+            heuristic. Strongly recommended in production -- the heuristic
+            pool is polluted by prose tokens which inflates the union set in
+            Jaccard scoring and depresses similarities below the threshold.
+
+    Returns a list of ``StitchedDraftFinding``; empty if the chapter is clean.
+    Cost: O(N^2) over event blocks but N is typically <= 20 per chapter.
+    """
+    blocks = _split_into_event_blocks(chapter_text)
+    pool = name_pool if name_pool is not None else frozenset(_extract_chapter_name_pool(chapter_text))
+    sigs = [_signature_of(i, off, txt, pool) for i, (off, txt) in enumerate(blocks)]
+    block_lengths = [len(txt.replace("\n", "")) for _, txt in blocks]
+    lo, hi = length_ratio_range
+
+    findings: list[StitchedDraftFinding] = []
+    for i in range(len(sigs)):
+        for j in range(i + 1, len(sigs)):
+            a, b = sigs[i], sigs[j]
+            # Cheap prefilter
+            if len(a.participants & b.participants) < min_participants_overlap:
+                continue
+            if len(a.props & b.props) < min_props_overlap:
+                continue
+            # Stitched drafts are different prose RENDITIONS of the same scene
+            # and therefore tend to have similar lengths. Two blocks with very
+            # different lengths sharing many participants/props are almost
+            # always genuinely different scenes that happen to reuse plot props
+            # (令牌 / 灵镜 / 暗格 recurring across an arc) -- not stitched.
+            if block_lengths[j] == 0:
+                continue
+            ratio = block_lengths[i] / block_lengths[j]
+            if not (lo <= ratio <= hi):
+                continue
+            sim = _event_similarity(a, b)
+            if sim >= similarity_threshold:
+                findings.append(
+                    StitchedDraftFinding(
+                        block_a=a,
+                        block_b=b,
+                        similarity=round(sim, 3),
+                        conflicts=_list_conflicts(a, b),
+                    )
+                )
+    return findings
+
+
+def build_stitched_draft_repair_prompt(
+    findings: list[StitchedDraftFinding],
+) -> str:
+    """Render an editor-facing instruction listing the colliding blocks.
+
+    Editor's job is to **pick one version and delete the other** -- never to
+    merge or rewrite both. Merging tends to keep contradictory props from
+    both drafts (e.g. "册子 AND 玉简") which is the bug we are trying to fix.
+    """
+    if not findings:
+        return ""
+
+    bullets: list[str] = []
+    for f in findings:
+        bullets.append(
+            f"- 段落 #{f.block_a.block_index} 与 #{f.block_b.block_index} "
+            f"事件签名相似度 {f.similarity}，疑似同一事件的两版草稿被同时保留。\n"
+            f"  · 段 A 起头：{f.block_a.excerpt}\n"
+            f"  · 段 B 起头：{f.block_b.excerpt}\n"
+            f"  · 共同参与者：{sorted(f.block_a.participants & f.block_b.participants)}\n"
+            f"  · 冲突项：{'; '.join(f.conflicts) if f.conflicts else '无显式冲突，但事件结构高度重叠'}"
+        )
+
+    return (
+        "【拼接稿修复任务】\n"
+        "检测到本章存在 ≥1 对疑似「换皮重写」的段落（同事件、不同措辞）。\n"
+        "请二选一保留，删除另一段；禁止合并两段（合并会留下道具/动作矛盾）。\n"
+        "选择标准：留下与章节 outline 的 scene cards 一致、与前后章 canon 不冲突的版本。\n\n"
+        + "\n".join(bullets)
+    )

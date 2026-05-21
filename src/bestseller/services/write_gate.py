@@ -9,7 +9,7 @@ Separation of concerns:
       effects) so unit tests can exercise gate behavior without fixtures.
     * ``handle_blocked_chapter`` is the side-effectful wrapper that persists
       the quality report, flips chapter state to FAILED, and drops rejected
-      drafts for human review. The caller wires these in when the pipeline
+      drafts for machine repair. The caller wires these in when the pipeline
       has a session.
 """
 

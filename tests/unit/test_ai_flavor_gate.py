@@ -226,7 +226,7 @@ def test_gate_blocks_when_residual_still_high_cn() -> None:
         config=cfg,
     )
     # The post-patch text *is* clean, but block_score_cn=0 means even the
-    # patched empty-spans state must route to human review. This guards the
+    # patched empty-spans state must route to machine repair. This guards the
     # block_on_residual escape hatch.
     assert out.decision in ("block", "patched")
 

@@ -16,7 +16,7 @@ trigger_keywords:
   - mode b
   - story bible
   - volume plan
-version: 2026.04.16
+version: 2026.05.21
 ---
 
 # BestSeller Framework Skill
@@ -49,6 +49,7 @@ version: 2026.04.16
 | 修改 scene / chapter pipeline | [architecture.md](architecture.md) § Pipeline Flow | [quality.md](quality.md) |
 | 修改知识层（canon / timeline / snapshot） | [knowledge.md](knowledge.md) | — |
 | 修改评分 / rewrite 逻辑 | [quality.md](quality.md) | — |
+| 修改方法论资产 / profile / gate / health | [quality.md](quality.md) | [../../../docs/methodology-framework-optimization-development-plan.md](../../../docs/methodology-framework-optimization-development-plan.md) |
 | 修改 output / 导出 | [output.md](output.md) | — |
 | 修改 planner | [planning.md](planning.md) | [prompts/planner.md](prompts/planner.md) |
 
@@ -128,4 +129,4 @@ INIT → PLAN_{PREMISE|WORLD|CHARACTERS|VOLUME_PLAN|[ACT]|[WORLD_EXPANSION]|WRIT
 
 ---
 
-*本 skill 文档反映 BestSeller 2026-04 的框架设计。更新版本时改动 `version` 字段。*
+*本 skill 文档反映 BestSeller 2026-05 的框架设计。更新版本时改动 `version` 字段。*

@@ -4165,8 +4165,8 @@
 	    blocked_structural_repair: '结构修复门控',
 	    blocked_generation_gate: '规划自动修复耗尽',
 	    repair_needs_attention: '章节门禁待处理',
-	    waiting_human: '修复待续跑',
-	    waiting_human_review: '等待复核',
+	    machine_blocked: '修复待续跑',
+	    machine_repair_required: '待机器修复',
     // AI Conception stages
     conception_market: '📊 市场策略构思', conception_character: '👤 角色体系构思',
     conception_world: '🌍 世界观构思', conception_review: '🔍 交叉审查',
@@ -4205,7 +4205,7 @@
     project_pipeline_started: '🎬 进入写作循环', resume_skipped_chapters: '跳过已完成章节（续传）',
     project_pipeline_completed: '写作流程完成',
     chapter_pipeline_started: '写作章节', chapter_pipeline_completed: '章节完成',
-    chapter_pipeline_paused_for_human_review: '等待人工复核',
+    chapter_pipeline_machine_repair_required: '机器修复阻断',
     // Quality assurance stages
     periodic_consistency_check_started: '一致性检查', periodic_consistency_check_completed: '一致性检查完成',
     rolling_summary_started: '📝 知识压缩', rolling_summary_completed: '📝 知识压缩完成',
@@ -4568,9 +4568,9 @@
     const repairPhase = repairPhaseOf(task);
     if (repairPhase === 'repair_gate') return '修复门控 · 正在或等待修复';
     if (repairPhase === 'needs_attention') return isFanqieShortTask(task) ? '全文门禁未过 · 后续需修复' : '章节门禁未过 · 后续需修复';
-    if (hasStagePrefix(stage, ['paused_for_human_review', 'human_review'])) return '等待人工复核';
+    if (hasStagePrefix(stage, ['machine_repair_required', 'machine_repair'])) return '机器修复阻断';
     if (hasStagePrefix(stage, ['blocked_generation_gate'])) return '规划自动修复耗尽';
-    if (hasStagePrefix(stage, ['repair_needs_attention', 'waiting_human'])) return '修复需要人工处理';
+    if (hasStagePrefix(stage, ['repair_needs_attention', 'machine_blocked'])) return '修复需要机器修复';
     if (hasStagePrefix(stage, ['blocked_structural_repair', 'structural_repair'])) return '结构修复门控';
     if (status === 'failed') return `${task.error || '失败'} · 等待重试`;
     if (status === 'cancelled') return '已停止 · 可恢复';
@@ -4584,7 +4584,7 @@
     const stage = String(task?.current_stage || '');
     const repairPhase = repairPhaseOf(task);
     if (repairPhase === 'needs_attention' || repairPhase === 'repair_gate') return true;
-    if (hasStagePrefix(stage, ['paused_for_human_review', 'human_review', 'blocked_generation_gate', 'repair_needs_attention', 'waiting_human', 'blocked_structural_repair', 'structural_repair'])) return true;
+    if (hasStagePrefix(stage, ['machine_repair_required', 'machine_repair', 'blocked_generation_gate', 'repair_needs_attention', 'machine_blocked', 'blocked_structural_repair', 'structural_repair'])) return true;
     if (status === 'failed' || status === 'cancelled' || status === 'incomplete') return true;
     return isShortCompletedTask(task);
   }
@@ -5077,24 +5077,24 @@
 	        badgeCls: 'incomplete',
 	      };
 	    }
-	    if (hasStagePrefix(stage, ['repair_needs_attention', 'waiting_human'])) {
+	    if (hasStagePrefix(stage, ['repair_needs_attention', 'machine_blocked'])) {
 	      return {
 	        ...base,
 	        phase: 'attention',
 	        label: '修复待处理',
 	        mode: '章节门禁',
-	        detail: task?.error || repairDetail || `仍有${unit}没有通过生产门禁，等待修复续跑或人工复核。`,
+	        detail: task?.error || repairDetail || `仍有${unit}没有通过生产门禁，等待自动修复续跑。`,
 	        next: '查看阻塞原因后继续修复，直到门禁通过。',
 	        badgeCls: 'incomplete',
 	      };
 	    }
-	    if (isActive && hasStagePrefix(stage, ['paused_for_human_review', 'human_review'])) {
+	    if (isActive && hasStagePrefix(stage, ['machine_repair_required', 'machine_repair'])) {
 	      return {
 	        ...base,
 	        phase: 'review',
 	        label: '待复核',
 	        mode: `${unit}写作暂停`,
-	        detail: `当前${unit}写作流程暂停，等待人工复核或修复处理，暂时不是正常写作推进。`,
+	        detail: `当前${unit}写作流程暂停，机器修复阻断或修复处理，暂时不是正常写作推进。`,
 	        next: '打开详情查看阻塞原因，确认后恢复写作或转入修复。',
 	        badgeCls: 'incomplete',
 	      };
@@ -5240,7 +5240,7 @@
         if (!n) return `${unit}修复处理完成`;
         const state = String(payload.production_state || '').toLowerCase();
         if (state === 'ok') return `第 ${n} ${unit}修复后门禁通过`;
-        if (payload.requires_human_review === true) return `第 ${n} ${unit}已处理，仍需复核`;
+        if (payload.requires_machine_repair === true || payload.requires_human_review === true) return `第 ${n} ${unit}已处理，仍需机器修复`;
         return `第 ${n} ${unit}修复处理完成`;
       }
       case 'resume_skipped_chapters':
@@ -5259,10 +5259,10 @@
           : '规划门禁自动修复耗尽，等待携带诊断续跑';
       case 'repair_needs_attention':
         return '章节门禁未闭合，等待修复续跑';
-      case 'waiting_human':
+      case 'machine_blocked':
         return payload.reason
-          ? `修复流程需要人工处理：${payload.reason}`
-          : '修复流程等待人工处理或续跑';
+          ? `修复流程需要机器修复：${payload.reason}`
+          : '修复流程等待机器修复或续跑';
       case 'progressive_autowrite_started':
         return `多卷本写作已启动${volumeCount ? `，共 ${volumeCount} 卷` : ''}${payload.project_chapter_count ? ` / ${payload.project_chapter_count} 章` : ''}`;
       case 'volume_planning_started':
@@ -5677,14 +5677,14 @@
     const eventTagClass = (e) => {
       const stage = e.stage || '';
       if (stage.endsWith('_failed') || stage === 'failed') return 'err';
-      if (stage.includes('warning') || stage === 'blocked_structural_repair' || stage === 'blocked_generation_gate' || stage === 'repair_needs_attention' || stage === 'waiting_human') return 'warn';
+      if (stage.includes('warning') || stage === 'blocked_structural_repair' || stage === 'blocked_generation_gate' || stage === 'repair_needs_attention' || stage === 'machine_blocked') return 'warn';
       if (stage.endsWith('_completed') || stage === 'completed') return 'ok';
       return '';
     };
     const eventTagText = (e) => {
       const stage = e.stage || '';
       if (stage.endsWith('_failed')) return '失败';
-      if (stage === 'blocked_structural_repair' || stage === 'blocked_generation_gate' || stage === 'repair_needs_attention' || stage === 'waiting_human') return '门控';
+      if (stage === 'blocked_structural_repair' || stage === 'blocked_generation_gate' || stage === 'repair_needs_attention' || stage === 'machine_blocked') return '门控';
       if (stage.endsWith('_completed')) return '完成';
       if (stage.endsWith('_started')) return '开始';
       return STAGE[stage] ? '事件' : '事件';
@@ -5948,7 +5948,7 @@
         states.set(n, 'started');
       } else if (e.stage === 'project_repair_chapter_completed') {
         const productionState = String(e.payload?.production_state || '').toLowerCase();
-        const passed = productionState === 'ok' || e.payload?.requires_human_review === false;
+        const passed = productionState === 'ok' || e.payload?.requires_machine_repair === false || e.payload?.requires_human_review === false;
         states.set(n, passed ? 'passed' : 'review');
       }
     }

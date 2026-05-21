@@ -25,7 +25,7 @@ expected character-budget for the patched output is.
 
 ``--execute`` actually calls the editor LLM via the framework's
 ``services.llm`` wrapper. Without it the script is fully read-only and
-produces a JSON patch plan suitable for human review.
+produces a JSON patch plan suitable for machine validation.
 """
 
 from __future__ import annotations

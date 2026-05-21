@@ -1,7 +1,0 @@
-{
-  "source_id": "source-0150",
-  "blocked_categories": [],
-  "blocked_combinations": [],
-  "replacement_policy": [],
-  "zero_signal_note": "All 211 chapters returned llm_fallback_stubs with confidence 0.0. No distinctive sentence templates, phrasing patterns, voice markers, or sentence-level signatures were captured. Taboo copy signals: none_detected. No style-copy risk exists because no observable style was present in extractable data."
-}

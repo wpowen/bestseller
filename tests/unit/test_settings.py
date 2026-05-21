@@ -6,7 +6,6 @@ import pytest
 
 from bestseller.settings import load_settings
 
-
 pytestmark = pytest.mark.unit
 
 
@@ -97,6 +96,14 @@ def test_default_settings_treat_non_death_offstage_states_as_auto_repairable() -
         "character_sleeping_appearance",
         "character_comatose_appearance",
     } <= repairable
+
+
+def test_fanqie_market_pipeline_keeps_profile_opt_in_and_blocks_long_gate() -> None:
+    settings = load_settings(env={})
+
+    assert settings.pipeline.enable_fanqie_market_profile is False
+    assert settings.pipeline.enable_fanqie_long_ranking_gate is True
+    assert settings.pipeline.fanqie_long_ranking_block_on_failure is True
 
 
 def test_env_overrides_nested_values(tmp_path: Path) -> None:

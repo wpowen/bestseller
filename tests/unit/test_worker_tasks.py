@@ -119,10 +119,11 @@ def test_generation_gate_block_ignores_transient_errors() -> None:
 
 
 @pytest.mark.asyncio
-async def test_run_project_repair_task_emits_waiting_human_when_repair_not_closed(
+async def test_run_project_repair_task_auto_continues_quality_closure_when_not_closed(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     events: list[tuple[str, dict, str | None]] = []
+    enqueued: list[dict[str, object]] = []
 
     class _FakeReporter:
         async def emit(
@@ -138,7 +139,16 @@ async def test_run_project_repair_task_emits_waiting_human_when_repair_not_close
         workflow_run_id = uuid4()
 
         def model_dump(self, *, mode: str) -> dict:
-            return {"requires_human_review": self.requires_human_review}
+            return {
+                "project_slug": "novel",
+                "requires_human_review": self.requires_human_review,
+                "final_verdict": "attention",
+            }
+
+    class _FakeRedis:
+        async def enqueue_job(self, function: str, **kwargs: object) -> object:
+            enqueued.append({"function": function, **kwargs})
+            return types.SimpleNamespace(job_id=kwargs.get("_job_id"))
 
     @asynccontextmanager
     async def fake_session_scope():
@@ -162,17 +172,23 @@ async def test_run_project_repair_task_emits_waiting_human_when_repair_not_close
     monkeypatch.setattr(repair_services, "run_project_repair", fake_run_project_repair)
 
     result = await worker_tasks.run_project_repair_task(
-        {"redis": object()},
+        {"redis": _FakeRedis()},
         "repair:heal:novel",
         {"project_slug": "novel"},
     )
 
-    assert result == {"requires_human_review": True}
+    assert result == {
+        "project_slug": "novel",
+        "requires_human_review": True,
+        "final_verdict": "attention",
+    }
     assert captured_kwargs["include_pending_rewrite_tasks"] is True
     assert captured_kwargs["pending_rewrite_task_limit"] == 10
-    assert events[-1][0] == "waiting_human"
-    assert events[-1][2] == "waiting_human"
-    assert events[-1][1]["reason"] == "project_repair_requires_attention"
+    assert enqueued[0]["function"] == "run_book_quality_closure_task"
+    assert enqueued[0]["workflow_run_id"] == "quality-closure:heal:novel"
+    assert events[-1][0] == "repairable_auto_continue"
+    assert events[-1][2] == "repairable_auto_continue"
+    assert events[-1][1]["source"] == "project_repair"
 
 
 @pytest.mark.asyncio
@@ -233,6 +249,99 @@ async def test_run_project_pipeline_task_emits_waiting_human_when_not_closed(
     assert events[-1][0] == "waiting_human"
     assert events[-1][2] == "waiting_human"
     assert events[-1][1]["reason"] == "project_pipeline_requires_attention"
+
+
+@pytest.mark.asyncio
+async def test_run_project_pipeline_task_refreshes_stale_truth_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    events: list[tuple[str, dict, str | None]] = []
+    calls: list[str] = []
+
+    class _FakeReporter:
+        async def emit(
+            self,
+            message: str,
+            data: dict,
+            event_type: str | None = None,
+        ) -> None:
+            events.append((message, data, event_type))
+
+    class _FakeResult:
+        requires_human_review = False
+        workflow_run_id = uuid4()
+        final_verdict = "pass"
+
+        def model_dump(self, *, mode: str) -> dict:
+            return {
+                "project_slug": "novel",
+                "requires_human_review": self.requires_human_review,
+                "final_verdict": self.final_verdict,
+            }
+
+    @asynccontextmanager
+    async def fake_session_scope():
+        yield object()
+
+    from bestseller.services import pipelines as pipeline_services
+    from bestseller.services import projects as project_services
+    from bestseller.services.truth_version import (
+        TruthMaterializationStatus,
+        TruthVersionStaleError,
+    )
+
+    async def fake_run_project_pipeline(*_args, **_kwargs):
+        calls.append("run")
+        if len(calls) == 1:
+            raise TruthVersionStaleError(
+                project_slug="novel",
+                truth_version=8,
+                stale_components=(
+                    TruthMaterializationStatus(
+                        component="story_bible",
+                        workflow_type="materialize_story_bible",
+                        status="stale",
+                        required_truth_version=8,
+                    ),
+                ),
+            )
+        return _FakeResult()
+
+    async def fake_get_project_by_slug(*_args, **_kwargs):
+        return types.SimpleNamespace(slug="novel")
+
+    async def fake_refresh(*_args, **_kwargs):
+        calls.append("refresh")
+        return True
+
+    monkeypatch.setattr(
+        worker_tasks,
+        "RedisProgressReporter",
+        lambda *_args, **_kwargs: _FakeReporter(),
+    )
+    monkeypatch.setattr(worker_tasks, "make_sync_callback", lambda _reporter: None)
+    monkeypatch.setattr(worker_tasks, "get_server_session", fake_session_scope)
+    monkeypatch.setattr(
+        pipeline_services,
+        "run_project_pipeline",
+        fake_run_project_pipeline,
+    )
+    monkeypatch.setattr(
+        pipeline_services,
+        "_refresh_stale_truth_materializations_for_resume",
+        fake_refresh,
+    )
+    monkeypatch.setattr(project_services, "get_project_by_slug", fake_get_project_by_slug)
+
+    result = await worker_tasks.run_project_pipeline_task(
+        {"redis": object()},
+        "project-pipeline:heal:novel",
+        {"project_slug": "novel"},
+    )
+
+    assert result["final_verdict"] == "pass"
+    assert calls == ["run", "refresh", "run"]
+    assert events[-1][0] == "completed"
 
 
 @pytest.mark.asyncio

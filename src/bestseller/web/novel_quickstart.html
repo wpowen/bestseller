@@ -2748,6 +2748,8 @@
     display: none;
     margin-bottom: 20px;
     animation: fadeIn .28s ease;
+    user-select: text;
+    -webkit-user-select: text;
   }
   .listing-panel.visible { display: block; }
 
@@ -2958,6 +2960,12 @@
     word-break: break-word;
   }
 
+  .copyable-text {
+    cursor: text;
+    user-select: text;
+    -webkit-user-select: text;
+  }
+
   .ls-copy-textarea {
     width: 100%;
     min-height: 210px;
@@ -2987,6 +2995,8 @@
     line-height: 1;
     white-space: nowrap;
     box-shadow: var(--shadow-sm);
+    user-select: none;
+    -webkit-user-select: none;
   }
 
   /* "Regenerate via LLM" button — sits next to copy buttons in listing
@@ -3154,6 +3164,21 @@
 
   .ls-candidates-table td strong { color: var(--text-bright); }
   .ls-candidates-table tbody tr:hover { background: var(--surface-tint); }
+
+  .ls-candidate-title {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 8px;
+    min-width: 180px;
+  }
+
+  .ls-candidate-title strong {
+    flex: 1;
+    min-width: 0;
+    line-height: 1.45;
+    word-break: break-word;
+  }
 
   .title-platform-tag {
     display: inline-flex;
@@ -4139,6 +4164,7 @@
 	    project_revising: '修订中，暂无任务记录',
 	    blocked_structural_repair: '结构修复门控',
 	    blocked_generation_gate: '规划自动修复耗尽',
+	    repair_needs_attention: '章节门禁待处理',
 	    waiting_human: '修复待续跑',
 	    waiting_human_review: '等待复核',
     // AI Conception stages
@@ -4387,7 +4413,7 @@
 	    if (state === 'archived') return 'project_archived';
 	    if (repairPhase === 'repair_gate') return 'repair_gate';
 	    if (repairPhase === 'planning_gate') return 'blocked_generation_gate';
-	    if (repairPhase === 'needs_attention') return 'blocked_generation_gate';
+	    if (repairPhase === 'needs_attention') return 'repair_needs_attention';
 	    const status = String(project?.status || '').toLowerCase();
 	    if (status === 'planning') return 'project_planning';
 	    if (status === 'paused') return 'project_paused';
@@ -4543,7 +4569,8 @@
     if (repairPhase === 'repair_gate') return '修复门控 · 正在或等待修复';
     if (repairPhase === 'needs_attention') return isFanqieShortTask(task) ? '全文门禁未过 · 后续需修复' : '章节门禁未过 · 后续需修复';
     if (hasStagePrefix(stage, ['paused_for_human_review', 'human_review'])) return '等待人工复核';
-    if (hasStagePrefix(stage, ['blocked_generation_gate', 'waiting_human'])) return '规划自动修复耗尽';
+    if (hasStagePrefix(stage, ['blocked_generation_gate'])) return '规划自动修复耗尽';
+    if (hasStagePrefix(stage, ['repair_needs_attention', 'waiting_human'])) return '修复需要人工处理';
     if (hasStagePrefix(stage, ['blocked_structural_repair', 'structural_repair'])) return '结构修复门控';
     if (status === 'failed') return `${task.error || '失败'} · 等待重试`;
     if (status === 'cancelled') return '已停止 · 可恢复';
@@ -4557,7 +4584,7 @@
     const stage = String(task?.current_stage || '');
     const repairPhase = repairPhaseOf(task);
     if (repairPhase === 'needs_attention' || repairPhase === 'repair_gate') return true;
-    if (hasStagePrefix(stage, ['paused_for_human_review', 'human_review', 'blocked_generation_gate', 'waiting_human', 'blocked_structural_repair', 'structural_repair'])) return true;
+    if (hasStagePrefix(stage, ['paused_for_human_review', 'human_review', 'blocked_generation_gate', 'repair_needs_attention', 'waiting_human', 'blocked_structural_repair', 'structural_repair'])) return true;
     if (status === 'failed' || status === 'cancelled' || status === 'incomplete') return true;
     return isShortCompletedTask(task);
   }
@@ -5039,7 +5066,7 @@
 	        badgeCls: 'failed',
 	      };
 	    }
-	    if (hasStagePrefix(stage, ['blocked_generation_gate', 'waiting_human'])) {
+	    if (hasStagePrefix(stage, ['blocked_generation_gate'])) {
 	      return {
 	        ...base,
 	        phase: 'attention',
@@ -5047,6 +5074,17 @@
 	        mode: '规划/世界观门禁',
 	        detail: task?.error || '故事圣经或卷大纲未通过门禁，系统已完成自动回炉尝试。',
 	        next: '再次恢复会携带诊断重新进入自动修复链路。',
+	        badgeCls: 'incomplete',
+	      };
+	    }
+	    if (hasStagePrefix(stage, ['repair_needs_attention', 'waiting_human'])) {
+	      return {
+	        ...base,
+	        phase: 'attention',
+	        label: '修复待处理',
+	        mode: '章节门禁',
+	        detail: task?.error || repairDetail || `仍有${unit}没有通过生产门禁，等待修复续跑或人工复核。`,
+	        next: '查看阻塞原因后继续修复，直到门禁通过。',
 	        badgeCls: 'incomplete',
 	      };
 	    }
@@ -5216,10 +5254,15 @@
       case 'auto_resume_queued':
         return '服务重启后已自动加入续写队列';
       case 'blocked_generation_gate':
-      case 'waiting_human':
         return payload.reason
           ? `规划门禁自动修复耗尽：${payload.reason}`
           : '规划门禁自动修复耗尽，等待携带诊断续跑';
+      case 'repair_needs_attention':
+        return '章节门禁未闭合，等待修复续跑';
+      case 'waiting_human':
+        return payload.reason
+          ? `修复流程需要人工处理：${payload.reason}`
+          : '修复流程等待人工处理或续跑';
       case 'progressive_autowrite_started':
         return `多卷本写作已启动${volumeCount ? `，共 ${volumeCount} 卷` : ''}${payload.project_chapter_count ? ` / ${payload.project_chapter_count} 章` : ''}`;
       case 'volume_planning_started':
@@ -5634,14 +5677,14 @@
     const eventTagClass = (e) => {
       const stage = e.stage || '';
       if (stage.endsWith('_failed') || stage === 'failed') return 'err';
-      if (stage.includes('warning') || stage === 'blocked_structural_repair' || stage === 'blocked_generation_gate' || stage === 'waiting_human') return 'warn';
+      if (stage.includes('warning') || stage === 'blocked_structural_repair' || stage === 'blocked_generation_gate' || stage === 'repair_needs_attention' || stage === 'waiting_human') return 'warn';
       if (stage.endsWith('_completed') || stage === 'completed') return 'ok';
       return '';
     };
     const eventTagText = (e) => {
       const stage = e.stage || '';
       if (stage.endsWith('_failed')) return '失败';
-      if (stage === 'blocked_structural_repair' || stage === 'blocked_generation_gate' || stage === 'waiting_human') return '门控';
+      if (stage === 'blocked_structural_repair' || stage === 'blocked_generation_gate' || stage === 'repair_needs_attention' || stage === 'waiting_human') return '门控';
       if (stage.endsWith('_completed')) return '完成';
       if (stage.endsWith('_started')) return '开始';
       return STAGE[stage] ? '事件' : '事件';
@@ -5673,6 +5716,7 @@
     const errEvents = events.filter(e => (e.stage || '').endsWith('_failed') || e.stage === 'failed');
     const repairBlocked = task.current_stage === 'blocked_structural_repair'
       || task.current_stage === 'blocked_generation_gate'
+      || task.current_stage === 'repair_needs_attention'
       || task.repair_status?.is_repairing
       || task.repair_status?.phase === 'repair_gate';
 
@@ -5714,7 +5758,7 @@
     let healthText = '良好';
     const healthReasons = [];
     if (status === 'failed') { healthCls = 'bad'; healthText = '异常'; healthReasons.push(task.error || '任务失败'); }
-    else if (repairBlocked) { healthCls = 'bad'; healthText = '门控'; healthReasons.push(task.current_stage === 'blocked_generation_gate' ? '规划自动修复耗尽' : '结构修复门控'); }
+    else if (repairBlocked) { healthCls = 'bad'; healthText = '门控'; healthReasons.push(task.current_stage === 'blocked_generation_gate' ? '规划自动修复耗尽' : (task.current_stage === 'repair_needs_attention' || task.repair_status?.phase === 'needs_attention' ? '章节门禁待处理' : '结构修复门控')); }
     else if (errEvents.length > 0) { healthCls = 'bad'; healthText = '有错误'; healthReasons.push(`${errEvents.length} 项错误事件`); }
     else if (status === 'cancelled' || status === 'incomplete') { healthCls = 'warn'; healthText = '中止'; }
     else if (stageStuck) { healthCls = 'warn'; healthText = '阶段过久'; healthReasons.push(`${stageAgeText} 未推进`); }
@@ -6046,7 +6090,9 @@
 	    if (!slug) return;
 	    const task = allTasks.find(t => t.project_slug === slug);
 	    const title = task?.title || projectTitleBySlug.get(slug) || slug;
-	    const active = task && (task.status === 'running' || task.status === 'queued');
+	    const taskIdValue = String(taskId || task?.task_id || '').trim();
+	    const isSyntheticProjectRow = task?.synthetic_project === true || taskIdValue.startsWith('project:');
+	    const active = task && !isSyntheticProjectRow && (task.status === 'running' || task.status === 'queued');
 	    if (active) {
 	      const stopFirst = confirm(
 	        `《${title}》当前仍在运行/排队。\n\n` +
@@ -6054,9 +6100,9 @@
 	        `现在先发送停止请求吗？任务停止后，再点击“完全删除”即可彻底删除。`
 	      );
 	      if (!stopFirst) return;
-	      if (taskId) {
+	      if (taskIdValue) {
 	        try {
-	          const res = await fetch(`/api/tasks/${taskId}/cancel`, { method: 'POST' });
+	          const res = await fetch(`/api/tasks/${encodeURIComponent(taskIdValue)}/cancel`, { method: 'POST' });
 	          const data = await res.json().catch(() => ({}));
 	          if (!res.ok) alert(data.error || '停止请求失败');
 	        } catch (err) {
@@ -7245,6 +7291,11 @@
     return `<button type="button" class="copy-btn ${esc(className)}" onclick="copyListingText('${esc(key)}', this)">${esc(label)}</button>`;
   }
 
+  function copyableSpan(text, fallback = '') {
+    const value = String(text || fallback || '');
+    return `<span class="copyable-text">${esc(value)}</span>`;
+  }
+
   // Module → label map (mirrors backend _LISTING_REGENERATE_MODULES). When the
   // user clicks "↻ 重新生成", the backend re-prompts the LLM only for that
   // module and persists the new value as a file override. If the user never
@@ -7315,8 +7366,13 @@
   async function writeClipboardText(text) {
     if (!text) return false;
     if (navigator.clipboard && window.isSecureContext) {
-      await navigator.clipboard.writeText(text);
-      return true;
+      try {
+        await navigator.clipboard.writeText(text);
+        return true;
+      } catch {
+        // Fall through to the textarea path for browsers that expose the API
+        // but reject writes because of permissions or focus state.
+      }
     }
     const area = document.createElement('textarea');
     area.value = text;
@@ -7325,6 +7381,7 @@
     area.style.left = '-9999px';
     area.style.top = '0';
     document.body.appendChild(area);
+    area.focus();
     area.select();
     const ok = document.execCommand('copy');
     area.remove();
@@ -7391,6 +7448,23 @@
         c.arc_state ? `当前：${c.arc_state}` : '',
       ].filter(Boolean);
       return lines.join('\n');
+    }).join('\n\n');
+  }
+
+  function buildTitleCandidatesCopyText(candidates) {
+    return candidates.map((item, i) => {
+      const title = compactListingText(item?.title);
+      const subtitle = compactListingText(item?.subtitle);
+      const platform = compactListingText(
+        item?.display_label || item?.platform_label || item?.scope_label || '全平台'
+      );
+      const angle = compactListingText(item?.angle);
+      return [
+        `${Number(item?.id || i + 1)}. ${title || '未命名标题'}`,
+        subtitle ? `副标题：${subtitle}` : '',
+        platform ? `平台：${platform}` : '',
+        angle ? `角度：${angle}` : '',
+      ].filter(Boolean).join('\n');
     }).join('\n\n');
   }
 
@@ -7471,19 +7545,19 @@
       <div class="ls-copy-list">
         <div class="ls-copy-item">
           <div class="row"><strong>书名</strong>${copyButton('复制', titleKey)}</div>
-          <span>${esc(title)}</span>
+          ${copyableSpan(title)}
         </div>
         <div class="ls-copy-item">
           <div class="row"><strong>作者</strong>${authorName ? copyButton('复制', authorKey) : ''}</div>
-          <span>${esc(authorName || '未填写')}</span>
+          ${copyableSpan(authorName, '未填写')}
         </div>
         <div class="ls-copy-item">
           <div class="row"><strong>标签</strong>${copyButton('复制', tagsKey)}</div>
-          <span>${esc(tags.length ? tags.join('、') : '待补标签')}</span>
+          ${copyableSpan(tags.length ? tags.join('、') : '', '待补标签')}
         </div>
         <div class="ls-copy-item">
           <div class="row"><strong>角色名</strong>${copyButton('复制', characterNameKey)}</div>
-          <span>${esc(characterNameText || '暂无角色名')}</span>
+          ${copyableSpan(characterNameText, '暂无角色名')}
         </div>
       </div>
       <textarea class="ls-copy-textarea" readonly onclick="this.select()">${esc(packText)}</textarea>
@@ -7525,7 +7599,7 @@
     $('#lsBasics').innerHTML = basicItems.length ? basicItems.map(([label, value]) => `
       <div class="ls-basic-item">
         <div class="row"><strong>${esc(label)}</strong>${copyButton('复制', registerListingCopyText(value))}</div>
-        <span>${esc(value)}</span>
+        ${copyableSpan(value)}
       </div>
     `).join('') : '<div style="color:var(--text-dim);font-size:13px;">暂无基础信息。</div>';
 
@@ -7542,18 +7616,18 @@
     introBlocks.push(`
       <div class="shelf-intro-card">
         <div class="meta"><span>500字内上架简介</span><span>${shelfIntro.length}/500</span></div>
-        <p>${esc(shelfIntro)}</p>
+        <p class="copyable-text">${esc(shelfIntro)}</p>
       </div>
     `);
-    if (listing.logline) introBlocks.push(`<p><strong>一句话钩子：</strong>${esc(listing.logline)}</p>`);
-    if (listing.short_intro) introBlocks.push(`<p><strong>短简介：</strong>${esc(listing.short_intro)}</p>`);
-    if (listing.long_intro) introBlocks.push(`<p><strong>长简介：</strong>${esc(listing.long_intro)}</p>`);
+    if (listing.logline) introBlocks.push(`<p class="copyable-text"><strong>一句话钩子：</strong>${esc(listing.logline)}</p>`);
+    if (listing.short_intro) introBlocks.push(`<p class="copyable-text"><strong>短简介：</strong>${esc(listing.short_intro)}</p>`);
+    if (listing.long_intro) introBlocks.push(`<p class="copyable-text"><strong>长简介：</strong>${esc(listing.long_intro)}</p>`);
     const promoCopy = Array.isArray(listing.promo_copy) ? listing.promo_copy : [];
     if (promoCopy.length) {
       introBlocks.push(promoCopy.map((item, i) =>
         `<div class="ls-promo">
           <div class="ls-promo-head"><strong>宣传文案 ${i + 1}</strong>${copyButton('复制', registerListingCopyText(item))}</div>
-          <span>${esc(item)}</span>
+          ${copyableSpan(item)}
         </div>`
       ).join(''));
     }
@@ -7563,17 +7637,24 @@
 
     // Title candidates
     const candidates = Array.isArray(listing.title_candidates) ? listing.title_candidates : [];
+    const candidatesCopyText = buildTitleCandidatesCopyText(candidates);
+    const candidatesCopyKey = registerListingCopyText(candidatesCopyText);
     $('#lsCandidates').innerHTML = candidates.length ? `
       <table class="ls-candidates-table">
         <thead><tr><th>#</th><th>标题/数据名</th><th>平台/范围</th><th>副标题</th><th>角度</th><th>建议</th></tr></thead>
         <tbody>${candidates.map((item, i) => `
           <tr>
             <td>${Number(item.id || i + 1)}</td>
-            <td><strong>${esc(item.title || '')}</strong></td>
+            <td>
+              <div class="ls-candidate-title">
+                <strong class="copyable-text">${esc(item.title || '')}</strong>
+                ${item.title ? copyButton('复制', registerListingCopyText(item.title)) : ''}
+              </div>
+            </td>
             <td><span class="listing-tag title-platform-tag">${esc(item.display_label || item.platform_label || item.scope_label || '全平台')}</span></td>
-            <td>${esc(item.subtitle || '')}</td>
-            <td>${esc(item.angle || '')}</td>
-            <td>${esc(item.recommendation || '')}</td>
+            <td class="copyable-text">${esc(item.subtitle || '')}</td>
+            <td class="copyable-text">${esc(item.angle || '')}</td>
+            <td class="copyable-text">${esc(item.recommendation || '')}</td>
           </tr>
         `).join('')}</tbody>
       </table>
@@ -7589,7 +7670,12 @@
       regenButton(slug, 'recommended_subtitle', '↻ 重新生成副标题'),
     ].filter(Boolean).join(' ');
     const candidatesActionsEl = $('#lsCandidatesActions');
-    if (candidatesActionsEl) candidatesActionsEl.innerHTML = regenButton(slug, 'title_candidates');
+    if (candidatesActionsEl) {
+      candidatesActionsEl.innerHTML = [
+        candidatesCopyText ? copyButton('复制候选列表', candidatesCopyKey) : '',
+        regenButton(slug, 'title_candidates'),
+      ].filter(Boolean).join(' ');
+    }
     const promiseActionsEl = $('#lsPromiseActions');
     if (promiseActionsEl) promiseActionsEl.innerHTML = regenButton(slug, 'reader_promise');
     $('#lsCharacters').innerHTML = characters.length ? characters.slice(0, 12).map(c => `

@@ -1,3 +1,4 @@
+# ruff: noqa: RUF001, RUF002
 """番茄短故事全文质量复审（Phase 2 门控）。"""
 
 from __future__ import annotations
@@ -10,13 +11,15 @@ from bestseller.domain.fanqie_short import (
     SCENE_MIN_SCORE,
     SCENE_PAYOFF_MIN_SCORE,
 )
+from bestseller.domain.fanqie_short_v2 import FanqieShortEmotionStack
+from bestseller.services.fanqie_short_gate_v2 import evaluate_fanqie_short_v2_readiness
 from bestseller.services.fanqie_short_opening_gate import (
     evaluate_fanqie_short_opening_gate,
     scan_fanqie_short_taboo_signals,
 )
 from bestseller.services.fanqie_short_ranking_gate import (
     FanqieRankingGateReport,
-    evaluate_fanqie_ranking_readiness,
+    evaluate_fanqie_core_ranking_readiness,
 )
 
 
@@ -25,19 +28,25 @@ class FanqieWholePieceReview:
     passed: bool
     opening_passed: bool
     ranking_passed: bool
+    short_v2_passed: bool
     taboo_signals: list[str]
     notes: list[str]
     ranking_report: FanqieRankingGateReport | None = None
+    short_v2_report: FanqieRankingGateReport | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "passed": self.passed,
             "opening_passed": self.opening_passed,
             "ranking_passed": self.ranking_passed,
+            "short_v2_passed": self.short_v2_passed,
             "taboo_signals": self.taboo_signals,
             "notes": self.notes,
             "ranking_report": (
                 self.ranking_report.to_dict() if self.ranking_report is not None else None
+            ),
+            "short_v2_report": (
+                self.short_v2_report.to_dict() if self.short_v2_report is not None else None
             ),
             "thresholds": {
                 "scene_min_score": SCENE_MIN_SCORE,
@@ -50,8 +59,10 @@ class FanqieWholePieceReview:
 def review_whole_fanqie_short_story(
     full_text: str,
     *,
+    title: str | None = None,
     unlock_line_ratio: float = 0.30,
     protagonist_name: str | None = None,
+    emotion_stack: FanqieShortEmotionStack | None = None,
 ) -> FanqieWholePieceReview:
     opening = evaluate_fanqie_short_opening_gate(
         full_text,
@@ -59,10 +70,17 @@ def review_whole_fanqie_short_story(
         protagonist_name=protagonist_name,
     )
     taboo = scan_fanqie_short_taboo_signals(full_text)
-    ranking = evaluate_fanqie_ranking_readiness(
+    ranking = evaluate_fanqie_core_ranking_readiness(
         full_text,
         unlock_line_ratio=unlock_line_ratio,
         protagonist_name=protagonist_name,
+    )
+    short_v2 = evaluate_fanqie_short_v2_readiness(
+        full_text,
+        title=title,
+        unlock_line_ratio=unlock_line_ratio,
+        protagonist_name=protagonist_name,
+        emotion_stack=emotion_stack,
     )
     notes: list[str] = []
     if not opening.passed:
@@ -74,16 +92,31 @@ def review_whole_fanqie_short_story(
             if finding.severity == "critical"
         ]
         notes.append("榜单级门禁未过：" + ", ".join(codes[:8]))
+    if not short_v2.passed:
+        codes = [
+            finding.code
+            for finding in short_v2.findings
+            if finding.severity == "critical"
+        ]
+        notes.append("短篇v2门禁未过：" + ", ".join(codes[:8]))
     if taboo:
         notes.append(f"禁忌信号：{', '.join(taboo)}")
     if len(full_text.strip()) < 500:
         notes.append("全文过短")
-    passed = opening.passed and ranking.passed and not taboo and len(full_text.strip()) >= 500
+    passed = (
+        opening.passed
+        and ranking.passed
+        and short_v2.passed
+        and not taboo
+        and len(full_text.strip()) >= 500
+    )
     return FanqieWholePieceReview(
         passed=passed,
         opening_passed=opening.passed,
         ranking_passed=ranking.passed,
+        short_v2_passed=short_v2.passed,
         taboo_signals=taboo,
         notes=notes,
         ranking_report=ranking,
+        short_v2_report=short_v2,
     )

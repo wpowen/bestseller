@@ -495,6 +495,19 @@ def test_quickstart_fanqie_task_progress_uses_single_story_language() -> None:
     assert "作者" in html
 
 
+def test_quickstart_listing_profile_content_is_copyable() -> None:
+    html = web_server._QUICKSTART_HTML_PATH.read_text(encoding="utf-8")
+
+    assert ".listing-panel {" in html
+    assert "user-select: text;" in html
+    assert "function copyableSpan(text, fallback = '')" in html
+    assert "function buildTitleCandidatesCopyText(candidates)" in html
+    assert "复制候选列表" in html
+    assert "copyButton('复制', registerListingCopyText(item.title))" in html
+    assert "await navigator.clipboard.writeText(text);" in html
+    assert "area.focus();" in html
+
+
 def test_quickstart_incomplete_tasks_are_not_labeled_stopped() -> None:
     html = web_server._QUICKSTART_HTML_PATH.read_text(encoding="utf-8")
 
@@ -649,6 +662,19 @@ def test_project_repair_status_payload_marks_repair_gate() -> None:
     assert payload["repair_completed"] == 0
     assert payload["progress_percent"] == 0
     assert payload["complete_ok_chapters"] == 27
+
+
+def test_library_book_state_active_workflow_overrides_repair_attention() -> None:
+    state = web_server._library_book_state(
+        status="revising",
+        completed_units=12,
+        target_units=100,
+        has_content=True,
+        repair_status={"is_repairing": True},
+        has_active_workflow=True,
+    )
+
+    assert state == "in_progress"
 
 
 def test_project_repair_status_payload_tracks_progress_after_unblocking() -> None:

@@ -427,6 +427,7 @@ async def test_find_stuck_projects_detects_missing_drafts(now: _dt.datetime) -> 
     assert stuck[0].stuck_at_chapter == 8
     assert stuck[0].chapters_total == 10
     assert stuck[0].chapters_with_draft == 7
+    assert stuck[0].heal_kind == "project_pipeline"
 
 
 @pytest.mark.asyncio
@@ -580,7 +581,7 @@ async def test_find_stuck_projects_temporarily_suppresses_recent_waiting_repair(
             id=uuid4(),
             project_id=p.id,
             production_state="blocked",
-            updated_at=now - _dt.timedelta(minutes=20),
+            updated_at=now - _dt.timedelta(seconds=50),
         ),
     ]
     drafts = [_FakeDraft(id=uuid4(), chapter_id=chapters[0].id, is_current=True)]
@@ -590,7 +591,7 @@ async def test_find_stuck_projects_temporarily_suppresses_recent_waiting_repair(
             project_id=p.id,
             workflow_type="project_repair",
             status="waiting_human",
-            updated_at=now - _dt.timedelta(minutes=5),
+            updated_at=now - _dt.timedelta(seconds=10),
         )
     ]
     session = _FakeSession(projects=[p], runs=runs, chapters=chapters, drafts=drafts)
@@ -692,6 +693,40 @@ async def test_find_stuck_projects_retries_stale_generation_gate_pause(
 
     assert len(stuck) == 1
     assert stuck[0].slug == "book-stale-planning-gate"
+    assert stuck[0].reason == "under_target_chapters"
+    assert stuck[0].stuck_at_chapter == 51
+
+
+@pytest.mark.asyncio
+async def test_find_stuck_projects_retries_stale_scene_plan_gate_pause(
+    now: _dt.datetime,
+) -> None:
+    p = _FakeProject(
+        id=uuid4(),
+        slug="book-stale-scene-plan-gate",
+        status="paused",
+        target_chapters=120,
+        metadata_json={
+            "generation_resume_blocked_by_planning_gate": True,
+            "generation_auto_repair_exhausted": True,
+            "production_paused": True,
+            "production_pause_reason": (
+                "scene_plan_richness_gate_failed:interactive_needs_two"
+            ),
+            "last_generation_gate_blocked_at": (
+                now
+                - _dt.timedelta(seconds=GENERATION_GATE_RESUME_COOLDOWN_SECONDS + 60)
+            ).isoformat(),
+        },
+    )
+    chapters = [_FakeChapter(id=uuid4(), project_id=p.id) for _ in range(50)]
+    drafts = [_FakeDraft(id=uuid4(), chapter_id=c.id, is_current=True) for c in chapters]
+    session = _FakeSession(projects=[p], runs=[], chapters=chapters, drafts=drafts)
+
+    stuck = await find_stuck_projects(session)
+
+    assert len(stuck) == 1
+    assert stuck[0].slug == "book-stale-scene-plan-gate"
     assert stuck[0].reason == "under_target_chapters"
     assert stuck[0].stuck_at_chapter == 51
 
@@ -1134,9 +1169,14 @@ async def test_try_acquire_heal_lock_falls_back_on_redis_error() -> None:
 
 
 def test_autowrite_heal_job_id_is_deterministic() -> None:
-    from bestseller.worker.self_heal import _autowrite_heal_job_id, _repair_heal_job_id
+    from bestseller.worker.self_heal import (
+        _autowrite_heal_job_id,
+        _project_pipeline_heal_job_id,
+        _repair_heal_job_id,
+    )
 
     assert _autowrite_heal_job_id("slug-a") == "autowrite:heal:slug-a"
+    assert _project_pipeline_heal_job_id("slug-a") == "project-pipeline:heal:slug-a"
     assert _repair_heal_job_id("slug-a") == "repair:heal:slug-a"
     # Identical across calls → ARQ dedup will reject a second enqueue.
     assert _autowrite_heal_job_id("slug-a") == _autowrite_heal_job_id("slug-a")
@@ -1156,7 +1196,7 @@ def test_coalesce_stuck_projects_prefers_repair_for_same_slug() -> None:
             stuck_at_chapter=10,
             chapters_total=20,
             chapters_with_draft=9,
-            heal_kind="autowrite",
+            heal_kind="project_pipeline",
         ),
         StuckProject(
             project_id=project_id,
@@ -1287,6 +1327,31 @@ async def test_requeue_repair_returns_job_id_on_success() -> None:
         "include_pending_rewrite_tasks": True,
         "pending_rewrite_task_limit": 10,
     }
+
+
+@pytest.mark.asyncio
+async def test_requeue_project_pipeline_returns_job_id_on_success() -> None:
+    from bestseller.worker.self_heal import _requeue_project_pipeline
+
+    pool = _FakeArqPool()
+    stuck = StuckProject(
+        project_id="p1",
+        slug="book-continue",
+        reason="missing_drafts",
+        stuck_at_chapter=8,
+        chapters_total=10,
+        chapters_with_draft=7,
+        heal_kind="project_pipeline",
+    )
+
+    job_id = await _requeue_project_pipeline(pool, stuck)  # type: ignore[arg-type]
+
+    assert job_id == "project-pipeline:heal:book-continue"
+    assert len(pool.enqueued) == 1
+    assert pool.enqueued[0]["function"] == "run_project_pipeline_task"
+    assert pool.enqueued[0]["_job_id"] == "project-pipeline:heal:book-continue"
+    assert pool.enqueued[0]["payload"] == {"project_slug": "book-continue"}
+    assert pool.enqueued[0]["_expires"].days >= 7
 
 
 @pytest.mark.asyncio

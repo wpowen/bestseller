@@ -38,6 +38,7 @@ from bestseller.services.drafts import (
     _NOVEL_OUTPUT_PROHIBITION_EN,
     _collect_post_assembly_duplicate_findings,
     _evaluate_chapter_quality_gate,
+    _maybe_write_scene_prompt_trace,
     _normalize_fragment,
     _stamp_duplicate_content_block,
     count_words,
@@ -1012,6 +1013,8 @@ def build_scene_rewrite_prompts(
     current_draft: SceneDraftVersionModel,
     rewrite_task: RewriteTaskModel,
     style_guide: StyleGuideModel | None,
+    context_packet: SceneWriterContextPacket | None = None,
+    context_budget_tokens: int | None = None,
 ) -> tuple[str, str]:
     from bestseller.services.genre_review_profiles import resolve_genre_review_profile
 
@@ -1071,6 +1074,11 @@ def build_scene_rewrite_prompts(
         project,
         chapter_number=chapter.chapter_number,
         language=language,
+    )
+    _rewrite_context_block = _render_scene_rewrite_context_packet_block(
+        context_packet,
+        language=language,
+        max_soft_tokens=context_budget_tokens,
     )
     # ── Word-count envelope: hard constraint to prevent rewrite-bloat spiral ──
     # The scene writer already enforces a strict word range; the rewriter must
@@ -1158,6 +1166,7 @@ def build_scene_rewrite_prompts(
             f"{_material_reference_block}"
             f"{_qimao_opening_contract_block}"
             f"{_methodology_line}"
+            f"{_rewrite_context_block}"
             f"Current draft:\n{current_draft.content_md}\n"
             "Rewrite the current scene in English only. Fix the flagged issues while "
             "respecting the word-count envelope above. The result should read like "
@@ -1181,6 +1190,7 @@ def build_scene_rewrite_prompts(
             f"{_material_reference_block}"
             f"{_qimao_opening_contract_block}"
             f"{_methodology_line}"
+            f"{_rewrite_context_block}"
             f"当前草稿：\n{current_draft.content_md}\n"
             "请按上述字数闸门重写本场景：修复被标记的问题的同时严格控制字数。"
             "要让文本更像平台成品网文，而不是策划草稿或解释说明。"
@@ -1192,6 +1202,128 @@ def build_scene_rewrite_prompts(
     if _genre_rewrite:
         user_prompt += f"\n\n{'[Genre rewrite focus]' if is_en else '【品类重写方向】'}\n{_genre_rewrite}"
     return system_prompt, user_prompt
+
+
+def _render_scene_rewrite_context_packet_block(
+    context_packet: SceneWriterContextPacket | None,
+    *,
+    language: str | None = None,
+    max_soft_tokens: int | None = None,
+) -> str:
+    if context_packet is None:
+        return ""
+    is_en = is_english_language(language)
+    hard_attrs = (
+        "identity_constraint_block",
+        "scene_scope_isolation_block",
+        "ranking_capability_profile_block",
+        "progression_context_block",
+        "rule_system_context_block",
+        "relationship_agency_context_block",
+        "entry_system_context_block",
+        "hype_constraints_block",
+        "l3_prompt_block",
+    )
+    soft_attrs = (
+        "decision_policy_block",
+        "faction_ecology_context_block",
+        "entry_registry_context_block",
+        "entry_state_ledger_block",
+        "genre_constraint_block",
+        "overused_phrase_block",
+        "reader_contract_block",
+        "opening_diversity_block",
+        "conflict_diversity_block",
+        "scene_purpose_diversity_block",
+        "env_diversity_block",
+        "arc_beat_block",
+        "five_layer_block",
+        "cliffhanger_diversity_block",
+        "tension_target_block",
+        "location_ledger_block",
+        "budget_diversity_block",
+        "plan_richness_block",
+    )
+    soft_budget = max(0, int((max_soft_tokens or 8000) * 0.45))
+    soft_tokens_used = 0
+    omitted: list[str] = []
+    hard_parts: list[str] = []
+    soft_parts: list[str] = []
+    for attr in hard_attrs:
+        value = str(getattr(context_packet, attr, "") or "").strip()
+        if value:
+            hard_parts.append(value)
+    for attr in soft_attrs:
+        value = str(getattr(context_packet, attr, "") or "").strip()
+        if not value:
+            continue
+        estimated_tokens = _estimate_prompt_tokens(value)
+        if soft_tokens_used + estimated_tokens <= soft_budget:
+            soft_parts.append(value)
+            soft_tokens_used += estimated_tokens
+        else:
+            omitted.append(attr)
+    warnings = [
+        str(item).strip()
+        for item in (getattr(context_packet, "contradiction_warnings", None) or [])
+        if str(item).strip()
+    ]
+    if warnings:
+        label = "Continuity constraints" if is_en else "连续性约束"
+        hard_parts.insert(0, f"=== {label} ===\n" + "\n".join(f"- {item}" for item in warnings))
+    parts = hard_parts + soft_parts
+    if omitted:
+        omitted_label = (
+            "Context blocks omitted by rewrite prompt budget"
+            if is_en
+            else "因重写提示词预算省略的上下文块"
+        )
+        parts.append(f"=== {omitted_label} ===\n" + ", ".join(omitted))
+    if not parts:
+        return ""
+    heading = (
+        "=== Scene rewrite context constraints (must obey) ==="
+        if is_en
+        else "=== 场景重写上下文约束（必须遵守）==="
+    )
+    footer = (
+        "=== End rewrite context constraints ==="
+        if is_en
+        else "=== 上下文约束结束 ==="
+    )
+    return f"{heading}\n" + "\n\n".join(parts) + f"\n{footer}\n"
+
+
+def _estimate_prompt_tokens(text: str) -> int:
+    if not text:
+        return 0
+    cjk_count = len(re.findall(r"[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]", text))
+    latin_count = len(re.findall(r"[A-Za-z0-9]+(?:['._-][A-Za-z0-9]+)*", text))
+    return max(1, int(cjk_count * 1.15 + latin_count * 1.3 + len(text) * 0.03))
+
+
+def _missing_required_rewrite_context_blocks(
+    context_packet: SceneWriterContextPacket | None,
+    user_prompt: str,
+) -> list[str]:
+    if context_packet is None:
+        return []
+    required_attrs = (
+        "identity_constraint_block",
+        "ranking_capability_profile_block",
+        "progression_context_block",
+        "rule_system_context_block",
+        "relationship_agency_context_block",
+        "entry_system_context_block",
+        "hype_constraints_block",
+        "l3_prompt_block",
+    )
+    missing: list[str] = []
+    for attr in required_attrs:
+        value = str(getattr(context_packet, attr, "") or "").strip()
+        if value and value not in user_prompt:
+            missing.append(attr)
+    return missing
 
 
 def _render_chapter_context_section(packet, *, language: str | None = None) -> str:
@@ -5484,6 +5616,7 @@ async def rewrite_scene_from_task(
     settings: AppSettings | None = None,
     workflow_run_id: UUID | None = None,
     step_run_id: UUID | None = None,
+    context_packet: SceneWriterContextPacket | None = None,
 ) -> tuple[SceneDraftVersionModel, RewriteTaskModel]:
     project, chapter, scene, style_guide, current_draft = await _load_scene_context(
         session,
@@ -5520,6 +5653,7 @@ async def rewrite_scene_from_task(
     llm_run_id: UUID | None = None
     generation_mode = "rewrite-fallback"
     content_md = fallback_content
+    prompt_trace_path: str | None = None
     if settings is not None:
         system_prompt, user_prompt = build_scene_rewrite_prompts(
             project,
@@ -5528,6 +5662,37 @@ async def rewrite_scene_from_task(
             current_draft,
             rewrite_task,
             style_guide,
+            context_packet=context_packet,
+            context_budget_tokens=settings.generation.context_budget_tokens,
+        )
+        missing_context_blocks = _missing_required_rewrite_context_blocks(
+            context_packet,
+            user_prompt,
+        )
+        if missing_context_blocks:
+            logger.warning(
+                "Scene %s %d.%d rewrite prompt missing required context blocks: %s",
+                project.slug,
+                chapter.chapter_number,
+                scene.scene_number,
+                missing_context_blocks,
+            )
+            rewrite_task.metadata_json = {
+                **(rewrite_task.metadata_json or {}),
+                "rewrite_context_missing_blocks": missing_context_blocks,
+            }
+        prompt_trace_path = _maybe_write_scene_prompt_trace(
+            settings,
+            project,
+            chapter,
+            scene,
+            context_packet,
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            workflow_run_id=workflow_run_id,
+            step_run_id=step_run_id,
+            model_tier="editor",
+            trace_kind="rewrite",
         )
         completion = await complete_text(
             session,
@@ -5553,6 +5718,12 @@ async def rewrite_scene_from_task(
                     "chapter_number": chapter.chapter_number,
                     "scene_number": scene.scene_number,
                     "rewrite_task_id": str(rewrite_task.id),
+                    **(
+                        {"rewrite_context_missing_blocks": missing_context_blocks}
+                        if missing_context_blocks
+                        else {}
+                    ),
+                    **({"prompt_trace_path": prompt_trace_path} if prompt_trace_path else {}),
                 },
             ),
         )
@@ -5608,6 +5779,7 @@ async def rewrite_scene_from_task(
             "mode": generation_mode,
             "rewrite_task_id": str(rewrite_task.id),
             "target_word_count": scene.target_word_count,
+            **({"prompt_trace_path": prompt_trace_path} if prompt_trace_path else {}),
         },
     )
     session.add(new_draft)

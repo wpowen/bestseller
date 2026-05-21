@@ -1,9 +1,13 @@
 from __future__ import annotations
 
-from collections.abc import Iterable
+import json
 import logging
 import math
+import os
 import re
+from collections.abc import Iterable
+from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 from uuid import UUID
 
@@ -12,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from bestseller.domain.context import SceneWriterContextPacket
 from bestseller.domain.enums import ChapterStatus, SceneStatus
+from bestseller.domain.fanqie_short import is_fanqie_short_project
 from bestseller.infra.db.models import (
     ChapterDraftVersionModel,
     ChapterModel,
@@ -25,11 +30,11 @@ from bestseller.infra.db.models import (
     StyleGuideModel,
 )
 from bestseller.services.canon_guardrails import load_canon_guardrails_for_project
-from bestseller.services.chapter_validator import classify_cliffhanger
-from bestseller.services.context import build_scene_writer_context_from_models
 from bestseller.services.character_intelligence.optimizer import (
     optimize_project_character_profiles,
 )
+from bestseller.services.chapter_validator import classify_cliffhanger
+from bestseller.services.context import build_scene_writer_context_from_models
 from bestseller.services.diversity_budget import (
     load_diversity_budget,
     save_diversity_budget,
@@ -50,6 +55,7 @@ from bestseller.services.output_validator import (
     ValidationContext,
 )
 from bestseller.services.projects import get_project_by_slug
+from bestseller.services.prompt_constructor import render_fanqie_market_craft_profile_block
 from bestseller.services.prompt_packs import (
     render_methodology_block,
     render_prompt_pack_fragment,
@@ -87,13 +93,13 @@ from bestseller.services.writing_profile import (
     render_writing_profile_prompt_block,
     resolve_writing_profile,
 )
-from bestseller.settings import AppSettings, load_settings
 from bestseller.services.word_targets import (
     model_output_token_ceiling,
     model_reasoning_token_reserve,
     resolve_llm_role_max_tokens,
     resolve_llm_role_model,
 )
+from bestseller.settings import AppSettings, load_settings
 
 _REPAIR_CODE_ALIASES: dict[str, str] = {
     "CHAPTER_LENGTH_BLOCK_LOW": "BLOCK_LOW",
@@ -114,6 +120,191 @@ INTRA_CHAPTER_DUPLICATE_BLOCK_CODE = "INTRA_CHAPTER_REPETITION"
 
 _CJK_CHAR_PATTERN = re.compile(r"[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]")
 _LATIN_WORD_PATTERN = re.compile(r"[A-Za-z0-9]+(?:['\u2019._-][A-Za-z0-9]+)*")
+
+_TRACE_TRUE_VALUES = {"1", "true", "yes", "on", "summary", "full"}
+
+
+def _scene_prompt_trace_mode() -> str | None:
+    raw = os.environ.get("BESTSELLER_TRACE_SCENE_PROMPTS", "")
+    mode = raw.strip().lower()
+    if mode not in _TRACE_TRUE_VALUES:
+        return None
+    if mode == "full" or os.environ.get("BESTSELLER_TRACE_FULL_PROMPTS"):
+        return "full"
+    return "summary"
+
+
+def _jsonable(value: Any) -> Any:
+    if isinstance(value, UUID):
+        return str(value)
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if isinstance(value, dict):
+        return {str(key): _jsonable(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple, set)):
+        return [_jsonable(item) for item in value]
+    if hasattr(value, "model_dump"):
+        return _jsonable(value.model_dump(mode="json"))
+    return value
+
+
+def _block_trace(block: str | None, user_prompt: str) -> dict[str, Any]:
+    text = block or ""
+    present = bool(text.strip())
+    return {
+        "present": present,
+        "chars": len(text),
+        "estimated_tokens": _estimate_tokens(text),
+        "included_in_user_prompt": bool(present and text in user_prompt),
+    }
+
+
+def _maybe_write_scene_prompt_trace(
+    settings: AppSettings,
+    project: ProjectModel,
+    chapter: ChapterModel,
+    scene: SceneCardModel,
+    context_packet: SceneWriterContextPacket | None,
+    *,
+    system_prompt: str,
+    user_prompt: str,
+    workflow_run_id: UUID | None,
+    step_run_id: UUID | None,
+    model_tier: str,
+    trace_kind: str = "scene",
+) -> str | None:
+    mode = _scene_prompt_trace_mode()
+    if mode is None:
+        return None
+
+    try:
+        output_dir = Path(settings.output.base_dir) / project.slug / "traces"
+        output_dir.mkdir(parents=True, exist_ok=True)
+        timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
+        safe_trace_kind = re.sub(r"[^a-z0-9_-]+", "-", trace_kind.lower()).strip("-")
+        if not safe_trace_kind:
+            safe_trace_kind = "scene"
+        path = output_dir / (
+            f"{safe_trace_kind}-prompt-ch{chapter.chapter_number:04d}-"
+            f"s{scene.scene_number:02d}-{timestamp}.json"
+        )
+
+        block_attrs = (
+            "identity_constraint_block",
+            "overused_phrase_block",
+            "genre_constraint_block",
+            "ranking_capability_profile_block",
+            "progression_context_block",
+            "decision_policy_block",
+            "rule_system_context_block",
+            "faction_ecology_context_block",
+            "relationship_agency_context_block",
+            "entry_system_context_block",
+            "entry_registry_context_block",
+            "entry_state_ledger_block",
+            "opening_diversity_block",
+            "conflict_diversity_block",
+            "scene_purpose_diversity_block",
+            "env_diversity_block",
+            "arc_beat_block",
+            "five_layer_block",
+            "cliffhanger_diversity_block",
+            "tension_target_block",
+            "location_ledger_block",
+            "budget_diversity_block",
+            "scene_scope_isolation_block",
+            "plan_richness_block",
+            "reader_contract_block",
+            "hype_constraints_block",
+            "l3_prompt_block",
+        )
+        blocks = {
+            attr: _block_trace(getattr(context_packet, attr, None), user_prompt)
+            for attr in block_attrs
+        }
+        counts = {
+            "story_bible_context_used": bool(_packet_story_bible_context(context_packet)),
+            "recent_scene_count": len(_packet_recent_scene_summaries(context_packet)),
+            "recent_timeline_count": len(_packet_recent_timeline_events(context_packet)),
+            "participant_fact_count": len(_packet_participant_canon_facts(context_packet)),
+            "active_arc_count": len(_packet_active_plot_arcs(context_packet)),
+            "active_beat_count": len(_packet_active_arc_beats(context_packet)),
+            "unresolved_clue_count": len(_packet_unresolved_clues(context_packet)),
+            "emotion_track_count": len(_packet_emotion_tracks(context_packet)),
+            "antagonist_plan_count": len(_packet_antagonist_plans(context_packet)),
+            "tree_context_count": len(_packet_tree_context(context_packet)),
+            "retrieval_chunk_count": len(_packet_retrieval_context(context_packet)),
+            "query_brief_used": bool(getattr(context_packet, "query_brief", None)),
+            "query_tool_call_count": len(getattr(context_packet, "query_trace", []) or []),
+        }
+        payload: dict[str, Any] = {
+            "trace_version": 1,
+            "created_at": datetime.now(UTC).isoformat(),
+            "mode": mode,
+            "workflow_run_id": workflow_run_id,
+            "step_run_id": step_run_id,
+            "project": {
+                "id": project.id,
+                "slug": project.slug,
+                "title": project.title,
+                "language": project.language,
+                "genre": project.genre,
+                "sub_genre": project.sub_genre,
+                "status": project.status,
+            },
+            "chapter": {
+                "id": chapter.id,
+                "number": chapter.chapter_number,
+                "title": chapter.title,
+                "status": chapter.status,
+                "production_state": chapter.production_state,
+                "target_word_count": chapter.target_word_count,
+                "current_word_count": chapter.current_word_count,
+                "metadata": chapter.metadata_json,
+            },
+            "scene": {
+                "id": scene.id,
+                "number": scene.scene_number,
+                "type": scene.scene_type,
+                "title": scene.title,
+                "status": scene.status,
+                "participants": scene.participants,
+                "target_word_count": scene.target_word_count,
+                "purpose": scene.purpose,
+                "entry_state": scene.entry_state,
+                "exit_state": scene.exit_state,
+                "metadata": scene.metadata_json,
+            },
+            "model_tier": model_tier,
+            "trace_kind": safe_trace_kind,
+            "context_query": getattr(context_packet, "query_text", None),
+            "context_counts": counts,
+            "context_blocks": blocks,
+            "prompt_stats": {
+                "system_chars": len(system_prompt),
+                "system_estimated_tokens": _estimate_tokens(system_prompt),
+                "user_chars": len(user_prompt),
+                "user_estimated_tokens": _estimate_tokens(user_prompt),
+                "context_budget_tokens": settings.generation.context_budget_tokens,
+            },
+        }
+        if mode == "full":
+            payload["prompts"] = {
+                "system": system_prompt,
+                "user": user_prompt,
+            }
+        else:
+            payload["prompt_previews"] = {
+                "system_head": system_prompt[:2000],
+                "user_head": user_prompt[:4000],
+                "user_tail": user_prompt[-2000:],
+            }
+        serialized = json.dumps(_jsonable(payload), ensure_ascii=False, indent=2)
+        path.write_text(serialized, encoding="utf-8")
+        return str(path)
+    except Exception:
+        logger.debug("scene prompt trace write failed", exc_info=True)
+        return None
 
 
 def _strip_markdown_plain(text: str) -> str:
@@ -3236,6 +3427,12 @@ def _resolve_project_writing_profile(project: Any, style_guide: StyleGuideModel 
 
 
 def _resolve_project_prompt_pack(project: Any, writing_profile: Any):
+    if is_fanqie_short_project(project):
+        return resolve_prompt_pack(
+            "fanqie_short",
+            genre=str(getattr(project, "genre", "general-fiction") or "general-fiction"),
+            sub_genre=getattr(project, "sub_genre", None),
+        )
     return resolve_prompt_pack(
         getattr(writing_profile.market, "prompt_pack_key", None),
         genre=str(getattr(project, "genre", "general-fiction") or "general-fiction"),
@@ -4025,7 +4222,9 @@ def build_scene_draft_prompts(
     tree_section = _render_tree_section(tree_context_nodes, language=language)
     hard_fact_section = _render_hard_fact_snapshot_section(hard_fact_snapshot, language=language)
     prompt_pack_section = render_prompt_pack_prompt_block(prompt_pack)
-    prompt_pack_scene_writer = render_prompt_pack_fragment(prompt_pack, "scene_writer")
+    prompt_pack_scene_writer = render_prompt_pack_fragment(
+        prompt_pack, "scene_writer"
+    ) or render_prompt_pack_fragment(prompt_pack, "segment_writer")
     _pp_line = (
         f"Prompt Pack:\n{prompt_pack_section}\n"
         if prompt_pack_section and is_en
@@ -4166,8 +4365,19 @@ def build_scene_draft_prompts(
 
     # Ranking-level book capability profile (Tier 1 — book-specific).
     _ranking_profile_line = ""
-    if ranking_capability_profile_block:
-        _ranking_profile_line = f"{ranking_capability_profile_block}\n\n"
+    _fanqie_market_craft_block = render_fanqie_market_craft_profile_block(
+        _project_meta.get("fanqie_craft_profile")
+        if isinstance(_project_meta.get("fanqie_craft_profile"), dict)
+        else None,
+        language=language,
+    )
+    _ranking_profile_parts = [
+        part
+        for part in (ranking_capability_profile_block, _fanqie_market_craft_block)
+        if part
+    ]
+    if _ranking_profile_parts:
+        _ranking_profile_line = "\n\n".join(_ranking_profile_parts) + "\n\n"
 
     # Premium genre engine constraints (Tier 1 — always included)
     _progression_context_line = ""
@@ -5257,6 +5467,7 @@ async def generate_scene_draft(
     llm_run_id: UUID | None = None
     generation_mode = "template-fallback"
     content_md = fallback_content
+    prompt_trace_path: str | None = None
     if settings is not None:
         system_prompt, user_prompt = build_scene_draft_prompts(
             project,
@@ -5441,6 +5652,18 @@ async def generate_scene_draft(
             scene,
             _packet_chapter_contract(context_packet),
         )
+        prompt_trace_path = _maybe_write_scene_prompt_trace(
+            settings,
+            project,
+            chapter,
+            scene,
+            context_packet,
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            workflow_run_id=workflow_run_id,
+            step_run_id=step_run_id,
+            model_tier=_model_tier,
+        )
         completion = await complete_text(
             session,
             settings,
@@ -5473,6 +5696,7 @@ async def generate_scene_draft(
                         else ""
                     ).strip(),
                     "model_tier": _model_tier,
+                    **({"prompt_trace_path": prompt_trace_path} if prompt_trace_path else {}),
                 },
             ),
         )
@@ -5621,6 +5845,7 @@ async def generate_scene_draft(
             "assigned_hype_intensity": (
                 context_packet.assigned_hype_intensity if context_packet else None
             ),
+            **({"prompt_trace_path": prompt_trace_path} if prompt_trace_path else {}),
         },
     )
     session.add(draft)
@@ -6058,8 +6283,26 @@ async def maybe_prepare_chapter_auto_repair(
                 if _has_character_offstage_repair_code(repairable_hit)
                 else frozenset()
             )
+            reset_draft_count = 0
             for sc in scenes:
                 sc.status = SceneStatus.NEEDS_REWRITE.value
+                result = await session.execute(
+                    update(SceneDraftVersionModel)
+                    .where(
+                        SceneDraftVersionModel.scene_card_id == sc.id,
+                        SceneDraftVersionModel.is_current.is_(True),
+                    )
+                    .values(is_current=False)
+                )
+                try:
+                    reset_draft_count += int(result.rowcount or 0)
+                except Exception:
+                    logger.debug(
+                        "chapter %d scene %d: current draft reset count unavailable",
+                        chapter.chapter_number,
+                        sc.scene_number,
+                        exc_info=True,
+                    )
                 removed = _filter_dead_scene_participants(sc, dead_names)
                 scene_hint = str(hint_text)
                 if removed:
@@ -6080,6 +6323,12 @@ async def maybe_prepare_chapter_auto_repair(
                 sc.metadata_json = sc_meta
             _mark_repair_started(repairable_hit)
             await session.flush()
+            logger.info(
+                "chapter %d: stored write-safety auto-repair reset %d scenes and %d current drafts",
+                chapter.chapter_number,
+                len(scenes),
+                reset_draft_count,
+            )
             return True, repairable_hit
         # code stored but not repairable — fall through to normal path
 
@@ -6387,8 +6636,26 @@ async def maybe_prepare_chapter_auto_repair(
         else frozenset()
     )
     reset_count = 0
+    reset_draft_count = 0
     for sc in scenes:
         sc.status = SceneStatus.NEEDS_REWRITE.value
+        result = await session.execute(
+            update(SceneDraftVersionModel)
+            .where(
+                SceneDraftVersionModel.scene_card_id == sc.id,
+                SceneDraftVersionModel.is_current.is_(True),
+            )
+            .values(is_current=False)
+        )
+        try:
+            reset_draft_count += int(result.rowcount or 0)
+        except Exception:
+            logger.debug(
+                "chapter %d scene %d: current draft reset count unavailable",
+                chapter.chapter_number,
+                sc.scene_number,
+                exc_info=True,
+            )
         removed = _filter_dead_scene_participants(sc, dead_names)
         scene_hint = repair_hint
         if removed:
@@ -6511,9 +6778,10 @@ async def maybe_prepare_chapter_auto_repair(
     # consistent.
     await session.flush()
     logger.info(
-        "chapter %d: auto-repair triggered (%d scenes reset) — block codes %s",
+        "chapter %d: auto-repair triggered (%d scenes reset, %d current drafts reset) — block codes %s",
         chapter.chapter_number,
         reset_count,
+        reset_draft_count,
         list(repairable_hit),
     )
     return True, block_codes

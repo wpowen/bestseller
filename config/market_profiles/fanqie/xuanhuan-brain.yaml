@@ -1,0 +1,34 @@
+profile_key: xuanhuan-brain
+category: 玄幻脑洞
+reader_promise:
+  - 奇观机制开局成立
+  - 修行或长生目标与当前生存压力绑定
+  - 每个设定都改变破局方式
+entry_pressure_patterns:
+  - 宗门淘汰
+  - 寿命倒计时
+  - 禁地规则
+  - 身份被夺
+advantage_patterns:
+  - 长生机制
+  - 禁忌功法
+  - 规则面板
+  - 低调苟活信息差
+chapter_loop:
+  - 规则压迫
+  - 主角用机制避险或反制
+  - 收获修为/寿命/线索
+  - 代价或因果追踪出现
+  - 更高层规则露出
+style_controls:
+  - 奇观句要服务动作
+  - 段落短而有状态变化
+  - 章末保留规则后果
+anti_patterns:
+  - 大段世界史开篇
+  - 只写境界名不写代价
+  - 主角优势无限制
+copy_boundaries:
+  - 禁止复用源作品宗门名
+  - 禁止搬运专属功法/法宝名
+  - 禁止仿写具体作者句法

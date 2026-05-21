@@ -102,7 +102,10 @@ STALE_ARQ_IN_PROGRESS_GRACE_SECONDS = 5 * 60
 # only suppress self-heal briefly. Older waiting rows are historical evidence,
 # not an active handoff; leaving them indefinite made blocked projects stall
 # forever.
-WAITING_REPAIR_SUPPRESSION_SECONDS = 60 * 60
+# Only suppress duplicate repair dispatches long enough for the just-finished
+# worker state to settle. A waiting_human repair row is historical evidence,
+# not an acceptable long-lived stop state for autonomous recovery.
+WAITING_REPAIR_SUPPRESSION_SECONDS = 60
 WRITE_SAFETY_REPAIR_RECOVERY_SECONDS = 15 * 60
 WRITE_SAFETY_REPAIR_MAX_RECOVERY_SECONDS = 45 * 60
 
@@ -133,6 +136,7 @@ _AUTO_REPAIRABLE_WRITE_SAFETY_BLOCK_CODES = frozenset(
 GENERATION_GATE_RESUME_COOLDOWN_SECONDS = 15 * 60
 _AUTO_RESUMABLE_GENERATION_GATE_REASONS = frozenset(
     {
+        "scene_plan_richness_gate_failed",
         "story_bible_gate_failed",
         "volume_outline_gate_failed",
     }
@@ -405,6 +409,7 @@ async def find_stuck_projects(session: Any) -> list[StuckProject]:
                     stuck_at_chapter=int(chapters_with_draft) + 1,
                     chapters_total=int(chapters_total),
                     chapters_with_draft=int(chapters_with_draft),
+                    heal_kind="project_pipeline",
                 )
             )
             continue
@@ -650,6 +655,11 @@ def _repair_heal_job_id(slug: str) -> str:
     return f"repair:heal:{slug}"
 
 
+def _project_pipeline_heal_job_id(slug: str) -> str:
+    """Deterministic ARQ job id for project-pipeline continuation self-heal."""
+    return f"project-pipeline:heal:{slug}"
+
+
 async def _heal_job_exists(pool: "ArqRedis", job_id: str) -> bool:
     job_key = f"arq:job:{job_id}"
     in_progress_key = f"arq:in-progress:{job_id}"
@@ -794,28 +804,95 @@ async def _requeue_repair(
     return job_id
 
 
+async def _requeue_project_pipeline(
+    pool: "ArqRedis",
+    stuck: StuckProject,
+) -> str | None:
+    """Enqueue project pipeline continuation for planned chapters without drafts."""
+    repair_job_id = _repair_heal_job_id(stuck.slug)
+    if await _heal_job_exists(pool, repair_job_id):
+        if not await _clear_stale_heal_job_if_needed(pool, repair_job_id):
+            logger.info(
+                "self-heal: skipped project pipeline slug=%s — repair job already owns project",
+                stuck.slug,
+            )
+            return None
+        logger.info(
+            "self-heal: cleared stale repair owner before project pipeline slug=%s",
+            stuck.slug,
+        )
+
+    autowrite_job_id = _autowrite_heal_job_id(stuck.slug)
+    if await _heal_job_exists(pool, autowrite_job_id):
+        if not await _clear_stale_heal_job_if_needed(pool, autowrite_job_id):
+            logger.info(
+                "self-heal: skipped project pipeline slug=%s — autowrite job already owns project",
+                stuck.slug,
+            )
+            return None
+        logger.info(
+            "self-heal: cleared stale autowrite owner before project pipeline slug=%s",
+            stuck.slug,
+        )
+
+    job_id = _project_pipeline_heal_job_id(stuck.slug)
+    job = await pool.enqueue_job(
+        "run_project_pipeline_task",
+        workflow_run_id=job_id,
+        payload={"project_slug": stuck.slug},
+        _job_id=job_id,
+        _expires=_dt.timedelta(days=SELF_HEAL_JOB_EXPIRES_DAYS),
+    )
+    if job is None:
+        job_key = f"arq:job:{job_id}"
+        in_progress_key = f"arq:in-progress:{job_id}"
+        result_key = f"arq:result:{job_id}"
+        retry_key = f"arq:retry:{job_id}"
+        if not await _clear_stale_heal_job_if_needed(pool, job_id):
+            in_flight = await pool.exists(job_key, in_progress_key)
+            if in_flight:
+                return None
+            await pool.delete(result_key, retry_key)
+        job = await pool.enqueue_job(
+            "run_project_pipeline_task",
+            workflow_run_id=job_id,
+            payload={"project_slug": stuck.slug},
+            _job_id=job_id,
+            _expires=_dt.timedelta(days=SELF_HEAL_JOB_EXPIRES_DAYS),
+        )
+        if job is None:
+            return None
+    return job_id
+
+
 async def _requeue_stuck_project(
     pool: "ArqRedis",
     stuck: StuckProject,
 ) -> str | None:
     if stuck.heal_kind == "repair":
         return await _requeue_repair(pool, stuck)
+    if stuck.heal_kind == "project_pipeline":
+        return await _requeue_project_pipeline(pool, stuck)
     return await _requeue_autowrite(pool, stuck)
 
 
 def _coalesce_stuck_projects_for_enqueue(
     stuck_list: list[StuckProject],
 ) -> list[StuckProject]:
-    """Keep one self-heal owner per project, with repair taking precedence."""
+    """Keep one self-heal owner per project, preferring the narrowest owner."""
 
     chosen: dict[str, StuckProject] = {}
     order: list[str] = []
+    priority = {"autowrite": 1, "project_pipeline": 2, "repair": 3}
     for stuck in stuck_list:
         if stuck.slug not in chosen:
             chosen[stuck.slug] = stuck
             order.append(stuck.slug)
             continue
-        if chosen[stuck.slug].heal_kind != "repair" and stuck.heal_kind == "repair":
+        if priority.get(stuck.heal_kind, 0) > priority.get(
+            chosen[stuck.slug].heal_kind,
+            0,
+        ):
             chosen[stuck.slug] = stuck
     return [chosen[slug] for slug in order]
 

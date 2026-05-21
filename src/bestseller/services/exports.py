@@ -336,6 +336,14 @@ def _write_commercial_package_sidecars(
     )
 
 
+def write_commercial_package_sidecars(
+    project: ProjectModel,
+    chapter_payloads: list[tuple[ChapterModel, ChapterDraftVersionModel]],
+    package_root: Path,
+) -> None:
+    _write_commercial_package_sidecars(project, chapter_payloads, package_root)
+
+
 def _sync_project_chapter_markdown_files(
     project: ProjectModel,
     chapter_payloads: list[tuple[ChapterModel, ChapterDraftVersionModel]],

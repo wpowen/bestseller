@@ -251,6 +251,11 @@ pipeline:
   enable_commercial_planning_readiness_gate: true
   commercial_planning_readiness_block_on_failure: true
   commercial_planning_min_target_chapters: 50
+  # Fanqie market intelligence is opt-in, but long-form signing readiness is
+  # enforced so weak opening loops are repaired before write-out.
+  enable_fanqie_market_profile: false
+  enable_fanqie_long_ranking_gate: true
+  fanqie_long_ranking_block_on_failure: true
   # Chapter-length stability gate.  Reads min/target/max from
   # ``generation.words_per_chapter`` above and turns large drifts
   # (>±warn_margin beyond the hard window) into blocking findings.

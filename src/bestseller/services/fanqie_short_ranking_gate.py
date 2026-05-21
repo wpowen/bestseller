@@ -1,3 +1,4 @@
+# ruff: noqa: RUF001
 """番茄短故事榜单级门禁。
 
 The checks here are deterministic guardrails used by planning, export, and
@@ -8,11 +9,15 @@ cost, serial-style endings, and protagonist-name drift.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Any, Iterable
+from typing import TYPE_CHECKING, Any
 
 from bestseller.domain.fanqie_short import DEFAULT_UNLOCK_LINE_RATIO
 from bestseller.services.fanqie_short_opening_gate import evaluate_fanqie_short_opening_gate
+
+if TYPE_CHECKING:
+    from bestseller.domain.fanqie_short_v2 import FanqieShortEmotionStack
 
 
 @dataclass(frozen=True)
@@ -123,8 +128,7 @@ _PAYOFF_TERMS = (
     "保住",
 )
 
-_ABILITY_TERMS = (
-    "能力",
+_POWER_SYSTEM_TERMS = (
     "异能",
     "系统",
     "面板",
@@ -137,6 +141,14 @@ _ABILITY_TERMS = (
     "金手指",
     "黑屏",
     "点选",
+    "觉醒",
+    "灵力",
+    "神识",
+    "共感",
+    "器灵",
+    "禁术",
+    "法术",
+    "异术",
 )
 
 _COST_TERMS = (
@@ -221,7 +233,14 @@ def _contains_any(text: str, terms: Iterable[str]) -> bool:
     return any(term.lower() in lowered for term in terms)
 
 
-def _merge_reports(phase: str, reports: Iterable[FanqieRankingGateReport]) -> FanqieRankingGateReport:
+def _has_power_system_signal(text: str) -> bool:
+    return _contains_any(text, _POWER_SYSTEM_TERMS)
+
+
+def _merge_reports(
+    phase: str,
+    reports: Iterable[FanqieRankingGateReport],
+) -> FanqieRankingGateReport:
     findings = tuple(finding for report in reports for finding in report.findings)
     return FanqieRankingGateReport(
         passed=not any(finding.severity == "critical" for finding in findings),
@@ -291,7 +310,7 @@ def evaluate_fanqie_opening_ranking_gate(
                 target="opening_300",
             )
         )
-    if _contains_any(text, _ABILITY_TERMS) and not _contains_any(first_220, _ABILITY_TERMS):
+    if _has_power_system_signal(text) and not _has_power_system_signal(first_220):
         findings.append(
             FanqieRankingFinding(
                 code="opening_ability_late",
@@ -329,7 +348,10 @@ def evaluate_fanqie_unlock_ranking_gate(
                 target="unlock_30_percent",
             )
         )
-    if not (_contains_any(unlock_slice, _PRESSURE_TERMS) and _contains_any(unlock_slice, _ACTION_TERMS)):
+    if not (
+        _contains_any(unlock_slice, _PRESSURE_TERMS)
+        and _contains_any(unlock_slice, _ACTION_TERMS)
+    ):
         findings.append(
             FanqieRankingFinding(
                 code="unlock_conflict_loop_missing",
@@ -350,7 +372,7 @@ def evaluate_fanqie_unlock_ranking_gate(
 def evaluate_fanqie_ability_cost_gate(full_text: str) -> FanqieRankingGateReport:
     text = (full_text or "").strip()
     findings: list[FanqieRankingFinding] = []
-    if _contains_any(text, _ABILITY_TERMS) and not _contains_any(text, _COST_TERMS):
+    if _has_power_system_signal(text) and not _contains_any(text, _COST_TERMS):
         findings.append(
             FanqieRankingFinding(
                 code="ability_cost_missing",
@@ -427,7 +449,7 @@ def evaluate_fanqie_name_continuity_gate(
     )
 
 
-def evaluate_fanqie_ranking_readiness(
+def evaluate_fanqie_core_ranking_readiness(
     full_text: str,
     *,
     unlock_line_ratio: float = DEFAULT_UNLOCK_LINE_RATIO,
@@ -453,6 +475,42 @@ def evaluate_fanqie_ranking_readiness(
             ),
         ),
     )
+
+
+def evaluate_fanqie_ranking_readiness(
+    full_text: str,
+    *,
+    title: str | None = None,
+    unlock_line_ratio: float = DEFAULT_UNLOCK_LINE_RATIO,
+    protagonist_name: str | None = None,
+    emotion_stack: FanqieShortEmotionStack | None = None,
+    include_v2: bool = True,
+) -> FanqieRankingGateReport:
+    """Evaluate the public short-story ranking gate.
+
+    The public entry now includes the v2 short-story layer by default so older
+    callers cannot accidentally bypass title, social-emotion, density, and
+    anti-longform checks.
+    """
+    core = evaluate_fanqie_core_ranking_readiness(
+        full_text,
+        unlock_line_ratio=unlock_line_ratio,
+        protagonist_name=protagonist_name,
+    )
+    if not include_v2:
+        return core
+
+    from bestseller.services.fanqie_short_gate_v2 import (
+        evaluate_fanqie_short_v2_supplemental_readiness,
+    )
+
+    supplemental = evaluate_fanqie_short_v2_supplemental_readiness(
+        full_text,
+        title=title,
+        protagonist_name=protagonist_name,
+        emotion_stack=emotion_stack,
+    )
+    return _merge_reports("ranking_readiness_v2", (core, supplemental))
 
 
 def build_fanqie_ranking_rewrite_instructions(report: FanqieRankingGateReport) -> str:

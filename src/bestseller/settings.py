@@ -285,6 +285,11 @@ class PipelineSettings(BaseModel):
     enable_commercial_planning_readiness_gate: bool = True
     commercial_planning_readiness_block_on_failure: bool = True
     commercial_planning_min_target_chapters: int = 50
+    # Fanqie market intelligence is opt-in, but long-form signing readiness is
+    # enforced by default so weak opening loops are repaired before write-out.
+    enable_fanqie_market_profile: bool = False
+    enable_fanqie_long_ranking_gate: bool = True
+    fanqie_long_ranking_block_on_failure: bool = True
     # Chapter-length stability gate.  Pulls the target window from
     # ``generation.words_per_chapter`` so historical projects without a
     # populated ``invariants.length_envelope`` still get hard feedback

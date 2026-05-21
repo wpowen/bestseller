@@ -67,6 +67,7 @@ class PromptPackFragments(BaseModel):
 
     global_rules: str | None = None
     scene_writer: str | None = None
+    segment_writer: str | None = None
     scene_review: str | None = None
     scene_rewrite: str | None = None
     chapter_review: str | None = None

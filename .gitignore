@@ -23,7 +23,7 @@ logs/
 docs/plans/
 
 # Distillation corpus & LLM outputs (local only; schemas stay in repo)
-data/distillation/source-*/
-data/distillation/aggregates/
-data/distillation/source_registry.index.json
+data/distillation/**
+!data/distillation/schemas/
+!data/distillation/schemas/**
 data/distillation/.prepare_source.lock

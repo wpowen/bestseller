@@ -54,6 +54,21 @@ from bestseller.services.exports import (
     export_project_markdown,
     export_project_pdf,
 )
+from bestseller.services.fanqie_market_analyzer import build_market_analysis_bundle
+from bestseller.services.fanqie_market_client import (
+    fetch_fanqiehub_snapshot,
+    normalize_fanqiehub_snapshot,
+)
+from bestseller.services.fanqie_market_repository import (
+    apply_fanqie_seed_profile,
+    import_fanqie_market_payload,
+    inspect_fanqie_market_project,
+    persist_market_planning_artifacts,
+    upsert_category_profile,
+    upsert_competitor_profiles,
+    upsert_ranking_snapshot,
+)
+from bestseller.services.fanqie_seed_profiles import list_fanqie_seed_profile_keys
 from bestseller.services.if_generation import run_if_pipeline, run_if_pipeline_integrated
 from bestseller.services.inspection import (
     build_project_structure,
@@ -110,7 +125,7 @@ from bestseller.services.publishing.amazon_kdp import (
     validate_amazon_kdp_project,
 )
 from bestseller.services.ranking_readiness import evaluate_project_ranking_readiness
-from bestseller.services.repair import run_project_repair
+from bestseller.services.repair import clear_stale_write_safety_scene_drafts, run_project_repair
 from bestseller.services.retrieval import refresh_project_retrieval_index, search_project_retrieval
 from bestseller.services.reviews import (
     review_chapter_draft,
@@ -168,6 +183,7 @@ model_pilot_app = typer.Typer(help="Multi-model novel pilot operations.")
 commercial_gate_app = typer.Typer(help="Commercial novel package gate operations.")
 premium_gate_app = typer.Typer(help="Premium novel readiness gate operations.")
 material_app = typer.Typer(help="Material library density and project material operations.")
+fanqie_market_app = typer.Typer(help="Fanqie ranking market intelligence operations.")
 ui_app = typer.Typer(help="Web UI operations.")
 prompt_pack_app = typer.Typer(help="Prompt pack operations.")
 writing_preset_app = typer.Typer(help="Writing preset operations.")
@@ -193,6 +209,7 @@ app.add_typer(model_pilot_app, name="model-pilot")
 app.add_typer(commercial_gate_app, name="commercial-gate")
 app.add_typer(premium_gate_app, name="premium-gate")
 app.add_typer(material_app, name="material")
+app.add_typer(fanqie_market_app, name="fanqie-market")
 app.add_typer(ui_app, name="ui")
 app.add_typer(prompt_pack_app, name="prompt-pack")
 app.add_typer(writing_preset_app, name="writing-preset")
@@ -735,6 +752,223 @@ def db_init() -> None:
     typer.echo("Database initialization completed.")
 
 
+@fanqie_market_app.command("analyze-file")
+def fanqie_market_analyze_file(
+    file: Annotated[Path, typer.Argument(exists=True, file_okay=True, dir_okay=False)],
+    category: Annotated[
+        str,
+        typer.Option(help="Fallback Fanqie category when the file omits it."),
+    ] = "",
+    board_type: Annotated[
+        str,
+        typer.Option(help="Fallback board type when the file omits it."),
+    ] = "reading",
+    channel: Annotated[
+        str,
+        typer.Option(help="Fallback platform/channel when the file omits it."),
+    ] = "fanqie",
+    competitor_limit: Annotated[
+        int | None,
+        typer.Option(min=1, help="Optional maximum number of ranked books to analyze."),
+    ] = None,
+) -> None:
+    """Analyze a ranking JSON file without writing to the database."""
+
+    payload = load_json_file(file)
+    snapshot = normalize_fanqiehub_snapshot(
+        payload,
+        category=category,
+        board_type=board_type,
+        channel=channel,
+        source_url=str(file),
+    )
+    analysis = build_market_analysis_bundle(snapshot, competitor_limit=competitor_limit)
+    typer.echo(json.dumps(analysis.summary(), ensure_ascii=False, indent=2))
+
+
+@fanqie_market_app.command("import-file")
+def fanqie_market_import_file(
+    file: Annotated[Path, typer.Argument(exists=True, file_okay=True, dir_okay=False)],
+    category: Annotated[
+        str,
+        typer.Option(help="Fallback Fanqie category when the file omits it."),
+    ] = "",
+    board_type: Annotated[
+        str,
+        typer.Option(help="Fallback board type when the file omits it."),
+    ] = "reading",
+    channel: Annotated[
+        str,
+        typer.Option(help="Fallback platform/channel when the file omits it."),
+    ] = "fanqie",
+    project_slug: Annotated[
+        str | None,
+        typer.Option(help="Optional project slug for storing planning artifacts."),
+    ] = None,
+    persist_artifacts: Annotated[
+        bool,
+        typer.Option(
+            "--persist-artifacts/--no-persist-artifacts",
+            help="Also store market snapshot/category/craft planning artifacts for the project.",
+        ),
+    ] = False,
+    competitor_limit: Annotated[
+        int | None,
+        typer.Option(min=1, help="Optional maximum number of ranked books to analyze."),
+    ] = None,
+) -> None:
+    """Import a ranking JSON file, persist profiles, and optionally create artifacts."""
+
+    async def _run() -> None:
+        settings = load_settings()
+        async with session_scope(settings) as session:
+            result = await import_fanqie_market_payload(
+                session,
+                load_json_file(file),
+                category=category,
+                board_type=board_type,
+                channel=channel,
+                source_url=str(file),
+                project_slug=project_slug,
+                persist_artifacts=persist_artifacts,
+                competitor_limit=competitor_limit,
+            )
+            typer.echo(json.dumps(result.to_dict(), ensure_ascii=False, indent=2))
+
+    asyncio.run(_run())
+
+
+@fanqie_market_app.command("fetch-category")
+def fanqie_market_fetch_category(
+    category: str,
+    board_type: Annotated[
+        str,
+        typer.Option(help="FanqieHub rank_type parameter."),
+    ] = "reading",
+    channel: Annotated[
+        str,
+        typer.Option(help="FanqieHub platform parameter."),
+    ] = "fanqie",
+    project_slug: Annotated[
+        str | None,
+        typer.Option(help="Optional project slug for storing planning artifacts."),
+    ] = None,
+    persist_artifacts: Annotated[
+        bool,
+        typer.Option(
+            "--persist-artifacts/--no-persist-artifacts",
+            help="Also store market snapshot/category/craft planning artifacts for the project.",
+        ),
+    ] = False,
+    competitor_limit: Annotated[
+        int | None,
+        typer.Option(min=1, help="Optional maximum number of ranked books to analyze."),
+    ] = None,
+) -> None:
+    """Fetch one FanqieHub category snapshot and persist its market profiles."""
+
+    async def _run() -> None:
+        settings = load_settings()
+        async with session_scope(settings) as session:
+            snapshot = await fetch_fanqiehub_snapshot(
+                category=category,
+                board_type=board_type,
+                channel=channel,
+            )
+            analysis = build_market_analysis_bundle(snapshot, competitor_limit=competitor_limit)
+            snapshot_model = await upsert_ranking_snapshot(session, snapshot)
+            competitor_models = await upsert_competitor_profiles(
+                session,
+                snapshot_model,
+                analysis.competitor_profiles,
+            )
+            category_model = await upsert_category_profile(
+                session,
+                snapshot_model,
+                analysis.category_profile,
+            )
+            artifacts = []
+            if persist_artifacts:
+                if not project_slug:
+                    raise typer.BadParameter(
+                        "--project-slug is required when --persist-artifacts is set."
+                    )
+                artifacts = await persist_market_planning_artifacts(
+                    session,
+                    project_slug=project_slug,
+                    analysis=analysis,
+                )
+            typer.echo(
+                json.dumps(
+                    {
+                        "snapshot_id": str(snapshot_model.id) if snapshot_model.id else None,
+                        "category_profile_id": (
+                            str(category_model.id) if category_model.id else None
+                        ),
+                        "competitor_profile_ids": [
+                            str(model.id) for model in competitor_models if model.id
+                        ],
+                        "artifact_ids": [str(artifact.id) for artifact in artifacts if artifact.id],
+                        "summary": analysis.summary(),
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                )
+            )
+
+    asyncio.run(_run())
+
+
+@fanqie_market_app.command("apply")
+def fanqie_market_apply(
+    project_slug: str,
+    profile_key: Annotated[
+        str,
+        typer.Option(
+            "--profile-key",
+            "-p",
+            help="Seed profile key from config/market_profiles/fanqie.",
+        ),
+    ] = "urban-brain",
+) -> None:
+    """Apply an offline Fanqie seed profile to a project."""
+
+    async def _run() -> None:
+        settings = load_settings()
+        async with session_scope(settings) as session:
+            result = await apply_fanqie_seed_profile(
+                session,
+                project_slug=project_slug,
+                profile_key=profile_key,
+            )
+            typer.echo(json.dumps(result, ensure_ascii=False, indent=2))
+
+    asyncio.run(_run())
+
+
+@fanqie_market_app.command("inspect")
+def fanqie_market_inspect(project_slug: str) -> None:
+    """Inspect the latest Fanqie market artifacts attached to a project."""
+
+    async def _run() -> None:
+        settings = load_settings()
+        async with session_scope(settings) as session:
+            result = await inspect_fanqie_market_project(
+                session,
+                project_slug=project_slug,
+            )
+            typer.echo(json.dumps(result, ensure_ascii=False, indent=2))
+
+    asyncio.run(_run())
+
+
+@fanqie_market_app.command("seed-list")
+def fanqie_market_seed_list() -> None:
+    """List offline Fanqie seed profiles."""
+
+    typer.echo(json.dumps(list_fanqie_seed_profile_keys(), ensure_ascii=False, indent=2))
+
+
 @project_app.command("create")
 def project_create(
     slug: str,
@@ -1028,6 +1262,47 @@ def project_repair(
                 progress=_autowrite_progress_printer if show_progress else None,
             )
             typer.echo(json.dumps(result.model_dump(mode="json"), ensure_ascii=False, indent=2))
+
+    asyncio.run(_run())
+
+
+@project_app.command("repair-stuck-drafts")
+def project_repair_stuck_drafts(
+    project_slug: str | None = typer.Argument(
+        None,
+        help="Optional project slug. Omit to scan every project.",
+    ),
+    dry_run: bool = typer.Option(
+        True,
+        "--dry-run/--apply",
+        help="Preview stale write-safety scene drafts by default; --apply clears matching current drafts.",
+    ),
+    limit: int | None = typer.Option(
+        None,
+        "--limit",
+        min=1,
+        help="Optional maximum number of stale scenes to process.",
+    ),
+    include_scenes: bool = typer.Option(
+        False,
+        "--include-scenes/--summary-only",
+        help="Include per-scene draft ids in the JSON output.",
+    ),
+) -> None:
+    """Find or clear legacy current scene drafts that keep write-safety repair stuck."""
+
+    async def _run() -> None:
+        settings = load_settings()
+        async with session_scope(settings) as session:
+            result = await clear_stale_write_safety_scene_drafts(
+                session,
+                project_slug=project_slug,
+                apply=not dry_run,
+                limit=limit,
+            )
+            if not include_scenes:
+                result = {key: value for key, value in result.items() if key != "scenes"}
+            typer.echo(json.dumps(result, ensure_ascii=False, indent=2))
 
     asyncio.run(_run())
 

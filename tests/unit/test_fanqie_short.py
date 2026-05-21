@@ -1,3 +1,4 @@
+# ruff: noqa: E501, RUF001
 """番茄短故事功能单元测试。"""
 
 from __future__ import annotations
@@ -20,9 +21,11 @@ from bestseller.services.fanqie_short_export import (
     build_signing_readiness_report,
     insert_unlock_line_marker,
 )
+from bestseller.services.fanqie_short_finalizer import finalize_fanqie_short_for_upload
 from bestseller.services.fanqie_short_opening_gate import scan_fanqie_short_taboo_signals
 from bestseller.services.fanqie_short_planner import (
     _fallback_beat_sheet,
+    _normalize_beat_sheet_payload,
     build_fanqie_segment_outline_batch,
 )
 from bestseller.services.fanqie_short_ranking_gate import (
@@ -31,7 +34,6 @@ from bestseller.services.fanqie_short_ranking_gate import (
     evaluate_fanqie_unlock_ranking_gate,
 )
 from bestseller.services.story_shape_router import derive_story_shape
-
 
 pytestmark = pytest.mark.unit
 
@@ -119,6 +121,30 @@ def test_fallback_beat_sheet_segment_count() -> None:
     assert sheet.beats[-1].closure_contract
 
 
+def test_normalize_beat_sheet_payload_accepts_string_contracts() -> None:
+    payload = {
+        "title": "器语者",
+        "logline": "顾器被冤后用器语共感自证清白。",
+        "pov": "first_person",
+        "unlock_milestone_segment": 2,
+        "beats": [
+            {
+                "segment_number": 1,
+                "beat_role": "hook",
+                "purpose": "顾器在堂审现场听见霜钟失语，被当众污名为骗子。",
+                "opening_contract": "前50字让主角进入压迫现场。",
+                "payoff_contract": ["当众拿到第一枚证据"],
+            }
+        ],
+    }
+
+    normalized = _normalize_beat_sheet_payload(payload)
+    sheet = FanqieShortBeatSheet.model_validate(normalized)
+
+    assert sheet.beats[0].opening_contract == {"summary": "前50字让主角进入压迫现场。"}
+    assert sheet.beats[0].payoff_contract == {"item_1": "当众拿到第一枚证据"}
+
+
 def test_fanqie_ranking_gate_passes_strong_single_piece() -> None:
     text = (
         "我被主管按在会议桌前，逼我签下挪用公款的认罪书。父亲手术费只剩最后一小时，"
@@ -140,6 +166,42 @@ def test_fanqie_ranking_gate_blocks_weak_background_opening() -> None:
     report = evaluate_fanqie_ranking_readiness(text, protagonist_name="我")
     assert not report.passed
     assert {finding.code for finding in report.findings if finding.severity == "critical"}
+
+
+def test_fanqie_ranking_gate_includes_short_v2_by_default() -> None:
+    text = (
+        "昨夜子时，寄渊阁的古琴霜钟失语了。多年以前，器灵制度由此建立，"
+        "世界观由此展开。第一章先铺设定，下一章再揭真相。"
+    )
+    report = evaluate_fanqie_ranking_readiness(
+        text,
+        title="器语者",
+        protagonist_name="我",
+    )
+    codes = {finding.code for finding in report.findings if finding.severity == "critical"}
+
+    assert not report.passed
+    assert report.phase == "ranking_readiness_v2"
+    assert "title_abstract_setting_only" in codes
+    assert "longform_contamination" in codes
+
+
+def test_fanqie_ranking_gate_does_not_treat_realistic_ability_as_power_system() -> None:
+    text = (
+        "我被继父按在医院缴费窗口前，逼我签下替家里背债的协议；不签，妹妹就错过手术。"
+        "我反手把收费单拍到窗口玻璃上，让财务查退款账户。护士愣住，继父脸色瞬间变了。"
+        "后来妈妈看着账本说，原来她不是没能力，只是一直不敢看。"
+        "真相大白后，假债务协议作废，偷走手术费的人认罪，我们终于重新开始。"
+    )
+    report = evaluate_fanqie_ranking_readiness(
+        text,
+        title="被逼替妹妹背债后，我让继父当场认罪",
+        protagonist_name="我",
+    )
+    codes = {finding.code for finding in report.findings}
+
+    assert "opening_ability_late" not in codes
+    assert "ability_cost_missing" not in codes
 
 
 def test_fanqie_unlock_gate_requires_payoff_before_30_percent() -> None:
@@ -181,6 +243,45 @@ def test_fanqie_closure_gate_blocks_serial_teaser() -> None:
     report = evaluate_fanqie_closure_gate(text)
     assert not report.passed
     assert any(finding.code == "serial_cliffhanger_ending" for finding in report.findings)
+
+
+def test_fanqie_short_finalizer_repairs_rejected_draft_to_upload_ready(tmp_path) -> None:
+    weak_text = (
+        "# 器语者\n\n"
+        "## 正文\n\n"
+        "清晨的风落在寄渊阁檐下。多年以前，器灵制度由此建立，世界观由此展开。"
+        "霜钟、原初之器、封印、共感、器魂、铭纹、十二枚古器都各有来历。"
+        "顾器站在那里，听别人说了很久关于历史和制度的事。\n\n"
+        "这是一段会被重复的诊断性水文，用来验证终稿闭环会删除机械重复段落。\n\n"
+        "这是一段会被重复的诊断性水文，用来验证终稿闭环会删除机械重复段落。\n\n"
+        "下章，他将去地下三层追问真正的真相。未完待续。"
+    )
+
+    result = finalize_fanqie_short_for_upload(
+        tmp_path,
+        title="器语者",
+        genre="东方幻想",
+        full_text=weak_text,
+        protagonist_name="顾器",
+        target_word_count=700,
+    )
+    critical_codes = {
+        finding["code"]
+        for finding in [
+            *result.readiness["ranking_findings"],
+            *result.readiness["short_v2_findings"],
+        ]
+        if finding["severity"] == "critical"
+    }
+
+    assert result.ready_for_upload is True
+    assert result.readiness["word_count_within_10pct"] is True
+    assert result.title == "被逼签认罪书后，我让真凶当场认罪"
+    assert "opening_contract" in result.actions
+    assert "target_length" in result.actions
+    assert result.full_text.count("这是一段会被重复的诊断性水文") <= 1
+    assert not critical_codes
+    assert "markdown_path" in result.export_paths
 
 
 @pytest.mark.asyncio
@@ -284,6 +385,77 @@ def test_build_segment_outline_single_scene_per_segment() -> None:
         assert "章" not in ch["title"]
         assert len(ch["scenes"]) == 1
     assert "爽点合同" in batch["chapters"][0]["chapter_goal"]
+
+
+def test_build_segment_outline_with_book_spec_does_not_use_generic_fallback() -> None:
+    project = type(
+        "P",
+        (),
+        {
+            "target_chapters": 6,
+            "target_word_count": 15_000,
+            "slug": "fanqie-book-spec-test",
+            "title": "神经登阶",
+            "language": "zh-CN",
+        },
+    )()
+    beats = FanqieShortBeatSheet(
+        beats=[
+            FanqieShortBeat(
+                segment_number=1,
+                beat_role="hook",
+                purpose="陆砚在发布会现场用脑机接口当场证明技术有效。",
+                continuity_contract={"protagonist_name": "我"},
+            ),
+            FanqieShortBeat(
+                segment_number=2,
+                beat_role="rising",
+                purpose="华威集团压价收购，陆砚以能力代价查出对方暗线。",
+            ),
+            FanqieShortBeat(segment_number=3, beat_role="rising", purpose="陆砚反制资本围剿。"),
+            FanqieShortBeat(segment_number=4, beat_role="midpoint", purpose="陆砚赢得政策试点。"),
+            FanqieShortBeat(segment_number=5, beat_role="crisis", purpose="境外势力抛出陷阱。"),
+            FanqieShortBeat(
+                segment_number=6,
+                beat_role="resolution",
+                purpose="陆砚拒绝出卖核心技术并收束主线。",
+            ),
+        ],
+        unlock_milestone_segment=2,
+    )
+    book_spec = {
+        "premise": "陆砚用非侵入式脑机接口突破行业围剿。",
+        "series_engine": {
+            "chapter_arc": (
+                "第1章技术亮相→第2章初创危机→第3章绝地反击→"
+                "第4章行业搅局→第5章多方围剿→第6章规则改写"
+            ),
+            "payoff_rhythm": "每段必须兑现一次技术反击或资本打脸。",
+        },
+    }
+    cast_spec = {
+        "protagonist": {"name": "陆砚"},
+        "supporting_cast": [{"name": "沈璃"}, {"name": "孟铮"}],
+        "antagonist": {"name": "郑鸿朗"},
+    }
+
+    batch = build_fanqie_segment_outline_batch(
+        project,
+        beats,
+        book_spec=book_spec,
+        cast_spec=cast_spec,
+    )
+
+    dumped = str(batch)
+    assert batch["batch_name"] == "fanqie-short-segments"
+    assert len(batch["chapters"]) == 6
+    assert "刚取回的旧物忽然认了别人的血" not in dumped
+    assert "盟友的信物出现在敌人手里" not in dumped
+    contract_dump = str(batch["chapters"][0]["causal_contract"])
+    assert "continuity_contract" in contract_dump
+    assert "陆砚" in contract_dump
+    assert "第1章技术亮相" in batch["chapters"][0]["chapter_goal"]
+    assert batch["chapters"][-1]["main_conflict"] == "第6章规则改写"
 
 
 def test_story_shape_fanqie_short_metadata() -> None:

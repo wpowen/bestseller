@@ -31,12 +31,14 @@ where the remediation block lands.
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, replace
 import logging
 import random
-from dataclasses import dataclass, replace
-from typing import Any, Sequence
+from typing import Any
 
 from bestseller.services.diversity_budget import DiversityBudget
+from bestseller.services.fanqie_market_integration import render_fanqie_craft_profile_block
 from bestseller.services.hype_engine import (
     GoldenFingerLadder,
     GoldenFingerRung,
@@ -53,7 +55,6 @@ from bestseller.services.invariants import (
     OpeningArchetype,
     ProjectInvariants,
 )
-
 
 logger = logging.getLogger(__name__)
 
@@ -114,6 +115,16 @@ def _archetype_directive(archetype: OpeningArchetype, language: str) -> str:
     return table.get(archetype, f"Open the chapter using the {archetype.value} archetype.")
 
 
+def render_fanqie_market_craft_profile_block(
+    craft_profile: Mapping[str, Any] | None,
+    *,
+    language: str = "zh-CN",
+) -> str:
+    """Render an anonymous Fanqie craft profile for chapter-planning prompts."""
+
+    return render_fanqie_craft_profile_block(craft_profile, language=language)
+
+
 # ---------------------------------------------------------------------------
 # PromptPlan.
 # ---------------------------------------------------------------------------
@@ -137,6 +148,7 @@ class PromptPlan:
     invariants_section: str = ""
     bible_slice: str = ""
     ranking_capability_profile_section: str = ""
+    market_profile_section: str = ""
     progression_constraints: str = ""
     decision_policy_constraints: str = ""
     rule_system_constraints: str = ""
@@ -200,6 +212,7 @@ class PromptPlan:
     _USER_SECTIONS: tuple[str, ...] = (
         "bible_slice",
         "ranking_capability_profile_section",
+        "market_profile_section",
         "progression_constraints",
         "decision_policy_constraints",
         "rule_system_constraints",
@@ -250,6 +263,7 @@ class PromptPlan:
             self.invariants_section,
             self.bible_slice,
             self.ranking_capability_profile_section,
+            self.market_profile_section,
             self.progression_constraints,
             self.decision_policy_constraints,
             self.rule_system_constraints,
@@ -688,6 +702,8 @@ def build_chapter_prompt(
     system: str = "",
     bible_slice: str = "",
     ranking_capability_profile_block: str = "",
+    market_profile_section: str = "",
+    fanqie_market_craft_profile: Mapping[str, Any] | None = None,
     progression_context_block: str = "",
     decision_policy_block: str = "",
     rule_system_context_block: str = "",
@@ -770,12 +786,22 @@ def build_chapter_prompt(
         reader_contract_cadence_head=reader_contract_cadence_head,
         reader_contract_cadence_tail=reader_contract_cadence_tail,
     )
+    fanqie_market_block = render_fanqie_market_craft_profile_block(
+        fanqie_market_craft_profile,
+        language=invariants.language,
+    )
+    market_section = "\n\n".join(
+        section
+        for section in (market_profile_section, fanqie_market_block)
+        if section.strip()
+    )
 
     plan = PromptPlan(
         system=system,
         invariants_section=build_invariants_section(invariants),
         bible_slice=bible_slice,
         ranking_capability_profile_section=ranking_capability_profile_block,
+        market_profile_section=market_section,
         progression_constraints=progression_context_block,
         decision_policy_constraints=decision_policy_block,
         rule_system_constraints=rule_system_context_block,
@@ -1082,4 +1108,5 @@ __all__ = [
     "choose_cliffhanger_type",
     "choose_opening_archetype",
     "rebuild_with_feedback",
+    "render_fanqie_market_craft_profile_block",
 ]

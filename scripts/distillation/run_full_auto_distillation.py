@@ -382,9 +382,13 @@ async def _run_one_pass(
     state["last_pass_iteration"] = iteration
     _atomic_write_json(state_path, state)
 
-    # --- Cross-book aggregation: every package that already validates (full corpus this pass). ---
+    # --- Cross-book aggregation: every package that already validates.
+    #
+    # `sources` may be a narrow incremental range. Aggregates are shared assets,
+    # so rebuilding them from only that range would erase the already-distilled
+    # corpus from the aggregate files.
     ready_packages: list[Path] = []
-    for pkg in sources:
+    for pkg in _discover_sources(dist_root):
         rep = validate_distillation_package(pkg)
         if rep.ok:
             ready_packages.append(pkg)

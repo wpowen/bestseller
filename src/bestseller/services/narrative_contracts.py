@@ -635,6 +635,14 @@ def repair_missing_scene_participants_pre_draft(
             ):
                 _add_candidate(referenced_name)
 
+    if not candidates:
+        fallback_identity = _primary_draft_ready_identity(
+            identity_index.values(),
+            excluded_tokens=excluded_tokens,
+        )
+        if fallback_identity is not None:
+            _add_candidate(fallback_identity.name)
+
     scene_type = _clean(getattr(scene, "scene_type", None)).lower()
     interactive_types = {"dialogue", "confrontation", "conflict", "对话", "冲突", "对峙"}
     if len(candidates) < 2 and scene_type in interactive_types:
@@ -654,6 +662,33 @@ def repair_missing_scene_participants_pre_draft(
 
     setattr(scene, "participants", candidates)
     return added_count
+
+
+def _primary_draft_ready_identity(
+    identities: Iterable[CharacterIdentity],
+    *,
+    excluded_tokens: set[str],
+) -> CharacterIdentity | None:
+    unique: dict[str, CharacterIdentity] = {}
+    for identity in identities:
+        token = _normalize_identity_token(identity.name)
+        if not token or token in unique:
+            continue
+        if token in excluded_tokens:
+            continue
+        if not identity.is_alive or not _identity_is_resolved(identity):
+            continue
+        unique[token] = identity
+    if not unique:
+        return None
+    return sorted(
+        unique.values(),
+        key=lambda item: (
+            _identity_role_priority(item.role),
+            _normalize_identity_token(item.name),
+        ),
+        reverse=True,
+    )[0]
 
 
 def _extract_chapter_goal(text: str | None) -> str:

@@ -3273,17 +3273,35 @@ async def _load_projects_payload(
 ) -> list[dict[str, object]]:
     async with session_scope(settings) as session:
         rows = await list_projects(session)
+        content_stats = await _load_project_content_stats(
+            session,
+            rows,
+            settings=settings,
+            include_filesystem=not light,
+        )
+        active_project_slugs = await _load_active_workflow_project_slugs(
+            session,
+            [row.id for row in rows],
+        )
+        redis_url = getattr(getattr(settings, "redis", None), "url", None)
+        if redis_url:
+            active_project_slugs.update(_fetch_heal_owned_slugs(str(redis_url)))
         if light:
             payload_rows: list[dict[str, object]] = []
             for row in rows:
                 meta = row.metadata_json if isinstance(row.metadata_json, dict) else {}
                 is_short = is_fanqie_short_project(row)
+                stats = content_stats.get(row.id, {})
+                completed_units = _safe_int(stats.get("completed_chapters"))
+                word_total = _safe_int(stats.get("word_count_total"))
+                has_active_workflow = row.slug in active_project_slugs
                 book_state = _library_book_state(
                     status=row.status,
-                    completed_units=0,
+                    completed_units=completed_units,
                     target_units=int(row.target_chapters or 0),
-                    has_content=False,
+                    has_content=word_total > 0 or completed_units > 0,
                     archived=_project_library_archived(meta),
+                    has_active_workflow=has_active_workflow,
                 )
                 payload_rows.append(
                     {
@@ -3298,9 +3316,15 @@ async def _load_projects_payload(
                         "content_mode": meta.get("content_mode"),
                         "length_key": meta.get("length_key"),
                         "unit_kind": "single_story" if is_short else "chapter",
+                        "unit_label": "全文" if is_short else "章节",
                         "target_word_count": row.target_word_count,
                         "target_chapters": row.target_chapters,
                         "segment_count": row.target_chapters if is_short else None,
+                        "completed_chapters": completed_units,
+                        "completed_segments": completed_units if is_short else 0,
+                        "words_on_disk": word_total,
+                        "current_chapter_number": row.current_chapter_number,
+                        "has_active_workflow": has_active_workflow,
                         "created_at": row.created_at.isoformat() if row.created_at else None,
                         "updated_at": row.updated_at.isoformat() if row.updated_at else None,
                     }
@@ -3318,6 +3342,10 @@ async def _load_projects_payload(
         for row in rows:
             meta = row.metadata_json if isinstance(row.metadata_json, dict) else {}
             is_short = is_fanqie_short_project(row)
+            stats = content_stats.get(row.id, {})
+            completed_units = _safe_int(stats.get("completed_chapters"))
+            word_total = _safe_int(stats.get("word_count_total"))
+            has_active_workflow = row.slug in active_project_slugs
             repair_status = _build_project_repair_status_payload(
                 row,
                 repair_counts.get(row.id, []),
@@ -3325,11 +3353,12 @@ async def _load_projects_payload(
             )
             book_state = _library_book_state(
                 status=row.status,
-                completed_units=0,
+                completed_units=completed_units,
                 target_units=int(row.target_chapters or 0),
-                has_content=False,
+                has_content=word_total > 0 or completed_units > 0,
                 archived=_project_library_archived(meta),
                 repair_status=repair_status,
+                has_active_workflow=has_active_workflow,
             )
             payload_rows.append(
                 {
@@ -3344,15 +3373,127 @@ async def _load_projects_payload(
                     "content_mode": meta.get("content_mode"),
                     "length_key": meta.get("length_key"),
                     "unit_kind": "single_story" if is_short else "chapter",
+                    "unit_label": "全文" if is_short else "章节",
                     "target_word_count": row.target_word_count,
                     "target_chapters": row.target_chapters,
                     "segment_count": row.target_chapters if is_short else None,
+                    "completed_chapters": completed_units,
+                    "completed_segments": completed_units if is_short else 0,
+                    "words_on_disk": word_total,
+                    "current_chapter_number": row.current_chapter_number,
+                    "has_active_workflow": has_active_workflow,
                     "created_at": row.created_at.isoformat() if row.created_at else None,
                     "updated_at": row.updated_at.isoformat() if row.updated_at else None,
                     "repair_status": repair_status,
                 }
             )
         return payload_rows
+
+
+async def _load_project_content_stats(
+    session: Any,
+    rows: list[Any],
+    *,
+    settings: AppSettings | None = None,
+    include_filesystem: bool = False,
+) -> dict[UUID, dict[str, object]]:
+    if not rows:
+        return {}
+
+    from sqlalchemy import and_, func, select
+
+    from bestseller.infra.db.models import ChapterDraftVersionModel, ChapterModel
+
+    project_ids = [row.id for row in rows]
+    stats: dict[UUID, dict[str, object]] = {
+        row.id: {
+            "completed_chapters": 0,
+            "word_count_total": 0,
+            "chapters_on_disk": 0,
+            "project_md_exists": False,
+        }
+        for row in rows
+    }
+    word_expr = func.coalesce(
+        func.nullif(ChapterModel.current_word_count, 0),
+        ChapterDraftVersionModel.word_count,
+        0,
+    )
+    result = await session.execute(
+        select(
+            ChapterModel.project_id,
+            func.count(ChapterModel.id),
+            func.coalesce(func.sum(word_expr), 0),
+        )
+        .outerjoin(
+            ChapterDraftVersionModel,
+            and_(
+                ChapterDraftVersionModel.chapter_id == ChapterModel.id,
+                ChapterDraftVersionModel.is_current.is_(True),
+            ),
+        )
+        .where(
+            ChapterModel.project_id.in_(project_ids),
+            word_expr > 0,
+        )
+        .group_by(ChapterModel.project_id)
+    )
+    for project_id, completed_chapters, word_total in result:
+        if project_id not in stats:
+            continue
+        stats[project_id]["completed_chapters"] = int(completed_chapters or 0)
+        stats[project_id]["word_count_total"] = int(word_total or 0)
+
+    if settings is not None and include_filesystem:
+        output_base = Path(settings.output.base_dir)
+        for row in rows:
+            slug = str(row.slug or "")
+            slug_dir = output_base / slug if slug else None
+            if not slug_dir or not slug_dir.exists():
+                continue
+            chapter_files = sorted(slug_dir.glob("chapter-*.md"))
+            words_on_disk = 0
+            for cf in chapter_files:
+                try:
+                    words_on_disk += len(cf.read_text(encoding="utf-8"))
+                except OSError:
+                    continue
+            current = stats[row.id]
+            current["chapters_on_disk"] = len(chapter_files)
+            current["word_count_total"] = max(
+                _safe_int(current.get("word_count_total")),
+                words_on_disk,
+            )
+            current["completed_chapters"] = max(
+                _safe_int(current.get("completed_chapters")),
+                len(chapter_files),
+            )
+            current["project_md_exists"] = (slug_dir / "project.md").exists()
+
+    return stats
+
+
+async def _load_active_workflow_project_slugs(
+    session: Any,
+    project_ids: list[UUID],
+) -> set[str]:
+    if not project_ids:
+        return set()
+
+    from sqlalchemy import select
+
+    from bestseller.infra.db.models import ProjectModel, WorkflowRunModel
+
+    result = await session.execute(
+        select(ProjectModel.slug)
+        .join(WorkflowRunModel, WorkflowRunModel.project_id == ProjectModel.id)
+        .where(
+            ProjectModel.id.in_(project_ids),
+            WorkflowRunModel.status.in_(("running", "queued")),
+        )
+        .distinct()
+    )
+    return {str(slug) for slug in result.scalars() if slug}
 
 
 async def _load_library_payload(settings: AppSettings) -> list[dict[str, object]]:
@@ -3372,10 +3513,18 @@ async def _load_library_payload(settings: AppSettings) -> list[dict[str, object]
             session,
             [row.id for row in rows],
         )
+        active_project_slugs = await _load_active_workflow_project_slugs(
+            session,
+            [row.id for row in rows],
+        )
+        redis_url = getattr(getattr(settings, "redis", None), "url", None)
+        if redis_url:
+            active_project_slugs.update(_fetch_heal_owned_slugs(str(redis_url)))
         results: list[dict[str, object]] = []
         for row in rows:
             slug = row.slug
             is_short = is_fanqie_short_project(row)
+            has_active_workflow = slug in active_project_slugs
             slug_dir = output_base / slug if slug else None
             chapter_files: list[Path] = []
             project_md_exists = False
@@ -3465,6 +3614,7 @@ async def _load_library_payload(settings: AppSettings) -> list[dict[str, object]
                 has_content=words_on_disk > 0 or project_md_exists,
                 archived=_project_library_archived(row.metadata_json),
                 repair_status=repair_status,
+                has_active_workflow=has_active_workflow,
             )
             is_archived = _project_library_archived(row.metadata_json)
             results.append(
@@ -3503,6 +3653,7 @@ async def _load_library_payload(settings: AppSettings) -> list[dict[str, object]
                     "current_export_filename": current_export_filename,
                     "current_export_modified_at": current_export_modified_at,
                     "has_project_md": project_md_exists,
+                    "has_active_workflow": has_active_workflow,
                     "tags": tags,
                     "tagline": tagline,
                     "repair_status": repair_status,
@@ -6088,10 +6239,13 @@ def _library_book_state(
     has_content: bool,
     archived: bool = False,
     repair_status: dict[str, object] | None = None,
+    has_active_workflow: bool = False,
 ) -> str:
     if archived:
         return "archived"
     normalized = str(status or "").lower()
+    if has_active_workflow:
+        return "in_progress"
     if repair_status and repair_status.get("is_repairing"):
         return "needs_attention"
     if normalized in _BOOK_ATTENTION_STATUSES:

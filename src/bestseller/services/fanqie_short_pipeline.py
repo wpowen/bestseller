@@ -1,3 +1,4 @@
+# ruff: noqa: ANN401, RUF002
 """番茄短故事专用 autowrite pipeline。"""
 
 from __future__ import annotations
@@ -5,17 +6,16 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from bestseller.domain.enums import ProjectType
+from bestseller.domain.enums import ArtifactType, ProjectType
 from bestseller.domain.fanqie_short import (
     DEFAULT_UNLOCK_LINE_RATIO,
     is_fanqie_short_project,
-    segment_target_words,
 )
 from bestseller.domain.planning import AutowriteResult
 from bestseller.domain.project import ProjectCreate
@@ -26,7 +26,15 @@ from bestseller.infra.db.models import (
     RewriteTaskModel,
 )
 from bestseller.services.drafts import count_words, sanitize_novel_markdown_content
-from bestseller.services.fanqie_short_export import export_fanqie_short_markdown
+from bestseller.services.fanqie_short_export import (
+    export_fanqie_short_markdown,
+    export_fanqie_short_rejected_draft,
+)
+from bestseller.services.fanqie_short_finalizer import finalize_fanqie_short_for_upload
+from bestseller.services.fanqie_short_gate_v2 import (
+    build_fanqie_short_v2_rewrite_instructions,
+    build_fanqie_short_v2_rewrite_routes,
+)
 from bestseller.services.fanqie_short_planner import (
     build_fanqie_segment_outline_batch,
     generate_fanqie_beat_sheet,
@@ -53,7 +61,6 @@ from bestseller.services.workflows import (
     materialize_latest_narrative_graph,
     materialize_latest_story_bible,
 )
-from bestseller.domain.enums import ArtifactType
 from bestseller.settings import AppSettings
 
 logger = logging.getLogger(__name__)
@@ -74,6 +81,41 @@ def _ranking_finding_chapter_numbers(
     if phase == "closure" or target == "ending":
         return [segment_total]
     return list(range(1, segment_total + 1))
+
+
+def _short_v2_finding_chapter_numbers(
+    finding: FanqieRankingFinding,
+    *,
+    segment_total: int,
+    unlock_segment: int,
+) -> list[int]:
+    """Map v2 whole-piece findings to concrete segment repair targets."""
+    target = finding.target
+    phase = finding.phase
+    code = finding.code
+    if (
+        target == "title"
+        or target.startswith("opening")
+        or phase in {"title", "opening"}
+        or code.startswith("first_screen")
+    ):
+        return [1]
+    if phase == "unlock" or target.startswith("unlock"):
+        return list(range(1, max(1, min(unlock_segment, segment_total)) + 1))
+    if phase == "closure" or target == "ending":
+        return [segment_total]
+    if phase in {"payoff", "anti_longform"} or target == "whole_story":
+        return list(range(1, segment_total + 1))
+    return _ranking_finding_chapter_numbers(
+        finding,
+        segment_total=segment_total,
+        unlock_segment=unlock_segment,
+    )
+
+
+def _short_v2_rewrite_strategy(code: str) -> str:
+    safe_code = "".join(char if char.isalnum() or char == "_" else "_" for char in code)
+    return f"fix_{safe_code}"[:64]
 
 
 async def _chapter_by_number(
@@ -155,6 +197,96 @@ async def _persist_fanqie_ranking_gate_failure(
                 "blocked_by_fanqie_ranking_gate": True,
                 "fanqie_ranking_gate_code": finding.code,
                 "fanqie_ranking_gate_message": finding.message,
+            }
+            created += 1
+    await session.flush()
+    return created
+
+
+async def _persist_fanqie_short_v2_gate_failure(
+    session: AsyncSession,
+    project: ProjectModel,
+    *,
+    report: FanqieRankingGateReport,
+    unlock_segment: int,
+) -> int:
+    """Persist v2 short-story failures as worker-routed repair tasks."""
+    routes = build_fanqie_short_v2_rewrite_routes(report)
+    route_by_code = {route.finding_code: route for route in routes}
+    meta = dict(project.metadata_json or {})
+    meta["fanqie_short_v2_gate_report"] = report.to_dict()
+    meta["fanqie_short_v2_rewrite_routes"] = [
+        route.model_dump(mode="json") for route in routes
+    ]
+    if not report.passed:
+        meta["fanqie_short_ready_for_upload"] = False
+    project.metadata_json = meta
+    if report.passed:
+        return 0
+
+    critical_findings = [finding for finding in report.findings if finding.severity == "critical"]
+    if not critical_findings:
+        return 0
+
+    created = 0
+    segment_total = max(int(getattr(project, "target_chapters", 0) or 0), 1)
+    for finding in critical_findings:
+        route = route_by_code.get(finding.code)
+        route_payload = route.model_dump(mode="json") if route is not None else None
+        instructions = build_fanqie_short_v2_rewrite_instructions(
+            FanqieRankingGateReport(
+                passed=False,
+                phase=finding.phase,
+                findings=(finding,),
+            )
+        )
+        for chapter_number in _short_v2_finding_chapter_numbers(
+            finding,
+            segment_total=segment_total,
+            unlock_segment=unlock_segment,
+        ):
+            chapter = await _chapter_by_number(
+                session,
+                project_id=project.id,
+                chapter_number=chapter_number,
+            )
+            if chapter is None:
+                continue
+            task = RewriteTaskModel(
+                project_id=project.id,
+                parent_task_id=None,
+                trigger_type="fanqie_short_v2_gate",
+                trigger_source_id=chapter.id,
+                rewrite_strategy=_short_v2_rewrite_strategy(finding.code),
+                priority=route.priority if route is not None else 1,
+                status="pending",
+                instructions=instructions,
+                context_required=[
+                    "chapter_draft",
+                    "fanqie_short_v2_contract",
+                    "fanqie_short_worker_route",
+                ],
+                metadata_json={
+                    "chapter_id": str(chapter.id),
+                    "chapter_number": chapter.chapter_number,
+                    "finding": finding.to_dict(),
+                    "source": "fanqie_short_v2_gate",
+                    "source_report_phase": report.phase,
+                    "worker_route": route_payload,
+                    "worker": route.worker if route is not None else "RankingGateWorker",
+                },
+            )
+            session.add(task)
+            chapter.status = "revision"
+            chapter.production_state = "blocked"
+            chapter.metadata_json = {
+                **(chapter.metadata_json or {}),
+                "blocked_by_fanqie_short_v2_gate": True,
+                "fanqie_short_v2_gate_code": finding.code,
+                "fanqie_short_v2_gate_message": finding.message,
+                "fanqie_short_v2_worker": (
+                    route.worker if route is not None else "RankingGateWorker"
+                ),
             }
             created += 1
     await session.flush()
@@ -253,7 +385,7 @@ def assemble_fanqie_whole_story(
 ) -> str:
     """拼接为单篇正文（段间空行，不加连载章标题）。"""
     parts: list[str] = []
-    for chapter, draft in chapter_payloads:
+    for _chapter, draft in chapter_payloads:
         body = sanitize_novel_markdown_content(draft.content_md or "")
         body = body.strip()
         if body.startswith("#"):
@@ -331,7 +463,13 @@ async def run_fanqie_short_pipeline(
 
     _emit_progress(progress, "fanqie_beat_sheet_started", {"project_slug": slug})
     beat_sheet = await generate_fanqie_beat_sheet(
-        session, settings, slug, premise, requested_by=requested_by
+        session,
+        settings,
+        slug,
+        premise,
+        book_spec=book_spec if isinstance(book_spec, dict) else None,
+        cast_spec=cast_spec if isinstance(cast_spec, dict) else None,
+        requested_by=requested_by,
     )
     outline_payload = build_fanqie_segment_outline_batch(
         project,
@@ -424,6 +562,7 @@ async def run_fanqie_short_pipeline(
     _emit_progress(progress, "fanqie_whole_review_started", {"project_slug": slug})
     whole_review = review_whole_fanqie_short_story(
         full_text,
+        title=project.title,
         unlock_line_ratio=unlock_ratio,
         protagonist_name=protagonist_name,
     )
@@ -463,9 +602,44 @@ async def run_fanqie_short_pipeline(
                 exc_info=True,
             )
 
+    short_v2_rewrite_task_count = 0
+    if not whole_review.short_v2_passed and whole_review.short_v2_report is not None:
+        try:
+            short_v2_rewrite_task_count = await _persist_fanqie_short_v2_gate_failure(
+                session,
+                project,
+                report=whole_review.short_v2_report,
+                unlock_segment=beat_sheet.unlock_milestone_segment,
+            )
+            await _checkpoint_commit(session)
+            routes = build_fanqie_short_v2_rewrite_routes(whole_review.short_v2_report)
+            _emit_progress(
+                progress,
+                "fanqie_short_v2_gate_rewrite_tasks_created",
+                {
+                    "project_slug": slug,
+                    "rewrite_task_count": short_v2_rewrite_task_count,
+                    "short_v2_gate_passed": whole_review.short_v2_report.passed,
+                    "critical_codes": [
+                        finding.code
+                        for finding in whole_review.short_v2_report.findings
+                        if finding.severity == "critical"
+                    ],
+                    "worker_routes": [
+                        route.model_dump(mode="json") for route in routes
+                    ],
+                },
+            )
+        except Exception:
+            logger.warning(
+                "Persisting fanqie short v2 gate failure failed for %s",
+                slug,
+                exc_info=True,
+            )
+
     export_paths: dict[str, str] = {}
-    export_artifact_id: UUID | None = None
-    if export_markdown and full_text.strip():
+    rejected_paths: dict[str, str] = {}
+    if export_markdown and full_text.strip() and whole_review.passed:
         export_paths = export_fanqie_short_markdown(
             output_dir,
             title=project.title,
@@ -480,6 +654,57 @@ async def run_fanqie_short_pipeline(
             "fanqie_export_completed",
             {"project_slug": slug, **export_paths, "total_words": total_words},
         )
+    elif export_markdown and full_text.strip():
+        finalization = finalize_fanqie_short_for_upload(
+            output_dir,
+            title=project.title,
+            genre=project.genre,
+            full_text=full_text,
+            unlock_line_ratio=unlock_ratio,
+            protagonist_name=protagonist_name,
+            target_word_count=project.target_word_count,
+        )
+        full_text = finalization.full_text
+        total_words = count_words(full_text)
+        whole_review = finalization.review
+        if finalization.ready_for_upload:
+            export_paths = finalization.export_paths
+            _emit_progress(
+                progress,
+                "fanqie_finalizer_export_completed",
+                {
+                    "project_slug": slug,
+                    **export_paths,
+                    "total_words": total_words,
+                    "final_title": finalization.title,
+                    "finalization_actions": list(finalization.actions),
+                    "finalization_report_path": finalization.report_path,
+                },
+            )
+        else:
+            rejected_paths = finalization.export_paths or export_fanqie_short_rejected_draft(
+                output_dir,
+                title=project.title,
+                genre=project.genre,
+                full_text=full_text,
+                review_report=whole_review.to_dict(),
+                unlock_line_ratio=unlock_ratio,
+                protagonist_name=protagonist_name,
+                target_word_count=project.target_word_count,
+            )
+            _emit_progress(
+                progress,
+                "fanqie_export_skipped",
+                {
+                    "project_slug": slug,
+                    "reason": "whole_review_failed_after_finalizer",
+                    "total_words": total_words,
+                    "review_notes": whole_review.notes,
+                    "rejected_paths": rejected_paths,
+                    "finalization_actions": list(finalization.actions),
+                    "finalization_report_path": finalization.report_path,
+                },
+            )
 
     _emit_progress(
         progress,
@@ -489,7 +714,9 @@ async def run_fanqie_short_pipeline(
             "total_words": total_words,
             "whole_review_passed": whole_review.passed,
             "ranking_gate_passed": whole_review.ranking_passed,
+            "short_v2_gate_passed": whole_review.short_v2_passed,
             "ranking_rewrite_task_count": ranking_rewrite_task_count,
+            "short_v2_rewrite_task_count": short_v2_rewrite_task_count,
         },
     )
 
@@ -502,10 +729,18 @@ async def run_fanqie_short_pipeline(
         narrative_graph_workflow_run_id=narrative_graph_result.workflow_run_id,
         project_workflow_run_id=planning_result.workflow_run_id,
         chapter_count=len(chapter_payloads),
-        export_status="exported" if export_paths else "not_exported",
+        export_status=(
+            "exported"
+            if export_paths
+            else "rejected_quality_gate"
+            if rejected_paths
+            else "not_exported"
+        ),
         output_path=export_paths.get("markdown_path"),
         output_dir=str(output_dir),
-        output_files=list(export_paths.values()),
+        output_files=(
+            list(export_paths.values()) if export_paths else list(rejected_paths.values())
+        ),
         final_verdict="pass" if whole_review.passed else "needs_attention",
         requires_human_review=not whole_review.passed,
     )

@@ -580,6 +580,57 @@ def test_repair_missing_scene_participants_pre_draft_uses_identity_context() -> 
     }
 
 
+def test_repair_missing_scene_participants_seeds_primary_identity_when_context_empty() -> None:
+    scene = SimpleNamespace(
+        scene_number=2,
+        participants=[],
+        time_label="第406章中段",
+        purpose={"story": "局势翻转，旧盟约被迫公开。"},
+        entry_state={},
+        exit_state={},
+    )
+    registry = [
+        CharacterIdentity(
+            name="Rowan Ashford",
+            gender="female",
+            pronoun_set_zh="她",
+            pronoun_set_en="she/her",
+            role="protagonist",
+        ),
+        CharacterIdentity(
+            name="Caelum",
+            gender="male",
+            pronoun_set_zh="他",
+            pronoun_set_en="he/him",
+            role="ally",
+        ),
+        CharacterIdentity(
+            name="Victor Hale",
+            gender="male",
+            pronoun_set_zh="他",
+            pronoun_set_en="he/him",
+            role="antagonist",
+            is_alive=False,
+        ),
+    ]
+
+    repaired = repair_missing_scene_participants_pre_draft(
+        scene,
+        identity_registry=registry,
+    )
+    report = validate_scene_contract_pre_draft(
+        scene,
+        identity_registry=registry,
+        require_identity_registry=True,
+    )
+
+    assert repaired == 1
+    assert scene.participants == ["Rowan Ashford"]
+    assert "PREDRAFT_SCENE_PARTICIPANTS_MISSING" not in {
+        violation.code for violation in report.violations
+    }
+
+
 def test_repair_missing_scene_participants_prefers_resolved_identity_aliases() -> None:
     scene = SimpleNamespace(
         scene_number=4,

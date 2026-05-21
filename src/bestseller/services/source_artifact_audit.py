@@ -10,13 +10,13 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
+import re
 from typing import Any
 
 from bestseller.services.quality_levers.detectors import (
     count_cjk_chars,
     count_latin_words,
 )
-
 
 DEFAULT_SOURCE_ARTIFACT_NAMES = (
     "project.md",
@@ -204,11 +204,11 @@ def _forbidden_term_findings(
     *,
     forbidden_terms: Sequence[str],
 ) -> list[SourceArtifactFinding]:
-    hits = {
-        term: text.count(term)
-        for term in forbidden_terms
-        if term and text.count(term) > 0
-    }
+    hits: dict[str, int] = {}
+    for term in forbidden_terms:
+        count = _count_forbidden_term(text, term)
+        if count > 0:
+            hits[term] = count
     if not hits:
         return []
     return [
@@ -220,6 +220,24 @@ def _forbidden_term_findings(
             evidence={"term_counts": hits},
         )
     ]
+
+
+_DUNGEON_COPY_CONTEXT_RE = re.compile(
+    r"(副本(?:机制|系统|流|制|化|任务|奖励|关卡|规则)|"
+    r"(?:游戏|无限流|主神|玩家|任务|闯关|通关|加载|规则|死亡游戏).{0,8}副本|"
+    r"副本.{0,8}(?:游戏|无限流|主神|玩家|任务|闯关|通关|加载|规则))"
+)
+
+
+def _count_forbidden_term(text: str, term: str) -> int:
+    if not term:
+        return 0
+    if term == "副本":
+        # “副本” is ambiguous in Chinese: it can mean an ordinary copy of
+        # evidence or a game/infinite-flow dungeon. Source audits should block
+        # the latter planning pollution, not normal story prose like “证词副本”.
+        return len(_DUNGEON_COPY_CONTEXT_RE.findall(text))
+    return text.count(term)
 
 
 def _infer_language(text: str) -> str:

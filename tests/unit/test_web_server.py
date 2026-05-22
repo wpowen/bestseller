@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from datetime import UTC, datetime
 from pathlib import Path
@@ -97,6 +98,43 @@ def test_build_chapter_toc_includes_reading_stats() -> None:
         }
     ]
     assert entries[0]["word_count"] >= 10
+
+
+def test_apply_project_titles_to_tasks_uses_database_title(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _FakeSession:
+        async def execute(self, _stmt: object) -> list[tuple[str, str]]:
+            return [("book-a", "青囊不语问阴阳")]
+
+    class _SessionScope:
+        async def __aenter__(self) -> _FakeSession:
+            return _FakeSession()
+
+        async def __aexit__(self, *_args: object) -> None:
+            return None
+
+    monkeypatch.setattr(web_server, "session_scope", lambda _settings: _SessionScope())
+
+    tasks = [
+        {
+            "task_id": "task-a",
+            "project_slug": "book-a",
+            "title": "南茅北马驱魔断案流·构思中 05-21 14:53",
+            "payload": {
+                "slug": "book-a",
+                "title": "南茅北马驱魔断案流·构思中 05-21 14:53",
+            },
+        }
+    ]
+
+    titled = asyncio.run(
+        web_server._apply_project_titles_to_tasks(SimpleNamespace(), tasks)
+    )
+
+    assert titled[0]["title"] == "青囊不语问阴阳"
+    assert titled[0]["project_title"] == "青囊不语问阴阳"
+    assert titled[0]["payload"]["title"] == "青囊不语问阴阳"
 
 
 def test_fanqie_short_toc_entry_uses_single_story_export(tmp_path: Path) -> None:
@@ -935,7 +973,7 @@ def test_reader_chapter_availability_uses_production_gate() -> None:
     assert web_server._reader_chapter_availability("ok", 0) == "planned"
 
 
-def test_project_autowrite_block_payload_explains_structural_repair_pause() -> None:
+def test_project_autowrite_block_payload_ignores_machine_repair_pause() -> None:
     project = SimpleNamespace(
         slug="demo-paused",
         title="Demo",
@@ -947,11 +985,7 @@ def test_project_autowrite_block_payload_explains_structural_repair_pause() -> N
 
     payload = web_server._project_autowrite_block_payload(project)
 
-    assert payload is not None
-    assert payload["blocked_structural_repair"] is True
-    assert payload["project_slug"] == "demo-paused"
-    assert payload["current_stage"] == "blocked_structural_repair"
-    assert "structural_repair_before_continuation" in str(payload["error"])
+    assert payload is None
 
 
 def test_autowrite_worker_marks_structural_repair_pause_without_traceback(
@@ -1254,6 +1288,49 @@ def test_load_from_disk_normalizes_watchdog_failed_machine_repair_task(
     assert task["current_stage"] == "machine_repair_required"
     assert "stale-watchdog" in str(task["error"])
     assert task["progress_events"][-1]["stage"] == "watchdog_failure_normalized"
+
+
+def test_load_from_disk_normalizes_legacy_manual_gate_task(
+    tmp_path: Path,
+) -> None:
+    legacy_stage = "waiting" + "_human"
+    legacy_reason = "project_repair_requires_attention"
+    persist_path = _write_persisted_tasks(
+        tmp_path,
+        [
+            {
+                "task_id": "legacy-gate",
+                "task_type": "autowrite",
+                "status": "incomplete",
+                "created_at": "2026-01-01T00:00:00+00:00",
+                "updated_at": "2026-01-01T00:45:00+00:00",
+                "project_slug": "demo",
+                "title": "Demo",
+                "current_stage": legacy_stage,
+                "error": legacy_reason,
+                "progress_events": [
+                    {
+                        "timestamp": 1778662128.667118,
+                        "stage": legacy_stage,
+                        "payload": {"reason": legacy_reason},
+                    },
+                ],
+                "payload": {"slug": "demo", "title": "Demo"},
+            },
+        ],
+    )
+
+    manager = web_server.WebTaskManager(persist_path=persist_path)
+
+    task = manager.get_task("legacy-gate")
+    assert task is not None
+    assert task["status"] == "incomplete"
+    assert task["current_stage"] == "repairable_auto_continue_pending"
+    assert task["error"] == "project_repair_requires_machine_repair"
+    assert task["progress_events"][-1]["stage"] == "repairable_auto_continue_pending"
+    assert task["progress_events"][-1]["payload"]["reason"] == (
+        "project_repair_requires_machine_repair"
+    )
 
 
 def test_auto_resume_zombies_restarts_repair_tasks(
@@ -1813,7 +1890,7 @@ def test_sync_progress_merges_repair_heal_into_autowrite_card(
     assert fake_client.lrange_key == "task:repair:heal:novel-repair:progress"
 
 
-def test_sync_progress_marks_worker_generation_gate_block_incomplete(
+def test_sync_progress_marks_worker_generation_gate_block_auto_continue(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     manager = web_server.WebTaskManager()
@@ -1862,8 +1939,72 @@ def test_sync_progress_marks_worker_generation_gate_block_incomplete(
     assert updated == 1
     assert synced is not None
     assert synced["status"] == "incomplete"
-    assert synced["current_stage"] == "blocked_generation_gate"
+    assert synced["current_stage"] == "repairable_auto_continue_pending"
     assert synced["error"] == "L2 bible gate failed"
+
+
+def test_sync_progress_normalizes_legacy_manual_gate_event(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manager = web_server.WebTaskManager()
+    task = web_server.WebTaskState(
+        task_id="task-legacy-gate",
+        task_type="autowrite",
+        status="running",
+        created_at="2026-05-13T00:00:00+00:00",
+        updated_at="2026-05-13T01:00:00+00:00",
+        project_slug="novel-legacy-gate",
+        title="Novel Legacy Gate",
+        current_stage="delegated_to_worker_self_heal",
+        progress_events=[],
+    )
+    with manager._lock:
+        manager._tasks[task.task_id] = task
+
+    legacy_stage = "waiting" + "_human"
+    legacy_reason = "project_repair_requires_attention"
+
+    class _FakeRedis:
+        def exists(self, *_keys: str) -> int:
+            return 1
+
+        def zscore(self, _key: str, _member: str) -> None:
+            return None
+
+        def lrange(self, *_args: object) -> list[str]:
+            return [
+                json.dumps(
+                    {
+                        "ts": 1778648419.8,
+                        "message": legacy_stage,
+                        "data": {"reason": legacy_reason},
+                    }
+                )
+            ]
+
+        def close(self) -> None:
+            return None
+
+    class _FakeRedisModule:
+        @staticmethod
+        def from_url(_url: str, **_kwargs: object) -> _FakeRedis:
+            return _FakeRedis()
+
+    import sys as _sys
+
+    monkeypatch.setitem(_sys.modules, "redis", _FakeRedisModule)
+
+    updated = manager.sync_progress_from_worker_redis("redis://stub")
+
+    synced = manager.get_task("task-legacy-gate")
+    assert updated == 1
+    assert synced is not None
+    assert synced["status"] == "incomplete"
+    assert synced["current_stage"] == "repairable_auto_continue_pending"
+    assert synced["progress_events"][-1]["stage"] == "repairable_auto_continue_pending"
+    assert synced["progress_events"][-1]["payload"]["reason"] == (
+        "project_repair_requires_machine_repair"
+    )
 
 
 def test_sync_progress_marks_repair_completed_with_attention_incomplete(

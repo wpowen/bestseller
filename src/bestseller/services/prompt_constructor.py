@@ -39,6 +39,9 @@ from typing import Any
 
 from bestseller.services.diversity_budget import DiversityBudget
 from bestseller.services.fanqie_market_integration import render_fanqie_craft_profile_block
+from bestseller.services.market_constraint_compiler import render_chapter_constraints_block
+from bestseller.services.reader_persona_simulator import render_persona_feedback_block
+from bestseller.services.voice_signature import render_voice_dna_block
 from bestseller.services.hype_engine import (
     GoldenFingerLadder,
     GoldenFingerRung,
@@ -146,9 +149,11 @@ class PromptPlan:
 
     system: str = ""
     invariants_section: str = ""
+    voice_dna_section: str = ""
     bible_slice: str = ""
     ranking_capability_profile_section: str = ""
     market_profile_section: str = ""
+    market_constraints_section: str = ""
     progression_constraints: str = ""
     decision_policy_constraints: str = ""
     rule_system_constraints: str = ""
@@ -158,6 +163,7 @@ class PromptPlan:
     methodology_inject: str = ""
     hype_constraints: str = ""
     diversity_constraints: str = ""
+    persona_feedback_section: str = ""
     prior_chapter_tail: str = ""
     scene_spec: str = ""
     anti_slop_footer: str = ""
@@ -202,6 +208,7 @@ class PromptPlan:
     _SYSTEM_SECTIONS: tuple[str, ...] = (
         "system",
         "invariants_section",
+        "voice_dna_section",
         "methodology_inject",
         "anti_slop_footer",
     )
@@ -213,6 +220,7 @@ class PromptPlan:
         "bible_slice",
         "ranking_capability_profile_section",
         "market_profile_section",
+        "market_constraints_section",
         "progression_constraints",
         "decision_policy_constraints",
         "rule_system_constraints",
@@ -221,6 +229,7 @@ class PromptPlan:
         "reader_contract_section",
         "hype_constraints",
         "diversity_constraints",
+        "persona_feedback_section",
         "prior_chapter_tail",
         "scene_spec",
         "feedback_block",
@@ -261,9 +270,11 @@ class PromptPlan:
         sections = [
             self.system,
             self.invariants_section,
+            self.voice_dna_section,
             self.bible_slice,
             self.ranking_capability_profile_section,
             self.market_profile_section,
+            self.market_constraints_section,
             self.progression_constraints,
             self.decision_policy_constraints,
             self.rule_system_constraints,
@@ -273,6 +284,7 @@ class PromptPlan:
             self.methodology_inject,
             self.hype_constraints,
             self.diversity_constraints,
+            self.persona_feedback_section,
             self.prior_chapter_tail,
             self.scene_spec,
             self.anti_slop_footer,
@@ -722,6 +734,9 @@ def build_chapter_prompt(
     reader_contract_cadence_head: int = 10,
     reader_contract_cadence_tail: int = 5,
     golden_finger_ladder: GoldenFingerLadder | None = None,
+    voice_dna: Any = None,
+    chapter_market_constraints: Any = None,
+    prior_persona_feedback: Any = None,
 ) -> PromptPlan:
     """Assemble a full ``PromptPlan`` for a chapter.
 
@@ -795,13 +810,24 @@ def build_chapter_prompt(
         for section in (market_profile_section, fanqie_market_block)
         if section.strip()
     )
+    voice_dna_section = render_voice_dna_block(
+        voice_dna, language=invariants.language
+    )
+    market_constraints_section = render_chapter_constraints_block(
+        chapter_market_constraints, language=invariants.language
+    )
+    persona_feedback_section = render_persona_feedback_block(
+        prior_persona_feedback, language=invariants.language
+    )
 
     plan = PromptPlan(
         system=system,
         invariants_section=build_invariants_section(invariants),
+        voice_dna_section=voice_dna_section,
         bible_slice=bible_slice,
         ranking_capability_profile_section=ranking_capability_profile_block,
         market_profile_section=market_section,
+        market_constraints_section=market_constraints_section,
         progression_constraints=progression_context_block,
         decision_policy_constraints=decision_policy_block,
         rule_system_constraints=rule_system_context_block,
@@ -819,6 +845,7 @@ def build_chapter_prompt(
             hot_vocab_top_n=hot_vocab_top_n,
             hot_vocab_min_count=hot_vocab_min_count,
         ),
+        persona_feedback_section=persona_feedback_section,
         prior_chapter_tail=build_prior_chapter_tail(
             prior_chapter_text, max_chars=prior_chapter_tail_chars
         ),

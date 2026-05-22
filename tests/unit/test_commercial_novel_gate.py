@@ -172,6 +172,47 @@ def test_commercial_gate_flags_contract_drift_and_canon_leak(tmp_path: Path) -> 
     assert "PREMATURE_MAJOR_PAYOFF" in codes
 
 
+def test_commercial_gate_flags_stitched_chapter_integrity_defects(tmp_path: Path) -> None:
+    _write_package(tmp_path, drift=False)
+    (tmp_path / "story-bible" / "cast-and-promises.md").write_text(
+        "# Cast\n\n"
+        "## 裴镜渊\n\n"
+        "功能：旧账名，代表债务过户方法。\n\n"
+        "承诺：第 16 章之后可用其名字解释债如何过户。\n\n"
+        "禁止：第一卷前段不得作为现场人物抢走十七栋主线。\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "chapter-001.md").write_text(
+        "# 第1章 测试\n\n"
+        "林渊按下三十三层的按钮，镜子里站着七个人。王老板让他别问。\n\n"
+        "镜面忽然裂开，青囊发烫，门外传来三短一长的敲门声。"
+        "他用罗盘压住电梯门，又看见倒影比自己先抬手。"
+        "铜钱在掌心发黑，青囊只吐出半句账文。\n\n"
+        "十一点二十九分，十七栋楼下。\n\n"
+        "王老板快步迎上来，指着二十三层那扇亮灯的窗户说：就是那里。\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "chapter-002.md").write_text(
+        "# 第2章 测试\n\n"
+        "小雨跪在镜前。裴镜渊忽然开口，说否认者先入账。\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "chapter-003.md").write_text(
+        "# 第3章 测试\n\n"
+        "林渊翻开青囊。\n\n---\n\n"
+        "另一段草稿从这里开始，人物和地点都重新进入。\n",
+        encoding="utf-8",
+    )
+
+    report = evaluate_book_package(tmp_path)
+    codes = {issue.code for issue in report.issues}
+
+    assert "CHAPTER_LOCATION_CONFLICT" in codes
+    assert "CHAPTER_OPENING_RESET" in codes
+    assert "CAST_NAME_EARLY_USE" in codes
+    assert "MANUSCRIPT_STITCH_MARKER" in codes
+
+
 def test_batch_callback_matching_accepts_qingnang_aliases() -> None:
     assert _callback_present("王老板回执", "王建业尸体手里攥着回执镜片。")
     assert _callback_present("老张临死话", "张建军临死前留了一句话：那扇门不是张家开的。")

@@ -145,6 +145,14 @@ class FakeExecuteRows:
         return list(self._rows)
 
 
+class FakeScalarOneOrNone:
+    def __init__(self, value: object | None) -> None:
+        self.value = value
+
+    def scalar_one_or_none(self) -> object | None:
+        return self.value
+
+
 def build_settings():
     return load_settings(env={})
 
@@ -305,6 +313,81 @@ def build_scene(project_id, chapter_id) -> SceneCardModel:
     )
     scene.id = uuid4()
     return scene
+
+
+@pytest.mark.asyncio
+async def test_retention_safety_after_assembly_blocks_from_prev_draft() -> None:
+    project = build_project()
+    chapter = build_chapter(project.id)
+    chapter.chapter_number = 2
+    chapter.production_state = "ok"
+    draft = ChapterDraftVersionModel(
+        project_id=project.id,
+        chapter_id=chapter.id,
+        version_no=1,
+        content_md="三日后，清晨。李四走进客栈。店小二殷勤地擦着桌子。",
+        word_count=30,
+        assembled_from_scene_draft_ids=[],
+        is_current=True,
+    )
+    prev_text = (
+        "下一刻，门外脚步声响起。突然，墙后传来一声低咳——"
+        "竟是他以为已死之人。未完——"
+    )
+    session = FakeSession(execute_results=[FakeScalarOneOrNone(prev_text)])
+
+    blocked = await pipeline_services._evaluate_retention_safety_after_assembly(
+        session,
+        project=project,
+        chapter=chapter,
+        chapter_draft=draft,
+        chapter_number=2,
+    )
+
+    assert blocked is True
+    assert chapter.production_state == "blocked"
+    assert "HOOK_ECHO_MISSING" in chapter.metadata_json["auto_repair_last_block_codes"]
+    assert chapter.metadata_json["retention_gate_passed"] is False
+    assert chapter.metadata_json["retention_gate_last_findings"]
+
+
+@pytest.mark.asyncio
+async def test_retention_safety_after_assembly_pass_keeps_state() -> None:
+    project = build_project()
+    chapter = build_chapter(project.id)
+    chapter.chapter_number = 2
+    chapter.production_state = "ok"
+    draft = ChapterDraftVersionModel(
+        project_id=project.id,
+        chapter_id=chapter.id,
+        version_no=1,
+        content_md=(
+            "门外脚步声越来越近。下一刻，门被推开，竟是他以为已死之人。"
+            "墙后的低咳声还在，名单从怀里掉了出来。"
+            "他踏上登临破界的石阶，低声说：从此天地间，我自有道。"
+        ),
+        word_count=50,
+        assembled_from_scene_draft_ids=[],
+        is_current=True,
+    )
+    prev_text = (
+        "下一刻，门外脚步声响起。突然，墙后传来一声低咳——"
+        "竟是他以为已死之人。未完——"
+    )
+    session = FakeSession(execute_results=[FakeScalarOneOrNone(prev_text)])
+
+    blocked = await pipeline_services._evaluate_retention_safety_after_assembly(
+        session,
+        project=project,
+        chapter=chapter,
+        chapter_draft=draft,
+        chapter_number=2,
+    )
+
+    assert blocked is False
+    assert chapter.production_state == "ok"
+    assert chapter.metadata_json["retention_gate_passed"] is True
+    assert "auto_repair_last_block_codes" not in chapter.metadata_json
 
 
 def build_style(project_id) -> StyleGuideModel:

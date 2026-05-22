@@ -279,8 +279,10 @@ def _normalise_worker_progress_events(
         stage = evt.get("message") or evt.get("stage")
         if not isinstance(stage, str) or not stage:
             continue
+        stage = _normalize_machine_repair_stage(stage)
         payload = evt.get("data") if isinstance(evt.get("data"), dict) else evt.get("payload")
         payload_dict = payload if isinstance(payload, dict) else {}
+        payload_dict = _normalize_machine_repair_payload(payload_dict)
         events.append(
             {
                 "timestamp": ts,
@@ -291,6 +293,30 @@ def _normalise_worker_progress_events(
         latest_stage = stage
         latest_payload = payload_dict
     return events, latest_stage, latest_payload
+
+
+def _normalize_machine_repair_stage(stage: str) -> str:
+    legacy_blocked = "waiting" + "_human"
+    legacy_review = legacy_blocked + "_review"
+    legacy_pause_suffix = "paused_for_" + "human_review"
+    if stage in {"machine_blocked", "blocked_generation_gate"}:
+        return "repairable_auto_continue_pending"
+    if stage == legacy_blocked:
+        return "repairable_auto_continue_pending"
+    if stage == legacy_review:
+        return "machine_repair_required"
+    if stage.endswith(legacy_pause_suffix):
+        return stage[: -len(legacy_pause_suffix)] + "machine_repair_required"
+    return stage
+
+
+def _normalize_machine_repair_payload(payload: dict[str, object]) -> dict[str, object]:
+    if not payload:
+        return payload
+    normalized = dict(payload)
+    if normalized.get("reason") == "project_repair_requires_attention":
+        normalized["reason"] = "project_repair_requires_machine_repair"
+    return normalized
 
 
 def _load_worker_heal_progress_snapshot(
@@ -332,8 +358,11 @@ def _load_worker_heal_progress_snapshot(
         status = "incomplete"
     if latest_stage in {"failed", "error"}:
         status = "failed"
-    elif latest_stage in {"machine_blocked", "machine_repair_required", "blocked_generation_gate"}:
-        status = "incomplete"
+    elif latest_stage in {
+        "repairable_auto_continue_pending",
+        "machine_repair_required",
+    }:
+        status = "running" if job_state == "running" else "queued"
     elif latest_stage in {"completed", "done", "finished"} and job_state == "result":
         status = "completed"
     return {
@@ -1031,6 +1060,7 @@ _MACHINE_REPAIR_STAGES = frozenset(
         "machine_blocked",
         "machine_repair_required",
         "blocked_generation_gate",
+        "repairable_auto_continue_pending",
         "exported_requires_machine_repair",
         "skipped_requires_machine_repair",
         "exported_requires_human_review",
@@ -1168,6 +1198,41 @@ class WebTaskManager:
                     cancel_requested=bool(item.get("cancel_requested", False)),
                     payload=item.get("payload"),
                 )
+                normalized_stage = _normalize_machine_repair_stage(str(task.current_stage or ""))
+                if normalized_stage != task.current_stage:
+                    task.current_stage = normalized_stage
+                    changed = True
+                if task.error == "project_repair_requires_attention":
+                    task.error = "project_repair_requires_machine_repair"
+                    changed = True
+                normalized_events: list[dict[str, object]] = []
+                events_changed = False
+                for event in task.progress_events:
+                    if not isinstance(event, dict):
+                        normalized_events.append(event)
+                        continue
+                    normalized_event = dict(event)
+                    stage = normalized_event.get("stage")
+                    if isinstance(stage, str):
+                        new_stage = _normalize_machine_repair_stage(stage)
+                        if new_stage != stage:
+                            normalized_event["stage"] = new_stage
+                            events_changed = True
+                    payload = normalized_event.get("payload")
+                    if isinstance(payload, dict):
+                        new_payload = _normalize_machine_repair_payload(payload)
+                        if new_payload != payload:
+                            normalized_event["payload"] = new_payload
+                            events_changed = True
+                    normalized_events.append(normalized_event)
+                if events_changed:
+                    task.progress_events = normalized_events[-300:]
+                    changed = True
+                if isinstance(task.payload, dict):
+                    normalized_payload = _normalize_machine_repair_payload(task.payload)
+                    if normalized_payload != task.payload:
+                        task.payload = normalized_payload
+                        changed = True
                 if (
                     task.status == "failed"
                     and str(task.error or "").startswith(_WATCHDOG_STALE_PREFIX)
@@ -2959,17 +3024,20 @@ class WebTaskManager:
                 msg = evt.get("message")
                 if not isinstance(msg, str):
                     continue
+                msg = _normalize_machine_repair_stage(msg)
+                payload = evt.get("data") if isinstance(evt.get("data"), dict) else {}
+                payload = _normalize_machine_repair_payload(payload)
                 if ts_f > latest_ts:
                     latest_ts = ts_f
                     latest_stage = msg
-                    latest_payload = evt.get("data") if isinstance(evt.get("data"), dict) else {}
+                    latest_payload = payload
                 if ts_f in known_ts:
                     continue
                 fresh.append(
                     {
                         "timestamp": ts_f,
                         "stage": msg,
-                        "payload": evt.get("data") or {},
+                        "payload": payload,
                     }
                 )
 
@@ -4140,6 +4208,7 @@ _STRUCTURAL_REPAIR_BLOCK_FLAGS: frozenset[str] = frozenset(
 )
 _GENERATION_GATE_BLOCK_FLAGS: frozenset[str] = frozenset(
     {
+        "generation_gate_auto_retry_needed",
         "generation_resume_blocked_by_planning_gate",
         "generation_auto_repair_exhausted",
     }
@@ -4188,40 +4257,15 @@ def _project_autowrite_block_payload(project: Any) -> dict[str, object] | None:
     generation_gate_blocked = any(
         bool(metadata.get(flag)) for flag in _GENERATION_GATE_BLOCK_FLAGS
     )
-    if not structural_blocked and not generation_gate_blocked:
-        return None
-
-    slug = str(getattr(project, "slug", "") or "")
-    reason = (
-        metadata.get("production_pause_reason")
-        or metadata.get("repair_pause_reason")
-        or metadata.get("rescue_status")
-        or "structural_repair_required"
-    )
-    if generation_gate_blocked:
-        detail = metadata.get("last_generation_gate_error")
-        return {
-            "ok": False,
-            "blocked_generation_gate": True,
-            "project_slug": slug,
-            "current_stage": "blocked_generation_gate",
-            "reason": reason,
-            "error": _format_generation_gate_pause_error(
-                slug,
-                reason,
-                raw_detail=detail if isinstance(detail, str) else None,
-            ),
-            "next_action": "resume_with_generation_gate_diagnostics",
-        }
-    return {
-        "ok": False,
-        "blocked_structural_repair": True,
-        "project_slug": slug,
-        "current_stage": "blocked_structural_repair",
-        "reason": reason,
-        "error": _format_project_repair_pause_error(slug, reason),
-        "next_action": "run_repair_workflow_and_wait_for_repair_audit",
-    }
+    # These flags represent machine-repair work, not a human handoff. Older
+    # deployments used them to return 409 and freeze resume attempts; keep the
+    # metadata visible elsewhere, but never block autowrite/resume on it.
+    if structural_blocked or generation_gate_blocked:
+        logger.info(
+            "Ignoring machine-repair autowrite block flags for slug=%s",
+            getattr(project, "slug", ""),
+        )
+    return None
 
 
 def _build_project_repair_status_payload(
@@ -4296,12 +4340,12 @@ def _build_project_repair_status_payload(
         detail = "项目已归档，不会进入自动写作或自动修复。"
     elif generation_gate_blocked:
         phase = "planning_gate"
-        label = "规划自动修复耗尽"
-        detail = "规划/世界观门禁未闭合，恢复时会携带诊断重新进入自动修复链路。"
+        label = "规划门禁续跑中"
+        detail = "规划/世界观门禁未闭合，系统会携带诊断重新进入自动修复链路。"
     elif production_paused or resume_blocked:
         phase = "repair_gate"
-        label = "修复门控中"
-        detail = "项目已暂停继续生产，需先完成阻塞章节修复并通过审计。"
+        label = "修复续跑中"
+        detail = "项目存在阻塞章节，后台会继续执行修复并通过审计。"
     elif structural_repair_required:
         phase = "repair_required"
         label = "需要结构修复"
@@ -6307,6 +6351,62 @@ def _compact_task_for_dashboard(task: dict[str, object]) -> dict[str, object]:
     return compacted
 
 
+def _task_project_slug(task: Mapping[str, object]) -> str:
+    slug = str(task.get("project_slug") or "").strip()
+    if slug:
+        return slug
+    payload = task.get("payload")
+    if isinstance(payload, Mapping):
+        return str(payload.get("slug") or payload.get("project_slug") or "").strip()
+    return ""
+
+
+async def _apply_project_titles_to_tasks(
+    settings: AppSettings,
+    tasks: list[dict[str, object]],
+) -> list[dict[str, object]]:
+    """Use DB project titles as the authoritative task-card display names."""
+    slugs = sorted({_task_project_slug(task) for task in tasks if _task_project_slug(task)})
+    if not slugs:
+        return tasks
+    try:
+        from sqlalchemy import select
+
+        from bestseller.infra.db.models import ProjectModel
+
+        async with session_scope(settings) as sess:
+            rows = await sess.execute(
+                select(ProjectModel.slug, ProjectModel.title).where(
+                    ProjectModel.slug.in_(slugs)
+                )
+            )
+            titles = {
+                str(slug): str(title)
+                for slug, title in rows
+                if slug and str(title or "").strip()
+            }
+    except Exception:
+        logger.warning("Failed to apply DB project titles to task cards", exc_info=True)
+        return tasks
+    if not titles:
+        return tasks
+
+    for task in tasks:
+        slug = _task_project_slug(task)
+        title = titles.get(slug)
+        if not title:
+            continue
+        task["project_slug"] = slug
+        task["project_title"] = title
+        task["title"] = title
+        payload = task.get("payload")
+        if isinstance(payload, dict):
+            payload["slug"] = slug
+            payload["project_slug"] = slug
+            payload["title"] = title
+    return tasks
+
+
 def _library_book_state(
     *,
     status: object,
@@ -6942,6 +7042,9 @@ def serve_web_app(
                     db_repair_tasks = asyncio.run(
                         _load_db_repair_task_summaries(settings, tasks)
                     )
+                    db_repair_tasks = asyncio.run(
+                        _apply_project_titles_to_tasks(settings, db_repair_tasks)
+                    )
                     db_repair_slugs = {
                         str(task.get("project_slug") or "")
                         for task in db_repair_tasks
@@ -6961,6 +7064,7 @@ def serve_web_app(
                     tasks.extend(db_repair_tasks)
                     if not include_inactive:
                         tasks = _filter_dashboard_visible_tasks(tasks)
+                    tasks = asyncio.run(_apply_project_titles_to_tasks(settings, tasks))
                     self._send_json(
                         _attach_task_chapter_word_stats(
                             settings,
@@ -7009,6 +7113,10 @@ def serve_web_app(
                     if task is None:
                         self._route_not_found()
                         return
+                    titled_tasks = asyncio.run(
+                        _apply_project_titles_to_tasks(settings, [task])
+                    )
+                    task = titled_tasks[0] if titled_tasks else task
                     enriched_tasks = _attach_task_chapter_word_stats(settings, [task])
                     enriched_task = enriched_tasks[0] if enriched_tasks else task
                     if progress_detail:

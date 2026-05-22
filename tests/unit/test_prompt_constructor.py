@@ -367,6 +367,158 @@ class TestBuildChapterPrompt:
         assert "【番茄榜单市场画像】" in plan.market_profile_section
         assert rendered.index("【榜单级能力 Profile】") < rendered.index("【番茄榜单市场画像】")
 
+    def test_voice_dna_block_injected_into_system_half(self) -> None:
+        from bestseller.services.voice_signature import extract_voice_dna_from_text
+
+        budget = DiversityBudget(project_id=uuid4())
+        inv = _invariants("zh-CN")
+        sample = (
+            "他握紧剑柄，心中暗想：今夜若不退，便是死路一条。"
+            "他不答，只是出剑。剑光如电。\n"
+        ) * 40
+        dna = extract_voice_dna_from_text(
+            sample, source_id="t-dna", source_label="测试声纹"
+        )
+
+        plan = build_chapter_prompt(
+            inv,
+            budget,
+            chapter_no=2,
+            scene_spec="【本章任务】对决开场。",
+            preassigned_opening=OpeningArchetype.CRISIS,
+            voice_dna=dna,
+        )
+
+        rendered = plan.render()
+        assert "作者声纹" in rendered
+        assert "测试声纹" in rendered
+        # voice_dna_section lives in system half (stable for the whole book).
+        assert "作者声纹" in plan.render_system()
+        assert "作者声纹" not in plan.render_user()
+
+    def test_chapter_market_constraints_injected_into_user_half(self) -> None:
+        from datetime import UTC, date, datetime
+
+        from bestseller.domain.fanqie_market import (
+            FanqieCategoryProfile,
+            FanqieCompetitorProfile,
+            FanqieCraftProfile,
+            FanqieMarketAnalysisBundle,
+            FanqieRankingSnapshot,
+        )
+        from bestseller.services.market_constraint_compiler import (
+            compile_chapter_constraints,
+        )
+
+        bundle = FanqieMarketAnalysisBundle(
+            snapshot=FanqieRankingSnapshot(
+                category="都市脑洞",
+                data_date=date(2026, 5, 20),
+                fetched_at=datetime.now(UTC),
+            ),
+            competitor_profiles=[
+                FanqieCompetitorProfile(
+                    source_book_id="b1",
+                    title="t",
+                    rank=1,
+                    hook_patterns=["opening_crisis_first"],
+                    structure_patterns=["repeatable_mechanism_loop"],
+                )
+            ],
+            category_profile=FanqieCategoryProfile(
+                category="都市脑洞",
+                data_date=date(2026, 5, 20),
+                sample_size=1,
+                hook_patterns=["opening_crisis_first", "ticking_clock"],
+                payoff_patterns=["money_payoff"],
+                structure_patterns=["repeatable_mechanism_loop"],
+                confidence=0.7,
+            ),
+            craft_profile=FanqieCraftProfile(
+                category="都市脑洞",
+                pacing_rules=["每章给一个钩子或反转"],
+                safety_boundary="只复用类目机制",
+                confidence=0.7,
+            ),
+        )
+        constraints = compile_chapter_constraints(bundle, chapter_position=2)
+
+        budget = DiversityBudget(project_id=uuid4())
+        inv = _invariants("zh-CN")
+        plan = build_chapter_prompt(
+            inv,
+            budget,
+            chapter_no=2,
+            scene_spec="【本章任务】机制兑现。",
+            preassigned_opening=OpeningArchetype.CRISIS,
+            chapter_market_constraints=constraints,
+        )
+
+        rendered = plan.render()
+        assert "市场硬约束" in rendered
+        assert "市场硬约束" in plan.render_user()
+        assert "市场硬约束" not in plan.render_system()
+
+    def test_persona_feedback_block_injected_when_provided(self) -> None:
+        from bestseller.services.reader_persona_simulator import (
+            ChapterSignalPack,
+            simulate_readers,
+        )
+
+        result = simulate_readers(
+            ChapterSignalPack(
+                chapter_position=1,
+                chapter_text_chars=4500,
+                hook_count=0,
+                payoff_count=0,
+                cliffhanger_strength=0.1,
+                voice_dna_drift=0.7,
+                market_hooks_hit=0,
+                market_hooks_required=3,
+                novelty_score=0.1,
+                consistency_score=0.4,
+                emotional_beat_count=0,
+                saturated_trope_hits=3,
+                target_length_min=2200,
+                target_length_max=3000,
+                dialogue_ratio=0.05,
+                action_ratio=0.05,
+                interior_ratio=0.05,
+                prose_quality_score=0.3,
+            )
+        )
+
+        budget = DiversityBudget(project_id=uuid4())
+        inv = _invariants("zh-CN")
+        plan = build_chapter_prompt(
+            inv,
+            budget,
+            chapter_no=2,
+            scene_spec="【本章任务】响应反馈。",
+            preassigned_opening=OpeningArchetype.CRISIS,
+            prior_persona_feedback=result,
+        )
+
+        rendered = plan.render()
+        assert "读者画像反馈" in rendered
+        assert "读者画像反馈" in plan.render_user()
+        assert "读者画像反馈" not in plan.render_system()
+
+    def test_new_kwargs_default_to_none_produces_no_blocks(self) -> None:
+        budget = DiversityBudget(project_id=uuid4())
+        inv = _invariants("zh-CN")
+        plan = build_chapter_prompt(
+            inv,
+            budget,
+            chapter_no=1,
+            scene_spec="【本章任务】略。",
+            preassigned_opening=OpeningArchetype.CRISIS,
+        )
+        rendered = plan.render()
+        assert "作者声纹" not in rendered
+        assert "市场硬约束" not in rendered
+        assert "读者画像反馈" not in rendered
+
     def test_empty_sections_skipped_in_render(self) -> None:
         budget = DiversityBudget(project_id=uuid4())
         inv = _invariants("en")

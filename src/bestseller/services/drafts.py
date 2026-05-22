@@ -218,6 +218,13 @@ def _maybe_write_scene_prompt_trace(
             "reader_contract_block",
             "hype_constraints_block",
             "l3_prompt_block",
+            "voice_dna_block",
+            "chapter_market_constraints_block",
+            "signature_scene_block",
+            "prior_persona_feedback_block",
+            "hook_echo_block",
+            "exposition_density_block",
+            "canon_guardrails_block",
         )
         blocks = {
             attr: _block_trace(getattr(context_packet, attr, None), user_prompt)
@@ -4115,6 +4122,28 @@ def build_scene_draft_prompts(
     # False).  When None / empty the prompt is byte-identical to the
     # pre-library pipeline — historical novels stay on v1.
     library_reference_block: str | None = None,
+    # ── P1 Originality Engine blocks ──
+    # Pre-rendered by ``pipelines.py`` from
+    # ``chapter_orchestrator.prepare_chapter_context``. Each is the
+    # rendered text for the corresponding service:
+    #   - voice_dna_block: render_voice_dna_block(target_dna)
+    #   - chapter_market_constraints_block: render_chapter_constraints_block(...)
+    #   - signature_scene_block: render_signature_scene_block(mandate)
+    #   - prior_persona_feedback_block: render_persona_feedback_block(prev_result)
+    # All optional; missing → no-op (block silently dropped from user_prompt).
+    voice_dna_block: str | None = None,
+    chapter_market_constraints_block: str | None = None,
+    signature_scene_block: str | None = None,
+    prior_persona_feedback_block: str | None = None,
+    # ── Retention safety gates ──
+    # hook_echo_block: lists prev chapter's hook tokens current chapter
+    #   MUST echo in opening.
+    # exposition_density_block: advisory ceiling on exposition density.
+    # canon_guardrails_block: chapter-aware forbidden-character/term list
+    #   (rendered from canon_guardrails). Prevents premature cast drift.
+    hook_echo_block: str | None = None,
+    exposition_density_block: str | None = None,
+    canon_guardrails_block: str | None = None,
     # Context budget
     context_budget_tokens: int = 6000,
 ) -> tuple[str, str]:
@@ -4500,6 +4529,40 @@ def build_scene_draft_prompts(
     if l3_prompt_block:
         _l3_prompt_line = f"{l3_prompt_block}\n\n"
 
+    # P1 Originality Engine blocks. All four are pre-rendered by
+    # pipelines.py from chapter_orchestrator.prepare_chapter_context.
+    # When the project hasn't extracted DNA / planned signatures /
+    # written a prior chapter, the corresponding line stays empty —
+    # the f-string concatenation below produces a byte-identical
+    # prompt to legacy.
+    _voice_dna_line = ""
+    if voice_dna_block:
+        _voice_dna_line = f"{voice_dna_block}\n\n"
+    _chapter_market_constraints_line = ""
+    if chapter_market_constraints_block:
+        _chapter_market_constraints_line = (
+            f"{chapter_market_constraints_block}\n\n"
+        )
+    _signature_scene_line = ""
+    if signature_scene_block:
+        _signature_scene_line = f"{signature_scene_block}\n\n"
+    _prior_persona_feedback_line = ""
+    if prior_persona_feedback_block:
+        _prior_persona_feedback_line = f"{prior_persona_feedback_block}\n\n"
+
+    # Retention safety gates — Hook Echo must come BEFORE bible context
+    # so the LLM treats prev-chapter hooks as primary constraint rather than
+    # afterthought.
+    _hook_echo_line = ""
+    if hook_echo_block:
+        _hook_echo_line = f"{hook_echo_block}\n\n"
+    _exposition_density_line = ""
+    if exposition_density_block:
+        _exposition_density_line = f"{exposition_density_block}\n\n"
+    _canon_guardrails_line = ""
+    if canon_guardrails_block:
+        _canon_guardrails_line = f"{canon_guardrails_block}\n\n"
+
     # Material library soft reference — opt-in inspiration for old projects'
     # new chapters. See ``material_library_reference`` module docstring.
     _library_reference_line = ""
@@ -4638,6 +4701,13 @@ def build_scene_draft_prompts(
             "hype_constraints_line": _hype_constraints_line,
             "qimao_opening_contract_line": _qimao_opening_contract_line,
             "l3_prompt_line": _l3_prompt_line,
+            "voice_dna_line": _voice_dna_line,
+            "chapter_market_constraints_line": _chapter_market_constraints_line,
+            "signature_scene_line": _signature_scene_line,
+            "prior_persona_feedback_line": _prior_persona_feedback_line,
+            "hook_echo_line": _hook_echo_line,
+            "exposition_density_line": _exposition_density_line,
+            "canon_guardrails_line": _canon_guardrails_line,
             "project_material_reference_line": _project_material_reference_line,
             "library_reference_line": _library_reference_line,
             "hard_fact_line": _hard_fact_line,
@@ -4702,6 +4772,13 @@ def build_scene_draft_prompts(
     _hype_constraints_line = _ctx["hype_constraints_line"]
     _qimao_opening_contract_line = _ctx["qimao_opening_contract_line"]
     _l3_prompt_line = _ctx["l3_prompt_line"]
+    _voice_dna_line = _ctx["voice_dna_line"]
+    _chapter_market_constraints_line = _ctx["chapter_market_constraints_line"]
+    _signature_scene_line = _ctx["signature_scene_line"]
+    _prior_persona_feedback_line = _ctx["prior_persona_feedback_line"]
+    _hook_echo_line = _ctx["hook_echo_line"]
+    _exposition_density_line = _ctx["exposition_density_line"]
+    _canon_guardrails_line = _ctx["canon_guardrails_line"]
     _project_material_reference_line = _ctx["project_material_reference_line"]
     _library_reference_line = _ctx["library_reference_line"]
     _hard_fact_line = _ctx["hard_fact_line"]
@@ -4738,6 +4815,13 @@ def build_scene_draft_prompts(
             f"{_hype_constraints_line}"
             f"{_qimao_opening_contract_line}"
             f"{_l3_prompt_line}"
+            f"{_voice_dna_line}"
+            f"{_chapter_market_constraints_line}"
+            f"{_signature_scene_line}"
+            f"{_canon_guardrails_line}"
+            f"{_hook_echo_line}"
+            f"{_exposition_density_line}"
+            f"{_prior_persona_feedback_line}"
             f"{_project_material_reference_line}"
             f"{_library_reference_line}"
             f"{_plan_richness_line}"
@@ -4826,6 +4910,13 @@ def build_scene_draft_prompts(
             f"{_hype_constraints_line}"
             f"{_qimao_opening_contract_line}"
             f"{_l3_prompt_line}"
+            f"{_voice_dna_line}"
+            f"{_chapter_market_constraints_line}"
+            f"{_signature_scene_line}"
+            f"{_canon_guardrails_line}"
+            f"{_hook_echo_line}"
+            f"{_exposition_density_line}"
+            f"{_prior_persona_feedback_line}"
             f"{_project_material_reference_line}"
             f"{_library_reference_line}"
             f"{_plan_richness_line}"
@@ -5648,6 +5739,35 @@ async def generate_scene_draft(
                 chapter=chapter,
                 scene=scene,
             ),
+            # P1 Originality Engine — pre-rendered by pipelines.py from
+            # chapter_orchestrator.prepare_chapter_context. None on legacy
+            # projects with no DNA / signature plan / prior feedback.
+            voice_dna_block=(
+                context_packet.voice_dna_block if context_packet else None
+            ),
+            chapter_market_constraints_block=(
+                context_packet.chapter_market_constraints_block
+                if context_packet
+                else None
+            ),
+            signature_scene_block=(
+                context_packet.signature_scene_block if context_packet else None
+            ),
+            prior_persona_feedback_block=(
+                context_packet.prior_persona_feedback_block
+                if context_packet
+                else None
+            ),
+            # Retention safety gates
+            hook_echo_block=(
+                context_packet.hook_echo_block if context_packet else None
+            ),
+            exposition_density_block=(
+                context_packet.exposition_density_block if context_packet else None
+            ),
+            canon_guardrails_block=(
+                context_packet.canon_guardrails_block if context_packet else None
+            ),
             context_budget_tokens=(
                 settings.generation.context_budget_tokens if settings else 6000
             ),
@@ -6264,6 +6384,93 @@ async def maybe_prepare_chapter_auto_repair(
     # Check chapter metadata for direct write-safety blocks that can bypass or
     # sit alongside the quality-report row.
     chapter_meta = dict(chapter.metadata_json or {})
+    retention_findings = [
+        item
+        for item in (chapter_meta.get("retention_gate_last_findings") or [])
+        if isinstance(item, dict)
+    ]
+
+    def _tokens_from_retention_finding(code: str, key: str) -> list[str]:
+        for finding in retention_findings:
+            if str(finding.get("code") or "") != code:
+                continue
+            evidence = finding.get("evidence")
+            if not isinstance(evidence, dict):
+                continue
+            raw = evidence.get(key)
+            if isinstance(raw, list):
+                return [str(item) for item in raw if str(item).strip()]
+        return []
+
+    def _details_for_retention_finding(code: str) -> list[str]:
+        details: list[str] = []
+        for finding in retention_findings:
+            if str(finding.get("code") or "") != code:
+                continue
+            detail = str(finding.get("detail") or "").strip()
+            if detail:
+                details.append(detail)
+        return details
+
+    retention_hint_by_code = {
+        "HOOK_ECHO_MISSING": (
+            "本章没有在开篇呼应上一章尾钩。重写时必须在前1000字内兑现、升级或反转上一章留下的具体钩子。"
+        ),
+        "SIGNATURE_SCENE_MISSING": (
+            "本章处在招牌场景槽位，但没有兑现招牌场景指令。重写时必须落实指定意象、誓约或揭示场面。"
+        ),
+        "EXPOSITION_DUMP": (
+            "本章铺垫/设定解释过密。重写时必须把设定切碎进动作、对话和当下冲突，删除连续解释段。"
+        ),
+        "CAST_VIOLATION": (
+            "本章出现了当前章节不允许登场的角色或旧设定名。重写时必须删除违规角色的对白、动作、视角、心声和在场描写；若只是旧账名，只能短暂作为账页/案卷名出现一次。"
+        ),
+    }
+
+    def _retention_hint_for_codes(codes: Iterable[str]) -> str:
+        ordered_codes = [
+            code
+            for code in dict.fromkeys(str(c) for c in codes if c)
+            if code in retention_hint_by_code
+        ]
+        if not ordered_codes:
+            return ""
+        hint_text = "\n".join(retention_hint_by_code[code] for code in ordered_codes)
+        if "HOOK_ECHO_MISSING" in ordered_codes:
+            missed_tokens = _tokens_from_retention_finding(
+                "HOOK_ECHO_MISSING", "missed_tokens"
+            )
+            matched_tokens = _tokens_from_retention_finding(
+                "HOOK_ECHO_MISSING", "matched_tokens"
+            )
+            prev_tokens = _tokens_from_retention_finding(
+                "HOOK_ECHO_MISSING", "prev_hook_tokens"
+            )
+            if missed_tokens:
+                hint_text = (
+                    f"{hint_text}\n"
+                    "上一章尾钩中本章漏掉的具体承诺："
+                    f"{'；'.join(missed_tokens[:8])}。"
+                )
+            if matched_tokens:
+                hint_text = (
+                    f"{hint_text}\n"
+                    f"已命中的回响：{'；'.join(matched_tokens[:6])}。"
+                )
+            if prev_tokens and not missed_tokens:
+                hint_text = (
+                    f"{hint_text}\n"
+                    f"上一章可回响钩子：{'；'.join(prev_tokens[:8])}。"
+                )
+        if "CAST_VIOLATION" in ordered_codes:
+            cast_details = _details_for_retention_finding("CAST_VIOLATION")
+            if cast_details:
+                hint_text = (
+                    f"{hint_text}\n"
+                    f"本次命中的正典/角色违规：{'；'.join(cast_details[:5])}。"
+                )
+        return hint_text
+
     stored_code = chapter_meta.get("write_safety_block_code")
     if stored_code:
         block_codes = (str(stored_code),)
@@ -6286,6 +6493,26 @@ async def maybe_prepare_chapter_auto_repair(
                 "write_safety_hint",
                 f"场景触发了 {stored_code} 矛盾，请修正后重写。",
             )
+            companion_retention_codes = [
+                str(finding.get("code") or "")
+                for finding in retention_findings
+                if finding.get("code")
+            ]
+            production_block_code = str(
+                chapter_meta.get("production_block_code") or ""
+            ).strip()
+            if production_block_code:
+                companion_retention_codes.append(production_block_code)
+            companion_retention_hint = _retention_hint_for_codes(
+                companion_retention_codes
+            )
+            if companion_retention_hint:
+                hint_text = f"{hint_text}\n{companion_retention_hint}"
+            strict_retention_hint = str(
+                chapter_meta.get("retention_retry_strict_prompt") or ""
+            ).strip()
+            if strict_retention_hint:
+                hint_text = f"{hint_text}\n{strict_retention_hint}"
             # Persist the hint into scene metadata so the writer sees it
             scenes = list(
                 await session.scalars(
@@ -6351,6 +6578,85 @@ async def maybe_prepare_chapter_auto_repair(
             )
             return True, repairable_hit
         # code stored but not repairable — fall through to normal path
+
+    metadata_codes = tuple(
+        str(c)
+        for c in (
+            chapter_meta.get("auto_repair_last_block_codes")
+            or chapter_meta.get("quality_gate_block_codes")
+            or (
+                [chapter_meta.get("production_block_code")]
+                if chapter_meta.get("production_block_code")
+                else []
+            )
+        )
+        if c
+    )
+    if metadata_codes:
+        repairable_hit = tuple(
+            c for c in metadata_codes if _canonical_repair_code(c) in repair_set
+        )
+        if repairable_hit:
+            hint_text = _retention_hint_for_codes(repairable_hit) or "\n".join(
+                f"本章触发 {code}，请按对应质量门约束重写。"
+                for code in repairable_hit
+            )
+            strict_retention_hint = str(
+                chapter_meta.get("retention_retry_strict_prompt") or ""
+            ).strip()
+            if strict_retention_hint:
+                hint_text = f"{hint_text}\n{strict_retention_hint}"
+            scenes = list(
+                await session.scalars(
+                    select(SceneCardModel)
+                    .where(SceneCardModel.chapter_id == chapter.id)
+                    .order_by(SceneCardModel.scene_number.asc())
+                )
+            )
+            reset_draft_count = 0
+            for sc in scenes:
+                sc.status = SceneStatus.NEEDS_REWRITE.value
+                result = await session.execute(
+                    update(SceneDraftVersionModel)
+                    .where(
+                        SceneDraftVersionModel.scene_card_id == sc.id,
+                        SceneDraftVersionModel.is_current.is_(True),
+                    )
+                    .values(is_current=False)
+                )
+                try:
+                    reset_draft_count += int(result.rowcount or 0)
+                except Exception:
+                    logger.debug(
+                        "chapter %d scene %d: current draft reset count unavailable",
+                        chapter.chapter_number,
+                        sc.scene_number,
+                        exc_info=True,
+                    )
+                sc_meta = dict(sc.metadata_json or {})
+                existing = str(sc_meta.get("auto_repair_hint") or "").strip()
+                sc_meta["auto_repair_hint"] = (
+                    f"{existing}\n{hint_text}" if existing else hint_text
+                )
+                sc_meta["auto_repair_block_codes"] = list(repairable_hit)
+                sc.metadata_json = sc_meta
+            _mark_repair_started(repairable_hit)
+            await session.flush()
+            logger.info(
+                "chapter %d: metadata auto-repair reset %d scenes and %d current drafts",
+                chapter.chapter_number,
+                len(scenes),
+                reset_draft_count,
+            )
+            return True, repairable_hit
+        if latest_report is None:
+            logger.info(
+                "chapter %d: metadata block codes %s are not in repair allowlist %s",
+                chapter.chapter_number,
+                list(metadata_codes),
+                sorted(repair_set),
+            )
+            return False, metadata_codes
 
     if latest_report is None:
         return False, ()

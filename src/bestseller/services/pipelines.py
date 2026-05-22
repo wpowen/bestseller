@@ -170,6 +170,194 @@ logger = logging.getLogger(__name__)
 WORKFLOW_TYPE_SCENE_PIPELINE = "scene_pipeline"
 
 
+async def _load_prev_chapter_draft_text(
+    session: AsyncSession,
+    project: ProjectModel,
+    chapter_number: int,
+) -> str | None:
+    if chapter_number < 2:
+        return None
+    result = await session.execute(
+        select(ChapterDraftVersionModel.content_md)
+        .join(ChapterModel, ChapterDraftVersionModel.chapter_id == ChapterModel.id)
+        .where(
+            ChapterModel.project_id == project.id,
+            ChapterModel.chapter_number == chapter_number - 1,
+            ChapterDraftVersionModel.is_current.is_(True),
+        )
+        .limit(1)
+    )
+    if result is None:
+        return None
+    if hasattr(result, "scalar_one_or_none"):
+        return result.scalar_one_or_none()
+    if hasattr(result, "scalar"):
+        return result.scalar()
+    return None
+
+
+async def _evaluate_retention_safety_after_assembly(
+    session: AsyncSession,
+    *,
+    project: ProjectModel,
+    chapter: ChapterModel,
+    chapter_draft: ChapterDraftVersionModel,
+    chapter_number: int,
+    output_base_dir: str | Path | None = None,
+) -> bool:
+    from bestseller.services.canon_guardrails import load_canon_guardrails_for_project
+    from bestseller.services.retention_safety_gate import (
+        evaluate_retention_safety,
+        stamp_retention_block_codes,
+    )
+
+    prev_text = await _load_prev_chapter_draft_text(
+        session,
+        project,
+        chapter_number,
+    )
+    report = evaluate_retention_safety(
+        chapter_position=chapter_number,
+        chapter_text=chapter_draft.content_md or "",
+        prev_chapter_text=prev_text,
+        prev_chapter_position=chapter_number - 1 if chapter_number > 1 else None,
+        total_chapters=int(getattr(project, "target_chapters", 0) or 500),
+        guardrails=load_canon_guardrails_for_project(
+            project,
+            output_base_dir=output_base_dir,
+        ),
+        skip_signature=not _signature_plan_file_exists(
+            project.slug,
+            output_base_dir=output_base_dir,
+        ),
+    )
+    metadata = dict(getattr(chapter, "metadata_json", None) or {})
+    metadata["retention_gate_last_findings"] = [
+        {
+            "code": finding.code,
+            "severity": finding.severity,
+            "detail": finding.detail,
+            **(
+                {"coverage": finding.coverage}
+                if finding.coverage is not None
+                else {}
+            ),
+            **(
+                {"exposition_ratio": finding.exposition_ratio}
+                if finding.exposition_ratio is not None
+                else {}
+            ),
+            **({"evidence": finding.evidence} if finding.evidence else {}),
+        }
+        for finding in report.findings
+    ]
+    metadata["retention_gate_passed"] = report.passed
+    chapter.metadata_json = metadata
+    blocked = stamp_retention_block_codes(chapter, report)
+    await session.flush()
+    logger.info(
+        "retention_safety_gate evaluated: ch%d passed=%s codes=%s findings=%d",
+        chapter_number,
+        report.passed,
+        list(report.auto_repair_codes),
+        len(report.findings),
+    )
+    return blocked
+
+
+def _signature_plan_file_exists(
+    project_slug: str,
+    *,
+    output_base_dir: str | Path | None,
+) -> bool:
+    if output_base_dir is None:
+        return True
+    return (
+        Path(output_base_dir)
+        / project_slug
+        / "story-bible"
+        / "signature-scene-plan.json"
+    ).exists()
+
+
+def _current_auto_repair_block_codes(chapter: ChapterModel) -> tuple[str, ...]:
+    metadata = dict(getattr(chapter, "metadata_json", None) or {})
+    raw_codes = (
+        metadata.get("auto_repair_last_block_codes")
+        or metadata.get("quality_gate_block_codes")
+        or (
+            [metadata.get("production_block_code")]
+            if metadata.get("production_block_code")
+            else []
+        )
+    )
+    return tuple(str(code) for code in raw_codes if code)
+
+
+def _apply_retention_retry_budget(
+    chapter: ChapterModel,
+    block_codes: tuple[str, ...],
+    originality_config: Any,
+) -> bool:
+    """Increment retention-specific retry state.
+
+    Returns True when the retention retry budget is exhausted and the caller
+    should stop automatic repair, leaving the chapter for human review.
+    """
+
+    try:
+        from bestseller.services.retention_safety_gate import (
+            AUTO_REPAIR_RETENTION_CODES,
+        )
+    except Exception:
+        return False
+
+    retention_set = set(AUTO_REPAIR_RETENTION_CODES)
+    retention_codes = tuple(code for code in block_codes if code in retention_set)
+    if not retention_codes:
+        return False
+
+    metadata = dict(getattr(chapter, "metadata_json", None) or {})
+    try:
+        retry_count = int(metadata.get("retention_retry_count") or 0) + 1
+    except (TypeError, ValueError):
+        retry_count = 1
+
+    max_retries = max(
+        1,
+        int(
+            metadata.get("retention_repair_max_retries")
+            or getattr(originality_config, "retention_max_retries", 5)
+            or 5
+        ),
+    )
+    escalate_after = max(
+        1, int(getattr(originality_config, "retention_escalate_after", 3) or 3)
+    )
+
+    metadata["retention_retry_count"] = retry_count
+    metadata["retention_retry_last_block_codes"] = list(retention_codes)
+    if retry_count >= escalate_after:
+        metadata["retention_retry_strict_prompt"] = (
+            f"【留存自修复第 {retry_count} 次】本章连续触发留存门禁 "
+            f"{', '.join(retention_codes)}。本次重写必须在前1000字内显式修复这些问题；"
+            "若仍未通过，将转入人工审核。不要开新支线，不要扩写设定，优先兑现上一章钩子、"
+            "招牌场景、铺垫节制与 cast/正典约束。"
+        )
+    else:
+        metadata.pop("retention_retry_strict_prompt", None)
+
+    exhausted = retry_count > max_retries
+    if exhausted:
+        metadata["retention_auto_repair_exhausted"] = True
+        metadata["requires_human_review"] = True
+        chapter.status = ChapterStatus.REVISION.value
+        chapter.production_state = "blocked"
+
+    chapter.metadata_json = metadata
+    return exhausted
+
+
 def _is_volume_outline_auto_repairable(exc: Exception) -> bool:
     message = str(exc)
     return (
@@ -2768,9 +2956,6 @@ async def run_scene_pipeline(
                 # already fall through because ``_invariants_for_hype``
                 # is None. When L3 is disabled in config we skip the call.
                 try:
-                    from bestseller.services.quality_gates_config import (
-                        get_quality_gates_config,
-                    )
                     _l3_cfg = get_quality_gates_config().l3
                     if (
                         _l3_cfg.enabled
@@ -2812,6 +2997,149 @@ async def run_scene_pipeline(
             except Exception:
                 logger.debug(
                     "Hype block injection failed for ch%d sc%d (non-fatal)",
+                    chapter_number,
+                    scene_number,
+                    exc_info=True,
+                )
+
+        # ── P1 Originality Engine block injection ──
+        # When enabled (and the project has file-backed DNA / market /
+        # signature plan / prior persona feedback under
+        # ``output/<slug>/``), stamp four extra prompt blocks onto the
+        # shared context. Missing artifacts → corresponding blocks stay
+        # None, downstream concatenation skips them. Never fatal.
+        if shared_context is not None:
+            try:
+                _orig_cfg = get_quality_gates_config().originality_engine
+                if _orig_cfg.enabled:
+                    from bestseller.services.chapter_orchestrator import (
+                        prepare_chapter_context as _prepare_chapter_context,
+                    )
+                    from bestseller.services.market_constraint_compiler import (
+                        render_chapter_constraints_block as _render_constraints_block,
+                    )
+                    from bestseller.services.exposition_density_gate import (
+                        check_exposition_density as _check_exposition_density,
+                        render_exposition_density_block as _render_exposition_block,
+                    )
+                    from bestseller.services.reader_persona_simulator import (
+                        render_persona_feedback_block as _render_persona_block,
+                    )
+                    from bestseller.services.signature_scene_planner import (
+                        render_signature_scene_block as _render_signature_block,
+                    )
+                    from bestseller.services.voice_signature import (
+                        render_voice_dna_block as _render_voice_block,
+                    )
+
+                    _orig_mode_b = bool(_orig_cfg.mode_b_override) if (
+                        _orig_cfg.mode_b_override is not None
+                    ) else False
+                    _orig_lang = (
+                        _invariants_for_hype.language
+                        if _invariants_for_hype is not None
+                        else "zh-CN"
+                    )
+                    try:
+                        _prev_text = await _load_prev_chapter_draft_text(
+                            session,
+                            project,
+                            chapter_number,
+                        )
+                    except Exception:
+                        logger.debug(
+                            "prev chapter draft lookup failed for ch%d (non-fatal)",
+                            chapter_number,
+                            exc_info=True,
+                        )
+                        _prev_text = None
+                    _orig_ctx = _prepare_chapter_context(
+                        project.slug,
+                        chapter_number,
+                        output_base_dir=settings.output.base_dir,
+                        mode_b=_orig_mode_b,
+                        prev_chapter_text=_prev_text,
+                    )
+                    if _orig_ctx.voice_dna is not None:
+                        shared_context.voice_dna_block = (
+                            _render_voice_block(
+                                _orig_ctx.voice_dna, language=_orig_lang
+                            ) or None
+                        )
+                    if _orig_ctx.market_constraints is not None:
+                        shared_context.chapter_market_constraints_block = (
+                            _render_constraints_block(
+                                _orig_ctx.market_constraints,
+                                language=_orig_lang,
+                            ) or None
+                        )
+                    if _orig_ctx.signature_scene_mandate is not None:
+                        shared_context.signature_scene_block = (
+                            _render_signature_block(
+                                _orig_ctx.signature_scene_mandate,
+                                language=_orig_lang,
+                            ) or None
+                        )
+                    if _orig_ctx.prior_persona_feedback is not None:
+                        shared_context.prior_persona_feedback_block = (
+                            _render_persona_block(
+                                _orig_ctx.prior_persona_feedback,
+                                language=_orig_lang,
+                            ) or None
+                        )
+                    if _orig_ctx.hook_echo_report is not None:
+                        shared_context.hook_echo_block = (
+                            _orig_ctx.hook_echo_block(language=_orig_lang) or None
+                        )
+                    try:
+                        shared_context.exposition_density_block = (
+                            _render_exposition_block(
+                                _check_exposition_density(
+                                    "",
+                                    chapter_position=chapter_number,
+                                ),
+                                language=_orig_lang,
+                            )
+                            or None
+                        )
+                    except Exception:
+                        logger.debug(
+                            "exposition density block injection failed for ch%d "
+                            "(non-fatal)",
+                            chapter_number,
+                            exc_info=True,
+                        )
+                    # Canon guardrails — chapter-aware forbidden character/term list.
+                    # This is the primary defense against premature cast drift
+                    # (e.g. 裴镜渊 leaking into ch1-15 of 青囊不语问阴阳).
+                    try:
+                        from bestseller.services.canon_guardrails import (
+                            load_canon_guardrails_for_project as _load_guard,
+                            render_canon_guardrails_block as _render_guard,
+                        )
+
+                        _guard = _load_guard(
+                            project,
+                            output_base_dir=settings.output.base_dir,
+                        )
+                        if not _guard.is_empty:
+                            shared_context.canon_guardrails_block = (
+                                _render_guard(
+                                    _guard,
+                                    chapter_number=chapter_number,
+                                    language=_orig_lang,
+                                )
+                                or None
+                            )
+                    except Exception:
+                        logger.debug(
+                            "canon guardrails injection failed for ch%d (non-fatal)",
+                            chapter_number,
+                            exc_info=True,
+                        )
+            except Exception:
+                logger.debug(
+                    "P1 Originality Engine block injection failed for ch%d sc%d (non-fatal)",
                     chapter_number,
                     scene_number,
                     exc_info=True,
@@ -3735,6 +4063,73 @@ async def run_chapter_pipeline(
                 },
             )
 
+            # ── P1 Originality Engine — post-write persona feedback ──
+            # Grade the assembled chapter against the 7 reader personas
+            # and persist the result to
+            # ``output/<slug>/knowledge/persona-feedback/after-ch-NNN.json``.
+            # The next chapter's pre-write hook (above) reads this file
+            # via ``load_latest_feedback`` and injects the directives into
+            # the next chapter's prompt. Non-fatal on any failure.
+            try:
+                _orig_cfg = get_quality_gates_config().originality_engine
+                if (
+                    _orig_cfg.enabled
+                    and _orig_cfg.persist_persona_feedback
+                    and chapter_draft.content_md
+                ):
+                    from bestseller.services.chapter_orchestrator import (
+                        grade_chapter as _grade_chapter,
+                        prepare_chapter_context as _prep_for_grade,
+                    )
+
+                    _grade_mode_b = bool(_orig_cfg.mode_b_override) if (
+                        _orig_cfg.mode_b_override is not None
+                    ) else False
+                    _grade_text = chapter_draft.content_md or ""
+                    if (
+                        _orig_cfg.grading_text_cap_chars > 0
+                        and len(_grade_text) > _orig_cfg.grading_text_cap_chars
+                    ):
+                        _grade_text = _grade_text[: _orig_cfg.grading_text_cap_chars]
+                    _grade_ctx = _prep_for_grade(
+                        project_slug,
+                        chapter_number,
+                        output_base_dir=settings.output.base_dir,
+                        mode_b=_grade_mode_b,
+                    )
+                    _grade_chapter(
+                        _grade_ctx,
+                        _grade_text,
+                        output_base_dir=settings.output.base_dir,
+                        mode_b=_grade_mode_b,
+                        persist=True,
+                    )
+            except Exception:
+                logger.debug(
+                    "P1 Originality Engine post-write grading failed for ch%d "
+                    "(non-fatal)",
+                    chapter_number,
+                    exc_info=True,
+                )
+            try:
+                _orig_cfg = get_quality_gates_config().originality_engine
+                if _orig_cfg.enabled and chapter_draft.content_md:
+                    await _evaluate_retention_safety_after_assembly(
+                        session,
+                        project=project,
+                        chapter=chapter,
+                        chapter_draft=chapter_draft,
+                        chapter_number=chapter_number,
+                        output_base_dir=settings.output.base_dir,
+                    )
+            except Exception:
+                logger.debug(
+                    "retention_safety_gate evaluation failed for ch%d "
+                    "(non-fatal)",
+                    chapter_number,
+                    exc_info=True,
+                )
+
         # ── Chapter auto-repair loop (C6) ──
         # When the assembled chapter trips a repairable block code (default:
         # BLOCK_LOW / BLOCK_HIGH from the length-stability gate), reset every
@@ -3765,6 +4160,16 @@ async def run_chapter_pipeline(
             or ()
             if c
         )
+        try:
+            from bestseller.services.retention_safety_gate import (
+                AUTO_REPAIR_RETENTION_CODES,
+            )
+
+            auto_repair_codes = tuple(
+                dict.fromkeys((*auto_repair_codes, *AUTO_REPAIR_RETENTION_CODES))
+            )
+        except Exception:
+            logger.debug("retention auto-repair code merge failed", exc_info=True)
         while (
             auto_repair_enabled
             and auto_repair_cap > 0
@@ -3775,6 +4180,27 @@ async def run_chapter_pipeline(
             )
         ):
             try:
+                _retry_cfg = get_quality_gates_config().originality_engine
+                _pre_repair_block_codes = _current_auto_repair_block_codes(chapter)
+                if _apply_retention_retry_budget(
+                    chapter,
+                    _pre_repair_block_codes,
+                    _retry_cfg,
+                ):
+                    logger.warning(
+                        "Chapter %d: retention auto-repair exhausted after %d attempt(s); "
+                        "routing to human review",
+                        chapter_number,
+                        int(
+                            (chapter.metadata_json or {}).get(
+                                "retention_retry_count", 0
+                            )
+                            or 0
+                        ),
+                    )
+                    scene_requires_human_review = True
+                    await session.flush()
+                    break
                 from bestseller.services.drafts import (
                     maybe_prepare_chapter_auto_repair,
                 )
@@ -3906,6 +4332,24 @@ async def run_chapter_pipeline(
             chapter_draft = await assemble_chapter_draft(
                 session, project_slug, chapter_number, settings=settings
             )
+            try:
+                _orig_cfg = get_quality_gates_config().originality_engine
+                if _orig_cfg.enabled and chapter_draft.content_md:
+                    await _evaluate_retention_safety_after_assembly(
+                        session,
+                        project=project,
+                        chapter=chapter,
+                        chapter_draft=chapter_draft,
+                        chapter_number=chapter_number,
+                        output_base_dir=settings.output.base_dir,
+                    )
+            except Exception:
+                logger.debug(
+                    "retention_safety_gate repair-pass evaluation failed for ch%d "
+                    "(non-fatal)",
+                    chapter_number,
+                    exc_info=True,
+                )
             _emit_progress(
                 progress,
                 "chapter_auto_repair_completed",
@@ -3987,9 +4431,6 @@ async def run_chapter_pipeline(
         # scene pass.
         bible_findings: dict[str, int] | None = None
         try:
-            from bestseller.services.quality_gates_config import (
-                get_quality_gates_config,
-            )
             _gates_cfg = get_quality_gates_config()
             if _gates_cfg.l2.enabled:
                 from bestseller.services.bible_gate import (
@@ -4093,10 +4534,6 @@ async def run_chapter_pipeline(
         # gates use.
         ai_flavor_outcome = None
         try:
-            from bestseller.services.quality_gates_config import (
-                get_quality_gates_config,
-            )
-
             _af_gates_cfg = get_quality_gates_config()
             if (
                 _af_gates_cfg.ai_flavor.enabled
@@ -4701,9 +5138,6 @@ async def run_chapter_pipeline(
                 # review loop compensates in a later chapter rather than
                 # waiting for the book-end audit. Failures non-fatal.
                 try:
-                    from bestseller.services.quality_gates_config import (
-                        get_quality_gates_config,
-                    )
                     _l7_cfg = get_quality_gates_config().l7
                     if _l7_cfg.enabled:
                         from bestseller.services.audit_loop import (
@@ -4739,9 +5173,6 @@ async def run_chapter_pipeline(
                 # quality scores without waiting for book-end Stage 11.
                 # Idempotent; failures non-fatal.
                 try:
-                    from bestseller.services.quality_gates_config import (
-                        get_quality_gates_config,
-                    )
                     _l8_cfg = get_quality_gates_config().l8
                     if _l8_cfg.enabled:
                         from bestseller.services.scorecard import (

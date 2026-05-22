@@ -32,6 +32,7 @@ from __future__ import annotations
 import asyncio
 import datetime as _dt
 import logging
+import os
 import time
 import uuid
 from dataclasses import dataclass
@@ -135,7 +136,9 @@ _AUTO_REPAIRABLE_WRITE_SAFETY_BLOCK_CODES = frozenset(
 # older deployment paused a project after exhausting that path, startup self-heal
 # may retry once the pause is no longer fresh instead of treating it as a manual
 # structural stop forever.
-GENERATION_GATE_RESUME_COOLDOWN_SECONDS = 15 * 60
+GENERATION_GATE_RESUME_COOLDOWN_SECONDS = int(
+    os.getenv("BESTSELLER_GENERATION_GATE_RESUME_COOLDOWN_SECONDS", "60")
+)
 _AUTO_RESUMABLE_GENERATION_GATE_REASONS = frozenset(
     {
         "scene_plan_richness_gate_failed",
@@ -399,6 +402,20 @@ async def find_stuck_projects(session: Any) -> list[StuckProject]:
             )
             continue
 
+        if auto_resumable_generation_gate:
+            stuck.append(
+                StuckProject(
+                    project_id=project.id,
+                    slug=project.slug,
+                    reason="generation_gate_auto_retry_needed",
+                    stuck_at_chapter=None,
+                    chapters_total=int(chapters_total),
+                    chapters_with_draft=int(chapters_with_draft),
+                    heal_kind="repair",
+                )
+            )
+            continue
+
         # A production pause such as ``structural_repair_before_continuation``
         # should stop continuation/autowrite, not the repair loop itself.
         # Check it only after blocked chapters have had a chance to dispatch a
@@ -597,12 +614,17 @@ def _project_has_stale_auto_resumable_generation_gate(project: ProjectModel) -> 
     metadata = getattr(project, "metadata_json", None) or {}
     if not isinstance(metadata, dict):
         return False
-    reason = str(metadata.get("production_pause_reason") or "").strip()
+    reason = str(
+        metadata.get("last_generation_gate_reason")
+        or metadata.get("production_pause_reason")
+        or ""
+    ).strip()
     base_reason = reason.split(":", 1)[0]
     if base_reason not in _AUTO_RESUMABLE_GENERATION_GATE_REASONS:
         return False
     if not (
-        metadata.get("generation_resume_blocked_by_planning_gate")
+        metadata.get("generation_gate_auto_retry_needed")
+        or metadata.get("generation_resume_blocked_by_planning_gate")
         or metadata.get("generation_auto_repair_exhausted")
     ):
         return False
@@ -628,10 +650,15 @@ async def _clear_auto_resumable_generation_gate_pause(
         return False
 
     metadata = dict(getattr(project, "metadata_json", None) or {})
-    reason = str(metadata.get("production_pause_reason") or "")
+    reason = str(
+        metadata.get("last_generation_gate_reason")
+        or metadata.get("production_pause_reason")
+        or ""
+    )
     metadata["last_generation_gate_auto_resumed_at"] = _dt.datetime.now(_dt.UTC).isoformat()
     metadata["last_generation_gate_auto_resumed_reason"] = reason
     for key in (
+        "generation_gate_auto_retry_needed",
         "generation_resume_blocked_by_planning_gate",
         "generation_auto_repair_exhausted",
         "production_paused",
@@ -652,20 +679,9 @@ async def _clear_auto_resumable_generation_gate_pause(
 
 
 def _project_resume_is_blocked(project: ProjectModel) -> bool:
-    metadata = getattr(project, "metadata_json", None) or {}
-    if not isinstance(metadata, dict):
-        metadata = {}
     if _project_has_stale_auto_resumable_generation_gate(project):
         return False
-    status = (getattr(project, "status", None) or "").lower()
-    if status == ProjectStatus.PAUSED.value and not metadata.get("stuck_at_chapter"):
-        return True
-    return bool(
-        metadata.get("generation_resume_blocked_until_repair_audit")
-        or metadata.get("structural_repair_required")
-        or metadata.get("production_pause_reason")
-        or metadata.get("production_paused")
-    )
+    return False
 
 
 def _arq_redis_settings(settings: AppSettings) -> Any:
@@ -970,7 +986,7 @@ async def _stale_in_progress_job(pool: "ArqRedis", job_id: str) -> bool:
 
 async def _safe_zrem(pool: "ArqRedis", key: str, member: str) -> None:
     try:
-        zrem = getattr(pool, "zrem")
+        zrem = pool.zrem
     except AttributeError:
         return
     try:

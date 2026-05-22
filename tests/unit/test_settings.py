@@ -98,6 +98,18 @@ def test_default_settings_treat_non_death_offstage_states_as_auto_repairable() -
     } <= repairable
 
 
+def test_default_settings_treat_retention_codes_as_auto_repairable() -> None:
+    settings = load_settings(env={})
+    repairable = set(settings.pipeline.chapter_auto_repair_repairable_codes)
+
+    assert {
+        "HOOK_ECHO_MISSING",
+        "SIGNATURE_SCENE_MISSING",
+        "EXPOSITION_DUMP",
+        "CAST_VIOLATION",
+    } <= repairable
+
+
 def test_fanqie_market_pipeline_keeps_profile_opt_in_and_blocks_long_gate() -> None:
     settings = load_settings(env={})
 

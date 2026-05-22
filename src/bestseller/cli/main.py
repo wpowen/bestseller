@@ -222,6 +222,13 @@ app.add_typer(prompt_pack_app, name="prompt-pack")
 app.add_typer(writing_preset_app, name="writing-preset")
 app.add_typer(writing_contest_app, name="writing-contest")
 app.add_typer(if_app, name="if")
+from bestseller.cli.voice_dna import voice_dna_app  # noqa: E402
+from bestseller.cli.book_writer import book_app  # noqa: E402
+from bestseller.cli.maintenance import maintenance_app  # noqa: E402
+
+app.add_typer(voice_dna_app, name="voice-dna")
+app.add_typer(book_app, name="book")
+app.add_typer(maintenance_app, name="maintenance")
 export_app.add_typer(export_amazon_kdp_app, name="amazon-kdp")
 
 

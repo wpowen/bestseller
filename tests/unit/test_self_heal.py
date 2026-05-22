@@ -752,7 +752,7 @@ async def test_find_stuck_projects_skips_library_archived_projects(
 async def test_find_stuck_projects_retries_stale_generation_gate_pause(
     now: _dt.datetime,
 ) -> None:
-    """Planning gate pauses should re-enter autowrite after the cooldown."""
+    """Planning gate pauses should re-enter machine repair after the cooldown."""
     p = _FakeProject(
         id=uuid4(),
         slug="book-stale-planning-gate",
@@ -777,8 +777,8 @@ async def test_find_stuck_projects_retries_stale_generation_gate_pause(
 
     assert len(stuck) == 1
     assert stuck[0].slug == "book-stale-planning-gate"
-    assert stuck[0].reason == "under_target_chapters"
-    assert stuck[0].stuck_at_chapter == 51
+    assert stuck[0].reason == "generation_gate_auto_retry_needed"
+    assert stuck[0].heal_kind == "repair"
 
 
 @pytest.mark.asyncio
@@ -811,8 +811,8 @@ async def test_find_stuck_projects_retries_stale_scene_plan_gate_pause(
 
     assert len(stuck) == 1
     assert stuck[0].slug == "book-stale-scene-plan-gate"
-    assert stuck[0].reason == "under_target_chapters"
-    assert stuck[0].stuck_at_chapter == 51
+    assert stuck[0].reason == "generation_gate_auto_retry_needed"
+    assert stuck[0].heal_kind == "repair"
 
 
 @pytest.mark.asyncio
@@ -830,7 +830,7 @@ async def test_find_stuck_projects_keeps_fresh_generation_gate_pause_blocked(
             "production_paused": True,
             "production_pause_reason": "story_bible_gate_failed",
             "last_generation_gate_blocked_at": (
-                now - _dt.timedelta(minutes=5)
+                now - _dt.timedelta(seconds=max(GENERATION_GATE_RESUME_COOLDOWN_SECONDS // 2, 1))
             ).isoformat(),
         },
     )
